@@ -6,7 +6,7 @@ import { electronAPI } from '@electron-toolkit/preload'
 import { AgentIpcChannels, type AgentEvent, type NativeContextMenuItemSpec, type AgentPrewarmHint, type BashOutputEvent, type CodexCollaborationMode, type CodexGoalStatus, type CodexPermissionPreset, type CodexReasoningEffort, type CodexReviewTarget, type CodexExternalAgentItem, type CodexMcpOauthLoginOptions, type ProviderEndpointTestResponse, type DiscoverModelsResult, type RemoteDeviceConfig, type SandboxMode, type SendMessageRequest, type ContentBlock, type ChatMessageContext, type ClaudeSteerPriority, type WorktreeActivateRequest, type WorktreeHandoffResult, type WorktreeAssignResult, type GitDirtyStatus, type SessionForkRequest, type SessionForkResult, type SideChatStartRequest, type SideChatStartResult, type HookSavePayload, type TerminalEvent, type TerminalListItem, type TerminalSnapshot, type HarnessId, type BrowserAudioState, type BrowserCertError, type BrowserOpenTabRequest, type UpsertMediaProviderRequest, type ThemeMode, type ComputerUseDisplayInfo, type ComputerUseViewfinderClaim, type ComputerUseViewfinderFrame, type RealtimeVoiceStartRequest, type RealtimeTimelineResult, type CodexRealtimeVoiceCatalog } from '@superone/shared/agent-types'
 import type { McpbInstallRequest } from '@superone/shared/mcpb-types'
 import type { TerminalCommandRule } from '@superone/shared/terminal-command-rules'
-import type { DshPluginInstallSource, FileEntryKind, PinnedSessionEntry, ScheduledSend, ScheduledSendPatch, ScheduledSendSessionInit, WindowFoldStep, WindowMiniMode } from '@superone/shared/agent-types'
+import type { AttachmentOriginalStatus, DshPluginInstallSource, StageAttachmentOriginalRequest, FileEntryKind, PinnedSessionEntry, ScheduledSend, ScheduledSendPatch, ScheduledSendSessionInit, WindowFoldStep, WindowMiniMode } from '@superone/shared/agent-types'
 import type { GitMentionCapabilities, GitMentionRefKind, GitMentionRefsResult } from '@superone/shared/git-mention-query'
 import type { ConsumerBinding, ConsumerId, Credential, EndpointOverride, Platform, ServiceEndpoint } from '@superone/shared/platform-registry'
 import type { DraftListEntry, DraftUpsertRequest, ProjectSnapshot } from '@superone/shared/environment'
@@ -1756,6 +1756,12 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.SAVE_FILE, folderPath, filePath, content),
   readFileAsDataUri: (absPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.READ_FILE_AS_DATA_URI, absPath),
+  stageAttachmentOriginal: (request: StageAttachmentOriginalRequest) =>
+    ipcRenderer.invoke(AgentIpcChannels.STAGE_ATTACHMENT_ORIGINAL, request) as Promise<{ path: string }>,
+  attachmentOriginalStatus: (paths: string[]) =>
+    ipcRenderer.invoke(AgentIpcChannels.ATTACHMENT_ORIGINAL_STATUS, paths) as Promise<Record<string, AttachmentOriginalStatus>>,
+  retryAttachmentOriginal: (path: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.RETRY_ATTACHMENT_ORIGINAL, path) as Promise<void>,
   getMediaProviders: () =>
     ipcRenderer.invoke(AgentIpcChannels.MEDIA_GEN_PROVIDERS),
   getModelCatalog: () =>

@@ -1903,7 +1903,7 @@ export class EnvironmentHost {
       /** Skills to exclude; node may discover and filter. */
       disabledSkills?: string[]
       /** Image/document attachments (base64) — node persists under turn cwd. */
-      images?: Array<{ id?: string; name?: string; mimeType: string; base64: string }>
+      images?: Array<{ id?: string; name?: string; mimeType: string; base64: string; originalPath?: string }>
       /** Node provider credential id for this turn. */
       apiProviderId?: string | null
       /** Codex turn kind: run|steer|review|compact (session.send options.turnKind). */
@@ -1963,7 +1963,7 @@ export class EnvironmentHost {
       typeof input.apiProviderId === 'string' && input.apiProviderId.trim()
         ? input.apiProviderId.trim()
         : undefined
-    const images = Array.isArray(input.images)
+    let images = Array.isArray(input.images)
       ? input.images
           .filter(
             (img) =>
@@ -1975,6 +1975,14 @@ export class EnvironmentHost {
           )
           .slice(0, 8)
       : []
+    // A full-size original went ahead through the sync zone; the node reads its own copy.
+    if (images.some((img) => img.originalPath !== undefined)) {
+      const zone = this.getSyncZone(connectionId)
+      if (!zone) throw new Error('This remote node cannot receive full-size attachments; remove them and attach again')
+      const { nodeAttachmentOriginal } = await import('../attachment-originals')
+      images = images.map(({ originalPath, ...img }) =>
+        typeof originalPath === 'string' ? { ...img, originalPath: nodeAttachmentOriginal(input.sessionId, originalPath, zone) } : img)
+    }
     const options: Record<string, unknown> = {}
     if (model) options.model = model
     if (effort) options.effort = effort

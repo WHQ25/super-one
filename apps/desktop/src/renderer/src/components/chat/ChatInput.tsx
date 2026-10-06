@@ -8,7 +8,7 @@ import { CLAUDE_INTERCEPTED_COMMAND_NAMES, CODEX_REJECT_PLAN_PLACEHOLDER, getLat
 import { useAppStore, useEffectiveProjectRoot } from '@/stores/app'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Loader2, X } from 'lucide-react'
-import type { MentionKind } from '@/stores/chat'
+import type { MentionKind, SessionWriteTarget } from '@/stores/chat'
 import { isBuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
 import { ContextUsage } from './ContextUsage'
 import { MentionPopup, type MentionPopupHandle } from './MentionPopup'
@@ -53,7 +53,7 @@ import { internalDragSource } from '@/components/sidebar/drag-drop-utils'
 import { AttachmentNode } from './attachment-node'
 import { ChipSelection } from './chip-selection'
 import { BrowserAnnotationChips } from '../browser/BrowserAnnotationChips'
-import { buildImageAttachment } from './image-compress'
+import { buildChatImage, originalPending, useOriginalUploads, watchOriginals } from './attachment-originals'
 import { ChatInputDirsHint } from './ChatInputDirsHint'
 import { ContextBar } from './ContextBar'
 import { McpAppContextAttachments } from './McpAppContextAttachments'
@@ -342,8 +342,16 @@ export function ChatInput({
     // `scheduledLoading` counts too: until the read for this session lands, a
     // null schedule means "not known yet", and sending into that window would go
     // out immediately *and* again when the armed row arrives and comes due.
+    // A full-size original still uploading to a remote node holds the send: the message names it.
+    const originalStatuses = useOriginalUploads((s) => s.statuses)
+    const originalsHeld = attachments.some((a) => originalPending(a, originalStatuses))
+    // A failed one waits on the user instead, through its chip.
+    const originalsUploading = attachments.some((a) => a.originalPath && originalStatuses[a.originalPath]?.state !== 'failed' && originalPending(a, originalStatuses))
+    useEffect(() => {
+      watchOriginals(attachments.flatMap((a) => (a.originalPath ? [a.originalPath] : [])))
+    }, [attachments])
     const canSend = hasContent && !isRemoteLocked && !codexDirsPendingNextTurn
-      && !scheduledLoading && !scheduled
+      && !scheduledLoading && !scheduled && !originalsHeld
     const showAgentMentions = activeProviderForResources === 'claude'
 
 
@@ -1385,12 +1393,21 @@ export function ChatInput({
     // Store the attachment and insert an inline chip node at the cursor, so an
     // upload reads as a file reference sitting in the message where the caret is.
     const attachFile = useCallback(
-      (att: ImageAttachment) => {
+      (att: ImageAttachment, owner?: SessionWriteTarget) => {
         const id = crypto.randomUUID()
-        addAttachment({ ...att, id })
+        // Staging an original can give a remote draft its node session id; the attachment follows it.
+        if (owner) storeActions.addAttachment({ ...att, id }, owner)
+        else addAttachment({ ...att, id })
         editorRef.current?.chain().focus().insertContent({ type: 'attachment', attrs: { id } }).run()
       },
-      [addAttachment]
+      [addAttachment, storeActions]
+    )
+    const attachImage = useCallback(
+      async (file: File, sourcePath?: string) => {
+        const image = await buildChatImage(file, sessionScope ?? undefined, sourcePath)
+        if (image) attachFile(image.attachment, image.target)
+      },
+      [attachFile, sessionScope]
     )
 
     // A copied chat message pastes back as it was sent: every image is read
@@ -1398,20 +1415,21 @@ export function ChatInput({
     // insert at the caret.
     const pasteParts = useCallback(
       async (parts: PastePart[]) => {
-        const attachments = await Promise.all(parts.map((part) => ('file' in part ? buildImageAttachment(part.file) : null)))
+        const images = await Promise.all(parts.map((part) => ('file' in part ? buildChatImage(part.file, sessionScope ?? undefined) : null)))
         const draft = parts.flatMap((part, index): DraftPart[] => {
           if ('mention' in part) addMention({ ...part.mention, kind: part.mention.kind as MentionKind })
           if (!('file' in part)) return [part]
-          const att = attachments[index]
-          if (!att) return []
+          const image = images[index]
+          if (!image) return []
           const id = crypto.randomUUID()
-          addAttachment({ ...att, id })
+          if (image.target) storeActions.addAttachment({ ...image.attachment, id }, image.target)
+          else addAttachment({ ...image.attachment, id })
           return [{ attachmentId: id }]
         })
         const content = draftInlineContent(draft)
         editorRef.current?.chain().focus().insertContent(content).run()
       },
-      [addAttachment, addMention]
+      [addAttachment, addMention, sessionScope, storeActions]
     )
     pastePartsRef.current = pasteParts
 
@@ -1419,9 +1437,7 @@ export function ChatInput({
       (files: FileList | File[]) => {
         for (const file of Array.from(files)) {
           if (file.type.startsWith('image/')) {
-            void buildImageAttachment(file).then((att) => {
-              if (att) attachFile(att)
-            })
+            void attachImage(file)
             continue
           }
           if (file.type === 'application/pdf') {
@@ -1442,7 +1458,7 @@ export function ChatInput({
           void insertFileMention(filePath)
         }
       },
-      [attachFile, insertFileMention]
+      [attachFile, attachImage, insertFileMention]
     )
     processSelectedFilesRef.current = processSelectedFiles
 
@@ -1457,10 +1473,9 @@ export function ChatInput({
         const bytes = new Uint8Array(bin.length)
         for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
         const name = absPath.split(/[\\/]/).pop() || 'image.png'
-        const att = await buildImageAttachment(new File([bytes], name, { type: mime }))
-        if (att) attachFile(att)
+        await attachImage(new File([bytes], name, { type: mime }), absPath)
       },
-      [attachFile],
+      [attachImage],
     )
     chatInputAPI.addImageFromPath = addImageFromPath
 
@@ -2208,6 +2223,7 @@ export function ChatInput({
             <ScheduledSendButton
               scheduled={scheduled}
               canSend={canSend}
+              waitingFor={originalsUploading ? t('chat.attachmentOriginal.waiting') : undefined}
               canArm={canArmSchedule}
               onSendNow={handleSend}
               onArm={handleArmScheduled}

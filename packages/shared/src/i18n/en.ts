@@ -1808,6 +1808,14 @@ export type Messages = {
     attachmentChip: {
       open: string
     }
+    attachmentOriginal: {
+      stageFailed: string
+      uploading: string
+      failed: string
+      retry: string
+      failedReattach: string
+      waiting: string
+    }
     userSelectionChip: {
       title_one: string
       title_other: string
@@ -6047,6 +6055,14 @@ export const en: Messages = {
     },
     attachmentChip: {
       open: 'Open Preview',
+    },
+    attachmentOriginal: {
+      stageFailed: 'Could not attach {{name}}: its full-size original could not be kept.',
+      uploading: 'Uploading full-size image to the remote node… {{percent}}%',
+      failed: 'The full-size image did not reach the remote node.',
+      retry: 'Retry Upload',
+      failedReattach: 'The full-size image did not reach the remote node. Remove it and attach it again.',
+      waiting: 'Waiting for full-size images to upload',
     },
     userSelectionChip: {
       title_one: '{{count}} quote',

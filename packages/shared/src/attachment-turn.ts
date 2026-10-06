@@ -42,8 +42,18 @@ export function buildAttachmentTurn(
       ...(!path ? { error: `Could not save ${name}; file-path tools cannot use it.` } : {}) }
   })
   const note = prepared.length ? `[Attached ${prepared.length} file(s). ${prepared.some(a => a.inline)
-    ? 'Images are included inline; do not Read them just to view them. ' : ''}Use the local path for file-path tools or selected PDF pages:\n${prepared.map(a => `${JSON.stringify(a.name)} → ${a.path ?? '(not saved locally)'}`).join('\n')}]` : ''
+    ? 'Images are included inline; do not Read them just to view them. ' : ''}Use the local path for file-path tools or selected PDF pages:\n${prepared.map(notePath).join('\n')}]` : ''
   return { attachments: prepared, inlineBlocks: buildInlineAttachmentBlocks(prepared.filter(a => a.inline)), note }
+}
+
+function notePath(attachment: PreparedAttachment): string {
+  const name = JSON.stringify(attachment.name)
+  if (!attachment.originalPath) return `${name} → ${attachment.path ?? '(not saved locally)'}`
+  // A missing original would send tools to a dead path; the user re-attaches instead.
+  try { accessSync(attachment.originalPath, constants.R_OK) } catch {
+    throw new AttachmentError(`The original of ${attachment.name} is no longer available. Remove it and attach it again.`)
+  }
+  return `${name} → ${attachment.originalPath} (full-size original; what you see is a downscaled copy)`
 }
 
 export function attachmentPrompt(text: string, note: string): string {

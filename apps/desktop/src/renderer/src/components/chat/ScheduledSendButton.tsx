@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ArrowUp, Clock } from 'lucide-react'
+import { ArrowUp, Clock, Loader2 } from 'lucide-react'
 import { SCHEDULED_SEND_DEFAULT_MESSAGE, type ScheduledSend } from '@superone/shared/agent-types'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Popover, PopoverAnchor, PopoverContent } from '@superone/ui/components/ui/popover'
@@ -51,6 +51,8 @@ interface ScheduledSendButtonProps {
   scheduled: ScheduledSend | null
   /** Whether an immediate send is possible right now (composer has content, etc). */
   canSend: boolean
+  /** Send is held until something in the composer is ready; names what it waits for. */
+  waitingFor?: string
   /**
    * Whether there is anything to schedule.
    *
@@ -80,6 +82,7 @@ interface ScheduledSendButtonProps {
 export function ScheduledSendButton({
   scheduled,
   canSend,
+  waitingFor,
   canArm,
   onSendNow,
   onArm,
@@ -237,11 +240,12 @@ export function ScheduledSendButton({
             <IconButton
               variant="ghost"
               onClick={handlePrimary}
-              disabled={!canSend}
-              aria-label={primaryLabel}
-              className="size-6 rounded-full border border-border disabled:opacity-30"
+              disabled={!canSend || !!waitingFor}
+              aria-label={waitingFor ?? primaryLabel}
+              tooltip={waitingFor}
+              className={cn('size-6 rounded-full border border-border disabled:opacity-30', waitingFor && 'disabled:opacity-60')}
             >
-              <ArrowUp />
+              {waitingFor ? <Loader2 className="animate-spin" /> : <ArrowUp />}
             </IconButton>
           )}
         </div>

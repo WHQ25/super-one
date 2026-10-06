@@ -106,8 +106,10 @@ insertion does not duplicate generated attachments. Later edits are not erased b
 a send acknowledgement. Insert into Draft returns to the ordinary chat composer.
 Ask Agent sends one new user message instead: the prompt and the chosen settings
 under the media tool's argument names, with the references as image attachments
-whose roles are given by attachment number. The chat draft is left untouched and
-the composer closes after the message is admitted.
+whose roles are given by attachment number. Like chat attachments, these keep
+their full-size originals, and the message waits until they have reached the
+agent. The chat draft is left untouched and the composer closes after the
+message is admitted.
 
 An agent's `media_generate_video` call is reviewed in the same video composer,
 shown in the decision slot instead of opened on the stack. It starts from the
@@ -194,6 +196,31 @@ is working in another surface. Escape in a prompt's text field moves focus to th
 container rather than blurring to the page. The base composer does not auto-focus on return when no focus needs
 restoring. The restore request targets the owning session and is issued after
 the editor mounts; old restore requests do not take focus on later mounts.
+
+Image attachments are downscaled to at most 2000 px for the agent to view: Claude,
+ACP and OpenCode get them inline, Codex as `localImage`. When the copy was
+downscaled, the full-size original is kept for file-path tools, and the
+attachment note names it instead of the copy.
+- **Where the original lives:**
+  - Local session: the user's own file, or a pasted image beside the turn
+    attachments.
+  - Remote session: the original goes into the session's sync zone when the
+    image is attached, and uploads to the node in the background (see
+    [session-sync-zone.md](../architecture/session-sync-zone.md) §6).
+- **While it uploads:** a progress ring sits over the chip's dimmed thumbnail,
+  and Send is disabled with a waiting spinner. Progress advances a 4 MiB chunk
+  at a time, so a spinning arc stands in until the first chunk lands.
+- **Upload failures stay in the composer:** the upload finishes before the
+  message exists, so a sent bubble never shows one.
+- **If the upload fails:** Send stays disabled.
+  - The chip offers Retry Upload.
+  - When the last chunk may already have landed, retrying is unsafe (E090-3),
+    so the chip asks for the attachment to be removed and added again.
+- **A missing original:** a send whose original has gone is refused rather
+  than naming a dead path.
+- **If the original cannot be kept when attaching** (a disk error, or the node
+  is unreachable): the image is not attached and a toast says why.
+- **Drafts** carry only the original's path, never its bytes.
 
 A session open in more than one window (the main window and a spawned mini
 window) shares one draft: text, chips, attachments, browser annotations, and

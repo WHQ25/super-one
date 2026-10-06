@@ -24,6 +24,11 @@ export interface AttachmentInput {
   mimeType: string
   /** Raw or data-URL base64. */
   base64: string
+  /**
+   * The full-size file when `base64` is a downscaled copy for viewing. File-path tools read this;
+   * the agent's own view stays on the copy.
+   */
+  originalPath?: string
 }
 
 export interface PersistedAttachment {
@@ -65,7 +70,7 @@ function decodeBase64(base64: string): Buffer | null {
   }
 }
 
-function safeFileBase(name: string | undefined, mimeType: string): string {
+export function safeFileBase(name: string | undefined, mimeType: string): string {
   const cleaned = (name || `attachment-${randomUUID()}`)
     .replace(/[^\w.\-]+/g, '_')
     .slice(0, 80)
@@ -84,7 +89,11 @@ export function persistAttachment(
   opts?: { name?: string },
 ): string | null {
   const buf = decodeBase64(base64)
-  if (!buf) return null
+  return buf ? persistAttachmentBytes(buf, mimeType, opts) : null
+}
+
+/** `persistAttachment` for bytes already in hand. */
+export function persistAttachmentBytes(buf: Uint8Array, mimeType: string, opts?: { name?: string }): string | null {
   try {
     const dir = resolveAttachmentsDir()
     mkdirSync(dir, { recursive: true })

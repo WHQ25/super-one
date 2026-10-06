@@ -1,5 +1,6 @@
 import { registerComputerUseViewfinderIpc } from './computer-use/viewfinder-ipc'
 import { registerMediaComposerIpc } from './media-gen/composer-ipc'
+import { registerAttachmentOriginalsIpc } from './attachment-originals'
 import { registerMcpAppsProviderIpc } from './mcp-apps/provider-ipc'
 import { initializeMcpAppExecutor, observeRemoteMcpAppEvent, releaseMcpAppRequester } from './mcp-apps/executor'
 import { codexAccountStore } from './codex/codex-account-store'
@@ -1671,6 +1672,7 @@ function attachEnvironmentStatusBridge(host: EnvironmentHost): void {
 
 function registerIpcHandlers(): void {
   registerMediaComposerIpc(id => sessionManager.getSession(id))
+  registerAttachmentOriginalsIpc()
   registerCollaborationMailboxIpc()
   // Local harness catalog (Settings → Harnesses). Register before createWindow
   // so continueToMain's needsHarnessAlign invoke cannot race a dynamic import.

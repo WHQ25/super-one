@@ -307,8 +307,8 @@ vi.mock('./mention-node', () => ({
 }))
 
 vi.mock('./image-compress', () => ({
-  buildImageAttachment: async (file: File) => ({ name: file.name, mimeType: file.type, base64: 'QUJD' }),
-  buildImageAttachmentFromBase64: async () => null,
+  downscaleImage: async (file: File) => ({ attachment: { name: file.name, mimeType: file.type, base64: 'QUJD' }, downscaled: false }),
+  base64ToFile: (base64: string, type: string, name: string) => new File([base64], name, { type }),
 }))
 
 vi.mock('./paste-chip-node', () => ({

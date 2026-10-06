@@ -18,7 +18,7 @@ import { ARTIFACT_CHUNK_BYTES, type ArtifactPutRequest } from '@superone/shared/
 vi.mock('../database', async () => (await import('../../test/fixtures/delivery-db')).deliveryDatabase())
 
 import { deliveryDb, resetDeliveryDatabase } from '../../test/fixtures/delivery-db'
-import { getDelivery, listSessionDeliveries, reserveDelivery, type Delivery, type DeliveryPhase } from '../db-session-deliveries'
+import { getDelivery, listSessionDeliveries, reserveDelivery, type Delivery, type DeliveryOrigin, type DeliveryPhase } from '../db-session-deliveries'
 import { _resetHoldersForTests, mintHolder } from './delivery-holders'
 import { ArtifactTransferService, DEFAULT_THROUGHPUT_BYTES_PER_MS } from './artifact-transfer-service'
 
@@ -41,13 +41,14 @@ function sealDelivery(
   localPath: string,
   rel: string,
   data: Buffer,
+  origin: DeliveryOrigin = 'produced',
 ): string {
   const r = reserveDelivery({
     sessionId,
     connectionId,
     localPath,
     relativePath: rel,
-    origin: 'produced',
+    origin,
     phase: 'sealed',
     holder: null,
     total: data.length,
@@ -301,6 +302,21 @@ describe('the transfer worker', () => {
     // Uploaded once, not again for the retried wake.
     expect(node.calls.filter((c) => c.final)).toHaveLength(1)
     expect(getDelivery(id)).toMatchObject({ outcome: 'done' })
+  })
+
+  it('lands an attachment original without waking the agent, since its message is not sent yet', async () => {
+    const node = fakeNode()
+    const notified: unknown[] = []
+    const service = new ArtifactTransferService({ put: node.put, notifyCompleted: async (_c, input) => { notified.push(input); return { delivered: true } } })
+    const local = join(root, 'full.png')
+    const data = Buffer.from('original bytes')
+    writeFileSync(local, data)
+    const id = sealDelivery('s1', 'c1', local, 'attachment/full.png', data, 'attachment')
+
+    await service.runOnce('c1')
+    expect(node.files.get('attachment/full.png')!.equals(data)).toBe(true)
+    expect(notified).toEqual([])
+    expect(getDelivery(id)).toMatchObject({ outcome: 'done', holder: null })
   })
 
   it('ends a delivery whose session is gone rather than retrying its wake forever', async () => {

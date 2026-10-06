@@ -41,7 +41,8 @@ export type DeliveryPhase = (typeof DELIVERY_PHASES)[number]
 export { ensureSessionFileDeliveriesSchema } from './db-session-deliveries-schema'
 
 export type DeliveryOutcome = 'done' | 'abandoned'
-export type DeliveryOrigin = 'download' | 'page-download' | 'produced'
+/** `attachment`: a chat attachment's original, sent before its message exists, so it lands without waking the agent. */
+export type DeliveryOrigin = 'download' | 'page-download' | 'produced' | 'attachment'
 
 export interface Delivery {
   deliveryId: string

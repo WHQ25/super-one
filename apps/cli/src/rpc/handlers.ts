@@ -28,7 +28,7 @@ import { isNodeMutatingCall } from '@superone/runtime/server/rpc-mutating-method
 import { cloneRepository } from '@superone/shared/git-clone'
 import { isGitMentionRefKind } from '@superone/shared/git-mention-query'
 import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs'
-import { join as pathJoin, resolve as pathResolve } from 'node:path'
+import { join as pathJoin, resolve as pathResolve, sep } from 'node:path'
 import { arch, cpus, freemem, homedir, hostname, platform, totalmem, uptime } from 'node:os'
 import type { AuthenticatedClient } from '../auth/auth-service'
 import type { NodeIdentity } from '../identity'
@@ -2305,6 +2305,18 @@ function handleSessionSetUiFlags(payload: unknown, ctx: RpcContext): RpcResult {
   }
 }
 
+/** The resolved node path of an attachment original inside `sessionId`'s zone, or null. */
+function attachmentOriginal(zone: ArtifactZoneService, sessionId: string, path: unknown): string | null {
+  const prefix = pathJoin(zone.syncRoot, sessionId) + sep
+  if (typeof path !== 'string' || !path.startsWith(prefix)) return null
+  try {
+    const resolved = zone.resolve(sessionId, path.slice(prefix.length).split(sep).join('/'))
+    return statSync(resolved).isFile() ? resolved : null
+  } catch {
+    return null
+  }
+}
+
 async function handleSessionSend(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
   if (denied) return denied
@@ -2387,10 +2399,18 @@ async function handleSessionSend(payload: unknown, ctx: RpcContext): Promise<Rpc
           base64,
           ...(typeof row.name === 'string' ? { name: row.name } : {}),
           ...(typeof row.id === 'string' ? { id: row.id } : {}),
+          ...(row.originalPath !== undefined ? { originalPath: row.originalPath as string } : {}),
         }
       })
       .filter((x): x is NonNullable<typeof x> => x != null)
       .slice(0, 8)
+    // A full-size original arrives ahead of its message through this session's sync zone.
+    for (const image of images) {
+      if (image.originalPath === undefined) continue
+      const original = attachmentOriginal(ctx.artifacts, String(p.sessionId ?? ''), image.originalPath)
+      if (!original) return { error: { code: 'invalid_argument', message: "attachment original must be a file in this session's sync zone" } }
+      image.originalPath = original
+    }
 
     const rawTurnKind =
       typeof options.turnKind === 'string'

@@ -22,7 +22,7 @@ export const RECORDING_ROOT = join(tmpdir(), 'super-one-recordings')
 export const BROWSER_DOWNLOAD_FALLBACK_DIR = join(tmpdir(), 'super-one-browser-downloads')
 
 export type CaptureProducer = 'browser' | 'computer-use' | 'ios-simulator' | 'android' | 'ios-mirror'
-export type ArtifactProducer = CaptureProducer | 'recording' | 'media-gen' | 'download' | 'agent'
+export type ArtifactProducer = CaptureProducer | 'recording' | 'media-gen' | 'download' | 'agent' | 'attachment'
 
 /** Zone id for artifacts produced with no session (manual UI captures). Never auto-deleted. */
 export const ADHOC_SESSION_ID = 'adhoc'
@@ -103,7 +103,7 @@ export function zoneRelativePath(path: string): { sessionId: string; relativePat
 }
 
 const ARTIFACT_PRODUCERS: readonly ArtifactProducer[] = [
-  'browser', 'computer-use', 'ios-simulator', 'android', 'ios-mirror', 'recording', 'media-gen', 'download', 'agent',
+  'browser', 'computer-use', 'ios-simulator', 'android', 'ios-mirror', 'recording', 'media-gen', 'download', 'agent', 'attachment',
 ]
 
 /**

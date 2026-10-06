@@ -92,6 +92,8 @@ export interface TurnImageAttachment {
   name?: string
   mimeType: string
   base64: string
+  /** The node's copy of the full-size original when `base64` is downscaled. */
+  originalPath?: string
 }
 
 export interface TranscriptBlock extends MessageDisplayFields {

@@ -3,7 +3,8 @@ import type { MediaComposerKind, MediaComposerModel, MediaComposerReference, Med
 import { validateTurnAttachments } from '@superone/shared/attachment-validation'
 import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
 import { useChatStore, type SessionWriteTarget } from '@/stores/chat'
-import { buildImageAttachmentFromBase64 } from '../image-compress'
+import { buildChatImageFromBase64, waitForOriginals } from '../attachment-originals'
+import { base64ToFile, downscaleImage } from '../image-compress'
 import { plainTextToTiptapDoc } from '../chat-input/plainTextToTiptapDoc'
 import { serializeComposerDocument } from '../chat-input/serializeComposerDocument'
 import { segmentsText } from '../chat-input/segments-text'
@@ -14,9 +15,10 @@ export async function insertMediaIntoDraft(target: SessionWriteTarget, result: M
     throw new Error('remoteVideoUnavailable')
   }
   const additions = result.kind === 'image' ? await Promise.all(result.files.map(async (file, index) => {
-    const image = file.base64 && await buildImageAttachmentFromBase64(file.base64, file.mediaType, file.path.split(/[\\/]/).at(-1) ?? 'image.png')
-    if (!image) throw new Error('Cannot read generated image')
-    return { ...image, id: `media-${result.generationId}-${index}` }
+    const built = file.base64 && await downscaleImage(base64ToFile(file.base64, file.mediaType, file.path.split(/[\\/]/).at(-1) ?? 'image.png'))
+    if (!built) throw new Error('Cannot read generated image')
+    // The generated file is the original already; a remote send maps it to the node's copy.
+    return { ...built.attachment, ...(built.downscaled ? { originalPath: file.path } : {}), id: `media-${result.generationId}-${index}` }
   })) : []
   // Re-read after image conversion: another pane may have edited or deleted this draft meanwhile.
   const store = useChatStore.getState()
@@ -90,12 +92,17 @@ export function buildMediaDelegationText({ kind, model, prompt, references, aspe
 
 /** Sends the request as an ordinary user message, leaving the chat draft untouched. */
 export async function delegateMediaToAgent(target: SessionWriteTarget, request: MediaDelegation) {
-  const attachments = await Promise.all(request.references.map(async (ref, index) => {
-    const image = await buildImageAttachmentFromBase64(ref.base64, ref.mediaType, ref.name)
+  let owner = target
+  const attachments = []
+  for (const [index, ref] of request.references.entries()) {
+    const image = await buildChatImageFromBase64(ref.base64, ref.mediaType, ref.name, owner)
     if (!image) throw new Error(`Cannot read reference image ${ref.name}`)
-    return { ...image, id: `media-reference-${crypto.randomUUID()}-${index}` }
-  }))
+    owner = image.target ?? owner
+    attachments.push({ ...image.attachment, id: `media-reference-${crypto.randomUUID()}-${index}` })
+  }
   validateTurnAttachments(attachments, request.prompt)
   const text = buildMediaDelegationText(request)
-  await useChatStore.getState().sendMessage(text, [{ text, isPaste: false }, ...attachments.map(image => ({ attachmentId: image.id }))], [], attachments, target)
+  // The message names the full-size references, so they must have reached the agent first.
+  await waitForOriginals(attachments.flatMap(image => image.originalPath ? [image.originalPath] : []))
+  await useChatStore.getState().sendMessage(text, [{ text, isPaste: false }, ...attachments.map(image => ({ attachmentId: image.id }))], [], attachments, owner)
 }

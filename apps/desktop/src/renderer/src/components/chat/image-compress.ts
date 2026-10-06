@@ -15,36 +15,30 @@ function readAsBase64(blob: Blob): Promise<string> {
   })
 }
 
-export async function buildImageAttachmentFromBase64(
-  base64: string,
-  mimeType: string,
-  name: string,
-): Promise<ImageAttachment | null> {
-  try {
-    const bin = atob(base64)
-    const bytes = new Uint8Array(bin.length)
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
-    const file = new File([bytes], name, { type: mimeType })
-    return await buildImageAttachment(file)
-  } catch {
-    return null
-  }
+export function base64ToFile(base64: string, mimeType: string, name: string): File {
+  const bin = atob(base64)
+  const bytes = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+  return new File([bytes], name, { type: mimeType })
 }
 
-export async function buildImageAttachment(file: File, maxSide = MAX_SIDE): Promise<ImageAttachment | null> {
+/** The attachment the agent views; `downscaled` says it is no longer the file the user gave. */
+export async function downscaleImage(file: File, maxSide = MAX_SIDE): Promise<{ attachment: ImageAttachment; downscaled: boolean } | null> {
+  const asIs = async () => {
+    const base64 = await readAsBase64(file)
+    return base64 ? { attachment: { mimeType: file.type, base64, name: file.name }, downscaled: false } : null
+  }
   let bitmap: ImageBitmap
   try {
     bitmap = await createImageBitmap(file)
   } catch {
-    const base64 = await readAsBase64(file)
-    return base64 ? { mimeType: file.type, base64, name: file.name } : null
+    return asIs()
   }
 
   const longSide = Math.max(bitmap.width, bitmap.height)
   if (longSide <= maxSide) {
     bitmap.close()
-    const base64 = await readAsBase64(file)
-    return base64 ? { mimeType: file.type, base64, name: file.name } : null
+    return asIs()
   }
 
   const scale = maxSide / longSide
@@ -57,8 +51,7 @@ export async function buildImageAttachment(file: File, maxSide = MAX_SIDE): Prom
   const ctx = canvas.getContext('2d')
   if (!ctx) {
     bitmap.close()
-    const base64 = await readAsBase64(file)
-    return base64 ? { mimeType: file.type, base64, name: file.name } : null
+    return asIs()
   }
   ctx.drawImage(bitmap, 0, 0, targetW, targetH)
   bitmap.close()
@@ -67,10 +60,7 @@ export async function buildImageAttachment(file: File, maxSide = MAX_SIDE): Prom
   const blob = await new Promise<Blob | null>((res) =>
     canvas.toBlob(res, outMime, outMime === 'image/jpeg' ? JPEG_QUALITY : undefined),
   )
-  if (!blob) {
-    const base64 = await readAsBase64(file)
-    return base64 ? { mimeType: file.type, base64, name: file.name } : null
-  }
+  if (!blob) return asIs()
   const base64 = await readAsBase64(blob)
-  return base64 ? { mimeType: outMime, base64, name: file.name } : null
+  return base64 ? { attachment: { mimeType: outMime, base64, name: file.name }, downscaled: true } : null
 }

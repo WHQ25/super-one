@@ -425,6 +425,25 @@ Boundary:
 | `media-gen` | `media_generate_image/video`, `@native/*-gallery` base64 input, their previews |
 | `download` | `browser_download` and page-started downloads **of a remote session** |
 | `agent` | the agent, per §5.4 |
+| `attachment` | the full-size original of a chat image attachment **of a remote session**, staged at attach time (`attachment-originals.ts`) |
+
+Attachment originals (`apps/desktop/src/main/attachment-originals.ts`):
+
+- The renderer sends the agent a downscaled copy (at most 2000 px) inline,
+  and only keeps an original when it downscaled. The note names the original
+  for file-path tools.
+- A remote session's original is written and sealed here when the image is
+  attached, with origin `attachment`. A draft gets its node session first
+  (`prepareMediaTarget`), because `artifact.put` needs one.
+- The composer holds Send until the row has landed. `session.send` carries
+  the desktop path, `EnvironmentHost.sendSessionMessage` maps it to the node
+  path, and the node accepts only an existing file in that session's zone.
+- On failure the chip offers Retry (`retryGivenUp`). A give-up at
+  `committing` cannot be retried (E090-3), so the user removes the attachment
+  and adds it again. Send stays held in every failed state.
+- A local session's original stays outside the zone: the user's own file, or
+  a pasted image in the turn attachments directory. A local draft has no
+  session row yet, and the sweep reclaims a `local` zone without one.
 
 Downloads (`agent/browser-download-store.ts`, `browser/browser-downloads.ts`):
 
@@ -764,7 +783,9 @@ stopped with it (`environment/environment-host.ts`).
   through the same `committing` gate as the eager push and feed the
   per-connection throughput meter the push budgets with.
 - After the bytes land, `session.notifyArtifactCompleted` (§5.3) wakes the
-  agent with `notificationId` = `delivery_id`, then `completeDelivery`. A node
+  agent with `notificationId` = `delivery_id`, then `completeDelivery`. An
+  `attachment` row completes without the wake: its message has not been sent,
+  and will name the file itself. A node
   answering `not_found`, `forbidden`, `failed_precondition`,
   `unimplemented` or `method_not_found` ends the delivery (`abandoned`);
   anything else retries, because the agent was told the path would work.

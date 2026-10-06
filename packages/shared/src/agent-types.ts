@@ -22,6 +22,11 @@ export interface ImageAttachment {
   /** Stable id linking an editor attachment chip node and its inline content block to this attachment. */
   id?: string
   /**
+   * The full-size original when `base64` was downscaled for the agent to view. A desktop path on
+   * this machine; a remote send rewrites it to the node's copy.
+   */
+  originalPath?: string
+  /**
    * Set on the copy a phone receives in a transcript: `base64` then holds a
    * small JPEG thumbnail (or nothing, for a PDF or a picture the host could not
    * decode) and `mimeType` describes that thumbnail. The original bytes stay on
@@ -29,6 +34,23 @@ export interface ImageAttachment {
    */
   preview?: boolean
 }
+
+/** Keeps an attachment's full-size original where the session's agent can read it. */
+export interface StageAttachmentOriginalRequest {
+  projectPath: string
+  sessionId: string
+  name: string
+  mimeType: string
+  /** The file on disk, when the image came from one; otherwise `bytes`. */
+  sourcePath?: string
+  bytes?: Uint8Array
+}
+
+/** A remote original uploads to the node in the background; local ones are always ready. */
+export type AttachmentOriginalStatus =
+  | { state: 'ready' }
+  | { state: 'uploading'; progress: number }
+  | { state: 'failed'; retryable: boolean }
 
 export interface ShareFileEncryption {
   version: number
@@ -4206,6 +4228,9 @@ export const AgentIpcChannels = {
   LOAD_DEVICE_MODEL: 'app:load-device-model',
   SAVE_FILE: 'app:save-file',
   READ_FILE_AS_DATA_URI: 'app:read-file-as-data-uri',
+  STAGE_ATTACHMENT_ORIGINAL: 'app:stage-attachment-original',
+  ATTACHMENT_ORIGINAL_STATUS: 'app:attachment-original-status',
+  RETRY_ATTACHMENT_ORIGINAL: 'app:retry-attachment-original',
   SAVE_FILE_AS: 'app:save-file-as',
   CLIPBOARD_WRITE_IMAGE: 'app:clipboard-write-image',
   BROWSER_FETCH_IMAGE: 'app:browser-fetch-image',

@@ -23,7 +23,7 @@ function seed(overrides: Partial<ScheduledSend> = {}): ScheduledSend {
  * composer around it. State is local here — in the app the row lives in main,
  * which is exactly why the component owns none of it.
  */
-function Harness({ initial }: { initial: ScheduledSend | null }) {
+function Harness({ initial, waitingFor }: { initial: ScheduledSend | null; waitingFor?: string }) {
   const [row, setRow] = useState<ScheduledSend | null>(initial)
   const [draft, setDraft] = useState(
     initial?.armed ? '' : 'Finish the remaining migration files, then run the tests.',
@@ -50,6 +50,7 @@ function Harness({ initial }: { initial: ScheduledSend | null }) {
             <ScheduledSendButton
               scheduled={row}
               canSend={draft.trim().length > 0}
+              waitingFor={waitingFor}
               canArm={draft.trim().length > 0}
               onSendNow={() => {
                 setSentLog(draft)
@@ -126,4 +127,9 @@ export const Armed: Story = {
 /** Queued by hand from the popover, with no rate limit involved. */
 export const ManualSchedule: Story = {
   args: { initial: seed({ armed: true, source: 'manual', message: 'Run the full suite and summarise failures.' }) },
+}
+
+/** A full-size attachment is still uploading to the remote node: send waits for it. */
+export const WaitingForUploads: Story = {
+  args: { initial: null, waitingFor: 'Waiting for full-size images to upload' },
 }

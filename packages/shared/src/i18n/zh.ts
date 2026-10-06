@@ -1916,6 +1916,14 @@ export const zh: Messages = {
     attachmentChip: {
       open: '打开预览',
     },
+    attachmentOriginal: {
+      stageFailed: '无法添加 {{name}}：原图未能保存。',
+      uploading: '正在上传原图到远程节点… {{percent}}%',
+      failed: '原图未能上传到远程节点。',
+      retry: '重新上传',
+      failedReattach: '原图未能上传到远程节点，请移除后重新添加。',
+      waiting: '正在等待原图上传完成',
+    },
     userSelectionChip: {
       title_one: '{{count}} 条引用',
       title_other: '{{count}} 条引用',

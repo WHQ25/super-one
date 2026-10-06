@@ -20,6 +20,7 @@ function toInputs(
     name: img.name,
     mimeType: img.mimeType,
     base64: img.base64,
+    ...(img.originalPath ? { originalPath: img.originalPath } : {}),
   }))
 }
 

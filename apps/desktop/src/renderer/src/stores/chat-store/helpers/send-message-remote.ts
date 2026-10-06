@@ -416,6 +416,7 @@ export async function sendRemoteMessageImpl(
     name: a.name,
     mimeType: a.mimeType,
     base64: a.base64,
+    ...(a.originalPath ? { originalPath: a.originalPath } : {}),
   }))
 
   // Codex slash commands → session.send turnKind (not desktop-only IPC).

@@ -1,7 +1,7 @@
 import type { SessionWriteTarget } from '@/stores/chat'
 import { useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
-import { buildImageAttachmentFromBase64 } from '../chat/image-compress'
+import { buildChatImageFromBase64 } from '../chat/attachment-originals'
 
 function imageNameFromUrl(url: string, mimeType: string): string {
   const ext = mimeType.split('/')[1]?.split('+')[0] || 'png'
@@ -23,9 +23,9 @@ async function fetchImage(url: string): Promise<{ base64: string; mimeType: stri
 export async function addBrowserImageToChat(url: string, target?: SessionWriteTarget): Promise<boolean> {
   const img = await fetchImage(url)
   if (!img) return false
-  const attachment = await buildImageAttachmentFromBase64(img.base64, img.mimeType, imageNameFromUrl(url, img.mimeType))
-  if (!attachment) return false
-  useChatStore.getState().addAttachment(attachment, target)
+  const image = await buildChatImageFromBase64(img.base64, img.mimeType, imageNameFromUrl(url, img.mimeType), target)
+  if (!image) return false
+  useChatStore.getState().addAttachment(image.attachment, image.target ?? target)
   return true
 }
 

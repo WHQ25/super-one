@@ -35,6 +35,22 @@ describe('attachment delivery', () => {
     for (const a of turn.attachments) expect(readFileSync(a.path!).toString('base64')).toBe(a.base64)
     expect(turn.note).toContain('do not Read')
   })
+  it('shows the agent the downscaled copy and gives tools the original', () => {
+    const original = join(directory, 'full.png')
+    writeFileSync(original, Buffer.from(PNG_ATTACHMENT.base64, 'base64'))
+    const attachment = { ...PNG_ATTACHMENT, originalPath: original }
+    const turn = buildAttachmentTurn([attachment], { inlineImages: true, requirePaths: true })
+    expect(turn.inlineBlocks).toHaveLength(1)
+    expect(turn.note).toContain(`"shot.png" → ${original} (full-size original`)
+    expect(turn.note).not.toContain(turn.attachments[0].path!)
+    const codex = buildCodexAttachmentInput('look', [attachment])
+    expect(codex[1]).toEqual({ type: 'localImage', path: expect.not.stringContaining('full.png') })
+    expect(codex[0]).toMatchObject({ text: expect.stringContaining(original) })
+  })
+  it('refuses a turn whose original has gone', () => {
+    expect(() => buildAttachmentTurn([{ ...PNG_ATTACHMENT, originalPath: join(directory, 'gone.png') }], { inlineImages: true }))
+      .toThrow('no longer available')
+  })
   it('passes only image paths as localImage, with PDF paths in Codex text', () => {
     const input = buildCodexAttachmentInput('', [PNG_ATTACHMENT, PDF_ATTACHMENT])
     expect(input).toHaveLength(2)

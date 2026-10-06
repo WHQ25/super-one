@@ -365,10 +365,12 @@ export class ArtifactTransferService {
   /**
    * Wake the agent for a landed file. A node that says the session is gone
    * ends the delivery; anything else is retried, because the agent was told
-   * the path would work and nothing else will tell it that it does.
+   * the path would work and nothing else will tell it that it does. An
+   * attachment original lands silently: its message names it, and is not
+   * sent until it has landed.
    */
   private async notify(row: Delivery, handle: DeliveryHandle): Promise<void> {
-    if (this.deps.notifyCompleted) {
+    if (this.deps.notifyCompleted && row.origin !== 'attachment') {
       try {
         await this.deps.notifyCompleted(row.connectionId, {
           sessionId: row.sessionId,

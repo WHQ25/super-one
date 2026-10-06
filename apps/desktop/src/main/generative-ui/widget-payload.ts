@@ -1,32 +1,14 @@
-import type { WidgetData, WidgetLayout, WidgetReusableHint } from '@superone/shared/generative-ui/types'
+import type { WidgetData } from '@superone/shared/generative-ui/types'
+import { buildWidgetData, type WidgetShowArgs } from '@superone/shared/generative-ui/widget-data'
 import { readTemplate, type TemplateRoots } from './template-store'
-
-export interface BuildWidgetPayloadInput {
-  title: string
-  widget_code?: string
-  template?: string
-  data?: Record<string, unknown>
-  reusable?: WidgetReusableHint
-  /** Overrides the layout a reused template was saved with. */
-  layout?: WidgetLayout
-  width?: number
-  height?: number
-}
 
 export interface BuiltWidgetPayload {
   payload?: WidgetData
   error?: string
 }
 
-export function injectWidgetData(code: string, data?: Record<string, unknown>): string {
-  if (!data) return code
-  const json = JSON.stringify(data).replace(/</g, '\\u003c')
-  return `<script>window.widget=Object.assign(window.widget||{},{data:${json}})</script>${code}`
-}
-
-export function buildWidgetPayload(roots: TemplateRoots, input: BuildWidgetPayloadInput): BuiltWidgetPayload {
-  const { title, widget_code, template, data, reusable, width, height } = input
-  let layout = input.layout
+export function buildWidgetPayload(roots: TemplateRoots, input: WidgetShowArgs): BuiltWidgetPayload {
+  const { widget_code, template, ...args } = input
 
   if (widget_code && template) {
     return { error: 'widget_show accepts either widget_code or template, not both.' }
@@ -35,31 +17,19 @@ export function buildWidgetPayload(roots: TemplateRoots, input: BuildWidgetPaylo
     return { error: 'widget_show requires either widget_code (new widget) or template (reuse a saved one).' }
   }
 
-  let source = widget_code ?? ''
-  let templateId: string | undefined
-  let templateVersion: number | undefined
+  if (!template) return { payload: buildWidgetData({ ...args, source: widget_code ?? '' }) }
 
-  if (template) {
-    const found = readTemplate(roots, template)
-    if (!found) {
-      return { error: `No widget template named "${template}". Call widget_list_templates to see the available templates.` }
-    }
-    source = found.code
-    templateId = found.id
-    templateVersion = found.version
-    layout ??= found.layout
+  const found = readTemplate(roots, template)
+  if (!found) {
+    return { error: `No widget template named "${template}". Call widget_list_templates to see the available templates.` }
   }
-
   return {
-    payload: {
-      title,
-      widget_code: injectWidgetData(source, data),
-      width: width ?? 800,
-      height: height ?? 600,
-      isSVG: source.trimStart().startsWith('<svg'),
-      ...(layout ? { layout } : {}),
-      ...(templateId ? { templateId, templateVersion } : {}),
-      ...(reusable ? { reusable } : {}),
-    },
+    payload: buildWidgetData({
+      ...args,
+      source: found.code,
+      layout: args.layout ?? found.layout,
+      templateId: found.id,
+      templateVersion: found.version,
+    }),
   }
 }

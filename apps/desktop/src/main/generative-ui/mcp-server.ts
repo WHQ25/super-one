@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { checkCdnViolations } from '@superone/shared/generative-ui/cdn-allowlist'
 import { isNativeTemplateId, nativeTypeFromTemplateId, NATIVE_WIDGET_TYPES } from '@superone/shared/generative-ui/native-widgets'
 import { WIDGET_LAYOUT_DESCRIPTION, WIDGET_SHOW_DESCRIPTION } from '@superone/shared/generative-ui/widget-tool-descriptions'
-import { parseWidgetLayout } from '@superone/shared/generative-ui/types'
+import { readWidgetShowArgs } from '@superone/shared/generative-ui/widget-data'
 import { buildWidgetPayload } from './widget-payload'
 import type { TemplateRoots } from './template-store'
 
@@ -103,24 +103,8 @@ export async function executeWidgetShowTool(
   args: Record<string, unknown>,
   opts?: WidgetToolsOptions,
 ) {
-  const title = String(args.title ?? '')
-  const widget_code = typeof args.widget_code === 'string' ? args.widget_code : undefined
-  const template = typeof args.template === 'string' ? args.template : undefined
-  const data =
-    args.data && typeof args.data === 'object' && !Array.isArray(args.data)
-      ? (args.data as Record<string, unknown>)
-      : undefined
-  const reusable =
-    args.reusable && typeof args.reusable === 'object' && !Array.isArray(args.reusable)
-      ? (args.reusable as {
-          id: string
-          description?: string
-          inputSchema?: Record<string, unknown>
-        })
-      : undefined
-  const layout = parseWidgetLayout(args.layout)
-  const width = typeof args.width === 'number' ? args.width : undefined
-  const height = typeof args.height === 'number' ? args.height : undefined
+  const showArgs = readWidgetShowArgs(args)
+  const { title, widget_code, template, data } = showArgs
 
   // The `@native/` namespace is unreachable by a saved template id (those match
   // /^[a-z0-9][a-z0-9_-]*$/), so this branch can never shadow a user's own template.
@@ -128,16 +112,7 @@ export async function executeWidgetShowTool(
     return executeNativeWidget(template, title, data, opts)
   }
 
-  const built = buildWidgetPayload(templateRoots(opts), {
-    title,
-    widget_code,
-    template,
-    data,
-    reusable,
-    layout,
-    width,
-    height,
-  })
+  const built = buildWidgetPayload(templateRoots(opts), showArgs)
   if (!built.payload) {
     return { content: [{ type: 'text' as const, text: built.error ?? 'widget_show failed.' }], isError: true }
   }

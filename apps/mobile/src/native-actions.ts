@@ -1,7 +1,7 @@
 import type { RefObject } from 'react'
 import { parseModUiPayload, type ModUiPayload } from './mod-ui'
 import type { WebView } from 'react-native-webview'
-import type { HostInbound, HostOutbound } from '@superone/chat-view'
+import type { HostInbound, HostOutbound, QueuedMessageAction } from '@superone/chat-view'
 import { isPreviewableMermaid } from '@superone/chat-view/mermaid-preview'
 import type { ComposerOpenResult, McpAppDeviceRequest, QuestionAnnotations, SaveWidgetTemplateRequest } from '@superone/shared/agent-types'
 import { parseWidgetLayout } from '@superone/shared/generative-ui/types'
@@ -131,6 +131,8 @@ export interface NativeActionPorts {
   resendFailedMessage(messageId: string): Promise<void>
   /** Pull a user message the host never took back into the composer. */
   editFailedMessage(messageId: string): Promise<void>
+  /** A tap on one of a queued message's actions under its bubble. */
+  queuedMessageAction(messageId: string, action: QueuedMessageAction): Promise<void>
 }
 
 /** A form's answers: question text → answer, every value a string. */
@@ -281,6 +283,10 @@ export async function resolveNativeRequest(
       await ports.resendFailedMessage(payloadString(message, 'messageId'))
     } else if (message.action === 'editFailedMessage') {
       await ports.editFailedMessage(payloadString(message, 'messageId'))
+    } else if (message.action === 'queuedMessageAction') {
+      const action = payloadString(message, 'action')
+      if (action !== 'edit' && action !== 'steer' && action !== 'steerSoon') throw new Error('invalid queued message action')
+      await ports.queuedMessageAction(payloadString(message, 'messageId'), action)
     } else if (message.action === 'mcpApp') {
       if (!ports.mcpApp) throw new Error('MCP Apps are unavailable')
       // Nested: the acknowledgement's `ok` below must not overwrite the host's.

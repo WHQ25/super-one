@@ -611,6 +611,22 @@ describe('attachment originals behind transcript thumbnails', () => {
     await expect(runtime.loadAttachment('user_1', { attachmentId: 'gone', name: 'x.jpg' })).rejects.toThrow('no longer available')
     runtime.dispose()
   })
+  it('restores a queued message with original bytes for thumbnails and keeps bytes it already holds', async () => {
+    const client = fakeClient()
+    const runtime = new ChatRuntime(client as never, () => {})
+    runtime.projectPath = '/p'
+    runtime.sessionId = 's1'
+    const own = { id: 'own', name: 'own.png', mimeType: 'image/png', base64: 'iVBORw0KGgo=' }
+    const thumb = { id: 'a1', name: 'desk.jpg', mimeType: 'image/jpeg', base64: 'dGh1bWI=', preview: true }
+    const originals = await runtime.originalAttachments({
+      id: 'q1', role: 'user', status: 'complete', createdAt: '', providerId: 'remote', content: [], attachments: [own, thumb],
+    })
+    expect(originals).toEqual([own, { id: 'a1', name: 'desk.jpg', mimeType: 'image/jpeg', base64: '/9j/' }])
+    expect(client.sent.filter((cmd) => (cmd as { type: string }).type === 'get_attachment')).toEqual([
+      expect.objectContaining({ messageId: 'q1', attachmentId: 'a1', name: 'desk.jpg' }),
+    ])
+    runtime.dispose()
+  })
 })
 
 

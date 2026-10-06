@@ -19,7 +19,6 @@ import { useMobileStyles, useMobileTheme } from '../theme/context'
 import type { ReactNode } from 'react'
 import { ChatComposer, type ComposerSelection } from './chat-composer'
 import type { UsageMeterProps } from '../ui/usage-panel'
-import { QueuedMessages } from '../ui/queued-messages'
 import { NewSessionLanding, type NewSessionLandingProps } from './new-session-landing'
 import { chatViewPrePaintScript, hostMessageIsReady } from './chat-webview-boot'
 import { createChatWebViewChannel } from './chat-webview-channel'
@@ -82,7 +81,6 @@ export function ChatScreen(props: {
   attachments: ImageAttachment[]
   projectDirs: string[]
   sessionDirs: string[]
-  queuedMessages: ChatMessage[]
   todos: Record<string, TodoItem>
   /** Pins the composer's phone action bar; see `ChatComposer`. */
   focused?: boolean
@@ -142,9 +140,6 @@ export function ChatScreen(props: {
   onSteerSoon?: () => void
   canSteer?: boolean
   canSteerSoon?: boolean
-  onEditQueued?: (messageId: string) => void
-  onSteerQueued?: (messageId: string) => void
-  onSteerQueuedSoon?: (messageId: string) => void
 }) {
   const styles = useMobileStyles()
   const { tokens } = useMobileTheme()
@@ -238,16 +233,6 @@ export function ChatScreen(props: {
           unmounting it mid-send would restore the draft on the way back. */}
       <View testID="chat-composer-stack" style={props.composerHidden ? { display: 'none' } : undefined}>
         {!props.loadingConversation ? <TodoPanel todos={props.todos} /> : null}
-        {!props.loadingConversation && props.queuedMessages.length ? (
-          <QueuedMessages
-            messages={props.queuedMessages}
-            canSteer={!!props.canSteer && props.streaming}
-            canSteerSoon={!!props.canSteerSoon && props.streaming}
-            onEdit={(id) => props.onEditQueued?.(id)}
-            onSteer={(id) => props.onSteerQueued?.(id)}
-            onSteerSoon={(id) => props.onSteerQueuedSoon?.(id)}
-          />
-        ) : null}
         {props.inputComposer}
         <View style={props.inputComposer ? { display: 'none' } : undefined}><ChatComposer {...props} /></View>
       </View>

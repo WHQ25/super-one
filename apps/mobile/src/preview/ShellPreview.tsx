@@ -525,7 +525,7 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
               onBranch: () => setPage('Branch'),
             } : undefined}
             selection={{ ...pickerCatalogs, model, models: previewModels, effort, efforts, onModel: chooseModel, onEffort: setEffort }}
-            webRef={web} permissionModes={['default', 'acceptEdits', 'plan']} permissionMode={mode} slashHits={slashDismissed ? [] : filterSlashCommands(chatDraft.draft, previewSlashCatalog, provider)} slashCatalogStatus={!slashDismissed && chatDraft.draft.startsWith('/') ? slashStatus : 'ready'} mentionRows={mentionRows} attachments={attachments} projectDirs={page === 'New session' ? previewDirs : []} sessionDirs={page === 'New session' ? previewSessionDirs : []} onManageDirectories={() => setPage('Additional folders')} queuedMessages={[]}
+            webRef={web} permissionModes={['default', 'acceptEdits', 'plan']} permissionMode={mode} slashHits={slashDismissed ? [] : filterSlashCommands(chatDraft.draft, previewSlashCatalog, provider)} slashCatalogStatus={!slashDismissed && chatDraft.draft.startsWith('/') ? slashStatus : 'ready'} mentionRows={mentionRows} attachments={attachments} projectDirs={page === 'New session' ? previewDirs : []} sessionDirs={page === 'New session' ? previewSessionDirs : []} onManageDirectories={() => setPage('Additional folders')}
 todos={page === 'Chat' ? previewTodos : {}} draft={chatDraft.draft} streaming={page === 'Chat'}
             contextAttachments={page === 'Chat' && appContext ? [previewAppContext] : []} onRemoveContext={() => setAppContext(false)}
             focused={documentInputFocused ? false : undefined}

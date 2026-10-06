@@ -355,6 +355,22 @@ export class ChatRuntime {
    * cost a second transfer.
    */
   async loadAttachment(messageId: string, ref: { attachmentId?: string; name: string }): Promise<string> {
+    const attachment = await this.originalAttachment(messageId, ref)
+    return `data:${attachment.mimeType};base64,${attachment.base64}`
+  }
+
+  /**
+   * A queued message's attachments with full bytes, for putting it back in the
+   * composer. Another client's queued message arrives with thumbnails only, and
+   * resending those would send the thumbnail as the picture.
+   */
+  originalAttachments(message: ChatMessage): Promise<ImageAttachment[]> {
+    return Promise.all((message.attachments ?? []).map((attachment) => attachment.preview
+      ? this.originalAttachment(message.id, { name: attachment.name, ...(attachment.id ? { attachmentId: attachment.id } : {}) })
+      : attachment))
+  }
+
+  private async originalAttachment(messageId: string, ref: { attachmentId?: string; name: string }): Promise<ImageAttachment> {
     const key = `${messageId}:${ref.attachmentId ?? ref.name}`
     const cached = this.attachmentBytes.get(key)
     if (cached) return cached
@@ -363,11 +379,10 @@ export class ChatRuntime {
     }) as { attachment?: ImageAttachment; error?: string }
     if (result.error) throw new Error(result.error)
     if (!result.attachment?.base64) throw new Error('attachment unavailable')
-    const dataUri = `data:${result.attachment.mimeType};base64,${result.attachment.base64}`
-    this.attachmentBytes.set(key, dataUri)
-    return dataUri
+    this.attachmentBytes.set(key, result.attachment)
+    return result.attachment
   }
-  private readonly attachmentBytes = new Map<string, string>()
+  private readonly attachmentBytes = new Map<string, ImageAttachment>()
 
   async loadSystemInfo(provider: string = String(this.provider)): Promise<SystemInfo> {
     if (!this.projectPath) return {}

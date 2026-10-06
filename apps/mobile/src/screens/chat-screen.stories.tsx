@@ -35,7 +35,6 @@ const base: ComponentProps<typeof ChatScreen> = {
   attachments: [],
   projectDirs: [],
   sessionDirs: [],
-  queuedMessages: [],
   todos: {},
   onManageDirectories: noop,
   draft: '',
@@ -105,17 +104,13 @@ export const CachedSessionRevalidating = {
   name: 'Cached session · renderer uncovered while the host revalidates',
 }
 
-export const QueuedWhileStreaming = {
+/** Queued messages themselves are drawn by the chat document; see `PortableQueuedMessages`. */
+export const SteerWhileStreaming = {
   args: {
     streaming: true,
     canSteer: true,
     canSteerSoon: true,
-    queuedMessages: [{
-      id: 'q1', role: 'user' as const, status: 'complete' as const,
-      content: [{ type: 'text' as const, text: 'fix the queue first' }],
-      createdAt: '', providerId: 'local',
-    }],
     draft: 'another thought',
   },
-  name: 'Streaming · queued user messages',
+  name: 'Streaming · steer from the composer',
 }

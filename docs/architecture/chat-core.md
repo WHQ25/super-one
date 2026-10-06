@@ -105,9 +105,11 @@ patch to it. The WebView receives a projection, never the session:
   pending-turn line, project root for link resolution), plus display-only extras
   (labels, mention artwork, MCP icons, history flags) and a `pendingPermission`
   summary (`requestId`, `toolName`, `toolUseId`) that marks the waiting tool row.
+  Queued messages are drawn here too, after the transcript as on the desktop: the
+  sent user bubble dimmed, its steer/edit taps sent back as `queuedMessageAction`.
 - **RN** keeps everything else and renders it natively: pending permissions,
   questions and plan approvals (native sheets), permission mode, model / effort /
-  harness settings, todos, queued messages, prompt suggestions. The WebView never
+  harness settings, todos, prompt suggestions. The WebView never
   owns a picker or a sheet.
 
 The principle: the WebView gets what the transcript paints and nothing that drives

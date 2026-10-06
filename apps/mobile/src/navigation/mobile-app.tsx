@@ -241,7 +241,6 @@ export function MobileApp() {
   const [contextAttachments, setContextAttachments] = useState<McpAppContextAttachment[]>([])
   const [removingContextViews, setRemovingContextViews] = useState<string[]>([])
   const [contextError, setContextError] = useState('')
-  const [queuedMessages, setQueuedMessages] = useState<ChatMessage[]>([])
   const [todos, setTodos] = useState<Record<string, TodoItem>>({})
   const [promptSuggestions, setPromptSuggestions] = useState<string[]>([])
   /** A field in the chat document (the question form) holds the keyboard, not the composer. */
@@ -482,6 +481,10 @@ export function MobileApp() {
     inject(webRef, modSession)
   }, [modSession])
   const transcriptSync = useTranscriptSync(webRef)
+  const queuedSentRef = useRef<ChatMessage[] | null>(null)
+  // Read at publish time, which runs from runtime callbacks rather than renders.
+  const queuedSteerRef = useRef({ now: false, soon: false })
+  queuedSteerRef.current = { now: canSteerQueued(selectedProvider), soon: canSteerQueuedSoon(selectedProvider, selectedAcpAgentId) }
   const syncSheets = (runtime: ChatRuntime, hydrate = false) => {
     if (connectionRef.current.epoch !== runtime.epoch) {
       connectionRef.current = { state: 'connected', epoch: runtime.epoch }
@@ -496,6 +499,9 @@ export function MobileApp() {
     const iconsRevision = mcpIconsRevision()
     const includeMcpIcons = hydrate || iconsRevision !== mcpIconsRevisionRef.current
     const mcpIcons = includeMcpIcons ? mcpIconsSnapshot() : undefined
+    // By identity: the reducer replaces the array only when the queue changes, and
+    // a picture this phone queued would otherwise cross the bridge on every patch.
+    const includeQueued = hydrate || runtime.session.queuedMessages !== queuedSentRef.current
     transcriptSync.publish(runtime, {
       hasMoreHistory: runtime.hasMoreHistory,
       historyNavigation: runtime.navigationAvailable,
@@ -520,13 +526,15 @@ export function MobileApp() {
       // resending them with every patch costs little and survives the delivery's own hydrates.
       pendingQuestion: runtime.session.pendingQuestion,
       slashCommandOutput: runtime.session.slashCommandOutput,
+      ...(includeQueued ? { queuedMessages: runtime.session.queuedMessages } : {}),
+      queuedSteer: runtime.streaming ? queuedSteerRef.current : { now: false, soon: false },
     }, hydrate)
+    if (includeQueued) queuedSentRef.current = runtime.session.queuedMessages
     if (includeMentionArtwork) mentionArtworkRevisionRef.current = mentionArtworkRevision
     if (includeMcpIcons) mcpIconsRevisionRef.current = iconsRevision
     setHasTranscript(runtime.session.messages.length > 0)
     setStreaming(runtime.streaming)
     setContextAttachments(runtime.contextAttachments)
-    setQueuedMessages(runtime.session.queuedMessages)
     setTodos(runtime.session.todos)
     setPromptSuggestions(runtime.session.promptSuggestions)
     setPermMode(runtime.permissionMode)
@@ -643,6 +651,21 @@ export function MobileApp() {
         setAttachments((current) => [...restored.filter((a) => !current.some((c) => c.id === a.id)), ...current])
       }
     },
+    queuedMessageAction: async (messageId, action) => runUiAction(async () => {
+      const runtime = runtimeRef.current
+      if (!runtime) return
+      if (action !== 'edit') return runtime.steerQueuedMessage(messageId, action === 'steer' ? 'now' : 'next')
+      const message = runtime.session.queuedMessages.find((item) => item.id === messageId)
+      if (!message) return
+      // Fetched before the dequeue: the host serves a queued original only while it is queued.
+      const originals = await runtime.originalAttachments(message)
+      if (!runtime.session.queuedMessages.some((item) => item.id === messageId)) return
+      runtime.dequeueMessage(messageId)
+      const text = queuedMessageText(message)
+      composerDraft.changeText(text)
+      suggestions.update(text)
+      if (originals.length) setAttachments(originals)
+    }, setStatus, action === 'edit' ? 'edit failed' : 'steer failed'),
     // The document's form fires and forgets; a failed send shows in the status line.
     answerQuestion: async (requestId, answers, annotations) => runUiAction(
       () => runtimeRef.current?.answerQuestion(requestId, answers, annotations),
@@ -1280,7 +1303,6 @@ export function MobileApp() {
     setContextAttachments([])
     setRemovingContextViews([])
     setContextError('')
-    setQueuedMessages([])
     setSandboxInfo(null)
     setPendingSandboxMode(null)
     setUsage({ contextTokens: 0, contextWindow: null, totalCostUsd: 0 })
@@ -2349,21 +2371,8 @@ export function MobileApp() {
           projectDirs={sessionId ? [] : workspaceDirs}
           sessionDirs={sessionId ? [] : additionalDirs.sessionDirs}
           onManageDirectories={openAdditionalDirs}
-          queuedMessages={queuedMessages}
           canSteer={canSteerQueued(selectedProvider)}
           canSteerSoon={canSteerQueuedSoon(selectedProvider, selectedAcpAgentId)}
-          onEditQueued={(messageId) => {
-            const runtime = runtimeRef.current
-            const message = runtime?.session.queuedMessages.find((item) => item.id === messageId)
-            if (!runtime || !message) return
-            runtime.dequeueMessage(messageId)
-            const text = queuedMessageText(message)
-            composerDraft.changeText(text)
-            suggestions.update(text)
-            if (message.attachments?.length) setAttachments(message.attachments)
-          }}
-          onSteerQueued={(messageId) => runUiAction(() => runtimeRef.current?.steerQueuedMessage(messageId, 'now'), setStatus, 'steer failed')}
-          onSteerQueuedSoon={(messageId) => runUiAction(() => runtimeRef.current?.steerQueuedMessage(messageId, 'next'), setStatus, 'steer failed')}
           todos={todos}
           collapsedPrompts={collapsedPendingPrompts({ permission: collabRequestOf(perm) ? null : perm, plan }, promptCollapse.collapsed)}
           onExpandPrompt={promptCollapse.expand}

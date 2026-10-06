@@ -48,7 +48,18 @@ export interface SessionProjection {
   pendingQuestion?: AskUserQuestionRequest | null
   /** Output of a command that is not a chat message, shown above the composer until dismissed. */
   slashCommandOutput?: { command: string; content: string } | null
+  /**
+   * User messages waiting for the live turn to end, drawn after the transcript
+   * like the desktop's. Sent only when the queue changes: a picture the phone
+   * queued itself carries its full bytes.
+   */
+  queuedMessages?: ChatMessage[]
+  /** Which steer actions the harness takes for a queued message. */
+  queuedSteer?: { now: boolean; soon: boolean }
 }
+
+/** What a tap on a queued message's action asks native to do. */
+export type QueuedMessageAction = 'edit' | 'steer' | 'steerSoon'
 
 export interface ReductionProjection extends SessionProjection {
   /** Optional reliable-delivery receipt; legacy hosts can keep sending bare projections. */

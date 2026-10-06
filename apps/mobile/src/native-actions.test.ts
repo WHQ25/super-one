@@ -26,6 +26,7 @@ function ports(): NativeActionPorts {
     openSession: vi.fn(),
     resendFailedMessage: vi.fn(),
     editFailedMessage: vi.fn(),
+    queuedMessageAction: vi.fn(),
   }
 }
 
@@ -72,6 +73,17 @@ describe('native chat actions', () => {
     }, target)).resolves.toMatchObject({ result: { ok: true } })
     expect(target.resendFailedMessage).toHaveBeenCalledWith('u1')
     expect(target.editFailedMessage).toHaveBeenCalledWith('u1')
+  })
+
+  it('routes a queued bubble action to the shell and refuses an unknown one', async () => {
+    const target = ports()
+    await expect(resolveNativeRequest({
+      type: 'requestNative', requestId: 'q', action: 'queuedMessageAction', payload: { messageId: 'q1', action: 'steerSoon' },
+    }, target)).resolves.toMatchObject({ result: { ok: true } })
+    expect(target.queuedMessageAction).toHaveBeenCalledWith('q1', 'steerSoon')
+    await expect(resolveNativeRequest({
+      type: 'requestNative', requestId: 'x', action: 'queuedMessageAction', payload: { messageId: 'q1', action: 'delete' },
+    }, target)).resolves.toMatchObject({ error: 'invalid queued message action' })
   })
 
   it('opens the session a transcript link names', async () => {

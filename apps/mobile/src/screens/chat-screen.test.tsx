@@ -49,7 +49,6 @@ function screenUi(overrides: {
       attachments={[]}
       projectDirs={[]}
       sessionDirs={[]}
-      queuedMessages={[]}
       todos={overrides.todos ? { a: { id: 'a', subject: 'Ship it', description: '', status: 'pending' } } : {}}
       onManageDirectories={noop}
       draft=""

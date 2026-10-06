@@ -34,6 +34,7 @@ import { exitMcpAppFullscreen, forgetMcpAppArrivals, noteMcpAppArrivals } from '
 import { installHostBridge, postHost, requestNativeAsync } from './bridge'
 import { MobileModPanes, MobileModUiProvider, useMobileModClient } from './mod-ui/MobileModUi'
 import { BottomDock } from './BottomDock'
+import { PortableQueuedMessages } from './PortableQueuedMessages'
 import { PortableCommandOutput, PortableQuestion } from './PortableDecisionCards'
 import { applyDocumentViewport } from './document-viewport'
 import { PortableMessage } from './PortableMessage'
@@ -81,6 +82,8 @@ const EMPTY_SESSION: SessionFacts = {
   projectPath: null,
   pendingQuestion: null,
   slashCommandOutput: null,
+  queuedMessages: [],
+  queuedSteer: { now: false, soon: false },
 }
 
 /** Take only the session keys the host actually sent; a patch omits what did not change. */
@@ -637,6 +640,8 @@ export function ChatView() {
   // nothing else to say (a jump to an unloaded turn, for instance).
   const topBusy = (navigationLoading || !!navigationRetry) && navigationEdge === 'top'
   const bottomBusy = (navigationLoading || !!navigationRetry) && navigationEdge === 'bottom'
+  const moreAfter = bottomBusy || state.range.end < state.messages.length
+    || (!!state.navigation && needsHistoryPage(state.messages, state.navigation, state.range, 'after'))
   const topRetry = navigationRetry && navigationEdge === 'top' ? navigationRetry : null
   const bottomRetry = navigationRetry && navigationEdge === 'bottom' ? navigationRetry : null
   return (
@@ -700,9 +705,14 @@ export function ChatView() {
           )
         })}
       </AsyncQuestionMessagesContext.Provider>
-      {visible.length > 0 && (bottomBusy || state.range.end < state.messages.length || (state.navigation && needsHistoryPage(state.messages, state.navigation, state.range, 'after'))) && (
+      {visible.length > 0 && moreAfter && (
         <EdgeLoader edge="bottom" loading={navigationLoading && navigationEdge === 'bottom'}
           error={!!navigationRetry && navigationEdge === 'bottom'} onLoad={bottomRetry ?? loadNext} />
+      )}
+      {/* The queue follows the latest turn, so it waits until the window reaches it. */}
+      {!moreAfter && state.session.queuedMessages.length > 0 && (
+        <PortableQueuedMessages messages={state.session.queuedMessages} steer={state.session.queuedSteer}
+          scheme={state.scheme} mentionArtwork={state.mentionArtwork} projectPath={state.session.projectPath} />
       )}
       {state.session.pendingTurn && <PendingTurnIndicator phase={state.session.pendingTurn} />}
       {state.session.isCompacting && <CompactingIndicator startedAt={state.session.compactingStartedAt} />}

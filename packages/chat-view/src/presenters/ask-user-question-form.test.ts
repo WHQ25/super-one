@@ -5,6 +5,8 @@ import { afterEach, expect, it, vi } from 'vitest'
 import type { AskUserQuestionRequest } from '@superone/shared/agent-types'
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }))
+// jsdom has no ResizeObserver; the answer fields grow with their text through one.
+vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
 import { AskUserQuestionForm, type AskUserQuestionFormProps } from './AskUserQuestionForm'
 
 const request: AskUserQuestionRequest = {
@@ -31,9 +33,11 @@ async function mount(props: Partial<AskUserQuestionFormProps> = {}) {
   return { onSubmit, onDismiss, button }
 }
 
-const type = (input: HTMLInputElement, value: string) => act(async () => {
-  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value)
-  input.dispatchEvent(new Event('input', { bubbles: true }))
+// The note and Other fields are growing textareas, not inputs.
+const fields = () => [...container!.querySelectorAll('textarea')]
+const type = (field: HTMLTextAreaElement, value: string) => act(async () => {
+  Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(field, value)
+  field.dispatchEvent(new Event('input', { bubbles: true }))
 })
 
 it('touch: no shortcut hints, a Dismiss button, and keys do nothing', async () => {
@@ -48,25 +52,24 @@ it('touch: no shortcut hints, a Dismiss button, and keys do nothing', async () =
 it('preselects the first previewed option and submits its note', async () => {
   const { onSubmit, button } = await mount()
   expect(container!.querySelector('[data-preview]')?.textContent).toBe('compact preview')
-  await type(container!.querySelector('input')!, 'denser')
+  await type(fields()[0]!, 'denser')
   await act(async () => button('chat.askUser.submit').click())
   expect(onSubmit).toHaveBeenCalledWith({ 'Which layout?': 'Compact' }, { 'Which layout?': { notes: 'denser' } })
 })
 
 it('touch: the Other field comes last; typing an answer drops the pick, its preview and note', async () => {
   const { onSubmit, button } = await mount()
-  const inputs = () => [...container!.querySelectorAll('input')]
-  expect(inputs().map((i) => i.placeholder)).toEqual(['chat.askUser.noteOptionalPlaceholder', 'chat.askUser.otherOption'])
-  await type(inputs().at(-1)!, ' neither ')
+  expect(fields().map((i) => i.placeholder)).toEqual(['chat.askUser.noteOptionalPlaceholder', 'chat.askUser.otherOption'])
+  await type(fields().at(-1)!, ' neither ')
   expect(container!.querySelector('[data-preview]')).toBeNull()
-  expect(inputs().map((i) => i.placeholder)).toEqual(['chat.askUser.otherOption'])
+  expect(fields().map((i) => i.placeholder)).toEqual(['chat.askUser.otherOption'])
   await act(async () => button('chat.askUser.submit').click())
   expect(onSubmit).toHaveBeenCalledWith({ 'Which layout?': 'neither' }, undefined)
 })
 
 it('keyboard: shortcuts only while the host says keys are in scope', async () => {
   let inScope = false
-  const { onSubmit } = await mount({ keyboard: { inScope: () => inScope } })
+  const { onSubmit } = await mount({ keyboard: { inScope: () => inScope, mac: false } })
   expect(container!.textContent).toContain('chat.askUser.hintDismiss')
   expect(container!.textContent).not.toContain('chat.askUser.dismiss')
   const press = (key: string) => act(async () => { window.dispatchEvent(new KeyboardEvent('keydown', { key })) })
@@ -81,7 +84,7 @@ it('keyboard: shortcuts only while the host says keys are in scope', async () =>
 
 it('a blank Other answer does not count as one', async () => {
   const { button } = await mount()
-  await type([...container!.querySelectorAll('input')].at(-1)!, '   ')
+  await type(fields().at(-1)!, '   ')
   expect(button('chat.askUser.submit').disabled).toBe(true)
 })
 
@@ -97,7 +100,7 @@ it('answers once: after Submit neither Submit nor Dismiss responds again', async
 })
 
 it('keyboard: leaves a key something else already took', async () => {
-  const { onSubmit } = await mount({ keyboard: { inScope: () => true } })
+  const { onSubmit } = await mount({ keyboard: { inScope: () => true, mac: false } })
   const take = (e: KeyboardEvent) => { if (e.key === '2') e.preventDefault() }
   window.addEventListener('keydown', take, true)
   try {

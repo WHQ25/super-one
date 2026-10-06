@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   isHighRiskPermission,
+  leaveDecisionField,
   setDecisionKeyboardPolicy,
   shouldSuppressDecisionShortcut,
 } from './decision-composer-policy'
@@ -77,5 +78,16 @@ describe('decision composer keyboard policy', () => {
     const after = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
     button.dispatchEvent(after)
     expect(after.defaultPrevented).toBe(false)
+  })
+
+  it('leaves a text field for the prompt container instead of <body>', () => {
+    const prompt = document.body.appendChild(document.createElement('div'))
+    prompt.tabIndex = -1
+    prompt.setAttribute('data-decision-focus', '')
+    const field = prompt.appendChild(document.createElement('textarea'))
+    field.focus()
+    leaveDecisionField(field)
+    expect(document.activeElement).toBe(prompt)
+    prompt.remove()
   })
 })

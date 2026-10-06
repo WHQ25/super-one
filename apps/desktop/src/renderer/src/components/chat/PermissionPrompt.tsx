@@ -33,7 +33,7 @@ import { WebMcpTrustPrompt } from './WebMcpTrustPrompt'
 import { FolderTrustPrompt } from './FolderTrustPrompt'
 import { ApproveRejectBar, PermissionActionButton } from './PermissionActionBar'
 import { canAutofocusInChatRoot, isFocusInChat, useChatRootRef } from './is-focus-in-chat'
-import { isHighRiskPermission, shouldSuppressDecisionShortcut, wasChatInputFocusedRecently } from './composer-slot/decision-composer-policy'
+import { isHighRiskPermission, leaveDecisionField, shouldSuppressDecisionShortcut, wasChatInputFocusedRecently } from './composer-slot/decision-composer-policy'
 
 interface MiniAppToolInfo {
   appId: string
@@ -402,7 +402,7 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
           handleDeny()
         } else if (e.key === 'Escape') {
           e.preventDefault()
-          feedbackRef.current?.blur()
+          leaveDecisionField(feedbackRef.current)
         }
         return
       }

@@ -33,7 +33,7 @@ import { WorkDirLabel, workDirTitle, type WorkDirState } from './work-dir-label'
 import { GroupedModelEffortSelector } from './model-selector/GroupedModelEffortSelector'
 import { useCollabLaunchModelSelector } from './model-selector/useCollabLaunchModelSelector'
 import { isFocusInChat, useChatRootRef } from './is-focus-in-chat'
-import { shouldSuppressDecisionShortcut } from './composer-slot/decision-composer-policy'
+import { leaveDecisionField, shouldSuppressDecisionShortcut } from './composer-slot/decision-composer-policy'
 
 interface Props {
   payload: SessionAgentRequestPayload
@@ -352,7 +352,7 @@ export function SessionAgentsConfirmPrompt({ payload, onConfirm, onReject }: Pro
       if (event.key === 'Tab' && !event.ctrlKey && !event.metaKey && !event.altKey) {
         event.preventDefault()
         if (typing) {
-          feedbackRef.current?.blur()
+          leaveDecisionField(feedbackRef.current)
           setActiveTab(event.shiftKey ? launches.length - 1 : 0)
           return
         }
@@ -369,7 +369,7 @@ export function SessionAgentsConfirmPrompt({ payload, onConfirm, onReject }: Pro
           handleReject()
         } else if (event.key === 'Escape') {
           event.preventDefault()
-          feedbackRef.current?.blur()
+          leaveDecisionField(feedbackRef.current)
         }
         return
       }

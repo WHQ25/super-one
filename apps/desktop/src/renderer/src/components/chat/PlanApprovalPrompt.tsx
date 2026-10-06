@@ -15,7 +15,7 @@ import {
 } from './plan-feedback'
 import { PlanLineReview } from './PlanLineReview'
 import { isFocusInChat, useChatRootRef } from './is-focus-in-chat'
-import { setDecisionKeyboardPolicy, shouldSuppressDecisionShortcut } from './composer-slot/decision-composer-policy'
+import { claimDecisionFocus, leaveDecisionField, setDecisionKeyboardPolicy, shouldSuppressDecisionShortcut } from './composer-slot/decision-composer-policy'
 
 export function PlanApprovalPrompt() {
   const { t } = useTranslation()
@@ -129,6 +129,10 @@ export function PlanApprovalPrompt() {
     return setDecisionKeyboardPolicy(root, `plan:${requestId}`, false)
   }, [chatRootRef, requestId])
 
+  useEffect(() => {
+    if (requestId) claimDecisionFocus(containerRef.current, chatRootRef?.current)
+  }, [chatRootRef, requestId])
+
   const focusVisibleFeedbackInput = useCallback(() => {
     const inputs = containerRef.current?.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
       'input[data-feedback], textarea[data-feedback]',
@@ -169,7 +173,7 @@ export function PlanApprovalPrompt() {
       if (e.key === 'Escape') {
         e.preventDefault()
         if (isFeedbackInputFocused) {
-          ;(active as HTMLElement).blur()
+          leaveDecisionField(active as HTMLElement)
           return
         }
         handleReject()
@@ -226,7 +230,7 @@ export function PlanApprovalPrompt() {
     : t('chat.plan.feedbackPlaceholder')
 
   return (
-    <div ref={containerRef} data-testid="plan-approval" className="@container flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+    <div ref={containerRef} tabIndex={-1} data-decision-focus="" data-testid="plan-approval" className="@container flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden outline-none">
       <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2">
         <PenLine className="size-4 text-primary" />
         <span className="text-sm font-medium text-foreground">{t('chat.plan.review')}</span>

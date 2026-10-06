@@ -135,7 +135,10 @@ store while the regular composer unmounts. When the queue clears, the editor
 restores focus only if that editor held focus before a decision or opened composer
 displaced it.
 Decision buttons and newly mounted MCP form fields do not take focus when the editor was focused within the last
-second, and the base composer does not auto-focus on return when no focus needs
+second. The decision prompt's container takes it instead, so the pane keeps its
+keyboard shortcuts after the editor unmounts; it leaves focus alone when the person
+is working in another surface. Escape in a prompt's text field moves focus to that
+container rather than blurring to the page. The base composer does not auto-focus on return when no focus needs
 restoring. The restore request targets the owning session and is issued after
 the editor mounts; old restore requests do not take focus on later mounts.
 

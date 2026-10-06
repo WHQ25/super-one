@@ -318,6 +318,7 @@ export function AskUserQuestionForm({ request, onSubmit, onDismiss, renderPrevie
   const [activeTab, setActiveTab] = useState(0)
   const [otherFocused, setOtherFocused] = useState(false)
   const [noteFocused, setNoteFocused] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
   const otherInputRef = useRef<HTMLTextAreaElement>(null)
   const notesInputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -361,14 +362,14 @@ export function AskUserQuestionForm({ request, onSubmit, onDismiss, renderPrevie
 
     if (e.key === 'Escape') {
       e.preventDefault()
-      if (typing) (document.activeElement as HTMLElement)?.blur()
+      if (typing) rootRef.current?.focus()
       else dismiss()
       return
     }
 
     if (e.key === 'Tab' && questions.length > 1) {
       e.preventDefault()
-      if (typing) (document.activeElement as HTMLElement)?.blur()
+      if (typing) rootRef.current?.focus()
       setActiveTab((tab) => (e.shiftKey ? (tab > 0 ? tab - 1 : questions.length - 1) : (tab < questions.length - 1 ? tab + 1 : 0)))
       return
     }
@@ -386,7 +387,7 @@ export function AskUserQuestionForm({ request, onSubmit, onDismiss, renderPrevie
     if (typing && e.ctrlKey) {
       if (num >= 1 && num <= q.options.length) {
         e.preventDefault()
-        ;(document.activeElement as HTMLElement)?.blur()
+        rootRef.current?.focus()
         selectOption(q, q.options[num - 1].label)
         setOtherFocused(false)
       }
@@ -441,7 +442,9 @@ export function AskUserQuestionForm({ request, onSubmit, onDismiss, renderPrevie
   const separator = <span className="mx-1 opacity-40">·</span>
 
   return (
-    <div className="@container rounded-lg border border-primary/40 bg-card p-3" data-ask-user-question={request.requestId}>
+    // Focusable with a keyboard: leaving a text field (Escape, Tab, ctrl+digit) lands here
+    // instead of on <body>, where the host's `inScope` would stop taking the form's keys.
+    <div ref={rootRef} tabIndex={keys ? -1 : undefined} className="@container rounded-lg border border-primary/40 bg-card p-3 outline-none" data-ask-user-question={request.requestId}>
       {!singleQuestion && (
         <div className="mb-3 flex gap-1 overflow-x-auto border-b border-border/50 pb-2">
           {questions.map((q, i) => (

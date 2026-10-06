@@ -1,10 +1,10 @@
-import { useLayoutEffect, useMemo, useRef } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { useActiveSession } from '@/stores/chat'
 import { ModQuestionSite } from '@superone/chat-view/mod-ui'
 import { useChatRootRef } from './is-focus-in-chat'
 import { AskUserQuestionPrompt } from './AskUserQuestionPrompt'
 import { PermissionPrompt } from './PermissionPrompt'
-import { isHighRiskPermission, setDecisionKeyboardPolicy } from './composer-slot/decision-composer-policy'
+import { claimDecisionFocus, isHighRiskPermission, setDecisionKeyboardPolicy } from './composer-slot/decision-composer-policy'
 import { buildDecisionQueue, type DecisionQueueItem } from './composer-slot/decision-queue'
 
 export function DecisionComposer({ item }: { item?: DecisionQueueItem | null }) {
@@ -28,10 +28,15 @@ export function DecisionComposer({ item }: { item?: DecisionQueueItem | null }) 
     return setDecisionKeyboardPolicy(root, requestKey, requireExplicitApproval)
   }, [chatRootRef, requestKey, requireExplicitApproval])
 
+  // Runs after the prompt's own effects, so a control it focused keeps focus.
+  useEffect(() => {
+    if (requestKey && !stale) claimDecisionFocus(containerRef.current, chatRootRef?.current)
+  }, [chatRootRef, requestKey, stale])
+
   if (!current) return null
 
   return (
-    <div ref={containerRef} inert={stale} data-testid="decision-composer" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+    <div ref={containerRef} inert={stale} tabIndex={-1} data-decision-focus="" data-testid="decision-composer" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden outline-none">
       <div key={requestKey} className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overflow-x-hidden">
         {current.kind === 'permission' ? (
           <PermissionPrompt request={current.request} />

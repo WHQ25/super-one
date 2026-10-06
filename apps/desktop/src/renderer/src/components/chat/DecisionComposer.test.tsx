@@ -38,6 +38,21 @@ describe('DecisionComposer', () => {
     expect(fireEvent.keyDown(button, { key: 'Enter' })).toBe(false)
   })
 
+  it('takes the focus the replaced editor dropped on <body>, but not from another surface', () => {
+    session.pendingPermissions = [{ requestId: 'focus', toolName: 'Read', input: {}, allowAlwaysAllow: false }]
+    session.pendingQuestion = null
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    const { unmount } = render(<div data-chat-root=""><DecisionComposer /></div>)
+    expect(document.activeElement).toBe(screen.getByTestId('decision-composer'))
+    unmount()
+
+    const terminal = document.body.appendChild(document.createElement('textarea'))
+    terminal.focus()
+    render(<div data-chat-root=""><DecisionComposer /></div>)
+    expect(document.activeElement).toBe(terminal)
+    terminal.remove()
+  })
+
   it('retains a resolved request for its exit animation and makes it inert', () => {
     const request = { requestId: 'outgoing', toolName: 'Bash', input: {}, allowAlwaysAllow: false }
     session.pendingPermissions = [request]

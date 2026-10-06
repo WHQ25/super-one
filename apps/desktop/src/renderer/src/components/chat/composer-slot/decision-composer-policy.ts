@@ -65,6 +65,26 @@ function isDecisionShortcut(event: KeyboardEvent): boolean {
   return event.key === 'Enter' || event.key === ' ' || /^[1-9]$/.test(event.key)
 }
 
+/**
+ * Decision keys are scoped to the chat pane that holds focus, so focus that falls to
+ * <body> leaves every shortcut dead. A prompt container marked `data-decision-focus`
+ * (with `tabIndex={-1}`) is where focus rests when no control inside should have it.
+ *
+ * On mount: the editor this prompt replaced has unmounted and taken focus with it.
+ * Take it back unless the person is working in another surface or the prompt
+ * already focused one of its own controls.
+ */
+export function claimDecisionFocus(container: HTMLElement | null, root: HTMLElement | null | undefined): void {
+  const active = document.activeElement
+  if (!container || container.contains(active)) return
+  if (!active || active === document.body || root?.contains(active)) container.focus({ preventScroll: true })
+}
+
+/** Leaves a prompt's text field (Escape, Tab) without dropping focus out of the prompt. */
+export function leaveDecisionField(field: HTMLElement | null): void {
+  field?.closest<HTMLElement>('[data-decision-focus]')?.focus({ preventScroll: true })
+}
+
 export function noteChatInputFocused(root: HTMLElement): void {
   recentInputFocus.set(root, Date.now())
 }

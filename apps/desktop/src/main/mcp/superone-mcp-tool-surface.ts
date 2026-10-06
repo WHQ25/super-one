@@ -189,6 +189,33 @@ async function runSuperoneMcpTool(
     return executeDeviceAgentTool(sessionId, toolName, args, signal)
   }
 
+  // The widget tools are listed among the built-ins but have no case there, so they are
+  // dispatched first.
+  if (toolName === WIDGET_LIST_TEMPLATES_NAME) {
+    const projectPath = getSessionHost()?.getSession(sessionId)?.projectPath
+    return listWidgetTemplatesHandler({ projectPath })
+  }
+
+  if (toolName === WIDGET_SHOW_NAME) {
+    const session = getSessionHost()?.getSession(sessionId)
+    const projectPath = session?.projectPath
+    return executeWidgetShowTool(args, {
+      projectPath,
+      sessionId,
+      isShownOnDesktop: isShownOnDesktop(sessionId),
+      resolveSessionRoot: () => getSessionHost()?.getSession(sessionId)?.cwd || projectPath,
+      // A remote Host Action has no local SessionManager entry; the previewer's
+      // context comes from the owning node instead (inline-files-previewer.md §2.2).
+      resolvePreviewerContext:
+        connectionId && connectionId !== 'local' && !session
+          ? async () => {
+              const { resolveRemotePreviewerContext } = await import('../environment/files-previewer-context')
+              return resolveRemotePreviewerContext(connectionId, sessionId)
+            }
+          : undefined,
+    })
+  }
+
   if ((BUILT_IN_SUPERONE_TOOL_NAMES as readonly string[]).includes(toolName)) {
     return executeBuiltInSuperoneTool(toolName as BuiltInSuperoneToolName, args, {
       notifyDevAppReady,
@@ -215,31 +242,6 @@ async function runSuperoneMcpTool(
         ? args.input as Record<string, unknown>
         : {},
     }, miniappToolDepsForSurface())
-  }
-
-  if (toolName === WIDGET_LIST_TEMPLATES_NAME) {
-    const projectPath = getSessionHost()?.getSession(sessionId)?.projectPath
-    return listWidgetTemplatesHandler({ projectPath })
-  }
-
-  if (toolName === WIDGET_SHOW_NAME) {
-    const session = getSessionHost()?.getSession(sessionId)
-    const projectPath = session?.projectPath
-    return executeWidgetShowTool(args, {
-      projectPath,
-      sessionId,
-      isShownOnDesktop: isShownOnDesktop(sessionId),
-      resolveSessionRoot: () => getSessionHost()?.getSession(sessionId)?.cwd || projectPath,
-      // A remote Host Action has no local SessionManager entry; the previewer's
-      // context comes from the owning node instead (inline-files-previewer.md §2.2).
-      resolvePreviewerContext:
-        connectionId && connectionId !== 'local' && !session
-          ? async () => {
-              const { resolveRemotePreviewerContext } = await import('../environment/files-previewer-context')
-              return resolveRemotePreviewerContext(connectionId, sessionId)
-            }
-          : undefined,
-    })
   }
 
   throw new Error(`Unknown SuperOne MCP tool: ${toolName}`)

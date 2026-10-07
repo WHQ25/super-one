@@ -1552,8 +1552,20 @@ function setAppMediaPermissions(appId: string, manifest: { permissions?: { media
  * BROADCAST_SESSION_SETTING handler has no Session to merge it into yet, so the
  * first send is the only place main can learn it.
  */
-function getOrCreateCodexSession(sessionId: string, projectPath: string, cwd?: string, gitBranch?: string | null, apiProviderId?: string | null, serviceTier?: string | null) {
-  const existing = sessionManager.getSession(sessionId)
+async function getOrCreateCodexSession(sessionId: string, projectPath: string, cwd?: string, gitBranch?: string | null, apiProviderId?: string | null, serviceTier?: string | null) {
+  let existing = sessionManager.getSession(sessionId)
+  // An empty draft keeps its sid across a harness switch, and the renderer's
+  // fire-and-forget reset of the prior runtime may still be tearing it down.
+  // Finish that disposal (joined if in flight) and create the Codex session.
+  if (
+    existing
+    && existing.snapshot.harnessId !== 'codex'
+    && existing.snapshot.messages.length === 0
+    && !existing.isStreaming()
+  ) {
+    await sessionManager.disposeSession(sessionId)
+    existing = null
+  }
   if (existing) {
     if (existing.snapshot.harnessId !== 'codex') {
       throw new Error(`Session ${sessionId} is not a codex session (harness=${existing.snapshot.harnessId})`)
@@ -2514,7 +2526,7 @@ function registerIpcHandlers(): void {
     ) => {
       const assistantMessageId = messageId ?? `codex_${Date.now()}`
       const persistedUserMessageId = userMessageId ?? newMessageId('user')
-      const session = getOrCreateCodexSession(sessionId, projectPath, cwd, gitBranch, extras?.apiProviderId, extras?.serviceTier)
+      const session = await getOrCreateCodexSession(sessionId, projectPath, cwd, gitBranch, extras?.apiProviderId, extras?.serviceTier)
       return runCodexTurnViaSessionManager(session, assistantMessageId, {
         content: userMessageText ?? prompt,
         model,
@@ -2926,7 +2938,7 @@ function registerIpcHandlers(): void {
       extras?: { contexts?: ChatMessageContext[]; userSelections?: string[]; userMessageContent?: ContentBlock[]; apiProviderId?: string | null; serviceTier?: string | null; additionalDirectories?: string[] },
     ) => {
       const assistantMessageId = messageId ?? `codex_${Date.now()}`
-      const session = getOrCreateCodexSession(sessionId, projectPath, cwd, gitBranch, extras?.apiProviderId, extras?.serviceTier)
+      const session = await getOrCreateCodexSession(sessionId, projectPath, cwd, gitBranch, extras?.apiProviderId, extras?.serviceTier)
       return runCodexTurnViaSessionManager(session, assistantMessageId, {
         content: userMessageText ?? '/review',
         model,
@@ -2969,7 +2981,7 @@ function registerIpcHandlers(): void {
       extras?: { contexts?: ChatMessageContext[]; userSelections?: string[]; userMessageContent?: ContentBlock[]; apiProviderId?: string | null; serviceTier?: string | null; additionalDirectories?: string[] },
     ) => {
       const assistantMessageId = messageId ?? `codex_${Date.now()}`
-      const session = getOrCreateCodexSession(sessionId, projectPath, cwd, gitBranch, extras?.apiProviderId, extras?.serviceTier)
+      const session = await getOrCreateCodexSession(sessionId, projectPath, cwd, gitBranch, extras?.apiProviderId, extras?.serviceTier)
       return runCodexTurnViaSessionManager(session, assistantMessageId, {
         content: userMessageText ?? '/compact',
         model,

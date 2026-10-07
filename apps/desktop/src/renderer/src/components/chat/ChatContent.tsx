@@ -586,6 +586,11 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
   }), [])
 
   const containerRef = useRef<HTMLDivElement>(null)
+  // Read by the empty-pane landing (ChatSuggestions) to stay put while a
+  // composer other than the text one occupies the slot.
+  const publishComposerOverhang = useCallback((px: number) => {
+    containerRef.current?.style.setProperty('--composer-overhang', `${px}px`)
+  }, [])
   const composerFocus = useRestoreChatInputFocus((needsDecision || !!appInput || !!openedComposer) && decisionAvailable, containerRef,
     projectPath && displayedSessionId ? { projectPath, sessionId: displayedSessionId } : undefined)
   const computeAutoScale = useCallback((w: number) => w >= 672 ? 1.15 : w >= 512 ? 1.1 : 1, [])
@@ -725,6 +730,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
             kind={composerKind}
             transitionKey={composerKey}
             align={{ kind: 'voice', to: 'text' }}
+            onOverhangChange={publishComposerOverhang}
             maxHeight={(needsDecision || !!appInput || !!openedComposer) && decisionAvailable ? COMPOSER_CONTENT_MAX_HEIGHT : undefined}
             render={(kind) => renderComposer(kind, displayedSessionId ?? '', {
               showTodoPopup: true,

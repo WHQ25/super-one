@@ -166,6 +166,33 @@ describe('useChatScroll', () => {
     expect(state.scrollTop).toBe(250)
   })
 
+  it('holds the scroll position while a composer hand-off resizes the viewport', () => {
+    const { el, state, contentChild } = createMockViewport()
+    const root = document.createElement('div')
+    root.setAttribute('data-chat-root', '')
+    const slot = document.createElement('div')
+    slot.setAttribute('data-composer-handoff', '')
+    root.append(el, slot)
+    const ref = { current: el }
+
+    renderHook(() => useChatScroll({ scrollViewportRef: ref }))
+    expect(state.scrollTop).toBe(200)
+
+    state.clientHeight = 250
+    fireResize(el)
+    expect(state.scrollTop).toBe(200)
+
+    // Content growth still follows, hand-off or not.
+    state.scrollHeight = 800
+    fireResize(contentChild)
+    expect(state.scrollTop).toBe(550)
+
+    slot.removeAttribute('data-composer-handoff')
+    state.clientHeight = 200
+    fireResize(el)
+    expect(state.scrollTop).toBe(600)
+  })
+
   it('stops following on wheel-up before any scroll event fires', () => {
     const { el, state } = createMockViewport()
     const ref = { current: el }

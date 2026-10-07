@@ -212,11 +212,16 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
       pausedScrollTopRef.current = viewport.scrollTop
       setShowScrollButton(false)
     }
-    const observer = new ResizeObserver(() => {
+    const observer = new ResizeObserver((entries) => {
+      // A composer hand-off resizes only the viewport. Holding scrollTop keeps
+      // history still; what a taller composer displaces stays one scroll away,
+      // and a shorter one hands the space back without moving anything.
+      const handoff = entries.every((entry) => entry.target === viewport)
+        && !!viewport.closest('[data-chat-root]')?.querySelector('[data-composer-handoff]')
       // Late growth (syntax highlight, wrap, content-visibility revealing a
       // tall tool block) often lands after the turn is already idle. Follow
       // state, not streaming, is what decides whether to stay pinned.
-      if (followRef.current) {
+      if (followRef.current && !handoff) {
         pinToBottom(viewport)
         pausedScrollTopRef.current = viewport.scrollTop
         setShowScrollButton(false)

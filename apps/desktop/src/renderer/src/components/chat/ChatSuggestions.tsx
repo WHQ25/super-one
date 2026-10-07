@@ -898,7 +898,9 @@ export function ChatSuggestions({ draft = false }: { draft?: boolean } = {}) {
   return (
     <div
       className="flex h-full flex-col items-center justify-center gap-4 px-4"
-      style={{ animation: 'fade-in 400ms ease-out' }}
+      // Centred as if the text composer held the slot (see ComposerSwitch
+      // `onOverhangChange`), so switching composers does not move the landing.
+      style={{ animation: 'fade-in 400ms ease-out', translate: '0 calc(var(--composer-overhang, 0px) / 2)' }}
       data-draft={draft || undefined}
       inert={locked}
     >

@@ -172,8 +172,16 @@ existing read-only behavior and suppress session decision prompts.
 ## Handoff animation
 
 The slot reuses the realtime voice composer's handoff: the outgoing composer
-drops for 200 ms, the incoming one rises for 240 ms, then the slot eases to its
-new height for 200 ms. Request identity also triggers a handoff between two
+drops for 200 ms, then the incoming one rises for 240 ms. The slot grows with a
+taller newcomer's rise using the same duration and easing, keeping its top
+visible. For a shorter newcomer, the slot waits until the rise finishes before
+shrinking over 200 ms. Content above the slot stays still throughout: the
+transcript keeps its scroll position instead of re-pinning to the bottom, so a
+taller composer leaves the displaced tail one scroll away rather than covering
+it, and the empty-pane landing stays centred as if the text composer held the
+slot. A shorter composer only moves history when the browser must clamp the
+scroll position at the bottom. Request identity also
+triggers a handoff between two
 permissions, a permission and a question, or successive MCP App consents.
 The outgoing request remains visible but inert until its exit finishes. Reduced
 motion switches immediately. Plan review keeps its existing full-screen flow.

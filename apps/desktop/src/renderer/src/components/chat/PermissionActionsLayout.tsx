@@ -107,7 +107,7 @@ export function PermissionActionsLayout({
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
               transition={{ ...TRANSITION, duration: reduceMotion ? 0 : 0.16 }}
-              className="ml-auto inline-flex shrink-0 items-center gap-1.5 text-[10px] text-muted-foreground"
+              className="ml-auto inline-flex shrink-0 items-center gap-1.5 text-2xs text-muted-foreground"
             >
               <NewlineKeys label={t('chat.permission.feedbackNewlineHint')} mac={isMac} />
             </motion.span>

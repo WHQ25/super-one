@@ -80,7 +80,7 @@ export function MediaReferences({ kind, references, roles, onChange, onAdd }: {
           <Upload className="size-4 shrink-0" />
           <span className="flex min-w-0 flex-col">
             <span className="truncate text-xs">{t('mediaComposer.dropReferences')}</span>
-            <span className="truncate text-[11px] text-muted-foreground">{t(kind === 'image' ? 'mediaComposer.imageReferenceHint' : 'mediaComposer.videoReferenceHint')}</span>
+            <span className="truncate text-[0.6875rem] text-muted-foreground">{t(kind === 'image' ? 'mediaComposer.imageReferenceHint' : 'mediaComposer.videoReferenceHint')}</span>
           </span>
         </button>
       </div>
@@ -99,7 +99,7 @@ export function MediaReferences({ kind, references, roles, onChange, onAdd }: {
             <MediaOptionSelector
               title={ref.name}
               label={t(`mediaComposer.${ref.role ?? 'reference'}`)}
-              className="px-1 py-0 text-[11px]"
+              className="px-1 py-0 text-[0.6875rem]"
               value={ref.role ?? 'reference'}
               onChange={role => setRole(index, role as ReferenceRole)}
               groups={[{ label: t('mediaComposer.referenceRole'), options: roles.map(role => ({ value: role, label: t(`mediaComposer.${role}`) })) }]}
@@ -122,7 +122,7 @@ export function MediaReferenceStrip({ items }: { items: { key: string; src: stri
   if (!items.length) return null
   return (
     <div className="flex flex-wrap items-start gap-2.5 pb-2 pt-1.5">
-      {items.map(item => <ReferenceThumb key={item.key} src={item.src} name={item.name} caption={<span className="text-[11px] text-muted-foreground">{item.label}</span>} />)}
+      {items.map(item => <ReferenceThumb key={item.key} src={item.src} name={item.name} caption={<span className="text-[0.6875rem] text-muted-foreground">{item.label}</span>} />)}
     </div>
   )
 }

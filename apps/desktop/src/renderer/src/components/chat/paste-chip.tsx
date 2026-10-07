@@ -61,7 +61,7 @@ export function PasteChip({ text, onSave, onExpand, selectable }: {
         title={t('chat.pasteChip.title', { count: text.split('\n').length })}
         actions={actions}
         card={(
-          <pre className="max-h-48 overflow-hidden whitespace-pre-wrap break-words font-mono text-[11px] leading-4 text-muted-foreground">
+          <pre className="max-h-48 overflow-hidden whitespace-pre-wrap break-words font-mono text-[0.6875rem] leading-4 text-muted-foreground">
             {pasteExcerpt(text)}
           </pre>
         )}

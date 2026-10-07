@@ -45,7 +45,7 @@ export function InputRequestForm({ meta, form, onSubmit, onCancel, error: hostEr
   return (
     <section className="@container flex min-w-0 flex-col gap-3 px-3 pt-3 pb-1" aria-label={meta.title}>
       <div className="min-w-0">
-        <p className="mb-1 break-words text-[11px] text-muted-foreground">{meta.origin.kind === 'miniapp'
+        <p className="mb-1 break-words text-[0.6875rem] text-muted-foreground">{meta.origin.kind === 'miniapp'
           ? meta.origin.appName ?? meta.origin.appId
           : t(meta.origin.kind === 'agent' ? 'chat.inputRequest.originAgent' : 'chat.inputRequest.originWidget')}</p>
         <h3 className="break-words text-sm font-medium">{meta.title}</h3>

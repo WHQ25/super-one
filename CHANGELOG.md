@@ -15,6 +15,127 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
+- Session links open chats across environments, including archived remote-node
+  transcripts. Scheduled sends support remote nodes and retain captured turn
+  settings.
+- Claude Ultracode is selectable on desktop, phone and remote nodes. Composer
+  borders and animated prompt keywords show the next turn's Ultracode,
+  ultrathink or Codex Ultra mode.
+- Image and video generation use chat composers with model-specific controls,
+  reference attachments and an Ask Agent action. Reference images retain
+  detail within each model's input limits.
+- Image file chips show thumbnails and previews; tools receive full-size
+  attachment originals after uploads finish.
+- Session forms share composer APIs across desktop, phone, mini-apps and
+  widgets, with draft retention, cancellation and validated submissions.
+- Queued messages synchronize across clients and appear as dimmed chat bubbles
+  on phones. Composer drafts synchronize between main and mini windows.
+
+### Fixed
+
+- Codex sends the displayed model and effort on every turn and recreates empty
+  drafts when switching from another harness.
+- Session switching avoids duplicate transcript rows, clears the previous
+  harness's context usage and restores consistent titles. Codex voice
+  restoration preserves saved message order; voice status appears in the
+  sidebar.
+- Claude account identity and usage follow the selected credential. Running
+  remote sessions apply model and permission changes, and the UI follows the
+  mode Claude actually accepts.
+- Widgets keep state when collapsed, render correctly in mobile subagent tool
+  rows and no longer wait indefinitely for a hidden desktop frame. Remote tool
+  results remain isolated by session.
+- Decision prompts retain keyboard focus and show newline shortcuts. Side-chat
+  input stays separate from drafts; copied and pasted chips preserve their
+  content and order.
+- Browser annotation marks disappear when their composer chips are removed or
+  sent. Active activity-panel tabs remain fully visible.
+- Composer hints scale with chat density, and input modes share consistent
+  spacing.
+
+### Changed
+
+- Upgrade Claude Agent SDK to 0.3.292 (Claude Code 2.1.292); resumed subagents
+  return to the running state on their own cards.
+- Widgets share collapsible MCP App frames, show generation status and return
+  concise tool results; saved templates exclude their data prelude.
+- Browser snapshots display screenshots. Browser calls now require a non-empty
+  description; refresh the tool catalog and supply descriptions in the
+  conversation language.
+- Remove the agent composer_request tool; agents use their harness question
+  tools. Mini-app and widget composer APIs remain available.
+- Claude model selection pins concrete catalog entries instead of the CLI
+  settings' default alias. Composer messages are marked human-typed, while
+  peer tasks remain non-human.
+- Desktop DevTools open on startup only with an explicit flag.
+
+## [0.72.0-alpha] - 2026-10-07
+
+### Added
+
+- Session links open chats across environments, including archived remote-node
+  transcripts. Scheduled sends support remote nodes and retain captured turn
+  settings.
+- Claude Ultracode is selectable on desktop, phone and remote nodes. Composer
+  borders and animated prompt keywords show the next turn's Ultracode,
+  ultrathink or Codex Ultra mode.
+- Image and video generation use chat composers with model-specific controls,
+  reference attachments and an Ask Agent action. Reference images retain
+  detail within each model's input limits.
+- Image file chips show thumbnails and previews; tools receive full-size
+  attachment originals after uploads finish.
+- Session forms share composer APIs across desktop, phone, mini-apps and
+  widgets, with draft retention, cancellation and validated submissions.
+- Queued messages synchronize across clients and appear as dimmed chat bubbles
+  on phones. Composer drafts synchronize between main and mini windows.
+
+### Fixed
+
+- Codex sends the displayed model and effort on every turn and recreates empty
+  drafts when switching from another harness.
+- Session switching avoids duplicate transcript rows, clears the previous
+  harness's context usage and restores consistent titles. Codex voice
+  restoration preserves saved message order; voice status appears in the
+  sidebar.
+- Claude account identity and usage follow the selected credential. Running
+  remote sessions apply model and permission changes, and the UI follows the
+  mode Claude actually accepts.
+- Widgets keep state when collapsed, render correctly in mobile subagent tool
+  rows and no longer wait indefinitely for a hidden desktop frame. Remote tool
+  results remain isolated by session.
+- Decision prompts retain keyboard focus and show newline shortcuts. Side-chat
+  input stays separate from drafts; copied and pasted chips preserve their
+  content and order.
+- Browser annotation marks disappear when their composer chips are removed or
+  sent. Active activity-panel tabs remain fully visible.
+- Composer hints scale with chat density, and input modes share consistent
+  spacing.
+
+### Changed
+
+- Upgrade Claude Agent SDK to 0.3.292 (Claude Code 2.1.292); resumed subagents
+  return to the running state on their own cards.
+- Widgets share collapsible MCP App frames, show generation status and return
+  concise tool results; saved templates exclude their data prelude.
+- Browser snapshots display screenshots. Browser calls now require a non-empty
+  description; refresh the tool catalog and supply descriptions in the
+  conversation language.
+- Remove the agent composer_request tool; agents use their harness question
+  tools. Mini-app and widget composer APIs remain available.
+- Claude model selection pins concrete catalog entries instead of the CLI
+  settings' default alias. Composer messages are marked human-typed, while
+  peer tasks remain non-human.
+- Desktop DevTools open on startup only with an explicit flag.
+
+### Tests
+
+- Align desktop session, widget and paste-chip fixtures with current contracts
+  and browser requirements.
+
+## [0.71.0] - 2026-10-05
+
+### Added
+
 - OpenCode uses a native agent selector with its own refresh control.
   Permissions follow OpenCode configuration on desktop and its mobile
   controller.
@@ -89,10 +210,9 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 - Codex runtime upgraded to 0.160.0, improving startup reliability,
   plugin loading and explicit provider model catalogs.
-- Claude Agent SDK 0.3.292 (Claude Code 2.1.292) runs installed mods.
+- Claude Agent SDK 0.3.289 (Claude Code 2.1.289) runs installed mods.
   Steering lets running commands finish, and interrupted replies no
-  longer appear to keep streaming. A subagent woken by SendMessage shows
-  as running again, then finished, on its own card on desktop and phone.
+  longer appear to keep streaming.
 - Subagent and workflow cards remain visible outside compact details;
   finished reasoning collapses in the maximized subagent view.
 - Phone question prompts and slash-command output appear above the
@@ -101,207 +221,6 @@ Every alpha release keeps its own notes on its GitHub Release.
   period or 30 minutes; exhaustion before reset is a warning. Harness
   chart bars omit totals.
 - Retired Kimi plans leave the picker while existing credentials work.
-
-## [0.71.0-alpha.3] - 2026-10-05
-
-### Changed
-
-- Upgrade Codex runtime to 0.160.0 and Claude Agent SDK to 0.3.289
-  (Claude Code 2.1.289).
-- Phone mod buttons use touch-sized controls and the UI font, without
-  keyboard shortcut badges.
-
-### Fixed
-
-- Claude mod panes attach correctly on phones and remote nodes.
-- Mod bands wrap whole items, and bordered boxes retain inner spacing.
-- Focusing a desktop mod pane no longer leaves a line below its tabs.
-
-## [0.71.0-alpha.2] - 2026-10-04
-
-### Added
-
-- Claude Code mods draw panes, transcript and tool decorations, composer
-  hints and interactive controls on desktop, with supported surfaces on
-  the phone and desktop sessions hosted on remote nodes. Desktop
-  preferences can disable mod rendering.
-- ACP context windows are selected from the model menu, with the current
-  window checked and the context ring reflecting the selection.
-
-### Fixed
-
-- Claude slash-command output retains its command identity after long
-  turns and compaction.
-- Claude usage model IDs no longer include context-window suffixes.
-- Mutating requests to remote nodes consistently carry idempotency keys.
-
-### Changed
-
-- Subagent and workflow cards remain visible outside compact details.
-- Finished reasoning collapses in the maximized subagent view.
-- Phone question prompts and slash-command output appear above the
-  composer in the chat document.
-
-## [0.71.0-alpha.1] - 2026-10-04
-
-### Added
-
-- Grok Build 1.0.45: SuperOne asks before Grok loads a folder's project
-  rules, MCP servers, hooks and skills, on desktop and the phone. Project
-  MCP servers stay off until the folder is trusted, including after a
-  reload or reconnect. A tool call Grok's Auto mode blocks is marked
-  denied on its tool card, and remote nodes run the Grok binary enabled
-  in SuperOne.
-- OpenCode 2 support, with a native agent selector (and its own refresh
-  control) in place of Claude-style permission presets on desktop and
-  the phone.
-- Elicitation forms ask one step at a time: each choice gets its own
-  step, typed fields share one, options are numbered rows (digits pick
-  them on the desktop), and the header shows the server's icon.
-- MCP Apps can download files: the desktop opens a save dialog for each
-  file, and the phone opens it in the file preview to save or share.
-- MCP App Views can open files their server names in the desktop file
-  preview; a file outside the session's project asks first.
-- Codex MCP forms can pick local files and preview resources.
-- Phone: MCP Apps share the desktop's View frame (collapse, fullscreen,
-  Activate) with an immersive fullscreen, and MCP resource mentions are
-  tappable.
-- The phone's file preview renders Markdown with the chat's renderer,
-  including diagrams, math, highlighted code and images.
-- File mention chips open the file on click, drag the file out from
-  their icon and offer the file chip menu.
-
-### Changed
-
-- Restored MCP App Views start as collapsed tool rows; expanding one
-  shows its snapshot and Activate reconnects it.
-- A failed MCP App call keeps the harness's own tool row with its error
-  instead of mounting the App.
-- Usage turns red only when the quota will run out within a tenth of its
-  period or 30 minutes; running out before reset is a warning, and
-  forecast alerts follow the same rule. Harness chart bars no longer show
-  totals.
-- Retired Kimi plans are no longer offered in the plan picker; existing
-  credentials keep working.
-
-### Fixed
-
-- OpenCode works again with OpenCode 2, while OpenCode 1 keeps working.
-- MCP App initial results up to 2 MiB reach live Views, and open the same
-  way after a restore and on the phone.
-- MCP App downloads over 1 MiB no longer stall, and linked downloads have
-  no size cap.
-- Closing a View on a remote session cancels its call on the node,
-  along with any form it raised.
-- Codex: MCP forms raised between model turns are handled, remote forms
-  survive waiting for an answer, and subagent MCP App Views render and
-  restore.
-- Grok: the main agent can use SuperOne session tools while a subagent
-  task runs.
-- A session whose worktree was removed stops its live turn instead of
-  staying pending in the sidebar.
-- Replies that land in a pane opened from history count as read, so
-  phones no longer show them as unseen.
-- Mobile: a taken-over desktop draft sends even when the desktop
-  prewarmed it; drafts sent or deleted on the desktop disappear after a
-  reconnect; the @ list opens already matching the desktop; context chips
-  are readable in the dark theme; mention names are no longer clipped by
-  long notes; widget borders stay visible on dark themes.
-- Wide display math scrolls inside its own box instead of sliding the
-  phone transcript sideways.
-- The interrupted-turn label is translated.
-- Adding a project offers save-as-default only for a new clone path, and
-  the project selector uses the same add-project dialog.
-- Elicitation form steps no longer show a focus ring after keyboard
-  navigation.
-
-## [0.71.0-alpha] - 2026-10-02
-
-### Added
-
-- MCP Apps: the interactive UI an MCP server ships with a tool
-  (`io.modelcontextprotocol/ui`) renders as a View in place of its tool
-  row, in Claude and Codex sessions, on desktop, on the phone and for
-  sessions on remote nodes. Views keep a header with the App's icon and
-  title, collapse into an ordinary tool row, open in the activity panel,
-  go fullscreen or picture-in-picture without reloading, and leave a card
-  in the chat that brings them back.
-- MCP App servers that need sign-in authenticate through Claude's or
-  Codex's own OAuth login, including when the harness runs on another
-  machine; tokens stay in the harness's store.
-- Messages an App asks to send, and new conversations it asks to start,
-  are approved in the composer slot (Escape declines). Context an App
-  attaches rides along on every send as a removable composer chip, with
-  images sent as real image inputs.
-- Restored Views reload from a cached copy of the App's HTML shared
-  across history and devices; Activate brings a restored snapshot back.
-- Cursor (opt-in, off by default): Settings → Harnesses → Cursor →
-  Preferences can route local stdio MCP App servers through SuperOne so
-  their Views render. The setting discloses that this bypasses Cursor's
-  team MCP and network controls.
-- Elicitation forms render from one shared schema model on desktop and
-  phone, including OpenAI extended forms (thumbnails, option
-  descriptions, suggested values, resource pickers), and Codex now
-  offers form elicitation to MCP servers. A form that cannot be fully
-  rendered shows a notice and can only be dismissed.
-- @ mentions search MCP servers that support `mentions/search`. A picked
-  item becomes a chip with the server's icon, its text is inlined into
-  the message at send, and hovering the chip shows exactly what the
-  agent receives.
-- Open With offers MCP Apps that declare a file entrypoint, from file
-  chip and file tree menus, the preview header and the placeholder for
-  formats SuperOne cannot preview. SuperOne's own preview stays the
-  default.
-- Desktop previews STEP and IGES CAD models as coloured meshes.
-- Claude Code mods: lines a mod writes appear in the transcript, its
-  notifications show as toasts, and its status line sits above the
-  composer. Plugins that fail to load say why in the transcript, and the
-  plugins page marks which plugins are mods.
-- Files previewer cards fit their tallest image or video instead of a
-  fixed height; composer context previews span the composer and are
-  titled by their source; a bash block's edited-file list scrolls past a
-  maximum height.
-
-### Fixed
-
-- Quota forecasts pace on the average since the window started, so most
-  readings show an estimate and short bursts no longer swing it; risk is
-  graded by projected usage at reset.
-- Mobile reconnects re-resolve the desktop route (LAN or relay) on every
-  retry, stop redialling when the desktop refuses a session restore, and
-  no longer tear down a healthy relay socket on returning to the
-  foreground. A redialled phone no longer goes offline when its stale
-  LAN socket closes, and live events after the 2048th on a LAN socket or
-  after a relay reset are no longer dropped.
-- Mobile: frames inside the chat (such as agent widgets) can no longer
-  send native requests; the iOS chat no longer crashes or stops
-  responding when an embedded frame loads; collaboration children stay
-  nested in the sidebar; the context ring uses the model's real window
-  (for example 1M for Opus 5.5).
-- Device and Computer Use previews appear when switching to a target
-  that is already active.
-- Links opened from the files previewer's fullscreen view respond to
-  clicks in the link dialog.
-- Native context menus keep `&` in labels.
-- 3D previews use softer lighting, so coloured materials and untextured
-  meshes no longer wash out.
-
-### Changed
-
-- Claude Agent SDK 0.3.287 (Claude Code 2.1.287): installed Claude Code
-  mods now run in Claude sessions. Steering a running turn lets running
-  commands finish instead of stopping them, and a reply cut short no
-  longer looks like it is still streaming.
-
-### Performance
-
-- Codex: MCP App View requests no longer wait 8–9 s on full MCP
-  discovery, and catalogs prewarm when an App attachment arrives.
-
-### Tests
-
-- An MCP Apps fixture server and View (with an OAuth mode), a recorded
-  Claude MCP Apps turn replay, and desktop View state coverage.
 
 ## [0.70.0] - 2026-09-30
 

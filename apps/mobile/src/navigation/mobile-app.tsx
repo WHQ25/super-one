@@ -919,12 +919,24 @@ export function MobileApp() {
       }).catch(error => logConnection('project refresh failed', { reason: error instanceof Error ? error.message : String(error) }))
     }
     const connectionHooks: Parameters<typeof createMobileRelayConnection>[0] = {
+      // The workspace surfaces (drawer lists, drafts, activity) read the raw
+      // batch on arrival: they must stay current with no session open, and a
+      // batch held back while a session restores reaches only that session.
+      onArrived: (events) => {
+        if (connectGeneration !== connectGenerationRef.current) return
+        remoteDraftsRef.current.ingest(events)
+        workspaceActivity.ingest(events)
+        const invalidated = sessionListInvalidations(events)
+        if (invalidated.length) {
+          for (const path of invalidated) cache.invalidate(path)
+          setSessionListRevision((n) => n + 1)
+        }
+        if (projectListChanged(events)) refreshProjects(workspaceClientRef.current)
+      },
       onEvents: (events, epoch) => {
         if (connectGeneration !== connectGenerationRef.current) return
         sessionLinkCandidateRef.current?.ingest(events, epoch)
         logRelayEventTypes(events)
-        remoteDraftsRef.current.ingest(events)
-        workspaceActivity.ingest(events)
         const removed = sessionRemovalStatus(events, runtimeRef.current, epoch)
         if (removed) {
           composerSwitchRef.current(null)
@@ -933,14 +945,6 @@ export function MobileApp() {
           setStatus(removed === 'Desktop disconnected this session' ? '' : removed)
           return
         }
-        // Read off the raw batch, before ChatRuntime: the drawer has to stay
-        // current even when no session is open and there is no runtime to ingest.
-        const invalidated = sessionListInvalidations(events)
-        if (invalidated.length) {
-          for (const path of invalidated) cache.invalidate(path)
-          setSessionListRevision((n) => n + 1)
-        }
-        if (projectListChanged(events)) refreshProjects(workspaceClientRef.current)
         additionalDirsRef.current.ingest(events)
         runtimeRef.current?.ingest(events, epoch)
         // The runtime does not reduce mod events; the document's mod client does.

@@ -41,6 +41,19 @@ describe('mobile relay connection lifecycle', () => {
     expect(oldTerminal).not.toHaveBeenCalled()
     connection.client.disconnect()
   })
+  it('shows workspace consumers a batch that a session restore is holding back', async () => {
+    const onEvents = vi.fn(), onArrived = vi.fn()
+    const socket = new MockSocket()
+    const connection = createMobileRelayConnection({ onEvents, onArrived, onTerminal: vi.fn(), restore: vi.fn().mockResolvedValue(1), currentEpoch: () => 1, onConnection: vi.fn(), onStatus: vi.fn(), onShutdown: vi.fn(), suppressDisconnect: () => false, endpoint: ENDPOINT, resolveLan: async () => null, openSocket: () => { queueMicrotask(() => socket.onopen?.()); return socket } })
+    await connection.dial(null)
+    connection.client.startBuffering()
+    const changed = { type: 'session_list_changed', projectPath: '/repo' }
+    socket.emit({ type: 'event', seq: 1, data: encryptHostTestPayload(deriveKeys(MASTER).aesKeyBytes, changed) })
+    expect(onArrived).toHaveBeenCalledWith([changed])
+    expect(onEvents).not.toHaveBeenCalled()
+    expect(connection.client.releaseBuffer().batches).toEqual([[changed]])
+    connection.client.disconnect()
+  })
   it('does not report a reopened transport as connected before session restore', async () => {
     vi.useFakeTimers()
     const sockets: MockSocket[] = []
@@ -122,6 +135,40 @@ describe('mobile relay connection lifecycle', () => {
     expect(onStatus).toHaveBeenLastCalledWith('')
     expect(onShutdown).not.toHaveBeenCalled()
     expect(connection.client.connected).toBe(true)
+    connection.client.disconnect()
+  })
+
+  it('rehydrates when the desktop redials before the relay saw its old socket close', async () => {
+    const sockets: MockSocket[] = []
+    const restore = vi.fn().mockResolvedValue(3)
+    const onConnection = vi.fn()
+    const connection = createMobileRelayConnection({
+      onEvents: vi.fn(),
+      onTerminal: vi.fn(),
+      restore,
+      currentEpoch: () => 2,
+      onConnection,
+      onStatus: vi.fn(),
+      onShutdown: vi.fn(),
+      suppressDisconnect: () => false,
+      endpoint: ENDPOINT,
+      resolveLan: async () => null,
+      openSocket: () => {
+        const socket = new MockSocket()
+        sockets.push(socket)
+        queueMicrotask(() => socket.onopen?.())
+        return socket
+      },
+    })
+
+    await connection.dial(null)
+    // No `peer_disconnected` first: the replaced desktop socket closed silently.
+    sockets[0].emit({ type: 'peer_connected' })
+    expect(onConnection).toHaveBeenLastCalledWith('reconnecting', 2)
+    sockets[0].emit({ type: 'handshake', hostName: 'desktop' })
+    await vi.waitFor(() => expect(restore).toHaveBeenCalledTimes(1))
+    expect(onConnection).toHaveBeenLastCalledWith('connected', 3)
+    expect(sockets).toHaveLength(1)
     connection.client.disconnect()
   })
 

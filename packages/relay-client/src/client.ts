@@ -49,6 +49,12 @@ export class RelayClient {
     private readonly hooks: {
       onMetric?: (metric: TransportMetric) => void
       onEvents?: (events: unknown[], epoch: number) => void
+      /**
+       * Every event batch as it arrives, including those a session restore is
+       * holding back. For consumers outside the session's epoch order (workspace
+       * invalidations, activity), which a buffered batch would otherwise never reach.
+       */
+      onArrived?: (events: unknown[]) => void
       onTerminal?: (payload: unknown) => void
       onReset?: () => void
       onShutdown?: () => void
@@ -376,6 +382,7 @@ export class RelayClient {
         return
       case 'events':
         this.maybeAck(effect.ack.seq, effect.ack.flush)
+        this.hooks.onArrived?.(effect.events)
         if (this.buffer.isBuffering) this.buffer.push(effect.events)
         else this.hooks.onEvents?.(effect.events, this.buffer.epoch)
         return

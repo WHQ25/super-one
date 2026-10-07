@@ -85,9 +85,10 @@ nulling the project on hide cleared the list and made every open pay for a fresh
 page-one fetch. **Re-reading is push-driven, not open-driven.** Every desktop
 write that adds, removes or reorders a row emits `session_list_changed`
 (projectPath, no rows — an invalidation, and no `sessionId`, which is what makes
-`MobileBroadcaster` fan it out to every paired device). The shell reads it off the
-raw event batch *before* `ChatRuntime`, because the drawer has to stay current
-while no session is open at all, and bumps one counter; the drawer re-reads only
+`MobileBroadcaster` fan it out to every paired device). The shell reads it in
+`onArrived`, off each raw batch as it arrives — not `onEvents`, which a session
+restore holds back and then hands only to that session's runtime — and bumps one
+counter; drafts and session activity are read there for the same reason; the drawer re-reads only
 when that counter moves, which also covers the cross-project Pinned section. A
 reconnect bumps it once — events sent while the socket was down were never
 delivered. The re-read is `refresh()`: in place, no spinner, no wipe, and a

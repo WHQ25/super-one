@@ -48,7 +48,9 @@ and reports input and bounded resize messages to RN.
   reopened *relay* socket asks `/status` before restoring; a desktop that is away parks
   the connection as `offline` (socket held, loop stopped, device row shows discovery's
   verdict) and the desktop's next `handshake` runs the restore. `peer_disconnected` is
-  the same `offline`. Without the probe every retry burned three 15 s request timeouts
+  the same `offline`. A `peer_connected` with no `peer_disconnected` before it is a
+  desktop that redialled before the relay saw its old socket close; it dropped every
+  event meanwhile, so it is `reconnecting` until its handshake restores. Without the probe every retry burned three 15 s request timeouts
   and painted `Reconnecting…` for a desktop that was simply off. LAN never probes: there
   the desktop *is* the socket peer. Re-send the current connection
   snapshot whenever the Chat WebView reports `ready` after a renderer reload.

@@ -10,6 +10,8 @@ export type DesktopEndpoint = { relayUrl: string; masterSecret: string; identity
 
 export type MobileRelayConnectionHooks = {
   onEvents: (events: unknown[], epoch: number) => void
+  /** Every batch on arrival, buffered or not; see `RelayClient`'s `onArrived`. */
+  onArrived?: (events: unknown[]) => void
   onTerminal: (payload: unknown) => void
   restore: (client: RelayClient) => Promise<number>
   currentEpoch: (client: RelayClient) => number
@@ -125,6 +127,7 @@ export function createMobileRelayConnection(hooks: MobileRelayConnectionHooks): 
   client = new RelayClient({
     onMetric: networkMetricsEnabled ? metric => networkLedger.record(metric) : undefined,
     onEvents: (events, epoch) => hooks.onEvents(events, epoch),
+    onArrived: events => hooks.onArrived?.(events),
     onTerminal: payload => hooks.onTerminal(payload),
     onReset: () => {
       hooks.onStatus('server reset — rehydrating')
@@ -146,7 +149,17 @@ export function createMobileRelayConnection(hooks: MobileRelayConnectionHooks): 
         return
       }
       if (frame.type === 'peer_connected') {
-        if (peerLost) hooks.onStatus('desktop reconnected — waiting for handshake')
+        if (peerLost) {
+          hooks.onStatus('desktop reconnected — waiting for handshake')
+          return
+        }
+        // The relay announces a departed desktop only once its socket closes, and
+        // a desktop that redials first replaces that socket before it does, so no
+        // `peer_disconnected` came. Everything it sent while away was dropped;
+        // its handshake restores like any other return.
+        if (reconnectController.isActive || peerRestore) return
+        peerLost = true
+        report('reconnecting', hooks.currentEpoch(client))
         return
       }
       if (frame.type === 'kicked') {

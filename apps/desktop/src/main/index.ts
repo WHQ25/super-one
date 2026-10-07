@@ -199,8 +199,7 @@ import {
   type GitStatusPair,
   type ParsedGitStatus,
 } from './git-status-utils'
-import { mapModelInfo } from './agent/claude-models'
-import { CLAUDE_METADATA_PROBE_PROMPT } from '@superone/claude'
+import { CLAUDE_CLI_DEFAULT_MODEL_ID, CLAUDE_METADATA_PROBE_PROMPT, mapClaudeModelCatalog } from '@superone/claude'
 import { getClaudeRateLimits } from './agent/claude-usage-service'
 import { claudeAccountConfig, listAccounts as listClaudeAccounts } from './agent/claude-account-service'
 import { claudeAccountStore } from './agent/claude-account-store'
@@ -4755,7 +4754,12 @@ function registerIpcHandlers(): void {
     const providerId = apiProviderId ?? (getBinding('chat:claude')?.credentialId ? null : claudeAccountStore().defaultProviderId())
     const accountEnv = claudeAccountConfig(providerId)?.extraEnv
     const cacheKey = claudeBinary ? `${harnessRuntimeCacheKey(claudeBinary)}:${providerId ?? 'default'}` : undefined
-    const cacheHit = getFreshHarnessResources('claude', { force, cacheKey })
+    // A row probed before the CLI `default` model was dropped from the catalog is re-probed.
+    const cacheHit = getFreshHarnessResources('claude', {
+      force,
+      cacheKey,
+      isUsable: (cached) => !cached.models.some((m) => m.id === CLAUDE_CLI_DEFAULT_MODEL_ID),
+    })
     if (cacheHit) {
       log.info('[CONNECT_CLAUDE] cache fresh (ageMs=%d), skipping CLI query', cacheHit.ageMs)
       const resources: ClaudeResources = { ...cacheHit.resources, skills, commands: userCommands, agents }
@@ -4827,7 +4831,7 @@ function registerIpcHandlers(): void {
       log.info('[CONNECT_CLAUDE] User Skills:', JSON.stringify(skills, null, 2))
       log.info('[CONNECT_CLAUDE] User Commands:', JSON.stringify(userCommands, null, 2))
 
-      const models = modelInfos.map(mapModelInfo)
+      const models = mapClaudeModelCatalog(modelInfos)
       const account = {
         email: accountInfo.email,
         organization: accountInfo.organization,

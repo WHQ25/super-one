@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { Options } from '@anthropic-ai/claude-agent-sdk'
-import { fetchClaudeModels, mapClaudeModelInfo } from './fetch-models'
+import { explicitClaudeModelId, fetchClaudeModels, mapClaudeModelInfo } from './fetch-models'
 import type { ClaudeQueryFn } from './types'
 
 /** Shape returned by `query().supportedModels()` (Agent SDK 0.3.x). */
@@ -59,12 +59,11 @@ describe('mapClaudeModelInfo', () => {
 })
 
 describe('fetchClaudeModels', () => {
-  it('returns the catalog the harness process reports', async () => {
+  it('returns the catalog the harness process reports, without the CLI-settings default row', async () => {
     const { queryFn, close } = stubQuery(SDK_MODELS)
     const models = await fetchClaudeModels({ cwd: '/work', queryFn })
 
-    expect(models.map((m) => m.id)).toEqual(['default', 'haiku'])
-    expect(models[0]).toMatchObject({ id: 'default', name: 'Opus 5 1M' })
+    expect(models.map((m) => m.id)).toEqual(['haiku'])
     expect(close).toHaveBeenCalled()
   })
 
@@ -94,5 +93,14 @@ describe('fetchClaudeModels', () => {
       throw new Error('spawn failed')
     }) as unknown as ClaudeQueryFn)
     await expect(fetchClaudeModels({ cwd: '/work', queryFn })).resolves.toEqual([])
+  })
+})
+
+describe('explicitClaudeModelId', () => {
+  it('reads a stored CLI default selection as unselected', () => {
+    expect(explicitClaudeModelId('default')).toBeNull()
+    expect(explicitClaudeModelId('')).toBeNull()
+    expect(explicitClaudeModelId(null)).toBeNull()
+    expect(explicitClaudeModelId('opus')).toBe('opus')
   })
 })

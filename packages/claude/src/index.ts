@@ -37,8 +37,11 @@ export {
   resetSdkClaudeBinaryCacheForTests,
 } from './resolve-sdk-binary'
 export {
+  CLAUDE_CLI_DEFAULT_MODEL_ID,
   CLAUDE_METADATA_PROBE_PROMPT,
+  explicitClaudeModelId,
   fetchClaudeModels,
+  mapClaudeModelCatalog,
   mapClaudeModelInfo,
   type ClaudeModelInfo,
   type FetchClaudeModelsOptions,

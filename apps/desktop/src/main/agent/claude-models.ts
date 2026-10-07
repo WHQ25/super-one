@@ -1,5 +1,5 @@
 import { query } from '@anthropic-ai/claude-agent-sdk'
-import { CLAUDE_METADATA_PROBE_PROMPT, mapClaudeModelInfo } from '@superone/claude'
+import { CLAUDE_METADATA_PROBE_PROMPT, mapClaudeModelCatalog, mapClaudeModelInfo } from '@superone/claude'
 import type { ModelOption } from '@superone/shared/agent-types'
 import log from '../logger'
 import { ensureShellPath } from '../shell-path'
@@ -26,7 +26,7 @@ export async function fetchModels(cwd: string, env?: Record<string, string | und
     const models = await q.supportedModels()
     q.close()
     log.info('[claude] fetchModels success count=%d', models.length)
-    return models.map(mapClaudeModelInfo)
+    return mapClaudeModelCatalog(models)
   } catch (error) {
     log.warn('[claude] fetchModels failed: %s', error instanceof Error ? error.message : String(error))
     return []

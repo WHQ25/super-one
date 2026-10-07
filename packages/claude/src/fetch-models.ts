@@ -58,6 +58,25 @@ export function mapClaudeModelInfo(m: ClaudeModelInfo): ModelOption {
   return base
 }
 
+/**
+ * The catalog row that follows the model named in the user's Claude Code
+ * settings. Its name and capabilities are a snapshot of whatever that setting
+ * was at probe time, so a later CLI change silently diverges from what
+ * SuperOne shows (model label, Auto eligibility). Sessions always pin a
+ * concrete model instead.
+ */
+export const CLAUDE_CLI_DEFAULT_MODEL_ID = 'default'
+
+/** SDK catalog → SuperOne options, without the CLI-settings `default` row. */
+export function mapClaudeModelCatalog(models: ClaudeModelInfo[]): ModelOption[] {
+  return models.filter((m) => m.value !== CLAUDE_CLI_DEFAULT_MODEL_ID).map(mapClaudeModelInfo)
+}
+
+/** A stored Claude model id, or null when it named the dropped CLI `default` row. */
+export function explicitClaudeModelId(id: string | null | undefined): string | null {
+  return id && id !== CLAUDE_CLI_DEFAULT_MODEL_ID ? id : null
+}
+
 export interface FetchClaudeModelsOptions {
   /** Project directory the probe runs in (settings / credentials scope). */
   cwd: string
@@ -107,7 +126,7 @@ export async function fetchClaudeModels(opts: FetchClaudeModelsOptions): Promise
       })(),
       opts.timeoutMs ?? DEFAULT_PROBE_TIMEOUT_MS,
     )
-    return models.map(mapClaudeModelInfo)
+    return mapClaudeModelCatalog(models)
   } catch {
     return []
   } finally {

@@ -24,6 +24,7 @@ import type {
 import { DEFAULT_NOTIFICATION_SETTINGS, NOTIFICATION_KINDS, normalizeNotificationSettings } from '@superone/shared/notifications'
 import { sanitizeOverrides } from '@superone/shared/harness-brand'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
+import { explicitClaudeModelId } from '@superone/claude'
 import { HARNESS_LAUNCH_OPTIONS } from '@superone/shared/launch-options'
 
 export type { AppSettings, AppSettingsPatch }
@@ -489,7 +490,7 @@ function readClaudePreference(data: Record<string, unknown>): ClaudePref {
 
   return {
     defaultModel: typeof claudePreference?.defaultModel === 'string'
-      ? claudePreference.defaultModel
+      ? explicitClaudeModelId(claudePreference.defaultModel) ?? ''
       : defaults.agentPreference.claude.defaultModel,
     defaultEffort: claudePreference?.defaultEffort === '' || isEffortLevel(claudePreference?.defaultEffort)
       ? (claudePreference.defaultEffort as EffortLevel | '')

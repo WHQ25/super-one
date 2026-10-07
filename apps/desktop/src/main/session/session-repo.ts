@@ -4,6 +4,7 @@ import log from '../logger'
 import { getProjectId } from '../recent-folders'
 import { notifySessionList } from '../session-list-watch'
 import { recordSessionStarted, recordMessageCounts, type HarnessKind } from '../usage-stats-service'
+import { explicitClaudeModelId } from '@superone/claude'
 import { isGrokAcpAgent } from '@superone/shared/acp-brand'
 import { sealCodexMetadata, sealStreamingTools } from '@superone/shared/content-delta'
 import type { ChatMessage, ContentBlock, EffortLevel, ImageAttachment, ChatMessageContext } from '@superone/shared/agent-types'
@@ -186,7 +187,7 @@ function rowToRecord(row: SessionRow, projectPath: string): SessionRecord {
     lastUserMessageAt: row.last_user_message_at,
     apiProviderId: row.api_provider_id ?? null,
     acpAgentId: row.acp_agent_id ?? null,
-    selectedModel: row.selected_model ?? null,
+    selectedModel: storedSelectedModel(harnessId, row.selected_model),
     selectedEffort: (row.selected_effort as EffortLevel | null) ?? null,
     codexServiceTier: row.codex_service_tier ?? null,
   }
@@ -213,6 +214,11 @@ export function harnessIdFromProviderId(providerId: string): HarnessId {
 export function deriveHarnessId(row: { provider_id?: string | null; provider?: string | null }): HarnessId {
   const providerId = row.provider_id ?? inferLegacyProviderId(row)
   return harnessIdFromProviderId(providerId)
+}
+
+/** A Claude row that stored the CLI-settings `default` model reads as unselected. */
+export function storedSelectedModel(harnessId: HarnessId, model: string | null): string | null {
+  return harnessId === 'claude' ? explicitClaudeModelId(model) : model
 }
 
 export interface InsertSessionInput {

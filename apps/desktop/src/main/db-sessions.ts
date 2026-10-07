@@ -1,6 +1,6 @@
 import { getDb } from './database'
 import { getProjectId } from './recent-folders'
-import { serializeMessageContent, rowToChatMessage, deriveHarnessId } from './session/session-repo'
+import { serializeMessageContent, rowToChatMessage, deriveHarnessId, storedSelectedModel } from './session/session-repo'
 import { recordSessionStarted, recordMessageCounts, type HarnessKind } from './usage-stats-service'
 import type { ChatMessage, EffortLevel, HarnessId, SessionHistoryEntry, PinnedSessionEntry } from '@superone/shared/agent-types'
 import { parseTagsJson } from '@superone/shared/session-tags'
@@ -84,11 +84,13 @@ export function listSessionsForProjectId(
 
   return rows.map((r) => {
     const tags = parseTagsJson(r.tags_json)
+    const harnessId = deriveHarnessId(r)
+    const selectedModel = storedSelectedModel(harnessId, r.selected_model)
     return {
       sessionId: r.id,
       title: r.title ?? 'Untitled',
       lastActiveAt: r.last_user_msg_at,
-      provider: deriveHarnessId(r),
+      provider: harnessId,
       messageCount: 0,
       ...(r.is_worktree ? { isWorktree: true } : {}),
       ...(r.is_pinned ? { isPinned: true } : {}),
@@ -99,7 +101,7 @@ export function listSessionsForProjectId(
       ...(r.automation_id ? { automationId: r.automation_id } : {}),
       ...(r.provider_session_id ? { providerSessionId: r.provider_session_id } : {}),
       ...(r.acp_agent_id ? { acpAgentId: r.acp_agent_id } : {}),
-      ...(r.selected_model ? { selectedModel: r.selected_model } : {}),
+      ...(selectedModel ? { selectedModel } : {}),
       ...(r.parent_session_id ? { parentSessionId: r.parent_session_id } : {}),
       ...(tags.length ? { tags } : {}),
     }
@@ -327,6 +329,7 @@ export function loadSessionState(
 
   const messages: ChatMessage[] = rows.map(rowToChatMessage)
 
+  const provider = deriveHarnessId(session)
   return {
     messages,
     totalCostUsd: session.total_cost_usd ?? 0,
@@ -334,11 +337,11 @@ export function loadSessionState(
     isWorktree: !!(session.is_worktree),
     gitBranch: session.git_branch ?? null,
     worktreePath: session.worktree_path ?? null,
-    provider: deriveHarnessId(session),
+    provider,
     providerSessionId: session.provider_session_id ?? null,
     apiProviderId: session.api_provider_id ?? null,
     acpAgentId: session.acp_agent_id ?? null,
-    selectedModel: session.selected_model ?? null,
+    selectedModel: storedSelectedModel(provider, session.selected_model),
     selectedEffort: (session.selected_effort as EffortLevel | null) ?? null,
     codexServiceTier: session.codex_service_tier ?? null,
     title: session.title ?? null,

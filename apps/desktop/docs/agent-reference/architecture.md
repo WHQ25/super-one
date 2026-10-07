@@ -145,6 +145,15 @@ Tables: `projects`, `sessions`, `chat_messages`. Messages stored as JSON blobs.
 - Background sessions: streaming sessions parked to `_bgSessions` when switching projects, restored on `resumeSession()`
 - `_historySessionId` tracks which DB session is loaded (enables resume from sidebar history)
 
+Codex requests carry effort in `codex.reasoningEffort`. `sessionRequestSelection`
+uses that field ahead of generic `effort` for both the backend and durable
+session settings, so snapshots, settings replay and DB restoration retain the
+effort sent by the picker, including configured defaults. Queued Codex turns
+update those settings when consumed, before their user message is persisted;
+a picker change made after enqueueing still takes precedence. Applying a request
+also synchronizes Codex's backend defaults and UI aliases, and broadcasts the
+updated selection, so later host sends without model/effort use the same values.
+
 Codex voice transcripts are stored separately in `session_realtime_timelines`.
 When rebuilding the backing thread, keep `chat_messages.sort_order` as the
 message spine: it includes local compaction markers and the assistant segments

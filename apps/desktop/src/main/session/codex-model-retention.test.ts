@@ -1,12 +1,14 @@
 /** @vitest-environment jsdom */
 
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ModelOption } from '@superone/shared/agent-types'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { AgentEvent, ModelOption, SendMessageRequest } from '@superone/shared/agent-types'
 import { useChatStore } from '@/stores/chat-store/index'
 import { createDefaultPerSessionState, createDefaultProjectState } from '@/stores/chat-store/defaults'
 import { getActiveSessionView } from '@/stores/chat-store/selectors'
 import { Session } from './session'
-import type { SessionBackend, SessionStateChange } from './types'
+import type { BackendStartOptions, SessionBackend, SessionStateChange } from './types'
+import { applyCodexBackendSelection, resolveCodexBackendSelection } from './backends/codex-backend-selection'
+import { defaultPrefsCache } from '@/stores/chat-store/helpers/prefs-cache'
 
 vi.mock('electron', () => ({ app: { getPath: () => '/tmp', getName: () => 'SuperOne', isPackaged: false }, ipcMain: { handle: vi.fn() } }))
 vi.mock('electron-log/main', () => ({ default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), transports: { file: {}, console: {} } } }))
@@ -18,6 +20,17 @@ const astra: ModelOption = {
   supportedReasoningEfforts: [{ value: 'high', description: 'High' }],
   defaultReasoningEffort: 'high',
 }
+const sol: ModelOption = {
+  id: 'gpt-6.1-sol', name: 'GPT-6.1 Sol', description: '', isDefault: true,
+  supportedReasoningEfforts: [
+    { value: 'low', description: 'Low' },
+    { value: 'xhigh', description: 'Extra high' },
+  ],
+  defaultReasoningEffort: 'low',
+}
+const originalCodexDefaults = defaultPrefsCache.codexSelection
+
+afterEach(() => { defaultPrefsCache.codexSelection = originalCodexDefaults })
 
 beforeEach(() => {
   localStorage.clear()
@@ -42,6 +55,146 @@ beforeEach(() => {
 })
 
 describe('Codex session model retention', () => {
+  it.each([
+    { hostEffort: undefined, requestEffort: undefined },
+    { hostEffort: 'low', requestEffort: undefined },
+    { hostEffort: 'low', requestEffort: 'low' },
+  ] as const)('keeps the displayed default effort through send, session switch and resend (host=$hostEffort, generic=$requestEffort)', async ({ hostEffort, requestEffort }) => {
+    defaultPrefsCache.codexSelection = { modelId: sol.id, reasoningEffort: 'xhigh', fastMode: false }
+    const project = useChatStore.getState().projectSessions[projectPath]
+    useChatStore.setState({ projectSessions: { [projectPath]: {
+      ...project, codexModels: [sol], _sessions: {
+        ...project._sessions,
+        astra: { ...project._sessions.astra, selectedCodexModel: sol.id, selectedCodexReasoningEffort: 'xhigh' },
+      },
+    } } })
+
+    let startOptions!: BackendStartOptions
+    let saved!: SessionStateChange
+    const turns: ReturnType<typeof resolveCodexBackendSelection>[] = []
+    const backend = {
+      onEvent: () => () => {},
+      onProviderSessionId: () => () => {},
+      onPermissionModeApplied: () => () => {},
+      start: async (options: BackendStartOptions) => { startOptions = options },
+      rebuild: async (options: BackendStartOptions) => { startOptions = options },
+      send: async (request: SendMessageRequest) => { turns.push(resolveCodexBackendSelection(startOptions, request)) },
+    } as unknown as SessionBackend
+    const host = new Session({
+      id: 'astra', projectPath, cwd: projectPath, providerId: 'codex-base', harnessId: 'codex',
+      providerConfig: {}, model: sol.id, effort: hostEffort, backend,
+      onStateChange: (snapshot) => { saved = snapshot },
+    })
+    if (hostEffort === 'low') host.broadcastSettingsPatch({ selectedCodexModel: sol.id, selectedCodexReasoningEffort: 'low' })
+    Object.assign(window.app, {
+      codexRun: vi.fn(async (_sid: string, _project: string, prompt: string, model?: string, reasoningEffort?: NonNullable<SendMessageRequest['codex']>['reasoningEffort']) => {
+        await host.send({ content: prompt, model, effort: requestEffort, codex: { mode: 'run', reasoningEffort } })
+        return { finalResponse: 'Done', items: [] }
+      }),
+      resumeSession: vi.fn(async (_project: string, sid: string) => {
+        if (sid === host.id) {
+          for (const event of host.getReplayEvents()) useChatStore.getState().handleAgentEvent(event)
+        }
+        return null
+      }),
+    })
+
+    await useChatStore.getState().sendMessage('Use the configured default')
+    expect(turns[0]).toMatchObject({ model: sol.id, reasoningEffort: 'xhigh' })
+    expect(startOptions).toMatchObject({ model: sol.id, effort: 'xhigh' })
+    expect(host.getUiSettings().selectedCodexReasoningEffort).toBe('xhigh')
+
+    await useChatStore.getState().switchSession('other')
+    await useChatStore.getState().switchSession('astra')
+    expect(getActiveSessionView(null).selectedCodexModel).toBe(sol.id)
+    expect(getActiveSessionView(null).selectedCodexReasoningEffort).toBe('xhigh')
+    expect(saved.selectedEffort).toBe('xhigh')
+    expect(host.snapshot.selectedEffort).toBe('xhigh')
+
+    await useChatStore.getState().sendMessage('Continue after returning')
+    expect(turns[1]).toMatchObject({ model: sol.id, reasoningEffort: 'xhigh' })
+
+    await useChatStore.getState().switchSession('other')
+    useChatStore.getState().removeSessionFromMemory(projectPath, 'astra')
+    Object.assign(window.app, { loadSessionState: vi.fn().mockResolvedValue({ ...saved, provider: 'codex' }) })
+    await useChatStore.getState().switchSession('astra')
+    expect(getActiveSessionView(null).selectedCodexModel).toBe(sol.id)
+    expect(getActiveSessionView(null).selectedCodexReasoningEffort).toBe('xhigh')
+  })
+
+  it.each(['minimal', 'ultra'] as const)('keeps the exact Codex-only effort %s in durable settings and replay', async (reasoningEffort) => {
+    const host = new Session({
+      id: 'astra', projectPath, cwd: projectPath, providerId: 'codex-base', harnessId: 'codex',
+      providerConfig: {}, effort: 'low',
+      backend: {
+        onEvent: () => () => {}, onProviderSessionId: () => () => {}, onPermissionModeApplied: () => () => {},
+        start: vi.fn().mockResolvedValue(undefined), send: vi.fn().mockResolvedValue(undefined),
+      } as unknown as SessionBackend,
+    })
+    await host.send({ content: 'Continue', model: sol.id, effort: 'low', codex: { reasoningEffort } })
+    expect(host.snapshot.selectedEffort).toBe(reasoningEffort)
+    expect(host.getReplayEvents()).toContainEqual(expect.objectContaining({
+      type: 'agent_setting_change', selectedEffort: reasoningEffort,
+    }))
+  })
+
+  it.each([false, true])('persists a consumed queued selection while protecting later picker changes (newer pick=%s)', async (newerPick) => {
+    let emit!: (event: AgentEvent) => void
+    let saved!: SessionStateChange
+    let startOptions!: BackendStartOptions
+    const turns: ReturnType<typeof resolveCodexBackendSelection>[] = []
+    const settingChanges: AgentEvent[] = []
+    const host = new Session({
+      id: 'astra', projectPath, cwd: projectPath, providerId: 'codex-base', harnessId: 'codex',
+      providerConfig: {}, model: fallback.id, effort: 'low',
+      backend: {
+        onEvent: (handler) => { emit = handler; return () => {} },
+        onProviderSessionId: () => () => {}, onPermissionModeApplied: () => () => {},
+        start: async (options: BackendStartOptions) => { startOptions = options },
+        rebuild: async (options: BackendStartOptions) => { startOptions = options },
+        send: async (request: SendMessageRequest) => { turns.push(resolveCodexBackendSelection(startOptions, request)) },
+        setCodexSelection: async (selection: Parameters<typeof applyCodexBackendSelection>[2]) => {
+          applyCodexBackendSelection(startOptions ?? null, null, selection)
+        },
+      } as unknown as SessionBackend,
+      onStateChange: (snapshot) => { saved = snapshot },
+    })
+    host.on((event) => { if (event.type === 'agent_setting_change') settingChanges.push(event) })
+    await host.send({ content: 'First turn' })
+    emit({ type: 'status_change', status: 'streaming' })
+    await host.send({
+      content: 'Queued turn', clientMessageId: 'queued', priority: 'next',
+      model: sol.id, codex: { reasoningEffort: 'xhigh' },
+    })
+    if (!newerPick) await host.send({
+      content: 'Second queued turn', clientMessageId: 'queued-2', priority: 'next',
+      model: astra.id, codex: { reasoningEffort: 'high' },
+    })
+    expect(host.snapshot.selectedEffort).toBe('low')
+    if (newerPick) host.broadcastSettingsPatch({ selectedCodexModel: astra.id, selectedCodexReasoningEffort: 'high' })
+    emit({ type: 'queued_message_consumed', clientMessageId: 'queued' })
+    expect(host.snapshot.selectedModel).toBe(newerPick ? astra.id : sol.id)
+    expect(saved.selectedModel).toBe(newerPick ? astra.id : sol.id)
+    expect(saved.selectedEffort).toBe(newerPick ? 'high' : 'xhigh')
+    expect(host.getUiSettings().selectedEffort).toBe(newerPick ? 'high' : 'xhigh')
+    expect(settingChanges.at(-1)).toMatchObject({
+      type: 'agent_setting_change',
+      patch: { selectedCodexModel: newerPick ? astra.id : sol.id, selectedCodexReasoningEffort: newerPick ? 'high' : 'xhigh' },
+    })
+    await host.send({ content: 'Host send without model or effort' })
+    expect(turns.at(-1)).toMatchObject({
+      model: newerPick ? astra.id : sol.id,
+      reasoningEffort: newerPick ? 'high' : 'xhigh',
+    })
+    expect(host.getUiSettings().selectedCodexReasoningEffort).toBe(newerPick ? 'high' : 'xhigh')
+    if (!newerPick) {
+      emit({ type: 'queued_message_consumed', clientMessageId: 'queued-2' })
+      await host.send({ content: 'Host send after second queued turn' })
+      expect(saved.selectedEffort).toBe('high')
+      expect(turns.at(-1)).toMatchObject({ model: astra.id, reasoningEffort: 'high' })
+    }
+  })
+
   it.each([false, true])('sends the chosen model outside the catalog (queued=%s)', async (queued) => {
     useChatStore.getState().setSelectedCodexModel(astra.id)
     useChatStore.setState((state) => ({ projectSessions: { [projectPath]: {

@@ -1,6 +1,7 @@
 import type { CodexPermissionPreset, CodexReasoningEffort, PermissionMode, SandboxInfo, SendMessageRequest } from '@superone/shared/agent-types'
 import type { BackendStartOptions } from '../types'
 import type { CodexSession } from '../../codex/codex-session'
+import { sessionRequestSelection } from '../session-request-selection'
 
 export interface CodexBackendSelectionPatch {
   model?: string | null
@@ -56,9 +57,10 @@ export function resolveCodexBackendSelection(opts: BackendStartOptions, request?
 } {
   const config = (opts.config && typeof opts.config === 'object' ? opts.config : {}) as CodexBackendConfig
   const approvedFullAccess = opts.permissionMode === 'dontAsk' && opts.sandboxInfo?.enabled === false
+  const selection = sessionRequestSelection('codex', request ?? {})
   return {
-    model: request?.model ?? opts.model ?? config.model,
-    reasoningEffort: request?.codex?.reasoningEffort ?? request?.effort ?? opts.effort ?? config.reasoningEffort,
+    model: selection.model ?? opts.model ?? config.model,
+    reasoningEffort: selection.effort ?? opts.effort ?? config.reasoningEffort,
     permissionPreset: request?.codex?.permissionPreset
       ?? (approvedFullAccess ? 'full-access' : config.permissionPreset)
       ?? mapCodexPermissionMode(opts.permissionMode, opts.sandboxInfo),

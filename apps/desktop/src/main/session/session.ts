@@ -12,6 +12,7 @@ import { SessionLiveness } from './session-liveness'
 import { hostPendingInteractions, trackHostInteraction } from './host-pending-interactions'
 import { dispatchBackendSteer } from './dispatch-backend-steer'
 import { broadcastSessionSettings } from './session-settings-broadcast'
+import { sessionRequestSelection, type PendingSessionRequest } from './session-request-selection'
 import type {
   AgentEvent,
   AgentStatus,
@@ -325,7 +326,8 @@ export class Session implements SessionContract {
    * and exposed on LiveSessionSnapshot.uiSettings so mini-window paints correctly.
    */
   private _uiSettings: import('@superone/shared/agent-types').SessionSettingsPatch = {}
-  private _pendingQueuedRequests = new Map<string, { request: SendMessageRequest; providerOrigin: SendProviderOrigin }>()
+  private _selectionRevision = 0
+  private _pendingQueuedRequests = new Map<string, PendingSessionRequest>()
   /** Shared so concurrent ensureStarted callers await the same backend.start(). */
   private _startPromise: Promise<void> | null = null
 
@@ -785,7 +787,7 @@ export class Session implements SessionContract {
         log.info('[Session] queued send promoted to normal send sid=%s (workspace roots changed)', this.id)
       } else {
         if (request.clientMessageId) {
-          this._pendingQueuedRequests.set(request.clientMessageId, { request, providerOrigin })
+          this._pendingQueuedRequests.set(request.clientMessageId, { request, providerOrigin, selectionRevision: this._selectionRevision })
           this.emitQueuedMessages()
         }
         try {
@@ -810,7 +812,7 @@ export class Session implements SessionContract {
       await prev.catch(() => {})
       await this.waitForRuntimeRelease()
       this.assertNotDisposed()
-      const effortChanged = request.effort !== undefined && request.effort !== this.effort
+      const effortChanged = this.applyRequestSelection(request)
       // The project's workspace folders are re-applied here rather than trusted
       // from the caller. A renderer that has not hydrated them — a detached
       // session window, a promoted draft, a mini-app-opened project — would
@@ -819,8 +821,6 @@ export class Session implements SessionContract {
       if (request.additionalDirs !== undefined) this.callerScopedDirs = [...request.additionalDirs]
       const nextDirs = this.resolveEffectiveDirs()
       const dirsChanged = this.dirsReachBackend() && !sameStringArray(nextDirs, this.additionalDirectories)
-      if (request.effort !== undefined) this.effort = request.effort
-      if (request.model !== undefined) this.model = request.model
       if (request.ultracode !== undefined) this.setUltracode(request.ultracode)
       this.additionalDirectories = nextDirs
       this.appendUserMessage(request, providerOrigin)
@@ -1078,6 +1078,7 @@ export class Session implements SessionContract {
 
   setSelectedSettings(opts: { model?: string | null; effort?: SendMessageRequest['effort'] | null; ultracode?: boolean; mode?: string | null; contextWindow?: number | null }): void | Promise<void> {
     this.assertNotDisposed()
+    if (opts.model !== undefined || opts.effort !== undefined) this._selectionRevision += 1
     if (opts.ultracode !== undefined) this.setUltracode(opts.ultracode)
     let changed = false
     if (opts.model !== undefined) {
@@ -2019,11 +2020,15 @@ export class Session implements SessionContract {
     if (event.type === 'queued_message_consumed') {
       const pending = this._pendingQueuedRequests.get(event.clientMessageId)
       if (pending) {
+        // A turn queued earlier must not replace a newer picker choice.
+        if (this.harnessId === 'codex' && pending.selectionRevision === this._selectionRevision) {
+          this.applyRequestSelection(pending.request)
+        }
         this.appendUserMessage(pending.request, pending.providerOrigin)
         this._pendingQueuedRequests.delete(event.clientMessageId)
       }
     } else if (event.type === 'queued_messages_restored') {
-      const nextPending = new Map<string, { request: SendMessageRequest; providerOrigin: SendProviderOrigin }>()
+      const nextPending = new Map<string, PendingSessionRequest>()
       for (const message of event.messages) {
         const existing = this._pendingQueuedRequests.get(message.clientMessageId)
         nextPending.set(message.clientMessageId, existing ?? {
@@ -2431,6 +2436,30 @@ export class Session implements SessionContract {
         }
       : request
     return buildClaudeUserMessage(displayRequest, messageOrigin)
+  }
+
+  private applyRequestSelection(request: SendMessageRequest): boolean {
+    const { model, effort } = sessionRequestSelection(this.harnessId, request)
+    const effortChanged = effort !== undefined && effort !== this.effort
+    if (effort !== undefined) this.effort = effort
+    if (model !== undefined) this.model = model
+    if (this.harnessId === 'codex' && (model !== undefined || effort !== undefined)) {
+      const uiChanged = (model !== undefined && model !== this._uiSettings.selectedCodexModel)
+        || (effort !== undefined && effort !== this._uiSettings.selectedCodexReasoningEffort)
+      const patch = {
+        ...(model !== undefined ? { selectedCodexModel: model } : {}),
+        ...(effort !== undefined ? { selectedCodexReasoningEffort: effort } : {}),
+      }
+      this.mergeUiSettings(patch)
+      // Queued turns bypass Session.send's rebuild path. Keep the backend's
+      // defaults aligned so a later host send with no selection uses these too.
+      void this.backend.setCodexSelection?.({
+        ...(model !== undefined ? { model } : {}),
+        ...(effort !== undefined ? { reasoningEffort: effort } : {}),
+      })
+      if (uiChanged) this.forwardEvent({ type: 'agent_setting_change', patch })
+    }
+    return effortChanged
   }
 
   private appendUserMessage(request: SendMessageRequest, providerOrigin: SendProviderOrigin): void {

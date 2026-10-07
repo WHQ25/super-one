@@ -261,6 +261,12 @@ describe('buildUserMessage', () => {
     expect(content[1]!.text).toMatch(/super-one-attachments/)
     expect(content[1]!.text).toContain('do not Read')
   })
+
+  it('stamps the user\'s own sends human and leaves host wake-ups unattributed', () => {
+    expect(buildUserMessage({ content: 'ultracode migrate the store' }, 's').origin).toEqual({ kind: 'human' })
+    expect(buildUserMessage({ content: 'peer reply', source: 'task-notification' }, 's').origin).toBeUndefined()
+    expect(buildUserMessage({ content: 'launch task', source: 'collaboration' }, 's').origin).toBeUndefined()
+  })
 })
 
 describe('createSessionQuery', () => {

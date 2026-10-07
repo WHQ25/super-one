@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
+import { claudeMessageOrigin } from '@superone/claude/claude-message-origin'
 import type { SendMessageRequest } from '@superone/shared/agent-types'
 import { attachmentPrompt, buildAttachmentTurn } from '@superone/shared/attachment-turn'
 import { validateTurnAttachments } from '@superone/shared/attachment-validation'
@@ -12,6 +13,7 @@ export function buildUserMessage(request: SendMessageRequest, sessionId: string)
     const turn = buildAttachmentTurn(request.images, { inlineImages: true, inlinePdf: false, requirePaths: true })
     content = [...turn.inlineBlocks, { type: 'text', text: attachmentPrompt(request.content, turn.note) }]
   }
+  const origin = claudeMessageOrigin(request.source)
   return {
     type: 'user',
     message: { role: 'user', content },
@@ -19,5 +21,6 @@ export function buildUserMessage(request: SendMessageRequest, sessionId: string)
     uuid: randomUUID(),
     session_id: sessionId,
     ...(request.priority ? { priority: request.priority } : {}),
+    ...(origin ? { origin } : {}),
   } as SDKUserMessage
 }

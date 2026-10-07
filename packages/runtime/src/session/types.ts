@@ -209,6 +209,8 @@ export type TurnRunner = ((input: {
    * steer injects into an in-flight app-server turn on a long-lived connection.
    */
   turnKind?: 'run' | 'steer' | 'review' | 'compact' | null
+  /** Host-origin synthetic turn (peer mailbox wake); absent for the user's own text. */
+  source?: 'user' | 'task-notification'
   /** Codex collaboration mode (string mode name or app-server object). */
   collaborationMode?: string | Record<string, unknown> | null
   /** Codex review/start target payload. */

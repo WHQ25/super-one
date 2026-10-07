@@ -1360,6 +1360,7 @@ export class SessionRuntime {
         turnKind: opts.turnKind ?? undefined,
         collaborationMode: opts.collaborationMode ?? undefined,
         reviewTarget: opts.reviewTarget,
+        source: opts.source,
         signal: abort.signal,
         onDelta: (delta) => {
           if (abort.signal.aborted) return

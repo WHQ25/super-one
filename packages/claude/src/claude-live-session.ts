@@ -10,9 +10,10 @@ import { existsSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { query as sdkQuery, type Options, type Query, type SDKMessage, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import { resolveMappedClaudeModelId } from '@superone/shared/agent-types'
-import type { AgentEvent } from '@superone/shared/agent-types'
+import type { AgentEvent, ChatMessageSource } from '@superone/shared/agent-types'
 import type { SessionTurnEvent } from '@superone/shared/environment'
 import { MessageBridge } from './message-bridge'
+import { claudeMessageOrigin } from './claude-message-origin'
 import { createClaudeAgentEventMapper } from './agent-event-mapper'
 import { applySdkMessage, createSdkMapState } from './map-sdk-message'
 import { withMcpAppsHostEnv, type ClaudeToolApps } from './mcp-apps'
@@ -40,6 +41,8 @@ export interface ClaudeLiveTurnInput {
   clientMessageId?: string
   /** When true (default if a turn is active), use SDK priority next. */
   priorityNext?: boolean
+  /** Transcript provenance; decides the SDK `origin` (see claudeMessageOrigin). */
+  source?: ChatMessageSource
   onDelta?: (text: string) => void
   onEvent?: (event: SessionTurnEvent) => void
   onAgentEvent?: (event: AgentEvent) => void
@@ -294,7 +297,9 @@ function toUserMessage(
   content: string | Array<Record<string, unknown>>,
   sessionId: string,
   priorityNext: boolean,
+  source: ChatMessageSource | undefined,
 ): SDKUserMessage {
+  const origin = claudeMessageOrigin(source)
   return {
     type: 'user',
     message: { role: 'user', content: content as never },
@@ -302,6 +307,7 @@ function toUserMessage(
     uuid: randomUUID(),
     session_id: sessionId,
     ...(priorityNext ? { priority: 'next' as const } : {}),
+    ...(origin ? { origin } : {}),
   } as SDKUserMessage
 }
 
@@ -433,7 +439,7 @@ export class ClaudeLiveSession {
     const tag = input.clientMessageId || randomUUID()
     const sessionId = this.sdkSessionId || ''
     const priorityNext = input.priorityNext !== false && this.isBusy
-    const msg = toUserMessage(input.content, sessionId, priorityNext)
+    const msg = toUserMessage(input.content, sessionId, priorityNext, input.source)
 
     return new Promise<ClaudeSdkTurnResult>((resolve, reject) => {
       if (input.signal?.aborted) {

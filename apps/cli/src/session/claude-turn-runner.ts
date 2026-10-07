@@ -478,6 +478,7 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
         clientMessageId: input.messageId,
         // If live is already busy, ClaudeLiveSession queues with priority next.
         priorityNext: true,
+        source: input.source,
         onDelta: input.onDelta,
         onEvent: input.onEvent,
         onAgentEvent: input.onAgentEvent,

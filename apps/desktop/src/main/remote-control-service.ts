@@ -1,4 +1,5 @@
 import { encryptHostPayload } from './remote/payload-codec'
+import { RelayDraftSaveThrottle } from './remote/relay-draft-save-throttle'
 import { RemoteEventBatcher } from './remote/event-batcher'
 import { webcrypto } from 'node:crypto'
 import { hostname } from 'node:os'
@@ -135,6 +136,10 @@ export class RemoteControlService {
   private terminalQueue: Promise<void> = Promise.resolve()
   private sendGeneration = 0
   private readonly eventBatcher = new RemoteEventBatcher((events, targets) => this.enqueueEvents(events, targets))
+  private readonly draftSaves = new RelayDraftSaveThrottle(
+    (event, targets) => this.queueSend([event], targets),
+    (targets) => this.draftRecipients(targets),
+  )
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private reconnectDelay = 1_000
   private intentionallyClosed = false
@@ -245,6 +250,14 @@ export class RemoteControlService {
       relayHttpUrl: relayWsToHttp(this.relayUrl),
       aesKey: this.keys.aesKey,
     }, onProgress)
+  }
+
+  private draftRecipients(targets?: string[]): { lan: string[]; relay: string[] } {
+    const recipients = { lan: [] as string[], relay: [] as string[] }
+    for (const [id, info] of this.connectedDevices) {
+      if (!targets || targets.includes(id)) recipients[this.primaryTransport(info)].push(id)
+    }
+    return recipients
   }
 
   private primaryTransport(info: ConnectedDevice): DeviceTransport {
@@ -396,6 +409,7 @@ export class RemoteControlService {
     await this.cancelPairing()
     this.intentionallyClosed = true
     this.eventBatcher.dispose()
+    this.draftSaves.dispose()
     this.sendGeneration++
     this.sendQueue = Promise.resolve()
     this.terminalQueue = Promise.resolve()
@@ -703,6 +717,11 @@ export class RemoteControlService {
     }
 
     if (SKIPPED_EVENTS.has(event.type)) return
+
+    if (event.type === 'draft_changed') {
+      this.draftSaves.route(event, targetDeviceIds)
+      return
+    }
 
     if (event.type === 'slash_command_output' && event.content.length > MAX_SLASH_OUTPUT) {
       this.queueSend([{ ...event, content: `${event.content.slice(0, MAX_SLASH_OUTPUT)}\n\n… output truncated` }], targetDeviceIds)

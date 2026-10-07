@@ -29,8 +29,10 @@ describe('opening a running session from mobile', () => {
       snapshot: { messages: [earlier, running], harnessId: providerId },
       isStreaming: () => true,
       getPendingInteractions: () => [],
+      getQueuedMessagesEvent: () => null,
       getCurrentSandboxInfo: () => undefined,
       getCurrentPermissionMode: () => 'default',
+      getUiSettings: () => ({}),
     }
     const client = {
       startBuffering() {},
@@ -73,4 +75,27 @@ it('restores all composer context from passive history without sending View HTML
   expect(restored.mcpAppContexts).toHaveLength(1)
   expect(restored.mcpAppContexts[0]).toMatchObject({ messageId: 'old-view', app: { modelContext: { updateId: 'r1' } } })
   expect(JSON.stringify(restored.mcpAppContexts)).not.toMatch(/private-html|tool-private/)
+})
+
+it('opens a session on the phone with the Ultracode the desktop session runs with', async () => {
+  const host = {
+    snapshot: { messages: [], harnessId: 'claude' },
+    isStreaming: () => false,
+    getPendingInteractions: () => [],
+    getQueuedMessagesEvent: () => null,
+    getCurrentSandboxInfo: () => undefined,
+    getCurrentPermissionMode: () => 'default',
+    getUiSettings: () => ({ ultracode: true }),
+  }
+  const client = {
+    startBuffering() {},
+    releaseBuffer: () => ({ epoch: 1, batches: [] }),
+    request: async (command: { type: string }) => command.type === 'get_session_state'
+      ? buildRemoteSessionSnapshot(host as never, '/project', 'session')
+      : command.type === 'load_session_messages' ? { messages: [], hasMore: false, provider: 'claude' } : { ok: true },
+  }
+  const runtime = new ChatRuntime(client as never, () => {})
+  await runtime.open('/project', 'session')
+  expect(runtime.session.ultracode).toBe(true)
+  runtime.dispose()
 })

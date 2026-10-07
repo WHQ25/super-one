@@ -815,6 +815,7 @@ export class AgentService {
                   ...(command.inputRequest ? { inputRequest: command.inputRequest } : {}),
                   ...(command.agent ? { agent: command.agent } : {}),
                   ...(command.modelParams ? { cursor: { params: command.modelParams } } : {}),
+                  ...(command.ultracode !== undefined ? { ultracode: command.ultracode } : {}),
                 }, { providerOrigin: 'remote', ...(onAccepted ? { onAccepted } : {}) })
                 await this.steerQueuedFromSend(session, command)
               })

@@ -10,6 +10,7 @@ import {
   modelPickerLabel,
   optionParamSummary,
   optionParamsForModel,
+  ultracodeAvailable,
 } from './model-picker-state'
 
 const claudeModels: ModelOption[] = [
@@ -252,5 +253,19 @@ describe('effort easter eggs', () => {
 
   it('stays quiet when effort is not a real choice', () => {
     expect(effortEasterEgg('claude', 'max', [{ value: 'max', label: 'Max' }])).toBe(null)
+  })
+})
+
+describe('ultracodeAvailable', () => {
+  const xhigh: Pick<ModelOption, 'supportedEffortLevels'> = { supportedEffortLevels: ['high', 'xhigh', 'max'] }
+
+  it('offers Ultracode where the harness reads it and the model has xhigh effort', () => {
+    expect(ultracodeAvailable('claude', xhigh, null)).toBe(true)
+    expect(ultracodeAvailable('claude', claudeModels[0], null)).toBe(false)
+    expect(ultracodeAvailable('codex', xhigh, null)).toBe(false)
+  })
+
+  it('leaves it to the mapped credential, which owns model and effort', () => {
+    expect(ultracodeAvailable('claude', xhigh, { default: { id: 'kimi-k2' } })).toBe(false)
   })
 })

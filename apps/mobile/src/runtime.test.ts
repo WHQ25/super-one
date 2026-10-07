@@ -41,6 +41,22 @@ function fakeClient(epoch = 1) {
 afterEach(() => vi.useRealTimers())
 
 describe('ChatRuntime', () => {
+  it('restores the host\'s Claude Ultracode and sends the phone\'s pick only when there is one', async () => {
+    const client = fakeClient()
+    const answer = client.request.getMockImplementation()!
+    client.request.mockImplementation(async (cmd) => cmd.type === 'get_session_state'
+      ? { status: 'idle', pendingInteractions: [], inProgressMessages: [], ultracode: true }
+      : answer(cmd))
+    const runtime = new ChatRuntime(client as never, () => {})
+    await runtime.open('/p', 'uc')
+    expect(runtime.session.ultracode).toBe(true)
+    runtime.send('off now', { ultracode: false })
+    runtime.send('no say')
+    const sends = client.sent.filter((cmd) => (cmd as { type: string }).type === 'send_message') as Array<{ content: string }>
+    expect(sends.find((cmd) => cmd.content === 'off now')).toMatchObject({ ultracode: false })
+    expect(sends.find((cmd) => cmd.content === 'no say')).not.toHaveProperty('ultracode')
+    runtime.dispose()
+  })
   it('clears the previous harness permission catalog when OpenCode offers no modes', async () => {
     const client = fakeClient()
     const runtime = new ChatRuntime(client as never, () => {})

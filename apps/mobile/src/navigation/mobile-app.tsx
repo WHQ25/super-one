@@ -492,6 +492,8 @@ export function MobileApp() {
       inject(webRef, { type: 'setConnection', ...connectionRef.current })
     }
     const surfaces = nativeInputs.sync(runtime)
+    // The host's Ultracode for this session; the picker and the border follow it.
+    harnessSelection.setHostUltracode(runtime.session.ultracode)
     const pending = surfaces.permission ?? surfaces.input
     const mentionArtworkRevision = dynamicMentionArtworkRevision()
     const includeMentionArtwork = hydrate || mentionArtworkRevision !== mentionArtworkRevisionRef.current
@@ -1698,6 +1700,7 @@ export function MobileApp() {
       ...(Object.keys(harnessSelection.modelParams).length
         ? { modelParams: harnessSelection.modelParams }
         : {}),
+      ...(harnessSelection.ultracodePick !== null ? { ultracode: harnessSelection.ultracodePick } : {}),
       clientMessageId,
       ...(queued ? { priority: 'next' as const } : {}),
       // Fold Stair into this send so it cannot race a follow-up steer RPC.

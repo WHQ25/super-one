@@ -16,6 +16,8 @@ export interface SelectorCatalogParam {
   kind: 'toggle' | 'choice'
   values: Array<{ value: string; label: string }>
   selected: string
+  /** Muted line under a toggle's label. */
+  description?: string
 }
 
 const EFFORT_VALUES = new Set(['low', 'medium', 'high', 'xhigh', 'max'])

@@ -107,6 +107,7 @@ export function OptionsSection({ params, onChange }: {
   params: SelectorCatalogParam[]; onChange: (id: string, value: string) => void
 }) {
   const { tokens: { colors, radius } } = useMobileTheme()
+  const { t } = useMobileLocale()
   const toggles = params.filter((param) => param.kind === 'toggle')
   const choices = params.filter((param) => param.kind === 'choice')
   if (!params.length) return null
@@ -114,11 +115,16 @@ export function OptionsSection({ params, onChange }: {
     {toggles.length ? <>
       <MenuSeparator />
       <SectionLabel>Options</SectionLabel>
-      {toggles.map((param) => <View key={param.id} style={{ minHeight: 44, flexDirection: 'row', alignItems: 'center',
-        justifyContent: 'space-between', gap: 12, paddingHorizontal: 8, borderRadius: radius.sm }}>
-        <Text numberOfLines={1} style={{ flex: 1, fontSize: 13, fontWeight: '500', color: colors.foreground }}>{param.label}</Text>
-        <Switch value={param.selected === 'true'} accessibilityLabel={param.label}
-          onValueChange={(enabled) => onChange(param.id, enabled ? 'true' : 'false')} />
+      {toggles.map((param) => <View key={param.id} style={{ minHeight: 44, justifyContent: 'center', paddingHorizontal: 8,
+        paddingVertical: param.description ? 6 : 0, borderRadius: radius.sm }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <Text numberOfLines={1} style={{ flex: 1, fontSize: 13, fontWeight: '500', color: colors.foreground }}>{param.label}</Text>
+          <Switch value={param.selected === 'true'} accessibilityLabel={param.label}
+            accessibilityHint={param.description ? t(param.description) : undefined}
+            onValueChange={(enabled) => onChange(param.id, enabled ? 'true' : 'false')} />
+        </View>
+        {/* The hint on its own line under label and switch, as the desktop selector draws it. */}
+        {param.description ? <Text style={{ marginTop: 2, fontSize: 12, color: colors.mutedForeground }}>{t(param.description)}</Text> : null}
       </View>)}
     </> : null}
     {choices.map((param) => <View key={param.id}>

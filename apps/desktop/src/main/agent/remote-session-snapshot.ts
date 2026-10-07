@@ -25,6 +25,7 @@ export async function buildRemoteSessionSnapshot(session: Session | undefined | 
     pendingInteractions,
     status,
     permissionMode: session?.getCurrentPermissionMode(),
+    ultracode: session?.getUiSettings().ultracode ?? false,
     isWorktree: snapshot?.isWorktree ?? false,
     worktreePath: snapshot?.worktreePath ?? null,
     gitBranch: snapshot?.gitBranch ?? null,

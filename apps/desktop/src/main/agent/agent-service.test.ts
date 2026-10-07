@@ -1428,6 +1428,7 @@ describe('AgentService.handleRemoteCommand', () => {
         getPendingInteractions: () => [],
         getQueuedMessagesEvent: () => null,
         getCurrentPermissionMode: () => 'default',
+        getUiSettings: () => ({ ultracode: true }),
         getCurrentSandboxInfo: () => ({ enabled: true, autoAllowBash: false }),
         setSandboxMode: vi.fn(async () => ({ enabled: true, autoAllowBash: true })),
         snapshot: {
@@ -1462,6 +1463,7 @@ describe('AgentService.handleRemoteCommand', () => {
         contextTokens: 82_400,
         totalCostUsd: 0.4213,
         sandboxInfo: { enabled: true, autoAllowBash: false },
+        ultracode: true,
       }))
     })
 

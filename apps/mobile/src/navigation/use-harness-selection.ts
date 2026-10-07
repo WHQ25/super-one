@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type {
   HarnessId,
   ModelOption,
@@ -14,8 +14,9 @@ import {
   effortOptionsForModel,
   resolveSelectedEffort,
   resolveSelectedModel,
+  selectedProviderModelEnv,
 } from '../model-selection-state'
-import { optionParamsForModel } from '../model-picker-state'
+import { optionParamsForModel, ultracodeAvailable, ultracodeOptionParam } from '../model-picker-state'
 import type { OpenedSessionSelection } from '../session-restore-selection'
 import { useMobileTheme } from '../theme/context'
 import type { DraftSessionSettings } from '@superone/shared/environment/draft-rpc'
@@ -61,6 +62,11 @@ export function useHarnessSelection() {
   // Codex Fast and Cursor catalog params are per model, so a model switch clears them.
   const [serviceTier, setServiceTier] = useState<string | null>(null)
   const [modelParams, setModelParams] = useState<Record<string, string>>({})
+  // Claude Ultracode is session state on the host. `hostUltracode` is what the
+  // open session reports; `ultracodePick` is this phone's switch, `null` until
+  // flipped, so a send never turns off what the desktop turned on.
+  const [hostUltracode, setHostUltracode] = useState(false)
+  const [ultracodePick, setUltracodePick] = useState<boolean | null>(null)
   const [permissionMode, setPermissionModeState] = useState('default')
   const [permissionModes, setPermissionModes] = useState<string[]>([
     'default',
@@ -141,6 +147,8 @@ export function useHarnessSelection() {
       ...(claimedAgentId !== undefined ? { selectedAgentId: claimedAgentId } : {}),
     }
 
+    // Opening a session: its own Ultracode, as the host reports it, holds.
+    if (current) setUltracodePick(null)
     setSystemInfo(info)
     setCatalogReady(true)
     // The catalog is the only thing that carries the host's brand hue, so this is
@@ -195,6 +203,8 @@ export function useHarnessSelection() {
     setSelectedProviderId(null)
     setServiceTier(null)
     setModelParams({})
+    setHostUltracode(false)
+    setUltracodePick(null)
     setSelectedAcpAgentId(provider === 'acp' ? acpAgentId : null)
   }
 
@@ -249,13 +259,31 @@ export function useHarnessSelection() {
   }
 
   const currentModel = models.find((model) => model.id === selectedModel)
+  const modelEnv = useMemo(
+    () => selectedProviderModelEnv({ providers: systemInfo.providers, activeProvider: systemInfo.activeProvider }, selectedProviderId),
+    [systemInfo.providers, systemInfo.activeProvider, selectedProviderId],
+  )
+  const canUltracode = ultracodeAvailable(selectedProvider, currentModel, modelEnv)
+  const ultracode = canUltracode && (ultracodePick ?? hostUltracode)
+  // A model or credential that cannot run it turns it off, as on desktop. No
+  // model yet is a catalog still loading, not an unsupported one.
+  useEffect(() => {
+    if (currentModel && !canUltracode && (ultracodePick ?? hostUltracode)) setUltracodePick(false)
+  }, [currentModel, canUltracode, ultracodePick, hostUltracode])
   const optionParams = useMemo(
-    () => optionParamsForModel(selectedProvider, currentModel, { serviceTier, params: modelParams }),
-    [selectedProvider, currentModel, serviceTier, modelParams],
+    () => [
+      ...optionParamsForModel(selectedProvider, currentModel, { serviceTier, params: modelParams }),
+      ...(canUltracode ? [ultracodeOptionParam(ultracode)] : []),
+    ],
+    [selectedProvider, currentModel, serviceTier, modelParams, canUltracode, ultracode],
   )
 
   /** Codex's Fast row is a service tier; every other param is a catalog value. */
   const setOptionParam = (id: string, value: string) => {
+    if (id === 'ultracode') {
+      setUltracodePick(value === 'true')
+      return
+    }
     if (selectedProvider === 'codex' && id === 'fast') {
       const next = value === 'true' ? findCodexFastServiceTier(currentModel)?.id ?? null : null
       claimed.current.serviceTier = next
@@ -311,6 +339,12 @@ export function useHarnessSelection() {
     selectProvider,
     optionParams,
     setOptionParam,
+    /** Whether the next turn runs as Ultracode, for the composer border. */
+    ultracode,
+    /** What a send says about Ultracode: the phone's pick, or nothing to keep the host's. */
+    ultracodePick,
+    /** The open session's Ultracode, as its host reports it. */
+    setHostUltracode,
     serviceTier,
     modelParams,
     permissionMode,

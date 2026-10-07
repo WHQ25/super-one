@@ -25,6 +25,8 @@ export type SessionSnapshot = {
   pendingInteractions?: AgentEvent[]
   status?: string
   permissionMode?: string
+  /** Claude Ultracode, session state the next turn runs with. */
+  ultracode?: boolean
   /** Runtime fact — the sandbox this session's process is actually confined by. */
   sandboxInfo?: SandboxInfo
   /**

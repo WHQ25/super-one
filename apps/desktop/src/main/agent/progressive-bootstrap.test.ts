@@ -13,7 +13,7 @@ it('hydrates the current live state from one bounded bootstrap without hidden bo
   ] }
   history.mockReturnValue({ messages: [{ ...source, status: 'interrupted' }], hasMore: true, cursor: 100 })
   const host = { snapshot: { harnessId: 'claude', messages: [source] }, isStreaming: () => true,
-    getPendingInteractions: () => [], getCurrentSandboxInfo: () => undefined, getCurrentPermissionMode: () => 'default' }
+    getPendingInteractions: () => [], getCurrentSandboxInfo: () => undefined, getCurrentPermissionMode: () => 'default', getUiSettings: () => ({}) }
   const request = vi.fn(async () => buildProgressiveBootstrap(host as never, '/p', 's'))
   const runtime = new ChatRuntime({ request, startBuffering() {}, releaseBuffer: () => ({ epoch: 1, batches: [] }) } as never, vi.fn())
   await runtime.open('/p', 's')

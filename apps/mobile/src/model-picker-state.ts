@@ -1,6 +1,7 @@
 import type { HarnessId, ModelOption, ProviderModelEnv, RemoteEffortOption, RemoteSystemInfo } from '@superone/shared/agent-types'
 import { resolveClaudeDisplayName, resolveClaudeEntries } from '@superone/shared/claude-model-mapping'
 import { findCodexFastServiceTier } from '@superone/shared/codex-fast-mode'
+import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { formatCodexModelName } from '@superone/shared/codex-model-label'
 import { selectorCatalogParams, type SelectorCatalogParam } from '@superone/shared/model-option-params'
 import { effortOptionsForModel } from './model-selection-state'
@@ -154,6 +155,32 @@ export function effortEasterEgg(
 ): 'max' | null {
   if (harness !== 'claude' || !hasSelectableEffort(efforts)) return null
   return effort === 'max' ? 'max' : null
+}
+
+/**
+ * Ultracode belongs to a harness that reads the `ultracode` keyword (Claude Code),
+ * which offers the session toggle on a model with xhigh effort. The desktop also
+ * hides it under a mapped credential, which owns model and effort.
+ */
+export function ultracodeAvailable(
+  harness: HarnessId,
+  model: Pick<ModelOption, 'supportedEffortLevels'> | undefined,
+  modelEnv: ProviderModelEnv | null,
+): boolean {
+  return HARNESS_CAPABILITIES[harness].promptKeywords.includes('ultracode')
+    && !modelEnv && !!model?.supportedEffortLevels?.includes('xhigh')
+}
+
+/** Claude's Ultracode switch under Options, with the desktop selector's hint (an English copy key). */
+export function ultracodeOptionParam(on: boolean): SelectorCatalogParam {
+  return {
+    id: 'ultracode',
+    label: 'Ultracode',
+    kind: 'toggle',
+    values: [{ value: 'false', label: 'Off' }, { value: 'true', label: 'On' }],
+    selected: on ? 'true' : 'false',
+    description: 'Use dynamic workflows on every task in this session.',
+  }
 }
 
 /** Trigger summary the desktop also shows: a non-default `optimize_for` pick. */

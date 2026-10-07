@@ -140,6 +140,7 @@ export class ChatRuntime {
       if (restored.snapshot.permissionMode) {
         session.permissionMode = restored.snapshot.permissionMode as SessionState['permissionMode']
       }
+      session.ultracode = restored.snapshot.ultracode ?? false
       if (restored.snapshot.status === 'streaming' || restored.snapshot.status === 'idle') {
         session.status = restored.snapshot.status
       }
@@ -461,6 +462,7 @@ export class ChatRuntime {
       ...(extra.modelParams && Object.keys(extra.modelParams).length
         ? { modelParams: extra.modelParams }
         : {}),
+      ...(extra.ultracode !== undefined ? { ultracode: extra.ultracode } : {}),
       clientMessageId,
       ...(extra.inputRequest ? { inputRequest: extra.inputRequest } : {}),
       ...(extra.priority ? { priority: extra.priority } : {}),

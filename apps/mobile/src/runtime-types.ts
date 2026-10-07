@@ -60,6 +60,8 @@ export type SendMessageOptions = {
   serviceTier?: string | null
   /** Cursor catalog params (param id → value). */
   modelParams?: Record<string, string>
+  /** Claude Ultracode toggle; omitted keeps the session's. */
+  ultracode?: boolean
   clientMessageId?: string
   inputRequest?: import('@superone/shared/input-request').InputRequestSubmission
   priority?: 'now' | 'next' | 'later'

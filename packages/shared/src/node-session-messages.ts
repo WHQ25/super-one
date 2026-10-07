@@ -20,7 +20,7 @@ export type NodeTranscriptBlock = {
   createdAt?: number
 }
 
-export type NodePendingInteraction = Pick<PermissionRequest, 'schemaForm' | 'elicitationForm' | 'subtitle' | 'riskLevel' | 'supportsAlwaysPersist' | 'inputRequest'> & {
+export type NodePendingInteraction = Pick<PermissionRequest, 'schemaForm' | 'elicitationForm' | 'subtitle' | 'riskLevel' | 'supportsAlwaysPersist' | 'inputRequest' | 'permissionDetails'> & {
   interactionId: string
   kind?: 'permission' | 'question' | 'plan' | 'session_agents_confirm'
   toolName?: string
@@ -126,6 +126,7 @@ export function nodePendingToPermissionRequest(
     allowAlwaysAllow: requestKind === 'mcp_elicitation' ? !schemaForm && pending.allowAlwaysAllow === true : pending.allowAlwaysAllow !== false,
     ...(requestKind ? { requestKind } : {}),
     ...(pending.message ? { message: pending.message } : {}),
+    ...(pending.permissionDetails ? { permissionDetails: pending.permissionDetails } : {}),
     ...(pending.serverName ? { serverName: pending.serverName } : {}),
     ...(elicitationUrl ? { elicitationUrl, subtitle: elicitationUrl } : {}),
     ...(elicitationId ? { elicitationId } : {}),

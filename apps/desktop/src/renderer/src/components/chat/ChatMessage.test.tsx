@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatMessage as ChatMessageType } from '@superone/shared/agent-types'
 import { ChatMessage, findLastAssistantMessageId, isRedundantTurnSummaryMarker } from './ChatMessage'
@@ -92,6 +92,58 @@ describe('ChatMessage delegated Codex state', () => {
     )
 
     expect(screen.getByTestId('codex-turn')).toHaveAttribute('data-working', 'true')
+  })
+})
+
+describe('OpenCode patch Detail statistics', () => {
+  const patchText = '*** Begin Patch\n*** Update File: /test/a.ts\n@@\n-old\n+new\n+extra\n*** Update File: /test/a.ts\n@@\n-old2\n+new2\n*** Add File: /test/b.ts\n+one\n+two\n*** End Patch'
+
+  function message(result = 'Applied', isError = false): ChatMessageType {
+    return {
+      ...createClaudeMessage([
+        { type: 'tool_use', toolName: 'Read', toolUseId: 'read', input: '{"file_path":"/test/a.ts"}', status: 'complete' },
+        { type: 'tool_result', toolUseId: 'read', summary: '' },
+        { type: 'tool_use', toolName: 'patch', toolUseId: 'patch', input: JSON.stringify({ patchText }), status: 'complete' },
+        { type: 'tool_result', toolUseId: 'patch', summary: result, isError },
+        { type: 'tool_use', toolName: 'CodeExecution', toolUseId: 'code', input: '{"code":"return 42"}', status: 'complete' },
+        { type: 'tool_result', toolUseId: 'code', summary: '42' },
+        { type: 'text', text: 'Patched the files.' },
+      ]),
+      providerId: 'opencode',
+    }
+  }
+
+  it('counts patch files/lines under Detail and matches the tool header after disclosure', async () => {
+    useAppStore.setState({ detailChatMode: false, autoExpandFileDiffs: false })
+    const { container } = render(<ChatMessage message={message()} sessionStatus="idle" isLastAssistant />)
+    const detail = container.querySelector('.turn-detail-section > button') as HTMLButtonElement
+    expect(detail).not.toBeNull()
+    expect(within(detail).getByTitle('3 tool calls')).toHaveTextContent('3')
+    expect(within(detail).getByTitle('2 files changed')).toHaveTextContent('2')
+    expect(within(detail).getByText('+5')).toBeInTheDocument()
+    expect(within(detail).getByText('-2')).toBeInTheDocument()
+    await act(async () => { fireEvent.click(detail) })
+    const patch = container.querySelector('[data-tool-use-id="patch"]') as HTMLElement
+    expect(within(patch).getByText('2 files')).toBeInTheDocument()
+    expect(within(patch).getByText('+5')).toBeInTheDocument()
+    expect(within(patch).getByText('-2')).toBeInTheDocument()
+    // UI-only child file rows never become extra calls or double-count Detail.
+    await act(async () => { fireEvent.click(within(patch).getByText('Patch Applied')) })
+    expect(within(detail).getByTitle('3 tool calls')).toHaveTextContent('3')
+    expect(within(detail).getByText('+5')).toBeInTheDocument()
+  })
+
+  it.each([
+    ['failed', 'Patch failed', true],
+    ['denied', '[denied] Not permitted', true],
+  ])('does not count %s patch mutations in Detail', (_status, result, isError) => {
+    useAppStore.setState({ detailChatMode: false })
+    const { container } = render(<ChatMessage message={message(result, isError)} sessionStatus="idle" isLastAssistant />)
+    const detail = container.querySelector('.turn-detail-section > button') as HTMLButtonElement
+    expect(within(detail).getByTitle('3 tool calls')).toBeInTheDocument()
+    expect(within(detail).queryByTitle('2 files changed')).toBeNull()
+    expect(within(detail).queryByText('+5')).toBeNull()
+    expect(within(detail).queryByText('-2')).toBeNull()
   })
 })
 

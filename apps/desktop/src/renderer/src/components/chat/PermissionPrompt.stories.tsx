@@ -79,6 +79,68 @@ const EDIT_DIFF = [
   '   }',
 ].join('\n')
 
+const OPEN_CODE_EXTERNAL: PermissionRequest = {
+  requestId: 'p-opencode-external', toolName: 'external_directory', toolUseId: 'call-read',
+  input: {}, allowAlwaysAllow: true, supportsAlwaysPersist: true,
+  permissionDetails: {
+    action: 'external_directory',
+    resources: ['/Users/me/Developer/reference-project/*', '/private/var/folders/04/super-one-attachments/*'],
+    save: ['/Users/me/Developer/reference-project/*'],
+    source: { toolName: 'read', toolUseId: 'call-read', messageId: 'msg-reference', input: { path: '/Users/me/Developer/reference-project/docs/spec.md', offset: 1, limit: 200 } },
+    metadata: { reason: 'Compare the reference implementation before updating the integration' },
+  },
+}
+
+/** Permission action, full scope and called-tool args are separate, even with empty metadata. */
+export const OpenCodeExternalDirectory: Story = {
+  render: () => <><SeedPermission request={OPEN_CODE_EXTERNAL} sessionProvider="opencode" /><PermissionPrompt request={OPEN_CODE_EXTERNAL} /></>,
+}
+
+export const OpenCodePermissionNarrow: Story = {
+  render: () => <StoryShell width={320}><SeedPermission request={OPEN_CODE_EXTERNAL} sessionProvider="opencode" /><PermissionPrompt request={OPEN_CODE_EXTERNAL} /></StoryShell>,
+}
+
+const OPEN_CODE_RESTORED: PermissionRequest = {
+  ...OPEN_CODE_EXTERNAL, requestId: 'p-opencode-restored', allowAlwaysAllow: false,
+  permissionDetails: { action: 'external_directory', resources: ['/outside/reference/*'], source: { toolUseId: 'call-before-reconnect', messageId: 'msg-before-reconnect' } },
+}
+
+export const OpenCodeRestoredPermission: Story = {
+  render: () => <><SeedPermission request={OPEN_CODE_RESTORED} sessionProvider="opencode" /><PermissionPrompt request={OPEN_CODE_RESTORED} /></>,
+}
+
+const OPEN_CODE_SHELL: PermissionRequest = {
+  requestId: 'p-opencode-shell', toolName: 'shell', input: {}, allowAlwaysAllow: true,
+  message: 'Inspect the status of the reference repository',
+  permissionDetails: { action: 'shell', resources: ['git -C /Users/me/Developer/reference-project status --short', 'git -C /Users/me/Developer/reference-project diff --stat'], save: ['git *'],
+    source: { toolName: 'shell', toolUseId: 'call-shell', input: { command: 'git status --short && git diff --stat', workdir: '/Users/me/Developer/reference-project', description: 'Inspect the reference repository' } },
+    metadata: { scanner: { commands: 2 } } },
+}
+
+export const OpenCodeShellPermission: Story = {
+  render: () => <><SeedPermission request={OPEN_CODE_SHELL} sessionProvider="opencode" /><PermissionPrompt request={OPEN_CODE_SHELL} /></>,
+}
+
+const OPEN_CODE_EDIT: PermissionRequest = {
+  requestId: 'p-opencode-edit', toolName: 'edit', input: {}, allowAlwaysAllow: true,
+  permissionDetails: { action: 'edit', resources: ['/Users/me/Developer/reference-project/src/config.ts'], save: ['/Users/me/Developer/reference-project/src/*'],
+    metadata: { diff: '@@ -1,2 +1,2 @@\n-export const enabled = false\n+export const enabled = true\n export const version = 2' },
+    source: { toolName: 'edit', toolUseId: 'call-edit', input: { path: '/Users/me/Developer/reference-project/src/config.ts', oldString: 'enabled = false', newString: 'enabled = true' } } },
+}
+
+export const OpenCodeEditPermission: Story = {
+  render: () => <><SeedPermission request={OPEN_CODE_EDIT} sessionProvider="opencode" /><PermissionPrompt request={OPEN_CODE_EDIT} /></>,
+}
+
+const OPEN_CODE_WILDCARD: PermissionRequest = {
+  ...OPEN_CODE_EXTERNAL, requestId: 'p-opencode-all', permissionDetails: { action: 'external_directory', resources: ['/outside/reference/*'], save: ['*'] },
+}
+
+/** Choose Remember: the preview explicitly warns that `*` exceeds the current directory. */
+export const OpenCodeBroadSavedScope: Story = {
+  render: () => <><SeedPermission request={OPEN_CODE_WILDCARD} sessionProvider="opencode" /><PermissionPrompt request={OPEN_CODE_WILDCARD} /></>,
+}
+
 export const BashCommand: Story = {
   decorators: [(Story) => (
     <>

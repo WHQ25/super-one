@@ -44,6 +44,13 @@ export function mapOpenCodePermissionRequest(input: {
     allowAlwaysAllow: (input.always?.length ?? 0) > 0,
     supportsAlwaysPersist: (input.always?.length ?? 0) > 0,
     message: input.patterns.join('\n') || input.permission,
+    permissionDetails: {
+      action: input.permission,
+      resources: input.patterns,
+      save: input.always,
+      metadata: input.metadata,
+      source: input.toolUseId ? { toolUseId: input.toolUseId } : undefined,
+    },
   }
 }
 

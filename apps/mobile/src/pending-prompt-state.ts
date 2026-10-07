@@ -1,6 +1,8 @@
 import type { PermissionRequest, PlanApprovalRequest } from '@superone/shared/agent-types'
 import { permissionSheetPresentation } from './permission-sheet-state'
 import { permissionToolContent } from './prompts/prompt-content'
+import { permissionDetailSummary } from '@superone/shared/permission-details'
+import { permissionPresentation, permissionPresentationTitle } from '@superone/shared/permission-presentation'
 
 /**
  * A decision the agent is waiting on. The sheet shows it; an outside tap puts
@@ -38,22 +40,24 @@ export function collapsedPendingPrompts(
   return prompts.filter((prompt) => collapsed.has(prompt.request.requestId))
 }
 
-export function permissionPromptTitle(request: PermissionRequest): string {
+export function permissionPromptTitle(request: PermissionRequest, translate: (source: string) => string = value => value): string {
+  const presentation = permissionPresentation(request)
+  if (presentation) return permissionPresentationTitle(presentation, translate)
   if (request.requestKind) return permissionSheetPresentation(request).title
   if (request.toolName === 'SandboxNetworkAccess') return 'Allow sandbox network access'
   return request.toolName.replace(/^mcp__.*?__/, '').replaceAll('_', ' ')
 }
 
-export function pendingPromptHeader(prompt: PendingPrompt): PendingPromptHeader {
+export function pendingPromptHeader(prompt: PendingPrompt, translate: (source: string) => string = value => value): PendingPromptHeader {
   switch (prompt.kind) {
     case 'permission': {
       const { request } = prompt
       const content = permissionToolContent(request)
       return {
-        title: permissionPromptTitle(request),
+        title: permissionPromptTitle(request, translate),
         detail: request.requestKind
           ? permissionSheetPresentation(request).description ?? ''
-          : content.fileName || content.command || content.target || content.description,
+          : permissionDetailSummary(request, content.fileName || content.command || content.target || content.description),
       }
     }
     case 'plan':

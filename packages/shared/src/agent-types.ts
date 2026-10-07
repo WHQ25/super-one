@@ -1168,6 +1168,19 @@ export interface PermissionRequest {
   toolUseId?: string
   input: Record<string, unknown>
   decisionReason?: string
+  /** Permission scope is not the triggering tool's input; keep both for HITL review. */
+  permissionDetails?: {
+    action: string
+    resources: string[]
+    save?: string[]
+    metadata?: Record<string, unknown>
+    source?: {
+      toolName?: string
+      toolUseId?: string
+      messageId?: string
+      input?: Record<string, unknown>
+    }
+  }
   blockedPath?: string
   allowAlwaysAllow: boolean
   /**
@@ -5101,7 +5114,7 @@ export type RemoteCommand =
    */
   | { type: 'fork_session'; requestId: string; projectPath: string; sessionId: string; mode: SessionForkMode }
   | { type: 'list_models'; requestId: string; projectPath: string }
-  | { type: 'get_system_info'; requestId: string; projectPath: string; provider: HarnessId }
+  | { type: 'get_system_info'; requestId: string; projectPath: string; provider: HarnessId; force?: boolean }
   /**
    * Subscription meter for the credential a session bills. `sessionId` lets the
    * host read through that session's live runtime (Grok billing rides the ACP

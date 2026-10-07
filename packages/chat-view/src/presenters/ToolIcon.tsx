@@ -1,4 +1,4 @@
-import { Terminal, FileText, FileEdit, FilePlus, Search, FolderSearch, Globe, Download, MessageCircleQuestion, Wrench, Plug, ClipboardList, Bot, BookOpen, Paintbrush, Toolbox, Package, Pencil, Image as ImageIcon, Smartphone, LayoutDashboard } from 'lucide-react'
+import { Terminal, FileText, FileEdit, FilePlus, Search, FolderSearch, Globe, Download, MessageCircleQuestion, Wrench, Plug, ClipboardList, Bot, BookOpen, Paintbrush, Toolbox, Package, Pencil, Image as ImageIcon, Smartphone, LayoutDashboard, SquareCode } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { McpIcon } from '@superone/ui/components/ui/McpIcon'
 import { McpAppIcon } from '@superone/ui/components/ui/mcp-app-icon'
@@ -6,6 +6,7 @@ import type { ToolIcon as ToolIconName } from './tool-display'
 
 const iconComponents: Record<ToolIconName, React.FC<{ className?: string }>> = {
   'terminal': Terminal,
+  'code': SquareCode,
   'file-text': FileText,
   'file-edit': FileEdit,
   'file-plus': FilePlus,

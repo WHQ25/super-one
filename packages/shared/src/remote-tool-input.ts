@@ -1,3 +1,6 @@
+import { normalizeTranscriptTool, parseMcpToolName } from './tool-ui'
+import { isPatchToolName, patchToolFiles } from './patch-tool'
+
 /**
  * Block type a tool call is remapped to before it leaves for a remote surface, so the
  * phone's reducer can group and route without re-deriving it from the tool name.
@@ -59,6 +62,7 @@ const BUILTIN_TOOL_INPUT_FIELDS: Record<string, readonly string[]> = {
   MemoryGet: ['path', 'file_path'],
   WebFetch: ['url'],
   Skill: ['skill'],
+  Patch: ['files'],
   Agent: ['name', 'subagent_type', 'description', 'model', 'team_name', 'prompt', 'run_in_background'],
   Task: ['name', 'subagent_type', 'description', 'model', 'team_name', 'prompt', 'run_in_background'],
   // `source` is Grok's `{ type: 'name' | 'script_path', name?, script_path? }` launch target.
@@ -100,7 +104,9 @@ function sanitizeBuiltinInput(toolName: string, input: string): string {
   let parsed: unknown
   try { parsed = JSON.parse(input) } catch { return '' }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return ''
-  const source = parsed as Record<string, unknown>
+  const source = toolName === 'Patch'
+    ? { files: patchToolFiles(parsed as Record<string, unknown>).map(({ diff: _diff, ...file }) => file) }
+    : normalizeTranscriptTool(toolName, parsed as Record<string, unknown>).input
   const safe = toolName === 'AskUserQuestion'
     ? sanitizeAskUserQuestionInput(source)
     : {}
@@ -380,6 +386,22 @@ function sanitizeWorkflowInput(toolName: string, input: string): string {
 
 /** Privacy-preserving tool input projected into the remote transcript. */
 export function sanitizeRemoteToolInput(toolName: string, input: string): string {
+  // Historical OpenCode turns predate the canonical live adapter. Normalize before
+  // selecting privacy fields, or Read.path / Skill.id disappear before the UI sees them.
+  if (toolName === 'skill') toolName = 'Skill'
+  if (isPatchToolName(toolName)) toolName = 'Patch'
+  if (toolName === 'CodeExecution') return '{"language":"JavaScript"}'
+  if (toolName === 'execute' || toolName === 'Edit') {
+    try {
+      const params = JSON.parse(input)
+      if (toolName === 'execute' && typeof params?.code === 'string') return '{"language":"JavaScript"}'
+      if (toolName === 'Edit' && (typeof params?.patchText === 'string' || params?.patch === true)) {
+        return JSON.stringify({ patch: true, files: patchToolFiles(params).map(({ diff: _diff, ...file }) => file) })
+      }
+    } catch { /* partial input still follows the ordinary privacy projection */ }
+  }
+  const mcp = parseMcpToolName(toolName)
+  if (mcp) toolName = `mcp__${mcp.serverName}__${mcp.mcpToolName}`
   if (shouldKeepRemoteToolInput(toolName)) return input
   return sanitizeBuiltinInput(toolName, input)
     || sanitizeSuperoneRowInput(toolName, input)

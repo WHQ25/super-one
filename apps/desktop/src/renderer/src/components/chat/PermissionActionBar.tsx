@@ -107,6 +107,8 @@ export function ApproveRejectBar({
   approveLabel,
   rejectLabel,
   approveDisabled,
+  approveTone = 'approve',
+  rejectTone = 'reject',
   enterApproves = true,
   requireExplicitApproval = false,
   approveSuffix,
@@ -121,6 +123,9 @@ export function ApproveRejectBar({
   approveLabel?: string
   rejectLabel?: string
   approveDisabled?: boolean
+  /** A remember-confirm step escalates with brand tone and cancels neutrally. */
+  approveTone?: PermissionActionTone
+  rejectTone?: PermissionActionTone
   /**
    * Whether a bare Enter approves. False when the harness flagged the ask as
    * `defaultToNo`: the approve button then carries no key hint and Enter rejects.
@@ -165,7 +170,7 @@ export function ApproveRejectBar({
     <>
       <PermissionActionButton
         ref={approveRef}
-        tone="approve"
+        tone={approveTone}
         disabled={approveDisabled}
         onClick={onApprove}
         kbd={requireExplicitApproval ? '⌘↵' : enterRejects ? undefined : '⏎'}
@@ -174,7 +179,7 @@ export function ApproveRejectBar({
         {approveSuffix}
       </PermissionActionButton>
       {extraActions}
-      <PermissionActionButton ref={rejectRef} tone="reject" onClick={onReject} kbd={!requireExplicitApproval && enterRejects ? '↵' : 'esc'}>
+      <PermissionActionButton ref={rejectRef} tone={rejectTone} onClick={onReject} kbd={!requireExplicitApproval && enterRejects ? '↵' : 'esc'}>
         {rejectLabel ?? t('chat.permission.deny')}
       </PermissionActionButton>
     </>

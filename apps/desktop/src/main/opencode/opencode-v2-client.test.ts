@@ -53,6 +53,34 @@ describe('OpenCodeV2Client', () => {
     expect(fetch).toHaveBeenCalledTimes(2)
   })
 
+  it('discovers the complete resource catalog after cold location and provider settlement', async () => {
+    const model = { id: 'gpt', providerID: 'openai', name: 'GPT', enabled: true, variants: [{ id: 'high' }], limit: { context: 200_000 } }
+    let agentRequests = 0
+    let modelRequests = 0
+    const fetch = vi.fn(async (url: string) => {
+      const path = new URL(url).pathname
+      expect(new URL(url).searchParams.get('location[directory]')).toBe('/project dir')
+      if (path === '/api/agent') return json({ data: ++agentRequests === 1 ? [] : [
+        { id: 'build', name: 'Build', description: 'Implement changes', mode: 'primary', hidden: false },
+        { id: 'hidden', name: 'Hidden', mode: 'primary', hidden: true },
+        { id: 'helper', name: 'Helper', mode: 'subagent', hidden: false },
+      ] })
+      if (path === '/api/model') return json({ data: ++modelRequests === 1 ? [] : [model] })
+      if (path === '/api/model/default') return json({ data: model })
+      if (path === '/api/provider') return json({ data: [{ id: 'openai', name: 'OpenAI' }] })
+      if (path === '/api/command') return json({ data: [{ name: 'review', description: 'Review changes' }] })
+      throw new Error(`Unexpected catalog route: ${path}`)
+    })
+    vi.stubGlobal('fetch', fetch)
+
+    const resources = await client().resources()
+    expect(resources.models).toMatchObject([{ id: 'openai/gpt', isDefault: true, supportedEffortLevels: ['high'] }])
+    expect(resources.agents).toEqual([{ id: 'build', name: 'Build', description: 'Implement changes', modelId: undefined }])
+    expect(resources.commands).toContainEqual({ name: 'review', description: 'Review changes', argumentHint: '', isSkill: false })
+    expect(agentRequests).toBe(2)
+    expect(modelRequests).toBe(2)
+  })
+
   it('locates sessions at the resolved directory', async () => {
     const real = mkdtempSync(join(tmpdir(), 'opencode-v2-'))
     const link = `${real}-link`

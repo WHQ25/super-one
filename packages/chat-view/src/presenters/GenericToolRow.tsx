@@ -27,6 +27,9 @@ import { grokAutoClassifierDenyText } from './grok-auto-deny'
 import { isWorkflowSmokeCheck } from './workflow-utils'
 import type { RemoteDiffTokens } from './remote-diff'
 import type { BashEditDiff, QuestionPreviewFormat } from '@superone/shared/agent-types'
+import { normalizeTranscriptTool } from '@superone/shared/tool-ui'
+import { isPatchToolCall, isPatchToolName, patchFileToolUse, type PatchToolFile } from '@superone/shared/patch-tool'
+import { CodeExecutionToolRow, PatchToolRow } from './NativeCodeToolRow'
 
 const DIFF_TOOLS = new Set(['Edit', 'Write', 'FileChange'])
 const FILE_PATH_TOOLS = new Set(['Read', 'Edit', 'Write', 'NotebookEdit', 'FileChange', 'Delete'])
@@ -171,7 +174,44 @@ function ToolResult({ text }: { text: string }) {
  * It reads only the block fields the phone already receives, so the WebView renders the
  * same row the desktop does — the differences live entirely in `ports`.
  */
-export function GenericToolRowPresenter({
+export function GenericToolRowPresenter(props: GenericToolRowProps) {
+  if (isPatchToolName(props.toolName)) return renderPatchRow(props)
+  if (props.toolName === 'CodeExecution') return <CodeExecutionToolRow {...props} />
+  // Old turns retain wire names. Require their input shape so a Grok `execute`
+  // shell alias or an unrelated Edit call cannot turn into a Code Mode/patch row.
+  if (props.toolName === 'execute' || props.toolName === 'Edit') {
+    const params = parseToolInput(props.input, props.toolName)
+    if (props.toolName === 'execute' && (typeof params.code === 'string' || params.language === 'JavaScript')) return <CodeExecutionToolRow {...props} />
+    if (isPatchToolCall(props.toolName, params)) return renderPatchRow(props)
+  }
+  return <GenericToolRow {...props} />
+}
+
+function renderPatchRow(props: GenericToolRowProps) {
+  return <PatchToolRow {...props} renderFileTool={(file, index) => <PatchFileRow file={file} index={index} parent={props} />} />
+}
+
+/** The native per-file row used by Bash, with patch source rather than a working-tree snapshot. */
+function PatchFileRow({ file, index, parent }: { file: PatchToolFile; index: number; parent: GenericToolRowProps }) {
+  const row = useMemo(() => patchFileToolUse(parent.toolUseId ?? '', index, file), [parent.toolUseId, index, file])
+  const ports = useMemo(() => ({
+    ...parent.ports,
+    streamingInputPreview: undefined,
+    renderFileChip: file.movePath ? (props: FileChipPortProps) => <>
+      {parent.ports.renderFileChip({ name: file.path.split('/').pop() ?? file.path, title: file.path, filePath: file.path })}
+      <span className="text-muted-foreground">→</span>
+      {parent.ports.renderFileChip(props)}
+    </> : parent.ports.renderFileChip,
+  }), [parent.ports, file.movePath, file.path])
+  return <GenericToolRow
+    toolName={row.toolName} toolUseId={row.toolUseId} input={row.input} filePath={row.filePath}
+    toolDiff={file.diff} toolLineDelta={{ added: file.added, removed: file.removed }}
+    status={parent.status ?? 'complete'} allowExpand={parent.allowExpand}
+    autoExpandFileDiffs={parent.autoExpandFileDiffs} ports={ports}
+  />
+}
+
+function GenericToolRow({
   presentation,
   hasDeferredDetails,
   trailing,
@@ -179,7 +219,7 @@ export function GenericToolRowPresenter({
   detailStatus,
   onDetailRetry,
   onExpandedChange,
-  toolName,
+  toolName: rawToolName,
   toolUseId,
   filePath,
   input,
@@ -198,10 +238,15 @@ export function GenericToolRowPresenter({
   ports,
 }: GenericToolRowProps) {
   const { t } = useTranslation()
+  // Saved OpenCode Skill calls predate live name normalization. Do not apply
+  // all Grok aliases here: OpenCode's `execute` is code mode, not a Bash call.
+  const toolName = rawToolName === 'skill' ? 'Skill' : rawToolName
   const shouldAutoExpandDiff = allowExpand && (autoExpand ?? defaultAutoExpand ?? autoExpandFileDiffs)
   const parsedParams = useMemo(() => parseToolInput(input, toolName), [input, toolName])
   const isStreaming = status === 'streaming'
-  const params = isStreaming && ports.streamingInputPreview ? ports.streamingInputPreview : parsedParams
+  const params = useMemo(() => isStreaming && ports.streamingInputPreview
+    ? normalizeTranscriptTool(toolName, ports.streamingInputPreview).input
+    : parsedParams, [isStreaming, ports.streamingInputPreview, toolName, parsedParams])
   const display = useMemo(() => getToolDisplay(toolName, params, ports.cwd, ports.homedir), [toolName, params, ports.cwd, ports.homedir])
   const mcpInfo = parseMcpToolName(toolName)
   const isMcp = mcpInfo !== null
@@ -277,7 +322,7 @@ export function GenericToolRowPresenter({
   const drawsResult = toolName !== 'Read' && toolName !== 'Skill' && toolName !== 'AskUserQuestion'
   const hasResult = !!cleanResult && drawsResult && (hasDeferredDetails || (!isStreaming && !isDenied))
   const hasQA = toolName === 'AskUserQuestion' && !!cleanResult && !isStreaming && !isQuestionDismissed
-  const expandable = allowExpand && ((hasDeferredDetails && drawsResult) || hasDiff || hasResult || hasQA || showDeniedFeedback)
+  const expandable = allowExpand && ((hasDeferredDetails && drawsResult) || hasDiff || hasResult || hasQA || showDeniedFeedback || (showError && !!cleanResult))
 
   // Prefer parsed input summary; fall back to ACP/main toolSummary (Grok title / raw_output).
   // Remote surfaces invert that — see `preferSentSummary`.
@@ -285,7 +330,7 @@ export function GenericToolRowPresenter({
   const summary = (ports.preferSentSummary
     ? (sentSummary || display.summary)
     : (display.summary || sentSummary))
-    || (!isMcp && display.icon === 'wrench' && input.length > 0
+    || (!isMcp && toolName !== 'Skill' && display.icon === 'wrench' && input.length > 0
       ? (input.length > 80 ? input.slice(0, 80) + '…' : input)
       : '')
 

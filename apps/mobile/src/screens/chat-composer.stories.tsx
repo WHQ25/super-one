@@ -80,7 +80,11 @@ function OpenCodeAgentsPreview() {
   const [agent, setAgent] = useState('plan')
   return <Preview {...base} provider="opencode" permissionModes={[]} tablet={false} selection={{
     ...base.selection!, agent, onAgent: setAgent,
-    agents: [{ id: 'build', name: 'Build' }, { id: 'plan', name: 'Plan' }, { id: 'reviewer', name: 'Reviewer' }],
+    agents: [
+      { id: 'build', name: 'Build', description: 'Implement changes using your configured permissions.' },
+      { id: 'plan', name: 'Plan', description: 'Explore the project and prepare a plan.' },
+      { id: 'reviewer', name: 'Reviewer', description: 'A custom primary agent from OpenCode.' },
+    ],
     onRefresh: async () => { await new Promise((resolve) => setTimeout(resolve, 700)) },
   }} />
 }

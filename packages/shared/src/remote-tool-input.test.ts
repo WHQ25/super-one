@@ -2,6 +2,28 @@ import { describe, expect, it } from 'vitest'
 import { sanitizeRemoteToolInput, shouldKeepRemoteToolInput } from './remote-tool-input'
 
 describe('remote tool input exemptions', () => {
+  it('projects patch file headers and code-mode identity without patch bodies or JavaScript source', () => {
+    const patchText = '*** Begin Patch\n*** Update File: /repo/a.ts\n@@\n-secret-old\n+secret-new\n*** End Patch'
+    for (const name of ['Patch', 'patch', 'apply_patch']) {
+      expect(JSON.parse(sanitizeRemoteToolInput(name, JSON.stringify({ patchText })))).toEqual({ files: [{ path: '/repo/a.ts', kind: 'update', added: 1, removed: 1 }] })
+    }
+    expect(sanitizeRemoteToolInput('CodeExecution', '{"code":"private script"}')).toBe('{"language":"JavaScript"}')
+    expect(sanitizeRemoteToolInput('execute', '{"code":"private script"}')).toBe('{"language":"JavaScript"}')
+    expect(sanitizeRemoteToolInput('execute', '{"command":"private shell"}')).toBe('')
+    expect(JSON.parse(sanitizeRemoteToolInput('Edit', JSON.stringify({ patchText })))).toEqual({ patch: true, files: [{ path: '/repo/a.ts', kind: 'update', added: 1, removed: 1 }] })
+  })
+
+  it('preserves OpenCode file chips and skill names from historical inputs while stripping bodies', () => {
+    expect(JSON.parse(sanitizeRemoteToolInput('Read', '{"path":"/repo/a.ts","offset":5,"limit":10}')))
+      .toEqual({ file_path: '/repo/a.ts', offset: 5, limit: 10 })
+    expect(JSON.parse(sanitizeRemoteToolInput('skill', '{"id":"opencode","body":"private"}')))
+      .toEqual({ skill: 'opencode' })
+    expect(JSON.parse(sanitizeRemoteToolInput('Edit', '{"filePath":"/repo/a.ts","oldString":"private","newString":"secret"}')))
+      .toEqual({ file_path: '/repo/a.ts' })
+    expect(JSON.parse(sanitizeRemoteToolInput('superone_browser_snapshot', '{"description":"Inspect checkout","selector":"#private"}')))
+      .toEqual({ description: 'Inspect checkout' })
+  })
+
   it('keeps only inputs needed by native mobile actions', () => {
     expect(shouldKeepRemoteToolInput('mcp__superone__widget_show')).toBe(true)
     expect(shouldKeepRemoteToolInput('mcp__superone__media_generate_image')).toBe(true)

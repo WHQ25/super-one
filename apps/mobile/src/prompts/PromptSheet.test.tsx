@@ -8,6 +8,45 @@ import { PermissionSheet } from './PermissionSheet'
 
 const bash: PermissionRequest = { requestId: 'perm-1', toolName: 'Bash', input: { command: 'bun run test' }, allowAlwaysAllow: true }
 
+test('external-directory approval uses a semantic title and keeps call context behind technical details', async () => {
+  const onAllow = jest.fn()
+  const request: PermissionRequest = {
+    requestId: 'per_external', toolName: 'external_directory', input: {}, allowAlwaysAllow: false,
+    permissionDetails: { action: 'external_directory', resources: ['/outside/reference/*', '/outside/second/*'], save: ['/outside/*'],
+      source: { toolName: 'read', toolUseId: 'call_read', input: { path: '/outside/reference/spec.md', limit: 200 } },
+      metadata: { reason: 'Reference implementation' } },
+  }
+  await renderSheet(<PermissionSheet perm={request} onAllow={onAllow} onDeny={() => {}} />)
+  expect(screen.getByText('Access External Directory /outside/reference')).toBeTruthy()
+  expect(screen.getByText('/outside/reference/*\n/outside/second/*')).toBeTruthy()
+  expect(screen.queryByText('read · call_read')).toBeNull()
+  await act(async () => { fireEvent.press(screen.getByRole('button', { name: 'Technical Details' })) })
+  expect(screen.getByText('/outside/*')).toBeTruthy()
+  expect(screen.getByText(/"path": "\/outside\/reference\/spec.md"/)).toBeTruthy()
+  expect(screen.getByText(/Reference implementation/)).toBeTruthy()
+  expect(screen.getByText('read · call_read')).toBeTruthy()
+  await act(async () => { fireEvent.press(screen.getByTestId('prompt-approve')) })
+  expect(onAllow).toHaveBeenCalledWith('per_external', undefined, false, undefined)
+})
+
+test('a remembered native permission previews project patterns before confirmation and can be cancelled', async () => {
+  const onAllow = jest.fn()
+  const onDeny = jest.fn()
+  const request: PermissionRequest = { requestId: 'per_save', toolName: 'external_directory', input: {}, allowAlwaysAllow: true,
+    permissionDetails: { action: 'external_directory', resources: ['/outside/reference/*'], save: ['/outside/*'] } }
+  await renderSheet(<PermissionSheet perm={request} onAllow={onAllow} onDeny={onDeny} />)
+  await act(async () => { fireEvent.press(screen.getByTestId('prompt-option-Remember for This Project')) })
+  expect(screen.getByText('Remember Permission in This Project?')).toBeTruthy()
+  expect(screen.getByText('/outside/*')).toBeTruthy()
+  expect(onAllow).not.toHaveBeenCalled()
+  await act(async () => { fireEvent.press(screen.getByTestId('prompt-reject')) })
+  expect(onDeny).not.toHaveBeenCalled()
+  expect(screen.getByText('Allow Once')).toBeTruthy()
+  await act(async () => { fireEvent.press(screen.getByTestId('prompt-option-Remember for This Project')) })
+  await act(async () => { fireEvent.press(screen.getByTestId('prompt-approve')) })
+  expect(onAllow).toHaveBeenCalledWith('per_save', undefined, true, undefined)
+})
+
 /** `PromptSheet` reads the status-bar inset directly; outside a provider that hook throws. */
 function withInsets(ui: ReactElement) {
   return <SafeAreaProvider initialMetrics={{ frame: { x: 0, y: 0, width: 390, height: 844 }, insets: { top: 47, left: 0, right: 0, bottom: 34 } }}>

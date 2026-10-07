@@ -1,5 +1,6 @@
 import { diffLines } from 'diff'
 import type { PermissionRequest } from '@superone/shared/agent-types'
+import { canRememberPermission } from '@superone/shared/permission-presentation'
 
 export function stringValue(value: unknown): string {
   return typeof value === 'string' ? value : ''
@@ -28,6 +29,7 @@ export function permissionToolContent(request: PermissionRequest) {
 }
 
 export function showRememberPermission(request: PermissionRequest): boolean {
+  if (request.permissionDetails && !request.requestKind) return canRememberPermission(request)
   if (request.requestKind) return true
   return request.allowAlwaysAllow && !request.suggestions?.length
     && !['Edit', 'Write', 'NotebookEdit'].includes(request.toolName)

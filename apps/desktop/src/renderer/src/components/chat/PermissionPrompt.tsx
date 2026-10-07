@@ -10,7 +10,7 @@ import { resolveMiniAppToolIdentity } from '@/lib/miniapp-tool-identity'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { McpAppIcon } from '@superone/ui/components/ui/mcp-app-icon'
 import { cn } from '@superone/ui/lib/utils'
-import { Circle, CheckCircle2, ChevronDown, ChevronUp, ShieldAlert, AlertTriangle, ExternalLink, Copy, Loader2, SquareTerminal } from 'lucide-react'
+import { Circle, CheckCircle2, ChevronDown, ChevronUp, ShieldAlert, AlertTriangle, ExternalLink, Copy, Loader2, SquareTerminal, FolderOpen } from 'lucide-react'
 import { requestOpenExternalLink } from '@/lib/external-link'
 import { ToolIcon } from './ToolIcon'
 import { getToolDisplay, getToolLabel, parseMcpToolName } from './tool-display'
@@ -23,6 +23,10 @@ import { SchemaFormComposer } from '../schema-form/SchemaFormComposer'
 import { InputRequestPrompt } from './InputRequestPrompt'
 import { useMcpFormResources } from '../schema-form/use-mcp-form-resources'
 import { getPermissionPromptConfig } from './permission-prompt/permission-prompt-config'
+import { PermissionDetails } from './permission-prompt/PermissionDetails'
+import { permissionDetailSummary } from '@superone/shared/permission-details'
+import { canRememberPermission, permissionPresentation } from '@superone/shared/permission-presentation'
+import { shortenPath } from '@superone/shared/path-display'
 import { VideoConfirmComposer } from './media-composer/VideoConfirmComposer'
 import { ConfigConfirmPromptContainer } from './ConfigConfirmPromptContainer'
 import { SessionAgentsConfirmPromptContainer } from './SessionAgentsConfirmPromptContainer'
@@ -144,6 +148,7 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
   const [selectedSuggestions, setSelectedSuggestions] = useState<Set<number>>(new Set())
   const [isFeedbackFocused, setIsFeedbackFocused] = useState(false)
   const [isCollapsed, setIsCollapsed] = useState(false)
+  const [rememberRequestId, setRememberRequestId] = useState<string | null>(null)
   const btnRefs = useRef<(HTMLButtonElement | null)[]>([])
   const feedbackRef = useRef<HTMLTextAreaElement>(null)
   const chatRootRef = useChatRootRef()
@@ -151,6 +156,9 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
   const requestId = pendingPermission?.requestId
   const toolName = pendingPermission?.toolName
   const allowAlwaysAllow = pendingPermission?.allowAlwaysAllow ?? false
+  const isScopedPermission = !!pendingPermission?.permissionDetails && !pendingPermission.requestKind
+  const hasScopedAlways = !!pendingPermission && canRememberPermission(pendingPermission)
+  const rememberPreview = rememberRequestId === requestId && hasScopedAlways
   // Harness asked for a decline-first prompt: focus lands on Deny and Enter must
   // not approve. Only the two-button Claude row honours it; Codex never sets it.
   const defaultToNo = pendingPermission?.defaultToNo === true
@@ -203,10 +211,11 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
     isElicitation,
     pendingPermission?.requestKind,
   )
-  const isCodexDecisionPrompt = promptConfig.buttonCount === 4
+  const isCodexDecisionPrompt = !isScopedPermission && promptConfig.buttonCount === 4
   // Host confirms that add a third "always" button between approve and reject.
   const hasHostAlwaysButton = promptConfig.buttonCount === 3
-  const isEditTool = toolName === 'Write' || toolName === 'Edit' || toolName === 'NotebookEdit'
+  const hasAlwaysButton = hasHostAlwaysButton || (hasScopedAlways && !rememberPreview)
+  const isEditTool = !isScopedPermission && (toolName === 'Write' || toolName === 'Edit' || toolName === 'NotebookEdit')
   const autoEligible = useMemo(
     () => eligibilityFromStore(account, availableModels.find((m) => m.id === selectedModel)).ok,
     [account, availableModels, selectedModel],
@@ -254,25 +263,26 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
         if (!canAutofocusInChatRoot(chatRootRef?.current) || wasChatInputFocusedRecently(chatRootRef?.current)) return
         // Deny sits at index 1 on the standard row (index 2 when device-control adds
         // its always-allow button between approve and reject).
-        const denyIdx = hasHostAlwaysButton ? 2 : 1
+        const denyIdx = hasAlwaysButton ? 2 : 1
         const initialIdx = defaultToNo && !isCodexDecisionPrompt ? denyIdx : 0
         btnRefs.current[initialIdx]?.focus()
         setFocusedIdx(initialIdx)
       })
     }
-  }, [requestId, isCollapsed, isSelfManagedConfirm, chatRootRef, defaultToNo, isCodexDecisionPrompt, hasHostAlwaysButton])
+  }, [requestId, isCollapsed, isSelfManagedConfirm, chatRootRef, defaultToNo, isCodexDecisionPrompt, hasAlwaysButton])
 
-  const btnCount = promptConfig.buttonCount
+  const btnCount = rememberPreview ? 2 : hasScopedAlways ? 3 : promptConfig.buttonCount
 
   const handleDeny = useCallback(() => {
     if (!requestId) return
+    if (rememberPreview) { setRememberRequestId(null); return }
     respondToPermission(
       requestId,
       false,
       undefined,
       isCodexDecisionPrompt ? undefined : (feedback.trim() || undefined),
     )
-  }, [requestId, respondToPermission, feedback, isCodexDecisionPrompt])
+  }, [requestId, respondToPermission, feedback, isCodexDecisionPrompt, rememberPreview])
 
   const handleAcceptEdit = useCallback(() => {
     if (!requestId) return
@@ -282,8 +292,12 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
 
   const handleAlwaysAllow = useCallback(() => {
     if (!requestId) return
+    if (isScopedPermission) {
+      if (hasScopedAlways) setRememberRequestId(requestId)
+      return
+    }
     respondToPermission(requestId, true, true)
-  }, [requestId, respondToPermission])
+  }, [requestId, respondToPermission, isScopedPermission, hasScopedAlways])
 
   const handleCancel = useCallback(() => {
     if (!requestId) return
@@ -301,6 +315,7 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
 
   const handleAllow = useCallback(() => {
     if (!requestId) return
+    if (rememberPreview && hasScopedAlways) { respondToPermission(requestId, true, true); return }
     if (isElicitation) {
       respondToPermission(requestId, true)
       return
@@ -328,7 +343,7 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
     } else {
       respondToPermission(requestId, true)
     }
-  }, [requestId, respondToPermission, selectedSuggestions, isElicitation, autoEligible, pendingPermission, setPermissionMode, terminalRule, rememberRule])
+  }, [requestId, respondToPermission, selectedSuggestions, isElicitation, autoEligible, pendingPermission, setPermissionMode, terminalRule, rememberRule, rememberPreview, hasScopedAlways])
 
   const handleElicitationAlwaysAllow = useCallback(() => {
     if (!requestId) return
@@ -367,6 +382,12 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
       // or in a sibling mosaic chat pane.
       if (!isFocusInChat(document.activeElement, chatRootRef?.current)) return
       if (shouldSuppressDecisionShortcut(e, chatRootRef?.current)) return
+      if (isScopedPermission && e.key === 'Enter' && e.repeat) { e.preventDefault(); return }
+      const submitScopedChoice = () => {
+        if (document.activeElement === btnRefs.current[hasAlwaysButton ? 2 : 1]) handleDeny()
+        else if (hasScopedAlways && !rememberPreview && document.activeElement === btnRefs.current[1]) handleAlwaysAllow()
+        else handleAllow()
+      }
 
       if (
         e.key === 'Enter'
@@ -375,7 +396,8 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
         && !e.isComposing
       ) {
         e.preventDefault()
-        handleAllow()
+        if (isScopedPermission) submitScopedChoice()
+        else handleAllow()
         return
       }
       if (isHighRiskPermission(pendingPermission) && (e.ctrlKey || e.metaKey || e.altKey)) return
@@ -412,15 +434,17 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
         return
       }
 
-      if ((isCodexDecisionPrompt || hasHostAlwaysButton) && e.key === 'Enter' && e.shiftKey && !e.isComposing) {
+      if ((isCodexDecisionPrompt || hasAlwaysButton) && e.key === 'Enter' && e.shiftKey && !e.isComposing) {
         e.preventDefault()
         handleAlwaysAllow()
         return
       }
+      if (isScopedPermission && e.key === 'Enter' && e.shiftKey) { e.preventDefault(); return }
 
       if (e.key === 'Enter' && !e.isComposing) {
         e.preventDefault()
         if (defaultToNo && !isCodexDecisionPrompt) handleDeny()
+        else if (isScopedPermission) submitScopedChoice()
         else handleAllow()
         return
       }
@@ -468,7 +492,7 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [requestId, btnCount, handleCancel, handleDeny, handleAcceptEdit, handleAllow, handleAlwaysAllow, isCodexDecisionPrompt, hasHostAlwaysButton, isEditTool, isCollapsed, suggestionsCount, toggleSuggestion, isSelfManagedConfirm, chatRootRef, defaultToNo, terminalRule, toggleRememberRule, pendingPermission])
+  }, [requestId, btnCount, handleCancel, handleDeny, handleAcceptEdit, handleAllow, handleAlwaysAllow, isCodexDecisionPrompt, hasAlwaysButton, hasScopedAlways, rememberPreview, isScopedPermission, isEditTool, isCollapsed, suggestionsCount, toggleSuggestion, isSelfManagedConfirm, chatRootRef, defaultToNo, terminalRule, toggleRememberRule, pendingPermission])
 
   if (!pendingPermission) return null
 
@@ -655,17 +679,27 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
   const displaySuggestions = autoEligible
     ? suggestions?.map((s) => (s.type === 'setMode' && s.mode === 'acceptEdits' ? { ...s, mode: 'auto' } : s))
     : suggestions
-  const display = getToolDisplay(toolName ?? '', input, cwd, homedir)
+  const scopedPresentation = permissionPresentation(pendingPermission)
+  const display = scopedPresentation ? { icon: scopedPresentation.icon === 'folder' ? 'folder-search' as const : scopedPresentation.icon, summary: permissionDetailSummary(pendingPermission) }
+    : getToolDisplay(toolName ?? '', input, cwd, homedir)
+  const scopedGlyph = scopedPresentation?.icon === 'folder'
+    ? <FolderOpen className="size-3.5 shrink-0 text-muted-foreground" />
+    : <ToolIcon icon={display.icon} className="size-3.5 shrink-0 text-muted-foreground" />
   const toolGlyph = isTerminalCommandConfirm
     ? <SquareTerminal className="size-3.5 shrink-0 text-muted-foreground" />
-    : <McpAppIcon src={mcpIconSrc} className="size-3.5 shrink-0 text-muted-foreground" fallback={<ToolIcon icon={display.icon} className="size-3.5 shrink-0 text-muted-foreground" />} />
+    : scopedPresentation ? scopedGlyph
+      : <McpAppIcon src={mcpIconSrc} className="size-3.5 shrink-0 text-muted-foreground" fallback={<ToolIcon icon={display.icon} className="size-3.5 shrink-0 text-muted-foreground" />} />
   // A first-party tool keeps the words its own chat row uses. Only the generic
   // fallback is shared with third-party MCP servers.
   const deviceLabelKey = deviceToolVerbKey(toolName ?? '', input)
   const terminalAction = isTerminalCommandConfirm && (input.action === 'run' || input.action === 'attach' || input.action === 'close')
     ? input.action
     : null
-  const toolLabel = terminalAction
+  const toolLabel = scopedPresentation
+    ? rememberPreview ? t('chat.permission.scoped.rememberTitle') : t(`chat.permission.scoped.titles.${scopedPresentation.kind}`, {
+      target: ['externalDirectory', 'read', 'edit', 'list'].includes(scopedPresentation.kind) ? shortenPath(scopedPresentation.target, cwd, homedir) : scopedPresentation.target,
+    })
+    : terminalAction
     ? t(`chat.permission.terminal.${terminalAction}`)
     : deviceLabelKey
       ? t(`chat.toolBlock.device.${deviceLabelKey}`)
@@ -679,7 +713,8 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
 
   const collapsedSummary = isSandboxNetwork
     ? (typeof input.host === 'string' ? input.host : t('chat.permission.networkAccess'))
-    : (display.summary || '')
+    : rememberPreview ? pendingPermission.permissionDetails?.save?.join('\n') || ''
+      : permissionDetailSummary(pendingPermission, display.summary)
 
   return (
     <div className="mx-3 mb-1">
@@ -691,6 +726,8 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
         >
           {isSandboxNetwork ? (
             <ShieldAlert className="size-3.5 shrink-0 animate-pulse text-amber-500" />
+          ) : scopedPresentation ? (
+            scopedGlyph
           ) : miniAppInfo ? (
             <MiniAppIcon appId={miniAppInfo.appId} className="size-3.5 shrink-0 animate-pulse" />
           ) : (
@@ -751,7 +788,7 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
                             {miniAppInfo ? (
                               <MiniAppToolLabel info={miniAppInfo} textSize="text-xs" />
                             ) : (
-                              <span className="font-medium text-foreground">{toolLabel}</span>
+                              <span className={scopedPresentation ? 'min-w-0 break-all font-medium text-foreground' : 'font-medium text-foreground'}>{toolLabel}</span>
                             )}
                             {isBash && typeof input.description === 'string' && input.description && (
                               <span className="min-w-0 truncate text-muted-foreground">{input.description}</span>
@@ -771,7 +808,8 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
                   )}
                 </>
               )}
-              {!isSandboxNetwork && display.summary && (
+              <PermissionDetails request={pendingPermission} summary={scopedPresentation ? undefined : display.summary} remembering={rememberPreview} />
+              {!pendingPermission.permissionDetails && !isSandboxNetwork && display.summary && (
                 <p
                   className={`mb-2 text-xs text-muted-foreground ${isBash ? 'max-h-32 overflow-y-auto whitespace-pre-wrap break-all font-mono' : 'truncate'}`}
                 >
@@ -862,7 +900,7 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
                 ) : (
                   <ApproveRejectBar
                     approveRef={(el) => { btnRefs.current[0] = el }}
-                    rejectRef={(el) => { btnRefs.current[hasHostAlwaysButton ? 2 : 1] = el }}
+                    rejectRef={(el) => { btnRefs.current[hasAlwaysButton ? 2 : 1] = el }}
                     feedbackRef={feedbackRef}
                     onApprove={handleAllow}
                     onReject={handleDeny}
@@ -872,20 +910,22 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
                     // unless both say theirs. "Allow" next to "Always Allow" invites
                     // the user to assume the first one also sticks.
                     {...(isDeviceControlConfirm ? { approveLabel: t('chat.permission.allowForSession') } : {})}
+                    {...(isScopedPermission ? { approveLabel: t(rememberPreview ? 'chat.permission.scoped.confirmRemember' : 'chat.permission.scoped.allowOnce'), rejectLabel: rememberPreview ? t('common.cancel') : undefined } : {})}
+                    {...(rememberPreview ? { approveTone: 'primary', rejectTone: 'neutral' } as const : {})}
                     approveSuffix={(selectedSuggestions.size > 0 || rememberRule !== null) && (
                       <span className="ml-1 text-xs text-success-foreground/70">+{selectedSuggestions.size + (rememberRule ? 1 : 0)}</span>
                     )}
-                    extraActions={hasHostAlwaysButton && (
+                    extraActions={hasAlwaysButton && (
                       <PermissionActionButton
                         ref={(el) => { btnRefs.current[1] = el }}
                         tone="primary"
                         kbd={requireExplicitApproval ? undefined : '⇧⏎'}
                         onClick={handleAlwaysAllow}
                       >
-                        {t('chat.permission.alwaysAllowDevice')}
+                        {t(hasScopedAlways ? 'chat.permission.scoped.remember' : 'chat.permission.alwaysAllowDevice')}
                       </PermissionActionButton>
                     )}
-                    feedback={{
+                    feedback={rememberPreview ? undefined : {
                       value: feedback,
                       onChange: setFeedback,
                       focused: isFeedbackFocused,

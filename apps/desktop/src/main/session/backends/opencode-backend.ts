@@ -24,6 +24,7 @@ import {
   mapOpenCodeQuestionRequest,
   openCodeAssistantMetadata,
   openCodeErrorMessage,
+  openCodeToolInput,
   openCodeToolName,
   readOpenCodeConfig,
   routeOpenCodeTodoEvent,
@@ -630,7 +631,7 @@ export class OpenCodeBackend implements SessionBackend {
 
   private emitTool(part: Extract<Part, { type: 'tool' }>, messageId: string): void {
     const status = part.state.status === 'completed' || part.state.status === 'error' ? 'complete' : 'streaming'
-    const input = 'input' in part.state ? JSON.stringify(part.state.input) : '{}'
+    const input = JSON.stringify(openCodeToolInput(part.tool, 'input' in part.state ? part.state.input : {}))
     this.emit({
       type: 'content_delta',
       messageId,

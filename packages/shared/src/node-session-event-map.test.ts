@@ -30,6 +30,15 @@ const ctx = {
 }
 
 describe('mapNodeSessionEvents (text-only)', () => {
+  it('retains approval scope and tool context in remote permission replay', () => {
+    const permissionDetails = { action: 'external_directory', resources: ['/outside/*'], save: ['/outside/*'],
+      source: { toolName: 'read', toolUseId: 'call_1', input: { path: '/outside/spec.md' } }, metadata: { reason: 'Reference' } }
+    const events = mapNodeSessionEvents([envelope({ eventType: 'session.permission_requested', payload: {
+      interactionId: 'per_1', toolName: 'external_directory', allowAlwaysAllow: false, permissionDetails,
+    } })], ctx)
+    expect(events).toMatchObject([{ type: 'permission_request', request: { requestId: 'per_1', permissionDetails, allowAlwaysAllow: false } }])
+  })
+
   it('keeps form fields and OpenAI form metadata in durable permission replay', () => {
     const form = elicitationFormRequest({ type: 'object', properties: { name: { type: 'string' } } })
     const events = mapNodeSessionEvents([envelope({ eventType: 'session.permission_requested', payload: {

@@ -6,6 +6,7 @@ import type {
   PermissionRequest,
 } from '@superone/shared/agent-types'
 import type { OpenCodeRuntimeConfig } from './opencode-runtime'
+import { normalizeTranscriptTool, parseMcpToolName } from '@superone/shared/tool-ui'
 
 export function readOpenCodeConfig(value: unknown): OpenCodeRuntimeConfig {
   if (!value || typeof value !== 'object') return {}
@@ -31,6 +32,8 @@ export function mapOpenCodePermissionRequest(input: {
   metadata?: Record<string, unknown>
   always?: string[]
   toolUseId?: string
+  message?: string
+  source?: NonNullable<PermissionRequest['permissionDetails']>['source']
 }): PermissionRequest {
   return {
     requestId: input.id,
@@ -39,7 +42,14 @@ export function mapOpenCodePermissionRequest(input: {
     input: input.metadata ?? {},
     allowAlwaysAllow: (input.always?.length ?? 0) > 0,
     supportsAlwaysPersist: (input.always?.length ?? 0) > 0,
-    message: input.patterns.join('\n') || input.permission,
+    message: input.message || input.patterns.join('\n') || input.permission,
+    permissionDetails: {
+      action: input.permission,
+      resources: input.patterns,
+      save: input.always,
+      metadata: input.metadata,
+      source: input.source ?? (input.toolUseId ? { toolUseId: input.toolUseId } : undefined),
+    },
   }
 }
 
@@ -87,8 +97,12 @@ export function routeOpenCodeTodoEvent(event: Event, emit: (event: AgentEvent) =
 }
 
 export function openCodeToolName(tool: string): string {
+  const mcp = parseMcpToolName(tool)
+  if (mcp) return `mcp__${mcp.serverName}__${mcp.mcpToolName}`
   const normalized = tool.toLowerCase()
   if (normalized === 'shell' || normalized === 'bash') return 'Bash'
+  if (normalized === 'patch' || normalized === 'apply_patch') return 'Patch'
+  if (normalized === 'execute') return 'CodeExecution'
   if (normalized === 'read') return 'Read'
   if (normalized === 'edit' || normalized === 'write') return normalized[0].toUpperCase() + normalized.slice(1)
   if (normalized === 'glob') return 'Glob'
@@ -97,7 +111,13 @@ export function openCodeToolName(tool: string): string {
   if (normalized === 'websearch') return 'WebSearch'
   if (normalized === 'task' || normalized === 'agent' || normalized === 'subtask') return 'Agent'
   if (normalized === 'todowrite') return 'TodoWrite'
+  if (normalized === 'skill') return 'Skill'
   return tool
+}
+
+/** Chat aliases only; upstream permissions and execution retain the original input. */
+export function openCodeToolInput(tool: string, input: Record<string, unknown>): Record<string, unknown> {
+  return normalizeTranscriptTool(openCodeToolName(tool), input).input
 }
 
 export function textFromOpenCodePart(part: Part): string | undefined {

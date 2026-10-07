@@ -1,6 +1,6 @@
 import type { ContentBlock, ImageGenerationItem, VideoGenerationItem } from '@superone/shared/agent-types'
 import { shortenPath } from '@superone/shared/path-display'
-import { isAlwaysHiddenToolName, parseMcpToolName } from '@superone/shared/tool-ui'
+import { isAlwaysHiddenToolName, normalizeTranscriptTool, parseMcpToolName } from '@superone/shared/tool-ui'
 import { DEVICE_AGENT_TOOL_NAMES } from '@superone/shared/superone-host-owned-tools'
 import { extractPartialToolInput } from '@superone/chat-core'
 import {
@@ -22,8 +22,11 @@ const TOOL_VERBS: Record<string, string> = {
   // Same copy as BashTerminalPresenter (`chat.toolBlock.running`). The portable
   // Bash row uses that presenter for live and deferred calls alike.
   Bash: 'Running',
+  Patch: 'Applying patch',
+  CodeExecution: 'Executing code',
   Read: 'Reading',
   Edit: 'Editing',
+  Delete: 'Deleting',
   Write: 'Writing',
   FileChange: 'Editing',
   NotebookEdit: 'Editing',
@@ -75,7 +78,7 @@ export function superoneToolGlyph(mcpToolName: string): ToolIcon | null {
   return WIDGET_TOOLS.has(mcpToolName) ? 'widget' : null
 }
 
-export type ToolIcon = 'terminal' | 'file-text' | 'file-edit' | 'file-plus' | 'search' | 'folder-search' | 'globe' | 'download' | 'message-circle' | 'wrench' | 'mcp' | 'plug' | 'clipboard-list' | 'bot' | 'book-open' | 'canvas' | 'toolbox' | 'package' | 'pencil' | 'image' | 'smartphone' | 'widget'
+export type ToolIcon = 'terminal' | 'code' | 'file-text' | 'file-edit' | 'file-plus' | 'search' | 'folder-search' | 'globe' | 'download' | 'message-circle' | 'wrench' | 'mcp' | 'plug' | 'clipboard-list' | 'bot' | 'book-open' | 'canvas' | 'toolbox' | 'package' | 'pencil' | 'image' | 'smartphone' | 'widget'
 
 export interface ToolDisplay {
   icon: ToolIcon
@@ -113,6 +116,8 @@ export function isHiddenToolBlock(toolName: string, result?: string): boolean {
 /** Human-readable tool title for chat UI (internal toolName stays PascalCase / id). */
 const TOOL_LABELS: Record<string, string> = {
   Bash: 'Bash',
+  Patch: 'Patch',
+  CodeExecution: 'Execute Code',
   Read: 'Read',
   Edit: 'Edit',
   Write: 'Write',
@@ -212,6 +217,10 @@ export function getToolDisplay(toolName: string, input: Record<string, unknown>,
   switch (toolName) {
     case 'Bash':
       return { icon: 'terminal', summary: String(input.command ?? '') }
+    case 'Patch':
+      return { icon: 'file-edit', summary: '' }
+    case 'CodeExecution':
+      return { icon: 'code', summary: 'JavaScript' }
     case 'ReportFindings':
       // Compact surfaces get the top finding — the list is ranked most-severe first,
       // so the first entry is the one worth the single line they have room for.
@@ -358,12 +367,15 @@ export function formatReadMeta(input: Record<string, unknown>): string {
 
 /** Parse a JSON string into a Record for tool display. */
 export function parseToolInput(input: string, toolName?: string): Record<string, unknown> {
+  let params: Record<string, unknown>
   try {
     const parsed = JSON.parse(input)
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {}
+    params = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {}
   } catch {
-    return extractPartialToolInput(input, toolName)
+    params = extractPartialToolInput(input, toolName)
   }
+  // Old stored turns still have wire-shaped fields even after the live adapter is fixed.
+  return toolName ? normalizeTranscriptTool(toolName, params).input : params
 }
 
 export { extractPartialToolInput }

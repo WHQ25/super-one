@@ -172,11 +172,12 @@ const PREVIEW_CATALOGS: Partial<Record<HarnessId, PreviewCatalog>> = {
   },
   opencode: {
     agents: [
-      { id: 'build', name: 'build', description: 'Write and run code' },
-      { id: 'plan', name: 'plan', description: 'Read-only planning' },
-      { id: 'general', name: 'general', description: 'Broad tasks' },
+      { id: 'build', name: 'Build', description: 'Write and run code' },
+      { id: 'plan', name: 'Plan', description: 'Read-only planning' },
+      { id: 'team/reviewer', name: 'Team Reviewer', description: 'Review project changes using the configured permissions.' },
+      { id: 'long', name: 'A Very Long Custom Agent Name for Narrow Chat Panes', description: 'A long project agent description wraps below its name without drifting to the icon column.' },
     ],
-    selectedAgentId: 'build',
+    selectedAgentId: null,
   },
   acp: {
     modes: [{ id: 'ask', name: 'Ask', description: 'Answer without editing' }, { id: 'code', name: 'Code', description: 'Edit files directly' }],
@@ -265,14 +266,14 @@ const initialMessages: ChatMessage[] = [
 ]
 
 /** Offline visual review of production pages; callbacks never contact a desktop. */
-export function ShellPreview({ initialPage = 'New session', initialEffort, onClose, onTheme }: { initialPage?: Page; initialEffort?: string; onClose: () => void; onTheme: () => void }) {
+export function ShellPreview({ initialPage = 'New session', initialHarness = 'claude', initialEffort, onClose, onTheme }: { initialPage?: Page; initialHarness?: HarnessId; initialEffort?: string; onClose: () => void; onTheme: () => void }) {
   const styles = useMobileStyles()
   const { tokens, setHarness } = useMobileTheme()
   const { t } = useMobileLocale()
   const { width, height, fontScale } = useWindowDimensions()
   const [page, setPage] = useState<Page>(initialPage)
   const [devicesRefreshing, setDevicesRefreshing] = useState(false)
-  const [provider, setProvider] = useState<HarnessId>('claude')
+  const [provider, setProvider] = useState<HarnessId>(initialHarness)
   const [acpAgentId, setAcpAgentId] = useState<string | null>(null)
   const chatDraft = useComposerDraft()
   const [mentionRows, setMentionRows] = useState<MentionRow[]>([])
@@ -526,7 +527,7 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
               onBranch: () => setPage('Branch'),
             } : undefined}
             selection={{ ...pickerCatalogs, model, models: previewModels, effort, efforts, onModel: chooseModel, onEffort: setEffort }}
-            webRef={web} permissionModes={['default', 'acceptEdits', 'plan']} permissionMode={mode} slashHits={slashDismissed ? [] : filterSlashCommands(chatDraft.draft, previewSlashCatalog, provider)} slashCatalogStatus={!slashDismissed && chatDraft.draft.startsWith('/') ? slashStatus : 'ready'} mentionRows={mentionRows} attachments={attachments} projectDirs={page === 'New session' ? previewDirs : []} sessionDirs={page === 'New session' ? previewSessionDirs : []} onManageDirectories={() => setPage('Additional folders')}
+            webRef={web} permissionModes={HARNESS_LAUNCH_OPTIONS[provider].permissionModes} permissionMode={mode} slashHits={slashDismissed ? [] : filterSlashCommands(chatDraft.draft, previewSlashCatalog, provider)} slashCatalogStatus={!slashDismissed && chatDraft.draft.startsWith('/') ? slashStatus : 'ready'} mentionRows={mentionRows} attachments={attachments} projectDirs={page === 'New session' ? previewDirs : []} sessionDirs={page === 'New session' ? previewSessionDirs : []} onManageDirectories={() => setPage('Additional folders')}
 todos={page === 'Chat' ? previewTodos : {}} draft={chatDraft.draft} streaming={page === 'Chat'}
             contextAttachments={page === 'Chat' && appContext ? [previewAppContext] : []} onRemoveContext={() => setAppContext(false)}
             focused={documentInputFocused ? false : undefined}

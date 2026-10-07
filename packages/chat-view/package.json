@@ -5,6 +5,7 @@
   "type": "module",
   "description": "React DOM chat renderer hosted in a mobile WebView. Receives pre-reduced patches only.",
   "exports": {
+    "./mod-ui/ModDiff": "./src/mod-ui/ModDiff.tsx",
     ".": "./src/index.ts",
     "./mermaid-preview": "./src/mermaid-preview.ts",
     "./view-mode": "./src/view-mode.ts",

@@ -2,6 +2,7 @@ import type { BashEditDiff, CodexThreadItem, TaskFileChange } from '@superone/sh
 import { bashEditFileChanges } from '@superone/shared/bash-edit-diff'
 import { fileMutationPath, isFileMutationTool } from '@superone/shared/file-mutation'
 import { normalizeTranscriptTool } from '@superone/shared/tool-ui'
+import { isPatchToolCall, patchToolFiles, summarizePatchToolFiles } from '@superone/shared/patch-tool'
 import { computeLineDelta } from './tool-block-utils'
 
 export interface TurnProcessStats {
@@ -120,6 +121,14 @@ function accumulateMutation(
   rawInput: Record<string, unknown>,
   projected?: { path?: string; delta?: { added: number; removed: number } },
 ): void {
+  if (isPatchToolCall(toolName, rawInput)) {
+    const patchFiles = patchToolFiles(rawInput)
+    for (const file of patchFiles) files.add(file.movePath ?? file.path)
+    const summary = summarizePatchToolFiles(patchFiles)
+    stats.added += summary.added
+    stats.removed += summary.removed
+    return
+  }
   const normalized = normalizeTranscriptTool(toolName, rawInput)
   if (!isFileMutationTool(normalized.toolName)) return
   const path = fileMutationPath(normalized.input) || projected?.path || ''

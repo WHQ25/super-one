@@ -4,7 +4,7 @@ import type {
   MessageMetadata,
   PermissionRequest,
 } from '@superone/shared/agent-types'
-import { mapOpenCodePermissionRequest, openCodeToolName } from './opencode-event-map'
+import { mapOpenCodePermissionRequest, openCodeToolInput, openCodeToolName } from './opencode-event-map'
 import type {
   OpenCodeV2Event,
   OpenCodeV2Form,
@@ -146,6 +146,13 @@ export class OpenCodeV2TurnTranslator {
             metadata: data.metadata,
             always: data.save,
             toolUseId: callId,
+            message: data.message,
+            source: data.source ? {
+              toolUseId: data.source.id,
+              messageId: data.source.messageID,
+              toolName: this.toolNames.get(data.source.id),
+              input: this.toolInputs.get(data.source.id),
+            } : undefined,
           }),
         }]
       }
@@ -215,10 +222,10 @@ export class OpenCodeV2TurnTranslator {
       }
       case 'session.tool.input.started':
         this.toolNames.set(event.data.id, event.data.name)
-        return [agent(this.toolUse(messageId, event.data.id, '{}', 'streaming', event.created))]
+        return [agent(this.toolUse(messageId, event.data.id, {}, 'streaming', event.created))]
       case 'session.tool.called':
         this.toolInputs.set(event.data.id, event.data.input)
-        return [agent(this.toolUse(messageId, event.data.id, JSON.stringify(event.data.input), 'streaming'))]
+        return [agent(this.toolUse(messageId, event.data.id, event.data.input, 'streaming'))]
       case 'session.tool.success':
       case 'session.tool.failed': {
         const id = event.data.id
@@ -229,7 +236,7 @@ export class OpenCodeV2TurnTranslator {
           .flatMap((item) => item.type === 'text' && item.text ? [item.text] : [])
           .join('\n')
         return [
-          agent(this.toolUse(messageId, id, JSON.stringify(this.toolInputs.get(id) ?? {}), 'complete')),
+          agent(this.toolUse(messageId, id, this.toolInputs.get(id) ?? {}, 'complete')),
           agent({
             type: 'content_delta',
             messageId,
@@ -246,7 +253,7 @@ export class OpenCodeV2TurnTranslator {
         const { shell } = event.data
         this.toolNames.set(shell.id, 'shell')
         this.toolInputs.set(shell.id, { command: shell.command })
-        return [agent(this.toolUse(messageId, shell.id, JSON.stringify({ command: shell.command }), 'streaming', event.created))]
+        return [agent(this.toolUse(messageId, shell.id, { command: shell.command }, 'streaming', event.created))]
       }
       case 'session.shell.ended': {
         const { shell, output } = event.data
@@ -254,7 +261,7 @@ export class OpenCodeV2TurnTranslator {
         if (!this.toolNames.has(shell.id) || this.completedTools.has(shell.id)) return []
         this.completedTools.add(shell.id)
         const actions: OpenCodeV2TurnAction[] = [
-          agent(this.toolUse(messageId, shell.id, JSON.stringify({ command: shell.command }), 'complete')),
+          agent(this.toolUse(messageId, shell.id, { command: shell.command }, 'complete')),
           agent({
             type: 'content_delta',
             messageId,
@@ -329,19 +336,20 @@ export class OpenCodeV2TurnTranslator {
   private toolUse(
     messageId: string,
     id: string,
-    input: string,
+    input: Record<string, unknown>,
     status: 'streaming' | 'complete',
     startedAt?: number,
   ): AgentEvent {
     this.lastBlockKey = null
+    const tool = this.toolNames.get(id) ?? 'tool'
     return {
       type: 'content_delta',
       messageId,
       delta: {
         type: 'tool_use',
-        toolName: openCodeToolName(this.toolNames.get(id) ?? 'tool'),
+        toolName: openCodeToolName(tool),
         toolUseId: id,
-        input,
+        input: JSON.stringify(openCodeToolInput(tool, input)),
         status,
         ...(startedAt ? { startedAt } : {}),
       },

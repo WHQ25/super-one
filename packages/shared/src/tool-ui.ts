@@ -1,11 +1,17 @@
 /**
- * Pure, browser-safe tool UI helpers shared by ACP live mapping and
+ * Pure, browser-safe tool UI helpers shared by harness live mapping and
  * transcript/JSONL replay (workflow full view, subagent full view).
  *
  * Keep this free of Node-only APIs (no Buffer) so the renderer can import it.
  */
 
 import { extractJsonStringValue } from './partial-json'
+import {
+  BUILT_IN_SUPERONE_TOOL_NAMES,
+  COMPUTER_USE_TOOL_NAMES,
+  MINIAPP_CALL_BARE_NAME,
+  MINIAPP_LIST_BARE_NAME,
+} from './superone-host-owned-tools'
 
 /** Map agent-native / Grok tool ids → Claude-shaped UI names for ToolBlock. */
 export const TOOL_ID_TO_UI_NAME: Record<string, string> = {
@@ -150,14 +156,27 @@ export function uiToolNameFromId(id: string | undefined | null): string | null {
   return TOOL_ID_TO_UI_NAME[key] ?? null
 }
 
+const OPENCODE_SUPERONE_TOOL_NAMES = new Set<string>([
+  ...BUILT_IN_SUPERONE_TOOL_NAMES,
+  ...COMPUTER_USE_TOOL_NAMES,
+  MINIAPP_CALL_BARE_NAME,
+  MINIAPP_LIST_BARE_NAME,
+])
+
 /**
  * Claude/Codex: `mcp__{server}__{tool}`. Grok's wire id is `{server}__{tool}`
  * (exactly one `__` delimiter) until ACP unwrap adds the `mcp__` prefix.
+ * OpenCode: `superone_{tool}` for the known host catalog only. A single `_`
+ * cannot otherwise distinguish a server name from a native/third-party tool id.
  */
 export function parseMcpToolName(toolName: string): { serverName: string; mcpToolName: string } | null {
   if (!toolName) return null
   const prefixed = /^mcp__(.+?)__(.+)$/.exec(toolName)
   if (prefixed) return { serverName: prefixed[1], mcpToolName: prefixed[2] }
+  if (toolName.startsWith('superone_')) {
+    const bare = toolName.slice('superone_'.length)
+    if (OPENCODE_SUPERONE_TOOL_NAMES.has(bare)) return { serverName: 'superone', mcpToolName: bare }
+  }
   const delimiter = toolName.indexOf('__')
   if (delimiter <= 0) return null
   if (toolName.indexOf('__', delimiter + 2) !== -1) return null
@@ -223,8 +242,8 @@ export function resolveGrokStreamingToolName(
 
 /**
  * Normalize a transcript / chat_history tool name + raw args into ToolBlock shape.
- * Grok uses ids like `read_file` and aliases like `target_file`; live ACP mapping
- * does the same — JSONL replay must stay aligned.
+ * Grok uses ids like `read_file` and aliases like `target_file`; OpenCode uses
+ * `path` / `filePath` and skill `id` / `name`. Live mapping and replay must agree.
  */
 export function normalizeTranscriptTool(
   rawName: string,
@@ -247,13 +266,21 @@ export function normalizeTranscriptTool(
 
   if (toolName === 'Read') {
     if (input.file_path == null && input.target_file != null) input.file_path = input.target_file
+    if (input.file_path == null && input.filePath != null) input.file_path = input.filePath
     if (input.file_path == null && input.path != null) input.file_path = input.path
   } else if (toolName === 'Edit' || toolName === 'Write' || toolName === 'Delete' || toolName === 'FileChange') {
     if (input.file_path == null && input.target_file != null) input.file_path = input.target_file
+    if (input.file_path == null && input.filePath != null) input.file_path = input.filePath
     if (input.file_path == null && input.path != null) input.file_path = input.path
     if (toolName === 'Write' && input.content == null && input.contents != null) input.content = input.contents
     if (toolName === 'Write' && input.content == null && input.fileText != null) input.content = input.fileText
     if (toolName === 'Edit' && input.diff == null && input.diffString != null) input.diff = input.diffString
+    if (toolName === 'Edit' && input.old_string == null && input.oldString != null) input.old_string = input.oldString
+    if (toolName === 'Edit' && input.new_string == null && input.newString != null) input.new_string = input.newString
+    if (toolName === 'Edit' && input.replace_all == null && input.replaceAll != null) input.replace_all = input.replaceAll
+  } else if (toolName === 'Skill') {
+    if (input.skill == null && input.id != null) input.skill = input.id
+    if (input.skill == null && input.name != null) input.skill = input.name
   } else if (toolName === 'Bash') {
     if (input.command == null && input.cmd != null) input.command = input.cmd
   } else if (toolName === 'LS') {

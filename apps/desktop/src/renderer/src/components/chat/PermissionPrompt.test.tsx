@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { createRef, type RefObject } from 'react'
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ButtonHTMLAttributes, ReactElement, ReactNode } from 'react'
 import type { PermissionRequest } from '@superone/shared/agent-types'
@@ -102,6 +102,49 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers())
 
 describe('PermissionPrompt', () => {
+  it('reviews a scoped remembered grant before replying, supports cancellation, and never submits on key repeat', async () => {
+    activeSessionState.sessionProvider = 'opencode'
+    activeSessionState.pendingPermissions = [{ requestId: 'per_scope', toolName: 'external_directory', input: {}, allowAlwaysAllow: true,
+      permissionDetails: { action: 'external_directory', resources: ['/outside/reference/*'], save: ['/outside/*'] } }]
+    renderInChat(<PermissionPrompt />)
+    act(() => screen.getByRole('button', { name: /allow once/i }).focus())
+    fireEvent.keyDown(window, { key: 'ArrowRight' })
+    fireEvent.keyDown(window, { key: 'Enter' })
+    expect(screen.getByText('Remember Permission in This Project?')).toBeVisible()
+    expect(chatState.respondToPermission).not.toHaveBeenCalled()
+    await waitFor(() => expect(screen.getByRole('button', { name: /confirm & remember/i })).toHaveFocus())
+    fireEvent.click(screen.getByText('Remember Permission in This Project?'))
+    expect(screen.getByText('/outside/*')).toBeVisible()
+    expect(screen.queryByText('/outside/reference/*')).toBeNull()
+    fireEvent.click(screen.getByText('Remember Permission in This Project?'))
+    await waitFor(() => expect(screen.getByRole('button', { name: /confirm & remember/i })).toHaveFocus())
+    fireEvent.keyDown(window, { key: 'Enter', repeat: true })
+    expect(chatState.respondToPermission).not.toHaveBeenCalled()
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(screen.getByRole('button', { name: /allow once/i })).toBeVisible()
+    expect(chatState.respondToPermission).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: /remember for this project/i }))
+    fireEvent.click(screen.getByRole('button', { name: /confirm & remember/i }))
+    expect(chatState.respondToPermission).toHaveBeenCalledExactlyOnceWith('per_scope', true, true)
+  })
+
+  it('does not carry a remembered approval into the next request or offer persistence without save patterns', () => {
+    activeSessionState.sessionProvider = 'opencode'
+    const request: PermissionRequest = { requestId: 'per_old', toolName: 'external_directory', input: {}, allowAlwaysAllow: true,
+      permissionDetails: { action: 'external_directory', resources: ['/outside/*'], save: ['/outside/*'] } }
+    const view = renderInChat(<PermissionPrompt request={request} />)
+    fireEvent.click(screen.getByRole('button', { name: /remember for this project/i }))
+    view.rerender(<div ref={view.rootRef} data-chat-root="" tabIndex={-1}>
+      <ChatRootContext.Provider value={view.rootRef as RefObject<HTMLElement | null>}>
+        <PermissionPrompt request={{ ...request, requestId: 'per_new', permissionDetails: { action: 'external_directory', resources: ['/second/*'] } }} />
+      </ChatRootContext.Provider>
+    </div>)
+    expect(screen.queryByRole('button', { name: /remember for this project/i })).toBeNull()
+    expect(screen.queryByText('Remember Permission in This Project?')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /allow once/i }))
+    expect(chatState.respondToPermission).toHaveBeenCalledExactlyOnceWith('per_new', true)
+  })
+
   it('submits high-risk feedback on Command+Enter without approving the command', () => {
     activeSessionState.sessionProvider = 'claude'
     renderInChat(<PermissionPrompt />)

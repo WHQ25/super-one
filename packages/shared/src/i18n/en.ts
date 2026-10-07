@@ -2033,6 +2033,42 @@ export type Messages = {
       blockedPath: string
       inputHeading: string
       suggestionsHeading: string
+      details: {
+        action: string
+        resources: string
+        source: string
+        toolInput: string
+        metadata: string
+        save: string
+        externalDirectoryHint: string
+        missingToolInput: string
+        saveHint: string
+      }
+      scoped: {
+        allowOnce: string
+        remember: string
+        rememberTitle: string
+        confirmRemember: string
+        rememberHint: string
+        allResourcesHint: string
+        technicalDetails: string
+        patterns: string
+        workingDirectory: string
+        titles: {
+          externalDirectory: string
+          read: string
+          edit: string
+          list: string
+          shell: string
+          glob: string
+          grep: string
+          subagent: string
+          webfetch: string
+          websearch: string
+          skill: string
+          tool: string
+        }
+      }
       allow: string
       allowForSession: string
       decline: string
@@ -2294,6 +2330,18 @@ export type Messages = {
       tapToOpen: string
     }
     toolBlock: {
+      nativeCode: {
+        applyingPatch: string
+        applyPatch: string
+        patchApplied: string
+        executingCode: string
+        executeCode: string
+        codeExecuted: string
+        fileCount: string
+        oneFile: string
+        source: string
+        output: string
+      }
       enteredPlanMode: string
       readingWidgetGuidelines: string
       readWidgetGuidelines: string
@@ -6150,7 +6198,7 @@ export const en: Messages = {
     creatingSession: 'Creating session…',
     opencode: {
       agent: 'Agent',
-      defaultAgent: 'Default Agent',
+      defaultAgent: 'Default',
       noAgents: 'No agents available. Refresh to try again.',
       refreshAgents: 'Refresh Agents',
       loadingAgents: 'Loading agents…',
@@ -6293,6 +6341,35 @@ export const en: Messages = {
       blockedPath: 'Blocked path: {{path}}',
       inputHeading: 'Input',
       suggestionsHeading: 'Suggestions',
+      details: {
+        action: 'Permission',
+        resources: 'Requested Scope',
+        source: 'Triggering Tool',
+        toolInput: 'Tool Arguments',
+        metadata: 'Request Metadata',
+        save: 'Proposed Saved Scope',
+        externalDirectoryHint: 'Access outside the project. This approves the directory boundary; read/edit checks still apply.',
+        missingToolInput: 'The tool arguments are not available in this permission request.',
+        saveHint: 'A saved approval would cover these patterns. Allow approves this request only.',
+      },
+      scoped: {
+        allowOnce: 'Allow Once',
+        remember: 'Remember for This Project',
+        rememberTitle: 'Remember Permission in This Project?',
+        confirmRemember: 'Confirm & Remember',
+        rememberHint: 'Future requests matching these patterns will be allowed in this project, including new sessions and restarts. Configured deny rules still apply.',
+        allResourcesHint: 'This allows all resources for {{action}}, not just the current request.',
+        technicalDetails: 'Technical Details',
+        patterns: 'Requested Scope',
+        workingDirectory: 'Working directory: {{path}}',
+        titles: {
+          externalDirectory: 'Access External Directory {{target}}',
+          read: 'Read {{target}}', edit: 'Edit {{target}}', list: 'List {{target}}',
+          shell: 'Run Shell Command', glob: 'Glob "{{target}}"', grep: 'Grep "{{target}}"',
+          subagent: '{{target}} Subagent', webfetch: 'Fetch {{target}}',
+          websearch: 'Search the Web for "{{target}}"', skill: 'Load Skill {{target}}', tool: 'Call Tool {{target}}',
+        },
+      },
       allow: 'Allow',
       allowForSession: 'Allow for this session',
       decline: 'Decline',
@@ -6544,6 +6621,18 @@ export const en: Messages = {
       tapToOpen: 'Tap to open',
     },
     toolBlock: {
+      nativeCode: {
+        applyingPatch: 'Applying patch…',
+        applyPatch: 'Apply Patch',
+        patchApplied: 'Patch Applied',
+        executingCode: 'Executing code…',
+        executeCode: 'Execute Code',
+        codeExecuted: 'Code Executed',
+        fileCount: '{{count}} files',
+        oneFile: '1 file',
+        source: 'Code',
+        output: 'Result',
+      },
       enteredPlanMode: 'Entered plan mode',
       readingWidgetGuidelines: 'Reading widget guidelines…',
       readWidgetGuidelines: 'Widget Guidelines Read',

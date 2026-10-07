@@ -13,6 +13,15 @@ const opts = {
 }
 
 describe('summarizeClaudeProcess', () => {
+  it.each(['Patch', 'patch', 'apply_patch', 'Edit'])('counts %s as one call with every successfully changed file', (toolName) => {
+    const patchText = '*** Begin Patch\n*** Update File: a.ts\n@@\n-old\n+new\n*** Add File: b.ts\n+one\n+two\n*** Delete File: c.ts\n*** End Patch'
+    const segs = [{ kind: 'block', block: { type: 'tool_use', toolName, toolUseId: 'p', input: JSON.stringify({ patchText }) } }]
+    expect(summarizeClaudeProcess(segs, opts)).toEqual({ toolCalls: 1, filesChanged: 3, added: 3, removed: 1 })
+    expect(summarizeClaudeProcess(segs, { ...opts, isErrorTool: () => true })).toEqual({ toolCalls: 1, filesChanged: 0, added: 0, removed: 0 })
+    const projected = [{ ...segs[0], block: { ...segs[0]!.block, input: '{"patch":true,"files":[{"path":"a.ts","kind":"update","added":1,"removed":1},{"path":"b.ts","kind":"add","added":2,"removed":0},{"path":"c.ts","kind":"delete","added":0,"removed":0}]}' } }]
+    expect(summarizeClaudeProcess(projected, opts)).toEqual({ toolCalls: 1, filesChanged: 3, added: 3, removed: 1 })
+  })
+
   it('counts visible tool calls and unique file mutations', () => {
     const stats = summarizeClaudeProcess(
       [

@@ -170,7 +170,7 @@ import { notifyWidgetReady, clearAllGates } from './generative-ui/widget-gate'
 import { setBashOutputWindow, watchBashOutput, unwatchBashOutput, unwatchAll as unwatchAllBashOutputs, readBashOutputTail, getWatchedFilePath } from './bash-output-watcher'
 import { setUnsavedBuffer } from './acp/acp-unsaved-buffer'
 import { closeAllOpenCodeServers, reapOrphanOpenCodeServers } from './opencode/opencode-client'
-import { probeOpenCodeResources } from './opencode/opencode-runtime'
+import { connectOpenCodeResources } from './opencode/opencode-resources'
 import { probeCursorResources } from './cursor/cursor-client'
 import { encryptCursorApiKey, readCursorConfig, resolveCursorApiKey } from './cursor/cursor-auth'
 import {
@@ -4915,18 +4915,7 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.CONNECT_OPENCODE, async (_e, force?: boolean) => {
     try {
-      return await connectWithHarnessResourceCache('opencode', {
-        force,
-        isUsable: (r) => (r.models?.length ?? 0) > 0 || (r.agents?.length ?? 0) > 0,
-        probe: () => probeOpenCodeResources({ cwd: resolveProbeCwd() }),
-        fallbackToCacheOnError: !force,
-        onCacheHit: (hit) => {
-          log.info('[CONNECT_OPENCODE] cache fresh (ageMs=%d), skipping probe', hit.ageMs)
-        },
-        onProbeError: (error) => {
-          log.warn('[CONNECT_OPENCODE] failed: %s', error instanceof Error ? error.message : String(error))
-        },
-      })
+      return await connectOpenCodeResources(resolveProbeCwd(), force)
     } catch (error) {
       if (force) throw error
       return { models: [], agents: [] }

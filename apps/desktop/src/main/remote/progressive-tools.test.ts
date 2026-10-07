@@ -20,6 +20,22 @@ function assistant(content: ChatMessage['content']): ChatMessage {
 }
 
 describe('progressive file-edit projection', () => {
+  it('keeps multi-file patch paths/counts collapsed and fetches per-file diffs only on expansion', () => {
+    const patchText = '*** Begin Patch\n*** Update File: /repo/a.ts\n@@\n-secret-old\n+secret-new\n*** Add File: /repo/b.ts\n+created\n*** End Patch'
+    const block = { type: 'tool_use' as const, toolName: 'Patch', toolUseId: 'patch', input: JSON.stringify({ patchText }), status: 'complete' as const }
+    const shell = projectTool(block, 'ref')
+    expect(shell).toMatchObject({ toolLineDelta: { added: 2, removed: 1 } })
+    expect(JSON.stringify(shell)).not.toMatch(/secret-old|secret-new|created|patchText/)
+    const detail = JSON.parse(toolDetail(assistant([block]), 'patch'))
+    expect(JSON.parse(detail.input).files).toMatchObject([
+      { path: '/repo/a.ts', diff: '-secret-old\n+secret-new' },
+      { path: '/repo/b.ts', diff: '+created' },
+    ])
+    const large = { ...block, input: JSON.stringify({ patchText: `*** Begin Patch\n${Array.from({ length: 40 }, (_, i) => `*** Update File: /repo/long-directory-name-${i}/file.ts\n@@\n-a\n+b\n`).join('')}*** End Patch` }) }
+    const projected = projectTool(large, 'ref') as typeof block
+    expect(JSON.parse(projected.input).files).toHaveLength(40)
+  })
+
   it('puts Edit line counts on the collapsed shell without the replaced bodies', () => {
     const projected = projectTool({
       type: 'tool_use',

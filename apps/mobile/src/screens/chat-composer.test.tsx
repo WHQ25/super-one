@@ -77,6 +77,18 @@ test('OpenCode has a separate native agent trigger, and the model trigger only n
   expect(screen.queryByLabelText(/Permission [Mm]ode:/)).toBeNull()
 })
 
+test('OpenCode displays Default without a permission mode chip when its catalog is empty', async () => {
+  await renderWithTheme(composer({
+    provider: 'opencode', permissionModes: [],
+    selection: {
+      model: '', models: [], effort: '', efforts: [], onModel: () => {}, onEffort: () => {},
+      agents: [], agent: null, onAgent: () => {},
+    },
+  }))
+  expect(screen.getByLabelText('Agent: Default')).toBeTruthy()
+  expect(screen.queryByLabelText(/Permission [Mm]ode:/)).toBeNull()
+})
+
 test('with no panel open the command list has the slot', async () => {
   await renderWithTheme(composer({ draft: '/cl', slashHits: [command('clear')] }))
 

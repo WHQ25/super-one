@@ -331,9 +331,19 @@ const openCodeInfo: RemoteSystemInfo = {
   models: [{ id: 'oc-model', name: 'OC', description: '' }],
   agents: [{ id: 'build', name: 'Build' }, { id: 'plan', name: 'Plan' }],
   selectedAgentId: 'build',
-  permissionModes: ['default'],
+  permissionModes: [],
   defaults: { model: 'oc-model', permissionMode: 'default' },
 }
+
+test('OpenCode keeps its empty permission catalog after discovery and refresh', async () => {
+  const { result } = await mount()
+  await act(async () => { result.current.resetForProvider('opencode') })
+  await act(async () => { result.current.applySystemInfo('opencode', openCodeInfo) })
+  expect(result.current.permissionModes).toEqual([])
+  expect(result.current.permissionMode).toBe('default')
+  await act(async () => { result.current.applySystemInfo('opencode', openCodeInfo) })
+  expect(result.current.permissionModes).toEqual([])
+})
 
 test('opening an OpenCode session restores its agent over the catalog default', async () => {
   const { result } = await mount()

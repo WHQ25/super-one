@@ -2,6 +2,7 @@ import { diffLines } from 'diff'
 import { humanizePageToolName } from '@superone/shared/page-tool-name'
 import type { AgentEvent, ContentBlock, ChatMessage, TodoToolItem } from '@superone/shared/agent-types'
 import { isSubagentToolName, normalizeTranscriptTool } from '@superone/shared/tool-ui'
+import { isPatchToolCall, patchToolLineDelta } from '@superone/shared/patch-tool'
 import { remoteToolBlockType, sanitizeRemoteToolInput } from '@superone/shared/remote-tool-input'
 import { readOutputFile } from './agent/claude-session-runtime'
 import { listWorkflowAgentsSync } from './workflow-transcripts'
@@ -215,6 +216,7 @@ export function computeToolLineDelta(toolName: string, input: string): { added: 
   try {
     const p = JSON.parse(input)
     if (!p || typeof p !== 'object' || Array.isArray(p)) return undefined
+    if (isPatchToolCall(toolName, p)) return patchToolLineDelta(p)
     const normalized = normalizeTranscriptTool(toolName, p)
     return lineDeltaFromParams(normalized.toolName, normalized.input)
   } catch {

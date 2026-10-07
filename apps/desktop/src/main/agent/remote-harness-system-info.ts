@@ -5,6 +5,7 @@ import type {
   HarnessResourcesMap,
   Locale,
   ModelOption,
+  OpenCodeResources,
   RemoteActiveProvider,
   RemoteProviderOption,
   RemoteSystemInfo,
@@ -35,6 +36,7 @@ export interface RemoteHarnessSystemInfoDependencies {
   getCachedResources: ResourceReader
   fetchClaudeModels: (projectPath: string) => Promise<ModelOption[]>
   listCodexModels?: (projectPath: string) => Promise<ModelOption[]>
+  connectOpenCodeResources: (projectPath: string) => Promise<OpenCodeResources>
   codexAccount?: (projectPath: string) => unknown
   activeProvider: (harnessId: 'claude' | 'codex') => RemoteActiveProvider | null
   /** Credentials/accounts the harness can run on, already shaped for the client. */
@@ -236,16 +238,16 @@ async function harnessSystemInfo(
       }
     }
     case 'opencode': {
-      const cached = deps.getCachedResources('opencode')
+      const resources = await deps.connectOpenCodeResources(projectPath)
       return {
         ...defaultInfo(
           'opencode',
           preferences,
-          cached?.models ?? [],
+          resources.models,
           HARNESS_LAUNCH_OPTIONS.opencode.permissionModes,
         ),
-        ...openCodeAgentCatalog(cached),
-        slashCommands: cached?.commands ?? [],
+        ...openCodeAgentCatalog(resources),
+        slashCommands: resources.commands ?? [],
       }
     }
     case 'cursor': {

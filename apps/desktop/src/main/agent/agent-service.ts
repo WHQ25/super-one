@@ -1827,6 +1827,10 @@ export class AgentService {
             currentLocale: getCurrentLocale(),
             getCachedResources: getCachedHarnessResources,
             fetchClaudeModels: fetchModels,
+            connectOpenCodeResources: async (projectPath) => {
+              const { connectOpenCodeResources } = await import('../opencode/opencode-resources')
+              return connectOpenCodeResources(projectPath, command.force)
+            },
             listCodexModels: this.codexListModels,
             codexAccount: this.codexGetAuthStatus,
             activeProvider: (harnessId) => buildRemoteActiveService(

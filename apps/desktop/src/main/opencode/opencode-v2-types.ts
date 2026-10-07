@@ -1,6 +1,7 @@
 /**
  * OpenCode 2.x HTTP API (`/api/*`) shapes SuperOne reads. Hand-written from the
- * 2.0.22 OpenAPI document and live event streams: npm has no SDK for this API yet.
+ * 2.0.22 OpenAPI document and live event streams. Migration to the generated
+ * @opencode/client is tracked in docs/harness/opencode/backlog.md.
  * Only the fields SuperOne uses are declared.
  */
 
@@ -97,6 +98,7 @@ export interface OpenCodeV2PermissionRequest {
   save?: string[]
   metadata?: Record<string, unknown>
   source?: { type: 'tool'; messageID: string; id: string }
+  message?: string
 }
 
 export interface OpenCodeV2FormOption {

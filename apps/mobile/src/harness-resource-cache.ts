@@ -34,7 +34,7 @@ export function peekHarnessResource<T extends keyof Resources>(
 }
 
 export function requestHarnessResource<T extends keyof Resources>(
-  client: Client, type: T, projectPath: string, provider: string, refresh = false,
+  client: Client, type: T, projectPath: string, provider: string, refresh: boolean | { force: true } = false,
 ): Promise<Resources[T]> {
   const cache = entries(client)
   const key = keyFor(type, projectPath, provider)
@@ -55,6 +55,7 @@ export function requestHarnessResource<T extends keyof Resources>(
   const entry: Entry = { value: existing?.value, pending: Promise.resolve(), updatedAt: existing?.updatedAt ?? 0, refreshing: true }
   entry.pending = Promise.resolve().then(() => client.request({
     type, requestId: randomId(), projectPath, provider: provider as HarnessId,
+    ...(type === 'get_system_info' && typeof refresh === 'object' ? { force: refresh.force } : {}),
   } as RemoteCommand)).then((value) => {
     if (!value || (value as { error?: string }).error) {
       throw new Error((value as { error?: string } | null)?.error || 'Could not load harness resources')

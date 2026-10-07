@@ -27,7 +27,7 @@ export function PendingPromptBar(props: {
 }) {
   const { tokens: { colors, radius } } = useMobileTheme()
   const { t } = useMobileLocale()
-  const { title, detail } = pendingPromptHeader(props.prompt)
+  const { title, detail } = pendingPromptHeader(props.prompt, t)
   const Icon = pendingPromptIcon(props.prompt)
   const label = t(title)
   return (

@@ -121,6 +121,7 @@ function NativeCatalog({ theme, onTheme, route }: { theme: ThemeChoice; onTheme:
     return <ToolCatalogPreview onClose={() => setShellPreview(null)} onTheme={() => onTheme(tokens.scheme === 'dark' ? 'light' : 'dark')} />
   }
   if (shellPreview) return <ShellPreview key={route?.kind === 'shell' ? route.revision : 'manual'} initialPage={shellPreview}
+    initialHarness={harness}
     initialEffort={route?.kind === 'shell' ? route.effort : undefined}
     onClose={() => setShellPreview(null)} onTheme={() => onTheme(tokens.scheme === 'dark' ? 'light' : 'dark')} />
   return (

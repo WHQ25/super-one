@@ -92,6 +92,7 @@ describe('isAlwaysHiddenToolName', () => {
     expect(isAlwaysHiddenToolName('search_tool')).toBe(true)
     expect(isAlwaysHiddenToolName('mcp__superone__session_rename')).toBe(true)
     expect(isAlwaysHiddenToolName('superone__session_rename')).toBe(true)
+    expect(isAlwaysHiddenToolName('superone_session_rename')).toBe(true)
   })
 
   it('does not hide ordinary file tools', () => {
@@ -103,6 +104,15 @@ describe('isAlwaysHiddenToolName', () => {
 })
 
 describe('parseMcpToolName', () => {
+  it('recognizes exact OpenCode host-tool names without guessing third-party server boundaries', () => {
+    expect(parseMcpToolName('superone_session_rename')).toEqual({ serverName: 'superone', mcpToolName: 'session_rename' })
+    expect(parseMcpToolName('superone_browser_snapshot')).toEqual({ serverName: 'superone', mcpToolName: 'browser_snapshot' })
+    expect(parseMcpToolName('superone_computer_act')).toEqual({ serverName: 'superone', mcpToolName: 'computer_act' })
+    expect(parseMcpToolName('superone_miniapp_call')).toEqual({ serverName: 'superone', mcpToolName: 'miniapp_call' })
+    expect(parseMcpToolName('superone_unknown_tool')).toBeNull()
+    expect(parseMcpToolName('github_list_issues')).toBeNull()
+  })
+
   it('parses Claude/Codex mcp__server__tool names', () => {
     expect(parseMcpToolName('mcp__filesystem__read_file')).toEqual({
       serverName: 'filesystem',
@@ -135,6 +145,21 @@ describe('parseMcpToolName', () => {
 })
 
 describe('normalizeTranscriptTool', () => {
+  it('aliases OpenCode file and skill inputs without replacing canonical fields or mutating wire input', () => {
+    const read = { filePath: '/repo/a.ts', offset: 5, limit: 10 }
+    expect(normalizeTranscriptTool('Read', read).input).toEqual({ ...read, file_path: '/repo/a.ts' })
+    expect(read).not.toHaveProperty('file_path')
+    expect(normalizeTranscriptTool('read', { path: '/repo/a.ts' }).input.file_path).toBe('/repo/a.ts')
+    expect(normalizeTranscriptTool('Edit', { filePath: '/repo/a.ts', oldString: 'a', newString: 'b', replaceAll: true }).input)
+      .toMatchObject({ file_path: '/repo/a.ts', old_string: 'a', new_string: 'b', replace_all: true })
+    expect(normalizeTranscriptTool('Write', { filePath: '/repo/a.ts', content: 'b' }).input.file_path).toBe('/repo/a.ts')
+    expect(normalizeTranscriptTool('skill', { id: 'opencode' })).toEqual({ toolName: 'Skill', input: { id: 'opencode', skill: 'opencode' } })
+    expect(normalizeTranscriptTool('Skill', { name: 'release' }).input.skill).toBe('release')
+    expect(normalizeTranscriptTool('Read', { file_path: '/canonical.ts', filePath: '/alias.ts' }).input.file_path).toBe('/canonical.ts')
+    expect(normalizeTranscriptTool('Skill', { skill: 'canonical', id: 'alias' }).input.skill).toBe('canonical')
+    expect(normalizeTranscriptTool('mcp__other__skill', { id: 'opencode' }).input).toEqual({ id: 'opencode' })
+  })
+
   it('aliases target_file and unwraps use_tool MCP envelope', () => {
     expect(normalizeTranscriptTool('read_file', { target_file: '/a.ts' })).toEqual({
       toolName: 'Read',

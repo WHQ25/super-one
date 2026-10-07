@@ -99,6 +99,9 @@ describe('OpenCode AgentEvent mapper', () => {
     expect(toolBlocks).toContainEqual(expect.objectContaining({ type: 'tool_result', toolUseId: 'call-1', summary: '/tmp' }))
     const complete = events.find((event) => event.type === 'message_complete')
     expect(complete?.metadata).toMatchObject({ model: 'openai/gpt-5.4', agent: 'build', costUsd: 0.1 })
+    expect(events.find((event) => event.type === 'permission_request')).toMatchObject({ request: {
+      permissionDetails: { action: 'bash', resources: ['pwd'], save: ['pwd'], metadata: { command: 'pwd' }, source: { toolUseId: 'call-1' } },
+    } })
   })
 
   it('emits retries without completing the turn', () => {

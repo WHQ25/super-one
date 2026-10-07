@@ -86,7 +86,7 @@ describe('OpenCode native agent controls', () => {
     useChatStore.getState().setHarnessResources('opencode', { ...catalog, agents: [] })
     connect.mockResolvedValue(catalog)
     render(<StatusBarPermission activeProvider="opencode" compactIndicators />)
-    await user.click(screen.getByRole('button', { name: 'Agent: Default Agent' }))
+    await user.click(screen.getByRole('button', { name: 'Agent: Default' }))
     expect(screen.getByText('No agents available. Refresh to try again.')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Refresh Agents' }))
     expect(await screen.findByRole('button', { name: 'Build' })).toBeInTheDocument()

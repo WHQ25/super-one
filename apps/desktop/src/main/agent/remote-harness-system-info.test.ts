@@ -52,6 +52,7 @@ function dependencies(
     settings: settings(permissionModes),
     getCachedResources,
     fetchClaudeModels: vi.fn(async () => []),
+    connectOpenCodeResources: vi.fn(async () => resources.opencode ?? { models: [], agents: [], commands: [] }),
     listCodexModels: vi.fn(async () => []),
     codexAccount: vi.fn(() => null),
     activeProvider: vi.fn(() => null),

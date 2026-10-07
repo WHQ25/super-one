@@ -3,6 +3,7 @@ import { bashEditFileChanges } from '@superone/shared/bash-edit-diff'
 import { fileMutationPath, isFileMutationTool } from '@superone/shared/file-mutation'
 import { sanitizeRemoteToolInput } from '@superone/shared/remote-tool-input'
 import { isSubagentToolName, normalizeTranscriptTool } from '@superone/shared/tool-ui'
+import { isPatchToolCall, isPatchToolName, patchToolFiles } from '@superone/shared/patch-tool'
 import { mcpAppMessageAttachments } from '@superone/shared/mcp-apps-state'
 import { compactMediaToolResult, computeToolLineDelta, computeToolMeta, stripMessagesForRemote } from '../remote-content'
 
@@ -15,6 +16,9 @@ const SHELL_INPUT_MAX = 1024
  * pushes an Agent call past the cap.
  */
 function shellInput(toolName: string, input: string): string {
+  // A patch's sanitized paths/counts are the collapsed multi-file header, not
+  // source code. Keep them even when several paths exceed the generic 1 KB cap.
+  if (isPatchToolName(toolName) || (toolName === 'Edit' && isPatchToolCall(toolName, parseInput(input) ?? {}))) return input
   if (input.length <= SHELL_INPUT_MAX) return input
   if (!isSubagentToolName(toolName)) return '{}'
   try {
@@ -66,6 +70,11 @@ export function taskFileChanges(message: ChatMessage, containerId: string): Task
       changes.push(...bashEditFileChanges(bashEditDiff))
       continue
     }
+    const input = parseInput(block.input) ?? {}
+    if (isPatchToolCall(block.toolName, input)) {
+      changes.push(...patchToolFiles(input).map((file) => ({ path: file.movePath ?? file.path, added: file.added, removed: file.removed })))
+      continue
+    }
     const change = fileMutationOf(block)
     if (change) changes.push(change)
   }
@@ -81,6 +90,10 @@ function bashEditDiffOf(message: ChatMessage, toolUseId: string) {
 export function isFileMutationChild(message: ChatMessage, toolUseId: string): boolean {
   if (bashEditDiffOf(message, toolUseId)) return true
   const block = message.content.find(candidate => 'toolName' in candidate && candidate.toolUseId === toolUseId)
+  if (block && 'toolName' in block) {
+    const input = parseInput(block.input) ?? {}
+    if (isPatchToolCall(block.toolName, input)) return patchToolFiles(input).length > 0
+  }
   return !!block && 'toolName' in block && fileMutationOf(block) !== undefined
 }
 
@@ -155,8 +168,11 @@ export function toolDetail(message: ChatMessage, id: string): string {
       : block.type === 'tool_result' ? { type: 'tool_result', toolUseId: block.toolUseId, summary: '', isError: block.isError } : block)
   const output = result && 'summary' in result ? result.summary : undefined
   const projectedTool = projected && 'toolName' in projected ? projected : undefined
+  const input = parseInput(tool.input) ?? {}
   return JSON.stringify({
-    input: projectedTool?.input ?? tool.input,
+    // Like Edit's toolDiff, patch bodies are fetched only when the phone opens
+    // details. Never send the raw patch wrapper in the collapsed transcript.
+    input: isPatchToolCall(tool.toolName, input) ? JSON.stringify({ patch: true, files: patchToolFiles(input) }) : projectedTool?.input ?? tool.input,
     result: output,
     // A background task's `result` is only its launch receipt; the run's own
     // output is patched onto the block when the task_notification lands.

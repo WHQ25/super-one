@@ -4,6 +4,7 @@ import { render, screen, fireEvent, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { PortableMessage } from '@superone/chat-view/PortableMessage'
 import type { ChatMessage, ContentBlock } from '@superone/shared/agent-types'
+import { sanitizeRemoteToolInput } from '@superone/shared/remote-tool-input'
 
 /**
  * A tool call that stands alone in a turn — one Edit between two paragraphs — goes through
@@ -36,6 +37,33 @@ function turnWithLoneEdit(): ChatMessage {
 }
 
 describe('portable turn tool metadata', () => {
+  it('counts a privacy-projected multi-file patch in Detail before its bodies are fetched', () => {
+    const patchText = '*** Begin Patch\n*** Update File: /workspace/a.ts\n@@\n-private-old\n+private-new\n+extra\n*** Update File: /workspace/a.ts\n@@\n-old2\n+new2\n*** Add File: /workspace/b.ts\n+one\n+two\n*** End Patch'
+    const message: ChatMessage = {
+      ...turnWithLoneEdit(), providerId: 'opencode',
+      content: [
+        { type: 'tool_use', toolName: 'Read', toolUseId: 'read', input: '{"file_path":"/workspace/a.ts"}', status: 'complete' },
+        { type: 'tool_result', toolUseId: 'read', summary: '' },
+        { type: 'tool_use', toolName: 'Patch', toolUseId: 'patch', input: sanitizeRemoteToolInput('Patch', JSON.stringify({ patchText })), status: 'complete' },
+        { type: 'tool_result', toolUseId: 'patch', summary: '' },
+        { type: 'tool_use', toolName: 'CodeExecution', toolUseId: 'code', input: '{"language":"JavaScript"}', status: 'complete' },
+        { type: 'tool_result', toolUseId: 'code', summary: '' },
+        { type: 'text', text: 'Updated the files.' },
+      ],
+    }
+    const { container } = render(<PortableMessage message={message} scheme="dark" pendingPermission={null} />)
+    const detail = container.querySelector('.turn-detail-section > button') as HTMLButtonElement
+    expect(within(detail).getByTitle('2 files changed')).toHaveTextContent('2')
+    expect(within(detail).getByText('+5')).toBeInTheDocument()
+    expect(within(detail).getByText('-2')).toBeInTheDocument()
+    expect(container.textContent).not.toContain('private-new')
+    fireEvent.click(detail)
+    const patch = container.querySelector('[data-tool-use-id="patch"]') as HTMLElement
+    expect(within(patch).getByText('2 files')).toBeInTheDocument()
+    expect(within(patch).getByText('+5')).toBeInTheDocument()
+    expect(within(patch).getByText('-2')).toBeInTheDocument()
+  })
+
   it('draws the diff of a tool call that is alone in its turn', () => {
     const { container } = render(
       <PortableMessage message={turnWithLoneEdit()} scheme="dark" pendingPermission={null} />,

@@ -10,3 +10,4 @@ Unused upstream capabilities and the decision on each. Decisions: `open`,
 | 3 | Skills (`/api/skill`, prompt `skills` attachments) | 2.0 | Skills in the slash menu on 2.x | 1.x listed skills as commands; 2.x needs attachments | open |
 | 4 | 2.x support in the remote node (`packages/opencode`) | 2.0 | OpenCode 2 on remote nodes | Second client in the node package | open |
 | 5 | Live agent catalog refresh for a running session | 1.x | "Refresh agents" would also reload project-defined agents; today the session list (`session_agents`) updates only when the runtime starts | Needs a runtime resource-reload call on both clients | open |
+| 6 | Generated `@opencode/client` (2.0.24 checked 2026-10-07) | 2.0 | Replace the handwritten v2 HTTP types/client and use the official authenticated service discovery | Preserve 1.x support, private-server ownership, auth, SSE recovery and canonical locations; never stop a user-owned shared service during probe cleanup | open |

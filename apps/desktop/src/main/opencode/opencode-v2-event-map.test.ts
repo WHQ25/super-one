@@ -43,6 +43,31 @@ const questionForm: OpenCodeV2Form = {
 }
 
 describe('OpenCodeV2TurnTranslator', () => {
+  it.each([
+    ['read', { path: '/repo/a.ts', offset: 5, limit: 10 }, 'Read', { file_path: '/repo/a.ts' }],
+    ['read', { filePath: '/repo/a.ts' }, 'Read', { file_path: '/repo/a.ts' }],
+    ['edit', { filePath: '/repo/a.ts', oldString: 'a', newString: 'b' }, 'Edit', { file_path: '/repo/a.ts', old_string: 'a', new_string: 'b' }],
+    ['write', { path: '/repo/a.ts', content: 'b' }, 'Write', { file_path: '/repo/a.ts' }],
+    ['skill', { id: 'opencode' }, 'Skill', { skill: 'opencode' }],
+    ['superone_session_rename', { title: 'New title' }, 'mcp__superone__session_rename', { title: 'New title' }],
+    ['superone_browser_snapshot', { description: 'Inspect checkout' }, 'mcp__superone__browser_snapshot', { description: 'Inspect checkout' }],
+    ['third_party_read', { path: '/repo/a.ts' }, 'third_party_read', { path: '/repo/a.ts' }],
+    ['execute', { code: 'return await tools.example()' }, 'CodeExecution', { code: 'return await tools.example()' }],
+    ['patch', { patchText: '*** Begin Patch\n*** End Patch' }, 'Patch', { patchText: '*** Begin Patch\n*** End Patch' }],
+    ['apply_patch', { patchText: '*** Begin Patch\n*** End Patch' }, 'Patch', { patchText: '*** Begin Patch\n*** End Patch' }],
+  ])('emits canonical chat identity and input for %s at every tool stage', (name, input, toolName, canonicalInput) => {
+    const events = agentEvents(run([
+      ev('session.step.started', { assistantMessageID: A, agent: 'build', model: { id: 'm1', providerID: 'opencode' } }),
+      ev('session.tool.input.started', { assistantMessageID: A, id: 'call', name }),
+      ev('session.tool.called', { assistantMessageID: A, id: 'call', input }),
+      ev('session.tool.success', { assistantMessageID: A, id: 'call', content: [{ type: 'text', text: 'result' }] }),
+    ]))
+    const tools = events.flatMap((event) => event.type === 'content_delta' && event.delta.type === 'tool_use' ? [event.delta] : [])
+    expect(tools.map((tool) => tool.toolName)).toEqual([toolName, toolName, toolName])
+    expect(JSON.parse(tools[1]!.input)).toMatchObject(canonicalInput)
+    expect(tools[2]!.input).toBe(tools[1]!.input)
+  })
+
   it('maps a tool turn to chat deltas, usage metadata and completion', () => {
     const actions = run([
       ev('session.inbox.enqueued', { inboxID: 'msg_user', item: { type: 'user' } }),
@@ -220,6 +245,54 @@ describe('OpenCodeV2TurnTranslator', () => {
       request: expect.objectContaining({ requestId: 'per_1', toolName: 'superone_terminal_tabs', toolUseId: 'call_t' }),
     })
     expect(actions.at(-1)).toEqual({ type: 'permission_resolved', requestId: 'per_1', approved: false })
+  })
+
+  it('keeps permission messages and resources when replayed outside an active turn', () => {
+    const translator = new OpenCodeV2TurnTranslator({ contextWindow: () => undefined })
+    const [action] = translator.apply({ id: 'ask', type: 'permission.asked', data: {
+      id: 'per_replay', sessionID: S, action: 'external_directory', resources: ['/external/*'],
+      message: 'Read a reference outside this project', save: ['/external/*'], metadata: { path: '/external/spec.md' },
+      source: { type: 'tool', messageID: A, id: 'call_old' },
+    } }, null)
+    expect(action).toMatchObject({ type: 'permission', request: {
+      message: 'Read a reference outside this project', permissionDetails: {
+        action: 'external_directory', resources: ['/external/*'], save: ['/external/*'], metadata: { path: '/external/spec.md' },
+        source: { toolUseId: 'call_old', messageId: A },
+      },
+    } })
+    if (action.type !== 'permission') throw new Error('Expected permission')
+    expect(action.request.permissionDetails?.source?.input).toBeUndefined()
+  })
+
+  it('correlates external-directory approval with native tool arguments without mistaking them for scope', () => {
+    const input = { path: '/outside/reference/spec.md', limit: 200 }
+    const actions = run([
+      ev('session.step.started', { assistantMessageID: A, agent: 'build', model: { id: 'm1', providerID: 'opencode' } }),
+      ev('session.tool.input.started', { assistantMessageID: A, id: 'call_read', name: 'read' }),
+      ev('session.tool.called', { assistantMessageID: A, id: 'call_read', input }),
+      ev('permission.asked', { id: 'per_external', action: 'external_directory', resources: ['/outside/reference/*', '/outside/second/*'],
+        save: ['/outside/*'], metadata: { reason: 'Inspect the reference implementation' }, source: { type: 'tool', messageID: A, id: 'call_read' } }),
+    ])
+    expect(actions.find((action) => action.type === 'permission')).toMatchObject({ type: 'permission', toolInput: input, request: {
+      toolName: 'external_directory', toolUseId: 'call_read', permissionDetails: {
+        action: 'external_directory', resources: ['/outside/reference/*', '/outside/second/*'], save: ['/outside/*'],
+        metadata: { reason: 'Inspect the reference implementation' }, source: { toolName: 'read', toolUseId: 'call_read', messageId: A, input },
+      },
+    } })
+  })
+
+  it('adds display aliases without changing the native permission input', () => {
+    const input = { path: '/repo/a.ts' }
+    const actions = run([
+      ev('session.step.started', { assistantMessageID: A, agent: 'build', model: { id: 'm1', providerID: 'opencode' } }),
+      ev('session.tool.input.started', { assistantMessageID: A, id: 'read', name: 'read' }),
+      ev('session.tool.called', { assistantMessageID: A, id: 'read', input }),
+      ev('permission.asked', { id: 'permission', action: 'read', resources: ['/repo/a.ts'], source: { type: 'tool', messageID: A, id: 'read' } }),
+    ])
+    const permission = actions.find((action) => action.type === 'permission')
+    expect(permission).toMatchObject({ toolInput: { path: '/repo/a.ts' }, request: { toolName: 'read' } })
+    if (permission?.type === 'permission') expect(permission.toolInput).not.toHaveProperty('file_path')
+    expect(input).not.toHaveProperty('file_path')
   })
 
   it('drops late content from a step that started before the turn', () => {

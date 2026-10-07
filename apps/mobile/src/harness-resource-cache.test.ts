@@ -5,6 +5,17 @@ import { peekSlashCatalog, requestSlashCatalog } from './slash-catalog'
 const makeClient = () => ({ request: vi.fn(async () => ({ models: [{ id: 'model' }] })) })
 
 describe('connection harness resources', () => {
+  it('forces an explicit refresh on the host and retains the displayed catalog on failure', async () => {
+    const client = makeClient()
+    await requestHarnessResource(client, 'get_system_info', '/p', 'opencode')
+    client.request.mockRejectedValueOnce(new Error('offline'))
+    await expect(requestHarnessResource(client, 'get_system_info', '/p', 'opencode', { force: true })).rejects.toThrow('offline')
+    expect(client.request).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'get_system_info', provider: 'opencode', force: true }))
+    expect(peekHarnessResource(client, 'get_system_info', '/p', 'opencode')?.models).toHaveLength(1)
+    await requestHarnessResource(client, 'get_system_info', '/p', 'opencode', true)
+    expect(client.request).toHaveBeenLastCalledWith(expect.not.objectContaining({ force: true }))
+  })
+
   it('marks unused catalogs stale without fetching them and keeps the warm value on revalidation failure', async () => {
     const client = makeClient()
     await requestHarnessResource(client, 'get_system_info', '/p', 'claude')

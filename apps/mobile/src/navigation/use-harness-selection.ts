@@ -179,7 +179,7 @@ export function useHarnessSelection() {
     // A user-picked ACP agent outranks whatever the host happens to report:
     // the switcher chose `Grok Build`, not "whichever agent is loaded".
     setSelectedAcpAgentId((current) => provider === 'acp' ? current ?? info.acpAgentId ?? null : null)
-    setPermissionModes(modes.length ? modes : ['default'])
+    setPermissionModes(modes)
     setPermissionModeState(nextPermissionMode)
   }
 

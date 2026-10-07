@@ -129,4 +129,18 @@ describe('OpenCodeBackend with OpenCode 2', () => {
     await send
     await backend.close()
   })
+
+  it('forwards once, remembered project approval and rejection as distinct native decisions', async () => {
+    const backend = new OpenCodeBackend()
+    await backend.start(startOptions())
+    for (const [id, allow, always, decision] of [
+      ['per_once', true, false, 'once'], ['per_saved', true, true, 'always'], ['per_no', false, false, 'reject'],
+    ] as const) {
+      route(v2('permission.asked', { id, action: 'external_directory', resources: ['/outside/reference/*'], save: ['/outside/*'] }))
+      expect(backend.respondToPermission(id, allow, always)).toBe(true)
+      expect(permissionReply).toHaveBeenCalledWith(id, decision)
+      expect(backend.getPendingInteractions().some(event => event.type === 'permission_request' && event.request.requestId === id)).toBe(false)
+    }
+    await backend.close()
+  })
 })

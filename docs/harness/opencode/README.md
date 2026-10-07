@@ -1,7 +1,7 @@
 # OpenCode integration
 
 Pin: `@opencode-ai/sdk` `^1.18.26` (installed 1.18.26) · Ledger version: not started ·
-Last updated: 2026-10-02
+Last updated: 2026-10-07
 
 ## Upstream
 
@@ -9,8 +9,12 @@ Last updated: 2026-10-02
   `@opencode-ai/models` `^0.0.62` for the model catalog.
 - Runtime: the user's own `opencode` binary, found on `PATH`; SuperOne does not pin it.
   Both 1.x and 2.x are supported on desktop. 2.x replaced the server API with `/api/*`,
-  which has no published SDK yet; SuperOne calls it through a hand-written client typed
-  from the 2.0.22 OpenAPI document.
+  SuperOne calls it through a hand-written client typed from the 2.0.22 OpenAPI
+  document. Upstream now publishes the generated
+  [`@opencode/client`](https://opencode.ai/v2/docs/build/client/) (latest 2.0.24
+  verified on 2026-10-07), including authenticated local service discovery.
+  Migration remains a separate integration task; `@opencode-ai/client` is the
+  older pre-release package, not the current V2 client.
 - The SDK dependency is a caret range. Pin it exactly before starting a ledger, or the
   ledger version cannot be stated.
 
@@ -42,6 +46,16 @@ native Plan agent; subsequent explicit agent selections take precedence.
 The shared `permissionMode: 'default'` field remains a compatibility wire value,
 not an OpenCode mode or a wildcard permission rule. The minimal remote-node
 runner in `packages/opencode` remains a separate, incomplete integration.
+
+Desktop IPC and mobile `get_system_info` share
+`apps/desktop/src/main/opencode/opencode-resources.ts`. Both discover models,
+agents and commands on demand, without needing a previous desktop session.
+Discovery caches are keyed by directory because agents and commands are
+location-specific; concurrent requests for the same directory share a probe.
+Explicit mobile refresh forwards `force` to bypass the host's disk cache;
+ordinary revalidation retains the shared TTL and cached values on failure.
+The mobile selection state preserves an empty permission-mode catalog instead
+of synthesizing a selectable Default mode. An unset agent is displayed as Default.
 
 ## Pin locations
 

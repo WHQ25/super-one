@@ -1253,7 +1253,7 @@ export function MobileApp() {
     const client = clientRef.current
     if (!client || !project) throw new Error('Connect to a desktop to refresh models')
     const request = ++systemInfoRequestRef.current
-    const info = await requestHarnessResource(client, 'get_system_info', project.path, selectedProvider, true)
+    const info = await requestHarnessResource(client, 'get_system_info', project.path, selectedProvider, { force: true })
     if (request !== systemInfoRequestRef.current || clientRef.current !== client) return
     if (info.error) throw new Error(info.error)
     applySystemInfo(selectedProvider, info)

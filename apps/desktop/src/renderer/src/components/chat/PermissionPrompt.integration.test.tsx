@@ -184,6 +184,67 @@ beforeEach(() => {
 })
 
 describe('PermissionPrompt + real store integration', () => {
+  it('shows semantic directory scope by default and keeps protocol context behind technical details', async () => {
+    seedProjectWithActiveSession('/proj', 'alpha')
+    act(() => useChatStore.getState().handleAgentEvent({
+      type: 'permission_request', projectPath: '/proj', sessionId: 'alpha', request: {
+        requestId: 'per_external', toolName: 'external_directory', toolUseId: 'call_read', input: {}, allowAlwaysAllow: false,
+        permissionDetails: { action: 'external_directory', resources: ['/outside/reference/*', '/outside/second/*'], save: ['/outside/*'],
+          metadata: { reason: 'Inspect the reference implementation' },
+          source: { toolName: 'read', toolUseId: 'call_read', messageId: 'msg_a', input: { path: '/outside/reference/spec.md', limit: 200 } },
+        },
+      },
+    }))
+    render(<PermissionPrompt />)
+    expect(screen.getAllByText(/\/outside\/reference\/\*\s+\/outside\/second\/\*/)[0]).toBeVisible()
+    expect(screen.getByText('Access External Directory /outside/reference')).toBeVisible()
+    expect(screen.queryByText('read · call_read · msg_a')).toBeNull()
+    expect(screen.queryByRole('button', { name: /remember for this project/i })).toBeNull()
+    fireEvent.click(screen.getByText('Technical Details'))
+    await screen.findByText('read · call_read · msg_a')
+    expect(screen.getByText('/outside/*')).toBeVisible()
+    expect(screen.getByText(/"path": "\/outside\/reference\/spec.md"/)).toBeVisible()
+    expect(screen.getByText(/"limit": 200/)).toBeVisible()
+    expect(screen.getByText(/Inspect the reference implementation/)).toBeVisible()
+    expect(screen.getByText('read · call_read · msg_a')).toBeVisible()
+    fireEvent.click(screen.getByText('Access External Directory /outside/reference'))
+    expect(screen.getAllByText(/\/outside\/reference\/\*\s+\/outside\/second\/\*/)[0]).toBeVisible()
+    fireEvent.click(screen.getByText('Access External Directory /outside/reference'))
+    await act(async () => { fireEvent.click(screen.getByText('Allow Once')) })
+    expect(mockWindowAgent.respondToPermission).toHaveBeenCalledWith('alpha', 'per_external', true, undefined, undefined, undefined, undefined, undefined)
+  })
+
+  it('previews proposed project rules before saving, and cancel does not approve or reject', async () => {
+    seedProjectWithActiveSession('/proj', 'alpha')
+    act(() => useChatStore.getState().handleAgentEvent({ type: 'permission_request', projectPath: '/proj', sessionId: 'alpha', request: {
+      requestId: 'per_remember', toolName: 'external_directory', input: {}, allowAlwaysAllow: true, supportsAlwaysPersist: true,
+      permissionDetails: { action: 'external_directory', resources: ['/outside/reference/*'], save: ['/outside/*'] },
+    } }))
+    render(<PermissionPrompt />)
+    expect(screen.getByRole('button', { name: /allow once/i })).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: /remember for this project/i }))
+    expect(screen.getByText('Remember Permission in This Project?')).toBeVisible()
+    expect(screen.getByText('/outside/*')).toBeVisible()
+    expect(screen.getByText(/including new sessions and restarts/)).toBeVisible()
+    expect(mockWindowAgent.respondToPermission).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: /cancel/i }))
+    expect(mockWindowAgent.respondToPermission).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: /allow once/i })).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: /remember for this project/i }))
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /confirm & remember/i })) })
+    expect(mockWindowAgent.respondToPermission).toHaveBeenCalledWith('alpha', 'per_remember', true, true, undefined, undefined, undefined, undefined)
+  })
+
+  it('shows the permission message even when a generic tool has no display summary', () => {
+    seedProjectWithActiveSession('/proj', 'alpha')
+    act(() => useChatStore.getState().handleAgentEvent({ type: 'permission_request', projectPath: '/proj', sessionId: 'alpha', request: {
+      requestId: 'per_legacy', toolName: 'external_directory', input: {}, allowAlwaysAllow: false,
+      message: '/outside/legacy-directory/*',
+    } }))
+    render(<PermissionPrompt />)
+    expect(screen.getByText('/outside/legacy-directory/*')).toBeVisible()
+  })
+
   it('binds the local Codex form picker and preview to the active permission request', async () => {
     seedProjectWithActiveSession('/proj', 'alpha')
     useChatStore.setState(state => ({ projectSessions: { ...state.projectSessions, '/proj': { ...state.projectSessions['/proj'], _sessions: {

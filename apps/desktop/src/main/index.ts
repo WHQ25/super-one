@@ -1,4 +1,5 @@
 import { providerSettingsEnv } from '@superone/claude'
+import { registerSessionLinkIpc } from './environment/session-link-ipc'
 import { registerComputerUseViewfinderIpc } from './computer-use/viewfinder-ipc'
 import { registerMediaComposerIpc } from './media-gen/composer-ipc'
 import { registerAttachmentOriginalsIpc } from './attachment-originals'
@@ -609,6 +610,7 @@ const remoteCallbacks: RemoteControlCallbacks = {
     releaseMcpAppRequester({ kind: 'mobile', deviceId })
     safeSend(AgentIpcChannels.REMOTE_DEVICE_STATUS_CHANGED, { id: deviceId, online: false })
     deviceRegistry.handleDeviceDisconnected(deviceId)
+    void import('./remote/environment-commands').then(module => module.releaseEnvironmentDevice(deviceId))
   },
   onPairingCodeReceived: ({ code, deviceName }) => {
     safeSend(AgentIpcChannels.REMOTE_PAIRING_CODE_RECEIVED, { code, deviceName })
@@ -1779,6 +1781,8 @@ function registerIpcHandlers(): void {
     attachEnvironmentStatusBridge(host)
     return pairLocalLab(host)
   })
+
+  registerSessionLinkIpc()
 
   // Environment management (Settings → Environments).
   // The first listItems() call also attaches the supervisor → renderer status push.

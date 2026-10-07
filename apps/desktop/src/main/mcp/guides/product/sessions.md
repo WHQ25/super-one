@@ -1,6 +1,31 @@
-# SuperOne session archive (`project_list` / `session_list` / `session_search` / `session_read` / `session_cleanup` / `session_tag` / `session_tag_list`)
+# SuperOne session archive (`environment_list` / `project_list` / `session_list` / `session_search` / `session_read` / `session_cleanup` / `session_tag` / `session_tag_list`)
 
-Read saved SuperOne chat transcripts across harnesses (Claude, Codex, ACP, OpenCode). This is **content-level** access to the host’s SQLite archive — not live collab, not provider-thread resume.
+Read saved SuperOne chat transcripts across harnesses (Claude, Codex, ACP, OpenCode). Reads use the selected execution host's archive: desktop SQLite or a configured CLI node's runtime store.
+
+## Environment discovery and links
+
+Omit `environmentId` for the calling session's host. `localhost` means that same
+owner, even when a desktop executes a remote Host Action or a phone views the
+message. Local search needs no environment-discovery call. For another host:
+
+```javascript
+environment_list()
+project_list({ environmentId })
+session_search({ environmentId, projectId, query: "refresh token" })
+session_read({ environmentId, sessionId, view: "user", limit: 20 })
+```
+
+List/search on another environment requires its `projectId` or `allProjects: true`.
+Each call reads one host. The result names the environment once; individual hits
+contain no repeated environment IDs or URLs. Keep that selector on follow-up reads.
+Unknown/offline/unsupported hosts return an error rather than searching locally.
+Cleanup and tag mutations retain their existing host scope.
+
+Render references as `[Title](session://localhost/<SuperOne sessionId>)` or
+`[Title](session://<environmentId>/<SuperOne sessionId>)`. Keep both IDs in the URL;
+do not add harness metadata or substitute a provider thread ID. The chip loads its
+icon from read-only metadata. When forwarding content outside its owning session,
+use the explicit environment URL. Selection-copy exports the resolved reference.
 
 ## What this is (and is not)
 
@@ -142,6 +167,7 @@ Safety: never deletes the **current** session; **pinned** sessions are skipped u
 ## Scope
 
 - **Default**: current project.
+- **Environment**: optional `environmentId` on project/list/search/read, defaulting to the calling session's execution host; discover other IDs with `environment_list`.
 - **Discover projects**: `project_list` → `id` / `name` / `path` / `lastActiveAt` (`isCurrent` for the calling session’s project).
 - **Cross-project**:
   - `session_list` / `session_search`: `projectId` or `allProjects: true` (rows/hits include `projectId` only).

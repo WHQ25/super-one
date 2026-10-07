@@ -1,3 +1,5 @@
+import { isSessionLink } from '@superone/shared/session-link'
+import { SessionChip, sessionChipLabel } from '@superone/chat-view/presenters/SessionChip'
 import { cn } from '@superone/ui/lib/utils'
 import { useIsDark } from '@/hooks/use-is-dark'
 import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
@@ -46,6 +48,7 @@ function LinkFavicon({ href }: { href: string }) {
 
 export function FileLink(props: React.AnchorHTMLAttributes<HTMLAnchorElement>) {
   const { href: rawHref, children, className, ...rest } = props
+  if (rawHref && isSessionLink(rawHref)) return <SessionChip href={rawHref} label={sessionChipLabel(children)} />
   const projectRoot = selectEffectiveProjectRoot(useAppStore.getState()) ?? ''
   // Expand ~/… (Grok often cites ~/.grok/sessions/… artifacts).
   let homeDir: string | undefined

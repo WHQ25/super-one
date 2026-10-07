@@ -18,6 +18,7 @@ export type HistoryPage = {
 }
 
 export type SessionSnapshot = {
+  sourceEnvironmentId?: string | null
   /** All active context, including Views outside the loaded history pages. */
   mcpAppContexts?: McpAppContextSource[]
   /** Authoritative live turn, including completed rows not yet in persisted history. */

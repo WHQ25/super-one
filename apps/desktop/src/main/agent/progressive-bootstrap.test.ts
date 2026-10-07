@@ -4,6 +4,7 @@ import { ChatRuntime } from '../../../../mobile/src/runtime'
 const { history } = vi.hoisted(() => ({ history: vi.fn() }))
 vi.mock('../db-sessions', () => ({ loadSessionMessagesPaginated: history }))
 vi.mock('../session/realtime-timeline-repo', () => ({ loadRealtimeTimeline: () => null }))
+vi.mock('../environment/session-identity', () => ({ localSessionEnvironmentId: () => 'desktop' }))
 import { buildProgressiveBootstrap } from './progressive-bootstrap'
 
 it('hydrates the current live state from one bounded bootstrap without hidden bodies', async () => {
@@ -13,10 +14,11 @@ it('hydrates the current live state from one bounded bootstrap without hidden bo
   ] }
   history.mockReturnValue({ messages: [{ ...source, status: 'interrupted' }], hasMore: true, cursor: 100 })
   const host = { snapshot: { harnessId: 'claude', messages: [source] }, isStreaming: () => true,
-    getPendingInteractions: () => [], getCurrentSandboxInfo: () => undefined, getCurrentPermissionMode: () => 'default', getUiSettings: () => ({}) }
+    getPendingInteractions: () => [], getQueuedMessagesEvent: () => null, getCurrentSandboxInfo: () => undefined, getCurrentPermissionMode: () => 'default', getUiSettings: () => ({}) }
   const request = vi.fn(async () => buildProgressiveBootstrap(host as never, '/p', 's'))
   const runtime = new ChatRuntime({ request, startBuffering() {}, releaseBuffer: () => ({ epoch: 1, batches: [] }) } as never, vi.fn())
   await runtime.open('/p', 's')
+  expect(runtime.sourceEnvironmentId).toBe('desktop')
   expect(request).toHaveBeenCalledTimes(1)
   expect(history).toHaveBeenCalledWith('s', 8)
   expect(runtime.messages[0]?.status).toBe('streaming')

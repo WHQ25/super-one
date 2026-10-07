@@ -81,6 +81,9 @@ export interface ListSessionsOptions {
 }
 
 export interface SessionGateway {
+  linkBootstrap?(ref: SessionRef): Promise<{ snapshot: unknown; page: SessionMessagesListResult; sequence: string }>
+  getMetadataBatch?(refs: SessionRef[]): Promise<import('../session-link').SessionLinkMetadataResult[]>
+  archive?(request: import('../session-archive').SessionArchiveRequest): Promise<import('../session-archive').ArchiveToolResult>
   create(input: CreateSessionInput): Promise<{ sessionId: string }>
   get(ref: SessionRef): Promise<unknown | null>
   /** Product session list is always paginated (limit + offset required). */

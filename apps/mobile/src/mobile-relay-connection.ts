@@ -40,6 +40,7 @@ export function createMobileRelayConnection(hooks: MobileRelayConnectionHooks): 
   client: RelayClient
   reconnectController: ReconnectController
   dial: (lan: LanAddress | null) => Promise<void>
+  adoptHooks(next: MobileRelayConnectionHooks): void
 } {
   let client!: RelayClient
   let stopped = false
@@ -123,8 +124,8 @@ export function createMobileRelayConnection(hooks: MobileRelayConnectionHooks): 
 
   client = new RelayClient({
     onMetric: networkMetricsEnabled ? metric => networkLedger.record(metric) : undefined,
-    onEvents: hooks.onEvents,
-    onTerminal: hooks.onTerminal,
+    onEvents: (events, epoch) => hooks.onEvents(events, epoch),
+    onTerminal: payload => hooks.onTerminal(payload),
     onReset: () => {
       hooks.onStatus('server reset — rehydrating')
       if (reconnectController.isActive) return
@@ -177,5 +178,5 @@ export function createMobileRelayConnection(hooks: MobileRelayConnectionHooks): 
     ...(hooks.openSocket ? { openSocket: hooks.openSocket } : {}),
   })
 
-  return { client, reconnectController, dial }
+  return { client, reconnectController, dial, adoptHooks: next => { hooks = next } }
 }

@@ -12,16 +12,17 @@
 /** Do not match session_list_agents or session_collab_*. */
 export function isSessionArchiveToolName(toolName: string | undefined): boolean {
   if (!toolName) return false
-  return /(?:^|__)(?:project_list|session_(?:list|search|read|cleanup|tag_list))$/.test(toolName)
+  return /(?:^|__)(?:environment_list|project_list|session_(?:list|search|read|cleanup|tag_list))$/.test(toolName)
 }
 
 /** Production list/search payloads are TOON tables — a mid-string slice makes decode fail. */
 export function looksLikeSessionArchiveToon(summary: string): boolean {
-  return /(?:^|\n)(?:projects|sessions|hits|tags)\[\d+\]/.test(summary.trim())
+  return /(?:^|\n)(?:environments|projects|sessions|hits|tags)\[\d+\]/.test(summary.trim())
 }
 
 export function looksLikeSessionArchiveJson(obj: Record<string, unknown>): boolean {
-  return Array.isArray(obj.sessions)
+  return Array.isArray(obj.environments)
+    || Array.isArray(obj.sessions)
     || Array.isArray(obj.hits)
     || Array.isArray(obj.projects)
     || Array.isArray(obj.tags)

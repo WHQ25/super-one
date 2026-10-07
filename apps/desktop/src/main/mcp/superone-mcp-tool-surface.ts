@@ -1,3 +1,4 @@
+import { createEnvironmentArchiveTools } from './environment-archive-tools'
 import { logToolFailure } from './tool-error-log'
 import {
   BUILT_IN_SUPERONE_TOOL_DEFS,
@@ -220,6 +221,7 @@ async function runSuperoneMcpTool(
 
   if ((BUILT_IN_SUPERONE_TOOL_NAMES as readonly string[]).includes(toolName)) {
     return executeBuiltInSuperoneTool(toolName as BuiltInSuperoneToolName, args, {
+      ...createEnvironmentArchiveTools(sessionId, connectionId),
       notifyDevAppReady,
       sessionId,
       sessionHost: getSessionHost(),

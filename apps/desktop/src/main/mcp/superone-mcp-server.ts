@@ -1,3 +1,4 @@
+import { createEnvironmentArchiveTools } from './environment-archive-tools'
 import type { McpSdkServerConfigWithInstance } from '@anthropic-ai/claude-agent-sdk'
 import { bindLocalCallScope } from './local-call-scope'
 import { bindToolErrorLog } from './tool-error-log'
@@ -290,6 +291,7 @@ export function createSuperoneMcpServer(sessionId: string, projectPath?: string)
   bindLocalCallScope(server, sessionId)
   bindToolErrorLog(server, sessionId)
   registerSuperoneTools(server, {
+    ...createEnvironmentArchiveTools(sessionId),
     notifyDevAppReady,
     sessionId,
     sessionHost: getSessionHost(),

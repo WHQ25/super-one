@@ -189,6 +189,7 @@ describe('settings RPC', () => {
       {
         sessionId: 's1',
         text: 'hi',
+        clientMessageId: 'user_phone_1',
         leaseId: 'l1',
         generation: '1',
       },
@@ -199,6 +200,7 @@ describe('settings RPC', () => {
     const arg = send.mock.calls[0][0] as { model?: string; sandboxMode?: string }
     expect(arg.model).toBe('claude-opus-4')
     expect(arg.sandboxMode).toBe('on')
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ clientMessageId: 'user_phone_1' }))
   })
 
   it('session.send carries the client\'s Ultracode toggle only when it names one', async () => {

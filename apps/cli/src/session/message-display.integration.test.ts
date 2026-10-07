@@ -9,6 +9,28 @@ import { ControlLeaseService } from './control-lease'
 import { SessionRuntime, type TurnRunner } from './session-runtime'
 
 describe('remote rich user message persistence', () => {
+  it('keeps sender IDs in SQLite history and live echoes, including repeated text from another client', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'message-echo-'))
+    const db = openNodeDatabase(join(directory, 'state.sqlite'))
+    const events = new EventLog(db, 'node')
+    const leases = new ControlLeaseService(db)
+    const runner: TurnRunner = async () => ({ finalText: 'done' })
+    let runtime = new SessionRuntime(db, events, leases, 'node', runner)
+    try {
+      const session = runtime.create({ projectId: 'project', harnessId: 'claude' })
+      const lease = leases.acquire({ resource: { environmentId: 'node', sessionId: session.sessionId }, holderClientId: 'client', ttlMs: 30_000 })
+      for (const clientMessageId of ['user_phone_1', 'user_desktop_1']) {
+        await runtime.send({ sessionId: session.sessionId, text: 'same text', clientMessageId, client: { clientSessionId: 'client' }, leaseId: lease.leaseId, generation: lease.generation })
+      }
+      const mapper = createNodeSessionEventMapper({ sessionId: session.sessionId, projectPath: '/project' })
+      const userEvents = events.listAfter('0').flatMap(event => mapper.map(event)).filter(event => event.type === 'user_message_appended')
+      expect(userEvents.map(event => event.message.id)).toEqual(['user_phone_1', 'user_desktop_1'])
+      await runtime.dispose()
+      runtime = new SessionRuntime(db, events, leases, 'node', runner)
+      expect(runtime.listMessages({ sessionId: session.sessionId }).messages.filter(message => message.role === 'user').map(message => message.id)).toEqual(['user_phone_1', 'user_desktop_1'])
+    } finally { await runtime.dispose(); db.close(); rmSync(directory, { recursive: true, force: true }) }
+  })
+
   it.each(['claude', 'codex'] as const)('keeps display chips separate from %s model input through restart and live events', async harness => {
     const directory = mkdtempSync(join(tmpdir(), 'message-display-'))
     const db = openNodeDatabase(join(directory, 'state.sqlite'))

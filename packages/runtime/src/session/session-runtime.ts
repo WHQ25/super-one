@@ -142,6 +142,7 @@ interface AgentsConfirmWaiter {
 
 /** Options for one harness turn (active or queued). */
 interface TurnOpts extends MessageDisplayFields {
+  clientMessageId?: string
   echoUserMessage?: boolean
   text: string
   requestId?: string
@@ -812,6 +813,11 @@ export class SessionRuntime {
     return this.clone(session)
   }
 
+  /** Internal read-only archive projection; avoids cloning transcript bodies for header reads. */
+  archiveEntries(): Iterable<Readonly<NodeSessionRecord>> {
+    return this.live.values()
+  }
+
   get(sessionId: string): NodeSessionRecord | null {
     const s = this.live.get(sessionId)
     return s ? this.clone(s) : null
@@ -939,6 +945,8 @@ export class SessionRuntime {
   async send(input: {
     sessionId: string
     text: string
+    /** Stable user block id shared by optimistic UI, live echo and history. */
+    clientMessageId?: string
     client: { clientSessionId: string }
     leaseId: string
     generation: string
@@ -1007,6 +1015,7 @@ export class SessionRuntime {
 
     const turnOpts: TurnOpts = {
       text: input.text,
+      clientMessageId: input.clientMessageId,
       ...parseMessageDisplay(input),
       echoUserMessage: input.echoUserMessage,
       requestId: input.requestId,
@@ -1204,7 +1213,9 @@ export class SessionRuntime {
     // The turn still runs; the transcript just keeps no bubble for a model-only wake.
     if (opts.source === 'task-notification' && isModelOnlyHostWake(opts.text)) return
     const userBlock: TranscriptBlock = {
-      id: randomUUID(),
+      // Keep the same canonical id in both durable history and the event log.
+      // Peers still receive the message; only the sender already has this id.
+      id: opts.clientMessageId || randomUUID(),
       role: 'user',
       text: opts.text,
       ...(opts.userMessageContent ? { userMessageContent: opts.userMessageContent } : {}),

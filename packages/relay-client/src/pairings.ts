@@ -1,4 +1,6 @@
 export type SavedPairing = {
+  /** Verified over the authenticated host connection; absent on legacy pairings. */
+  environmentId?: string
   id: string
   /** User-assigned label. Host name remains the transport-reported identity. */
   name?: string

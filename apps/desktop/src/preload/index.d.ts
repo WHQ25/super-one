@@ -1005,6 +1005,9 @@ export interface EnvironmentAPI extends MediaComposerAPI {
     label: string
   }>
 
+  sessionSource(projectPath: string): Promise<string | null>
+  sessionLinkMetadata(refs: import('@superone/shared/environment/refs').SessionRef[]): Promise<import('@superone/shared/session-link').SessionLinkMetadataResult[]>
+  sessionLinkTarget(ref: import('@superone/shared/environment/refs').SessionRef): Promise<import('@superone/shared/session-link').SessionLinkTarget>
   listItems(): Promise<EnvironmentListItem[]>
   addOverSsh(input: {
     destination: string

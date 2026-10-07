@@ -1,3 +1,4 @@
+import { ENVIRONMENT_LIST_DESCRIPTION, ARCHIVE_ENVIRONMENT_DESCRIPTION } from '@superone/shared/superone-tool-descriptions'
 import { superoneHome } from '../superone-home'
 import { INTERACTION_MEMORY_TOOL_DEFS, memoryActor } from '@superone/shared/interaction-memory'
 import { InteractionMemoryStore, executeInteractionMemoryTool } from '@superone/runtime/fs/interaction-memory'
@@ -171,6 +172,8 @@ function sessionMemoryActor(deps: BuiltInSuperoneToolDeps): string {
 }
 
 export interface BuiltInSuperoneToolDeps {
+  environmentList?: () => Promise<import('@superone/shared/session-archive').ArchiveToolResult>
+  archiveRead?: (tool: import('@superone/shared/session-archive').SessionArchiveTool, args: Record<string, unknown>, local: () => import('@superone/shared/session-archive').ArchiveToolResult) => Promise<import('@superone/shared/session-archive').ArchiveToolResult>
   notifyDevAppReady: (projectDir: string, appId: string) => void
   sessionId: string
   sessionHost: SessionTitleHost | null
@@ -331,14 +334,16 @@ export async function executeBuiltInSuperoneTool(
       return sessionTagHandler(args as unknown as SessionTagArgs, deps)
     case 'session_tag_list':
       return sessionTagListHandler(args as unknown as SessionTagListArgs, deps)
+    case 'environment_list':
+      return deps.environmentList?.() ?? { content: [{ type: 'text' as const, text: '[Error] Environment discovery unavailable' }], isError: true }
     case 'project_list':
-      return projectListHandler(args as unknown as ProjectListArgs, deps)
+      return deps.archiveRead ? deps.archiveRead('project_list', args, () => projectListHandler(args as unknown as ProjectListArgs, deps)) : projectListHandler(args as unknown as ProjectListArgs, deps)
     case 'session_list':
-      return sessionListHandler(args as unknown as SessionListArgs, deps)
+      return deps.archiveRead ? deps.archiveRead('session_list', args, () => sessionListHandler(args as unknown as SessionListArgs, deps)) : sessionListHandler(args as unknown as SessionListArgs, deps)
     case 'session_search':
-      return sessionSearchHandler(args as unknown as SessionSearchArgs, deps)
+      return deps.archiveRead ? deps.archiveRead('session_search', args, () => sessionSearchHandler(args as unknown as SessionSearchArgs, deps)) : sessionSearchHandler(args as unknown as SessionSearchArgs, deps)
     case 'session_read':
-      return sessionReadHandler(args as unknown as SessionReadArgs, deps)
+      return deps.archiveRead ? deps.archiveRead('session_read', args, () => sessionReadHandler(args as unknown as SessionReadArgs, deps)) : sessionReadHandler(args as unknown as SessionReadArgs, deps)
     case 'session_cleanup':
       return sessionCleanupHandler(args as unknown as SessionCleanupArgs, deps)
     case 'automation_list':
@@ -654,17 +659,20 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
     (args) => sessionTagListHandler(args, deps),
   )
 
+  server.registerTool('environment_list', { description: ENVIRONMENT_LIST_DESCRIPTION, inputSchema: {} }, async () => deps.environmentList?.() ?? { content: [{ type: 'text' as const, text: '[Error] Environment discovery unavailable' }], isError: true })
+
   server.registerTool(
     'project_list',
     {
       description: PROJECT_LIST_DESCRIPTION,
       inputSchema: {
+        environmentId: z.string().optional().describe(ARCHIVE_ENVIRONMENT_DESCRIPTION),
         query: z.string().optional().describe('Case-insensitive substring filter on project name or path.'),
         limit: z.number().int().min(1).max(100).optional().describe('Max rows. Default 50, max 100.'),
         offset: z.number().int().min(0).optional().describe('Pagination offset. Default 0.'),
       },
     },
-    (args) => projectListHandler(args, deps),
+    async (args) => deps.archiveRead ? deps.archiveRead('project_list', args, () => projectListHandler(args, deps)) : projectListHandler(args, deps),
   )
 
   server.registerTool(
@@ -672,6 +680,7 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
     {
       description: SESSION_LIST_DESCRIPTION,
       inputSchema: {
+        environmentId: z.string().optional().describe(ARCHIVE_ENVIRONMENT_DESCRIPTION),
         query: z.string().optional().describe('Case-insensitive title substring filter.'),
         harness: z.enum(['claude', 'codex', 'acp', 'opencode']).optional().describe('Filter by harness.'),
         includeHidden: z.boolean().optional().describe('Include hidden sessions. Default false.'),
@@ -699,7 +708,7 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
         offset: z.number().int().min(0).optional().describe('Pagination offset. Default 0.'),
       },
     },
-    (args) => sessionListHandler(args, deps),
+    async (args) => deps.archiveRead ? deps.archiveRead('session_list', args, () => sessionListHandler(args, deps)) : sessionListHandler(args, deps),
   )
 
   server.registerTool(
@@ -707,6 +716,7 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
     {
       description: SESSION_SEARCH_DESCRIPTION,
       inputSchema: {
+        environmentId: z.string().optional().describe(ARCHIVE_ENVIRONMENT_DESCRIPTION),
         query: z.string().min(1).describe('Search terms (AND). Matches title and message text.'),
         harness: z.enum(['claude', 'codex', 'acp', 'opencode']).optional(),
         sessionIds: z.array(z.string()).max(32).optional().describe('Optional: restrict search to these session ids.'),
@@ -724,7 +734,7 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
         limit: z.number().int().min(1).max(50).optional().describe('Max hits. Default 20, max 50.'),
       },
     },
-    (args) => sessionSearchHandler(args, deps),
+    async (args) => deps.archiveRead ? deps.archiveRead('session_search', args, () => sessionSearchHandler(args, deps)) : sessionSearchHandler(args, deps),
   )
 
   server.registerTool(
@@ -732,6 +742,7 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
     {
       description: SESSION_READ_DESCRIPTION,
       inputSchema: {
+        environmentId: z.string().optional().describe(ARCHIVE_ENVIRONMENT_DESCRIPTION),
         sessionId: z
           .string()
           .min(1)
@@ -748,7 +759,7 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
         toolUseId: z.string().optional().describe('Required for view=tool_detail.'),
       },
     },
-    (args) => sessionReadHandler(args, deps),
+    async (args) => deps.archiveRead ? deps.archiveRead('session_read', args, () => sessionReadHandler(args, deps)) : sessionReadHandler(args, deps),
   )
 
   server.registerTool(

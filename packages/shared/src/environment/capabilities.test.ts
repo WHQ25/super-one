@@ -10,6 +10,7 @@ describe('normalizeCapabilities', () => {
   it('defaults missing flags to false and harnessIds to []', () => {
     expect(normalizeCapabilities({})).toEqual({
       sessions: false,
+      sessionArchive: false,
       harnessIds: [],
       terminal: false,
       workspaceFs: false,

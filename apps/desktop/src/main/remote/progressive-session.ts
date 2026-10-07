@@ -5,15 +5,23 @@ import { bashEditFileChanges, summarizeBashEditDiff } from '@superone/shared/bas
 import { isSubagentToolName } from '@superone/shared/tool-ui'
 
 /** View preferences are device-scoped; persisted transcripts remain complete. */
-const views = new Map<string, { sessionId: string; details: Map<string, DetailSubscription> }>()
+const views = new Map<string, Map<string, { details: Map<string, DetailSubscription> }>>()
 type DetailSubscription = { ref: string; text: string; revision: number }
 
-export function setProgressiveSession(deviceId: string, sessionId?: string): void {
-  views.delete(deviceId)
-  if (sessionId) views.set(deviceId, { sessionId, details: new Map() })
+export function setProgressiveSession(deviceId: string, sessionId?: string, preserve = false): void {
+  if (!preserve) views.delete(deviceId)
+  if (sessionId) {
+    const sessions = views.get(deviceId) ?? new Map()
+    sessions.set(sessionId, { details: new Map() })
+    views.set(deviceId, sessions)
+  }
+}
+export function unsetProgressiveSession(deviceId: string, sessionId?: string): void {
+  if (sessionId) views.get(deviceId)?.delete(sessionId)
+  else views.delete(deviceId)
 }
 export function isProgressiveSession(deviceId: string, sessionId: string): boolean {
-  return views.get(deviceId)?.sessionId === sessionId
+  return views.get(deviceId)?.has(sessionId) ?? false
 }
 const reference = (messageId: string, kind: string, key: string | number) => JSON.stringify([messageId, kind, key])
 
@@ -95,20 +103,20 @@ function detailText(message: ChatMessage, ref: string): string {
   throw new Error('Detail not found')
 }
 export function subscribeDetail(deviceId: string, sessionId: string, subscriptionId: string, ref: string, message: ChatMessage) {
-  const view = views.get(deviceId)
-  if (!view || view.sessionId !== sessionId) throw new Error('Session subscription expired')
+  const view = views.get(deviceId)?.get(sessionId)
+  if (!view) throw new Error('Session subscription expired')
   if (view.details.size >= 64 && !view.details.has(subscriptionId)) throw new Error('Too many expanded details')
   const text = detailText(message, ref)
   view.details.set(subscriptionId, { ref, text, revision: 0 })
   return { subscriptionId, revision: 0, offset: 0, text }
 }
 export function unsubscribeDetail(deviceId: string, sessionId: string, subscriptionId: string): void {
-  const view = views.get(deviceId)
-  if (view?.sessionId === sessionId) view.details.delete(subscriptionId)
+  const view = views.get(deviceId)?.get(sessionId)
+  if (view) view.details.delete(subscriptionId)
 }
 export function detailUpdates(deviceId: string, sessionId: string, messages: readonly ChatMessage[]): AgentEvent[] {
-  const view = views.get(deviceId)
-  if (view?.sessionId !== sessionId || !view.details.size) return []
+  const view = views.get(deviceId)?.get(sessionId)
+  if (!view?.details.size) return []
   const updates: AgentEvent[] = []
   for (const [subscriptionId, detail] of view.details) {
     const message = messages.find(message => message.id === detailMessageId(detail.ref))

@@ -146,6 +146,30 @@ const codexInfo: RemoteSystemInfo = {
   defaults: { model: 'gpt-6-astra', effort: 'high', permissionMode: 'auto', fastMode: true },
 }
 
+test('returning from a CLI route clears foreign session settings before adopting desktop defaults', async () => {
+  const { result } = await mount()
+  await act(async () => { result.current.resetForProvider('codex') })
+  await act(async () => {
+    result.current.applySystemInfo('codex', {
+      ...codexInfo,
+      defaults: { model: 'cli-model', effort: 'medium', permissionMode: 'default', sandboxMode: 'off' },
+    }, { model: 'cli-model', effort: 'medium', permissionMode: 'default', apiProviderId: 'cli-credential', serviceTier: null })
+  })
+  expect(result.current.permissionMode).toBe('default')
+  expect(result.current.selectedProviderId).toBe('cli-credential')
+
+  await act(async () => { result.current.resetForProvider('codex') })
+  await act(async () => {
+    result.current.applySystemInfo('codex', { ...codexInfo, selectedProviderId: 'desktop-credential', defaults: { ...codexInfo.defaults, sandboxMode: 'on' } })
+  })
+  expect(result.current.permissionMode).toBe('auto')
+  expect(result.current.selectedModel).toBe('gpt-6-astra')
+  expect(result.current.selectedEffort).toBe('high')
+  expect(result.current.selectedProviderId).toBe('desktop-credential')
+  expect(result.current.serviceTier).toBe('priority')
+  expect(result.current.defaultSandboxMode).toBe('on')
+})
+
 test.each([{ models: [] }, { models: codexInfo.models }])('keeps an opened Codex model and effort when the catalog omits it ($models)', async ({ models }) => {
   const { result } = await mount()
   await act(async () => { result.current.resetForProvider('codex') })

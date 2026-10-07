@@ -1,3 +1,6 @@
+import { resolveSessionLink } from '@superone/shared/session-link'
+import { desktopSessionLinkPorts, openSessionLink, sessionLinkSource } from '@/lib/session-links'
+import { useSessionScope } from '@/stores/chat-store/session-scope'
 import {
   SessionArchiveToolBlockPresenter,
   isSessionArchiveToolName,
@@ -27,11 +30,22 @@ async function openArchiveSession(sessionId: string, projectId?: string | null) 
 
 /** Desktop adapter for project/session navigation and harness branding. */
 export function SessionArchiveToolBlock(props: SessionArchiveToolBlockProps) {
+  const scope = useSessionScope()
+  const sourceProject = scope?.projectPath
+  const open = async (sessionId: string, projectId?: string | null, environmentId?: string) => {
+    try {
+    if (!environmentId) return openArchiveSession(sessionId, projectId)
+    const source = sourceProject ? await sessionLinkSource(sourceProject) : null
+    const ref = resolveSessionLink({ sessionId, environmentId }, source)
+    if (!ref) throw new Error('Session source environment unavailable')
+    await openSessionLink(ref)
+    } catch (error) { desktopSessionLinkPorts.onError(error) }
+  }
   return (
     <SessionArchiveToolBlockPresenter
       {...props}
       onOpenProject={(projectPath) => useAppStore.getState().selectProject(projectPath.trim())}
-      onOpenSession={openArchiveSession}
+      onOpenSession={open}
       renderHarnessIcon={(harness, acpAgentId) => {
         const Icon = resolveSessionIcon(harness || null, acpAgentId)
         return Icon

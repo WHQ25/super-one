@@ -112,7 +112,9 @@
     "./presenters/workflow-utils": "./src/presenters/workflow-utils.ts",
     "./terminal-html": "./src/terminal-html.ts",
     "./transcript-rows": "./src/transcript-rows.ts",
-    "./mod-ui": "./src/mod-ui/index.ts"
+    "./mod-ui": "./src/mod-ui/index.ts",
+    "./presenters/SessionChip": "./src/presenters/SessionChip.tsx",
+    "./presenters/session-link-cache": "./src/presenters/session-link-cache.ts"
   },
   "scripts": {
     "build": "vite build && vite build --config vite.terminal.config.ts && bun scripts/embed-host-html.ts",

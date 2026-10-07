@@ -16,6 +16,8 @@ export interface ProjectedApiRetry {
  * has no live token counter — see `PortableTurnFooter`.
  */
 export interface SessionProjection {
+  /** Authenticated owner of this transcript; localhost links bind here. */
+  sourceEnvironmentId?: string | null
   /** Mirrors the host's session status; gates the live-turn spinner. */
   sessionStatus?: AgentStatus
   streamingTokens?: { input: number; output: number }

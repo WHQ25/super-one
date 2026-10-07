@@ -51,6 +51,7 @@ the same commit.
 - [mcp-apps.md](features/mcp-apps.md) — hosting third-party MCP Apps Views (Codex, Claude; desktop, phone, remote)
 - [claude-mods.md](features/claude-mods.md) — drawing Claude Code mods (panes, band, transcript sites, `Client`; desktop, phone, remote)
 - [composer.md](features/composer.md) — desktop composer slot, decision queue, and focus and draft rules
+- [session-links.md](features/session-links.md) — session Markdown chips, source ownership and environment-scoped archive discovery
 
 ### Development
 

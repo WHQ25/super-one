@@ -1,3 +1,4 @@
+import { dispatchSessionArchiveRpc } from './session-archive-handlers'
 import { parseMessageDisplay } from '@superone/shared/message-display'
 import { MOD_UI_MUTATING_OPS, MOD_UI_UNAVAILABLE, type ModUiOp, type ModUiRequest } from '@superone/shared/mod-ui'
 import { dispatchMcpAppsRpc } from './mcp-apps-handlers'
@@ -220,6 +221,8 @@ export async function dispatchRpc(method: string, payload: unknown, ctx: RpcCont
 const PLUGIN_RELOAD_METHODS = new Set(['plugins.setEnabled', 'plugins.install', 'plugins.update', 'plugins.delete'])
 
 async function dispatchRpcInner(method: string, payload: unknown, ctx: RpcContext): Promise<RpcResult> {
+  const archive = dispatchSessionArchiveRpc(method, payload, ctx)
+  if (archive) return archive
   const resource = dispatchResourceRpc(method, payload, {
     client: ctx.client,
     projects: ctx.projects,
@@ -685,6 +688,7 @@ function handleDescriptor(ctx: RpcContext): RpcResult {
       // provider_resume is durable in SQLite; Claude/Codex reopen after node restart
       // and continue from claude-session:<id> / thread:<id> on the next turn.
       coldSessionResume: true,
+      sessionArchive: true,
       // Mid-turn reattach across process restart is not implemented for any harness
       // yet — streaming rows are reconciled to interrupted (see SessionRuntime).
       turnReattach: false,
@@ -2031,7 +2035,8 @@ function handleSessionGet(payload: unknown, ctx: RpcContext): RpcResult {
   if (denied) return denied
   const sessionId = String(asRecord(payload).sessionId ?? '')
   const session = ctx.sessions.get(sessionId)
-  return { result: session }
+  const config = session?.harnessId === 'acp' ? ctx.sessionProviders?.get(session.providerId)?.config as { agentId?: string } | undefined : undefined
+  return { result: session ? { ...session, ...(session.harnessId === 'acp' ? { acpAgentId: config?.agentId ?? null } : {}) } : null }
 }
 
 /**
@@ -2498,6 +2503,7 @@ async function handleSessionSend(payload: unknown, ctx: RpcContext): Promise<Rpc
     const result = await ctx.sessions.send({
       sessionId: String(p.sessionId ?? ''),
       text: String(p.text ?? ''),
+      clientMessageId: typeof p.clientMessageId === 'string' ? p.clientMessageId : undefined,
       ...parseMessageDisplay(options),
       echoUserMessage: options.echoUserMessage === true,
       client: { clientSessionId: ctx.client.clientSessionId },

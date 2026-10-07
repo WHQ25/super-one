@@ -502,6 +502,7 @@ export function sessionSearchHandler(args: SessionSearchArgs, deps: BuiltInSuper
     sessionId: string
     title: string
     harness: string
+    acpAgentId: string | null
     projectId: string | null
     messageId: string
     role: string
@@ -552,6 +553,7 @@ export function sessionSearchHandler(args: SessionSearchArgs, deps: BuiltInSuper
       sessionId: row.session_id,
       title: row.title ?? 'Untitled',
       harness,
+      acpAgentId: row.acp_agent_id,
       projectId: row.project_id ?? null,
       messageId: row.message_id,
       role: row.role,

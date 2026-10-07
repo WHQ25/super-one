@@ -72,6 +72,19 @@ test('puts search and new session above the device readout', async () => {
   expect(tree.indexOf('Search Sessions')).toBeLessThan(tree.indexOf('Studio'))
 })
 
+test('keeps new session available in the desktop workspace while a linked CLI session is active', async () => {
+  const onNewSession = jest.fn<WorkspaceSidebarProps['onNewSession']>()
+  await renderWithTheme(sidebar({ activeProject: null, activeSessionId: null, sessions: [], onNewSession }))
+  await act(async () => { fireEvent.press(screen.getByLabelText('New Session')) })
+  expect(onNewSession).toHaveBeenCalledWith({ path: '/repo', name: 'repo' })
+})
+
+test('has no new-session target when the workspace has no projects', async () => {
+  await renderWithTheme(sidebar({ projects: [], activeProject: null, activeSessionId: null, sessions: [] }))
+  expect(screen.queryByLabelText('New Session')).toBeNull()
+  expect(screen.getByLabelText('Add Project')).toBeTruthy()
+})
+
 test('reports reconnecting under the device name, not in the project list', async () => {
   await renderWithTheme(sidebar({
     deviceStatus: 'connecting',

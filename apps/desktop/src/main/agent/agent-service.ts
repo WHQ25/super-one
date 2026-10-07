@@ -4,7 +4,7 @@ import { withTurnReceipt } from '../remote/turn-receipt'
 import { codexAccountStore } from '../codex/codex-account-store'
 import { loadSessionHistoryIndex, loadSessionMessageWindow } from '../session/history-navigation'
 import { buildProgressiveBootstrap } from './progressive-bootstrap'
-import { isProgressiveSession, projectProgressiveMessage, setProgressiveSession } from '../remote/progressive-session'
+import { isProgressiveSession, projectProgressiveMessage, setProgressiveSession, unsetProgressiveSession } from '../remote/progressive-session'
 import { rememberAttachmentOrigin } from '../remote/attachment-echo'
 import { findAttachment } from '../remote/attachment-thumbnail'
 import { videoPosterService } from '../remote/video-poster'
@@ -629,6 +629,30 @@ export class AgentService {
       log.info('[CONN-DESK] %s start transport=%s deviceId=%s', command.type, source?.transport ?? '?', deviceId)
     }
     trace('remote.cmd', command.type, command)
+    if (command.type === 'environment_command') {
+      try {
+        const { executeEnvironmentCommand } = await import('../remote/environment-commands')
+        const result = await executeEnvironmentCommand(command.environmentId, command.command, deviceId, event => this.remoteControlService?.sendAgentEvent(event, [deviceId]) ?? Promise.resolve(), command.sessionId)
+        if (command.requestId) await respond?.(command.requestId, result)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        if (command.requestId) await respond?.(command.requestId, { error: message })
+        // Fire-and-forget controls (permission ids are interaction ids) need visible failures too.
+        if (!command.requestId || command.command.type.startsWith('respond_')) {
+          const sessionId = 'sessionId' in command.command ? command.command.sessionId : command.sessionId
+          if (sessionId) await this.remoteControlService?.sendAgentEvent({ type: 'remote_command_error', command: command.command.type, environmentId: command.environmentId, sessionId, message }, [deviceId])
+        }
+      }
+      return
+    }
+    if (['session_link_identity', 'session_link_metadata', 'session_link_resolve'].includes(command.type)) {
+      try {
+        const { readSessionLinkCommand } = await import('../remote/session-link-commands')
+        const result = await readSessionLinkCommand(command)
+        if ('requestId' in command && command.requestId) await respond?.(command.requestId, result)
+      } catch (error) { if ('requestId' in command && command.requestId) await respond?.(command.requestId, { error: error instanceof Error ? error.message : String(error) }) }
+      return
+    }
     switch (command.type) {
       case 'list_drafts':
       case 'open_draft':
@@ -1198,8 +1222,8 @@ export class AgentService {
           }
           throw err
         }
-        setProgressiveSession(deviceId, command.progressive ? command.sessionId : undefined)
-        this.releaseDeviceFromOtherSessions(deviceId, command.sessionId)
+        setProgressiveSession(deviceId, command.progressive ? command.sessionId : undefined, command.preserveSubscriptions)
+        if (!command.preserveSubscriptions) this.releaseDeviceFromOtherSessions(deviceId, command.sessionId)
         for (const event of subSession.getReplayEvents()) {
           try {
             await this.remoteControlService?.sendAgentEvent(event, [deviceId])
@@ -1222,7 +1246,7 @@ export class AgentService {
         break
       }
       case 'unsubscribe_session': {
-        if (!command.sessionId || isProgressiveSession(deviceId, command.sessionId)) setProgressiveSession(deviceId)
+        unsetProgressiveSession(deviceId, command.sessionId)
         const targetSessionId = command.sessionId
         if (targetSessionId) {
           const s = this.sessionManager?.getSession(targetSessionId)
@@ -1233,7 +1257,7 @@ export class AgentService {
         break
       }
       case 'leave_session': {
-        if (isProgressiveSession(deviceId, command.sessionId)) setProgressiveSession(deviceId)
+        unsetProgressiveSession(deviceId, command.sessionId)
         const session = this.sessionManager?.getSession(command.sessionId)
         if (!session) break
         if (session.owner.kind === 'remote' && session.owner.deviceId === deviceId) {

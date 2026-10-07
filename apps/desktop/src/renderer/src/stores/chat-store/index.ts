@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { useAppStore } from '../app'
+import { switchToProjectSession } from './helpers/switch-to-session'
 import { useActivityViewStateStore } from '../activity-view-state'
 import { buildSlashCommands, extractModeFromSuggestions, findCheckpointTarget } from './helpers/chat-helpers'
 import { writeProjectExtraDirs, readProjectExtraDirs, type ProjectExtraDirsSink } from './helpers/project-extra-dirs-write'
@@ -594,22 +595,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     } catch (err) { console.warn('[chat] fetchSessionsPage failed:', err) }
   },
 
-  switchToSession: async (projectPath, sessionId) => {
-    const state = get()
-    if (projectPath === state.activeProject) {
-      const activeSid = state.projectSessions[projectPath]?._activeSessionId ?? null
-      if (sessionId === activeSid) return
-      await get().switchSession(sessionId)
-      return
-    }
-    // Cross-project hop goes through useAppStore.selectProject so the sidebar's
-    // currentFolder/currentProjectId update too, not just useChatStore.activeProject.
-    await useAppStore.getState().selectProject(projectPath)
-    const fresh = get()
-    if (fresh.projectSessions[projectPath]?._activeSessionId !== sessionId) {
-      await fresh.switchSession(sessionId)
-    }
-  },
+  switchToSession: (projectPath, sessionId) => switchToProjectSession(get, projectPath, sessionId),
 
   renameSession: async (sessionId, title) => {
     const { activeProject } = get()
@@ -693,6 +679,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
         activeProject,
         sessionId,
         prev,
+        { adoptSession: true },
       )
       // Re-merge with whatever landed in _sessions during the awaits above.
       // Unconditional set(hydrated) dropped concurrent stream deltas (race).

@@ -53,6 +53,11 @@ const {
 } = await import('./remote-session-ops')
 
 describe('resolveNodeSessionId', () => {
+  it('preserves ACP and its agent identity instead of coercing remote sessions to Claude', async () => {
+    getSession.mockResolvedValueOnce({ sessionId: 'acp-session', harnessId: 'acp', providerId: 'grok', acpAgentId: 'grok-build', status: 'idle', transcript: [], model: 'grok-model', permissionMode: 'auto' })
+    const { hydrated } = await hydrateRemoteSessionWithCatalog('remote:env-1:/work/app', 'acp-session', null, { adoptSession: true })
+    expect(hydrated).toMatchObject({ sessionProvider: 'acp', preferredProvider: 'acp', acpAgentId: 'grok-build', selectedModel: 'grok-model', permissionMode: 'auto' })
+  })
   it('adopts the existing Claude node session with all inherited settings and never creates another', async () => {
     getSession.mockResolvedValueOnce({ sessionId: 'host-created', harnessId: 'claude', providerId: 'claude-personal', status: 'idle', transcript: [],
       model: 'sonnet', effort: 'high', permissionMode: 'auto', sandboxMode: 'on', apiProviderId: 'account', cwd: '/work/app/worktree' })

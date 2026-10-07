@@ -646,3 +646,17 @@ export const SessionCleanup: Story = {
     </StoryShell>
   ),
 }
+
+export const EnvironmentList: Story = {
+  name: 'environment_list',
+  render: () => <StoryShell width={360}>
+    {block('environment_list', {}, { status: 'streaming' })}
+    {block('environment_list', {}, { result: JSON.stringify({ environments: [
+      { environmentId: 'desktop', label: 'My desktop', isLocal: true, state: 'connected', searchable: true },
+      { environmentId: 'node', label: 'Build node with a long descriptive name', isLocal: false, state: 'disconnected', searchable: false },
+    ] }) })}
+    {block('environment_list', {}, { result: JSON.stringify({ environments: [] }) })}
+    {block('environment_list', {}, { isError: true, result: JSON.stringify({ status: 'error', message: 'Source session environment unavailable' }) })}
+    {block('environment_list', {}, { isDenied: true })}
+  </StoryShell>,
+}

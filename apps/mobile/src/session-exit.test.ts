@@ -35,4 +35,10 @@ describe('mobile session exit', () => {
     expect(sessionRemovalStatus([event], null, 3)).toBeNull()
     expect(sessionRemovalStatus([null, {}, { ...event, sessionId: 'other' }], makeRuntime(), 3)).toBeNull()
   })
+
+  it('ignores a removal event for the same session ID on another host', () => {
+    const runtime = { ...makeRuntime(), sourceEnvironmentId: 'node' }
+    expect(sessionRemovalStatus([{ type: 'session_closed', sessionId: 'active', environmentId: 'desktop' }], runtime, 3)).toBeNull()
+    expect(sessionRemovalStatus([{ type: 'session_closed', sessionId: 'active', environmentId: 'node' }], runtime, 3)).toBeTruthy()
+  })
 })

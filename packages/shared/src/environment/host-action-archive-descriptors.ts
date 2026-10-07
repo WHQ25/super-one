@@ -1,3 +1,4 @@
+import { ENVIRONMENT_LIST_DESCRIPTION, ARCHIVE_ENVIRONMENT_DESCRIPTION } from '../superone-tool-descriptions'
 import type { HostActionSuperoneToolDescriptor } from './host-action-superone-descriptors'
 import {
   RENAME_SESSION_DESCRIPTION,
@@ -13,6 +14,7 @@ import {
 } from '../superone-tool-descriptions'
 
 export const HOST_ACTION_ARCHIVE_DESCRIPTORS: HostActionSuperoneToolDescriptor[] = [
+  { name: 'environment_list', description: ENVIRONMENT_LIST_DESCRIPTION, inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
   {
     "name": "session_rename",
     "description": RENAME_SESSION_DESCRIPTION,
@@ -126,6 +128,7 @@ export const HOST_ACTION_ARCHIVE_DESCRIPTORS: HostActionSuperoneToolDescriptor[]
     "inputSchema": {
       "type": "object",
       "properties": {
+        environmentId: { type: 'string', description: ARCHIVE_ENVIRONMENT_DESCRIPTION },
         "query": {
           "type": "string",
           "description": "Case-insensitive substring filter on project name or path."
@@ -151,6 +154,7 @@ export const HOST_ACTION_ARCHIVE_DESCRIPTORS: HostActionSuperoneToolDescriptor[]
     "inputSchema": {
       "type": "object",
       "properties": {
+        environmentId: { type: 'string', description: ARCHIVE_ENVIRONMENT_DESCRIPTION },
         "query": {
           "type": "string",
           "description": "Case-insensitive title substring filter."
@@ -244,6 +248,7 @@ export const HOST_ACTION_ARCHIVE_DESCRIPTORS: HostActionSuperoneToolDescriptor[]
     "inputSchema": {
       "type": "object",
       "properties": {
+        environmentId: { type: 'string', description: ARCHIVE_ENVIRONMENT_DESCRIPTION },
         "query": {
           "type": "string",
           "minLength": 1,
@@ -313,6 +318,7 @@ export const HOST_ACTION_ARCHIVE_DESCRIPTORS: HostActionSuperoneToolDescriptor[]
     "inputSchema": {
       "type": "object",
       "properties": {
+        environmentId: { type: 'string', description: ARCHIVE_ENVIRONMENT_DESCRIPTION },
         "sessionId": {
           "type": "string",
           "minLength": 1,

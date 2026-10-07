@@ -1,3 +1,4 @@
+import { invalidateSessionLinkMetadata } from './PortableMarkdown'
 import { contiguousHistoryRange, needsHistoryPage, globalHistoryRange } from './history-navigation'
 import { extendHistoryIndex, mergeIndexedHistory, type SessionHistoryIndex } from '@superone/shared/session-history-index'
 import { EdgeLoader } from './EdgeLoader'
@@ -80,6 +81,7 @@ const EMPTY_SESSION: SessionFacts = {
   apiRetry: null,
   pendingTurn: null,
   projectPath: null,
+  sourceEnvironmentId: null,
   pendingQuestion: null,
   slashCommandOutput: null,
   queuedMessages: [],
@@ -200,6 +202,7 @@ function needsEarlierPage(view: ViewState): boolean {
 
 export function ChatView() {
   const [state, setState] = useState<ViewState>(() => ({ ...EMPTY_STATE, scheme: initialDocumentScheme(document.documentElement) }))
+  useEffect(invalidateSessionLinkMetadata, [state.session.sourceEnvironmentId])
   const stateRef = useRef(state)
   const atBottomRef = useRef(true)
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -481,6 +484,7 @@ export function ChatView() {
         exitMcpAppFullscreen()
         return
       case 'reset':
+        invalidateSessionLinkMetadata()
         forgetMcpAppArrivals()
         navigationRequest.current++
         setNavigationLoading(false)
@@ -505,6 +509,7 @@ export function ChatView() {
         }))
         return
       case 'setConnection':
+        invalidateSessionLinkMetadata()
         setState((previous) => ({ ...previous, connection: { state: message.state, epoch: message.epoch } }))
         return
       case 'setTheme':
@@ -699,7 +704,7 @@ export function ChatView() {
               isLastAssistant={message.id === lastAssistantId}
               sessionStreaming={sessionStreaming}
               streamingTokens={state.session.streamingTokens}
-              projectPath={state.session.projectPath}
+              projectPath={state.session.projectPath} sourceEnvironmentId={state.session.sourceEnvironmentId}
               hideCopyActions={isRealtimeVoiceMessage(message)}
             />
           )

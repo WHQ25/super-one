@@ -1,4 +1,7 @@
-import { memo, useMemo, type ComponentType } from 'react'
+import { DesktopSessionLinkScope } from '@/lib/session-links'
+import { SessionChip, sessionChipLabel } from '@superone/chat-view/presenters/SessionChip'
+import { rehypeSessionLinks } from '@superone/chat-view/presenters/markdown-media'
+import { memo, useMemo, type ComponentProps, type ComponentType } from 'react'
 import { defaultRemarkPlugins, type Components } from 'streamdown'
 import { remarkMediaPaths } from './remark-media-paths'
 import { tryCopy } from '@/lib/clipboard'
@@ -23,14 +26,18 @@ export {
   splitByInsightBlocks,
 } from './presenters/CopyableMarkdown'
 
+function SessionMarkdownLink({ href, children }: ComponentProps<'a'> & { node?: unknown }) {
+  return <SessionChip href={href ?? ''} label={sessionChipLabel(children)} />
+}
+
 const desktopMarkdownRuntime: CopyableMarkdownRuntime = {
-  components: streamdownComponents,
+  components: { ...streamdownComponents, 'session-chip': SessionMarkdownLink } as unknown as Components,
   controls: streamdownControls,
   getMathPluginSync,
   linkSafety: streamdownLinkSafety,
   loadMathPlugin,
   plugins: streamdownPlugins,
-  rehypePlugins: streamdownRehypePlugins,
+  rehypePlugins: [...streamdownRehypePlugins, rehypeSessionLinks],
   copyText: tryCopy,
 }
 
@@ -50,12 +57,12 @@ export const InsightBlock = memo(function InsightBlock({
   isStreaming: boolean
 }) {
   return (
-    <InsightBlockPresenter
+    <DesktopSessionLinkScope><InsightBlockPresenter
       title={title}
       content={content}
       isStreaming={isStreaming}
       runtime={desktopMarkdownRuntime}
-    />
+    /></DesktopSessionLinkScope>
   )
 })
 
@@ -77,11 +84,11 @@ export const CopyableMarkdown = memo(function CopyableMarkdown({
     remarkPlugins: [...Object.values(defaultRemarkPlugins), remarkMediaPaths(projectPath)],
   } : desktopMarkdownRuntime, [projectPath])
   return (
-    <CopyableMarkdownPresenter
+    <DesktopSessionLinkScope projectPath={projectPath}><CopyableMarkdownPresenter
       text={text}
       isStreaming={isStreaming}
       components={components as Components | undefined}
       runtime={runtime}
-    />
+    /></DesktopSessionLinkScope>
   )
 })

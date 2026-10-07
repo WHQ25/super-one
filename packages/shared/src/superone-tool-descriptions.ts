@@ -76,7 +76,7 @@ export const PROJECT_LIST_DESCRIPTION =
   'List SuperOne projects (id, name, path, lastActiveAt). ' +
   'Call this to discover projectId before session_list/session_search with projectId. ' +
   'Default order is last-active desc. Filter with query (name/path substring). ' +
-  'isCurrent marks the project of the calling session.'
+  'isCurrent marks the project of the calling session. Omit environmentId for its host; use environment_list only to discover unknown remote IDs.'
 
 export const SESSION_LIST_DESCRIPTION =
   "List saved SuperOne session metadata. Default: current project; pass projectId or allProjects for another scope. Filter by title, harness, dates, tags, or pin/hidden state. Use session_read for a transcript, session_search for message text, and project_list for project paths. Does not resume a harness or connect live collaboration."
@@ -84,7 +84,7 @@ export const SESSION_LIST_DESCRIPTION =
 export const SESSION_SEARCH_DESCRIPTION =
   'Search SuperOne chat transcripts by text (title + message body). Default: current project; projectId or allProjects for cross-project. ' +
   'Optional tags + tagMatch (any/all, default any) narrows sessions in SQL before scanning messages. Discover tags with session_tag_list. ' +
-  'Returns matching message hits with short snippets and projectId. Then call session_read with sessionId/messageId. Snippets are pointers only — not full bodies.'
+  'Returns matching message hits with short snippets and projectId. Then call session_read with sessionId/messageId. Snippets are pointers only — not full bodies. environmentId defaults to the calling session host and is returned once for the result; reuse it for session_read and session:// links. Discover unknown remote IDs with environment_list.'
 
 export const SESSION_READ_DESCRIPTION =
   "Read a saved transcript by sessionId without resuming its harness. Choose the view needed: meta, user, assistant, text, tools (index), or tool_detail (requires toolUseId). Paginate with limit/cursor; anchor with messageId/around. Read current-session history only when needed content is absent from context, such as after compaction."
@@ -250,3 +250,6 @@ export const TERMINAL_ACT_DESCRIPTION =
 export const TERMINAL_WAIT_FOR_DESCRIPTION =
   'Block until a terminal tab reaches a state; conditions AND-combine: text (substring visible on screen or in new output), textGone, idleMs (no output for that long), exited (foreground command finished). ' +
   'Use after terminal_tabs run or terminal_act when output arrives asynchronously (a server banner, a watch rebuild finishing). timeoutMs default 15000, max 120000. Do not sleep+poll with terminal_snapshot yourself.'
+
+export const ENVIRONMENT_LIST_DESCRIPTION = 'List configured SuperOne environments and their stable IDs. Use only when a remote environment ID is unknown; reuse known IDs. Local session queries default to the calling session host and need no discovery. Pass an ID to session_search/list/read or project_list for remote queries.'
+export const ARCHIVE_ENVIRONMENT_DESCRIPTION = 'Target environment ID from environment_list. Omit or use localhost for the calling session host.'

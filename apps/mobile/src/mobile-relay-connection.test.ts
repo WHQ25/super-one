@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SocketLike } from '@superone/relay-client'
 import { createMobileRelayConnection } from './mobile-relay-connection'
+import { deriveKeys } from '@superone/relay-client/crypto'
+import { encryptHostTestPayload } from '../../../packages/relay-client/src/test-host-frame'
 
 const MASTER = '0123456789abcdef'.repeat(8)
 const ENDPOINT = { relayUrl: 'wss://relay.example', masterSecret: MASTER, identity: { deviceId: 'phone-1', deviceName: 'Phone' } }
@@ -22,6 +24,23 @@ class MockSocket implements SocketLike {
 afterEach(() => vi.useRealTimers())
 
 describe('mobile relay connection lifecycle', () => {
+  it('delivers events and terminal traffic to adopted hooks after link preparation', async () => {
+    const oldEvents = vi.fn(), newEvents = vi.fn(), oldTerminal = vi.fn(), newTerminal = vi.fn()
+    const socket = new MockSocket()
+    const hooks = { onEvents: oldEvents, onTerminal: oldTerminal, restore: vi.fn().mockResolvedValue(1), currentEpoch: () => 1, onConnection: vi.fn(), onStatus: vi.fn(), onShutdown: vi.fn(), suppressDisconnect: () => false, endpoint: ENDPOINT, resolveLan: async () => null, openSocket: () => { queueMicrotask(() => socket.onopen?.()); return socket } }
+    const connection = createMobileRelayConnection(hooks)
+    await connection.dial(null)
+    connection.client.releaseBuffer()
+    connection.adoptHooks({ ...hooks, onEvents: newEvents, onTerminal: newTerminal })
+    const aes = deriveKeys(MASTER).aesKeyBytes
+    socket.emit({ type: 'event', seq: 1, data: encryptHostTestPayload(aes, { type: 'status_change', sessionId: 'same', status: 'idle' }) })
+    socket.emit({ type: 'terminal', data: encryptHostTestPayload(aes, { type: 'output', text: 'ready' }) })
+    expect(newEvents).toHaveBeenCalledOnce()
+    expect(newTerminal).toHaveBeenCalledOnce()
+    expect(oldEvents).not.toHaveBeenCalled()
+    expect(oldTerminal).not.toHaveBeenCalled()
+    connection.client.disconnect()
+  })
   it('does not report a reopened transport as connected before session restore', async () => {
     vi.useFakeTimers()
     const sockets: MockSocket[] = []

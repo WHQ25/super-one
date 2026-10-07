@@ -390,6 +390,18 @@ describe('continueToMain', () => {
 })
 
 describe('selectProject', () => {
+  it('selects the local host when explicitly returning from a remote project', async () => {
+    mockWindowApp.openFolder.mockResolvedValue(true)
+    resetStore({ selectedHostConnectionId: 'env-remote' })
+
+    await useAppStore.getState().selectProject('/local', { connectionId: 'local' })
+
+    expect(mockWindowApp.openFolder).toHaveBeenCalledWith('/local')
+    expect(mockEnvironment.openProject).not.toHaveBeenCalled()
+    expect(useAppStore.getState().selectedHostConnectionId).toBe('local')
+    expect(useChatStore.getState().activeProject).toBe('/local')
+  })
+
   it('should navigate from startup to main when opening a project', async () => {
     mockWindowApp.selectFolder.mockResolvedValue('/new')
     mockWindowApp.openFolder.mockResolvedValue(true)

@@ -1,3 +1,4 @@
+import { buildSessionLink } from '@superone/shared/session-link'
 import type { RefObject } from 'react'
 import { parseModUiPayload, type ModUiPayload } from './mod-ui'
 import type { WebView } from 'react-native-webview'
@@ -110,6 +111,9 @@ export interface NativeActionPorts {
    * parent). Only the id is known here; the shell resolves its project.
    */
   openSession(sessionId: string): Promise<void>
+  openSessionLink?(ref: import('@superone/shared/environment/refs').SessionRef): Promise<void>
+  sessionLinkMetadata?(refs: import('@superone/shared/environment/refs').SessionRef[]): Promise<import('@superone/shared/session-link').SessionLinkMetadataResult[]>
+  sessionLinkError?(message: string): void
   /**
    * A server-bound call from an MCP App View, relayed to the host. Resolves to the host's
    * result as is, including its refusals; see `requestMcpApp`.
@@ -277,6 +281,20 @@ export async function resolveNativeRequest(
       await ports.previewMermaid(svg)
     } else if (message.action === 'copyText') {
       await ports.copyText(payloadString(message, 'text'))
+    } else if (message.action === 'openSessionLink' || message.action === 'sessionLinkMetadata') {
+      const payload = message.payload as { ref?: import('@superone/shared/environment/refs').SessionRef; refs?: import('@superone/shared/environment/refs').SessionRef[] }
+      const refs = message.action === 'openSessionLink' ? [payload?.ref] : payload?.refs
+      if (!Array.isArray(refs) || refs.length > 50 || refs.some(ref => !ref || typeof ref.environmentId !== 'string' || typeof ref.sessionId !== 'string')) throw new Error('Invalid session references')
+      for (const ref of refs) buildSessionLink(ref!)
+      if (message.action === 'openSessionLink') {
+        if (!ports.openSessionLink) throw new Error('Session links unavailable')
+        await ports.openSessionLink(refs[0]!)
+      } else {
+        if (!ports.sessionLinkMetadata) throw new Error('Session metadata unavailable')
+        result = { metadata: await ports.sessionLinkMetadata(refs as import('@superone/shared/environment/refs').SessionRef[]) }
+      }
+    } else if (message.action === 'sessionLinkError') {
+      ports.sessionLinkError?.(payloadString(message, 'message'))
     } else if (message.action === 'openSession') {
       await ports.openSession(payloadString(message, 'sessionId'))
     } else if (message.action === 'resendFailedMessage') {

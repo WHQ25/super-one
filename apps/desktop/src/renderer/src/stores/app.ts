@@ -503,6 +503,7 @@ async function applyProjectSelection(
   await useChatStore.getState().focusProject(folderPath, {
     carryOpenDraft: options?.carryOpenDraft === true,
   })
+  set({ selectedHostConnectionId: 'local' })
   if (useAppStore.getState().view === 'startup') set({ view: 'main' })
   return true
 }

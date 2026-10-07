@@ -435,6 +435,9 @@ const environmentAPI = {
     }>,
 
   // Environment management (Settings → Environments)
+  sessionSource: (projectPath: string) => ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_SESSION_SOURCE, projectPath),
+  sessionLinkMetadata: (refs: import('@superone/shared/environment/refs').SessionRef[]) => ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_SESSION_LINK_METADATA, refs),
+  sessionLinkTarget: (ref: import('@superone/shared/environment/refs').SessionRef) => ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_SESSION_LINK_TARGET, ref),
   listItems: () => ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_LIST_ITEMS),
   addOverSsh: (input: {
     destination: string

@@ -22,8 +22,10 @@ export function composerDraftKey(
   pairingId: string | null,
   projectPath: string | undefined,
   sessionId: string | null,
+  environmentId?: string | null,
 ): string {
-  return `${pairingId ?? ''}\n${projectPath ?? ''}\n${sessionId ?? 'new'}`
+  const host = environmentId ? JSON.stringify([pairingId, environmentId]) : pairingId ?? ''
+  return `${host}\n${projectPath ?? ''}\n${sessionId ?? 'new'}`
 }
 
 function cloneSnapshot(snapshot: SessionComposerSnapshot): SessionComposerSnapshot {

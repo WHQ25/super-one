@@ -33,7 +33,7 @@ export type NodeSessionEventMapContext = {
   /**
    * When true, skip `session.user_message` → `user_message_appended`.
    * Use when the desktop already echoed the user bubble optimistically
-   * (node blockIds differ from the clientMessageId).
+   * (older nodes may use blockIds different from the clientMessageId).
    */
   skipUserMessage?: boolean
 }

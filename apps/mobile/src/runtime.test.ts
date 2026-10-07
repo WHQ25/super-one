@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { CachedTranscript } from '@superone/relay-client'
 import { ChatRuntime } from './runtime'
+import { createNodeSessionEventMapper } from '@superone/shared/node-session-event-map'
 
 function fakeClient(epoch = 1) {
   const sent: unknown[] = []
@@ -41,6 +42,46 @@ function fakeClient(epoch = 1) {
 afterEach(() => vi.useRealTimers())
 
 describe('ChatRuntime', () => {
+  it('merges the routed node echo with its optimistic bubble and keeps same-text messages from peers', async () => {
+    const runtime = new ChatRuntime(fakeClient() as never, () => {})
+    await runtime.open('/app', 'same')
+    runtime.sourceEnvironmentId = 'node'
+    runtime.send('12345', { clientMessageId: 'user_phone_1' })
+    const mapper = createNodeSessionEventMapper({ sessionId: 'same', projectPath: '/app' })
+    for (const [sequence, blockId] of [['1', 'user_phone_1'], ['2', 'user_desktop_1']]) {
+      runtime.ingest(mapper.map({ eventId: `e${sequence}`, sequence, timestamp: Date.now(), environmentId: 'node', aggregateType: 'session', aggregateId: 'same', eventType: 'session.user_message', eventVersion: 1, payload: { blockId, text: '12345' } }).map(event => ({ ...event, environmentId: 'node' })))
+    }
+    expect(runtime.session.messages.map(message => message.id)).toEqual(['user_phone_1', 'user_desktop_1'])
+    runtime.dispose()
+  })
+  it('sets a new session owner before replaying buffered events and rejects foreign same-ID events', async () => {
+    const client = fakeClient()
+    client.request.mockResolvedValueOnce({ ok: true, sessionId: 'same' })
+      .mockResolvedValueOnce({ snapshot: { sourceEnvironmentId: 'desktop' } })
+    const ownMessage = { id: 'own', role: 'user', content: [{ type: 'text', text: 'Own message' }], status: 'complete', createdAt: '' }
+    client.releaseBuffer = () => ({ epoch: 1, batches: [[
+      { type: 'user_message_appended', environmentId: 'other', sessionId: 'same', message: { ...ownMessage, id: 'foreign' } },
+      { type: 'user_message_appended', environmentId: 'desktop', sessionId: 'same', message: ownMessage },
+      { type: 'status_change', environmentId: 'desktop', sessionId: 'same', status: 'streaming' },
+    ]] } as never)
+    const runtime = new ChatRuntime(client as never, () => {})
+    await runtime.create('/p', { sessionId: 'same' })
+    expect(runtime.sourceEnvironmentId).toBe('desktop')
+    expect(runtime.session.messages.map(message => message.id)).toEqual(['own'])
+    expect(runtime.session.status).toBe('streaming')
+    runtime.dispose()
+  })
+  it('rejects foreign same-ID events in a prepared restore buffer', async () => {
+    const runtime = new ChatRuntime(fakeClient() as never, () => {})
+    await runtime.open('/p', 'same', {
+      messages: [], snapshot: { sourceEnvironmentId: 'node' }, epoch: 1, hasMore: false, cursor: null,
+      metrics: { subscribeMs: 0, historyMs: 0, snapshotMs: 0, totalMs: 0, historyBytes: 0, snapshotBytes: 0 },
+      liveBatches: [[{ type: 'user_message_appended', environmentId: 'desktop', sessionId: 'same',
+        message: { id: 'foreign', role: 'user', content: [], status: 'complete', createdAt: '' } }]],
+    })
+    expect(runtime.session.messages).toEqual([])
+    runtime.dispose()
+  })
   it('restores the host\'s Claude Ultracode and sends the phone\'s pick only when there is one', async () => {
     const client = fakeClient()
     const answer = client.request.getMockImplementation()!
@@ -55,6 +96,21 @@ describe('ChatRuntime', () => {
     const sends = client.sent.filter((cmd) => (cmd as { type: string }).type === 'send_message') as Array<{ content: string }>
     expect(sends.find((cmd) => cmd.content === 'off now')).toMatchObject({ ultracode: false })
     expect(sends.find((cmd) => cmd.content === 'no say')).not.toHaveProperty('ultracode')
+    runtime.dispose()
+  })
+  it('isolates same-ID messages and command errors by their owning environment', async () => {
+    const client = fakeClient()
+    const onCommandError = vi.fn()
+    const runtime = new ChatRuntime(client as never, () => {}, { onCommandError })
+    await runtime.open('/app', 'same')
+    runtime.sourceEnvironmentId = 'node'
+    runtime.ingest([{ type: 'remote_command_error', environmentId: 'desktop', sessionId: 'same', command: 'interrupt', message: 'Foreign error' }])
+    expect(onCommandError).not.toHaveBeenCalled()
+    runtime.ingest([{ type: 'remote_command_error', environmentId: 'node', sessionId: 'same', command: 'interrupt', message: 'Control denied' }])
+    expect(onCommandError).toHaveBeenCalledWith('Control denied')
+    const message = { id: 'foreign', role: 'user', content: [{ type: 'text', text: 'Foreign message' }], status: 'complete', createdAt: new Date().toISOString() }
+    runtime.ingest([{ type: 'user_message_appended', environmentId: 'desktop', sessionId: 'same', message }])
+    expect(runtime.session.messages).toEqual([])
     runtime.dispose()
   })
   it('clears the previous harness permission catalog when OpenCode offers no modes', async () => {

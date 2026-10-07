@@ -6,6 +6,7 @@ import type { Session, SessionManager } from '../session/types'
 import { trace } from '../agent/event-trace'
 import { liveSessionActivity } from './live-session-activity'
 import log from '../logger'
+import { localSessionEnvironmentId } from '../environment/session-identity'
 
 export interface MobileTransport {
   sendAgentEvent(event: AgentEvent, targetDeviceIds?: string[]): Promise<void>
@@ -60,6 +61,7 @@ export class MobileBroadcaster {
       logInteractionRoute(event, 'drop:no-target', { owner: session.owner.kind })
       return
     }
+    event = { ...event, environmentId: localSessionEnvironmentId() }
     trace('remote.broadcast', 'route', { type: event.type, sessionId: event.sessionId, targets: [...targets] })
     logInteractionRoute(event, 'route', { targets: [...targets] })
     // The sender of a message with attachments gets the echo without the bytes.

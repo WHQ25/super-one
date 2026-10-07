@@ -67,6 +67,9 @@ export function WorkspaceList(props: WorkspaceListProps) {
   // remounts this list on every open, and expanding one commit later would
   // unfold the active project each time.
   const activePath = props.activeProject?.path
+  // A linked CLI session has no active row in this desktop workspace. Keep its
+  // new-session entry available using the same first-project landing target.
+  const newSessionProject = props.activeProject ?? props.projects[0]
   const { visible, cache } = props
   const [expandedPaths, setExpandedPaths] = useState<ReadonlySet<string>>(
     () => new Set(visible && activePath ? [...cache.expandedPaths, activePath] : cache.expandedPaths),
@@ -138,8 +141,8 @@ export function WorkspaceList(props: WorkspaceListProps) {
         <Search size={15} color={colors.mutedForeground} />
         <Text style={{ color: colors.mutedForeground, fontSize: 14 }}>{t('Search sessions')}</Text>
       </Pressable>
-      {props.activeProject ? <IconButton icon={SquarePen} label="New session"
-        onPress={() => leave(() => void props.onNewSession(props.activeProject!))} chrome="plain" color={colors.foreground} /> : null}
+      {newSessionProject ? <IconButton icon={SquarePen} label="New session"
+        onPress={() => leave(() => void props.onNewSession(newSessionProject))} chrome="plain" color={colors.foreground} /> : null}
     </View>
 
     <ScrollView style={{ flex: 1 }} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 8, paddingTop: 8, paddingBottom: 16 }}>

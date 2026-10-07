@@ -37,6 +37,8 @@ export class CollaborationService {
   }
 
   /** Agent profiles from session_providers (+ ready-harness fallback). */
+  isSpawnChild(sessionId: string): boolean { return this.ctx.store.isSpawnChild(sessionId) }
+
   listProfiles(): SessionAgentProfile[] {
     return listCollaborationProfiles(this.deps)
   }

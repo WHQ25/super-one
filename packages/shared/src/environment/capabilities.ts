@@ -7,6 +7,8 @@ import type { HarnessId } from '../session-types'
 
 export interface EnvironmentCapabilities {
   sessions: boolean
+  /** Environment-qualified archive reads and session-link restore baseline. */
+  sessionArchive?: boolean
   /** Harness IDs this environment can host. */
   harnessIds: HarnessId[]
   terminal: boolean
@@ -46,6 +48,7 @@ export interface EnvironmentCapabilities {
 
 export const LOCAL_ENVIRONMENT_CAPABILITIES: EnvironmentCapabilities = {
   sessions: true,
+  sessionArchive: true,
   harnessIds: ['claude', 'codex', 'acp', 'opencode'],
   terminal: true,
   workspaceFs: true,
@@ -93,6 +96,7 @@ export function intersectCapabilities(
   const harnessSet = new Set(b.harnessIds)
   return {
     sessions: a.sessions && b.sessions,
+    sessionArchive: Boolean(a.sessionArchive && b.sessionArchive),
     harnessIds: a.harnessIds.filter((id) => harnessSet.has(id)),
     terminal: a.terminal && b.terminal,
     workspaceFs: a.workspaceFs && b.workspaceFs,
@@ -128,6 +132,7 @@ export function normalizeCapabilities(raw: unknown): EnvironmentCapabilities {
 
   return {
     sessions: flag('sessions'),
+    sessionArchive: flag('sessionArchive'),
     harnessIds,
     terminal: flag('terminal'),
     workspaceFs: flag('workspaceFs'),

@@ -1,3 +1,4 @@
+import { ENVIRONMENT_LIST_DESCRIPTION, ARCHIVE_ENVIRONMENT_DESCRIPTION } from '@superone/shared/superone-tool-descriptions'
 import { INTERACTION_MEMORY_TOOL_DEFS } from '@superone/shared/interaction-memory'
 import type { SuperoneMcpToolDescriptor } from './superone-mcp-types'
 import { READ_MANUAL_INPUT_SCHEMA } from './manual-tool-defs'
@@ -16,6 +17,7 @@ export {
 } from '@superone/shared/superone-host-owned-tools'
 
 export const SESSION_ARCHIVE_TOOL_NAMES = [
+  'environment_list',
   'project_list',
   'session_list',
   'session_search',
@@ -173,6 +175,7 @@ export const AUTOMATION_AGENT_CONFIG_INPUT_SCHEMA = {
 } as const
 
 export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
+  { name: 'environment_list', description: ENVIRONMENT_LIST_DESCRIPTION, inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
   ...INTERACTION_MEMORY_TOOL_DEFS,
   {
     name: 'session_collab_list_agents',
@@ -531,6 +534,7 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
     inputSchema: {
       type: 'object',
       properties: {
+        environmentId: { type: 'string', description: ARCHIVE_ENVIRONMENT_DESCRIPTION },
         query: { type: 'string', description: 'Case-insensitive substring filter on project name or path.' },
         limit: { type: 'integer', minimum: 1, maximum: 100, description: 'Max rows. Default 50, max 100.' },
         offset: { type: 'integer', minimum: 0, description: 'Pagination offset. Default 0.' },
@@ -544,6 +548,7 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
     inputSchema: {
       type: 'object',
       properties: {
+        environmentId: { type: 'string', description: ARCHIVE_ENVIRONMENT_DESCRIPTION },
         query: { type: 'string', description: 'Case-insensitive title substring filter.' },
         harness: { type: 'string', enum: ['claude', 'codex', 'acp', 'opencode'], description: 'Filter by harness.' },
         includeHidden: { type: 'boolean', description: 'Include hidden sessions. Default false.' },
@@ -597,6 +602,7 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
     inputSchema: {
       type: 'object',
       properties: {
+        environmentId: { type: 'string', description: ARCHIVE_ENVIRONMENT_DESCRIPTION },
         query: { type: 'string', minLength: 1, description: 'Search terms (AND). Matches title and message text.' },
         harness: { type: 'string', enum: ['claude', 'codex', 'acp', 'opencode'] },
         sessionIds: {
@@ -637,6 +643,7 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
     inputSchema: {
       type: 'object',
       properties: {
+        environmentId: { type: 'string', description: ARCHIVE_ENVIRONMENT_DESCRIPTION },
         sessionId: {
           type: 'string',
           minLength: 1,

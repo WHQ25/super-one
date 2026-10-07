@@ -6,6 +6,7 @@ export type PendingPermission = {
 } | null
 
 export interface PortableTurnContextValue {
+  sourceEnvironmentId?: string | null
   scheme: 'light' | 'dark'
   pendingPermission: PendingPermission
   /**

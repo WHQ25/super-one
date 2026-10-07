@@ -2408,6 +2408,11 @@ export type Messages = {
       }
       /** project_list / session_list / session_search / session_read / session_cleanup — casing mirrors collab. */
       archive: {
+        environmentsListed: string
+        listingEnvironments: string
+        listEnvironments: string
+        environmentCount: string
+        emptyEnvironments: string
         listingProjects: string
         projectsListed: string
         listProjects: string
@@ -6653,6 +6658,11 @@ export const en: Messages = {
       // Session archive tools — same casing grammar as collab:
       // streaming = sentence case (+ …); done primary labels = Title Case.
       archive: {
+        environmentsListed: 'Environments Listed',
+        listingEnvironments: 'Listing environments…',
+        listEnvironments: 'List environments',
+        environmentCount: '{{count}} environments',
+        emptyEnvironments: 'No environments found',
         listingProjects: 'Listing projects…',
         projectsListed: 'Projects Listed',
         listProjects: 'List Projects',

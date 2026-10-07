@@ -136,6 +136,7 @@ export const PortableMessage = memo(function PortableMessage({
   sessionStreaming = false,
   streamingTokens = ZERO_TURN_TOKENS,
   projectPath = null,
+  sourceEnvironmentId = null,
   mcpIcons = {},
   hideCopyActions = false,
 }: {
@@ -147,6 +148,7 @@ export const PortableMessage = memo(function PortableMessage({
   /** The session itself is still producing output (status streaming or background). */
   sessionStreaming?: boolean
   streamingTokens?: TurnTokenCounts
+  sourceEnvironmentId?: string | null
   projectPath?: string | null
   mcpIcons?: Record<string, string>
   /** A spoken turn has a synthetic id and nothing to copy or resolve against. */
@@ -236,7 +238,7 @@ export const PortableMessage = memo(function PortableMessage({
   if (isModelOnlyWakeMessage(message)) return null
 
   return (
-    <PortableTurnProvider scheme={scheme} pendingPermission={pendingPermission} projectPath={projectPath} mcpIcons={mcpIcons}>
+    <PortableTurnProvider scheme={scheme} pendingPermission={pendingPermission} projectPath={projectPath} sourceEnvironmentId={sourceEnvironmentId} mcpIcons={mcpIcons}>
       <article data-turn-id={message.id} data-message-role={message.role} data-message-status={message.status}>
         <ChatMessagePresenter
           isUser={isUser}

@@ -4,6 +4,7 @@
  * around them. Inline code and elements marked `data-selection-fill` take part:
  * while one lies fully inside the selection it gets `.selection-filled` and CSS
  * paints it in the selection colour out to its line box (styles/index.css).
+ * Atomic copy targets fill on any intersection, matching their full-chip copy.
  * Layout never moves:
  * an inline box grows by padding that replaces its margins and only extends
  * vertically; an atomic box (inline-flex/-block) paints a ::before behind itself,
@@ -139,7 +140,7 @@ function sync(): void {
     if (scope && !scope.closest('[contenteditable="true"]')) {
       const own = scope.closest<HTMLElement>(TARGETS)
       for (const el of [...(own ? [own] : []), ...scope.querySelectorAll<HTMLElement>(TARGETS)]) {
-        if (covers(range, el)) next.push(el)
+        if (el.hasAttribute('data-selection-atomic') ? range.intersectsNode(el) : covers(range, el)) next.push(el)
       }
       const item = scope.closest<HTMLElement>('.chat-md li')
       for (const li of [...(item ? [item] : []), ...scope.querySelectorAll<HTMLElement>('.chat-md li')]) {

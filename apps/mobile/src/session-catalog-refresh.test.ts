@@ -33,4 +33,21 @@ describe('optional session catalog refresh', () => {
     await vi.waitFor(() => expect(fail).toHaveBeenCalledWith(expect.objectContaining({ message: 'catalog unavailable' })))
     expect(transition.isActive).toBe(false)
   })
+  it('does not put an old catalog failure onto a newly selected session', async () => {
+    let fail!: (error: Error) => void
+    const catalog = new Promise<string>((_resolve, reject) => { fail = reject })
+    let current = true
+    const onError = vi.fn()
+    const apply = vi.fn()
+    const transition = new SessionTransition()
+    await transition.run(async () => {
+      refreshSessionCatalog(() => catalog, () => current, apply, onError)
+    })
+    expect(transition.isActive).toBe(false)
+    current = false
+    fail(new Error('catalog unavailable'))
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(onError).not.toHaveBeenCalled()
+    expect(apply).not.toHaveBeenCalled()
+  })
 })

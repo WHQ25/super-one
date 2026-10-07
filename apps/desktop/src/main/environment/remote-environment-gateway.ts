@@ -243,9 +243,10 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
   async *subscribeEvents(input: SubscribeEventsInput): AsyncIterable<EnvironmentEventEnvelope> {
     let after = input.afterSequence ?? '0'
     // Poll durable event log (WS push can replace this later).
-    for (;;) {
+    while (!input.signal?.aborted) {
       const batch = await this.listEvents(after)
       for (const ev of batch) {
+        if (input.signal?.aborted) return
         after = ev.sequence
         yield ev
       }
@@ -1105,6 +1106,12 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
 
   private createSessionGateway(): SessionGateway {
     return {
+      linkBootstrap: ref => { this.assertEnv(ref.environmentId); return this.client.rpc('session.linkBootstrap', { sessionId: ref.sessionId }) },
+      getMetadataBatch: async refs => {
+        for (const ref of refs) this.assertEnv(ref.environmentId)
+        return this.client.rpc('session.linkMetadata', { sessionIds: refs.map(ref => ref.sessionId) })
+      },
+      archive: request => this.client.rpc('session.archive', request),
       create: async (input: CreateSessionInput) => {
         this.assertEnv(input.project.environmentId)
         const result = await this.client.rpc<{ sessionId: string }>('session.create', {

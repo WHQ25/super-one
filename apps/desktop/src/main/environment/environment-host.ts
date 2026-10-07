@@ -2578,7 +2578,7 @@ export class EnvironmentHost {
    * Descriptor fields are only present while a node is reachable — a stored
    * environment stays listed when offline so the UI can offer a reconnect.
    */
-  async listEnvironments(): Promise<EnvironmentListItem[]> {
+  async listEnvironments(options?: { includeDescriptors?: boolean }): Promise<EnvironmentListItem[]> {
     const local = this.registry.getLocal()
     const localDescriptor = await local.getDescriptor()
     const items: EnvironmentListItem[] = [
@@ -2600,7 +2600,7 @@ export class EnvironmentHost {
     for (const known of this.connections.listKnown()) {
       const gateway = this.connections.getGateway(known.environmentId)
       const snapshot = this.connections.getSupervisor(known.connectionId)
-      const descriptor = gateway ? await gateway.getDescriptor().catch(() => null) : null
+      const descriptor = gateway && options?.includeDescriptors !== false ? await gateway.getDescriptor().catch(() => null) : null
       // A connection with no live entry was disconnected or never dialed; the
       // last snapshot is stale in that case, so report it as disconnected.
       const state = snapshot?.state ?? (this.lastStatus.has(known.connectionId) ? 'disconnected' : 'available')

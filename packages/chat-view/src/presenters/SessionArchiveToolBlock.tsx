@@ -39,6 +39,7 @@ import {
 } from './session-archive-display'
 
 export type SessionArchiveToolName =
+  | 'environment_list'
   | 'project_list'
   | 'session_list'
   | 'session_search'
@@ -55,7 +56,7 @@ export interface SessionArchiveToolBlockPresenterProps {
   /** false when nested under a subagent card — header-only. */
   allowExpand?: boolean
   onOpenProject?: (projectPath: string) => void | Promise<void>
-  onOpenSession?: (sessionId: string, projectId?: string | null) => void | Promise<void>
+  onOpenSession?: (sessionId: string, projectId?: string | null, environmentId?: string) => void | Promise<void>
   renderHarnessIcon?: (harness: string, acpAgentId?: string | null) => ReactNode
 }
 
@@ -140,7 +141,7 @@ function SessionTitleLink({
   openLabel: string
   className?: string
   children?: ReactNode
-  onOpenSession?: (sessionId: string, projectId?: string | null) => void | Promise<void>
+  onOpenSession?: (sessionId: string, projectId?: string | null, environmentId?: string) => void | Promise<void>
 }) {
   if (!sessionId || !onOpenSession) {
     return <span className={className}>{children ?? title}</span>
@@ -264,7 +265,7 @@ function ListBody({
   pinnedLabel: string
   thisChatLabel: string
   openSessionLabel: string
-  onOpenSession?: (sessionId: string, projectId?: string | null) => void | Promise<void>
+  onOpenSession?: (sessionId: string, projectId?: string | null, environmentId?: string) => void | Promise<void>
   renderHarnessIcon?: (harness: string, acpAgentId?: string | null) => ReactNode
 }) {
   if (sessions.length === 0) {
@@ -374,7 +375,7 @@ function SearchBody({
   hits: Array<Record<string, unknown>>
   emptyLabel: string
   openSessionLabel: string
-  onOpenSession?: (sessionId: string, projectId?: string | null) => void | Promise<void>
+  onOpenSession?: (sessionId: string, projectId?: string | null, environmentId?: string) => void | Promise<void>
 }) {
   if (hits.length === 0) {
     return <div className="text-muted-foreground">{emptyLabel}</div>
@@ -564,6 +565,8 @@ export function SessionArchiveToolBlockPresenter({
   }, [result])
 
   const rec = asRecord(parsed)
+  const environmentId = typeof rec?.environmentId === 'string' ? rec.environmentId : typeof params.environmentId === 'string' ? params.environmentId : undefined
+  const openScopedSession = onOpenSession ? (sessionId: string, projectId?: string | null) => onOpenSession(sessionId, projectId, environmentId) : undefined
   // cancelled = user closed the confirm without deleting — neutral chrome (not warning/error)
   // partial = some deletes succeeded — warning chrome
   const tone: 'default' | 'error' | 'warning' | 'denied' = isDenied || rec?.status === 'rejected'
@@ -575,6 +578,18 @@ export function SessionArchiveToolBlockPresenter({
         : 'default'
 
   const canShowExpand = allowExpand && !isStreaming && !isDenied
+
+  if (toolName === 'environment_list') {
+    const rows = asArray(rec?.environments).map(row => asRecord(row) ?? {})
+    const failed = isError || rec?.status === 'error'
+    return <ExpandableToolRow
+      icon={<List className="size-3 text-muted-foreground" />}
+      label={t(`${a}.${isStreaming ? 'listingEnvironments' : failed || isDenied ? 'listEnvironments' : 'environmentsListed'}`)}
+      summary={failed ? String(rec?.message ?? '') || undefined : !isStreaming && !isDenied ? rows.length ? t(`${a}.environmentCount`, { count: rows.length }) : t(`${a}.emptyEnvironments`) : undefined}
+      streaming={isStreaming} tone={tone} expandable={canShowExpand && !failed && rows.length > 0}>
+      <div className="space-y-1">{rows.map(row => <div key={String(row.environmentId)} className="flex min-w-0 items-center gap-2" title={String(row.environmentId)}><span className="min-w-0 flex-1 truncate">{String(row.label ?? row.environmentId)}</span><span className="shrink-0 text-muted-foreground">{['available', 'connecting', 'synchronizing', 'connected', 'disconnected', 'backoff', 'blocked'].includes(String(row.state)) ? t(`settings.environments.state.${row.state}`) : ''}</span></div>)}</div>
+    </ExpandableToolRow>
+  }
 
   // ---------- project_list ----------
   if (toolName === 'project_list') {
@@ -658,7 +673,7 @@ export function SessionArchiveToolBlockPresenter({
           pinnedLabel={t(`${a}.pinned`)}
           thisChatLabel={t(`${a}.thisChat`)}
           openSessionLabel={t(`${a}.openSession`)}
-          onOpenSession={onOpenSession}
+          onOpenSession={openScopedSession}
           renderHarnessIcon={renderHarnessIcon}
         />
       </ExpandableToolRow>
@@ -700,7 +715,7 @@ export function SessionArchiveToolBlockPresenter({
           hits={hits}
           emptyLabel={t(`${a}.emptyHits`)}
           openSessionLabel={t(`${a}.openSession`)}
-          onOpenSession={onOpenSession}
+          onOpenSession={openScopedSession}
         />
       </ExpandableToolRow>
     )
@@ -978,7 +993,8 @@ export function SessionArchiveToolBlockPresenter({
 
 export function isSessionArchiveToolName(name: string): name is SessionArchiveToolName {
   return (
-    name === 'project_list'
+    name === 'environment_list'
+    || name === 'project_list'
     || name === 'session_list'
     || name === 'session_search'
     || name === 'session_read'

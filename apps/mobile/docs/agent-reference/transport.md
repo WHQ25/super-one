@@ -92,6 +92,17 @@ Measure payload changes with `bun apps/desktop/scripts/benchmark-mobile-payload.
 
 ## Phone-side caches
 
+Session Markdown links use a preparation route with its own event buffer, so
+target restore does not pause source traffic. A verified paired desktop is
+prepared through current discovery; a CLI environment is reached through the
+paired desktop's authenticated gateway. Connection hooks are adopted only at
+commit. Failed candidates unsubscribe themselves without retiring the source.
+Routed events and removal notifications include the execution environment, and
+same-ID traffic from another host is ignored. Composer and transcript keys also
+include the routed environment within a pairing. See
+[session-links.md](../../../../docs/features/session-links.md) for the contract,
+supported existing-session operations and device-level verification boundary.
+
 - Derived caches are keyed by pairing and wiped on Forget: `workspace-cache.v1.<pairing>`
   in MMKV (`persisted-workspace.ts`) and the per-pairing disk pool behind
   `file-preview-cache-store.ts`, which also holds transcripts. Formats are versioned;

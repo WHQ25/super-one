@@ -49,6 +49,14 @@ All IPC channels are defined as constants in `AgentIpcChannels` (`packages/share
 
 ### Environment API migration (local = one environment)
 
+Session Markdown references use stable `SessionRef` identities and source-pane
+ownership through `window.environment.sessionSource`, `sessionLinkMetadata` and
+`sessionLinkTarget`. Header lookup never restores/connects/controls a session;
+click preparation verifies the owning project before navigation. Environment
+archive reads preserve the remote Host Action caller as `localhost`, and routed
+phone events carry their execution environment. Shared contracts and lifecycle
+details live in [session-links.md](../../../../docs/features/session-links.md).
+
 **Direction:** product features should go through `EnvironmentHost` / `window.environment`. Local desktop is an `ExecutionEnvironment` (`connectionId: 'local'`), not a permanent special case beside remote.
 
 | Area | Status |

@@ -1,3 +1,7 @@
+import { lookupSessionLinkMetadata, resolveSessionLink, sessionLinkBaseClient, type SessionLinkPreparation, type ResolvedSessionLink } from '../session-link-navigation'
+import { readConnectionWorkspace } from '../connection-workspace'
+import { activatePreparedSessionLink } from '../session-link-transition'
+import type { SessionRef } from '@superone/shared/environment/refs'
 import { openWidgetInputRequest } from '../widget-input-request'
 import { setComposerConnection } from '../widget-composer-client'
 import { findMcpAppAttachment } from '@superone/shared/mcp-apps-state'
@@ -98,7 +102,7 @@ import { createMediaPorts } from '../media-ports'
 import { cacheMcpAppDownload, type CachedDownload } from '../mcp-app-downloads'
 import type { ReconnectController } from '../reconnect-controller'
 import { createMobileRelayConnection } from '../mobile-relay-connection'
-import { SessionTransition } from '../session-transition'
+import { SessionTransition, SessionTransitionBusyError } from '../session-transition'
 import { findSession, readProjectSessions } from './workspace-data'
 import { useRemoteDirectory } from './use-remote-directory'
 import { useProjectGitStatus } from './use-project-git-status'
@@ -171,6 +175,8 @@ export function MobileApp() {
   const [activePairingId, setActivePairingId] = useState<string | null>(null)
   const activePairingIdRef = useRef(activePairingId)
   activePairingIdRef.current = activePairingId
+  const [routedEnvironmentId, setRoutedEnvironmentId] = useState<string | null>(null)
+  const routedEnvironmentIdRef = useRef<string | null>(null)
   const [connectingPairingId, setConnectingPairingId] = useState<string | null>(null)
   const [activeTransport, setActiveTransport] = useState<'lan' | 'relay' | null>(null)
   const [reconnect, setReconnect] = useState<ReconnectInfo | null>(null)
@@ -317,6 +323,14 @@ export function MobileApp() {
   const webRef = useRef<WebView>(null)
   const termRef = useRef<WebView>(null)
   const clientRef = useRef<RelayClient | null>(null)
+  // Workspace and draft operations always use the paired desktop, even while
+  // the chat client routes commands to a linked CLI environment.
+  const workspaceClientRef = useMemo(() => ({ get current() {
+    return clientRef.current ? sessionLinkBaseClient(clientRef.current) : null
+  } }), [])
+  const sessionLinkGenerationRef = useRef(0)
+  const sessionLinkQueueRef = useRef<Promise<void>>(Promise.resolve())
+  const sessionLinkCandidateRef = useRef<Pick<SessionLinkPreparation, 'ingest'> | null>(null)
   const autoRecap = useAutoRecap({
     clientRef,
     sessionId,
@@ -326,7 +340,7 @@ export function MobileApp() {
   const filePreview = useFilePreview({ clientRef, transport: activeTransport, project, sessionId, pairingId: activePairingId })
   const promptCollapse = usePromptCollapse()
   useOrientationLock({ filePreviewOpen: filePreview.state != null })
-  const workspaceActivity = useWorkspaceActivity(clientRef.current, connectionState === 'connected', screen === 'chat' && !sessionSwitcherOpen ? sessionId : null)
+  const workspaceActivity = useWorkspaceActivity(workspaceClientRef.current, connectionState === 'connected', !routedEnvironmentId && screen === 'chat' && !sessionSwitcherOpen ? sessionId : null)
   const directory = useRemoteDirectory(clientRef)
   const { load: loadDirectory, path: directoryPath, items: directoryItems } = directory
   // The browser is a project tree by default; computer mode is the folder-picking
@@ -378,22 +392,22 @@ export function MobileApp() {
   const fatalReloadRef = useRef({ startedAt: 0, count: 0 })
   const mentionArtworkRevisionRef = useRef(-1)
   const mcpIconsRevisionRef = useRef(-1)
-  const suggestions = useComposerSuggestions(runtimeRef, `${activePairingId}:${project?.path}:${sessionId}:${selectedProvider}:${selectedAcpAgentId ?? ''}`, { client: clientRef, connected: connectionState === 'connected', projectPath: project?.path, provider: selectedProvider, acpAgentId: selectedAcpAgentId, projects, sessionId, iconStore: mobileKv })
+  const suggestions = useComposerSuggestions(runtimeRef, `${activePairingId}:${routedEnvironmentId}:${project?.path}:${sessionId}:${selectedProvider}:${selectedAcpAgentId ?? ''}`, { client: clientRef, connected: connectionState === 'connected', projectPath: project?.path, provider: selectedProvider, acpAgentId: selectedAcpAgentId, projects, sessionId, iconStore: mobileKv })
   const { slashHits, mentionRows } = suggestions
   const remoteDrafts = useMobileDraftSession({
-    kv, pairingId: activePairingId, clientRef, composer: composerDraft, attachments, sessionId,
+    kv, pairingId: activePairingId, clientRef: workspaceClientRef, composer: composerDraft, attachments, sessionId,
     project, projects, selection: harnessSelection, worktree: worktreeSelection, sandbox: composerSandboxInfo,
     sessionDirs: additionalDirs.sessionDirs, restoreSessionDirs: additionalDirs.restoreSessionDirs,
     setWorktree: setWorktreeSelection, setSandbox: setPendingSandboxMode, setAttachments, setHarness,
     applyText: suggestions.applyProgrammatic,
-    openProject: (target) => openProject(target),
+    openProject: (target) => openProject(target, true, true),
     loadSettings: (provider, target) => loadShellDetails(provider, target),
     leaveSession: () => leaveActiveSession(),
     showDraft: (title) => { setActiveSessionTitle(title); setScreen('chat') },
     showWorkspace: returnToWorkspace, onError: setStatus,
   })
   const nativeInputs = useNativeInputRequests({
-    runtimeRef, clientRef, connected: connectionState === 'connected', pairingId: activePairingId,
+    runtimeRef, clientRef, connected: connectionState === 'connected', pairingId: routedEnvironmentId ? JSON.stringify([activePairingId, routedEnvironmentId]) : activePairingId,
     projectPath: project?.path, sessionId,
     sendOptions: {
       model: selectedModel || undefined, effort: selectedEffort || undefined,
@@ -409,11 +423,13 @@ export function MobileApp() {
    * opposite: park it per session so switching away does not leak it, and
    * switching back restores what was typed there.
    */
-  const switchComposerDraft = (nextSessionId: string | null, nextProjectPath = project?.path) => {
-    const from = composerDraftKey(activePairingId, project?.path, sessionId)
-    const to = composerDraftKey(activePairingId, nextProjectPath, nextSessionId)
+  const composerLocationRef = useRef({ key: composerDraftKey(null, undefined, null), sessionId: null as string | null })
+  const switchComposerDraft = (nextSessionId: string | null, nextProjectPath = project?.path, environmentId = routedEnvironmentIdRef.current) => {
+    const from = composerLocationRef.current.key
+    const to = composerDraftKey(activePairingIdRef.current, nextProjectPath, nextSessionId, environmentId)
     if (from === to) return
-    if (sessionId) sessionDrafts.stash(from, { ...composerDraft.exportSnapshot(), attachments: attachmentsRef.current })
+    if (composerLocationRef.current.sessionId) sessionDrafts.stash(from, { ...composerDraft.exportSnapshot(), attachments: attachmentsRef.current })
+    composerLocationRef.current = { key: to, sessionId: nextSessionId }
     const restored = nextSessionId ? sessionDrafts.load(to) : { ...EMPTY_COMPOSER_DRAFT, attachments: [] }
     composerDraft.replaceWith(restored)
     suggestions.applyProgrammatic(restored.text)
@@ -533,6 +549,7 @@ export function MobileApp() {
       apiRetry: runtime.session.apiRetry,
       pendingTurn: runtime.pendingTurn,
       projectPath: runtime.projectPath || null,
+      sourceEnvironmentId: runtime.sourceEnvironmentId,
       // Drawn by the document above the composer; at most one patch is in flight, so
       // resending them with every patch costs little and survives the delivery's own hydrates.
       pendingQuestion: runtime.session.pendingQuestion,
@@ -700,14 +717,21 @@ export function MobileApp() {
       if (!runtime) throw new Error('no active session')
       runtime.respondCodexPlan(messageId, status, feedback)
     },
-    openSession: async (targetId) => {
+    sessionLinkError: message => setStatus(message),
+    sessionLinkMetadata: async refs => {
       const client = clientRef.current
+      if (!client) throw new Error('not connected')
+      return lookupSessionLinkMetadata(client, refs)
+    },
+    openSessionLink: ref => openLinkedSession(ref),
+    openSession: async (targetId) => {
+      const client = workspaceClientRef.current
       if (!client) throw new Error('not connected')
       // The WebView fires this and forgets, so failures go to the status line
       // like every other navigation. The transcript only carries the id; the
       // row (provider, project) comes from the host so the header and picker
       // land on the right harness.
-      runUiAction(async () => {
+      await runUiAction(async () => {
         const row = await findSession(client, targetId)
         if (!row) throw new Error('that session is no longer on the host')
         await openSessionAnywhere(row)
@@ -828,14 +852,26 @@ export function MobileApp() {
     setPairings(next)
   }
   const connectGenerationRef = useRef(0)
-  const connectWithSecret = async (relayUrl: string, secret: string, lanHostPort?: string, hostName?: string, desktopDeviceId?: string) => {
+  const connectWithSecret = async (relayUrl: string, secret: string, lanHostPort?: string, hostName?: string, desktopDeviceId?: string, prepared?: SessionLinkPreparation, canAdopt = () => true): Promise<boolean> => {
+    const preparedConnection = prepared?.connection
     networkLedger.mark('connect')
-    const connectGeneration = ++connectGenerationRef.current
+    let connectGeneration = preparedConnection ? connectGenerationRef.current : ++connectGenerationRef.current
     const activeDeviceId = deviceId || await loadOrCreateMobileId()
-    if (connectGeneration !== connectGenerationRef.current) return
+    if (connectGeneration !== connectGenerationRef.current) return false
     if (!deviceId) setDeviceId(activeDeviceId)
+    const pairingId = desktopDeviceId || hostName || relayUrl
+    const persisted = new PersistedWorkspace(kv, pairingId)
+    await persisted.load()
+    if (connectGeneration !== connectGenerationRef.current || !canAdopt()) { persisted.dispose(); return false }
+    const hp = (lanHostPort ?? lan).trim()
+    const preparedWorkspace = prepared?.workspace
+    if (preparedConnection) await rememberPairing({ id: pairingId, relayUrl, secret, hostName, lan: hp.includes(':') ? hp : undefined,
+      desktopDeviceId, environmentId: prepared?.pairing?.environmentId })
+    if (connectGeneration !== connectGenerationRef.current || !canAdopt()) { persisted.dispose(); return false }
+    const cache = new WorkspaceListCache(persisted)
     await remoteDraftsRef.current.park()
-    if (connectGeneration !== connectGenerationRef.current) return
+    if (connectGeneration !== connectGenerationRef.current || !canAdopt()) { persisted.dispose(); return false }
+    if (preparedConnection) connectGeneration = ++connectGenerationRef.current
     composerSwitchRef.current(null)
     composerDraft.replaceWith(EMPTY_COMPOSER_DRAFT)
     suggestions.applyProgrammatic('')
@@ -852,15 +888,13 @@ export function MobileApp() {
     clearActiveSession()
     setProjects([]); setSessions([]); setHarnessOptions([]); setProject(null)
     workspaceCacheRef.current.persistence?.dispose()
-    const pairingId = desktopDeviceId || hostName || relayUrl
+    activePairingIdRef.current = pairingId
     setActivePairingId(pairingId)
-    const persisted = new PersistedWorkspace(kv, pairingId)
-    await persisted.load()
-    if (connectGeneration !== connectGenerationRef.current) { persisted.dispose(); return }
-    const cache = new WorkspaceListCache(persisted)
+    routedEnvironmentIdRef.current = null
+    setRoutedEnvironmentId(null)
     // Initialize once, before showing cached data. Revalidation must never clear
     // text/attachments typed into this landing or replace a session opened there.
-    remoteDraftsRef.current.begin()
+    if (!preparedConnection) remoteDraftsRef.current.begin()
     const initialShellRequest = shellDetailsRequestRef.current
     const cachedProjects = persisted.get<Project[]>('projects')
     let cachedProject: Project | undefined
@@ -874,9 +908,10 @@ export function MobileApp() {
     if (Array.isArray(cachedHarnesses)) setHarnessOptions(cachedHarnesses.filter(row => row && typeof row.provider === 'string'))
 
     networkLedger.checkpoint('cache-loaded')
-    const { client, reconnectController, dial } = createMobileRelayConnection({
+    const connectionHooks: Parameters<typeof createMobileRelayConnection>[0] = {
       onEvents: (events, epoch) => {
         if (connectGeneration !== connectGenerationRef.current) return
+        sessionLinkCandidateRef.current?.ingest(events, epoch)
         logRelayEventTypes(events)
         remoteDraftsRef.current.ingest(events)
         workspaceActivity.ingest(events)
@@ -963,16 +998,33 @@ export function MobileApp() {
         setScreen('pair')
       },
       suppressDisconnect: () => suppressReconnectRef.current,
-    })
+    }
+    const connection = preparedConnection ?? createMobileRelayConnection(connectionHooks)
+    if (preparedConnection) preparedConnection.adoptHooks(connectionHooks)
+    const { client, reconnectController, dial } = connection
     bindHarnessPersistence(client, persisted)
     reconnectControllerRef.current = reconnectController
     clientRef.current = client
+    prepared?.adoptConnection()
     workspaceCacheRef.current = cache
     setWorkspaceCache(cache)
-    const hp = (lanHostPort ?? lan).trim()
-    await dial(parseLanHostPort(hp))
-    if (connectGeneration !== connectGenerationRef.current) return
+    if (!preparedConnection) await dial(parseLanHostPort(hp))
+    if (connectGeneration !== connectGenerationRef.current) return false
     setActiveTransport(client.transport)
+    if (preparedConnection) {
+      persisted.set('projects', preparedWorkspace!.projects)
+      persisted.set('harness-options', preparedWorkspace!.options)
+      setProjects(preparedWorkspace!.projects)
+      setHarnessOptions(preparedWorkspace!.options)
+      connectionRef.current = { state: 'connected', epoch: client.buffer.epoch }
+      setConnectionState('connected')
+      void loadMcpIcons(client, prepared?.target.projectPath).catch(error => {
+        if (clientRef.current && sessionLinkBaseClient(clientRef.current) === client) setStatus(error instanceof Error ? error.message : 'Could not load tool icons')
+      })
+      return true
+    }
+    // Optional identity discovery must not hold up an older desktop's landing.
+    const identity = client.request({ type: 'session_link_identity', requestId: randomId() }, 8_000).catch(() => null) as Promise<{ environmentId?: string } | null>
     await rememberPairing({
       id: desktopDeviceId || hostName || relayUrl,
       relayUrl,
@@ -981,37 +1033,28 @@ export function MobileApp() {
       lan: hp.includes(':') ? hp : undefined,
       desktopDeviceId,
     })
-    if (connectGeneration !== connectGenerationRef.current) return
+    if (connectGeneration !== connectGenerationRef.current) return false
+    void identity.then(verified => {
+      if (verified?.environmentId && connectGeneration === connectGenerationRef.current) return rememberPairing({ id: pairingId, relayUrl, secret, hostName, lan: hp.includes(':') ? hp : undefined, desktopDeviceId, environmentId: verified.environmentId })
+    }).catch(error => { if (connectGeneration === connectGenerationRef.current) setStatus(error instanceof Error ? error.message : 'Could not save host identity') })
     // Every await here is a full round trip, and over the relay each one is
     // hundreds of milliseconds; independent requests go out together.
     // The harness list is already ordered and labelled the way the host's own
     // new-session surface shows them.
-    const [res, options] = await Promise.all([
-      client.request({ type: 'list_projects', requestId: randomId() } as RemoteCommand) as Promise<{
-        projects?: Project[]
-        error?: string
-      }>,
-      client.request({ type: 'list_harness_options', requestId: randomId() } as RemoteCommand)
-        .then((result) => {
-          const response = result as ListHarnessOptionsResponse | null
-          return response && !('error' in response) ? response.options : []
-        }).catch((): RemoteHarnessOption[] => []),
-    ])
-    if (clientRef.current !== client) return
-    if (res.error) throw new Error(res.error)
-    const projectRows = res.projects ?? []
+    const { projects: projectRows, options } = await readConnectionWorkspace(client)
+    if (clientRef.current !== client) return false
     persisted.set('projects', projectRows)
     persisted.set('harness-options', options)
     setProjects(projectRows)
-    if (clientRef.current !== client) return
+    if (clientRef.current !== client) return false
     setHarnessOptions(options)
-    if (shellDetailsRequestRef.current !== initialShellRequest || runtimeRef.current || sessionTransitionRef.current.isActive) return
+    if (shellDetailsRequestRef.current !== initialShellRequest || runtimeRef.current || sessionTransitionRef.current.isActive) return true
     const initialProject = projectRows.find(row => row.path === cachedProject?.path) ?? projectRows[0]
     if (initialProject) {
       // Warm only the selected harness; another provider may start a process
       // merely to list models and is loaded when the user chooses it.
       await openProject(initialProject, false)
-      if (clientRef.current !== client || shellDetailsRequestRef.current !== initialShellRequest + 1 || runtimeRef.current || sessionTransitionRef.current.isActive) return
+      if (clientRef.current !== client || shellDetailsRequestRef.current !== initialShellRequest + 1 || runtimeRef.current || sessionTransitionRef.current.isActive) return true
       const system = peekHarnessResource(client, 'get_system_info', initialProject.path, selectedProvider)
       if (system) applySystemInfo(selectedProvider, system)
       const resources = peekHarnessResource(client, 'get_project_resources', initialProject.path, selectedProvider)
@@ -1019,12 +1062,13 @@ export function MobileApp() {
       if (!cachedProject) setScreen('chat')
     } else {
       await loadMcpIcons(client)
-      if (clientRef.current !== client) return
+      if (clientRef.current !== client) return false
       // Nothing to run a session in yet — land on the picker, which owns Add Project.
       setScreen('project-picker')
     }
     setStatus('')
     networkLedger.checkpoint('landing-ready')
+    return true
   }
 
   /**
@@ -1037,6 +1081,14 @@ export function MobileApp() {
    */
   const connectToPairing = async (item: SavedPairing) => {
     if (connectingPairingId) return
+    // Unknown link hosts open the device list without retiring the source.
+    // Tapping that still-connected device should resume it, not reset its chat.
+    if (item.id === activePairingIdRef.current && clientRef.current && connectionState === 'connected' && project) {
+      ++sessionLinkGenerationRef.current
+      setStatus('')
+      setScreen('chat')
+      return
+    }
     setConnectingPairingId(item.id)
     try {
       if (!isReachable(discovery.statusOf(item))) {
@@ -1125,13 +1177,16 @@ export function MobileApp() {
     setPaste(result.data)
     void onPair(result.data)
   }
-  const openProject = async (p: Project, parkDraft = true) => {
+  const openProject = async (p: Project, parkDraft = true, transitionOwned = false) => {
+    if (!transitionOwned) sessionTransitionRef.current.assertIdle()
+    const navigation = ++sessionLinkGenerationRef.current
+    restoreWorkspaceRoute(p.path)
     const client = clientRef.current
     if (!client) return
     systemInfoRequestRef.current++
     const projectRequest = ++shellDetailsRequestRef.current
     if (parkDraft && p.path !== project?.path) await remoteDrafts.park()
-    if (clientRef.current !== client || projectRequest !== shellDetailsRequestRef.current) return
+    if (navigation !== sessionLinkGenerationRef.current || clientRef.current !== client || projectRequest !== shellDetailsRequestRef.current) return
     const cache = workspaceCacheRef.current
     const listRevision = cache.revisionOf(p.path)
     if (p.path !== project?.path) {
@@ -1144,7 +1199,7 @@ export function MobileApp() {
       readProjectSessions(client, p.path),
       refreshGitInfo(p.path),
     ])
-    if (clientRef.current !== client || projectRequest !== shellDetailsRequestRef.current) return
+    if (navigation !== sessionLinkGenerationRef.current || clientRef.current !== client || projectRequest !== shellDetailsRequestRef.current) return
     setProject(p)
     setSessions(page.sessions)
     // This page is the list the drawer would otherwise read again on its next open.
@@ -1254,9 +1309,7 @@ export function MobileApp() {
   // file opens the fullscreen preview, which decides how to show it.
   const previewFile = (path: string) => filePreview.open(path)
 
-  const bindRuntime = (client: RelayClient) => {
-    setStatus('')
-    runtimeRef.current?.dispose()
+  const createRuntime = (client: RelayClient, environmentId: string | null = null, pairingId = activePairingIdRef.current) => {
     const runtime = new ChatRuntime(client, (_session, hydrate) => {
       if (runtimeRef.current === runtime) syncSheets(runtime, hydrate)
     }, {
@@ -1264,9 +1317,19 @@ export function MobileApp() {
       onDetail: (event) => { if (runtimeRef.current === runtime) inject(webRef, { ...event, type: 'detailUpdate' }) },
       onComposerResult: result => { if (runtimeRef.current === runtime) inject(webRef, { type: 'composerSettled', ...result }) },
       onSessionRecap: (sid) => autoRecap.markRecapShown(sid),
-      transcripts: sessionTranscriptCache,
-      pairingId: () => activePairingIdRef.current,
+      onCommandError: message => { if (runtimeRef.current === runtime) setStatus(message) },
+      transcripts: environmentId ? {
+        get: (pairingId, path, sid) => sessionTranscriptCache.get(pairingId, JSON.stringify([environmentId, path]), sid),
+        put: (pairingId, path, sid, transcript) => sessionTranscriptCache.put(pairingId, JSON.stringify([environmentId, path]), sid, transcript),
+      } : sessionTranscriptCache,
+      pairingId: () => pairingId,
     })
+    return runtime
+  }
+  const bindRuntime = (client: RelayClient, environmentId: string | null = null, preparedRuntime?: ChatRuntime) => {
+    setStatus('')
+    runtimeRef.current?.dispose()
+    const runtime = preparedRuntime ?? createRuntime(client, environmentId)
     runtimeRef.current = runtime
     setTerminalUi({ writable: false, title: 'Terminal', tabs: [], activeId: '' })
     const term = new TerminalRuntime(client, (paints) => {
@@ -1338,12 +1401,31 @@ export function MobileApp() {
     }, setStatus, 'leave session failed')
   }
   const failSessionTransition = (error: unknown) => {
+    if (error instanceof SessionTransitionBusyError) { setStatus(error.message); return }
     switchComposerDraft(null)
     clearActiveSession()
     returnToWorkspace()
     setStatus(error instanceof Error ? error.message : 'session transition failed')
   }
-  const openSession = (row: SessionRow, targetProject = project) => sessionTransitionRef.current.run(async () => {
+  const restoreWorkspaceRoute = (path = projects[0]?.path) => {
+    const client = clientRef.current
+    if (!client || !routedEnvironmentIdRef.current) return
+    switchComposerDraft(null, path, null)
+    leaveActiveSession()
+    clientRef.current = sessionLinkBaseClient(client)
+    routedEnvironmentIdRef.current = null
+    setRoutedEnvironmentId(null)
+    // Session settings and credential ids belong to their execution host. They
+    // must not override the paired desktop's defaults on its new-session page.
+    harnessSelection.resetForProvider(selectedProvider)
+    setProject(projects.find(row => row.path === path) ?? projects[0] ?? null)
+  }
+  const runWorkspaceTransition = (action: () => Promise<void>) => sessionTransitionRef.current.run(async () => {
+    ++sessionLinkGenerationRef.current
+    await action()
+  })
+  const openSession = (row: SessionRow, targetProject = project) => runWorkspaceTransition(async () => {
+    restoreWorkspaceRoute(targetProject?.path)
     const client = clientRef.current
     const p = targetProject
     if (!client || !p) return
@@ -1352,7 +1434,7 @@ export function MobileApp() {
       setScreen('chat')
       return
     }
-    switchComposerDraft(row.sessionId, p.path)
+    switchComposerDraft(row.sessionId, p.path, null)
     setSessionLoading(true)
     try {
       const previousId = runtimeRef.current?.sessionId
@@ -1392,6 +1474,73 @@ export function MobileApp() {
     await openSession(row, target)
   }
 
+  const openLinkedSession = (ref: SessionRef): Promise<void> => {
+    const generation = ++sessionLinkGenerationRef.current
+    const task = sessionLinkQueueRef.current.then(async () => {
+      if (generation !== sessionLinkGenerationRef.current) return
+      const sourceClient = clientRef.current
+      const sourceRuntime = runtimeRef.current
+      if (!sourceClient) throw new Error('not connected')
+      if (sourceRuntime?.sessionId === ref.sessionId && sourceRuntime.sourceEnvironmentId === ref.environmentId) return
+      const connectionGeneration = connectGenerationRef.current
+      const stillSource = () => generation === sessionLinkGenerationRef.current && sourceRuntime === runtimeRef.current
+      const isCurrent = () => stillSource() && connectionGeneration === connectGenerationRef.current
+      let resolved: ResolvedSessionLink | null = null
+      try {
+        resolved = await resolveSessionLink({ ref, client: sourceClient, currentPairingId: activePairingIdRef.current ?? '', pairings,
+          identity: { deviceId: deviceId || await loadOrCreateMobileId(), deviceName: getMobileDeviceName() },
+          resolveLan: pairingId => discovery.resolveLan(pairingId),
+          onCandidate: candidate => { sessionLinkCandidateRef.current = candidate },
+          isCurrent,
+        })
+        if (!isCurrent()) { resolved.retire(); return }
+        // Restore owns a real subscription. Keep its cleanup and activation in
+        // the same lock so stale cleanup cannot unsubscribe an ordinary restore.
+        await sessionTransitionRef.current.run(async () => {
+          const candidate = await resolved!.restore()
+          const environmentScope = candidate.target.connectionId ? ref.environmentId : null
+          await activatePreparedSessionLink(candidate, {
+            isCurrent,
+            createRuntime: () => createRuntime(candidate.client, environmentScope, candidate.pairing?.id ?? activePairingIdRef.current),
+            parkSource: () => remoteDraftsRef.current.park(),
+            adoptConnection: () => {
+              const pairing = candidate.pairing!
+              return connectWithSecret(pairing.relayUrl, pairing.secret, pairing.lan, pairing.hostName, pairing.desktopDeviceId, candidate, stillSource)
+            },
+            ownsConnection: () => clientRef.current === candidate.connection?.client && !runtimeRef.current,
+            leaveSource: () => { if (sourceRuntime?.sessionId) sourceClient.send({ type: 'leave_session', sessionId: sourceRuntime.sessionId }) },
+            activate: detached => {
+              clientRef.current = candidate.client
+              const targetProject = { path: candidate.target.projectPath, name: candidate.target.projectPath.split('/').pop() || candidate.target.projectPath }
+              setProject(targetProject)
+              routedEnvironmentIdRef.current = environmentScope
+              setRoutedEnvironmentId(environmentScope)
+              switchComposerDraft(ref.sessionId, targetProject.path, environmentScope)
+              resetSessionChrome()
+              setSessionId(ref.sessionId)
+              setActiveSessionTitle(candidate.target.title || 'Untitled')
+              const provider = (candidate.target.harness || 'claude') as HarnessId
+              harnessSelection.resetForProvider(provider, candidate.target.acpAgentId)
+              setHarness(provider)
+              const runtime = bindRuntime(candidate.client, environmentScope, detached as ChatRuntime)
+              setScreen('chat')
+              syncSheets(runtime, true)
+              setSessionLoading(false)
+              refreshRuntimeCatalog(runtime, provider, true)
+            },
+          })
+        })
+      } catch (error) {
+        resolved?.retire()
+        if (!isCurrent()) return
+        if (error instanceof Error && error.message.includes('Unknown session environment')) setScreen('pair')
+        throw error
+      }
+    })
+    sessionLinkQueueRef.current = task.catch(() => {})
+    return task
+  }
+
   /**
    * Runs one session-list command. The list applies its own change only when
    * this resolves true, so a rejected command leaves the row exactly as it was
@@ -1408,7 +1557,7 @@ export function MobileApp() {
   }
 
   const pinSession = async (row: SessionRow, pinned: boolean, targetProject = project) => {
-    const client = clientRef.current
+    const client = workspaceClientRef.current
     const p = targetProject
     if (!client || !p) throw new Error('no active project')
     const result = await client.request({
@@ -1427,7 +1576,7 @@ export function MobileApp() {
   }
 
   const removeSession = async (row: SessionRow, type: 'archive_session' | 'delete_session', targetProject = project) => {
-    const client = clientRef.current
+    const client = workspaceClientRef.current
     const p = targetProject
     if (!client || !p) throw new Error('no active project')
     const result = await client.request({
@@ -1439,7 +1588,7 @@ export function MobileApp() {
     if (!result.ok) throw new Error(result.error ?? `failed to ${type === 'archive_session' ? 'archive' : 'delete'} session`)
 
     if (p.path === project?.path) setSessions((current) => current.filter((item) => item.sessionId !== row.sessionId))
-    if (sessionId === row.sessionId) {
+    if (!routedEnvironmentIdRef.current && runtimeRef.current?.sessionId === row.sessionId && runtimeRef.current.projectPath === p.path) {
       switchComposerDraft(null)
       leaveActiveSession()
       returnToWorkspace()
@@ -1455,9 +1604,12 @@ export function MobileApp() {
       runSessionOp(() => removeSession(row, 'delete_session', p), 'failed to delete session'),
   }
 
-  const startNewSession = async (targetProject = project) => {
+  const startNewSession = (targetProject = project) => runWorkspaceTransition(async () => {
+    const wasRouted = !!routedEnvironmentIdRef.current
+    restoreWorkspaceRoute()
+    if (wasRouted && !projects.some(row => row.path === targetProject?.path)) targetProject = projects[0] ?? null
     await remoteDrafts.park()
-    switchComposerDraft(null, targetProject?.path)
+    switchComposerDraft(null, targetProject?.path, null)
     composerDraft.replaceWith(EMPTY_COMPOSER_DRAFT)
     setAttachments([])
     suggestions.applyProgrammatic('')
@@ -1466,15 +1618,26 @@ export function MobileApp() {
     setStatus('')
     setActiveSessionTitle('New session')
     setScreen('chat')
+    // Draft saving must resume even if the optional settings read later fails.
+    remoteDrafts.begin()
     const client = clientRef.current
     if (client && targetProject) {
-      const system = peekHarnessResource(client, 'get_system_info', targetProject.path, selectedProvider)
-      if (system) applySystemInfo(selectedProvider, system)
-      const resources = peekHarnessResource(client, 'get_project_resources', targetProject.path, selectedProvider)
-      setWorkspaceDirs(resources?.workspaceDirs ?? [])
+      const request = ++systemInfoRequestRef.current
+      const path = targetProject.path
+      const system = peekHarnessResource(client, 'get_system_info', path, selectedProvider)
+      const isCurrent = () => clientRef.current === client && request === systemInfoRequestRef.current
+      const apply = (info: RemoteSystemInfo) => {
+        applySystemInfo(selectedProvider, info)
+        const resources = peekHarnessResource(client, 'get_project_resources', path, selectedProvider)
+        setWorkspaceDirs(resources?.workspaceDirs ?? [])
+      }
+      if (system) apply(system)
+      else {
+        refreshSessionCatalog(() => requestHarnessResource(client, 'get_system_info', path, selectedProvider),
+          isCurrent, apply, () => setStatus(t('Agent settings are unavailable. Refresh the model list and try again.')))
+      }
     }
-    remoteDrafts.begin()
-  }
+  })
   /** Open a project for a new session — the picker's only exit that keeps state. */
   const chooseProject = (target: Project) =>
     runUiAction(async () => {
@@ -1488,7 +1651,7 @@ export function MobileApp() {
 
   const addProjectFlow = useAddProject({
     request: (command) => {
-      const client = clientRef.current
+      const client = workspaceClientRef.current
       if (!client) throw new Error('Connect to a desktop to browse projects')
       return client.request(command)
     },
@@ -1648,6 +1811,10 @@ export function MobileApp() {
     validateTurnAttachments(attachments, text)
     if (sessionTransitionRef.current.isActive) {
       setStatus('The conversation is still loading. Please send again when it is ready.')
+      return
+    }
+    if (!runtimeRef.current?.sessionId && !harnessSelection.catalogReady) {
+      setStatus(t('Agent settings are unavailable. Refresh the model list and try again.'))
       return
     }
     if (isManualRecapCommand(text) && shouldInterceptGrokRecap(selectedProvider, selectedAcpAgentId)) {
@@ -1850,6 +2017,7 @@ export function MobileApp() {
 
   /** Drop the transport and everything hanging off it, back to the device list. */
   const disconnectDevice = async () => {
+    ++sessionLinkGenerationRef.current
     ++connectGenerationRef.current
     workspaceCacheRef.current.persistence?.dispose()
     await remoteDrafts.park()
@@ -2014,17 +2182,17 @@ export function MobileApp() {
    * of them is the bug this replaced.
    */
   const workspaceList = {
-    client: clientRef.current,
+    client: workspaceClientRef.current,
     projects,
-    activeProject: project,
-    activeSessionId: sessionId,
+    activeProject: routedEnvironmentId ? null : project,
+    activeSessionId: routedEnvironmentId ? null : sessionId,
     sessions,
     cache: workspaceCache,
     listRevision: sessionListRevision,
     drafts: remoteDrafts.rows,
     activeDraftId: remoteDrafts.activeId,
     onOpenDraft: (row: import('@superone/shared/environment/draft-rpc').DraftListEntry) =>
-      runUiAction(() => sessionTransitionRef.current.run(() => remoteDrafts.open(row)), setStatus, 'Could not open draft'),
+      runUiAction(() => runWorkspaceTransition(() => remoteDrafts.open(row)), setStatus, 'Could not open draft'),
     onDeleteDraft: (row: import('@superone/shared/environment/draft-rpc').DraftListEntry) =>
       runUiAction(() => remoteDrafts.remove(row), setStatus, 'Could not delete draft'),
     onNewSession: (p: Project) => runUiAction(async () => { await openProject(p); await startNewSession(p) }, setStatus, 'failed to open project'),
@@ -2486,7 +2654,7 @@ export function MobileApp() {
 
       {route === 'session-search' ? (
         <SessionSearchScreen
-          client={clientRef.current}
+          client={workspaceClientRef.current}
           onCancel={leaveToWorkspace}
           onOpenSession={(row) => runUiAction(() => openSessionAnywhere(row), setStatus, 'failed to open session')}
         />

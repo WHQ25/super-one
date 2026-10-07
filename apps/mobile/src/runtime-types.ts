@@ -7,6 +7,7 @@ export type SessionTranscriptCache = {
 }
 
 export type ChatRuntimeHooks = {
+  onCommandError?(message: string): void
   onComposerResult?: (result: import('./widget-composer-client').WidgetComposerResult) => void
   onCachedHydrate?: () => void
   onDetail?: (event: Extract<AgentEvent, { type: 'remote_detail' }>) => void

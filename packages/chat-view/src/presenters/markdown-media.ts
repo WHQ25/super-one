@@ -4,6 +4,17 @@ import { defaultRehypePlugins } from 'streamdown'
 import { harden, BlockPolicy } from 'rehype-harden'
 import rehypeSanitize, { defaultSchema, type Options as SanitizeSchema } from 'rehype-sanitize'
 import type { PluggableList } from 'unified'
+import type { Root as HtmlRoot } from 'hast'
+import { isSessionLink } from '@superone/shared/session-link'
+
+/** Run after sanitization; ordinary anchors retain Streamdown's Link Safety. */
+export function rehypeSessionLinks() {
+  return (tree: HtmlRoot) => {
+    visit(tree, 'element', node => {
+      if (node.tagName === 'a' && typeof node.properties.href === 'string' && isSessionLink(node.properties.href)) node.tagName = 'session-chip'
+    })
+  }
+}
 
 /**
  * The markdown media pipeline both chat surfaces share.
@@ -85,6 +96,7 @@ export function createMarkdownRehypePlugins({ srcProtocols, tagNames = [], attri
     attributes: { ...defaultSchema.attributes, ...attributes },
     protocols: {
       ...defaultSchema.protocols,
+      href: [...(defaultSchema.protocols?.href ?? []), 'session'],
       src: [...(defaultSchema.protocols?.src ?? []), ...srcProtocols],
     },
   }

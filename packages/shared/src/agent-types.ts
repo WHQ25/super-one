@@ -1799,6 +1799,7 @@ export interface SubagentRetryInfo {
 
 export type AgentEventBase =
   | import('./environment/draft-rpc').DraftChangedEvent
+  | { type: 'remote_command_error'; command: string; message: string }
   | { type: 'remote_detail'; subscriptionId: string; revision: number; offset: number; text: string }
   | { type: 'message_start'; message: ChatMessage }
   | { type: 'user_message_appended'; message: ChatMessage }
@@ -2115,7 +2116,7 @@ export type JevRunActionOutcome = 'worked' | 'didnt' | 'unknown'
 
 export type JevRunOutcome = 'paused' | 'done' | 'aborted'
 
-export type AgentEvent = AgentEventBase & { remoteView?: 'summary'; projectPath?: string; sessionId?: string; draftSessionId?: string; seq?: number; epoch?: number }
+export type AgentEvent = AgentEventBase & { environmentId?: string; remoteView?: 'summary'; projectPath?: string; sessionId?: string; draftSessionId?: string; seq?: number; epoch?: number }
 export type QueuedMessagesChangedEvent = Extract<AgentEvent, { type: 'queued_messages_changed' }>
 
 export type AgentStatus = 'idle' | 'streaming' | 'background' | 'error'
@@ -4547,6 +4548,9 @@ export const AgentIpcChannels = {
   TERMINAL_COMMAND_RULE_REMOVE: 'terminal:command-rules:remove',
 
   // Multi-environment / remote node (Main environment host)
+  ENVIRONMENT_SESSION_SOURCE: 'environment:sessionSource',
+  ENVIRONMENT_SESSION_LINK_METADATA: 'environment:sessionLinkMetadata',
+  ENVIRONMENT_SESSION_LINK_TARGET: 'environment:sessionLinkTarget',
   ENVIRONMENT_LIST: 'environment:list',
   ENVIRONMENT_GET_LOCAL_ID: 'environment:getLocalId',
   ENVIRONMENT_WORKSPACE_LIST_DIR: 'environment:workspaceListDir',
@@ -4950,6 +4954,10 @@ export type McpAppDeviceRequest = Exclude<McpAppHostOperation, { operation: 'ope
   & { messageId: string }
 
 export type RemoteCommand =
+  | { type: 'session_link_identity'; requestId: string }
+  | { type: 'session_link_metadata'; requestId: string; refs: import('./environment/refs').SessionRef[] }
+  | { type: 'session_link_resolve'; requestId: string; ref: import('./environment/refs').SessionRef }
+  | { type: 'environment_command'; requestId?: string; environmentId: string; sessionId?: string; command: RemoteCommand }
   | import('./environment/draft-rpc').DraftRemoteCommand
   | import('./codex-async-question').CodexAsyncQuestionAnswerCommand
   | { type: 'create_session'; draftId?: string; draftLeaseId?: string; requestId: string; sessionId: string; projectPath: string; provider?: HarnessId; acpAgentId?: string; permissionMode?: string; effort?: string; model?: string; mode?: string; agentPreset?: string; apiProviderId?: string | null; gitBranch?: string; worktreePath?: string; worktreeBranch?: string; worktreeMode?: WorktreeMode; worktreeBranchName?: string; worktreeCarryLocalChanges?: boolean; additionalDirectories?: string[]; /** Sandbox the picker chose before the session existed (Claude / Cursor). */ sandboxMode?: SandboxMode }
@@ -4977,7 +4985,7 @@ export type RemoteCommand =
   | { type: 'dismiss_question'; requestId: string; projectPath?: string; sessionId: string }
   | { type: 'respond_plan_approval'; requestId: string; approved: boolean; feedback?: string; projectPath?: string; sessionId: string }
   | { type: 'codex_plan_approval'; messageId: string; status: 'approved' | 'rejected'; feedback?: string; projectPath?: string; sessionId: string }
-  | { type: 'subscribe_session'; projectPath: string; sessionId: string; requestId?: string; progressive?: boolean }
+  | { type: 'subscribe_session'; projectPath: string; sessionId: string; requestId?: string; progressive?: boolean; preserveSubscriptions?: boolean }
   | { type: 'unsubscribe_session'; sessionId?: string }
   /** The phone is showing this session in the foreground; the host records its latest completion as read. */
   | { type: 'mark_session_seen'; projectPath: string; sessionId: string }

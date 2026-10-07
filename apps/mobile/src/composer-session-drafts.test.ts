@@ -9,6 +9,16 @@ const fileDraft = (text: string) => ({
 })
 
 describe('per-session composer drafts', () => {
+  it('isolates colliding IDs and paths on environments reached through one pairing', () => {
+    const drafts = new SessionComposerDrafts()
+    const local = composerDraftKey('desk', '/proj', 'same')
+    const node = composerDraftKey('desk', '/proj', 'same', 'node')
+    drafts.stash(local, fileDraft('desktop draft'))
+    drafts.stash(node, fileDraft('node draft'))
+    expect(drafts.load(local).text).toBe('desktop draft')
+    expect(drafts.load(node).text).toBe('node draft')
+    expect(composerDraftKey('desk', '/proj', 'same', 'another')).not.toBe(node)
+  })
   it('keeps drafts isolated by session and restores the empty composer when none is stored', () => {
     const drafts = new SessionComposerDrafts()
     const sessionA = composerDraftKey('desk', '/proj', 'a')

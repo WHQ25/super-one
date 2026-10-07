@@ -29,6 +29,8 @@ export interface EnvironmentEventEnvelope<T = unknown> {
 }
 
 export interface SubscribeEventsInput {
+  /** Local consumer cancellation; never serialized as an RPC field. */
+  signal?: AbortSignal
   environmentId: string
   /**
    * Resume from this sequence exclusive (subscribe from snapshotSequence + 1).

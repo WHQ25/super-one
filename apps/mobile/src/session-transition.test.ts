@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { SessionTransition } from './session-transition'
+import { SessionTransition, SessionTransitionBusyError } from './session-transition'
 
 describe('SessionTransition', () => {
   it('prevents concurrent session restores that share the relay buffer', async () => {
@@ -12,12 +12,14 @@ describe('SessionTransition', () => {
     const running = transition.run(actionA)
     await Promise.resolve()
     expect(transition.isActive).toBe(true)
-    await transition.run(actionB)
+    await expect(transition.run(actionB)).rejects.toBeInstanceOf(SessionTransitionBusyError)
+    expect(() => transition.assertIdle()).toThrow('Please try again shortly')
     expect(actionB).not.toHaveBeenCalled()
 
     finish()
     await running
     expect(transition.isActive).toBe(false)
+    expect(() => transition.assertIdle()).not.toThrow()
     await transition.run(actionB)
     expect(actionB).toHaveBeenCalledOnce()
   })

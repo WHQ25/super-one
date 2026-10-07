@@ -2503,6 +2503,11 @@ export const zh: Messages = {
         },
       },
       archive: {
+        environmentsListed: '环境已列出',
+        listingEnvironments: '正在列出环境…',
+        listEnvironments: '列出环境',
+        environmentCount: '{{count}} 个环境',
+        emptyEnvironments: '未找到环境',
         listingSessions: '正在列出会话…',
         sessionsListed: '已列出会话',
         listSessions: '列出会话',

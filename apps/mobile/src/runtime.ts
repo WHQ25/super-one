@@ -32,6 +32,7 @@ import type { CachedTranscript, RelayClient } from '@superone/relay-client'
 import { restoreSession } from '@superone/relay-client'
 import { randomId } from './ids'
 import { newMessageId } from '@superone/shared/message-id'
+import { createSessionCommand } from './runtime-create-session'
 
 type SessionState = ReturnType<typeof createDefaultChatCoreSession>
 
@@ -40,6 +41,7 @@ const NO_WORKTREE: SessionWorktreeFacts = { isWorktree: false, worktreePath: nul
 type SendMessageCommand = Extract<RemoteCommand, { type: 'send_message' }>
 
 export class ChatRuntime {
+  sourceEnvironmentId: string | null = null
   private readonly appContexts = new McpAppContextAttachments()
   get contextAttachments() { return this.appContexts.items(this.session.messages) }
   removeContextAttachment(id: string): Promise<void> {
@@ -99,7 +101,7 @@ export class ChatRuntime {
       result => this.hooks.onComposerResult?.(result))
   }
 
-  async open(projectPath: string, sessionId: string): Promise<void> {
+  async open(projectPath: string, sessionId: string, prepared?: import('@superone/relay-client').RestoredSession): Promise<void> {
     this.persistTranscript()
     if (this.projectPath !== projectPath || this.sessionId !== sessionId) this.widgetComposers.releaseAll()
     this.projectPath = projectPath
@@ -127,8 +129,9 @@ export class ChatRuntime {
         this.hooks.onCachedHydrate?.()
         networkLedger.checkpoint('cached-hydrate')
       }
-      const restored = await restoreSession(this.client, projectPath, sessionId, cached)
+      const restored = prepared ?? await restoreSession(this.client, projectPath, sessionId, cached)
       if (generation !== this.restoreGeneration) return
+      this.sourceEnvironmentId = restored.snapshot.sourceEnvironmentId ?? null
       this.restoreMetrics = restored.metrics
       this.appContexts.restore(restored.snapshot.mcpAppContexts)
       this.navigationAvailable = restored.navigationAvailable === true
@@ -176,6 +179,7 @@ export class ChatRuntime {
         ...restored.liveBatches.flat() as AgentEvent[],
       ]
       for (const event of restoreEvents) {
+        if (event.environmentId && event.environmentId !== this.sourceEnvironmentId) continue
         if (event.sessionId && event.sessionId !== this.sessionId) continue
         if (this.handleSideEvent(event)) continue
         this.captureRuntimeFacts(event, session.messages)
@@ -279,6 +283,7 @@ export class ChatRuntime {
     if (opts.provider) this.provider = opts.provider
     this.projectPath = projectPath
     this.sessionId = sessionId
+    this.sourceEnvironmentId = null
     this.creating = true
     try {
       const id = await this.createOnHost(projectPath, sessionId, opts)
@@ -297,33 +302,7 @@ export class ChatRuntime {
   }
 
   private async createOnHost(projectPath: string, sessionId: string, opts: CreateSessionOptions): Promise<string> {
-    const res = await this.client.request({
-      type: 'create_session',
-      requestId: randomId(),
-      sessionId,
-      projectPath,
-      ...(opts.provider ? { provider: opts.provider as HarnessId } : {}),
-      ...(opts.acpAgentId ? { acpAgentId: opts.acpAgentId } : {}),
-      ...(opts.permissionMode ? { permissionMode: opts.permissionMode } : {}),
-      ...(opts.effort ? { effort: opts.effort } : {}),
-      ...(opts.model ? { model: opts.model } : {}),
-      ...(opts.gitBranch ? { gitBranch: opts.gitBranch } : {}),
-      ...(opts.worktreePath ? { worktreePath: opts.worktreePath } : {}),
-      ...(opts.worktreeBranch ? { worktreeBranch: opts.worktreeBranch } : {}),
-      ...(opts.worktreeMode ? { worktreeMode: opts.worktreeMode } : {}),
-      ...(opts.worktreeBranchName ? { worktreeBranchName: opts.worktreeBranchName } : {}),
-      ...(opts.worktreeCarryLocalChanges !== undefined
-        ? { worktreeCarryLocalChanges: opts.worktreeCarryLocalChanges }
-        : {}),
-      ...(opts.additionalDirectories?.length
-        ? { additionalDirectories: opts.additionalDirectories }
-        : {}),
-      ...(opts.mode ? { mode: opts.mode } : {}),
-      ...(opts.agentPreset ? { agentPreset: opts.agentPreset } : {}),
-      ...(opts.apiProviderId !== undefined ? { apiProviderId: opts.apiProviderId } : {}),
-      ...(opts.sandboxMode ? { sandboxMode: opts.sandboxMode } : {}),
-      ...(opts.draftId ? { draftId: opts.draftId, draftLeaseId: opts.draftLeaseId } : {}),
-    } as RemoteCommand) as { ok?: boolean; sessionId?: string; error?: string; cwd?: string; gitBranch?: string | null }
+    const res = await this.client.request(createSessionCommand(projectPath, sessionId, opts)) as { ok?: boolean; sessionId?: string; error?: string; cwd?: string; gitBranch?: string | null }
     if (res.error || res.ok === false) throw new Error(res.error ?? 'create_session failed')
     const id = res.sessionId ?? sessionId
     this.sessionId = id
@@ -338,8 +317,11 @@ export class ChatRuntime {
     try {
       const subscribed = await this.client.request({
         type: 'subscribe_session', projectPath, sessionId: id, progressive: true,
-      } as RemoteCommand) as { error?: string }
+      } as RemoteCommand) as { error?: string; snapshot?: import('@superone/relay-client').SessionSnapshot }
       if (subscribed.error) throw new Error(subscribed.error)
+      // The subscription reports the authenticated owner before buffered events
+      // are replayed, just as restore does for an existing session.
+      this.sourceEnvironmentId = subscribed.snapshot?.sourceEnvironmentId ?? null
       const { epoch, batches } = this.client.releaseBuffer()
       this.eventEpoch = epoch
       for (const batch of batches) this.ingest(batch as AgentEvent[], epoch)
@@ -921,7 +903,9 @@ export class ChatRuntime {
   }
 
   private apply(event: AgentEvent): void {
+    if (event.environmentId && event.environmentId !== this.sourceEnvironmentId) return
     if (event.sessionId && event.sessionId !== this.sessionId) return
+    if (event.type === 'remote_command_error') { this.hooks.onCommandError?.(event.message); return }
     if (event.type === 'user_message_send_failed') {
       const queued = this.session.queuedMessages.some(message => message.id === event.clientMessageId)
       const restored = this.inputRequestSends.reject(this.session, event.clientMessageId, event.error, queued)

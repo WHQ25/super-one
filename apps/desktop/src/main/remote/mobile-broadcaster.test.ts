@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+vi.mock('../environment/session-identity', () => ({ localSessionEnvironmentId: () => 'desktop-env' }))
+import { describe, expect, it, vi } from 'vitest'
 
 import { MobileBroadcaster, type MobileTransport } from './mobile-broadcaster'
 import { rememberAttachmentOrigin } from './attachment-echo'
@@ -51,6 +52,7 @@ describe('MobileBroadcaster', () => {
     await broadcaster.broadcast({ type: 'message_complete', sessionId: 's1' } as AgentEvent)
     expect(transport.sent).toHaveLength(1)
     expect(transport.sent[0].targets).toEqual(['dev-A'])
+    expect(transport.sent[0].event.environmentId).toBe('desktop-env')
   })
 
   it('echoes a sent picture back to its sender without the bytes, and in full to everyone else', async () => {

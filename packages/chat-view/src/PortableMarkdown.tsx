@@ -1,3 +1,7 @@
+import { isSessionLink } from '@superone/shared/session-link'
+import { SessionChip, SessionLinkContext, sessionChipLabel, type SessionLinkPorts } from './presenters/SessionChip'
+import { createSessionLinkCache } from './presenters/session-link-cache'
+import { requestNativeAsync } from './bridge'
 import { createElement, useContext, useEffect, useMemo, type ComponentProps, type ReactNode } from 'react'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { isVideoFileName } from '@superone/shared/file-preview'
@@ -94,8 +98,20 @@ function NativeFileChip({
   )
 }
 
+const sessionLinkPorts: SessionLinkPorts = {
+  cache: createSessionLinkCache(async refs => {
+    const result = await requestNativeAsync('sessionLinkMetadata', { refs }) as { metadata?: import('@superone/shared/session-link').SessionLinkMetadataResult[] }
+    return result.metadata ?? []
+  }),
+  open: async ref => { await requestNativeAsync('openSessionLink', { ref }, 120_000) },
+  onError: error => { requestNative('sessionLinkError', { message: error instanceof Error ? error.message : 'Could not open session' }) },
+}
+
+export const invalidateSessionLinkMetadata = () => sessionLinkPorts.cache.clear()
+
 function NativeLink({ href, onClick, children, node: _node, ...props }: ComponentProps<'a'> & { node?: unknown }) {
-  const { projectPath, scheme } = useContext(PortableTurnContext)
+  const { projectPath, scheme, sourceEnvironmentId } = useContext(PortableTurnContext)
+  if (href && isSessionLink(href)) return <SessionLinkContext.Provider value={{ sourceEnvironmentId, ports: sessionLinkPorts }}><SessionChip href={href} label={sessionChipLabel(children)} /></SessionLinkContext.Provider>
   const resolved = href ? resolveProjectFileHref(href, projectPath ?? '') : null
   if (resolved) {
     return (

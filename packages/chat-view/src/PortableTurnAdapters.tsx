@@ -1,3 +1,4 @@
+import { PortableSessionArchive } from './PortableSessionArchive'
 import { PortableCodexCommand } from './PortableCodexCommand'
 import { ModMessageScope } from './mod-ui/react'
 import { DeferredInteractiveTool, isPortableInteractiveTool } from './DeferredInteractiveTool'
@@ -357,7 +358,7 @@ function renderDedicatedTool(props: ClaudeToolPresenterProps, brandIconSrc?: str
   if (collabToolName && isSessionArchiveToolName(collabToolName)) {
     const isDenied = Boolean(props.result?.startsWith('[denied] '))
     return (
-      <SessionArchiveToolBlockPresenter
+      <PortableSessionArchive
         toolName={collabToolName}
         params={parseRecord(props.input)}
         result={isDenied ? props.result?.slice('[denied] '.length) : props.result}
@@ -1111,12 +1112,13 @@ export function PortableTurnProvider({
   scheme,
   pendingPermission,
   projectPath,
+  sourceEnvironmentId,
   mcpIcons = {},
   children,
 }: Omit<PortableTurnContextValue, 'mcpIcons'> & { mcpIcons?: Record<string, string>; children: ReactNode }) {
   const value = useMemo(
-    () => ({ scheme, pendingPermission, projectPath, mcpIcons }),
-    [scheme, pendingPermission, projectPath, mcpIcons],
+    () => ({ scheme, pendingPermission, projectPath, sourceEnvironmentId, mcpIcons }),
+    [scheme, pendingPermission, projectPath, sourceEnvironmentId, mcpIcons],
   )
   return <PortableTurnContext.Provider value={value}>{children}</PortableTurnContext.Provider>
 }

@@ -3,6 +3,7 @@
  * All host-scoped project keys use `remote:<connectionId>:<hostPath>`.
  */
 import type { AgentEvent, SessionHistoryEntry } from '@superone/shared/agent-types'
+import { HARNESS_CAPABILITIES } from '@superone/shared/harness-capabilities'
 import type {
   EnvironmentEventEnvelope,
   SessionMessageBlock,
@@ -99,7 +100,7 @@ export async function hydrateRemotePerSession(
   const pendingFields = nodePendingInteractionFields(snap?.pendingInteraction, snap?.pendingInputRequests)
   const isLive =
     snap?.status === 'streaming' || pendingFields.awaitingAssistantReply
-  const chatProvider = (providerId === 'claude' || providerId === 'codex'
+  const chatProvider = (Object.hasOwn(HARNESS_CAPABILITIES, providerId)
     ? providerId
     : 'claude') as ChatProvider
   return {
@@ -121,6 +122,7 @@ export async function hydrateRemotePerSession(
     } : {}),
     sessionProvider: chatProvider,
     preferredProvider: chatProvider,
+    ...(chatProvider === 'acp' && snap?.acpAgentId !== undefined ? { acpAgentId: snap.acpAgentId } : {}),
     messages,
     status: isLive ? 'streaming' : nodeStatusToAgentStatus(snap?.status),
     _title: snap?.title ?? base._title ?? null,

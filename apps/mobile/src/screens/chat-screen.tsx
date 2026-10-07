@@ -191,6 +191,7 @@ export function ChatScreen(props: {
         ref={props.webRef}
         originWhitelist={['*']}
         source={CHAT_SOURCE}
+        showsVerticalScrollIndicator={false}
         injectedJavaScriptBeforeContentLoaded={prePaint}
         style={[styles.flex, { backgroundColor: tokens.colors.background }]}
         containerStyle={{ backgroundColor: tokens.colors.background }}

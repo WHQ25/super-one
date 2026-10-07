@@ -71,6 +71,95 @@ test('holds the reading position when a historical turn is open during streaming
   await expect(tick(page, 'u2')).toHaveAttribute('aria-current', 'step')
 })
 
+test('automatic streaming follows the answer without ever revealing the scrollbar', async ({ page }, info) => {
+  const messages = conversation(6)
+  await send(page, { type: 'hydrate', messages })
+  const scrollbar = page.locator('.chat-scrollbar')
+  await expect(scrollbar).toHaveAttribute('data-visible', 'false')
+  const before = await page.evaluate(() => window.scrollY)
+  await scrollbar.evaluate((element) => {
+    element.setAttribute('data-reveals', '0')
+    new MutationObserver((records) => {
+      if (records.some(record => record.attributeName === 'data-visible') && element.getAttribute('data-visible') === 'true') {
+        element.setAttribute('data-reveals', String(Number(element.getAttribute('data-reveals')) + 1))
+      }
+    }).observe(element, { attributes: true, attributeFilter: ['data-visible'] })
+  })
+  for (let i = 1; i <= 4; i++) {
+    await send(page, { type: 'applyReductionPatch', messages: [...messages.slice(0, -1), {
+      ...messages.at(-1)!, status: 'streaming', content: [{ type: 'text', text: 'Streaming answer. '.repeat(200 * i) }],
+    }], sessionStatus: 'streaming' })
+    await page.waitForTimeout(100)
+  }
+  expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(before)
+  await expect(scrollbar).toHaveAttribute('data-reveals', '0')
+  await expect(scrollbar).toHaveCSS('opacity', '0')
+  await page.screenshot({ path: info.outputPath('automatic-scroll.png') })
+})
+
+test('manual scrolling shows the scrollbar, then fades and stays hidden during a jump', async ({ page }, info) => {
+  await send(page, { type: 'setTheme', scheme: 'light' })
+  await send(page, { type: 'hydrate', messages: conversation(12) })
+  const scrollbar = page.locator('.chat-scrollbar')
+  await page.mouse.move(120, 350)
+  await page.mouse.wheel(0, -240)
+  await expect(scrollbar).toHaveAttribute('data-visible', 'true')
+  await expect(scrollbar).toHaveCSS('opacity', '1')
+  const thumb = scrollbar.locator('.chat-scrollbar-thumb')
+  expect((await thumb.boundingBox())!.height).toBeGreaterThanOrEqual(24)
+  await page.screenshot({ path: info.outputPath('manual-scroll-light.png') })
+  await expect(scrollbar).toHaveAttribute('data-visible', 'false')
+  await expect(scrollbar).toHaveCSS('opacity', '0')
+  await send(page, { type: 'setTheme', scheme: 'dark' })
+  await send(page, { type: 'setViewport', locale: 'zh' })
+  await page.mouse.wheel(0, -120)
+  await expect(scrollbar).toHaveAttribute('data-visible', 'true')
+  await expect(scrollbar).toHaveCSS('opacity', '1')
+  await page.screenshot({ path: info.outputPath('manual-scroll-dark.png') })
+  await send(page, { type: 'scrollToTurn', turnId: 'u2', behavior: 'smooth' })
+  await expect.poll(async () => Math.abs(await targetTop(page, 'u2'))).toBeLessThan(16)
+  await expect(scrollbar).toHaveAttribute('data-visible', 'false')
+})
+
+test('incoming output at the bottom immediately hides the manual scrollbar', async ({ page }) => {
+  await page.evaluate(() => window.addEventListener('message', (event) => {
+    if (event.data?.type === 'viewState') document.documentElement.dataset.testAtBottom = String(event.data.atBottom)
+  }))
+  const messages = conversation(6)
+  messages[messages.length - 1] = { ...messages.at(-1)!, status: 'streaming' }
+  await send(page, { type: 'hydrate', messages, sessionStatus: 'streaming' })
+  const scrollbar = page.locator('.chat-scrollbar')
+  await page.mouse.move(120, 350)
+  await page.mouse.wheel(0, -150)
+  await expect(scrollbar).toHaveAttribute('data-visible', 'true')
+  await expect(page.locator('html')).toHaveAttribute('data-test-at-bottom', 'false')
+  await page.mouse.wheel(0, 300)
+  await expect(page.locator('html')).toHaveAttribute('data-test-at-bottom', 'true')
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollHeight - window.scrollY - window.innerHeight)).toBeLessThan(2)
+  await send(page, { type: 'applyReductionPatch', messages: [...messages.slice(0, -1), {
+    ...messages.at(-1)!, status: 'streaming', content: [{ type: 'text', text: 'Streaming answer. '.repeat(400) }],
+  }], sessionStatus: 'streaming' })
+  await expect(scrollbar).toHaveAttribute('data-visible', 'false', { timeout: 300 })
+  // This must be the automatic-scroll guard, before the 650 ms inactivity timeout.
+})
+
+test('a touch swipe reveals the scrollbar but a tap and session replacement do not', async ({ page, browserName }) => {
+  test.skip(browserName !== 'chromium', 'Chromium CDP supplies real touchscreen input')
+  await send(page, { type: 'hydrate', messages: conversation(6) })
+  const scrollbar = page.locator('.chat-scrollbar')
+  const client = await page.context().newCDPSession(page)
+  await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 120, y: 300 }] })
+  await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+  await expect(scrollbar).toHaveAttribute('data-visible', 'false')
+  await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 120, y: 300 }] })
+  await client.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 120, y: 400 }] })
+  await expect(scrollbar).toHaveAttribute('data-visible', 'true')
+  await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+  await expect(scrollbar).toHaveAttribute('data-visible', 'false')
+  await send(page, { type: 'hydrate', messages: conversation(4) })
+  await expect(scrollbar).toHaveAttribute('data-visible', 'false')
+})
+
 test('expands and collapses compacted history and jumps across the boundary', async ({ page }) => {
   const turns = conversation(12)
   turns.splice(12, 0, message('compact', 'assistant', '__compact__:auto:12000', 'system'))

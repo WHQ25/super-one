@@ -74,6 +74,7 @@ export function ToolCatalogPreview({ onClose, onTheme }: { onClose: () => void; 
         ref={web}
         originWhitelist={['*']}
         source={CHAT_SOURCE}
+        showsVerticalScrollIndicator={false}
         style={styles.flex}
         onLoadStart={channel.reset}
         onMessage={(event) => {

@@ -65,6 +65,9 @@ AES-GCM'd; `src/native-crypto.ts` swaps the relay-client's pure-JS
 show the cipher any more — if a send is slow again, count the crossings first.
 The conversation tick rail also lives in the chat WebView (`ChatScrollIndicator`),
 where it can measure and navigate the transcript without round-tripping through RN.
+The host disables its native vertical scrollbar. `ChatScrollbar` shows a document
+overlay during manual scrolling (including momentum), hides it after inactivity,
+and clears it before automatic following or navigation.
 Its turn outline and tick curve are shared with desktop. Touch scrubbing previews
 questions and replies, then jumps on release; compact ticks expand/collapse history.
 Navigation mounts a bounded neighborhood around the target, and paging moves in

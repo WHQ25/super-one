@@ -1,0 +1,24 @@
+/* Hide the browser's copy too; WKWebView's native indicator is disabled by the host. */
+html:has(.chat-scrollbar) { scrollbar-width: none; }
+html:has(.chat-scrollbar)::-webkit-scrollbar { display: none; }
+
+.chat-scrollbar {
+  position: fixed;
+  top: calc(3px + var(--safe-area-top, 0px));
+  right: calc(2px + var(--safe-area-right, 0px));
+  bottom: calc(3px + var(--safe-area-bottom, 0px) + var(--bottom-dock, 0px));
+  width: 3px;
+  z-index: 21;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+.chat-scrollbar[data-visible="true"] { opacity: 1; }
+.chat-scrollbar-thumb {
+  width: 100%;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--foreground) 35%, transparent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat-scrollbar { transition: none; }
+}

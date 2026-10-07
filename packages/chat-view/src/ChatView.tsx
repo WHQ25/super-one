@@ -42,6 +42,7 @@ import { PortableMessage } from './PortableMessage'
 import { isRealtimeVoiceMessage } from '@superone/shared/realtime-transcript'
 import { extractTurnOutline } from '@superone/shared/turn-outline'
 import { ChatScrollIndicator } from './ChatScrollIndicator'
+import { ChatScrollbar, type ChatScrollbarHandle } from './ChatScrollbar'
 import { captureScrollAnchor, compactBoundary, compactsAfter, compactTimeline, compactVisibleStart, jumpChatWindow, visibleChatWindow, type ScrollAnchor } from './chat-navigation'
 import type { HostInbound, ReductionProjection, SessionProjection } from './protocol'
 
@@ -213,6 +214,7 @@ export function ChatView() {
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyError, setHistoryError] = useState(false)
   const scrollToBottomRef = useRef(false)
+  const scrollbarRef = useRef<ChatScrollbarHandle>(null)
   const navigationRequest = useRef(0)
   const [navigationLoading, setNavigationLoading] = useState(false)
   const [navigationRetry, setNavigationRetry] = useState<(() => void) | null>(null)
@@ -576,6 +578,7 @@ export function ChatView() {
     }
     if (loadingPreviousRef.current) setTimeout(() => { loadingPreviousRef.current = false }, 60)
     if (!state.scrollTarget && (scrollToBottomRef.current || atBottomRef.current)) {
+      scrollbarRef.current?.hide()
       page.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'auto' })
       scrollToBottomRef.current = false
     }
@@ -585,6 +588,7 @@ export function ChatView() {
     if (!state.scrollTarget) return
     const element = document.querySelector<HTMLElement>(`[data-turn-id="${CSS.escape(state.scrollTarget.id)}"]`)
     if (!element) return
+    scrollbarRef.current?.hide()
     element.scrollIntoView({ behavior: state.scrollTarget.behavior, block: 'start' })
     setState((previous) => ({ ...previous, scrollTarget: undefined }))
   }, [state.scrollTarget, state.range])
@@ -661,6 +665,7 @@ export function ChatView() {
     >
       <div className="chat-view-edge-fade" data-edge="top" aria-hidden="true" />
       <div className="chat-view-edge-fade" data-edge="bottom" aria-hidden="true" />
+      <ChatScrollbar key={state.transcriptEpoch} ref={scrollbarRef} />
       <ChatScrollIndicator entries={outline} range={navigation ? globalHistoryRange(state.messages, navigation, state.range) : state.range} hasCompact={hasCompact}
         compactExpanded={compactExpanded} compactSplit={compactSplit} onJump={jumpToMessage}
         onToggleCompact={() => setCompactExpansion(compactExpanded ? 0 : timeline.ids.length)} />

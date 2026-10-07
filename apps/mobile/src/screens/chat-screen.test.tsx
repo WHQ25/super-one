@@ -81,6 +81,8 @@ test('covers the previous transcript while restore runs, without unmounting the 
   // Booting under the cover is what stops WKWebView's white default from
   // flashing the moment restore finishes.
   expect(screen.getByTestId('chat-webview')).toBeTruthy()
+  // The document owns the manual-only scrollbar; the native copy flashes on scrollTo.
+  expect(screen.getByTestId('chat-webview').props.showsVerticalScrollIndicator).toBe(false)
   expect(screen.queryByText('Ship it')).toBeNull()
   expect(screen.queryByTestId('phone-composer-status')).toBeNull()
 })

@@ -25,6 +25,8 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Changed
 
+- Upgrade Claude Agent SDK to 0.3.293 (Claude Code 2.1.293), adding
+  Haiku 5.5.
 - Align the image composer with the text composer and add a reference
   attachment button; show the reference drop hint in the prompt placeholder.
 

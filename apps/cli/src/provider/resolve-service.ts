@@ -232,11 +232,13 @@ export interface ModelOptionWire {
   serviceTiers?: Array<{ id: string; name: string; description: string }>
 }
 
+const CLAUDE_EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max']
+
 /** Default Claude slugs when the node has no custom catalog. */
 const DEFAULT_CLAUDE_MODELS: ModelOptionWire[] = [
-  { id: 'claude-sonnet-4-5', name: 'Sonnet 4.5', description: '', isDefault: true, supportedEffortLevels: ['low', 'medium', 'high', 'max'] },
-  { id: 'claude-opus-4-5', name: 'Opus 4.5', description: '', supportedEffortLevels: ['low', 'medium', 'high', 'max'] },
-  { id: 'claude-haiku-4-5', name: 'Haiku 4.5', description: '', supportedEffortLevels: ['low', 'medium', 'high'] },
+  { id: 'claude-opus-5-5', name: 'Opus 5.5', description: '', isDefault: true, supportedEffortLevels: CLAUDE_EFFORT_LEVELS },
+  { id: 'claude-sonnet-5-5', name: 'Sonnet 5.5', description: '', supportedEffortLevels: CLAUDE_EFFORT_LEVELS },
+  { id: 'claude-haiku-5-5', name: 'Haiku 5.5', description: '', supportedEffortLevels: CLAUDE_EFFORT_LEVELS },
 ]
 
 const DEFAULT_CODEX_MODELS: ModelOptionWire[] = [

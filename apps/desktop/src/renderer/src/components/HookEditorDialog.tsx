@@ -433,7 +433,7 @@ function PromptFields({ form, update, t }: { form: HookFormState; update: Update
         />
       </Field>
       <Field label={t('resources.hooks.editor.fields.model')}>
-        <Input value={form.model} onChange={(e) => update('model', e.target.value)} placeholder="claude-haiku-4-5" />
+        <Input value={form.model} onChange={(e) => update('model', e.target.value)} placeholder="claude-haiku-5-5" />
       </Field>
     </>
   )

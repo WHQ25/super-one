@@ -37,6 +37,10 @@ vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn() },
 }))
 
+vi.mock('../environment/session-identity', () => ({
+  localSessionEnvironmentId: () => 'test-environment',
+}))
+
 vi.mock('./fuzzy-file-search', () => ({
   searchFiles: vi.fn(),
   searchMentions: vi.fn(),

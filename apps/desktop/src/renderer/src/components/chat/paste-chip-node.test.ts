@@ -1,3 +1,5 @@
+/** @vitest-environment jsdom */
+
 import { liftBlockPasteChips } from './paste-chip-node'
 
 describe('liftBlockPasteChips', () => {

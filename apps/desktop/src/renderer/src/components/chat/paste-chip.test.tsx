@@ -1,3 +1,5 @@
+/** @vitest-environment jsdom */
+
 import { pasteSummary } from './paste-chip'
 
 describe('pasteSummary', () => {

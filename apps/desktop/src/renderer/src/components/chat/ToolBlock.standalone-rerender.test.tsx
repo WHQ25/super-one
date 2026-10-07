@@ -16,8 +16,8 @@ vi.mock('react-i18next', () => ({
 }))
 
 vi.mock('@/stores/chat', () => ({
-  useChatStore: (selector: (state: { toolRenderers: Record<string, never>; activeProject: string | null }) => unknown) =>
-    selector({ toolRenderers: {}, activeProject: '/proj' }),
+  useChatStore: (selector: (state: { toolRenderers: Record<string, never>; activeProject: string | null; projectSessions: Record<string, never> }) => unknown) =>
+    selector({ toolRenderers: {}, activeProject: '/proj', projectSessions: {} }),
   useActiveSession: (selector: (state: { cwd: string; homedir: string; _streamingToolInputPreviews: Record<string, never> }) => unknown) =>
     selector({ cwd: '/proj', homedir: '/Users/test', _streamingToolInputPreviews: {} }),
   useBashOutput: () => ({ chunks: [], completed: true }),

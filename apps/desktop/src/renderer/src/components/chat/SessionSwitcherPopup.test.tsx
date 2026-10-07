@@ -545,7 +545,9 @@ describe('SessionSwitcherPopup commit routing', () => {
       _previousFocusedSession: { projectPath: '/b', sessionId: 'b1' },
     })
 
-    const selectProjectMock = vi.fn().mockResolvedValue(undefined)
+    const selectProjectMock = vi.fn(async (projectPath?: string) => {
+      useChatStore.setState({ activeProject: projectPath ?? null })
+    })
     const switchSessionMock = vi.fn().mockResolvedValue(undefined)
     const focusProjectMock = vi.fn().mockResolvedValue(undefined)
     useAppStore.setState({ selectProject: selectProjectMock })
@@ -563,7 +565,7 @@ describe('SessionSwitcherPopup commit routing', () => {
     })
     await act(async () => { await Promise.resolve() })
 
-    expect(selectProjectMock).toHaveBeenCalledWith('/b')
+    expect(selectProjectMock).toHaveBeenCalledWith('/b', { connectionId: 'local' })
     // Cross-project path must NOT call useChatStore.focusProject directly — that would skip sidebar sync.
     expect(focusProjectMock).not.toHaveBeenCalled()
   })

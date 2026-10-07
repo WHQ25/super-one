@@ -9,10 +9,14 @@ import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
+import android.graphics.Typeface
+import android.os.SystemClock
 import android.text.Editable
 import android.text.Spannable
 import android.text.SpannableString
+import android.text.TextPaint
 import android.text.TextWatcher
+import android.text.style.MetricAffectingSpan
 import android.text.style.ReplacementSpan
 import android.view.Gravity
 import android.view.KeyEvent
@@ -48,6 +52,24 @@ class MentionEditorView(context: Context, appContext: AppContext) : ExpoView(con
   private var blendedKinds = emptySet<String>()
   private var chipColor = Color.TRANSPARENT
   private var artwork = emptyMap<String, Bitmap>()
+  private var keywordAnimate = false
+  private var keywordStepMs = 50
+  private var keywordSteps = 30
+  private var keywordBand = 3
+  private var keywordStep = -1L
+  private var shimmerRunning = false
+  /** The draft's keywords render in pixel capitals (`fonts/`, see scripts/build-font.py). */
+  private val keywordTypeface: Typeface? by lazy {
+    try { Typeface.createFromAsset(context.assets, "superone-keyword-pixel.ttf") } catch (_: RuntimeException) { null }
+  }
+  private val shimmerTick = object : Runnable {
+    override fun run() {
+      if (!shimmerRunning) return
+      val step = SystemClock.uptimeMillis() / keywordStepMs
+      if (step != keywordStep) recolorKeywords(step)
+      editor.postDelayed(this, keywordStepMs - SystemClock.uptimeMillis() % keywordStepMs)
+    }
+  }
   private val editor = object : EditText(context) {
     override fun onTextContextMenuItem(id: Int): Boolean {
       val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -259,6 +281,95 @@ class MentionEditorView(context: Context, appContext: AppContext) : ExpoView(con
     changing = false
     eventCount++
     publish()
+  }
+
+  /**
+   * Paints the draft's prompt keywords: JS's `KeywordHighlight`, for the draft
+   * with this `eventCount` only. A later keystroke gets its own highlight next.
+   */
+  fun setKeywords(value: Map<String, Any?>) {
+    val text = editor.text ?: return
+    val expected = (value["eventCount"] as? Number)?.toInt() ?: return
+    if (expected != eventCount || BaseInputConnection.getComposingSpanStart(text) >= 0) return
+    keywordAnimate = value["animate"] as? Boolean ?: false
+    keywordStepMs = ((value["stepMs"] as? Number)?.toInt() ?: keywordStepMs).coerceAtLeast(1)
+    keywordSteps = ((value["steps"] as? Number)?.toInt() ?: keywordSteps).coerceAtLeast(1)
+    keywordBand = (value["band"] as? Number)?.toInt() ?: keywordBand
+    val step = if (keywordAnimate) SystemClock.uptimeMillis() / keywordStepMs else -1L
+    keywordStep = step
+    val wasChanging = changing
+    changing = true
+    try {
+      for (span in text.getSpans(0, text.length, KeywordSpan::class.java)) text.removeSpan(span)
+      for (raw in value["letters"] as? List<*> ?: emptyList<Any>()) {
+        val letter = raw as? Map<*, *> ?: continue
+        val offset = (letter["offset"] as? Number)?.toInt() ?: continue
+        val index = (letter["index"] as? Number)?.toInt() ?: continue
+        val color = (letter["color"] as? String)?.let(Color::parseColor) ?: continue
+        val shimmer = (letter["shimmer"] as? String)?.let(Color::parseColor) ?: continue
+        if (offset !in text.indices || text[offset] == '\uFFFC') continue
+        text.setSpan(KeywordSpan(index, color, shimmer, lit(index, step)), offset, offset + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+      }
+    } finally { changing = wasChanging }
+    updateShimmer()
+  }
+
+  private fun lit(index: Int, step: Long): Boolean {
+    if (step < 0) return false
+    val phase = Math.floorMod(step - index, keywordSteps.toLong())
+    return phase < keywordBand
+  }
+
+  /** Re-sets only the letters the band entered or left: TextView redraws a span's line on a span change, not on invalidate(). */
+  private fun recolorKeywords(step: Long) {
+    val text = editor.text ?: return
+    keywordStep = step
+    if (BaseInputConnection.getComposingSpanStart(text) >= 0) return
+    val wasChanging = changing
+    changing = true
+    try {
+      for (span in text.getSpans(0, text.length, KeywordSpan::class.java)) {
+        val next = lit(span.index, step)
+        if (next == span.lit) continue
+        val start = text.getSpanStart(span)
+        val end = text.getSpanEnd(span)
+        val flags = text.getSpanFlags(span)
+        text.removeSpan(span)
+        text.setSpan(KeywordSpan(span.index, span.color, span.shimmer, next), start, end, flags)
+      }
+    } finally { changing = wasChanging }
+  }
+
+  private fun updateShimmer() {
+    val text = editor.text
+    val running = keywordAnimate && isAttachedToWindow && text != null && text.getSpans(0, text.length, KeywordSpan::class.java).isNotEmpty()
+    if (running == shimmerRunning) return
+    shimmerRunning = running
+    editor.removeCallbacks(shimmerTick)
+    if (running) editor.post(shimmerTick)
+  }
+
+  override fun onAttachedToWindow() {
+    super.onAttachedToWindow()
+    updateShimmer()
+  }
+
+  override fun onDetachedFromWindow() {
+    shimmerRunning = false
+    editor.removeCallbacks(shimmerTick)
+    super.onDetachedFromWindow()
+  }
+
+  /** A keyword letter: pixel capitals at 16/15 of the text size, in its rest or shimmer colour. */
+  private inner class KeywordSpan(val index: Int, val color: Int, val shimmer: Int, val lit: Boolean) : MetricAffectingSpan() {
+    override fun updateMeasureState(paint: TextPaint) {
+      keywordTypeface?.let { paint.typeface = it }
+      paint.textSize = editor.textSize * 16f / 15f
+    }
+    override fun updateDrawState(paint: TextPaint) {
+      updateMeasureState(paint)
+      paint.color = if (lit) shimmer else color
+    }
   }
 
   private class ChipHit(val offset: Int, val span: ChipSpan, val left: Float, val top: Float, val right: Float, val bottom: Float)

@@ -1,5 +1,5 @@
 {
   "platforms": ["apple", "android"],
-  "apple": { "modules": ["MentionEditorModule"] },
+  "apple": { "modules": ["MentionEditorModule"], "podspecPath": "SuperOneMentionEditor.podspec" },
   "android": { "modules": ["expo.modules.mentioneditor.MentionEditorModule"] }
 }

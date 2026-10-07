@@ -44,6 +44,43 @@ export const ULTRATHINK_COLORS: readonly Rgb[] = [
 ]
 
 /**
+ * The prompt keywords' shimmer colours: Claude Code's `rainbow_*_shimmer` and
+ * Ultracode's (`--ultrathink-shimmer-N`, `--ultracode-shimmer`). Claude Code's
+ * are lighter still, which reads as a glint on a dark page but vanishes on a
+ * light one, so the light theme shimmers toward a deeper shade instead.
+ */
+export const ULTRATHINK_SHIMMER_COLORS: Record<'light' | 'dark', readonly Rgb[]> = {
+  light: [[196, 38, 38], [206, 84, 14], [184, 124, 0], [46, 132, 58], [34, 94, 180], [98, 58, 176], [176, 48, 128]],
+  dark: [[250, 155, 147], [255, 185, 137], [255, 225, 155], [185, 230, 180], [180, 205, 240], [195, 180, 230], [230, 180, 210]],
+}
+export const ULTRACODE_SHIMMER_COLOR: Record<'light' | 'dark', Rgb> = { light: [52, 0, 120], dark: [208, 180, 255] }
+
+/**
+ * A keyword letter's rest and shimmer colours: ultrathink's rainbow by letter
+ * index, wrapping after violet, and Ultracode's purple throughout.
+ */
+export function promptKeywordLetterColors(keyword: PromptKeyword, index: number, dark: boolean): { color: Rgb; shimmer: Rgb } {
+  const theme = dark ? 'dark' : 'light'
+  if (keyword === 'ultracode') return { color: ULTRACODE_COLORS[theme][0], shimmer: ULTRACODE_SHIMMER_COLOR[theme] }
+  const hue = index % ULTRATHINK_COLORS.length
+  return { color: ULTRATHINK_COLORS[hue]!, shimmer: ULTRATHINK_SHIMMER_COLORS[theme][hue]! }
+}
+
+/**
+ * Claude Code's prompt-input shimmer on its keywords: a band of `band` letters
+ * in the shimmer colours steps one letter per `stepMs` and runs past each end,
+ * so a letter is lit for `band` of every `steps` steps, starting at its index
+ * (desktop `prompt-keyword-shimmer`: 1.5s, 50ms per letter, lit for the first 10%).
+ */
+export const PROMPT_KEYWORD_SHIMMER = { stepMs: 50, steps: 30, band: 3 } as const
+
+/** Whether letter `index` of a keyword is in the shimmer band at clock `step`. */
+export function promptKeywordLetterLit(step: number, index: number): boolean {
+  const { steps, band } = PROMPT_KEYWORD_SHIMMER
+  return ((((step - index) % steps) + steps) % steps) < band
+}
+
+/**
  * Codex's own Ultra effort colours, from its effort slider: indigo-blue into a
  * lavender sheen and back through deep violet. Mid-tones, so one set reads on
  * both themes.

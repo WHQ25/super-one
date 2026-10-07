@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { COMPOSER_MODE_SPARKLE_COLORS, composerMode, composerModeRing, ULTRATHINK_COLORS } from './composer-mode'
+import {
+  COMPOSER_MODE_SPARKLE_COLORS, composerMode, composerModeRing, promptKeywordLetterColors, promptKeywordLetterLit, ULTRATHINK_COLORS,
+} from './composer-mode'
 
 const CLAUDE = ['ultrathink', 'ultracode'] as const
 const mode = (text: string, ultracode = false) => composerMode({ text, promptKeywords: CLAUDE, ultracode })
@@ -38,5 +40,20 @@ describe('composer mode palettes', () => {
 
   it('sparkles only for the multi-agent modes', () => {
     expect(Object.keys(COMPOSER_MODE_SPARKLE_COLORS).sort()).toEqual(['codex-ultra', 'ultracode'])
+  })
+})
+
+describe('prompt keyword letters', () => {
+  it('runs ultrathink\'s rainbow by letter, wrapping after violet, and keeps Ultracode purple', () => {
+    expect(promptKeywordLetterColors('ultrathink', 7, false).color).toEqual(ULTRATHINK_COLORS[0])
+    expect(promptKeywordLetterColors('ultracode', 4, true)).toEqual({ color: [175, 135, 255], shimmer: [208, 180, 255] })
+  })
+
+  it('lights a three-letter band that steps one letter at a time over a 30-step cycle', () => {
+    const lit = (step: number) => Array.from({ length: 10 }, (_, i) => i).filter((i) => promptKeywordLetterLit(step, i))
+    expect(lit(0)).toEqual([0])
+    expect(lit(4)).toEqual([2, 3, 4])
+    expect(lit(12)).toEqual([])
+    expect(lit(30)).toEqual(lit(0))
   })
 })

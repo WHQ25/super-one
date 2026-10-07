@@ -7,6 +7,7 @@ import { selectNativeMention } from '../mention-selection'
 import type { MentionItem } from '../mentions'
 import { rememberMentionArtwork } from './mention-dynamic-artwork'
 import { firstLineRange } from '../composer-first-line'
+import type { PromptKeyword } from '@superone/shared/prompt-keywords'
 
 export interface NativeComposerController {
   insertMention(item: MentionItem): boolean
@@ -45,8 +46,10 @@ export function composerInputMinHeight(tablet: boolean): number {
 
 export const COMPOSER_INPUT_MAX_HEIGHT = 144
 
-export function NativeComposerInput({ binding, tablet, editable, placeholder, onSubmit, onFocus, onBlur, onMentionPress }: {
+export function NativeComposerInput({ binding, tablet, editable, placeholder, onSubmit, onFocus, onBlur, onMentionPress, promptKeywords }: {
   binding: NativeComposerBinding; tablet: boolean; editable: boolean; placeholder: string; onSubmit(): void
+  /** See `NativeMentionEditor`. */
+  promptKeywords?: readonly PromptKeyword[]
   onFocus?: () => void
   onBlur?: () => void
   /** A chip was tapped; `frame` is in `editor`'s points, for whoever anchors a card to it. */
@@ -137,6 +140,7 @@ export function NativeComposerInput({ binding, tablet, editable, placeholder, on
     canSubmit: () => !!snapshot.current && !snapshot.current.composing && !snapshot.current.rejection && pending.current === null,
   }))
   return <View ref={view} collapsable={false}><NativeMentionEditor onMentionPress={onMentionPress ? pressMention : undefined} command={command} editable={editable} placeholder={placeholder} accessibilityLabel="Message"
+    promptKeywords={promptKeywords}
     onFocus={onFocus} onBlur={onBlur}
     autoSize={{ minHeight: composerInputMinHeight(tablet), maxHeight: COMPOSER_INPUT_MAX_HEIGHT }} submitBehavior={tablet ? 'submit' : 'newline'}
     onSubmit={() => { if (pending.current === null) onSubmit() }}

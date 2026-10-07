@@ -1,5 +1,31 @@
+import CoreText
 import ExpoModulesCore
 import UIKit
+
+/// A prompt keyword letter's place in its word and its two colours. It rides on
+/// the character as an attribute, so the shimmer follows the letter through
+/// edits until JS sends the next draft's keywords.
+private final class KeywordLetter {
+  let index: Int
+  let color: UIColor
+  let shimmer: UIColor
+  init(index: Int, color: UIColor, shimmer: UIColor) {
+    self.index = index
+    self.color = color
+    self.shimmer = shimmer
+  }
+}
+
+private extension NSAttributedString.Key {
+  static let promptKeyword = NSAttributedString.Key("SuperOnePromptKeyword")
+}
+
+/// Breaks the display link's retain on the view.
+private final class WeakTicker {
+  weak var target: MentionEditorView?
+  init(_ target: MentionEditorView) { self.target = target }
+  @objc func tick() { target?.shimmerTick() }
+}
 
 private final class MentionAttachment: NSTextAttachment {
   let kind: String
@@ -93,6 +119,25 @@ final class MentionEditorView: ExpoView, UITextViewDelegate {
   private var chipBackground = UIColor.clear
   private var artwork: [String: UIImage] = [:]
   private var editorFont = UIFont.systemFont(ofSize: 15)
+  private var keywordAnimate = false
+  private var keywordStepMs = 50
+  private var keywordSteps = 30
+  private var keywordBand = 3
+  private var keywordStep = -1
+  private var keywordLink: CADisplayLink?
+
+  /// The draft's keywords render in pixel capitals (`fonts/`, see scripts/build-font.py),
+  /// registered once from this module's resource bundle.
+  private static let keywordFontName: String? = {
+    guard let bundle = Bundle(for: MentionEditorView.self).url(forResource: "SuperOneMentionEditorFonts", withExtension: "bundle").flatMap(Bundle.init(url:)),
+      let url = bundle.url(forResource: "superone-keyword-pixel", withExtension: "ttf") else { return nil }
+    CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+    return "SuperOneKeywordPixel-Regular"
+  }()
+  /// A font pixel is 1/8 em, so 16/15 of the 15pt body makes it exactly 2pt, as on desktop.
+  private var keywordFont: UIFont {
+    Self.keywordFontName.flatMap { UIFont(name: $0, size: editorFont.pointSize * 16 / 15) } ?? editorFont
+  }
 
   required init(appContext: AppContext? = nil) {
     super.init(appContext: appContext)
@@ -127,11 +172,6 @@ final class MentionEditorView: ExpoView, UITextViewDelegate {
     updateFontIfNeeded()
   }
 
-  override func didMoveToWindow() {
-    super.didMoveToWindow()
-    updateFontIfNeeded()
-  }
-
   override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
     super.traitCollectionDidChange(previousTraitCollection)
     if previousTraitCollection?.preferredContentSizeCategory != traitCollection.preferredContentSizeCategory {
@@ -152,6 +192,7 @@ final class MentionEditorView: ExpoView, UITextViewDelegate {
     editor.typingAttributes[.font] = next
     placeholderLabel.font = next
     redrawAttachments()
+    restyleKeywords()
     editor.selectedRange = selection
     changing = false
     setNeedsLayout()
@@ -184,7 +225,13 @@ final class MentionEditorView: ExpoView, UITextViewDelegate {
       onSubmit(["eventCount": eventCount])
       return false
     }
+    plainTypingAttributes()
     return true
+  }
+  /// UIKit copies the attributes before the caret into what is typed next; a
+  /// letter typed against a keyword is plain until JS says it is one.
+  private func plainTypingAttributes() {
+    editor.typingAttributes = [.font: editorFont, .foregroundColor: foreground]
   }
   /// The chip drawn under `point` (editor coordinates), with its offset and frame in the editor.
   private func chip(at point: CGPoint) -> (offset: Int, attachment: MentionAttachment, frame: CGRect)? {
@@ -219,6 +266,7 @@ final class MentionEditorView: ExpoView, UITextViewDelegate {
     publish()
   }
   func textViewDidChangeSelection(_ textView: UITextView) {
+    plainTypingAttributes()
     if !changing { updateFontIfNeeded(); publish() }
   }
 
@@ -227,6 +275,7 @@ final class MentionEditorView: ExpoView, UITextViewDelegate {
     foreground = color
     editor.textColor = color
     redrawAttachments()
+    restyleKeywords()
   }
   func setChipBackground(_ value: String) {
     guard let color = Self.color(value) else { return }
@@ -257,6 +306,109 @@ final class MentionEditorView: ExpoView, UITextViewDelegate {
     artwork = next
     redrawAttachments()
   }
+  /// Paints the draft's prompt keywords: JS's `KeywordHighlight`, for the draft
+  /// with this `eventCount` only. A later keystroke gets its own highlight next.
+  func setKeywords(_ value: [String: Any]) {
+    guard let expected = value["eventCount"] as? Int, expected == eventCount, editor.markedTextRange == nil else { return }
+    keywordAnimate = value["animate"] as? Bool ?? false
+    keywordStepMs = max(1, value["stepMs"] as? Int ?? keywordStepMs)
+    keywordSteps = max(1, value["steps"] as? Int ?? keywordSteps)
+    keywordBand = value["band"] as? Int ?? keywordBand
+    let storage = editor.textStorage
+    let letters = (value["letters"] as? [[String: Any]] ?? []).compactMap { row -> (Int, KeywordLetter)? in
+      guard let offset = row["offset"] as? Int, offset >= 0, offset < storage.length,
+        storage.attribute(.attachment, at: offset, effectiveRange: nil) == nil,
+        let index = row["index"] as? Int, let color = (row["color"] as? String).flatMap(Self.color),
+        let shimmer = (row["shimmer"] as? String).flatMap(Self.color) else { return nil }
+      return (offset, KeywordLetter(index: index, color: color, shimmer: shimmer))
+    }
+    editKeywordAttributes {
+      storage.enumerateAttribute(.promptKeyword, in: NSRange(location: 0, length: storage.length)) { value, range, _ in
+        guard value != nil else { return }
+        storage.removeAttribute(.promptKeyword, range: range)
+        storage.addAttributes([.font: self.editorFont, .foregroundColor: self.foreground], range: range)
+      }
+      for (offset, letter) in letters {
+        storage.addAttribute(.promptKeyword, value: letter, range: NSRange(location: offset, length: 1))
+      }
+    }
+    restyleKeywords()
+  }
+
+  private func editKeywordAttributes(_ body: () -> Void) {
+    let selection = editor.selectedRange
+    let wasChanging = changing
+    changing = true
+    editor.undoManager?.disableUndoRegistration()
+    editor.textStorage.beginEditing()
+    body()
+    editor.textStorage.endEditing()
+    editor.undoManager?.enableUndoRegistration()
+    if editor.selectedRange != selection { editor.selectedRange = selection }
+    changing = wasChanging
+  }
+
+  /// Font and colour of every keyword letter for the shimmer's current step.
+  private func restyleKeywords() {
+    guard editor.markedTextRange == nil else { return }
+    let step = keywordAnimate ? Int(CACurrentMediaTime() * 1000) / keywordStepMs : -1
+    keywordStep = step
+    let storage = editor.textStorage
+    let font = keywordFont
+    var any = false
+    editKeywordAttributes {
+      storage.enumerateAttribute(.promptKeyword, in: NSRange(location: 0, length: storage.length)) { value, range, _ in
+        guard let letter = value as? KeywordLetter else { return }
+        any = true
+        storage.addAttributes([.font: font, .foregroundColor: self.keywordColor(letter, step: step)], range: range)
+      }
+    }
+    runShimmer(any && keywordAnimate && window != nil)
+  }
+
+  private func keywordColor(_ letter: KeywordLetter, step: Int) -> UIColor {
+    guard step >= 0 else { return letter.color }
+    let phase = ((step - letter.index) % keywordSteps + keywordSteps) % keywordSteps
+    return phase < keywordBand ? letter.shimmer : letter.color
+  }
+
+  private func runShimmer(_ running: Bool) {
+    if running, keywordLink == nil {
+      let link = CADisplayLink(target: WeakTicker(self), selector: #selector(WeakTicker.tick))
+      link.preferredFramesPerSecond = max(1, 1000 / keywordStepMs)
+      link.add(to: .main, forMode: .common)
+      keywordLink = link
+    } else if !running {
+      keywordLink?.invalidate()
+      keywordLink = nil
+    }
+  }
+
+  /// Recolours only the letters the band has entered or left: a colour, never a
+  /// font, so the text is not laid out again. A draft being composed is left alone.
+  fileprivate func shimmerTick() {
+    let step = Int(CACurrentMediaTime() * 1000) / keywordStepMs
+    guard editor.markedTextRange == nil, step != keywordStep else { return }
+    let previous = keywordStep
+    keywordStep = step
+    let storage = editor.textStorage
+    editKeywordAttributes {
+      storage.enumerateAttribute(.promptKeyword, in: NSRange(location: 0, length: storage.length)) { value, range, _ in
+        guard let letter = value as? KeywordLetter else { return }
+        let color = self.keywordColor(letter, step: step)
+        if color !== self.keywordColor(letter, step: previous) { storage.addAttribute(.foregroundColor, value: color, range: range) }
+      }
+    }
+  }
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    updateFontIfNeeded()
+    restyleKeywords()
+  }
+
+  deinit { keywordLink?.invalidate() }
+
   private static func color(_ raw: String) -> UIColor? {
     let hex = raw.hasPrefix("#") ? String(raw.dropFirst()) : raw
     guard hex.count == 6, let value = UInt64(hex, radix: 16) else { return nil }

@@ -1,4 +1,4 @@
-import { useRef, useState, type ComponentType } from 'react'
+import { useMemo, useRef, useState, type ComponentType } from 'react'
 import { useMentionArtwork, type MentionArtwork } from './mention-artwork'
 import { Platform, type ViewProps } from 'react-native'
 import { requireNativeView, requireOptionalNativeModule } from 'expo'
@@ -7,6 +7,9 @@ import { IME_SETTLE_MS } from '../composer-state'
 import { useMobileTheme } from '../theme/context'
 import { BUILTIN_CAPABILITIES, LEGACY_CAPABILITY_IDS } from '@superone/shared/capability-prompt-tags'
 import type { AnchorRect } from './popover-layout'
+import type { PromptKeyword } from '@superone/shared/prompt-keywords'
+import { keywordHighlight, type KeywordHighlight } from '../prompt-keyword-highlight'
+import { useIconMotion } from './use-icon-motion'
 
 const blendedKinds = [...BUILTIN_CAPABILITIES.map((item) => item.id), ...LEGACY_CAPABILITY_IDS, 'agent-profile', 'desktop-app', 'session', 'git', 'mcp-resource']
 
@@ -15,6 +18,7 @@ type NativeProps = ViewProps & {
   submitOnReturn: boolean; onSubmit: (event: { nativeEvent: { eventCount: number } }) => void
   placeholder: string; editable: boolean; editorLabel: string
   artwork: MentionArtwork[]; mutedForeground: string; blendedKinds: string[]
+  keywords: KeywordHighlight
   onContentHeightChange: (event: { nativeEvent: { height: number } }) => void
   onDocumentChange: (event: { nativeEvent: unknown }) => void
   onMentionPress: (event: { nativeEvent: Record<string, unknown> }) => void
@@ -33,15 +37,25 @@ const NativeView: ComponentType<NativeProps> | null = (Platform.OS === 'ios' || 
   && requireOptionalNativeModule('SuperOneMentionEditor') ? requireNativeView<NativeProps>('SuperOneMentionEditor') : null
 export const nativeMentionEditorAvailable = NativeView !== null
 
-export function NativeMentionEditor({ command, onChange, onError, editable = true, placeholder = 'Ask anything…', autoSize, submitBehavior = 'newline', onSubmit, onMentionPress, ...viewProps }: ViewProps & {
+const NO_KEYWORDS: readonly PromptKeyword[] = []
+
+export function NativeMentionEditor({ command, onChange, onError, editable = true, placeholder = 'Ask anything…', autoSize, submitBehavior = 'newline', onSubmit, onMentionPress, promptKeywords = NO_KEYWORDS, ...viewProps }: ViewProps & {
   editable?: boolean; placeholder?: string
+  /** The keywords the session's harness acts on, painted in the draft as on desktop. */
+  promptKeywords?: readonly PromptKeyword[]
   /** A chip was tapped; the editor kept its caret and keyboard. Older dev clients never send it. */
   onMentionPress?: (press: MentionPress) => void
   submitBehavior?: 'newline' | 'submit'; onSubmit?: (snapshot: MentionEditorSnapshot) => void
   autoSize?: { minHeight: number; maxHeight: number }
   command: MentionEditorCommand; onChange: (snapshot: MentionEditorSnapshot) => void; onError: (message: string) => void
 }) {
-  const { tokens: { colors } } = useMobileTheme()
+  const { tokens: { colors, scheme } } = useMobileTheme()
+  const motion = useIconMotion()
+  const [draft, setDraft] = useState({ text: command.text, eventCount: 0 })
+  const keywords = useMemo(
+    () => keywordHighlight(draft, promptKeywords, { dark: scheme === 'dark', animate: motion }),
+    [draft, promptKeywords, scheme, motion],
+  )
   const latestEvent = useRef(-1)
   const lastTextChangeAt = useRef(0)
   const latestSnapshot = useRef<MentionEditorSnapshot | null>(null)
@@ -49,7 +63,7 @@ export function NativeMentionEditor({ command, onChange, onError, editable = tru
   const [tokens, setTokens] = useState(command.tokens)
   const artwork = useMentionArtwork(tokens)
   if (!NativeView) return null
-  return <NativeView {...viewProps} editable={editable} placeholder={placeholder} editorLabel={viewProps.accessibilityLabel ?? 'Message'} command={command} foreground={colors.foreground} chipBackground={colors.muted} artwork={artwork} mutedForeground={colors.mutedForeground} blendedKinds={blendedKinds}
+  return <NativeView {...viewProps} editable={editable} placeholder={placeholder} editorLabel={viewProps.accessibilityLabel ?? 'Message'} command={command} foreground={colors.foreground} chipBackground={colors.muted} artwork={artwork} mutedForeground={colors.mutedForeground} blendedKinds={blendedKinds} keywords={keywords}
     submitOnReturn={submitBehavior === 'submit'}
     onSubmit={({ nativeEvent }) => {
       const snapshot = latestSnapshot.current
@@ -72,6 +86,8 @@ export function NativeMentionEditor({ command, onChange, onError, editable = tru
       latestEvent.current = snapshot.eventCount
       latestSnapshot.current = snapshot
       setTokens(snapshot.tokens)
+      setDraft((current) => current.eventCount === snapshot.eventCount && current.text === snapshot.text
+        ? current : { text: snapshot.text, eventCount: snapshot.eventCount })
       onChange(snapshot)
     }} />
 }

@@ -25,6 +25,7 @@ import type {
 } from '@superone/shared/agent-types'
 import type { GoalCapability } from '@superone/shared/harness/harness-capabilities'
 import { HARNESS_LAUNCH_OPTIONS } from '@superone/shared/launch-options'
+import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import type { SessionGoal } from '@superone/shared/agent-types'
 import type { SelectorCatalogParam } from '../model-picker-state'
 import type { MatchedSlashCommand } from '../slash'
@@ -285,6 +286,7 @@ export function ChatComposer(props: ChatComposerProps) {
               {props.attachments.length ? <View style={{ padding: 6 }}><AttachmentStrip attachments={props.attachments} onRemove={props.onRemoveAttachment} /></View> : null}
               {props.nativeDraft && nativeMentionEditorAvailable ? <NativeComposerInput key={props.nativeDraft.generation ?? 0} binding={props.nativeDraft} tablet={tablet}
                 editable={!props.loadingConversation} placeholder={props.placeholder ?? 'Ask anything…'} onSubmit={props.onSubmitFromKeyboard}
+                promptKeywords={HARNESS_CAPABILITIES[props.provider].promptKeywords}
                 onFocus={onFocus} onBlur={onBlur}
                 onMentionPress={props.previewMcpMention ? (press, editor) => {
                   if (press.kind !== 'mcp-resource') return

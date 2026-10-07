@@ -1,6 +1,9 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { CODEX_ULTRA_COLORS, COMPOSER_MODE_SPARKLE_COLORS, ULTRACODE_COLORS, ULTRATHINK_COLORS, type Rgb } from '@superone/shared/composer-mode'
+import {
+  CODEX_ULTRA_COLORS, COMPOSER_MODE_SPARKLE_COLORS, PROMPT_KEYWORD_SHIMMER, ULTRACODE_COLORS, ULTRACODE_SHIMMER_COLOR, ULTRATHINK_COLORS,
+  ULTRATHINK_SHIMMER_COLORS, type Rgb,
+} from '@superone/shared/composer-mode'
 
 const css = readFileSync(new URL('../../styles/index.css', import.meta.url), 'utf8')
 const rgb = (value: Rgb) => value.join(' ')
@@ -35,5 +38,16 @@ describe('ComposerModeBorder palette', () => {
     expect(css).toContain(`.dark .composer-mode-border[data-mode='codex-ultra'] { --cmb-sparkle: ${rgb(COMPOSER_MODE_SPARKLE_COLORS['codex-ultra']!.dark)}; }`)
     expect(css).toContain(`--cmb-sparkle: ${rgb(COMPOSER_MODE_SPARKLE_COLORS.ultracode!.light)};`)
     expect(css).toContain(`.dark .composer-mode-border[data-mode='ultracode'] { --cmb-sparkle: ${rgb(COMPOSER_MODE_SPARKLE_COLORS.ultracode!.dark)}; }`)
+  })
+
+  it('shimmers the prompt keywords in the shared colours and timing', () => {
+    for (const [selector, theme] of [[':root', 'light'], ['.dark', 'dark']] as const) {
+      expect(ULTRATHINK_SHIMMER_COLORS[theme].map((_, i) => declared(selector, `ultrathink-shimmer-${i}`))).toEqual(ULTRATHINK_SHIMMER_COLORS[theme].map(rgb))
+      expect(declared(selector, 'ultracode-shimmer')).toBe(rgb(ULTRACODE_SHIMMER_COLOR[theme]))
+    }
+    const { stepMs, steps, band } = PROMPT_KEYWORD_SHIMMER
+    expect(css).toContain(`animation: prompt-keyword-shimmer ${(stepMs * steps) / 1000}s step-end infinite;`)
+    expect(css).toContain(`animation-delay: calc(var(--kw-index) * ${stepMs}ms);`)
+    expect(css).toContain(`${(band / steps) * 100}% { color: var(--kw-color); }`)
   })
 })

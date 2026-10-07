@@ -9,4 +9,6 @@ version = '0.1.0'
 android {
   namespace 'expo.modules.mentioneditor'
   defaultConfig { versionCode 1; versionName '0.1.0' }
+  // One font file for both platforms; the iOS podspec bundles the same directory.
+  sourceSets { main { assets.srcDirs += ['../fonts'] } }
 }

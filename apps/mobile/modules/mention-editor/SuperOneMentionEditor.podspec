@@ -11,5 +11,7 @@ Pod::Spec.new do |s|
   s.swift_version = '5.9'
   s.static_framework = true
   s.dependency 'ExpoModulesCore'
-  s.source_files = '**/*.swift'
+  # At the module root so the pod reaches `fonts/`, which Android reads as assets too.
+  s.source_files = 'ios/**/*.swift'
+  s.resource_bundles = { 'SuperOneMentionEditorFonts' => ['fonts/superone-keyword-pixel.ttf'] }
 end

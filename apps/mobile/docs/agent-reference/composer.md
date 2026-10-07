@@ -42,6 +42,20 @@ it opens; `isMentionTokenKind` is the one list of chip kinds both directions che
 send (`composer-draft-state.ts`). The plain `TextInput` fallback flattens to text,
 so the two editors send different payloads — tests assert the sent payload on both.
 
+**Prompt keyword styling.** The native editor paints the harness's
+`promptKeywords` using shared matching, palettes and shimmer timing. Claude's
+`ultrathink` uses rainbow letters and `ultracode` uses purple, both in pixel
+capitals; the draft and sent text retain their original case. A derived Tiny5
+font is bundled by the module on both platforms (SIL OFL in `fonts/`). Rebuild
+it from the desktop subset with `python3 build-font.py` in the module's
+`scripts/` directory (requires fontTools with WOFF2 support).
+JS supplies UTF-16 letter offsets tied to `eventCount`; native ignores stale
+or composing drafts, preserves selection and pauses painting during IME input.
+Shimmer runs natively, stops when detached, and becomes static for Reduce Motion
+or an inactive app. The plain TextInput fallback has no keyword styling.
+Preview light/dark, editable keyword drafts and capability exclusions on the
+`Composer modes` page. Font/module changes require a rebuilt native client.
+
 **Explicit Send prepares the editor first** (`navigation/use-composer-send.ts`): it
 awaits native `prepareSubmit` (iOS ends marked text, Android clears composition and
 restarts input), which answers with the authoritative draft under a submission id;

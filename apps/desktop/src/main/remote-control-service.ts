@@ -14,7 +14,7 @@ export type { RemoteDeviceConfig }
 import { trace } from './agent/event-trace'
 import { readOutputFile } from './agent/claude-session-runtime'
 import { listWorkflowAgentsSync } from './workflow-transcripts'
-import { initHighlighter, parseAnsiTokens } from './remote-highlighter'
+import { initHighlighter } from './remote-highlighter'
 
 /**
  * Machine name published over mDNS. The default variant advertises the bare
@@ -56,7 +56,7 @@ const MAX_SLASH_OUTPUT = 200_000
 const THROTTLED_EVENTS = new Set(['tool_progress'])
 
 const WS_CHUNK_SIZE = 800_000
-import { TODO_TOOLS, stripEventForRemote, truncateBashOutput, resolveTodoToolTodos, parseWorkflowTranscriptDir, stripProjectPath } from './remote-content'
+import { TODO_TOOLS, stripEventForRemote, remoteBashResult, resolveTodoToolTodos, parseWorkflowTranscriptDir, stripProjectPath } from './remote-content'
 export { computeTodoItems, countLines, countEditDelta, stripProjectPath, computeToolMeta, computeToolLineDelta, truncateBashOutput, stripEventForRemote, stripMessagesForRemote, parseWorkflowMeta, parseWorkflowTranscriptDir, resolveTodoToolTodos } from './remote-content'
 export type { TextSegment, SplitResult } from './split-text-blocks'
 
@@ -752,8 +752,7 @@ export class RemoteControlService {
       } else if (event.delta.type === 'tool_result' && tools.widgetIds.has(event.delta.toolUseId)) {
         stripped = { ...event, delta: event.delta }
       } else if (event.delta.type === 'tool_result' && tools.bashCommands.has(event.delta.toolUseId)) {
-        const output = truncateBashOutput(event.delta.summary)
-        stripped = { ...event, delta: { type: 'bash_result', toolUseId: event.delta.toolUseId, summary: output, parentToolUseId: event.delta.parentToolUseId, outputTokens: parseAnsiTokens(output) } }
+        stripped = { ...event, delta: remoteBashResult(event.delta) }
       } else if (event.delta.type === 'tool_result' && tools.agentIds.has(event.delta.toolUseId)) {
         const outputMatch = event.delta.summary?.match(/output_file:\s*(\S+)/)
         if (outputMatch) tools.agentOutputFiles.set(event.delta.toolUseId, outputMatch[1])

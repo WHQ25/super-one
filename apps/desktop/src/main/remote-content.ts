@@ -394,6 +394,16 @@ export function truncateBashOutput(text: string): string {
   return truncated.length > MAX_BASH_OUTPUT ? truncated.slice(0, MAX_BASH_OUTPUT) + '…' : truncated
 }
 
+/**
+ * A Bash outcome as the phone receives it, live or restored. The working-tree
+ * diff rides along: the phone draws the file rows and counts them in the turn
+ * stat from it, and the CLI already bounds its size.
+ */
+export function remoteBashResult(block: Extract<ContentBlock, { type: 'tool_result' }>): ContentBlock {
+  const output = truncateBashOutput(block.summary)
+  return { type: 'bash_result', toolUseId: block.toolUseId, summary: output, parentToolUseId: block.parentToolUseId, outputTokens: parseAnsiTokens(output), ...(block.bashEditDiff ? { bashEditDiff: block.bashEditDiff } : {}) }
+}
+
 const CODE_FENCE_RE = /^(`{3,})(\w*)\n([\s\S]*?)^\1\s*$/gm
 
 export function extractCodeBlockTokens(text: string): Array<{ language: string; tokens: [string, string | null][][] | null }> | undefined {
@@ -426,12 +436,7 @@ function stripContentBlock(block: ContentBlock, bashCmds?: Map<string, string>, 
     return { ...block, type: mappedType, input: sanitizeRemoteToolInput(block.toolName, block.input), toolSummary: block.toolSummary ?? meta.toolSummary, toolFilePath: block.toolFilePath ?? meta.toolFilePath, toolLineDelta: block.toolLineDelta ?? meta.toolLineDelta, toolDiff: block.toolDiff ?? meta.toolDiff, toolDiffTokens: block.toolDiffTokens ?? meta.toolDiffTokens, toolTodos: block.toolTodos ?? meta.toolTodos, subagentType: meta.subagentType, toolPrompt: meta.toolPrompt, runInBackground: meta.runInBackground, workflowName: meta.workflowName, workflowDescription: meta.workflowDescription, workflowPhases: meta.workflowPhases } as ContentBlock
   }
   if (block.type === 'tool_result') {
-    if (bashCmds?.has(block.toolUseId)) {
-      const output = truncateBashOutput(block.summary)
-      // The working-tree diff rides along: the phone draws the file rows and
-      // counts them in the turn stat from it, and the CLI already bounds its size.
-      return { type: 'bash_result', toolUseId: block.toolUseId, summary: output, parentToolUseId: block.parentToolUseId, outputTokens: parseAnsiTokens(output), ...(block.bashEditDiff ? { bashEditDiff: block.bashEditDiff } : {}) }
-    }
+    if (bashCmds?.has(block.toolUseId)) return remoteBashResult(block)
     if (block.summary.startsWith('{"ok":true,"shareId":')) {
       return block
     }

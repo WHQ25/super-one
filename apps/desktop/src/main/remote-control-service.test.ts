@@ -539,6 +539,18 @@ describe('RemoteControlService content_delta ordering', () => {
     },
   )
 
+  it('keeps the working-tree diff on a live Bash result so the collapsed row shows its file stats', async () => {
+    const { service, captured } = makeService()
+    const bashEditDiff = { files: [], moreFiles: 1, changedFiles: ['/p/a.ts'], summary: { files: 1, added: 3, removed: 1, approximate: false } }
+    await service.sendAgentEvent({ type: 'content_delta', messageId: 'm1',
+      delta: toolUseBlock('Bash', { command: 'sed -i s/a/b/ a.ts' }, 'bash-1') })
+    await service.sendAgentEvent({ type: 'content_delta', messageId: 'm1',
+      delta: { type: 'tool_result', toolUseId: 'bash-1', summary: '', bashEditDiff } })
+    expect(captured).toContainEqual(expect.objectContaining({
+      type: 'content_delta', delta: expect.objectContaining({ type: 'bash_result', toolUseId: 'bash-1', bashEditDiff }),
+    }))
+  })
+
   it('keeps a live widget result whole while another session starts a reply', async () => {
     const { service, captured } = makeService()
     const summary = JSON.stringify({ title: 'w', widget_code: `<div>${'x'.repeat(400)}</div>`, width: 800, height: 600, isSVG: false })

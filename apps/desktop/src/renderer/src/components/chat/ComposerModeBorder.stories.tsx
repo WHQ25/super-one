@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { ComposerModeBorder, type ComposerMode } from './ComposerModeBorder'
+import type { ComposerMode } from '@superone/shared/composer-mode'
+import { ComposerModeBorder } from './ComposerModeBorder'
 
 /** The composer box as ChatInput draws it with a mode border: its own stacking context, border hidden, the ring in its place. */
 function Composer({ mode, draft, width = 640 }: { mode: ComposerMode; draft: string; width?: number }) {

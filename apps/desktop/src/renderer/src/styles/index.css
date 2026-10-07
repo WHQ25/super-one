@@ -259,7 +259,9 @@
 }
 
 /* Ultracode's purple everywhere it shows: Claude Code's `autoAccept`. Magenta
-   and indigo join it only in ComposerModeBorder's turning ring. */
+   and indigo join it only in ComposerModeBorder's turning ring. The composer
+   mode colours are `@superone/shared/composer-mode`'s, which mobile paints
+   from; ComposerModeBorder.test.ts holds these declarations to them. */
 :root { --ultracode: 135 0 255; --ultracode-2: 214 51 240; --ultracode-3: 99 102 241; }
 .dark { --ultracode: 175 135 255; --ultracode-2: 236 130 255; --ultracode-3: 129 140 248; }
 

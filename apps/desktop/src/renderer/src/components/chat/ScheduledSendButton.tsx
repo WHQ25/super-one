@@ -66,6 +66,8 @@ interface ScheduledSendButtonProps {
   onArm: (sendAt: number) => void
   /** Cancel the schedule and hand the queued text back to the composer. */
   onDisarm: () => void
+  /** Drop an unanswered offer entirely. */
+  onDismiss: () => void
   /** Re-time a queued send that already exists. */
   onSetSendAt: (sendAt: number) => void
 }
@@ -87,6 +89,7 @@ export function ScheduledSendButton({
   onSendNow,
   onArm,
   onDisarm,
+  onDismiss,
   onSetSendAt,
 }: ScheduledSendButtonProps) {
   const { t } = useTranslation()
@@ -220,21 +223,26 @@ export function ScheduledSendButton({
                 <ChipLabel>{label}</ChipLabel>
               </div>
             ) : (
-              // Unanswered, so the whole chip is the answer: it asks a question
-              // and clicking anywhere on it says yes, which is additive and
-              // undoable by the armed state's own X.
-              <button
-                type="button"
+              // Unanswered, so the chip is the answer: it asks a question and
+              // clicking anywhere on it says yes, which is additive and undoable
+              // by the armed state's own X. The clock slot is the "no" — it
+              // stops propagation, so it never also reaches the chip's yes.
+              // The inner button is the accessible target; a click on the
+              // padding around it lands on the chip directly.
+              <div
                 onClick={handlePrimary}
-                aria-label={primaryLabel}
                 className={cn(
                   chipClass,
                   'cursor-pointer border-warning/40 bg-warning/8 text-warning/90 transition-colors hover:bg-warning/15 hover:text-warning',
                 )}
               >
-                <Clock className="size-3.5 shrink-0" />
-                <ChipLabel>{label}</ChipLabel>
-              </button>
+                <HoverCloseSlot onClose={onDismiss} label={t('chat.scheduledSend.dismiss')}>
+                  <Clock className="size-3.5 shrink-0" />
+                </HoverCloseSlot>
+                <button type="button" aria-label={primaryLabel} className="cursor-pointer">
+                  <ChipLabel>{label}</ChipLabel>
+                </button>
+              </div>
             )
           ) : (
             <IconButton

@@ -351,16 +351,12 @@ export function ChatInput({
       scheduled, loading: scheduledLoading, deliveredNonce, schedule: scheduleSend,
       setMessage: setScheduledMessage, setArmed: setArmedScheduled, setSendAt, clear: clearScheduled,
     } = useScheduledSend(displayedSessionId, getScheduledSendInit)
-    // An *armed* schedule blocks an immediate send — cancel it first. Sending
-    // under one would empty the composer the schedule mirrors, so the same text
-    // would go out twice. An unanswered offer blocks nothing: it is a question,
-    // and gating on the row's mere existence would strand the user, since
-    // cancelling a rate-limit offer leaves the row in place unarmed.
     // Any queued send blocks an immediate one, answered or not. Under a usage
     // limit an immediate send only bounces off the same wall, and under an armed
     // schedule it would empty the composer that schedule mirrors, sending the
-    // same text twice. The way out of an offer is to switch provider — a
-    // different quota retires it — not to send past it.
+    // same text twice. The ways out of an offer are dismissing it, switching
+    // provider — a different quota retires it — or the reset itself, which
+    // retires it in main; not sending past it.
     //
     // `scheduledLoading` counts too: until the read for this session lands, a
     // null schedule means "not known yet", and sending into that window would go
@@ -2275,6 +2271,7 @@ export function ChatInput({
               onSendNow={handleSend}
               onArm={handleArmScheduled}
               onDisarm={handleDisarmScheduled}
+              onDismiss={clearScheduled}
               onSetSendAt={setSendAt}
             />
             {activeProviderForResources === 'codex' && (!isStreaming || realtimeVoiceEngaged) && activeProject && displayedSessionId && (

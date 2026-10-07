@@ -97,18 +97,43 @@ export class ScheduledSendService {
   private readonly delivering = new Map<string, number>()
   /** Consecutive resolve failures per session, for diagnostic logging. */
   private readonly resolveFailures = new Map<string, number>()
+  /** One timer per unanswered offer, firing at its own reset time. */
+  private readonly offerExpiry = new Map<string, ReturnType<typeof setTimeout>>()
 
   constructor(private readonly deps: ScheduledSendDeps) {}
 
   private emit(sessionId: string, scheduled: ScheduledSend | null): void {
+    this.syncOfferExpiry(sessionId, scheduled)
     this.deps.broadcast(sessionId, scheduled, false)
+  }
+
+  /**
+   * Retire an unanswered rate-limit offer when its reset comes round.
+   *
+   * The offer asks "continue when the quota reopens?"; once it has reopened the
+   * question is moot — and while it stands it holds the composer's send. Every
+   * write passes through `emit`, so re-timing, accepting or removing the row
+   * re-arms or drops the timer here. Reset windows top out at days, well inside
+   * `setTimeout`'s range.
+   */
+  private syncOfferExpiry(sessionId: string, scheduled: ScheduledSend | null): void {
+    const prev = this.offerExpiry.get(sessionId)
+    if (prev) clearTimeout(prev)
+    this.offerExpiry.delete(sessionId)
+    if (scheduled?.source !== 'rate_limit' || scheduled.armed) return
+    this.offerExpiry.set(sessionId, setTimeout(
+      () => this.clearStallOffer(sessionId),
+      Math.max(0, scheduled.sendAt - Date.now()),
+    ))
   }
 
   start(): void {
     if (this.poll) return
     this.poll = setInterval(() => this.flushDue(), POLL_INTERVAL_MS)
-    // Catch up on anything that came due while the app was closed.
+    // Catch up on anything that came due while the app was closed, and time out
+    // the offers left standing — those already past retire at once.
     this.flushDue()
+    for (const row of listScheduledSends()) this.syncOfferExpiry(row.sessionId, row)
   }
 
   stop(): void {
@@ -119,6 +144,8 @@ export class ScheduledSendService {
     this.lastResetsAt.clear()
     this.delivering.clear()
     this.resolveFailures.clear()
+    for (const timer of this.offerExpiry.values()) clearTimeout(timer)
+    this.offerExpiry.clear()
   }
 
   get(sessionId: string): ScheduledSend | null {
@@ -176,7 +203,8 @@ export class ScheduledSendService {
    * Three things are deliberately still allowed:
    * - anything that is not arming (re-timing, mirroring text, disarming);
    * - a rate-limit offer, whose time is a gate that has already opened rather
-   *   than a plan — accepting it late means "the quota is back, go now";
+   *   than a plan — accepting it in the instant before it expires means
+   *   "the quota is back, go now";
    * - an already-armed row whose time has passed, which is the normal state
    *   between falling due and being delivered, and while a failed send retries.
    */

@@ -1878,6 +1878,7 @@ export type Messages = {
       time: string
       accept: string
       cancel: string
+      dismiss: string
       sendNow: string
       queued: string
       hintIdle: string
@@ -6139,6 +6140,7 @@ export const en: Messages = {
       time: 'Time',
       accept: 'Schedule for {{time}}',
       cancel: 'Cancel scheduled send',
+      dismiss: 'Dismiss',
       sendNow: 'Send',
       queued: 'Queued: {{message}}',
       hintIdle: 'Queue the composer for later.',

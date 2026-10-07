@@ -24,6 +24,7 @@ vi.mock('../db-scheduled-sends', () => ({
   getScheduledSendRemoteTarget: (sessionId: string) => (store.has(sessionId) ? remoteTargets.get(sessionId) ?? null : null),
   listDueScheduledSends: (nowMs: number) =>
     [...store.values()].filter((r) => r.armed && r.sendAt <= nowMs),
+  listScheduledSends: () => [...store.values()],
   upsertScheduledSend: (sessionId: string, patch: ScheduledSendPatch, remote?: { projectKey: string; turn?: unknown }) => {
     const prev = store.get(sessionId)
     const sendAt = patch.sendAt ?? prev?.sendAt
@@ -368,8 +369,8 @@ describe('scheduled send — a time that has already passed', () => {
   it('still accepts a rate-limit offer whose reset has already come round', async () => {
     const { service, send } = setup()
     service.observe(SID, rateLimitFailure(IN_ONE_HOUR / 1000))
-    // The user walked away and came back after the window reopened. That time
-    // is a gate, not a plan — it is open now, so accepting means "go".
+    // Accepted in the instant the window reopened, before the expiry timer
+    // retired the offer. That time is a gate, not a plan — it is open now, so "go".
     vi.setSystemTime(IN_ONE_HOUR + 2 * RESET_BUFFER_MS)
     service.set(SID, { armed: true, message: 'finish the migration' })
 
@@ -377,6 +378,40 @@ describe('scheduled send — a time that has already passed', () => {
     service.start()
     await vi.waitFor(() => expect(send).toHaveBeenCalled())
     service.stop()
+  })
+
+  it('retires an unanswered offer exactly when its reset comes round', () => {
+    const { service, broadcast, send } = setup()
+    service.observe(SID, rateLimitFailure(IN_ONE_HOUR / 1000))
+    const offeredAt = IN_ONE_HOUR + RESET_BUFFER_MS
+
+    vi.advanceTimersByTime(offeredAt - NOW - 1)
+    expect(store.get(SID)?.armed).toBe(false)
+
+    vi.advanceTimersByTime(1)
+    expect(store.get(SID)).toBeUndefined()
+    expect(broadcast).toHaveBeenLastCalledWith(SID, null, false)
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('does not expire an offer the user accepted', () => {
+    const { service } = setup()
+    service.observe(SID, rateLimitFailure(IN_ONE_HOUR / 1000))
+    service.set(SID, { armed: true })
+
+    vi.advanceTimersByTime(IN_ONE_HOUR + RESET_BUFFER_MS - NOW)
+    expect(store.get(SID)?.armed).toBe(true)
+  })
+
+  it('retires an offer that expired while the app was closed', () => {
+    store.set(SID, { sessionId: SID, sendAt: NOW - 1, message: null, armed: false, source: 'rate_limit' })
+    const { service } = setup()
+
+    service.start()
+    vi.advanceTimersByTime(0)
+    service.stop()
+
+    expect(store.get(SID)).toBeUndefined()
   })
 
   it('leaves an already-armed row alone once its time has come round', () => {

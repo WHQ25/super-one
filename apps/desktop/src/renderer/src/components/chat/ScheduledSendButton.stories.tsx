@@ -65,6 +65,7 @@ function Harness({ initial, waitingFor }: { initial: ScheduledSend | null; waiti
                 if (row?.source === 'manual') setRow(null)
                 else if (row) setRow({ ...row, armed: false, message: null })
               }}
+              onDismiss={() => setRow(null)}
               onSetSendAt={(sendAt) => setRow((prev) => (prev ? { ...prev, sendAt } : prev))}
             />
           </div>
@@ -113,7 +114,8 @@ export const Idle: Story = {
 
 /**
  * The moment a turn is cut off on quota: the label unrolls out of the circle with
- * the reset time already filled in, and the check is the consent.
+ * the reset time already filled in, and the check is the consent. Hovering the
+ * chip turns its clock into an X that dismisses the offer.
  */
 export const RateLimitOffer: Story = {
   args: { initial: seed() },

@@ -1986,6 +1986,7 @@ export const zh: Messages = {
       time: '时间',
       accept: '安排在 {{time}} 发送',
       cancel: '取消定时发送',
+      dismiss: '忽略',
       sendNow: '发送',
       queued: '待发送：{{message}}',
       hintIdle: '把输入框内容排到稍后发送。',

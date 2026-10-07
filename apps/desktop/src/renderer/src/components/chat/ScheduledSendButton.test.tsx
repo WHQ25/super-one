@@ -31,6 +31,7 @@ function renderButton(scheduled: ScheduledSend | null, canSend = true, canArm = 
     onSendNow: vi.fn(),
     onArm: vi.fn(),
     onDisarm: vi.fn(),
+    onDismiss: vi.fn(),
     onSetSendAt: vi.fn(),
   }
   render(<ScheduledSendButton scheduled={scheduled} canSend={canSend} canArm={canArm} {...handlers} />)
@@ -118,6 +119,16 @@ describe('scheduled send button', () => {
 
     expect(onArm).toHaveBeenCalledWith(SEND_AT)
     expect(onSendNow).not.toHaveBeenCalled()
+  })
+
+  it('dismisses an unanswered offer from the clock slot without accepting it', async () => {
+    const { onArm, onDismiss, onDisarm } = renderButton(queued())
+
+    await userEvent.click(screen.getByRole('button', { name: /dismiss/i }))
+
+    expect(onDismiss).toHaveBeenCalledTimes(1)
+    expect(onArm).not.toHaveBeenCalled()
+    expect(onDisarm).not.toHaveBeenCalled()
   })
 
   it('states the committed time once armed', () => {

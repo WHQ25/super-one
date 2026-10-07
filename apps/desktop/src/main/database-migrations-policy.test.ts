@@ -25,6 +25,7 @@ const MIGRATION_SOURCES = [
   join(__dirname, 'database-migrations.ts'),
   join(__dirname, 'db-session-deliveries-schema.ts'),
   join(__dirname, 'db-terminal-command-rules.ts'),
+  join(__dirname, 'db-scheduled-sends.ts'),
   join(__dirname, '../../../../packages/runtime/src/collaboration/schema.ts'),
 ]
 const DESTRUCTIVE_PATTERN = /\b(?:DROP\s+TABLE(?:\s+IF\s+EXISTS)?|DROP\s+COLUMN|RENAME\s+COLUMN|RENAME\s+TO)\b[^'"`\n]*/gi
@@ -56,6 +57,9 @@ const CONSTRAINT_ONLY_REBUILDS = [
   // #65: child_session_id UNIQUE → per-relation partial unique indexes.
   'DROP TABLE session_collaboration_grants',
   'RENAME TO session_collaboration_grants',
+  // session_id REFERENCES sessions(id) dropped so remote-node sessions can queue sends.
+  'DROP TABLE scheduled_sends',
+  'RENAME TO scheduled_sends',
 ]
 
 const ALLOWED = [...GRANDFATHERED, ...CONSTRAINT_ONLY_REBUILDS]

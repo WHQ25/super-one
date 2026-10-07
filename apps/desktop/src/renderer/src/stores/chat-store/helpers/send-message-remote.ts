@@ -1,4 +1,4 @@
-import type { ChatMessage, ContentBlock, ImageAttachment } from '@superone/shared/agent-types'
+import type { ChatMessage, ContentBlock, ImageAttachment, ScheduledSendRemoteTurn } from '@superone/shared/agent-types'
 import { SESSION_TITLE_MAX_CHARS } from '@superone/shared/session-title'
 import { buildBrowserAnnotationText } from './browser-annotation'
 import { createDefaultPerSessionState } from '../defaults'
@@ -7,7 +7,7 @@ import type { ChatStoreSet } from './lifecycle'
 import { getProject, getScopedPerSession, mergeCallerScopedDirs } from './store-helpers'
 import { isGrokAcpAgent } from '@superone/shared/acp-brand'
 import { CLAUDE_INTERCEPTED_COMMANDS } from '../index'
-import type { ChatProvider, ChatStore, InputSegment, Mention } from '../types'
+import type { ChatProvider, ChatStore, InputSegment, Mention, PerSessionState } from '../types'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { nodeHarnessToProviderId, nodeStatusToAgentStatus, reconcileTranscriptWithLocalMessages, type NodeSessionSnapshot } from '@/lib/remote-session-messages'
 import { providerSessionIdFromResume } from '@superone/shared/environment'
@@ -65,131 +65,12 @@ export async function sendRemoteMessageImpl(
     }
   }
 
-  const { useAppStore } = await import('../../app')
-  let projectId = useAppStore.getState().currentProjectId
-  // Recover node projectId if mirror lost it (host switch race, HMR, etc.).
-  if (!projectId) {
-    try {
-      const listed = await window.environment.listProjects(remoteKey.connectionId)
-      const rows = Array.isArray(listed) ? listed : []
-      const match = rows.find(
-        (p: { path?: string; projectId?: string }) =>
-          (p.path || '').replace(/\/$/, '') === remoteKey.path.replace(/\/$/, ''),
-      )
-      projectId = match?.projectId ?? null
-      if (projectId) useAppStore.setState({ currentProjectId: projectId })
-    } catch {
-      /* fall through */
-    }
-  }
-  if (!projectId) {
-    throw new Error(
-      'Remote project is not registered (missing projectId). Re-open the project on this host.',
-    )
-  }
-
-  // Pending worktree create (branch/attach/detach) — same as local, but IPC hits node.
-  const wtState = useAppStore.getState().getWorktreeState(projectPath)
-  if (wtState.pendingBaseBranch) {
-    const baseBranch = wtState.pendingBaseBranch
-    const mode = wtState.pendingMode
-    const branchName = wtState.pendingBranchName.trim()
-    if (mode === 'branch' && !branchName) {
-      throw new Error('Branch mode requires a branch name')
-    }
-    const act = await window.app.activateWorktree(projectPath, {
-      baseBranch,
-      mode,
-      branchName: mode === 'branch' ? branchName : undefined,
-      carryLocalChanges: wtState.pendingCarryLocalChanges,
-    })
-    if (!act.ok) {
-      throw new Error(act.error || 'Failed to activate remote worktree')
-    }
-    useAppStore.getState().setActiveWorktree(projectPath, act.path)
-    const recordedBranch = mode === 'branch' ? branchName : baseBranch
-    patchSession(() => ({
-      messages: [],
-      _gitBranch: recordedBranch,
-      _worktreePath: act.path,
-      sessionProvider: null,
-    }))
-  }
-
-  // Local draft UUIDs from ensureSession never exist on the node — materialize first.
-  const candidateSid = resolveWriteSid()
-  const existingSess = candidateSid
-    ? getScopedPerSession(get(), writeScope.target ?? { projectPath, sessionId: candidateSid })
-    : getScopedPerSession(get(), writeScope.target)
-  // Honor UI harness tab (wire ids: claude|codex|acp|opencode). Default claude.
-  const uiProvider =
-    existingSess.sessionProvider ?? existingSess.preferredProvider ?? 'claude'
-  const preferredHarness: 'claude' | 'codex' | 'acp' | 'opencode' =
-    uiProvider === 'codex' || uiProvider === 'acp' || uiProvider === 'opencode'
-      ? uiProvider
-      : 'claude'
-  const { resolveNodeSessionId } = await import('@/lib/remote-session-ops')
-  const { createDefaultPerSessionState } = await import('../defaults')
-  const resolved = await resolveNodeSessionId(projectPath, projectId, candidateSid, {
-    harnessId: preferredHarness,
-    providerId: preferredHarness,
-  })
-  let sid = resolved.sessionId
-
-  // Worktree cwd for the node turn (host path). activePath is remote:<conn>:<host> or host abs.
-  const remoteWt = useAppStore.getState().getWorktreeState(projectPath)
-  const cwdHostPath = remoteWt.activePath
-    ? parseRemoteProjectKey(remoteWt.activePath)?.path ??
-      (remoteWt.activePath.startsWith('/') ? remoteWt.activePath : null)
-    : null
-
-  if (resolved.created || sid !== candidateSid) {
-    const prev = existingSess
-    writeScope.target = { projectPath, sessionId: sid }
-    set((s) => {
-      const proj = getProject(s, projectPath)
-      const nextSessions = { ...proj._sessions }
-      if (candidateSid && candidateSid !== sid) {
-        delete nextSessions[candidateSid]
-      }
-      const base = prev ?? createDefaultPerSessionState()
-      // Keep UI model selection when swapping draft UUID → real node session id.
-      // If still empty (Claude resources loaded late), apply default now.
-      let selectedModel = base.selectedModel
-      let selectedEffort = base.selectedEffort
-      // Remote models come from the node catalog — do not fill from local harnessResources.
-      nextSessions[sid] = {
-        ...base,
-        sessionProvider: preferredHarness,
-        preferredProvider: preferredHarness,
-        selectedModel,
-        selectedEffort,
-        _historyHydrated: true,
-      }
-      return {
-        projectSessions: {
-          ...s.projectSessions,
-          [projectPath]: {
-            ...proj,
-            _activeSessionId: sid,
-            _sessions: nextSessions,
-          },
-        },
-      }
-    })
-  } else {
-    writeScope.target = { projectPath, sessionId: sid }
-  }
+  const { sid, preferredHarness, worktreeActivePath } = await prepareRemoteSendTarget(set, get, projectPath, remoteKey, writeScope)
 
   // Assemble agent prompt like local (quotes, contexts, annotations, capability tags).
   const writeSess = getScopedPerSession(get(), writeScope.target ?? { projectPath, sessionId: sid })
-  const codexSelectionForTurn = preferredHarness === 'codex'
-    ? resolveSessionCodexSelection(
-        getProject(get(), projectPath).codexModels,
-        writeSess.selectedCodexModel,
-        writeSess.selectedCodexReasoningEffort,
-      )
-    : undefined
+  // Read before the user bubble is appended below, like everything else here.
+  const turnOptions = remoteTurnOptions(get(), projectPath, sid, worktreeActivePath)
   const annotations = writeSess.browserAnnotations ?? []
   const annotationImages: ImageAttachment[] = annotations
     .filter((a) => a.screenshot)
@@ -399,19 +280,6 @@ export async function sendRemoteMessageImpl(
     userSelections: userSelections.length > 0 ? [...userSelections] : undefined,
   }
 
-  const modelForTurn =
-    preferredHarness === 'claude' || preferredHarness === 'acp' || preferredHarness === 'opencode'
-      ? writeSess.selectedModel || undefined
-      : preferredHarness === 'codex'
-        ? codexSelectionForTurn?.modelId || undefined
-        : undefined
-  const effortForTurn =
-    preferredHarness === 'claude' || preferredHarness === 'acp' || preferredHarness === 'opencode'
-      ? writeSess.selectedEffort || undefined
-      : preferredHarness === 'codex'
-        ? codexSelectionForTurn?.reasoningEffort
-        : undefined
-  const apiProviderIdForTurn = writeSess.apiProviderId ?? null
   const imagesForTurn = attachments.map((a) => ({
     name: a.name,
     mimeType: a.mimeType,
@@ -420,10 +288,8 @@ export async function sendRemoteMessageImpl(
   }))
 
   // Codex slash commands → session.send turnKind (not desktop-only IPC).
-  let remoteTurnKind: 'run' | 'steer' | 'review' | 'compact' | undefined
+  let remoteTurnKind: 'run' | 'steer' | 'review' | 'compact' | undefined = turnOptions.turnKind
   let remoteReviewTarget: unknown
-  let remoteText = finalContent
-  let remoteCollaborationMode: string | undefined
   if (preferredHarness === 'codex') {
     const cmd = parseCodexCommand(rawContent)
     if (cmd?.kind === 'compact') {
@@ -431,10 +297,7 @@ export async function sendRemoteMessageImpl(
     } else if (cmd?.kind === 'review') {
       remoteTurnKind = 'review'
       remoteReviewTarget = cmd.target
-    } else {
-      remoteTurnKind = 'run'
     }
-    remoteCollaborationMode = writeSess.selectedCodexCollaborationMode || undefined
   }
 
   // Always append to messages; node queues concurrent sends (priority=next parity).
@@ -459,53 +322,19 @@ export async function sendRemoteMessageImpl(
     }
   }
 
-  const permissionModeForTurn = writeSess.permissionMode || undefined
-  const projectState = getProject(get(), projectPath)
-  const liveSession = getScopedPerSession(get(), writeScope.target ?? { projectPath, sessionId: sid })
-  const additionalDirs = mergeCallerScopedDirs(projectState, liveSession)
-  // Desktop disabled-skills filter → Claude SDK skills allow-list (node discovers rest).
-  const storeDisabled = get().disabledSkills ?? []
-  const disabledSkillsForTurn =
-    preferredHarness === 'claude' && storeDisabled.length > 0 ? storeDisabled : undefined
-  let enabledSkillsForTurn: string[] | undefined
-  if (disabledSkillsForTurn) {
-    const known = [
-      ...projectState.slashCommands,
-      ...projectState._projectSkills,
-    ]
-      .filter((c) => c.isSkill)
-      .map((c) => c.name)
-    if (known.length > 0) {
-      const disabled = new Set(disabledSkillsForTurn)
-      enabledSkillsForTurn = known.filter((n) => !disabled.has(n))
-    }
-  }
 
   // Node accepts send while streaming (FIFO queue / codex steer). Drain stays
   // open across queued turns until the session is fully idle.
   // turnKind / collaborationMode / reviewTarget are forwarded to node session.send
   // (preload types lag; cast keeps remote codex on the session path, not desktop IPC).
   const sendInput = {
+    ...turnOptions,
     sessionId: sid,
-    text: remoteText,
+    text: finalContent,
     clientMessageId: userMessageId,
     projectPath,
-    providerId: preferredHarness,
-    cwdHostPath,
-    ...(modelForTurn ? { model: modelForTurn } : {}),
-    ...(effortForTurn ? { effort: effortForTurn } : {}),
-    ...(permissionModeForTurn ? { permissionMode: permissionModeForTurn } : {}),
-    ...(additionalDirs.length > 0 ? { additionalDirectories: additionalDirs } : {}),
-    ...(enabledSkillsForTurn && enabledSkillsForTurn.length > 0
-      ? { enabledSkills: enabledSkillsForTurn }
-      : {}),
-    ...(disabledSkillsForTurn ? { disabledSkills: disabledSkillsForTurn } : {}),
     ...(imagesForTurn.length > 0 ? { images: imagesForTurn } : {}),
-    ...(apiProviderIdForTurn ? { apiProviderId: apiProviderIdForTurn } : {}),
-    // Off is sent too: the node's process keeps whatever the last turn named.
-    ...(preferredHarness === 'claude' ? { ultracode: writeSess.ultracode } : {}),
     ...(remoteTurnKind ? { turnKind: remoteTurnKind } : {}),
-    ...(remoteCollaborationMode ? { collaborationMode: remoteCollaborationMode } : {}),
     ...(remoteReviewTarget !== undefined ? { reviewTarget: remoteReviewTarget } : {}),
   }
   const statusBeforeSend = writeSess.status
@@ -607,4 +436,188 @@ export async function sendRemoteMessageImpl(
     failureState: () => ({ status: statusBeforeSend === 'streaming' ? 'streaming' : 'idle' }),
   })
   return
+}
+
+type RemoteHarness = 'claude' | 'codex' | 'acp' | 'opencode'
+
+/** Harness a remote send runs on: the UI tab's (wire ids claude|codex|acp|opencode), default claude. */
+function remoteHarnessOf(session: PerSessionState): RemoteHarness {
+  const uiProvider = session.sessionProvider ?? session.preferredProvider ?? 'claude'
+  return uiProvider === 'codex' || uiProvider === 'acp' || uiProvider === 'opencode' ? uiProvider : 'claude'
+}
+
+/** Worktree cwd for the node turn (host path). activePath is remote:<conn>:<host> or host abs. */
+function remoteCwdHostPath(activePath: string | null | undefined): string | null {
+  if (!activePath) return null
+  return parseRemoteProjectKey(activePath)?.path ?? (activePath.startsWith('/') ? activePath : null)
+}
+
+/**
+ * Make the composer's session real on its node and point `writeScope` at it.
+ *
+ * A remote project's composer holds a renderer-only draft UUID until the first
+ * send; this resolves the node project, activates a pending worktree, and swaps
+ * the draft for the node session id. Shared by an immediate send and by arming
+ * a scheduled one, which needs a node session to hang off just the same.
+ */
+export async function prepareRemoteSendTarget(
+  set: ChatStoreSet,
+  get: () => ChatStore,
+  projectPath: string,
+  remoteKey: NonNullable<ReturnType<typeof parseRemoteProjectKey>>,
+  writeScope: SendWriteScope,
+): Promise<{ sid: string; preferredHarness: RemoteHarness; worktreeActivePath: string | null }> {
+  const { useAppStore } = await import('../../app')
+  let projectId = useAppStore.getState().currentProjectId
+  // Recover node projectId if mirror lost it (host switch race, HMR, etc.).
+  if (!projectId) {
+    try {
+      const listed = await window.environment.listProjects(remoteKey.connectionId)
+      const rows = Array.isArray(listed) ? listed : []
+      const match = rows.find(
+        (p: { path?: string; projectId?: string }) =>
+          (p.path || '').replace(/\/$/, '') === remoteKey.path.replace(/\/$/, ''),
+      )
+      projectId = match?.projectId ?? null
+      if (projectId) useAppStore.setState({ currentProjectId: projectId })
+    } catch {
+      /* fall through */
+    }
+  }
+  if (!projectId) {
+    throw new Error(
+      'Remote project is not registered (missing projectId). Re-open the project on this host.',
+    )
+  }
+
+  // Pending worktree create (branch/attach/detach) — same as local, but IPC hits node.
+  const wtState = useAppStore.getState().getWorktreeState(projectPath)
+  if (wtState.pendingBaseBranch) {
+    const baseBranch = wtState.pendingBaseBranch
+    const mode = wtState.pendingMode
+    const branchName = wtState.pendingBranchName.trim()
+    if (mode === 'branch' && !branchName) {
+      throw new Error('Branch mode requires a branch name')
+    }
+    const act = await window.app.activateWorktree(projectPath, {
+      baseBranch,
+      mode,
+      branchName: mode === 'branch' ? branchName : undefined,
+      carryLocalChanges: wtState.pendingCarryLocalChanges,
+    })
+    if (!act.ok) {
+      throw new Error(act.error || 'Failed to activate remote worktree')
+    }
+    useAppStore.getState().setActiveWorktree(projectPath, act.path)
+    const recordedBranch = mode === 'branch' ? branchName : baseBranch
+    writeScope.patch(() => ({
+      messages: [],
+      _gitBranch: recordedBranch,
+      _worktreePath: act.path,
+      sessionProvider: null,
+    }))
+  }
+
+  // Local draft UUIDs from ensureSession never exist on the node — materialize first.
+  const candidateSid = writeScope.sessionId()
+  const existingSess = candidateSid
+    ? getScopedPerSession(get(), writeScope.target ?? { projectPath, sessionId: candidateSid })
+    : getScopedPerSession(get(), writeScope.target)
+  // Honor UI harness tab (wire ids: claude|codex|acp|opencode). Default claude.
+  const preferredHarness = remoteHarnessOf(existingSess)
+  const { resolveNodeSessionId } = await import('@/lib/remote-session-ops')
+  const resolved = await resolveNodeSessionId(projectPath, projectId, candidateSid, {
+    harnessId: preferredHarness,
+    providerId: preferredHarness,
+  })
+  const sid = resolved.sessionId
+
+  if (resolved.created || sid !== candidateSid) {
+    const prev = existingSess
+    writeScope.target = { projectPath, sessionId: sid }
+    set((s) => {
+      const proj = getProject(s, projectPath)
+      const nextSessions = { ...proj._sessions }
+      if (candidateSid && candidateSid !== sid) {
+        delete nextSessions[candidateSid]
+      }
+      const base = prev ?? createDefaultPerSessionState()
+      // Keep UI model selection when swapping draft UUID → real node session id.
+      // If still empty (Claude resources loaded late), apply default now.
+      let selectedModel = base.selectedModel
+      let selectedEffort = base.selectedEffort
+      // Remote models come from the node catalog — do not fill from local harnessResources.
+      nextSessions[sid] = {
+        ...base,
+        sessionProvider: preferredHarness,
+        preferredProvider: preferredHarness,
+        selectedModel,
+        selectedEffort,
+        _historyHydrated: true,
+      }
+      return {
+        projectSessions: {
+          ...s.projectSessions,
+          [projectPath]: {
+            ...proj,
+            _activeSessionId: sid,
+            _sessions: nextSessions,
+          },
+        },
+      }
+    })
+  } else {
+    writeScope.target = { projectPath, sessionId: sid }
+  }
+  return { sid, preferredHarness, worktreeActivePath: useAppStore.getState().getWorktreeState(projectPath).activePath }
+}
+
+/**
+ * The per-turn options a remote send carries from the composer's session
+ * state — the node only remembers its own defaults. Codex slash-command turn
+ * kinds are the caller's to override.
+ */
+export function remoteTurnOptions(
+  state: ChatStore,
+  projectPath: string,
+  sessionId: string,
+  worktreeActivePath: string | null | undefined,
+): ScheduledSendRemoteTurn {
+  const project = getProject(state, projectPath)
+  const session = getScopedPerSession(state, { projectPath, sessionId })
+  const harness = remoteHarnessOf(session)
+  const codexSelection = harness === 'codex'
+    ? resolveSessionCodexSelection(project.codexModels, session.selectedCodexModel, session.selectedCodexReasoningEffort)
+    : undefined
+  const model = harness === 'codex' ? codexSelection?.modelId || undefined : session.selectedModel || undefined
+  const effort = harness === 'codex' ? codexSelection?.reasoningEffort : session.selectedEffort || undefined
+  const additionalDirectories = mergeCallerScopedDirs(project, session)
+  // Desktop disabled-skills filter → Claude SDK skills allow-list (node discovers rest).
+  const storeDisabled = state.disabledSkills ?? []
+  const disabledSkills = harness === 'claude' && storeDisabled.length > 0 ? storeDisabled : undefined
+  let enabledSkills: string[] | undefined
+  if (disabledSkills) {
+    const known = [...project.slashCommands, ...project._projectSkills].filter((c) => c.isSkill).map((c) => c.name)
+    if (known.length > 0) {
+      const disabled = new Set(disabledSkills)
+      enabledSkills = known.filter((n) => !disabled.has(n))
+    }
+  }
+  return {
+    providerId: harness,
+    cwdHostPath: remoteCwdHostPath(worktreeActivePath),
+    ...(model ? { model } : {}),
+    ...(effort ? { effort } : {}),
+    ...(session.permissionMode ? { permissionMode: session.permissionMode } : {}),
+    ...(additionalDirectories.length > 0 ? { additionalDirectories } : {}),
+    ...(enabledSkills && enabledSkills.length > 0 ? { enabledSkills } : {}),
+    ...(disabledSkills ? { disabledSkills } : {}),
+    ...(session.apiProviderId ? { apiProviderId: session.apiProviderId } : {}),
+    // Off is sent too: the node's process keeps whatever the last turn named.
+    ...(harness === 'claude' ? { ultracode: session.ultracode } : {}),
+    ...(harness === 'codex' ? { turnKind: 'run' as const } : {}),
+    ...(harness === 'codex' && session.selectedCodexCollaborationMode
+      ? { collaborationMode: session.selectedCodexCollaborationMode }
+      : {}),
+  }
 }

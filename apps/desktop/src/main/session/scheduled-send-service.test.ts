@@ -7,8 +7,10 @@ import { createClaudeAgentEventMapper } from '@superone/claude'
  * the real table (same patch-merge rule, same due predicate, same source-scoped
  * delete), so the service's real logic runs end to end.
  */
-const { store, sessions, hidden, transcripts } = vi.hoisted(() => ({
+const { store, remoteTargets, sessions, hidden, transcripts } = vi.hoisted(() => ({
   store: new Map<string, ScheduledSend>(),
+  /** Rows marked as remote-node sessions, with the turn options they carry. */
+  remoteTargets: new Map<string, { projectKey: string; turn: unknown }>(),
   /** Sessions that have a `sessions` row — the schedule's foreign key. */
   sessions: new Set<string>(),
   /** Sessions kept out of the sidebar's list. */
@@ -19,14 +21,17 @@ const { store, sessions, hidden, transcripts } = vi.hoisted(() => ({
 
 vi.mock('../db-scheduled-sends', () => ({
   getScheduledSend: (sessionId: string) => store.get(sessionId) ?? null,
+  getScheduledSendRemoteTarget: (sessionId: string) => (store.has(sessionId) ? remoteTargets.get(sessionId) ?? null : null),
   listDueScheduledSends: (nowMs: number) =>
     [...store.values()].filter((r) => r.armed && r.sendAt <= nowMs),
-  upsertScheduledSend: (sessionId: string, patch: ScheduledSendPatch) => {
-    // The real table's foreign key: a session with no row cannot hold a schedule.
-    if (!sessions.has(sessionId)) return null
+  upsertScheduledSend: (sessionId: string, patch: ScheduledSendPatch, remote?: { projectKey: string; turn?: unknown }) => {
     const prev = store.get(sessionId)
     const sendAt = patch.sendAt ?? prev?.sendAt
     if (sendAt === undefined) return null
+    const target = remoteTargets.get(sessionId) ?? (remote ? { projectKey: remote.projectKey, turn: null } : undefined)
+    // A local session with no row cannot hold a schedule; a remote one never has one.
+    if (!target && !sessions.has(sessionId)) return null
+    if (target) remoteTargets.set(sessionId, { ...target, turn: remote?.turn ?? target.turn })
     const next: ScheduledSend = {
       sessionId,
       sendAt,
@@ -37,7 +42,7 @@ vi.mock('../db-scheduled-sends', () => ({
     store.set(sessionId, next)
     return next
   },
-  deleteScheduledSend: (sessionId: string) => { store.delete(sessionId) },
+  deleteScheduledSend: (sessionId: string) => { store.delete(sessionId); remoteTargets.delete(sessionId) },
   deleteScheduledSendBySource: (sessionId: string, source: string) => {
     if (store.get(sessionId)?.source === source) store.delete(sessionId)
   },
@@ -92,16 +97,19 @@ function setup() {
     resumeSession: vi.fn(() => session),
   }
   const broadcast = vi.fn()
+  const sendRemote = vi.fn(async (input: { onAccepted: () => void }) => { input.onAccepted() })
   const service = new ScheduledSendService({
     sessionManager: sessionManager as never,
     broadcast,
     resumeDefaults: () => ({ permissionMode: 'default', sandboxMode: undefined }),
+    sendRemote,
   })
-  return { service, send, broadcast, sessionManager }
+  return { service, send, sendRemote, broadcast, sessionManager }
 }
 
 beforeEach(() => {
   store.clear()
+  remoteTargets.clear()
   sessions.clear()
   hidden.clear()
   transcripts.clear()
@@ -732,6 +740,118 @@ describe('scheduled send — delivery', () => {
     const later = IN_ONE_HOUR + 3_600_000
     service.observe(SID, rateLimitFailure(later / 1000))
     expect(store.get(SID)?.armed).toBe(false)
+    service.stop()
+  })
+})
+
+describe('scheduled send — remote-node session', () => {
+  const NODE_SID = 'node-sess-1'
+  const REMOTE_KEY = 'remote:conn-1:/srv/app'
+  const TURN = { providerId: 'claude', model: 'opus', permissionMode: 'acceptEdits' }
+  const remoteInit = { projectPath: REMOTE_KEY, harnessId: 'claude' as const, remoteTurn: TURN }
+
+  function remoteRateLimit(resetsAtSeconds: number): AgentEvent {
+    return { ...rateLimitFailure(resetsAtSeconds), sessionId: NODE_SID, projectPath: REMOTE_KEY }
+  }
+
+  it('arms without a local session row and sends through the node', async () => {
+    const { service, send, sendRemote, broadcast, sessionManager } = setup()
+    service.set(NODE_SID, { armed: true, sendAt: IN_ONE_HOUR, message: 'ship it' }, remoteInit)
+    expect(sessions.has(NODE_SID)).toBe(false)
+
+    vi.setSystemTime(IN_ONE_HOUR)
+    service.start()
+    await vi.waitFor(() => expect(sendRemote).toHaveBeenCalled())
+
+    expect(sendRemote).toHaveBeenCalledWith(expect.objectContaining({
+      target: { projectKey: REMOTE_KEY, turn: TURN },
+      sessionId: NODE_SID,
+      text: 'ship it',
+      clientMessageId: `scheduled-send:${NODE_SID}:${IN_ONE_HOUR}`,
+    }))
+    expect(send).not.toHaveBeenCalled()
+    expect(sessionManager.resumeSession).not.toHaveBeenCalled()
+    // Accepted by the node is delivered: the composer that mirrored it may empty.
+    expect(store.has(NODE_SID)).toBe(false)
+    expect(broadcast).toHaveBeenLastCalledWith(NODE_SID, null, true)
+    service.stop()
+  })
+
+  it('offers a resume when a remote turn hits a rate limit, and delivers it remotely', async () => {
+    const { service, sendRemote } = setup()
+    service.observe(NODE_SID, remoteRateLimit(IN_ONE_HOUR / 1000))
+    expect(store.get(NODE_SID)).toMatchObject({ armed: false, source: 'rate_limit' })
+
+    service.set(NODE_SID, { armed: true }, remoteInit)
+    vi.setSystemTime(IN_ONE_HOUR + RESET_BUFFER_MS)
+    service.start()
+    await vi.waitFor(() => expect(sendRemote).toHaveBeenCalled())
+    expect(sendRemote.mock.calls[0]![0]).toMatchObject({ target: { projectKey: REMOTE_KEY, turn: TURN } })
+
+    // The resumed turn limits again: the user's consent carries the chain on.
+    const later = IN_ONE_HOUR + 3_600_000
+    service.observe(NODE_SID, remoteRateLimit(later / 1000))
+    expect(store.get(NODE_SID)).toMatchObject({ armed: true, sendAt: later + RESET_BUFFER_MS })
+    expect(remoteTargets.get(NODE_SID)).toEqual({ projectKey: REMOTE_KEY, turn: TURN })
+    vi.setSystemTime(later + RESET_BUFFER_MS)
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(sendRemote).toHaveBeenCalledTimes(2)
+    expect(sendRemote.mock.calls[1]![0]).toMatchObject({ target: { projectKey: REMOTE_KEY, turn: TURN } })
+    service.stop()
+  })
+
+  it('keeps the send armed when the node is unreachable', async () => {
+    const { service, sendRemote } = setup()
+    sendRemote.mockRejectedValueOnce(Object.assign(new Error('not connected'), { code: 'unavailable' }))
+    service.set(NODE_SID, { armed: true, sendAt: IN_ONE_HOUR }, remoteInit)
+
+    vi.setSystemTime(IN_ONE_HOUR)
+    service.start()
+    await vi.waitFor(() => expect(sendRemote).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => expect(store.get(NODE_SID)?.armed).toBe(true))
+
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(sendRemote).toHaveBeenCalledTimes(2)
+    expect(store.has(NODE_SID)).toBe(false)
+    service.stop()
+  })
+
+  it('treats a conflict with a durable successful receipt as delivered', async () => {
+    const { service, sendRemote, broadcast } = setup()
+    sendRemote.mockRejectedValueOnce(Object.assign(new Error('reused'), { code: 'idempotency_conflict', details: { receiptStored: true } }))
+    service.set(NODE_SID, { armed: true, sendAt: IN_ONE_HOUR }, remoteInit)
+
+    vi.setSystemTime(IN_ONE_HOUR)
+    service.start()
+    await vi.waitFor(() => expect(store.has(NODE_SID)).toBe(false))
+    expect(broadcast).toHaveBeenLastCalledWith(NODE_SID, null, true)
+    service.stop()
+  })
+
+  it.each([undefined, { receiptStored: false }])('retains a conflicting send without a successful receipt (%j)', async (details) => {
+    const { service, sendRemote, broadcast } = setup()
+    sendRemote.mockRejectedValueOnce(Object.assign(new Error('request still pending'), { code: 'idempotency_conflict', details }))
+    service.set(NODE_SID, { armed: true, sendAt: IN_ONE_HOUR }, remoteInit)
+    vi.setSystemTime(IN_ONE_HOUR)
+    service.start()
+    await vi.waitFor(() => expect(sendRemote).toHaveBeenCalledTimes(1))
+    expect(store.get(NODE_SID)?.armed).toBe(true)
+    expect(broadcast).not.toHaveBeenCalledWith(NODE_SID, null, true)
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(sendRemote).toHaveBeenCalledTimes(2)
+    expect(store.has(NODE_SID)).toBe(false)
+    service.stop()
+  })
+
+  it('drops the send once the session is gone from the node', async () => {
+    const { service, sendRemote, broadcast } = setup()
+    sendRemote.mockRejectedValueOnce(Object.assign(new Error('session not found'), { code: 'not_found' }))
+    service.set(NODE_SID, { armed: true, sendAt: IN_ONE_HOUR }, remoteInit)
+
+    vi.setSystemTime(IN_ONE_HOUR)
+    service.start()
+    await vi.waitFor(() => expect(store.has(NODE_SID)).toBe(false))
+    expect(broadcast).toHaveBeenLastCalledWith(NODE_SID, null, false)
     service.stop()
   })
 })

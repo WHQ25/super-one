@@ -40,6 +40,7 @@ export class IdempotencyService {
     if (row.request_payload_hash !== payloadHash) {
       throw Object.assign(new Error('idempotency key reused with different payload'), {
         code: 'idempotency_conflict',
+        details: { receiptStored: true },
       })
     }
     return JSON.parse(row.receipt_json)

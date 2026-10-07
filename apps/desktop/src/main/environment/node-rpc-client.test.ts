@@ -297,3 +297,14 @@ describe('NodeRpcClient half-open transport detection', () => {
     expect(onUnexpectedDisconnect).not.toHaveBeenCalled()
   })
 })
+
+it('preserves successful receipt evidence from a server RPC error', async () => {
+  const { client, ws } = await connectClient({ supervised: true })
+  const request = client.rpc('session.send', { sessionId: 's1', text: 'continue' })
+  const rejection = expect(request).rejects.toMatchObject({ code: 'idempotency_conflict', details: { receiptStored: true }, transport: false })
+  await Promise.resolve()
+  const sent = JSON.parse(ws.send.mock.calls.at(-1)![0] as string)
+  ws.emit('message', Buffer.from(JSON.stringify({ type: 'rpc_error', requestId: sent.requestId, error: { code: 'idempotency_conflict', message: 'different payload', details: { receiptStored: true } } })))
+  await rejection
+  client.close()
+})

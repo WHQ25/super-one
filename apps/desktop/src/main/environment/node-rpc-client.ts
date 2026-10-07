@@ -599,7 +599,7 @@ export class NodeRpcClient {
       type: string
       requestId?: string
       result?: unknown
-      error?: { code: string; message: string }
+      error?: { code: string; message: string; details?: Record<string, unknown> }
     }
     try {
       msg = JSON.parse(raw)
@@ -619,7 +619,7 @@ export class NodeRpcClient {
     clearTimeout(pending.timer)
     if (msg.type === 'rpc_error') {
       // Server application/protocol errors — never classified as transport.
-      pending.reject(rpcResponseError(msg.error?.code || 'internal', msg.error?.message || 'rpc error'))
+      pending.reject(rpcResponseError(msg.error?.code || 'internal', msg.error?.message || 'rpc error', msg.error?.details))
     } else {
       pending.resolve(msg.result)
     }
@@ -652,11 +652,12 @@ function transportError(message: string): Error {
 }
 
 /** Server-originated RPC/handshake error — never auto-retried. */
-function rpcResponseError(code: string, message: string): Error {
+function rpcResponseError(code: string, message: string, details?: Record<string, unknown>): Error {
   return Object.assign(new Error(message), {
     code,
     transport: false as const,
     rpcError: true as const,
+    ...(details ? { details } : {}),
   })
 }
 

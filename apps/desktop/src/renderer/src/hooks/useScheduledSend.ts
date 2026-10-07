@@ -16,8 +16,12 @@ export interface ScheduledSendControls {
    * the composer that mirrors it knows when — and only when — to empty itself.
    */
   deliveredNonce: number
-  /** Queue `message` for `sendAt` and arm it in one write. */
-  schedule: (message: string | null, sendAt: number) => void
+  /**
+   * Queue `message` for `sendAt` and arm it in one write. `sessionId` overrides
+   * the hook's own when arming just replaced a draft id (a remote composer's
+   * first node session); the subscription follows once the view does.
+   */
+  schedule: (message: string | null, sendAt: number, sessionId?: string) => void
   /** Keep the queued text in step with the composer it mirrors. */
   setMessage: (message: string | null) => void
   /** Flip the arm without restating the time or the text. */
@@ -41,11 +45,12 @@ export interface ScheduledSendControls {
 export function useScheduledSend(
   sessionId: string | null | undefined,
   /**
-   * How to persist this session if arming finds it has never been sent in. Read
-   * through a ref so a changing project root does not re-subscribe, and so the
-   * write uses what is true at the moment the user arms.
+   * How to persist this session if arming finds it has never been sent in, and
+   * a remote session's turn options. Called at write time through a ref, so a
+   * changing project root does not re-subscribe and every write carries what is
+   * true at that moment.
    */
-  sessionInit?: ScheduledSendSessionInit | null,
+  getSessionInit?: (sessionId: string) => ScheduledSendSessionInit | null,
 ): ScheduledSendControls {
   const [scheduled, setScheduled] = useState<ScheduledSend | null>(null)
   const [loading, setLoading] = useState(true)
@@ -81,20 +86,20 @@ export function useScheduledSend(
     }
   }, [sessionId])
 
-  const initRef = useRef(sessionInit)
-  initRef.current = sessionInit
+  const initRef = useRef(getSessionInit)
+  initRef.current = getSessionInit
 
   const patch = useCallback(
-    (next: ScheduledSendPatch) => {
-      if (!sessionId) return
-      void window.app.setScheduledSend(sessionId, next, initRef.current ?? undefined)
+    (next: ScheduledSendPatch, target = sessionId) => {
+      if (!target) return
+      void window.app.setScheduledSend(target, next, initRef.current?.(target) ?? undefined)
     },
     [sessionId],
   )
 
   const schedule = useCallback(
-    (message: string | null, sendAt: number) => {
-      patch({ armed: true, message: message?.trim() || null, sendAt })
+    (message: string | null, sendAt: number, target?: string) => {
+      patch({ armed: true, message: message?.trim() || null, sendAt }, target)
     },
     [patch],
   )

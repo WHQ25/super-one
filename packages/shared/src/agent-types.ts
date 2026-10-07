@@ -682,12 +682,43 @@ export interface ScheduledSendPatch {
  * and it is also the one case where the session has no database row: rows are
  * written by the first send. The schedule needs one to hang off, and delivery
  * needs one to resume from — hours later, quite possibly in another app run.
+ *
+ * A remote-node project (`remote:<connectionId>:<path>`) never gets a local
+ * row: the composer creates the node session before arming, and delivery goes
+ * to the node through `remoteTurn`.
  */
 export interface ScheduledSendSessionInit {
   projectPath: string
   harnessId: HarnessId
   /** Set when the pane is pointed at a worktree rather than the project root. */
   worktreePath?: string | null
+  /** Remote-node sessions only — the turn options the composer would send now. */
+  remoteTurn?: ScheduledSendRemoteTurn
+}
+
+/**
+ * Per-turn options of a remote-node send.
+ *
+ * The node keeps only its own session defaults; the composer's model, effort
+ * and the rest travel with every send. A send the desktop makes on the user's
+ * behalf hours later has to carry the same ones, so they are captured with the
+ * schedule rather than guessed at delivery.
+ */
+export interface ScheduledSendRemoteTurn {
+  providerId: string
+  /** Host-absolute worktree cwd; null leaves the node session's cwd alone. */
+  cwdHostPath?: string | null
+  model?: string
+  effort?: string
+  permissionMode?: string
+  additionalDirectories?: string[]
+  enabledSkills?: string[]
+  disabledSkills?: string[]
+  apiProviderId?: string
+  turnKind?: 'run'
+  collaborationMode?: string
+  /** Claude Ultracode toggle (`SessionSettingsPatch.ultracode`). */
+  ultracode?: boolean
 }
 
 /**

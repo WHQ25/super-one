@@ -25,6 +25,7 @@ import { BASE_SESSION_PROVIDER_DEFINITIONS } from '@superone/shared/session-prov
 import type Database from 'better-sqlite3'
 import { ensureSessionFileDeliveriesSchema } from './db-session-deliveries'
 import { ensureTerminalCommandRulesSchema } from './db-terminal-command-rules'
+import { ensureScheduledSendsSchema } from './db-scheduled-sends'
 import { encryptSecretIfAvailable } from './crypto/secret-store'
 import log from './logger'
 
@@ -36,7 +37,7 @@ import log from './logger'
  * every launch); it decides when a pre-migration snapshot is taken and lets a
  * build recognise a database written by a newer build.
  */
-export const SCHEMA_VERSION = 10
+export const SCHEMA_VERSION = 11
 
 /**
  * The oldest schema revision that can still read this database.
@@ -663,24 +664,6 @@ function applyMigrations(db: Database.Database): void {
       last_sequence INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY(credential_hash, session_id)
     );
-
-    -- At most one queued send per session. armed = 0 is an offer the composer
-    -- shows but nothing owes; armed = 1 is what the scheduler polls for and
-    -- delivers at send_at. Persisted rather than held in a timer because the
-    -- common case — waiting out a rate-limit window — routinely outlives the app
-    -- run, so an in-memory timer would silently never fire.
-    -- The source column decides the lifetime: a rate-limit row is scoped to the
-    -- stall that created it, a manual one lives until delivered or cleared.
-    CREATE TABLE IF NOT EXISTS scheduled_sends (
-      session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
-      send_at TEXT NOT NULL,
-      message TEXT,
-      armed INTEGER NOT NULL DEFAULT 0,
-      source TEXT NOT NULL DEFAULT 'manual',
-      created_at TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_scheduled_sends_due
-      ON scheduled_sends(armed, send_at);
   `)
   const collaborationGrantCols = db.prepare('PRAGMA table_info(session_collaboration_grants)').all() as Array<{ name: string }>
   if (!collaborationGrantCols.some((column) => column.name === 'credential_secret')) {
@@ -692,6 +675,8 @@ function applyMigrations(db: Database.Database): void {
   }
   // Several sessions may link the same peer; only spawn parentage stays unique.
   ensureCollaborationGrantUniqueness(db, { warn: (message) => log.warn(message) })
+  // Composer scheduled sends, local and remote-node; DDL owned by the module.
+  ensureScheduledSendsSchema(db, { warn: (message) => log.warn(message) })
 
   // Session sync zone delivery record (docs/architecture/session-sync-zone.md §8):
   // one durable row per zone file delivered to its node — created before the

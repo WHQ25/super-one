@@ -532,6 +532,21 @@ const scheduledSendService = new ScheduledSendService({
   broadcast: (sessionId, scheduled, delivered) =>
     safeSend(AgentIpcChannels.SCHEDULED_SEND_CHANGED, { sessionId, scheduled, delivered }),
   resumeDefaults: () => agentService.readDefaultSessionPrefs(),
+  sendRemote: async ({ target, sessionId, text, clientMessageId, onAccepted }) => {
+    const remote = parseRemoteProjectKey(target.projectKey)
+    if (!remote) throw new Error(`not a remote project key: ${target.projectKey}`)
+    const { getEnvironmentHost } = await import('./environment')
+    // No optimistic bubble exists for a send nobody typed just now, so the node echoes it.
+    return getEnvironmentHost().sendSessionMessage(remote.connectionId, {
+      ...target.turn,
+      sessionId,
+      text,
+      clientMessageId,
+      projectPath: target.projectKey,
+      echoUserMessage: true,
+      onAccepted,
+    })
+  },
 })
 const powerManagementService = createPowerManagementService()
 
@@ -1645,6 +1660,7 @@ function attachEnvironmentStatusBridge(host: EnvironmentHost): void {
   // Remote node turns: map session.events → AgentEvent and stream into chat.
   host.setAgentEventSink((event) => {
     observeRemoteMcpAppEvent(event)
+    if (event.sessionId) scheduledSendService.observe(event.sessionId, event)
     safeSend(AgentIpcChannels.EVENT, event)
   })
   // Auto-connect desired remotes + network-online edge wake.

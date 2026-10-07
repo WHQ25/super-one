@@ -9,14 +9,17 @@ import {
   type ScheduledSendSessionInit,
 } from '@superone/shared/agent-types'
 import { baseSessionProviderId } from '@superone/shared/session-provider-definitions'
+import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
 import log from '../logger'
 import {
   deleteScheduledSend,
   deleteScheduledSendBySource,
   getScheduledSend,
+  getScheduledSendRemoteTarget,
   listDueScheduledSends,
   listScheduledSends,
   upsertScheduledSend,
+  type ScheduledSendRemoteTarget,
 } from '../db-scheduled-sends'
 import { hideSession, sessionHasMessages } from '../db-sessions'
 import { insertSessionRecord } from './session-repo'
@@ -51,6 +54,17 @@ export interface ScheduledSendDeps {
   broadcast: (sessionId: string, scheduled: ScheduledSend | null, delivered: boolean) => void
   /** Session prefs used when the send has to load a session that is not in memory. */
   resumeDefaults: () => { permissionMode: PermissionMode; sandboxMode: SandboxMode | undefined }
+  /**
+   * Send on a remote-node session. Resolves once the turn settles; `onAccepted`
+   * fires when the node has taken the message.
+   */
+  sendRemote: (input: {
+    target: ScheduledSendRemoteTarget
+    sessionId: string
+    text: string
+    clientMessageId: string
+    onAccepted: () => void
+  }) => Promise<unknown>
 }
 
 /**
@@ -71,11 +85,12 @@ export class ScheduledSendService {
   private readonly sending = new Set<string>()
   /**
    * Sessions whose current turn *is* an auto-resume. If that turn rate-limits
-   * again the fresh offer re-arms itself with the same message instead of
+   * again the fresh offer re-arms itself with the same message and remote turn
+   * settings instead of
    * silently reverting to "ask the user again" — which would defeat the point
    * for anyone who armed it and walked away.
    */
-  private readonly autoRearm = new Map<string, string | null>()
+  private readonly autoRearm = new Map<string, { message: string | null; remote?: ScheduledSendRemoteTarget }>()
   /** Latest `resetsAt` (epoch ms) seen per session, as a fallback when the failure carries none. */
   private readonly lastResetsAt = new Map<string, number>()
   /** Due time of each send awaiting evidence that the provider received it. */
@@ -120,7 +135,7 @@ export class ScheduledSendService {
    * is stored, so arming, re-timing and re-wording are three independent writes.
    *
    * `init` describes the session for the one case where it does not exist yet —
-   * see `materializeSession`.
+   * see `materializeSession` — and carries a remote-node session's turn options.
    */
   set(sessionId: string, patch: ScheduledSendPatch, init?: ScheduledSendSessionInit): ScheduledSend | null {
     if (!this.armableInPast(sessionId, patch)) {
@@ -131,11 +146,16 @@ export class ScheduledSendService {
       this.emit(sessionId, current)
       return current
     }
-    let next = upsertScheduledSend(sessionId, patch)
+    // A remote session already exists on its node — the composer creates it
+    // before arming — and never gets a local row to materialize.
+    const remote = init && parseRemoteProjectKey(init.projectPath)
+      ? { projectKey: init.projectPath, turn: init.remoteTurn }
+      : undefined
+    let next = upsertScheduledSend(sessionId, patch, remote)
     // `sendAt` as well as `armed`: a write with neither a time of its own nor a
     // stored one to fall back on has nothing to schedule, and persisting a
     // session for it would leave an empty one behind for no promise at all.
-    if (!next && patch.armed && patch.sendAt !== undefined && init && this.materializeSession(sessionId, init)) {
+    if (!next && !remote && patch.armed && patch.sendAt !== undefined && init && this.materializeSession(sessionId, init)) {
       next = upsertScheduledSend(sessionId, patch)
     }
     if (patch.armed === false) this.autoRearm.delete(sessionId)
@@ -246,7 +266,7 @@ export class ScheduledSendService {
     this.retireDelivered(sessionId, sendAt)
   }
 
-  /** Wire to `sessionManager.onAny`. */
+  /** Wire to `sessionManager.onAny` and to the remote-node event sink. */
   observe(sessionId: string, event: AgentEvent, replay = false): void {
     // Session restoration replays UI settings through the same event bus. A
     // saved provider ID is not a new switch that should cancel a queued send.
@@ -267,7 +287,7 @@ export class ScheduledSendService {
           this.clearStallOffer(sessionId)
           return
         }
-        this.offerResume(sessionId, info.resetsAt)
+        this.offerResume(sessionId, info.resetsAt, event.projectPath)
         return
       }
       case 'stream_message_start':
@@ -314,7 +334,7 @@ export class ScheduledSendService {
     this.emit(sessionId, null)
   }
 
-  private offerResume(sessionId: string, resetsAtSeconds: number | undefined): void {
+  private offerResume(sessionId: string, resetsAtSeconds: number | undefined, projectPath: string | undefined): void {
     const now = Date.now()
     const fromError = typeof resetsAtSeconds === 'number' ? resetsAtSeconds * 1000 : undefined
     const candidate = fromError ?? this.lastResetsAt.get(sessionId)
@@ -333,13 +353,15 @@ export class ScheduledSendService {
     if (existing?.armed && !this.sending.has(sessionId)) return
 
     const rearming = this.autoRearm.has(sessionId) || (this.sending.has(sessionId) && existing?.armed === true)
-    const rearmMessage = this.autoRearm.get(sessionId) ?? existing?.message ?? null
+    const continuation = this.autoRearm.get(sessionId)
+    const rearmMessage = continuation?.message ?? existing?.message ?? null
+    const remote = continuation?.remote ?? (projectPath && parseRemoteProjectKey(projectPath) ? { projectKey: projectPath, turn: null } : undefined)
     const next = upsertScheduledSend(sessionId, {
       sendAt: candidate + RESET_BUFFER_MS,
       source: 'rate_limit',
       armed: rearming,
       ...(rearming ? { message: rearmMessage ?? null } : {}),
-    })
+    }, remote ? { projectKey: remote.projectKey, turn: remote.turn ?? undefined } : undefined)
     if (next) this.emit(sessionId, next)
   }
 
@@ -366,6 +388,11 @@ export class ScheduledSendService {
       const fresh = getScheduledSend(sessionId)
       if (!fresh?.armed || fresh.sendAt > Date.now()) return
 
+      const remote = getScheduledSendRemoteTarget(sessionId)
+      if (remote) {
+        await this.deliverRemote(fresh, remote)
+        return
+      }
       const session = this.resolveSession(sessionId)
       if (!session) {
         // A deleted session cannot leave a row behind — the table's
@@ -386,7 +413,7 @@ export class ScheduledSendService {
         return
       }
       const content = fresh.message?.trim() || SCHEDULED_SEND_DEFAULT_MESSAGE
-      if (fresh.source === 'rate_limit') this.autoRearm.set(sessionId, fresh.message)
+      if (fresh.source === 'rate_limit') this.autoRearm.set(sessionId, { message: fresh.message })
       this.reveal(sessionId)
       log.info('[scheduled-send] delivering queued send for session %s', sessionId)
       this.delivering.set(sessionId, fresh.sendAt)
@@ -408,6 +435,57 @@ export class ScheduledSendService {
       log.warn('[scheduled-send] send failed sid=%s: %s', sessionId, String(err))
     } finally {
       this.sending.delete(sessionId)
+    }
+  }
+
+  /**
+   * Deliver to a remote-node session through the node itself.
+   *
+   * Retired as soon as the node accepts: from then on the message is in the
+   * node's durable transcript and its turn is the node's to run, so there is no
+   * "accepted but lost" window for a retry to cover. A rate limit that turn hits
+   * still comes back through `observe`, which re-offers or re-arms exactly as
+   * for a local session.
+   *
+   * The node does not queue behind a busy session for us to wait out — it takes
+   * the send into its own FIFO — so there is no streaming check here. Retries
+   * reuse the `clientMessageId`, which the node treats as an idempotency key
+   * per client session: a send whose reply was lost replays its receipt instead
+   * of going out twice.
+   */
+  private async deliverRemote(row: ScheduledSend, target: ScheduledSendRemoteTarget): Promise<void> {
+    const { sessionId } = row
+    if (row.source === 'rate_limit') this.autoRearm.set(sessionId, { message: row.message, remote: target })
+    log.info('[scheduled-send] delivering queued send for remote session %s', sessionId)
+    let accepted = false
+    try {
+      await this.deps.sendRemote({
+        target,
+        sessionId,
+        text: row.message?.trim() || SCHEDULED_SEND_DEFAULT_MESSAGE,
+        clientMessageId: `scheduled-send:${sessionId}:${row.sendAt}`,
+        onAccepted: () => {
+          accepted = true
+          this.retireDelivered(sessionId, row.sendAt)
+        },
+      })
+    } catch (err) {
+      if (accepted) return
+      const code = (err as { code?: unknown }).code
+      // A conflict can also refer to an unfinished request. Only a durable
+      // successful receipt proves delivery; older nodes omit this evidence.
+      const details = (err as { details?: { receiptStored?: boolean } }).details
+      if (code === 'idempotency_conflict' && details?.receiptStored === true) {
+        this.retireDelivered(sessionId, row.sendAt)
+        return
+      }
+      // The session is gone from the node; no retry can ever land.
+      if (code === 'not_found') {
+        log.warn('[scheduled-send] remote session %s no longer exists; dropping its queued send', sessionId)
+        this.clear(sessionId)
+        return
+      }
+      throw err
     }
   }
 

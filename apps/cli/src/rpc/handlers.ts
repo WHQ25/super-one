@@ -1048,9 +1048,11 @@ function handleTerminalReleaseControl(payload: unknown, ctx: RpcContext): RpcRes
 }
 
 function mapThrown(err: unknown): RpcResult {
-  const e = err as { code?: string; message?: string }
+  const e = err as { code?: string; message?: string; details?: Record<string, unknown> }
   const code = (e.code as RpcErrorCode | undefined) ?? 'internal'
-  return { error: { code, message: e.message || 'internal error' } }
+  return {
+    error: { code, message: e.message || 'internal error', ...(e.details ? { details: e.details } : {}) },
+  }
 }
 
 function handleProjectList(ctx: RpcContext): RpcResult {

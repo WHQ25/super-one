@@ -21,7 +21,7 @@ const hasFiles = (event: DragEvent) => event.dataTransfer.types.includes('Files'
  * under the box. Files dropped or pasted anywhere on the box go to `onFiles`.
  */
 export function MediaComposerFrame({
-  kind, prompt, onPromptChange, onSubmit, promptDisabled, controlsDisabled, onExit, above, references, controls, actions, status, onFiles,
+  kind, prompt, onPromptChange, onSubmit, promptDisabled, controlsDisabled, onExit, above, references, leadingControls, controls, actions, status, onFiles,
 }: {
   kind: MediaComposerKind
   prompt: string
@@ -33,6 +33,7 @@ export function MediaComposerFrame({
   onExit?: () => void
   above?: ReactNode
   references?: ReactNode
+  leadingControls?: ReactNode
   /** Toolbar controls in priority order; past the fourth, or when out of room, they move to the settings panel. */
   controls: ToolbarControl[]
   actions: ReactNode
@@ -68,7 +69,8 @@ export function MediaComposerFrame({
           maxRows={5}
           maxLength={32_000}
           placeholder={t(kind === 'image' ? 'mediaComposer.imagePlaceholder' : 'mediaComposer.videoPlaceholder')}
-          className="min-h-9 rounded-none border-0 bg-transparent px-0 py-1.5 text-sm leading-6 shadow-none focus-visible:ring-0 dark:bg-transparent"
+          // Absorb the text composer's 26px status bar so the box tops share the slot's bottom anchor.
+          className={cn('rounded-none border-0 bg-transparent px-0 text-sm leading-6 shadow-none focus-visible:ring-0 dark:bg-transparent', kind === 'image' ? 'min-h-[3.875rem] pt-0 pb-[1.625rem]' : 'min-h-9 py-1.5')}
         />
         <div className="mt-1.5 flex items-center gap-1">
           <ComposerModeChip
@@ -78,6 +80,7 @@ export function MediaComposerFrame({
             onExit={onExit}
             className={cn('text-primary', onExit && 'hover:bg-primary/10')}
           />
+          {leadingControls && <div inert={controlsDisabled} className={cn('flex shrink-0 items-center', controlsDisabled && 'opacity-60')}>{leadingControls}</div>}
           <OverflowControls controls={controls} max={MAX_TOOLBAR_CONTROLS} moreLabel={t('mediaComposer.moreSettings')} disabled={controlsDisabled} />
           <div className="flex shrink-0 items-center gap-1.5">{actions}</div>
         </div>

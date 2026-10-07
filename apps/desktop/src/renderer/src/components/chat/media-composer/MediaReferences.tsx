@@ -55,6 +55,19 @@ function ReferenceThumb({ src, name, onRemove, caption }: { src: string; name: s
   )
 }
 
+/** A file picker shared by the toolbar, empty drop target and reference add tile. */
+export function MediaReferencePicker({ onAdd, className, children }: { onAdd: (files: File[]) => void; className: string; children?: ReactNode }) {
+  const { t } = useTranslation()
+  const input = useRef<HTMLInputElement>(null)
+  return <>
+    <input ref={input} type="file" accept={REFERENCE_TYPES.join(',')} multiple className="sr-only" tabIndex={-1} aria-hidden="true"
+      onChange={event => { const files = Array.from(event.target.files ?? []); event.target.value = ''; onAdd(files) }} />
+    <button type="button" onClick={() => input.current?.click()} aria-label={t('mediaComposer.addReference')} title={t('mediaComposer.addReference')} className={className}>
+      {children ?? <Plus className="size-4" />}
+    </button>
+  </>
+}
+
 /** Editable reference images: a drop target when empty, thumbnails plus an add tile otherwise. */
 export function MediaReferences({ kind, references, roles, onChange, onAdd }: {
   kind: MediaComposerKind
@@ -65,30 +78,25 @@ export function MediaReferences({ kind, references, roles, onChange, onAdd }: {
   onAdd: (files: File[]) => void
 }) {
   const { t } = useTranslation()
-  const input = useRef<HTMLInputElement>(null)
   const setRole = (index: number, role: ReferenceRole) => onChange(references.map((ref, i) => i === index
     ? { ...ref, role }
     // A start or end frame is unique; the previous holder becomes a reference.
     : role !== 'reference' && ref.role === role ? { ...ref, role: 'reference' } : ref))
-  const picker = <input ref={input} type="file" accept={REFERENCE_TYPES.join(',')} multiple className="sr-only" tabIndex={-1} aria-hidden="true"
-    onChange={event => { const files = Array.from(event.target.files ?? []); event.target.value = ''; onAdd(files) }} />
   if (!references.length) {
     return (
       <div className="pb-2 pt-0.5">
-        {picker}
-        <button type="button" onClick={() => input.current?.click()} className="flex h-12 w-full items-center gap-2.5 rounded-lg border border-dashed border-border px-3 text-left text-muted-foreground transition-colors hover:border-primary/50 hover:bg-primary/5 hover:text-foreground">
+        <MediaReferencePicker onAdd={onAdd} className="flex h-12 w-full items-center gap-2.5 rounded-lg border border-dashed border-border px-3 text-left text-muted-foreground transition-colors hover:border-primary/50 hover:bg-primary/5 hover:text-foreground">
           <Upload className="size-4 shrink-0" />
           <span className="flex min-w-0 flex-col">
             <span className="truncate text-xs">{t('mediaComposer.dropReferences')}</span>
             <span className="truncate text-[0.6875rem] text-muted-foreground">{t(kind === 'image' ? 'mediaComposer.imageReferenceHint' : 'mediaComposer.videoReferenceHint')}</span>
           </span>
-        </button>
+        </MediaReferencePicker>
       </div>
     )
   }
   return (
     <div className="flex flex-wrap items-start gap-2.5 pb-2 pt-1.5">
-      {picker}
       {references.map((ref, index) => (
         <ReferenceThumb
           key={index}
@@ -108,10 +116,7 @@ export function MediaReferences({ kind, references, roles, onChange, onAdd }: {
         />
       ))}
       {references.length < MAX_REFERENCES && (
-        <button type="button" onClick={() => input.current?.click()} aria-label={t('mediaComposer.addReference')} title={t('mediaComposer.addReference')}
-          className="flex size-12 shrink-0 items-center justify-center rounded-lg border border-dashed border-border text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground">
-          <Plus className="size-4" />
-        </button>
+        <MediaReferencePicker onAdd={onAdd} className="flex size-12 shrink-0 items-center justify-center rounded-lg border border-dashed border-border text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground" />
       )}
     </div>
   )

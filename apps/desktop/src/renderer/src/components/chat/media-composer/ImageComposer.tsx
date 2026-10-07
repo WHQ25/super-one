@@ -1,9 +1,9 @@
 import { useTranslation } from 'react-i18next'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Paperclip } from 'lucide-react'
 import { composerForSession, type OpenedComposerProps } from '../composer-slot/composer-registry'
 import { MediaComposerFrame, MediaGenerateButton, MediaRunModeSelector, MediaStopButton } from './MediaComposerFrame'
 import { MediaComposerResults } from './MediaComposerResults'
-import { MediaReferences } from './MediaReferences'
+import { MediaReferencePicker, MediaReferences } from './MediaReferences'
 import { useImageControls } from './MediaSelectors'
 import { MediaComposerStatus } from './MediaComposerStatus'
 import { cancelMediaGeneration } from './media-composer-runs'
@@ -33,7 +33,10 @@ export function ImageComposer(props: OpenedComposerProps) {
         {run.result?.status === 'succeeded' && <MediaComposerResults target={session} result={run.result} disabled={!active}
           onUse={() => submit({ result: run.result })} onReturn={() => composerForSession(session).returnToChat()} />}
       </>}
-      references={<MediaReferences kind="image" references={form.references} onChange={references => change({ references })} onAdd={media.addFiles} />}
+      references={form.references.length > 0 && <MediaReferences kind="image" references={form.references} onChange={references => change({ references })} onAdd={media.addFiles} />}
+      leadingControls={!form.references.length && <MediaReferencePicker onAdd={media.addFiles} className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
+        <Paperclip className="size-4" />
+      </MediaReferencePicker>}
       controls={controls}
       actions={<>
         <MediaRunModeSelector value={form.runMode} onChange={runMode => change({ runMode })} />

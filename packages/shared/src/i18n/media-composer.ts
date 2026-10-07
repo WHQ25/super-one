@@ -1,7 +1,7 @@
 export const mediaComposerEn = {
   mode: 'Composer Actions', attach: 'Add Attachment', image: 'Generate Image', video: 'Generate Video',
   imageMode: 'Image', videoMode: 'Video', exitImage: 'Exit Image Generation', exitVideo: 'Exit Video Generation',
-  prompt: 'Prompt', imagePlaceholder: 'Describe the image…', videoPlaceholder: 'Describe the scene and camera movement…',
+  prompt: 'Prompt', imagePlaceholder: 'Describe an image or drop references…', videoPlaceholder: 'Describe the scene and camera movement…',
   automatic: 'Auto', autoRatio: 'Auto Ratio', autoSize: 'Auto Size', autoDuration: 'Auto Length',
   model: 'Model', moreSettings: 'More Settings', aspectRatio: 'Aspect Ratio', size: 'Size',
   sizeAutoHint: 'Let the model decide', resolution: 'Resolution', landscape: 'Landscape', portrait: 'Portrait',
@@ -28,7 +28,7 @@ export const mediaComposerEn = {
 export const mediaComposerZh: typeof mediaComposerEn = {
   mode: '输入操作', attach: '添加附件', image: '生成图片', video: '生成视频',
   imageMode: '图片', videoMode: '视频', exitImage: '退出图片生成', exitVideo: '退出视频生成',
-  prompt: '描述', imagePlaceholder: '描述你想生成的图片…', videoPlaceholder: '描述画面内容和镜头运动…',
+  prompt: '描述', imagePlaceholder: '描述你想生成的图片，或拖入参考图…', videoPlaceholder: '描述画面内容和镜头运动…',
   automatic: '自动', autoRatio: '自动比例', autoSize: '自动尺寸', autoDuration: '自动时长',
   model: '模型', moreSettings: '更多设置', aspectRatio: '画面比例', size: '尺寸',
   sizeAutoHint: '由模型决定', resolution: '分辨率', landscape: '横屏', portrait: '竖屏',

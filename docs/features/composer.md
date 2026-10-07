@@ -56,7 +56,10 @@ chat composer: an Image or Video mode chip whose icon turns into a close control
 on hover (the same chip as Codex plan mode), selectors styled like the model
 selector, and a status row under the box. Existing chat text, rich content and
 attachments stay in the chat draft; supported attached images also seed the
-reference list. The prompt starts at one row and grows with content; Enter
+reference list. The image prompt includes the text composer's status-bar height,
+so their top edges line up in the bottom-anchored slot. Its reference drop hint
+lives in the prompt placeholder, with a toolbar attachment button for choosing
+the first reference. The prompt starts at one row and grows with content; Enter
 generates, while Shift+Enter and Alt+Enter insert a newline.
 
 Reference images (PNG, JPEG, WebP; up to 8 and 24 MB) are dropped or pasted

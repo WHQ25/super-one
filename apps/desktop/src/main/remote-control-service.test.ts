@@ -1110,7 +1110,11 @@ it('keeps terminal output before exit when compression of the first frame is slo
   const keys = await deriveKeys(secret)
   const frames: string[] = []
   const service = new RemoteControlService('', {} as never)
-  Object.assign(service, { keys, relayWs: { readyState: 1, send: (frame: string) => frames.push(frame) } })
+  Object.assign(service, {
+    keys,
+    relayWs: { readyState: 1, send: (frame: string) => frames.push(frame) },
+    connectedDevices: new Map([['phone', { name: 'Phone', transports: new Set(['relay']) }]]),
+  })
   await Promise.all([
     service.sendTerminalFrame({ type: 'terminal_output', terminalId: 't', data: 'x'.repeat(1_000_000), fromSeq: 1, toSeq: 1, createdAt: 0 }),
     service.sendTerminalFrame({ type: 'terminal_exited', terminalId: 't', exitCode: 0, signal: null }),

@@ -673,9 +673,8 @@ export class RemoteControlService {
       if (generation !== this.sendGeneration) return
       const payload: Record<string, unknown> = { type: 'terminal', data }
       if (targetDeviceIds && targetDeviceIds.length > 0) payload.targets = targetDeviceIds
-      const json = JSON.stringify(payload)
-      if (this.relayWs?.readyState === WebSocket.OPEN) this.relayWs.send(json)
-      this.lanServer?.broadcastFrame(json, targetDeviceIds)
+      this.sendRelayFrame(payload, targetDeviceIds)
+      this.lanServer?.broadcastFrame(JSON.stringify(payload), targetDeviceIds)
     }).catch(err => {
       log.error('[RemoteControl] Failed to send terminal frame:', err)
     })
@@ -688,12 +687,26 @@ export class RemoteControlService {
     return relayOpen || lanActive
   }
 
+  /**
+   * The relay delivers a broadcast only to phones on the relay, and buffers a
+   * targeted frame until each target ACKs — which a phone holding a LAN socket
+   * never does. Drop LAN phones from the targets and skip frames nobody on the
+   * relay would receive. Offline targets stay, so a reconnecting phone replays.
+   */
+  private sendRelayFrame(payload: Record<string, unknown>, targetDeviceIds?: string[]): void {
+    if (this.relayWs?.readyState !== WebSocket.OPEN) return
+    if (!targetDeviceIds?.length) {
+      if ([...this.connectedDevices.values()].some((info) => info.transports.has('relay'))) this.relayWs.send(JSON.stringify(payload))
+      return
+    }
+    const targets = targetDeviceIds.filter((id) => !this.connectedDevices.get(id)?.transports.has('lan'))
+    if (targets.length) this.relayWs.send(JSON.stringify({ ...payload, targets }))
+  }
+
   private sendEventFrame(encryptedData: string, targetDeviceIds?: string[]): void {
     const basePayload: Record<string, unknown> = { type: 'event', data: encryptedData }
     if (targetDeviceIds && targetDeviceIds.length > 0) basePayload.targets = targetDeviceIds
-    if (this.relayWs?.readyState === WebSocket.OPEN) {
-      this.relayWs.send(JSON.stringify(basePayload))
-    }
+    this.sendRelayFrame(basePayload, targetDeviceIds)
     if (this.lanServer) {
       const lanFrame = JSON.stringify({ ...basePayload, seq: ++this.lanFrameSeq })
       this.lanServer.broadcastFrame(lanFrame, targetDeviceIds)

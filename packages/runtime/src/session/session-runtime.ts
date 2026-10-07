@@ -8,7 +8,7 @@ import { McpAppAttachmentIndex } from './mcp-apps-index'
 import type { McpAppsResolvedAttachment } from '@superone/shared/environment/mcp-apps-state-rpc'
 import { assertCodexAccountSwitchAllowed } from '@superone/shared/codex-accounts'
 import { randomUUID } from 'node:crypto'
-import type { AgentEvent } from '@superone/shared/agent-types'
+import type { AgentEvent, ChatMessageSource } from '@superone/shared/agent-types'
 import { MOD_UI_MUTATING_OPS, MOD_UI_UNAVAILABLE, asNodeCallerModUiRequest, asNodeReaderModEvent, type ModUiOp, type ModUiRequest, type ModUiResult } from '@superone/shared/mod-ui'
 import { acceptedElicitationContent } from '@superone/shared/schema-form'
 import {
@@ -159,10 +159,10 @@ interface TurnOpts extends MessageDisplayFields {
   collaborationMode?: string | Record<string, unknown> | null
   reviewTarget?: unknown
   /**
-   * Host-origin synthetic turn (mailbox peer wake). Transcript/events store a
+   * Who wrote the text (see TurnRunner `source`). Transcript/events store a
    * redacted copy so collaboration credentials never leak into the UI snapshot.
    */
-  source?: 'user' | 'task-notification'
+  source?: ChatMessageSource
 }
 
 /** Normalize optional string settings: empty → null; non-string → leave as-is (caller filters). */
@@ -1067,8 +1067,8 @@ export class SessionRuntime {
     permissionMode?: string | null
     sandboxMode?: string | null
     apiProviderId?: string | null
-    /** Host-origin synthetic turn (peer mailbox wake). */
-    source?: 'user' | 'task-notification'
+    /** A peer's task or a host wake; absent for the user's own text. */
+    source?: ChatMessageSource
   }): Promise<NodeSessionRecord> {
     if (this.disposing) {
       throw Object.assign(new Error('runtime is shutting down'), { code: 'failed_precondition' })

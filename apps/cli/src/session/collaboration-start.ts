@@ -103,6 +103,8 @@ async function deliverInitialTask(ctx: CollaborationContext, grant: GrantRow, ch
       permissionMode: config.permissionMode,
       sandboxMode: config.sandboxMode,
       apiProviderId: config.apiProviderId,
+      // The parent agent's words, not the user's: never stamped human-typed.
+      source: 'collaboration',
       requestId: `collaboration-task-${grant.grant_id.slice(0, 16)}`,
     })
   } catch {

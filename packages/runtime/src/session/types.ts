@@ -1,7 +1,7 @@
 import type { McpAppsBinding, McpAppOrigin, McpAppsProvider } from '@superone/shared/mcp-apps'
 import type { SessionTurnEvent } from '@superone/shared/environment'
 import type { MessageDisplayFields } from '@superone/shared/message-display'
-import type { AgentEvent, PermissionRequest } from '@superone/shared/agent-types'
+import type { AgentEvent, ChatMessageSource, PermissionRequest } from '@superone/shared/agent-types'
 import type { ModUiOp, ModUiRequest, ModUiResult } from '@superone/shared/mod-ui'
 
 export type SessionStatus =
@@ -209,8 +209,12 @@ export type TurnRunner = ((input: {
    * steer injects into an in-flight app-server turn on a long-lived connection.
    */
   turnKind?: 'run' | 'steer' | 'review' | 'compact' | null
-  /** Host-origin synthetic turn (peer mailbox wake); absent for the user's own text. */
-  source?: 'user' | 'task-notification'
+  /**
+   * Who wrote the text: absent or `user` for the user's own (composer, phone,
+   * automation); `collaboration` for a peer's task, `task-notification` for a
+   * host wake. Claude stamps only the user's own as human-typed.
+   */
+  source?: ChatMessageSource
   /** Codex collaboration mode (string mode name or app-server object). */
   collaborationMode?: string | Record<string, unknown> | null
   /** Codex review/start target payload. */

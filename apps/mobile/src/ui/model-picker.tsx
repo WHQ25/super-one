@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { ActivityIndicator, Pressable, View } from 'react-native'
 import { Text } from './text'
-import { RefreshCw, Search, X, Zap } from 'lucide-react-native'
+import { RefreshCw, Search, Workflow, X, Zap } from 'lucide-react-native'
 import type {
   HarnessId,
   ModelOption,
@@ -12,6 +12,7 @@ import type {
   RemoteProviderOption,
 } from '@superone/shared/agent-types'
 import { useMobileTheme } from '../theme/context'
+import { ULTRACODE_COLORS } from '@superone/shared/composer-mode'
 import { AnchoredMenu, MenuDisclosureRow, MenuRow, MenuSeparator, MenuTextInput, useMenuAnchor } from './anchored-menu'
 import { EffortSlider } from './effort-slider'
 import { FireText } from './effort-easter-egg'
@@ -52,7 +53,7 @@ type Section = 'models' | 'agents' | 'modes' | 'providers' | null
 /** Model, effort and every harness-native catalog in one control, like the desktop selector. */
 export function ModelPicker(props: ModelPickerProps) {
   const menu = useMenuAnchor()
-  const { tokens: { colors } } = useMobileTheme()
+  const { tokens: { colors, scheme } } = useMobileTheme()
   const { t } = useMobileLocale()
   const [query, setQuery] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
@@ -76,6 +77,9 @@ export function ModelPicker(props: ModelPickerProps) {
   const agentLabel = agents.find((agent) => agent.id === props.agent)?.name
   const summary = optionParamSummary(optionParams)
   const fastEnabled = optionParams.some((param) => param.id === 'fast' && param.selected === 'true')
+  // Ultracode's mark sits beside the label even when an egg replaces it, as on desktop.
+  const ultracodeOn = optionParams.some((param) => param.id === 'ultracode' && param.selected === 'true')
+  const [ur, ug, ub] = ULTRACODE_COLORS[scheme === 'dark' ? 'dark' : 'light'][0]
   // Effort and the catalogs own the menu body until a list is asked for.
   const hasSideOptions = canSelectEffort || optionParams.length > 0 || modes.length > 0 || agents.length > 0
   const listOpen = expanded === 'models' || !hasSideOptions
@@ -116,7 +120,7 @@ export function ModelPicker(props: ModelPickerProps) {
   ]
   return <>
     <Pressable ref={menu.ref} disabled={props.disabled} accessibilityRole="button"
-      accessibilityLabel={`${t('Model')}: ${egg ? eggLabel : triggerParts.map((part) => part.text).join(', ')}`}
+      accessibilityLabel={`${t('Model')}: ${egg ? eggLabel : triggerParts.map((part) => part.text).join(', ')}${ultracodeOn ? ', Ultracode' : ''}`}
       accessibilityState={{ disabled: props.disabled, expanded: !!menu.anchor }} onPress={() => { collapse(); menu.open() }}
       hitSlop={CHIP_HIT_SLOP}
       style={({ pressed }) => ({ minHeight: CHIP_HEIGHT, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: props.compact ? 6 : 12,
@@ -129,6 +133,7 @@ export function ModelPicker(props: ModelPickerProps) {
         {!props.compact ? <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>{t('Model')}</Text> : null}
         {/* Truncation priority follows desktop: effort and options give way long before the model name. */}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          {ultracodeOn ? <Workflow size={props.compact ? 11 : 13} color={`rgb(${ur}, ${ug}, ${ub})`} /> : null}
           {egg ? <FireText fontSize={props.compact ? 12 : 15}>{eggLabel}</FireText> : null}
           {!egg && fastEnabled ? <Zap size={props.compact ? 11 : 13} color={colors.mutedForeground} fill={colors.mutedForeground} /> : null}
           {!egg && triggerParts.map((part, index) => <View key={`${part.text}-${index}`}

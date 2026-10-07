@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { View } from 'react-native'
 import { MobileThemeProvider } from '../theme/context'
 import { ModelPicker, type ModelPickerProps } from './model-picker'
+import { ultracodeOptionParam } from '../model-picker-state'
 
 function Preview(props: ModelPickerProps) {
   const [model, setModel] = useState(props.model)
@@ -71,4 +72,13 @@ export const ClaudeMappedProvider = {
 /** A credential with no mapping keeps the Claude catalog and effort. */
 export const ClaudePlainProvider = {
   args: { ...ClaudeDefault.args, providerId: 'cred-plain' } satisfies Partial<ModelPickerProps>,
+}
+
+/** Ultracode on: its purple mark leads the trigger, and Options carries the switch with the desktop's hint. */
+export const ClaudeUltracode = {
+  args: {
+    ...ClaudeDefault.args,
+    optionParams: [ultracodeOptionParam(true)],
+    onOptionParam: () => {},
+  } satisfies Partial<ModelPickerProps>,
 }

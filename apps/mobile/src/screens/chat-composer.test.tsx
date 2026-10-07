@@ -5,6 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { renderWithTheme } from '../test-render'
 import type { MatchedSlashCommand } from '../slash'
 import { ChatComposer, type ChatComposerProps } from './chat-composer'
+import { ultracodeOptionParam } from '../model-picker-state'
 
 function command(name: string): MatchedSlashCommand {
   return { name, description: '', argumentHint: '', isSkill: false, matchIndices: [], score: 0, matched: true }
@@ -326,4 +327,17 @@ test('a special next turn draws its mode border on the phone and tablet input, a
 
   await renderWithTheme(composer({ composerMode: null }))
   expect(screen.queryByTestId('composer-mode-border')).toBeNull()
+})
+
+test('the model trigger carries Ultracode\'s mark while the switch is on, as the desktop selector does', async () => {
+  const selection = (on: boolean): ChatComposerProps['selection'] => ({
+    model: 'opus', models: [{ id: 'opus', name: 'Opus', description: '', supportedEffortLevels: ['high', 'xhigh'] }],
+    effort: 'high', efforts: [{ value: 'high', label: 'High' }, { value: 'xhigh', label: 'Extra High' }],
+    onModel: () => {}, onEffort: () => {}, optionParams: [ultracodeOptionParam(on)], onOptionParam: () => {},
+  })
+  await renderWithTheme(composer({ selection: selection(true) }))
+  expect(screen.getByLabelText('Model: Opus, High, Ultracode')).toBeTruthy()
+
+  await renderWithTheme(composer({ selection: selection(false) }))
+  expect(screen.getByLabelText('Model: Opus, High')).toBeTruthy()
 })

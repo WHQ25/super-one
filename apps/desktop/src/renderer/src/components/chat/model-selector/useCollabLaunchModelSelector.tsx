@@ -540,15 +540,10 @@ export function useCollabLaunchModelSelector(args: {
     onChange({ apiProviderId: id })
   }
 
-  // Match ClaudeModelSelector easter-egg trigger labels for max / xhigh.
+  // Match ClaudeModelSelector's easter-egg trigger label for max.
   const triggerLabel = useMemo<ReactNode | undefined>(() => {
-    if (harnessId !== 'claude' || activeModelEnv) return undefined
-    const eggName = (selectedModelLabel ?? 'Model').toUpperCase()
-    if (selectedEffort === 'max') return <FireText>{`${eggName} · MAX`}</FireText>
-    if (selectedEffort === 'xhigh') {
-      return <span className="rainbow-text font-normal">{`${eggName} · ULTRATHINK`}</span>
-    }
-    return undefined
+    if (harnessId !== 'claude' || activeModelEnv || selectedEffort !== 'max') return undefined
+    return <FireText>{`${(selectedModelLabel ?? 'Model').toUpperCase()} · MAX`}</FireText>
   }, [harnessId, activeModelEnv, selectedModelLabel, selectedEffort])
 
   return {

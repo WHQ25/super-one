@@ -13,6 +13,7 @@ import {
 } from './GroupedModelEffortSelector'
 import { useSelectorProviders } from './useSelectorProviders'
 import { findCodexFastServiceTier } from './codex-fast-mode'
+import { currentCodexReasoningEffort } from '@/stores/chat-store/helpers/codex-helpers'
 
 interface Props {
   onCloseAutoFocus?: (e: Event) => void
@@ -38,11 +39,7 @@ export function CodexModelSelector({ onCloseAutoFocus }: Props) {
       ? formatCodexModelName(undefined, selectedCodexModel)
       : null
   const codexReasoningEfforts = selectedCodexModelOption?.supportedReasoningEfforts ?? []
-  const currentCodexReasoningEffort =
-    selectedCodexReasoningEffort
-    ?? selectedCodexModelOption?.defaultReasoningEffort
-    ?? codexReasoningEfforts[0]?.value
-    ?? null
+  const shownCodexReasoningEffort = currentCodexReasoningEffort(selectedCodexModelOption, selectedCodexReasoningEffort)
 
   const models = useMemo<SelectorModelOption[]>(
     () => codexModels.map((m) => ({ id: m.id, name: formatCodexModelName(m.name, m.id), description: m.description })),
@@ -77,7 +74,7 @@ export function CodexModelSelector({ onCloseAutoFocus }: Props) {
             && !findCodexFastServiceTier(model)
         }}
         effortOptions={effortOptions}
-        selectedEffort={currentCodexReasoningEffort}
+        selectedEffort={shownCodexReasoningEffort}
         onSelectEffort={(value) => setSelectedCodexReasoningEffort(value as CodexReasoningEffort)}
         optionParams={optionParams}
         onOptionParamChange={(id, value) => {

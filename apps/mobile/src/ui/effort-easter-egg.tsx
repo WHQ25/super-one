@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Animated, Easing, Platform, StyleSheet, View, type LayoutChangeEvent } from 'react-native'
-import Svg, { Defs, LinearGradient, Mask, RadialGradient, Rect, Stop, Text as SvgText } from 'react-native-svg'
+import Svg, { Defs, RadialGradient, Stop, Text as SvgText } from 'react-native-svg'
 import {
   FIRE_EMBER,
   FIRE_FILL_STOPS,
@@ -8,23 +8,19 @@ import {
   FIRE_SWEEP_CENTERS,
   FIRE_SWEEP_S,
   fireSweepOpacity,
-  RAINBOW_DARK,
-  RAINBOW_LIGHT,
 } from '@superone/shared/effort-easter-egg-palette'
 import { Text } from './text'
 import { FireEmbers } from './fire-embers'
 import { useMobileTheme } from '../theme/context'
 
 /**
- * The two Claude effort easter eggs, ported to React Native.
+ * Claude's `max` effort easter egg, ported to React Native.
  *
  * The embers are a real particle simulation on a Skia canvas — see
  * `fire-embers`. Everything here is the text underneath them: RN has no text
- * gradients, so the molten fill and the rainbow scroll are drawn with
- * `react-native-svg` over a measured layout box.
+ * gradients, so the molten fill is drawn with `react-native-svg` over a
+ * measured layout box.
  */
-
-const AnimatedRect = Animated.createAnimatedComponent(Rect)
 
 type Box = { width: number; height: number }
 
@@ -64,9 +60,9 @@ function baselineY(box: Box, fontSize: number): number {
  * `react-native-svg` lays a string out a few percent wider than RN's own text
  * engine measures it, and a viewport only as wide as the measured box shaves the
  * last glyph. The slack belongs to the SVG viewport alone: reserving it in the
- * layout text pads the chip with a gap the label never fills. So every geometry
- * derived from the paint — viewport, scroll period, mask — is built from this
- * width, while the layout box stays the width of the text.
+ * layout text pads the chip with a gap the label never fills. So the SVG
+ * viewport is built from this width, while the layout box stays the width of
+ * the text.
  * `textLength` would be the exact fix, but react-native-svg drops it in
  * `extractText` before it reaches the native view.
  */
@@ -78,7 +74,7 @@ function paintWidth(box: Box, text: string, fontSize: number): number {
  * react-native-svg's Android text layout (`TSpanView.java`) reads each glyph's
  * kerned advance off the whole line but then subtracts that advance from the
  * *end* position to find the glyph's start, so a kern pair moves the wrong
- * glyph: in `ULTRATHINK` the `L` is pulled back into the `U` by the L–T kern
+ * glyph: in a word like `ULTRA` the `L` is pulled back into the `U` by the L–T kern
  * and a hole opens before the `T`. Turning auto-kerning off makes every glyph
  * advance by its own width, which is what RN's own text engine shows. iOS
  * takes its advances from CoreText, kerned and correctly placed, so it keeps
@@ -168,59 +164,12 @@ export function FireText({ children, fontSize }: { children: string; fontSize: n
   }
 
   return <View onLayout={onLayout}>
-    {/* Measures the box, then stops painting so only the SVG runs show — see
-        `RainbowText` for why this is `opacity` and not `color: 'transparent'`. */}
+    {/* Measures the box, then stops painting so only the SVG run shows, or the
+        two read as one smeared label. `opacity`, not `color: 'transparent'`:
+        RN Android drops a fully transparent text colour and falls back to the
+        default ink. */}
     <Text numberOfLines={1} style={{ ...layer, color: FIRE_EMBER, opacity: box ? 0 : 1 }}>{children}</Text>
     {box ? <MoltenFill box={box} fontSize={fontSize}>{children}</MoltenFill> : null}
     {box ? <FireEmbers width={box.width} height={box.height} dark={false} /> : null}
-  </View>
-}
-
-/** `MODEL · ULTRATHINK`. One palette laid down twice, scrolled by exactly one copy. */
-export function RainbowText({ children, fontSize }: { children: string; fontSize: number }) {
-  const { tokens: { scheme, colors } } = useMobileTheme()
-  const [box, onLayout] = useTextBox()
-  const shift = useRef(new Animated.Value(0)).current
-  const width = box ? paintWidth(box, children, fontSize) : 0
-  useEffect(() => {
-    if (!width) return
-    shift.setValue(0)
-    const animation = Animated.loop(
-      Animated.timing(shift, { toValue: -width, duration: 2000, easing: Easing.linear, useNativeDriver: false }),
-    )
-    animation.start()
-    return () => { animation.stop() }
-  }, [shift, width])
-
-  const palette = scheme === 'dark' ? RAINBOW_DARK : RAINBOW_LIGHT
-  // Two copies across the doubled rect: sliding by one copy lands on an
-  // identical frame, so the loop has no seam.
-  const stops = palette.flatMap((color, index) => {
-    const step = index / (palette.length - 1) / 2
-    return [
-      <Stop key={`a${index}`} offset={step} stopColor={color} />,
-      <Stop key={`b${index}`} offset={0.5 + step} stopColor={color} />,
-    ]
-  })
-
-  return <View onLayout={onLayout}>
-    {/* The layout text has to stay for the box to be measured, but it must stop
-        painting once the SVG takes over, or the two runs read as one smeared,
-        unreadable label. `color: 'transparent'` does not do it — RN Android
-        drops a fully transparent text colour and falls back to the default ink
-        — so hide the view instead, which still measures. */}
-    <Text numberOfLines={1} style={{ fontSize, fontWeight: '500', color: colors.foreground,
-      opacity: box ? 0 : 1 }}>{children}</Text>
-    {box ? <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-      <Svg width={width} height={box.height}>
-        <Defs>
-          <LinearGradient id="rainbow" x1="0" y1="0" x2="1" y2="0">{stops}</LinearGradient>
-          <Mask id="rainbow-mask">
-            <SvgText {...GLYPH_PROPS} x={0} y={baselineY(box, fontSize)} fontSize={fontSize} fontWeight="500" fill="#ffffff">{children}</SvgText>
-          </Mask>
-        </Defs>
-        <AnimatedRect x={shift} y={0} width={width * 2} height={box.height} fill="url(#rainbow)" mask="url(#rainbow-mask)" />
-      </Svg>
-    </View> : null}
   </View>
 }

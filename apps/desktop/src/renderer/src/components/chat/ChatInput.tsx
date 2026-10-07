@@ -29,6 +29,9 @@ import { GitMentionDecoration } from './git-mention-decoration'
 import { useEnabledGitMentionPortals } from './use-git-mention-capabilities'
 import { useMcpAppFileRoute } from '@/components/mcp-apps/file-apps'
 import { DebugMentionDecoration, syncDebugMentionHint } from './debug-mention-decoration'
+import { PromptKeywordDecoration, syncPromptKeywords } from './prompt-keyword-decoration'
+import { ComposerModeBorder, composerMode } from './ComposerModeBorder'
+import { currentCodexReasoningEffort } from '@/stores/chat-store/helpers/codex-helpers'
 import { PromptSuggestion } from './prompt-suggestion'
 import { ModPromptDecoration, applyModPromptEdit, caretTextOffset, setModPromptDecorations } from './chat-input/mod-prompt-decoration'
 import { registerModComposer } from '@/lib/mod-ui/composer-bridge'
@@ -195,6 +198,8 @@ export function ChatInput({
       return Boolean(realtime?.starting || realtime?.realtimeSessionId)
     })
     const commandPopup = useActiveSession((s) => s.slashCommandOutput)
+    const ultracode = useActiveSession((s) => s.ultracode)
+    const codexReasoningEffort = useActiveSession((s) => currentCodexReasoningEffort(s.codexModels.find((m) => m.id === s.selectedCodexModel), s.selectedCodexReasoningEffort))
     // Every per-session write is routed to this pane's session, not the project's
     // active one — otherwise a non-active pane's write (e.g. the editor's draft
     // re-sync on remount) lands on whichever session happens to be active.
@@ -302,6 +307,12 @@ export function ChatInput({
     const resolvedCodexProviderId = useResolvedProviderId('codex')
     // One folder set for every harness now — nothing swaps with the provider.
     const supportsAdditionalDirs = HARNESS_CAPABILITIES[activeProviderForResources]?.supportsAdditionalDirs ?? false
+    const promptKeywords = HARNESS_CAPABILITIES[activeProviderForResources].promptKeywords
+    // The border says what the next turn will do differently.
+    const borderMode = useMemo(
+      () => composerMode({ text, promptKeywords, ultracode, codexReasoningEffort: activeProviderForResources === 'codex' ? codexReasoningEffort : null }),
+      [text, promptKeywords, ultracode, activeProviderForResources, codexReasoningEffort],
+    )
     const canOpenSideChat = useCanOpenSideChat()
     const isCodexPlanMode = activeProviderForResources === 'codex' && selectedCodexCollaborationMode === 'plan'
     const hasContent = text.trim().length > 0 || attachments.length > 0 || browserAnnotations.length > 0 || mentions.length > 0 || hasPasteChips
@@ -1587,6 +1598,7 @@ export function ChatInput({
         SessionMentionDecoration.configure({ context: sessionProjectOptions }),
         GitMentionDecoration.configure({ context: gitPortals }),
         DebugMentionDecoration.configure({ hint: t('chat.placeholder.debugBug') }),
+        PromptKeywordDecoration.configure({ keywords: promptKeywords }),
         PromptSuggestion,
         ModPromptDecoration,
       ],
@@ -1970,6 +1982,10 @@ export function ChatInput({
       syncDebugMentionHint(editor, t('chat.placeholder.debugBug'))
     }, [editor, t])
 
+    useEffect(() => {
+      syncPromptKeywords(editor, promptKeywords)
+    }, [editor, promptKeywords])
+
 
     useEffect(() => {
       if (isRemoteLocked || !promptSuggestion || isStreaming || hasPendingInteraction) return
@@ -2010,6 +2026,10 @@ export function ChatInput({
         <div
           className={cn(
             'relative mx-3 mb-1 rounded-xl border border-border px-3 py-2',
+            // ComposerModeBorder draws the border instead, and its halo sits
+            // at z-index -1 in this box's own stacking context. z-10 is what
+            // the slash popups already carried, so they still stack as before.
+            borderMode && 'z-10 border-transparent',
             isDragging && 'ring-2 ring-inset ring-primary/50'
           )}
           onDragEnter={handleDragEnter}
@@ -2017,6 +2037,7 @@ export function ChatInput({
           onDragOver={handleDragOver}
           onDrop={handleDrop}
         >
+        {borderMode && <ComposerModeBorder mode={borderMode} />}
         {showSlashPopup && (
           <div className="absolute bottom-full left-0 right-0 z-10 mb-1 flex max-h-64 flex-col overflow-hidden rounded-xl border border-border bg-popover p-1.5">
             {acpSlashInitialLoading && (

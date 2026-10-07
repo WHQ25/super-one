@@ -1,5 +1,6 @@
 import type { HarnessId } from './harness-id'
 import { isGrokAcpAgent } from './acp-brand'
+import type { PromptKeyword } from '../prompt-keywords'
 
 /**
  * How a harness's session goal behaves. `null` on a harness means it has no goal
@@ -121,6 +122,11 @@ export interface HarnessCapabilities {
    * optional), which keeps the full result.
    */
   supportsShortWidgetResult: boolean
+  /**
+   * Words the harness acts on when they appear in the prompt text, for that turn
+   * only. The composer highlights them; on any other harness they are plain text.
+   */
+  promptKeywords: readonly PromptKeyword[]
   /** User-facing display name for this harness. */
   displayName: string
 }
@@ -146,6 +152,10 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     terminalCommandApproval: 'harness',
     modUi: true,
     supportsShortWidgetResult: true,
+    // `ultrathink` adds a deeper-reasoning reminder to the turn (effort is
+    // untouched); `ultracode` opts it into the Workflow tool, on messages stamped
+    // human — see `claudeMessageOrigin`.
+    promptKeywords: ['ultrathink', 'ultracode'],
     displayName: 'Claude',
   },
   codex: {
@@ -168,6 +178,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     terminalCommandApproval: 'harness',
     modUi: false,
     supportsShortWidgetResult: true,
+    promptKeywords: [],
     displayName: 'Codex',
   },
   acp: {
@@ -203,6 +214,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     terminalCommandApproval: 'harness',
     modUi: false,
     supportsShortWidgetResult: false,
+    promptKeywords: [],
     displayName: 'Others',
   },
   opencode: {
@@ -222,6 +234,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     terminalCommandApproval: 'harness',
     modUi: false,
     supportsShortWidgetResult: false,
+    promptKeywords: [],
     displayName: 'OpenCode',
   },
   cursor: {
@@ -243,6 +256,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     terminalCommandApproval: 'executor',
     modUi: false,
     supportsShortWidgetResult: false,
+    promptKeywords: [],
     displayName: 'Cursor',
   },
   dsh: {
@@ -277,6 +291,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     terminalCommandApproval: 'harness',
     modUi: false,
     supportsShortWidgetResult: false,
+    promptKeywords: [],
     displayName: 'DeepSeek',
   },
 }

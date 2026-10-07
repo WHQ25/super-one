@@ -85,6 +85,14 @@ export function getLatestCodexThreadId(messages: ChatMessage[]): string | undefi
   return undefined
 }
 
+/** The effort the Codex selector shows: the session's pick, else the model's default, else its first option. */
+export function currentCodexReasoningEffort(
+  model: ModelOption | undefined,
+  selected: CodexReasoningEffort | undefined,
+): CodexReasoningEffort | null {
+  return selected ?? model?.defaultReasoningEffort ?? model?.supportedReasoningEfforts?.[0]?.value ?? null
+}
+
 export function resolveCodexReasoningEffort(
   model: ModelOption | undefined,
   preferred?: CodexReasoningEffort,

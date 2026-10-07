@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { FIRE_SWEEP_CENTERS, fireSweepOpacity, lerpColor, DARK_COLORS, RAINBOW_DARK, RAINBOW_LIGHT } from './effort-easter-egg-palette'
+import { FIRE_SWEEP_CENTERS, fireSweepOpacity, lerpColor, DARK_COLORS } from './effort-easter-egg-palette'
 
 describe('fireSweepOpacity', () => {
   it('is full at the start of the loop and dark through the middle', () => {
@@ -30,10 +30,5 @@ describe('palettes', () => {
   it('walks the ember ramp from young to spent', () => {
     expect(lerpColor(DARK_COLORS, 0)).toEqual(DARK_COLORS[0])
     expect(lerpColor(DARK_COLORS, 1)).toEqual(DARK_COLORS[DARK_COLORS.length - 1])
-  })
-
-  it('closes both rainbows so the scroll has no seam', () => {
-    expect(RAINBOW_DARK[0]).toBe(RAINBOW_DARK[RAINBOW_DARK.length - 1])
-    expect(RAINBOW_LIGHT[0]).toBe(RAINBOW_LIGHT[RAINBOW_LIGHT.length - 1])
   })
 })

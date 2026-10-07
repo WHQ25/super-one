@@ -199,18 +199,174 @@
   background-color: var(--muted);
 }
 
-@keyframes rainbow-scroll {
-  0% { background-position: 200% 50%; }
-  100% { background-position: 0% 50%; }
+/*
+ * Claude Code's prompt-input shimmer on its keywords: a three-letter band of the
+ * lighter shimmer colours steps one letter per 50ms and runs ten letters past
+ * each end, so `ultrathink` cycles every 30 steps (1.5s) and each letter is lit
+ * for 3 of them. `ultracode`'s 9 letters would cycle 50ms sooner; it shares the
+ * 1.5s. Letter index (and which ultrathink colour) come from prompt-keyword-decoration.
+ */
+@keyframes prompt-keyword-shimmer {
+  0% { color: var(--kw-shimmer); }
+  10% { color: var(--kw-color); }
 }
 
-.rainbow-text {
-  background: linear-gradient(90deg, #ed7aab, #e0874e, #d4b040, #6abf55, #45d4c0, #5db8ff, #7d7df5, #b86ad8, #ed7aab);
-  background-size: 200% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: rainbow-scroll 2s linear infinite;
+/*
+ * Tiny5 (SIL OFL 1.1, assets/fonts/tiny5-OFL.txt), cut down to A–Z: the
+ * keywords render as pixel capitals while the draft keeps what was typed. A
+ * font pixel is 1/8 em, so 8/7 of the 14px composer (16px) makes it exactly 2
+ * screen pixels and the 5-pixel capitals as tall as the text's. `line-height:
+ * 1` keeps the larger size from growing the line.
+ */
+@font-face {
+  font-family: 'Prompt Keyword Pixel';
+  src: url('../assets/fonts/tiny5-keywords.woff2') format('woff2');
+  font-display: swap;
+}
+
+.prompt-keyword-ultrathink,
+.prompt-keyword-ultracode {
+  font-family: 'Prompt Keyword Pixel', var(--app-font-sans);
+  font-size: calc(1em * 8 / 7);
+  text-transform: uppercase;
+  line-height: 1;
+  color: var(--kw-color);
+  animation: prompt-keyword-shimmer 1.5s step-end infinite;
+  animation-delay: calc(var(--kw-index) * 50ms);
+}
+
+/*
+ * Keyword colours. The rest colours are Claude Code's: `rainbow_*` (one set in
+ * every theme) and `autoAccept`. Its shimmer colours are lighter still, which
+ * reads as a glint on a dark page but nearly vanishes on a light one, so the
+ * light theme shimmers toward a deeper shade instead: either way the band
+ * stands out further from the page than the letters at rest.
+ */
+:root {
+  --ultrathink-0: 235 95 87; --ultrathink-1: 245 139 87; --ultrathink-2: 250 195 95; --ultrathink-3: 145 200 130;
+  --ultrathink-4: 130 170 220; --ultrathink-5: 155 130 200; --ultrathink-6: 200 130 180;
+  --ultrathink-shimmer-0: 196 38 38; --ultrathink-shimmer-1: 206 84 14; --ultrathink-shimmer-2: 184 124 0;
+  --ultrathink-shimmer-3: 46 132 58; --ultrathink-shimmer-4: 34 94 180; --ultrathink-shimmer-5: 98 58 176;
+  --ultrathink-shimmer-6: 176 48 128;
+  --ultracode-shimmer: 52 0 120;
+}
+
+.dark {
+  --ultrathink-shimmer-0: 250 155 147; --ultrathink-shimmer-1: 255 185 137; --ultrathink-shimmer-2: 255 225 155;
+  --ultrathink-shimmer-3: 185 230 180; --ultrathink-shimmer-4: 180 205 240; --ultrathink-shimmer-5: 195 180 230;
+  --ultrathink-shimmer-6: 230 180 210;
+  --ultracode-shimmer: 208 180 255;
+}
+
+/* Ultracode's purple everywhere it shows: Claude Code's `autoAccept`. Magenta
+   and indigo join it only in ComposerModeBorder's turning ring. */
+:root { --ultracode: 135 0 255; --ultracode-2: 214 51 240; --ultracode-3: 99 102 241; }
+.dark { --ultracode: 175 135 255; --ultracode-2: 236 130 255; --ultracode-3: 129 140 248; }
+
+.prompt-keyword-ultracode {
+  --kw-color: rgb(var(--ultracode));
+  --kw-shimmer: rgb(var(--ultracode-shimmer));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .prompt-keyword-ultrathink,
+  .prompt-keyword-ultracode { animation: none; }
+}
+
+/*
+ * ComposerModeBorder: the composer's border while the next turn runs as
+ * Ultracode, ultrathink or Codex Ultra, its colours turning, with a soft halo;
+ * the multi-agent modes also have twinkling sparkles.
+ * Each ring is a static mask over a square conic layer that only rotates, and
+ * sparkles only scale, turn and fade, so it all runs on the compositor; the
+ * square's side is the box diagonal, so it covers every corner at any angle.
+ */
+.composer-mode-border {
+  position: absolute;
+  inset: -1px;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  container-type: size;
+}
+
+.composer-mode-border[data-mode='ultracode'] {
+  --cmb-colors: rgb(var(--ultracode)), rgb(var(--ultracode-2)), rgb(var(--ultracode-3)),
+    rgb(var(--ultracode)), rgb(var(--ultracode-2)), rgb(var(--ultracode-3)), rgb(var(--ultracode));
+  --cmb-sparkle: 214 51 240;
+}
+
+.dark .composer-mode-border[data-mode='ultracode'] { --cmb-sparkle: 246 238 255; }
+
+/* Codex Ultra: the same mode in Codex's own Ultra effort colours, taken from
+   its effort slider: indigo-blue into a lavender sheen and back through deep
+   violet. Mid-tones, so one set reads on both themes; only the sparkle flips. */
+.composer-mode-border[data-mode='codex-ultra'] {
+  --cmb-colors: rgb(66 82 195), rgb(143 121 235), rgb(188 153 255), rgb(81 55 170),
+    rgb(66 82 195), rgb(143 121 235), rgb(188 153 255), rgb(81 55 170), rgb(66 82 195);
+  --cmb-sparkle: 81 55 170;
+}
+
+.dark .composer-mode-border[data-mode='codex-ultra'] { --cmb-sparkle: 255 255 255; }
+
+.composer-mode-border[data-mode='ultrathink'] {
+  --cmb-colors: rgb(var(--ultrathink-0)), rgb(var(--ultrathink-1)), rgb(var(--ultrathink-2)), rgb(var(--ultrathink-3)),
+    rgb(var(--ultrathink-4)), rgb(var(--ultrathink-5)), rgb(var(--ultrathink-6)), rgb(var(--ultrathink-0));
+}
+
+.composer-mode-border__glow {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  filter: blur(6px);
+  opacity: 0.6;
+}
+
+.composer-mode-border__ring {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.5px;
+  overflow: hidden;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+}
+
+.composer-mode-border__glow > .composer-mode-border__ring { padding: 3px; }
+
+.composer-mode-border__spin {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: hypot(100cqw, 100cqh);
+  aspect-ratio: 1;
+  translate: -50% -50%;
+  background: conic-gradient(var(--cmb-colors));
+  animation: composer-mode-border-turn 1.8s linear infinite;
+}
+
+@keyframes composer-mode-border-turn {
+  to { rotate: 1turn; }
+}
+
+/* A four-point star, centred on its spot on the border. */
+.composer-mode-border__sparkle {
+  position: absolute;
+  translate: -50% -50%;
+  background: rgb(var(--cmb-sparkle));
+  clip-path: polygon(50% 0, 61% 39%, 100% 50%, 61% 61%, 50% 100%, 39% 61%, 0 50%, 39% 39%);
+  scale: 0;
+  animation: composer-mode-border-sparkle 2s ease-in-out infinite;
+}
+
+@keyframes composer-mode-border-sparkle {
+  0%, 50%, 100% { scale: 0; rotate: 0deg; opacity: 0; }
+  68% { scale: 1; rotate: 45deg; opacity: 1; }
+  84% { scale: 0.45; rotate: 90deg; opacity: 0.7; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .composer-mode-border__spin { animation: none; }
+  .composer-mode-border__sparkle { display: none; }
 }
 
 @keyframes fire-glow {
@@ -223,10 +379,6 @@
 .fire-text-glow {
   color: #ffd700;
   animation: fire-glow 0.8s ease-in-out infinite;
-}
-
-html:not(.dark) .rainbow-text {
-  background-image: linear-gradient(90deg, #d6336c, #e8590c, #9c6f00, #2f9e44, #0c8599, #1971c2, #6741d9, #ae3ec9, #d6336c);
 }
 
 .fire-text-ember {

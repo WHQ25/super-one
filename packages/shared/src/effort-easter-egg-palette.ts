@@ -1,12 +1,7 @@
 /**
- * Palettes for the two Claude effort easter eggs — `max` burns, `xhigh` goes
- * rainbow. Desktop paints them with canvas particles and a CSS gradient; mobile
- * paints the same colours with SVG and Animated. Shared so the two surfaces
- * cannot drift into two different fires.
- *
- * The desktop rainbow also exists as a `linear-gradient` in
- * `apps/desktop/src/renderer/src/styles/index.css` (`.rainbow-text`); keep the
- * two lists in step.
+ * Palette for Claude's `max` effort easter egg. Desktop paints it with canvas
+ * particles; mobile paints the same colours with SVG and Animated. Shared so the
+ * two surfaces cannot drift into two different fires.
  */
 
 /** Ember ramp, young → spent. Dark mode starts near white and burns down to red. */
@@ -38,16 +33,6 @@ export function lerpColor(colors: number[][], t: number): [number, number, numbe
     colors[i]![2]! + (colors[i + 1]![2]! - colors[i]![2]!) * f,
   ]
 }
-
-/** First and last stop are the same colour, so the scroll loops seamlessly. */
-export const RAINBOW_DARK = [
-  '#ed7aab', '#e0874e', '#d4b040', '#6abf55', '#45d4c0', '#5db8ff', '#7d7df5', '#b86ad8', '#ed7aab',
-]
-
-/** Darker stops: the dark-mode rainbow washes out on a light surface. */
-export const RAINBOW_LIGHT = [
-  '#d6336c', '#e8590c', '#9c6f00', '#2f9e44', '#0c8599', '#1971c2', '#6741d9', '#ae3ec9', '#d6336c',
-]
 
 /** The molten fill under `max`, as radial-gradient stops (offset, colour). */
 export const FIRE_FILL_STOPS: Array<[number, string]> = [

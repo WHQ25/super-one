@@ -143,17 +143,17 @@ export function optionParamsForModel(
 }
 
 /**
- * Claude's two effort easter eggs, which replace the whole trigger label:
- * `max` burns, `xhigh` goes rainbow. Only Claude has them on desktop, and only
- * when effort is a real choice.
+ * Claude's `max` effort easter egg, which replaces the whole trigger label with
+ * a burning one. Only Claude has it on desktop, and only when effort is a real
+ * choice.
  */
 export function effortEasterEgg(
   harness: HarnessId,
   effort: string,
   efforts: RemoteEffortOption[],
-): 'max' | 'xhigh' | null {
+): 'max' | null {
   if (harness !== 'claude' || !hasSelectableEffort(efforts)) return null
-  return effort === 'max' || effort === 'xhigh' ? effort : null
+  return effort === 'max' ? 'max' : null
 }
 
 /** Trigger summary the desktop also shows: a non-default `optimize_for` pick. */

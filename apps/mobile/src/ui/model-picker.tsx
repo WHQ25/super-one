@@ -14,7 +14,7 @@ import type {
 import { useMobileTheme } from '../theme/context'
 import { AnchoredMenu, MenuDisclosureRow, MenuRow, MenuSeparator, MenuTextInput, useMenuAnchor } from './anchored-menu'
 import { EffortSlider } from './effort-slider'
-import { FireText, RainbowText } from './effort-easter-egg'
+import { FireText } from './effort-easter-egg'
 import { CHIP_HEIGHT, CHIP_HIT_SLOP, chipTriggerBackground } from './chip-metrics'
 import { AgentSection, ModeSection, OptionsSection, ProviderSection, SectionLabel } from './model-picker-sections'
 import {
@@ -103,8 +103,8 @@ export function ModelPicker(props: ModelPickerProps) {
     try { await props.onRefresh() } catch (cause) { setError(cause instanceof Error ? cause.message : t('Could not refresh models')) }
     finally { setLoading(false) }
   }
-  // Claude's two effort easter eggs replace the whole trigger, as on desktop.
-  const eggLabel = `${modelLabel.toUpperCase()} · ${props.effort === 'max' ? 'MAX' : 'ULTRATHINK'}`
+  // Claude's max effort easter egg replaces the whole trigger, as on desktop.
+  const eggLabel = `${modelLabel.toUpperCase()} · MAX`
   const egg = effortEasterEgg(props.harness, props.effort, props.efforts)
   // Shrink weights mirror the desktop trigger: the model name is the last thing
   // to be truncated, agent next, effort and option summaries give way first.
@@ -129,8 +129,7 @@ export function ModelPicker(props: ModelPickerProps) {
         {!props.compact ? <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>{t('Model')}</Text> : null}
         {/* Truncation priority follows desktop: effort and options give way long before the model name. */}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-          {egg === 'max' ? <FireText fontSize={props.compact ? 12 : 15}>{eggLabel}</FireText> : null}
-          {egg === 'xhigh' ? <RainbowText fontSize={props.compact ? 12 : 15}>{eggLabel}</RainbowText> : null}
+          {egg ? <FireText fontSize={props.compact ? 12 : 15}>{eggLabel}</FireText> : null}
           {!egg && fastEnabled ? <Zap size={props.compact ? 11 : 13} color={colors.mutedForeground} fill={colors.mutedForeground} /> : null}
           {!egg && triggerParts.map((part, index) => <View key={`${part.text}-${index}`}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 4, flexShrink: part.shrink, minWidth: 0 }}>

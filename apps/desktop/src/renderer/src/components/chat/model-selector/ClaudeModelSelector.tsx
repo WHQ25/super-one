@@ -154,9 +154,7 @@ export function ClaudeModelSelector({ onCloseAutoFocus }: Props) {
   const eggName = (currentModelName ?? 'Model').toUpperCase()
   const triggerLabel = selectedEffort === 'max'
     ? <FireText>{`${eggName} · MAX`}</FireText>
-    : selectedEffort === 'xhigh'
-      ? <span className="rainbow-text font-normal">{`${eggName} · ULTRATHINK`}</span>
-      : undefined
+    : undefined
 
   return (
     <div className="flex items-center gap-1">

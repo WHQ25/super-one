@@ -243,9 +243,9 @@ describe('effort easter eggs', () => {
     { value: 'max', label: 'Max' },
   ]
 
-  it('burns on max and goes rainbow on xhigh, for Claude only', () => {
+  it('burns on max, for Claude only', () => {
     expect(effortEasterEgg('claude', 'max', claudeEfforts)).toBe('max')
-    expect(effortEasterEgg('claude', 'xhigh', claudeEfforts)).toBe('xhigh')
+    expect(effortEasterEgg('claude', 'xhigh', claudeEfforts)).toBe(null)
     expect(effortEasterEgg('claude', 'low', claudeEfforts)).toBe(null)
     expect(effortEasterEgg('codex', 'max', claudeEfforts)).toBe(null)
   })

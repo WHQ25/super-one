@@ -38,6 +38,8 @@ import { useMobileTheme } from '../theme/context'
 import { AdditionalDirsChip, ContextRing, GoalChip, IconButton, PermissionModeSelector, SandboxSelector } from '../ui'
 import type { UsageMeterProps } from '../ui/usage-panel'
 import { CHIP_HEIGHT } from '../ui/chip-metrics'
+import { ComposerModeBorder } from '../ui/composer-mode-border'
+import type { ComposerMode } from '@superone/shared/composer-mode'
 
 export type ComposerSelection = {
   model: string; models: ModelOption[]; effort: string; efforts: RemoteEffortOption[]
@@ -60,6 +62,11 @@ export type ChatComposerProps = {
   contextError?: string
   onRemoveContext?: (id: string) => void
   draft: string; streaming: boolean; attachments: ImageAttachment[]
+  /**
+   * What the next turn runs as, when it is special (Ultracode, ultrathink,
+   * Codex Ultra): the input's border turns in that mode's colours.
+   */
+  composerMode?: ComposerMode | null
   /**
    * Session restore is in flight. The chips above the input belong to the
    * session being left, so they stay off until the new facts arrive.
@@ -154,8 +161,12 @@ export type ChatComposerProps = {
   overlay?: ReactNode
 }
 
+/** The phone input's pill corners. */
+const PHONE_INPUT_RADIUS = 20
+
 export function ChatComposer(props: ChatComposerProps) {
   const { tokens: { colors, radius } } = useMobileTheme()
+  const mode = props.loadingConversation ? null : props.composerMode ?? null
   const { width, height } = useWindowDimensions()
   const tablet = props.tablet ?? shouldUseTabletComposer(width, height)
   const [inputFocused, setInputFocused] = useState(false)
@@ -258,35 +269,42 @@ export function ChatComposer(props: ChatComposerProps) {
         breadcrumbs={props.mentionQuery && !isSessionMentionQuery(props.mentionQuery) && !isGitMentionQuery(props.mentionQuery)
           ? mentionBreadcrumbs(props.mentionQuery) : []} />
     </>}
-    <ScrollView keyboardShouldPersistTaps="always" scrollEnabled={false} style={{ flexGrow: 0 }}>
+    {/* A mode border's halo and sparkles reach past the input box, so nothing on the way up may clip them. */}
+    <ScrollView keyboardShouldPersistTaps="always" scrollEnabled={false} style={{ flexGrow: 0, ...(mode ? { overflow: 'visible' as const } : null) }}>
       {actionBar}
-      <View testID={tablet ? 'tablet-composer' : 'phone-composer'} style={tablet
-        ? { borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: 6 }
-        : { flexDirection: 'row', alignItems: 'flex-end', gap: 4 }}>
-        <View style={tablet ? undefined : { flex: 1, borderWidth: 1, borderColor: colors.border, borderRadius: 20, overflow: 'hidden' }}>
-          <ContextAttachments items={props.contextAttachments ?? []} removing={props.removingContexts} error={props.contextError} onRemove={props.onRemoveContext} />
-          {props.previewMcpMention ? <McpMentionPreviewMenu press={mcpPreview} read={props.previewMcpMention} onDismiss={() => setMcpPreview(null)} /> : null}
-          {props.attachments.length ? <View style={{ padding: 6 }}><AttachmentStrip attachments={props.attachments} onRemove={props.onRemoveAttachment} /></View> : null}
-          {props.nativeDraft && nativeMentionEditorAvailable ? <NativeComposerInput key={props.nativeDraft.generation ?? 0} binding={props.nativeDraft} tablet={tablet}
-            editable={!props.loadingConversation} placeholder={props.placeholder ?? 'Ask anything…'} onSubmit={props.onSubmitFromKeyboard}
-            onFocus={onFocus} onBlur={onBlur}
-            onMentionPress={props.previewMcpMention ? (press, editor) => {
-              if (press.kind !== 'mcp-resource') return
-              menuHost.measure(editor, (at) => setMcpPreview({ value: press.value, anchor: { ...press.frame, x: at.x + press.frame.x, y: at.y + press.frame.y } }))
-            } : undefined} /> : <TextInput
-            accessibilityLabel="Message"
-            editable={!props.loadingConversation}
-            style={{ color: colors.foreground, fontSize: 15, lineHeight: 22, minHeight: composerInputMinHeight(tablet), maxHeight: COMPOSER_INPUT_MAX_HEIGHT, paddingHorizontal: 12, paddingTop: 10, paddingBottom: 10, textAlignVertical: 'top' }}
-            placeholder={props.placeholder ?? 'Ask anything…'} placeholderTextColor={colors.mutedForeground}
-            value={props.draft} onChangeText={props.onDraft} multiline submitBehavior={tablet ? 'submit' : 'newline'}
-            selection={props.requestedCursor}
-            onSelectionChange={(event) => props.onCursorChange?.(event.nativeEvent.selection)}
-            onFocus={onFocus} onBlur={onBlur}
-            onSubmitEditing={props.onSubmitFromKeyboard} autoCorrect
-          />}
+      <View>
+        {tablet && mode ? <ComposerModeBorder mode={mode} radius={radius.lg} /> : null}
+        <View testID={tablet ? 'tablet-composer' : 'phone-composer'} style={tablet
+          ? { borderWidth: 1, borderColor: mode ? 'transparent' : colors.border, borderRadius: radius.lg, padding: 6 }
+          : { flexDirection: 'row', alignItems: 'flex-end', gap: 4 }}>
+          <View style={tablet ? undefined : { flex: 1 }}>
+            {!tablet && mode ? <ComposerModeBorder mode={mode} radius={PHONE_INPUT_RADIUS} /> : null}
+            <View style={tablet ? undefined : { borderWidth: 1, borderColor: mode ? 'transparent' : colors.border, borderRadius: PHONE_INPUT_RADIUS, overflow: 'hidden' }}>
+              <ContextAttachments items={props.contextAttachments ?? []} removing={props.removingContexts} error={props.contextError} onRemove={props.onRemoveContext} />
+              {props.previewMcpMention ? <McpMentionPreviewMenu press={mcpPreview} read={props.previewMcpMention} onDismiss={() => setMcpPreview(null)} /> : null}
+              {props.attachments.length ? <View style={{ padding: 6 }}><AttachmentStrip attachments={props.attachments} onRemove={props.onRemoveAttachment} /></View> : null}
+              {props.nativeDraft && nativeMentionEditorAvailable ? <NativeComposerInput key={props.nativeDraft.generation ?? 0} binding={props.nativeDraft} tablet={tablet}
+                editable={!props.loadingConversation} placeholder={props.placeholder ?? 'Ask anything…'} onSubmit={props.onSubmitFromKeyboard}
+                onFocus={onFocus} onBlur={onBlur}
+                onMentionPress={props.previewMcpMention ? (press, editor) => {
+                  if (press.kind !== 'mcp-resource') return
+                  menuHost.measure(editor, (at) => setMcpPreview({ value: press.value, anchor: { ...press.frame, x: at.x + press.frame.x, y: at.y + press.frame.y } }))
+                } : undefined} /> : <TextInput
+                accessibilityLabel="Message"
+                editable={!props.loadingConversation}
+                style={{ color: colors.foreground, fontSize: 15, lineHeight: 22, minHeight: composerInputMinHeight(tablet), maxHeight: COMPOSER_INPUT_MAX_HEIGHT, paddingHorizontal: 12, paddingTop: 10, paddingBottom: 10, textAlignVertical: 'top' }}
+                placeholder={props.placeholder ?? 'Ask anything…'} placeholderTextColor={colors.mutedForeground}
+                value={props.draft} onChangeText={props.onDraft} multiline submitBehavior={tablet ? 'submit' : 'newline'}
+                selection={props.requestedCursor}
+                onSelectionChange={(event) => props.onCursorChange?.(event.nativeEvent.selection)}
+                onFocus={onFocus} onBlur={onBlur}
+                onSubmitEditing={props.onSubmitFromKeyboard} autoCorrect
+              />}
+            </View>
+          </View>
+          {tablet ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>{attach}{props.loadingConversation ? null : controls}{sendCluster}</View>
+            : phoneActions ? null : <>{send}{stop}</>}
         </View>
-        {tablet ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>{attach}{props.loadingConversation ? null : controls}{sendCluster}</View>
-          : phoneActions ? null : <>{send}{stop}</>}
       </View>
     </ScrollView>
   </View>

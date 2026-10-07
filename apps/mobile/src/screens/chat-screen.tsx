@@ -27,6 +27,7 @@ import { TodoPanel } from '../ui/todo-panel'
 import { PendingPromptBar } from '../ui/pending-prompt-bar'
 import type { PendingPrompt } from '../pending-prompt-state'
 import { useMobileLocale } from '../i18n/context'
+import type { ComposerMode } from '@superone/shared/composer-mode'
 
 const CHAT_SOURCE = { html: CHAT_VIEW_HTML }
 
@@ -120,6 +121,8 @@ export function ChatScreen(props: {
   previewMcpMention?: (value: string) => Promise<McpMentionReadResource | null>
   draft: string
   streaming: boolean
+  /** See `ChatComposerProps.composerMode`. */
+  composerMode?: ComposerMode | null
   onWebMessage: (raw: string) => void
   onWebProcessError: (message: string) => void
   onPermissionMode: (mode: string) => void

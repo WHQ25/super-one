@@ -313,3 +313,17 @@ test('Send is disabled while restoring, then works as soon as the conversation i
   fireEvent.press(screen.getByLabelText('Send'))
   expect(taps).toBe(1)
 })
+
+test('a special next turn draws its mode border on the phone and tablet input, and only once the session is shown', async () => {
+  await renderWithTheme(composer({ composerMode: 'ultracode' }))
+  expect(screen.getByTestId('composer-mode-border')).toBeTruthy()
+
+  await renderWithTheme(composer({ composerMode: 'codex-ultra', tablet: true }))
+  expect(screen.getByTestId('composer-mode-border')).toBeTruthy()
+
+  await renderWithTheme(composer({ composerMode: 'ultrathink', loadingConversation: true }))
+  expect(screen.queryByTestId('composer-mode-border')).toBeNull()
+
+  await renderWithTheme(composer({ composerMode: null }))
+  expect(screen.queryByTestId('composer-mode-border')).toBeNull()
+})

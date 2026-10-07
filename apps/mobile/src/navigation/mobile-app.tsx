@@ -4,6 +4,8 @@ import { findMcpAppAttachment } from '@superone/shared/mcp-apps-state'
 import { invokeModUi } from '../mod-ui'
 import { mobileModClientId } from '@superone/shared/mod-ui'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
+import { composerMode } from '@superone/shared/composer-mode'
+import type { CodexReasoningEffort } from '@superone/shared/agent-types'
 import type { McpAppContextAttachment } from '@superone/shared/mcp-app-model-context'
 import { PersistedWorkspace } from '../persisted-workspace'
 import { mergeRestoredDraftText, userMessageText } from '@superone/chat-core'
@@ -207,6 +209,13 @@ export function MobileApp() {
   const [workspaceDirs, setWorkspaceDirs] = useState<string[]>([])
   const composerDraft = useComposerDraft()
   const { draft, draftRef, lastDraftChangeAtRef } = composerDraft
+  // What the next turn runs as, for the composer border (desktop `ChatInput` rule).
+  const nextTurnMode = useMemo(() => composerMode({
+    text: draft,
+    promptKeywords: HARNESS_CAPABILITIES[selectedProvider].promptKeywords,
+    ultracode: harnessSelection.ultracode,
+    codexReasoningEffort: selectedProvider === 'codex' ? selectedEffort as CodexReasoningEffort : null,
+  }), [draft, selectedProvider, harnessSelection.ultracode, selectedEffort])
   const sessionDrafts = useRef(new SessionComposerDrafts()).current
   const [terminalUi, setTerminalUi] = useState<TerminalUi>({ writable: false, title: 'Terminal', tabs: [], activeId: '' })
   const [streaming, setStreaming] = useState(false)
@@ -2289,6 +2298,7 @@ export function MobileApp() {
 
       {route === 'chat' ? (
         <ChatScreen provider={selectedProvider}
+          composerMode={nextTurnMode}
           contextAttachments={contextAttachments}
           removingContexts={contextAttachments.filter(item => removingContextViews.includes(item.appInstanceId)).map(item => item.id)}
           contextError={contextError}

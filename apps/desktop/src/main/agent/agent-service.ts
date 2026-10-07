@@ -6,6 +6,7 @@ import { loadSessionHistoryIndex, loadSessionMessageWindow } from '../session/hi
 import { buildProgressiveBootstrap } from './progressive-bootstrap'
 import { isProgressiveSession, projectProgressiveMessage, setProgressiveSession, unsetProgressiveSession } from '../remote/progressive-session'
 import { rememberAttachmentOrigin } from '../remote/attachment-echo'
+import { appendMobileLog } from '../remote/mobile-log'
 import { findAttachment } from '../remote/attachment-thumbnail'
 import { videoPosterService } from '../remote/video-poster'
 import { handleDetailCommand } from '../remote/detail-command'
@@ -1243,6 +1244,10 @@ export class AgentService {
       case 'mark_session_seen': {
         if (!this.canAccessSession(command.projectPath, command.sessionId)) break
         this.sessionManager?.getSession(command.sessionId)?.markSeen()
+        break
+      }
+      case 'append_mobile_log': {
+        await respond?.(command.requestId, { written: appendMobileLog(deviceId, command.entries) })
         break
       }
       case 'unsubscribe_session': {

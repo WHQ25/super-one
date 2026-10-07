@@ -4986,6 +4986,13 @@ export type McpAppDeviceRequest = Exclude<McpAppHostOperation, { operation: 'ope
   & Pick<McpAppHostRequest, 'appInstanceId' | 'approval'>
   & { messageId: string }
 
+/**
+ * One phone diagnostic line: transport and sync facts only, never message
+ * content or secrets. `at` is the phone's clock, so lines buffered offline keep
+ * their real order.
+ */
+export type MobileLogEntry = { at: string; tag: string; fields?: Record<string, string | number | boolean | null> }
+
 export type RemoteCommand =
   | { type: 'session_link_identity'; requestId: string }
   | { type: 'session_link_metadata'; requestId: string; refs: import('./environment/refs').SessionRef[] }
@@ -5022,6 +5029,8 @@ export type RemoteCommand =
   | { type: 'unsubscribe_session'; sessionId?: string }
   /** The phone is showing this session in the foreground; the host records its latest completion as read. */
   | { type: 'mark_session_seen'; projectPath: string; sessionId: string }
+  /** Diagnostic lines the phone buffered; the host appends them to its `mobile.log`. */
+  | { type: 'append_mobile_log'; requestId: string; entries: MobileLogEntry[] }
   | { type: 'leave_session'; sessionId: string }
   | { type: 'subscribe_detail'; requestId: string; projectPath: string; sessionId: string; detailRef: string; subscriptionId: string }
   | { type: 'unsubscribe_detail'; requestId: string; projectPath: string; sessionId: string; subscriptionId: string }

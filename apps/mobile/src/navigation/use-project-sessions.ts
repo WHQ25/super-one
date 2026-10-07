@@ -5,6 +5,7 @@ import type { Project } from '../project-types'
 import { flattenSessionGroups, groupSessionRows, mergeActivityIntoRows, SESSION_REVEAL_STEP, type SessionListItem, type SessionListRow } from '../session-list-state'
 import type { WorkspaceListCache } from '../workspace-list-cache'
 import { readProjectSessions, SESSION_PAGE_SIZE } from './workspace-data'
+import { logSidebar } from '../relay-debug'
 
 /**
  * A dropped socket is reported under the device name, not as a project's list
@@ -167,6 +168,7 @@ export function useProjectSessions({
     refreshing.current = true
     const request = generation.current
     const revision = cache.revisionOf(path)
+    logSidebar('list refresh', { path, revision })
     void readProjectSessions(client, path, { limit: Math.max(loadedRef.current, SESSION_PAGE_SIZE), offset: 0 })
       .then((page) => {
         if (request !== generation.current) return
@@ -174,10 +176,11 @@ export function useProjectSessions({
         setTotal(page.totalCount)
         setSynced(revision)
         setError('')
+        logSidebar('list refreshed', { path, revision, rows: page.sessions.length })
       })
       // A failed background refresh leaves the cached list alone; the user did
       // not ask for it and has nothing to retry.
-      .catch(() => {})
+      .catch((cause: unknown) => logSidebar('list refresh failed', { path, reason: cause instanceof Error ? cause.message : String(cause) }))
       .finally(() => { refreshing.current = false })
   }, [client, path, cache])
 

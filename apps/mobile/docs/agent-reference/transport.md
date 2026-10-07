@@ -40,8 +40,12 @@ and reports input and bounded resize messages to RN.
   dial, which goes stale while the phone is backgrounded and would retry forever.
   A restore the host *answers* with an error (`RestoreRejectedError`: session gone,
   locked, denied) settles the connection and returns to the workspace instead of
-  redialling. The loop logs `[reconnect]` lines (route, state, retry reason) in
-  release builds too; read them with `adb logcat -s ReactNativeJS`.
+  redialling. The loop logs `[reconnect]` lines (route, state, retry reason), and
+  list sync logs `[sidebar]` lines, in release builds too. Both are also held in
+  `diagnostic-log.ts` (1,000 lines, kept across disconnects) and uploaded with
+  `append_mobile_log` while connected and on backgrounding; the desktop writes them
+  to `mobile.log` beside `main.log` (`dev-mobile.log` in dev), stamped with the
+  phone's clock. Fields are transport and sync facts only.
   A reopened socket is still `reconnecting`: publish `connected` and
   the new epoch only after rehydrate releases the buffer. **An open relay socket says
   nothing about the desktop** — the relay accepts a lone mobile as a mailbox — so a

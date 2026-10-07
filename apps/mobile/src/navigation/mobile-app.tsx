@@ -149,7 +149,8 @@ import { useReconnectOnForeground } from '../use-reconnect-on-foreground'
 import { useDeviceDiscovery } from './use-device-discovery'
 import { isFullBleedScreen } from '../layout-state'
 import { isReachable, type ReconnectInfo } from '../device-status'
-import { logConnection, logRelayEventTypes } from '../relay-debug'
+import { logConnection, logRelayEventTypes, logSidebar } from '../relay-debug'
+import { useDiagnosticUpload } from './use-diagnostic-upload'
 import { dynamicMentionArtworkRevision, dynamicMentionArtworkSnapshot } from '../ui/mention-dynamic-artwork'
 import { loadMcpIcons, mcpIconsRevision, mcpIconsSnapshot } from '../mcp-icons'
 import { useMobileLocale } from '../i18n/context'
@@ -340,6 +341,7 @@ export function MobileApp() {
   const filePreview = useFilePreview({ clientRef, transport: activeTransport, project, sessionId, pairingId: activePairingId })
   const promptCollapse = usePromptCollapse()
   useOrientationLock({ filePreviewOpen: filePreview.state != null })
+  useDiagnosticUpload(workspaceClientRef.current, connectionState === 'connected')
   const workspaceActivity = useWorkspaceActivity(workspaceClientRef.current, connectionState === 'connected', !routedEnvironmentId && screen === 'chat' && !sessionSwitcherOpen ? sessionId : null)
   const directory = useRemoteDirectory(clientRef)
   const { load: loadDirectory, path: directoryPath, items: directoryItems } = directory
@@ -916,7 +918,8 @@ export function MobileApp() {
         if (connectGeneration !== connectGenerationRef.current) return
         persisted.set('projects', rows)
         setProjects(rows)
-      }).catch(error => logConnection('project refresh failed', { reason: error instanceof Error ? error.message : String(error) }))
+        logSidebar('projects refreshed', { count: rows.length })
+      }).catch(error => logSidebar('projects refresh failed', { reason: error instanceof Error ? error.message : String(error) }))
     }
     const connectionHooks: Parameters<typeof createMobileRelayConnection>[0] = {
       // The workspace surfaces (drawer lists, drafts, activity) read the raw
@@ -930,8 +933,12 @@ export function MobileApp() {
         if (invalidated.length) {
           for (const path of invalidated) cache.invalidate(path)
           setSessionListRevision((n) => n + 1)
+          logSidebar('lists invalidated', { paths: invalidated.join(',') })
         }
-        if (projectListChanged(events)) refreshProjects(workspaceClientRef.current)
+        if (projectListChanged(events)) {
+          logSidebar('project list changed')
+          refreshProjects(workspaceClientRef.current)
+        }
       },
       onEvents: (events, epoch) => {
         if (connectGeneration !== connectGenerationRef.current) return
@@ -986,6 +993,7 @@ export function MobileApp() {
         if (state === 'connected' && connectionRef.current?.state !== 'connected') {
           cache.invalidateAll()
           setSessionListRevision((n) => n + 1)
+          logSidebar('all lists invalidated', { after: connectionRef.current?.state ?? null })
         }
         connectionRef.current = { state, epoch }
         setConnectionState(state)

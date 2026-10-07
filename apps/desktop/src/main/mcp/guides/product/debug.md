@@ -43,11 +43,22 @@ Main process logs use `electron-log`. File name is typically `main.log` (older r
 
 (Older installs may still have a leftover `super-one` logs folder; prefer `SuperOne` and the resolved path in **Runtime paths** below.)
 
+The alpha variant logs under `SuperOne Alpha` instead of `SuperOne`.
+
+### Paired phone diagnostics
+
+Paired phones upload their connection and session-list sync lines to
+**`mobile.log`** (rotated to `mobile.log.old`) in the same folder as `main.log`.
+Each line is `[phone ISO time] [device id prefix] tag key=value …`, using the
+phone's clock so lines buffered while it was offline keep their real order.
+Read it alongside `main.log` when the phone missed an update or failed to reconnect.
+
 ### Development (`bun run dev` from the monorepo)
 
 | What | Path |
 |------|------|
 | Main log | `apps/desktop/dev.log` (cwd when you start dev; wiped on each `bun run dev`) |
+| Paired phone log | `apps/desktop/dev-mobile.log` |
 | Dev userData | `apps/desktop/.dev-data/` |
 | Event trace DB (if enabled) | `apps/desktop/event-trace.db` |
 

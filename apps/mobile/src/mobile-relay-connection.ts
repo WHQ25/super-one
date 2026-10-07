@@ -158,6 +158,7 @@ export function createMobileRelayConnection(hooks: MobileRelayConnectionHooks): 
         // `peer_disconnected` came. Everything it sent while away was dropped;
         // its handshake restores like any other return.
         if (reconnectController.isActive || peerRestore) return
+        logConnection('desktop reattached', { transport: client.transport })
         peerLost = true
         report('reconnecting', hooks.currentEpoch(client))
         return

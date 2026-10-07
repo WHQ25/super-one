@@ -13,6 +13,40 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ## [Unreleased]
 
+### Fixed
+
+- Preserve Codex's requested model and reasoning effort across session
+  creation, restart and resume.
+- Let unanswered usage-reset offers be dismissed and expire when the quota
+  resets, so they no longer block sending.
+- Keep chat history and the empty-chat landing still while switching
+  composers; taller composers rise without clipping.
+- Align session link chips with file chips.
+
+### Changed
+
+- Align the image composer with the text composer and add a reference
+  attachment button; show the reference drop hint in the prompt placeholder.
+
+## [0.72.1-alpha] - 2026-10-07
+
+### Fixed
+
+- Preserve Codex's requested model and reasoning effort across session
+  creation, restart and resume.
+- Let unanswered usage-reset offers be dismissed and expire when the quota
+  resets, so they no longer block sending.
+- Keep chat history and the empty-chat landing still while switching
+  composers; taller composers rise without clipping.
+- Align session link chips with file chips.
+
+### Changed
+
+- Align the image composer with the text composer and add a reference
+  attachment button; show the reference drop hint in the prompt placeholder.
+
+## [0.72.0] - 2026-10-07
+
 ### Added
 
 - Session links open chats across environments, including archived remote-node
@@ -68,69 +102,6 @@ Every alpha release keeps its own notes on its GitHub Release.
   settings' default alias. Composer messages are marked human-typed, while
   peer tasks remain non-human.
 - Desktop DevTools open on startup only with an explicit flag.
-
-## [0.72.0-alpha] - 2026-10-07
-
-### Added
-
-- Session links open chats across environments, including archived remote-node
-  transcripts. Scheduled sends support remote nodes and retain captured turn
-  settings.
-- Claude Ultracode is selectable on desktop, phone and remote nodes. Composer
-  borders and animated prompt keywords show the next turn's Ultracode,
-  ultrathink or Codex Ultra mode.
-- Image and video generation use chat composers with model-specific controls,
-  reference attachments and an Ask Agent action. Reference images retain
-  detail within each model's input limits.
-- Image file chips show thumbnails and previews; tools receive full-size
-  attachment originals after uploads finish.
-- Session forms share composer APIs across desktop, phone, mini-apps and
-  widgets, with draft retention, cancellation and validated submissions.
-- Queued messages synchronize across clients and appear as dimmed chat bubbles
-  on phones. Composer drafts synchronize between main and mini windows.
-
-### Fixed
-
-- Codex sends the displayed model and effort on every turn and recreates empty
-  drafts when switching from another harness.
-- Session switching avoids duplicate transcript rows, clears the previous
-  harness's context usage and restores consistent titles. Codex voice
-  restoration preserves saved message order; voice status appears in the
-  sidebar.
-- Claude account identity and usage follow the selected credential. Running
-  remote sessions apply model and permission changes, and the UI follows the
-  mode Claude actually accepts.
-- Widgets keep state when collapsed, render correctly in mobile subagent tool
-  rows and no longer wait indefinitely for a hidden desktop frame. Remote tool
-  results remain isolated by session.
-- Decision prompts retain keyboard focus and show newline shortcuts. Side-chat
-  input stays separate from drafts; copied and pasted chips preserve their
-  content and order.
-- Browser annotation marks disappear when their composer chips are removed or
-  sent. Active activity-panel tabs remain fully visible.
-- Composer hints scale with chat density, and input modes share consistent
-  spacing.
-
-### Changed
-
-- Upgrade Claude Agent SDK to 0.3.292 (Claude Code 2.1.292); resumed subagents
-  return to the running state on their own cards.
-- Widgets share collapsible MCP App frames, show generation status and return
-  concise tool results; saved templates exclude their data prelude.
-- Browser snapshots display screenshots. Browser calls now require a non-empty
-  description; refresh the tool catalog and supply descriptions in the
-  conversation language.
-- Remove the agent composer_request tool; agents use their harness question
-  tools. Mini-app and widget composer APIs remain available.
-- Claude model selection pins concrete catalog entries instead of the CLI
-  settings' default alias. Composer messages are marked human-typed, while
-  peer tasks remain non-human.
-- Desktop DevTools open on startup only with an explicit flag.
-
-### Tests
-
-- Align desktop session, widget and paste-chip fixtures with current contracts
-  and browser requirements.
 
 ## [0.71.0] - 2026-10-05
 

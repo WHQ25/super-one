@@ -4,6 +4,7 @@ import {
   groupSessionRows,
   mergeActivityIntoRows,
   partitionSessionGroups,
+  projectListChanged,
   sessionListInvalidations,
   visibleSessionGroups,
   type SessionListRow,
@@ -264,5 +265,12 @@ describe('mergeActivityIntoRows', () => {
     }, '/repo')
     expect(merged.map((session) => session.sessionId)).toEqual(['running', 'listed'])
     expect(merged[0]).toMatchObject({ title: 'Long running task', status: 'streaming' })
+  })
+})
+
+describe('projectListChanged', () => {
+  it('spots the signal in a mixed batch and ignores malformed frames', () => {
+    expect(projectListChanged([null, { type: 'content_delta', sessionId: 's1' }, { type: 'project_list_changed' }])).toBe(true)
+    expect(projectListChanged([null, 'project_list_changed', { type: 'session_list_changed', projectPath: '/repo' }])).toBe(false)
   })
 })

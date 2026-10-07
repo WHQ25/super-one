@@ -236,3 +236,8 @@ export function sessionListInvalidations(events: unknown[]): string[] {
   }
   return paths
 }
+
+/** Whether the host reported its project list as changed in this batch. */
+export function projectListChanged(events: unknown[]): boolean {
+  return events.some(event => !!event && typeof event === 'object' && (event as { type?: unknown }).type === 'project_list_changed')
+}

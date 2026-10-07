@@ -93,6 +93,12 @@ reconnect bumps it once — events sent while the socket was down were never
 delivered. The re-read is `refresh()`: in place, no spinner, no wipe, and a
 failure leaves the cached list alone.
 
+Project rows follow the same rule. The recents store (`recent-folders.ts`) emits
+`project_list_changed` on a first registration, a removal or a rename; the shell
+re-reads `list_projects` on it and after every redial, keeping the shown rows if
+the read fails. Without it a project added on the desktop — and every session in
+it — stayed invisible until the phone re-paired.
+
 The desktop half is wired at the **db layer** (`watchSessionList` in
 `db-sessions.ts`), not at the callers: the same seven mutations are reached from
 IPC, the session manager, automations and remote commands, so a notification hung

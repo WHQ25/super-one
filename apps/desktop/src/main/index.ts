@@ -99,7 +99,7 @@ import { nodePtySpawner } from './terminal/pty'
 import { DeviceRegistry } from './remote/device-registry'
 import { MobileBroadcaster } from './remote/mobile-broadcaster'
 import { spawnParentOf } from './session/collaboration-mailbox'
-import { watchSessionDeletes, watchSessionList } from './session-list-watch'
+import { watchProjectList, watchSessionDeletes, watchSessionList } from './session-list-watch'
 import { localDraftStore } from './db-drafts'
 import { withoutDraftAttachmentBytes } from '@superone/shared/environment/draft-content'
 import { installDraftOpenFlush } from './remote/draft-open-flush'
@@ -4592,6 +4592,9 @@ function registerIpcHandlers(): void {
   // constructing the service in a test leaves no process-wide watcher behind.
   watchSessionList((projectPath) => {
     agentService.notifyEventSubscribers({ type: 'session_list_changed', projectPath })
+  })
+  watchProjectList(() => {
+    agentService.notifyEventSubscribers({ type: 'project_list_changed' })
   })
   // A deleted session takes its sync zone and transfer jobs with it
   // (docs/architecture/session-sync-zone.md §7) — off the db-layer signal, so the

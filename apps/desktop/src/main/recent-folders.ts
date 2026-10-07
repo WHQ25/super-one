@@ -6,6 +6,7 @@ import type { RecentFolder } from '@superone/shared/agent-types'
 import { PATH_EXISTS_LIST_TIMEOUT_MS, pathExistsBounded } from './path-exists-bounded'
 import { parseProjectExtraDirs, resolveProjectExtraDirs, type ProjectExtraDirsPatch } from '@superone/shared/project-extra-dirs'
 import { normalizeProjectExtraDirs } from '@superone/shared/project-extra-dirs-node'
+import { notifyProjectList } from './session-list-watch'
 
 export function getRecentFolders(): RecentFolder[] {
   const db = getDb()
@@ -53,6 +54,8 @@ export function addRecentFolder(folderPath: string): void {
   const db = getDb()
   const now = new Date().toISOString()
   const name = basename(folderPath)
+  // Runs on every `openFolder`; only a first registration changes the list.
+  const isNew = getProjectId(folderPath) === null
 
   db.prepare(`
     INSERT INTO projects (id, path, name, added_at)
@@ -60,6 +63,7 @@ export function addRecentFolder(folderPath: string): void {
     ON CONFLICT(path) DO UPDATE SET
       name = CASE WHEN projects.is_user_renamed = 1 THEN projects.name ELSE excluded.name END
   `).run(randomUUID(), folderPath, name, now)
+  if (isNew) notifyProjectList()
 }
 
 
@@ -69,6 +73,7 @@ export function removeRecentFolder(folderPath: string): void {
   db.prepare('DELETE FROM projects WHERE path = ?').run(folderPath)
   void import('./mcp-apps/resource-store').then(module => module.scheduleMcpAppResourceGc()).catch(() => {})
   if (projectId) dropMiniAppOrderBucket(projectId)
+  if (projectId) notifyProjectList()
 }
 
 export interface UpdateProjectInput extends ProjectExtraDirsPatch {
@@ -127,6 +132,7 @@ export function updateProject(input: UpdateProjectInput): RecentFolder {
         extra_dirs_json = COALESCE(?, extra_dirs_json)
     WHERE id = ?
   `).run(nextName, renamedFlag, nextExtraDirs, row.id)
+  if (nextName !== null) notifyProjectList()
 
   const updated = getRecentFolders().find((f) => f.id === row.id)
   if (!updated) {

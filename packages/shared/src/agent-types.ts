@@ -2039,6 +2039,8 @@ export type AgentEventBase =
    * every paired device rather than to one session's subscribers.
    */
   | { type: 'session_list_changed'; projectPath: string }
+  /** The host's project list gained, lost or renamed a project. Same invalidation shape as above. */
+  | { type: 'project_list_changed' }
   | { type: 'session_activity'; activity: import('./session-activity').SessionActivity; completed?: boolean }
   /**
    * Ultra-short one-line summary of the just-finished turn (Grok `last_turn_summary`).

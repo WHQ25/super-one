@@ -1,5 +1,5 @@
 import { lookupSessionLinkMetadata, resolveSessionLink, sessionLinkBaseClient, type SessionLinkPreparation, type ResolvedSessionLink } from '../session-link-navigation'
-import { readConnectionWorkspace } from '../connection-workspace'
+import { readConnectionWorkspace, readProjects } from '../connection-workspace'
 import { activatePreparedSessionLink } from '../session-link-transition'
 import type { SessionRef } from '@superone/shared/environment/refs'
 import { openWidgetInputRequest } from '../widget-input-request'
@@ -95,7 +95,7 @@ import {
 } from '../worktree-state'
 import { shouldUseTabletMultiPane } from '../layout-state'
 import { WorkspaceSidebar } from './workspace-sidebar'
-import { sessionListInvalidations, type SessionListRow as SessionRow } from '../session-list-state'
+import { projectListChanged, sessionListInvalidations, type SessionListRow as SessionRow } from '../session-list-state'
 import { WorkspaceListCache } from '../workspace-list-cache'
 import { injectHostMessage as inject, resolveNativeRequest, type NativeActionPorts } from '../native-actions'
 import { createMediaPorts } from '../media-ports'
@@ -908,6 +908,16 @@ export function MobileApp() {
     if (Array.isArray(cachedHarnesses)) setHarnessOptions(cachedHarnesses.filter(row => row && typeof row.provider === 'string'))
 
     networkLedger.checkpoint('cache-loaded')
+    // Project rows follow the host: re-read on its signal and after a redial,
+    // which missed any signal sent meanwhile. A failed read keeps what is shown.
+    const refreshProjects = (activeClient: RelayClient | null) => {
+      if (!activeClient) return
+      void readProjects(activeClient).then(rows => {
+        if (connectGeneration !== connectGenerationRef.current) return
+        persisted.set('projects', rows)
+        setProjects(rows)
+      }).catch(error => logConnection('project refresh failed', { reason: error instanceof Error ? error.message : String(error) }))
+    }
     const connectionHooks: Parameters<typeof createMobileRelayConnection>[0] = {
       onEvents: (events, epoch) => {
         if (connectGeneration !== connectGenerationRef.current) return
@@ -930,6 +940,7 @@ export function MobileApp() {
           for (const path of invalidated) cache.invalidate(path)
           setSessionListRevision((n) => n + 1)
         }
+        if (projectListChanged(events)) refreshProjects(workspaceClientRef.current)
         additionalDirsRef.current.ingest(events)
         runtimeRef.current?.ingest(events, epoch)
         // The runtime does not reduce mod events; the document's mod client does.
@@ -944,6 +955,7 @@ export function MobileApp() {
         invalidateGitResources(activeClient)
         await remoteDraftsRef.current.reconnect().catch((error) => setStatus(error instanceof Error ? error.message : 'Could not restore drafts'))
         markHarnessResourcesStale(activeClient)
+        refreshProjects(activeClient)
         await loadMcpIcons(activeClient, runtimeRef.current?.projectPath)
         const runtime = runtimeRef.current
         if (!runtime) return activeClient.releaseBuffer().epoch

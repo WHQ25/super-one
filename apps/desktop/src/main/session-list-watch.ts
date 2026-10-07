@@ -29,6 +29,23 @@ export function notifySessionList(projectPath: string | null | undefined): void 
 }
 
 /**
+ * "The host's project list changed" — a project was registered, removed or
+ * renamed. Same reasoning as the session list: registration is reached from
+ * IPC, remote `add_project`, clone and collaboration spawns, so the signal hangs
+ * off the recents store rather than any one of them.
+ */
+const projectListWatchers = new Set<() => void>()
+
+export function watchProjectList(watcher: () => void): () => void {
+  projectListWatchers.add(watcher)
+  return () => { projectListWatchers.delete(watcher) }
+}
+
+export function notifyProjectList(): void {
+  for (const watcher of projectListWatchers) watcher()
+}
+
+/**
  * "These sessions no longer exist" — the signal everything that holds
  * per-session state outside the database reclaims on (the sync zone under
  * userData, its transfer jobs). Same reasoning as the list watcher: three

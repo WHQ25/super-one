@@ -211,6 +211,11 @@ export class ClaudeBackend implements SessionBackend {
     return this.onElicitationHandle
   }
 
+  private syncReportedPermissionMode(mode: PermissionMode): void {
+    if (this._lastStartOpts) this._lastStartOpts.permissionMode = mode
+    this.emitPermissionModeApplied(mode)
+  }
+
   private emitPermissionModeApplied(mode: PermissionMode): void {
     for (const cb of this.permissionModeAppliedListeners) {
       try { cb(mode) } catch (err) { log.warn('[ClaudeBackend] permissionModeApplied listener error:', err) }
@@ -1134,6 +1139,13 @@ export class ClaudeBackend implements SessionBackend {
     if (event.type === 'permission_request') {
       log.info('[ClaudeBackend.emit] permission_request listeners=%d requestId=%s', this.eventListeners.size, event.request.requestId)
     }
+    // The CLI reports its effective mode in every turn's init and in a status after
+    // each change — including a fallback it picks itself (auto unavailable for the
+    // model). The stream is ordered, so the latest report is the truth.
+    const reportedMode = event.type === 'session_init'
+      ? event.session.permissionMode
+      : event.type === 'status_indicator' ? event.permissionMode : undefined
+    if (reportedMode) this.syncReportedPermissionMode(reportedMode)
     for (const cb of this.eventListeners) {
       try { cb(event) } catch (err) { log.warn('[ClaudeBackend] event listener error:', err) }
     }

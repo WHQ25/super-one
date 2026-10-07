@@ -193,6 +193,8 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
     mcpDiskKey: string
     /** Sorted directory set at open time — ACP-style: only changes on restart. */
     additionalDirsKey: string
+    /** Ultracode the process runs with; a turn that names another switches it live. */
+    ultracode: boolean
     /** Servers the live process was opened with; MCP App bindings fingerprint them. */
     mcpServers: Record<string, unknown>
     /** Tool UI metadata of this process, loaded on its first MCP tool call. */
@@ -294,6 +296,7 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
     enabledSkills?: string[]
     disabledSkills?: string[]
     apiProviderId?: string | null
+    ultracode?: boolean
   }): LiveEntry => {
     const sessionKey = p.session.sessionId
     const hostActionMcp = opts.createHostActionClaudeMcp?.(sessionKey) ?? null
@@ -348,6 +351,7 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
       sessionId: parseClaudeSessionResume(p.session.providerResume),
       model: p.model && p.model.trim() ? p.model.trim() : undefined,
       effort: p.effort && p.effort.trim() ? p.effort.trim() : undefined,
+      ultracode: p.ultracode,
       permissionMode: p.permissionMode,
       uid: p.uid,
       sandboxMode: p.sandboxMode && p.sandboxMode.trim() ? p.sandboxMode.trim() : undefined,
@@ -366,6 +370,7 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
       cwd: p.cwd,
       mcpDiskKey: mcpDiskKeyOf(merged.diskNames),
       additionalDirsKey: additionalDirsKeyOf(p.additionalDirectories?.filter(Boolean)),
+      ultracode: p.ultracode ?? false,
       mcpServers: merged.claudeMcpServers,
       mcpAppsCatalog,
       refreshMcpAppsCatalog: refreshCatalog,
@@ -434,6 +439,9 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
     const nextAdditionalDirsKey = additionalDirsKeyOf(input.additionalDirectories?.filter(Boolean))
 
     let entry = lives.get(sessionKey)
+    // A turn without a say (a host wake) keeps the Ultracode the process had,
+    // across a restart too.
+    const ultracode = input.ultracode ?? entry?.ultracode
     // Restart live session if cwd changed (worktree switch), the MCP allowlist
     // changed, or the directory set changed.
     if (
@@ -460,7 +468,13 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
       enabledSkills: input.enabledSkills,
       disabledSkills: input.disabledSkills,
       apiProviderId: input.apiProviderId,
+      ultracode,
     })
+    if (ultracode !== undefined && ultracode !== entry.ultracode) {
+      await entry.live.setUltracode(ultracode)
+      entry.ultracode = ultracode
+      input.onAgentEvent?.({ type: 'agent_setting_change', patch: { ultracode } })
+    }
     entry.onAmbientEvent = input.onAmbientEvent
     if (input.onAmbientEvent) for (const event of entry.modBacklog.splice(0)) input.onAmbientEvent(event)
 

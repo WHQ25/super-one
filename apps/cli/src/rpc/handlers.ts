@@ -2437,6 +2437,9 @@ async function handleSessionSend(payload: unknown, ctx: RpcContext): Promise<Rpc
         : p.reviewTarget !== undefined
           ? p.reviewTarget
           : undefined
+    // Claude Ultracode is the client's session toggle, sent with every turn
+    // like model and effort; the node keeps no durable copy.
+    const ultracode = typeof options.ultracode === 'boolean' ? options.ultracode : undefined
 
     // Precedence: client turn options → durable session settings (patchSettings)
     // → node agent defaults. SessionRuntime also re-applies session fallbacks.
@@ -2520,6 +2523,7 @@ async function handleSessionSend(payload: unknown, ctx: RpcContext): Promise<Rpc
             ? (collaborationMode as string | Record<string, unknown>)
             : undefined,
       reviewTarget,
+      ultracode,
     })
     return { result }
   } catch (err) {

@@ -215,6 +215,11 @@ export type TurnRunner = ((input: {
    * host wake. Claude stamps only the user's own as human-typed.
    */
   source?: ChatMessageSource
+  /**
+   * Claude Ultracode (SDK `settings.ultracode`) from this turn on; omitted keeps
+   * what the live harness process already runs with.
+   */
+  ultracode?: boolean
   /** Codex collaboration mode (string mode name or app-server object). */
   collaborationMode?: string | Record<string, unknown> | null
   /** Codex review/start target payload. */

@@ -72,6 +72,8 @@ export interface ClaudeLiveSessionOptions {
   resumeDropsTurn?: string
   model?: string
   effort?: string
+  /** Ultracode at open (SDK `settings.ultracode`); `setUltracode` switches a running process. */
+  ultracode?: boolean
   permissionMode?: string
   /**
    * Effective uid of the harness process for the root permission guard.
@@ -282,7 +284,11 @@ function buildLiveOptions(
     env,
     // Constant: the CLI only defaults the Bash working-tree diff on in auto /
     // bypassPermissions mode, and the chat renders those edits as file rows.
-    settings: { ...(settingsEnv ? { env: settingsEnv } : {}), bashEditDiffEnabled: true },
+    settings: {
+      ...(settingsEnv ? { env: settingsEnv } : {}),
+      bashEditDiffEnabled: true,
+      ...(opts.ultracode ? { ultracode: true } : {}),
+    },
   }
 
   return {
@@ -472,6 +478,14 @@ export class ClaudeLiveSession {
       }
       this.startTurn({ tag, msg, input, resolve, reject })
     })
+  }
+
+  /**
+   * Switches Ultracode in place. `ultracode` alone, never with `effortLevel`:
+   * an effort change sent without the ultracode key turns Ultracode off.
+   */
+  async setUltracode(enabled: boolean): Promise<void> {
+    await this.query?.applyFlagSettings({ ultracode: enabled })
   }
 
   async dispose(): Promise<void> {

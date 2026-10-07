@@ -86,4 +86,22 @@ describe('ClaudeModelSelector Ultracode toggle', () => {
     expect(selectorProps.optionParams).toEqual([])
     expect(session().ultracode).toBe(false)
   })
+
+  it('offers Ultracode on a remote project, where the next turn carries it instead of IPC', () => {
+    const remote = 'remote:conn-1:/srv/app'
+    useChatStore.getState().ensureSession(remote)
+    useChatStore.setState((s) => ({
+      activeProject: remote,
+      projectSessions: { ...s.projectSessions, [remote]: { ...s.projectSessions[remote]!, claudeModels: [OPUS] } },
+    }))
+    useChatStore.getState().setSelectedModel('opus')
+    render(<ClaudeModelSelector />)
+    setSessionSettings.mockClear()
+
+    act(() => selectorProps.onOptionParamChange?.('ultracode', 'true'))
+
+    const state = useChatStore.getState().projectSessions[remote]!
+    expect(state._sessions[state._activeSessionId!]!.ultracode).toBe(true)
+    expect(setSessionSettings).not.toHaveBeenCalled()
+  })
 })

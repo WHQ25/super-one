@@ -163,6 +163,8 @@ interface TurnOpts extends MessageDisplayFields {
    * redacted copy so collaboration credentials never leak into the UI snapshot.
    */
   source?: ChatMessageSource
+  /** Claude Ultracode from this turn on; omitted keeps the live process's. */
+  ultracode?: boolean
 }
 
 /** Normalize optional string settings: empty → null; non-string → leave as-is (caller filters). */
@@ -968,6 +970,8 @@ export class SessionRuntime {
     collaborationMode?: string | Record<string, unknown> | null
     /** Codex review/start target. */
     reviewTarget?: unknown
+    /** Claude Ultracode from this turn on; omitted keeps the live process's. */
+    ultracode?: boolean
   }): Promise<NodeSessionRecord> {
     if (this.disposing) {
       throw Object.assign(new Error('runtime is shutting down'), { code: 'failed_precondition' })
@@ -1018,6 +1022,7 @@ export class SessionRuntime {
       turnKind,
       collaborationMode: input.collaborationMode,
       reviewTarget: input.reviewTarget,
+      ultracode: input.ultracode,
     }
 
     // Always accept the user message into the durable transcript (queue or run).
@@ -1361,6 +1366,7 @@ export class SessionRuntime {
         collaborationMode: opts.collaborationMode ?? undefined,
         reviewTarget: opts.reviewTarget,
         source: opts.source,
+        ultracode: opts.ultracode,
         signal: abort.signal,
         onDelta: (delta) => {
           if (abort.signal.aborted) return

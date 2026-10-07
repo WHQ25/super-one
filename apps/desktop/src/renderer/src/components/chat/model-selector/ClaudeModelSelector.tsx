@@ -132,9 +132,8 @@ export function ClaudeModelSelector({ onCloseAutoFocus }: Props) {
     return (currentModel?.supportedEffortLevels ?? []).map((level) => ({ value: level, label: formatEffortLabel(level) }))
   }, [activeModelEnv, currentModel])
 
-  // Claude Code offers Ultracode where dynamic workflows run on a model with xhigh
-  // effort. Remote nodes do not carry the toggle yet.
-  const ultracodeAvailable = !isRemoteProject && !activeModelEnv && !!currentModel?.supportedEffortLevels?.includes('xhigh')
+  // Claude Code offers Ultracode where dynamic workflows run on a model with xhigh effort.
+  const ultracodeAvailable = !activeModelEnv && !!currentModel?.supportedEffortLevels?.includes('xhigh')
   useEffect(() => {
     // Switching to a model or provider without it turns it off, as Claude Code
     // refuses it there. Wait for the catalog: no model yet is not "unsupported".

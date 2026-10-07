@@ -201,6 +201,15 @@ describe('settings RPC', () => {
     expect(arg.sandboxMode).toBe('on')
   })
 
+  it('session.send carries the client\'s Ultracode toggle only when it names one', async () => {
+    const ctx = baseCtx({ settingsConfigPath: configPath })
+    const send = ctx.sessions.send as ReturnType<typeof vi.fn>
+    const turn = { sessionId: 's1', text: 'hi', leaseId: 'l1', generation: '1' }
+    await dispatchRpc('session.send', { ...turn, options: { ultracode: true } }, ctx)
+    await dispatchRpc('session.send', { ...turn, options: { ultracode: 'yes' } }, ctx)
+    expect(send.mock.calls.map(([input]) => (input as { ultracode?: boolean }).ultracode)).toEqual([true, undefined])
+  })
+
   it('sandbox.probe returns capability booleans', async () => {
     const ctx = baseCtx({
       settingsConfigPath: configPath,

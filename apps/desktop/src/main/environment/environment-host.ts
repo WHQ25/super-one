@@ -1912,6 +1912,8 @@ export class EnvironmentHost {
       collaborationMode?: string | Record<string, unknown> | null
       /** Codex review/start target. */
       reviewTarget?: unknown
+      /** Claude Ultracode toggle; the node switches its process when it differs. */
+      ultracode?: boolean
       /** Receipt after the node accepts, before waiting for the model turn. */
       onAccepted?: () => void
     },
@@ -2005,6 +2007,7 @@ export class EnvironmentHost {
     }
     if (input.collaborationMode != null) options.collaborationMode = input.collaborationMode
     if (input.reviewTarget !== undefined) options.reviewTarget = input.reviewTarget
+    if (typeof input.ultracode === 'boolean') options.ultracode = input.ultracode
     await gateway.sessions.send({
       session: { environmentId, sessionId: input.sessionId },
       text: input.text,

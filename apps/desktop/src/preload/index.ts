@@ -670,6 +670,8 @@ const environmentAPI = {
       turnKind?: 'run' | 'steer' | 'review' | 'compact' | null
       collaborationMode?: string | Record<string, unknown> | null
       reviewTarget?: unknown
+      /** Claude Ultracode toggle for this turn and after. */
+      ultracode?: boolean
     },
   ) =>
     ipcRenderer.invoke(

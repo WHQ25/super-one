@@ -410,7 +410,7 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
     const { projectPath: activeProject, ipcSessionId } = resolveWriteScope(get(), target)
     if (!activeProject) return
     set((s) => commitPerSession(s, target, () => ({ ultracode: enabled })))
-    // Remote node sessions do not carry Ultracode yet; the picker hides it there.
+    // A remote node takes it with each turn, as model and effort (remoteTurnOptions).
     if (!parseRemoteProjectKey(activeProject)) {
       void window.agent.setSessionSettings(activeProject, { ultracode: enabled }, ipcSessionId)
     }

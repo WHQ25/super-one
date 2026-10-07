@@ -54,6 +54,33 @@ function runnerWith(queryFn: ClaudeQueryFn) {
   return { turn, events }
 }
 
+describe('node Claude runner: Ultracode', () => {
+  it('opens the process with Ultracode and switches it in place, without a rebuild', async () => {
+    const { queryFn, applyFlagSettings, optionsAt } = fakeQuery()
+    const { turn, events } = runnerWith(queryFn)
+
+    await turn('one', { ultracode: true })
+    expect(optionsAt(0).settings).toMatchObject({ ultracode: true })
+
+    await turn('two', { ultracode: false })
+    expect(queryFn).toHaveBeenCalledTimes(1)
+    expect(applyFlagSettings).toHaveBeenCalledExactlyOnceWith({ ultracode: false })
+    expect(events).toContainEqual({ type: 'agent_setting_change', patch: { ultracode: false } })
+  })
+
+  it('leaves the process alone when a turn says nothing about it', async () => {
+    const { queryFn, applyFlagSettings, optionsAt } = fakeQuery()
+    const { turn } = runnerWith(queryFn)
+
+    await turn('one')
+    await turn('wake', { source: 'task-notification' })
+    await turn('same', { ultracode: false })
+
+    expect(optionsAt(0).settings).not.toHaveProperty('ultracode')
+    expect(applyFlagSettings).not.toHaveBeenCalled()
+  })
+})
+
 describe('node Claude runner: message origin', () => {
   it('stamps the user\'s own text human-typed, and a peer\'s or a host wake not', async () => {
     const { queryFn, users } = fakeQuery()

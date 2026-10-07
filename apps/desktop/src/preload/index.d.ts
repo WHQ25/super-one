@@ -1205,6 +1205,8 @@ export interface EnvironmentAPI extends MediaComposerAPI {
       turnKind?: 'run' | 'steer' | 'review' | 'compact' | null
       collaborationMode?: string | Record<string, unknown> | null
       reviewTarget?: unknown
+      /** Claude Ultracode toggle for this turn and after. */
+      ultracode?: boolean
     },
   ): Promise<unknown>
   /** Poll durable node `session.events` after sequence (exclusive). */

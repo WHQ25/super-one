@@ -502,6 +502,8 @@ export async function sendRemoteMessageImpl(
     ...(disabledSkillsForTurn ? { disabledSkills: disabledSkillsForTurn } : {}),
     ...(imagesForTurn.length > 0 ? { images: imagesForTurn } : {}),
     ...(apiProviderIdForTurn ? { apiProviderId: apiProviderIdForTurn } : {}),
+    // Off is sent too: the node's process keeps whatever the last turn named.
+    ...(preferredHarness === 'claude' ? { ultracode: writeSess.ultracode } : {}),
     ...(remoteTurnKind ? { turnKind: remoteTurnKind } : {}),
     ...(remoteCollaborationMode ? { collaborationMode: remoteCollaborationMode } : {}),
     ...(remoteReviewTarget !== undefined ? { reviewTarget: remoteReviewTarget } : {}),

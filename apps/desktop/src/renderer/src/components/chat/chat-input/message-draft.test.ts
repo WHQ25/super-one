@@ -1,6 +1,7 @@
 import type { ChatMessage, ImageAttachment } from '@superone/shared/agent-types'
 import { wrapPathRefMention } from '@superone/shared/miniapp-prompt-tags'
 import { messageDraft } from './message-draft'
+import { serializeComposerDocument } from './serializeComposerDocument'
 
 const shot = { id: 'att-1', name: 'shot.png', mimeType: 'image/png', base64: 'QUJD' }
 const loose = { name: 'old.png', mimeType: 'image/png', base64: 'QUJD' }
@@ -10,6 +11,14 @@ const message = (content: ChatMessage['content'], attachments: ImageAttachment[]
 })
 
 describe('messageDraft', () => {
+  it('keeps a retired debug mention as a capability when editing and resending an old message', () => {
+    const tag = '<superone-capability><name>Debug</name><id>debug</id></superone-capability>'
+    const draft = messageDraft(message([{ type: 'text', text: `${tag} this crashed` }], []))
+    const serialized = serializeComposerDocument(draft.doc, draft.text, draft.attachments)
+    expect(serialized.mentions).toEqual([{ kind: 'debug', value: 'debug', displayName: 'Debug' }])
+    expect(serialized.segments).toEqual([{ text: `${tag} this crashed`, isPaste: false }])
+  })
+
   it('puts every chip back where it was, without the space sending padded mentions with', () => {
     const draft = messageDraft(message([
       { type: 'text', text: `see  ${wrapPathRefMention('file', 'src/a.ts', 'a.ts')}  and` },

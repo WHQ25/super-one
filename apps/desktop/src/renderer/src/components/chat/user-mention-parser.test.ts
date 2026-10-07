@@ -142,8 +142,8 @@ describe('parseUserMentions', () => {
       ])
     })
 
-    // `collab` is retired from the popup but must keep rendering in old bubbles.
-    it('parses every capability kind a stored message can carry, including retired collab', () => {
+    // Retired capabilities must keep rendering in old bubbles.
+    it('parses stored capability kinds, including retired collab and debug', () => {
       const input =
         '<superone-capability><name>Agents Collaboration</name><id>collab</id></superone-capability> ' +
         '<superone-capability><name>Computer Use</name><id>computer</id></superone-capability> ' +

@@ -1,6 +1,6 @@
 import type { JSONContent } from '@tiptap/react'
 import type { ImageAttachment } from '@superone/shared/agent-types'
-import { isBuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
+import { isStoredCapabilityId, wrapCapabilityMention } from '@superone/shared/capability-prompt-tags'
 import { wrapAgentMention } from '@superone/shared/agent-mention-tags'
 import { wrapGitMention } from '@superone/shared/git-mention-tags'
 import { wrapMcpResourceMention } from '@superone/shared/mcp-app-mentions'
@@ -16,7 +16,7 @@ function mentionText(attrs: MentionNodeAttrs): string {
   if (kind === 'git') return wrapGitMention(value, displayName)
   if (kind === 'mcp-resource') return wrapMcpResourceMention(value, displayName)
   if (kind === 'agent-profile') return wrapAgentMention(value, displayName)
-  if (isBuiltinCapabilityId(kind)) return `<superone-capability><name>${displayName}</name><id>${kind}</id></superone-capability>`
+  if (isStoredCapabilityId(kind)) return wrapCapabilityMention(kind, displayName)
   const path = kind === 'directory' && value && !value.endsWith('/') ? `${value}/` : value
   return wrapPathRefMention(kind === 'directory' || kind === 'agent' ? kind : 'file', path, displayName || path)
 }

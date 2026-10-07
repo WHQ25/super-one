@@ -500,7 +500,7 @@ describe('ChatMessage capability mention bubble', () => {
     expect(chip).toHaveTextContent('Widget')
   })
 
-  it('renders debug capability chip from a popup tag', () => {
+  it('keeps the retired debug chip readable in stored messages', () => {
     const text =
       '<superone-capability><name>Debug</name><id>debug</id></superone-capability> this crashed'
     const { container } = render(

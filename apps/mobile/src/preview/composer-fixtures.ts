@@ -55,7 +55,7 @@ export const previewAgentProfiles: MentionItem[] = [
 ]
 
 /** Only these are switched on, so the rest render disabled rather than absent. */
-export const previewCapabilityIds = ['widget', 'debug']
+export const previewCapabilityIds = ['widget']
 
 /** Long enough that both the label and the second line have to truncate. */
 export const previewLongMentionItems: MentionItem[] = [

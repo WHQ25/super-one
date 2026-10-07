@@ -39,7 +39,7 @@ import type {
   TodoItem,
 } from '@superone/shared/agent-types'
 import type { SchemaFormValue } from '@superone/shared/schema-form'
-import type { BuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
+import type { StoredCapabilityId } from '@superone/shared/capability-prompt-tags'
 import type { ChatCoreSession } from '@superone/chat-core'
 import type { BrowserAnnotation } from './helpers/browser-annotation'
 
@@ -65,7 +65,7 @@ export type MentionKind =
   | 'directory'
   | 'agent'
   | 'miniapp'
-  | BuiltinCapabilityId
+  | StoredCapabilityId
   /** Installed desktop app — value is reverse-DNS bundleId. */
   | 'desktop-app'
   /** SuperOne session archive — value is sessions.id (not provider session id). */

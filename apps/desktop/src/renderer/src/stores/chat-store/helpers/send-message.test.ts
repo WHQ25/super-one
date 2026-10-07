@@ -1147,7 +1147,6 @@ describe('sendMessageImpl: built-in capability reminder', () => {
         { kind: 'browser', value: 'browser', displayName: 'Super浏览器' },
         { kind: 'computer', value: 'computer', displayName: '控制电脑' },
         { kind: 'widget', value: 'widget', displayName: '小组件' },
-        { kind: 'debug', value: 'debug', displayName: '调试' },
       ],
     })
 
@@ -1160,13 +1159,9 @@ describe('sendMessageImpl: built-in capability reminder', () => {
     expect(content).toContain('tools start with "mcp__superone__browser_"')
     expect(content).toContain('tools start with "mcp__superone__computer_"')
     expect(content).toContain('tools start with "mcp__superone__widget_"')
-    expect(content).toContain('read_manual({ domain: "product", topic: "debug" })')
-    expect(content).toContain('read_manual({ domain: "product", topic: "contribute" })')
-    expect(content).not.toContain('tools start with "mcp__superone__debug')
     expect(content).toContain('"Super Browser"')
     expect(content).toContain('"Computer Use"')
     expect(content).toContain('"Widget"')
-    expect(content).toContain('"Debug"')
     expect(content).toContain('<name>Super Browser</name>')
     expect(content).not.toContain('Super浏览器')
     expect(content).not.toContain('控制电脑')
@@ -1175,7 +1170,18 @@ describe('sendMessageImpl: built-in capability reminder', () => {
     expect(content).toContain('automate the built-in browser')
     expect(content).toContain('control the desktop UI')
     expect(content).toContain('render SVG, diagrams, charts')
-    expect(content).toContain('diagnose SuperOne bugs')
+  })
+
+  it('adds no capability reminder for a retired debug mention', async () => {
+    seedProject('/proj', 'sid-1', {
+      mentions: [{ kind: 'debug', value: 'debug', displayName: 'Debug' }],
+    })
+    await useChatStore.getState().sendMessage(
+      '<superone-capability><name>Debug</name><id>debug</id></superone-capability> this crashed',
+    )
+    const content = mockSendMessage.mock.calls[0][1].content as string
+    expect(content).not.toContain('superone-capability-reminder')
+    expect(content).not.toContain('read_manual')
   })
 
   it('uses Codex-style tool prefixes (dot after server) for codex', async () => {

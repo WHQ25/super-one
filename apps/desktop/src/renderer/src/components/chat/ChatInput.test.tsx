@@ -173,7 +173,6 @@ vi.mock('@tiptap/react', () => {
         promptSuggestion: { suggestion: null as string | null },
         sessionMentionDecoration: { context: [] as unknown[] },
         gitMentionDecoration: { context: null },
-        debugMentionDecoration: { hint: '' },
       },
       getText: () => {
         if (editorState.destroyed) throw new Error('Destroyed editor accessed')
@@ -319,11 +318,6 @@ vi.mock('./paste-chip-node', () => ({
 
 vi.mock('./slash-decoration', () => ({
   SlashDecoration: { configure: () => ({}) },
-}))
-
-vi.mock('./debug-mention-decoration', () => ({
-  DebugMentionDecoration: { configure: () => ({}) },
-  syncDebugMentionHint: vi.fn(),
 }))
 
 vi.mock('./prompt-suggestion', () => ({

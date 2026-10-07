@@ -28,7 +28,6 @@ import { SessionMentionDecoration, syncPortalMentionDismissed } from './session-
 import { GitMentionDecoration } from './git-mention-decoration'
 import { useEnabledGitMentionPortals } from './use-git-mention-capabilities'
 import { useMcpAppFileRoute } from '@/components/mcp-apps/file-apps'
-import { DebugMentionDecoration, syncDebugMentionHint } from './debug-mention-decoration'
 import { PromptKeywordDecoration, syncPromptKeywords } from './prompt-keyword-decoration'
 import { ComposerModeBorder } from './ComposerModeBorder'
 import { composerMode } from '@superone/shared/composer-mode'
@@ -1619,7 +1618,6 @@ export function ChatInput({
         SlashDecoration.configure({ slashCommands: activeSlashCommands }),
         SessionMentionDecoration.configure({ context: sessionProjectOptions }),
         GitMentionDecoration.configure({ context: gitPortals }),
-        DebugMentionDecoration.configure({ hint: t('chat.placeholder.debugBug') }),
         PromptKeywordDecoration.configure({ keywords: promptKeywords }),
         PromptSuggestion,
         ModPromptDecoration,
@@ -1999,10 +1997,6 @@ export function ChatInput({
         editor.view.dispatch(editor.state.tr)
       }
     }, [shownPlaceholder, editor])
-
-    useEffect(() => {
-      syncDebugMentionHint(editor, t('chat.placeholder.debugBug'))
-    }, [editor, t])
 
     useEffect(() => {
       syncPromptKeywords(editor, promptKeywords)

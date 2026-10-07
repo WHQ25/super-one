@@ -9,7 +9,7 @@ const profile = (path: string, label: string, slug: string, aliases: string[] = 
 describe('mentionGroupKey', () => {
   it('maps every kind onto a group the order actually lists', () => {
     // `groupItems` drops unlisted keys silently, so an unmapped kind vanishes.
-    const kinds = ['builtin', 'computer', 'browser', 'widget', 'debug', 'agent-profile', 'session',
+    const kinds = ['builtin', 'computer', 'browser', 'widget', 'agent-profile', 'session',
       'desktop-app', 'agent', 'miniapp', 'file', 'directory', 'dir-entry', 'future-kind']
     for (const kind of kinds) {
       expect(MENTION_GROUP_ORDER).toContain(mentionGroupKey({ kind, path: 'x' }))
@@ -70,7 +70,7 @@ describe('buildMentionRows', () => {
 
   it('keeps catalog order for a bare @, and lists the switched-off ones too', () => {
     const rows = buildMentionRows('', { remote: [], agentProfiles: [], capabilityIds: ['debug', 'widget'] })
-    expect(rows.map((row) => row.item.path)).toEqual(['computer', 'browser', 'widget', 'debug', 'session', 'git', 'gh'])
+    expect(rows.map((row) => row.item.path)).toEqual(['computer', 'browser', 'widget', 'session', 'git', 'gh'])
     // Unknown git availability stays enterable until the host answers, matching the grammar gate.
     expect(rows.filter((row) => row.disabled).map((row) => row.item.path)).toEqual(['computer', 'browser'])
   })

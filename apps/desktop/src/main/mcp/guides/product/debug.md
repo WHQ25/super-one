@@ -3,7 +3,7 @@
 Personal paths use `$SUPERONE_HOME`: `~/.superone` for stable, `~/.superone/alpha` for alpha, and `~/.superone/dev` for dev (or an explicit absolute override). Project paths use `<project>/.superone`, with `/alpha` or `/dev` for those variants. No cross-variant fallback or migration is performed.
 
 
-Use this when the user is stuck, sees a crash, or wrong behavior and you need **logs + source layout** to diagnose — including when they @-mentioned Debug. Combine with product/contribute when they want to file an issue or open a fix PR.
+Use this when the user encounters a SuperOne crash or wrong behavior and you need **logs + source layout** to diagnose. The shared system prompt routes SuperOne bugs here; no mention is needed. Combine with product/contribute when they want to file an issue or open a fix PR.
 
 For **issues and PRs** (bugs, features, improvements):  
 `read_manual({ domain: "product", topic: "contribute" })`  

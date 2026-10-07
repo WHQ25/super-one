@@ -10,7 +10,6 @@ export function mentionCapabilityAvailability(settings: { computerUseEnabled?: b
     computer: isComputerUseSupportedPlatform(platform) && settings?.computerUseEnabled === true,
     browser: settings?.cdpEnabled === true,
     widget: true,
-    debug: true,
   }
 }
 

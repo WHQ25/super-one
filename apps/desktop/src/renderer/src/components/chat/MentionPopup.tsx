@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState, useCallback, useImperativeHandle, forwardRef, useMemo, type UIEvent } from 'react'
-import { Bot, Bug, Folder, Folders, Globe, LayoutDashboard, MessageSquare, MousePointer2 } from 'lucide-react'
+import { Bot, Folder, Folders, Globe, LayoutDashboard, MessageSquare, MousePointer2 } from 'lucide-react'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { cn } from '@superone/ui/lib/utils'
 import { Kbd } from '@superone/ui/components/ui/kbd'
@@ -265,16 +265,6 @@ function capabilityIcon(id: BuiltinCapabilityId | SessionPortalId, disabled?: bo
       />
     )
   }
-  if (id === 'debug') {
-    return (
-      <Bug
-        className={cn(
-          'size-3.5 shrink-0',
-          muted ?? 'text-rose-600 dark:text-rose-400',
-        )}
-      />
-    )
-  }
   return (
     <Globe
       className={cn(
@@ -509,12 +499,11 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       if (isPortalMode) onSetSelectedIndex(0)
     }, [isPortalMode, parsedSessionQuery?.phase, git.parsed?.phase, onSetSelectedIndex])
 
-    /** Feature gates for built-in @-capability chips (settings toggles). Widget and debug are always on. */
+    /** Feature gates for built-in @-capability chips (settings toggles). Widget is always on. */
     const [capabilityEnabled, setCapabilityEnabled] = useState<Record<BuiltinCapabilityId, boolean>>({
       computer: false,
       browser: false,
       widget: true,
-      debug: true,
     })
     /** False until the first getAppSettings settle — needed before we know whether to wait on apps. */
     const [capabilitySettingsReady, setCapabilitySettingsReady] = useState(false)
@@ -534,7 +523,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         })
         .catch(() => {
           if (!cancelled) {
-            setCapabilityEnabled({ computer: false, browser: false, widget: true, debug: true })
+            setCapabilityEnabled({ computer: false, browser: false, widget: true })
             setCapabilitySettingsReady(true)
           }
         })
@@ -664,7 +653,6 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
     const capabilityLabel = useCallback((id: BuiltinCapabilityId): string => {
       if (id === 'computer') return t('chat.mentionPopup.capabilityComputer')
       if (id === 'widget') return t('chat.mentionPopup.capabilityWidget')
-      if (id === 'debug') return t('chat.mentionPopup.capabilityDebug')
       return t('chat.mentionPopup.capabilityBrowser')
     }, [t])
 

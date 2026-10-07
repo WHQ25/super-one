@@ -17,10 +17,10 @@ const catalogs = new WeakMap<Client, Map<string, MentionCatalog>>()
 
 /**
  * What a host offers, from its search answer. A host that predates the field
- * answered without it and only ever had these two on.
+ * answered without it; widget is the only still-supported capability known on.
  */
 export function hostCapabilityIds(answer: unknown): unknown[] {
-  return Array.isArray(answer) ? answer : ['widget', 'debug']
+  return Array.isArray(answer) ? answer : ['widget']
 }
 
 export function peekMentionCatalog(client: Client | null, projectPath: string | undefined): MentionCatalog | undefined {

@@ -161,8 +161,11 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** Bare `@`: built-ins including the Session, Git and GitHub portals, in catalog order. */
+/** Bare `@`: supported capabilities and portals in catalog order; Debug is retired. */
 export const Catalog: Story = { args: { query: '' } }
+
+/** Typing `@debug` no longer offers a built-in capability. */
+export const RetiredDebug: Story = { args: { query: 'debug' } }
 
 /** `@gi` ranks the Git portal by keyword; Tab / click enters `@git `. */
 export const GitPortalMatch: Story = { args: { query: 'gi' } }

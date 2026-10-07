@@ -24,7 +24,19 @@ describe('native suggestion selection to desktop message', () => {
   it('keeps project-agent names distinct from discovered provider references', () => {
     expect(mentionTokenFromItem({ kind: 'agent', path: 'codex' })).toEqual({ kind: 'agent', value: 'codex', displayName: 'codex' })
     expect(mentionTokenFromItem({ kind: 'agent-profile', path: 'acp-base:grok-build', label: '@Grok' })).toEqual({ kind: 'agent-profile', value: 'acp-base:grok-build', displayName: 'Grok' })
-    expect(mentionTokenFromItem({ kind: 'builtin', path: 'debug', label: '@debug' })?.kind).toBe('debug')
+    expect(mentionTokenFromItem({ kind: 'builtin', path: 'debug', label: '@debug' })).toBeUndefined()
+    expect(mentionTokenFromItem({ kind: 'debug', path: 'debug', label: '@debug' })).toBeUndefined()
+  })
+
+  it('restores and sends a retired debug chip from a saved native draft', () => {
+    const draft = parseMentionEditorSnapshot({ text: '\uFFFC this crashed',
+      tokens: [{ offset: 0, kind: 'debug', value: 'debug', displayName: 'Debug' }],
+      start: 14, end: 14, eventCount: 0, composing: false })
+    const serialized = serializeMentionDocument(draft.document)
+    expect(parseUserMentions(serialized)).toEqual([
+      { type: 'mention', kind: 'debug', value: 'debug', displayName: 'Debug' },
+      { type: 'text', text: '  this crashed' },
+    ])
   })
 
   it('keeps folder traversal editable and rejects unknown identities or composing selections', () => {

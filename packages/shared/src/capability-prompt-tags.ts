@@ -1,18 +1,18 @@
-/** Built-in @-mention capabilities (computer / browser / widget / debug). */
+/** Built-in @-mention capabilities (computer / browser / widget). */
 
-export type BuiltinCapabilityId = 'computer' | 'browser' | 'widget' | 'debug'
+export type BuiltinCapabilityId = 'computer' | 'browser' | 'widget'
 
 /**
  * Retired capability ids that still exist in stored messages.
  *
  * `collab` was replaced by naming the agent directly (`@codex`, `@grok`) — see
- * `@superone/shared/agent-mention-tags`. It is no longer offered in the popup
- * and no longer emits a reminder, but old user bubbles must keep rendering it
- * as a chip instead of leaking the raw tag.
+ * `@superone/shared/agent-mention-tags`. `debug` moved into the shared system
+ * prompt. Neither is offered in the popup or emits a reminder, but old user
+ * bubbles must keep rendering them as chips instead of leaking the raw tags.
  */
-export type LegacyCapabilityId = 'collab'
+export type LegacyCapabilityId = 'collab' | 'debug'
 
-export const LEGACY_CAPABILITY_IDS: readonly LegacyCapabilityId[] = ['collab'] as const
+export const LEGACY_CAPABILITY_IDS: readonly LegacyCapabilityId[] = ['collab', 'debug'] as const
 
 /** Any capability id that can appear in a persisted message. */
 export type StoredCapabilityId = BuiltinCapabilityId | LegacyCapabilityId
@@ -27,7 +27,7 @@ export interface BuiltinCapability {
    * Bare tool-name prefix after the server qualifier.
    * Claude: `mcp__superone__${toolPrefix}…`
    * Codex:  `mcp__superone.${toolPrefix}…` (dot after server — listed the same way as miniapp).
-   * Omit when the capability is a manual/workflow (e.g. debug), not a tool family.
+   * Omit when the capability is a manual/workflow, not a tool family.
    */
   toolPrefix?: string
   /**
@@ -56,13 +56,6 @@ export const BUILTIN_CAPABILITIES: readonly BuiltinCapability[] = [
     intent: 'render SVG, diagrams, charts, or interactive HTML inline in chat via widget tools',
     toolPrefix: 'widget_',
   },
-  {
-    id: 'debug',
-    displayName: 'Debug',
-    intent: 'diagnose SuperOne bugs, gather logs, and help file an upstream issue when the user wants',
-    hint:
-      'first call read_manual({ domain: "product", topic: "debug" }); then read_manual({ domain: "product", topic: "contribute" }) only if they want to report upstream. If they have no GitHub account, draft the issue for them to copy — do not open a PR',
-  },
 ] as const
 
 export const BUILTIN_CAPABILITY_IDS: readonly BuiltinCapabilityId[] = BUILTIN_CAPABILITIES.map((c) => c.id)
@@ -90,7 +83,7 @@ export const CAPABILITY_TAG_REGEX =
 export const CAPABILITY_REMINDER_REGEX =
   /\n*<superone-capability-reminder>[\s\S]*?<\/superone-capability-reminder>\n*/g
 
-export function wrapCapabilityMention(id: BuiltinCapabilityId, displayName?: string): string {
+export function wrapCapabilityMention(id: StoredCapabilityId, displayName?: string): string {
   const cap = getBuiltinCapability(id)
   const name = displayName?.trim() || cap?.displayName || id
   return `<superone-capability><name>${name}</name><id>${id}</id></superone-capability>`

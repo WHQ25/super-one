@@ -20,7 +20,7 @@ const suggestions: MentionItem[] = [
   { kind: 'file', path: 'src/中文 file.ts', label: '中文 file.ts' },
   { kind: 'directory', path: 'src', label: 'src' },
   { kind: 'agent-profile', path: 'codex-base', label: 'Codex' },
-  { kind: 'builtin', path: 'debug', label: 'Debug' },
+  { kind: 'builtin', path: 'widget', label: 'Widget' },
   { kind: 'miniapp', path: 'board', label: 'Board' },
   { kind: 'desktop-app', path: 'com.example.Editor', label: 'Editor' },
 ]
@@ -68,7 +68,7 @@ export function MentionEditorPreview() {
       id: command.id + 1, eventCount: snapshot.eventCount, start: 0, end: snapshot.text.length, text: '', tokens: [],
     })} />
     <Button label="Load identity glyphs" disabled={snapshot.composing} onPress={() => {
-      const kinds = ['agent', 'directory', 'session', 'computer', 'browser', 'widget', 'debug'] as const
+      const kinds = ['agent', 'directory', 'session', 'computer', 'browser', 'widget'] as const
       const document: MentionDocument = kinds.flatMap((kind) => [
         { mention: { kind, value: kind === 'directory' ? 'src' : kind, displayName: kind } }, { text: ' ' },
       ])

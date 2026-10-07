@@ -1,3 +1,4 @@
+import { isBuiltinCapabilityId, isStoredCapabilityId } from '@superone/shared/capability-prompt-tags'
 import { isMentionTokenKind, nativeMentionSpans, nativeMentionText, type MentionDocument, type MentionToken } from './mention-document'
 import type { MentionEditorCommand, MentionEditorSnapshot } from './mention-editor-state'
 import { extractMentionQuery, type MentionItem } from './mentions'
@@ -8,7 +9,7 @@ export function mentionTokenFromItem(item: MentionItem): MentionToken | undefine
   const kind = item.kind === 'builtin' ? item.path
     : item.kind === 'dir-entry' ? (item.isDirectory ? 'directory' : 'file')
     : item.kind === 'git-ref' ? 'git' : item.kind
-  if (!isMentionTokenKind(kind)) return
+  if (!isMentionTokenKind(kind) || (isStoredCapabilityId(kind) && !isBuiltinCapabilityId(kind))) return
   const pathLike = kind === 'file' || kind === 'directory' || kind === 'agent'
   const displayName = item.label?.replace(/^@/, '') || (pathLike
     ? item.path.replace(/[/\\]+$/, '').split(/[/\\]/).at(-1) : item.path) || item.path

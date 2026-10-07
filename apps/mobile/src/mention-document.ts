@@ -1,7 +1,7 @@
 import { wrapAgentMention } from '@superone/shared/agent-mention-tags'
 import { wrapGitMention } from '@superone/shared/git-mention-tags'
 import { wrapMcpResourceMention } from '@superone/shared/mcp-app-mentions'
-import { isBuiltinCapabilityId, wrapCapabilityMention, type BuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
+import { isStoredCapabilityId, wrapCapabilityMention, type StoredCapabilityId } from '@superone/shared/capability-prompt-tags'
 import { wrapPathRefMention } from '@superone/shared/miniapp-prompt-tags'
 import type { ComposerCursor } from './composer-cursor'
 
@@ -9,13 +9,13 @@ import type { ComposerCursor } from './composer-cursor'
 export const MENTION_OBJECT = '\uFFFC'
 const TOKEN_KINDS = ['file', 'directory', 'agent', 'agent-profile', 'miniapp', 'desktop-app', 'session', 'git', 'mcp-resource'] as const
 export type MentionToken = {
-  kind: typeof TOKEN_KINDS[number] | BuiltinCapabilityId
+  kind: typeof TOKEN_KINDS[number] | StoredCapabilityId
   value: string
   displayName: string
 }
-/** The one list of what may be a chip: picked from the popup, and read back from native. */
+/** Chip identities accepted from native and saved drafts, including retired capabilities. */
 export function isMentionTokenKind(kind: string): kind is MentionToken['kind'] {
-  return (TOKEN_KINDS as readonly string[]).includes(kind) || isBuiltinCapabilityId(kind)
+  return (TOKEN_KINDS as readonly string[]).includes(kind) || isStoredCapabilityId(kind)
 }
 export type MentionSegment = { text: string } | { mention: MentionToken }
 export type MentionDocument = readonly MentionSegment[]
@@ -108,7 +108,7 @@ export function serializeMentionDocument(document: MentionDocument): string {
     if ('text' in segment) return segment.text
     const { kind, value, displayName } = segment.mention
     let tag: string
-    if (isBuiltinCapabilityId(kind)) tag = wrapCapabilityMention(kind, displayName)
+    if (isStoredCapabilityId(kind)) tag = wrapCapabilityMention(kind, displayName)
     else if (kind === 'agent-profile') tag = wrapAgentMention(value, displayName)
     else if (kind === 'miniapp') tag = `<superone-miniapp><appname>${displayName}</appname><appid>${value}</appid></superone-miniapp>`
     else if (kind === 'desktop-app') tag = `<superone-desktop-app><name>${displayName}</name><bundleId>${value}</bundleId></superone-desktop-app>`

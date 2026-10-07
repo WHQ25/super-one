@@ -195,6 +195,15 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
     additionalDirsKey: string
     /** Ultracode the process runs with; a turn that names another switches it live. */
     ultracode: boolean
+    /** Model the process runs; a turn that names another switches it live. */
+    model: string | undefined
+    /** Effort the process was opened with; a turn that names another reopens it. */
+    effort: string | undefined
+    /**
+     * The mode the process is in, as the CLI last reported it — a requested
+     * mode it could not take (auto on a model without it) never lands here.
+     */
+    permissionMode: string | undefined
     /** Servers the live process was opened with; MCP App bindings fingerprint them. */
     mcpServers: Record<string, unknown>
     /** Tool UI metadata of this process, loaded on its first MCP tool call. */
@@ -233,6 +242,27 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
    */
   const additionalDirsKeyOf = (dirs: readonly string[] | undefined): string =>
     [...new Set(dirs ?? [])].sort().join('\0')
+
+  const trimmedOrUndefined = (value: string | null | undefined): string | undefined =>
+    value && value.trim() ? value.trim() : undefined
+
+  /**
+   * The CLI reports its mode in each turn's init and in a status after every
+   * change, including a fallback it picks itself. Clients hear when that differs
+   * from the mode the process was believed to be in.
+   */
+  const followReportedMode = (
+    entry: LiveEntry,
+    event: AgentEvent,
+    emit: ((event: AgentEvent) => void) | undefined,
+  ): void => {
+    const mode = event.type === 'session_init'
+      ? event.session.permissionMode
+      : event.type === 'status_indicator' ? event.permissionMode : undefined
+    if (!mode || mode === entry.permissionMode) return
+    entry.permissionMode = mode
+    emit?.({ type: 'agent_setting_change', patch: { permissionMode: mode } })
+  }
 
   const binaryOrNull = () =>
     resolveClaudeBinaryPath({
@@ -345,12 +375,13 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
         const current = lives.get(sessionKey)
         if (!current) return
         current.lastActivityAt = Date.now()
+        followReportedMode(current, event, current.onAmbientEvent)
         current.onAmbientEvent?.(event)
       },
       binaryPath: p.binary,
       sessionId: parseClaudeSessionResume(p.session.providerResume),
-      model: p.model && p.model.trim() ? p.model.trim() : undefined,
-      effort: p.effort && p.effort.trim() ? p.effort.trim() : undefined,
+      model: trimmedOrUndefined(p.model),
+      effort: trimmedOrUndefined(p.effort),
       ultracode: p.ultracode,
       permissionMode: p.permissionMode,
       uid: p.uid,
@@ -371,6 +402,9 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
       mcpDiskKey: mcpDiskKeyOf(merged.diskNames),
       additionalDirsKey: additionalDirsKeyOf(p.additionalDirectories?.filter(Boolean)),
       ultracode: p.ultracode ?? false,
+      model: trimmedOrUndefined(p.model),
+      effort: trimmedOrUndefined(p.effort),
+      permissionMode: p.permissionMode,
       mcpServers: merged.claudeMcpServers,
       mcpAppsCatalog,
       refreshMcpAppsCatalog: refreshCatalog,
@@ -442,13 +476,17 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
     // A turn without a say (a host wake) keeps the Ultracode the process had,
     // across a restart too.
     const ultracode = input.ultracode ?? entry?.ultracode
+    const model = trimmedOrUndefined(input.model)
+    const effort = trimmedOrUndefined(input.effort)
     // Restart live session if cwd changed (worktree switch), the MCP allowlist
-    // changed, or the directory set changed.
+    // changed, the directory set changed, or the effort changed — an in-place
+    // effort change would turn Ultracode off.
     if (
       entry
       && (entry.cwd !== cwd
         || entry.mcpDiskKey !== nextMcpDiskKey
-        || entry.additionalDirsKey !== nextAdditionalDirsKey)
+        || entry.additionalDirsKey !== nextAdditionalDirsKey
+        || (effort !== undefined && effort !== entry.effort))
     ) {
       await disposeEntry(sessionKey)
       entry = undefined
@@ -461,8 +499,8 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
       authEnv,
       uid,
       permissionMode: permissions.permissionMode,
-      model: input.model,
-      effort: input.effort,
+      model,
+      effort,
       sandboxMode: input.sandboxMode,
       additionalDirectories: input.additionalDirectories,
       enabledSkills: input.enabledSkills,
@@ -474,6 +512,20 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
       await entry.live.setUltracode(ultracode)
       entry.ultracode = ultracode
       input.onAgentEvent?.({ type: 'agent_setting_change', patch: { ultracode } })
+    }
+    if (model !== undefined && model !== entry.model) {
+      await entry.live.setModel(model)
+      entry.model = model
+    }
+    const requestedMode = permissions.permissionMode
+    if (requestedMode !== undefined && requestedMode !== entry.permissionMode) {
+      // A mode the model cannot take is refused; the turn runs in the mode the
+      // process is in, and the client is told which one that is.
+      const switched = await entry.live.setPermissionMode(requestedMode).then(() => true, () => false)
+      if (switched) entry.permissionMode = requestedMode
+      else if (entry.permissionMode) {
+        input.onAgentEvent?.({ type: 'agent_setting_change', patch: { permissionMode: entry.permissionMode as PermissionMode } })
+      }
     }
     entry.onAmbientEvent = input.onAmbientEvent
     if (input.onAmbientEvent) for (const event of entry.modBacklog.splice(0)) input.onAmbientEvent(event)
@@ -495,7 +547,13 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
         source: input.source,
         onDelta: input.onDelta,
         onEvent: input.onEvent,
-        onAgentEvent: input.onAgentEvent,
+        // Only when the caller listens: its presence selects the structured event path.
+        onAgentEvent: input.onAgentEvent
+          ? (event) => {
+              followReportedMode(activeEntry, event, input.onAgentEvent)
+              input.onAgentEvent!(event)
+            }
+          : undefined,
         onPermission: input.onPermission
           ? async (req) => {
               const decision = await input.onPermission!({

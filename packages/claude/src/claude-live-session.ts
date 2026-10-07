@@ -488,6 +488,17 @@ export class ClaudeLiveSession {
     await this.query?.applyFlagSettings({ ultracode: enabled })
   }
 
+  /** Switches the model in place, mapped the way the open options map it. */
+  async setModel(model: string): Promise<void> {
+    const env = this.opts.env ? { ...process.env, ...this.opts.env } : undefined
+    await this.query?.setModel(resolveMappedClaudeModelId(model, env))
+  }
+
+  /** Switches the permission mode in place; rejects one the model cannot take (auto). */
+  async setPermissionMode(mode: string): Promise<void> {
+    await this.query?.setPermissionMode(mode as NonNullable<Options['permissionMode']>)
+  }
+
   async dispose(): Promise<void> {
     if (this.closed) return
     this.closed = true

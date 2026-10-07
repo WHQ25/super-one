@@ -9,7 +9,7 @@ import type { HostClientConfig, HostClientToken } from './host-client'
  * the CLI shipped with this SDK version; a version test fails on a bump so it
  * is checked again. A layout that no longer matches reads as "not signed in".
  */
-export const CLAUDE_MCP_OAUTH_VERIFIED_SDK = '0.3.289'
+export const CLAUDE_MCP_OAUTH_VERIFIED_SDK = '0.3.292'
 
 type HttpConfig = Extract<HostClientConfig, { type: 'http' | 'sse' }>
 

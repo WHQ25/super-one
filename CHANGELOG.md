@@ -89,9 +89,10 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 - Codex runtime upgraded to 0.160.0, improving startup reliability,
   plugin loading and explicit provider model catalogs.
-- Claude Agent SDK 0.3.289 (Claude Code 2.1.289) runs installed mods.
+- Claude Agent SDK 0.3.292 (Claude Code 2.1.292) runs installed mods.
   Steering lets running commands finish, and interrupted replies no
-  longer appear to keep streaming.
+  longer appear to keep streaming. A subagent woken by SendMessage shows
+  as running again, then finished, on its own card on desktop and phone.
 - Subagent and workflow cards remain visible outside compact details;
   finished reasoning collapses in the maximized subagent view.
 - Phone question prompts and slash-command output appear above the

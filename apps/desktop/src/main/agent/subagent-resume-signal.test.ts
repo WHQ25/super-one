@@ -27,9 +27,19 @@ describe('withSubagentResumeSignal', () => {
     expect(resumeFrames(run([started, notified, child]))).toEqual([])
   })
 
-  it('stays quiet when the SDK registers the resumed task itself', () => {
+  it('re-keys the run the SDK registers for a resume to the Agent block', () => {
+    // Claude Code 2.1.292: the resumed run's task events name the SendMessage call.
     const sdkResume: AgentEvent = { type: 'task_started', taskId: 'task-1', toolUseId: 'send', description: 'Review', taskType: 'local_agent', isBackgrounded: true }
-    expect(resumeFrames(run([started, notified, wake, sdkResume, child]))).toEqual([sdkResume])
+    const resumeProgress: AgentEvent = { type: 'task_progress', taskId: 'task-1', toolUseId: 'send', description: 'Reading', usage: { totalTokens: 1, toolUses: 1, durationMs: 1 } }
+    const resumeNotified: AgentEvent = { ...notified, toolUseId: 'send' } as AgentEvent
+    const out = run([started, notified, wake, sdkResume, child, resumeProgress, resumeNotified])
+    expect(resumeFrames(out)).toEqual([{ ...sdkResume, toolUseId: 'agent' }])
+    expect(out.filter(event => event.type.startsWith('task_')).map(event => 'toolUseId' in event && event.toolUseId)).toEqual(['agent', 'agent', 'agent', 'agent', 'agent'])
+  })
+
+  it('leaves task events of other tasks alone', () => {
+    const shell: AgentEvent = { type: 'task_started', taskId: 'shell-1', toolUseId: 'bash', description: 'sleep', taskType: 'local_bash' }
+    expect(run([started, shell])).toEqual([started, shell])
   })
 
   it('announces each resume after the run finishes again', () => {

@@ -22,6 +22,8 @@ reason). Ledger rows: [api-surface.md](api-surface.md).
 | 12 | Draw mod UI (panes, the band above the prompt) | 0.3.287 (2.1.287) | Mods' panes, controls, transcript rewrites and `Client` parts in SuperOne, as Claude Desktop shows them | Rides an undeclared control protocol through `Query.request` / `setUiHost` (see [contracts](contracts.md#mod-ui-rides-a-private-control-protocol)); an SDK bump can break it silently, so each upgrade replays the recordings | adopt ([features/claude-mods.md](../../features/claude-mods.md)) |
 | 14 | `ui_read_selection` mod host request | 0.3.289 (native schema observed) | Lets a mod read the selection on a remote surface | Needs host request mapping and selection capture on desktop and phone | open |
 | 13 | `get_task_output` control request | 0.3.287 | Live tail of a background shell or Monitor task without reading its output file | No Query wrapper | open |
+| 15 | Subagent ids: `agent_id` on messages, `parent_task_id` and `run_id` on task events | 0.3.292 | Attribute frames and tasks to a subagent without the inline block tree, and drop late frames of an earlier run | Inline subagent frames already carry the right `parent_tool_use_id`, and resume re-keying needs only `task_id` ([0.3.292](upgrades/0.3.292.md)); worth it for tasks whose launching block never reaches the transcript | open |
+| 16 | `ui_prompt_autocomplete` mod host request | 0.3.292 (native schema observed) | A mod's completions in the SuperOne composer | Schema is `@internal`; a per-keystroke ask merged into the composer's menus, local sessions only (like G6) | open, wait for the protocol to become public |
 
 ## Integration gaps
 

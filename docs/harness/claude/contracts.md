@@ -195,6 +195,21 @@ re-check an entry when an upgrade touches its area.
   descriptions.
 - **Guard:** unguarded.
 
+### A resumed subagent run is named by the SendMessage call
+
+- **Behavior:** SendMessage to a finished subagent starts a new run of the same
+  task: `task_started` (`is_backgrounded: true`) keeps the `task_id` and gets a new
+  `run_id`, and the run's `task_*` events carry the SendMessage call's
+  `tool_use_id`. The resumed output keeps the original Agent id as
+  `parent_tool_use_id` and carries `agent_id` = `task_id`. An earlier trace
+  (CLI version unrecorded) showed no `task_started` for the run at all.
+- **Observed:** Claude Code 2.1.292, live probe.
+- **Depends on it:** `withSubagentResumeSignal` in
+  `apps/desktop/src/main/agent/subagent-resume-signal.ts` re-keys those events to
+  the Agent block and, for a CLI that does not register the run, announces it
+  itself. The renderer's `resolveTaskProgressWrite` also resolves by `task_id`.
+- **Guard:** `apps/desktop/src/main/agent/subagent-resume-signal.test.ts`.
+
 ### SessionStart hook callbacks never run
 
 - **Behavior:** An in-process `SessionStart` callback in `Options.hooks` is

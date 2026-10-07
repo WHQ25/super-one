@@ -22,6 +22,7 @@ import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Kbd } from '@superone/ui/components/ui/kbd'
 import { cn } from '@superone/ui/lib/utils'
 import { AddProjectList } from './AddProjectList'
+import { CloneDestinationLine } from './CloneDestinationLine'
 import {
   confirmActionKey,
   enterLabelKey,
@@ -455,11 +456,11 @@ export function AddProjectDialog({
               </div>
             </div>
             {flow.clonePreviewPath && (
-              <div className="truncate pt-1 font-mono text-[11px] text-muted-foreground">
-                {t('sidebar.addProject.clonesInto', {
-                  path: flow.clonePreviewPath,
-                })}
-              </div>
+              <CloneDestinationLine
+                path={flow.clonePreviewPath}
+                cloning={flow.busy}
+                progress={flow.cloneProgress}
+              />
             )}
             <label className="mt-2 flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
               <Checkbox

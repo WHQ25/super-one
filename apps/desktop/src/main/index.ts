@@ -2289,12 +2289,17 @@ function registerIpcHandlers(): void {
   ipcMain.handle(
     AgentIpcChannels.ENVIRONMENT_CLONE_REPOSITORY,
     async (
-      _e,
+      e,
       connectionId: string,
       input: { remoteUrl: string; parentPath: string; directoryName?: string; shallow?: boolean },
     ) => {
       const { getEnvironmentHost } = await import('./environment')
-      return getEnvironmentHost().cloneRepository(connectionId, input)
+      // Reply to the requesting window only — the dialog lives there.
+      return getEnvironmentHost().cloneRepository(connectionId, input, (percent) => {
+        if (!e.sender.isDestroyed()) {
+          e.sender.send(AgentIpcChannels.ENVIRONMENT_CLONE_PROGRESS, percent)
+        }
+      })
     },
   )
   ipcMain.handle(AgentIpcChannels.ENVIRONMENT_CONNECT, async (_e, connectionId: string) => {

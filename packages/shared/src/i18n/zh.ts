@@ -428,6 +428,7 @@ export const zh: Messages = {
       githubNeedCli: '安装并登录 GitHub CLI（gh）可列出你的仓库，或直接输入 owner/repo。',
       githubPrivate: '私有',
       clonesInto: '将克隆到 {{path}}',
+      cloningInto: '正在克隆到 {{path}}',
       cloning: '正在克隆...',
       willCreateDirectory: '将创建 {{path}}',
       createSection: '创建',

@@ -1359,6 +1359,8 @@ export interface EnvironmentAPI extends MediaComposerAPI {
 
   onStatusEvent(callback: (snapshot: SupervisorSnapshot) => void): () => void
   onInstallProgress(callback: (progress: EnvironmentInstallProgress) => void): () => void
+  /** Download percent of the in-flight local `cloneRepository` from this window. */
+  onCloneProgress(callback: (percent: number) => void): () => void
 }
 
 /** Selectable Host from local ~/.ssh/config (see main environment/ssh-config). */

@@ -7,6 +7,7 @@ import { setAddProjectHookDelayForTests } from './use-add-project-dialog'
 const browsePath = vi.fn()
 const openProject = vi.fn()
 const cloneRepository = vi.fn()
+const onCloneProgress = vi.fn()
 const searchGithubRepos = vi.fn()
 const queryGithubRepos = vi.fn()
 const listMyGithubRepos = vi.fn()
@@ -110,10 +111,12 @@ describe('add-project dialog', () => {
       defaultClonePaths: patch.defaultClonePaths ?? {},
     }))
     selectFolder.mockResolvedValue(null)
+    onCloneProgress.mockReturnValue(() => {})
     ;(window as unknown as Record<string, unknown>).environment = {
       browsePath,
       openProject,
       cloneRepository,
+      onCloneProgress,
     }
     ;(window as unknown as Record<string, unknown>).app = {
       ...((window as unknown as Record<string, unknown>).app as object),
@@ -758,6 +761,38 @@ describe('add-project dialog', () => {
       }),
     )
     await waitFor(() => expect(onOpened).toHaveBeenCalled())
+  })
+
+  it('shows clone progress in the repository card while cloning', async () => {
+    let emit: (percent: number) => void = () => {}
+    const unsubscribe = vi.fn()
+    onCloneProgress.mockImplementation((callback: (percent: number) => void) => {
+      emit = callback
+      return unsubscribe
+    })
+    let finish: (value: unknown) => void = () => {}
+    cloneRepository.mockReturnValue(new Promise((resolve) => (finish = resolve)))
+    renderDialog()
+
+    fireEvent.click(screen.getByText('GitHub Repository'))
+    fireEvent.change(input(), { target: { value: 'WHQ25/super-one' } })
+    await screen.findByRole('button', { name: /WHQ25\/super-one/ })
+    fireEvent.keyDown(input(), { key: 'Enter' })
+    await screen.findByText('Repository')
+    await waitFor(() => expect(browsePath).toHaveBeenCalled())
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+
+    fireEvent.keyDown(input(), { key: 'Enter', shiftKey: true })
+    await waitFor(() => expect(cloneRepository).toHaveBeenCalled())
+    expect(screen.getByText(/^Cloning into /)).toBeInTheDocument()
+    expect(screen.getByRole('progressbar')).not.toHaveAttribute('aria-valuenow')
+
+    act(() => emit(42))
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '42')
+    expect(screen.getByText('42%')).toBeInTheDocument()
+
+    await act(async () => finish({ projectId: 'p', path: '/tmp/super-one', name: 'super-one' }))
+    expect(unsubscribe).toHaveBeenCalled()
   })
 
   it('opts out of a shallow clone when the checkbox is unchecked', async () => {

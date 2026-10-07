@@ -122,6 +122,8 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
   const [browseError, setBrowseError] = useState<string | null>(null)
   const [browseLoading, setBrowseLoading] = useState(false)
   const [busy, setBusy] = useState(false)
+  /** Clone download percent; null until git reports one (and always for remote hosts). */
+  const [cloneProgress, setCloneProgress] = useState<number | null>(null)
   const [submitError, setSubmitError] = useState('')
   const [githubRepos, setGithubRepos] = useState<GithubRepoHit[]>([])
   const [githubQueryHits, setGithubQueryHits] = useState<GithubRepoHit[]>([])
@@ -910,6 +912,8 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
       if (!parentPath) return
       setBusy(true)
       setSubmitError('')
+      setCloneProgress(null)
+      const stopProgress = window.environment.onCloneProgress(setCloneProgress)
       try {
         const project = await window.environment.cloneRepository(connectionId, {
           remoteUrl: step.remoteUrl,
@@ -933,6 +937,7 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
       } catch (err) {
         setSubmitError(formatAddProjectError(err, t))
       } finally {
+        stopProgress()
         setBusy(false)
       }
     },
@@ -1161,6 +1166,7 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
     isGithubMyReposMode,
     loadMoreGithubRepos,
     busy,
+    cloneProgress,
     submitError,
     resolved,
     repoResolved,

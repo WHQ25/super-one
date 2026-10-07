@@ -392,6 +392,7 @@ export type Messages = {
       githubNeedCli: string
       githubPrivate: string
       clonesInto: string
+      cloningInto: string
       cloning: string
       /** Fixed-height hint when submit will mkdir the typed path (or parent). */
       willCreateDirectory: string
@@ -4612,6 +4613,7 @@ export const en: Messages = {
         'Install and sign in to GitHub CLI (gh) to list your repos, or type owner/repo.',
       githubPrivate: 'Private',
       clonesInto: 'Clones into {{path}}',
+      cloningInto: 'Cloning into {{path}}',
       cloning: 'Cloning...',
       willCreateDirectory: 'Will create {{path}}',
       createSection: 'Create',

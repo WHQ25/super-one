@@ -911,6 +911,11 @@ const environmentAPI = {
     ipcRenderer.on(AgentIpcChannels.ENVIRONMENT_STATUS_EVENT, handler)
     return () => ipcRenderer.removeListener(AgentIpcChannels.ENVIRONMENT_STATUS_EVENT, handler)
   },
+  onCloneProgress: (callback: (percent: number) => void) => {
+    const handler = (_e: unknown, percent: number): void => callback(percent)
+    ipcRenderer.on(AgentIpcChannels.ENVIRONMENT_CLONE_PROGRESS, handler)
+    return () => ipcRenderer.removeListener(AgentIpcChannels.ENVIRONMENT_CLONE_PROGRESS, handler)
+  },
   onInstallProgress: (callback: (progress: unknown) => void) => {
     const handler = (_e: unknown, progress: unknown): void => callback(progress)
     ipcRenderer.on(AgentIpcChannels.ENVIRONMENT_INSTALL_PROGRESS, handler)

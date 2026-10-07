@@ -7,13 +7,26 @@
  * rather than being written twice.
  */
 
-import { execFile } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync } from 'node:fs'
 import { isAbsolute, join, resolve } from 'node:path'
 import { repoNameFromGitUrl, validateCloneRemoteUrl } from './git-remote'
 
 /** A clone of a large repo over a slow link still has to finish. */
 const CLONE_TIMEOUT_MS = 15 * 60 * 1000
+/** Enough stderr to explain a failure; progress output would otherwise grow unbounded. */
+const STDERR_TAIL_CHARS = 16 * 1024
+
+/** Only the object download is slow enough to be worth a bar; other phases are quick. */
+const RECEIVING_LINE = /^Receiving objects:\s+(\d{1,3})%/
+/** Any progress meter, including `remote:` phases — kept out of error messages. */
+const ANY_PROGRESS_LINE = /:\s+\d{1,3}%/
+
+/** Download percent for one `git clone --progress` stderr line, or null for other lines. */
+export function parseCloneProgress(line: string): number | null {
+  const match = RECEIVING_LINE.exec(line.trim())
+  return match ? Math.min(Number(match[1]), 100) : null
+}
 
 export interface CloneRepositoryInput {
   remoteUrl: string
@@ -30,7 +43,8 @@ export interface CloneRepositoryInput {
 
 /** `git clone` argv after the binary name. Exported so tests can lock the flag order. */
 export function buildCloneArgs(input: CloneRepositoryInput, destinationPath: string): string[] {
-  const args = ['clone']
+  // Progress is only written to a TTY unless asked for explicitly.
+  const args = ['clone', '--progress']
   if (input.shallow) args.push('--depth=1')
   // `--` stops git from reading a hostile URL as an option.
   args.push('--', input.remoteUrl.trim(), destinationPath)
@@ -72,9 +86,11 @@ export function resolveCloneDestination(input: CloneRepositoryInput): CloneRepos
 /**
  * Clone into `<parentPath>/<directoryName>`, creating the parent directory when
  * it does not exist yet (the "Create & Clone" case in the add-project dialog).
+ * `onProgress` receives the monotonically increasing object download percent.
  */
 export async function cloneRepository(
   input: CloneRepositoryInput,
+  onProgress?: (percent: number) => void,
 ): Promise<CloneRepositoryResult> {
   const destination = resolveCloneDestination(input)
 
@@ -88,35 +104,58 @@ export async function cloneRepository(
   mkdirSync(parent, { recursive: true })
 
   await new Promise<void>((resolvePromise, reject) => {
-    execFile(
-      'git',
-      buildCloneArgs(input, destination.path),
-      {
-        cwd: parent,
-        timeout: CLONE_TIMEOUT_MS,
-        maxBuffer: 16 * 1024 * 1024,
-        // Never let git block on an interactive credential or host-key prompt:
-        // a hung prompt would leave the dialog spinning with no way out.
-        env: {
-          ...process.env,
-          GIT_TERMINAL_PROMPT: '0',
-          GIT_ASKPASS: 'echo',
-          GIT_SSH_COMMAND: `${process.env.GIT_SSH_COMMAND ?? 'ssh'} -o BatchMode=yes`,
-        },
+    const child = spawn('git', buildCloneArgs(input, destination.path), {
+      cwd: parent,
+      timeout: CLONE_TIMEOUT_MS,
+      stdio: ['ignore', 'ignore', 'pipe'],
+      // Never let git block on an interactive credential or host-key prompt:
+      // a hung prompt would leave the dialog spinning with no way out.
+      env: {
+        ...process.env,
+        GIT_TERMINAL_PROMPT: '0',
+        GIT_ASKPASS: 'echo',
+        GIT_SSH_COMMAND: `${process.env.GIT_SSH_COMMAND ?? 'ssh'} -o BatchMode=yes`,
       },
-      (err, _stdout, stderr) => {
-        if (!err) {
-          resolvePromise()
-          return
+    })
+
+    let stderrTail = ''
+    let pending = ''
+    let lastPercent = -1
+    child.stderr.setEncoding('utf8')
+    child.stderr.on('data', (chunk: string) => {
+      stderrTail = (stderrTail + chunk).slice(-STDERR_TAIL_CHARS)
+      if (!onProgress) return
+      // Progress lines are rewritten in place with `\r`.
+      const lines = (pending + chunk).split(/\r|\n/)
+      pending = lines.pop() ?? ''
+      for (const line of lines) {
+        const percent = parseCloneProgress(line)
+        if (percent !== null && percent > lastPercent) {
+          lastPercent = percent
+          onProgress(percent)
         }
-        const detail = (stderr || err.message || '').trim().split('\n').slice(-4).join('\n')
-        reject(
-          Object.assign(new Error(detail || `git clone failed: ${input.remoteUrl}`), {
-            code: 'failed_precondition',
-          }),
-        )
-      },
-    )
+      }
+    })
+
+    child.on('error', (err) => {
+      reject(Object.assign(err, { code: 'failed_precondition' }))
+    })
+    child.on('close', (code, signal) => {
+      if (code === 0) {
+        resolvePromise()
+        return
+      }
+      const detail = stderrTail
+        .split(/\r|\n/)
+        .filter((line) => line.trim() && !ANY_PROGRESS_LINE.test(line))
+        .slice(-4)
+        .join('\n')
+        .trim()
+      const fallback = signal
+        ? `git clone was terminated (${signal}): ${input.remoteUrl}`
+        : `git clone failed: ${input.remoteUrl}`
+      reject(Object.assign(new Error(detail || fallback), { code: 'failed_precondition' }))
+    })
   })
 
   return destination

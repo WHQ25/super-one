@@ -2511,10 +2511,12 @@ export class EnvironmentHost {
   /**
    * Clone a repository onto a host and register the result as a project.
    * The parent directory is created when missing ("Create & Clone").
+   * `onProgress` fires for local clones only; the node RPC has no progress push.
    */
   async cloneRepository(
     connectionId: string,
     input: { remoteUrl: string; parentPath: string; directoryName?: string; shallow?: boolean },
+    onProgress?: (percent: number) => void,
   ): Promise<ProjectSnapshot> {
     if (connectionId !== 'local') {
       const project = await this.requireRemoteGateway(connectionId).cloneRepository(input)
@@ -2530,7 +2532,7 @@ export class EnvironmentHost {
     const cloned = await cloneRepository({
       ...input,
       parentPath: this.expandLocalPath(input.parentPath),
-    })
+    }, onProgress)
     return this.registerLocalProject(cloned.path)
   }
 

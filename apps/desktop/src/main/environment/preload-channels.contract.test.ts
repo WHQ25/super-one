@@ -58,6 +58,7 @@ describe('environment preload ↔ Main IPC contract', () => {
     )
     expect(AgentIpcChannels.ENVIRONMENT_BROWSE_PATH).toBe('environment:browsePath')
     expect(AgentIpcChannels.ENVIRONMENT_CLONE_REPOSITORY).toBe('environment:cloneRepository')
+    expect(AgentIpcChannels.ENVIRONMENT_CLONE_PROGRESS).toBe('environment:cloneProgress')
     expect(AgentIpcChannels.ENVIRONMENT_CONNECT).toBe('environment:connect')
     expect(AgentIpcChannels.ENVIRONMENT_DISCONNECT).toBe('environment:disconnect')
     expect(AgentIpcChannels.ENVIRONMENT_FORGET).toBe('environment:forget')
@@ -109,6 +110,7 @@ describe('environment preload ↔ Main IPC contract', () => {
       'ENVIRONMENT_RESUME_REMOTE_SESSION_EVENTS',
       'ENVIRONMENT_BROWSE_PATH',
       'ENVIRONMENT_CLONE_REPOSITORY',
+      'ENVIRONMENT_CLONE_PROGRESS',
       'ENVIRONMENT_CONNECT',
       'ENVIRONMENT_DISCONNECT',
       'ENVIRONMENT_FORGET',

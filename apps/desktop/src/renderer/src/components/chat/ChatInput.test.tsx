@@ -27,6 +27,8 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
     additionalDirs: [] as string[],
     projectExtraDirs: [] as string[],
     additionalDirsDirty: false,
+    // The composer border reads the Codex effort the selector shows.
+    codexModels: [] as Array<{ id: string }>,
     messages: [] as unknown[],
     cwd: '/project' as string,
     homedir: '/home/user' as string,

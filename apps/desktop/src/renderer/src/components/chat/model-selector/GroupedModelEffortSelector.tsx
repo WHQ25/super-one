@@ -1,5 +1,5 @@
 import { isCodexAccountProvider } from '@superone/shared/codex-accounts'
-import { useMemo, useState, type ReactNode } from 'react'
+import { useId, useMemo, useState, type ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { Check, ChevronDown, ChevronRight, RefreshCw, Search, Settings2, X, Zap } from 'lucide-react'
@@ -71,6 +71,8 @@ export interface SelectorCatalogParam {
   kind: 'toggle' | 'choice'
   values: Array<{ value: string; label: string }>
   selected: string
+  /** Muted line under a toggle's label. */
+  description?: string
 }
 
 interface GroupedModelEffortSelectorProps {
@@ -339,20 +341,27 @@ function ToggleParamGroup({
   return (
     <div className="pb-1 pt-1.5">
       <div className="px-2 pb-1 text-xs text-muted-foreground">Options</div>
-      {params.map((param) => (
-        <div
-          key={param.id}
-          className="flex items-center justify-between gap-3 rounded-md px-2 py-1.5"
-        >
-          <span className="min-w-0 truncate text-sm font-medium">{param.label}</span>
-          <Switch
-            checked={param.selected === 'true'}
-            onCheckedChange={(enabled) => onChange(param.id, enabled ? 'true' : 'false')}
-            onClick={(event) => event.stopPropagation()}
-            aria-label={param.label}
-          />
-        </div>
-      ))}
+      {params.map((param) => <ToggleParamRow key={param.id} param={param} onChange={onChange} />)}
+    </div>
+  )
+}
+
+/** Label and switch on one line; the hint, if any, on its own line underneath. */
+function ToggleParamRow({ param, onChange }: { param: SelectorCatalogParam; onChange: (id: string, value: string) => void }) {
+  const descriptionId = useId()
+  return (
+    <div className="rounded-md px-2 py-1.5">
+      <div className="flex items-center justify-between gap-3">
+        <span className="min-w-0 truncate text-sm font-medium">{param.label}</span>
+        <Switch
+          checked={param.selected === 'true'}
+          onCheckedChange={(enabled) => onChange(param.id, enabled ? 'true' : 'false')}
+          onClick={(event) => event.stopPropagation()}
+          aria-label={param.label}
+          aria-describedby={param.description ? descriptionId : undefined}
+        />
+      </div>
+      {param.description && <p id={descriptionId} className="mt-0.5 text-xs text-muted-foreground">{param.description}</p>}
     </div>
   )
 }

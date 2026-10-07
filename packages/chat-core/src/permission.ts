@@ -24,6 +24,7 @@ export function reducePermission(session: ChatCoreSession, event: PermissionEven
       const merged = {
         selectedModel: eventPatch.selectedModel ?? event.selectedModel,
         selectedEffort: eventPatch.selectedEffort ?? event.selectedEffort,
+        ultracode: eventPatch.ultracode,
         selectedCodexModel: eventPatch.selectedCodexModel,
         selectedCodexReasoningEffort: eventPatch.selectedCodexReasoningEffort,
         selectedCodexServiceTier: eventPatch.selectedCodexServiceTier,
@@ -60,6 +61,9 @@ export function reducePermission(session: ChatCoreSession, event: PermissionEven
       }
       if (merged.selectedCodexServiceTier !== undefined) {
         patch.selectedCodexServiceTier = merged.selectedCodexServiceTier
+      }
+      if (merged.ultracode !== undefined) {
+        patch.ultracode = merged.ultracode
       }
       if (merged.selectedCodexPermissionPreset != null) {
         patch.selectedCodexPermissionPreset = merged.selectedCodexPermissionPreset

@@ -38,6 +38,7 @@ export function useScopedSessionActions() {
     // Harness settings
     setSelectedModel: s.setSelectedModel,
     setSelectedEffort: s.setSelectedEffort,
+    setUltracode: s.setUltracode,
     setCursorModelParams: s.setCursorModelParams,
     setCursorModelParam: s.setCursorModelParam,
     setSelectedAcpMode: s.setSelectedAcpMode,
@@ -68,6 +69,7 @@ export function useScopedSessionActions() {
     return {
       setSelectedModel: (model: string) => actions.setSelectedModel(model, target),
       setSelectedEffort: (effort?: EffortLevel) => actions.setSelectedEffort(effort, target),
+      setUltracode: (enabled: boolean) => actions.setUltracode(enabled, target),
       setCursorModelParams: (params: Record<string, string>) => actions.setCursorModelParams(params, target),
       setCursorModelParam: (id: string, value: string) => actions.setCursorModelParam(id, value, target),
       setSelectedAcpMode: (modeId: string) => actions.setSelectedAcpMode(modeId, target),

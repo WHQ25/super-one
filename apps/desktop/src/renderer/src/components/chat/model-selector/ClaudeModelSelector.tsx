@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Zap } from 'lucide-react'
+import { Workflow, Zap } from 'lucide-react'
 import type { EffortLevel } from '@superone/shared/agent-types'
 import { formatEffortLabel } from '@superone/shared/effort-labels'
 import { useActiveSession, useChatStore, useScopedSessionActions, selectClaudeModels } from '@/stores/chat'
@@ -10,7 +10,7 @@ import { consumerForHarness, resolveEffective } from '@/lib/provider-resolve'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { FireText } from '../FireText'
 import { resolveClaudeDisplayName, resolveClaudeEntries } from '@superone/shared/claude-model-mapping'
-import { GroupedModelEffortSelector, type SelectorEffortOption, type SelectorModelOption } from './GroupedModelEffortSelector'
+import { GroupedModelEffortSelector, type SelectorCatalogParam, type SelectorEffortOption, type SelectorModelOption } from './GroupedModelEffortSelector'
 import { useSelectorProviders } from './useSelectorProviders'
 
 interface Props {
@@ -22,12 +22,13 @@ export function ClaudeModelSelector({ onCloseAutoFocus }: Props) {
 
   const selectedModel = useActiveSession((s) => s.selectedModel)
   const selectedEffort = useActiveSession((s) => s.selectedEffort)
+  const ultracode = useActiveSession((s) => s.ultracode)
   const preferredProvider = useActiveSession((s) => s.preferredProvider)
   const sessionProvider = useActiveSession((s) => s.sessionProvider)
   const sessionApiProviderId = useActiveSession((s) => s.apiProviderId)
   const availableModels = useChatStore(selectClaudeModels)
   const activeProject = useChatStore((s) => s.activeProject)
-  const { setSelectedModel, setSelectedEffort } = useScopedSessionActions()
+  const { setSelectedModel, setSelectedEffort, setUltracode } = useScopedSessionActions()
   const refreshClaudeResources = useChatStore((s) => s.refreshClaudeResources)
   const claudeResourcesLoading = useChatStore((s) => s.claudeResourcesLoading)
   const claudeModelsLoading = useActiveSession((s) => s.claudeModelsLoading)
@@ -131,6 +132,25 @@ export function ClaudeModelSelector({ onCloseAutoFocus }: Props) {
     return (currentModel?.supportedEffortLevels ?? []).map((level) => ({ value: level, label: formatEffortLabel(level) }))
   }, [activeModelEnv, currentModel])
 
+  // Claude Code offers Ultracode where dynamic workflows run on a model with xhigh
+  // effort. Remote nodes do not carry the toggle yet.
+  const ultracodeAvailable = !isRemoteProject && !activeModelEnv && !!currentModel?.supportedEffortLevels?.includes('xhigh')
+  useEffect(() => {
+    // Switching to a model or provider without it turns it off, as Claude Code
+    // refuses it there. Wait for the catalog: no model yet is not "unsupported".
+    if (ultracode && currentModel && !ultracodeAvailable) setUltracode(false)
+  }, [ultracode, currentModel, ultracodeAvailable, setUltracode])
+  const optionParams = useMemo<SelectorCatalogParam[]>(() => ultracodeAvailable
+    ? [{
+        id: 'ultracode',
+        label: 'Ultracode',
+        kind: 'toggle',
+        values: [{ value: 'false', label: 'Off' }, { value: 'true', label: 'On' }],
+        selected: ultracode ? 'true' : 'false',
+        description: t('tooltips.ultracodeHint'),
+      }]
+    : [], [ultracodeAvailable, ultracode, t])
+
   const eggName = (currentModelName ?? 'Model').toUpperCase()
   const triggerLabel = selectedEffort === 'max'
     ? <FireText>{`${eggName} · MAX`}</FireText>
@@ -140,6 +160,11 @@ export function ClaudeModelSelector({ onCloseAutoFocus }: Props) {
 
   return (
     <div className="flex items-center gap-1">
+      {ultracode && (
+        <span title={t('tooltips.ultracode')}>
+          <Workflow className="size-3 text-[rgb(var(--ultracode))]" />
+        </span>
+      )}
       {fastModeState && fastModeState !== 'off' && (
         <span title={t('tooltips.fastMode', { state: fastModeState })}>
           <Zap className={`size-3 ${fastModeState === 'on' ? 'text-yellow-500' : 'text-muted-foreground'}`} />
@@ -153,6 +178,8 @@ export function ClaudeModelSelector({ onCloseAutoFocus }: Props) {
         effortOptions={effortOptions}
         selectedEffort={selectedEffort ?? null}
         onSelectEffort={(value) => setSelectedEffort(value as EffortLevel)}
+        optionParams={optionParams}
+        onOptionParamChange={(id, value) => { if (id === 'ultracode') setUltracode(value === 'true') }}
         onRefreshModels={() => void refreshClaudeResources(true)}
         modelsLoading={modelsLoading}
         triggerLabel={triggerLabel}

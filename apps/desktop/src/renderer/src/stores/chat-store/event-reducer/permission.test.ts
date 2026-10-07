@@ -80,6 +80,13 @@ describe('reducePermission: agent_setting_change', () => {
     expect(patch.selectedCodexPermissionPreset).toBe('full-access')
   })
 
+  it('writes the Claude Ultracode toggle both ways', () => {
+    const on = reducePermission(createDefaultPerSessionState(), { type: 'agent_setting_change', patch: { ultracode: true } } as never)
+    expect(on.ultracode).toBe(true)
+    const off = reducePermission({ ...createDefaultPerSessionState(), ultracode: true }, { type: 'agent_setting_change', patch: { ultracode: false } } as never)
+    expect(off.ultracode).toBe(false)
+  })
+
   it('writes codex service tier', () => {
     const patch = reducePermission(createDefaultPerSessionState(), {
       type: 'agent_setting_change', patch: { selectedCodexServiceTier: 'fast' },

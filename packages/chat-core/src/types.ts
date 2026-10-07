@@ -167,6 +167,8 @@ export interface ChatCoreSession {
   modelUserChosen: boolean
   selectedEffort?: EffortLevel
   effortUserChosen: boolean
+  /** Claude Ultracode toggle; see SessionSettingsPatch.ultracode. */
+  ultracode: boolean
   selectedCodexModel: string
   selectedCodexReasoningEffort?: CodexReasoningEffort
   selectedCodexServiceTier: string | null

@@ -34,6 +34,7 @@ export function sessionSendRequest(options: SessionSendOptions): SendMessageRequ
     provider,
     model: options.model,
     effort: provider === 'codex' ? undefined : options.effort,
+    ...(provider === 'claude' ? { ultracode: session.ultracode } : {}),
     additionalDirs: options.additionalDirs,
     images: options.images,
     userMessageContent: options.userMessageContent,

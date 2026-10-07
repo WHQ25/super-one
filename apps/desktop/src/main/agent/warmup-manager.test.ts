@@ -49,6 +49,10 @@ describe('WarmupManager.keyOf', () => {
     expect(k0).not.toBe(WarmupManager.keyOf(baseOpts({ effort: 'high' as Options['effort'] })))
   })
 
+  it('differs when Ultracode is on, so a plain warm query never serves an Ultracode turn', () => {
+    expect(WarmupManager.keyOf(baseOpts())).not.toBe(WarmupManager.keyOf(baseOpts({ settings: { ultracode: true } })))
+  })
+
   it('differs when model changes so the first turn never inherits a stale warm model', () => {
     const k0 = WarmupManager.keyOf(baseOpts({ model: 'claude-sonnet-4-6' }))
     const k1 = WarmupManager.keyOf(baseOpts({ model: 'claude-opus-4-8' }))

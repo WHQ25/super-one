@@ -465,6 +465,7 @@ export interface ChatStore {
 
   setSelectedModel: (model: string, target?: SessionWriteTarget) => void
   setSelectedEffort: (effort?: EffortLevel, target?: SessionWriteTarget) => void
+  setUltracode: (enabled: boolean, target?: SessionWriteTarget) => void
   setCursorModelParams: (params: Record<string, string>, target?: SessionWriteTarget) => void
   setCursorModelParam: (id: string, value: string, target?: SessionWriteTarget) => void
   setFastMode: (enabled: boolean) => void

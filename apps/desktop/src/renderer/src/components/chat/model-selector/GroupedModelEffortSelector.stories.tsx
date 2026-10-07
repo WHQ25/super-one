@@ -4,6 +4,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import {
   GroupedModelEffortSelector,
   type SelectorAgentOption,
+  type SelectorCatalogParam,
   type SelectorEffortOption,
   type SelectorModelGroup,
   type SelectorModelOption,
@@ -157,3 +158,34 @@ function CodexManualRefreshStory() {
 }
 
 export const CodexManualRefresh: Story = { render: () => <CodexManualRefreshStory /> }
+
+/** A toggle under Options with a hint line, as Claude's Ultracode switch shows. Open the menu to see it. */
+function ToggleOptionWithHintStory() {
+  const [modelId, setModelId] = useState('gpt-5.3-codex')
+  const [effort, setEffort] = useState('xhigh')
+  const [on, setOn] = useState(true)
+  const params: SelectorCatalogParam[] = [{
+    id: 'ultracode',
+    label: 'Ultracode',
+    kind: 'toggle',
+    values: [{ value: 'false', label: 'Off' }, { value: 'true', label: 'On' }],
+    selected: on ? 'true' : 'false',
+    description: 'Use dynamic workflows on every task in this session.',
+  }]
+  return (
+    <div className="flex min-h-80 items-end justify-center rounded-lg border bg-muted/20 p-6">
+      <GroupedModelEffortSelector
+        models={MODELS}
+        selectedModelId={modelId}
+        onSelectModel={setModelId}
+        effortOptions={EFFORTS}
+        selectedEffort={effort}
+        onSelectEffort={setEffort}
+        optionParams={params}
+        onOptionParamChange={(_, value) => setOn(value === 'true')}
+      />
+    </div>
+  )
+}
+
+export const ToggleOptionWithHint: Story = { render: () => <ToggleOptionWithHintStory /> }

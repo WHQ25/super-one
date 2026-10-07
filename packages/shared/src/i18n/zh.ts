@@ -4162,6 +4162,8 @@ export const zh: Messages = {
     mermaidSource: '源码',
     expand: '展开',
     fastMode: '快速模式：{{state}}',
+    ultracode: 'Ultracode：每个任务都使用动态 workflow',
+    ultracodeHint: '本会话的每个任务都使用动态 workflow。',
     selectModel: '选择模型',
     thinkingEffort: '思考强度',
     effortFromEnv: '由服务商环境变量设定 (CLAUDE_CODE_EFFORT_LEVEL)',

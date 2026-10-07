@@ -241,6 +241,7 @@ export class ClaudeBackend implements SessionBackend {
       cwd: opts.cwd,
       model: opts.model ?? config.model,
       effort: opts.effort,
+      ultracode: opts.ultracode,
       permissionMode: opts.permissionMode,
       sandboxInfo: opts.sandboxInfo,
       canUseTool,
@@ -794,6 +795,17 @@ export class ClaudeBackend implements SessionBackend {
       ? { enabled: true, autoAllowBashIfSandboxed: sandboxInfo.autoAllowBash, failIfUnavailable: false }
       : { enabled: false }
     await this.query.applyFlagSettings({ sandbox })
+  }
+
+  /**
+   * `ultracode` alone, never with `effortLevel`: an effort change sent without
+   * the ultracode key turns Ultracode off. Effort changes rebuild the query from
+   * `_lastStartOpts`, which carries the toggle.
+   */
+  async setUltracode(enabled: boolean): Promise<void> {
+    if (this._lastStartOpts) this._lastStartOpts.ultracode = enabled
+    if (!this.query) return
+    await this.query.applyFlagSettings({ ultracode: enabled })
   }
 
   async setAdditionalDirectories(dirs: string[]): Promise<boolean> {

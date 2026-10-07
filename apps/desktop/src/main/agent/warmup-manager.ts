@@ -82,6 +82,7 @@ export class WarmupManager {
       cwd: opts.cwd ?? '',
       model: opts.model ?? '',
       effort: opts.effort ?? '',
+      ultracode: typeof opts.settings === 'object' && opts.settings.ultracode === true,
       permissionMode: opts.permissionMode ?? 'default',
       bypass: opts.allowDangerouslySkipPermissions ?? false,
       sandbox: opts.sandbox ? `${!!opts.sandbox.enabled}|${!!opts.sandbox.autoAllowBashIfSandboxed}` : '',

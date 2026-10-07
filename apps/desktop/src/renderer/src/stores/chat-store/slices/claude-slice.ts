@@ -40,6 +40,8 @@ import {
 export interface ClaudeSlice {
   setSelectedModel: (model: string, target?: SessionWriteTarget) => void
   setSelectedEffort: (effort?: EffortLevel, target?: SessionWriteTarget) => void
+  /** Claude Ultracode for this session: every substantive turn runs as a multi-agent workflow. */
+  setUltracode: (enabled: boolean, target?: SessionWriteTarget) => void
   setCursorModelParams: (params: Record<string, string>, target?: SessionWriteTarget) => void
   setCursorModelParam: (id: string, value: string, target?: SessionWriteTarget) => void
   setFastMode: (enabled: boolean) => void
@@ -401,6 +403,16 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
       if (getScopedPerSession(get(), target).draftText.length > 0) {
         triggerPrewarm(get(), activeProject)
       }
+    }
+  },
+
+  setUltracode: (enabled, target) => {
+    const { projectPath: activeProject, ipcSessionId } = resolveWriteScope(get(), target)
+    if (!activeProject) return
+    set((s) => commitPerSession(s, target, () => ({ ultracode: enabled })))
+    // Remote node sessions do not carry Ultracode yet; the picker hides it there.
+    if (!parseRemoteProjectKey(activeProject)) {
+      void window.agent.setSessionSettings(activeProject, { ultracode: enabled }, ipcSessionId)
     }
   },
 

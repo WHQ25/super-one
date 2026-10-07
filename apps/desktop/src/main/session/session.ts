@@ -821,6 +821,7 @@ export class Session implements SessionContract {
       const dirsChanged = this.dirsReachBackend() && !sameStringArray(nextDirs, this.additionalDirectories)
       if (request.effort !== undefined) this.effort = request.effort
       if (request.model !== undefined) this.model = request.model
+      if (request.ultracode !== undefined) this.setUltracode(request.ultracode)
       this.additionalDirectories = nextDirs
       this.appendUserMessage(request, providerOrigin)
       this.liveness.beginSend()
@@ -1075,8 +1076,9 @@ export class Session implements SessionContract {
     })
   }
 
-  setSelectedSettings(opts: { model?: string | null; effort?: SendMessageRequest['effort'] | null; mode?: string | null; contextWindow?: number | null }): void | Promise<void> {
+  setSelectedSettings(opts: { model?: string | null; effort?: SendMessageRequest['effort'] | null; ultracode?: boolean; mode?: string | null; contextWindow?: number | null }): void | Promise<void> {
     this.assertNotDisposed()
+    if (opts.ultracode !== undefined) this.setUltracode(opts.ultracode)
     let changed = false
     if (opts.model !== undefined) {
       const next = opts.model ?? undefined
@@ -1114,6 +1116,21 @@ export class Session implements SessionContract {
     if (applyWindow) {
       if (!this.model) throw new Error('ACP model is not selected')
       return this.setModel(this.model, { contextWindow: opts.contextWindow as number })
+    }
+  }
+
+  /**
+   * Claude Ultracode lives in `_uiSettings` alone: start options read it from
+   * there, and a running query takes the change live (no rebuild). Session-only,
+   * like Claude Code's `/effort` toggle, so it is not written to the database.
+   */
+  private setUltracode(enabled: boolean): void {
+    if ((this._uiSettings.ultracode ?? false) === enabled) return
+    const patch: import('@superone/shared/agent-types').SessionSettingsPatch = { ultracode: enabled }
+    this.mergeUiSettings(patch)
+    this.forwardEvent({ type: 'agent_setting_change', patch })
+    if (this.backendStarted) {
+      this.backend.setUltracode?.(enabled)?.catch((err) => log.warn('[Session] setUltracode failed sid=%s:', this.id, err))
     }
   }
 
@@ -1387,6 +1404,7 @@ export class Session implements SessionContract {
       effort: hint?.effort ?? asEffortLevel(this._uiSettings.selectedAcpModeId) ?? this.effort,
       model: hint?.model ?? this.model,
       serviceTier: this._uiSettings.selectedCodexServiceTier,
+      ultracode: this._uiSettings.ultracode ?? false,
       additionalDirectories: this.backendDirs(dirs),
       abortController: new AbortController(),
       providerSessionId: this._providerSessionId ?? undefined,
@@ -1791,6 +1809,7 @@ export class Session implements SessionContract {
     if (ui.permissionMode && ui.permissionMode !== 'default') return true
     if (ui.selectedModel) return true
     if (ui.selectedEffort) return true
+    if (ui.ultracode) return true
     if (ui.selectedAcpModeId) return true
     if (ui.selectedCodexModel) return true
     if (ui.selectedCodexReasoningEffort) return true
@@ -1933,6 +1952,7 @@ export class Session implements SessionContract {
       effort: asEffortLevel(this._uiSettings.selectedAcpModeId) ?? this.effort,
       model: this.model,
       serviceTier: this._uiSettings.selectedCodexServiceTier,
+      ultracode: this._uiSettings.ultracode ?? false,
       additionalDirectories: this.backendDirs(),
       abortController: this.abortController,
       providerSessionId: this._providerSessionId ?? undefined,

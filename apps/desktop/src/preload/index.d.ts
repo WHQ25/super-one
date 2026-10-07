@@ -58,7 +58,7 @@ interface AgentAPI {
   /** `sessionId` targets one session (a mosaic pane, a side chat); omit it for the project's active session. */
   setSandboxMode(projectPath: string, mode: SandboxMode, sessionId?: string): Promise<SandboxInfo>
   /** `sessionId` targets one session (a mosaic pane, a side chat); omit it for the project's active session. */
-  setSessionSettings(projectPath: string, settings: { model?: string | null; effort?: SendMessageRequest['effort'] | null; mode?: string | null; agentPreset?: string | null; contextWindow?: number | null }, sessionId?: string): Promise<void>
+  setSessionSettings(projectPath: string, settings: { model?: string | null; effort?: SendMessageRequest['effort'] | null; ultracode?: boolean; mode?: string | null; agentPreset?: string | null; contextWindow?: number | null }, sessionId?: string): Promise<void>
   setSessionApiProvider(sessionId: string, apiProviderId: string | null): Promise<void>
   broadcastSessionSetting(sessionId: string, patch: SessionSettingsPatch): Promise<void>
   answerQuestion(sessionId: string, requestId: string, answers: Record<string, string>, annotations?: QuestionAnnotations): Promise<void>

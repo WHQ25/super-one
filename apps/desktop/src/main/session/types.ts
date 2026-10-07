@@ -170,6 +170,8 @@ export interface BackendStartOptions {
   model?: string
   /** Codex service tier used when a turn does not provide an explicit override. */
   serviceTier?: string | null
+  /** Claude Ultracode (SDK `settings.ultracode`). */
+  ultracode?: boolean
   additionalDirectories?: string[]
   abortController: AbortController
   providerSessionId?: string
@@ -375,6 +377,8 @@ export interface SessionBackend {
   requestSessionRecap?(auto: boolean): Promise<boolean>
   setSandbox(sandboxInfo: SandboxInfo): Promise<void>
   setAdditionalDirectories?(dirs: string[]): Promise<boolean>
+  /** Claude only: switch Ultracode on the live query; later starts read BackendStartOptions.ultracode. */
+  setUltracode?(enabled: boolean): Promise<void>
   hasActiveBackgroundTasks?(): boolean
   getCodexGoal?(threadId: string | null): Promise<CodexGoal | null>
   setCodexGoal?(threadId: string | null, objective: string, status?: CodexGoalStatus): Promise<CodexGoal | null>

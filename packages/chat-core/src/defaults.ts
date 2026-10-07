@@ -56,6 +56,7 @@ export function createDefaultChatCoreSession(): ChatCoreSession {
     modelUserChosen: false,
     selectedEffort: undefined,
     effortUserChosen: false,
+    ultracode: false,
     selectedCodexModel: '',
     selectedCodexReasoningEffort: undefined,
     selectedCodexServiceTier: null,

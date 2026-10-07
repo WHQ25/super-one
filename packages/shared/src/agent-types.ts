@@ -2201,6 +2201,8 @@ export interface SessionSettingsPatch {
   // Claude
   selectedModel?: string | null
   selectedEffort?: EffortLevel | null
+  /** Ultracode: every substantive turn runs as a dynamic multi-agent workflow. Session-only, like Claude Code's `/effort` toggle. */
+  ultracode?: boolean
   // Codex
   selectedCodexModel?: string | null
   selectedCodexReasoningEffort?: CodexReasoningEffort | null
@@ -2244,6 +2246,8 @@ export interface SendMessageRequest {
   worktreePath?: string
   priority?: 'now' | 'next' | 'later'
   taskBudget?: number
+  /** Claude: the session's Ultracode toggle, carried so a draft's first send starts with it. */
+  ultracode?: boolean
   codex?: CodexSendExtras
   /** Body of the user message as it should appear in the bubble (overrides content blocks built from `content`). */
   userMessageContent?: ContentBlock[]

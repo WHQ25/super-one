@@ -41,6 +41,8 @@ export interface SessionQueryOptions {
   cwd: string
   model?: string
   effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+  /** Standing dynamic-workflow orchestration (SDK `settings.ultracode`); ignored by the CLI where unavailable. */
+  ultracode?: boolean
   permissionMode: PermissionMode
   sandboxInfo?: SandboxInfo
   canUseTool?: CanUseTool
@@ -148,10 +150,15 @@ export function buildClaudeOptions(opts: SessionQueryOptions): Options {
     abortController: opts.abortController,
     additionalDirectories: opts.additionalDirectories,
     env: withModDevFoldersEnv(withMcpAppsHostEnv(opts.env), opts.modDevFolders),
-    // Derived from the same keys as `env`, so WarmupManager.keyOf needs no extra field.
+    // `env` derives from the same keys as top-level `env`, so WarmupManager.keyOf
+    // needs no extra field for it; `ultracode` has its own key there.
     // `bashEditDiffEnabled` is constant: the CLI only defaults it on in auto /
     // bypassPermissions mode, and the chat renders Bash edits as file rows.
-    settings: { ...(opts.settingsEnv ? { env: opts.settingsEnv } : {}), bashEditDiffEnabled: true },
+    settings: {
+      ...(opts.settingsEnv ? { env: opts.settingsEnv } : {}),
+      bashEditDiffEnabled: true,
+      ...(opts.ultracode ? { ultracode: true } : {}),
+    },
     spawnClaudeCodeProcess: makeClaudeSpawn({
       onStderr: (data) => {
         log.warn('[claude-cli]', data.trimEnd())

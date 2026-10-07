@@ -4069,6 +4069,8 @@ export type Messages = {
     mermaidSource: string
     expand: string
     fastMode: string
+    ultracode: string
+    ultracodeHint: string
     selectModel: string
     thinkingEffort: string
     effortFromEnv: string
@@ -8311,6 +8313,8 @@ export const en: Messages = {
     mermaidSource: 'Source',
     expand: 'Expand',
     fastMode: 'Fast mode: {{state}}',
+    ultracode: 'Ultracode: dynamic workflows on every task',
+    ultracodeHint: 'Use dynamic workflows on every task in this session.',
     selectModel: 'Select Model',
     thinkingEffort: 'Thinking Effort',
     effortFromEnv: 'Effort level is set by provider environment (CLAUDE_CODE_EFFORT_LEVEL)',

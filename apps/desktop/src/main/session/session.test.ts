@@ -191,6 +191,10 @@ class FakeBackend implements SessionBackend {
   async setSandbox(info: import('@superone/shared/agent-types').SandboxInfo): Promise<void> {
     this.setSandboxCalls.push(info)
   }
+  setUltracodeCalls: boolean[] = []
+  async setUltracode(enabled: boolean): Promise<void> {
+    this.setUltracodeCalls.push(enabled)
+  }
   requestSessionRecapCalls: boolean[] = []
   async requestSessionRecap(auto: boolean): Promise<boolean> {
     this.requestSessionRecapCalls.push(auto)
@@ -917,6 +921,36 @@ describe('Session state machine', () => {
     })
     backend.resolveSend?.()
     await p
+  })
+
+  it('send() starts a draft with the Ultracode the request carries', async () => {
+    const p = session.send({ content: 'hi', ultracode: true })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(backend.startOpts?.ultracode).toBe(true)
+    backend.resolveSend?.()
+    await p
+  })
+
+  it('Ultracode switches on a running query live, without a rebuild, and replays to late subscribers', async () => {
+    const p = session.send({ content: 'start the backend' })
+    await new Promise((r) => setTimeout(r, 0))
+    backend.resolveSend?.()
+    await p
+    const events: AgentEvent[] = []
+    session.on((e) => events.push(e))
+
+    session.setSelectedSettings({ ultracode: true })
+    session.setSelectedSettings({ ultracode: true })
+
+    expect(backend.setUltracodeCalls).toEqual([true])
+    expect(backend.rebuildCalls).toHaveLength(0)
+    expect(events.filter((e) => e.type === 'agent_setting_change')).toEqual([
+      expect.objectContaining({ type: 'agent_setting_change', patch: { ultracode: true } }),
+    ])
+    expect(session.getReplayEvents()).toContainEqual(expect.objectContaining({
+      type: 'agent_setting_change',
+      patch: expect.objectContaining({ ultracode: true }),
+    }))
   })
 
   it('prewarm is NOT skipped after backend has started (so later rebuilds can consume the new warmup slot)', async () => {

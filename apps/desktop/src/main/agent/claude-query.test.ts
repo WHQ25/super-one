@@ -135,6 +135,11 @@ describe('buildClaudeOptions settingsEnv', () => {
     expect(buildClaudeOptions(base).settings).toEqual({ bashEditDiffEnabled: true })
   })
 
+  it('asks for Ultracode through the flag settings layer only when it is on', () => {
+    expect(buildClaudeOptions({ ...base, ultracode: true }).settings).toEqual({ bashEditDiffEnabled: true, ultracode: true })
+    expect(buildClaudeOptions({ ...base, ultracode: false }).settings).toEqual({ bashEditDiffEnabled: true })
+  })
+
   it('always enables the Bash working-tree diff: the CLI only defaults it on in auto mode', () => {
     expect(buildClaudeOptions({ ...base, permissionMode: 'acceptEdits' }).settings).toMatchObject({ bashEditDiffEnabled: true })
   })

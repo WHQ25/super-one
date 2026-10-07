@@ -1230,6 +1230,17 @@ describe('ClaudeBackend', () => {
       expect((opts as { sandboxInfo?: unknown }).sandboxInfo).toEqual({ enabled: true, autoAllowBash: false })
     })
 
+    it('setUltracode while idle-released applies Ultracode to the revived runtime', async () => {
+      const backend = await startThenIdleRelease()
+
+      await backend.setUltracode(true)
+      void backend.send({ content: 'hi' })
+      await new Promise((r) => setTimeout(r, 0))
+
+      const [, opts] = hoisted.captured.createSessionQueryMock.mock.calls[1]!
+      expect((opts as { ultracode?: boolean }).ultracode).toBe(true)
+    })
+
     it('setModel while idle-released applies the new model to the revived runtime', async () => {
       const backend = await startThenIdleRelease()
 

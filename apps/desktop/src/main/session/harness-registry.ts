@@ -5,6 +5,8 @@ import { CodexBackend } from './backends/codex-backend'
 import { CursorBackend } from './backends/cursor-backend'
 import { DeepseekBackend } from './backends/deepseek-backend'
 import { OpenCodeBackend } from './backends/opencode-backend'
+import { ScriptedBackend } from './backends/scripted-backend'
+import { scriptedHarnessEnabled } from './scripted-harness-gate'
 import { forkAcpTranscript } from './backends/acp-fork'
 import { forkClaudeTranscript } from './backends/claude-fork'
 import { forkCodexThread } from './backends/codex-fork'
@@ -148,7 +150,10 @@ const registry = new Map<HarnessId, Harness>([
 
 export const harnessRegistry = {
   get(id: HarnessId): Harness | undefined {
-    return registry.get(id)
+    const harness = registry.get(id)
+    // E2E only: every harness runs scripted turns (see scripted-backend.ts).
+    if (harness && scriptedHarnessEnabled()) return { ...harness, createBackend: () => new ScriptedBackend(id) }
+    return harness
   },
   list(): Harness[] {
     return Array.from(registry.values())

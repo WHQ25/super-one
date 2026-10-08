@@ -1,30 +1,15 @@
-import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
+import { test, expect, _electron as electron, type ElectronApplication } from '@playwright/test'
 import path from 'node:path'
-import { rm } from 'node:fs/promises'
+import { DESKTOP_ROOT as PROJECT_ROOT, getRendererWindow, instanceUserDataDir, removeInstanceData } from './fixtures/desktop-instance'
 
-const PROJECT_ROOT = process.cwd()
 const INSTANCE_NAME = 'playwright'
-const USER_DATA_DIR = path.join(PROJECT_ROOT, '.dev-data', `instance-${INSTANCE_NAME}`)
-
-async function getRendererWindow(app: ElectronApplication, timeoutMs = 15_000): Promise<Page> {
-  const deadline = Date.now() + timeoutMs
-  while (Date.now() < deadline) {
-    // By page: a fresh profile also briefly hosts a windowless storage-migration page.
-    const win = app.windows().find((w) => w.url().includes('/index.html'))
-    if (win) {
-      await win.waitForLoadState('domcontentloaded')
-      return win
-    }
-    await new Promise((r) => setTimeout(r, 100))
-  }
-  throw new Error(`renderer window did not open within ${timeoutMs}ms`)
-}
+const USER_DATA_DIR = instanceUserDataDir(INSTANCE_NAME)
 
 test.describe('app launch', () => {
   let app: ElectronApplication
 
   test.beforeAll(async () => {
-    await rm(USER_DATA_DIR, { recursive: true, force: true })
+    await removeInstanceData(INSTANCE_NAME)
     app = await electron.launch({
       // `.` boots through package.json `main`, the same entry the packaged app uses.
       args: ['.'],

@@ -31,6 +31,7 @@ import {
   isDesktopManagedPinAligned,
 } from './tarball-installer'
 import log from '../logger'
+import { scriptedHarnessEnabled } from '../session/scripted-harness-gate'
 import { refreshGrokInstallation } from './grok-installation'
 
 let manager: HarnessManager | null = null
@@ -70,6 +71,8 @@ export function getHarnessManager(): HarnessManager {
   // better-sqlite3 Database satisfies TransactionalSqliteDatabase.
   const db = getDb() as unknown as TransactionalSqliteDatabase
   manager = new HarnessManager(db)
+  // E2E only: scripted turns need no installed runtime (see scripted-backend.ts).
+  if (scriptedHarnessEnabled()) manager.enableSimulatedOverlay()
   return manager
 }
 

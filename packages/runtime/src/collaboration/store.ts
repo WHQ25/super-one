@@ -308,21 +308,49 @@ export class CollaborationStore {
   }
 
   /**
-   * Unread messages addressed to `sessionId` across grants, without marking
-   * them read. Batches keep the order of `grantIds`.
+   * Up to `limit` unread messages addressed to `sessionId` across grants,
+   * without marking them read: one per grant in turn, grants with the oldest
+   * unread message first, so successive reads reach every grant even when
+   * there are more grants than `limit`. Each batch is a prefix of its grant's
+   * unread messages. Selection reads only the mailbox index; bodies load for
+   * the selected messages alone.
    */
-  peekMailbox(sessionId: string, grantIds: string[], limitPerGrant: number): MailboxBatch[] {
-    return grantIds.flatMap((grantId) => {
+  peekMailbox(sessionId: string, grantIds: string[], limit: number): MailboxBatch[] {
+    const unread = this.db.prepare(`
+      SELECT rowid AS rid FROM session_collaboration_messages
+      WHERE credential_hash = ? AND recipient_session_id = ? AND sequence > ?
+      ORDER BY sequence LIMIT ?
+    `)
+    const createdAt = this.db.prepare('SELECT created_at FROM session_collaboration_messages WHERE rowid = ?')
+    const queues = grantIds.flatMap((grantId) => {
       const cursor = this.db.prepare(`
         SELECT last_sequence FROM session_collaboration_cursors WHERE credential_hash = ? AND session_id = ?
       `).get(grantId, sessionId) as { last_sequence: number } | undefined
-      const rows = this.db.prepare(`
-        SELECT ${MESSAGE_COLUMNS} FROM session_collaboration_messages
-        WHERE credential_hash = ? AND recipient_session_id = ? AND sequence > ?
-        ORDER BY sequence LIMIT ?
-      `).all(grantId, sessionId, cursor?.last_sequence ?? 0, limitPerGrant) as CollaborationMessageRow[]
-      return rows.length > 0 ? [{ grantId, rows }] : []
-    })
+      const rids = (unread.all(grantId, sessionId, cursor?.last_sequence ?? 0, limit) as Array<{ rid: number }>)
+        .map((row) => row.rid)
+      if (rids.length === 0) return []
+      const oldest = (createdAt.get(rids[0]) as { created_at: string }).created_at
+      return [{ grantId, rids, oldest, taken: 0 }]
+    }).sort((a, b) => a.oldest.localeCompare(b.oldest))
+    let budget = limit
+    while (budget > 0) {
+      let took = false
+      for (const queue of queues) {
+        if (budget === 0) break
+        if (queue.taken === queue.rids.length) continue
+        queue.taken++
+        budget--
+        took = true
+      }
+      if (!took) break
+    }
+    const load = this.db.prepare(`SELECT ${MESSAGE_COLUMNS} FROM session_collaboration_messages WHERE rowid = ?`)
+    return queues
+      .filter((queue) => queue.taken > 0)
+      .map(({ grantId, rids, taken }) => ({
+        grantId,
+        rows: rids.slice(0, taken).map((rid) => load.get(rid) as CollaborationMessageRow),
+      }))
   }
 
   /**

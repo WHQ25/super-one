@@ -166,6 +166,37 @@ describe('readCallerMailbox', () => {
       expect(contents(1)).toEqual(['a4'])
     })
 
+    it('loads only the bodies it returns, however large the backlog', () => {
+      for (let n = 0; n < 40; n++) {
+        spawn('parent', `c${n}`)
+        for (let m = 0; m < 30; m++) send(`c${n}`, undefined, 'x'.repeat(1_000))
+      }
+      let bodies = 0
+      const counting = new Proxy(db, {
+        get(target, key) {
+          if (key !== 'prepare') return Reflect.get(target, key, target)
+          return (sql: string) => {
+            const statement = target.prepare(sql)
+            if (!/\bcontent\b/.test(sql)) return statement
+            return new Proxy(statement, {
+              get(stmt, method) {
+                const value = Reflect.get(stmt, method, stmt)
+                if (method !== 'get' && method !== 'all') return typeof value === 'function' ? value.bind(stmt) : value
+                return (...args: unknown[]) => {
+                  const result = value.apply(stmt, args)
+                  bodies += Array.isArray(result) ? result.length : result ? 1 : 0
+                  return result
+                }
+              },
+            })
+          }
+        },
+      })
+      const read = readCallerMailbox(new CollaborationStore(counting), 'parent', { limit: 10 }, sessionTitle)
+      expect(read.messages).toHaveLength(10)
+      expect(bodies).toBeLessThanOrEqual(10)
+    })
+
     it('acknowledges only the prefix it returned', () => {
       spawn('parent', 'a')
       for (let n = 1; n <= 3; n++) send('a', undefined, `a${n}`)

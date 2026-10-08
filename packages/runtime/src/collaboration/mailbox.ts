@@ -6,7 +6,7 @@ import {
   deriveCollaborationRole,
   parseGrantConfig,
 } from './launch'
-import type { CollaborationGrantRow, CollaborationStore, MailboxAck, MailboxBatch } from './store'
+import type { CollaborationGrantRow, CollaborationStore, MailboxAck } from './store'
 import { HANDOFF_NO_MAILBOX, NO_PEERS_HINT } from './text'
 
 /**
@@ -180,35 +180,8 @@ export function normalizeMailboxContent(raw: unknown): string {
 
 /**
  * Drain the caller's unread messages (optionally only from `from` peers) and
- * list its peers. Each channel gets an even share of `limit`.
+ * list its peers. Channels share `limit` fairly ({@link CollaborationStore.peekMailbox}).
  */
-/**
- * At most `limit` messages, a prefix of each batch: one per grant in turn,
- * grants with the oldest unread message first, so successive reads reach
- * every grant even when there are more grants than `limit`.
- */
-function takeFairly(batches: MailboxBatch[], limit: number): MailboxBatch[] {
-  const queues = batches
-    .map((batch) => ({ batch, taken: 0 }))
-    .sort((a, b) => a.batch.rows[0]!.created_at.localeCompare(b.batch.rows[0]!.created_at)
-      || a.batch.rows[0]!.sequence - b.batch.rows[0]!.sequence)
-  let budget = limit
-  while (budget > 0) {
-    let took = false
-    for (const queue of queues) {
-      if (budget === 0) break
-      if (queue.taken === queue.batch.rows.length) continue
-      queue.taken++
-      budget--
-      took = true
-    }
-    if (!took) break
-  }
-  return queues
-    .filter((queue) => queue.taken > 0)
-    .map(({ batch, taken }) => ({ grantId: batch.grantId, rows: batch.rows.slice(0, taken) }))
-}
-
 export function readCallerMailbox(
   store: CollaborationStore,
   callerSessionId: string,
@@ -245,7 +218,7 @@ export function readCallerMailbox(
 
   const limit = Math.min(MAX_MESSAGES_PER_RETRIEVE, Math.max(1, Math.floor(options.limit ?? MAX_MESSAGES_PER_RETRIEVE)))
   const peerByGrant = new Map(selected.map((channel) => [channel.grant.grant_id, channel.peer]))
-  const batches = takeFairly(store.peekMailbox(callerSessionId, [...peerByGrant.keys()], limit), limit)
+  const batches = store.peekMailbox(callerSessionId, [...peerByGrant.keys()], limit)
   const acks = batches.map(({ grantId, rows }) => ({ grantId, lastSequence: rows[rows.length - 1]!.sequence }))
   if (!options.deferAck) store.ackMailbox(callerSessionId, acks)
   const messages = batches

@@ -7,6 +7,7 @@ import { existsSync, statSync } from 'fs'
 import type { SessionAgentLaunchConfig } from '@superone/shared/agent-types'
 import { findCodexFastServiceTier } from '@superone/shared/codex-fast-mode'
 import {
+  childStoppedWakeText,
   describePeerForCaller as describeGrantPeerForCaller,
   linkActivationWakeText,
   mailboxWakeText,
@@ -42,8 +43,13 @@ export function sessionTitle(sessionId: string): string | null {
   return row?.title ?? null
 }
 
+/** Session title for agent-facing text, falling back to the short id while untitled. */
+function sessionLabelTitle(sessionId: string): string {
+  return sessionTitle(sessionId)?.trim() || sessionId.slice(0, 8)
+}
+
 export function initiatorTitleOf(grant: GrantRow): string {
-  return sessionTitle(grant.parent_session_id)?.trim() || grant.parent_session_id.slice(0, 8)
+  return sessionLabelTitle(grant.parent_session_id)
 }
 
 
@@ -125,8 +131,21 @@ async function wakeSession(host: SessionManager, sessionId: string, text: string
 }
 
 export function wakeCollaborationPeer(host: SessionManager, sessionId: string, fromSessionId: string): Promise<void> {
-  const fromTitle = sessionTitle(fromSessionId)?.trim() || fromSessionId.slice(0, 8)
-  return wakeSession(host, sessionId, mailboxWakeText({ sessionId: fromSessionId, title: fromTitle }))
+  return wakeSession(host, sessionId, mailboxWakeText({ sessionId: fromSessionId, title: sessionLabelTitle(fromSessionId) }))
+}
+
+/** Fallback wake: a spawn child stopped (`status`) without messaging its parent since its last input. */
+export function wakeParentOfStoppedChild(
+  host: SessionManager,
+  parentSessionId: string,
+  childSessionId: string,
+  status: string,
+): Promise<void> {
+  return wakeSession(host, parentSessionId, childStoppedWakeText({
+    sessionId: childSessionId,
+    title: sessionLabelTitle(childSessionId),
+    status,
+  }))
 }
 
 export function wakeLinkPeer(

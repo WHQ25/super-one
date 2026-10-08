@@ -60,6 +60,17 @@ export function mailboxWakeText(from: { sessionId: string; title: string }): str
   )
 }
 
+/**
+ * Fallback wake for a spawn parent whose child stopped without messaging it
+ * since its last input. One line: the parent asks retrieve for details.
+ */
+export function childStoppedWakeText(child: { sessionId: string; title: string; status: string }): string {
+  return (
+    `Your collaboration child ${sessionLabel(child.sessionId, child.title)} stopped (${child.status}) `
+    + 'without sending you a message. Call session_collab_retrieve for its state, then decide whether to message it.'
+  )
+}
+
 export function linkActivationWakeText(input: {
   initiatorSessionId: string
   initiatorTitle: string

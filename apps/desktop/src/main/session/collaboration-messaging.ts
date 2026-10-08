@@ -12,7 +12,9 @@ import {
   readOnlyTargetMessage as collaborationTargetReadOnlyMessage,
   resolveSendChannel,
 } from '@superone/runtime/collaboration'
+import type { CollaborationPeer } from '@superone/runtime/collaboration'
 import { denyMainThreadOnlyIfSubagent } from '../mcp/main-thread-session-guard'
+import { describeChildStatus } from './collaboration-lifecycle'
 import { collaborationStore as store, notifyCollaborationMailboxChanged } from './collaboration-mailbox'
 import {
   errorResult,
@@ -84,6 +86,14 @@ export interface SessionRetrieveArgs {
   from?: string[]
 }
 
+/** Child peers also carry what they are doing, so a woken parent can decide without reading transcripts. */
+function withChildStatus(peers: CollaborationPeer[], host: SessionManager) {
+  const now = Date.now()
+  return peers.map((peer) => peer.relation === 'child'
+    ? { ...peer, ...describeChildStatus(host.getSession(peer.sessionId), now) }
+    : peer)
+}
+
 /**
  * Non-blocking mailbox read. Advances this endpoint's cursor for any messages
  * currently available and lists the caller's peers. Peers are woken via task
@@ -93,6 +103,7 @@ export interface SessionRetrieveArgs {
 export async function retrieveSessionMessages(
   callerSessionId: string,
   args: SessionRetrieveArgs,
+  host: SessionManager,
 ) {
   const denied = await denyMainThreadOnlyIfSubagent(callerSessionId, 'session_collab_retrieve')
   if (denied) return toolResult(denied, true)
@@ -102,7 +113,8 @@ export async function retrieveSessionMessages(
   } catch (error) {
     return errorResult(error)
   }
-  const { messages, peers } = read
+  const { messages } = read
+  const peers = withChildStatus(read.peers, host)
   if (messages.length > 0) {
     notifyCollaborationMailboxChanged(callerSessionId)
     return toolResult({ status: 'messages', messages, peers })

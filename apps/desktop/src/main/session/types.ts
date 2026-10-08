@@ -588,6 +588,8 @@ export interface Session {
   isStreaming(): boolean
   /** Sidebar liveness from backend events; see `Session.activityStatus`. */
   activityStatus(): AgentStatus
+  /** Epoch ms of the last agent event or user action. */
+  readonly lastRuntimeActivityAt: number
   /** A realtime voice call is open on this session. */
   readonly realtimeActive: boolean
   truncateMessagesAt(checkpointId: string): void

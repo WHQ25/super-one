@@ -256,6 +256,9 @@ function fakeSession(
     send: vi.fn(async () => {}),
     setTitle: vi.fn(),
     isStreaming: vi.fn(() => false),
+    activityStatus: vi.fn(() => 'idle'),
+    getPendingInteractions: vi.fn(() => []),
+    lastRuntimeActivityAt: 0,
     injectTaskNotification: vi.fn(async () => {}),
     appendTranscriptMessage: vi.fn(),
     on: vi.fn((handler: (event: AgentEvent) => void) => {
@@ -912,10 +915,10 @@ describe('@agent mention targets', () => {
     expect(wake).toHaveBeenCalledTimes(1)
     expect(wake.mock.calls[0][0]).toMatch(/^A collaboration mailbox message is ready\. It is from SuperOne session parent/)
 
-    const childInbox = resultJson(await retrieveSessionMessages(childId, {}))
+    const childInbox = resultJson(await retrieveSessionMessages(childId, {}, host))
     expect(childInbox.messages).toMatchObject([{ content: 'from parent', from: { sessionId: 'parent', relation: 'parent' } }])
     expect(childInbox.peers).toMatchObject([{ name: 'Parent', sessionId: 'parent', relation: 'parent' }])
-    const drained = resultJson(await retrieveSessionMessages(childId, {}))
+    const drained = resultJson(await retrieveSessionMessages(childId, {}, host))
     expect(drained).toMatchObject({ status: 'empty', messages: [] })
     // An empty mailbox must talk the agent out of re-polling, not just report nothing.
     expect(drained.hint).toMatch(/do not sleep|end your turn/i)
@@ -923,9 +926,11 @@ describe('@agent mention targets', () => {
     expect(drained.peers).toMatchObject([{ sessionId: 'parent' }])
 
     await sendSessionMessage(childId, { content: 'from child' }, host)
-    const parentInbox = resultJson(await retrieveSessionMessages('parent', {}))
+    const parentInbox = resultJson(await retrieveSessionMessages('parent', {}, host))
     expect(parentInbox.messages).toMatchObject([{ content: 'from child', from: { sessionId: childId, relation: 'child' } }])
-    expect(parentInbox.peers).toMatchObject([{ sessionId: childId, relation: 'child' }])
+    expect(parentInbox.peers).toMatchObject([{ sessionId: childId, relation: 'child', state: 'idle' }])
+    // Only child peers carry a state; the parent's own view of its parent does not.
+    expect(childInbox.peers[0]).not.toHaveProperty('state')
   })
 
   it('retrieves messages from multiple child sessions in one call', async () => {
@@ -944,7 +949,7 @@ describe('@agent mention targets', () => {
     expect(ambiguous.message).toContain(first.sessionId)
     expect(ambiguous.message).toContain(second.sessionId)
 
-    const inbox = resultJson(await retrieveSessionMessages('parent', {}))
+    const inbox = resultJson(await retrieveSessionMessages('parent', {}, host))
     expect(inbox.messages).toHaveLength(2)
     expect(inbox.messages).toEqual(expect.arrayContaining([
       expect.objectContaining({ fromSessionId: first.sessionId, content: 'first' }),
@@ -1061,7 +1066,7 @@ describe('@agent mention targets', () => {
       expect(listUnreadCollaborationMessages(childId)).toEqual(unread)
       expect(listUnreadCollaborationMessages('parent')).toEqual([])
       expect(changed).toHaveBeenCalledTimes(2)
-      await retrieveSessionMessages(childId, {})
+      await retrieveSessionMessages(childId, {}, host)
       expect(listUnreadCollaborationMessages(childId)).toEqual([])
       expect(changed).toHaveBeenLastCalledWith(childId)
       expect(changed).toHaveBeenCalledTimes(3)
@@ -1118,7 +1123,7 @@ describe('@agent mention targets', () => {
     expect(String(sent.message)).toMatch(/worktree directory has been removed/i)
     expect(child.injectTaskNotification).not.toHaveBeenCalled()
 
-    const retrieved = resultJson(await retrieveSessionMessages(childId, {}))
+    const retrieved = resultJson(await retrieveSessionMessages(childId, {}, host))
     expect(retrieved.status).toBe('empty')
     expect(retrieved.messages).toEqual([])
   })
@@ -1236,7 +1241,8 @@ describe('@agent mention targets', () => {
 
   it('returns a tool error for a non-peer retrieve filter instead of throwing', async () => {
     const parent = fakeSession('parent')
-    const result = resultJson(await retrieveSessionMessages(parent.id, { from: ['stranger'] }))
+    const { host } = fakeHost(parent)
+    const result = resultJson(await retrieveSessionMessages(parent.id, { from: ['stranger'] }, host))
     expect(result).toMatchObject({ status: 'error' })
     expect(String(result.message)).toMatch(/Not your collaboration peers: stranger/)
   })
@@ -1256,7 +1262,7 @@ describe('@agent mention targets', () => {
       const sent = await sending
       expect(sent.isError).toBe(true)
       expect(String(resultJson(sent).message ?? resultJson(sent))).toMatch(/main thread/)
-      const reading = retrieveSessionMessages('parent', {})
+      const reading = retrieveSessionMessages('parent', {}, host)
       await vi.advanceTimersByTimeAsync(PARENT_CALL_WAIT_MS)
       const read = await reading
       expect(read.isError).toBe(true)
@@ -1266,9 +1272,9 @@ describe('@agent mention targets', () => {
       _resetMainThreadSessionGuardForTests()
     }
     // The subagent neither sent as the parent nor drained its inbox.
-    const childInbox = resultJson(await retrieveSessionMessages(started.sessionId, {}))
+    const childInbox = resultJson(await retrieveSessionMessages(started.sessionId, {}, host))
     expect(childInbox.status).toBe('empty')
-    const parentInbox = resultJson(await retrieveSessionMessages('parent', {}))
+    const parentInbox = resultJson(await retrieveSessionMessages('parent', {}, host))
     expect(parentInbox.messages).toMatchObject([{ content: 'for the parent only' }])
   })
 
@@ -1282,7 +1288,7 @@ describe('@agent mention targets', () => {
     noteLiveAcpSubagent('parent', 'sub-1', true)
     try {
       noteParentMainThreadCall('parent', 'tc-retrieve', 'mcp__superone__session_collab_retrieve')
-      const read = await retrieveSessionMessages('parent', { from: [childId] })
+      const read = await retrieveSessionMessages('parent', { from: [childId] }, host)
       expect(read.isError).toBeUndefined()
       expect(resultJson(read).messages).toMatchObject([{ content: 'VERDICT: PASS' }])
       const undelivered = state.db!.prepare(
@@ -1300,12 +1306,13 @@ describe('@agent mention targets', () => {
     } finally {
       _resetMainThreadSessionGuardForTests()
     }
-    const childInbox = resultJson(await retrieveSessionMessages(childId, {}))
+    const childInbox = resultJson(await retrieveSessionMessages(childId, {}, host))
     expect(childInbox.messages).toMatchObject([{ content: 'thanks' }])
   })
 
   it('tells a session with no peers how to get one', async () => {
-    const result = resultJson(await retrieveSessionMessages('loner', {}))
+    const { host } = fakeHost(fakeSession('loner'))
+    const result = resultJson(await retrieveSessionMessages('loner', {}, host))
     expect(result).toMatchObject({ status: 'empty', peers: [] })
     expect(String(result.hint)).toMatch(/session_collab_request/)
   })
@@ -1359,7 +1366,7 @@ describe('@agent mention targets', () => {
     }, host))
     expect(sent).toMatchObject({ status: 'sent', to: { sessionId: 'peer-session', relation: 'link' } })
 
-    const retrieved = resultJson(await retrieveSessionMessages('peer-session', {}))
+    const retrieved = resultJson(await retrieveSessionMessages('peer-session', {}, host))
     expect(retrieved.status).toBe('messages')
     expect(retrieved.peers).toMatchObject([{ sessionId: 'parent', relation: 'link' }])
     const messages = retrieved.messages as Array<{ content: string }>
@@ -1484,7 +1491,7 @@ describe('@agent mention targets', () => {
     expect(String(reply.message)).toMatch(/one-way/i)
 
     // The sibling has no peers at all.
-    const retrieve = resultJson(await retrieveSessionMessages(sessionId, {}))
+    const retrieve = resultJson(await retrieveSessionMessages(sessionId, {}, host))
     expect(retrieve).toMatchObject({ status: 'empty', peers: [] })
   })
 
@@ -1575,7 +1582,7 @@ describe('@agent mention targets', () => {
         .toMatchObject({ status: 'sent' })
     }
 
-    const retrieved = resultJson(await retrieveSessionMessages(siblingId, {}))
+    const retrieved = resultJson(await retrieveSessionMessages(siblingId, {}, host))
     expect(retrieved.peers).toEqual([
       expect.objectContaining({ sessionId: 'lead-a', relation: 'link' }),
       expect.objectContaining({ sessionId: 'lead-b', relation: 'link' }),

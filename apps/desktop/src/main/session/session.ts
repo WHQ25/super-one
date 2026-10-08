@@ -245,6 +245,8 @@ export class Session implements SessionContract {
   private _needsRebuild = false
 
   get lastEventAt(): number { return this._lastEventAt }
+  /** Last agent event or user action; the stall and idle-release clock. */
+  get lastRuntimeActivityAt(): number { return this._lastRuntimeActivityAt }
 
   private _messages: ChatMessage[] = []
   /** Message ids mutated since last successful persist. */

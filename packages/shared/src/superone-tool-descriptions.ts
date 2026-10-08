@@ -208,6 +208,7 @@ export const SESSION_SEND_CONTENT_DESCRIPTION =
 
 export const SESSION_RETRIEVE_DESCRIPTION =
   'Read queued Markdown messages from your collaboration peers and list those peers (session id, name, relation). ' +
+  'Child peers may also report state (running, awaiting_approval, stalled, idle, error), lastActivityAt, and runningTool. ' +
   'Call after a collaboration wake, before acting on peer input, or to find out who you can message. ' +
   'This is a non-blocking read: status "empty" is not a retry signal. Do not sleep or poll; end your turn and wait for the next wake.'
 

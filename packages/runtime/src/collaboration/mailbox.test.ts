@@ -149,3 +149,18 @@ describe('assertNotPeeredElsewhere', () => {
     expect(() => assertNotPeeredElsewhere(store, 'other', 'target')).not.toThrow()
   })
 })
+
+describe('CollaborationStore.lastMessageTimes', () => {
+  it('reports when a session last sent and received, across channels', () => {
+    spawn('parent', 'child')
+    expect(store.lastMessageTimes('child')).toEqual({ sentAt: null, receivedAt: null })
+    send('parent', 'child', 'task update')
+    const afterReceive = store.lastMessageTimes('child')
+    expect(afterReceive.sentAt).toBeNull()
+    expect(afterReceive.receivedAt).not.toBeNull()
+    send('child', undefined, 'done')
+    const afterSend = store.lastMessageTimes('child')
+    expect(afterSend.sentAt! >= afterReceive.receivedAt!).toBe(true)
+    expect(store.lastMessageTimes('parent').receivedAt).toBe(afterSend.sentAt)
+  })
+})

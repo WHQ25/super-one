@@ -99,6 +99,7 @@ import { nodePtySpawner } from './terminal/pty'
 import { DeviceRegistry } from './remote/device-registry'
 import { MobileBroadcaster } from './remote/mobile-broadcaster'
 import { spawnParentOf } from './session/collaboration-mailbox'
+import { CHILD_STALL_CHECK_INTERVAL_MS, CollaborationChildMonitor } from './session/collaboration-lifecycle'
 import { watchProjectList, watchSessionDeletes, watchSessionList } from './session-list-watch'
 import { localDraftStore } from './db-drafts'
 import { withoutDraftAttachmentBytes } from '@superone/shared/environment/draft-content'
@@ -780,6 +781,15 @@ const desktopNotificationChannel = new DesktopNotificationChannel({
   },
 })
 notificationService.registerChannel(desktopNotificationChannel)
+
+/** Spawn-child stops wake the parent; stalls notify the human. See `CollaborationChildMonitor`. */
+const collaborationChildMonitor = new CollaborationChildMonitor({
+  host: sessionManager,
+  notifyStalled: (sessionId) => notificationService.notifyStalled(sessionId),
+  clearStalled: (sessionId) => notificationService.clearStalled(sessionId),
+})
+sessionManager.onAny((sessionId, event, replay) => collaborationChildMonitor.handleEvent(sessionId, event, replay))
+setInterval(() => collaborationChildMonitor.checkStalls(), CHILD_STALL_CHECK_INTERVAL_MS).unref()
 
 /**
  * Single convergence point for everything the renderer sees. Notifications tap

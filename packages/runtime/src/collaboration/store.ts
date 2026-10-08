@@ -275,6 +275,15 @@ export class CollaborationStore {
     })
   }
 
+  /** When `sessionId` last sent and last received a mailbox message (ISO), across all its channels. */
+  lastMessageTimes(sessionId: string): { sentAt: string | null; receivedAt: string | null } {
+    return this.db.prepare(`
+      SELECT
+        (SELECT MAX(created_at) FROM session_collaboration_messages WHERE sender_session_id = ?) AS sentAt,
+        (SELECT MAX(created_at) FROM session_collaboration_messages WHERE recipient_session_id = ?) AS receivedAt
+    `).get(sessionId, sessionId) as { sentAt: string | null; receivedAt: string | null }
+  }
+
   /** Queue a link grant's opening body for the peer exactly once, then mark the task sent. */
   appendLinkOpening(grant: CollaborationGrantRow, recipientSessionId: string, content: string): void {
     this.transaction(() => {

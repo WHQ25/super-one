@@ -250,7 +250,9 @@ Nobody watches child or handoff sessions. Prefer the most autonomous mode that c
 
 Your peers are your spawn parent or children and your started link peers — never a handoff session. The host decides who may message whom from the calling session, so there is nothing to remember: address a peer by its session id in `session_collab_send({ to })`. Omitting `to` messages a spawn child's parent, or otherwise your only peer. Any number of sessions may link the same session, including a spawn child, so a session can have several link peers.
 
-`session_collab_retrieve` always lists your peers (`sessionId`, `name`, `relation`: `parent` / `child` / `link`), even when no message is waiting. Call it to find out who you can message, for example after your context was compacted. Pass `from` to read only some peers.
+`session_collab_retrieve` always lists your peers (`sessionId`, `name`, `relation`: `parent` / `child` / `link`), even when no message is waiting. Call it to find out who you can message, for example after your context was compacted. Pass `from` to read only some peers. On the desktop, each child peer also reports `state` (`running`, `awaiting_approval`, `stalled`, `idle`, `error`), `lastActivityAt`, and the `runningTool` it is waiting on.
+
+A child reports by messaging you, which wakes you. If a spawn child stops (idle or error, after its background work) without messaging you since its last input, the host wakes you once with a single line naming the child and its status; call `session_collab_retrieve` for details. Approval prompts and stalls (no activity for 10 minutes) notify the user, not you, and a run the user stopped wakes nobody.
 
 Only the main thread may call the mailbox tools; subagents are denied.
 

@@ -367,7 +367,7 @@ export async function executeBuiltInSuperoneTool(
         sendSessionMessage(deps.sessionId, args as unknown as SessionSendArgs, collaborationHost(deps)))
     case 'session_collab_retrieve':
       return import('../session/session-collaboration').then(({ retrieveSessionMessages }) =>
-        retrieveSessionMessages(deps.sessionId, args as unknown as SessionRetrieveArgs))
+        retrieveSessionMessages(deps.sessionId, args as unknown as SessionRetrieveArgs, collaborationHost(deps)))
     case 'config_read':
       return configReadHandler(args as { domain?: string; recordId?: string }, deps)
     case 'config_apply':
@@ -480,7 +480,7 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
     },
     async (args) => {
       const { retrieveSessionMessages } = await import('../session/session-collaboration')
-      return retrieveSessionMessages(deps.sessionId, args)
+      return retrieveSessionMessages(deps.sessionId, args, collaborationHost(deps))
     },
   )
 

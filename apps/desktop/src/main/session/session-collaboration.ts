@@ -29,6 +29,7 @@ import { defaultLaunchCwd } from './collaboration-child-project'
 import { resolveCodexServiceTier, toolResult } from './collaboration-host'
 import type { Session, SessionManager } from './types'
 import { openSessionAgentsConfirm } from './session-collaboration-confirm'
+import { hasExternalParent } from './collaboration-external-parent'
 
 export { setSessionCollaborationCallbacks } from './collaboration-host'
 export { sendSessionMessage, retrieveSessionMessages, type SessionSendArgs, type SessionRetrieveArgs } from './collaboration-messaging'
@@ -222,7 +223,7 @@ export async function requestSessionAgents(
   // Nested spawn collab is not supported: sidebar only renders one parent→children level,
   // and grandchild grants would orphan intermediate sessions in the UI.
   // Link peers may still request (they are not spawn children).
-  if (store().isSpawnChild(callerSessionId)) {
+  if (store().isSpawnChild(callerSessionId) || hasExternalParent(callerSessionId)) {
     return toolResult({ status: 'error', message: NESTED_COLLABORATION_UNSUPPORTED }, true)
   }
   const parent = host.getSession(callerSessionId)

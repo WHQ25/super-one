@@ -1,6 +1,7 @@
 import { hostname } from 'node:os'
 import { app } from 'electron'
 import type { AppSettings, NodeHostPairingToken, NodeHostStatus } from '@superone/shared/agent-types'
+import type { HostActionTerminalResult } from '@superone/shared/environment'
 import { assertSessionHarnessRuntimeReady } from '@superone/runtime/harness'
 import { getMachineInfo } from '@superone/runtime/machine'
 import log from '../logger'
@@ -124,4 +125,20 @@ export function stopNodeHost(): Promise<void> {
 export function mintNodeHostPairingToken(): NodeHostPairingToken {
   if (!host) throw Object.assign(new Error('remote node access is off'), { code: 'failed_precondition' })
   return host.mintPairingToken()
+}
+
+/**
+ * Ask the controller of a session served here to run one of its tools (a
+ * collaboration child's mailbox tools, whose parent runs on the controller).
+ */
+export function requestControllerHostAction(
+  input: Parameters<DesktopNodeHost['sessions']['requestHostAction']>[0],
+): Promise<HostActionTerminalResult> {
+  if (!host) {
+    return Promise.reject(Object.assign(
+      new Error('Remote node access is off, so the machine that launched this session cannot be reached'),
+      { code: 'failed_precondition' },
+    ))
+  }
+  return host.sessions.requestHostAction(input)
 }

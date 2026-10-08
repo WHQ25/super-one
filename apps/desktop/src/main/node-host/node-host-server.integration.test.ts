@@ -28,6 +28,7 @@ vi.mock('electron', () => ({
 vi.mock('../logger', () => ({ default: { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} } }))
 
 import { NodeConnectionManager } from '../environment/node-connection-manager'
+import { RemoteHostActionConsumer } from '../environment/remote-host-action-consumer'
 import { NodeCredentialStore } from '../environment/node-credential-store'
 import type { RemoteControlledSessionRow, RemoteControllerRecord } from '../db-remote-controlled-sessions'
 import type { Session } from '../session/types'
@@ -64,7 +65,8 @@ class FakeSession {
   }
   claim(owner: { kind: 'remote'; deviceId: string }) { this.owner = owner }
   release() { this.owner = { kind: 'local' } }
-  activityStatus() { return 'idle' }
+  status: 'idle' | 'streaming' = 'idle'
+  activityStatus() { return this.status }
   setTitle() {}
   getCurrentPermissionMode() { return 'default' }
   async setPermissionMode() {}
@@ -132,6 +134,37 @@ function memoryStore(projects: () => ProjectSnapshot[]): NodeHostSessionStore & 
     rename: () => {},
     loadMessages: () => ({ messages: [], cursor: null, hasMore: false }),
   }
+}
+
+/** B with one git project (origin + a commit), paired with a fresh A. */
+async function pairedDesktops() {
+  const userData = tempDir('superone-node-host-')
+  const projectDir = tempDir('superone-node-host-project-')
+  execFileSync('git', ['init', '-q', projectDir])
+  execFileSync('git', ['-C', projectDir, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init'])
+  execFileSync('git', ['-C', projectDir, 'remote', 'add', 'origin', 'https://example.com/acme/app.git'])
+  const folders: RecentFolder[] = [{ id: 'p1', path: projectDir, name: 'app', addedAt: '', lastOpened: new Date().toISOString() }]
+  const projects = createDesktopProjectsPort({ list: () => folders, add: () => {} })
+  const sessions = new FakeSessionManager()
+  const store = memoryStore(() => projects.list())
+  const harnesses = new HarnessManager(openNodeDatabase(':memory:'))
+  harnesses.enableSimulatedOverlay()
+  const host = await DesktopNodeHost.start(
+    {
+      userDataDir: userData, label: 'Desktop B', appVersion: '0.0.0-test', sessions, store, projects, harnesses,
+      hooks: {
+        probeHarnessReadiness: () => ({ ok: true }) as never,
+        assertSessionHarnessRuntimeReady: () => ({ ok: true, reason: 'test' }),
+      },
+    },
+    { bindPort: 23000 + Math.floor(Math.random() * 10000) },
+  )
+  hosts.push(host)
+  const pairing = host.mintPairingToken()
+  const manager = new NodeConnectionManager({ credentialStore: new NodeCredentialStore(tempDir('superone-desktop-a-')) })
+  managers.push(manager)
+  const { connectionId } = await manager.pairAndConnect({ baseUrl: pairing.url, pairingToken: pairing.pairingToken, label: 'Desktop A', channel: pairing.channel })
+  return { host, sessions, store, projectDir, connectionId, client: manager.getClient(connectionId)! }
 }
 
 describe('DesktopNodeHost', () => {
@@ -224,5 +257,67 @@ describe('DesktopNodeHost', () => {
     expect(after.events.map((e) => e.sequence)).toEqual(events.slice(2).map((e) => e.sequence))
     const snapshot = await reconnected.getClient(second.connectionId)!.rpc<{ snapshotSequence: string }>('session.snapshot')
     expect(snapshot.snapshotSequence).toBe(events.at(-1)!.sequence)
+  })
+})
+
+describe('DesktopNodeHost collaboration children', () => {
+  it('cuts a worktree for a remote child and carries its mailbox tools to the controller as Host Actions', async () => {
+    const { host, sessions, store, projectDir, connectionId, client } = await pairedDesktops()
+
+    const described = await client.rpc<ExecutionEnvironmentDescriptor>('environment.descriptor')
+    expect(described.capabilities).toMatchObject({ hostActionV1: true, git: false })
+    // Only worktree creation of the git family is served.
+    await expect(client.rpc('git.status', { projectId: 'p1' })).rejects.toMatchObject({ code: 'not_found' })
+    const worktree = await client.rpc<{ path: string }>('git.worktreeActivate', {
+      projectId: 'p1', baseBranch: 'HEAD', mode: 'branch', branchName: 'superone/builder-1',
+    })
+    expect(execFileSync('git', ['-C', worktree.path, 'branch', '--show-current'], { encoding: 'utf8' }).trim()).toBe('superone/builder-1')
+    // A cwd outside the project and its served worktrees stays refused.
+    await expect(client.rpc('session.create', { projectId: 'p1', harnessId: 'claude', cwd: tempDir('elsewhere-') }))
+      .rejects.toMatchObject({ code: 'invalid_argument' })
+
+    const created = await client.rpc<{ sessionId: string; externalParent?: { sessionId: string } }>('session.create', {
+      projectId: 'p1', harnessId: 'claude', title: 'Builder - Implementer', cwd: worktree.path,
+      systemPromptAppend: 'child of parent-a', externalParent: { sessionId: 'parent-a' },
+    })
+    expect(created.externalParent).toEqual({ sessionId: 'parent-a' })
+    expect(store.rows.get(created.sessionId)?.controller.externalParent).toEqual({ sessionId: 'parent-a' })
+    expect(host.sessions.externalParentOf(created.sessionId)).toEqual({ sessionId: 'parent-a' })
+    expect(sessions.live.get(created.sessionId)!.cwd).toBe(worktree.path)
+    void projectDir
+
+    // A's persistent consumer runs whatever the child asks of the controller.
+    const executed: Array<{ toolName: string; sessionId: string; args: unknown }> = []
+    const consumer = new RemoteHostActionConsumer({
+      connectionId,
+      client,
+      pollWaitMs: 200,
+      executor: async (claimed) => {
+        executed.push({ toolName: claimed.toolName, sessionId: claimed.sessionId, args: claimed.args })
+        return { outcome: 'succeeded', result: { content: [{ type: 'text', text: '{"status":"sent"}' }] } }
+      },
+    })
+    consumer.start()
+    try {
+      const live = sessions.live.get(created.sessionId)!
+      live.status = 'streaming'
+      const terminal = await host.sessions.requestHostAction({
+        sessionId: created.sessionId, toolName: 'session_collab_send', args: { content: 'Pushed the branch' },
+      })
+      expect(terminal).toMatchObject({ state: 'succeeded', result: { content: [{ type: 'text', text: '{"status":"sent"}' }] } })
+      expect(executed).toEqual([{ toolName: 'session_collab_send', sessionId: created.sessionId, args: { content: 'Pushed the branch' } }])
+
+      // An action outlives no turn: the end of the run cancels what is still pending.
+      consumer.stop('test')
+      await consumer.waitUntilStopped()
+      const pending = host.sessions.requestHostAction({ sessionId: created.sessionId, toolName: 'session_collab_retrieve', args: {} })
+      live.status = 'idle'
+      const lease = await client.rpc<{ leaseId: string; generation: string }>('session.acquireControl', { sessionId: created.sessionId })
+      await client.rpc('session.send', { sessionId: created.sessionId, text: 'wake', leaseId: lease.leaseId, generation: lease.generation })
+      await expect(pending).resolves.toMatchObject({ state: 'cancelled' })
+    } finally {
+      consumer.stop('test')
+      await consumer.waitUntilStopped()
+    }
   })
 })

@@ -90,6 +90,11 @@ export interface WorkspaceFsPort {
 
 /** Host-owned git/worktree ops (CLI: WorkspaceGitService). */
 export interface WorkspaceGitPort {
+  /**
+   * The `git.*` methods a partial port serves; the rest answer unsupported.
+   * Absent: the whole family.
+   */
+  readonly servedMethods?: ReadonlySet<string>
   status(projectId: string): unknown
   statusAt(projectId: string, absolutePath?: string | null): unknown
   diff(projectId: string, opts?: { staged?: boolean; path?: string }): unknown
@@ -109,7 +114,7 @@ export interface WorkspaceGitPort {
       branchName?: string
       carryLocalChanges?: boolean
     },
-  ): { path: string }
+  ): { path: string } | Promise<{ path: string }>
   removeWorktree(projectId: string, worktreePath: string): void
   assignBranch(projectId: string, worktreePath: string, rawName: string): unknown
   handoffToMain(projectId: string, worktreePath: string): unknown

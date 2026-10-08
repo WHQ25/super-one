@@ -89,7 +89,10 @@ function requiredPorts(method: string): readonly FamilyPort[] {
 }
 
 function serves(ctx: HostRpcContext, method: string): boolean {
-  return requiredPorts(method).every((port) => ctx[port] != null)
+  if (!requiredPorts(method).every((port) => ctx[port] != null)) return false
+  // A partial git port serves only the methods it names.
+  const gitMethods = ctx.workspaceGit?.servedMethods
+  return !(gitMethods && method.startsWith('git.') && method !== 'git.clone' && !gitMethods.has(method))
 }
 
 /** The explicit answer for a method family this host does not serve. */
@@ -1543,7 +1546,7 @@ function handleGitWorktrees(payload: unknown, ctx: RpcContext): RpcResult {
   }
 }
 
-function handleGitWorktreeActivate(payload: unknown, ctx: RpcContext): RpcResult {
+async function handleGitWorktreeActivate(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.writeWorkspace)
   if (denied) return denied
   const p = asRecord(payload)
@@ -1553,7 +1556,7 @@ function handleGitWorktreeActivate(payload: unknown, ctx: RpcContext): RpcResult
   }
   try {
     return {
-      result: ctx.workspaceGit.activateWorktree(String(p.projectId ?? ''), {
+      result: await ctx.workspaceGit.activateWorktree(String(p.projectId ?? ''), {
         baseBranch: String(p.baseBranch ?? ''),
         mode,
         branchName: typeof p.branchName === 'string' ? p.branchName : undefined,
@@ -1751,7 +1754,7 @@ async function handleSessionFork(payload: unknown, ctx: RpcContext): Promise<Rpc
       const writeDenied = requireScopes(ctx.client, OPERATION_SCOPES.writeWorkspace)
       if (writeDenied) return writeDenied
       if (!git) return unsupported('session.fork (worktree)')
-      const wt = git.activateWorktree(source.projectId, {
+      const wt = await git.activateWorktree(source.projectId, {
         baseBranch: 'HEAD',
         mode: 'detach',
         carryLocalChanges: true,

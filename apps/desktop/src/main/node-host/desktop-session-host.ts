@@ -1,5 +1,11 @@
 import { randomUUID } from 'node:crypto'
-import { SESSION_DURABLE_EVENT, type EnvironmentEventEnvelope } from '@superone/shared/environment'
+import {
+  HOST_ACTION_CAPABILITY_VERSION,
+  HOST_ACTION_TOOL_GROUPS,
+  SESSION_DURABLE_EVENT,
+  type EnvironmentEventEnvelope,
+  type HostActionTerminalResult,
+} from '@superone/shared/environment'
 import type {
   AgentEvent,
   ChatMessage,
@@ -11,7 +17,13 @@ import type {
 } from '@superone/shared/agent-types'
 import type { ControlLeasePort, SessionHostPort } from '@superone/runtime/server'
 import { unsupportedMethodError } from '@superone/runtime/server'
-import type { EventLog, NodeSessionRecord, NodeSessionSettings } from '@superone/runtime/session'
+import {
+  HostActionChannel,
+  type EventLog,
+  type HostActionStore,
+  type NodeSessionRecord,
+  type NodeSessionSettings,
+} from '@superone/runtime/session'
 import type { SessionMessageBlock } from '@superone/shared/environment'
 import type { RemoteControlledSessionRow, RemoteControllerRecord } from '../db-remote-controlled-sessions'
 import type { Session, SessionCreateOptions } from '../session/types'
@@ -46,10 +58,19 @@ export interface DesktopSessionHostDeps {
   store: NodeHostSessionStore
   leases: ControlLeasePort
   events: EventLog
+  /** Durable Host Actions this desktop's sessions ask their controller to run. */
+  hostActions: HostActionStore
   projectPath(projectId: string): string | null
   /** Pairing label of a controller, for the "started from" badge. */
   controllerLabel(clientSessionId: string): string | null
 }
+
+/**
+ * Host Action tool groups a controller runs for sessions served here. Only the
+ * mailbox tools of a collaboration child whose parent is on the controller use
+ * the channel today; the desktop runs every other tool itself.
+ */
+const DESKTOP_HOST_ACTION_TOOL_GROUPS = [HOST_ACTION_TOOL_GROUPS.superone]
 
 /** Session owner id a node controller claims, so the desktop's own UI cannot send. */
 export function nodeControllerDeviceId(clientSessionId: string): string {
@@ -124,8 +145,25 @@ export class DesktopSessionHost implements SessionHostPort {
   /** Live Session objects whose events are being recorded (a resume makes a new one). */
   private readonly recording = new WeakSet<Session>()
   private readonly unsubscribe: () => void
+  private readonly hostActions: HostActionChannel
 
   constructor(private readonly deps: DesktopSessionHostDeps) {
+    this.hostActions = new HostActionChannel({
+      store: deps.hostActions,
+      session: (sessionId) => {
+        const row = deps.store.get(sessionId)
+        if (!row) return null
+        const activity = deps.sessions.getSession(sessionId)?.activityStatus()
+        return {
+          controllerClientSessionId: row.controller.clientSessionId,
+          hostActionCapabilityVersion: HOST_ACTION_CAPABILITY_VERSION,
+          hostActionToolGroups: DESKTOP_HOST_ACTION_TOOL_GROUPS,
+          closed: false,
+          streaming: activity === 'streaming' || activity === 'background',
+        }
+      },
+    })
+    this.hostActions.reconcileAfterRestart()
     // Fires for live sessions now and every session registered later — a
     // resume from this desktop's sidebar included — so recording and the
     // read-only claim survive a dispose/resume cycle.
@@ -134,6 +172,30 @@ export class DesktopSessionHost implements SessionHostPort {
 
   dispose(): void {
     this.unsubscribe()
+    this.hostActions.dispose()
+  }
+
+  /**
+   * Ask the controller to run `toolName` for `sessionId` and wait for its
+   * reply. Cancelled when the turn ends or `signal` aborts.
+   */
+  requestHostAction(input: {
+    sessionId: string
+    toolName: string
+    args: unknown
+    signal?: AbortSignal
+  }): Promise<HostActionTerminalResult> {
+    return this.hostActions.request({
+      ...input,
+      toolGroup: HOST_ACTION_TOOL_GROUPS.superone,
+      // Mailbox tools: a replayed send dedupes by clientMessageId, but a replayed retrieve drains twice.
+      replayPolicy: 'unsafe',
+    })
+  }
+
+  /** The collaboration parent on the controller, when this session is such a child. */
+  externalParentOf(sessionId: string): { sessionId: string } | null {
+    return this.deps.store.get(sessionId)?.controller.externalParent ?? null
   }
 
   private adopt(session: Session): void {
@@ -144,6 +206,10 @@ export class DesktopSessionHost implements SessionHostPort {
     this.claim(session, row.controller.clientSessionId)
     session.on((event, replay) => {
       if (replay) return
+      // A Host Action belongs to the turn that asked for it.
+      if (event.type === 'status_change' && (event.status === 'idle' || event.status === 'error')) {
+        this.hostActions.cancelForSession(session.id, 'turn_ended')
+      }
       try {
         const { eventType, payload } = durableEventOf(event)
         this.deps.events.appendSession({ sessionId: session.id, eventType, payload })
@@ -189,9 +255,10 @@ export class DesktopSessionHost implements SessionHostPort {
       isUserRenamed: row.isUserRenamed,
       tags: row.tags,
       controllerClientSessionId: row.controller.clientSessionId,
-      hostActionCapabilityVersion: 0,
-      hostActionToolGroups: [],
+      hostActionCapabilityVersion: HOST_ACTION_CAPABILITY_VERSION,
+      hostActionToolGroups: [...DESKTOP_HOST_ACTION_TOOL_GROUPS],
       alwaysAllowedTools: [],
+      ...(row.controller.externalParent ? { externalParent: row.controller.externalParent } : {}),
     }
   }
 
@@ -236,6 +303,7 @@ export class DesktopSessionHost implements SessionHostPort {
       clientSessionId,
       label: this.deps.controllerLabel(clientSessionId),
       ...(input.systemPromptAppend ? { systemPromptAppend: input.systemPromptAppend } : {}),
+      ...(input.externalParent ? { externalParent: { sessionId: input.externalParent.sessionId } } : {}),
     }
     this.deps.store.setController(sessionId, controller, providerId)
     // A remote launch must not take over which session this desktop shows.
@@ -441,23 +509,24 @@ export class DesktopSessionHost implements SessionHostPort {
       live.release(nodeControllerDeviceId(row.controller.clientSessionId), 'self_switch')
       this.claim(live, controllerClientSessionId)
     }
+    this.hostActions.rebind(sessionId, controllerClientSessionId)
     return null
   }
 
-  async pollHostActions(): Promise<never> {
-    throw unsupportedMethodError('session.hostActionsPoll')
+  pollHostActions(input: Parameters<SessionHostPort['pollHostActions']>[0]): ReturnType<SessionHostPort['pollHostActions']> {
+    return this.hostActions.poll(input)
   }
 
-  claimHostAction(): never {
-    throw unsupportedMethodError('session.claimHostAction')
+  claimHostAction(input: Parameters<SessionHostPort['claimHostAction']>[0]): ReturnType<SessionHostPort['claimHostAction']> {
+    return this.hostActions.claim(input)
   }
 
-  renewHostActionClaim(): never {
-    throw unsupportedMethodError('session.renewHostActionClaim')
+  renewHostActionClaim(input: Parameters<SessionHostPort['renewHostActionClaim']>[0]): unknown {
+    return this.hostActions.renew(input)
   }
 
-  respondHostAction(): never {
-    throw unsupportedMethodError('session.respondHostAction')
+  respondHostAction(input: Parameters<SessionHostPort['respondHostAction']>[0]): ReturnType<SessionHostPort['respondHostAction']> {
+    return this.hostActions.respond(input)
   }
 
   async notifyArtifactsCompleted(): Promise<never> {

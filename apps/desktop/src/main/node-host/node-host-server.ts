@@ -18,11 +18,12 @@ import {
 } from '@superone/runtime/server'
 import { openNodeDatabase, type NodeDatabase } from '@superone/runtime/db'
 import { ControlLeaseService } from '@superone/runtime/lease'
-import { EventLog } from '@superone/runtime/session'
+import { EventLog, createSqliteHostActionStore } from '@superone/runtime/session'
 import type { HarnessManager } from '@superone/runtime/harness'
 import { verifyPayload } from '@superone/runtime/crypto/crypto-util'
 import type { NodeHostPairingToken } from '@superone/shared/agent-types'
 import { DesktopSessionHost, type NodeHostSessionManager, type NodeHostSessionStore } from './desktop-session-host'
+import { createDesktopWorktreePort } from './desktop-worktree-port'
 import { desktopNodeHostPaths, DESKTOP_NODE_LOOPBACK_HOST } from './paths'
 
 /**
@@ -35,16 +36,19 @@ const DESKTOP_NODE_CAPABILITIES: HostCapabilityFlags = {
   nodeAdmin: false,
   coldSessionResume: true,
   turnReattach: false,
-  hostActionV1: false,
+  hostActionV1: true,
   drafts: false,
 }
 
 /**
  * Methods the shared families would serve without a port but that have no
- * desktop meaning yet: node settings belong to this desktop's own settings.
+ * desktop meaning yet: node settings belong to this desktop's own settings,
+ * and a fork would cut a worktree before learning sessions cannot fork here.
  */
+const DESKTOP_UNSERVED_METHODS = new Set(['settings.patch', 'sandbox.probe', 'session.fork'])
+
 const desktopExtensions: RpcExtensionDispatch = (method) => {
-  if (method !== 'settings.patch' && method !== 'sandbox.probe') return null
+  if (!DESKTOP_UNSERVED_METHODS.has(method)) return null
   const { code, message, details } = unsupportedMethodError(method)
   return { error: { code, message, details } }
 }
@@ -104,11 +108,13 @@ export class DesktopNodeHost {
         store: deps.store,
         leases,
         events,
+        hostActions: createSqliteHostActionStore(db),
         projectPath: (projectId) => deps.projects.get(projectId)?.path ?? null,
         controllerLabel: (clientSessionId) =>
           auth.listClientSessions().find((c) => c.clientSessionId === clientSessionId)?.label ?? null,
       })
       const hooks = desktopRpcHooks(deps)
+      const workspaceGit = createDesktopWorktreePort(deps.projects)
       const startedAt = Date.now()
       const bindHost = listen.bindHost ?? DESKTOP_NODE_LOOPBACK_HOST
       // Pairing, tokens and RPC run only inside the pairing-secret channel
@@ -134,6 +140,7 @@ export class DesktopNodeHost {
             capabilities: DESKTOP_NODE_CAPABILITIES,
             startedAt,
             projects: deps.projects,
+            workspaceGit,
             sessions: sessionHost,
             harnesses: deps.harnesses,
             extensions: desktopExtensions,
@@ -152,6 +159,11 @@ export class DesktopNodeHost {
       db.close()
       throw err
     }
+  }
+
+  /** The `session.*` surface, for tools of sessions served here. */
+  get sessions(): DesktopSessionHost {
+    return this.sessionHost
   }
 
   /** Where other devices reach this host (the advertised host, else the bind address). */

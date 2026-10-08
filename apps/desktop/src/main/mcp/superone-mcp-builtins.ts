@@ -366,10 +366,10 @@ export async function executeBuiltInSuperoneTool(
         startSessionAgent(deps.sessionId, args as unknown as SessionStartArgs, collaborationHost(deps)))
     case 'session_collab_send':
       return import('../session/session-collaboration').then(({ sendSessionMessage }) =>
-        sendSessionMessage(deps.sessionId, args as unknown as SessionSendArgs, collaborationHost(deps)))
+        sendSessionMessage(deps.sessionId, args as unknown as SessionSendArgs, collaborationHost(deps), deps.signal))
     case 'session_collab_retrieve':
       return import('../session/session-collaboration').then(({ retrieveSessionMessages }) =>
-        retrieveSessionMessages(deps.sessionId, args as unknown as SessionRetrieveArgs, collaborationHost(deps)))
+        retrieveSessionMessages(deps.sessionId, args as unknown as SessionRetrieveArgs, collaborationHost(deps), deps.signal))
     case 'config_read':
       return configReadHandler(args as { domain?: string; recordId?: string }, deps)
     case 'config_apply':
@@ -467,9 +467,9 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
         clientMessageId: z.string().optional(),
       },
     },
-    async (args) => {
+    async (args, extra) => {
       const { sendSessionMessage } = await import('../session/session-collaboration')
-      return sendSessionMessage(deps.sessionId, args, collaborationHost(deps))
+      return sendSessionMessage(deps.sessionId, args, collaborationHost(deps), extra.signal)
     },
   )
   server.registerTool(
@@ -480,9 +480,9 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
         from: z.array(z.string().min(1)).max(32).optional().describe(SESSION_RETRIEVE_FROM_DESCRIPTION),
       },
     },
-    async (args) => {
+    async (args, extra) => {
       const { retrieveSessionMessages } = await import('../session/session-collaboration')
-      return retrieveSessionMessages(deps.sessionId, args, collaborationHost(deps))
+      return retrieveSessionMessages(deps.sessionId, args, collaborationHost(deps), extra.signal)
     },
   )
 

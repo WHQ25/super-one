@@ -147,3 +147,38 @@ describe('session.create', () => {
     expect(create).not.toHaveBeenCalled()
   })
 })
+
+describe('a partial git port', () => {
+  function worktreeOnlyHost() {
+    const activateWorktree = vi.fn(async () => ({ path: '/tmp/p1-wt' }))
+    const ctx = projectsOnlyHost({
+      client: {
+        clientSessionId: 'c1',
+        scopes: ['environment:read', 'project:read', 'workspace:read', 'workspace:write'],
+        devicePublicKeyFingerprint: 'fp',
+        devicePublicKeyPem: 'pem',
+      } as RpcContext['client'],
+      workspaceGit: {
+        servedMethods: new Set(['git.worktreeActivate']),
+        activateWorktree,
+      } as unknown as RpcContext['workspaceGit'],
+    })
+    return { ctx, activateWorktree }
+  }
+
+  it('serves only the methods it names, awaiting an async worktree', async () => {
+    const { ctx, activateWorktree } = worktreeOnlyHost()
+    const res = await dispatchRpc('git.worktreeActivate', { projectId: 'p1', baseBranch: 'origin/HEAD', mode: 'branch', branchName: 'b' }, ctx)
+    expect(res).toEqual({ result: { path: '/tmp/p1-wt' } })
+    expect(activateWorktree).toHaveBeenCalledWith('p1', expect.objectContaining({ baseBranch: 'origin/HEAD', branchName: 'b' }))
+    const status = await dispatchRpc('git.status', { projectId: 'p1' }, ctx)
+    expect(status.error).toMatchObject({ code: 'not_found', details: { unsupported: true } })
+  })
+
+  it('does not advertise git or worktree listing', async () => {
+    const { ctx } = worktreeOnlyHost()
+    const res = await dispatchRpc('environment.descriptor', {}, ctx)
+    const descriptor = res.result as ExecutionEnvironmentDescriptor
+    expect(descriptor.capabilities).toMatchObject({ git: false, worktrees: false })
+  })
+})

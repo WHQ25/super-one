@@ -19,6 +19,8 @@ export interface RemoteControllerRecord {
   model?: string | null
   effort?: string | null
   systemPromptAppend?: string | null
+  /** Collaboration parent on the controller; its mailbox tools run there as Host Actions. */
+  externalParent?: { sessionId: string } | null
 }
 
 export interface RemoteControlledSessionRow {

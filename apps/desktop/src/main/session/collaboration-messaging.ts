@@ -15,6 +15,7 @@ import {
 import type { CollaborationPeer } from '@superone/runtime/collaboration'
 import { denyMainThreadOnlyIfSubagent } from '../mcp/main-thread-session-guard'
 import { describeChildStatus } from './collaboration-lifecycle'
+import { forwardToExternalParent } from './collaboration-external-parent'
 import { collaborationStore as store, notifyCollaborationMailboxChanged } from './collaboration-mailbox'
 import {
   errorResult,
@@ -36,9 +37,12 @@ export async function sendSessionMessage(
   callerSessionId: string,
   args: SessionSendArgs,
   host: SessionManager,
+  signal?: AbortSignal,
 ) {
   const denied = await denyMainThreadOnlyIfSubagent(callerSessionId, 'session_collab_send')
   if (denied) return toolResult(denied, true)
+  const forwarded = await forwardToExternalParent(callerSessionId, 'session_collab_send', args, signal)
+  if (forwarded) return forwarded
   const grants = store()
   let channel: ReturnType<typeof resolveSendChannel>
   let content: string
@@ -104,9 +108,12 @@ export async function retrieveSessionMessages(
   callerSessionId: string,
   args: SessionRetrieveArgs,
   host: SessionManager,
+  signal?: AbortSignal,
 ) {
   const denied = await denyMainThreadOnlyIfSubagent(callerSessionId, 'session_collab_retrieve')
   if (denied) return toolResult(denied, true)
+  const forwarded = await forwardToExternalParent(callerSessionId, 'session_collab_retrieve', args, signal)
+  if (forwarded) return forwarded
   let read: ReturnType<typeof readCallerMailbox>
   try {
     read = readCallerMailbox(store(), callerSessionId, { from: args.from }, sessionTitle)

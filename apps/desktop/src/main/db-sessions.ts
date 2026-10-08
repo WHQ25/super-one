@@ -2,7 +2,7 @@ import { getDb } from './database'
 import { getProjectId } from './recent-folders'
 import { serializeMessageContent, rowToChatMessage, deriveHarnessId, storedSelectedModel } from './session/session-repo'
 import { recordSessionStarted, recordMessageCounts, type HarnessKind } from './usage-stats-service'
-import type { ChatMessage, EffortLevel, HarnessId, SessionHistoryEntry, PinnedSessionEntry } from '@superone/shared/agent-types'
+import type { ChatMessage, EffortLevel, HarnessId, SessionHistoryEntry, PinnedSessionEntry, SessionRemoteControllerInfo } from '@superone/shared/agent-types'
 import { parseTagsJson } from '@superone/shared/session-tags'
 import { notifySessionList, notifySessionsDeleted } from './session-list-watch'
 import { remoteControllerInfo } from './db-remote-controlled-sessions'
@@ -314,17 +314,17 @@ export function saveSessionState(
 /** Load session state from DB */
 export function loadSessionState(
   sessionId: string,
-): { messages: ChatMessage[]; totalCostUsd: number; contextTokens: number; isWorktree: boolean; gitBranch: string | null; worktreePath: string | null; provider: string; providerSessionId: string | null; parentSessionId: string | null; apiProviderId: string | null; acpAgentId: string | null; selectedModel: string | null; selectedEffort: EffortLevel | null; codexServiceTier: string | null; title: string | null } | null {
+): { messages: ChatMessage[]; totalCostUsd: number; contextTokens: number; isWorktree: boolean; gitBranch: string | null; worktreePath: string | null; provider: string; providerSessionId: string | null; parentSessionId: string | null; apiProviderId: string | null; acpAgentId: string | null; selectedModel: string | null; selectedEffort: EffortLevel | null; codexServiceTier: string | null; title: string | null; remoteController: SessionRemoteControllerInfo | null } | null {
   const db = getDb()
 
   const session = db.prepare(`
     SELECT title, total_cost_usd, context_tokens, is_worktree, git_branch, worktree_path,
       provider, provider_id, provider_session_id, api_provider_id, acp_agent_id,
-      selected_model, selected_effort, codex_service_tier,
+      selected_model, selected_effort, codex_service_tier, remote_controller_json,
       (SELECT parent_session_id FROM session_collaboration_grants
         WHERE child_session_id = sessions.id AND COALESCE(kind, 'spawn') = 'spawn') AS parent_session_id
     FROM sessions WHERE id = ?
-  `).get(sessionId) as (DbSession & { is_worktree: number | null; git_branch: string | null; worktree_path: string | null; provider: string | null; provider_id: string | null; provider_session_id: string | null; parent_session_id: string | null; api_provider_id: string | null; acp_agent_id: string | null; selected_model: string | null; selected_effort: string | null; codex_service_tier: string | null }) | undefined
+  `).get(sessionId) as (DbSession & { is_worktree: number | null; git_branch: string | null; worktree_path: string | null; provider: string | null; provider_id: string | null; provider_session_id: string | null; parent_session_id: string | null; api_provider_id: string | null; acp_agent_id: string | null; selected_model: string | null; selected_effort: string | null; codex_service_tier: string | null; remote_controller_json: string | null }) | undefined
 
   if (!session) return null
 
@@ -354,6 +354,7 @@ export function loadSessionState(
     selectedEffort: (session.selected_effort as EffortLevel | null) ?? null,
     codexServiceTier: session.codex_service_tier ?? null,
     title: session.title ?? null,
+    remoteController: remoteControllerInfo(session.remote_controller_json),
   }
 }
 

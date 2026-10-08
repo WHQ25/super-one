@@ -10,6 +10,7 @@ import {
   remoteControllerInfo,
   setSessionRemoteController,
 } from './db-remote-controlled-sessions'
+import { loadSessionState } from './db-sessions'
 
 beforeEach(() => {
   db.current = new Database(':memory:')
@@ -19,7 +20,13 @@ beforeEach(() => {
       id TEXT PRIMARY KEY, project_id TEXT, title TEXT, created_at TEXT, last_user_message_at TEXT,
       provider TEXT, provider_id TEXT, provider_session_id TEXT, worktree_path TEXT,
       is_pinned INTEGER, is_hidden INTEGER, is_user_renamed INTEGER, tags_json TEXT NOT NULL DEFAULT '[]',
-      remote_controller_json TEXT
+      remote_controller_json TEXT,
+      total_cost_usd REAL, context_tokens INTEGER, is_worktree INTEGER, git_branch TEXT, api_provider_id TEXT,
+      acp_agent_id TEXT, selected_model TEXT, selected_effort TEXT, codex_service_tier TEXT
+    );
+    CREATE TABLE chat_messages (
+      id TEXT, session_id TEXT, sort_order INTEGER, role TEXT, status TEXT, content_json TEXT, created_at TEXT,
+      provider_id TEXT, metadata_json TEXT, checkpoint_id TEXT, resume_point_id TEXT
     );
     INSERT INTO projects VALUES ('p1', '/work/app', 'app', '2026-01-01T00:00:00.000Z');
     INSERT INTO sessions (id, project_id, title, created_at) VALUES ('local', 'p1', 'mine', '2026-01-01T00:00:00.000Z');
@@ -47,5 +54,11 @@ describe('remote-controlled sessions', () => {
     expect(remoteControllerInfo('{')).toBeNull()
     expect(remoteControllerInfo(JSON.stringify({ label: 'no id' }))).toBeNull()
     expect(remoteControllerInfo(null)).toBeNull()
+  })
+
+  it('carries the controller label into the restored session state', () => {
+    setSessionRemoteController('remote', { clientSessionId: 'c1', label: 'Desktop A' })
+    expect(loadSessionState('remote')?.remoteController).toEqual({ label: 'Desktop A' })
+    expect(loadSessionState('local')?.remoteController).toBeNull()
   })
 })

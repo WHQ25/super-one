@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto'
 import { chmodSync, existsSync, mkdirSync, unlinkSync } from 'fs'
 import { createServer as createHttpServer, type IncomingMessage, type Server as HttpServer, type ServerResponse } from 'http'
 import net, { type Server, type Socket } from 'net'
+import { tmpdir } from 'os'
 import { dirname, join } from 'path'
 import { app } from 'electron'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
@@ -70,7 +71,11 @@ function socketEndpoint(): string {
   if (process.platform === 'win32') {
     return `\\\\.\\pipe\\superone-mcp-${process.pid}-${randomUUID()}`
   }
-  return join(app.getPath('userData'), `superone-mcp-${process.pid}.sock`)
+  const name = `superone-mcp-${process.pid}.sock`
+  const inUserData = join(app.getPath('userData'), name)
+  // A Unix socket path is capped at 104 bytes on macOS (108 on Linux); a deep
+  // checkout's dev instance profile exceeds it. The per-user temp dir does not.
+  return Buffer.byteLength(inUserData) < 104 ? inUserData : join(tmpdir(), name)
 }
 
 function bridgeScriptPath(): string {

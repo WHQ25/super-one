@@ -85,7 +85,9 @@ Long-term docs affected: [remote-node-service.md](../architecture/remote-node-se
 ## Local runtime convergence (desktop as node)
 
 One execution model: the desktop's local environment runs through the same
-node server and `EnvironmentGateway` path as remote.
+node server and `EnvironmentGateway` path as remote. Desktop B as an
+execution node for agent orchestration goes first; see
+[desktop-node-orchestration.md](desktop-node-orchestration.md).
 
 - Server core is extracted to `packages/runtime/src/server/`, but only
   `apps/cli` consumes it; the desktop does not embed it.

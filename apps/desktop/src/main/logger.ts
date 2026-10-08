@@ -1,5 +1,5 @@
 import { renameSync } from 'fs'
-import { join } from 'path'
+import { devRunFile } from './dev-run-file'
 import log from 'electron-log/main.js'
 import { is } from '@electron-toolkit/utils'
 
@@ -10,7 +10,7 @@ for (const stream of [process.stdout, process.stderr]) {
 }
 
 if (is.dev) {
-  log.transports.file.resolvePathFn = () => join(process.cwd(), 'dev.log')
+  log.transports.file.resolvePathFn = () => devRunFile('dev', '.log')
 }
 
 const archive = (oldLog: unknown) => {
@@ -32,7 +32,7 @@ export function mobileLog(): typeof log {
   const logger = log.create({ logId: 'mobile' })
   logger.transports.console.level = false
   logger.transports.file.fileName = 'mobile.log'
-  if (is.dev) logger.transports.file.resolvePathFn = () => join(process.cwd(), 'dev-mobile.log')
+  if (is.dev) logger.transports.file.resolvePathFn = () => devRunFile('dev-mobile', '.log')
   logger.transports.file.maxSize = 2 * 1024 * 1024
   logger.transports.file.archiveLogFn = archive
   logger.transports.file.format = '{text}'

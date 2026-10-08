@@ -3,6 +3,7 @@ import { createHash } from 'crypto'
 import net from 'net'
 import { join } from 'path'
 import log from '../logger'
+import { devRunFile } from '../dev-run-file'
 import { getNodeRuntime } from '../agent/resolve-cli'
 import { ProcessTitle } from '../process-titles'
 import { resolveCodexChatReasoning, type CodexChatReasoningConfig } from './codex-responses/reasoning'
@@ -73,7 +74,7 @@ export function buildProxyEnv(config: Record<string, unknown>, runtimeEnv?: Reco
     ...runtimeEnv,
     SUPERONE_PROXY_CONFIG: JSON.stringify(config),
     SUPERONE_EVENT_TRACE_CHILD: '1',
-    SUPERONE_EVENT_TRACE_DB: join(process.cwd(), 'llm-proxy-event-trace.db'),
+    SUPERONE_EVENT_TRACE_DB: devRunFile('llm-proxy-event-trace', '.db'),
   }
 }
 

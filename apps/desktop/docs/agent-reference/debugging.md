@@ -60,7 +60,7 @@ sqlite3 event-trace.db "SELECT ts, type, data FROM events WHERE source='agent.sd
 
 ### Log File
 
-In development mode, `electron-log` writes to `apps/desktop/dev.log` (relative to the dev cwd; configured in `apps/desktop/src/main/logger.ts`). The dev script auto-deletes the previous `dev.log` on each run to keep it small. When debugging main process issues, read this file to inspect logs instead of guessing. The log format is `[date time] [level] text`. Paired phones upload their `[reconnect]` / `[sidebar]` diagnostics to `mobile.log` beside `main.log` (`dev-mobile.log` in dev), stamped with the phone's clock.
+In development mode, `electron-log` writes to `apps/desktop/dev.log` (relative to the dev cwd; configured in `apps/desktop/src/main/logger.ts`). A named instance (`SUPERONE_INSTANCE=<name>`, e2e runs, the desktop-node lab) writes `instance-<name>-dev.log` and `instance-<name>-event-trace.db` instead. The dev script auto-deletes the previous `dev.log` on each run to keep it small. When debugging main process issues, read this file to inspect logs instead of guessing. The log format is `[date time] [level] text`. Paired phones upload their `[reconnect]` / `[sidebar]` diagnostics to `mobile.log` beside `main.log` (`dev-mobile.log` in dev), stamped with the phone's clock.
 
 For packaged builds, electron-log uses the running variant's app name for its
 log directory. Read the actual path for that variant rather than assuming

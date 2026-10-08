@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3'
-import { join } from 'path'
+import { devRunFile } from '../dev-run-file'
 
 const isDev = process.env.NODE_ENV === 'development'
 let db: Database.Database | null = null
@@ -10,7 +10,7 @@ if (isDev) {
   ready = import('better-sqlite3')
     .then(({ default: Db }) => {
       db = new (Db as unknown as typeof Database)(
-        process.env.SUPERONE_EVENT_TRACE_DB ?? join(process.cwd(), 'event-trace.db'),
+        process.env.SUPERONE_EVENT_TRACE_DB ?? devRunFile('event-trace', '.db'),
       )
       db.pragma('journal_mode = WAL')
       db.exec(`

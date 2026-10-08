@@ -1,4 +1,5 @@
 import type { ProviderStore } from '../provider/provider-store'
+import type { HarnessManager } from '../session/harness-manager'
 import type { RpcHostHooks } from '@superone/runtime/server'
 import { isClaudeBinaryOverrideRunnable } from '../session/claude-turn-runner'
 import { isCodexBinaryOverrideRunnable } from '../session/codex-turn-runner'
@@ -21,5 +22,18 @@ export function createCliRpcHostHooks(): RpcHostHooks {
     enableHarness: (harnesses, input, providers) =>
       enableHarness(harnesses, input, (providers as ProviderStore | null | undefined) ?? null),
     disableHarness,
+    forkHarnessResume: async ({ source, targetCwd, forkFromMessageId, ...opts }) => {
+      const { forkNodeHarnessResume } = await import('../session/harness-fork')
+      return forkNodeHarnessResume(
+        source,
+        targetCwd,
+        {
+          ...opts,
+          harnesses: opts.harnesses as HarnessManager | undefined,
+          providers: opts.providers as ProviderStore | undefined,
+        },
+        forkFromMessageId,
+      )
+    },
   }
 }

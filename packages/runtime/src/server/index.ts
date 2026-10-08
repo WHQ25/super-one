@@ -19,12 +19,19 @@ export {
   type NodeServerOptions,
   type NodeServerHandle,
   type NodeRpcDispatch,
+  type NodeRpcRequestContext,
   type NodeAuthPort,
 } from './node-server'
+export { dispatchRpc, clearWatchBuffersForClient } from './rpc-dispatch'
 export type {
   RpcContext,
   RpcResult,
   RpcHostHooks,
+  RpcExtensionDispatch,
+  HostCapabilityFlags,
+  SessionHostPort,
+  ControlLeasePort,
+  ArtifactZonePort,
   ProjectsPort,
   TerminalsPort,
   WorkspaceFsPort,

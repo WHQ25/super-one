@@ -1,5 +1,5 @@
 import { verifyPayload } from '../crypto-util'
-import { dispatchRpc, clearWatchBuffersForClient } from '../rpc/handlers'
+import { dispatchRpc, clearWatchBuffersForClient, type RpcContext } from '../rpc/handlers'
 import { cancelMcpAppsInvocationsForClient } from '../rpc/mcp-apps-handlers'
 import { createCliRpcHostHooks } from '../rpc/host-hooks'
 import type { AuthService } from '../auth/auth-service'
@@ -23,7 +23,6 @@ import type { ArtifactZoneService } from '../workspace/artifact-zone'
 import type { SessionProviderStore } from '@superone/runtime/session'
 import {
   startNodeServer as startRuntimeNodeServer,
-  type NodeRpcDispatch,
   type NodeServerHandle,
 } from '@superone/runtime/server'
 
@@ -62,14 +61,14 @@ export async function startNodeServer(opts: NodeServerOptions): Promise<NodeServ
   const hooks = createCliRpcHostHooks()
   const startedAt = opts.startedAt ?? Date.now()
 
-  return startRuntimeNodeServer({
+  return startRuntimeNodeServer<RpcContext>({
     identity: opts.identity,
     auth: opts.auth,
     bindHost: opts.bindHost,
     bindPort: opts.bindPort,
     startedAt,
     verifyDeviceProof: verifyPayload,
-    dispatchRpc: dispatchRpc as NodeRpcDispatch,
+    dispatchRpc,
     onClientDisconnected: (clientSessionId) => {
       opts.workspaceWatch.cancelForClient?.(clientSessionId)
       opts.workspaceTailWatch.cancelForClient?.(clientSessionId)

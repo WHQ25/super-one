@@ -65,10 +65,17 @@ function getBearer(req: IncomingMessage): string | null {
   return m?.[1] ?? null
 }
 
-export type NodeRpcDispatch = (
+/** Per-request fields the transport adds to the host's context. */
+export interface NodeRpcRequestContext {
+  client: AuthenticatedClient
+  requestId?: string
+  idempotencyKey?: string
+}
+
+export type NodeRpcDispatch<C extends NodeRpcRequestContext = RpcContext> = (
   method: string,
   payload: unknown,
-  ctx: RpcContext,
+  ctx: C,
 ) => Promise<RpcResult>
 
 /** Auth surface the transport needs. AuthService satisfies this. */
@@ -91,16 +98,14 @@ export interface NodeAuthPort {
   createWsTicket(accessToken: string): WsTicketResult
 }
 
-export interface NodeServerOptions {
+export interface NodeServerOptions<C extends NodeRpcRequestContext = RpcContext> {
   identity: NodeIdentity
   auth: NodeAuthPort | AuthService
   bindHost: string
   bindPort: number
   startedAt?: number
-  dispatchRpc: NodeRpcDispatch
-  createRpcContext: (
-    client: AuthenticatedClient,
-  ) => Omit<RpcContext, 'client' | 'requestId' | 'idempotencyKey'>
+  dispatchRpc: NodeRpcDispatch<C>
+  createRpcContext: (client: AuthenticatedClient) => Omit<C, keyof NodeRpcRequestContext>
   onClientDisconnected: (clientSessionId: string) => void
   verifyDeviceProof: (publicKeyPem: string, payload: string, signature: string) => boolean
 }
@@ -121,7 +126,9 @@ export interface NodeServerHandle {
  * RPC dispatch and watch-buffer cleanup are injected so both the CLI host and
  * a future desktop embed can share this transport.
  */
-export async function startNodeServer(opts: NodeServerOptions): Promise<NodeServerHandle> {
+export async function startNodeServer<C extends NodeRpcRequestContext = RpcContext>(
+  opts: NodeServerOptions<C>,
+): Promise<NodeServerHandle> {
   const activeSockets = new Map<WebSocket, AuthenticatedClient>()
   const negotiated = new WeakMap<WebSocket, { protocol: number; databaseSchema: number }>()
 
@@ -353,7 +360,7 @@ export async function startNodeServer(opts: NodeServerOptions): Promise<NodeServ
           client,
           requestId,
           idempotencyKey: msg.idempotencyKey,
-        })
+        } as C)
         if (result.error) {
           ws.send(JSON.stringify({ type: 'rpc_error', requestId, error: result.error }))
         } else {
@@ -414,7 +421,7 @@ export async function startNodeServer(opts: NodeServerOptions): Promise<NodeServ
 async function handleHttp(
   req: IncomingMessage,
   res: ServerResponse,
-  opts: NodeServerOptions,
+  opts: Pick<NodeServerOptions<NodeRpcRequestContext>, 'identity' | 'auth' | 'verifyDeviceProof'>,
 ): Promise<void> {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`)
   const path = url.pathname

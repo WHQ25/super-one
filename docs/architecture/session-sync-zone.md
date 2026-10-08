@@ -373,7 +373,7 @@ Boundary:
 - `delete` tombstones the session directory until it returns, so a transfer
   landing after a delete does not recreate it. `session.remove` on the node
   deletes the session's zone directory itself
-  (`apps/cli/src/rpc/handlers.ts`), since the controller binding is gone
+  (`packages/runtime/src/server/rpc-dispatch.ts`), since the controller binding is gone
   afterwards.
 
 ### 5.3 Session RPCs: claim renewal and the completion wake

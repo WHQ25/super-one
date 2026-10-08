@@ -617,7 +617,7 @@ closed. `simulatedHarness` is an in-memory readiness overlay for tests
 `opencode` is an independent harness, never an ACP agent or an
 `acpAgentId: opencode` shortcut. `acp-grok` is the concrete Grok catalog
 identity; sessions, `capabilities.harnessIds` and the desktop `HarnessId` still
-use the legacy wire id `acp` (`normalizeSessionHarnessId` in `apps/cli/src/rpc/handlers.ts`,
+use the legacy wire id `acp` (`normalizeSessionHarnessId` in `packages/runtime/src/server/rpc-dispatch.ts`,
 `HarnessManager.isSessionHarnessRunnable`). A migration to `acp-grok` must not
 rewrite an arbitrary custom ACP profile to Grok without evidence that it uses
 the Grok definition.
@@ -638,6 +638,16 @@ includes:
 
 Electron callbacks become injected ports: renderer delivery becomes an event
 publisher, desktop dialogs become durable interactions answered through RPC.
+
+RPC dispatch for the shared method families (`environment`, `settings`,
+`harness`, `project`, `fs`/`workspace`, `git`, `terminal`, `session`,
+`collaboration`, `provider`) lives in `packages/runtime/src/server/rpc-dispatch.ts`
+and runs against optional host ports (`rpc-context.ts`; `session.*` goes through
+`SessionHostPort`). A host serves the families whose ports it provides, the
+descriptor capabilities advertise exactly those, and any other family answers
+`not_found` with `details.unsupported: true`. Host-only families (the CLI's
+archive, MCP Apps, resources, automations, drafts, artifacts, Codex admin) plug
+in through `RpcContext.extensions`.
 
 Agent collaboration stays within one environment: parent and child Sessions run
 on the same node and use its persistent mailbox. Cross-environment collaboration

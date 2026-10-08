@@ -27,7 +27,8 @@ control leases, sessions, and harness execution. Root repository rules apply.
 | Area | Entry |
 |---|---|
 | Commands, startup, pairing | `src/cli.ts` |
-| RPC dispatch | `src/rpc/handlers.ts` |
+| Shared RPC families and host ports | `packages/runtime/src/server/rpc-dispatch.ts`, `rpc-context.ts` |
+| CLI-only RPC families and wiring | `src/rpc/handlers.ts` |
 | HTTP health and authenticated WebSocket | `src/server/node-server.ts` |
 | Files and git | `src/workspace/` |
 | Sessions and runner wiring | `src/session/`, `packages/runtime/src/session/` |

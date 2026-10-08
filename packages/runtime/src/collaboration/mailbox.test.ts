@@ -140,6 +140,42 @@ describe('readCallerMailbox', () => {
       .toThrow(/Not your collaboration peers: stranger/)
   })
 
+  describe('within its budget', () => {
+    const contents = (limit: number, deferAck = false) =>
+      readCallerMailbox(store, 'parent', { limit, deferAck }, sessionTitle).messages.map((m) => m.content)
+
+    it('returns at most `limit` messages even with more peers than that, and the rest later', () => {
+      for (const child of ['a', 'b', 'c']) {
+        spawn('parent', child)
+        send(child, undefined, `${child}1`)
+      }
+      expect(contents(2)).toEqual(['a1', 'b1'])
+      expect(contents(2)).toEqual(['c1'])
+      expect(contents(2)).toEqual([])
+    })
+
+    it('shares the budget across peers so a busy one cannot starve the others', () => {
+      spawn('parent', 'a')
+      spawn('parent', 'b')
+      for (let n = 1; n <= 3; n++) send('a', undefined, `a${n}`)
+      send('b', undefined, 'b1')
+      expect(contents(2)).toEqual(['a1', 'b1'])
+      send('a', undefined, 'a4')
+      send('b', undefined, 'b2')
+      expect(contents(3)).toEqual(['a2', 'a3', 'b2'])
+      expect(contents(1)).toEqual(['a4'])
+    })
+
+    it('acknowledges only the prefix it returned', () => {
+      spawn('parent', 'a')
+      for (let n = 1; n <= 3; n++) send('a', undefined, `a${n}`)
+      const read = readCallerMailbox(store, 'parent', { limit: 1, deferAck: true }, sessionTitle)
+      expect(read.messages.map((m) => m.content)).toEqual(['a1'])
+      store.ackMailbox('parent', read.acks)
+      expect(contents(5)).toEqual(['a2', 'a3'])
+    })
+  })
+
   describe('with a deferred acknowledgement', () => {
     const read = () => readCallerMailbox(store, 'parent', { deferAck: true }, sessionTitle)
     const contents = (result: ReturnType<typeof read>) => result.messages.map((m) => m.content)

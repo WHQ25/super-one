@@ -3,6 +3,14 @@ import { composerFromRemoteDraft, remoteDraftFromComposer, worktreeFromDraft } f
 import { serializeMentionDocument } from './mention-document'
 
 describe('desktop draft restored on a phone', () => {
+  it('preserves inline paste chips through phone editing and desktop draft save', () => {
+    const content = [{ type: 'text', text: 'Before ' },
+      { type: 'pasteChip', attrs: { text: 'short paste' } }, { type: 'text', text: ' after' }]
+    const composer = composerFromRemoteDraft({ text: '', docJson: { type: 'doc', content: [{ type: 'paragraph', content }] } })
+    expect(composer.document).toEqual([{ text: 'Before ' }, { paste: 'short paste' }, { text: ' after' }])
+    const saved = remoteDraftFromComposer('d', '/repo', composer, { harness: 'codex' })
+    expect(saved.docJson).toEqual({ type: 'doc', content: [{ type: 'paragraph', content }] })
+  })
   it('round trips mention identities, multiline paste and attachments', () => {
     const draft = { id: 'd', text: 'fallback', docJson: { type: 'doc', content: [
       { type: 'paragraph', content: [{ type: 'text', text: 'Read ' }, { type: 'mention', attrs: { kind: 'file', value: '/repo/a.ts', displayName: 'a.ts' } }] },

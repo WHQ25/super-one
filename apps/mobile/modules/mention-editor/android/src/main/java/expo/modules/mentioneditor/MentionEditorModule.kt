@@ -17,6 +17,7 @@ class MentionEditorModule : Module() {
       Prop("chipBackground") { view: MentionEditorView, color: String -> view.setChipBackground(color) }
       Prop("mutedForeground") { view: MentionEditorView, color: String -> view.setMutedForeground(color) }
       Prop("blendedKinds") { view: MentionEditorView, kinds: List<String> -> view.setBlendedKinds(kinds) }
+      Prop("pasteChrome") { view: MentionEditorView, value: Map<String, Double> -> view.setPasteChrome(value) }
       Prop("artwork") { view: MentionEditorView, images: List<Map<String, String>> -> view.setArtwork(images) }
       Prop("keywords") { view: MentionEditorView, value: Map<String, Any?> -> view.setKeywords(value) }
     }

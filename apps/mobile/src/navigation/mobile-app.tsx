@@ -12,7 +12,7 @@ import { composerMode } from '@superone/shared/composer-mode'
 import type { CodexReasoningEffort } from '@superone/shared/agent-types'
 import type { McpAppContextAttachment } from '@superone/shared/mcp-app-model-context'
 import { PersistedWorkspace } from '../persisted-workspace'
-import { mergeRestoredDraftText, userMessageText } from '@superone/chat-core'
+import { composerDraftFromMessage } from '../composer-message-content'
 import { networkLedger } from '../network-ledger'
 import type { AgentEvent, RemoteSystemInfo } from '@superone/shared/agent-types'
 import { invalidateGitResources, requestGitResource } from '../git-resource-cache'
@@ -50,7 +50,7 @@ import { openedSessionSelection } from '../session-restore-selection'
 import { TerminalRuntime, type TerminalUi } from '../terminal-runtime'
 import { randomId } from '../ids'
 import { newMessageId } from '@superone/shared/message-id'
-import { canSteerQueued, canSteerQueuedSoon, composerQueuedSendFields, queuedMessageText } from '../queued-send'
+import { canSteerQueued, canSteerQueuedSoon, composerQueuedSendFields } from '../queued-send'
 import { mentionInsertText } from '../mentions'
 import { McpPanel } from '../ui/mcp-panel'
 import { AddDirScreen } from '../screens/add-dir-screen'
@@ -676,9 +676,9 @@ export function MobileApp() {
     editFailedMessage: async (messageId) => {
       const message = runtimeRef.current?.takeFailedMessage(messageId)
       if (!message) return
-      const text = mergeRestoredDraftText(userMessageText(message), composerDraft.exportSnapshot().text)
-      if (composerDraft.editorRef.current) composerDraft.editorRef.current.replaceText(text)
-      else composerDraft.changeText(text)
+      const restoredDraft = composerDraftFromMessage(message, composerDraft.exportSnapshot())
+      composerDraft.replaceWith(restoredDraft)
+      suggestions.applyProgrammatic(restoredDraft.text)
       const restored = message.attachments ?? []
       if (restored.length) {
         setAttachments((current) => [...restored.filter((a) => !current.some((c) => c.id === a.id)), ...current])
@@ -694,9 +694,9 @@ export function MobileApp() {
       const originals = await runtime.originalAttachments(message)
       if (!runtime.session.queuedMessages.some((item) => item.id === messageId)) return
       runtime.dequeueMessage(messageId)
-      const text = queuedMessageText(message)
-      composerDraft.changeText(text)
-      suggestions.update(text)
+      const restoredDraft = composerDraftFromMessage(message)
+      composerDraft.replaceWith(restoredDraft)
+      suggestions.applyProgrammatic(restoredDraft.text)
       if (originals.length) setAttachments(originals)
     }, setStatus, action === 'edit' ? 'edit failed' : 'steer failed'),
     // The document's form fires and forgets; a failed send shows in the status line.
@@ -1770,7 +1770,7 @@ export function MobileApp() {
    * host round trips, so the tap lands like a desktop send — bubble, title, and
    * a "Creating session…" line under it — instead of a blank wait.
    */
-  const createSession = async (turn: { clientMessageId: string; text: string; images: ImageAttachment[]; title: string }) => {
+  const createSession = async (turn: { clientMessageId: string; text: string; images: ImageAttachment[]; title: string; userMessageContent: import('@superone/shared/agent-types').ContentBlock[] }) => {
     const client = clientRef.current
     const p = project
     if (!client || !p) return
@@ -1790,7 +1790,7 @@ export function MobileApp() {
       setSessionId(id)
       setActiveSessionTitle(turn.title.slice(0, 72) || 'New session')
       setScreen('chat')
-      runtime.stageTurn(turn.clientMessageId, turn.text, turn.images)
+      runtime.stageTurn(turn.clientMessageId, turn.text, turn.images, turn.userMessageContent)
       const draftControl = await remoteDrafts.prepareSend()
       await runtime.create(p.path, {
         ...draftControl,
@@ -1883,7 +1883,7 @@ export function MobileApp() {
       const snapshot = composerDraft.exportSnapshot()
       const cleared = attachments.length === 0 && composerDraft.clearSent(sentDraft.revision)
       if (cleared && !composerDraft.editorRef.current) suggestions.update('')
-      await createSession({ clientMessageId, text, images: attachments, title: sentDraft.title })
+      await createSession({ clientMessageId, text, images: attachments, title: sentDraft.title, userMessageContent: sentDraft.userMessageContent })
       if (!runtimeRef.current) {
         if (cleared) {
           composerDraft.replaceWith(snapshot)
@@ -1900,6 +1900,7 @@ export function MobileApp() {
       ? await mcpMentionContentForModel(clientRef.current, project.path, runtime.sessionId, text) : ''
     if (runtimeRef.current !== runtime) return
     runtime.send(text + mcpContent, {
+      userMessageContent: [...sentDraft.userMessageContent, ...(mcpContent ? [{ type: 'text' as const, text: mcpContent, isPaste: false }] : [])],
       images: attachments,
       ...(selectedProvider === 'codex' && remoteDrafts.settings?.codexCollaborationMode
         ? { collaborationMode: remoteDrafts.settings.codexCollaborationMode } : {}),

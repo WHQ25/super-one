@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Save } from 'lucide-react'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { PasteTextDialog } from '@superone/chat-view/presenters/PasteChip'
+import { PASTE_TEXT_DIALOG, PASTE_TEXT_EDITOR } from '@superone/ui/lib/paste-chip-presentation'
 
 /** A composer paste chip's full text, editable; ⌘/Ctrl+Enter saves it back into the chip. */
 export function PasteChipPreview({ open, onOpenChange, text, onSave }: {
@@ -54,7 +55,8 @@ export function PasteChipPreview({ open, onOpenChange, text, onSave }: {
           }
         }}
         spellCheck={false}
-        className="block h-[60vh] w-full resize-none border-0 bg-transparent p-4 font-mono text-xs leading-relaxed text-foreground outline-none focus:outline-none focus-visible:outline-none"
+        className="block w-full resize-none border-0 bg-transparent font-mono text-foreground outline-none focus:outline-none focus-visible:outline-none"
+        style={{ ...PASTE_TEXT_EDITOR, lineHeight: `${PASTE_TEXT_EDITOR.lineHeight}px`, height: `${PASTE_TEXT_DIALOG.editorHeightRatio * 100}vh` }}
       />
     </PasteTextDialog>
   )

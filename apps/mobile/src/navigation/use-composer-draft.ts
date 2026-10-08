@@ -26,6 +26,6 @@ export function useComposerDraft() {
     setGeneration((value) => value + 1)
   }
   return { draft, draftRef: state.text, document: state.document, editorRef, generation, lastDraftChangeAtRef: state.lastChangeAt,
-    changeText, accept, recordMention: state.recordMention.bind(state), capture: () => state.capture(),
+    changeText, accept, recordMention: state.recordMention.bind(state), capture: () => state.capture(!!editorRef.current),
     exportSnapshot: () => state.exportSnapshot(), replaceWith, clearSent }
 }

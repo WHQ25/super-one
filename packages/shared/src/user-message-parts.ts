@@ -12,6 +12,13 @@ export type UserMessagePart =
   | { paste: string }
   | { attachment: ImageAttachment }
 
+/** Model-facing text: a one-line paste joins adjacent words; other blocks start a line. */
+export function joinComposerTextSegments(texts: readonly { text: string; isPaste?: boolean }[]): string {
+  const inline = (segment: { text: string; isPaste?: boolean }) => segment.isPaste && !segment.text.includes('\n')
+  return texts.map((segment, index) => index === 0 ? segment.text
+    : (inline(segment) || inline(texts[index - 1]!) ? ' ' : '\n') + segment.text).join('')
+}
+
 /**
  * Chips that carry a human label rather than a path: they show `displayName`,
  * never the raw value. Shared so the composer and the sent bubble cannot

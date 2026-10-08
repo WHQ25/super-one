@@ -16,6 +16,8 @@ import android.text.Spannable
 import android.text.SpannableString
 import android.text.TextPaint
 import android.text.TextWatcher
+import android.text.StaticLayout
+import android.text.Layout
 import android.text.style.MetricAffectingSpan
 import android.text.style.ReplacementSpan
 import android.view.Gravity
@@ -50,6 +52,7 @@ class MentionEditorView(context: Context, appContext: AppContext) : ExpoView(con
   private var changing = false
   private var mutedForeground = Color.GRAY
   private var blendedKinds = emptySet<String>()
+  private var pasteChrome = emptyMap<String, Double>()
   private var chipColor = Color.TRANSPARENT
   private var artwork = emptyMap<String, Bitmap>()
   private var keywordAnimate = false
@@ -87,8 +90,8 @@ class MentionEditorView(context: Context, appContext: AppContext) : ExpoView(con
           val pasted = (0 until clip.itemCount).joinToString("\n") {
             clip.getItemAt(it).coerceToText(context).toString()
           }.replace('\uFFFC', '\uFFFD')
-          value.replace(start, end, pasted)
-          setSelection(start + pasted.length)
+          if (pasted.isBlank()) { value.replace(start, end, pasted); setSelection(start + pasted.length) }
+          else insertPaste(start, end, pasted)
           return true
         }
       }
@@ -191,6 +194,7 @@ class MentionEditorView(context: Context, appContext: AppContext) : ExpoView(con
   fun setEditorLabel(value: String) { editor.contentDescription = value }
   fun setMutedForeground(color: String) { mutedForeground = Color.parseColor(color); editor.setHintTextColor(mutedForeground); refreshChipSpans() }
   fun setBlendedKinds(kinds: List<String>) { blendedKinds = kinds.toSet(); refreshChipSpans() }
+  fun setPasteChrome(value: Map<String, Double>) { pasteChrome = value; refreshChipSpans() }
 
   fun setArtwork(images: List<Map<String, String>>) {
     artwork = images.mapNotNull { image ->
@@ -232,6 +236,7 @@ class MentionEditorView(context: Context, appContext: AppContext) : ExpoView(con
       for (offset in start until end) {
         val span = spans[offset]
         if (span == null) append(value[offset])
+        else if (span.kind == "paste") append('\n').append(span.value).append('\n')
         else {
           val label = when (span.kind) {
             "file", "agent" -> span.value
@@ -242,6 +247,25 @@ class MentionEditorView(context: Context, appContext: AppContext) : ExpoView(con
         }
       }
     }
+  }
+
+  private fun insertPaste(start: Int, end: Int, text: String) {
+    val value = editor.text ?: return
+    if (!editor.isEnabled) return
+    val collapsed = text.replace(Regex("\\s+"), " ").trim()
+    val chars = collapsed.codePoints().limit(41).toArray()
+    val label = String(chars, 0, minOf(chars.size, 40)) + if (chars.size > 40) "…" else ""
+    val replacement = SpannableString("\uFFFC")
+    replacement.setSpan(ChipSpan("paste", text, label), 0, 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+    changing = true
+    editor.beginBatchEdit()
+    BaseInputConnection.removeComposingSpans(value)
+    value.replace(start, end, replacement)
+    editor.setSelection(start + 1)
+    editor.endBatchEdit()
+    changing = false
+    eventCount++
+    publish()
   }
 
   fun applyCommand(command: Map<String, Any?>) {
@@ -428,17 +452,29 @@ class MentionEditorView(context: Context, appContext: AppContext) : ExpoView(con
 
   private inner class ChipSpan(val kind: String, val value: String, val label: String) : ReplacementSpan() {
     private val blended get() = kind in blendedKinds
-    private val margin get() = editor.textSize * if (blended) 0.25f else 0.125f
-    private val padding get() = if (blended) 0f else editor.textSize * 0.35f
-    private val icon get() = artwork["$kind:$value"]
-    private val iconWidth get() = if (icon != null) editor.textSize * 1.25f else 0f
+    private fun metric(name: String, fallback: Float) = if (kind == "paste") pasteChrome[name]?.toFloat() ?: fallback else fallback
+    private val margin get() = editor.textSize * metric("marginEm", if (blended) 0.25f else 0.125f)
+    private val padding get() = editor.textSize * metric("paddingEm", if (blended) 0f else 0.35f)
+    private val icon get() = artwork[if (kind == "paste") "paste" else "$kind:$value"]
+    private val iconSize get() = editor.textSize * metric("iconSizeEm", 1f)
+    private val iconWidth get() = if (icon != null) iconSize + editor.textSize * metric("iconGapEm", 0.25f) else 0f
+    private fun pasteLayout(paint: Paint): StaticLayout? {
+      if (kind != "paste") return null
+      val available = if (editor.width <= 0) paint.measureText(label) else
+        (editor.width - editor.totalPaddingLeft - editor.totalPaddingRight - (padding + margin) * 2 - iconWidth).coerceAtLeast(1f)
+      val width = kotlin.math.ceil(minOf(paint.measureText(label), available)).toInt().coerceAtLeast(1)
+      return StaticLayout.Builder.obtain(label, 0, label.length, TextPaint(paint), width)
+        .setAlignment(Layout.Alignment.ALIGN_NORMAL).setIncludePad(false).build()
+    }
     override fun getSize(paint: Paint, text: CharSequence, start: Int, end: Int, fm: Paint.FontMetricsInt?): Int {
+      val layout = pasteLayout(paint)
       if (fm != null) {
         val metrics = paint.fontMetricsInt
         fm.ascent = metrics.ascent; fm.descent = metrics.descent
-        fm.top = metrics.top; fm.bottom = metrics.bottom; fm.leading = metrics.leading
+        if (layout != null) fm.descent += maxOf(0, layout.height - (metrics.descent - metrics.ascent))
+        fm.top = metrics.top; fm.bottom = maxOf(metrics.bottom, fm.descent); fm.leading = metrics.leading
       }
-      return kotlin.math.ceil(paint.measureText(label) + (padding + margin) * 2 + iconWidth).toInt()
+      return kotlin.math.ceil((layout?.width?.toFloat() ?: paint.measureText(label)) + (padding + margin) * 2 + iconWidth).toInt()
     }
     override fun draw(canvas: Canvas, text: CharSequence, start: Int, end: Int, x: Float, top: Int, y: Int, bottom: Int, paint: Paint) {
       val previous = paint.color
@@ -451,10 +487,17 @@ class MentionEditorView(context: Context, appContext: AppContext) : ExpoView(con
       paint.color = if (blended) mutedForeground else editor.currentTextColor
       icon?.let { bitmap ->
         val center = y + (metrics.ascent + metrics.descent) / 2
-        val size = editor.textSize
-        canvas.drawBitmap(bitmap, null, RectF(x + margin + padding, center - size / 2, x + margin + padding + size, center + size / 2), paint)
+        val iconTop = if (kind == "paste") y - iconSize + editor.textSize * metric("iconBaselineEm", 0.15f) else center - iconSize / 2
+        canvas.drawBitmap(bitmap, null, RectF(x + margin + padding, iconTop, x + margin + padding + iconSize, iconTop + iconSize), paint)
       }
-      canvas.drawText(label, x + margin + padding + iconWidth, y.toFloat(), paint)
+      val layout = pasteLayout(paint)
+      if (layout == null) canvas.drawText(label, x + margin + padding + iconWidth, y.toFloat(), paint)
+      else {
+        canvas.save()
+        canvas.translate(x + margin + padding + iconWidth, y + metrics.ascent)
+        layout.draw(canvas)
+        canvas.restore()
+      }
       paint.color = previous
     }
   }

@@ -132,7 +132,10 @@ const MenuKeyboardContext = createContext<{ current: boolean } | null>(null)
  * menu reflows around it instead of closing. */
 export function MenuTextInput(props: ComponentProps<typeof TextInput>) {
   const ownsKeyboard = useContext(MenuKeyboardContext)
-  return <TextInput {...props} onFocus={(event) => { if (ownsKeyboard) ownsKeyboard.current = true; props.onFocus?.(event) }} />
+  return <TextInput {...props}
+    // iOS may hide the previous input accessory before the field's onFocus.
+    onTouchStart={(event) => { if (ownsKeyboard) ownsKeyboard.current = true; props.onTouchStart?.(event) }}
+    onFocus={(event) => { if (ownsKeyboard) ownsKeyboard.current = true; props.onFocus?.(event) }} />
 }
 
 export function MenuRow({ label, labelNode, description, leading, accessory, selected, showCheck = true, disabled, destructive, onPress }: {

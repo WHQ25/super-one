@@ -9,6 +9,28 @@ function fileDraft(path: string, eventCount: number) {
 }
 
 describe('structured composer draft lifecycle', () => {
+  it('marks long ordinary text explicitly so the bubble cannot infer a paste', () => {
+    const state = new ComposerDraftState()
+    const text = 'x'.repeat(500)
+    state.changeText(text)
+    expect(state.capture()).toMatchObject({ userMessageContent: [{ type: 'text', text, isPaste: false }] })
+  })
+
+  it('captures separate paste chips and surrounding text for sending', () => {
+    const state = new ComposerDraftState()
+    state.accept(parseMentionEditorSnapshot({ text: 'Before \uFFFC after', start: 14, end: 14, eventCount: 1, composing: false,
+      tokens: [{ offset: 7, kind: 'paste', value: 'short paste', displayName: 'short paste' }] }))
+    expect(state.capture()).toMatchObject({ userMessageContent: [
+      { type: 'text', text: 'Before', isPaste: false },
+      { type: 'text', text: 'short paste', isPaste: true },
+      { type: 'text', text: 'after', isPaste: false },
+    ] })
+    expect(state.capture().text).toBe('Before short paste after')
+    const sent = state.capture()
+    state.accept(parseMentionEditorSnapshot({ text: 'Before \uFFFC after', start: 14, end: 14, eventCount: 2, composing: false,
+      tokens: [{ offset: 7, kind: 'paste', value: 'edited paste', displayName: 'edited paste' }] }))
+    expect(state.holdsCaptured(sent.revision)).toBe(false)
+  })
   it('preserves identity across native remount and emits a readable session title', () => {
     const state = new ComposerDraftState()
     state.accept(fileDraft('src/中文 file.ts', 5))

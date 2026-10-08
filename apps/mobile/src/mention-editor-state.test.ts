@@ -7,6 +7,13 @@ const token = { offset: 2, kind: 'agent-profile', value: 'codex-base', displayNa
 const native = { text: '看 \uFFFC', tokens: [token], start: 3, end: 3, eventCount: 4, composing: false }
 
 describe('native editor boundary', () => {
+  it('keeps a pasted chip distinct from typed text in the native snapshot', () => {
+    const text = 'line one\nline two'
+    const snapshot = parseMentionEditorSnapshot({ ...native,
+      tokens: [{ offset: 2, kind: 'paste', value: text, displayName: 'line one line two' }],
+    })
+    expect(snapshot.document).toEqual([{ text: '看 ' }, { paste: text }])
+  })
   it('recovers sendable identity and accepts Android backward selections', () => {
     const snapshot = parseMentionEditorSnapshot({ ...native, start: 3, end: 1 })
     expect(snapshot.start).toBe(1)

@@ -1,4 +1,4 @@
-import type { AgentEvent, HarnessId, ImageAttachment, RemoteSystemInfo } from '@superone/shared/agent-types'
+import type { AgentEvent, ContentBlock, HarnessId, ImageAttachment, RemoteSystemInfo } from '@superone/shared/agent-types'
 import type { CachedTranscript } from '@superone/relay-client'
 
 export type SessionTranscriptCache = {
@@ -53,6 +53,7 @@ export type CreateSessionOptions = {
 }
 
 export type SendMessageOptions = {
+  userMessageContent?: ContentBlock[]
   collaborationMode?: string
   images?: ImageAttachment[]; model?: string; effort?: string
   /** OpenCode primary agent for this turn. */

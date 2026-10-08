@@ -6,6 +6,7 @@ import { useComposerDraft } from '../navigation/use-composer-draft'
 import { extractMentionQuery, insertMention, type MentionItem } from '../mentions'
 import type { MentionEditorSnapshot } from '../mention-editor-state'
 import { MentionEditorPreview } from './MentionEditorPreview'
+import { PasteChipComposerPreview } from './PasteChipComposerPreview'
 import { ComposerSuggestionsGallery } from './ComposerSuggestionsGallery'
 import { previewAgentProfiles, previewCapabilityIds, previewMentionItems, previewSlashCatalog } from './composer-fixtures'
 import { filterSlashCommands } from '../slash'
@@ -615,7 +616,7 @@ todos={page === 'Chat' ? previewTodos : {}} draft={chatDraft.draft} streaming={p
           {page === 'Composer modes' ? <ComposerModeGallery /> : null}
           {page === 'Loading states' ? <LoadingStateGallery /> : null}
           {page === 'Usage' ? <UsageGallery /> : null}
-          {page === 'Chip editor' ? <MentionEditorPreview /> : null}
+          {page === 'Chip editor' ? <><PasteChipComposerPreview /><MentionEditorPreview /></> : null}
           {route === 'files' && !gallery ? (page === 'File search' ? <FileFinderView
             query="chat" busy={false} onQuery={() => {}}
             finder={{ kind: 'search', root: '/workspace/super-one', results: PREVIEW_SEARCH_RESULTS, searched: true,

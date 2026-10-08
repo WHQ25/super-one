@@ -18,7 +18,7 @@ export function composerFromRemoteDraft(draft: { text: string; docJson?: object 
   const walk = (node: Node) => {
     if (node.type === 'mention' && typeof node.attrs?.kind === 'string' && typeof node.attrs.value === 'string') {
       document.push({ mention: { kind: node.attrs.kind as MentionToken['kind'], value: node.attrs.value, displayName: String(node.attrs.displayName ?? node.attrs.value) } })
-    } else if (node.type === 'pasteChip') addText(String(node.attrs?.text ?? ''))
+    } else if (node.type === 'pasteChip') document.push({ paste: String(node.attrs?.text ?? '') })
     else if (node.type === 'hardBreak') addText('\n')
     else if (typeof node.text === 'string') addText(node.text)
     else for (const child of node.content ?? []) walk(child)
@@ -38,6 +38,7 @@ export function remoteDraftFromComposer(id: string, projectPath: string, compose
   const paragraphs: Node[] = [{ type: 'paragraph', content: [] }]
   for (const segment of document) {
     if ('mention' in segment) paragraphs.at(-1)!.content!.push({ type: 'mention', attrs: { ...segment.mention } })
+    else if ('paste' in segment) paragraphs.at(-1)!.content!.push({ type: 'pasteChip', attrs: { text: segment.paste } })
     else segment.text.split('\n').forEach((text, index) => {
       if (index) paragraphs.push({ type: 'paragraph', content: [] })
       if (text) paragraphs.at(-1)!.content!.push({ type: 'text', text })

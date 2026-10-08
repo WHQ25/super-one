@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { desktopMentionGlyphs } from '../../scripts/mention-glyphs'
+import { desktopMentionGlyphs, desktopPasteGlyph, desktopPastePresentation } from '../../scripts/mention-glyphs'
 import { mentionGlyphArtwork } from './mention-glyph-data'
 import data from './mention-artwork.generated.json'
 import { GENERATED_DARK_COLORS, GENERATED_LIGHT_COLORS } from '../theme/tokens.generated'
@@ -7,7 +7,7 @@ import { GENERATED_DARK_COLORS, GENERATED_LIGHT_COLORS } from '../theme/tokens.g
 describe('desktop mention identities on mobile', () => {
   it('preserves desktop glyph and theme colors through native image lookup', () => {
     const glyphs: Record<string, { icon: string; light: string; dark: string }> = data.glyphs
-    for (const [kind, expected] of Object.entries(desktopMentionGlyphs())) {
+    for (const [kind, expected] of Object.entries({ ...desktopMentionGlyphs(), paste: desktopPasteGlyph() })) {
       expect(glyphs[kind]).toMatchObject(expected)
       const light = mentionGlyphArtwork(kind, 'light', GENERATED_LIGHT_COLORS.foreground)
       const dark = mentionGlyphArtwork(kind, 'dark', GENERATED_DARK_COLORS.foreground)
@@ -20,5 +20,12 @@ describe('desktop mention identities on mobile', () => {
     expect(miniApp).toBe(mentionGlyphArtwork('miniapp', 'dark', GENERATED_DARK_COLORS.foreground))
     expect(mentionGlyphArtwork('agent-profile', 'dark', GENERATED_DARK_COLORS.foreground)).toBeUndefined()
     expect(mentionGlyphArtwork('__proto__', 'dark', GENERATED_DARK_COLORS.foreground)).toBeUndefined()
+  })
+  it('carries the desktop CSS chrome and inherited muted paste icon color', () => {
+    const desktop = desktopPastePresentation()
+    expect(data.pasteChrome).toEqual(desktop.chrome)
+    expect(data.pasteChrome.blended).toBe(true)
+    expect(data.glyphs.paste.light).toBe(GENERATED_LIGHT_COLORS.mutedForeground)
+    expect(data.glyphs.paste.dark).toBe(GENERATED_DARK_COLORS.mutedForeground)
   })
 })

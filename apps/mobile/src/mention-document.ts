@@ -4,6 +4,7 @@ import { wrapMcpResourceMention } from '@superone/shared/mcp-app-mentions'
 import { isStoredCapabilityId, wrapCapabilityMention, type StoredCapabilityId } from '@superone/shared/capability-prompt-tags'
 import { wrapPathRefMention } from '@superone/shared/miniapp-prompt-tags'
 import type { ComposerCursor } from './composer-cursor'
+import { pasteSummary } from '@superone/shared/user-message-parts'
 
 /** One UTF-16 position in UITextView/EditText, regardless of the visible label. */
 export const MENTION_OBJECT = '\uFFFC'
@@ -17,24 +18,27 @@ export type MentionToken = {
 export function isMentionTokenKind(kind: string): kind is MentionToken['kind'] {
   return (TOKEN_KINDS as readonly string[]).includes(kind) || isStoredCapabilityId(kind)
 }
-export type MentionSegment = { text: string } | { mention: MentionToken }
+export type ComposerToken = MentionToken | { kind: 'paste'; value: string; displayName: string }
+export type MentionSegment = { text: string } | { mention: MentionToken } | { paste: string }
 export type MentionDocument = readonly MentionSegment[]
 
 export function nativeMentionText(document: MentionDocument): string {
   return document.map((segment) => 'text' in segment ? segment.text : MENTION_OBJECT).join('')
 }
 
-export function nativeMentionSpans(document: MentionDocument): Array<MentionToken & { offset: number }> {
+export function nativeMentionSpans(document: MentionDocument): Array<ComposerToken & { offset: number }> {
   let offset = 0
   return document.flatMap((segment) => {
     if ('text' in segment) { offset += segment.text.length; return [] }
-    return [{ ...segment.mention, offset: offset++ }]
+    const token: ComposerToken = 'paste' in segment
+      ? { kind: 'paste', value: segment.paste, displayName: pasteSummary(segment.paste) } : segment.mention
+    return [{ ...token, offset: offset++ }]
   })
 }
 
 /** Recover identities from a native snapshot after EditText/UITextView moved its
  * spans. Reject inconsistent metadata instead of silently attaching a wrong ID. */
-export function documentFromNativeMentions(text: string, spans: readonly (MentionToken & { offset: number })[]): MentionSegment[] {
+export function documentFromNativeMentions(text: string, spans: readonly (ComposerToken & { offset: number })[]): MentionSegment[] {
   const result: MentionSegment[] = []
   let position = 0
   for (const span of [...spans].sort((a, b) => a.offset - b.offset)) {
@@ -43,7 +47,7 @@ export function documentFromNativeMentions(text: string, spans: readonly (Mentio
       throw new RangeError('Invalid native mention span')
     }
     if (offset > position) result.push({ text: text.slice(position, offset) })
-    result.push({ mention })
+    result.push(mention.kind === 'paste' ? { paste: mention.value } : { mention })
     position = offset + 1
   }
   if (position < text.length) result.push({ text: text.slice(position) })
@@ -53,6 +57,7 @@ export function documentFromNativeMentions(text: string, spans: readonly (Mentio
 function normalize(segments: MentionDocument): MentionSegment[] {
   const result: MentionSegment[] = []
   for (const segment of segments) {
+    if ('paste' in segment) { result.push({ paste: segment.paste }); continue }
     if ('mention' in segment) { result.push({ mention: { ...segment.mention } }); continue }
     if (!segment.text) continue
     const last = result.at(-1)
@@ -95,6 +100,7 @@ export function replaceMentionRange(document: MentionDocument, range: ComposerCu
 export function plainMentionText(document: MentionDocument): string {
   return document.map((segment) => {
     if ('text' in segment) return segment.text
+    if ('paste' in segment) return segment.paste
     const token = segment.mention
     const value = token.kind === 'directory' ? `${token.value.replace(/\/+$/, '')}/`
       : token.kind === 'file' || token.kind === 'agent' ? token.value : token.displayName || token.value
@@ -106,6 +112,7 @@ export function plainMentionText(document: MentionDocument): string {
 export function serializeMentionDocument(document: MentionDocument): string {
   return document.map((segment) => {
     if ('text' in segment) return segment.text
+    if ('paste' in segment) return segment.paste
     const { kind, value, displayName } = segment.mention
     let tag: string
     if (isStoredCapabilityId(kind)) tag = wrapCapabilityMention(kind, displayName)

@@ -27,6 +27,16 @@ private final class WeakTicker {
   @objc func tick() { target?.shimmerTick() }
 }
 
+/// The desktop chip's one-line, 40-code-point label; its value keeps the full paste.
+private enum PasteChip {
+  static func summary(_ text: String) -> String {
+    let collapsed = text.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    let chars = Array(collapsed.unicodeScalars.prefix(41))
+    return String(String.UnicodeScalarView(chars.prefix(40))) + (chars.count > 40 ? "…" : "")
+  }
+}
+
 private final class MentionAttachment: NSTextAttachment {
   let kind: String
   let value: String
@@ -42,30 +52,39 @@ private final class MentionAttachment: NSTextAttachment {
 
   var plainText: String {
     switch kind {
+    case "paste": return "\n" + value + "\n"
     case "file", "agent": return "@" + value
     case "directory": return "@" + value + (value.hasSuffix("/") ? "" : "/")
     default: return "@" + label
     }
   }
 
-  func render(font: UIFont, foreground: UIColor, background: UIColor, blended: Bool, icon: UIImage?) {
-    let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: foreground]
+  func render(font: UIFont, foreground: UIColor, background: UIColor, blended: Bool, icon: UIImage?, maxWidth: CGFloat? = nil, chrome: [String: Double]? = nil) {
+    let paragraph = NSMutableParagraphStyle()
+    paragraph.lineBreakMode = maxWidth == nil ? .byTruncatingTail : .byWordWrapping
+    let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: foreground, .paragraphStyle: paragraph]
     let textSize = (label as NSString).size(withAttributes: attributes)
     // Match desktop .mention-chip--resource / --blended em geometry.
-    let margin = font.pointSize * (blended ? 0.25 : 0.125)
-    let padding = font.pointSize * (blended ? 0 : 0.35)
-    let iconWidth = icon == nil ? 0 : font.pointSize * 1.25
-    let contentWidth = ceil(textSize.width) + padding * 2 + iconWidth
-    let size = CGSize(width: contentWidth + margin * 2, height: ceil(font.lineHeight))
+    let margin = font.pointSize * CGFloat(chrome?["marginEm"] ?? (blended ? 0.25 : 0.125))
+    let padding = font.pointSize * CGFloat(chrome?["paddingEm"] ?? (blended ? 0 : 0.35))
+    let iconSize = font.pointSize * CGFloat(chrome?["iconSizeEm"] ?? 1)
+    let iconWidth = icon == nil ? 0 : iconSize + font.pointSize * CGFloat(chrome?["iconGapEm"] ?? 0.25)
+    let labelWidth = min(ceil(textSize.width), maxWidth.map { max(1, $0 - (padding + margin) * 2 - iconWidth) } ?? ceil(textSize.width))
+    let contentWidth = labelWidth + padding * 2 + iconWidth
+    let labelHeight = (label as NSString).boundingRect(with: CGSize(width: labelWidth, height: .greatestFiniteMagnitude),
+      options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: attributes, context: nil).height
+    let size = CGSize(width: contentWidth + margin * 2, height: ceil(max(font.lineHeight, labelHeight)))
     image = UIGraphicsImageRenderer(size: size).image { _ in
       if !blended {
         background.setFill()
         UIBezierPath(roundedRect: CGRect(x: margin, y: 0, width: contentWidth, height: size.height), cornerRadius: font.pointSize * 0.25).fill()
       }
-      icon?.draw(in: CGRect(x: margin + padding, y: (size.height - font.pointSize) / 2, width: font.pointSize, height: font.pointSize))
-      (label as NSString).draw(at: CGPoint(x: margin + padding + iconWidth, y: 0), withAttributes: attributes)
+      let iconY = chrome.map { font.ascender - iconSize + font.pointSize * CGFloat($0["iconBaselineEm"] ?? 0.15) } ?? (ceil(font.lineHeight) - iconSize) / 2
+      icon?.draw(in: CGRect(x: margin + padding, y: iconY, width: iconSize, height: iconSize))
+      (label as NSString).draw(in: CGRect(x: margin + padding + iconWidth, y: 0, width: labelWidth, height: size.height), withAttributes: attributes)
     }
-    bounds = CGRect(x: 0, y: font.descender, width: size.width, height: size.height)
+    // Keep the first label line on the prose baseline when a narrow chip wraps.
+    bounds = CGRect(x: 0, y: font.descender - (size.height - ceil(font.lineHeight)), width: size.width, height: size.height)
   }
 }
 
@@ -93,11 +112,14 @@ private final class MentionTextView: UITextView {
   }
   var copySelection: (() -> String)?
   var cutSelection: (() -> Void)?
+  var pasteText: ((String) -> Void)?
   override func copy(_ sender: Any?) { UIPasteboard.general.string = copySelection?() ?? "" }
   override func cut(_ sender: Any?) { copy(sender); cutSelection?() }
   override func paste(_ sender: Any?) {
     guard let value = UIPasteboard.general.string else { return }
-    insertLiteral(value.replacingOccurrences(of: "\u{FFFC}", with: "\u{FFFD}"))
+    let text = value.replacingOccurrences(of: "\u{FFFC}", with: "\u{FFFD}")
+    if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { insertLiteral(text) }
+    else { pasteText?(text) }
   }
 }
 
@@ -108,6 +130,7 @@ final class MentionEditorView: ExpoView, UITextViewDelegate {
   let onMentionPress = EventDispatcher()
   private var submitOnReturn = false
   private var lastContentHeight: CGFloat = 0
+  private var lastEditorWidth: CGFloat = 0
   private let editor = MentionTextView()
   private let placeholderLabel = UILabel()
   private var eventCount = 0
@@ -116,6 +139,7 @@ final class MentionEditorView: ExpoView, UITextViewDelegate {
   private var foreground = UIColor.label
   private var mutedForeground = UIColor.secondaryLabel
   private var blendedKinds = Set<String>()
+  private var pasteChrome: [String: Double] = [:]
   private var chipBackground = UIColor.clear
   private var artwork: [String: UIImage] = [:]
   private var editorFont = UIFont.systemFont(ofSize: 15)
@@ -147,6 +171,7 @@ final class MentionEditorView: ExpoView, UITextViewDelegate {
     editor.textContainerInset = UIEdgeInsets(top: 10, left: 7, bottom: 10, right: 7)
     editor.autocorrectionType = .yes
     editor.copySelection = { [weak self] in self?.plainSelection() ?? "" }
+    editor.pasteText = { [weak self] in self?.insertPaste($0) }
     editor.cutSelection = { [weak self] in
       guard let self else { return }
       self.editor.unmarkText()
@@ -201,6 +226,10 @@ final class MentionEditorView: ExpoView, UITextViewDelegate {
   override func layoutSubviews() {
     super.layoutSubviews()
     editor.frame = bounds
+    if lastEditorWidth != editor.bounds.width {
+      lastEditorWidth = editor.bounds.width
+      redrawAttachments()
+    }
     let inset = editor.textContainerInset
     let x = inset.left + editor.textContainer.lineFragmentPadding
     let width = max(0, bounds.width - x - inset.right - editor.textContainer.lineFragmentPadding)
@@ -292,10 +321,38 @@ final class MentionEditorView: ExpoView, UITextViewDelegate {
     blendedKinds = Set(kinds)
     redrawAttachments()
   }
+  func setPasteChrome(_ value: [String: Double]) { pasteChrome = value; redrawAttachments() }
   private func render(_ attachment: MentionAttachment) {
     let blended = blendedKinds.contains(attachment.kind)
+    let paste = attachment.kind == "paste"
+    let icon = artwork[paste ? "paste" : "\(attachment.kind):\(attachment.value)"]
+    let availableWidth = max(24, editor.bounds.width - editor.textContainerInset.left - editor.textContainerInset.right - editor.textContainer.lineFragmentPadding * 2)
     attachment.render(font: editorFont, foreground: blended ? mutedForeground : foreground,
-      background: chipBackground, blended: blended, icon: artwork["\(attachment.kind):\(attachment.value)"])
+      background: chipBackground, blended: blended, icon: icon, maxWidth: paste ? availableWidth : nil, chrome: paste ? pasteChrome : nil)
+  }
+  private func insertPaste(_ text: String) {
+    guard editor.isEditable else { return }
+    editor.unmarkText()
+    let attachment = MentionAttachment(kind: "paste", value: text, label: PasteChip.summary(text))
+    render(attachment)
+    let replacement = NSAttributedString(string: "\u{FFFC}", attributes: [.attachment: attachment, .font: editorFont, .foregroundColor: foreground])
+    replacePasteRange(editor.selectedRange, with: replacement)
+  }
+  /// One undoable native edit, including the chip's identity and the replaced selection.
+  private func replacePasteRange(_ range: NSRange, with replacement: NSAttributedString, selection: NSRange? = nil) {
+    guard range.location >= 0, NSMaxRange(range) <= editor.textStorage.length else { return }
+    let previous = editor.textStorage.attributedSubstring(from: range)
+    let previousSelection = editor.selectedRange
+    editor.undoManager?.registerUndo(withTarget: self) { target in
+      target.replacePasteRange(NSRange(location: range.location, length: replacement.length), with: previous, selection: previousSelection)
+    }
+    changing = true
+    editor.textStorage.replaceCharacters(in: range, with: replacement)
+    editor.selectedRange = selection ?? NSRange(location: range.location + replacement.length, length: 0)
+    plainTypingAttributes()
+    changing = false
+    eventCount += 1
+    publish()
   }
   func setArtwork(_ images: [[String: String]]) {
     var next: [String: UIImage] = [:]

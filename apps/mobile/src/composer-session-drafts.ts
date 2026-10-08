@@ -32,7 +32,7 @@ function cloneSnapshot(snapshot: SessionComposerSnapshot): SessionComposerSnapsh
   return {
     text: snapshot.text,
     document: snapshot.document.map((segment) => (
-      'text' in segment ? { text: segment.text } : { mention: { ...segment.mention } }
+      'text' in segment ? { text: segment.text } : 'paste' in segment ? { paste: segment.paste } : { mention: { ...segment.mention } }
     )),
     insertions: snapshot.insertions.map((insertion) => ({
       text: insertion.text,

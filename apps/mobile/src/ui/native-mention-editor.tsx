@@ -10,14 +10,17 @@ import type { AnchorRect } from './popover-layout'
 import type { PromptKeyword } from '@superone/shared/prompt-keywords'
 import { keywordHighlight, type KeywordHighlight } from '../prompt-keyword-highlight'
 import { useIconMotion } from './use-icon-motion'
+import { pasteChrome } from './mention-artwork.generated.json'
 
-const blendedKinds = [...BUILTIN_CAPABILITIES.map((item) => item.id), ...LEGACY_CAPABILITY_IDS, 'agent-profile', 'desktop-app', 'session', 'git', 'mcp-resource']
+const blendedKinds = [...BUILTIN_CAPABILITIES.map((item) => item.id), ...LEGACY_CAPABILITY_IDS, 'agent-profile', 'desktop-app', 'session', 'git', 'mcp-resource', ...(pasteChrome.blended ? ['paste'] : [])]
+const { blended: _blended, ...pasteMetrics } = pasteChrome
 
 type NativeProps = ViewProps & {
   command: MentionEditorCommand; foreground: string; chipBackground: string
   submitOnReturn: boolean; onSubmit: (event: { nativeEvent: { eventCount: number } }) => void
   placeholder: string; editable: boolean; editorLabel: string
   artwork: MentionArtwork[]; mutedForeground: string; blendedKinds: string[]
+  pasteChrome: typeof pasteMetrics
   keywords: KeywordHighlight
   onContentHeightChange: (event: { nativeEvent: { height: number } }) => void
   onDocumentChange: (event: { nativeEvent: unknown }) => void
@@ -25,13 +28,14 @@ type NativeProps = ViewProps & {
 }
 
 /** A tapped chip and where it is drawn, in the editor's own points. */
-export type MentionPress = { kind: string; value: string; frame: AnchorRect }
+export type MentionPress = { kind: string; value: string; offset: number; frame: AnchorRect }
 
 function parseMentionPress(raw: Record<string, unknown>): MentionPress | null {
-  const { kind, value, x, y, width, height } = raw
+  const { kind, value, offset, x, y, width, height } = raw
   if (typeof kind !== 'string' || typeof value !== 'string') return null
+  if (typeof offset !== 'number' || !Number.isSafeInteger(offset) || offset < 0) return null
   if (![x, y, width, height].every((n) => typeof n === 'number' && Number.isFinite(n))) return null
-  return { kind, value, frame: { x: x as number, y: y as number, width: width as number, height: height as number } }
+  return { kind, value, offset, frame: { x: x as number, y: y as number, width: width as number, height: height as number } }
 }
 const NativeView: ComponentType<NativeProps> | null = (Platform.OS === 'ios' || Platform.OS === 'android')
   && requireOptionalNativeModule('SuperOneMentionEditor') ? requireNativeView<NativeProps>('SuperOneMentionEditor') : null
@@ -63,7 +67,7 @@ export function NativeMentionEditor({ command, onChange, onError, editable = tru
   const [tokens, setTokens] = useState(command.tokens)
   const artwork = useMentionArtwork(tokens)
   if (!NativeView) return null
-  return <NativeView {...viewProps} editable={editable} placeholder={placeholder} editorLabel={viewProps.accessibilityLabel ?? 'Message'} command={command} foreground={colors.foreground} chipBackground={colors.muted} artwork={artwork} mutedForeground={colors.mutedForeground} blendedKinds={blendedKinds} keywords={keywords}
+  return <NativeView {...viewProps} editable={editable} placeholder={placeholder} editorLabel={viewProps.accessibilityLabel ?? 'Message'} command={command} foreground={colors.foreground} chipBackground={colors.muted} artwork={artwork} mutedForeground={colors.mutedForeground} blendedKinds={blendedKinds} pasteChrome={pasteMetrics} keywords={keywords}
     submitOnReturn={submitBehavior === 'submit'}
     onSubmit={({ nativeEvent }) => {
       const snapshot = latestSnapshot.current

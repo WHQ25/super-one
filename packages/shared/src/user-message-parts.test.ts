@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { attachmentForBlock, isLongPaste, mentionLabel, pasteSummary } from './user-message-parts'
+import { attachmentForBlock, isLongPaste, joinComposerTextSegments, mentionLabel, pasteSummary } from './user-message-parts'
+
+describe('joinComposerTextSegments', () => {
+  it('joins one-line pastes inline and multiline pastes on their own lines', () => {
+    expect(joinComposerTextSegments([{ text: 'Before', isPaste: false }, { text: 'paste', isPaste: true }, { text: 'after', isPaste: false }])).toBe('Before paste after')
+    expect(joinComposerTextSegments([{ text: 'Before', isPaste: false }, { text: 'line one\nline two', isPaste: true }, { text: 'after', isPaste: false }])).toBe('Before\nline one\nline two\nafter')
+  })
+})
 
 describe('pasteSummary', () => {
   it('collapses lines and whitespace into one line', () => {

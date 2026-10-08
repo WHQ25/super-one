@@ -428,6 +428,7 @@ export class ChatRuntime {
 
   send(content: string, extra: SendMessageOptions = {}): void {
     const clientMessageId = extra.clientMessageId ?? newMessageId('user')
+    const message = localUserMessage(clientMessageId, content, extra.images, extra.userMessageContent)
     const inputRequest = extra.inputRequest && this.session.pendingPermissions.find(request => request.requestId === extra.inputRequest!.requestId)
     if (inputRequest) this.inputRequestSends.capture(clientMessageId, inputRequest)
     const cmd: SendMessageCommand = {
@@ -435,6 +436,7 @@ export class ChatRuntime {
       sessionId: this.sessionId,
       projectPath: this.projectPath,
       content,
+      userMessageContent: message.content,
       provider: this.provider as HarnessId,
       ...(extra.model ? { model: extra.model } : {}),
       ...(extra.effort ? { effort: extra.effort } : {}),
@@ -454,7 +456,7 @@ export class ChatRuntime {
     // The wire messages that report this command's output carry no name, so the
     // only chance to learn it is here, from what the user actually sent.
     const queued = extra.priority === 'next'
-      ? localUserMessage(clientMessageId, content, extra.images)
+      ? message
       : null
     this.session = {
       ...this.session,
@@ -467,7 +469,7 @@ export class ChatRuntime {
     }
     // A live send paints its own bubble, as the desktop does: the host echoes
     // it back under the same id, which the reducer then ignores as a duplicate.
-    if (!queued) this.appendLocalTurn(localUserMessage(clientMessageId, content, extra.images))
+    if (!queued) this.appendLocalTurn(message)
     this.dirty = true
     this.flush()
     void this.deliver(cmd)
@@ -533,8 +535,8 @@ export class ChatRuntime {
    * Paint the first bubble before the host has a session to send it to. The
    * `send()` that follows `create()` reuses the id, so nothing is drawn twice.
    */
-  stageTurn(clientMessageId: string, content: string, images?: ImageAttachment[]): void {
-    this.appendLocalTurn(localUserMessage(clientMessageId, content, images))
+  stageTurn(clientMessageId: string, content: string, images?: ImageAttachment[], userMessageContent?: SendMessageOptions['userMessageContent']): void {
+    this.appendLocalTurn(localUserMessage(clientMessageId, content, images, userMessageContent))
     this.dirty = true
     this.flush()
   }

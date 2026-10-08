@@ -68,6 +68,22 @@ test('stays open around the keyboard its own search field raised, re-measuring t
   expect(onDismiss).toHaveBeenCalledTimes(1)
 })
 
+test('a menu input claims the iOS keyboard transition before native focus arrives', async () => {
+  Platform.OS = 'ios'
+  const onDismiss = jest.fn()
+  const remeasure = jest.fn()
+  await renderMenu(onDismiss, remeasure)
+
+  // iOS can send WillHide while changing input accessories, before onFocus.
+  await act(async () => { fireEvent(screen.getByLabelText('Search models'), 'touchStart') })
+  await keyboard('keyboardWillHide', 850, 0)
+  expect(onDismiss).not.toHaveBeenCalled()
+  await act(async () => { fireEvent(screen.getByLabelText('Search models'), 'focus') })
+  await keyboard('keyboardDidShow', 500, 350)
+  expect(remeasure).toHaveBeenCalledTimes(1)
+  expect(onDismiss).not.toHaveBeenCalled()
+})
+
 test('a prominent title names the source like the desktop popover; menus keep a muted label', async () => {
   const menu = (prominent: boolean) => render(
     <SafeAreaProvider initialMetrics={{ frame: { x: 0, y: 0, width: 390, height: 844 }, insets: { top: 47, left: 0, right: 0, bottom: 34 } }}>

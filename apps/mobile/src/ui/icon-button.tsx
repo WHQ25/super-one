@@ -6,7 +6,7 @@ import { Text } from './text'
 import { useMobileTheme } from '../theme/context'
 import { useMobileLocale } from '../i18n/context'
 
-export function IconButton({ icon: Icon, glyph, label, onPress, disabled, active, destructive, tone, color, chrome = 'default', iconSize = 20, spinning, style, hitSlop, buttonRef }: {
+export function IconButton({ icon: Icon, glyph, label, onPress, disabled, active, destructive, tone, color, chrome = 'default', iconSize = 20, strokeWidth = 1.8, spinning, style, hitSlop, buttonRef }: {
   buttonRef?: RefObject<View | null>
   icon?: LucideIcon
   /** A typed character (e.g. `/`) when a Lucide mark would read as the wrong symbol. */
@@ -21,6 +21,7 @@ export function IconButton({ icon: Icon, glyph, label, onPress, disabled, active
   color?: string
   chrome?: 'default' | 'plain' | 'circle'
   iconSize?: number
+  strokeWidth?: number
   /** Rotate the icon to show the action it triggers is still running. */
   spinning?: boolean
   style?: StyleProp<ViewStyle>
@@ -39,8 +40,8 @@ export function IconButton({ icon: Icon, glyph, label, onPress, disabled, active
     }
     if (!Icon) return null
     return spinning
-      ? <SpinningIcon icon={Icon} size={iconSize} color={color} strokeWidth={1.8} />
-      : <Icon size={iconSize} strokeWidth={1.8} color={color} />
+      ? <SpinningIcon icon={Icon} size={iconSize} color={color} strokeWidth={strokeWidth} />
+      : <Icon size={iconSize} strokeWidth={strokeWidth} color={color} />
   }
   // `active` tints the glyph rather than filling the button: a toggle in a header
   // row sits beside plain actions, and a solid block reads as a different kind of

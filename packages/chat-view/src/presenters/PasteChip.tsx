@@ -6,6 +6,7 @@ import { Dialog, DialogClose, DialogContent, DialogTitle } from '@superone/ui/co
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { MentionChipContent } from '@superone/ui/components/ui/MentionChipBody'
 import { cn } from '@superone/ui/lib/utils'
+import { PASTE_TEXT_DIALOG, PASTE_TEXT_EDITOR } from '@superone/ui/lib/paste-chip-presentation'
 import { useUserBubblePorts } from './user-bubble-ports'
 
 /** `copied` flips on for a moment after a copy through the host succeeds. */
@@ -38,13 +39,14 @@ export function PasteTextDialog({ open, onOpenChange, text, lineCount, titleExtr
   const { copied, run } = useCopiedFlag()
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent showCloseButton={false} className="max-h-[90vh] max-w-4xl gap-0 overflow-hidden p-0">
-        <div className="flex items-center justify-between border-b px-4 py-2.5">
-          <DialogTitle className="text-sm font-medium">
+      <DialogContent showCloseButton={false} className="gap-0 overflow-hidden p-0"
+        style={{ maxHeight: `${PASTE_TEXT_DIALOG.maxHeightRatio * 100}vh`, maxWidth: PASTE_TEXT_DIALOG.maxWidth, width: `calc(100% - ${PASTE_TEXT_DIALOG.viewportMargin * 2}px)`, borderRadius: PASTE_TEXT_DIALOG.radius }}>
+        <div className="flex items-center justify-between border-b" style={{ padding: `${PASTE_TEXT_DIALOG.headerPaddingVertical}px ${PASTE_TEXT_DIALOG.headerPaddingHorizontal}px` }}>
+          <DialogTitle className="font-medium" style={{ fontSize: PASTE_TEXT_DIALOG.titleFontSize, lineHeight: `${PASTE_TEXT_DIALOG.titleLineHeight}px` }}>
             {t('chat.pasteChip.title', { count: lineCount ?? text.split('\n').length })}
             {titleExtra}
           </DialogTitle>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center" style={{ gap: PASTE_TEXT_DIALOG.actionGap }}>
             {actions}
             <IconButton size="sm" onClick={() => void run(() => copyText(text))}>
               {copied ? <Check /> : <Copy />}
@@ -57,7 +59,7 @@ export function PasteTextDialog({ open, onOpenChange, text, lineCount, titleExtr
           </div>
         </div>
         {children ?? (
-          <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap p-4 font-mono text-xs leading-relaxed text-foreground">
+          <pre className="overflow-auto whitespace-pre-wrap font-mono text-foreground" style={{ ...PASTE_TEXT_EDITOR, lineHeight: `${PASTE_TEXT_EDITOR.lineHeight}px`, maxHeight: `${PASTE_TEXT_DIALOG.editorHeightRatio * 100}vh` }}>
             {text}
           </pre>
         )}

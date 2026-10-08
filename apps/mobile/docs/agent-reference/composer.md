@@ -35,12 +35,31 @@ Native owns typing, IME composition and the caret; JS never mirrors a controlled
 value. JS edits are commands carrying the last seen `eventCount`, and native rejects
 a stale count or an active composition (the snapshot reports the `rejection`). A
 chip is one UTF-16 object position (U+FFFC) holding kind, value and display name.
-Copy/cut expand chips to plain text; paste inserts literal text and never creates a
-token. Tapping a chip emits `onMentionPress` (kind, value, frame in the editor) and
+Copy/cut expand chips to plain text. System text paste creates an inline Paste Chip
+at any nonblank length, matching desktop; typing, IME input and whitespace-only
+paste stay text. Paste tokens carry the full text as `value`, occupy one native
+position, and use the desktop's 40-code-point summary and generated FileText icon.
+Paste chrome (no fill, muted label/icon, em spacing and baseline) is extracted from
+desktop `MentionChipContent` and `mention-chip.css` by `generate-mention-artwork.ts`;
+native receives those metrics as `pasteChrome`. The full 40-code-point summary wraps
+on narrow editors instead of getting a second truncation.
+Tapping a paste opens the centered `PasteChipEditorDialog` to copy, edit/save or expand it to plain
+text. A save waits for the native snapshot to acknowledge the exact replacement;
+stale/composing edits retain the popup draft. Its top toolbar, unframed text area,
+typography and window dimensions use `@superone/ui/lib/paste-chip-presentation`,
+also used by desktop `PasteTextDialog` / `PasteChipPreview`. The native dialog uses
+the same-window menu host and shrinks above the keyboard without dismissing edits.
+Tapping a chip emits `onMentionPress` (kind, value, offset, frame in the editor) and
 is withheld from the text view, so neither caret nor keyboard moves under the card
-it opens; `isMentionTokenKind` is the one list of chip kinds both directions check. The document serialises to desktop tags only when the draft is captured for
-send (`composer-draft-state.ts`). The plain `TextInput` fallback flattens to text,
-so the two editors send different payloads — tests assert the sent payload on both.
+it opens; `isMentionTokenKind` is the shared list of mention kinds, and native
+snapshots additionally accept `paste`. The document serialises to desktop tags only when the draft is captured for
+send (`composer-draft-state.ts`). `composer-message-content.ts` captures explicit
+`isPaste: true/false` blocks, reused by the optimistic bubble, staged first turn,
+queued turn and host request. Message editing and remote drafts preserve paste
+identity. The plain `TextInput` fallback flattens to text,
+so the two editors send different payloads — tests assert the sent payload on both;
+it sends flattened pastes with `isPaste: false`, matching what it displays.
+Native paste interception needs a rebuilt client, not just an OTA JavaScript update.
 
 **Prompt keyword styling.** The native editor paints the harness's
 `promptKeywords` using shared matching, palettes and shimmer timing. Claude's

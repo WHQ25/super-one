@@ -8,7 +8,7 @@ import * as lucide from 'lucide-react'
 import { GithubIcon } from '@superone/ui/components/ui/github-icon'
 import McpMono from '@lobehub/icons/es/MCP/components/Mono'
 import { DefaultMiniAppIcon } from '../../../packages/ui/src/components/ui/DefaultMiniAppIcon'
-import { desktopMentionGlyphs } from './mention-glyphs'
+import { desktopMentionGlyphs, desktopPastePresentation } from './mention-glyphs'
 import files from '../src/ui/file-icons.generated.json'
 import { GENERATED_DARK_COLORS, GENERATED_LIGHT_COLORS } from '../src/theme/tokens.generated'
 
@@ -34,7 +34,8 @@ const glyphs: Record<string, { icon: string; light: string; dark: string; artwor
 // An MCP server item's fallback (`mcpResourceMentionIcon`), kept out of the desktop's
 // static glyphs because its chips prefer the server's own icon.
 const mcpResource = { icon: 'McpIcon', light: '$foreground', dark: '$foreground' }
-for (const [kind, glyph] of [...Object.entries(desktopMentionGlyphs()), ['mcp-resource', mcpResource] as const]) {
+const paste = desktopPastePresentation()
+for (const [kind, glyph] of [...Object.entries(desktopMentionGlyphs()), ['mcp-resource', mcpResource] as const, ['paste', paste.glyph] as const]) {
   // lucide 1.0 dropped brand marks; the desktop carries GitHub's itself.
   const local: Record<string, ComponentType<{ color: string }>> = { GithubIcon, McpIcon: McpMono as ComponentType<{ color: string }> }
   const Icon = local[glyph.icon] ?? (lucide as unknown as Record<string, ComponentType<{ color: string }>>)[glyph.icon]
@@ -58,7 +59,7 @@ const miniAppHash = createHash('sha256').update(miniAppPng).digest('hex').slice(
 images[miniAppHash] = miniAppPng.toString('base64')
 glyphs.miniapp = { icon: 'default-app-icon', light: '$asset', dark: '$asset', artwork: { $asset: miniAppHash } }
 const target = resolve(import.meta.dirname, '../src/ui/mention-artwork.generated.json')
-const output = JSON.stringify({ pixels, variants, glyphs, images }) + '\n'
+const output = JSON.stringify({ pixels, variants, glyphs, images, pasteChrome: paste.chrome }) + '\n'
 if (process.argv.includes('--check')) {
   if (readFileSync(target, 'utf8') !== output) throw new Error('Native mention artwork is stale; run generate:icons')
 } else writeFileSync(target, output)

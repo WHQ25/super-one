@@ -1,6 +1,6 @@
-import { documentFromNativeMentions, isMentionTokenKind, MENTION_OBJECT, type MentionSegment, type MentionToken } from './mention-document'
+import { documentFromNativeMentions, isMentionTokenKind, MENTION_OBJECT, type MentionSegment, type ComposerToken } from './mention-document'
 
-export type NativeMentionSpan = MentionToken & { offset: number }
+export type NativeMentionSpan = ComposerToken & { offset: number }
 export type MentionEditorCommand = {
   id: number; eventCount: number; start: number; end: number
   text: string; tokens: NativeMentionSpan[]
@@ -31,11 +31,11 @@ export function parseMentionEditorSnapshot(raw: unknown): MentionEditorSnapshot 
   if (Math.max(start, end) > text.length) throw new RangeError('Native editor selection is outside the draft')
   const tokens = value.tokens.map((rawToken): NativeMentionSpan => {
     const token = record(rawToken)
-    if (typeof token.kind !== 'string' || !isMentionTokenKind(token.kind)
-      || typeof token.value !== 'string' || !token.value || typeof token.displayName !== 'string') {
+    if (typeof token.kind !== 'string' || (token.kind !== 'paste' && !isMentionTokenKind(token.kind))
+      || typeof token.value !== 'string' || (token.kind !== 'paste' && !token.value) || typeof token.displayName !== 'string') {
       throw new TypeError('Invalid native mention identity')
     }
-    return { offset: integer(token.offset), kind: token.kind as MentionToken['kind'], value: token.value, displayName: token.displayName }
+    return { offset: integer(token.offset), kind: token.kind as ComposerToken['kind'], value: token.value, displayName: token.displayName }
   })
   const document = documentFromNativeMentions(text, tokens)
   if (document.some((segment) => 'text' in segment && segment.text.includes(MENTION_OBJECT))) {

@@ -1,5 +1,7 @@
-import { documentFromText, plainMentionText, serializeMentionDocument, type MentionDocument, type MentionInsertion, type MentionToken } from './mention-document'
+import { documentFromText, plainMentionText, type MentionDocument, type MentionInsertion, type MentionToken } from './mention-document'
+import { joinComposerTextSegments } from '@superone/shared/user-message-parts'
 import type { MentionEditorSnapshot } from './mention-editor-state'
+import { composerMessageContent } from './composer-message-content'
 
 export type ComposerDraftSnapshot = {
   text: string
@@ -21,9 +23,8 @@ export class ComposerDraftState {
   readonly lastChangeAt = { current: 0 }
   private revision = 0
   private snapshot: MentionEditorSnapshot | null = null
-  /** Native text at the last `capture()`. IME may bump the revision without
-   * changing it (composing spans, restartInput); that is still the sent draft. */
-  private capturedVisible: string | null = null
+  /** IME-only changes can bump the revision; chip identity changes are real edits. */
+  private capturedDocument: string | null = null
   /**
    * Mentions the plain-text editor wrote. The native editor keeps identities in
    * its own spans; the fallback has nowhere to put them, so they live here and
@@ -66,9 +67,11 @@ export class ComposerDraftState {
     this.revision++
     return true
   }
-  capture() {
-    this.capturedVisible = this.text.current
-    return { text: serializeMentionDocument(this.document.current), title: plainMentionText(this.document.current).trim(), revision: this.revision }
+  capture(pasteChipsVisible = true) {
+    this.capturedDocument = JSON.stringify(this.document.current)
+    const userMessageContent = composerMessageContent(this.document.current, pasteChipsVisible)
+    const texts = userMessageContent.filter((block): block is Extract<typeof block, { type: 'text' }> => block.type === 'text')
+    return { text: joinComposerTextSegments(texts), title: plainMentionText(this.document.current).trim(), revision: this.revision, userMessageContent }
   }
   /** Copy out so another session can take the editor without sharing identity. */
   exportSnapshot(): ComposerDraftSnapshot {
@@ -86,11 +89,11 @@ export class ComposerDraftState {
     this.lastChangeAt.current = 0
     this.revision++
     this.snapshot = null
-    this.capturedVisible = null
+    this.capturedDocument = null
   }
   isCurrent(revision: number) { return this.revision === revision }
   /** True when nothing the user typed has replaced the captured draft. */
   holdsCaptured(revision: number) {
-    return this.revision === revision || this.text.current === this.capturedVisible
+    return this.revision === revision || JSON.stringify(this.document.current) === this.capturedDocument
   }
 }

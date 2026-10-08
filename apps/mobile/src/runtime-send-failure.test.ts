@@ -36,6 +36,15 @@ describe('send failure', () => {
     runtime.dispose()
   })
 
+  it('stops "Sending…" when the host already took the id', async () => {
+    const { runtime } = runtimeWith(async () => ({ ok: true, duplicate: true }))
+    runtime.send('hello', { clientMessageId: 'u' })
+    await settle()
+    expect(runtime.session.messages[0]?.metadata?.sendFailure).toBeUndefined()
+    expect(runtime.pendingTurn).toBeNull()
+    runtime.dispose()
+  })
+
   it('marks a send failed when the host reports it after the receipt', async () => {
     const { runtime } = runtimeWith(async () => ({ ok: true }))
     runtime.send('hello', { clientMessageId: 'u' })

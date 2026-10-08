@@ -74,7 +74,7 @@ import { listAccounts as listClaudeAccounts } from './claude-account-service'
 import { getCurrentLocale } from '../i18n'
 import { buildRemoteHarnessSystemInfo } from './remote-harness-system-info'
 import { buildRemoteSessionSnapshot } from './remote-session-snapshot'
-import { userMessageAnswered } from '@superone/shared/send-failure'
+import { userMessageAnswered, type DuplicateSend } from '@superone/shared/send-failure'
 import { sessionDefaultsForHarness } from '@superone/shared/harness/session-defaults'
 
 /** Resolve a path to its git common directory (shared across worktrees). */
@@ -551,7 +551,7 @@ export class AgentService {
     })
   }
 
-  private async runCodexRemoteTurn(projectPath: string, sessionId: string, deviceId: string, command: { content: string; userMessageContent?: SendMessageRequest['userMessageContent']; contexts?: SendMessageRequest['contexts']; model?: string; effort?: string; serviceTier?: string | null; permissionPreset?: string; collaborationMode?: string; threadId?: string; images?: SendMessageRequest['images']; gitBranch?: string | null; worktreeBranch?: string | null; clientMessageId?: string; priority?: 'now' | 'next' | 'later'; inputRequest?: SendMessageRequest['inputRequest'] }, onAccepted?: () => void): Promise<void> {
+  private async runCodexRemoteTurn(projectPath: string, sessionId: string, deviceId: string, command: { content: string; userMessageContent?: SendMessageRequest['userMessageContent']; contexts?: SendMessageRequest['contexts']; model?: string; effort?: string; serviceTier?: string | null; permissionPreset?: string; collaborationMode?: string; threadId?: string; images?: SendMessageRequest['images']; gitBranch?: string | null; worktreeBranch?: string | null; clientMessageId?: string; priority?: 'now' | 'next' | 'later'; inputRequest?: SendMessageRequest['inputRequest'] }, onAccepted?: (receipt?: DuplicateSend) => void): Promise<void> {
     const userMessageId = newMessageId('user')
     const assistantMessageId = newMessageId('remote')
     const mgr = this.requireSessionManager()

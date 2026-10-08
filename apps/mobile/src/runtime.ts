@@ -32,6 +32,7 @@ import type { CachedTranscript, RelayClient } from '@superone/relay-client'
 import { restoreSession } from '@superone/relay-client'
 import { randomId } from './ids'
 import { newMessageId } from '@superone/shared/message-id'
+import { isDuplicateSend } from '@superone/shared/send-failure'
 import { createSessionCommand } from './runtime-create-session'
 
 type SessionState = ReturnType<typeof createDefaultChatCoreSession>
@@ -490,7 +491,10 @@ export class ChatRuntime {
       if (error) throw new Error(error)
       if (generation === this.restoreGeneration && cmd.clientMessageId) {
         this.inputRequestSends.complete(cmd.clientMessageId)
-        if (cmd.inputRequest) { this.dirty = true; this.flush() }
+        // The host already has this id (a stale Resend): nothing new will answer it.
+        const duplicate = isDuplicateSend(result)
+        if (duplicate) this.session = { ...this.session, awaitingAssistantReply: false }
+        if (cmd.inputRequest || duplicate) { this.dirty = true; this.flush() }
       }
     } catch (error) {
       if (generation !== this.restoreGeneration || !cmd.clientMessageId) return

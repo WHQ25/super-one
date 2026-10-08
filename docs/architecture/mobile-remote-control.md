@@ -242,7 +242,8 @@ send. Resend without the original request (`failedMessageResend` in
 host reuses the row, clears its failure and broadcasts `user_message_send_retried`
 so every other client drops its Resend. A send of an id the host already took
 (admitted, queued, answered or running) is held, not run again: `Session.send`
-resolves `{ duplicate: true }`. A queued send the backend refuses becomes a
+resolves `{ duplicate: true }` and the phone's `send_message` receipt carries
+the same flag, so either client stops waiting for a reply. A queued send the backend refuses becomes a
 failed row in the transcript, like any other.
 
 The phone sends every turn, with or without attachments, as a request with a

@@ -1783,6 +1783,28 @@ describe('AgentService.handleRemoteCommand', () => {
     }, ['mobile-A'])
   })
 
+  it('send_message tells the phone when the host already took its id', async () => {
+    const service = new AgentService()
+    const send = vi.fn(async (_req: unknown, opts?: { onAccepted?: (receipt?: { duplicate: true }) => void }) => {
+      opts?.onAccepted?.({ duplicate: true })
+      return { duplicate: true as const }
+    })
+    const activeSession = makeMockSession({ id: 'sid-1', projectPath: '/p', send })
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getActiveSession: vi.fn(() => activeSession),
+      getSession: vi.fn(() => activeSession),
+      forEachSession: vi.fn(),
+    }
+    const respond = vi.fn().mockResolvedValue(undefined)
+
+    await service.handleRemoteCommand({
+      type: 'send_message', requestId: 'req-1', content: 'hello',
+      projectPath: '/p', sessionId: 'sid-1', clientMessageId: 'user-1',
+    } as never, respond, { deviceId: 'mobile-A', transport: 'lan' })
+
+    expect(respond).toHaveBeenCalledWith('req-1', { ok: true, duplicate: true })
+  })
+
   it('does not report an interrupted reply as a failed mobile send', async () => {
     const service = new AgentService()
     const snapshot = { harnessId: 'codex', messages: [] as Array<{ id: string; role: string }> }

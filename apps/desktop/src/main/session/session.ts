@@ -771,7 +771,7 @@ export class Session implements SessionContract {
     } as AgentEvent)
   }
 
-  async send(request: SendMessageRequest, opts?: { providerOrigin?: SendProviderOrigin; onAccepted?: () => void }): Promise<DuplicateSend | void> {
+  async send(request: SendMessageRequest, opts?: { providerOrigin?: SendProviderOrigin; onAccepted?: (receipt?: DuplicateSend) => void }): Promise<DuplicateSend | void> {
     const providerOrigin = opts?.providerOrigin ?? 'local'
     this.assertNotDisposed()
     this.assertCanSend(providerOrigin)
@@ -780,7 +780,7 @@ export class Session implements SessionContract {
       // A Resend from a client that missed the retry: the host already has this
       // message, so it is held, not run again.
       log.info('[Session] duplicate send ignored sid=%s clientMessageId=%s', this.id, clientMessageId)
-      opts?.onAccepted?.()
+      opts?.onAccepted?.({ duplicate: true })
       return { duplicate: true }
     }
     // A submitted agent-output form claims its request before the message is admitted.

@@ -1,13 +1,13 @@
 /**
  * Follows the runs of spawn children on other machines for the child
  * monitor, independent of whichever chat drain streams them to the UI. Each
- * child keeps the node event sequence processed so far in its grant, so a
- * restart or reconnect of this desktop resumes from there: no stop is missed
- * and none is seen twice.
+ * child keeps the node event sequence processed so far, and the run open
+ * there, in its grant, so a restart or reconnect of this desktop resumes from
+ * there: no stop is missed and none is seen twice.
  */
 
-import type { AgentEvent } from '@superone/shared/agent-types'
-import type { SessionAgentRemoteLaunch } from '@superone/shared/agent-types'
+import type { AgentEvent, SessionAgentRemoteLaunch, SessionAgentRunState } from '@superone/shared/agent-types'
+import { SESSION_DURABLE_EVENT, type EnvironmentEventEnvelope } from '@superone/shared/environment'
 import { createNodeSessionEventMapper, type NodeSessionEventMapper } from '@superone/shared/node-session-event-map'
 import { parseGrantConfig, type CollaborationGrantRow } from '@superone/runtime/collaboration'
 import log from '../logger'
@@ -18,9 +18,12 @@ export const REMOTE_CHILD_POLL_MS = 2_000
 /** A page of `session.events` holds at most this many events. */
 const EVENT_PAGE = 1000
 
+/** The {@link CollaborationChildMonitor} surface the watcher drives. */
 export interface RemoteChildRunFeed {
-  handleEvent(sessionId: string, event: AgentEvent, replay: boolean): void
-  resumeRun(sessionId: string): void
+  handleEvent(sessionId: string, event: AgentEvent, replay: boolean, stopKey?: string): void
+  resumeRun(sessionId: string, state?: SessionAgentRunState): void
+  runState(sessionId: string): SessionAgentRunState | null
+  stopRun(sessionId: string, status: string, stopKey?: string): void
 }
 
 interface Child {
@@ -95,42 +98,56 @@ export class RemoteChildWatcher {
 
   private async poll(connectionId: string, children: Child[]): Promise<void> {
     const port = await remotePort()
+    /** Node status of children whose run state was just resumed while their node says it is not running. */
+    const settled = new Map<string, string>()
     for (const child of children) {
       if (this.resumed.has(child.sessionId)) continue
+      const state = await port.getSession(connectionId, child.sessionId)
       // A run open at the cursor, or running now, ends in a stop that must count.
-      const state = child.remote.runOpen ? null : await port.getSession(connectionId, child.sessionId)
-      if (child.remote.runOpen || state?.status === 'streaming') this.feed.resumeRun(child.sessionId)
+      if (child.remote.run) this.feed.resumeRun(child.sessionId, child.remote.run)
+      else if (state?.status === 'streaming') this.feed.resumeRun(child.sessionId)
+      if (state && state.status !== 'streaming' && this.feed.runState(child.sessionId)) settled.set(child.sessionId, state.status)
       this.resumed.add(child.sessionId)
     }
-    const runOpen = new Map(children.map((child) => [child.sessionId, child.remote.runOpen === true]))
+    const store = collaborationStore()
     const cursors = new Map(children.map((child) => [child.sessionId, seq(child.remote.eventCursor)]))
+    /** Children whose run opened or stopped in the events read now. */
+    const statusSeen = new Set<string>()
     let after = [...cursors.values()].reduce((min, value) => (value < min ? value : min))
     for (;;) {
       const page = await port.listEvents(connectionId, after.toString())
       for (const envelope of page) {
         const at = seq(envelope.sequence)
         after = at
-        const cursor = envelope.aggregateType === 'session' ? cursors.get(envelope.aggregateId) : undefined
+        const sessionId = envelope.aggregateId
+        const cursor = envelope.aggregateType === 'session' ? cursors.get(sessionId) : undefined
         if (cursor === undefined || at <= cursor) continue
-        cursors.set(envelope.aggregateId, at)
-        const events = this.mapper(envelope.aggregateId).map(envelope)
-        for (const event of events) {
-          this.feed.handleEvent(envelope.aggregateId, event, false)
-          if (event.type === 'status_change') {
-            runOpen.set(envelope.aggregateId, event.status === 'streaming' || event.status === 'background')
-          }
-        }
-        // A stop may have woken the parent: record it before anything can replay it.
-        if (events.some((event) => event.type === 'status_change')) {
-          this.save(children, envelope.aggregateId, at, runOpen.get(envelope.aggregateId)!)
-        }
+        cursors.set(sessionId, at)
+        const events = this.mapper(sessionId).map(envelope)
+        const restarted = restartStop(envelope)
+        if (restarted || events.some((event) => event.type === 'status_change')) statusSeen.add(sessionId)
+        // A stop records its parent wake with the cursor past it, or neither.
+        store.transaction(() => {
+          for (const event of events) this.feed.handleEvent(sessionId, event, false, envelope.sequence)
+          if (restarted && this.feed.runState(sessionId)) this.feed.stopRun(sessionId, restarted, envelope.sequence)
+          this.save(children, sessionId, at, 'run')
+        })
       }
       if (page.length > 0) {
         // Nothing of the others happened up to here either.
         for (const [sessionId, value] of cursors) if (value < after) cursors.set(sessionId, after)
-        for (const child of children) this.save(children, child.sessionId, cursors.get(child.sessionId)!, runOpen.get(child.sessionId)!)
+        for (const child of children) this.save(children, child.sessionId, cursors.get(child.sessionId)!, 'cursor')
       }
-      if (page.length < EVENT_PAGE) return
+      if (page.length < EVENT_PAGE) break
+    }
+    // The node settled a run this desktop resumed without logging its stop (an older node).
+    for (const [sessionId, status] of settled) {
+      if (statusSeen.has(sessionId) || !this.feed.runState(sessionId)) continue
+      const cursor = cursors.get(sessionId)!
+      store.transaction(() => {
+        this.feed.stopRun(sessionId, status, `settled:${cursor}`)
+        this.save(children, sessionId, cursor, 'run')
+      })
     }
   }
 
@@ -143,12 +160,29 @@ export class RemoteChildWatcher {
     return mapper
   }
 
-  private save(children: Child[], sessionId: string, cursor: bigint, runOpen: boolean): void {
+  /**
+   * Record the cursor with the run open there: when the run changed
+   * (`'run'`), or when the cursor advanced (`'cursor'`).
+   */
+  private save(children: Child[], sessionId: string, cursor: bigint, when: 'run' | 'cursor'): void {
     const child = children.find((item) => item.sessionId === sessionId)
-    if (!child || (seq(child.remote.eventCursor) >= cursor && child.remote.runOpen === runOpen)) return
-    child.remote = { ...child.remote, eventCursor: cursor.toString(), runOpen }
+    if (!child) return
+    const run = this.feed.runState(sessionId) ?? undefined
+    const advanced = seq(child.remote.eventCursor) < cursor
+    const runChanged = JSON.stringify(run) !== JSON.stringify(child.remote.run)
+    if (when === 'run' ? !runChanged : !advanced) return
+    const { run: _previous, ...remote } = child.remote
+    child.remote = { ...remote, eventCursor: cursor.toString(), ...(run ? { run } : {}) }
     const store = collaborationStore()
     const config = parseGrantConfig(store.grantById(child.grant.grant_id)?.config_json ?? child.grant.config_json)
     store.updateConfig(child.grant.grant_id, { ...config, remote: child.remote })
   }
+}
+
+/** The stop a node logged for a run its restart ended; null for any other event. */
+function restartStop(envelope: EnvironmentEventEnvelope): string | null {
+  if (envelope.eventType !== SESSION_DURABLE_EVENT.reconciled) return null
+  const status = (envelope.payload as { status?: unknown } | null)?.status
+  if (typeof status !== 'string' || status === 'streaming') return null
+  return `${status} (its machine restarted)`
 }

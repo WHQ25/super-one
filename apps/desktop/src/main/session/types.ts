@@ -525,7 +525,7 @@ export interface Session {
    * content for human observers). Dedupes by message id.
    */
   appendTranscriptMessage(message: import('@superone/shared/agent-types').ChatMessage): void
-  injectTaskNotification(content: string): Promise<void>
+  injectTaskNotification(content: string): Promise<TaskNotificationDelivery>
   respondToPermission(
     requestId: string,
     allow: boolean,
@@ -626,3 +626,10 @@ export interface SessionManager {
   on(sessionId: string, handler: (event: AgentEvent) => void): () => void
   onAny(handler: (sessionId: string, event: AgentEvent) => void): () => void
 }
+
+/**
+ * What became of a host task notification: started or queued in the session
+ * (`accepted`), held by the harness in memory until it can take it
+ * (`deferred`, gone if the app exits), or not handed over (`failed`).
+ */
+export type TaskNotificationDelivery = 'accepted' | 'deferred' | 'failed'

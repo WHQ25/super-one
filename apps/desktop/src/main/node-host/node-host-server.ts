@@ -24,6 +24,7 @@ import { verifyPayload } from '@superone/runtime/crypto/crypto-util'
 import type { NodeHostPairingToken } from '@superone/shared/agent-types'
 import { DesktopSessionHost, type NodeHostSessionManager, type NodeHostSessionStore } from './desktop-session-host'
 import { createDesktopWorktreePort } from './desktop-worktree-port'
+import { reconcileRunsAfterRestart } from './reconcile-runs'
 import { desktopNodeHostPaths, DESKTOP_NODE_LOOPBACK_HOST } from './paths'
 
 /**
@@ -102,6 +103,7 @@ export class DesktopNodeHost {
       const leases = new ControlLeaseService(db)
       const idempotency = new IdempotencyService(db)
       const events = new EventLog(db, identity.environmentId)
+      reconcileRunsAfterRestart({ db, events, store: deps.store, sessions: deps.sessions })
       const sessionHost = new DesktopSessionHost({
         environmentId: identity.environmentId,
         sessions: deps.sessions,

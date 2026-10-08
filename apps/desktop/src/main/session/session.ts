@@ -103,6 +103,7 @@ import {
   type SessionSnapshot,
   type SessionStateChange,
   type SessionStatus,
+  type TaskNotificationDelivery,
 } from './types'
 
 export interface SessionConstructorOptions {
@@ -2580,26 +2581,31 @@ export class Session implements SessionContract {
    * so its transcript entry is appended here on its behalf. Model-only wakes
    * (receipts, mailbox) are omitted: the tool row or status-bar inbox shows them.
    */
-  async injectTaskNotification(content: string): Promise<void> {
-    if (this._status === 'disposed') return
-    if (this.rejectIfWorktreeRemoved()) return
+  /**
+   * Start a host turn with `content`, or queue it behind the running one.
+   * `deferred`: the harness holds it in memory until its turn can take it
+   * (lost if this process exits); `failed`: it was not handed over.
+   */
+  async injectTaskNotification(content: string): Promise<TaskNotificationDelivery> {
+    if (this._status === 'disposed') return 'failed'
+    if (this.rejectIfWorktreeRemoved()) return 'failed'
     const text = content.trim()
-    if (!text) return
+    if (!text) return 'failed'
     this.touchRuntimeActivity()
     try {
       await this.ensureStarted()
     } catch (err) {
       log.warn('[Session] injectTaskNotification ensureStarted failed sid=%s: %s', this.id, err instanceof Error ? err.message : String(err))
-      return
+      return 'failed'
     }
     if (this.backend.injectTaskNotification) {
       try {
         const outcome = await this.backend.injectTaskNotification(text)
         if (outcome === 'sent-inline') {
           this.appendUserMessage(taskNotificationRequest(text), 'host')
-          return
+          return 'accepted'
         }
-        if (outcome === 'deferred') return
+        if (outcome === 'deferred') return 'deferred'
       } catch (err) {
         log.warn('[Session] injectTaskNotification harness path failed, falling back sid=%s: %s', this.id, err instanceof Error ? err.message : String(err))
       }
@@ -2612,8 +2618,10 @@ export class Session implements SessionContract {
         },
         { providerOrigin: 'host' },
       )
+      return 'accepted'
     } catch (err) {
       log.warn('[Session] injectTaskNotification fallback send failed sid=%s: %s', this.id, err instanceof Error ? err.message : String(err))
+      return 'failed'
     }
   }
 

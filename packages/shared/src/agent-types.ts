@@ -1121,8 +1121,16 @@ export interface SessionAgentRemoteLaunch {
   uncommittedChanges: number
   /** Host-maintained: the child's node event sequence this desktop has processed. */
   eventCursor?: string
-  /** Host-maintained: whether a run was open at `eventCursor`. */
-  runOpen?: boolean
+  /** Host-maintained: the run open at `eventCursor`; absent when none was. */
+  run?: SessionAgentRunState
+}
+
+/** A collaboration child's open run as its parent's host follows it. */
+export interface SessionAgentRunState {
+  /** A human stopped this run; its end wakes nobody. */
+  interrupted: boolean
+  /** Short failure label of the run so far. */
+  error?: string
 }
 
 /** Max length for the full task delivered to a collab child session. */

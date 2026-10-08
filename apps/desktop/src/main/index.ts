@@ -798,7 +798,11 @@ const collaborationChildMonitor = new CollaborationChildMonitor({
   clearStalled: (sessionId) => notificationService.clearStalled(sessionId),
 })
 sessionManager.onAny((sessionId, event, replay) => collaborationChildMonitor.handleEvent(sessionId, event, replay))
-setInterval(() => void collaborationChildMonitor.checkStalls(), CHILD_STALL_CHECK_INTERVAL_MS).unref()
+setInterval(() => {
+  void collaborationChildMonitor.checkStalls()
+  // Stop wakes a parent did not accept yet, this run or before a restart.
+  void collaborationChildMonitor.retryStopWakes()
+}, CHILD_STALL_CHECK_INTERVAL_MS).unref()
 // Children on other machines: their runs reach the monitor from the node's event log.
 new RemoteChildWatcher(collaborationChildMonitor).start()
 

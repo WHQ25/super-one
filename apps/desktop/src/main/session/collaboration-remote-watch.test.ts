@@ -1,109 +1,182 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AgentEvent } from '@superone/shared/agent-types'
+import { openNodeDatabase } from '@superone/runtime/db'
+import { CollaborationStore } from '@superone/runtime/collaboration'
 import type { EnvironmentEventEnvelope } from '@superone/shared/environment'
+import type { SessionManager, TaskNotificationDelivery } from './types'
 
 const state = vi.hoisted(() => ({
-  grants: new Map<string, { grant_id: string; child_session_id: string; config_json: string }>(),
+  store: null as unknown as CollaborationStore,
   events: [] as EnvironmentEventEnvelope[],
   status: 'idle',
   connected: true,
+  wake: vi.fn(async (..._args: unknown[]): Promise<TaskNotificationDelivery> => 'accepted'),
 }))
 
 vi.mock('../logger', () => ({ default: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() } }))
 vi.mock('./collaboration-mailbox', () => ({
-  collaborationStore: () => ({
-    startedSpawnGrants: () => [...state.grants.values()],
-    grantById: (id: string) => state.grants.get(id) ?? null,
-    updateConfig: (id: string, config: object) => {
-      const grant = state.grants.get(id)!
-      state.grants.set(id, { ...grant, config_json: JSON.stringify(config) })
-    },
-  }),
+  collaborationStore: () => state.store,
+  spawnParentOf: (id: string) => state.store.spawnGrantForChild(id)?.parent_session_id ?? null,
 }))
+vi.mock('./collaboration-host', () => ({ wakeParentOfStoppedChild: state.wake }))
 vi.mock('./collaboration-remote', () => ({
+  remoteChildTarget: () => ({ environmentId: 'env-b' }),
+  remoteChildState: async () => ({ status: state.status, pendingInteraction: null }),
   remotePort: async () => ({
     listEnvironments: async () => [{ environmentId: 'env-b', connectionId: 'conn-b', label: 'B', connected: state.connected, harnessIds: [] }],
     getSession: async () => ({ status: state.status, pendingInteraction: null }),
-    listEvents: async (_c: string, after: string) => state.events.filter((e) => BigInt(e.sequence) > BigInt(after)),
+    listEvents: async (_c: string, after: string) =>
+      state.events.filter((e) => BigInt(e.sequence) > BigInt(after)).slice(0, 1000),
   }),
 }))
 
 const { RemoteChildWatcher } = await import('./collaboration-remote-watch')
+const { CollaborationChildMonitor } = await import('./collaboration-lifecycle')
 
-function statusEvent(sequence: number, status: string, sessionId = 'child'): EnvironmentEventEnvelope {
+const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+function envelope(sequence: number, eventType: string, payload: unknown, sessionId = 'child'): EnvironmentEventEnvelope {
   return {
     sequence: String(sequence),
     aggregateType: 'session',
     aggregateId: sessionId,
-    eventType: 'session.agent_event',
+    eventType,
     eventId: `e${sequence}`,
     timestamp: 1_000 + sequence,
-    payload: { event: { type: 'status_change', status } },
+    payload,
   } as unknown as EnvironmentEventEnvelope
 }
 
-function cursorOf() {
-  return JSON.parse(state.grants.get('g1')!.config_json).remote as { eventCursor: string; runOpen: boolean }
+const agentEvent = (sequence: number, event: object, sessionId = 'child') =>
+  envelope(sequence, 'session.agent_event', { event }, sessionId)
+const statusEvent = (sequence: number, status: string, sessionId = 'child') =>
+  agentEvent(sequence, { type: 'status_change', status }, sessionId)
+
+let grantId: string
+
+function remoteOf() {
+  return JSON.parse(state.store.grantById(grantId)!.config_json).remote as { eventCursor: string; run?: object }
+}
+
+/** This desktop as it starts: a fresh monitor and watcher over the persisted grants. */
+function startDesktop() {
+  const monitor = new CollaborationChildMonitor({
+    host: {} as SessionManager,
+    view: () => null,
+    lastUserMessageAt: () => null,
+    notifyStalled: vi.fn(),
+    clearStalled: vi.fn(),
+  })
+  return { monitor, watcher: new RemoteChildWatcher(monitor) }
+}
+
+async function tick(desktop: ReturnType<typeof startDesktop>) {
+  await desktop.watcher.tick()
+  await settle()
 }
 
 describe('RemoteChildWatcher', () => {
-  let fed: Array<{ sessionId: string; status?: string }>
-  let resumed: string[]
-  const feed = {
-    handleEvent: (sessionId: string, event: AgentEvent) => {
-      fed.push({ sessionId, status: event.type === 'status_change' ? event.status : undefined })
-    },
-    resumeRun: (sessionId: string) => { resumed.push(sessionId) },
-  }
-
   beforeEach(() => {
-    fed = []
-    resumed = []
     state.connected = true
     state.status = 'idle'
+    state.wake.mockReset()
+    state.wake.mockResolvedValue('accepted')
     state.events = [statusEvent(10, 'streaming', 'other'), statusEvent(11, 'streaming')]
-    state.grants = new Map([['g1', {
-      grant_id: 'g1',
-      child_session_id: 'child',
-      config_json: JSON.stringify({ remote: { environmentId: 'env-b', label: 'B', eventCursor: '5' } }),
-    }]])
+    state.store = new CollaborationStore(openNodeDatabase(':memory:'))
+    grantId = state.store.createGrant({
+      kind: 'spawn',
+      parentSessionId: 'parent',
+      agentId: 'claude',
+      config: { launchId: 'l1', remote: { environmentId: 'env-b', label: 'B', eventCursor: '5' } },
+    })
+    state.store.bindStartedSession(state.store.grantById(grantId)!, 'child', JSON.parse(state.store.grantById(grantId)!.config_json))
+    state.store.markTaskSent(grantId)
   })
 
-  it('feeds a child run from its persisted cursor and records how far it got', async () => {
-    const watcher = new RemoteChildWatcher(feed)
-    await watcher.tick()
-    expect(fed).toEqual([{ sessionId: 'child', status: 'streaming' }])
-    expect(cursorOf()).toEqual(expect.objectContaining({ eventCursor: '11', runOpen: true }))
+  it('feeds a child run from its persisted cursor and records the run open there', async () => {
+    const desktop = startDesktop()
+    await tick(desktop)
+    expect(remoteOf()).toEqual(expect.objectContaining({ eventCursor: '11', run: { interrupted: false } }))
 
     state.events.push(statusEvent(12, 'idle'))
-    await watcher.tick()
-    expect(fed.at(-1)).toEqual({ sessionId: 'child', status: 'idle' })
-    expect(cursorOf()).toEqual(expect.objectContaining({ eventCursor: '12', runOpen: false }))
+    await tick(desktop)
+    expect(remoteOf().eventCursor).toBe('12')
+    expect(remoteOf().run).toBeUndefined()
+    expect(state.wake).toHaveBeenCalledTimes(1)
+    expect(state.wake).toHaveBeenCalledWith(expect.anything(), 'parent', 'child', 'idle')
   })
 
-  it('after a restart resumes the open run and sees its stop exactly once', async () => {
-    await new RemoteChildWatcher(feed).tick()
-    fed = []
-    // This desktop restarts; the child stops meanwhile.
+  it('after a restart of this desktop resumes the open run and wakes for its stop exactly once', async () => {
+    await tick(startDesktop())
     state.events.push(statusEvent(12, 'idle'))
-    const restarted = new RemoteChildWatcher(feed)
-    await restarted.tick()
-    expect(resumed).toEqual(['child'])
-    expect(fed).toEqual([{ sessionId: 'child', status: 'idle' }])
-    await restarted.tick()
-    await new RemoteChildWatcher(feed).tick()
-    expect(fed).toHaveLength(1)
+    const restarted = startDesktop()
+    await tick(restarted)
+    await tick(restarted)
+    await tick(startDesktop())
+    expect(state.wake).toHaveBeenCalledTimes(1)
+  })
+
+  it('wakes nobody for a run a human stopped, even across a restart and many pages of events', async () => {
+    state.events.push(agentEvent(12, { type: 'message_interrupted', messageId: 'm1' }))
+    for (let sequence = 13; sequence < 2_600; sequence++) state.events.push(statusEvent(sequence, 'streaming', 'other'))
+    await tick(startDesktop())
+    expect(remoteOf()).toEqual(expect.objectContaining({ eventCursor: '2599', run: { interrupted: true } }))
+
+    state.events.push(statusEvent(2_600, 'idle'))
+    await tick(startDesktop())
+    expect(remoteOf().eventCursor).toBe('2600')
+    expect(state.wake).not.toHaveBeenCalled()
+  })
+
+  it('wakes the parent when the child machine restarted mid-run', async () => {
+    const desktop = startDesktop()
+    await tick(desktop)
+    state.events.push(envelope(12, 'session.reconciled', { status: 'interrupted', reason: 'node_restart_non_reattachable' }))
+    await tick(desktop)
+    expect(state.wake).toHaveBeenCalledWith(expect.anything(), 'parent', 'child', 'interrupted (its machine restarted)')
+    expect(remoteOf().run).toBeUndefined()
+  })
+
+  it('wakes once when both machines restarted during the run', async () => {
+    await tick(startDesktop())
+    state.events.push(envelope(12, 'session.reconciled', { status: 'interrupted', reason: 'node_restart' }))
+    await tick(startDesktop())
+    await tick(startDesktop())
+    expect(state.wake).toHaveBeenCalledTimes(1)
+  })
+
+  it('ends a resumed run the node settled without logging a stop', async () => {
+    await tick(startDesktop())
+    // An older node: the run ended in its restart and nothing says so in its log.
+    state.status = 'interrupted'
+    await tick(startDesktop())
+    expect(state.wake).toHaveBeenCalledWith(expect.anything(), 'parent', 'child', 'interrupted')
+    expect(remoteOf().run).toBeUndefined()
+  })
+
+  it('keeps a stop wake that was not delivered and delivers it once after a restart', async () => {
+    await tick(startDesktop())
+    // This desktop dies between recording the stop and delivering its wake.
+    state.wake.mockImplementationOnce(() => new Promise(() => {}))
+    state.events.push(statusEvent(12, 'idle'))
+    await tick(startDesktop())
+    expect(JSON.parse(state.store.grantById(grantId)!.config_json).pendingStopWake).toEqual({ key: '12', status: 'idle' })
+
+    const restarted = startDesktop()
+    await tick(restarted)
+    await restarted.monitor.retryStopWakes()
+    expect(state.wake).toHaveBeenCalledTimes(2)
+    expect(JSON.parse(state.store.grantById(grantId)!.config_json).pendingStopWake).toBeUndefined()
   })
 
   it('waits for the machine to reconnect and reads the run state again then', async () => {
     state.connected = false
-    const watcher = new RemoteChildWatcher(feed)
-    await watcher.tick()
-    expect(fed).toEqual([])
+    const desktop = startDesktop()
+    await tick(desktop)
+    expect(remoteOf().eventCursor).toBe('5')
     state.connected = true
     state.status = 'streaming'
     state.events = []
-    await watcher.tick()
-    expect(resumed).toEqual(['child'])
+    await tick(desktop)
+    expect(desktop.monitor.runState('child')).toEqual({ interrupted: false })
   })
 })

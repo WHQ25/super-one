@@ -8,13 +8,15 @@
  * human stopped wakes nobody.
  */
 
-import type { AgentEvent, AgentStatus, ChatMessage } from '@superone/shared/agent-types'
+import { randomUUID } from 'node:crypto'
+import type { AgentEvent, AgentStatus, ChatMessage, SessionAgentLaunchConfig, SessionAgentRunState } from '@superone/shared/agent-types'
+import { parseGrantConfig } from '@superone/runtime/collaboration'
 import { classifyAgentErrorText, isRateLimitErrorInfo } from '@superone/shared/agent-error'
 import log from '../logger'
 import { collaborationStore, spawnParentOf } from './collaboration-mailbox'
 import { wakeParentOfStoppedChild } from './collaboration-host'
 import { remoteChildState, remoteChildTarget } from './collaboration-remote'
-import type { Session, SessionManager } from './types'
+import type { Session, SessionManager, TaskNotificationDelivery } from './types'
 
 /** Streaming with no agent event or user action for this long counts as a stall. */
 export const CHILD_STALL_MS = 10 * 60_000
@@ -162,11 +164,6 @@ export function describeRunError(event: Extract<AgentEvent, { type: 'message_err
   return event.error.trim().split('\n')[0]!.slice(0, 160)
 }
 
-interface RunState {
-  /** A human stopped this run; its end wakes nobody. */
-  interrupted: boolean
-  error?: string
-}
 
 export interface CollaborationChildMonitorDeps {
   host: SessionManager
@@ -187,22 +184,30 @@ export interface CollaborationChildMonitorDeps {
  * a stop. Replayed events are ignored: they describe no new stop.
  */
 export class CollaborationChildMonitor {
-  private readonly runs = new Map<string, RunState>()
+  private readonly runs = new Map<string, SessionAgentRunState>()
   /** sessionId → the activity time its stall was observed at; one notice per stall. */
   private readonly stalls = new Map<string, number>()
+  /** Grants whose stop wake is being delivered now. */
+  private readonly delivering = new Set<string>()
+  /**
+   * Stop wakes the parent's harness queued in memory: not retried while this
+   * process lives, delivered again after a restart (at least once).
+   */
+  private readonly queuedWakes = new Set<string>()
   private readonly now: () => number
 
   constructor(private readonly deps: CollaborationChildMonitorDeps) {
     this.now = deps.now ?? Date.now
   }
 
-  handleEvent(sessionId: string, event: AgentEvent, replay: boolean): void {
+  /** `stopKey` identifies the stop durably (a node event sequence); local stops get a fresh one. */
+  handleEvent(sessionId: string, event: AgentEvent, replay: boolean, stopKey?: string): void {
     if (replay) return
     observedEventAt.set(sessionId, this.now())
     switch (event.type) {
       case 'status_change':
         if (event.status === 'streaming' || event.status === 'background') this.open(sessionId)
-        else this.stop(sessionId, event.status)
+        else this.stopRun(sessionId, event.status, stopKey)
         break
       case 'message_start':
         if (event.message.role === 'assistant') this.runs.set(sessionId, { interrupted: false })
@@ -222,10 +227,51 @@ export class CollaborationChildMonitor {
 
   /**
    * A child seen mid-run without its opening event (this desktop restarted or
-   * reconnected while it ran): its next stop must still count.
+   * reconnected while it ran): its next stop must still count. `state` is the
+   * run as last recorded, when this desktop recorded one.
    */
-  resumeRun(sessionId: string): void {
-    this.open(sessionId)
+  resumeRun(sessionId: string, state?: SessionAgentRunState): void {
+    if (!this.runs.has(sessionId) && state) this.runs.set(sessionId, { ...state })
+    else this.open(sessionId)
+  }
+
+  /** The open run of `sessionId`, for recording with an event cursor; null when none is open. */
+  runState(sessionId: string): SessionAgentRunState | null {
+    const run = this.runs.get(sessionId)
+    return run ? { ...run } : null
+  }
+
+  /**
+   * The open run of `sessionId` ended: `status` is how (`idle`, `error`, or a
+   * description). A child that stopped without reporting wakes its parent;
+   * the wake is recorded on the grant first and cleared only once delivered.
+   */
+  stopRun(sessionId: string, status: string, stopKey = `local:${randomUUID()}`): void {
+    const run = this.runs.get(sessionId)
+    this.runs.delete(sessionId)
+    this.clearStall(sessionId)
+    if (!run || run.interrupted) return
+    const grant = collaborationStore().spawnGrantForChild(sessionId)
+    if (!grant) return
+    // The task never arrived: session_collab_start already told the parent why.
+    if (grant.task_sent !== 1) return
+    if (reportedSinceLastInput(sessionId, this.deps.lastUserMessageAt(sessionId))) return
+    const label = status === 'error' && run.error ? `error: ${run.error}` : status
+    log.info('[session-collaboration] child stopped without reporting sid=%s parent=%s status=%s', sessionId, grant.parent_session_id, label)
+    const store = collaborationStore()
+    const config = parseGrantConfig<StopWakeConfig>(grant.config_json)
+    if (config.pendingStopWake?.key !== stopKey) {
+      store.updateConfig(grant.grant_id, { ...config, pendingStopWake: { key: stopKey, status: label } })
+    }
+    // After the caller's transaction (if any) commits.
+    queueMicrotask(() => void this.deliverStopWake(grant.grant_id))
+  }
+
+  /** Deliver every recorded stop wake still pending (startup, then periodically). */
+  async retryStopWakes(): Promise<void> {
+    const grants = collaborationStore().startedSpawnGrants()
+      .filter((grant) => parseGrantConfig<StopWakeConfig>(grant.config_json).pendingStopWake)
+    await Promise.all(grants.map((grant) => this.deliverStopWake(grant.grant_id)))
   }
 
   /** Notify the human once per stall of a spawn child; never wakes the parent. */
@@ -241,7 +287,34 @@ export class CollaborationChildMonitor {
     }
   }
 
-  private open(sessionId: string): RunState {
+  private async deliverStopWake(grantId: string): Promise<void> {
+    if (this.delivering.has(grantId)) return
+    const store = collaborationStore()
+    const grant = store.grantById(grantId)
+    const pending = grant && parseGrantConfig<StopWakeConfig>(grant.config_json).pendingStopWake
+    if (!grant?.child_session_id || !pending || this.queuedWakes.has(pending.key)) return
+    this.delivering.add(grantId)
+    let delivery: TaskNotificationDelivery
+    try {
+      delivery = await wakeParentOfStoppedChild(this.deps.host, grant.parent_session_id, grant.child_session_id, pending.status)
+    } finally {
+      this.delivering.delete(grantId)
+    }
+    if (delivery === 'failed') return
+    if (delivery === 'deferred') {
+      this.queuedWakes.add(pending.key)
+      return
+    }
+    const current = store.grantById(grantId)
+    if (!current) return
+    const config = parseGrantConfig<StopWakeConfig>(current.config_json)
+    // A newer stop recorded meanwhile keeps its own wake.
+    if (config.pendingStopWake?.key !== pending.key) return
+    const { pendingStopWake: _delivered, ...rest } = config
+    store.updateConfig(grantId, rest)
+  }
+
+  private open(sessionId: string): SessionAgentRunState {
     let run = this.runs.get(sessionId)
     if (!run) {
       run = { interrupted: false }
@@ -250,22 +323,12 @@ export class CollaborationChildMonitor {
     return run
   }
 
-  private stop(sessionId: string, status: Exclude<AgentStatus, 'streaming' | 'background'>): void {
-    const run = this.runs.get(sessionId)
-    this.runs.delete(sessionId)
-    this.clearStall(sessionId)
-    if (!run || run.interrupted) return
-    const grant = collaborationStore().spawnGrantForChild(sessionId)
-    if (!grant) return
-    // The task never arrived: session_collab_start already told the parent why.
-    if (grant.task_sent !== 1) return
-    if (reportedSinceLastInput(sessionId, this.deps.lastUserMessageAt(sessionId))) return
-    const label = status === 'error' && run.error ? `error: ${run.error}` : status
-    log.info('[session-collaboration] child stopped without reporting sid=%s parent=%s status=%s', sessionId, grant.parent_session_id, label)
-    void wakeParentOfStoppedChild(this.deps.host, grant.parent_session_id, sessionId, label)
-  }
-
   private clearStall(sessionId: string): void {
     if (this.stalls.delete(sessionId)) this.deps.clearStalled(sessionId)
   }
+}
+
+type StopWakeConfig = SessionAgentLaunchConfig & {
+  /** Host-maintained: the parent wake for a stop, until the parent accepted it. */
+  pendingStopWake?: { key: string; status: string }
 }

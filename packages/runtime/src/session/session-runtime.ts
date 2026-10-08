@@ -19,7 +19,6 @@ import {
   type ClaimHostActionResult,
   type HostActionChange,
   type HostActionPublicView,
-  type HostActionReplayPolicy,
   type HostActionsPollResult,
   type HostActionTerminalResult,
   type RespondHostActionResult,
@@ -35,11 +34,8 @@ import { stripMiniAppMarkup } from '@superone/shared/miniapp-prompt-tags'
 import { SESSION_TITLE_MAX_CHARS } from '@superone/shared/session-title'
 import { isModelOnlyHostWake } from '@superone/shared/host-wake'
 import type { LeaseGuard, SessionEventLog, SessionStore } from './ports'
-import {
-  DEFAULT_HOST_ACTION_CLAIM_TTL_MS,
-  DEFAULT_HOST_ACTION_DEADLINE_MS,
-  type HostActionStore,
-} from './host-action-store'
+import type { HostActionStore } from './host-action-store'
+import { HostActionChannel } from './host-action-channel'
 import {
   type ActiveHarnessRuntime,
   type AgentsConfirmOutcome,
@@ -189,11 +185,6 @@ type TurnQueueItem = TurnOpts
  * 3. Client with control lease calls `respondPermission`
  * 4. Waiter resolves allow|deny; timeout / abort / close resolve deny
  */
-interface HostActionWaiter {
-  settle: (result: HostActionTerminalResult) => void
-  timer: ReturnType<typeof setTimeout> | null
-}
-
 export class SessionRuntime {
   /** Host context changes invalidate this; ordinary sends do not rescan the event log. */
   private readonly mcpAppContexts = new Map<string, ReturnType<typeof mcpAppModelContextInput>>()
@@ -217,11 +208,7 @@ export class SessionRuntime {
   private readonly mcpAppResources?: McpAppResourceStore
   private readonly mcpAppGc?: ReturnType<typeof createMcpAppResourceGc>
   private readonly hostActions: HostActionStore | null
-  /** Live waiters for requestHostAction terminal settlement. */
-  private readonly hostActionWaiters = new Map<string, HostActionWaiter>()
-  /** Long-poll waiters woken on host action change. */
-  private readonly hostActionPollWaiters = new Set<() => void>()
-  private hostActionExpiryTimer: ReturnType<typeof setInterval> | null = null
+  private readonly hostActionChannel: HostActionChannel | null
   private runtimeReaperTimer: ReturnType<typeof setInterval> | null = null
   async getMcpAppsProvider(binding: McpAppsBinding, origin: McpAppOrigin): Promise<McpAppsProvider> {
     const session = this.get(binding.session)
@@ -306,6 +293,32 @@ export class SessionRuntime {
     this.agentsConfirmTimeoutMs =
       opts?.agentsConfirmTimeoutMs ?? DEFAULT_AGENTS_CONFIRM_TIMEOUT_MS
     this.hostActions = opts?.hostActions ?? null
+    this.hostActionChannel = this.hostActions
+      ? new HostActionChannel({
+          store: this.hostActions,
+          session: (sessionId) => {
+            const session = this.live.get(sessionId)
+            if (!session) return null
+            return {
+              controllerClientSessionId: session.controllerClientSessionId,
+              hostActionCapabilityVersion: session.hostActionCapabilityVersion,
+              hostActionToolGroups: session.hostActionToolGroups,
+              closed: !!session.closed || session.status === 'ended',
+              streaming: session.status === 'streaming',
+            }
+          },
+          turnSignal: (sessionId) => this.aborts.get(sessionId)?.values().next().value?.signal,
+          // Observability only — never args.
+          onRequested: (sessionId, actionId) => {
+            this.events.appendSession({
+              sessionId,
+              eventType: SESSION_DURABLE_EVENT.hostActionRequested,
+              payload: { actionId },
+            })
+          },
+          isDisposing: () => this.disposing,
+        })
+      : null
     this.mcpAppResources = opts?.mcpAppResources
     this.hydrateFromStore()
     this.reconcileAfterRestart()
@@ -324,17 +337,6 @@ export class SessionRuntime {
         void this.reapIdleRuntimes()
       }, runtimeReaperIntervalMs)
       this.runtimeReaperTimer.unref?.()
-    }
-    if (this.hostActions) {
-      this.hostActions.subscribe(() => this.wakeHostActionPollers())
-      // Periodic claim/deadline reconciliation (claim TTL requeue / cancel).
-      this.hostActionExpiryTimer = setInterval(() => {
-        this.reconcileHostActionExpiry()
-      }, 2_000)
-      // Don't keep the process alive solely for this timer (tests + node).
-      if (typeof this.hostActionExpiryTimer === 'object' && 'unref' in this.hostActionExpiryTimer) {
-        this.hostActionExpiryTimer.unref()
-      }
     }
   }
 
@@ -477,12 +479,7 @@ export class SessionRuntime {
     }
 
     // Cancel every non-terminal host action so crash-window waiters settle.
-    if (this.hostActions) {
-      const cancelled = this.hostActions.reconcileAfterRestart()
-      for (const row of cancelled) {
-        this.settleHostActionWaiter(this.hostActions.toTerminal(row))
-      }
-    }
+    this.hostActionChannel?.reconcileAfterRestart()
   }
 
   create(input: {
@@ -652,16 +649,7 @@ export class SessionRuntime {
     session.updatedAt = Date.now()
     this.persist(session)
 
-    if (this.hostActions) {
-      const { cancelled } = this.hostActions.rebindSessionController({
-        sessionId: session.sessionId,
-        toControllerClientSessionId: next,
-      })
-      for (const row of cancelled) {
-        this.settleHostActionWaiter(this.hostActions.toTerminal(row))
-      }
-      this.wakeHostActionPollers()
-    }
+    this.hostActionChannel?.rebind(session.sessionId, next)
 
     return this.clone(session)
   }
@@ -1682,339 +1670,44 @@ export class SessionRuntime {
   // Host Action channel (controller-scoped durable poll / claim / respond)
   // ---------------------------------------------------------------------------
 
-  /**
-   * Create a host action and await its terminal state.
-   * Cancelled by interrupt / turn timeout / session close / deadline / node restart.
-   * Late responses after cancellation are rejected by the store.
-   */
-  requestHostAction(input: {
-    sessionId: string
-    turnId?: string | null
-    toolName: string
-    toolGroup: string
-    args: unknown
-    replayPolicy?: HostActionReplayPolicy
-    deadlineMs?: number
-    /**
-     * When aborted, cancel this action (MCP tool handler should pass the turn signal).
-     * Also auto-bound to the session's in-flight turn AbortSignal when present.
-     */
-    signal?: AbortSignal
-  }): Promise<HostActionTerminalResult> {
-    if (!this.hostActions) {
-      return Promise.reject(
-        Object.assign(new Error('host action store not configured'), {
-          code: 'failed_precondition',
-        }),
-      )
-    }
-    if (this.disposing) {
-      return Promise.reject(
-        Object.assign(new Error('runtime is shutting down'), { code: 'failed_precondition' }),
-      )
-    }
-    const session = this.live.get(input.sessionId)
-    if (!session) {
-      return Promise.reject(Object.assign(new Error('session not found'), { code: 'not_found' }))
-    }
-    if (!session.controllerClientSessionId) {
-      return Promise.reject(
-        Object.assign(new Error('session has no controller binding'), {
-          code: 'failed_precondition',
-        }),
-      )
-    }
-    if (session.hostActionCapabilityVersion < 1) {
-      return Promise.reject(
-        Object.assign(new Error('hostActionV1 not granted on this session'), {
-          code: 'failed_precondition',
-        }),
-      )
-    }
-    if (!session.hostActionToolGroups.includes(input.toolGroup)) {
-      return Promise.reject(
-        Object.assign(new Error(`tool group not granted: ${input.toolGroup}`), {
-          code: 'forbidden',
-        }),
-      )
-    }
-    if (session.closed || session.status === 'ended') {
-      return Promise.reject(
-        Object.assign(new Error('session is closed'), { code: 'failed_precondition' }),
-      )
-    }
-
-    const deadlineMs = input.deadlineMs ?? DEFAULT_HOST_ACTION_DEADLINE_MS
-    const row = this.hostActions.create({
-      sessionId: session.sessionId,
-      turnId: input.turnId ?? null,
-      controllerClientSessionId: session.controllerClientSessionId,
-      toolName: input.toolName,
-      toolGroup: input.toolGroup,
-      args: input.args,
-      replayPolicy: input.replayPolicy ?? 'safe',
-      deadlineMs,
-    })
-
-    // Observability only — never args.
-    this.events.appendSession({
-      sessionId: session.sessionId,
-      eventType: SESSION_DURABLE_EVENT.hostActionRequested,
-      payload: { actionId: row.actionId },
-    })
-
-    return new Promise<HostActionTerminalResult>((resolve) => {
-      const remaining = Math.max(0, row.deadline - Date.now())
-      const timer = setTimeout(() => {
-        this.cancelHostActionInternal(row.actionId, 'deadline_exceeded')
-      }, remaining + 50)
-
-      const abortCleanups: Array<() => void> = []
-      const onAbort = (reason: string) => {
-        this.cancelHostActionInternal(row.actionId, reason)
-      }
-
-      // Bind to explicit signal + active turn abort (interrupt / turn end).
-      const signals: AbortSignal[] = []
-      if (input.signal) signals.push(input.signal)
-      const turnAbort = this.aborts.get(session.sessionId)?.values().next().value?.signal
-      if (turnAbort && turnAbort !== input.signal) signals.push(turnAbort)
-
-      for (const sig of signals) {
-        if (sig.aborted) {
-          // Defer so the waiter is registered before settle.
-          queueMicrotask(() => onAbort('aborted'))
-          break
-        }
-        const handler = () => onAbort('aborted')
-        sig.addEventListener('abort', handler, { once: true })
-        abortCleanups.push(() => sig.removeEventListener('abort', handler))
-      }
-
-      this.hostActionWaiters.set(row.actionId, {
-        settle: (result) => {
-          clearTimeout(timer)
-          for (const c of abortCleanups) c()
-          this.hostActionWaiters.delete(row.actionId)
-          resolve(result)
-        },
-        timer,
-      })
-    })
-  }
-
-  /**
-   * Controller-scoped long-poll. Without afterSequence: outstanding snapshot + cursor.
-   * With afterSequence: durable state changes after the cursor (waits up to waitMs).
-   * Exposes IDs, state, version, replayPolicy — never args.
-   */
-  async pollHostActions(input: {
-    controllerClientSessionId: string
-    afterSequence?: string | null
-    waitMs?: number
-    limit?: number
-  }): Promise<HostActionsPollResult> {
-    if (!this.hostActions) {
-      throw Object.assign(new Error('host action store not configured'), {
-        code: 'failed_precondition',
-      })
-    }
-    // Opportunistic expiry pass before answering.
-    this.reconcileHostActionExpiry()
-
-    const limit = Math.min(Math.max(input.limit ?? 100, 1), 500)
-    const waitMs = Math.min(Math.max(input.waitMs ?? 0, 0), 30_000)
-    const hasCursor = input.afterSequence != null && input.afterSequence !== ''
-
-    if (!hasCursor) {
-      const outstanding = this.hostActions.listOutstanding(input.controllerClientSessionId)
-      return {
-        outstanding,
-        changes: [],
-        cursor: this.hostActions.headSequence(),
-      }
-    }
-
-    const after = String(input.afterSequence)
-    const existing = this.hostActions.listChangesAfter(
-      input.controllerClientSessionId,
-      after,
-      limit,
-    )
-    if (existing.length > 0 || waitMs === 0) {
-      return {
-        changes: existing,
-        cursor: existing.length
-          ? existing[existing.length - 1]!.sequence
-          : this.hostActions.headSequence(),
-      }
-    }
-
-    // Long-poll: wait for a change or timeout.
-    await new Promise<void>((resolve) => {
-      let settled = false
-      const done = () => {
-        if (settled) return
-        settled = true
-        this.hostActionPollWaiters.delete(done)
-        clearTimeout(timer)
-        resolve()
-      }
-      const timer = setTimeout(done, waitMs)
-      this.hostActionPollWaiters.add(done)
-    })
-
-    const changes = this.hostActions.listChangesAfter(
-      input.controllerClientSessionId,
-      after,
-      limit,
-    )
-    return {
-      changes,
-      cursor: changes.length
-        ? changes[changes.length - 1]!.sequence
-        : this.hostActions.headSequence(),
-    }
-  }
-
-  /**
-   * Atomically claim a pending action for the authenticated controller.
-   * Verifies binding, capability/grant, active turn, and pending state.
-   */
-  claimHostAction(input: {
-    actionId: string
-    expectedVersion: number
-    controllerClientSessionId: string
-    claimTtlMs?: number
-  }): ClaimHostActionResult {
-    if (!this.hostActions) {
-      throw Object.assign(new Error('host action store not configured'), {
-        code: 'failed_precondition',
-      })
-    }
-    this.reconcileHostActionExpiry()
-
-    const existing = this.hostActions.get(input.actionId)
-    if (!existing) {
-      throw Object.assign(new Error('host action not found'), { code: 'not_found' })
-    }
-    if (existing.controllerClientSessionId !== input.controllerClientSessionId) {
-      throw Object.assign(new Error('not the session controller'), { code: 'forbidden' })
-    }
-
-    const session = this.live.get(existing.sessionId)
-    if (!session) {
-      throw Object.assign(new Error('session not found'), { code: 'not_found' })
-    }
-    if (session.controllerClientSessionId !== input.controllerClientSessionId) {
-      throw Object.assign(new Error('not the session controller'), { code: 'forbidden' })
-    }
-    if (session.hostActionCapabilityVersion < 1) {
-      throw Object.assign(new Error('hostActionV1 not granted'), { code: 'failed_precondition' })
-    }
-    if (!session.hostActionToolGroups.includes(existing.toolGroup)) {
-      throw Object.assign(new Error(`tool group not granted: ${existing.toolGroup}`), {
-        code: 'forbidden',
-      })
-    }
-    if (session.closed || session.status === 'ended') {
-      throw Object.assign(new Error('session is closed'), { code: 'failed_precondition' })
-    }
-    // Active turn required — host tools only make sense mid-turn.
-    if (session.status !== 'streaming') {
-      throw Object.assign(new Error('no active turn'), { code: 'failed_precondition' })
-    }
-
-    const { row, claimToken } = this.hostActions.claim({
-      actionId: input.actionId,
-      expectedVersion: input.expectedVersion,
-      controllerClientSessionId: input.controllerClientSessionId,
-      claimTtlMs: input.claimTtlMs ?? DEFAULT_HOST_ACTION_CLAIM_TTL_MS,
-    })
-
-    return {
-      actionId: row.actionId,
-      version: row.version,
-      claimToken,
-      claimExpiresAt: row.claimExpiresAt!,
-      toolName: row.toolName,
-      toolGroup: row.toolGroup,
-      args: JSON.parse(row.argsJson),
-      replayPolicy: row.replayPolicy,
-      sessionId: row.sessionId,
-      turnId: row.turnId,
-    }
-  }
-
-  /**
-   * Extend a live claim instead of letting it lapse (§4.1) — the desktop asks
-   * when a Host Action's outputs are still uploading. Bounded by the action's
-   * own deadline, so the agent never waits longer than it already agreed to.
-   */
-  renewHostActionClaim(input: {
-    actionId: string
-    claimToken: string
-    controllerClientSessionId: string
-    ttlMs?: number
-  }): { actionId: string; version: number; claimExpiresAt: number } {
-    if (!this.hostActions) {
+  private requireHostActions(): HostActionChannel {
+    if (!this.hostActionChannel) {
       throw Object.assign(new Error('host action store not configured'), { code: 'failed_precondition' })
     }
-    const row = this.hostActions.renewClaim({
-      actionId: input.actionId,
-      claimToken: input.claimToken,
-      controllerClientSessionId: input.controllerClientSessionId,
-      ttlMs: input.ttlMs ?? DEFAULT_HOST_ACTION_CLAIM_TTL_MS,
-    })
-    return { actionId: row.actionId, version: row.version, claimExpiresAt: row.claimExpiresAt! }
+    return this.hostActionChannel
   }
 
-  /**
-   * Atomically verify claim token, persist terminal result, settle live waiter.
-   * Identical response returns stored receipt; different payload → conflict.
-   */
-  respondHostAction(input: {
-    actionId: string
-    claimToken: string
-    controllerClientSessionId: string
-    outcome: 'succeeded' | 'failed'
-    result?: unknown
-    error?: unknown
-  }): RespondHostActionResult {
-    if (!this.hostActions) {
-      throw Object.assign(new Error('host action store not configured'), {
-        code: 'failed_precondition',
-      })
+  /** See {@link HostActionChannel.request}. */
+  requestHostAction(input: Parameters<HostActionChannel['request']>[0]): Promise<HostActionTerminalResult> {
+    if (!this.hostActionChannel) {
+      return Promise.reject(
+        Object.assign(new Error('host action store not configured'), { code: 'failed_precondition' }),
+      )
     }
+    return this.hostActionChannel.request(input)
+  }
 
-    const { row, duplicate } = this.hostActions.respond({
-      actionId: input.actionId,
-      claimToken: input.claimToken,
-      controllerClientSessionId: input.controllerClientSessionId,
-      outcome: input.outcome,
-      result: input.result,
-      error: input.error,
-    })
+  pollHostActions(input: Parameters<HostActionChannel['poll']>[0]): Promise<HostActionsPollResult> {
+    return this.requireHostActions().poll(input)
+  }
 
-    if (!duplicate) {
-      this.settleHostActionWaiter(this.hostActions.toTerminal(row))
-    } else {
-      // Duplicate identical response — still ensure any waiter is settled.
-      this.settleHostActionWaiter(this.hostActions.toTerminal(row))
-    }
+  claimHostAction(input: Parameters<HostActionChannel['claim']>[0]): ClaimHostActionResult {
+    return this.requireHostActions().claim(input)
+  }
 
-    return {
-      actionId: row.actionId,
-      state: row.state as 'succeeded' | 'failed',
-      version: row.version,
-      duplicate,
-    }
+  renewHostActionClaim(
+    input: Parameters<HostActionChannel['renew']>[0],
+  ): { actionId: string; version: number; claimExpiresAt: number } {
+    return this.requireHostActions().renew(input)
+  }
+
+  respondHostAction(input: Parameters<HostActionChannel['respond']>[0]): RespondHostActionResult {
+    return this.requireHostActions().respond(input)
   }
 
   /** Test/helper: list outstanding public views for a controller. */
   listOutstandingHostActions(controllerClientSessionId: string): HostActionPublicView[] {
-    if (!this.hostActions) return []
-    return this.hostActions.listOutstanding(controllerClientSessionId)
+    return this.hostActionChannel?.listOutstanding(controllerClientSessionId) ?? []
   }
 
   /** Test/helper: peek a change log after sequence. */
@@ -2023,67 +1716,11 @@ export class SessionRuntime {
     afterSequence: string,
     limit = 100,
   ): HostActionChange[] {
-    if (!this.hostActions) return []
-    return this.hostActions.listChangesAfter(controllerClientSessionId, afterSequence, limit)
+    return this.hostActionChannel?.listChanges(controllerClientSessionId, afterSequence, limit) ?? []
   }
 
   private cancelHostActionsForSession(sessionId: string, reason: string): void {
-    if (!this.hostActions) return
-    try {
-      const cancelled = this.hostActions.cancel({ sessionId, reason })
-      for (const row of cancelled) {
-        this.settleHostActionWaiter(this.hostActions.toTerminal(row))
-      }
-    } catch (err) {
-      // Shutdown races: db may already be closed when turn finally runs.
-      if ((err as Error).message?.includes('not open')) return
-      throw err
-    }
-  }
-
-  private cancelHostActionInternal(actionId: string, reason: string): void {
-    if (!this.hostActions) return
-    try {
-      const cancelled = this.hostActions.cancel({ actionId, reason })
-      for (const row of cancelled) {
-        this.settleHostActionWaiter(this.hostActions.toTerminal(row))
-      }
-    } catch (err) {
-      if ((err as Error).message?.includes('not open')) return
-      throw err
-    }
-  }
-
-  private settleHostActionWaiter(result: HostActionTerminalResult): void {
-    const waiter = this.hostActionWaiters.get(result.actionId)
-    if (!waiter) return
-    if (waiter.timer) clearTimeout(waiter.timer)
-    this.hostActionWaiters.delete(result.actionId)
-    waiter.settle(result)
-  }
-
-  private wakeHostActionPollers(): void {
-    for (const w of [...this.hostActionPollWaiters]) {
-      try {
-        w()
-      } catch {
-        /* ignore */
-      }
-    }
-  }
-
-  private reconcileHostActionExpiry(): void {
-    if (!this.hostActions) return
-    try {
-      const changed = this.hostActions.reconcileExpired()
-      for (const row of changed) {
-        if (row.state === 'cancelled' || row.state === 'succeeded' || row.state === 'failed') {
-          this.settleHostActionWaiter(this.hostActions.toTerminal(row))
-        }
-      }
-    } catch {
-      /* ignore reconcile errors (db closed during dispose) */
-    }
+    this.hostActionChannel?.cancelForSession(sessionId, reason)
   }
 
   respondPermission(input: {
@@ -2669,17 +2306,11 @@ export class SessionRuntime {
       clearInterval(this.runtimeReaperTimer)
       this.runtimeReaperTimer = null
     }
-    if (this.hostActionExpiryTimer) {
-      clearInterval(this.hostActionExpiryTimer)
-      this.hostActionExpiryTimer = null
-    }
     // Cancel outstanding host actions so requestHostAction waiters settle.
-    if (this.hostActions) {
-      for (const session of this.live.values()) {
-        this.cancelHostActionsForSession(session.sessionId, 'runtime_dispose')
-      }
+    for (const session of this.live.values()) {
+      this.cancelHostActionsForSession(session.sessionId, 'runtime_dispose')
     }
-    this.wakeHostActionPollers()
+    this.hostActionChannel?.dispose()
 
     const deadline = Date.now() + timeoutMs
     // Abort currently tracked controllers; re-abort if any late map entries appear.

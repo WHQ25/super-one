@@ -16,6 +16,7 @@ import { InteractionMemoryStore, executeInteractionMemoryTool } from '@superone/
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import {
   HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS,
+  hostActionToolReply,
   isNodeLocalSuperoneTool,
   listHostActionSuperoneTools,
   type HostActionReplayPolicy,
@@ -80,30 +81,8 @@ function collabErrorResult(err: unknown) {
   return toolResultJson({ status: 'error', code, message }, true)
 }
 
-export function terminalToMcpContent(terminal: HostActionTerminalResult): {
-  content: Array<{ type: 'text'; text: string }>
-  isError?: boolean
-} {
-  if (terminal.state === 'succeeded') {
-    // Prefer desktop tool reply shape when present.
-    const r = terminal.result
-    if (r && typeof r === 'object' && Array.isArray((r as { content?: unknown }).content)) {
-      return r as { content: Array<{ type: 'text'; text: string }>; isError?: boolean }
-    }
-    return {
-      content: [{ type: 'text', text: JSON.stringify(terminal.result ?? null) }],
-    }
-  }
-  const err =
-    terminal.error ??
-    (terminal.state === 'cancelled'
-      ? { code: 'cancelled', message: 'host action cancelled' }
-      : { code: 'failed', message: 'host action failed' })
-  return {
-    content: [{ type: 'text', text: typeof err === 'string' ? err : JSON.stringify(err) }],
-    isError: true,
-  }
-}
+/** Kept for importers of the CLI module; the shape is shared with every node host. */
+export const terminalToMcpContent = hostActionToolReply
 
 /**
  * Create an McpServer with Host Action SuperOne tools + optional node-local collab.

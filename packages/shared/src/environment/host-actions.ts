@@ -137,3 +137,32 @@ export interface HostActionTerminalResult {
   result?: unknown
   error?: unknown
 }
+
+/** MCP tool reply a node returns for a Host Action the controller ran. */
+export type HostActionToolReply = {
+  content: Array<{ type: 'text'; text: string }>
+  isError?: boolean
+}
+
+/**
+ * The tool reply for a settled Host Action: the controller's own tool reply
+ * when it sent one, otherwise the result or error as JSON text.
+ */
+export function hostActionToolReply(terminal: HostActionTerminalResult): HostActionToolReply {
+  if (terminal.state === 'succeeded') {
+    const r = terminal.result
+    if (r && typeof r === 'object' && Array.isArray((r as { content?: unknown }).content)) {
+      return r as HostActionToolReply
+    }
+    return { content: [{ type: 'text', text: JSON.stringify(terminal.result ?? null) }] }
+  }
+  const err =
+    terminal.error ??
+    (terminal.state === 'cancelled'
+      ? { code: 'cancelled', message: 'host action cancelled' }
+      : { code: 'failed', message: 'host action failed' })
+  return {
+    content: [{ type: 'text', text: typeof err === 'string' ? err : JSON.stringify(err) }],
+    isError: true,
+  }
+}

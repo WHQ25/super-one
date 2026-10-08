@@ -51,6 +51,11 @@ export {
   type CreateHostActionInput,
 } from './host-action-store'
 export {
+  HostActionChannel,
+  type HostActionChannelDeps,
+  type HostActionSessionView,
+} from './host-action-channel'
+export {
   createSessionProviderStore,
   ensureSessionProvidersTable,
   settingsFromSessionProviderConfig,

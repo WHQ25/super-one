@@ -8,7 +8,7 @@ import { assertCodexAccountSwitchAllowed } from '@superone/shared/codex-accounts
 import { insertCodexTimelineRow, stampCodexTimelineOrder } from '@superone/shared/codex-timeline-rows'
 import { buildCompactBoundaryMessage, compactBoundaryInsertIndex, isCompactSlashSend } from '@superone/shared/compact-boundary'
 import { newMessageId } from '@superone/shared/message-id'
-import { markSendFailure, withSendFailure, withoutSendFailure, type DuplicateSend } from '@superone/shared/send-failure'
+import { isAgentOutputEvent, withSendFailure, withoutSendFailure, type DuplicateSend } from '@superone/shared/send-failure'
 import { SessionShutdown } from './session-shutdown'
 import { SessionLiveness } from './session-liveness'
 import { hostPendingInteractions, trackHostInteraction } from './host-pending-interactions'
@@ -96,6 +96,7 @@ import {
   type HarnessId,
   type PrewarmHint,
   type ProjectResources,
+  type SendDelivery,
   type SendProviderOrigin,
   type Session as SessionContract,
   type SessionBackend,
@@ -106,6 +107,25 @@ import {
   type SessionStateChange,
   type SessionStatus,
 } from './types'
+
+/** What `Session` learns about one send while the backend runs it. */
+interface SendDeliveryState extends SendDelivery {
+  delivered: boolean
+  /** Assistant rows the backend opened for this send (`message_start`). */
+  openedMessageIds: string[]
+  /** The first `message_error` of this send, for backends that report failure by event. */
+  error: string | null
+}
+
+function createSendDelivery(): SendDeliveryState {
+  const state: SendDeliveryState = {
+    delivered: false,
+    openedMessageIds: [],
+    error: null,
+    onInputAccepted: () => { state.delivered = true },
+  }
+  return state
+}
 
 export interface SessionConstructorOptions {
   id: string
@@ -342,6 +362,8 @@ export class Session implements SessionContract {
   private _pendingQueuedRequests = new Map<string, PendingSessionRequest>()
   /** User message ids of sends waiting in `_sendChain`, before their row is appended. */
   private _admittingSendIds = new Set<string>()
+  /** The normal send the backend is running, until it settles (see `SendDelivery`). */
+  private _delivery: SendDeliveryState | null = null
   /** Shared so concurrent ensureStarted callers await the same backend.start(). */
   private _startPromise: Promise<void> | null = null
 
@@ -812,12 +834,13 @@ export class Session implements SessionContract {
           this._pendingQueuedRequests.set(request.clientMessageId, { request, providerOrigin, selectionRevision: this._selectionRevision })
           this.emitQueuedMessages()
         }
+        const delivery = createSendDelivery()
         try {
           this.flushFirstTurnPreamble()
           opts?.onAccepted?.()
-          await this.backend.send(withMcpAppContext(request, this._messages))
+          await this.backend.send(withMcpAppContext(request, this._messages), delivery)
         } catch (error) {
-          this.recordSendFailure(request, error)
+          if (!delivery.delivered) this.recordSendFailure(request, error)
           throw error
         }
         return
@@ -845,6 +868,8 @@ export class Session implements SessionContract {
       if (request.ultracode !== undefined) this.setUltracode(request.ultracode)
       this.additionalDirectories = nextDirs
       this.appendUserMessage(request, providerOrigin)
+      const delivery = createSendDelivery()
+      this._delivery = delivery
       try {
         this.liveness.beginSend()
         this.snapEffectiveApiProviderId()
@@ -874,19 +899,39 @@ export class Session implements SessionContract {
         this._status = 'streaming'
         try {
           this.flushFirstTurnPreamble()
-          await this.backend.send(withMcpAppContext(request, this._messages))
+          await this.backend.send(withMcpAppContext(request, this._messages), delivery)
         } finally {
           if ((this._status as SessionStatus) !== 'disposed') this._status = 'ended'
         }
+        // A backend that reports a failed start by event rather than by throwing.
+        if (!delivery.delivered && delivery.error !== null) {
+          this.recordSendFailure(request, delivery.error, delivery.openedMessageIds)
+        }
       } catch (error) {
-        this.recordSendFailure(request, error)
+        // Delivered input is held: a resend could run the task twice.
+        if (!delivery.delivered) this.recordSendFailure(request, error, delivery.openedMessageIds)
         throw error
+      } finally {
+        if (this._delivery === delivery) this._delivery = null
       }
     } finally {
       if (clientMessageId) this._admittingSendIds.delete(clientMessageId)
       this.liveness.endSend()
       release()
     }
+  }
+
+  /**
+   * Agent output proves the running send was delivered even if its backend
+   * never said so; lifecycle rows and errors are remembered for a send that
+   * was not.
+   */
+  private observeDelivery(event: AgentEvent): void {
+    const delivery = this._delivery
+    if (!delivery || delivery.delivered) return
+    if (isAgentOutputEvent(event)) delivery.delivered = true
+    else if (event.type === 'message_start' && event.message.role === 'assistant') delivery.openedMessageIds.push(event.message.id)
+    else if (event.type === 'message_error') delivery.error ??= event.error
   }
 
   /** Whether the user message `id` was already admitted, queued, answered or is running. */
@@ -2029,6 +2074,7 @@ export class Session implements SessionContract {
   }
 
   private forwardEvent(event: AgentEvent): AgentEvent {
+    this.observeDelivery(event)
     // A read receipt is about the user, not the agent, and a mod redrawing is
     // not agent work: neither may bump the session's recency nor postpone its
     // idle runtime release.
@@ -2533,26 +2579,34 @@ export class Session implements SessionContract {
   }
 
   /**
-   * A send admitted into the transcript or the queue whose turn never started
-   * (the runtime would not start, the backend refused it). The caller's
-   * rejection reaches only the caller, and only if it is still connected, so
-   * the failure is kept on the user row: every client restoring this session
-   * sees it. A queued send moves into the transcript as that row; the queue
-   * only holds work still due to run.
+   * A send admitted into the transcript or the queue that never reached the
+   * agent (the runtime would not start, the backend failed before handing the
+   * input over). The caller's rejection reaches only the caller, and only if it
+   * is still connected, so the failure is kept on the user row: every client
+   * restoring this session sees it. Assistant rows the backend opened for the
+   * send hold no reply and are dropped. A queued send moves into the
+   * transcript as that row; the queue only holds work still due to run.
    */
-  private recordSendFailure(request: SendMessageRequest, error: unknown): void {
+  private recordSendFailure(request: SendMessageRequest, error: unknown, openedMessageIds: string[] = []): void {
     const id = request.clientMessageId
     if (!id || this._status === 'disposed') return
     const message = error instanceof Error ? error.message : String(error)
     const queued = this._pendingQueuedRequests.get(id)
-    const messages = queued && !this._messages.some((m) => m.id === id)
-      ? [...this._messages, withSendFailure(this.userMessageFor(queued.request, queued.providerOrigin), message)]
-      : markSendFailure(this._messages, id, message)
+    const discarded = openedMessageIds.filter((openedId) => this._messages.some((m) => m.id === openedId))
+    const kept = discarded.length > 0 ? this._messages.filter((m) => !discarded.includes(m.id)) : this._messages
+    const messages = kept.some((m) => m.id === id)
+      ? kept.map((m) => (m.id === id ? withSendFailure(m, message) : m))
+      : queued ? [...kept, withSendFailure(this.userMessageFor(queued.request, queued.providerOrigin), message)] : null
     if (messages) {
-      this.replaceMessages(messages)
+      this.replaceMessages(messages, { fullPersist: discarded.length > 0 })
       this.notifyStateChange()
       // Before the queue change, so a client still holding the queued bubble moves it.
-      this.forwardEvent({ type: 'user_message_send_failed', clientMessageId: id, error: message })
+      this.forwardEvent({
+        type: 'user_message_send_failed',
+        clientMessageId: id,
+        error: message,
+        ...(discarded.length > 0 ? { discardedMessageIds: discarded } : {}),
+      })
     }
     if (queued) {
       this._pendingQueuedRequests.delete(id)

@@ -406,6 +406,29 @@ describe('OpenCodeBackend', () => {
     await backend.close()
   })
 
+  it('signals input delivery only once the prompt goes to OpenCode', async () => {
+    const backend = new OpenCodeBackend()
+    await backend.start(startOptions())
+    await backend.releaseRuntime('idle')
+    setOpenCodeRuntimeFactory(async () => { throw new Error('environment is not connected') })
+    const unsent = { onInputAccepted: vi.fn() }
+    await backend.send({ content: 'hello' }, unsent)
+    expect(unsent.onInputAccepted).not.toHaveBeenCalled()
+    expect(prompt).not.toHaveBeenCalled()
+
+    setOpenCodeRuntimeFactory(async (opts: OpenCodeRuntimeOptions) => {
+      route = opts.onEvent
+      return runtime
+    })
+    // The request went out; only its answer was lost.
+    prompt.mockRejectedValueOnce(new Error('socket hang up'))
+    const sent = { onInputAccepted: vi.fn() }
+    await backend.send({ content: 'hello' }, sent)
+    expect(sent.onInputAccepted).toHaveBeenCalledOnce()
+    expect(prompt).toHaveBeenCalledOnce()
+    await backend.close()
+  })
+
   it('initializes project instructions through the native session endpoint', async () => {
     const backend = new OpenCodeBackend()
     await backend.start(startOptions())

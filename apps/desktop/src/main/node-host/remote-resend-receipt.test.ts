@@ -112,7 +112,7 @@ describe('Resend of a remote row the node accepted and then failed', () => {
 
     expect(t.hostSend).toHaveBeenCalledTimes(2)
     expect(t.backend.send).toHaveBeenCalledOnce()
-    expect(t.backend.send).toHaveBeenCalledWith(expect.objectContaining({ clientMessageId: 'u1' }))
+    expect(t.backend.send).toHaveBeenCalledWith(expect.objectContaining({ clientMessageId: 'u1' }), expect.anything())
     expect(t.row()?.metadata?.sendFailure).toBeUndefined()
     expect(new Set(t.keys).size).toBe(2)
   })

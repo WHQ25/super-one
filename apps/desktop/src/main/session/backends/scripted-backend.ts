@@ -18,7 +18,7 @@
  */
 import { randomUUID } from 'node:crypto'
 import type { AgentEvent, ContentBlock, PermissionMode, SendMessageRequest } from '@superone/shared/agent-types'
-import type { BackendStartOptions, HarnessId, SessionBackend } from '../types'
+import type { BackendStartOptions, HarnessId, SendDelivery, SessionBackend } from '../types'
 
 type ScriptStep =
   | { tool: string; args?: Record<string, unknown> }
@@ -77,9 +77,10 @@ export class ScriptedBackend implements SessionBackend {
   async rebuild(opts: BackendStartOptions): Promise<void> { await this.start(opts) }
   prewarm(opts: BackendStartOptions): void { void this.start(opts) }
 
-  async send(request: SendMessageRequest): Promise<void> {
+  async send(request: SendMessageRequest, delivery?: SendDelivery): Promise<void> {
     // Resolve once the turn is accepted, as real harnesses do. A message that
     // arrives mid-turn (a mailbox wake) runs after it, like a queued prompt.
+    delivery?.onInputAccepted()
     this.turns = this.turns.then(async () => {
       const turn = new AbortController()
       this.turn = turn

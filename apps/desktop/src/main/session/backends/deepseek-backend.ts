@@ -30,7 +30,7 @@ import {
   getDeepseekRuntime,
   registerApprovalRouter,
 } from '../../deepseek/deepseek-runtime-host'
-import type { BackendCommand, BackendEvent, BackendStartOptions, HarnessId, SessionBackend } from '../types'
+import type { BackendCommand, BackendEvent, BackendStartOptions, HarnessId, SendDelivery, SessionBackend } from '../types'
 import { QueuedUserMessageQueue } from '../queued-user-message-queue'
 import { DeepseekQuestions } from './deepseek-questions'
 
@@ -219,7 +219,7 @@ export class DeepseekBackend implements SessionBackend {
     await agent?.dispose()
   }
 
-  async send(request: SendMessageRequest): Promise<void> {
+  async send(request: SendMessageRequest, delivery?: SendDelivery): Promise<void> {
     const agent = await this.ensureAgent()
     if (this.queuedMessages.intercept(request)) return
     // `/compact` is not a prompt: it drives `ctx.compaction.compactNow()` and
@@ -241,6 +241,7 @@ export class DeepseekBackend implements SessionBackend {
     // stored nothing — when an attachment is unusable, the store is absent, or
     // the routed model does not accept image input, so a refusal leaves the
     // session untouched and the user hears about it.
+    delivery?.onInputAccepted()
     await agent.sendText(request.content, request.images)
   }
 

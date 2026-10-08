@@ -74,7 +74,7 @@ import { listAccounts as listClaudeAccounts } from './claude-account-service'
 import { getCurrentLocale } from '../i18n'
 import { buildRemoteHarnessSystemInfo } from './remote-harness-system-info'
 import { buildRemoteSessionSnapshot } from './remote-session-snapshot'
-import { userMessageAnswered, type DuplicateSend } from '@superone/shared/send-failure'
+import type { DuplicateSend } from '@superone/shared/send-failure'
 import { sessionDefaultsForHarness } from '@superone/shared/harness/session-defaults'
 
 /** Resolve a path to its git common directory (shared across worktrees). */
@@ -778,10 +778,12 @@ export class AgentService {
         const reportLateFailure = async (error: unknown) => {
           // withTurnReceipt already answered the request (or there was none), so
           // this event is the only way the phone learns its bubble never ran.
-          // Once an assistant reply exists, a rejection is a turn failure (or
-          // interruption), and the reply's own event describes that outcome.
-          const messages = this.findSessionBySid(projectPath, sessionId)?.snapshot?.messages
-          if (messages && command.clientMessageId && userMessageAnswered(messages, command.clientMessageId)) return
+          // A row the session kept without a failure reached the agent: the
+          // rejection is a turn failure (or interruption), and the reply's own
+          // event describes that outcome.
+          const row = this.findSessionBySid(projectPath, sessionId)?.snapshot?.messages
+            .find((message) => message.id === command.clientMessageId)
+          if (row && !row.metadata?.sendFailure) return
           log.warn('[AgentService] remote send_message failed after admission:', error)
           if (!command.clientMessageId) return
           await this.remoteControlService?.sendEventToMobile({

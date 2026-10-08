@@ -347,6 +347,20 @@ export type SessionLifecycleEvent =
   | { type: 'subscriber_removed'; sessionId: string; deviceId: string; reason?: SessionLeaveReason }
   | { type: 'closed'; sessionId: string }
 
+/**
+ * Per-send hook from `Session` to the backend. The backend calls
+ * `onInputAccepted` immediately before the call that submits the user's input
+ * to the harness (prompt RPC, SDK stream push), so a failure whose outcome is
+ * uncertain still counts as delivered and a resend of the message is held. A
+ * failure before it means the harness never saw the input: the row keeps a
+ * retryable `sendFailure`. Lifecycle events the backend emits on its own
+ * (`message_start`, status) are not delivery. The node runner contract is the
+ * same (`TurnRunner` `onInputAccepted` in `@superone/runtime/session`).
+ */
+export interface SendDelivery {
+  onInputAccepted: () => void
+}
+
 export interface SessionBackend {
   readonly kind: HarnessId
   hasActiveRuntime(): boolean
@@ -354,7 +368,7 @@ export interface SessionBackend {
   start(opts: BackendStartOptions): Promise<void>
   rebuild(opts: BackendStartOptions): Promise<void>
   prewarm(opts: BackendStartOptions): void
-  send(request: SendMessageRequest): Promise<void>
+  send(request: SendMessageRequest, delivery?: SendDelivery): Promise<void>
   interrupt(): Promise<void>
   startRealtimeVoice?(request: import('@superone/shared/agent-types').RealtimeVoiceStartRequest): Promise<void>
   stopRealtimeVoice?(): Promise<void>

@@ -70,7 +70,7 @@ describe('Codex async answers across turn completion', () => {
     await session.dispatchBackendCommand(answer)
     await vi.waitFor(() => expect(backend.send).toHaveBeenCalledTimes(1))
     expect(backend.handleCommand).not.toHaveBeenCalled()
-    expect(backend.send).toHaveBeenCalledWith(expect.objectContaining({ content: 'Production', clientMessageId: answer.newUserMessageId, model: 'gpt-5.6-sol', effort: 'high' }))
+    expect(backend.send).toHaveBeenCalledWith(expect.objectContaining({ content: 'Production', clientMessageId: answer.newUserMessageId, model: 'gpt-5.6-sol', effort: 'high' }), expect.anything())
     expect(session.snapshot.messages.filter(message => message.id === answer.newUserMessageId)).toHaveLength(1)
   })
 

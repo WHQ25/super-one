@@ -114,6 +114,12 @@ export function extractSuperoneMiniAppToolName(message: string): string | null {
 }
 
 export interface CodexRunStreamCallbacks {
+  /**
+   * Just before the request that submits the input (turn/start, review/start,
+   * thread/compact/start): from then Codex may act on it even if the response
+   * is lost. Thread setup failures come before it (see `SendDelivery`).
+   */
+  onInputAccepted?: () => void
   onThreadStarted?: (threadId: string) => void
   /** A provider-created turn surfaced on the shared thread notification stream. */
   onTurnStarted?: (info: { turnId?: string; queued: boolean }) => void
@@ -2632,6 +2638,7 @@ export async function runCodexTurn(
         }
 
         markMutationStarted()
+        callbacks?.onInputAccepted?.()
         const turnStartResult = await connection.request(
           'turn/start',
           buildTurnStartParams(session, resolvedThreadId, input, request, permissionProfile, effectiveCwd),
@@ -2788,6 +2795,7 @@ export async function reviewCodexTurn(
       async ({ connection, notificationInbox, connectionId, threadId: resolvedThreadId, markMutationStarted }) => {
         markMutationStarted()
         await updateThreadSettings(connection, resolvedThreadId, session, effectiveCwd, permissionProfile, request.additionalDirectories)
+        callbacks?.onInputAccepted?.()
         await connection.request('review/start', compactRecord({
           threadId: resolvedThreadId,
           delivery: 'inline',
@@ -2850,6 +2858,7 @@ export async function compactCodexTurn(
       async ({ connection, notificationInbox, connectionId, threadId: resolvedThreadId, markMutationStarted }) => {
         markMutationStarted()
         await updateThreadSettings(connection, resolvedThreadId, session, effectiveCwd, permissionProfile, request.additionalDirectories)
+        callbacks?.onInputAccepted?.()
         await connection.request('thread/compact/start', { threadId: resolvedThreadId })
 
         return streamTurnEvents(connection, session, null, controller, callbacks, {

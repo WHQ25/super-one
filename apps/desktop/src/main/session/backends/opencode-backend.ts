@@ -45,7 +45,7 @@ import {
   taskNotificationRequest,
 } from '../task-notification-queue'
 import { QueuedUserMessageQueue } from '../queued-user-message-queue'
-import type { BackendStartOptions, HarnessId, SessionBackend, TaskNotificationInjectResult } from '../types'
+import type { BackendStartOptions, HarnessId, SendDelivery, SessionBackend, TaskNotificationInjectResult } from '../types'
 
 type OpenCodeRuntimeFactory = (opts: OpenCodeRuntimeOptions) => Promise<OpenCodeRuntime>
 
@@ -219,7 +219,7 @@ export class OpenCodeBackend implements SessionBackend {
     return this.currentMessageId !== null || this.activeTurn !== null
   }
 
-  async send(request: SendMessageRequest): Promise<void> {
+  async send(request: SendMessageRequest, delivery?: SendDelivery): Promise<void> {
     if (!this.started || this.disposed) throw new Error('OpenCodeBackend not started')
     if (this.pendingQueued.intercept(request)) return
     if (this.activeTurn) throw new Error('OpenCodeBackend already has an active turn')
@@ -249,7 +249,7 @@ export class OpenCodeBackend implements SessionBackend {
         this.activeCompaction = { preTokens: usage?.totalTokens ?? this.lastContextTokens, startedAt: Date.now() }
         this.emit({ type: 'status_indicator', indicator: 'compacting' })
       }
-      const dispatch = await dispatchOpenCodeRequest(runtime, request)
+      const dispatch = await dispatchOpenCodeRequest(runtime, request, delivery?.onInputAccepted)
       this.syncNativeSettings(runtime, request.agent)
       if (dispatch.kind === 'local') {
         this.emit({ type: 'slash_command_output', messageId, content: dispatch.content })

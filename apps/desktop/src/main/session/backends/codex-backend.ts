@@ -78,7 +78,7 @@ import {
   TaskNotificationQueue,
   taskNotificationRequest,
 } from '../task-notification-queue'
-import type { BackendCommand, BackendStartOptions, HarnessId, SessionBackend, TaskNotificationInjectResult } from '../types'
+import type { BackendCommand, BackendStartOptions, HarnessId, SendDelivery, SessionBackend, TaskNotificationInjectResult } from '../types'
 
 export interface CodexRunStreamCallbacksDeps {
   onThreadStarted?: (threadId: string) => void
@@ -646,16 +646,16 @@ export class CodexBackend implements SessionBackend {
     return existing
   }
 
-  async send(request: SendMessageRequest): Promise<void> {
+  async send(request: SendMessageRequest, delivery?: SendDelivery): Promise<void> {
     this.assertStarted()
     if (this.realtimeHandle) {
-      await this.sendDuringRealtimeVoice(request)
+      await this.sendDuringRealtimeVoice(request, delivery)
       return
     }
     if (this.realtimeTurnPump) await this.realtimeTurnPump
     if (request.priority === 'next' || request.priority === 'later') {
       if (this.isTurnBusy()) {
-        await this.enqueueDurableMessage(request)
+        await this.enqueueDurableMessage(request, delivery)
         return
       }
       // Falling through to a normal turn still has to answer the queue. Three
@@ -752,6 +752,7 @@ export class CodexBackend implements SessionBackend {
     let compactLifecycleSettled = false
     const turnBoundaryCallbacks: CodexRunStreamCallbacks = {
       ...baseCallbacks,
+      onInputAccepted: delivery?.onInputAccepted,
       onTurnCompleted: ({ turnId }) => {
         finalizeSegment(runningAssistantId, {
           threadId: this.providerSessionId,
@@ -915,7 +916,7 @@ export class CodexBackend implements SessionBackend {
    * Codex's handoff mirror; the realtime pump renders the turn like a delegated
    * one, but with ordinary provenance so it reads as the user's own turn.
    */
-  private async sendDuringRealtimeVoice(request: SendMessageRequest): Promise<void> {
+  private async sendDuringRealtimeVoice(request: SendMessageRequest, delivery?: SendDelivery): Promise<void> {
     const startOpts = this.startOpts
     if (!startOpts) throw new Error('CodexBackend missing startOpts')
     const mode = request.codex?.mode ?? 'run'
@@ -930,7 +931,7 @@ export class CodexBackend implements SessionBackend {
     )
     const queuedPriority = request.priority === 'next' || request.priority === 'later'
     if (queuedPriority && this.realtimeTurnStreaming) {
-      await this.enqueueDurableMessage(request)
+      await this.enqueueDurableMessage(request, delivery)
       return
     }
     // Same contract as the ordinary path: the renderer parked this bubble as
@@ -942,6 +943,8 @@ export class CodexBackend implements SessionBackend {
     // starting a fresh turn, so no `turn/started` will arrive to consume the flag.
     this.realtimeTypedTurnPending = !this.realtimeTurnStreaming
     try {
+      // turn/start goes out on the voice thread here.
+      delivery?.onInputAccepted()
       await startCodexRealtimeTypedTurn(session, startOpts.projectPath, {
         prompt: request.codex?.prompt ?? request.content,
         clientMessageId: request.clientMessageId,
@@ -1605,7 +1608,7 @@ export class CodexBackend implements SessionBackend {
     return true
   }
 
-  private async enqueueDurableMessage(request: SendMessageRequest): Promise<void> {
+  private async enqueueDurableMessage(request: SendMessageRequest, delivery?: SendDelivery): Promise<void> {
     const clientMessageId = request.clientMessageId
     const session = this.session
     const handle = session?.connectionHandle
@@ -1616,6 +1619,8 @@ export class CodexBackend implements SessionBackend {
     const input = buildCodexQueuedInput(request.content, request.images)
     this.durableQueue.set(clientMessageId, { submissionId: null, request, input })
     try {
+      // thread/queue/add hands the input to Codex, which runs it on its own.
+      delivery?.onInputAccepted()
       const submissionId = await this.addDurableSubmission(clientMessageId, input)
       const queued = this.durableQueue.get(clientMessageId)
       if (queued) queued.submissionId = submissionId

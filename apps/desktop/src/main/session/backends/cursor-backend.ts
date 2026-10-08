@@ -32,7 +32,7 @@ import {
   setCursorRuntimeFactory,
 } from '../../cursor/cursor-runtime'
 import { getCachedHarnessResources } from '../../database'
-import type { BackendStartOptions, HarnessId, SessionBackend } from '../types'
+import type { BackendStartOptions, HarnessId, SendDelivery, SessionBackend } from '../types'
 
 export { setCursorRuntimeFactory }
 
@@ -225,7 +225,7 @@ export class CursorBackend implements SessionBackend {
     return promise
   }
 
-  async send(request: SendMessageRequest): Promise<void> {
+  async send(request: SendMessageRequest, delivery?: SendDelivery): Promise<void> {
     if (!this.started || this.disposed) throw new Error('CursorBackend not started')
     if (this.activeTurn) throw new Error('CursorBackend already has an active turn')
 
@@ -316,6 +316,8 @@ export class CursorBackend implements SessionBackend {
       const idempotencyKey = request.clientMessageId
         || request.assistantMessageId
         || messageId
+      // The prompt goes to the Cursor agent here; earlier failures never sent it.
+      delivery?.onInputAccepted()
       await runtime.send(messageId, attachmentPrompt(request.content, turn.note), {
         images: images.length ? images : undefined,
         force: force || undefined,

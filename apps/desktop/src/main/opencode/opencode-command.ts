@@ -41,22 +41,30 @@ export type OpenCodeDispatchResult =
   | { kind: 'turn' }
   | { kind: 'local'; command: 'share' | 'unshare'; content: string }
 
+/**
+ * `onInputAccepted` runs just before the request that hands the input to
+ * OpenCode (see `SendDelivery`); validation and local share commands come first.
+ */
 export async function dispatchOpenCodeRequest(
   runtime: OpenCodeRuntime,
   request: SendMessageRequest,
+  onInputAccepted?: () => void,
 ): Promise<OpenCodeDispatchResult> {
   if (request.content.startsWith('!')) {
     const shellCommand = resolveOpenCodeShellCommand(request.content)
     if (!shellCommand) throw new Error('OpenCode shell command cannot be empty')
     if (request.images?.length) throw new Error('OpenCode shell commands do not support attachments')
+    onInputAccepted?.()
     await runtime.shell(shellCommand, request.model, request.agent)
     return { kind: 'turn' }
   }
   if (request.content.trim() === '/init') {
+    onInputAccepted?.()
     await runtime.init(request.model)
     return { kind: 'turn' }
   }
   if (request.content.trim() === '/compact') {
+    onInputAccepted?.()
     await runtime.compact(request.model)
     return { kind: 'turn' }
   }
@@ -76,6 +84,7 @@ export async function dispatchOpenCodeRequest(
     request.content,
     runtime.commands.filter((candidate) => !localCommandNames.has(candidate.name.replace(/^\//, ''))),
   )
+  onInputAccepted?.()
   if (command) await runtime.command(command.name, command.arguments, request.model, request.effort, request.images, request.agent)
   else await runtime.prompt(request.content, request.model, request.effort, request.images, request.agent)
   return { kind: 'turn' }

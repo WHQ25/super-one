@@ -68,7 +68,7 @@ import {
   taskNotificationRequest,
 } from '../task-notification-queue'
 import { QueuedUserMessageQueue } from '../queued-user-message-queue'
-import type { BackendCommand, BackendStartOptions, HarnessId, SessionBackend, TaskNotificationInjectResult } from '../types'
+import type { BackendCommand, BackendStartOptions, HarnessId, SendDelivery, SessionBackend, TaskNotificationInjectResult } from '../types'
 import {
   isGrokGoalClear,
   isGrokGoalSlash,
@@ -1349,7 +1349,7 @@ export class AcpBackend implements SessionBackend {
     this.taskNotificationFlush.flush()
   }
 
-  async send(request: SendMessageRequest): Promise<void> {
+  async send(request: SendMessageRequest, delivery?: SendDelivery): Promise<void> {
     if (!this.started || this.disposed) throw new Error('AcpBackend not started')
     const compact = parseGrokCompactSlash(request.content)
     if (compact) {
@@ -1429,7 +1429,7 @@ export class AcpBackend implements SessionBackend {
           log.debug('[AcpBackend] set model before prompt failed:', err)
         }
       }
-      const turn = runtime.prompt(request.content, messageId, onEvent, request.images)
+      const turn = runtime.prompt(request.content, messageId, onEvent, request.images, { onInputAccepted: delivery?.onInputAccepted })
       this.activePrompt = turn
       await turn
       if (clearsGoal && !goalReported && !this.interrupted) {

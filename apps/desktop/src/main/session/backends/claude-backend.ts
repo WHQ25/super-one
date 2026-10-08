@@ -44,7 +44,7 @@ import type {
 import log from '../../logger'
 import { DEADLINE_EXCEEDED, INTERRUPT_CANCEL_TIMEOUT_MS, withDeadline } from '../../promise-deadline'
 import { trace } from '../../agent/event-trace'
-import type { BackendCommand, BackendStartOptions, HarnessId, SessionBackend, TaskNotificationInjectResult } from '../types'
+import type { BackendCommand, BackendStartOptions, HarnessId, SendDelivery, SessionBackend, TaskNotificationInjectResult } from '../types'
 import { QueuedUserMessageQueue } from '../queued-user-message-queue'
 import { ClaudeGoalTracker } from './claude-goal-tracker'
 import { readAppSettings } from '../../app-settings-service'
@@ -475,7 +475,7 @@ export class ClaudeBackend implements SessionBackend {
     return 'sent-inline'
   }
 
-  async send(request: SendMessageRequest): Promise<void> {
+  async send(request: SendMessageRequest, delivery?: SendDelivery): Promise<void> {
     if (this.queuedUserMessages.intercept(request)) return
     await this.ensureRuntime()
     if (!this.bridge || !this.query) throw new Error('ClaudeBackend not started')
@@ -517,6 +517,8 @@ export class ClaudeBackend implements SessionBackend {
     const userMsg = buildUserMessage(turnRequest, this.providerSessionId ?? '')
     for (const goalEvent of this.goalTracker.noteSend(turnRequest.content)) this.emit(goalEvent)
     this.flushPendingInstruction()
+    // Handed to the SDK stream: from here the CLI may act on the prompt.
+    delivery?.onInputAccepted()
     this.bridge.push(userMsg)
     await turnDone
   }

@@ -239,9 +239,10 @@ export interface AcpRuntime {
     /**
      * `sendNow` stamps `_meta.sendNow` so Grok cancels the live turn and runs
      * this prompt next. The previous turn is marked superseded and must not
-     * emit idle over the replacement.
+     * emit idle over the replacement. `onInputAccepted` runs just before
+     * session/prompt goes out (see `SendDelivery`).
      */
-    opts?: { sendNow?: boolean },
+    opts?: { sendNow?: boolean; onInputAccepted?: () => void },
   ): Promise<void>
   cancel(): Promise<void>
   close(): Promise<void>
@@ -1550,6 +1551,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       // ActiveSession.prompt() cannot stamp `_meta`. Grok's
       // reconcile_plan_mode_with_prompt treats prompt `_meta.mode` as the only
       // prompt-carried mode signal (`agent` | `ask` | `plan`).
+      promptOpts?.onInputAccepted?.()
       const promptPromise = activeConnection.agent.request(methods.agent.session.prompt, {
         sessionId: activeSession.sessionId,
         prompt: promptBlocks as never,

@@ -30,8 +30,10 @@ export function reduceUserMessageSendFailed(
   event: SendFailedEvent,
 ): Partial<ChatCoreSession> {
   const id = event.clientMessageId
-  if (session.messages.some((m) => m.id === id)) {
-    const messages = markSendFailure(session.messages, id, event.error)
+  const discarded = event.discardedMessageIds
+  const current = discarded?.length ? session.messages.filter((m) => !discarded.includes(m.id)) : session.messages
+  if (current.some((m) => m.id === id)) {
+    const messages = markSendFailure(current, id, event.error)
     // Nothing will answer this send; the pending-reply line must not keep spinning.
     return messages ? { messages, awaitingAssistantReply: false } : {}
   }

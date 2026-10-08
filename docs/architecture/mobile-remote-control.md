@@ -233,9 +233,15 @@ writes every file under `$TMPDIR/super-one-attachments` before the turn is
 recorded or queued. The receipt `{ ok: true }` is sent when the session admits the
 turn, not when the provider finishes. A refusal before admission answers the
 request with an error; a failure after admission reaches the device as
-`user_message_send_failed`, unless an assistant reply already exists. When the
-turn never started (the runtime would not start, the backend refused the send),
-`Session` also records the failure on the user row (`metadata.sendFailure`), so
+`user_message_send_failed`, unless the input already reached the agent. Each
+backend (and each node `TurnRunner`) calls `onInputAccepted` immediately before
+the call that submits the input — prompt RPC, SDK stream push — so a failure
+with an uncertain outcome counts as delivered; agent output also counts, while
+lifecycle events the backend emits itself (`message_start`, status) do not.
+When the input never reached the agent (the runtime would not start, the
+backend failed before submitting), `Session` drops the empty assistant rows
+the backend opened (`discardedMessageIds` on the event) and records the failure
+on the user row (`metadata.sendFailure`), so
 a phone that was disconnected, or a reloaded window, restores it as a failed
 send. Resend without the original request (`failedMessageResend` in
 `packages/shared/src/send-failure.ts`) sends the row again under its own id; the

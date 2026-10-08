@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { AgentEvent, SendMessageRequest } from '@superone/shared/agent-types'
 import { ChatRuntime } from '../../../../mobile/src/runtime'
 import { Session } from './session'
-import type { SessionBackend } from './types'
+import type { SendDelivery, SessionBackend } from './types'
 
 vi.mock('../logger', () => ({ default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() } }))
 vi.mock('../shell-path', () => ({ ensureShellPath: async () => {}, isShellPathReady: () => true }))
@@ -10,7 +10,7 @@ vi.mock('../shell-path', () => ({ ensureShellPath: async () => {}, isShellPathRe
 function fixture(start: () => Promise<void>) {
   let emit!: (event: AgentEvent) => void
   const backend = {
-    kind: 'claude', start: vi.fn(start), send: vi.fn(async (_request: SendMessageRequest) => {}),
+    kind: 'claude', start: vi.fn(start), send: vi.fn(async (_request: SendMessageRequest, _delivery?: SendDelivery) => {}),
     onEvent: (listener: typeof emit) => { emit = listener; return () => {} },
     onProviderSessionId: () => () => {}, onPermissionModeApplied: () => () => {},
     getPendingInteractions: () => [],
@@ -83,7 +83,7 @@ describe('a send the host admitted but never started', () => {
     runtime.dispose()
 
     await session.send({ content: 'later', clientMessageId: 'u2' })
-    expect(backend.send).toHaveBeenLastCalledWith(expect.objectContaining({ clientMessageId: 'u2' }))
+    expect(backend.send).toHaveBeenLastCalledWith(expect.objectContaining({ clientMessageId: 'u2' }), expect.anything())
     expect(session.snapshot.messages.filter((message) => message.id === 'u2')).toHaveLength(1)
     expect(session.snapshot.messages.find((message) => message.id === 'u2')?.metadata?.sendFailure).toBeUndefined()
   })
@@ -116,10 +116,55 @@ describe('a send the host admitted but never started', () => {
     expect(backend.send).toHaveBeenCalledOnce()
   })
 
-  it('leaves the row alone when the turn had already replied', async () => {
+  const start = (id: string): AgentEvent =>
+    ({ type: 'message_start', message: { id, role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'claude' } })
+
+  it('holds a send the backend handed to the harness before it failed', async () => {
+    const { session, backend, emit } = fixture(async () => {})
+    backend.send.mockImplementation(async (_request: SendMessageRequest, delivery?: SendDelivery) => {
+      emit(start('a1'))
+      delivery?.onInputAccepted()
+      throw new Error('stream broke')
+    })
+    await expect(session.send({ content: 'hello', clientMessageId: 'u1' })).rejects.toThrow('stream broke')
+    expect(session.snapshot.messages.find((message) => message.id === 'u1')?.metadata?.sendFailure).toBeUndefined()
+    await expect(session.send({ content: 'hello', clientMessageId: 'u1' })).resolves.toEqual({ duplicate: true })
+    expect(backend.send).toHaveBeenCalledOnce()
+  })
+
+  it('fails a send that never reached the harness although the backend opened a reply, and drops that row everywhere', async () => {
+    const { session, backend, emit } = fixture(async () => {})
+    const phone = await openOnMobile(session)
+    session.on((event) => phone.ingest([event]))
+    // OpenCode's shape: message_start first, then the runtime cannot connect,
+    // reported by event without a throw.
+    backend.send.mockImplementationOnce(async () => {
+      emit(start('a1'))
+      emit({ type: 'message_error', messageId: 'a1', error: 'environment is not connected' })
+    })
+    await session.send({ content: 'hello', clientMessageId: 'u1' })
+    expect(session.snapshot.messages.map((message) => message.id)).toEqual(['u1'])
+    expect(session.snapshot.messages[0]?.metadata?.sendFailure).toEqual({ error: 'environment is not connected' })
+    expect(phone.session.messages.map((message) => message.id)).toEqual(['u1'])
+    expect(phone.session.messages[0]?.metadata?.sendFailure).toEqual({ error: 'environment is not connected' })
+
+    backend.send.mockImplementationOnce(async (_request: SendMessageRequest, delivery?: SendDelivery) => {
+      emit(start('a2'))
+      delivery?.onInputAccepted()
+      emit({ type: 'content_delta', messageId: 'a2', delta: { type: 'text', text: 'done' } })
+    })
+    await session.send({ content: 'hello', clientMessageId: 'u1' })
+    expect(backend.send).toHaveBeenCalledTimes(2)
+    expect(session.snapshot.messages.map((message) => message.id)).toEqual(['u1', 'a2'])
+    expect(session.snapshot.messages[0]?.metadata?.sendFailure).toBeUndefined()
+    phone.dispose()
+  })
+
+  it('takes agent output as delivery when the backend never signals it', async () => {
     const { session, backend, emit } = fixture(async () => {})
     backend.send.mockImplementation(async () => {
-      emit({ type: 'message_start', message: { id: 'a1', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'claude' } })
+      emit(start('a1'))
+      emit({ type: 'content_delta', messageId: 'a1', delta: { type: 'text', text: 'partial' } })
       throw new Error('stream broke')
     })
     await expect(session.send({ content: 'hello', clientMessageId: 'u1' })).rejects.toThrow('stream broke')

@@ -1910,7 +1910,16 @@ export type AgentEventBase =
   | { type: 'tool_progress'; messageId: string; toolUseId: string; toolName: string; elapsedSeconds: number; parentToolUseId?: string | null; taskId?: string; subagentType?: string; subagentRetry?: SubagentRetryInfo; heartbeat?: boolean }
   | { type: 'message_timestamp'; messageId: string; timestamp: string }
   /** The host could not deliver a user send it had already acknowledged (or never acknowledges). */
-  | { type: 'user_message_send_failed'; clientMessageId: string; error: string }
+  | {
+      type: 'user_message_send_failed'
+      clientMessageId: string
+      error: string
+      /**
+       * Assistant rows the host opened for this send before learning it never
+       * reached the agent; they hold no reply, so clients drop them too.
+       */
+      discardedMessageIds?: string[]
+    }
   /** A failed user send was taken again under the same id; its row is no longer a failed send. */
   | { type: 'user_message_send_retried'; clientMessageId: string }
   | { type: 'message_complete'; messageId: string; metadata?: MessageMetadata }

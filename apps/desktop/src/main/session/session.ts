@@ -8,6 +8,7 @@ import { assertCodexAccountSwitchAllowed } from '@superone/shared/codex-accounts
 import { insertCodexTimelineRow, stampCodexTimelineOrder } from '@superone/shared/codex-timeline-rows'
 import { buildCompactBoundaryMessage, compactBoundaryInsertIndex, isCompactSlashSend } from '@superone/shared/compact-boundary'
 import { newMessageId } from '@superone/shared/message-id'
+import { markSendFailure, withoutSendFailure } from '@superone/shared/send-failure'
 import { SessionShutdown } from './session-shutdown'
 import { SessionLiveness } from './session-liveness'
 import { hostPendingInteractions, trackHostInteraction } from './host-pending-interactions'
@@ -835,37 +836,42 @@ export class Session implements SessionContract {
       if (request.ultracode !== undefined) this.setUltracode(request.ultracode)
       this.additionalDirectories = nextDirs
       this.appendUserMessage(request, providerOrigin)
-      this.liveness.beginSend()
-      this.snapEffectiveApiProviderId()
-      const needsRebuild = this._needsRebuild
-      let dirsNeedRebuild = dirsChanged
-      if (dirsChanged && this.backendStarted && !effortChanged && !needsRebuild) {
-        const applied = (await this.backend.setAdditionalDirectories?.(this.additionalDirectories)) ?? false
-        dirsNeedRebuild = !applied
-      }
-      if (this.backendStarted && (effortChanged || dirsNeedRebuild || needsRebuild)) {
-        log.info('[Session] rebuilding backend sid=%s effortChanged=%s dirsChanged=%s needsRebuild=%s', this.id, effortChanged, dirsChanged, needsRebuild)
-        await this.rebuildBackend()
-        this._needsRebuild = false
-      } else {
-        await this.ensureStarted()
-        // Codex snapshots its MCP tool set when the thread starts — including at prewarm,
-        // before a first-turn @-mention can register app tools. The just-adopted prewarmed
-        // thread is then stale, so rebuild to re-establish the connection on a fresh snapshot.
-        // Claude's in-process MCP server reflects the live tool set, so it needs no rebuild.
-        if (needsRebuild && this.harnessId === 'codex') {
-          log.info('[Session] rebuilding codex backend post-start to pick up tools registered before first send sid=%s', this.id)
-          await this.rebuildBackend()
-        }
-        this._needsRebuild = false
-      }
-      this.assertNotDisposed()
-      this._status = 'streaming'
       try {
-        this.flushFirstTurnPreamble()
-        await this.backend.send(withMcpAppContext(request, this._messages))
-      } finally {
-        if ((this._status as SessionStatus) !== 'disposed') this._status = 'ended'
+        this.liveness.beginSend()
+        this.snapEffectiveApiProviderId()
+        const needsRebuild = this._needsRebuild
+        let dirsNeedRebuild = dirsChanged
+        if (dirsChanged && this.backendStarted && !effortChanged && !needsRebuild) {
+          const applied = (await this.backend.setAdditionalDirectories?.(this.additionalDirectories)) ?? false
+          dirsNeedRebuild = !applied
+        }
+        if (this.backendStarted && (effortChanged || dirsNeedRebuild || needsRebuild)) {
+          log.info('[Session] rebuilding backend sid=%s effortChanged=%s dirsChanged=%s needsRebuild=%s', this.id, effortChanged, dirsChanged, needsRebuild)
+          await this.rebuildBackend()
+          this._needsRebuild = false
+        } else {
+          await this.ensureStarted()
+          // Codex snapshots its MCP tool set when the thread starts — including at prewarm,
+          // before a first-turn @-mention can register app tools. The just-adopted prewarmed
+          // thread is then stale, so rebuild to re-establish the connection on a fresh snapshot.
+          // Claude's in-process MCP server reflects the live tool set, so it needs no rebuild.
+          if (needsRebuild && this.harnessId === 'codex') {
+            log.info('[Session] rebuilding codex backend post-start to pick up tools registered before first send sid=%s', this.id)
+            await this.rebuildBackend()
+          }
+          this._needsRebuild = false
+        }
+        this.assertNotDisposed()
+        this._status = 'streaming'
+        try {
+          this.flushFirstTurnPreamble()
+          await this.backend.send(withMcpAppContext(request, this._messages))
+        } finally {
+          if ((this._status as SessionStatus) !== 'disposed') this._status = 'ended'
+        }
+      } catch (error) {
+        this.recordSendFailure(request, error)
+        throw error
       }
     } finally {
       this.liveness.endSend()
@@ -2491,15 +2497,36 @@ export class Session implements SessionContract {
     if (isCompactSlashSend(this.harnessId, request.content)) {
       this._pendingCompactUserId = userMsg.id
     }
-    const wasNew = !this._messages.some((m) => m.id === userMsg.id)
+    const existing = this._messages.find((m) => m.id === userMsg.id)
+    const wasNew = !existing
     if (wasNew) {
       this.replaceMessages([...this._messages, userMsg])
+    } else if (existing.metadata?.sendFailure) {
+      // Sent again under the same id: the row is no longer a failed send.
+      this.replaceMessages(this._messages.map((m) => (m === existing ? withoutSendFailure(m) : m)))
     }
     this._lastUserMessageAt = Date.now()
     this.notifyStateChange()
     if (wasNew) {
       this.forwardEvent({ type: 'user_message_appended', message: userMsg } as AgentEvent)
     }
+  }
+
+  /**
+   * A send admitted into the transcript whose turn never started (the runtime
+   * would not start, the backend refused it). The caller's rejection reaches
+   * only the caller, and only if it is still connected, so the failure is kept
+   * on the user row: every client restoring this session sees it.
+   */
+  private recordSendFailure(request: SendMessageRequest, error: unknown): void {
+    const id = request.clientMessageId
+    if (!id || this._status === 'disposed') return
+    const message = error instanceof Error ? error.message : String(error)
+    const messages = markSendFailure(this._messages, id, message)
+    if (!messages) return
+    this.replaceMessages(messages)
+    this.notifyStateChange()
+    this.forwardEvent({ type: 'user_message_send_failed', clientMessageId: id, error: message })
   }
 
   private notifyStateChange(allowEmpty = false): void {

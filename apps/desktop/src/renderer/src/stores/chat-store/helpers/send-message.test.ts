@@ -874,6 +874,25 @@ describe('sendMessageImpl: IPC dispatch + rollback', () => {
     expect(sess.awaitingAssistantReply).toBe(true)
   })
 
+  it('resends a failure the host recorded from the transcript row, after a reload dropped the replay', async () => {
+    const image = { id: 'img', name: 'a.png', mimeType: 'image/png', base64: 'AAAA' }
+    const content = [{ type: 'image' as const, name: 'a.png' }, { type: 'text' as const, text: 'hello' }]
+    seedProject('/proj', 'sid-1', { messages: [{
+      id: 'u1', role: 'user', status: 'complete', createdAt: '', providerId: 'local', content, attachments: [image],
+      metadata: { sendFailure: { error: 'spawn claude ENOENT' } },
+    }] })
+
+    await useChatStore.getState().resendFailedMessage('u1')
+
+    expect(mockSendMessage).toHaveBeenCalledWith('/proj', {
+      clientMessageId: 'u1', content: 'hello', userMessageContent: content, images: [image], sessionId: 'sid-1',
+    })
+    const sess = getActiveSession('/proj')
+    expect(sess.messages.map((m) => m.id)).toEqual(['u1'])
+    expect(sess.messages[0].metadata?.sendFailure).toBeUndefined()
+    expect(sess.awaitingAssistantReply).toBe(true)
+  })
+
   it('edit pulls a failed message back into the composer and forgets its replay', async () => {
     seedProject('/proj', 'sid-1', { draftText: 'typed since' })
     mockSendMessage.mockRejectedValueOnce(new Error('network down'))

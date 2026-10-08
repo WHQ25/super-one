@@ -1,12 +1,11 @@
 import type { AgentEvent, ChatMessage } from '@superone/shared/agent-types'
 import { MCP_RESOURCE_REMINDER_REGEX } from '@superone/shared/mcp-app-mentions'
+import { markSendFailure, withSendFailure } from '@superone/shared/send-failure'
 import type { ChatCoreSession } from './types'
 
-type SendFailedEvent = Extract<AgentEvent, { type: 'user_message_send_failed' }>
+export { failedMessageResend, markSendFailure, userMessageAnswered, withoutSendFailure } from '@superone/shared/send-failure'
 
-function withSendFailure(message: ChatMessage, error: string): ChatMessage {
-  return { ...message, metadata: { ...message.metadata, sendFailure: { error } } }
-}
+type SendFailedEvent = Extract<AgentEvent, { type: 'user_message_send_failed' }>
 
 /**
  * The composer text a user message was sent from (paste segments included). The
@@ -21,13 +20,6 @@ export function mergeRestoredDraftText(restored: string, typed: string): string 
   return typed.trim() ? `${restored}\n${typed}` : restored
 }
 
-/** Drop the failure row before the message is sent again. */
-export function withoutSendFailure(message: ChatMessage): ChatMessage {
-  if (!message.metadata?.sendFailure) return message
-  const { sendFailure: _, ...metadata } = message.metadata
-  return { ...message, metadata }
-}
-
 /**
  * Keep a send the host never took visible, with its failure, instead of losing it.
  * A queued send moves into the transcript: the queue only holds work still due to run.
@@ -37,18 +29,10 @@ export function reduceUserMessageSendFailed(
   event: SendFailedEvent,
 ): Partial<ChatCoreSession> {
   const id = event.clientMessageId
-  const messageIndex = session.messages.findIndex((m) => m.id === id)
-  if (messageIndex !== -1) {
-    // A reply (including an interrupted or errored one) proves the send reached
-    // the agent. A late host error belongs to that reply, not this user bubble.
-    const nextUserIndex = session.messages.findIndex((m, index) => index > messageIndex && m.role === 'user')
-    if (session.messages.some((m, index) => index > messageIndex
-      && (nextUserIndex === -1 || index < nextUserIndex) && m.role === 'assistant')) return {}
-    return {
-      messages: session.messages.map((m) => (m.id === id ? withSendFailure(m, event.error) : m)),
-      // Nothing will answer this send; the pending-reply line must not keep spinning.
-      awaitingAssistantReply: false,
-    }
+  if (session.messages.some((m) => m.id === id)) {
+    const messages = markSendFailure(session.messages, id, event.error)
+    // Nothing will answer this send; the pending-reply line must not keep spinning.
+    return messages ? { messages, awaitingAssistantReply: false } : {}
   }
   const queued = session.queuedMessages.find((m) => m.id === id)
   if (!queued) return {}

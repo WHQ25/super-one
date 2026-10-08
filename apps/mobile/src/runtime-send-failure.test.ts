@@ -82,6 +82,27 @@ describe('send failure', () => {
     runtime.dispose()
   })
 
+  it('resends a failure the host recorded from the restored row, with the original pictures', async () => {
+    const { client, runtime } = runtimeWith(async (cmd) => cmd.type === 'get_attachment'
+      ? { attachment: IMAGE }
+      : { ok: true })
+    const content = [{ type: 'image' as const, name: 'a.png' }, { type: 'text' as const, text: 'look' }]
+    runtime.ingest([{ type: 'user_message_appended', sessionId: 's', message: {
+      id: 'u', role: 'user', status: 'complete', createdAt: '', providerId: 'remote', content,
+      attachments: [{ id: 'i', name: 'a.png', mimeType: 'image/jpeg', base64: 'thumb', preview: true }],
+    } }])
+    runtime.ingest([{ type: 'user_message_send_failed', sessionId: 's', clientMessageId: 'u', error: 'spawn claude ENOENT' }])
+
+    await runtime.resendFailedMessage('u')
+    await settle()
+    expect(client.request).toHaveBeenLastCalledWith(expect.objectContaining({
+      type: 'send_message', clientMessageId: 'u', content: 'look', userMessageContent: content, images: [IMAGE],
+    }))
+    expect(runtime.session.messages.map((m) => m.id)).toEqual(['u'])
+    expect(runtime.session.messages[0]?.metadata?.sendFailure).toBeUndefined()
+    runtime.dispose()
+  })
+
   it('moves a failed queued send into the transcript', async () => {
     const { runtime } = runtimeWith(async () => ({ error: 'refused' }))
     runtime.send('later', { clientMessageId: 'q', priority: 'next' })

@@ -25,7 +25,7 @@ import type {
   SavedWidgetTemplate,
   SandboxMode,
 } from '@superone/shared/agent-types'
-import { applyEventToSession, createDefaultChatCoreSession, pendingSlashCommandFrom, withoutSendFailure } from '@superone/chat-core'
+import { applyEventToSession, createDefaultChatCoreSession, failedMessageResend, pendingSlashCommandFrom, withoutSendFailure } from '@superone/chat-core'
 import { AGENT_EVENT_BATCH_MS } from '@superone/shared/agent-event-batcher'
 import { sandboxInfoFromMode } from '@superone/shared/harness/harness-sandbox'
 import type { CachedTranscript, RelayClient } from '@superone/relay-client'
@@ -507,10 +507,14 @@ export class ChatRuntime {
     }
   }
 
-  /** Resend a failed message exactly as it originally went out. */
-  resendFailedMessage(clientMessageId: string): void {
-    const cmd = this.failedSends.get(clientMessageId)
-    if (!cmd) return
+  /**
+   * Resend a failed message exactly as it originally went out. A failure the
+   * host recorded after taking the message (or one from before a restore) left
+   * no command behind; the transcript row is resent under its own id instead.
+   */
+  async resendFailedMessage(clientMessageId: string): Promise<void> {
+    const cmd = this.failedSends.get(clientMessageId) ?? await this.resendCommandFromTranscript(clientMessageId)
+    if (!cmd || !this.session.messages.some((message) => message.id === clientMessageId && message.metadata?.sendFailure)) return
     this.failedSends.delete(clientMessageId)
     this.session = {
       ...this.session,
@@ -521,6 +525,19 @@ export class ChatRuntime {
     this.dirty = true
     this.flush()
     void this.deliver(cmd)
+  }
+
+  private async resendCommandFromTranscript(clientMessageId: string): Promise<SendMessageCommand | null> {
+    const message = this.session.messages.find((item) => item.id === clientMessageId)
+    const fromRow = message ? failedMessageResend(message) : null
+    if (!message || !fromRow) return null
+    const { images: _, ...resend } = fromRow
+    // The transcript may hold thumbnails only; the turn needs the originals.
+    const images = await this.originalAttachments(message)
+    return {
+      type: 'send_message', sessionId: this.sessionId, projectPath: this.projectPath, provider: this.provider as HarnessId,
+      ...resend, ...(images.length ? { images } : {}),
+    }
   }
 
   /** Drop a failed message from the transcript; the caller puts it back into the composer. */

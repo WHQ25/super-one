@@ -16,12 +16,13 @@ export function dropSendReplay(messageId: string): void {
   replays.delete(messageId)
 }
 
-/** Resend a failed message as it originally went out. No-op when it cannot be replayed. */
-export async function replayFailedSend(messageId: string): Promise<void> {
+/** Resend a failed message as it originally went out; false when no replay is held. */
+export async function replayFailedSend(messageId: string): Promise<boolean> {
   const replay = replays.get(messageId)
-  if (!replay) return
+  if (!replay) return false
   replays.delete(messageId)
   await replay()
+  return true
 }
 
 export interface UserSendDelivery<T> {

@@ -14,7 +14,9 @@ import {
   updatePerSession,
 } from '../index'
 import { toastSendFailure } from '../helpers/send-error-toast'
-import { dropSendReplay, replayFailedSend } from '../helpers/send-replay'
+import { deliverUserSend, dropSendReplay, replayFailedSend } from '../helpers/send-replay'
+import { createSendWriteScope } from '../helpers/send-write-scope'
+import { failedMessageResend, withoutSendFailure } from '@superone/chat-core'
 import { restoreSentDraft } from '@/components/chat/chat-input/restore-sent-draft'
 import { messageDraft } from '@/components/chat/chat-input/message-draft'
 
@@ -38,8 +40,12 @@ export interface SessionSlice {
   rewindConversation: (userMessageId: string) => Promise<RewindFilesResult>
   previewRewind: (checkpointId: string) => Promise<RewindFilesResult>
   editQueuedMessage: (messageId: string, target?: SessionWriteTarget) => void
-  /** Resend a failed user message exactly as it originally went out. */
-  resendFailedMessage: (messageId: string) => Promise<void>
+  /**
+   * Resend a failed user message exactly as it originally went out, or — when
+   * that send is no longer held (a reload; a failure the host recorded) — from
+   * the transcript row, under the same id.
+   */
+  resendFailedMessage: (messageId: string, target?: SessionWriteTarget) => Promise<void>
   /** Drop a failed user message from the transcript and put it back into the composer. */
   editFailedMessage: (messageId: string, target?: SessionWriteTarget) => void
   deleteQueuedMessage: (messageId: string, target?: SessionWriteTarget) => void
@@ -107,7 +113,25 @@ export const createSessionSlice: StateCreator<ChatStore, [], [], SessionSlice> =
     })))
   },
 
-  resendFailedMessage: (messageId) => replayFailedSend(messageId),
+  resendFailedMessage: async (messageId, target) => {
+    if (await replayFailedSend(messageId)) return
+    const projectPath = target?.projectPath ?? get().activeProject
+    const msg = getScopedPerSession(get(), target).messages.find((m) => m.id === messageId)
+    const resend = msg ? failedMessageResend(msg) : null
+    if (!projectPath || !resend) return
+    const scope = createSendWriteScope(set, get, projectPath, target)
+    const request = { ...resend, sessionId: scope.sessionId() ?? undefined }
+    scope.patch((sess) => ({
+      messages: sess.messages.map((m) => (m.id === messageId ? withoutSendFailure(m) : m)),
+      awaitingAssistantReply: true,
+    }))
+    await deliverUserSend({
+      messageId,
+      patchSession: scope.patch,
+      deliver: () => window.agent.sendMessage(projectPath, request),
+      retryState: () => ({ awaitingAssistantReply: true }),
+    })
+  },
 
   editFailedMessage: (messageId, target) => {
     const msg = getScopedPerSession(get(), target).messages.find((m) => m.id === messageId)

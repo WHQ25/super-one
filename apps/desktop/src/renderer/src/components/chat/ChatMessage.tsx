@@ -310,7 +310,7 @@ export const ChatMessage = memo(function ChatMessage({
           ? (
             <SendFailureResendButton
               error={sendFailure.error}
-              onResend={() => { void useChatStore.getState().resendFailedMessage(message.id) }}
+              onResend={() => { void useChatStore.getState().resendFailedMessage(message.id, scope ?? undefined) }}
             />
           )
           : undefined}

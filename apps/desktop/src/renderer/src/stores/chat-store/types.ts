@@ -456,7 +456,7 @@ export interface ChatStore {
 
   editQueuedMessage: (messageId: string, target?: SessionWriteTarget) => void
   /** Resend a failed user message exactly as it originally went out. */
-  resendFailedMessage: (messageId: string) => Promise<void>
+  resendFailedMessage: (messageId: string, target?: SessionWriteTarget) => Promise<void>
   /** Drop a failed user message from the transcript and put it back into the composer. */
   editFailedMessage: (messageId: string, target?: SessionWriteTarget) => void
   deleteQueuedMessage: (messageId: string, target?: SessionWriteTarget) => void

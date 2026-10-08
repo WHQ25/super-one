@@ -670,9 +670,9 @@ export function MobileApp() {
       if (composerDraft.editorRef.current) composerDraft.editorRef.current.replaceText(text)
       else composerDraft.changeText(text)
     },
-    resendFailedMessage: async (messageId) => {
-      runtimeRef.current?.resendFailedMessage(messageId)
-    },
+    resendFailedMessage: async (messageId) => runUiAction(async () => {
+      await runtimeRef.current?.resendFailedMessage(messageId)
+    }, setStatus, 'resend failed'),
     editFailedMessage: async (messageId) => {
       const message = runtimeRef.current?.takeFailedMessage(messageId)
       if (!message) return

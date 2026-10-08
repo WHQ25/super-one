@@ -74,6 +74,7 @@ import { listAccounts as listClaudeAccounts } from './claude-account-service'
 import { getCurrentLocale } from '../i18n'
 import { buildRemoteHarnessSystemInfo } from './remote-harness-system-info'
 import { buildRemoteSessionSnapshot } from './remote-session-snapshot'
+import { userMessageAnswered } from '@superone/shared/send-failure'
 import { sessionDefaultsForHarness } from '@superone/shared/harness/session-defaults'
 
 /** Resolve a path to its git common directory (shared across worktrees). */
@@ -780,12 +781,7 @@ export class AgentService {
           // Once an assistant reply exists, a rejection is a turn failure (or
           // interruption), and the reply's own event describes that outcome.
           const messages = this.findSessionBySid(projectPath, sessionId)?.snapshot?.messages
-          const userIndex = messages?.findIndex((message) => message.id === command.clientMessageId) ?? -1
-          if (userIndex !== -1 && messages) {
-            const nextUserIndex = messages.findIndex((message, index) => index > userIndex && message.role === 'user')
-            if (messages.some((message, index) => index > userIndex
-              && (nextUserIndex === -1 || index < nextUserIndex) && message.role === 'assistant')) return
-          }
+          if (messages && command.clientMessageId && userMessageAnswered(messages, command.clientMessageId)) return
           log.warn('[AgentService] remote send_message failed after admission:', error)
           if (!command.clientMessageId) return
           await this.remoteControlService?.sendEventToMobile({

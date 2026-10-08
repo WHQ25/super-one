@@ -233,7 +233,13 @@ writes every file under `$TMPDIR/super-one-attachments` before the turn is
 recorded or queued. The receipt `{ ok: true }` is sent when the session admits the
 turn, not when the provider finishes. A refusal before admission answers the
 request with an error; a failure after admission reaches the device as
-`user_message_send_failed`, unless an assistant reply already exists.
+`user_message_send_failed`, unless an assistant reply already exists. When the
+turn never started (the runtime would not start, the backend refused the send),
+`Session` also records the failure on the user row (`metadata.sendFailure`), so
+a phone that was disconnected, or a reloaded window, restores it as a failed
+send. Resend without the original request (`failedMessageResend` in
+`packages/shared/src/send-failure.ts`) sends the row again under its own id; the
+host reuses the row and clears its failure.
 
 The phone sends every turn, with or without attachments, as a request with a
 `requestId`. An error or timeout reduces to `user_message_send_failed`, which

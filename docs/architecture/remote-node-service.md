@@ -611,7 +611,10 @@ queue (`host_actions`) that the controller polls, claims and answers
 `respondHostAction`,
 `apps/desktop/src/main/environment/remote-host-action-consumer.ts`), exposed to
 the node agent through a loopback MCP server
-(`apps/cli/src/session/host-action-mcp-server.ts`). How files those tools
+(`apps/cli/src/session/host-action-mcp-server.ts`). The channel itself
+(`packages/runtime/src/session/host-action-channel.ts`) is shared by every
+host that serves `session.*`; a desktop serving other devices uses it for the
+mailbox tools of collaboration children whose parent is the controller. How files those tools
 produce are shared between desktop and node is
 [session-sync-zone.md](session-sync-zone.md).
 
@@ -679,13 +682,21 @@ RPC dispatch for the shared method families (`environment`, `settings`,
 and runs against optional host ports (`rpc-context.ts`; `session.*` goes through
 `SessionHostPort`). A host serves the families whose ports it provides, the
 descriptor capabilities advertise exactly those, and any other family answers
-`not_found` with `details.unsupported: true`. Host-only families (the CLI's
+`not_found` with `details.unsupported: true`. A git port may serve part of its
+family (`WorkspaceGitPort.servedMethods`); the desktop serves only
+`git.worktreeActivate`. Host-only families (the CLI's
 archive, MCP Apps, resources, automations, drafts, artifacts, Codex admin) plug
 in through `RpcContext.extensions`.
 
-Agent collaboration stays within one environment: parent and child Sessions run
-on the same node and use its persistent mailbox. Cross-environment collaboration
-is a separate protocol.
+Agent collaboration runs within one environment, except that a desktop may
+spawn a child on a node it controls (desktop or CLI). The mailbox stays with
+the parent's desktop: the child is created with `externalParent` and the
+collaboration prompt (`session.create`), its `session_collab_send/retrieve` go
+to the controller as Host Actions in the `superone` group, it may not launch
+children itself, and the parent reaches it with `session.send` under the
+control lease. The child's runs reach the parent's desktop as the session
+events it drains, which drive the same stop-wake and stall notice as a local
+child (`apps/desktop/src/main/session/collaboration-lifecycle.ts`).
 
 Recovery guarantees are advertised per environment (`coldSessionResume`,
 `turnReattach`, §9.3). Parity means equivalent supported behavior, not identical
@@ -841,7 +852,11 @@ traversal and symlink escapes, and applies payload and transfer limits.
 
 Git commands and worktree creation execute on the node. A local and a remote
 clone are distinct projects even when repository identity groups them in the UI.
-Worktree paths never cross environments.
+Worktree paths never cross environments. `git.clone` without a parent directory
+clones into the node's `agent.projectsDir` setting (default
+`~/SuperOne/Projects`), which is where a remote collaboration launch puts a
+repository the node lacks; matching uses the normalized origin URL of
+`ProjectSnapshot.repoIdentity`.
 
 ### 14.4 Session artifacts
 

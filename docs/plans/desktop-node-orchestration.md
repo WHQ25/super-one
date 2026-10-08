@@ -53,6 +53,7 @@ Long-term docs affected: `docs/architecture/remote-node-service.md` (desktop as 
 - `session.create` gains `cwd` and `systemPromptAppend` (the collaboration prompt).
 - The mailbox belongs to the initiator. A remote child with `externalParent` forwards `session_collab_send/retrieve` to A through Host Actions, which desktop B must now also serve (step 1 port). Nested spawn is refused on such children.
 - Delivery and wake are authorized as "the caller is the child's controller" and use `sendWithoutLease`.
+- Progress (2026-10-08): done for desktop B and the CLI node. Delivery and wake use `session.send` under the lease the initiator holds rather than `sendWithoutLease`. The initiator keeps a hidden local session row per remote child as its mailbox endpoint (the mailbox tables reference `sessions`). Open: no `git.fetch` before the target cuts the worktree, so a stale existing checkout may lack the base ref; a clone whose directory already exists unregistered fails; remote children use the target's base provider and the initiator's model list.
 
 ### 5. Child lifecycle wakes the parent
 
@@ -62,6 +63,7 @@ Long-term docs affected: `docs/architecture/remote-node-service.md` (desktop as 
 - Permission prompts and stalls (streaming with no events for N minutes, default 10; today `_lastRuntimeActivityAt` is private, `session.ts:243`) notify the human on desktop and phone and do not wake the parent. Sessions stopped by a human do not wake the parent either.
 - `session_collab_retrieve` reports each child's state: running, awaiting approval, stalled, idle or error, plus last activity and the running tool.
 - On completion the child hands back a structured result: branch, PR URL, summary and self-test result. The parent fetches the branch and verifies it locally.
+- Progress (2026-10-08): local children done. A remote child's stop wake and stall notice run on the initiator from the session events it drains for that child (a Host Action needs a live turn, and the mailbox that decides "reported" is the initiator's), so the target runs no monitor. retrieve reads a remote child's state from its node. A child whose initial task never arrived wakes nobody. Open: events of a remote child turn are drained only while the initiator runs; a restart of the initiator during a child turn misses that stop.
 
 ### 6. Node context for scheduling
 

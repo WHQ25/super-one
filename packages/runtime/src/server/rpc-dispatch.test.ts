@@ -1,7 +1,13 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { ExecutionEnvironmentDescriptor } from '@superone/shared/environment'
 import { dispatchRpc } from './rpc-dispatch'
-import type { HostCapabilityFlags, ProjectsPort, RpcContext, RpcHostHooks } from './rpc-context'
+import type {
+  HostCapabilityFlags,
+  ProjectsPort,
+  RpcContext,
+  RpcHostHooks,
+  SessionHostPort,
+} from './rpc-context'
 import type { NodeIdentity } from './identity'
 
 const flags: HostCapabilityFlags = {
@@ -16,6 +22,7 @@ const flags: HostCapabilityFlags = {
 
 const projects = {
   list: () => [{ projectId: 'p1', path: '/tmp/p1', name: 'p1' }],
+  get: (projectId: string) => (projectId === 'p1' ? { projectId: 'p1', path: '/tmp/p1', name: 'p1' } : null),
 } as unknown as ProjectsPort
 
 /** A host that serves only projects: no sessions, terminals, workspace or git. */
@@ -90,5 +97,45 @@ describe('node rpc dispatch on a partial host', () => {
       }),
     )
     expect(res).toEqual({ result: 'from extension' })
+  })
+})
+
+describe('session.create', () => {
+  function sessionHost() {
+    const create = vi.fn((input: { projectId: string }) => ({ sessionId: 's1', ...input }))
+    const ctx = projectsOnlyHost({
+      sessions: { create } as unknown as SessionHostPort,
+      harnesses: {
+        isSessionHarnessRunnable: () => true,
+        readySessionHarnessIds: () => ['claude'],
+      } as unknown as RpcContext['harnesses'],
+      simulatedHarness: true,
+    })
+    return { ctx, create }
+  }
+
+  it('passes cwd and systemPromptAppend to the session host', async () => {
+    const { ctx, create } = sessionHost()
+    const res = await dispatchRpc(
+      'session.create',
+      { projectId: 'p1', cwd: '/tmp/p1', systemPromptAppend: 'You are a child session.' },
+      ctx,
+    )
+    expect(res.error).toBeUndefined()
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({ projectId: 'p1', cwd: '/tmp/p1', systemPromptAppend: 'You are a child session.' }),
+    )
+  })
+
+  it.each([
+    [{ cwd: 'relative/dir' }, 'cwd not allowed for this project'],
+    [{ cwd: '/elsewhere' }, 'cwd not allowed for this project'],
+    [{ cwd: 42 }, 'cwd must be a string'],
+    [{ systemPromptAppend: { text: 'x' } }, 'systemPromptAppend must be a string'],
+  ])('rejects %j', async (extra, message) => {
+    const { ctx, create } = sessionHost()
+    const res = await dispatchRpc('session.create', { projectId: 'p1', ...extra }, ctx)
+    expect(res.error).toEqual({ code: 'invalid_argument', message })
+    expect(create).not.toHaveBeenCalled()
   })
 })

@@ -1,4 +1,4 @@
-import { dirname as configDirname, join as pathJoin, resolve as pathResolve, sep } from 'node:path'
+import { dirname as configDirname, isAbsolute, join as pathJoin, resolve as pathResolve, sep } from 'node:path'
 import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs'
 import { arch, cpus, freemem, homedir, hostname, platform, totalmem, uptime } from 'node:os'
 import { parseMessageDisplay } from '@superone/shared/message-display'
@@ -1896,6 +1896,19 @@ function handleSessionCreate(payload: unknown, ctx: RpcContext): RpcResult {
   if (!ctx.projects.get(projectId)) {
     return { error: { code: 'not_found', message: `unknown projectId: ${projectId}` } }
   }
+  // Optional working directory: the project root or one of its worktrees.
+  if (p.cwd != null && typeof p.cwd !== 'string') {
+    return { error: { code: 'invalid_argument', message: 'cwd must be a string' } }
+  }
+  const cwd = typeof p.cwd === 'string' && p.cwd.trim() ? p.cwd.trim() : null
+  if (cwd !== null && (!isAbsolute(cwd) || !isAllowedSessionCwd(ctx, projectId, cwd))) {
+    return { error: { code: 'invalid_argument', message: 'cwd not allowed for this project' } }
+  }
+  // Optional system-prompt append (e.g. a collaboration prompt for a launched child).
+  if (p.systemPromptAppend != null && typeof p.systemPromptAppend !== 'string') {
+    return { error: { code: 'invalid_argument', message: 'systemPromptAppend must be a string' } }
+  }
+  const systemPromptAppend = typeof p.systemPromptAppend === 'string' ? p.systemPromptAppend : null
   try {
     // Resolve agent defaults at create so the client can seed UI without a second round-trip.
     // Precedence: explicit create options → session_providers.config → node agent defaults.
@@ -1938,6 +1951,8 @@ function handleSessionCreate(payload: unknown, ctx: RpcContext): RpcResult {
       harnessId,
       providerId,
       title: typeof p.title === 'string' ? p.title : undefined,
+      cwd,
+      systemPromptAppend,
       // Initial HA controller = creating client. Token refresh keeps the same
       // clientSessionId; re-pair does not — acquireControl rebinds (see above).
       controllerClientSessionId: ctx.client.clientSessionId,

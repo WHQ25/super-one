@@ -16,6 +16,7 @@ import {
 } from './node-auth-client'
 import { NodeCredentialStore, type NodeDeviceCredential } from './node-credential-store'
 import { NodeRpcClient } from './node-rpc-client'
+import type { ChannelCredential } from '@superone/runtime/server/secure-channel-client'
 import { RemoteEnvironmentGateway } from './remote-environment-gateway'
 
 export interface KnownEnvironmentRecord extends KnownEnvironment {
@@ -115,6 +116,8 @@ export class NodeConnectionManager {
     pairingToken: string
     label: string
     endpointProfiles?: KnownEnvironmentRecord['endpointProfiles']
+    /** From the pairing code when the node requires its encrypted channel. */
+    channel?: ChannelCredential
   }): Promise<{ connectionId: string; descriptor: ExecutionEnvironmentDescriptor; persisted: boolean }> {
     const device = generateDeviceKeyPair()
     const paired = await pairWithNode({
@@ -122,6 +125,7 @@ export class NodeConnectionManager {
       pairingToken: input.pairingToken,
       devicePublicKeyPem: device.publicKeyPem,
       label: input.label,
+      channel: input.channel,
     })
 
     const connectionId = randomUUID()
@@ -136,6 +140,7 @@ export class NodeConnectionManager {
       baseUrl: input.baseUrl.replace(/\/$/, ''),
       label: input.label,
       updatedAt: Date.now(),
+      ...(input.channel ? { channel: input.channel } : {}),
     }
 
     const saveResult = this.opts.credentialStore.save(credential)
@@ -234,6 +239,8 @@ export class NodeConnectionManager {
     connectionId: string
     baseUrl: string
     pairingToken: string
+    /** A fresh pairing code's channel credential; defaults to the stored one. */
+    channel?: ChannelCredential
   }): Promise<ExecutionEnvironmentDescriptor> {
     const known = this.known.get(input.connectionId)
     if (!known) throw new Error(`unknown connection ${input.connectionId}`)
@@ -245,12 +252,14 @@ export class NodeConnectionManager {
       nodePublicKeyFingerprint: known.nodePublicKeyFingerprint,
     })
 
+    const channel = input.channel ?? this.opts.credentialStore.get(input.connectionId)?.channel
     const device = generateDeviceKeyPair()
     const paired = await pairWithNode({
       baseUrl,
       pairingToken: input.pairingToken,
       devicePublicKeyPem: device.publicKeyPem,
       label: known.label,
+      channel,
     })
     if (paired.environmentId !== known.environmentId) {
       throw Object.assign(
@@ -280,6 +289,7 @@ export class NodeConnectionManager {
       baseUrl,
       label: known.label,
       updatedAt: Date.now(),
+      ...(channel ? { channel } : {}),
     }
     const saveResult = this.opts.credentialStore.save(credential)
     if (!saveResult.ok) {
@@ -429,6 +439,7 @@ export class NodeConnectionManager {
             refreshToken: credential.refreshToken,
             devicePrivateKeyPem: credential.devicePrivateKeyPem,
             clientSessionId: credential.clientSessionId,
+            channel: credential.channel,
           })
           // Server-returned rotated refresh is authoritative in memory even if disk save fails.
           // Using the old refresh again would trigger reuse-revocation of the valid family.
@@ -457,10 +468,11 @@ export class NodeConnectionManager {
       expectedEnvironmentId: credential.environmentId,
       expectedNodePublicKeyFingerprint: credential.nodePublicKeyFingerprint,
       devicePrivateKeyPem: credential.devicePrivateKeyPem,
+      channel: credential.channel,
       supervised: true,
       getWsTicket: async () => {
         const token = await ensureAccess()
-        return mintWsTicket({ baseUrl: credential.baseUrl, accessToken: token })
+        return mintWsTicket({ baseUrl: credential.baseUrl, accessToken: token, channel: credential.channel })
       },
       onUnexpectedDisconnect: (error) => {
         // Defer so the close handler finishes clearing socket state first.

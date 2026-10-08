@@ -3,6 +3,11 @@ import WebSocket from 'ws'
 import type { ControlLease, EnvironmentLiveStatus, ExecutionEnvironmentDescriptor, TerminalReadResult } from '@superone/shared/environment'
 import { DATABASE_SCHEMA_GENERATION, PROTOCOL_GENERATION } from '@superone/shared/environment'
 import { isNodeMutatingCall } from '@superone/runtime/server/rpc-mutating-methods'
+import {
+  establishSecureChannel,
+  type ChannelCredential,
+  type SecureChannel,
+} from '@superone/runtime/server/secure-channel-client'
 import { signWithDeviceKey } from './node-auth-client'
 
 export interface NodeRpcClientOptions {
@@ -27,6 +32,11 @@ export interface NodeRpcClientOptions {
   onUnexpectedDisconnect?: (error: string) => void
   /** Application-level keepalive period. Default 15s; 0 disables. */
   heartbeatIntervalMs?: number
+  /**
+   * The node's encrypted-channel credential. When set, the socket opens the
+   * channel first and attaches with the ticket inside it instead of headers.
+   */
+  channel?: ChannelCredential
 }
 
 type Pending = {
@@ -110,6 +120,8 @@ export class NodeRpcClient {
   private pendingPingId: string | null = null
   private missedPongs = 0
   private readonly heartbeatIntervalMs: number
+  /** Established encrypted channel per socket; absent on plain sockets. */
+  private readonly channels = new WeakMap<WebSocket, SecureChannel>()
 
   constructor(private readonly opts: NodeRpcClientOptions) {
     this.baseUrl = opts.baseUrl.replace(/\/$/, '')
@@ -195,13 +207,16 @@ export class NodeRpcClient {
         return
       }
       let settled = false
-      const ws = new WebSocket(url, {
-        headers: {
-          'x-superone-ws-ticket': ticket,
-          'x-superone-ws-proof': ticketId,
-          'x-superone-ws-sig': sig,
-        },
-      })
+      const channel = this.opts.channel
+      const ws = channel
+        ? new WebSocket(url)
+        : new WebSocket(url, {
+            headers: {
+              'x-superone-ws-ticket': ticket,
+              'x-superone-ws-proof': ticketId,
+              'x-superone-ws-sig': sig,
+            },
+          })
       this.connectingWs = ws
 
       let timer: ReturnType<typeof setTimeout> | null = null
@@ -235,15 +250,11 @@ export class NodeRpcClient {
         if (!settled) fail(transportError('websocket closed during handshake'))
       })
 
-      ws.on('open', () => {
-        if (this.closed || generation !== this.connectGeneration) {
-          fail(transportError('client closed'))
-          return
-        }
+      const startProtocolHandshake = () => {
         const requestId = randomUUID()
         const onHs = (raw: WebSocket.RawData) => {
           try {
-            const msg = JSON.parse(raw.toString()) as {
+            const msg = this.decodeFrame(ws, raw) as {
               requestId?: string
               type?: string
               error?: { code?: string; message?: string }
@@ -272,7 +283,20 @@ export class NodeRpcClient {
             const socketId = this.nextSocketId++
             this.ws = ws
             this.wsSocketId = socketId
-            ws.on('message', (data) => this.onMessage(data.toString()))
+            ws.on('message', (data) => {
+              let msg: unknown
+              try {
+                msg = this.decodeFrame(ws, data)
+              } catch (err) {
+                // A frame that fails channel authentication means the stream is
+                // no longer trustworthy; a malformed plain frame is ignored.
+                if (this.channels.has(ws)) {
+                  this.reportTransportDead(err instanceof Error ? err.message : String(err), socketId)
+                }
+                return
+              }
+              this.onMessage(msg)
+            })
             ws.on('close', () => {
               // Intentional drop/close remove listeners first — only unexpected
               // close of the current promoted socket reaches here.
@@ -296,15 +320,35 @@ export class NodeRpcClient {
           }
         }
         ws.on('message', onHs)
-        ws.send(
-          JSON.stringify({
-            type: 'handshake',
-            requestId,
-            payload: {
-              protocol: { ...PROTOCOL_GENERATION },
-              databaseSchema: { ...DATABASE_SCHEMA_GENERATION },
-            },
-          }),
+        this.sendFrame(ws, {
+          type: 'handshake',
+          requestId,
+          payload: {
+            protocol: { ...PROTOCOL_GENERATION },
+            databaseSchema: { ...DATABASE_SCHEMA_GENERATION },
+          },
+        })
+      }
+
+      ws.on('open', () => {
+        if (this.closed || generation !== this.connectGeneration) {
+          fail(transportError('client closed'))
+          return
+        }
+        if (!channel) {
+          startProtocolHandshake()
+          return
+        }
+        void this.attachThroughChannel(ws, channel, { ticket, ticketId, sig }).then(
+          () => {
+            if (settled) return
+            if (this.closed || generation !== this.connectGeneration) {
+              fail(transportError('client closed'))
+              return
+            }
+            startProtocolHandshake()
+          },
+          (err: Error) => fail(err),
         )
       })
     })
@@ -437,7 +481,7 @@ export class NodeRpcClient {
     const requestId = randomUUID()
     this.pendingPingId = requestId
     try {
-      ws.send(JSON.stringify({ type: 'ping', requestId }))
+      this.sendFrame(ws, { type: 'ping', requestId })
     } catch (err) {
       this.reportTransportDead(
         `heartbeat send failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -484,7 +528,7 @@ export class NodeRpcClient {
         socketId,
       })
       try {
-        this.ws!.send(JSON.stringify(message))
+        this.sendFrame(this.ws!, message)
       } catch (err) {
         this.pending.delete(requestId)
         clearTimeout(timer)
@@ -598,18 +642,64 @@ export class NodeRpcClient {
     }
   }
 
-  private onMessage(raw: string): void {
-    let msg: {
+  /**
+   * Open the encrypted channel on a fresh socket and attach it to the node
+   * session with the ticket and device proof, all inside the channel.
+   */
+  private async attachThroughChannel(
+    ws: WebSocket,
+    credential: ChannelCredential,
+    attach: { ticket: string; ticketId: string; sig: string },
+  ): Promise<void> {
+    let channel: SecureChannel
+    try {
+      channel = await establishSecureChannel(ws, credential, HANDSHAKE_TIMEOUT_MS)
+    } catch (err) {
+      const e = err as { code?: string; message?: string }
+      // A wrong pairing secret needs user action, not a reconnect loop.
+      if (e.code === 'unauthorized') throw rpcResponseError('unauthorized', e.message || 'channel authentication failed')
+      throw transportError(e.message || 'encrypted channel failed')
+    }
+    this.channels.set(ws, channel)
+    const requestId = randomUUID()
+    await new Promise<void>((resolve, reject) => {
+      const onAttach = (raw: WebSocket.RawData) => {
+        ws.off('message', onAttach)
+        try {
+          const msg = channel.open(raw as Buffer) as { type?: string; requestId?: string; error?: { code?: string; message?: string } }
+          if (msg.type === 'attach_ok' && msg.requestId === requestId) {
+            resolve()
+            return
+          }
+          reject(rpcResponseError(msg.error?.code || 'unauthorized', msg.error?.message || 'attach failed'))
+        } catch (err) {
+          reject(transportError(err instanceof Error ? err.message : String(err)))
+        }
+      }
+      ws.on('message', onAttach)
+      this.sendFrame(ws, { type: 'attach', requestId, ticket: attach.ticket, proof: attach.ticketId, sig: attach.sig })
+    })
+  }
+
+  private sendFrame(ws: WebSocket, msg: unknown): void {
+    const channel = this.channels.get(ws)
+    ws.send(channel ? channel.seal(msg) : JSON.stringify(msg))
+  }
+
+  /** Throws on malformed JSON, and on channel tampering or replay. */
+  private decodeFrame(ws: WebSocket, data: WebSocket.RawData): unknown {
+    const channel = this.channels.get(ws)
+    return channel ? channel.open(data as Buffer) : JSON.parse(data.toString())
+  }
+
+  private onMessage(raw: unknown): void {
+    const msg = raw as {
       type: string
       requestId?: string
       result?: unknown
       error?: { code: string; message: string; details?: Record<string, unknown> }
     }
-    try {
-      msg = JSON.parse(raw)
-    } catch {
-      return
-    }
+    if (!msg || typeof msg !== 'object') return
     if (msg.type === 'pong') {
       // Any pong proves liveness, even a late one from a previous tick.
       this.pendingPingId = null

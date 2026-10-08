@@ -6,6 +6,10 @@ import {
   type KeyObject,
 } from 'node:crypto'
 import type { AuthScope } from '@superone/shared/environment'
+import {
+  secureChannelAuthRequest,
+  type ChannelCredential,
+} from '@superone/runtime/server/secure-channel-client'
 
 export interface DeviceKeyPair {
   privateKeyPem: string
@@ -107,35 +111,85 @@ async function readNodeJson<T>(
   }
 }
 
+type NodeAuthPath = '/v1/pair' | '/v1/token' | '/v1/ws-ticket'
+
+/**
+ * One pairing/refresh/ticket exchange. Plain HTTP by default; when the node
+ * requires its encrypted channel, the same request runs as a sealed frame.
+ */
+async function exchangeWithNode<T>(input: {
+  baseUrl: string
+  path: NodeAuthPath
+  body: Record<string, unknown>
+  accessToken?: string
+  channel?: ChannelCredential
+  operation: string
+}): Promise<T> {
+  const url = `${input.baseUrl.replace(/\/$/, '')}${input.path}`
+  let status: number
+  let body: T & { error?: { code: string; message: string } }
+  if (input.channel) {
+    const wsUrl = `${input.baseUrl.replace(/\/$/, '').replace(/^http/, 'ws')}/ws`
+    try {
+      const result = await secureChannelAuthRequest({
+        wsUrl,
+        credential: input.channel,
+        path: input.path,
+        body: input.body,
+        accessToken: input.accessToken,
+        timeoutMs: NODE_REQUEST_TIMEOUT_MS,
+      })
+      status = result.status
+      body = (result.body ?? {}) as typeof body
+    } catch (error) {
+      const e = error as { code?: string; message?: string }
+      throw Object.assign(
+        new Error(`${input.operation} request failed for ${nodeEndpointDescription(url)} ${url}: ${e.message ?? String(error)}`),
+        { code: e.code === 'unauthorized' ? 'unauthorized' : 'unavailable', cause: error },
+      )
+    }
+  } else {
+    const res = await fetchNode(
+      url,
+      {
+        method: 'POST',
+        headers: {
+          ...(input.accessToken ? { authorization: `Bearer ${input.accessToken}` } : {}),
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify(input.body),
+      },
+      input.operation,
+    )
+    status = res.status
+    body = await readNodeJson<typeof body>(res, input.operation, url)
+  }
+  if (status < 200 || status >= 300) {
+    throw Object.assign(new Error(body.error?.message || `${input.operation} failed`), {
+      code: body.error?.code || 'unauthorized',
+    })
+  }
+  return body
+}
+
 export async function pairWithNode(input: {
   baseUrl: string
   pairingToken: string
   devicePublicKeyPem: string
   label?: string
+  channel?: ChannelCredential
 }): Promise<PairResult> {
-  const url = `${input.baseUrl.replace(/\/$/, '')}/v1/pair`
-  const res = await fetchNode(
-    url,
-    {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        pairingToken: input.pairingToken,
-        devicePublicKeyPem: input.devicePublicKeyPem,
-        label: input.label,
-      }),
+  return exchangeWithNode<PairResult>({
+    baseUrl: input.baseUrl,
+    path: '/v1/pair',
+    body: {
+      pairingToken: input.pairingToken,
+      devicePublicKeyPem: input.devicePublicKeyPem,
+      label: input.label,
     },
-    'pairing',
-  )
-  const body = await readNodeJson<
-    PairResult & { error?: { code: string; message: string } }
-  >(res, 'pairing', url)
-  if (!res.ok) {
-    throw Object.assign(new Error(body.error?.message || 'pair failed'), {
-      code: body.error?.code || 'unauthorized',
-    })
-  }
-  return body
+    channel: input.channel,
+    operation: 'pairing',
+  })
 }
 
 export async function refreshNodeAccess(input: {
@@ -143,62 +197,37 @@ export async function refreshNodeAccess(input: {
   refreshToken: string
   devicePrivateKeyPem: string
   clientSessionId: string
+  channel?: ChannelCredential
 }): Promise<TokenResult> {
   const proofPayload = `refresh:${input.clientSessionId}:${Date.now()}`
-  const proofSignature = signWithDeviceKey(input.devicePrivateKeyPem, proofPayload)
-  const url = `${input.baseUrl.replace(/\/$/, '')}/v1/token`
-  const res = await fetchNode(
-    url,
-    {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        refreshToken: input.refreshToken,
-        proofPayload,
-        proofSignature,
-      }),
+  return exchangeWithNode<TokenResult>({
+    baseUrl: input.baseUrl,
+    path: '/v1/token',
+    body: {
+      refreshToken: input.refreshToken,
+      proofPayload,
+      proofSignature: signWithDeviceKey(input.devicePrivateKeyPem, proofPayload),
     },
-    'token refresh',
-  )
-  const body = await readNodeJson<
-    TokenResult & { error?: { code: string; message: string } }
-  >(res, 'token refresh', url)
-  if (!res.ok) {
-    throw Object.assign(
-      new Error(body.error?.message || 'token refresh failed'),
-      {
-        code: body.error?.code || 'unauthorized',
-      },
-    )
-  }
-  return body
+    channel: input.channel,
+    operation: 'token refresh',
+  })
 }
 
 export async function mintWsTicket(input: {
   baseUrl: string
   accessToken: string
+  channel?: ChannelCredential
 }): Promise<string> {
-  const url = `${input.baseUrl.replace(/\/$/, '')}/v1/ws-ticket`
-  const res = await fetchNode(
-    url,
-    {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${input.accessToken}`,
-        'content-type': 'application/json',
-      },
-      body: '{}',
-    },
-    'WebSocket ticket',
-  )
-  const body = await readNodeJson<{
-    ticket?: string
-    error?: { code: string; message: string }
-  }>(res, 'WebSocket ticket', url)
-  if (!res.ok || !body.ticket) {
-    throw Object.assign(new Error(body.error?.message || 'ws ticket failed'), {
-      code: body.error?.code || 'unauthorized',
-    })
+  const body = await exchangeWithNode<{ ticket?: string }>({
+    baseUrl: input.baseUrl,
+    path: '/v1/ws-ticket',
+    body: {},
+    accessToken: input.accessToken,
+    channel: input.channel,
+    operation: 'WebSocket ticket',
+  })
+  if (!body.ticket) {
+    throw Object.assign(new Error('ws ticket failed'), { code: 'unauthorized' })
   }
   return body.ticket
 }

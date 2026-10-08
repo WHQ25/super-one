@@ -115,4 +115,4 @@ export async function secureChannelAuthRequest(input: {
     ws.close()
   }
 }
-export type { ChannelCredential } from '@superone/relay-client/secure-channel'
+export type { ChannelCredential, SecureChannel } from '@superone/relay-client/secure-channel'

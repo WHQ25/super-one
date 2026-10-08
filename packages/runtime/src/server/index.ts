@@ -24,6 +24,11 @@ export {
   type NodeRpcRequestContext,
   type NodeAuthPort,
 } from './node-server'
+export {
+  deriveIssuedChannelSecret,
+  issueChannelCredential,
+  type ChannelCredential,
+} from '@superone/relay-client/secure-channel'
 export { dispatchRpc, clearWatchBuffersForClient } from './rpc-dispatch'
 export type {
   RpcContext,

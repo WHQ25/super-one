@@ -2,6 +2,7 @@ import { safeStorage } from 'electron'
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import type { ChannelCredential } from '@superone/runtime/server/secure-channel-client'
 
 /**
  * Fail-closed credential storage for long-lived node credentials.
@@ -25,6 +26,11 @@ export interface NodeDeviceCredential {
   baseUrl: string
   label: string
   updatedAt: number
+  /**
+   * Pairing secret of the node's encrypted channel, from the out-of-band
+   * pairing code. Present when the node only serves requests inside it.
+   */
+  channel?: ChannelCredential
 }
 
 interface StoredFile {
@@ -137,6 +143,7 @@ export class NodeCredentialStore {
           devicePrivateKeyPem: string
           devicePublicKeyPem: string
           refreshToken: string
+          channel?: ChannelCredential
         }
         this.memory.set(entry.connectionId, {
           connectionId: entry.connectionId,
@@ -146,6 +153,7 @@ export class NodeCredentialStore {
           devicePrivateKeyPem: secrets.devicePrivateKeyPem,
           devicePublicKeyPem: secrets.devicePublicKeyPem,
           refreshToken: secrets.refreshToken,
+          ...(secrets.channel ? { channel: secrets.channel } : {}),
           baseUrl: entry.baseUrl,
           label: entry.label,
           updatedAt: entry.updatedAt,
@@ -166,6 +174,7 @@ export class NodeCredentialStore {
         devicePrivateKeyPem: cred.devicePrivateKeyPem,
         devicePublicKeyPem: cred.devicePublicKeyPem,
         refreshToken: cred.refreshToken,
+        channel: cred.channel,
       })
       const secretsBlob = ENC_PREFIX + safeStorage.encryptString(secretsJson).toString('base64')
       entries.push({

@@ -407,7 +407,12 @@ const environmentAPI = {
     project: { environmentId: string; projectId: string },
   ) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_WORKSPACE_TAIL_WATCH_STOP, watchId, project),
-  pairRemote: (input: { baseUrl: string; pairingToken: string; label: string }) =>
+  pairRemote: (input: {
+    baseUrl: string
+    pairingToken: string
+    label: string
+    channel?: { keyId: string; secretHex: string }
+  }) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_PAIR_REMOTE, input),
   connectWithFailover: (connectionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_CONNECT_FAILOVER, connectionId),

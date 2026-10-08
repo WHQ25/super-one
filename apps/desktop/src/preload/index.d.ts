@@ -986,6 +986,8 @@ export interface EnvironmentAPI extends MediaComposerAPI {
   connectWithFailover(connectionId: string): Promise<unknown>
   /** Dev-only: probe local remote-node lab on loopback. */
   localLabStatus(): Promise<{
+    /** Encrypted-channel credential carried by the node's pairing code. */
+    channel?: { keyId: string; secretHex: string }
     available: boolean
     baseUrl: string
     label: string

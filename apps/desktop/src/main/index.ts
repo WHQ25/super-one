@@ -1786,7 +1786,10 @@ function registerIpcHandlers(): void {
   )
   ipcMain.handle(
     AgentIpcChannels.ENVIRONMENT_PAIR_REMOTE,
-    async (_e, input: { baseUrl: string; pairingToken: string; label: string }) => {
+    async (
+      _e,
+      input: { baseUrl: string; pairingToken: string; label: string; channel?: { keyId: string; secretHex: string } },
+    ) => {
       const { getEnvironmentHost } = await import('./environment')
       return getEnvironmentHost().pairRemote(input)
     },

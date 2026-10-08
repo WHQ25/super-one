@@ -313,6 +313,7 @@ export class EnvironmentHost {
     pairingToken: string
     label: string
     endpointProfiles?: EndpointProfile[]
+    channel?: { keyId: string; secretHex: string }
   }) {
     const result = await this.connections.pairAndConnect(input)
     this.startHostActionConsumer(result.connectionId)

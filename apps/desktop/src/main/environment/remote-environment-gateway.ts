@@ -1169,6 +1169,10 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
         this.assertEnv(input.session.environmentId)
         // Unique once per logical send — never derive from text length/content.
         const clientMessageId = input.clientMessageId || randomUUID()
+        // The RPC's idempotency key is the client's per-call attempt key, not
+        // the message id: its transport retries reuse it, while a Resend of a
+        // row that failed after acceptance must reach the host's send again.
+        // The host's duplicate guard on clientMessageId holds a taken message.
         await this.client.rpc(
           'session.send',
           {
@@ -1181,8 +1185,6 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
               ? { options: input.options }
               : {}),
           },
-          undefined,
-          clientMessageId,
         )
       },
       patchSettings: async (input) => {

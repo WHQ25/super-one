@@ -218,4 +218,30 @@ describe('SessionRuntime send queue', () => {
     expect(waiterHit).toBe(true)
     expect(done.pendingInteraction).toBeNull()
   })
+
+  it('holds a send of a message id it already took, queued or answered', async () => {
+    const texts: string[] = []
+    const runner: TurnRunner = async ({ text }) => {
+      texts.push(text)
+      await new Promise((r) => setTimeout(r, 20))
+      return { finalText: text, providerResume: null }
+    }
+    const { store, events, leases } = memoryPorts()
+    const runtime = new SessionRuntime(store, events, leases, 'env-q-dup', runner)
+    const session = runtime.create({ projectId: 'p', harnessId: 'opencode' })
+    const send = (text: string, clientMessageId: string) =>
+      runtime.send({ sessionId: session.sessionId, text, clientMessageId, client, ...lease })
+
+    await send('first', 'u1')
+    await send('second', 'u2')
+    // A Resend of each under a new attempt key: one running, one queued.
+    await send('first', 'u1')
+    await send('second', 'u2')
+    await waitIdle(runtime, session.sessionId)
+    await send('first', 'u1')
+
+    const done = await waitIdle(runtime, session.sessionId)
+    expect(texts).toEqual(['first', 'second'])
+    expect(done.transcript.filter((t) => t.role === 'user').map((t) => t.id)).toEqual(['u1', 'u2'])
+  })
 })

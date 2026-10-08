@@ -995,6 +995,11 @@ export class SessionRuntime {
     if (session.closed || session.status === 'ended') {
       throw Object.assign(new Error('session is closed'), { code: 'failed_precondition' })
     }
+    // Each delivery attempt carries its own RPC idempotency key, so a Resend of
+    // a message this node already took (queued, running or answered) is held here.
+    if (input.clientMessageId && session.transcript.some((block) => block.role === 'user' && block.id === input.clientMessageId)) {
+      return this.clone(session)
+    }
 
     // Turn payload wins; omitted/empty keys fall back to durable session settings
     // so remote clients need not re-send model/effort/etc. every turn.

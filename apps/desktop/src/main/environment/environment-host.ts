@@ -86,6 +86,7 @@ import type { ProjectExtraDirsPatch } from '@superone/shared/project-extra-dirs'
 import { getRecentFolders, addRecentFolder, removeRecentFolder, updateProject, getProjectId, getProjectPathById } from '../recent-folders'
 import { listSessionsForProjectId, listPinnedSessions as listLocalPinnedSessions } from '../db-sessions'
 import type {
+  ClonedProject,
   DraftListEntry,
   DraftRecord,
   DraftUpsertRequest,
@@ -2524,7 +2525,7 @@ export class EnvironmentHost {
     connectionId: string,
     input: { remoteUrl: string; parentPath: string; directoryName?: string; shallow?: boolean; ifExists?: 'reuse-or-rename' },
     onProgress?: (percent: number) => void,
-  ): Promise<ProjectSnapshot> {
+  ): Promise<ClonedProject> {
     if (connectionId !== 'local') {
       const project = await this.requireRemoteGateway(connectionId).cloneRepository(input)
       this.updateRemoteProjectCache(connectionId, (projects) => [

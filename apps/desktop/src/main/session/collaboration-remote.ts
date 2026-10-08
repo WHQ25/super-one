@@ -12,7 +12,7 @@ import type {
 } from '@superone/shared/agent-types'
 import type { CollaborationGrantRow } from '@superone/runtime/collaboration'
 import { describeLaunchedPeer, parseGrantConfig } from '@superone/runtime/collaboration'
-import type { EnvironmentEventEnvelope, ProjectSnapshot } from '@superone/shared/environment'
+import type { ClonedProject, EnvironmentEventEnvelope, ProjectSnapshot } from '@superone/shared/environment'
 import { normalizeGitRemoteUrl, repoIdentityRemote } from '@superone/shared/git-remote-url'
 import { gitRun } from '../git-run'
 import { collaborationStore } from './collaboration-mailbox'
@@ -43,7 +43,7 @@ export interface RemoteCollaborationPort {
    * Clone into `parentPath`; an unregistered checkout of the same origin
    * there is reused, any other folder of that name is cloned beside.
    */
-  clone(connectionId: string, input: { remoteUrl: string; parentPath: string }): Promise<ProjectSnapshot>
+  clone(connectionId: string, input: { remoteUrl: string; parentPath: string }): Promise<ClonedProject>
   /** Update the project's `origin` refs so a worktree starts from current code. */
   fetch(connectionId: string, projectId: string): Promise<void>
   activateWorktree(
@@ -234,8 +234,15 @@ export async function startRemoteChild(input: {
   const env = await connectedEnvironment(remote.environmentId)
   const p = await remotePort()
   // Re-resolve: the target may have opened or cloned the repository since approval.
-  let project = matchProject(await p.listProjects(env.connectionId), remote.repository)
-  if (project) {
+  let project: ProjectSnapshot | undefined = matchProject(await p.listProjects(env.connectionId), remote.repository)
+  let cloned = false
+  if (!project) {
+    if (!remote.cloneInto) throw failed(`${env.label} no longer has a checkout of ${remote.repository}`)
+    const clone = await p.clone(env.connectionId, { remoteUrl: remote.cloneUrl, parentPath: remote.cloneInto })
+    project = clone
+    cloned = !clone.reused
+  }
+  if (!cloned) {
     // An existing checkout may predate the pushed work the child starts from.
     try {
       await p.fetch(env.connectionId, project.projectId)
@@ -244,9 +251,6 @@ export async function startRemoteChild(input: {
         throw failed(`Could not fetch origin on ${env.label}: ${error instanceof Error ? error.message : String(error)}`)
       }
     }
-  } else {
-    if (!remote.cloneInto) throw failed(`${env.label} no longer has a checkout of ${remote.repository}`)
-    project = await p.clone(env.connectionId, { remoteUrl: remote.cloneUrl, parentPath: remote.cloneInto })
   }
   const branch = input.config.worktree?.branchName?.trim()
     || `superone/${branchSlug(input.config.name ?? 'agent')}-${input.grant.grant_id.slice(0, 8)}`

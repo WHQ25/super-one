@@ -1983,6 +1983,7 @@ describe('spawning a child on another machine', () => {
   let repo: string
   let calls: Record<string, unknown[]>
   let remoteProjects: Array<{ projectId: string; path: string; name: string; extraDirs: string[]; repoIdentity: string | null }>
+  let cloneReuses: boolean
   let remoteSession: { status: string; pendingInteraction: unknown }
 
   function git(...args: string[]) {
@@ -1996,6 +1997,7 @@ describe('spawning a child on another machine', () => {
     git('remote', 'add', 'origin', ORIGIN)
     state.projects.push({ path: repo })
     calls = { clone: [], fetch: [], activateWorktree: [], createSession: [], send: [] }
+    cloneReuses = false
     remoteProjects = []
     remoteSession = { status: 'streaming', pendingInteraction: null }
     const port: RemoteCollaborationPort = {
@@ -2009,7 +2011,7 @@ describe('spawning a child on another machine', () => {
         calls.clone.push(input)
         const project = { projectId: 'p-cloned', path: '/Users/b/SuperOne/Projects/app', name: 'app', extraDirs: [], repoIdentity: 'git:https://github.com/acme/app' }
         remoteProjects.push(project)
-        return project
+        return cloneReuses ? { ...project, reused: true } : project
       },
       activateWorktree: async (_connectionId, projectId, input) => {
         calls.activateWorktree.push({ projectId, ...input })
@@ -2133,6 +2135,16 @@ describe('spawning a child on another machine', () => {
     await startSessionAgent('parent', { launchId: 'remote' }, host)
     expect(calls.createSession).toHaveLength(1)
     expect(calls.send).toHaveLength(1)
+  })
+
+  it('fetches a checkout the clone found already on disk before cutting the worktree', async () => {
+    // An unregistered checkout of the same origin from an earlier clone.
+    cloneReuses = true
+    const { parent, host } = remoteParent()
+    await requestRemote(parent, host)
+    await startSessionAgent('parent', { launchId: 'remote', task: 'Implement export' }, host)
+    expect(calls.clone).toHaveLength(1)
+    expect(calls.fetch).toEqual(['p-cloned'])
   })
 
   it('runs the remote child mailbox tools against this mailbox, both ways', async () => {

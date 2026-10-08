@@ -218,7 +218,7 @@ describe('git.clone into an existing folder', () => {
       const res = await dispatchRpc('git.clone', {
         remoteUrl: 'https://github.com/acme/app', parentPath: parent, ifExists: 'reuse-or-rename',
       }, ctx)
-      expect(res).toEqual({ result: { projectId: 'p-app', path: existing, name: 'app' } })
+      expect(res).toEqual({ result: { projectId: 'p-app', path: existing, name: 'app', reused: true } })
     } finally {
       rmSync(parent, { recursive: true, force: true })
     }

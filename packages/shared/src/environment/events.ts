@@ -73,6 +73,12 @@ export interface ProjectSnapshot {
   lastActiveAt?: number
 }
 
+/** `git.clone` result. */
+export interface ClonedProject extends ProjectSnapshot {
+  /** The checkout existed before the call (`ifExists: 'reuse-or-rename'`) and was not cloned now. */
+  reused?: boolean
+}
+
 export interface SessionEventSnapshot {
   sessionId: string
   projectId: string

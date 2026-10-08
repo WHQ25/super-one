@@ -9,6 +9,7 @@ import type {
   ArtifactPutResult,
   ArtifactStatResult,
   ControlLease,
+  ClonedProject,
   CreateSessionInput,
   CreateTerminalInput,
   DraftGateway,
@@ -304,9 +305,9 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     parentPath: string
     directoryName?: string
     shallow?: boolean
-    /** Reuse an unregistered checkout of the same origin, else clone under a free name. */
+    /** Reuse an unregistered checkout of the same origin (`reused`), else clone under a free name. */
     ifExists?: 'reuse-or-rename'
-  }): Promise<ProjectSnapshot> {
+  }): Promise<ClonedProject> {
     return this.client.rpc('git.clone', input)
   }
 

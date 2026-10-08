@@ -1888,7 +1888,8 @@ async function handleGitClone(payload: unknown, ctx: RpcContext): Promise<RpcRes
     }
     if (p.ifExists === 'reuse-or-rename') {
       const existing = existingCloneTarget(input)
-      if (existing.reuse) return { result: ctx.projects.open(existing.reuse.path, existing.reuse.name) }
+      // `reused`: the checkout predates this call, so it may lack recent commits.
+      if (existing.reuse) return { result: { ...ctx.projects.open(existing.reuse.path, existing.reuse.name), reused: true } }
       input.directoryName = existing.directoryName
     }
     const cloned = await cloneRepository(input)

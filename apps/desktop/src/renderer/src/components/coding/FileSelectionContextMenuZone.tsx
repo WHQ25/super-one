@@ -5,9 +5,9 @@ import { useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { showNativeContextMenu } from '@/lib/native-context-menu'
 import { SelectionMenu } from '@/components/chat/SelectionContextMenu'
-import { compressLineRanges, formatFilePrefix, lineKindToMarker, type LineKind } from '@/lib/file-quote-prefix'
+import { compressLineRanges, formatFilePrefix, lineKindToMarker, type LineKind } from '@superone/shared/file-quote-prefix'
 
-export { compressLineRanges } from '@/lib/file-quote-prefix'
+export { compressLineRanges } from '@superone/shared/file-quote-prefix'
 
 interface MenuState {
   x: number

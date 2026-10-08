@@ -1,15 +1,11 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { Quote, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
-import { DiffView, inferLanguage, useHighlightedTokens, type DiffLine } from '@/lib/diff-utils'
-import { getHighlightCache } from '@/lib/highlight-cache'
-import { useEffectiveProjectRoot } from '@/stores/app'
-import { parseFilePrefix, parseDiffBody, expandLineRanges, type ParsedFilePrefix } from '@/lib/file-quote-prefix'
-import { mergeQuoteTokens } from '@/lib/quote-tokens'
-import { toProjectRelativePath } from '@/lib/file-link'
+import { parseFilePrefix, expandLineRanges, type ParsedFilePrefix } from '@superone/shared/file-quote-prefix'
 import { cn } from '@superone/ui/lib/utils'
+import { useUserBubblePorts } from './user-bubble-ports'
 
 interface UserSelectionChipProps {
   selections: string[]
@@ -46,67 +42,6 @@ function FileChipLabel({ filePath, rangeText, size = 'md', className }: FileChip
   )
 }
 
-interface CodeBodyProps {
-  body: string
-  filePath: string
-  lineNums: number[]
-  isDiff: boolean
-}
-
-function useFullFileContent(filePath: string, fileRoot: string | null): string | null {
-  const [content, setContent] = useState<string | null>(null)
-  useEffect(() => {
-    if (!fileRoot || !filePath) return
-    const relPath = toProjectRelativePath(filePath, fileRoot)
-    // Outside the project root — nothing readable through readProjectFile.
-    if (relPath === filePath) return
-    let cancelled = false
-    window.app.readProjectFile?.(fileRoot, relPath).then((r) => {
-      if (!cancelled && r?.content != null) setContent(r.content)
-    }).catch(() => {})
-    return () => { cancelled = true }
-  }, [filePath, fileRoot])
-  return content
-}
-
-function CodeBody({ body, filePath, lineNums, isDiff }: CodeBodyProps) {
-  const fileRoot = useEffectiveProjectRoot()
-  const cache = useMemo(() => getHighlightCache(fileRoot), [fileRoot])
-  const language = useMemo(() => inferLanguage(filePath), [filePath])
-
-  const diffLines = useMemo(() => isDiff ? parseDiffBody(body) : null, [isDiff, body])
-  const codeOnly = useMemo(
-    () => diffLines ? diffLines.map((l) => l.text).join('\n') : body,
-    [diffLines, body],
-  )
-  const hasRemoved = useMemo(
-    () => diffLines ? diffLines.some((l) => l.kind === 'removed') : false,
-    [diffLines],
-  )
-
-  const fullContent = useFullFileContent(filePath, fileRoot)
-  const fullTokens = useHighlightedTokens(fullContent ?? '', language, { cache })
-  const snippetTokens = useHighlightedTokens(
-    hasRemoved || !fullTokens ? codeOnly : '',
-    language,
-    { cache },
-  )
-
-  const lines = useMemo<DiffLine[]>(() => {
-    const codeLines = codeOnly.split('\n')
-    return codeLines.map((text, i) => ({
-      kind: diffLines?.[i]?.kind ?? 'unchanged',
-      lineNum: lineNums[i] ?? i + 1,
-      text,
-      sourceIdx: i,
-    }))
-  }, [codeOnly, lineNums, diffLines])
-
-  const tokens = useMemo(() => mergeQuoteTokens(lines, fullTokens, snippetTokens), [lines, fullTokens, snippetTokens])
-
-  return <DiffView lines={lines} newTokens={tokens} oldTokens={tokens} maxHeight="max-h-64" className="text-xs" />
-}
-
 interface QuoteItemProps {
   text: string
   index: number
@@ -115,6 +50,7 @@ interface QuoteItemProps {
 }
 
 function QuoteItem({ text, index, onRemoveAt, readOnly }: QuoteItemProps) {
+  const { QuoteBody } = useUserBubblePorts()
   const parsed = useMemo<ParsedFilePrefix | null>(() => parseFilePrefix(text), [text])
   const lineNums = useMemo(
     () => parsed ? expandLineRanges(parsed.rangeText) : [],
@@ -133,7 +69,7 @@ function QuoteItem({ text, index, onRemoveAt, readOnly }: QuoteItemProps) {
               className="max-w-full"
             />
           </div>
-          <CodeBody body={parsed.body} filePath={parsed.filePath} lineNums={lineNums} isDiff={parsed.isDiff} />
+          <QuoteBody quote={parsed} lineNums={lineNums} />
         </>
       ) : (
         <pre className="max-h-40 overflow-y-auto whitespace-pre-wrap font-mono text-xs leading-relaxed text-muted-foreground">
@@ -153,6 +89,10 @@ function QuoteItem({ text, index, onRemoveAt, readOnly }: QuoteItemProps) {
   )
 }
 
+/**
+ * Quoted selections a message carries (or the composer holds): one chip that
+ * opens the quotes, file quotes with their code in the host's highlighter.
+ */
 export function UserSelectionChip({ selections, onRemoveAt, onClear, readOnly = false }: UserSelectionChipProps) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)

@@ -43,9 +43,9 @@ library returns assets as stored — HEIC on every iPhone — and the host's Rea
 tool and the model accept only JPEG/PNG/GIF/WebP, so HEIC/TIFF/AVIF become
 JPEG, anything over 2048 px on its longest edge is scaled down, a PNG stays PNG,
 a GIF is never touched, and the bytes are sniffed afterwards rather than
-trusting the picker's mime type. The user bubble shows each attachment as a
-thumbnail chip (`PortableAttachmentChip`, the phone's `AttachmentChip`) that
-opens the native viewer; the optimistic bubble carries the same `image` /
+trusting the picker's mime type. The user bubble shows each attachment as the
+desktop's inline chip (`AttachmentChipPresenter`, see the user bubble in
+`docs/architecture/chat-core.md`) that opens the native viewer; the optimistic bubble carries the same `image` /
 `document` blocks the host builds, because the host's echo is deduplicated
 away and a reopened session must look the same. A transcript loaded from the
 host carries only a 256 px thumbnail per picture (`ImageAttachment.preview`,

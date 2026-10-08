@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
-import { ContextChip, ContextPreviewContent } from './ContextChip'
-import { UserSelectionChip } from './UserSelectionChip'
+import { ContextChip } from './ContextChip'
+import { ContextPreviewContent } from '@superone/chat-view/presenters/MessageContextChips'
+import { UserSelectionChip } from '@superone/chat-view/presenters/UserSelectionChip'
 import type { MiniAppContextSlot } from '@/stores/chat'
 
 interface ContextBarProps {

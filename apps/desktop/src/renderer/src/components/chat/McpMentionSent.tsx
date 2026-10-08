@@ -9,7 +9,7 @@ import { McpMentionCard, useMcpMentionSent } from '@superone/chat-view/presenter
 import { useSessionScope } from '@/stores/chat'
 import { useMcpAppFileRoute } from '@/components/mcp-apps/file-apps'
 import { previewMcpMention } from '@/components/mcp-apps/mention-content'
-import { ChipHoverCard } from './ChipHoverCard'
+import { ChipHoverCard } from '@superone/ui/components/ui/ChipHoverCard'
 
 /** A chip in a sent message: exactly what went to the agent. */
 export function McpMentionSentHover({ value, children }: { value: string; children: ReactNode }) {

@@ -1,24 +1,14 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { IconButton } from '@superone/ui/components/ui/icon-button'
-import { Dialog, DialogClose, DialogContent, DialogTitle } from '@superone/ui/components/ui/dialog'
-import { FileIcon } from '@superone/ui/components/ui/FileIcon'
-import { AlertCircle, Check, Copy, Maximize2, RotateCw, X } from 'lucide-react'
-import { cn } from '@superone/ui/lib/utils'
-import { tryCopyImage } from '@/lib/clipboard'
-import { PdfPreview } from './PdfPreview'
-import { ChipHoverCard } from './ChipHoverCard'
-import { ImageLightbox } from './image-lightbox'
-import { MentionChipContent } from './MentionChip'
-import { useCopyFeedback } from './chat-message/copy-button'
+import { AlertCircle, Check, Copy, ImageIcon, Maximize2, RotateCw } from 'lucide-react'
 import type { AttachmentOriginalStatus, ImageAttachment } from '@superone/shared/agent-types'
+import { FileIcon } from '@superone/ui/components/ui/FileIcon'
+import { IconButton } from '@superone/ui/components/ui/icon-button'
+import { MentionChipContent } from '@superone/ui/components/ui/MentionChipBody'
+import { cn } from '@superone/ui/lib/utils'
+import { useCopiedFlag } from './PasteChip'
+import { useUserBubblePorts } from './user-bubble-ports'
 
-/**
- * Inline attachment chip: an image thumbnail or a file-type icon, then the file
- * name. Shared by the sent-message renderer and the composer's editor node.
- * Click opens the image viewer (PDF: its preview); hover shows the image larger
- * with copy / open. `selectable` lets a sent bubble's selection take the chip.
- */
 /**
  * A composer chip's full-size original on its way to a remote node. Send waits for it; a failed
  * upload is retried, or the attachment removed and added again.
@@ -28,12 +18,30 @@ export interface AttachmentOriginalUpload {
   onRetry: () => void
 }
 
-export function AttachmentChip({ att, selectable, original }: { att: ImageAttachment; selectable?: boolean; original?: AttachmentOriginalUpload }) {
+/**
+ * Inline attachment chip: an image thumbnail or a file-type icon, then the file
+ * name, in the composer and in a sent bubble on both hosts. Click or tap opens
+ * the host's viewer; where the host has hover, a card shows the image larger
+ * with copy / open. `selectable` lets a sent bubble's selection take the chip.
+ * `messageId` lets a host fetch an original the transcript only holds a
+ * thumbnail of.
+ */
+export function AttachmentChipPresenter({ att, document, messageId, selectable, original }: {
+  att: ImageAttachment
+  /** A document block: its bytes may be gone (a phone transcript), so its mime type cannot say. */
+  document?: boolean
+  messageId?: string
+  selectable?: boolean
+  original?: AttachmentOriginalUpload
+}) {
   const { t } = useTranslation()
+  const { ChipCard, AttachmentViewer, copyImage } = useUserBubblePorts()
   const [open, setOpen] = useState(false)
-  const { copied, run } = useCopyFeedback()
-  const isPdf = att.mimeType === 'application/pdf'
-  const src = `data:${att.mimeType};base64,${att.base64}`
+  const { copied, run } = useCopiedFlag()
+  const isPdf = document || att.mimeType === 'application/pdf'
+  // A picture can arrive without bytes (the host could not cut a thumbnail):
+  // its icon stands in, and opening still fetches the original.
+  const src = att.base64 ? `data:${att.mimeType};base64,${att.base64}` : null
   const upload = original?.status
   const uploading = upload?.state === 'uploading'
   const failed = upload?.state === 'failed'
@@ -41,7 +49,7 @@ export function AttachmentChip({ att, selectable, original }: { att: ImageAttach
     : failed ? t(upload.retryable ? 'chat.attachmentOriginal.failed' : 'chat.attachmentOriginal.failedReattach') : null
   return (
     <>
-      <ChipHoverCard
+      <ChipCard
         title={att.name}
         actions={(
           <>
@@ -50,8 +58,8 @@ export function AttachmentChip({ att, selectable, original }: { att: ImageAttach
                 <RotateCw />
               </IconButton>
             )}
-            {!isPdf && (
-              <IconButton tooltip={t('chat.image.copyImage')} onClick={() => void run(() => tryCopyImage(att.mimeType, att.base64))}>
+            {!isPdf && copyImage && (
+              <IconButton tooltip={t('chat.image.copyImage')} onClick={() => void run(() => copyImage(att))}>
                 {copied ? <Check className="text-success" /> : <Copy />}
               </IconButton>
             )}
@@ -60,7 +68,7 @@ export function AttachmentChip({ att, selectable, original }: { att: ImageAttach
             </IconButton>
           </>
         )}
-        card={isPdf ? undefined : (
+        card={isPdf || !src ? undefined : (
           <>
             <img src={src} alt={att.name} className="max-h-64 w-full rounded-md object-contain" />
             {uploadNote && <p className={cn('mt-1.5 text-xs', failed ? 'text-error' : 'text-muted-foreground')}>{uploadNote}</p>}
@@ -72,23 +80,22 @@ export function AttachmentChip({ att, selectable, original }: { att: ImageAttach
           kind="attachment"
           className={cn('break-normal cursor-pointer', selectable && 'select-text')}
           aria-description={uploadNote ?? undefined}
-          // Copied as a separator plus, in the HTML flavour, the image in place
-          // (utils/selection-copy.ts); its name as text would duplicate it on paste.
+          // Copied as a separator plus, in the HTML flavour, the image in place;
+          // its name as text would duplicate it on paste.
           data-copy-text=" "
           data-copy-image={isPdf ? undefined : ''}
           onClick={() => setOpen(true)}
           icon={isPdf
             ? <FileIcon name={att.name} size={16} />
+            : !src ? <ImageIcon />
             : uploading ? <UploadThumbnail src={src} alt={att.name} progress={upload.progress} />
             : failed ? <AlertCircle className="text-error" />
             // Inline style: .mention-chip__icon > img forces object-fit: contain.
             : <img src={src} alt={att.name} className="rounded-[2px]" style={{ objectFit: 'cover' }} />}
           label={att.name}
         />
-      </ChipHoverCard>
-      {isPdf
-        ? open && <AttachmentPreviewDialog attachment={att} onClose={() => setOpen(false)} />
-        : <ImageLightbox src={src} alt={att.name} open={open} onOpenChange={setOpen} />}
+      </ChipCard>
+      <AttachmentViewer attachment={att} isDocument={isPdf} messageId={messageId} open={open} onOpenChange={setOpen} />
     </>
   )
 }
@@ -115,24 +122,5 @@ function UploadThumbnail({ src, alt, progress }: { src: string; alt: string; pro
         />
       </svg>
     </span>
-  )
-}
-
-/** Full-size preview dialog for a PDF attachment. */
-function AttachmentPreviewDialog({ attachment, onClose }: { attachment: ImageAttachment; onClose: () => void }) {
-  return (
-    <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
-      <DialogContent showCloseButton={false} className="max-h-[90vh] max-w-4xl gap-0 overflow-hidden p-0">
-        <div className="flex items-center justify-between border-b px-4 py-2.5">
-          <DialogTitle className="truncate text-sm font-medium">{attachment.name}</DialogTitle>
-          <DialogClose asChild>
-            <IconButton size="sm">
-              <X />
-            </IconButton>
-          </DialogClose>
-        </div>
-        <PdfPreview base64={attachment.base64} />
-      </DialogContent>
-    </Dialog>
   )
 }

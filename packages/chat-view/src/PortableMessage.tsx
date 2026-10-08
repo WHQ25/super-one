@@ -1,4 +1,3 @@
-import { ContextAttachments } from '@superone/ui/components/ui/context-attachments'
 import { memo, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ChatMessage, ContentBlock } from '@superone/shared/agent-types'
@@ -7,16 +6,15 @@ import { ChatMessagePresenter } from './presenters/ChatMessage'
 import { TurnSummaryAboveFooter } from './presenters/ChatMessageIndicators'
 import { collaborationLabelKey, isModelOnlyWakeMessage } from './presenters/collaboration-label'
 import { goalMessageObjective } from '@superone/shared/session-goal'
+import { promptKeywordsIn, type PromptKeyword } from '@superone/shared/prompt-keywords'
 import { parseRealtimeDelegation } from '@superone/shared/realtime-timeline'
 import { RealtimeDelegationBody } from './presenters/RealtimeDelegationBody'
 import { getAssistantCopyText } from './presenters/getAssistantCopyText'
 import { ZERO_TURN_TOKENS, type TurnTokenCounts } from './presenters/turn-footer-model'
 import { PortableCollabTaskBubble } from './PortableCollabTaskBubble'
-import { attachmentForBlock, PortableAttachmentChip } from './PortableAttachmentChip'
-import { PortableUserText } from './PortableUserText'
-import { ModSite } from './mod-ui/react'
-import { stringProp, userMessageProps } from './mod-ui/site-props'
-import { McpMentionSentProvider } from './presenters/McpMentionCard'
+import { UserMessageContentPresenter } from './presenters/UserMessageContent'
+import { MessageContextChips } from './presenters/MessageContextChips'
+import { PortableUserBubblePorts } from './portable-user-bubble-ports'
 import { PortableToolRow } from './PortableToolRow'
 import { PortableTurnFooter } from './PortableTurnFooter'
 import {
@@ -40,6 +38,8 @@ import { requestNative } from './bridge'
 
 type PendingPermission = NonNullable<ReductionProjection['pendingPermission']>
 
+const NO_KEYWORDS: readonly PromptKeyword[] = []
+
 function resultsByTool(content: ContentBlock[]): Map<string, { result: string; isError: boolean }> {
   const results = new Map<string, { result: string; isError: boolean }>()
   for (const block of content) {
@@ -52,56 +52,25 @@ function resultsByTool(content: ContentBlock[]): Map<string, { result: string; i
   return results
 }
 
-type AttachmentBlock = Extract<ContentBlock, { type: 'image' | 'document' }>
-const isAttachmentBlock = (block: ContentBlock): block is AttachmentBlock => block.type === 'image' || block.type === 'document'
-
-function PortableUserContent({
-  message,
-  mentionArtwork,
-}: {
-  message: ChatMessage
-  mentionArtwork: Record<string, string>
-}) {
-  const results = resultsByTool(message.content)
-  // Attachments sit in one row above the text, as on desktop, whatever order
-  // the blocks arrived in.
-  const attachments = message.content.filter(isAttachmentBlock)
-  const rest = attachments.length ? message.content.filter((block) => !isAttachmentBlock(block)) : message.content
-  const chips = attachments.length > 0 && (
-    <div key="attachments" className="mb-1.5 flex flex-wrap gap-1.5">
-      {attachments.map((block, index) => (
-        <PortableAttachmentChip key={block.id ?? index} messageId={message.id} block={block} attachment={attachmentForBlock(message, block)} />
-      ))}
-    </div>
+/** A tool call a user message carries, as a tool row with the result the message holds for it. */
+function UserToolBlock({ block, index, message }: { block: ContentBlock; index: number; message: ChatMessage }) {
+  if (!('toolName' in block && 'toolUseId' in block && 'input' in block)) return null
+  const result = resultsByTool(message.content).get(block.toolUseId)
+  return (
+    <PortableToolRow
+      key={`${block.toolUseId}-${index}`}
+      toolName={block.toolName}
+      toolUseId={block.toolUseId}
+      input={block.input}
+      toolSummary={block.toolSummary}
+      status={block.status}
+      result={result?.result}
+      isError={result?.isError}
+      toolDiff={block.toolDiff}
+      toolDiffTokens={block.toolDiffTokens}
+      toolLineDelta={block.toolLineDelta}
+    />
   )
-  return <McpMentionSentProvider content={message.content}>{[chips, ...rest.map((block, index) => {
-    if (block.type === 'text') {
-      return (
-        <ModSite key={index} component="UserMessage" instanceId={index === 0 ? message.id : `${message.id}:${index}`} props={userMessageProps(block.text)}>
-          {(p) => <PortableUserText text={stringProp(p, 'text', block.text)} mentionArtwork={mentionArtwork} />}
-        </ModSite>
-      )
-    }
-    if ('toolName' in block && 'toolUseId' in block && 'input' in block) {
-      const result = results.get(block.toolUseId)
-      return (
-        <PortableToolRow
-          key={`${block.toolUseId}-${index}`}
-          toolName={block.toolName}
-          toolUseId={block.toolUseId}
-          input={block.input}
-          toolSummary={block.toolSummary}
-          status={block.status}
-          result={result?.result}
-          isError={result?.isError}
-          toolDiff={block.toolDiff}
-          toolDiffTokens={block.toolDiffTokens}
-          toolLineDelta={block.toolLineDelta}
-        />
-      )
-    }
-    return null
-  })]}</McpMentionSentProvider>
 }
 
 /**
@@ -139,6 +108,7 @@ export const PortableMessage = memo(function PortableMessage({
   sourceEnvironmentId = null,
   mcpIcons = {},
   hideCopyActions = false,
+  promptKeywords = NO_KEYWORDS,
 }: {
   message: ChatMessage
   scheme: 'light' | 'dark'
@@ -153,6 +123,8 @@ export const PortableMessage = memo(function PortableMessage({
   mcpIcons?: Record<string, string>
   /** A spoken turn has a synthetic id and nothing to copy or resolve against. */
   hideCopyActions?: boolean
+  /** The prompt keywords the session's harness acts on. */
+  promptKeywords?: readonly PromptKeyword[]
 }) {
   const { t } = useTranslation()
   const isUser = message.role === 'user'
@@ -181,13 +153,9 @@ export const PortableMessage = memo(function PortableMessage({
     [isUser, message.content],
   )
   const goalObjective = isUser ? goalMessageObjective(userText) : null
+  // Scanned over the whole sent text: a goal shows its objective without the `/goal` the harness saw.
+  const sentKeywords = useMemo(() => promptKeywordsIn(userText, promptKeywords), [userText, promptKeywords])
   const delegation = isUser ? parseRealtimeDelegation(userText) : null
-  const userMessage = useMemo(
-    () => (goalObjective !== null
-      ? { ...message, content: message.content.map((block) => (block.type === 'text' ? { ...block, text: goalObjective } : block)) }
-      : message),
-    [goalObjective, message],
-  )
   const fallback = message.metadata?.modelFallback
   const pluginNotice = message.metadata?.pluginNotice
   const body = fallback
@@ -217,7 +185,7 @@ export const PortableMessage = memo(function PortableMessage({
     : delegation
       ? <RealtimeDelegationBody delegation={delegation} />
       : isUser
-      ? <PortableUserContent message={userMessage} mentionArtwork={mentionArtwork} />
+      ? <UserMessageContentPresenter message={message} text={goalObjective} promptKeywords={sentKeywords} Block={UserToolBlock} />
       : isCodex
         ? <PortableCodexTurn message={message} isStreaming={isStreaming} isLastAssistant={isLastAssistant} />
         : <PortableClaudeTurn message={message} isStreaming={isStreaming} />
@@ -239,6 +207,7 @@ export const PortableMessage = memo(function PortableMessage({
 
   return (
     <PortableTurnProvider scheme={scheme} pendingPermission={pendingPermission} projectPath={projectPath} sourceEnvironmentId={sourceEnvironmentId} mcpIcons={mcpIcons}>
+      <PortableUserBubblePorts mentionArtwork={mentionArtwork}>
       <article data-turn-id={message.id} data-message-role={message.role} data-message-status={message.status}>
         <ChatMessagePresenter
           isUser={isUser}
@@ -284,7 +253,7 @@ export const PortableMessage = memo(function PortableMessage({
             )}
           contexts={message.contexts?.length
             ? (
-              <ContextAttachments items={message.contexts.map(context => ({ id: context.appId, title: context.summary, source: context.appName, content: context.content, thumbnail: context.thumbnail }))} />
+              <MessageContextChips contexts={message.contexts} />
             )
             : undefined}
           sendFailure={isUser && message.metadata?.sendFailure
@@ -300,6 +269,7 @@ export const PortableMessage = memo(function PortableMessage({
             : undefined}
         />
       </article>
+      </PortableUserBubblePorts>
     </PortableTurnProvider>
   )
 })

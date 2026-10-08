@@ -1,0 +1,82 @@
+/*
+ * Prompt keywords painted as Claude Code's prompt input paints them: the
+ * desktop composer's draft and every sent user bubble, on desktop and in the
+ * mobile chat document.
+ */
+
+/*
+ * Claude Code's prompt-input shimmer on its keywords: a three-letter band of the
+ * lighter shimmer colours steps one letter per 50ms and runs ten letters past
+ * each end, so `ultrathink` cycles every 30 steps (1.5s) and each letter is lit
+ * for 3 of them. `ultracode`'s 9 letters would cycle 50ms sooner; it shares the
+ * 1.5s. Letter index (and which ultrathink colour) come from `prompt-keyword-text`.
+ */
+@keyframes prompt-keyword-shimmer {
+  0% { color: var(--kw-shimmer); }
+  10% { color: var(--kw-color); }
+}
+
+/*
+ * Tiny5 (SIL OFL 1.1, assets/fonts/tiny5-OFL.txt), cut down to A–Z: the
+ * keywords render as pixel capitals while the draft keeps what was typed. A
+ * font pixel is 1/8 em, so 8/7 of 14px text (16px) makes it exactly 2
+ * screen pixels and the 5-pixel capitals as tall as the text's. `line-height:
+ * 1` keeps the larger size from growing the line.
+ */
+@font-face {
+  font-family: 'Prompt Keyword Pixel';
+  src: url('../assets/fonts/tiny5-keywords.woff2') format('woff2');
+  font-display: swap;
+}
+
+.prompt-keyword-ultrathink,
+.prompt-keyword-ultracode {
+  font-family: 'Prompt Keyword Pixel', var(--app-font-sans, sans-serif);
+  font-size: calc(1em * 8 / 7);
+  text-transform: uppercase;
+  line-height: 1;
+  color: var(--kw-color);
+  animation: prompt-keyword-shimmer 1.5s step-end infinite;
+  animation-delay: calc(var(--kw-index) * 50ms);
+}
+
+/*
+ * Keyword colours. The rest colours are Claude Code's: `rainbow_*` (one set in
+ * every theme) and `autoAccept`. Its shimmer colours are lighter still, which
+ * reads as a glint on a dark page but nearly vanishes on a light one, so the
+ * light theme shimmers toward a deeper shade instead: either way the band
+ * stands out further from the page than the letters at rest.
+ */
+:root {
+  --ultrathink-0: 235 95 87; --ultrathink-1: 245 139 87; --ultrathink-2: 250 195 95; --ultrathink-3: 145 200 130;
+  --ultrathink-4: 130 170 220; --ultrathink-5: 155 130 200; --ultrathink-6: 200 130 180;
+  --ultrathink-shimmer-0: 196 38 38; --ultrathink-shimmer-1: 206 84 14; --ultrathink-shimmer-2: 184 124 0;
+  --ultrathink-shimmer-3: 46 132 58; --ultrathink-shimmer-4: 34 94 180; --ultrathink-shimmer-5: 98 58 176;
+  --ultrathink-shimmer-6: 176 48 128;
+  --ultracode-shimmer: 52 0 120;
+}
+
+.dark {
+  --ultrathink-shimmer-0: 250 155 147; --ultrathink-shimmer-1: 255 185 137; --ultrathink-shimmer-2: 255 225 155;
+  --ultrathink-shimmer-3: 185 230 180; --ultrathink-shimmer-4: 180 205 240; --ultrathink-shimmer-5: 195 180 230;
+  --ultrathink-shimmer-6: 230 180 210;
+  --ultracode-shimmer: 208 180 255;
+}
+
+/* Ultracode's purple everywhere it shows: Claude Code's `autoAccept`. Magenta
+   and indigo join it only in the desktop ComposerModeBorder's turning ring.
+   The composer mode colours are `@superone/shared/composer-mode`'s, which the
+   native composer paints from; ComposerModeBorder.test.ts holds these
+   declarations to them. */
+:root { --ultracode: 135 0 255; --ultracode-2: 214 51 240; --ultracode-3: 99 102 241; }
+.dark { --ultracode: 175 135 255; --ultracode-2: 236 130 255; --ultracode-3: 129 140 248; }
+
+.prompt-keyword-ultracode {
+  --kw-color: rgb(var(--ultracode));
+  --kw-shimmer: rgb(var(--ultracode-shimmer));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .prompt-keyword-ultrathink,
+  .prompt-keyword-ultracode { animation: none; }
+}

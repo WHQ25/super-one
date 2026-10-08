@@ -6,7 +6,8 @@ import type { AgentEvent, AskUserQuestionRequest, ChatMessage } from '@superone/
 import { EMPTY_MOD_PANE_ROSTER, MOD_ABOVE_PROMPT_INSTANCE, MOD_SESSION_MODE_INSTANCE, type ModChild, type ModClientModuleBundle, type ModElement, type ModPaneRoster, type ModRenderResult, type ModUiOp } from '@superone/shared/mod-ui'
 import { desktopModUiPorts } from '@/lib/mod-ui/DesktopModUi'
 import { useActivityPanelStore } from '@/stores/activity-panel'
-import { UserTextBlock } from '../ChatMessage'
+import { UserTextPresenter } from '@superone/chat-view/presenters/UserText'
+import { DesktopUserBubblePorts } from '../user-bubble-ports'
 import { DurationFooter } from '../ChatMessageFooter'
 import { ModAbovePrompt, ModPaneBody } from './ModSurfaces'
 import { ModSessionMode } from './ModStatusSites'
@@ -233,7 +234,7 @@ function UserRow({ answer, off }: { answer: Answer; off?: boolean }) {
     <Session answers={answers} off={off}>
       <div className="w-[520px] max-w-full rounded-2xl bg-muted px-4 py-2 text-sm">
         <ModSite component="UserMessage" instanceId="m1" props={props}>
-          {(p) => <UserTextBlock text={stringProp(p, 'text', text)} />}
+          {(p) => <DesktopUserBubblePorts><UserTextPresenter text={stringProp(p, 'text', text)} /></DesktopUserBubblePorts>}
         </ModSite>
       </div>
     </Session>

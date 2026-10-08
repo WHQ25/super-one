@@ -87,6 +87,7 @@ const EMPTY_SESSION: SessionFacts = {
   slashCommandOutput: null,
   queuedMessages: [],
   queuedSteer: { now: false, soon: false },
+  promptKeywords: [],
 }
 
 /** Take only the session keys the host actually sent; a patch omits what did not change. */
@@ -645,6 +646,10 @@ export function ChatView() {
   const lastAssistantId = findLastAssistantMessageId(state.messages)
   const sessionStreaming = state.session.sessionStatus === 'streaming'
     || state.session.sessionStatus === 'background'
+  // Each patch carries a fresh array; key it by value so memoized bubbles keep their props.
+  const promptKeywordKey = state.session.promptKeywords.join(',')
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const promptKeywords = useMemo(() => state.session.promptKeywords, [promptKeywordKey])
   // A window request paints on the edge it concerns even when that edge has
   // nothing else to say (a jump to an unloaded turn, for instance).
   const topBusy = (navigationLoading || !!navigationRetry) && navigationEdge === 'top'
@@ -711,6 +716,7 @@ export function ChatView() {
               streamingTokens={state.session.streamingTokens}
               projectPath={state.session.projectPath} sourceEnvironmentId={state.session.sourceEnvironmentId}
               hideCopyActions={isRealtimeVoiceMessage(message)}
+              promptKeywords={promptKeywords}
             />
           )
         })}

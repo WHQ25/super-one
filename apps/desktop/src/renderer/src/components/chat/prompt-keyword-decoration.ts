@@ -2,7 +2,7 @@
  * Paints the prompt keywords the session's harness acts on
  * (`HarnessCapabilities.promptKeywords`) the way Claude Code's own prompt input
  * does, letter by letter with a shimmer sweeping across: `ultrathink` in its
- * rainbow, `ultracode` in its purple (`.prompt-keyword-*` in index.css).
+ * rainbow, `ultracode` in its purple (`.prompt-keyword-*` in `@superone/ui/styles/prompt-keyword.css`).
  */
 
 import { Extension, type Editor } from '@tiptap/core'
@@ -10,10 +10,7 @@ import type { Node as PMNode } from '@tiptap/pm/model'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { findPromptKeywords, type PromptKeyword } from '@superone/shared/prompt-keywords'
-
-// Claude Code's `rainbow_*` and `rainbow_*_shimmer` theme colours, assigned by
-// letter index and wrapping after violet: `--ultrathink-N` in index.css.
-const RAINBOW_LENGTH = 7
+import { promptKeywordLetterVars } from '@superone/ui/components/ui/prompt-keyword-text'
 
 export interface PromptKeywordDecorationOptions {
   keywords: readonly PromptKeyword[]
@@ -54,9 +51,7 @@ function draftText(doc: PMNode): { text: string; positions: number[] } {
 }
 
 function letterStyle(keyword: PromptKeyword, index: number): string {
-  if (keyword !== 'ultrathink') return `--kw-index: ${index}`
-  const hue = index % RAINBOW_LENGTH
-  return `--kw-color: rgb(var(--ultrathink-${hue})); --kw-shimmer: rgb(var(--ultrathink-shimmer-${hue})); --kw-index: ${index}`
+  return Object.entries(promptKeywordLetterVars(keyword, index)).map(([name, value]) => `${name}: ${value}`).join('; ')
 }
 
 export const PromptKeywordDecoration = Extension.create<PromptKeywordDecorationOptions, PromptKeywordDecorationStorage>({

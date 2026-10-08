@@ -35,6 +35,8 @@ describe('chat-view package boundary', () => {
     expect(adapterSource).toContain('<CodexTurnViewPresenter')
     expect(adapterSource).toContain('TurnDetail: TurnDetailSection')
     expect(adapterSource).toContain('<ToolGroupPresenter')
+    // User bubbles too: the phone has no copy of the desktop's chips.
+    expect(messageSource).toContain('<UserMessageContentPresenter')
     expect(messageSource).not.toMatch(/function\s+codexItem\s*\(/)
     expect(messageSource).not.toMatch(/function\s+ClaudeContent\s*\(/)
   })

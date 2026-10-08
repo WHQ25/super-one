@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { wrapPathRefMention } from '@superone/shared/miniapp-prompt-tags'
 import { wrapCapabilityMention } from '@superone/shared/capability-prompt-tags'
 import { wrapAgentMention } from '@superone/shared/agent-mention-tags'
-import { PortableUserText } from './PortableUserText'
+import { PortableUserText } from './portable-user-text.fixture'
 
 /** Rendered text, ignoring markup — chip labels are split around their icon. */
 const textOf = (html: string) => html.replace(/<[^>]*>/g, '')
@@ -36,7 +36,7 @@ describe('structured user mentions in the mobile transcript', () => {
   it('renders selected file identity as a Symbols chip without leaking tag fields', () => {
     const html = renderToStaticMarkup(createElement(PortableUserText, { text: `查看 ${wrapPathRefMention('file', 'src/中文 file.ts', '中文 file.ts')} 然后测试` }))
     expect(html).toContain('data-mention-kind="file"')
-    expect(html).toContain('mention-chip--resource')
+    expect(html).toContain('role="button"')
     expect(html).toContain('<svg')
     expect(html).toContain('title="src/中文 file.ts"')
     expect(textOf(html)).toContain('中文 file.ts')
@@ -50,14 +50,15 @@ describe('structured user mentions in the mobile transcript', () => {
     expect(html).toContain('text-rose-600')
     expect(html).not.toContain('superone-capability')
   })
-  it('matches desktop directory tone and project-agent badge treatment', () => {
+  it('draws directories and project agents as the desktop does', () => {
     const folder = renderToStaticMarkup(createElement(PortableUserText, { text: wrapPathRefMention('directory', 'src/', 'src') }))
     expect(folder).toContain('lucide-folder')
-    expect(folder).toContain('text-primary')
+    expect(folder).toContain('mention-chip--blended')
+    expect(folder).not.toContain('role="button"')
     const agent = renderToStaticMarkup(createElement(PortableUserText, { text: wrapPathRefMention('agent', 'reviewer', 'reviewer') }))
-    expect(agent).toContain('@reviewer')
-    expect(agent).toContain('border-primary/40')
-    expect(agent).not.toContain('lucide-bot')
+    expect(agent).toContain('mention-chip--blended')
+    expect(agent).toContain('lucide-bot')
+    expect(textOf(agent)).toContain('reviewer')
   })
   it('renders host app artwork and shared desktop fallbacks', () => {
     const miniapp = '<superone-miniapp><appname>Board</appname><appid>board</appid></superone-miniapp>'

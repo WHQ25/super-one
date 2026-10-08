@@ -1,5 +1,5 @@
 """
-Derives the native keyword font from the desktop's Tiny5 subset (A-Z only):
+Derives the native keyword font from the web Tiny5 subset (A-Z only):
 
 - a-z map to the capitals, so a keyword renders in pixel capitals while the
   draft keeps what was typed (UIKit and Android spans have no text-transform);
@@ -11,7 +11,7 @@ Run from this directory: python3 build-font.py (writes ../fonts/)
 """
 from fontTools.ttLib import TTFont
 
-SOURCE = '../../../../desktop/src/renderer/src/assets/fonts/tiny5-keywords.woff2'
+SOURCE = '../../../../../packages/ui/src/assets/fonts/tiny5-keywords.woff2'
 FAMILY = 'SuperOne Keyword Pixel'
 POSTSCRIPT = 'SuperOneKeywordPixel-Regular'
 PIXEL = 128  # 1/8 em at 1024 units

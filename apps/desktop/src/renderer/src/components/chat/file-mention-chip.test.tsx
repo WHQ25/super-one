@@ -6,7 +6,8 @@ import { wrapPathRefMention } from '@superone/shared/miniapp-prompt-tags'
 import { useAppStore } from '@/stores/app'
 import { openFileTab } from '@/components/activity/activity-panel-api'
 import type { NodeViewProps } from '@tiptap/react'
-import { UserTextBlock } from './ChatMessage'
+import { UserTextPresenter } from '@superone/chat-view/presenters/UserText'
+import { DesktopUserBubblePorts } from './user-bubble-ports'
 import { MentionChip } from './MentionChip'
 
 vi.mock('@/components/activity/activity-panel-api', async (importOriginal) => ({
@@ -27,13 +28,13 @@ beforeEach(() => {
 
 describe('sent file mention chip', () => {
   it('opens the file tab on click', () => {
-    render(<UserTextBlock text={`see ${wrapPathRefMention('file', 'src/app.ts', 'app.ts')}`} />)
+    render(<DesktopUserBubblePorts><UserTextPresenter text={`see ${wrapPathRefMention('file', 'src/app.ts', 'app.ts')}`} /></DesktopUserBubblePorts>)
     fireEvent.click(screen.getByRole('button'))
     expect(openFileTab).toHaveBeenCalledWith('src/app.ts')
   })
 
   it('offers the file chip context menu', () => {
-    render(<UserTextBlock text={`see ${wrapPathRefMention('file', 'src/app.ts', 'app.ts')}`} />)
+    render(<DesktopUserBubblePorts><UserTextPresenter text={`see ${wrapPathRefMention('file', 'src/app.ts', 'app.ts')}`} /></DesktopUserBubblePorts>)
     fireEvent.contextMenu(screen.getByRole('button'))
     expect(screen.getByText('Add to Chat')).toBeInTheDocument()
     fireEvent.click(screen.getByText('Copy Path'))
@@ -41,7 +42,7 @@ describe('sent file mention chip', () => {
   })
 
   it('drags from the icon only and keeps the name selectable, like FileChip', () => {
-    render(<UserTextBlock text={`see ${wrapPathRefMention('file', 'src/app.ts', 'app.ts')}`} />)
+    render(<DesktopUserBubblePorts><UserTextPresenter text={`see ${wrapPathRefMention('file', 'src/app.ts', 'app.ts')}`} /></DesktopUserBubblePorts>)
     const chip = screen.getByRole('button')
     expect(chip).not.toHaveAttribute('draggable')
     expect(chip).not.toHaveClass('select-none')
@@ -49,14 +50,14 @@ describe('sent file mention chip', () => {
   })
 
   it('leaves non-file mentions inert', () => {
-    render(<UserTextBlock text={`see ${wrapPathRefMention('directory', 'src/', 'src')}`} />)
+    render(<DesktopUserBubblePorts><UserTextPresenter text={`see ${wrapPathRefMention('directory', 'src/', 'src')}`} /></DesktopUserBubblePorts>)
     expect(screen.queryByRole('button')).toBeNull()
   })
 })
 
 describe('composer file mention chip', () => {
   const renderComposerChip = (kind: string, value: string, displayName: string) =>
-    render(<MentionChip {...({ node: { attrs: { kind, value, displayName } } } as unknown as NodeViewProps)} />)
+    render(<DesktopUserBubblePorts><MentionChip {...({ node: { attrs: { kind, value, displayName } } } as unknown as NodeViewProps)} /></DesktopUserBubblePorts>)
 
   it('opens the file tab on click and offers the file chip context menu', () => {
     renderComposerChip('file', 'src/app.ts', 'app.ts')

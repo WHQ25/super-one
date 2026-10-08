@@ -2,17 +2,6 @@ import { Node, mergeAttributes, type JSONContent } from '@tiptap/core'
 import { ReactNodeViewRenderer } from '@tiptap/react'
 import { PasteChipView } from './PasteChipView'
 
-const PASTE_CHIP_LINE_THRESHOLD = 10
-const PASTE_CHIP_CHAR_THRESHOLD = 500
-
-/**
- * A message from before pastes were marked (`isPaste`) shows its long text
- * runs as a paste chip; the composer chips every paste.
- */
-export function isLongPaste(text: string): boolean {
-  return text.split('\n').length >= PASTE_CHIP_LINE_THRESHOLD || text.length >= PASTE_CHIP_CHAR_THRESHOLD
-}
-
 export const PasteChipNode = Node.create({
   name: 'pasteChip',
   group: 'inline',

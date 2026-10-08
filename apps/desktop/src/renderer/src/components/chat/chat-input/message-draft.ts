@@ -2,8 +2,7 @@ import type { JSONContent } from '@tiptap/core'
 import type { ChatMessage, ImageAttachment } from '@superone/shared/agent-types'
 import type { CopiedMention } from '@/lib/clipboard'
 import { plainTextToTiptapParagraphContent } from './plainTextToTiptapDoc'
-import { mentionCopyText } from '../chat-message/user-copy-html'
-import { userMessageParts } from '../chat-message/user-message-parts'
+import { mentionCopyText, userMessageParts } from '@superone/shared/user-message-parts'
 
 /** A piece of composer content: text, a mention, a paste chip, or an attachment chip by id. */
 export type DraftPart = { text: string } | { mention: CopiedMention } | { paste: string } | { attachmentId: string }

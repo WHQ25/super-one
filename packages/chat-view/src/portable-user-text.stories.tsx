@@ -4,7 +4,7 @@ import { wrapPathRefMention } from '@superone/shared/miniapp-prompt-tags'
 import { expect, within } from 'storybook/test'
 import type { ContentBlock } from '@superone/shared/agent-types'
 import { encodeMcpMentionValue, formatMcpResourceReminder, wrapMcpResourceMention } from '@superone/shared/mcp-app-mentions'
-import { PortableUserText } from './PortableUserText'
+import { PortableUserText } from './portable-user-text.fixture'
 import { McpMentionSentProvider } from './presenters/McpMentionCard'
 
 /**

@@ -1,7 +1,7 @@
 import { NodeViewWrapper } from '@tiptap/react'
 import type { NodeViewProps } from '@tiptap/react'
 import { useActiveSession } from '@/stores/chat'
-import { AttachmentChip } from './attachment-chip'
+import { AttachmentChipPresenter } from '@superone/chat-view/presenters/AttachmentChip'
 import { retryOriginal, useOriginalUploads } from './attachment-originals'
 import type { AttachmentNodeAttrs } from './attachment-node'
 
@@ -17,7 +17,7 @@ export function AttachmentChipNode({ node }: NodeViewProps) {
 
   return (
     <NodeViewWrapper as="span" contentEditable={false} data-attachment="" className="select-none">
-      <AttachmentChip
+      <AttachmentChipPresenter
         att={att}
         original={originalPath ? {
           status,

@@ -5,7 +5,11 @@ import {
   ULTRATHINK_SHIMMER_COLORS, type Rgb,
 } from '@superone/shared/composer-mode'
 
-const css = readFileSync(new URL('../../styles/index.css', import.meta.url), 'utf8')
+// The keyword colours sit in the shared stylesheet that the mobile chat document also loads.
+const css = [
+  new URL('../../styles/index.css', import.meta.url),
+  new URL('../../../../../../../packages/ui/src/styles/prompt-keyword.css', import.meta.url),
+].map((url) => readFileSync(url, 'utf8')).join('\n')
 const rgb = (value: Rgb) => value.join(' ')
 /** `--name: r g b` as declared in the stylesheet's top-level `selector { … }` rules. */
 function declared(selector: string, name: string): string | undefined {
@@ -15,7 +19,8 @@ function declared(selector: string, name: string): string | undefined {
 }
 
 /**
- * The desktop paints the composer modes from `styles/index.css`, mobile from
+ * The desktop paints the composer modes from `styles/index.css` and the shared
+ * `prompt-keyword.css`, the native composer from
  * `@superone/shared/composer-mode`. These hold the stylesheet to the shared
  * palette so the two cannot drift.
  */

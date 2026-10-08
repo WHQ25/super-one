@@ -3,7 +3,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { FileChip } from './FileChip'
 import { MentionChip } from './MentionChip'
-import { UserTextBlock } from './ChatMessage'
+import { UserTextPresenter } from '@superone/chat-view/presenters/UserText'
+import { DesktopUserBubblePorts } from './user-bubble-ports'
 import { wrapPathRefMention } from '@superone/shared/miniapp-prompt-tags'
 import type { NodeViewProps } from '@tiptap/react'
 import { useAppStore } from '@/stores/app'
@@ -18,11 +19,11 @@ for (const kind of ['file chip', 'composer mention', 'sent mention'] as const) {
       vi.mocked(openFileTab).mockClear()
       const startDrag = vi.fn()
       window.app.startDrag = startDrag
-      const { container } = render(kind === 'file chip'
+      const { container } = render(<DesktopUserBubblePorts>{kind === 'file chip'
         ? <FileChip name="photo.png" title="photo.png" filePath="/project/photo.png" />
         : kind === 'composer mention'
           ? <MentionChip {...({ node: { attrs: { kind: 'file', value: 'photo.png', displayName: 'photo.png' } } } as unknown as NodeViewProps)} />
-          : <UserTextBlock text={wrapPathRefMention('file', 'photo.png', 'photo.png')} />)
+          : <UserTextPresenter text={wrapPathRefMention('file', 'photo.png', 'photo.png')} />}</DesktopUserBubblePorts>)
       const thumbnail = container.querySelector('img')!
       expect(thumbnail).toHaveAttribute('draggable', 'false')
       expect(thumbnail.closest('[draggable="true"]')).not.toBeNull()

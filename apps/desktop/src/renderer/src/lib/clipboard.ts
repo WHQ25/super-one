@@ -58,7 +58,9 @@ export function markSuperOneCopy(html: string): string {
 }
 
 /** A mention chip as the composer stores it. */
-export type CopiedMention = { kind: string; value: string; displayName: string }
+import type { UserMention } from '@superone/shared/user-message-parts'
+
+export type CopiedMention = UserMention
 
 export type PastePart = { text: string } | { file: File } | { mention: CopiedMention } | { paste: string }
 

@@ -23,6 +23,7 @@ import { MentionNode } from './mention-node'
 import { findMiniAppMentionMarkers } from '@superone/shared/miniapp-mention-marker'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { PasteChipNode } from './paste-chip-node'
+import { DesktopUserBubblePorts } from './user-bubble-ports'
 import { SlashDecoration } from './slash-decoration'
 import { SessionMentionDecoration, syncPortalMentionDismissed } from './session-mention-decoration'
 import { GitMentionDecoration } from './git-mention-decoration'
@@ -2032,6 +2033,8 @@ export function ChatInput({
     const isComposerEmpty = useCallback(() => editorRef.current?.isEmpty ?? true, [])
 
     return (
+      // The composer's chips (mentions, attachments, pastes, quotes) act as the sent bubble's do.
+      <DesktopUserBubblePorts>
       <div inert={isRemoteLocked} aria-disabled={isRemoteLocked} className={cn('relative', isRemoteLocked && 'opacity-60')}>
         {(activeProviderForResources === 'claude' || activeProviderForResources === 'codex') && <ChatInputDirsHint />}
         {status !== 'streaming' && (
@@ -2285,5 +2288,6 @@ export function ChatInput({
         )}
         </div>
       </div>
+      </DesktopUserBubblePorts>
     )
   }

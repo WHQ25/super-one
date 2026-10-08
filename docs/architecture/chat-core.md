@@ -94,6 +94,27 @@ Enforced by source-scanning tests; a violation fails the suite.
 DOM `window` (scroll, resize) is allowed in chat-view: it is that renderer's own
 document.
 
+## User bubble
+
+A user message's content is one presenter on both hosts:
+`UserMessageContentPresenter` (`presenters/UserMessageContent.tsx`) draws quoted
+selections, then the blocks in written order — attachments as inline chips, text
+through `UserTextPresenter` (mentions, paste chips, prompt keywords), tool calls
+as the host's `Block`. The composer's chips (attachment, paste, quotes, mention
+icons) are the same presenters. What differs per host is a `UserBubblePorts`
+object (`presenters/user-bubble-ports.tsx`) provided by context:
+
+| Port | Desktop (`components/chat/user-bubble-ports.tsx`) | Phone (`portable-user-bubble-ports.tsx`) |
+|---|---|---|
+| `MentionIcon` | mini-app / desktop-app / MCP icons from stores and IPC, image file thumbnails | `mentionArtwork` and `mcpIcons` from the projection |
+| `FileMention` | click opens, icon drags, right-click file menu | tap → `previewFile` |
+| `McpMention`, `ChipCard` | hover cards | tap popover; no hover card |
+| `AttachmentViewer` | image lightbox, PDF dialog | `loadAttachment` → native `previewImage` |
+| `QuoteBody` | highlighted against the project file | plain text |
+
+Only artwork and interaction are host-bound; labels, chip chrome, copy
+attributes and which keywords are painted stay in the presenters.
+
 ## State split on the phone
 
 RN holds the complete `ChatCoreSession` in `ChatRuntime.session` and applies every

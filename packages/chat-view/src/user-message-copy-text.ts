@@ -1,11 +1,6 @@
 import type { ChatMessage } from '@superone/shared/agent-types'
-import { parseUserMentions, type UserTextSegment } from '@superone/shared/user-mention-parser'
-
-/** Same label the chip shows: display name when it has one, else the path's last segment. */
-function mentionLabel(segment: Extract<UserTextSegment, { type: 'mention' }>): string {
-  if (segment.displayName) return segment.displayName
-  return segment.value.replace(/[/\\]+$/, '').split(/[/\\]/).at(-1) || segment.value
-}
+import { parseUserMentions } from '@superone/shared/user-mention-parser'
+import { mentionLabel } from '@superone/shared/user-message-parts'
 
 /**
  * The text a user bubble puts on the clipboard: what the bubble *shows*, not
@@ -18,7 +13,7 @@ export function userMessageCopyText(message: ChatMessage): string {
   for (const block of message.content) {
     if (block.type !== 'text') continue
     const rendered = parseUserMentions(block.text)
-      .map((segment) => segment.type === 'text' ? segment.text : `@${mentionLabel(segment)}`)
+      .map((segment) => segment.type === 'text' ? segment.text : `@${mentionLabel(segment.kind, segment.value, segment.displayName)}`)
       .join('')
     if (rendered.trim()) parts.push(rendered)
   }

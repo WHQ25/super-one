@@ -1,4 +1,5 @@
 import type { AgentEvent, AgentStatus, AskUserQuestionRequest, ChatMessage, Locale } from '@superone/shared/agent-types'
+import type { PromptKeyword } from '@superone/shared/prompt-keywords'
 import type { ChatWindowRange } from './chat-window'
 
 /** Wire shape of the retry banner; mirrors what `ApiRetryIndicator` renders. */
@@ -58,6 +59,8 @@ export interface SessionProjection {
   queuedMessages?: ChatMessage[]
   /** Which steer actions the harness takes for a queued message. */
   queuedSteer?: { now: boolean; soon: boolean }
+  /** The prompt keywords the session's harness acts on; sent bubbles paint them. */
+  promptKeywords?: PromptKeyword[]
 }
 
 /** What a tap on a queued message's action asks native to do. */

@@ -512,6 +512,8 @@ export function MobileApp() {
   // Read at publish time, which runs from runtime callbacks rather than renders.
   const queuedSteerRef = useRef({ now: false, soon: false })
   queuedSteerRef.current = { now: canSteerQueued(selectedProvider), soon: canSteerQueuedSoon(selectedProvider, selectedAcpAgentId) }
+  const promptKeywordsRef = useRef(HARNESS_CAPABILITIES[selectedProvider].promptKeywords)
+  promptKeywordsRef.current = HARNESS_CAPABILITIES[selectedProvider].promptKeywords
   const syncSheets = (runtime: ChatRuntime, hydrate = false) => {
     if (connectionRef.current.epoch !== runtime.epoch) {
       connectionRef.current = { state: 'connected', epoch: runtime.epoch }
@@ -558,6 +560,7 @@ export function MobileApp() {
       slashCommandOutput: runtime.session.slashCommandOutput,
       ...(includeQueued ? { queuedMessages: runtime.session.queuedMessages } : {}),
       queuedSteer: runtime.streaming ? queuedSteerRef.current : { now: false, soon: false },
+      promptKeywords: [...promptKeywordsRef.current],
     }, hydrate)
     if (includeQueued) queuedSentRef.current = runtime.session.queuedMessages
     if (includeMentionArtwork) mentionArtworkRevisionRef.current = mentionArtworkRevision

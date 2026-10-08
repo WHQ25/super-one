@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { findPromptKeywords, hasPromptKeyword } from './prompt-keywords'
+import { findPromptKeywords, hasPromptKeyword, promptKeywordsIn } from './prompt-keywords'
 
 const words = (text: string, keyword: 'ultrathink' | 'ultracode') =>
   findPromptKeywords(text, [keyword]).map(({ start, end }) => text.slice(start, end))
@@ -61,5 +61,13 @@ describe('hasPromptKeyword', () => {
     expect(hasPromptKeyword('refactor the store, ultracode', 'ultracode')).toBe(true)
     expect(hasPromptKeyword('what is ultracode?', 'ultracode')).toBe(false)
     expect(hasPromptKeyword('/review ultracode', 'ultracode')).toBe(false)
+  })
+})
+
+describe('promptKeywordsIn', () => {
+  it('keeps the keywords the whole text asked for, in the order given', () => {
+    expect(promptKeywordsIn('ultracode it, ultrathink first', ['ultrathink', 'ultracode'])).toEqual(['ultrathink', 'ultracode'])
+    expect(promptKeywordsIn('/goal ultracode ship it, ultrathink first', ['ultrathink', 'ultracode'])).toEqual(['ultrathink'])
+    expect(promptKeywordsIn('ultrathink ultracode', [])).toEqual([])
   })
 })

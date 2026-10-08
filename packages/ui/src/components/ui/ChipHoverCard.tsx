@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { HoverCard, HoverCardContent, HoverCardTrigger } from '@superone/ui/components/ui/hover-card'
+import { HoverCard, HoverCardContent, HoverCardTrigger } from './hover-card'
 
 /**
  * Hover card shared by chat chips (composer and sent bubble): a header with the

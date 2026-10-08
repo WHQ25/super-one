@@ -1,4 +1,4 @@
-import type { ComponentPropsWithoutRef, ReactNode } from 'react'
+import type { ComponentPropsWithoutRef, ComponentPropsWithRef, ReactNode } from 'react'
 import { cn } from '../../lib/utils'
 
 /**
@@ -20,6 +20,39 @@ export function MentionChipBody({ icon, label, iconProps }: {
         {first}
       </span>
       {rest.join('')}
+    </span>
+  )
+}
+
+/**
+ * Shared shell for every chat chip (mentions, attachments, pasted text),
+ * composer + bubble, desktop + phone: `[icon] [label]` in the blended style, no fill.
+ * Bubble: parent .user-text-with-mentions is normal inline flow.
+ * Composer: .mention-chip uses vertical-align: baseline in the paragraph.
+ * Remaining props and `ref` land on the outer span, so a file chip can take its
+ * click and Radix `asChild` context-menu trigger; `iconProps` make the icon its drag handle.
+ */
+export function MentionChipContent({
+  kind,
+  icon,
+  label,
+  iconProps,
+  className,
+  ...rest
+}: Omit<ComponentPropsWithRef<'span'>, 'children'> & {
+  kind?: string
+  icon: ReactNode
+  label: string
+  iconProps?: ComponentPropsWithoutRef<'span'>
+}) {
+  return (
+    <span
+      {...rest}
+      data-mention-kind={kind}
+      data-selection-fill=""
+      className={cn('mention-chip mention-chip--blended select-none', className)}
+    >
+      <MentionChipBody icon={icon} label={label} iconProps={iconProps} />
     </span>
   )
 }

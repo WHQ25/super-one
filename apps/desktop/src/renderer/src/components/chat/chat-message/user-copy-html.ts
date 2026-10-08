@@ -1,10 +1,5 @@
-import { escapeHtml, markSuperOneCopy, mentionCopyHtml, pasteCopyHtml, type CopiedMention } from '@/lib/clipboard'
-import type { UserMessagePart } from './user-message-parts'
-
-/** What a mention chip copies as in plain text: a path mention keeps its path. */
-export function mentionCopyText({ kind, value, displayName }: CopiedMention): string {
-  return `@${kind === 'file' || kind === 'directory' || kind === 'agent' ? value : displayName || value}`
-}
+import { mentionCopyText, type UserMessagePart } from '@superone/shared/user-message-parts'
+import { escapeHtml, markSuperOneCopy, mentionCopyHtml, pasteCopyHtml } from '@/lib/clipboard'
 
 /**
  * HTML flavour of a copied user message: its text, images, mentions and paste

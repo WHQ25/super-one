@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { AttachmentOriginalStatus, ImageAttachment } from '@superone/shared/agent-types'
-import { AttachmentChip } from './attachment-chip'
+import { AttachmentChipPresenter } from '@superone/chat-view/presenters/AttachmentChip'
+import { DesktopUserBubblePorts } from './user-bubble-ports'
 
 const PHOTO: ImageAttachment = {
   id: 'photo',
@@ -22,7 +23,7 @@ function Harness({ status, width = 560 }: { status: AttachmentOriginalStatus | u
   return (
     <div style={{ width }} className="rounded-xl border border-border bg-background px-3 py-2 text-sm">
       <span>Use this as the first frame </span>
-      <AttachmentChip
+      <AttachmentChipPresenter
         att={att}
         original={{ status: current, onRetry: () => setCurrent({ state: 'uploading', progress: 0 }) }}
       />
@@ -35,6 +36,7 @@ const meta: Meta<typeof Harness> = {
   title: 'Chat/AttachmentChip/Full-size Original',
   component: Harness,
   parameters: { layout: 'padded' },
+  decorators: [(Story) => <DesktopUserBubblePorts><Story /></DesktopUserBubblePorts>],
 }
 
 export default meta

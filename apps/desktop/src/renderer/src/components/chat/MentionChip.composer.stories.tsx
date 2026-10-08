@@ -10,6 +10,7 @@ import { rememberMcpMentionIcons } from '@/components/mcp-apps/mention-icons'
 import { MentionNode } from './mention-node'
 import { AttachmentNode } from './attachment-node'
 import { PasteChipNode } from './paste-chip-node'
+import { DesktopUserBubblePorts } from './user-bubble-ports'
 import { ChipSelection } from './chip-selection'
 
 const PROJECT = '/storybook/mention-composer'
@@ -113,6 +114,8 @@ const meta = {
   title: 'Chat/MentionChip/Composer',
   component: Composer,
   parameters: { layout: 'padded' },
+  // The production chips draw their icons and actions through the composer's ports.
+  decorators: [(Story) => <DesktopUserBubblePorts><Story /></DesktopUserBubblePorts>],
   play: async ({ canvasElement }) => {
     const chip = await new Promise<HTMLElement>((resolve) => {
       const find = () => {

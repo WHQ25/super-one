@@ -8,7 +8,7 @@ import { useResolvedMediaSrc } from '@/hooks/use-resolved-media-src'
 import { resolveMediaSrcForProject } from '@/lib/remote-media-url'
 import { toLocalFileUrl } from '@/lib/path-utils'
 import { useAppStore, selectEffectiveProjectRoot } from '@/stores/app'
-import { ChipHoverCard } from './ChipHoverCard'
+import { ChipHoverCard } from '@superone/ui/components/ui/ChipHoverCard'
 import { ImageLightbox } from './image-lightbox'
 
 /** Image art lives inside the existing file drag handle; the image itself never drags. */

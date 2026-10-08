@@ -21,6 +21,7 @@
     "./bridge": "./src/bridge.ts",
     "./fixtures/native-host": "./src/fixtures/native-host.ts",
     "./fixtures/tool-catalog": "./src/fixtures/tool-catalog.ts",
+    "./fixtures/user-bubble": "./src/fixtures/user-bubble.ts",
     "./fixtures/widget-mockup": "./src/fixtures/widget-mockup.ts",
     "./host-html": "./src/host-html.ts",
     "./markdown": "./src/markdown.ts",
@@ -115,6 +116,13 @@
     "./transcript-rows": "./src/transcript-rows.ts",
     "./mod-ui": "./src/mod-ui/index.ts",
     "./presenters/SessionChip": "./src/presenters/SessionChip.tsx",
+    "./presenters/AttachmentChip": "./src/presenters/AttachmentChip.tsx",
+    "./presenters/MessageContextChips": "./src/presenters/MessageContextChips.tsx",
+    "./presenters/PasteChip": "./src/presenters/PasteChip.tsx",
+    "./presenters/UserMessageContent": "./src/presenters/UserMessageContent.tsx",
+    "./presenters/UserSelectionChip": "./src/presenters/UserSelectionChip.tsx",
+    "./presenters/UserText": "./src/presenters/UserText.tsx",
+    "./presenters/user-bubble-ports": "./src/presenters/user-bubble-ports.tsx",
     "./presenters/session-link-cache": "./src/presenters/session-link-cache.ts"
   },
   "scripts": {

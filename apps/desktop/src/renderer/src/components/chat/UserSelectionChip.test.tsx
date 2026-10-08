@@ -2,7 +2,13 @@
 
 import { act, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { UserSelectionChip } from './UserSelectionChip'
+import { UserSelectionChip as SharedUserSelectionChip } from '@superone/chat-view/presenters/UserSelectionChip'
+import { DesktopUserBubblePorts } from './user-bubble-ports'
+
+/** The quote chip with the desktop's highlighted quote body. */
+const UserSelectionChip = (props: Parameters<typeof SharedUserSelectionChip>[0]) => (
+  <DesktopUserBubblePorts><SharedUserSelectionChip {...props} /></DesktopUserBubblePorts>
+)
 
 let mockCurrentFolder: string | null = null
 vi.mock('@/stores/app', () => ({

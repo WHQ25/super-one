@@ -87,3 +87,12 @@ export function findPromptKeywords(text: string, keywords: readonly PromptKeywor
     .flatMap((keyword) => MATCHERS[keyword](text).map(([start, end]) => ({ keyword, start, end })))
     .sort((a, b) => a.start - b.start)
 }
+
+/**
+ * Which of `keywords` the whole sent `text` asked for. A bubble that shows
+ * only part of what was sent (a goal's objective without its `/goal`) paints
+ * just these, so it never lights a word the harness did not act on.
+ */
+export function promptKeywordsIn(text: string, keywords: readonly PromptKeyword[]): PromptKeyword[] {
+  return keywords.filter((keyword) => hasPromptKeyword(text, keyword))
+}

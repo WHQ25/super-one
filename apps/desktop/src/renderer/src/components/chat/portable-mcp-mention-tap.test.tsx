@@ -17,19 +17,22 @@ function message() {
   return render(<PortableMessage message={sent} scheme="dark" pendingPermission={null} />)
 }
 
+/** The sent MCP chips, in message order. */
+const chips = (container: HTMLElement) => [...container.querySelectorAll<HTMLElement>('[data-mention-kind="mcp-resource"]')]
+
 /** The phone has no hover, so a sent MCP chip opens the desktop's card on tap. */
 describe('a sent MCP chip in the portable transcript', () => {
   it('opens the text the message carried for it', async () => {
-    message()
+    const { container } = message()
     expect(screen.queryByText('Grade 8.8 stainless')).toBeNull()
-    fireEvent.click(screen.getByTitle(bolt))
+    fireEvent.click(chips(container)[0]!)
     expect(await screen.findByText('Grade 8.8 stainless')).toBeTruthy()
     expect(screen.getAllByText('cad://parts/hex-bolt').length).toBeGreaterThan(0)
   })
 
   it('says only the link went when nothing was inlined', async () => {
-    message()
-    fireEvent.click(screen.getByTitle(nut))
+    const { container } = message()
+    fireEvent.click(chips(container)[1]!)
     expect(await screen.findByText(/Only the link was sent/)).toBeTruthy()
   })
 

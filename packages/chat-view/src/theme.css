@@ -3,6 +3,7 @@
 @import "@superone/ui/styles/animations.css";
 @import "@superone/ui/styles/theme.css";
 @import "@superone/ui/styles/chat-md.css";
+@import "@superone/ui/styles/prompt-keyword.css";
 @import "katex/dist/katex.min.css";
 @source "./**/*.{ts,tsx}";
 @source "../../../node_modules/streamdown/dist/*.js";

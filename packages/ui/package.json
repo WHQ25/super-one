@@ -8,7 +8,7 @@
     "./styles/*": "./src/styles/*",
     "./components/ui/*": "./src/components/ui/*.tsx",
     "./components/harness/*": "./src/components/harness/*.tsx",
-    "./lib/utils": "./src/lib/utils.ts"
+    "./lib/*": "./src/lib/*.ts"
   },
   "dependencies": {
     "@lobehub/icons": "^5.0.1",

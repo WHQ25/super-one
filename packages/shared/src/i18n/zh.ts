@@ -3222,6 +3222,10 @@ export const zh: Messages = {
       failed: 'API 请求失败',
       tryAgain: '再试一次',
     },
+    messageTime: {
+      today: '今天 {{time}}',
+      yesterday: '昨天 {{time}}',
+    },
     compaction: {
       compacted: '对话已压缩',
       compacting: '正在压缩对话…',

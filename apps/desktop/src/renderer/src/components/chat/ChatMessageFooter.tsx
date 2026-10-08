@@ -13,6 +13,7 @@ import { isRealtimeVoiceMessage } from './codex-realtime-messages'
 import { useStallLevel, getStallColor } from '@/lib/stall-utils'
 import { tryCopy } from '@/lib/clipboard'
 import { MessageErrorBadge } from './MessageErrorBadge'
+import { MessageTimestamp } from '@superone/chat-view/presenters/MessageTime'
 import {
   formatTerminalReason,
   turnFooterModel,
@@ -281,6 +282,9 @@ export function DurationFooter({
           </>
         )
       })()}
+      {!isStreaming && (
+        <MessageTimestamp iso={message.metadata?.completedAt} className="hidden group-hover/footer:inline" />
+      )}
       {showFork && (
         <ForkButton
           message={message}

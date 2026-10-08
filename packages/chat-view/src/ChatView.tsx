@@ -6,6 +6,7 @@ import { deliverDetail } from './detail-stream'
 import { applyDocumentTheme, initialDocumentScheme } from './document-theme'
 import { AsyncQuestionMessagesContext } from './PortableAsyncQuestion'
 import {
+  Fragment,
   Component,
   useCallback,
   useEffect,
@@ -29,6 +30,8 @@ import {
   TurnMetaIndicator,
 } from './presenters/ChatMessageIndicators'
 import { transcriptRow } from './transcript-rows'
+import { dateSeparators } from './presenters/message-time'
+import { MessageDateSeparator } from './presenters/MessageTime'
 import { ZERO_TURN_TOKENS } from './presenters/turn-footer-model'
 import { CHAT_WINDOW, initialChatWindow, loadPreviousChatWindow, loadNextChatWindow, normalizeChatWindow, type ChatWindowRange } from './chat-window'
 import { exitMcpAppFullscreen, forgetMcpAppArrivals, noteMcpAppArrivals } from './mcp-app-document'
@@ -629,6 +632,10 @@ export function ChatView() {
     [state.navigation, state.messages.length, tailId, state.session.sessionStatus, state.transcriptEpoch])
   const timeline = useMemo(() => compactTimeline(state.messages, navigation),
     [navigation, state.messages.length, tailId, state.transcriptEpoch])
+  const tailCreatedAt = state.messages.at(-1)?.createdAt
+  const dateSeparatorAt = useMemo(() => dateSeparators(state.messages, Date.now()),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [state.messages.length, tailId, tailCreatedAt, state.transcriptEpoch])
   const visibleStart = compactVisibleStart(state.messages, timeline, state.expandLevel)
   // Like desktop, the rail lists only expanded turns plus a single compact tick.
   const boundary = compactBoundary(timeline, state.expandLevel)
@@ -703,7 +710,8 @@ export function ChatView() {
               </div>
             )
           }
-          return (
+          const separatorAt = dateSeparatorAt.get(message.id)
+          const turn = (
             <PortableMessage
               key={message.id}
               message={message}
@@ -719,6 +727,8 @@ export function ChatView() {
               promptKeywords={promptKeywords}
             />
           )
+          if (separatorAt === undefined) return turn
+          return <Fragment key={message.id}><MessageDateSeparator at={separatorAt} />{turn}</Fragment>
         })}
       </AsyncQuestionMessagesContext.Provider>
       {visible.length > 0 && moreAfter && (

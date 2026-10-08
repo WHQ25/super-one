@@ -38,6 +38,7 @@ import { ReasoningBlock } from './ReasoningBlock'
 import { promptKeywordsIn } from '@superone/shared/prompt-keywords'
 import { UserMessageContentPresenter } from '@superone/chat-view/presenters/UserMessageContent'
 import { MessageContextChips } from '@superone/chat-view/presenters/MessageContextChips'
+import { MessageTimestamp } from '@superone/chat-view/presenters/MessageTime'
 import { DesktopUserBubblePorts } from './user-bubble-ports'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { useActiveHarness } from '@/hooks/useHarnessTheme'
@@ -245,6 +246,7 @@ export const ChatMessage = memo(function ChatMessage({
     (!isCollab && !hideUserActions) || (isCollab && userText.length > 0)
   ) ? (
     <div className="relative mt-1 flex items-center gap-1 opacity-0 group-hover/copy:opacity-100">
+      <MessageTimestamp iso={message.createdAt} className="mr-1 text-xs" />
       {!isCollab && message.checkpointId && (
         <RewindButton
           checkpointId={message.checkpointId}

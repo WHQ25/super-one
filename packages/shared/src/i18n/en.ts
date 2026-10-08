@@ -3136,6 +3136,10 @@ export type Messages = {
       failed: string
       tryAgain: string
     }
+    messageTime: {
+      today: string
+      yesterday: string
+    }
     compaction: {
       compacted: string
       compacting: string
@@ -7425,6 +7429,10 @@ export const en: Messages = {
       exhausted: 'API retries exhausted',
       failed: 'API request failed',
       tryAgain: 'Try Again',
+    },
+    messageTime: {
+      today: 'Today {{time}}',
+      yesterday: 'Yesterday {{time}}',
     },
     compaction: {
       compacted: 'Conversation Compacted',

@@ -42,6 +42,8 @@ import { ChatRootContext } from './is-focus-in-chat'
 import { DesktopModUi } from '@/lib/mod-ui/DesktopModUi'
 import { ModPaneDockSync } from './mod/ModSurfaces'
 import type { CodexPlanApprovalState } from '@superone/shared/agent-types'
+import { dateSeparators } from '@superone/chat-view/presenters/message-time'
+import { MessageDateSeparator } from '@superone/chat-view/presenters/MessageTime'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { isGrokAcpAgent } from '@superone/shared/acp-brand'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
@@ -204,6 +206,13 @@ function ChatTranscript({
   useEffect(() => { setRenderCount(INITIAL_RENDER_COUNT) }, [displayedSessionId])
   const hasMore = renderCount < visibleMessages.length
   const renderedMessages = hasMore ? visibleMessages.slice(-renderCount) : visibleMessages
+  const messagesTailCreatedAt = displayMessages[messagesLen - 1]?.createdAt
+  const dateSeparatorAt = useMemo(
+    () => dateSeparators(displayMessages, Date.now()),
+    // Same churn guard as compactIndices; the tail's createdAt can still be corrected mid-turn.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [messagesLen, messagesTailId, messagesTailCreatedAt]
+  )
   // A fallback id can name a model from either catalog: model_fallback is emitted
   // by the Claude SDK and by the ACP backends.
   const modelCatalog = useMemo(() => [...claudeModels, ...acpModels], [claudeModels, acpModels])
@@ -393,8 +402,11 @@ function ChatTranscript({
                   </div>
                 )
               }
+              // Only plain turns open a day: every row above is a system row.
+              const separatorAt = dateSeparatorAt.get(msg.id)
               return (
                 <div key={msg.id} data-message-id={msg.id} className="chat-message-wrapper">
+                  {separatorAt !== undefined && <MessageDateSeparator at={separatorAt} />}
                   <ChatMessage message={msg} sessionStatus={sessionStatus} isLastAssistant={msg.id === displayLastAssistantMessageId} />
                 </div>
               )

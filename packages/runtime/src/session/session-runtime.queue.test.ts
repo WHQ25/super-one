@@ -245,3 +245,100 @@ describe('SessionRuntime send queue', () => {
     expect(done.transcript.filter((t) => t.role === 'user').map((t) => t.id)).toEqual(['u1', 'u2'])
   })
 })
+
+describe('SessionRuntime send of a message that never ran', () => {
+  const userIds = (s: NodeSessionRecord) => s.transcript.filter((t) => t.role === 'user').map((t) => t.id)
+  const failureOf = (s: NodeSessionRecord, id: string) => s.transcript.find((t) => t.id === id)?.metadata?.sendFailure
+
+  it('runs a message whose runner failed to start again under its id, then holds it once answered', async () => {
+    const texts: string[] = []
+    let spawnable = false
+    const runner: TurnRunner = async ({ text }) => {
+      texts.push(text)
+      if (!spawnable) throw new Error('spawn claude ENOENT')
+      return { finalText: `re: ${text}`, providerResume: null }
+    }
+    const { store, events, leases } = memoryPorts()
+    const runtime = new SessionRuntime(store, events, leases, 'env-retry', runner)
+    const session = runtime.create({ projectId: 'p', harnessId: 'claude' })
+    const send = () => runtime.send({ sessionId: session.sessionId, text: 'task', clientMessageId: 'u1', client, ...lease })
+
+    await send()
+    const failed = await waitIdle(runtime, session.sessionId)
+    expect(failed.status).toBe('idle')
+    expect(failureOf(failed, 'u1')).toEqual({ error: 'spawn claude ENOENT' })
+    expect(store.loadAll()[0] && failureOf(store.loadAll()[0]!, 'u1')).toEqual({ error: 'spawn claude ENOENT' })
+    expect(runtime.listMessages({ sessionId: session.sessionId }).messages[0]?.metadata).toEqual({ sendFailure: { error: 'spawn claude ENOENT' } })
+
+    spawnable = true
+    await send()
+    const answered = await waitIdle(runtime, session.sessionId)
+    expect(texts).toEqual(['task', 'task'])
+    expect(userIds(answered)).toEqual(['u1'])
+    expect(failureOf(answered, 'u1')).toBeUndefined()
+    expect(answered.transcript.at(-1)).toMatchObject({ role: 'assistant', text: 're: task' })
+
+    await send()
+    await waitIdle(runtime, session.sessionId)
+    expect(texts).toHaveLength(2)
+  })
+
+  it('holds a message whose reply started and then failed, and fails the one queued behind it', async () => {
+    const texts: string[] = []
+    const runner: TurnRunner = async ({ text, onDelta }) => {
+      texts.push(text)
+      onDelta('working')
+      await new Promise((r) => setTimeout(r, 20))
+      throw new Error('provider overloaded')
+    }
+    const { store, events, leases } = memoryPorts()
+    const runtime = new SessionRuntime(store, events, leases, 'env-retry-err', runner)
+    const session = runtime.create({ projectId: 'p', harnessId: 'opencode' })
+    const send = (text: string, id: string) => runtime.send({ sessionId: session.sessionId, text, clientMessageId: id, client, ...lease })
+
+    await send('first', 'u1')
+    await send('second', 'u2')
+    const done = await waitIdle(runtime, session.sessionId)
+    expect(done.status).toBe('error')
+    expect(failureOf(done, 'u1')).toBeUndefined()
+    expect(failureOf(done, 'u2')?.error).toMatch(/did not run/)
+
+    // The session error belongs to u1's reply: its resend is held.
+    await send('first', 'u1')
+    expect(texts).toEqual(['first'])
+  })
+
+  it('turns a queued message into a failed row across a node restart, and runs its resend', async () => {
+    const texts: string[] = []
+    const runner: TurnRunner = async ({ text, onDelta }) => {
+      texts.push(text)
+      onDelta('working')
+      return new Promise(() => {})
+    }
+    const { store, events, leases } = memoryPorts()
+    const before = new SessionRuntime(store, events, leases, 'env-restart', runner)
+    const session = before.create({ projectId: 'p', harnessId: 'opencode' })
+    await before.send({ sessionId: session.sessionId, text: 'first', clientMessageId: 'u1', client, ...lease })
+    await before.send({ sessionId: session.sessionId, text: 'second', clientMessageId: 'u2', client, ...lease })
+    // Running: a resend is held.
+    await before.send({ sessionId: session.sessionId, text: 'first', clientMessageId: 'u1', client, ...lease })
+    expect(texts).toEqual(['first'])
+
+    const afterTexts: string[] = []
+    const after = new SessionRuntime(store, events, leases, 'env-restart', async ({ text }) => {
+      afterTexts.push(text)
+      return { finalText: text, providerResume: null }
+    })
+    const restored = after.get(session.sessionId)!
+    expect(restored.status).toBe('interrupted')
+    expect(failureOf(restored, 'u1')).toBeUndefined()
+    expect(failureOf(restored, 'u2')?.error).toMatch(/restarted/)
+
+    await after.send({ sessionId: session.sessionId, text: 'first', clientMessageId: 'u1', client, ...lease })
+    await after.send({ sessionId: session.sessionId, text: 'second', clientMessageId: 'u2', client, ...lease })
+    const done = await waitIdle(after, session.sessionId)
+    expect(afterTexts).toEqual(['second'])
+    expect(userIds(done)).toEqual(['u1', 'u2'])
+    expect(failureOf(done, 'u2')).toBeUndefined()
+  })
+})

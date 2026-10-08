@@ -163,7 +163,14 @@ interface TurnOpts extends MessageDisplayFields {
   source?: ChatMessageSource
   /** Claude Ultracode from this turn on; omitted keeps the live process's. */
   ultracode?: boolean
+  /** The transcript user row this turn runs; absent for a model-only host wake. */
+  userBlockId?: string
 }
+
+/** A queued message whose turn never started because the node restarted. */
+const QUEUED_SEND_LOST_ON_RESTART = 'The node restarted before this queued message ran'
+/** A queued message dropped because the turn ahead of it stopped or failed. */
+const QUEUED_SEND_DROPPED = 'The turn before this queued message stopped, so it did not run'
 
 /** Normalize optional string settings: empty → null; non-string → leave as-is (caller filters). */
 function normalizeSettingValue(value: unknown): string | null | undefined {
@@ -410,6 +417,12 @@ export class SessionRuntime {
       if (session.status === 'streaming') {
         session.status = 'interrupted'
         changed = true
+      }
+      // The FIFO is in memory only: what it held never ran, so each queued
+      // message becomes a failed row the user can resend, rather than work the
+      // node starts on its own after the turn ahead of it was interrupted.
+      for (const block of session.transcript) {
+        if (block.queued && this.markSendFailed(session, block.id, QUEUED_SEND_LOST_ON_RESTART)) changed = true
       }
       // No live permissionWaiters after restart — drop sticky pending UI or clients hang.
       if (session.pendingInteraction != null) {
@@ -996,10 +1009,10 @@ export class SessionRuntime {
       throw Object.assign(new Error('session is closed'), { code: 'failed_precondition' })
     }
     // Each delivery attempt carries its own RPC idempotency key, so a Resend of
-    // a message this node already took (queued, running or answered) is held here.
-    if (input.clientMessageId && session.transcript.some((block) => block.role === 'user' && block.id === input.clientMessageId)) {
-      return this.clone(session)
-    }
+    // a message this node already took (queued, running or answered) is held
+    // here. Only a message that never reached the agent runs again.
+    const taken = this.userRow(session, input.clientMessageId)
+    if (taken && !taken.metadata?.sendFailure) return this.clone(session)
 
     // Turn payload wins; omitted/empty keys fall back to durable session settings
     // so remote clients need not re-send model/effort/etc. every turn.
@@ -1054,15 +1067,7 @@ export class SessionRuntime {
         this.beginTurn(session, turnOpts)
         return this.clone(session)
       }
-      const q = this.turnQueues.get(session.sessionId) ?? []
-      q.push(turnOpts)
-      this.turnQueues.set(session.sessionId, q)
-      this.events.appendSession({
-        sessionId: session.sessionId,
-        eventType: SESSION_DURABLE_EVENT.statusChanged,
-        payload: { status: 'streaming', queued: true },
-        causationRequestId: input.requestId,
-      })
+      this.enqueueTurn(session, turnOpts)
       return this.clone(session)
     }
 
@@ -1141,15 +1146,7 @@ export class SessionRuntime {
         this.beginTurn(session, turnOpts)
         return this.clone(session)
       }
-      const q = this.turnQueues.get(session.sessionId) ?? []
-      q.push(turnOpts)
-      this.turnQueues.set(session.sessionId, q)
-      this.events.appendSession({
-        sessionId: session.sessionId,
-        eventType: SESSION_DURABLE_EVENT.statusChanged,
-        payload: { status: 'streaming', queued: true },
-        causationRequestId: input.requestId,
-      })
+      this.enqueueTurn(session, turnOpts)
       return this.clone(session)
     }
 
@@ -1214,6 +1211,18 @@ export class SessionRuntime {
   private appendUserMessage(session: NodeSessionRecord, opts: TurnOpts): void {
     // The turn still runs; the transcript just keeps no bubble for a model-only wake.
     if (opts.source === 'task-notification' && isModelOnlyHostWake(opts.text)) return
+    const failed = this.userRow(session, opts.clientMessageId)
+    if (failed?.metadata?.sendFailure) {
+      // Sent again under the same id: the row runs now and is no longer failed.
+      const { sendFailure: _, ...metadata } = failed.metadata
+      if (Object.keys(metadata).length > 0) failed.metadata = metadata
+      else delete failed.metadata
+      opts.userBlockId = failed.id
+      session.updatedAt = Date.now()
+      this.persist(session)
+      this.appendAgentEvent(session.sessionId, { type: 'user_message_send_retried', clientMessageId: failed.id }, opts.requestId)
+      return
+    }
     const userBlock: TranscriptBlock = {
       // Keep the same canonical id in both durable history and the event log.
       // Peers still receive the message; only the sender already has this id.
@@ -1226,6 +1235,7 @@ export class SessionRuntime {
       createdAt: Date.now(),
     }
     session.transcript.push(userBlock)
+    opts.userBlockId = userBlock.id
     session.updatedAt = Date.now()
 
     let autoTitle: string | null = null
@@ -1259,11 +1269,55 @@ export class SessionRuntime {
     }
   }
 
+  private userRow(session: NodeSessionRecord, id: string | undefined): TranscriptBlock | undefined {
+    return id ? session.transcript.find((block) => block.role === 'user' && block.id === id) : undefined
+  }
+
+  private appendAgentEvent(sessionId: string, event: AgentEvent, causationRequestId?: string): void {
+    this.events.appendSession({ sessionId, eventType: SESSION_DURABLE_EVENT.agentEvent, payload: { event }, causationRequestId })
+  }
+
+  /**
+   * Record that user row `id` never reached the agent, with the shared
+   * `metadata.sendFailure` marker every client renders as a failed row with
+   * Resend; a send of the same id then runs it again (see `send`). The caller
+   * persists. False when the row is gone (a model-only wake has none).
+   */
+  private markSendFailed(session: NodeSessionRecord, id: string | undefined, error: string): boolean {
+    const row = this.userRow(session, id)
+    if (!row) return false
+    delete row.queued
+    row.metadata = { ...row.metadata, sendFailure: { error } }
+    session.updatedAt = Date.now()
+    this.appendAgentEvent(session.sessionId, { type: 'user_message_send_failed', clientMessageId: row.id, error })
+    return true
+  }
+
+  /** Queue a turn behind the running one; its row is marked so a restart can tell it never ran. */
+  private enqueueTurn(session: NodeSessionRecord, opts: TurnOpts): void {
+    const row = this.userRow(session, opts.userBlockId)
+    if (row) {
+      row.queued = true
+      this.persist(session)
+    }
+    const q = this.turnQueues.get(session.sessionId) ?? []
+    q.push(opts)
+    this.turnQueues.set(session.sessionId, q)
+    this.events.appendSession({
+      sessionId: session.sessionId,
+      eventType: SESSION_DURABLE_EVENT.statusChanged,
+      payload: { status: 'streaming', queued: true },
+      causationRequestId: opts.requestId,
+    })
+  }
+
   private beginTurn(session: NodeSessionRecord, opts: TurnOpts): void {
     const sid = session.sessionId
     const prev = this.activeTurnCounts.get(sid) ?? 0
     this.activeTurnCounts.set(sid, prev + 1)
 
+    const row = this.userRow(session, opts.userBlockId)
+    if (row?.queued) delete row.queued
     session.status = 'streaming'
     session.updatedAt = Date.now()
     this.persist(session)
@@ -1351,6 +1405,10 @@ export class SessionRuntime {
     const assistantId = randomUUID()
     let assistantText = ''
     const requestId = opts.requestId
+    // Whether the agent took this message up: any output or interaction for the
+    // turn. A runner that throws before it (a harness that cannot spawn) never
+    // delivered the message, so the failure is the message's, not a reply's.
+    let started = false
     const permissionMode =
       typeof opts.permissionMode === 'string' && opts.permissionMode.trim()
         ? opts.permissionMode.trim()
@@ -1382,6 +1440,7 @@ export class SessionRuntime {
         ultracode: opts.ultracode,
         signal: abort.signal,
         onDelta: (delta) => {
+          started = true
           if (abort.signal.aborted) return
           assistantText += delta
           this.events.appendSession({
@@ -1392,21 +1451,20 @@ export class SessionRuntime {
           })
         },
         onEvent: (event) => {
+          started = true
           this.projectOnEvent(session, event, abort.signal, requestId, (delta) => {
             assistantText += delta
           })
         },
         onAgentEvent: (event) => {
+          // A setting the runner reconciles before starting is not a reply.
+          if (event.type !== 'agent_setting_change') started = true
           if (abort.signal.aborted) return
-          this.events.appendSession({
-            sessionId: session.sessionId,
-            eventType: SESSION_DURABLE_EVENT.agentEvent,
-            payload: { event },
-            causationRequestId: requestId,
-          })
+          this.appendAgentEvent(session.sessionId, event, requestId)
         },
         onAmbientEvent: (event) => this.handleAmbientEvent(session.sessionId, event),
         onPermission: (interaction) => {
+          started = true
           // Modes that skip interactive permission prompts (desktop parity).
           if (
             permissionMode === 'bypassPermissions' ||
@@ -1421,12 +1479,12 @@ export class SessionRuntime {
           }
           return this.waitForPermissionDecision(session, interaction, abort.signal, requestId)
         },
-        onElicitation: (interaction, signal) => this.requestElicitation(session.sessionId, interaction,
-          signal ? AbortSignal.any([abort.signal, signal]) : abort.signal, requestId),
+        onElicitation: (interaction, signal) => (started = true, this.requestElicitation(session.sessionId, interaction,
+          signal ? AbortSignal.any([abort.signal, signal]) : abort.signal, requestId)),
         onQuestion: (interaction) =>
-          this.waitForQuestionDecision(session, interaction, abort.signal, requestId),
+          (started = true, this.waitForQuestionDecision(session, interaction, abort.signal, requestId)),
         onPlan: (interaction) =>
-          this.waitForPlanDecision(session, interaction, abort.signal, requestId),
+          (started = true, this.waitForPlanDecision(session, interaction, abort.signal, requestId)),
       })
 
       if (session.closed) {
@@ -1485,7 +1543,21 @@ export class SessionRuntime {
       } else {
         // Only mark error if this is the last active turn.
         const remainingPeers = Math.max(0, (this.activeTurnCounts.get(session.sessionId) ?? 1) - 1)
-        if (remainingPeers <= 0) {
+        if (!started && this.markSendFailed(session, opts.userBlockId, (err as Error).message)) {
+          // Nothing ran: the failure sits on the row, and work queued behind it may still run.
+          const fifo = this.turnQueues.get(session.sessionId)?.length ?? 0
+          if (remainingPeers <= 0 && fifo === 0) {
+            session.status = 'idle'
+            this.events.appendSession({
+              sessionId: session.sessionId,
+              eventType: SESSION_DURABLE_EVENT.statusChanged,
+              payload: { status: 'idle' },
+              causationRequestId: requestId,
+            })
+          } else if (remainingPeers <= 0) {
+            session.status = 'streaming'
+          }
+        } else if (remainingPeers <= 0) {
           session.status = 'error'
           this.events.appendSession({
             sessionId: session.sessionId,
@@ -1540,7 +1612,13 @@ export class SessionRuntime {
           }
         }
       } else if (session.closed || session.status === 'interrupted' || session.status === 'error') {
+        const dropped = this.turnQueues.get(sid) ?? []
         this.turnQueues.delete(sid)
+        // Queued messages never ran: keep each as a failed row to resend.
+        if (!session.closed) {
+          const marked = dropped.filter((item) => this.markSendFailed(session, item.userBlockId, QUEUED_SEND_DROPPED))
+          if (marked.length > 0) this.persist(session)
+        }
       }
 
       const activeAborts = this.aborts.get(sid)

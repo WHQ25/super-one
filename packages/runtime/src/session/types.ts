@@ -1,7 +1,7 @@
 import type { McpAppsBinding, McpAppOrigin, McpAppsProvider } from '@superone/shared/mcp-apps'
 import type { SessionTurnEvent } from '@superone/shared/environment'
 import type { MessageDisplayFields } from '@superone/shared/message-display'
-import type { AgentEvent, ChatMessageSource, PermissionRequest } from '@superone/shared/agent-types'
+import type { AgentEvent, ChatMessageSource, PermissionRequest, SendFailure } from '@superone/shared/agent-types'
 import type { ModUiOp, ModUiRequest, ModUiResult } from '@superone/shared/mod-ui'
 
 export type SessionStatus =
@@ -108,6 +108,13 @@ export interface TranscriptBlock extends MessageDisplayFields {
   role: 'user' | 'assistant' | 'system'
   text: string
   createdAt: number
+  /**
+   * The shared send-failure marker (`ChatMessage.metadata.sendFailure`): this
+   * user message never reached the agent, so a send of its id runs it again.
+   */
+  metadata?: { sendFailure?: SendFailure }
+  /** Waiting in the runtime's in-memory FIFO, so a restart can tell it never ran. */
+  queued?: boolean
 }
 
 export interface PendingInteraction extends Pick<PermissionRequest, 'schemaForm' | 'elicitationForm' | 'subtitle' | 'riskLevel' | 'supportsAlwaysPersist' | 'inputRequest'> {

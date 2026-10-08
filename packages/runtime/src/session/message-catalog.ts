@@ -456,7 +456,7 @@ export function buildSessionMessageCatalog(
     // createdAt is the completion time.
     const metadata = role === 'assistant'
       ? { ...extra.metadata, completedAt: new Date(createdAt).toISOString() }
-      : extra.metadata
+      : block.metadata?.sendFailure ? { sendFailure: block.metadata.sendFailure } : extra.metadata
     out.push({
       id: block.id,
       role,

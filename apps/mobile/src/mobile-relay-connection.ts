@@ -1,6 +1,6 @@
 import { networkLedger, networkMetricsEnabled } from './network-ledger'
 import { RelayClient, type HostLink, type MobileIdentity, type OpenSocket } from '@superone/relay-client'
-import { ReconnectController, type ConnectionState } from './reconnect-controller'
+import { ReconnectController, RECONNECT_DELAYS_MS, type ConnectionState } from './reconnect-controller'
 import type { ReconnectInfo } from './device-status'
 import type { LanAddress } from './device-discovery'
 import { logConnection } from './relay-debug'
@@ -49,6 +49,15 @@ export function createMobileRelayConnection(hooks: MobileRelayConnectionHooks): 
   let peerLost = false
   let peerRestore: Promise<void> | null = null
   /**
+   * Bumped by every verified handshake. A restore that spans one ran (at least
+   * partly) on a channel the desktop has since replaced, so it runs again.
+   */
+  let channelGeneration = 0
+  /** False between `peer_disconnected` and the desktop's next handshake. */
+  let peerPresent = true
+  /** Ends a restore backoff early: a new channel, a departed peer or a lost socket. */
+  let wakeRestore: (() => void) | null = null
+  /**
    * A handshake seen on the current socket. The desktop sends one whenever a
    * mobile attaches, and it can land while the `/status` probe is still in
    * flight — the probe then answers from a stale heartbeat, but a handshake is
@@ -72,19 +81,47 @@ export function createMobileRelayConnection(hooks: MobileRelayConnectionHooks): 
     hooks.onConnection(state, epoch)
   }
   const restore = () => hooks.restore(client)
+  const peerRestoreWanted = () => !stopped && peerLost && peerPresent && client.connected && !reconnectController.isActive
+  /**
+   * Restores over the desktop's current channel until one restore completes on
+   * it. Nothing external is guaranteed to come along after a failure — the socket
+   * stays open and the desktop may never handshake again — so failures back off
+   * and retry here rather than wait for a disconnect.
+   */
   const restorePeer = () => {
-    if (peerRestore) return
-    peerRestore = restore()
-      .then((epoch) => {
-        if (stopped) return
-        peerLost = false
-        report('connected', epoch)
-        hooks.onStatus('')
-      })
-      .catch((error) => {
-        if (!stopped) hooks.onStatus(error instanceof Error ? error.message : 'rehydrate failed')
-      })
-      .finally(() => { peerRestore = null })
+    if (peerRestore) {
+      wakeRestore?.()
+      return
+    }
+    peerRestore = (async () => {
+      let failures = 0
+      while (peerRestoreWanted()) {
+        const generation = channelGeneration
+        try {
+          const epoch = await restore()
+          if (generation !== channelGeneration) continue
+          if (!peerRestoreWanted()) return
+          peerLost = false
+          report('connected', epoch)
+          hooks.onStatus('')
+          return
+        } catch (error) {
+          if (generation !== channelGeneration || !peerRestoreWanted()) continue
+          const delayMs = RECONNECT_DELAYS_MS[Math.min(failures++, RECONNECT_DELAYS_MS.length - 1)]
+          const reason = error instanceof Error ? error.message : 'rehydrate failed'
+          logConnection('restore retry', { transport: client.transport, reason, delayMs })
+          hooks.onStatus(`${reason} — retrying in ${delayMs / 1_000}s`)
+          await new Promise<void>((resolve) => {
+            const timer = setTimeout(() => wakeRestore?.(), delayMs)
+            wakeRestore = () => {
+              clearTimeout(timer)
+              wakeRestore = null
+              resolve()
+            }
+          })
+        }
+      }
+    })().finally(() => { peerRestore = null })
   }
   const reconnectController = new ReconnectController(
     redial,
@@ -138,6 +175,8 @@ export function createMobileRelayConnection(hooks: MobileRelayConnectionHooks): 
     onControl: (frame) => {
       if (frame.type === 'peer_disconnected') {
         peerLost = true
+        peerPresent = false
+        wakeRestore?.()
         report('offline', hooks.currentEpoch(client))
         hooks.onStatus('desktop disconnected — waiting to reconnect')
         return
@@ -164,8 +203,11 @@ export function createMobileRelayConnection(hooks: MobileRelayConnectionHooks): 
         hooks.onKicked?.()
         return
       }
-      if (frame.type === 'handshake') handshakeSeen = true
-      if (frame.type !== 'handshake' || !peerLost || reconnectController.isActive || peerRestore) return
+      if (frame.type !== 'handshake') return
+      handshakeSeen = true
+      peerPresent = true
+      channelGeneration += 1
+      if (!peerLost || reconnectController.isActive) return
       restorePeer()
     },
     onStatus: (connected) => {
@@ -182,6 +224,7 @@ export function createMobileRelayConnection(hooks: MobileRelayConnectionHooks): 
       }
       logConnection('transport lost', { transport: client.transport, looping: reconnectController.isActive })
       reconnectController.start(hooks.currentEpoch(client))
+      wakeRestore?.()
     },
     ...(hooks.openSocket ? { openSocket: hooks.openSocket } : {}),
   })

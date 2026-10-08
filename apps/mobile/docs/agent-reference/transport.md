@@ -60,7 +60,11 @@ and reports input and bounded resize messages to RN.
   verdict) and the desktop's next `handshake` runs the restore. `peer_disconnected` is
   the same `offline`. A `peer_connected` with no `peer_disconnected` before it is a
   desktop that redialled before the relay saw its old socket close; it dropped every
-  event meanwhile, so it is `reconnecting` until its handshake restores. Without the probe every retry burned three 15 s request timeouts
+  event meanwhile, so it is `reconnecting` until its handshake restores. A
+  handshake-driven restore completes only on the channel it started on: a handshake
+  that lands mid-restore runs it again, and a failed one retries with the same
+  bounded backoff until the desktop leaves or the socket drops, since nothing else
+  is guaranteed to arrive on the open socket. Without the probe every retry burned three 15 s request timeouts
   and painted `Reconnecting…` for a desktop that was simply off. LAN never probes: there
   the desktop *is* the socket peer. Re-send the current connection
   snapshot whenever the Chat WebView reports `ready` after a renderer reload.

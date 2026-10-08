@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { SocketLike } from '@superone/relay-client'
+import type { RelayClient, SocketLike } from '@superone/relay-client'
+import type { RemoteCommand } from '@superone/shared/agent-types'
 import { createMobileRelayConnection } from './mobile-relay-connection'
 import { TEST_LINK, completeHandshake } from '../../../packages/relay-client/src/test-host-link'
 
@@ -168,6 +169,125 @@ describe('mobile relay connection lifecycle', () => {
     await vi.waitFor(() => expect(restore).toHaveBeenCalledTimes(1))
     expect(onConnection).toHaveBeenLastCalledWith('connected', 3)
     expect(sockets).toHaveLength(1)
+    connection.client.disconnect()
+  })
+
+  it('restores again when the desktop reattaches while a restore is in flight', async () => {
+    const sockets: MockSocket[] = []
+    const restore = vi.fn(async (client: RelayClient) => {
+      const result = await client.request({ type: 'subscribe_session', projectPath: '/repo', sessionId: 's1' } as RemoteCommand) as { epoch: number }
+      return result.epoch
+    })
+    const onConnection = vi.fn()
+    const connection = createMobileRelayConnection({
+      onEvents: vi.fn(),
+      onTerminal: vi.fn(),
+      restore,
+      currentEpoch: () => 2,
+      onConnection,
+      onStatus: vi.fn(),
+      onShutdown: vi.fn(),
+      suppressDisconnect: () => false,
+      endpoint: ENDPOINT,
+      resolveLan: async () => null,
+      openSocket: () => {
+        const socket = new MockSocket()
+        sockets.push(socket)
+        queueMicrotask(() => socket.onopen?.())
+        return socket
+      },
+    })
+
+    await connection.dial(null)
+    sockets[0].emit({ type: 'peer_connected' })
+    completeHandshake(sockets[0], TEST_LINK, 'desktop')
+    await vi.waitFor(() => expect(restore).toHaveBeenCalledTimes(1))
+    // The desktop reattaches again before answering: the relay client cancels
+    // the restore RPC and a second channel comes up over the same socket.
+    sockets[0].emit({ type: 'peer_connected' })
+    const host = completeHandshake(sockets[0], TEST_LINK, 'desktop')
+    await vi.waitFor(() => expect(restore).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() => host.reply(sockets[0], { epoch: 9 }))
+    await vi.waitFor(() => expect(onConnection).toHaveBeenLastCalledWith('connected', 9))
+    expect(sockets).toHaveLength(1)
+    expect(connection.reconnectController.isActive).toBe(false)
+    connection.client.disconnect()
+  })
+
+  it('retries a failed peer restore with backoff while the socket stays open', async () => {
+    vi.useFakeTimers()
+    const sockets: MockSocket[] = []
+    const restore = vi.fn()
+      .mockRejectedValueOnce(new Error('rpc timeout: subscribe_session'))
+      .mockResolvedValue(9)
+    const onConnection = vi.fn()
+    const onStatus = vi.fn()
+    const connection = createMobileRelayConnection({
+      onEvents: vi.fn(),
+      onTerminal: vi.fn(),
+      restore,
+      currentEpoch: () => 2,
+      onConnection,
+      onStatus,
+      onShutdown: vi.fn(),
+      suppressDisconnect: () => false,
+      endpoint: ENDPOINT,
+      resolveLan: async () => null,
+      openSocket: () => {
+        const socket = new MockSocket()
+        sockets.push(socket)
+        queueMicrotask(() => socket.onopen?.())
+        return socket
+      },
+    })
+
+    await connection.dial(null)
+    sockets[0].emit({ type: 'peer_disconnected' })
+    sockets[0].emit({ type: 'peer_connected' })
+    completeHandshake(sockets[0], TEST_LINK, 'desktop')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(restore).toHaveBeenCalledTimes(1)
+    expect(onStatus).toHaveBeenLastCalledWith('rpc timeout: subscribe_session — retrying in 1s')
+    expect(onConnection).toHaveBeenLastCalledWith('offline', 2)
+
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(restore).toHaveBeenCalledTimes(2)
+    expect(onConnection).toHaveBeenLastCalledWith('connected', 9)
+    expect(sockets).toHaveLength(1)
+    connection.client.disconnect()
+  })
+
+  it('stops retrying a peer restore once the desktop leaves the relay', async () => {
+    vi.useFakeTimers()
+    const sockets: MockSocket[] = []
+    const restore = vi.fn().mockRejectedValue(new Error('rpc timeout: subscribe_session'))
+    const connection = createMobileRelayConnection({
+      onEvents: vi.fn(),
+      onTerminal: vi.fn(),
+      restore,
+      currentEpoch: () => 2,
+      onConnection: vi.fn(),
+      onStatus: vi.fn(),
+      onShutdown: vi.fn(),
+      suppressDisconnect: () => false,
+      endpoint: ENDPOINT,
+      resolveLan: async () => null,
+      openSocket: () => {
+        const socket = new MockSocket()
+        sockets.push(socket)
+        queueMicrotask(() => socket.onopen?.())
+        return socket
+      },
+    })
+
+    await connection.dial(null)
+    sockets[0].emit({ type: 'peer_connected' })
+    completeHandshake(sockets[0], TEST_LINK, 'desktop')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(restore).toHaveBeenCalledTimes(1)
+    sockets[0].emit({ type: 'peer_disconnected' })
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(restore).toHaveBeenCalledTimes(1)
     connection.client.disconnect()
   })
 

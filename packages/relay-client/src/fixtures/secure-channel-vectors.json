@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "comment": "Secure channel v1 (relay-client secure-channel.ts). Fixed nonces and IV; cross-checked against node:crypto in secure-channel.test.ts. Regenerate only when the format changes.",
+  "rootSecretHex": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "keyId": "3f2b8c1e-7a4d-4e5f-9c0b-1d2e3f4a5b6c",
+  "secretHex": "e4620c0bf60dd8153f5073df3027f93dd7616ff89520dfbc6594907857bf6e6d",
+  "clientNonceHex": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+  "serverNonceHex": "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2",
+  "c2sKeyHex": "9bad80ededd0774d1ea15625343d47cd72acb63a171c13c31c7faaf0bf25cfc1",
+  "s2cKeyHex": "330179f3c972e3393d4d74762a8b7f23cb2bc5a236cb7c894165e35d28b76513",
+  "clientProofHex": "27578f2c6678e32125d579ea35e019057ff4a32436ecac1d731bab2f683daf37",
+  "serverProofHex": "00119920f9773b308a4eefa3c38e7765e961649074f2d40eba5d50feba5585cc",
+  "frame": {
+    "key": "c2s",
+    "seq": 1,
+    "ivHex": "000102030405060708090a0b",
+    "payload": {
+      "type": "rpc",
+      "requestId": "r1",
+      "method": "environment.health",
+      "payload": {}
+    },
+    "frameHex": "000102030405060708090a0b42556daf723ff2b86e955fcf181d5ea42bff063205b3ce0fba1bee8d0c25153d8e6d11243f1d7b060462acbc965225115125895017d386d26d3977be16e96728147898d40f4f0e8dbd40a72aaa57a3900b0502778d46bf4acb914b77280aeb08644a"
+  }
+}

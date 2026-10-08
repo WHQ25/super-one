@@ -7,6 +7,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./crypto": "./src/crypto.ts",
+    "./secure-channel": "./src/secure-channel.ts",
     "./transport-ledger": "./src/transport-ledger.ts"
   },
   "scripts": {

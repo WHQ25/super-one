@@ -106,7 +106,10 @@ connection) run the channel above over JSON text envelopes:
   challenge echoes the hello's nonce in `hello`, so the phone ignores one for an
   older hello. The host resolves the key id to the paired device; over the relay
   that device must also own the relay slot the hello came from. An unknown or
-  revoked key id is answered with `kicked`. After the proof the host sends
+  revoked key id is answered with `kicked`. The host resolves the key id again
+  when the proof arrives and before running each command, so a device removed
+  mid-handshake, or while its channel is open, is refused; removing a device
+  also closes its pending handshakes and channels. After the proof the host sends
   `{ type: 'channel', data }`, a sealed `handshake` frame (host name, LAN
   addresses); only then does the phone send requests.
 - Frames: `command`, `event`, `response`, `response_chunk` and `terminal` keep
@@ -121,12 +124,17 @@ connection) run the channel above over JSON text envelopes:
   and addresses relay copies to that phone alone; responses are bound to the
   channel their command arrived on. Replayed, reordered or tampered frames fail:
   a LAN socket is closed, a relay command is dropped.
-- Frames sealed for an earlier connection cannot be opened, so the phone does
-  not ask the relay to replay: it rebases its ACK watermark on the first seq of
-  the new connection and restores the session (see
+- The channel's sequence numbers are the only ordering and deduplication: the
+  phone ignores the envelope `seq` and sends no ACK. Frames sealed for an
+  earlier connection cannot be opened, so nothing is replayed; the phone
+  restores the session on each new connection (see
   [mobile-remote-control.md](mobile-remote-control.md)).
+- The relay (`apps/relay/src/relay-session.ts`) forwards and keeps nothing. For
+  phones built before the channel only, it still stamps each `event` with a
+  `seq` contiguous per phone socket and answers `replay` with `reset`; remove
+  both once those phones are gone.
 - Cleartext control frames remain: `kicked`, `desktop_shutdown`,
-  `peer_connected` / `peer_disconnected`, `ack`. Anyone who knows the room id
+  `peer_connected` / `peer_disconnected`. Anyone who knows the room id
   (any paired phone, including a removed one) can still send them or occupy a
   relay slot: the relay does not authenticate room members. They cannot read or
   forge frames.

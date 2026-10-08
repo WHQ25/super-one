@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { PROCESSED_SEQ_CAP } from './ack'
 import { RelayClient, type SocketLike } from './client'
 import { restoreSession } from './restore'
 import { LINK_CHANNEL_FRAME } from './phone-link'
@@ -155,7 +154,7 @@ describe('RelayClient', () => {
     expect(restored.snapshot.status).toBe('idle')
   })
 
-  it('send() is fire-and-forget and onTerminal skips ACK', async () => {
+  it('send() is fire-and-forget and delivers terminal frames', async () => {
     let sock: MockSocket | null = null
     const terms: unknown[] = []
     const client = new RelayClient({
@@ -177,126 +176,30 @@ describe('RelayClient', () => {
     expect(terms).toEqual([{ type: 'terminal_output', data: 'ok' }])
   })
 
-  it('keeps a terminal flood outside the event ACK namespace', async () => {
+  it('delivers every event the channel opens, whatever its envelope seq, and never ACKs or asks for replay', async () => {
     vi.useFakeTimers()
     let sock: MockSocket | null = null
-    let terminalFrames = 0
-    const events: unknown[][] = []
+    let delivered = 0
     const client = new RelayClient({
       openSocket: () => {
         sock = new MockSocket()
         queueMicrotask(() => sock?.onopen?.())
         return sock
       },
-      onTerminal: () => { terminalFrames += 1 },
-      onEvents: (batch) => events.push(batch),
+      onEvents: () => { delivered += 1 },
     })
     const connected = client.connectRelay(RELAY)
     await vi.runAllTicks()
     await connected
     const host = completeHandshake(sock!)
-    for (let i = 0; i < 384; i++) {
-      sock!.emit({ type: 'terminal', seq: i + 1, data: host.seal('terminal', { type: 'terminal_output', terminalId: 't1', data: 'x'.repeat(8 * 1_024) }) })
-    }
-    expect(terminalFrames).toBe(384)
-    expect(client.lastAckedSeq).toBe(0)
-    expect(sock!.sent.some((frame) => frame.includes('"ack"'))).toBe(false)
-
-    sock!.emit({
-      type: 'event',
-      seq: 1,
-      data: host.seal('event', { type: 'after-terminal-flood' }),
-    })
-    expect(events).toEqual([[{ type: 'after-terminal-flood' }]])
-    vi.advanceTimersByTime(2_000)
-    expect(sock!.sent.filter((frame) => frame.includes('"ack"'))).toEqual([
-      JSON.stringify({ type: 'ack', seq: 1 }),
-    ])
-  })
-
-  it('keeps one ACK timer and sends its latest cumulative watermark', async () => {
-    vi.useFakeTimers()
-    let sock: MockSocket | null = null
-    const client = new RelayClient({
-      openSocket: () => {
-        sock = new MockSocket()
-        queueMicrotask(() => sock?.onopen?.())
-        return sock
-      },
-    })
-    const connected = client.connectRelay(RELAY)
-    await vi.runAllTicks()
-    await connected
-    const host = completeHandshake(sock!)
-    const payload = (seq: number) => host.seal('event', { type: 'event', eventSeq: seq })
-    sock!.emit({ type: 'event', seq: 1, data: payload(1) })
-    vi.advanceTimersByTime(1_000)
-    sock!.emit({ type: 'event', seq: 2, data: payload(2) })
-    vi.advanceTimersByTime(999)
-    expect(sock!.sent.filter((frame) => frame.includes('"ack"'))).toHaveLength(0)
-    vi.advanceTimersByTime(1)
-    expect(sock!.sent.filter((frame) => frame.includes('"ack"'))).toEqual([
-      JSON.stringify({ type: 'ack', seq: 2 }),
-    ])
-
-    for (let seq = 3; seq <= 11; seq++) sock!.emit({ type: 'event', seq, data: payload(seq) })
-    expect(sock!.sent.filter((frame) => frame.includes('"ack"'))).toHaveLength(1)
-    sock!.emit({ type: 'event', seq: 12, data: payload(12) })
-    expect(sock!.sent.filter((frame) => frame.includes('"ack"')).at(-1)).toBe(
-      JSON.stringify({ type: 'ack', seq: 12 }),
-    )
-  })
-
-  it('cancels stale ACKs when reset arrives', async () => {
-    vi.useFakeTimers()
-    let sock: MockSocket | null = null
-    const resets: number[] = []
-    let client: RelayClient
-    client = new RelayClient({
-      openSocket: () => {
-        sock = new MockSocket()
-        queueMicrotask(() => sock?.onopen?.())
-        return sock
-      },
-      onReset: () => {
-        resets.push(1)
-        client.send({ type: 'subscribe_session', projectPath: '/p', sessionId: 's' })
-      },
-    })
-    const connected = client.connectRelay(RELAY)
-    await vi.runAllTicks()
-    await connected
-    const host = completeHandshake(sock!)
-    await vi.runAllTicks()
-    sock!.emit({ type: 'event', seq: 1, data: host.seal('event', { type: 'one' }) })
-    const sentBeforeReset = sock!.sent.length
-    sock!.emit({ type: 'reset' })
-    vi.advanceTimersByTime(2_000)
-    expect(sock!.sent.filter((frame) => frame.includes('"ack"'))).toHaveLength(0)
-    expect(resets).toEqual([1])
-    expect(client.buffer.isBuffering).toBe(true)
-    expect(sock!.sent).toHaveLength(sentBeforeReset + 1)
-  })
-
-  it('ACKs a relay envelope even when payload decryption fails', async () => {
-    vi.useFakeTimers()
-    let sock: MockSocket | null = null
-    const client = new RelayClient({
-      openSocket: () => {
-        sock = new MockSocket()
-        queueMicrotask(() => sock?.onopen?.())
-        return sock
-      },
-    })
-    const connected = client.connectRelay(RELAY)
-    await vi.runAllTicks()
-    await connected
-    completeHandshake(sock!)
+    // A phone shares the relay with others, so its envelope seqs can skip; the
+    // channel, not the envelope, decides what is new.
+    const total = 2_200
+    for (let i = 0; i < total; i++) sock!.emit({ type: 'event', seq: 1 + i * 2, data: host.seal('event', { type: 'e', i }) })
     sock!.emit({ type: 'event', seq: 1, data: 'invalid-ciphertext' })
-    vi.advanceTimersByTime(2_000)
-    expect(sock!.sent.filter((frame) => frame.includes('"ack"'))).toEqual([
-      JSON.stringify({ type: 'ack', seq: 1 }),
-    ])
+    vi.advanceTimersByTime(10_000)
+    expect(delivered).toBe(total)
+    expect(sock!.sent.some((frame) => frame.includes('"ack"') || frame.includes('"replay"'))).toBe(false)
   })
 
   it('buffers events after a reconnect, on a fresh channel, with one exclusive socket', async () => {
@@ -346,7 +249,7 @@ describe('RelayClient', () => {
     expect(sockets[0].closed).toBe(true)
   })
 
-  it('keeps relay and LAN delivery exclusive and never ACKs a LAN seq', async () => {
+  it('keeps relay and LAN delivery exclusive', async () => {
     const sockets: MockSocket[] = []
     const events: unknown[][] = []
     const client = new RelayClient({
@@ -371,25 +274,6 @@ describe('RelayClient', () => {
       data: host.seal('event', [{ type: 'lan-event' }]),
     })
     expect(events).toEqual([[{ type: 'lan-event' }]])
-    expect(sockets[1].sent.some((frame) => frame.includes('"ack"'))).toBe(false)
-  })
-
-  it('keeps delivering LAN events past the processed-seq cap when joining mid-run', async () => {
-    let socket: MockSocket | null = null
-    let delivered = 0
-    const client = new RelayClient({
-      openSocket: () => {
-        socket = new MockSocket()
-        queueMicrotask(() => socket?.onopen?.())
-        return socket
-      },
-      onEvents: () => { delivered += 1 },
-    })
-    await client.connectLan('192.0.2.1', 7788, TEST_LINK)
-    const host = completeHandshake(socket!)
-    const total = PROCESSED_SEQ_CAP + 50
-    for (let seq = 5_000; seq < 5_000 + total; seq++) socket!.emit({ type: 'event', seq, data: host.seal('event', [{ type: 'lan-event' }]) })
-    expect(delivered).toBe(total)
   })
 
   it('downloads a desktop file over LAN by resolving {lanHost} to the connected host', async () => {
@@ -451,8 +335,8 @@ describe('RelayClient', () => {
     await client.connectRelay(RELAY)
     const host = completeHandshake(sock!)
     const once = host.seal('event', { type: 'once' })
-    sock!.emit({ type: 'event', seq: 1, data: once })
-    sock!.emit({ type: 'event', seq: 2, data: once })
+    sock!.emit({ type: 'event', data: once })
+    sock!.emit({ type: 'event', data: once })
     expect(events).toEqual([[{ type: 'once' }]])
 
     const result = client.request({ type: 'list_projects', requestId: 'r-relabel' })

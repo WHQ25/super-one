@@ -36,7 +36,7 @@ describe('LanServer source address filter', () => {
   })
 
   async function start() {
-    const resolveKey = vi.fn(() => ({ deviceId: 'dev-1', deviceName: 'iPhone', secretHex: issueChannelCredential(ROOT, 'key-dev-1').secretHex }))
+    const resolveKey = vi.fn(() => ({ keyId: 'key-dev-1', deviceId: 'dev-1', deviceName: 'iPhone', secretHex: issueChannelCredential(ROOT, 'key-dev-1').secretHex }))
     const onClientRegistered = vi.fn()
     server = new LanServer({ phoneLink, resolveKey, handshakeInfo: () => ({ hostName: 'h' }), onCommand: vi.fn(), onClientRegistered })
     const { port } = await server.start({ host: '127.0.0.1' })

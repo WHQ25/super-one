@@ -13,12 +13,6 @@ export class EventBuffer {
     this.queue = []
   }
 
-  /** Server reset invalidates every pre-reset live batch. */
-  restart(): void {
-    this.buffering = true
-    this.queue = []
-  }
-
   stop(): void {
     this.buffering = false
     this.queue = []

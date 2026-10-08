@@ -1,4 +1,3 @@
-export { PROCESSED_SEQ_CAP, SeqAckTracker, TransportAckRegistry } from './ack'
 export { BUFFER_FIRST_ORDER, EventBuffer } from './buffer'
 export { handleInboundFrame } from './frames'
 export { LAN_SERVICE_TYPE, LAN_TXT_ROOM_ID, buildLanWsUrl, buildRelayWsUrl } from './connect'

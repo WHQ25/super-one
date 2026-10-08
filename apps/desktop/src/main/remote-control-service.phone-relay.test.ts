@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { WebSocketServer, type WebSocket as ServerSocket } from 'ws'
+import WebSocket, { WebSocketServer, type WebSocket as ServerSocket } from 'ws'
 
 vi.mock('./remote-highlighter', () => ({
   initHighlighter: vi.fn(),
@@ -14,19 +14,20 @@ vi.mock('./lan-advertiser', () => ({
 }))
 
 import { RelayClient, type HostLink } from '@superone/relay-client'
-import { issueChannelCredential } from '@superone/relay-client/secure-channel'
+import { issueChannelCredential, startClientHandshake } from '@superone/relay-client/secure-channel'
+import { sealLinkFrame } from '@superone/relay-client/phone-link'
+import { nextFrame } from './remote/test-phone'
 import { RemoteControlService, type PairedPhone } from './remote-control-service'
 
 const ROOT = 'ab'.repeat(32)
 
-/** The relay's routing contract (apps/relay `relay-session.ts`), minus buffering. */
+/** The relay's routing contract (apps/relay `relay-session.ts`). */
 async function startRelay() {
   const server = new WebSocketServer({ host: '127.0.0.1', port: 0 })
   await new Promise<void>((resolve) => server.once('listening', resolve))
   let desktop: ServerSocket | null = null
   const mobiles = new Map<string, ServerSocket>()
   const fromMobiles: Array<Record<string, unknown>> = []
-  let seq = 0
   server.on('connection', (socket, req) => {
     const url = new URL(req.url ?? '/', 'http://relay')
     const role = url.searchParams.get('role')
@@ -45,7 +46,7 @@ async function startRelay() {
       const frame = JSON.parse(text) as Record<string, unknown>
       if (role === 'desktop') {
         const to = (id: unknown) => mobiles.get(String(id))
-        if (frame.type === 'event') for (const id of frame.targets as string[]) to(id)?.send(JSON.stringify({ type: 'event', seq: ++seq, data: frame.data }))
+        if (frame.type === 'event') for (const id of frame.targets as string[]) to(id)?.send(JSON.stringify({ type: 'event', data: frame.data }))
         else if (frame.type === 'terminal') for (const id of frame.targets as string[]) to(id)?.send(text)
         else to(frame.mobileDeviceId)?.send(text)
         return
@@ -152,5 +153,69 @@ describe('RemoteControlService phone channel over the relay', () => {
     await again.connect()
     await vi.waitFor(() => expect(again.controls).toContainEqual(expect.objectContaining({ type: 'kicked' })))
     await expect(again.client.request({ type: 'list_projects', requestId: 'r2' } as never, 300)).rejects.toThrow()
+  })
+
+  describe('removing a device mid-handshake', () => {
+    /** A raw phone in its relay slot that has said hello and holds the challenge, but not yet proven its key. */
+    async function challenged(deviceId: string, keyId: string) {
+      const socket = new WebSocket(`${relay!.url}/?role=mobile&deviceId=${deviceId}`)
+      await new Promise((resolve, reject) => { socket.once('open', resolve); socket.once('error', reject) })
+      const hs = startClientHandshake(issueChannelCredential(ROOT, keyId))
+      const challenge = nextFrame(socket, (f) => f.type === 'channel')
+      socket.send(JSON.stringify({ type: 'channel', msg: hs.hello }))
+      const { proof, channel } = hs.finish((await challenge).msg)
+      const frames: Array<Record<string, unknown>> = []
+      socket.on('message', (raw) => frames.push(JSON.parse(raw.toString())))
+      return {
+        socket,
+        frames,
+        proveAndCommand: () => {
+          socket.send(JSON.stringify({ type: 'channel', msg: proof }))
+          const data = sealLinkFrame(channel, { t: 'command' }, new TextEncoder().encode(JSON.stringify({ type: 'list_projects', requestId: 'r1' })))
+          socket.send(JSON.stringify({ type: 'command', data }))
+        },
+      }
+    }
+
+    it('revoking the device cancels its pending relay handshake', async () => {
+      const onCommand = vi.fn()
+      const paired = await start([{ deviceId: 'dev-1', deviceName: 'iPhone', keyId: 'key-dev-1' }], onCommand)
+      const phone = await challenged('dev-1', 'key-dev-1')
+      paired.delete('key-dev-1')
+      service!.revokeDevice('dev-1')
+      phone.proveAndCommand()
+      await vi.waitFor(() => expect(phone.frames).toContainEqual(expect.objectContaining({ type: 'kicked', mobileDeviceId: 'dev-1' })))
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      expect(onCommand).not.toHaveBeenCalled()
+      expect(phone.frames.some((f) => f.type === 'channel' && 'data' in f)).toBe(false)
+      expect(service!.getOnlineDevices().has('dev-1')).toBe(false)
+      phone.socket.close()
+    })
+
+    it('rejects a proof that arrives after the pairing was deleted', async () => {
+      const onCommand = vi.fn()
+      const paired = await start([{ deviceId: 'dev-1', deviceName: 'iPhone', keyId: 'key-dev-1' }], onCommand)
+      const phone = await challenged('dev-1', 'key-dev-1')
+      paired.delete('key-dev-1')
+      phone.proveAndCommand()
+      await vi.waitFor(() => expect(phone.frames).toContainEqual(expect.objectContaining({ type: 'kicked', mobileDeviceId: 'dev-1' })))
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      expect(onCommand).not.toHaveBeenCalled()
+      expect(service!.getOnlineDevices().has('dev-1')).toBe(false)
+      phone.socket.close()
+    })
+
+    it('refuses a command on an open channel once the pairing is gone', async () => {
+      const onCommand = vi.fn()
+      const paired = await start([{ deviceId: 'dev-1', deviceName: 'iPhone', keyId: 'key-dev-1' }], onCommand)
+      const a = phone('dev-1', 'key-dev-1')
+      await a.connect()
+      await vi.waitFor(() => expect(service!.getOnlineDevices().has('dev-1')).toBe(true))
+      paired.delete('key-dev-1')
+      a.client.send({ type: 'terminal_input', terminalId: 't', data: 'ls\n' } as never)
+      await vi.waitFor(() => expect(a.controls).toContainEqual(expect.objectContaining({ type: 'kicked' })))
+      expect(onCommand).not.toHaveBeenCalled()
+      expect(service!.getOnlineDevices().has('dev-1')).toBe(false)
+    })
   })
 })

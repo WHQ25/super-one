@@ -3,13 +3,6 @@ interface Env {
   PAIRING_SESSION: DurableObjectNamespace
 }
 
-interface BufferEntry {
-  seq: number
-  data: string
-  recipients: string[]
-  pendingAcks: Set<string>
-}
-
 type RelayFrame =
   | { type: 'event'; data: string; targets?: string[] }
   | { type: 'command'; data: string; mobileDeviceId?: string }
@@ -19,13 +12,13 @@ type RelayFrame =
   | { type: 'desktop_shutdown' }
   | { type: 'response'; requestId: string; data: string; mobileDeviceId?: string }
   | { type: 'response_chunk'; requestId: string; index: number; total: number; data: string; mobileDeviceId?: string }
+  /** Pre-channel phones only; see `legacySeq`. */
   | { type: 'ack'; seq: number }
   | { type: 'replay'; fromSeq: number }
   | { type: 'terminal'; data: string; targets?: string[] }
-  /** Secure-channel handshake between one phone and the desktop; never buffered. */
+  /** Secure-channel handshake between one phone and the desktop. */
   | { type: 'channel'; mobileDeviceId?: string; [key: string]: unknown }
 
-const MAX_BUFFER_SIZE = 500
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000
 /**
  * Clients send the literal `ping` every 30s and give up on a pong after 10s
@@ -36,27 +29,20 @@ const IDLE_TIMEOUT_MS = 30 * 60 * 1000
 const HEARTBEAT_STALE_MS = 2 * 30_000 + 10_000
 const DESKTOP_TAG = 'desktop'
 const MOBILE_TAG_PREFIX = 'mobile:'
-const SEQ_KEY = 'seq'
-const FORCED_DROP_KEY = 'forcedDropSeq'
 
+/**
+ * The relay forwards ciphertext and keeps nothing. Each phone's frames are
+ * sealed under its own secure channel, whose sequence numbers already reject
+ * replays and reordering, and frames from an earlier connection cannot be
+ * opened, so a phone restores state on reconnect instead of asking for replay.
+ * Contract: docs/architecture/relay-crypto.md.
+ */
 export class RelaySession implements DurableObject {
-  private seq = 0
-  private buffer: BufferEntry[] = []
-  private deviceAckedSeq = new Map<string, number>()
-  private forcedDropSeq = 0
-  readonly ready: Promise<void>
-
   constructor(
     private readonly state: DurableObjectState,
     private readonly env: Env,
   ) {
     this.state.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'))
-    this.ready = state.blockConcurrencyWhile(async () => {
-      const persistedSeq = await state.storage.get<number>(SEQ_KEY)
-      const persistedForcedDrop = await state.storage.get<number>(FORCED_DROP_KEY)
-      if (typeof persistedSeq === 'number') this.seq = persistedSeq
-      if (typeof persistedForcedDrop === 'number') this.forcedDropSeq = persistedForcedDrop
-    })
   }
 
   /**
@@ -220,32 +206,13 @@ export class RelaySession implements DurableObject {
     }
     desktop?.close(1000, 'idle_timeout')
     for (const mobile of this.getAllMobiles()) mobile.close(1000, 'idle_timeout')
-    this.buffer = []
-    this.seq = 0
-    this.deviceAckedSeq.clear()
-    this.forcedDropSeq = 0
-    await this.state.storage.put(SEQ_KEY, 0)
-    await this.state.storage.put(FORCED_DROP_KEY, 0)
   }
 
   private handleDesktopMessage(frame: RelayFrame): void {
     switch (frame.type) {
       case 'event': {
-        const targets = frame.targets && frame.targets.length > 0 ? frame.targets : null
-        let recipientIds: string[]
-        if (targets) {
-          recipientIds = targets
-        } else {
-          recipientIds = []
-          for (const mobile of this.getAllMobiles()) {
-            const deviceId = this.getMobileDeviceId(mobile)
-            if (deviceId) recipientIds.push(deviceId)
-          }
-        }
-        const entry = this.enqueue(frame.data, recipientIds)
-        for (const deviceId of recipientIds) {
-          const ws = this.getMobileByDeviceId(deviceId)
-          ws?.send(JSON.stringify({ type: 'event', seq: entry.seq, data: entry.data }))
+        for (const ws of this.recipients(frame.targets)) {
+          ws.send(JSON.stringify({ type: 'event', seq: this.legacySeq(ws), data: frame.data }))
         }
         break
       }
@@ -269,12 +236,6 @@ export class RelaySession implements DurableObject {
         for (const mobile of this.getAllMobiles()) {
           mobile.send(payload)
         }
-        this.buffer = []
-        this.seq = 0
-        this.deviceAckedSeq.clear()
-        this.forcedDropSeq = 0
-        void this.state.storage.put(SEQ_KEY, 0)
-        void this.state.storage.put(FORCED_DROP_KEY, 0)
         break
       }
       case 'response':
@@ -290,16 +251,8 @@ export class RelaySession implements DurableObject {
         break
       }
       case 'terminal': {
-        const targets = frame.targets && frame.targets.length > 0 ? frame.targets : null
-        if (targets) {
-          for (const deviceId of targets) {
-            this.getMobileByDeviceId(deviceId)?.send(JSON.stringify(frame))
-          }
-        } else {
-          for (const mobile of this.getAllMobiles()) {
-            mobile.send(JSON.stringify(frame))
-          }
-        }
+        const payload = JSON.stringify(frame)
+        for (const ws of this.recipients(frame.targets)) ws.send(payload)
         break
       }
     }
@@ -316,74 +269,34 @@ export class RelaySession implements DurableObject {
       case 'register':
         desktop?.send(JSON.stringify(frame))
         break
-      case 'ack':
-        this.handleAck(senderDeviceId, frame.seq)
-        break
       case 'replay':
-        this.handleReplay(senderWs, frame.fromSeq)
+        // Nothing is kept to replay: a pre-channel phone rebases and restores.
+        senderWs.send(JSON.stringify({ type: 'reset' }))
         break
     }
   }
 
-  private enqueue(data: string, recipients: string[]): BufferEntry {
-    this.seq++
-    void this.state.storage.put(SEQ_KEY, this.seq)
-    const entry: BufferEntry = {
-      seq: this.seq,
-      data,
-      recipients,
-      pendingAcks: new Set(recipients),
+  /** Listed devices that are connected, or every connected phone. */
+  private recipients(targets: string[] | undefined): WebSocket[] {
+    if (!targets || targets.length === 0) return this.getAllMobiles()
+    const live: WebSocket[] = []
+    for (const deviceId of new Set(targets)) {
+      const ws = this.getMobileByDeviceId(deviceId)
+      if (ws) live.push(ws)
     }
-    this.buffer.push(entry)
-    if (this.buffer.length > MAX_BUFFER_SIZE) {
-      const dropped = this.buffer.shift()
-      if (dropped && dropped.pendingAcks.size > 0 && dropped.seq > this.forcedDropSeq) {
-        this.forcedDropSeq = dropped.seq
-        void this.state.storage.put(FORCED_DROP_KEY, this.forcedDropSeq)
-        console.warn(
-          `[RelaySession] forced drop seq=${dropped.seq} pending=${Array.from(dropped.pendingAcks).join(',')} ` +
-          `recipients=${dropped.recipients.join(',')} buffer overflow MAX_BUFFER_SIZE=${MAX_BUFFER_SIZE}`,
-        )
-      }
-    }
-    return entry
+    return live
   }
 
-  private handleAck(deviceId: string | null, seq: number): void {
-    if (!deviceId) return
-    const cur = this.deviceAckedSeq.get(deviceId) ?? 0
-    if (seq <= cur) return
-    this.deviceAckedSeq.set(deviceId, seq)
-    for (const entry of this.buffer) {
-      if (entry.seq <= seq) entry.pendingAcks.delete(deviceId)
-    }
-    this.gcBuffer()
-  }
-
-  private gcBuffer(): void {
-    while (this.buffer.length > 0 && this.buffer[0].pendingAcks.size === 0) {
-      this.buffer.shift()
-    }
-  }
-
-  private handleReplay(mobile: WebSocket, fromSeq: number): void {
-    const deviceId = this.getMobileDeviceId(mobile)
-    if (!deviceId) return
-
-    if (fromSeq <= this.forcedDropSeq) {
-      console.warn(
-        `[RelaySession] replay reset device=${deviceId} fromSeq=${fromSeq} <= forcedDropSeq=${this.forcedDropSeq} ` +
-        `(buffer overflowed before device caught up)`,
-      )
-      mobile.send(JSON.stringify({ type: 'reset' }))
-      return
-    }
-
-    for (const entry of this.buffer) {
-      if (entry.seq < fromSeq) continue
-      if (!entry.recipients.includes(deviceId)) continue
-      mobile.send(JSON.stringify({ type: 'event', seq: entry.seq, data: entry.data }))
-    }
+  /**
+   * Envelope seq, contiguous per phone socket, for phones built before the
+   * secure channel: they drop any `event` without one and ACK a contiguous
+   * watermark. Current phones ignore it. Kept in the socket attachment so it
+   * survives hibernation; remove once no pre-channel phone connects.
+   */
+  private legacySeq(ws: WebSocket): number {
+    const seq = ((ws.deserializeAttachment() as { seq?: number } | null)?.seq ?? 0) + 1
+    ws.serializeAttachment({ seq })
+    return seq
   }
 
   private touchIdleTimer(): void {

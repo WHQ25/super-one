@@ -1,7 +1,6 @@
 import { RequestCoalescer } from './request-coalescer'
 import { jsonBytes, type TransportMetric } from './transport-ledger'
 import type { ReadDesktopFileResponse, RemoteCommand } from '@superone/shared/agent-types'
-import { SeqAckTracker } from './ack'
 import { EventBuffer } from './buffer'
 import { buildLanWsUrl, buildRelayWsUrl, type TransportKind } from './connect'
 import { deriveKeys } from './crypto'
@@ -53,11 +52,9 @@ export class RelayClient {
   private channel: SecureChannel | null = null
   private handshake: { nonce: string; finish: ReturnType<typeof startClientHandshake>['finish'] } | null = null
   private ready: ChannelReady = channelReady()
-  private readonly tracker = new SeqAckTracker()
   private readonly rpc = new RpcInbox()
   private readonly reads = new RequestCoalescer()
   readonly buffer = new EventBuffer()
-  private ackTimer: ReturnType<typeof setTimeout> | null = null
   private heartbeat: RelayHeartbeat | null = null
   private probe: { promise: Promise<boolean>; finish: (ok: boolean) => void } | null = null
   private cancelConnect: (() => void) | null = null
@@ -79,7 +76,6 @@ export class RelayClient {
        */
       onArrived?: (events: unknown[]) => void
       onTerminal?: (payload: unknown) => void
-      onReset?: () => void
       onShutdown?: () => void
       onControl?: (frame: RelayControlFrame) => void
       onStatus?: (connected: boolean) => void
@@ -95,10 +91,6 @@ export class RelayClient {
 
   get connected(): boolean {
     return this.ws != null
-  }
-
-  get lastAckedSeq(): number {
-    return this.tracker.lastAckedSeq
   }
 
   startBuffering(): void {
@@ -132,7 +124,6 @@ export class RelayClient {
     this.closed = true
     this.cancelConnect?.()
     this.cancelConnect = null
-    this.clearAckTimer()
     this.probe?.finish(false)
     this.stopHeartbeat()
     this.reads.clear()
@@ -141,7 +132,6 @@ export class RelayClient {
     this.ws = null
     this.detachAndClose(ws)
     this.resetChannel(new Error('disconnected'))
-    this.tracker.clear()
     this.buffer.stop()
     if (ws) this.hooks.onStatus?.(false)
   }
@@ -315,7 +305,6 @@ export class RelayClient {
   private async open(url: string, link: HostLink): Promise<void> {
     this.cancelConnect?.()
     this.cancelConnect = null
-    this.clearAckTimer()
     this.probe?.finish(false)
     this.stopHeartbeat()
     this.reads.clear()
@@ -329,8 +318,7 @@ export class RelayClient {
     const keys = deriveKeys(link.credential.secretHex)
     this.fileKeys = { aesKeyBytes: keys.aesKeyBytes, channelKeyHex: keys.channelKeyHex }
     // Frames sealed for an earlier connection cannot be opened on this one, so
-    // nothing is replayed: the next relay seq (or the LAN counter) is the base.
-    this.tracker.rebase()
+    // nothing is replayed; the caller restores state over the new channel.
     const ws = (this.hooks.openSocket ?? defaultOpenSocket)(url)
     this.ws = ws
     await new Promise<void>((resolve, reject) => {
@@ -390,7 +378,6 @@ export class RelayClient {
   private handleClosed(ws: SocketLike, error: Error = new Error('connection closed')): void {
     if (this.ws !== ws) return
     this.ws = null
-    this.clearAckTimer()
     this.probe?.finish(false)
     this.stopHeartbeat()
     this.detachAndClose(ws)
@@ -460,16 +447,12 @@ export class RelayClient {
       if (this.hooks.onMetric) this.metric({ kind: 'decoded', name: frame.type ?? 'unknown', bytes: jsonBytes(payload), durationMs: performance.now() - started - decryptMs })
       return payload
     }
-    const effect = handleInboundFrame(frame, this.tracker, decrypt)
+    const effect = handleInboundFrame(frame, decrypt)
     switch (effect.kind) {
       case 'drop':
       case 'pong':
         return
-      case 'ack':
-        this.maybeAck(effect.seq, effect.flush)
-        return
       case 'events':
-        this.maybeAck(effect.ack.seq, effect.ack.flush)
         this.hooks.onArrived?.(effect.events)
         if (this.buffer.isBuffering) this.buffer.push(effect.events)
         else this.hooks.onEvents?.(effect.events, this.buffer.epoch)
@@ -477,13 +460,7 @@ export class RelayClient {
       case 'terminal':
         this.hooks.onTerminal?.(effect.payload)
         return
-      case 'reset':
-        this.clearAckTimer()
-        this.buffer.restart()
-        this.hooks.onReset?.()
-        return
       case 'desktop_shutdown':
-        this.clearAckTimer()
         this.buffer.stop()
         this.hooks.onShutdown?.()
         return
@@ -507,34 +484,6 @@ export class RelayClient {
         }
       }
     }
-  }
-
-  private maybeAck(seq: number, flush: boolean): void {
-    if (this.kind !== 'relay' || !this.ws || seq <= 0) return
-    if (flush) {
-      this.sendAck(this.tracker.lastAckedSeq)
-      return
-    }
-    if (this.ackTimer == null) {
-      this.ackTimer = setTimeout(() => this.sendAck(this.tracker.lastAckedSeq), 2000)
-    }
-  }
-
-  private sendAck(seq: number): void {
-    this.clearAckTimer()
-    const ws = this.ws
-    if (!ws) return
-    try {
-      this.sendFrame(ws, JSON.stringify({ type: 'ack', seq }))
-      this.tracker.acknowledgeSent()
-    } catch {
-      // A closing socket may reject send before onclose schedules reconnect.
-    }
-  }
-
-  private clearAckTimer(): void {
-    if (this.ackTimer) clearTimeout(this.ackTimer)
-    this.ackTimer = null
   }
 
   private detachAndClose(ws: SocketLike | null): void {

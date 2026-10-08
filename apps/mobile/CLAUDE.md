@@ -11,7 +11,7 @@ It requires native modules and does not run in Expo Go. Root rules apply.
 | Workspace lists, drawer, tablet navigation, theme | [workspace.md](docs/agent-reference/workspace.md) |
 | Composer, todos, slash commands, additional directories | [composer.md](docs/agent-reference/composer.md) |
 | File preview, media, uploads/downloads | [files.md](docs/agent-reference/files.md) |
-| Pairing, LAN/relay discovery, reconnect, restore, ACKs | [transport.md](docs/agent-reference/transport.md) |
+| Pairing, LAN/relay discovery, reconnect, restore | [transport.md](docs/agent-reference/transport.md) |
 | Native dependencies, identities, EAS, updates, release smoke | [native-builds.md](docs/agent-reference/native-builds.md) |
 | Build prerequisites, Vitest/Jest, Maestro, offline previews | [testing.md](docs/agent-reference/testing.md) |
 

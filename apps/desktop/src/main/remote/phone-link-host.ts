@@ -42,8 +42,18 @@ export { deriveIssuedChannelSecret } from '@superone/relay-client/secure-channel
 export type PhoneLinkHost = typeof import('./phone-link-host')
 
 /** A paired phone as the host knows it, resolved from the key id it presents. */
-export type PhoneKey = { deviceId: string; deviceName: string; secretHex: string }
+export type PhoneKey = { keyId: string; deviceId: string; deviceName: string; secretHex: string }
 export type ResolvePhoneKey = (keyId: string) => PhoneKey | null
+
+/**
+ * The pairing a channel was opened under still stands: its key id resolves to
+ * the same device and secret. Checked when the handshake completes and before
+ * each command, so removing a device cuts it off even mid-handshake.
+ */
+export function stillPaired(resolve: ResolvePhoneKey, device: PhoneKey): boolean {
+  const live = resolve(device.keyId)
+  return live !== null && live.deviceId === device.deviceId && live.secretHex === device.secretHex
+}
 
 export type ChannelEnvelope = { type: typeof LINK_CHANNEL_FRAME; msg?: unknown; hello?: unknown; data?: unknown }
 
@@ -64,6 +74,11 @@ export class PhoneHandshake {
     /** On the relay the slot names the device; its key must belong to it. */
     private readonly expectedDeviceId?: string,
   ) {}
+
+  /** The device whose proof this handshake is waiting for, so revoking it can cancel the wait. */
+  get pendingDeviceId(): string | null {
+    return this.pending?.device.deviceId ?? null
+  }
 
   step(envelope: ChannelEnvelope): HandshakeStep {
     const msg = envelope.msg as { type?: unknown } | undefined
@@ -88,11 +103,15 @@ export class PhoneHandshake {
     if (msg?.type === 'channel_proof' && this.pending) {
       const { accept, device } = this.pending
       this.pending = null
+      let channel: SecureChannel
       try {
-        return { kind: 'established', channel: accept.finish(msg), device }
+        channel = accept.finish(msg)
       } catch (err) {
         return { kind: 'failed', reason: err instanceof Error ? err.message : String(err) }
       }
+      // The device may have been removed since its hello.
+      if (!stillPaired(this.resolve, device)) return { kind: 'rejected', reason: 'pairing removed during the handshake' }
+      return { kind: 'established', channel, device }
     }
     return { kind: 'failed', reason: 'unexpected channel message' }
   }

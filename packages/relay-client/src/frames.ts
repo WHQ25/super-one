@@ -1,5 +1,3 @@
-import { SeqAckTracker } from './ack'
-
 export type TransportKind = 'relay' | 'lan'
 
 export type InboundFrame = {
@@ -21,10 +19,8 @@ export type RelayControlFrame =
 
 export type FrameEffect =
   | { kind: 'drop' }
-  | { kind: 'ack'; seq: number; flush: boolean }
-  | { kind: 'events'; events: unknown[]; ack: { seq: number; flush: boolean } }
+  | { kind: 'events'; events: unknown[] }
   | { kind: 'terminal'; payload: unknown }
-  | { kind: 'reset' }
   | { kind: 'desktop_shutdown' }
   | { kind: 'control'; frame: RelayControlFrame }
   | { kind: 'response'; requestId: string; payload: unknown }
@@ -43,29 +39,15 @@ function asEvents(decrypted: unknown): unknown[] {
   return []
 }
 
-/** Never copy envelope seq onto AgentEvent.seq. */
-function stripEnvelopeSeq(events: unknown[]): unknown[] {
-  return events.map((ev) => {
-    if (!ev || typeof ev !== 'object') return ev
-    return ev
-  })
-}
-
-export function handleInboundFrame(
-  frame: InboundFrame,
-  tracker: SeqAckTracker,
-  decrypt: FrameDecrypt,
-): FrameEffect {
+/**
+ * Envelope `seq` is ignored: the secure channel orders and deduplicates every
+ * sealed frame (a replayed or reordered one fails to open), and nothing is
+ * replayed across connections, so there is no envelope ACK either.
+ */
+export function handleInboundFrame(frame: InboundFrame, decrypt: FrameDecrypt): FrameEffect {
   const type = frame.type
   if (type === 'pong') return { kind: 'pong' }
-  if (type === 'reset') {
-    tracker.rebase()
-    return { kind: 'reset' }
-  }
-  if (type === 'desktop_shutdown') {
-    tracker.clear()
-    return { kind: 'desktop_shutdown' }
-  }
+  if (type === 'desktop_shutdown') return { kind: 'desktop_shutdown' }
   if (type === 'peer_connected' || type === 'peer_disconnected') {
     return { kind: 'control', frame: { type } }
   }
@@ -103,26 +85,10 @@ export function handleInboundFrame(
       data: frame.data,
     }
   }
-  if (type !== 'event') return { kind: 'drop' }
-
-  const seq = frame.seq ?? 0
-  if (!tracker.see(seq)) return { kind: 'drop' }
-
-  const marked = tracker.markProcessed(seq)
-  const ack = { seq: marked.lastAckedSeq, flush: marked.shouldAckNow }
-
-  if (typeof frame.data !== 'string') return { kind: 'ack', seq: ack.seq, flush: ack.flush }
-
-  let decrypted: unknown
+  if (type !== 'event' || typeof frame.data !== 'string') return { kind: 'drop' }
   try {
-    decrypted = decrypt(frame.data, 'event')
+    return { kind: 'events', events: asEvents(decrypt(frame.data, 'event')) }
   } catch {
-    return { kind: 'ack', seq: ack.seq, flush: ack.flush }
-  }
-
-  return {
-    kind: 'events',
-    events: stripEnvelopeSeq(asEvents(decrypted)),
-    ack,
+    return { kind: 'drop' }
   }
 }

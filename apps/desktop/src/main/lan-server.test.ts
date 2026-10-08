@@ -24,7 +24,7 @@ const credentialOf = (keyId: string): ChannelCredential => issueChannelCredentia
 function makeServer(overrides: Partial<LanServerCallbacks> = {}, paired = PHONES): LanServer {
   return new LanServer({
     phoneLink,
-    resolveKey: (keyId) => paired[keyId] ? { ...paired[keyId], secretHex: credentialOf(keyId).secretHex } : null,
+    resolveKey: (keyId) => paired[keyId] ? { ...paired[keyId], keyId, secretHex: credentialOf(keyId).secretHex } : null,
     handshakeInfo: () => ({ hostName: 'test-host' }),
     onCommand: vi.fn(),
     ...overrides,
@@ -99,6 +99,66 @@ describe('LanServer', () => {
     expect(server.isEmpty()).toBe(true)
   })
 
+  describe('removing a device mid-handshake', () => {
+    /** A phone that has said hello and holds the host's challenge, but has not sent its proof. */
+    async function challenged(port: number) {
+      const socket = await open(port)
+      sockets.push(socket)
+      const hs = startClientHandshake(credentialOf('key-dev-1'))
+      const challenge = nextFrame(socket, (f) => f.type === 'channel')
+      socket.send(JSON.stringify({ type: 'channel', msg: hs.hello }))
+      const { proof, channel } = hs.finish((await challenge).msg)
+      return { socket, channel, sendProof: () => socket.send(JSON.stringify({ type: 'channel', msg: proof })) }
+    }
+
+    it('revoking the device closes its pending handshake', async () => {
+      const paired = { ...PHONES }
+      const onClientRegistered = vi.fn()
+      const onCommand = vi.fn()
+      server = makeServer({ onClientRegistered, onCommand }, paired)
+      const { port } = await server.start({ host: '127.0.0.1' })
+      const phone = await challenged(port)
+      const kicked = nextFrame(phone.socket, (f) => f.type === 'kicked')
+      const socketClosed = closed(phone.socket)
+      delete paired['key-dev-1']
+      server.kickDevice('dev-1')
+      expect(await kicked).toEqual({ type: 'kicked', mobileDeviceId: 'dev-1' })
+      expect(await socketClosed).toEqual({ code: 1000, reason: 'kicked' })
+      expect(onClientRegistered).not.toHaveBeenCalled()
+      expect(onCommand).not.toHaveBeenCalled()
+    })
+
+    it('a proof that arrives after the pairing was deleted is rejected', async () => {
+      const paired = { ...PHONES }
+      const onClientRegistered = vi.fn()
+      const onCommand = vi.fn()
+      server = makeServer({ onClientRegistered, onCommand }, paired)
+      const { port } = await server.start({ host: '127.0.0.1' })
+      const phone = await challenged(port)
+      delete paired['key-dev-1']
+      const socketClosed = closed(phone.socket)
+      phone.sendProof()
+      phone.socket.send(command(phone.channel, { type: 'list_projects', requestId: 'r1' }))
+      expect(await socketClosed).toEqual({ code: 1008, reason: 'not_paired' })
+      expect(onClientRegistered).not.toHaveBeenCalled()
+      expect(onCommand).not.toHaveBeenCalled()
+      expect(server.isEmpty()).toBe(true)
+    })
+
+    it('a command on an open channel is refused once the pairing is gone', async () => {
+      const paired = { ...PHONES }
+      const onCommand = vi.fn()
+      server = makeServer({ onCommand }, paired)
+      const { port } = await server.start({ host: '127.0.0.1' })
+      const phone = track(await connectPhone(port))
+      delete paired['key-dev-1']
+      const socketClosed = closed(phone.socket)
+      phone.socket.send(command(phone.channel, { type: 'list_projects', requestId: 'r1' }))
+      expect(await socketClosed).toEqual({ code: 1000, reason: 'kicked' })
+      expect(onCommand).not.toHaveBeenCalled()
+    })
+  })
+
   it('runs a command round trip and binds the response to the channel', async () => {
     const onCommand = vi.fn<LanServerCallbacks['onCommand']>((_cmd, respond) => { void respond('req-1', { ok: true, value: 42 }) })
     server = makeServer({ onCommand })
@@ -147,9 +207,9 @@ describe('LanServer', () => {
 
     const framed = await frameHostPayload([{ type: 'pong' }])
     const both = Promise.all([nextFrame(a.socket, (f) => f.type === 'event'), nextFrame(b.socket, (f) => f.type === 'event')])
-    server.sendFramed('event', framed, undefined, 7)
+    server.sendFramed('event', framed)
     const [fa, fb] = await both
-    expect(fa.seq).toBe(7)
+    expect(fa.seq).toBeUndefined()
     expect(decodeHostPlaintext(openLinkFrame(a.channel, fa.data as string).payload)).toEqual([{ type: 'pong' }])
     expect(decodeHostPlaintext(openLinkFrame(b.channel, fb.data as string).payload)).toEqual([{ type: 'pong' }])
     // One phone's copy is useless to the other.
@@ -212,7 +272,7 @@ describe('LanServer', () => {
     await expect(client.request({ type: 'list_projects', requestId: 'r1' } as never)).resolves.toEqual({ projects: [{ path: '/p', name: 'p' }] })
     expect(controls).toContainEqual({ type: 'handshake', hostName: 'test-host' })
 
-    server.sendFramed('event', await frameHostPayload({ type: 'status_change', status: 'idle' }), ['dev-1'], 1)
+    server.sendFramed('event', await frameHostPayload({ type: 'status_change', status: 'idle' }), ['dev-1'])
     await vi.waitFor(() => expect(events).toEqual([[{ type: 'status_change', status: 'idle' }]]))
 
     // Removing the device: its live socket is kicked and its key no longer opens a channel.

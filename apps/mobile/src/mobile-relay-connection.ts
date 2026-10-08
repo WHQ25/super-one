@@ -129,12 +129,6 @@ export function createMobileRelayConnection(hooks: MobileRelayConnectionHooks): 
     onEvents: (events, epoch) => hooks.onEvents(events, epoch),
     onArrived: events => hooks.onArrived?.(events),
     onTerminal: payload => hooks.onTerminal(payload),
-    onReset: () => {
-      hooks.onStatus('server reset — rehydrating')
-      if (reconnectController.isActive) return
-      report('reconnecting', hooks.currentEpoch(client))
-      restorePeer()
-    },
     onShutdown: () => {
       stopped = true
       reconnectController.cancel()

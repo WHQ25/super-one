@@ -115,7 +115,7 @@ export interface RemoteControlCallbacks {
 type DeviceTransport = 'lan' | 'relay'
 type ConnectedDevice = { name: string; transports: Set<DeviceTransport> }
 /** One phone's channel through the relay; replaced whenever the phone says hello again. */
-type RelayLink = { handshake: PhoneHandshake; channel: SecureChannel | null }
+type RelayLink = { handshake: PhoneHandshake; channel: SecureChannel | null; device: PhoneKey | null }
 
 /** The channel crypto loads with remote control, never on the startup path. */
 let phoneLinkHost: Promise<PhoneLinkHost> | null = null
@@ -194,7 +194,6 @@ export class RemoteControlService {
   private relayUrl = ''
   private lastLanActive = false
 
-  private lanFrameSeq = 0
 
   constructor(
     private readonly defaultRelayUrl: string,
@@ -422,16 +421,18 @@ export class RemoteControlService {
   private resolvePhoneKey(keyId: string): PhoneKey | null {
     const phone = this.callbacks.pairedPhones?.byKey(keyId)
     if (!phone || !this.keys) return null
-    return { deviceId: phone.deviceId, deviceName: phone.deviceName, secretHex: this.link().deriveIssuedChannelSecret(this.keys.rootSecret, keyId) }
+    return { keyId, deviceId: phone.deviceId, deviceName: phone.deviceName, secretHex: this.link().deriveIssuedChannelSecret(this.keys.rootSecret, keyId) }
   }
 
   /**
    * Cut a removed phone off now: its key id no longer resolves, so it cannot
-   * open a new channel, and the channels it holds are dropped.
+   * open a new channel or finish one it started, and the channels it holds are
+   * dropped. Call after deleting the pairing.
    */
   revokeDevice(deviceId: string): void {
     for (const key of this.deviceFileKeys.keys()) if (key.startsWith(`${deviceId}:`)) this.deviceFileKeys.delete(key)
-    if (this.relayLinks.delete(deviceId) && this.relayWs?.readyState === WebSocket.OPEN) {
+    this.relayLinks.delete(deviceId)
+    if (this.relayWs?.readyState === WebSocket.OPEN) {
       this.relayWs.send(JSON.stringify({ type: 'kicked', mobileDeviceId: deviceId }))
     }
     this.lanServer?.kickDevice(deviceId)
@@ -496,7 +497,6 @@ export class RemoteControlService {
     this.deviceFileKeys.clear()
     this.keys = null
     this.fileTokenSigner = null
-    this.lanFrameSeq = 0
   }
 
   private async broadcastShutdown(): Promise<void> {
@@ -599,8 +599,9 @@ export class RemoteControlService {
         const ws = this.relayWs
         const generation = this.sendGeneration
         const deviceId = typeof frame.mobileDeviceId === 'string' ? frame.mobileDeviceId : null
-        const channel = deviceId ? this.relayLinks.get(deviceId)?.channel : null
-        if (!deviceId || !channel || typeof frame.data !== 'string') {
+        const link = deviceId ? this.relayLinks.get(deviceId) : undefined
+        const channel = link?.channel
+        if (!deviceId || !link?.device || !channel || typeof frame.data !== 'string') {
           log.warn('[RemoteControl] relay command without an open channel, dropping')
           return
         }
@@ -610,6 +611,11 @@ export class RemoteControlService {
         } catch (err) {
           // Only the relay could have injected it; the channel itself stays usable.
           log.warn('[RemoteControl] rejected relay command from %s: %s', deviceId, err instanceof Error ? err.message : String(err))
+          return
+        }
+        if (!this.link().stillPaired((keyId) => this.resolvePhoneKey(keyId), link.device)) {
+          log.warn('[RemoteControl] relay command from removed device %s', deviceId)
+          this.revokeDevice(deviceId)
           return
         }
         trace('remote.in', command.type, command)
@@ -647,7 +653,7 @@ export class RemoteControlService {
     let link = this.relayLinks.get(deviceId)
     if ((frame.msg as { type?: unknown } | undefined)?.type === 'channel_hello' || !link) {
       // A hello starts over: whatever channel this phone had is abandoned.
-      link = { handshake: new (this.link().PhoneHandshake)((keyId) => this.resolvePhoneKey(keyId), deviceId), channel: null }
+      link = { handshake: new (this.link().PhoneHandshake)((keyId) => this.resolvePhoneKey(keyId), deviceId), channel: null, device: null }
       this.relayLinks.set(deviceId, link)
     }
     const step = link.handshake.step(frame)
@@ -666,6 +672,7 @@ export class RemoteControlService {
         return
       case 'established':
         link.channel = step.channel
+        link.device = step.device
         log.info('[CONN-DESK] relay channel established deviceId=%s', deviceId)
         ws.send(JSON.stringify({ ...this.link().sealHandshake(step.channel, this.handshakeInfo()), mobileDeviceId: deviceId }))
         this.markDeviceOnline(step.device.deviceName, deviceId, 'relay')
@@ -792,9 +799,9 @@ export class RemoteControlService {
 
   /**
    * Seal a framed payload once per phone holding a relay channel, skipping
-   * phones on the LAN, and address each copy to that phone alone (the relay
-   * buffers it for that phone's ACK). A frame sealed for a channel is
-   * unreadable on any other, so phones without a channel get nothing.
+   * phones on the LAN, and address each copy to that phone alone. A frame
+   * sealed for a channel is unreadable on any other, so phones without a
+   * channel get nothing; the channel's own sequence numbers order each copy.
    */
   private sendRelayFramed(kind: 'event' | 'terminal', framed: Uint8Array, targetDeviceIds?: string[]): void {
     const ws = this.relayWs
@@ -809,7 +816,7 @@ export class RemoteControlService {
 
   private sendEventFrame(framed: Uint8Array, targetDeviceIds?: string[]): void {
     this.sendRelayFramed('event', framed, targetDeviceIds)
-    this.lanServer?.sendFramed('event', framed, targetDeviceIds, ++this.lanFrameSeq)
+    this.lanServer?.sendFramed('event', framed, targetDeviceIds)
   }
 
   async sendAgentEvent(event: AgentEvent, targetDeviceIds?: string[]): Promise<void> {

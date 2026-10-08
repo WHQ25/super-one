@@ -169,20 +169,16 @@ export function upsertPairedDevice(id: string, name: string, channelKeyId?: stri
 
 /**
  * Refresh last_seen on reconnect. Keep the stored name so a desktop pairing
- * override is not replaced by whatever the phone reports next.
+ * override is not replaced by whatever the phone reports next. Only pairing
+ * creates a row; a connection never brings back a removed device.
  * Returns the name the UI should show.
  */
 export function recordPairedDeviceSeen(id: string, incomingName: string): string {
   const now = new Date().toISOString()
-  const existing = getDb().prepare('SELECT name FROM paired_devices WHERE id = ?').get(id) as
+  const existing = getDb().prepare('UPDATE paired_devices SET last_seen_at = ? WHERE id = ? RETURNING name').get(now, id) as
     | { name: string }
     | undefined
-  if (existing) {
-    getDb().prepare('UPDATE paired_devices SET last_seen_at = ? WHERE id = ?').run(now, id)
-    return existing.name
-  }
-  upsertPairedDevice(id, incomingName)
-  return incomingName
+  return existing?.name ?? incomingName
 }
 
 export function listPairedDevices(): PairedDeviceRow[] {

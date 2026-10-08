@@ -15,6 +15,8 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260905.1",
+    "@superone/relay-client": "workspace:*",
+    "@superone/shared": "workspace:*",
     "wrangler": "4"
   }
 }

@@ -127,8 +127,6 @@ describe('mobile relay connection lifecycle', () => {
     sockets[0].emit({ type: 'peer_disconnected' })
     expect(onConnection).toHaveBeenLastCalledWith('offline', 2)
     sockets[0].emit({ type: 'peer_connected' })
-    // An existing relay replay reset can arrive before the peer's handshake.
-    sockets[0].emit({ type: 'reset' })
     completeHandshake(sockets[0], TEST_LINK, 'desktop')
     await vi.waitFor(() => expect(restore).toHaveBeenCalledTimes(1))
     expect(sockets).toHaveLength(1)

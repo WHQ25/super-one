@@ -1,5 +1,5 @@
 import { frameHostPayload } from './remote/payload-codec'
-import type { ChannelEnvelope, PhoneHandshake, PhoneLinkHost, ResolvePhoneKey } from './remote/phone-link-host'
+import type { ChannelEnvelope, PhoneHandshake, PhoneKey, PhoneLinkHost, ResolvePhoneKey } from './remote/phone-link-host'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { AddressInfo } from 'node:net'
 import { networkInterfaces } from 'node:os'
@@ -52,7 +52,7 @@ export interface LanServerCallbacks {
 interface ClientState {
   /** Set once the phone has proven its key; the device bound to that key. */
   deviceId: string
-  deviceName: string
+  device: PhoneKey | null
   handshake: PhoneHandshake
   channel: SecureChannel | null
   registerTimer: ReturnType<typeof setTimeout> | null
@@ -157,14 +157,14 @@ export class LanServer {
    * Seal one framed payload for every target socket's own channel. Sealing and
    * sending stay synchronous so channel sequence numbers follow send order.
    */
-  sendFramed(kind: 'event' | 'terminal', framed: Uint8Array, targetDeviceIds?: string[], seq?: number): void {
+  sendFramed(kind: 'event' | 'terminal', framed: Uint8Array, targetDeviceIds?: string[]): void {
     const filter = targetDeviceIds ? new Set(targetDeviceIds) : null
     for (const ws of this.registeredTargets(filter)) {
       const channel = this.clients.get(ws)?.channel
       if (!channel) continue
       try {
         const data = this.callbacks.phoneLink.sealHostFrame(channel, { t: kind }, framed)
-        ws.send(JSON.stringify(kind === 'event' ? { type: 'event', seq, data } : { type: 'terminal', data }))
+        ws.send(JSON.stringify({ type: kind, data }))
       } catch (err) {
         log.warn('[LanServer] send %s failed: %s', kind, err instanceof Error ? err.message : String(err))
       }
@@ -210,21 +210,25 @@ export class LanServer {
     return false
   }
 
+  /** Close the device's sockets, including one still waiting to prove its key. */
   kickDevice(deviceId: string): void {
     for (const [ws, state] of this.clients) {
-      if (state.deviceId === deviceId) {
-        try {
-          ws.send(JSON.stringify({ type: 'kicked', mobileDeviceId: deviceId }))
-        } catch { /* ignore */ }
-        ws.close(1000, 'kicked')
-      }
+      if (state.deviceId !== deviceId && state.handshake.pendingDeviceId !== deviceId) continue
+      this.kick(ws, deviceId)
     }
+  }
+
+  private kick(ws: WebSocket, deviceId: string): void {
+    try {
+      ws.send(JSON.stringify({ type: 'kicked', mobileDeviceId: deviceId }))
+    } catch { /* ignore */ }
+    ws.close(1000, 'kicked')
   }
 
   private handleConnection(ws: WebSocket): void {
     const state: ClientState = {
       deviceId: '',
-      deviceName: '',
+      device: null,
       handshake: new this.callbacks.phoneLink.PhoneHandshake(this.callbacks.resolveKey),
       channel: null,
       registerTimer: setTimeout(() => {
@@ -314,7 +318,7 @@ export class LanServer {
       state.registerTimer = null
     }
     state.deviceId = device.deviceId
-    state.deviceName = device.deviceName
+    state.device = device
     state.channel = channel
 
     // LAN has no heartbeat, so the socket a suspended phone left behind can
@@ -349,6 +353,11 @@ export class LanServer {
       return
     }
 
+    if (!state.device || !this.callbacks.phoneLink.stillPaired(this.callbacks.resolveKey, state.device)) {
+      log.warn('[LanServer] Command from a removed device, disconnecting: %s', state.deviceId)
+      this.kick(ws, state.deviceId)
+      return
+    }
     trace('remote.in', (command as { type?: string }).type ?? 'unknown', command)
     const respond: LanRemoteResponder = (requestId, payload) => this.sendResponse(ws, channel, requestId, payload)
     this.callbacks.onCommand(command, respond, { deviceId: state.deviceId })

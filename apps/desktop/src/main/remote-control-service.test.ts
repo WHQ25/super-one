@@ -902,7 +902,7 @@ const testPhones = (deviceId: string) => {
   return { byKey: (keyId: string) => keyId === TEST_KEY_ID ? phone : null, byId: (id: string) => id === deviceId ? phone : null }
 }
 
-describe('RemoteControlService LAN frame seq', () => {
+describe('RemoteControlService LAN delivery', () => {
   let service: RemoteControlService | null = null
   let client: import('ws').WebSocket | null = null
 
@@ -914,7 +914,7 @@ describe('RemoteControlService LAN frame seq', () => {
     service = null
   })
 
-  it('injects monotonically increasing seq into LAN frames so mobile seq filter does not drop them', async () => {
+  it('seals LAN events in order on the phone\'s channel, with no envelope seq', async () => {
     const { WebSocket } = await import('ws')
     const { webcrypto } = await import('node:crypto')
     const { bytesToHex } = await import('./remote-control-crypto')
@@ -936,7 +936,8 @@ describe('RemoteControlService LAN frame seq', () => {
     const port = service.getLanPort()
     expect(port).not.toBeNull()
 
-    client = (await connectTestPhone(port!, issueChannelCredential(masterSecret, TEST_KEY_ID))).socket
+    const phone = await connectTestPhone(port!, issueChannelCredential(masterSecret, TEST_KEY_ID))
+    client = phone.socket
 
     const frames: Array<Record<string, unknown>> = []
     client.on('message', (raw) => {
@@ -951,10 +952,11 @@ describe('RemoteControlService LAN frame seq', () => {
     }
     await new Promise((r) => setTimeout(r, 100))
 
-    expect(frames).toHaveLength(3)
-    expect(frames[0].seq).toBe(1)
-    expect(frames[1].seq).toBe(2)
-    expect(frames[2].seq).toBe(3)
+    const { openLinkFrame } = await import('@superone/relay-client/phone-link')
+    const { decodeHostPlaintext } = await import('@superone/relay-client/host-payload')
+    expect(frames.map((f) => f.seq)).toEqual([undefined, undefined, undefined])
+    const opened = frames.map((f) => decodeHostPlaintext(openLinkFrame(phone.channel, f.data as string).payload) as { n?: number })
+    expect(opened.map((event) => event.n)).toEqual([0, 1, 2])
   })
 
   it('broadcasts desktop_shutdown to LAN clients before tearing down so mobiles can return to device list instead of reconnecting', async () => {
@@ -977,7 +979,8 @@ describe('RemoteControlService LAN frame seq', () => {
     })
 
     const port = service.getLanPort()
-    client = (await connectTestPhone(port!, issueChannelCredential(masterSecret, TEST_KEY_ID))).socket
+    const phone = await connectTestPhone(port!, issueChannelCredential(masterSecret, TEST_KEY_ID))
+    client = phone.socket
 
     const shutdownPromise = new Promise<Record<string, unknown>>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('desktop_shutdown timeout')), 1500)
@@ -994,54 +997,6 @@ describe('RemoteControlService LAN frame seq', () => {
     expect(frame).toEqual({ type: 'desktop_shutdown' })
 
     service = null
-  })
-
-  it('resets LAN frame seq on stop so a fresh start begins at 1', async () => {
-    const { WebSocket } = await import('ws')
-    const { webcrypto } = await import('node:crypto')
-    const { bytesToHex } = await import('./remote-control-crypto')
-
-    const masterSecret = bytesToHex(webcrypto.getRandomValues(new Uint8Array(32)).buffer)
-    const deviceId = 'mobile-test'
-
-    service = new RemoteControlService('ws://127.0.0.1:1', {
-      onCommand: vi.fn(),
-      pairedPhones: testPhones(deviceId),
-    })
-    const config = {
-      enabled: true,
-      masterSecret,
-      deviceId: 'desktop-test',
-      relayUrl: 'ws://127.0.0.1:1',
-    }
-    await service.start(config)
-
-    const captureFrames = async (): Promise<Array<Record<string, unknown>>> => {
-      const port = service!.getLanPort()
-      const ws = (await connectTestPhone(port!, issueChannelCredential(masterSecret, TEST_KEY_ID))).socket
-      const collected: Array<Record<string, unknown>> = []
-      ws.on('message', (raw) => {
-        try {
-          const f = JSON.parse(raw.toString())
-          if (f.type === 'event') collected.push(f)
-        } catch { /* ignore */ }
-      })
-      await service!.sendEventToMobile({ type: 'status_change', status: 'streaming' }, [deviceId])
-      await service!.sendEventToMobile({ type: 'status_change', status: 'idle' }, [deviceId])
-      await new Promise((r) => setTimeout(r, 80))
-      ws.close()
-      ws.removeAllListeners()
-      return collected
-    }
-
-    const first = await captureFrames()
-    expect(first.map((f) => f.seq)).toEqual([1, 2])
-
-    await service.stop()
-    await service.start(config)
-
-    const second = await captureFrames()
-    expect(second.map((f) => f.seq)).toEqual([1, 2])
   })
 })
 

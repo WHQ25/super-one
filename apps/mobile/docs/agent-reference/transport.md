@@ -78,12 +78,10 @@ and reports input and bounded resize messages to RN.
   Only acknowledged paints can be followed by a diff. Hydrates supersede pending
   work; the document acknowledges duplicates without reapplying them. Keep native
   permission state updates outside this document queue.
-- Only relay `event` envelopes advance or emit cumulative ACKs. LAN and terminal
-  frames never produce relay ACKs. Every new socket and a relay `reset` start the
-  tracker with `rebase()`: LAN seqs are the desktop's run-wide counter, relay
-  frames from an earlier connection are unreadable and never replayed, so a
-  watermark cleared to 0 could never advance and would start dropping every event
-  once `processed` reached its cap.
+- Envelopes are never ACKed. The secure channel orders and deduplicates sealed
+  frames (a replayed or reordered frame fails to open), so the client ignores the
+  envelope `seq` the relay still stamps for older phones. Frames from an earlier
+  connection are unreadable and never replayed; every new connection restores.
 - The desktop LAN server keeps one socket per device, like the relay: a completed
   channel handshake closes the device's older sockets, and only the last socket closing reports the
   device offline. LAN has no heartbeat, so a suspended phone's socket otherwise
@@ -94,9 +92,8 @@ and reports input and bounded resize messages to RN.
   on (`apps/desktop/src/main/remote-control-service.ts`); a reply that finishes
   encoding after a reconnect is dropped, never sent on the new socket.
 - Never carry audio frames on the relay chat-event path: each inbound message re-arms
-  a Durable Object alarm, each event persists its seq and rides ACK/replay, and the
-  500-entry replay buffer force-drops on overflow (`apps/relay/src/relay-session.ts`).
-  Audio needs its own channel.
+  a Durable Object alarm and wakes it (`apps/relay/src/relay-session.ts`). Audio
+  needs its own channel.
 
 Envelope framing, compression and host event coalescing are described in
 [mobile-remote-control.md](../../../../docs/architecture/mobile-remote-control.md).

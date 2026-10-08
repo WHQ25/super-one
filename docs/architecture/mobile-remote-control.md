@@ -88,9 +88,9 @@ encryption:
    - Non-`AgentEvent` payloads sent through `sendEventToMobile` flush the batcher
      first, preserving order.
 4. One serial queue frames each batch once, then seals one copy per phone
-   channel: relay copies are addressed to that phone (sequenced by the relay),
-   LAN copies go to its socket (sequenced by `lanFrameSeq`). Phones without a
-   channel get nothing. Terminal frames use their own serial queue.
+   channel: relay copies are addressed to that phone, LAN copies go to its
+   socket, and each copy is ordered by that phone's channel sequence. Phones
+   without a channel get nothing. Terminal frames use their own serial queue.
 
 `stop()` disposes the batcher and bumps `sendGeneration`; queued work from the old
 generation is discarded rather than sent on a new connection.

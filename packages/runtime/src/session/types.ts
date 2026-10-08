@@ -84,6 +84,12 @@ export interface NodeSessionRecord {
   isAutomation?: boolean
   /** Owning automation id when isAutomation is true. */
   automationId?: string | null
+  /**
+   * Set for a collaboration child launched by a session on another machine.
+   * Its mailbox belongs to that parent: `session_collab_send/retrieve` go to the
+   * controller as Host Actions, and the child may not launch children itself.
+   */
+  externalParent?: { sessionId: string } | null
 }
 
 /** Image/document attachment for a remote turn (base64 payload). */

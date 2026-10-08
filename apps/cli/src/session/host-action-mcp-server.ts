@@ -51,6 +51,8 @@ export interface HostActionMcpServerOptions {
   requestHostAction: HostActionRequestFn
   /** Node-local session_collab_* (SessionRuntime collab service). */
   collab?: NodeCollabToolHandlers
+  /** Collaboration children of another machine's session forward their mailbox tools. */
+  hasExternalParent?: (sessionId: string) => boolean
   /** OKF actor for interaction-memory notes (harness + model of the session). */
   resolveActor?: (sessionId: string) => string | undefined
   /** The harness running a session, read per call; decides whether `widget_show` replies are shortened. */
@@ -206,6 +208,7 @@ export async function startHostActionMcpServer(
       try {
         const server = createHostActionMcpServer(superoneSessionId, opts.requestHostAction, {
           collab: opts.collab,
+          hasExternalParent: opts.hasExternalParent,
           resolveActor: opts.resolveActor,
           resolveHarnessId: opts.resolveHarnessId,
         })
@@ -295,6 +298,7 @@ export async function startHostActionMcpServer(
     createClaudeSdkMcp(sessionId: string): ClaudeSdkMcpHandle {
       const server = createHostActionMcpServer(sessionId, opts.requestHostAction, {
         collab: opts.collab,
+        hasExternalParent: opts.hasExternalParent,
         resolveActor: opts.resolveActor,
         resolveHarnessId: opts.resolveHarnessId,
       })

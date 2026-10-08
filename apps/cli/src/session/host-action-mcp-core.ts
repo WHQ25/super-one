@@ -16,14 +16,17 @@ import { InteractionMemoryStore, executeInteractionMemoryTool } from '@superone/
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import {
   HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS,
+  HOST_ACTION_TOOL_GROUPS,
   hostActionToolReply,
   isNodeLocalSuperoneTool,
   listHostActionSuperoneTools,
   type HostActionReplayPolicy,
+  type HostActionToolReply,
   type HostActionTerminalResult,
 } from '@superone/shared/environment'
 import { supportsShortWidgetResult } from '@superone/shared/harness/harness-capabilities'
 import { readWidgetShowArgs, widgetShowShortContent } from '@superone/shared/generative-ui/widget-data'
+import { NESTED_COLLABORATION_UNSUPPORTED } from '@superone/runtime/collaboration'
 import { jsonSchemaToZodShape } from './json-schema-to-zod'
 
 /** Public MCP server name harnesses attach as. */
@@ -57,6 +60,11 @@ export interface CreateHostActionMcpServerOptions {
   /** OKF actor for notes this session writes; resolved per call so a model switch is reflected. */
   resolveActor?: (sessionId: string) => string | undefined
   collab?: NodeCollabToolHandlers
+  /**
+   * True for a collaboration child whose parent runs on another machine: its
+   * mailbox tools go to the controller as Host Actions and it launches nothing.
+   */
+  hasExternalParent?: (sessionId: string) => boolean
   /** The harness running a session, read per call; decides whether `widget_show` replies are shortened. */
   resolveHarnessId?: (sessionId: string) => string | undefined
 }
@@ -102,7 +110,12 @@ export function createHostActionMcpServer(
       (args, extra) => executeInteractionMemoryTool(def.name, args, memoryFor(), extra.signal))
   }
   if (opts?.collab) {
-    registerNodeCollabTools(server, superoneSessionId, opts.collab)
+    const external = opts.hasExternalParent
+    registerNodeCollabTools(
+      server,
+      superoneSessionId,
+      external ? forwardExternalChildCollab(opts.collab, requestHostAction, external) : opts.collab,
+    )
   }
   return server
 }
@@ -157,6 +170,43 @@ export function registerHostActionTools(
       },
     )
   }
+}
+
+/**
+ * Collab handlers of a session whose collaboration parent may live on another
+ * machine. For such a child, send and retrieve run on the controller (which
+ * owns the mailbox) and launching is refused like any nested collaboration.
+ */
+function forwardExternalChildCollab(
+  local: NodeCollabToolHandlers,
+  requestHostAction: HostActionRequestFn,
+  hasExternalParent: (sessionId: string) => boolean,
+): NodeCollabToolHandlers {
+  const refuse = (): never => {
+    throw Object.assign(new Error(NESTED_COLLABORATION_UNSUPPORTED), { code: 'failed_precondition' })
+  }
+  const forward = async (toolName: string, sessionId: string, args: unknown) =>
+    new ForwardedReply(hostActionToolReply(await requestHostAction({
+      sessionId,
+      toolName,
+      toolGroup: HOST_ACTION_TOOL_GROUPS.superone,
+      args: args ?? {},
+      // A replayed send is deduplicated by clientMessageId; a replayed retrieve would drain twice.
+      replayPolicy: 'unsafe',
+    })))
+  return {
+    listAgents: local.listAgents,
+    request: (id, args, signal) => (hasExternalParent(id) ? refuse() : local.request(id, args, signal)),
+    start: (id, args) => (hasExternalParent(id) ? refuse() : local.start(id, args)),
+    send: (id, args) => (hasExternalParent(id) ? forward('session_collab_send', id, args) : local.send(id, args)),
+    retrieve: (id, args) =>
+      hasExternalParent(id) ? forward('session_collab_retrieve', id, args) : local.retrieve(id, args),
+  }
+}
+
+/** A tool reply produced by the controller, returned to the agent as is. */
+class ForwardedReply {
+  constructor(readonly reply: HostActionToolReply) {}
 }
 
 function collabDescriptor(name: string): {
@@ -245,7 +295,7 @@ export function registerNodeCollabTools(
     async (args) => {
       try {
         const result = await collab.send(superoneSessionId, args ?? {})
-        return toolResultJson(result)
+        return result instanceof ForwardedReply ? result.reply : toolResultJson(result)
       } catch (err) {
         return collabErrorResult(err)
       }
@@ -262,7 +312,7 @@ export function registerNodeCollabTools(
     async (args) => {
       try {
         const result = await collab.retrieve(superoneSessionId, args ?? {})
-        return toolResultJson(result)
+        return result instanceof ForwardedReply ? result.reply : toolResultJson(result)
       } catch (err) {
         return collabErrorResult(err)
       }

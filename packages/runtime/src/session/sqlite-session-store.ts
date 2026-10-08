@@ -9,6 +9,7 @@ function parseSettingsJson(raw: string | null | undefined): {
   model: string | null
   effort: string | null
   apiProviderId: string | null
+  externalParent: { sessionId: string } | null
 } {
   const empty = {
     permissionMode: null as string | null,
@@ -16,6 +17,7 @@ function parseSettingsJson(raw: string | null | undefined): {
     model: null as string | null,
     effort: null as string | null,
     apiProviderId: null as string | null,
+    externalParent: null as { sessionId: string } | null,
   }
   if (!raw) return empty
   try {
@@ -32,10 +34,16 @@ function parseSettingsJson(raw: string | null | undefined): {
       model: str('model'),
       effort: str('effort'),
       apiProviderId: str('apiProviderId'),
+      externalParent: externalParentOf(obj.externalParent),
     }
   } catch {
     return empty
   }
+}
+
+function externalParentOf(raw: unknown): { sessionId: string } | null {
+  const sessionId = (raw as { sessionId?: unknown } | null)?.sessionId
+  return typeof sessionId === 'string' && sessionId ? { sessionId } : null
 }
 
 function serializeSettingsJson(session: NodeSessionRecord): string {
@@ -45,6 +53,7 @@ function serializeSettingsJson(session: NodeSessionRecord): string {
     model: session.model ?? null,
     effort: session.effort ?? null,
     apiProviderId: session.apiProviderId ?? null,
+    ...(session.externalParent ? { externalParent: session.externalParent } : {}),
   })
 }
 
@@ -120,6 +129,7 @@ export function createSqliteSessionStore(db: SqliteDatabase): SessionStore {
           model: settings.model,
           effort: settings.effort,
           apiProviderId: settings.apiProviderId,
+          ...(settings.externalParent ? { externalParent: settings.externalParent } : {}),
           createdAt: r.created_at,
           updatedAt: r.updated_at,
           isPinned: r.is_pinned === 1,

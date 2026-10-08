@@ -8,6 +8,7 @@ import {
   PROTOCOL_GENERATION,
   hasAllScopes,
   isNodeHarnessId,
+  nodeProjectsDir,
   normalizeSessionHarnessId,
   OPERATION_SCOPES,
   providerSessionIdFromResume,
@@ -1834,9 +1835,13 @@ async function handleGitClone(payload: unknown, ctx: RpcContext): Promise<RpcRes
   if (denied) return denied
   const p = asRecord(payload)
   try {
+    // Without a parent the clone goes to this node's projects directory.
+    const parentPath = typeof p.parentPath === 'string' && p.parentPath.trim()
+      ? p.parentPath
+      : nodeProjectsDir(loadNodeAgentSettings(ctx.settingsConfigPath))
     const cloned = await cloneRepository({
       remoteUrl: String(p.remoteUrl ?? ''),
-      parentPath: expandHostPath(String(p.parentPath ?? '')),
+      parentPath: expandHostPath(parentPath),
       directoryName: typeof p.directoryName === 'string' ? p.directoryName : undefined,
       shallow: p.shallow === true,
     })
@@ -1919,6 +1924,14 @@ function handleSessionCreate(payload: unknown, ctx: RpcContext): RpcResult {
     return { error: { code: 'invalid_argument', message: 'systemPromptAppend must be a string' } }
   }
   const systemPromptAppend = typeof p.systemPromptAppend === 'string' ? p.systemPromptAppend : null
+  // A collaboration child launched by a session on another machine: its mailbox
+  // tools go to that machine through Host Actions instead of this node's own.
+  const externalParent = asRecord(p.externalParent)
+  const externalParentSessionId =
+    typeof externalParent.sessionId === 'string' ? externalParent.sessionId.trim() : ''
+  if (p.externalParent != null && !externalParentSessionId) {
+    return { error: { code: 'invalid_argument', message: 'externalParent.sessionId is required' } }
+  }
   try {
     // Resolve agent defaults at create so the client can seed UI without a second round-trip.
     // Precedence: explicit create options → session_providers.config → node agent defaults.
@@ -1963,6 +1976,7 @@ function handleSessionCreate(payload: unknown, ctx: RpcContext): RpcResult {
       title: typeof p.title === 'string' ? p.title : undefined,
       cwd,
       systemPromptAppend,
+      ...(externalParentSessionId ? { externalParent: { sessionId: externalParentSessionId } } : {}),
       // Initial HA controller = creating client. Token refresh keeps the same
       // clientSessionId; re-pair does not — acquireControl rebinds (see above).
       controllerClientSessionId: ctx.client.clientSessionId,

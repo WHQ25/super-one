@@ -34,6 +34,7 @@ export const DEFAULT_NODE_AGENT_SETTINGS: NodeAgentSettings = {
   },
   experimentalClaudeOpenAiChatEnabled: false,
   note: '',
+  projectsDir: '',
 }
 
 /** File root shape: merge agent block into existing config.json without clobbering peers. */
@@ -100,6 +101,7 @@ export function normalizeNodeAgentSettings(raw: unknown): NodeAgentSettings {
       false,
     ),
     note: asString(agent.note, '').trim(),
+    projectsDir: asString(agent.projectsDir, '').trim(),
   }
 }
 
@@ -112,6 +114,7 @@ export function mergeNodeAgentSettings(
     codex: { ...current.codex },
     experimentalClaudeOpenAiChatEnabled: current.experimentalClaudeOpenAiChatEnabled,
     note: current.note,
+    projectsDir: current.projectsDir,
   }
 
   if (patch.claude) {
@@ -159,6 +162,7 @@ export function mergeNodeAgentSettings(
     next.experimentalClaudeOpenAiChatEnabled = patch.experimentalClaudeOpenAiChatEnabled
   }
   if (typeof patch.note === 'string') next.note = patch.note
+  if (typeof patch.projectsDir === 'string') next.projectsDir = patch.projectsDir
 
   return normalizeNodeAgentSettings(next)
 }

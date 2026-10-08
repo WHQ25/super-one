@@ -50,6 +50,20 @@ export interface NodeAgentSettings {
    * to agents in `environment_list` as `descriptor.note`. Empty when unset.
    */
   note: string
+  /**
+   * Directory `git.clone` puts a repository in when the caller names none, as
+   * when another machine launches an agent here for a repository this machine
+   * lacks. Empty or absent means {@link DEFAULT_NODE_PROJECTS_DIR}.
+   */
+  projectsDir?: string
+}
+
+/** Default parent directory for clones a remote launch asks for (`~` is the node user's home). */
+export const DEFAULT_NODE_PROJECTS_DIR = '~/SuperOne/Projects'
+
+/** The directory `git.clone` uses when the caller names none. */
+export function nodeProjectsDir(settings: Pick<NodeAgentSettings, 'projectsDir'>): string {
+  return settings.projectsDir?.trim() || DEFAULT_NODE_PROJECTS_DIR
 }
 
 export type NodeAgentSettingsPatch = {
@@ -61,6 +75,7 @@ export type NodeAgentSettingsPatch = {
   >
   experimentalClaudeOpenAiChatEnabled?: boolean
   note?: string
+  projectsDir?: string
 }
 
 export interface SettingsGetRequest {

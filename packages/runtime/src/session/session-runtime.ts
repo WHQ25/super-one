@@ -36,6 +36,7 @@ import { isModelOnlyHostWake } from '@superone/shared/host-wake'
 import type { LeaseGuard, SessionEventLog, SessionStore } from './ports'
 import type { HostActionStore } from './host-action-store'
 import { HostActionChannel } from './host-action-channel'
+import { collaborationSystemPrompt } from '../collaboration/text'
 import {
   type ActiveHarnessRuntime,
   type AgentsConfirmOutcome,
@@ -391,6 +392,11 @@ export class SessionRuntime {
   private hydrateFromStore(): void {
     for (const session of this.store.loadAll()) {
       this.live.set(session.sessionId, session)
+      // The prompt append is in memory only; a child of another machine's
+      // session has no local grant to rebuild it from.
+      if (session.externalParent) {
+        this.systemPromptAppends.set(session.sessionId, collaborationSystemPrompt(session.externalParent.sessionId))
+      }
     }
   }
 
@@ -512,6 +518,8 @@ export class SessionRuntime {
     /** Mark session as automation-owned (filterable in session.list metadata). */
     isAutomation?: boolean
     automationId?: string | null
+    /** Collaboration parent on another machine (see {@link NodeSessionRecord.externalParent}). */
+    externalParent?: { sessionId: string } | null
   }): NodeSessionRecord {
     const now = Date.now()
     const controller =
@@ -555,6 +563,7 @@ export class SessionRuntime {
       alwaysAllowedTools: [],
       isAutomation,
       automationId,
+      ...(input.externalParent ? { externalParent: { sessionId: input.externalParent.sessionId } } : {}),
     }
     this.live.set(session.sessionId, session)
     if (input.systemPromptAppend && input.systemPromptAppend.trim()) {

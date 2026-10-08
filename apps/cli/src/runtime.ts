@@ -137,6 +137,7 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
       return session ? memoryActor(session.harnessId, session.model) : undefined
     },
     resolveHarnessId: (sessionId) => sessionsRef?.get(sessionId)?.harnessId,
+    hasExternalParent: (sessionId) => !!sessionsRef?.get(sessionId)?.externalParent,
     collab: {
       listAgents: () => {
         if (!collaborationRef) throw Object.assign(new Error('collab not ready'), { code: 'failed_precondition' })
@@ -152,6 +153,12 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
             role: string
             config?: Record<string, unknown>
           }>
+        }
+        if (a.launches?.some((launch) => (launch as { environment?: unknown }).environment)) {
+          // The mailbox and machine list live in the desktop app that controls this node.
+          throw Object.assign(new Error('Launching on another machine is only available from the SuperOne desktop app'), {
+            code: 'failed_precondition',
+          })
         }
         return collaborationRef.request({
           parentSessionId: sessionId,

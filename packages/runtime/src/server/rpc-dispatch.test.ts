@@ -127,7 +127,15 @@ describe('session.create', () => {
     )
   })
 
+  it('passes the external collaboration parent of a child launched from another machine', async () => {
+    const { ctx, create } = sessionHost()
+    const res = await dispatchRpc('session.create', { projectId: 'p1', externalParent: { sessionId: 'parent-a' } }, ctx)
+    expect(res.error).toBeUndefined()
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ externalParent: { sessionId: 'parent-a' } }))
+  })
+
   it.each([
+    [{ externalParent: { sessionId: '' } }, 'externalParent.sessionId is required'],
     [{ cwd: 'relative/dir' }, 'cwd not allowed for this project'],
     [{ cwd: '/elsewhere' }, 'cwd not allowed for this project'],
     [{ cwd: 42 }, 'cwd must be a string'],

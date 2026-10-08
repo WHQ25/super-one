@@ -8,7 +8,7 @@ import { assertCodexAccountSwitchAllowed } from '@superone/shared/codex-accounts
 import { insertCodexTimelineRow, stampCodexTimelineOrder } from '@superone/shared/codex-timeline-rows'
 import { buildCompactBoundaryMessage, compactBoundaryInsertIndex, isCompactSlashSend } from '@superone/shared/compact-boundary'
 import { newMessageId } from '@superone/shared/message-id'
-import { markSendFailure, withoutSendFailure } from '@superone/shared/send-failure'
+import { markSendFailure, withSendFailure, withoutSendFailure } from '@superone/shared/send-failure'
 import { SessionShutdown } from './session-shutdown'
 import { SessionLiveness } from './session-liveness'
 import { hostPendingInteractions, trackHostInteraction } from './host-pending-interactions'
@@ -807,9 +807,7 @@ export class Session implements SessionContract {
           opts?.onAccepted?.()
           await this.backend.send(withMcpAppContext(request, this._messages))
         } catch (error) {
-          if (request.clientMessageId && this._pendingQueuedRequests.delete(request.clientMessageId)) {
-            this.emitQueuedMessages()
-          }
+          this.recordSendFailure(request, error)
           throw error
         }
         return
@@ -2513,20 +2511,31 @@ export class Session implements SessionContract {
   }
 
   /**
-   * A send admitted into the transcript whose turn never started (the runtime
-   * would not start, the backend refused it). The caller's rejection reaches
-   * only the caller, and only if it is still connected, so the failure is kept
-   * on the user row: every client restoring this session sees it.
+   * A send admitted into the transcript or the queue whose turn never started
+   * (the runtime would not start, the backend refused it). The caller's
+   * rejection reaches only the caller, and only if it is still connected, so
+   * the failure is kept on the user row: every client restoring this session
+   * sees it. A queued send moves into the transcript as that row; the queue
+   * only holds work still due to run.
    */
   private recordSendFailure(request: SendMessageRequest, error: unknown): void {
     const id = request.clientMessageId
     if (!id || this._status === 'disposed') return
     const message = error instanceof Error ? error.message : String(error)
-    const messages = markSendFailure(this._messages, id, message)
-    if (!messages) return
-    this.replaceMessages(messages)
-    this.notifyStateChange()
-    this.forwardEvent({ type: 'user_message_send_failed', clientMessageId: id, error: message })
+    const queued = this._pendingQueuedRequests.get(id)
+    const messages = queued && !this._messages.some((m) => m.id === id)
+      ? [...this._messages, withSendFailure(this.userMessageFor(queued.request, queued.providerOrigin), message)]
+      : markSendFailure(this._messages, id, message)
+    if (messages) {
+      this.replaceMessages(messages)
+      this.notifyStateChange()
+      // Before the queue change, so a client still holding the queued bubble moves it.
+      this.forwardEvent({ type: 'user_message_send_failed', clientMessageId: id, error: message })
+    }
+    if (queued) {
+      this._pendingQueuedRequests.delete(id)
+      this.emitQueuedMessages()
+    }
   }
 
   private notifyStateChange(allowEmpty = false): void {

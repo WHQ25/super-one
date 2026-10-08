@@ -64,6 +64,30 @@ describe('a send the host admitted but never started', () => {
     expect(session.snapshot.messages[0]?.metadata?.sendFailure).toBeUndefined()
   })
 
+  it('keeps a queued send the backend refused as a failed row a restore shows, and resends it', async () => {
+    const { session, backend, emit } = fixture(async () => {})
+    await session.send({ content: 'first', clientMessageId: 'u1' })
+    emit({ type: 'status_change', status: 'streaming' })
+    const live: AgentEvent[] = []
+    session.on((event) => live.push(event))
+    backend.send.mockRejectedValueOnce(new Error('not connected'))
+    await expect(session.send({ content: 'later', clientMessageId: 'u2', priority: 'next' })).rejects.toThrow('not connected')
+
+    expect(session.getQueuedMessagesEvent()).toBeNull()
+    expect(live.map((event) => event.type)).toEqual(['queued_messages_changed', 'user_message_send_failed', 'queued_messages_changed'])
+    emit({ type: 'status_change', status: 'idle' })
+    const runtime = await openOnMobile(session)
+    const row = runtime.session.messages.find((message) => message.id === 'u2')
+    expect(row?.metadata?.sendFailure).toEqual({ error: 'not connected' })
+    expect(runtime.session.queuedMessages).toEqual([])
+    runtime.dispose()
+
+    await session.send({ content: 'later', clientMessageId: 'u2' })
+    expect(backend.send).toHaveBeenLastCalledWith(expect.objectContaining({ clientMessageId: 'u2' }))
+    expect(session.snapshot.messages.filter((message) => message.id === 'u2')).toHaveLength(1)
+    expect(session.snapshot.messages.find((message) => message.id === 'u2')?.metadata?.sendFailure).toBeUndefined()
+  })
+
   it('leaves the row alone when the turn had already replied', async () => {
     const { session, backend, emit } = fixture(async () => {})
     backend.send.mockImplementation(async () => {

@@ -220,8 +220,12 @@ export class CollaborationChildMonitor {
         break
       }
     }
-    // A new run supersedes the last stop: its wake is moot.
-    if (!hadRun && this.runs.has(sessionId)) clearStopWakeOfChild(sessionId, stopKey)
+    // A later run supersedes the last stop: its wake is moot. A node event
+    // orders itself against the stop, whether or not a run was already open
+    // here (a run resumed after a restart is).
+    if (stopKey !== undefined ? event.type === 'status_change' || event.type === 'message_start' : !hadRun && this.runs.has(sessionId)) {
+      clearStopWakeOfChild(sessionId, stopKey)
+    }
     // Any live event is activity: the stall is over.
     this.clearStall(sessionId)
   }
@@ -234,6 +238,14 @@ export class CollaborationChildMonitor {
   resumeRun(sessionId: string, state?: SessionAgentRunState): void {
     if (!this.runs.has(sessionId) && state) this.runs.set(sessionId, { ...state })
     else this.open(sessionId)
+  }
+
+  /**
+   * The child is running now, after any stop this desktop recorded for it
+   * (stops are recorded only up to the event cursor): that stop is moot.
+   */
+  supersedeStop(sessionId: string): void {
+    clearStopWakeOfChild(sessionId, undefined)
   }
 
   /** The open run of `sessionId`, for recording with an event cursor; null when none is open. */

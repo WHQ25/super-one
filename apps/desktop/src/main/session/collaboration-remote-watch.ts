@@ -22,6 +22,7 @@ const EVENT_PAGE = 1000
 export interface RemoteChildRunFeed {
   handleEvent(sessionId: string, event: AgentEvent, replay: boolean, stopKey?: string): void
   resumeRun(sessionId: string, state?: SessionAgentRunState): void
+  supersedeStop(sessionId: string): void
   runState(sessionId: string): SessionAgentRunState | null
   stopRun(sessionId: string, status: string, stopKey?: string): void
 }
@@ -106,6 +107,7 @@ export class RemoteChildWatcher {
       // A run open at the cursor, or running now, ends in a stop that must count.
       if (child.remote.run) this.feed.resumeRun(child.sessionId, child.remote.run)
       else if (state?.status === 'streaming') this.feed.resumeRun(child.sessionId)
+      if (state?.status === 'streaming') this.feed.supersedeStop(child.sessionId)
       if (state && state.status !== 'streaming' && this.feed.runState(child.sessionId)) settled.set(child.sessionId, state.status)
       this.resumed.add(child.sessionId)
     }

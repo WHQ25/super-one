@@ -191,6 +191,37 @@ describe('RemoteChildWatcher', () => {
     expect(state.wake.mock.calls.map((call) => call[2]).sort()).toEqual(['child', 'child-c'])
   })
 
+  describe('a recorded stop the child moved past', () => {
+    const pending = () => JSON.parse(state.store.grantById(grantId)!.config_json).pendingStopWake
+
+    beforeEach(async () => {
+      await tick(startDesktop())
+      state.events.push(statusEvent(12, 'idle'))
+      await tick(startDesktop())
+      expect(pending()).toMatchObject({ key: '12' })
+    })
+
+    it('ends when this desktop restarts while the child runs again', async () => {
+      state.events.push(statusEvent(13, 'streaming'))
+      state.status = 'streaming'
+      const restarted = startDesktop(() => Date.now() + 60_000)
+      await tick(restarted)
+      expect(pending()).toBeUndefined()
+      await restarted.monitor.resendStopWakes()
+      expect(state.wake).toHaveBeenCalledTimes(1)
+    })
+
+    it('ends when the new run already reported and stopped before this desktop is back', async () => {
+      state.store.appendMessage({ grantId, senderSessionId: 'child', recipientSessionId: 'parent', content: 'done' })
+      state.events.push(statusEvent(13, 'streaming'), statusEvent(14, 'idle'))
+      const restarted = startDesktop(() => Date.now() + 60_000)
+      await tick(restarted)
+      expect(pending()).toBeUndefined()
+      await restarted.monitor.resendStopWakes()
+      expect(state.wake).toHaveBeenCalledTimes(1)
+    })
+  })
+
   it('waits for the machine to reconnect and reads the run state again then', async () => {
     state.connected = false
     const desktop = startDesktop()

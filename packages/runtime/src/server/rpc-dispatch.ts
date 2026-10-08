@@ -18,7 +18,10 @@ import {
   type RpcErrorCode,
 } from '@superone/shared/environment'
 import { applySessionTagOp, parseSessionTagOp } from '@superone/shared/session-tags'
-import { cloneRepository } from '@superone/shared/git-clone'
+import { cloneRepository, resolveCloneDestination, type CloneRepositoryInput } from '@superone/shared/git-clone'
+import { normalizeGitRemoteUrl, repoIdentityRemote } from '@superone/shared/git-remote-url'
+import { isGitRemoteName } from '../git/index'
+import { detectRepoIdentity } from '../workspace/index'
 import { isGitMentionRefKind } from '@superone/shared/git-mention-query'
 import type { ConsumerBinding, ConsumerId, Platform } from '@superone/shared/platform-registry'
 import { loadNodeAgentSettings, patchNodeAgentSettings, resolveAgentTurnDefaults } from '../settings/index'
@@ -329,6 +332,8 @@ async function dispatchRpcInner(method: string, payload: unknown, hostCtx: HostR
       return handleGitMentionCapabilities(payload, ctx)
     case 'git.worktreeActivate':
       return handleGitWorktreeActivate(payload, ctx)
+    case 'git.fetch':
+      return handleGitFetch(payload, ctx)
     case 'git.worktreeCheckedOutBranches':
       return handleGitWorktreeCheckedOutBranches(payload, ctx)
     case 'git.worktreeAssignBranch':
@@ -1546,6 +1551,20 @@ function handleGitWorktrees(payload: unknown, ctx: RpcContext): RpcResult {
   }
 }
 
+async function handleGitFetch(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.writeWorkspace)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const remote = typeof p.remote === 'string' && p.remote.trim() ? p.remote.trim() : 'origin'
+  if (!isGitRemoteName(remote)) return { error: { code: 'invalid_argument', message: 'invalid remote name' } }
+  try {
+    await ctx.workspaceGit.fetch(String(p.projectId ?? ''), remote)
+    return { result: { ok: true } }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
 async function handleGitWorktreeActivate(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.writeWorkspace)
   if (denied) return denied
@@ -1833,6 +1852,25 @@ async function handleSessionFork(payload: unknown, ctx: RpcContext): Promise<Rpc
  * Clone a remote repository onto this host and register it as a project, so
  * the desktop add-project dialog gets back a ready-to-open ProjectSnapshot.
  */
+/**
+ * A clone whose folder already exists: reuse it when it is a checkout of the
+ * same origin (a clone that was never registered or was removed from the
+ * list), otherwise clone beside it under the first free `<name>-<n>`.
+ */
+function existingCloneTarget(input: CloneRepositoryInput): {
+  reuse?: { path: string; name: string }
+  directoryName?: string
+} {
+  const destination = resolveCloneDestination(input)
+  if (!existsSync(destination.path)) return { directoryName: input.directoryName }
+  const wanted = normalizeGitRemoteUrl(input.remoteUrl)
+  if (wanted && repoIdentityRemote(detectRepoIdentity(destination.path)) === wanted) return { reuse: destination }
+  for (let n = 2; ; n++) {
+    const directoryName = `${destination.name}-${n}`
+    if (!existsSync(pathJoin(configDirname(destination.path), directoryName))) return { directoryName }
+  }
+}
+
 async function handleGitClone(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.manageProject)
   if (denied) return denied
@@ -1842,12 +1880,18 @@ async function handleGitClone(payload: unknown, ctx: RpcContext): Promise<RpcRes
     const parentPath = typeof p.parentPath === 'string' && p.parentPath.trim()
       ? p.parentPath
       : nodeProjectsDir(loadNodeAgentSettings(ctx.settingsConfigPath))
-    const cloned = await cloneRepository({
+    const input = {
       remoteUrl: String(p.remoteUrl ?? ''),
       parentPath: expandHostPath(parentPath),
       directoryName: typeof p.directoryName === 'string' ? p.directoryName : undefined,
       shallow: p.shallow === true,
-    })
+    }
+    if (p.ifExists === 'reuse-or-rename') {
+      const existing = existingCloneTarget(input)
+      if (existing.reuse) return { result: ctx.projects.open(existing.reuse.path, existing.reuse.name) }
+      input.directoryName = existing.directoryName
+    }
+    const cloned = await cloneRepository(input)
     return { result: ctx.projects.open(cloned.path, cloned.name) }
   } catch (err) {
     return mapThrown(err)

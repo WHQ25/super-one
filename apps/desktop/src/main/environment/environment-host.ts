@@ -2522,7 +2522,7 @@ export class EnvironmentHost {
    */
   async cloneRepository(
     connectionId: string,
-    input: { remoteUrl: string; parentPath: string; directoryName?: string; shallow?: boolean },
+    input: { remoteUrl: string; parentPath: string; directoryName?: string; shallow?: boolean; ifExists?: 'reuse-or-rename' },
     onProgress?: (percent: number) => void,
   ): Promise<ProjectSnapshot> {
     if (connectionId !== 'local') {

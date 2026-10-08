@@ -116,6 +116,8 @@ export interface WorkspaceGitPort {
     },
   ): { path: string } | Promise<{ path: string }>
   removeWorktree(projectId: string, worktreePath: string): void
+  /** Update the project's remote-tracking refs of `remote` (and its `HEAD`). */
+  fetch(projectId: string, remote: string): void | Promise<void>
   assignBranch(projectId: string, worktreePath: string, rawName: string): unknown
   handoffToMain(projectId: string, worktreePath: string): unknown
   handoffPreview(projectId: string, worktreePath: string): unknown

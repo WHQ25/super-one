@@ -266,11 +266,23 @@ describe('DesktopNodeHost collaboration children', () => {
 
     const described = await client.rpc<ExecutionEnvironmentDescriptor>('environment.descriptor')
     expect(described.capabilities).toMatchObject({ hostActionV1: true, git: false })
-    // Only worktree creation of the git family is served.
+    // Only fetching and worktree creation of the git family are served.
     await expect(client.rpc('git.status', { projectId: 'p1' })).rejects.toMatchObject({ code: 'not_found' })
+    // Pushed work B's checkout has not seen yet: the fetch makes it the base.
+    const origin = tempDir('superone-origin-')
+    execFileSync('git', ['init', '-q', '--bare', origin])
+    execFileSync('git', ['-C', projectDir, 'remote', 'set-url', 'origin', origin])
+    execFileSync('git', ['-C', projectDir, 'push', '-q', origin, 'HEAD:refs/heads/main'])
+    execFileSync('git', ['-C', origin, 'symbolic-ref', 'HEAD', 'refs/heads/main'])
+    const pusher = join(tempDir('superone-pusher-'), 'clone')
+    execFileSync('git', ['clone', '-q', origin, pusher])
+    execFileSync('git', ['-C', pusher, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'pushed from A'])
+    execFileSync('git', ['-C', pusher, 'push', '-q', 'origin', 'HEAD:main'])
+    await client.rpc('git.fetch', { projectId: 'p1', remote: 'origin' })
     const worktree = await client.rpc<{ path: string }>('git.worktreeActivate', {
-      projectId: 'p1', baseBranch: 'HEAD', mode: 'branch', branchName: 'superone/builder-1',
+      projectId: 'p1', baseBranch: 'origin/HEAD', mode: 'branch', branchName: 'superone/builder-1',
     })
+    expect(execFileSync('git', ['-C', worktree.path, 'log', '-1', '--format=%s'], { encoding: 'utf8' }).trim()).toBe('pushed from A')
     expect(execFileSync('git', ['-C', worktree.path, 'branch', '--show-current'], { encoding: 'utf8' }).trim()).toBe('superone/builder-1')
     // A cwd outside the project and its served worktrees stays refused.
     await expect(client.rpc('session.create', { projectId: 'p1', harnessId: 'claude', cwd: tempDir('elsewhere-') }))

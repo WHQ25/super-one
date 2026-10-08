@@ -1,3 +1,7 @@
+import { execFileSync } from 'node:child_process'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import type { ExecutionEnvironmentDescriptor } from '@superone/shared/environment'
 import { dispatchRpc } from './rpc-dispatch'
@@ -151,6 +155,7 @@ describe('session.create', () => {
 describe('a partial git port', () => {
   function worktreeOnlyHost() {
     const activateWorktree = vi.fn(async () => ({ path: '/tmp/p1-wt' }))
+    const fetch = vi.fn(async () => {})
     const ctx = projectsOnlyHost({
       client: {
         clientSessionId: 'c1',
@@ -159,11 +164,12 @@ describe('a partial git port', () => {
         devicePublicKeyPem: 'pem',
       } as RpcContext['client'],
       workspaceGit: {
-        servedMethods: new Set(['git.worktreeActivate']),
+        servedMethods: new Set(['git.worktreeActivate', 'git.fetch']),
         activateWorktree,
+        fetch,
       } as unknown as RpcContext['workspaceGit'],
     })
-    return { ctx, activateWorktree }
+    return { ctx, activateWorktree, fetch }
   }
 
   it('serves only the methods it names, awaiting an async worktree', async () => {
@@ -175,10 +181,46 @@ describe('a partial git port', () => {
     expect(status.error).toMatchObject({ code: 'not_found', details: { unsupported: true } })
   })
 
+  it('fetches a named remote and refuses anything that is not one', async () => {
+    const { ctx, fetch } = worktreeOnlyHost()
+    expect(await dispatchRpc('git.fetch', { projectId: 'p1' }, ctx)).toEqual({ result: { ok: true } })
+    expect(fetch).toHaveBeenCalledWith('p1', 'origin')
+    const bad = await dispatchRpc('git.fetch', { projectId: 'p1', remote: '--upload-pack=x' }, ctx)
+    expect(bad.error).toMatchObject({ code: 'invalid_argument' })
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
   it('does not advertise git or worktree listing', async () => {
     const { ctx } = worktreeOnlyHost()
     const res = await dispatchRpc('environment.descriptor', {}, ctx)
     const descriptor = res.result as ExecutionEnvironmentDescriptor
     expect(descriptor.capabilities).toMatchObject({ git: false, worktrees: false })
+  })
+})
+
+describe('git.clone into an existing folder', () => {
+  it('registers an unregistered checkout of the same origin instead of failing', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'clone-existing-'))
+    try {
+      const existing = join(parent, 'app')
+      execFileSync('git', ['init', '-q', existing])
+      execFileSync('git', ['-C', existing, 'remote', 'add', 'origin', 'git@github.com:acme/app.git'])
+      const open = vi.fn((path: string, name?: string) => ({ projectId: 'p-app', path, name }))
+      const ctx = projectsOnlyHost({
+        client: {
+          clientSessionId: 'c1',
+          scopes: ['project:manage'],
+          devicePublicKeyFingerprint: 'fp',
+          devicePublicKeyPem: 'pem',
+        } as RpcContext['client'],
+        projects: { ...projects, open } as unknown as ProjectsPort,
+      })
+      const res = await dispatchRpc('git.clone', {
+        remoteUrl: 'https://github.com/acme/app', parentPath: parent, ifExists: 'reuse-or-rename',
+      }, ctx)
+      expect(res).toEqual({ result: { projectId: 'p-app', path: existing, name: 'app' } })
+    } finally {
+      rmSync(parent, { recursive: true, force: true })
+    }
   })
 })

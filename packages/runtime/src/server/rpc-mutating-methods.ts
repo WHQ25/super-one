@@ -23,6 +23,7 @@ const NODE_MUTATING_METHODS: ReadonlySet<string> = new Set([
   'workspace.tailWatchStart',
   'workspace.tailWatchStop',
   'git.clone',
+  'git.fetch',
   'git.switchBranch',
   'git.createBranch',
   'git.worktreeActivate',

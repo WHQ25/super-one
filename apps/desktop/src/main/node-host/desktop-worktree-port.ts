@@ -2,6 +2,8 @@ import { realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { ProjectsPort, WorkspaceGitPort } from '@superone/runtime/server'
 import { unsupportedMethodError } from '@superone/runtime/server'
+import { fetchRemoteCommands } from '@superone/runtime/git'
+import { gitRun } from '../git-run'
 import { activateWorktree } from '../git/worktree-ops'
 
 function canonical(path: string): string {
@@ -16,8 +18,9 @@ function canonical(path: string): string {
  * The part of `git.*` this desktop serves to other devices: creating a fresh
  * worktree, so a session another machine launches here works on its own
  * branch without touching this desktop's checkout. A session may then run in
- * the project root or a worktree created here. Every other git method stays
- * with this desktop's user and answers unsupported.
+ * the project root or a worktree created here. Fetching the remote first keeps
+ * the base current. Every other git method stays with this desktop's user and
+ * answers unsupported.
  */
 export function createDesktopWorktreePort(projects: ProjectsPort): WorkspaceGitPort {
   /** projectId → worktrees created through this port (canonical paths). */
@@ -32,7 +35,14 @@ export function createDesktopWorktreePort(projects: ProjectsPort): WorkspaceGitP
   }
 
   return {
-    servedMethods: new Set(['git.worktreeActivate']),
+    servedMethods: new Set(['git.worktreeActivate', 'git.fetch']),
+    async fetch(projectId, remote) {
+      const root = projectRoot(projectId)
+      const { fetch, setHead } = fetchRemoteCommands(remote)
+      await gitRun(root, fetch)
+      // The remote may have no default branch to point at.
+      await gitRun(root, setHead).catch(() => undefined)
+    },
     async activateWorktree(projectId, input) {
       const { path } = await activateWorktree(projectRoot(projectId), input)
       const paths = created.get(projectId) ?? new Set<string>()

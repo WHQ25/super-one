@@ -9,6 +9,7 @@ import {
   parseWorktreePorcelain,
   ghRun,
   gitRunSync,
+  fetchRemoteCommands,
   listGitMentionRefs,
   probeGitMentionCapabilities,
   type GitMentionRunners,
@@ -386,6 +387,21 @@ export class WorkspaceGitService {
     const recordedBranch = recordedBranchForMode(mode, baseBranch, safeBranchName ?? branchName)
     this.projects.touch(projectId)
     return { path: wtPath, recordedBranch }
+  }
+
+  fetch(projectId: string, remote: string): void {
+    const folderPath = this.root(projectId)
+    const { fetch, setHead } = fetchRemoteCommands(remote)
+    try {
+      git(folderPath, fetch)
+    } catch (err) {
+      throw Object.assign(new Error(gitErrorMessage(err) || 'git fetch failed'), { code: 'failed_precondition' })
+    }
+    try {
+      git(folderPath, setHead)
+    } catch {
+      /* the remote may have no default branch to point at */
+    }
   }
 
   /** Best-effort cleanup after a failed session.fork worktree path. */

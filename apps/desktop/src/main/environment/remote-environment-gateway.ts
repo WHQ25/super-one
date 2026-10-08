@@ -304,8 +304,15 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     parentPath: string
     directoryName?: string
     shallow?: boolean
+    /** Reuse an unregistered checkout of the same origin, else clone under a free name. */
+    ifExists?: 'reuse-or-rename'
   }): Promise<ProjectSnapshot> {
     return this.client.rpc('git.clone', input)
+  }
+
+  /** Update a project's remote-tracking refs (and `<remote>/HEAD`) on the node. */
+  async gitFetch(projectId: string, remote = 'origin'): Promise<unknown> {
+    return this.client.rpc('git.fetch', { projectId, remote })
   }
 
   async gitStatus(projectId: string, opts?: { cwd?: string }): Promise<unknown> {

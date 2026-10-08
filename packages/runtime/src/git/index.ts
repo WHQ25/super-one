@@ -9,6 +9,7 @@ export {
   type WorktreePorcelainEntry,
 } from './worktree-porcelain'
 export { gitRun, gitRunSync, type GitRunOptions } from './run'
+export { fetchRemoteCommands, isGitRemoteName } from './fetch'
 export { listGitMentionRefs, probeGitMentionCapabilities, type GitMentionRunner, type GitMentionRunners } from './mention-refs'
 export { ghRun, isGhMissingError } from './gh-run'
 export {

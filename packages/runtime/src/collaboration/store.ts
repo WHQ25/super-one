@@ -43,6 +43,12 @@ export interface MailboxBatch {
   rows: CollaborationMessageRow[]
 }
 
+/** The last message of a grant a reader received. */
+export interface MailboxAck {
+  grantId: string
+  lastSequence: number
+}
+
 const GRANT_COLUMNS = `credential_hash AS grant_id, parent_session_id, child_session_id,
   agent_id, task, config_json, task_sent, COALESCE(kind, 'spawn') AS kind, started_at`
 
@@ -302,11 +308,11 @@ export class CollaborationStore {
   }
 
   /**
-   * Drain unread messages addressed to `sessionId` across grants, advancing this
-   * endpoint's cursor. Batches keep the order of `grantIds`.
+   * Unread messages addressed to `sessionId` across grants, without marking
+   * them read. Batches keep the order of `grantIds`.
    */
-  readMailbox(sessionId: string, grantIds: string[], limitPerGrant: number): MailboxBatch[] {
-    return this.transaction(() => grantIds.flatMap((grantId) => {
+  peekMailbox(sessionId: string, grantIds: string[], limitPerGrant: number): MailboxBatch[] {
+    return grantIds.flatMap((grantId) => {
       const cursor = this.db.prepare(`
         SELECT last_sequence FROM session_collaboration_cursors WHERE credential_hash = ? AND session_id = ?
       `).get(grantId, sessionId) as { last_sequence: number } | undefined
@@ -315,18 +321,27 @@ export class CollaborationStore {
         WHERE credential_hash = ? AND recipient_session_id = ? AND sequence > ?
         ORDER BY sequence LIMIT ?
       `).all(grantId, sessionId, cursor?.last_sequence ?? 0, limitPerGrant) as CollaborationMessageRow[]
-      if (rows.length === 0) return []
-      const lastSequence = rows[rows.length - 1].sequence
-      this.db.prepare(`
-        INSERT INTO session_collaboration_cursors (credential_hash, session_id, last_sequence)
-        VALUES (?, ?, ?)
-        ON CONFLICT(credential_hash, session_id) DO UPDATE SET last_sequence = excluded.last_sequence
-      `).run(grantId, sessionId, lastSequence)
-      this.db.prepare(`
-        UPDATE session_collaboration_messages SET delivered_at = COALESCE(delivered_at, ?)
-        WHERE credential_hash = ? AND recipient_session_id = ? AND sequence <= ?
-      `).run(nowIso(), grantId, sessionId, lastSequence)
-      return [{ grantId, rows }]
-    }))
+      return rows.length > 0 ? [{ grantId, rows }] : []
+    })
+  }
+
+  /**
+   * Mark messages read up to each grant's `lastSequence`. A cursor never
+   * moves back, so acknowledgements may arrive in any order.
+   */
+  ackMailbox(sessionId: string, acks: readonly MailboxAck[]): void {
+    this.transaction(() => {
+      for (const { grantId, lastSequence } of acks) {
+        this.db.prepare(`
+          INSERT INTO session_collaboration_cursors (credential_hash, session_id, last_sequence)
+          VALUES (?, ?, ?)
+          ON CONFLICT(credential_hash, session_id) DO UPDATE SET last_sequence = MAX(last_sequence, excluded.last_sequence)
+        `).run(grantId, sessionId, lastSequence)
+        this.db.prepare(`
+          UPDATE session_collaboration_messages SET delivered_at = COALESCE(delivered_at, ?)
+          WHERE credential_hash = ? AND recipient_session_id = ? AND sequence <= ?
+        `).run(nowIso(), grantId, sessionId, lastSequence)
+      }
+    })
   }
 }

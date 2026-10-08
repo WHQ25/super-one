@@ -31,7 +31,17 @@ export type HostActionExecutor = (
   claimed: ClaimHostActionResult,
   signal: AbortSignal,
   connectionId: string,
-) => Promise<{ outcome: 'succeeded' | 'failed'; result?: unknown; error?: unknown }>
+) => Promise<{
+  outcome: 'succeeded' | 'failed'
+  result?: unknown
+  error?: unknown
+  /**
+   * Runs once the node accepted this response, never when the action was
+   * cancelled or the response failed: what must not take effect before the
+   * session has the result (a mailbox read) commits here.
+   */
+  onResponded?: () => void
+}>
 
 export interface RemoteHostActionConsumerOptions {
   connectionId: string
@@ -256,7 +266,7 @@ export class RemoteHostActionConsumer {
         }
         if (ac.signal.aborted) return
 
-        let outcome: { outcome: 'succeeded' | 'failed'; result?: unknown; error?: unknown }
+        let outcome: Awaited<ReturnType<HostActionExecutor>>
         try {
           outcome = await this.executor(claimed, ac.signal, this.connectionId)
         } catch (err) {
@@ -275,6 +285,7 @@ export class RemoteHostActionConsumer {
           result: outcome.result,
           error: outcome.error,
         })
+        outcome.onResponded?.()
       } catch (err) {
         // Claim race (another socket won) or cancel — drop known so requeue can retry.
         const code = (err as { code?: string })?.code

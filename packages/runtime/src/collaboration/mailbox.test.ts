@@ -139,6 +139,43 @@ describe('readCallerMailbox', () => {
     expect(() => readCallerMailbox(store, 'parent', { from: ['stranger'] }, sessionTitle))
       .toThrow(/Not your collaboration peers: stranger/)
   })
+
+  describe('with a deferred acknowledgement', () => {
+    const read = () => readCallerMailbox(store, 'parent', { deferAck: true }, sessionTitle)
+    const contents = (result: ReturnType<typeof read>) => result.messages.map((m) => m.content)
+
+    it('returns the same messages again until they are acknowledged', () => {
+      spawn('parent', 'child')
+      send('child', undefined, 'one')
+      const first = read()
+      // The reply never reached the reader.
+      const again = read()
+      expect(again.messages.map((m) => m.messageId)).toEqual(first.messages.map((m) => m.messageId))
+      store.ackMailbox('parent', again.acks)
+      expect(read().messages).toEqual([])
+    })
+
+    it('acknowledges only the batch it returned, not messages that arrived after', () => {
+      spawn('parent', 'child')
+      send('child', undefined, 'one')
+      const first = read()
+      send('child', undefined, 'two')
+      store.ackMailbox('parent', first.acks)
+      expect(contents(read())).toEqual(['two'])
+    })
+
+    it('never moves the cursor back when overlapping reads are acknowledged out of order', () => {
+      spawn('parent', 'child')
+      send('child', undefined, 'one')
+      const older = read()
+      send('child', undefined, 'two')
+      const newer = read()
+      expect(contents(newer)).toEqual(['one', 'two'])
+      store.ackMailbox('parent', newer.acks)
+      store.ackMailbox('parent', older.acks)
+      expect(read().messages).toEqual([])
+    })
+  })
 })
 
 describe('assertNotPeeredElsewhere', () => {

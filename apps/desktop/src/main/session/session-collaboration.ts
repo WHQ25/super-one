@@ -380,17 +380,27 @@ export async function runRemoteChildMailboxTool(
   childSessionId: string,
   toolName: string,
   args: Record<string, unknown>,
-): Promise<{ content: Array<{ type: 'text'; text: string }>; isError?: boolean }> {
+): Promise<{
+  reply: { content: Array<{ type: 'text'; text: string }>; isError?: boolean }
+  /** Commits a retrieve: run once the child's node accepted the reply. */
+  onResponded?: () => void
+}> {
   const target = remoteChildTarget(childSessionId)
   if (!target || !environmentId || target.environmentId !== environmentId) {
-    return toolResult({ status: 'error', message: `${childSessionId} is not a collaboration child launched from here` }, true)
+    return { reply: toolResult({ status: 'error', message: `${childSessionId} is not a collaboration child launched from here` }, true) }
   }
   const { getSessionHost } = await import('../mcp/superone-mcp-server')
   const host = getSessionHost() as SessionManager | null
-  if (!host) return toolResult({ status: 'error', message: 'Session host is unavailable' }, true)
-  return toolName === 'session_collab_send'
-    ? sendSessionMessage(childSessionId, args as unknown as SessionSendArgs, host)
-    : retrieveSessionMessages(childSessionId, args as SessionRetrieveArgs, host)
+  if (!host) return { reply: toolResult({ status: 'error', message: 'Session host is unavailable' }, true) }
+  if (toolName === 'session_collab_send') {
+    return { reply: await sendSessionMessage(childSessionId, args as unknown as SessionSendArgs, host) }
+  }
+  // The reply crosses the network: its messages stay unread until it arrived.
+  let onResponded: (() => void) | undefined
+  const reply = await retrieveSessionMessages(childSessionId, args as SessionRetrieveArgs, host, undefined, (ack) => {
+    onResponded = ack
+  })
+  return { reply, ...(onResponded ? { onResponded } : {}) }
 }
 
 /** Spawn children only — link peers must never get a collaboration system prompt. */

@@ -2142,7 +2142,7 @@ describe('spawning a child on another machine', () => {
 
     // Child → parent arrives as a Host Action from the child's machine and wakes the parent.
     const sent = await runRemoteChildMailboxTool('env-b', 'remote-child', 'session_collab_send', { content: 'Pushed superone/builder' })
-    expect(resultJson(sent).status).toBe('sent')
+    expect(resultJson(sent.reply).status).toBe('sent')
     expect(parent.injectTaskNotification).toHaveBeenCalledWith(expect.stringContaining('Builder - Implementer'))
     const parentRead = resultJson(await retrieveSessionMessages('parent', {}, host))
     expect(parentRead.messages.map((m: { content: string }) => m.content)).toEqual(['Pushed superone/builder'])
@@ -2152,12 +2152,19 @@ describe('spawning a child on another machine', () => {
     await sendSessionMessage('parent', { to: 'remote-child', content: 'Also add tests' }, host)
     await vi.waitFor(() => expect(calls.send).toHaveLength(2))
     expect(calls.send[1]).toMatchObject({ sessionId: 'remote-child', text: expect.stringContaining('session_collab_retrieve') })
-    const childRead = resultJson(await runRemoteChildMailboxTool('env-b', 'remote-child', 'session_collab_retrieve', {}))
-    expect(childRead.messages.map((m: { content: string }) => m.content)).toEqual(['Also add tests'])
+    const childRead = await runRemoteChildMailboxTool('env-b', 'remote-child', 'session_collab_retrieve', {})
+    expect(resultJson(childRead.reply).messages.map((m: { content: string }) => m.content)).toEqual(['Also add tests'])
+    // Read for the child only once its machine has the reply.
+    const resent = await runRemoteChildMailboxTool('env-b', 'remote-child', 'session_collab_retrieve', {})
+    expect(resultJson(resent.reply).messages.map((m: { messageId: string }) => m.messageId))
+      .toEqual(resultJson(childRead.reply).messages.map((m: { messageId: string }) => m.messageId))
+    resent.onResponded!()
+    childRead.onResponded!()
+    expect(resultJson((await runRemoteChildMailboxTool('env-b', 'remote-child', 'session_collab_retrieve', {})).reply).messages).toEqual([])
 
     // Another machine cannot act as this child.
     const forged = await runRemoteChildMailboxTool('env-other', 'remote-child', 'session_collab_send', { content: 'x' })
-    expect(forged.isError).toBe(true)
+    expect(forged.reply.isError).toBe(true)
   })
 
   it('keeps the remote child out of the local sidebar list', async () => {

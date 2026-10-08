@@ -129,7 +129,9 @@ vi.mock('./environment-host', () => ({
 vi.mock('../mcp/superone-mcp-tool-surface', () => mcpSurface)
 vi.mock('../mcp/session-tag-tools', () => renameTags)
 const collab = vi.hoisted(() => ({
-  runRemoteChildMailboxTool: vi.fn(async (..._args: unknown[]) => ({ content: [{ type: 'text', text: '{"status":"sent"}' }] } as { content: Array<{ type: 'text'; text: string }>; isError?: boolean })),
+  runRemoteChildMailboxTool: vi.fn(async (..._args: unknown[]) => ({
+    reply: { content: [{ type: 'text', text: '{"status":"sent"}' }] } as { content: Array<{ type: 'text'; text: string }>; isError?: boolean },
+  } as { reply: { content: Array<{ type: 'text'; text: string }>; isError?: boolean }; onResponded?: () => void })),
 }))
 vi.mock('../session/session-collaboration', () => collab)
 
@@ -281,7 +283,18 @@ describe('desktopHostActionExecutor', () => {
     expect(out).toEqual({ outcome: 'succeeded', result: { content: [{ type: 'text', text: '{"status":"sent"}' }] } })
     expect(collab.runRemoteChildMailboxTool).toHaveBeenCalledWith('env-1', 'remote-child', 'session_collab_send', { content: 'done' })
 
-    collab.runRemoteChildMailboxTool.mockResolvedValueOnce({ content: [{ type: 'text', text: '{"status":"error"}' }], isError: true })
+    // A retrieve commits once the node has the reply.
+    const ack = vi.fn()
+    collab.runRemoteChildMailboxTool.mockResolvedValueOnce({ reply: { content: [{ type: 'text', text: '{"status":"messages"}' }] }, onResponded: ack })
+    const read = await desktopHostActionExecutor(
+      claimed({ toolName: 'session_collab_retrieve', toolGroup: 'superone', sessionId: 'remote-child' }),
+      new AbortController().signal,
+      'conn-1',
+    )
+    expect(read.onResponded).toBe(ack)
+    expect(ack).not.toHaveBeenCalled()
+
+    collab.runRemoteChildMailboxTool.mockResolvedValueOnce({ reply: { content: [{ type: 'text', text: '{"status":"error"}' }], isError: true } })
     const refused = await desktopHostActionExecutor(
       claimed({ toolName: 'session_collab_retrieve', toolGroup: 'superone', sessionId: 'stranger' }),
       new AbortController().signal,

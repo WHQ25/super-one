@@ -51,11 +51,7 @@ const NODE_LOCAL_COLLAB_TOOLS = new Set([
  */
 const REMOTE_CHILD_MAILBOX_TOOLS = new Set(['session_collab_send', 'session_collab_retrieve'])
 
-type ExecutorResult = {
-  outcome: 'succeeded' | 'failed'
-  result?: unknown
-  error?: unknown
-}
+type ExecutorResult = Awaited<ReturnType<HostActionExecutor>>
 
 /** Wall-clock cap for a single host-action tool execution (ms). */
 const HOST_ACTION_EXECUTION_TIMEOUT_MS = 120_000
@@ -318,8 +314,10 @@ async function runRemoteChildMailboxTool(
   const { getEnvironmentHost } = await import('./environment-host')
   const environmentId = getEnvironmentHost().environmentIdOf(connectionId)
   const { runRemoteChildMailboxTool: run } = await import('../session/session-collaboration')
-  const result = await run(environmentId, claimed.sessionId, claimed.toolName, args)
-  return result.isError ? { outcome: 'failed', error: result, result } : { outcome: 'succeeded', result }
+  const { reply, onResponded } = await run(environmentId, claimed.sessionId, claimed.toolName, args)
+  return reply.isError
+    ? { outcome: 'failed', error: reply, result: reply }
+    : { outcome: 'succeeded', result: reply, ...(onResponded ? { onResponded } : {}) }
 }
 
 /** Verbatim local renameSessionTool user_locked text — tool desc matches on this token. */

@@ -103,12 +103,17 @@ function withChildStatus(peers: CollaborationPeer[], host: SessionManager) {
  * currently available and lists the caller's peers. Peers are woken via task
  * notification on send; the agent calls this after a wake, or to rediscover
  * who it can message.
+ *
+ * With `deferAck` the messages stay unread: it receives the acknowledgement
+ * to run once the reply reached the reader, and until then a retrieve returns
+ * them again.
  */
 export async function retrieveSessionMessages(
   callerSessionId: string,
   args: SessionRetrieveArgs,
   host: SessionManager,
   signal?: AbortSignal,
+  deferAck?: (ack: () => void) => void,
 ) {
   const denied = await denyMainThreadOnlyIfSubagent(callerSessionId, 'session_collab_retrieve')
   if (denied) return toolResult(denied, true)
@@ -116,14 +121,21 @@ export async function retrieveSessionMessages(
   if (forwarded) return forwarded
   let read: ReturnType<typeof readCallerMailbox>
   try {
-    read = readCallerMailbox(store(), callerSessionId, { from: args.from }, sessionTitle)
+    read = readCallerMailbox(store(), callerSessionId, { from: args.from, deferAck: Boolean(deferAck) }, sessionTitle)
   } catch (error) {
     return errorResult(error)
   }
-  const { messages } = read
+  const { messages, acks } = read
   const peers = await withChildStatus(read.peers, host)
   if (messages.length > 0) {
-    notifyCollaborationMailboxChanged(callerSessionId)
+    if (deferAck) {
+      deferAck(() => {
+        store().ackMailbox(callerSessionId, acks)
+        notifyCollaborationMailboxChanged(callerSessionId)
+      })
+    } else {
+      notifyCollaborationMailboxChanged(callerSessionId)
+    }
     return toolResult({ status: 'messages', messages, peers })
   }
   return toolResult({

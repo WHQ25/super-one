@@ -6,7 +6,7 @@ import {
   deriveCollaborationRole,
   parseGrantConfig,
 } from './launch'
-import type { CollaborationGrantRow, CollaborationStore } from './store'
+import type { CollaborationGrantRow, CollaborationStore, MailboxAck } from './store'
 import { HANDOFF_NO_MAILBOX, NO_PEERS_HINT } from './text'
 
 /**
@@ -185,9 +185,18 @@ export function normalizeMailboxContent(raw: unknown): string {
 export function readCallerMailbox(
   store: CollaborationStore,
   callerSessionId: string,
-  options: { from?: string[]; limit?: number },
+  options: {
+    from?: string[]
+    limit?: number
+    /**
+     * Leave the messages unread: the caller acknowledges `acks` with
+     * `store.ackMailbox` once the reader has them. Until then a retrieve
+     * returns them again.
+     */
+    deferAck?: boolean
+  },
   sessionTitle: SessionTitleLookup,
-): { messages: MailboxMessage[]; peers: CollaborationPeer[] } {
+): { messages: MailboxMessage[]; peers: CollaborationPeer[]; acks: MailboxAck[] } {
   const channels = listMailboxChannels(store, callerSessionId, sessionTitle)
   const peers = peersOf(channels)
   const from = options.from?.map((id) => id.trim()).filter(Boolean) ?? []
@@ -205,12 +214,15 @@ export function readCallerMailbox(
   const selected = from.length > 0
     ? channels.filter((channel) => from.includes(channel.peer.sessionId))
     : channels
-  if (selected.length === 0) return { messages: [], peers }
+  if (selected.length === 0) return { messages: [], peers, acks: [] }
 
   const limit = Math.min(MAX_MESSAGES_PER_RETRIEVE, Math.max(1, Math.floor(options.limit ?? MAX_MESSAGES_PER_RETRIEVE)))
   const peerByGrant = new Map(selected.map((channel) => [channel.grant.grant_id, channel.peer]))
   const perGrantLimit = Math.max(1, Math.floor(limit / selected.length))
-  const messages = store.readMailbox(callerSessionId, [...peerByGrant.keys()], perGrantLimit)
+  const batches = store.peekMailbox(callerSessionId, [...peerByGrant.keys()], perGrantLimit)
+  const acks = batches.map(({ grantId, rows }) => ({ grantId, lastSequence: rows[rows.length - 1]!.sequence }))
+  if (!options.deferAck) store.ackMailbox(callerSessionId, acks)
+  const messages = batches
     .flatMap(({ grantId, rows }) => rows.map((row): MailboxMessage => ({
       messageId: row.id,
       sequence: row.sequence,
@@ -220,6 +232,5 @@ export function readCallerMailbox(
       createdAt: row.created_at,
     })))
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-    .slice(0, limit)
-  return { messages, peers }
+  return { messages, peers, acks }
 }

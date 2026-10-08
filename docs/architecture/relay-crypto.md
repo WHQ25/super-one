@@ -38,6 +38,40 @@ the encrypted payload, so relay envelopes and control messages are unaffected.
 When and how the host decides to compress, and the rest of the phone ↔ host
 protocol, are in [mobile-remote-control.md](mobile-remote-control.md).
 
+## Node encrypted channel
+
+Node traffic between desktops (and, later, through the relay) uses a
+per-connection channel keyed by a pairing secret that is exchanged out of band
+and never sent over the network. Implementation:
+`packages/relay-client/src/secure-channel.ts` (noble, so it also runs on
+Hermes); the Node `ws` client half is
+`packages/runtime/src/server/secure-channel-client.ts`. Where node servers use
+it is described in [remote-node-service.md §11.3](remote-node-service.md).
+
+- Keys: `deriveKeys(secret)` from above gives the HMAC key (`channel-key`) and the
+  base key (`aes-key`). A node derives each pairing's secret as
+  HMAC-SHA-256(root, `superone-channel/v1|secret|${keyId}`).
+- Handshake, JSON text frames with `v: 1`:
+  1. client → `channel_hello { keyId, nonce }` (32 random bytes, hex)
+  2. node → `channel_challenge { nonce, proof }`
+  3. client → `channel_proof { proof }`
+
+  Each proof is HMAC-SHA-256(HMAC key,
+  `superone-channel/v1|${role}|${keyId}|${clientNonce}|${serverNonce}`) with role
+  `server` or `client`, compared in constant time. The client checks the node's
+  proof before it reveals its own. A wrong secret or an unknown key id fails the
+  same way.
+- Direction keys: HKDF-SHA-256(base key, salt `clientNonce || serverNonce`, info
+  `superone-channel/v1|c2s` or `|s2c`, 32 bytes). They are fresh per connection,
+  so a frame captured on one connection fails authentication on any other.
+- Frames, binary: `IV(12) || AES-256-GCM(seq:u64be || JSON)` with AAD
+  `superone-channel/v1`. Each direction numbers its frames from 1, and the
+  receiver rejects any sequence number that is not higher than the last one it
+  accepted (replay, reorder). The node's first frame is `channel_ready`.
+
+The phone LAN link does not use this channel yet; its `register` frame still
+trusts a bare device id and its frames carry no sequence number.
+
 ## Golden vectors
 
 - [`relay-crypto-vectors.json`](../../packages/relay-client/src/fixtures/relay-crypto-vectors.json):
@@ -47,6 +81,11 @@ protocol, are in [mobile-remote-control.md](mobile-remote-control.md).
 - [`host-payload-v1.json`](../../packages/relay-client/src/fixtures/host-payload-v1.json):
   raw and deflated host application frames, checked by
   `packages/relay-client/src/host-payload.test.ts`.
+
+- [`secure-channel-vectors.json`](../../packages/relay-client/src/fixtures/secure-channel-vectors.json):
+  node channel secret derivation, handshake proofs, direction keys and a sealed
+  frame with fixed nonces and IV. Checked, including against `node:crypto`, by
+  `packages/relay-client/src/secure-channel.test.ts`.
 
 The master secret is the test fixture `'0123456789abcdef'.repeat(8)`. Ciphertexts
 contain random IVs, so regenerating changes every value: recapture only when an

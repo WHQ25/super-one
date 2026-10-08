@@ -487,10 +487,43 @@ host from `tailscale status --json` (`endpoint-probes.ts`) but never uses its ow
 Tailscale self IP or its local `tailscaleServeEnabled` state for a remote node.
 Each node is responsible for its own Tailscale endpoint.
 
-### 11.3 Direct WSS
+### 11.3 Direct WSS and the encrypted channel
 
-An operator may expose the node behind a TLS reverse proxy. Plain public
-`ws://` is rejected, and forwarded headers are not trusted by default.
+The channel to a node must be encrypted, either by the transport (loopback,
+SSH forward, Tailscale, a TLS reverse proxy) or by the node's encrypted channel.
+Forwarded headers are not trusted by default.
+
+The encrypted channel lets a node serve plain `ws://` on a LAN. It is enabled by
+`startNodeServer({ secureChannel })` (`packages/runtime/src/server/node-server.ts`);
+without the option nothing changes. With it, only `GET /health` stays plain:
+`/v1/pair`, `/v1/token` and `/v1/ws-ticket` answer `403 channel_required`, and a
+ticketed `/ws` upgrade is refused. On `/ws` the client completes the channel
+handshake ([relay-crypto.md](relay-crypto.md#node-encrypted-channel)), then sends
+sealed frames:
+
+- `{ type: 'auth', requestId, path, body, accessToken? }` → `auth_result
+  { requestId, status, body }`: the same pairing, refresh and ticket exchanges as
+  the HTTP endpoints, with the same status codes and bodies.
+- `{ type: 'attach', requestId, ticket, proof, sig }` → `attach_ok`: the WS
+  ticket and device proof that a plain socket sends as upgrade headers. Before
+  attach, RPC is answered with `unauthorized`; handshake plus attach must finish
+  within 30 s.
+- After attach, the usual `handshake` / `rpc` / `ping` messages.
+
+Node auth (§12) runs unchanged inside the channel. The desktop client
+(`node-auth-client.ts`, `node-rpc-client.ts`) uses short-lived sockets for the
+auth exchanges and opens the RPC socket the same way. A wrong channel secret
+blocks as `unauthorized`.
+
+Channel secrets never cross the network. The node keeps one root secret
+(`secrets/channel-root.key`, `loadOrCreateChannelRoot`) and derives a secret per
+pairing from the pairing token id (`issueChannelCredential`). The pairing code
+or QR carries the token and `{ keyId, secretHex }` out of band. The desktop
+stores the credential with the device key in the safeStorage-encrypted secrets
+blob (`node-credential-store.ts`). Revoking a client session does not revoke its
+channel secret, but that secret only opens the channel; node auth still rejects
+the revoked client. Regenerating the node identity replaces the root, so every
+client must pair again.
 
 ### 11.4 Relay
 
@@ -504,7 +537,8 @@ flow-control counters and expiry; method names, resource IDs, prompts, terminal
 output and file data stay inside the encrypted payload. Relay replay is a
 transport optimization; the node's event log remains the recovery authority.
 
-Only the framing contract exists (`packages/shared/src/environment/relay-framing.ts`);
+The node encrypted channel (§11.3) is the payload this transport will carry
+unchanged. Only the framing contract exists (`packages/shared/src/environment/relay-framing.ts`);
 `apps/relay` serves mobile remote control ([relay-crypto.md](relay-crypto.md)).
 
 ## 12. Authentication and Authorization

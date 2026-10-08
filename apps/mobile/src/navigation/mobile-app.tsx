@@ -99,7 +99,7 @@ import { projectListChanged, sessionListInvalidations, type SessionListRow as Se
 import { WorkspaceListCache } from '../workspace-list-cache'
 import { injectHostMessage as inject, resolveNativeRequest, type NativeActionPorts } from '../native-actions'
 import { createMediaPorts } from '../media-ports'
-import { cacheMcpAppDownload, type CachedDownload } from '../mcp-app-downloads'
+import { cacheDownload, cacheMcpAppDownload, type CachedDownload } from '../mcp-app-downloads'
 import type { ReconnectController } from '../reconnect-controller'
 import { createMobileRelayConnection } from '../mobile-relay-connection'
 import { SessionTransition, SessionTransitionBusyError } from '../session-transition'
@@ -764,6 +764,15 @@ export function MobileApp() {
       const runtime = runtimeRef.current
       if (!runtime) throw new Error('no active session')
       return runtime.loadAttachment(messageId, ref)
+    },
+    previewAttachment: async (messageId, ref) => {
+      const runtime = runtimeRef.current
+      if (!runtime) throw new Error('no active session')
+      // The page opens at once; fetching the original and its failure show there.
+      void filePreview.showLocalFile(ref.name, async () => {
+        const { name, mimeType, base64 } = await runtime.originalAttachment(messageId, ref)
+        return cacheDownload({ name, mimeType, base64 }, 'attachments')
+      })
     },
     resolveFavicon: async (url, isDark) => {
       const client = clientRef.current

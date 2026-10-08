@@ -6,7 +6,7 @@ import type { Locale } from '@superone/shared/agent-types'
 import type { FilePreviewState } from '../file-preview-state'
 import { createFakeGenerationPorts } from '../preview/fake-generation-ports'
 import { createFakeMediaPorts, type FakeSaveBehaviour } from '../preview/fake-media-ports'
-import { FILE_PREVIEW_FIXTURES, TINY_PNG, TOOL_GENERATION, sampleModelLocalUri } from '../preview/file-preview-fixtures'
+import { FILE_PREVIEW_FIXTURES, TINY_PNG, TOOL_GENERATION, isBundledSample, sampleLocalUri } from '../preview/file-preview-fixtures'
 import { Button } from './primitives'
 import { FilePreviewModal } from './file-preview'
 
@@ -28,10 +28,10 @@ const fixture = (label: string): FilePreviewState =>
 function Preview(props: Args) {
   const [state, setState] = useState<FilePreviewState | null>(props.state)
   useEffect(() => {
-    const model = props.state
-    if (model?.kind !== 'model' || (model.name !== 'Box.glb' && model.name !== 'triangle.usdz')) return
+    const sample = props.state
+    if (!isBundledSample(sample)) return
     let active = true
-    void sampleModelLocalUri(model.name).then((uri) => { if (active) setState({ ...model, localUri: uri }) })
+    void sampleLocalUri(sample.name).then((uri) => { if (active) setState({ ...sample, localUri: uri }) })
     return () => { active = false }
   }, [props.state])
   const ports = useMemo(
@@ -99,6 +99,12 @@ export const Model = { args: { state: fixture('Model · GLB') } }
 export const ModelLight = { args: { state: fixture('Model · GLB'), scheme: 'light' } }
 export const ModelUsdz = { args: { state: fixture('Model · USDZ') } }
 export const ModelUnavailable = { args: { state: fixture('Model · unavailable') } }
+/** A PDF in the offline pdf.js viewer: pages render as they scroll in; pinch to zoom; the counter tracks the page. */
+export const Pdf = { args: { state: fixture('PDF · three pages') } }
+export const PdfLight = { args: { state: fixture('PDF · three pages'), scheme: 'light' } }
+export const PdfLandscape = { args: { state: fixture('PDF · three pages'), landscape: true } }
+/** The cache file is gone: the viewer says so instead of a blank page. */
+export const PdfUnavailable = { args: { state: fixture('PDF · unavailable') } }
 
 export const Mermaid = { args: { state: fixture('Mermaid') } }
 /** Same diagram in the light shell. */

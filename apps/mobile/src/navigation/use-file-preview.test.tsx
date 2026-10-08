@@ -43,3 +43,29 @@ test('close leaves every stacked page at once', async () => {
   await act(async () => { result.current.back() })
   expect(result.current.state).toBeNull()
 })
+
+test('a phone-local file opens loading, fails in place, and its retry fetches again', async () => {
+  const { result } = await renderPreview()
+  const pdf = { name: 'spec.pdf', mimeType: 'application/pdf', localUri: 'file:///cache/attachments/spec.pdf', size: 1796 }
+  let fail!: (error: Error) => void
+  const fetch = jest.fn<() => Promise<typeof pdf>>()
+    .mockImplementationOnce(() => new Promise((_, reject) => { fail = reject }))
+    .mockResolvedValueOnce(pdf)
+
+  let opening!: Promise<void>
+  await act(async () => { opening = result.current.showLocalFile('spec.pdf', fetch) })
+  expect(result.current.state).toMatchObject({ kind: 'loading', name: 'spec.pdf' })
+  await act(async () => {
+    fail(new Error('That attachment is no longer available'))
+    await opening
+  })
+  expect(result.current.state).toMatchObject({ kind: 'error', name: 'spec.pdf', message: 'That attachment is no longer available' })
+
+  await act(async () => { result.current.retry() })
+  expect(fetch).toHaveBeenCalledTimes(2)
+  expect(result.current.state).toMatchObject({ kind: 'pdf', name: 'spec.pdf', localUri: pdf.localUri })
+
+  // The retry replaced the failed page rather than stacking on it.
+  await act(async () => { result.current.back() })
+  expect(result.current.state).toBeNull()
+})

@@ -6,7 +6,7 @@ import type { MarkdownDocumentPorts } from '../markdown-document-requests'
 import { Button, SelectionField } from '../ui'
 import { createFakeGenerationPorts } from './fake-generation-ports'
 import { createFakeMediaPorts, type FakeSaveBehaviour } from './fake-media-ports'
-import { FILE_PREVIEW_FIXTURES, sampleModelLocalUri } from './file-preview-fixtures'
+import { FILE_PREVIEW_FIXTURES, isBundledSample, sampleLocalUri } from './file-preview-fixtures'
 
 const SAVE_OUTCOMES: FakeSaveBehaviour[] = ['saved', 'cancelled', 'denied', 'throw']
 
@@ -26,28 +26,28 @@ export function FilePreviewGallery() {
   const [nested, setNested] = useState<FilePreviewState | null>(null)
   const [phase, setPhase] = useState<'idle' | 'downloading' | null>(null)
   const fixture = FILE_PREVIEW_FIXTURES.find((item) => item.label === label) ?? FILE_PREVIEW_FIXTURES[0]
-  const bundledModel = fixture.state.kind === 'model' && (fixture.state.name === 'Box.glb' || fixture.state.name === 'triangle.usdz')
-  const [modelUri, setModelUri] = useState<string | null>(null)
-  const [modelError, setModelError] = useState<string | null>(null)
+  const bundled = isBundledSample(fixture.state) ? fixture.state : null
+  const [sampleUri, setSampleUri] = useState<string | null>(null)
+  const [sampleError, setSampleError] = useState<string | null>(null)
   useEffect(() => {
-    if (!bundledModel || fixture.state.kind !== 'model') return
+    if (!bundled) return
     let active = true
-    setModelUri(null)
-    setModelError(null)
-    void sampleModelLocalUri(fixture.state.name as 'Box.glb' | 'triangle.usdz').then((uri) => { if (active) setModelUri(uri) })
-      .catch((cause) => { if (active) setModelError(cause instanceof Error ? cause.message : String(cause)) })
+    setSampleUri(null)
+    setSampleError(null)
+    void sampleLocalUri(bundled.name).then((uri) => { if (active) setSampleUri(uri) })
+      .catch((cause) => { if (active) setSampleError(cause instanceof Error ? cause.message : String(cause)) })
     return () => { active = false }
-  }, [label, bundledModel])
+  }, [label, bundled?.name])
   // The Download button flips the real card into its downloading state so the
   // transition can be seen, not just its two ends.
   const state: FilePreviewState = fixture.state.kind === 'transfer' && phase
     ? { ...fixture.state, phase }
-    : fixture.state.kind === 'model' && bundledModel && modelError
-      ? { kind: 'error', path: fixture.state.path, name: fixture.state.name, message: modelError }
-      : fixture.state.kind === 'model' && bundledModel && !modelUri
-        ? { kind: 'loading', path: fixture.state.path, name: fixture.state.name }
-        : fixture.state.kind === 'model' && bundledModel
-          ? { ...fixture.state, localUri: modelUri! }
+    : bundled && sampleError
+      ? { kind: 'error', path: bundled.path, name: bundled.name, message: sampleError }
+      : bundled && !sampleUri
+        ? { kind: 'loading', path: bundled.path, name: bundled.name }
+        : bundled
+          ? { ...bundled, localUri: sampleUri! }
           : fixture.state
   const ports = useMemo(() => createFakeMediaPorts({ save: saveOutcome, delayMs: 600 }), [saveOutcome])
   const generationPorts = useMemo(() => createFakeGenerationPorts({ delayMs: 600 }), [])

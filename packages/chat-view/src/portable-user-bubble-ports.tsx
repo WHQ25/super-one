@@ -45,14 +45,19 @@ function PortableFileMention({ kind, value, chip }: FileMentionProps) {
 }
 
 /**
- * A tap on a picture opens the native viewer with its original; a PDF has no
- * viewer in the chat document, so the tap does nothing. Renders nothing itself.
+ * A tap on a picture opens the native viewer with its original; a document
+ * (a PDF) opens on the native preview page, which fetches its bytes first.
+ * Renders nothing itself.
  */
 function PortableAttachmentViewer({ attachment, isDocument, messageId, open, onOpenChange }: AttachmentViewerProps) {
   useEffect(() => {
     if (!open) return
     onOpenChange(false)
-    if (isDocument || !messageId) return
+    if (!messageId) return
+    if (isDocument) {
+      requestNative('previewAttachment', { messageId, name: attachment.name, ...(attachment.id ? { attachmentId: attachment.id } : {}) })
+      return
+    }
     attachmentImageSource(messageId, attachment)
       .then((src) => previewImage(src, { label: attachment.name }))
       // The host no longer has it (or is too old to answer): the chip stays as it is.

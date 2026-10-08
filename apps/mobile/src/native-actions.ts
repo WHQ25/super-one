@@ -63,6 +63,11 @@ export interface NativeActionPorts {
    */
   loadAttachment(messageId: string, ref: { attachmentId?: string; name: string }): Promise<string>
   /**
+   * Open an attachment that is not a picture (a PDF) on the preview page, from
+   * its original bytes: the transcript carries only its name.
+   */
+  previewAttachment(messageId: string, ref: { attachmentId?: string; name: string }): Promise<void>
+  /**
    * The favicon the desktop's own chat shows in front of `url`, as a data URL.
    * `null` when it has none (or the host is too old to answer): the link keeps
    * its globe.
@@ -160,6 +165,12 @@ function parseQuestionNotes(message: NativeRequest): QuestionAnnotations | undef
   return Object.keys(notes).length ? notes : undefined
 }
 
+/** Which of a message's attachments a request names: by id when it has one, by name for older messages. */
+function attachmentRef(message: NativeRequest): { attachmentId?: string; name: string } {
+  const attachmentId = (message.payload as Record<string, unknown> | undefined)?.attachmentId
+  return { ...(typeof attachmentId === 'string' ? { attachmentId } : {}), name: payloadString(message, 'name') }
+}
+
 function payloadString(message: NativeRequest, key: string): string {
   const value = (message.payload as Record<string, unknown> | undefined)?.[key]
   if (typeof value !== 'string' || !value) throw new Error(`invalid ${message.action} payload`)
@@ -254,11 +265,9 @@ export async function resolveNativeRequest(
     } else if (message.action === 'loadTextFile') {
       result = await ports.loadTextFile(payloadString(message, 'path'), payloadRoot(message))
     } else if (message.action === 'loadAttachment') {
-      const attachmentId = (message.payload as Record<string, unknown> | undefined)?.attachmentId
-      result = { dataUri: await ports.loadAttachment(payloadString(message, 'messageId'), {
-        ...(typeof attachmentId === 'string' ? { attachmentId } : {}),
-        name: payloadString(message, 'name'),
-      }) }
+      result = { dataUri: await ports.loadAttachment(payloadString(message, 'messageId'), attachmentRef(message)) }
+    } else if (message.action === 'previewAttachment') {
+      await ports.previewAttachment(payloadString(message, 'messageId'), attachmentRef(message))
     } else if (message.action === 'resolveFavicon') {
       const url = payloadString(message, 'url')
       if (!/^https?:\/\//i.test(url)) throw new Error('unsupported link')

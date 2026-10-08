@@ -32,6 +32,7 @@ import { WindowStatusBar } from './window-status-bar'
 import { ZoomableImage } from './zoomable-image'
 import { ZoomableMermaid } from './zoomable-mermaid'
 import { ZoomableModel } from './zoomable-model'
+import { PdfPages } from './pdf-pages'
 
 export type FilePreviewModalProps = {
   /** What to show; `null` keeps the modal closed. */
@@ -190,6 +191,14 @@ function PreviewBody({ state, chromeVisible, onToggleChrome, onStartTransfer, on
     return (
       <View style={[styles.flex, offset, { backgroundColor: colors.background }]}>
         <ZoomableModel key={state.localUri} uri={state.localUri} name={state.name} />
+      </View>
+    )
+  }
+
+  if (state.kind === 'pdf') {
+    return (
+      <View style={[styles.flex, offset, { backgroundColor: colors.background }]}>
+        <PdfPages key={state.localUri} uri={state.localUri} name={state.name} />
       </View>
     )
   }

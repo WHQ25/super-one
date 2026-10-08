@@ -9,8 +9,13 @@ const CACHE_DIRECTORY = 'mcp-app-downloads'
 export interface CachedDownload { name: string; mimeType: string; localUri: string; size: number }
 
 /** Put one `ui/download-file` item on the phone as a file the preview can show, save and share. */
-export async function cacheMcpAppDownload(item: McpAppLocalDownload): Promise<CachedDownload> {
-  const directory = new Directory(Paths.cache, CACHE_DIRECTORY)
+export function cacheMcpAppDownload(item: McpAppLocalDownload): Promise<CachedDownload> {
+  return cacheDownload(item, CACHE_DIRECTORY)
+}
+
+/** Bytes, text or a URL written to a file under the cache `directoryName`, for the preview to show, save and share. */
+export async function cacheDownload(item: McpAppLocalDownload, directoryName: string): Promise<CachedDownload> {
+  const directory = new Directory(Paths.cache, directoryName)
   directory.create({ intermediates: true, idempotent: true })
   const file = new File(directory, safeCacheFileName(randomId(), item.name))
   const base = { name: item.name, mimeType: item.mimeType }

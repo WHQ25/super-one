@@ -353,7 +353,8 @@ export class ChatRuntime {
       : attachment))
   }
 
-  private async originalAttachment(messageId: string, ref: { attachmentId?: string; name: string }): Promise<ImageAttachment> {
+  /** An attachment with its original bytes, memoised like `loadAttachment`. */
+  async originalAttachment(messageId: string, ref: { attachmentId?: string; name: string }): Promise<ImageAttachment> {
     const key = `${messageId}:${ref.attachmentId ?? ref.name}`
     const cached = this.attachmentBytes.get(key)
     if (cached) return cached

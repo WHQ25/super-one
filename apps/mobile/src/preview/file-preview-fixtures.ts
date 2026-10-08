@@ -92,9 +92,20 @@ export const CODEX_GENERATION: ImageGenerationInfo = {
 const SAMPLE_CLIP_URI = Asset.fromModule(require('../../assets/preview/sample-clip.mp4')).uri
 const SAMPLE_MODEL = Asset.fromModule(require('../../assets/preview/box.glb'))
 const SAMPLE_USDZ = Asset.fromModule(require('../../assets/preview/triangle.usdz'))
-export async function sampleModelLocalUri(name: 'Box.glb' | 'triangle.usdz'): Promise<string> {
-  const asset = await (name === 'Box.glb' ? SAMPLE_MODEL : SAMPLE_USDZ).downloadAsync()
-  if (!asset.localUri) throw new Error('Sample model is unavailable')
+const SAMPLE_PDF = Asset.fromModule(require('../../assets/preview/sample.pdf'))
+const BUNDLED_SAMPLES = { 'Box.glb': SAMPLE_MODEL, 'triangle.usdz': SAMPLE_USDZ, 'sample.pdf': SAMPLE_PDF }
+
+/** A model or PDF fixture whose bytes ship with the app, so its viewer can draw it offline. */
+export type BundledSampleState = Extract<FilePreviewState, { kind: 'model' | 'pdf' }> & { name: keyof typeof BUNDLED_SAMPLES }
+
+export function isBundledSample(state: FilePreviewState | null | undefined): state is BundledSampleState {
+  return (state?.kind === 'model' || state?.kind === 'pdf') && Object.hasOwn(BUNDLED_SAMPLES, state.name)
+}
+
+/** The bundled sample's file on the phone, which the offline viewer reads beside its page. */
+export async function sampleLocalUri(name: keyof typeof BUNDLED_SAMPLES): Promise<string> {
+  const asset = await BUNDLED_SAMPLES[name].downloadAsync()
+  if (!asset.localUri) throw new Error('Sample file is unavailable')
   return asset.localUri
 }
 
@@ -118,6 +129,8 @@ export const FILE_PREVIEW_FIXTURES: ReadonlyArray<{ label: string; state: FilePr
   { label: 'Video · undecodable', state: { kind: 'video', path: '/workspace/super-one/out/odd.mov', name: 'odd.mov', localUri: 'file:///cache/file-preview/missing.mov', mimeType: 'video/quicktime', size: 12 } },
   { label: 'Model · GLB', state: { kind: 'model', path: '/workspace/super-one/models/Box.glb', name: 'Box.glb', localUri: 'file:///sample-model-pending.glb', mimeType: 'model/gltf-binary', size: 1664 } },
   { label: 'Model · USDZ', state: { kind: 'model', path: '/workspace/super-one/models/triangle.usdz', name: 'triangle.usdz', localUri: 'file:///sample-model-pending.usdz', mimeType: 'model/vnd.usdz+zip', size: 557 } },
+  { label: 'PDF · three pages', state: { kind: 'pdf', path: '/workspace/super-one/docs/sample.pdf', name: 'sample.pdf', localUri: 'file:///sample-pdf-pending.pdf', mimeType: 'application/pdf', size: 1796 } },
+  { label: 'PDF · unavailable', state: { kind: 'pdf', path: '/workspace/super-one/docs/missing.pdf', name: 'missing.pdf', localUri: 'file:///cache/file-preview/missing.pdf', mimeType: 'application/pdf', size: 12 } },
   { label: 'Model · unavailable', state: { kind: 'model', path: '/workspace/super-one/models/missing.glb', name: 'missing.glb', localUri: 'file:///cache/file-preview/missing.glb', mimeType: 'model/gltf-binary', size: 12 } },
   { label: 'Mermaid', state: { kind: 'mermaid', name: 'Mermaid', svg: '<svg xmlns="http://www.w3.org/2000/svg" width="100%" style="max-width: 240px;" viewBox="0 0 240 80"><rect width="240" height="80" rx="10" fill="#1e1e2e"/><text x="120" y="48" text-anchor="middle" fill="#cdd6f4" font-size="16" font-family="system-ui">Start → End</text></svg>' } },
   { label: 'Code · cited line 16', state: { kind: 'text', path: PATH, name: 'PortableToolRow.tsx', text: CODE, size: CODE.length, markdown: false, line: 16 } },
@@ -128,6 +141,6 @@ export const FILE_PREVIEW_FIXTURES: ReadonlyArray<{ label: string; state: FilePr
   { label: 'Transfer · relay, awaiting confirm', state: { kind: 'transfer', ...HERO, needsConfirm: true, phase: 'idle' } },
   { label: 'Transfer · downloading', state: { kind: 'transfer', ...HERO, needsConfirm: true, phase: 'downloading', receivedBytes: 2_410_056 } },
   { label: 'Transfer · LAN, downloading', state: { kind: 'transfer', path: '/workspace/super-one/logs/dev.log', name: 'dev.log', size: 1_204_988, mimeType: 'application/octet-stream', needsConfirm: false, phase: 'downloading', receivedBytes: 402_000 } },
-  { label: 'Transfer · ready to save', state: { kind: 'transfer', path: '/workspace/super-one/docs/spec.pdf', name: 'spec.pdf', size: 2_310_000, mimeType: 'application/pdf', needsConfirm: true, phase: 'ready', localUri: 'file:///cache/file-preview/spec.pdf' } },
+  { label: 'Transfer · ready to save', state: { kind: 'transfer', path: '/workspace/super-one/out/logs.zip', name: 'logs.zip', size: 2_310_000, mimeType: 'application/zip', needsConfirm: true, phase: 'ready', localUri: 'file:///cache/file-preview/logs.zip' } },
   { label: 'Error', state: { kind: 'error', path: '/workspace/super-one/.env', name: '.env', message: 'path matches blacklist' } },
 ]

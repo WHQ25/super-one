@@ -18,11 +18,13 @@ import { imagePreviewFileName, parseImageDataUri, type ImagePreviewTarget } from
  * - `text` — small text or Markdown that rode back inside the RPC.
  * - `video` — a clip whose bytes have landed on the phone, played by the
  *   native player over the cache file. Its menu saves to Photos like a picture.
+ * - `model` / `pdf` — a 3D model or a PDF on the phone, drawn by an offline
+ *   viewer page (three.js, pdf.js) over the cache file.
  * - `transfer` — a file that must move as bytes first. Over the relay a file
  *   larger than the RPC cap needs confirmation (the desktop stages an encrypted
  *   copy on R2); over the LAN it starts on its own. A finished transfer becomes
- *   an `image` or a `video`, or stays here with `localUri` set, ready to save
- *   or share.
+ *   an `image`, a `video`, a `model` or a `pdf`, or stays here with `localUri`
+ *   set, ready to save or share.
  */
 export type FilePreviewState =
   | {
@@ -65,6 +67,15 @@ export type FilePreviewState =
       path: string
       name: string
       /** Downloaded model in the phone's file preview cache. */
+      localUri: string
+      mimeType: string
+      size: number
+    }
+  | {
+      kind: 'pdf'
+      path: string
+      name: string
+      /** Downloaded PDF in the phone's file preview cache. */
       localUri: string
       mimeType: string
       size: number
@@ -322,6 +333,9 @@ export function completeTransfer(
   if (current.mimeType.startsWith('video/')) {
     return { kind: 'video', path: current.path, name: current.name, localUri, mimeType: current.mimeType, size: current.size }
   }
+  if (current.mimeType === 'application/pdf' || fileKindFromName(current.name) === 'pdf') {
+    return { kind: 'pdf', path: current.path, name: current.name, localUri, mimeType: current.mimeType, size: current.size }
+  }
   if (fileKindFromName(current.name) === 'model' && !CAD_MODEL_EXTENSIONS.has(extensionOf(current.name))) {
     return { kind: 'model', path: current.path, name: current.name, localUri, mimeType: current.mimeType, size: current.size }
   }
@@ -347,7 +361,7 @@ export function previewLocalSource(state: FilePreviewState): LocalSource | null 
     const inline = parseImageDataUri(state.src)
     return inline ? { kind: 'dataUri', dataUri: state.src, name: state.name, mimeType: inline.mimeType } : null
   }
-  if (state.kind === 'video' || state.kind === 'model') {
+  if (state.kind === 'video' || state.kind === 'model' || state.kind === 'pdf') {
     return { kind: 'file', uri: state.localUri, name: state.name, mimeType: state.mimeType }
   }
   if (state.kind === 'transfer' && state.phase === 'ready' && state.localUri) {

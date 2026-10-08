@@ -140,9 +140,18 @@ describe('transfer completion', () => {
     })
   })
 
+  it('turns a downloaded PDF into the pdf body, by MIME type or by name', () => {
+    const pdf = { ...image, path: '/proj/docs/spec.pdf', name: 'spec.pdf', mimeType: 'application/pdf' }
+    expect(completeTransfer(pdf, 'file:///cache/spec.pdf')).toEqual({
+      kind: 'pdf', path: pdf.path, name: pdf.name, localUri: 'file:///cache/spec.pdf', mimeType: pdf.mimeType, size: pdf.size,
+    })
+    const generic = { ...pdf, mimeType: 'application/octet-stream' }
+    expect(completeTransfer(generic, 'file:///cache/spec.pdf')).toMatchObject({ kind: 'pdf' })
+  })
+
   it('keeps any other file on the transfer card with its bytes attached', () => {
-    const pdf = { ...image, name: 'spec.pdf', mimeType: 'application/pdf' }
-    expect(completeTransfer(pdf, 'file:///cache/spec.pdf')).toMatchObject({ kind: 'transfer', phase: 'ready', localUri: 'file:///cache/spec.pdf' })
+    const archive = { ...image, name: 'logs.zip', mimeType: 'application/zip' }
+    expect(completeTransfer(archive, 'file:///cache/logs.zip')).toMatchObject({ kind: 'transfer', phase: 'ready', localUri: 'file:///cache/logs.zip' })
   })
 
   it('keeps CAD files on the transfer card, since only the desktop can tessellate them', () => {
@@ -210,6 +219,10 @@ describe('the more menu', () => {
     expect(previewLocalSource(text)).toEqual({ kind: 'text', text: '# a', name: 'a.md', mimeType: 'text/markdown' })
     const ready: FilePreviewState = { kind: 'transfer', path: '/p/s.pdf', name: 's.pdf', size: 1, mimeType: 'application/pdf', needsConfirm: false, phase: 'ready', localUri: 'file:///c/s.pdf' }
     expect(previewLocalSource(ready)).toEqual({ kind: 'file', uri: 'file:///c/s.pdf', name: 's.pdf', mimeType: 'application/pdf' })
+    const pdf: FilePreviewState = { kind: 'pdf', path: '/p/s.pdf', name: 's.pdf', size: 1, mimeType: 'application/pdf', localUri: 'file:///c/s.pdf' }
+    expect(previewLocalSource(pdf)).toEqual({ kind: 'file', uri: 'file:///c/s.pdf', name: 's.pdf', mimeType: 'application/pdf' })
+    // A PDF saves to Files, not Photos.
+    expect(filePreviewMenu(pdf)).toEqual({ save: { enabled: true, toPhotos: false }, share: { enabled: true } })
   })
 })
 

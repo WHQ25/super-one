@@ -82,6 +82,11 @@ export type FilePreviewPorts = {
   pairingId: string | null
 }
 
+/** A file already on the phone, as the page its type opens: a finished transfer. */
+function downloadedState(file: CachedDownload): FilePreviewState {
+  return completeTransfer({ kind: 'transfer', path: file.name, name: file.name, size: file.size, mimeType: file.mimeType, needsConfirm: false, phase: 'idle' }, file.localUri)
+}
+
 /**
  * The fullscreen preview's state and the RPCs behind it.
  *
@@ -261,8 +266,30 @@ export function useFilePreview(ports: FilePreviewPorts) {
     generation.current++
     for (const file of files) {
       pushCurrent()
-      setState(completeTransfer({ kind: 'transfer', path: file.name, name: file.name, size: file.size, mimeType: file.mimeType, needsConfirm: false, phase: 'idle' }, file.localUri))
+      setState(downloadedState(file))
     }
+  }, [pushCurrent, setState])
+
+  /** What a failed `showLocalFile` page retries with. */
+  const localFetch = useRef<{ page: FilePreviewState; fetch: () => Promise<CachedDownload> } | null>(null)
+
+  /**
+   * A file `fetch` puts on the phone itself (a chat attachment's original):
+   * the page opens loading at once and fails in place, its retry fetching again.
+   */
+  const showLocalFile = useCallback(async (name: string, fetch: () => Promise<CachedDownload>, stack = true) => {
+    const mine = ++generation.current
+    if (stack) pushCurrent()
+    setState({ kind: 'loading', path: name, name })
+    let next: FilePreviewState
+    try {
+      next = downloadedState(await fetch())
+    } catch (error) {
+      next = { kind: 'error', path: name, name, message: error instanceof Error ? error.message : String(error) }
+      localFetch.current = { page: next, fetch }
+    }
+    if (generation.current !== mine) return
+    setState(next)
   }, [pushCurrent, setState])
 
   const back = useCallback(() => {
@@ -281,10 +308,14 @@ export function useFilePreview(ports: FilePreviewPorts) {
   const retry = useCallback(() => {
     const current = stateRef.current
     if (!current || current.kind === 'image' || current.kind === 'mermaid') return
+    if (localFetch.current?.page === current) {
+      void showLocalFile(current.name, localFetch.current.fetch, false)
+      return
+    }
     // load() only throws before the page shows anything; the page has a state for it.
     load(current.path, 'line' in current ? current.line : undefined, 'root' in current ? current.root : undefined)
       .catch((error) => setState({ kind: 'error', path: current.path, name: current.name, message: error instanceof Error ? error.message : String(error), ...('root' in current && current.root ? { root: current.root } : {}) }))
-  }, [load, setState])
+  }, [load, setState, showLocalFile])
 
   const confirmTransfer = useCallback(() => { void startTransfer() }, [startTransfer])
 
@@ -317,5 +348,5 @@ export function useFilePreview(ports: FilePreviewPorts) {
     },
   }), [])
 
-  return { state, covered: history.current, open, showImage, showMermaid, showDownloads, back, close, startTransfer: confirmTransfer, retry, generationPorts }
+  return { state, covered: history.current, open, showImage, showMermaid, showDownloads, showLocalFile, back, close, startTransfer: confirmTransfer, retry, generationPorts }
 }

@@ -4,8 +4,8 @@ Chat WebView native requests route HTTPS links, clipboard copies, and stripped r
 file-tool metadata through RN. Every preview — file chip or picture — lands in the one
 fullscreen `ui/file-preview.tsx` modal (`FilePreviewModal`, its own `MenuHost`) whose only
 chrome is Close, the title, and a **More** menu with *Save to Photos* / *Save to Files* and
-*Share*. `file-preview-state.ts` owns the state machine (`loading | image | video | model | text |
-transfer | error`) and decides which menu rows are enabled; `media-ports.ts` (`MediaPorts`)
+*Share*. `file-preview-state.ts` owns the state machine (`loading | image | video | model | pdf |
+text | transfer | error`) and decides which menu rows are enabled; `media-ports.ts` (`MediaPorts`)
 is the only place that performs save/share through `expo-file-system` / `expo-sharing` / `expo-media-library`,
 so tests, stories, and the gallery inject `preview/fake-media-ports.ts` instead. Saving to
 Photos asks for add-only library permission and surfaces a denied state with an Open
@@ -18,13 +18,23 @@ transport and small binaries (≤512 KiB) inline over the relay (policy in
 on its own over LAN, after a Download confirmation over the relay when R2 staging is
 required. Downloaded images swap into the image body, downloaded clips into the `video`
 body (`ui/video-player.tsx`, `expo-video` with native controls, autoplay, Save to Photos),
-and 3D files into the `model` body (`ui/zoomable-model.tsx`). Other files stay on a
-"Downloaded" card so the menu can save or share them. The 3D body writes an offline
-viewer HTML beside the cached model and gives its WebView read access to that folder.
+3D files into the `model` body (`ui/zoomable-model.tsx`) and PDFs into the `pdf` body
+(`ui/pdf-pages.tsx`). Other files stay on a "Downloaded" card so the menu can save or
+share them. The 3D and PDF bodies share `ui/cached-file-viewer.tsx`: it writes an offline
+viewer page beside the cached file and gives its WebView read access to that folder;
+the page reads the file over XHR (`viewer-runtime/cached-file.ts`). The PDF page
+(`pdf-viewer/entry.ts`) is pdf.js's legacy build (the modern one needs iOS 18.2) with
+its worker and the packed Adobe CMaps inlined, so CJK text in PDFs that do not embed it
+maps offline: pages are sized up front, render as they near the screen, are cancelled or
+release their bitmap far from it, and the WebView pinch-zooms. A PDF sent as a chat
+attachment opens here too: the bubble's chip asks `previewAttachment`, and the page opens
+loading while the original bytes (`ChatRuntime.originalAttachment`) come into the cache;
+a failure shows in place and its Retry fetches again (`useFilePreview.showLocalFile`).
 Its bundled Three.js parser is shared with desktop; orbit, pinch zoom, pan, reset and
 model animations work offline. Models save to Files or share. A glTF file with external
 buffers or textures needs a self-contained GLB for phone preview, because only the
-selected file transfers. `build:chat-view` regenerates the gitignored viewer HTML.
+selected file transfers. `build:chat-view` regenerates the gitignored viewer pages
+(`scripts/build-model-viewer.ts`, `scripts/build-pdf-viewer.ts`).
 `expo-video`
 is native — pulling it in needs a dev-client rebuild — and jest stands it in from
 `jest.setup.ts` (a source containing `missing` reports `status: 'error'`). `openFile` is the secondary action: resolve the path against the active project and

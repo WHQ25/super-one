@@ -184,7 +184,7 @@ describe('FilePreviewCache', () => {
 })
 
 describe('hydrateTransferFromCache', () => {
-  it('turns a cached picture into the image body and leaves a miss idle', () => {
+  it('turns a cached picture or PDF into its body and leaves a miss idle', () => {
     const disk = memoryDisk()
     const cache = new FilePreviewCache(disk, 1_000, () => 1)
     cache.put(identity(), 'hero.png', new Uint8Array(100))
@@ -192,7 +192,8 @@ describe('hydrateTransferFromCache', () => {
       kind: 'image', src: expect.stringContaining('hero.png'),
     })
     expect(hydrateTransferFromCache(transfer(), 'desk-2', cache)).toMatchObject({ kind: 'transfer', phase: 'idle' })
-    expect(hydrateTransferFromCache(transfer({ mimeType: 'application/pdf' }), 'desk-1', cache)).toMatchObject({
+    expect(hydrateTransferFromCache(transfer({ mimeType: 'application/pdf' }), 'desk-1', cache)).toMatchObject({ kind: 'pdf' })
+    expect(hydrateTransferFromCache(transfer({ mimeType: 'application/zip' }), 'desk-1', cache)).toMatchObject({
       kind: 'transfer', phase: 'ready',
     })
   })

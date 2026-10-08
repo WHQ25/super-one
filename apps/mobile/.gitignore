@@ -1,6 +1,7 @@
 .expo/
 dist/
 src/generated-model-viewer-html.ts
+src/generated-pdf-viewer-html.ts
 /ios/
 /android/
 web-build/

@@ -5,10 +5,7 @@ import {
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { parseModel, placeModelCamera, updateModelCameraClipPlanes } from '../../desktop/src/renderer/src/components/coding/model-loader'
 import { addModelFillLights, lightModel } from '../../desktop/src/renderer/src/components/coding/model-environment'
-
-declare global {
-  interface Window { modelPreviewTarget: { name: string; uri: string } }
-}
+import { readCachedFile, setViewerStatus } from '../viewer-runtime/cached-file'
 
 function disposeModel(object: Object3D): void {
   object.traverse((part) => {
@@ -25,33 +22,10 @@ function disposeModel(object: Object3D): void {
   })
 }
 
-function status(message: string): void {
-  document.getElementById('status')!.textContent = message
-}
-
-function readCachedModel(uri: string): Promise<ArrayBuffer> {
-  return new Promise((resolve, reject) => {
-    // WebView's file access grants apply to XMLHttpRequest; fetch(file://)
-    // rejects before the model parser sees any bytes on mobile WebViews.
-    const request = new XMLHttpRequest()
-    request.open('GET', uri)
-    request.responseType = 'arraybuffer'
-    request.onload = () => {
-      if ((request.status !== 0 && (request.status < 200 || request.status >= 300)) || !(request.response instanceof ArrayBuffer)) {
-        reject(new Error(`Could not read cached model (${request.status})`))
-        return
-      }
-      resolve(request.response)
-    }
-    request.onerror = () => reject(new Error('Could not read cached model'))
-    request.send()
-  })
-}
-
 async function main(): Promise<void> {
-  const { name, uri } = window.modelPreviewTarget
+  const { name, uri } = window.viewerTarget
   const host = document.getElementById('stage')!
-  const bytes = await readCachedModel(uri)
+  const bytes = await readCachedFile(uri)
   // Only the transferred file is available on the phone. Reject glTF sibling
   // requests instead of allowing a model to read other cached previews.
   const loaded = await parseModel(name, bytes)
@@ -105,7 +79,7 @@ async function main(): Promise<void> {
     frame = requestAnimationFrame(draw)
   }
   frame = requestAnimationFrame(draw)
-  status('')
+  setViewerStatus('')
   document.getElementById('reset')!.hidden = false
   window.addEventListener('pagehide', () => {
     cancelAnimationFrame(frame)
@@ -119,5 +93,5 @@ async function main(): Promise<void> {
 }
 
 void main().catch((error: unknown) => {
-  status(error instanceof Error ? error.message : String(error))
+  setViewerStatus(error instanceof Error ? error.message : String(error))
 })

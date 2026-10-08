@@ -109,7 +109,7 @@ object (`presenters/user-bubble-ports.tsx`) provided by context:
 | `MentionIcon` | mini-app / desktop-app / MCP icons from stores and IPC, image file thumbnails | `mentionArtwork` and `mcpIcons` from the projection |
 | `FileMention` | click opens, icon drags, right-click file menu | tap → `previewFile` |
 | `McpMention`, `ChipCard` | hover cards | tap popover; no hover card |
-| `AttachmentViewer` | image lightbox, PDF dialog | `loadAttachment` → native `previewImage` |
+| `AttachmentViewer` | image lightbox, PDF dialog | picture: `loadAttachment` → native `previewImage`; PDF: `previewAttachment` → file preview page |
 | `QuoteBody` | highlighted against the project file | plain text |
 
 Only artwork and interaction are host-bound; labels, chip chrome, copy

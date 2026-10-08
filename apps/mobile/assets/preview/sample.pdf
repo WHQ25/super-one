@@ -1,0 +1,64 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+2 0 obj
+<< /Length 263 >>
+stream
+BT /F1 22 Tf 56 760 Td (SuperOne PDF preview) Tj ET
+BT /F1 13 Tf 56 720 Td (Page 1 of 3) Tj ET
+BT /F1 13 Tf 56 698 Td (Rendered offline by pdf.js in the file preview page.) Tj ET
+BT /F1 13 Tf 56 676 Td (Pinch to zoom; pages render as they scroll into view.) Tj ET
+endstream
+endobj
+3 0 obj
+<< /Type /Page /Parent 8 0 R /MediaBox [0 0 612 792] /Contents 2 0 R /Resources << /Font << /F1 1 0 R >> >> >>
+endobj
+4 0 obj
+<< /Length 310 >>
+stream
+BT /F1 22 Tf 56 760 Td (Token refresh) Tj ET
+BT /F1 13 Tf 56 720 Td (Page 2 of 3) Tj ET
+BT /F1 13 Tf 56 698 Td (1. The app wakes from sleep.) Tj ET
+BT /F1 13 Tf 56 676 Td (2. The refresh request races the first API call.) Tj ET
+BT /F1 13 Tf 56 654 Td (3. The stale token wins and the user is signed out.) Tj ET
+endstream
+endobj
+5 0 obj
+<< /Type /Page /Parent 8 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 1 0 R >> >> >>
+endobj
+6 0 obj
+<< /Length 229 >>
+stream
+BT /F1 22 Tf 56 760 Td (Fix) Tj ET
+BT /F1 13 Tf 56 720 Td (Page 3 of 3) Tj ET
+BT /F1 13 Tf 56 698 Td (Serialize refreshes behind one promise and retry) Tj ET
+BT /F1 13 Tf 56 676 Td (the first call once the new token lands.) Tj ET
+endstream
+endobj
+7 0 obj
+<< /Type /Page /Parent 8 0 R /MediaBox [0 0 612 792] /Contents 6 0 R /Resources << /Font << /F1 1 0 R >> >> >>
+endobj
+8 0 obj
+<< /Type /Pages /Kids [3 0 R 5 0 R 7 0 R] /Count 3 >>
+endobj
+9 0 obj
+<< /Type /Catalog /Pages 8 0 R >>
+endobj
+xref
+0 10
+0000000000 65535 f 
+0000000009 00000 n 
+0000000079 00000 n 
+0000000393 00000 n 
+0000000519 00000 n 
+0000000880 00000 n 
+0000001006 00000 n 
+0000001286 00000 n 
+0000001412 00000 n 
+0000001481 00000 n 
+trailer
+<< /Size 10 /Root 9 0 R >>
+startxref
+1530
+%%EOF

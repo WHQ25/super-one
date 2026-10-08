@@ -10,6 +10,7 @@ function ports(): NativeActionPorts {
     loadVideoPoster: vi.fn(async () => ({ dataUri: 'data:image/jpeg;base64,/9j/', width: 320, height: 180, durationMs: 4200 })),
     loadTextFile: vi.fn(async () => ({ text: '# hi\n' })),
     loadAttachment: vi.fn(async () => 'data:image/jpeg;base64,/9j/'),
+    previewAttachment: vi.fn(async () => {}),
     resolveFavicon: vi.fn(async () => 'data:image/png;base64,AA=='),
     previewImage: vi.fn(),
     previewMermaid: vi.fn(),
@@ -298,6 +299,17 @@ describe('native chat actions', () => {
       type: 'requestNative', requestId: 'att2', action: 'loadAttachment', payload: { messageId: 'user_1', name: 'old.png' },
     }, target)
     expect(target.loadAttachment).toHaveBeenLastCalledWith('user_1', { name: 'old.png' })
+  })
+
+  it('opens a document attachment on the preview page, and refuses one without a name', async () => {
+    const target = ports()
+    await expect(resolveNativeRequest({
+      type: 'requestNative', requestId: 'doc', action: 'previewAttachment', payload: { messageId: 'user_1', attachmentId: 'p1', name: 'spec.pdf' },
+    }, target)).resolves.toMatchObject({ result: { ok: true } })
+    expect(target.previewAttachment).toHaveBeenCalledWith('user_1', { attachmentId: 'p1', name: 'spec.pdf' })
+    await expect(resolveNativeRequest({
+      type: 'requestNative', requestId: 'doc2', action: 'previewAttachment', payload: { messageId: 'user_1' },
+    }, target)).resolves.toMatchObject({ error: 'invalid previewAttachment payload' })
   })
 
   it('answers resolveFavicon with the desktop icon for an http(s) link only', async () => {

@@ -45,13 +45,28 @@ function stoppedWake(childName: string): RegExp {
   return new RegExp(`Received: Your collaboration child SuperOne session \\S+ \\("${childName}[^"]*"\\) stopped`)
 }
 
+/** English UI with remote nodes (experimental) shown, as the steps below read it. */
+const UI_SETTINGS = { locale: 'en', experimentalRemoteNodesEnabled: true }
+
 async function launchB(fresh: boolean): Promise<DesktopInstance> {
   return launchDesktop(B_NAME, {
     fresh,
     env: envB,
-    // Where B clones a repository it lacks (`agent.projectsDir`).
-    seed: fresh ? { 'node-host/config.json': { agent: { projectsDir: projectsDirB } } } : {},
+    seed: fresh
+      ? {
+          'app-settings.json': { ...UI_SETTINGS, remoteNodeAccessPort: NODE_PORT },
+          // Where B clones a repository it lacks (`agent.projectsDir`).
+          'node-host/config.json': { agent: { projectsDir: projectsDirB } },
+        }
+      : {},
   })
+}
+
+/** Settings → Remote Control, on the given tab. */
+async function openRemoteSettings(page: Page, tab: 'Control This Mac' | 'Control Other Devices'): Promise<void> {
+  await page.keyboard.press('Meta+Comma')
+  await page.getByRole('button', { name: 'Remote Control', exact: true }).click()
+  await page.getByRole('tab', { name: tab }).click()
 }
 
 /** Keep every agent event A's renderer receives, for the assertions below. */
@@ -146,7 +161,7 @@ test.beforeAll(async () => {
   await mkdir(homeA, { recursive: true })
   await mkdir(homeB, { recursive: true })
   envB = { ...SCRIPTED, HOME: homeB }
-  a = await launchDesktop(A_NAME, { env: { ...SCRIPTED, HOME: homeA } })
+  a = await launchDesktop(A_NAME, { env: { ...SCRIPTED, HOME: homeA }, seed: { 'app-settings.json': UI_SETTINGS } })
   b = await launchB(true)
   await recordEvents(a.window)
 })
@@ -164,29 +179,31 @@ test.afterAll(async () => {
   await removeInstanceData(B_NAME)
 })
 
-test('B serves node access and A pairs with its pairing token', async () => {
-  const status = await b.window.evaluate(async (port) => {
-    const app = (window as unknown as { app: { saveAppSettings(p: unknown): Promise<unknown>; getNodeHostStatus(): Promise<{ running: boolean; error: string | null }> } }).app
-    await app.saveAppSettings({ remoteNodeAccessEnabled: true, remoteNodeAccessPort: port })
-    for (let i = 0; i < 100; i++) {
-      const s = await app.getNodeHostStatus()
-      if (s.running || s.error) return s
-      await new Promise((r) => setTimeout(r, 100))
-    }
-    return app.getNodeHostStatus()
-  }, NODE_PORT)
-  expect(status).toMatchObject({ running: true, error: null })
+test('B turns on node access and A pairs with the code B shows', async () => {
+  // B: Settings → Remote Control → Allow Other Devices to Run Tasks → Add Device.
+  await openRemoteSettings(b.window, 'Control This Mac')
+  await b.window.getByRole('switch', { name: 'Allow Other Devices to Run Tasks' }).click()
+  await expect(b.window.getByText(/Listening on /)).toBeVisible({ timeout: 30_000 })
+  await b.window.getByRole('button', { name: 'Add Device' }).click()
+  const code = (await b.window.getByLabel('Pairing Code', { exact: true }).textContent())!.trim()
+  expect(code).toMatch(/^superone-node:/)
 
-  // What the pairing code carries (its format is covered by `node-pairing-code.test.ts`).
-  const token = await b.window.evaluate(() =>
-    (window as unknown as { app: { mintNodeHostPairingToken(): Promise<{ pairingToken: string; channel: { keyId: string; secretHex: string }; environmentId: string }> } }).app.mintNodeHostPairingToken())
-  // One machine: reach B on loopback at the port it serves, not its advertised host.
-  const baseUrl = `http://127.0.0.1:${NODE_PORT}`
-  const paired = await a.window.evaluate(async (input) =>
-    (window as unknown as { environment: { pairRemote(i: unknown): Promise<{ connectionId: string; descriptor: { environmentId: string } }> } }).environment.pairRemote(input),
-  { baseUrl, pairingToken: token.pairingToken, channel: token.channel, label: 'Node B' })
-  environmentId = paired.descriptor.environmentId
-  expect(environmentId).toBe(token.environmentId)
+  // A: Settings → Remote Control → Control Other Devices → Add Desktop, paste, Add.
+  await openRemoteSettings(a.window, 'Control Other Devices')
+  await a.window.getByRole('button', { name: 'Add Desktop' }).click()
+  const dialog = a.window.getByRole('dialog', { name: 'Add Desktop' })
+  await dialog.getByLabel('Pairing Code').fill(code)
+  await dialog.getByLabel('Name').fill('Node B')
+  await dialog.getByRole('button', { name: 'Add', exact: true }).click()
+  await expect(dialog).toBeHidden({ timeout: 60_000 })
+
+  environmentId = await a.window.evaluate(async () => {
+    const items = await (window as unknown as { environment: { listItems(): Promise<Array<{ kind: string; label: string; environmentId: string }>> } }).environment.listItems()
+    return items.find((item) => item.kind === 'remote' && item.label === 'Node B')!.environmentId
+  })
+  expect(environmentId).toBeTruthy()
+  // Back to the chat view; the parent sessions below run from there.
+  await a.window.keyboard.press('Meta+Comma')
 })
 
 test('children spawned on B clone the repo; a report reaches the mailbox and a silent stop wakes the parent', async () => {

@@ -56,9 +56,8 @@ bun run dev:desktop-node:lab:status
 bun run dev:desktop-node:lab:stop
 ```
 
-Paste the code in A under Settings → Environments → Add Desktop. The script also
-prints a `window.environment.pairRemote({ baseUrl: 'http://127.0.0.1:7794', … })`
-line for A's DevTools console, which pairs over loopback.
+Paste the code in A under Settings → Remote Control → Control Other Devices →
+Add Desktop (that tab needs the experimental remote nodes setting on in A).
 
 B is `SUPERONE_INSTANCE=node-b` (`scripts/desktop-node-lab.ts`). It runs the
 main/preload build already in `apps/desktop/out` (A's `bun run dev` writes it;
@@ -84,7 +83,8 @@ on B needs its harness enabled and signed in on B (Settings → Harnesses).
 
 The automated version is `e2e/desktop-node-orchestration.spec.ts`
 (`bun run test:e2e:fast -- e2e/desktop-node-orchestration.spec.ts` after
-`bunx electron-vite build`). Two instances pair over loopback, and a parent on A
+`bunx electron-vite build`). B turns on node access and shows a code in its
+settings, A pastes it into Add Desktop, and a parent on A
 spawns children on B for a repository served by a loopback `git daemon`. Both
 run the scripted harness (`src/main/session/backends/scripted-backend.ts`): every
 harness follows the `<scripted>` steps in its message instead of calling a model.

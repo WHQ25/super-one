@@ -123,9 +123,9 @@ async function launch(): Promise<void> {
 
   mkdirSync(LAB, { recursive: true })
   mkdirSync(PROJECTS_DIR, { recursive: true })
-  // Node access on from the first launch, on a port of its own.
+  // Node access on from the first launch, on a port of its own (shown under the experimental flag).
   const settingsFile = join(USER_DATA, 'app-settings.json')
-  writeJson(settingsFile, { ...readJson(settingsFile), remoteNodeAccessEnabled: true, remoteNodeAccessPort: NODE_PORT })
+  writeJson(settingsFile, { ...readJson(settingsFile), experimentalRemoteNodesEnabled: true, remoteNodeAccessEnabled: true, remoteNodeAccessPort: NODE_PORT })
   const nodeConfigFile = join(USER_DATA, 'node-host', 'config.json')
   const nodeConfig = readJson(nodeConfigFile) as { agent?: Record<string, unknown> }
   if (!nodeConfig.agent?.projectsDir) writeJson(nodeConfigFile, { ...nodeConfig, agent: { ...nodeConfig.agent, projectsDir: PROJECTS_DIR } })
@@ -161,8 +161,7 @@ async function pair(): Promise<void> {
   }
   const token = await evaluateInB<Parameters<typeof encodeNodePairingCode>[0]>('window.app.mintNodeHostPairingToken()')
   console.log(`\nPairing code for A (single use, expires ${new Date(token.expiresAt).toLocaleTimeString()}):\n\n${encodeNodePairingCode(token)}\n`)
-  console.log('Or pair A over loopback from its DevTools console:\n')
-  console.log(`await window.environment.pairRemote(${JSON.stringify({ baseUrl: `http://127.0.0.1:${NODE_PORT}`, pairingToken: token.pairingToken, channel: token.channel, label: `Desktop ${INSTANCE}` })})\n`)
+  console.log('Paste it in A: Settings → Remote Control → Control Other Devices → Add Desktop.')
 }
 
 async function status(): Promise<void> {

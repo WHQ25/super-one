@@ -273,4 +273,21 @@ describe('NotificationService', () => {
 
     expect(healthy.delivered).toHaveLength(1)
   })
+
+  it('rings a stall once until it is cleared, and honors the stalled opt-out', () => {
+    const service = makeService()
+    const channel = fakeChannel()
+    service.registerChannel(channel)
+
+    service.notifyStalled('sid')
+    service.notifyStalled('sid')
+    expect(channel.delivered).toHaveLength(1)
+    expect(channel.delivered[0]).toMatchObject({ kind: 'stalled', sessionId: 'sid', body: 'notifications.stalled' })
+
+    service.clearStalled('sid')
+    expect(channel.withdrawn).toEqual(['stalled:sid'])
+    settings.kinds.stalled = false
+    service.notifyStalled('sid')
+    expect(channel.delivered).toHaveLength(1)
+  })
 })

@@ -702,6 +702,7 @@ export const zh: Messages = {
     waitingApproval: '等待审批',
     waitingInput: '请求输入',
     completed: '已完成',
+    stalled: '长时间没有进展',
   },
   settings: {
     layout: {
@@ -1265,6 +1266,7 @@ export const zh: Messages = {
           plan: '计划审批',
           confirm: '宿主确认请求',
           completed: '任务完成',
+          stalled: '协作智能体卡住',
         },
       },
       storage: {

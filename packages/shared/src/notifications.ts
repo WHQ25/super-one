@@ -36,6 +36,11 @@ export type NotificationKind =
    * you" — it is "you can come back now".
    */
   | 'completed'
+  /**
+   * A collaboration child has been mid-run with no activity for a while. It
+   * does not wake the parent agent, so the human is the one told.
+   */
+  | 'stalled'
 
 export const NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'permission',
@@ -43,6 +48,7 @@ export const NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'plan',
   'confirm',
   'completed',
+  'stalled',
 ]
 
 /**
@@ -74,7 +80,7 @@ export interface NotificationSettings {
 
 export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   enabled: true,
-  kinds: { permission: true, question: true, plan: true, confirm: true, completed: true },
+  kinds: { permission: true, question: true, plan: true, confirm: true, completed: true, stalled: true },
 }
 
 /** True when `settings` permits delivering `kind`. */

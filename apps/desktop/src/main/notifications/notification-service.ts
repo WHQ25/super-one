@@ -11,7 +11,14 @@ import type { NotificationIntent, NotificationSettings } from '@superone/shared/
 import { isNotificationKindEnabled } from '@superone/shared/notifications'
 import log from '../logger'
 import type { NotificationChannel } from './notification-channel'
-import { RunTracker, intentForEvent, withdrawIdForEvent, type IntentContext } from './notification-intent'
+import {
+  RunTracker,
+  intentForEvent,
+  stalledIntent,
+  stalledIntentId,
+  withdrawIdForEvent,
+  type IntentContext,
+} from './notification-intent'
 
 export interface NotificationServiceDeps {
   readSettings(): NotificationSettings
@@ -76,13 +83,24 @@ export class NotificationService {
     const settings = this.deps.readSettings()
     if (!settings.enabled) return
 
-    const intent = intentForEvent(event, {
-      t: this.deps.t,
-      describeSession: this.deps.describeSession,
-      now: this.now,
-      runCompleted,
-    })
-    if (!intent) return
+    const intent = intentForEvent(event, { ...this.intentContext(), runCompleted })
+    if (intent) this.raise(intent, settings)
+  }
+
+  /** A collaboration child stuck mid-run; see `CollaborationChildMonitor`. */
+  notifyStalled(sessionId: string): void {
+    this.raise(stalledIntent(sessionId, this.intentContext()), this.deps.readSettings())
+  }
+
+  clearStalled(sessionId: string): void {
+    this.withdraw(stalledIntentId(sessionId))
+  }
+
+  private intentContext(): IntentContext {
+    return { t: this.deps.t, describeSession: this.deps.describeSession, now: this.now }
+  }
+
+  private raise(intent: NotificationIntent, settings: NotificationSettings): void {
     if (!isNotificationKindEnabled(settings, intent.kind)) return
     if (this.active.has(intent.id)) return
 

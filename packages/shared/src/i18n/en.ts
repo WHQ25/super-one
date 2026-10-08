@@ -658,6 +658,7 @@ export type Messages = {
     waitingApproval: string
     waitingInput: string
     completed: string
+    stalled: string
   }
   settings: {
     layout: {
@@ -1180,6 +1181,7 @@ export type Messages = {
           plan: string
           confirm: string
           completed: string
+          stalled: string
         }
       }
       storage: {
@@ -4894,6 +4896,7 @@ export const en: Messages = {
     waitingApproval: 'Waiting for approval',
     waitingInput: 'Waiting for your input',
     completed: 'Finished',
+    stalled: 'Stalled with no recent progress',
   },
   settings: {
     layout: {
@@ -5468,6 +5471,7 @@ export const en: Messages = {
           plan: 'Plan approvals',
           confirm: 'Host confirmations',
           completed: 'Finished runs',
+          stalled: 'Stalled collaboration agents',
         },
       },
       storage: {

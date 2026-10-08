@@ -66,7 +66,7 @@ describe('app-settings-service', () => {
     analyticsEnabled: true,
     notifications: {
       enabled: true,
-      kinds: { permission: true, question: true, plan: true, confirm: true, completed: true },
+      kinds: { permission: true, question: true, plan: true, confirm: true, completed: true, stalled: true },
     },
     powerMode: 'system',
     experimentalAgentsEnabled: false,

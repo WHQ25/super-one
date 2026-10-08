@@ -94,6 +94,7 @@ const BODY_KEY: Record<NotificationKind, string> = {
   plan: 'notifications.waitingApproval',
   question: 'notifications.waitingInput',
   completed: 'notifications.completed',
+  stalled: 'notifications.stalled',
 }
 
 /**
@@ -106,6 +107,16 @@ function build(ctx: IntentContext, kind: NotificationKind, id: string, sessionId
   const { label, projectPath } = sessionLabel(ctx, sessionId)
   const body = ctx.t(BODY_KEY[kind])
   return { id, kind, sessionId, projectPath, title: label, body, createdAt: ctx.now() }
+}
+
+/** One banner per session: a later stall replaces it, renewed activity withdraws it. */
+export function stalledIntentId(sessionId: string): string {
+  return `stalled:${sessionId}`
+}
+
+/** A collaboration child stuck mid-run. Raised by the collaboration monitor, not by an event. */
+export function stalledIntent(sessionId: string, ctx: IntentContext): NotificationIntent {
+  return build(ctx, 'stalled', stalledIntentId(sessionId), sessionId)
 }
 
 /**

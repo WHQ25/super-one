@@ -14,6 +14,8 @@ type Params = {
   lan?: boolean
   expireOnMount?: boolean
   remoteNodes?: boolean
+  /** "Allow other devices to run tasks" is on (needs remoteNodes). */
+  nodeAccess?: boolean
 }
 
 const day = (offset: number) => new Date(Date.now() - offset * 86_400_000).toISOString()
@@ -42,6 +44,11 @@ const meta: Meta<typeof RemotePage> = {
     mockIpc('app', 'saveRemoteConfig', async () => undefined)
     mockIpc('app', 'startPairing', async () => ({ channelId: 'c0ffee', tempKeyHex: 'ab'.repeat(16), relayUrl: 'wss://relay.superone.dev' }))
     mockIpc('app', 'cancelPairing', async () => undefined)
+    mockIpc('app', 'getAppSettings', async () => ({ remoteNodeAccessEnabled: p.nodeAccess ?? false, remoteNodeAccessPort: null }))
+    mockIpc('app', 'getNodeHostStatus', async () => (p.nodeAccess
+      ? { running: true, url: 'http://hangqi-mbp.local:7791', environmentId: 'env-1', error: null }
+      : { running: false, url: null, environmentId: null, error: null }))
+    mockIpc('app', 'getNodeHostNote', async () => '')
     mockIpc('app', 'confirmPairing', async () => undefined)
     mockIpc('app', 'onPairingCodeReceived', (cb: unknown) => {
       codeReceived = cb as typeof codeReceived
@@ -118,6 +125,9 @@ export const OtherDevices: Story = {
     await expect(await canvas.findByText('build-box')).toBeInTheDocument()
   },
 }
+
+/** Experimental remote nodes on: this computer can serve tasks for paired desktops. */
+export const RunTasksForOtherDevices: Story = { parameters: { remoteNodes: true, nodeAccess: true, devices: DEVICES } }
 
 export const Narrow: Story = {
   parameters: { devices: DEVICES, remoteNodes: true },

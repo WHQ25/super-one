@@ -880,6 +880,58 @@ export type Messages = {
         title: string
         subtitle: string
       }
+      nodeAccess: {
+        title: string
+        enableLabel: string
+        enableDescription: string
+        port: string
+        portDescription: string
+        portPlaceholder: string
+        portInvalid: string
+        status: { off: string; starting: string; listening: string; error: string }
+        addDevice: string
+        mintFailed: string
+        code: {
+          title: string
+          instructions: string
+          warning: string
+          copy: string
+          copied: string
+          expiresIn: string
+          expired: string
+          newCode: string
+          done: string
+        }
+        note: {
+          label: string
+          description: string
+          placeholder: string
+          save: string
+          saved: string
+          saveFailed: string
+        }
+      }
+      addDesktop: {
+        button: string
+        title: string
+        description: string
+        codeLabel: string
+        codePlaceholder: string
+        nameLabel: string
+        nameHint: string
+        submit: string
+        success: string
+        errors: {
+          invalid: string
+          unsupportedVersion: string
+          expired: string
+          used: string
+          rejected: string
+          unreachable: string
+          channelRequired: string
+          channelAuth: string
+        }
+      }
       channels: {
         addDevice: string
         empty: string
@@ -5132,6 +5184,69 @@ export const en: Messages = {
         title: 'Other devices',
         subtitle:
           'Run projects, terminals, and agents on remote machines. They keep running after you disconnect.',
+      },
+      nodeAccess: {
+        title: 'Run Tasks for Other Devices',
+        enableLabel: 'Allow Other Devices to Run Tasks',
+        enableDescription:
+          "Paired SuperOne desktops can start agent sessions on this computer. They run here with this computer's accounts, API keys, files and tools.",
+        port: 'Port',
+        portDescription: 'Leave empty to use the default port.',
+        portPlaceholder: 'Default',
+        portInvalid: 'Enter a port from 1024 to 65535.',
+        status: {
+          off: 'Off',
+          starting: 'Starting…',
+          listening: 'Listening on {{url}}',
+          error: 'Could not start: {{error}}',
+        },
+        addDevice: 'Add Device',
+        mintFailed: 'Could not create a pairing code: {{message}}',
+        code: {
+          title: 'Pairing Code',
+          instructions:
+            'On the other computer, open Settings → Remote Control → Control Other Devices, choose Add Desktop, and paste this code.',
+          warning: 'The code pairs one device with this computer. Share it only with your own devices.',
+          copy: 'Copy Code',
+          copied: 'Pairing code copied',
+          expiresIn: 'Expires in {{time}}',
+          expired: 'This code has expired.',
+          newCode: 'New Code',
+          done: 'Done',
+        },
+        note: {
+          label: 'Note for Agents',
+          description:
+            'Agents on other devices read this when choosing where to run work, for example "Has the GPU; use it for model builds."',
+          placeholder: 'What is this computer good for?',
+          save: 'Save',
+          saved: 'Note saved',
+          saveFailed: 'Could not save the note: {{message}}',
+        },
+      },
+      addDesktop: {
+        button: 'Add Desktop',
+        title: 'Add Desktop',
+        description:
+          'On the other computer, turn on "Allow Other Devices to Run Tasks" under Remote Control, choose Add Device, and paste its pairing code here.',
+        codeLabel: 'Pairing Code',
+        codePlaceholder: 'superone-node:1:…',
+        nameLabel: 'Name',
+        nameHint: 'How the other computer appears in your environments.',
+        submit: 'Add',
+        success: 'Desktop added',
+        errors: {
+          invalid: 'This is not a SuperOne pairing code. Copy the whole code from the other computer.',
+          unsupportedVersion: 'This pairing code comes from a newer SuperOne. Update this app and try again.',
+          expired: 'This pairing code has expired. Create a new one on the other computer.',
+          used: 'This pairing code was already used. Create a new one on the other computer.',
+          rejected: 'The other computer did not accept this pairing code. Create a new one and try again.',
+          unreachable:
+            'Could not reach {{url}}. Check that the other computer is awake, on a network this computer can reach, and allows other devices to run tasks.',
+          channelRequired:
+            'The other computer only accepts encrypted connections. Create a new pairing code there and paste it again.',
+          channelAuth: 'The encryption key in this code does not match the other computer. Create a new pairing code there.',
+        },
       },
       channels: {
         addDevice: 'Add Device',

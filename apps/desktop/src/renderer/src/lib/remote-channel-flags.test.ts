@@ -28,13 +28,13 @@ function remote(overrides: Partial<EnvironmentListItem> = {}): EnvironmentListIt
 }
 
 describe('remote channel flags', () => {
-  it('only enables SSH for now', () => {
+  it('enables desktop and SSH, not Tailscale yet', () => {
     expect(REMOTE_CHANNEL_ENABLED).toEqual({
-      desktop: false,
+      desktop: true,
       ssh: true,
       tailscale: false,
     })
-    expect(enabledRemoteChannels()).toEqual(['ssh'])
+    expect(enabledRemoteChannels()).toEqual(['desktop', 'ssh'])
   })
 })
 

@@ -1,11 +1,11 @@
 /**
  * Feature flags for "control other devices" connection channels.
- * Only SSH is shipped; desktop and Tailscale stay hidden until ready.
+ * SSH and desktop (pairing code) are shipped; Tailscale stays hidden until ready.
  */
 export type RemoteDeviceChannel = 'desktop' | 'ssh' | 'tailscale'
 
 export const REMOTE_CHANNEL_ENABLED: Record<RemoteDeviceChannel, boolean> = {
-  desktop: false,
+  desktop: true,
   ssh: true,
   tailscale: false,
 }

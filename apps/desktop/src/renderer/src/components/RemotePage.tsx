@@ -11,6 +11,7 @@ import { useAppStore } from '@/stores/app'
 import { useRemoteStatus } from '@/hooks/useRemoteStatus'
 import type { PairedDevice } from '@superone/shared/agent-types'
 import { EnvironmentsPage } from './settings/environments/EnvironmentsPage'
+import { NodeAccessSection } from './settings/node-access/NodeAccessSection'
 import { PairingCodeConfirm } from './PairingCodeConfirm'
 import {
   SettingsPage,
@@ -79,6 +80,7 @@ function ThisDevicePanel() {
   const { t } = useTranslation()
   const config = useAppStore((s) => s.remoteConfig)
   const setRemoteConfig = useAppStore((s) => s.setRemoteConfig)
+  const experimentalRemoteNodesEnabled = useAppStore((s) => s.experimentalRemoteNodesEnabled)
   const [pairedDevices, setPairedDevices] = useState<PairedDevice[]>([])
   const [pairingStep, setPairingStep] = useState<PairingStep>('idle')
   const [qrValue, setQrValue] = useState('')
@@ -354,6 +356,8 @@ function ThisDevicePanel() {
           <PairedDeviceList devices={desktopDevices} onRemove={handleRemoveDevice} />
         )}
       </SettingsSection>
+
+      {experimentalRemoteNodesEnabled && <NodeAccessSection />}
 
       {import.meta.env.DEV && (
         <SettingsSection

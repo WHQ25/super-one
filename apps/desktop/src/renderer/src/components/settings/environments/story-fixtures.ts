@@ -14,7 +14,20 @@ const ssh = (id: string, label: string, target: string, patch: Partial<Environme
   ...patch,
 })
 
+const desktop = (id: string, label: string, url: string, patch: Partial<EnvironmentListItem> = {}): EnvironmentListItem => ({
+  connectionId: id,
+  environmentId: `env-${id}`,
+  label,
+  kind: 'remote',
+  state: 'disconnected',
+  endpointProfiles: [{ endpointId: 'primary', kind: 'direct-wss', label: url, target: url }],
+  preferredEndpointId: 'primary',
+  platform: { os: 'darwin', arch: 'arm64' },
+  ...patch,
+})
+
 export const ENVIRONMENT_ITEMS: EnvironmentListItem[] = [
+  desktop('studio', 'Hangqis-Studio', 'http://Hangqis-Studio.local:7791', { state: 'connected' }),
   ssh('build-box', 'build-box', 'dev@build-box.internal', { state: 'connected' }),
   ssh('gpu', 'gpu-workstation', 'hangqi@10.0.0.42', {
     nodeUpgrade: { remoteVersion: '0.69.0', targetVersion: '0.71.2', canUpgradeOverSsh: true },

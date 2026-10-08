@@ -1,4 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
+import i18n from 'i18next'
+import { expect, userEvent, within } from 'storybook/test'
 import type { EnvironmentListItem } from '@superone/shared/environment'
 import { EnvironmentsPage } from './EnvironmentsPage'
 import { ENVIRONMENT_ITEMS, mockEnvironmentApi } from './story-fixtures'
@@ -39,3 +41,14 @@ export const Populated: Story = {}
 export const LabOnline: Story = { parameters: { items: ENVIRONMENT_ITEMS.slice(0, 1), labReachable: true } }
 
 export const Narrow: Story = { parameters: { width: 460 } }
+
+/** Desktop card → Add Desktop opens the pairing-code dialog. */
+export const AddDesktop: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(await canvas.findByRole('button', { name: i18n.t('settings.remote.addDesktop.button') }))
+    await expect(
+      await within(canvasElement.ownerDocument.body).findByLabelText(i18n.t('settings.remote.addDesktop.codeLabel')),
+    ).toBeInTheDocument()
+  },
+}

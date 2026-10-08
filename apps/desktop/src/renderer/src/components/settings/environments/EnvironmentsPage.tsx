@@ -28,6 +28,7 @@ import {
   enabledRemoteChannels,
   type RemoteDeviceChannel,
 } from '@/lib/remote-channel-flags'
+import { AddDesktopDialog } from './AddDesktopDialog'
 import { AddEnvironmentDialog } from './AddEnvironmentDialog'
 import { SettingsSection, settingsRowClassName } from '../SettingsSection'
 
@@ -113,6 +114,7 @@ export function EnvironmentsPage() {
   /** Ref mirrors busyId so progress events and begin/endBusy stay race-free. */
   const busyIdRef = useRef<string | null>(null)
   const [addOpen, setAddOpen] = useState(false)
+  const [addDesktopOpen, setAddDesktopOpen] = useState(false)
   const channels = useMemo(() => enabledRemoteChannels(), [])
   const showLocalLab = import.meta.env.DEV
   const anyBusy = busyId != null
@@ -341,6 +343,17 @@ export function EnvironmentsPage() {
                     <Plus className="size-3.5" />
                     {t('settings.remote.channels.addDevice')}
                   </Button>
+                ) : channel === 'desktop' ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7"
+                    onClick={() => setAddDesktopOpen(true)}
+                    disabled={anyBusy}
+                  >
+                    <Plus className="size-3.5" />
+                    {t('settings.remote.addDesktop.button')}
+                  </Button>
                 ) : null}
               >
                 {devices.length === 0 ? (
@@ -395,6 +408,14 @@ export function EnvironmentsPage() {
       )}
 
       <AddEnvironmentDialog open={addOpen} onOpenChange={setAddOpen} onAdded={handleAdded} />
+      <AddDesktopDialog
+        open={addDesktopOpen}
+        onOpenChange={setAddDesktopOpen}
+        onAdded={() => {
+          toast.success(t('settings.remote.addDesktop.success'))
+          void refresh()
+        }}
+      />
     </div>
   )
 }

@@ -4,6 +4,7 @@ import type {
   RealtimeTimelineSegment,
   RemoteCommand,
   SandboxInfo,
+  SessionGoal,
 } from '@superone/shared/agent-types'
 import type { RelayClient } from './client'
 import type { McpAppContextSource } from '@superone/shared/mcp-apps-state'
@@ -47,6 +48,11 @@ export type SessionSnapshot = {
    */
   realtimeSegments?: RealtimeTimelineSegment[]
   activeRealtimeSessionId?: string | null
+  /**
+   * The session's goal as the host last heard it; null when there is none. The
+   * harness reports it only when it changes, so a restore must carry it.
+   */
+  goal?: SessionGoal | null
   error?: string
 }
 

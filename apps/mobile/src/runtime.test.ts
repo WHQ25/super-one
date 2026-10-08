@@ -98,6 +98,25 @@ describe('ChatRuntime', () => {
     expect(sends.find((cmd) => cmd.content === 'no say')).not.toHaveProperty('ultracode')
     runtime.dispose()
   })
+  it('restores the session goal from the snapshot, including a goal cleared during the gap', async () => {
+    const client = fakeClient()
+    const answer = client.request.getMockImplementation()!
+    let goal: unknown = { objective: 'ship the fix', status: 'active' }
+    client.request.mockImplementation(async (cmd) => cmd.type === 'get_session_state'
+      ? { status: 'idle', pendingInteractions: [], inProgressMessages: [], goal }
+      : answer(cmd))
+    const runtime = new ChatRuntime(client as never, () => {})
+    await runtime.open('/p', 'goal')
+    expect(runtime.session.sessionGoal).toEqual({ objective: 'ship the fix', status: 'active' })
+    // Paused while the phone was away: the event never arrived, the snapshot has it.
+    goal = { objective: 'ship the fix', status: 'paused' }
+    await runtime.reopen()
+    expect(runtime.session.sessionGoal).toEqual({ objective: 'ship the fix', status: 'paused' })
+    goal = null
+    await runtime.reopen()
+    expect(runtime.session.sessionGoal).toBeNull()
+    runtime.dispose()
+  })
   it('isolates same-ID messages and command errors by their owning environment', async () => {
     const client = fakeClient()
     const onCommandError = vi.fn()

@@ -262,8 +262,11 @@ startBuffering
   server `reset` frame discards the queued batches and restarts buffering, and
   the app runs the same restore.
 - `ChatRuntime` seeds the snapshot (live turn, pending interactions, usage,
-  sandbox, worktree, voice segments), replays the released batches through the
-  reducer, then hydrates the document. Batches carrying an older epoch are
+  sandbox, worktree, voice segments, goal), replays the released batches through the
+  reducer, then hydrates the document. The first batch is the host's
+  `Session.getReplayEvents()` (settings, catalogs, queue, compaction, goal, harness
+  todo list). Session state a harness reports only when it changes must be in one
+  of the two, since no event from before the restore is replayed. Batches carrying an older epoch are
   dropped; overlapping restores commit only their newest generation.
 - Creating a session subscribes and releases without a history fetch.
 - Hosts that do not return a bootstrap page get the fallback sequence

@@ -144,6 +144,9 @@ export class ChatRuntime {
         session.permissionMode = restored.snapshot.permissionMode as SessionState['permissionMode']
       }
       session.ultracode = restored.snapshot.ultracode ?? false
+      // The harness reports the goal only when it changes; restore is the one
+      // place a phone that missed that event learns it.
+      session.sessionGoal = restored.snapshot.goal ?? null
       if (restored.snapshot.status === 'streaming' || restored.snapshot.status === 'idle') {
         session.status = restored.snapshot.status
       }

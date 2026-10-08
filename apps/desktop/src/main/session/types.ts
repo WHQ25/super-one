@@ -7,6 +7,7 @@ import type {
   ChatMessage,
   ClaudeSteerPriority,
   CodexGoal,
+  SessionGoal,
   CodexGoalStatus,
   CodexReasoningEffort,
   ContextUsageInfo,
@@ -571,6 +572,8 @@ export interface Session {
   /** `queued_messages_changed` for the current host queue; null when it is empty. */
   getQueuedMessagesEvent(): QueuedMessagesChangedEvent | null
   getPendingInteractions(): AgentEvent[]
+  /** The goal the harness last reported; null when it has none or has not said. */
+  getSessionGoal(): SessionGoal | null
   getCodexGoal(threadId: string | null): Promise<CodexGoal | null>
   setCodexGoal(threadId: string | null, objective: string, status?: CodexGoalStatus): Promise<CodexGoal | null>
   clearCodexGoal(threadId: string | null): Promise<boolean>

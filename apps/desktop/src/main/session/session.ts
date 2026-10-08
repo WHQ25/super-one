@@ -33,6 +33,7 @@ import type {
   SandboxInfo,
   SandboxMode,
   SendMessageRequest,
+  SessionGoal,
 } from '@superone/shared/agent-types'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { HARNESS_LAUNCH_OPTIONS } from '@superone/shared/launch-options'
@@ -311,6 +312,13 @@ export class Session implements SessionContract {
   private _cachedAcpModes: AgentEvent | null = null
   private _cachedAcpCommands: AgentEvent | null = null
   private _cachedSessionAgents: AgentEvent | null = null
+  /**
+   * Session-wide state the harness reports only when it changes. A subscriber
+   * that arrives later (a reloaded window, a phone restoring after a gap) never
+   * saw the event, so the last one is replayed.
+   */
+  private _cachedSessionGoal: Extract<AgentEvent, { type: 'session_goal' }> | null = null
+  private _cachedTodos: AgentEvent | null = null
   /**
    * Backend is compacting right now. Replayed as `status_indicator` so a
    * subscriber that arrives mid-compaction (mobile opening the session, a
@@ -1519,6 +1527,10 @@ export class Session implements SessionContract {
     })
   }
 
+  getSessionGoal(): SessionGoal | null {
+    return this._cachedSessionGoal?.goal ?? null
+  }
+
   async getCodexGoal(threadId: string | null): Promise<CodexGoal | null> {
     this.assertNotDisposed()
     this.touchRuntimeActivity()
@@ -1745,6 +1757,8 @@ export class Session implements SessionContract {
     if (this._cachedAcpModes) out.push(this._cachedAcpModes)
     if (this._cachedAcpCommands) out.push(this._cachedAcpCommands)
     if (this._cachedSessionAgents) out.push(this._cachedSessionAgents)
+    if (this._cachedSessionGoal) out.push(this._cachedSessionGoal)
+    if (this._cachedTodos) out.push(this._cachedTodos)
     if (this._compacting) {
       out.push({ type: 'status_indicator', indicator: 'compacting', sessionId: this.id, projectPath: this.projectPath })
     }
@@ -2131,6 +2145,10 @@ export class Session implements SessionContract {
       this._cachedAcpCommands = tagged
     } else if (tagged.type === 'session_agents') {
       this._cachedSessionAgents = tagged
+    } else if (tagged.type === 'session_goal') {
+      this._cachedSessionGoal = tagged
+    } else if (tagged.type === 'todos_updated') {
+      this._cachedTodos = tagged
     } else if (tagged.type === 'permission_mode_change') {
       this.mergeUiSettings({ permissionMode: tagged.mode })
     }

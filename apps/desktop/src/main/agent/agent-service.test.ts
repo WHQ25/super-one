@@ -1433,6 +1433,7 @@ describe('AgentService.handleRemoteCommand', () => {
         getQueuedMessagesEvent: () => null,
         getCurrentPermissionMode: () => 'default',
         getUiSettings: () => ({ ultracode: true }),
+        getSessionGoal: () => ({ objective: 'ship it', status: 'paused' }),
         getCurrentSandboxInfo: () => ({ enabled: true, autoAllowBash: false }),
         setSandboxMode: vi.fn(async () => ({ enabled: true, autoAllowBash: true })),
         snapshot: {
@@ -1454,7 +1455,7 @@ describe('AgentService.handleRemoteCommand', () => {
       return { service, session }
     }
 
-    it('get_session_state carries context usage and sandbox alongside the transcript', async () => {
+    it('get_session_state carries context usage, sandbox and goal alongside the transcript', async () => {
       const { service } = serviceWithSession()
       const respond = vi.fn()
 
@@ -1468,6 +1469,7 @@ describe('AgentService.handleRemoteCommand', () => {
         totalCostUsd: 0.4213,
         sandboxInfo: { enabled: true, autoAllowBash: false },
         ultracode: true,
+        goal: { objective: 'ship it', status: 'paused' },
       }))
     })
 

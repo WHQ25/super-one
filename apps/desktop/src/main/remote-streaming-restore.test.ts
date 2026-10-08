@@ -32,7 +32,7 @@ describe('opening a running session from mobile', () => {
       getQueuedMessagesEvent: () => null,
       getCurrentSandboxInfo: () => undefined,
       getCurrentPermissionMode: () => 'default',
-      getUiSettings: () => ({}),
+      getUiSettings: () => ({}), getSessionGoal: () => null,
     }
     const client = {
       startBuffering() {},
@@ -85,7 +85,7 @@ it('opens a session on the phone with the Ultracode the desktop session runs wit
     getQueuedMessagesEvent: () => null,
     getCurrentSandboxInfo: () => undefined,
     getCurrentPermissionMode: () => 'default',
-    getUiSettings: () => ({ ultracode: true }),
+    getUiSettings: () => ({ ultracode: true }), getSessionGoal: () => null,
   }
   const client = {
     startBuffering() {},

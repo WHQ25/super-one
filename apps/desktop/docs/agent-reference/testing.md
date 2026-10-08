@@ -43,3 +43,50 @@ changes do not need invented behavior tests. The root test-scope policy applies.
 - `apps/desktop/src/main/session/session.test.ts` — `FakeBackend` + real `Session`; scenarios like "switch cwd during streaming defers rebuild to next send", "bypass mode boundary triggers backend rebuild"
 - `apps/desktop/src/renderer/src/stores/chat-store.test.ts` — real Zustand store + mocked `window.agent`; scenarios like "respondToPlanApproval triggers setPermissionMode IPC when approved"
 - `apps/desktop/src/main/session/isolation.integration.test.ts` — multi-session isolation scenarios with fake backends
+
+### Testing desktop as a node on one machine
+
+Run your normal dev desktop as A and a second dev desktop as B, the node:
+
+```bash
+bun run dev                          # A: your usual profile, renderer :5173
+bun run dev:desktop-node:lab         # B: starts, waits for its node host, prints a pairing code
+bun run dev:desktop-node:lab:pair    # another single-use code (B must be running)
+bun run dev:desktop-node:lab:status
+bun run dev:desktop-node:lab:stop
+```
+
+Paste the code in A under Settings → Environments → Add Desktop. The script also
+prints a `window.environment.pairRemote({ baseUrl: 'http://127.0.0.1:7794', … })`
+line for A's DevTools console, which pairs over loopback.
+
+B is `SUPERONE_INSTANCE=node-b` (`scripts/desktop-node-lab.ts`). It runs the
+main/preload build already in `apps/desktop/out` (A's `bun run dev` writes it;
+the script builds once if it is missing) against its own renderer dev server, so
+it never rebuilds A's files. Restart B after A rebuilds main. Ports (override
+with `SUPERONE_LAB_NODE_PORT`, `SUPERONE_LAB_CDP_PORT`, `SUPERONE_LAB_RENDERER_PORT`):
+node host 7794 (A's dev default is 7793), CDP 9334, renderer 5174.
+
+| | A | B |
+|---|---|---|
+| Profile (`superone.db`, settings, node identity and pairings) | `.dev-data` | `.dev-data/instance-node-b` |
+| SuperOne home (accounts, mini-apps, memory) | `~/.superone/dev` | `instance-node-b/lab/superone-home` |
+| Harness runtimes | `~/.superone/dev/harness` | shared with A (`SUPERONE_LAB_HARNESS_HOME`) |
+| Harness logins (`~/.claude`, `~/.codex`, Keychain) | `$HOME` | shared (same `$HOME`) |
+| Worktrees for children (`~/.worktrees`) | `$HOME` | shared; names do not collide |
+| Clones of repositories B lacks | — | `instance-node-b/lab/projects` |
+| Dev log, event trace | `dev.log`, `event-trace.db` | `instance-node-b-dev.log`, `instance-node-b-event-trace.db` |
+
+There is no single-instance lock, and the phone LAN server and other local
+listeners take ephemeral ports. B starts with node access on, written into its
+`app-settings.json`; delete `.dev-data/instance-node-b` for a fresh node. A child
+on B needs its harness enabled and signed in on B (Settings → Harnesses).
+
+The automated version is `e2e/desktop-node-orchestration.spec.ts`
+(`bun run test:e2e:fast -- e2e/desktop-node-orchestration.spec.ts` after
+`bunx electron-vite build`). Two instances pair over loopback, and a parent on A
+spawns children on B for a repository served by a loopback `git daemon`. Both
+run the scripted harness (`src/main/session/backends/scripted-backend.ts`): every
+harness follows the `<scripted>` steps in its message instead of calling a model.
+It is enabled only by `SUPERONE_E2E_SCRIPTED_HARNESS=1` in an unpackaged build
+(`scripted-harness-gate.ts`); a packaged app ignores the variable.

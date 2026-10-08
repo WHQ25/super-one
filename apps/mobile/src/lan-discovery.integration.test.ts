@@ -1,15 +1,16 @@
 import { describe, expect, it, vi } from 'vitest'
-import { roomIdForSecret, type SavedPairing } from '@superone/relay-client'
+import { computeRoomId, deriveKeys, type SavedPairing } from '@superone/relay-client'
 import { DeviceDiscovery } from './device-discovery'
 import { LanServiceCache, type NativeLanRecord } from './lan-service-cache'
 import { deriveDeviceStatus } from './device-status'
 
 /**
  * The seam mDNS exists for: an advertised record has to be matched back to a
- * saved pairing, and the only thing linking them is a room id each side derives
- * independently from the shared secret. This exercises that with the real
- * derivation rather than a stub, because a mismatch here is invisible in unit
- * tests — discovery simply never matches anything and every device reads offline.
+ * saved pairing, and the only thing linking them is the room id: the desktop
+ * derives it from its root secret and hands it to the phone at pairing. This
+ * exercises that with the real derivation rather than a stub, because a mismatch
+ * here is invisible in unit tests — discovery never matches and every device
+ * reads offline.
  *
  * The record shape mirrors what the desktop publishes in
  * `remote-control-service.ts#startLanAdvertiser`: TXT `roomId`, `hostName`, `variant`.
@@ -21,18 +22,21 @@ const OTHER_SECRET = '3a'.repeat(32)
 const HOST = '192.168.1.9'
 const PORT = 51_549
 
+/** As the desktop derives it (`remote-control-service.ts`) and sends it in the pairing response. */
+const roomOf = (root: string) => computeRoomId(deriveKeys(root).channelKeyHex)
+
 function advertisement(secret: string, over: Partial<NativeLanRecord> = {}): NativeLanRecord {
   return {
     host: 'desk.local',
     addresses: [HOST],
     port: PORT,
-    txt: { roomId: roomIdForSecret(secret), hostName: 'Studio iMac', variant: 'alpha' },
+    txt: { roomId: roomOf(secret), hostName: 'Studio iMac', variant: 'alpha' },
     ...over,
   }
 }
 
 function pairing(secret: string): SavedPairing {
-  return { id: 'desk-1', relayUrl: 'wss://relay.example.com', secret }
+  return { id: 'desk-1', relayUrl: 'wss://relay.example.com', secret: 'cd'.repeat(32), keyId: 'phone-key-0001', roomId: roomOf(secret) }
 }
 
 function harness(records: NativeLanRecord[]) {
@@ -40,7 +44,7 @@ function harness(records: NativeLanRecord[]) {
   cache.replace(records)
   const checkLan = vi.fn(async (host: string, port: number) => host === HOST && port === PORT)
   const discovery = new DeviceDiscovery({
-    roomIdFor: roomIdForSecret,
+    roomIdFor: (pairing) => pairing.roomId ?? null,
     lanAddressOf: () => null,
     checkRelay: async () => false,
     checkLan,

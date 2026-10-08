@@ -37,7 +37,7 @@ import log from './logger'
  * every launch); it decides when a pre-migration snapshot is taken and lets a
  * build recognise a database written by a newer build.
  */
-export const SCHEMA_VERSION = 12
+export const SCHEMA_VERSION = 13
 
 /**
  * The oldest schema revision that can still read this database.
@@ -351,6 +351,11 @@ function applyMigrations(db: Database.Database): void {
       last_seen_at TEXT
     );
   `)
+  // Per-device channel key id issued at pairing; NULL rows predate it and must re-pair.
+  const pairedDeviceCols = db.prepare('PRAGMA table_info(paired_devices)').all() as Array<{ name: string }>
+  if (!pairedDeviceCols.some((column) => column.name === 'channel_key_id')) {
+    db.exec('ALTER TABLE paired_devices ADD COLUMN channel_key_id TEXT')
+  }
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS automations (

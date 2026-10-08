@@ -125,7 +125,8 @@ import type { ProxyUpstream } from './providers/llm-proxy-manager'
 import { shutdownAll as shutdownAllProxies } from './providers/llm-proxy-manager'
 import { getBinding } from './providers/credential-store'
 import type { Session as SessionContract, SessionProvider } from './session/types'
-import { expandProviderModelEnv } from '@superone/shared/agent-types'
+import { expandProviderModelEnv, REMOTE_CHANNEL_SCHEME } from '@superone/shared/agent-types'
+import { randomBytes } from 'node:crypto'
 import { claudeThirdPartyEnv, PROXY_TRANSFORMERS_ENV } from '@superone/shared/platform-registry'
 import { detectBuiltinAgents } from './acp/acp-detect'
 import { getBuiltinAgent } from './acp/agent-catalog'
@@ -220,7 +221,7 @@ import { disposeIosSimulatorManager } from './ios-simulator'
 import { disposeAndroidDeviceManager } from './device/android'
 import { disposeMirrorDeviceManager } from './device/ios-mirror'
 import { attachDeviceGestureEvents } from './device/gesture-events'
-import { getDb, closeDb, getCachedHarnessResources, setCachedHarnessResources, updateCachedHarnessResources, upsertPairedDevice, recordPairedDeviceSeen, listPairedDevices, deletePairedDevice, isPairedDevice } from './database'
+import { getDb, closeDb, getCachedHarnessResources, setCachedHarnessResources, updateCachedHarnessResources, upsertPairedDevice, recordPairedDeviceSeen, listPairedDevices, deletePairedDevice, findPairedPhone } from './database'
 import { connectWithHarnessResourceCache, getFreshHarnessResources, harnessRuntimeCacheKey } from './harness/resource-cache'
 import { backfillFromHistory, getBackfillStatus, queryCounts, queryHarnessSessionRanks, queryUsage } from './usage-stats-service'
 import { discoverUserSkills, discoverUserCommands, discoverUserAgents, discoverCodexUserPrompts } from './agent/discover-resources'
@@ -564,10 +565,24 @@ function readRemoteConfig(): RemoteDeviceConfig | null {
   try {
     const raw = JSON.parse(readFileSync(getRemoteConfigPath(), 'utf-8')) as Record<string, unknown>
     const { preventSleep: _legacyPreventSleep, ...config } = raw
-    return { relayUrl: '', ...config } as RemoteDeviceConfig
+    return rotateLegacyRemoteRoot({ relayUrl: '', ...config } as RemoteDeviceConfig)
   } catch {
     return null
   }
+}
+
+/**
+ * Phones paired before per-device channel keys hold the old shared secret
+ * itself. It becomes the root every new phone secret derives from only after
+ * a rotation; otherwise an old phone could derive any new phone's secret. The
+ * old pairings stop working and show as needing a re-pair.
+ */
+function rotateLegacyRemoteRoot(config: RemoteDeviceConfig): RemoteDeviceConfig {
+  if (config.channelScheme === REMOTE_CHANNEL_SCHEME) return config
+  const rotated: RemoteDeviceConfig = { ...config, masterSecret: randomBytes(32).toString('hex'), channelScheme: REMOTE_CHANNEL_SCHEME }
+  writeFileSync(getRemoteConfigPath(), JSON.stringify(rotated))
+  log.info('[RemoteControl] rotated the remote root secret for per-device channel keys; earlier phone pairings must re-pair')
+  return rotated
 }
 
 function migrateLegacyRemotePowerMode(): AppSettings {
@@ -639,8 +654,8 @@ const remoteCallbacks: RemoteControlCallbacks = {
   onPairingExpired: () => {
     safeSend(AgentIpcChannels.REMOTE_PAIRING_EXPIRED)
   },
-  onPairingConfirmed: ({ mobileDeviceId, deviceName }) => {
-    upsertPairedDevice(mobileDeviceId, deviceName)
+  onPairingConfirmed: ({ mobileDeviceId, deviceName, keyId }) => {
+    upsertPairedDevice(mobileDeviceId, deviceName, keyId)
     safeSend(AgentIpcChannels.REMOTE_DEVICE_STATUS_CHANGED, { id: mobileDeviceId, online: false })
   },
   onPairingAlreadyPaired: ({ deviceName }) => {
@@ -653,7 +668,10 @@ const remoteCallbacks: RemoteControlCallbacks = {
     safeSend(AgentIpcChannels.REMOTE_LAN_STATUS, active)
   },
   onLanUploadProgress: (info) => mobileReceiveService.handleLanUploadProgress(info),
-  isPairedDevice: (deviceId) => isPairedDevice(deviceId),
+  pairedPhones: {
+    byKey: (keyId) => findPairedPhone({ keyId }),
+    byId: (id) => findPairedPhone({ id }),
+  },
 }
 declare const __CF_RELAY_URL__: string
 const remoteControlService = new RemoteControlService(__CF_RELAY_URL__, remoteCallbacks)
@@ -849,7 +867,7 @@ const mobileReceiveService = new MobileReceiveService({
   signLanUploadUrl: (savedPath) => remoteControlService.signLanUploadUrl(savedPath, { ttlMs: 60_000 }),
   computeRelayKey: (name) => remoteControlService.computeRelayUploadKey(name),
   signRelayUploadUrl: (key) => remoteControlService.signRelayUploadUrl(key),
-  downloadAndDecryptRelayFile: (key, onProgress) => remoteControlService.downloadAndDecryptRelayFile(key, onProgress),
+  downloadAndDecryptRelayFile: (key, deviceId, onProgress) => remoteControlService.downloadAndDecryptRelayFile(key, deviceId, onProgress),
   deleteRelayFile: (key) => remoteControlService.deleteRelayFile(key),
   emitProgress: (event) => safeSend(AgentIpcChannels.REMOTE_UPLOAD_PROGRESS, event),
   now: () => Date.now(),
@@ -4593,8 +4611,13 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.REMOTE_GET_HOSTNAME, () => hostname())
   ipcMain.handle(AgentIpcChannels.REMOTE_GET_CONFIG, readRemoteConfig)
   ipcMain.handle(AgentIpcChannels.REMOTE_SAVE_CONFIG, (_, config: RemoteDeviceConfig) => {
-    writeFileSync(getRemoteConfigPath(), JSON.stringify(config))
-    remoteControlService.start(config)
+    // The root is main-owned once stored: a renderer holding a stale copy must not undo a rotation.
+    const stored = readRemoteConfig()
+    const next: RemoteDeviceConfig = stored
+      ? { ...config, masterSecret: stored.masterSecret, channelScheme: REMOTE_CHANNEL_SCHEME }
+      : { ...config, channelScheme: REMOTE_CHANNEL_SCHEME }
+    writeFileSync(getRemoteConfigPath(), JSON.stringify(next))
+    remoteControlService.start(next)
   })
   ipcMain.handle(AgentIpcChannels.REMOTE_LIST_PAIRED, (): PairedDevice[] => {
     const online = remoteControlService.getOnlineDevices()
@@ -4605,12 +4628,14 @@ function registerIpcHandlers(): void {
       lastSeenAt: row.last_seen_at,
       online: online.has(row.id),
       transport: online.get(row.id)?.transport,
+      ...(row.channel_key_id ? {} : { needsRepair: true }),
       // QR pairing is phone-only today; desktop clients will set this explicitly later.
       clientKind: 'mobile' as const,
     }))
   })
   ipcMain.handle(AgentIpcChannels.REMOTE_REMOVE_PAIRED, (_, id: string) => {
     deletePairedDevice(id)
+    remoteControlService.revokeDevice(id)
   })
   ipcMain.handle(AgentIpcChannels.REMOTE_START_PAIRING, async () => {
     const config = readRemoteConfig()

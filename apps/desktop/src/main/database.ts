@@ -149,14 +149,22 @@ export interface PairedDeviceRow {
   name: string
   paired_at: string
   last_seen_at: string | null
+  /** Channel key id issued at pairing; null for pairings that must be redone. */
+  channel_key_id: string | null
 }
 
-export function upsertPairedDevice(id: string, name: string): void {
+/** Record a pairing. A new key id replaces the old one, which stops resolving. */
+export function upsertPairedDevice(id: string, name: string, channelKeyId?: string): void {
+  const now = new Date().toISOString()
   getDb().prepare(`
-    INSERT INTO paired_devices (id, name, paired_at, last_seen_at)
-    VALUES (?, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET name = excluded.name, last_seen_at = excluded.last_seen_at
-  `).run(id, name, new Date().toISOString(), new Date().toISOString())
+    INSERT INTO paired_devices (id, name, paired_at, last_seen_at, channel_key_id)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      name = excluded.name,
+      last_seen_at = excluded.last_seen_at,
+      paired_at = CASE WHEN excluded.channel_key_id IS NULL THEN paired_at ELSE excluded.paired_at END,
+      channel_key_id = COALESCE(excluded.channel_key_id, channel_key_id)
+  `).run(id, name, now, now, channelKeyId ?? null)
 }
 
 /**
@@ -185,6 +193,12 @@ export function deletePairedDevice(id: string): void {
   getDb().prepare('DELETE FROM paired_devices WHERE id = ?').run(id)
 }
 
-export function isPairedDevice(id: string): boolean {
-  return !!getDb().prepare('SELECT 1 FROM paired_devices WHERE id = ?').get(id)
+/** A phone paired with a channel key, looked up by that key or by its device id. */
+export function findPairedPhone(by: { keyId: string } | { id: string }): { deviceId: string; deviceName: string; keyId: string } | null {
+  const row = ('keyId' in by
+    ? getDb().prepare('SELECT id, name, channel_key_id FROM paired_devices WHERE channel_key_id = ?').get(by.keyId)
+    : getDb().prepare('SELECT id, name, channel_key_id FROM paired_devices WHERE id = ? AND channel_key_id IS NOT NULL').get(by.id)
+  ) as { id: string; name: string; channel_key_id: string } | undefined
+  return row ? { deviceId: row.id, deviceName: row.name, keyId: row.channel_key_id } : null
 }
+

@@ -1,4 +1,5 @@
 import { decryptPayload, encryptPayload, hexToByteArray } from './crypto'
+import type { ChannelCredential } from './secure-channel'
 
 export type PairQr = {
   channelId: string
@@ -43,22 +44,43 @@ export function encryptPairRequest(
   return encryptPayload(hexToByteArray(tempKeyHex), payload)
 }
 
-export function decryptPairResponse(tempKeyHex: string, data: string): {
-  masterSecret: string
-  hostName: string
-  relayUrl: string
-} {
+const KEY_ID = /^[A-Za-z0-9_-]{8,128}$/
+const HEX_64 = /^[0-9a-f]{64}$/
+const ROOM_ID = /^[0-9a-f]{32}$/
+
+/** Thrown when a desktop answers with the retired shared-secret pairing. */
+export class OutdatedDesktopPairingError extends Error {
+  constructor() {
+    super('This desktop must be updated before it can pair')
+    this.name = 'OutdatedDesktopPairingError'
+  }
+}
+
+/**
+ * The pairing response is sealed under the QR's temporary key, which only the
+ * phone that scanned it holds. It issues this phone its own channel credential
+ * (the host derives it from its root and the key id) and the host's relay room.
+ */
+export function decryptPairResponse(tempKeyHex: string, data: string): PairResult {
   const decrypted = decryptPayload(hexToByteArray(tempKeyHex), data) as Record<string, unknown>
-  const masterSecret = decrypted.masterSecret
-  if (typeof masterSecret !== 'string' || !masterSecret) throw new Error('pair_response missing masterSecret')
+  const credential = decrypted.credential as Record<string, unknown> | undefined
+  if (!credential && typeof decrypted.masterSecret === 'string') throw new OutdatedDesktopPairingError()
+  const keyId = credential?.keyId
+  const secretHex = credential?.secretHex
+  const roomId = decrypted.roomId
+  if (typeof keyId !== 'string' || !KEY_ID.test(keyId) || typeof secretHex !== 'string' || !HEX_64.test(secretHex)) {
+    throw new Error('pair_response missing channel credential')
+  }
+  if (typeof roomId !== 'string' || !ROOM_ID.test(roomId)) throw new Error('pair_response missing room')
   return {
-    masterSecret,
+    credential: { keyId, secretHex },
+    roomId,
     hostName: typeof decrypted.hostName === 'string' ? decrypted.hostName : 'Desktop',
     relayUrl: typeof decrypted.relayUrl === 'string' ? decrypted.relayUrl : '',
   }
 }
 
-export type PairResult = { masterSecret: string; hostName: string; relayUrl: string }
+export type PairResult = { credential: ChannelCredential; roomId: string; hostName: string; relayUrl: string }
 
 export function startPairingHandshake(opts: {
   qr: PairQr

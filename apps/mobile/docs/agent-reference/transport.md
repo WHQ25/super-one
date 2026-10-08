@@ -30,7 +30,13 @@ and reports input and bounded resize messages to RN.
 
 - `RelayClient` owns exactly one active socket. Connecting through LAN replaces relay,
   and connecting through relay replaces LAN.
-- Open/reconnect starts event buffering before replay. Session restore then runs
+- Every socket runs the channel handshake with this phone's own pairing credential
+  ([relay-crypto.md](../../../../docs/architecture/relay-crypto.md#phone-link));
+  requests wait for it, and a relay phone repeats it on each `peer_connected`.
+  `kicked` (removed device, or a pairing from before per-device keys) clears the
+  saved pairing's `keyId`, so the device row reads Re-pair Required and only a new
+  QR pairing reconnects it.
+- Open/reconnect starts event buffering before restore. Session restore then runs
   subscribe → history → snapshot → release; a server `reset` discards pre-reset
   batches and triggers the same restore path.
 - Transport loss retries with bounded backoff until it succeeds or a manual connection
@@ -73,12 +79,13 @@ and reports input and bounded resize messages to RN.
   work; the document acknowledges duplicates without reapplying them. Keep native
   permission state updates outside this document queue.
 - Only relay `event` envelopes advance or emit cumulative ACKs. LAN and terminal
-  frames never produce relay ACKs. A LAN socket and a relay `reset` start the
-  tracker with `rebase()`: LAN seqs are the desktop's run-wide counter, and a reset
-  skips the dropped range, so a watermark cleared to 0 could never advance and
-  would start dropping every event once `processed` reached its cap.
-- The desktop LAN server keeps one socket per device, like the relay: a register
-  closes the device's older sockets, and only the last socket closing reports the
+  frames never produce relay ACKs. Every new socket and a relay `reset` start the
+  tracker with `rebase()`: LAN seqs are the desktop's run-wide counter, relay
+  frames from an earlier connection are unreadable and never replayed, so a
+  watermark cleared to 0 could never advance and would start dropping every event
+  once `processed` reached its cap.
+- The desktop LAN server keeps one socket per device, like the relay: a completed
+  channel handshake closes the device's older sockets, and only the last socket closing reports the
   device offline. LAN has no heartbeat, so a suspended phone's socket otherwise
   outlives its redial and unsubscribes the new connection when it finally closes.
 - Development builds log only decrypted `AgentEvent.type` values, never event payloads

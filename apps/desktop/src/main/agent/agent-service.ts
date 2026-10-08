@@ -2393,10 +2393,15 @@ export class AgentService {
         url = lanUrl
         expiresAt = Date.now() + 60_000
       } else {
+        if (!source?.deviceId) {
+          await respond(command.requestId, { ok: false, error: 'no_transport', message: 'relay file needs the requesting device' })
+          return
+        }
         const result = await remote.uploadFileToRelay(
           authorized.realPath,
           { mimeType: authorized.mimeType, size: authorized.size },
           command.sessionId ?? 'no-session',
+          source.deviceId,
         )
         url = result.downloadUrl
         expiresAt = result.expiresAt

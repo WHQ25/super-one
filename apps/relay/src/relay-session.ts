@@ -22,6 +22,8 @@ type RelayFrame =
   | { type: 'ack'; seq: number }
   | { type: 'replay'; fromSeq: number }
   | { type: 'terminal'; data: string; targets?: string[] }
+  /** Secure-channel handshake between one phone and the desktop; never buffered. */
+  | { type: 'channel'; mobileDeviceId?: string; [key: string]: unknown }
 
 const MAX_BUFFER_SIZE = 500
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000
@@ -257,6 +259,11 @@ export class RelaySession implements DurableObject {
         target?.send(JSON.stringify(frame))
         break
       }
+      case 'channel': {
+        if (typeof frame.mobileDeviceId !== 'string') break
+        this.getMobileByDeviceId(frame.mobileDeviceId)?.send(JSON.stringify(frame))
+        break
+      }
       case 'desktop_shutdown': {
         const payload = JSON.stringify(frame)
         for (const mobile of this.getAllMobiles()) {
@@ -303,6 +310,7 @@ export class RelaySession implements DurableObject {
     const senderDeviceId = this.getMobileDeviceId(senderWs)
     switch (frame.type) {
       case 'command':
+      case 'channel':
         desktop?.send(JSON.stringify({ ...frame, mobileDeviceId: senderDeviceId }))
         break
       case 'register':

@@ -162,11 +162,11 @@ dns-sd -R superone-fakeaaa1 _superone._tcp local 9101 \
   1 to 2 desktops, and killing the `dns-sd` process took it back to 1 with the row
   removed, all without remounting.
 
-The room id itself was checked against the desktop's own derivation: reading the
-`masterSecret` out of `remote-config.json` and running it through the mobile
-`roomIdForSecret` reproduced the advertised `23e1bcf6…` exactly. That match is
-frozen as a regression test in `src/lan-discovery.integration.test.ts`, which runs
-the real derivation over a desktop-shaped record rather than a stubbed room id.
+The room id itself was checked against the desktop's own derivation: running the
+`masterSecret` from `remote-config.json` through the shared room derivation
+reproduced the advertised `23e1bcf6…` exactly. Phones now receive the room id at
+pairing instead of deriving it; `src/lan-discovery.integration.test.ts` runs the
+desktop's derivation over a desktop-shaped record rather than a stubbed room id.
 
 Toolchain notes for repeating this: `expo prebuild` does not run `pod install`, and
 CocoaPods needs `LANG=en_US.UTF-8`. `expo run:android` needs `JAVA_HOME` (Android

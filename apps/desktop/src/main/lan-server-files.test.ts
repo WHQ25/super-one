@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { deriveFileTokenKeyFromExtractable, createLanFileTokenSigner, type LanFileTokenSigner } from './lan-file-token'
 import { LanServer } from './lan-server'
+import * as phoneLink from './remote/phone-link-host'
 
 const SECRET_HEX = 'a'.repeat(64)
 let workspace: string
@@ -16,10 +17,10 @@ let signer: LanFileTokenSigner
 
 async function startServer(getSigner: () => LanFileTokenSigner | null): Promise<{ server: LanServer; port: number }> {
   const server = new LanServer({
-    getAesKey: () => null,
-    isPairedDevice: () => false,
+    phoneLink,
+    resolveKey: () => null,
+    handshakeInfo: () => ({ hostName: 'test-host' }),
     onCommand: vi.fn(),
-    hostName: 'test-host',
     getFileTokenSigner: getSigner,
   })
   const { port } = await server.start({ host: '127.0.0.1' })

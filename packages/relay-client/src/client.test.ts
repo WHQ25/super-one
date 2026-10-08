@@ -1,11 +1,12 @@
-import { encryptHostTestPayload as encryptPayload } from './test-host-frame'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PROCESSED_SEQ_CAP } from './ack'
-import { deriveKeys } from './crypto'
 import { RelayClient, type SocketLike } from './client'
 import { restoreSession } from './restore'
+import { LINK_CHANNEL_FRAME } from './phone-link'
+import { issueChannelCredential } from './secure-channel'
+import { TEST_LINK, TEST_ROOT_SECRET, completeHandshake } from './test-host-link'
 
-const MASTER = '0123456789abcdef'.repeat(8)
+const RELAY = { relayUrl: 'wss://relay.example', link: TEST_LINK, deviceId: 'dev-1' }
 
 class MockSocket implements SocketLike {
   sent: string[] = []
@@ -31,7 +32,7 @@ afterEach(() => vi.useRealTimers())
 it('probes a healthy foreground socket once and resolves false when it closes', async () => {
   const socket = new MockSocket()
   const client = new RelayClient({ openSocket: () => { queueMicrotask(() => socket.onopen?.()); return socket } })
-  await client.connectRelay({ relayUrl: 'wss://relay.example', masterSecret: MASTER })
+  await client.connectRelay(RELAY)
   const probe = client.probeConnection()
   expect(client.probeConnection()).toBe(probe)
   // The relay's auto-response pair is the literal text, as the heartbeat uses.
@@ -55,20 +56,22 @@ describe('RelayClient', () => {
       },
       onEvents: (batch) => events.push(batch),
     })
-    await client.connectRelay({ relayUrl: 'wss://relay.example', masterSecret: MASTER, deviceId: 'd1' })
+    await client.connectRelay(RELAY)
     expect(sock).not.toBeNull()
-    expect(sock!.sent.some((s) => s.includes('"replay"'))).toBe(true)
+    // Nothing sealed for an earlier connection can be opened, so nothing is replayed.
+    expect(sock!.sent.some((s) => s.includes('"replay"'))).toBe(false)
+    const reqP = client.request({ type: 'list_projects', requestId: 'r1' })
+    // Commands wait for the channel; nothing goes out in the clear before it.
+    await Promise.resolve()
+    expect(sock!.sent.some((s) => s.includes('"command"'))).toBe(false)
+    const host = completeHandshake(sock!)
 
     client.startBuffering()
-    const keys = deriveKeys(MASTER)
-    const live = encryptPayload(keys.aesKeyBytes, { type: 'status_change', status: 'idle' })
-    sock!.emit({ type: 'event', seq: 1, data: live })
+    sock!.emit({ type: 'event', seq: 1, data: host.seal('event', { type: 'status_change', status: 'idle' }) })
     expect(events).toEqual([])
 
-    const reqP = client.request({ type: 'list_projects', requestId: 'r1' })
-    const cmd = JSON.parse(sock!.sent.find((s) => s.includes('"command"'))!)
-    const payload = encryptPayload(keys.aesKeyBytes, { projects: [{ path: '/p', name: 'p' }] })
-    sock!.emit({ type: 'response', requestId: 'r1', data: payload })
+    await vi.waitFor(() => expect(sock!.sent.some((s) => s.includes('"command"'))).toBe(true))
+    expect(host.reply(sock!, { projects: [{ path: '/p', name: 'p' }] })).toMatchObject({ type: 'list_projects', requestId: 'r1' })
     await expect(reqP).resolves.toEqual({ projects: [{ path: '/p', name: 'p' }] })
 
     const released = client.releaseBuffer()
@@ -76,7 +79,7 @@ describe('RelayClient', () => {
     expect(released.batches).toHaveLength(1)
   })
 
-  it('registers mobile identity before replay and surfaces relay control frames', async () => {
+  it('runs the channel handshake, re-runs it for a rejoining desktop, and surfaces control frames', async () => {
     let sock: MockSocket | null = null
     const controls: unknown[] = []
     const client = new RelayClient({
@@ -88,21 +91,42 @@ describe('RelayClient', () => {
       onControl: (frame) => controls.push(frame),
     })
 
-    await client.connectRelay({
-      relayUrl: 'wss://relay.example',
-      masterSecret: MASTER,
-      deviceId: 'dev-1',
-      deviceName: 'Expo',
-    })
-    expect(sock!.sent.slice(0, 2).map((frame) => JSON.parse(frame).type)).toEqual(['register', 'replay'])
+    await client.connectRelay(RELAY)
+    const hello = JSON.parse(sock!.sent[0]!)
+    expect(hello).toMatchObject({ type: LINK_CHANNEL_FRAME, msg: { type: 'channel_hello', keyId: TEST_LINK.credential.keyId } })
+    // The secret never appears on the wire.
+    expect(sock!.sent.join('')).not.toContain(TEST_LINK.credential.secretHex)
+    completeHandshake(sock!, TEST_LINK, 'desktop')
     sock!.emit({ type: 'peer_disconnected' })
     sock!.emit({ type: 'peer_connected' })
-    sock!.emit({ type: 'handshake', hostName: 'desktop' })
+    const hellos = sock!.sent.filter((s) => s.includes('channel_hello'))
+    expect(hellos).toHaveLength(2)
+    completeHandshake(sock!, TEST_LINK, 'desktop')
     expect(controls).toEqual([
+      { type: 'handshake', hostName: 'desktop' },
       { type: 'peer_disconnected' },
       { type: 'peer_connected' },
       { type: 'handshake', hostName: 'desktop' },
     ])
+  })
+
+  it('ignores a challenge for an older hello and drops a host that cannot prove the secret', async () => {
+    let sock: MockSocket | null = null
+    const statuses: boolean[] = []
+    const client = new RelayClient({
+      openSocket: () => {
+        sock = new MockSocket()
+        queueMicrotask(() => sock?.onopen?.())
+        return sock
+      },
+      onStatus: (connected) => statuses.push(connected),
+    })
+    await client.connectRelay(RELAY)
+    sock!.emit({ type: LINK_CHANNEL_FRAME, msg: { type: 'channel_challenge', v: 1, nonce: 'aa'.repeat(32), proof: 'bb'.repeat(32) }, hello: 'stale' })
+    expect(sock!.sent.some((s) => s.includes('channel_proof'))).toBe(false)
+    const impostor = { credential: issueChannelCredential(TEST_ROOT_SECRET, 'test-phone-key-x'), roomId: TEST_LINK.roomId }
+    expect(() => completeHandshake(sock!, { ...impostor, credential: { ...impostor.credential, keyId: TEST_LINK.credential.keyId } })).toThrow('no channel proof sent')
+    expect(statuses).toEqual([true, false])
   })
 
   it('restoreSession is subscribe → history → snapshot → release', async () => {
@@ -114,15 +138,14 @@ describe('RelayClient', () => {
         return sock
       },
     })
-    await client.connectRelay({ relayUrl: 'wss://relay.example', masterSecret: MASTER })
-    const keys = deriveKeys(MASTER)
+    await client.connectRelay(RELAY)
+    const host = completeHandshake(sock!)
     const restoreP = restoreSession(client, '/proj', 'sess-1')
-    await Promise.resolve()
+    let answered = 0
     const reply = async (body: unknown) => {
-      const last = sock!.sent.filter((s) => s.includes('"command"')).at(-1)!
-      const frame = JSON.parse(last) as { data: string }
-      const cmd = (await import('./crypto')).decryptPayload(keys.aesKeyBytes, frame.data) as { requestId: string }
-      sock!.emit({ type: 'response', requestId: cmd.requestId, data: encryptPayload(keys.aesKeyBytes, body) })
+      await vi.waitFor(() => expect(sock!.sent.filter((s) => s.includes('"command"')).length).toBeGreaterThan(answered))
+      answered += 1
+      host.reply(sock!, body)
     }
     await reply({ ok: true })
     await reply({ messages: [{ id: 'm1', role: 'user', status: 'complete', content: [], createdAt: '', providerId: 'claude' }], hasMore: false, cursor: null })
@@ -143,13 +166,14 @@ describe('RelayClient', () => {
       },
       onTerminal: (p) => terms.push(p),
     })
-    await client.connectRelay({ relayUrl: 'wss://relay.example', masterSecret: MASTER })
+    await client.connectRelay(RELAY)
+    const host = completeHandshake(sock!)
+    await Promise.resolve()
     const before = sock!.sent.length
     client.send({ type: 'terminal_input', terminalId: 't1', data: 'ls\n' })
     expect(sock!.sent.length).toBe(before + 1)
-    expect(sock!.sent.at(-1)).toContain('"command"')
-    const keys = deriveKeys(MASTER)
-    sock!.emit({ type: 'terminal', data: encryptPayload(keys.aesKeyBytes, { type: 'terminal_output', data: 'ok' }) })
+    expect(host.lastCommand(sock!)).toEqual({ type: 'terminal_input', terminalId: 't1', data: 'ls\n' })
+    sock!.emit({ type: 'terminal', data: host.seal('terminal', { type: 'terminal_output', data: 'ok' }) })
     expect(terms).toEqual([{ type: 'terminal_output', data: 'ok' }])
   })
 
@@ -167,17 +191,12 @@ describe('RelayClient', () => {
       onTerminal: () => { terminalFrames += 1 },
       onEvents: (batch) => events.push(batch),
     })
-    const connected = client.connectRelay({ relayUrl: 'wss://relay.example', masterSecret: MASTER })
+    const connected = client.connectRelay(RELAY)
     await vi.runAllTicks()
     await connected
-    const { aesKeyBytes } = deriveKeys(MASTER)
-    const terminalData = encryptPayload(aesKeyBytes, {
-      type: 'terminal_output',
-      terminalId: 't1',
-      data: 'x'.repeat(8 * 1_024),
-    })
+    const host = completeHandshake(sock!)
     for (let i = 0; i < 384; i++) {
-      sock!.emit({ type: 'terminal', seq: i + 1, data: terminalData })
+      sock!.emit({ type: 'terminal', seq: i + 1, data: host.seal('terminal', { type: 'terminal_output', terminalId: 't1', data: 'x'.repeat(8 * 1_024) }) })
     }
     expect(terminalFrames).toBe(384)
     expect(client.lastAckedSeq).toBe(0)
@@ -186,7 +205,7 @@ describe('RelayClient', () => {
     sock!.emit({
       type: 'event',
       seq: 1,
-      data: encryptPayload(aesKeyBytes, { type: 'after-terminal-flood' }),
+      data: host.seal('event', { type: 'after-terminal-flood' }),
     })
     expect(events).toEqual([[{ type: 'after-terminal-flood' }]])
     vi.advanceTimersByTime(2_000)
@@ -205,11 +224,11 @@ describe('RelayClient', () => {
         return sock
       },
     })
-    const connected = client.connectRelay({ relayUrl: 'wss://relay.example', masterSecret: MASTER })
+    const connected = client.connectRelay(RELAY)
     await vi.runAllTicks()
     await connected
-    const keys = deriveKeys(MASTER)
-    const payload = (seq: number) => encryptPayload(keys.aesKeyBytes, { type: 'event', eventSeq: seq })
+    const host = completeHandshake(sock!)
+    const payload = (seq: number) => host.seal('event', { type: 'event', eventSeq: seq })
     sock!.emit({ type: 'event', seq: 1, data: payload(1) })
     vi.advanceTimersByTime(1_000)
     sock!.emit({ type: 'event', seq: 2, data: payload(2) })
@@ -244,11 +263,12 @@ describe('RelayClient', () => {
         client.send({ type: 'subscribe_session', projectPath: '/p', sessionId: 's' })
       },
     })
-    const connected = client.connectRelay({ relayUrl: 'wss://relay.example', masterSecret: MASTER })
+    const connected = client.connectRelay(RELAY)
     await vi.runAllTicks()
     await connected
-    const { aesKeyBytes } = deriveKeys(MASTER)
-    sock!.emit({ type: 'event', seq: 1, data: encryptPayload(aesKeyBytes, { type: 'one' }) })
+    const host = completeHandshake(sock!)
+    await vi.runAllTicks()
+    sock!.emit({ type: 'event', seq: 1, data: host.seal('event', { type: 'one' }) })
     const sentBeforeReset = sock!.sent.length
     sock!.emit({ type: 'reset' })
     vi.advanceTimersByTime(2_000)
@@ -268,9 +288,10 @@ describe('RelayClient', () => {
         return sock
       },
     })
-    const connected = client.connectRelay({ relayUrl: 'wss://relay.example', masterSecret: MASTER })
+    const connected = client.connectRelay(RELAY)
     await vi.runAllTicks()
     await connected
+    completeHandshake(sock!)
     sock!.emit({ type: 'event', seq: 1, data: 'invalid-ciphertext' })
     vi.advanceTimersByTime(2_000)
     expect(sock!.sent.filter((frame) => frame.includes('"ack"'))).toEqual([
@@ -278,7 +299,7 @@ describe('RelayClient', () => {
     ])
   })
 
-  it('buffers replay before reconnect and keeps one exclusive socket', async () => {
+  it('buffers events after a reconnect, on a fresh channel, with one exclusive socket', async () => {
     const sockets: MockSocket[] = []
     const client = new RelayClient({
       openSocket: () => {
@@ -288,17 +309,20 @@ describe('RelayClient', () => {
         return socket
       },
     })
-    await client.connectRelay({ relayUrl: 'wss://relay.example', masterSecret: MASTER })
+    await client.connectRelay(RELAY)
+    const first = completeHandshake(sockets[0])
+    const stale = first.seal('event', { type: 'sealed-for-the-old-connection' })
     await client.reconnect()
     expect(sockets).toHaveLength(2)
     expect(sockets[0].closed).toBe(true)
     expect(client.buffer.isBuffering).toBe(true)
 
-    const { aesKeyBytes } = deriveKeys(MASTER)
+    const host = completeHandshake(sockets[1])
+    sockets[1].emit({ type: 'event', seq: 7, data: stale })
     sockets[1].emit({
       type: 'event',
-      seq: 1,
-      data: encryptPayload(aesKeyBytes, { type: 'during-replay' }),
+      seq: 8,
+      data: host.seal('event', { type: 'during-replay' }),
     })
     client.startBuffering()
     expect(client.releaseBuffer().batches).toEqual([[{ type: 'during-replay' }]])
@@ -316,7 +340,7 @@ describe('RelayClient', () => {
       },
       onStatus: (connected) => statuses.push(connected),
     })
-    await client.connectRelay({ relayUrl: 'wss://relay.example', masterSecret: MASTER })
+    await client.connectRelay(RELAY)
     await client.reconnect()
     expect(statuses).toEqual([true, true])
     expect(sockets[0].closed).toBe(true)
@@ -334,17 +358,17 @@ describe('RelayClient', () => {
       },
       onEvents: (batch) => events.push(batch),
     })
-    await client.connectRelay({ relayUrl: 'wss://relay.example', masterSecret: MASTER })
-    await client.connectLan('192.0.2.1', 7788, MASTER)
+    await client.connectRelay(RELAY)
+    await client.connectLan('192.0.2.1', 7788, TEST_LINK)
     expect(sockets).toHaveLength(2)
     expect(sockets[0].closed).toBe(true)
     expect(client.transport).toBe('lan')
 
-    const { aesKeyBytes } = deriveKeys(MASTER)
+    const host = completeHandshake(sockets[1])
     sockets[1].emit({
       type: 'event',
       seq: 42,
-      data: encryptPayload(aesKeyBytes, [{ type: 'lan-event' }]),
+      data: host.seal('event', [{ type: 'lan-event' }]),
     })
     expect(events).toEqual([[{ type: 'lan-event' }]])
     expect(sockets[1].sent.some((frame) => frame.includes('"ack"'))).toBe(false)
@@ -361,10 +385,10 @@ describe('RelayClient', () => {
       },
       onEvents: () => { delivered += 1 },
     })
-    await client.connectLan('192.0.2.1', 7788, MASTER)
-    const data = encryptPayload(deriveKeys(MASTER).aesKeyBytes, [{ type: 'lan-event' }])
+    await client.connectLan('192.0.2.1', 7788, TEST_LINK)
+    const host = completeHandshake(socket!)
     const total = PROCESSED_SEQ_CAP + 50
-    for (let seq = 5_000; seq < 5_000 + total; seq++) socket!.emit({ type: 'event', seq, data })
+    for (let seq = 5_000; seq < 5_000 + total; seq++) socket!.emit({ type: 'event', seq, data: host.seal('event', [{ type: 'lan-event' }]) })
     expect(delivered).toBe(total)
   })
 
@@ -376,7 +400,7 @@ describe('RelayClient', () => {
         return socket
       },
     })
-    await client.connectLan('192.0.2.1', 7788, MASTER)
+    await client.connectLan('192.0.2.1', 7788, TEST_LINK)
 
     const bytes = new TextEncoder().encode('png')
     const get = vi.fn(async () => ({
@@ -405,9 +429,35 @@ describe('RelayClient', () => {
         return sock
       },
     })
-    await client.connectRelay({ relayUrl: 'wss://relay.example', masterSecret: MASTER })
+    await client.connectRelay(RELAY)
+    const host = completeHandshake(sock!)
     const result = client.request({ type: 'list_projects', requestId: 'bad-response' })
+    await vi.waitFor(() => expect(sock!.sent.some((s) => s.includes('"command"'))).toBe(true))
     sock!.emit({ type: 'response', requestId: 'bad-response', data: 'invalid' })
     await expect(result).rejects.toBeInstanceOf(Error)
+  })
+
+  it('rejects a replayed frame and an event relabelled as a response', async () => {
+    let sock: MockSocket | null = null
+    const events: unknown[][] = []
+    const client = new RelayClient({
+      openSocket: () => {
+        sock = new MockSocket()
+        queueMicrotask(() => sock?.onopen?.())
+        return sock
+      },
+      onEvents: (batch) => events.push(batch),
+    })
+    await client.connectRelay(RELAY)
+    const host = completeHandshake(sock!)
+    const once = host.seal('event', { type: 'once' })
+    sock!.emit({ type: 'event', seq: 1, data: once })
+    sock!.emit({ type: 'event', seq: 2, data: once })
+    expect(events).toEqual([[{ type: 'once' }]])
+
+    const result = client.request({ type: 'list_projects', requestId: 'r-relabel' })
+    await vi.waitFor(() => expect(sock!.sent.some((s) => s.includes('"command"'))).toBe(true))
+    sock!.emit({ type: 'response', requestId: 'r-relabel', data: host.seal('event', { projects: [] }) })
+    await expect(result).rejects.toThrow('link frame kind event')
   })
 })

@@ -1,5 +1,3 @@
-import { computeRoomId, deriveKeys } from './crypto'
-
 /** The relay answers a status probe fast or not at all; a stalled request is offline. */
 export const RELAY_STATUS_TIMEOUT_MS = 5_000
 /** A desktop on the same network answers in single-digit milliseconds. */
@@ -15,20 +13,6 @@ export type PresenceFetch = (
   url: string,
   init: { signal: AbortSignal },
 ) => Promise<PresenceResponse>
-
-const roomIds = new Map<string, string>()
-
-/**
- * HKDF + SHA-256 over the pairing secret. Memoised: discovery re-derives this for
- * every saved device on every refresh, and the result never changes for a secret.
- */
-export function roomIdForSecret(masterSecret: string): string {
-  const cached = roomIds.get(masterSecret)
-  if (cached !== undefined) return cached
-  const room = computeRoomId(deriveKeys(masterSecret).channelKeyHex)
-  roomIds.set(masterSecret, room)
-  return room
-}
 
 /** `host:port` as stored on a pairing, or advertised over mDNS. */
 export function parseLanHostPort(raw: string | null | undefined): { host: string; port: number } | null {
@@ -84,13 +68,13 @@ async function probe(
  */
 export async function checkRelayDesktopOnline(opts: {
   relayUrl: string
-  masterSecret: string
+  roomId: string
   fetch?: PresenceFetch
   now?: () => number
   timeoutMs?: number
 }): Promise<boolean> {
   const base = relayHttpBase(opts.relayUrl)
-  const room = roomIdForSecret(opts.masterSecret)
+  const room = encodeURIComponent(opts.roomId)
   const ts = String((opts.now ?? Date.now)())
   const res = await probe(
     `${base}/status?room=${room}&ts=${ts}`,

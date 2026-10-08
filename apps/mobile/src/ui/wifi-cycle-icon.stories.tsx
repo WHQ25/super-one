@@ -16,7 +16,7 @@ const pairing: SavedPairing = {
 }
 
 const statuses: DeviceStatus[] = [
-  'searchingLan', 'connecting', 'onlineLan', 'onlineCloud', 'connectedLan', 'connectedCloud', 'offline',
+  'searchingLan', 'connecting', 'onlineLan', 'onlineCloud', 'connectedLan', 'connectedCloud', 'offline', 'repairRequired',
 ]
 
 function Gallery() {

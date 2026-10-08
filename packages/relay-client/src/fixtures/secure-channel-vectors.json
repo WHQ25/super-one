@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "comment": "Secure channel v1 (relay-client secure-channel.ts). Fixed nonces and IV; cross-checked against node:crypto in secure-channel.test.ts. Regenerate only when the format changes.",
+  "comment": "Secure channel v1 (relay-client secure-channel.ts) and the phone link frame body (phone-link.ts). Fixed nonces and IVs; cross-checked against node:crypto. Regenerate only when the format changes.",
   "rootSecretHex": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
   "keyId": "3f2b8c1e-7a4d-4e5f-9c0b-1d2e3f4a5b6c",
   "secretHex": "e4620c0bf60dd8153f5073df3027f93dd7616ff89520dfbc6594907857bf6e6d",
@@ -21,5 +21,19 @@
       "payload": {}
     },
     "frameHex": "000102030405060708090a0b42556daf723ff2b86e955fcf181d5ea42bff063205b3ce0fba1bee8d0c25153d8e6d11243f1d7b060462acbc965225115125895017d386d26d3977be16e96728147898d40f4f0e8dbd40a72aaa57a3900b0502778d46bf4acb914b77280aeb08644a"
+  },
+  "linkFrame": {
+    "key": "s2c",
+    "seq": 3,
+    "ivHex": "0c0b0a090807060504030201",
+    "header": {
+      "t": "response",
+      "requestId": "r1"
+    },
+    "hostFrameHex": "000000000b7b226f6b223a747275657d",
+    "payload": {
+      "ok": true
+    },
+    "frameHex": "0c0b0a0908070605040302018a7fc6b5807d60b3976866ae46116b47bfebca3ab07725b5b502a15742b226badb9230c47b619c755d30602cdeca28450986ef1ae6de0ded9966bb916872c7d96136eea8406bc19c341024"
   }
 }

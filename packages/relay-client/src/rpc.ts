@@ -1,6 +1,5 @@
 import type { RemoteCommand } from '@superone/shared/agent-types'
 import { MAX_REMOTE_CIPHERTEXT_CHARS, REMOTE_RESPONSE_CHUNK_CHARS } from '@superone/shared/remote-payload'
-import { encryptPayload } from './crypto'
 
 export type PendingRpc = {
   resolve: (value: unknown) => void
@@ -13,7 +12,8 @@ export class RpcInbox {
 
   constructor(private readonly id: () => string = () => crypto.randomUUID()) {}
 
-  begin(command: RemoteCommand, send: (frame: unknown) => void, aesKeyBytes: Uint8Array, timeoutMs = 15_000): Promise<unknown> {
+  /** `send` seals and transmits the command (with its request id) on the current connection. */
+  begin(command: RemoteCommand, send: (payload: Record<string, unknown>) => void, timeoutMs = 15_000): Promise<unknown> {
     const requestId = 'requestId' in command && typeof command.requestId === 'string' && command.requestId
       ? command.requestId
       : this.id()
@@ -21,7 +21,6 @@ export class RpcInbox {
     if (this.pending.has(requestId)) {
       return Promise.reject(new Error(`rpc requestId already pending: ${requestId}`))
     }
-    const data = encryptPayload(aesKeyBytes, payload)
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(requestId)
@@ -33,7 +32,7 @@ export class RpcInbox {
         reject: (e) => { clearTimeout(timer); reject(e) },
       })
       try {
-        send({ type: 'command', data })
+        send(payload)
       } catch (error) {
         this.pending.delete(requestId)
         clearTimeout(timer)

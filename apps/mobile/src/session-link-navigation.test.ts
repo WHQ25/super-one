@@ -28,7 +28,7 @@ describe('mobile session link preparation', () => {
     vi.mocked(createMobileRelayConnection).mockReturnValue(connection as never)
     const opts = options(client())
     opts.ref = pairedTarget.ref
-    opts.pairings = [{ id: 'B', environmentId: 'desktop-B', relayUrl: 'wss://relay', secret: 'secret', lan: 'old:123' } as never]
+    opts.pairings = [{ id: 'B', environmentId: 'desktop-B', relayUrl: 'wss://relay', secret: 'cd'.repeat(32), keyId: 'phone-key-0001', roomId: '0f'.repeat(16), lan: 'old:123' } as never]
     const result = await prepareSessionLink(opts)
     expect(opts.resolveLan).toHaveBeenCalledWith('B')
     expect(connection.dial).toHaveBeenCalledWith(null)

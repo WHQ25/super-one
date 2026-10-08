@@ -455,15 +455,21 @@ function PairedDeviceRow({
           )}
         />
         <span className="truncate">{device.name}</span>
-        <span className="shrink-0 text-xs text-muted-foreground">
-          {device.online
-            ? t('resources.remote.online')
-            : device.lastSeenAt
-              ? t('resources.remote.lastSeen', {
-                  date: new Date(device.lastSeenAt).toLocaleDateString(),
-                })
-              : t('resources.remote.neverConnected')}
-        </span>
+        {device.needsRepair ? (
+          <span className="shrink-0 text-xs text-warning" title={t('resources.remote.needsRepairHint')}>
+            {t('resources.remote.needsRepair')}
+          </span>
+        ) : (
+          <span className="shrink-0 text-xs text-muted-foreground">
+            {device.online
+              ? t('resources.remote.online')
+              : device.lastSeenAt
+                ? t('resources.remote.lastSeen', {
+                    date: new Date(device.lastSeenAt).toLocaleDateString(),
+                  })
+                : t('resources.remote.neverConnected')}
+          </span>
+        )}
       </div>
       <Button
         variant="ghost"

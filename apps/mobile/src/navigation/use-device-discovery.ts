@@ -4,7 +4,7 @@ import {
   checkLanReachable,
   checkRelayDesktopOnline,
   parseLanHostPort,
-  roomIdForSecret,
+  pairingNeedsRepair,
   type SavedPairing,
 } from '@superone/relay-client'
 import { DeviceDiscovery, type LanAddress } from '../device-discovery'
@@ -40,12 +40,12 @@ export function useDeviceDiscovery(input: {
     })
     browserRef.current = browser
     discoveryRef.current = new DeviceDiscovery({
-      roomIdFor: roomIdForSecret,
+      roomIdFor: (pairing) => pairing.roomId ?? null,
       lanAddressOf: (pairing) => parseLanHostPort(pairing.lan),
-      checkRelay: (pairing) => checkRelayDesktopOnline({
-        relayUrl: pairing.relayUrl,
-        masterSecret: pairing.secret,
-      }).catch(() => false),
+      // A pairing without a room predates per-device keys; it is never reachable.
+      checkRelay: (pairing) => pairing.roomId
+        ? checkRelayDesktopOnline({ relayUrl: pairing.relayUrl, roomId: pairing.roomId }).catch(() => false)
+        : Promise.resolve(false),
       checkLan: (host, port) => checkLanReachable({ host, port }),
       ensureBrowsing: () => browser.ensureBrowsing(),
       restartBrowsing: () => browser.restartBrowsing(),
@@ -84,6 +84,7 @@ export function useDeviceDiscovery(input: {
 
   const statusOf = useCallback((pairing: SavedPairing): DeviceStatus => deriveDeviceStatus({
     pairingId: pairing.id,
+    needsRepair: pairingNeedsRepair(pairing),
     activePairingId: input.activePairingId,
     activeTransport: input.activeTransport,
     connectionState: input.connectionState,

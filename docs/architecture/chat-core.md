@@ -258,7 +258,7 @@ startBuffering
   → release buffered event batches in order, epoch += 1
 ```
 
-- Every `type: 'event'` frame, including relay replay, queues while buffering. A
+- Every `type: 'event'` frame queues while buffering. A
   server `reset` frame discards the queued batches and restarts buffering, and
   the app runs the same restore.
 - `ChatRuntime` seeds the snapshot (live turn, pending interactions, usage,
@@ -275,10 +275,11 @@ startBuffering
 ## Transports and ACK
 
 `RelayClient` (`packages/relay-client/src/client.ts`) has exactly one active
-socket; connecting over LAN replaces relay and vice versa. The desktop broadcasts
-each event to both: the relay frame gets its sequence number from the relay, and
-the LAN frame gets the desktop's own `lanFrameSeq`
-(`remote-control-service.ts#sendEventFrame`). The two number spaces never mix.
+socket; connecting over LAN replaces relay and vice versa. The desktop seals
+each event once per phone channel and sends it on that phone's transport: the
+relay copy gets its sequence number from the relay, and the LAN copy gets the
+desktop's own `lanFrameSeq` (`remote-control-service.ts#sendEventFrame`). The two
+number spaces never mix.
 
 Frame handling is `handleInboundFrame` in `packages/relay-client/src/frames.ts`;
 ACK state is `SeqAckTracker` in `ack.ts`:
@@ -291,10 +292,9 @@ ACK state is `SeqAckTracker` in `ack.ts`:
 - Only relay `event` frames produce ACKs. LAN frames are deduplicated by their
   sequence but never ACKed, and terminal, response and control frames have no
   sequence path.
-- The tracker is cleared when the transport target changes (always for LAN,
-  for relay when the URL, secret or device changes), on `reset`, on
-  `desktop_shutdown` and on disconnect. A relay reconnect to the same target
-  sends `replay { fromSeq: lastAckedSeq + 1 }`; LAN has no replay, so a LAN
-  reconnect is a full restore.
+- Every new socket rebases the tracker (`rebase()`), and `reset`,
+  `desktop_shutdown` and disconnect clear it. Frames are sealed for one
+  connection's channel ([relay-crypto.md](relay-crypto.md#phone-link)), so a
+  reconnect over either transport asks for no replay and is a full restore.
 - The envelope sequence is transport state only. It is never written onto
   `AgentEvent.seq`, which the session assigns for replay deduplication.

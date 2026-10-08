@@ -106,7 +106,7 @@ describe('MobileReceiveService', () => {
     if (res.ok) {
       expect(readFileSync(res.savedPath, 'utf8')).toBe('decrypted-bytes')
     }
-    expect(deps.downloadAndDecryptRelayFile).toHaveBeenCalledWith('files/room/deadbeef.bin', expect.any(Function))
+    expect(deps.downloadAndDecryptRelayFile).toHaveBeenCalledWith('files/room/deadbeef.bin', 'dev1', expect.any(Function))
     expect(deps.deleteRelayFile).toHaveBeenCalledWith('files/room/deadbeef.bin')
   })
 

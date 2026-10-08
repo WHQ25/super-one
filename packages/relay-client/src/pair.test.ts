@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { decryptPairResponse, encryptPairRequest, parsePairQr, startPairingHandshake } from './pair'
+import { OutdatedDesktopPairingError, decryptPairResponse, encryptPairRequest, parsePairQr, startPairingHandshake } from './pair'
 import { encryptPayload, hexToByteArray } from './crypto'
+
+const CREDENTIAL = { keyId: 'phone-key-0001', secretHex: 'cd'.repeat(32) }
+const ROOM = '0f'.repeat(16)
 
 describe('pairing QR', () => {
   it('parses superone://pair URLs', () => {
@@ -28,13 +31,22 @@ describe('pairing QR', () => {
     const key = 'ab'.repeat(32)
     const data = encryptPairRequest(key, { code: '123456', mobileDeviceId: 'm1', deviceName: 'Phone' })
     const opened = decryptPairResponse(key, encryptPayload(hexToByteArray(key), {
-      masterSecret: 'secret',
+      credential: CREDENTIAL,
+      roomId: ROOM,
       hostName: 'Mac',
       relayUrl: 'wss://r',
     }))
-    expect(opened.masterSecret).toBe('secret')
+    expect(opened).toEqual({ credential: CREDENTIAL, roomId: ROOM, hostName: 'Mac', relayUrl: 'wss://r' })
     expect(hexToByteArray(key).length).toBe(32)
     expect(data.length).toBeGreaterThan(20)
+  })
+
+  it('rejects a shared-secret response from a desktop that predates per-device credentials', () => {
+    const key = 'ab'.repeat(32)
+    const legacy = encryptPayload(hexToByteArray(key), { masterSecret: 'cd'.repeat(32), hostName: 'Mac', relayUrl: 'wss://r' })
+    expect(() => decryptPairResponse(key, legacy)).toThrow(OutdatedDesktopPairingError)
+    const malformed = encryptPayload(hexToByteArray(key), { credential: { keyId: 'k', secretHex: 'x' }, roomId: ROOM })
+    expect(() => decryptPairResponse(key, malformed)).toThrow('channel credential')
   })
 
   it('completes the encrypted pairing handshake and closes its socket', async () => {
@@ -61,14 +73,16 @@ describe('pairing QR', () => {
       data: JSON.stringify({
         type: 'pair_response',
         data: encryptPayload(hexToByteArray(key), {
-          masterSecret: 'secret',
+          credential: CREDENTIAL,
+          roomId: ROOM,
           hostName: 'Mac',
           relayUrl: 'ws://desktop-internal:8787',
         }),
       }),
     })
     await expect(done).resolves.toEqual({
-      masterSecret: 'secret',
+      credential: CREDENTIAL,
+      roomId: ROOM,
       hostName: 'Mac',
       relayUrl: 'wss://relay.example',
     })

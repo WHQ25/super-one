@@ -1,5 +1,3 @@
-import { computeHmacToken, computeRoomId, deriveKeys } from './crypto'
-
 export type TransportKind = 'relay' | 'lan'
 
 /**
@@ -11,26 +9,23 @@ export const LAN_SERVICE_TYPE = '_superone._tcp'
 /** TXT key carrying the room id, which is how a record is matched to a pairing. */
 export const LAN_TXT_ROOM_ID = 'roomId'
 
-export async function buildRelayWsUrl(opts: {
+/**
+ * The room is the paired host's relay room, delivered at pairing; the relay
+ * routes by it and by the device slot, and sees only sealed frames.
+ */
+export function buildRelayWsUrl(opts: {
   relayUrl: string
-  masterSecret: string
+  roomId: string
   role: 'mobile' | 'desktop'
   deviceId?: string
   now?: () => number
-}): Promise<{ url: string; aesKeyBytes: Uint8Array; channelKeyHex: string }> {
-  const keys = deriveKeys(opts.masterSecret)
+}): string {
   const ts = String((opts.now ?? Date.now)())
-  const token = computeHmacToken(keys.channelKeyHex, opts.role, ts)
-  const room = computeRoomId(keys.channelKeyHex)
   const base = opts.relayUrl.replace(/\/$/, '')
   const deviceQuery = opts.role === 'mobile' && opts.deviceId
     ? `&deviceId=${encodeURIComponent(opts.deviceId)}`
     : ''
-  return {
-    url: `${base}/ws?role=${opts.role}&token=${token}&ts=${ts}&room=${room}${deviceQuery}`,
-    aesKeyBytes: keys.aesKeyBytes,
-    channelKeyHex: keys.channelKeyHex,
-  }
+  return `${base}/ws?role=${opts.role}&ts=${ts}&room=${encodeURIComponent(opts.roomId)}${deviceQuery}`
 }
 
 export function buildLanWsUrl(host: string, port: number): string {

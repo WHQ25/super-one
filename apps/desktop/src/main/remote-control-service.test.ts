@@ -25,6 +25,8 @@ import {
   RemoteControlService,
 } from './remote-control-service'
 import type { AgentEvent, PermissionRequest } from '@superone/shared/agent-types'
+import { issueChannelCredential } from '@superone/relay-client/secure-channel'
+import { connectTestPhone } from './remote/test-phone'
 
 function toolUseBlock(toolName: string, input: Record<string, unknown>, toolUseId = 'tu-1'): ContentBlock & { type: 'tool_use' } {
   return { type: 'tool_use', toolName, toolUseId, input: JSON.stringify(input) }
@@ -894,6 +896,12 @@ describe('stripEventForRemote codex todo_list streaming', () => {
   })
 })
 
+const TEST_KEY_ID = 'phone-key-0001'
+const testPhones = (deviceId: string) => {
+  const phone = { deviceId, deviceName: 'tester', keyId: TEST_KEY_ID }
+  return { byKey: (keyId: string) => keyId === TEST_KEY_ID ? phone : null, byId: (id: string) => id === deviceId ? phone : null }
+}
+
 describe('RemoteControlService LAN frame seq', () => {
   let service: RemoteControlService | null = null
   let client: import('ws').WebSocket | null = null
@@ -916,7 +924,7 @@ describe('RemoteControlService LAN frame seq', () => {
 
     service = new RemoteControlService('ws://127.0.0.1:1', {
       onCommand: vi.fn(),
-      isPairedDevice: () => true,
+      pairedPhones: testPhones(deviceId),
     })
     await service.start({
       enabled: true,
@@ -928,9 +936,7 @@ describe('RemoteControlService LAN frame seq', () => {
     const port = service.getLanPort()
     expect(port).not.toBeNull()
 
-    client = new WebSocket(`ws://127.0.0.1:${port}/ws?role=mobile`)
-    await new Promise<void>((r) => client!.once('open', () => r()))
-    client.send(JSON.stringify({ type: 'register', deviceName: 'tester', mobileDeviceId: deviceId }))
+    client = (await connectTestPhone(port!, issueChannelCredential(masterSecret, TEST_KEY_ID))).socket
 
     const frames: Array<Record<string, unknown>> = []
     client.on('message', (raw) => {
@@ -938,15 +944,6 @@ describe('RemoteControlService LAN frame seq', () => {
         const f = JSON.parse(raw.toString())
         if (f.type === 'event') frames.push(f)
       } catch { /* ignore */ }
-    })
-    await new Promise<void>((r) => {
-      const onMsg = (raw: import('ws').RawData) => {
-        try {
-          const f = JSON.parse(raw.toString())
-          if (f.type === 'handshake') { client!.off('message', onMsg); r() }
-        } catch { /* ignore */ }
-      }
-      client!.on('message', onMsg)
     })
 
     for (let i = 0; i < 3; i++) {
@@ -970,7 +967,7 @@ describe('RemoteControlService LAN frame seq', () => {
 
     service = new RemoteControlService('ws://127.0.0.1:1', {
       onCommand: vi.fn(),
-      isPairedDevice: () => true,
+      pairedPhones: testPhones(deviceId),
     })
     await service.start({
       enabled: true,
@@ -980,19 +977,7 @@ describe('RemoteControlService LAN frame seq', () => {
     })
 
     const port = service.getLanPort()
-    client = new WebSocket(`ws://127.0.0.1:${port}/ws?role=mobile`)
-    await new Promise<void>((r) => client!.once('open', () => r()))
-    client.send(JSON.stringify({ type: 'register', deviceName: 'tester', mobileDeviceId: deviceId }))
-
-    await new Promise<void>((r) => {
-      const onMsg = (raw: import('ws').RawData) => {
-        try {
-          const f = JSON.parse(raw.toString())
-          if (f.type === 'handshake') { client!.off('message', onMsg); r() }
-        } catch { /* ignore */ }
-      }
-      client!.on('message', onMsg)
-    })
+    client = (await connectTestPhone(port!, issueChannelCredential(masterSecret, TEST_KEY_ID))).socket
 
     const shutdownPromise = new Promise<Record<string, unknown>>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('desktop_shutdown timeout')), 1500)
@@ -1021,7 +1006,7 @@ describe('RemoteControlService LAN frame seq', () => {
 
     service = new RemoteControlService('ws://127.0.0.1:1', {
       onCommand: vi.fn(),
-      isPairedDevice: () => true,
+      pairedPhones: testPhones(deviceId),
     })
     const config = {
       enabled: true,
@@ -1033,24 +1018,13 @@ describe('RemoteControlService LAN frame seq', () => {
 
     const captureFrames = async (): Promise<Array<Record<string, unknown>>> => {
       const port = service!.getLanPort()
-      const ws = new WebSocket(`ws://127.0.0.1:${port}/ws?role=mobile`)
-      await new Promise<void>((r) => ws.once('open', () => r()))
-      ws.send(JSON.stringify({ type: 'register', deviceName: 'tester', mobileDeviceId: deviceId }))
+      const ws = (await connectTestPhone(port!, issueChannelCredential(masterSecret, TEST_KEY_ID))).socket
       const collected: Array<Record<string, unknown>> = []
       ws.on('message', (raw) => {
         try {
           const f = JSON.parse(raw.toString())
           if (f.type === 'event') collected.push(f)
         } catch { /* ignore */ }
-      })
-      await new Promise<void>((r) => {
-        const onMsg = (raw: import('ws').RawData) => {
-          try {
-            const f = JSON.parse(raw.toString())
-            if (f.type === 'handshake') { ws.off('message', onMsg); r() }
-          } catch { /* ignore */ }
-        }
-        ws.on('message', onMsg)
       })
       await service!.sendEventToMobile({ type: 'status_change', status: 'streaming' }, [deviceId])
       await service!.sendEventToMobile({ type: 'status_change', status: 'idle' }, [deviceId])
@@ -1104,34 +1078,47 @@ describe('slash command output over the wire', () => {
 })
 
 it('keeps terminal output before exit when compression of the first frame is slower', async () => {
-  const { deriveKeys } = await import('./remote-control-crypto')
-  const { deriveKeys: mobileKeys, decryptHostPayload } = await import('@superone/relay-client/crypto')
-  const secret = '0123456789abcdef'.repeat(8)
-  const keys = await deriveKeys(secret)
+  const { acceptClientHello, startClientHandshake } = await import('@superone/relay-client/secure-channel')
+  const { openLinkFrame } = await import('@superone/relay-client/phone-link')
+  const { decodeHostPlaintext } = await import('@superone/relay-client/host-payload')
+  const credential = issueChannelCredential('ab'.repeat(32), TEST_KEY_ID)
+  const c = startClientHandshake(credential)
+  const s = acceptClientHello(c.hello, () => credential.secretHex)
+  const { proof, channel: phone } = c.finish(s.challenge)
   const frames: string[] = []
   const service = new RemoteControlService('', {} as never)
   Object.assign(service, {
-    keys,
+    keys: { rootSecret: 'ab'.repeat(32), channelKeyHex: 'cd'.repeat(32) },
+    phoneLink: await import('./remote/phone-link-host'),
     relayWs: { readyState: 1, send: (frame: string) => frames.push(frame) },
+    relayLinks: new Map([['phone', { channel: s.finish(proof) }]]),
     connectedDevices: new Map([['phone', { name: 'Phone', transports: new Set(['relay']) }]]),
   })
   await Promise.all([
     service.sendTerminalFrame({ type: 'terminal_output', terminalId: 't', data: 'x'.repeat(1_000_000), fromSeq: 1, toSeq: 1, createdAt: 0 }),
     service.sendTerminalFrame({ type: 'terminal_exited', terminalId: 't', exitCode: 0, signal: null }),
   ])
-  const key = mobileKeys(secret).aesKeyBytes
-  expect(frames.map(frame => (decryptHostPayload(key, JSON.parse(frame).data) as { type: string }).type)).toEqual(['terminal_output', 'terminal_exited'])
+  // Opening in order also proves the channel sequence follows send order.
+  expect(frames.map(frame => (decodeHostPlaintext(openLinkFrame(phone, JSON.parse(frame).data).payload) as { type: string }).type)).toEqual(['terminal_output', 'terminal_exited'])
 })
 
 it('drops a response when its relay connection is replaced during compression', async () => {
-  const { deriveKeys } = await import('./remote-control-crypto')
-  const keys = await deriveKeys('0123456789abcdef'.repeat(8))
+  const { acceptClientHello, startClientHandshake } = await import('@superone/relay-client/secure-channel')
+  const credential = issueChannelCredential('ab'.repeat(32), TEST_KEY_ID)
+  const c = startClientHandshake(credential)
+  const s = acceptClientHello(c.hello, () => credential.secretHex)
+  const channel = s.finish(c.finish(s.challenge).proof)
   const oldSend = vi.fn()
   const newSend = vi.fn()
   const service = new RemoteControlService('', {} as never)
-  Object.assign(service, { keys, relayWs: { readyState: 1, send: oldSend } })
-  const pending = (service as unknown as { sendResponse(id: string, value: unknown): Promise<void> })
-    .sendResponse('old-request', { body: 'x'.repeat(1_000_000) })
+  Object.assign(service, {
+    keys: { rootSecret: 'ab'.repeat(32), channelKeyHex: 'cd'.repeat(32) },
+    phoneLink: await import('./remote/phone-link-host'),
+    relayWs: { readyState: 1, send: oldSend },
+    relayLinks: new Map([['phone', { channel }]]),
+  })
+  const pending = (service as unknown as { sendResponse(id: string, value: unknown, deviceId: string, channel: unknown): Promise<void> })
+    .sendResponse('old-request', { body: 'x'.repeat(1_000_000) }, 'phone', channel)
   Object.assign(service, { relayWs: { readyState: 1, send: newSend } })
   await pending
   expect(oldSend).not.toHaveBeenCalled()

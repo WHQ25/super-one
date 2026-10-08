@@ -193,6 +193,7 @@
         "@superone/codex": "workspace:*",
         "@superone/cursor": "workspace:*",
         "@superone/deepseek": "workspace:*",
+        "@superone/relay-client": "workspace:*",
         "@superone/runtime": "workspace:*",
         "@superone/shared": "workspace:*",
         "@superone/ui": "workspace:*",

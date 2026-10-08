@@ -34,8 +34,8 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { WebView } from 'react-native-webview'
 import type { HostInbound, HostOutbound } from '@superone/chat-view'
 import {
-  checkRelayDesktopOnline, loadPairings, parseLanHostPort, parsePairQr, RelayClient, RestoreRejectedError, savePairings,
-  startPairingHandshake, upsertPairing, type SavedPairing,
+  checkRelayDesktopOnline, hostLinkOf, loadPairings, OutdatedDesktopPairingError, parseLanHostPort, parsePairQr, RelayClient,
+  RestoreRejectedError, savePairings, startPairingHandshake, upsertPairing, type HostLink, type SavedPairing,
 } from '@superone/relay-client'
 import type {
   ChatMessage, GitDirtyStatus, HarnessId, ImageAttachment, PermissionRequest,
@@ -866,7 +866,9 @@ export function MobileApp() {
     setPairings(next)
   }
   const connectGenerationRef = useRef(0)
-  const connectWithSecret = async (relayUrl: string, secret: string, lanHostPort?: string, hostName?: string, desktopDeviceId?: string, prepared?: SessionLinkPreparation, canAdopt = () => true): Promise<boolean> => {
+  /** The fields a pairing stores for its link; the secret stays on this phone. */
+  const linkFields = (link: HostLink) => ({ secret: link.credential.secretHex, keyId: link.credential.keyId, roomId: link.roomId })
+  const connectWithLink = async (relayUrl: string, link: HostLink, lanHostPort?: string, hostName?: string, desktopDeviceId?: string, prepared?: SessionLinkPreparation, canAdopt = () => true): Promise<boolean> => {
     const preparedConnection = prepared?.connection
     networkLedger.mark('connect')
     let connectGeneration = preparedConnection ? connectGenerationRef.current : ++connectGenerationRef.current
@@ -879,7 +881,7 @@ export function MobileApp() {
     if (connectGeneration !== connectGenerationRef.current || !canAdopt()) { persisted.dispose(); return false }
     const hp = (lanHostPort ?? lan).trim()
     const preparedWorkspace = prepared?.workspace
-    if (preparedConnection) await rememberPairing({ id: pairingId, relayUrl, secret, hostName, lan: hp.includes(':') ? hp : undefined,
+    if (preparedConnection) await rememberPairing({ id: pairingId, relayUrl, ...linkFields(link), hostName, lan: hp.includes(':') ? hp : undefined,
       desktopDeviceId, environmentId: prepared?.pairing?.environmentId })
     if (connectGeneration !== connectGenerationRef.current || !canAdopt()) { persisted.dispose(); return false }
     const cache = new WorkspaceListCache(persisted)
@@ -1020,8 +1022,8 @@ export function MobileApp() {
       },
       onStatus: () => { /* DeviceStatus + reconnect own connection feedback. */ },
       onReconnectInfo: setReconnect,
-      isDesktopOnline: () => checkRelayDesktopOnline({ relayUrl, masterSecret: secret }).catch(() => false),
-      endpoint: { relayUrl, masterSecret: secret, identity: { deviceId: activeDeviceId, deviceName: getMobileDeviceName() } },
+      isDesktopOnline: () => checkRelayDesktopOnline({ relayUrl, roomId: link.roomId }).catch(() => false),
+      endpoint: { relayUrl, link, identity: { deviceId: activeDeviceId, deviceName: getMobileDeviceName() } },
       resolveLan: () => discovery.resolveLan(pairingId),
       onShutdown: () => {
         setConnectionState('offline')
@@ -1029,9 +1031,12 @@ export function MobileApp() {
         setScreen('pair')
       },
       onKicked: () => {
+        // The desktop no longer accepts this phone's key: removed there, or
+        // paired before per-device keys. Only a new pairing brings it back.
         setConnectionState('offline')
-        setStatus('')
         setScreen('pair')
+        void updatePairings(rows => rows.map(row => row.id === pairingId ? { ...row, keyId: undefined } : row))
+        setStatus(t('This phone was removed from the desktop. Pair it again to reconnect.'))
       },
       suppressDisconnect: () => suppressReconnectRef.current,
     }
@@ -1064,14 +1069,14 @@ export function MobileApp() {
     await rememberPairing({
       id: desktopDeviceId || hostName || relayUrl,
       relayUrl,
-      secret,
+      ...linkFields(link),
       hostName,
       lan: hp.includes(':') ? hp : undefined,
       desktopDeviceId,
     })
     if (connectGeneration !== connectGenerationRef.current) return false
     void identity.then(verified => {
-      if (verified?.environmentId && connectGeneration === connectGenerationRef.current) return rememberPairing({ id: pairingId, relayUrl, secret, hostName, lan: hp.includes(':') ? hp : undefined, desktopDeviceId, environmentId: verified.environmentId })
+      if (verified?.environmentId && connectGeneration === connectGenerationRef.current) return rememberPairing({ id: pairingId, relayUrl, ...linkFields(link), hostName, lan: hp.includes(':') ? hp : undefined, desktopDeviceId, environmentId: verified.environmentId })
     }).catch(error => { if (connectGeneration === connectGenerationRef.current) setStatus(error instanceof Error ? error.message : 'Could not save host identity') })
     // Every await here is a full round trip, and over the relay each one is
     // hundreds of milliseconds; independent requests go out together.
@@ -1125,6 +1130,11 @@ export function MobileApp() {
       setScreen('chat')
       return
     }
+    const link = hostLinkOf(item)
+    if (!link) {
+      setStatus(t('This desktop was paired before a security update. Show a new pairing code on the desktop and scan it to reconnect.'))
+      return
+    }
     setConnectingPairingId(item.id)
     try {
       if (!isReachable(discovery.statusOf(item))) {
@@ -1135,7 +1145,7 @@ export function MobileApp() {
       }
       const discovered = discovery.lanAddressOf(item.id)
       const lanHostPort = discovered ? `${discovered.host}:${discovered.port}` : undefined
-      await connectWithSecret(item.relayUrl, item.secret, lanHostPort, item.hostName, item.desktopDeviceId)
+      await connectWithLink(item.relayUrl, link, lanHostPort, item.hostName, item.desktopDeviceId)
     } catch {
       // The device row moves from Connecting back to Offline; connection
       // failures do not create a second, page-level status message.
@@ -1169,18 +1179,20 @@ export function MobileApp() {
         const paired = await done
         pairingSocketRef.current = null
         setCode(null)
-        await connectWithSecret(paired.relayUrl || qr.relayUrl, paired.masterSecret, undefined, paired.hostName, qr.desktopDeviceId)
+        await connectWithLink(paired.relayUrl || qr.relayUrl, { credential: paired.credential, roomId: paired.roomId }, undefined, paired.hostName, qr.desktopDeviceId)
         return
       }
-      const json = JSON.parse(raw) as { relayUrl?: string; secret?: string; url?: string }
+      const json = JSON.parse(raw) as { relayUrl?: string; url?: string; secret?: string; keyId?: string; roomId?: string }
       const url = json.relayUrl ?? json.url
-      if (!url || !json.secret) throw new Error('JSON needs relayUrl and secret')
-      await connectWithSecret(url, json.secret)
+      if (!url || !json.secret || !json.keyId || !json.roomId) throw new Error('JSON needs relayUrl, secret, keyId and roomId')
+      await connectWithLink(url, { credential: { keyId: json.keyId, secretHex: json.secret }, roomId: json.roomId })
     } catch (e) {
       pairingSocketRef.current = null
       setCode(null)
       // A cancelled handshake fails by design; do not report it as an error.
-      setStatus(pairingCancelledRef.current ? '' : e instanceof Error ? e.message : 'pair failed')
+      setStatus(pairingCancelledRef.current ? ''
+        : e instanceof OutdatedDesktopPairingError ? t('Update SuperOne on the desktop, then pair again.')
+        : e instanceof Error ? e.message : 'pair failed')
     }
   }
 
@@ -1541,7 +1553,9 @@ export function MobileApp() {
             parkSource: () => remoteDraftsRef.current.park(),
             adoptConnection: () => {
               const pairing = candidate.pairing!
-              return connectWithSecret(pairing.relayUrl, pairing.secret, pairing.lan, pairing.hostName, pairing.desktopDeviceId, candidate, stillSource)
+              const link = hostLinkOf(pairing)
+              if (!link) throw new Error(t('This desktop was paired before a security update. Show a new pairing code on the desktop and scan it to reconnect.'))
+              return connectWithLink(pairing.relayUrl, link, pairing.lan, pairing.hostName, pairing.desktopDeviceId, candidate, stillSource)
             },
             ownsConnection: () => clientRef.current === candidate.connection?.client && !runtimeRef.current,
             leaveSource: () => { if (sourceRuntime?.sessionId) sourceClient.send({ type: 'leave_session', sessionId: sourceRuntime.sessionId }) },

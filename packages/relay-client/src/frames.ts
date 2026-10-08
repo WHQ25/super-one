@@ -1,5 +1,4 @@
 import { SeqAckTracker } from './ack'
-import { decryptHostPayload } from './crypto'
 
 export type TransportKind = 'relay' | 'lan'
 
@@ -33,8 +32,9 @@ export type FrameEffect =
   | { kind: 'response_chunk'; requestId: string; index: number; total: number; data: string }
   | { kind: 'pong' }
 
+/** Opens a sealed link frame of the expected kind (and request) and decodes its host payload. */
 export interface FrameDecrypt {
-  (data: string): unknown
+  (data: string, kind: 'event' | 'response' | 'terminal', requestId?: string): unknown
 }
 
 function asEvents(decrypted: unknown): unknown[] {
@@ -66,9 +66,6 @@ export function handleInboundFrame(
     tracker.clear()
     return { kind: 'desktop_shutdown' }
   }
-  if (type === 'handshake') {
-    return { kind: 'control', frame: { type, ...(frame.hostName ? { hostName: frame.hostName } : {}) } }
-  }
   if (type === 'peer_connected' || type === 'peer_disconnected') {
     return { kind: 'control', frame: { type } }
   }
@@ -81,7 +78,7 @@ export function handleInboundFrame(
   if (type === 'terminal') {
     if (typeof frame.data !== 'string') return { kind: 'drop' }
     try {
-      return { kind: 'terminal', payload: decrypt(frame.data) }
+      return { kind: 'terminal', payload: decrypt(frame.data, 'terminal') }
     } catch {
       return { kind: 'drop' }
     }
@@ -89,7 +86,7 @@ export function handleInboundFrame(
   if (type === 'response') {
     if (!frame.requestId || typeof frame.data !== 'string') return { kind: 'drop' }
     try {
-      return { kind: 'response', requestId: frame.requestId, payload: decrypt(frame.data) }
+      return { kind: 'response', requestId: frame.requestId, payload: decrypt(frame.data, 'response', frame.requestId) }
     } catch (error) {
       return { kind: 'response_error', requestId: frame.requestId, error }
     }
@@ -118,7 +115,7 @@ export function handleInboundFrame(
 
   let decrypted: unknown
   try {
-    decrypted = decrypt(frame.data)
+    decrypted = decrypt(frame.data, 'event')
   } catch {
     return { kind: 'ack', seq: ack.seq, flush: ack.flush }
   }
@@ -128,8 +125,4 @@ export function handleInboundFrame(
     events: stripEnvelopeSeq(asEvents(decrypted)),
     ack,
   }
-}
-
-export function makeDecrypt(aesKeyBytes: Uint8Array): FrameDecrypt {
-  return (data: string) => decryptHostPayload(aesKeyBytes, data)
 }

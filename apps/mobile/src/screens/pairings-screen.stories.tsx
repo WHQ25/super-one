@@ -8,7 +8,7 @@ import { PairingsScreen } from './pairings-screen'
 const noop = () => {}
 
 function device(id: string, hostName: string, lan?: string): SavedPairing {
-  return { id, hostName, lan, relayUrl: 'wss://relay.super-one.dev', secret: 'a'.repeat(64) }
+  return { id, hostName, lan, relayUrl: 'wss://relay.super-one.dev', secret: 'a'.repeat(64), keyId: `key-${id}`, roomId: '0f'.repeat(16) }
 }
 
 const fewDevices: { pairing: SavedPairing; status: DeviceStatus }[] = [
@@ -110,6 +110,15 @@ export const Reconnecting = {
     activePairingId: 'desk-lan',
     reconnect: { attempting: false, waiting: true, delayMs: 16_000, nextAtMs: Date.now() + 9_000 },
   },
+}
+
+export const RepairRequired = {
+  name: 'Paired before the security update · Re-pair Required',
+  args: withDevices([
+    fewDevices[0]!,
+    { pairing: { ...device('desk-old', 'Old studio Mac'), keyId: undefined, roomId: undefined }, status: 'repairRequired' },
+    fewDevices[2]!,
+  ]),
 }
 
 export const Refreshing = {

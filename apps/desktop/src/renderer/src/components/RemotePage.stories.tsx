@@ -90,6 +90,22 @@ export const Disabled: Story = { parameters: { enabled: false, relay: false } }
 /** Phones and a desktop controller: online, last seen, never connected, long name. */
 export const PairedWithDevices: Story = { parameters: { devices: DEVICES, lan: true } }
 
+/** Phones paired before per-device channel keys: they show Re-pair Required instead of a last-seen date. */
+export const NeedsRepair: Story = {
+  parameters: {
+    devices: [
+      DEVICES[0]!,
+      { id: 'old-iphone', name: 'Old iPhone paired before the update', pairedAt: day(200), lastSeenAt: day(3), online: false, needsRepair: true },
+      { id: 'old-pixel', name: 'Pixel 6', pairedAt: day(400), lastSeenAt: null, online: false, needsRepair: true },
+    ],
+  },
+  play: async ({ canvasElement }) => {
+    const labels = await within(canvasElement).findAllByText(i18n.t('resources.remote.needsRepair'))
+    await expect(labels).toHaveLength(2)
+    await expect(labels[0]).toHaveAttribute('title', i18n.t('resources.remote.needsRepairHint'))
+  },
+}
+
 /** Scanning step: QR code inline in the Mobile card. */
 export const WaitingForScan: Story = {
   play: async ({ canvasElement }) => {

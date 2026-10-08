@@ -1,8 +1,8 @@
-import { encryptHostPayload } from './remote/payload-codec'
+import { frameHostPayload } from './remote/payload-codec'
+import type { ChannelEnvelope, PhoneHandshake, PhoneLinkHost, ResolvePhoneKey } from './remote/phone-link-host'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { AddressInfo } from 'node:net'
 import { networkInterfaces } from 'node:os'
-import { webcrypto } from 'node:crypto'
 import { createReadStream, createWriteStream, statSync } from 'node:fs'
 import { pipeline } from 'node:stream/promises'
 import { Transform } from 'node:stream'
@@ -10,7 +10,8 @@ import { WebSocket, WebSocketServer } from 'ws'
 import log from './logger'
 import { trace } from './agent/event-trace'
 import type { RemoteCommand } from '@superone/shared/agent-types'
-import { decryptPayload } from './remote-control-crypto'
+import type { LinkHandshakeInfo } from '@superone/relay-client/phone-link'
+import type { SecureChannel } from '@superone/relay-client/secure-channel'
 import type { LanFileTokenSigner } from './lan-file-token'
 import { inferMimeType } from './file-bridge'
 
@@ -35,10 +36,12 @@ const WS_CHUNK_SIZE = 800_000
 export type LanRemoteResponder = (requestId: string, data: unknown) => Promise<void>
 
 export interface LanServerCallbacks {
-  getAesKey: () => webcrypto.CryptoKey | null
-  isPairedDevice: (deviceId: string) => boolean
+  /** The loaded phone link module (`loadPhoneLinkHost`). */
+  phoneLink: PhoneLinkHost
+  /** Key id → paired phone; null once the device is removed. */
+  resolveKey: ResolvePhoneKey
+  handshakeInfo: () => LinkHandshakeInfo
   onCommand: (cmd: RemoteCommand, respond: LanRemoteResponder, source: { deviceId: string }) => void
-  hostName: string
   onClientRegistered?: (info: { deviceName: string; deviceId: string }) => void
   onClientDisconnected?: (info: { deviceId: string }) => void
   getFileTokenSigner?: () => LanFileTokenSigner | null
@@ -46,8 +49,11 @@ export interface LanServerCallbacks {
 }
 
 interface ClientState {
+  /** Set once the phone has proven its key; the device bound to that key. */
   deviceId: string
   deviceName: string
+  handshake: PhoneHandshake
+  channel: SecureChannel | null
   registerTimer: ReturnType<typeof setTimeout> | null
 }
 
@@ -141,23 +147,26 @@ export class LanServer {
     return addr?.port ?? null
   }
 
-  async broadcastEvent(event: unknown): Promise<void> {
-    const aesKey = this.callbacks.getAesKey()
-    if (!aesKey) return
-    if (this.registeredTargets().length === 0) return
-    try {
-      const data = await encryptHostPayload(aesKey, event)
-      this.broadcastFrame(JSON.stringify({ type: 'event', data }))
-    } catch (err) {
-      log.error('[LanServer] broadcastEvent failed:', err)
+  /**
+   * Seal one framed payload for every target socket's own channel. Sealing and
+   * sending stay synchronous so channel sequence numbers follow send order.
+   */
+  sendFramed(kind: 'event' | 'terminal', framed: Uint8Array, targetDeviceIds?: string[], seq?: number): void {
+    const filter = targetDeviceIds ? new Set(targetDeviceIds) : null
+    for (const ws of this.registeredTargets(filter)) {
+      const channel = this.clients.get(ws)?.channel
+      if (!channel) continue
+      try {
+        const data = this.callbacks.phoneLink.sealHostFrame(channel, { t: kind }, framed)
+        ws.send(JSON.stringify(kind === 'event' ? { type: 'event', seq, data } : { type: 'terminal', data }))
+      } catch (err) {
+        log.warn('[LanServer] send %s failed: %s', kind, err instanceof Error ? err.message : String(err))
+      }
     }
   }
 
-  broadcastFrame(frameJson: string, targetDeviceIds?: string[]): void {
-    const filter = targetDeviceIds ? new Set(targetDeviceIds) : null
-    for (const ws of this.registeredTargets(filter)) {
-      try { ws.send(frameJson) } catch { /* ignore */ }
-    }
+  hasRegisteredClient(): boolean {
+    return this.registeredTargets().length > 0
   }
 
   async broadcastShutdown(): Promise<void> {
@@ -181,7 +190,7 @@ export class LanServer {
   private registeredTargets(filter?: Set<string> | null): WebSocket[] {
     const targets: WebSocket[] = []
     for (const [ws, state] of this.clients) {
-      if (!state.deviceId || ws.readyState !== WebSocket.OPEN) continue
+      if (!state.deviceId || !state.channel || ws.readyState !== WebSocket.OPEN) continue
       if (filter && !filter.has(state.deviceId)) continue
       targets.push(ws)
     }
@@ -210,6 +219,8 @@ export class LanServer {
     const state: ClientState = {
       deviceId: '',
       deviceName: '',
+      handshake: new this.callbacks.phoneLink.PhoneHandshake(this.callbacks.resolveKey),
+      channel: null,
       registerTimer: setTimeout(() => {
         log.warn('[LanServer] Register timeout, closing connection')
         ws.close(1008, 'register_timeout')
@@ -251,92 +262,90 @@ export class LanServer {
 
     const type = frame.type as string
 
-    if (!state.deviceId) {
-      if (type !== 'register') {
-        log.warn('[LanServer] Non-register frame before register, closing:', type)
-        ws.close(1008, 'must_register_first')
+    if (!state.channel) {
+      if (type !== 'channel') {
+        log.warn('[LanServer] Frame before the channel handshake, closing:', type)
+        ws.close(1008, 'channel_required')
         return
       }
-      await this.handleRegister(ws, state, frame)
+      this.handleHandshake(ws, state, frame as ChannelEnvelope)
       return
     }
 
     switch (type) {
       case 'command':
-        await this.handleCommand(ws, frame)
+        this.handleCommand(ws, state, state.channel, frame)
         break
       default:
         log.warn('[LanServer] Unknown frame type:', type)
     }
   }
 
-  private async handleRegister(ws: WebSocket, state: ClientState, frame: Record<string, unknown>): Promise<void> {
-    const deviceName = typeof frame.deviceName === 'string' ? frame.deviceName : 'Unknown Device'
-    const deviceId = typeof frame.mobileDeviceId === 'string' ? frame.mobileDeviceId : ''
-
-    if (!deviceId || !this.callbacks.isPairedDevice(deviceId)) {
-      log.warn('[LanServer] Rejecting unrecognized device:', deviceId)
+  private handleHandshake(ws: WebSocket, state: ClientState, frame: ChannelEnvelope): void {
+    const step = state.handshake.step(frame)
+    if (step.kind === 'challenge') {
+      ws.send(JSON.stringify(step.reply))
+      return
+    }
+    if (step.kind === 'rejected') {
+      // A removed phone, or one paired before per-device credentials: it must pair again.
+      log.warn('[LanServer] Rejecting unpaired channel key: %s', step.reason)
       try {
-        ws.send(JSON.stringify({ type: 'kicked', mobileDeviceId: deviceId }))
+        ws.send(JSON.stringify({ type: 'kicked' }))
       } catch { /* ignore */ }
-      ws.close(1000, 'not_paired')
+      ws.close(1008, 'not_paired')
+      return
+    }
+    if (step.kind === 'failed') {
+      log.warn('[LanServer] Channel handshake failed: %s', step.reason)
+      ws.close(1008, 'channel_failed')
       return
     }
 
+    const { channel, device } = step
     if (state.registerTimer) {
       clearTimeout(state.registerTimer)
       state.registerTimer = null
     }
-    state.deviceId = deviceId
-    state.deviceName = deviceName
+    state.deviceId = device.deviceId
+    state.deviceName = device.deviceName
+    state.channel = channel
 
     // LAN has no heartbeat, so the socket a suspended phone left behind can
     // still read OPEN here. One socket per device, as on the relay.
     let replacedCount = 0
     for (const [other, otherState] of this.clients) {
-      if (other === ws || otherState.deviceId !== deviceId) continue
+      if (other === ws || otherState.deviceId !== device.deviceId) continue
       other.close(1000, 'replaced')
       replacedCount++
     }
 
-    log.info('[CONN-DESK] LAN register received deviceId=%s name=%s replaced=%d', deviceId, deviceName, replacedCount)
-    this.callbacks.onClientRegistered?.({ deviceName, deviceId })
-
+    log.info('[CONN-DESK] LAN channel established deviceId=%s replaced=%d', device.deviceId, replacedCount)
     try {
-      ws.send(JSON.stringify({ type: 'handshake', hostName: this.callbacks.hostName }))
-      log.info('[CONN-DESK] LAN handshake sent deviceId=%s', deviceId)
+      ws.send(JSON.stringify(this.callbacks.phoneLink.sealHandshake(channel, this.callbacks.handshakeInfo())))
     } catch (err) {
       log.error('[LanServer] Failed to send handshake:', err)
     }
+    this.callbacks.onClientRegistered?.({ deviceName: device.deviceName, deviceId: device.deviceId })
   }
 
-  private async handleCommand(ws: WebSocket, frame: Record<string, unknown>): Promise<void> {
-    const aesKey = this.callbacks.getAesKey()
-    if (!aesKey) {
-      log.warn('[LanServer] No aesKey available, dropping command')
-      return
-    }
+  private handleCommand(ws: WebSocket, state: ClientState, channel: SecureChannel, frame: Record<string, unknown>): void {
     const data = frame.data
     if (typeof data !== 'string') return
 
     let command: RemoteCommand
     try {
-      command = (await decryptPayload(aesKey, data)) as RemoteCommand
+      command = this.callbacks.phoneLink.openCommand(channel, data)
     } catch (err) {
-      log.error('[LanServer] Decryption failed, disconnecting:', err)
+      // Tampered, replayed or reordered: this connection can no longer be trusted.
+      log.error('[LanServer] Rejected command frame, disconnecting:', err)
       ws.close(1008, 'decryption_failed')
       return
     }
 
-    const client = this.clients.get(ws)
-    const deviceId = client?.deviceId
-    if (!deviceId) {
-      log.warn('[LanServer] command from unregistered client, dropping')
-      return
-    }
     trace('remote.in', (command as { type?: string }).type ?? 'unknown', command)
-    const respond: LanRemoteResponder = (requestId, payload) => this.sendResponse(ws, requestId, payload)
-    this.callbacks.onCommand(command, respond, { deviceId })
+    const respond: LanRemoteResponder = (requestId, payload) => this.sendResponse(ws, channel, requestId, payload)
+    this.callbacks.onCommand(command, respond, { deviceId: state.deviceId })
   }
 
   private async handleFileRequest(req: IncomingMessage, res: ServerResponse, path: string): Promise<void> {
@@ -478,14 +487,14 @@ export class LanServer {
     res.end(JSON.stringify({ ok: true, savedPath: payload.path }))
   }
 
-  private async sendResponse(ws: WebSocket, requestId: string, data: unknown): Promise<void> {
-    const aesKey = this.callbacks.getAesKey()
-    if (!aesKey) return
+  private async sendResponse(ws: WebSocket, channel: SecureChannel, requestId: string, data: unknown): Promise<void> {
     if (ws.readyState !== WebSocket.OPEN) return
     try {
       trace('remote.resp', requestId, data)
-      const encrypted = await encryptHostPayload(aesKey, data)
-      if (ws.readyState !== WebSocket.OPEN || this.callbacks.getAesKey() !== aesKey) return
+      const framed = await frameHostPayload(data)
+      // A response belongs to the channel its command arrived on.
+      if (ws.readyState !== WebSocket.OPEN || this.clients.get(ws)?.channel !== channel) return
+      const encrypted = this.callbacks.phoneLink.sealHostFrame(channel, { t: 'response', requestId }, framed)
       if (encrypted.length <= WS_CHUNK_SIZE) {
         ws.send(JSON.stringify({ type: 'response', requestId, data: encrypted }))
       } else {

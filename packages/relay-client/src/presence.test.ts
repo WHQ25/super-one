@@ -3,11 +3,10 @@ import {
   checkLanReachable,
   checkRelayDesktopOnline,
   parseLanHostPort,
-  roomIdForSecret,
   type PresenceFetch,
 } from './presence'
 
-const SECRET = 'a'.repeat(64)
+const ROOM = '0f'.repeat(16)
 
 // Typed as `PresenceFetch` rather than a bare `vi.fn(async () => …)`: without
 // the parameters the mock's call tuple is empty, so `mock.calls[0][0]` does not
@@ -25,21 +24,21 @@ describe('relay desktop presence', () => {
     const fetch = respond({ desktop: true })
     const online = await checkRelayDesktopOnline({
       relayUrl: 'wss://relay.example.com',
-      masterSecret: SECRET,
+      roomId: ROOM,
       fetch,
       now: () => 1_700_000_000_000,
     })
     expect(online).toBe(true)
     const [url] = fetch.mock.calls[0]
     expect(url).toBe(
-      `https://relay.example.com/status?room=${roomIdForSecret(SECRET)}&ts=1700000000000`,
+      `https://relay.example.com/status?room=${ROOM}&ts=1700000000000`,
     )
   })
 
   it('reports offline when the room exists but no desktop is attached', async () => {
     const online = await checkRelayDesktopOnline({
       relayUrl: 'wss://relay.example.com',
-      masterSecret: SECRET,
+      roomId: ROOM,
       fetch: respond({ desktop: false }),
     })
     expect(online).toBe(false)
@@ -48,12 +47,12 @@ describe('relay desktop presence', () => {
   it('treats a non-200 status and a network failure alike as offline', async () => {
     const rejected = await checkRelayDesktopOnline({
       relayUrl: 'wss://relay.example.com',
-      masterSecret: SECRET,
+      roomId: ROOM,
       fetch: respond({ desktop: true }, { ok: false, status: 401 }),
     })
     const thrown = await checkRelayDesktopOnline({
       relayUrl: 'wss://relay.example.com',
-      masterSecret: SECRET,
+      roomId: ROOM,
       fetch: async () => { throw new Error('offline') },
     })
     expect([rejected, thrown]).toEqual([false, false])
@@ -63,7 +62,7 @@ describe('relay desktop presence', () => {
     const fetch = respond({ desktop: true })
     await checkRelayDesktopOnline({
       relayUrl: 'ws://192.168.1.9:8787/',
-      masterSecret: SECRET,
+      roomId: ROOM,
       fetch,
       now: () => 42,
     })
@@ -73,7 +72,7 @@ describe('relay desktop presence', () => {
   it('rejects a relay URL that is not a WebSocket URL', async () => {
     await expect(checkRelayDesktopOnline({
       relayUrl: 'https://relay.example.com',
-      masterSecret: SECRET,
+      roomId: ROOM,
       fetch: respond({ desktop: true }),
     })).rejects.toThrow(/rejected/)
   })
@@ -84,7 +83,7 @@ describe('relay desktop presence', () => {
       let aborted = false
       const promise = checkRelayDesktopOnline({
         relayUrl: 'wss://relay.example.com',
-        masterSecret: SECRET,
+        roomId: ROOM,
         timeoutMs: 5_000,
         fetch: (_url, init) => new Promise((_resolve, reject) => {
           init.signal.addEventListener('abort', () => {

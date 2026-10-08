@@ -4114,6 +4114,8 @@ export const zh: Messages = {
       online: '在线',
       lastSeen: '最后连接：{{date}}',
       neverConnected: '从未连接',
+      needsRepair: '需要重新配对',
+      needsRepairHint: '该设备在安全更新前配对。请先移除，再通过“配对新手机”重新配对。',
       remove: '移除',
       customRelay: '自定义中继服务器',
       deployCloudflare: '部署到 Cloudflare',

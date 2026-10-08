@@ -4,10 +4,23 @@ import { computeHmacToken, computeRoomId, decryptBytesChunked, encryptBytesChunk
 
 const encoder = new TextEncoder()
 
-export interface RelayFileUploadContext {
+/** Static keys from one phone's channel secret; staged files are sealed for that phone only. */
+export interface RelayFileKeys {
   channelKeyHex: string
-  relayHttpUrl: string
   aesKey: webcrypto.CryptoKey
+}
+
+export interface RelayFileUploadContext {
+  /** The host room's channel key: authenticates presign requests and names the `files/<room>/` prefix. */
+  roomKeyHex: string
+  relayHttpUrl: string
+  /** Needed only to seal or open file contents. */
+  fileKeys?: Promise<RelayFileKeys>
+}
+
+async function fileKeysOf(context: RelayFileUploadContext): Promise<RelayFileKeys> {
+  if (!context.fileKeys) throw new Error('relay file keys unavailable')
+  return context.fileKeys
 }
 
 export interface RelayUploadEncryptionInfo {
@@ -55,18 +68,19 @@ export async function uploadFileToRelay(
   context: RelayFileUploadContext,
   onProgress?: (loadedFraction: number) => void,
 ): Promise<RelayUploadResult> {
-  const roomId = await computeRoomId(context.channelKeyHex)
+  const roomId = await computeRoomId(context.roomKeyHex)
   const ts = Date.now()
   const keyHash = await sha256Hex(`${realPath}:${sessionId}:${ts}`)
   const key = `files/${roomId}/${keyHash.slice(0, 32)}.bin`
 
   const fileBytes = await readFile(realPath)
-  const encrypted = await encryptBytesChunked(context.aesKey, fileBytes, key, context.channelKeyHex)
+  const fileKeys = await fileKeysOf(context)
+  const encrypted = await encryptBytesChunked(fileKeys.aesKey, fileBytes, key, fileKeys.channelKeyHex)
   const encryptedContentType = 'application/octet-stream'
 
   const uploadUrl = await fetchUploadUrl({
     relayHttpUrl: context.relayHttpUrl,
-    channelKeyHex: context.channelKeyHex,
+    channelKeyHex: context.roomKeyHex,
     key,
     contentType: encryptedContentType,
     contentLength: encrypted.byteLength,
@@ -90,7 +104,7 @@ export async function uploadFileToRelay(
 
   const downloadResult = await fetchDownloadUrl({
     relayHttpUrl: context.relayHttpUrl,
-    channelKeyHex: context.channelKeyHex,
+    channelKeyHex: context.roomKeyHex,
     key,
   })
   return {
@@ -166,7 +180,7 @@ async function safeText(res: Response): Promise<string> {
 }
 
 export async function computeRelayUploadKey(context: RelayFileUploadContext, name: string): Promise<string> {
-  const roomId = await computeRoomId(context.channelKeyHex)
+  const roomId = await computeRoomId(context.roomKeyHex)
   const rand = webcrypto.getRandomValues(new Uint8Array(16))
   const hash = Array.from(rand).map((b) => b.toString(16).padStart(2, '0')).join('')
   void name
@@ -176,7 +190,7 @@ export async function computeRelayUploadKey(context: RelayFileUploadContext, nam
 export async function signRelayUploadUrl(context: RelayFileUploadContext, key: string): Promise<string> {
   return fetchUploadUrl({
     relayHttpUrl: context.relayHttpUrl,
-    channelKeyHex: context.channelKeyHex,
+    channelKeyHex: context.roomKeyHex,
     key,
     contentType: 'application/octet-stream',
   })
@@ -189,7 +203,7 @@ export async function downloadAndDecryptRelayFile(
 ): Promise<Buffer> {
   const { url } = await fetchDownloadUrl({
     relayHttpUrl: context.relayHttpUrl,
-    channelKeyHex: context.channelKeyHex,
+    channelKeyHex: context.roomKeyHex,
     key,
   })
   const res = await fetch(url)
@@ -199,7 +213,8 @@ export async function downloadAndDecryptRelayFile(
   const encrypted = onProgress && res.body
     ? await readBodyWithProgress(res, onProgress)
     : new Uint8Array(await res.arrayBuffer())
-  const decrypted = await decryptBytesChunked(context.aesKey, encrypted, key, context.channelKeyHex)
+  const fileKeys = await fileKeysOf(context)
+  const decrypted = await decryptBytesChunked(fileKeys.aesKey, encrypted, key, fileKeys.channelKeyHex)
   return Buffer.from(decrypted)
 }
 
@@ -230,11 +245,11 @@ async function readBodyWithProgress(
 
 export async function deleteRelayFile(context: RelayFileUploadContext, key: string): Promise<void> {
   const ts = Date.now().toString()
-  const sig = await computeHmacToken(context.channelKeyHex, 'desktop', ts)
+  const sig = await computeHmacToken(context.roomKeyHex, 'desktop', ts)
   const res = await fetch(`${context.relayHttpUrl}/files/delete-url`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ channelKey: context.channelKeyHex, role: 'desktop', ts, sig, key }),
+    body: JSON.stringify({ channelKey: context.roomKeyHex, role: 'desktop', ts, sig, key }),
   })
   if (!res.ok) {
     throw new RelayUploadError(`delete-url failed: ${res.status} ${await safeText(res)}`, res.status)

@@ -371,6 +371,24 @@ describe('RelaySession', () => {
       expect(mobileB.send).not.toHaveBeenCalled()
     })
 
+    it('channel handshake frames: stamped with the sender, routed to one mobile, never buffered', async () => {
+      const hello = { type: 'channel', msg: { type: 'channel_hello', v: 1, keyId: 'k', nonce: 'n' }, mobileDeviceId: 'dev-2' }
+      // A sender cannot claim another device's slot: the relay overwrites the id.
+      await session.webSocketMessage(mobileWs as any, JSON.stringify(hello))
+      expect(desktopWs.send).toHaveBeenCalledWith(JSON.stringify({ ...hello, mobileDeviceId: 'dev-1' }))
+
+      const challenge = { type: 'channel', mobileDeviceId: 'dev-2', msg: { type: 'channel_challenge' }, hello: 'n' }
+      await session.webSocketMessage(desktopWs as any, JSON.stringify(challenge))
+      expect(mobileB.send).toHaveBeenCalledWith(JSON.stringify(challenge))
+      expect(mobileWs.send).not.toHaveBeenCalled()
+
+      await session.webSocketMessage(desktopWs as any, JSON.stringify({ type: 'channel', data: 'sealed' }))
+      expect(mobileB.send).toHaveBeenCalledTimes(1)
+      mobileB.send.mockClear()
+      await session.webSocketMessage(mobileB as any, JSON.stringify({ type: 'replay', fromSeq: 1 }))
+      expect(mobileB.send).not.toHaveBeenCalled()
+    })
+
     it('kicked frame from desktop targets only the matching mobile', async () => {
       await session.webSocketMessage(desktopWs as any, JSON.stringify({ type: 'kicked', mobileDeviceId: 'dev-2' }))
       expect(mobileB.send).toHaveBeenCalledWith(JSON.stringify({ type: 'kicked', mobileDeviceId: 'dev-2' }))

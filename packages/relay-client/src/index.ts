@@ -1,6 +1,6 @@
 export { PROCESSED_SEQ_CAP, SeqAckTracker, TransportAckRegistry } from './ack'
 export { BUFFER_FIRST_ORDER, EventBuffer } from './buffer'
-export { handleInboundFrame, makeDecrypt } from './frames'
+export { handleInboundFrame } from './frames'
 export { LAN_SERVICE_TYPE, LAN_TXT_ROOM_ID, buildLanWsUrl, buildRelayWsUrl } from './connect'
 export {
   LAN_PROBE_TIMEOUT_MS,
@@ -8,12 +8,11 @@ export {
   checkLanReachable,
   checkRelayDesktopOnline,
   parseLanHostPort,
-  roomIdForSecret,
 } from './presence'
 export type { PresenceFetch, PresenceResponse } from './presence'
 export { RpcInbox } from './rpc'
 export { RelayClient } from './client'
-export type { MobileIdentity, OpenSocket, SocketLike } from './client'
+export type { HostLink, MobileIdentity, OpenSocket, SocketLike } from './client'
 export { RestoreRejectedError, restoreSession, mergeCachedHistory, appendHistory, dropIncompleteTail } from './restore'
 export type { CachedTranscript, HistoryPage, RestoredSession, SessionSnapshot } from './restore'
 export {
@@ -48,12 +47,15 @@ export {
   serializePairings,
   upsertPairing,
   memoryKv,
+  pairingNeedsRepair,
+  hostLinkOf,
 } from './pairings'
 export type { SavedPairing, Kv } from './pairings'
 export {
   decryptPairResponse,
   encryptPairRequest,
   generatePairCode,
+  OutdatedDesktopPairingError,
   pairWsUrl,
   parsePairQr,
   startPairingHandshake,
@@ -79,6 +81,9 @@ export {
   hexToByteArray,
 } from './crypto'
 export { setCryptoBackend } from './crypto-backend'
+export { LINK_CHANNEL_FRAME, openLinkFrame, sealLinkFrame } from './phone-link'
+export type { LinkHandshakeInfo, LinkHeader, LinkKind } from './phone-link'
+export type { ChannelCredential } from './secure-channel'
 export type { AesGcm, Base64Codec, CryptoBackend } from './crypto-backend'
 
 export { TransportLedger, type TransportMetric, type LedgerSnapshot } from './transport-ledger'

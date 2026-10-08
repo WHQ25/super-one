@@ -10,7 +10,8 @@ export type LanAddress = { host: string; port: number }
  * orchestration is testable without a relay, a network, or a native browser.
  */
 export type DiscoveryPorts = {
-  roomIdFor: (secret: string) => string
+  /** The host room delivered at pairing; null for a pairing that must be redone. */
+  roomIdFor: (pairing: SavedPairing) => string | null
   lanAddressOf: (pairing: SavedPairing) => LanAddress | null
   checkRelay: (pairing: SavedPairing) => Promise<boolean>
   checkLan: (host: string, port: number) => Promise<boolean>
@@ -171,7 +172,8 @@ export class DeviceDiscovery {
    * advertised beside the live one until its record expires.
    */
   private lanCandidates(pairing: SavedPairing): LanAddress[] {
-    const hits = this.ports.lookupLan(this.ports.roomIdFor(pairing.secret))
+    const roomId = this.ports.roomIdFor(pairing)
+    const hits = roomId ? this.ports.lookupLan(roomId) : []
     if (hits.length > 0) return hits.map(({ host, port }) => ({ host, port }))
     const stored = this.ports.lanAddressOf(pairing)
     return stored ? [stored] : []

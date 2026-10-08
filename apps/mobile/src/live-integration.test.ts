@@ -1,10 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { RelayClient, type SocketLike } from '@superone/relay-client'
-import { decryptPayload, deriveKeys } from '@superone/relay-client'
-import { encryptHostTestPayload as encryptPayload } from '../../../packages/relay-client/src/test-host-frame'
+import { TEST_LINK, completeHandshake, type TestHost } from '../../../packages/relay-client/src/test-host-link'
 import { ChatRuntime } from './runtime'
-
-const MASTER = '0123456789abcdef'.repeat(8)
 
 class MockSocket implements SocketLike {
   sent: string[] = []
@@ -24,7 +21,7 @@ describe('live RN ↔ relay integration', () => {
   it('rehydrates a mid-stream flap, releases buffered events, and rejects the stale epoch', async () => {
     vi.useFakeTimers()
     const sockets: MockSocket[] = []
-    const keys = deriveKeys(MASTER)
+    const hosts = new WeakMap<MockSocket, TestHost>()
     let runtime!: ChatRuntime
     const paints: string[] = []
     const client = new RelayClient({
@@ -50,7 +47,7 @@ describe('live RN ↔ relay integration', () => {
           const frame = JSON.parse(socket.sent[index]) as { type?: string; data?: string }
           if (frame.type !== 'command' || !frame.data) continue
           cursors.set(socket, index + 1)
-          return decryptPayload(keys.aesKeyBytes, frame.data) as { requestId: string; type: string }
+          return hosts.get(socket)!.openCommand(frame.data) as { requestId: string; type: string }
         }
         await Promise.resolve()
       }
@@ -61,20 +58,21 @@ describe('live RN ↔ relay integration', () => {
       socket.emit({
         type: 'response',
         requestId: command.requestId,
-        data: encryptPayload(keys.aesKeyBytes, body),
+        data: hosts.get(socket)!.seal('response', body, command.requestId),
       })
       return command
     }
     const emitEvent = (socket: MockSocket, seq: number, event: unknown) => socket.emit({
       type: 'event',
       seq,
-      data: encryptPayload(keys.aesKeyBytes, event),
+      data: hosts.get(socket)!.seal('event', event),
     })
 
-    const connected = client.connectRelay({ relayUrl: 'wss://relay.example', masterSecret: MASTER })
+    const connected = client.connectRelay({ relayUrl: 'wss://relay.example', link: TEST_LINK, deviceId: 'phone-1' })
     await vi.runAllTicks()
     await connected
     const first = sockets[0]
+    hosts.set(first, completeHandshake(first))
     const opening = runtime.open('/project', 'session')
     expect((await respond(first, { ok: true })).type).toBe('subscribe_session')
     expect((await respond(first, { messages: [], hasMore: false, provider: 'claude' })).type).toBe('load_session_messages')
@@ -95,6 +93,7 @@ describe('live RN ↔ relay integration', () => {
     await vi.runAllTicks()
     await reconnecting
     const second = sockets[1]
+    hosts.set(second, completeHandshake(second))
     const reopening = runtime.reopen()
     await respond(second, { ok: true })
     await respond(second, {

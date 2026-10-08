@@ -3,12 +3,19 @@ import { expect, it } from 'vitest'
 import { frameRemotePayload, MAX_REMOTE_PAYLOAD_BYTES } from '@superone/shared/remote-payload'
 import { decodeHostPlaintext } from './host-payload'
 import { readFileSync } from 'node:fs'
-import { decryptHostPayload, deriveKeys } from './crypto'
+import { deriveKeys } from './crypto'
+import { aesGcm, base64 } from './crypto-backend'
 
-it('decodes frozen raw and deflated AES-GCM host vectors', () => {
+it('decodes frozen raw and deflated host frames', () => {
   const fixture = JSON.parse(readFileSync(new URL('./fixtures/host-payload-v1.json', import.meta.url), 'utf8'))
   const keys = deriveKeys(fixture.masterSecretHex)
-  for (const vector of fixture.vectors) expect(decryptHostPayload(keys.aesKeyBytes, vector.ciphertextB64)).toEqual(vector.plaintext)
+  for (const vector of fixture.vectors) {
+    // The vectors seal the frame under a static key; the frame inside is what is pinned.
+    const sealed = base64().decode(vector.ciphertextB64)
+    const frame = aesGcm().open(keys.aesKeyBytes, sealed.subarray(0, 12), sealed.subarray(12))
+    expect(frame[0]).toBe(vector.flag)
+    expect(decodeHostPlaintext(frame)).toEqual(vector.plaintext)
+  }
 })
 
 it('rejects unknown flags, bad streams, size lies and excessive output declarations', () => {

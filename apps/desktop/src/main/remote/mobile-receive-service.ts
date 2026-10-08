@@ -17,7 +17,8 @@ export interface MobileReceiveServiceDeps {
   signLanUploadUrl(savedPath: string): Promise<string | null>
   computeRelayKey(name: string): Promise<string>
   signRelayUploadUrl(key: string, meta: { mimeType: string; size: number }): Promise<string>
-  downloadAndDecryptRelayFile(key: string, onProgress?: (loadedFraction: number) => void): Promise<Buffer>
+  /** Opens a file the phone `deviceId` sealed under its own keys. */
+  downloadAndDecryptRelayFile(key: string, deviceId: string, onProgress?: (loadedFraction: number) => void): Promise<Buffer>
   deleteRelayFile(key: string): Promise<void>
   emitProgress(event: MobileUploadProgress): void
   now(): number
@@ -182,7 +183,7 @@ export class MobileReceiveService {
     }
     this.pending.delete(req.requestId)
     try {
-      const bytes = await this.deps.downloadAndDecryptRelayFile(pending.key, (fraction) => {
+      const bytes = await this.deps.downloadAndDecryptRelayFile(pending.key, pending.deviceId, (fraction) => {
         this.emit(pending, 'relay', 'receiving', Math.round(fraction * pending.size))
       })
       await writeFile(pending.savedPath, bytes)

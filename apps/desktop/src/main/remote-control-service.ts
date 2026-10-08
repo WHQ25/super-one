@@ -1,4 +1,7 @@
-import { encryptHostPayload } from './remote/payload-codec'
+import { frameHostPayload } from './remote/payload-codec'
+import type { ChannelEnvelope, PhoneHandshake, PhoneKey, PhoneLinkHost } from './remote/phone-link-host'
+import type { SecureChannel } from '@superone/relay-client/secure-channel'
+import type { LinkHandshakeInfo } from '@superone/relay-client/phone-link'
 import { RelayDraftSaveThrottle } from './remote/relay-draft-save-throttle'
 import { RemoteEventBatcher } from './remote/event-batcher'
 import { webcrypto } from 'node:crypto'
@@ -35,6 +38,7 @@ import {
   computeHmacToken,
   computeRoomId,
 } from './remote-control-crypto'
+import type { RelayFileKeys } from './relay-file-uploader'
 import { LanServer, listLanIpAddresses } from './lan-server'
 import { LanAdvertiser } from './lan-advertiser'
 import { createLanFileTokenSigner, deriveFileTokenKeyFromExtractable, type LanFileTokenSigner } from './lan-file-token'
@@ -80,24 +84,49 @@ export interface RemoteCommandSource {
   transport: 'relay' | 'lan'
 }
 
+/** A phone paired with a per-device channel key. Rows without a key must re-pair. */
+export interface PairedPhone {
+  deviceId: string
+  deviceName: string
+  keyId: string
+}
+
+export interface PairedPhoneLookup {
+  byKey(keyId: string): PairedPhone | null
+  byId(deviceId: string): PairedPhone | null
+}
+
 export interface RemoteControlCallbacks {
   onCommand: (cmd: RemoteCommand, respond: RemoteResponder, source: RemoteCommandSource) => void
   onClientRegistered?: (info: { deviceName: string; deviceId: string; transport: 'lan' | 'relay'; firstConnect: boolean }) => void
   onClientDisconnected?: (info: { deviceId: string }) => void
   onPairingCodeReceived?: (info: { code: string; deviceName: string }) => void
   onPairingExpired?: () => void
-  onPairingConfirmed?: (info: { mobileDeviceId: string; deviceName: string }) => void
+  onPairingConfirmed?: (info: { mobileDeviceId: string; deviceName: string; keyId: string }) => void
   onPairingAlreadyPaired?: (info: { deviceName: string }) => void
   onRelayStatusChanged?: (connected: boolean) => void
   onLanStatusChanged?: (active: boolean) => void
   onLanUploadProgress?: (info: { savedPath: string; receivedBytes: number; done: boolean; error?: string }) => void
-  isPairedDevice?: (deviceId: string) => boolean
+  pairedPhones?: PairedPhoneLookup
   /** Test seam only; production keeps the shared relay heartbeat cadence. */
   relayHeartbeat?: { intervalMs: number; timeoutMs: number }
 }
 
 type DeviceTransport = 'lan' | 'relay'
 type ConnectedDevice = { name: string; transports: Set<DeviceTransport> }
+/** One phone's channel through the relay; replaced whenever the phone says hello again. */
+type RelayLink = { handshake: PhoneHandshake; channel: SecureChannel | null }
+
+/** The channel crypto loads with remote control, never on the startup path. */
+let phoneLinkHost: Promise<PhoneLinkHost> | null = null
+function loadPhoneLinkHost(): Promise<PhoneLinkHost> {
+  return phoneLinkHost ??= import('./remote/phone-link-host')
+}
+
+/** Key ids the host issues at pairing: 16 random bytes, hex. */
+function newChannelKeyId(): string {
+  return bytesToHex(webcrypto.getRandomValues(new Uint8Array(16)).buffer)
+}
 
 /** One session's in-flight tool calls, keyed by tool_use id; reset when the session starts a reply. */
 interface LiveToolState {
@@ -124,7 +153,16 @@ function emptyLiveToolState(): LiveToolState {
 
 export class RemoteControlService {
   private relayWs: WebSocket | null = null
-  private keys: { channelKeyHex: string; aesKey: webcrypto.CryptoKey } | null = null
+  /**
+   * The host root (`RemoteDeviceConfig.masterSecret`): it derives every phone's
+   * channel secret and the relay room. `channelKeyHex` names the room and
+   * authenticates relay file requests; frames are sealed per phone channel.
+   */
+  private keys: { rootSecret: string; channelKeyHex: string } | null = null
+  private relayLinks = new Map<string, RelayLink>()
+  /** Set by `start()`; every path that seals or opens a frame runs after it. */
+  private phoneLink: PhoneLinkHost | null = null
+  private deviceFileKeys = new Map<string, Promise<RelayFileKeys>>()
   private fileTokenSigner: LanFileTokenSigner | null = null
   private connectedDevices = new Map<string, ConnectedDevice>()
   private lanServer: LanServer | null = null
@@ -209,15 +247,28 @@ export class RemoteControlService {
     return `http://{lanHost}:${port}/files/upload/${encodeURIComponent(token)}`
   }
 
-  private relayFileContext(): RelayFileUploadContext {
+  private relayFileContext(deviceId?: string): RelayFileUploadContext {
     if (!this.keys || !this.relayUrl) {
       throw new Error('Relay not connected')
     }
     return {
-      channelKeyHex: this.keys.channelKeyHex,
+      roomKeyHex: this.keys.channelKeyHex,
       relayHttpUrl: relayWsToHttp(this.relayUrl),
-      aesKey: this.keys.aesKey,
+      ...(deviceId ? { fileKeys: this.fileKeysOf(deviceId) } : {}),
     }
+  }
+
+  /** Relay-staged files are sealed under static keys from the phone's own channel secret. */
+  private fileKeysOf(deviceId: string): Promise<RelayFileKeys> {
+    const phone = this.callbacks.pairedPhones?.byId(deviceId)
+    if (!this.keys || !phone) return Promise.reject(new Error('Device is not paired'))
+    const cacheKey = `${deviceId}:${phone.keyId}`
+    let keys = this.deviceFileKeys.get(cacheKey)
+    if (!keys) {
+      keys = deriveKeys(this.link().deriveIssuedChannelSecret(this.keys.rootSecret, phone.keyId))
+      this.deviceFileKeys.set(cacheKey, keys)
+    }
+    return keys
   }
 
   async computeRelayUploadKey(name: string): Promise<string> {
@@ -228,8 +279,8 @@ export class RemoteControlService {
     return signRelayUploadUrl(this.relayFileContext(), key)
   }
 
-  async downloadAndDecryptRelayFile(key: string, onProgress?: (loadedFraction: number) => void): Promise<Buffer> {
-    return downloadAndDecryptRelayFile(this.relayFileContext(), key, onProgress)
+  async downloadAndDecryptRelayFile(key: string, deviceId: string, onProgress?: (loadedFraction: number) => void): Promise<Buffer> {
+    return downloadAndDecryptRelayFile(this.relayFileContext(deviceId), key, onProgress)
   }
 
   async deleteRelayFile(key: string): Promise<void> {
@@ -240,16 +291,10 @@ export class RemoteControlService {
     realPath: string,
     meta: { mimeType: string; size: number },
     sessionId: string,
+    deviceId: string,
     onProgress?: (loadedFraction: number) => void,
   ): Promise<RelayUploadResult> {
-    if (!this.keys || !this.relayUrl) {
-      throw new Error('Relay not connected')
-    }
-    return uploadFileToRelay(realPath, meta, sessionId, {
-      channelKeyHex: this.keys.channelKeyHex,
-      relayHttpUrl: relayWsToHttp(this.relayUrl),
-      aesKey: this.keys.aesKey,
-    }, onProgress)
+    return uploadFileToRelay(realPath, meta, sessionId, this.relayFileContext(deviceId), onProgress)
   }
 
   private draftRecipients(targets?: string[]): { lan: string[]; relay: string[] } {
@@ -304,7 +349,8 @@ export class RemoteControlService {
     this.relayUrl = config.relayUrl || this.defaultRelayUrl
     if (!config.enabled || !this.relayUrl) return
 
-    this.keys = await deriveKeys(config.masterSecret)
+    this.phoneLink = await loadPhoneLinkHost()
+    this.keys = { rootSecret: config.masterSecret, channelKeyHex: (await deriveKeys(config.masterSecret)).channelKeyHex }
     try {
       const hmacKey = await deriveFileTokenKeyFromExtractable(config.masterSecret)
       this.fileTokenSigner = createLanFileTokenSigner(hmacKey)
@@ -321,10 +367,10 @@ export class RemoteControlService {
   private async startLanServer(): Promise<void> {
     if (this.lanServer) return
     const server = new LanServer({
-      getAesKey: () => this.keys?.aesKey ?? null,
-      isPairedDevice: (id) => this.callbacks.isPairedDevice?.(id) ?? false,
+      phoneLink: this.link(),
+      resolveKey: (keyId) => this.resolvePhoneKey(keyId),
+      handshakeInfo: () => this.handshakeInfo(),
       onCommand: (cmd, respond, source) => this.callbacks.onCommand(cmd, respond, { deviceId: source.deviceId, transport: 'lan' }),
-      hostName: hostname(),
       onClientRegistered: ({ deviceName, deviceId }) => this.markDeviceOnline(deviceName, deviceId, 'lan'),
       onClientDisconnected: ({ deviceId }) => this.markDeviceOffline(deviceId, 'lan'),
       getFileTokenSigner: () => this.fileTokenSigner,
@@ -361,14 +407,36 @@ export class RemoteControlService {
     }
   }
 
-  private buildHandshakeFrame(): string {
+  private link(): PhoneLinkHost {
+    if (!this.phoneLink) throw new Error('remote control has not started')
+    return this.phoneLink
+  }
+
+  private handshakeInfo(): LinkHandshakeInfo {
     const port = this.lanServer?.getPort()
     const hosts = port ? listLanIpAddresses() : []
-    return JSON.stringify({
-      type: 'handshake',
-      hostName: hostname(),
-      ...(port && hosts.length > 0 ? { lan: { hosts, port } } : {}),
-    })
+    return { hostName: hostname(), ...(port && hosts.length > 0 ? { lan: { hosts, port } } : {}) }
+  }
+
+  /** Key id → the phone it was issued to and its secret; null once the device is removed. */
+  private resolvePhoneKey(keyId: string): PhoneKey | null {
+    const phone = this.callbacks.pairedPhones?.byKey(keyId)
+    if (!phone || !this.keys) return null
+    return { deviceId: phone.deviceId, deviceName: phone.deviceName, secretHex: this.link().deriveIssuedChannelSecret(this.keys.rootSecret, keyId) }
+  }
+
+  /**
+   * Cut a removed phone off now: its key id no longer resolves, so it cannot
+   * open a new channel, and the channels it holds are dropped.
+   */
+  revokeDevice(deviceId: string): void {
+    for (const key of this.deviceFileKeys.keys()) if (key.startsWith(`${deviceId}:`)) this.deviceFileKeys.delete(key)
+    if (this.relayLinks.delete(deviceId) && this.relayWs?.readyState === WebSocket.OPEN) {
+      this.relayWs.send(JSON.stringify({ type: 'kicked', mobileDeviceId: deviceId }))
+    }
+    this.lanServer?.kickDevice(deviceId)
+    this.markDeviceOffline(deviceId, 'relay')
+    this.markDeviceOffline(deviceId, 'lan')
   }
 
   private async stopLanServer(): Promise<void> {
@@ -424,6 +492,8 @@ export class RemoteControlService {
       this.callbacks.onRelayStatusChanged?.(false)
     }
     await this.stopLanServer()
+    this.relayLinks.clear()
+    this.deviceFileKeys.clear()
     this.keys = null
     this.fileTokenSigner = null
     this.lanFrameSeq = 0
@@ -469,6 +539,8 @@ export class RemoteControlService {
 
     const ws = new WebSocket(url)
     this.relayWs = ws
+    // Phones open new channels when the relay announces this socket.
+    this.relayLinks.clear()
     // A half-open socket never emits 'close' on its own; terminate() does,
     // which hands the dead link to the reconnect path below.
     const heartbeat = createRelayHeartbeat({
@@ -484,7 +556,6 @@ export class RemoteControlService {
       log.info('[RemoteControl] Relay connected')
       this.reconnectDelay = 1_000
       this.callbacks.onRelayStatusChanged?.(true)
-      ws.send(this.buildHandshakeFrame())
       heartbeat.start()
     })
 
@@ -525,50 +596,79 @@ export class RemoteControlService {
   private async handleRelayMessage(frame: { type: string; [key: string]: unknown }): Promise<void> {
     switch (frame.type) {
       case 'command': {
-        if (!this.keys) return
         const ws = this.relayWs
         const generation = this.sendGeneration
-        const command = (await decryptPayload(this.keys.aesKey, frame.data as string)) as RemoteCommand
-        if (this.relayWs !== ws || generation !== this.sendGeneration) return
+        const deviceId = typeof frame.mobileDeviceId === 'string' ? frame.mobileDeviceId : null
+        const channel = deviceId ? this.relayLinks.get(deviceId)?.channel : null
+        if (!deviceId || !channel || typeof frame.data !== 'string') {
+          log.warn('[RemoteControl] relay command without an open channel, dropping')
+          return
+        }
+        let command: RemoteCommand
+        try {
+          command = this.link().openCommand(channel, frame.data)
+        } catch (err) {
+          // Only the relay could have injected it; the channel itself stays usable.
+          log.warn('[RemoteControl] rejected relay command from %s: %s', deviceId, err instanceof Error ? err.message : String(err))
+          return
+        }
         trace('remote.in', command.type, command)
-        const deviceId = (frame.mobileDeviceId as string | undefined) ?? null
-        if (!deviceId) {
-          log.warn('[RemoteControl] relay command missing mobileDeviceId, dropping')
-          return
-        }
-        this.callbacks.onCommand(command, (requestId, data) => this.sendResponse(requestId, data, deviceId, ws, generation), { deviceId, transport: 'relay' })
+        this.callbacks.onCommand(command, (requestId, data) => this.sendResponse(requestId, data, deviceId, channel, ws, generation), { deviceId, transport: 'relay' })
         break
       }
-      case 'register': {
-        const deviceName = (frame.deviceName as string) ?? 'Unknown Device'
-        const deviceId = (frame.mobileDeviceId as string) ?? `unknown-${Date.now()}`
-        if (this.callbacks.isPairedDevice && !this.callbacks.isPairedDevice(deviceId)) {
-          log.warn('[RemoteControl] Rejecting unrecognized device:', deviceId)
-          this.relayWs?.send(JSON.stringify({ type: 'kicked', mobileDeviceId: deviceId }))
-          this.lanServer?.kickDevice(deviceId)
-          return
-        }
-        log.info('[CONN-DESK] register received deviceId=%s name=%s', deviceId, deviceName)
-        this.markDeviceOnline(deviceName, deviceId, 'relay')
+      case 'channel':
+        this.handleRelayChannel(frame as ChannelEnvelope & { mobileDeviceId?: unknown })
         break
-      }
       case 'peer_connected':
-        log.info('[CONN-DESK] peer_connected mobileDeviceId=%s, sending handshake', frame.mobileDeviceId ?? '(unknown)')
-        this.relayWs?.send(this.buildHandshakeFrame())
+        log.info('[CONN-DESK] peer_connected mobileDeviceId=%s, awaiting its channel', frame.mobileDeviceId ?? '(unknown)')
         break
       case 'peer_disconnected': {
         const deviceId = frame.mobileDeviceId as string | undefined
         if (deviceId) {
           log.info('[RemoteControl] Mobile peer disconnected: %s', deviceId)
+          this.relayLinks.delete(deviceId)
           this.markDeviceOffline(deviceId, 'relay')
         } else {
           log.info('[RemoteControl] Mobile peer disconnected (no deviceId)')
+          this.relayLinks.clear()
           for (const [id, info] of Array.from(this.connectedDevices)) {
             if (info.transports.has('relay')) this.markDeviceOffline(id, 'relay')
           }
         }
         break
       }
+    }
+  }
+
+  private handleRelayChannel(frame: ChannelEnvelope & { mobileDeviceId?: unknown }): void {
+    const deviceId = typeof frame.mobileDeviceId === 'string' ? frame.mobileDeviceId : null
+    const ws = this.relayWs
+    if (!deviceId || !ws || ws.readyState !== WebSocket.OPEN) return
+    let link = this.relayLinks.get(deviceId)
+    if ((frame.msg as { type?: unknown } | undefined)?.type === 'channel_hello' || !link) {
+      // A hello starts over: whatever channel this phone had is abandoned.
+      link = { handshake: new (this.link().PhoneHandshake)((keyId) => this.resolvePhoneKey(keyId), deviceId), channel: null }
+      this.relayLinks.set(deviceId, link)
+    }
+    const step = link.handshake.step(frame)
+    switch (step.kind) {
+      case 'challenge':
+        ws.send(JSON.stringify({ ...step.reply, mobileDeviceId: deviceId }))
+        return
+      case 'rejected':
+        log.warn('[RemoteControl] Rejecting relay phone %s: %s', deviceId, step.reason)
+        this.relayLinks.delete(deviceId)
+        ws.send(JSON.stringify({ type: 'kicked', mobileDeviceId: deviceId }))
+        return
+      case 'failed':
+        log.warn('[RemoteControl] Relay channel handshake failed for %s: %s', deviceId, step.reason)
+        this.relayLinks.delete(deviceId)
+        return
+      case 'established':
+        link.channel = step.channel
+        log.info('[CONN-DESK] relay channel established deviceId=%s', deviceId)
+        ws.send(JSON.stringify({ ...this.link().sealHandshake(step.channel, this.handshakeInfo()), mobileDeviceId: deviceId }))
+        this.markDeviceOnline(step.device.deviceName, deviceId, 'relay')
     }
   }
 
@@ -608,7 +708,7 @@ export class RemoteControlService {
             code: string; mobileDeviceId: string; deviceName: string
           }
           const name = deviceName ?? 'Mobile Device'
-          if (this.callbacks.isPairedDevice?.(mobileDeviceId)) {
+          if (this.callbacks.pairedPhones?.byId(mobileDeviceId)) {
             log.info('[RemoteControl] Device already paired:', mobileDeviceId)
             ws.send(JSON.stringify({ type: 'pair_already_paired' }))
             this.callbacks.onPairingAlreadyPaired?.({ deviceName: name })
@@ -639,8 +739,13 @@ export class RemoteControlService {
     if (!session || session.pendingCode === null) throw new Error('No pairing request received yet')
     if (session.pendingCode !== enteredCode) throw new Error('Incorrect pairing code')
 
+    // The phone gets its own channel secret, derived from the root and a fresh
+    // key id, under the QR's temporary key; the root itself never leaves.
+    const phoneLink = await loadPhoneLinkHost()
+    const keyId = newChannelKeyId()
     const encrypted = await encryptPayload(session.aesKey, {
-      masterSecret,
+      credential: { keyId, secretHex: phoneLink.deriveIssuedChannelSecret(masterSecret, keyId) },
+      roomId: await computeRoomId((await deriveKeys(masterSecret)).channelKeyHex),
       hostName: hostname(),
       relayUrl: this.relayUrl,
     })
@@ -649,7 +754,7 @@ export class RemoteControlService {
     const mobileDeviceId = session.pendingMobileDeviceId!
     const name = resolvePairedDeviceDisplayName(deviceName, session.pendingDeviceName ?? '')
     log.info('[RemoteControl] Pairing confirmed for:', name)
-    this.callbacks.onPairingConfirmed?.({ mobileDeviceId, deviceName: name })
+    this.callbacks.onPairingConfirmed?.({ mobileDeviceId, deviceName: name, keyId })
     await this.cancelPairing()
   }
 
@@ -669,12 +774,10 @@ export class RemoteControlService {
     const generation = this.sendGeneration
     this.terminalQueue = this.terminalQueue.then(async () => {
       if (!this.keys || generation !== this.sendGeneration || !this.hasAnyMobileTransport()) return
-      const data = await encryptHostPayload(this.keys.aesKey, event)
+      const framed = await frameHostPayload(event)
       if (generation !== this.sendGeneration) return
-      const payload: Record<string, unknown> = { type: 'terminal', data }
-      if (targetDeviceIds && targetDeviceIds.length > 0) payload.targets = targetDeviceIds
-      this.sendRelayFrame(payload, targetDeviceIds)
-      this.lanServer?.broadcastFrame(JSON.stringify(payload), targetDeviceIds)
+      this.sendRelayFramed('terminal', framed, targetDeviceIds)
+      this.lanServer?.sendFramed('terminal', framed, targetDeviceIds)
     }).catch(err => {
       log.error('[RemoteControl] Failed to send terminal frame:', err)
     })
@@ -683,34 +786,30 @@ export class RemoteControlService {
 
   private hasAnyMobileTransport(): boolean {
     const relayOpen = this.relayWs !== null && this.relayWs.readyState === WebSocket.OPEN
-    const lanActive = this.lanServer !== null && !this.lanServer.isEmpty()
-    return relayOpen || lanActive
+    const relayChannel = relayOpen && [...this.relayLinks.values()].some((link) => link.channel)
+    return relayChannel || this.lanServer?.hasRegisteredClient() === true
   }
 
   /**
-   * The relay delivers a broadcast only to phones on the relay, and buffers a
-   * targeted frame until each target ACKs — which a phone holding a LAN socket
-   * never does. Drop LAN phones from the targets and skip frames nobody on the
-   * relay would receive. Offline targets stay, so a reconnecting phone replays.
+   * Seal a framed payload once per phone holding a relay channel, skipping
+   * phones on the LAN, and address each copy to that phone alone (the relay
+   * buffers it for that phone's ACK). A frame sealed for a channel is
+   * unreadable on any other, so phones without a channel get nothing.
    */
-  private sendRelayFrame(payload: Record<string, unknown>, targetDeviceIds?: string[]): void {
-    if (this.relayWs?.readyState !== WebSocket.OPEN) return
-    if (!targetDeviceIds?.length) {
-      if ([...this.connectedDevices.values()].some((info) => info.transports.has('relay'))) this.relayWs.send(JSON.stringify(payload))
-      return
+  private sendRelayFramed(kind: 'event' | 'terminal', framed: Uint8Array, targetDeviceIds?: string[]): void {
+    const ws = this.relayWs
+    if (ws?.readyState !== WebSocket.OPEN) return
+    const targets = targetDeviceIds?.length ? new Set(targetDeviceIds) : null
+    for (const [deviceId, link] of this.relayLinks) {
+      if (!link.channel || (targets && !targets.has(deviceId))) continue
+      if (this.connectedDevices.get(deviceId)?.transports.has('lan')) continue
+      ws.send(JSON.stringify({ type: kind, targets: [deviceId], data: this.link().sealHostFrame(link.channel, { t: kind }, framed) }))
     }
-    const targets = targetDeviceIds.filter((id) => !this.connectedDevices.get(id)?.transports.has('lan'))
-    if (targets.length) this.relayWs.send(JSON.stringify({ ...payload, targets }))
   }
 
-  private sendEventFrame(encryptedData: string, targetDeviceIds?: string[]): void {
-    const basePayload: Record<string, unknown> = { type: 'event', data: encryptedData }
-    if (targetDeviceIds && targetDeviceIds.length > 0) basePayload.targets = targetDeviceIds
-    this.sendRelayFrame(basePayload, targetDeviceIds)
-    if (this.lanServer) {
-      const lanFrame = JSON.stringify({ ...basePayload, seq: ++this.lanFrameSeq })
-      this.lanServer.broadcastFrame(lanFrame, targetDeviceIds)
-    }
+  private sendEventFrame(framed: Uint8Array, targetDeviceIds?: string[]): void {
+    this.sendRelayFramed('event', framed, targetDeviceIds)
+    this.lanServer?.sendFramed('event', framed, targetDeviceIds, ++this.lanFrameSeq)
   }
 
   async sendAgentEvent(event: AgentEvent, targetDeviceIds?: string[]): Promise<void> {
@@ -824,20 +923,31 @@ export class RemoteControlService {
     this.queueSend([stripped], targetDeviceIds)
   }
 
-  private async sendResponse(requestId: string, data: unknown, mobileDeviceId?: string, ws = this.relayWs, generation = this.sendGeneration): Promise<void> {
-    if (!this.keys || !ws || this.relayWs !== ws || ws.readyState !== WebSocket.OPEN || generation !== this.sendGeneration) return
+  private async sendResponse(
+    requestId: string,
+    data: unknown,
+    mobileDeviceId: string,
+    channel: SecureChannel,
+    ws = this.relayWs,
+    generation = this.sendGeneration,
+  ): Promise<void> {
+    const current = () => !!ws && this.relayWs === ws && ws.readyState === WebSocket.OPEN && generation === this.sendGeneration
+      && this.relayLinks.get(mobileDeviceId)?.channel === channel
+    if (!this.keys || !current()) return
     try {
       trace('remote.resp', requestId, data)
-      const encrypted = await encryptHostPayload(this.keys.aesKey, data)
-      if (this.relayWs !== ws || ws.readyState !== WebSocket.OPEN || generation !== this.sendGeneration) return
+      const framed = await frameHostPayload(data)
+      // A response belongs to the channel its command arrived on.
+      if (!current()) return
+      const encrypted = this.link().sealHostFrame(channel, { t: 'response', requestId }, framed)
       if (encrypted.length <= WS_CHUNK_SIZE) {
-        ws.send(JSON.stringify({ type: 'response', requestId, data: encrypted, ...(mobileDeviceId ? { mobileDeviceId } : {}) }))
+        ws!.send(JSON.stringify({ type: 'response', requestId, data: encrypted, mobileDeviceId }))
       } else {
         const totalChunks = Math.ceil(encrypted.length / WS_CHUNK_SIZE)
         log.info(`[RemoteControl] Chunking response ${requestId}: ${encrypted.length} bytes → ${totalChunks} chunks`)
         for (let i = 0; i < totalChunks; i++) {
           const chunk = encrypted.slice(i * WS_CHUNK_SIZE, (i + 1) * WS_CHUNK_SIZE)
-          ws.send(JSON.stringify({ type: 'response_chunk', requestId, index: i, total: totalChunks, data: chunk, ...(mobileDeviceId ? { mobileDeviceId } : {}) }))
+          ws!.send(JSON.stringify({ type: 'response_chunk', requestId, index: i, total: totalChunks, data: chunk, mobileDeviceId }))
         }
       }
     } catch (err) {
@@ -864,8 +974,8 @@ export class RemoteControlService {
     this.sendQueue = this.sendQueue.then(async () => {
       if (!this.keys || generation !== this.sendGeneration) return
       if (!this.hasAnyMobileTransport()) return
-      const data = await encryptHostPayload(this.keys.aesKey, payload)
-      if (generation === this.sendGeneration) this.sendEventFrame(data, targetDeviceIds)
+      const framed = await frameHostPayload(payload)
+      if (generation === this.sendGeneration) this.sendEventFrame(framed, targetDeviceIds)
     }).catch(err => log.error('[RemoteControl] Failed to send events:', err))
     return this.sendQueue
   }

@@ -1,4 +1,4 @@
-import { restoreSession, type RelayClient, type SavedPairing, type RestoredSession } from '@superone/relay-client'
+import { hostLinkOf, restoreSession, type RelayClient, type SavedPairing, type RestoredSession } from '@superone/relay-client'
 import type { LanAddress } from './device-discovery'
 import type { SessionRef } from '@superone/shared/environment/refs'
 import type { RemoteCommand } from '@superone/shared/agent-types'
@@ -99,8 +99,10 @@ export async function resolveSessionLink(options: SessionLinkOptions): Promise<R
   }
   let base = sessionLinkBaseClient(options.client)
   if (pairing) {
+    const link = hostLinkOf(pairing)
+    if (!link) throw new Error('Pair this desktop again to open its sessions')
     connection = createMobileRelayConnection({
-      endpoint: { relayUrl: pairing.relayUrl, masterSecret: pairing.secret, identity: options.identity },
+      endpoint: { relayUrl: pairing.relayUrl, link, identity: options.identity },
       onEvents: (events, epoch) => route?.ingest(events, epoch), onTerminal: () => {}, restore: async () => 0, currentEpoch: () => 0,
       onConnection: () => {}, onStatus: () => {}, onShutdown: () => {}, onKicked: () => {},
       resolveLan: () => options.resolveLan(pairing.id), suppressDisconnect: () => true,

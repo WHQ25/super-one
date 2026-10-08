@@ -5504,6 +5504,8 @@ export interface PairedDevice {
    * `desktop` = another SuperOne desktop allowed to control this host.
    */
   clientKind?: PairedDeviceClientKind
+  /** Paired before per-device channel keys; it cannot connect until paired again. */
+  needsRepair?: boolean
 }
 
 export interface RemoteDeviceStatus {
@@ -5528,11 +5530,17 @@ export interface MobileUploadProgress {
   error?: string
 }
 
+/** `RemoteDeviceConfig.channelScheme` once the root issues per-device channel keys. */
+export const REMOTE_CHANNEL_SCHEME = 2
+
 export interface RemoteDeviceConfig {
   enabled: boolean
+  /** Host root secret. Never leaves the desktop; phones get secrets derived from it. */
   masterSecret: string
   deviceId: string
   relayUrl: string
+  /** Absent on configs whose root was shared with phones directly; those are rotated. */
+  channelScheme?: typeof REMOTE_CHANNEL_SCHEME
 }
 
 export type Locale = 'en' | 'zh'

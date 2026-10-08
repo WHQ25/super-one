@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { RelayClient, type SocketLike } from './client'
 
-const MASTER = '0123456789abcdef'.repeat(8)
+import { TEST_LINK } from './test-host-link'
 
 class MockSocket implements SocketLike {
   sent: string[] = []
@@ -46,7 +46,7 @@ describe('RelayClient heartbeat', () => {
 
   it('pings the relay on a cadence and keeps the socket while pongs come back', async () => {
     const { client, sockets, statuses } = makeClient()
-    await client.connectRelay({ relayUrl: 'wss://relay.example', masterSecret: MASTER, deviceId: 'd1' })
+    await client.connectRelay({ relayUrl: 'wss://relay.example', link: TEST_LINK, deviceId: 'd1' })
     const sock = sockets[0]!
     vi.advanceTimersByTime(100)
     expect(pings(sock)).toBe(1)
@@ -62,7 +62,7 @@ describe('RelayClient heartbeat', () => {
 
   it('treats a missed pong as a closed socket so the reconnect loop runs', async () => {
     const { client, sockets, statuses } = makeClient()
-    await client.connectRelay({ relayUrl: 'wss://relay.example', masterSecret: MASTER, deviceId: 'd1' })
+    await client.connectRelay({ relayUrl: 'wss://relay.example', link: TEST_LINK, deviceId: 'd1' })
     const sock = sockets[0]!
     const pending = client.request({ type: 'list_projects', requestId: 'r1' } as never, 60_000)
     vi.advanceTimersByTime(130)
@@ -74,7 +74,7 @@ describe('RelayClient heartbeat', () => {
 
   it('does not ping over LAN, where the desktop is the socket peer', async () => {
     const { client, sockets } = makeClient()
-    await client.connectLan('10.0.0.2', 7788, MASTER, { deviceId: 'd1', deviceName: 'Phone' })
+    await client.connectLan('10.0.0.2', 7788, TEST_LINK)
     vi.advanceTimersByTime(500)
     expect(pings(sockets[0]!)).toBe(0)
     expect(client.connected).toBe(true)
@@ -82,7 +82,7 @@ describe('RelayClient heartbeat', () => {
 
   it('stops the heartbeat of a socket that was replaced or disconnected', async () => {
     const { client, sockets } = makeClient()
-    await client.connectRelay({ relayUrl: 'wss://relay.example', masterSecret: MASTER, deviceId: 'd1' })
+    await client.connectRelay({ relayUrl: 'wss://relay.example', link: TEST_LINK, deviceId: 'd1' })
     await client.reconnect()
     const [first, second] = sockets as [MockSocket, MockSocket]
     vi.advanceTimersByTime(100)

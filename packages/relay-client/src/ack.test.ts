@@ -1,11 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { PROCESSED_SEQ_CAP, SeqAckTracker, TransportAckRegistry } from './ack'
 import { EventBuffer } from './buffer'
-import { deriveKeys } from './crypto'
-import { encryptHostTestPayload as encryptPayload } from './test-host-frame'
-import { handleInboundFrame, makeDecrypt } from './frames'
-
-const MASTER = '0123456789abcdef'.repeat(8)
+import { handleInboundFrame, type FrameDecrypt } from './frames'
 
 describe('SeqAckTracker', () => {
   it('adds seq before decrypt and ACKs on decrypt fail', () => {
@@ -66,29 +62,31 @@ describe('SeqAckTracker', () => {
   })
 })
 
+/** The frame layer is crypto-agnostic; sealing is covered by client and phone-link tests. */
+const plain = (payload: unknown) => JSON.stringify(payload)
+const plainDecrypt: FrameDecrypt = (data) => JSON.parse(data)
+
 describe('handleInboundFrame', () => {
   it('decrypts object and array envelopes without stamping envelope seq', async () => {
-    const { aesKeyBytes } = deriveKeys(MASTER)
-    const decrypt = makeDecrypt(aesKeyBytes)
+    const decrypt = plainDecrypt
     const tracker = new SeqAckTracker()
-    const obj = encryptPayload(aesKeyBytes, { type: 'status_change', status: 'idle' })
+    const obj = plain({ type: 'status_change', status: 'idle' })
     const a = handleInboundFrame({ type: 'event', seq: 1, data: obj }, tracker, decrypt)
     expect(a.kind).toBe('events')
     if (a.kind === 'events') {
       expect(a.events).toHaveLength(1)
       expect((a.events[0] as { seq?: number }).seq).toBeUndefined()
     }
-    const batch = encryptPayload(aesKeyBytes, [{ type: 'a' }, { type: 'b' }])
+    const batch = plain([{ type: 'a' }, { type: 'b' }])
     const b = handleInboundFrame({ type: 'event', seq: 2, data: batch }, tracker, decrypt)
     expect(b.kind).toBe('events')
     if (b.kind === 'events') expect(b.events).toHaveLength(2)
   })
 
   it('preserves event-owned seq values in mixed envelopes', () => {
-    const { aesKeyBytes } = deriveKeys(MASTER)
-    const decrypt = makeDecrypt(aesKeyBytes)
+    const decrypt = plainDecrypt
     const tracker = new SeqAckTracker()
-    const batch = encryptPayload(aesKeyBytes, [
+    const batch = plain([
       { type: 'a', seq: 77 },
       { type: 'b' },
     ])
@@ -111,10 +109,9 @@ describe('handleInboundFrame', () => {
   })
 
   it('ignores terminal frames for ACK', () => {
-    const { aesKeyBytes } = deriveKeys(MASTER)
-    const decrypt = makeDecrypt(aesKeyBytes)
+    const decrypt = plainDecrypt
     const tracker = new SeqAckTracker()
-    const data = encryptPayload(aesKeyBytes, { type: 'terminal_data', terminalId: 't1' })
+    const data = plain({ type: 'terminal_data', terminalId: 't1' })
     const effect = handleInboundFrame({ type: 'terminal', seq: 9, data }, tracker, decrypt)
     expect(effect.kind).toBe('terminal')
     expect(tracker.lastAckedSeq).toBe(0)
@@ -154,18 +151,15 @@ describe('handleInboundFrame', () => {
       kind: 'control',
       frame: { type: 'peer_disconnected' },
     })
-    expect(handleInboundFrame({ type: 'handshake', hostName: 'desktop' }, tracker, () => ({}))).toEqual({
-      kind: 'control',
-      frame: { type: 'handshake', hostName: 'desktop' },
-    })
+    // The host's handshake is sealed inside the channel; a cleartext one is ignored.
+    expect(handleInboundFrame({ type: 'handshake', hostName: 'desktop' }, tracker, () => ({}))).toEqual({ kind: 'drop' })
     expect(tracker.lastAckedSeq).toBe(1)
   })
 
   it('drops duplicate envelope seq', () => {
-    const { aesKeyBytes } = deriveKeys(MASTER)
-    const decrypt = makeDecrypt(aesKeyBytes)
+    const decrypt = plainDecrypt
     const tracker = new SeqAckTracker()
-    const data = encryptPayload(aesKeyBytes, { type: 'ping' })
+    const data = plain({ type: 'ping' })
     handleInboundFrame({ type: 'event', seq: 1, data }, tracker, decrypt)
     const dup = handleInboundFrame({ type: 'event', seq: 1, data }, tracker, decrypt)
     expect(dup.kind).toBe('drop')

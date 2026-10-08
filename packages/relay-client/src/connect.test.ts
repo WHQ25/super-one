@@ -1,22 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { deriveKeys } from './crypto'
 import { buildLanWsUrl, buildRelayWsUrl } from './connect'
 
-const MASTER = '0123456789abcdef'.repeat(8)
-
 describe('connect URLs', () => {
-  it('builds a signed relay URL without putting the secret in the query', async () => {
-    const { url, channelKeyHex } = await buildRelayWsUrl({
-      relayUrl: 'wss://relay.example',
-      masterSecret: MASTER,
+  it('builds a relay URL from the paired room and device slot, with no secret in it', () => {
+    const url = buildRelayWsUrl({
+      relayUrl: 'wss://relay.example/',
+      roomId: '0f'.repeat(16),
       role: 'mobile',
       deviceId: 'dev-1',
       now: () => 1700000000,
     })
-    expect(url).toContain('wss://relay.example/ws?role=mobile')
-    expect(url).toContain('deviceId=dev-1')
-    expect(url).not.toContain(MASTER)
-    expect(channelKeyHex).toBe(deriveKeys(MASTER).channelKeyHex)
+    expect(url).toBe(`wss://relay.example/ws?role=mobile&ts=1700000000&room=${'0f'.repeat(16)}&deviceId=dev-1`)
   })
 
   it('builds a LAN ws URL', () => {

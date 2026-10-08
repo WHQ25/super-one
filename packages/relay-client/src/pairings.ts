@@ -5,7 +5,12 @@ export type SavedPairing = {
   /** User-assigned label. Host name remains the transport-reported identity. */
   name?: string
   relayUrl: string
+  /** This phone's channel secret for the host (hex). Never sent over the network. */
   secret: string
+  /** Channel key id issued at pairing; absent on pairings made before per-device secrets. */
+  keyId?: string
+  /** The host's relay room and mDNS `roomId`, delivered at pairing. */
+  roomId?: string
   hostName?: string
   lan?: string
   desktopDeviceId?: string
@@ -32,6 +37,20 @@ export function parsePairings(raw: string | null): SavedPairing[] {
   } catch {
     return []
   }
+}
+
+/**
+ * Pairings from before per-device channel credentials carry the retired shared
+ * secret, which no host accepts any more; they must be paired again.
+ */
+export function pairingNeedsRepair(pairing: SavedPairing): boolean {
+  return !pairing.keyId || !pairing.roomId
+}
+
+/** The credential and room a connection needs, or null when the pairing must be redone. */
+export function hostLinkOf(pairing: SavedPairing): { credential: { keyId: string; secretHex: string }; roomId: string } | null {
+  if (!pairing.keyId || !pairing.roomId) return null
+  return { credential: { keyId: pairing.keyId, secretHex: pairing.secret }, roomId: pairing.roomId }
 }
 
 export function serializePairings(pairings: SavedPairing[]): string {

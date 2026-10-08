@@ -1,19 +1,44 @@
 # Relay crypto
 
 End-to-end encryption between a paired desktop host and the phone. The relay
-only sees ciphertext. The desktop implementation is
-`apps/desktop/src/main/remote-control-crypto.ts` (WebCrypto); the phone and other
-TS consumers use `packages/relay-client/src/crypto.ts`. Both must produce and
-accept the same bytes, which the golden vectors pin.
+only sees ciphertext. Every phone holds its own channel secret; phone frames use
+the [encrypted channel](#node-encrypted-channel) below, the same construction
+the node link uses ([phone link](#phone-link)). The static-key primitives live in
+`apps/desktop/src/main/remote-control-crypto.ts` (WebCrypto) and
+`packages/relay-client/src/crypto.ts`; both must produce and accept the same
+bytes, which the golden vectors pin.
 
-## Algorithm
+## Static-key primitives
 
-- HKDF-SHA-256, empty salt, info `channel-key` / `aes-key`, 256-bit output.
-- AES-256-GCM with a 12-byte random IV: `base64(IV || ciphertext || tag)`.
-- Auth: HMAC-SHA-256 over `${role}:${timestamp}` with the channel key.
-- Room id: first 32 hex characters of SHA-256(channel key).
-- Files: chunked envelope, format `0x02`; each chunk's AAD is
-  `${channelKeyHex}:${r2Key}:${index}`.
+- `deriveKeys`: HKDF-SHA-256, empty salt, info `channel-key` / `aes-key`, 256-bit output.
+- AES-256-GCM with a 12-byte random IV: `base64(IV || ciphertext || tag)`. Only
+  the pairing exchange uses this, under the QR's temporary key.
+- Room id: first 32 hex characters of SHA-256(channel key). The host room is
+  derived from the host root (`RemoteDeviceConfig.masterSecret`).
+- Relay file requests: HMAC-SHA-256 over `${role}:${timestamp}` with the host
+  room's channel key; the relay checks it and the `files/<room>/` key prefix.
+- Files: chunked envelope, format `0x02`, sealed under `deriveKeys(phone secret)`
+  of the phone that sends or receives it; each chunk's AAD is
+  `${channelKeyHex}:${r2Key}:${index}` with that phone's channel key.
+
+## Pairing
+
+The desktop shows a QR with a one-time channel id and a 32-byte temporary key.
+The phone sends `pair_request { code, mobileDeviceId, deviceName }` sealed under
+the temporary key through the relay's pairing room; after the user confirms the
+code, the desktop answers `pair_response` under the same key with
+`{ credential: { keyId, secretHex }, roomId, hostName, relayUrl }`. The key id is
+16 fresh random bytes (hex); the secret is the issued channel secret below,
+derived from the root, so the desktop stores only the key id
+(`paired_devices.channel_key_id`). The root never leaves the desktop. Removing a
+device deletes its key id, so its secret no longer resolves; re-pairing issues a
+new key id.
+
+Pairings made before per-device secrets carried the root itself. The desktop
+rotates such a root once (`RemoteDeviceConfig.channelScheme`), and lists rows
+without a key id as needing re-pair; the phone marks saved pairings without
+`keyId`/`roomId` the same way. A phone receiving a `pair_response` with a bare
+`masterSecret` reports that the desktop must be updated.
 
 ## Crypto backends
 
@@ -40,7 +65,7 @@ protocol, are in [mobile-remote-control.md](mobile-remote-control.md).
 
 ## Node encrypted channel
 
-Node traffic between desktops (and, later, through the relay) uses a
+Node traffic between desktops, and phone traffic to its host, uses a
 per-connection channel keyed by a pairing secret that is exchanged out of band
 and never sent over the network. Implementation:
 `packages/relay-client/src/secure-channel.ts` (noble, so it also runs on
@@ -69,8 +94,45 @@ it is described in [remote-node-service.md §11.3](remote-node-service.md).
   receiver rejects any sequence number that is not higher than the last one it
   accepted (replay, reorder). The node's first frame is `channel_ready`.
 
-The phone LAN link does not use this channel yet; its `register` frame still
-trusts a bare device id and its frames carry no sequence number.
+Frame bodies are bytes (`sealChannelBytes`); the node channel's bodies are JSON.
+
+## Phone link
+
+`packages/relay-client/src/phone-link.ts` (phone, `RelayClient`) and
+`apps/desktop/src/main/remote/phone-link-host.ts` (host, LAN server and relay
+connection) run the channel above over JSON text envelopes:
+
+- Handshake: `{ type: 'channel', msg }` carries hello, challenge and proof. A
+  challenge echoes the hello's nonce in `hello`, so the phone ignores one for an
+  older hello. The host resolves the key id to the paired device; over the relay
+  that device must also own the relay slot the hello came from. An unknown or
+  revoked key id is answered with `kicked`. After the proof the host sends
+  `{ type: 'channel', data }`, a sealed `handshake` frame (host name, LAN
+  addresses); only then does the phone send requests.
+- Frames: `command`, `event`, `response`, `response_chunk` and `terminal` keep
+  their envelopes, and `data` is one sealed channel frame, base64. The sealed
+  body is `headerLen:u16be || header JSON || payload`; the header names the kind
+  (and request id), so a relabelled frame fails. Host payloads are the host
+  application frame below; commands are raw JSON. The header is capped at
+  1 KiB (`REMOTE_LINK_HEADER_MAX_BYTES`).
+- Channels are per connection. A LAN socket handshakes once; a relay phone
+  handshakes when its socket opens and again whenever the relay announces the
+  desktop (`peer_connected`). The host seals each event once per phone channel
+  and addresses relay copies to that phone alone; responses are bound to the
+  channel their command arrived on. Replayed, reordered or tampered frames fail:
+  a LAN socket is closed, a relay command is dropped.
+- Frames sealed for an earlier connection cannot be opened, so the phone does
+  not ask the relay to replay: it rebases its ACK watermark on the first seq of
+  the new connection and restores the session (see
+  [mobile-remote-control.md](mobile-remote-control.md)).
+- Cleartext control frames remain: `kicked`, `desktop_shutdown`,
+  `peer_connected` / `peer_disconnected`, `ack`. Anyone who knows the room id
+  (any paired phone, including a removed one) can still send them or occupy a
+  relay slot: the relay does not authenticate room members. They cannot read or
+  forge frames.
+
+The desktop installs a `node:crypto` AES-GCM backend for the shared code and
+loads it lazily, outside the startup chunk.
 
 ## Golden vectors
 
@@ -79,13 +141,12 @@ trusts a bare device id and its frames carry no sequence number.
   `apps/desktop/src/main/remote-control-crypto.golden.test.ts` and
   `packages/relay-client/src/crypto.test.ts`.
 - [`host-payload-v1.json`](../../packages/relay-client/src/fixtures/host-payload-v1.json):
-  raw and deflated host application frames, checked by
-  `packages/relay-client/src/host-payload.test.ts`.
-
+  raw and deflated host application frames (sealed under a fixed static key for
+  the fixture), checked by `packages/relay-client/src/host-payload.test.ts`.
 - [`secure-channel-vectors.json`](../../packages/relay-client/src/fixtures/secure-channel-vectors.json):
-  node channel secret derivation, handshake proofs, direction keys and a sealed
-  frame with fixed nonces and IV. Checked, including against `node:crypto`, by
-  `packages/relay-client/src/secure-channel.test.ts`.
+  issued secret derivation, handshake proofs, direction keys, a sealed JSON frame
+  and a sealed phone link frame with fixed nonces and IVs. Checked, including
+  against `node:crypto`, by `secure-channel.test.ts` and `phone-link.test.ts`.
 
 The master secret is the test fixture `'0123456789abcdef'.repeat(8)`. Ciphertexts
 contain random IVs, so regenerating changes every value: recapture only when an

@@ -1,12 +1,12 @@
 import { networkLedger, networkMetricsEnabled } from './network-ledger'
-import { RelayClient, type MobileIdentity, type OpenSocket } from '@superone/relay-client'
+import { RelayClient, type HostLink, type MobileIdentity, type OpenSocket } from '@superone/relay-client'
 import { ReconnectController, type ConnectionState } from './reconnect-controller'
 import type { ReconnectInfo } from './device-status'
 import type { LanAddress } from './device-discovery'
 import { logConnection } from './relay-debug'
 
 /** Everything needed to reach one paired desktop over either route. */
-export type DesktopEndpoint = { relayUrl: string; masterSecret: string; identity: MobileIdentity }
+export type DesktopEndpoint = { relayUrl: string; link: HostLink; identity: MobileIdentity }
 
 export type MobileRelayConnectionHooks = {
   onEvents: (events: unknown[], epoch: number) => void
@@ -57,10 +57,10 @@ export function createMobileRelayConnection(hooks: MobileRelayConnectionHooks): 
   let handshakeSeen = false
   let lastDelayMs = 0
   let attempt = 0
-  const { relayUrl, masterSecret, identity } = hooks.endpoint
+  const { relayUrl, link, identity } = hooks.endpoint
   const dial = (lan: LanAddress | null) => lan
-    ? client.connectLan(lan.host, lan.port, masterSecret, identity)
-    : client.connectRelay({ relayUrl, masterSecret, deviceId: identity.deviceId, deviceName: identity.deviceName })
+    ? client.connectLan(lan.host, lan.port, link)
+    : client.connectRelay({ relayUrl, link, deviceId: identity.deviceId })
   const redial = async () => {
     client.startBuffering()
     const lan = await hooks.resolveLan()

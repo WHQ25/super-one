@@ -17,18 +17,21 @@ caches are in [transport.md](../../apps/mobile/docs/agent-reference/transport.md
 
 ## Payload framing
 
-Every application payload is AES-256-GCM sealed and base64 encoded inside a JSON
-envelope (`{ type, data, … }`). The two directions differ on purpose:
+Every application payload is one sealed frame of the phone's per-connection
+channel, base64 encoded inside a JSON envelope (`{ type, data, … }`); the sealed
+body carries an authenticated link header before the payload
+([relay-crypto.md](relay-crypto.md#phone-link)). The two directions differ on purpose:
 
 - **Host → phone** (events, responses, terminal frames): the plaintext is a
   five-byte header, `flag:u8` (`0x00` raw, `0x01` raw DEFLATE) and the original
   JSON byte length as `u32be`, followed by the body. The header is inside the
-  authenticated plaintext. Encoder: `encryptHostPayload` in
+  authenticated plaintext. Encoder: `frameHostPayload` in
   `apps/desktop/src/main/remote/payload-codec.ts`, using `frameRemotePayload` from
-  `packages/shared/src/remote-payload.ts`. Decoder: `decodeHostPlaintext` in
+  `packages/shared/src/remote-payload.ts`; the frame is built once and sealed
+  per phone channel. Decoder: `decodeHostPlaintext` in
   `packages/relay-client/src/host-payload.ts`.
 - **Phone → host** (commands): plain JSON, no header, no compression
-  (`encryptPayload` in `packages/relay-client/src/crypto.ts`). Compressing this
+  (`RelayClient#sendCommand` in `packages/relay-client/src/client.ts`). Compressing this
   direction would cost phone CPU and has not been shown to pay off; add it only on
   measured benefit, as a header change on both sides.
 
@@ -49,7 +52,8 @@ Rules:
   frames are not chunked; the batcher bounds them.
 - Relay and LAN use the same framing. Compression is inside the ciphertext, so
   the relay forwards opaque payloads and its envelopes and control frames are
-  unaffected. There is no version negotiation: desktop and phone upgrade together.
+  unaffected. There is no version negotiation: desktop and phone upgrade together,
+  and phones paired before per-device channel secrets must pair again.
 - Fixture: [`host-payload-v1.json`](../../packages/relay-client/src/fixtures/host-payload-v1.json)
   holds raw and deflated frames, checked by `host-payload.test.ts`.
 
@@ -80,9 +84,10 @@ encryption:
      advance one sequence at a time.
    - Non-`AgentEvent` payloads sent through `sendEventToMobile` flush the batcher
      first, preserving order.
-4. One serial encrypt queue seals each batch as a single frame and broadcasts it
-   to relay (sequenced by the relay) and LAN (sequenced by `lanFrameSeq`).
-   Terminal frames use their own serial queue.
+4. One serial queue frames each batch once, then seals one copy per phone
+   channel: relay copies are addressed to that phone (sequenced by the relay),
+   LAN copies go to its socket (sequenced by `lanFrameSeq`). Phones without a
+   channel get nothing. Terminal frames use their own serial queue.
 
 `stop()` disposes the batcher and bumps `sendGeneration`; queued work from the old
 generation is discarded rather than sent on a new connection.
@@ -95,9 +100,10 @@ generation is discarded rather than sent on a new connection.
   `list_pinned_sessions`) share one request (`request-coalescer.ts`); completed
   results are never memoized there. `send` is fire-and-forget.
 - **Responses are bound to the connection the command arrived on.** The relay
-  responder captures the socket and `sendGeneration` when the command arrives and drops
-  the response if either changed, including after the asynchronous compression
-  step. The LAN responder captures the originating socket and AES key. A response
+  responder captures the socket, `sendGeneration` and the phone's channel when the
+  command arrives and drops the response if any changed, including after the
+  asynchronous compression step. The LAN responder captures the originating
+  socket and its channel. A response
   therefore never lands on a newer connection that did not ask for it.
 - On the phone, opening a socket fails every pending RPC (`connection replaced`)
   and frames from a replaced socket are ignored.

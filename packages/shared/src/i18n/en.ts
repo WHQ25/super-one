@@ -4030,6 +4030,8 @@ export type Messages = {
       online: string
       lastSeen: string
       neverConnected: string
+      needsRepair: string
+      needsRepairHint: string
       remove: string
       customRelay: string
       deployCloudflare: string
@@ -8407,6 +8409,8 @@ export const en: Messages = {
       online: 'Online',
       lastSeen: 'Last seen {{date}}',
       neverConnected: 'Never connected',
+      needsRepair: 'Re-pair Required',
+      needsRepairHint: 'Paired before a security update. Remove it, then pair this phone again from Pair New Phone.',
       remove: 'Remove',
       customRelay: 'Custom Relay Server',
       deployCloudflare: 'Deploy to Cloudflare',

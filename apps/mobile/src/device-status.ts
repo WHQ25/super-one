@@ -11,6 +11,8 @@ export type DeviceStatus =
   | 'connecting'
   | 'connectedLan'
   | 'connectedCloud'
+  /** Paired before per-device channel keys; only a new pairing reconnects it. */
+  | 'repairRequired'
 
 export type DeviceReachability = { lan: boolean; relay: boolean }
 
@@ -42,7 +44,7 @@ export function isConnected(status: DeviceStatus): boolean {
 }
 
 export function isReachable(status: DeviceStatus): boolean {
-  return status !== 'offline' && status !== 'searchingLan' && status !== 'connecting'
+  return status !== 'offline' && status !== 'searchingLan' && status !== 'connecting' && status !== 'repairRequired'
 }
 
 export function isLanStatus(status: DeviceStatus): boolean {
@@ -58,6 +60,7 @@ export function isLanStatus(status: DeviceStatus): boolean {
  */
 export function deriveDeviceStatus(input: {
   pairingId: string
+  needsRepair?: boolean
   activePairingId: string | null
   activeTransport: 'lan' | 'relay' | null
   connectionState: 'connected' | 'reconnecting' | 'offline'
@@ -65,6 +68,7 @@ export function deriveDeviceStatus(input: {
   reachability: DeviceReachability | undefined
   searchingLan: boolean
 }): DeviceStatus {
+  if (input.needsRepair) return 'repairRequired'
   if (input.connectingPairingId === input.pairingId) return 'connecting'
   const active = input.activePairingId !== null && input.activePairingId === input.pairingId
   if (active && input.connectionState === 'connected') {
@@ -93,6 +97,8 @@ export function describeDeviceStatus(
   switch (status) {
     case 'offline':
       return { status, label: 'Offline', tone: 'danger', glyph: 'cloud-off', spin: false }
+    case 'repairRequired':
+      return { status, label: 'Re-pair Required', tone: 'warning', glyph: 'cloud-off', spin: false }
     case 'searchingLan':
       return { status, label: 'Searching local network…', tone: 'muted', glyph: 'wifi-search', spin: true }
     case 'onlineLan':

@@ -1,13 +1,21 @@
 /** Run: bun apps/desktop/scripts/benchmark-mobile-payload.ts (synthetic fixtures, no services). */
 import { deriveKeys, encryptPayload } from '../src/main/remote-control-crypto'
-import { encryptHostPayload } from '../src/main/remote/payload-codec'
-import { deriveKeys as mobileKeys, decryptHostPayload } from '@superone/relay-client/crypto'
+import { frameHostPayload } from '../src/main/remote/payload-codec'
+import { decodeHostPlaintext } from '@superone/relay-client/host-payload'
+import { openLinkFrame, sealLinkFrame } from '@superone/relay-client/phone-link'
+import { acceptClientHello, issueChannelCredential, startClientHandshake } from '@superone/relay-client/secure-channel'
 import { RemoteEventBatcher } from '../src/main/remote/event-batcher'
 import type { AgentEvent } from '@superone/shared/agent-types'
 
 const secret = '0123456789abcdef'.repeat(8)
 const host = await deriveKeys(secret)
-const mobile = mobileKeys(secret)
+// One phone link channel, as a paired phone would hold after its handshake.
+const credential = issueChannelCredential(secret.slice(0, 64), 'benchmark-phone')
+const hello = startClientHandshake(credential)
+const accept = acceptClientHello(hello.hello, () => credential.secretHex)
+const { proof, channel: phone } = hello.finish(accept.challenge)
+const hostChannel = accept.finish(proof)
+const seal = async (payload: unknown) => sealLinkFrame(hostChannel, { t: 'event' }, await frameHostPayload(payload))
 const envelopeBytes = (data: string, type = 'response') => Buffer.byteLength(JSON.stringify({ type, requestId: 'fixture', data }))
 let seed = 42
 const binary = Uint8Array.from({ length: 256 * 1024 }, () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed >>> 24 })
@@ -24,9 +32,9 @@ for (const [name, fixture] of Object.entries(fixtures)) {
   let wire = ''
   for (let i = 0; i < 6; i++) {
     const start = performance.now()
-    wire = await encryptHostPayload(host.aesKey, fixture)
+    wire = await seal(fixture)
     const encodedAt = performance.now()
-    const decoded = decryptHostPayload(mobile.aesKeyBytes, wire)
+    const decoded = decodeHostPlaintext(openLinkFrame(phone, wire).payload)
     if (JSON.stringify(decoded) !== JSON.stringify(fixture)) throw new Error(`Roundtrip failed: ${name}`)
     if (i > 0) timings.push({ encodeMs: encodedAt - start, decodeMs: performance.now() - encodedAt })
   }
@@ -41,5 +49,5 @@ for (let i = 0; i < events.length; i++) { batcher.push(events[i]!, ['phone']); i
 batcher.flush(); batcher.dispose()
 let oldBytes = 0, newBytes = 0
 for (const event of events) oldBytes += envelopeBytes(await encryptPayload(host.aesKey, [event]), 'event')
-for (const batch of batches) newBytes += envelopeBytes(await encryptHostPayload(host.aesKey, batch), 'event')
+for (const batch of batches) newBytes += envelopeBytes(await seal(batch), 'event')
 console.log(JSON.stringify({ runtime: process.version, synthetic: true, rows, stream: { events: events.length, oldFrames: events.length, newFrames: batches.length, oldBytes, newBytes } }, null, 2))

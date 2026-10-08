@@ -65,7 +65,6 @@ describe('RemoteControlService relay heartbeat', () => {
   async function startService(relayUrl: string) {
     service = new RemoteControlService(relayUrl, {
       onCommand: vi.fn(),
-      isPairedDevice: () => true,
       relayHeartbeat: { intervalMs: 40, timeoutMs: 40 },
     })
     await service.start({
@@ -83,7 +82,8 @@ describe('RemoteControlService relay heartbeat', () => {
     await waitFor(() => pings.length >= 3)
     expect(desktops).toHaveLength(1)
     expect(service!.isRelayConnected()).toBe(true)
-    expect(relay.controls).toEqual(['handshake'])
+    // Phones open their own channels; the desktop announces nothing on connect.
+    expect(relay.controls).toEqual([])
   })
 
   it('terminates a socket whose pings go unanswered and dials the relay again', async () => {
@@ -93,7 +93,6 @@ describe('RemoteControlService relay heartbeat', () => {
     // First socket dies on the missed pong; the reconnect path opens a second.
     await waitFor(() => closes.length >= 1 && desktops.length >= 2)
     expect(closes[0]).not.toBe(1000)
-    await waitFor(() => relay!.controls.filter(type => type === 'handshake').length >= 2)
-    expect(relay.controls.every(type => type === 'handshake')).toBe(true)
+    expect(relay.controls).toEqual([])
   })
 })

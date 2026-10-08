@@ -4,8 +4,11 @@ import type { ReadDesktopFileResponse, RemoteCommand } from '@superone/shared/ag
 import { SeqAckTracker } from './ack'
 import { EventBuffer } from './buffer'
 import { buildLanWsUrl, buildRelayWsUrl, type TransportKind } from './connect'
-import { decryptHostPayload, deriveKeys, encryptPayload } from './crypto'
-import { handleInboundFrame, type InboundFrame, type RelayControlFrame } from './frames'
+import { deriveKeys } from './crypto'
+import { handleInboundFrame, type FrameDecrypt, type InboundFrame, type RelayControlFrame } from './frames'
+import { decodeHostPlaintext } from './host-payload'
+import { LINK_CHANNEL_FRAME, openLinkFrame, sealLinkFrame } from './phone-link'
+import { SecureChannel, SecureChannelError, startClientHandshake, type ChannelCredential } from './secure-channel'
 import { createRelayHeartbeat, RELAY_PING, RELAY_PONG, type RelayHeartbeat } from '@superone/shared/relay-heartbeat'
 import { RpcInbox } from './rpc'
 import { uploadBytes, type HttpPut, type UploadBytesOptions } from './attachments'
@@ -24,12 +27,32 @@ export type SocketLike = {
 export type OpenSocket = (url: string) => SocketLike
 export type MobileIdentity = { deviceId: string; deviceName: string }
 
+/** What a phone holds for one paired host; the secret never crosses the network. */
+export type HostLink = { credential: ChannelCredential; roomId: string }
+
+type ChannelReady = { promise: Promise<void>; resolve: () => void; reject: (error: Error) => void }
+
+function channelReady(): ChannelReady {
+  let resolve!: () => void
+  let reject!: (error: Error) => void
+  const promise = new Promise<void>((res, rej) => { resolve = res; reject = rej })
+  // A connection nobody asked anything of must not surface an unhandled rejection.
+  promise.catch(() => {})
+  return { promise, resolve, reject }
+}
+
+const encoder = new TextEncoder()
+
 const defaultOpenSocket: OpenSocket = (url) => new WebSocket(url) as unknown as SocketLike
 
 export class RelayClient {
   private ws: SocketLike | null = null
-  private aesKeyBytes: Uint8Array | null = null
-  private channelKeyHex: string | null = null
+  private credential: ChannelCredential | null = null
+  /** Static per-pairing keys for relay-staged files; frames use the channel. */
+  private fileKeys: { aesKeyBytes: Uint8Array; channelKeyHex: string } | null = null
+  private channel: SecureChannel | null = null
+  private handshake: { nonce: string; finish: ReturnType<typeof startClientHandshake>['finish'] } | null = null
+  private ready: ChannelReady = channelReady()
   private readonly tracker = new SeqAckTracker()
   private readonly rpc = new RpcInbox()
   private readonly reads = new RequestCoalescer()
@@ -41,8 +64,8 @@ export class RelayClient {
   private kind: TransportKind = 'relay'
   private closed = false
   private last:
-    | { kind: 'relay'; relayUrl: string; masterSecret: string; deviceId?: string; deviceName?: string }
-    | { kind: 'lan'; host: string; port: number; masterSecret: string; identity?: MobileIdentity }
+    | { kind: 'relay'; relayUrl: string; link: HostLink; deviceId: string }
+    | { kind: 'lan'; host: string; port: number; link: HostLink }
     | null = null
 
   constructor(
@@ -86,43 +109,23 @@ export class RelayClient {
     return this.buffer.release()
   }
 
-  async connectRelay(opts: {
-    relayUrl: string
-    masterSecret: string
-    deviceId?: string
-    deviceName?: string
-  }): Promise<void> {
-    const sameRelay = this.last?.kind === 'relay'
-      && this.last.relayUrl === opts.relayUrl
-      && this.last.masterSecret === opts.masterSecret
-      && this.last.deviceId === opts.deviceId
-      && this.last.deviceName === opts.deviceName
-    if (!sameRelay) this.tracker.clear()
+  /**
+   * The relay slot is keyed by `deviceId`; the host checks it against the
+   * device bound to the credential. The desktop may be away: the handshake then
+   * runs when the relay announces it (`peer_connected`).
+   */
+  async connectRelay(opts: { relayUrl: string; link: HostLink; deviceId: string }): Promise<void> {
     this.last = { kind: 'relay', ...opts }
     this.kind = 'relay'
     this.closed = false
-    const built = await buildRelayWsUrl({
-      relayUrl: opts.relayUrl,
-      masterSecret: opts.masterSecret,
-      role: 'mobile',
-      deviceId: opts.deviceId,
-    })
-    this.channelKeyHex = built.channelKeyHex
-    const identity = opts.deviceId
-      ? { deviceId: opts.deviceId, deviceName: opts.deviceName ?? 'Mobile' }
-      : undefined
-    await this.open(built.url, built.aesKeyBytes, true, identity)
+    await this.open(buildRelayWsUrl({ relayUrl: opts.relayUrl, roomId: opts.link.roomId, role: 'mobile', deviceId: opts.deviceId }), opts.link)
   }
 
-  async connectLan(host: string, port: number, masterSecret: string, identity?: MobileIdentity): Promise<void> {
-    this.last = { kind: 'lan', host, port, masterSecret, ...(identity ? { identity } : {}) }
+  async connectLan(host: string, port: number, link: HostLink): Promise<void> {
+    this.last = { kind: 'lan', host, port, link }
     this.kind = 'lan'
     this.closed = false
-    const keys = deriveKeys(masterSecret)
-    this.channelKeyHex = keys.channelKeyHex
-    // LAN frames carry the desktop's run-wide counter, not a per-socket seq.
-    this.tracker.rebase()
-    await this.open(buildLanWsUrl(host, port), keys.aesKeyBytes, false, identity)
+    await this.open(buildLanWsUrl(host, port), link)
   }
 
   disconnect(): void {
@@ -137,18 +140,20 @@ export class RelayClient {
     const ws = this.ws
     this.ws = null
     this.detachAndClose(ws)
+    this.resetChannel(new Error('disconnected'))
     this.tracker.clear()
     this.buffer.stop()
     if (ws) this.hooks.onStatus?.(false)
   }
 
   request(command: RemoteCommand, timeoutMs = 15_000): Promise<unknown> {
-    if (!this.ws || !this.aesKeyBytes) return Promise.reject(new Error('not connected'))
+    if (!this.ws) return Promise.reject(new Error('not connected'))
     const ws = this.ws
-    const result = this.reads.run(command, timeoutMs, () => {
+    const result = this.reads.run(command, timeoutMs, async () => {
       const started = performance.now()
-      const encoding = started
-      const pending = this.rpc.begin(command, frame => this.sendFrame(ws, JSON.stringify(frame)), this.aesKeyBytes!, timeoutMs)
+      await this.whenChannelReady(ws, timeoutMs, command.type)
+      const encoding = performance.now()
+      const pending = this.rpc.begin(command, payload => this.sendCommand(ws, payload), Math.max(1, timeoutMs - (encoding - started)))
       this.metric({ kind: 'encode', name: command.type, durationMs: performance.now() - encoding, bytes: this.hooks.onMetric ? jsonBytes(command) : 0 })
       if (this.hooks.onMetric) {
         const record = () => this.metric({ kind: 'rpc', name: command.type, durationMs: performance.now() - started })
@@ -163,13 +168,13 @@ export class RelayClient {
     input: Omit<UploadBytesOptions, 'transport' | 'lanHost' | 'aesKeyBytes' | 'channelKeyHex' | 'request' | 'put'>,
     put: HttpPut,
   ): Promise<string> {
-    if (!this.ws || !this.aesKeyBytes || !this.channelKeyHex) return Promise.reject(new Error('not connected'))
+    if (!this.ws || !this.fileKeys) return Promise.reject(new Error('not connected'))
     return uploadBytes({
       ...input,
       transport: this.kind,
       lanHost: this.last?.kind === 'lan' ? this.last.host : undefined,
-      aesKeyBytes: this.aesKeyBytes,
-      channelKeyHex: this.channelKeyHex,
+      aesKeyBytes: this.fileKeys.aesKeyBytes,
+      channelKeyHex: this.fileKeys.channelKeyHex,
       request: (command, timeoutMs) => this.request(command, timeoutMs),
       put,
     })
@@ -184,20 +189,93 @@ export class RelayClient {
       file,
       transport: this.kind,
       lanHost: this.last?.kind === 'lan' ? this.last.host : undefined,
-      aesKeyBytes: this.aesKeyBytes,
-      channelKeyHex: this.channelKeyHex,
+      aesKeyBytes: this.fileKeys?.aesKeyBytes ?? null,
+      channelKeyHex: this.fileKeys?.channelKeyHex ?? null,
       ...(get ? { get } : {}),
       ...(onProgress ? { onProgress } : {}),
     })
   }
 
-  /** Fire-and-forget encrypted command. Terminal I/O uses this — results arrive on the terminal channel. */
+  /**
+   * Fire-and-forget encrypted command. Terminal I/O uses this — results arrive
+   * on the terminal channel. Before the channel is up it waits for it, in order.
+   */
   send(command: RemoteCommand): void {
-    if (!this.ws || !this.aesKeyBytes) throw new Error('not connected')
-    const started = performance.now()
-    const data = encryptPayload(this.aesKeyBytes, command)
-    this.metric({ kind: 'encode', name: command.type, durationMs: performance.now() - started, bytes: this.hooks.onMetric ? jsonBytes(command) : 0 })
-    this.sendFrame(this.ws, JSON.stringify({ type: 'command', data }))
+    const ws = this.ws
+    if (!ws) throw new Error('not connected')
+    const deliver = () => {
+      const started = performance.now()
+      this.sendCommand(ws, command)
+      this.metric({ kind: 'encode', name: command.type, durationMs: performance.now() - started, bytes: this.hooks.onMetric ? jsonBytes(command) : 0 })
+    }
+    if (this.channel && this.handshake === null) {
+      deliver()
+      return
+    }
+    void this.ready.promise.then(() => { if (this.ws === ws) deliver() }, () => {})
+  }
+
+  private sendCommand(ws: SocketLike, command: unknown): void {
+    const channel = this.channel
+    if (this.ws !== ws || !channel) throw new Error('not connected')
+    const data = sealLinkFrame(channel, { t: 'command' }, encoder.encode(JSON.stringify(command)))
+    this.sendFrame(ws, JSON.stringify({ type: 'command', data }))
+  }
+
+  /** Resolves once the host has proven the pairing secret on this socket. */
+  private whenChannelReady(ws: SocketLike, timeoutMs: number, name: string): Promise<void> {
+    if (this.ws !== ws) return Promise.reject(new Error('connection replaced'))
+    if (this.channel && this.handshake === null) return Promise.resolve()
+    return new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`rpc timeout: ${name}`)), timeoutMs)
+      this.ready.promise.then(
+        () => { clearTimeout(timer); resolve() },
+        (error: Error) => { clearTimeout(timer); reject(error) },
+      )
+    })
+  }
+
+  /** Forget the channel of the current socket; waiters fail with `error` and a new wait begins. */
+  private resetChannel(error: Error): void {
+    this.channel = null
+    this.handshake = null
+    this.ready.reject(error)
+    this.ready = channelReady()
+  }
+
+  private startHandshake(ws: SocketLike): void {
+    if (!this.credential || this.ws !== ws) return
+    this.resetChannel(new Error('channel restarted'))
+    const hs = startClientHandshake(this.credential)
+    this.handshake = { nonce: hs.hello.nonce, finish: hs.finish }
+    this.sendFrame(ws, JSON.stringify({ type: LINK_CHANNEL_FRAME, msg: hs.hello }))
+  }
+
+  private onChannelFrame(ws: SocketLike, frame: { msg?: unknown; hello?: unknown; data?: unknown }): void {
+    if (frame.msg !== undefined) {
+      // A challenge answers one hello; an older hello's challenge is stale.
+      const hs = this.handshake
+      if (!hs || frame.hello !== hs.nonce) return
+      try {
+        const { proof, channel } = hs.finish(frame.msg)
+        this.channel = channel
+        this.sendFrame(ws, JSON.stringify({ type: LINK_CHANNEL_FRAME, msg: proof }))
+      } catch (error) {
+        // The host could not prove the secret: not our host. Drop the socket.
+        this.handleClosed(ws, error instanceof Error ? error : new Error('channel handshake failed'))
+      }
+      return
+    }
+    if (typeof frame.data !== 'string' || !this.channel || !this.handshake) return
+    try {
+      const { header } = openLinkFrame(this.channel, frame.data)
+      if (header.t !== 'handshake') throw new SecureChannelError('channel_protocol', 'expected handshake')
+      this.handshake = null
+      this.ready.resolve()
+      this.hooks.onControl?.({ type: 'handshake', hostName: header.hostName })
+    } catch (error) {
+      this.handleClosed(ws, error instanceof Error ? error : new Error('channel handshake failed'))
+    }
   }
 
   /** Foreground liveness check; an open relay socket alone does not prove liveness. */
@@ -231,15 +309,10 @@ export class RelayClient {
     if (!last) return Promise.reject(new Error('never connected'))
     this.buffer.start()
     if (last.kind === 'relay') return this.connectRelay(last)
-    return this.connectLan(last.host, last.port, last.masterSecret, last.identity)
+    return this.connectLan(last.host, last.port, last.link)
   }
 
-  private async open(
-    url: string,
-    aesKeyBytes: Uint8Array,
-    replay: boolean,
-    identity?: MobileIdentity,
-  ): Promise<void> {
+  private async open(url: string, link: HostLink): Promise<void> {
     this.cancelConnect?.()
     this.cancelConnect = null
     this.clearAckTimer()
@@ -250,8 +323,14 @@ export class RelayClient {
     const previous = this.ws
     this.ws = null
     this.detachAndClose(previous)
+    this.resetChannel(new Error('connection replaced'))
     this.closed = false
-    this.aesKeyBytes = aesKeyBytes
+    this.credential = link.credential
+    const keys = deriveKeys(link.credential.secretHex)
+    this.fileKeys = { aesKeyBytes: keys.aesKeyBytes, channelKeyHex: keys.channelKeyHex }
+    // Frames sealed for an earlier connection cannot be opened on this one, so
+    // nothing is replayed: the next relay seq (or the LAN counter) is the base.
+    this.tracker.rebase()
     const ws = (this.hooks.openSocket ?? defaultOpenSocket)(url)
     this.ws = ws
     await new Promise<void>((resolve, reject) => {
@@ -291,18 +370,9 @@ export class RelayClient {
       this.detachAndClose(ws)
       return
     }
-    if (identity) {
-      this.sendFrame(ws, JSON.stringify({
-        type: 'register',
-        deviceName: identity.deviceName,
-        mobileDeviceId: identity.deviceId,
-      }))
-    }
     this.hooks.onStatus?.(true)
-    if (replay) {
-      const fromSeq = this.tracker.lastAckedSeq + 1
-      this.sendFrame(ws, JSON.stringify({ type: 'replay', fromSeq }))
-    }
+    if (this.ws !== ws) return
+    this.startHandshake(ws)
     // Only the relay answers pings; on LAN the desktop is the socket peer, so a
     // dead link surfaces as request failures instead.
     if (this.kind === 'relay') {
@@ -317,15 +387,16 @@ export class RelayClient {
     }
   }
 
-  private handleClosed(ws: SocketLike): void {
+  private handleClosed(ws: SocketLike, error: Error = new Error('connection closed')): void {
     if (this.ws !== ws) return
     this.ws = null
     this.clearAckTimer()
     this.probe?.finish(false)
     this.stopHeartbeat()
     this.detachAndClose(ws)
+    this.resetChannel(error)
     this.reads.clear()
-    this.rpc.failAll(new Error('connection closed'))
+    this.rpc.failAll(error)
     this.hooks.onStatus?.(false)
   }
 
@@ -361,14 +432,31 @@ export class RelayClient {
     } catch {
       return
     }
-    if (!this.aesKeyBytes) return
-    const decrypt = (data: string) => {
+    const ws = this.ws
+    if (!ws) return
+    if (frame.type === LINK_CHANNEL_FRAME) {
+      this.onChannelFrame(ws, frame as { msg?: unknown; hello?: unknown; data?: unknown })
+      return
+    }
+    if (frame.type === 'peer_connected' && this.kind === 'relay') {
+      // A desktop that (re)joined the room holds no channel for us yet.
+      this.rpc.failAll(new Error('desktop reconnected'))
+      this.reads.clear()
+      this.startHandshake(ws)
+    } else if (frame.type === 'peer_disconnected' && this.kind === 'relay') {
+      this.resetChannel(new Error('desktop disconnected'))
+    }
+    const decrypt: FrameDecrypt = (data, kind, requestId) => {
+      const channel = this.channel
+      if (!channel || this.handshake) throw new Error('channel not established')
       const started = performance.now()
-      let decryptMs = 0
-      const payload = decryptHostPayload(this.aesKeyBytes!, data, this.hooks.onMetric ? ms => {
-        decryptMs = ms
-        this.metric({ kind: 'decrypt', name: frame.type ?? 'unknown', durationMs: ms })
-      } : undefined)
+      const { header, payload: framed } = openLinkFrame(channel, data)
+      if (header.t !== kind || (header.t === 'response' && header.requestId !== requestId)) {
+        throw new SecureChannelError('channel_protocol', `link frame kind ${header.t} where ${kind} was expected`)
+      }
+      const decryptMs = performance.now() - started
+      if (this.hooks.onMetric) this.metric({ kind: 'decrypt', name: frame.type ?? 'unknown', durationMs: decryptMs })
+      const payload = decodeHostPlaintext(framed)
       if (this.hooks.onMetric) this.metric({ kind: 'decoded', name: frame.type ?? 'unknown', bytes: jsonBytes(payload), durationMs: performance.now() - started - decryptMs })
       return payload
     }
@@ -412,7 +500,7 @@ export class RelayClient {
         try {
           const assembled = this.rpc.ingestChunk(effect.requestId, effect.index, effect.total, effect.data)
           if (assembled) {
-            this.rpc.complete(effect.requestId, decrypt(assembled))
+            this.rpc.complete(effect.requestId, decrypt(assembled, 'response', effect.requestId))
           }
         } catch (error) {
           this.rpc.fail(effect.requestId, error)

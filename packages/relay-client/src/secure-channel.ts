@@ -217,19 +217,18 @@ export function acceptClientHello(
 }
 
 /**
- * `IV(12) || AES-256-GCM(seq:u64be || JSON)` with the channel label as AAD.
- * Exposed for golden vectors; use `SecureChannel` otherwise.
+ * `IV(12) || AES-256-GCM(seq:u64be || body)` with the channel label as AAD.
+ * Exposed for golden vectors and byte-framed links; use `SecureChannel` otherwise.
  */
-export function sealChannelFrame(
+export function sealChannelBytes(
   key: Uint8Array,
   seq: number,
-  payload: unknown,
+  body: Uint8Array,
   iv: Uint8Array = randomBytes(IV_BYTES),
 ): Uint8Array {
-  const json = encoder.encode(JSON.stringify(payload))
-  const plain = new Uint8Array(SEQ_BYTES + json.length)
+  const plain = new Uint8Array(SEQ_BYTES + body.length)
   new DataView(plain.buffer).setBigUint64(0, BigInt(seq))
-  plain.set(json, SEQ_BYTES)
+  plain.set(body, SEQ_BYTES)
   const sealed = aesGcm().seal(key, iv, plain, AAD)
   const out = new Uint8Array(IV_BYTES + sealed.length)
   out.set(iv, 0)
@@ -237,7 +236,7 @@ export function sealChannelFrame(
   return out
 }
 
-export function openChannelFrame(key: Uint8Array, frame: Uint8Array): { seq: number; payload: unknown } {
+export function openChannelBytes(key: Uint8Array, frame: Uint8Array): { seq: number; body: Uint8Array } {
   if (frame.length < IV_BYTES + TAG_BYTES + SEQ_BYTES) {
     throw new SecureChannelError('channel_decrypt', 'channel frame too short')
   }
@@ -249,13 +248,30 @@ export function openChannelFrame(key: Uint8Array, frame: Uint8Array): { seq: num
   }
   const seq = new DataView(plain.buffer, plain.byteOffset, plain.byteLength).getBigUint64(0)
   if (seq > BigInt(Number.MAX_SAFE_INTEGER)) throw new SecureChannelError('channel_replay', 'channel sequence overflow')
-  let payload: unknown
+  return { seq: Number(seq), body: plain.subarray(SEQ_BYTES) }
+}
+
+/** A JSON-bodied channel frame; the node channel carries these. */
+export function sealChannelFrame(
+  key: Uint8Array,
+  seq: number,
+  payload: unknown,
+  iv: Uint8Array = randomBytes(IV_BYTES),
+): Uint8Array {
+  return sealChannelBytes(key, seq, encoder.encode(JSON.stringify(payload)), iv)
+}
+
+export function openChannelFrame(key: Uint8Array, frame: Uint8Array): { seq: number; payload: unknown } {
+  const { seq, body } = openChannelBytes(key, frame)
+  return { seq, payload: parseJsonBody(body) }
+}
+
+function parseJsonBody(body: Uint8Array): unknown {
   try {
-    payload = JSON.parse(decoder.decode(plain.subarray(SEQ_BYTES)))
+    return JSON.parse(decoder.decode(body))
   } catch {
     throw new SecureChannelError('channel_protocol', 'channel frame is not JSON')
   }
-  return { seq: Number(seq), payload }
 }
 
 /** One established connection. Sequence numbers start at 1 in each direction. */
@@ -269,17 +285,25 @@ export class SecureChannel {
   ) {}
 
   seal(payload: unknown): Uint8Array {
-    this.sendSeq += 1
-    return sealChannelFrame(this.sendKey, this.sendSeq, payload)
+    return this.sealBytes(encoder.encode(JSON.stringify(payload)))
   }
 
   /** Throws on tampering, a wrong key, or a sequence number that does not increase. */
   open(frame: Uint8Array): unknown {
-    const { seq, payload } = openChannelFrame(this.recvKey, frame)
+    return parseJsonBody(this.openBytes(frame))
+  }
+
+  sealBytes(body: Uint8Array): Uint8Array {
+    this.sendSeq += 1
+    return sealChannelBytes(this.sendKey, this.sendSeq, body)
+  }
+
+  openBytes(frame: Uint8Array): Uint8Array {
+    const { seq, body } = openChannelBytes(this.recvKey, frame)
     if (seq <= this.recvSeq) {
       throw new SecureChannelError('channel_replay', `channel sequence ${seq} after ${this.recvSeq}`)
     }
     this.recvSeq = seq
-    return payload
+    return body
   }
 }

@@ -476,7 +476,7 @@ export function applyClaudeEventToRuntime(
                 ...message,
                 status: 'error' as const,
                 content: sealStreamingTools(message.content),
-                metadata: { ...message.metadata, errorInfo: event.errorInfo ?? { raw: event.error } },
+                metadata: { ...message.metadata, ...event.metadata, errorInfo: event.errorInfo ?? { raw: event.error } },
               }
         )),
       }

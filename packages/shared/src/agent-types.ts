@@ -735,6 +735,11 @@ export interface MessageMetadata {
   costUsd?: number
   durationMs?: number
   durationApiMs?: number
+  /**
+   * ISO time the turn reached a terminal state (complete, interrupted or error).
+   * Stamped once by the host, so live clients and the persisted row agree.
+   */
+  completedAt?: string
   numTurns?: number
   usage?: UsageInfo
   modelUsage?: Record<string, ModelUsageInfo>
@@ -1857,7 +1862,7 @@ export type AgentEventBase =
   | { type: 'user_message_send_failed'; clientMessageId: string; error: string }
   | { type: 'message_complete'; messageId: string; metadata?: MessageMetadata }
   | { type: 'message_interrupted'; messageId: string; metadata?: MessageMetadata }
-  | { type: 'message_error'; messageId: string; error: string; errorInfo?: AgentErrorInfo }
+  | { type: 'message_error'; messageId: string; error: string; errorInfo?: AgentErrorInfo; metadata?: MessageMetadata }
   | { type: 'status_change'; status: AgentStatus }
   | { type: 'permission_request'; request: PermissionRequest }
   | { type: 'permission_mode_change'; mode: PermissionMode }

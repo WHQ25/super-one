@@ -20,6 +20,7 @@ import type {
   UserQuestion,
 } from './agent-types'
 import { buildAgentErrorInfo } from './agent-error'
+import { stampCompletedAt } from './message-completed-at'
 import type { EnvironmentEventEnvelope } from './environment/events'
 import { SESSION_DURABLE_EVENT } from './environment/session-events'
 
@@ -255,7 +256,8 @@ export function createNodeSessionEventMapper(ctx: NodeSessionEventMapContext): N
     const payload = asRecord(envelope.payload)
     const out: AgentEvent[] = []
     const push = (event: AgentEvent) => {
-      out.push(stamp(event, ctx, envelope.sequence))
+      // The envelope time is when the node logged the event, not when this client saw it.
+      out.push(stamp(stampCompletedAt(event, new Date(envelope.timestamp).toISOString()), ctx, envelope.sequence))
     }
 
     switch (eventType) {

@@ -1,6 +1,7 @@
 import { McpAppsError, type McpAppsBinding, type McpAppOrigin, type McpAppsProvider } from '@superone/shared/mcp-apps'
 import { MOD_UI_MUTATING_OPS, MOD_UI_UNAVAILABLE, type ModUiOp, type ModUiRequest, type ModUiResult } from '@superone/shared/mod-ui'
 import { updateMcpAppAttachments } from '@superone/shared/mcp-apps-state'
+import { stampCompletedAt } from '@superone/shared/message-completed-at'
 import { withMcpAppContext } from './mcp-app-context'
 import { admitTurnAttachments } from '@superone/shared/attachment-turn'
 import { assertCodexAccountSwitchAllowed } from '@superone/shared/codex-accounts'
@@ -2067,10 +2068,11 @@ export class Session implements SessionContract {
     } else if (event.type === 'compact_boundary') {
       this._compacting = false
     }
-    // The divider row's id travels on the event so every reducer mints the same row.
+    // The divider row's id travels on the event so every reducer mints the same row,
+    // and so does a turn's completion time.
     const stamped = event.type === 'compact_boundary' && !event.id
       ? ({ ...event, id: newMessageId('compact') } as AgentEvent)
-      : event
+      : stampCompletedAt(event)
     const sequenced = stamped.seq === undefined
       ? ({ ...stamped, ...nextEventSeq() } as AgentEvent)
       : stamped
@@ -2335,6 +2337,7 @@ export class Session implements SessionContract {
         result,
         durationMs: codexMeta?.durationMs as number | undefined,
         model: codexMeta?.model as string | undefined,
+        completedAt: event.metadata?.completedAt,
       })
       const endStampedMessages = next.messages.map((message) => {
         if (message.id !== event.messageId || event.seq === undefined) return message

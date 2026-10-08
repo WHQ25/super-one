@@ -342,12 +342,14 @@ export function finalizeCodexAssistantMessage(
     result?: CodexRunResult
     durationMs?: number
     model?: string
+    completedAt?: string
   },
 ): CodexSessionRuntime {
   const streamedTokens = runtime.streamingTokensByMessageId[args.messageId]
   const consumedTokens = args.result?.turnUsage
     ? { input: args.result.turnUsage.inputTokens, output: args.result.turnUsage.outputTokens }
     : streamedTokens
+  const completedAt = args.completedAt ? { completedAt: args.completedAt } : {}
   const nextMessages = runtime.messages.map((message) => {
     if (message.id !== args.messageId) return message
     if (args.status !== 'complete' || !args.result) {
@@ -359,7 +361,7 @@ export function finalizeCodexAssistantMessage(
         ...message,
         status: args.status,
         content: [{ type: 'text' as const, text: args.text }],
-        metadata: sealCodexMetadata(message.metadata),
+        metadata: sealCodexMetadata({ ...message.metadata, ...completedAt }),
       }
     }
     return {
@@ -368,6 +370,7 @@ export function finalizeCodexAssistantMessage(
       content: [{ type: 'text' as const, text: args.text }],
       metadata: args.result.usage ? {
         ...message.metadata,
+        ...completedAt,
         durationMs: args.durationMs,
         usage: args.result.turnUsage ?? {
           inputTokens: Math.max(0, args.result.usage.lastInputTokens - args.result.usage.lastCachedInputTokens),
@@ -387,6 +390,7 @@ export function finalizeCodexAssistantMessage(
         },
       } : {
         ...message.metadata,
+        ...completedAt,
         durationMs: args.durationMs,
         codex: {
           threadId: args.result.threadId,

@@ -152,6 +152,7 @@ export function reduceLifecycle(
             status: 'error' as const,
             metadata: sealCodexMetadata({
               ...msg.metadata,
+              ...event.metadata,
               errorInfo: event.errorInfo ?? { raw: event.error },
             }),
             content: sealStreamingTools(msg.content),

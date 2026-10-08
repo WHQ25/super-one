@@ -451,17 +451,23 @@ export function buildSessionMessageCatalog(
     ) {
       resumePointId = session.providerResume
     }
+    const createdAt = typeof block.createdAt === 'number' ? block.createdAt : Date.now()
+    // The runtime appends an assistant block only once its turn finishes, so its
+    // createdAt is the completion time.
+    const metadata = role === 'assistant'
+      ? { ...extra.metadata, completedAt: new Date(createdAt).toISOString() }
+      : extra.metadata
     out.push({
       id: block.id,
       role,
       text: typeof block.text === 'string' ? block.text : '',
-      createdAt: typeof block.createdAt === 'number' ? block.createdAt : Date.now(),
+      createdAt,
       sortOrder: i,
       ...(role === 'user' && block.userMessageContent ? { content: block.userMessageContent } : orderedContent && orderedContent.length > 0 ? { content: orderedContent } : {}),
       ...(block.contexts ? { contexts: block.contexts } : {}),
       ...(block.attachments ? { attachments: block.attachments.map(item => ({ ...item, name: item.name ?? 'Attachment' })) } : {}),
       ...(tools && tools.length > 0 ? { tools } : {}),
-      ...(extra.metadata ? { metadata: extra.metadata } : {}),
+      ...(metadata ? { metadata } : {}),
       ...(extra.checkpointId ? { checkpointId: extra.checkpointId } : {}),
       ...(resumePointId ? { resumePointId } : {}),
     })

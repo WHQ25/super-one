@@ -1,14 +1,25 @@
+import { createServer } from 'node:http'
 import { WebSocketServer, type WebSocket } from 'ws'
 
 /**
  * In-process stand-in for `apps/relay` (`relay-session.ts`) for tests: one
  * `desktop` socket and per-device `mobile` slots per room, `channel` and
- * `kicked` routing, peer announcements and the `ping` auto-response. Event
- * buffering is left out; the node channel does not use it.
+ * `kicked` routing, peer announcements, the `ping` auto-response and the
+ * `/status` presence probe. Event buffering is left out; the node channel
+ * does not use it.
  */
 export async function startTestRelay() {
-  const server = new WebSocketServer({ host: '127.0.0.1', port: 0 })
-  await new Promise<void>((resolve) => server.once('listening', resolve))
+  const http = createServer((req, res) => {
+    const url = new URL(req.url ?? '/', 'http://relay')
+    if (url.pathname !== '/status') {
+      res.writeHead(404).end()
+      return
+    }
+    res.writeHead(200, { 'content-type': 'application/json' })
+    res.end(JSON.stringify({ desktop: rooms.get(url.searchParams.get('room') ?? '')?.desktop != null }))
+  })
+  const server = new WebSocketServer({ server: http })
+  await new Promise<void>((resolve) => http.listen(0, '127.0.0.1', resolve))
   const rooms = new Map<string, { desktop: WebSocket | null; mobiles: Map<string, WebSocket> }>()
   /** Every text frame the relay received, to check nothing secret crosses it. */
   const seen: string[] = []
@@ -58,15 +69,19 @@ export async function startTestRelay() {
       }
     })
   })
-  const port = (server.address() as { port: number }).port
+  const port = (http.address() as { port: number }).port
   return {
     url: `ws://127.0.0.1:${port}`,
     seen,
     hasDesktop: (roomId: string) => rooms.get(roomId)?.desktop != null,
+    /** Cut every client slot, as a network change on the client side would. */
+    dropClients: () => {
+      for (const room of rooms.values()) for (const mobile of room.mobiles.values()) mobile.terminate()
+    },
     close: () =>
       new Promise<void>((resolve) => {
         for (const client of server.clients) client.terminate()
-        server.close(() => resolve())
+        server.close(() => http.close(() => resolve()))
       }),
   }
 }

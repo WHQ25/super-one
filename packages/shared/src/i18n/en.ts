@@ -961,6 +961,8 @@ export type Messages = {
       forgetConfirm: string
       addSuccess: string
       credentialInMemoryOnly: string
+      repairCodePrompt: string
+      repairCodeOtherNode: string
       /** How a connected node is reached right now. */
       path: { label: string; lan: string; tailscale: string; relay: string; ssh: string; direct: string }
       noSessionsCapability: string
@@ -5320,6 +5322,8 @@ export const en: Messages = {
       addSuccess: 'Environment connected',
       credentialInMemoryOnly:
         'OS secure storage is unavailable, so this credential is kept in memory only and will be lost when SuperOne quits.',
+      repairCodePrompt: 'Paste a new pairing code from that computer (Remote Control → Control This Mac)',
+      repairCodeOtherNode: 'This pairing code belongs to another computer, not "{{label}}".',
       path: {
         label: 'Connected via',
         lan: 'LAN',

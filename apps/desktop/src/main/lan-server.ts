@@ -97,8 +97,8 @@ export class LanServer {
       res.end('Upgrade required')
     })
     // Phones reach this server on the LAN or a tailnet; refuse anyone else
-    // before any HTTP or handshake work.
-    httpServer.on('connection', (socket) => {
+    // before any HTTP or handshake work (ahead of the HTTP parser's listener).
+    httpServer.prependListener('connection', (socket) => {
       if (!isPrivateNetworkAddress(socket.remoteAddress)) socket.destroy()
     })
     const wss = new WebSocketServer({ server: httpServer, path: '/ws' })

@@ -22,6 +22,12 @@ import {
   type EndpointKind,
   type SupervisorState,
 } from '@superone/shared/environment'
+import {
+  NODE_LAN_ENDPOINT_ID,
+  NodePairingCodeError,
+  decodeNodePairingCode,
+  nodePairingEndpointProfiles,
+} from '@superone/shared/environment/node-pairing-code'
 import { Badge } from '@superone/ui/components/ui/badge'
 import { Button } from '@superone/ui/components/ui/button'
 import { cn } from '@superone/ui/lib/utils'
@@ -212,7 +218,38 @@ export function EnvironmentsPage() {
     })
   }
 
+  /** Desktop nodes re-pair from a fresh pairing code, over whichever route reaches them. */
+  function promptDesktopRepair(item: EnvironmentListItem): void {
+    const text = window.prompt(t('settings.environments.repairCodePrompt'))
+    if (!text?.trim()) return
+    let code: ReturnType<typeof decodeNodePairingCode>
+    try {
+      code = decodeNodePairingCode(text, Date.now())
+    } catch (err) {
+      const expired = err instanceof NodePairingCodeError && err.code === 'expired'
+      toast.error(t(expired ? 'settings.remote.addDesktop.errors.expired' : 'settings.remote.addDesktop.errors.invalid'))
+      return
+    }
+    if (code.environmentId !== item.environmentId) {
+      toast.error(t('settings.environments.repairCodeOtherNode', { label: item.label }))
+      return
+    }
+    void run(item.connectionId, async () => {
+      await window.environment.repairPairing({
+        connectionId: item.connectionId,
+        pairingToken: code.pairingToken,
+        channel: code.channel,
+        endpointProfiles: nodePairingEndpointProfiles(code),
+      })
+      toast.success(t('settings.environments.repairPairingSuccess', { defaultValue: 'Pairing repaired' }))
+    })
+  }
+
   function promptManualRepair(item: EnvironmentListItem): void {
+    if (item.endpointProfiles.some((p) => p.kind === 'relay' || p.endpointId === NODE_LAN_ENDPOINT_ID)) {
+      promptDesktopRepair(item)
+      return
+    }
     const token = window.prompt(
       t('settings.environments.repairTokenPrompt', {
         defaultValue: 'Paste a fresh pairing token from the node',

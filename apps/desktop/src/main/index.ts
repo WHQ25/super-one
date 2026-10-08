@@ -24,7 +24,7 @@ import { countAddedLines } from './git-added-lines'
 import { activateWorktree, assignBranch, getCheckedOutBranches, getHandoffPreview, getWorktreeInfo, gitErrorMessage, handoffToLocal } from './git/worktree-ops'
 import { is } from '@electron-toolkit/utils'
 import type { EnvironmentHost } from './environment/environment-host'
-import type { DraftUpsertRequest, PairRemoteInput } from '@superone/shared/environment'
+import type { DraftUpsertRequest, PairRemoteInput, RepairPairingInput } from '@superone/shared/environment'
 import log from './logger'
 import { packagedUserDataPath, resolveAndMigrateUserData } from './user-data-path'
 import { variant, variantId, variantDownloadUrl } from './variant'
@@ -2380,7 +2380,7 @@ function registerIpcHandlers(): void {
     AgentIpcChannels.ENVIRONMENT_REPAIR_PAIRING,
     async (
       _e,
-      input: { connectionId: string; baseUrl: string; pairingToken: string },
+      input: RepairPairingInput,
     ) => {
       const { getEnvironmentHost } = await import('./environment')
       return getEnvironmentHost().repairPairing(input)

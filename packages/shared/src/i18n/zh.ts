@@ -1035,6 +1035,8 @@ export const zh: Messages = {
       forgetConfirm: '从这台电脑上移除「{{label}}」？远程服务会继续运行，只会清除本地凭证。',
       addSuccess: '环境已连接',
       credentialInMemoryOnly: '系统安全存储不可用，该凭证仅保存在内存中，退出 SuperOne 后会丢失。',
+      repairCodePrompt: '粘贴那台电脑新生成的配对码（远程控制 → 控制这台 Mac）',
+      repairCodeOtherNode: '这个配对码属于另一台电脑，不是「{{label}}」。',
       path: {
         label: '连接方式',
         lan: '局域网',

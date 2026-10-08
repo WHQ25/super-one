@@ -6,6 +6,7 @@ import {
   type NodeRouteCandidate,
 } from '@superone/shared/environment'
 import { createRelayNodeDialer } from '@superone/runtime/server/relay-node-link'
+import { checkRelayDesktopOnline } from '@superone/relay-client/presence'
 import { browseLanServices, nodeLanUrls, type LanService } from '../lan-browser'
 import { NODE_LAN_SERVICE_TYPE } from '../lan-service-type'
 import type { ResolvedNodeRoute } from './node-connection-manager'
@@ -26,7 +27,11 @@ export interface NodeRouteResolverDeps {
   probe: (baseUrl: string, target: NodeRouteTarget) => Promise<boolean>
   /** Open (or reuse) the SSH forward of a profile and return its local base URL. */
   openSshForward: (target: NodeRouteTarget, profile: EndpointProfile) => Promise<string | undefined>
+  /** Whether the node holds its relay room now; the phone link's `/status` presence check by default. */
+  relayOnline?: (relayUrl: string, roomId: string) => Promise<boolean>
 }
+
+const RELAY_STATUS_TIMEOUT_MS = 3_000
 
 const PATH_ORDER: NodeLinkPath[] = ['lan', 'tailscale', 'direct', 'ssh', 'relay']
 
@@ -86,6 +91,11 @@ export class NodeRouteResolver {
     if (path === 'relay') {
       const roomId = profile.relay?.roomId
       if (!roomId) return undefined
+      // Ask the relay first: an absent node fails now, not after the channel handshake times out.
+      const online = await (this.deps.relayOnline ?? defaultRelayOnline)(profile.target, roomId)
+      if (!online) {
+        throw Object.assign(new Error('the node is offline: it is not connected to the relay'), { code: 'unavailable' })
+      }
       return {
         baseUrl: profile.target,
         dial: createRelayNodeDialer({ relayUrl: profile.target, roomId }),
@@ -101,6 +111,10 @@ export class NodeRouteResolver {
     if (options.probe && !(await this.deps.probe(baseUrl, target))) return undefined
     return { baseUrl, path, endpointId: profile.endpointId }
   }
+}
+
+function defaultRelayOnline(relayUrl: string, roomId: string): Promise<boolean> {
+  return checkRelayDesktopOnline({ relayUrl, roomId, timeoutMs: RELAY_STATUS_TIMEOUT_MS }).catch(() => false)
 }
 
 function httpBase(target: string): string {

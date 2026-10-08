@@ -9,7 +9,7 @@ import type { TerminalCommandRule } from '@superone/shared/terminal-command-rule
 import type { AttachmentOriginalStatus, DshPluginInstallSource, StageAttachmentOriginalRequest, FileEntryKind, PinnedSessionEntry, ScheduledSend, ScheduledSendPatch, ScheduledSendSessionInit, WindowFoldStep, WindowMiniMode } from '@superone/shared/agent-types'
 import type { GitMentionCapabilities, GitMentionRefKind, GitMentionRefsResult } from '@superone/shared/git-mention-query'
 import type { ConsumerBinding, ConsumerId, Credential, EndpointOverride, Platform, ServiceEndpoint } from '@superone/shared/platform-registry'
-import type { DraftListEntry, DraftUpsertRequest, PairRemoteInput, ProjectSnapshot } from '@superone/shared/environment'
+import type { DraftListEntry, DraftUpsertRequest, PairRemoteInput, ProjectSnapshot, RepairPairingInput } from '@superone/shared/environment'
 import type { IosSimulatorChrome, IosSimulatorCreateRequest, IosSimulatorDevice, IosSimulatorRuntimeOption, IosSimulatorStatus } from '@superone/shared/ios-simulator'
 import type { DeviceCapture, DeviceDescriptor, DeviceFrame, DeviceInput, DeviceInputResult, DeviceState, DeviceStreamOptions, DeviceViewfinderClaim } from '@superone/shared/device'
 import type { DeviceSetupKind, DeviceSetupOption } from '@superone/shared/device-setup'
@@ -833,7 +833,7 @@ const environmentAPI = {
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_RETRY_NOW, connectionId) as Promise<
       'started' | 'already_connected' | 'blocked' | 'disposed'
     >,
-  repairPairing: (input: { connectionId: string; baseUrl: string; pairingToken: string }) =>
+  repairPairing: (input: RepairPairingInput) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_REPAIR_PAIRING, input),
   /** Re-pair over the stored SSH endpoint; the desktop mints the token itself. */
   repairPairingOverSsh: (connectionId: string) =>

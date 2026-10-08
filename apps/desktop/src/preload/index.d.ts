@@ -27,7 +27,7 @@ import type { IosSimulatorChrome, IosSimulatorCreateRequest, IosSimulatorDevice,
 import type { DeviceCapture, DeviceDescriptor, DeviceFrame, DeviceInput, DeviceInputResult, DeviceState, DeviceStreamOptions, DeviceViewfinderClaim, LoadedDeviceModel } from '@superone/shared/device'
 import type { DeviceSetupKind, DeviceSetupOption } from '@superone/shared/device-setup'
 import type { DeviceEnvironmentAction, DeviceEnvironmentResult, DeviceEnvironmentState } from '@superone/shared/device-environment'
-import type { PairRemoteInput, SyncZoneReclaimResult, SyncZoneUsage } from '@superone/shared/environment'
+import type { PairRemoteInput, RepairPairingInput, SyncZoneReclaimResult, SyncZoneUsage } from '@superone/shared/environment'
 // Re-export so renderer consumers of the preload types see the correlated shape.
 export type { EnvironmentInstallProgress } from '@superone/shared/environment'
 
@@ -1318,11 +1318,7 @@ export interface EnvironmentAPI extends MediaComposerAPI {
   retryNow(
     connectionId: string,
   ): Promise<'started' | 'already_connected' | 'blocked' | 'disposed'>
-  repairPairing(input: {
-    connectionId: string
-    baseUrl: string
-    pairingToken: string
-  }): Promise<unknown>
+  repairPairing(input: RepairPairingInput): Promise<unknown>
   /**
    * Re-pair over the stored SSH endpoint. The desktop mints a fresh pairing
    * token on the host and keeps the same connectionId (no project-key churn).

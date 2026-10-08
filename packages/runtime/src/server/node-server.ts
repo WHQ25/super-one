@@ -202,7 +202,8 @@ export async function startNodeServer<C extends NodeRpcRequestContext = RpcConte
 
   if (opts.allowRemoteAddress) {
     const allow = opts.allowRemoteAddress
-    httpServer.on('connection', (socket) => {
+    // Ahead of the HTTP parser's own listener, so a refused peer is never parsed.
+    httpServer.prependListener('connection', (socket) => {
       if (!allow(socket.remoteAddress)) socket.destroy()
     })
   }

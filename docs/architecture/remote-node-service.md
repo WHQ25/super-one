@@ -574,6 +574,13 @@ and framing are in [relay-crypto.md](relay-crypto.md#node-channel-over-the-relay
   the recovery authority.
 - The relay has no `/health` for the node; identity rests on the channel proof
   and the descriptor's environment id and key fingerprint.
+- Before dialing the relay, the client asks the relay's `/status` whether the
+  node holds its room (the phone link's presence check,
+  `@superone/relay-client/presence`), so an offline node fails in seconds
+  rather than at the channel handshake timeout.
+- Explicit failover (`connectWithFailover`) and re-pairing from a fresh code
+  (`repairPairing` without a base URL) choose their route the same way, so a
+  node reachable only through the relay recovers there.
 
 Pairing works over the relay alone: the pairing code (`superone-node:2:`,
 `node-pairing-code.ts`) carries the node's environment id, LAN hint

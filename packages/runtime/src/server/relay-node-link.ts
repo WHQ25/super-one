@@ -78,12 +78,15 @@ export class RelaySlotSocket extends EventEmitter {
     this.emit('open')
   }
 
+  /** Like `ws`: throws before the slot opens; after it closes, a frame is dropped (a late reply). */
   send(data: string | Uint8Array): void {
-    if (this.readyState !== WebSocket.OPEN) throw new Error('relay slot is not open')
+    if (this.readyState === WebSocket.CONNECTING) throw new Error('relay slot is not open yet')
+    if (this.readyState !== WebSocket.OPEN) return
     for (const envelope of encodeNodeRelayFrame(data)) {
       if (!this.write(envelope)) {
+        // The relay socket is gone; the close event hands recovery to the owner.
         this.remoteClose(1006, 'relay_unavailable')
-        throw new Error('relay is not connected')
+        return
       }
     }
   }

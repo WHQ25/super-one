@@ -18,11 +18,12 @@ const target: NodeRouteTarget = {
   preferredEndpointId: 'lan',
 }
 
-function resolver(reachable: string[], discovered: string[] = []) {
+function resolver(reachable: string[], discovered: string[] = [], nodeOnRelay = true) {
   const probe = vi.fn(async (baseUrl: string) => reachable.includes(baseUrl))
   const discoverLan = vi.fn(async () => discovered)
   const openSshForward = vi.fn(async () => 'http://127.0.0.1:40000')
-  return { routes: new NodeRouteResolver({ probe, discoverLan, openSshForward }), probe, discoverLan, openSshForward }
+  const relayOnline = vi.fn(async () => nodeOnRelay)
+  return { routes: new NodeRouteResolver({ probe, discoverLan, openSshForward, relayOnline }), probe, discoverLan, openSshForward, relayOnline }
 }
 
 describe('NodeRouteResolver', () => {
@@ -41,6 +42,12 @@ describe('NodeRouteResolver', () => {
     expect(typeof route?.dial).toBe('function')
     // The relay is the last resort and is not probed over HTTP.
     expect(relay.probe.mock.calls.map(([url]) => url)).toEqual(['http://Studio.local:7791', 'http://100.80.0.2:7791'])
+  })
+
+  it('reports a node that is not on the relay as offline without dialing', async () => {
+    const { routes, relayOnline } = resolver([], [], false)
+    await expect(routes.resolve(target)).rejects.toMatchObject({ code: 'unavailable', message: expect.stringMatching(/offline/) })
+    expect(relayOnline).toHaveBeenCalledWith('wss://relay.example', ROOM)
   })
 
   it('uses a lone profile as-is and opens a preferred SSH forward', async () => {

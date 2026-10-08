@@ -282,19 +282,27 @@ export class NodeConnectionManager {
   async repairPairing(input: {
     connectionId: string
     baseUrl: string
+    /** The route the exchange runs through when it is not a plain base URL (relay). */
+    route?: ResolvedNodeRoute
     pairingToken: string
     /** A fresh pairing code's channel credential; defaults to the stored one. */
     channel?: ChannelCredential
+    /** A fresh pairing code's routes, replacing the stored ones. */
+    endpointProfiles?: KnownEnvironmentRecord['endpointProfiles']
   }): Promise<ExecutionEnvironmentDescriptor> {
     const known = this.known.get(input.connectionId)
     if (!known) throw new Error(`unknown connection ${input.connectionId}`)
     const baseUrl = input.baseUrl.replace(/\/$/, '')
 
-    // Unauthenticated identity probe before consuming the one-time token.
-    await assertNodeIdentity(baseUrl, {
-      environmentId: known.environmentId,
-      nodePublicKeyFingerprint: known.nodePublicKeyFingerprint,
-    })
+    // Unauthenticated identity probe before consuming the one-time token. The
+    // relay has no HTTP surface; there the channel proof and the identity
+    // check of the pairing result below stand in for it.
+    if (!input.route?.dial) {
+      await assertNodeIdentity(baseUrl, {
+        environmentId: known.environmentId,
+        nodePublicKeyFingerprint: known.nodePublicKeyFingerprint,
+      })
+    }
 
     const channel = input.channel ?? this.opts.credentialStore.get(input.connectionId)?.channel
     const device = generateDeviceKeyPair()
@@ -304,6 +312,7 @@ export class NodeConnectionManager {
       devicePublicKeyPem: device.publicKeyPem,
       label: known.label,
       channel,
+      dial: input.route?.dial,
     })
     if (paired.environmentId !== known.environmentId) {
       throw Object.assign(
@@ -343,6 +352,9 @@ export class NodeConnectionManager {
     this.updateKnown(known.connectionId, {
       desired: true,
       baseUrl,
+      ...(input.endpointProfiles?.length
+        ? { endpointProfiles: input.endpointProfiles, preferredEndpointId: input.endpointProfiles[0].endpointId }
+        : {}),
       updatedAt: Date.now(),
     })
 

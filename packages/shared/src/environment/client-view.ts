@@ -67,6 +67,19 @@ export interface PairRemoteInput {
   channel?: { keyId: string; secretHex: string }
 }
 
+/**
+ * Re-pair a known connection with a fresh token. With `baseUrl` the exchange
+ * goes there (an SSH node's tunnel is rebuilt first); without it, main picks
+ * the route like any dial, using a fresh pairing code's routes when given.
+ */
+export interface RepairPairingInput {
+  connectionId: string
+  baseUrl?: string
+  pairingToken: string
+  channel?: { keyId: string; secretHex: string }
+  endpointProfiles?: EndpointProfile[]
+}
+
 export interface NodeUpgradeAvailability {
   /** CLI version currently running on the node. */
   remoteVersion: string

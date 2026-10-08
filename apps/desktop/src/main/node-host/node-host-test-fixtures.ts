@@ -1,8 +1,13 @@
-import type { AgentEvent, ChatMessage, SendMessageRequest, SessionAgentProfile } from '@superone/shared/agent-types'
+import { execFileSync } from 'node:child_process'
+import type { AgentEvent, ChatMessage, RecentFolder, SendMessageRequest, SessionAgentProfile } from '@superone/shared/agent-types'
+import { HarnessManager } from '@superone/runtime/harness'
+import { openNodeDatabase } from '@superone/runtime/db'
 import type { ProjectSnapshot } from '@superone/shared/environment'
 import type { RemoteControlledSessionRow, RemoteControllerRecord } from '../db-remote-controlled-sessions'
 import type { Session } from '../session/types'
+import { createDesktopProjectsPort } from './desktop-projects-port'
 import type { NodeHostSessionManager, NodeHostSessionStore } from './desktop-session-host'
+import { DesktopNodeHost, type DesktopNodeHostListen } from './node-host-server'
 
 /** Fakes of B's session manager and store for node host integration tests. */
 
@@ -106,3 +111,27 @@ export function memoryStore(projects: () => ProjectSnapshot[]): NodeHostSessionS
   }
 }
 
+
+/** Desktop B serving one git project (`p1`) with fake sessions; caller stops it. */
+export async function startTestDesktopNode(input: { userDataDir: string; projectDir: string; listen: DesktopNodeHostListen }) {
+  execFileSync('git', ['init', '-q', input.projectDir])
+  execFileSync('git', ['-C', input.projectDir, 'remote', 'add', 'origin', 'https://example.com/acme/app.git'])
+  const folders: RecentFolder[] = [{ id: 'p1', path: input.projectDir, name: 'app', addedAt: '', lastOpened: new Date().toISOString() }]
+  const projects = createDesktopProjectsPort({ list: () => folders, add: () => {} })
+  const sessions = new FakeSessionManager()
+  const harnesses = new HarnessManager(openNodeDatabase(':memory:'))
+  harnesses.enableSimulatedOverlay()
+  const host = await DesktopNodeHost.start(
+    {
+      userDataDir: input.userDataDir, label: 'Desktop B', appVersion: '0.0.0-test', sessions,
+      store: memoryStore(() => projects.list()), projects, harnesses,
+      listAgentProfiles: () => AGENT_PROFILES,
+      hooks: {
+        probeHarnessReadiness: () => ({ ok: true }) as never,
+        assertSessionHarnessRuntimeReady: () => ({ ok: true, reason: 'test' }),
+      },
+    },
+    input.listen,
+  )
+  return { host, sessions }
+}

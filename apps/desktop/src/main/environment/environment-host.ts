@@ -15,6 +15,7 @@ import type {
   ArtifactStatResult,
   EndpointProfile,
   PairRemoteInput,
+  RepairPairingInput,
   EnvironmentGateway,
   EnvironmentOs,
   WorkspaceEntry,
@@ -34,11 +35,9 @@ import {
   decideRemoteCliAction,
   desktopUpgradeRequiredMessage,
   providerSessionIdFromResume,
-  selectEndpointWithFailover,
   shouldBlockDesktopForNewerNode,
   shouldOfferNodeUpgrade,
   sshArgsForSpec,
-  tailscaleEndpoint,
   tunnelSpecFromEndpoint,
   type RemoteInstallSource,
 } from '@superone/shared/environment'
@@ -47,7 +46,7 @@ import { ArtifactTransferService } from './artifact-transfer-service'
 import { NodeConnectionManager } from './node-connection-manager'
 import { NodeCredentialStore } from './node-credential-store'
 import { WorkspaceRouter } from './workspace-router'
-import { probeEndpointHealth, discoverTailscaleHost } from './endpoint-probes'
+import { probeEndpointHealth } from './endpoint-probes'
 import type { KnownEnvironmentRecord, ResolvedNodeRoute } from './node-connection-manager'
 import { NodeRouteResolver, cachedNodeLanDiscovery, type NodeRouteTarget } from './node-route-resolver'
 import type { CodexMcpOauthLoginOptions } from '@superone/shared/agent-types'
@@ -2879,28 +2878,43 @@ export class EnvironmentHost {
    * Re-pair under the same connectionId after auth/revocation. Preserves
    * label/endpoints/projects; never auto-unblocks without a successful re-pair.
    */
-  async repairPairing(input: {
-    connectionId: string
-    baseUrl: string
-    pairingToken: string
-  }): Promise<ExecutionEnvironmentDescriptor> {
+  async repairPairing(input: RepairPairingInput): Promise<ExecutionEnvironmentDescriptor> {
     const known = this.connections.listKnown().find((k) => k.connectionId === input.connectionId)
     if (!known) throw new Error(`unknown connection ${input.connectionId}`)
 
-    // Prefer explicit baseUrl; for SSH endpoints rebuild tunnel first.
-    let baseUrl = input.baseUrl.replace(/\/$/, '')
-    const preferred =
-      known.endpointProfiles.find((p) => p.endpointId === known.preferredEndpointId) ??
-      known.endpointProfiles[0]
-    if (preferred && tunnelSpecFromEndpoint(preferred)) {
-      const resolved = await this.openSshForward(known, preferred)
-      if (resolved) baseUrl = resolved
+    let route: ResolvedNodeRoute | undefined
+    let baseUrl: string
+    if (input.baseUrl) {
+      // Explicit baseUrl; for SSH endpoints rebuild the tunnel first.
+      baseUrl = input.baseUrl.replace(/\/$/, '')
+      const preferred =
+        known.endpointProfiles.find((p) => p.endpointId === known.preferredEndpointId) ??
+        known.endpointProfiles[0]
+      if (preferred && tunnelSpecFromEndpoint(preferred)) {
+        const resolved = await this.openSshForward(known, preferred)
+        if (resolved) baseUrl = resolved
+      }
+    } else {
+      // A desktop node's fresh pairing code: the same route choice as a dial,
+      // so a node reachable only through the relay re-pairs there.
+      const profiles = input.endpointProfiles?.length ? input.endpointProfiles : known.endpointProfiles
+      const resolved = await this.routes.resolve({
+        ...known,
+        endpointProfiles: profiles,
+        preferredEndpointId: input.endpointProfiles?.length ? profiles[0].endpointId : known.preferredEndpointId,
+      })
+      if (!resolved) throw Object.assign(new Error('no route to the node'), { code: 'unavailable' })
+      route = resolved
+      baseUrl = resolved.dial ? (known.baseUrl ?? resolved.baseUrl) : resolved.baseUrl
     }
 
     const descriptor = await this.connections.repairPairing({
       connectionId: input.connectionId,
       baseUrl,
+      route,
       pairingToken: input.pairingToken,
+      channel: input.channel,
+      endpointProfiles: input.endpointProfiles,
     })
     return this.finalizeRepairedPairing(input.connectionId, descriptor)
   }
@@ -3354,8 +3368,9 @@ export class EnvironmentHost {
   }
 
   /**
-   * Fail over across known endpoints (SSH / Tailscale / relay) while preserving identity.
-   * On success, reconnects the stored credentials against the selected baseUrl.
+   * Reconnect over the first route that answers (LAN, Tailscale, SSH, relay)
+   * while preserving identity: the same route choice every supervised dial
+   * makes, run now.
    */
   async connectWithFailover(connectionId: string): Promise<{
     baseUrl: string
@@ -3364,45 +3379,12 @@ export class EnvironmentHost {
   }> {
     const known = this.connections.listKnown().find((k) => k.connectionId === connectionId)
     if (!known) throw new Error(`unknown connection ${connectionId}`)
-
-    // Only profiles already bound to this known environment, probed over HTTP.
-    // The relay has no HTTP surface; the supervisor's route selection
-    // (NodeRouteResolver) falls back to it. Never use Desktop Tailscale Self IP.
-    const profiles = known.endpointProfiles.filter((p) => p.kind !== 'relay')
-    void discoverTailscaleHost
-    void tailscaleEndpoint
-
-    const env = { ...known, endpointProfiles: profiles }
-    const selected = await selectEndpointWithFailover({
-      known: env,
-      probe: async (endpoint) => {
-        if (endpoint.kind === 'relay') {
-          return {
-            endpointId: endpoint.endpointId,
-            ok: false,
-            error: 'relay transport adapter not installed',
-          }
-        }
-        if (endpoint.kind === 'ssh-forward' && known.baseUrl) {
-          return probeEndpointHealth(endpoint, { baseUrlOverride: known.baseUrl })
-        }
-        return probeEndpointHealth(endpoint)
-      },
-    })
-
-    if (!selected.selected || !selected.baseUrl) {
-      throw Object.assign(new Error('no healthy endpoint with matching identity'), {
-        code: 'unavailable',
-        attempts: !selected.selected ? selected.attempts : [],
-      })
+    const route = await this.routes.resolve(known)
+    if (!route) {
+      throw Object.assign(new Error('no healthy endpoint with matching identity'), { code: 'unavailable' })
     }
-
-    await this.connections.connectExisting(connectionId, selected.baseUrl)
-    return {
-      baseUrl: selected.baseUrl,
-      endpointId: selected.endpointId,
-      environmentId: selected.environmentId!,
-    }
+    await this.connections.connectExisting(connectionId, route.dial ? undefined : route.baseUrl)
+    return { baseUrl: route.baseUrl, endpointId: route.endpointId, environmentId: known.environmentId }
   }
 
   dispose(): void {

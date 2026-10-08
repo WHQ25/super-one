@@ -7,6 +7,8 @@ export function nodeIdentityPaths(nodeHome: string) {
     environmentId: join(nodeHome, 'environment-id'),
     secretsDir: join(nodeHome, 'secrets'),
     instanceKey: join(nodeHome, 'secrets', 'instance.key'),
+    /** Root of per-pairing secrets for the encrypted node channel. */
+    channelRoot: join(nodeHome, 'secrets', 'channel-root.key'),
     logsDir: join(nodeHome, 'logs'),
   }
 }

@@ -47,7 +47,7 @@
     },
     "apps/desktop": {
       "name": "@superone/desktop",
-      "version": "0.72.1",
+      "version": "0.72.2",
       "dependencies": {
         "@agentclientprotocol/sdk": "^1.4.0",
         "@ai-sdk/google": "^4.0.62",
@@ -770,6 +770,7 @@
       "name": "@superone/runtime",
       "version": "0.0.0",
       "dependencies": {
+        "@superone/relay-client": "workspace:*",
         "@superone/shared": "workspace:*",
         "better-sqlite3": "^13.0.1",
         "croner": "^10.0.1",

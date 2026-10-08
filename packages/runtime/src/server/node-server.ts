@@ -12,6 +12,11 @@ import type {
   PairExchangeResult,
   WsTicketResult,
 } from './auth-service'
+import {
+  acceptClientHello,
+  SecureChannelError,
+  type SecureChannel,
+} from '@superone/relay-client/secure-channel'
 import type { NodeIdentity } from './identity'
 import type { RpcContext, RpcResult } from './rpc-context'
 
@@ -108,7 +113,24 @@ export interface NodeServerOptions<C extends NodeRpcRequestContext = RpcContext>
   createRpcContext: (client: AuthenticatedClient) => Omit<C, keyof NodeRpcRequestContext>
   onClientDisconnected: (clientSessionId: string) => void
   verifyDeviceProof: (publicKeyPem: string, payload: string, signature: string) => boolean
+  /**
+   * Require the pairing-secret encrypted channel for every request except
+   * `/health`. Pairing, token refresh, WS tickets and RPC then run as sealed
+   * frames on `/ws`; plain HTTP auth endpoints and ticketed upgrades are refused.
+   */
+  secureChannel?: NodeSecureChannelOptions
 }
+
+export interface NodeSecureChannelOptions {
+  /** Pairing secret (hex) for a channel key id, or null when unknown. */
+  resolveSecret(keyId: string): string | null
+}
+
+/** Handshake plus attach must finish within this window. */
+const CHANNEL_SETUP_TIMEOUT_MS = 30_000
+/** Handshake messages are small JSON text frames. */
+const MAX_CHANNEL_HANDSHAKE_BYTES = 4 * 1024
+const AUTH_PATHS = new Set(['/v1/pair', '/v1/token', '/v1/ws-ticket'])
 
 export interface NodeServerHandle {
   httpServer: Server
@@ -130,7 +152,6 @@ export async function startNodeServer<C extends NodeRpcRequestContext = RpcConte
   opts: NodeServerOptions<C>,
 ): Promise<NodeServerHandle> {
   const activeSockets = new Map<WebSocket, AuthenticatedClient>()
-  const negotiated = new WeakMap<WebSocket, { protocol: number; databaseSchema: number }>()
 
   const closeSocketsForClient = (clientSessionId: string) => {
     for (const [ws, client] of activeSockets) {
@@ -171,6 +192,25 @@ export async function startNodeServer<C extends NodeRpcRequestContext = RpcConte
 
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_WS_PAYLOAD })
 
+  /** Peek, prove and consume a WS ticket; throws `unauthorized` on any failure. */
+  const authorizeWsTicket = (
+    ticket: string,
+    proofPayload: string | null | undefined,
+    proofSignature: string | null | undefined,
+  ): AuthenticatedClient => {
+    const peeked = opts.auth.peekWsTicket(ticket)
+    if (!proofPayload || !proofSignature) {
+      throw Object.assign(new Error('ws proof required'), { code: 'unauthorized' })
+    }
+    if (proofPayload !== ticket.split('.')[0] && proofPayload !== ticket) {
+      throw Object.assign(new Error('proof payload must bind ticket'), { code: 'unauthorized' })
+    }
+    if (!opts.verifyDeviceProof(peeked.devicePublicKeyPem, proofPayload, proofSignature)) {
+      throw Object.assign(new Error('device proof failed for ws ticket'), { code: 'unauthorized' })
+    }
+    return opts.auth.consumeWsTicket(ticket)
+  }
+
   httpServer.on('upgrade', (req, socket, head) => {
     if (opts.identity.identityConflict) {
       socket.write('HTTP/1.1 409 Conflict\r\nConnection: close\r\n\r\n')
@@ -189,6 +229,19 @@ export async function startNodeServer<C extends NodeRpcRequestContext = RpcConte
         ? req.headers['sec-websocket-protocol'][0]
         : req.headers['sec-websocket-protocol']?.split(',')[0]?.trim())
     const ticket = headerTicket || url.searchParams.get('ticket')
+
+    if (opts.secureChannel) {
+      // A ticket outside the channel would travel in clear; authentication
+      // happens inside the channel instead (`attach`).
+      if (ticket) {
+        socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n')
+        socket.destroy()
+        return
+      }
+      wss.handleUpgrade(req, socket, head, (ws) => serveSecureChannel(ws, opts.secureChannel!))
+      return
+    }
+
     const proofPayload =
       (req.headers['x-superone-ws-proof'] as string | undefined) || url.searchParams.get('proof')
     const proofSignature =
@@ -200,21 +253,12 @@ export async function startNodeServer<C extends NodeRpcRequestContext = RpcConte
       return
     }
     try {
-      const peeked = opts.auth.peekWsTicket(ticket)
-      if (!proofPayload || !proofSignature) {
-        throw Object.assign(new Error('ws proof required'), { code: 'unauthorized' })
-      }
-      if (proofPayload !== ticket.split('.')[0] && proofPayload !== ticket) {
-        throw Object.assign(new Error('proof payload must bind ticket'), { code: 'unauthorized' })
-      }
-      if (!opts.verifyDeviceProof(peeked.devicePublicKeyPem, proofPayload, proofSignature)) {
-        throw Object.assign(new Error('device proof failed for ws ticket'), { code: 'unauthorized' })
-      }
-      const client = opts.auth.consumeWsTicket(ticket)
-
+      const client = authorizeWsTicket(ticket, proofPayload, proofSignature)
       wss.handleUpgrade(req, socket, head, (ws) => {
         activeSockets.set(ws, client)
-        wss.emit('connection', ws, req, client)
+        const handle = createRpcHandler((msg) => ws.send(JSON.stringify(msg)), (code, reason) => ws.close(code, reason), client)
+        ws.on('message', (data) => void handle(() => JSON.parse(data.toString())))
+        trackClose(ws)
       })
     } catch (err) {
       socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n')
@@ -223,18 +267,130 @@ export async function startNodeServer<C extends NodeRpcRequestContext = RpcConte
     }
   })
 
-  wss.on('connection', (ws: WebSocket, _req: IncomingMessage, client: AuthenticatedClient) => {
-    const ctxBase = opts.createRpcContext(client)
+  /**
+   * Channel lifecycle on one socket: text handshake (hello → challenge →
+   * proof), then sealed binary frames. Before `attach` only auth exchanges are
+   * served; after it, the same RPC handler as a ticketed plain socket.
+   */
+  const serveSecureChannel = (ws: WebSocket, channelOpts: NodeSecureChannelOptions): void => {
+    let accept: ReturnType<typeof acceptClientHello> | null = null
+    let channel: SecureChannel | null = null
+    let rpc: ((read: () => unknown) => Promise<void>) | null = null
+    const send = (msg: unknown) => {
+      if (channel) ws.send(channel.seal(msg))
+    }
+    const setupTimer = setTimeout(() => ws.close(4408, 'channel_setup_timeout'), CHANNEL_SETUP_TIMEOUT_MS)
+    setupTimer.unref?.()
+    trackClose(ws, () => clearTimeout(setupTimer))
 
-    ws.on('message', async (data) => {
+    ws.on('message', (data, isBinary) => {
+      const bytes = data as Buffer
+      try {
+        if (!channel) {
+          if (isBinary || bytes.length > MAX_CHANNEL_HANDSHAKE_BYTES) {
+            throw new SecureChannelError('channel_protocol', 'expected a handshake text frame')
+          }
+          const msg = JSON.parse(bytes.toString('utf8')) as unknown
+          if (!accept) {
+            accept = acceptClientHello(msg, (keyId) => channelOpts.resolveSecret(keyId))
+            ws.send(JSON.stringify(accept.challenge))
+            return
+          }
+          channel = accept.finish(msg)
+          send({ type: 'channel_ready' })
+          return
+        }
+        if (!isBinary) throw new SecureChannelError('channel_protocol', 'expected a sealed binary frame')
+        const payload = channel.open(bytes)
+        if (rpc) {
+          void rpc(() => payload)
+          return
+        }
+        handlePreAttach(payload)
+      } catch (err) {
+        const code = err instanceof SecureChannelError ? err.code : 'channel_protocol'
+        ws.close(4401, code)
+      }
+    })
+
+    const handlePreAttach = (payload: unknown): void => {
+      const msg = (payload ?? {}) as {
+        type?: string
+        requestId?: string
+        path?: string
+        body?: JsonBody
+        accessToken?: string
+        ticket?: string
+        proof?: string
+        sig?: string
+      }
+      const requestId = msg.requestId || 'unknown'
+      if (msg.type === 'auth' && typeof msg.path === 'string' && AUTH_PATHS.has(msg.path)) {
+        const result = handleAuthRequest(msg.path, msg.body ?? {}, msg.accessToken ?? null, opts)
+        send({ type: 'auth_result', requestId, status: result.status, body: result.body })
+        return
+      }
+      if (msg.type === 'attach' && typeof msg.ticket === 'string') {
+        let client: AuthenticatedClient
+        try {
+          client = authorizeWsTicket(msg.ticket, msg.proof, msg.sig)
+        } catch (err) {
+          const e = err as { code?: string; message?: string }
+          send({ type: 'rpc_error', requestId, error: { code: e.code ?? 'unauthorized', message: e.message ?? 'attach failed' } })
+          ws.close(4401, 'unauthorized')
+          return
+        }
+        clearTimeout(setupTimer)
+        activeSockets.set(ws, client)
+        rpc = createRpcHandler(send, (code, reason) => ws.close(code, reason), client)
+        send({ type: 'attach_ok', requestId })
+        return
+      }
+      send({
+        type: 'rpc_error',
+        requestId,
+        error: { code: 'unauthorized', message: 'attach with a WebSocket ticket before RPC' },
+      })
+    }
+  }
+
+  const trackClose = (ws: WebSocket, onClose?: () => void): void => {
+    ws.on('close', () => {
+      onClose?.()
+      const client = activeSockets.get(ws)
+      activeSockets.delete(ws)
+      if (!client) return
+      let stillConnected = false
+      for (const c of activeSockets.values()) {
+        if (c.clientSessionId === client.clientSessionId) {
+          stillConnected = true
+          break
+        }
+      }
+      if (!stillConnected) {
+        opts.onClientDisconnected(client.clientSessionId)
+      }
+    })
+  }
+
+  /** RPC message handling shared by plain ticketed sockets and attached channels. */
+  const createRpcHandler = (
+    send: (msg: unknown) => void,
+    closeSocket: (code: number, reason: string) => void,
+    client: AuthenticatedClient,
+  ) => {
+    const ctxBase = opts.createRpcContext(client)
+    let negotiatedGeneration: { protocol: number; databaseSchema: number } | undefined
+
+    return async (read: () => unknown): Promise<void> => {
       let requestId = 'unknown'
       try {
         if (opts.auth.isRevoked(client.clientSessionId)) {
-          ws.close(4001, 'session_revoked')
+          closeSocket(4001, 'session_revoked')
           return
         }
 
-        const msg = JSON.parse(data.toString()) as {
+        const msg = read() as {
           type?: string
           requestId?: string
           method?: string
@@ -246,7 +402,7 @@ export async function startNodeServer<C extends NodeRpcRequestContext = RpcConte
         requestId = msg.requestId || 'unknown'
 
         if (msg.type === 'ping') {
-          ws.send(JSON.stringify({ type: 'pong', requestId }))
+          send({ type: 'pong', requestId })
           return
         }
 
@@ -266,39 +422,33 @@ export async function startNodeServer<C extends NodeRpcRequestContext = RpcConte
             },
           )
           if (!result.ok) {
-            ws.send(
-              JSON.stringify({
-                type: 'rpc_error',
-                requestId,
-                error: { code: 'protocol_incompatible', message: result.reason },
-              }),
-            )
-            ws.close(4002, 'protocol_incompatible')
+            send({
+              type: 'rpc_error',
+              requestId,
+              error: { code: 'protocol_incompatible', message: result.reason },
+            })
+            closeSocket(4002, 'protocol_incompatible')
             return
           }
-          negotiated.set(ws, { protocol: result.protocol, databaseSchema: result.databaseSchema })
-          ws.send(
-            JSON.stringify({
-              type: 'handshake_ok',
-              requestId,
-              result: {
-                protocol: result.protocol,
-                databaseSchema: result.databaseSchema,
-                environmentId: opts.identity.environmentId,
-              },
-            }),
-          )
+          negotiatedGeneration = { protocol: result.protocol, databaseSchema: result.databaseSchema }
+          send({
+            type: 'handshake_ok',
+            requestId,
+            result: {
+              protocol: result.protocol,
+              databaseSchema: result.databaseSchema,
+              environmentId: opts.identity.environmentId,
+            },
+          })
           return
         }
 
         if (msg.type !== 'rpc' && !msg.method) {
-          ws.send(
-            JSON.stringify({
-              type: 'rpc_error',
-              requestId,
-              error: { code: 'invalid_argument', message: 'expected rpc message' },
-            }),
-          )
+          send({
+            type: 'rpc_error',
+            requestId,
+            error: { code: 'invalid_argument', message: 'expected rpc message' },
+          })
           return
         }
 
@@ -307,51 +457,45 @@ export async function startNodeServer<C extends NodeRpcRequestContext = RpcConte
           method === 'environment.descriptor' ||
           method === 'environment.health' ||
           method === 'environment.systemInfo'
-        if (!negotiated.get(ws) && !bootstrapRead) {
-          ws.send(
-            JSON.stringify({
+        if (!negotiatedGeneration && !bootstrapRead) {
+          send({
+            type: 'rpc_error',
+            requestId,
+            error: {
+              code: 'failed_precondition',
+              message: 'handshake required before non-bootstrap RPC',
+            },
+          })
+          return
+        }
+        if (negotiatedGeneration) {
+          if (msg.protocolVersion !== negotiatedGeneration.protocol) {
+            send({
               type: 'rpc_error',
               requestId,
               error: {
-                code: 'failed_precondition',
-                message: 'handshake required before non-bootstrap RPC',
+                code: 'protocol_incompatible',
+                message:
+                  msg.protocolVersion === undefined
+                    ? 'protocolVersion required on RPC envelopes after handshake'
+                    : `protocolVersion ${msg.protocolVersion} not negotiated`,
               },
-            }),
-          )
-          return
-        }
-        if (negotiated.get(ws)) {
-          if (msg.protocolVersion !== negotiated.get(ws)!.protocol) {
-            ws.send(
-              JSON.stringify({
-                type: 'rpc_error',
-                requestId,
-                error: {
-                  code: 'protocol_incompatible',
-                  message:
-                    msg.protocolVersion === undefined
-                      ? 'protocolVersion required on RPC envelopes after handshake'
-                      : `protocolVersion ${msg.protocolVersion} not negotiated`,
-                },
-              }),
-            )
+            })
             return
           }
         }
 
         if (!msg.environmentId || msg.environmentId !== opts.identity.environmentId) {
-          ws.send(
-            JSON.stringify({
-              type: 'rpc_error',
-              requestId,
-              error: {
-                code: 'environment_mismatch',
-                message: msg.environmentId
-                  ? 'environmentId does not match this node'
-                  : 'environmentId is required on every RPC envelope',
-              },
-            }),
-          )
+          send({
+            type: 'rpc_error',
+            requestId,
+            error: {
+              code: 'environment_mismatch',
+              message: msg.environmentId
+                ? 'environmentId does not match this node'
+                : 'environmentId is required on every RPC envelope',
+            },
+          })
           return
         }
 
@@ -362,36 +506,20 @@ export async function startNodeServer<C extends NodeRpcRequestContext = RpcConte
           idempotencyKey: msg.idempotencyKey,
         } as C)
         if (result.error) {
-          ws.send(JSON.stringify({ type: 'rpc_error', requestId, error: result.error }))
+          send({ type: 'rpc_error', requestId, error: result.error })
         } else {
-          ws.send(JSON.stringify({ type: 'rpc_result', requestId, result: result.result }))
+          send({ type: 'rpc_result', requestId, result: result.result })
         }
       } catch (err) {
         const e = err as { message?: string; code?: string }
-        ws.send(
-          JSON.stringify({
-            type: 'rpc_error',
-            requestId,
-            error: { code: e.code || 'internal', message: e.message || 'internal error' },
-          }),
-        )
+        send({
+          type: 'rpc_error',
+          requestId,
+          error: { code: e.code || 'internal', message: e.message || 'internal error' },
+        })
       }
-    })
-
-    ws.on('close', () => {
-      activeSockets.delete(ws)
-      let stillConnected = false
-      for (const c of activeSockets.values()) {
-        if (c.clientSessionId === client.clientSessionId) {
-          stillConnected = true
-          break
-        }
-      }
-      if (!stillConnected) {
-        opts.onClientDisconnected(client.clientSessionId)
-      }
-    })
-  })
+    }
+  }
 
   await new Promise<void>((resolve, reject) => {
     httpServer.once('error', reject)
@@ -421,7 +549,7 @@ export async function startNodeServer<C extends NodeRpcRequestContext = RpcConte
 async function handleHttp(
   req: IncomingMessage,
   res: ServerResponse,
-  opts: Pick<NodeServerOptions<NodeRpcRequestContext>, 'identity' | 'auth' | 'verifyDeviceProof'>,
+  opts: Pick<NodeServerOptions<NodeRpcRequestContext>, 'identity' | 'auth' | 'verifyDeviceProof' | 'secureChannel'>,
 ): Promise<void> {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`)
   const path = url.pathname
@@ -455,42 +583,69 @@ async function handleHttp(
     return
   }
 
-  if (method === 'POST' && path === '/v1/pair') {
-    const body = await readJson(req, MAX_JSON_BYTES.pair)
+  if (opts.secureChannel) {
+    sendJson(res, 403, {
+      error: { code: 'channel_required', message: 'this node accepts requests only inside its encrypted channel' },
+    })
+    return
+  }
+
+  if (method === 'POST' && AUTH_PATHS.has(path)) {
+    const body = await readJson(req, path === '/v1/ws-ticket' ? MAX_JSON_BYTES.ticket : MAX_JSON_BYTES.pair)
+    const result = handleAuthRequest(path, body, getBearer(req), opts)
+    sendJson(res, result.status, result.body)
+    return
+  }
+
+  sendJson(res, 404, { error: { code: 'not_found', message: 'not found' } })
+}
+
+/**
+ * Pairing, token refresh and WS ticket exchanges. Served over plain HTTP, or
+ * as sealed `auth` frames when the node requires its encrypted channel.
+ */
+function handleAuthRequest(
+  path: string,
+  body: JsonBody,
+  bearer: string | null,
+  opts: Pick<NodeServerOptions<NodeRpcRequestContext>, 'auth' | 'verifyDeviceProof'>,
+): { status: number; body: unknown } {
+  const failure = (err: unknown, fallback: string) => {
+    const e = err as { code?: string; message?: string }
+    return {
+      status: e.code === 'unauthorized' || e.code === 'revoked' ? 401 : 500,
+      body: { error: { code: e.code ?? 'internal', message: e.message ?? fallback } },
+    }
+  }
+
+  if (path === '/v1/pair') {
     const pairingToken = String(body.pairingToken ?? '')
     const devicePublicKeyPem = String(body.devicePublicKeyPem ?? '')
     const label = typeof body.label === 'string' ? body.label : undefined
     if (!pairingToken || !devicePublicKeyPem) {
-      sendJson(res, 400, {
-        error: { code: 'invalid_argument', message: 'pairingToken and devicePublicKeyPem required' },
-      })
-      return
+      return {
+        status: 400,
+        body: { error: { code: 'invalid_argument', message: 'pairingToken and devicePublicKeyPem required' } },
+      }
     }
     try {
-      const result = opts.auth.exchangePairingToken({ pairingToken, devicePublicKeyPem, label })
-      sendJson(res, 200, result)
+      return { status: 200, body: opts.auth.exchangePairingToken({ pairingToken, devicePublicKeyPem, label }) }
     } catch (err) {
-      const e = err as { code?: string; message?: string }
-      sendJson(res, e.code === 'unauthorized' || e.code === 'revoked' ? 401 : 500, {
-        error: { code: e.code ?? 'internal', message: e.message ?? 'pair failed' },
-      })
+      return failure(err, 'pair failed')
     }
-    return
   }
 
-  if (method === 'POST' && path === '/v1/token') {
-    const body = await readJson(req, MAX_JSON_BYTES.token)
+  if (path === '/v1/token') {
     const refreshToken = String(body.refreshToken ?? '')
     const proofPayload = String(body.proofPayload ?? '')
     const proofSignature = String(body.proofSignature ?? '')
     if (!refreshToken || !proofPayload || !proofSignature) {
-      sendJson(res, 400, {
-        error: {
-          code: 'invalid_argument',
-          message: 'refreshToken, proofPayload, proofSignature required',
+      return {
+        status: 400,
+        body: {
+          error: { code: 'invalid_argument', message: 'refreshToken, proofPayload, proofSignature required' },
         },
-      })
-      return
+      }
     }
     try {
       const result = opts.auth.refreshAccess({
@@ -499,37 +654,19 @@ async function handleHttp(
         proofSignature,
         verifyDeviceProof: opts.verifyDeviceProof,
       })
-      sendJson(res, 200, result)
+      return { status: 200, body: result }
     } catch (err) {
-      const e = err as { code?: string; message?: string }
-      sendJson(res, e.code === 'unauthorized' || e.code === 'revoked' ? 401 : 500, {
-        error: { code: e.code ?? 'internal', message: e.message ?? 'token refresh failed' },
-      })
+      return failure(err, 'token refresh failed')
     }
-    return
   }
 
-  if (method === 'POST' && path === '/v1/ws-ticket') {
-    let accessToken = getBearer(req)
-    if (!accessToken) {
-      const body = await readJson(req, MAX_JSON_BYTES.ticket)
-      accessToken = String(body.accessToken ?? '')
-    }
-    if (!accessToken) {
-      sendJson(res, 401, { error: { code: 'unauthorized', message: 'access token required' } })
-      return
-    }
-    try {
-      const ticket = opts.auth.createWsTicket(accessToken)
-      sendJson(res, 200, ticket)
-    } catch (err) {
-      const e = err as { code?: string; message?: string }
-      sendJson(res, e.code === 'unauthorized' || e.code === 'revoked' ? 401 : 500, {
-        error: { code: e.code ?? 'internal', message: e.message ?? 'ticket failed' },
-      })
-    }
-    return
+  const accessToken = bearer || String(body.accessToken ?? '')
+  if (!accessToken) {
+    return { status: 401, body: { error: { code: 'unauthorized', message: 'access token required' } } }
   }
-
-  sendJson(res, 404, { error: { code: 'not_found', message: 'not found' } })
+  try {
+    return { status: 200, body: opts.auth.createWsTicket(accessToken) }
+  } catch (err) {
+    return failure(err, 'ticket failed')
+  }
 }

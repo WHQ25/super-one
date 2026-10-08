@@ -1,6 +1,7 @@
 export { nodeIdentityPaths } from './node-paths'
 export {
   loadOrCreateIdentity,
+  loadOrCreateChannelRoot,
   regenerateIdentity,
   computeBindingHash,
   type NodeIdentity,
@@ -18,6 +19,7 @@ export {
   startNodeServer,
   type NodeServerOptions,
   type NodeServerHandle,
+  type NodeSecureChannelOptions,
   type NodeRpcDispatch,
   type NodeRpcRequestContext,
   type NodeAuthPort,

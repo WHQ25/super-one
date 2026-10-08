@@ -1,7 +1,7 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { hostname, userInfo } from 'node:os'
 import { dirname, join } from 'node:path'
-import { createPublicKey } from 'node:crypto'
+import { createPublicKey, randomBytes } from 'node:crypto'
 import {
   fingerprintPublicKeyPem,
   generateEd25519KeyPair,
@@ -145,6 +145,8 @@ export function regenerateIdentity(nodeHome: string, label?: string): NodeIdenti
 
   const bindingHash = computeBindingHash(nodeHome)
   writeSecretFile(join(paths.secretsDir, 'binding-hash'), `${bindingHash}\n`)
+  // A clone must not keep serving the channel secrets of the original node.
+  rmSync(paths.channelRoot, { force: true })
 
   return {
     environmentId,
@@ -157,4 +159,19 @@ export function regenerateIdentity(nodeHome: string, label?: string): NodeIdenti
     identityConflict: false,
     persistedBindingHash: bindingHash,
   }
+}
+
+/**
+ * Root secret from which the node derives each pairing's channel secret
+ * (`deriveIssuedChannelSecret` in `@superone/relay-client/secure-channel`).
+ */
+export function loadOrCreateChannelRoot(nodeHome: string): string {
+  const path = nodeIdentityPaths(nodeHome).channelRoot
+  if (existsSync(path)) {
+    const existing = readFileSync(path, 'utf8').trim()
+    if (/^[0-9a-f]{64}$/.test(existing)) return existing
+  }
+  const root = randomBytes(32).toString('hex')
+  writeSecretFile(path, `${root}\n`)
+  return root
 }

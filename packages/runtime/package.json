@@ -45,6 +45,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@superone/relay-client": "workspace:*",
     "@superone/shared": "workspace:*",
     "better-sqlite3": "^13.0.1",
     "croner": "^10.0.1",

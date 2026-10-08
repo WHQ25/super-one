@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import WebSocket from 'ws'
-import type { ControlLease, ExecutionEnvironmentDescriptor, TerminalReadResult } from '@superone/shared/environment'
+import type { ControlLease, EnvironmentLiveStatus, ExecutionEnvironmentDescriptor, TerminalReadResult } from '@superone/shared/environment'
 import { DATABASE_SCHEMA_GENERATION, PROTOCOL_GENERATION } from '@superone/shared/environment'
 import { isNodeMutatingCall } from '@superone/runtime/server/rpc-mutating-methods'
 import { signWithDeviceKey } from './node-auth-client'
@@ -519,6 +519,10 @@ export class NodeRpcClient {
 
   async systemInfo(): Promise<Record<string, unknown>> {
     return this.rpc('environment.systemInfo')
+  }
+
+  async liveStatus(): Promise<EnvironmentLiveStatus> {
+    return this.rpc('environment.status')
   }
 
   async terminalCreate(input: {

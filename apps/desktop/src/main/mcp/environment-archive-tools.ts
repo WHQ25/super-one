@@ -1,5 +1,6 @@
 import { decode, encode } from '@toon-format/toon'
 import type { ArchiveToolResult, SessionArchiveTool } from '@superone/shared/session-archive'
+import type { EnvironmentListItem, EnvironmentLiveStatus, EnvironmentMachine } from '@superone/shared/environment'
 import { currentCallOwner } from './artifact-registry'
 
 export function createEnvironmentArchiveTools(sessionId: string, connectionId?: string) {
@@ -15,9 +16,20 @@ export function createEnvironmentArchiveTools(sessionId: string, connectionId?: 
   return {
     environmentList: async (): Promise<ArchiveToolResult> => {
       try {
-        const { items, source } = await environments(true)
-        const unique = new Map(items.map(item => [item.environmentId, item]))
-        return { content: [{ type: 'text', text: encode({ environments: [...unique.values()].map(item => ({ environmentId: item.environmentId, label: item.label, isLocal: item.environmentId === source.environmentId, state: item.state, searchable: item.kind === 'local' || item.capabilities?.sessionArchive === true })) }) }] }
+        const { host, items, source } = await environments(true)
+        const unique = [...new Map(items.map(item => [item.environmentId, item])).values()]
+        const rows = await Promise.all(unique.map(async (item) => {
+          const isLocal = item.environmentId === source.environmentId
+          if (item.kind === 'local') {
+            const [{ readLocalNodeContext }, { getSessionHost }] = await Promise.all([import('../environment/local-node-context'), import('./superone-mcp-server')])
+            const sessions = getSessionHost()
+            return environmentRow(item, isLocal, await readLocalNodeContext(sessions?.forEachSession ? { forEachSession: fn => sessions.forEachSession?.(fn) } : null))
+          }
+          // Older nodes reject environment.status as unsupported; their live columns stay null.
+          const live = item.state === 'connected' ? await host.getGateway(item.environmentId)?.getLiveStatus?.().catch(() => undefined) : undefined
+          return environmentRow(item, isLocal, { machine: item.machine, note: item.note, harnessIds: item.capabilities?.harnessIds, live })
+        }))
+        return { content: [{ type: 'text', text: encode({ environments: rows }) }] }
       } catch (error) { return failure(error) }
     },
     archiveRead: async (tool: SessionArchiveTool, args: Record<string, unknown>, local: () => ArchiveToolResult): Promise<ArchiveToolResult> => {
@@ -53,6 +65,36 @@ export function createEnvironmentArchiveTools(sessionId: string, connectionId?: 
     },
   }
 }
+const gib = (bytes: number) => Math.round((bytes / 2 ** 30) * 10) / 10
+
+/**
+ * One flat `environment_list` row. Every row carries every column (null when
+ * unknown: offline, or a node too old to report it) so TOON keeps its table form.
+ */
+export function environmentRow(item: EnvironmentListItem, isLocal: boolean, facts: { machine?: EnvironmentMachine; note?: string; harnessIds?: readonly string[]; live?: EnvironmentLiveStatus }) {
+  const { machine, live } = facts
+  return {
+    environmentId: item.environmentId,
+    label: item.label,
+    isLocal,
+    state: item.state,
+    searchable: item.kind === 'local' || item.capabilities?.sessionArchive === true,
+    os: machine?.os ?? item.platform?.os ?? null,
+    arch: item.platform?.arch ?? null,
+    cpu: machine ? [machine.cpuModel, `${machine.cpuCores} cores`].filter(Boolean).join(', ') : null,
+    memoryGb: machine ? gib(machine.memoryBytes) : null,
+    gpus: machine?.gpus?.join('; ') ?? null,
+    harnesses: facts.harnessIds?.join(' ') ?? null,
+    toolchains: machine ? machine.toolchains.map(tool => tool.version ? `${tool.name} ${tool.version}` : tool.name).join(', ') : null,
+    note: facts.note || null,
+    load1: live?.load1 ?? null,
+    freeMemoryGb: live ? gib(live.freeMemoryBytes) : null,
+    runningSessions: live?.sessions?.running ?? null,
+    pendingSessions: live?.sessions?.pending ?? null,
+    gui: live?.gui ?? null,
+  }
+}
+
 function failure(error: unknown): ArchiveToolResult {
   return { content: [{ type: 'text', text: JSON.stringify({ status: 'error', message: error instanceof Error ? error.message : 'Environment read failed' }) }], isError: true }
 }

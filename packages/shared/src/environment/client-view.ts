@@ -7,6 +7,7 @@
  */
 
 import type { EnvironmentCapabilities } from './capabilities'
+import type { EnvironmentMachine } from './descriptor'
 import type { EndpointKind, EndpointProfile, InstallationProfile } from './known-environment'
 import type { SupervisorState } from './connection-supervisor-core'
 
@@ -28,6 +29,9 @@ export interface EnvironmentListItem {
   cliVersion?: string
   protocolVersion?: number
   capabilities?: EnvironmentCapabilities
+  /** Remote descriptor facts; the local machine's are read in-process by `environment_list`. */
+  machine?: EnvironmentMachine
+  note?: string
   endpointProfiles: EndpointProfile[]
   preferredEndpointId?: string
   installationProfile?: InstallationProfile

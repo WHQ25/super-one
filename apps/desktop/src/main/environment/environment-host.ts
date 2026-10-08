@@ -2621,6 +2621,8 @@ export class EnvironmentHost {
         cliVersion: descriptor?.cliVersion,
         protocolVersion: descriptor?.protocolVersion,
         capabilities: descriptor?.capabilities,
+        machine: descriptor?.machine,
+        note: descriptor?.note,
         endpointProfiles: known.endpointProfiles,
         preferredEndpointId: known.preferredEndpointId,
         installationProfile: known.installationProfile,

@@ -262,6 +262,10 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     return this.client.systemInfo()
   }
 
+  async getLiveStatus() {
+    return this.client.liveStatus()
+  }
+
   async openProject(
     path: string,
     name?: string,

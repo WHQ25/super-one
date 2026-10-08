@@ -13,24 +13,61 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ## [Unreleased]
 
+### Added
+
+- Preview PDFs and open PDF attachments on phones.
+- Show progress when cloning repositories locally.
+- Upload phone connection diagnostics to the desktop's mobile.log.
+
 ### Fixed
 
-- Preserve Codex's requested model and reasoning effort across session
-  creation, restart and resume.
-- Let unanswered usage-reset offers be dismissed and expire when the quota
-  resets, so they no longer block sending.
-- Keep chat history and the empty-chat landing still while switching
-  composers; taller composers rise without clipping.
-- Align session link chips with file chips.
+- Refresh phone project and session lists after desktop changes and reconnects.
+- Preserve file and line statistics in live mobile Bash results.
+- Show the phone chat scrollbar only during manual scrolling.
 
 ### Changed
 
-- Upgrade Claude Agent SDK to 0.3.293 (Claude Code 2.1.293), adding
-  Haiku 5.5.
-- Align the image composer with the text composer and add a reference
-  attachment button; show the reference drop hint in the prompt placeholder.
+- Share user bubbles across desktop and phone, including context chips,
+  attachments and prompt keyword highlights.
+- Display OpenCode patches, Code Mode and scoped permissions; refresh
+  directory-specific model and agent catalogs.
+- Upgrade Claude Agent SDK to 0.3.293, adding Haiku 5.5.
+- Replace the Debug mention with system prompt guidance.
 
-## [0.72.1-alpha] - 2026-10-07
+### Performance
+
+- Reduce relay traffic by throttling draft saves to five-second intervals
+  and skipping frames with no relay recipients.
+
+## [0.72.2-alpha] - 2026-10-08
+
+### Added
+
+- Preview PDFs and open PDF attachments on phones.
+- Show progress when cloning repositories locally.
+- Upload phone connection diagnostics to the desktop's mobile.log.
+
+### Fixed
+
+- Refresh phone project and session lists after desktop changes and reconnects.
+- Preserve file and line statistics in live mobile Bash results.
+- Show the phone chat scrollbar only during manual scrolling.
+
+### Changed
+
+- Share user bubbles across desktop and phone, including context chips,
+  attachments and prompt keyword highlights.
+- Display OpenCode patches, Code Mode and scoped permissions; refresh
+  directory-specific model and agent catalogs.
+- Upgrade Claude Agent SDK to 0.3.293, adding Haiku 5.5.
+- Replace the Debug mention with system prompt guidance.
+
+### Performance
+
+- Reduce relay traffic by throttling draft saves to five-second intervals
+  and skipping frames with no relay recipients.
+
+## [0.72.1] - 2026-10-07
 
 ### Fixed
 

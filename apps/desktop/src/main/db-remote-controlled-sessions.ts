@@ -18,6 +18,8 @@ export interface RemoteControllerRecord {
   sandboxMode?: string | null
   model?: string | null
   effort?: string | null
+  /** Credential id on this desktop the session runs on; absent follows the binding. */
+  apiProviderId?: string | null
   systemPromptAppend?: string | null
   /** Collaboration parent on the controller; its mailbox tools run there as Host Actions. */
   externalParent?: { sessionId: string } | null

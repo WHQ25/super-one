@@ -141,10 +141,14 @@ export function flatHarnessCatalog(args: {
  * Model + AI-provider controls for one collab launch row.
  * Mirrors the main chat selectors (Claude / Codex / OpenCode / ACP) for labels,
  * model catalog, effort chips, and third-party keys — without writing the parent session.
+ *
+ * `catalog: 'profile'` reads models, efforts and keys from the profile alone,
+ * for a launch on another machine whose catalog this one's caches do not describe.
  */
 export function useCollabLaunchModelSelector(args: {
   harnessId: HarnessId
   profile: SessionAgentProfile | undefined
+  catalog?: 'local' | 'profile'
   apiProviderId: string | null | undefined
   selectedModelId: string | null | undefined
   selectedEffort: string | null | undefined
@@ -170,6 +174,7 @@ export function useCollabLaunchModelSelector(args: {
 } {
   const { t } = useTranslation()
   const { harnessId, profile, apiProviderId, selectedModelId, selectedEffort, onChange } = args
+  const profileOnly = args.catalog === 'profile'
 
   const platforms = useSettingsStore((s) => s.platforms) ?? EMPTY_PLATFORMS
   const credentials = useSettingsStore((s) => s.credentials) ?? EMPTY_CREDENTIALS
@@ -182,10 +187,10 @@ export function useCollabLaunchModelSelector(args: {
   const setSettingsTab = useAppStore((s) => s.setSettingsTab)
   const experimentalClaudeOpenAiChatEnabled = useAppStore((s) => s.experimentalClaudeOpenAiChatEnabled)
   const activeProject = useChatStore((s) => s.activeProject)
-  const claudeCatalog = useChatStore((s) => s.harnessResources.claude?.models ?? EMPTY_MODELS)
-  const openCodeCatalog = useChatStore((s) => s.harnessResources.opencode?.models ?? EMPTY_MODELS)
-  const cursorResources = useChatStore((s) => s.harnessResources.cursor)
-  const dshCatalog = useChatStore((s) => s.harnessResources.dsh?.models ?? EMPTY_MODELS)
+  const claudeCatalog = useChatStore((s) => (profileOnly ? EMPTY_MODELS : s.harnessResources.claude?.models ?? EMPTY_MODELS))
+  const openCodeCatalog = useChatStore((s) => (profileOnly ? EMPTY_MODELS : s.harnessResources.opencode?.models ?? EMPTY_MODELS))
+  const cursorResources = useChatStore((s) => (profileOnly ? undefined : s.harnessResources.cursor))
+  const dshCatalog = useChatStore((s) => (profileOnly ? EMPTY_MODELS : s.harnessResources.dsh?.models ?? EMPTY_MODELS))
 
   const [codexModels, setCodexModels] = useState<ModelOption[]>([])
   const [codexLoading, setCodexLoading] = useState(false)
@@ -203,15 +208,15 @@ export function useCollabLaunchModelSelector(args: {
   }, [selectedHostConnectionId, providerScope, setProviderScope])
 
   useEffect(() => {
-    if (typeof fetchProviderData !== 'function') return
+    if (profileOnly || typeof fetchProviderData !== 'function') return
     void fetchProviderData()
-  }, [fetchProviderData, providerScope])
+  }, [profileOnly, fetchProviderData, providerScope])
 
   const supportsProviders = harnessId === 'claude' || harnessId === 'codex'
   const consumer = supportsProviders ? consumerForHarness(harnessId) : null
 
   const liveProviders = useMemo<SelectorProviderOption[]>(() => {
-    if (!consumer) return []
+    if (!consumer || profileOnly) return []
     return credentialsForConsumer(platforms, credentials, consumer, {
       experimentalClaudeOpenAiChatEnabled,
     }).map((credential) => {
@@ -224,7 +229,7 @@ export function useCollabLaunchModelSelector(args: {
         keyName: credential.name,
       }
     })
-  }, [consumer, platforms, credentials, experimentalClaudeOpenAiChatEnabled])
+  }, [consumer, profileOnly, platforms, credentials, experimentalClaudeOpenAiChatEnabled])
 
   const defaultProviderLabel = harnessId === 'codex'
     ? t('resources.providers.defaultLabelCodex')
@@ -253,12 +258,14 @@ export function useCollabLaunchModelSelector(args: {
 
   const activeModelEnv = useMemo(() => {
     if (harnessId !== 'claude') return null
-    const mapping = effective?.modelMapping
+    const mapping = profileOnly
+      ? profile?.apiProviders.find((provider) => provider.id === selectedProviderId)?.modelEnv
+      : effective?.modelMapping
     return mapping && Object.keys(mapping).length > 0 ? mapping : null
-  }, [harnessId, effective])
+  }, [harnessId, profileOnly, profile?.apiProviders, selectedProviderId, effective])
 
   const loadCodexModels = useMemo(() => {
-    if (harnessId !== 'codex') return null
+    if (harnessId !== 'codex' || profileOnly) return null
     return async (force = false) => {
       const projectPath = activeProject || ''
       const listModels = window.app?.codexListModels
@@ -279,7 +286,7 @@ export function useCollabLaunchModelSelector(args: {
         if (requestId === codexRequestId.current) setCodexLoading(false)
       }
     }
-  }, [harnessId, activeProject, selectedProviderId])
+  }, [harnessId, profileOnly, activeProject, selectedProviderId])
 
   useEffect(() => {
     if (!loadCodexModels) {

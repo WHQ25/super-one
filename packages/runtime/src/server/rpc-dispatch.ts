@@ -92,10 +92,11 @@ function requiredPorts(method: string): readonly FamilyPort[] {
 }
 
 function serves(ctx: HostRpcContext, method: string): boolean {
-  if (!requiredPorts(method).every((port) => ctx[port] != null)) return false
-  // A partial git port serves only the methods it names.
-  const gitMethods = ctx.workspaceGit?.servedMethods
-  return !(gitMethods && method.startsWith('git.') && method !== 'git.clone' && !gitMethods.has(method))
+  // A partial port (`servedMethods`) serves only the methods it names.
+  return requiredPorts(method).every((port) => {
+    const served = ctx[port] as { readonly servedMethods?: ReadonlySet<string> } | undefined
+    return served != null && (!served.servedMethods || served.servedMethods.has(method))
+  })
 }
 
 /** The explicit answer for a method family this host does not serve. */
@@ -2017,10 +2018,13 @@ function handleSessionCreate(payload: unknown, ctx: RpcContext): RpcResult {
       profileSettings.sandboxMode,
       defaults.sandboxMode,
     )
+    // A credential id on this node; null follows the node's provider binding.
+    const apiProviderId = pick(options.apiProviderId, p.apiProviderId, undefined, null)
     let session = ctx.sessions.create({
       projectId,
       harnessId,
       providerId,
+      ...(apiProviderId ? { apiProviderId } : {}),
       title: typeof p.title === 'string' ? p.title : undefined,
       cwd,
       systemPromptAppend,

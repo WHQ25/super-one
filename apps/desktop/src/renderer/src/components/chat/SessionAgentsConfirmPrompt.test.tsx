@@ -1,9 +1,9 @@
 /** @vitest-environment jsdom */
 
-import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ReactElement } from 'react'
-import type { SessionAgentRequestPayload } from '@superone/shared/agent-types'
+import type { RemoteAgentProfiles, SessionAgentProfile, SessionAgentRequestPayload } from '@superone/shared/agent-types'
 import { useMosaicStore } from '@/components/mosaic/mosaic-store'
 import { useChatStore } from '@/stores/chat'
 import { SessionAgentsConfirmPrompt } from './SessionAgentsConfirmPrompt'
@@ -13,6 +13,48 @@ function renderInChat(ui: ReactElement) {
   const result = render(<div data-chat-root="" tabIndex={-1}>{ui}</div>)
   ;(result.container.querySelector('[data-chat-root]') as HTMLElement).focus()
   return result
+}
+
+afterEach(() => {
+  delete (window as { environment?: unknown }).environment
+})
+
+function mockRemoteCatalog(answer: (environmentId: string) => Promise<RemoteAgentProfiles>) {
+  const remoteAgentProfiles = vi.fn(answer)
+  ;(window as unknown as { environment: { remoteAgentProfiles: typeof remoteAgentProfiles } }).environment = { remoteAgentProfiles }
+  return remoteAgentProfiles
+}
+
+/** The target machine's own Claude: other models and a key this machine does not have. */
+const STUDIO_CLAUDE: SessionAgentProfile = {
+  id: 'claude-base',
+  name: 'Claude',
+  harnessId: 'claude',
+  defaultConfig: { model: 'claude-opus', effort: 'high' },
+  models: [{ id: 'claude-opus', name: 'Studio Opus' }, { id: 'claude-haiku', name: 'Studio Haiku' }],
+  efforts: ['medium', 'high'],
+  apiProviders: [{ id: 'studio-key', name: 'Bedrock', keyName: 'Studio account' }],
+}
+
+function remoteLaunchPayload(model?: string): SessionAgentRequestPayload {
+  const remote = payload()
+  remote.launches = [remote.launches[0]]
+  delete remote.launches[0].config.cwd
+  delete remote.launches[0].config.effort
+  if (model) remote.launches[0].config.model = model
+  else delete remote.launches[0].config.model
+  remote.launches[0].config.remote = {
+    environmentId: 'env-b',
+    label: 'Studio Mac',
+    repository: 'github.com/acme/app',
+    cloneUrl: 'git@github.com:acme/app.git',
+    projectId: 'p-app',
+    projectPath: '/Users/b/app',
+    baseRef: 'origin/HEAD',
+    unpushedCommits: 0,
+    uncommittedChanges: 0,
+  }
+  return remote
 }
 
 function payload(): SessionAgentRequestPayload {
@@ -201,7 +243,8 @@ describe('session agents confirm prompt', () => {
     expect(screen.getByTitle('Local')).toBeInTheDocument()
   })
 
-  it('shows the target machine, the clone and what this checkout keeps back for a remote launch', () => {
+  it('shows the target machine, the clone and what this checkout keeps back for a remote launch', async () => {
+    mockRemoteCatalog(async () => ({ supported: false }))
     const remote = payload()
     remote.launches = [remote.launches[0]]
     delete remote.launches[0].config.cwd
@@ -227,14 +270,49 @@ describe('session agents confirm prompt', () => {
     // No local working-location label for a child that runs elsewhere.
     expect(screen.queryByTitle('Local')).not.toBeInTheDocument()
 
-    // This machine's model list does not apply there; its defaults are used.
-    expect(screen.getByText("Studio Mac's default model")).toBeInTheDocument()
+    // An older target cannot list its catalog: this machine's list does not apply there, its defaults are used.
+    expect(await screen.findByText("Studio Mac's default model")).toBeInTheDocument()
     expect(screen.queryByText('Claude Sonnet')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: /Approve/ }))
     const confirmed = onConfirm.mock.calls[0][0][0].config
     expect(confirmed.remote).toMatchObject({ environmentId: 'env-b', cloneInto: '~/SuperOne/Projects' })
     expect(confirmed).not.toHaveProperty('effort')
+  })
+
+  it('picks a remote launch model from the target catalog, replacing one the target lacks', async () => {
+    const fetchCatalog = mockRemoteCatalog(async () => ({ supported: true, profiles: [STUDIO_CLAUDE] }))
+    const onConfirm = vi.fn()
+    renderInChat(<SessionAgentsConfirmPrompt payload={remoteLaunchPayload('claude-sonnet')} onConfirm={onConfirm} onReject={vi.fn()} />)
+
+    expect(await screen.findByText('claude-sonnet is not available on Studio Mac; the model selected here is used instead.')).toBeInTheDocument()
+    expect(fetchCatalog).toHaveBeenCalledWith('env-b')
+    // The target's catalog, not this machine's (whose Claude Sonnet the agent named).
+    expect(screen.getAllByText(/Studio Opus/).length).toBeGreaterThan(0)
+    expect(screen.queryByText(/Claude Sonnet/)).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /Approve/ }))
+    expect(onConfirm.mock.calls[0][0][0].config).toMatchObject({ model: 'claude-opus', effort: 'high' })
+  })
+
+  it('keeps a requested model the target offers and shows loading, then a retryable failure', async () => {
+    let fail = true
+    const fetchCatalog = mockRemoteCatalog(() => (fail
+      ? Promise.reject(new Error('Studio Mac is not connected'))
+      : Promise.resolve({ supported: true, profiles: [STUDIO_CLAUDE] })))
+    const onConfirm = vi.fn()
+    renderInChat(<SessionAgentsConfirmPrompt payload={remoteLaunchPayload('claude-haiku')} onConfirm={onConfirm} onReject={vi.fn()} />)
+
+    expect(screen.getByText("Loading Studio Mac's models…")).toBeInTheDocument()
+    expect(await screen.findByText("Could not load Studio Mac's models")).toBeInTheDocument()
+    fail = false
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    await waitFor(() => expect(screen.queryByText("Could not load Studio Mac's models")).not.toBeInTheDocument())
+    expect(fetchCatalog).toHaveBeenCalledTimes(2)
+    expect(screen.queryByText(/is not available on Studio Mac/)).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /Approve/ }))
+    expect(onConfirm.mock.calls[0][0][0].config).toMatchObject({ model: 'claude-haiku' })
   })
 
   it('confirms every launch, carrying per-tab overrides and untouched agent config', () => {

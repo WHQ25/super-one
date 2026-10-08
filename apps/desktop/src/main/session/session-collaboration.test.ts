@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { SESSION_AGENT_LAUNCHES_FIELD, type AgentEvent } from '@superone/shared/agent-types'
+import { SESSION_AGENT_LAUNCHES_FIELD, type AgentEvent, type SessionAgentProfile } from '@superone/shared/agent-types'
 import { ensureCollaborationGrantUniqueness } from '@superone/runtime/collaboration'
 import type { Session, SessionCreateOptions, SessionManager } from './types'
 
@@ -1985,6 +1985,8 @@ describe('spawning a child on another machine', () => {
   let remoteProjects: Array<{ projectId: string; path: string; name: string; extraDirs: string[]; repoIdentity: string | null }>
   let cloneReuses: boolean
   let remoteSession: { status: string; pendingInteraction: unknown }
+  /** The target's own agent catalog; 'unsupported' is a node too old to serve one. */
+  let remoteProfiles: SessionAgentProfile[] | 'unsupported'
 
   function git(...args: string[]) {
     execFileSync('git', ['-C', repo, ...args], { stdio: 'ignore' })
@@ -2000,7 +2002,14 @@ describe('spawning a child on another machine', () => {
     cloneReuses = false
     remoteProjects = []
     remoteSession = { status: 'streaming', pendingInteraction: null }
+    remoteProfiles = 'unsupported'
     const port: RemoteCollaborationPort = {
+      listProfiles: async () => {
+        if (remoteProfiles === 'unsupported') {
+          throw Object.assign(new Error('unsupported method: collaboration.listProfiles'), { code: 'not_found', details: { unsupported: true } })
+        }
+        return remoteProfiles
+      },
       listEnvironments: async () => [
         { environmentId: 'env-b', connectionId: 'conn-b', label: 'Studio Mac', connected: true, harnessIds: ['claude'] },
         { environmentId: 'env-off', connectionId: 'conn-off', label: 'Laptop', connected: false, harnessIds: ['claude'] },
@@ -2042,17 +2051,33 @@ describe('spawning a child on another machine', () => {
     return { parent, ...fixture }
   }
 
-  async function requestRemote(parent: Session, host: SessionManager, environment = 'env-b') {
+  async function requestRemote(
+    parent: Session,
+    host: SessionManager,
+    environment = 'env-b',
+    options: { config?: Record<string, unknown>; confirm?: Record<string, unknown> } = {},
+  ) {
     const promise = requestSessionAgents(parent.id, {
-      launches: [{ launchId: 'remote', agentId: 'claude-base', environment, summary: 'Build it', name: 'Builder', role: 'Implementer' }],
+      launches: [{ launchId: 'remote', agentId: 'claude-base', environment, summary: 'Build it', name: 'Builder', role: 'Implementer', ...(options.config ? { config: options.config } : {}) }],
     }, host)
     await vi.waitFor(() => expect(parent.emitHostEvent).toHaveBeenCalled())
     const event = (parent.emitHostEvent as ReturnType<typeof vi.fn>).mock.calls[0][0] as AgentEvent
     if (event.type !== 'permission_request') throw new Error('Expected permission request')
     const launches = event.request.sessionAgentsConfirm!.launches
-    resolveSessionAgentsConfirm(event.request.requestId, 'accept', { [SESSION_AGENT_LAUNCHES_FIELD]: JSON.stringify(launches) })
+    const confirmed = launches.map((launch) => ({ ...launch, config: { ...launch.config, ...options.confirm } }))
+    resolveSessionAgentsConfirm(event.request.requestId, 'accept', { [SESSION_AGENT_LAUNCHES_FIELD]: JSON.stringify(confirmed) })
     await promise
     return launches[0]
+  }
+
+  const STUDIO_CLAUDE: SessionAgentProfile = {
+    id: 'claude-base',
+    name: 'Claude',
+    harnessId: 'claude',
+    defaultConfig: { model: 'claude-sonnet', effort: 'high' },
+    models: [{ id: 'claude-sonnet', name: 'Sonnet' }, { id: 'claude-opus', name: 'Opus' }],
+    efforts: ['medium', 'high'],
+    apiProviders: [{ id: 'cred-studio', name: 'Anthropic', keyName: 'Studio key' }],
   }
 
   it('lists the machines a child can run on with the agents they have ready', async () => {
@@ -2060,6 +2085,46 @@ describe('spawning a child on another machine', () => {
     expect(listed.environments).toEqual([
       expect.objectContaining({ environmentId: 'env-b', label: 'Studio Mac', agents: [expect.objectContaining({ id: 'claude-base' })] }),
     ])
+  })
+
+  it('lists the agents of a machine that serves its catalog from that catalog', async () => {
+    remoteProfiles = [STUDIO_CLAUDE, { ...STUDIO_CLAUDE, id: 'claude-custom', name: 'Custom' }]
+    const listed = await listCollaborationAgents()
+    expect(listed.environments).toEqual([expect.objectContaining({
+      environmentId: 'env-b',
+      // Only base profiles: a remote launch runs the target's base provider.
+      agents: [{ id: 'claude-base', name: 'Claude', harnessId: 'claude', models: STUDIO_CLAUDE.models, efforts: STUDIO_CLAUDE.efforts, apiProviders: STUDIO_CLAUDE.apiProviders }],
+    })])
+  })
+
+  it('creates the child on the model and key picked from the target catalog', async () => {
+    remoteProfiles = [STUDIO_CLAUDE]
+    const { parent, host } = remoteParent()
+    const launch = await requestRemote(parent, host, 'env-b', {
+      config: { apiProviderId: 'cred-studio' },
+      confirm: { model: 'claude-opus', effort: 'medium' },
+    })
+    expect(launch.config.apiProviderId).toBe('cred-studio')
+    await startSessionAgent('parent', { launchId: 'remote', task: 'Implement export' }, host)
+    expect(calls.createSession).toEqual([expect.objectContaining({
+      options: expect.objectContaining({ model: 'claude-opus', effort: 'medium', apiProviderId: 'cred-studio' }),
+    })])
+    expect(calls.send).toEqual([expect.objectContaining({ model: 'claude-opus', effort: 'medium', apiProviderId: 'cred-studio' })])
+  })
+
+  it('refuses a key or model the target does not have, and a key on a machine that cannot list any', async () => {
+    remoteProfiles = [STUDIO_CLAUDE]
+    const { parent, host } = remoteParent()
+    await expect(requestSessionAgents(parent.id, {
+      launches: [{ agentId: 'claude-base', environment: 'env-b', summary: 'Build it', config: { apiProviderId: 'cred-local' } }],
+    }, host)).rejects.toThrow(/Unknown apiProviderId for agent claude-base: cred-local/)
+    await expect(requestRemote(parent, host, 'env-b', { confirm: { model: 'gpt-5' } }))
+      .rejects.toThrow(/Model gpt-5 is not available for claude-base on Studio Mac/)
+
+    remoteProfiles = 'unsupported'
+    await expect(requestSessionAgents(parent.id, {
+      launches: [{ agentId: 'claude-base', environment: 'env-b', summary: 'Build it', config: { apiProviderId: 'cred-studio' } }],
+    }, host)).rejects.toThrow(/cannot list its provider keys/)
   })
 
   it('matches the target checkout by origin and shows what the child will not see', async () => {

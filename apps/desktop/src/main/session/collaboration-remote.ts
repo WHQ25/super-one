@@ -6,6 +6,7 @@
  */
 
 import type {
+  RemoteAgentProfiles,
   SessionAgentLaunchConfig,
   SessionAgentProfile,
   SessionAgentRemoteLaunch,
@@ -51,6 +52,8 @@ export interface RemoteCollaborationPort {
     projectId: string,
     input: { baseBranch: string; mode: 'branch'; branchName: string },
   ): Promise<{ path: string }>
+  /** The node's launchable agent profiles; rejects with an unsupported error on a node that has none to list. */
+  listProfiles(connectionId: string): Promise<SessionAgentProfile[]>
   createSession(connectionId: string, input: {
     environmentId: string
     projectId: string
@@ -72,6 +75,7 @@ export interface RemoteCollaborationPort {
     permissionMode?: string
     model?: string
     effort?: string
+    apiProviderId?: string
   }): Promise<void>
   getSession(connectionId: string, sessionId: string): Promise<RemoteSessionState | null>
   /** Head of the node's durable event log (inclusive). */
@@ -112,11 +116,32 @@ export async function connectedEnvironment(environmentId: string): Promise<Remot
   return env
 }
 
-/** Connected machines with the local profiles they can run (base harness profiles only). */
+/** The base profiles of `env`, or null when it is too old to list them. */
+async function listBaseProfiles(env: RemoteCollabEnvironment): Promise<SessionAgentProfile[] | null> {
+  try {
+    const profiles = await (await remotePort()).listProfiles(env.connectionId)
+    return (Array.isArray(profiles) ? profiles : []).filter((profile) => profile.id === remoteProviderId(profile.harnessId))
+  } catch (error) {
+    if (isUnsupported(error)) return null
+    throw error
+  }
+}
+
+/**
+ * The agents a remote child can run on `environmentId`, with that machine's
+ * models, efforts and provider key ids and labels. `supported: false` is a
+ * node too old to list them; its children run on its own defaults.
+ */
+export async function remoteAgentProfiles(environmentId: string): Promise<RemoteAgentProfiles> {
+  const profiles = await listBaseProfiles(await connectedEnvironment(environmentId))
+  return profiles ? { supported: true, profiles } : { supported: false }
+}
+
+/** Connected machines with the base profiles they can run, from their own catalog where they serve it. */
 export async function listRemoteAgentEnvironments(localProfiles: SessionAgentProfile[]): Promise<Array<{
   environmentId: string
   label: string
-  agents: Array<Pick<SessionAgentProfile, 'id' | 'name' | 'harnessId' | 'brandKey' | 'models' | 'efforts'>>
+  agents: Array<Pick<SessionAgentProfile, 'id' | 'name' | 'harnessId' | 'brandKey' | 'models' | 'efforts' | 'apiProviders'>>
 }>> {
   let environments: RemoteCollabEnvironment[]
   try {
@@ -124,12 +149,20 @@ export async function listRemoteAgentEnvironments(localProfiles: SessionAgentPro
   } catch {
     return []
   }
-  return environments.filter((env) => env.connected).map((env) => ({
-    environmentId: env.environmentId,
-    label: env.label,
-    agents: localProfiles
-      .filter((profile) => profile.id === remoteProviderId(profile.harnessId) && env.harnessIds.includes(profile.harnessId))
-      .map(({ id, name, harnessId, brandKey, models, efforts }) => ({ id, name, harnessId, brandKey, models, efforts })),
+  return Promise.all(environments.filter((env) => env.connected).map(async (env) => {
+    // A node that cannot list its catalog runs the harnesses it reports ready, on its own defaults.
+    const remote = await listBaseProfiles(env).catch(() => null)
+    const profiles = remote
+      ?? localProfiles
+        .filter((profile) => profile.id === remoteProviderId(profile.harnessId) && env.harnessIds.includes(profile.harnessId))
+        .map((profile) => ({ ...profile, apiProviders: [] }))
+    return {
+      environmentId: env.environmentId,
+      label: env.label,
+      agents: profiles.map(({ id, name, harnessId, brandKey, models, efforts, apiProviders }) => (
+        { id, name, harnessId, brandKey, models, efforts, apiProviders }
+      )),
+    }
   }))
 }
 
@@ -287,6 +320,7 @@ export async function startRemoteChild(input: {
       harnessId: input.harnessId,
       ...(input.config.model ? { model: input.config.model } : {}),
       ...(input.config.effort ? { effort: input.config.effort } : {}),
+      ...(input.config.apiProviderId ? { apiProviderId: input.config.apiProviderId } : {}),
       ...(input.config.permissionMode ? { permissionMode: input.config.permissionMode } : {}),
       ...(input.config.sandboxMode ? { sandboxMode: input.config.sandboxMode } : {}),
     },
@@ -327,6 +361,7 @@ export async function sendToRemoteChild(
     ...(config.permissionMode ? { permissionMode: config.permissionMode } : {}),
     ...(config.model ? { model: config.model } : {}),
     ...(config.effort ? { effort: config.effort } : {}),
+    ...(config.apiProviderId ? { apiProviderId: config.apiProviderId } : {}),
   })
 }
 

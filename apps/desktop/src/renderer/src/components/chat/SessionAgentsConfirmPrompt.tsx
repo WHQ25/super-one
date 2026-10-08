@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
-import { AlertTriangle, Bot, FolderClosed, GitBranch, MessageSquare, Server, Users, Zap } from 'lucide-react'
+import { AlertTriangle, Bot, FolderClosed, GitBranch, Loader2, MessageSquare, RefreshCw, Server, Users, Zap } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Kbd } from '@superone/ui/components/ui/kbd'
@@ -8,6 +8,7 @@ import { findCodexFastServiceTier } from '@superone/shared/codex-fast-mode'
 import {
   buildLaunchTabLabels,
   isHandoffLaunch,
+  isLaunchModelOffered,
   isLinkLaunch,
   launchNameRoleLine,
   launchWorkDir,
@@ -33,6 +34,7 @@ import { ApproveRejectBar } from './PermissionActionBar'
 import { WorkDirLabel, workDirTitle, type WorkDirState } from './work-dir-label'
 import { GroupedModelEffortSelector } from './model-selector/GroupedModelEffortSelector'
 import { useCollabLaunchModelSelector } from './model-selector/useCollabLaunchModelSelector'
+import { useRemoteAgentCatalogs, type RemoteAgentCatalog } from './model-selector/useRemoteAgentCatalogs'
 import { isFocusInChat, useChatRootRef } from './is-focus-in-chat'
 import { leaveDecisionField, shouldSuppressDecisionShortcut } from './composer-slot/decision-composer-policy'
 
@@ -141,15 +143,80 @@ function RemoteLaunchTarget({ remote }: { remote: SessionAgentRemoteLaunch }) {
   )
 }
 
+/** The target machine's own profile for a remote launch, once its catalog has loaded. */
+function remoteProfileOf(launch: SessionAgentLaunchProposal, catalog: RemoteAgentCatalog | undefined): SessionAgentProfile | undefined {
+  return catalog?.status === 'ready' ? catalog.profiles.find((profile) => profile.id === launch.agentId) : undefined
+}
+
+/**
+ * The model control of a launch on another machine until its catalog offers
+ * a picker: loading, a failed load with retry, or the target's default model
+ * when it is too old to list one or lists no models for this agent.
+ */
+function RemoteModelStatus({
+  remote,
+  catalog,
+  model,
+  onRetry,
+}: {
+  remote: SessionAgentRemoteLaunch
+  catalog: RemoteAgentCatalog | undefined
+  model: string | undefined
+  onRetry: () => void
+}) {
+  const { t } = useTranslation()
+  const machine = remote.label
+  if (!catalog || catalog.status === 'loading') {
+    return (
+      <span className="inline-flex min-w-0 items-center gap-1 px-1 text-xs text-muted-foreground">
+        <Loader2 className="size-3 shrink-0 animate-spin" />
+        <span className="truncate">{t('chat.sessionAgentsConfirm.remoteModelsLoading', { machine })}</span>
+      </span>
+    )
+  }
+  if (catalog.status === 'error') {
+    return (
+      <span className="inline-flex min-w-0 items-center gap-0.5 pl-1 text-xs text-error" title={catalog.message}>
+        <AlertTriangle className="size-3 shrink-0" />
+        <span className="truncate">{t('chat.sessionAgentsConfirm.remoteModelsError', { machine })}</span>
+        <IconButton size="sm" tooltip={t('chat.sessionAgentsConfirm.remoteModelsRetry')} onClick={onRetry}>
+          <RefreshCw />
+        </IconButton>
+      </span>
+    )
+  }
+  return (
+    <span
+      className="min-w-0 truncate px-1 text-xs text-muted-foreground"
+      title={t(
+        catalog.status === 'unsupported' ? 'chat.sessionAgentsConfirm.remoteCatalogUnsupported' : 'chat.sessionAgentsConfirm.remoteNoModels',
+        { machine },
+      )}
+    >
+      {model
+        ? t('chat.sessionAgentsConfirm.remoteModel', { model })
+        : t('chat.sessionAgentsConfirm.remoteDefaultModel', { machine })}
+    </span>
+  )
+}
+
 function LaunchPanel({
   launch,
+  requested,
   profile,
+  remoteCatalog,
+  onRetryRemoteCatalog,
   summaryExpanded,
   onToggleSummary,
   onChange,
 }: {
   launch: SessionAgentLaunchProposal
+  /** The launch as the agent proposed it, before the user's edits. */
+  requested: SessionAgentLaunchProposal
   profile: SessionAgentProfile | undefined
+  /** The target machine's catalog for a remote launch. */
+  remoteCatalog: RemoteAgentCatalog | undefined
+  onRetryRemoteCatalog: () => void
   summaryExpanded: boolean
   onToggleSummary: () => void
   onChange: (patch: EditableConfig) => void
@@ -160,17 +227,23 @@ function LaunchPanel({
   const link = isLinkLaunch(launch)
   const handoff = isHandoffLaunch(launch)
   const harnessId = profile?.harnessId ?? 'claude'
+  // A remote launch picks from the target's own catalog, never this machine's.
+  const remoteProfile = config.remote ? remoteProfileOf(launch, remoteCatalog) : undefined
+  const catalogProfile = config.remote ? remoteProfile : profile
   const modelSelector = useCollabLaunchModelSelector({
     harnessId,
-    profile,
+    profile: catalogProfile,
+    catalog: config.remote ? 'profile' : 'local',
     apiProviderId: config.apiProviderId,
-    selectedModelId: config.model,
-    selectedEffort: config.effort,
+    selectedModelId: config.model ?? catalogProfile?.defaultConfig.model,
+    selectedEffort: config.effort ?? catalogProfile?.defaultConfig.effort,
     onChange,
   })
   const workDirState: WorkDirState = launchWorkDir(config.worktree)
   const selectedProfileModel = profile?.models.find((model) => model.id === modelSelector.selectedModelId)
-  const supportsFastMode = harnessId === 'codex' && !!findCodexFastServiceTier(selectedProfileModel)
+  const supportsFastMode = !config.remote && harnessId === 'codex' && !!findCodexFastServiceTier(selectedProfileModel)
+  const remotePicker = !!remoteProfile && remoteProfile.models.length > 0
+  const requestedModelMissing = !!remoteProfile && !isLaunchModelOffered(remoteProfile, requested.config)
   const nameRole = launchNameRoleLine(launch)
   const peerTitle = peerSessionTitle(launch)
   const summary = launch.summary.trim()
@@ -286,16 +359,13 @@ function LaunchPanel({
           )}
 
           <div className="mt-2 flex min-w-0 shrink-0 flex-wrap items-center gap-1 rounded-md border border-border bg-muted/20 px-1 py-0.5">
-            {config.remote ? (
-              // The target runs its own providers and catalog; this machine's list does not apply there.
-              <span
-                className="min-w-0 truncate px-1 text-xs text-muted-foreground"
-                title={t('chat.sessionAgentsConfirm.remoteModelHint', { machine: config.remote.label })}
-              >
-                {config.model
-                  ? t('chat.sessionAgentsConfirm.remoteModel', { model: config.model })
-                  : t('chat.sessionAgentsConfirm.remoteDefaultModel', { machine: config.remote.label })}
-              </span>
+            {config.remote && !remotePicker ? (
+              <RemoteModelStatus
+                remote={config.remote}
+                catalog={remoteCatalog}
+                model={config.model}
+                onRetry={onRetryRemoteCatalog}
+              />
             ) : (<>
             {/* Fast mode rides in front of the model label as a toggleable glyph, mirroring the
                 lightning bolt the chat-input model trigger shows when the Fast tier is on. */}
@@ -355,6 +425,17 @@ function LaunchPanel({
               </>
             )}
           </div>
+          {config.remote && requestedModelMissing && (
+            <p className="mt-1 flex shrink-0 items-start gap-1 text-xs leading-snug text-warning">
+              <AlertTriangle className="mt-px size-3 shrink-0" />
+              <span>
+                {t('chat.sessionAgentsConfirm.remoteModelUnavailable', {
+                  model: requested.config.model,
+                  machine: config.remote.label,
+                })}
+              </span>
+            </p>
+          )}
         </>
       )}
     </div>
@@ -372,6 +453,11 @@ export function SessionAgentsConfirmPrompt({ payload, onConfirm, onReject }: Pro
   const chatRootRef = useChatRootRef()
 
   const { launches, profiles } = payload
+  const remoteEnvironmentIds = useMemo(
+    () => launches.flatMap((launch) => (launch.config.remote ? [launch.config.remote.environmentId] : [])),
+    [launches],
+  )
+  const { catalogs: remoteCatalogs, retry: retryRemoteCatalog } = useRemoteAgentCatalogs(remoteEnvironmentIds)
   const tabLabels = useMemo(() => buildLaunchTabLabels(launches, profiles), [launches, profiles])
   const multiple = launches.length > 1
   const activeIndex = Math.min(activeTab, launches.length - 1)
@@ -385,12 +471,22 @@ export function SessionAgentsConfirmPrompt({ payload, onConfirm, onReject }: Pro
   const resolved = useMemo(
     () => launches.map((launch) => {
       if (launch.config.remote) {
-        // Another machine: its own model catalog and providers apply; only how it runs is editable here.
-        const { permissionMode, sandboxMode } = overrides[launch.launchId] ?? {}
+        // Another machine: only its own catalog applies. Until it loads, or when the
+        // machine cannot list one, the child runs on its defaults and only how it runs is editable.
+        const { permissionMode, sandboxMode, fastMode: _fastMode, ...selection } = overrides[launch.launchId] ?? {}
+        const remoteProfile = remoteProfileOf(launch, remoteCatalogs[launch.config.remote.environmentId])
+        // A model the agent asked for that the target lacks falls back to the target's default.
+        const fallback = remoteProfile && !isLaunchModelOffered(remoteProfile, launch.config)
+          ? {
+              model: remoteProfile.defaultConfig.model ?? remoteProfile.models[0]?.id,
+              effort: remoteProfile.defaultConfig.effort,
+            }
+          : {}
         return {
           ...launch,
           config: {
             ...launch.config,
+            ...(remoteProfile ? { ...fallback, ...selection } : {}),
             ...(permissionMode ? { permissionMode } : {}),
             ...(sandboxMode ? { sandboxMode } : {}),
           },
@@ -406,7 +502,7 @@ export function SessionAgentsConfirmPrompt({ payload, onConfirm, onReject }: Pro
         },
       }
     }),
-    [launches, overrides, profiles],
+    [launches, overrides, profiles, remoteCatalogs],
   )
 
   const handleConfirm = useCallback(() => onConfirm(resolved), [onConfirm, resolved])
@@ -537,7 +633,12 @@ export function SessionAgentsConfirmPrompt({ payload, onConfirm, onReject }: Pro
         <LaunchPanel
           key={activeLaunch.launchId}
           launch={resolved[activeIndex]}
+          requested={activeLaunch}
           profile={profiles.find((profile) => profile.id === activeLaunch.agentId)}
+          remoteCatalog={activeLaunch.config.remote ? remoteCatalogs[activeLaunch.config.remote.environmentId] : undefined}
+          onRetryRemoteCatalog={() => {
+            if (activeLaunch.config.remote) retryRemoteCatalog(activeLaunch.config.remote.environmentId)
+          }}
           summaryExpanded={summaryExpanded}
           onToggleSummary={() => setSummaryExpanded((value) => !value)}
           onChange={(patch) => setOverrides((current) => ({

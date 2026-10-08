@@ -324,7 +324,7 @@ export class DesktopSessionHost implements SessionHostPort {
       sandboxMode: row.controller.sandboxMode ?? null,
       model: row.controller.model ?? null,
       effort: row.controller.effort ?? null,
-      apiProviderId: null,
+      apiProviderId: row.controller.apiProviderId ?? null,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
       isPinned: row.isPinned,
@@ -379,6 +379,7 @@ export class DesktopSessionHost implements SessionHostPort {
     const controller: RemoteControllerRecord = {
       clientSessionId,
       label: this.deps.controllerLabel(clientSessionId),
+      ...(input.apiProviderId ? { apiProviderId: input.apiProviderId } : {}),
       ...(input.systemPromptAppend ? { systemPromptAppend: input.systemPromptAppend } : {}),
       ...(input.externalParent ? { externalParent: { sessionId: input.externalParent.sessionId } } : {}),
     }
@@ -390,6 +391,7 @@ export class DesktopSessionHost implements SessionHostPort {
       projectPath,
       cwd,
       providerId,
+      ...(input.apiProviderId ? { apiProviderId: input.apiProviderId } : {}),
       ...(input.title ? { title: input.title } : {}),
       ...(input.systemPromptAppend ? { systemPromptAppend: input.systemPromptAppend } : {}),
     })
@@ -426,6 +428,7 @@ export class DesktopSessionHost implements SessionHostPort {
       sandboxMode: pick(patch.sandboxMode, row.controller.sandboxMode),
       model: pick(patch.model, row.controller.model),
       effort: pick(patch.effort, row.controller.effort),
+      apiProviderId: pick(patch.apiProviderId, row.controller.apiProviderId),
     }
     this.deps.store.setController(sessionId, controller)
     const live = this.deps.sessions.getSession(sessionId)
@@ -440,6 +443,10 @@ export class DesktopSessionHost implements SessionHostPort {
         await session.setPermissionMode(settings.permissionMode as PermissionMode)
       }
       if (settings.sandboxMode) await session.setSandboxMode(settings.sandboxMode as SandboxMode)
+      // Only an explicit key: without one the session follows this desktop's binding.
+      if (settings.apiProviderId && settings.apiProviderId !== session.getApiProviderId()) {
+        session.setApiProviderId(settings.apiProviderId)
+      }
     } catch (err) {
       log.warn('[node-host] applying settings failed sid=%s: %s', session.id, err instanceof Error ? err.message : String(err))
     }
@@ -485,6 +492,7 @@ export class DesktopSessionHost implements SessionHostPort {
       ...row.controller,
       permissionMode: input.permissionMode ?? row.controller.permissionMode,
       sandboxMode: input.sandboxMode ?? row.controller.sandboxMode,
+      apiProviderId: input.apiProviderId ?? row.controller.apiProviderId,
     })
     const request: SendMessageRequest = {
       content: input.text,

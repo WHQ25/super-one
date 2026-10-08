@@ -1,4 +1,9 @@
-import type { SessionAgentLaunchProposal, SessionAgentProfile, SessionAgentWorktreeConfig } from './agent-types'
+import type {
+  SessionAgentLaunchConfig,
+  SessionAgentLaunchProposal,
+  SessionAgentProfile,
+  SessionAgentWorktreeConfig,
+} from './agent-types'
 
 /**
  * Pure label derivations for the "request agents collaboration" confirm UI. Desktop
@@ -81,4 +86,17 @@ export function launchWorkDir(worktree: SessionAgentWorktreeConfig | null | unde
   if (worktree.mode === 'detach') return { kind: 'createFrom', base: worktree.baseBranch }
   if (worktree.mode === 'attach') return { kind: 'attachTo', base: worktree.baseBranch }
   return { kind: 'createBranch', name: worktree.branchName ?? '' }
+}
+
+/**
+ * Whether `profile` offers the launch's model. A profile's `models` is the
+ * catalog of the default provider, so a launch on a provider key and a profile
+ * without a listed catalog are not checked here.
+ */
+export function isLaunchModelOffered(
+  profile: SessionAgentProfile,
+  config: Pick<SessionAgentLaunchConfig, 'model' | 'apiProviderId'>,
+): boolean {
+  if (!config.model || config.apiProviderId || profile.models.length === 0) return true
+  return profile.models.some((model) => model.id === config.model)
 }

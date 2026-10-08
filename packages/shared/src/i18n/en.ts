@@ -2354,7 +2354,15 @@ export type Messages = {
       /** Model slot of a launch on another machine: that machine's defaults apply. */
       remoteDefaultModel: string
       remoteModel: string
-      remoteModelHint: string
+      /** Tooltip: the target runs a version that cannot list its models. */
+      remoteCatalogUnsupported: string
+      /** Tooltip: the target lists no models for this agent. */
+      remoteNoModels: string
+      remoteModelsLoading: string
+      remoteModelsError: string
+      remoteModelsRetry: string
+      /** Warning: the agent asked for a model the target does not offer. */
+      remoteModelUnavailable: string
       expandTask: string
       collapseTask: string
       hintSwitch: string
@@ -6728,7 +6736,12 @@ export const en: Messages = {
       remoteUnseenChanges: 'The agent sees only pushed work: {{commits}} unpushed commit(s) and {{files}} uncommitted file(s) on this machine will not reach it.',
       remoteDefaultModel: "{{machine}}'s default model",
       remoteModel: 'Model {{model}}',
-      remoteModelHint: 'Runs on the model and AI provider configured on {{machine}}',
+      remoteCatalogUnsupported: '{{machine}} runs an older SuperOne that cannot list its models, so the agent uses the model and AI provider configured there',
+      remoteNoModels: '{{machine}} lists no models for this agent, so it uses the model configured there',
+      remoteModelsLoading: "Loading {{machine}}'s models…",
+      remoteModelsError: "Could not load {{machine}}'s models",
+      remoteModelsRetry: 'Retry',
+      remoteModelUnavailable: '{{model}} is not available on {{machine}}; the model selected here is used instead.',
       expandTask: 'Show the full task',
       collapseTask: 'Collapse the task',
       hintSwitch: 'switch agent',

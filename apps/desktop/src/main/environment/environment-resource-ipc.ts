@@ -169,6 +169,13 @@ export function ensureEnvironmentResourceIpcRegistered(): void {
     },
   )
   ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_REMOTE_AGENT_PROFILES,
+    async (_e, environmentId: string) => {
+      const { remoteAgentProfiles } = await import('../session/collaboration-remote')
+      return remoteAgentProfiles(environmentId)
+    },
+  )
+  ipcMain.handle(
     AgentIpcChannels.ENVIRONMENT_SESSION_PROVIDERS_LIST,
     async (_e, connectionId: string, harnessId?: string) => {
       return (await host()).listRemoteSessionProviders(connectionId, harnessId)

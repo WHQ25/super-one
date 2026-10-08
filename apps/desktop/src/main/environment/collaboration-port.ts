@@ -4,6 +4,7 @@
  * changes on re-pair, so collaboration stores environmentIds instead).
  */
 
+import type { SessionAgentProfile } from '@superone/shared/agent-types'
 import { nodeProjectsDir, type NodeAgentSettings } from '@superone/shared/environment'
 import type { RemoteCollaborationPort } from '../session/collaboration-remote'
 import { getEnvironmentHost } from './environment-host'
@@ -42,6 +43,9 @@ export function environmentHostCollaborationPort(): RemoteCollaborationPort {
     },
     async activateWorktree(connectionId, projectId, input) {
       return await (await gateway(connectionId)).gitWorktreeActivate(projectId, input) as { path: string }
+    },
+    async listProfiles(connectionId) {
+      return await (await gateway(connectionId)).collaborationListProfiles() as SessionAgentProfile[]
     },
     async createSession(connectionId, input) {
       return (await gateway(connectionId)).sessions.create({

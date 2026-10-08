@@ -131,6 +131,13 @@ describe('session.create', () => {
     )
   })
 
+  it('creates the session on the provider key the client chose', async () => {
+    const { ctx, create } = sessionHost()
+    const res = await dispatchRpc('session.create', { projectId: 'p1', options: { apiProviderId: 'cred-b' } }, ctx)
+    expect(res.error).toBeUndefined()
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ apiProviderId: 'cred-b' }))
+  })
+
   it('passes the external collaboration parent of a child launched from another machine', async () => {
     const { ctx, create } = sessionHost()
     const res = await dispatchRpc('session.create', { projectId: 'p1', externalParent: { sessionId: 'parent-a' } }, ctx)
@@ -222,5 +229,26 @@ describe('git.clone into an existing folder', () => {
     } finally {
       rmSync(parent, { recursive: true, force: true })
     }
+  })
+})
+
+describe('a partial collaboration port', () => {
+  const profiles = [{ id: 'claude-base', name: 'Claude', harnessId: 'claude', defaultConfig: {}, models: [], efforts: [], apiProviders: [] }]
+  const ctx = () => projectsOnlyHost({
+    collaboration: {
+      servedMethods: new Set(['collaboration.listProfiles']),
+      listProfiles: () => profiles,
+    } as unknown as RpcContext['collaboration'],
+  })
+
+  it('lists profiles and answers the mailbox methods unsupported', async () => {
+    expect(await dispatchRpc('collaboration.listProfiles', {}, ctx())).toEqual({ result: profiles })
+    const send = await dispatchRpc('collaboration.send', {}, ctx())
+    expect(send.error).toMatchObject({ code: 'not_found', details: { method: 'collaboration.send', unsupported: true } })
+  })
+
+  it('does not advertise collaboration', async () => {
+    const res = await dispatchRpc('environment.descriptor', {}, ctx())
+    expect((res.result as ExecutionEnvironmentDescriptor).capabilities.collaboration).toBe(false)
   })
 })

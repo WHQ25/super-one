@@ -17,6 +17,7 @@ import {
 } from '../db-remote-controlled-sessions'
 import { getHarnessManager, probeDesktopHarness } from '../harness/service'
 import { desktopHarnessResolver } from '../harness/host'
+import { listSessionAgentProfiles } from '../session/agent-profiles'
 import { createDesktopProjectsPort } from './desktop-projects-port'
 import type { NodeHostSessionManager, NodeHostSessionStore } from './desktop-session-host'
 import { DesktopNodeHost } from './node-host-server'
@@ -79,6 +80,7 @@ export function applyNodeHostSettings(settings: NodeHostSettings, sessions: Node
           store: desktopSessionStore,
           projects: createDesktopProjectsPort({ list: getRecentFolders, add: addRecentFolder }),
           harnesses: getHarnessManager(),
+          listAgentProfiles: listSessionAgentProfiles,
           guiState: readDesktopGuiState,
           hooks: {
             probeHarnessReadiness: (_harnesses, id) => probeDesktopHarness(id),

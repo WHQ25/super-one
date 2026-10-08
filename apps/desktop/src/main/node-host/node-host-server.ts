@@ -8,6 +8,7 @@ import {
   loadOrCreateIdentity,
   startNodeServer,
   unsupportedMethodError,
+  type CollaborationPort,
   type HostCapabilityFlags,
   type NodeIdentity,
   type NodeServerHandle,
@@ -21,7 +22,7 @@ import { ControlLeaseService } from '@superone/runtime/lease'
 import { EventLog, createSqliteHostActionStore } from '@superone/runtime/session'
 import type { HarnessManager } from '@superone/runtime/harness'
 import { verifyPayload } from '@superone/runtime/crypto/crypto-util'
-import type { NodeHostPairingToken } from '@superone/shared/agent-types'
+import type { NodeHostPairingToken, SessionAgentProfile } from '@superone/shared/agent-types'
 import { DesktopSessionHost, type NodeHostSessionManager, type NodeHostSessionStore } from './desktop-session-host'
 import { createDesktopWorktreePort } from './desktop-worktree-port'
 import { reconcileRunsAfterRestart } from './reconcile-runs'
@@ -54,6 +55,25 @@ const desktopExtensions: RpcExtensionDispatch = (method) => {
   return { error: { code, message, details } }
 }
 
+/**
+ * Only the agent catalog of the collaboration family: a controller lists what
+ * it can launch here (harnesses, models, key ids and labels; never key
+ * material). The mailbox stays with the controller that launches the child.
+ */
+function desktopCollaborationPort(listProfiles: () => SessionAgentProfile[]): CollaborationPort {
+  const unsupported = (method: string) => async () => {
+    throw unsupportedMethodError(method)
+  }
+  return {
+    servedMethods: new Set(['collaboration.listProfiles']),
+    listProfiles,
+    request: unsupported('collaboration.request'),
+    start: unsupported('collaboration.start'),
+    send: unsupported('collaboration.send'),
+    retrieve: unsupported('collaboration.retrieve'),
+  }
+}
+
 export interface DesktopNodeHostDeps {
   userDataDir: string
   /** Shown to controllers as this environment's name; the host name by default. */
@@ -63,6 +83,8 @@ export interface DesktopNodeHostDeps {
   store: NodeHostSessionStore
   projects: ProjectsPort
   harnesses: HarnessManager
+  /** The agent profiles this desktop can launch, as its own collaboration lists them. */
+  listAgentProfiles: () => SessionAgentProfile[]
   /** Whether GUI tools can run now (`environment.status`). */
   guiState?: RpcContext['guiState']
   /** Harness readiness probes and runtime checks (desktop resolver). */
@@ -80,7 +102,7 @@ export interface DesktopNodeHostListen {
 /**
  * The node surface this desktop serves to other devices: the runtime node
  * server and RPC dispatcher over desktop ports (projects, sessions, harness
- * catalog), with the runtime's auth, leases, idempotency and durable event
+ * and agent catalogs), with the runtime's auth, leases, idempotency and durable event
  * log in a node database of its own under userData.
  */
 export class DesktopNodeHost {
@@ -117,6 +139,7 @@ export class DesktopNodeHost {
       })
       const hooks = desktopRpcHooks(deps)
       const workspaceGit = createDesktopWorktreePort(deps.projects)
+      const collaboration = desktopCollaborationPort(deps.listAgentProfiles)
       const startedAt = Date.now()
       const bindHost = listen.bindHost ?? DESKTOP_NODE_LOOPBACK_HOST
       // Pairing, tokens and RPC run only inside the pairing-secret channel
@@ -145,6 +168,7 @@ export class DesktopNodeHost {
             workspaceGit,
             sessions: sessionHost,
             harnesses: deps.harnesses,
+            collaboration,
             extensions: desktopExtensions,
             ...(deps.guiState ? { guiState: deps.guiState } : {}),
           }),

@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { ReactNode } from 'react'
-import type { SessionAgentProfile, SessionAgentRequestPayload } from '@superone/shared/agent-types'
+import type { RemoteAgentProfiles, SessionAgentProfile, SessionAgentRequestPayload } from '@superone/shared/agent-types'
 import { SessionAgentsConfirmPrompt } from './SessionAgentsConfirmPrompt'
 
 /** Tab shortcuts only arm inside [data-chat-root]; the container query drives the hint row. */
@@ -68,12 +68,72 @@ function codexPayload(overrides?: {
   }
 }
 
+/** The target machine's own Claude, with models and keys this machine does not have. */
+const STUDIO_CLAUDE: SessionAgentProfile = {
+  id: 'claude-base',
+  name: 'Claude',
+  harnessId: 'claude',
+  defaultConfig: { model: 'claude-sonnet-4-5', effort: 'high' },
+  models: [
+    { id: 'claude-sonnet-4-5', name: 'Claude Sonnet 4.5' },
+    { id: 'claude-opus', name: 'Claude Opus' },
+    { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5' },
+  ],
+  efforts: ['low', 'medium', 'high', 'max'],
+  apiProviders: [{ id: 'studio-bedrock', name: 'Amazon Bedrock', brand: 'aws', keyName: 'Studio team account' }],
+}
+
+const LONG_NAMES_CLAUDE: SessionAgentProfile = {
+  ...STUDIO_CLAUDE,
+  defaultConfig: { model: 'claude-sonnet-4-5-20250929-extended-context-preview', effort: 'high' },
+  models: [
+    { id: 'claude-sonnet-4-5-20250929-extended-context-preview', name: 'Claude Sonnet 4.5 (1M context, extended thinking preview build)' },
+    ...STUDIO_CLAUDE.models,
+  ],
+  apiProviders: [{ id: 'studio-gateway', name: 'Enterprise LLM Gateway (us-east-1 production)', keyName: 'Build farm shared account for nightly agents' }],
+}
+
+/**
+ * What `window.environment.remoteAgentProfiles` answers for the target machine:
+ * its catalog, a load that never finishes, a failure (a retry then loads), a
+ * node too old to list one, or a catalog without models for the agent.
+ */
+type RemoteCatalogMock = 'ready' | 'loading' | 'error' | 'unsupported' | 'no-models' | 'long-names'
+
+function remoteCatalogAnswer(mock: RemoteCatalogMock, attempt: number): Promise<RemoteAgentProfiles> {
+  switch (mock) {
+    case 'loading':
+      return new Promise(() => {})
+    case 'error':
+      return attempt === 1
+        ? Promise.reject(new Error("Error invoking remote method 'environment:remoteAgentProfiles': Error: Studio Mac is not connected"))
+        : Promise.resolve({ supported: true, profiles: [STUDIO_CLAUDE] })
+    case 'unsupported':
+      return Promise.resolve({ supported: false })
+    case 'no-models':
+      return Promise.resolve({ supported: true, profiles: [{ ...STUDIO_CLAUDE, models: [], defaultConfig: {} }] })
+    case 'long-names':
+      return Promise.resolve({ supported: true, profiles: [LONG_NAMES_CLAUDE] })
+    default:
+      return Promise.resolve({ supported: true, profiles: [STUDIO_CLAUDE] })
+  }
+}
+
 const meta: Meta<typeof SessionAgentsConfirmPrompt> = {
   title: 'Tool UI/Collaboration/Session Agents Confirm',
   component: SessionAgentsConfirmPrompt,
-  parameters: { layout: 'padded' },
+  parameters: { layout: 'padded', remoteCatalog: 'ready' satisfies RemoteCatalogMock },
   args: { onConfirm: () => {}, onReject: () => {} },
   decorators: [(Story) => <StoryShell width={820}><Story /></StoryShell>],
+  beforeEach: ({ parameters }) => {
+    const previousApi = window.environment
+    let attempt = 0
+    window.environment = {
+      ...previousApi,
+      remoteAgentProfiles: async () => remoteCatalogAnswer(parameters.remoteCatalog as RemoteCatalogMock, ++attempt),
+    }
+    return () => { window.environment = previousApi }
+  },
 }
 
 export default meta
@@ -163,14 +223,72 @@ function remotePayload(
   }
 }
 
-/** Launch on another machine that already has the repository; nothing local is left behind. */
+/**
+ * Launch on another machine that already has the repository. The model, effort and
+ * key pickers list that machine's own catalog, preselected on its default model.
+ */
 export const RemoteExistingCheckout: Story = {
   args: { payload: remotePayload({}) },
 }
 
-/** The agent asked for a model by name; the target's provider still serves it. */
+/** The agent asked for a model the target offers; it stays selected. */
 export const RemoteRequestedModel: Story = {
   args: { payload: remotePayload({}, 'claude-opus') },
+}
+
+/** The agent asked for a model the target lacks: a warning, and the target's default is selected instead. */
+export const RemoteRequestedModelUnavailable: Story = {
+  args: { payload: remotePayload({}, 'claude-3-opus-legacy') },
+}
+
+/** The target's catalog is still loading; approving now runs the child on the target's defaults. */
+export const RemoteCatalogLoading: Story = {
+  args: { payload: remotePayload({}) },
+  parameters: { remoteCatalog: 'loading' },
+}
+
+/** Loading the target's catalog failed; the retry button loads it (the mock succeeds on retry). */
+export const RemoteCatalogError: Story = {
+  args: { payload: remotePayload({}) },
+  parameters: { remoteCatalog: 'error' },
+}
+
+/** The target runs an older SuperOne without a catalog: the agent's model or the target's default, explained in the tooltip. */
+export const RemoteOlderNode: Story = {
+  args: { payload: remotePayload({}, 'claude-opus') },
+  parameters: { remoteCatalog: 'unsupported' },
+}
+
+/** The target lists no models for this agent; the child uses the target's configured model. */
+export const RemoteNoModels: Story = {
+  args: { payload: remotePayload({}) },
+  parameters: { remoteCatalog: 'no-models' },
+}
+
+/** Long machine, model and key names truncate inside the settings row. */
+export const RemoteLongNames: Story = {
+  args: { payload: remotePayload({ label: 'Build Farm Mac Studio (Rack 3, Shanghai office, nightly agents)' }) },
+  parameters: { remoteCatalog: 'long-names' },
+}
+
+/** Dark theme with the target's pickers and an unavailable-model warning. */
+export const RemoteDark: Story = {
+  args: { payload: remotePayload({ unpushedCommits: 2, uncommittedChanges: 1 }, 'claude-3-opus-legacy') },
+  globals: { theme: 'dark' },
+}
+
+/** Chinese copy in a narrow chat, while the target's catalog fails to load. */
+export const RemoteChineseNarrow: Story = {
+  args: { payload: remotePayload({}, 'claude-3-opus-legacy') },
+  parameters: { remoteCatalog: 'error' },
+  globals: { locale: 'zh' },
+  decorators: [(Story) => <StoryShell width={360}><Story /></StoryShell>],
+}
+
+/** Chinese copy with the target's pickers loaded and an unavailable-model warning. */
+export const RemoteChinese: Story = {
+  args: { payload: remotePayload({}, 'claude-3-opus-legacy') },
+  globals: { locale: 'zh' },
 }
 
 /** The target lacks the repository and clones it; this checkout has unpushed and uncommitted work. */

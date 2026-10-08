@@ -1351,6 +1351,8 @@ export interface EnvironmentAPI extends MediaComposerAPI {
     },
   ): Promise<unknown>
 
+  /** Agents a collaboration child can run on another machine, from that machine's catalog. */
+  remoteAgentProfiles(environmentId: string): Promise<import('@superone/shared/agent-types').RemoteAgentProfiles>
 
   /** Node session_providers list (optional harness filter). */
   listRemoteSessionProviders(

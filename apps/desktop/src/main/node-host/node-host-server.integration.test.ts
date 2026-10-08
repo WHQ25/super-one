@@ -3,7 +3,7 @@ import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { AgentEvent, ChatMessage, RecentFolder, SendMessageRequest } from '@superone/shared/agent-types'
+import type { AgentEvent, ChatMessage, RecentFolder, SendMessageRequest, SessionAgentProfile } from '@superone/shared/agent-types'
 import type { EnvironmentEventEnvelope, ExecutionEnvironmentDescriptor, ProjectSnapshot } from '@superone/shared/environment'
 import { HarnessManager } from '@superone/runtime/harness'
 import { openNodeDatabase } from '@superone/runtime/db'
@@ -36,6 +36,17 @@ import { createDesktopProjectsPort } from './desktop-projects-port'
 import { nodeControllerDeviceId, type NodeHostSessionManager, type NodeHostSessionStore } from './desktop-session-host'
 import { DesktopNodeHost } from './node-host-server'
 
+/** B's agent catalog: ids and labels of its keys, never key material. */
+const AGENT_PROFILES: SessionAgentProfile[] = [{
+  id: 'claude-base',
+  name: 'Claude',
+  harnessId: 'claude',
+  defaultConfig: { model: 'claude-sonnet', effort: 'high' },
+  models: [{ id: 'claude-sonnet', name: 'Sonnet' }, { id: 'claude-opus', name: 'Opus' }],
+  efforts: ['medium', 'high'],
+  apiProviders: [{ id: 'cred-b', name: 'Anthropic', keyName: 'Team key' }],
+}]
+
 const dirs: string[] = []
 const hosts: DesktopNodeHost[] = []
 const managers: NodeConnectionManager[] = []
@@ -63,6 +74,9 @@ class FakeSession {
     this.handlers.add(handler)
     return () => this.handlers.delete(handler)
   }
+  apiProviderId: string | null = null
+  getApiProviderId() { return this.apiProviderId }
+  setApiProviderId(id: string | null) { this.apiProviderId = id }
   claim(owner: { kind: 'remote'; deviceId: string }) { this.owner = owner }
   release() { this.owner = { kind: 'local' } }
   status: 'idle' | 'streaming' = 'idle'
@@ -91,8 +105,9 @@ class FakeSessionManager implements NodeHostSessionManager {
   readonly live = new Map<string, FakeSession>()
   private readonly listeners = new Set<(s: Session) => void>()
   active: string | null = 'local-session'
-  createSession(opts: { id?: string; cwd?: string; projectPath: string }) {
+  createSession(opts: { id?: string; cwd?: string; projectPath: string; apiProviderId?: string | null }) {
     const session = new FakeSession(opts.id!, opts.cwd ?? opts.projectPath)
+    session.apiProviderId = opts.apiProviderId ?? null
     this.live.set(session.id, session)
     this.active = session.id
     for (const l of this.listeners) l(session as unknown as Session)
@@ -154,6 +169,7 @@ async function pairedDesktops() {
   const host = await DesktopNodeHost.start(
     {
       userDataDir: userData, label: 'Desktop B', appVersion: '0.0.0-test', sessions, store, projects, harnesses,
+      listAgentProfiles: () => AGENT_PROFILES,
       hooks: {
         probeHarnessReadiness: () => ({ ok: true }) as never,
         assertSessionHarnessRuntimeReady: () => ({ ok: true, reason: 'test' }),
@@ -191,6 +207,7 @@ describe('DesktopNodeHost', () => {
         store,
         projects,
         harnesses,
+        listAgentProfiles: () => AGENT_PROFILES,
         hooks: {
           probeHarnessReadiness: () => ({ ok: true }) as never,
           assertSessionHarnessRuntimeReady: () => ({ ok: true, reason: 'test' }),
@@ -333,6 +350,27 @@ describe('DesktopNodeHost collaboration children', () => {
       consumer.stop('test')
       await consumer.waitUntilStopped()
     }
+  })
+})
+
+describe('DesktopNodeHost agent catalog', () => {
+  it('lists the agents it can launch and creates a child on the model and key picked from them', async () => {
+    const { sessions, store, client } = await pairedDesktops()
+    expect(await client.rpc('collaboration.listProfiles')).toEqual(AGENT_PROFILES)
+    // The mailbox stays with the controller: only the catalog of the family is served.
+    await expect(client.rpc('collaboration.send', { sessionId: 's', content: 'x' })).rejects.toMatchObject({ code: 'not_found' })
+
+    const created = await client.rpc<{ sessionId: string; model: string | null; apiProviderId: string | null }>('session.create', {
+      projectId: 'p1', harnessId: 'claude', options: { model: 'claude-opus', effort: 'medium', apiProviderId: 'cred-b' },
+    })
+    const live = sessions.live.get(created.sessionId)!
+    expect(live.apiProviderId).toBe('cred-b')
+    expect(store.rows.get(created.sessionId)?.controller).toMatchObject({ model: 'claude-opus', effort: 'medium', apiProviderId: 'cred-b' })
+    expect(await client.rpc('session.get', { sessionId: created.sessionId })).toMatchObject({ model: 'claude-opus', apiProviderId: 'cred-b' })
+
+    const lease = await client.rpc<{ leaseId: string; generation: string }>('session.acquireControl', { sessionId: created.sessionId })
+    await client.rpc('session.send', { sessionId: created.sessionId, text: 'go', leaseId: lease.leaseId, generation: lease.generation })
+    expect(live.sent[0]).toMatchObject({ content: 'go', model: 'claude-opus', effort: 'medium' })
   })
 })
 

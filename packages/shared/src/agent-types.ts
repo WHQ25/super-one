@@ -1125,6 +1125,15 @@ export interface SessionAgentRemoteLaunch {
   run?: SessionAgentRunState
 }
 
+/**
+ * What a remote child can run on another machine, from that machine's own
+ * catalog (base profiles only). `supported: false` is a node too old to list
+ * it; such a child runs on the target's default model and provider.
+ */
+export type RemoteAgentProfiles =
+  | { supported: true; profiles: SessionAgentProfile[] }
+  | { supported: false }
+
 /** A collaboration child's open run as its parent's host follows it. */
 export interface SessionAgentRunState {
   /** A human stopped this run; its end wakes nobody. */
@@ -4850,6 +4859,8 @@ export const AgentIpcChannels = {
   /** Node session_providers CRUD. */
   /** Node-side collaboration agent profiles — authoritative agentIds for @-mentions on a remote session. */
   ENVIRONMENT_COLLAB_LIST_PROFILES: 'environment:collabListProfiles',
+  /** Agent profiles a remote collaboration child can run on an environmentId (RemoteAgentProfiles). */
+  ENVIRONMENT_REMOTE_AGENT_PROFILES: 'environment:remoteAgentProfiles',
   ENVIRONMENT_SESSION_PROVIDERS_LIST: 'environment:sessionProvidersList',
   ENVIRONMENT_SESSION_PROVIDERS_GET: 'environment:sessionProvidersGet',
   ENVIRONMENT_SESSION_PROVIDERS_GET_BASE: 'environment:sessionProvidersGetBase',

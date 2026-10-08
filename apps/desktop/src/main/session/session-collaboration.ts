@@ -8,6 +8,7 @@ import type {
   SessionAgentRemoteLaunch,
 } from '@superone/shared/agent-types'
 import { acpAgentDisplayName, resolveHarnessBrandKey } from '@superone/shared/acp-brand'
+import { isLaunchModelOffered } from '@superone/shared/collab-request-display'
 import {
   EDITABLE_PERMISSION_MODES,
   EDITABLE_SANDBOX_MODES,
@@ -31,6 +32,7 @@ import {
   isLocalEnvironment,
   listRemoteAgentEnvironments,
   planRemoteLaunch,
+  remoteAgentProfiles,
   remoteChildTarget,
   remoteProviderId,
 } from './collaboration-remote'
@@ -222,8 +224,8 @@ function normalizeLaunches(
 
 /**
  * Resolve the launches that target another machine, by launch index. Only
- * spawn launches of a base profile without third-party keys can: the target
- * has its own provider bindings and none of this machine's keys.
+ * spawn launches of a base profile can, and a provider key must be one of the
+ * target's own: it has its own bindings and none of this machine's keys.
  */
 async function planRemoteLaunches(
   args: RequestSessionAgentsArgs,
@@ -241,12 +243,50 @@ async function planRemoteLaunches(
         `Agent ${profile.id} is a configuration of this machine; launch ${remoteProviderId(profile.harnessId)} on another machine.`,
       )
     }
+    const environmentId = launch.environment!.trim()
     if (launch.config?.apiProviderId) {
-      throw new Error('Third-party provider keys stay on this machine; omit apiProviderId for a launch on another machine.')
+      const remote = await remoteAgentProfile(environmentId, launch.agentId?.trim() ?? '')
+      if (!remote) {
+        throw new Error('That machine cannot list its provider keys; omit apiProviderId to use its default provider.')
+      }
+      assertKnownApiProviderId(launch.config, remote.profile)
     }
-    plans.set(index, await planRemoteLaunch(defaultLaunchCwd(parent), launch.environment!.trim()))
+    plans.set(index, await planRemoteLaunch(defaultLaunchCwd(parent), environmentId))
   }))
   return plans
+}
+
+/** `agentId` in the target's own catalog; null when the target is too old to list one. */
+async function remoteAgentProfile(
+  environmentId: string,
+  agentId: string,
+): Promise<{ profile: SessionAgentProfile } | null> {
+  const catalog = await remoteAgentProfiles(environmentId)
+  if (!catalog.supported) return null
+  const profile = catalog.profiles.find((item) => item.id === agentId)
+  if (!profile) throw new Error(`Agent ${agentId} is not available on that machine. Pick one from session_collab_list_agents → environments[].agents.`)
+  return { profile }
+}
+
+/**
+ * Check confirmed remote launches against their target's catalog: the
+ * confirm answer is renderer input, and a model or key the target lacks would
+ * otherwise fail there or quietly run on its default.
+ */
+async function assertRemoteLaunchConfigs(launches: SessionAgentLaunchProposal[]): Promise<void> {
+  await Promise.all(launches.map(async (launch) => {
+    const remote = launch.config.remote
+    if (!remote) return
+    const target = await remoteAgentProfile(remote.environmentId, launch.agentId)
+    if (!target) return
+    assertKnownApiProviderId(launch.config, target.profile)
+    if (!isLaunchModelOffered(target.profile, launch.config)) {
+      throw new Error(
+        `Model ${launch.config.model} is not available for ${launch.agentId} on ${remote.label} `
+        + `(available: ${target.profile.models.map((model) => model.id).join(', ')}).`,
+      )
+    }
+  }))
 }
 
 async function localCollabEnvironmentId(): Promise<string | undefined> {
@@ -276,8 +316,8 @@ function remoteLaunchProposal(
 ): SessionAgentLaunchProposal {
   const { profile, remote } = input
   // This machine's profile defaults (model, effort, keys) name its own catalog;
-  // the target uses its own defaults unless the agent asked for a model.
-  const { cwd: _cwd, worktree: _worktree, apiProviderId: _apiProviderId, ...config } = {
+  // the target uses its own defaults unless the agent asked for others.
+  const { cwd: _cwd, worktree: _worktree, ...config } = {
     permissionMode: 'default' as const,
     sandboxMode: 'off' as const,
     ...launch.config,
@@ -317,6 +357,10 @@ function createGrants(parentSessionId: string, launches: SessionAgentLaunchPropo
     }
     const profile = profiles.get(launch.agentId)
     if (!profile) throw new Error(`Unknown agent profile: ${launch.agentId}`)
+    // Remote launches were checked against their target's catalog instead.
+    if (launch.config.remote) {
+      return recordApprovedLaunch(grants, parentSessionId, launch, launch.config).approved
+    }
     // Also covers the confirm UI's provider edit, which reaches here as renderer input.
     assertKnownApiProviderId(launch.config, profile)
     const config = {
@@ -324,8 +368,6 @@ function createGrants(parentSessionId: string, launches: SessionAgentLaunchPropo
       ...(typeof launch.config.fastMode === 'boolean'
         ? { codexServiceTier: resolveCodexServiceTier(launch.agentId, launch.config, profile) }
         : {}),
-      // Keys are local to this machine; a remote child uses the target's own binding.
-      ...(launch.config.remote ? { apiProviderId: undefined } : {}),
     }
     return recordApprovedLaunch(grants, parentSessionId, launch, config).approved
   }))
@@ -363,6 +405,7 @@ export async function requestSessionAgents(
     return toolResult({ status: 'rejected', feedback: outcome.content?.feedback })
   }
   const confirmed = mergeConfirmedLaunches(launches, outcome.content)
+  await assertRemoteLaunchConfigs(confirmed)
   return toolResult({
     status: 'approved',
     launches: createGrants(callerSessionId, confirmed),

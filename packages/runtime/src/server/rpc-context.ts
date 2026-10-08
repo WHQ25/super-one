@@ -157,6 +157,11 @@ export interface WorkspaceTailWatchPort {
 
 /** Collaboration mailbox (CLI: CollaborationService). */
 export interface CollaborationPort {
+  /**
+   * The `collaboration.*` methods a partial port serves; the rest answer
+   * unsupported. Absent: the whole family.
+   */
+  readonly servedMethods?: ReadonlySet<string>
   listProfiles(): unknown
   request(input: {
     parentSessionId: string

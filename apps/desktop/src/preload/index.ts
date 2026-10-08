@@ -866,6 +866,9 @@ const environmentAPI = {
   listRemoteCollabProfiles: (connectionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_COLLAB_LIST_PROFILES, connectionId),
 
+  remoteAgentProfiles: (environmentId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_REMOTE_AGENT_PROFILES, environmentId),
+
   /** Node session_providers CRUD (multi-profile). */
   listRemoteSessionProviders: (connectionId: string, harnessId?: string) =>
     ipcRenderer.invoke(

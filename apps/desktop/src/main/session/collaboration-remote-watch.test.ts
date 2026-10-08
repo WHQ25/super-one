@@ -201,6 +201,16 @@ describe('RemoteChildWatcher', () => {
       expect(pending()).toMatchObject({ key: '12' })
     })
 
+    it('stays through later idle and error reports without a new run', async () => {
+      // The settled child's runtime is released, and it reports again.
+      state.events.push(statusEvent(13, 'idle'), statusEvent(14, 'error'), statusEvent(15, 'idle'))
+      const restarted = startDesktop(() => Date.now() + 60_000)
+      await tick(restarted)
+      expect(pending()).toMatchObject({ key: '12' })
+      await restarted.monitor.resendStopWakes()
+      expect(state.wake).toHaveBeenCalledTimes(2)
+    })
+
     it('ends when this desktop restarts while the child runs again', async () => {
       state.events.push(statusEvent(13, 'streaming'))
       state.status = 'streaming'

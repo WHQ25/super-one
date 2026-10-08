@@ -220,10 +220,12 @@ export class CollaborationChildMonitor {
         break
       }
     }
-    // A later run supersedes the last stop: its wake is moot. A node event
-    // orders itself against the stop, whether or not a run was already open
-    // here (a run resumed after a restart is).
-    if (stopKey !== undefined ? event.type === 'status_change' || event.type === 'message_start' : !hadRun && this.runs.has(sessionId)) {
+    // A later run supersedes the last stop: its wake is moot. Only an event
+    // that opens a run counts (a settled child may report idle again, e.g.
+    // when its runtime is released); a node event orders itself against the
+    // stop whether or not a run was already open here (a run resumed after a
+    // restart is).
+    if (stopKey !== undefined ? opensRun(event) : !hadRun && this.runs.has(sessionId)) {
       clearStopWakeOfChild(sessionId, stopKey)
     }
     // Any live event is activity: the stall is over.
@@ -370,6 +372,12 @@ function clearStopWake(grantId: string, key?: string): void {
   if (!config.pendingStopWake || (key !== undefined && config.pendingStopWake.key !== key)) return
   const { pendingStopWake: _observed, ...rest } = config
   store.updateConfig(grantId, rest)
+}
+
+/** An event the monitor opens a run on. */
+function opensRun(event: AgentEvent): boolean {
+  if (event.type === 'status_change') return event.status === 'streaming' || event.status === 'background'
+  return event.type === 'message_start' && event.message.role === 'assistant'
 }
 
 /** True when the event at `eventKey` comes after the stop at `stopKey` (both node sequences). */

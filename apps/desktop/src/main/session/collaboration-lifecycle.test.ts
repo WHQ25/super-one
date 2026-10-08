@@ -252,6 +252,18 @@ describe('CollaborationChildMonitor', () => {
       expect(pendingWake(grantId)).toBeDefined()
     })
 
+    it('stays when an errored child reports idle once its runtime is released', async () => {
+      monitor.handleEvent('child', { type: 'status_change', status: 'streaming' }, false, '1')
+      monitor.handleEvent('child', { type: 'status_change', status: 'error' }, false, '2')
+      monitor.handleEvent('child', { type: 'status_change', status: 'idle' }, false, '3')
+      monitor.handleEvent('child', { type: 'status_change', status: 'idle' }, false, '4')
+      expect(pendingWake(grantId)).toMatchObject({ key: '2', status: 'error' })
+      await settle()
+      later(60_000)
+      await monitor.resendStopWakes()
+      expect(state.wake).toHaveBeenCalledTimes(2)
+    })
+
     it('ends only for a run that opened after the stop', () => {
       monitor.handleEvent('child', { type: 'status_change', status: 'streaming' }, false, '20')
       monitor.handleEvent('child', { type: 'status_change', status: 'idle' }, false, '21')

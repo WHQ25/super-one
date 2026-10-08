@@ -238,6 +238,7 @@ import { trace, closeTraceDb } from './agent/event-trace'
 import { RemoteControlService } from './remote-control-service'
 import { readProjectPreferences, saveProjectPreferences } from './claude-preferences-service'
 import { readAppSettings, saveAppSettings } from './app-settings-service'
+import { getRemoteControlledSession } from './db-remote-controlled-sessions'
 import { getInstallId } from './install-id'
 import { reportMainException, reportProcessGone } from './crash-telemetry'
 import { systemDownloadDir } from './agent/browser-download-store'
@@ -509,7 +510,9 @@ const sessionManager = new SessionManagerImpl({
       permissionMode: collaborationConfig?.permissionMode,
       sandboxMode: collaborationConfig?.sandboxMode,
       codexServiceTier: collaborationConfig?.codexServiceTier ?? loaded.record.codexServiceTier,
-      systemPromptAppend: getSessionCollaborationSystemPrompt(sessionId),
+      systemPromptAppend: getSessionCollaborationSystemPrompt(sessionId)
+        ?? getRemoteControlledSession(sessionId)?.controller.systemPromptAppend
+        ?? undefined,
     }
   },
   getActiveProvider: (harnessId, apiProviderId) => {
@@ -906,6 +909,14 @@ function applyLiquidGlass(): void {
   }
 }
 
+/** Start or stop the node surface other devices run tasks through; loaded only when it is on. */
+let nodeHostLoaded = false
+async function applyNodeHostSettings(settings: AppSettings): Promise<void> {
+  nodeHostLoaded = true
+  const { applyNodeHostSettings: apply } = await import('./node-host/node-host-controller')
+  await apply(settings, sessionManager)
+}
+
 async function applyAppSettingsPatch(patch: AppSettingsPatch): Promise<AppSettings> {
   const requestedPowerMode = patch.powerMode
   const previousPowerMode = requestedPowerMode === undefined
@@ -947,6 +958,9 @@ async function applyAppSettingsPatch(patch: AppSettingsPatch): Promise<AppSettin
   }
   if (patch?.experimentalClaudeOpenAiChatEnabled !== undefined) {
     sessionManager.markAllNeedsRebuild('claude')
+  }
+  if (patch?.remoteNodeAccessEnabled !== undefined || patch?.remoteNodeAccessPort !== undefined) {
+    await applyNodeHostSettings(result)
   }
   if (patch?.computerUseEnabled === false) {
     // Feature off → immediately drop any lingering control chrome.
@@ -4307,6 +4321,8 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.APP_SETTINGS_GET, () => readAppSettings())
   ipcMain.handle(AgentIpcChannels.APP_SETTINGS_SAVE, (_e, patch) => applyAppSettingsPatch(patch))
+  ipcMain.handle(AgentIpcChannels.NODE_HOST_STATUS, async () => (await import('./node-host/node-host-controller')).nodeHostStatus())
+  ipcMain.handle(AgentIpcChannels.NODE_HOST_MINT_PAIRING_TOKEN, async () => (await import('./node-host/node-host-controller')).mintNodeHostPairingToken())
   ipcMain.handle(AgentIpcChannels.APP_DEFAULT_DOWNLOAD_DIR, () => systemDownloadDir())
   ipcMain.handle(AgentIpcChannels.JEV_API_KEY_STATUS, async () => (await import('./jev/jev-api-key')).getJevApiKeyStatus())
   ipcMain.handle(AgentIpcChannels.JEV_API_KEY_SET, async (_e, key: string) => (await import('./jev/jev-api-key')).setJevApiKey(String(key ?? '')))
@@ -4658,6 +4674,8 @@ function registerIpcHandlers(): void {
 
   const savedRemoteConfig = readRemoteConfig()
   if (savedRemoteConfig) remoteControlService.start(savedRemoteConfig)
+  const startupSettings = readAppSettings()
+  if (startupSettings.remoteNodeAccessEnabled) void applyNodeHostSettings(startupSettings)
 
   powerMonitor.on('resume', () => {
     log.info('[RemoteControl] System resumed, restarting channel')
@@ -6087,6 +6105,7 @@ function performQuit(): void {
   ]).catch(() => {})
   Promise.allSettled([
     remoteStop,
+    nodeHostLoaded ? import('./node-host/node-host-controller').then((m) => m.stopNodeHost()) : undefined,
     powerManagementService.dispose(),
     disposeIosSimulatorManager(),
     // Shuts down only emulators SuperOne started. Without this they survive the app

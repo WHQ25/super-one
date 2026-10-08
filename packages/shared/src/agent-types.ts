@@ -2899,6 +2899,17 @@ export interface SessionHistoryEntry {
   automationId?: string
   /** Parent SuperOne session when this entry was created through session_start. */
   parentSessionId?: string
+  /**
+   * Another device started this session through this host's node surface and
+   * controls it; this host shows it read-only. Omitted for local sessions.
+   */
+  remoteController?: SessionRemoteControllerInfo
+}
+
+/** Who controls a session started on this host by another device. */
+export interface SessionRemoteControllerInfo {
+  /** Pairing label of the controlling device, or null when it gave none. */
+  label: string | null
 }
 
 export interface PinnedSessionEntry extends SessionHistoryEntry {
@@ -4353,6 +4364,9 @@ export const AgentIpcChannels = {
   APP_SETTINGS_GET: 'app:settings-get',
   APP_SETTINGS_SAVE: 'app:settings-save',
   APP_SETTINGS_CHANGED: 'app:settings-changed',
+  /** Node surface served to other devices: state and pairing (see `remoteNodeAccessEnabled`). */
+  NODE_HOST_STATUS: 'nodeHost:status',
+  NODE_HOST_MINT_PAIRING_TOKEN: 'nodeHost:mintPairingToken',
   /** Resolved OS Downloads folder, shown as the placeholder for an unset download directory. */
   APP_DEFAULT_DOWNLOAD_DIR: 'app:default-download-dir',
   /** Jev (TypeSafe) API key for the experimental browser fast loop: configured? / replace. */
@@ -5578,6 +5592,13 @@ export interface AppSettings {
    * switcher). Default off — mobile remote-control of this host stays available.
    */
   experimentalRemoteNodesEnabled: boolean
+  /**
+   * Allow other devices to run tasks on this computer: serve the node surface
+   * (projects, harness readiness, sessions) while the app runs. Default off.
+   */
+  remoteNodeAccessEnabled: boolean
+  /** Port the node surface listens on; null uses the per-app default. */
+  remoteNodeAccessPort: number | null
   crispText: boolean
   /**
    * When the macOS notification authorization prompt was spent, or null if it
@@ -5762,6 +5783,31 @@ export interface HarnessSessionRank {
 }
 
 
+/** State of the node surface this desktop serves to other devices. */
+export interface NodeHostStatus {
+  running: boolean
+  /** Listening URL while running. */
+  url: string | null
+  environmentId: string | null
+  /** Why the last start failed (port in use, …); null when it did not. */
+  error: string | null
+}
+
+/**
+ * A single-use pairing token another device exchanges inside this host's
+ * encrypted channel. Shown once (code or QR); never logged.
+ */
+export interface NodeHostPairingToken {
+  url: string
+  environmentId: string
+  nodePublicKeyFingerprint: string
+  tokenId: string
+  pairingToken: string
+  /** Encrypted-channel credential the pairing runs through; `secretHex` never goes over the network. */
+  channel: { keyId: string; secretHex: string }
+  expiresAt: number
+}
+
 export interface AppSettingsPatch {
   analyticsEnabled?: boolean
   /** Partial patch: omitted kinds keep their current value. */
@@ -5771,6 +5817,8 @@ export interface AppSettingsPatch {
   enabledExperimentalAgents?: string[]
   experimentalClaudeOpenAiChatEnabled?: boolean
   experimentalRemoteNodesEnabled?: boolean
+  remoteNodeAccessEnabled?: boolean
+  remoteNodeAccessPort?: number | null
   crispText?: boolean
   notificationsPrimedAt?: number | null
   autoExpandFileDiffs?: boolean

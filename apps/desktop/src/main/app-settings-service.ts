@@ -91,6 +91,11 @@ function mergeNotificationSettings(
   return { enabled: patch.enabled ?? current.enabled, kinds }
 }
 
+/** A TCP port the user may pick for the node surface; anything else means the default. */
+function readNodePort(value: unknown): number | null {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1024 && value <= 65535 ? value : null
+}
+
 const defaults: AppSettings = {
   analyticsEnabled: true,
   notifications: DEFAULT_NOTIFICATION_SETTINGS,
@@ -99,6 +104,8 @@ const defaults: AppSettings = {
   enabledExperimentalAgents: [],
   experimentalClaudeOpenAiChatEnabled: false,
   experimentalRemoteNodesEnabled: false,
+  remoteNodeAccessEnabled: false,
+  remoteNodeAccessPort: null,
   crispText: true,
   notificationsPrimedAt: null,
   autoExpandFileDiffs: false,
@@ -634,6 +641,10 @@ export function readAppSettings(): AppSettings {
       experimentalRemoteNodesEnabled: typeof data.experimentalRemoteNodesEnabled === 'boolean'
         ? data.experimentalRemoteNodesEnabled
         : defaults.experimentalRemoteNodesEnabled,
+      remoteNodeAccessEnabled: typeof data.remoteNodeAccessEnabled === 'boolean'
+        ? data.remoteNodeAccessEnabled
+        : defaults.remoteNodeAccessEnabled,
+      remoteNodeAccessPort: readNodePort(data.remoteNodeAccessPort),
       crispText: typeof data.crispText === 'boolean' ? data.crispText : defaults.crispText,
       notificationsPrimedAt:
         typeof data.notificationsPrimedAt === 'number' ? data.notificationsPrimedAt : null,
@@ -722,6 +733,8 @@ export function readAppSettings(): AppSettings {
       enabledExperimentalAgents: [],
       experimentalClaudeOpenAiChatEnabled: defaults.experimentalClaudeOpenAiChatEnabled,
       experimentalRemoteNodesEnabled: defaults.experimentalRemoteNodesEnabled,
+      remoteNodeAccessEnabled: defaults.remoteNodeAccessEnabled,
+      remoteNodeAccessPort: defaults.remoteNodeAccessPort,
       crispText: defaults.crispText,
       notificationsPrimedAt: defaults.notificationsPrimedAt,
       autoExpandFileDiffs: defaults.autoExpandFileDiffs,
@@ -846,6 +859,10 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
       ?? current.experimentalClaudeOpenAiChatEnabled,
     experimentalRemoteNodesEnabled: patch.experimentalRemoteNodesEnabled
       ?? current.experimentalRemoteNodesEnabled,
+    remoteNodeAccessEnabled: patch.remoteNodeAccessEnabled ?? current.remoteNodeAccessEnabled,
+    remoteNodeAccessPort: patch.remoteNodeAccessPort === undefined
+      ? current.remoteNodeAccessPort
+      : readNodePort(patch.remoteNodeAccessPort),
     crispText: patch.crispText ?? current.crispText,
     notificationsPrimedAt:
       patch.notificationsPrimedAt !== undefined

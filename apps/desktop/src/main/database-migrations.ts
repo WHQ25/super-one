@@ -37,7 +37,7 @@ import log from './logger'
  * every launch); it decides when a pre-migration snapshot is taken and lets a
  * build recognise a database written by a newer build.
  */
-export const SCHEMA_VERSION = 11
+export const SCHEMA_VERSION = 12
 
 /**
  * The oldest schema revision that can still read this database.
@@ -558,6 +558,11 @@ function applyMigrations(db: Database.Database): void {
   // harness default (which would silently downgrade a session the user set to Fast).
   if (!sessionColsPostRebuild.some((c) => c.name === 'codex_service_tier')) {
     db.exec('ALTER TABLE sessions ADD COLUMN codex_service_tier TEXT')
+  }
+  // Set on sessions another device started through the node surface (the
+  // controller's identity and launch settings); null for local sessions.
+  if (!sessionColsPostRebuild.some((c) => c.name === 'remote_controller_json')) {
+    db.exec('ALTER TABLE sessions ADD COLUMN remote_controller_json TEXT')
   }
   const msgColsPostRebuild = db.prepare("PRAGMA table_info(chat_messages)").all() as Array<{ name: string }>
   if (!msgColsPostRebuild.some((c) => c.name === 'usage_counted_at')) {

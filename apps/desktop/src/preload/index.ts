@@ -1904,6 +1904,10 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.APP_SETTINGS_GET),
   saveAppSettings: (patch: Record<string, unknown>) =>
     ipcRenderer.invoke(AgentIpcChannels.APP_SETTINGS_SAVE, patch),
+  getNodeHostStatus: () =>
+    ipcRenderer.invoke(AgentIpcChannels.NODE_HOST_STATUS),
+  mintNodeHostPairingToken: () =>
+    ipcRenderer.invoke(AgentIpcChannels.NODE_HOST_MINT_PAIRING_TOKEN),
   getDefaultDownloadDir: () =>
     ipcRenderer.invoke(AgentIpcChannels.APP_DEFAULT_DOWNLOAD_DIR),
   getJevApiKeyStatus: () =>

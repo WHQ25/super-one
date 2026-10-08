@@ -344,6 +344,7 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
           expectedTurnId: live.activeTurnId,
           skipThreadSetup: true,
           signal: input.signal,
+          onInputAccepted: input.onInputAccepted,
         })
         return {
           finalText: result.finalText,
@@ -409,6 +410,7 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
             onTurnStarted: (turnId) => {
               conn.activeTurnId = turnId
             },
+            onInputAccepted: input.onInputAccepted,
           })
           if (result.threadId) conn.threadId = result.threadId
           conn.activeTurnId = null
@@ -436,6 +438,7 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
           onDelta: input.onDelta,
           signal: input.signal,
           threadConfig,
+          onInputAccepted: input.onInputAccepted,
         })
         if (result.threadId) conn.threadId = result.threadId
         conn.activeTurnId = null

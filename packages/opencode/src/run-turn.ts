@@ -117,6 +117,9 @@ export function createOpenCodeAppServerTurnRunner(
 
       // Subscribe before promptAsync so fast first-token / tool events are not lost.
       const stream = (await client.event.subscribe({}, { signal: input.signal })).stream
+      // From here OpenCode may run the prompt, even if the response is lost;
+      // a failure above (server, session, MCP, subscribe) never submitted it.
+      input.onInputAccepted?.()
       await client.session.promptAsync({
         sessionID: sessionId,
         system: SUPERONE_SYSTEM_PROMPT_APPEND,

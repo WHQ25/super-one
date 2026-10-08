@@ -21,6 +21,8 @@ export interface RunCursorSdkTurnOptions {
   messageId?: string
   prompt: string
   onAgentEvent?: (event: AgentEvent) => void
+  /** Called just before the prompt is sent (see `TurnRunner` `onInputAccepted`). */
+  onInputAccepted?: () => void
   signal?: AbortSignal
 }
 
@@ -80,6 +82,8 @@ export async function runCursorSdkTurn(
     if (opts.signal?.aborted) {
       throw new Error('Cursor turn interrupted')
     }
+    // The prompt goes to the Cursor agent here; earlier failures never sent it.
+    opts.onInputAccepted?.()
     await runtime.send(messageId, opts.prompt)
     return { finalText, providerResume: providerResume ?? runtime.agentId }
   } finally {

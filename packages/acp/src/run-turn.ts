@@ -318,6 +318,8 @@ export function createAcpAgentTurnRunner(opts: RunAcpTurnOptions = {}): TurnRunn
       const prompt = input.text.trimStart().startsWith('/')
         ? input.text
         : `${superoneHostContext()}\n\n${input.text}`
+      // session/prompt goes out here: from now the agent may act on the input.
+      input.onInputAccepted?.()
       const promptPromise = active.prompt(prompt)
       let stopReason = 'end_turn'
 

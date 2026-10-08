@@ -237,6 +237,16 @@ export type TurnRunner = ((input: {
   collaborationMode?: string | Record<string, unknown> | null
   /** Codex review/start target payload. */
   reviewTarget?: unknown
+  /**
+   * The input was handed to the harness: call it immediately before the call
+   * that submits the input (prompt RPC, SDK stream push), so a failure whose
+   * outcome is uncertain — a lost response, a throw after the request may
+   * have gone out — counts as delivered. A throw before this call means the
+   * harness never saw the input, and the message stays retryable under its
+   * id; after it, a resend is held as a duplicate. Lifecycle events a runner
+   * emits on its own (`message_start`, status, provider ids) are not delivery.
+   */
+  onInputAccepted?: () => void
   onDelta: (text: string) => void
   onEvent?: (event: SessionTurnEvent) => void
   /** Lossless harness-native AgentEvent stream. */

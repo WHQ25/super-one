@@ -86,6 +86,7 @@ export function createCursorTurnRunner(opts: CreateCursorTurnRunnerOptions = {})
         prompt: input.text,
         messageId: input.messageId,
         onAgentEvent: input.onAgentEvent,
+        onInputAccepted: input.onInputAccepted,
         signal: input.signal,
       })
     }

@@ -545,6 +545,7 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
         // If live is already busy, ClaudeLiveSession queues with priority next.
         priorityNext: true,
         source: input.source,
+        onInputAccepted: input.onInputAccepted,
         onDelta: input.onDelta,
         onEvent: input.onEvent,
         // Only when the caller listens: its presence selects the structured event path.

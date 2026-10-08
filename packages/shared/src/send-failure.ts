@@ -1,4 +1,4 @@
-import type { ChatMessage, ChatMessageContext, ContentBlock, ImageAttachment } from './agent-types'
+import type { AgentEvent, ChatMessage, ChatMessageContext, ContentBlock, ImageAttachment } from './agent-types'
 import { parseInputRequestError } from './input-request'
 
 /** Transport / connectivity failures from remote node RPC, relay, or environment host. */
@@ -35,6 +35,32 @@ export interface DuplicateSend {
 
 export function isDuplicateSend(value: unknown): value is DuplicateSend {
   return typeof value === 'object' && value !== null && (value as { duplicate?: unknown }).duplicate === true
+}
+
+/**
+ * Agent events only the agent itself produces — reply text, tool work, a
+ * question to the user — so seeing one proves the input reached it.
+ * Lifecycle events a runner emits on its own (`message_start`,
+ * `status_change`, `provider_session_id`, setting changes, a `message_error`
+ * for a failed start) prove nothing. This is a safety net: the delivery
+ * point itself is the runner's explicit input-accepted signal.
+ */
+const AGENT_OUTPUT_EVENT_TYPES: ReadonlySet<AgentEvent['type']> = new Set<AgentEvent['type']>([
+  'content_delta',
+  'tool_input_delta',
+  'tool_progress',
+  'codex_item_delta',
+  'codex_item_patch',
+  'permission_request',
+  'ask_user_question',
+  'plan_approval',
+  'codex_plan_approval',
+  'slash_command_output',
+])
+
+/** Whether `event` is output only the agent produces, so its input was delivered. */
+export function isAgentOutputEvent(event: AgentEvent): boolean {
+  return AGENT_OUTPUT_EVENT_TYPES.has(event.type)
 }
 
 export function withSendFailure(message: ChatMessage, error: string): ChatMessage {

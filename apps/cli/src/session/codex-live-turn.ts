@@ -83,6 +83,8 @@ export async function openTurnAndStream(opts: {
   onDelta?: (text: string) => void
   signal: AbortSignal
   onTurnStarted?: (turnId: string | null) => void
+  /** Called just before turn/start goes out (see `TurnRunner` `onInputAccepted`). */
+  onInputAccepted?: () => void
 }): Promise<CodexAppServerTurnResult> {
   if (opts.signal.aborted) throw new Error('Codex turn interrupted')
 
@@ -92,6 +94,8 @@ export async function openTurnAndStream(opts: {
     opts.reasoningEffort,
   )
 
+  // From here Codex may run the input, even if the turn/start response is lost.
+  opts.onInputAccepted?.()
   const turnStartResult = await opts.client.request(
     'turn/start',
     compactRecord({

@@ -283,6 +283,31 @@ describe('SessionRuntime send of a message that never ran', () => {
     expect(texts).toHaveLength(2)
   })
 
+  it('decides on the runner accepting the input, not on lifecycle events it emits itself', async () => {
+    let accepts = false
+    const runner: TurnRunner = async ({ onAgentEvent, onEvent, onInputAccepted }) => {
+      onAgentEvent?.({ type: 'message_start', message: { id: 'a1', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'opencode' } })
+      onAgentEvent?.({ type: 'status_change', status: 'streaming' })
+      onAgentEvent?.({ type: 'provider_session_id', providerSessionId: 'p1' })
+      onEvent?.({ kind: 'status', status: 'streaming' })
+      if (accepts) onInputAccepted?.()
+      throw new Error('disconnected')
+    }
+    const { store, events, leases } = memoryPorts()
+    const runtime = new SessionRuntime(store, events, leases, 'env-accept', runner)
+    const session = runtime.create({ projectId: 'p', harnessId: 'opencode' })
+    const send = (id: string) => runtime.send({ sessionId: session.sessionId, text: 'task', clientMessageId: id, client, ...lease })
+
+    await send('u1')
+    expect(failureOf(await waitIdle(runtime, session.sessionId), 'u1')).toEqual({ error: 'disconnected' })
+
+    accepts = true
+    await send('u2')
+    const held = await waitIdle(runtime, session.sessionId)
+    expect(held.status).toBe('error')
+    expect(failureOf(held, 'u2')).toBeUndefined()
+  })
+
   it('holds a message whose reply started and then failed, and fails the one queued behind it', async () => {
     const texts: string[] = []
     const runner: TurnRunner = async ({ text, onDelta }) => {

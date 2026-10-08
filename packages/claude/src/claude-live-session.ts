@@ -49,6 +49,11 @@ export interface ClaudeLiveTurnInput {
   onPermission?: ClaudePermissionHandler
   onQuestion?: ClaudeQuestionHandler
   onPlan?: ClaudePlanHandler
+  /**
+   * Called when the prompt is pushed onto the SDK input stream (a queued turn:
+   * when it leaves the queue). See `TurnRunner` `onInputAccepted`.
+   */
+  onInputAccepted?: () => void
   signal?: AbortSignal
 }
 
@@ -537,6 +542,8 @@ export class ClaudeLiveSession {
     if (this.sdkSessionId && item.msg.session_id !== this.sdkSessionId) {
       item.msg = { ...item.msg, session_id: this.sdkSessionId }
     }
+    // Handed to the SDK: from here the CLI may act on the prompt.
+    item.input.onInputAccepted?.()
     this.bridge.push(item.msg, item.tag)
   }
 

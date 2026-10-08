@@ -9,6 +9,7 @@ import type { McpAppsResolvedAttachment } from '@superone/shared/environment/mcp
 import { assertCodexAccountSwitchAllowed } from '@superone/shared/codex-accounts'
 import { randomUUID } from 'node:crypto'
 import type { AgentEvent, ChatMessageSource } from '@superone/shared/agent-types'
+import { isAgentOutputEvent } from '@superone/shared/send-failure'
 import { MOD_UI_MUTATING_OPS, MOD_UI_UNAVAILABLE, asNodeCallerModUiRequest, asNodeReaderModEvent, type ModUiOp, type ModUiRequest, type ModUiResult } from '@superone/shared/mod-ui'
 import { acceptedElicitationContent } from '@superone/shared/schema-form'
 import {
@@ -1405,10 +1406,12 @@ export class SessionRuntime {
     const assistantId = randomUUID()
     let assistantText = ''
     const requestId = opts.requestId
-    // Whether the agent took this message up: any output or interaction for the
-    // turn. A runner that throws before it (a harness that cannot spawn) never
-    // delivered the message, so the failure is the message's, not a reply's.
+    // Whether the harness may have acted on this message: the runner's
+    // `onInputAccepted`, or — as a safety net — real output or an interaction
+    // from the agent. A runner that throws before either never delivered the
+    // message, so the failure is the message's, not a reply's.
     let started = false
+    const markStarted = () => { started = true }
     const permissionMode =
       typeof opts.permissionMode === 'string' && opts.permissionMode.trim()
         ? opts.permissionMode.trim()
@@ -1439,8 +1442,9 @@ export class SessionRuntime {
         source: opts.source,
         ultracode: opts.ultracode,
         signal: abort.signal,
+        onInputAccepted: markStarted,
         onDelta: (delta) => {
-          started = true
+          if (delta) started = true
           if (abort.signal.aborted) return
           assistantText += delta
           this.events.appendSession({
@@ -1451,20 +1455,19 @@ export class SessionRuntime {
           })
         },
         onEvent: (event) => {
-          started = true
+          if (event.kind !== 'status') started = true
           this.projectOnEvent(session, event, abort.signal, requestId, (delta) => {
             assistantText += delta
           })
         },
         onAgentEvent: (event) => {
-          // A setting the runner reconciles before starting is not a reply.
-          if (event.type !== 'agent_setting_change') started = true
+          if (isAgentOutputEvent(event)) started = true
           if (abort.signal.aborted) return
           this.appendAgentEvent(session.sessionId, event, requestId)
         },
         onAmbientEvent: (event) => this.handleAmbientEvent(session.sessionId, event),
         onPermission: (interaction) => {
-          started = true
+          markStarted()
           // Modes that skip interactive permission prompts (desktop parity).
           if (
             permissionMode === 'bypassPermissions' ||
@@ -1479,12 +1482,12 @@ export class SessionRuntime {
           }
           return this.waitForPermissionDecision(session, interaction, abort.signal, requestId)
         },
-        onElicitation: (interaction, signal) => (started = true, this.requestElicitation(session.sessionId, interaction,
+        onElicitation: (interaction, signal) => (markStarted(), this.requestElicitation(session.sessionId, interaction,
           signal ? AbortSignal.any([abort.signal, signal]) : abort.signal, requestId)),
         onQuestion: (interaction) =>
-          (started = true, this.waitForQuestionDecision(session, interaction, abort.signal, requestId)),
+          (markStarted(), this.waitForQuestionDecision(session, interaction, abort.signal, requestId)),
         onPlan: (interaction) =>
-          (started = true, this.waitForPlanDecision(session, interaction, abort.signal, requestId)),
+          (markStarted(), this.waitForPlanDecision(session, interaction, abort.signal, requestId)),
       })
 
       if (session.closed) {
@@ -2481,7 +2484,9 @@ export function createSimulatedTurnRunner(opts?: {
 }): TurnRunner {
   const chunks = opts?.chunks ?? ['Hello', ' from', ' remote', ' Codex']
   const delayMs = opts?.delayMs ?? 30
-  return async ({ onDelta, onEvent, onPermission, onQuestion, onPlan, signal }) => {
+  return async ({ onInputAccepted, onDelta, onEvent, onPermission, onQuestion, onPlan, signal }) => {
+    // Nothing to submit to: the simulated agent has the input as soon as it runs.
+    onInputAccepted?.()
     onEvent?.({ kind: 'status', status: 'streaming' })
     if (opts?.requestPermission && onPermission) {
       const decision = await onPermission({

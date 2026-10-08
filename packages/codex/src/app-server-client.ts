@@ -526,8 +526,11 @@ export async function steerCodexAppServerTurn(opts: {
   input?: AttachmentCodexInput[]
   expectedTurnId?: string | null
   signal?: AbortSignal
+  /** Called just before the input is sent (see `TurnRunner` `onInputAccepted`). */
+  onInputAccepted?: () => void
 }): Promise<CodexAppServerTurnResult> {
   if (opts.signal?.aborted) throw new Error('Codex turn interrupted')
+  opts.onInputAccepted?.()
   await opts.client.request('turn/steer', {
     threadId: opts.threadId,
     input: opts.input ?? [{ type: 'text', text: opts.prompt }],
@@ -584,6 +587,12 @@ export async function runCodexAppServerTurn(opts: {
    * Applied on both thread/start and thread/resume so SuperOne MCP attaches every turn.
    */
   threadConfig?: Record<string, unknown>
+  /**
+   * Called just before the request that submits the input (turn/start,
+   * turn/steer, review/start, thread/compact/start): from then Codex may act
+   * on it even if the response is lost. Thread setup failures come before it.
+   */
+  onInputAccepted?: () => void
 }): Promise<CodexAppServerTurnResult> {
   const turnKind: CodexTurnKind = opts.turnKind ?? 'run'
   let threadId = opts.threadId ?? null
@@ -617,6 +626,7 @@ export async function runCodexAppServerTurn(opts: {
       input: opts.input,
       expectedTurnId: opts.expectedTurnId,
       signal: opts.signal,
+      onInputAccepted: opts.onInputAccepted,
     })
   }
 
@@ -628,6 +638,7 @@ export async function runCodexAppServerTurn(opts: {
       approvalPolicy: 'never',
       sandboxPolicy: buildCodexWorkspaceWriteSandboxPolicy(opts.cwd, opts.additionalDirectories),
     })
+    opts.onInputAccepted?.()
     await opts.client.request('thread/compact/start', { threadId })
   } else if (turnKind === 'review') {
     await opts.client.request('thread/settings/update', {
@@ -635,6 +646,7 @@ export async function runCodexAppServerTurn(opts: {
       approvalPolicy: 'never',
       sandboxPolicy: buildCodexWorkspaceWriteSandboxPolicy(opts.cwd, opts.additionalDirectories),
     })
+    opts.onInputAccepted?.()
     await opts.client.request('review/start', compactRecord({
       threadId,
       delivery: 'inline',
@@ -646,6 +658,7 @@ export async function runCodexAppServerTurn(opts: {
       opts.model,
       opts.reasoningEffort,
     )
+    opts.onInputAccepted?.()
     const turnStartResult = await opts.client.request('turn/start', compactRecord({
       threadId,
       input: opts.input ?? [{ type: 'text', text: opts.prompt, text_elements: [] }],

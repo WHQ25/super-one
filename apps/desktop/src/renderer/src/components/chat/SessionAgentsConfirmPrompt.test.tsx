@@ -205,6 +205,8 @@ describe('session agents confirm prompt', () => {
     const remote = payload()
     remote.launches = [remote.launches[0]]
     delete remote.launches[0].config.cwd
+    delete remote.launches[0].config.model
+    delete remote.launches[0].config.effort
     remote.launches[0].config.remote = {
       environmentId: 'env-b',
       label: 'Studio Mac',
@@ -225,8 +227,14 @@ describe('session agents confirm prompt', () => {
     // No local working-location label for a child that runs elsewhere.
     expect(screen.queryByTitle('Local')).not.toBeInTheDocument()
 
+    // This machine's model list does not apply there; its defaults are used.
+    expect(screen.getByText("Studio Mac's default model")).toBeInTheDocument()
+    expect(screen.queryByText('Claude Sonnet')).not.toBeInTheDocument()
+
     fireEvent.click(screen.getByRole('button', { name: /Approve/ }))
-    expect(onConfirm.mock.calls[0][0][0].config.remote).toMatchObject({ environmentId: 'env-b', cloneInto: '~/SuperOne/Projects' })
+    const confirmed = onConfirm.mock.calls[0][0][0].config
+    expect(confirmed.remote).toMatchObject({ environmentId: 'env-b', cloneInto: '~/SuperOne/Projects' })
+    expect(confirmed).not.toHaveProperty('effort')
   })
 
   it('confirms every launch, carrying per-tab overrides and untouched agent config', () => {

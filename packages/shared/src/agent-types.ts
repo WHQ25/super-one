@@ -1119,6 +1119,10 @@ export interface SessionAgentRemoteLaunch {
   unpushedCommits: number
   /** Uncommitted files in the parent's checkout; the child cannot see them. */
   uncommittedChanges: number
+  /** Host-maintained: the child's node event sequence this desktop has processed. */
+  eventCursor?: string
+  /** Host-maintained: whether a run was open at `eventCursor`. */
+  runOpen?: boolean
 }
 
 /** Max length for the full task delivered to a collab child session. */

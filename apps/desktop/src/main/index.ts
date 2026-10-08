@@ -100,6 +100,8 @@ import { DeviceRegistry } from './remote/device-registry'
 import { MobileBroadcaster } from './remote/mobile-broadcaster'
 import { spawnParentOf } from './session/collaboration-mailbox'
 import { CHILD_STALL_CHECK_INTERVAL_MS, CollaborationChildMonitor, childActivityView } from './session/collaboration-lifecycle'
+import { RemoteChildWatcher } from './session/collaboration-remote-watch'
+import { remoteChildLabel } from './session/collaboration-remote'
 import { watchProjectList, watchSessionDeletes, watchSessionList } from './session-list-watch'
 import { localDraftStore } from './db-drafts'
 import { withoutDraftAttachmentBytes } from '@superone/shared/environment/draft-content'
@@ -763,8 +765,10 @@ const notificationService = new NotificationService({
   hasMobileOnline: () => remoteControlService.hasReachableDevice(),
   describeSession: (sessionId) => {
     const session = sessionManager.getSession(sessionId)
-    if (!session) return undefined
-    return { title: session.snapshot.title, projectPath: session.projectPath }
+    if (session) return { title: session.snapshot.title, projectPath: session.projectPath }
+    // A collaboration child on another machine (stalled notices name it and its machine).
+    const remoteChild = remoteChildLabel(sessionId)
+    return remoteChild ? { title: remoteChild } : undefined
   },
   t: (key, options) => t(key, options),
 })
@@ -795,6 +799,8 @@ const collaborationChildMonitor = new CollaborationChildMonitor({
 })
 sessionManager.onAny((sessionId, event, replay) => collaborationChildMonitor.handleEvent(sessionId, event, replay))
 setInterval(() => void collaborationChildMonitor.checkStalls(), CHILD_STALL_CHECK_INTERVAL_MS).unref()
+// Children on other machines: their runs reach the monitor from the node's event log.
+new RemoteChildWatcher(collaborationChildMonitor).start()
 
 /**
  * Single convergence point for everything the renderer sees. Notifications tap
@@ -1687,8 +1693,6 @@ function attachEnvironmentStatusBridge(host: EnvironmentHost): void {
   host.setAgentEventSink((event) => {
     observeRemoteMcpAppEvent(event)
     if (event.sessionId) scheduledSendService.observe(event.sessionId, event)
-    // Collaboration children on other machines report their runs through these events.
-    if (event.sessionId) collaborationChildMonitor.handleEvent(event.sessionId, event, false)
     safeSend(AgentIpcChannels.EVENT, event)
   })
   // Auto-connect desired remotes + network-online edge wake.

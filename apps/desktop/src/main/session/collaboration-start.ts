@@ -443,7 +443,10 @@ async function startRemoteSpawn(grant: GrantRow, callerSessionId: string, host: 
     createSessionRecord(parent.projectPath, childSessionId, peer.title)
     hideSession(childSessionId, true)
     // Record where it landed: retries and wakes route by this, not by the plan.
-    const landed = { ...config, remote: { ...config.remote, projectPath: started.projectPath } }
+    const landed = {
+      ...config,
+      remote: { ...config.remote, projectPath: started.projectPath, eventCursor: started.eventCursor },
+    }
     store().bindStartedSession(grant, childSessionId, landed)
     store().updateConfig(grant.grant_id, landed)
     notifyCollaborationSessionsChanged()

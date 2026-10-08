@@ -128,7 +128,10 @@ export const MixedHarnesses: Story = {
   },
 }
 
-function remotePayload(remote: Partial<NonNullable<SessionAgentRequestPayload['launches'][number]['config']['remote']>>): SessionAgentRequestPayload {
+function remotePayload(
+  remote: Partial<NonNullable<SessionAgentRequestPayload['launches'][number]['config']['remote']>>,
+  model?: string,
+): SessionAgentRequestPayload {
   return {
     profiles: [CLAUDE_PROFILE],
     launches: [
@@ -139,8 +142,7 @@ function remotePayload(remote: Partial<NonNullable<SessionAgentRequestPayload['l
         name: 'Builder',
         role: 'Implementer',
         config: {
-          model: 'claude-sonnet',
-          effort: 'high',
+          ...(model ? { model } : {}),
           permissionMode: 'bypassPermissions',
           sandboxMode: 'off',
           remote: {
@@ -164,6 +166,11 @@ function remotePayload(remote: Partial<NonNullable<SessionAgentRequestPayload['l
 /** Launch on another machine that already has the repository; nothing local is left behind. */
 export const RemoteExistingCheckout: Story = {
   args: { payload: remotePayload({}) },
+}
+
+/** The agent asked for a model by name; the target's provider still serves it. */
+export const RemoteRequestedModel: Story = {
+  args: { payload: remotePayload({}, 'claude-opus') },
 }
 
 /** The target lacks the repository and clones it; this checkout has unpushed and uncommitted work. */

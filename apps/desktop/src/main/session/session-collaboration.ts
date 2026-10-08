@@ -275,8 +275,9 @@ function remoteLaunchProposal(
   },
 ): SessionAgentLaunchProposal {
   const { profile, remote } = input
+  // This machine's profile defaults (model, effort, keys) name its own catalog;
+  // the target uses its own defaults unless the agent asked for a model.
   const { cwd: _cwd, worktree: _worktree, apiProviderId: _apiProviderId, ...config } = {
-    ...profile.defaultConfig,
     permissionMode: 'default' as const,
     sandboxMode: 'off' as const,
     ...launch.config,

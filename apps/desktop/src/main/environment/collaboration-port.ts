@@ -36,7 +36,10 @@ export function environmentHostCollaborationPort(): RemoteCollaborationPort {
       const result = await (await gateway(connectionId)).settingsGet() as { settings?: NodeAgentSettings } | null
       return nodeProjectsDir(result?.settings ?? {})
     },
-    clone: (connectionId, input) => host.cloneRepository(connectionId, input),
+    clone: (connectionId, input) => host.cloneRepository(connectionId, { ...input, ifExists: 'reuse-or-rename' }),
+    async fetch(connectionId, projectId) {
+      await (await gateway(connectionId)).gitFetch(projectId, 'origin')
+    },
     async activateWorktree(connectionId, projectId, input) {
       return await (await gateway(connectionId)).gitWorktreeActivate(projectId, input) as { path: string }
     },
@@ -61,6 +64,10 @@ export function environmentHostCollaborationPort(): RemoteCollaborationPort {
         }).then(() => resolve(), reject)
       })
     },
+    async eventHead(connectionId) {
+      return (await gateway(connectionId)).eventHeadSequence()
+    },
+    listEvents: (connectionId, afterSequence) => host.listSessionEvents(connectionId, afterSequence),
     async getSession(connectionId, sessionId) {
       const record = await host.getSession(connectionId, sessionId) as { status?: string; pendingInteraction?: unknown } | null
       return record ? { status: record.status ?? 'idle', pendingInteraction: record.pendingInteraction ?? null } : null

@@ -1995,7 +1995,7 @@ describe('spawning a child on another machine', () => {
     git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'local only')
     git('remote', 'add', 'origin', ORIGIN)
     state.projects.push({ path: repo })
-    calls = { clone: [], activateWorktree: [], createSession: [], send: [] }
+    calls = { clone: [], fetch: [], activateWorktree: [], createSession: [], send: [] }
     remoteProjects = []
     remoteSession = { status: 'streaming', pendingInteraction: null }
     const port: RemoteCollaborationPort = {
@@ -2019,8 +2019,11 @@ describe('spawning a child on another machine', () => {
         calls.createSession.push(input)
         return { sessionId: 'remote-child' }
       },
+      fetch: async (_connectionId, projectId) => { calls.fetch.push(projectId) },
       send: async (_connectionId, input) => { calls.send.push(input) },
       getSession: async () => remoteSession,
+      eventHead: async () => '41',
+      listEvents: async () => [],
     }
     setRemoteCollaborationPort(port)
   })
@@ -2074,6 +2077,13 @@ describe('spawning a child on another machine', () => {
       uncommittedChanges: 1,
     })
     expect(launch.config.cwd).toBeUndefined()
+    // This machine's model defaults name its own catalog; the target uses its own.
+    expect(launch.config.model).toBeUndefined()
+
+    await startSessionAgent('parent', { launchId: 'remote', task: 'Implement export' }, host)
+    // The existing checkout is brought up to date before the worktree is cut from it.
+    expect(calls.fetch).toEqual(['p-app'])
+    expect(calls.clone).toEqual([])
   })
 
   it('plans a clone into the target projects directory when it lacks the repository', async () => {
@@ -2113,7 +2123,11 @@ describe('spawning a child on another machine', () => {
       systemPromptAppend: expect.stringContaining('child session of SuperOne session parent'),
     })])
     expect(calls.send).toEqual([expect.objectContaining({ sessionId: 'remote-child', text: 'Implement export' })])
+    expect(calls.fetch).toEqual([])
     expect(host.createSession).not.toHaveBeenCalled()
+    // Its events are followed from the node head before it existed.
+    const grant = state.db!.prepare("SELECT config_json FROM session_collaboration_grants WHERE child_session_id = 'remote-child'").get() as { config_json: string }
+    expect(JSON.parse(grant.config_json).remote).toMatchObject({ eventCursor: '41', projectPath: '/Users/b/SuperOne/Projects/app' })
 
     // A retry neither creates a second child nor redelivers the task.
     await startSessionAgent('parent', { launchId: 'remote' }, host)

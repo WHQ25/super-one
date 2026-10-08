@@ -2351,6 +2351,10 @@ export type Messages = {
       remoteBranchFrom: string
       /** Warning: what of this checkout a child on another machine will not see. */
       remoteUnseenChanges: string
+      /** Model slot of a launch on another machine: that machine's defaults apply. */
+      remoteDefaultModel: string
+      remoteModel: string
+      remoteModelHint: string
       expandTask: string
       collapseTask: string
       hintSwitch: string
@@ -6722,6 +6726,9 @@ export const en: Messages = {
       remoteCloneInto: 'Clones {{url}} into {{directory}}',
       remoteBranchFrom: 'Works on a new branch from {{ref}}',
       remoteUnseenChanges: 'The agent sees only pushed work: {{commits}} unpushed commit(s) and {{files}} uncommitted file(s) on this machine will not reach it.',
+      remoteDefaultModel: "{{machine}}'s default model",
+      remoteModel: 'Model {{model}}',
+      remoteModelHint: 'Runs on the model and AI provider configured on {{machine}}',
       expandTask: 'Show the full task',
       collapseTask: 'Collapse the task',
       hintSwitch: 'switch agent',

@@ -11,8 +11,8 @@ import type {
   SessionAgentRemoteLaunch,
 } from '@superone/shared/agent-types'
 import type { CollaborationGrantRow } from '@superone/runtime/collaboration'
-import { parseGrantConfig } from '@superone/runtime/collaboration'
-import type { ProjectSnapshot } from '@superone/shared/environment'
+import { describeLaunchedPeer, parseGrantConfig } from '@superone/runtime/collaboration'
+import type { EnvironmentEventEnvelope, ProjectSnapshot } from '@superone/shared/environment'
 import { normalizeGitRemoteUrl, repoIdentityRemote } from '@superone/shared/git-remote-url'
 import { gitRun } from '../git-run'
 import { collaborationStore } from './collaboration-mailbox'
@@ -39,7 +39,13 @@ export interface RemoteCollaborationPort {
   listProjects(connectionId: string): Promise<ProjectSnapshot[]>
   /** Where the node clones a repository it lacks. */
   projectsDir(connectionId: string): Promise<string>
+  /**
+   * Clone into `parentPath`; an unregistered checkout of the same origin
+   * there is reused, any other folder of that name is cloned beside.
+   */
   clone(connectionId: string, input: { remoteUrl: string; parentPath: string }): Promise<ProjectSnapshot>
+  /** Update the project's `origin` refs so a worktree starts from current code. */
+  fetch(connectionId: string, projectId: string): Promise<void>
   activateWorktree(
     connectionId: string,
     projectId: string,
@@ -68,6 +74,10 @@ export interface RemoteCollaborationPort {
     effort?: string
   }): Promise<void>
   getSession(connectionId: string, sessionId: string): Promise<RemoteSessionState | null>
+  /** Head of the node's durable event log (inclusive). */
+  eventHead(connectionId: string): Promise<string>
+  /** Node events strictly after `afterSequence`, one page. */
+  listEvents(connectionId: string, afterSequence: string): Promise<EnvironmentEventEnvelope[]>
 }
 
 let port: RemoteCollaborationPort | null = null
@@ -77,7 +87,7 @@ export function setRemoteCollaborationPort(next: RemoteCollaborationPort | null)
   port = next
 }
 
-async function remotePort(): Promise<RemoteCollaborationPort> {
+export async function remotePort(): Promise<RemoteCollaborationPort> {
   if (!port) {
     const { environmentHostCollaborationPort } = await import('../environment/collaboration-port')
     port = environmentHostCollaborationPort()
@@ -95,7 +105,7 @@ export function isLocalEnvironment(environment: string | undefined, localEnviron
   return !id || id === 'local' || id === localEnvironmentId
 }
 
-async function connectedEnvironment(environmentId: string): Promise<RemoteCollabEnvironment> {
+export async function connectedEnvironment(environmentId: string): Promise<RemoteCollabEnvironment> {
   const env = (await (await remotePort()).listEnvironments()).find((item) => item.environmentId === environmentId)
   if (!env) throw failed(`Unknown environment ${environmentId}. Pick one from session_collab_list_agents → environments[].`)
   if (!env.connected) throw failed(`${env.label} is not connected. Connect it in Settings → Environments, then request again.`)
@@ -200,6 +210,8 @@ function isUnsupported(error: unknown): boolean {
 
 export interface StartedRemoteChild {
   sessionId: string
+  /** Node event head before the child existed: its events all come after it. */
+  eventCursor: string
   connectionId: string
   projectPath: string
   cwd: string
@@ -223,7 +235,16 @@ export async function startRemoteChild(input: {
   const p = await remotePort()
   // Re-resolve: the target may have opened or cloned the repository since approval.
   let project = matchProject(await p.listProjects(env.connectionId), remote.repository)
-  if (!project) {
+  if (project) {
+    // An existing checkout may predate the pushed work the child starts from.
+    try {
+      await p.fetch(env.connectionId, project.projectId)
+    } catch (error) {
+      if (!isUnsupported(error)) {
+        throw failed(`Could not fetch origin on ${env.label}: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+  } else {
     if (!remote.cloneInto) throw failed(`${env.label} no longer has a checkout of ${remote.repository}`)
     project = await p.clone(env.connectionId, { remoteUrl: remote.cloneUrl, parentPath: remote.cloneInto })
   }
@@ -247,6 +268,7 @@ export async function startRemoteChild(input: {
     }
     createdBranch = null
   }
+  const eventCursor = await p.eventHead(env.connectionId)
   const { sessionId } = await p.createSession(env.connectionId, {
     environmentId: remote.environmentId,
     projectId: project.projectId,
@@ -265,13 +287,20 @@ export async function startRemoteChild(input: {
       ...(input.config.sandboxMode ? { sandboxMode: input.config.sandboxMode } : {}),
     },
   })
-  return { sessionId, connectionId: env.connectionId, projectPath: project.path, cwd, branch: createdBranch }
+  return { sessionId, eventCursor, connectionId: env.connectionId, projectPath: project.path, cwd, branch: createdBranch }
 }
 
 /** The remote target of a spawn child, or null for a local child or any other session. */
 export function remoteChildTarget(childSessionId: string): SessionAgentRemoteLaunch | null {
   const grant = collaborationStore().spawnGrantForChild(childSessionId)
   return grant ? parseGrantConfig(grant.config_json).remote ?? null : null
+}
+
+/** `Name - Role · Machine` of a child on another machine; null for any other session. */
+export function remoteChildLabel(childSessionId: string): string | null {
+  const grant = collaborationStore().spawnGrantForChild(childSessionId)
+  const remote = grant ? parseGrantConfig(grant.config_json).remote : undefined
+  return grant && remote ? `${describeLaunchedPeer(grant).title} · ${remote.label}` : null
 }
 
 /** Start a turn in a remote child (its task or a wake) under this desktop's lease. */

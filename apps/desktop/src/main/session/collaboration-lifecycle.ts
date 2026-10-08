@@ -220,6 +220,14 @@ export class CollaborationChildMonitor {
     this.clearStall(sessionId)
   }
 
+  /**
+   * A child seen mid-run without its opening event (this desktop restarted or
+   * reconnected while it ran): its next stop must still count.
+   */
+  resumeRun(sessionId: string): void {
+    this.open(sessionId)
+  }
+
   /** Notify the human once per stall of a spawn child; never wakes the parent. */
   async checkStalls(now = this.now()): Promise<void> {
     for (const sessionId of [...this.runs.keys()]) {

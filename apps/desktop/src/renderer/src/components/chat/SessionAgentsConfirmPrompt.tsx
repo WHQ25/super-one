@@ -286,6 +286,17 @@ function LaunchPanel({
           )}
 
           <div className="mt-2 flex min-w-0 shrink-0 flex-wrap items-center gap-1 rounded-md border border-border bg-muted/20 px-1 py-0.5">
+            {config.remote ? (
+              // The target runs its own providers and catalog; this machine's list does not apply there.
+              <span
+                className="min-w-0 truncate px-1 text-xs text-muted-foreground"
+                title={t('chat.sessionAgentsConfirm.remoteModelHint', { machine: config.remote.label })}
+              >
+                {config.model
+                  ? t('chat.sessionAgentsConfirm.remoteModel', { model: config.model })
+                  : t('chat.sessionAgentsConfirm.remoteDefaultModel', { machine: config.remote.label })}
+              </span>
+            ) : (<>
             {/* Fast mode rides in front of the model label as a toggleable glyph, mirroring the
                 lightning bolt the chat-input model trigger shows when the Fast tier is on. */}
             {supportsFastMode && (
@@ -325,6 +336,7 @@ function LaunchPanel({
               modelsLoading={modelSelector.modelsLoading}
               triggerLabel={modelSelector.triggerLabel}
             />
+            </>)}
             <span aria-hidden="true" className="h-3.5 w-px shrink-0 bg-border" />
             <HarnessPermissionPopover
               harnessId={harnessId}
@@ -372,6 +384,18 @@ export function SessionAgentsConfirmPrompt({ payload, onConfirm, onReject }: Pro
 
   const resolved = useMemo(
     () => launches.map((launch) => {
+      if (launch.config.remote) {
+        // Another machine: its own model catalog and providers apply; only how it runs is editable here.
+        const { permissionMode, sandboxMode } = overrides[launch.launchId] ?? {}
+        return {
+          ...launch,
+          config: {
+            ...launch.config,
+            ...(permissionMode ? { permissionMode } : {}),
+            ...(sandboxMode ? { sandboxMode } : {}),
+          },
+        }
+      }
       const profile = profiles.find((item) => item.id === launch.agentId)
       return {
         ...launch,

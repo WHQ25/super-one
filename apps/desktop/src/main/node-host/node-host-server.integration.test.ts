@@ -66,6 +66,8 @@ class FakeSession {
   claim(owner: { kind: 'remote'; deviceId: string }) { this.owner = owner }
   release() { this.owner = { kind: 'local' } }
   status: 'idle' | 'streaming' = 'idle'
+  pending: AgentEvent[] = []
+  getPendingInteractions() { return this.pending }
   activityStatus() { return this.status }
   setTitle() {}
   getCurrentPermissionMode() { return 'default' }
@@ -331,5 +333,50 @@ describe('DesktopNodeHost collaboration children', () => {
       consumer.stop('test')
       await consumer.waitUntilStopped()
     }
+  })
+})
+
+describe('DesktopNodeHost lifecycle and prompts', () => {
+  it('answers in-flight Host Actions when the host stops', async () => {
+    const { host, sessions, client } = await pairedDesktops()
+    const created = await client.rpc<{ sessionId: string }>('session.create', { projectId: 'p1', harnessId: 'claude' })
+    sessions.live.get(created.sessionId)!.status = 'streaming'
+    const pending = host.sessions.requestHostAction({ sessionId: created.sessionId, toolName: 'session_collab_retrieve', args: {} })
+
+    // Turning remote access off (or changing its port) stops the host.
+    await host.stop()
+    hosts.splice(hosts.indexOf(host), 1)
+
+    await expect(pending).resolves.toMatchObject({ state: 'cancelled' })
+    await expect(host.sessions.requestHostAction({ sessionId: created.sessionId, toolName: 'session_collab_send', args: {} }))
+      .rejects.toMatchObject({ code: 'failed_precondition' })
+  })
+
+  it('reports the live prompt of a session as its pending interaction', async () => {
+    const { sessions, client } = await pairedDesktops()
+    const created = await client.rpc<{ sessionId: string }>('session.create', { projectId: 'p1', harnessId: 'claude' })
+    const live = sessions.live.get(created.sessionId)!
+    live.status = 'streaming'
+    const read = async () => (await client.rpc<{ pendingInteraction: Record<string, unknown> | null }>('session.get', { sessionId: created.sessionId })).pendingInteraction
+
+    expect(await read()).toBeNull()
+
+    live.pending = [{ type: 'permission_request', request: { requestId: 'perm-1', toolName: 'Bash', toolUseId: 'tu-1', input: { command: 'ls' }, allowAlwaysAllow: true } } as AgentEvent]
+    const permission = await read()
+    expect(permission).toMatchObject({ interactionId: 'perm-1', kind: 'permission', toolName: 'Bash', toolUseId: 'tu-1', input: { command: 'ls' }, allowAlwaysAllow: true })
+    // Stable across reads, so a controller can tell a prompt it already shows.
+    expect((await read())?.createdAt).toBe(permission?.createdAt)
+    const status = await client.rpc<{ sessions: { pending: number } }>('environment.status')
+    expect(status.sessions.pending).toBe(1)
+
+    live.pending = [{ type: 'ask_user_question', request: { requestId: 'q-1', questions: [{ question: 'Which?', header: 'Pick', options: [{ label: 'A' }], multiSelect: false }] } } as AgentEvent]
+    expect(await read()).toMatchObject({ interactionId: 'q-1', kind: 'question', input: { questions: [{ question: 'Which?' }] } })
+
+    live.pending = [{ type: 'plan_approval', request: { requestId: 'plan-1', planContent: 'Do it', planFilePath: '/tmp/plan.md', allowedPrompts: [] } } as AgentEvent]
+    expect(await read()).toMatchObject({ interactionId: 'plan-1', kind: 'plan', input: { plan: 'Do it' } })
+
+    // A reconnecting controller restores the prompt from the snapshot.
+    const snapshot = await client.rpc<{ sessions: Array<{ sessionId: string; pendingInteraction: unknown }> }>('session.snapshot')
+    expect(snapshot.sessions.find((s) => s.sessionId === created.sessionId)?.pendingInteraction).toMatchObject({ interactionId: 'plan-1', kind: 'plan' })
   })
 })

@@ -23,6 +23,7 @@ import {
   type HostActionStore,
   type NodeSessionRecord,
   type NodeSessionSettings,
+  type PendingInteraction,
 } from '@superone/runtime/session'
 import type { SessionMessageBlock } from '@superone/shared/environment'
 import type { RemoteControlledSessionRow, RemoteControllerRecord } from '../db-remote-controlled-sessions'
@@ -71,6 +72,56 @@ export interface DesktopSessionHostDeps {
  * the channel today; the desktop runs every other tool itself.
  */
 const DESKTOP_HOST_ACTION_TOOL_GROUPS = [HOST_ACTION_TOOL_GROUPS.superone]
+
+/**
+ * A live desktop prompt in the node's pending-interaction contract — the shape
+ * the CLI node keeps on its session record and A's interaction gateway and
+ * event mapper read. Null for events that are not prompts.
+ */
+export function pendingInteractionOf(event: AgentEvent, createdAt: number): PendingInteraction | null {
+  switch (event.type) {
+    case 'permission_request': {
+      const r = event.request
+      return {
+        interactionId: r.requestId,
+        kind: r.requestKind === 'session_agents_confirm' ? 'session_agents_confirm' : 'permission',
+        toolName: r.toolName,
+        ...(r.toolUseId ? { toolUseId: r.toolUseId } : {}),
+        input: r.input,
+        createdAt,
+        allowAlwaysAllow: r.allowAlwaysAllow,
+        ...(r.requestKind ? { requestKind: r.requestKind } : {}),
+        ...(r.message ? { message: r.message } : {}),
+        ...(r.serverName ? { serverName: r.serverName } : {}),
+        ...(r.sessionAgentsConfirm ? { sessionAgentsConfirm: r.sessionAgentsConfirm as unknown as PendingInteraction['sessionAgentsConfirm'] } : {}),
+        ...(r.schemaForm ? { schemaForm: r.schemaForm } : {}),
+        ...(r.elicitationForm ? { elicitationForm: r.elicitationForm } : {}),
+        ...(r.subtitle ? { subtitle: r.subtitle } : {}),
+        ...(r.riskLevel ? { riskLevel: r.riskLevel } : {}),
+        ...(r.supportsAlwaysPersist !== undefined ? { supportsAlwaysPersist: r.supportsAlwaysPersist } : {}),
+        ...(r.inputRequest ? { inputRequest: r.inputRequest } : {}),
+      }
+    }
+    case 'ask_user_question':
+      return {
+        interactionId: event.request.requestId,
+        kind: 'question',
+        toolName: 'AskUserQuestion',
+        input: { questions: event.request.questions },
+        createdAt,
+      }
+    case 'plan_approval':
+      return {
+        interactionId: event.request.requestId,
+        kind: 'plan',
+        toolName: 'ExitPlanMode',
+        input: { plan: event.request.planContent, planFilePath: event.request.planFilePath },
+        createdAt,
+      }
+    default:
+      return null
+  }
+}
 
 /** Session owner id a node controller claims, so the desktop's own UI cannot send. */
 export function nodeControllerDeviceId(clientSessionId: string): string {
@@ -144,6 +195,10 @@ function notFound(): Error {
 export class DesktopSessionHost implements SessionHostPort {
   /** Live Session objects whose events are being recorded (a resume makes a new one). */
   private readonly recording = new WeakSet<Session>()
+  /** Event subscriptions on adopted sessions, dropped when the host stops. */
+  private readonly sessionListeners = new Set<() => void>()
+  /** When each live prompt was first seen, so its `createdAt` is stable across reads. */
+  private readonly promptSeenAt = new Map<string, number>()
   private readonly unsubscribe: () => void
   private readonly hostActions: HostActionChannel
 
@@ -170,9 +225,17 @@ export class DesktopSessionHost implements SessionHostPort {
     this.unsubscribe = deps.sessions.onSession((session) => this.adopt(session))
   }
 
+  /**
+   * The host stops serving: no new Host Actions, and every one in flight is
+   * cancelled and answered so the child's tool call returns instead of
+   * waiting on a controller that can no longer reach it. Must run before the
+   * node database closes.
+   */
   dispose(): void {
     this.unsubscribe()
-    this.hostActions.dispose()
+    for (const off of this.sessionListeners) off()
+    this.sessionListeners.clear()
+    this.hostActions.shutdown('node_host_stopped')
   }
 
   /**
@@ -204,8 +267,9 @@ export class DesktopSessionHost implements SessionHostPort {
     if (!row) return
     this.recording.add(session)
     this.claim(session, row.controller.clientSessionId)
-    session.on((event, replay) => {
+    const off = session.on((event, replay) => {
       if (replay) return
+      if (event.type === 'interaction_resolved') this.promptSeenAt.delete(event.requestId)
       // A Host Action belongs to the turn that asked for it.
       if (event.type === 'status_change' && (event.status === 'idle' || event.status === 'error')) {
         this.hostActions.cancelForSession(session.id, 'turn_ended')
@@ -217,6 +281,19 @@ export class DesktopSessionHost implements SessionHostPort {
         log.warn('[node-host] event append failed sid=%s: %s', session.id, err instanceof Error ? err.message : String(err))
       }
     })
+    this.sessionListeners.add(off)
+  }
+
+  /** The live session's open prompt (one at a time on the wire, as on the CLI node). */
+  private pendingInteraction(live: Session | null): PendingInteraction | null {
+    for (const event of live?.getPendingInteractions() ?? []) {
+      const id = 'request' in event && event.request && typeof event.request === 'object' ? (event.request as { requestId?: string }).requestId : undefined
+      if (!id) continue
+      if (!this.promptSeenAt.has(id)) this.promptSeenAt.set(id, Date.now())
+      const pending = pendingInteractionOf(event, this.promptSeenAt.get(id)!)
+      if (pending) return pending
+    }
+    return null
   }
 
   private claim(session: Session, clientSessionId: string): void {
@@ -240,7 +317,7 @@ export class DesktopSessionHost implements SessionHostPort {
       status: activity === 'streaming' || activity === 'background' ? 'streaming' : activity === 'error' ? 'error' : 'idle',
       // Messages are served by session.messages.list from the desktop transcript.
       transcript: [],
-      pendingInteraction: null,
+      pendingInteraction: this.pendingInteraction(live),
       providerResume: row.providerSessionId,
       cwd: live?.cwd ?? row.worktreePath ?? row.projectPath,
       permissionMode: row.controller.permissionMode ?? null,

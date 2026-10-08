@@ -60,6 +60,8 @@ export class HostActionChannel {
   /** Long-poll waiters woken on host action change. */
   private readonly pollWaiters = new Set<() => void>()
   private expiryTimer: ReturnType<typeof setInterval> | null = null
+  /** Set by {@link shutdown}; new actions are refused. */
+  private shutDown = false
   private readonly unsubscribe: () => void
 
   constructor(private readonly deps: HostActionChannelDeps) {
@@ -95,7 +97,7 @@ export class HostActionChannel {
      */
     signal?: AbortSignal
   }): Promise<HostActionTerminalResult> {
-    if (this.deps.isDisposing?.()) {
+    if (this.shutDown || this.deps.isDisposing?.()) {
       return Promise.reject(coded('runtime is shutting down', 'failed_precondition'))
     }
     const session = this.deps.session(input.sessionId)
@@ -340,6 +342,21 @@ export class HostActionChannel {
 
   cancelAction(actionId: string, reason: string): void {
     this.cancel(() => this.store.cancel({ actionId, reason }))
+  }
+
+  /**
+   * The host stops serving: refuse new actions, cancel every action a live
+   * waiter is blocked on (while the store is still open) and settle each
+   * waiter, so no tool call outlives the host. Then {@link dispose}.
+   */
+  shutdown(reason: string): void {
+    this.shutDown = true
+    for (const actionId of [...this.waiters.keys()]) this.cancelAction(actionId, reason)
+    // A row the store could no longer cancel still owes its caller an answer.
+    for (const actionId of [...this.waiters.keys()]) {
+      this.settle({ actionId, state: 'cancelled', error: { code: reason } })
+    }
+    this.dispose()
   }
 
   /** Stop the reconciliation timer and release long-pollers. Pending actions stay for the caller to cancel. */

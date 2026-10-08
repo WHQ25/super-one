@@ -209,7 +209,8 @@ export class ProjectRegistry {
   }
 }
 
-function detectRepoIdentity(abs: string): string | null {
+/** `git:<origin url>` for a checkout with an origin, `gitdir:<path>` without one, null outside git. */
+export function detectRepoIdentity(abs: string): string | null {
   try {
     const out = execFileSync('git', ['-C', abs, 'rev-parse', '--git-dir'], {
       encoding: 'utf8',

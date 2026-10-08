@@ -26,6 +26,7 @@ import { getMachineInfo, readLiveStatus } from '../machine/index'
 import { settingsFromSessionProviderConfig, type NodeSessionRecord } from '../session/index'
 import type { AuthenticatedClient } from './auth-service'
 import { isNodeMutatingCall } from './rpc-mutating-methods'
+import { unsupportedMethodError } from './unsupported'
 import type {
   ArtifactZonePort,
   RpcContext as HostRpcContext,
@@ -92,13 +93,7 @@ function serves(ctx: HostRpcContext, method: string): boolean {
 
 /** The explicit answer for a method family this host does not serve. */
 function unsupported(method: string): RpcResult {
-  return {
-    error: {
-      code: 'not_found',
-      message: `unsupported method on this environment: ${method}`,
-      details: { method, unsupported: true },
-    },
-  }
+  return mapThrown(unsupportedMethodError(method))
 }
 
 /** The git port when a non-git handler can use it; absent on hosts without git. */

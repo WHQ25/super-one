@@ -1,1 +1,1 @@
-export { ProjectRegistry } from './project-registry'
+export { ProjectRegistry, detectRepoIdentity } from './project-registry'

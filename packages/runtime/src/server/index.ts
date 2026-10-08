@@ -30,6 +30,8 @@ export {
   type ChannelCredential,
 } from '@superone/relay-client/secure-channel'
 export { dispatchRpc, clearWatchBuffersForClient } from './rpc-dispatch'
+export { IdempotencyService } from './idempotency'
+export { unsupportedMethodError } from './unsupported'
 export type {
   RpcContext,
   RpcResult,

@@ -121,7 +121,7 @@ export class ClaudeBackend implements SessionBackend {
     isBusy: () => this.turnResolves.size > 0,
     isAlive: () => Boolean(this.bridge && this.query),
     emit: (event) => this.emit(event),
-    send: (request) => this.send(request),
+    send: (request, delivery) => this.send(request, delivery),
     warn: (message, err) => log.warn('[ClaudeBackend] %s: %s', message, err instanceof Error ? err.message : String(err)),
   })
 
@@ -476,7 +476,7 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   async send(request: SendMessageRequest, delivery?: SendDelivery): Promise<void> {
-    if (this.queuedUserMessages.intercept(request)) return
+    if (this.queuedUserMessages.intercept(request, delivery)) return
     await this.ensureRuntime()
     if (!this.bridge || !this.query) throw new Error('ClaudeBackend not started')
 
@@ -843,6 +843,8 @@ export class ClaudeBackend implements SessionBackend {
         { ...taken.request, priority },
         this.providerSessionId ?? '',
       )
+      // Steered into the live turn: the parked message reaches the SDK here.
+      taken.delivery?.onInputAccepted()
       this.bridge.push(userMsg, cmd.clientMessageId)
       // Only `now` cancels tools, so only `now` produces the `aborted_tools`
       // result `stripSteerAbort` exists to hide. Latching on `next` would swallow

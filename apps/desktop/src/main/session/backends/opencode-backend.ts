@@ -75,7 +75,7 @@ export class OpenCodeBackend implements SessionBackend {
     isBusy: () => this.isTurnBusy(),
     isAlive: () => this.started && !this.disposed,
     emit: (event) => this.emit(event),
-    send: (request) => this.send(request),
+    send: (request, delivery) => this.send(request, delivery),
     warn: (message, err) => log.warn(`[OpenCodeBackend] ${message}:`, err),
   })
   private readonly pendingTaskNotifications = new TaskNotificationQueue()
@@ -221,7 +221,7 @@ export class OpenCodeBackend implements SessionBackend {
 
   async send(request: SendMessageRequest, delivery?: SendDelivery): Promise<void> {
     if (!this.started || this.disposed) throw new Error('OpenCodeBackend not started')
-    if (this.pendingQueued.intercept(request)) return
+    if (this.pendingQueued.intercept(request, delivery)) return
     if (this.activeTurn) throw new Error('OpenCodeBackend already has an active turn')
     const messageId = request.assistantMessageId ?? `opencode_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
     this.resetTurnState()

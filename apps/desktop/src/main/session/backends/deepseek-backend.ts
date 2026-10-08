@@ -84,7 +84,7 @@ export class DeepseekBackend implements SessionBackend {
     isBusy: () => this.agent?.status() === 'running',
     isAlive: () => this.opts !== null,
     emit: (event) => this.emit(event),
-    send: (request) => this.send(request),
+    send: (request, delivery) => this.send(request, delivery),
     warn: (message, err) => log.warn(`[deepseek] ${message}:`, err),
   })
 
@@ -221,7 +221,7 @@ export class DeepseekBackend implements SessionBackend {
 
   async send(request: SendMessageRequest, delivery?: SendDelivery): Promise<void> {
     const agent = await this.ensureAgent()
-    if (this.queuedMessages.intercept(request)) return
+    if (this.queuedMessages.intercept(request, delivery)) return
     // `/compact` is not a prompt: it drives `ctx.compaction.compactNow()` and
     // opens no turn. Intercepted here rather than mounting dsh's own
     // `command-compact` row, because SuperOne owns the slash surface.
@@ -421,6 +421,7 @@ export class DeepseekBackend implements SessionBackend {
     const taken = this.queuedMessages.take(cmd.clientMessageId)
     if (!taken) throw new Error(`Queued DeepSeek message not found: ${cmd.clientMessageId}`)
     try {
+      taken.delivery?.onInputAccepted()
       await agent.steerText(taken.request.content, taken.request.images)
     } catch (error) {
       this.queuedMessages.restore(taken)

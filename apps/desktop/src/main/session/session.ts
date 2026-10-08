@@ -117,16 +117,6 @@ interface SendDeliveryState extends SendDelivery {
   error: string | null
 }
 
-function createSendDelivery(): SendDeliveryState {
-  const state: SendDeliveryState = {
-    delivered: false,
-    openedMessageIds: [],
-    error: null,
-    onInputAccepted: () => { state.delivered = true },
-  }
-  return state
-}
-
 export interface SessionConstructorOptions {
   id: string
   projectPath: string
@@ -834,7 +824,7 @@ export class Session implements SessionContract {
           this._pendingQueuedRequests.set(request.clientMessageId, { request, providerOrigin, selectionRevision: this._selectionRevision })
           this.emitQueuedMessages()
         }
-        const delivery = createSendDelivery()
+        const delivery = this.createSendDelivery(request)
         try {
           this.flushFirstTurnPreamble()
           opts?.onAccepted?.()
@@ -868,7 +858,7 @@ export class Session implements SessionContract {
       if (request.ultracode !== undefined) this.setUltracode(request.ultracode)
       this.additionalDirectories = nextDirs
       this.appendUserMessage(request, providerOrigin)
-      const delivery = createSendDelivery()
+      const delivery = this.createSendDelivery(request)
       this._delivery = delivery
       try {
         this.liveness.beginSend()
@@ -929,9 +919,48 @@ export class Session implements SessionContract {
   private observeDelivery(event: AgentEvent): void {
     const delivery = this._delivery
     if (!delivery || delivery.delivered) return
+    if (event.type === 'message_start') {
+      if (event.message.role === 'assistant') delivery.openedMessageIds.push(event.message.id)
+      return
+    }
+    // A late event of the turn before belongs to that turn, not to this send.
+    const messageId = 'messageId' in event && typeof event.messageId === 'string' ? event.messageId : null
+    if (messageId !== null && !delivery.openedMessageIds.includes(messageId)) return
     if (isAgentOutputEvent(event)) delivery.delivered = true
-    else if (event.type === 'message_start' && event.message.role === 'assistant') delivery.openedMessageIds.push(event.message.id)
     else if (event.type === 'message_error') delivery.error ??= event.error
+  }
+
+  /**
+   * Delivery state of one send. `runDeferred` serves a send the backend
+   * parked in its own queue: when the backend runs it, its events are
+   * attributed to it, and a failure before its input was handed over is
+   * recorded on its row, as for a send that runs at once.
+   */
+  private createSendDelivery(request: SendMessageRequest): SendDeliveryState {
+    const state: SendDeliveryState = {
+      delivered: false,
+      openedMessageIds: [],
+      error: null,
+      onInputAccepted: () => { state.delivered = true },
+      runDeferred: async (run) => {
+        this._delivery = state
+        let failed = false
+        let failure: unknown
+        try {
+          await run()
+        } catch (error) {
+          failed = true
+          failure = error
+        } finally {
+          if (this._delivery === state) this._delivery = null
+        }
+        if (!state.delivered && (failed || state.error !== null)) {
+          this.recordSendFailure(request, failed ? failure : state.error, state.openedMessageIds)
+        }
+        if (failed) throw failure
+      },
+    }
+    return state
   }
 
   /** Whether the user message `id` was already admitted, queued, answered or is running. */

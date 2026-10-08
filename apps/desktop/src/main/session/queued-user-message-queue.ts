@@ -1,4 +1,11 @@
 import type { AgentEvent, SendMessageRequest } from '@superone/shared/agent-types'
+import type { SendDelivery } from './types'
+
+/** A parked send and the delivery hooks of the `Session.send` that parked it. */
+export interface QueuedUserMessage {
+  request: SendMessageRequest
+  delivery?: SendDelivery
+}
 
 /**
  * Host-owned mid-turn queue for user-typed messages. OpenCode always runs a
@@ -13,8 +20,8 @@ import type { AgentEvent, SendMessageRequest } from '@superone/shared/agent-type
  * backend owns this policy. Wire it as:
  *
  * ```ts
- * async send(request) {
- *   if (this.queuedMessages.intercept(request)) return
+ * async send(request, delivery) {
+ *   if (this.queuedMessages.intercept(request, delivery)) return
  *   …
  *   finally { this.queuedMessages.flush() }
  * }
@@ -22,9 +29,19 @@ import type { AgentEvent, SendMessageRequest } from '@superone/shared/agent-type
  *
  * Claude flushes from its terminal-event handler instead: a steered message
  * runs as a continuation turn that no `send()` awaits.
+ *
+ * Each item keeps the `SendDelivery` of the send that parked it. The parking
+ * call has long returned when the item runs, so the flush runs it through
+ * `delivery.runDeferred`, which ties that run's events and failure back to
+ * the message; a steer that hands the item to the live turn calls its
+ * `onInputAccepted`.
  */
+export interface TakenQueuedUserMessage extends QueuedUserMessage {
+  index: number
+}
+
 export class QueuedUserMessageQueue {
-  private items: SendMessageRequest[] = []
+  private items: QueuedUserMessage[] = []
 
   constructor(private readonly host: {
     /** True while a turn is active — a queued message must wait. */
@@ -33,7 +50,7 @@ export class QueuedUserMessageQueue {
     isAlive(): boolean
     emit(event: AgentEvent): void
     /** Re-entry point; receives the original request (priority intact). */
-    send(request: SendMessageRequest): Promise<void>
+    send(request: SendMessageRequest, delivery?: SendDelivery): Promise<void>
     warn(message: string, err: unknown): void
   }) {}
 
@@ -50,10 +67,10 @@ export class QueuedUserMessageQueue {
    * until that event lands, and its `isStreaming()` check can be a tick ahead of
    * the backend, so the event must fire on this path too.
    */
-  intercept(request: SendMessageRequest): boolean {
+  intercept(request: SendMessageRequest, delivery?: SendDelivery): boolean {
     if (request.priority !== 'next' && request.priority !== 'later') return false
     if (this.host.isBusy()) {
-      this.items.push(request)
+      this.items.push({ request, delivery })
       return true
     }
     if (request.clientMessageId) {
@@ -69,8 +86,9 @@ export class QueuedUserMessageQueue {
       this.clear()
       return
     }
-    const next = this.items.shift()!
-    void this.host.send(next).catch((err) => {
+    const { request, delivery } = this.items.shift()!
+    const run = () => this.host.send(request, delivery)
+    void (delivery?.runDeferred ? delivery.runDeferred(run) : run()).catch((err) => {
       this.host.warn('queued send failed', err)
     })
   }
@@ -81,16 +99,17 @@ export class QueuedUserMessageQueue {
   }
 
   /** Remove and return one queued request for a harness-specific action. */
-  take(clientMessageId: string): { request: SendMessageRequest; index: number } | null {
-    const idx = this.items.findIndex((r) => r.clientMessageId === clientMessageId)
+  take(clientMessageId: string): TakenQueuedUserMessage | null {
+    const idx = this.items.findIndex((item) => item.request.clientMessageId === clientMessageId)
     if (idx === -1) return null
-    const request = this.items.splice(idx, 1)[0]
-    return request ? { request, index: idx } : null
+    const item = this.items.splice(idx, 1)[0]
+    return item ? { ...item, index: idx } : null
   }
 
   /** Restore a request removed by `take()` when the follow-up action fails. */
-  restore(taken: { request: SendMessageRequest; index: number }): void {
-    this.items.splice(Math.min(taken.index, this.items.length), 0, taken.request)
+  restore(taken: TakenQueuedUserMessage): void {
+    const { index, ...item } = taken
+    this.items.splice(Math.min(index, this.items.length), 0, item)
   }
 
   clear(): void {

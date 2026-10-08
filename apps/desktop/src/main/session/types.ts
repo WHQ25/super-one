@@ -359,6 +359,13 @@ export type SessionLifecycleEvent =
  */
 export interface SendDelivery {
   onInputAccepted: () => void
+  /**
+   * For a send the backend parks in its own queue: the backend runs the
+   * parked send through this when it leaves the queue, so `Session` ties that
+   * run's events and failure to this message (the parking call returned long
+   * before). Rejects with the run's error.
+   */
+  runDeferred?: (run: () => Promise<void>) => Promise<void>
 }
 
 export interface SessionBackend {

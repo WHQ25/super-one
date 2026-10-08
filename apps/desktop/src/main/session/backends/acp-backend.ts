@@ -67,7 +67,7 @@ import {
   TaskNotificationQueue,
   taskNotificationRequest,
 } from '../task-notification-queue'
-import { QueuedUserMessageQueue } from '../queued-user-message-queue'
+import { QueuedUserMessageQueue, type TakenQueuedUserMessage } from '../queued-user-message-queue'
 import type { BackendCommand, BackendStartOptions, HarnessId, SendDelivery, SessionBackend, TaskNotificationInjectResult } from '../types'
 import {
   isGrokGoalClear,
@@ -180,7 +180,7 @@ export class AcpBackend implements SessionBackend {
     isBusy: () => this.isTurnBusy(),
     isAlive: () => this.started && !this.disposed,
     emit: (event) => this.emit(event),
-    send: (request) => this.send(request),
+    send: (request, delivery) => this.send(request, delivery),
     warn: (message, err) => log.warn(`[AcpBackend] ${message}:`, err),
   })
   private readonly pendingTaskNotifications = new TaskNotificationQueue()
@@ -1223,12 +1223,14 @@ export class AcpBackend implements SessionBackend {
     })
   }
 
-  private async interjectRequest(request: SendMessageRequest): Promise<boolean> {
+  private async interjectRequest(request: SendMessageRequest, delivery?: SendDelivery): Promise<boolean> {
     const runtime = this.runtime
     if (!runtime?.interject) return false
     const id = request.clientMessageId ?? `interject_${Date.now().toString(36)}`
     this.selfInterjectionIds.add(id)
     try {
+      // x.ai/interject hands the message to the live turn.
+      delivery?.onInputAccepted()
       await runtime.interject(request.content, id, request.images)
     } catch (err) {
       this.selfInterjectionIds.delete(id)
@@ -1362,10 +1364,10 @@ export class AcpBackend implements SessionBackend {
     if (isGrokGoalSlash(request.content) && this.isTurnBusy()) {
       await this.cancelLivePrompt()
     }
-    if (this.pendingQueued.intercept(request)) return
+    if (this.pendingQueued.intercept(request, delivery)) return
     // Concurrent session/prompt cancels Grok's live turn. Park even `now`.
     if (this.isTurnBusy()) {
-      const parked = this.pendingQueued.intercept({ ...request, priority: 'next' })
+      const parked = this.pendingQueued.intercept({ ...request, priority: 'next' }, delivery)
       if (parked) return
     }
     const messageId = request.assistantMessageId
@@ -1912,7 +1914,7 @@ export class AcpBackend implements SessionBackend {
         this.steerNow(taken)
         return
       }
-      const ok = await this.interjectRequest(taken.request)
+      const ok = await this.interjectRequest(taken.request, taken.delivery)
       if (!ok) throw new Error('Grok interject is unavailable')
     } catch (err) {
       this.pendingQueued.restore(taken)
@@ -1925,7 +1927,7 @@ export class AcpBackend implements SessionBackend {
    * live turn (the running command is backgrounded, not killed) and runs this
    * message next. Steer soon stays on `x.ai/interject`.
    */
-  private steerNow(taken: { request: SendMessageRequest; index: number }): void {
+  private steerNow(taken: TakenQueuedUserMessage): void {
     const runtime = this.runtime
     if (!runtime) throw new Error('Grok sendNow is unavailable')
     const request = taken.request
@@ -1969,7 +1971,7 @@ export class AcpBackend implements SessionBackend {
         this.routeSessionEvent(routed, this.config.agentId ?? null, this.runtimeEpoch)
       },
       request.images,
-      { sendNow: true },
+      { sendNow: true, onInputAccepted: taken.delivery?.onInputAccepted },
     )
     this.sendNowPrompt = next
     void next.catch(() => {

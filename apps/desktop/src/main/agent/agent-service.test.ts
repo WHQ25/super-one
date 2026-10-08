@@ -828,6 +828,24 @@ describe('AgentService Realtime Voice', () => {
 })
 
 describe('AgentService SEND_MESSAGE', () => {
+  it('refuses a remote project key instead of resuming or creating a local session', async () => {
+    const service = new AgentService()
+    const sessionManager = {
+      getSession: vi.fn(() => null),
+      getActiveSession: vi.fn(() => null),
+      resumeSession: vi.fn(),
+      createSession: vi.fn(),
+    }
+    ;(service as { sessionManager: unknown }).sessionManager = sessionManager
+    service.setup()
+    const handler = getRegisteredIpcHandler(AgentIpcChannels.SEND_MESSAGE)!
+
+    await expect(handler(null, 'remote:env-1:/work/app', { content: 'hi', clientMessageId: 'u1', sessionId: 'node-sid' }))
+      .rejects.toThrow(/remote project/)
+    expect(sessionManager.resumeSession).not.toHaveBeenCalled()
+    expect(sessionManager.createSession).not.toHaveBeenCalled()
+  })
+
   it('creates a Claude session with the renderer draft id before the first send', async () => {
     const service = new AgentService()
     const send = vi.fn().mockResolvedValue(undefined)

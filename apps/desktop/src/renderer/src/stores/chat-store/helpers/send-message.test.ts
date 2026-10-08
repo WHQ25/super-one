@@ -893,6 +893,26 @@ describe('sendMessageImpl: IPC dispatch + rollback', () => {
     expect(sess.awaitingAssistantReply).toBe(true)
   })
 
+  it('resends a remote row through the environment gateway, never local IPC, after a reload', async () => {
+    const remotePath = 'remote:env-1:/work/app'
+    const image = { id: 'img', name: 'a.png', mimeType: 'image/png', base64: 'AAAA' }
+    seedProject(remotePath, 'node-sid-1', { sessionProvider: 'claude', messages: [{
+      id: 'u1', role: 'user', status: 'complete', createdAt: '', providerId: 'claude',
+      content: [{ type: 'image', name: 'a.png' }, { type: 'text', text: 'hello' }], attachments: [image],
+      metadata: { sendFailure: { error: 'not connected' } },
+    }] })
+    mockEnvSendSessionMessage.mockResolvedValueOnce({ sessionId: 'node-sid-1', status: 'idle', harnessId: 'claude', transcript: [] })
+
+    await useChatStore.getState().resendFailedMessage('u1', { projectPath: remotePath, sessionId: 'node-sid-1' })
+
+    expect(mockSendMessage).not.toHaveBeenCalled()
+    expect(mockEnvSendSessionMessage).toHaveBeenCalledWith('env-1', expect.objectContaining({
+      sessionId: 'node-sid-1', clientMessageId: 'u1', text: 'hello', projectPath: remotePath, providerId: 'claude',
+      images: [{ name: 'a.png', mimeType: 'image/png', base64: 'AAAA' }],
+    }))
+    expect(getActiveSession(remotePath).messages[0].metadata?.sendFailure).toBeUndefined()
+  })
+
   it('edit pulls a failed message back into the composer and forgets its replay', async () => {
     seedProject('/proj', 'sid-1', { draftText: 'typed since' })
     mockSendMessage.mockRejectedValueOnce(new Error('network down'))

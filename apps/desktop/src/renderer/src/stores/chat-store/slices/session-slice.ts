@@ -16,6 +16,8 @@ import {
 import { toastSendFailure } from '../helpers/send-error-toast'
 import { deliverUserSend, dropSendReplay, replayFailedSend } from '../helpers/send-replay'
 import { createSendWriteScope } from '../helpers/send-write-scope'
+import { resendRemoteMessageImpl } from '../helpers/send-message-remote'
+import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { failedMessageResend, withoutSendFailure } from '@superone/chat-core'
 import { restoreSentDraft } from '@/components/chat/chat-input/restore-sent-draft'
 import { messageDraft } from '@/components/chat/chat-input/message-draft'
@@ -120,6 +122,9 @@ export const createSessionSlice: StateCreator<ChatStore, [], [], SessionSlice> =
     const resend = msg ? failedMessageResend(msg) : null
     if (!projectPath || !resend) return
     const scope = createSendWriteScope(set, get, projectPath, target)
+    // A node session is sent through the environment gateway, like a composer send.
+    const remoteKey = parseRemoteProjectKey(projectPath)
+    if (remoteKey) return resendRemoteMessageImpl(set, get, projectPath, remoteKey, scope, resend)
     const request = { ...resend, sessionId: scope.sessionId() ?? undefined }
     scope.patch((sess) => ({
       messages: sess.messages.map((m) => (m.id === messageId ? withoutSendFailure(m) : m)),

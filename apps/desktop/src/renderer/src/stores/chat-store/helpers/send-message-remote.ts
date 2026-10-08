@@ -14,7 +14,7 @@ import { providerSessionIdFromResume } from '@superone/shared/environment'
 import { expandPathRefTagsForAgent, stripMiniAppMarkup } from '@superone/shared/miniapp-prompt-tags'
 import { isBuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
 import { deliverUserSend } from './send-replay'
-import { isRemoteSendDetached } from '@superone/shared/send-failure'
+import { isRemoteSendDetached, withoutSendFailure, type FailedMessageResend } from '@superone/shared/send-failure'
 import { shouldInterceptHostSlash } from './send-command-policy'
 import type { SendWriteScope } from './send-write-scope'
 
@@ -337,7 +337,81 @@ export async function sendRemoteMessageImpl(
     ...(remoteTurnKind ? { turnKind: remoteTurnKind } : {}),
     ...(remoteReviewTarget !== undefined ? { reviewTarget: remoteReviewTarget } : {}),
   }
-  const statusBeforeSend = writeSess.status
+  await deliverRemoteTurn(set, writeScope, {
+    projectPath, remoteKey, sid, preferredHarness, sendInput: sendInput as RemoteSendInput,
+    titleText: rawContent || finalContent,
+    statusBeforeSend: writeSess.status,
+  })
+}
+
+/**
+ * Resend a failed row of a node session from what its transcript kept, under
+ * the same id, through the same gateway path as a composer send.
+ */
+export async function resendRemoteMessageImpl(
+  set: ChatStoreSet,
+  get: () => ChatStore,
+  projectPath: string,
+  remoteKey: NonNullable<ReturnType<typeof parseRemoteProjectKey>>,
+  writeScope: SendWriteScope,
+  resend: FailedMessageResend,
+): Promise<void> {
+  // The row came from the node, so its session already exists there.
+  const sid = writeScope.sessionId()
+  if (!sid) return
+  writeScope.target = { projectPath, sessionId: sid }
+  const { useAppStore } = await import('../../app')
+  const sess = getScopedPerSession(get(), writeScope.target)
+  const turnOptions = remoteTurnOptions(get(), projectPath, sid, useAppStore.getState().getWorktreeState(projectPath).activePath)
+  const images = (resend.images ?? []).map((a) => ({
+    name: a.name,
+    mimeType: a.mimeType,
+    base64: a.base64,
+    ...(a.originalPath ? { originalPath: a.originalPath } : {}),
+  }))
+  writeScope.patch((s) => ({
+    messages: s.messages.map((m) => (m.id === resend.clientMessageId ? withoutSendFailure(m) : m)),
+    awaitingAssistantReply: true,
+    status: 'streaming',
+  }))
+  await deliverRemoteTurn(set, writeScope, {
+    projectPath, remoteKey, sid, preferredHarness: remoteHarnessOf(sess),
+    sendInput: {
+      ...turnOptions,
+      sessionId: sid,
+      text: resend.content,
+      clientMessageId: resend.clientMessageId,
+      projectPath,
+      ...(images.length > 0 ? { images } : {}),
+    } as RemoteSendInput,
+    titleText: resend.content,
+    statusBeforeSend: sess.status,
+  })
+}
+
+type RemoteSendInput = Parameters<typeof window.environment.sendSessionMessage>[1] & { clientMessageId: string }
+
+/**
+ * Hand one prepared user turn to the node through the environment gateway
+ * (which holds the session lease) and apply the settled node snapshot. Shared
+ * by a composer send and a Resend rebuilt from the transcript row.
+ */
+async function deliverRemoteTurn(
+  set: ChatStoreSet,
+  writeScope: SendWriteScope,
+  turn: {
+    projectPath: string
+    remoteKey: NonNullable<ReturnType<typeof parseRemoteProjectKey>>
+    sid: string
+    preferredHarness: RemoteHarness
+    sendInput: RemoteSendInput
+    /** Plain text a missing session title is derived from. */
+    titleText: string
+    statusBeforeSend: PerSessionState['status']
+  },
+): Promise<void> {
+  const { projectPath, remoteKey, sid, preferredHarness, sendInput, titleText, statusBeforeSend } = turn
+  const patchSession = writeScope.patch
   const applyFinalSnapshot = async (finalSnap: NodeSessionSnapshot | null) => {
     const providerId = nodeHarnessToProviderId(
       finalSnap?.harnessId || finalSnap?.providerId || preferredHarness,
@@ -351,7 +425,7 @@ export async function sendRemoteMessageImpl(
         ? finalSnap.title.trim()
         : null
     // Prefer node snap title; otherwise user-visible plain text (not agent tag markup).
-    const titleSource = stripMiniAppMarkup(rawContent || finalContent).trim().replace(/\s+/g, ' ')
+    const titleSource = stripMiniAppMarkup(titleText).trim().replace(/\s+/g, ' ')
     const derivedTitle =
       snapTitle ||
       (titleSource
@@ -419,11 +493,11 @@ export async function sendRemoteMessageImpl(
     }
   }
   await deliverUserSend({
-    messageId: userMessageId,
+    messageId: sendInput.clientMessageId,
     patchSession,
     deliver: () => window.environment.sendSessionMessage(
       remoteKey.connectionId,
-      sendInput as Parameters<typeof window.environment.sendSessionMessage>[1],
+      sendInput,
     ),
     onDelivered: async (result) => {
       // The node holds the message and only the stream dropped: reconnect
@@ -435,8 +509,8 @@ export async function sendRemoteMessageImpl(
     // A concurrent turn this send was queued behind is still running.
     failureState: () => ({ status: statusBeforeSend === 'streaming' ? 'streaming' : 'idle' }),
   })
-  return
 }
+
 
 type RemoteHarness = 'claude' | 'codex' | 'acp' | 'opencode'
 

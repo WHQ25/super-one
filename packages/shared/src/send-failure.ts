@@ -53,19 +53,21 @@ export function markSendFailure(messages: readonly ChatMessage[], id: string, er
   return messages.map((m) => (m.id === id ? withSendFailure(m, error) : m))
 }
 
+export interface FailedMessageResend {
+  clientMessageId: string
+  content: string
+  userMessageContent: ContentBlock[]
+  contexts?: ChatMessageContext[]
+  images?: ImageAttachment[]
+}
+
 /**
  * A failed row sent again from what the transcript kept, for when the original
  * request is gone (a reload, a reconnect). Same id, so the host reuses its row.
  * Null when the row is not a failed send, or its form submission was refused
  * for good (an answered or expired request cannot be resent).
  */
-export function failedMessageResend(message: ChatMessage): {
-  clientMessageId: string
-  content: string
-  userMessageContent: ContentBlock[]
-  contexts?: ChatMessageContext[]
-  images?: ImageAttachment[]
-} | null {
+export function failedMessageResend(message: ChatMessage): FailedMessageResend | null {
   const failure = message.metadata?.sendFailure
   if (!failure || parseInputRequestError(failure.error)) return null
   return {

@@ -2820,6 +2820,11 @@ export class AgentService {
     // --- Session-scoped handlers (projectPath as first arg) ---
 
     ipcMain.handle(AgentIpcChannels.SEND_MESSAGE, async (_event, projectPath: string, request: SendMessageRequest) => {
+      // A node session runs on its node, sent through the environment gateway;
+      // the key is not a local project path to resume or create a Session in.
+      if (parseRemoteProjectKey(projectPath)) {
+        throw new Error(`send_message: ${projectPath} is a remote project; send through the environment gateway`)
+      }
       this.throwIfRemoteLocked(projectPath)
       const session = await this.getOrCreateActiveSession(projectPath, request.sessionId, {
         worktreePath: request.worktreePath,

@@ -1088,6 +1088,7 @@ export {
   useActiveSession,
   getActiveSessionView,
   useIsRemoteLocked,
+  useSessionRemoteController,
   useBashOutput,
   selectClaudeResources,
   selectCodexResources,

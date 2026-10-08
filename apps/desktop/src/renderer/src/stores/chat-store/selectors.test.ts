@@ -55,6 +55,7 @@ const { useChatStore } = chatStore
 const {
   useActiveSession,
   useIsRemoteLocked,
+  useSessionRemoteController,
   useBashOutput,
   selectActiveCodexSkills,
   selectActiveCursorSlashItems,
@@ -222,6 +223,23 @@ describe('useIsRemoteLocked', () => {
       useChatStore.setState({ remoteSessions: { [PATH]: [sid] } })
     })
     expect(renderHook(() => useIsRemoteLocked()).result.current).toBe(true)
+  })
+
+  it('locks a session another device started here and exposes its controller', () => {
+    const sid = setupActiveProject()
+    expect(renderHook(() => useSessionRemoteController()).result.current).toBeNull()
+    act(() => {
+      useChatStore.setState((state) => ({
+        projectSessions: {
+          [PATH]: {
+            ...state.projectSessions[PATH],
+            _sessions: { [sid]: { ...state.projectSessions[PATH]._sessions[sid], remoteController: { label: 'MacBook Air' } } },
+          },
+        },
+      }))
+    })
+    expect(renderHook(() => useIsRemoteLocked()).result.current).toBe(true)
+    expect(renderHook(() => useSessionRemoteController()).result.current).toEqual({ label: 'MacBook Air' })
   })
 })
 

@@ -81,3 +81,31 @@ export const DisconnectError: Story = { render: () => <DraftPreview failure /> }
 
 export const InvalidAttachment: Story = { render: () => <DraftPreview attachmentFailure="invalid" /> }
 export const AttachmentSaveRetry: Story = { render: () => <DraftPreview attachmentFailure="save" narrow /> }
+
+/** A session another desktop started on this computer: the composer gives way to a read-only banner. */
+function RemoteControlledPreview({ label, narrow = false }: { label: string | null; narrow?: boolean }) {
+  const [ready, setReady] = useState(false)
+  useEffect(() => {
+    const previous = useChatStore.getState()
+    const project = createDefaultProjectState()
+    const session = createDefaultPerSessionState()
+    session.remoteController = { label }
+    useChatStore.setState({ activeProject: projectPath, projectSessions: {
+      ...previous.projectSessions,
+      [projectPath]: { ...project, _activeSessionId: sessionId, _sessions: { [sessionId]: session } },
+    } })
+    setReady(true)
+    return () => useChatStore.setState(previous)
+  }, [label])
+  return <div style={{ width: narrow ? 320 : 620, maxWidth: '100%' }}>
+    {ready && <TooltipProvider><ChatComposerShell showTodoPopup={false} /></TooltipProvider>}
+  </div>
+}
+
+export const StartedFromAnotherDevice: Story = { render: () => <RemoteControlledPreview label="MacBook Air" /> }
+export const StartedFromUnnamedDevice: Story = { render: () => <RemoteControlledPreview label={null} /> }
+export const StartedFromLongLabelNarrow: Story = {
+  render: () => <RemoteControlledPreview label="Hangqi’s 16-inch MacBook Pro (Office, 3rd floor)" narrow />,
+}
+export const StartedFromAnotherDeviceDark: Story = { ...StartedFromAnotherDevice, globals: { theme: 'dark' } }
+export const StartedFromAnotherDeviceChinese: Story = { ...StartedFromAnotherDevice, globals: { locale: 'zh' } }

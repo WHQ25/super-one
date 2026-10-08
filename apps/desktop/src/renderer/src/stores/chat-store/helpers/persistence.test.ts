@@ -111,6 +111,13 @@ describe('_mergePersistedSessionState', () => {
     expect(merged._parentSessionId).toBe('parent')
   })
 
+  it('restores the controller of a session another device started here', () => {
+    const base = { messages: [], totalCostUsd: 0, contextTokens: 0, isWorktree: false, gitBranch: null, worktreePath: null, provider: 'claude' as const }
+    const remote = _mergePersistedSessionState(createDefaultPerSessionState(), { ...base, remoteController: { label: 'MacBook Air' } })
+    expect(remote.remoteController).toEqual({ label: 'MacBook Air' })
+    expect(_mergePersistedSessionState(createDefaultPerSessionState(), { ...base, remoteController: null }).remoteController).toBeNull()
+  })
+
   it('restores the provider session id for an empty voice-only session', () => {
     const merged = _mergePersistedSessionState(createDefaultPerSessionState(), {
       messages: [],

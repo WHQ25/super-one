@@ -32,6 +32,7 @@ import type {
   SandboxInfo,
   SandboxMode,
   SessionHistoryEntry,
+  SessionRemoteControllerInfo,
   SessionInfo,
   SkillInfo,
   SlashCommandInfo,
@@ -232,6 +233,8 @@ export interface PerSessionState extends ChatCoreSession {
    */
   draftId: string | null
   draftRemoteDeviceId?: string | null
+  /** Another device started this session through this computer's node surface and controls it; shown read-only. */
+  remoteController?: SessionRemoteControllerInfo | null
   promptSuggestion: string | null
   attachments: ImageAttachment[]
   browserAnnotations: BrowserAnnotation[]
@@ -384,6 +387,7 @@ export type PersistedSessionState = {
   /** Codex Fast mode (service tier id); null means Fast is off for this session. */
   codexServiceTier?: string | null
   title?: string | null
+  remoteController?: SessionRemoteControllerInfo | null
 }
 
 export interface ChatStore {

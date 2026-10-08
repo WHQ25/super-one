@@ -1545,6 +1545,11 @@ export type Messages = {
     }
   }
   chat: {
+    remoteController: {
+      badge: string
+      badgeUnknown: string
+      readOnly: string
+    }
     mods: {
       paneClosed: string
       closePane: string
@@ -5907,6 +5912,11 @@ export const en: Messages = {
     },
   },
   chat: {
+    remoteController: {
+      badge: 'Started from {{label}}',
+      badgeUnknown: 'Started from another device',
+      readOnly: 'Only that device can send messages or answer prompts. This computer shows the session read-only.',
+    },
     mods: {
       paneClosed: 'This pane is closed.',
       closePane: 'Close Pane',

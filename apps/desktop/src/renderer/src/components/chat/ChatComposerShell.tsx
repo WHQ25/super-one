@@ -2,7 +2,7 @@ import { memo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { GitFork, Smartphone } from 'lucide-react'
 import { toast } from 'sonner'
-import { useChatStore, useActiveSession, useIsRemoteLocked } from '@/stores/chat'
+import { useChatStore, useActiveSession, useIsRemoteLocked, useSessionRemoteController } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { catalogIdForSessionProvider, isCatalogHarnessDisabled } from '@/lib/harness-visibility'
 import { resolveSessionIcon, resolveSessionIconFromBrandKey } from '@/components/harness/resolve-session-icon'
@@ -10,6 +10,7 @@ import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
 import { ChatInput } from './ChatInput'
 import { ChatStatusBar } from './ChatStatusBar'
 import { RemoteComposerBanner } from './RemoteComposerBanner'
+import { RemoteControllerBanner } from './RemoteControllerBanner'
 import { CursorApiKeyDialog } from './CursorApiKeyDialog'
 import { TodoPopup } from './TodoPopup'
 
@@ -33,6 +34,7 @@ export const ChatComposerShell = memo(function ChatComposerShell({
   const acpAgentId = useActiveSession((s) => s.acpAgentId)
   const disconnectRemoteSessionAction = useChatStore((s) => s.disconnectRemoteSession)
   const isRemoteLocked = useIsRemoteLocked()
+  const remoteController = useSessionRemoteController()
   const remoteDraftId = useActiveSession((s) => s.draftRemoteDeviceId ? s.draftId : null)
   const [disconnectingDraft, setDisconnectingDraft] = useState(false)
   const harnessCatalog = useAppStore((s) => s.harnessCatalog)
@@ -86,6 +88,7 @@ export const ChatComposerShell = memo(function ChatComposerShell({
       </div>
     )
   }
+  if (remoteController) return <RemoteControllerBanner label={remoteController.label} />
   if (isRemoteLocked) {
     if (remoteDraftId) return <>
       <RemoteComposerBanner busy={disconnectingDraft} onDisconnect={() => {

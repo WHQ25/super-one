@@ -1644,6 +1644,11 @@ export const zh: Messages = {
     },
   },
   chat: {
+    remoteController: {
+      badge: '由 {{label}} 发起',
+      badgeUnknown: '由其他设备发起',
+      readOnly: '只有该设备可以发送消息或回应提示，本机仅以只读方式显示此会话。',
+    },
     mods: {
       paneClosed: '这个面板已关闭。',
       closePane: '关闭面板',

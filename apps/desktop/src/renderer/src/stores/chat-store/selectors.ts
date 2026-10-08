@@ -5,6 +5,7 @@ import type {
   CodexResources,
   ModelOption,
   SkillInfo,
+  SessionRemoteControllerInfo,
   SlashCommandInfo,
 } from '@superone/shared/agent-types'
 
@@ -78,7 +79,13 @@ export function useIsRemoteLocked(): boolean {
     const project = store.projectSessions[projectPath]
     const sessionId = scope?.sessionId ?? project?._activeSessionId
     return isRemoteSession(store, projectPath, sessionId)
+      || !!(sessionId && project?._sessions[sessionId]?.remoteController)
   })
+}
+
+/** Controller of the scoped session when another device started it here; null for local sessions. */
+export function useSessionRemoteController(): SessionRemoteControllerInfo | null {
+  return useActiveSession((s) => s.remoteController ?? null)
 }
 
 export function useBashOutput(toolUseId: string): { content: string; finished: boolean; outputPath?: string } | undefined {

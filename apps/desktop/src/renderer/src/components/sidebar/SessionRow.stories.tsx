@@ -245,3 +245,38 @@ export const HoverRevealsPin: Story = {
     />
   ),
 }
+
+const startedFrom = (label: string | null) => ({ remoteController: { label } })
+
+/** Sessions another desktop started here: short, long and unnamed controllers, running and idle. */
+export const StartedFromAnotherDevice: Story = {
+  name: 'Started from another device',
+  render: () => (
+    <Preview
+      activeId="remote-run"
+      rows={[
+        { session: entry('remote-run', 'Fix the flaky upload test', startedFrom('MacBook Air')), status: 'streaming' },
+        { session: entry('remote-long', 'Port the relay client to the encrypted channel', startedFrom('Hangqi’s 16-inch MacBook Pro (Office)')) },
+        { session: entry('remote-anon', 'Run the iOS simulator suite', startedFrom(null)) },
+      ]}
+    />
+  ),
+}
+
+export const StartedFromAnotherDeviceNarrow: Story = {
+  name: 'Started from another device (narrow)',
+  render: () => (
+    <Preview
+      width={180}
+      rows={[
+        { session: entry('remote-narrow', '补齐 session sync zone 全部 §9 未完成项', startedFrom('Hangqi’s 16-inch MacBook Pro')) },
+      ]}
+    />
+  ),
+}
+
+export const StartedFromAnotherDeviceDark: Story = {
+  ...StartedFromAnotherDevice,
+  name: 'Started from another device (dark)',
+  globals: { theme: 'dark' },
+}

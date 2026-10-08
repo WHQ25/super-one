@@ -1,7 +1,7 @@
 import { memo, useCallback } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useTranslation } from 'react-i18next'
-import { Bot, ChevronDown, ChevronRight, Clock, CornerDownRight, Eye, EyeOff, Loader2, MessageSquare, Mic, Pin, Smartphone } from 'lucide-react'
+import { Bot, ChevronDown, ChevronRight, Clock, CornerDownRight, Eye, EyeOff, Laptop, Loader2, MessageSquare, Mic, Pin, Smartphone } from 'lucide-react'
 import type { SessionIconProps } from '@superone/ui/components/harness/ClaudeSessionIcon'
 import { resolveSessionIcon } from '@/components/harness/resolve-session-icon'
 import { MarqueeText } from '@superone/ui/components/ui/marquee-text'
@@ -12,6 +12,7 @@ import { useRealtimeCallStore } from '@/stores/realtime-call'
 import { REALTIME_VOICE_GLYPH_SCALE } from '@/lib/realtime-voice-visuals'
 import { armedSendFor, useScheduledSendsStore } from '@/stores/scheduled-sends'
 import { formatSendWhen } from '@/components/chat/scheduled-send-time'
+import { remoteControllerBadgeText } from '@/components/chat/RemoteControllerBanner'
 import { useStallLevel, getStallColor, useEllipsisRepaintKey, type StallLevel } from '@/lib/stall-utils'
 import type { SessionHistoryEntry } from '@superone/shared/agent-types'
 import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
@@ -216,6 +217,16 @@ export const SessionRow = memo(function SessionRow({
               {/* Why this row is at the top of the list. Always visible — the
                   hover-revealed pin/expand buttons beside it are actions, this
                   is a state, and a state the user cannot see explains nothing. */}
+              {session.remoteController && (
+                <span
+                  className="mr-1 inline-flex max-w-24 min-w-0 items-center gap-1 rounded bg-sidebar-foreground/10 px-1 py-px text-[10px] text-sidebar-foreground/70"
+                  title={remoteControllerBadgeText(t, session.remoteController.label)}
+                  aria-label={remoteControllerBadgeText(t, session.remoteController.label)}
+                >
+                  <Laptop className="size-2.5 shrink-0" />
+                  {session.remoteController.label && <span className="truncate">{session.remoteController.label}</span>}
+                </span>
+              )}
               {scheduled && (
                 <Clock
                   className="size-3 shrink-0 text-warning group-hover/session:mr-1"

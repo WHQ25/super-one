@@ -86,6 +86,7 @@ export function _mergePersistedSessionState(session: PerSessionState, saved: Per
   return {
     ...session,
     _title: session._title ?? saved.title ?? null,
+    remoteController: saved.remoteController ?? session.remoteController ?? null,
     messages: mergedMessages,
     totalCostUsd: Math.max(session.totalCostUsd, saved.totalCostUsd),
     contextTokens: Math.max(session.contextTokens, saved.contextTokens),
@@ -137,6 +138,7 @@ export function _mergeHydratedSessionState(
   return {
     ...session,
     _title: session._title ?? hydrated._title,
+    remoteController: session.remoteController ?? hydrated.remoteController ?? null,
     messages: mergedMessages,
     totalCostUsd: Math.max(session.totalCostUsd, hydrated.totalCostUsd),
     contextTokens: Math.max(session.contextTokens, hydrated.contextTokens),

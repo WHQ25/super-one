@@ -109,6 +109,9 @@ export async function sendMessageImpl(
 
   // Mobile remote-control lock (another device owns the desktop session) — not node env.
   if (isRemoteSession(get(), projectPath, resolveWriteSid())) return
+  // Started from another device through this computer's node surface: only that
+  // controller may send (main rejects with SessionLockedError); the composer is read-only.
+  if (getScopedPerSession(get(), writeScope.target).remoteController) return
 
   const initialSession = getScopedPerSession(get(), writeScope.target)
   const initialProvider = initialSession.sessionProvider ?? initialSession.preferredProvider

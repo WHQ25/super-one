@@ -13,19 +13,33 @@ import { classifyAgentErrorText, isRateLimitErrorInfo } from '@superone/shared/a
 import log from '../logger'
 import { collaborationStore, spawnParentOf } from './collaboration-mailbox'
 import { wakeParentOfStoppedChild } from './collaboration-host'
+import { remoteChildState, remoteChildTarget } from './collaboration-remote'
 import type { Session, SessionManager } from './types'
 
 /** Streaming with no agent event or user action for this long counts as a stall. */
 export const CHILD_STALL_MS = 10 * 60_000
 export const CHILD_STALL_CHECK_INTERVAL_MS = 60_000
 
-export type CollaborationChildState = 'running' | 'awaiting_approval' | 'stalled' | 'idle' | 'error'
+export type CollaborationChildState = 'running' | 'awaiting_approval' | 'stalled' | 'idle' | 'error' | 'unreachable'
 
 export interface CollaborationChildStatus {
   state: CollaborationChildState
-  /** ISO time of the last agent event or user action; absent when the session is not loaded. */
+  /** ISO time of the last agent event or user action; absent when unknown. */
   lastActivityAt?: string
   /** Top-level tool still waiting for its result. */
+  runningTool?: string
+}
+
+/**
+ * A child as this desktop sees it, wherever it runs: a local Session, or a
+ * session on another machine read from its node plus the events this desktop
+ * drained from it.
+ */
+export interface ChildActivityView {
+  activity: AgentStatus
+  awaitingApproval: boolean
+  /** Last agent event or user action (ms); absent when unknown. */
+  lastActivityAt?: number
   runningTool?: string
 }
 
@@ -44,22 +58,89 @@ export function runningToolName(messages: readonly ChatMessage[]): string | unde
   return undefined
 }
 
-function liveState(session: Session, now: number): CollaborationChildState {
-  const activity: AgentStatus = session.activityStatus()
+/** The view of a local child; null when it is not loaded. */
+export function localChildView(session: Session | null): ChildActivityView | null {
+  if (!session) return null
+  const activity = session.activityStatus()
+  // A settled child runs no tool; skip the transcript scan.
+  const runningTool = activity === 'idle' || activity === 'error' ? undefined : runningToolName(session.snapshot.messages)
+  return {
+    activity,
+    awaitingApproval: session.getPendingInteractions().length > 0,
+    lastActivityAt: session.lastRuntimeActivityAt,
+    ...(runningTool ? { runningTool } : {}),
+  }
+}
+
+function viewState(view: ChildActivityView, now: number): CollaborationChildState {
+  const { activity } = view
   if (activity === 'idle' || activity === 'error') return activity
-  if (session.getPendingInteractions().length > 0) return 'awaiting_approval'
-  if (activity === 'streaming' && now - session.lastRuntimeActivityAt >= CHILD_STALL_MS) return 'stalled'
+  if (view.awaitingApproval) return 'awaiting_approval'
+  if (activity === 'streaming' && view.lastActivityAt !== undefined && now - view.lastActivityAt >= CHILD_STALL_MS) {
+    return 'stalled'
+  }
   return 'running'
 }
 
-/** What session_collab_retrieve reports for a child peer. A session not loaded in memory is idle. */
+/** What session_collab_retrieve reports for a child peer. A child with no view is idle. */
+export function describeChildView(view: ChildActivityView | null, now = Date.now()): CollaborationChildStatus {
+  if (!view) return { state: 'idle' }
+  const state = viewState(view, now)
+  const lastActivityAt = view.lastActivityAt !== undefined ? { lastActivityAt: new Date(view.lastActivityAt).toISOString() } : {}
+  if (state === 'idle' || state === 'error') return { state, ...lastActivityAt }
+  return { state, ...lastActivityAt, ...(view.runningTool ? { runningTool: view.runningTool } : {}) }
+}
+
+/** {@link describeChildView} of a local child. */
 export function describeChildStatus(session: Session | null, now = Date.now()): CollaborationChildStatus {
-  if (!session) return { state: 'idle' }
-  const state = liveState(session, now)
-  const lastActivityAt = new Date(session.lastRuntimeActivityAt).toISOString()
-  if (state === 'idle' || state === 'error') return { state, lastActivityAt }
-  const runningTool = runningToolName(session.snapshot.messages)
-  return { state, lastActivityAt, ...(runningTool ? { runningTool } : {}) }
+  return describeChildView(localChildView(session), now)
+}
+
+/**
+ * The view of a child wherever it runs; `unreachable` when it runs on a
+ * machine this desktop cannot reach now.
+ */
+export async function childActivityView(
+  host: SessionManager,
+  sessionId: string,
+): Promise<ChildActivityView | null | 'unreachable'> {
+  if (!remoteChildTarget(sessionId)) return localChildView(host.getSession(sessionId))
+  const remote = await remoteChildState(sessionId)
+  if (!remote) return 'unreachable'
+  const lastActivityAt = observedActivityAt(sessionId)
+  return {
+    activity: nodeStatusActivity(remote.status),
+    awaitingApproval: remote.pendingInteraction != null,
+    ...(lastActivityAt !== undefined ? { lastActivityAt } : {}),
+  }
+}
+
+/** What session_collab_retrieve reports for a child peer, wherever it runs. */
+export async function describeCollaborationChild(
+  host: SessionManager,
+  sessionId: string,
+  now = Date.now(),
+): Promise<CollaborationChildStatus> {
+  const view = await childActivityView(host, sessionId)
+  return view === 'unreachable' ? { state: 'unreachable' } : describeChildView(view, now)
+}
+
+/**
+ * When this desktop last saw a live event of each session. For a child on
+ * another machine that is its last activity: its events reach this desktop
+ * only as the turns it starts there are drained.
+ */
+const observedEventAt = new Map<string, number>()
+
+export function observedActivityAt(sessionId: string): number | undefined {
+  return observedEventAt.get(sessionId)
+}
+
+/** A remote node's session status as an agent activity. */
+export function nodeStatusActivity(status: string): AgentStatus {
+  if (status === 'streaming') return 'streaming'
+  if (status === 'error') return 'error'
+  return 'idle'
 }
 
 /**
@@ -89,16 +170,21 @@ interface RunState {
 
 export interface CollaborationChildMonitorDeps {
   host: SessionManager
+  /** The child as seen now (see {@link ChildActivityView}); null when unknown. */
+  view(sessionId: string): ChildActivityView | null | Promise<ChildActivityView | null>
+  /** When the child last got a user message; null when unknown. */
+  lastUserMessageAt(sessionId: string): number | null
   notifyStalled(sessionId: string): void
   clearStalled(sessionId: string): void
   now?: () => number
 }
 
 /**
- * Feeds on every live session event. A run opens on `streaming` / `background`
- * (or the first assistant message or error) and stops on the `idle` / `error`
- * that settles it, so a turn that ends with background tasks still running is
- * not a stop. Replayed events are ignored: they describe no new stop.
+ * Feeds on every live session event, from local sessions and from children
+ * on other machines alike. A run opens on `streaming` / `background` (or the
+ * first assistant message or error) and stops on the `idle` / `error` that
+ * settles it, so a turn that ends with background tasks still running is not
+ * a stop. Replayed events are ignored: they describe no new stop.
  */
 export class CollaborationChildMonitor {
   private readonly runs = new Map<string, RunState>()
@@ -112,6 +198,7 @@ export class CollaborationChildMonitor {
 
   handleEvent(sessionId: string, event: AgentEvent, replay: boolean): void {
     if (replay) return
+    observedEventAt.set(sessionId, this.now())
     switch (event.type) {
       case 'status_change':
         if (event.status === 'streaming' || event.status === 'background') this.open(sessionId)
@@ -129,18 +216,20 @@ export class CollaborationChildMonitor {
         break
       }
     }
-    this.clearStallIfActive(sessionId)
+    // Any live event is activity: the stall is over.
+    this.clearStall(sessionId)
   }
 
   /** Notify the human once per stall of a spawn child; never wakes the parent. */
-  checkStalls(now = this.now()): void {
-    for (const sessionId of this.runs.keys()) {
-      const session = this.deps.host.getSession(sessionId)
-      if (!session || liveState(session, now) !== 'stalled') continue
-      const activityAt = session.lastRuntimeActivityAt
+  async checkStalls(now = this.now()): Promise<void> {
+    for (const sessionId of [...this.runs.keys()]) {
+      if (!spawnParentOf(sessionId)) continue
+      const view = await this.deps.view(sessionId)
+      if (!view || viewState(view, now) !== 'stalled' || !this.runs.has(sessionId)) continue
+      const activityAt = view.lastActivityAt!
       if (this.stalls.get(sessionId) === activityAt) continue
       this.stalls.set(sessionId, activityAt)
-      if (spawnParentOf(sessionId)) this.deps.notifyStalled(sessionId)
+      this.deps.notifyStalled(sessionId)
     }
   }
 
@@ -158,21 +247,14 @@ export class CollaborationChildMonitor {
     this.runs.delete(sessionId)
     this.clearStall(sessionId)
     if (!run || run.interrupted) return
-    const parentSessionId = spawnParentOf(sessionId)
-    if (!parentSessionId) return
-    const child = this.deps.host.getSession(sessionId)
-    if (reportedSinceLastInput(sessionId, child?.snapshot.lastUserMessageAt ?? null)) return
+    const grant = collaborationStore().spawnGrantForChild(sessionId)
+    if (!grant) return
+    // The task never arrived: session_collab_start already told the parent why.
+    if (grant.task_sent !== 1) return
+    if (reportedSinceLastInput(sessionId, this.deps.lastUserMessageAt(sessionId))) return
     const label = status === 'error' && run.error ? `error: ${run.error}` : status
-    log.info('[session-collaboration] child stopped without reporting sid=%s parent=%s status=%s', sessionId, parentSessionId, label)
-    void wakeParentOfStoppedChild(this.deps.host, parentSessionId, sessionId, label)
-  }
-
-  private clearStallIfActive(sessionId: string): void {
-    const stalledAt = this.stalls.get(sessionId)
-    if (stalledAt === undefined) return
-    const session = this.deps.host.getSession(sessionId)
-    if (session && session.lastRuntimeActivityAt === stalledAt) return
-    this.clearStall(sessionId)
+    log.info('[session-collaboration] child stopped without reporting sid=%s parent=%s status=%s', sessionId, grant.parent_session_id, label)
+    void wakeParentOfStoppedChild(this.deps.host, grant.parent_session_id, sessionId, label)
   }
 
   private clearStall(sessionId: string): void {

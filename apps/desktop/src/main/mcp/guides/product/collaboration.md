@@ -242,6 +242,16 @@ Set `cwd` only because this launch targets a genuinely different project root. T
 }
 ```
 
+## On another machine
+
+A `spawn` launch may run on another connected machine: `session_collab_list_agents` lists them under `environments[]` with the agents each one can run, and the launch passes that `environmentId` as `environment`. Use it for a heavy job or a toolchain this machine lacks.
+
+- The child works in a fresh worktree and branch of the same repository on that machine, cloned there when missing. A project without an origin remote cannot run elsewhere.
+- It sees only what is pushed. The approval card warns about unpushed commits and uncommitted files; push them first when the child needs them. `cwd`, `worktree` (except `branchName`), `carryLocalChanges` and `apiProviderId` do not apply.
+- Ask it to push its branch (or open a PR) and report the branch name, then fetch the branch here to verify.
+- The mailbox works as for a local child. `session_collab_retrieve` reports its `state` from that machine, or `unreachable` while it is offline.
+- `handoff` and `link` stay on this machine, and a remote child cannot launch children.
+
 ## Permission and sandbox
 
 Nobody watches child or handoff sessions. Prefer the most autonomous mode that can finish the task: `permissionMode: "bypassPermissions"` for Claude-family and Codex harnesses, or `"auto"` for ACP. The user can downgrade permission and sandbox settings in the approval dialog. Use `"plan"` or `"default"` only when stopping for human review is the purpose of the launch.
@@ -250,7 +260,7 @@ Nobody watches child or handoff sessions. Prefer the most autonomous mode that c
 
 Your peers are your spawn parent or children and your started link peers — never a handoff session. The host decides who may message whom from the calling session, so there is nothing to remember: address a peer by its session id in `session_collab_send({ to })`. Omitting `to` messages a spawn child's parent, or otherwise your only peer. Any number of sessions may link the same session, including a spawn child, so a session can have several link peers.
 
-`session_collab_retrieve` always lists your peers (`sessionId`, `name`, `relation`: `parent` / `child` / `link`), even when no message is waiting. Call it to find out who you can message, for example after your context was compacted. Pass `from` to read only some peers. On the desktop, each child peer also reports `state` (`running`, `awaiting_approval`, `stalled`, `idle`, `error`), `lastActivityAt`, and the `runningTool` it is waiting on.
+`session_collab_retrieve` always lists your peers (`sessionId`, `name`, `relation`: `parent` / `child` / `link`), even when no message is waiting. Call it to find out who you can message, for example after your context was compacted. Pass `from` to read only some peers. On the desktop, each child peer also reports `state` (`running`, `awaiting_approval`, `stalled`, `idle`, `error`, or `unreachable` for a child on a machine that is offline), `lastActivityAt`, and the `runningTool` it is waiting on.
 
 A child reports by messaging you, which wakes you. If a spawn child stops (idle or error, after its background work) without messaging you since its last input, the host wakes you once with a single line naming the child and its status; call `session_collab_retrieve` for details. Approval prompts and stalls (no activity for 10 minutes) notify the user, not you, and a run the user stopped wakes nobody.
 

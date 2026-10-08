@@ -5,7 +5,13 @@
 
 import { randomUUID } from 'crypto'
 import { resolve } from 'path'
-import type { EffortLevel, PermissionMode, SandboxMode } from '@superone/shared/agent-types'
+import type {
+  EffortLevel,
+  PermissionMode,
+  SandboxMode,
+  SessionAgentLaunchConfig,
+  SessionAgentRemoteLaunch,
+} from '@superone/shared/agent-types'
 import {
   HANDOFF_NOTE,
   collaborationSessionTitle,
@@ -21,11 +27,12 @@ import {
 } from '@superone/runtime/collaboration'
 import { activateWorktree } from '../git/worktree-ops'
 import { getDb } from '../database'
-import { createSession as createSessionRecord } from '../db-sessions'
+import { createSession as createSessionRecord, hideSession } from '../db-sessions'
 import log from '../logger'
 import { listSessionAgentProfiles } from './agent-profiles'
 import { collaborationStore as store, notifyCollaborationMailboxChanged } from './collaboration-mailbox'
 import { ensureChildProject, isManagedWorktreePath, resolveCwd } from './collaboration-child-project'
+import { sendToRemoteChild, startRemoteChild, type StartedRemoteChild } from './collaboration-remote'
 import {
   errorResult,
   isCollaborationTargetReadOnly,
@@ -239,6 +246,8 @@ export async function startSessionAgent(
       config: peer.config,
     })
   }
+  const remote = parseConfig(grant.config_json).remote
+  if (remote && grant.kind === 'spawn') return startRemoteSpawn(grant, callerSessionId, host)
   if (grant.child_session_id) {
     const liveChild = host.getSession(grant.child_session_id)
     if (isCollaborationTargetReadOnly(grant.child_session_id, liveChild)) {
@@ -396,6 +405,77 @@ export async function startSessionAgent(
       name: displayName,
       role,
       ...(config.worktree ? { worktree: config.worktree } : {}),
+    },
+  })
+}
+
+/**
+ * A spawn child on another machine: created there through the gateway (clone,
+ * worktree, session), then given its task under this desktop's lease. A retry
+ * after the child exists only redelivers an undelivered task.
+ */
+async function startRemoteSpawn(grant: GrantRow, callerSessionId: string, host: SessionManager) {
+  const config = parseConfig(grant.config_json) as SessionAgentLaunchConfig & { remote: SessionAgentRemoteLaunch }
+  const peer = describeLaunchedPeer(grant)
+  const reused = Boolean(grant.child_session_id)
+  let childSessionId = grant.child_session_id
+  let started: StartedRemoteChild | null = null
+  if (!childSessionId) {
+    const parent = host.getSession(callerSessionId)
+    if (!parent) {
+      return toolResult({ status: 'error', message: 'Parent session is not available' }, true)
+    }
+    try {
+      started = await startRemoteChild({
+        grant,
+        config,
+        harnessId: listSessionAgentProfiles().find((item) => item.id === grant.agent_id)?.harnessId
+          ?? grant.agent_id.replace(/-base$/, ''),
+        title: peer.title,
+        systemPromptAppend: collaborationSystemPrompt(grant.parent_session_id),
+      })
+    } catch (error) {
+      return errorResult(error)
+    }
+    childSessionId = started.sessionId
+    // The mailbox keys its endpoints by local session rows; this hidden row is
+    // the child's endpoint here (the sidebar lists the child under its machine).
+    createSessionRecord(parent.projectPath, childSessionId, peer.title)
+    hideSession(childSessionId, true)
+    // Record where it landed: retries and wakes route by this, not by the plan.
+    const landed = { ...config, remote: { ...config.remote, projectPath: started.projectPath } }
+    store().bindStartedSession(grant, childSessionId, landed)
+    store().updateConfig(grant.grant_id, landed)
+    notifyCollaborationSessionsChanged()
+  }
+  if (grant.task_sent !== 1) {
+    try {
+      await sendToRemoteChild(childSessionId, grant.task, {
+        clientMessageId: `collaboration-task-${grant.grant_id.slice(0, 16)}`,
+      })
+    } catch (error) {
+      return errorResult(error)
+    }
+    store().markTaskSent(grant.grant_id)
+  }
+  return toolResult({
+    status: 'started',
+    mode: 'spawn',
+    sessionId: childSessionId,
+    environmentId: config.remote.environmentId,
+    machine: config.remote.label,
+    reused,
+    name: peer.name,
+    role: peer.role,
+    title: peer.title,
+    config: {
+      model: config.model,
+      effort: config.effort,
+      permissionMode: config.permissionMode,
+      sandboxMode: config.sandboxMode,
+      ...(started ? { cwd: started.cwd, branch: started.branch } : {}),
+      name: peer.name,
+      role: peer.role,
     },
   })
 }

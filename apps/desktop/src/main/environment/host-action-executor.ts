@@ -36,16 +36,20 @@ import { releaseHeldDeliveries } from '../mcp/artifact-registry'
 const REMOTE_SESSION_SCOPED_TOOLS = new Set(['session_rename'])
 
 /**
- * Node-local collab tools must never HA-route to desktop SessionManager.
- * Catalog no longer advertises them; reject stale claims with failed_precondition.
+ * Launching stays node-local (SessionRuntime collab) and is never advertised as
+ * a Host Action; reject stale claims with failed_precondition.
  */
 const NODE_LOCAL_COLLAB_TOOLS = new Set([
   'session_collab_list_agents',
   'session_collab_request',
   'session_collab_start',
-  'session_collab_send',
-  'session_collab_retrieve',
 ])
+
+/**
+ * Mailbox tools of a collaboration child this desktop launched on the node:
+ * the mailbox is here, so the child's send/retrieve run against it.
+ */
+const REMOTE_CHILD_MAILBOX_TOOLS = new Set(['session_collab_send', 'session_collab_retrieve'])
 
 type ExecutorResult = {
   outcome: 'succeeded' | 'failed'
@@ -98,6 +102,10 @@ export const desktopHostActionExecutor: HostActionExecutor = async (
                 + 'It is not advertised as a Host Action; upgrade the remote node.',
             },
           }
+        }
+
+        if (REMOTE_CHILD_MAILBOX_TOOLS.has(claimed.toolName)) {
+          return await runRemoteChildMailboxTool(claimed, args, connectionId)
         }
 
         if (REMOTE_SESSION_SCOPED_TOOLS.has(claimed.toolName)) {
@@ -300,6 +308,18 @@ async function executeRemoteSessionScopedTool(
         },
       }
   }
+}
+
+async function runRemoteChildMailboxTool(
+  claimed: ClaimHostActionResult,
+  args: Record<string, unknown>,
+  connectionId: string,
+): Promise<ExecutorResult> {
+  const { getEnvironmentHost } = await import('./environment-host')
+  const environmentId = getEnvironmentHost().environmentIdOf(connectionId)
+  const { runRemoteChildMailboxTool: run } = await import('../session/session-collaboration')
+  const result = await run(environmentId, claimed.sessionId, claimed.toolName, args)
+  return result.isError ? { outcome: 'failed', error: result, result } : { outcome: 'succeeded', result }
 }
 
 /** Verbatim local renameSessionTool user_locked text — tool desc matches on this token. */

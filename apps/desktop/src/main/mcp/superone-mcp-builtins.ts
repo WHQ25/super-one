@@ -65,6 +65,7 @@ import {
   LAUNCH_MODE_DESCRIPTION,
   LAUNCH_PERMISSION_MODE_DESCRIPTION,
   LAUNCH_SESSION_ID_DESCRIPTION,
+  LAUNCH_ENVIRONMENT_DESCRIPTION,
   LAUNCH_SUMMARY_DESCRIPTION,
   LAUNCH_TASK_DESCRIPTION,
   SESSION_LIST_AGENTS_DESCRIPTION,
@@ -355,8 +356,8 @@ export async function executeBuiltInSuperoneTool(
     case 'automation_delete':
       return automationDeleteHandler(args as unknown as AutomationDeleteArgs, deps)
     case 'session_collab_list_agents':
-      return import('../session/session-collaboration').then(({ listSessionAgentProfiles }) => ({
-        content: [{ type: 'text' as const, text: JSON.stringify({ agents: listSessionAgentProfiles() }) }],
+      return import('../session/session-collaboration').then(async ({ listCollaborationAgents }) => ({
+        content: [{ type: 'text' as const, text: JSON.stringify(await listCollaborationAgents()) }],
       }))
     case 'session_collab_request':
       return import('../session/session-collaboration').then(({ requestSessionAgents }) =>
@@ -398,8 +399,8 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
     'session_collab_list_agents',
     { description: SESSION_LIST_AGENTS_DESCRIPTION, inputSchema: {} },
     async () => {
-      const { listSessionAgentProfiles } = await import('../session/session-collaboration')
-      return { content: [{ type: 'text' as const, text: JSON.stringify({ agents: listSessionAgentProfiles() }) }] }
+      const { listCollaborationAgents } = await import('../session/session-collaboration')
+      return { content: [{ type: 'text' as const, text: JSON.stringify(await listCollaborationAgents()) }] }
     },
   )
   server.registerTool(
@@ -411,6 +412,7 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
           launchId: z.string().optional(),
           mode: z.enum(['spawn', 'handoff', 'link']).optional().describe(LAUNCH_MODE_DESCRIPTION),
           sessionId: z.string().min(1).optional().describe(LAUNCH_SESSION_ID_DESCRIPTION),
+          environment: z.string().min(1).optional().describe(LAUNCH_ENVIRONMENT_DESCRIPTION),
           agentId: z.string().optional(),
           summary: z.string().trim().min(1).describe(LAUNCH_SUMMARY_DESCRIPTION),
           name: z.string().trim().min(1).max(64).optional(),

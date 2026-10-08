@@ -1123,6 +1123,10 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
           harnessId: (input.options?.harnessId as string) ?? undefined,
           providerId: input.providerId,
           title: input.title,
+          ...(input.cwd ? { cwd: input.cwd } : {}),
+          ...(input.systemPromptAppend ? { systemPromptAppend: input.systemPromptAppend } : {}),
+          ...(input.externalParent ? { externalParent: input.externalParent } : {}),
+          ...(input.options ? { options: input.options } : {}),
         })
         return { sessionId: result.sessionId }
       },

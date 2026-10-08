@@ -201,6 +201,34 @@ describe('session agents confirm prompt', () => {
     expect(screen.getByTitle('Local')).toBeInTheDocument()
   })
 
+  it('shows the target machine, the clone and what this checkout keeps back for a remote launch', () => {
+    const remote = payload()
+    remote.launches = [remote.launches[0]]
+    delete remote.launches[0].config.cwd
+    remote.launches[0].config.remote = {
+      environmentId: 'env-b',
+      label: 'Studio Mac',
+      repository: 'github.com/acme/app',
+      cloneUrl: 'git@github.com:acme/app.git',
+      cloneInto: '~/SuperOne/Projects',
+      baseRef: 'origin/HEAD',
+      unpushedCommits: 3,
+      uncommittedChanges: 2,
+    }
+    const onConfirm = vi.fn()
+    renderInChat(<SessionAgentsConfirmPrompt payload={remote} onConfirm={onConfirm} onReject={vi.fn()} />)
+
+    expect(screen.getByTitle('Runs on Studio Mac')).toHaveTextContent('Studio Mac')
+    expect(screen.getByTitle('Clones git@github.com:acme/app.git into ~/SuperOne/Projects')).toHaveTextContent('Clone github.com/acme/app')
+    expect(screen.getByTitle('Works on a new branch from origin/HEAD')).toBeInTheDocument()
+    expect(screen.getByText(/3 unpushed commit\(s\) and 2 uncommitted file\(s\)/)).toBeInTheDocument()
+    // No local working-location label for a child that runs elsewhere.
+    expect(screen.queryByTitle('Local')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /Approve/ }))
+    expect(onConfirm.mock.calls[0][0][0].config.remote).toMatchObject({ environmentId: 'env-b', cloneInto: '~/SuperOne/Projects' })
+  })
+
   it('confirms every launch, carrying per-tab overrides and untouched agent config', () => {
     const onConfirm = vi.fn()
     renderInChat(<SessionAgentsConfirmPrompt payload={payload()} onConfirm={onConfirm} onReject={vi.fn()} />)

@@ -8,6 +8,7 @@ import {
   LAUNCH_SESSION_ID_DESCRIPTION,
   LAUNCH_PERMISSION_MODE_DESCRIPTION,
   LAUNCH_CWD_DESCRIPTION,
+  LAUNCH_ENVIRONMENT_DESCRIPTION,
   LAUNCH_WORKTREE_DESCRIPTION,
   LAUNCH_BRANCH_NAME_DESCRIPTION,
   SESSION_START_DESCRIPTION,
@@ -59,6 +60,11 @@ export const HOST_ACTION_COLLABORATION_DESCRIPTORS: HostActionSuperoneToolDescri
                 "type": "string",
                 "minLength": 1,
                 "description": LAUNCH_SESSION_ID_DESCRIPTION
+              },
+              "environment": {
+                "type": "string",
+                "minLength": 1,
+                "description": LAUNCH_ENVIRONMENT_DESCRIPTION
               },
               "agentId": {
                 "type": "string",

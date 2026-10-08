@@ -129,6 +129,7 @@ export const VIDEO_STATUS_DESCRIPTION =
 
 export const SESSION_LIST_AGENTS_DESCRIPTION =
   'List the agent profiles available for user-approved child sessions. Only launchable agents are returned. ' +
+  'Agents on other connected machines are listed under environments[] with the environmentId to launch them with. ' +
   'Inspect each profile\'s harness and defaultConfig before session_collab_request. ' +
   'You may reuse one agentId for multiple launches. ' +
   'Skip this call when the user already named an agent with @ — that mention carries its agentId.'
@@ -171,6 +172,11 @@ export const LAUNCH_SESSION_ID_DESCRIPTION =
 export const LAUNCH_PERMISSION_MODE_DESCRIPTION =
   'How autonomous the child session is. Nobody watches a child, so prefer the most autonomous mode it can finish under; "plan"/"default" only when stopping for human review is the point. ' +
   'Per-harness mode names, and why requesting autonomy is safe here: See read_manual({ domain: "product", topic: "collaboration" }).'
+
+export const LAUNCH_ENVIRONMENT_DESCRIPTION =
+  'Spawn only. environmentId of another connected machine (session_collab_list_agents → environments[]) to run the ' +
+  'child there; omit for this machine. The child works in a fresh worktree and branch of the same repository on that ' +
+  'machine (cloned when missing), so it sees only what is pushed. cwd and worktree are ignored.'
 
 export const LAUNCH_CWD_DESCRIPTION =
   'Only for a genuinely different project root; omit for the current project. ' +

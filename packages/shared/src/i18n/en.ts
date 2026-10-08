@@ -2342,6 +2342,15 @@ export type Messages = {
       handOffHint: string
       /** Tooltip / a11y for opening the peer session from the confirm card. */
       openPeerSession: string
+      /** Tooltip of the target machine chip on a launch to another machine. */
+      remoteMachine: string
+      /** Chip when the target machine lacks the repository and will clone it. */
+      remoteClone: string
+      remoteCloneInto: string
+      /** Tooltip of the base-ref chip: the child's new branch starts there. */
+      remoteBranchFrom: string
+      /** Warning: what of this checkout a child on another machine will not see. */
+      remoteUnseenChanges: string
       expandTask: string
       collapseTask: string
       hintSwitch: string
@@ -6708,6 +6717,11 @@ export const en: Messages = {
       handOffTo: 'Hand off to:',
       handOffHint: 'Takes the task over in its own top-level session — no replies back to this one.',
       openPeerSession: 'Open session',
+      remoteMachine: 'Runs on {{machine}}',
+      remoteClone: 'Clone {{repository}}',
+      remoteCloneInto: 'Clones {{url}} into {{directory}}',
+      remoteBranchFrom: 'Works on a new branch from {{ref}}',
+      remoteUnseenChanges: 'The agent sees only pushed work: {{commits}} unpushed commit(s) and {{files}} uncommitted file(s) on this machine will not reach it.',
       expandTask: 'Show the full task',
       collapseTask: 'Collapse the task',
       hintSwitch: 'switch agent',

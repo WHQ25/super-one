@@ -1,5 +1,6 @@
 import { listUnreadCollaborationMessages, onCollaborationMailboxChanged } from './collaboration-mailbox'
 import Database from 'better-sqlite3'
+import { execFileSync } from 'child_process'
 import { mkdirSync, mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
@@ -57,6 +58,19 @@ const state = vi.hoisted(() => ({
     codex: { defaultModel: '', defaultReasoningEffort: '', defaultFastMode: false },
     acp: { selectedAgentId: null as string | null },
   },
+  sessionHost: null as unknown,
+  requestControllerHostAction: vi.fn(),
+}))
+
+vi.mock('../git-run', async () => ({ gitRun: (await import('@superone/runtime/git')).gitRun }))
+vi.mock('../environment/environment-host', () => ({
+  getEnvironmentHost: () => ({
+    getLocalGateway: () => ({ getDescriptor: async () => ({ environmentId: 'env-local' }) }),
+  }),
+}))
+vi.mock('../mcp/superone-mcp-server', () => ({ getSessionHost: () => state.sessionHost }))
+vi.mock('../node-host/node-host-controller', () => ({
+  requestControllerHostAction: state.requestControllerHostAction,
 }))
 
 vi.mock('../app-settings-service', () => ({
@@ -144,6 +158,9 @@ vi.mock('../db-sessions', () => ({
     })
     return sessionId
   },
+  hideSession: (sessionId: string, hidden: boolean) => {
+    state.db!.prepare('UPDATE sessions SET is_hidden = ? WHERE id = ?').run(hidden ? 1 : 0, sessionId)
+  },
 }))
 vi.mock('../recent-folders', () => ({
   getRecentFolders: () => state.projects,
@@ -155,8 +172,11 @@ vi.mock('../recent-folders', () => ({
 }))
 
 import { listAgentMentionTargets } from './agent-profiles'
+import { setRemoteCollaborationPort, type RemoteCollaborationPort } from './collaboration-remote'
 import {
+  listCollaborationAgents,
   requestSessionAgents,
+  runRemoteChildMailboxTool,
   listSessionAgentProfiles,
   getSessionCollaborationRunConfig,
   getSessionCollaborationSystemPrompt,
@@ -201,7 +221,9 @@ function createSchema(db: Database.Database): void {
       selected_model TEXT,
       selected_effort TEXT,
       is_worktree INTEGER DEFAULT 0,
-      worktree_path TEXT
+      worktree_path TEXT,
+      is_hidden INTEGER DEFAULT 0,
+      remote_controller_json TEXT
     );
     CREATE TABLE session_collaboration_grants (
       credential_hash TEXT PRIMARY KEY,
@@ -1953,5 +1975,217 @@ describe('child session project attribution', () => {
 
     expect(activeIn(OTHER_PROJECT)).toBe('incumbent')
     expect(activeIn(TEST_CWD)).toBe('parent')
+  })
+})
+
+describe('spawning a child on another machine', () => {
+  const ORIGIN = 'git@github.com:acme/app.git'
+  let repo: string
+  let calls: Record<string, unknown[]>
+  let remoteProjects: Array<{ projectId: string; path: string; name: string; extraDirs: string[]; repoIdentity: string | null }>
+  let remoteSession: { status: string; pendingInteraction: unknown }
+
+  function git(...args: string[]) {
+    execFileSync('git', ['-C', repo, ...args], { stdio: 'ignore' })
+  }
+
+  beforeEach(() => {
+    repo = mkdtempSync(join(tmpdir(), 'collab-remote-'))
+    git('init', '-q')
+    git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'local only')
+    git('remote', 'add', 'origin', ORIGIN)
+    state.projects.push({ path: repo })
+    calls = { clone: [], activateWorktree: [], createSession: [], send: [] }
+    remoteProjects = []
+    remoteSession = { status: 'streaming', pendingInteraction: null }
+    const port: RemoteCollaborationPort = {
+      listEnvironments: async () => [
+        { environmentId: 'env-b', connectionId: 'conn-b', label: 'Studio Mac', connected: true, harnessIds: ['claude'] },
+        { environmentId: 'env-off', connectionId: 'conn-off', label: 'Laptop', connected: false, harnessIds: ['claude'] },
+      ],
+      listProjects: async () => remoteProjects,
+      projectsDir: async () => '~/SuperOne/Projects',
+      clone: async (_connectionId, input) => {
+        calls.clone.push(input)
+        const project = { projectId: 'p-cloned', path: '/Users/b/SuperOne/Projects/app', name: 'app', extraDirs: [], repoIdentity: 'git:https://github.com/acme/app' }
+        remoteProjects.push(project)
+        return project
+      },
+      activateWorktree: async (_connectionId, projectId, input) => {
+        calls.activateWorktree.push({ projectId, ...input })
+        return { path: '/Users/b/.worktrees/app/1' }
+      },
+      createSession: async (_connectionId, input) => {
+        calls.createSession.push(input)
+        return { sessionId: 'remote-child' }
+      },
+      send: async (_connectionId, input) => { calls.send.push(input) },
+      getSession: async () => remoteSession,
+    }
+    setRemoteCollaborationPort(port)
+  })
+
+  afterEach(() => {
+    setRemoteCollaborationPort(null)
+    rmSync(repo, { recursive: true, force: true })
+  })
+
+  function remoteParent() {
+    const parent = fakeSession('parent', { cwd: repo, projectPath: repo })
+    const fixture = fakeHost(parent)
+    state.sessionHost = fixture.host
+    return { parent, ...fixture }
+  }
+
+  async function requestRemote(parent: Session, host: SessionManager, environment = 'env-b') {
+    const promise = requestSessionAgents(parent.id, {
+      launches: [{ launchId: 'remote', agentId: 'claude-base', environment, summary: 'Build it', name: 'Builder', role: 'Implementer' }],
+    }, host)
+    await vi.waitFor(() => expect(parent.emitHostEvent).toHaveBeenCalled())
+    const event = (parent.emitHostEvent as ReturnType<typeof vi.fn>).mock.calls[0][0] as AgentEvent
+    if (event.type !== 'permission_request') throw new Error('Expected permission request')
+    const launches = event.request.sessionAgentsConfirm!.launches
+    resolveSessionAgentsConfirm(event.request.requestId, 'accept', { [SESSION_AGENT_LAUNCHES_FIELD]: JSON.stringify(launches) })
+    await promise
+    return launches[0]
+  }
+
+  it('lists the machines a child can run on with the agents they have ready', async () => {
+    const listed = await listCollaborationAgents()
+    expect(listed.environments).toEqual([
+      expect.objectContaining({ environmentId: 'env-b', label: 'Studio Mac', agents: [expect.objectContaining({ id: 'claude-base' })] }),
+    ])
+  })
+
+  it('matches the target checkout by origin and shows what the child will not see', async () => {
+    remoteProjects.push({ projectId: 'p-app', path: '/Users/b/code/app', name: 'app', extraDirs: [], repoIdentity: 'git:https://github.com/Acme/app.git' })
+    execFileSync('sh', ['-c', `echo x > ${join(repo, 'dirty.txt')}`])
+    const { parent, host } = remoteParent()
+    const launch = await requestRemote(parent, host)
+    expect(launch.config.remote).toEqual({
+      environmentId: 'env-b',
+      label: 'Studio Mac',
+      repository: 'github.com/acme/app',
+      cloneUrl: ORIGIN,
+      projectId: 'p-app',
+      projectPath: '/Users/b/code/app',
+      baseRef: 'origin/HEAD',
+      unpushedCommits: 1,
+      uncommittedChanges: 1,
+    })
+    expect(launch.config.cwd).toBeUndefined()
+  })
+
+  it('plans a clone into the target projects directory when it lacks the repository', async () => {
+    const { parent, host } = remoteParent()
+    const launch = await requestRemote(parent, host)
+    expect(launch.config.remote).toMatchObject({ cloneInto: '~/SuperOne/Projects' })
+    expect(launch.config.remote?.projectId).toBeUndefined()
+  })
+
+  it('refuses a project without an origin remote and a disconnected machine', async () => {
+    const { parent, host } = remoteParent()
+    const request = (environment: string) => requestSessionAgents(parent.id, {
+      launches: [{ agentId: 'claude-base', environment, summary: 'Build it', name: 'Builder', role: 'Implementer' }],
+    }, host)
+    await expect(request('env-off')).rejects.toThrow(/Laptop is not connected/)
+    git('remote', 'remove', 'origin')
+    await expect(request('env-b')).rejects.toThrow(/no origin remote/)
+    expect(parent.emitHostEvent).not.toHaveBeenCalled()
+  })
+
+  it('clones, cuts a worktree branch and creates the child with its external parent, then sends the task', async () => {
+    const { parent, host } = remoteParent()
+    await requestRemote(parent, host)
+    const result = resultJson(await startSessionAgent('parent', { launchId: 'remote', task: 'Implement export' }, host))
+
+    expect(result).toMatchObject({ status: 'started', sessionId: 'remote-child', environmentId: 'env-b', machine: 'Studio Mac' })
+    expect(calls.clone).toEqual([{ remoteUrl: ORIGIN, parentPath: '~/SuperOne/Projects' }])
+    expect(calls.activateWorktree).toEqual([expect.objectContaining({
+      projectId: 'p-cloned', baseBranch: 'origin/HEAD', mode: 'branch', branchName: expect.stringMatching(/^superone\/builder-/),
+    })])
+    expect(calls.createSession).toEqual([expect.objectContaining({
+      environmentId: 'env-b',
+      projectId: 'p-cloned',
+      providerId: 'claude-base',
+      cwd: '/Users/b/.worktrees/app/1',
+      externalParentSessionId: 'parent',
+      systemPromptAppend: expect.stringContaining('child session of SuperOne session parent'),
+    })])
+    expect(calls.send).toEqual([expect.objectContaining({ sessionId: 'remote-child', text: 'Implement export' })])
+    expect(host.createSession).not.toHaveBeenCalled()
+
+    // A retry neither creates a second child nor redelivers the task.
+    await startSessionAgent('parent', { launchId: 'remote' }, host)
+    expect(calls.createSession).toHaveLength(1)
+    expect(calls.send).toHaveLength(1)
+  })
+
+  it('runs the remote child mailbox tools against this mailbox, both ways', async () => {
+    const { parent, host } = remoteParent()
+    await requestRemote(parent, host)
+    await startSessionAgent('parent', { launchId: 'remote', task: 'Implement export' }, host)
+
+    // Child → parent arrives as a Host Action from the child's machine and wakes the parent.
+    const sent = await runRemoteChildMailboxTool('env-b', 'remote-child', 'session_collab_send', { content: 'Pushed superone/builder' })
+    expect(resultJson(sent).status).toBe('sent')
+    expect(parent.injectTaskNotification).toHaveBeenCalledWith(expect.stringContaining('Builder - Implementer'))
+    const parentRead = resultJson(await retrieveSessionMessages('parent', {}, host))
+    expect(parentRead.messages.map((m: { content: string }) => m.content)).toEqual(['Pushed superone/builder'])
+    expect(parentRead.peers[0]).toMatchObject({ sessionId: 'remote-child', relation: 'child', state: 'running' })
+
+    // Parent → child is queued here and wakes the child through its machine.
+    await sendSessionMessage('parent', { to: 'remote-child', content: 'Also add tests' }, host)
+    await vi.waitFor(() => expect(calls.send).toHaveLength(2))
+    expect(calls.send[1]).toMatchObject({ sessionId: 'remote-child', text: expect.stringContaining('session_collab_retrieve') })
+    const childRead = resultJson(await runRemoteChildMailboxTool('env-b', 'remote-child', 'session_collab_retrieve', {}))
+    expect(childRead.messages.map((m: { content: string }) => m.content)).toEqual(['Also add tests'])
+
+    // Another machine cannot act as this child.
+    const forged = await runRemoteChildMailboxTool('env-other', 'remote-child', 'session_collab_send', { content: 'x' })
+    expect(forged.isError).toBe(true)
+  })
+
+  it('keeps the remote child out of the local sidebar list', async () => {
+    const { parent, host } = remoteParent()
+    await requestRemote(parent, host)
+    await startSessionAgent('parent', { launchId: 'remote', task: 'Implement export' }, host)
+    const row = state.db!.prepare('SELECT is_hidden FROM sessions WHERE id = ?').get('remote-child') as { is_hidden: number }
+    expect(row.is_hidden).toBe(1)
+  })
+})
+
+describe('a child whose parent runs on another machine', () => {
+  beforeEach(() => {
+    insertSessionRow('external-child', TEST_CWD, 'Builder - Implementer')
+    state.db!.prepare('UPDATE sessions SET remote_controller_json = ? WHERE id = ?')
+      .run(JSON.stringify({ clientSessionId: 'client-a', label: 'A', externalParent: { sessionId: 'parent-on-a' } }), 'external-child')
+    state.requestControllerHostAction.mockReset()
+  })
+
+  it('refuses to launch children of its own', async () => {
+    const child = fakeSession('external-child')
+    const { host } = fakeHost(child)
+    const result = await requestSessionAgents('external-child', {
+      launches: [{ agentId: 'claude-base', summary: 'x', name: 'n', role: 'r' }],
+    }, host)
+    expect(result.isError).toBe(true)
+    expect(resultJson(result).message).toMatch(/Nested collaboration is not supported/)
+    expect(child.emitHostEvent).not.toHaveBeenCalled()
+  })
+
+  it('sends and retrieves through its controller instead of this machine\'s mailbox', async () => {
+    const reply = { content: [{ type: 'text', text: JSON.stringify({ status: 'sent', messageId: 'm1' }) }] }
+    state.requestControllerHostAction.mockResolvedValue({ actionId: 'a1', state: 'succeeded', result: reply })
+    const { host } = fakeHost(fakeSession('external-child'))
+    const sent = await sendSessionMessage('external-child', { content: 'done' }, host)
+    expect(sent).toEqual(reply)
+    expect(state.requestControllerHostAction).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'external-child', toolName: 'session_collab_send', args: { content: 'done' },
+    }))
+
+    state.requestControllerHostAction.mockResolvedValue({ actionId: 'a2', state: 'cancelled' })
+    const read = await retrieveSessionMessages('external-child', {}, host)
+    expect(read.isError).toBe(true)
   })
 })

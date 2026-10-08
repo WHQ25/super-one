@@ -329,6 +329,11 @@ export class EnvironmentHost {
     return this.hostActionConsumers.get(connectionId)?.isRunning === true
   }
 
+  /** The environment a paired connection reaches; null for an unknown connection. */
+  environmentIdOf(connectionId: string): string | null {
+    return this.connections.listKnown().find((k) => k.connectionId === connectionId)?.environmentId ?? null
+  }
+
   /** Subscribe to supervisor state changes; returns an unsubscribe function. */
   onStatusChange(listener: (snapshot: SupervisorSnapshot) => void): () => void {
     this.statusListeners.add(listener)

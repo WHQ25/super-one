@@ -127,3 +127,61 @@ export const MixedHarnesses: Story = {
     },
   },
 }
+
+function remotePayload(remote: Partial<NonNullable<SessionAgentRequestPayload['launches'][number]['config']['remote']>>): SessionAgentRequestPayload {
+  return {
+    profiles: [CLAUDE_PROFILE],
+    launches: [
+      {
+        launchId: 'remote-impl',
+        agentId: 'claude-base',
+        summary: 'Implement the export command on the build machine and push a branch',
+        name: 'Builder',
+        role: 'Implementer',
+        config: {
+          model: 'claude-sonnet',
+          effort: 'high',
+          permissionMode: 'bypassPermissions',
+          sandboxMode: 'off',
+          remote: {
+            environmentId: 'env-b',
+            label: 'Studio Mac',
+            repository: 'github.com/acme/app',
+            cloneUrl: 'git@github.com:acme/app.git',
+            projectId: 'p-app',
+            projectPath: '/Users/build/code/app',
+            baseRef: 'origin/feat/export',
+            unpushedCommits: 0,
+            uncommittedChanges: 0,
+            ...remote,
+          },
+        },
+      },
+    ],
+  }
+}
+
+/** Launch on another machine that already has the repository; nothing local is left behind. */
+export const RemoteExistingCheckout: Story = {
+  args: { payload: remotePayload({}) },
+}
+
+/** The target lacks the repository and clones it; this checkout has unpushed and uncommitted work. */
+export const RemoteCloneWithUnpushedWork: Story = {
+  args: {
+    payload: remotePayload({
+      projectId: undefined,
+      projectPath: undefined,
+      cloneInto: '~/SuperOne/Projects',
+      baseRef: 'origin/HEAD',
+      unpushedCommits: 3,
+      uncommittedChanges: 2,
+    }),
+  },
+}
+
+/** Narrow chat: the machine, clone and branch chips wrap and the warning stays readable. */
+export const RemoteNarrow: Story = {
+  args: { payload: remotePayload({ projectId: undefined, projectPath: undefined, cloneInto: '~/SuperOne/Projects', unpushedCommits: 1, uncommittedChanges: 0 }) },
+  decorators: [(Story) => <StoryShell width={360}><Story /></StoryShell>],
+}

@@ -5,6 +5,7 @@ import type {
   SessionAgentLaunchConfig,
   SessionAgentLaunchProposal,
   SessionAgentProfile,
+  SessionAgentRemoteLaunch,
 } from '@superone/shared/agent-types'
 import { acpAgentDisplayName, resolveHarnessBrandKey } from '@superone/shared/acp-brand'
 import {
@@ -26,6 +27,13 @@ import { getDb } from '../database'
 import { listSessionAgentProfiles } from './agent-profiles'
 import { collaborationStore as store } from './collaboration-mailbox'
 import { defaultLaunchCwd } from './collaboration-child-project'
+import {
+  isLocalEnvironment,
+  listRemoteAgentEnvironments,
+  planRemoteLaunch,
+  remoteChildTarget,
+  remoteProviderId,
+} from './collaboration-remote'
 import { resolveCodexServiceTier, toolResult } from './collaboration-host'
 import type { Session, SessionManager } from './types'
 import { openSessionAgentsConfirm } from './session-collaboration-confirm'
@@ -33,6 +41,12 @@ import { hasExternalParent } from './collaboration-external-parent'
 
 export { setSessionCollaborationCallbacks } from './collaboration-host'
 export { sendSessionMessage, retrieveSessionMessages, type SessionSendArgs, type SessionRetrieveArgs } from './collaboration-messaging'
+import {
+  retrieveSessionMessages,
+  sendSessionMessage,
+  type SessionRetrieveArgs,
+  type SessionSendArgs,
+} from './collaboration-messaging'
 export { startSessionAgent, type SessionStartArgs } from './collaboration-start'
 
 /**
@@ -41,6 +55,19 @@ export { startSessionAgent, type SessionStartArgs } from './collaboration-start'
  * collaboration module.
  */
 export { listSessionAgentProfiles } from './agent-profiles'
+
+/**
+ * session_collab_list_agents: this machine's profiles, plus each connected
+ * machine with the profiles it can run (launch them with `environment`).
+ */
+export async function listCollaborationAgents(): Promise<{
+  agents: SessionAgentProfile[]
+  environments?: Awaited<ReturnType<typeof listRemoteAgentEnvironments>>
+}> {
+  const agents = listSessionAgentProfiles()
+  const environments = await listRemoteAgentEnvironments(agents)
+  return environments.length > 0 ? { agents, environments } : { agents }
+}
 
 export interface RequestSessionAgentsArgs {
   launches: Array<{
@@ -54,6 +81,8 @@ export interface RequestSessionAgentsArgs {
     agentId?: string
     /** Required for link: existing SuperOne session id. */
     sessionId?: string
+    /** Spawn only: environmentId of another connected machine to run the child on. */
+    environment?: string
     /** What the launch is for; the user approves this. The brief goes to session_collab_start. */
     summary?: string
     /** Agent-chosen human label (not harness name). Used in `Name - Role`. */
@@ -95,11 +124,15 @@ function assertKnownApiProviderId(
   )
 }
 
-function normalizeLaunches(args: RequestSessionAgentsArgs, parent: Session): SessionAgentLaunchProposal[] {
+function normalizeLaunches(
+  args: RequestSessionAgentsArgs,
+  parent: Session,
+  remotes: ReadonlyMap<number, SessionAgentRemoteLaunch> = new Map(),
+): SessionAgentLaunchProposal[] {
   if (!Array.isArray(args.launches)) throw new Error('launches must contain at least one proposed session')
   assertLaunchCount(args.launches.length)
   const profiles = new Map(listSessionAgentProfiles().map((profile) => [profile.id, profile]))
-  return args.launches.map((launch) => {
+  return args.launches.map((launch, index) => {
     const mode = resolveLaunchMode(launch.mode)
     const launchId = launch.launchId?.trim() || randomUUID()
 
@@ -163,8 +196,10 @@ function normalizeLaunches(args: RequestSessionAgentsArgs, parent: Session): Ses
     if (!agentId) throw new Error(`${mode} launches require agentId from session_collab_list_agents`)
     const profile = profiles.get(agentId)
     if (!profile) throw new Error(`Unknown agent profile: ${agentId}`)
-    assertKnownApiProviderId(launch.config, profile)
     const { summary, name, role } = normalizeLaunchLabels(mode, launch)
+    const remote = remotes.get(index)
+    if (remote) return remoteLaunchProposal(launch, { launchId, profile, summary, name, role, remote })
+    assertKnownApiProviderId(launch.config, profile)
     return {
       launchId,
       mode,
@@ -183,6 +218,85 @@ function normalizeLaunches(args: RequestSessionAgentsArgs, parent: Session): Ses
       },
     }
   })
+}
+
+/**
+ * Resolve the launches that target another machine, by launch index. Only
+ * spawn launches of a base profile without third-party keys can: the target
+ * has its own provider bindings and none of this machine's keys.
+ */
+async function planRemoteLaunches(
+  args: RequestSessionAgentsArgs,
+  parent: Session,
+): Promise<Map<number, SessionAgentRemoteLaunch>> {
+  const localEnvironmentId = await localCollabEnvironmentId()
+  const profiles = new Map(listSessionAgentProfiles().map((profile) => [profile.id, profile]))
+  const plans = new Map<number, SessionAgentRemoteLaunch>()
+  await Promise.all(args.launches.map(async (launch, index) => {
+    if (isLocalEnvironment(launch.environment, localEnvironmentId)) return
+    if (resolveLaunchMode(launch.mode) !== 'spawn') throw new Error('Only spawn launches can run on another machine')
+    const profile = profiles.get(launch.agentId?.trim() ?? '')
+    if (profile && profile.id !== remoteProviderId(profile.harnessId)) {
+      throw new Error(
+        `Agent ${profile.id} is a configuration of this machine; launch ${remoteProviderId(profile.harnessId)} on another machine.`,
+      )
+    }
+    if (launch.config?.apiProviderId) {
+      throw new Error('Third-party provider keys stay on this machine; omit apiProviderId for a launch on another machine.')
+    }
+    plans.set(index, await planRemoteLaunch(defaultLaunchCwd(parent), launch.environment!.trim()))
+  }))
+  return plans
+}
+
+async function localCollabEnvironmentId(): Promise<string | undefined> {
+  try {
+    const { getEnvironmentHost } = await import('../environment/environment-host')
+    return (await getEnvironmentHost().getLocalGateway().getDescriptor()).environmentId
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * A spawn child on another machine. It runs that machine's base provider for
+ * the harness in a fresh worktree of the same repository; this checkout's
+ * cwd, worktree and third-party keys do not apply there.
+ */
+function remoteLaunchProposal(
+  launch: RequestSessionAgentsArgs['launches'][number],
+  input: {
+    launchId: string
+    profile: SessionAgentProfile
+    summary: string
+    name: string
+    role: string
+    remote: SessionAgentRemoteLaunch
+  },
+): SessionAgentLaunchProposal {
+  const { profile, remote } = input
+  const { cwd: _cwd, worktree: _worktree, apiProviderId: _apiProviderId, ...config } = {
+    ...profile.defaultConfig,
+    permissionMode: 'default' as const,
+    sandboxMode: 'off' as const,
+    ...launch.config,
+  }
+  return {
+    launchId: input.launchId,
+    mode: 'spawn',
+    agentId: profile.id,
+    summary: input.summary,
+    name: input.name,
+    role: input.role,
+    config: {
+      ...config,
+      // The branch name an agent picked still names the child's branch there.
+      ...(launch.config?.worktree?.branchName ? { worktree: { enabled: true, baseBranch: remote.baseRef, mode: 'branch', branchName: launch.config.worktree.branchName } } : {}),
+      name: input.name,
+      role: input.role,
+      remote,
+    },
+  }
 }
 
 
@@ -209,6 +323,8 @@ function createGrants(parentSessionId: string, launches: SessionAgentLaunchPropo
       ...(typeof launch.config.fastMode === 'boolean'
         ? { codexServiceTier: resolveCodexServiceTier(launch.agentId, launch.config, profile) }
         : {}),
+      // Keys are local to this machine; a remote child uses the target's own binding.
+      ...(launch.config.remote ? { apiProviderId: undefined } : {}),
     }
     return recordApprovedLaunch(grants, parentSessionId, launch, config).approved
   }))
@@ -228,7 +344,11 @@ export async function requestSessionAgents(
   }
   const parent = host.getSession(callerSessionId)
   if (!parent) return toolResult({ status: 'error', message: 'Parent session is not available' }, true)
-  const launches = normalizeLaunches(args, parent)
+  // Only launches to another machine wait on the network before the confirm card.
+  const remotes = args.launches?.some?.((launch) => launch.environment?.trim())
+    ? await planRemoteLaunches(args, parent)
+    : undefined
+  const launches = normalizeLaunches(args, parent, remotes)
   let outcome: Awaited<ReturnType<typeof openSessionAgentsConfirm>>
   try {
     outcome = await openSessionAgentsConfirm(parent, { launches, profiles: listSessionAgentProfiles() }, signal)
@@ -247,6 +367,29 @@ export async function requestSessionAgents(
     launches: createGrants(callerSessionId, confirmed),
     next: START_APPROVED_LAUNCHES_HINT,
   })
+}
+
+/**
+ * A mailbox tool call of a spawn child this desktop launched on another
+ * machine, arriving as a Host Action from `environmentId`. The child acts on
+ * this desktop's mailbox exactly like a local child would.
+ */
+export async function runRemoteChildMailboxTool(
+  environmentId: string | null,
+  childSessionId: string,
+  toolName: string,
+  args: Record<string, unknown>,
+): Promise<{ content: Array<{ type: 'text'; text: string }>; isError?: boolean }> {
+  const target = remoteChildTarget(childSessionId)
+  if (!target || !environmentId || target.environmentId !== environmentId) {
+    return toolResult({ status: 'error', message: `${childSessionId} is not a collaboration child launched from here` }, true)
+  }
+  const { getSessionHost } = await import('../mcp/superone-mcp-server')
+  const host = getSessionHost() as SessionManager | null
+  if (!host) return toolResult({ status: 'error', message: 'Session host is unavailable' }, true)
+  return toolName === 'session_collab_send'
+    ? sendSessionMessage(childSessionId, args as unknown as SessionSendArgs, host)
+    : retrieveSessionMessages(childSessionId, args as SessionRetrieveArgs, host)
 }
 
 /** Spawn children only — link peers must never get a collaboration system prompt. */

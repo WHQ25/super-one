@@ -49,6 +49,10 @@ export interface CreateSessionInput {
   title?: string
   cwd?: string
   model?: string
+  /** Appended to the session's system prompt (a collaboration child's instructions). */
+  systemPromptAppend?: string
+  /** The collaboration parent on the creating machine, for a child launched there. */
+  externalParent?: { sessionId: string }
   /** Opaque harness-specific options. */
   options?: Record<string, unknown>
 }

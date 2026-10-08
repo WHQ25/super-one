@@ -63,6 +63,9 @@ export function listSessionsForProjectId(
         ON g.child_session_id = s.id
         AND COALESCE(g.kind, 'spawn') = 'spawn'
       WHERE s.project_id = ?
+        -- A child on another machine keeps a row here only as its mailbox endpoint;
+        -- the sidebar lists it under that machine.
+        AND json_extract(g.config_json, '$.remote.environmentId') IS NULL
     ), grouped_sessions AS (
       SELECT related_sessions.*,
              MAX(last_user_msg_at) OVER (PARTITION BY root_session_id) AS group_last_active_at

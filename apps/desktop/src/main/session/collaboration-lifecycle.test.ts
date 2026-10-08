@@ -4,8 +4,11 @@ import type { Session, SessionManager } from './types'
 
 const state = vi.hoisted(() => ({
   parents: new Map<string, string>(),
+  /** Children whose initial task never arrived. */
+  undelivered: new Set<string>(),
   times: new Map<string, { sentAt: string | null; receivedAt: string | null }>(),
   wake: vi.fn(async () => {}),
+  remote: new Map<string, { status: string; pendingInteraction: unknown } | null>(),
 }))
 
 vi.mock('../logger', () => ({ default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn() } }))
@@ -13,14 +16,24 @@ vi.mock('./collaboration-mailbox', () => ({
   spawnParentOf: (id: string) => state.parents.get(id) ?? null,
   collaborationStore: () => ({
     lastMessageTimes: (id: string) => state.times.get(id) ?? { sentAt: null, receivedAt: null },
+    spawnGrantForChild: (id: string) => state.parents.has(id)
+      ? { parent_session_id: state.parents.get(id), task_sent: state.undelivered.has(id) ? 0 : 1 }
+      : null,
   }),
 }))
 vi.mock('./collaboration-host', () => ({ wakeParentOfStoppedChild: state.wake }))
+vi.mock('./collaboration-remote', () => ({
+  remoteChildTarget: (id: string) => (state.remote.has(id) ? { environmentId: 'env-b' } : null),
+  remoteChildState: async (id: string) => state.remote.get(id) ?? null,
+}))
 
 const {
   CHILD_STALL_MS,
   CollaborationChildMonitor,
+  childActivityView,
   describeChildStatus,
+  describeCollaborationChild,
+  localChildView,
 } = await import('./collaboration-lifecycle')
 
 interface FakeChild {
@@ -48,15 +61,27 @@ describe('CollaborationChildMonitor', () => {
   let clearStalled: ReturnType<typeof vi.fn>
   let monitor: InstanceType<typeof CollaborationChildMonitor>
 
+  let now: number
+
   beforeEach(() => {
     state.parents = new Map([['child', 'parent']])
+    state.undelivered = new Set()
     state.times = new Map()
+    state.remote = new Map()
     state.wake.mockClear()
     child = { status: 'streaming', pending: [], activityAt: 1_000, lastUserMessageAt: 1_000, messages: [] }
     notifyStalled = vi.fn()
     clearStalled = vi.fn()
+    now = 1_000
     const host = { getSession: (id: string) => (id === 'child' ? fakeSession(child) : null) } as unknown as SessionManager
-    monitor = new CollaborationChildMonitor({ host, notifyStalled, clearStalled })
+    monitor = new CollaborationChildMonitor({
+      host,
+      view: (id) => childActivityView(host, id).then((view) => (view === 'unreachable' ? null : view)),
+      lastUserMessageAt: (id) => (id === 'child' ? child.lastUserMessageAt : null),
+      notifyStalled,
+      clearStalled,
+      now: () => now,
+    })
   })
 
   const feed = (event: AgentEvent, sessionId = 'child', replay = false) =>
@@ -110,13 +135,22 @@ describe('CollaborationChildMonitor', () => {
     expect(state.wake).toHaveBeenCalledWith(expect.anything(), 'parent', 'child', 'error: rate limited or out of quota')
   })
 
-  it('notifies the human once per stall and withdraws it when activity resumes', () => {
+  it('does not wake when the initial task never reached the child', () => {
+    // session_collab_start already returned the delivery error to the parent.
+    state.undelivered.add('child')
+    feed({ type: 'status_change', status: 'streaming' })
+    feed({ type: 'message_error', messageId: 'm1', error: 'spawn failed' })
+    feed({ type: 'status_change', status: 'error' })
+    expect(state.wake).not.toHaveBeenCalled()
+  })
+
+  it('notifies the human once per stall and withdraws it when activity resumes', async () => {
     feed({ type: 'status_change', status: 'streaming' })
     const stalledAt = child.activityAt + CHILD_STALL_MS
-    monitor.checkStalls(stalledAt - 1)
+    await monitor.checkStalls(stalledAt - 1)
     expect(notifyStalled).not.toHaveBeenCalled()
-    monitor.checkStalls(stalledAt)
-    monitor.checkStalls(stalledAt + 60_000)
+    await monitor.checkStalls(stalledAt)
+    await monitor.checkStalls(stalledAt + 60_000)
     expect(notifyStalled).toHaveBeenCalledTimes(1)
     expect(notifyStalled).toHaveBeenCalledWith('child')
 
@@ -126,11 +160,40 @@ describe('CollaborationChildMonitor', () => {
     expect(state.wake).not.toHaveBeenCalled()
   })
 
-  it('does not count a pending approval as a stall', () => {
+  it('does not count a pending approval as a stall', async () => {
     child.pending = [{ type: 'permission_request', request: { requestId: 'r', toolName: 'Bash', input: {} } } as AgentEvent]
     feed({ type: 'status_change', status: 'streaming' })
-    monitor.checkStalls(child.activityAt + CHILD_STALL_MS)
+    await monitor.checkStalls(child.activityAt + CHILD_STALL_MS)
     expect(notifyStalled).not.toHaveBeenCalled()
+  })
+
+  describe('a child on another machine', () => {
+    beforeEach(() => {
+      state.parents.set('remote-child', 'parent')
+      state.remote.set('remote-child', { status: 'streaming', pendingInteraction: null })
+    })
+
+    it('wakes the parent when its drained events show it stopped without reporting', () => {
+      feed({ type: 'status_change', status: 'streaming' }, 'remote-child')
+      feed({ type: 'status_change', status: 'idle' }, 'remote-child')
+      expect(state.wake).toHaveBeenCalledWith(expect.anything(), 'parent', 'remote-child', 'idle')
+    })
+
+    it('notifies the human when no event arrived for the stall window while its node reports it streaming', async () => {
+      feed({ type: 'status_change', status: 'streaming' }, 'remote-child')
+      await monitor.checkStalls(1_000 + CHILD_STALL_MS - 1)
+      expect(notifyStalled).not.toHaveBeenCalled()
+      await monitor.checkStalls(1_000 + CHILD_STALL_MS)
+      expect(notifyStalled).toHaveBeenCalledWith('remote-child')
+      expect(state.wake).not.toHaveBeenCalled()
+    })
+
+    it('does not call a remote child waiting on approval stalled', async () => {
+      state.remote.set('remote-child', { status: 'streaming', pendingInteraction: { interactionId: 'i1' } })
+      feed({ type: 'status_change', status: 'streaming' }, 'remote-child')
+      await monitor.checkStalls(1_000 + CHILD_STALL_MS)
+      expect(notifyStalled).not.toHaveBeenCalled()
+    })
   })
 })
 
@@ -160,5 +223,18 @@ describe('describeChildStatus', () => {
     const child: FakeChild = { status: 'error', pending: [], activityAt: 5_000, lastUserMessageAt: null, messages: [toolMessage] }
     expect(describeChildStatus(fakeSession(child), 6_000)).toEqual({ state: 'error', lastActivityAt: iso(5_000) })
     expect(describeChildStatus(null)).toEqual({ state: 'idle' })
+  })
+
+  it('reports a remote child from its node, and an unreachable one as such', async () => {
+    const host = { getSession: () => null } as unknown as SessionManager
+    state.remote = new Map([
+      ['waiting', { status: 'streaming', pendingInteraction: { interactionId: 'i1' } }],
+      ['done', { status: 'interrupted', pendingInteraction: null }],
+      ['gone', null],
+    ])
+    expect((await describeCollaborationChild(host, 'waiting')).state).toBe('awaiting_approval')
+    expect((await describeCollaborationChild(host, 'done')).state).toBe('idle')
+    expect(await describeCollaborationChild(host, 'gone')).toEqual({ state: 'unreachable' })
+    expect(localChildView(null)).toBeNull()
   })
 })

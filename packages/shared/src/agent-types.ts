@@ -1091,6 +1091,34 @@ export interface SessionAgentLaunchConfig {
    * Set by the requesting agent; not user-editable in the confirm UI.
    */
   role?: string
+  /** Host-resolved target when the child runs on another machine. Not agent- or user-editable. */
+  remote?: SessionAgentRemoteLaunch
+}
+
+/**
+ * Where a spawn child launched on another machine runs. The host resolves it
+ * at request time so the confirm card shows the machine, whether it clones,
+ * and what the child will not see.
+ */
+export interface SessionAgentRemoteLaunch {
+  environmentId: string
+  /** Name of the target machine. */
+  label: string
+  /** Normalized origin of the parent's repository (`host/owner/repo`). */
+  repository: string
+  /** Origin URL as the parent's checkout has it; what a clone uses. */
+  cloneUrl: string
+  /** The target's project for that repository; absent when it will be cloned. */
+  projectId?: string
+  projectPath?: string
+  /** Set when the target has no checkout: the directory it clones into. */
+  cloneInto?: string
+  /** Ref the child's new worktree branch starts from on the target. */
+  baseRef: string
+  /** Commits of the parent's branch not on its remote; the child cannot see them. */
+  unpushedCommits: number
+  /** Uncommitted files in the parent's checkout; the child cannot see them. */
+  uncommittedChanges: number
 }
 
 /** Max length for the full task delivered to a collab child session. */

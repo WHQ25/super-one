@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
-import { Bot, FolderClosed, MessageSquare, Users, Zap } from 'lucide-react'
+import { AlertTriangle, Bot, FolderClosed, GitBranch, MessageSquare, Server, Users, Zap } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Kbd } from '@superone/ui/components/ui/kbd'
@@ -20,6 +20,7 @@ import type {
   SandboxMode,
   SessionAgentLaunchProposal,
   SessionAgentProfile,
+  SessionAgentRemoteLaunch,
   SessionAgentRequestPayload,
 } from '@superone/shared/agent-types'
 import { resolveSessionIcon, resolveSessionIconFromBrandKey } from '@/components/harness/resolve-session-icon'
@@ -92,6 +93,51 @@ function MetaChip({
       <Icon className="size-3 shrink-0" />
       <span className="truncate">{label}</span>
     </span>
+  )
+}
+
+/**
+ * Where a child on another machine runs: the machine, its checkout or the
+ * clone it will make, the branch base, and what of this checkout it will not see.
+ */
+function RemoteLaunchTarget({ remote }: { remote: SessionAgentRemoteLaunch }) {
+  const { t } = useTranslation()
+  const unseen = remote.unpushedCommits > 0 || remote.uncommittedChanges > 0
+  return (
+    <>
+      <div className="mt-1.5 flex shrink-0 flex-wrap items-center gap-x-2.5 gap-y-1">
+        <MetaChip icon={Server} label={remote.label} title={t('chat.sessionAgentsConfirm.remoteMachine', { machine: remote.label })} />
+        {remote.projectPath ? (
+          <MetaChip
+            icon={FolderClosed}
+            label={pathBasename(remote.projectPath)}
+            title={`${t('chat.sessionAgentsConfirm.workingDirectory')}: ${remote.projectPath}`}
+          />
+        ) : (
+          <MetaChip
+            icon={FolderClosed}
+            label={t('chat.sessionAgentsConfirm.remoteClone', { repository: remote.repository })}
+            title={t('chat.sessionAgentsConfirm.remoteCloneInto', { url: remote.cloneUrl, directory: remote.cloneInto ?? '' })}
+          />
+        )}
+        <MetaChip
+          icon={GitBranch}
+          label={remote.baseRef}
+          title={t('chat.sessionAgentsConfirm.remoteBranchFrom', { ref: remote.baseRef })}
+        />
+      </div>
+      {unseen && (
+        <p className="mt-1 flex shrink-0 items-start gap-1 text-xs leading-snug text-warning">
+          <AlertTriangle className="mt-px size-3 shrink-0" />
+          <span>
+            {t('chat.sessionAgentsConfirm.remoteUnseenChanges', {
+              commits: remote.unpushedCommits,
+              files: remote.uncommittedChanges,
+            })}
+          </span>
+        </p>
+      )}
+    </>
   )
 }
 
@@ -221,6 +267,7 @@ function LaunchPanel({
         ) : null
       ) : (
         <>
+          {config.remote ? <RemoteLaunchTarget remote={config.remote} /> : (
           <div className="mt-1.5 flex shrink-0 flex-wrap items-center gap-x-2.5 gap-y-1">
             {config.cwd && (
               <MetaChip
@@ -236,6 +283,7 @@ function LaunchPanel({
               <WorkDirLabel state={workDirState} />
             </span>
           </div>
+          )}
 
           <div className="mt-2 flex min-w-0 shrink-0 flex-wrap items-center gap-1 rounded-md border border-border bg-muted/20 px-1 py-0.5">
             {/* Fast mode rides in front of the model label as a toggleable glyph, mirroring the

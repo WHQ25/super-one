@@ -86,6 +86,7 @@ import {
   LAUNCH_TASK_DESCRIPTION,
   LAUNCH_MODE_DESCRIPTION,
   LAUNCH_SESSION_ID_DESCRIPTION,
+  LAUNCH_ENVIRONMENT_DESCRIPTION,
   LAUNCH_PERMISSION_MODE_DESCRIPTION,
   LAUNCH_CWD_DESCRIPTION,
   LAUNCH_WORKTREE_DESCRIPTION,
@@ -205,6 +206,11 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
                 type: 'string',
                 minLength: 1,
                 description: LAUNCH_SESSION_ID_DESCRIPTION,
+              },
+              environment: {
+                type: 'string',
+                minLength: 1,
+                description: LAUNCH_ENVIRONMENT_DESCRIPTION,
               },
               agentId: {
                 type: 'string',

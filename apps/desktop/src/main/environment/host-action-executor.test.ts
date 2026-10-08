@@ -56,6 +56,7 @@ const node = vi.hoisted(() => {
 })
 
 const envHost = vi.hoisted(() => ({
+  environmentIdOf: (connectionId: string) => (connectionId === 'conn-1' ? 'env-1' : null),
   renameSession: vi.fn(async (_connectionId: string, _sessionId: string, title: string) => ({
     title,
   })),
@@ -127,6 +128,10 @@ vi.mock('./environment-host', () => ({
 }))
 vi.mock('../mcp/superone-mcp-tool-surface', () => mcpSurface)
 vi.mock('../mcp/session-tag-tools', () => renameTags)
+const collab = vi.hoisted(() => ({
+  runRemoteChildMailboxTool: vi.fn(async (..._args: unknown[]) => ({ content: [{ type: 'text', text: '{"status":"sent"}' }] } as { content: Array<{ type: 'text'; text: string }>; isError?: boolean })),
+}))
+vi.mock('../session/session-collaboration', () => collab)
 
 import { desktopHostActionExecutor } from './host-action-executor'
 import type { ClaimHostActionResult } from '@superone/shared/environment'
@@ -265,6 +270,24 @@ describe('desktopHostActionExecutor', () => {
     expect(out.error).toMatchObject({ code: 'failed_precondition' })
     expect(browser.executeBrowserTool).not.toHaveBeenCalled()
     expect(envHost.renameSession).not.toHaveBeenCalled()
+  })
+
+  it('runs a remote collaboration child\'s mailbox tools against this desktop\'s mailbox', async () => {
+    const out = await desktopHostActionExecutor(
+      claimed({ toolName: 'session_collab_send', toolGroup: 'superone', sessionId: 'remote-child', args: { content: 'done' } }),
+      new AbortController().signal,
+      'conn-1',
+    )
+    expect(out).toEqual({ outcome: 'succeeded', result: { content: [{ type: 'text', text: '{"status":"sent"}' }] } })
+    expect(collab.runRemoteChildMailboxTool).toHaveBeenCalledWith('env-1', 'remote-child', 'session_collab_send', { content: 'done' })
+
+    collab.runRemoteChildMailboxTool.mockResolvedValueOnce({ content: [{ type: 'text', text: '{"status":"error"}' }], isError: true })
+    const refused = await desktopHostActionExecutor(
+      claimed({ toolName: 'session_collab_retrieve', toolGroup: 'superone', sessionId: 'stranger' }),
+      new AbortController().signal,
+      'conn-1',
+    )
+    expect(refused.outcome).toBe('failed')
   })
 
   it('routes session_tag to the host archive MCP surface, not the node store', async () => {

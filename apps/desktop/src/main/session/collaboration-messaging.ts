@@ -14,7 +14,7 @@ import {
 } from '@superone/runtime/collaboration'
 import type { CollaborationPeer } from '@superone/runtime/collaboration'
 import { denyMainThreadOnlyIfSubagent } from '../mcp/main-thread-session-guard'
-import { describeChildStatus } from './collaboration-lifecycle'
+import { describeCollaborationChild } from './collaboration-lifecycle'
 import { forwardToExternalParent } from './collaboration-external-parent'
 import { collaborationStore as store, notifyCollaborationMailboxChanged } from './collaboration-mailbox'
 import {
@@ -93,9 +93,9 @@ export interface SessionRetrieveArgs {
 /** Child peers also carry what they are doing, so a woken parent can decide without reading transcripts. */
 function withChildStatus(peers: CollaborationPeer[], host: SessionManager) {
   const now = Date.now()
-  return peers.map((peer) => peer.relation === 'child'
-    ? { ...peer, ...describeChildStatus(host.getSession(peer.sessionId), now) }
-    : peer)
+  return Promise.all(peers.map(async (peer) => peer.relation === 'child'
+    ? { ...peer, ...await describeCollaborationChild(host, peer.sessionId, now) }
+    : peer))
 }
 
 /**
@@ -121,7 +121,7 @@ export async function retrieveSessionMessages(
     return errorResult(error)
   }
   const { messages } = read
-  const peers = withChildStatus(read.peers, host)
+  const peers = await withChildStatus(read.peers, host)
   if (messages.length > 0) {
     notifyCollaborationMailboxChanged(callerSessionId)
     return toolResult({ status: 'messages', messages, peers })

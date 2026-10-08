@@ -25,9 +25,9 @@ beforeEach(() => {
       last_user_message_at TEXT, is_worktree INTEGER, is_pinned INTEGER,
       is_hidden INTEGER, git_branch TEXT, worktree_path TEXT, is_automation INTEGER,
       automation_id TEXT, provider_session_id TEXT, provider_id TEXT, provider TEXT,
-      acp_agent_id TEXT, selected_model TEXT, tags_json TEXT
+      acp_agent_id TEXT, selected_model TEXT, tags_json TEXT, remote_controller_json TEXT
     );
-    CREATE TABLE session_collaboration_grants (child_session_id TEXT, parent_session_id TEXT, kind TEXT);
+    CREATE TABLE session_collaboration_grants (child_session_id TEXT, parent_session_id TEXT, kind TEXT, config_json TEXT);
     CREATE TABLE chat_messages (session_id TEXT);
     INSERT INTO projects VALUES ('project', '/repo', 'repo');
     INSERT INTO sessions (id, project_id, title, created_at, is_pinned, provider_id)

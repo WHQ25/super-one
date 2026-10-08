@@ -99,7 +99,7 @@ import { nodePtySpawner } from './terminal/pty'
 import { DeviceRegistry } from './remote/device-registry'
 import { MobileBroadcaster } from './remote/mobile-broadcaster'
 import { spawnParentOf } from './session/collaboration-mailbox'
-import { CHILD_STALL_CHECK_INTERVAL_MS, CollaborationChildMonitor } from './session/collaboration-lifecycle'
+import { CHILD_STALL_CHECK_INTERVAL_MS, CollaborationChildMonitor, childActivityView } from './session/collaboration-lifecycle'
 import { watchProjectList, watchSessionDeletes, watchSessionList } from './session-list-watch'
 import { localDraftStore } from './db-drafts'
 import { withoutDraftAttachmentBytes } from '@superone/shared/environment/draft-content'
@@ -788,11 +788,13 @@ notificationService.registerChannel(desktopNotificationChannel)
 /** Spawn-child stops wake the parent; stalls notify the human. See `CollaborationChildMonitor`. */
 const collaborationChildMonitor = new CollaborationChildMonitor({
   host: sessionManager,
+  view: (sessionId) => childActivityView(sessionManager, sessionId).then((view) => (view === 'unreachable' ? null : view)),
+  lastUserMessageAt: (sessionId) => sessionManager.getSession(sessionId)?.snapshot.lastUserMessageAt ?? null,
   notifyStalled: (sessionId) => notificationService.notifyStalled(sessionId),
   clearStalled: (sessionId) => notificationService.clearStalled(sessionId),
 })
 sessionManager.onAny((sessionId, event, replay) => collaborationChildMonitor.handleEvent(sessionId, event, replay))
-setInterval(() => collaborationChildMonitor.checkStalls(), CHILD_STALL_CHECK_INTERVAL_MS).unref()
+setInterval(() => void collaborationChildMonitor.checkStalls(), CHILD_STALL_CHECK_INTERVAL_MS).unref()
 
 /**
  * Single convergence point for everything the renderer sees. Notifications tap
@@ -1685,6 +1687,8 @@ function attachEnvironmentStatusBridge(host: EnvironmentHost): void {
   host.setAgentEventSink((event) => {
     observeRemoteMcpAppEvent(event)
     if (event.sessionId) scheduledSendService.observe(event.sessionId, event)
+    // Collaboration children on other machines report their runs through these events.
+    if (event.sessionId) collaborationChildMonitor.handleEvent(event.sessionId, event, false)
     safeSend(AgentIpcChannels.EVENT, event)
   })
   // Auto-connect desired remotes + network-online edge wake.

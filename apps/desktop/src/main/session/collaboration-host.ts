@@ -8,6 +8,7 @@ import type { SessionAgentLaunchConfig } from '@superone/shared/agent-types'
 import { findCodexFastServiceTier } from '@superone/shared/codex-fast-mode'
 import {
   childStoppedWakeText,
+  describeLaunchedPeer,
   describePeerForCaller as describeGrantPeerForCaller,
   linkActivationWakeText,
   mailboxWakeText,
@@ -17,6 +18,8 @@ import {
 import { getDb } from '../database'
 import log from '../logger'
 import { listSessionAgentProfiles } from './agent-profiles'
+import { collaborationStore } from './collaboration-mailbox'
+import { remoteChildTarget, sendToRemoteChild } from './collaboration-remote'
 import type { Session, SessionManager } from './types'
 
 let sessionsChangedListener: (() => void) | null = null
@@ -43,9 +46,15 @@ export function sessionTitle(sessionId: string): string | null {
   return row?.title ?? null
 }
 
-/** Session title for agent-facing text, falling back to the short id while untitled. */
+/**
+ * Session title for agent-facing text. A child on another machine has no row
+ * here, so its launch title stands in; the short id is the last resort.
+ */
 function sessionLabelTitle(sessionId: string): string {
-  return sessionTitle(sessionId)?.trim() || sessionId.slice(0, 8)
+  const title = sessionTitle(sessionId)?.trim()
+  if (title) return title
+  const grant = remoteChildTarget(sessionId) ? collaborationStore().spawnGrantForChild(sessionId) : null
+  return grant ? describeLaunchedPeer(grant).title : sessionId.slice(0, 8)
 }
 
 export function initiatorTitleOf(grant: GrantRow): string {
@@ -110,6 +119,19 @@ export function isCollaborationTargetReadOnly(sessionId: string, live: Session |
 
 /** Start a host turn in `sessionId`; queues behind an in-flight turn. Best-effort. */
 async function wakeSession(host: SessionManager, sessionId: string, text: string): Promise<void> {
+  if (remoteChildTarget(sessionId)) {
+    // A child on another machine: a turn through the gateway, under this desktop's lease.
+    try {
+      await sendToRemoteChild(sessionId, text)
+    } catch (error) {
+      log.warn(
+        '[session-collaboration] remote wake failed sid=%s: %s',
+        sessionId,
+        error instanceof Error ? error.message : String(error),
+      )
+    }
+    return
+  }
   const session = resolveLiveSession(host, sessionId)
   if (!session) {
     log.debug('[session-collaboration] peer not available for wake sid=%s', sessionId)

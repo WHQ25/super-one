@@ -893,6 +893,20 @@ describe('sendMessageImpl: IPC dispatch + rollback', () => {
     expect(sess.awaitingAssistantReply).toBe(true)
   })
 
+  it('settles a stale Resend the host already took without waiting for a reply', async () => {
+    seedProject('/proj', 'sid-1', { messages: [{
+      id: 'u1', role: 'user', status: 'complete', createdAt: '', providerId: 'local',
+      content: [{ type: 'text', text: 'hello' }], metadata: { sendFailure: { error: 'spawn claude ENOENT' } },
+    }] })
+    mockSendMessage.mockResolvedValueOnce({ duplicate: true })
+
+    await useChatStore.getState().resendFailedMessage('u1')
+
+    const sess = getActiveSession('/proj')
+    expect(sess.messages[0].metadata?.sendFailure).toBeUndefined()
+    expect(sess.awaitingAssistantReply).toBe(false)
+  })
+
   it('resends a remote row through the environment gateway, never local IPC, after a reload', async () => {
     const remotePath = 'remote:env-1:/work/app'
     const image = { id: 'img', name: 'a.png', mimeType: 'image/png', base64: 'AAAA' }

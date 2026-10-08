@@ -19,6 +19,7 @@ import { createSendWriteScope } from '../helpers/send-write-scope'
 import { resendRemoteMessageImpl } from '../helpers/send-message-remote'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { failedMessageResend, withoutSendFailure } from '@superone/chat-core'
+import { isDuplicateSend } from '@superone/shared/send-failure'
 import { restoreSentDraft } from '@/components/chat/chat-input/restore-sent-draft'
 import { messageDraft } from '@/components/chat/chat-input/message-draft'
 
@@ -134,6 +135,8 @@ export const createSessionSlice: StateCreator<ChatStore, [], [], SessionSlice> =
       messageId,
       patchSession: scope.patch,
       deliver: () => window.agent.sendMessage(projectPath, request),
+      // A stale Resend: the host already has this message and ran nothing new.
+      onDelivered: (result) => { if (isDuplicateSend(result)) scope.patch(() => ({ awaitingAssistantReply: false })) },
       retryState: () => ({ awaitingAssistantReply: true }),
     })
   },

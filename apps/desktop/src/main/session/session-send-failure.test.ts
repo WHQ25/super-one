@@ -88,6 +88,34 @@ describe('a send the host admitted but never started', () => {
     expect(session.snapshot.messages.find((message) => message.id === 'u2')?.metadata?.sendFailure).toBeUndefined()
   })
 
+  it('clears the marker on every other subscriber when one retries, and holds a stale Resend', async () => {
+    let fail = true
+    const { session, backend } = fixture(async () => { if (fail) throw new Error('spawn claude ENOENT') })
+    await expect(session.send({ content: 'hello', clientMessageId: 'u1' })).rejects.toThrow()
+    const phone = await openOnMobile(session)
+    session.on((event) => phone.ingest([event]))
+    expect(phone.session.messages[0]?.metadata?.sendFailure).toBeDefined()
+
+    fail = false
+    await session.send({ content: 'hello', clientMessageId: 'u1' })
+    expect(phone.session.messages[0]?.metadata?.sendFailure).toBeUndefined()
+
+    await expect(session.send({ content: 'hello', clientMessageId: 'u1' })).resolves.toEqual({ duplicate: true })
+    expect(backend.send).toHaveBeenCalledOnce()
+    phone.dispose()
+  })
+
+  it('holds a second send of an id still waiting for its turn', async () => {
+    const { session, backend } = fixture(async () => {})
+    const [first, second] = await Promise.all([
+      session.send({ content: 'hello', clientMessageId: 'u1' }),
+      session.send({ content: 'hello', clientMessageId: 'u1' }),
+    ])
+    expect(first).toBeUndefined()
+    expect(second).toEqual({ duplicate: true })
+    expect(backend.send).toHaveBeenCalledOnce()
+  })
+
   it('leaves the row alone when the turn had already replied', async () => {
     const { session, backend, emit } = fixture(async () => {})
     backend.send.mockImplementation(async () => {

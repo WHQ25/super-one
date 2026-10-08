@@ -496,7 +496,8 @@ export interface Session {
   subscribe(deviceId: string): void
   unsubscribe(deviceId: string, reason?: SessionLeaveReason): void
   onLifecycle(handler: (event: SessionLifecycleEvent) => void): () => void
-  send(request: SendMessageRequest, opts?: { providerOrigin?: SendProviderOrigin; onAccepted?: () => void }): Promise<void>
+  /** Resolves `{ duplicate: true }` when the host already took this user message id; nothing runs again. */
+  send(request: SendMessageRequest, opts?: { providerOrigin?: SendProviderOrigin; onAccepted?: () => void }): Promise<import('@superone/shared/send-failure').DuplicateSend | void>
   interrupt(): Promise<boolean>
   /** Worktree deleted under the live session: go read-only and stop the turn. */
   markWorktreeRemoved(): Promise<void>

@@ -239,7 +239,11 @@ turn never started (the runtime would not start, the backend refused the send),
 a phone that was disconnected, or a reloaded window, restores it as a failed
 send. Resend without the original request (`failedMessageResend` in
 `packages/shared/src/send-failure.ts`) sends the row again under its own id; the
-host reuses the row and clears its failure.
+host reuses the row, clears its failure and broadcasts `user_message_send_retried`
+so every other client drops its Resend. A send of an id the host already took
+(admitted, queued, answered or running) is held, not run again: `Session.send`
+resolves `{ duplicate: true }`. A queued send the backend refuses becomes a
+failed row in the transcript, like any other.
 
 The phone sends every turn, with or without attachments, as a request with a
 `requestId`. An error or timeout reduces to `user_message_send_failed`, which

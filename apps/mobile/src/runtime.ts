@@ -938,6 +938,8 @@ export class ChatRuntime {
         return
       }
     }
+    // Another client's Resend went through; the one held here is stale.
+    if (event.type === 'user_message_send_retried') this.failedSends.delete(event.clientMessageId)
     if (event.type === 'session_title_changed' && event.sessionId === this.sessionId) {
       this.sessionTitle = event.title
     }

@@ -509,7 +509,7 @@ export class DesktopSessionHost implements SessionHostPort {
     }
     // Answer once the turn is admitted; the rest streams through session.events.
     await new Promise<void>((resolve, reject) => {
-      session.send(request, { providerOrigin: 'remote', onAccepted: resolve }).then(resolve, reject)
+      session.send(request, { providerOrigin: 'remote', onAccepted: resolve }).then(() => resolve(), reject)
     })
     return this.record(this.requireRow(input.sessionId))
   }

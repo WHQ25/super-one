@@ -1,11 +1,12 @@
 import type { AgentEvent, ChatMessage } from '@superone/shared/agent-types'
 import { MCP_RESOURCE_REMINDER_REGEX } from '@superone/shared/mcp-app-mentions'
-import { markSendFailure, withSendFailure } from '@superone/shared/send-failure'
+import { markSendFailure, withSendFailure, withoutSendFailure } from '@superone/shared/send-failure'
 import type { ChatCoreSession } from './types'
 
 export { failedMessageResend, markSendFailure, userMessageAnswered, withoutSendFailure } from '@superone/shared/send-failure'
 
 type SendFailedEvent = Extract<AgentEvent, { type: 'user_message_send_failed' }>
+type SendRetriedEvent = Extract<AgentEvent, { type: 'user_message_send_retried' }>
 
 /**
  * The composer text a user message was sent from (paste segments included). The
@@ -40,4 +41,14 @@ export function reduceUserMessageSendFailed(
     queuedMessages: session.queuedMessages.filter((m) => m.id !== id),
     messages: [...session.messages, withSendFailure(queued, event.error)],
   }
+}
+
+/** Another client's Resend went through: this client's copy of the row is no longer failed. */
+export function reduceUserMessageSendRetried(
+  session: ChatCoreSession,
+  event: SendRetriedEvent,
+): Partial<ChatCoreSession> {
+  const failed = session.messages.find((m) => m.id === event.clientMessageId && m.metadata?.sendFailure)
+  if (!failed) return {}
+  return { messages: session.messages.map((m) => (m === failed ? withoutSendFailure(m) : m)) }
 }

@@ -8,7 +8,7 @@ import { assertCodexAccountSwitchAllowed } from '@superone/shared/codex-accounts
 import { insertCodexTimelineRow, stampCodexTimelineOrder } from '@superone/shared/codex-timeline-rows'
 import { buildCompactBoundaryMessage, compactBoundaryInsertIndex, isCompactSlashSend } from '@superone/shared/compact-boundary'
 import { newMessageId } from '@superone/shared/message-id'
-import { markSendFailure, withSendFailure, withoutSendFailure } from '@superone/shared/send-failure'
+import { markSendFailure, withSendFailure, withoutSendFailure, type DuplicateSend } from '@superone/shared/send-failure'
 import { SessionShutdown } from './session-shutdown'
 import { SessionLiveness } from './session-liveness'
 import { hostPendingInteractions, trackHostInteraction } from './host-pending-interactions'
@@ -340,6 +340,8 @@ export class Session implements SessionContract {
   private _uiSettings: import('@superone/shared/agent-types').SessionSettingsPatch = {}
   private _selectionRevision = 0
   private _pendingQueuedRequests = new Map<string, PendingSessionRequest>()
+  /** User message ids of sends waiting in `_sendChain`, before their row is appended. */
+  private _admittingSendIds = new Set<string>()
   /** Shared so concurrent ensureStarted callers await the same backend.start(). */
   private _startPromise: Promise<void> | null = null
 
@@ -583,12 +585,12 @@ export class Session implements SessionContract {
     this.backend = opts.backend
     // Idle task-notification flushes must take Session.send / _sendChain — never
     // backend.send alone (races status machine and concurrent user sends).
-    this.backend.bindTaskNotificationSend?.((content, opts) =>
-      this.send(
+    this.backend.bindTaskNotificationSend?.(async (content, opts) => {
+      await this.send(
         { ...taskNotificationRequest(content), ...(opts?.clientMessageId ? { clientMessageId: opts.clientMessageId } : {}) },
         { providerOrigin: 'host' },
-      ),
-    )
+      )
+    })
     this.permissionMode = opts.permissionMode ?? 'default'
     this.sandboxInfo = coerceSandboxInfo(opts.sandboxInfo ?? getDefaultSandbox())
     this.effort = opts.effort
@@ -769,10 +771,18 @@ export class Session implements SessionContract {
     } as AgentEvent)
   }
 
-  async send(request: SendMessageRequest, opts?: { providerOrigin?: SendProviderOrigin; onAccepted?: () => void }): Promise<void> {
+  async send(request: SendMessageRequest, opts?: { providerOrigin?: SendProviderOrigin; onAccepted?: () => void }): Promise<DuplicateSend | void> {
     const providerOrigin = opts?.providerOrigin ?? 'local'
     this.assertNotDisposed()
     this.assertCanSend(providerOrigin)
+    const clientMessageId = request.clientMessageId
+    if (clientMessageId && this.sendAlreadyTaken(clientMessageId)) {
+      // A Resend from a client that missed the retry: the host already has this
+      // message, so it is held, not run again.
+      log.info('[Session] duplicate send ignored sid=%s clientMessageId=%s', this.id, clientMessageId)
+      opts?.onAccepted?.()
+      return { duplicate: true }
+    }
     // A submitted agent-output form claims its request before the message is admitted.
     request = claimInputRequestForSend(this.id, request)
     admitTurnAttachments(request.content, request.images)
@@ -816,6 +826,7 @@ export class Session implements SessionContract {
     const prev = this._sendChain
     let release!: () => void
     this._sendChain = new Promise<void>((r) => { release = r })
+    if (clientMessageId) this._admittingSendIds.add(clientMessageId)
     try {
       // The validated request now has a place in this session's send queue.
       opts?.onAccepted?.()
@@ -872,9 +883,17 @@ export class Session implements SessionContract {
         throw error
       }
     } finally {
+      if (clientMessageId) this._admittingSendIds.delete(clientMessageId)
       this.liveness.endSend()
       release()
     }
+  }
+
+  /** Whether the user message `id` was already admitted, queued, answered or is running. */
+  private sendAlreadyTaken(id: string): boolean {
+    return this._admittingSendIds.has(id)
+      || this._pendingQueuedRequests.has(id)
+      || this._messages.some((m) => m.id === id && !m.metadata?.sendFailure)
   }
 
   async interrupt(): Promise<boolean> {
@@ -2507,6 +2526,9 @@ export class Session implements SessionContract {
     this.notifyStateChange()
     if (wasNew) {
       this.forwardEvent({ type: 'user_message_appended', message: userMsg } as AgentEvent)
+    } else if (existing.metadata?.sendFailure) {
+      // Every other client still shows Resend on its copy of the row.
+      this.forwardEvent({ type: 'user_message_send_retried', clientMessageId: userMsg.id })
     }
   }
 

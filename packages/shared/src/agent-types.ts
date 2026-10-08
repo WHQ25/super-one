@@ -1911,6 +1911,8 @@ export type AgentEventBase =
   | { type: 'message_timestamp'; messageId: string; timestamp: string }
   /** The host could not deliver a user send it had already acknowledged (or never acknowledges). */
   | { type: 'user_message_send_failed'; clientMessageId: string; error: string }
+  /** A failed user send was taken again under the same id; its row is no longer a failed send. */
+  | { type: 'user_message_send_retried'; clientMessageId: string }
   | { type: 'message_complete'; messageId: string; metadata?: MessageMetadata }
   | { type: 'message_interrupted'; messageId: string; metadata?: MessageMetadata }
   | { type: 'message_error'; messageId: string; error: string; errorInfo?: AgentErrorInfo; metadata?: MessageMetadata }

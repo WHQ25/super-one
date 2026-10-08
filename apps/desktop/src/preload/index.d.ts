@@ -33,7 +33,8 @@ export type { EnvironmentInstallProgress } from '@superone/shared/environment'
 
 
 interface AgentAPI {
-  sendMessage(projectPath: string, request: SendMessageRequest): Promise<void>
+  /** `{ duplicate: true }` when the host already took `request.clientMessageId`; nothing runs again. */
+  sendMessage(projectPath: string, request: SendMessageRequest): Promise<import('@superone/shared/send-failure').DuplicateSend | void>
   dequeueMessage(projectPath: string, clientMessageId: string): Promise<boolean>
   steerQueuedMessage(projectPath: string, clientMessageId: string, sessionId?: string, priority?: ClaudeSteerPriority): Promise<boolean>
   startQueuedMessages(projectPath: string, sessionId?: string): Promise<boolean>

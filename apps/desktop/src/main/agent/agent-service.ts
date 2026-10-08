@@ -2841,7 +2841,7 @@ export class AgentService {
         cwd: session.cwd,
         worktreePath: request.worktreePath ?? null,
       })
-      await session.send(request)
+      return session.send(request)
     })
 
     ipcMain.handle(AgentIpcChannels.DEQUEUE_MESSAGE, async (_event, projectPath: string, clientMessageId: string) => {

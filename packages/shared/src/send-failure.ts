@@ -24,6 +24,19 @@ export function isRemoteSendDetached(value: unknown): value is RemoteSendDetache
   return typeof value === 'object' && value !== null && (value as { streamDetached?: unknown }).streamDetached === true
 }
 
+/**
+ * `Session.send` result for a user message id the host already took (admitted,
+ * queued, answered or running): nothing is sent again. A Resend from a stale
+ * client lands here instead of running the task twice.
+ */
+export interface DuplicateSend {
+  duplicate: true
+}
+
+export function isDuplicateSend(value: unknown): value is DuplicateSend {
+  return typeof value === 'object' && value !== null && (value as { duplicate?: unknown }).duplicate === true
+}
+
 export function withSendFailure(message: ChatMessage, error: string): ChatMessage {
   return { ...message, metadata: { ...message.metadata, sendFailure: { error } } }
 }

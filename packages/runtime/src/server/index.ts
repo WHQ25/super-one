@@ -51,3 +51,5 @@ export type {
   IdempotencyPort,
   ProvidersPort,
 } from './rpc-context'
+export { dialWebSocket, type NodeSocket, type NodeSocketDialer } from './node-socket'
+export { RelayNodeHost, createRelayNodeDialer, nodeRelayRoomId } from './relay-node-link'

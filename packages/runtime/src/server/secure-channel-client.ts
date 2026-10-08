@@ -1,5 +1,6 @@
-import WebSocket from 'ws'
+import type WebSocket from 'ws'
 import { randomUUID } from 'node:crypto'
+import { dialWebSocket, type NodeSocket, type NodeSocketDialer } from './node-socket'
 import {
   SecureChannelError,
   startClientHandshake,
@@ -18,7 +19,7 @@ function channelError(message: string): Error {
  * node's sealed `channel_ready` arrives; listeners it adds are removed again.
  */
 export function establishSecureChannel(
-  ws: WebSocket,
+  ws: NodeSocket,
   credential: ChannelCredential,
   timeoutMs: number,
 ): Promise<SecureChannel> {
@@ -79,8 +80,10 @@ export async function secureChannelAuthRequest(input: {
   body: Record<string, unknown>
   accessToken?: string
   timeoutMs: number
+  /** How to open the socket; a plain WebSocket to `wsUrl` by default. */
+  dial?: NodeSocketDialer
 }): Promise<{ status: number; body: unknown }> {
-  const ws = new WebSocket(input.wsUrl)
+  const ws = (input.dial ?? dialWebSocket)(input.wsUrl)
   try {
     await new Promise<void>((resolve, reject) => {
       ws.once('open', () => resolve())
@@ -116,3 +119,4 @@ export async function secureChannelAuthRequest(input: {
   }
 }
 export type { ChannelCredential, SecureChannel } from '@superone/relay-client/secure-channel'
+export type { NodeSocket, NodeSocketDialer } from './node-socket'

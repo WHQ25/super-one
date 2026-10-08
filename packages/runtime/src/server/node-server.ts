@@ -18,6 +18,7 @@ import {
   type SecureChannel,
 } from '@superone/relay-client/secure-channel'
 import type { NodeIdentity } from './identity'
+import { MAX_NODE_FRAME_BYTES, type NodeSocket } from './node-socket'
 import type { RpcContext, RpcResult } from './rpc-context'
 
 const MAX_JSON_BYTES = {
@@ -27,8 +28,7 @@ const MAX_JSON_BYTES = {
   default: 64 * 1024,
 } as const
 
-/** Must cover workspace.readFile/writeFile max (10 MiB) plus RPC framing overhead. */
-const MAX_WS_PAYLOAD = 12 * 1024 * 1024
+const MAX_WS_PAYLOAD = MAX_NODE_FRAME_BYTES
 
 interface JsonBody {
   [key: string]: unknown
@@ -119,6 +119,11 @@ export interface NodeServerOptions<C extends NodeRpcRequestContext = RpcContext>
    * frames on `/ws`; plain HTTP auth endpoints and ticketed upgrades are refused.
    */
   secureChannel?: NodeSecureChannelOptions
+  /**
+   * Accept a TCP connection only when this returns true for its peer address.
+   * Checked on `connection`, before any HTTP parsing or auth work.
+   */
+  allowRemoteAddress?: (address: string | undefined) => boolean
 }
 
 export interface NodeSecureChannelOptions {
@@ -138,6 +143,11 @@ export interface NodeServerHandle {
   url: string
   /** Close all sockets for a revoked client session. */
   closeSocketsForClient(clientSessionId: string): void
+  /**
+   * Serve the encrypted channel on a socket that did not arrive through this
+   * HTTP server (a relay slot). Only with `secureChannel`.
+   */
+  acceptChannelSocket(socket: NodeSocket): void
   close(): Promise<void>
 }
 
@@ -151,7 +161,7 @@ export interface NodeServerHandle {
 export async function startNodeServer<C extends NodeRpcRequestContext = RpcContext>(
   opts: NodeServerOptions<C>,
 ): Promise<NodeServerHandle> {
-  const activeSockets = new Map<WebSocket, AuthenticatedClient>()
+  const activeSockets = new Map<NodeSocket, AuthenticatedClient>()
 
   const closeSocketsForClient = (clientSessionId: string) => {
     for (const [ws, client] of activeSockets) {
@@ -189,6 +199,13 @@ export async function startNodeServer<C extends NodeRpcRequestContext = RpcConte
       })
     }
   })
+
+  if (opts.allowRemoteAddress) {
+    const allow = opts.allowRemoteAddress
+    httpServer.on('connection', (socket) => {
+      if (!allow(socket.remoteAddress)) socket.destroy()
+    })
+  }
 
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_WS_PAYLOAD })
 
@@ -272,7 +289,7 @@ export async function startNodeServer<C extends NodeRpcRequestContext = RpcConte
    * proof), then sealed binary frames. Before `attach` only auth exchanges are
    * served; after it, the same RPC handler as a ticketed plain socket.
    */
-  const serveSecureChannel = (ws: WebSocket, channelOpts: NodeSecureChannelOptions): void => {
+  const serveSecureChannel = (ws: NodeSocket, channelOpts: NodeSecureChannelOptions): void => {
     let accept: ReturnType<typeof acceptClientHello> | null = null
     let channel: SecureChannel | null = null
     let rpc: ((read: () => unknown) => Promise<void>) | null = null
@@ -354,7 +371,7 @@ export async function startNodeServer<C extends NodeRpcRequestContext = RpcConte
     }
   }
 
-  const trackClose = (ws: WebSocket, onClose?: () => void): void => {
+  const trackClose = (ws: NodeSocket, onClose?: () => void): void => {
     ws.on('close', () => {
       onClose?.()
       const client = activeSockets.get(ws)
@@ -535,6 +552,10 @@ export async function startNodeServer<C extends NodeRpcRequestContext = RpcConte
     wss,
     url,
     closeSocketsForClient,
+    acceptChannelSocket(socket) {
+      if (!opts.secureChannel) throw new Error('acceptChannelSocket requires secureChannel')
+      serveSecureChannel(socket, opts.secureChannel)
+    },
     async close() {
       for (const ws of activeSockets.keys()) ws.close()
       activeSockets.clear()

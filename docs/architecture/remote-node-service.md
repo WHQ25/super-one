@@ -250,8 +250,8 @@ in-memory session or refuses to save.
 
 `EndpointKind`: `direct-wss`, `tailscale`, `ssh-forward`, `relay`, `local`.
 Endpoint profiles describe access only; they never create a second environment
-or duplicate its projects and Sessions. `relay` is not connectable
-(`CONNECTABLE_ENDPOINT_KINDS` in `client-view.ts`; see §11.4).
+or duplicate its projects and Sessions. A `relay` profile carries the node's
+relay room (`relay.roomId`, routing only; §11.4).
 
 ### 6.4 InstallationProfile
 
@@ -459,7 +459,25 @@ Transient failures retry with capped exponential backoff and jitter. `auth`,
 `user` enter `blocked` and require user action. Resume and network-online events
 trigger an immediate probe.
 
-Endpoint selection follows saved preference, then observed successful routes.
+Every dial picks its route through `NodeRouteResolver`
+(`apps/desktop/src/main/environment/node-route-resolver.ts`) over the order of
+`orderNodeRoutes` (`packages/shared/src/environment/node-route.ts`): LAN
+addresses mDNS reports for the node, the saved preference, then the other
+profiles by path (LAN, Tailscale, direct), relay last. An SSH forward is opened
+only when it is the preferred profile. With more than one candidate, each but
+the last must pass a 2.5 s `/health` identity probe; the relay is not probed.
+A lone candidate (most CLI nodes) is used as before. Only desktop nodes, paired
+with a LAN hint, are looked up over mDNS.
+
+Desktop nodes follow the phone link: LAN on the same network, otherwise
+Tailscale, otherwise the relay. A lost LAN socket is a normal disconnect, so the
+next dial falls through to Tailscale or the relay. While connected off the LAN,
+the 30 s health check also asks whether a route ahead of the current one answers
+(`betterRouteAvailable`); if so it reports the connection unhealthy and the
+supervisor re-dials, landing on the LAN. Sessions carry over: leases belong to
+the client session, and event readers resume with `afterSequence`. The
+environments list shows the live path (`EnvironmentListItem.activePath`).
+
 Failover to another endpoint (`endpoint-failover.ts`) proceeds only after the
 resolved descriptor carries the same `environmentId` and key fingerprint.
 
@@ -485,13 +503,24 @@ identity supplements but never replaces SuperOne application auth. A `tailscale`
 endpoint is an HTTP(S) base URL probed at `/health`; the desktop can suggest a
 host from `tailscale status --json` (`endpoint-probes.ts`) but never uses its own
 Tailscale self IP or its local `tailscaleServeEnabled` state for a remote node.
-Each node is responsible for its own Tailscale endpoint.
+Each node is responsible for its own Tailscale endpoint. A desktop node puts its
+own Tailscale IPv4 address, when it has one, in its pairing code.
 
 ### 11.3 Direct WSS and the encrypted channel
 
 The channel to a node must be encrypted, either by the transport (loopback,
 SSH forward, Tailscale, a TLS reverse proxy) or by the node's encrypted channel.
 Forwarded headers are not trusted by default.
+
+A desktop node listens on every interface while node access is on, but accepts
+TCP peers only from private networks: loopback, RFC 1918, link-local
+(169.254/16, fe80::/10), IPv6 unique-local (fc00::/7) and the Tailscale ranges
+(100.64/10, fd7a:115c:a1e0::/48), IPv4-mapped forms included
+(`packages/shared/src/private-network-address.ts`). Other peers are dropped on
+`connection` (`startNodeServer({ allowRemoteAddress })`), before any HTTP or
+channel work. The phone LAN server applies the same filter. The node also advertises
+itself over mDNS as `_superone-node._tcp` with TXT `env=<environmentId>` and
+`variant`; a paired desktop matches `env` to the pairing (`lan-browser.ts`).
 
 The encrypted channel lets a node serve plain `ws://` on a LAN. It is enabled by
 `startNodeServer({ secureChannel })` (`packages/runtime/src/server/node-server.ts`);
@@ -527,19 +556,35 @@ client must pair again.
 
 ### 11.4 Relay
 
-The environment relay is a separate protocol from mobile remote control: node
-and clients connect outbound to a broker that forwards opaque end-to-end
-encrypted frames and never holds provider credentials or plaintext workspace
-data. It must support node/client roles, multiple clients, per-client identity,
-flow control, replay bounds and connection generation. Relay-visible metadata is
-limited to routing identifiers, connection generation, opaque frame size,
-flow-control counters and expiry; method names, resource IDs, prompts, terminal
-output and file data stay inside the encrypted payload. Relay replay is a
-transport optimization; the node's event log remains the recovery authority.
+The relay (`apps/relay`, the phone link's broker) carries the node encrypted
+channel when two devices are on different networks. It forwards opaque frames
+and never holds provider credentials or plaintext workspace data; its routing
+and framing are in [relay-crypto.md](relay-crypto.md#node-channel-over-the-relay).
 
-The node encrypted channel (§11.3) is the payload this transport will carry
-unchanged. Only the framing contract exists (`packages/shared/src/environment/relay-framing.ts`);
-`apps/relay` serves mobile remote control ([relay-crypto.md](relay-crypto.md)).
+- The node keeps the `desktop` socket of its room open while node access is on
+  (`RelayNodeHost`, `packages/runtime/src/server/relay-node-link.ts`). The room
+  id is derived from the channel root (`nodeRelayRoomId`) and is not secret.
+- Each client connection (an auth exchange or the RPC socket) takes a fresh
+  `mobile` slot in that room (`createRelayNodeDialer`). The node hands each slot
+  to `NodeServerHandle.acceptChannelSocket`, so the handshake, `auth`, `attach`
+  and RPC run exactly as on a direct `/ws` socket.
+- A slot closes when the node leaves or rejoins the relay (its channels are
+  gone), or when the node closes the connection (`kicked` with its close code).
+  The client then reconnects through the supervisor; the node's event log stays
+  the recovery authority.
+- The relay has no `/health` for the node; identity rests on the channel proof
+  and the descriptor's environment id and key fingerprint.
+
+Pairing works over the relay alone: the pairing code (`superone-node:2:`,
+`node-pairing-code.ts`) carries the node's environment id, LAN hint
+(host name and port), optional Tailscale address, relay URL and room, the
+single-use token and the channel credential. The desktop pairs over whichever
+route resolves first.
+
+Known gap: the relay does not authenticate room members. Anyone who knows a room
+id (any device that ever paired, including a revoked one) can take the room's
+`desktop` socket or a slot and disrupt connections. It cannot read or forge
+channel frames, so this is denial of service only.
 
 ## 12. Authentication and Authorization
 

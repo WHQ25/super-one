@@ -9,7 +9,7 @@ import type { TerminalCommandRule } from '@superone/shared/terminal-command-rule
 import type { AttachmentOriginalStatus, DshPluginInstallSource, StageAttachmentOriginalRequest, FileEntryKind, PinnedSessionEntry, ScheduledSend, ScheduledSendPatch, ScheduledSendSessionInit, WindowFoldStep, WindowMiniMode } from '@superone/shared/agent-types'
 import type { GitMentionCapabilities, GitMentionRefKind, GitMentionRefsResult } from '@superone/shared/git-mention-query'
 import type { ConsumerBinding, ConsumerId, Credential, EndpointOverride, Platform, ServiceEndpoint } from '@superone/shared/platform-registry'
-import type { DraftListEntry, DraftUpsertRequest, ProjectSnapshot } from '@superone/shared/environment'
+import type { DraftListEntry, DraftUpsertRequest, PairRemoteInput, ProjectSnapshot } from '@superone/shared/environment'
 import type { IosSimulatorChrome, IosSimulatorCreateRequest, IosSimulatorDevice, IosSimulatorRuntimeOption, IosSimulatorStatus } from '@superone/shared/ios-simulator'
 import type { DeviceCapture, DeviceDescriptor, DeviceFrame, DeviceInput, DeviceInputResult, DeviceState, DeviceStreamOptions, DeviceViewfinderClaim } from '@superone/shared/device'
 import type { DeviceSetupKind, DeviceSetupOption } from '@superone/shared/device-setup'
@@ -407,13 +407,7 @@ const environmentAPI = {
     project: { environmentId: string; projectId: string },
   ) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_WORKSPACE_TAIL_WATCH_STOP, watchId, project),
-  pairRemote: (input: {
-    baseUrl: string
-    pairingToken: string
-    label: string
-    deviceLabel?: string
-    channel?: { keyId: string; secretHex: string }
-  }) =>
+  pairRemote: (input: PairRemoteInput) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_PAIR_REMOTE, input),
   connectWithFailover: (connectionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_CONNECT_FAILOVER, connectionId),

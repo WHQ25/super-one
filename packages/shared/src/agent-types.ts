@@ -5861,6 +5861,10 @@ export interface NodeHostStatus {
  */
 export interface NodeHostPairingToken {
   url: string
+  /** Fields of the pairing code (`node-pairing-code.ts`): LAN hint, Tailscale address, relay room. */
+  lan: { host: string; port: number }
+  tailscaleHost?: string
+  relay?: { url: string; room: string }
   environmentId: string
   nodePublicKeyFingerprint: string
   tokenId: string

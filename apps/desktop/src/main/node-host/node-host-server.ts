@@ -6,6 +6,8 @@ import {
   issueChannelCredential,
   loadOrCreateChannelRoot,
   loadOrCreateIdentity,
+  nodeRelayRoomId,
+  RelayNodeHost,
   startNodeServer,
   unsupportedMethodError,
   type CollaborationPort,
@@ -97,6 +99,14 @@ export interface DesktopNodeHostListen {
   bindHost?: string
   /** The address other devices reach this host at, for the pairing code. */
   advertisedHost?: string
+  /** This host's Tailscale address, offered in the pairing code. */
+  tailscaleHost?: string
+  /** Accept a TCP peer only when this returns true (private networks when listening beyond loopback). */
+  allowRemoteAddress?: (address: string | undefined) => boolean
+  /** Relay broker (`wss://…`) that carries the channel when devices are not on one network. */
+  relayUrl?: string
+  onRelayStatus?: (connected: boolean) => void
+  log?: { info: (message: string) => void; warn: (message: string) => void }
 }
 
 /**
@@ -113,7 +123,8 @@ export class DesktopNodeHost {
     private readonly sessionHost: DesktopSessionHost,
     private readonly server: NodeServerHandle,
     private readonly channelRoot: string,
-    private readonly advertisedUrl: string,
+    private readonly listen: DesktopNodeHostListen,
+    private readonly relay: RelayNodeHost | null,
   ) {}
 
   static async start(deps: DesktopNodeHostDeps, listen: DesktopNodeHostListen): Promise<DesktopNodeHost> {
@@ -155,6 +166,7 @@ export class DesktopNodeHost {
           verifyDeviceProof: verifyPayload,
           dispatchRpc,
           secureChannel: { resolveSecret: (keyId) => deriveIssuedChannelSecret(channelRoot, keyId) },
+          ...(listen.allowRemoteAddress ? { allowRemoteAddress: listen.allowRemoteAddress } : {}),
           onClientDisconnected: () => {},
           createRpcContext: () => ({
             identity,
@@ -174,9 +186,18 @@ export class DesktopNodeHost {
           }),
         })
         auth.onRevoke = (clientSessionId) => server.closeSocketsForClient(clientSessionId)
-        const port = new URL(server.url).port
-        const advertisedUrl = listen.advertisedHost ? `http://${listen.advertisedHost}:${port}` : server.url
-        return new DesktopNodeHost(db, identity, auth, sessionHost, server, channelRoot, advertisedUrl)
+        // The relay carries the same channel frames for devices on other networks.
+        const relay = listen.relayUrl
+          ? new RelayNodeHost({
+              relayUrl: listen.relayUrl,
+              roomId: nodeRelayRoomId(channelRoot),
+              onSocket: (socket) => server.acceptChannelSocket(socket),
+              onStatus: listen.onRelayStatus,
+              log: listen.log,
+            })
+          : null
+        relay?.start()
+        return new DesktopNodeHost(db, identity, auth, sessionHost, server, channelRoot, listen, relay)
       } catch (err) {
         sessionHost.dispose()
         throw err
@@ -192,9 +213,18 @@ export class DesktopNodeHost {
     return this.sessionHost
   }
 
-  /** Where other devices reach this host (the advertised host, else the bind address). */
+  /** Port the node server listens on. */
+  get port(): number {
+    return Number(new URL(this.server.url).port)
+  }
+
+  /** Where other devices reach this host on its LAN (the advertised host, else the bind address). */
   get url(): string {
-    return this.advertisedUrl
+    return this.listen.advertisedHost ? `http://${this.listen.advertisedHost}:${this.port}` : this.server.url
+  }
+
+  get relayConnected(): boolean {
+    return this.relay?.connected === true
   }
 
   /**
@@ -204,7 +234,12 @@ export class DesktopNodeHost {
   mintPairingToken(): NodeHostPairingToken {
     const token = this.auth.createPairingToken()
     return {
-      url: this.advertisedUrl,
+      url: this.url,
+      lan: { host: this.listen.advertisedHost ?? new URL(this.server.url).hostname, port: this.port },
+      ...(this.listen.tailscaleHost ? { tailscaleHost: this.listen.tailscaleHost } : {}),
+      ...(this.relay && this.listen.relayUrl
+        ? { relay: { url: this.listen.relayUrl, room: nodeRelayRoomId(this.channelRoot) } }
+        : {}),
       channel: issueChannelCredential(this.channelRoot, token.tokenId),
       environmentId: this.identity.environmentId,
       nodePublicKeyFingerprint: this.identity.publicKeyFingerprint,
@@ -215,6 +250,7 @@ export class DesktopNodeHost {
   }
 
   async stop(): Promise<void> {
+    this.relay?.stop()
     this.sessionHost.dispose()
     try {
       await this.server.close()

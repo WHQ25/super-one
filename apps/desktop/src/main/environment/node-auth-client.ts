@@ -9,6 +9,7 @@ import type { AuthScope } from '@superone/shared/environment'
 import {
   secureChannelAuthRequest,
   type ChannelCredential,
+  type NodeSocketDialer,
 } from '@superone/runtime/server/secure-channel-client'
 
 export interface DeviceKeyPair {
@@ -123,11 +124,16 @@ async function exchangeWithNode<T>(input: {
   body: Record<string, unknown>
   accessToken?: string
   channel?: ChannelCredential
+  /** Relay slot dialer; the exchange then runs only inside the channel. */
+  dial?: NodeSocketDialer
   operation: string
 }): Promise<T> {
   const url = `${input.baseUrl.replace(/\/$/, '')}${input.path}`
   let status: number
   let body: T & { error?: { code: string; message: string } }
+  if (input.dial && !input.channel) {
+    throw Object.assign(new Error(`${input.operation} over the relay needs the encrypted channel`), { code: 'invalid_config' })
+  }
   if (input.channel) {
     const wsUrl = `${input.baseUrl.replace(/\/$/, '').replace(/^http/, 'ws')}/ws`
     try {
@@ -138,6 +144,7 @@ async function exchangeWithNode<T>(input: {
         body: input.body,
         accessToken: input.accessToken,
         timeoutMs: NODE_REQUEST_TIMEOUT_MS,
+        dial: input.dial,
       })
       status = result.status
       body = (result.body ?? {}) as typeof body
@@ -178,6 +185,7 @@ export async function pairWithNode(input: {
   devicePublicKeyPem: string
   label?: string
   channel?: ChannelCredential
+  dial?: NodeSocketDialer
 }): Promise<PairResult> {
   return exchangeWithNode<PairResult>({
     baseUrl: input.baseUrl,
@@ -188,6 +196,7 @@ export async function pairWithNode(input: {
       label: input.label,
     },
     channel: input.channel,
+    dial: input.dial,
     operation: 'pairing',
   })
 }
@@ -198,6 +207,7 @@ export async function refreshNodeAccess(input: {
   devicePrivateKeyPem: string
   clientSessionId: string
   channel?: ChannelCredential
+  dial?: NodeSocketDialer
 }): Promise<TokenResult> {
   const proofPayload = `refresh:${input.clientSessionId}:${Date.now()}`
   return exchangeWithNode<TokenResult>({
@@ -209,6 +219,7 @@ export async function refreshNodeAccess(input: {
       proofSignature: signWithDeviceKey(input.devicePrivateKeyPem, proofPayload),
     },
     channel: input.channel,
+    dial: input.dial,
     operation: 'token refresh',
   })
 }
@@ -217,6 +228,7 @@ export async function mintWsTicket(input: {
   baseUrl: string
   accessToken: string
   channel?: ChannelCredential
+  dial?: NodeSocketDialer
 }): Promise<string> {
   const body = await exchangeWithNode<{ ticket?: string }>({
     baseUrl: input.baseUrl,
@@ -224,6 +236,7 @@ export async function mintWsTicket(input: {
     body: {},
     accessToken: input.accessToken,
     channel: input.channel,
+    dial: input.dial,
     operation: 'WebSocket ticket',
   })
   if (!body.ticket) {

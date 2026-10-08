@@ -24,7 +24,7 @@ import { countAddedLines } from './git-added-lines'
 import { activateWorktree, assignBranch, getCheckedOutBranches, getHandoffPreview, getWorktreeInfo, gitErrorMessage, handoffToLocal } from './git/worktree-ops'
 import { is } from '@electron-toolkit/utils'
 import type { EnvironmentHost } from './environment/environment-host'
-import type { DraftUpsertRequest } from '@superone/shared/environment'
+import type { DraftUpsertRequest, PairRemoteInput } from '@superone/shared/environment'
 import log from './logger'
 import { packagedUserDataPath, resolveAndMigrateUserData } from './user-data-path'
 import { variant, variantId, variantDownloadUrl } from './variant'
@@ -944,7 +944,8 @@ let nodeHostLoaded = false
 async function applyNodeHostSettings(settings: AppSettings): Promise<void> {
   nodeHostLoaded = true
   const { applyNodeHostSettings: apply } = await import('./node-host/node-host-controller')
-  await apply(settings, sessionManager)
+  // The same relay the phone link uses carries the node channel across networks.
+  await apply(settings, sessionManager, { relayUrl: readRemoteConfig()?.relayUrl || __CF_RELAY_URL__ })
 }
 
 async function applyAppSettingsPatch(patch: AppSettingsPatch): Promise<AppSettings> {
@@ -1832,7 +1833,7 @@ function registerIpcHandlers(): void {
     AgentIpcChannels.ENVIRONMENT_PAIR_REMOTE,
     async (
       _e,
-      input: { baseUrl: string; pairingToken: string; label: string; deviceLabel?: string; channel?: { keyId: string; secretHex: string } },
+      input: PairRemoteInput,
     ) => {
       const { getEnvironmentHost } = await import('./environment')
       return getEnvironmentHost().pairRemote(input)

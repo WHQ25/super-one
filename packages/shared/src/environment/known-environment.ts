@@ -20,7 +20,8 @@ export interface EndpointProfile {
   label: string
   /**
    * Connection target depending on kind:
-   * - direct-wss / tailscale / relay: wss URL or host:port
+   * - direct-wss / tailscale: http(s) base URL or host:port
+   * - relay: the relay broker's ws(s) URL
    * - ssh-forward: OpenSSH destination (user@host or Host alias)
    * - local: empty / unused
    */
@@ -50,6 +51,8 @@ export interface EndpointProfile {
      */
     nodeBinDir?: string
   }
+  /** Relay endpoints: the node's relay room (routing only, not a secret). */
+  relay?: { roomId: string }
   /** Last successful connection timestamp (ms), client-local. */
   lastSuccessAt?: number
 }

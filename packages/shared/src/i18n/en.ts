@@ -961,6 +961,8 @@ export type Messages = {
       forgetConfirm: string
       addSuccess: string
       credentialInMemoryOnly: string
+      /** How a connected node is reached right now. */
+      path: { label: string; lan: string; tailscale: string; relay: string; ssh: string; direct: string }
       noSessionsCapability: string
       nodeOutdated: string
       nodeOutdatedManual: string
@@ -5318,6 +5320,14 @@ export const en: Messages = {
       addSuccess: 'Environment connected',
       credentialInMemoryOnly:
         'OS secure storage is unavailable, so this credential is kept in memory only and will be lost when SuperOne quits.',
+      path: {
+        label: 'Connected via',
+        lan: 'LAN',
+        tailscale: 'Tailscale',
+        relay: 'Relay',
+        ssh: 'SSH',
+        direct: 'Direct',
+      },
       noSessionsCapability:
         'This node does not advertise agent sessions yet. Terminal and workspace operations still work.',
       nodeOutdated:

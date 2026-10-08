@@ -17,11 +17,16 @@ const SECRET = 'e4620c0bf60dd8153f5073df3027f93dd7616ff89520dfbc6594907857bf6e6d
 
 function code(paste: NonNullable<Params['paste']>): string {
   if (paste === 'garbage') return 'superone://pair?channel=c0ffee&key=abc'
-  if (paste === 'newer') return 'superone-node:2:eyJ1IjoiaHR0cDovL3gifQ'
+  if (paste === 'newer') return 'superone-node:3:eyJ1IjoiaHR0cDovL3gifQ'
   return encodeNodePairingCode({
-    url: paste === 'long'
-      ? 'http://hangqi-studio-display-workstation-with-a-very-long-bonjour-name.local:47791'
-      : 'http://Hangqis-Studio.local:7791',
+    environmentId: 'env-9f3c2a',
+    lan: {
+      host: paste === 'long'
+        ? 'hangqi-studio-display-workstation-with-a-very-long-bonjour-name.local'
+        : 'Hangqis-Studio.local',
+      port: paste === 'long' ? 47791 : 7791,
+    },
+    relay: { url: 'wss://relay.superone.example', room: '0f'.repeat(16) },
     pairingToken: 'pt_Jx8m2W0qLr4nB6sVt3yHc1kA',
     channel: { keyId: 'tok_7d1e', secretHex: SECRET },
     expiresAt: paste === 'expired' ? Date.now() - 1_000 : Date.now() + 10 * 60_000,

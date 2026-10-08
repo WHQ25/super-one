@@ -3,7 +3,7 @@ import i18n from 'i18next'
 import { expect, userEvent, within } from 'storybook/test'
 import type { EnvironmentListItem } from '@superone/shared/environment'
 import { EnvironmentsPage } from './EnvironmentsPage'
-import { ENVIRONMENT_ITEMS, mockEnvironmentApi } from './story-fixtures'
+import { DESKTOP_PATH_ITEMS, ENVIRONMENT_ITEMS, mockEnvironmentApi } from './story-fixtures'
 
 type Params = { items?: EnvironmentListItem[] | null; labReachable?: boolean; width?: number }
 
@@ -41,6 +41,19 @@ export const Populated: Story = {}
 export const LabOnline: Story = { parameters: { items: ENVIRONMENT_ITEMS.slice(0, 1), labReachable: true } }
 
 export const Narrow: Story = { parameters: { width: 460 } }
+
+/** Paired desktops on the LAN, over Tailscale and over the relay; a reconnecting one shows no path. */
+export const ConnectionPaths: Story = {
+  parameters: { items: DESKTOP_PATH_ITEMS },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    for (const path of ['lan', 'tailscale', 'relay'] as const) {
+      await expect(await canvas.findByText(i18n.t(`settings.environments.path.${path}`))).toBeInTheDocument()
+    }
+  },
+}
+
+export const ConnectionPathsNarrow: Story = { parameters: { items: DESKTOP_PATH_ITEMS, width: 460 } }
 
 /** Desktop card → Add Desktop opens the pairing-code dialog. */
 export const AddDesktop: Story = {

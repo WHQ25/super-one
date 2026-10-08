@@ -37,15 +37,7 @@ export function NodePairingCodePanel({ token, renewing, onRenew, onDone }: {
   onDone: () => void
 }) {
   const { t } = useTranslation()
-  const code = useMemo(
-    () => encodeNodePairingCode({
-      url: token.url,
-      pairingToken: token.pairingToken,
-      channel: token.channel,
-      expiresAt: token.expiresAt,
-    }),
-    [token],
-  )
+  const code = useMemo(() => encodeNodePairingCode(token), [token])
   const now = useNowUntil(token.expiresAt)
   const expired = now >= token.expiresAt
 

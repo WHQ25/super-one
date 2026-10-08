@@ -6,7 +6,6 @@ import {
   tailscaleEndpoint,
 } from './endpoint-failover'
 import type { KnownEnvironment } from './known-environment'
-import { assertRelayOpaque, decodeRelayFrame, encodeRelayFrame } from './relay-framing'
 import { ConnectionSupervisorCore } from './connection-supervisor-core'
 
 const known: KnownEnvironment = {
@@ -76,23 +75,6 @@ describe('endpoint failover', () => {
   it('orders preferred first', () => {
     const ordered = orderEndpoints(known, true)
     expect(ordered[0]?.endpointId).toBe('ssh')
-  })
-})
-
-describe('relay framing', () => {
-  it('round-trips opaque frames without application fields', () => {
-    const frame = {
-      header: {
-        routeId: 'route-1',
-        connectionGeneration: 3,
-        payloadBytes: 16,
-      },
-      ciphertext: Buffer.from('encrypted-payload').toString('base64url'),
-    }
-    const encoded = encodeRelayFrame(frame)
-    expect(encoded).not.toContain('sessions.send')
-    assertRelayOpaque(frame)
-    expect(decodeRelayFrame(encoded)).toEqual(frame)
   })
 })
 

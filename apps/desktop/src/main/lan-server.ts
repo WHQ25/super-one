@@ -10,6 +10,7 @@ import { WebSocket, WebSocketServer } from 'ws'
 import log from './logger'
 import { trace } from './agent/event-trace'
 import type { RemoteCommand } from '@superone/shared/agent-types'
+import { isPrivateNetworkAddress } from '@superone/shared/private-network-address'
 import type { LinkHandshakeInfo } from '@superone/relay-client/phone-link'
 import type { SecureChannel } from '@superone/relay-client/secure-channel'
 import type { LanFileTokenSigner } from './lan-file-token'
@@ -94,6 +95,11 @@ export class LanServer {
       }
       res.writeHead(426)
       res.end('Upgrade required')
+    })
+    // Phones reach this server on the LAN or a tailnet; refuse anyone else
+    // before any HTTP or handshake work.
+    httpServer.on('connection', (socket) => {
+      if (!isPrivateNetworkAddress(socket.remoteAddress)) socket.destroy()
     })
     const wss = new WebSocketServer({ server: httpServer, path: '/ws' })
 

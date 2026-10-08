@@ -41,6 +41,8 @@ const OFF: NodeHostStatus = { running: false, url: null, environmentId: null, er
 function token(expired: boolean): NodeHostPairingToken {
   return {
     url: LISTENING.url!,
+    lan: { host: 'Hangqis-Studio.local', port: 7791 },
+    relay: { url: 'wss://relay.superone.example', room: '0f'.repeat(16) },
     environmentId: 'env-9f3c2a',
     nodePublicKeyFingerprint: 'sha256:2f9a',
     tokenId: 'tok_7d1e',

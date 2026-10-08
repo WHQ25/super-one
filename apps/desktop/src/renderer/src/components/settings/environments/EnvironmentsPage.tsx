@@ -22,6 +22,7 @@ import {
   type EndpointKind,
   type SupervisorState,
 } from '@superone/shared/environment'
+import { Badge } from '@superone/ui/components/ui/badge'
 import { Button } from '@superone/ui/components/ui/button'
 import { cn } from '@superone/ui/lib/utils'
 import {
@@ -666,6 +667,15 @@ function EnvironmentDeviceRow({
           <span className="truncate text-sm">{item.label}</span>
           {subtitle ? (
             <span className="min-w-0 truncate text-xs text-muted-foreground">{subtitle}</span>
+          ) : null}
+          {live && item.activePath ? (
+            <Badge
+              variant="outline"
+              className="px-1.5 py-0 text-[10px] font-normal text-muted-foreground"
+              title={`${t('settings.environments.path.label')}: ${t(`settings.environments.path.${item.activePath}`)}`}
+            >
+              {t(`settings.environments.path.${item.activePath}`)}
+            </Badge>
           ) : null}
           {identityConflict ? (
             <span className="shrink-0 text-xs text-destructive">

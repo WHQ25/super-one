@@ -27,7 +27,7 @@ import type { IosSimulatorChrome, IosSimulatorCreateRequest, IosSimulatorDevice,
 import type { DeviceCapture, DeviceDescriptor, DeviceFrame, DeviceInput, DeviceInputResult, DeviceState, DeviceStreamOptions, DeviceViewfinderClaim, LoadedDeviceModel } from '@superone/shared/device'
 import type { DeviceSetupKind, DeviceSetupOption } from '@superone/shared/device-setup'
 import type { DeviceEnvironmentAction, DeviceEnvironmentResult, DeviceEnvironmentState } from '@superone/shared/device-environment'
-import type { SyncZoneReclaimResult, SyncZoneUsage } from '@superone/shared/environment'
+import type { PairRemoteInput, SyncZoneReclaimResult, SyncZoneUsage } from '@superone/shared/environment'
 // Re-export so renderer consumers of the preload types see the correlated shape.
 export type { EnvironmentInstallProgress } from '@superone/shared/environment'
 
@@ -986,16 +986,7 @@ export interface EnvironmentAPI extends MediaComposerAPI {
     watchId: string,
     project: { environmentId: string; projectId: string },
   ): Promise<{ ok: boolean }>
-  pairRemote(input: {
-    baseUrl: string
-    pairingToken: string
-    /** Name this computer stores for the node. */
-    label: string
-    /** Name the node shows for this computer ("Started from …"); defaults to `label`. */
-    deviceLabel?: string
-    /** Encrypted-channel credential carried by the node's pairing code. */
-    channel?: { keyId: string; secretHex: string }
-  }): Promise<{ connectionId: string; descriptor: unknown; persisted: boolean }>
+  pairRemote(input: PairRemoteInput): Promise<{ connectionId: string; descriptor: unknown; persisted: boolean }>
   connectWithFailover(connectionId: string): Promise<unknown>
   /** Dev-only: probe local remote-node lab on loopback. */
   localLabStatus(): Promise<{

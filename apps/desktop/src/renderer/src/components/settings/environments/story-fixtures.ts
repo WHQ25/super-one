@@ -27,8 +27,8 @@ const desktop = (id: string, label: string, url: string, patch: Partial<Environm
 })
 
 export const ENVIRONMENT_ITEMS: EnvironmentListItem[] = [
-  desktop('studio', 'Hangqis-Studio', 'http://Hangqis-Studio.local:7791', { state: 'connected' }),
-  ssh('build-box', 'build-box', 'dev@build-box.internal', { state: 'connected' }),
+  desktop('studio', 'Hangqis-Studio', 'http://Hangqis-Studio.local:7791', { state: 'connected', activePath: 'lan' }),
+  ssh('build-box', 'build-box', 'dev@build-box.internal', { state: 'connected', activePath: 'ssh' }),
   ssh('gpu', 'gpu-workstation', 'hangqi@10.0.0.42', {
     nodeUpgrade: { remoteVersion: '0.69.0', targetVersion: '0.71.2', canUpgradeOverSsh: true },
   }),
@@ -46,6 +46,14 @@ export const ENVIRONMENT_ITEMS: EnvironmentListItem[] = [
     blockReason: 'identity_conflict',
     lastError: 'Node fingerprint changed since pairing',
   }),
+]
+
+/** A desktop node reached each way it can be: LAN, Tailscale, relay, and while reconnecting. */
+export const DESKTOP_PATH_ITEMS: EnvironmentListItem[] = [
+  desktop('studio', 'Hangqis-Studio', 'http://Hangqis-Studio.local:7791', { state: 'connected', activePath: 'lan' }),
+  desktop('office', 'Office-iMac', 'http://Office-iMac.local:7791', { state: 'connected', activePath: 'tailscale' }),
+  desktop('travel', 'hangqi-studio-display-workstation-with-a-very-long-bonjour-name', 'http://hangqi-studio-display-workstation-with-a-very-long-bonjour-name.local:47791', { state: 'connected', activePath: 'relay' }),
+  desktop('home', 'Home-Mini', 'http://Home-Mini.local:7791', { state: 'backoff', lastError: 'node left the relay' }),
 ]
 
 const REMOTE_HARNESSES = [

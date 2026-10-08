@@ -54,6 +54,9 @@ Rules:
   the relay forwards opaque payloads and its envelopes and control frames are
   unaffected. There is no version negotiation: desktop and phone upgrade together,
   and phones paired before per-device channel secrets must pair again.
+- The LAN server listens on every interface but drops peers outside private
+  networks (loopback, RFC 1918, link-local, IPv6 unique-local, Tailscale) on
+  `connection`, like the desktop node ([remote-node-service.md §11.3](remote-node-service.md)).
 - Fixture: [`host-payload-v1.json`](../../packages/relay-client/src/fixtures/host-payload-v1.json)
   holds raw and deflated frames, checked by `host-payload.test.ts`.
 

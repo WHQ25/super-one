@@ -134,6 +134,26 @@ connection) run the channel above over JSON text envelopes:
 The desktop installs a `node:crypto` AES-GCM backend for the shared code and
 loads it lazily, outside the startup chunk.
 
+## Node channel over the relay
+
+`packages/runtime/src/server/relay-node-link.ts` carries the node encrypted
+channel through the same relay, in the phone link's `channel` envelope:
+
+- Room: `desktop` is the node; the room id is the first 32 hex characters of
+  HMAC-SHA-256(channel root, `superone-channel/v1|relay-room`). Every client
+  connection opens its own `mobile` slot `node-<uuid>`, so one connection's
+  frames never mix with another's.
+- Frames: a handshake text frame travels as `{ type: 'channel', msg }`; a sealed
+  binary channel frame as base64 `data`, split into parts of at most
+  `REMOTE_RESPONSE_CHUNK_CHARS` with `more: true` on all but the last. Frame
+  bytes are unchanged; the assembled frame is capped at the node's 12 MiB
+  WebSocket limit.
+- Closing: the node ends a slot with `{ type: 'kicked', code, reason }`; a client
+  slot also closes on `peer_connected`, `peer_disconnected` and
+  `desktop_shutdown`, since the node's channel for it is gone.
+- The relay sees the room id, slot ids, the key id in the hello and frame sizes.
+  Room membership is not authenticated (see the phone link above).
+
 ## Golden vectors
 
 - [`relay-crypto-vectors.json`](../../packages/relay-client/src/fixtures/relay-crypto-vectors.json):

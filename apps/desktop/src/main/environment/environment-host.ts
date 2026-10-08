@@ -14,6 +14,7 @@ import type {
   ArtifactPutResult,
   ArtifactStatResult,
   EndpointProfile,
+  PairRemoteInput,
   EnvironmentGateway,
   EnvironmentOs,
   WorkspaceEntry,
@@ -38,7 +39,6 @@ import {
   shouldOfferNodeUpgrade,
   sshArgsForSpec,
   tailscaleEndpoint,
-  relayEndpoint,
   tunnelSpecFromEndpoint,
   type RemoteInstallSource,
 } from '@superone/shared/environment'
@@ -48,7 +48,8 @@ import { NodeConnectionManager } from './node-connection-manager'
 import { NodeCredentialStore } from './node-credential-store'
 import { WorkspaceRouter } from './workspace-router'
 import { probeEndpointHealth, discoverTailscaleHost } from './endpoint-probes'
-import type { KnownEnvironmentRecord } from './node-connection-manager'
+import type { KnownEnvironmentRecord, ResolvedNodeRoute } from './node-connection-manager'
+import { NodeRouteResolver, cachedNodeLanDiscovery, type NodeRouteTarget } from './node-route-resolver'
 import type { CodexMcpOauthLoginOptions } from '@superone/shared/agent-types'
 import { SshTunnelManager } from './ssh-tunnel-manager'
 import { formatConnectionLog } from './connection-log'
@@ -113,6 +114,8 @@ import {
 } from './remote-host-action-consumer'
 
 export interface EnvironmentHostOptions {
+  /** mDNS lookup of desktop nodes on this network (LAN base URLs per environment id). */
+  discoverLan?: (environmentId: string) => Promise<string[]>
   /** Injectable for tests; production opens real `ssh -L` forwards. */
   tunnels?: SshTunnelManager
   /** Injectable for tests; production shells out to the system OpenSSH client. */
@@ -168,6 +171,8 @@ export class EnvironmentHost {
   readonly connections: NodeConnectionManager
   readonly workspaceRouter: WorkspaceRouter
   readonly tunnels: SshTunnelManager
+  /** Route of each dial: LAN, Tailscale, SSH forward or relay. */
+  private readonly routes: NodeRouteResolver
   private readonly knownPath: string
   private readonly bootstrap: (opts: SshBootstrapOptions) => Promise<SshBootstrapResult>
   private readonly probeHost: (target: SshTarget) => Promise<RemoteHostProbe>
@@ -274,6 +279,11 @@ export class EnvironmentHost {
       },
     })
     this.tunnels = options.tunnels ?? new SshTunnelManager()
+    this.routes = new NodeRouteResolver({
+      discoverLan: options.discoverLan ?? cachedNodeLanDiscovery(),
+      probe: (baseUrl, target) => probeNodeIdentity(baseUrl, target),
+      openSshForward: (target, profile) => this.openSshForward(target as KnownEnvironmentRecord, profile),
+    })
     this.bootstrap = options.bootstrapOverSsh ?? bootstrapNodeOverSsh
     this.probeHost = options.probeHost ?? probeRemoteHost
     this.installNode = options.installNode ?? installNodeOverSsh
@@ -290,7 +300,8 @@ export class EnvironmentHost {
       // Existing-connection dials (including first) rebuild tunnels here under the
       // supervisor. Pairing still skips the first resolve so bootstrap adopt() is
       // not raced (see resolveEndpointFromFirstAttempt).
-      resolveReconnectBaseUrl: (known) => this.resolveBaseUrl(known),
+      resolveReconnectRoute: (known) => this.routes.resolve(known),
+      betterRouteAvailable: (known, current) => this.routes.betterThan(known, current),
     })
     this.registry.setConnectionManager(this.connections)
     this.workspaceRouter = new WorkspaceRouter((environmentId) => this.registry.get(environmentId))
@@ -309,15 +320,30 @@ export class EnvironmentHost {
     return this.workspaceRouter
   }
 
-  async pairRemote(input: {
-    baseUrl: string
-    pairingToken: string
-    label: string
-    deviceLabel?: string
-    endpointProfiles?: EndpointProfile[]
-    channel?: { keyId: string; secretHex: string }
-  }) {
-    const result = await this.connections.pairAndConnect(input)
+  /**
+   * Pair with a node. A desktop node's pairing code gives routes instead of a
+   * URL: pairing runs over the LAN when the node answers there (mDNS or the
+   * code's LAN hint), else Tailscale, else the relay, so two desktops on
+   * different networks pair without opening a port.
+   */
+  async pairRemote(input: PairRemoteInput) {
+    let baseUrl = input.baseUrl
+    let route: ResolvedNodeRoute | undefined
+    if (!baseUrl) {
+      const profiles = input.endpointProfiles ?? []
+      if (!input.environmentId || profiles.length === 0) {
+        throw Object.assign(new Error('pairing needs a node URL or the routes from its pairing code'), { code: 'invalid_argument' })
+      }
+      route = await this.routes.resolve({
+        environmentId: input.environmentId,
+        endpointProfiles: profiles,
+        preferredEndpointId: profiles[0].endpointId,
+      })
+      if (!route) throw Object.assign(new Error('no route to the node'), { code: 'unavailable' })
+      // The stored base URL is a direct address even when pairing went through the relay.
+      baseUrl = route.dial ? (profiles.find((p) => p.kind !== 'relay')?.target ?? route.baseUrl) : route.baseUrl
+    }
+    const result = await this.connections.pairAndConnect({ ...input, baseUrl, route })
     this.startHostActionConsumer(result.connectionId)
     return result
   }
@@ -2633,6 +2659,7 @@ export class EnvironmentHost {
         note: descriptor?.note,
         endpointProfiles: known.endpointProfiles,
         preferredEndpointId: known.preferredEndpointId,
+        activePath: this.connections.getActivePath(known.connectionId) ?? undefined,
         installationProfile: known.installationProfile,
         credentialInMemoryOnly: !this.credentials.isSecureStorageAvailable(),
         nodeUpgrade: this.nodeUpgradeFor(known, descriptor?.cliVersion),
@@ -2866,7 +2893,7 @@ export class EnvironmentHost {
       known.endpointProfiles.find((p) => p.endpointId === known.preferredEndpointId) ??
       known.endpointProfiles[0]
     if (preferred && tunnelSpecFromEndpoint(preferred)) {
-      const resolved = await this.resolveBaseUrl(known)
+      const resolved = await this.openSshForward(known, preferred)
       if (resolved) baseUrl = resolved
     }
 
@@ -3265,14 +3292,9 @@ export class EnvironmentHost {
     return { version: installed.version, warnings }
   }
 
-  /** Resolve a usable base URL, rebuilding an SSH tunnel when the endpoint needs one. */
-  private async resolveBaseUrl(known: KnownEnvironmentRecord): Promise<string | undefined> {
-    const preferred =
-      known.endpointProfiles.find((p) => p.endpointId === known.preferredEndpointId) ??
-      known.endpointProfiles[0]
-    if (!preferred) return known.baseUrl
-
-    const spec = tunnelSpecFromEndpoint(preferred)
+  /** Rebuild (or reuse) the SSH tunnel of an ssh-forward profile; its local base URL. */
+  private async openSshForward(known: KnownEnvironmentRecord, profile: EndpointProfile): Promise<string | undefined> {
+    const spec = tunnelSpecFromEndpoint(profile)
     if (spec) {
       return this.tunnels.ensure(known.connectionId, spec, {
         // Process-alive alone is not enough: require HTTP health + identity.
@@ -3284,9 +3306,6 @@ export class EnvironmentHost {
           })
         },
       })
-    }
-    if (preferred.kind === 'direct-wss' || preferred.kind === 'tailscale') {
-      return preferred.target || known.baseUrl
     }
     return known.baseUrl
   }
@@ -3346,8 +3365,9 @@ export class EnvironmentHost {
     const known = this.connections.listKnown().find((k) => k.connectionId === connectionId)
     if (!known) throw new Error(`unknown connection ${connectionId}`)
 
-    // Only profiles already bound to this known environment.
-    // Exclude relay until transport adapter exists; never use Desktop Tailscale Self IP.
+    // Only profiles already bound to this known environment, probed over HTTP.
+    // The relay has no HTTP surface; the supervisor's route selection
+    // (NodeRouteResolver) falls back to it. Never use Desktop Tailscale Self IP.
     const profiles = known.endpointProfiles.filter((p) => p.kind !== 'relay')
     void discoverTailscaleHost
     void tailscaleEndpoint
@@ -3383,29 +3403,6 @@ export class EnvironmentHost {
       endpointId: selected.endpointId,
       environmentId: selected.environmentId!,
     }
-  }
-
-  /**
-   * Record a relay endpoint for future transport work.
-   * Relay profiles are intentionally excluded from connectWithFailover until
-   * an E2E frame adapter exists — metadata only.
-   */
-  addRelayEndpoint(connectionId: string, relayUrl: string): void {
-    const known = this.connections.listKnown().find((k) => k.connectionId === connectionId)
-    if (!known) throw new Error(`unknown connection ${connectionId}`)
-    const next: KnownEnvironmentRecord = {
-      ...known,
-      endpointProfiles: [
-        ...known.endpointProfiles.filter((p) => p.kind !== 'relay'),
-        {
-          ...relayEndpoint({ relayUrl }),
-          // Marker for UI: not selectable for NodeRpcClient connect.
-          label: `${relayEndpoint({ relayUrl }).label} (unsupported transport)`,
-        },
-      ],
-      updatedAt: Date.now(),
-    }
-    this.saveKnown(next)
   }
 
   dispose(): void {
@@ -3551,4 +3548,17 @@ async function mapPool<T>(
     }
   })
   await Promise.all(runners)
+}
+
+/** `/health` identity probe for route selection; a short timeout so a dead LAN falls through quickly. */
+async function probeNodeIdentity(baseUrl: string, target: NodeRouteTarget): Promise<boolean> {
+  const result = await probeEndpointHealth(
+    { endpointId: 'probe', kind: 'direct-wss', label: baseUrl, target: baseUrl },
+    { timeoutMs: 2_500 },
+  )
+  return (
+    result.ok &&
+    result.environmentId === target.environmentId &&
+    (!target.nodePublicKeyFingerprint || result.nodePublicKeyFingerprint === target.nodePublicKeyFingerprint)
+  )
 }

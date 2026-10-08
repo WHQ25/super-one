@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { ExecutionEnvironmentDescriptor, KnownEnvironment } from '@superone/shared/environment'
+import type { ExecutionEnvironmentDescriptor, KnownEnvironment, NodeLinkPath } from '@superone/shared/environment'
 import {
   ConnectionSupervisor,
   type RetryNowDisposition,
@@ -15,13 +15,19 @@ import {
   refreshNodeAccess,
 } from './node-auth-client'
 import { NodeCredentialStore, type NodeDeviceCredential } from './node-credential-store'
-import { NodeRpcClient } from './node-rpc-client'
+import { NodeRpcClient, type NodeRoute } from './node-rpc-client'
 import type { ChannelCredential } from '@superone/runtime/server/secure-channel-client'
 import { RemoteEnvironmentGateway } from './remote-environment-gateway'
 
 export interface KnownEnvironmentRecord extends KnownEnvironment {
   /** Last known base URL (direct or forwarded). */
   baseUrl?: string
+}
+
+/** A route picked for one dial: where, how (relay slot dialer), and which path it is. */
+export interface ResolvedNodeRoute extends NodeRoute {
+  path: NodeLinkPath
+  endpointId: string
 }
 
 export interface NodeConnectionManagerOptions {
@@ -39,6 +45,22 @@ export interface NodeConnectionManagerOptions {
   resolveReconnectBaseUrl?: (
     known: Readonly<KnownEnvironmentRecord>,
   ) => Promise<string | undefined>
+  /**
+   * Pick the route for a dial (LAN, Tailscale, relay…). Takes precedence over
+   * `resolveReconnectBaseUrl`; returning undefined keeps the stored base URL.
+   */
+  resolveReconnectRoute?: (
+    known: Readonly<KnownEnvironmentRecord>,
+  ) => Promise<ResolvedNodeRoute | undefined>
+  /**
+   * While connected over a route other than the LAN: whether a better one is
+   * reachable now. True makes the periodic health check hand the connection
+   * back to the supervisor, which re-dials through `resolveReconnectRoute`.
+   */
+  betterRouteAvailable?: (
+    known: Readonly<KnownEnvironmentRecord>,
+    current: ResolvedNodeRoute,
+  ) => Promise<boolean>
 }
 
 interface LiveConnection {
@@ -54,6 +76,8 @@ interface LiveConnection {
   credentialDirty: boolean
   /** Last reason disk persist failed (durable degraded signal). */
   credentialPersistError?: string
+  /** Route of the current (or last) dial. */
+  route?: ResolvedNodeRoute
 }
 
 /**
@@ -92,6 +116,19 @@ export class NodeConnectionManager {
     return live?.client.connected === true && live.supervisor.getSnapshot().state === 'connected'
   }
 
+  /** How the live connection reaches its node; null while not connected. */
+  getActivePath(connectionId: string): NodeLinkPath | null {
+    if (!this.isConnected(connectionId)) return null
+    return this.lives.get(connectionId)?.route?.path ?? null
+  }
+
+  /** Re-check a live connection now (e.g. its node just appeared on the LAN). */
+  async checkRoute(environmentId: string): Promise<void> {
+    for (const live of this.lives.values()) {
+      if (live.environmentId === environmentId) await live.supervisor.wake('health-probe').catch(() => {})
+    }
+  }
+
   getSupervisor(connectionId: string): SupervisorSnapshot | null {
     const live = this.lives.get(connectionId)
     if (!live) return null
@@ -113,6 +150,8 @@ export class NodeConnectionManager {
    */
   async pairAndConnect(input: {
     baseUrl: string
+    /** The route pairing runs through when it is not a plain base URL (relay). */
+    route?: ResolvedNodeRoute
     pairingToken: string
     /** Name this side stores for the node. */
     label: string
@@ -129,6 +168,7 @@ export class NodeConnectionManager {
       devicePublicKeyPem: device.publicKeyPem,
       label: input.deviceLabel ?? input.label,
       channel: input.channel,
+      dial: input.route?.dial,
     })
 
     const connectionId = randomUUID()
@@ -164,7 +204,7 @@ export class NodeConnectionManager {
           target: input.baseUrl,
         },
       ],
-      preferredEndpointId: 'primary',
+      preferredEndpointId: input.endpointProfiles?.[0]?.endpointId ?? 'primary',
       desired: true,
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -177,6 +217,7 @@ export class NodeConnectionManager {
     // dial so bootstrap adopt() is not raced by a second tunnels.ensure().
     const descriptor = await this.connectWithCredential(credential, {
       resolveEndpointFromFirstAttempt: false,
+      route: input.route,
     })
     return {
       connectionId,
@@ -357,9 +398,16 @@ export class NodeConnectionManager {
 
   private async connectWithCredential(
     credential: NodeDeviceCredential,
-    options?: { resolveEndpointFromFirstAttempt?: boolean },
+    options?: { resolveEndpointFromFirstAttempt?: boolean; route?: ResolvedNodeRoute },
   ): Promise<ExecutionEnvironmentDescriptor> {
     this.disconnect(credential.connectionId)
+
+    // A relayed route carries its own dialer; direct routes use credential.baseUrl.
+    let route: ResolvedNodeRoute = options?.route ?? {
+      baseUrl: credential.baseUrl,
+      path: 'direct',
+      endpointId: 'primary',
+    }
 
     let accessToken = ''
     let accessExpiresAt = 0
@@ -438,11 +486,12 @@ export class NodeConnectionManager {
           // Re-check after winning the in-flight slot — a peer may have just refreshed.
           if (accessToken && accessExpiresAt > Date.now() + 30_000) return accessToken
           const tokens = await refreshNodeAccess({
-            baseUrl: credential.baseUrl,
+            baseUrl: route.baseUrl,
             refreshToken: credential.refreshToken,
             devicePrivateKeyPem: credential.devicePrivateKeyPem,
             clientSessionId: credential.clientSessionId,
             channel: credential.channel,
+            dial: route.dial,
           })
           // Server-returned rotated refresh is authoritative in memory even if disk save fails.
           // Using the old refresh again would trigger reuse-revocation of the valid family.
@@ -467,7 +516,8 @@ export class NodeConnectionManager {
     let skipResolverOnce = options?.resolveEndpointFromFirstAttempt !== true
 
     const client = new NodeRpcClient({
-      baseUrl: credential.baseUrl,
+      baseUrl: route.baseUrl,
+      dial: route.dial,
       expectedEnvironmentId: credential.environmentId,
       expectedNodePublicKeyFingerprint: credential.nodePublicKeyFingerprint,
       devicePrivateKeyPem: credential.devicePrivateKeyPem,
@@ -475,7 +525,7 @@ export class NodeConnectionManager {
       supervised: true,
       getWsTicket: async () => {
         const token = await ensureAccess()
-        return mintWsTicket({ baseUrl: credential.baseUrl, accessToken: token, channel: credential.channel })
+        return mintWsTicket({ baseUrl: route.baseUrl, accessToken: token, channel: credential.channel, dial: route.dial })
       },
       onUnexpectedDisconnect: (error) => {
         // Defer so the close handler finishes clearing socket state first.
@@ -487,8 +537,24 @@ export class NodeConnectionManager {
       },
     })
 
+    const applyRoute = (next: ResolvedNodeRoute): void => {
+      route = { ...next, baseUrl: next.baseUrl.replace(/\/$/, '') }
+      const live = this.lives.get(credential.connectionId)
+      if (live) live.route = route
+      client.setRoute(route)
+      // The stored base URL stays the last direct address; a relay URL is not one.
+      if (!route.dial && route.baseUrl !== credential.baseUrl) {
+        credential.baseUrl = route.baseUrl
+        tryPersistCredential()
+        if (this.known.has(credential.connectionId)) this.updateKnown(credential.connectionId, { baseUrl: route.baseUrl })
+      }
+    }
+
     const applyBaseUrl = (next: string): void => {
       const normalized = next.replace(/\/$/, '')
+      route = { baseUrl: normalized, path: route.path, endpointId: route.endpointId }
+      const live = this.lives.get(credential.connectionId)
+      if (live) live.route = route
       if (normalized === credential.baseUrl) {
         client.setBaseUrl(normalized)
         return
@@ -508,31 +574,48 @@ export class NodeConnectionManager {
       connectionId: credential.connectionId,
       stableAfterMs: 30_000,
       connect: async () => {
-        if (!skipResolverOnce && this.opts.resolveReconnectBaseUrl) {
-          const known = this.known.get(credential.connectionId)
-          if (known) {
+        const known = this.known.get(credential.connectionId)
+        if (!skipResolverOnce && known) {
+          if (this.opts.resolveReconnectRoute) {
+            const resolved = await this.opts.resolveReconnectRoute(known)
+            if (resolved) applyRoute(resolved)
+          } else if (this.opts.resolveReconnectBaseUrl) {
             const resolved = await this.opts.resolveReconnectBaseUrl(known)
             if (resolved) applyBaseUrl(resolved)
           }
         }
         skipResolverOnce = false
         // Probe unauthenticated health first so clone/regenerate surfaces as
-        // identity_conflict before auth errors obscure the root cause.
-        await assertNodeIdentity(credential.baseUrl, {
-          environmentId: credential.environmentId,
-          nodePublicKeyFingerprint: credential.nodePublicKeyFingerprint,
-        })
+        // identity_conflict before auth errors obscure the root cause. A relay
+        // has no HTTP surface; the channel proof and descriptor check identity.
+        if (!route.dial) {
+          await assertNodeIdentity(route.baseUrl, {
+            environmentId: credential.environmentId,
+            nodePublicKeyFingerprint: credential.nodePublicKeyFingerprint,
+          })
+        }
         await client.connect()
         await client.getDescriptor()
       },
       healthProbe: async () => {
+        let ok = false
         try {
           if (credentialDirty) tryPersistCredential()
           const h = await client.health()
-          return h.ok === true
+          ok = h.ok === true
         } catch {
           return false
         }
+        if (!ok) return false
+        // Off the LAN: a reachable better route hands the connection back to
+        // the supervisor, which re-dials it; session cursors resume there.
+        const known = this.known.get(credential.connectionId)
+        if (route.path !== 'lan' && known && this.opts.betterRouteAvailable) {
+          if (await this.opts.betterRouteAvailable(known, route).catch(() => false)) {
+            throw new Error(`switching from ${route.path} to a better route`)
+          }
+        }
+        return true
       },
       invalidateTransport: (reason) => {
         client.invalidateTransport(reason)
@@ -549,6 +632,7 @@ export class NodeConnectionManager {
       credential,
       credentialDirty: false,
       credentialPersistError: undefined,
+      route,
     })
 
     await supervisor.start()

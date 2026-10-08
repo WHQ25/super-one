@@ -1035,6 +1035,14 @@ export const zh: Messages = {
       forgetConfirm: '从这台电脑上移除「{{label}}」？远程服务会继续运行，只会清除本地凭证。',
       addSuccess: '环境已连接',
       credentialInMemoryOnly: '系统安全存储不可用，该凭证仅保存在内存中，退出 SuperOne 后会丢失。',
+      path: {
+        label: '连接方式',
+        lan: '局域网',
+        tailscale: 'Tailscale',
+        relay: '中继',
+        ssh: 'SSH',
+        direct: '直连',
+      },
       noSessionsCapability: '该节点尚未开放 Agent 会话能力，终端与工作区操作仍可正常使用。',
       nodeOutdated:
         '该节点运行的是 SuperOne CLI {{remoteVersion}}，本机桌面为 {{targetVersion}}。旧节点可能返回过时的模型列表，或根本跑不了对话。',

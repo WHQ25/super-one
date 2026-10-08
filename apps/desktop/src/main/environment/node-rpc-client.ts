@@ -3,9 +3,12 @@ import WebSocket from 'ws'
 import type { ControlLease, EnvironmentLiveStatus, ExecutionEnvironmentDescriptor, TerminalReadResult } from '@superone/shared/environment'
 import { DATABASE_SCHEMA_GENERATION, PROTOCOL_GENERATION } from '@superone/shared/environment'
 import { isNodeMutatingCall } from '@superone/runtime/server/rpc-mutating-methods'
+import { dialWebSocket } from '@superone/runtime/server/node-socket'
 import {
   establishSecureChannel,
   type ChannelCredential,
+  type NodeSocket,
+  type NodeSocketDialer,
   type SecureChannel,
 } from '@superone/runtime/server/secure-channel-client'
 import { signWithDeviceKey } from './node-auth-client'
@@ -37,6 +40,17 @@ export interface NodeRpcClientOptions {
    * channel first and attaches with the ticket inside it instead of headers.
    */
   channel?: ChannelCredential
+  /**
+   * Opens channel sockets (a relay slot instead of a direct WebSocket).
+   * Only with `channel`: the relay carries nothing but channel frames.
+   */
+  dial?: NodeSocketDialer
+}
+
+/** Where the client dials: an http(s) base URL, and for the relay the slot dialer. */
+export interface NodeRoute {
+  baseUrl: string
+  dial?: NodeSocketDialer
 }
 
 type Pending = {
@@ -104,11 +118,11 @@ function rpcTimeoutMs(method: string): number | undefined {
  */
 export class NodeRpcClient {
   private baseUrl: string
-  private ws: WebSocket | null = null
+  private ws: NodeSocket | null = null
   private wsSocketId = 0
   private nextSocketId = 1
   /** Socket mid-handshake; not yet promoted to `ws`. Closed by `close()`. */
-  private connectingWs: WebSocket | null = null
+  private connectingWs: NodeSocket | null = null
   private pending = new Map<string, Pending>()
   private closed = false
   private connectPromise: Promise<void> | null = null
@@ -121,10 +135,12 @@ export class NodeRpcClient {
   private missedPongs = 0
   private readonly heartbeatIntervalMs: number
   /** Established encrypted channel per socket; absent on plain sockets. */
-  private readonly channels = new WeakMap<WebSocket, SecureChannel>()
+  private readonly channels = new WeakMap<NodeSocket, SecureChannel>()
+  private dial: NodeSocketDialer | undefined
 
   constructor(private readonly opts: NodeRpcClientOptions) {
     this.baseUrl = opts.baseUrl.replace(/\/$/, '')
+    this.dial = opts.dial
     this.heartbeatIntervalMs = opts.heartbeatIntervalMs ?? HEARTBEAT_INTERVAL_MS
   }
 
@@ -145,6 +161,12 @@ export class NodeRpcClient {
 
   getBaseUrl(): string {
     return this.baseUrl
+  }
+
+  /** Switch route (LAN, Tailscale, relay) while idle; same rule as `setBaseUrl`. */
+  setRoute(route: NodeRoute): void {
+    this.setBaseUrl(route.baseUrl)
+    this.dial = route.dial
   }
 
   /**
@@ -208,8 +230,12 @@ export class NodeRpcClient {
       }
       let settled = false
       const channel = this.opts.channel
-      const ws = channel
-        ? new WebSocket(url)
+      if (this.dial && !channel) {
+        reject(rpcResponseError('invalid_config', 'a relayed route needs the encrypted channel'))
+        return
+      }
+      const ws: NodeSocket = channel
+        ? (this.dial ?? dialWebSocket)(url)
         : new WebSocket(url, {
             headers: {
               'x-superone-ws-ticket': ticket,
@@ -647,7 +673,7 @@ export class NodeRpcClient {
    * session with the ticket and device proof, all inside the channel.
    */
   private async attachThroughChannel(
-    ws: WebSocket,
+    ws: NodeSocket,
     credential: ChannelCredential,
     attach: { ticket: string; ticketId: string; sig: string },
   ): Promise<void> {
@@ -681,13 +707,13 @@ export class NodeRpcClient {
     })
   }
 
-  private sendFrame(ws: WebSocket, msg: unknown): void {
+  private sendFrame(ws: NodeSocket, msg: unknown): void {
     const channel = this.channels.get(ws)
     ws.send(channel ? channel.seal(msg) : JSON.stringify(msg))
   }
 
   /** Throws on malformed JSON, and on channel tampering or replay. */
-  private decodeFrame(ws: WebSocket, data: WebSocket.RawData): unknown {
+  private decodeFrame(ws: NodeSocket, data: WebSocket.RawData): unknown {
     const channel = this.channels.get(ws)
     return channel ? channel.open(data as Buffer) : JSON.parse(data.toString())
   }

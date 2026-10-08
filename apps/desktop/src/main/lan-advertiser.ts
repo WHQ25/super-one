@@ -5,9 +5,10 @@ import makeMdns, { type MdnsAnswer, type MdnsInstance, type MdnsQuestion } from 
 import log from './logger'
 import { ProcessTitle } from './process-titles'
 
-export const LAN_SERVICE_TYPE = 'superone'
-export const LAN_SERVICE_FQDN = `_${LAN_SERVICE_TYPE}._tcp`
-const LAN_SERVICE_DOMAIN = `${LAN_SERVICE_FQDN}.local`
+import { LAN_SERVICE_TYPE, lanServiceDomain, lanServiceFqdn } from './lan-service-type'
+
+export { LAN_SERVICE_TYPE, NODE_LAN_SERVICE_TYPE } from './lan-service-type'
+export const LAN_SERVICE_FQDN = lanServiceFqdn(LAN_SERVICE_TYPE)
 const SRV_TTL = 120
 const PTR_TTL = 4500
 
@@ -15,6 +16,8 @@ export interface LanAdvertisement {
   name: string
   port: number
   txt: Record<string, string>
+  /** DNS-SD service type without `_`/`._tcp`; the phone link's `superone` by default. */
+  serviceType?: string
 }
 
 export interface AdvertiserStrategy {
@@ -60,7 +63,7 @@ export class LanAdvertiser {
 }
 
 function advertisementEqual(a: LanAdvertisement, b: LanAdvertisement): boolean {
-  if (a.name !== b.name || a.port !== b.port) return false
+  if (a.name !== b.name || a.port !== b.port || a.serviceType !== b.serviceType) return false
   const ak = Object.keys(a.txt)
   const bk = Object.keys(b.txt)
   if (ak.length !== bk.length) return false
@@ -79,7 +82,7 @@ class DnsSdStrategy implements AdvertiserStrategy {
       const args = [
         '-R',
         ad.name,
-        LAN_SERVICE_FQDN,
+        lanServiceFqdn(ad.serviceType ?? LAN_SERVICE_TYPE),
         'local',
         String(ad.port),
         ...txtArgs,
@@ -102,7 +105,7 @@ class DnsSdStrategy implements AdvertiserStrategy {
       child.stdout.on('data', (chunk: Buffer) => {
         const text = chunk.toString('utf8')
         if (!settled && text.includes('Name now registered and active')) {
-          log.info(`[LanAdvertiser] dns-sd registered ${ad.name}.${LAN_SERVICE_DOMAIN} port=${ad.port}`)
+          log.info(`[LanAdvertiser] dns-sd registered ${ad.name}.${lanServiceDomain(ad.serviceType ?? LAN_SERVICE_TYPE)} port=${ad.port}`)
           settle()
         }
       })
@@ -186,7 +189,7 @@ class MulticastDnsStrategy implements AdvertiserStrategy {
 
         this.mdns = mdns
         this.records = records
-        log.info(`[LanAdvertiser] multicast-dns published ${ad.name}.${LAN_SERVICE_DOMAIN} port=${ad.port}`)
+        log.info(`[LanAdvertiser] multicast-dns published ${ad.name}.${lanServiceDomain(ad.serviceType ?? LAN_SERVICE_TYPE)} port=${ad.port}`)
         resolve()
       }
 
@@ -253,10 +256,11 @@ class MulticastDnsStrategy implements AdvertiserStrategy {
 }
 
 export function buildRecords(ad: LanAdvertisement): MdnsAnswer[] {
-  const instance = `${ad.name}.${LAN_SERVICE_DOMAIN}`
+  const domain = lanServiceDomain(ad.serviceType ?? LAN_SERVICE_TYPE)
+  const instance = `${ad.name}.${domain}`
   const target = preferredHostname()
   return [
-    { name: LAN_SERVICE_DOMAIN, type: 'PTR', ttl: PTR_TTL, data: instance },
+    { name: domain, type: 'PTR', ttl: PTR_TTL, data: instance },
     {
       name: instance,
       type: 'SRV',

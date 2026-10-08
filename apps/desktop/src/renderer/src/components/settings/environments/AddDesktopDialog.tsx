@@ -5,6 +5,8 @@ import { Loader2 } from 'lucide-react'
 import {
   NodePairingCodeError,
   decodeNodePairingCode,
+  nodePairingCodeLabel,
+  nodePairingEndpointProfiles,
   type NodePairingCode,
 } from '@superone/shared/environment/node-pairing-code'
 import { Button } from '@superone/ui/components/ui/button'
@@ -29,15 +31,6 @@ interface AddDesktopDialogProps {
 
 type Decoded = { code: NodePairingCode } | { error: string } | null
 
-/** `Studio.local` → `Studio`: the node's advertised host is its machine name. */
-function defaultLabel(url: string): string {
-  try {
-    return new URL(url).hostname.replace(/\.local$/i, '')
-  } catch {
-    return url
-  }
-}
-
 function pairingCodeMessage(err: unknown, t: TFunction): string {
   if (!(err instanceof NodePairingCodeError)) return err instanceof Error ? err.message : String(err)
   if (err.code === 'expired') return t('settings.remote.addDesktop.errors.expired')
@@ -47,8 +40,10 @@ function pairingCodeMessage(err: unknown, t: TFunction): string {
 
 /**
  * Pair another SuperOne desktop from the pairing code it shows under Remote
- * Control. The code carries the node URL, a single-use token and the
- * encrypted-channel credential; nothing in it is logged.
+ * Control. The code carries the node's LAN, Tailscale and relay routes, a
+ * single-use token and the encrypted-channel credential; nothing in it is
+ * logged. Main pairs over the LAN when the node is on this network, else
+ * through the relay.
  */
 export function AddDesktopDialog({ open, onOpenChange, onAdded }: AddDesktopDialogProps) {
   const { t } = useTranslation()
@@ -89,9 +84,10 @@ export function AddDesktopDialog({ open, onOpenChange, onAdded }: AddDesktopDial
       const fresh = decodeNodePairingCode(codeText, Date.now())
       const deviceLabel = await window.app.getHostname().catch(() => '')
       await window.environment.pairRemote({
-        baseUrl: fresh.url,
+        environmentId: fresh.environmentId,
+        endpointProfiles: nodePairingEndpointProfiles(fresh),
         pairingToken: fresh.pairingToken,
-        label: name.trim() || defaultLabel(fresh.url),
+        label: name.trim() || nodePairingCodeLabel(fresh),
         deviceLabel: deviceLabel || undefined,
         channel: fresh.channel,
       })
@@ -104,7 +100,7 @@ export function AddDesktopDialog({ open, onOpenChange, onAdded }: AddDesktopDial
       } else {
         const message = err instanceof Error ? err.message : String(err)
         const failure = classifyPairDesktopError(message)
-        setError(failure ? t(`settings.remote.addDesktop.errors.${failure}`, { url: code.url }) : message)
+        setError(failure ? t(`settings.remote.addDesktop.errors.${failure}`, { url: nodePairingCodeLabel(code) }) : message)
       }
     } finally {
       setBusy(false)
@@ -146,7 +142,7 @@ export function AddDesktopDialog({ open, onOpenChange, onAdded }: AddDesktopDial
               id="desktop-pairing-name"
               value={name}
               disabled={busy}
-              placeholder={code ? defaultLabel(code.url) : ''}
+              placeholder={code ? nodePairingCodeLabel(code) : ''}
               onChange={(e) => setName(e.target.value)}
             />
             <p className="text-xs text-muted-foreground">{t('settings.remote.addDesktop.nameHint')}</p>

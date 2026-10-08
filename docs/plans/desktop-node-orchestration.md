@@ -45,6 +45,7 @@ Long-term docs affected: `docs/architecture/remote-node-service.md` (desktop as 
 - Transport: the node protocol runs inside the phone link's end-to-end encryption (`docs/architecture/relay-crypto.md`). The pairing secret is exchanged out of band (code or QR) and never sent over the network. Every frame is AES-256-GCM over plain `ws://` on the LAN. The node's own auth (device key, tokens, tickets) runs inside the encrypted channel. The relay transport (`EndpointKind 'relay'`) later carries the same frames unchanged.
 - The encrypted layer also closes two gaps of the phone LAN link: the handshake proves key possession instead of trusting a bare `deviceId` (`apps/desktop/src/main/lan-server.ts:273`), and frames carry a sequence number against replay. Apply both to the phone link as well.
 - The architecture rule "no plain `ws://` beyond loopback" becomes "the channel must be encrypted", either by the transport (loopback, SSH, Tailscale, TLS) or by this layer.
+- Progress (2026-10-09): desktop-to-desktop links follow the phone link. B accepts only private-network peers (the phone LAN server too), advertises `_superone-node._tcp` over mDNS, and holds a relay room; A dials LAN (mDNS or the pairing code's hint), then Tailscale, then the relay, moves back to the LAN when it answers, and shows the live path. Pairing code v2 carries the routes, so pairing works over the relay alone. Open: relay room membership is unauthenticated (denial of service only).
 
 ### 4. Remote launch from collaboration tools
 
@@ -74,7 +75,7 @@ Long-term docs affected: `docs/architecture/remote-node-service.md` (desktop as 
 ### 7. Later
 
 - Per-node accounts and remaining quota, API key weekly and monthly budgets, and agent-chosen account per launch. This is opt-in, the chosen account is always shown, and there is no detection evasion. Quota for gateway subscriptions is adapted provider by provider.
-- The relay transport and B-side pairing UX.
+- B-side pairing UX beyond the code and QR.
 - The ownership merge (lease as the single steering authority), and human viewing and control (CDP screencast or window frames first, WebRTC with input later).
 
 ## Open decisions

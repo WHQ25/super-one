@@ -389,6 +389,25 @@ describe('RelaySession', () => {
       expect(mobileB.send).not.toHaveBeenCalled()
     })
 
+    it('node channel slots: chunked frames and a coded close pass through unchanged', async () => {
+      // A desktop node (runtime relay-node-link.ts) gives every connection its own slot.
+      const node = createMockWebSocket()
+      const slot = createMockWebSocket()
+      state.acceptWebSocket(node, ['desktop'])
+      state.acceptWebSocket(slot, ['mobile:node-1'])
+      const part = { type: 'channel', data: 'QUJD', more: true }
+      await session.webSocketMessage(slot as any, JSON.stringify(part))
+      expect(node.send).toHaveBeenCalledWith(JSON.stringify({ ...part, mobileDeviceId: 'node-1' }))
+
+      const reply = { type: 'channel', data: 'REVG', more: true, mobileDeviceId: 'node-1' }
+      await session.webSocketMessage(node as any, JSON.stringify(reply))
+      expect(slot.send).toHaveBeenCalledWith(JSON.stringify(reply))
+      const close = { type: 'kicked', mobileDeviceId: 'node-1', code: 4401, reason: 'channel_auth_failed' }
+      await session.webSocketMessage(node as any, JSON.stringify(close))
+      expect(slot.send).toHaveBeenLastCalledWith(JSON.stringify(close))
+      expect(mobileWs.send).not.toHaveBeenCalled()
+    })
+
     it('kicked frame from desktop targets only the matching mobile', async () => {
       await session.webSocketMessage(desktopWs as any, JSON.stringify({ type: 'kicked', mobileDeviceId: 'dev-2' }))
       expect(mobileB.send).toHaveBeenCalledWith(JSON.stringify({ type: 'kicked', mobileDeviceId: 'dev-2' }))

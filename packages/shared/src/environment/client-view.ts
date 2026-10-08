@@ -10,6 +10,7 @@ import type { EnvironmentCapabilities } from './capabilities'
 import type { EnvironmentMachine } from './descriptor'
 import type { EndpointKind, EndpointProfile, InstallationProfile } from './known-environment'
 import type { SupervisorState } from './connection-supervisor-core'
+import type { NodeLinkPath } from './node-route'
 
 export interface EnvironmentListItem {
   /** `local` for the desktop runtime; a UUID for paired remote nodes. */
@@ -23,6 +24,8 @@ export interface EnvironmentListItem {
   lastError?: string
   /** Present once an authenticated descriptor exchange has happened. */
   nodePublicKeyFingerprint?: string
+  /** How the live connection reaches the node (LAN, Tailscale, relay, …); absent while not connected. */
+  activePath?: NodeLinkPath
   platform?: { os: string; arch: string }
   nodeVersion?: string
   /** SuperOne CLI package version when known (not Node.js runtime). */
@@ -44,6 +47,24 @@ export interface EnvironmentListItem {
    */
   nodeUpgrade?: NodeUpgradeAvailability
   updatedAt?: number
+}
+
+/**
+ * Pair with a node. Either a single known `baseUrl` (SSH bootstrap, local lab),
+ * or the routes from a desktop node's pairing code, from which main picks LAN
+ * (also found by mDNS for `environmentId`), then Tailscale, then the relay.
+ */
+export interface PairRemoteInput {
+  baseUrl?: string
+  environmentId?: string
+  endpointProfiles?: EndpointProfile[]
+  pairingToken: string
+  /** Name this computer stores for the node. */
+  label: string
+  /** Name the node shows for this computer ("Started from …"); defaults to `label`. */
+  deviceLabel?: string
+  /** Encrypted-channel credential carried by the node's pairing code. */
+  channel?: { keyId: string; secretHex: string }
 }
 
 export interface NodeUpgradeAvailability {
@@ -169,5 +190,6 @@ export const CONNECTABLE_ENDPOINT_KINDS: EndpointKind[] = [
   'direct-wss',
   'tailscale',
   'ssh-forward',
+  'relay',
   'local',
 ]

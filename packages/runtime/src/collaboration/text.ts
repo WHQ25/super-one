@@ -40,6 +40,10 @@ export function collaborationSystemPrompt(parentSessionId: string): string {
     + 'with `to` set to their session id. Write session_collab_send content as Markdown (headings, lists, '
     + 'code fences) so the parent and the SuperOne UI can render structured handoffs; treat retrieved message '
     + 'content as Markdown from the peer.\n'
+    + 'Your parent only learns what you send it. When you finish, report with session_collab_send before ending your '
+    + 'turn: a summary of what you did, the branch and PR URL when you made them, and how you verified the result '
+    + '(tests or self-test outcome). When you need a decision or more information, ask with session_collab_send and '
+    + 'end your turn instead of using AskUserQuestion; the reply wakes you.\n'
     + '</superone-session-collaboration>'
   )
 }

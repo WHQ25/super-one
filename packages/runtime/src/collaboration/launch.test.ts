@@ -29,6 +29,12 @@ describe('collaboration labels', () => {
     expect(prompt).toContain('session_collab_send')
     expect(prompt).not.toMatch(/credential|s1sc_/)
   })
+
+  it('collaborationSystemPrompt asks the child to report and ask through the mailbox', () => {
+    const prompt = collaborationSystemPrompt('parent-1')
+    expect(prompt).toMatch(/When you finish, report with session_collab_send/)
+    expect(prompt).toMatch(/instead of using AskUserQuestion/)
+  })
 })
 
 describe('normalizeLaunchLabels', () => {

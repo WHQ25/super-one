@@ -548,6 +548,10 @@ interface AppAPI {
   getNodeHostStatus(): Promise<NodeHostStatus>
   /** Single-use pairing token for another device; rejects while remote node access is off. */
   mintNodeHostPairingToken(): Promise<NodeHostPairingToken>
+  /** Owner note agents read when choosing this computer as a node; stored in the node config, not app settings. */
+  getNodeHostNote(): Promise<string>
+  /** Replace the node note (empty clears); resolves to the stored, trimmed value. */
+  setNodeHostNote(note: string): Promise<string>
   /** OS Downloads folder — the effective target when `browserDownloadDir` is unset. */
   getDefaultDownloadDir(): Promise<string>
   /** Whether a Jev (TypeSafe) API key is stored for the experimental browser fast loop; never the key itself. */
@@ -985,7 +989,10 @@ export interface EnvironmentAPI extends MediaComposerAPI {
   pairRemote(input: {
     baseUrl: string
     pairingToken: string
+    /** Name this computer stores for the node. */
     label: string
+    /** Name the node shows for this computer ("Started from …"); defaults to `label`. */
+    deviceLabel?: string
     /** Encrypted-channel credential carried by the node's pairing code. */
     channel?: { keyId: string; secretHex: string }
   }): Promise<{ connectionId: string; descriptor: unknown; persisted: boolean }>

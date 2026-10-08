@@ -1,10 +1,9 @@
-import { app, powerMonitor } from 'electron'
+import { powerMonitor } from 'electron'
 import type { EnvironmentGuiState, EnvironmentLiveStatus, EnvironmentMachine } from '@superone/shared/environment'
 import type { HarnessId } from '@superone/shared/session-types'
 import { getMachineInfo, readLiveStatus } from '@superone/runtime/machine'
-import { loadNodeAgentSettings } from '@superone/runtime/settings'
 import { ensureShellPath } from '../shell-path'
-import { desktopNodeHostPaths } from '../node-host/paths'
+import { readNodeNote } from '../node-host/node-note'
 
 /** The slice of a live desktop session that the activity counts read. */
 export interface LocalSessionActivity {
@@ -40,7 +39,7 @@ export async function readLocalNodeContext(sessions: LocalSessionSource | null):
   })
   return {
     machine: await getMachineInfo(),
-    note: loadNodeAgentSettings(desktopNodeHostPaths(app.getPath('userData')).configJson).note,
+    note: readNodeNote(),
     harnessIds: getHarnessManager().readySessionHarnessIds(),
     live: readLiveStatus({ sessions: sessions ? activity : null, gui: readDesktopGuiState() }),
   }

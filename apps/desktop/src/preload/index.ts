@@ -411,6 +411,7 @@ const environmentAPI = {
     baseUrl: string
     pairingToken: string
     label: string
+    deviceLabel?: string
     channel?: { keyId: string; secretHex: string }
   }) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_PAIR_REMOTE, input),
@@ -1908,6 +1909,10 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.NODE_HOST_STATUS),
   mintNodeHostPairingToken: () =>
     ipcRenderer.invoke(AgentIpcChannels.NODE_HOST_MINT_PAIRING_TOKEN),
+  getNodeHostNote: () =>
+    ipcRenderer.invoke(AgentIpcChannels.NODE_HOST_NOTE_GET),
+  setNodeHostNote: (note: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.NODE_HOST_NOTE_SET, note),
   getDefaultDownloadDir: () =>
     ipcRenderer.invoke(AgentIpcChannels.APP_DEFAULT_DOWNLOAD_DIR),
   getJevApiKeyStatus: () =>

@@ -1802,7 +1802,7 @@ function registerIpcHandlers(): void {
     AgentIpcChannels.ENVIRONMENT_PAIR_REMOTE,
     async (
       _e,
-      input: { baseUrl: string; pairingToken: string; label: string; channel?: { keyId: string; secretHex: string } },
+      input: { baseUrl: string; pairingToken: string; label: string; deviceLabel?: string; channel?: { keyId: string; secretHex: string } },
     ) => {
       const { getEnvironmentHost } = await import('./environment')
       return getEnvironmentHost().pairRemote(input)
@@ -4323,6 +4323,8 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.APP_SETTINGS_SAVE, (_e, patch) => applyAppSettingsPatch(patch))
   ipcMain.handle(AgentIpcChannels.NODE_HOST_STATUS, async () => (await import('./node-host/node-host-controller')).nodeHostStatus())
   ipcMain.handle(AgentIpcChannels.NODE_HOST_MINT_PAIRING_TOKEN, async () => (await import('./node-host/node-host-controller')).mintNodeHostPairingToken())
+  ipcMain.handle(AgentIpcChannels.NODE_HOST_NOTE_GET, async () => (await import('./node-host/node-note')).readNodeNote())
+  ipcMain.handle(AgentIpcChannels.NODE_HOST_NOTE_SET, async (_e, note: unknown) => (await import('./node-host/node-note')).writeNodeNote(String(note ?? '')))
   ipcMain.handle(AgentIpcChannels.APP_DEFAULT_DOWNLOAD_DIR, () => systemDownloadDir())
   ipcMain.handle(AgentIpcChannels.JEV_API_KEY_STATUS, async () => (await import('./jev/jev-api-key')).getJevApiKeyStatus())
   ipcMain.handle(AgentIpcChannels.JEV_API_KEY_SET, async (_e, key: string) => (await import('./jev/jev-api-key')).setJevApiKey(String(key ?? '')))

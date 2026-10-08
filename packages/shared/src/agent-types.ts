@@ -4367,6 +4367,9 @@ export const AgentIpcChannels = {
   /** Node surface served to other devices: state and pairing (see `remoteNodeAccessEnabled`). */
   NODE_HOST_STATUS: 'nodeHost:status',
   NODE_HOST_MINT_PAIRING_TOKEN: 'nodeHost:mintPairingToken',
+  /** Owner note agents read when choosing this node (`agent.note` in the node config). */
+  NODE_HOST_NOTE_GET: 'nodeHost:noteGet',
+  NODE_HOST_NOTE_SET: 'nodeHost:noteSet',
   /** Resolved OS Downloads folder, shown as the placeholder for an unset download directory. */
   APP_DEFAULT_DOWNLOAD_DIR: 'app:default-download-dir',
   /** Jev (TypeSafe) API key for the experimental browser fast loop: configured? / replace. */

@@ -312,6 +312,7 @@ export class EnvironmentHost {
     baseUrl: string
     pairingToken: string
     label: string
+    deviceLabel?: string
     endpointProfiles?: EndpointProfile[]
     channel?: { keyId: string; secretHex: string }
   }) {

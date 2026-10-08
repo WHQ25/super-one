@@ -114,7 +114,10 @@ export class NodeConnectionManager {
   async pairAndConnect(input: {
     baseUrl: string
     pairingToken: string
+    /** Name this side stores for the node. */
     label: string
+    /** Name the node records for this device; defaults to `label`. */
+    deviceLabel?: string
     endpointProfiles?: KnownEnvironmentRecord['endpointProfiles']
     /** From the pairing code when the node requires its encrypted channel. */
     channel?: ChannelCredential
@@ -124,7 +127,7 @@ export class NodeConnectionManager {
       baseUrl: input.baseUrl,
       pairingToken: input.pairingToken,
       devicePublicKeyPem: device.publicKeyPem,
-      label: input.label,
+      label: input.deviceLabel ?? input.label,
       channel: input.channel,
     })
 

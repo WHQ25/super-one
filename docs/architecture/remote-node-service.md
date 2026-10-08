@@ -694,9 +694,12 @@ the parent's desktop: the child is created with `externalParent` and the
 collaboration prompt (`session.create`), its `session_collab_send/retrieve` go
 to the controller as Host Actions in the `superone` group, it may not launch
 children itself, and the parent reaches it with `session.send` under the
-control lease. The child's runs reach the parent's desktop as the session
-events it drains, which drive the same stop-wake and stall notice as a local
-child (`apps/desktop/src/main/session/collaboration-lifecycle.ts`).
+control lease. The parent's desktop follows the child's runs from the node
+event log with a cursor persisted per child, across its own restarts and
+reconnects (`collaboration-remote-watch.ts`), and they drive the same
+stop-wake and stall notice as a local child
+(`apps/desktop/src/main/session/collaboration-lifecycle.ts`). Before cutting
+the child's worktree the node fetches `origin` (`git.fetch`).
 
 Recovery guarantees are advertised per environment (`coldSessionResume`,
 `turnReattach`, §9.3). Parity means equivalent supported behavior, not identical

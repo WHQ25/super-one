@@ -44,6 +44,13 @@ export interface EnvironmentCapabilities {
    * then neither rewrites Host Action paths nor mirrors node artifacts.
    */
   syncZone: boolean
+  /**
+   * `session.send` is idempotent by `clientMessageId` on the host: a message
+   * it took is held, one that never ran runs again under the same id. Only
+   * then may a controller key each send attempt on its own; an older node
+   * dedupes by the RPC key alone, so its controller keys by message id.
+   */
+  messageIdempotency?: boolean
 }
 
 export const LOCAL_ENVIRONMENT_CAPABILITIES: EnvironmentCapabilities = {
@@ -64,6 +71,7 @@ export const LOCAL_ENVIRONMENT_CAPABILITIES: EnvironmentCapabilities = {
   drafts: true,
   // Local artifacts already live on this machine; there is no peer to sync with.
   syncZone: false,
+  messageIdempotency: true,
 }
 
 /** Baseline node capabilities; Phase 2 enables workspaceFs/git/worktrees at runtime. */
@@ -111,6 +119,7 @@ export function intersectCapabilities(
     hostActionV1: a.hostActionV1 && b.hostActionV1,
     drafts: a.drafts && b.drafts,
     syncZone: a.syncZone && b.syncZone,
+    messageIdempotency: Boolean(a.messageIdempotency && b.messageIdempotency),
   }
 }
 
@@ -147,5 +156,6 @@ export function normalizeCapabilities(raw: unknown): EnvironmentCapabilities {
     hostActionV1: flag('hostActionV1'),
     drafts: flag('drafts'),
     syncZone: flag('syncZone'),
+    messageIdempotency: flag('messageIdempotency'),
   }
 }

@@ -27,7 +27,8 @@ const ENV = 'env-b'
 const CLIENT = 'desktop-a'
 const SID = 's1'
 
-function setup() {
+/** `messageIdempotency: false` stands for a node predating the message-id guard. */
+async function setup({ messageIdempotency = true } = {}) {
   let failStart = true
   const backend = {
     kind: 'claude',
@@ -66,6 +67,7 @@ function setup() {
   const keys: string[] = []
   let loseNextResponse = false
   const client = {
+    getDescriptor: async () => ({ environmentId: ENV, capabilities: { messageIdempotency } }),
     async rpc(method: string, payload: unknown, _environmentId?: string, commandKey?: string) {
       const idempotencyKey = commandKey || randomUUID()
       keys.push(idempotencyKey)
@@ -79,6 +81,7 @@ function setup() {
     },
   } as unknown as NodeRpcClient
   const gateway = new RemoteEnvironmentGateway(client)
+  await gateway.getDescriptor()
 
   const acquire = () => leases.acquire({ resource: { environmentId: ENV, sessionId: SID }, holderClientId: CLIENT })
   const send = (lease: { leaseId: string; generation: string }) => gateway.sessions.send({
@@ -95,7 +98,7 @@ function setup() {
 
 describe('Resend of a remote row the node accepted and then failed', () => {
   async function acceptedThenFailed() {
-    const t = setup()
+    const t = await setup()
     const lease = t.acquire()
     await t.send(lease)
     await vi.waitFor(() => expect(t.row()?.metadata?.sendFailure).toEqual({ error: 'spawn claude ENOENT' }))
@@ -129,7 +132,7 @@ describe('Resend of a remote row the node accepted and then failed', () => {
 
 describe('A send whose response was lost', () => {
   it('replays the receipt for the same attempt and holds a new attempt of the accepted id', async () => {
-    const t = setup()
+    const t = await setup()
     t.startSucceeds()
     const lease = t.acquire()
     t.loseNextResponse()
@@ -143,5 +146,20 @@ describe('A send whose response was lost', () => {
     await expect(t.hostSend.mock.results[1]?.value).resolves.toEqual({ duplicate: true })
     expect(t.backend.send).toHaveBeenCalledOnce()
     expect(t.session.snapshot.messages.filter((message) => message.id === 'u1')).toHaveLength(1)
+  })
+
+  it('keys a Resend by the message id on a node without the message-id guard, so it runs once', async () => {
+    const t = await setup({ messageIdempotency: false })
+    t.startSucceeds()
+    const lease = t.acquire()
+    t.loseNextResponse()
+    await t.send(lease)
+    await t.send(lease)
+
+    // Every attempt carried the message id, so the node answered the Resend
+    // from its receipt without reaching its send.
+    expect(t.keys).toEqual(['u1', 'u1'])
+    expect(t.hostSend).toHaveBeenCalledOnce()
+    expect(t.backend.send).toHaveBeenCalledOnce()
   })
 })

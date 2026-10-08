@@ -1169,10 +1169,13 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
         this.assertEnv(input.session.environmentId)
         // Unique once per logical send — never derive from text length/content.
         const clientMessageId = input.clientMessageId || randomUUID()
-        // The RPC's idempotency key is the client's per-call attempt key, not
-        // the message id: its transport retries reuse it, while a Resend of a
-        // row that failed after acceptance must reach the host's send again.
-        // The host's duplicate guard on clientMessageId holds a taken message.
+        // On a host that dedupes by message id, the RPC's idempotency key is
+        // the client's per-call attempt key: its transport retries reuse it,
+        // while a Resend of a row that failed after acceptance reaches the
+        // host's send again and its guard holds a taken message. Without that
+        // guard (an older node, or a descriptor not read yet) the message id
+        // stays the key, so a Resend after a lost response cannot run it twice.
+        const attemptKeyed = this.descriptorCache?.capabilities?.messageIdempotency === true
         await this.client.rpc(
           'session.send',
           {
@@ -1185,6 +1188,8 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
               ? { options: input.options }
               : {}),
           },
+          undefined,
+          attemptKeyed ? undefined : clientMessageId,
         )
       },
       patchSettings: async (input) => {

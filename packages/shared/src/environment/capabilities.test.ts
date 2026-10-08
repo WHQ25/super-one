@@ -25,6 +25,7 @@ describe('normalizeCapabilities', () => {
       hostActionV1: false,
       drafts: false,
       syncZone: false,
+      messageIdempotency: false,
     })
   })
 

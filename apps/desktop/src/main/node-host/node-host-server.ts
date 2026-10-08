@@ -42,6 +42,7 @@ const DESKTOP_NODE_CAPABILITIES: HostCapabilityFlags = {
   turnReattach: false,
   hostActionV1: true,
   drafts: false,
+  messageIdempotency: true,
 }
 
 /**

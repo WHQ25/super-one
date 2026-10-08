@@ -89,6 +89,7 @@ const CLI_CAPABILITY_FLAGS: HostCapabilityFlags = {
   turnReattach: false,
   hostActionV1: true,
   drafts: true,
+  messageIdempotency: true,
 }
 
 /** Serve one node RPC with the shared families plus the CLI's own. */

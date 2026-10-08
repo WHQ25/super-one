@@ -2,12 +2,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentEvent, AgentStatus, ChatMessage } from '@superone/shared/agent-types'
 import { openNodeDatabase } from '@superone/runtime/db'
 import { CollaborationStore } from '@superone/runtime/collaboration'
-import type { Session, SessionManager, TaskNotificationDelivery } from './types'
+import type { Session, SessionManager } from './types'
 
 const state = vi.hoisted(() => ({
   store: null as unknown as CollaborationStore,
   times: new Map<string, { sentAt: string | null; receivedAt: string | null }>(),
-  wake: vi.fn(async (..._args: unknown[]): Promise<TaskNotificationDelivery> => 'accepted'),
+  wake: vi.fn(async (..._args: unknown[]) => {}),
   remote: new Map<string, { status: string; pendingInteraction: unknown } | null>(),
 }))
 
@@ -24,6 +24,8 @@ vi.mock('./collaboration-remote', () => ({
 
 const {
   CHILD_STALL_MS,
+  acknowledgeStoppedChild,
+  pendingStopKey,
   CollaborationChildMonitor,
   childActivityView,
   describeChildStatus,
@@ -78,19 +80,30 @@ describe('CollaborationChildMonitor', () => {
   let monitor: InstanceType<typeof CollaborationChildMonitor>
 
   let now: number
+  let parent: { status: AgentStatus; queued: boolean; prompting?: boolean }
 
   beforeEach(() => {
     resetStore()
     spawnChild('child')
     state.times = new Map()
     state.remote = new Map()
-    state.wake.mockReset()
-    state.wake.mockResolvedValue('accepted')
+    state.wake.mockClear()
+    parent = { status: 'idle', queued: false }
     child = { status: 'streaming', pending: [], activityAt: 1_000, lastUserMessageAt: 1_000, messages: [] }
     notifyStalled = vi.fn()
     clearStalled = vi.fn()
     now = 1_000
-    const host = { getSession: (id: string) => (id === 'child' ? fakeSession(child) : null) } as unknown as SessionManager
+    const host = {
+      getSession: (id: string) => {
+        if (id === 'child') return fakeSession(child)
+        if (id !== 'parent') return null
+        return {
+          activityStatus: () => parent.status,
+          getQueuedMessagesEvent: () => (parent.queued ? { type: 'queued_messages_changed' } : null),
+          getPendingInteractions: () => (parent.prompting ? [{ type: 'ask_user_question' }] : []),
+        } as unknown as Session
+      },
+    } as unknown as SessionManager
     monitor = new CollaborationChildMonitor({
       host,
       view: (id) => childActivityView(host, id).then((view) => (view === 'unreachable' ? null : view)),
@@ -170,50 +183,102 @@ describe('CollaborationChildMonitor', () => {
     expect(state.wake).not.toHaveBeenCalled()
   })
 
-  it('keeps the wake recorded until the parent accepts it and retries after a failure', async () => {
-    const grantId = state.store.spawnGrantForChild('child')!.grant_id
-    // The parent's harness fails to start once.
-    state.wake.mockResolvedValueOnce('failed')
-    feed({ type: 'status_change', status: 'streaming' })
-    feed({ type: 'status_change', status: 'idle' })
-    expect(pendingWake(grantId)).toEqual({ key: expect.any(String), status: 'idle' })
-    await settle()
-    expect(state.wake).toHaveBeenCalledTimes(1)
-    expect(pendingWake(grantId)).toBeDefined()
+  describe('a stop wake', () => {
+    let grantId: string
+    const stop = async () => {
+      feed({ type: 'status_change', status: 'streaming' })
+      feed({ type: 'status_change', status: 'idle' })
+      await settle()
+    }
+    const later = (ms: number) => { now += ms }
 
-    await monitor.retryStopWakes()
-    expect(state.wake).toHaveBeenCalledTimes(2)
-    expect(pendingWake(grantId)).toBeUndefined()
-    await monitor.retryStopWakes()
-    expect(state.wake).toHaveBeenCalledTimes(2)
-  })
-
-  it('delivers a wake recorded before a crash once this desktop is back', async () => {
-    const grantId = state.store.spawnGrantForChild('child')!.grant_id
-    // The process dies before the delivery runs.
-    state.wake.mockImplementationOnce(() => new Promise(() => {}))
-    feed({ type: 'status_change', status: 'streaming' })
-    feed({ type: 'status_change', status: 'idle' })
-    await settle()
-
-    const restarted = new CollaborationChildMonitor({
-      host: {} as SessionManager, view: () => null, lastUserMessageAt: () => null, notifyStalled, clearStalled,
+    beforeEach(() => {
+      grantId = state.store.spawnGrantForChild('child')!.grant_id
     })
-    await restarted.retryStopWakes()
-    expect(state.wake).toHaveBeenLastCalledWith(expect.anything(), 'parent', 'child', 'idle')
-    expect(pendingWake(grantId)).toBeUndefined()
-  })
 
-  it('does not retry a wake the parent queued until this desktop restarts', async () => {
-    const grantId = state.store.spawnGrantForChild('child')!.grant_id
-    state.wake.mockResolvedValueOnce('deferred')
-    feed({ type: 'status_change', status: 'streaming' })
-    feed({ type: 'status_change', status: 'idle' })
-    await settle()
-    await monitor.retryStopWakes()
-    expect(state.wake).toHaveBeenCalledTimes(1)
-    // The queue lived in this process only.
-    expect(pendingWake(grantId)).toBeDefined()
+    it('is sent again once the busy parent that dropped it sits idle', async () => {
+      parent.status = 'streaming'
+      // Sent at once; the busy parent's harness queue drops it (overflow, close, interrupt).
+      await stop()
+      expect(state.wake).toHaveBeenCalledTimes(1)
+      later(60_000)
+      await monitor.resendStopWakes()
+      expect(state.wake).toHaveBeenCalledTimes(1)
+
+      parent.status = 'idle'
+      parent.queued = true
+      await monitor.resendStopWakes()
+      expect(state.wake).toHaveBeenCalledTimes(1)
+      parent.queued = false
+      await monitor.resendStopWakes()
+      expect(state.wake).toHaveBeenCalledTimes(2)
+      expect(state.wake).toHaveBeenLastCalledWith(expect.anything(), 'parent', 'child', 'idle')
+      // Not again within the interval.
+      await monitor.resendStopWakes()
+      expect(state.wake).toHaveBeenCalledTimes(2)
+    })
+
+    it('is not sent again while the parent waits on the human', async () => {
+      await stop()
+      later(60_000)
+      parent.prompting = true
+      await monitor.resendStopWakes()
+      expect(state.wake).toHaveBeenCalledTimes(1)
+    })
+
+    it('ends when the parent retrieves the stopped child, also across a restart', async () => {
+      await stop()
+      const key = pendingStopKey('child')
+      acknowledgeStoppedChild('parent', 'child', 'running', key)
+      acknowledgeStoppedChild('parent', 'child', 'unreachable', key)
+      acknowledgeStoppedChild('stranger', 'child', 'idle', key)
+      expect(pendingWake(grantId)).toBeDefined()
+      acknowledgeStoppedChild('parent', 'child', 'idle', key)
+      expect(pendingWake(grantId)).toBeUndefined()
+
+      const restarted = new CollaborationChildMonitor({
+        host: {} as SessionManager, view: () => null, lastUserMessageAt: () => null, notifyStalled, clearStalled, now: () => now + 120_000,
+      })
+      await restarted.resendStopWakes()
+      expect(state.wake).toHaveBeenCalledTimes(1)
+    })
+
+    it('keeps a stop recorded while the retrieve looked the child up', async () => {
+      await stop()
+      const seen = pendingStopKey('child')
+      // The child runs and stops again before the lookup returns.
+      await stop()
+      acknowledgeStoppedChild('parent', 'child', 'idle', seen)
+      expect(pendingWake(grantId)).toBeDefined()
+    })
+
+    it('ends only for a run that opened after the stop', () => {
+      monitor.handleEvent('child', { type: 'status_change', status: 'streaming' }, false, '20')
+      monitor.handleEvent('child', { type: 'status_change', status: 'idle' }, false, '21')
+      monitor.handleEvent('child', { type: 'status_change', status: 'streaming' }, false, '19')
+      expect(pendingWake(grantId)).toBeDefined()
+      monitor.handleEvent('child', { type: 'status_change', status: 'idle' }, false, '19')
+      monitor.handleEvent('child', { type: 'status_change', status: 'streaming' }, false, '22')
+      expect(pendingWake(grantId)).toBeUndefined()
+    })
+
+    it('is sent after a restart when the parent never saw it', async () => {
+      await stop()
+      const restarted = new CollaborationChildMonitor({
+        host: { getSession: () => null } as unknown as SessionManager, view: () => null, lastUserMessageAt: () => null, notifyStalled, clearStalled, now: () => now + 60_000,
+      })
+      await restarted.resendStopWakes()
+      expect(state.wake).toHaveBeenCalledTimes(2)
+    })
+
+    it('ends when the child runs again', async () => {
+      await stop()
+      feed({ type: 'status_change', status: 'streaming' })
+      expect(pendingWake(grantId)).toBeUndefined()
+      later(60_000)
+      await monitor.resendStopWakes()
+      expect(state.wake).toHaveBeenCalledTimes(1)
+    })
   })
 
   it('notifies the human once per stall and withdraws it when activity resumes', async () => {

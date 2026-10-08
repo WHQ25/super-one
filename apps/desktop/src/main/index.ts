@@ -800,8 +800,8 @@ const collaborationChildMonitor = new CollaborationChildMonitor({
 sessionManager.onAny((sessionId, event, replay) => collaborationChildMonitor.handleEvent(sessionId, event, replay))
 setInterval(() => {
   void collaborationChildMonitor.checkStalls()
-  // Stop wakes a parent did not accept yet, this run or before a restart.
-  void collaborationChildMonitor.retryStopWakes()
+  // Stop wakes an idle parent has not observed yet, from this run or before a restart.
+  void collaborationChildMonitor.resendStopWakes()
 }, CHILD_STALL_CHECK_INTERVAL_MS).unref()
 // Children on other machines: their runs reach the monitor from the node's event log.
 new RemoteChildWatcher(collaborationChildMonitor).start()

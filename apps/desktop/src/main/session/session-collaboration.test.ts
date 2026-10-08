@@ -2147,6 +2147,25 @@ describe('spawning a child on another machine', () => {
     expect(calls.fetch).toEqual(['p-cloned'])
   })
 
+  it('clears a stop wake only when a retrieve reports the child stopped', async () => {
+    const { parent, host } = remoteParent()
+    await requestRemote(parent, host)
+    await startSessionAgent('parent', { launchId: 'remote', task: 'Implement export' }, host)
+    const config = () => JSON.parse((state.db!.prepare("SELECT config_json FROM session_collaboration_grants WHERE child_session_id = 'remote-child'")
+      .get() as { config_json: string }).config_json)
+    state.db!.prepare("UPDATE session_collaboration_grants SET config_json = ? WHERE child_session_id = 'remote-child'")
+      .run(JSON.stringify({ ...config(), pendingStopWake: { key: '50', status: 'idle', lastAttemptAt: 0 } }))
+
+    // Its machine cannot say: the parent has not seen the stop.
+    remoteSession = null as unknown as typeof remoteSession
+    expect(resultJson(await retrieveSessionMessages('parent', {}, host)).peers[0].state).toBe('unreachable')
+    expect(config().pendingStopWake).toBeDefined()
+
+    remoteSession = { status: 'idle', pendingInteraction: null }
+    expect(resultJson(await retrieveSessionMessages('parent', {}, host)).peers[0].state).toBe('idle')
+    expect(config().pendingStopWake).toBeUndefined()
+  })
+
   it('runs the remote child mailbox tools against this mailbox, both ways', async () => {
     const { parent, host } = remoteParent()
     await requestRemote(parent, host)

@@ -150,7 +150,7 @@ export interface SessionTitleSetter {
    * origin `{ kind: 'task-notification' }`; other harnesses fall back to a
    * synthetic send.
    */
-  injectTaskNotification?(content: string): Promise<unknown>
+  injectTaskNotification?(content: string): Promise<void>
 }
 
 export interface SessionTitleHost {

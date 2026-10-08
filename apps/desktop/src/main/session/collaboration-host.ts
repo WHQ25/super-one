@@ -20,7 +20,7 @@ import log from '../logger'
 import { listSessionAgentProfiles } from './agent-profiles'
 import { collaborationStore } from './collaboration-mailbox'
 import { remoteChildTarget, sendToRemoteChild } from './collaboration-remote'
-import type { Session, SessionManager, TaskNotificationDelivery } from './types'
+import type { Session, SessionManager } from './types'
 
 let sessionsChangedListener: (() => void) | null = null
 
@@ -117,44 +117,42 @@ export function isCollaborationTargetReadOnly(sessionId: string, live: Session |
   }
 }
 
-/** Start a host turn in `sessionId`; queues behind an in-flight turn. */
-async function wakeSession(host: SessionManager, sessionId: string, text: string): Promise<TaskNotificationDelivery> {
+/** Start a host turn in `sessionId`; queues behind an in-flight turn. Best-effort. */
+async function wakeSession(host: SessionManager, sessionId: string, text: string): Promise<void> {
   if (remoteChildTarget(sessionId)) {
     // A child on another machine: a turn through the gateway, under this desktop's lease.
     try {
       await sendToRemoteChild(sessionId, text)
-      return 'accepted'
     } catch (error) {
       log.warn(
         '[session-collaboration] remote wake failed sid=%s: %s',
         sessionId,
         error instanceof Error ? error.message : String(error),
       )
-      return 'failed'
     }
+    return
   }
   const session = resolveLiveSession(host, sessionId)
   if (!session) {
     log.debug('[session-collaboration] peer not available for wake sid=%s', sessionId)
-    return 'failed'
+    return
   }
   if (isCollaborationTargetReadOnly(sessionId, session)) {
     log.debug('[session-collaboration] skip wake; worktree removed sid=%s', sessionId)
-    return 'failed'
+    return
   }
   try {
-    return await session.injectTaskNotification(text)
+    await session.injectTaskNotification(text)
   } catch (error) {
     log.warn(
       '[session-collaboration] wake failed sid=%s: %s',
       sessionId,
       error instanceof Error ? error.message : String(error),
     )
-    return 'failed'
   }
 }
 
-export function wakeCollaborationPeer(host: SessionManager, sessionId: string, fromSessionId: string): Promise<TaskNotificationDelivery> {
+export function wakeCollaborationPeer(host: SessionManager, sessionId: string, fromSessionId: string): Promise<void> {
   return wakeSession(host, sessionId, mailboxWakeText({ sessionId: fromSessionId, title: sessionLabelTitle(fromSessionId) }))
 }
 
@@ -164,7 +162,7 @@ export function wakeParentOfStoppedChild(
   parentSessionId: string,
   childSessionId: string,
   status: string,
-): Promise<TaskNotificationDelivery> {
+): Promise<void> {
   return wakeSession(host, parentSessionId, childStoppedWakeText({
     sessionId: childSessionId,
     title: sessionLabelTitle(childSessionId),
@@ -177,7 +175,7 @@ export function wakeLinkPeer(
   sessionId: string,
   grant: GrantRow,
   hasOpening: boolean,
-): Promise<TaskNotificationDelivery> {
+): Promise<void> {
   return wakeSession(host, sessionId, linkActivationWakeText({
     initiatorSessionId: grant.parent_session_id,
     initiatorTitle: initiatorTitleOf(grant),

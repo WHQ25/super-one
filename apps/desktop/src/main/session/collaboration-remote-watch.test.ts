@@ -2,14 +2,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { openNodeDatabase } from '@superone/runtime/db'
 import { CollaborationStore } from '@superone/runtime/collaboration'
 import type { EnvironmentEventEnvelope } from '@superone/shared/environment'
-import type { SessionManager, TaskNotificationDelivery } from './types'
+import type { SessionManager } from './types'
 
 const state = vi.hoisted(() => ({
   store: null as unknown as CollaborationStore,
   events: [] as EnvironmentEventEnvelope[],
   status: 'idle',
   connected: true,
-  wake: vi.fn(async (..._args: unknown[]): Promise<TaskNotificationDelivery> => 'accepted'),
+  wake: vi.fn(async (..._args: unknown[]) => {}),
+  /** Events of the second machine, `env-c`. */
+  eventsC: [] as EnvironmentEventEnvelope[],
 }))
 
 vi.mock('../logger', () => ({ default: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() } }))
@@ -22,10 +24,13 @@ vi.mock('./collaboration-remote', () => ({
   remoteChildTarget: () => ({ environmentId: 'env-b' }),
   remoteChildState: async () => ({ status: state.status, pendingInteraction: null }),
   remotePort: async () => ({
-    listEnvironments: async () => [{ environmentId: 'env-b', connectionId: 'conn-b', label: 'B', connected: state.connected, harnessIds: [] }],
+    listEnvironments: async () => [
+      { environmentId: 'env-b', connectionId: 'conn-b', label: 'B', connected: state.connected, harnessIds: [] },
+      { environmentId: 'env-c', connectionId: 'conn-c', label: 'C', connected: true, harnessIds: [] },
+    ],
     getSession: async () => ({ status: state.status, pendingInteraction: null }),
-    listEvents: async (_c: string, after: string) =>
-      state.events.filter((e) => BigInt(e.sequence) > BigInt(after)).slice(0, 1000),
+    listEvents: async (connectionId: string, after: string) =>
+      (connectionId === 'conn-c' ? state.eventsC : state.events).filter((e) => BigInt(e.sequence) > BigInt(after)).slice(0, 1000),
   }),
 }))
 
@@ -58,9 +63,10 @@ function remoteOf() {
 }
 
 /** This desktop as it starts: a fresh monitor and watcher over the persisted grants. */
-function startDesktop() {
+function startDesktop(now = Date.now) {
   const monitor = new CollaborationChildMonitor({
-    host: {} as SessionManager,
+    host: { getSession: () => null } as unknown as SessionManager,
+    now,
     view: () => null,
     lastUserMessageAt: () => null,
     notifyStalled: vi.fn(),
@@ -78,8 +84,8 @@ describe('RemoteChildWatcher', () => {
   beforeEach(() => {
     state.connected = true
     state.status = 'idle'
-    state.wake.mockReset()
-    state.wake.mockResolvedValue('accepted')
+    state.wake.mockClear()
+    state.eventsC = []
     state.events = [statusEvent(10, 'streaming', 'other'), statusEvent(11, 'streaming')]
     state.store = new CollaborationStore(openNodeDatabase(':memory:'))
     grantId = state.store.createGrant({
@@ -153,19 +159,36 @@ describe('RemoteChildWatcher', () => {
     expect(remoteOf().run).toBeUndefined()
   })
 
-  it('keeps a stop wake that was not delivered and delivers it once after a restart', async () => {
+  it('keeps a stop wake the parent never saw and sends it again after a restart', async () => {
     await tick(startDesktop())
-    // This desktop dies between recording the stop and delivering its wake.
+    // This desktop dies before the wake reaches the parent.
     state.wake.mockImplementationOnce(() => new Promise(() => {}))
     state.events.push(statusEvent(12, 'idle'))
     await tick(startDesktop())
-    expect(JSON.parse(state.store.grantById(grantId)!.config_json).pendingStopWake).toEqual({ key: '12', status: 'idle' })
+    expect(JSON.parse(state.store.grantById(grantId)!.config_json).pendingStopWake).toMatchObject({ key: '12', status: 'idle' })
 
-    const restarted = startDesktop()
+    const restarted = startDesktop(() => Date.now() + 60_000)
     await tick(restarted)
-    await restarted.monitor.retryStopWakes()
+    await restarted.monitor.resendStopWakes()
     expect(state.wake).toHaveBeenCalledTimes(2)
-    expect(JSON.parse(state.store.grantById(grantId)!.config_json).pendingStopWake).toBeUndefined()
+  })
+
+  it('wakes for children on two machines that stop at the same event sequence', async () => {
+    const other = state.store.createGrant({
+      kind: 'spawn',
+      parentSessionId: 'parent',
+      agentId: 'claude',
+      config: { launchId: 'l2', remote: { environmentId: 'env-c', label: 'C', eventCursor: '5' } },
+    })
+    state.store.bindStartedSession(state.store.grantById(other)!, 'child-c', JSON.parse(state.store.grantById(other)!.config_json))
+    state.store.markTaskSent(other)
+    state.eventsC = [statusEvent(11, 'streaming', 'child-c')]
+    const desktop = startDesktop()
+    await tick(desktop)
+    state.events.push(statusEvent(12, 'idle'))
+    state.eventsC.push(statusEvent(12, 'idle', 'child-c'))
+    await tick(desktop)
+    expect(state.wake.mock.calls.map((call) => call[2]).sort()).toEqual(['child', 'child-c'])
   })
 
   it('waits for the machine to reconnect and reads the run state again then', async () => {

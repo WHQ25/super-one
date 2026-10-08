@@ -14,7 +14,7 @@ import {
 } from '@superone/runtime/collaboration'
 import type { CollaborationPeer } from '@superone/runtime/collaboration'
 import { denyMainThreadOnlyIfSubagent } from '../mcp/main-thread-session-guard'
-import { describeCollaborationChild } from './collaboration-lifecycle'
+import { acknowledgeStoppedChild, describeCollaborationChild, pendingStopKey } from './collaboration-lifecycle'
 import { forwardToExternalParent } from './collaboration-external-parent'
 import { collaborationStore as store, notifyCollaborationMailboxChanged } from './collaboration-mailbox'
 import {
@@ -90,12 +90,21 @@ export interface SessionRetrieveArgs {
   from?: string[]
 }
 
-/** Child peers also carry what they are doing, so a woken parent can decide without reading transcripts. */
-function withChildStatus(peers: CollaborationPeer[], host: SessionManager) {
+/**
+ * Child peers also carry what they are doing, so a woken parent can decide
+ * without reading transcripts. `acks` gets the stop wakes this report
+ * observes, to clear once the reply is returned.
+ */
+function withChildStatus(callerSessionId: string, peers: CollaborationPeer[], host: SessionManager, acks: Array<() => void>) {
   const now = Date.now()
-  return Promise.all(peers.map(async (peer) => peer.relation === 'child'
-    ? { ...peer, ...await describeCollaborationChild(host, peer.sessionId, now) }
-    : peer))
+  return Promise.all(peers.map(async (peer) => {
+    if (peer.relation !== 'child') return peer
+    // Read before the lookup: a stop recorded during it is not observed by this report.
+    const stopKey = pendingStopKey(peer.sessionId)
+    const status = await describeCollaborationChild(host, peer.sessionId, now)
+    acks.push(() => acknowledgeStoppedChild(callerSessionId, peer.sessionId, status.state, stopKey))
+    return { ...peer, ...status }
+  }))
 }
 
 /**
@@ -126,18 +135,22 @@ export async function retrieveSessionMessages(
     return errorResult(error)
   }
   const { messages, acks } = read
-  const peers = await withChildStatus(read.peers, host)
-  if (messages.length > 0) {
-    if (deferAck) {
-      deferAck(() => {
-        store().ackMailbox(callerSessionId, acks)
-        notifyCollaborationMailboxChanged(callerSessionId)
-      })
-    } else {
-      notifyCollaborationMailboxChanged(callerSessionId)
-    }
-    return toolResult({ status: 'messages', messages, peers })
+  const observed: Array<() => void> = []
+  let peers: Awaited<ReturnType<typeof withChildStatus>>
+  try {
+    peers = await withChildStatus(callerSessionId, read.peers, host, observed)
+  } catch (error) {
+    return errorResult(error)
   }
+  // What the reader now has: its messages, and the stops it saw.
+  const commit = () => {
+    if (deferAck && messages.length > 0) store().ackMailbox(callerSessionId, acks)
+    for (const ack of observed) ack()
+    if (messages.length > 0) notifyCollaborationMailboxChanged(callerSessionId)
+  }
+  if (deferAck) deferAck(commit)
+  else commit()
+  if (messages.length > 0) return toolResult({ status: 'messages', messages, peers })
   return toolResult({
     status: 'empty',
     messages: [],

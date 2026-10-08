@@ -16,7 +16,7 @@ import log from '../logger'
 import { collaborationStore, spawnParentOf } from './collaboration-mailbox'
 import { wakeParentOfStoppedChild } from './collaboration-host'
 import { remoteChildState, remoteChildTarget } from './collaboration-remote'
-import type { Session, SessionManager, TaskNotificationDelivery } from './types'
+import type { Session, SessionManager } from './types'
 
 /** Streaming with no agent event or user action for this long counts as a stall. */
 export const CHILD_STALL_MS = 10 * 60_000
@@ -187,23 +187,22 @@ export class CollaborationChildMonitor {
   private readonly runs = new Map<string, SessionAgentRunState>()
   /** sessionId → the activity time its stall was observed at; one notice per stall. */
   private readonly stalls = new Map<string, number>()
-  /** Grants whose stop wake is being delivered now. */
+  /** Grants whose stop wake is being sent now. */
   private readonly delivering = new Set<string>()
-  /**
-   * Stop wakes the parent's harness queued in memory: not retried while this
-   * process lives, delivered again after a restart (at least once).
-   */
-  private readonly queuedWakes = new Set<string>()
   private readonly now: () => number
 
   constructor(private readonly deps: CollaborationChildMonitorDeps) {
     this.now = deps.now ?? Date.now
   }
 
-  /** `stopKey` identifies the stop durably (a node event sequence); local stops get a fresh one. */
+  /**
+   * `stopKey` is the node event sequence of a remote child's event: it names
+   * a stop durably and orders a new run after it. Local stops get a fresh key.
+   */
   handleEvent(sessionId: string, event: AgentEvent, replay: boolean, stopKey?: string): void {
     if (replay) return
     observedEventAt.set(sessionId, this.now())
+    const hadRun = this.runs.has(sessionId)
     switch (event.type) {
       case 'status_change':
         if (event.status === 'streaming' || event.status === 'background') this.open(sessionId)
@@ -221,6 +220,8 @@ export class CollaborationChildMonitor {
         break
       }
     }
+    // A new run supersedes the last stop: its wake is moot.
+    if (!hadRun && this.runs.has(sessionId)) clearStopWakeOfChild(sessionId, stopKey)
     // Any live event is activity: the stall is over.
     this.clearStall(sessionId)
   }
@@ -243,8 +244,10 @@ export class CollaborationChildMonitor {
 
   /**
    * The open run of `sessionId` ended: `status` is how (`idle`, `error`, or a
-   * description). A child that stopped without reporting wakes its parent;
-   * the wake is recorded on the grant first and cleared only once delivered.
+   * description). A child that stopped without reporting wakes its parent.
+   * The wake stays recorded on the grant until the parent observes the stop
+   * (see {@link acknowledgeStoppedChild}) or the child runs again, and is sent
+   * again while the parent sits idle: a wake may repeat, it is never lost.
    */
   stopRun(sessionId: string, status: string, stopKey = `local:${randomUUID()}`): void {
     const run = this.runs.get(sessionId)
@@ -257,21 +260,33 @@ export class CollaborationChildMonitor {
     if (grant.task_sent !== 1) return
     if (reportedSinceLastInput(sessionId, this.deps.lastUserMessageAt(sessionId))) return
     const label = status === 'error' && run.error ? `error: ${run.error}` : status
-    log.info('[session-collaboration] child stopped without reporting sid=%s parent=%s status=%s', sessionId, grant.parent_session_id, label)
-    const store = collaborationStore()
     const config = parseGrantConfig<StopWakeConfig>(grant.config_json)
-    if (config.pendingStopWake?.key !== stopKey) {
-      store.updateConfig(grant.grant_id, { ...config, pendingStopWake: { key: stopKey, status: label } })
-    }
+    // A replayed stop (same key) was recorded and sent already.
+    if (config.pendingStopWake?.key === stopKey) return
+    log.info('[session-collaboration] child stopped without reporting sid=%s parent=%s status=%s', sessionId, grant.parent_session_id, label)
+    collaborationStore().updateConfig(grant.grant_id, {
+      ...config,
+      pendingStopWake: { key: stopKey, status: label, lastAttemptAt: this.now() },
+    })
     // After the caller's transaction (if any) commits.
-    queueMicrotask(() => void this.deliverStopWake(grant.grant_id))
+    queueMicrotask(() => void this.sendStopWake(grant.grant_id, stopKey))
   }
 
-  /** Deliver every recorded stop wake still pending (startup, then periodically). */
-  async retryStopWakes(): Promise<void> {
-    const grants = collaborationStore().startedSpawnGrants()
-      .filter((grant) => parseGrantConfig<StopWakeConfig>(grant.config_json).pendingStopWake)
-    await Promise.all(grants.map((grant) => this.deliverStopWake(grant.grant_id)))
+  /**
+   * Send again every recorded stop wake whose parent sits idle (no turn
+   * running or queued) and whose last attempt is at least `intervalMs` old.
+   */
+  async resendStopWakes(intervalMs = CHILD_STALL_CHECK_INTERVAL_MS, now = this.now()): Promise<void> {
+    const store = collaborationStore()
+    await Promise.all(store.startedSpawnGrants().map(async (grant) => {
+      const config = parseGrantConfig<StopWakeConfig>(grant.config_json)
+      const pending = config.pendingStopWake
+      if (!pending || now - pending.lastAttemptAt < intervalMs || this.delivering.has(grant.grant_id)) return
+      if (!parentIsIdle(this.deps.host.getSession(grant.parent_session_id))) return
+      // Recorded before the attempt, for this stop only.
+      store.updateConfig(grant.grant_id, { ...config, pendingStopWake: { ...pending, lastAttemptAt: now } })
+      await this.sendStopWake(grant.grant_id, pending.key)
+    }))
   }
 
   /** Notify the human once per stall of a spawn child; never wakes the parent. */
@@ -287,31 +302,17 @@ export class CollaborationChildMonitor {
     }
   }
 
-  private async deliverStopWake(grantId: string): Promise<void> {
+  private async sendStopWake(grantId: string, key: string): Promise<void> {
     if (this.delivering.has(grantId)) return
-    const store = collaborationStore()
-    const grant = store.grantById(grantId)
+    const grant = collaborationStore().grantById(grantId)
     const pending = grant && parseGrantConfig<StopWakeConfig>(grant.config_json).pendingStopWake
-    if (!grant?.child_session_id || !pending || this.queuedWakes.has(pending.key)) return
+    if (!grant?.child_session_id || pending?.key !== key) return
     this.delivering.add(grantId)
-    let delivery: TaskNotificationDelivery
     try {
-      delivery = await wakeParentOfStoppedChild(this.deps.host, grant.parent_session_id, grant.child_session_id, pending.status)
+      await wakeParentOfStoppedChild(this.deps.host, grant.parent_session_id, grant.child_session_id, pending.status)
     } finally {
       this.delivering.delete(grantId)
     }
-    if (delivery === 'failed') return
-    if (delivery === 'deferred') {
-      this.queuedWakes.add(pending.key)
-      return
-    }
-    const current = store.grantById(grantId)
-    if (!current) return
-    const config = parseGrantConfig<StopWakeConfig>(current.config_json)
-    // A newer stop recorded meanwhile keeps its own wake.
-    if (config.pendingStopWake?.key !== pending.key) return
-    const { pendingStopWake: _delivered, ...rest } = config
-    store.updateConfig(grantId, rest)
   }
 
   private open(sessionId: string): SessionAgentRunState {
@@ -329,6 +330,67 @@ export class CollaborationChildMonitor {
 }
 
 type StopWakeConfig = SessionAgentLaunchConfig & {
-  /** Host-maintained: the parent wake for a stop, until the parent accepted it. */
-  pendingStopWake?: { key: string; status: string }
+  /**
+   * Host-maintained: the parent wake for the child's last stop, until the
+   * parent observed it. `key` names the stop; `lastAttemptAt` is in ms.
+   */
+  pendingStopWake?: { key: string; status: string; lastAttemptAt: number }
+}
+
+/**
+ * No turn running or queued and no prompt awaiting the human: a wake sent
+ * now starts a turn rather than waiting in a harness queue.
+ */
+function parentIsIdle(parent: Session | null): boolean {
+  if (!parent) return true
+  const activity = parent.activityStatus()
+  return (activity === 'idle' || activity === 'error')
+    && parent.getQueuedMessagesEvent() === null
+    && parent.getPendingInteractions().length === 0
+}
+
+/** Clear the grant's stop wake if it is still the one for `key`; a newer stop keeps its own. */
+function clearStopWake(grantId: string, key?: string): void {
+  const store = collaborationStore()
+  const grant = store.grantById(grantId)
+  if (!grant) return
+  const config = parseGrantConfig<StopWakeConfig>(grant.config_json)
+  if (!config.pendingStopWake || (key !== undefined && config.pendingStopWake.key !== key)) return
+  const { pendingStopWake: _observed, ...rest } = config
+  store.updateConfig(grantId, rest)
+}
+
+/** True when the event at `eventKey` comes after the stop at `stopKey` (both node sequences). */
+function isAfterStop(eventKey: string | undefined, stopKey: string): boolean {
+  if (eventKey === undefined || !/^\d+$/.test(eventKey) || !/^\d+$/.test(stopKey)) return true
+  return BigInt(eventKey) > BigInt(stopKey)
+}
+
+/** A new run of the child supersedes its last stop; `eventKey` is the node sequence that opened it. */
+function clearStopWakeOfChild(childSessionId: string, eventKey: string | undefined): void {
+  const grant = collaborationStore().spawnGrantForChild(childSessionId)
+  const pending = grant && parseGrantConfig<StopWakeConfig>(grant.config_json).pendingStopWake
+  if (pending && isAfterStop(eventKey, pending.key)) clearStopWake(grant.grant_id, pending.key)
+}
+
+/** Key of the child's stop wake the parent has not observed yet; null when none. */
+export function pendingStopKey(childSessionId: string): string | null {
+  const grant = collaborationStore().spawnGrantForChild(childSessionId)
+  return (grant && parseGrantConfig<StopWakeConfig>(grant.config_json).pendingStopWake?.key) ?? null
+}
+
+/**
+ * The parent saw its child stopped: a successful `session_collab_retrieve`
+ * reported it idle or in error. Clears the stop wake `key` read before that
+ * state was looked up, so a stop recorded meanwhile keeps its wake.
+ */
+export function acknowledgeStoppedChild(
+  parentSessionId: string,
+  childSessionId: string,
+  state: CollaborationChildState,
+  key: string | null,
+): void {
+  if (!key || (state !== 'idle' && state !== 'error')) return
+  const grant = collaborationStore().spawnGrantForChild(childSessionId)
+  if (grant?.parent_session_id === parentSessionId) clearStopWake(grant.grant_id, key)
 }

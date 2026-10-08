@@ -701,8 +701,10 @@ from the node event log with a cursor and the open run's state persisted per
 child, across its own restarts and reconnects and the node's
 (`collaboration-remote-watch.ts`; a node restart that ends a run logs
 `session.reconciled`). They drive the same stop-wake and stall notice as a
-local child (`apps/desktop/src/main/session/collaboration-lifecycle.ts`); a
-stop wake stays recorded on the grant until the parent's session accepted it.
+local child (`apps/desktop/src/main/session/collaboration-lifecycle.ts`). A
+stop wake stays recorded on the grant until the parent observes the stop (a
+retrieve that reports the child idle or in error) or the child runs again, and
+is sent again while the parent sits idle: it may repeat, it is not lost.
 Before cutting the child's worktree the node fetches `origin` (`git.fetch`);
 an existing checkout is fetched too.
 

@@ -47,7 +47,7 @@ import { NodeConnectionManager } from './node-connection-manager'
 import { NodeCredentialStore } from './node-credential-store'
 import { WorkspaceRouter } from './workspace-router'
 import { probeEndpointHealth } from './endpoint-probes'
-import type { KnownEnvironmentRecord, ResolvedNodeRoute } from './node-connection-manager'
+import { isRouteIndependentFailure, type KnownEnvironmentRecord, type ResolvedNodeRoute } from './node-connection-manager'
 import { NodeRouteResolver, cachedNodeLanDiscovery, type NodeRouteTarget } from './node-route-resolver'
 import type { CodexMcpOauthLoginOptions } from '@superone/shared/agent-types'
 import { SshTunnelManager } from './ssh-tunnel-manager'
@@ -300,7 +300,8 @@ export class EnvironmentHost {
       // supervisor. Pairing still skips the first resolve so bootstrap adopt() is
       // not raced (see resolveEndpointFromFirstAttempt).
       resolveReconnectRoute: (known) => this.routes.resolve(known),
-      betterRouteAvailable: (known, current) => this.routes.betterThan(known, current),
+      onRouteFailed: (known, route) => this.routes.markFailed(known, route),
+      betterRoute: (known, current) => this.routes.betterRoute(known, current),
     })
     this.registry.setConnectionManager(this.connections)
     this.workspaceRouter = new WorkspaceRouter((environmentId) => this.registry.get(environmentId))
@@ -326,23 +327,22 @@ export class EnvironmentHost {
    * different networks pair without opening a port.
    */
   async pairRemote(input: PairRemoteInput) {
-    let baseUrl = input.baseUrl
-    let route: ResolvedNodeRoute | undefined
+    const baseUrl = input.baseUrl
     if (!baseUrl) {
       const profiles = input.endpointProfiles ?? []
       if (!input.environmentId || profiles.length === 0) {
         throw Object.assign(new Error('pairing needs a node URL or the routes from its pairing code'), { code: 'invalid_argument' })
       }
-      route = await this.routes.resolve({
-        environmentId: input.environmentId,
-        endpointProfiles: profiles,
-        preferredEndpointId: profiles[0].endpointId,
-      })
-      if (!route) throw Object.assign(new Error('no route to the node'), { code: 'unavailable' })
+      const target = { environmentId: input.environmentId, endpointProfiles: profiles, preferredEndpointId: profiles[0].endpointId }
       // The stored base URL is a direct address even when pairing went through the relay.
-      baseUrl = route.dial ? (profiles.find((p) => p.kind !== 'relay')?.target ?? route.baseUrl) : route.baseUrl
+      const directUrl = profiles.find((p) => p.kind !== 'relay')?.target
+      const result = await this.overRoutes(target, (r) =>
+        this.connections.pairAndConnect({ ...input, baseUrl: r.dial ? (directUrl ?? r.baseUrl) : r.baseUrl, route: r }),
+      )
+      this.startHostActionConsumer(result.connectionId)
+      return result
     }
-    const result = await this.connections.pairAndConnect({ ...input, baseUrl, route })
+    const result = await this.connections.pairAndConnect({ ...input, baseUrl })
     this.startHostActionConsumer(result.connectionId)
     return result
   }
@@ -2882,39 +2882,41 @@ export class EnvironmentHost {
     const known = this.connections.listKnown().find((k) => k.connectionId === input.connectionId)
     if (!known) throw new Error(`unknown connection ${input.connectionId}`)
 
-    let route: ResolvedNodeRoute | undefined
-    let baseUrl: string
-    if (input.baseUrl) {
-      // Explicit baseUrl; for SSH endpoints rebuild the tunnel first.
-      baseUrl = input.baseUrl.replace(/\/$/, '')
-      const preferred =
-        known.endpointProfiles.find((p) => p.endpointId === known.preferredEndpointId) ??
-        known.endpointProfiles[0]
-      if (preferred && tunnelSpecFromEndpoint(preferred)) {
-        const resolved = await this.openSshForward(known, preferred)
-        if (resolved) baseUrl = resolved
-      }
-    } else {
+    if (!input.baseUrl) {
       // A desktop node's fresh pairing code: the same route choice as a dial,
       // so a node reachable only through the relay re-pairs there.
       const profiles = input.endpointProfiles?.length ? input.endpointProfiles : known.endpointProfiles
-      const resolved = await this.routes.resolve({
+      const target = {
         ...known,
         endpointProfiles: profiles,
         preferredEndpointId: input.endpointProfiles?.length ? profiles[0].endpointId : known.preferredEndpointId,
-      })
-      if (!resolved) throw Object.assign(new Error('no route to the node'), { code: 'unavailable' })
-      route = resolved
-      baseUrl = resolved.dial ? (known.baseUrl ?? resolved.baseUrl) : resolved.baseUrl
+      }
+      const descriptor = await this.overRoutes(target, (r) =>
+        this.connections.repairPairing({
+          connectionId: input.connectionId,
+          baseUrl: r.dial ? (known.baseUrl ?? r.baseUrl) : r.baseUrl,
+          route: r,
+          pairingToken: input.pairingToken,
+          channel: input.channel,
+          endpointProfiles: input.endpointProfiles,
+        }),
+      )
+      return this.finalizeRepairedPairing(input.connectionId, descriptor)
     }
 
+    // Explicit baseUrl; for SSH endpoints rebuild the tunnel first.
+    let baseUrl = input.baseUrl.replace(/\/$/, '')
+    const preferred =
+      known.endpointProfiles.find((p) => p.endpointId === known.preferredEndpointId) ??
+      known.endpointProfiles[0]
+    if (preferred && tunnelSpecFromEndpoint(preferred)) {
+      const resolved = await this.openSshForward(known, preferred)
+      if (resolved) baseUrl = resolved
+    }
     const descriptor = await this.connections.repairPairing({
       connectionId: input.connectionId,
       baseUrl,
-      route,
       pairingToken: input.pairingToken,
-      channel: input.channel,
-      endpointProfiles: input.endpointProfiles,
     })
     return this.finalizeRepairedPairing(input.connectionId, descriptor)
   }
@@ -3304,6 +3306,28 @@ export class EnvironmentHost {
 
     await this.connect(connectionId)
     return { version: installed.version, warnings }
+  }
+
+  /**
+   * Run a one-shot exchange (pairing, re-pairing) over the best route, moving
+   * on when a route answers `/health` but fails the encrypted connection.
+   */
+  private async overRoutes<T>(target: NodeRouteTarget, run: (route: ResolvedNodeRoute) => Promise<T>): Promise<T> {
+    let previous: ResolvedNodeRoute | undefined
+    for (let attempt = 1; ; attempt++) {
+      const route = await this.routes.resolve(target)
+      if (!route) throw Object.assign(new Error('no route to the node'), { code: 'unavailable' })
+      if (previous && previous.endpointId === route.endpointId && previous.baseUrl === route.baseUrl) {
+        throw Object.assign(new Error('no other route to the node'), { code: 'unavailable' })
+      }
+      try {
+        return await run(route)
+      } catch (err) {
+        if (isRouteIndependentFailure(err) || attempt >= 4 || /already used|expired|invalid pairing token/i.test((err as Error).message)) throw err
+        this.routes.markFailed(target, route)
+        previous = route
+      }
+    }
   }
 
   /** Rebuild (or reuse) the SSH tunnel of an ssh-forward profile; its local base URL. */

@@ -1,5 +1,10 @@
 import { randomUUID } from 'node:crypto'
-import type { ExecutionEnvironmentDescriptor, KnownEnvironment, NodeLinkPath } from '@superone/shared/environment'
+import {
+  isTerminalCredentialFailure,
+  type ExecutionEnvironmentDescriptor,
+  type KnownEnvironment,
+  type NodeLinkPath,
+} from '@superone/shared/environment'
 import {
   ConnectionSupervisor,
   type RetryNowDisposition,
@@ -53,15 +58,40 @@ export interface NodeConnectionManagerOptions {
     known: Readonly<KnownEnvironmentRecord>,
   ) => Promise<ResolvedNodeRoute | undefined>
   /**
-   * While connected over a route other than the LAN: whether a better one is
-   * reachable now. True makes the periodic health check hand the connection
-   * back to the supervisor, which re-dials through `resolveReconnectRoute`.
+   * The encrypted connection over a resolved route failed for a reason that
+   * may be the route's (refused, timed out, channel proof failed). The next
+   * `resolveReconnectRoute` should pass it over.
    */
-  betterRouteAvailable?: (
+  onRouteFailed?: (known: Readonly<KnownEnvironmentRecord>, route: ResolvedNodeRoute) => void
+  /**
+   * While connected over a route other than the LAN: a better one whose
+   * `/health` answers. The manager proves it with a full encrypted connection
+   * (channel, attach, descriptor identity) before giving up the current one.
+   */
+  betterRoute?: (
     known: Readonly<KnownEnvironmentRecord>,
     current: ResolvedNodeRoute,
-  ) => Promise<boolean>
+  ) => Promise<ResolvedNodeRoute | undefined>
 }
+
+/** Errors no other route can fix: the credential, the protocol or the node's identity. */
+export function isRouteIndependentFailure(err: unknown): boolean {
+  const { code, message } = (err ?? {}) as { code?: string; message?: string }
+  return (
+    isTerminalCredentialFailure(code, message ?? '') ||
+    code === 'protocol_incompatible' ||
+    code === 'identity_conflict' ||
+    code === 'invalid_config'
+  )
+}
+
+/** Same route: same endpoint and address. */
+function sameRoute(a: ResolvedNodeRoute, b: ResolvedNodeRoute): boolean {
+  return a.endpointId === b.endpointId && a.baseUrl === b.baseUrl
+}
+
+/** Dial attempts within one supervisor connect before backing off. */
+const MAX_ROUTES_PER_DIAL = 4
 
 interface LiveConnection {
   connectionId: string
@@ -580,34 +610,81 @@ export class NodeConnectionManager {
       }
     }
 
+    /** The route the next dial must use (a verified upgrade, or a fallback mid-dial). */
+    let pinnedRoute: ResolvedNodeRoute | null = null
+
+    /** Open, attach and identity-check a throwaway connection over `candidate`. */
+    const verifyRoute = async (candidate: ResolvedNodeRoute): Promise<boolean> => {
+      const probe = new NodeRpcClient({
+        baseUrl: candidate.baseUrl,
+        dial: candidate.dial,
+        expectedEnvironmentId: credential.environmentId,
+        expectedNodePublicKeyFingerprint: credential.nodePublicKeyFingerprint,
+        devicePrivateKeyPem: credential.devicePrivateKeyPem,
+        channel: credential.channel,
+        supervised: true,
+        heartbeatIntervalMs: 0,
+        getWsTicket: async () =>
+          mintWsTicket({ baseUrl: candidate.baseUrl, accessToken: await ensureAccess(), channel: credential.channel, dial: candidate.dial }),
+      })
+      try {
+        await probe.connect()
+        await probe.getDescriptor()
+        return true
+      } catch {
+        return false
+      } finally {
+        probe.close()
+      }
+    }
+
     const gateway = new RemoteEnvironmentGateway(client)
     const supervisor = new ConnectionSupervisor({
       environmentId: credential.environmentId,
       connectionId: credential.connectionId,
       stableAfterMs: 30_000,
       connect: async () => {
-        const known = this.known.get(credential.connectionId)
-        if (!skipResolverOnce && known) {
-          if (this.opts.resolveReconnectRoute) {
-            const resolved = await this.opts.resolveReconnectRoute(known)
-            if (resolved) applyRoute(resolved)
-          } else if (this.opts.resolveReconnectBaseUrl) {
-            const resolved = await this.opts.resolveReconnectBaseUrl(known)
-            if (resolved) applyBaseUrl(resolved)
+        // A route that answers `/health` but not the encrypted channel (or a
+        // spoofed answer) is marked failed, and the dial moves on to the next.
+        for (let attempt = 1; ; attempt++) {
+          const known = this.known.get(credential.connectionId)
+          if (pinnedRoute) {
+            applyRoute(pinnedRoute)
+            pinnedRoute = null
+          } else if (!skipResolverOnce && known) {
+            if (this.opts.resolveReconnectRoute) {
+              const resolved = await this.opts.resolveReconnectRoute(known)
+              if (resolved) applyRoute(resolved)
+            } else if (this.opts.resolveReconnectBaseUrl) {
+              const resolved = await this.opts.resolveReconnectBaseUrl(known)
+              if (resolved) applyBaseUrl(resolved)
+            }
+          }
+          skipResolverOnce = false
+          const tried = route
+          try {
+            // Probe unauthenticated health first so clone/regenerate surfaces as
+            // identity_conflict before auth errors obscure the root cause. A relay
+            // has no HTTP surface; the channel proof and descriptor check identity.
+            if (!route.dial) {
+              await assertNodeIdentity(route.baseUrl, {
+                environmentId: credential.environmentId,
+                nodePublicKeyFingerprint: credential.nodePublicKeyFingerprint,
+              })
+            }
+            await client.connect()
+            await client.getDescriptor()
+            return
+          } catch (err) {
+            if (!known || !this.opts.onRouteFailed || !this.opts.resolveReconnectRoute || isRouteIndependentFailure(err)) throw err
+            client.invalidateTransport('route failed')
+            this.opts.onRouteFailed(known, tried)
+            if (attempt >= MAX_ROUTES_PER_DIAL) throw err
+            const next = await this.opts.resolveReconnectRoute(known)
+            if (!next || sameRoute(next, tried)) throw err
+            pinnedRoute = next
           }
         }
-        skipResolverOnce = false
-        // Probe unauthenticated health first so clone/regenerate surfaces as
-        // identity_conflict before auth errors obscure the root cause. A relay
-        // has no HTTP surface; the channel proof and descriptor check identity.
-        if (!route.dial) {
-          await assertNodeIdentity(route.baseUrl, {
-            environmentId: credential.environmentId,
-            nodePublicKeyFingerprint: credential.nodePublicKeyFingerprint,
-          })
-        }
-        await client.connect()
-        await client.getDescriptor()
       },
       healthProbe: async () => {
         let ok = false
@@ -619,12 +696,18 @@ export class NodeConnectionManager {
           return false
         }
         if (!ok) return false
-        // Off the LAN: a reachable better route hands the connection back to
-        // the supervisor, which re-dials it; session cursors resume there.
+        // Off the LAN: make before break. A better route must carry a full
+        // encrypted connection to this node before the working one is given
+        // up; then the supervisor re-dials onto it and session cursors resume.
         const known = this.known.get(credential.connectionId)
-        if (route.path !== 'lan' && known && this.opts.betterRouteAvailable) {
-          if (await this.opts.betterRouteAvailable(known, route).catch(() => false)) {
-            throw new Error(`switching from ${route.path} to a better route`)
+        if (route.path !== 'lan' && known && this.opts.betterRoute) {
+          const better = await this.opts.betterRoute(known, route).catch(() => undefined)
+          if (better) {
+            if (await verifyRoute(better)) {
+              pinnedRoute = better
+              throw new Error(`switching from ${route.path} to ${better.path}`)
+            }
+            this.opts.onRouteFailed?.(known, better)
           }
         }
         return true

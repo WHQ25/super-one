@@ -67,14 +67,36 @@ describe('NodeRouteResolver', () => {
       .resolves.toMatchObject({ path: 'ssh', baseUrl: 'http://127.0.0.1:40000' })
   })
 
-  it('reports a better route only when one ahead of the current path answers', async () => {
+  it('offers a better route only when one ahead of the current path answers', async () => {
     const offLan = resolver(['http://100.80.0.2:7791'])
-    await expect(offLan.routes.betterThan(target, { path: 'relay' })).resolves.toBe(true)
-    await expect(offLan.routes.betterThan(target, { path: 'tailscale' })).resolves.toBe(false)
+    await expect(offLan.routes.betterRoute(target, { path: 'relay' })).resolves.toMatchObject({ path: 'tailscale' })
+    await expect(offLan.routes.betterRoute(target, { path: 'tailscale' })).resolves.toBeUndefined()
 
     const backHome = resolver(['http://192.168.1.20:7791'], ['http://192.168.1.20:7791'])
-    await expect(backHome.routes.betterThan(target, { path: 'relay' })).resolves.toBe(true)
-    await expect(backHome.routes.betterThan(target, { path: 'lan' })).resolves.toBe(false)
+    await expect(backHome.routes.betterRoute(target, { path: 'relay' })).resolves.toMatchObject({ path: 'lan', baseUrl: 'http://192.168.1.20:7791' })
+    await expect(backHome.routes.betterRoute(target, { path: 'lan' })).resolves.toBeUndefined()
+  })
+
+  it('passes over a route whose encrypted connection failed, for a while', async () => {
+    let now = 1_000
+    const probe = vi.fn(async () => true)
+    const routes = new NodeRouteResolver(
+      { probe, discoverLan: async () => [], openSshForward: async () => undefined, relayOnline: async () => true },
+      () => now,
+    )
+    const lan = await routes.resolve(target)
+    expect(lan?.path).toBe('lan')
+    // /health answered but the channel failed: the next dial moves on.
+    routes.markFailed(target, lan!)
+    await expect(routes.resolve(target)).resolves.toMatchObject({ path: 'tailscale' })
+    await expect(routes.betterRoute(target, { path: 'relay' })).resolves.toMatchObject({ path: 'tailscale' })
+    routes.markFailed(target, (await routes.resolve(target))!)
+    await expect(routes.resolve(target)).resolves.toMatchObject({ path: 'relay' })
+    // With every route failed, all are tried again rather than none.
+    routes.markFailed(target, (await routes.resolve(target))!)
+    await expect(routes.resolve(target)).resolves.toMatchObject({ path: 'lan' })
+    now += 3 * 60_000
+    expect((await routes.candidates(target)).map((c) => c.path)).toEqual(['lan', 'tailscale', 'relay'])
   })
 })
 

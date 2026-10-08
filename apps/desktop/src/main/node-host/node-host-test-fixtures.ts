@@ -1,4 +1,7 @@
 import { execFileSync } from 'node:child_process'
+import { randomBytes } from 'node:crypto'
+import { createServer } from 'node:http'
+import { WebSocketServer } from 'ws'
 import type { AgentEvent, ChatMessage, RecentFolder, SendMessageRequest, SessionAgentProfile } from '@superone/shared/agent-types'
 import { HarnessManager } from '@superone/runtime/harness'
 import { openNodeDatabase } from '@superone/runtime/db'
@@ -134,4 +137,35 @@ export async function startTestDesktopNode(input: { userDataDir: string; project
     input.listen,
   )
   return { host, sessions }
+}
+
+/**
+ * Something on A's LAN that answers `/health` with B's (public) identity and
+ * takes the WebSocket, but cannot prove B's channel secret: a spoofed mDNS
+ * answer, or B behind a path that breaks WebSockets.
+ */
+export async function startSpoofedLanNode(identity: { environmentId: string; nodePublicKeyFingerprint: string }) {
+  const http = createServer((_req, res) => {
+    res.writeHead(200, { 'content-type': 'application/json' })
+    res.end(JSON.stringify({ ok: true, ...identity, identityConflict: false }))
+  })
+  const wss = new WebSocketServer({ server: http })
+  let upgrades = 0
+  wss.on('connection', (ws) => {
+    upgrades += 1
+    ws.on('message', () =>
+      ws.send(JSON.stringify({ type: 'channel_challenge', v: 1, nonce: randomBytes(32).toString('hex'), proof: randomBytes(32).toString('hex') })),
+    )
+  })
+  await new Promise<void>((resolve) => http.listen(0, '127.0.0.1', resolve))
+  return {
+    url: `http://127.0.0.1:${(http.address() as { port: number }).port}`,
+    upgrades: () => upgrades,
+    close: () =>
+      new Promise<void>((resolve) => {
+        for (const c of wss.clients) c.terminate()
+        wss.close()
+        http.close(() => resolve())
+      }),
+  }
 }

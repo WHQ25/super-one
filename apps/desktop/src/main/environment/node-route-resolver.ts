@@ -1,4 +1,5 @@
 import {
+  NODE_DISCOVERED_LAN_ENDPOINT_ID,
   NODE_LAN_ENDPOINT_ID,
   orderNodeRoutes,
   type EndpointProfile,
@@ -32,6 +33,11 @@ export interface NodeRouteResolverDeps {
 }
 
 const RELAY_STATUS_TIMEOUT_MS = 3_000
+/**
+ * How long a route whose encrypted connection failed is passed over. An HTTP
+ * `/health` answer is unauthenticated, so only the channel proves a route.
+ */
+const FAILED_ROUTE_EXCLUSION_MS = 2 * 60_000
 
 const PATH_ORDER: NodeLinkPath[] = ['lan', 'tailscale', 'direct', 'ssh', 'relay']
 
@@ -40,18 +46,41 @@ const PATH_ORDER: NodeLinkPath[] = ['lan', 'tailscale', 'direct', 'ssh', 'relay'
  * phone link does: LAN when the node is on this network, else Tailscale, else
  * the relay. Only desktop nodes (paired with a LAN hint) are looked up over
  * mDNS. A lone candidate is used as-is, as before multi-route nodes existed.
+ * A route whose encrypted connection failed (`markFailed`) is passed over for
+ * a while, unless nothing else is left, so the next dial moves on.
  */
 export class NodeRouteResolver {
-  constructor(private readonly deps: NodeRouteResolverDeps) {}
+  private readonly failedUntil = new Map<string, number>()
+
+  constructor(
+    private readonly deps: NodeRouteResolverDeps,
+    private readonly now: () => number = Date.now,
+  ) {}
+
+  /** The encrypted connection over `route` failed: try the next route for a while. */
+  markFailed(target: Pick<NodeRouteTarget, 'environmentId'>, route: Pick<ResolvedNodeRoute, 'endpointId' | 'baseUrl'>): void {
+    this.failedUntil.set(routeKey(target.environmentId, route.endpointId, route.baseUrl), this.now() + FAILED_ROUTE_EXCLUSION_MS)
+  }
+
+  private isExcluded(environmentId: string, candidate: NodeRouteCandidate): boolean {
+    const key = routeKey(environmentId, candidate.profile.endpointId, candidate.profile.target)
+    const until = this.failedUntil.get(key)
+    if (until === undefined) return false
+    if (until > this.now()) return true
+    this.failedUntil.delete(key)
+    return false
+  }
 
   async candidates(target: NodeRouteTarget): Promise<NodeRouteCandidate[]> {
     const lanCapable = target.endpointProfiles.some((p) => p.endpointId === NODE_LAN_ENDPOINT_ID)
     const discovered = lanCapable ? await this.deps.discoverLan(target.environmentId).catch(() => []) : []
-    return orderNodeRoutes({
+    const all = orderNodeRoutes({
       profiles: target.endpointProfiles,
       preferredEndpointId: target.preferredEndpointId,
       discoveredLanUrls: discovered,
     })
+    const usable = all.filter((c) => !this.isExcluded(target.environmentId, c))
+    return usable.length > 0 ? usable : all
   }
 
   async resolve(target: NodeRouteTarget): Promise<ResolvedNodeRoute | undefined> {
@@ -71,15 +100,21 @@ export class NodeRouteResolver {
     return undefined
   }
 
-  /** Whether a route ahead of `current` (LAN over Tailscale over relay) answers now. */
-  async betterThan(target: NodeRouteTarget, current: { path: NodeLinkPath }): Promise<boolean> {
+  /**
+   * A route ahead of `current` (LAN over Tailscale over relay) whose `/health`
+   * answers now. Only a candidate: the caller proves it with the encrypted
+   * channel before giving up the current connection.
+   */
+  async betterRoute(target: NodeRouteTarget, current: { path: NodeLinkPath }): Promise<ResolvedNodeRoute | undefined> {
     const rank = PATH_ORDER.indexOf(current.path)
     for (const candidate of await this.candidates(target)) {
       if (PATH_ORDER.indexOf(candidate.path) >= rank) continue
       if (candidate.path === 'ssh' || candidate.path === 'relay') continue
-      if (await this.deps.probe(httpBase(candidate.profile.target), target)) return true
+      if (this.isExcluded(target.environmentId, candidate)) continue
+      const route = await this.open(candidate, target, { probe: true })
+      if (route) return route
     }
-    return false
+    return undefined
   }
 
   private async open(
@@ -115,6 +150,12 @@ export class NodeRouteResolver {
 
 function defaultRelayOnline(relayUrl: string, roomId: string): Promise<boolean> {
   return checkRelayDesktopOnline({ relayUrl, roomId, timeoutMs: RELAY_STATUS_TIMEOUT_MS }).catch(() => false)
+}
+
+/** One key per stored profile; mDNS can report several LAN addresses under one id. */
+function routeKey(environmentId: string, endpointId: string, baseUrl: string): string {
+  const address = endpointId === NODE_DISCOVERED_LAN_ENDPOINT_ID ? `|${baseUrl.replace(/\/$/, '')}` : ''
+  return `${environmentId}|${endpointId}${address}`
 }
 
 function httpBase(target: string): string {

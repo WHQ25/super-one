@@ -470,12 +470,21 @@ A lone candidate (most CLI nodes) is used as before. Only desktop nodes, paired
 with a LAN hint, are looked up over mDNS.
 
 Desktop nodes follow the phone link: LAN on the same network, otherwise
-Tailscale, otherwise the relay. A lost LAN socket is a normal disconnect, so the
-next dial falls through to Tailscale or the relay. While connected off the LAN,
-the 30 s health check also asks whether a route ahead of the current one answers
-(`betterRouteAvailable`); if so it reports the connection unhealthy and the
-supervisor re-dials, landing on the LAN. Sessions carry over: leases belong to
-the client session, and event readers resume with `afterSequence`. The
+Tailscale, otherwise the relay. `/health` is unauthenticated, so it only
+nominates a route; the encrypted channel proves it. When the channel, attach or
+descriptor check fails on a route for a reason another route could fix, the
+route is passed over for two minutes (`markFailed`) and the same dial moves on,
+so a LAN that answers `/health` but not the channel (or a spoofed answer) falls
+through to the relay. A lost LAN socket is a normal disconnect, so the next
+dial falls through as well.
+
+While connected off the LAN, the 30 s health check asks for a route ahead of
+the current one (`betterRoute`) and upgrades make-before-break: a throwaway
+connection over it must complete the channel, attach and the descriptor
+identity check before the supervisor re-dials onto it. A route that fails this
+is passed over and the working connection is left alone. Sessions carry over:
+leases belong to the client session, and event readers resume with
+`afterSequence`. The
 environments list shows the live path (`EnvironmentListItem.activePath`).
 
 Failover to another endpoint (`endpoint-failover.ts`) proceeds only after the

@@ -34,7 +34,7 @@ import { NodeConnectionManager } from '../environment/node-connection-manager'
 import { NodeCredentialStore } from '../environment/node-credential-store'
 import { NodeRouteResolver } from '../environment/node-route-resolver'
 import { probeEndpointHealth } from '../environment/endpoint-probes'
-import { startTestDesktopNode } from './node-host-test-fixtures'
+import { startSpoofedLanNode, startTestDesktopNode } from './node-host-test-fixtures'
 
 const cleanup: Array<() => unknown> = []
 afterEach(async () => {
@@ -84,6 +84,73 @@ async function lanPath(targetPort: number) {
 }
 
 describe('desktop node over the relay', () => {
+  it('keeps a working relay connection when the LAN answers /health but not the channel, and dials past it', async () => {
+    const relay = await startTestRelay()
+    cleanup.push(() => relay.close())
+    const { host } = await startTestDesktopNode({
+      userDataDir: tempDir('superone-spoof-b-'),
+      projectDir: tempDir('superone-spoof-project-'),
+      listen: { bindPort: 0, relayUrl: relay.url },
+    })
+    cleanup.push(() => host.stop())
+    await vi.waitFor(() => expect(host.relayConnected).toBe(true))
+    const spoof = await startSpoofedLanNode({ environmentId: host.identity.environmentId, nodePublicKeyFingerprint: host.identity.publicKeyFingerprint })
+    cleanup.push(spoof.close)
+
+    const code = decodeNodePairingCode(encodeNodePairingCode(host.mintPairingToken()), Date.now())
+    const port = Number(new URL(spoof.url).port)
+    const endpointProfiles = nodePairingEndpointProfiles({ ...code, lan: { host: '127.0.0.1', port } })
+    let now = Date.now()
+    const routes = new NodeRouteResolver(
+      {
+        discoverLan: async () => [],
+        probe: async (baseUrl, target) => {
+          const health = await probeEndpointHealth({ endpointId: 'p', kind: 'direct-wss', label: baseUrl, target: baseUrl }, { timeoutMs: 1_000 })
+          return health.ok && health.environmentId === target.environmentId
+        },
+        openSshForward: async () => undefined,
+      },
+      () => now,
+    )
+    const manager = new NodeConnectionManager({
+      credentialStore: new NodeCredentialStore(tempDir('superone-spoof-a-')),
+      resolveReconnectRoute: (known) => routes.resolve(known),
+      onRouteFailed: (known, route) => routes.markFailed(known, route),
+      betterRoute: (known, current) => routes.betterRoute(known, current),
+    })
+    cleanup.push(() => manager.disconnectAll())
+
+    // Pair over the relay (the LAN answer is not trusted for pairing either; see EnvironmentHost.pairRemote).
+    const relayRoute = await routes.resolve({ environmentId: code.environmentId, endpointProfiles: endpointProfiles.filter((p) => p.kind === 'relay') })
+    const { connectionId } = await manager.pairAndConnect({
+      baseUrl: endpointProfiles[0].target, route: relayRoute, endpointProfiles, pairingToken: code.pairingToken, label: 'Desktop B', channel: code.channel,
+    })
+    const client = manager.getClient(connectionId)!
+    const generation = manager.getSupervisor(connectionId)!.generation
+
+    // Upgrade check: /health says LAN, the channel says no. The relay connection stays up, untouched.
+    await manager.checkRoute(code.environmentId)
+    expect(spoof.upgrades()).toBe(1)
+    expect(manager.getActivePath(connectionId)).toBe('relay')
+    expect(manager.getSupervisor(connectionId)!.generation).toBe(generation)
+    await expect(client.rpc('environment.health')).resolves.toMatchObject({ ok: true })
+    // The failed LAN is passed over for a while: the next check does not even try it.
+    await manager.checkRoute(code.environmentId)
+    expect(spoof.upgrades()).toBe(1)
+
+    // A fresh dial with nothing remembered: the LAN wins on /health, fails the channel, and the same dial moves on to the relay.
+    now += 10 * 60_000
+    relay.dropClients()
+    await vi.waitFor(() => {
+      expect(manager.getSupervisor(connectionId)!.generation).toBeGreaterThan(generation)
+      expect(manager.getActivePath(connectionId)).toBe('relay')
+    }, { timeout: 10_000, interval: 50 })
+    expect(spoof.upgrades()).toBeGreaterThanOrEqual(2)
+    expect(manager.getSupervisor(connectionId)!.state).toBe('connected')
+    await expect(client.rpc('environment.health')).resolves.toMatchObject({ ok: true })
+  })
+
+
   it('pairs through the relay alone, moves to the LAN, falls back to the relay on LAN loss, and resumes events', async () => {
     const relay = await startTestRelay()
     cleanup.push(() => relay.close())
@@ -112,7 +179,8 @@ describe('desktop node over the relay', () => {
     const manager = new NodeConnectionManager({
       credentialStore: new NodeCredentialStore(tempDir('superone-relay-a-')),
       resolveReconnectRoute: (known) => routes.resolve(known),
-      betterRouteAvailable: (known, current) => routes.betterThan(known, current),
+      onRouteFailed: (known, route) => routes.markFailed(known, route),
+      betterRoute: (known, current) => routes.betterRoute(known, current),
     })
     cleanup.push(() => manager.disconnectAll())
 

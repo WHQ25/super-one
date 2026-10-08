@@ -27,7 +27,7 @@ vi.mock('electron', () => ({
 vi.mock('../logger', () => ({ default: { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} } }))
 
 import { EnvironmentHost, resetEnvironmentHostForTests } from './environment-host'
-import { startTestDesktopNode } from '../node-host/node-host-test-fixtures'
+import { startSpoofedLanNode, startTestDesktopNode } from '../node-host/node-host-test-fixtures'
 
 const cleanup: Array<() => unknown> = []
 afterEach(async () => {
@@ -49,6 +49,36 @@ function relayOnly(code: NodePairingCode): NodePairingCode {
 }
 
 describe('EnvironmentHost with a relay-only desktop node', () => {
+  it('pairs through the relay when the LAN answers /health but fails the channel', async () => {
+    const relay = await startTestRelay()
+    cleanup.push(() => relay.close())
+    const { host: b } = await startTestDesktopNode({
+      userDataDir: tempDir('superone-ehr-b-'),
+      projectDir: tempDir('superone-ehr-project-'),
+      listen: { bindPort: 0, relayUrl: relay.url },
+    })
+    cleanup.push(() => b.stop())
+    await vi.waitFor(() => expect(b.relayConnected).toBe(true))
+    const spoof = await startSpoofedLanNode({ environmentId: b.identity.environmentId, nodePublicKeyFingerprint: b.identity.publicKeyFingerprint })
+    cleanup.push(spoof.close)
+
+    electron.userData = tempDir('superone-ehr-a-')
+    const a = new EnvironmentHost(electron.userData, { discoverLan: async () => [] })
+    cleanup.push(() => a.dispose())
+    const code = decodeNodePairingCode(encodeNodePairingCode(b.mintPairingToken()), Date.now())
+    const { connectionId } = await a.pairRemote({
+      environmentId: code.environmentId,
+      endpointProfiles: nodePairingEndpointProfiles({ ...code, lan: { host: '127.0.0.1', port: Number(new URL(spoof.url).port) } }),
+      pairingToken: code.pairingToken,
+      label: 'Desktop B',
+      channel: code.channel,
+    })
+    expect(spoof.upgrades()).toBeGreaterThanOrEqual(1)
+    const item = (await a.listEnvironments({ includeDescriptors: false })).find((i) => i.connectionId === connectionId)
+    expect(item?.activePath).toBe('relay')
+  })
+
+
   it('pairs, reconnects after a drop, fails over and re-pairs through the relay; reports an offline node fast', async () => {
     const relay = await startTestRelay()
     cleanup.push(() => relay.close())

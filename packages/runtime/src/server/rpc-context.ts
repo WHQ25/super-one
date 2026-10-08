@@ -2,6 +2,7 @@ import type {
   ClaimHostActionResult,
   EnvironmentCapabilities,
   EnvironmentEventEnvelope,
+  EnvironmentGuiState,
   HostActionsPollResult,
   NodeHarnessId,
   ProjectSnapshot,
@@ -380,6 +381,8 @@ export interface RpcContext {
   sessionProviders?: Pick<SessionProviderStore, 'get'>
   artifacts?: ArtifactZonePort
   extensions?: RpcExtensionDispatch
+  /** Whether GUI tools can run now (`environment.status`); a host without one is headless. */
+  guiState?: () => EnvironmentGuiState
 
   simulatedHarness?: boolean
   requestId?: string

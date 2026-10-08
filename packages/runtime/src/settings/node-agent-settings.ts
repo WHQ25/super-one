@@ -33,6 +33,7 @@ export const DEFAULT_NODE_AGENT_SETTINGS: NodeAgentSettings = {
     permissionPreset: '',
   },
   experimentalClaudeOpenAiChatEnabled: false,
+  note: '',
 }
 
 /** File root shape: merge agent block into existing config.json without clobbering peers. */
@@ -98,6 +99,7 @@ export function normalizeNodeAgentSettings(raw: unknown): NodeAgentSettings {
       agent.experimentalClaudeOpenAiChatEnabled,
       false,
     ),
+    note: asString(agent.note, '').trim(),
   }
 }
 
@@ -109,6 +111,7 @@ export function mergeNodeAgentSettings(
     claude: { ...current.claude },
     codex: { ...current.codex },
     experimentalClaudeOpenAiChatEnabled: current.experimentalClaudeOpenAiChatEnabled,
+    note: current.note,
   }
 
   if (patch.claude) {
@@ -155,6 +158,7 @@ export function mergeNodeAgentSettings(
   if (typeof patch.experimentalClaudeOpenAiChatEnabled === 'boolean') {
     next.experimentalClaudeOpenAiChatEnabled = patch.experimentalClaudeOpenAiChatEnabled
   }
+  if (typeof patch.note === 'string') next.note = patch.note
 
   return normalizeNodeAgentSettings(next)
 }

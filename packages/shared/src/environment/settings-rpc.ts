@@ -45,6 +45,11 @@ export interface NodeAgentSettings {
   claude: NodeClaudeAgentDefaults
   codex: NodeCodexAgentDefaults
   experimentalClaudeOpenAiChatEnabled: boolean
+  /**
+   * Owner-written note about this machine (what it is for, what it has), shown
+   * to agents in `environment_list` as `descriptor.note`. Empty when unset.
+   */
+  note: string
 }
 
 export type NodeAgentSettingsPatch = {
@@ -55,6 +60,7 @@ export type NodeAgentSettingsPatch = {
     }
   >
   experimentalClaudeOpenAiChatEnabled?: boolean
+  note?: string
 }
 
 export interface SettingsGetRequest {

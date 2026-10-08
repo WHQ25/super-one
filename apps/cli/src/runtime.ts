@@ -29,6 +29,7 @@ import {
   type HostActionMcpServerHandle,
 } from './session/host-action-mcp-server'
 import { loadNodeAgentSettings } from '@superone/runtime/settings'
+import { getMachineInfo } from '@superone/runtime/machine'
 import { memoryActor } from '@superone/shared/interaction-memory'
 import {
   AutomationService,
@@ -92,6 +93,8 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
   const config = resolveRuntimeConfig(partial)
   const paths = nodePaths(config.nodeHome)
   const identity = loadOrCreateIdentity(config.nodeHome, config.label)
+  // Warm the descriptor's machine facts so the first handshake does not wait on the probes.
+  void getMachineInfo()
   const db = openNodeDatabase(paths.stateDb)
   const auth = new AuthService(db, identity)
   const terminals = new NodeTerminalManager(db)

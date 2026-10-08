@@ -39,6 +39,53 @@ export interface ExecutionEnvironmentDescriptor {
    * it locally (`docs/architecture/session-sync-zone.md` §2).
    */
   syncRoot?: string
+  /**
+   * Hardware, OS and toolchains, collected once per node process (so refreshed
+   * by a restart or upgrade). Older nodes omit it.
+   */
+  machine?: EnvironmentMachine
+  /** Owner-written note about this machine (node setting `note`). */
+  note?: string
+}
+
+/** Static facts an agent uses to pick a machine. Fields a host cannot read are omitted. */
+export interface EnvironmentMachine {
+  /** Human-readable OS name and version, e.g. `macOS 26.0`, `Ubuntu 24.04.1 LTS`. */
+  os: string
+  cpuModel?: string
+  cpuCores: number
+  memoryBytes: number
+  /** GPU model names. */
+  gpus?: string[]
+  /** Developer toolchains found on PATH. */
+  toolchains: EnvironmentToolchain[]
+}
+
+export interface EnvironmentToolchain {
+  name: string
+  version?: string
+}
+
+/**
+ * Whether GUI tools (computer use, simulators) can run now. A headless node
+ * reports `unavailable`; a desktop host reports `locked` while the screen is.
+ */
+export type EnvironmentGuiState = 'available' | 'locked' | 'unavailable'
+
+/** Live load, read on demand through `environment.status`. */
+export interface EnvironmentLiveStatus {
+  /** One-minute load average; omitted on Windows, where Node reports none. */
+  load1?: number
+  cpuCores: number
+  freeMemoryBytes: number
+  /** Omitted when the host does not serve sessions. */
+  sessions?: {
+    /** Sessions with a turn in progress. */
+    running: number
+    /** Sessions waiting for a user decision (permission, question, plan). */
+    pending: number
+  }
+  gui: EnvironmentGuiState
 }
 
 /** Well-known constant for the in-process desktop environment before identity is persisted. */

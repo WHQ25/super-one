@@ -22,6 +22,7 @@ import { isGitMentionRefKind } from '@superone/shared/git-mention-query'
 import type { ConsumerBinding, ConsumerId, Platform } from '@superone/shared/platform-registry'
 import { loadNodeAgentSettings, patchNodeAgentSettings, resolveAgentTurnDefaults } from '../settings/index'
 import { probeSandboxRpc } from '../sandbox/index'
+import { getMachineInfo, readLiveStatus } from '../machine/index'
 import { settingsFromSessionProviderConfig, type NodeSessionRecord } from '../session/index'
 import type { AuthenticatedClient } from './auth-service'
 import { isNodeMutatingCall } from './rpc-mutating-methods'
@@ -237,6 +238,8 @@ async function dispatchRpcInner(method: string, payload: unknown, hostCtx: HostR
       return handleHealth(ctx)
     case 'environment.systemInfo':
       return handleSystemInfo(ctx)
+    case 'environment.status':
+      return handleStatus(ctx)
     case 'settings.get':
       return handleSettingsGet(ctx)
     case 'settings.patch':
@@ -596,7 +599,7 @@ function handleProviderImportBundle(payload: unknown, ctx: RpcContext): RpcResul
   }
 }
 
-function handleDescriptor(ctx: HostRpcContext): RpcResult {
+async function handleDescriptor(ctx: HostRpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readEnvironment)
   if (denied) return denied
   // Advertise enabled + ready catalog entries plus directly runnable bundled/
@@ -614,6 +617,8 @@ function handleDescriptor(ctx: HostRpcContext): RpcResult {
   } catch {
     cliVersion = process.env.SUPERONE_CLI_VERSION?.trim() || undefined
   }
+
+  const { note } = loadNodeAgentSettings(ctx.settingsConfigPath)
 
   const descriptor: ExecutionEnvironmentDescriptor = {
     environmentId: ctx.identity.environmentId,
@@ -640,6 +645,8 @@ function handleDescriptor(ctx: HostRpcContext): RpcResult {
     },
     nodePublicKeyFingerprint: ctx.identity.publicKeyFingerprint,
     ...(ctx.artifacts ? { syncRoot: ctx.artifacts.syncRoot } : {}),
+    machine: await getMachineInfo(),
+    ...(note ? { note } : {}),
   }
   return { result: descriptor }
 }
@@ -739,6 +746,14 @@ function handleHealth(ctx: RpcContext): RpcResult {
       processUptimeSec: uptime(),
     },
   }
+}
+
+/** Live load and session counts for scheduling (`environment_list`). */
+function handleStatus(ctx: HostRpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readEnvironment)
+  if (denied) return denied
+  const sessions = ctx.sessions?.list().map((s) => ({ running: s.status === 'streaming', pending: s.pendingInteraction != null }))
+  return { result: readLiveStatus({ sessions: sessions ?? null, gui: ctx.guiState?.() ?? 'unavailable' }) }
 }
 
 async function handleSystemInfo(ctx: RpcContext): Promise<RpcResult> {

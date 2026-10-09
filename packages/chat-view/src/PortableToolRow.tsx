@@ -34,7 +34,7 @@ import type { BashEditDiff, QuestionPreviewFormat } from '@superone/shared/agent
  * both surfaces; only the tap target differs: the phone previews the file in place
  * (`previewFile`), the way the desktop opens it in a tab.
  */
-function PortableFileChip({ name, title, filePath, className }: { name: string; title: string; filePath: string; className?: string }) {
+export function PortableFileChip({ name, title, filePath, className }: { name: string; title: string; filePath: string; className?: string }) {
   return (
     <FileChipShell
       icon={<FileIcon name={filePath.split(/[/\\]/).pop() || name} size={12} />}

@@ -90,3 +90,20 @@ export const SearchAction: Story = {
     isStreaming: false,
   },
 }
+
+export const MultiRead: Story = {
+  args: { item: { id: 'multi-read', type: 'command_execution', cwd: '/repo', command: "sed -n '1,20p' src/a.ts src/b.ts",
+    commandActions: [{ type: 'read', path: '/repo/src/a.ts' }], aggregatedOutput: 'Shared output for both files.', exitCode: 0, status: 'completed' }, isStreaming: false },
+  play: async ({ canvasElement }) => { canvasElement.querySelector<HTMLElement>('.tool-node > div')?.click() },
+}
+export const MultiReadNarrow: Story = {
+  ...MultiRead, decorators: [(Story) => <StoryShell width={320}><Story /></StoryShell>],
+}
+export const MultiReadChinese: Story = { ...MultiReadNarrow, globals: { locale: 'zh', theme: 'dark' } }
+export const MultiReadLight: Story = { ...MultiRead, globals: { theme: 'light' } }
+export const MixedExploration: Story = {
+  args: { item: { ...MultiRead.args!.item!, command: 'cat a.ts && rg TODO src', commandActions: [
+    { type: 'read', path: '/repo/a.ts' }, { type: 'search', query: 'TODO', path: '/repo/src' },
+  ] }, isStreaming: false },
+  play: MultiRead.play,
+}

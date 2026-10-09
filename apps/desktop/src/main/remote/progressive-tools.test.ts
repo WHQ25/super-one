@@ -13,13 +13,27 @@ vi.mock('../split-text-blocks', () => ({
 
 import { describe, expect, it } from 'vitest'
 import type { ChatMessage, CodexThreadItem } from '@superone/shared/agent-types'
-import { projectCodexTool, projectTool, taskFileChanges, toolDetail } from './progressive-tools'
+import { codexCommandPresentation } from '@superone/shared/codex-command-actions'
+import { codexToolDetail, projectCodexTool, projectTool, taskFileChanges, toolDetail } from './progressive-tools'
 
 function assistant(content: ChatMessage['content']): ChatMessage {
   return { id: 'm', role: 'assistant', status: 'complete', createdAt: '', providerId: 'claude', content }
 }
 
 describe('progressive file-edit projection', () => {
+  it('keeps every read path before truncating a long shell command and returns one complete command detail', () => {
+    const files = Array.from({ length: 12 }, (_, index) => `src/directory-with-long-name/file-${index}.ts`)
+    const item: CodexThreadItem = { id: 'read', type: 'command_execution', cwd: '/repo', command: `cat ${files.join(' ')}`,
+      commandActions: [{ type: 'unknown', command: `cat ${files.join(' ')}` }], aggregatedOutput: 'shared output', status: 'completed', exitCode: 0 }
+    const shell = projectCodexTool(item, 'read-ref')
+    expect(shell.type === 'command_execution' && shell.command.length).toBe(160)
+    expect(shell.type === 'command_execution' && shell.commandActions?.map(action => action.path)).toEqual(files.map(file => `/repo/${file}`))
+    expect(shell.type === 'command_execution' && codexCommandPresentation(shell).files).toEqual(files.map(file => `/repo/${file}`))
+    expect(JSON.stringify(shell)).not.toContain('shared output')
+    const detail = codexToolDetail(item, 'read-ref')
+    expect(JSON.parse(detail)).toMatchObject({ item: { ...item, aggregatedOutput: '' }, result: 'shared output' })
+    expect(detail.match(/shared output/g)).toHaveLength(1)
+  })
   it('keeps multi-file patch paths/counts collapsed and fetches per-file diffs only on expansion', () => {
     const patchText = '*** Begin Patch\n*** Update File: /repo/a.ts\n@@\n-secret-old\n+secret-new\n*** Add File: /repo/b.ts\n+created\n*** End Patch'
     const block = { type: 'tool_use' as const, toolName: 'Patch', toolUseId: 'patch', input: JSON.stringify({ patchText }), status: 'complete' as const }

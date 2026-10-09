@@ -1,3 +1,4 @@
+import { resolveCodexCommandActions } from '@superone/shared/codex-command-actions'
 import type { ChatMessage, ContentBlock, CodexFileUpdateChange, CodexMcpToolCallItem, CodexThreadItem, TaskFileChange } from '@superone/shared/agent-types'
 import { bashEditFileChanges } from '@superone/shared/bash-edit-diff'
 import { fileMutationPath, isFileMutationTool } from '@superone/shared/file-mutation'
@@ -214,7 +215,7 @@ export function projectCodexTool(item: CodexThreadItem, ref: string): CodexThrea
     }))
     return { ...item, remoteDetail: ref, prompt: undefined, childItems: Object.keys(childItems).length ? childItems : undefined, agentsStates: {} }
   }
-  if (item.type === 'command_execution') return { ...item, remoteDetail: ref, command: item.command.slice(0, 160), aggregatedOutput: '', commandActions: item.commandActions?.map(action => ({ ...action, command: action.command?.slice(0, 160) })) }
+  if (item.type === 'command_execution') return { ...item, remoteDetail: ref, command: item.command.slice(0, 160), aggregatedOutput: '', commandActions: resolveCodexCommandActions(item).map(action => ({ ...action, command: action.command?.slice(0, 160) })) }
   if (item.type === 'file_change') {
     const toolLineDelta = item.toolLineDelta ?? fileChangeLineDelta(item.changes)
     return { ...item, remoteDetail: ref, ...(toolLineDelta ? { toolLineDelta } : {}), changes: item.changes.map((change) => {
@@ -262,7 +263,7 @@ export function codexToolDetail(item: CodexThreadItem, ref: string): string {
     ]))
     return JSON.stringify({ item: { ...item, childItems }, input: JSON.stringify({ prompt: item.prompt }), result: JSON.stringify(item.agentsStates) })
   }
-  if (item.type === 'command_execution') return JSON.stringify({ input: JSON.stringify({ command: item.command }), result: item.aggregatedOutput })
+  if (item.type === 'command_execution') return JSON.stringify({ item: { ...item, aggregatedOutput: '' }, input: JSON.stringify({ command: item.command }), result: item.aggregatedOutput })
   if (item.type === 'file_change') {
     const first = item.changes[0]
     return JSON.stringify({

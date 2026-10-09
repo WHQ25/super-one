@@ -2701,7 +2701,7 @@ export const zh: Messages = {
       runningInline: '运行中…',
       timedOut: '已超时',
       outputFileExpired: '输出文件：{{path}} 已过期',
-      terminalPanel: '终端',
+      commandPanel: '命令',
       noOutput: '（无输出）',
       moreFilesChanged_one: '还有 {{count}} 个文件改动',
       moreFilesChanged_other: '还有 {{count}} 个文件改动',

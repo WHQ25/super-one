@@ -1,3 +1,4 @@
+import { mapCodexCommandItem } from '@superone/codex/command-item'
 import { readCodexMcpAppFields } from '@superone/codex/mcp-apps'
 import log from '../logger'
 import { DEADLINE_EXCEEDED, INTERRUPT_CANCEL_TIMEOUT_MS, withDeadline } from '../promise-deadline'
@@ -38,7 +39,6 @@ import type {
   CodexCollabAgentStatus,
   CodexCollabTool,
   CodexCollabToolCallItem,
-  CodexCommandExecutionStatus,
   CodexCompactRequest,
   CodexMcpToolCallStatus,
   CodexMcpServerStartup,
@@ -65,7 +65,7 @@ import {
   MCP_SUPERONE_TOOL_PREFIX,
   toQualifiedSuperoneToolName,
 } from '../mcp/superone-host-owned-tools'
-import { appendAggregatedOutput, capAggregatedOutput } from '@superone/shared/codex-command-output'
+import { appendAggregatedOutput } from '@superone/shared/codex-command-output'
 import { MAIN_THREAD_ONLY_SUPERONE_TOOL_NAMES } from '@superone/shared/superone-host-owned-tools'
 import { resolveConfigConfirm, rejectConfigConfirm } from '../mcp/config-tools'
 import { resolveVideoConfirm, rejectVideoConfirm } from '../mcp/media-tools'
@@ -297,20 +297,6 @@ function mapPatchChangeKind(raw: unknown): CodexPatchChangeKind {
   return 'update'
 }
 
-function mapCommandExecutionStatus(raw: unknown): CodexCommandExecutionStatus {
-  const status = readString(raw)
-  switch (status) {
-    case 'in_progress':
-    case 'inProgress':
-      return 'in_progress'
-    case 'failed':
-    case 'declined':
-      return 'failed'
-    case 'completed':
-    default:
-      return 'completed'
-  }
-}
 
 function mapPatchApplyStatus(raw: unknown): CodexPatchApplyStatus {
   const status = readString(raw)
@@ -388,39 +374,8 @@ export function mapThreadItemFromAppServer(raw: unknown, previous?: CodexThreadI
     }
 
     case 'command_execution':
-    case 'commandExecution': {
-      const prevCommand = previous?.type === 'command_execution' ? previous : null
-      const command = readString(rec.command) ?? prevCommand?.command ?? ''
-      const aggregatedOutput = capAggregatedOutput(
-        readString(rec.aggregatedOutput)
-          ?? readString(rec.aggregated_output)
-          ?? prevCommand?.aggregatedOutput
-          ?? '',
-      )
-      const exitCode = readNumber(rec.exitCode) ?? readNumber(rec.exit_code)
-      const commandActions = Array.isArray(rec.commandActions)
-        ? rec.commandActions.map((a) => {
-            const r = asRecord(a)
-            if (!r) return null
-            return {
-              type: readString(r.type) ?? 'unknown',
-              ...(r.command != null ? { command: readString(r.command) ?? undefined } : {}),
-              ...(r.name != null ? { name: readString(r.name) ?? undefined } : {}),
-              ...(r.path != null ? { path: readString(r.path) ?? undefined } : {}),
-              ...(r.query != null ? { query: readString(r.query) ?? undefined } : {}),
-            }
-          }).filter((a): a is NonNullable<typeof a> => a !== null)
-        : undefined
-      return {
-        id,
-        type: 'command_execution',
-        command,
-        aggregatedOutput,
-        ...(exitCode !== null ? { exitCode } : {}),
-        status: mapCommandExecutionStatus(rec.status ?? prevCommand?.status),
-        ...(commandActions ? { commandActions } : prevCommand?.commandActions ? { commandActions: prevCommand.commandActions } : {}),
-      }
-    }
+    case 'commandExecution':
+      return mapCodexCommandItem(id, rec, previous?.type === 'command_execution' ? previous : undefined)
 
     case 'file_change':
     case 'fileChange': {

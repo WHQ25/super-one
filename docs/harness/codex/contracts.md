@@ -5,6 +5,33 @@ Upstream behavior SuperOne depends on that the app-server schema does not state.
 its area. Realtime is experimental upstream (`features.realtime_conversation`,
 enabled by `apps/desktop/src/main/codex/app-server-connection.ts`).
 
+## Shell command presentation
+
+### One execution can contain multiple read/search/list actions
+
+- **Behavior:** `commandActions` describes an ordered array, while output, status
+  and exit code belong to the containing command execution. Consecutive reads
+  can produce multiple actions. Best-effort upstream parsing can mark
+  `cat a.ts b.ts` unknown or report only the first file for multi-file `head` / `sed`.
+- **Observed:** 0.159.0 local source inspection, `shell-command/src/parse_command.rs`
+  and `app-server-protocol/src/protocol/v2/item.rs`; not a live provider probe.
+- **Depends on it:** `packages/codex/src/command-item.ts` retains execution `cwd`
+  and all actions for desktop and CLI. `packages/shared/src/codex-command-actions.ts`
+  supplements literal reads using a bounded grammar for `cat`, `head`, `tail`
+  and numeric `sed -n` print ranges. Variables, globs, redirects, pipes and
+  unsupported scripts are left to upstream metadata; unknown mixed actions stay
+  Bash. Relative operands use the execution directory, preserving upstream paths
+  when that directory is unavailable or disagrees with an individual action.
+  Desktop/mobile use one expandable call with file/action rows and one shared
+  Command section for command/output, using the Claude Bash edit layout.
+  Exploration groups count unique
+  full read paths, not calls. Remote projection resolves paths before truncating
+  commands; full output remains deferred until expansion.
+- **Guard:** Shared `codex-command-actions.test.ts`, Codex `command-item.test.ts`,
+  desktop `CodexCommandBlock.test.tsx` / `progressive-tools.test.ts`, and mobile
+  `e2e/codex-command-actions.spec.ts` cover multi-file recognition, mixed actions,
+  path/count preservation, previews, combined output and deferred retry.
+
 ## Models and thread forks
 
 ### Model discovery depends on the app-server client version

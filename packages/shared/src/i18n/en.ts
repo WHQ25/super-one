@@ -2614,7 +2614,7 @@ export type Messages = {
       runningInline: string
       timedOut: string
       outputFileExpired: string
-      terminalPanel: string
+      commandPanel: string
       noOutput: string
       moreFilesChanged_one: string
       moreFilesChanged_other: string
@@ -6909,7 +6909,7 @@ export const en: Messages = {
       runningInline: 'Running…',
       timedOut: 'Timed out',
       outputFileExpired: 'Output file: {{path}} expired',
-      terminalPanel: 'Terminal',
+      commandPanel: 'Command',
       noOutput: '(no output)',
       moreFilesChanged_one: '{{count}} more file changed',
       moreFilesChanged_other: '{{count}} more files changed',

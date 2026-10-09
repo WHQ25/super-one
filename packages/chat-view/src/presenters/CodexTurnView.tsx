@@ -1,3 +1,4 @@
+import { codexCommandPresentation, summarizeCodexCommandActions } from '@superone/shared/codex-command-actions'
 import {
   Fragment,
   memo,
@@ -292,10 +293,8 @@ interface CodexTopology {
 
 const EMPTY_CODEX_ITEMS: CodexThreadItem[] = []
 
-const COLLAPSIBLE_COMMAND_TYPES = new Set(['read', 'search'])
-
 function isCollapsibleCommand(item: CodexThreadItem): item is CodexCommandExecutionItem {
-  return item.type === 'command_execution' && COLLAPSIBLE_COMMAND_TYPES.has(item.commandActions?.[0]?.type ?? '')
+  return item.type === 'command_execution' && codexCommandPresentation(item).kind !== 'bash'
 }
 
 function groupableAppIdForItem(
@@ -325,7 +324,7 @@ function codexTopologyToken(
   isHiddenMcpItem: CodexTurnViewPresenterRuntime['isHiddenMcpItem'],
 ): string {
   if (item.type === 'command_execution') {
-    return `${item.id}\0command_execution\0${item.commandActions?.[0]?.type ?? ''}`
+    return `${item.id}\0command_execution\0${codexCommandPresentation(item).kind}`
   }
   if (item.type === 'mcp_tool_call') {
     return `${item.id}\0mcp_tool_call\0${isHiddenMcpItem(item) ? 'hidden' : groupableAppIdForItem(item, groupableAppByTool) ?? ''}`
@@ -414,16 +413,11 @@ function buildCodexTopology(
 }
 
 function generateCommandGroupSummary(items: CodexCommandExecutionItem[], t: (key: string, options?: Record<string, unknown>) => string): string {
-  let readCount = 0
-  let searchCount = 0
-  for (const item of items) {
-    const t = item.commandActions?.[0]?.type
-    if (t === 'read') readCount++
-    else if (t === 'search') searchCount++
-  }
-  const read = readCount > 0 ? t('chat.codex.commandGroupRead', { count: readCount }) : ''
-  const search = searchCount > 0 ? t('chat.codex.commandGroupSearch', { count: searchCount }) : ''
-  return read && search ? t('chat.codex.commandGroupCombined', { read, search }) : read || search
+  const counts = summarizeCodexCommandActions(items)
+  const read = counts.files > 0 ? t('chat.codex.commandGroupRead', { count: counts.files }) : ''
+  const search = counts.searches > 0 ? t('chat.codex.commandGroupSearch', { count: counts.searches }) : ''
+  const summary = read && search ? t('chat.codex.commandGroupCombined', { read, search }) : read || search
+  return counts.lists > 0 ? [summary, `LS ×${counts.lists}`].filter(Boolean).join(', ') : summary || t('chat.codex.codeExplored')
 }
 
 const CodexCommandGroup = memo(function CodexCommandGroup({
@@ -459,9 +453,9 @@ const CodexCommandGroup = memo(function CodexCommandGroup({
         <BookOpenText className="size-3 shrink-0 text-muted-foreground" />
         <span className="min-w-0 truncate text-foreground">
           {hasRunning && runningItem
-            ? `${runningItem.commandActions?.[0]?.type === 'read'
+            ? `${codexCommandPresentation(runningItem).kind === 'read'
               ? t('chat.codex.statusReading')
-              : t('chat.codex.statusSearching')}…`
+              : codexCommandPresentation(runningItem).kind === 'search' ? t('chat.codex.statusSearching') : t('chat.codex.exploringCode')}…`
             : generateCommandGroupSummary(items, t)}
         </span>
         <ChevronRight className={cn('ml-auto size-3 shrink-0 transition-transform duration-200', expanded && 'rotate-90')} />

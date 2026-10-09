@@ -380,6 +380,8 @@ export interface CodexCommandExecutionItem {
   id: string
   type: 'command_execution'
   command: string
+  /** Execution directory supplied by Codex; relative read operands resolve here. */
+  cwd?: string
   aggregatedOutput: string
   exitCode?: number
   status: CodexCommandExecutionStatus

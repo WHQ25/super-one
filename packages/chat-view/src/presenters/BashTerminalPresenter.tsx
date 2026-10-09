@@ -16,10 +16,9 @@ import { TerminalCommandOutput } from './TerminalCommandOutput'
 import { extractToolError } from './tool-block-utils'
 import { ToolIcon } from './ToolIcon'
 import { ToolName } from './ToolRow'
+import { ToolOperationDetails } from './ToolOperationDetails'
 
 const BASH_LOAD_CHUNK = 50
-// A codemod can touch hundreds of files; the rows scroll instead of stretching the turn.
-const EDIT_ROWS_MAX_HEIGHT = 'max-h-96'
 
 export interface BashOutputSnapshot {
   content: string
@@ -379,20 +378,9 @@ export function BashTerminalPresenter({
         </div>
       </div>
       {allowExpand && expanded && (hasEdits ? (
-        <div className="cursor-default space-y-0.5 border-t border-border/30 px-1.5 py-1">
-          <div
-            className="flex cursor-pointer items-center gap-1.5 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted/40"
-            onClick={() => setOutputOpen((value) => !value)}
-          >
-            <ChevronRight className={cn('size-3 shrink-0 transition-transform duration-200', outputOpen && 'rotate-90')} />
-            <span>{t('chat.toolBlock.terminalPanel')}</span>
-          </div>
-          {outputOpen && outputPanel}
-          <div className={cn(EDIT_ROWS_MAX_HEIGHT, 'space-y-0.5 overflow-y-auto')}>
-            {editRows.map((row) => <div key={row.toolUseId}>{renderFileTool!(row)}</div>)}
-          </div>
-          {editNote && <div className="px-2 py-0.5 text-xs text-muted-foreground/70">{editNote}</div>}
-        </div>
+        <ToolOperationDetails outputOpen={outputOpen} onOutputOpenChange={setOutputOpen} outputPanel={outputPanel} note={editNote}>
+          {editRows.map((row) => <div key={row.toolUseId}>{renderFileTool!(row)}</div>)}
+        </ToolOperationDetails>
       ) : outputPanel)}
     </div>
   )

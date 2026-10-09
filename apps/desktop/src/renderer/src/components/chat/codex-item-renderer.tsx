@@ -1,17 +1,13 @@
 import { Check, Clock, MessageSquare, ScanSearch, TriangleAlert } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import type { CodexCommandExecutionItem, CodexPlanApprovalState, CodexThreadItem } from '@superone/shared/agent-types'
+import type { CodexPlanApprovalState, CodexThreadItem } from '@superone/shared/agent-types'
 import { ToolBlock } from './ToolBlock'
 import { CopyableMarkdown } from './CopyableMarkdown'
 import { ReasoningBlock } from './ReasoningBlock'
-import { useActiveSession, useChatStore } from '@/stores/chat'
+import { useChatStore } from '@/stores/chat'
 import { resolveMarkdownFileLinks } from './chat-shared'
-import { shortenPath } from './tool-display'
-import type { ToolIcon as ToolIconName } from './tool-display'
 import { ToolIcon } from './ToolIcon'
 import { cn } from '@superone/ui/lib/utils'
-import { AnsiText } from '@/lib/ansi'
-import { FileChip } from './ToolBlock'
 import { CodexPlanImplementFooter } from './CodexPlanImplementFooter'
 import { CodexPlanBlockPresenter } from './presenters/CodexPlanBlock'
 import { codexMcpItemInput, codexMcpItemIsError, codexMcpItemResultText } from './presenters/CodexTurnView'
@@ -20,11 +16,11 @@ import { fileLinkComponents } from './chat-markdown-components'
 import { memo, useState, useEffect, useRef } from 'react'
 import { ChevronRight } from 'lucide-react'
 import type { CodexCollabToolCallItem } from '@superone/shared/agent-types'
-import { TerminalCommandOutput } from './TerminalCommandOutput'
 import { CompactLabeledToolRow, ToolName, ToolRow, ToolSummary, toolOutcomeLabel, withStreamingEllipsis } from './tool-row'
-import { isCodexCommandToolError } from './codex-command-status'
 import { CodexAsyncQuestionBlock } from './CodexAsyncQuestionBlock'
 import { CodexMcpAuthAction, hasCodexMcpAuthChallenge } from './CodexMcpAuthAction'
+import { CodexCommandBlock } from './CodexCommandBlock'
+export { CodexCommandBlock } from './CodexCommandBlock'
 import { usePlanFullscreen } from './plan-fullscreen-context'
 export { PlanFullscreenContext, usePlanFullscreen } from './plan-fullscreen-context'
 
@@ -38,82 +34,6 @@ function StreamingAgentMessage({ text, isStreaming }: { text: string; isStreamin
   const projectPath = useChatStore((s) => s.activeProject)
   const resolved = projectPath ? resolveMarkdownFileLinks(text, projectPath) : text
   return <CopyableMarkdown projectPath={projectPath} text={resolved} isStreaming={isStreaming} components={fileLinkComponents} />
-}
-
-export function getCommandDisplay(item: CodexCommandExecutionItem, cwd?: string, homedir?: string): { icon: ToolIconName; label: string; summary: string } {
-  const action = item.commandActions?.[0]
-  const sp = (p: string): string => shortenPath(p, cwd, homedir)
-  switch (action?.type) {
-    case 'read':
-      return { icon: 'file-text', label: 'Read', summary: action.path ? sp(action.path) : item.command }
-    case 'search':
-      return { icon: 'search', label: 'Grep', summary: `${action.query ?? ''}${action.path ? ` in ${sp(action.path)}` : ''}` }
-    default:
-      return { icon: 'terminal', label: 'Bash', summary: item.command }
-  }
-}
-
-export const CodexCommandBlock = memo(function CodexCommandBlock({ item, isStreaming }: { item: CodexCommandExecutionItem; isStreaming: boolean }) {
-  const { t } = useTranslation()
-  const cwd = useActiveSession((s) => s.cwd)
-  const homedir = useActiveSession((s) => s.homedir)
-  const display = getCommandDisplay(item, cwd, homedir)
-  const action = item.commandActions?.[0]
-  const realRunning = item.status === 'in_progress'
-  const [showRunning, setShowRunning] = useState(realRunning)
-
-  useEffect(() => {
-    if (realRunning) {
-      setShowRunning(true)
-      return
-    }
-    const id = setTimeout(() => setShowRunning(false), 500)
-    return () => clearTimeout(id)
-  }, [realRunning])
-
-  const isRunning = isStreaming && showRunning
-  const [expanded, setExpanded] = useState(false)
-  const isToolError = isCodexCommandToolError(item)
-  const tone = isToolError ? 'error' as const : 'default' as const
-  const runningLabel = display.label === 'Bash'
-    ? t('chat.codex.statusRunning')
-    : display.label === 'Read'
-      ? t('chat.codex.statusReading')
-      : t('chat.codex.statusSearching')
-
-  return (
-    <ToolRow
-      icon={<ToolIcon icon={display.icon} className="size-3 shrink-0 text-muted-foreground" />}
-      tone={tone}
-      expandable
-      details={<CodexCommandOutput item={item} isRunning={isRunning} />}
-      detailsClassName=""
-      mountDetails="expanded"
-      expanded={expanded}
-      onExpandedChange={setExpanded}
-    >
-      <ToolName streaming={isRunning} tone={tone}>
-        {isRunning ? `${runningLabel}…` : display.label}
-      </ToolName>
-      {action?.type === 'read' && action.path
-        ? <FileChip name={action.path.split('/').pop() || ''} title={display.summary} filePath={action.path} />
-        : !expanded ? <ToolSummary>{display.summary}</ToolSummary> : null}
-    </ToolRow>
-  )
-})
-
-function CodexCommandOutput({ item, isRunning }: { item: CodexCommandExecutionItem; isRunning: boolean }) {
-  const { t } = useTranslation()
-  const output = `${item.aggregatedOutput ?? ''}${item.exitCode !== undefined ? `\n\nExit code ${item.exitCode}` : ''}`.trim()
-  return (
-    <TerminalCommandOutput command={item.command} hasOutput={!!output} outputVersion={output}>
-      {output ? (
-        <div className="text-terminal-muted"><AnsiText text={output} /></div>
-      ) : isRunning ? (
-        <div className="text-terminal-muted"><span className="animate-shimmer">{t('chat.codex.runningInline')}</span></div>
-      ) : null}
-    </TerminalCommandOutput>
-  )
 }
 
 function CollabWaitBlock({ item }: { item: CodexCollabToolCallItem }) {

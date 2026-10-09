@@ -45,6 +45,7 @@
     "./presenters/CodexAsyncQuestionView": "./src/presenters/CodexAsyncQuestionView.tsx",
     "./presenters/CodexCollabBlock": "./src/presenters/CodexCollabBlock.tsx",
     "./presenters/CodexPlanBlock": "./src/presenters/CodexPlanBlock.tsx",
+    "./presenters/CodexCommandBlock": "./src/presenters/CodexCommandBlock.tsx",
     "./presenters/CodexTurnView": "./src/presenters/CodexTurnView.tsx",
     "./presenters/CollabTaskBubble": "./src/presenters/CollabTaskBubble.tsx",
     "./presenters/CollapsibleOutput": "./src/presenters/CollapsibleOutput.tsx",

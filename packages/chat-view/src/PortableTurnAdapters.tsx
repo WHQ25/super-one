@@ -942,10 +942,9 @@ function PortableCodexItem(props: CodexItemPresenterProps) {
     if (item.remoteDetail) return <DeferredCodexMcp item={item} />
     return <PortableClaudeTool {...claudePropsFromCodexMcp(item)} />
   }
+  if (item.type === 'command_execution') return <PortableCodexCommand item={item} isStreaming={isStreaming} />
   if ('remoteDetail' in item && item.remoteDetail) return <DeferredCodexTool item={item} isStreaming={isStreaming} />
   switch (item.type) {
-    case 'command_execution':
-      return <PortableCodexCommand item={item} isStreaming={isStreaming} />
     case 'agent_message':
       return item.questions?.length ? <PortableAsyncQuestion item={item} /> : <div className="my-0.5"><PortableCodexMarkdown text={item.text} isStreaming={isStreaming} /></div>
     case 'plan':

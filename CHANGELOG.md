@@ -15,31 +15,86 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
-- Preview PDFs and open PDF attachments on phones.
-- Show progress when cloning repositories locally.
-- Upload phone connection diagnostics to the desktop's mobile.log.
-
-### Fixed
-
-- Refresh phone project and session lists after desktop changes and reconnects.
-- Preserve file and line statistics in live mobile Bash results.
-- Show the phone chat scrollbar only during manual scrolling.
+- Run tasks on another desktop: pair two desktops through a phone already
+  paired with one of them, then reach the other desktop over LAN, Tailscale
+  or the relay.
+- Control who may drive a desktop with an Allow Control switch and one
+  switch per controlling desktop or phone. Sessions started from another
+  device show a "Started from <device>" badge and are read-only locally.
+- Spawn collaboration children on another connected machine, using that
+  machine's own models and keys. The child clones or fetches the repository
+  and works in a fresh worktree there.
+- Wake the parent when a child stops without reporting, and notify when a
+  child stalls.
+- `environment_get_info` replaces `environment_list`: hardware (OS, CPU,
+  GPUs, total and free memory) and subscription usage (Claude, Codex, Grok,
+  OpenCode Go, Cursor) for each environment.
+- Show message times on hover and day separators in the transcript.
 
 ### Changed
 
-- Share user bubbles across desktop and phone, including context chips,
-  attachments and prompt keyword highlights.
-- Display OpenCode patches, Code Mode and scoped permissions; refresh
-  directory-specific model and agent catalogs.
-- Upgrade Claude Agent SDK to 0.3.293, adding Haiku 5.5.
-- Replace the Debug mention with system prompt guidance.
+- Each paired phone now uses its own encrypted channel with per-connection
+  keys and replay protection. Phones paired earlier must be paired again:
+  remove each device marked "Re-pair Required" on the desktop and pair it
+  from Pair New Phone. Older phone and desktop builds cannot connect.
+- The Grok credits gauge reads the Grok CLI login directly, with no running
+  agent.
 
-### Performance
+### Fixed
 
-- Reduce relay traffic by throttling draft saves to five-second intervals
-  and skipping frames with no relay recipients.
+- Keep a send that never started, or a refused queued send, as a failed row
+  that can be retried; hold duplicate sends instead of running them twice.
+- Restore the session goal and todo list after a reconnect or reload.
+- Keep newly spawned sessions under their parent in the sidebar.
+- Show every file read by a single Codex shell command.
+- Phone: paste chips match desktop, file diffs are highlighted with line
+  numbers that scroll with the code, and restores retry until they reach
+  the current connection.
+- Retry usage readings whose connection was reset by a proxy or VPN.
 
-## [0.72.2-alpha] - 2026-10-08
+## [0.73.0-alpha] - 2026-10-09
+
+### Added
+
+- Run tasks on another desktop: pair two desktops through a phone already
+  paired with one of them, then reach the other desktop over LAN, Tailscale
+  or the relay.
+- Control who may drive a desktop with an Allow Control switch and one
+  switch per controlling desktop or phone. Sessions started from another
+  device show a "Started from <device>" badge and are read-only locally.
+- Spawn collaboration children on another connected machine, using that
+  machine's own models and keys. The child clones or fetches the repository
+  and works in a fresh worktree there.
+- Wake the parent when a child stops without reporting, and notify when a
+  child stalls.
+- `environment_get_info` replaces `environment_list`: hardware (OS, CPU,
+  GPUs, total and free memory) and subscription usage (Claude, Codex, Grok,
+  OpenCode Go, Cursor) for each environment.
+- Show message times on hover and day separators in the transcript.
+
+### Changed
+
+- Each paired phone now uses its own encrypted channel with per-connection
+  keys and replay protection. Phones paired earlier must be paired again:
+  remove each device marked "Re-pair Required" on the desktop and pair it
+  from Pair New Phone. Older phone and desktop builds cannot connect.
+- Alpha builds connect through a dedicated alpha relay.
+- The Grok credits gauge reads the Grok CLI login directly, with no running
+  agent.
+
+### Fixed
+
+- Keep a send that never started, or a refused queued send, as a failed row
+  that can be retried; hold duplicate sends instead of running them twice.
+- Restore the session goal and todo list after a reconnect or reload.
+- Keep newly spawned sessions under their parent in the sidebar.
+- Show every file read by a single Codex shell command.
+- Phone: paste chips match desktop, file diffs are highlighted with line
+  numbers that scroll with the code, and restores retry until they reach
+  the current connection.
+- Retry usage readings whose connection was reset by a proxy or VPN.
+
+## [0.72.2] - 2026-10-08
 
 ### Added
 

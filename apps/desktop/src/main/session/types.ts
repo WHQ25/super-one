@@ -11,7 +11,6 @@ import type {
   CodexGoalStatus,
   CodexReasoningEffort,
   ContextUsageInfo,
-  ProviderRateLimits,
   McpServerInfo,
   ModelUsageInfo,
   PermissionMode,
@@ -461,8 +460,6 @@ export interface SessionBackend {
   dismissQuestion(requestId: string): void
   respondToPlanApproval(requestId: string, approved: boolean, feedback?: string): void
   getContextUsage(): Promise<ContextUsageInfo | null>
-  /** Account-level usage/credits for the gauge. Only harnesses that expose one implement it. */
-  getRateLimits?(): Promise<ProviderRateLimits | null>
   getMcpAppsProvider?(binding: McpAppsBinding, origin: McpAppOrigin): Promise<McpAppsProvider>
   /** Bindings for host-initiated App calls (file entrypoints); empty until the harness has a live provider session. */
   getMcpAppsHostBindings?(): Promise<Array<{ binding: McpAppsBinding; origin: McpAppOrigin }>>
@@ -566,7 +563,6 @@ export interface Session {
   dismissQuestion(requestId: string): void
   respondToPlanApproval(requestId: string, approved: boolean, feedback?: string): void
   getContextUsage(): Promise<ContextUsageInfo | null>
-  getRateLimits(): Promise<ProviderRateLimits | null>
   getMcpAppsProvider?(binding: McpAppsBinding, origin: McpAppOrigin): Promise<McpAppsProvider>
   /** Bindings for host-initiated App calls (file entrypoints); empty until the harness has a live provider session. */
   /** `start: false` answers only from a harness that is already running. */

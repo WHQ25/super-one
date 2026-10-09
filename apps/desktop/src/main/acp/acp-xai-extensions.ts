@@ -20,8 +20,6 @@ export const XAI_SCHEDULED_TASK_INJECT_PROMPT = 'x.ai/scheduled_task_inject_prom
 export const XAI_RECAP = 'x.ai/recap'
 /** Client → agent: permission/yolo baseline change for the live session. */
 export const XAI_YOLO_MODE_CHANGED = 'x.ai/yolo_mode_changed'
-/** Client → agent: Grok Build credits + subscription tier for the usage gauge. */
-export const XAI_BILLING = 'x.ai/billing'
 /** Agent → client: remote settings snapshot (may carry a consent notice). */
 export const XAI_SETTINGS_UPDATE = 'x.ai/settings/update'
 /** Client → agent: record that the user accepted a consent notice. */

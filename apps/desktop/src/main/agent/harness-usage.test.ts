@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { ClaudeRateLimits, CodexRateLimits, ProviderRateLimits } from '@superone/shared/agent-types'
-import { codexWindowLabel, readHarnessUsage, type HarnessUsageDeps } from './harness-usage'
+import { readHarnessUsage, type HarnessUsageDeps } from './harness-usage'
 
 const claudeLimits: ClaudeRateLimits = {
   windows: [{ label: '5h', usedPercent: 40, resetsAt: 1_700_000_000 }, { label: 'Weekly', usedPercent: 12, resetsAt: null }],
@@ -114,14 +114,5 @@ describe('readHarnessUsage', () => {
 
   it('has no meter for harnesses without a subscription surface', async () => {
     expect(await readHarnessUsage({ provider: 'opencode', projectPath: '/p' }, deps())).toBeNull()
-  })
-})
-
-describe('codexWindowLabel', () => {
-  it('names windows by duration like the desktop gauge', () => {
-    expect(codexWindowLabel(300)).toBe('5h')
-    expect(codexWindowLabel(10_080)).toBe('7d')
-    expect(codexWindowLabel(30)).toBe('30m')
-    expect(codexWindowLabel(null)).toBe('Usage')
   })
 })

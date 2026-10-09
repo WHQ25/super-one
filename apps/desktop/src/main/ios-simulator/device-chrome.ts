@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process'
 import { mkdir, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
-import { AsyncCoalescer } from '../async-cache'
+import { AsyncCoalescer } from '@superone/runtime/async-coalescer'
 import type {
   IosSimulatorChrome,
   IosSimulatorChromeButton,

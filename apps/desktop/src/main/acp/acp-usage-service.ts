@@ -1,75 +1,15 @@
 /**
- * Cached account credits for the ACP usage gauge.
- *
- * Billing is account-scoped, but the only way to ask for it is a live ACP
- * runtime (`_x.ai/billing` rides the session connection and its grok.com auth).
- * So: read through whichever session still has a runtime, and keep the last
- * answer so the panel stays populated after idle release tears runtimes down.
+ * Account credits for the ACP usage gauge. Only Grok reports any: its Build
+ * credits, read from the Grok CLI login by the shared runtime reader (the same
+ * one a node serves), so no agent process has to be running.
  */
 
-import log from '../logger'
 import type { ProviderRateLimits } from '@superone/shared/agent-types'
-import type { Session as SessionContract } from '../session/types'
+import { isGrokAcpAgent } from '@superone/shared/acp-brand'
+import { readGrokRateLimits } from '@superone/runtime/usage'
+import { usageLog } from '../agent/usage-log'
 
-const MIN_FETCH_INTERVAL_MS = 60 * 1000
-
-interface CacheEntry {
-  data: ProviderRateLimits
-  lastFetchMs: number
-}
-
-const cache = new Map<string, CacheEntry>()
-
-/** Cache key: the agent's account, approximated by agent id (one login per agent). */
-function cacheKey(agentId: string): string {
-  return agentId
-}
-
-export function clearAcpRateLimitCache(): void {
-  cache.clear()
-}
-
-/** Seed the gauge cache from a runtime-ready prefetch so a later UI read is instant. */
-export function cacheAcpRateLimits(agentId: string, data: ProviderRateLimits): void {
-  cache.set(cacheKey(agentId), { data, lastFetchMs: Date.now() })
-}
-
-export async function getAcpRateLimits(
-  agentId: string,
-  session: SessionContract | null | undefined,
-  force = false,
-  opts: {
-    /**
-     * Spawn the session's runtime for a forced read when it has none. The
-     * desktop prewarms on session select, so its reads always find one; a phone
-     * only resumes passively, and its manual refresh stands in for that select.
-     */
-    warm?: boolean
-  } = {},
-): Promise<ProviderRateLimits | null> {
-  const key = cacheKey(agentId)
-  const cached = cache.get(key)
-  const nowMs = Date.now()
-  if (!force && cached && nowMs - cached.lastFetchMs < MIN_FETCH_INTERVAL_MS) return cached.data
-  if (!session) {
-    log.info('[acp-usage] no active session agent=%s cached=%s', agentId, cached ? 'yes' : 'no')
-    return cached?.data ?? null
-  }
-  if (force && opts.warm && !session.hasActiveRuntime()) {
-    log.info('[acp-usage] warming runtime for a forced read agent=%s sid=%s', agentId, session.id)
-    session.prewarm({ acpAgentId: agentId })
-  }
-
-  try {
-    const fresh = await session.getRateLimits()
-    if (!fresh) {
-      log.info('[acp-usage] empty rate limits agent=%s cached=%s', agentId, cached ? 'yes' : 'no')
-      return cached?.data ?? null
-    }
-    cache.set(key, { data: fresh, lastFetchMs: nowMs })
-    return fresh
-  } catch (err) {
-    log.debug('[acp-usage] rate limit fetch failed agent=%s:', agentId, err)
-    return cached?.data ?? null
-  }
+export async function getAcpRateLimits(agentId: string, force = false): Promise<ProviderRateLimits | null> {
+  if (!isGrokAcpAgent(agentId)) return null
+  return (await readGrokRateLimits({ force, log: usageLog })).value
 }

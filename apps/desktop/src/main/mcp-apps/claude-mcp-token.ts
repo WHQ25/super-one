@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { findClaudeCredentialStore, type ClaudeCredentialData } from '../agent/claude-credential-store'
+import { findClaudeCredentialStore, type ClaudeCredentialData } from '@superone/runtime/usage'
 import type { HostClientConfig, HostClientToken } from './host-client'
 
 /**

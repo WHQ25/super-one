@@ -8,7 +8,8 @@ import { resolveSdkClaudeBinary } from './claude-binary'
 import { dedupeAccounts } from './claude-account-parse'
 import { claudeAccountStore } from './claude-account-store'
 import { readClaudeAccount } from './claude-account-profile'
-import { loadCredentials } from './claude-oauth'
+import { loadClaudeCredentials } from '@superone/runtime/usage'
+import { usageLog } from './usage-log'
 
 const STATUS_TIMEOUT_MS = 15_000
 const LOGIN_TIMEOUT_MS = 5 * 60_000
@@ -97,7 +98,7 @@ export function claudeAccountConfig(id: string | null): { extraEnv: Record<strin
   if (dir) {
     const store = claudeAccountStore()
     store.assertManaged(dir)
-    if (!loadCredentials(dir)?.oauth.accessToken || store.get(dir)?.account.loggedIn === false) throw new Error('Please sign in to this Claude account before continuing')
+    if (!loadClaudeCredentials(dir, usageLog)?.oauth.accessToken || store.get(dir)?.account.loggedIn === false) throw new Error('Please sign in to this Claude account before continuing')
     const known = store.get(dir)
     if (known?.ownerIdentity && !known.account.identityKey) throw new Error('Unable to verify this Claude account. Refresh accounts before continuing.')
     store.prepareSessionHome(dir)

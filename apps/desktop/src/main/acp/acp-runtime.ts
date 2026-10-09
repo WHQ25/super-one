@@ -55,7 +55,6 @@ import { handleReadTextFile, handleWriteTextFile } from './acp-fs'
 import { AcpTerminalManager } from './acp-terminals'
 import {
   XAI_ASK_USER_QUESTION,
-  XAI_BILLING,
   XAI_CONSENT_RECORD,
   XAI_EXIT_PLAN_MODE,
   XAI_MCP_AUTH_TRIGGER,
@@ -119,7 +118,6 @@ import {
   grokYoloModeNotificationParams,
   parentMainThreadToolName,
 } from './acp-permission-preapprove'
-import { parseGrokBilling } from './acp-billing'
 import {
   pickNonInteractiveAcpAuthMethod,
 } from './acp-auth'
@@ -137,7 +135,6 @@ import type {
   ContextUsageInfo,
   ImageAttachment,
   PermissionMode,
-  ProviderRateLimits,
 } from '@superone/shared/agent-types'
 
 /**
@@ -221,7 +218,7 @@ export interface AcpRuntime {
    * Grok Build credits + subscription tier for the usage gauge. Null when the
    * agent has no billing surface (non-Grok ACP agents, API-key auth, offline).
    */
-  getRateLimits(): Promise<ProviderRateLimits | null>
+
   /**
    * Whether initialize `_meta.sessionRecap` advertised recap (Grok fail-closed until true).
    */
@@ -1405,32 +1402,6 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     setAcpSessionMode,
     async getContextUsage() {
       return xaiCorrelation.lastUsage
-    },
-    async getRateLimits() {
-      try {
-        log.info('[acp-runtime] x.ai/billing request agent=%s', launch.agentId)
-        const raw = await activeConnection.agent.request(xaiExtWireMethod(XAI_BILLING), {})
-        const limits = parseGrokBilling(raw)
-        if (!limits) {
-          const keys = raw && typeof raw === 'object' && !Array.isArray(raw)
-            ? Object.keys(raw as Record<string, unknown>).join(',')
-            : typeof raw
-          log.info('[acp-runtime] x.ai/billing unparsed agent=%s shape=%s', launch.agentId, keys)
-          return null
-        }
-        log.info(
-          '[acp-runtime] x.ai/billing agent=%s plan=%s used=%s%%',
-          launch.agentId,
-          limits.planType ?? '(none)',
-          limits.windows[0]?.usedPercent ?? '?',
-        )
-        return limits
-      } catch (err) {
-        // Expected for non-Grok agents (method not found) and API-key auth
-        // (billing needs the grok.com OAuth session), so never louder than debug.
-        log.debug('[acp-runtime] x.ai/billing unavailable agent=%s:', launch.agentId, err)
-        return null
-      }
     },
     async setPermissionMode(mode) {
       // Plan is ACP session mode, not Grok yolo/auto permission baseline.

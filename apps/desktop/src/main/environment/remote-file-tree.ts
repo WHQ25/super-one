@@ -47,7 +47,7 @@ import {
   resolveEntryStatusPair,
   type ParsedGitStatus,
 } from '../git-status-utils'
-import { AsyncCoalescer } from '../async-cache'
+import { AsyncCoalescer } from '@superone/runtime/async-coalescer'
 import type { EnvironmentHost } from './environment-host'
 import { RemoteEnvironmentGateway } from './remote-environment-gateway'
 import { resolveSessionFile, resolverDepsFor } from './session-file-resolver'

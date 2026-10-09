@@ -19,7 +19,7 @@ import { resolveRealPath, isPathWithinAllowed, isPathAtOrWithinAllowed, sanitize
 import { spawn } from 'child_process'
 import { gitRun, isNotGitRepoError, type GitRunOptions } from './git-run'
 import { logGitFailure, logSlowGit } from './git-diagnostics'
-import { AsyncCoalescer } from './async-cache'
+import { AsyncCoalescer } from '@superone/runtime/async-coalescer'
 import { countAddedLines } from './git-added-lines'
 import { activateWorktree, assignBranch, getCheckedOutBranches, getHandoffPreview, getWorktreeInfo, gitErrorMessage, handoffToLocal } from './git/worktree-ops'
 import { is } from '@electron-toolkit/utils'
@@ -124,7 +124,7 @@ import { buildClaudeEnv, buildRemoteActiveService, resolveChatService } from './
 import type { ProxyUpstream } from './providers/llm-proxy-manager'
 import { shutdownAll as shutdownAllProxies } from './providers/llm-proxy-manager'
 import { getBinding } from './providers/credential-store'
-import type { Session as SessionContract, SessionProvider } from './session/types'
+import type { SessionProvider } from './session/types'
 import { expandProviderModelEnv, REMOTE_CHANNEL_SCHEME } from '@superone/shared/agent-types'
 import { randomBytes } from 'node:crypto'
 import { claudeThirdPartyEnv, PROXY_TRANSFORMERS_ENV } from '@superone/shared/platform-registry'
@@ -2489,20 +2489,9 @@ function registerIpcHandlers(): void {
         }
         return codexService.getAccountUsage(projectPath, apiProviderId, threadId)
       },
-      // Grok billing rides the session's ACP connection: prefer the session the
-      // phone is looking at, then the project's active one, then any session on
-      // the same agent that still has a runtime (billing is account-scoped).
-      // A forced read may spawn the runtime: the phone has no PREWARM on select.
-      acpRateLimits: async (agentId, { sessionId, projectPath }, force) => {
+      acpRateLimits: async (agentId, _request, force) => {
         const { getAcpRateLimits } = await import('./acp/acp-usage-service')
-        const bills = (session: SessionContract | null | undefined) =>
-          session?.snapshot.harnessId === 'acp' && (session.snapshot.acpAgentId ?? agentId) === agentId ? session : null
-        let live: SessionContract | null = null
-        sessionManager.forEachSession((session) => { if (!live && bills(session)?.hasActiveRuntime()) live = session })
-        const session = bills(sessionId ? sessionManager.getSession(sessionId) : null)
-          ?? bills(sessionManager.getActiveSession(projectPath))
-          ?? live
-        return getAcpRateLimits(agentId, session, force, { warm: true })
+        return getAcpRateLimits(agentId, force)
       },
     })
   })

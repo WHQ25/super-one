@@ -1,75 +1,23 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('../logger', () => ({
-  default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
-}))
+const runtime = vi.hoisted(() => ({ readGrokRateLimits: vi.fn() }))
+vi.mock('@superone/runtime/usage', () => runtime)
+vi.mock('../agent/usage-log', () => ({ usageLog: { info: () => {}, warn: () => {} } }))
 
-import {
-  cacheAcpRateLimits,
-  clearAcpRateLimitCache,
-  getAcpRateLimits,
-} from './acp-usage-service'
-import type { ProviderRateLimits } from '@superone/shared/agent-types'
-import type { Session } from '../session/types'
+import { getAcpRateLimits } from './acp-usage-service'
 
-const SAMPLE: ProviderRateLimits = {
-  title: 'Grok Build',
-  planType: 'SuperGrok Heavy',
-  windows: [{ label: 'Weekly limit', usedPercent: 0, resetsAt: null }],
-  extraUsage: null,
-  fetchedAt: 1,
-}
+const SAMPLE = { title: 'Grok Build', planType: 'SuperGrok Heavy', windows: [{ label: 'Weekly limit', usedPercent: 12, resetsAt: null }], extraUsage: null }
 
 describe('acp-usage-service', () => {
-  afterEach(() => {
-    clearAcpRateLimitCache()
+  beforeEach(() => runtime.readGrokRateLimits.mockReset().mockResolvedValue({ value: SAMPLE }))
+
+  it('reads Grok credits from the CLI login, passing a forced refresh through', async () => {
+    await expect(getAcpRateLimits('grok-build', true)).resolves.toEqual(SAMPLE)
+    expect(runtime.readGrokRateLimits).toHaveBeenCalledWith(expect.objectContaining({ force: true }))
   })
 
-  it('returns a runtime-ready prefetch without asking the session again', async () => {
-    cacheAcpRateLimits('grok-build', SAMPLE)
-    const session = {
-      getRateLimits: async () => {
-        throw new Error('should not hit the live session')
-      },
-    } as unknown as Session
-
-    await expect(getAcpRateLimits('grok-build', session)).resolves.toEqual(SAMPLE)
-  })
-
-  it('a forced read with warm spawns the runtime for a session that has none', async () => {
-    const prewarm = vi.fn()
-    const session = {
-      id: 's1',
-      hasActiveRuntime: () => false,
-      prewarm,
-      getRateLimits: async () => SAMPLE,
-    } as unknown as Session
-
-    await expect(getAcpRateLimits('grok-build', session, true, { warm: true })).resolves.toEqual(SAMPLE)
-    expect(prewarm).toHaveBeenCalledWith({ acpAgentId: 'grok-build' })
-  })
-
-  it('a routine read never spawns a runtime, even with warm', async () => {
-    const prewarm = vi.fn()
-    const session = {
-      id: 's1',
-      hasActiveRuntime: () => false,
-      prewarm,
-      getRateLimits: async () => null,
-    } as unknown as Session
-
-    await expect(getAcpRateLimits('grok-build', session, false, { warm: true })).resolves.toBeNull()
-    await expect(getAcpRateLimits('grok-build', session, true)).resolves.toBeNull()
-    expect(prewarm).not.toHaveBeenCalled()
-  })
-
-  it('does not cache an empty answer so a later prefetch can fill the gauge', async () => {
-    const session = {
-      getRateLimits: async () => null,
-    } as unknown as Session
-    await expect(getAcpRateLimits('grok-build', session)).resolves.toBeNull()
-
-    cacheAcpRateLimits('grok-build', SAMPLE)
-    await expect(getAcpRateLimits('grok-build', session)).resolves.toEqual(SAMPLE)
+  it('reports nothing for agents without account credits', async () => {
+    await expect(getAcpRateLimits('gemini')).resolves.toBeNull()
+    expect(runtime.readGrokRateLimits).not.toHaveBeenCalled()
   })
 })

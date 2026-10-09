@@ -3211,8 +3211,7 @@ export class AgentService {
       force?: boolean,
     ) => {
       const { getAcpRateLimits } = await import('../acp/acp-usage-service')
-      const session = this.sessionManager?.getActiveSession(projectPath) ?? null
-      return getAcpRateLimits(agentId, session, force ?? false)
+      return getAcpRateLimits(agentId, force ?? false)
     })
 
     ipcMain.handle(AgentIpcChannels.PLUGINS_RELOAD, async (_event, projectPath: string) => {

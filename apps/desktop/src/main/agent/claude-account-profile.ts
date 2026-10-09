@@ -1,7 +1,11 @@
 import { createHash } from 'node:crypto'
 import type { ClaudeAccount } from '@superone/shared/agent-types'
-import { fetchWithTimeout, hasProfileScope, loadCredentials, needsRefresh, refreshToken } from './claude-oauth'
-import { AsyncCoalescer } from '../async-cache'
+import { fetchWithTimeout, hasProfileScope, loadClaudeCredentials, needsRefresh, refreshClaudeToken, type LoadedClaudeCreds } from '@superone/runtime/usage'
+import { usageLog } from './usage-log'
+
+const loadCredentials = (dir: string | null) => loadClaudeCredentials(dir, usageLog)
+const refreshToken = (creds: LoadedClaudeCreds) => refreshClaudeToken(creds, usageLog)
+import { AsyncCoalescer } from '@superone/runtime/async-coalescer'
 import { claudeAccountStore, type ClaudeAccountStore } from './claude-account-store'
 
 const PROFILE_TTL_MS = 60_000

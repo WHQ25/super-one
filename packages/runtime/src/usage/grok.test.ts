@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseGrokBilling } from './acp-billing'
+import { parseGrokBilling } from './grok'
 
 /** Verbatim `_x.ai/billing` response from `grok agent stdio` 1.0.0. */
 const REAL_RESPONSE = {

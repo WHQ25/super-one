@@ -39,6 +39,8 @@
     "./mcp-apps/*": "./src/mcp-apps/*.ts",
     "./machine": "./src/machine/index.ts",
     "./machine/*": "./src/machine/*.ts",
+    "./async-coalescer": "./src/async-coalescer.ts",
+    "./usage": "./src/usage/index.ts",
     "./server": "./src/server/index.ts",
     "./server/*": "./src/server/*.ts"
   },

@@ -21,6 +21,7 @@ import type {
 import { claudeAccountCredentialDir, isClaudeAccountProvider } from '@superone/shared/agent-types'
 import { isGrokAcpAgent } from '@superone/shared/acp-brand'
 import { isCodexAccountProvider } from '@superone/shared/codex-accounts'
+import { codexWindowLabel } from '@superone/runtime/usage'
 
 export interface HarnessUsageRequest {
   provider: HarnessId
@@ -42,14 +43,6 @@ export interface HarnessUsageDeps {
   /** Lifetime stats plus the thread estimate for the session named in the request, when it has one. */
   codexAccountUsage: (projectPath: string, apiProviderId: string | null, sessionId: string | null) => Promise<CodexAccountUsage | null>
   acpRateLimits: (agentId: string, request: HarnessUsageRequest, force: boolean) => Promise<ProviderRateLimits | null>
-}
-
-/** Codex names a window by duration only; render it the way the desktop gauge does. */
-export function codexWindowLabel(minutes: number | null): string {
-  if (!minutes || minutes <= 0) return 'Usage'
-  if (minutes < 60) return `${minutes}m`
-  if (minutes < 1440) return `${Math.round(minutes / 60)}h`
-  return `${Math.round(minutes / 1440)}d`
 }
 
 function fromCodex(limits: CodexRateLimits, account: CodexAccountStatus | null, codexAccount: CodexAccountUsage | null): RemoteUsage | null {

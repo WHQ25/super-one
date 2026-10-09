@@ -24,7 +24,6 @@ import type {
   CodexRunResult,
   CodexUsageInfo,
   ContextUsageInfo,
-  ProviderRateLimits,
   McpServerInfo,
   PermissionMode,
   QuestionAnnotations,
@@ -1332,15 +1331,6 @@ export class Session implements SessionContract {
     if (!this.backendStarted) return null
     this.touchRuntimeActivity()
     return this.backend.getContextUsage()
-  }
-
-  /**
-   * Reading the gauge is not agent activity — deliberately no `touchRuntimeActivity()`.
-   * Also no `backendStarted` gate: ACP prewarm already has a runtime that can
-   * answer `_x.ai/billing` before the first `send()` flips that flag.
-   */
-  async getRateLimits(): Promise<ProviderRateLimits | null> {
-    return (await this.backend.getRateLimits?.()) ?? null
   }
 
   async getMcpAppsProvider(binding: McpAppsBinding, origin: McpAppOrigin): Promise<McpAppsProvider> {

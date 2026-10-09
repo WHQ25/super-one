@@ -3,7 +3,6 @@ import type {
   ContextUsageInfo,
   McpServerInfo,
   PermissionMode,
-  ProviderRateLimits,
   QuestionAnnotations,
   RewindFilesResult,
   SandboxInfo,
@@ -770,9 +769,6 @@ export class AcpBackend implements SessionBackend {
       // The listeners above only reach the DB. The renderer learns the real id from this event.
       this.emit({ type: 'provider_session_id', providerSessionId: runtime.sessionId })
       this.emitConfigFromRuntime(runtime, agentId, epoch)
-      // Billing rides this connection. Ask now so the sidebar gauge is filled
-      // before the first turn ends — the renderer often fetches during prewarm.
-      if (agentId && isGrokAcpAgent(agentId)) void this.prefetchRateLimits(agentId)
       return runtime
     })()
     this.ensureRuntimePromise = promise
@@ -1850,36 +1846,6 @@ export class AcpBackend implements SessionBackend {
       return await this.runtime.getContextUsage()
     } catch {
       return null
-    }
-  }
-
-  /**
-   * Account credits for the usage gauge. Deliberately does not spawn: a panel
-   * open must never cold-start an agent process (matches requestSessionRecap).
-   */
-  async getRateLimits(): Promise<ProviderRateLimits | null> {
-    // A read that lands mid-spawn — a turn just started, or a prewarm the read
-    // itself triggered — waits for the runtime instead of reporting nothing.
-    if (!this.runtime && this.ensureRuntimePromise) await this.ensureRuntimePromise.catch(() => null)
-    if (!this.runtime || typeof this.runtime.getRateLimits !== 'function') {
-      log.info('[AcpBackend] getRateLimits skipped — no runtime')
-      return null
-    }
-    try {
-      return await this.runtime.getRateLimits()
-    } catch {
-      return null
-    }
-  }
-
-  private async prefetchRateLimits(agentId: string): Promise<void> {
-    if (!this.runtime || typeof this.runtime.getRateLimits !== 'function') return
-    try {
-      const { cacheAcpRateLimits } = await import('../../acp/acp-usage-service')
-      const limits = await this.runtime.getRateLimits()
-      if (limits) cacheAcpRateLimits(agentId, limits)
-    } catch (err) {
-      log.debug('[AcpBackend] prefetch rate limits failed agent=%s:', agentId, err)
     }
   }
 

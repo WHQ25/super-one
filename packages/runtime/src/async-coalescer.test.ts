@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { AsyncCoalescer } from './async-cache'
+import { AsyncCoalescer } from './async-coalescer'
 
 const deferred = <T>() => {
   let resolve!: (v: T) => void

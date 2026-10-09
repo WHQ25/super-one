@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { parseUsage, type UsageResponse } from './claude-usage-parse'
+import { createHash } from 'node:crypto'
+import { keychainServiceNames, parseClaudeUsage as parseUsage, type ClaudeUsageResponse as UsageResponse } from './claude'
 
 describe('parseUsage (Claude /api/oauth/usage → ClaudeRateLimits)', () => {
   it('maps each known utilization window with its label and converts resets_at ISO to epoch seconds', () => {
@@ -120,5 +121,48 @@ describe('parseUsage — model-scoped weekly windows from limits[]', () => {
     }
 
     expect(parseUsage(data, null).windows).toEqual([{ model: 'fable', id: 'weekly_scoped:Fable', label: 'Fable weekly', usedPercent: 7, resetsAt: null }])
+  })
+})
+
+describe('keychainServiceNames — mirrors the CLI\'s own service-name construction', () => {
+  const BASE = 'Claude Code-credentials'
+  // sha256("/domains/work").slice(0,8) — the CLI hashes the NFC-normalized path.
+  const hashOf = (path: string) =>
+    createHash('sha256').update(path.normalize('NFC')).digest('hex').slice(0, 8)
+
+  it('uses the bare service when neither env var is set', () => {
+    expect(keychainServiceNames(null, {})).toEqual([BASE])
+  })
+
+  it('hashes CLAUDE_CONFIG_DIR when only that is set', () => {
+    expect(keychainServiceNames(null, { CLAUDE_CONFIG_DIR: '/custom/home' }))
+      .toEqual([`${BASE}-${hashOf('/custom/home')}`, BASE])
+  })
+
+  it('lets CLAUDE_SECURESTORAGE_CONFIG_DIR win over CLAUDE_CONFIG_DIR', () => {
+    const env = { CLAUDE_CONFIG_DIR: '/custom/home', CLAUDE_SECURESTORAGE_CONFIG_DIR: '/domains/work' }
+    expect(keychainServiceNames(null, env)[0]).toBe(`${BASE}-${hashOf('/domains/work')}`)
+  })
+
+  it('treats an empty CLAUDE_SECURESTORAGE_CONFIG_DIR as the default domain, even with a custom config dir', () => {
+    const env = { CLAUDE_CONFIG_DIR: '/custom/home', CLAUDE_SECURESTORAGE_CONFIG_DIR: '' }
+    expect(keychainServiceNames(null, env)).toEqual([BASE])
+  })
+
+  it('hashes an explicit credential dir and ignores both env vars', () => {
+    const env = { CLAUDE_CONFIG_DIR: '/custom/home', CLAUDE_SECURESTORAGE_CONFIG_DIR: '/domains/other' }
+    expect(keychainServiceNames('/domains/work', env)).toEqual([`${BASE}-${hashOf('/domains/work')}`])
+  })
+
+  it('never falls back to the default service for an explicit domain', () => {
+    // Falling back would read a *different account's* credentials and silently report its usage.
+    expect(keychainServiceNames('/domains/work', {})).not.toContain(BASE)
+  })
+
+  it('normalizes to NFC so a decomposed path hashes like the CLI composes it', () => {
+    const composed = '/domains/caf\u00e9'
+    const decomposed = '/domains/cafe\u0301'
+    expect(decomposed).not.toBe(composed)
+    expect(keychainServiceNames(decomposed, {})).toEqual(keychainServiceNames(composed, {}))
   })
 })

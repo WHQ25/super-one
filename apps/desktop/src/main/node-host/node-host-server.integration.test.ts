@@ -315,3 +315,40 @@ describe('DesktopNodeHost lifecycle and prompts', () => {
     expect(snapshot.sessions.find((s) => s.sessionId === created.sessionId)?.pendingInteraction).toMatchObject({ interactionId: 'plan-1', kind: 'plan' })
   })
 })
+
+describe('DesktopNodeHost takeback', () => {
+  it('lets this desktop take a session back and the controller reconnect only on purpose', async () => {
+    const { host, sessions, client } = await pairedDesktops()
+    const created = await client.rpc<{ sessionId: string; controllerClientSessionId: string }>('session.create', { projectId: 'p1', harnessId: 'claude' })
+    const live = sessions.live.get(created.sessionId)!
+    const lease = await client.rpc<{ leaseId: string; generation: string }>('session.acquireControl', { sessionId: created.sessionId })
+    const { snapshotSequence } = await client.rpc<{ snapshotSequence: string }>('session.snapshot')
+
+    // Disconnect here: this desktop drives it, the controller's lease is gone.
+    host.sessions.releaseControl(created.sessionId)
+    expect(live.owner).toEqual({ kind: 'local' })
+    await expect(client.rpc('session.send', { sessionId: created.sessionId, text: 'hi', leaseId: lease.leaseId, generation: lease.generation }))
+      .rejects.toMatchObject({ code: 'failed_precondition', details: { reason: 'control_released' } })
+    await expect(client.rpc('session.renewControl', { leaseId: lease.leaseId, generation: lease.generation })).rejects.toMatchObject({ code: 'lease_stale' })
+    // An ordinary acquire (the controller's automatic one before a send) does not take it back.
+    await expect(client.rpc('session.acquireControl', { sessionId: created.sessionId }))
+      .rejects.toMatchObject({ details: { reason: 'control_released' } })
+    expect(await client.rpc('session.get', { sessionId: created.sessionId })).toMatchObject({ controlReleased: true })
+
+    // The controller learns it from the event log, as this desktop's UI does from the session.
+    const { events } = await client.rpc<{ events: EnvironmentEventEnvelope[] }>('session.events', { afterSequence: snapshotSequence })
+    expect(events.map((e) => (e.payload as { event?: AgentEvent }).event)).toContainEqual({ type: 'remote_control_changed', released: true })
+
+    // Reconnect: an explicit reclaim drives it again, and again, like a phone.
+    const reclaimed = await client.rpc<{ leaseId: string; generation: string }>('session.acquireControl', { sessionId: created.sessionId, reclaim: true })
+    expect(Number(reclaimed.generation)).toBeGreaterThan(Number(lease.generation))
+    expect(live.owner).toEqual({ kind: 'remote', deviceId: nodeControllerDeviceId(created.controllerClientSessionId) })
+    await client.rpc('session.send', { sessionId: created.sessionId, text: 'go on', leaseId: reclaimed.leaseId, generation: reclaimed.generation })
+    expect(live.sent.at(-1)).toMatchObject({ content: 'go on' })
+    expect(await client.rpc('session.get', { sessionId: created.sessionId })).not.toHaveProperty('controlReleased')
+
+    host.sessions.releaseControl(created.sessionId)
+    await client.rpc('session.acquireControl', { sessionId: created.sessionId, reclaim: true })
+    expect(live.owner).toMatchObject({ kind: 'remote' })
+  })
+})

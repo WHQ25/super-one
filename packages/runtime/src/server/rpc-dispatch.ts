@@ -2172,11 +2172,19 @@ function handleSessionAcquireControl(payload: unknown, ctx: RpcContext): RpcResu
     return { error: { code: 'invalid_argument', message: 'sessionId required' } }
   }
   try {
+    const resource = { environmentId: ctx.identity.environmentId, sessionId }
     const lease = ctx.leases.acquire({
-      resource: { environmentId: ctx.identity.environmentId, sessionId },
+      resource,
       holderClientId: ctx.client.clientSessionId,
       ttlMs: typeof p.ttlMs === 'number' ? p.ttlMs : undefined,
     })
+    try {
+      ctx.sessions.admitControl?.(sessionId, ctx.client.clientSessionId, { reclaim: p.reclaim === true })
+    } catch (err) {
+      // Expire rather than delete, so the next grant still bumps the generation.
+      ctx.leases.revoke(resource)
+      throw err
+    }
     // Re-pair / client-session rotation: lease can move to a new clientSessionId while
     // sessions.controller_client_session_id stays on the revoked controller. Host Action
     // mint/poll are keyed by that field — rebind so SuperOne MCP tools work again.

@@ -57,6 +57,9 @@ export class FakeSession {
     this.emit({ type: 'status_change', status: 'streaming' } as AgentEvent)
     this.emit({ type: 'status_change', status: 'idle' } as AgentEvent)
   }
+  emitHostEvent(event: AgentEvent) {
+    this.emit(event)
+  }
   private emit(event: AgentEvent) {
     for (const h of this.handlers) h(event, false)
   }

@@ -11,6 +11,7 @@ import type {
 
 import { isRemoteSession, useChatStore } from './index'
 import { useSessionScope, type SessionScope } from './session-scope'
+import { isControlledElsewhere } from './helpers/remote-control'
 import type { ActiveSessionView, ChatStore, PerSessionState, ProjectState } from './types'
 import { createDefaultPerSessionState, createDefaultProjectState } from './defaults'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
@@ -79,13 +80,19 @@ export function useIsRemoteLocked(): boolean {
     const project = store.projectSessions[projectPath]
     const sessionId = scope?.sessionId ?? project?._activeSessionId
     return isRemoteSession(store, projectPath, sessionId)
-      || !!(sessionId && project?._sessions[sessionId]?.remoteController)
+      || isControlledElsewhere(sessionId ? project?._sessions[sessionId] : undefined)
   })
 }
 
-/** Controller of the scoped session when another device started it here; null for local sessions. */
+
+/** Controller of the scoped session while it holds control from another device; null otherwise. */
 export function useSessionRemoteController(): SessionRemoteControllerInfo | null {
-  return useActiveSession((s) => s.remoteController ?? null)
+  return useActiveSession((s) => (s.remoteController && !s.remoteController.released ? s.remoteController : null))
+}
+
+/** The computer this remote session runs on took it back; Reconnect controls it again. */
+export function useRemoteControlReleased(): boolean {
+  return useActiveSession((s) => !!s.remoteControlReleased)
 }
 
 export function useBashOutput(toolUseId: string): { content: string; finished: boolean; outputPath?: string } | undefined {

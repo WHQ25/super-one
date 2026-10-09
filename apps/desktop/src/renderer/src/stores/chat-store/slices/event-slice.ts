@@ -19,6 +19,7 @@ import { buildSlashCommands } from '../helpers/chat-helpers'
 import { accumulateCodexFooterTokens, getCodexUsageStepTokens } from '../helpers/codex-helpers'
 import { mergeMessagesByMaxSeq } from '../helpers/event-helpers'
 import { clearUnseenCompleted } from '../helpers/unseen-completed'
+import { applyRemoteControlChange } from '../helpers/remote-control'
 import { inferProviderFromHarnessId } from '../helpers/provider-routing'
 import { createDefaultPerSessionState, createDefaultProjectState, getDefaultEffortForModel } from '../defaults'
 import { clearStreamingToolInputsForSession } from '../event-reducer/shared'
@@ -219,6 +220,10 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
     const projectPath = event.projectPath
     const eventSessionId = event.sessionId
     if (!projectPath) return
+    if (event.type === 'remote_control_changed') {
+      if (eventSessionId) set((s) => applyRemoteControlChange(s, projectPath, eventSessionId, event.released))
+      return
+    }
     // Mod drawing state lives in the session's mod client, not in the transcript.
     if (routeModEvent(event, projectPath, eventSessionId)) return
     if (event.type === 'additional_dirs_changed') {

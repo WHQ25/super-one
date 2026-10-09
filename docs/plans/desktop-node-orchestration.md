@@ -36,7 +36,7 @@ Long-term docs affected: `docs/architecture/remote-node-service.md` (desktop as 
 - Serve `environment.*`, `harness.list`, `project.list/get/open`, `git.clone` and the `session.*` subset from step 1. Terminal, workspace, fs and the other git methods stay unsupported for now.
 - Implement `SessionHostPort` with `SessionManager` (`session-manager.ts:184`, `SessionCreateOptions` already has cwd, permissionMode, systemPromptAppend and unattended).
 - Add a durable event log for sessions served to remote controllers, using the runtime `EventLog` (SQLite, rowid sequence), so that a controller can resume with `afterSequence` after a disconnect or a restart of B.
-- Ownership: the remote controller holds the session's control lease. B's own UI shows these sessions read-only with a "started from <A>" badge. Takeover belongs to the later ownership merge.
+- Ownership: the remote controller holds the session's control lease. B's own UI shows "<A> is controlling" with Disconnect in place of the composer (and a "started from <A>" badge in the sidebar), which takes the session back until A reconnects (`docs/architecture/remote-node-service.md`, control leases).
 
 ### 3. Embedded server, pairing and transport on B
 

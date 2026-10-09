@@ -551,6 +551,8 @@ interface AppAPI {
   removeNodeHostController(id: string): Promise<void>
   /** Keep a paired desktop out (or let it back in) without unpairing it. */
   setNodeHostControllerEnabled(id: string, enabled: boolean): Promise<void>
+  /** Take a session another desktop started here back; that desktop watches until it reconnects. */
+  releaseNodeHostSession(sessionId: string): Promise<void>
   /** The controller list or host status changed. */
   onNodeHostChanged(callback: () => void): () => void
   /** Show a controller QR for a phone paired with the controller; resolves to the QR text. */
@@ -1214,6 +1216,8 @@ export interface EnvironmentAPI extends MediaComposerAPI {
     hasMore?: boolean
   }>
   interruptSession(connectionId: string, sessionId: string): Promise<void>
+  /** Control a session again after the computer it runs on took it back. */
+  reclaimSessionControl(connectionId: string, sessionId: string): Promise<void>
   /** One op on a session's mod surface; `connectionId` is `local` for this computer. */
   modUi<O extends import('@superone/shared/mod-ui').ModUiOp>(
     connectionId: string,

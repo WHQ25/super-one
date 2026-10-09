@@ -69,6 +69,11 @@ export interface NodeSessionRecord {
    * (fail closed — a different paired desktop is rejected).
    */
   controllerClientSessionId: string | null
+  /**
+   * The host took the session back from its controller (desktop nodes only).
+   * The controller re-acquires its lease with `reclaim` to drive it again.
+   */
+  controlReleased?: boolean
   /** Capability version for the Host Action channel (0 = unbound / unsupported). */
   hostActionCapabilityVersion: number
   /** Session-scoped tool groups the controller may execute (e.g. browser.read). */

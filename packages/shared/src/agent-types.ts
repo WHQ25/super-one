@@ -2053,6 +2053,13 @@ export type AgentEventBase =
   | { type: 'stream_message_stop'; messageId: string; parentToolUseId?: string | null }
   | { type: 'remote_session_start'; remoteProjectPath: string; remoteSessionId: string; isSubscribe?: boolean; harnessId?: HarnessId; /** ACP agent (e.g. grok-build) so desktop can brand a mobile-owned session. */ acpAgentId?: string | null; /** Where the session runs. A phone subscribes before its first message is persisted, so the desktop cannot read this from the session row yet. */ worktreePath?: string | null; gitBranch?: string | null }
   | { type: 'remote_session_end'; remoteProjectPath: string; remoteSessionId: string; isSubscribe?: boolean }
+  /**
+   * A session another desktop started here changed hands: `released` means this
+   * host took it back, so the controller watches until it reconnects. The host
+   * emits it on the session, so its own UI and the controller (replaying the
+   * node event log) both see it.
+   */
+  | { type: 'remote_control_changed'; released: boolean }
   | { type: 'interaction_resolved'; interactionType: 'permission' | 'question' | 'plan_approval'; requestId: string; approved?: boolean; feedback?: string }
   /** Host-recorded read receipt: some client looked at this completion. `messageId` null when nothing has completed yet. */
   | { type: 'session_seen'; messageId: string | null }
@@ -2960,8 +2967,8 @@ export interface SessionHistoryEntry {
   /** Parent SuperOne session when this entry was created through session_start. */
   parentSessionId?: string
   /**
-   * Another device started this session through this host's node surface and
-   * controls it; this host shows it read-only. Omitted for local sessions.
+   * Another device started this session through this host's node surface.
+   * While it holds control this host only watches. Omitted for local sessions.
    */
   remoteController?: SessionRemoteControllerInfo
 }
@@ -2970,6 +2977,8 @@ export interface SessionHistoryEntry {
 export interface SessionRemoteControllerInfo {
   /** Pairing label of the controlling device, or null when it gave none. */
   label: string | null
+  /** This host took control back; the device watches until it reconnects. */
+  released?: boolean
 }
 
 export interface PinnedSessionEntry extends SessionHistoryEntry {
@@ -4432,6 +4441,8 @@ export const AgentIpcChannels = {
   NODE_HOST_CONTROLLERS: 'nodeHost:controllers',
   NODE_HOST_REMOVE_CONTROLLER: 'nodeHost:removeController',
   NODE_HOST_SET_CONTROLLER_ENABLED: 'nodeHost:setControllerEnabled',
+  /** Take a session another desktop started here back from it. */
+  NODE_HOST_RELEASE_SESSION: 'nodeHost:releaseSession',
   /** Push: the controller list or the host status changed. */
   NODE_HOST_CHANGED: 'nodeHost:changed',
   /** Controller QR shown here; a phone paired with the controller scans it. */
@@ -4743,6 +4754,8 @@ export const AgentIpcChannels = {
   /** Paged denser message catalog (session.messages.list) for remote UI hydrate. */
   ENVIRONMENT_LIST_SESSION_MESSAGES: 'environment:listSessionMessages',
   ENVIRONMENT_INTERRUPT_SESSION: 'environment:interruptSession',
+  /** Take control of a remote session back after its host released it (Reconnect). */
+  ENVIRONMENT_RECLAIM_SESSION_CONTROL: 'environment:reclaimSessionControl',
   /** One op on a session's mod surface (`@superone/shared/mod-ui`), local or remote. */
   ENVIRONMENT_MOD_UI: 'environment:modUi',
   ENVIRONMENT_RENAME_SESSION: 'environment:renameSession',

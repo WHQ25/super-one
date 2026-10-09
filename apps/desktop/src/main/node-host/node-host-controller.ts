@@ -264,6 +264,14 @@ export async function removeNodeHostController(id: string): Promise<void> {
   await reconcileNodeHost()
 }
 
+/** This desktop's user takes a session another desktop started here back from it. */
+export function releaseNodeHostSession(sessionId: string): void {
+  if (!host) {
+    throw Object.assign(new Error('Remote node access is off'), { code: 'failed_precondition' })
+  }
+  host.sessions.releaseControl(sessionId)
+}
+
 /**
  * Ask the controller of a session served here to run one of its tools (a
  * collaboration child's mailbox tools, whose parent runs on the controller).

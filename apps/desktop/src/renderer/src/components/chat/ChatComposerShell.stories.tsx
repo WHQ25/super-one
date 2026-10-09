@@ -8,6 +8,8 @@ import { plainTextToTiptapDoc } from './chat-input/plainTextToTiptapDoc'
 import { mockIpc } from '../../../../../.storybook/mock-ipc'
 import { TooltipProvider } from '@superone/ui/components/ui/tooltip'
 import { Toaster } from 'sonner'
+import i18n from 'i18next'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 
 mockIpc('app', 'getMediaServerPort', async () => 6006)
 mockIpc('app', 'getGitInfo', async () => null)
@@ -82,8 +84,21 @@ export const DisconnectError: Story = { render: () => <DraftPreview failure /> }
 export const InvalidAttachment: Story = { render: () => <DraftPreview attachmentFailure="invalid" /> }
 export const AttachmentSaveRetry: Story = { render: () => <DraftPreview attachmentFailure="save" narrow /> }
 
-/** A session another desktop started on this computer: the composer gives way to a read-only banner. */
-function RemoteControlledPreview({ label, narrow = false }: { label: string | null; narrow?: boolean }) {
+type ControlOutcome = 'ok' | 'busy' | 'error'
+
+/** Settle a mocked Disconnect/Reconnect: change hands, hang, or fail. */
+function settle(outcome: ControlOutcome, apply: () => void): Promise<void> {
+  if (outcome === 'busy') return new Promise<void>(() => {})
+  if (outcome === 'error') return Promise.reject(new Error('The other computer is offline.'))
+  apply()
+  return Promise.resolve()
+}
+
+/**
+ * A session another desktop started on this computer: the composer gives way
+ * to "<that desktop> is controlling"; Disconnect takes it back and opens the composer.
+ */
+function RemoteControlledPreview({ label, narrow = false, outcome = 'ok' }: { label: string | null; narrow?: boolean; outcome?: ControlOutcome }) {
   const [ready, setReady] = useState(false)
   useEffect(() => {
     const previous = useChatStore.getState()
@@ -94,11 +109,14 @@ function RemoteControlledPreview({ label, narrow = false }: { label: string | nu
       ...previous.projectSessions,
       [projectPath]: { ...project, _activeSessionId: sessionId, _sessions: { [sessionId]: session } },
     } })
+    // Main answers with the session's remote_control_changed event.
+    mockIpc('app', 'releaseNodeHostSession', () => settle(outcome, () =>
+      useChatStore.getState().handleAgentEvent({ type: 'remote_control_changed', released: true, projectPath, sessionId })))
     setReady(true)
     return () => useChatStore.setState(previous)
-  }, [label])
+  }, [label, outcome])
   return <div style={{ width: narrow ? 320 : 620, maxWidth: '100%' }}>
-    {ready && <TooltipProvider><ChatComposerShell showTodoPopup={false} /></TooltipProvider>}
+    {ready && <TooltipProvider><ChatComposerShell showTodoPopup={false} /><Toaster /></TooltipProvider>}
   </div>
 }
 
@@ -109,3 +127,63 @@ export const StartedFromLongLabelNarrow: Story = {
 }
 export const StartedFromAnotherDeviceDark: Story = { ...StartedFromAnotherDevice, globals: { theme: 'dark' } }
 export const StartedFromAnotherDeviceChinese: Story = { ...StartedFromAnotherDevice, globals: { locale: 'zh' } }
+
+/** Disconnect takes the session back: the banner leaves and this computer's composer opens. */
+export const DisconnectController: Story = {
+  render: () => <RemoteControlledPreview label="MacBook Air" />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(await canvas.findByRole('button', { name: i18n.t('chat.remoteController.disconnect') }))
+    await waitFor(() => expect(canvas.queryByRole('button', { name: i18n.t('chat.remoteController.disconnect') })).toBeNull())
+  },
+}
+export const DisconnectControllerPending: Story = { render: () => <RemoteControlledPreview label="MacBook Air" outcome="busy" /> }
+export const DisconnectControllerError: Story = { render: () => <RemoteControlledPreview label="MacBook Air" outcome="error" /> }
+
+const remoteProjectPath = 'remote:mini:/Users/vensen/super-one'
+
+/** A session on another computer whose user took it back: "<that computer> is controlling", Reconnect drives it again. */
+function ReleasedPreview({ narrow = false, outcome = 'ok' }: { narrow?: boolean; outcome?: ControlOutcome }) {
+  const [ready, setReady] = useState(false)
+  useEffect(() => {
+    const previous = useChatStore.getState()
+    const project = createDefaultProjectState()
+    const session = createDefaultPerSessionState()
+    session.remoteControlReleased = true
+    const environment = window.environment
+    useChatStore.setState({ activeProject: remoteProjectPath, projectSessions: {
+      ...previous.projectSessions,
+      [remoteProjectPath]: { ...project, _activeSessionId: sessionId, _sessions: { [sessionId]: session } },
+    } })
+    window.environment = {
+      ...environment,
+      listItems: async () => [{ connectionId: 'mini', label: 'VensendeMac-mini' }] as Awaited<ReturnType<typeof window.environment.listItems>>,
+      reclaimSessionControl: () => settle(outcome, () => {}),
+    }
+    setReady(true)
+    return () => {
+      window.environment = environment
+      useChatStore.setState(previous)
+    }
+  }, [outcome])
+  return <div style={{ width: narrow ? 320 : 620, maxWidth: '100%' }}>
+    {ready && <TooltipProvider><ChatComposerShell showTodoPopup={false} /><Toaster /></TooltipProvider>}
+  </div>
+}
+
+export const TakenBackByHost: Story = { render: () => <ReleasedPreview /> }
+export const TakenBackByHostNarrow: Story = { render: () => <ReleasedPreview narrow /> }
+export const TakenBackByHostDark: Story = { ...TakenBackByHost, globals: { theme: 'dark' } }
+export const TakenBackByHostChinese: Story = { ...TakenBackByHost, globals: { locale: 'zh' } }
+export const ReconnectPending: Story = { render: () => <ReleasedPreview outcome="busy" /> }
+export const ReconnectError: Story = { render: () => <ReleasedPreview outcome="error" /> }
+
+/** Reconnect takes control again: the banner leaves and the composer opens. */
+export const Reconnect: Story = {
+  render: () => <ReleasedPreview />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(await canvas.findByRole('button', { name: i18n.t('chat.remoteController.reconnect') }))
+    await waitFor(() => expect(canvas.queryByRole('button', { name: i18n.t('chat.remoteController.reconnect') })).toBeNull())
+  },
+}

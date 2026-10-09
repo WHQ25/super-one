@@ -14,6 +14,7 @@ import { _ensureClaudeSessionReadyForSend, resetLock, type ChatStoreSet } from '
 import { _getEffectiveSessionId } from './persistence'
 import { applyCachedCodexPermissionPreset } from './prefs-cache'
 import { commitPerSession, getProject, getScopedPerSession, mergeCallerScopedDirs } from './store-helpers'
+import { isControlledElsewhere } from './remote-control'
 import { isGrokAcpAgent } from '@superone/shared/acp-brand'
 import { CLAUDE_INTERCEPTED_COMMANDS, isRemoteSession } from '../index'
 import type { ChatProvider, ChatStore, InputSegment, Mention, SessionWriteTarget } from '../types'
@@ -109,9 +110,8 @@ export async function sendMessageImpl(
 
   // Mobile remote-control lock (another device owns the desktop session) — not node env.
   if (isRemoteSession(get(), projectPath, resolveWriteSid())) return
-  // Started from another device through this computer's node surface: only that
-  // controller may send (main rejects with SessionLockedError); the composer is read-only.
-  if (getScopedPerSession(get(), writeScope.target).remoteController) return
+  // Another computer drives it (main or the node rejects the send); the composer is read-only.
+  if (isControlledElsewhere(getScopedPerSession(get(), writeScope.target))) return
 
   const initialSession = getScopedPerSession(get(), writeScope.target)
   const initialProvider = initialSession.sessionProvider ?? initialSession.preferredProvider

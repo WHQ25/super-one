@@ -1527,7 +1527,12 @@ export type Messages = {
     remoteController: {
       badge: string
       badgeUnknown: string
-      readOnly: string
+      controlling: string
+      controllingUnknown: string
+      disconnect: string
+      disconnectFailed: string
+      reconnect: string
+      reconnectFailed: string
     }
     mods: {
       paneClosed: string
@@ -5886,7 +5891,12 @@ export const en: Messages = {
     remoteController: {
       badge: 'Started from {{label}}',
       badgeUnknown: 'Started from another device',
-      readOnly: 'Only that device can send messages or answer prompts. This computer shows the session read-only.',
+      controlling: '{{label}} is controlling this session.',
+      controllingUnknown: 'Another computer is controlling this session.',
+      disconnect: 'Disconnect',
+      disconnectFailed: 'Could not disconnect: {{message}}',
+      reconnect: 'Reconnect',
+      reconnectFailed: 'Could not reconnect: {{message}}',
     },
     mods: {
       paneClosed: 'This pane is closed.',

@@ -23,6 +23,8 @@ export interface RemoteControllerRecord {
   systemPromptAppend?: string | null
   /** Collaboration parent on the controller; its mailbox tools run there as Host Actions. */
   externalParent?: { sessionId: string } | null
+  /** This desktop took the session back; the controller watches until it reclaims it. */
+  released?: boolean
 }
 
 export interface RemoteControlledSessionRow {
@@ -46,7 +48,7 @@ export interface RemoteControlledSessionRow {
 /** The renderer-facing part of a stored controller; null when the column is unset or unreadable. */
 export function remoteControllerInfo(json: string | null | undefined): SessionRemoteControllerInfo | null {
   const record = parseRemoteController(json)
-  return record ? { label: record.label } : null
+  return record ? { label: record.label, ...(record.released ? { released: true } : {}) } : null
 }
 
 export function parseRemoteController(json: string | null | undefined): RemoteControllerRecord | null {

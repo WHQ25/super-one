@@ -1,8 +1,11 @@
-import { memo, useState } from 'react'
+import { memo, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { GitFork, Smartphone } from 'lucide-react'
 import { toast } from 'sonner'
-import { useChatStore, useActiveSession, useIsRemoteLocked, useSessionRemoteController } from '@/stores/chat'
+import { useChatStore, useActiveSession, useIsRemoteLocked, useRemoteControlReleased, useSessionRemoteController } from '@/stores/chat'
+import { useSessionScope } from '@/stores/chat-store/session-scope'
+import { applyRemoteControlChange } from '@/stores/chat-store/helpers/remote-control'
+import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { useAppStore } from '@/stores/app'
 import { catalogIdForSessionProvider, isCatalogHarnessDisabled } from '@/lib/harness-visibility'
 import { resolveSessionIcon, resolveSessionIconFromBrandKey } from '@/components/harness/resolve-session-icon'
@@ -10,7 +13,7 @@ import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
 import { ChatInput } from './ChatInput'
 import { ChatStatusBar } from './ChatStatusBar'
 import { RemoteComposerBanner } from './RemoteComposerBanner'
-import { RemoteControllerBanner } from './RemoteControllerBanner'
+import { RemoteControlBanner } from './RemoteControllerBanner'
 import { CursorApiKeyDialog } from './CursorApiKeyDialog'
 import { TodoPopup } from './TodoPopup'
 
@@ -35,6 +38,16 @@ export const ChatComposerShell = memo(function ChatComposerShell({
   const disconnectRemoteSessionAction = useChatStore((s) => s.disconnectRemoteSession)
   const isRemoteLocked = useIsRemoteLocked()
   const remoteController = useSessionRemoteController()
+  const remoteControlReleased = useRemoteControlReleased()
+  const scope = useSessionScope()
+  const projectPath = useChatStore((s) => scope?.projectPath ?? s.activeProject)
+  const [controlBusy, setControlBusy] = useState(false)
+  /** Connection of the computer that took this session back; null while this pane may drive it. */
+  const releasedOn = remoteControlReleased && projectPath ? parseRemoteProjectKey(projectPath)?.connectionId ?? null : null
+  const hostLabel = useEnvironmentLabel(releasedOn)
+  /** The pane's session, read when acted on so an unscoped pane does not follow every switch. */
+  const sessionId = (): string | null => scope?.sessionId
+    ?? (projectPath ? useChatStore.getState().projectSessions[projectPath]?._activeSessionId ?? null : null)
   const remoteDraftId = useActiveSession((s) => s.draftRemoteDeviceId ? s.draftId : null)
   const [disconnectingDraft, setDisconnectingDraft] = useState(false)
   const harnessCatalog = useAppStore((s) => s.harnessCatalog)
@@ -88,7 +101,25 @@ export const ChatComposerShell = memo(function ChatComposerShell({
       </div>
     )
   }
-  if (remoteController) return <RemoteControllerBanner label={remoteController.label} />
+  /** Disconnect or Reconnect; the toast names which one failed. */
+  const changeControl = (action: 'disconnect' | 'reconnect', change: (sid: string) => Promise<unknown>) => {
+    const sid = sessionId()
+    if (!sid) return
+    setControlBusy(true)
+    void change(sid)
+      .catch((error) => toast.error(t(`chat.remoteController.${action}Failed`, { message: error instanceof Error ? error.message : String(error) })))
+      .finally(() => setControlBusy(false))
+  }
+  if (remoteController) {
+    // The session announces the change, which reopens the composer here.
+    return <RemoteControlBanner label={remoteController.label} action="disconnect" busy={controlBusy}
+      onAction={() => changeControl('disconnect', (sid) => window.app.releaseNodeHostSession(sid))} />
+  }
+  if (releasedOn && projectPath) {
+    return <RemoteControlBanner label={hostLabel} action="reconnect" busy={controlBusy}
+      onAction={() => changeControl('reconnect', (sid) => window.environment.reclaimSessionControl(releasedOn, sid)
+        .then(() => useChatStore.setState((s) => applyRemoteControlChange(s, projectPath, sid, false))))} />
+  }
   if (isRemoteLocked) {
     if (remoteDraftId) return <>
       <RemoteComposerBanner busy={disconnectingDraft} onDisconnect={() => {
@@ -122,3 +153,17 @@ export const ChatComposerShell = memo(function ChatComposerShell({
     </>
   )
 })
+
+/** A paired computer's name, read once it is needed; null until known. */
+function useEnvironmentLabel(connectionId: string | null): string | null {
+  const [label, setLabel] = useState<string | null>(null)
+  useEffect(() => {
+    if (!connectionId) return
+    let cancelled = false
+    void window.environment.listItems()
+      .then((items) => { if (!cancelled) setLabel(items.find((item) => item.connectionId === connectionId)?.label ?? null) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [connectionId])
+  return connectionId ? label : null
+}

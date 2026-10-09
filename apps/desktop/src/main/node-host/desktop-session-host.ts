@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import {
+  CONTROL_RELEASED_REASON,
   HOST_ACTION_CAPABILITY_VERSION,
   HOST_ACTION_TOOL_GROUPS,
   SESSION_DURABLE_EVENT,
@@ -123,7 +124,7 @@ export function pendingInteractionOf(event: AgentEvent, createdAt: number): Pend
   }
 }
 
-/** Session owner id a node controller claims, so the desktop's own UI cannot send. */
+/** Session owner id a node controller claims, so the desktop's own UI only watches. */
 export function nodeControllerDeviceId(clientSessionId: string): string {
   return `node:${clientSessionId}`
 }
@@ -184,6 +185,14 @@ function notFound(): Error {
   return Object.assign(new Error('session not found'), { code: 'not_found' })
 }
 
+/** The refusal a controller gets after this desktop took the session back. */
+function controlReleasedError(): Error {
+  return Object.assign(new Error('this computer took the session back; reconnect to control it again'), {
+    code: 'failed_precondition',
+    details: { reason: CONTROL_RELEASED_REASON },
+  })
+}
+
 /**
  * `session.*` on the desktop: sessions a remote controller starts here run on
  * the desktop's own SessionManager, are stored as ordinary desktop sessions
@@ -221,7 +230,7 @@ export class DesktopSessionHost implements SessionHostPort {
     this.hostActions.reconcileAfterRestart()
     // Fires for live sessions now and every session registered later — a
     // resume from this desktop's sidebar included — so recording and the
-    // read-only claim survive a dispose/resume cycle.
+    // controller's claim survive a dispose/resume cycle.
     this.unsubscribe = deps.sessions.onSession((session) => this.adopt(session))
   }
 
@@ -266,7 +275,7 @@ export class DesktopSessionHost implements SessionHostPort {
     const row = this.deps.store.get(session.id)
     if (!row) return
     this.recording.add(session)
-    this.claim(session, row.controller.clientSessionId)
+    if (!row.controller.released) this.claim(session, row.controller.clientSessionId)
     const off = session.on((event, replay) => {
       if (replay) return
       if (event.type === 'interaction_resolved') this.promptSeenAt.delete(event.requestId)
@@ -301,7 +310,7 @@ export class DesktopSessionHost implements SessionHostPort {
       session.claim({ kind: 'remote', deviceId: nodeControllerDeviceId(clientSessionId) })
     } catch (err) {
       // Another device (a phone) is already attached; the lease still gates the node surface.
-      log.warn('[node-host] read-only claim skipped sid=%s: %s', session.id, err instanceof Error ? err.message : String(err))
+      log.warn('[node-host] controller claim skipped sid=%s: %s', session.id, err instanceof Error ? err.message : String(err))
     }
   }
 
@@ -332,6 +341,7 @@ export class DesktopSessionHost implements SessionHostPort {
       isUserRenamed: row.isUserRenamed,
       tags: row.tags,
       controllerClientSessionId: row.controller.clientSessionId,
+      ...(row.controller.released ? { controlReleased: true } : {}),
       hostActionCapabilityVersion: HOST_ACTION_CAPABILITY_VERSION,
       hostActionToolGroups: [...DESKTOP_HOST_ACTION_TOOL_GROUPS],
       alwaysAllowedTools: [],
@@ -346,6 +356,7 @@ export class DesktopSessionHost implements SessionHostPort {
   }
 
   private assertLease(sessionId: string, clientSessionId: string, leaseId: string, generation: string): void {
+    if (this.deps.store.get(sessionId)?.controller.released) throw controlReleasedError()
     this.deps.leases.assertValid({
       resource: { environmentId: this.deps.environmentId, sessionId },
       leaseId,
@@ -581,6 +592,32 @@ export class DesktopSessionHost implements SessionHostPort {
     }
   }
 
+  /**
+   * This desktop's user takes the session back, as Disconnect does for a
+   * phone: the controller's claim and lease end and the composer here opens.
+   * The controller keeps the session and watches until it reconnects.
+   */
+  releaseControl(sessionId: string): void {
+    const row = this.requireRow(sessionId)
+    if (row.controller.released) return
+    this.deps.store.setController(sessionId, { ...row.controller, released: true })
+    this.deps.leases.revoke({ environmentId: this.deps.environmentId, sessionId })
+    const session = this.live(row)
+    session.release(nodeControllerDeviceId(row.controller.clientSessionId))
+    session.emitHostEvent({ type: 'remote_control_changed', released: true })
+  }
+
+  admitControl(sessionId: string, controllerClientSessionId: string, opts: { reclaim: boolean }): void {
+    const row = this.deps.store.get(sessionId)
+    if (!row?.controller.released) return
+    if (!opts.reclaim) throw controlReleasedError()
+    const controller: RemoteControllerRecord = { ...row.controller, released: false }
+    this.deps.store.setController(sessionId, controller)
+    const session = this.live({ ...row, controller })
+    this.claim(session, row.controller.clientSessionId)
+    session.emitHostEvent({ type: 'remote_control_changed', released: false })
+  }
+
   rebindHostActionController(sessionId: string, controllerClientSessionId: string): unknown {
     const row = this.requireRow(sessionId)
     if (row.controller.clientSessionId === controllerClientSessionId) return null
@@ -590,7 +627,7 @@ export class DesktopSessionHost implements SessionHostPort {
       label: this.deps.controllerLabel(controllerClientSessionId),
     })
     const live = this.deps.sessions.getSession(sessionId)
-    if (live) {
+    if (live && !row.controller.released) {
       live.release(nodeControllerDeviceId(row.controller.clientSessionId), 'self_switch')
       this.claim(live, controllerClientSessionId)
     }

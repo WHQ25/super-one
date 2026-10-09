@@ -154,6 +154,15 @@ export class ControlLeaseService {
     }
   }
 
+  /**
+   * End whatever lease holds `resource` now, without its holder. The row stays
+   * expired, so the next acquire bumps the generation and the old holder's
+   * renew and mutating calls fail as stale.
+   */
+  revoke(resource: ResourceRef): void {
+    this.db.prepare(`UPDATE control_leases SET expires_at = 0 WHERE resource_key = ?`).run(resourceKey(resource))
+  }
+
   release(leaseId: string, generation: string, holderClientId: string): void {
     const result = this.db
       .prepare(

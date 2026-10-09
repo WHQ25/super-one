@@ -33,6 +33,7 @@ import {
   DEFAULT_REMOTE_INSTALL_SOURCE,
   DESKTOP_UPGRADE_REQUIRED,
   decideRemoteCliAction,
+  isControlReleasedError,
   desktopUpgradeRequiredMessage,
   providerSessionIdFromResume,
   shouldBlockDesktopForNewerNode,
@@ -843,9 +844,20 @@ export class EnvironmentHost {
     return work
   }
 
+  /**
+   * Drive a session again after the computer it runs on took it back. A lease
+   * acquired without `reclaim` is refused there, so ordinary sends never
+   * silently take control back.
+   */
+  async reclaimSessionControl(connectionId: string, sessionId: string): Promise<void> {
+    this.sessionLeases.delete(this.leaseKey(connectionId, sessionId))
+    await this.ensureSessionLeaseUnlocked(connectionId, sessionId, { reclaim: true })
+  }
+
   private async ensureSessionLeaseUnlocked(
     connectionId: string,
     sessionId: string,
+    opts?: { reclaim?: boolean },
   ): Promise<{ leaseId: string; generation: string }> {
     const { gateway, environmentId } = this.resolveRemote(connectionId)
     const key = this.leaseKey(connectionId, sessionId)
@@ -879,6 +891,7 @@ export class EnvironmentHost {
     const lease = await gateway.sessions.acquireControl({
       resource: { environmentId, sessionId },
       ttlMs: 60_000,
+      ...(opts?.reclaim ? { reclaim: true } : {}),
     })
     this.sessionLeases.set(key, {
       leaseId: lease.leaseId,
@@ -1903,7 +1916,13 @@ export class EnvironmentHost {
     },
   ): Promise<unknown> {
     const { gateway, environmentId } = this.resolveRemote(connectionId)
-    const control = await this.ensureSessionLease(connectionId, input.sessionId)
+    const control = await this.ensureSessionLease(connectionId, input.sessionId).catch((err: unknown) => {
+      // The composer was opened before the node took the session back; close it now.
+      if (isControlReleasedError(err)) {
+        this.agentEventSink?.({ type: 'remote_control_changed', released: true, sessionId: input.sessionId, projectPath: input.projectPath })
+      }
+      throw err
+    })
 
     if (input.cwdHostPath !== undefined && gateway instanceof RemoteEnvironmentGateway) {
       try {

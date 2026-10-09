@@ -219,7 +219,7 @@ export interface ProvidersPort {
 }
 
 /** Control leases on sessions and terminals (runtime ControlLeaseService). */
-export type ControlLeasePort = Pick<ControlLeaseService, 'acquire' | 'renew' | 'release' | 'assertValid'>
+export type ControlLeasePort = Pick<ControlLeaseService, 'acquire' | 'renew' | 'release' | 'revoke' | 'assertValid'>
 
 /** Session sync zone (`docs/architecture/session-sync-zone.md`; CLI: ArtifactZoneService). */
 export interface ArtifactZonePort {
@@ -280,6 +280,12 @@ export interface SessionHostPort {
   listEventsAfter(afterSequence: string, reader?: { clientSessionId: string }): EnvironmentEventEnvelope[]
   listMessages(input: SessionRuntimeInput<'listMessages'>): SessionMessagesListResult
 
+  /**
+   * Gate a lease just acquired on a session: refuse it while the host has taken
+   * the session back, unless the client explicitly `reclaim`s it. Hosts without
+   * takeback omit it.
+   */
+  admitControl?(sessionId: string, controllerClientSessionId: string, opts: { reclaim: boolean }): void
   /** Re-point Host Action ownership after a new client acquires the session's lease. */
   rebindHostActionController(sessionId: string, controllerClientSessionId: string): unknown
   pollHostActions(input: SessionRuntimeInput<'pollHostActions'>): Promise<HostActionsPollResult>

@@ -1257,6 +1257,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
         return this.client.rpc<ControlLease>('session.acquireControl', {
           sessionId: input.resource.sessionId,
           ttlMs: input.ttlMs,
+          ...(input.reclaim ? { reclaim: true } : {}),
         })
       },
       renewControl: async (input: LeaseRenewInput) => {

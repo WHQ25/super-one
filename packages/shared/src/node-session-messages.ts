@@ -63,6 +63,8 @@ export type NodeSessionSnapshot = {
   providerResume?: string | null
   /** Bare harness session id when the node already strips the resume prefix. */
   providerSessionId?: string | null
+  /** The node's own user took the session back; reconnect re-acquires with `reclaim`. */
+  controlReleased?: boolean
 }
 
 /** Map node pending permission into desktop PermissionRequest for the prompt UI. */

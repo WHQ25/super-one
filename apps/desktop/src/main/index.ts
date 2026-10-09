@@ -2212,6 +2212,13 @@ function registerIpcHandlers(): void {
     },
   )
   ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_RECLAIM_SESSION_CONTROL,
+    async (_e, connectionId: string, sessionId: string) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().reclaimSessionControl(connectionId, sessionId)
+    },
+  )
+  ipcMain.handle(
     AgentIpcChannels.ENVIRONMENT_RENAME_SESSION,
     async (_e, connectionId: string, sessionId: string, title: string) => {
       const { getEnvironmentHost } = await import('./environment')
@@ -4334,6 +4341,8 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.NODE_HOST_REMOVE_CONTROLLER, async (_e, id: unknown) => (await desktopPairing()).removeController(String(id)))
   ipcMain.handle(AgentIpcChannels.NODE_HOST_SET_CONTROLLER_ENABLED, async (_e, id: unknown, enabled: unknown) =>
     (await desktopPairing()).setControllerEnabled(String(id), enabled === true))
+  ipcMain.handle(AgentIpcChannels.NODE_HOST_RELEASE_SESSION, async (_e, sessionId: unknown) =>
+    (await import('./node-host/node-host-controller')).releaseNodeHostSession(String(sessionId ?? '')))
   ipcMain.handle(AgentIpcChannels.NODE_HOST_PAIRING_START, async () => (await desktopPairing()).startControllerQr())
   ipcMain.handle(AgentIpcChannels.NODE_HOST_PAIRING_CONFIRM, async (_e, code: unknown) => (await desktopPairing()).confirmControllerQr(String(code ?? '')))
   ipcMain.handle(AgentIpcChannels.NODE_HOST_PAIRING_CANCEL, async () => (await desktopPairing()).cancelControllerQr())

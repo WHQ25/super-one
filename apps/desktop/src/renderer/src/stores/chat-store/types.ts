@@ -233,8 +233,10 @@ export interface PerSessionState extends ChatCoreSession {
    */
   draftId: string | null
   draftRemoteDeviceId?: string | null
-  /** Another device started this session through this computer's node surface and controls it; shown read-only. */
+  /** Another device started this session through this computer's node surface; read-only here while it holds control. */
   remoteController?: SessionRemoteControllerInfo | null
+  /** A session on another computer that its own user took back; read-only here until Reconnect. */
+  remoteControlReleased?: boolean
   promptSuggestion: string | null
   attachments: ImageAttachment[]
   browserAnnotations: BrowserAnnotation[]

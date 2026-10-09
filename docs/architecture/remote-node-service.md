@@ -438,6 +438,15 @@ interface ControlLease {
   Session lease.
 - The lease epoch is random per node process, so a restart invalidates every
   prior lease; clients reacquire after synchronization.
+- Whichever side cannot drive a session its controller started on a desktop
+  node shows "<computer> is controlling" in place of the composer, like a
+  phone-driven session: the node offers Disconnect, the controller Reconnect. Disconnect takes the session back:
+  the node expires the lease, refuses `failed_precondition` with
+  `details.reason: 'control_released'` to the controller's commands and
+  ordinary acquires, and emits `remote_control_changed` on the session (its
+  own UI and the controller's event log both see it). The controller watches
+  until its user picks Reconnect, which acquires with `reclaim: true`; this can
+  repeat. The controller's automatic acquire before a send never reclaims.
 
 ## 10. Connection Supervision
 

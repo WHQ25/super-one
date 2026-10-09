@@ -18,6 +18,8 @@ export interface LeaseAcquireInput {
   resource: SessionRef | TerminalRef
   /** Requested TTL in ms; node may clamp. */
   ttlMs?: number
+  /** Take a session back after its host released it from this client (the user's Reconnect). */
+  reclaim?: boolean
 }
 
 export interface LeaseRenewInput {
@@ -34,6 +36,13 @@ export interface LeaseReleaseInput {
 export interface MutatingControlContext {
   leaseId: string
   generation: string
+}
+
+/** `details.reason` of the refusal a controller gets after the host took its session back. */
+export const CONTROL_RELEASED_REASON = 'control_released'
+
+export function isControlReleasedError(err: unknown): boolean {
+  return (err as { details?: { reason?: unknown } } | null)?.details?.reason === CONTROL_RELEASED_REASON
 }
 
 export function isSessionResource(

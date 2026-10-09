@@ -1622,7 +1622,12 @@ export const zh: Messages = {
     remoteController: {
       badge: '由 {{label}} 发起',
       badgeUnknown: '由其他设备发起',
-      readOnly: '只有该设备可以发送消息或回应提示，本机仅以只读方式显示此会话。',
+      controlling: '{{label}} 正在操控此会话。',
+      controllingUnknown: '另一台电脑正在操控此会话。',
+      disconnect: '断开',
+      disconnectFailed: '无法断开：{{message}}',
+      reconnect: '重新连接',
+      reconnectFailed: '无法重新连接：{{message}}',
     },
     mods: {
       paneClosed: '这个面板已关闭。',

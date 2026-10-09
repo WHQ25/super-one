@@ -698,6 +698,8 @@ const environmentAPI = {
     ),
   interruptSession: (connectionId: string, sessionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_INTERRUPT_SESSION, connectionId, sessionId),
+  reclaimSessionControl: (connectionId: string, sessionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_RECLAIM_SESSION_CONTROL, connectionId, sessionId),
   modUi: (connectionId: string, sessionId: string, op: string, request: unknown) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_MOD_UI, connectionId, sessionId, op, request),
   renameSession: (connectionId: string, sessionId: string, title: string) =>
@@ -1905,6 +1907,8 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.NODE_HOST_REMOVE_CONTROLLER, id),
   setNodeHostControllerEnabled: (id: string, enabled: boolean) =>
     ipcRenderer.invoke(AgentIpcChannels.NODE_HOST_SET_CONTROLLER_ENABLED, id, enabled),
+  releaseNodeHostSession: (sessionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.NODE_HOST_RELEASE_SESSION, sessionId),
   onNodeHostChanged: (callback: () => void) => {
     const handler = (): void => callback()
     ipcRenderer.on(AgentIpcChannels.NODE_HOST_CHANGED, handler)

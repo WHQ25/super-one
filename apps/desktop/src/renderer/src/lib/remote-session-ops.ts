@@ -107,7 +107,7 @@ export async function hydrateRemotePerSession(
     ...base,
     selectedModel: previous?.modelUserChosen ? previous.selectedModel : snap?.model ?? previous?.selectedModel ?? base.selectedModel,
     selectedEffort: previous?.effortUserChosen ? previous.selectedEffort : (snap?.effort as PerSessionState['selectedEffort']) ?? previous?.selectedEffort ?? base.selectedEffort,
-    ...(snap?.sessionId ? { hostSessionOwned: true } : {}),
+    ...(snap?.sessionId ? { hostSessionOwned: true, remoteControlReleased: snap.controlReleased === true } : {}),
     ...(opts?.adoptSession ? {
       harnessUserChosen: true, modelUserChosen: !!snap?.model, effortUserChosen: !!snap?.effort,
       ...(snap?.permissionMode ? { permissionMode: snap.permissionMode } : {}),

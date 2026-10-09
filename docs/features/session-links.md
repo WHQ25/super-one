@@ -134,8 +134,10 @@ target host's session ID. Cleanup/tag mutations keep their existing scope.
 
 `environment_get_info()` is a separate read-only discovery call. It returns unique
 verified environment IDs with label, caller-relative `isLocal`, connection state
-and archive support, plus hardware unless `include: []`. It includes no
-credentials or endpoint. Ordinary local
+and archive support, plus hardware unless `include: []`. `include: ['usage']`
+adds a separate table with one row per quota window of each signed-in
+subscription on each connected environment (node method `environment.usage`).
+It includes no credentials or endpoint. Ordinary local
 search needs no discovery call.
 
 Archive results carry the selected environment once at the result/header level.

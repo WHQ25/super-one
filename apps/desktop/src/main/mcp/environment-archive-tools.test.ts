@@ -2,9 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { decode } from '@toon-format/toon'
 import { createEnvironmentArchiveTools } from './environment-archive-tools'
 
-const mocks = vi.hoisted(() => ({ list: vi.fn(), connect: vi.fn(), archive: vi.fn(), owner: vi.fn(), liveStatus: vi.fn(), localContext: vi.fn() }))
+const mocks = vi.hoisted(() => ({ list: vi.fn(), connect: vi.fn(), archive: vi.fn(), owner: vi.fn(), liveStatus: vi.fn(), localContext: vi.fn(), usage: vi.fn(), localUsage: vi.fn() }))
 vi.mock('./artifact-registry', () => ({ currentCallOwner: mocks.owner }))
-vi.mock('../environment/environment-host', () => ({ getEnvironmentHost: () => ({ listEnvironments: mocks.list, connect: mocks.connect, getGateway: () => ({ sessions: { archive: mocks.archive }, getLiveStatus: mocks.liveStatus }) }) }))
+vi.mock('../environment/environment-host', () => ({ getEnvironmentHost: () => ({ listEnvironments: mocks.list, connect: mocks.connect, getGateway: () => ({ sessions: { archive: mocks.archive }, getLiveStatus: mocks.liveStatus, getUsage: mocks.usage }) }) }))
+vi.mock('../agent/subscription-usage', () => ({ readLocalSubscriptionUsage: mocks.localUsage }))
 vi.mock('../environment/local-node-context', () => ({ readLocalNodeContext: mocks.localContext }))
 const local = vi.fn(() => ({ content: [{ type: 'text' as const, text: JSON.stringify({ hits: [{ sessionId: 'same', title: 'Local' }] }) }] }))
 beforeEach(() => {
@@ -71,6 +72,23 @@ describe('environment archive tools', () => {
     expect(rows[2]).toMatchObject({ environmentId: 'gpu', os: 'Ubuntu 24.04 LTS', cpu: '32 cores', gpus: 'NVIDIA GA102 [GeForce RTX 3090]', memoryGb: 128, freeMemoryGb: 100 })
     expect(rows[3]).toMatchObject({ environmentId: 'off', state: 'disconnected', os: null, freeMemoryGb: null })
     expect(mocks.liveStatus).toHaveBeenCalledTimes(2)
+  })
+
+  it('adds a usage table with one row per quota window, keeping a row for each failure', async () => {
+    mocks.localUsage.mockResolvedValue([
+      { harness: 'claude', account: 'me@example.com', planType: 'Max 5x', windows: [{ label: '5h', usedPercent: 27.04, resetsAt: 1_800_000_000 }, { label: 'Weekly', usedPercent: 84, resetsAt: null }] },
+      { harness: 'grok', account: null, planType: null, windows: [], error: 'Grok login expired.' },
+    ])
+    mocks.usage.mockRejectedValue(new Error('unsupported method on this environment: environment.usage'))
+    const value = decode((await createEnvironmentArchiveTools('local-session').environmentGetInfo({ include: ['usage'] })).content[0].text) as { environments: unknown[]; usage: Array<Record<string, unknown>> }
+    expect(value.environments).toHaveLength(2)
+    expect(value.usage).toEqual([
+      { environmentId: 'desktop', harness: 'claude', account: 'me@example.com', plan: 'Max 5x', window: '5h', usedPercent: 27, resetsAt: '2027-01-15T08:00:00.000Z', error: null },
+      { environmentId: 'desktop', harness: 'claude', account: 'me@example.com', plan: 'Max 5x', window: 'Weekly', usedPercent: 84, resetsAt: null, error: null },
+      { environmentId: 'desktop', harness: 'grok', account: null, plan: null, window: null, usedPercent: null, resetsAt: null, error: 'Grok login expired.' },
+      { environmentId: 'node', harness: null, account: null, plan: null, window: null, usedPercent: null, resetsAt: null, error: 'unsupported method on this environment: environment.usage' },
+    ])
+    expect(mocks.localContext).not.toHaveBeenCalled()
   })
 
   it('reads only the named environments, and only their identity when include is empty', async () => {

@@ -1,6 +1,7 @@
 import { decode, encode } from '@toon-format/toon'
 import type { ArchiveToolResult, SessionArchiveTool } from '@superone/shared/session-archive'
-import type { EnvironmentListItem, EnvironmentLiveStatus, EnvironmentMachine } from '@superone/shared/environment'
+import type { EnvironmentListItem, EnvironmentLiveStatus, EnvironmentMachine, SubscriptionUsage } from '@superone/shared/environment'
+import type { ClaudeRateLimitWindow } from '@superone/shared/agent-types'
 import type { EnvironmentInfoGroup } from '@superone/shared/environment/host-action-archive-descriptors'
 import { currentCallOwner } from './artifact-registry'
 
@@ -30,7 +31,8 @@ export function createEnvironmentArchiveTools(sessionId: string, connectionId?: 
           if (!include.has('hardware')) return row
           return { ...row, ...hardwareColumns(await readHardware(host, item)) }
         }))
-        return { content: [{ type: 'text', text: encode({ environments: rows }) }] }
+        const usage = include.has('usage') ? (await Promise.all(selected.map(item => readUsage(host, item)))).flat() : null
+        return { content: [{ type: 'text', text: encode({ environments: rows, ...(usage ? { usage } : {}) }) }] }
       } catch (error) { return failure(error) }
     },
     archiveRead: async (tool: SessionArchiveTool, args: Record<string, unknown>, local: () => ArchiveToolResult): Promise<ArchiveToolResult> => {
@@ -107,6 +109,42 @@ export function hardwareColumns({ item, machine, live }: { item: EnvironmentList
     memoryGb: machine ? gib(machine.memoryBytes) : null,
     freeMemoryGb: live ? gib(live.freeMemoryBytes) : null,
   }
+}
+
+async function readUsage(host: EnvironmentHostLike, item: EnvironmentListItem) {
+  if (item.state !== 'connected') return []
+  try {
+    if (item.kind === 'local') {
+      const { readLocalSubscriptionUsage } = await import('../agent/subscription-usage')
+      return usageRows(item.environmentId, await readLocalSubscriptionUsage())
+    }
+    const gateway = host.getGateway(item.environmentId)
+    if (!gateway?.getUsage) return []
+    return usageRows(item.environmentId, (await gateway.getUsage()).accounts)
+  } catch (error) {
+    // Older nodes reject environment.usage as unsupported.
+    return [usageRow(item.environmentId, null, null, error instanceof Error ? error.message : String(error))]
+  }
+}
+
+function usageRow(environmentId: string, usage: SubscriptionUsage | null, window: ClaudeRateLimitWindow | null, error: string | null) {
+  return {
+    environmentId,
+    harness: usage?.harness ?? null,
+    account: usage?.account ?? null,
+    plan: usage?.planType ?? null,
+    window: window?.label ?? null,
+    usedPercent: window ? Math.round(window.usedPercent * 10) / 10 : null,
+    resetsAt: window?.resetsAt ? new Date(window.resetsAt * 1000).toISOString() : null,
+    error,
+  }
+}
+
+/** One row per quota window; a subscription without windows keeps one row carrying its error. */
+export function usageRows(environmentId: string, accounts: SubscriptionUsage[]) {
+  return accounts.flatMap(usage => usage.windows.length
+    ? usage.windows.map(window => usageRow(environmentId, usage, window, usage.error ?? null))
+    : [usageRow(environmentId, usage, null, usage.error ?? null)])
 }
 
 function failure(error: unknown): ArchiveToolResult {

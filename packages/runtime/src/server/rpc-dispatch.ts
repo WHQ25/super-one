@@ -13,6 +13,7 @@ import {
   OPERATION_SCOPES,
   providerSessionIdFromResume,
   type AuthScope,
+  type EnvironmentUsageReport,
   type ExecutionEnvironmentDescriptor,
   type NodeAgentSettingsPatch,
   type RpcErrorCode,
@@ -27,6 +28,7 @@ import type { ConsumerBinding, ConsumerId, Platform } from '@superone/shared/pla
 import { loadNodeAgentSettings, patchNodeAgentSettings, resolveAgentTurnDefaults } from '../settings/index'
 import { probeSandboxRpc } from '../sandbox/index'
 import { getMachineInfo, readLiveStatus } from '../machine/index'
+import { readSubscriptionUsage } from '../usage/index'
 import { settingsFromSessionProviderConfig, type NodeSessionRecord } from '../session/index'
 import type { AuthenticatedClient } from './auth-service'
 import { isNodeMutatingCall } from './rpc-mutating-methods'
@@ -243,6 +245,8 @@ async function dispatchRpcInner(method: string, payload: unknown, hostCtx: HostR
       return handleSystemInfo(ctx)
     case 'environment.status':
       return handleStatus(ctx)
+    case 'environment.usage':
+      return handleUsage(payload, ctx)
     case 'settings.get':
       return handleSettingsGet(ctx)
     case 'settings.patch':
@@ -755,6 +759,17 @@ function handleStatus(ctx: HostRpcContext): RpcResult {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readEnvironment)
   if (denied) return denied
   return { result: readLiveStatus() }
+}
+
+async function handleUsage(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readEnvironment)
+  if (denied) return denied
+  const accounts = await readSubscriptionUsage({
+    claudeAccounts: await ctx.subscriptionUsage?.claudeAccounts?.(),
+    force: (payload as { force?: unknown } | null)?.force === true,
+    log: ctx.subscriptionUsage?.log,
+  })
+  return { result: { accounts } satisfies EnvironmentUsageReport }
 }
 
 async function handleSystemInfo(ctx: RpcContext): Promise<RpcResult> {

@@ -30,6 +30,8 @@ import { DesktopSessionHost, type NodeHostSessionManager, type NodeHostSessionSt
 import { createDesktopWorktreePort } from './desktop-worktree-port'
 import { reconcileRunsAfterRestart } from './reconcile-runs'
 import { desktopNodeHostPaths, DESKTOP_NODE_LOOPBACK_HOST } from './paths'
+import { claudeUsageAccounts } from '../agent/subscription-usage'
+import { usageLog } from '../agent/usage-log'
 
 /**
  * Policy flags of the desktop node. The port-backed families (sessions, git, …)
@@ -186,6 +188,7 @@ export class DesktopNodeHost {
             harnesses: deps.harnesses,
             collaboration,
             extensions: desktopExtensions,
+            subscriptionUsage: { claudeAccounts: claudeUsageAccounts, log: usageLog },
           }),
         })
         auth.onRevoke = (clientSessionId) => {

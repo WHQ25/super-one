@@ -13,7 +13,7 @@ import { readCursorRateLimits } from './cursor'
 import { readGrokRateLimits } from './grok'
 import { silentLog, type UsageLog } from './http'
 import { readOpenCodeGoRateLimits } from './opencode'
-import type { OpenReadOnlyDatabase } from './sqlite-reader'
+import { openReadOnlySqlite } from './sqlite-reader'
 import type { UsageReading } from './throttle'
 
 export * from './claude'
@@ -25,13 +25,15 @@ export { fetchWithTimeout, silentLog, type UsageLog } from './http'
 export type { OpenReadOnlyDatabase, ReadOnlyDatabase } from './sqlite-reader'
 export type { UsageReading } from './throttle'
 
+/** A Claude login to read: `credentialDir` null is the CLI's default login. */
+export interface ClaudeUsageAccount {
+  credentialDir: string | null
+  label: string | null
+}
+
 export interface SubscriptionUsageOptions {
-  openDatabase: OpenReadOnlyDatabase
-  /**
-   * Claude logins to read: `credentialDir` null is the CLI's default login. A host
-   * without SuperOne-managed accounts omits this and gets the default login only.
-   */
-  claudeAccounts?: ReadonlyArray<{ credentialDir: string | null; label: string | null }>
+  /** A host without SuperOne-managed accounts omits this and gets the default login only. */
+  claudeAccounts?: readonly ClaudeUsageAccount[]
   force?: boolean
   log?: UsageLog
 }
@@ -63,8 +65,8 @@ export async function readSubscriptionUsage(opts: SubscriptionUsageOptions): Pro
     ...claude.map((account) => settle('claude', account.label, () => readClaudeRateLimits(account.credentialDir, { force, log }))),
     settle('codex', null, () => readCodexRateLimits({ force })),
     settle('grok', null, () => readGrokRateLimits({ force, log })),
-    settle('opencode', null, () => readOpenCodeGoRateLimits(opts.openDatabase, { force })),
-    settle('cursor', null, () => readCursorRateLimits(opts.openDatabase, { force })),
+    settle('opencode', null, () => readOpenCodeGoRateLimits(openReadOnlySqlite, { force })),
+    settle('cursor', null, () => readCursorRateLimits(openReadOnlySqlite, { force })),
   ])
   return rows.flat()
 }

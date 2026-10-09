@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import WebSocket from 'ws'
-import type { ControlLease, EnvironmentLiveStatus, ExecutionEnvironmentDescriptor, TerminalReadResult } from '@superone/shared/environment'
+import type { ControlLease, EnvironmentLiveStatus, EnvironmentUsageReport, ExecutionEnvironmentDescriptor, TerminalReadResult } from '@superone/shared/environment'
 import { DATABASE_SCHEMA_GENERATION, PROTOCOL_GENERATION } from '@superone/shared/environment'
 import { isNodeMutatingCall } from '@superone/runtime/server/rpc-mutating-methods'
 import { dialWebSocket } from '@superone/runtime/server/node-socket'
@@ -593,6 +593,10 @@ export class NodeRpcClient {
 
   async liveStatus(): Promise<EnvironmentLiveStatus> {
     return this.rpc('environment.status')
+  }
+
+  async usage(): Promise<EnvironmentUsageReport> {
+    return this.rpc('environment.usage')
   }
 
   async terminalCreate(input: {

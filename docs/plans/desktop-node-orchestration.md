@@ -71,10 +71,11 @@ Long-term docs affected: `docs/architecture/remote-node-service.md` (desktop as 
 - Hardware only: OS, arch, CPU model and cores, GPUs, and total memory in `ExecutionEnvironmentDescriptor.machine` (collected once per node process), plus free memory read on query through `environment.status`.
 - Returned by `environment_get_info`, not injected into the system prompt. Harnesses, toolchains, session counts, load and GUI state are deliberately left out.
 - Progress (2026-10-09): done for the CLI node and desktop B (`packages/runtime/src/machine`, `local-node-context.ts`).
+- Subscription usage (`include: ['usage']`, node method `environment.usage`): every runtime node reads the logins its harnesses already use (Claude, Codex, Grok, OpenCode Go, Cursor on macOS) through `packages/runtime/src/usage`; desktop B adds its SuperOne-managed Claude accounts. Read-only except the Claude and Grok token refreshes, which are written back. Done 2026-10-09.
 
 ### 7. Later
 
-- Per-node accounts and remaining quota, API key weekly and monthly budgets, and agent-chosen account per launch. This is opt-in, the chosen account is always shown, and there is no detection evasion. Quota for gateway subscriptions is adapted provider by provider.
+- API key weekly and monthly budgets, and agent-chosen account per launch. This is opt-in, the chosen account is always shown, and there is no detection evasion. Quota for gateway subscriptions is adapted provider by provider.
 - B-side pairing UX beyond the code and QR.
 - The ownership merge (lease as the single steering authority), and human viewing and control (CDP screencast or window frames first, WebRTC with input later).
 

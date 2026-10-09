@@ -1,4 +1,5 @@
 import type { EnvironmentLiveStatus, ExecutionEnvironmentDescriptor } from './descriptor'
+import type { EnvironmentUsageReport } from './subscription-usage'
 import type {
   EnvironmentEventEnvelope,
   EnvironmentSnapshot,
@@ -34,6 +35,8 @@ export interface EnvironmentGateway {
   getSnapshot?(): Promise<EnvironmentSnapshot>
   /** Free memory (`environment.status`); older nodes reject it as unsupported. */
   getLiveStatus?(): Promise<EnvironmentLiveStatus>
+  /** Subscription usage of the node's logins (`environment.usage`); older nodes reject it as unsupported. */
+  getUsage?(): Promise<EnvironmentUsageReport>
   subscribeEvents(input: SubscribeEventsInput): AsyncIterable<EnvironmentEventEnvelope>
   readonly sessions: SessionGateway
   readonly interactions: InteractionGateway

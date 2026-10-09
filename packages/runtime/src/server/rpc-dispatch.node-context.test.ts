@@ -10,6 +10,8 @@ import type { NodeIdentity } from './identity'
 
 const machine = { os: 'macOS 26.0', cpuModel: 'Apple M3 Max', cpuCores: 16, memoryBytes: 64 * 2 ** 30, gpus: ['Apple M3 Max'], toolchains: [{ name: 'git', version: '2.50.1' }] }
 vi.mock('../machine/index', async (importOriginal) => ({ ...(await importOriginal<object>()), getMachineInfo: async () => machine }))
+const readSubscriptionUsage = vi.hoisted(() => vi.fn(async () => [{ harness: 'codex', account: null, planType: 'Pro 100', windows: [] }]))
+vi.mock('../usage/index', () => ({ readSubscriptionUsage }))
 
 const dirs: string[] = []
 afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }) })
@@ -45,5 +47,15 @@ describe('node context for scheduling', () => {
     const ctx = host()
     ctx.client = { ...ctx.client, scopes: [] }
     expect((await dispatchRpc('environment.status', {}, ctx)).error?.code).toBe('forbidden')
+    expect((await dispatchRpc('environment.usage', {}, ctx)).error?.code).toBe('forbidden')
+  })
+
+  it('reads subscription usage with the host\'s Claude accounts, or the default login without them', async () => {
+    const accounts = [{ credentialDir: '/a', label: 'me@example.com' }]
+    const result = await dispatchRpc('environment.usage', { force: true }, host({ subscriptionUsage: { claudeAccounts: async () => accounts } }))
+    expect(result.result).toEqual({ accounts: [{ harness: 'codex', account: null, planType: 'Pro 100', windows: [] }] })
+    expect(readSubscriptionUsage).toHaveBeenLastCalledWith({ claudeAccounts: accounts, force: true, log: undefined })
+    await dispatchRpc('environment.usage', {}, host())
+    expect(readSubscriptionUsage).toHaveBeenLastCalledWith({ claudeAccounts: undefined, force: false, log: undefined })
   })
 })

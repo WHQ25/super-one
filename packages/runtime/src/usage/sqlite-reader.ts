@@ -1,10 +1,14 @@
-/** Opens someone else's SQLite file read-only. Hosts pass their own driver (desktop and CLI build better-sqlite3 differently). */
+import Database from 'better-sqlite3'
+
+/** Opens someone else's SQLite file read-only. */
 export interface ReadOnlyDatabase {
   prepare(sql: string): { get(...params: unknown[]): unknown; all(...params: unknown[]): unknown[] }
   close(): void
 }
 
 export type OpenReadOnlyDatabase = (path: string) => ReadOnlyDatabase
+
+export const openReadOnlySqlite: OpenReadOnlyDatabase = (path) => new Database(path, { readonly: true, fileMustExist: true })
 
 export function withDatabase<T>(open: OpenReadOnlyDatabase, path: string, read: (db: ReadOnlyDatabase) => T): T {
   const db = open(path)

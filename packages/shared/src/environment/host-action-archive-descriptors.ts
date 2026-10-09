@@ -14,7 +14,7 @@ import {
 } from '../superone-tool-descriptions'
 
 /** Detail groups `environment_get_info` can add to the base row. */
-export const ENVIRONMENT_INFO_GROUPS = ['hardware'] as const
+export const ENVIRONMENT_INFO_GROUPS = ['hardware', 'usage'] as const
 export type EnvironmentInfoGroup = typeof ENVIRONMENT_INFO_GROUPS[number]
 
 /** Shared by the desktop definition and the remote descriptor, which must match byte for byte. */

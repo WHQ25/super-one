@@ -13,3 +13,8 @@ export interface SubscriptionUsage {
   /** Why the windows are missing or stale: an expired login, a failed request. */
   error?: string
 }
+
+/** `environment.usage` result. */
+export interface EnvironmentUsageReport {
+  accounts: SubscriptionUsage[]
+}

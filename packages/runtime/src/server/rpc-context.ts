@@ -30,6 +30,7 @@ import type {
 import type { HarnessInstallationStatus } from '@superone/shared/environment'
 import type { AuthenticatedClient } from './auth-service'
 import type { NodeIdentity } from './identity'
+import type { ClaudeUsageAccount, UsageLog } from '../usage/index'
 
 /** Host-owned project catalog (CLI: ProjectRegistry). */
 export interface ProjectsPort {
@@ -332,6 +333,12 @@ export interface RpcHostHooks {
   }): Promise<string | null>
 }
 
+export interface SubscriptionUsagePort {
+  /** SuperOne-managed Claude accounts, read instead of the CLI's default login. */
+  claudeAccounts?: () => Promise<readonly ClaudeUsageAccount[]>
+  log?: UsageLog
+}
+
 export interface RpcResult {
   result?: unknown
   error?: { code: RpcErrorCode; message: string; details?: Record<string, unknown> }
@@ -392,6 +399,8 @@ export interface RpcContext {
   sessionProviders?: Pick<SessionProviderStore, 'get'>
   artifacts?: ArtifactZonePort
   extensions?: RpcExtensionDispatch
+  /** Host knowledge for `environment.usage`; without it the node reads each CLI's default login. */
+  subscriptionUsage?: SubscriptionUsagePort
 
   simulatedHarness?: boolean
   requestId?: string

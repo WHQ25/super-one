@@ -872,56 +872,47 @@ export type Messages = {
         thisMac: string
         otherDevices: string
       }
+      deviceKind: { mac: string; pc: string; linux: string; phone: string; server: string }
       thisDevice: {
         mobile: { title: string; description: string; empty: string }
-        desktop: { title: string; description: string; empty: string }
+        desktop: {
+          title: string
+          empty: string
+          pairedAt: string
+          hostError: string
+          removed: string
+          accessOff: string
+          allow: string
+          grantedTitle: string
+          grantedBody: string
+          pairing: {
+            scan: string
+            grants: string
+            prompt: string
+            granted: string
+            expired: string
+            cancelled: string
+            failed: string
+          }
+        }
       }
       otherDevices: {
         title: string
         subtitle: string
       }
-      nodeAccess: {
-        title: string
-        enableLabel: string
-        enableDescription: string
-        port: string
-        portDescription: string
-        portPlaceholder: string
-        portInvalid: string
-        status: { off: string; starting: string; listening: string; error: string }
-        addDevice: string
-        mintFailed: string
-        code: {
-          title: string
-          instructions: string
-          warning: string
-          copy: string
-          copied: string
-          expiresIn: string
-          expired: string
-          newCode: string
-          done: string
-        }
-        note: {
-          label: string
-          description: string
-          placeholder: string
-          save: string
-          saved: string
-          saveFailed: string
-        }
-      }
       addDesktop: {
         button: string
         title: string
         description: string
-        codeLabel: string
-        codePlaceholder: string
-        nameLabel: string
-        nameHint: string
-        submit: string
-        success: string
+        waiting: string
+        codeTitle: string
+        codeHint: string
+        pairing: string
+        paired: string
+        retry: string
         errors: {
+          qrExpired: string
+          cancelled: string
           invalid: string
           unsupportedVersion: string
           expired: string
@@ -961,8 +952,6 @@ export type Messages = {
       forgetConfirm: string
       addSuccess: string
       credentialInMemoryOnly: string
-      repairCodePrompt: string
-      repairCodeOtherNode: string
       /** How a connected node is reached right now. */
       path: { label: string; lan: string; tailscale: string; relay: string; ssh: string; direct: string }
       noSessionsCapability: string
@@ -971,23 +960,7 @@ export type Messages = {
       upgradeNode: string
       upgradingNode: string
       upgradeNodeSuccess: string
-      harness: {
-        title: string
-        loading: string
-        empty: string
-        enable: string
-        disable: string
-        enabled: string
-        disabled: string
-        needsAuth: string
-        ids: {
-          claude: string
-          codex: string
-          opencode: string
-          cursor: string
-          'acp-grok': string
-        }
-      }
+      accessOff: string
       state: {
         available: string
         connecting: string
@@ -4016,7 +3989,6 @@ export type Messages = {
       pairNewDevice: string
       pairNewPhone: string
       pairNewDesktop: string
-      pairTitle: string
       stepScan: string
       stepCode: string
       copyLink: string
@@ -5200,6 +5172,7 @@ export const en: Messages = {
         thisMac: 'Control This Mac',
         otherDevices: 'Control Other Devices',
       },
+      deviceKind: { mac: 'Mac', pc: 'PC', linux: 'Linux', phone: 'Phone', server: 'Server' },
       thisDevice: {
         mobile: {
           title: 'Mobile',
@@ -5208,8 +5181,23 @@ export const en: Messages = {
         },
         desktop: {
           title: 'Desktop',
-          description: 'Other SuperOne desktops allowed to control this computer.',
-          empty: 'No desktop clients paired yet.',
+          empty: 'No desktops paired yet.',
+          pairedAt: 'Paired {{date}}',
+          hostError: 'Paired desktops cannot connect: {{error}}',
+          removed: '{{name}} can no longer run tasks here',
+          accessOff: 'Access Off',
+          allow: 'Allow {{name}} to run tasks here',
+          grantedTitle: 'Desktop Paired',
+          grantedBody: 'Your phone allowed {{name}} to run tasks on this computer.',
+          pairing: {
+            scan: 'Scan with the SuperOne app on a phone paired with the desktop that will control this computer.',
+            grants: "The paired desktop runs tasks here with this computer's accounts, API keys, files and tools.",
+            prompt: 'Enter the code shown on {{phone}} to let {{name}} run tasks on this computer.',
+            granted: '{{name}} is finishing pairing and will appear here.',
+            expired: 'The pairing code expired. Start again.',
+            cancelled: 'Pairing was cancelled on the phone.',
+            failed: 'Pairing stopped: {{message}}',
+          },
         },
       },
       otherDevices: {
@@ -5217,67 +5205,27 @@ export const en: Messages = {
         subtitle:
           'Run projects, terminals, and agents on remote machines. They keep running after you disconnect.',
       },
-      nodeAccess: {
-        title: 'Run Tasks for Other Devices',
-        enableLabel: 'Allow Other Devices to Run Tasks',
-        enableDescription:
-          "Paired SuperOne desktops can start agent sessions on this computer. They run here with this computer's accounts, API keys, files and tools.",
-        port: 'Port',
-        portDescription: 'Leave empty to use the default port.',
-        portPlaceholder: 'Default',
-        portInvalid: 'Enter a port from 1024 to 65535.',
-        status: {
-          off: 'Off',
-          starting: 'Starting…',
-          listening: 'Listening on {{url}}',
-          error: 'Could not start: {{error}}',
-        },
-        addDevice: 'Add Device',
-        mintFailed: 'Could not create a pairing code: {{message}}',
-        code: {
-          title: 'Pairing Code',
-          instructions:
-            'On the other computer, open Settings → Remote Control → Control Other Devices, choose Add Desktop, and paste this code.',
-          warning: 'The code pairs one device with this computer. Share it only with your own devices.',
-          copy: 'Copy Code',
-          copied: 'Pairing code copied',
-          expiresIn: 'Expires in {{time}}',
-          expired: 'This code has expired.',
-          newCode: 'New Code',
-          done: 'Done',
-        },
-        note: {
-          label: 'Note for Agents',
-          description:
-            'Agents on other devices read this when choosing where to run work, for example "Has the GPU; use it for model builds."',
-          placeholder: 'What is this computer good for?',
-          save: 'Save',
-          saved: 'Note saved',
-          saveFailed: 'Could not save the note: {{message}}',
-        },
-      },
       addDesktop: {
         button: 'Add Desktop',
         title: 'Add Desktop',
-        description:
-          'On the other computer, turn on "Allow Other Devices to Run Tasks" under Remote Control, choose Add Device, and paste its pairing code here.',
-        codeLabel: 'Pairing Code',
-        codePlaceholder: 'superone-node:1:…',
-        nameLabel: 'Name',
-        nameHint: 'How the other computer appears in your environments.',
-        submit: 'Add',
-        success: 'Desktop added',
+        description: 'Scan with the SuperOne app on a phone paired with the desktop you want to control.',
+        waiting: 'Waiting for your phone…',
+        codeTitle: 'Enter This Code on Your Phone',
+        codeHint: 'Your phone checks it before letting this computer control {{name}}.',
+        pairing: 'Pairing with {{name}}…',
+        paired: '{{name}} added',
+        retry: 'Try Again',
         errors: {
-          invalid: 'This is not a SuperOne pairing code. Copy the whole code from the other computer.',
-          unsupportedVersion: 'This pairing code comes from a newer SuperOne. Update this app and try again.',
-          expired: 'This pairing code has expired. Create a new one on the other computer.',
-          used: 'This pairing code was already used. Create a new one on the other computer.',
-          rejected: 'The other computer did not accept this pairing code. Create a new one and try again.',
-          unreachable:
-            'Could not reach {{url}}. Check that the other computer is awake, on a network this computer can reach, and allows other devices to run tasks.',
-          channelRequired:
-            'The other computer only accepts encrypted connections. Create a new pairing code there and paste it again.',
-          channelAuth: 'The encryption key in this code does not match the other computer. Create a new pairing code there.',
+          qrExpired: 'The code expired before your phone finished. Try again.',
+          cancelled: 'Pairing was cancelled on the phone.',
+          invalid: 'The other computer sent a pairing code this app cannot read. Update both and try again.',
+          unsupportedVersion: 'The other computer runs a newer SuperOne. Update this app and try again.',
+          expired: 'The pairing code expired. Try again.',
+          used: 'The pairing code was already used. Try again.',
+          rejected: 'The other computer did not accept the pairing. Try again.',
+          unreachable: 'Could not reach the other computer. Check that it is awake and on a network this computer can reach.',
+          channelRequired: 'The other computer only accepts encrypted connections. Update this app and try again.',
+          channelAuth: 'The encryption key did not match the other computer. Try again.',
         },
       },
       channels: {
@@ -5322,8 +5270,6 @@ export const en: Messages = {
       addSuccess: 'Environment connected',
       credentialInMemoryOnly:
         'OS secure storage is unavailable, so this credential is kept in memory only and will be lost when SuperOne quits.',
-      repairCodePrompt: 'Paste a new pairing code from that computer (Remote Control → Control This Mac)',
-      repairCodeOtherNode: 'This pairing code belongs to another computer, not "{{label}}".',
       path: {
         label: 'Connected via',
         lan: 'LAN',
@@ -5341,23 +5287,7 @@ export const en: Messages = {
       upgradeNode: 'Upgrade Node',
       upgradingNode: 'Upgrading node…',
       upgradeNodeSuccess: 'Node upgraded to {{version}}',
-      harness: {
-        title: 'Harnesses',
-        loading: 'Loading harnesses…',
-        empty: 'No harness catalog on this node.',
-        enable: 'Enable',
-        disable: 'Disable',
-        enabled: 'Enabled {{id}}',
-        disabled: 'Disabled {{id}}',
-        needsAuth: 'sign-in required',
-        ids: {
-          claude: 'Claude',
-          codex: 'Codex',
-          opencode: 'OpenCode',
-          cursor: 'Cursor',
-          'acp-grok': 'Grok (ACP)',
-        },
-      },
+      accessOff: 'That device turned off access for this computer. It reconnects once access is back on.',
       state: {
         available: 'Not Connected',
         connecting: 'Connecting',
@@ -8405,8 +8335,7 @@ export const en: Messages = {
       pairNewDevice: 'Pair New Device',
       pairNewPhone: 'Pair New Phone',
       pairNewDesktop: 'Pair New Desktop',
-      pairTitle: 'Pair a New Phone',
-      stepScan: 'Open SuperOne on your phone and scan this QR code',
+      stepScan: 'Scan with the SuperOne app on your phone.',
       stepCode: 'Enter the 6-digit code shown on your phone',
       copyLink: 'Copy Pairing Link',
       linkCopied: 'Pairing link copied',

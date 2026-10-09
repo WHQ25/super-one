@@ -53,13 +53,24 @@ export type { SavedPairing, Kv } from './pairings'
 export {
   decryptPairResponse,
   encryptPairRequest,
-  generatePairCode,
   OutdatedDesktopPairingError,
   pairWsUrl,
   parsePairQr,
   startPairingHandshake,
 } from './pair'
 export type { PairQr, PairResult } from './pair'
+export { generatePairCode, joinPairRoom, newPairRoomKeys, PAIR_ROOM_TIMEOUT_MS } from './pair-room'
+export type { OpenPairRoomSocket, PairRoom, PairRoomFrame, PairRoomSocket } from './pair-room'
+export {
+  DESKTOP_PAIR_FRAMES,
+  DesktopPairRejectedError,
+  desktopPairQrKind,
+  desktopPairQrUrl,
+  parseDesktopPairQr,
+  startControllerPairing,
+  startNodePairing,
+} from './desktop-pair'
+export type { DesktopPairQr, DesktopPairQrKind, NodePairing } from './desktop-pair'
 export type { FrameDecrypt, FrameEffect, InboundFrame, RelayControlFrame, TransportKind } from './frames'
 export {
   FILE_CHUNK_SIZE,

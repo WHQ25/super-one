@@ -1,18 +1,21 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { QRCodeSVG } from 'qrcode.react'
 import { useTranslation } from 'react-i18next'
-import { Cloud, Monitor, Wifi } from 'lucide-react'
+import { Cloud, Monitor, Plus, Wifi } from 'lucide-react'
 import { Switch } from '@superone/ui/components/ui/switch'
 import { Button } from '@superone/ui/components/ui/button'
+import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
 import { cn } from '@superone/ui/lib/utils'
 import { useAppStore } from '@/stores/app'
 import { useRemoteStatus } from '@/hooks/useRemoteStatus'
 import type { PairedDevice } from '@superone/shared/agent-types'
 import { EnvironmentsPage } from './settings/environments/EnvironmentsPage'
-import { NodeAccessSection } from './settings/node-access/NodeAccessSection'
+import { DesktopControllersSection } from './settings/node-access/DesktopControllersSection'
+import { DeviceRow } from './settings/DeviceRow'
 import { PairingCodeConfirm } from './PairingCodeConfirm'
+import { PairingDialog } from './PairingDialog'
+import { PairingQrPanel } from './PairingQrPanel'
 import {
   SettingsPage,
   SettingsRow,
@@ -20,10 +23,6 @@ import {
   settingsRowClassName,
 } from './settings/SettingsSection'
 import { SettingsSegmentedControl } from './settings/SettingsSegmentedControl'
-
-function deviceClientKind(device: PairedDevice): 'mobile' | 'desktop' {
-  return device.clientKind === 'desktop' ? 'desktop' : 'mobile'
-}
 
 type PairingStep = 'idle' | 'waiting_scan' | 'waiting_code'
 type RemoteSettingsTab = 'this-device' | 'other-devices'
@@ -179,6 +178,12 @@ function ThisDevicePanel() {
     setRemoteConfig({ ...config, ...patch })
   }
 
+  async function handleSetDeviceEnabled(id: string, enabled: boolean) {
+    setPairedDevices((prev) => prev.map((d) => d.id === id ? { ...d, enabled } : d))
+    await window.app.setPairedDeviceEnabled(id, enabled)
+    await window.app.listPairedDevices().then(setPairedDevices)
+  }
+
   async function handleRemoveDevice(id: string) {
     await window.app.removePairedDevice(id)
     setPairedDevices((prev) => prev.filter((d) => d.id !== id))
@@ -197,8 +202,7 @@ function ThisDevicePanel() {
     }
   }
 
-  const mobileDevices = pairedDevices.filter((d) => deviceClientKind(d) === 'mobile')
-  const desktopDevices = pairedDevices.filter((d) => deviceClientKind(d) === 'desktop')
+  const mobileDevices = pairedDevices
 
   const emptyRowClassName = cn(settingsRowClassName, 'text-xs text-muted-foreground')
 
@@ -265,52 +269,51 @@ function ThisDevicePanel() {
       {/* Mobile controllers */}
       <SettingsSection
         title={t('settings.remote.thisDevice.mobile.title')}
-        actions={pairingStep === 'idle' ? (
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7"
-            disabled={!config?.enabled}
+        actions={(
+          <IconButton
+            size="md"
+            tooltip={t('resources.remote.pairNewPhone')}
+            disabled={!config?.enabled || pairingStep !== 'idle'}
             onClick={handleStartPairing}
           >
-            {t('resources.remote.pairNewPhone')}
-          </Button>
-        ) : null}
+            <Plus />
+          </IconButton>
+        )}
       >
-        {config?.enabled && pairingStep === 'waiting_scan' && (
-          <div className={cn(settingsRowClassName, 'flex flex-col items-center gap-3 py-5 text-center')}>
-            <p className="text-sm font-medium">{t('resources.remote.pairTitle')}</p>
-            <ol className="list-inside list-decimal space-y-1 text-xs text-muted-foreground">
-              <li>{t('resources.remote.stepScan')}</li>
-              <li>{t('resources.remote.stepCode')}</li>
-            </ol>
-            {/* The QR code needs a light quiet zone to scan in dark mode too. */}
-            <div className="rounded-lg bg-white p-3">
-              <QRCodeSVG value={qrValue} size={200} />
-            </div>
-            <div className="flex items-center gap-2">
-              {import.meta.env.DEV && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7"
-                  onClick={() => {
-                    navigator.clipboard.writeText(qrValue)
-                    toast.success(t('resources.remote.linkCopied'))
-                  }}
-                >
-                  {t('resources.remote.copyLink')}
-                </Button>
-              )}
-              <Button variant="ghost" size="sm" className="h-7" onClick={handleCancelPairing}>
-                {t('common.cancel')}
-              </Button>
-            </div>
-          </div>
+        {codeError && pairingStep === 'idle' && (
+          <p className={cn(settingsRowClassName, 'text-xs text-destructive')}>{codeError}</p>
         )}
 
-        {config?.enabled && pairingStep === 'waiting_code' && (
-          <div className={settingsRowClassName}>
+        {mobileDevices.length === 0 ? (
+          <p className={emptyRowClassName}>{t('settings.remote.thisDevice.mobile.empty')}</p>
+        ) : (
+          <ul className="rounded-[inherit]">
+            {mobileDevices.map((device) => (
+              <li key={device.id}>
+                <PairedPhoneRow
+                  device={device}
+                  controlAllowed={config?.enabled ?? false}
+                  onSetEnabled={(enabled) => void handleSetDeviceEnabled(device.id, enabled)}
+                  onRemove={() => void handleRemoveDevice(device.id)}
+                />
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <PairingDialog
+          open={pairingStep !== 'idle'}
+          onOpenChange={(open) => { if (!open) void handleCancelPairing() }}
+          title={t('resources.remote.pairNewPhone')}
+          description={t('resources.remote.stepScan')}
+        >
+          {pairingStep === 'waiting_scan' ? (
+            <PairingQrPanel
+              hint={t('resources.remote.stepScan')}
+              value={qrValue}
+              onCancel={() => { void handleCancelPairing() }}
+            />
+          ) : (
             <PairingCodeConfirm
               deviceName={pendingDeviceName}
               onDeviceNameChange={setPendingDeviceName}
@@ -321,43 +324,12 @@ function ThisDevicePanel() {
               onConfirm={() => { void handleConfirmPairing() }}
               onCancel={() => { void handleCancelPairing() }}
             />
-          </div>
-        )}
-
-        {codeError && pairingStep === 'idle' && (
-          <p className={cn(settingsRowClassName, 'text-xs text-destructive')}>{codeError}</p>
-        )}
-
-        {mobileDevices.length === 0 ? (
-          <p className={emptyRowClassName}>{t('settings.remote.thisDevice.mobile.empty')}</p>
-        ) : (
-          <PairedDeviceList devices={mobileDevices} onRemove={handleRemoveDevice} />
-        )}
+          )}
+        </PairingDialog>
       </SettingsSection>
 
-      {/* Desktop controllers of this host */}
-      <SettingsSection
-        title={t('settings.remote.thisDevice.desktop.title')}
-        actions={(
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7"
-            disabled
-            title={t('resources.remote.pairNewDesktop')}
-          >
-            {t('resources.remote.pairNewDesktop')}
-          </Button>
-        )}
-      >
-        {desktopDevices.length === 0 ? (
-          <p className={emptyRowClassName}>{t('settings.remote.thisDevice.desktop.empty')}</p>
-        ) : (
-          <PairedDeviceList devices={desktopDevices} onRemove={handleRemoveDevice} />
-        )}
-      </SettingsSection>
-
-      {experimentalRemoteNodesEnabled && <NodeAccessSection />}
+      {/* Desktops that run tasks on this computer (remote nodes, experimental). */}
+      {experimentalRemoteNodesEnabled && <DesktopControllersSection controlAllowed={config?.enabled ?? false} />}
 
       {import.meta.env.DEV && (
         <SettingsSection
@@ -417,68 +389,44 @@ function ThisDevicePanel() {
   )
 }
 
-function PairedDeviceList({
-  devices,
-  onRemove,
-}: {
-  devices: PairedDevice[]
-  onRemove: (id: string) => void
-}) {
-  return (
-    <ul className="rounded-[inherit]">
-      {devices.map((device) => (
-        <PairedDeviceRow
-          key={device.id}
-          device={device}
-          onRemove={() => onRemove(device.id)}
-        />
-      ))}
-    </ul>
-  )
-}
-
-function PairedDeviceRow({
+function PairedPhoneRow({
   device,
+  controlAllowed,
+  onSetEnabled,
   onRemove,
 }: {
   device: PairedDevice
+  controlAllowed: boolean
+  onSetEnabled: (enabled: boolean) => void
   onRemove: () => void
 }) {
   const { t } = useTranslation()
+  const status = device.needsRepair
+    ? t('resources.remote.needsRepair')
+    : !device.enabled
+      ? t('settings.remote.thisDevice.desktop.accessOff')
+      : device.online
+        ? t('resources.remote.online')
+        : device.lastSeenAt
+          ? t('resources.remote.lastSeen', { date: new Date(device.lastSeenAt).toLocaleDateString() })
+          : t('resources.remote.neverConnected')
   return (
-    <li className={cn(settingsRowClassName, 'flex items-center justify-between gap-3 py-2 text-sm')}>
-      <div className="flex min-w-0 items-center gap-2">
-        <span
-          className={cn(
-            'size-2 shrink-0 rounded-full',
-            device.online ? 'bg-success' : 'bg-muted-foreground/40',
-          )}
-        />
-        <span className="truncate">{device.name}</span>
-        {device.needsRepair ? (
-          <span className="shrink-0 text-xs text-warning" title={t('resources.remote.needsRepairHint')}>
-            {t('resources.remote.needsRepair')}
-          </span>
-        ) : (
-          <span className="shrink-0 text-xs text-muted-foreground">
-            {device.online
-              ? t('resources.remote.online')
-              : device.lastSeenAt
-                ? t('resources.remote.lastSeen', {
-                    date: new Date(device.lastSeenAt).toLocaleDateString(),
-                  })
-                : t('resources.remote.neverConnected')}
-          </span>
-        )}
-      </div>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="h-7 shrink-0 text-muted-foreground hover:text-destructive"
-        onClick={onRemove}
-      >
-        {t('resources.remote.remove')}
-      </Button>
-    </li>
+    <DeviceRow
+      kind="phone"
+      name={device.name}
+      online={device.online}
+      path={device.transport}
+      status={status}
+      statusTone={device.needsRepair ? 'warning' : 'muted'}
+      statusTitle={device.needsRepair ? t('resources.remote.needsRepairHint') : undefined}
+      removeLabel={t('resources.remote.remove')}
+      onRemove={onRemove}
+      access={{
+        enabled: device.enabled,
+        label: t('settings.remote.thisDevice.desktop.allow', { name: device.name }),
+        onChange: onSetEnabled,
+      }}
+      accessLocked={!controlAllowed}
+    />
   )
 }

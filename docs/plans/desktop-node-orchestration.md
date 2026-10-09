@@ -40,8 +40,8 @@ Long-term docs affected: `docs/architecture/remote-node-service.md` (desktop as 
 
 ### 3. Embedded server, pairing and transport on B
 
-- Off by default. A setting, "Allow other devices to run tasks on this computer", starts `startNodeServer` in Electron main with the runtime `AuthService` and identity. The server runs only while the app is running.
-- B's settings page mints a pairing token (code or QR). A pairs through the existing `/v1/pair` flow.
+- `startNodeServer` runs in Electron main with the runtime `AuthService` and identity, only while the app runs and B has a controller (or a pairing is in progress); there is no switch.
+- Pairing goes through a phone paired with one of the two desktops, which scans a QR on the other and carries B's node code; the controlled side confirms a six-digit code. A then pairs through the existing `/v1/pair` flow. Contract: `docs/architecture/remote-node-service.md` §11.5.
 - Transport: the node protocol runs inside the phone link's end-to-end encryption (`docs/architecture/relay-crypto.md`). The pairing secret is exchanged out of band (code or QR) and never sent over the network. Every frame is AES-256-GCM over plain `ws://` on the LAN. The node's own auth (device key, tokens, tickets) runs inside the encrypted channel. The relay transport (`EndpointKind 'relay'`) later carries the same frames unchanged.
 - The encrypted layer also closes two gaps of the phone LAN link: the handshake proves key possession instead of trusting a bare `deviceId` (`apps/desktop/src/main/lan-server.ts:273`), and frames carry a sequence number against replay. Apply both to the phone link as well.
 - The architecture rule "no plain `ws://` beyond loopback" becomes "the channel must be encrypted", either by the transport (loopback, SSH, Tailscale, TLS) or by this layer.

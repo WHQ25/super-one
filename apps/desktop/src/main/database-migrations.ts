@@ -356,6 +356,10 @@ function applyMigrations(db: Database.Database): void {
   if (!pairedDeviceCols.some((column) => column.name === 'channel_key_id')) {
     db.exec('ALTER TABLE paired_devices ADD COLUMN channel_key_id TEXT')
   }
+  // Per-phone access switch; an older desktop ignores it.
+  if (!pairedDeviceCols.some((column) => column.name === 'disabled')) {
+    db.exec('ALTER TABLE paired_devices ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0')
+  }
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS automations (

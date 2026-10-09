@@ -9,6 +9,8 @@
     "./crypto": "./src/crypto.ts",
     "./secure-channel": "./src/secure-channel.ts",
     "./phone-link": "./src/phone-link.ts",
+    "./desktop-pair": "./src/desktop-pair.ts",
+    "./pair-room": "./src/pair-room.ts",
     "./presence": "./src/presence.ts",
     "./host-payload": "./src/host-payload.ts",
     "./transport-ledger": "./src/transport-ledger.ts"

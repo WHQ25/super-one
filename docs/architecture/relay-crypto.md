@@ -40,6 +40,11 @@ without a key id as needing re-pair; the phone marks saved pairings without
 `keyId`/`roomId` the same way. A phone receiving a `pair_response` with a bare
 `masterSecret` reports that the desktop must be updated.
 
+Desktop pairing through a phone uses the same room and temporary-key sealing
+with its own frames; see
+[remote-node-service.md §11.5](remote-node-service.md#115-desktop-pairing-through-a-phone).
+The six-digit codes come from a CSPRNG (`generatePairCode`).
+
 ## Crypto backends
 
 `packages/relay-client/src/crypto-backend.ts` isolates AES-GCM and base64. The

@@ -8,11 +8,9 @@
  *   bun scripts/desktop-node-lab.ts start | pair | status | stop
  */
 import { spawn } from 'node:child_process'
-import { createRequire } from 'node:module'
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { encodeNodePairingCode } from '../packages/shared/src/environment/node-pairing-code'
 
 const ROOT = resolve(import.meta.dir, '..')
 const DESKTOP = join(ROOT, 'apps', 'desktop')
@@ -20,6 +18,9 @@ const INSTANCE = process.env.SUPERONE_LAB_INSTANCE ?? 'node-b'
 const NODE_PORT = Number(process.env.SUPERONE_LAB_NODE_PORT ?? 7794)
 const CDP_PORT = Number(process.env.SUPERONE_LAB_CDP_PORT ?? 9334)
 const RENDERER_PORT = Number(process.env.SUPERONE_LAB_RENDERER_PORT ?? 5174)
+/** A: the `bun run dev:cdp` desktop pairing pairs into. */
+const A_CDP_PORT = Number(process.env.SUPERONE_LAB_A_CDP_PORT ?? 9222)
+const A_RENDERER_PORT = 5173
 
 // Same layout as `src/main/index.ts` for an unpackaged SUPERONE_INSTANCE.
 const USER_DATA = join(DESKTOP, '.dev-data', `instance-${INSTANCE}`)
@@ -30,7 +31,7 @@ const SUPERONE_HOME = process.env.SUPERONE_LAB_HOME ?? join(LAB, 'superone-home'
 const HARNESS_HOME = process.env.SUPERONE_LAB_HARNESS_HOME ?? join(homedir(), '.superone', 'dev', 'harness')
 const PROJECTS_DIR = process.env.SUPERONE_LAB_PROJECTS_DIR ?? join(LAB, 'projects')
 
-interface Pids { renderer: number; electron: number }
+interface Pids { dev: number }
 
 function readJson(file: string): Record<string, unknown> {
   try { return JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown> } catch { return {} }
@@ -47,7 +48,7 @@ function alive(pid: number): boolean {
 
 function runningPids(): Pids | null {
   const pids = readJson(PIDS) as Partial<Pids>
-  return pids.electron && alive(pids.electron) ? pids as Pids : null
+  return pids.dev && alive(pids.dev) ? pids as Pids : null
 }
 
 async function reachable(url: string): Promise<boolean> {
@@ -77,10 +78,14 @@ function startDetached(name: string, cmd: string[], env: Record<string, string>)
 }
 
 /** Evaluate an expression in B's main window over CDP and return its value. */
-async function evaluateInB<T>(expression: string): Promise<T> {
-  const targets = await (await fetch(`http://127.0.0.1:${CDP_PORT}/json/list`)).json() as Array<{ type: string; url: string; webSocketDebuggerUrl: string }>
-  const page = targets.find((t) => t.type === 'page' && t.url.startsWith(`http://localhost:${RENDERER_PORT}/`))
-  if (!page) throw new Error(`B's window is not open (CDP targets: ${targets.map((t) => t.url).join(', ')})`)
+function evaluateInB<T>(expression: string): Promise<T> {
+  return evaluateIn<T>('B', CDP_PORT, RENDERER_PORT, expression)
+}
+
+async function evaluateIn<T>(name: string, cdpPort: number, rendererPort: number, expression: string): Promise<T> {
+  const targets = await (await fetch(`http://127.0.0.1:${cdpPort}/json/list`)).json() as Array<{ type: string; url: string; webSocketDebuggerUrl: string }>
+  const page = targets.find((t) => t.type === 'page' && t.url.startsWith(`http://localhost:${rendererPort}/`))
+  if (!page) throw new Error(`${name}'s window is not open (CDP targets: ${targets.map((t) => t.url).join(', ')})`)
   const ws = new WebSocket(page.webSocketDebuggerUrl)
   await new Promise((ok, fail) => { ws.onopen = ok; ws.onerror = fail })
   try {
@@ -103,7 +108,8 @@ async function start(): Promise<void> {
     await stop()
     throw error
   }
-  await pair()
+  // B stays up when A cannot pair yet (no CDP); pair later with `… lab:pair`.
+  await pair().catch((error: unknown) => console.log(`\nNot paired: ${error instanceof Error ? error.message : String(error)}`))
 }
 
 async function launch(): Promise<void> {
@@ -123,65 +129,67 @@ async function launch(): Promise<void> {
 
   mkdirSync(LAB, { recursive: true })
   mkdirSync(PROJECTS_DIR, { recursive: true })
-  // Node access on from the first launch, on a port of its own (shown under the experimental flag).
+  // Node access on a port of its own; it starts when `pair` mints a code (shown under the experimental flag).
   const settingsFile = join(USER_DATA, 'app-settings.json')
-  writeJson(settingsFile, { ...readJson(settingsFile), experimentalRemoteNodesEnabled: true, remoteNodeAccessEnabled: true, remoteNodeAccessPort: NODE_PORT })
+  writeJson(settingsFile, { ...readJson(settingsFile), experimentalRemoteNodesEnabled: true, remoteNodeAccessPort: NODE_PORT })
   const nodeConfigFile = join(USER_DATA, 'node-host', 'config.json')
   const nodeConfig = readJson(nodeConfigFile) as { agent?: Record<string, unknown> }
   if (!nodeConfig.agent?.projectsDir) writeJson(nodeConfigFile, { ...nodeConfig, agent: { ...nodeConfig.agent, projectsDir: PROJECTS_DIR } })
 
   // Its own renderer dev server, so A's `bun run dev` keeps 5173 and B never rebuilds A's out/.
-  const renderer = startDetached('renderer', ['bunx', 'electron-vite', 'dev', '--rendererOnly'], { VITE_PORT: String(RENDERER_PORT) })
-  writeJson(PIDS, { renderer, electron: 0 })
-  await waitFor('renderer dev server', `http://localhost:${RENDERER_PORT}/`, 60_000)
-
-  const electronBin = createRequire(join(DESKTOP, 'package.json'))('electron') as string
-  const electron = startDetached('electron', [electronBin, '.', `--remote-debugging-port=${CDP_PORT}`], {
-    NODE_ENV: 'development',
-    ELECTRON_RENDERER_URL: `http://localhost:${RENDERER_PORT}`,
+  // `--rendererOnly` still launches Electron, so B's environment goes on this process.
+  const dev = startDetached('dev', ['bunx', 'electron-vite', 'dev', '--rendererOnly', '--remoteDebuggingPort', String(CDP_PORT)], {
+    VITE_PORT: String(RENDERER_PORT),
     SUPERONE_INSTANCE: INSTANCE,
     SUPERONE_HOME,
     SUPERONE_HARNESS_HOME: HARNESS_HOME,
   })
-  writeJson(PIDS, { renderer, electron })
+  writeJson(PIDS, { dev })
   await waitFor('B window (CDP)', `http://127.0.0.1:${CDP_PORT}/json/version`, 60_000)
-  await waitFor('B node host', `http://127.0.0.1:${NODE_PORT}/health`, 60_000)
   console.log(`B (${INSTANCE}) is up: node http://127.0.0.1:${NODE_PORT}, CDP ${CDP_PORT}, renderer ${RENDERER_PORT}`)
   console.log(`  profile ${USER_DATA}\n  log     ${join(DESKTOP, `instance-${INSTANCE}-dev.log`)}`)
 }
 
+/**
+ * Pair A with B the way a phone would carry it, minus the phone: B mints a
+ * node code and A pairs it, both over CDP. A must run with CDP on
+ * (`bun run dev:cdp`, port `SUPERONE_LAB_A_CDP_PORT`, default 9222).
+ */
 async function pair(): Promise<void> {
   if (!runningPids()) throw new Error(`B (${INSTANCE}) is not running; start it with \`bun run dev:desktop-node:lab\``)
   await waitFor('B window (CDP)', `http://127.0.0.1:${CDP_PORT}/json/version`, 30_000)
   // A fresh profile opens its window a moment after CDP is up.
   const deadline = Date.now() + 30_000
-  while (!(await evaluateInB<boolean>("typeof window.app?.mintNodeHostPairingToken === 'function'").catch(() => false))) {
+  while (!(await evaluateInB<boolean>("typeof window.app?.devMintNodePairingCode === 'function'").catch(() => false))) {
     if (Date.now() > deadline) throw new Error(`B's window did not load (log: ${join(DESKTOP, `instance-${INSTANCE}-dev.log`)})`)
     await Bun.sleep(500)
   }
-  const token = await evaluateInB<Parameters<typeof encodeNodePairingCode>[0]>('window.app.mintNodeHostPairingToken()')
-  console.log(`\nPairing code for A (single use, expires ${new Date(token.expiresAt).toLocaleTimeString()}):\n\n${encodeNodePairingCode(token)}\n`)
-  console.log('Paste it in A: Settings → Remote Control → Control Other Devices → Add Desktop.')
+  if (!(await reachable(`http://127.0.0.1:${A_CDP_PORT}/json/version`))) {
+    throw new Error(`A has no CDP on :${A_CDP_PORT}; run A with \`bun run dev:cdp\` (or set SUPERONE_LAB_A_CDP_PORT), then \`bun run dev:desktop-node:lab:pair\``)
+  }
+  // Allow Control is B's master switch for every controller.
+  await evaluateInB<void>('window.app.getRemoteConfig().then((c) => c && !c.enabled ? window.app.saveRemoteConfig({ ...c, enabled: true }) : undefined)')
+  const code = await evaluateInB<string>('window.app.devMintNodePairingCode()')
+  await evaluateIn<void>('A', A_CDP_PORT, A_RENDERER_PORT, `window.environment.devPairNodeCode(${JSON.stringify(code)})`)
+  console.log('\nA is paired with B: Settings → Remote Control → Control Other Devices.')
 }
 
 async function status(): Promise<void> {
   const pids = runningPids()
-  console.log(pids ? `B (${INSTANCE}) running: electron pid ${pids.electron}, renderer pid ${pids.renderer}` : `B (${INSTANCE}) not running`)
+  console.log(pids ? `B (${INSTANCE}) running: pid ${pids.dev}` : `B (${INSTANCE}) not running`)
   console.log(`node host  ${await reachable(`http://127.0.0.1:${NODE_PORT}/health`) ? 'up' : 'down'} (:${NODE_PORT})`)
   console.log(`CDP        ${await reachable(`http://127.0.0.1:${CDP_PORT}/json/version`) ? 'up' : 'down'} (:${CDP_PORT})`)
 }
 
 async function stop(): Promise<void> {
   const pids = readJson(PIDS) as Partial<Pids>
-  for (const pid of [pids.electron, pids.renderer]) {
-    if (!pid || !alive(pid)) continue
-    // Each was started as its own process group; take its helpers down with it.
+  const pid = pids.dev
+  if (pid && alive(pid)) {
+    // Started as its own process group; take Electron and its helpers down with it.
     try { process.kill(-pid, 'SIGTERM') } catch { process.kill(pid, 'SIGTERM') }
-  }
-  const deadline = Date.now() + 10_000
-  while ([pids.electron, pids.renderer].some((pid) => pid && alive(pid)) && Date.now() < deadline) await Bun.sleep(200)
-  for (const pid of [pids.electron, pids.renderer]) {
-    if (pid && alive(pid)) try { process.kill(-pid, 'SIGKILL') } catch { /* already gone */ }
+    const deadline = Date.now() + 10_000
+    while (alive(pid) && Date.now() < deadline) await Bun.sleep(200)
+    if (alive(pid)) try { process.kill(-pid, 'SIGKILL') } catch { /* already gone */ }
   }
   rmSync(PIDS, { force: true })
   console.log(`B (${INSTANCE}) stopped. Its profile stays in ${USER_DATA}; delete it for a fresh node.`)

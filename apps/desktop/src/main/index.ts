@@ -221,7 +221,7 @@ import { disposeIosSimulatorManager } from './ios-simulator'
 import { disposeAndroidDeviceManager } from './device/android'
 import { disposeMirrorDeviceManager } from './device/ios-mirror'
 import { attachDeviceGestureEvents } from './device/gesture-events'
-import { getDb, closeDb, getCachedHarnessResources, setCachedHarnessResources, updateCachedHarnessResources, upsertPairedDevice, recordPairedDeviceSeen, listPairedDevices, deletePairedDevice, findPairedPhone } from './database'
+import { getDb, closeDb, getCachedHarnessResources, setCachedHarnessResources, updateCachedHarnessResources, upsertPairedDevice, recordPairedDeviceSeen, listPairedDevices, deletePairedDevice, setPairedDeviceEnabled, findPairedPhone } from './database'
 import { connectWithHarnessResourceCache, getFreshHarnessResources, harnessRuntimeCacheKey } from './harness/resource-cache'
 import { backfillFromHistory, getBackfillStatus, queryCounts, queryHarnessSessionRanks, queryUsage } from './usage-stats-service'
 import { discoverUserSkills, discoverUserCommands, discoverUserAgents, discoverCodexUserPrompts } from './agent/discover-resources'
@@ -939,11 +939,34 @@ function applyLiquidGlass(): void {
   }
 }
 
+/** Desktop pairing through a phone; loaded on first use. */
+let desktopPairingModule: Promise<typeof import('./node-host/desktop-pairing')> | null = null
+function desktopPairing(): Promise<typeof import('./node-host/desktop-pairing')> {
+  desktopPairingModule ??= import('./node-host/desktop-pairing').then((module) => {
+    module.configureDesktopPairing({
+      setNodeHostEnabled: async (enabled) => {
+        if (readAppSettings().remoteNodeAccessEnabled !== enabled) {
+          await applyAppSettingsPatch({ remoteNodeAccessEnabled: enabled })
+        } else if (enabled) {
+          await applyNodeHostSettings(readAppSettings())
+        }
+      },
+      send: (channel, payload) => safeSend(channel, payload),
+      relayUrl: () => readRemoteConfig()?.relayUrl || __CF_RELAY_URL__,
+      environmentHost: async () => (await import('./environment')).getEnvironmentHost(),
+      remoteNodesEnabled: () => readAppSettings().experimentalRemoteNodesEnabled,
+    })
+    return module
+  })
+  return desktopPairingModule
+}
+
 /** Start or stop the node surface other devices run tasks through; loaded only when it is on. */
 let nodeHostLoaded = false
 async function applyNodeHostSettings(settings: AppSettings): Promise<void> {
   nodeHostLoaded = true
-  const { applyNodeHostSettings: apply } = await import('./node-host/node-host-controller')
+  const { applyNodeHostSettings: apply, setNodeHostAccessAllowed } = await import('./node-host/node-host-controller')
+  setNodeHostAccessAllowed(readRemoteConfig()?.enabled === true)
   // The same relay the phone link uses carries the node channel across networks.
   await apply(settings, sessionManager, { relayUrl: readRemoteConfig()?.relayUrl || __CF_RELAY_URL__ })
 }
@@ -1906,41 +1929,6 @@ function registerIpcHandlers(): void {
     const { listSshConfigHosts } = await import('./environment/ssh-config')
     return listSshConfigHosts()
   })
-  ipcMain.handle(AgentIpcChannels.ENVIRONMENT_HARNESS_LIST, async (_e, connectionId: string) => {
-    const { getEnvironmentHost } = await import('./environment')
-    return getEnvironmentHost().listRemoteHarnesses(connectionId)
-  })
-  ipcMain.handle(
-    AgentIpcChannels.ENVIRONMENT_HARNESS_ENABLE,
-    async (
-      _e,
-      connectionId: string,
-      input: {
-        harnessId: string
-        artifactPath?: string
-        command?: string
-        serverUrl?: string
-        args?: string[]
-      },
-    ) => {
-      const { getEnvironmentHost } = await import('./environment')
-      return getEnvironmentHost().enableRemoteHarness(connectionId, input)
-    },
-  )
-  ipcMain.handle(
-    AgentIpcChannels.ENVIRONMENT_HARNESS_DISABLE,
-    async (_e, connectionId: string, harnessId: string) => {
-      const { getEnvironmentHost } = await import('./environment')
-      return getEnvironmentHost().disableRemoteHarness(connectionId, harnessId)
-    },
-  )
-  ipcMain.handle(
-    AgentIpcChannels.ENVIRONMENT_HARNESS_PROBE,
-    async (_e, connectionId: string, harnessId: string) => {
-      const { getEnvironmentHost } = await import('./environment')
-      return getEnvironmentHost().probeRemoteHarness(connectionId, harnessId)
-    },
-  )
   ipcMain.handle(AgentIpcChannels.ENVIRONMENT_LIST_PROJECTS, async (
     _e,
     connectionId: string,
@@ -4353,9 +4341,20 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.APP_SETTINGS_GET, () => readAppSettings())
   ipcMain.handle(AgentIpcChannels.APP_SETTINGS_SAVE, (_e, patch) => applyAppSettingsPatch(patch))
   ipcMain.handle(AgentIpcChannels.NODE_HOST_STATUS, async () => (await import('./node-host/node-host-controller')).nodeHostStatus())
-  ipcMain.handle(AgentIpcChannels.NODE_HOST_MINT_PAIRING_TOKEN, async () => (await import('./node-host/node-host-controller')).mintNodeHostPairingToken())
-  ipcMain.handle(AgentIpcChannels.NODE_HOST_NOTE_GET, async () => (await import('./node-host/node-note')).readNodeNote())
-  ipcMain.handle(AgentIpcChannels.NODE_HOST_NOTE_SET, async (_e, note: unknown) => (await import('./node-host/node-note')).writeNodeNote(String(note ?? '')))
+  ipcMain.handle(AgentIpcChannels.NODE_HOST_CONTROLLERS, async () => (await desktopPairing()).listControllers())
+  ipcMain.handle(AgentIpcChannels.NODE_HOST_REMOVE_CONTROLLER, async (_e, id: unknown) => (await desktopPairing()).removeController(String(id)))
+  ipcMain.handle(AgentIpcChannels.NODE_HOST_SET_CONTROLLER_ENABLED, async (_e, id: unknown, enabled: unknown) =>
+    (await desktopPairing()).setControllerEnabled(String(id), enabled === true))
+  ipcMain.handle(AgentIpcChannels.NODE_HOST_PAIRING_START, async () => (await desktopPairing()).startControllerQr())
+  ipcMain.handle(AgentIpcChannels.NODE_HOST_PAIRING_CONFIRM, async (_e, code: unknown) => (await desktopPairing()).confirmControllerQr(String(code ?? '')))
+  ipcMain.handle(AgentIpcChannels.NODE_HOST_PAIRING_CANCEL, async () => (await desktopPairing()).cancelControllerQr())
+  ipcMain.handle(AgentIpcChannels.ENVIRONMENT_NODE_PAIRING_START, async () => (await desktopPairing()).startNodeQr())
+  ipcMain.handle(AgentIpcChannels.ENVIRONMENT_NODE_PAIRING_CANCEL, async () => (await desktopPairing()).cancelNodeQr())
+  if (is.dev) {
+    // `scripts/desktop-node-lab.ts` pairs two dev desktops without a phone.
+    ipcMain.handle(AgentIpcChannels.NODE_HOST_DEV_MINT_CODE, async () => (await desktopPairing()).mintNodeCode())
+    ipcMain.handle(AgentIpcChannels.ENVIRONMENT_DEV_PAIR_NODE_CODE, async (_e, code: unknown) => (await desktopPairing()).pairNodeCode(String(code ?? '')))
+  }
   ipcMain.handle(AgentIpcChannels.APP_DEFAULT_DOWNLOAD_DIR, () => systemDownloadDir())
   ipcMain.handle(AgentIpcChannels.JEV_API_KEY_STATUS, async () => (await import('./jev/jev-api-key')).getJevApiKeyStatus())
   ipcMain.handle(AgentIpcChannels.JEV_API_KEY_SET, async (_e, key: string) => (await import('./jev/jev-api-key')).setJevApiKey(String(key ?? '')))
@@ -4619,6 +4618,10 @@ function registerIpcHandlers(): void {
       : { ...config, channelScheme: REMOTE_CHANNEL_SCHEME }
     writeFileSync(getRemoteConfigPath(), JSON.stringify(next))
     remoteControlService.start(next)
+    // Allow Control covers desktops that run tasks here too.
+    if (nodeHostLoaded) {
+      void import('./node-host/node-host-controller').then(({ setNodeHostAccessAllowed }) => setNodeHostAccessAllowed(next.enabled))
+    }
   })
   ipcMain.handle(AgentIpcChannels.REMOTE_LIST_PAIRED, (): PairedDevice[] => {
     const online = remoteControlService.getOnlineDevices()
@@ -4629,10 +4632,13 @@ function registerIpcHandlers(): void {
       lastSeenAt: row.last_seen_at,
       online: online.has(row.id),
       transport: online.get(row.id)?.transport,
+      enabled: row.disabled === 0,
       ...(row.channel_key_id ? {} : { needsRepair: true }),
-      // QR pairing is phone-only today; desktop clients will set this explicitly later.
-      clientKind: 'mobile' as const,
     }))
+  })
+  ipcMain.handle(AgentIpcChannels.REMOTE_SET_PAIRED_ENABLED, (_, id: string, enabled: boolean) => {
+    setPairedDeviceEnabled(id, enabled === true)
+    if (!enabled) remoteControlService.disconnectDevice(id)
   })
   ipcMain.handle(AgentIpcChannels.REMOTE_REMOVE_PAIRED, (_, id: string) => {
     deletePairedDevice(id)
@@ -4705,6 +4711,7 @@ function registerIpcHandlers(): void {
   })
   deviceRegistry.setDraftControl(localDraftStore())
   agentService.setPrepareDraftOpen(installDraftOpenFlush(allWindows))
+  agentService.setDesktopPairCommand(async (command) => (await desktopPairing()).handleDesktopPairCommand(command))
   localDraftStore().watch((event) => {
     publishAgentEvent(event)
     // Phones keep drafts as rows and load a composer through `open_draft`;
@@ -4715,7 +4722,11 @@ function registerIpcHandlers(): void {
   const savedRemoteConfig = readRemoteConfig()
   if (savedRemoteConfig) remoteControlService.start(savedRemoteConfig)
   const startupSettings = readAppSettings()
-  if (startupSettings.remoteNodeAccessEnabled) void applyNodeHostSettings(startupSettings)
+  if (startupSettings.remoteNodeAccessEnabled) {
+    void applyNodeHostSettings(startupSettings)
+      .then(async () => (await desktopPairing()).reconcileNodeHostAtStartup())
+      .catch((error) => log.warn('[node-host] startup reconcile failed: %s', error instanceof Error ? error.message : String(error)))
+  }
 
   powerMonitor.on('resume', () => {
     log.info('[RemoteControl] System resumed, restarting channel')

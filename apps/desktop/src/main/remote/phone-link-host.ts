@@ -42,7 +42,14 @@ export { deriveIssuedChannelSecret } from '@superone/relay-client/secure-channel
 export type PhoneLinkHost = typeof import('./phone-link-host')
 
 /** A paired phone as the host knows it, resolved from the key id it presents. */
-export type PhoneKey = { keyId: string; deviceId: string; deviceName: string; secretHex: string }
+export type PhoneKey = {
+  keyId: string
+  deviceId: string
+  deviceName: string
+  secretHex: string
+  /** False while this desktop keeps the phone out without unpairing it. */
+  enabled: boolean
+}
 export type ResolvePhoneKey = (keyId: string) => PhoneKey | null
 
 /**
@@ -53,6 +60,14 @@ export type ResolvePhoneKey = (keyId: string) => PhoneKey | null
 export function stillPaired(resolve: ResolvePhoneKey, device: PhoneKey): boolean {
   const live = resolve(device.keyId)
   return live !== null && live.deviceId === device.deviceId && live.secretHex === device.secretHex
+}
+
+/**
+ * The phone may use its channel now. A switched-off phone is turned away
+ * without `kicked`, which would make it forget the pairing.
+ */
+export function phoneAllowed(resolve: ResolvePhoneKey, device: PhoneKey): boolean {
+  return resolve(device.keyId)?.enabled === true
 }
 
 export type ChannelEnvelope = { type: typeof LINK_CHANNEL_FRAME; msg?: unknown; hello?: unknown; data?: unknown }

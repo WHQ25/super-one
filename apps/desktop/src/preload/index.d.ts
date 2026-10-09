@@ -8,7 +8,7 @@ import type { PreviewerFile } from '@superone/shared/generative-ui/native-widget
 import type { ComputerUseDisplayInfo, ComputerUseViewfinderClaim, ComputerUseViewfinderFrame } from '@superone/shared/agent-types'
 import type { AttachmentOriginalStatus, OpenCodeResources, StageAttachmentOriginalRequest } from '@superone/shared/agent-types'
 import type { DshPluginList, DshPluginInstallResult, DshPluginInstallSource } from '@superone/shared/agent-types'
-import type { AgentEvent, AgentInfo, AgentPrewarmHint, ApiProvider, AppSettings, AppSettingsPatch, NodeHostPairingToken, NodeHostStatus, Automation, AutomationRunStatus, BashOutputEvent, BrowserAudioState, BrowserCertError, BrowserOpenTabRequest, BrowserHistoryEntry, ChatMessage, ChatMessageContext, ClaudePreferences, ClaudeSteerPriority, ClaudeResources, CodexAccountLoginStartResult, CodexAccountStatus, CodexAuthStatus, CodexCollaborationMode, CodexConfigRequirements, CodexGoal, CodexGoalStatus, CodexHookGroup, CodexMarketplaceAddRequest, CodexMarketplaceAddResult, CodexMarketplaceUpgradeResult, CodexPermissionPreset, CodexRateLimits, CodexRateLimitResetOutcome, CodexMcpOauthLoginResult, CodexMcpOauthLoginOptions, CodexExternalAgentItem, CodexExternalAgentImportResult, CodexAccountUsage, CodexServerDiagnostics, CodexRealtimeVoiceCatalog, ClaudeAccount, ClaudeRateLimits, ProviderRateLimits, CodexReasoningEffort, CodexResources, CodexReviewTarget, CodexRunResult, CodexSetAuthRequest, ContentBlock, ContextUsageInfo, CreateAutomationRequest, CreateProviderRequest, DiscoverModelsResult, FileEntryKind, FileOpResult, FileSearchResult, FileTreeEntry, NativeContextMenuItemSpec, GitDirtyStatus, GitFileContent, GitFileDiff, GitInfoResult, GitLogEntry, GitResult, GitStatusFile, HarnessId, HookConfig, HookSavePayload, ImageAttachment, ListDirEntry, LoadSessionMessagesResult, Locale, MarketplacePlugin, MarketplacePluginDetail, MarketplaceScope, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta, MediaProviderStatus, UpsertMediaProviderRequest, MentionSearchItem, ModelOption, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, PluginModReview, PluginUserConfig, ProviderEndpointTestResponse, QuestionAnnotations, ScheduledSend, ScheduledSendPatch, ScheduledSendSessionInit, RecentFolder, RemoteDeviceConfig, ResourceScope, RewindFilesResult, SandboxInfo, SandboxMode, SandboxProbeResult, SendMessageRequest, SessionHistoryEntry, SessionSettingsPatch, SetupEvent, SkillDetail, SkillInfo, SlashCommandInfo, StartupData, TerminalEvent, TerminalListItem, TerminalSnapshot, ThemeMode, UpdateAutomationRequest, UpdateEvent, UpdateProviderRequest, WorktreeActivateRequest, WorktreeInfo, WorktreeHandoffResult, WorktreeAssignResult, SessionForkRequest, SessionForkResult, SideChatStartRequest, SideChatStartResult, WindowFoldStep, WindowMiniMode, RealtimeVoiceStartRequest, RealtimeTimelineResult } from '@superone/shared/agent-types'
+import type { AgentEvent, AgentInfo, AgentPrewarmHint, ApiProvider, AppSettings, AppSettingsPatch, ControllerPairingEvent, NodeHostController, NodePairingEvent, NodeHostStatus, Automation, AutomationRunStatus, BashOutputEvent, BrowserAudioState, BrowserCertError, BrowserOpenTabRequest, BrowserHistoryEntry, ChatMessage, ChatMessageContext, ClaudePreferences, ClaudeSteerPriority, ClaudeResources, CodexAccountLoginStartResult, CodexAccountStatus, CodexAuthStatus, CodexCollaborationMode, CodexConfigRequirements, CodexGoal, CodexGoalStatus, CodexHookGroup, CodexMarketplaceAddRequest, CodexMarketplaceAddResult, CodexMarketplaceUpgradeResult, CodexPermissionPreset, CodexRateLimits, CodexRateLimitResetOutcome, CodexMcpOauthLoginResult, CodexMcpOauthLoginOptions, CodexExternalAgentItem, CodexExternalAgentImportResult, CodexAccountUsage, CodexServerDiagnostics, CodexRealtimeVoiceCatalog, ClaudeAccount, ClaudeRateLimits, ProviderRateLimits, CodexReasoningEffort, CodexResources, CodexReviewTarget, CodexRunResult, CodexSetAuthRequest, ContentBlock, ContextUsageInfo, CreateAutomationRequest, CreateProviderRequest, DiscoverModelsResult, FileEntryKind, FileOpResult, FileSearchResult, FileTreeEntry, NativeContextMenuItemSpec, GitDirtyStatus, GitFileContent, GitFileDiff, GitInfoResult, GitLogEntry, GitResult, GitStatusFile, HarnessId, HookConfig, HookSavePayload, ImageAttachment, ListDirEntry, LoadSessionMessagesResult, Locale, MarketplacePlugin, MarketplacePluginDetail, MarketplaceScope, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta, MediaProviderStatus, UpsertMediaProviderRequest, MentionSearchItem, ModelOption, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, PluginModReview, PluginUserConfig, ProviderEndpointTestResponse, QuestionAnnotations, ScheduledSend, ScheduledSendPatch, ScheduledSendSessionInit, RecentFolder, RemoteDeviceConfig, ResourceScope, RewindFilesResult, SandboxInfo, SandboxMode, SandboxProbeResult, SendMessageRequest, SessionHistoryEntry, SessionSettingsPatch, SetupEvent, SkillDetail, SkillInfo, SlashCommandInfo, StartupData, TerminalEvent, TerminalListItem, TerminalSnapshot, ThemeMode, UpdateAutomationRequest, UpdateEvent, UpdateProviderRequest, WorktreeActivateRequest, WorktreeInfo, WorktreeHandoffResult, WorktreeAssignResult, SessionForkRequest, SessionForkResult, SideChatStartRequest, SideChatStartResult, WindowFoldStep, WindowMiniMode, RealtimeVoiceStartRequest, RealtimeTimelineResult } from '@superone/shared/agent-types'
 import type { MiniAppEntry, MiniAppHostLogEvent, MiniAppInstallMeta, MiniAppInstallResult, MiniAppPackResult, MiniAppPreviewResult, MiniAppToolInterceptOpenRequest, DevRegistryEntry, DevRegistryView } from '@superone/shared/miniapp-types'
 import type { McpbInstallRequest, McpbInstalledEntry, McpbPreview } from '@superone/shared/mcpb-types'
 import type { GitMentionCapabilities, GitMentionRefKind, GitMentionRefsResult } from '@superone/shared/git-mention-query'
@@ -545,14 +545,22 @@ interface AppAPI {
   setFastMode(enabled: boolean): Promise<void>
   getAppSettings(): Promise<AppSettings>
   saveAppSettings(patch: AppSettingsPatch): Promise<AppSettings>
-  /** Node surface other devices run tasks through (`remoteNodeAccessEnabled`). */
+  /** Node surface controller desktops run tasks through; it runs while one is paired. */
   getNodeHostStatus(): Promise<NodeHostStatus>
-  /** Single-use pairing token for another device; rejects while remote node access is off. */
-  mintNodeHostPairingToken(): Promise<NodeHostPairingToken>
-  /** Owner note agents read when choosing this computer as a node; stored in the node config, not app settings. */
-  getNodeHostNote(): Promise<string>
-  /** Replace the node note (empty clears); resolves to the stored, trimmed value. */
-  setNodeHostNote(note: string): Promise<string>
+  listNodeHostControllers(): Promise<NodeHostController[]>
+  removeNodeHostController(id: string): Promise<void>
+  /** Keep a paired desktop out (or let it back in) without unpairing it. */
+  setNodeHostControllerEnabled(id: string, enabled: boolean): Promise<void>
+  /** The controller list or host status changed. */
+  onNodeHostChanged(callback: () => void): () => void
+  /** Show a controller QR for a phone paired with the controller; resolves to the QR text. */
+  startControllerPairing(): Promise<string>
+  /** The code the phone shows; rejects when it does not match. */
+  confirmControllerPairing(code: string): Promise<void>
+  cancelControllerPairing(): Promise<void>
+  onControllerPairingEvent(callback: (event: ControllerPairingEvent) => void): () => void
+  /** Development builds only. */
+  devMintNodePairingCode(): Promise<string>
   /** OS Downloads folder — the effective target when `browserDownloadDir` is unset. */
   getDefaultDownloadDir(): Promise<string>
   /** Whether a Jev (TypeSafe) API key is stored for the experimental browser fast loop; never the key itself. */
@@ -806,6 +814,8 @@ interface AppAPI {
   onClientRegistered(callback: (info: { deviceName: string }) => void): () => void
   listPairedDevices(): Promise<import('@superone/shared/agent-types').PairedDevice[]>
   removePairedDevice(id: string): Promise<void>
+  /** Keep a paired phone out (or let it back in) without unpairing it. */
+  setPairedDeviceEnabled(id: string, enabled: boolean): Promise<void>
   onDeviceStatusChanged(callback: (device: import('@superone/shared/agent-types').RemoteDeviceStatus) => void): () => void
   onUploadProgress(callback: (progress: import('@superone/shared/agent-types').MobileUploadProgress) => void): () => void
   startPairing(): Promise<{ channelId: string; tempKeyHex: string; relayUrl: string }>
@@ -988,6 +998,12 @@ export interface EnvironmentAPI extends MediaComposerAPI {
     project: { environmentId: string; projectId: string },
   ): Promise<{ ok: boolean }>
   pairRemote(input: PairRemoteInput): Promise<{ connectionId: string; descriptor: unknown; persisted: boolean }>
+  /** Show a node QR for a phone paired with the node; resolves to the QR text. */
+  startNodePairing(): Promise<string>
+  cancelNodePairing(): Promise<void>
+  onNodePairingEvent(callback: (event: NodePairingEvent) => void): () => void
+  /** Development builds only. */
+  devPairNodeCode(code: string): Promise<void>
   connectWithFailover(connectionId: string): Promise<unknown>
   /** Dev-only: probe local remote-node lab on loopback. */
   localLabStatus(): Promise<{
@@ -1043,40 +1059,6 @@ export interface EnvironmentAPI extends MediaComposerAPI {
   upgradeNode(connectionId: string): Promise<{ version: string; warnings: string[] }>
   /** Host aliases from the local OpenSSH client config (~/.ssh/config). */
   listSshConfigHosts(): Promise<SshConfigHostEntry[]>
-  /** Admin harness catalog on a connected remote node. */
-  listHarnesses(connectionId: string): Promise<
-    Array<{
-      id: string
-      runtimeSource: string
-      enabled: boolean
-      state: string
-      runtimeVersion?: string
-      command?: string
-      requiresAuth: boolean
-      diagnostic?: { code: string; message: string }
-    }>
-  >
-  enableHarness(
-    connectionId: string,
-    input: {
-      harnessId: string
-      artifactPath?: string
-      command?: string
-      serverUrl?: string
-      args?: string[]
-    },
-  ): Promise<{
-    id: string
-    enabled: boolean
-    state: string
-    command?: string
-    diagnostic?: { code: string; message: string }
-  }>
-  disableHarness(
-    connectionId: string,
-    harnessId: string,
-  ): Promise<{ id: string; enabled: boolean; state: string }>
-  probeHarness(connectionId: string, harnessId: string): Promise<unknown>
   /** Projects for sidebar: `local` or a remote connectionId (must be connected). */
   listProjects(connectionId: string, options?: { refresh?: boolean }): Promise<ProjectSnapshot[]>
   /** Open/register a project path on a host; `createIfMissing` backs "Create & Add". */

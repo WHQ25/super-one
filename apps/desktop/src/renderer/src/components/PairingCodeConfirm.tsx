@@ -7,8 +7,11 @@ import { Label } from '@superone/ui/components/ui/label'
 export const PAIRED_DEVICE_NAME_MAX = 64
 
 export function PairingCodeConfirm(props: {
-  deviceName: string
-  onDeviceNameChange: (value: string) => void
+  /** Name to store for the device; omit both to ask only for the code. */
+  deviceName?: string
+  onDeviceNameChange?: (value: string) => void
+  /** Replaces the code field's label. */
+  prompt?: string
   code: string
   onCodeChange: (value: string) => void
   error: string
@@ -19,23 +22,25 @@ export function PairingCodeConfirm(props: {
   const { t } = useTranslation()
   return (
     <div className="flex flex-col items-stretch gap-3">
-      <div className="space-y-1.5">
-        <Label htmlFor="pairing-device-name" className="text-xs text-muted-foreground">
-          {t('resources.remote.deviceNameLabel')}
-        </Label>
-        <Input
-          id="pairing-device-name"
-          value={props.deviceName}
-          maxLength={PAIRED_DEVICE_NAME_MAX}
-          onChange={(event) => props.onDeviceNameChange(event.target.value)}
-          placeholder={t('resources.remote.deviceNameLabel')}
-          className="h-8 bg-background"
-        />
-        <p className="text-xs text-muted-foreground">{t('resources.remote.deviceNameHint')}</p>
-      </div>
+      {props.onDeviceNameChange && (
+        <div className="space-y-1.5">
+          <Label htmlFor="pairing-device-name" className="text-xs text-muted-foreground">
+            {t('resources.remote.deviceNameLabel')}
+          </Label>
+          <Input
+            id="pairing-device-name"
+            value={props.deviceName ?? ''}
+            maxLength={PAIRED_DEVICE_NAME_MAX}
+            onChange={(event) => props.onDeviceNameChange?.(event.target.value)}
+            placeholder={t('resources.remote.deviceNameLabel')}
+            className="h-8 bg-background"
+          />
+          <p className="text-xs text-muted-foreground">{t('resources.remote.deviceNameHint')}</p>
+        </div>
+      )}
       <div className="space-y-1.5">
         <Label htmlFor="pairing-code" className="text-xs text-muted-foreground">
-          {t('resources.remote.stepCode')}
+          {props.prompt ?? t('resources.remote.stepCode')}
         </Label>
         <div className="flex items-center gap-2">
           <input

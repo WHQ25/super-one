@@ -64,6 +64,22 @@ describe('AuthService', () => {
     expect(() => auth.consumeWsTicket(ticket.ticket)).toThrow(/already used/)
   })
 
+  it('reports live pairing tokens and announces each new pairing', () => {
+    const { auth } = setup()
+    const paired: string[] = []
+    auth.onPaired = (id) => paired.push(id)
+    expect(auth.hasLivePairingToken()).toBe(false)
+    const token = auth.createPairingToken()
+    expect(auth.hasLivePairingToken()).toBe(true)
+    expect(auth.hasLivePairingToken(token.expiresAt + 1)).toBe(false)
+    const result = auth.exchangePairingToken({
+      pairingToken: token.token,
+      devicePublicKeyPem: generateEd25519KeyPair().publicKeyPem,
+    })
+    expect(paired).toEqual([result.clientSessionId])
+    expect(auth.hasLivePairingToken()).toBe(false)
+  })
+
   it('revokes session and rejects subsequent access tokens', () => {
     const { auth } = setup()
     const device = generateEd25519KeyPair()
@@ -132,6 +148,96 @@ describe('AuthService', () => {
     } catch (err) {
       expect(err).toMatchObject({ code: 'revoked' })
     }
+  })
+
+  it('suspends a session as non-terminal unauthorized, closes it, and lets it back in', () => {
+    const { auth } = setup()
+    const device = generateEd25519KeyPair()
+    const paired = auth.exchangePairingToken({
+      pairingToken: auth.createPairingToken().token,
+      devicePublicKeyPem: device.publicKeyPem,
+    })
+    const refresh = (refreshToken: string) => {
+      const proof = `refresh:${paired.clientSessionId}:${Date.now()}`
+      return auth.refreshAccess({
+        refreshToken,
+        proofPayload: proof,
+        proofSignature: signPayload(device.privateKeyPem, proof),
+        verifyDeviceProof: verifyPayload,
+      })
+    }
+    const access = refresh(paired.refreshToken)
+    const ticket = auth.createWsTicket(access.accessToken)
+    const closed: string[] = []
+    auth.onRevoke = (id) => closed.push(id)
+
+    expect(auth.setClientSessionSuspended(paired.clientSessionId, true)).toBe(true)
+    expect(closed).toEqual([paired.clientSessionId])
+    expect(auth.listClientSessions()[0]?.suspendedAt).toEqual(expect.any(Number))
+    expect(auth.verifyAccessToken(access.accessToken)).toEqual({ ok: false, reason: 'client session suspended' })
+    expect(() => auth.consumeWsTicket(ticket.ticket)).toThrow(expect.objectContaining({ code: 'unauthorized' }))
+    expect(() => refresh(access.refreshToken)).toThrow(expect.objectContaining({ code: 'unauthorized', message: 'client session suspended' }))
+
+    expect(auth.setClientSessionSuspended(paired.clientSessionId, false)).toBe(true)
+    expect(auth.listClientSessions()[0]?.suspendedAt).toBeNull()
+    expect(auth.verifyAccessToken(refresh(access.refreshToken).accessToken).ok).toBe(true)
+    expect(closed).toHaveLength(1)
+  })
+
+  it('keeps one session per device key: pairing again replaces the old one', () => {
+    const { auth } = setup()
+    const device = generateEd25519KeyPair()
+    const closed: string[] = []
+    auth.onRevoke = (id) => closed.push(id)
+    const first = auth.exchangePairingToken({
+      pairingToken: auth.createPairingToken().token,
+      devicePublicKeyPem: device.publicKeyPem,
+      platform: 'darwin',
+    })
+    const second = auth.exchangePairingToken({
+      pairingToken: auth.createPairingToken().token,
+      devicePublicKeyPem: device.publicKeyPem,
+      platform: 'darwin',
+    })
+    expect(closed).toEqual([first.clientSessionId])
+    const live = auth.listClientSessions().filter((s) => s.revokedAt === null)
+    expect(live.map((s) => [s.clientSessionId, s.platform])).toEqual([[second.clientSessionId, 'darwin']])
+  })
+
+  it('pauses every session without touching them, then lets them back in', () => {
+    const { auth } = setup()
+    const device = generateEd25519KeyPair()
+    const paired = auth.exchangePairingToken({
+      pairingToken: auth.createPairingToken().token,
+      devicePublicKeyPem: device.publicKeyPem,
+    })
+    const proof = `refresh:${paired.clientSessionId}:${Date.now()}`
+    const access = auth.refreshAccess({
+      refreshToken: paired.refreshToken,
+      proofPayload: proof,
+      proofSignature: signPayload(device.privateKeyPem, proof),
+      verifyDeviceProof: verifyPayload,
+    })
+    const closed: string[] = []
+    auth.onRevoke = (id) => closed.push(id)
+
+    auth.setAccessPaused(true)
+    expect(closed).toEqual([paired.clientSessionId])
+    expect(auth.verifyAccessToken(access.accessToken)).toEqual({ ok: false, reason: 'client session suspended' })
+    expect(auth.listClientSessions()[0]?.suspendedAt).toBeNull()
+
+    auth.setAccessPaused(false)
+    expect(auth.verifyAccessToken(access.accessToken).ok).toBe(true)
+  })
+
+  it('does not suspend a revoked session', () => {
+    const { auth } = setup()
+    const paired = auth.exchangePairingToken({
+      pairingToken: auth.createPairingToken().token,
+      devicePublicKeyPem: generateEd25519KeyPair().publicKeyPem,
+    })
+    auth.revokeClientSession(paired.clientSessionId)
+    expect(auth.setClientSessionSuspended(paired.clientSessionId, true)).toBe(false)
   })
 
   it('allows immediately-previous refresh within grace instead of revoking', () => {

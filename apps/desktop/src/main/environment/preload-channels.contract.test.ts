@@ -77,10 +77,6 @@ describe('environment preload ↔ Main IPC contract', () => {
     expect(clientView).toContain('EnvironmentInstallOperation')
     expect(clientView).toContain('connectionId?:')
     expect(clientView).toContain("operation?: EnvironmentInstallOperation")
-    expect(AgentIpcChannels.ENVIRONMENT_HARNESS_LIST).toBe('environment:harnessList')
-    expect(AgentIpcChannels.ENVIRONMENT_HARNESS_ENABLE).toBe('environment:harnessEnable')
-    expect(AgentIpcChannels.ENVIRONMENT_HARNESS_DISABLE).toBe('environment:harnessDisable')
-    expect(AgentIpcChannels.ENVIRONMENT_HARNESS_PROBE).toBe('environment:harnessProbe')
   })
 
   it('wires every management channel through Main and preload', () => {
@@ -119,10 +115,6 @@ describe('environment preload ↔ Main IPC contract', () => {
       'ENVIRONMENT_REPAIR_PAIRING_SSH',
       'ENVIRONMENT_STATUS_EVENT',
       'ENVIRONMENT_INSTALL_PROGRESS',
-      'ENVIRONMENT_HARNESS_LIST',
-      'ENVIRONMENT_HARNESS_ENABLE',
-      'ENVIRONMENT_HARNESS_DISABLE',
-      'ENVIRONMENT_HARNESS_PROBE',
       'ENVIRONMENT_LOCAL_LAB_STATUS',
       'ENVIRONMENT_PAIR_LOCAL_LAB',
     ]

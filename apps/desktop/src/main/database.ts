@@ -151,6 +151,8 @@ export interface PairedDeviceRow {
   last_seen_at: string | null
   /** Channel key id issued at pairing; null for pairings that must be redone. */
   channel_key_id: string | null
+  /** 1 while this desktop keeps the phone out without unpairing it. */
+  disabled: number
 }
 
 /** Record a pairing. A new key id replaces the old one, which stops resolving. */
@@ -185,16 +187,20 @@ export function listPairedDevices(): PairedDeviceRow[] {
   return getDb().prepare('SELECT * FROM paired_devices ORDER BY paired_at DESC').all() as PairedDeviceRow[]
 }
 
+export function setPairedDeviceEnabled(id: string, enabled: boolean): void {
+  getDb().prepare('UPDATE paired_devices SET disabled = ? WHERE id = ?').run(enabled ? 0 : 1, id)
+}
+
 export function deletePairedDevice(id: string): void {
   getDb().prepare('DELETE FROM paired_devices WHERE id = ?').run(id)
 }
 
 /** A phone paired with a channel key, looked up by that key or by its device id. */
-export function findPairedPhone(by: { keyId: string } | { id: string }): { deviceId: string; deviceName: string; keyId: string } | null {
+export function findPairedPhone(by: { keyId: string } | { id: string }): { deviceId: string; deviceName: string; keyId: string; enabled: boolean } | null {
   const row = ('keyId' in by
-    ? getDb().prepare('SELECT id, name, channel_key_id FROM paired_devices WHERE channel_key_id = ?').get(by.keyId)
-    : getDb().prepare('SELECT id, name, channel_key_id FROM paired_devices WHERE id = ? AND channel_key_id IS NOT NULL').get(by.id)
-  ) as { id: string; name: string; channel_key_id: string } | undefined
-  return row ? { deviceId: row.id, deviceName: row.name, keyId: row.channel_key_id } : null
+    ? getDb().prepare('SELECT id, name, channel_key_id, disabled FROM paired_devices WHERE channel_key_id = ?').get(by.keyId)
+    : getDb().prepare('SELECT id, name, channel_key_id, disabled FROM paired_devices WHERE id = ? AND channel_key_id IS NOT NULL').get(by.id)
+  ) as { id: string; name: string; channel_key_id: string; disabled: number } | undefined
+  return row ? { deviceId: row.id, deviceName: row.name, keyId: row.channel_key_id, enabled: row.disabled === 0 } : null
 }
 

@@ -75,9 +75,9 @@ describe('RemoteControlService phone channel over the relay', () => {
     relay = null
   })
 
-  async function start(phones: PairedPhone[], onCommand = vi.fn()) {
+  async function start(phones: Array<Omit<PairedPhone, 'enabled'> & { enabled?: boolean }>, onCommand = vi.fn()) {
     relay = await startRelay()
-    const paired = new Map(phones.map((phone) => [phone.keyId, phone]))
+    const paired = new Map(phones.map((phone) => [phone.keyId, { enabled: true, ...phone }]))
     service = new RemoteControlService(relay.url, {
       onCommand,
       pairedPhones: {

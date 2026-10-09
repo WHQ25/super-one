@@ -521,7 +521,7 @@ The channel to a node must be encrypted, either by the transport (loopback,
 SSH forward, Tailscale, a TLS reverse proxy) or by the node's encrypted channel.
 Forwarded headers are not trusted by default.
 
-A desktop node listens on every interface while node access is on, but accepts
+A desktop node listens on every interface while it serves (§11.5), but accepts
 TCP peers only from private networks: loopback, RFC 1918, link-local
 (169.254/16, fe80::/10), IPv6 unique-local (fc00::/7) and the Tailscale ranges
 (100.64/10, fd7a:115c:a1e0::/48), IPv4-mapped forms included
@@ -591,16 +591,72 @@ and framing are in [relay-crypto.md](relay-crypto.md#node-channel-over-the-relay
   (`repairPairing` without a base URL) choose their route the same way, so a
   node reachable only through the relay recovers there.
 
-Pairing works over the relay alone: the pairing code (`superone-node:2:`,
+Pairing works over the relay alone: the node pairing code (`superone-node:2:`,
 `node-pairing-code.ts`) carries the node's environment id, LAN hint
 (host name and port), optional Tailscale address, relay URL and room, the
 single-use token and the channel credential. The desktop pairs over whichever
-route resolves first.
+route resolves first. The code travels only through a phone (§11.5).
 
 Known gap: the relay does not authenticate room members. Anyone who knows a room
 id (any device that ever paired, including a revoked one) can take the room's
 `desktop` socket or a slot and disrupt connections. It cannot read or forge
 channel frames, so this is denial of service only.
+
+### 11.5 Desktop pairing through a phone
+
+A controller desktop (C) runs sessions on a controlled desktop (N). They pair
+through a phone already paired with one of them; there is no code to copy and
+no switch to turn on. The controlled side always confirms with six digits.
+
+| Shown on | Settings entry | Phone is paired with | Code shown on → typed on |
+|---|---|---|---|
+| N | Control This Computer → Desktop → Pair New Desktop | C | phone → N |
+| C | Control Other Devices → Add Desktop | N | C → phone |
+
+Both QRs open a relay pairing room (`/pair?channel=…`) with a temporary key, like
+phone pairing ([relay-crypto.md](relay-crypto.md#pairing)), and name the desktop
+that shows them: `superone://pair-controller?channel&key&relay&name` on N,
+`superone://pair-node?…` on C. Room frames are sealed under the temporary key;
+`packages/relay-client/src/desktop-pair.ts` defines them and the phone side.
+
+- Controller QR (`controller-pairing.ts`): N starts its node host and joins the
+  room. The phone picks C, shows a code and sends `controller_request { code,
+  controllerName, phoneName }`. When the person types the code on N, N mints a
+  node pairing code and answers `controller_grant { nodeCode }`. The phone sends
+  `node_pair { nodeCode, nodeName }` to C over its own link, and C pairs.
+- Node QR (`environment/node-pairing.ts`): the phone picks N and sends
+  `node_offer { nodeName, phoneName }`; C answers `node_challenge { code }` and
+  shows the code. The phone compares the typed code itself, because it confirms
+  on N's behalf: C only says which code it shows. On a match the phone sends
+  `node_mint { controllerName }` to N over its own link (N starts its host,
+  mints, and notifies its user), then `node_grant { nodeCode }` to C; C pairs and
+  answers `node_result { ok, error? }`.
+- Either side may send `desktop_pair_rejected` to end the room.
+
+A phone paired with a desktop can already run anything there, so it may grant
+control of that desktop. C pairs a node it knows (same environment id) again in
+place, keeping its connection and projects (`pairNodeFromCode`). Both commands
+and both QRs need the experimental remote-nodes setting on that desktop.
+
+N's node host has no switch. It runs while N has a controller (an unrevoked
+client session), a controller QR is open, or a minted code can still be
+redeemed, and stops otherwise (`reconcileNodeHost`); `remoteNodeAccessEnabled`
+persists that state across restarts, and `remoteNodeAccessPort` overrides the
+per-variant port without UI. N lists its controllers under Control This
+Computer → Desktop; removing one revokes its client session and closes its
+sockets. Its switch suspends the session instead (`client_sessions.suspended_at`):
+the sockets close and refresh, access tokens and tickets fail as non-terminal
+`unauthorized` (`client session suspended`), so C keeps its credential, backs
+off, and reconnects once the switch is back on. Allow Control (the phone
+link's switch) is the master switch over both: off pauses every session the
+same way (`AuthService.setAccessPaused`) and stops the phone link; each device's
+own switch applies again once it is on. A phone's switch (`paired_devices.disabled`)
+refuses its channel without `kicked`, which would make the phone forget the
+pairing. Pairing again with the same device key replaces that device's earlier
+session, and C reports its OS at pairing (`client_sessions.device_platform`) so
+N can show what kind of computer it is. Development builds expose the two halves without a phone
+(`nodeHost:devMintCode`, `environment:devPairNodeCode`) for
+`scripts/desktop-node-lab.ts` and the e2e suite.
 
 ## 12. Authentication and Authorization
 

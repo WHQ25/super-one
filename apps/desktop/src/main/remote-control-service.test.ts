@@ -898,7 +898,7 @@ describe('stripEventForRemote codex todo_list streaming', () => {
 
 const TEST_KEY_ID = 'phone-key-0001'
 const testPhones = (deviceId: string) => {
-  const phone = { deviceId, deviceName: 'tester', keyId: TEST_KEY_ID }
+  const phone = { deviceId, deviceName: 'tester', keyId: TEST_KEY_ID, enabled: true }
   return { byKey: (keyId: string) => keyId === TEST_KEY_ID ? phone : null, byId: (id: string) => id === deviceId ? phone : null }
 }
 

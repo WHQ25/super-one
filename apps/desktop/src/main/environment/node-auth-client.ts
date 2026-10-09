@@ -194,6 +194,8 @@ export async function pairWithNode(input: {
       pairingToken: input.pairingToken,
       devicePublicKeyPem: input.devicePublicKeyPem,
       label: input.label,
+      // Lets the node show what kind of computer controls it.
+      platform: process.platform,
     },
     channel: input.channel,
     dial: input.dial,

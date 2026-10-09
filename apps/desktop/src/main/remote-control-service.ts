@@ -89,6 +89,7 @@ export interface PairedPhone {
   deviceId: string
   deviceName: string
   keyId: string
+  enabled: boolean
 }
 
 export interface PairedPhoneLookup {
@@ -421,7 +422,13 @@ export class RemoteControlService {
   private resolvePhoneKey(keyId: string): PhoneKey | null {
     const phone = this.callbacks.pairedPhones?.byKey(keyId)
     if (!phone || !this.keys) return null
-    return { keyId, deviceId: phone.deviceId, deviceName: phone.deviceName, secretHex: this.link().deriveIssuedChannelSecret(this.keys.rootSecret, keyId) }
+    return {
+      keyId,
+      deviceId: phone.deviceId,
+      deviceName: phone.deviceName,
+      secretHex: this.link().deriveIssuedChannelSecret(this.keys.rootSecret, keyId),
+      enabled: phone.enabled,
+    }
   }
 
   /**
@@ -436,6 +443,17 @@ export class RemoteControlService {
       this.relayWs.send(JSON.stringify({ type: 'kicked', mobileDeviceId: deviceId }))
     }
     this.lanServer?.kickDevice(deviceId)
+    this.markDeviceOffline(deviceId, 'relay')
+    this.markDeviceOffline(deviceId, 'lan')
+  }
+
+  /**
+   * Drop a switched-off phone's channels without `kicked`, so it keeps its
+   * pairing and gets back in once switched on again.
+   */
+  disconnectDevice(deviceId: string): void {
+    this.relayLinks.delete(deviceId)
+    this.lanServer?.disconnectDevice(deviceId)
     this.markDeviceOffline(deviceId, 'relay')
     this.markDeviceOffline(deviceId, 'lan')
   }
@@ -618,6 +636,11 @@ export class RemoteControlService {
           this.revokeDevice(deviceId)
           return
         }
+        if (!this.link().phoneAllowed((keyId) => this.resolvePhoneKey(keyId), link.device)) {
+          log.info('[RemoteControl] relay command from switched-off device %s', deviceId)
+          this.disconnectDevice(deviceId)
+          return
+        }
         trace('remote.in', command.type, command)
         this.callbacks.onCommand(command, (requestId, data) => this.sendResponse(requestId, data, deviceId, channel, ws, generation), { deviceId, transport: 'relay' })
         break
@@ -671,6 +694,11 @@ export class RemoteControlService {
         this.relayLinks.delete(deviceId)
         return
       case 'established':
+        if (!step.device.enabled) {
+          log.info('[RemoteControl] Relay phone %s is switched off; not opening its channel', deviceId)
+          this.relayLinks.delete(deviceId)
+          return
+        }
         link.channel = step.channel
         link.device = step.device
         log.info('[CONN-DESK] relay channel established deviceId=%s', deviceId)

@@ -3,13 +3,13 @@ import type { LanAddress } from './device-discovery'
 import type { SessionRef } from '@superone/shared/environment/refs'
 import type { RemoteCommand } from '@superone/shared/agent-types'
 import type { SessionLinkTarget, SessionLinkMetadataResult } from '@superone/shared/session-link'
-import { createMobileRelayConnection } from './mobile-relay-connection'
+import { closeSideConnection, createSideConnection, type SideConnection } from './side-connection'
 import { randomId } from './ids'
 import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
 import { buildSessionLink } from '@superone/shared/session-link'
 import { readConnectionWorkspace } from './connection-workspace'
 
-type Connection = ReturnType<typeof createMobileRelayConnection>
+type Connection = SideConnection
 export interface SessionLinkPreparation {
   client: RelayClient
   connection?: Connection
@@ -95,17 +95,16 @@ export async function resolveSessionLink(options: SessionLinkOptions): Promise<R
       route.commit()
       try { route.client.send({ type: 'unsubscribe_session', sessionId: ref.sessionId }) } catch { /* transport already gone */ }
     }
-    if (connection) { connection.reconnectController.cancel(); connection.client.disconnect() }
+    if (connection) closeSideConnection(connection)
   }
   let base = sessionLinkBaseClient(options.client)
   if (pairing) {
-    const link = hostLinkOf(pairing)
-    if (!link) throw new Error('Pair this desktop again to open its sessions')
-    connection = createMobileRelayConnection({
-      endpoint: { relayUrl: pairing.relayUrl, link, identity: options.identity },
-      onEvents: (events, epoch) => route?.ingest(events, epoch), onTerminal: () => {}, restore: async () => 0, currentEpoch: () => 0,
-      onConnection: () => {}, onStatus: () => {}, onShutdown: () => {}, onKicked: () => {},
-      resolveLan: () => options.resolveLan(pairing.id), suppressDisconnect: () => true,
+    if (!hostLinkOf(pairing)) throw new Error('Pair this desktop again to open its sessions')
+    connection = createSideConnection({
+      pairing,
+      identity: options.identity,
+      resolveLan: options.resolveLan,
+      onEvents: (events, epoch) => route?.ingest(events, epoch),
     })
     base = connection.client
   }

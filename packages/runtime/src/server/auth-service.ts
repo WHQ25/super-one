@@ -48,6 +48,12 @@ export interface AuthenticatedClient {
   devicePublicKeyPem: string
 }
 
+const SUSPENDED_REASON = 'client session suspended'
+
+function suspendedError(): Error {
+  return Object.assign(new Error(SUSPENDED_REASON), { code: 'unauthorized' })
+}
+
 function parseScopes(json: string): AuthScope[] {
   return JSON.parse(json) as AuthScope[]
 }
@@ -58,8 +64,12 @@ function parseScopes(json: string): AuthScope[] {
  */
 export class AuthService {
   private readonly hashKey: Buffer
-  /** Called when a client session is revoked so the server can close sockets. */
+  /** Called when a client session is revoked or suspended so the server can close sockets. */
   onRevoke: ((clientSessionId: string) => void) | null = null
+  /** Called after a pairing token registered a new client session. */
+  onPaired: ((clientSessionId: string) => void) | null = null
+  /** Every client is turned away like a suspended one (the host's master switch). */
+  private accessPaused = false
 
   constructor(
     private readonly db: TransactionalSqliteDatabase,
@@ -101,12 +111,15 @@ export class AuthService {
 
   /**
    * Atomically consume a pairing token and register the client device key.
-   * Returns a refresh credential bound to that device.
+   * Returns a refresh credential bound to that device. A device pairing again
+   * with the same key replaces its earlier session, so it is listed once.
    */
   exchangePairingToken(input: {
     pairingToken: string
     devicePublicKeyPem: string
     label?: string
+    /** The client's OS (`process.platform`), shown with it. */
+    platform?: string
   }): PairExchangeResult {
     const tokenHash = this.hashSecret(input.pairingToken)
     const now = Date.now()
@@ -149,18 +162,28 @@ export class AuthService {
       const deviceFp = fingerprintPublicKeyPem(input.devicePublicKeyPem)
       const refreshExpiresAt = now + AUTH_CREDENTIAL_LIFETIMES.refreshInactivityMs
 
+      const replaced = (this.db
+        .prepare('SELECT client_session_id FROM client_sessions WHERE device_public_key_fingerprint = ? AND revoked_at IS NULL')
+        .all(deviceFp) as Array<{ client_session_id: string }>).map((r) => r.client_session_id)
+      if (replaced.length > 0) {
+        this.db
+          .prepare('UPDATE client_sessions SET revoked_at = ? WHERE device_public_key_fingerprint = ? AND revoked_at IS NULL')
+          .run(now, deviceFp)
+      }
+
       this.db
         .prepare(
           `INSERT INTO client_sessions
-           (client_session_id, device_public_key_pem, device_public_key_fingerprint, label,
+           (client_session_id, device_public_key_pem, device_public_key_fingerprint, label, device_platform,
             scopes_json, refresh_family_id, refresh_hash, refresh_expires_at, created_at, last_used_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           clientSessionId,
           input.devicePublicKeyPem,
           deviceFp,
           input.label ?? null,
+          input.platform ?? null,
           JSON.stringify(scopes),
           refreshFamilyId,
           this.hashSecret(refreshToken),
@@ -170,16 +193,42 @@ export class AuthService {
         )
 
       return {
-        clientSessionId,
-        refreshToken,
-        scopes,
-        environmentId: this.identity.environmentId,
-        nodePublicKeyFingerprint: this.identity.publicKeyFingerprint,
-        expiresAt: refreshExpiresAt,
-      } satisfies PairExchangeResult
+        result: {
+          clientSessionId,
+          refreshToken,
+          scopes,
+          environmentId: this.identity.environmentId,
+          nodePublicKeyFingerprint: this.identity.publicKeyFingerprint,
+          expiresAt: refreshExpiresAt,
+        } satisfies PairExchangeResult,
+        replaced,
+      }
     })
 
-    return exchange()
+    const { result, replaced } = exchange()
+    for (const id of replaced) {
+      try {
+        this.onRevoke?.(id)
+      } catch {
+        /* best-effort socket close */
+      }
+    }
+    try {
+      this.onPaired?.(result.clientSessionId)
+    } catch {
+      /* best-effort notification */
+    }
+    return result
+  }
+
+  /** Whether some pairing token can still be exchanged. */
+  hasLivePairingToken(now = Date.now()): boolean {
+    return this.db
+      .prepare(
+        `SELECT 1 FROM pairing_tokens
+         WHERE consumed_at IS NULL AND revoked_at IS NULL AND expires_at >= ? LIMIT 1`,
+      )
+      .get(now) !== undefined
   }
 
   /**
@@ -212,13 +261,14 @@ export class AuthService {
       refresh_hash: string
       refresh_expires_at: number
       revoked_at: number | null
+      suspended_at: number | null
     }
 
     const loadByHash = (hash: string): SessionRow | undefined =>
       this.db
         .prepare(
           `SELECT client_session_id, device_public_key_pem, device_public_key_fingerprint,
-                  scopes_json, refresh_family_id, refresh_hash, refresh_expires_at, revoked_at
+                  scopes_json, refresh_family_id, refresh_hash, refresh_expires_at, revoked_at, suspended_at
            FROM client_sessions WHERE refresh_hash = ?`,
         )
         .get(hash) as SessionRow | undefined
@@ -227,7 +277,7 @@ export class AuthService {
       this.db
         .prepare(
           `SELECT client_session_id, device_public_key_pem, device_public_key_fingerprint,
-                  scopes_json, refresh_family_id, refresh_hash, refresh_expires_at, revoked_at
+                  scopes_json, refresh_family_id, refresh_hash, refresh_expires_at, revoked_at, suspended_at
            FROM client_sessions WHERE client_session_id = ?`,
         )
         .get(clientSessionId) as SessionRow | undefined
@@ -271,6 +321,7 @@ export class AuthService {
     }
 
     if (row.revoked_at) throw Object.assign(new Error('client session revoked'), { code: 'revoked' })
+    if (this.accessPaused || row.suspended_at) throw suspendedError()
     if (row.refresh_expires_at < now) {
       // Family is unusable until re-pair — not a transient proof flake.
       throw Object.assign(new Error('refresh token expired'), { code: 'revoked' })
@@ -396,7 +447,7 @@ export class AuthService {
     const row = this.db
       .prepare(
         `SELECT t.ticket_id, t.ticket_hash, t.client_session_id, t.scopes_json, t.proof_thumbprint,
-                t.expires_at, t.consumed_at, s.device_public_key_pem, s.revoked_at
+                t.expires_at, t.consumed_at, s.device_public_key_pem, s.revoked_at, s.suspended_at
          FROM ws_tickets t
          JOIN client_sessions s ON s.client_session_id = t.client_session_id
          WHERE t.ticket_id = ?`,
@@ -412,11 +463,13 @@ export class AuthService {
           consumed_at: number | null
           device_public_key_pem: string
           revoked_at: number | null
+          suspended_at: number | null
         }
       | undefined
 
     if (!row) throw Object.assign(new Error('invalid ws ticket'), { code: 'unauthorized' })
     if (row.revoked_at) throw Object.assign(new Error('client session revoked'), { code: 'revoked' })
+    if (this.accessPaused || row.suspended_at) throw suspendedError()
     if (row.consumed_at) throw Object.assign(new Error('ws ticket already used'), { code: 'unauthorized' })
     if (row.expires_at < now) throw Object.assign(new Error('ws ticket expired'), { code: 'unauthorized' })
     if (!safeEqualString(row.ticket_hash, ticketHash)) {
@@ -475,7 +528,7 @@ export class AuthService {
 
     const row = this.db
       .prepare(
-        `SELECT client_session_id, device_public_key_pem, device_public_key_fingerprint, scopes_json, revoked_at
+        `SELECT client_session_id, device_public_key_pem, device_public_key_fingerprint, scopes_json, revoked_at, suspended_at
          FROM client_sessions WHERE client_session_id = ?`,
       )
       .get(claims.clientSessionId) as
@@ -485,11 +538,13 @@ export class AuthService {
           device_public_key_fingerprint: string
           scopes_json: string
           revoked_at: number | null
+          suspended_at: number | null
         }
       | undefined
 
     if (!row) return { ok: false, reason: 'unknown client session' }
     if (row.revoked_at) return { ok: false, reason: 'client session revoked' }
+    if (this.accessPaused || row.suspended_at) return { ok: false, reason: SUSPENDED_REASON }
     if (
       typeof claims.proofKeyThumbprint === 'string' &&
       claims.proofKeyThumbprint !== row.device_public_key_fingerprint
@@ -524,6 +579,48 @@ export class AuthService {
     return false
   }
 
+  /**
+   * Turn a client session's access off or back on without unpairing it. While
+   * suspended its tokens and tickets are refused as non-terminal `unauthorized`,
+   * so the client keeps its credential and reconnects once access returns.
+   */
+  setClientSessionSuspended(clientSessionId: string, suspended: boolean): boolean {
+    const result = suspended
+      ? this.db
+        .prepare('UPDATE client_sessions SET suspended_at = ? WHERE client_session_id = ? AND suspended_at IS NULL AND revoked_at IS NULL')
+        .run(Date.now(), clientSessionId)
+      : this.db
+        .prepare('UPDATE client_sessions SET suspended_at = NULL WHERE client_session_id = ? AND suspended_at IS NOT NULL')
+        .run(clientSessionId)
+    if (result.changes !== 1) return false
+    if (suspended) {
+      try {
+        this.onRevoke?.(clientSessionId)
+      } catch {
+        /* best-effort socket close */
+      }
+    }
+    return true
+  }
+
+  /**
+   * Turn every client away, or let them back in, without touching their
+   * sessions: the same non-terminal refusal as a suspended session.
+   */
+  setAccessPaused(paused: boolean): void {
+    if (this.accessPaused === paused) return
+    this.accessPaused = paused
+    if (!paused) return
+    for (const session of this.listClientSessions()) {
+      if (session.revokedAt !== null) continue
+      try {
+        this.onRevoke?.(session.clientSessionId)
+      } catch {
+        /* best-effort socket close */
+      }
+    }
+  }
+
   listClientSessions(): Array<{
     clientSessionId: string
     label: string | null
@@ -531,11 +628,14 @@ export class AuthService {
     createdAt: number
     lastUsedAt: number
     revokedAt: number | null
+    suspendedAt: number | null
+    platform: string | null
   }> {
     return (
       this.db
         .prepare(
-          `SELECT client_session_id, label, device_public_key_fingerprint, created_at, last_used_at, revoked_at
+          `SELECT client_session_id, label, device_public_key_fingerprint, created_at, last_used_at, revoked_at, suspended_at,
+                  device_platform
            FROM client_sessions ORDER BY created_at DESC`,
         )
         .all() as Array<{
@@ -545,6 +645,8 @@ export class AuthService {
         created_at: number
         last_used_at: number
         revoked_at: number | null
+        suspended_at: number | null
+        device_platform: string | null
       }>
     ).map((r) => ({
       clientSessionId: r.client_session_id,
@@ -553,6 +655,8 @@ export class AuthService {
       createdAt: r.created_at,
       lastUsedAt: r.last_used_at,
       revokedAt: r.revoked_at,
+      suspendedAt: r.suspended_at,
+      platform: r.device_platform,
     }))
   }
 }

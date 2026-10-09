@@ -55,13 +55,13 @@ export const ConnectionPaths: Story = {
 
 export const ConnectionPathsNarrow: Story = { parameters: { items: DESKTOP_PATH_ITEMS, width: 460 } }
 
-/** Desktop card → Add Desktop opens the pairing-code dialog. */
+/** Desktop card → Add Desktop (+) opens the pairing dialog with a QR for the phone. */
 export const AddDesktop: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await userEvent.click(await canvas.findByRole('button', { name: i18n.t('settings.remote.addDesktop.button') }))
     await expect(
-      await within(canvasElement.ownerDocument.body).findByLabelText(i18n.t('settings.remote.addDesktop.codeLabel')),
+      await within(canvasElement.ownerDocument.body).findByRole('dialog', { name: i18n.t('settings.remote.addDesktop.title') }),
     ).toBeInTheDocument()
   },
 }

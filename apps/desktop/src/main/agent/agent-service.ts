@@ -126,6 +126,9 @@ import { loadRealtimeTimeline, reconcileRealtimeTimeline } from '../session/real
 export class AgentService {
   private prepareDraftOpen?: (draftId: string) => Promise<void>
   setPrepareDraftOpen(prepare: (draftId: string) => Promise<void>): void { this.prepareDraftOpen = prepare }
+  /** Desktop pairing a phone carries (`node_mint`, `node_pair`); main loads it on first use. */
+  private desktopPairCommand?: (command: Extract<RemoteCommand, { type: 'node_mint' | 'node_pair' }>) => Promise<unknown>
+  setDesktopPairCommand(handle: NonNullable<AgentService['desktopPairCommand']>): void { this.desktopPairCommand = handle }
   private mainWindow: BrowserWindow | null = null
   private sessionManager: import('../session/session-manager').SessionManagerImpl | null = null
   private eventSubscribers: Array<(event: AgentEvent) => void> = []
@@ -644,6 +647,15 @@ export class AgentService {
           const sessionId = 'sessionId' in command.command ? command.command.sessionId : command.sessionId
           if (sessionId) await this.remoteControlService?.sendAgentEvent({ type: 'remote_command_error', command: command.command.type, environmentId: command.environmentId, sessionId, message }, [deviceId])
         }
+      }
+      return
+    }
+    if (command.type === 'node_mint' || command.type === 'node_pair') {
+      try {
+        if (!this.desktopPairCommand) throw new Error('Desktop pairing is unavailable')
+        await respond?.(command.requestId, await this.desktopPairCommand(command))
+      } catch (error) {
+        await respond?.(command.requestId, { error: error instanceof Error ? error.message : String(error) })
       }
       return
     }

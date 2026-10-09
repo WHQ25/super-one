@@ -15,7 +15,7 @@ import log from './logger'
 
 const ROOT = 'ab'.repeat(32)
 const ROOM = '0f'.repeat(16)
-const PHONES: Record<string, { deviceId: string; deviceName: string }> = {
+const PHONES: Record<string, { deviceId: string; deviceName: string; enabled?: boolean }> = {
   'key-dev-1': { deviceId: 'dev-1', deviceName: 'iPhone' },
   'key-dev-2': { deviceId: 'dev-2', deviceName: 'Pixel' },
 }
@@ -24,7 +24,9 @@ const credentialOf = (keyId: string): ChannelCredential => issueChannelCredentia
 function makeServer(overrides: Partial<LanServerCallbacks> = {}, paired = PHONES): LanServer {
   return new LanServer({
     phoneLink,
-    resolveKey: (keyId) => paired[keyId] ? { ...paired[keyId], keyId, secretHex: credentialOf(keyId).secretHex } : null,
+    resolveKey: (keyId) => paired[keyId]
+      ? { enabled: true, ...paired[keyId], keyId, secretHex: credentialOf(keyId).secretHex }
+      : null,
     handshakeInfo: () => ({ hostName: 'test-host' }),
     onCommand: vi.fn(),
     ...overrides,
@@ -79,6 +81,22 @@ describe('LanServer', () => {
     const legacyClosed = closed(legacy)
     legacy.send(JSON.stringify({ type: 'register', deviceName: 'Spoof', mobileDeviceId: 'dev-2' }))
     expect(await legacyClosed).toEqual({ code: 1008, reason: 'channel_required' })
+  })
+
+  it('turns a switched-off phone away without kicking it, so it stays paired', async () => {
+    server = makeServer({}, { 'key-dev-1': { ...PHONES['key-dev-1']!, enabled: false } })
+    const { port } = await server.start({ host: '127.0.0.1' })
+    const socket = await open(port)
+    sockets.push(socket)
+    const frames: Array<Record<string, unknown>> = []
+    socket.on('message', (raw) => frames.push(JSON.parse(raw.toString())))
+    const socketClosed = closed(socket)
+    const hs = startClientHandshake(credentialOf('key-dev-1'))
+    const challenge = nextFrame(socket, (f) => f.type === 'channel')
+    socket.send(JSON.stringify({ type: 'channel', msg: hs.hello }))
+    socket.send(JSON.stringify({ type: 'channel', msg: hs.finish((await challenge).msg).proof }))
+    expect(await socketClosed).toEqual({ code: 1008, reason: 'access_off' })
+    expect(frames.some((f) => f.type === 'kicked')).toBe(false)
   })
 
   it('refuses a phone that knows the key id but not the secret', async () => {

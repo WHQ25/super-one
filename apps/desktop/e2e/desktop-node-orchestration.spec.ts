@@ -1,7 +1,7 @@
 /**
  * Desktop A runs collaboration children on desktop B, end to end, without a
  * model: both run the scripted harness (`src/main/session/backends/scripted-backend.ts`).
- * B enables node access and mints a pairing code, A pairs, and A's parent
+ * B mints a node pairing code, A pairs with it, and A's parent
  * session spawns children on B for a repository B has to clone from a
  * loopback `origin`.
  */
@@ -11,6 +11,7 @@ import { existsSync } from 'node:fs'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { decodeNodePairingCode } from '@superone/shared/environment/node-pairing-code'
 import { launchDesktop, mainPid, removeInstanceData, type DesktopInstance } from './fixtures/desktop-instance'
 
 const A_NAME = 'e2e-node-a'
@@ -179,31 +180,26 @@ test.afterAll(async () => {
   await removeInstanceData(B_NAME)
 })
 
-test('B turns on node access and A pairs with the code B shows', async () => {
-  // B: Settings → Remote Control → Allow Other Devices to Run Tasks → Add Device.
-  await openRemoteSettings(b.window, 'Control This Mac')
-  await b.window.getByRole('switch', { name: 'Allow Other Devices to Run Tasks' }).click()
-  await expect(b.window.getByText(/Listening on /)).toBeVisible({ timeout: 30_000 })
-  await b.window.getByRole('button', { name: 'Add Device' }).click()
-  const code = (await b.window.getByLabel('Pairing Code', { exact: true }).textContent())!.trim()
+test('A pairs with B from a node code B mints', async () => {
+  // A phone carries this code between the two in the product; the e2e build
+  // exposes the same mint and pair steps directly (`desktop-pairing.ts`).
+  const code = await b.window.evaluate(() =>
+    (window as unknown as { app: { devMintNodePairingCode(): Promise<string> } }).app.devMintNodePairingCode())
   expect(code).toMatch(/^superone-node:/)
+  await a.window.evaluate((value) =>
+    (window as unknown as { environment: { devPairNodeCode(code: string): Promise<void> } }).environment.devPairNodeCode(value), code)
 
-  // A: Settings → Remote Control → Control Other Devices → Add Desktop, paste, Add.
-  await openRemoteSettings(a.window, 'Control Other Devices')
-  await a.window.getByRole('button', { name: 'Add Desktop' }).click()
-  const dialog = a.window.getByRole('dialog', { name: 'Add Desktop' })
-  await dialog.getByLabel('Pairing Code').fill(code)
-  await dialog.getByLabel('Name').fill('Node B')
-  await dialog.getByRole('button', { name: 'Add', exact: true }).click()
-  await expect(dialog).toBeHidden({ timeout: 60_000 })
+  environmentId = decodeNodePairingCode(code).environmentId
+  const paired = await a.window.evaluate(async (id) => {
+    const items = await (window as unknown as { environment: { listItems(): Promise<Array<{ kind: string; environmentId: string }>> } }).environment.listItems()
+    return items.some((item) => item.kind === 'remote' && item.environmentId === id)
+  }, environmentId)
+  expect(paired).toBe(true)
 
-  environmentId = await a.window.evaluate(async () => {
-    const items = await (window as unknown as { environment: { listItems(): Promise<Array<{ kind: string; label: string; environmentId: string }>> } }).environment.listItems()
-    return items.find((item) => item.kind === 'remote' && item.label === 'Node B')!.environmentId
-  })
-  expect(environmentId).toBeTruthy()
-  // Back to the chat view; the parent sessions below run from there.
-  await a.window.keyboard.press('Meta+Comma')
+  // B lists A among the desktops that run tasks on it.
+  await openRemoteSettings(b.window, 'Control This Mac')
+  await expect(b.window.getByRole('button', { name: 'Remove' }).first()).toBeVisible({ timeout: 30_000 })
+  await b.window.keyboard.press('Meta+Comma')
 })
 
 test('children spawned on B clone the repo; a report reaches the mailbox and a silent stop wakes the parent', async () => {

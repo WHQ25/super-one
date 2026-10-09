@@ -45,6 +45,8 @@ export function openNodeDatabase(dbPath: string): NodeDatabase {
   ensureProjectExtraDirsColumn(db)
   // Session-layer provider profiles (collaboration + multi-profile models).
   ensureSessionProvidersSupport(db)
+  // Per-client access switch and the client's OS; an older binary ignores both.
+  ensureClientSessionColumns(db)
 
   const row = db.prepare('SELECT value FROM meta WHERE key = ?').get('schema_generation') as
     | { value: string }
@@ -79,6 +81,12 @@ function ensureSessionUiColumns(db: NodeDatabase): void {
   if (!names.has('is_user_renamed')) {
     db.exec(`ALTER TABLE sessions ADD COLUMN is_user_renamed INTEGER NOT NULL DEFAULT 0`)
   }
+}
+
+function ensureClientSessionColumns(db: NodeDatabase): void {
+  const cols = new Set((db.prepare(`PRAGMA table_info(client_sessions)`).all() as Array<{ name: string }>).map((c) => c.name))
+  if (!cols.has('suspended_at')) db.exec(`ALTER TABLE client_sessions ADD COLUMN suspended_at INTEGER`)
+  if (!cols.has('device_platform')) db.exec(`ALTER TABLE client_sessions ADD COLUMN device_platform TEXT`)
 }
 
 function ensureProjectExtraDirsColumn(db: NodeDatabase): void {

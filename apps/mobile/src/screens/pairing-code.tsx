@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, type ReactNode } from 'react'
 import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native'
 import { Text } from '../ui/text'
 import { Button } from '../ui'
@@ -13,7 +13,16 @@ const DIGIT_TRACKING = 10
  * what the user is doing — reading six digits onto another machine — and the
  * "Pair New Device" action would restart the very handshake they are waiting on.
  */
-export function PairingCode(props: { code: string; onCancel: () => void }) {
+export function PairingCode(props: {
+  code: string
+  onCancel: () => void
+  /** Copy for a different pairing (two desktops); defaults to phone pairing. */
+  title?: string
+  body?: string
+  waiting?: string
+  /** Shown above the code, e.g. which desktop controls which. */
+  header?: ReactNode
+}) {
   const styles = useStyles()
   const { tokens } = useMobileTheme()
   const { t } = useMobileLocale()
@@ -21,7 +30,8 @@ export function PairingCode(props: { code: string; onCancel: () => void }) {
     <View style={styles.page}>
       <View style={styles.center}>
         <Wordmark />
-        <Text style={styles.title}>{t('Desktop Pairing Code')}</Text>
+        <Text style={styles.title}>{t(props.title ?? 'Desktop Pairing Code')}</Text>
+        {props.header}
         <View style={styles.codeBox}>
           <Text
             // VoiceOver reads a bare "123456" as a number, which is useless for
@@ -32,10 +42,10 @@ export function PairingCode(props: { code: string; onCancel: () => void }) {
             {props.code}
           </Text>
         </View>
-        <Text style={styles.body}>{t('Enter it in SuperOne on your computer to finish pairing.')}</Text>
+        <Text style={styles.body}>{t(props.body ?? 'Enter it in SuperOne on your computer to finish pairing.')}</Text>
         <View style={styles.waiting}>
           <ActivityIndicator size="small" color={tokens.colors.mutedForeground} />
-          <Text style={styles.waitingLabel}>{t('Waiting for desktop confirmation…')}</Text>
+          <Text style={styles.waitingLabel}>{t(props.waiting ?? 'Waiting for desktop confirmation…')}</Text>
         </View>
       </View>
       <Button label="Cancel" variant="secondary" onPress={props.onCancel} />

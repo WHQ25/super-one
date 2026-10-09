@@ -60,6 +60,7 @@ import { workflowRunRows } from '../workflow-runs'
 import { requestMcpServers, type McpServerRow } from '../mcp-status'
 import { mentionTokenFromItem } from '../mention-selection'
 import { isPairingQrInput, normalizePairingInput } from '../pairing-input'
+import { desktopPairQrKind } from '@superone/relay-client/desktop-pair'
 import { usePairingDeepLink } from '../pairing-deep-link'
 import { shouldSubmitFromKeyboard } from '../composer-state'
 import { replaceFirstLine } from '../composer-first-line'
@@ -147,6 +148,7 @@ import { fetchShellDetails } from './shell-details'
 import { subscribeHarnessResources, bindHarnessPersistence, markHarnessResourcesStale, peekHarnessResource, preloadHarnessResources, requestHarnessResource } from '../harness-resource-cache'
 import { useReconnectOnForeground } from '../use-reconnect-on-foreground'
 import { useDeviceDiscovery } from './use-device-discovery'
+import { useDesktopPairing } from './use-desktop-pairing'
 import { isFullBleedScreen } from '../layout-state'
 import { isReachable, type ReconnectInfo } from '../device-status'
 import { logConnection, logRelayEventTypes, logSidebar } from '../relay-debug'
@@ -469,6 +471,12 @@ export function MobileApp() {
     activeTransport,
     connectionState,
     connectingPairingId,
+  })
+  const desktopPairing = useDesktopPairing({
+    pairings,
+    identity: async () => ({ deviceId: deviceId || await loadOrCreateMobileId(), deviceName: getMobileDeviceName() }),
+    resolveLan: (pairingId) => discovery.resolveLan(pairingId),
+    active: () => ({ pairingId: activePairingIdRef.current, client: clientRef.current }),
   })
   useEffect(() => {
     void loadPairings(kv).then(setPairings).catch((error) => {
@@ -1157,6 +1165,12 @@ export function MobileApp() {
   const onPair = async (value: string = paste) => {
     const raw = normalizePairingInput(value)
     try {
+      if (desktopPairQrKind(raw)) {
+        // Another desktop's QR: this phone carries a pairing between two desktops.
+        setScreen('pair')
+        desktopPairing.start(raw)
+        return
+      }
       if (isPairingQrInput(raw)) {
         const qr = parsePairQr(raw)
         const activeDeviceId = deviceId || await loadOrCreateMobileId()
@@ -2436,6 +2450,13 @@ export function MobileApp() {
           paste={paste}
           lan={lan}
           code={code}
+          desktopPairing={desktopPairing.state}
+          onChooseDesktop={(index) => {
+            const state = desktopPairing.state
+            if (state?.step === 'choose' && state.candidates[index]) void desktopPairing.choose(state.qr, state.candidates[index])
+          }}
+          onSubmitDesktopCode={(value) => void desktopPairing.submitCode(value)}
+          onCancelDesktopPairing={desktopPairing.cancel}
           pairings={pairings}
           statusOf={discovery.statusOf}
           reconnect={reconnect}

@@ -129,3 +129,44 @@ export const PairingCode = {
   name: 'Pairing code shown',
   args: { code: '123456' },
 }
+
+const studioQr = (kind: 'controller' | 'node') => ({
+  kind,
+  channelId: 'c0ffee',
+  tempKeyHex: 'ab'.repeat(32),
+  relayUrl: 'wss://relay.super-one.dev',
+  desktopName: kind === 'controller' ? 'Studio iMac' : 'Office MacBook Pro',
+})
+
+/** Scanned a controller QR with several saved desktops: pick the one that will control it. */
+export const DesktopPairingChoose = {
+  name: 'Desktop pairing: choose desktop',
+  args: { desktopPairing: { step: 'choose', qr: studioQr('controller'), candidates: fewDevices.map((d) => d.pairing) } },
+}
+
+/** Controller QR: the code to type on the scanned desktop. */
+export const DesktopPairingShowCode = {
+  name: 'Desktop pairing: code for the desktop',
+  args: { desktopPairing: { step: 'show-code', qr: studioQr('controller'), other: fewDevices[1]!.pairing, code: '482913' } },
+}
+
+/** Node QR: type the code the controlling desktop shows; a wrong one says so. */
+export const DesktopPairingEnterCode = {
+  name: 'Desktop pairing: enter code (mismatch)',
+  args: { desktopPairing: { step: 'enter-code', qr: studioQr('node'), other: fewDevices[0]!.pairing, mismatch: true } },
+}
+
+export const DesktopPairingWorking = {
+  name: 'Desktop pairing: finishing',
+  args: { desktopPairing: { step: 'working', qr: studioQr('node'), other: fewDevices[0]!.pairing } },
+}
+
+export const DesktopPairingDone = {
+  name: 'Desktop pairing: paired',
+  args: { desktopPairing: { step: 'done', qr: studioQr('controller'), other: device('long', 'Office workstation with a remarkably long machine name') } },
+}
+
+export const DesktopPairingFailed = {
+  name: 'Desktop pairing: failed',
+  args: { desktopPairing: { step: 'failed', message: 'Pair this phone with the other desktop first, then scan again.' } },
+}

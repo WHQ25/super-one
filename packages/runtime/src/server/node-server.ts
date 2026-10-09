@@ -93,6 +93,7 @@ export interface NodeAuthPort {
     pairingToken: string
     devicePublicKeyPem: string
     label?: string
+    platform?: string
   }): PairExchangeResult
   refreshAccess(input: {
     refreshToken: string
@@ -112,6 +113,8 @@ export interface NodeServerOptions<C extends NodeRpcRequestContext = RpcContext>
   dispatchRpc: NodeRpcDispatch<C>
   createRpcContext: (client: AuthenticatedClient) => Omit<C, keyof NodeRpcRequestContext>
   onClientDisconnected: (clientSessionId: string) => void
+  /** An authenticated socket opened for this client. */
+  onClientConnected?: (clientSessionId: string) => void
   verifyDeviceProof: (publicKeyPem: string, payload: string, signature: string) => boolean
   /**
    * Require the pairing-secret encrypted channel for every request except
@@ -144,6 +147,11 @@ export interface NodeServerHandle {
   /** Close all sockets for a revoked client session. */
   closeSocketsForClient(clientSessionId: string): void
   /**
+   * Authenticated clients connected now, one entry per socket: the peer
+   * address of a direct socket, or null for one that came through a relay slot.
+   */
+  connectedClients(): Array<{ clientSessionId: string; remoteAddress: string | null }>
+  /**
    * Serve the encrypted channel on a socket that did not arrive through this
    * HTTP server (a relay slot). Only with `secureChannel`.
    */
@@ -162,6 +170,8 @@ export async function startNodeServer<C extends NodeRpcRequestContext = RpcConte
   opts: NodeServerOptions<C>,
 ): Promise<NodeServerHandle> {
   const activeSockets = new Map<NodeSocket, AuthenticatedClient>()
+  /** Peer address per socket; null for a relay slot (`acceptChannelSocket`). */
+  const socketPeers = new WeakMap<NodeSocket, string | null>()
 
   const closeSocketsForClient = (clientSessionId: string) => {
     for (const [ws, client] of activeSockets) {
@@ -256,7 +266,10 @@ export async function startNodeServer<C extends NodeRpcRequestContext = RpcConte
         socket.destroy()
         return
       }
-      wss.handleUpgrade(req, socket, head, (ws) => serveSecureChannel(ws, opts.secureChannel!))
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        socketPeers.set(ws, req.socket.remoteAddress ?? null)
+        serveSecureChannel(ws, opts.secureChannel!)
+      })
       return
     }
 
@@ -273,7 +286,9 @@ export async function startNodeServer<C extends NodeRpcRequestContext = RpcConte
     try {
       const client = authorizeWsTicket(ticket, proofPayload, proofSignature)
       wss.handleUpgrade(req, socket, head, (ws) => {
+        socketPeers.set(ws, req.socket.remoteAddress ?? null)
         activeSockets.set(ws, client)
+        opts.onClientConnected?.(client.clientSessionId)
         const handle = createRpcHandler((msg) => ws.send(JSON.stringify(msg)), (code, reason) => ws.close(code, reason), client)
         ws.on('message', (data) => void handle(() => JSON.parse(data.toString())))
         trackClose(ws)
@@ -360,6 +375,7 @@ export async function startNodeServer<C extends NodeRpcRequestContext = RpcConte
         }
         clearTimeout(setupTimer)
         activeSockets.set(ws, client)
+        opts.onClientConnected?.(client.clientSessionId)
         rpc = createRpcHandler(send, (code, reason) => ws.close(code, reason), client)
         send({ type: 'attach_ok', requestId })
         return
@@ -553,8 +569,15 @@ export async function startNodeServer<C extends NodeRpcRequestContext = RpcConte
     wss,
     url,
     closeSocketsForClient,
+    connectedClients() {
+      return [...activeSockets].map(([ws, client]) => ({
+        clientSessionId: client.clientSessionId,
+        remoteAddress: socketPeers.get(ws) ?? null,
+      }))
+    },
     acceptChannelSocket(socket) {
       if (!opts.secureChannel) throw new Error('acceptChannelSocket requires secureChannel')
+      socketPeers.set(socket, null)
       serveSecureChannel(socket, opts.secureChannel)
     },
     async close() {
@@ -644,6 +667,7 @@ function handleAuthRequest(
     const pairingToken = String(body.pairingToken ?? '')
     const devicePublicKeyPem = String(body.devicePublicKeyPem ?? '')
     const label = typeof body.label === 'string' ? body.label : undefined
+    const platform = typeof body.platform === 'string' ? body.platform.slice(0, 32) : undefined
     if (!pairingToken || !devicePublicKeyPem) {
       return {
         status: 400,
@@ -651,7 +675,7 @@ function handleAuthRequest(
       }
     }
     try {
-      return { status: 200, body: opts.auth.exchangePairingToken({ pairingToken, devicePublicKeyPem, label }) }
+      return { status: 200, body: opts.auth.exchangePairingToken({ pairingToken, devicePublicKeyPem, label, platform }) }
     } catch (err) {
       return failure(err, 'pair failed')
     }

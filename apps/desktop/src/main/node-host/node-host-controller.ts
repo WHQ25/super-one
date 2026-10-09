@@ -1,6 +1,7 @@
 import { hostname, networkInterfaces } from 'node:os'
 import { app } from 'electron'
-import type { AppSettings, NodeHostPairingToken, NodeHostStatus } from '@superone/shared/agent-types'
+import type { AppSettings, NodeHostController, NodeHostStatus } from '@superone/shared/agent-types'
+import { encodeNodePairingCode } from '@superone/shared/environment/node-pairing-code'
 import type { HostActionTerminalResult } from '@superone/shared/environment'
 import { assertSessionHarnessRuntimeReady } from '@superone/runtime/harness'
 import { getMachineInfo } from '@superone/runtime/machine'
@@ -35,6 +36,14 @@ let advertiser: LanAdvertiser | null = null
 let lastError: string | null = null
 /** Start/stop run one at a time; a settings change waits for the previous one. */
 let transition: Promise<unknown> = Promise.resolve()
+/** Persists `remoteNodeAccessEnabled` and applies it; set by main at startup. */
+let setHostEnabled: ((enabled: boolean) => Promise<void>) | null = null
+/** Whether a controller QR is open here, which keeps the host up. */
+let holdOpen: () => boolean = () => false
+const changeListeners = new Set<() => void>()
+let reconcileTimer: ReturnType<typeof setTimeout> | null = null
+/** Allow Control (the phone link's switch) also gates every controller here. */
+let accessAllowed = true
 
 const desktopSessionStore: NodeHostSessionStore = {
   createRow: ({ sessionId, projectPath, title, cwd }) => {
@@ -117,9 +126,11 @@ export function applyNodeHostSettings(
           tailscaleHost: tailscaleAddress(),
           allowRemoteAddress: isPrivateNetworkAddress,
           ...(relayUrl ? { relayUrl } : {}),
+          onControllersChanged: notifyChanged,
           log: { info: (m) => log.info(m), warn: (m) => log.warn(m) },
         },
       )
+      host.setAccessAllowed(accessAllowed)
       hostPort = port
       hostRelayUrl = relayUrl
       lastError = null
@@ -131,6 +142,7 @@ export function applyNodeHostSettings(
     }
     return nodeHostStatus()
   })
+  void next.then(notifyChanged)
   transition = next.catch(() => {})
   return next
 }
@@ -178,10 +190,83 @@ export function stopNodeHost(): Promise<void> {
   return next
 }
 
-/** A pairing token for B's settings UI; fails while the surface is off. */
-export function mintNodeHostPairingToken(): NodeHostPairingToken {
-  if (!host) throw Object.assign(new Error('remote node access is off'), { code: 'failed_precondition' })
-  return host.mintPairingToken()
+/**
+ * The host runs while this computer has a controller, a controller QR is
+ * open, or a code it minted can still be redeemed; nobody switches it by hand.
+ * Main passes how to persist and apply that (`remoteNodeAccessEnabled`).
+ */
+export function configureNodeHostLifecycle(opts: {
+  setEnabled: (enabled: boolean) => Promise<void>
+  pairingOpen: () => boolean
+}): void {
+  setHostEnabled = opts.setEnabled
+  holdOpen = opts.pairingOpen
+}
+
+/** Follow Allow Control: off turns every controller away; each keeps its own switch. */
+export function setNodeHostAccessAllowed(allowed: boolean): void {
+  if (accessAllowed === allowed) return
+  accessAllowed = allowed
+  host?.setAccessAllowed(allowed)
+  notifyChanged()
+}
+
+export function onNodeHostChanged(listener: () => void): () => void {
+  changeListeners.add(listener)
+  return () => changeListeners.delete(listener)
+}
+
+function notifyChanged(): void {
+  for (const listener of changeListeners) listener()
+}
+
+/** Start the host if it is off; fails with the start error. */
+export async function ensureNodeHost(): Promise<void> {
+  if (!setHostEnabled) throw new Error('node host lifecycle is not configured')
+  if (!accessAllowed) throw Object.assign(new Error('Allow Control is off'), { code: 'failed_precondition' })
+  await setHostEnabled(true)
+  if (!host) {
+    throw Object.assign(new Error(lastError ?? 'remote node access could not start'), { code: 'failed_precondition' })
+  }
+}
+
+/** Stop the host once nothing needs it. */
+export async function reconcileNodeHost(): Promise<void> {
+  await transition
+  if (!host || !setHostEnabled) return
+  if (holdOpen() || host.controllers().length > 0 || host.hasLivePairingToken()) return
+  log.info('[node-host] no controllers left; stopping')
+  await setHostEnabled(false)
+}
+
+/**
+ * A single-use node pairing code (`superone-node:…`) for one controller. It
+ * carries the channel secret, so it goes only to the phone that carries it.
+ */
+export async function mintNodePairingCode(): Promise<string> {
+  await ensureNodeHost()
+  const token = host!.mintPairingToken()
+  // Check again once the code can no longer be redeemed.
+  if (reconcileTimer) clearTimeout(reconcileTimer)
+  reconcileTimer = setTimeout(() => {
+    reconcileTimer = null
+    void reconcileNodeHost()
+  }, Math.max(0, token.expiresAt - Date.now()) + 1_000)
+  reconcileTimer.unref?.()
+  return encodeNodePairingCode(token)
+}
+
+export function listNodeHostControllers(): NodeHostController[] {
+  return host?.controllers() ?? []
+}
+
+export function setNodeHostControllerEnabled(id: string, enabled: boolean): void {
+  host?.setControllerEnabled(id, enabled)
+}
+
+export async function removeNodeHostController(id: string): Promise<void> {
+  host?.removeController(id)
+  await reconcileNodeHost()
 }
 
 /**

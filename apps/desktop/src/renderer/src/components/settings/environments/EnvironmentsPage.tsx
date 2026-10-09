@@ -22,21 +22,18 @@ import {
   type EndpointKind,
   type SupervisorState,
 } from '@superone/shared/environment'
-import {
-  NODE_LAN_ENDPOINT_ID,
-  NodePairingCodeError,
-  decodeNodePairingCode,
-  nodePairingEndpointProfiles,
-} from '@superone/shared/environment/node-pairing-code'
+import { NODE_LAN_ENDPOINT_ID } from '@superone/shared/environment/node-pairing-code'
 import { Badge } from '@superone/ui/components/ui/badge'
 import { Button } from '@superone/ui/components/ui/button'
+import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
 import {
   enabledRemoteChannels,
   type RemoteDeviceChannel,
 } from '@/lib/remote-channel-flags'
-import { AddDesktopDialog } from './AddDesktopDialog'
+import { PairDesktopDialog } from './PairDesktopDialog'
 import { AddEnvironmentDialog } from './AddEnvironmentDialog'
+import { DeviceRow, computerKind } from '../DeviceRow'
 import { SettingsSection, settingsRowClassName } from '../SettingsSection'
 
 /** Device rows are `li`s inside a card; the list carries the card's inset dividers. */
@@ -218,36 +215,16 @@ export function EnvironmentsPage() {
     })
   }
 
-  /** Desktop nodes re-pair from a fresh pairing code, over whichever route reaches them. */
-  function promptDesktopRepair(item: EnvironmentListItem): void {
-    const text = window.prompt(t('settings.environments.repairCodePrompt'))
-    if (!text?.trim()) return
-    let code: ReturnType<typeof decodeNodePairingCode>
-    try {
-      code = decodeNodePairingCode(text, Date.now())
-    } catch (err) {
-      const expired = err instanceof NodePairingCodeError && err.code === 'expired'
-      toast.error(t(expired ? 'settings.remote.addDesktop.errors.expired' : 'settings.remote.addDesktop.errors.invalid'))
-      return
-    }
-    if (code.environmentId !== item.environmentId) {
-      toast.error(t('settings.environments.repairCodeOtherNode', { label: item.label }))
-      return
-    }
-    void run(item.connectionId, async () => {
-      await window.environment.repairPairing({
-        connectionId: item.connectionId,
-        pairingToken: code.pairingToken,
-        channel: code.channel,
-        endpointProfiles: nodePairingEndpointProfiles(code),
-      })
-      toast.success(t('settings.environments.repairPairingSuccess', { defaultValue: 'Pairing repaired' }))
-    })
-  }
+  const handleDesktopPaired = useCallback((nodeName: string) => {
+    setAddDesktopOpen(false)
+    toast.success(t('settings.remote.addDesktop.paired', { name: nodeName }))
+    void refresh()
+  }, [refresh, t])
 
   function promptManualRepair(item: EnvironmentListItem): void {
     if (item.endpointProfiles.some((p) => p.kind === 'relay' || p.endpointId === NODE_LAN_ENDPOINT_ID)) {
-      promptDesktopRepair(item)
+      // A desktop node re-pairs through a phone like a new one; main keeps its connection.
+      setAddDesktopOpen(true)
       return
     }
     const token = window.prompt(
@@ -371,27 +348,23 @@ export function EnvironmentsPage() {
                   </span>
                 )}
                 actions={channel === 'ssh' ? (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-7"
+                  <IconButton
+                    size="md"
+                    tooltip={t('settings.remote.channels.addDevice')}
                     onClick={() => setAddOpen(true)}
                     disabled={anyBusy}
                   >
-                    <Plus className="size-3.5" />
-                    {t('settings.remote.channels.addDevice')}
-                  </Button>
+                    <Plus />
+                  </IconButton>
                 ) : channel === 'desktop' ? (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-7"
+                  <IconButton
+                    size="md"
+                    tooltip={t('settings.remote.addDesktop.button')}
                     onClick={() => setAddDesktopOpen(true)}
                     disabled={anyBusy}
                   >
-                    <Plus className="size-3.5" />
-                    {t('settings.remote.addDesktop.button')}
-                  </Button>
+                    <Plus />
+                  </IconButton>
                 ) : null}
               >
                 {devices.length === 0 ? (
@@ -446,13 +419,10 @@ export function EnvironmentsPage() {
       )}
 
       <AddEnvironmentDialog open={addOpen} onOpenChange={setAddOpen} onAdded={handleAdded} />
-      <AddDesktopDialog
+      <PairDesktopDialog
         open={addDesktopOpen}
         onOpenChange={setAddDesktopOpen}
-        onAdded={() => {
-          toast.success(t('settings.remote.addDesktop.success'))
-          void refresh()
-        }}
+        onPaired={handleDesktopPaired}
       />
     </div>
   )
@@ -578,32 +548,32 @@ function LocalLabSection({
       )}
       actions={(
         <>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7"
-            disabled={statusLoading || busy}
-            onClick={() => void refreshStatus()}
-            title={t('settings.remote.channels.localLab.refreshStatus')}
-          >
-            {statusLoading ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <RefreshCw className="size-3.5" />
-            )}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7"
-            disabled={busy || statusLoading || (anyBusy && !busy)}
-            onClick={() => void handlePair()}
-          >
-            {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Plug className="size-3.5" />}
-            {devices.length > 0
-              ? t('settings.remote.channels.localLab.reconnect')
-              : t('settings.remote.channels.localLab.connect')}
-          </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7"
+                disabled={statusLoading || busy}
+                onClick={() => void refreshStatus()}
+                title={t('settings.remote.channels.localLab.refreshStatus')}
+              >
+                {statusLoading ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="size-3.5" />
+                )}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7"
+                disabled={busy || statusLoading || (anyBusy && !busy)}
+                onClick={() => void handlePair()}
+              >
+                {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Plug className="size-3.5" />}
+                {devices.length > 0
+                  ? t('settings.remote.channels.localLab.reconnect')
+                  : t('settings.remote.channels.localLab.connect')}
+              </Button>
         </>
       )}
     >
@@ -692,100 +662,72 @@ function EnvironmentDeviceRow({
   const controlsDisabled = busy || actionsLocked
 
   return (
-    <div className={settingsRowClassName}>
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <Server
-            className={cn(
-              'size-3.5 shrink-0',
-              live ? 'text-success' : blocked ? 'text-destructive' : 'text-muted-foreground',
-            )}
-          />
-          <span className="truncate text-sm">{item.label}</span>
-          {subtitle ? (
-            <span className="min-w-0 truncate text-xs text-muted-foreground">{subtitle}</span>
-          ) : null}
-          {live && item.activePath ? (
-            <Badge
-              variant="outline"
-              className="px-1.5 py-0 text-[10px] font-normal text-muted-foreground"
-              title={`${t('settings.environments.path.label')}: ${t(`settings.environments.path.${item.activePath}`)}`}
-            >
-              {t(`settings.environments.path.${item.activePath}`)}
-            </Badge>
-          ) : null}
-          {identityConflict ? (
-            <span className="shrink-0 text-xs text-destructive">
-              {t('settings.environments.identityConflict', {
-                defaultValue: 'Identity mismatch — forget and re-add',
-              })}
-            </span>
-          ) : null}
-        </div>
-
-        <div className="flex shrink-0 items-center gap-1">
-          {busy ? (
-            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Loader2 className="size-4 animate-spin" />
-              {busyLabel ? <span className="capitalize">{busyLabel}</span> : null}
-            </span>
-          ) : actionsLocked ? null : live ? (
+    <DeviceRow
+      kind={channelForEnvironment(item) === 'ssh' ? 'server' : computerKind(item.platform?.os)}
+      name={item.label}
+      online={live}
+      path={live ? item.activePath : null}
+      status={identityConflict
+        ? t('settings.environments.identityConflict', { defaultValue: 'Identity mismatch — forget and re-add' })
+        : subtitle}
+      statusTone={identityConflict ? 'error' : 'muted'}
+      removeLabel={t('settings.environments.forget')}
+      onRemove={onForget}
+      removeDisabled={controlsDisabled}
+      actions={(
+        <>
+      {busy ? (
+        <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" />
+          {busyLabel ? <span className="capitalize">{busyLabel}</span> : null}
+        </span>
+      ) : actionsLocked ? null : live ? (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 text-xs text-muted-foreground"
+          onClick={onDisconnect}
+        >
+          <Unplug className="size-3.5" />
+          {t('settings.environments.disconnect')}
+        </Button>
+      ) : authBlocked && onRepair ? (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 text-xs text-muted-foreground"
+          onClick={onRepair}
+        >
+          <RefreshCw className="size-3.5" />
+          {t('settings.environments.repairPairing', { defaultValue: 'Repair pairing' })}
+        </Button>
+      ) : identityConflict ? null : (
+        <>
+          {item.state === 'backoff' && onRetry ? (
             <Button
               variant="ghost"
               size="sm"
               className="h-7 text-xs text-muted-foreground"
-              onClick={onDisconnect}
-            >
-              <Unplug className="size-3.5" />
-              {t('settings.environments.disconnect')}
-            </Button>
-          ) : authBlocked && onRepair ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 text-xs text-muted-foreground"
-              onClick={onRepair}
+              onClick={onRetry}
             >
               <RefreshCw className="size-3.5" />
-              {t('settings.environments.repairPairing', { defaultValue: 'Repair pairing' })}
+              {t('settings.environments.retryNow', { defaultValue: 'Retry' })}
             </Button>
-          ) : identityConflict ? null : (
-            <>
-              {item.state === 'backoff' && onRetry ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 text-xs text-muted-foreground"
-                  onClick={onRetry}
-                >
-                  <RefreshCw className="size-3.5" />
-                  {t('settings.environments.retryNow', { defaultValue: 'Retry' })}
-                </Button>
-              ) : null}
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 text-xs text-muted-foreground"
-                onClick={onConnect}
-              >
-                <Plug className="size-3.5" />
-                {t('settings.environments.connect')}
-              </Button>
-            </>
-          )}
+          ) : null}
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 text-xs text-muted-foreground hover:text-destructive"
-            onClick={onForget}
-            disabled={controlsDisabled}
+            className="h-7 text-xs text-muted-foreground"
+            onClick={onConnect}
           >
-            <Trash2 className="size-3.5" />
-            {t('settings.environments.forget')}
+            <Plug className="size-3.5" />
+            {t('settings.environments.connect')}
           </Button>
-        </div>
-      </div>
-
+        </>
+      )}
+        </>
+      )}
+    >
       {item.lastError && (
         <p
           className={cn(
@@ -799,7 +741,7 @@ function EnvironmentDeviceRow({
               })
             : null}
           {item.blockReason ? ' — ' : ''}
-          {item.lastError}
+          {/client session suspended/i.test(item.lastError) ? t('settings.environments.accessOff') : item.lastError}
         </p>
       )}
 
@@ -838,133 +780,6 @@ function EnvironmentDeviceRow({
         </div>
       )}
 
-      {live ? <RemoteHarnessPanel connectionId={item.connectionId} /> : null}
-    </div>
-  )
-}
-
-interface RemoteHarnessRow {
-  id: string
-  enabled: boolean
-  state: string
-  runtimeSource: string
-  requiresAuth: boolean
-  diagnostic?: { code: string; message: string }
-}
-
-/** Connected remote only: list + enable/disable harness catalog via node:admin RPC. */
-function RemoteHarnessPanel({ connectionId }: { connectionId: string }) {
-  const { t } = useTranslation()
-  const [rows, setRows] = useState<RemoteHarnessRow[] | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [busyId, setBusyId] = useState<string | null>(null)
-  const [error, setError] = useState('')
-
-  const refresh = useCallback(async () => {
-    setLoading(true)
-    setError('')
-    try {
-      const list = (await window.environment.listHarnesses(connectionId)) as RemoteHarnessRow[]
-      setRows(Array.isArray(list) ? list : [])
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-      setRows(null)
-    } finally {
-      setLoading(false)
-    }
-  }, [connectionId])
-
-  useEffect(() => {
-    void refresh()
-  }, [refresh])
-
-  async function toggle(row: RemoteHarnessRow): Promise<void> {
-    setBusyId(row.id)
-    setError('')
-    try {
-      if (row.enabled && (row.state === 'ready' || row.state === 'needs_auth')) {
-        await window.environment.disableHarness(connectionId, row.id)
-        toast.success(t('settings.environments.harness.disabled', { id: row.id }))
-      } else {
-        await window.environment.enableHarness(connectionId, { harnessId: row.id })
-        toast.success(t('settings.environments.harness.enabled', { id: row.id }))
-      }
-      await refresh()
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      setError(msg)
-      toast.error(msg)
-    } finally {
-      setBusyId(null)
-    }
-  }
-
-  return (
-    <div className="mt-2.5 space-y-1.5 pl-5.5">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-xs font-medium text-muted-foreground">
-          {t('settings.environments.harness.title')}
-        </p>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="h-6 px-1.5 text-xs text-muted-foreground"
-          onClick={() => void refresh()}
-          disabled={loading || busyId !== null}
-        >
-          <RefreshCw className={cn('size-3', loading && 'animate-spin')} />
-        </Button>
-      </div>
-      {loading && !rows ? (
-        <p className="text-xs text-muted-foreground">{t('settings.environments.harness.loading')}</p>
-      ) : null}
-      {error ? <p className="text-xs text-destructive break-words">{error}</p> : null}
-      {rows && rows.length > 0 ? (
-        <ul className="space-y-1">
-          {rows.map((row) => {
-            const active = row.enabled && (row.state === 'ready' || row.state === 'needs_auth')
-            const label = t(`settings.environments.harness.ids.${row.id}`, {
-              defaultValue: row.id,
-            })
-            return (
-              <li
-                key={row.id}
-                className="flex items-center justify-between gap-2 rounded px-1 py-0.5 text-xs"
-              >
-                <div className="min-w-0">
-                  <span className="font-medium text-foreground">{label}</span>
-                  <span className="ml-1.5 text-muted-foreground">
-                    {row.state}
-                    {row.requiresAuth && row.state === 'needs_auth'
-                      ? ` · ${t('settings.environments.harness.needsAuth')}`
-                      : ''}
-                  </span>
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-6 shrink-0 px-2 text-xs"
-                  disabled={busyId !== null}
-                  onClick={() => void toggle(row)}
-                >
-                  {busyId === row.id ? (
-                    <Loader2 className="size-3 animate-spin" />
-                  ) : active ? (
-                    t('settings.environments.harness.disable')
-                  ) : (
-                    t('settings.environments.harness.enable')
-                  )}
-                </Button>
-              </li>
-            )
-          })}
-        </ul>
-      ) : null}
-      {rows && rows.length === 0 && !loading ? (
-        <p className="text-xs text-muted-foreground">{t('settings.environments.harness.empty')}</p>
-      ) : null}
-    </div>
+    </DeviceRow>
   )
 }

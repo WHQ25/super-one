@@ -4424,12 +4424,24 @@ export const AgentIpcChannels = {
   APP_SETTINGS_GET: 'app:settings-get',
   APP_SETTINGS_SAVE: 'app:settings-save',
   APP_SETTINGS_CHANGED: 'app:settings-changed',
-  /** Node surface served to other devices: state and pairing (see `remoteNodeAccessEnabled`). */
+  /**
+   * Node surface served to controller desktops. It runs while one is paired
+   * or a "Pair New Desktop" QR is open (see `remoteNodeAccessEnabled`).
+   */
   NODE_HOST_STATUS: 'nodeHost:status',
-  NODE_HOST_MINT_PAIRING_TOKEN: 'nodeHost:mintPairingToken',
-  /** Owner note agents read when choosing this node (`agent.note` in the node config). */
-  NODE_HOST_NOTE_GET: 'nodeHost:noteGet',
-  NODE_HOST_NOTE_SET: 'nodeHost:noteSet',
+  NODE_HOST_CONTROLLERS: 'nodeHost:controllers',
+  NODE_HOST_REMOVE_CONTROLLER: 'nodeHost:removeController',
+  NODE_HOST_SET_CONTROLLER_ENABLED: 'nodeHost:setControllerEnabled',
+  /** Push: the controller list or the host status changed. */
+  NODE_HOST_CHANGED: 'nodeHost:changed',
+  /** Controller QR shown here; a phone paired with the controller scans it. */
+  NODE_HOST_PAIRING_START: 'nodeHost:pairingStart',
+  NODE_HOST_PAIRING_CONFIRM: 'nodeHost:pairingConfirm',
+  NODE_HOST_PAIRING_CANCEL: 'nodeHost:pairingCancel',
+  /** Push: {@link ControllerPairingEvent}. */
+  NODE_HOST_PAIRING_EVENT: 'nodeHost:pairingEvent',
+  /** Development builds: a node pairing code without a phone (`desktop-node-lab`). */
+  NODE_HOST_DEV_MINT_CODE: 'nodeHost:devMintCode',
   /** Resolved OS Downloads folder, shown as the placeholder for an unset download directory. */
   APP_DEFAULT_DOWNLOAD_DIR: 'app:default-download-dir',
   /** Jev (TypeSafe) API key for the experimental browser fast loop: configured? / replace. */
@@ -4586,6 +4598,7 @@ export const AgentIpcChannels = {
   REMOTE_CLIENT_REGISTERED: 'remote:client-registered',
   REMOTE_LIST_PAIRED: 'remote:list-paired',
   REMOTE_REMOVE_PAIRED: 'remote:remove-paired',
+  REMOTE_SET_PAIRED_ENABLED: 'remote:set-paired-enabled',
   REMOTE_DEVICE_STATUS_CHANGED: 'remote:device-status-changed',
   REMOTE_UPLOAD_PROGRESS: 'remote:upload-progress',
   REMOTE_START_PAIRING: 'remote:start-pairing',
@@ -4755,6 +4768,13 @@ export const AgentIpcChannels = {
   ENVIRONMENT_REPAIR_PAIRING: 'environment:repairPairing',
   /** Re-pair over the stored SSH endpoint; the desktop mints the token itself. */
   ENVIRONMENT_REPAIR_PAIRING_SSH: 'environment:repairPairingOverSsh',
+  /** Node QR shown here; a phone paired with the node scans it. */
+  ENVIRONMENT_NODE_PAIRING_START: 'environment:nodePairingStart',
+  ENVIRONMENT_NODE_PAIRING_CANCEL: 'environment:nodePairingCancel',
+  /** Main → renderer push: {@link NodePairingEvent}. */
+  ENVIRONMENT_NODE_PAIRING_EVENT: 'environment:nodePairingEvent',
+  /** Development builds: pair a node code without a phone (`desktop-node-lab`). */
+  ENVIRONMENT_DEV_PAIR_NODE_CODE: 'environment:devPairNodeCode',
   /** Main → renderer supervisor state push. */
   ENVIRONMENT_STATUS_EVENT: 'environment:statusEvent',
   /** Main → renderer SSH probe/install progress push. */
@@ -4776,10 +4796,6 @@ export const AgentIpcChannels = {
   ENVIRONMENT_PROVIDER_PULL_REMOTE: 'environment:providerPullRemote',
   ENVIRONMENT_PROVIDER_LIST_MODELS: 'environment:providerListModels',
   /** Remote node harness catalog (node:admin). */
-  ENVIRONMENT_HARNESS_LIST: 'environment:harnessList',
-  ENVIRONMENT_HARNESS_ENABLE: 'environment:harnessEnable',
-  ENVIRONMENT_HARNESS_DISABLE: 'environment:harnessDisable',
-  ENVIRONMENT_HARNESS_PROBE: 'environment:harnessProbe',
 
   // The four things only the iOS Simulator has: whether this machine has a usable
   // Xcode, which runtimes it installed, Apple's DeviceKit artwork, and making a new
@@ -5096,6 +5112,14 @@ export type MobileLogEntry = { at: string; tag: string; fields?: Record<string, 
 
 export type RemoteCommand =
   | { type: 'session_link_identity'; requestId: string }
+  /**
+   * Desktop pairing through the phone (`@superone/relay-client/desktop-pair`).
+   * `node_mint`: this desktop becomes controllable by `controllerName`; answers
+   * `{ nodeCode }`. `node_pair`: this desktop pairs the node in `nodeCode`;
+   * answers `{ ok: true }`. Both answer `{ error }` on failure.
+   */
+  | { type: 'node_mint'; requestId: string; controllerName: string }
+  | { type: 'node_pair'; requestId: string; nodeCode: string; nodeName: string }
   | { type: 'session_link_metadata'; requestId: string; refs: import('./environment/refs').SessionRef[] }
   | { type: 'session_link_resolve'; requestId: string; ref: import('./environment/refs').SessionRef }
   | { type: 'environment_command'; requestId?: string; environmentId: string; sessionId?: string; command: RemoteCommand }
@@ -5500,9 +5524,6 @@ export type UploadFileCompleteResponse =
   | { ok: true; savedPath: string }
   | UploadFileError
 
-/** Who is allowed to remote-control this SuperOne host. */
-export type PairedDeviceClientKind = 'mobile' | 'desktop'
-
 export interface PairedDevice {
   id: string
   name: string
@@ -5510,11 +5531,8 @@ export interface PairedDevice {
   lastSeenAt: string | null
   online: boolean
   transport?: 'lan' | 'relay'
-  /**
-   * Defaults to `mobile` for legacy rows (QR phone pairing).
-   * `desktop` = another SuperOne desktop allowed to control this host.
-   */
-  clientKind?: PairedDeviceClientKind
+  /** False while this desktop keeps the phone out without unpairing it. */
+  enabled: boolean
   /** Paired before per-device channel keys; it cannot connect until paired again. */
   needsRepair?: boolean
 }
@@ -5870,6 +5888,39 @@ export interface NodeHostStatus {
  * A single-use pairing token another device exchanges inside this host's
  * encrypted channel. Shown once (code or QR); never logged.
  */
+/** A desktop paired to run sessions on this computer. */
+export interface NodeHostController {
+  id: string
+  label: string
+  pairedAt: number
+  lastUsedAt: number
+  /** False while this computer keeps it out without unpairing it. */
+  enabled: boolean
+  /** Its OS as it reported at pairing (`process.platform`); null for older pairings. */
+  platform: string | null
+  /** How it is connected now; null while it is not. */
+  path: NodeHostControllerPath | null
+}
+
+export type NodeHostControllerPath = 'lan' | 'tailscale' | 'relay'
+
+/** Progress of a controller QR this computer shows (`NODE_HOST_PAIRING_EVENT`). */
+export type ControllerPairingEvent =
+  /** A phone scanned the QR for `controllerName`; the person types the code it shows. */
+  | { type: 'request'; controllerName: string; phoneName: string }
+  /** The node code went to the phone; the controller finishes pairing on its side. */
+  | { type: 'granted'; controllerName: string }
+  | { type: 'ended'; reason: 'expired' | 'failed' | 'rejected'; message?: string }
+
+/** Progress of a node QR this computer shows (`ENVIRONMENT_NODE_PAIRING_EVENT`). */
+export type NodePairingEvent =
+  /** A phone scanned the QR for `nodeName`; show `code` for the person to type there. */
+  | { type: 'offer'; code: string; nodeName: string; phoneName: string }
+  /** The phone confirmed the code and handed over the node's pairing code. */
+  | { type: 'pairing'; nodeName: string }
+  | { type: 'paired'; nodeName: string }
+  | { type: 'ended'; reason: 'expired' | 'failed' | 'rejected'; message?: string }
+
 export interface NodeHostPairingToken {
   url: string
   /** Fields of the pairing code (`node-pairing-code.ts`): LAN hint, Tailscale address, relay room. */

@@ -49,15 +49,18 @@ changes do not need invented behavior tests. The root test-scope policy applies.
 Run your normal dev desktop as A and a second dev desktop as B, the node:
 
 ```bash
-bun run dev                          # A: your usual profile, renderer :5173
-bun run dev:desktop-node:lab         # B: starts, waits for its node host, prints a pairing code
-bun run dev:desktop-node:lab:pair    # another single-use code (B must be running)
+bun run dev:cdp                      # A: your usual profile, renderer :5173, CDP :9222
+bun run dev:desktop-node:lab         # B: starts and pairs A with it
+bun run dev:desktop-node:lab:pair    # pair again (B must be running)
 bun run dev:desktop-node:lab:status
 bun run dev:desktop-node:lab:stop
 ```
 
-Paste the code in A under Settings → Remote Control → Control Other Devices →
-Add Desktop (that tab needs the experimental remote nodes setting on in A).
+The product pairs two desktops through a phone. The lab skips the phone: B
+mints a node code and A pairs it, both over CDP through development-only IPC
+(`SUPERONE_LAB_A_CDP_PORT` if A's CDP is not on 9222). Without A's CDP, B stays
+up and `lab:pair` pairs later. A's Control Other Devices tab needs the
+experimental remote nodes setting on.
 
 B is `SUPERONE_INSTANCE=node-b` (`scripts/desktop-node-lab.ts`). It runs the
 main/preload build already in `apps/desktop/out` (A's `bun run dev` writes it;
@@ -77,14 +80,14 @@ node host 7794 (A's dev default is 7793), CDP 9334, renderer 5174.
 | Dev log, event trace | `dev.log`, `event-trace.db` | `instance-node-b-dev.log`, `instance-node-b-event-trace.db` |
 
 There is no single-instance lock, and the phone LAN server and other local
-listeners take ephemeral ports. B starts with node access on, written into its
-`app-settings.json`; delete `.dev-data/instance-node-b` for a fresh node. A child
+listeners take ephemeral ports. B's node host starts when it mints a code and
+then runs while A is paired; delete `.dev-data/instance-node-b` for a fresh node. A child
 on B needs its harness enabled and signed in on B (Settings → Harnesses).
 
 The automated version is `e2e/desktop-node-orchestration.spec.ts`
 (`bun run test:e2e:fast -- e2e/desktop-node-orchestration.spec.ts` after
-`bunx electron-vite build`). B turns on node access and shows a code in its
-settings, A pastes it into Add Desktop, and a parent on A
+`bunx electron-vite build`). B mints a node code and A pairs it through the same
+development-only IPC as the lab, and a parent on A
 spawns children on B for a repository served by a loopback `git daemon`. Both
 run the scripted harness (`src/main/session/backends/scripted-backend.ts`): every
 harness follows the `<scripted>` steps in its message instead of calling a model.

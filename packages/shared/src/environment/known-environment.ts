@@ -87,6 +87,8 @@ export interface KnownEnvironment {
    * - `false`: user explicitly disconnected; stay down until Connect
    */
   desired?: boolean
+  /** The node's platform as it last reported it, so it shows while offline. */
+  platform?: { os: string; arch: string }
   /** Client-local presentation only. */
   createdAt: number
   updatedAt: number

@@ -1,5 +1,6 @@
 import { decryptPayload, encryptPayload, hexToByteArray } from './crypto'
 import type { ChannelCredential } from './secure-channel'
+import { generatePairCode, joinPairRoom, pairRoomUrl, type OpenPairRoomSocket } from './pair-room'
 
 export type PairQr = {
   channelId: string
@@ -9,16 +10,31 @@ export type PairQr = {
 }
 
 export function parsePairQr(raw: string): PairQr {
+  const { params, channelId, tempKeyHex, relayUrl } = readPairQr(raw, 'pair')
+  const desktopDeviceId = params.get('deviceId') ?? ''
+  if (!desktopDeviceId) throw new Error('QR is missing channel, key, deviceId, or relay')
+  return { channelId, tempKeyHex, desktopDeviceId, relayUrl }
+}
+
+/**
+ * The room part every pairing QR shares: `superone://<host>?channel&key&relay`.
+ * Exported for the desktop-pairing QRs (`desktop-pair.ts`).
+ */
+export function readPairQr(raw: string, host: string): {
+  params: URLSearchParams
+  channelId: string
+  tempKeyHex: string
+  relayUrl: string
+} {
   const uri = new URL(raw)
-  if (uri.protocol !== 'superone:' || uri.hostname !== 'pair') {
+  if (uri.protocol !== 'superone:' || uri.hostname !== host) {
     throw new Error('not a SuperOne pairing QR')
   }
-  const q = uri.searchParams
-  const channelId = q.get('channel') ?? ''
-  const tempKeyHex = q.get('key') ?? ''
-  const desktopDeviceId = q.get('deviceId') ?? ''
-  const relayUrl = q.get('relay') ?? ''
-  if (!channelId || !tempKeyHex || !desktopDeviceId || !relayUrl) {
+  const params = uri.searchParams
+  const channelId = params.get('channel') ?? ''
+  const tempKeyHex = params.get('key') ?? ''
+  const relayUrl = params.get('relay') ?? ''
+  if (!channelId || !tempKeyHex || !relayUrl) {
     throw new Error('QR is missing channel, key, deviceId, or relay')
   }
   if (!/^[0-9a-f]{64}$/i.test(tempKeyHex)) throw new Error('QR pairing key is invalid')
@@ -26,15 +42,11 @@ export function parsePairQr(raw: string): PairQr {
   if (relay.protocol !== 'ws:' && relay.protocol !== 'wss:') {
     throw new Error('QR relay URL must use ws or wss')
   }
-  return { channelId, tempKeyHex, desktopDeviceId, relayUrl }
-}
-
-export function generatePairCode(): string {
-  return String(Math.floor(100000 + Math.random() * 900000))
+  return { params, channelId, tempKeyHex, relayUrl }
 }
 
 export function pairWsUrl(relayUrl: string, channelId: string): string {
-  return `${relayUrl.replace(/\/$/, '')}/pair?channel=${encodeURIComponent(channelId)}&role=mobile`
+  return pairRoomUrl(relayUrl, channelId, 'mobile')
 }
 
 export function encryptPairRequest(
@@ -62,7 +74,10 @@ export class OutdatedDesktopPairingError extends Error {
  * (the host derives it from its root and the key id) and the host's relay room.
  */
 export function decryptPairResponse(tempKeyHex: string, data: string): PairResult {
-  const decrypted = decryptPayload(hexToByteArray(tempKeyHex), data) as Record<string, unknown>
+  return readPairResponse(decryptPayload(hexToByteArray(tempKeyHex), data) as Record<string, unknown>)
+}
+
+function readPairResponse(decrypted: Record<string, unknown>): PairResult {
   const credential = decrypted.credential as Record<string, unknown> | undefined
   if (!credential && typeof decrypted.masterSecret === 'string') throw new OutdatedDesktopPairingError()
   const keyId = credential?.keyId
@@ -86,72 +101,25 @@ export function startPairingHandshake(opts: {
   qr: PairQr
   mobileDeviceId: string
   deviceName: string
-  openSocket: (url: string) => {
-    send(data: string): void
-    close(): void
-    onopen: ((ev?: unknown) => void) | null
-    onmessage: ((ev: { data: string }) => void) | null
-    onclose: ((ev?: unknown) => void) | null
-    onerror: ((ev?: unknown) => void) | null
-  }
+  openSocket: OpenPairRoomSocket
 }): { code: string; done: Promise<PairResult> } {
   const code = generatePairCode()
-  const ws = opts.openSocket(pairWsUrl(opts.qr.relayUrl, opts.qr.channelId))
-  const done = new Promise<PairResult>((resolve, reject) => {
-    let settled = false
-    const finish = (result: { ok: true; value: PairResult } | { ok: false; error: unknown }): void => {
-      if (settled) return
-      settled = true
-      clearTimeout(timer)
-      if (result.ok) resolve(result.value)
-      else reject(result.error)
-      ws.close()
-    }
-    const timer = setTimeout(() => finish({ ok: false, error: new Error('pairing timeout') }), 3 * 60 * 1000)
-    ws.onerror = () => {
-      finish({ ok: false, error: new Error('pairing socket error') })
-    }
-    ws.onclose = () => {
-      if (!settled) finish({ ok: false, error: new Error('pairing socket closed') })
-    }
-    ws.onopen = () => {
-      try {
-        const data = encryptPairRequest(opts.qr.tempKeyHex, {
-          code,
-          mobileDeviceId: opts.mobileDeviceId,
-          deviceName: opts.deviceName,
-        })
-        ws.send(JSON.stringify({ type: 'pair_request', data }))
-      } catch (error) {
-        finish({ ok: false, error })
+  const room = joinPairRoom<PairResult>({
+    relayUrl: opts.qr.relayUrl,
+    channelId: opts.qr.channelId,
+    tempKeyHex: opts.qr.tempKeyHex,
+    role: 'mobile',
+    openSocket: opts.openSocket,
+    onOpen: (r) => r.send('pair_request', { code, mobileDeviceId: opts.mobileDeviceId, deviceName: opts.deviceName }),
+    onFrame: (frame, settle) => {
+      if (frame.type === 'pair_rejected') settle({ ok: false, error: new Error('pairing rejected') })
+      else if (frame.type === 'pair_already_paired') settle({ ok: false, error: new Error('already paired') })
+      else if (frame.type === 'pair_response' && frame.body) {
+        // Keep using the endpoint that completed the handshake. The desktop may be
+        // advertising an internal address that is unreachable through NAT or a proxy.
+        settle({ ok: true, value: { ...readPairResponse(frame.body), relayUrl: opts.qr.relayUrl } })
       }
-    }
-    ws.onmessage = (ev) => {
-      let frame: { type?: string; data?: string }
-      try {
-        frame = JSON.parse(String(ev.data)) as { type?: string; data?: string }
-      } catch {
-        return
-      }
-      if (frame.type === 'pair_rejected') {
-        finish({ ok: false, error: new Error('pairing rejected') })
-        return
-      }
-      if (frame.type === 'pair_already_paired') {
-        finish({ ok: false, error: new Error('already paired') })
-        return
-      }
-      if (frame.type === 'pair_response' && frame.data) {
-        try {
-          const result = decryptPairResponse(opts.qr.tempKeyHex, frame.data)
-          // Keep using the endpoint that completed the handshake. The desktop may be
-          // advertising an internal address that is unreachable through NAT or a proxy.
-          finish({ ok: true, value: { ...result, relayUrl: opts.qr.relayUrl } })
-        } catch (error) {
-          finish({ ok: false, error })
-        }
-      }
-    }
+    },
   })
-  return { code, done }
+  return { code, done: room.done }
 }

@@ -24,7 +24,8 @@ import { ControlLeaseService } from '@superone/runtime/lease'
 import { EventLog, createSqliteHostActionStore } from '@superone/runtime/session'
 import type { HarnessManager } from '@superone/runtime/harness'
 import { verifyPayload } from '@superone/runtime/crypto/crypto-util'
-import type { NodeHostPairingToken, SessionAgentProfile } from '@superone/shared/agent-types'
+import type { NodeHostController, NodeHostControllerPath, NodeHostPairingToken, SessionAgentProfile } from '@superone/shared/agent-types'
+import { networkAddressScope } from '@superone/shared/private-network-address'
 import { DesktopSessionHost, type NodeHostSessionManager, type NodeHostSessionStore } from './desktop-session-host'
 import { createDesktopWorktreePort } from './desktop-worktree-port'
 import { reconcileRunsAfterRestart } from './reconcile-runs'
@@ -107,6 +108,8 @@ export interface DesktopNodeHostListen {
   /** Relay broker (`wss://…`) that carries the channel when devices are not on one network. */
   relayUrl?: string
   onRelayStatus?: (connected: boolean) => void
+  /** A controller paired or was removed. */
+  onControllersChanged?: () => void
   log?: { info: (message: string) => void; warn: (message: string) => void }
 }
 
@@ -168,7 +171,9 @@ export class DesktopNodeHost {
           dispatchRpc,
           secureChannel: { resolveSecret: (keyId) => deriveIssuedChannelSecret(channelRoot, keyId) },
           ...(listen.allowRemoteAddress ? { allowRemoteAddress: listen.allowRemoteAddress } : {}),
-          onClientDisconnected: () => {},
+          // Controllers coming and going change what the settings list shows.
+          onClientConnected: () => listen.onControllersChanged?.(),
+          onClientDisconnected: () => listen.onControllersChanged?.(),
           createRpcContext: () => ({
             identity,
             idempotency,
@@ -186,7 +191,11 @@ export class DesktopNodeHost {
             ...(deps.guiState ? { guiState: deps.guiState } : {}),
           }),
         })
-        auth.onRevoke = (clientSessionId) => server.closeSocketsForClient(clientSessionId)
+        auth.onRevoke = (clientSessionId) => {
+          server.closeSocketsForClient(clientSessionId)
+          listen.onControllersChanged?.()
+        }
+        auth.onPaired = () => listen.onControllersChanged?.()
         // The relay carries the same channel frames for devices on other networks.
         const relay = listen.relayUrl
           ? new RelayNodeHost({
@@ -248,6 +257,54 @@ export class DesktopNodeHost {
       pairingToken: token.token,
       expiresAt: token.expiresAt,
     }
+  }
+
+  /** Desktops paired to run sessions here, newest first. */
+  controllers(): NodeHostController[] {
+    return this.auth.listClientSessions()
+      .filter((c) => c.revokedAt === null)
+      .map((c) => ({
+        id: c.clientSessionId,
+        label: c.label ?? '',
+        pairedAt: c.createdAt,
+        lastUsedAt: c.lastUsedAt,
+        enabled: c.suspendedAt === null,
+        platform: c.platform,
+        path: this.controllerPaths().get(c.clientSessionId) ?? null,
+      }))
+  }
+
+  /** How each connected controller reaches this computer right now. */
+  private controllerPaths(): Map<string, NodeHostControllerPath> {
+    const paths = new Map<string, NodeHostControllerPath>()
+    for (const { clientSessionId, remoteAddress } of this.server.connectedClients()) {
+      // A direct socket outranks a relay one for the same controller.
+      if (paths.get(clientSessionId) && paths.get(clientSessionId) !== 'relay') continue
+      paths.set(clientSessionId, remoteAddress === null
+        ? 'relay'
+        : networkAddressScope(remoteAddress) === 'tailscale' ? 'tailscale' : 'lan')
+    }
+    return paths
+  }
+
+  /** Let a controller in again, or keep it out (closing its connections) while it stays paired. */
+  setControllerEnabled(id: string, enabled: boolean): boolean {
+    return this.auth.setClientSessionSuspended(id, !enabled)
+  }
+
+  /** The master switch: off turns every controller away; each keeps its own switch. */
+  setAccessAllowed(allowed: boolean): void {
+    this.auth.setAccessPaused(!allowed)
+  }
+
+  /** Unpair a controller and close its connections. */
+  removeController(id: string): boolean {
+    return this.auth.revokeClientSession(id)
+  }
+
+  /** Whether a minted pairing code can still be redeemed. */
+  hasLivePairingToken(): boolean {
+    return this.auth.hasLivePairingToken()
   }
 
   async stop(): Promise<void> {

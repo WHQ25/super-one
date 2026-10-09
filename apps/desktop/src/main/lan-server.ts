@@ -218,6 +218,13 @@ export class LanServer {
     }
   }
 
+  /** Close the device's sockets without `kicked`: it stays paired. */
+  disconnectDevice(deviceId: string): void {
+    for (const [ws, state] of this.clients) {
+      if (state.deviceId === deviceId || state.handshake.pendingDeviceId === deviceId) ws.close(1008, 'access_off')
+    }
+  }
+
   private kick(ws: WebSocket, deviceId: string): void {
     try {
       ws.send(JSON.stringify({ type: 'kicked', mobileDeviceId: deviceId }))
@@ -313,6 +320,11 @@ export class LanServer {
     }
 
     const { channel, device } = step
+    if (!device.enabled) {
+      log.info('[LanServer] Phone %s is switched off; closing its channel', device.deviceId)
+      ws.close(1008, 'access_off')
+      return
+    }
     if (state.registerTimer) {
       clearTimeout(state.registerTimer)
       state.registerTimer = null
@@ -356,6 +368,10 @@ export class LanServer {
     if (!state.device || !this.callbacks.phoneLink.stillPaired(this.callbacks.resolveKey, state.device)) {
       log.warn('[LanServer] Command from a removed device, disconnecting: %s', state.deviceId)
       this.kick(ws, state.deviceId)
+      return
+    }
+    if (!this.callbacks.phoneLink.phoneAllowed(this.callbacks.resolveKey, state.device)) {
+      ws.close(1008, 'access_off')
       return
     }
     trace('remote.in', (command as { type?: string }).type ?? 'unknown', command)

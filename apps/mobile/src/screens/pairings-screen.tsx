@@ -8,6 +8,8 @@ import { useMobileStyles, useMobileTheme } from '../theme/context'
 import { Badge, Button, IconButton, ListRow, SectionHeader, Sheet } from '../ui'
 import { DeviceRow, deviceLabel } from '../ui/device-row'
 import { PairingCode } from './pairing-code'
+import { DesktopPairingFlow } from './desktop-pairing'
+import type { DesktopPairingState } from '../navigation/desktop-pairing-state'
 import { Wordmark } from '../ui/wordmark'
 import type { DeviceStatus, ReconnectInfo } from '../device-status'
 import { useMobileLocale } from '../i18n/context'
@@ -17,6 +19,11 @@ export function PairingsScreen(props: {
   paste: string
   lan: string
   code: string | null
+  /** Pairing two desktops through this phone; takes over the page while set. */
+  desktopPairing?: DesktopPairingState | null
+  onChooseDesktop?: (index: number) => void
+  onSubmitDesktopCode?: (code: string) => void
+  onCancelDesktopPairing?: () => void
   pairings: SavedPairing[]
   statusOf: (pairing: SavedPairing) => DeviceStatus
   /** Backoff of the live socket; only the active device can be retrying. */
@@ -60,6 +67,16 @@ export function PairingsScreen(props: {
     )
   }
   if (props.code) return <PairingCode code={props.code} onCancel={props.onCancelPairing} />
+  if (props.desktopPairing) {
+    return (
+      <DesktopPairingFlow
+        state={props.desktopPairing}
+        onChoose={(index) => props.onChooseDesktop?.(index)}
+        onSubmitCode={(code) => props.onSubmitDesktopCode?.(code)}
+        onCancel={() => props.onCancelDesktopPairing?.()}
+      />
+    )
+  }
   const hasDevices = props.pairings.length > 0
   return (
     <View style={styles.screenSection}>

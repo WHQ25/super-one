@@ -6,7 +6,7 @@ import { electronAPI } from '@electron-toolkit/preload'
 import { AgentIpcChannels, type AgentEvent, type NativeContextMenuItemSpec, type AgentPrewarmHint, type BashOutputEvent, type CodexCollaborationMode, type CodexGoalStatus, type CodexPermissionPreset, type CodexReasoningEffort, type CodexReviewTarget, type CodexExternalAgentItem, type CodexMcpOauthLoginOptions, type ProviderEndpointTestResponse, type DiscoverModelsResult, type RemoteDeviceConfig, type SandboxMode, type SendMessageRequest, type ContentBlock, type ChatMessageContext, type ClaudeSteerPriority, type WorktreeActivateRequest, type WorktreeHandoffResult, type WorktreeAssignResult, type GitDirtyStatus, type SessionForkRequest, type SessionForkResult, type SideChatStartRequest, type SideChatStartResult, type HookSavePayload, type TerminalEvent, type TerminalListItem, type TerminalSnapshot, type HarnessId, type BrowserAudioState, type BrowserCertError, type BrowserOpenTabRequest, type UpsertMediaProviderRequest, type ThemeMode, type ComputerUseDisplayInfo, type ComputerUseViewfinderClaim, type ComputerUseViewfinderFrame, type RealtimeVoiceStartRequest, type RealtimeTimelineResult, type CodexRealtimeVoiceCatalog } from '@superone/shared/agent-types'
 import type { McpbInstallRequest } from '@superone/shared/mcpb-types'
 import type { TerminalCommandRule } from '@superone/shared/terminal-command-rules'
-import type { AttachmentOriginalStatus, DshPluginInstallSource, StageAttachmentOriginalRequest, FileEntryKind, PinnedSessionEntry, ScheduledSend, ScheduledSendPatch, ScheduledSendSessionInit, WindowFoldStep, WindowMiniMode } from '@superone/shared/agent-types'
+import type { AttachmentOriginalStatus, ControllerPairingEvent, NodePairingEvent, DshPluginInstallSource, StageAttachmentOriginalRequest, FileEntryKind, PinnedSessionEntry, ScheduledSend, ScheduledSendPatch, ScheduledSendSessionInit, WindowFoldStep, WindowMiniMode } from '@superone/shared/agent-types'
 import type { GitMentionCapabilities, GitMentionRefKind, GitMentionRefsResult } from '@superone/shared/git-mention-query'
 import type { ConsumerBinding, ConsumerId, Credential, EndpointOverride, Platform, ServiceEndpoint } from '@superone/shared/platform-registry'
 import type { DraftListEntry, DraftUpsertRequest, PairRemoteInput, ProjectSnapshot, RepairPairingInput } from '@superone/shared/environment'
@@ -411,6 +411,17 @@ const environmentAPI = {
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_PAIR_REMOTE, input),
   connectWithFailover: (connectionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_CONNECT_FAILOVER, connectionId),
+  startNodePairing: () =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_NODE_PAIRING_START),
+  cancelNodePairing: () =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_NODE_PAIRING_CANCEL),
+  onNodePairingEvent: (callback: (event: NodePairingEvent) => void) => {
+    const handler = (_e: unknown, event: NodePairingEvent): void => callback(event)
+    ipcRenderer.on(AgentIpcChannels.ENVIRONMENT_NODE_PAIRING_EVENT, handler)
+    return () => ipcRenderer.removeListener(AgentIpcChannels.ENVIRONMENT_NODE_PAIRING_EVENT, handler)
+  },
+  devPairNodeCode: (code: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_DEV_PAIR_NODE_CODE, code),
   /** Dev-only: status of local remote-node lab (`bun run dev:cli:lab`). */
   localLabStatus: () =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_LOCAL_LAB_STATUS) as Promise<{
@@ -468,22 +479,6 @@ const environmentAPI = {
         display: string
       }>
     >,
-  listHarnesses: (connectionId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_HARNESS_LIST, connectionId),
-  enableHarness: (
-    connectionId: string,
-    input: {
-      harnessId: string
-      artifactPath?: string
-      command?: string
-      serverUrl?: string
-      args?: string[]
-    },
-  ) => ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_HARNESS_ENABLE, connectionId, input),
-  disableHarness: (connectionId: string, harnessId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_HARNESS_DISABLE, connectionId, harnessId),
-  probeHarness: (connectionId: string, harnessId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_HARNESS_PROBE, connectionId, harnessId),
   listProjects: (connectionId: string, options?: { refresh?: boolean }) =>
     ipcRenderer.invoke(
       AgentIpcChannels.ENVIRONMENT_LIST_PROJECTS,
@@ -1904,12 +1899,30 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.APP_SETTINGS_SAVE, patch),
   getNodeHostStatus: () =>
     ipcRenderer.invoke(AgentIpcChannels.NODE_HOST_STATUS),
-  mintNodeHostPairingToken: () =>
-    ipcRenderer.invoke(AgentIpcChannels.NODE_HOST_MINT_PAIRING_TOKEN),
-  getNodeHostNote: () =>
-    ipcRenderer.invoke(AgentIpcChannels.NODE_HOST_NOTE_GET),
-  setNodeHostNote: (note: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.NODE_HOST_NOTE_SET, note),
+  listNodeHostControllers: () =>
+    ipcRenderer.invoke(AgentIpcChannels.NODE_HOST_CONTROLLERS),
+  removeNodeHostController: (id: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.NODE_HOST_REMOVE_CONTROLLER, id),
+  setNodeHostControllerEnabled: (id: string, enabled: boolean) =>
+    ipcRenderer.invoke(AgentIpcChannels.NODE_HOST_SET_CONTROLLER_ENABLED, id, enabled),
+  onNodeHostChanged: (callback: () => void) => {
+    const handler = (): void => callback()
+    ipcRenderer.on(AgentIpcChannels.NODE_HOST_CHANGED, handler)
+    return () => ipcRenderer.removeListener(AgentIpcChannels.NODE_HOST_CHANGED, handler)
+  },
+  startControllerPairing: () =>
+    ipcRenderer.invoke(AgentIpcChannels.NODE_HOST_PAIRING_START),
+  confirmControllerPairing: (code: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.NODE_HOST_PAIRING_CONFIRM, code),
+  cancelControllerPairing: () =>
+    ipcRenderer.invoke(AgentIpcChannels.NODE_HOST_PAIRING_CANCEL),
+  onControllerPairingEvent: (callback: (event: ControllerPairingEvent) => void) => {
+    const handler = (_e: unknown, event: ControllerPairingEvent): void => callback(event)
+    ipcRenderer.on(AgentIpcChannels.NODE_HOST_PAIRING_EVENT, handler)
+    return () => ipcRenderer.removeListener(AgentIpcChannels.NODE_HOST_PAIRING_EVENT, handler)
+  },
+  devMintNodePairingCode: () =>
+    ipcRenderer.invoke(AgentIpcChannels.NODE_HOST_DEV_MINT_CODE),
   getDefaultDownloadDir: () =>
     ipcRenderer.invoke(AgentIpcChannels.APP_DEFAULT_DOWNLOAD_DIR),
   getJevApiKeyStatus: () =>
@@ -2459,6 +2472,8 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.REMOTE_LIST_PAIRED),
   removePairedDevice: (id: string) =>
     ipcRenderer.invoke(AgentIpcChannels.REMOTE_REMOVE_PAIRED, id),
+  setPairedDeviceEnabled: (id: string, enabled: boolean) =>
+    ipcRenderer.invoke(AgentIpcChannels.REMOTE_SET_PAIRED_ENABLED, id, enabled),
   onDeviceStatusChanged: (callback: (device: import('@superone/shared/agent-types').RemoteDeviceStatus) => void) => {
     const handler = (_ipcEvent: Electron.IpcRendererEvent, device: import('@superone/shared/agent-types').RemoteDeviceStatus): void => {
       callback(device)

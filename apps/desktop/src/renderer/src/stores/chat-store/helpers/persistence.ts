@@ -92,6 +92,7 @@ export function _mergePersistedSessionState(session: PerSessionState, saved: Per
     sessionProvider: session.sessionProvider ?? persistedProvider,
     preferredProvider: session.sessionProvider ? session.preferredProvider : persistedProvider,
     _providerSessionId: session._providerSessionId ?? saved.providerSessionId ?? null,
+    _parentSessionId: saved.parentSessionId ?? null,
     _gitBranch: session._gitBranch ?? saved.gitBranch,
     _worktreePath: session._worktreePath ?? saved.worktreePath,
     lastAssistantMessageId:
@@ -144,6 +145,7 @@ export function _mergeHydratedSessionState(
     sessionProvider: session.sessionProvider ?? hydrated.sessionProvider,
     preferredProvider: session.sessionProvider ? session.preferredProvider : hydrated.preferredProvider,
     _providerSessionId: session._providerSessionId ?? hydrated._providerSessionId,
+    _parentSessionId: hydrated._parentSessionId === undefined ? session._parentSessionId : hydrated._parentSessionId,
     _gitBranch: session._gitBranch ?? hydrated._gitBranch,
     _worktreePath: session._worktreePath ?? hydrated._worktreePath,
     lastAssistantMessageId:

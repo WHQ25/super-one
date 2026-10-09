@@ -108,6 +108,8 @@ export interface PerSessionState extends ChatCoreSession {
   session: SessionInfo | null
   /** Provider-side session id (Claude SDK / ACP agent). Survives harnesses with no SessionInfo. */
   _providerSessionId: string | null
+  /** Authoritative spawn relationship restored from the host, including null for roots. */
+  _parentSessionId?: string | null
   /**
    * The dsh agent preset this session composes from — a draft until the session
    * has an agent, after which dsh's own log is authoritative and the picker
@@ -374,6 +376,7 @@ export type PersistedSessionState = {
   worktreePath: string | null
   provider: ChatProvider
   providerSessionId?: string | null
+  parentSessionId?: string | null
   apiProviderId?: string | null
   acpAgentId?: string | null
   selectedModel?: string | null

@@ -98,6 +98,7 @@ describe('_mergePersistedSessionState', () => {
       gitBranch: null,
       worktreePath: null,
       provider: 'codex',
+      parentSessionId: 'parent',
       title: 'persisted title',
     }
     const merged = _mergePersistedSessionState(sess, saved as never)
@@ -107,6 +108,7 @@ describe('_mergePersistedSessionState', () => {
     expect(merged.sessionProvider).toBe('codex')
     expect(merged.preferredProvider).toBe('codex')
     expect(merged._historyHydrated).toBe(true)
+    expect(merged._parentSessionId).toBe('parent')
   })
 
   it('restores the provider session id for an empty voice-only session', () => {
@@ -293,10 +295,17 @@ describe('_mergeHydratedSessionState', () => {
       messages: [hydratedMsg],
       _latestCodexTodoList: openTodo,
       _historyHydrated: true,
+      _parentSessionId: 'parent',
     }
     const merged = _mergeHydratedSessionState(session, hydrated)
     // Newest message is live completed-only → derived null, not the hydrated open list.
     expect(merged._latestCodexTodoList).toBeNull()
+    expect(merged._parentSessionId).toBe('parent')
+  })
+  it('preserves an authoritative root during a concurrent hydration merge', () => {
+    const session = { ...createDefaultPerSessionState(), _parentSessionId: 'stale-parent' }
+    const hydrated = { ...createDefaultPerSessionState(), _parentSessionId: null, _historyHydrated: true }
+    expect(_mergeHydratedSessionState(session, hydrated)._parentSessionId).toBeNull()
   })
   it('carries the persisted model/effort through the concurrent-modification merge path', () => {
     const stub = createDefaultPerSessionState()

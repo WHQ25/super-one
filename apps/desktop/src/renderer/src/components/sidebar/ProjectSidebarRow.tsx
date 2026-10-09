@@ -217,6 +217,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
           data._gitBranch ?? '',
           data._worktreePath ?? '',
           data._title ?? '',
+          data._parentSessionId ?? '',
           getSessionTitle(data.messages) ?? '',
           hasRealtimeTimeline ? 1 : 0,
         ].join('\x01')
@@ -275,6 +276,12 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
         const dbEntry = dbSessionById.get(sid)
         if (dbEntry?.isHidden) continue
         if (dbEntry) continue
+        // A launch has a durable row before its first task arrives. Until hydration
+        // restores its spawn relationship, showing it as a root would flash the
+        // wrong hierarchy. Handoffs hydrate with no parent and stay independent.
+        if (!data._historyHydrated && data.messages.some(
+          (message) => message.metadata?.collaboration?.kind === 'initial_task',
+        )) continue
         const isUnseen = projectSession.unseenCompletedSessions.has(sid)
         const isForeground = sid === foregroundSessionId
         if (!hasRealtimeTimeline && !isForeground && !isLiveSession(data, isUnseen)) continue
@@ -286,6 +293,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
           provider: data.sessionProvider ?? undefined,
           ...(data.acpAgentId ? { acpAgentId: data.acpAgentId } : {}),
           providerSessionId: data._providerSessionId ?? undefined,
+          parentSessionId: data._parentSessionId ?? undefined,
           messageCount: data.messages.length,
           isWorktree: !!data._gitBranch,
           gitBranch: data._gitBranch ?? undefined,

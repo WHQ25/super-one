@@ -24,7 +24,6 @@ import { useChatStore } from '@/stores/chat'
 import { useAppStore, type SidebarTab } from '@/stores/app'
 import { parseRemoteProjectKey, remoteProjectKey } from '@/lib/remote-project-key'
 import { useShallow } from 'zustand/react/shallow'
-import { shallow } from 'zustand/shallow'
 import { useFullscreen } from '@/hooks/useFullscreen'
 import { useRemoteStatus } from '@/hooks/useRemoteStatus'
 import { useHostProjects } from '@/hooks/use-host-projects'
@@ -33,6 +32,7 @@ import { cn } from '@superone/ui/lib/utils'
 import { Tabs, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
 import { FileTree } from '@/components/sidebar/FileTree'
 import { useMosaicStore } from '@/components/mosaic/mosaic-store'
+import { useSidebarSessions } from '@/components/sidebar/use-sidebar-sessions'
 import { ProjectSidebarRow } from '@/components/sidebar/ProjectSidebarRow'
 import { PinnedSessionRow } from '@/components/sidebar/PinnedSessionRow'
 import { DraftsSection } from '@/components/sidebar/DraftsSection'
@@ -42,7 +42,7 @@ import { RenameSessionDialog } from '@/components/sidebar/RenameSessionDialog'
 import { EditProjectDialog } from '@/components/sidebar/EditProjectDialog'
 import { AddProjectDialog } from '@/components/sidebar/add-project/AddProjectDialog'
 import { traceSidebar, useSidebarRenderTrace } from '@/components/sidebar/sidebar-trace'
-import type { RecentFolder, SessionHistoryEntry, PinnedSessionEntry } from '@superone/shared/agent-types'
+import type { RecentFolder, SessionHistoryEntry } from '@superone/shared/agent-types'
 import type { EnvironmentListItem } from '@superone/shared/environment'
 import { getDeleteSessionRecovery, shouldSkipDeleteConfirm, setSkipDeleteConfirm } from './session-delete-helpers'
 import { LayoutToggle } from '@/components/coding/LayoutToggle'
@@ -58,15 +58,7 @@ const isMac = window.app.platform === 'darwin'
 
 type SortMode = 'recent' | 'added'
 
-const SESSIONS_FETCH_LIMIT = 13
-// Read through the next root so children belonging to the overflow root cannot
-// be stranded on the following row-based database page.
-const SESSIONS_FETCH_ROOT_TARGET = 14
 const EMPTY_SESSIONS: SessionHistoryEntry[] = []
-
-function visibleRootSessionCount(sessions: SessionHistoryEntry[]): number {
-  return sessions.filter((session) => !session.isHidden && !session.parentSessionId).length
-}
 
 export const AppSidebar = memo(function AppSidebar() {
   const { t } = useTranslation()
@@ -91,13 +83,7 @@ export const AppSidebar = memo(function AppSidebar() {
   const isMac = window.app.platform === 'darwin'
   const localHostLabel = isMac ? t('sidebar.thisMac') : t('sidebar.thisPc')
   const resetSession = useChatStore((s) => s.resetSession)
-  const removeSessionFromMemory = useChatStore((s) => s.removeSessionFromMemory)
   const switchSession = useChatStore((s) => s.switchSession)
-  const { currentActiveSid, currentStatus } = useChatStore(useShallow((s) => {
-    const proj = currentFolder ? s.projectSessions[currentFolder] : undefined
-    const sid = proj?._activeSessionId
-    return { currentActiveSid: sid, currentStatus: sid ? proj?._sessions?.[sid]?.status : undefined }
-  }))
 
   const [filesMounted, setExplorerMounted] = useState(sidebarTab === 'files')
   if (sidebarTab === 'files' && !filesMounted) setExplorerMounted(true)
@@ -131,9 +117,6 @@ export const AppSidebar = memo(function AppSidebar() {
   const [frozenRecentOrder, setFrozenRecentOrder] = useState<string[] | null>(null)
   const prevSortModeRef = useRef<SortMode>('recent')
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
-  const [folderSessions, setFolderSessions] = useState<Record<string, SessionHistoryEntry[]>>({})
-  const [folderSessionsHaveMore, setFolderSessionsHaveMore] = useState<Record<string, boolean>>({})
-  const [pinnedSessions, setPinnedSessions] = useState<PinnedSessionEntry[]>([])
   const [deleteTarget, setDeleteTarget] = useState<{ sessionId: string; title: string; folderPath: string; provider: import('@superone/shared/agent-types').HarnessId } | null>(null)
   const [copiedCmd, setCopiedCmd] = useState<'cd' | 'resume' | null>(null)
   const [removeTarget, setRemoveTarget] = useState<{
@@ -163,10 +146,14 @@ export const AppSidebar = memo(function AppSidebar() {
   const handledOutdatedHostsRef = useRef<Set<string>>(new Set())
   const [openProjectDialogOpen, setOpenProjectDialogOpen] = useState(false)
   const fetchRecentFolders = useAppStore((s) => s.fetchRecentFolders)
-  const inFlightFolderSessions = useRef(new Map<string, Promise<SessionHistoryEntry[]>>())
   const expandedFoldersRef = useRef(expandedFolders)
-  const folderSessionsRef = useRef(folderSessions)
-  const folderSessionsHaveMoreRef = useRef(folderSessionsHaveMore)
+  const {
+    currentActiveSid, folderSessions, folderSessionsHaveMore, folderSessionsRef,
+    pinnedSessions, pinnedStatuses, loadFolderSessions, loadMoreFolderSessions,
+    refreshFolderSessions, refreshPinned, handlePinSession, handleHideSession,
+    executeDeleteSession,
+  } = useSidebarSessions({ currentFolder, selectedHostConnectionId, hostProjects })
+  const [skipConfirm, setSkipConfirm] = useState(false)
 
   // Environments for the host switcher (local + paired remotes).
   // Skip listing remotes when the experiment is off.
@@ -216,161 +203,6 @@ export const AppSidebar = memo(function AppSidebar() {
     expandedFoldersRef.current = expandedFolders
   }, [expandedFolders])
 
-  useEffect(() => {
-    folderSessionsRef.current = folderSessions
-  }, [folderSessions])
-
-  useEffect(() => {
-    folderSessionsHaveMoreRef.current = folderSessionsHaveMore
-  }, [folderSessionsHaveMore])
-
-  const loadFolderSessions = useCallback(async (folderPath: string, reason: 'expand' | 'refresh' | 'current' | 'switch') => {
-    const existing = inFlightFolderSessions.current.get(folderPath)
-    if (existing) {
-      traceSidebar('sessions_load:reuse', { folderPath, reason }, folderPath)
-      return existing
-    }
-
-    const promise = (async () => {
-      const sessions: SessionHistoryEntry[] = []
-      let offset = 0
-      let visibleCount = 0
-      let hasMore = true
-      const startedAt = performance.now()
-      traceSidebar('sessions_load:start', { folderPath, reason, pageSize: SESSIONS_FETCH_LIMIT }, folderPath)
-      try {
-        // Unified Environment API (local + remote). Prefer hostProjects id for remote.
-        const { listSessionsPage } = await import('@/lib/session-list-ops')
-        const preferredProjectId = hostProjects.find((p) => p.path === folderPath)?.id ?? null
-        while (visibleRootSessionCount(sessions) < SESSIONS_FETCH_ROOT_TARGET) {
-          const page = await listSessionsPage(folderPath, {
-            limit: SESSIONS_FETCH_LIMIT,
-            offset,
-            projectId: preferredProjectId,
-          })
-          visibleCount += page.filter((session) => !session.isHidden && !session.parentSessionId).length
-          traceSidebar('sessions_load:page', {
-            folderPath,
-            reason,
-            offset,
-            pageCount: page.length,
-            visibleCount,
-            elapsedMs: Math.round((performance.now() - startedAt) * 100) / 100,
-            remote: Boolean(parseRemoteProjectKey(folderPath)),
-          }, folderPath)
-          if (page.length === 0) {
-            hasMore = false
-            break
-          }
-          sessions.push(...page)
-          if (page.length < SESSIONS_FETCH_LIMIT) {
-            hasMore = false
-            break
-          }
-          offset += page.length
-        }
-        folderSessionsRef.current = { ...folderSessionsRef.current, [folderPath]: sessions }
-        setFolderSessions((prev) => {
-          const existing = prev[folderPath]
-          if (existing && existing.length === sessions.length && existing.every((session, i) => shallow(session, sessions[i]))) {
-            return prev
-          }
-          return { ...prev, [folderPath]: sessions }
-        })
-        folderSessionsHaveMoreRef.current = { ...folderSessionsHaveMoreRef.current, [folderPath]: hasMore }
-        setFolderSessionsHaveMore((prev) => prev[folderPath] === hasMore
-          ? prev
-          : { ...prev, [folderPath]: hasMore })
-        traceSidebar('sessions_load:end', {
-          folderPath,
-          reason,
-          fetchedCount: sessions.length,
-          visibleCount,
-          elapsedMs: Math.round((performance.now() - startedAt) * 100) / 100,
-        }, folderPath)
-        inFlightFolderSessions.current.delete(folderPath)
-        return sessions
-      } catch (error) {
-        traceSidebar('sessions_load:error', {
-          folderPath,
-          reason,
-          error: error instanceof Error ? error.message : String(error),
-          elapsedMs: Math.round((performance.now() - startedAt) * 100) / 100,
-        }, folderPath)
-        inFlightFolderSessions.current.delete(folderPath)
-        return []
-      }
-    })()
-
-    inFlightFolderSessions.current.set(folderPath, promise)
-    return promise
-  }, [hostProjects])
-
-  const loadMoreFolderSessions = useCallback(async (folderPath: string, minimumRootCount: number) => {
-    const pending = inFlightFolderSessions.current.get(folderPath)
-    if (pending) await pending
-
-    const cached = folderSessionsRef.current[folderPath] ?? []
-    if (folderSessionsHaveMoreRef.current[folderPath] !== true) return cached
-    if (visibleRootSessionCount(cached) >= minimumRootCount) return cached
-
-    const promise = (async () => {
-      let sessions = cached
-      let hasMore = true
-      const startedAt = performance.now()
-
-      try {
-        const { listSessionsPage } = await import('@/lib/session-list-ops')
-        const preferredProjectId = hostProjects.find((p) => p.path === folderPath)?.id ?? null
-        while (visibleRootSessionCount(sessions) < minimumRootCount && hasMore) {
-          const page = await listSessionsPage(folderPath, {
-            limit: SESSIONS_FETCH_LIMIT,
-            offset: sessions.length,
-            projectId: preferredProjectId,
-          })
-          traceSidebar('sessions_load:page', {
-            folderPath,
-            reason: 'show_more',
-            offset: sessions.length,
-            pageCount: page.length,
-            visibleCount: visibleRootSessionCount(sessions) + visibleRootSessionCount(page),
-            elapsedMs: Math.round((performance.now() - startedAt) * 100) / 100,
-            remote: Boolean(parseRemoteProjectKey(folderPath)),
-          }, folderPath)
-          if (page.length === 0) {
-            hasMore = false
-            break
-          }
-          sessions = [...sessions, ...page]
-          hasMore = page.length >= SESSIONS_FETCH_LIMIT
-        }
-
-        folderSessionsRef.current = { ...folderSessionsRef.current, [folderPath]: sessions }
-        setFolderSessions((prev) => ({ ...prev, [folderPath]: sessions }))
-        folderSessionsHaveMoreRef.current = { ...folderSessionsHaveMoreRef.current, [folderPath]: hasMore }
-        setFolderSessionsHaveMore((prev) => ({ ...prev, [folderPath]: hasMore }))
-        return sessions
-      } catch (error) {
-        traceSidebar('sessions_load:error', {
-          folderPath,
-          reason: 'show_more',
-          error: error instanceof Error ? error.message : String(error),
-          elapsedMs: Math.round((performance.now() - startedAt) * 100) / 100,
-        }, folderPath)
-        return sessions
-      }
-    })()
-
-    inFlightFolderSessions.current.set(folderPath, promise)
-    try {
-      return await promise
-    } finally {
-      if (inFlightFolderSessions.current.get(folderPath) === promise) {
-        inFlightFolderSessions.current.delete(folderPath)
-      }
-    }
-  }, [hostProjects])
-
   const toggleExpand = useCallback((folderPath: string) => {
     const remote = parseRemoteProjectKey(folderPath)
     if (remote) {
@@ -412,72 +244,6 @@ export const AppSidebar = memo(function AppSidebar() {
     }
   }, [hostProjects, loadFolderSessions, selectProject])
 
-  /**
-   * Which host the rows currently in `pinnedSessions` came from. Read only when
-   * a request resolves, so a slow node answering after the user switched away
-   * cannot paint its rows under another host's label.
-   */
-  const pinnedHostRef = useRef(selectedHostConnectionId)
-  const refreshPinned = useCallback(() => {
-    const connectionId = selectedHostConnectionId
-    window.environment
-      .listPinnedSessions(connectionId)
-      .then((rows) => {
-        if (pinnedHostRef.current !== connectionId) return
-        setPinnedSessions(rows)
-      })
-      .catch(() => {
-        if (pinnedHostRef.current === connectionId) setPinnedSessions([])
-      })
-  }, [selectedHostConnectionId])
-
-  const refreshFolderSessions = useCallback((folderPath: string) => {
-    loadFolderSessions(folderPath, 'refresh')
-  }, [loadFolderSessions])
-
-  // Pinned follows the host switcher. Clear first: the previous host's pins
-  // point at projects on a different machine, so leaving them up while the new
-  // list loads would offer rows the selected host does not have.
-  useEffect(() => {
-    pinnedHostRef.current = selectedHostConnectionId
-    setPinnedSessions([])
-    refreshPinned()
-  }, [selectedHostConnectionId, refreshPinned])
-
-  const currentSessionId = currentActiveSid
-  const pinnedStatuses = useChatStore(useShallow((s) => {
-    const map: Record<string, string> = {}
-    for (const p of pinnedSessions) {
-      const proj = s.projectSessions[p.folderPath]
-      const status = proj?._sessions?.[p.sessionId]?.status ?? ''
-      const unseen = proj?.unseenCompletedSessions?.has(p.sessionId) ? '1' : '0'
-      map[p.sessionId] = `${status}:${unseen}`
-    }
-    return map
-  }))
-  useEffect(() => {
-    if (!currentFolder) return
-    void loadFolderSessions(currentFolder, 'current')
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentFolder, currentStatus, currentSessionId])
-  useEffect(() => {
-    if (!currentFolder) return
-    return window.app.onSessionChanged(() => {
-      refreshFolderSessions(currentFolder)
-      refreshPinned()
-      // A collaboration child pointed outside every open project registers its
-      // own — without this the new project row only appears after a restart.
-      void useAppStore.getState().fetchRecentFolders()
-    })
-  }, [currentFolder, refreshFolderSessions, refreshPinned])
-  const sessionListNonce = useAppStore((s) => s.sessionListNonce)
-  useEffect(() => {
-    if (!currentFolder || sessionListNonce === 0) return
-    refreshFolderSessions(currentFolder)
-    refreshPinned()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionListNonce])
-
   const handleSwitchSession = useCallback(async (
     folderPath: string,
     sessionId: string,
@@ -506,75 +272,6 @@ export const AppSidebar = memo(function AppSidebar() {
     // switchSession handles remote hydrate (session.get) and local SQLite resume.
     await switchSession(sessionId)
   }, [selectProject, switchSession, currentFolder, loadFolderSessions, hostProjects])
-
-  const handlePinSession = useCallback(async (sessionId: string, pinned: boolean, folderPath: string) => {
-    const remote = parseRemoteProjectKey(folderPath)
-    if (remote) {
-      await window.environment.setSessionUiFlags(remote.connectionId, sessionId, { isPinned: pinned })
-      refreshPinned()
-      refreshFolderSessions(folderPath)
-      return
-    }
-    await window.app.pinSession(sessionId, pinned)
-    refreshPinned()
-    refreshFolderSessions(folderPath)
-  }, [refreshPinned, refreshFolderSessions])
-
-  const handleHideSession = useCallback(async (sessionId: string, hidden: boolean, folderPath: string) => {
-    const remote = parseRemoteProjectKey(folderPath)
-    if (remote) {
-      await window.environment.setSessionUiFlags(remote.connectionId, sessionId, { isHidden: hidden })
-      refreshFolderSessions(folderPath)
-      return
-    }
-    await window.app.hideSession(sessionId, hidden)
-    refreshFolderSessions(folderPath)
-  }, [refreshFolderSessions])
-
-  const [skipConfirm, setSkipConfirm] = useState(false)
-
-  const executeDeleteSession = useCallback(async (target: { sessionId: string; folderPath: string }) => {
-    const remote = parseRemoteProjectKey(target.folderPath)
-    if (remote) {
-      await window.environment.removeSession(remote.connectionId, target.sessionId)
-    } else {
-      await window.app.deleteSession(target.sessionId)
-    }
-
-    const current = useChatStore.getState().projectSessions[target.folderPath]
-    if (current?._activeSessionId === target.sessionId) {
-      if (remote) {
-        // Avoid local resetSession minting a desktop SessionManager session.
-        useChatStore.setState((s) => {
-          const proj = s.projectSessions[target.folderPath]
-          if (!proj) return s
-          return {
-            projectSessions: {
-              ...s.projectSessions,
-              [target.folderPath]: { ...proj, _activeSessionId: null },
-            },
-          }
-        })
-      } else {
-        await resetSession()
-      }
-    }
-    // Every delete must also drop the session from renderer memory, not just from the
-    // database. The sidebar synthesises rows out of `_sessions` for anything the DB has
-    // no row for yet — a voice session has no chat messages and often lives only there —
-    // so a row left in memory survives its own deletion and can never be removed.
-    removeSessionFromMemory(target.folderPath, target.sessionId)
-
-    setFolderSessions((prev) => ({
-      ...prev,
-      [target.folderPath]: (prev[target.folderPath] ?? []).filter(
-        (s) => s.sessionId !== target.sessionId
-      ),
-    }))
-    setPinnedSessions((prev) => prev.filter((s) => s.sessionId !== target.sessionId))
-    refreshFolderSessions(target.folderPath)
-    if (!remote) refreshPinned()
-  }, [refreshFolderSessions, refreshPinned, resetSession, removeSessionFromMemory])
 
   const handleDeleteSession = useCallback(async () => {
     if (!deleteTarget) return

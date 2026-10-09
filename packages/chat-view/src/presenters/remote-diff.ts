@@ -6,7 +6,16 @@ export interface RemoteDiffTokens { added?: DiffTokenLine[]; removed?: DiffToken
 export type NativeDiffLine = { kind: 'added' | 'removed' | 'context'; text: string; line: number; tokens?: [string, string | null][] }
 
 /** Remote tokens index source lines, including unchanged context, not rendered rows. */
-export function parseNativeDiff(diff: string, tokens?: RemoteDiffTokens): NativeDiffLine[] {
+export function parseNativeDiff(diff: string, tokens?: RemoteDiffTokens, sourceKind?: 'add' | 'delete'): NativeDiffLine[] {
+  if (!diff) return []
+  // Codex add/delete details are whole file contents, not prefixed patch rows.
+  if (sourceKind) {
+    const kind = sourceKind === 'add' ? 'added' : 'removed'
+    return diff.replace(/\r\n/g, '\n').replace(/\n$/, '').split('\n').map((text, index) => {
+      const source = tokens?.[sourceKind === 'add' ? 'added' : 'removed']?.[index]
+      return { kind, text, line: index + 1, tokens: source?.map(([part]) => part).join('') === text ? source : undefined }
+    })
+  }
   const result: NativeDiffLine[] = []
   let oldLine = 1, newLine = 1, oldIndex = 0, newIndex = 0
   const unified = /^@@ /m.test(diff)

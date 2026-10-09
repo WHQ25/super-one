@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { PortableToolRow } from './PortableToolRow'
+import { PortableTurnContext } from './portable-turn-context'
 
 const meta = {
   title: 'Tool UI/Mobile/File edit',
@@ -79,5 +80,36 @@ export const FileChangeExpanded: Story = {
   },
   play: async ({ canvasElement }) => {
     canvasElement.querySelector<HTMLElement>('.tool-node > div')?.click()
+  },
+}
+
+const longFile = Array.from({ length: 60 }, (_, index) =>
+  `export const entry${index}: string = "A long source line that scrolls horizontally while its line number stays visible"`,
+).join('\n')
+
+export const FileChangeAddLong: Story = {
+  args: {
+    toolName: 'FileChange',
+    toolUseId: 'add-long',
+    input: JSON.stringify({ file_path: '/workspace/example.ts', kind: 'add', diff: longFile }),
+    status: 'complete',
+    toolLineDelta: { added: 60, removed: 0 },
+    hasDeferredDetails: true,
+    autoExpand: true,
+  },
+}
+
+export const FileChangeAddLight: Story = {
+  ...FileChangeAddLong,
+  decorators: [(Story) => <PortableTurnContext.Provider value={{ scheme: 'light', pendingPermission: null, projectPath: null, mcpIcons: {} }}><Story /></PortableTurnContext.Provider>],
+  globals: { theme: 'light' },
+}
+
+export const FileChangeDelete: Story = {
+  args: {
+    ...FileChangeAddLong.args,
+    toolUseId: 'delete-file',
+    input: JSON.stringify({ file_path: '/workspace/example.ts', kind: 'delete', diff: '/* Removed module\n * with a multiline comment. */\nexport const enabled = false\n' }),
+    toolLineDelta: { added: 0, removed: 3 },
   },
 }

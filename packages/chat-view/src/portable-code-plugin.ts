@@ -86,6 +86,12 @@ export function resolveLanguage(raw: string): string | null {
   return loaded.has(value) ? value : null
 }
 
+/** Uses only the grammars already bundled in the mobile document. */
+export function highlightPortableCode(code: string, language: string, theme: 'github-dark' | 'github-light') {
+  const lang = resolveLanguage(language)
+  return lang ? highlighter.codeToTokens(code, { lang, theme }) : null
+}
+
 export function createPortableCodePlugin(theme: 'github-dark' | 'github-light'): CodeHighlighterPlugin {
   return {
     name: 'shiki',
@@ -94,10 +100,8 @@ export function createPortableCodePlugin(theme: 'github-dark' | 'github-light'):
     getThemes: () => [theme, theme],
     supportsLanguage: (language) => resolveLanguage(language) !== null,
     highlight: ({ code, language }) => {
-      const lang = resolveLanguage(language)
-      if (!lang) return null
       // Sync engine, sync grammars: the callback path never has to run.
-      return highlighter.codeToTokens(code, { lang, theme }) as never
+      return highlightPortableCode(code, language, theme) as never
     },
   }
 }

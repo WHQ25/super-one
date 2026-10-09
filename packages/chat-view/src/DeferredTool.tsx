@@ -83,8 +83,8 @@ function DeferredCodexFileChangeRow({ item, change, index, toolLineDelta }: {
   const { detail, status, retry } = useDeferredToolDetail(item.remoteDetail, expanded, true)
   const loaded = detail.item?.type === 'file_change' ? detail.item.changes[index] : undefined
   return <PortableToolRow toolName="FileChange" toolUseId={`${item.id}-${index}`}
-    input={JSON.stringify({ file_path: change.path, kind: change.kind })} filePath={change.path || undefined}
-    toolLineDelta={toolLineDelta} toolDiff={loaded?.diff || undefined}
+    input={JSON.stringify({ file_path: change.path, kind: change.kind, diff: loaded?.diff ?? '' })} filePath={change.path || undefined}
+    toolLineDelta={toolLineDelta}
     status="complete"
     result={failed && index === 0 ? 'Failed to apply file changes.' : undefined} isError={failed}
     autoExpand={false} hasDeferredDetails detailStatus={status} onExpandedChange={setExpanded} onDetailRetry={retry} />

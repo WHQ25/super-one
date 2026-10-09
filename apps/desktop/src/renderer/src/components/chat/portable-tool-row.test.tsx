@@ -96,8 +96,8 @@ describe('portable tool row', () => {
 
     // The file chip stops propagation so tapping it opens the file; expanding is the row.
     fireEvent.click(container.querySelector('.tool-node > div')!)
-    expect(screen.getByText('const enabled = true')).toBeInTheDocument()
-    expect(screen.getByText('const enabled = false')).toBeInTheDocument()
+    expect(container).toHaveTextContent('const enabled = true')
+    expect(container).toHaveTextContent('const enabled = false')
   })
 
   it('keeps the header delta on a deferred Edit and does not dump raw params after expand', () => {
@@ -123,8 +123,8 @@ describe('portable tool row', () => {
     expect(container.textContent).not.toContain('new_string')
 
     fireEvent.click(container.querySelector('.tool-node > div')!)
-    expect(screen.getByText('const enabled = true')).toBeInTheDocument()
-    expect(screen.getByText('const enabled = false')).toBeInTheDocument()
+    expect(container).toHaveTextContent('const enabled = true')
+    expect(container).toHaveTextContent('const enabled = false')
     expect(container.textContent).not.toContain('old_string')
     expect(container.textContent).not.toContain('new_string')
   })
@@ -166,8 +166,19 @@ describe('portable tool row', () => {
     expect(container.querySelector('.text-error')?.textContent).toBe('-1')
     expect(container.textContent).not.toContain('huge patch body')
     fireEvent.click(container.querySelector('.tool-node > div')!)
-    expect(screen.getByText('new line')).toBeInTheDocument()
+    expect(container).toHaveTextContent('new line')
     expect(container.textContent).not.toContain('huge patch body')
+  })
+
+  it.each(['add', 'delete'] as const)('keeps host-precomputed FileChange %s prefixes separate from the source', (kind) => {
+    const marker = kind === 'add' ? '+' : '-'
+    const { container } = render(<PortableToolRow
+      toolName="FileChange" toolUseId="host-file-change" status="complete"
+      input={JSON.stringify({ file_path: '/repo/example.ts', kind })}
+      toolDiff={`${marker}  const value = 1`} />)
+    fireEvent.click(container.querySelector('.tool-node > div')!)
+    expect(container.querySelector('div.whitespace-pre')?.textContent).toBe(`${marker}  const value = 1`)
+    expect(container.querySelectorAll('div.whitespace-pre span[style]').length).toBeGreaterThan(1)
   })
 
   it('renders Bash as the terminal view, with the transported tail as its output', () => {

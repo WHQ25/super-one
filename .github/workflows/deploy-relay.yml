@@ -102,7 +102,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
           if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
-            echo "::error::CLOUDFLARE_API_TOKEN secret is not set. Create a fine-grained CF API token with Account: Workers Scripts:Edit + Account:Read, plus Zone: DNS:Edit + Zone: Workers Routes:Edit on the super-one.dev zone (needed for the relay.super-one.dev custom domain). Add it as a repo secret."
+            echo "::error::CLOUDFLARE_API_TOKEN secret is not set. Create a fine-grained CF API token with Account: Workers Scripts:Edit + Account:Read + Workers R2 Storage:Read, plus Zone: DNS:Edit + Zone: Workers Routes:Edit on the super-one.dev zone (needed for the relay.super-one.dev custom domain). Add it as a repo secret."
             exit 1
           fi
           if [ -n "${INPUT_MESSAGE}" ]; then
@@ -110,3 +110,26 @@ jobs:
           else
             bunx wrangler deploy --name "${WORKER_NAME}" --message "deploy via gh actions: ${{ github.sha }}"
           fi
+
+      # File presign credentials live in repo secrets, so every Worker this
+      # workflow deploys gets them without a by-hand `wrangler secret put`.
+      # The key is scoped to the staging bucket only: it must not be the
+      # release R2 key, which can rewrite update artifacts.
+      - name: Sync file presign secrets
+        working-directory: apps/relay
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.RELAY_R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.RELAY_R2_SECRET_ACCESS_KEY }}
+        run: |
+          if [ -z "$R2_ACCOUNT_ID" ] || [ -z "$R2_ACCESS_KEY_ID" ] || [ -z "$R2_SECRET_ACCESS_KEY" ]; then
+            echo "::error::Set repo secrets RELAY_R2_ACCESS_KEY_ID and RELAY_R2_SECRET_ACCESS_KEY (an R2 API token with Object Read & Write on super-one-file-staging only) and R2_ACCOUNT_ID."
+            exit 1
+          fi
+          SECRETS_FILE="$RUNNER_TEMP/relay-secrets.json"
+          jq -n --arg bucket super-one-file-staging \
+            '{R2_ACCOUNT_ID: env.R2_ACCOUNT_ID, R2_BUCKET_NAME: $bucket, R2_ACCESS_KEY_ID: env.R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY: env.R2_SECRET_ACCESS_KEY}' \
+            > "$SECRETS_FILE"
+          bunx wrangler secret bulk "$SECRETS_FILE" --name "${WORKER_NAME}"
+          rm -f "$SECRETS_FILE"

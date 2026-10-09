@@ -3,7 +3,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { EnvironmentLiveStatus, ExecutionEnvironmentDescriptor } from '@superone/shared/environment'
-import { patchNodeAgentSettings } from '../settings/index'
 import type { NodeSessionRecord } from '../session/index'
 import { dispatchRpc } from './rpc-dispatch'
 import type { RpcContext, SessionHostPort } from './rpc-context'
@@ -32,31 +31,14 @@ function host(over: Partial<RpcContext> = {}): RpcContext {
 }
 
 describe('node context for scheduling', () => {
-  it('puts machine facts and the owner note in the descriptor', async () => {
-    const ctx = host()
-    let descriptor = (await dispatchRpc('environment.descriptor', {}, ctx)).result as ExecutionEnvironmentDescriptor
+  it('puts machine facts in the descriptor', async () => {
+    const descriptor = (await dispatchRpc('environment.descriptor', {}, host())).result as ExecutionEnvironmentDescriptor
     expect(descriptor.machine).toEqual(machine)
-    expect(descriptor).not.toHaveProperty('note')
-    patchNodeAgentSettings(ctx.settingsConfigPath, { note: 'Signing certs for iOS releases' })
-    descriptor = (await dispatchRpc('environment.descriptor', {}, ctx)).result as ExecutionEnvironmentDescriptor
-    expect(descriptor.note).toBe('Signing certs for iOS releases')
   })
 
-  it('reports live load with session counts, headless by default', async () => {
-    const records = [
-      { status: 'streaming', pendingInteraction: null },
-      { status: 'streaming', pendingInteraction: { kind: 'permission' } },
-      { status: 'idle', pendingInteraction: null },
-    ] as unknown as NodeSessionRecord[]
-    const sessions = { list: () => records } as unknown as SessionHostPort
-    const status = (await dispatchRpc('environment.status', {}, host({ sessions }))).result as EnvironmentLiveStatus
-    expect(status).toMatchObject({ sessions: { running: 2, pending: 1 }, gui: 'unavailable' })
-  })
-
-  it('takes the GUI state from the host and omits sessions it does not serve', async () => {
-    const status = (await dispatchRpc('environment.status', {}, host({ guiState: () => 'locked' }))).result as EnvironmentLiveStatus
-    expect(status.gui).toBe('locked')
-    expect(status).not.toHaveProperty('sessions')
+  it('reports free memory', async () => {
+    const status = (await dispatchRpc('environment.status', {}, host())).result as EnvironmentLiveStatus
+    expect(status.freeMemoryBytes).toBeGreaterThan(0)
   })
 
   it('requires environment:read', async () => {

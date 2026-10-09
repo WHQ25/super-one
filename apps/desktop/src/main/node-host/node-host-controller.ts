@@ -9,8 +9,6 @@ import { isPrivateNetworkAddress, networkAddressScope } from '@superone/shared/p
 import log from '../logger'
 import { LanAdvertiser } from '../lan-advertiser'
 import { NODE_LAN_SERVICE_TYPE } from '../lan-service-type'
-import { ensureShellPath } from '../shell-path'
-import { readDesktopGuiState } from '../environment/local-node-context'
 import { variantId } from '../variant'
 import { addRecentFolder, getRecentFolders } from '../recent-folders'
 import { createSession as createSessionRow, loadSessionMessagesPaginated, renameSession } from '../db-sessions'
@@ -100,8 +98,6 @@ export function applyNodeHostSettings(
     if (host && hostPort === port && hostRelayUrl === relayUrl) return nodeHostStatus()
     await stopHost()
     try {
-      // Machine facts in the descriptor probe toolchains on the login-shell PATH.
-      await ensureShellPath()
       void getMachineInfo()
       host = await DesktopNodeHost.start(
         {
@@ -112,7 +108,6 @@ export function applyNodeHostSettings(
           projects: createDesktopProjectsPort({ list: getRecentFolders, add: addRecentFolder }),
           harnesses: getHarnessManager(),
           listAgentProfiles: listSessionAgentProfiles,
-          guiState: readDesktopGuiState,
           hooks: {
             probeHarnessReadiness: (_harnesses, id) => probeDesktopHarness(id),
             assertSessionHarnessRuntimeReady: (id, harnesses) =>

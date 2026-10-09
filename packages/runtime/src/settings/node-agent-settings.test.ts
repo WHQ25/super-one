@@ -58,14 +58,6 @@ describe('node-agent-settings', () => {
     expect(next.experimentalClaudeOpenAiChatEnabled).toBe(true)
   })
 
-  it('stores the owner note trimmed and keeps it across other patches', () => {
-    const path = join(mkdtempSync(join(tmpdir(), 'nas-')), 'c.json')
-    expect(loadNodeAgentSettings(path).note).toBe('')
-    expect(patchNodeAgentSettings(path, { note: '  GPU box, has CUDA 12  ' }).note).toBe('GPU box, has CUDA 12')
-    expect(patchNodeAgentSettings(path, { claude: { defaultModel: 'm1' } }).note).toBe('GPU box, has CUDA 12')
-    expect(patchNodeAgentSettings(path, { note: '' }).note).toBe('')
-  })
-
   it('keeps askUserQuestionPreviewFormat node-local and rejects unknown values', () => {
     const path = join(mkdtempSync(join(tmpdir(), 'nas-')), 'c.json')
     expect(loadNodeAgentSettings(path).claude.askUserQuestionPreviewFormat).toBe('')

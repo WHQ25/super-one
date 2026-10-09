@@ -34,7 +34,6 @@ export interface EnvironmentListItem {
   capabilities?: EnvironmentCapabilities
   /** Remote descriptor facts; the local machine's are read in-process by `environment_list`. */
   machine?: EnvironmentMachine
-  note?: string
   endpointProfiles: EndpointProfile[]
   preferredEndpointId?: string
   installationProfile?: InstallationProfile

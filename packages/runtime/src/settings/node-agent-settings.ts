@@ -33,7 +33,6 @@ export const DEFAULT_NODE_AGENT_SETTINGS: NodeAgentSettings = {
     permissionPreset: '',
   },
   experimentalClaudeOpenAiChatEnabled: false,
-  note: '',
   projectsDir: '',
 }
 
@@ -100,7 +99,6 @@ export function normalizeNodeAgentSettings(raw: unknown): NodeAgentSettings {
       agent.experimentalClaudeOpenAiChatEnabled,
       false,
     ),
-    note: asString(agent.note, '').trim(),
     projectsDir: asString(agent.projectsDir, '').trim(),
   }
 }
@@ -113,7 +111,6 @@ export function mergeNodeAgentSettings(
     claude: { ...current.claude },
     codex: { ...current.codex },
     experimentalClaudeOpenAiChatEnabled: current.experimentalClaudeOpenAiChatEnabled,
-    note: current.note,
     projectsDir: current.projectsDir,
   }
 
@@ -161,7 +158,6 @@ export function mergeNodeAgentSettings(
   if (typeof patch.experimentalClaudeOpenAiChatEnabled === 'boolean') {
     next.experimentalClaudeOpenAiChatEnabled = patch.experimentalClaudeOpenAiChatEnabled
   }
-  if (typeof patch.note === 'string') next.note = patch.note
   if (typeof patch.projectsDir === 'string') next.projectsDir = patch.projectsDir
 
   return normalizeNodeAgentSettings(next)

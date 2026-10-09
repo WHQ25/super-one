@@ -32,7 +32,7 @@ export interface EnvironmentGateway {
    * implement this; local may return a lightweight in-memory projection.
    */
   getSnapshot?(): Promise<EnvironmentSnapshot>
-  /** Live load and session counts (`environment.status`); older nodes reject it as unsupported. */
+  /** Free memory (`environment.status`); older nodes reject it as unsupported. */
   getLiveStatus?(): Promise<EnvironmentLiveStatus>
   subscribeEvents(input: SubscribeEventsInput): AsyncIterable<EnvironmentEventEnvelope>
   readonly sessions: SessionGateway

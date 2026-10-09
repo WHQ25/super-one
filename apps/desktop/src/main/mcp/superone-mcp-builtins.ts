@@ -159,8 +159,6 @@ export interface SessionTitleHost {
   getSession(sessionId: string): SessionTitleSetter | null
   /** A desktop view (pane, mosaic tile or mini window) is drawing this session. */
   isSessionForeground?(sessionId: string): boolean
-  /** Every live session; `environment_list` counts the running and pending ones. */
-  forEachSession?(fn: (session: import('../environment/local-node-context').LocalSessionActivity) => void): void
 }
 
 function collaborationHost(deps: BuiltInSuperoneToolDeps): SessionManager {

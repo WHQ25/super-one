@@ -623,8 +623,6 @@ async function handleDescriptor(ctx: HostRpcContext): Promise<RpcResult> {
     cliVersion = process.env.SUPERONE_CLI_VERSION?.trim() || undefined
   }
 
-  const { note } = loadNodeAgentSettings(ctx.settingsConfigPath)
-
   const descriptor: ExecutionEnvironmentDescriptor = {
     environmentId: ctx.identity.environmentId,
     label: ctx.identity.label,
@@ -651,7 +649,6 @@ async function handleDescriptor(ctx: HostRpcContext): Promise<RpcResult> {
     nodePublicKeyFingerprint: ctx.identity.publicKeyFingerprint,
     ...(ctx.artifacts ? { syncRoot: ctx.artifacts.syncRoot } : {}),
     machine: await getMachineInfo(),
-    ...(note ? { note } : {}),
   }
   return { result: descriptor }
 }
@@ -753,12 +750,11 @@ function handleHealth(ctx: RpcContext): RpcResult {
   }
 }
 
-/** Live load and session counts for scheduling (`environment_list`). */
+/** Free memory for scheduling (`environment_list`). */
 function handleStatus(ctx: HostRpcContext): RpcResult {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readEnvironment)
   if (denied) return denied
-  const sessions = ctx.sessions?.list().map((s) => ({ running: s.status === 'streaming', pending: s.pendingInteraction != null }))
-  return { result: readLiveStatus({ sessions: sessions ?? null, gui: ctx.guiState?.() ?? 'unavailable' }) }
+  return { result: readLiveStatus() }
 }
 
 async function handleSystemInfo(ctx: RpcContext): Promise<RpcResult> {

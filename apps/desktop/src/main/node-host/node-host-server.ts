@@ -89,8 +89,6 @@ export interface DesktopNodeHostDeps {
   harnesses: HarnessManager
   /** The agent profiles this desktop can launch, as its own collaboration lists them. */
   listAgentProfiles: () => SessionAgentProfile[]
-  /** Whether GUI tools can run now (`environment.status`). */
-  guiState?: RpcContext['guiState']
   /** Harness readiness probes and runtime checks (desktop resolver). */
   hooks: Pick<RpcHostHooks, 'probeHarnessReadiness' | 'assertSessionHarnessRuntimeReady'>
 }
@@ -188,7 +186,6 @@ export class DesktopNodeHost {
             harnesses: deps.harnesses,
             collaboration,
             extensions: desktopExtensions,
-            ...(deps.guiState ? { guiState: deps.guiState } : {}),
           }),
         })
         auth.onRevoke = (clientSessionId) => {

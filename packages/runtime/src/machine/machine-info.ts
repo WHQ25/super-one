@@ -1,15 +1,14 @@
 /**
- * Static machine facts for `descriptor.machine`: OS, CPU, memory, GPUs and the
- * developer toolchains on PATH. Collected once per process — a node restart or
- * upgrade refreshes it — and never fabricated: a fact the host cannot read is
- * omitted.
+ * Static machine facts for `descriptor.machine`: OS, CPU, memory and GPUs.
+ * Collected once per process — a node restart or upgrade refreshes it — and
+ * never fabricated: a fact the host cannot read is omitted.
  */
 
 import { execFile } from 'node:child_process'
 import { accessSync, constants, readFileSync } from 'node:fs'
 import { cpus, platform, release, totalmem, version as kernelVersion } from 'node:os'
 import { delimiter, join } from 'node:path'
-import type { EnvironmentMachine, EnvironmentToolchain } from '@superone/shared/environment'
+import type { EnvironmentMachine } from '@superone/shared/environment'
 
 const COMMAND_TIMEOUT_MS = 5_000
 
@@ -22,24 +21,6 @@ const runCommand: RunCommand = (file, args) =>
       resolve(err ? null : `${stdout}\n${stderr}`),
     )
   })
-
-/** Toolchains worth knowing when choosing a machine, with their version flag. */
-const TOOLCHAINS: ReadonlyArray<{ name: string; args: string[]; os?: NodeJS.Platform }> = [
-  { name: 'git', args: ['--version'] },
-  { name: 'docker', args: ['--version'] },
-  { name: 'xcodebuild', args: ['-version'], os: 'darwin' },
-  { name: 'node', args: ['--version'] },
-  { name: 'bun', args: ['--version'] },
-  { name: 'python3', args: ['--version'] },
-  { name: 'go', args: ['version'] },
-  { name: 'rustc', args: ['--version'] },
-  { name: 'java', args: ['-version'] },
-]
-
-/** First dotted version number in a `--version` banner. */
-export function parseToolVersion(output: string): string | undefined {
-  return /(\d+\.\d+(?:\.\d+)?)/.exec(output)?.[1]
-}
 
 /** Model names from `system_profiler SPDisplaysDataType -json`. */
 export function parseMacDisplays(json: string): string[] {
@@ -130,32 +111,10 @@ async function readGpus(run: RunCommand): Promise<string[]> {
   }
 }
 
-async function readToolchains(run: RunCommand): Promise<EnvironmentToolchain[]> {
-  const os = platform()
-  // Without the Command Line Tools, macOS's /usr/bin git/python3/… are shims
-  // that pop an install dialog instead of answering.
-  const macShimsLive = os !== 'darwin' || (await run('xcode-select', ['-p'])) !== null
-  const found = await Promise.all(
-    TOOLCHAINS.filter((tool) => !tool.os || tool.os === os).map(async (tool): Promise<EnvironmentToolchain | null> => {
-      const path = findOnPath(tool.name)
-      if (!path || (!macShimsLive && path.startsWith('/usr/bin/'))) return null
-      const output = await run(path, tool.args)
-      if (output === null) return null
-      const version = parseToolVersion(output)
-      return version ? { name: tool.name, version } : { name: tool.name }
-    }),
-  )
-  return found.filter((tool): tool is EnvironmentToolchain => tool !== null)
-}
-
 /** Collect machine facts now. Never rejects; unreadable facts are omitted. */
 export async function collectMachineInfo(run: RunCommand = runCommand): Promise<EnvironmentMachine> {
   const cpuList = cpus()
-  const [os, gpus, toolchains] = await Promise.all([
-    readOs(run),
-    readGpus(run).catch(() => []),
-    readToolchains(run).catch(() => []),
-  ])
+  const [os, gpus] = await Promise.all([readOs(run), readGpus(run).catch(() => [])])
   const cpuModel = cpuList[0]?.model.replace(/\s+/g, ' ').trim()
   return {
     os,
@@ -163,7 +122,6 @@ export async function collectMachineInfo(run: RunCommand = runCommand): Promise<
     cpuCores: cpuList.length,
     memoryBytes: totalmem(),
     ...(gpus.length ? { gpus } : {}),
-    toolchains,
   }
 }
 
@@ -171,8 +129,7 @@ let cached: Promise<EnvironmentMachine> | null = null
 
 /**
  * Process-lifetime machine facts. Call early to warm it: the first descriptor
- * read otherwise waits for the probes (around a second on macOS). Hosts whose
- * PATH is resolved late (desktop login shell) should call it after that.
+ * read otherwise waits for the probes (around a second on macOS).
  */
 export function getMachineInfo(): Promise<EnvironmentMachine> {
   cached ??= collectMachineInfo()

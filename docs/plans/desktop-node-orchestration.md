@@ -68,10 +68,9 @@ Long-term docs affected: `docs/architecture/remote-node-service.md` (desktop as 
 
 ### 6. Node context for scheduling
 
-- Static, collected at pairing and refreshed on node upgrade: CPU model and cores, memory, GPU, OS, ready harnesses, detected toolchains (Xcode, Docker and so on), and a user-written node note. These are added to `ExecutionEnvironmentDescriptor`.
-- Dynamic, read on query: online state, running and pending session counts, load, and whether GUI tools are usable (screen locked or not).
-- Returned by `environment_list`, not injected into the system prompt.
-- Progress (2026-10-09): done for the CLI node and desktop B (`packages/runtime/src/machine`, `environment.status`, `local-node-context.ts`); a desktop reports `locked` from `powerMonitor`. The desktop no longer has a note editor (dropped with the pairing redesign), so only a CLI node's `superone note` sets one.
+- Hardware only: OS, arch, CPU model and cores, GPUs, and total memory in `ExecutionEnvironmentDescriptor.machine` (collected once per node process), plus free memory read on query through `environment.status`.
+- Returned by `environment_list`, not injected into the system prompt. Harnesses, toolchains, session counts, load and GUI state are deliberately left out.
+- Progress (2026-10-09): done for the CLI node and desktop B (`packages/runtime/src/machine`, `local-node-context.ts`).
 
 ### 7. Later
 

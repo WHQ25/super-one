@@ -46,11 +46,6 @@ export interface NodeAgentSettings {
   codex: NodeCodexAgentDefaults
   experimentalClaudeOpenAiChatEnabled: boolean
   /**
-   * Owner-written note about this machine (what it is for, what it has), shown
-   * to agents in `environment_list` as `descriptor.note`. Empty when unset.
-   */
-  note: string
-  /**
    * Directory `git.clone` puts a repository in when the caller names none, as
    * when another machine launches an agent here for a repository this machine
    * lacks. Empty or absent means {@link DEFAULT_NODE_PROJECTS_DIR}.
@@ -74,7 +69,6 @@ export type NodeAgentSettingsPatch = {
     }
   >
   experimentalClaudeOpenAiChatEnabled?: boolean
-  note?: string
   projectsDir?: string
 }
 

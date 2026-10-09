@@ -6,7 +6,6 @@ const mocks = vi.hoisted(() => ({ list: vi.fn(), connect: vi.fn(), archive: vi.f
 vi.mock('./artifact-registry', () => ({ currentCallOwner: mocks.owner }))
 vi.mock('../environment/environment-host', () => ({ getEnvironmentHost: () => ({ listEnvironments: mocks.list, connect: mocks.connect, getGateway: () => ({ sessions: { archive: mocks.archive }, getLiveStatus: mocks.liveStatus }) }) }))
 vi.mock('../environment/local-node-context', () => ({ readLocalNodeContext: mocks.localContext }))
-vi.mock('./superone-mcp-server', () => ({ getSessionHost: () => null }))
 const local = vi.fn(() => ({ content: [{ type: 'text' as const, text: JSON.stringify({ hits: [{ sessionId: 'same', title: 'Local' }] }) }] }))
 beforeEach(() => {
   vi.clearAllMocks()
@@ -15,7 +14,7 @@ beforeEach(() => {
   mocks.connect.mockResolvedValue({ environmentId: 'node', capabilities: { sessionArchive: true } })
   mocks.archive.mockResolvedValue({ content: [{ type: 'text', text: 'remote result' }] })
   mocks.liveStatus.mockRejectedValue(new Error('unsupported method on this environment: environment.status'))
-  mocks.localContext.mockResolvedValue({ machine: { os: 'macOS 26.0', cpuModel: 'Apple M3 Max', cpuCores: 16, memoryBytes: 64 * 2 ** 30, gpus: ['Apple M3 Max'], toolchains: [{ name: 'git', version: '2.50.1' }, { name: 'docker' }] }, note: 'Release signing', harnessIds: ['claude', 'codex'], live: { load1: 2.5, cpuCores: 16, freeMemoryBytes: 8 * 2 ** 30, sessions: { running: 1, pending: 0 }, gui: 'locked' } })
+  mocks.localContext.mockResolvedValue({ machine: { os: 'macOS 26.0', cpuModel: 'Apple M3 Max', cpuCores: 16, memoryBytes: 64 * 2 ** 30, gpus: ['Apple M3 Max'] }, live: { freeMemoryBytes: 8 * 2 ** 30 } })
 })
 describe('environment archive tools', () => {
   it('uses the Host Action caller as localhost, rather than the desktop executor', async () => {
@@ -53,22 +52,22 @@ describe('environment archive tools', () => {
     const value = decode((await createEnvironmentArchiveTools('same').archiveRead('session_list', { environmentId: 'desktop', allProjects: true }, handler)).content[0].text) as { sessions: Array<{ isSelf: boolean }> }
     expect(value.sessions[0].isSelf).toBe(false)
   })
-  it('lists machine facts and live load as flat rows, null where a node cannot say', async () => {
+  it('lists hardware and free memory as flat rows, null where a node cannot say', async () => {
     mocks.list.mockResolvedValue([
       { connectionId: 'local', environmentId: 'desktop', kind: 'local', label: 'Desktop', state: 'connected', platform: { os: 'darwin', arch: 'arm64' } },
       { connectionId: 'old', environmentId: 'old', kind: 'remote', label: 'Old node', state: 'connected', platform: { os: 'linux', arch: 'x64' }, capabilities: { harnessIds: ['codex'] } },
-      { connectionId: 'gpu', environmentId: 'gpu', kind: 'remote', label: 'GPU box', state: 'connected', platform: { os: 'linux', arch: 'x64' }, capabilities: { harnessIds: [] }, machine: { os: 'Ubuntu 24.04 LTS', cpuCores: 32, memoryBytes: 128 * 2 ** 30, gpus: ['NVIDIA GA102 [GeForce RTX 3090]'], toolchains: [] }, note: 'CUDA work' },
+      { connectionId: 'gpu', environmentId: 'gpu', kind: 'remote', label: 'GPU box', state: 'connected', platform: { os: 'linux', arch: 'x64' }, capabilities: { harnessIds: [] }, machine: { os: 'Ubuntu 24.04 LTS', cpuCores: 32, memoryBytes: 128 * 2 ** 30, gpus: ['NVIDIA GA102 [GeForce RTX 3090]'] } },
       { connectionId: 'off', environmentId: 'off', kind: 'remote', label: 'Offline', state: 'disconnected' },
     ])
-    mocks.liveStatus.mockImplementation(async () => ({ cpuCores: 32, load1: 0.4, freeMemoryBytes: 100 * 2 ** 30, sessions: { running: 0, pending: 0 }, gui: 'unavailable' }))
+    mocks.liveStatus.mockImplementation(async () => ({ freeMemoryBytes: 100 * 2 ** 30 }))
     mocks.liveStatus.mockRejectedValueOnce(new Error('unsupported'))
     const text = (await createEnvironmentArchiveTools('local-session').environmentList()).content[0].text
     expect(text).toMatch(/^environments\[4\]\{/)
     const rows = (decode(text) as { environments: Array<Record<string, unknown>> }).environments
-    expect(rows[0]).toMatchObject({ environmentId: 'desktop', isLocal: true, os: 'macOS 26.0', cpu: 'Apple M3 Max, 16 cores', memoryGb: 64, gpus: 'Apple M3 Max', harnesses: 'claude codex', toolchains: 'git 2.50.1, docker', note: 'Release signing', load1: 2.5, freeMemoryGb: 8, runningSessions: 1, pendingSessions: 0, gui: 'locked' })
-    expect(rows[1]).toMatchObject({ environmentId: 'old', os: 'linux', cpu: null, harnesses: 'codex', toolchains: null, load1: null, gui: null })
-    expect(rows[2]).toMatchObject({ environmentId: 'gpu', os: 'Ubuntu 24.04 LTS', cpu: '32 cores', memoryGb: 128, harnesses: '', note: 'CUDA work', load1: 0.4, gui: 'unavailable' })
-    expect(rows[3]).toMatchObject({ environmentId: 'off', state: 'disconnected', os: null, harnesses: null, gui: null })
+    expect(rows[0]).toEqual({ environmentId: 'desktop', label: 'Desktop', isLocal: true, state: 'connected', searchable: true, os: 'macOS 26.0', arch: 'arm64', cpu: 'Apple M3 Max, 16 cores', gpus: 'Apple M3 Max', memoryGb: 64, freeMemoryGb: 8 })
+    expect(rows[1]).toMatchObject({ environmentId: 'old', os: 'linux', cpu: null, memoryGb: null, freeMemoryGb: null })
+    expect(rows[2]).toMatchObject({ environmentId: 'gpu', os: 'Ubuntu 24.04 LTS', cpu: '32 cores', gpus: 'NVIDIA GA102 [GeForce RTX 3090]', memoryGb: 128, freeMemoryGb: 100 })
+    expect(rows[3]).toMatchObject({ environmentId: 'off', state: 'disconnected', os: null, freeMemoryGb: null })
     expect(mocks.liveStatus).toHaveBeenCalledTimes(2)
   })
 })

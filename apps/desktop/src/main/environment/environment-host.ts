@@ -2610,7 +2610,6 @@ export class EnvironmentHost {
         protocolVersion: descriptor?.protocolVersion,
         capabilities: descriptor?.capabilities,
         machine: descriptor?.machine,
-        note: descriptor?.note,
         endpointProfiles: known.endpointProfiles,
         preferredEndpointId: known.preferredEndpointId,
         activePath: this.connections.getActivePath(known.connectionId) ?? undefined,

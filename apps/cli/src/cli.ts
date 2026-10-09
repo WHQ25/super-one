@@ -11,7 +11,6 @@
  *   status [--home DIR]
  *   identity [--home DIR]
  *   identity regenerate [--home DIR]
- *   note [TEXT | --clear] [--home DIR]
  *   version
  *   install-systemd [--home DIR] [--exec PATH]
  *   uninstall-systemd
@@ -42,7 +41,6 @@ Commands:
   status [--home DIR]
   identity [--home DIR]
   identity regenerate [--home DIR]
-  note [TEXT | --clear] [--home DIR]   show or set the note agents see for this machine
   version
   install-systemd [--home DIR] [--exec PATH] [--host HOST] [--port PORT]
   uninstall-systemd
@@ -188,17 +186,6 @@ async function main(): Promise<void> {
         2,
       ),
     )
-    return
-  }
-
-  if (cmd === 'note') {
-    const configPath = nodePaths(resolveNodeHome(argValue(rest, '--home'))).configJson
-    const homeAt = rest.indexOf('--home')
-    const text = rest.filter((arg, i) => arg !== '--clear' && i !== homeAt && i !== homeAt + 1).join(' ').trim()
-    const settings = hasFlag(rest, '--clear') || text
-      ? patchNodeAgentSettings(configPath, { note: hasFlag(rest, '--clear') ? '' : text })
-      : loadNodeAgentSettings(configPath)
-    console.log(settings.note)
     return
   }
 

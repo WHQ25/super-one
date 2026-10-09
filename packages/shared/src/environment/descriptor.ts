@@ -40,12 +40,10 @@ export interface ExecutionEnvironmentDescriptor {
    */
   syncRoot?: string
   /**
-   * Hardware, OS and toolchains, collected once per node process (so refreshed
-   * by a restart or upgrade). Older nodes omit it.
+   * Hardware and OS, collected once per node process (so refreshed by a
+   * restart or upgrade). Older nodes omit it.
    */
   machine?: EnvironmentMachine
-  /** Owner-written note about this machine (node setting `note`). */
-  note?: string
 }
 
 /** Static facts an agent uses to pick a machine. Fields a host cannot read are omitted. */
@@ -57,35 +55,11 @@ export interface EnvironmentMachine {
   memoryBytes: number
   /** GPU model names. */
   gpus?: string[]
-  /** Developer toolchains found on PATH. */
-  toolchains: EnvironmentToolchain[]
 }
 
-export interface EnvironmentToolchain {
-  name: string
-  version?: string
-}
-
-/**
- * Whether GUI tools (computer use, simulators) can run now. A headless node
- * reports `unavailable`; a desktop host reports `locked` while the screen is.
- */
-export type EnvironmentGuiState = 'available' | 'locked' | 'unavailable'
-
-/** Live load, read on demand through `environment.status`. */
+/** What changes while a node runs, read on demand through `environment.status`. */
 export interface EnvironmentLiveStatus {
-  /** One-minute load average; omitted on Windows, where Node reports none. */
-  load1?: number
-  cpuCores: number
   freeMemoryBytes: number
-  /** Omitted when the host does not serve sessions. */
-  sessions?: {
-    /** Sessions with a turn in progress. */
-    running: number
-    /** Sessions waiting for a user decision (permission, question, plan). */
-    pending: number
-  }
-  gui: EnvironmentGuiState
 }
 
 /** Well-known constant for the in-process desktop environment before identity is persisted. */

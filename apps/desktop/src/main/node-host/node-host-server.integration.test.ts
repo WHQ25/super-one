@@ -303,8 +303,6 @@ describe('DesktopNodeHost lifecycle and prompts', () => {
     expect(permission).toMatchObject({ interactionId: 'perm-1', kind: 'permission', toolName: 'Bash', toolUseId: 'tu-1', input: { command: 'ls' }, allowAlwaysAllow: true })
     // Stable across reads, so a controller can tell a prompt it already shows.
     expect((await read())?.createdAt).toBe(permission?.createdAt)
-    const status = await client.rpc<{ sessions: { pending: number } }>('environment.status')
-    expect(status.sessions.pending).toBe(1)
 
     live.pending = [{ type: 'ask_user_question', request: { requestId: 'q-1', questions: [{ question: 'Which?', header: 'Pick', options: [{ label: 'A' }], multiSelect: false }] } } as AgentEvent]
     expect(await read()).toMatchObject({ interactionId: 'q-1', kind: 'question', input: { questions: [{ question: 'Which?' }] } })

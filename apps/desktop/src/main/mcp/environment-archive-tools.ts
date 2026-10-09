@@ -21,13 +21,12 @@ export function createEnvironmentArchiveTools(sessionId: string, connectionId?: 
         const rows = await Promise.all(unique.map(async (item) => {
           const isLocal = item.environmentId === source.environmentId
           if (item.kind === 'local') {
-            const [{ readLocalNodeContext }, { getSessionHost }] = await Promise.all([import('../environment/local-node-context'), import('./superone-mcp-server')])
-            const sessions = getSessionHost()
-            return environmentRow(item, isLocal, await readLocalNodeContext(sessions?.forEachSession ? { forEachSession: fn => sessions.forEachSession?.(fn) } : null))
+            const { readLocalNodeContext } = await import('../environment/local-node-context')
+            return environmentRow(item, isLocal, await readLocalNodeContext())
           }
-          // Older nodes reject environment.status as unsupported; their live columns stay null.
+          // Older nodes reject environment.status as unsupported; their free memory stays null.
           const live = item.state === 'connected' ? await host.getGateway(item.environmentId)?.getLiveStatus?.().catch(() => undefined) : undefined
-          return environmentRow(item, isLocal, { machine: item.machine, note: item.note, harnessIds: item.capabilities?.harnessIds, live })
+          return environmentRow(item, isLocal, { machine: item.machine, live })
         }))
         return { content: [{ type: 'text', text: encode({ environments: rows }) }] }
       } catch (error) { return failure(error) }
@@ -71,7 +70,7 @@ const gib = (bytes: number) => Math.round((bytes / 2 ** 30) * 10) / 10
  * One flat `environment_list` row. Every row carries every column (null when
  * unknown: offline, or a node too old to report it) so TOON keeps its table form.
  */
-export function environmentRow(item: EnvironmentListItem, isLocal: boolean, facts: { machine?: EnvironmentMachine; note?: string; harnessIds?: readonly string[]; live?: EnvironmentLiveStatus }) {
+export function environmentRow(item: EnvironmentListItem, isLocal: boolean, facts: { machine?: EnvironmentMachine; live?: EnvironmentLiveStatus }) {
   const { machine, live } = facts
   return {
     environmentId: item.environmentId,
@@ -82,16 +81,9 @@ export function environmentRow(item: EnvironmentListItem, isLocal: boolean, fact
     os: machine?.os ?? item.platform?.os ?? null,
     arch: item.platform?.arch ?? null,
     cpu: machine ? [machine.cpuModel, `${machine.cpuCores} cores`].filter(Boolean).join(', ') : null,
-    memoryGb: machine ? gib(machine.memoryBytes) : null,
     gpus: machine?.gpus?.join('; ') ?? null,
-    harnesses: facts.harnessIds?.join(' ') ?? null,
-    toolchains: machine ? machine.toolchains.map(tool => tool.version ? `${tool.name} ${tool.version}` : tool.name).join(', ') : null,
-    note: facts.note || null,
-    load1: live?.load1 ?? null,
+    memoryGb: machine ? gib(machine.memoryBytes) : null,
     freeMemoryGb: live ? gib(live.freeMemoryBytes) : null,
-    runningSessions: live?.sessions?.running ?? null,
-    pendingSessions: live?.sessions?.pending ?? null,
-    gui: live?.gui ?? null,
   }
 }
 

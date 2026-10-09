@@ -1,18 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { platform } from 'node:os'
-import { collectMachineInfo, parseLspci, parseMacDisplays, parseOsRelease, parseToolVersion, type RunCommand } from './machine-info'
+import { collectMachineInfo, parseLspci, parseMacDisplays, parseOsRelease, type RunCommand } from './machine-info'
 
 describe('machine info parsers', () => {
-  it('reads the version from each toolchain banner', () => {
-    expect(parseToolVersion('git version 2.50.1 (Apple Git-155)')).toBe('2.50.1')
-    expect(parseToolVersion('Docker version 28.3.2, build 578ccf6')).toBe('28.3.2')
-    expect(parseToolVersion('Xcode 26.0\nBuild version 17A324')).toBe('26.0')
-    expect(parseToolVersion('v24.1.0')).toBe('24.1.0')
-    expect(parseToolVersion('go version go1.25.0 darwin/arm64')).toBe('1.25.0')
-    expect(parseToolVersion('openjdk version "21.0.2" 2024-01-16')).toBe('21.0.2')
-    expect(parseToolVersion('no digits')).toBeUndefined()
-  })
-
   it('reads GPU models from system_profiler JSON', () => {
     const json = JSON.stringify({ SPDisplaysDataType: [{ sppci_model: 'Apple M3 Max', sppci_cores: '40' }, { _name: 'no model' }] })
     expect(parseMacDisplays(json)).toEqual(['Apple M3 Max'])
@@ -41,7 +31,6 @@ describe('collectMachineInfo', () => {
     expect(info.cpuCores).toBeGreaterThan(0)
     expect(info.memoryBytes).toBeGreaterThan(0)
     expect(info).not.toHaveProperty('gpus')
-    expect(info.toolchains).toEqual([])
     expect(info.os.length).toBeGreaterThan(0)
   })
 

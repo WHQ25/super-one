@@ -339,7 +339,7 @@ function sanitizeWorkflowInput(toolName: string, input: string): string {
     'automation_apply',
     'automation_delete',
     'config_apply',
-    'environment_list',
+    'environment_get_info',
     'project_list',
     'session_list',
     'session_search',

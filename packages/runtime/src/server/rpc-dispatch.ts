@@ -750,7 +750,7 @@ function handleHealth(ctx: RpcContext): RpcResult {
   }
 }
 
-/** Free memory for scheduling (`environment_list`). */
+/** Free memory for scheduling (`environment_get_info`). */
 function handleStatus(ctx: HostRpcContext): RpcResult {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readEnvironment)
   if (denied) return denied

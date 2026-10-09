@@ -1,8 +1,9 @@
-import { ENVIRONMENT_LIST_DESCRIPTION, ARCHIVE_ENVIRONMENT_DESCRIPTION } from '@superone/shared/superone-tool-descriptions'
+import { ENVIRONMENT_GET_INFO_DESCRIPTION, ARCHIVE_ENVIRONMENT_DESCRIPTION } from '@superone/shared/superone-tool-descriptions'
 import { superoneHome } from '../superone-home'
 import { INTERACTION_MEMORY_TOOL_DEFS, memoryActor } from '@superone/shared/interaction-memory'
 import { InteractionMemoryStore, executeInteractionMemoryTool } from '@superone/runtime/fs/interaction-memory'
 import { jsonSchemaToZodShape } from './json-schema-zod'
+import { ENVIRONMENT_GET_INFO_INPUT_SCHEMA } from '@superone/shared/environment/host-action-archive-descriptors'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { AppSettings, AppSettingsPatch } from '@superone/shared/agent-types'
 import { existsSync } from 'fs'
@@ -173,7 +174,7 @@ function sessionMemoryActor(deps: BuiltInSuperoneToolDeps): string {
 }
 
 export interface BuiltInSuperoneToolDeps {
-  environmentList?: () => Promise<import('@superone/shared/session-archive').ArchiveToolResult>
+  environmentGetInfo?: (args: import('./environment-archive-tools').EnvironmentGetInfoArgs) => Promise<import('@superone/shared/session-archive').ArchiveToolResult>
   archiveRead?: (tool: import('@superone/shared/session-archive').SessionArchiveTool, args: Record<string, unknown>, local: () => import('@superone/shared/session-archive').ArchiveToolResult) => Promise<import('@superone/shared/session-archive').ArchiveToolResult>
   notifyDevAppReady: (projectDir: string, appId: string) => void
   sessionId: string
@@ -335,8 +336,8 @@ export async function executeBuiltInSuperoneTool(
       return sessionTagHandler(args as unknown as SessionTagArgs, deps)
     case 'session_tag_list':
       return sessionTagListHandler(args as unknown as SessionTagListArgs, deps)
-    case 'environment_list':
-      return deps.environmentList?.() ?? { content: [{ type: 'text' as const, text: '[Error] Environment discovery unavailable' }], isError: true }
+    case 'environment_get_info':
+      return deps.environmentGetInfo?.(args as import('./environment-archive-tools').EnvironmentGetInfoArgs) ?? { content: [{ type: 'text' as const, text: '[Error] Environment discovery unavailable' }], isError: true }
     case 'project_list':
       return deps.archiveRead ? deps.archiveRead('project_list', args, () => projectListHandler(args as unknown as ProjectListArgs, deps)) : projectListHandler(args as unknown as ProjectListArgs, deps)
     case 'session_list':
@@ -661,7 +662,7 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
     (args) => sessionTagListHandler(args, deps),
   )
 
-  server.registerTool('environment_list', { description: ENVIRONMENT_LIST_DESCRIPTION, inputSchema: {} }, async () => deps.environmentList?.() ?? { content: [{ type: 'text' as const, text: '[Error] Environment discovery unavailable' }], isError: true })
+  server.registerTool('environment_get_info', { description: ENVIRONMENT_GET_INFO_DESCRIPTION, inputSchema: jsonSchemaToZodShape(ENVIRONMENT_GET_INFO_INPUT_SCHEMA) }, async (args) => deps.environmentGetInfo?.(args) ?? { content: [{ type: 'text' as const, text: '[Error] Environment discovery unavailable' }], isError: true })
 
   server.registerTool(
     'project_list',

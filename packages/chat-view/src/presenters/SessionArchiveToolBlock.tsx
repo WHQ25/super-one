@@ -39,6 +39,8 @@ import {
 } from './session-archive-display'
 
 export type SessionArchiveToolName =
+  | 'environment_get_info'
+  /** Older transcripts. */
   | 'environment_list'
   | 'project_list'
   | 'session_list'
@@ -579,7 +581,7 @@ export function SessionArchiveToolBlockPresenter({
 
   const canShowExpand = allowExpand && !isStreaming && !isDenied
 
-  if (toolName === 'environment_list') {
+  if (toolName === 'environment_get_info' || toolName === 'environment_list') {
     const rows = asArray(rec?.environments).map(row => asRecord(row) ?? {})
     const failed = isError || rec?.status === 'error'
     return <ExpandableToolRow
@@ -993,7 +995,8 @@ export function SessionArchiveToolBlockPresenter({
 
 export function isSessionArchiveToolName(name: string): name is SessionArchiveToolName {
   return (
-    name === 'environment_list'
+    name === 'environment_get_info'
+    || name === 'environment_list'
     || name === 'project_list'
     || name === 'session_list'
     || name === 'session_search'

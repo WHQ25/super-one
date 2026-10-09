@@ -32,7 +32,7 @@ export interface EnvironmentListItem {
   cliVersion?: string
   protocolVersion?: number
   capabilities?: EnvironmentCapabilities
-  /** Remote descriptor facts; the local machine's are read in-process by `environment_list`. */
+  /** Remote descriptor facts; the local machine's are read in-process by `environment_get_info`. */
   machine?: EnvironmentMachine
   endpointProfiles: EndpointProfile[]
   preferredEndpointId?: string

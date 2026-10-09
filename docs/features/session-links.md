@@ -132,9 +132,10 @@ owner, including remote Host Actions. A call reads exactly one environment.
 Cross-host list/search requires `projectId` or `allProjects: true`; read uses the
 target host's session ID. Cleanup/tag mutations keep their existing scope.
 
-`environment_list()` is a separate read-only discovery call. It returns unique
+`environment_get_info()` is a separate read-only discovery call. It returns unique
 verified environment IDs with label, caller-relative `isLocal`, connection state
-and archive support. It includes no credentials or endpoint. Ordinary local
+and archive support, plus hardware unless `include: []`. It includes no
+credentials or endpoint. Ordinary local
 search needs no discovery call.
 
 Archive results carry the selected environment once at the result/header level.

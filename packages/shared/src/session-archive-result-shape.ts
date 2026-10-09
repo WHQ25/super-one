@@ -12,7 +12,7 @@
 /** Do not match session_list_agents or session_collab_*. */
 export function isSessionArchiveToolName(toolName: string | undefined): boolean {
   if (!toolName) return false
-  return /(?:^|__)(?:environment_list|project_list|session_(?:list|search|read|cleanup|tag_list))$/.test(toolName)
+  return /(?:^|__)(?:environment_(?:list|get_info)|project_list|session_(?:list|search|read|cleanup|tag_list))$/.test(toolName)
 }
 
 /** Production list/search payloads are TOON tables — a mid-string slice makes decode fail. */

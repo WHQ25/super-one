@@ -1,7 +1,10 @@
 import { decode, encode } from '@toon-format/toon'
 import type { ArchiveToolResult, SessionArchiveTool } from '@superone/shared/session-archive'
 import type { EnvironmentListItem, EnvironmentLiveStatus, EnvironmentMachine } from '@superone/shared/environment'
+import type { EnvironmentInfoGroup } from '@superone/shared/environment/host-action-archive-descriptors'
 import { currentCallOwner } from './artifact-registry'
+
+type EnvironmentHostLike = Pick<import('../environment/environment-host').EnvironmentHost, 'getGateway'>
 
 export function createEnvironmentArchiveTools(sessionId: string, connectionId?: string) {
   const environments = async (includeDescriptors = false) => {
@@ -14,19 +17,18 @@ export function createEnvironmentArchiveTools(sessionId: string, connectionId?: 
     return { host, items, source }
   }
   return {
-    environmentList: async (): Promise<ArchiveToolResult> => {
+    environmentGetInfo: async (args: EnvironmentGetInfoArgs = {}): Promise<ArchiveToolResult> => {
       try {
-        const { host, items, source } = await environments(true)
+        const include = new Set<EnvironmentInfoGroup>(args.include ?? ['hardware'])
+        const { host, items, source } = await environments(include.has('hardware'))
         const unique = [...new Map(items.map(item => [item.environmentId, item])).values()]
-        const rows = await Promise.all(unique.map(async (item) => {
-          const isLocal = item.environmentId === source.environmentId
-          if (item.kind === 'local') {
-            const { readLocalNodeContext } = await import('../environment/local-node-context')
-            return environmentRow(item, isLocal, await readLocalNodeContext())
-          }
-          // Older nodes reject environment.status as unsupported; their free memory stays null.
-          const live = item.state === 'connected' ? await host.getGateway(item.environmentId)?.getLiveStatus?.().catch(() => undefined) : undefined
-          return environmentRow(item, isLocal, { machine: item.machine, live })
+        const unknown = (args.environmentIds ?? []).filter(id => !unique.some(item => item.environmentId === id))
+        if (unknown.length) throw new Error(`Unknown environment: ${unknown.join(', ')}. Call environment_get_info without environmentIds to list them.`)
+        const selected = args.environmentIds ? unique.filter(item => args.environmentIds!.includes(item.environmentId)) : unique
+        const rows = await Promise.all(selected.map(async (item) => {
+          const row = environmentRow(item, item.environmentId === source.environmentId)
+          if (!include.has('hardware')) return row
+          return { ...row, ...hardwareColumns(await readHardware(host, item)) }
         }))
         return { content: [{ type: 'text', text: encode({ environments: rows }) }] }
       } catch (error) { return failure(error) }
@@ -64,20 +66,40 @@ export function createEnvironmentArchiveTools(sessionId: string, connectionId?: 
     },
   }
 }
+export interface EnvironmentGetInfoArgs {
+  environmentIds?: string[]
+  include?: EnvironmentInfoGroup[]
+}
+
 const gib = (bytes: number) => Math.round((bytes / 2 ** 30) * 10) / 10
 
-/**
- * One flat `environment_list` row. Every row carries every column (null when
- * unknown: offline, or a node too old to report it) so TOON keeps its table form.
- */
-export function environmentRow(item: EnvironmentListItem, isLocal: boolean, facts: { machine?: EnvironmentMachine; live?: EnvironmentLiveStatus }) {
-  const { machine, live } = facts
+/** Identity columns every `environment_get_info` row carries. */
+export function environmentRow(item: EnvironmentListItem, isLocal: boolean) {
   return {
     environmentId: item.environmentId,
     label: item.label,
     isLocal,
     state: item.state,
     searchable: item.kind === 'local' || item.capabilities?.sessionArchive === true,
+  }
+}
+
+async function readHardware(host: EnvironmentHostLike, item: EnvironmentListItem): Promise<{ item: EnvironmentListItem; machine?: EnvironmentMachine; live?: EnvironmentLiveStatus }> {
+  if (item.kind === 'local') {
+    const { readLocalNodeContext } = await import('../environment/local-node-context')
+    return { item, ...(await readLocalNodeContext()) }
+  }
+  // Older nodes reject environment.status as unsupported; their free memory stays null.
+  const live = item.state === 'connected' ? await host.getGateway(item.environmentId)?.getLiveStatus?.().catch(() => undefined) : undefined
+  return { item, machine: item.machine, live }
+}
+
+/**
+ * Hardware columns. Every row carries every column (null when unknown:
+ * offline, or a node too old to report it) so TOON keeps its table form.
+ */
+export function hardwareColumns({ item, machine, live }: { item: EnvironmentListItem; machine?: EnvironmentMachine; live?: EnvironmentLiveStatus }) {
+  return {
     os: machine?.os ?? item.platform?.os ?? null,
     arch: item.platform?.arch ?? null,
     cpu: machine ? [machine.cpuModel, `${machine.cpuCores} cores`].filter(Boolean).join(', ') : null,

@@ -146,7 +146,7 @@ export const BUILT_IN_SUPERONE_TOOL_NAMES = [
   'session_rename',
   'session_tag',
   'session_tag_list',
-  'environment_list',
+  'environment_get_info',
   'project_list',
   'session_list',
   'session_search',

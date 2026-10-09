@@ -23,7 +23,7 @@ describe('environment archive tools', () => {
     await tools.archiveRead('session_search', { query: 'why' }, local)
     expect(local).not.toHaveBeenCalled()
     expect(mocks.archive).toHaveBeenCalledWith({ tool: 'session_search', args: { query: 'why', environmentId: 'localhost' }, sourceSessionId: 'remote-session' })
-    const list = decode((await tools.environmentList()).content[0].text) as { environments: Array<{ environmentId: string; isLocal: boolean }> }
+    const list = decode((await tools.environmentGetInfo()).content[0].text) as { environments: Array<{ environmentId: string; isLocal: boolean }> }
     expect(list.environments.find(item => item.environmentId === 'node')?.isLocal).toBe(true)
     expect(list.environments.find(item => item.environmentId === 'desktop')?.isLocal).toBe(false)
   })
@@ -32,7 +32,9 @@ describe('environment archive tools', () => {
     const value = decode((await tools.archiveRead('session_search', { query: 'why' }, local)).content[0].text) as { environmentId: string; hits: Array<Record<string, unknown>> }
     expect(value.environmentId).toBe('localhost'); expect(value.hits[0]).not.toHaveProperty('environmentId')
     expect(mocks.list).toHaveBeenLastCalledWith({ includeDescriptors: false })
-    await tools.environmentList()
+    await tools.environmentGetInfo({ include: [] })
+    expect(mocks.list).toHaveBeenLastCalledWith({ includeDescriptors: false })
+    await tools.environmentGetInfo()
     expect(mocks.list).toHaveBeenLastCalledWith({ includeDescriptors: true })
     expect(mocks.connect).not.toHaveBeenCalled()
   })
@@ -61,7 +63,7 @@ describe('environment archive tools', () => {
     ])
     mocks.liveStatus.mockImplementation(async () => ({ freeMemoryBytes: 100 * 2 ** 30 }))
     mocks.liveStatus.mockRejectedValueOnce(new Error('unsupported'))
-    const text = (await createEnvironmentArchiveTools('local-session').environmentList()).content[0].text
+    const text = (await createEnvironmentArchiveTools('local-session').environmentGetInfo()).content[0].text
     expect(text).toMatch(/^environments\[4\]\{/)
     const rows = (decode(text) as { environments: Array<Record<string, unknown>> }).environments
     expect(rows[0]).toEqual({ environmentId: 'desktop', label: 'Desktop', isLocal: true, state: 'connected', searchable: true, os: 'macOS 26.0', arch: 'arm64', cpu: 'Apple M3 Max, 16 cores', gpus: 'Apple M3 Max', memoryGb: 64, freeMemoryGb: 8 })
@@ -69,5 +71,16 @@ describe('environment archive tools', () => {
     expect(rows[2]).toMatchObject({ environmentId: 'gpu', os: 'Ubuntu 24.04 LTS', cpu: '32 cores', gpus: 'NVIDIA GA102 [GeForce RTX 3090]', memoryGb: 128, freeMemoryGb: 100 })
     expect(rows[3]).toMatchObject({ environmentId: 'off', state: 'disconnected', os: null, freeMemoryGb: null })
     expect(mocks.liveStatus).toHaveBeenCalledTimes(2)
+  })
+
+  it('reads only the named environments, and only their identity when include is empty', async () => {
+    const tools = createEnvironmentArchiveTools('local-session')
+    const one = decode((await tools.environmentGetInfo({ environmentIds: ['node'], include: [] })).content[0].text) as { environments: Array<Record<string, unknown>> }
+    expect(one.environments).toEqual([{ environmentId: 'node', label: 'Node', isLocal: false, state: 'connected', searchable: true }])
+    expect(mocks.localContext).not.toHaveBeenCalled()
+    expect(mocks.liveStatus).not.toHaveBeenCalled()
+    const missing = await tools.environmentGetInfo({ environmentIds: ['nope'] })
+    expect(missing.isError).toBe(true)
+    expect(missing.content[0].text).toMatch(/Unknown environment: nope/)
   })
 })

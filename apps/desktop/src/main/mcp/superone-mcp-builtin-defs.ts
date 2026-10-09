@@ -1,7 +1,8 @@
-import { ENVIRONMENT_LIST_DESCRIPTION, ARCHIVE_ENVIRONMENT_DESCRIPTION } from '@superone/shared/superone-tool-descriptions'
+import { ENVIRONMENT_GET_INFO_DESCRIPTION, ARCHIVE_ENVIRONMENT_DESCRIPTION } from '@superone/shared/superone-tool-descriptions'
 import { INTERACTION_MEMORY_TOOL_DEFS } from '@superone/shared/interaction-memory'
 import type { SuperoneMcpToolDescriptor } from './superone-mcp-types'
 import { READ_MANUAL_INPUT_SCHEMA } from './manual-tool-defs'
+import { ENVIRONMENT_GET_INFO_INPUT_SCHEMA } from '@superone/shared/environment/host-action-archive-descriptors'
 export { MEDIA_GUIDE_TOPICS, MINIAPP_GUIDE_TOPICS, MANUAL_DOMAINS, PRODUCT_GUIDE_TOPICS, READ_MANUAL_INPUT_SCHEMA, type ManualDomain } from './manual-tool-defs'
 
 // Browser tool name lists live in @superone/shared so registration and
@@ -17,7 +18,7 @@ export {
 } from '@superone/shared/superone-host-owned-tools'
 
 export const SESSION_ARCHIVE_TOOL_NAMES = [
-  'environment_list',
+  'environment_get_info',
   'project_list',
   'session_list',
   'session_search',
@@ -176,7 +177,7 @@ export const AUTOMATION_AGENT_CONFIG_INPUT_SCHEMA = {
 } as const
 
 export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
-  { name: 'environment_list', description: ENVIRONMENT_LIST_DESCRIPTION, inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
+  { name: 'environment_get_info', description: ENVIRONMENT_GET_INFO_DESCRIPTION, inputSchema: ENVIRONMENT_GET_INFO_INPUT_SCHEMA },
   ...INTERACTION_MEMORY_TOOL_DEFS,
   {
     name: 'session_collab_list_agents',

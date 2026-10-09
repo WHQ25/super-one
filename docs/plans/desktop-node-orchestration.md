@@ -20,7 +20,7 @@ Long-term docs affected: `docs/architecture/remote-node-service.md` (desktop as 
 - `session.create` does not accept `cwd` or `systemPromptAppend` (`handlers.ts:1901`). `git.clone` exists (`:1884`), and `ProjectSnapshot.repoIdentity` is `git:<origin url>`.
 - Collaboration has no environment field. A parent is woken only when its child calls `session_collab_send` (`collaboration-messaging.ts:32`). Nothing fires when a child finishes, needs a human, or stalls, not even locally.
 - Only the CLI node runtime serves Host Actions (`session-runtime.ts:1884`). The desktop is only a consumer.
-- `environment_list` returns `{environmentId, label, isLocal, state, searchable}` (`environment-archive-tools.ts:16`). No hardware information is collected.
+- `environment_get_info` returns `{environmentId, label, isLocal, state, searchable}` (`environment-archive-tools.ts:16`). No hardware information is collected.
 
 ## Steps
 
@@ -69,7 +69,7 @@ Long-term docs affected: `docs/architecture/remote-node-service.md` (desktop as 
 ### 6. Node context for scheduling
 
 - Hardware only: OS, arch, CPU model and cores, GPUs, and total memory in `ExecutionEnvironmentDescriptor.machine` (collected once per node process), plus free memory read on query through `environment.status`.
-- Returned by `environment_list`, not injected into the system prompt. Harnesses, toolchains, session counts, load and GUI state are deliberately left out.
+- Returned by `environment_get_info`, not injected into the system prompt. Harnesses, toolchains, session counts, load and GUI state are deliberately left out.
 - Progress (2026-10-09): done for the CLI node and desktop B (`packages/runtime/src/machine`, `local-node-context.ts`).
 
 ### 7. Later

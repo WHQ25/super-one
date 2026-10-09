@@ -1,4 +1,4 @@
-# SuperOne session archive (`environment_list` / `project_list` / `session_list` / `session_search` / `session_read` / `session_cleanup` / `session_tag` / `session_tag_list`)
+# SuperOne session archive (`environment_get_info` / `project_list` / `session_list` / `session_search` / `session_read` / `session_cleanup` / `session_tag` / `session_tag_list`)
 
 Read saved SuperOne chat transcripts across harnesses (Claude, Codex, ACP, OpenCode). Reads use the selected execution host's archive: desktop SQLite or a configured CLI node's runtime store.
 
@@ -9,7 +9,7 @@ owner, even when a desktop executes a remote Host Action or a phone views the
 message. Local search needs no environment-discovery call. For another host:
 
 ```javascript
-environment_list()
+environment_get_info({ include: [] })
 project_list({ environmentId })
 session_search({ environmentId, projectId, query: "refresh token" })
 session_read({ environmentId, sessionId, view: "user", limit: 20 })
@@ -167,7 +167,7 @@ Safety: never deletes the **current** session; **pinned** sessions are skipped u
 ## Scope
 
 - **Default**: current project.
-- **Environment**: optional `environmentId` on project/list/search/read, defaulting to the calling session's execution host; discover other IDs with `environment_list`.
+- **Environment**: optional `environmentId` on project/list/search/read, defaulting to the calling session's execution host; discover other IDs with `environment_get_info`.
 - **Discover projects**: `project_list` → `id` / `name` / `path` / `lastActiveAt` (`isCurrent` for the calling session’s project).
 - **Cross-project**:
   - `session_list` / `session_search`: `projectId` or `allProjects: true` (rows/hits include `projectId` only).

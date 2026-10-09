@@ -1,4 +1,4 @@
-import { ENVIRONMENT_LIST_DESCRIPTION, ARCHIVE_ENVIRONMENT_DESCRIPTION } from '../superone-tool-descriptions'
+import { ENVIRONMENT_GET_INFO_DESCRIPTION, ENVIRONMENT_GET_INFO_IDS_DESCRIPTION, ENVIRONMENT_GET_INFO_INCLUDE_DESCRIPTION, ARCHIVE_ENVIRONMENT_DESCRIPTION } from '../superone-tool-descriptions'
 import type { HostActionSuperoneToolDescriptor } from './host-action-superone-descriptors'
 import {
   RENAME_SESSION_DESCRIPTION,
@@ -13,8 +13,22 @@ import {
   SESSION_CLEANUP_DESCRIPTION
 } from '../superone-tool-descriptions'
 
+/** Detail groups `environment_get_info` can add to the base row. */
+export const ENVIRONMENT_INFO_GROUPS = ['hardware'] as const
+export type EnvironmentInfoGroup = typeof ENVIRONMENT_INFO_GROUPS[number]
+
+/** Shared by the desktop definition and the remote descriptor, which must match byte for byte. */
+export const ENVIRONMENT_GET_INFO_INPUT_SCHEMA = {
+  type: 'object',
+  properties: {
+    environmentIds: { type: 'array', items: { type: 'string' }, minItems: 1, description: ENVIRONMENT_GET_INFO_IDS_DESCRIPTION },
+    include: { type: 'array', items: { type: 'string', enum: [...ENVIRONMENT_INFO_GROUPS] }, description: ENVIRONMENT_GET_INFO_INCLUDE_DESCRIPTION },
+  },
+  additionalProperties: false,
+}
+
 export const HOST_ACTION_ARCHIVE_DESCRIPTORS: HostActionSuperoneToolDescriptor[] = [
-  { name: 'environment_list', description: ENVIRONMENT_LIST_DESCRIPTION, inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
+  { name: 'environment_get_info', description: ENVIRONMENT_GET_INFO_DESCRIPTION, inputSchema: ENVIRONMENT_GET_INFO_INPUT_SCHEMA },
   {
     "name": "session_rename",
     "description": RENAME_SESSION_DESCRIPTION,

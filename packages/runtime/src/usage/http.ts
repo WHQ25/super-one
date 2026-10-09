@@ -10,10 +10,19 @@ export async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
-    return await fetch(url, { ...init, signal: controller.signal })
+    return await fetch(url, { ...init, signal: controller.signal }).catch((error: unknown) => {
+      // Proxies and VPNs drop some of several parallel handshakes; the request was never sent, so retry once.
+      if (!isResetBeforeSend(error)) throw error
+      return fetch(url, { ...init, signal: controller.signal })
+    })
   } finally {
     clearTimeout(timer)
   }
+}
+
+function isResetBeforeSend(error: unknown): boolean {
+  const cause = (error as { cause?: { code?: unknown; message?: unknown } } | null)?.cause
+  return cause?.code === 'ECONNRESET' && String(cause.message).includes('before secure TLS connection was established')
 }
 
 /** `Retry-After` as milliseconds from now: delta seconds or an HTTP date. */

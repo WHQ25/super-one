@@ -57,7 +57,7 @@ export class UsageThrottle<T> {
       if (outcome.fingerprint) state.fingerprint = outcome.fingerprint
       if (outcome.rateLimitedForMs !== undefined) {
         state.rateLimitedUntilMs = now + (outcome.rateLimitedForMs || this.defaultBackoffMs)
-        state.error = 'Rate limited; showing the last reading.'
+        state.error = state.value ? 'Rate limited; showing the last reading.' : 'Rate limited; try again later.'
       } else if (outcome.value !== undefined) {
         state.value = outcome.value
         state.error = undefined

@@ -3,6 +3,7 @@
  * Electron-free; shared by SessionRuntime.listMessages.
  */
 import type { ContentBlock } from '@superone/shared/agent-types'
+import { collaborationTaskMetadata } from '@superone/shared/message-display'
 import { applyContentDelta } from '@superone/shared/content-delta'
 import {
   SESSION_DURABLE_EVENT,
@@ -454,9 +455,11 @@ export function buildSessionMessageCatalog(
     const createdAt = typeof block.createdAt === 'number' ? block.createdAt : Date.now()
     // The runtime appends an assistant block only once its turn finishes, so its
     // createdAt is the completion time.
-    const metadata = role === 'assistant'
+    const metadata: Record<string, unknown> | undefined = role === 'assistant'
       ? { ...extra.metadata, completedAt: new Date(createdAt).toISOString() }
-      : block.metadata?.sendFailure ? { sendFailure: block.metadata.sendFailure } : extra.metadata
+      : block.metadata?.sendFailure
+        ? { sendFailure: block.metadata.sendFailure, ...collaborationTaskMetadata(block.collaboration) }
+        : collaborationTaskMetadata(block.collaboration) ?? extra.metadata
     out.push({
       id: block.id,
       role,

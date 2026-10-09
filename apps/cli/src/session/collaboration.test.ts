@@ -183,6 +183,11 @@ describe('collaboration grants + mailbox', () => {
     expect(started.sessionId).toBeTruthy()
     expect(taskOf().task).toBe('Do the work')
     expect(sessions.getSystemPromptAppend(started.sessionId)).toContain(parent.sessionId)
+    // The brief reads as a task from the parent session, as on the desktop.
+    expect(sessions.listMessages({ sessionId: started.sessionId }).messages[0]).toMatchObject({
+      role: 'user',
+      metadata: { source: 'collaboration', collaboration: { kind: 'initial_task', fromSessionTitle: 'parent' } },
+    })
 
     // launchIds are scoped to the requesting session.
     await expect(collab.start({ callerSessionId: started.sessionId, launchId, task: 'x' }))

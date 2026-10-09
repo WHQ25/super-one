@@ -43,7 +43,10 @@ export class SessionRuntime extends CoreSessionRuntime {
     leases: ControlLeaseService & LeaseGuard,
     environmentId: string,
     turnRunner: TurnRunner,
-    opts?: { defaultApiProviderId?: (harnessId: string) => string | null },
+    opts?: {
+      defaultApiProviderId?: (harnessId: string) => string | null
+      controllerLabel?: (clientSessionId: string) => string | null
+    },
   ) {
     super(createSqliteSessionStore(db), events, leases, environmentId, turnRunner, {
       ...opts,

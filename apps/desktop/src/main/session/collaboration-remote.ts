@@ -13,6 +13,7 @@ import type {
 } from '@superone/shared/agent-types'
 import type { CollaborationGrantRow } from '@superone/runtime/collaboration'
 import { describeLaunchedPeer, parseGrantConfig } from '@superone/runtime/collaboration'
+import type { MessageDisplayFields } from '@superone/shared/message-display'
 import type { ClonedProject, EnvironmentEventEnvelope, ProjectSnapshot } from '@superone/shared/environment'
 import { normalizeGitRemoteUrl, repoIdentityRemote } from '@superone/shared/git-remote-url'
 import { gitRun } from '../git-run'
@@ -76,6 +77,7 @@ export interface RemoteCollaborationPort {
     model?: string
     effort?: string
     apiProviderId?: string
+    collaboration?: MessageDisplayFields['collaboration']
   }): Promise<void>
   getSession(connectionId: string, sessionId: string): Promise<RemoteSessionState | null>
   /** Head of the node's durable event log (inclusive). */
@@ -345,7 +347,7 @@ export function remoteChildLabel(childSessionId: string): string | null {
 export async function sendToRemoteChild(
   childSessionId: string,
   text: string,
-  options: { clientMessageId?: string } = {},
+  options: { clientMessageId?: string; collaboration?: MessageDisplayFields['collaboration'] } = {},
 ): Promise<void> {
   const grant = collaborationStore().spawnGrantForChild(childSessionId)
   const config = grant ? parseGrantConfig(grant.config_json) : null
@@ -356,6 +358,7 @@ export async function sendToRemoteChild(
     sessionId: childSessionId,
     text,
     ...(options.clientMessageId ? { clientMessageId: options.clientMessageId } : {}),
+    ...(options.collaboration ? { collaboration: options.collaboration } : {}),
     projectPath: remoteProjectKey(env.connectionId, config.remote.projectPath ?? ''),
     providerId: grant.agent_id,
     ...(config.permissionMode ? { permissionMode: config.permissionMode } : {}),

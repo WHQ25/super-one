@@ -52,7 +52,10 @@ export class FakeSession {
   async send(request: SendMessageRequest, opts?: { onAccepted?: () => void }) {
     this.sent.push(request)
     opts?.onAccepted?.()
-    const user: ChatMessage = { id: request.clientMessageId ?? 'u1', role: 'user', status: 'complete', content: [{ type: 'text', text: request.content }], createdAt: new Date().toISOString(), providerId: 'claude' }
+    const user: ChatMessage = {
+      id: request.clientMessageId ?? 'u1', role: 'user', status: 'complete', content: [{ type: 'text', text: request.content }], createdAt: new Date().toISOString(), providerId: 'claude',
+      ...(request.collaboration ? { metadata: { source: request.source, collaboration: request.collaboration } } : {}),
+    }
     this.emit({ type: 'user_message_appended', message: user, projectPath: '/b/project', sessionId: this.id } as AgentEvent)
     this.emit({ type: 'status_change', status: 'streaming' } as AgentEvent)
     this.emit({ type: 'status_change', status: 'idle' } as AgentEvent)

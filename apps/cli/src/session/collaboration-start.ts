@@ -87,12 +87,9 @@ function applyFormAnswers(ctx: CollaborationContext, grant: GrantRow, formAnswer
 async function deliverInitialTask(ctx: CollaborationContext, grant: GrantRow, childSessionId: string): Promise<void> {
   if (grant.task_sent === 1) return
   const config = parseGrantConfig(grant.config_json)
+  const parentTitle = ctx.deps.sessions.get(grant.parent_session_id)?.title?.trim() || null
   const text = grant.kind === 'handoff'
-    ? handoffTaskContent({
-      parentSessionId: grant.parent_session_id,
-      parentTitle: ctx.deps.sessions.get(grant.parent_session_id)?.title?.trim() || null,
-      task: grant.task,
-    })
+    ? handoffTaskContent({ parentSessionId: grant.parent_session_id, parentTitle, task: grant.task })
     : grant.task
   try {
     await ctx.deps.sessions.sendWithoutLease({
@@ -105,6 +102,7 @@ async function deliverInitialTask(ctx: CollaborationContext, grant: GrantRow, ch
       apiProviderId: config.apiProviderId,
       // The parent agent's words, not the user's: never stamped human-typed.
       source: 'collaboration',
+      collaboration: { kind: 'initial_task', ...(parentTitle ? { fromSessionTitle: parentTitle } : {}) },
       requestId: `collaboration-task-${grant.grant_id.slice(0, 16)}`,
     })
   } catch {

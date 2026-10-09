@@ -455,6 +455,7 @@ async function startRemoteSpawn(grant: GrantRow, callerSessionId: string, host: 
     try {
       await sendToRemoteChild(childSessionId, grant.task, {
         clientMessageId: `collaboration-task-${grant.grant_id.slice(0, 16)}`,
+        collaboration: { kind: 'initial_task' },
       })
     } catch (error) {
       return errorResult(error)

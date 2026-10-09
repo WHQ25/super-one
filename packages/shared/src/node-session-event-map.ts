@@ -9,7 +9,7 @@
  * Missing optional fields are skipped, unknown event types yield nothing,
  * and non-text payloads never throw.
  */
-import { parseMessageDisplay } from './message-display'
+import { collaborationTaskMetadata, parseMessageDisplay } from './message-display'
 import type {
   AgentEvent,
   AgentStatus,
@@ -186,6 +186,7 @@ function userMessage(ctx: NodeSessionEventMapContext, blockId: string, text: str
     ],
     ...(display.contexts ? { contexts: display.contexts } : {}),
     ...(attachments?.length ? { attachments } : {}),
+    ...(display.collaboration ? { metadata: collaborationTaskMetadata(display.collaboration) } : {}),
     createdAt: nowIso,
     providerId: ctx.providerId ?? 'codex',
   }

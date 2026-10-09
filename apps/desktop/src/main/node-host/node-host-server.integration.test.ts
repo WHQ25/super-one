@@ -34,6 +34,7 @@ import { createDesktopProjectsPort } from './desktop-projects-port'
 import { nodeControllerDeviceId } from './desktop-session-host'
 import { AGENT_PROFILES, FakeSessionManager, memoryStore } from './node-host-test-fixtures'
 import { DesktopNodeHost } from './node-host-server'
+import { mapNodeSessionEvents } from '@superone/shared/node-session-event-map'
 
 const dirs: string[] = []
 const hosts: DesktopNodeHost[] = []
@@ -350,5 +351,30 @@ describe('DesktopNodeHost takeback', () => {
     host.sessions.releaseControl(created.sessionId)
     await client.rpc('session.acquireControl', { sessionId: created.sessionId, reclaim: true })
     expect(live.owner).toMatchObject({ kind: 'remote' })
+  })
+})
+
+describe('DesktopNodeHost launch tasks', () => {
+  it("shows a controller agent's launch task as a task from that desktop, here and on the controller", async () => {
+    const { sessions, client } = await pairedDesktops()
+    const created = await client.rpc<{ sessionId: string }>('session.create', { projectId: 'p1', harnessId: 'claude' })
+    const lease = await client.rpc<{ leaseId: string; generation: string }>('session.acquireControl', { sessionId: created.sessionId })
+    const { snapshotSequence } = await client.rpc<{ snapshotSequence: string }>('session.snapshot')
+    await client.rpc('session.send', {
+      sessionId: created.sessionId, text: 'Fix the flaky upload test', clientMessageId: 'task-1', leaseId: lease.leaseId, generation: lease.generation,
+      options: { echoUserMessage: true, collaboration: { kind: 'initial_task' } },
+    })
+    expect(sessions.live.get(created.sessionId)!.sent[0]).toMatchObject({
+      source: 'collaboration',
+      collaboration: { kind: 'initial_task', direction: 'inbound', fromSessionTitle: 'Desktop A' },
+    })
+
+    const { events } = await client.rpc<{ events: EnvironmentEventEnvelope[] }>('session.events', { afterSequence: snapshotSequence })
+    const mapped = mapNodeSessionEvents(events, { sessionId: created.sessionId, projectPath: 'remote:b:/p', providerId: 'claude' })
+    const task = mapped.find((e) => e.type === 'user_message_appended')
+    expect(task && 'message' in task ? task.message.metadata : null).toEqual({
+      source: 'collaboration',
+      collaboration: { kind: 'initial_task', direction: 'inbound', fromSessionTitle: 'Desktop A' },
+    })
   })
 })

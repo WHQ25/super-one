@@ -447,6 +447,13 @@ interface ControlLease {
   own UI and the controller's event log both see it). The controller watches
   until its user picks Reconnect, which acquires with `reclaim: true`; this can
   repeat. The controller's automatic acquire before a send never reclaims.
+- Every collaboration child's launch task renders as "Task from <sender>". A
+  child on another machine gets it with the display field
+  `collaboration: { kind: 'initial_task' }`; the node (desktop or CLI) names
+  the sender itself from the controller's pairing label, ignoring any name the
+  controller sends, and records it on the user message, its durable event and
+  `session.messages.list` metadata. A child started by an agent on the same
+  machine is named after its parent session instead.
 
 ## 10. Connection Supervision
 

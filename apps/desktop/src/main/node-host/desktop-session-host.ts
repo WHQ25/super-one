@@ -152,6 +152,9 @@ export function durableEventOf(event: AgentEvent): { eventType: string; payload:
         text: textOf(message.content),
         userMessageContent: message.content,
         ...(message.contexts ? { contexts: message.contexts } : {}),
+        ...(message.metadata?.collaboration?.kind === 'initial_task'
+          ? { collaboration: { kind: 'initial_task', ...(message.metadata.collaboration.fromSessionTitle ? { fromSessionTitle: message.metadata.collaboration.fromSessionTitle } : {}) } }
+          : {}),
       },
     }
   }
@@ -517,6 +520,17 @@ export class DesktopSessionHost implements SessionHostPort {
       ...(input.userMessageContent ? { userMessageContent: input.userMessageContent } : {}),
       ...(input.contexts ? { contexts: input.contexts } : {}),
       ...(input.ultracode !== undefined ? { ultracode: input.ultracode } : {}),
+      // A launch task from the controller's agent reads as one here, named after that device.
+      ...(input.collaboration
+        ? {
+            source: 'collaboration' as const,
+            collaboration: {
+              kind: 'initial_task' as const,
+              direction: 'inbound' as const,
+              ...(row.controller.label ? { fromSessionTitle: row.controller.label } : {}),
+            },
+          }
+        : {}),
     }
     // Answer once the turn is admitted; the rest streams through session.events.
     await new Promise<void>((resolve, reject) => {

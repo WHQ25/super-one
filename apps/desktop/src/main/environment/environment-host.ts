@@ -1876,6 +1876,8 @@ export class EnvironmentHost {
       text: string
       userMessageContent?: MessageDisplayFields['userMessageContent']
       contexts?: MessageDisplayFields['contexts']
+      /** A collaboration delivery; the node names its sender on the bubble. */
+      collaboration?: MessageDisplayFields['collaboration']
       /** This caller does not optimistically append a user bubble. */
       echoUserMessage?: boolean
       clientMessageId?: string

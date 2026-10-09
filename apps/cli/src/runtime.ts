@@ -237,10 +237,14 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
     leases,
     identity.environmentId,
     turnRunner,
-    { defaultApiProviderId: (harness) => harness === 'codex'
-      ? providers.listBindings().find((b) => b.consumer === 'chat:codex')?.credentialId
-        ?? nodeCodexAccountStore(paths.nodeHome).defaultProviderId()
-      : null },
+    {
+      defaultApiProviderId: (harness) => harness === 'codex'
+        ? providers.listBindings().find((b) => b.consumer === 'chat:codex')?.credentialId
+          ?? nodeCodexAccountStore(paths.nodeHome).defaultProviderId()
+        : null,
+      controllerLabel: (clientSessionId) =>
+        auth.listClientSessions().find((c) => c.clientSessionId === clientSessionId)?.label ?? null,
+    },
   )
   sessionsRef = sessions
   const sessionProviders = createSessionProviderStore(db)

@@ -282,6 +282,7 @@ export class SessionRuntime {
    * Not durable in sessions table — reconstructed from grants on restart when needed.
    */
   private readonly systemPromptAppends = new Map<string, string>()
+  private readonly controllerLabel?: (clientSessionId: string) => string | null
 
   constructor(
     private readonly store: SessionStore,
@@ -296,8 +297,11 @@ export class SessionRuntime {
       mcpAppResources?: McpAppResourceStore
       /** Tests may disable or shorten the runtime sweep; production uses 30s. */
       runtimeReaperIntervalMs?: number
+      /** Pairing label of a controller, so its agent's launch tasks say which device sent them. */
+      controllerLabel?: (clientSessionId: string) => string | null
     },
   ) {
+    this.controllerLabel = opts?.controllerLabel
     this.defaultApiProviderId = opts?.defaultApiProviderId
     this.agentsConfirmTimeoutMs =
       opts?.agentsConfirmTimeoutMs ?? DEFAULT_AGENTS_CONFIRM_TIMEOUT_MS
@@ -970,6 +974,8 @@ export class SessionRuntime {
     images?: TurnImageAttachment[]
     userMessageContent?: MessageDisplayFields['userMessageContent']
     contexts?: MessageDisplayFields['contexts']
+    /** A launch task from the controller's agent; named after the controller here, whatever it claims. */
+    collaboration?: MessageDisplayFields['collaboration']
     echoUserMessage?: boolean
     /** Claude-style permission mode for this turn (falls back to session.permissionMode). */
     permissionMode?: string | null
@@ -1029,10 +1035,14 @@ export class SessionRuntime {
 
     const turnKind = input.turnKind ?? null
 
+    const controller = input.collaboration ? this.controllerLabel?.(input.client.clientSessionId) : null
     const turnOpts: TurnOpts = {
       text: input.text,
       clientMessageId: input.clientMessageId,
       ...parseMessageDisplay(input),
+      ...(input.collaboration
+        ? { collaboration: { kind: 'initial_task' as const, ...(controller ? { fromSessionTitle: controller } : {}) } }
+        : {}),
       echoUserMessage: input.echoUserMessage,
       requestId: input.requestId,
       model: pick(input.model, session.model),
@@ -1091,6 +1101,8 @@ export class SessionRuntime {
     apiProviderId?: string | null
     /** A peer's task or a host wake; absent for the user's own text. */
     source?: ChatMessageSource
+    /** A launch task from an agent on this node, named after its session. */
+    collaboration?: MessageDisplayFields['collaboration']
   }): Promise<NodeSessionRecord> {
     if (this.disposing) {
       throw Object.assign(new Error('runtime is shutting down'), { code: 'failed_precondition' })
@@ -1120,6 +1132,7 @@ export class SessionRuntime {
       sandboxMode: pick(input.sandboxMode, session.sandboxMode),
       apiProviderId: session.harnessId === 'codex' ? input.apiProviderId ?? session.apiProviderId : pick(input.apiProviderId, session.apiProviderId),
       source: input.source,
+      ...(input.collaboration ? { collaboration: input.collaboration } : {}),
     }
 
     if (session.harnessId === 'codex') {
@@ -1232,6 +1245,7 @@ export class SessionRuntime {
       text: opts.text,
       ...(opts.userMessageContent ? { userMessageContent: opts.userMessageContent } : {}),
       ...(opts.contexts?.length ? { contexts: opts.contexts } : {}),
+      ...(opts.collaboration ? { collaboration: opts.collaboration } : {}),
       ...(opts.images?.length ? { attachments: opts.images } : {}),
       createdAt: Date.now(),
     }
@@ -1254,6 +1268,7 @@ export class SessionRuntime {
         text: opts.text,
         ...(userBlock.userMessageContent ? { userMessageContent: userBlock.userMessageContent } : {}),
         ...(userBlock.contexts ? { contexts: userBlock.contexts } : {}),
+        ...(userBlock.collaboration ? { collaboration: userBlock.collaboration } : {}),
         ...(userBlock.attachments ? { attachments: userBlock.attachments } : {}),
         ...(opts.echoUserMessage ? { echoUserMessage: true } : {}),
         ...(opts.source ? { source: opts.source } : {}),

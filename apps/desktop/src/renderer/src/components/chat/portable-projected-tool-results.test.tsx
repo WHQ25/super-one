@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { render, fireEvent, within } from '@testing-library/react'
+import { render, fireEvent, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { PortableMessage } from '@superone/chat-view/PortableMessage'
 import { applyContentDelta } from '@superone/shared/content-delta'
@@ -100,7 +100,7 @@ describe('projected tool results on the phone', () => {
   })
 })
 
-it('renders a Codex shell command before output arrives and updates it in place', () => {
+it('renders a Codex shell command before output arrives and updates it in place', async () => {
   const message: ChatMessage = {
     id: 'codex-turn', role: 'assistant', status: 'streaming', createdAt: '', providerId: 'codex', content: [],
     metadata: { codex: { threadId: 'thread', usage: null, items: [
@@ -111,7 +111,7 @@ it('renders a Codex shell command before output arrives and updates it in place'
   const { container, rerender } = render(<PortableMessage message={message} {...props} />)
   const row = container.querySelector('[data-tool-use-id="shell"]')
   expect(row).not.toBeNull()
-  fireEvent.click(row!.querySelector('div')!)
+  fireEvent.click(row!.querySelector('.tool-node > div')!)
   expect(container.textContent).toContain('bun run build')
   expect(row!.querySelector('.animate-shimmer')).not.toBeNull()
   const update = (output: string, complete: boolean): ChatMessage => ({
@@ -125,7 +125,8 @@ it('renders a Codex shell command before output arrives and updates it in place'
   expect(row!.textContent).toContain('Building…')
   rerender(<PortableMessage message={update('Build complete', true)} {...props} />)
   expect(row!.textContent).toContain('Build complete')
-  expect(row!.querySelector('.animate-shimmer')).toBeNull()
+  // The running state lingers briefly so a fast command does not flash.
+  await waitFor(() => expect(row!.querySelector('.animate-shimmer')).toBeNull())
 })
 
 it.each(['projected', 'codex'])('renders a historical %s command echo only once', (format) => {
@@ -144,7 +145,7 @@ it.each(['projected', 'codex'])('renders a historical %s command echo only once'
   const { container } = render(<PortableMessage message={message} scheme="dark" pendingPermission={null} />)
   const row = container.querySelector('[data-tool-use-id="history-shell"]')!
   expect(row).not.toBeNull()
-  fireEvent.click(row.querySelector('div')!)
+  fireEvent.click(row.querySelector('.tool-node > div')!)
   expect(row.textContent?.split(command)).toHaveLength(2)
   expect(row.textContent).toContain(' M README.md')
 })

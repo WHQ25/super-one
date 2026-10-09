@@ -103,12 +103,7 @@ function PortableBashTool({
   const description = typeof params.description === 'string' && params.description.trim()
     ? params.description
     : (typeof params.command === 'string' && toolSummary && toolSummary !== params.command ? toolSummary : undefined)
-  // Older remote histories include the transport's colored command echo.
-  // Match that exact format only: a program may legitimately print `$ command`.
-  const legacyEcho = `\x1b[32m$\x1b[0m ${command}`
-  const output = command && result?.startsWith(`${legacyEcho}\n`)
-    ? result.slice(legacyEcho.length + 1)
-    : command && result === legacyEcho ? '' : result
+  const output = result === undefined ? result : stripLegacyCommandEcho(command, result)
   const isDenied = Boolean(output?.startsWith('[denied] '))
   const isPendingPermission = Boolean(pendingPermission
     && (pendingPermission.toolUseId ? pendingPermission.toolUseId === toolUseId : pendingPermission.toolName === 'Bash'))
@@ -367,4 +362,14 @@ export function PortableToolRow({ allowExpand = true, inSubagent = false, ...pro
       ports={ports}
     />
   )
+}
+
+/**
+ * Older remote histories include the transport's colored command echo. Match
+ * that exact format only: a program may legitimately print `$ command`.
+ */
+export function stripLegacyCommandEcho(command: string, output: string): string {
+  if (!command) return output
+  const legacyEcho = `\x1b[32m$\x1b[0m ${command}`
+  return output.startsWith(`${legacyEcho}\n`) ? output.slice(legacyEcho.length + 1) : output === legacyEcho ? '' : output
 }

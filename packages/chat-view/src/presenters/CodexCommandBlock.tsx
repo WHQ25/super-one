@@ -42,7 +42,8 @@ export function CodexCommandBlockPresenter({ item, isStreaming, cwd, renderFileC
   const label = view.kind === 'explore' ? t(running ? 'chat.codex.exploringCode' : 'chat.codex.codeExplored')
     : running ? `${t(view.kind === 'read' ? 'chat.codex.statusReading' : view.kind === 'search' ? 'chat.codex.statusSearching' : 'chat.codex.statusRunning')}…`
     : labels[view.kind]
-  const output = `${item.aggregatedOutput}${item.exitCode !== undefined ? `\n\nExit code ${item.exitCode}` : ''}`.trim()
+  // Keep leading spaces: they are columns (`git status --short`), not padding.
+  const output = `${item.aggregatedOutput}${item.exitCode !== undefined ? `\n\nExit code ${item.exitCode}` : ''}`.replace(/^\n+/, '').trimEnd()
   const outputPanel = <>
     <TerminalCommandOutput command={item.command} hasOutput={!!output} outputVersion={output}>
       {output ? <div className="text-terminal-muted">{renderAnsiText(output)}</div>

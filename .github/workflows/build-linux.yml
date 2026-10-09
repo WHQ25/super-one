@@ -48,7 +48,9 @@ concurrency:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  SO_CF_RELAY_URL: ${{ secrets.SO_CF_RELAY_URL }}
+  # Alpha builds use the alpha relay; until SO_CF_RELAY_URL_ALPHA is set they
+  # keep the stable one.
+  SO_CF_RELAY_URL: ${{ inputs.variant == 'alpha' && secrets.SO_CF_RELAY_URL_ALPHA || secrets.SO_CF_RELAY_URL }}
   NODE_OPTIONS: --max-old-space-size=8192
 
 jobs:

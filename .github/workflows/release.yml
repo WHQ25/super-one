@@ -44,7 +44,7 @@ on:
         type: boolean
         default: false
       deploy_relay:
-        description: 'Deploy apps/relay to Cloudflare (only when apps/relay changed)'
+        description: "Deploy apps/relay to this variant's relay (only when apps/relay changed since that relay's last deploy)"
         required: false
         type: boolean
         default: false
@@ -239,4 +239,5 @@ jobs:
     secrets: inherit
     with:
       ref: ${{ inputs.ref }}
+      channel: ${{ inputs.variant }}
       message: ${{ needs.plan.outputs.release_tag }} (${{ needs.plan.outputs.sha }})

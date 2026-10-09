@@ -3,6 +3,13 @@ name: Deploy relay
 on:
   workflow_dispatch:
     inputs:
+      channel:
+        description: 'Which relay to deploy: alpha (relay-alpha.super-one.dev) or stable (relay.super-one.dev)'
+        required: true
+        type: choice
+        options:
+          - alpha
+          - stable
       ref:
         description: 'Branch or commit SHA to deploy (defaults to main HEAD)'
         required: false
@@ -12,6 +19,10 @@ on:
         required: false
   workflow_call:
     inputs:
+      channel:
+        description: Which relay to deploy, alpha or stable (the release variant)
+        required: true
+        type: string
       ref:
         description: Branch or commit SHA to deploy (defaults to main HEAD)
         required: false
@@ -23,18 +34,31 @@ on:
         type: string
 
 concurrency:
-  group: deploy-relay
+  group: deploy-relay-${{ inputs.channel }}
   cancel-in-progress: false
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   INPUT_MESSAGE: ${{ inputs.message }}
+  INPUT_CHANNEL: ${{ inputs.channel }}
+  # Alpha builds point at their own Worker, so relay changes reach alpha
+  # clients before stable ones. Same code and wrangler.toml; only the Worker
+  # name and domain differ.
+  WORKER_NAME: ${{ inputs.channel == 'alpha' && 'super-one-relay-alpha' || 'super-one-relay' }}
+  RELAY_DOMAIN: ${{ inputs.channel == 'alpha' && 'relay-alpha.super-one.dev' || 'relay.super-one.dev' }}
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      - name: Check channel
+        run: |
+          case "$INPUT_CHANNEL" in
+            alpha|stable) ;;
+            *) echo "::error::unknown relay channel '$INPUT_CHANNEL'"; exit 1 ;;
+          esac
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.ref }}
@@ -59,11 +83,11 @@ jobs:
       - name: Inject official custom domain
         working-directory: apps/relay
         run: |
-          cat > /tmp/route.toml <<'EOF'
-          # Prepended by deploy-relay.yml for the official deployment only.
+          cat > /tmp/route.toml <<EOF
+          # Prepended by deploy-relay.yml for the official deployments only.
           # Not committed — keeps wrangler.toml self-host friendly in the public mirror.
           routes = [
-            { pattern = "relay.super-one.dev", custom_domain = true },
+            { pattern = "${RELAY_DOMAIN}", custom_domain = true },
           ]
 
           EOF
@@ -82,7 +106,7 @@ jobs:
             exit 1
           fi
           if [ -n "${INPUT_MESSAGE}" ]; then
-            bunx wrangler deploy --message "${INPUT_MESSAGE}"
+            bunx wrangler deploy --name "${WORKER_NAME}" --message "${INPUT_MESSAGE}"
           else
-            bunx wrangler deploy --message "deploy via gh actions: ${{ github.sha }}"
+            bunx wrangler deploy --name "${WORKER_NAME}" --message "deploy via gh actions: ${{ github.sha }}"
           fi

@@ -9,7 +9,7 @@ import { parseMentionEditorSnapshot } from '../../../apps/mobile/src/mention-edi
 import { localUserMessage } from '../../../apps/mobile/src/runtime-user-message'
 
 const i18n = createInstance()
-beforeAll(async () => { await i18n.init({ lng: 'en', resources: {}, initImmediate: false }) })
+beforeAll(async () => { await i18n.init({ lng: 'en', resources: {}, initAsync: false }) })
 const renderText = (block: { text: string; isPaste?: boolean }) => renderToStaticMarkup(
   createElement(I18nextProvider, { i18n }, createElement(UserTextPresenter, block)),
 )

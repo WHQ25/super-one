@@ -1,6 +1,7 @@
 import { afterEach, expect, jest, test } from '@jest/globals'
 import { createRef } from 'react'
-import { act, render } from '@testing-library/react-native'
+import { act } from '@testing-library/react-native'
+import { renderWithTheme } from '../test-render'
 import { NativeComposerInput, type NativeComposerController } from './native-composer-input'
 import { parseMentionEditorSnapshot } from '../mention-editor-state'
 
@@ -13,7 +14,8 @@ async function setup() {
   const controller = createRef<NativeComposerController>()
   const onChange = jest.fn()
   const onError = jest.fn()
-  const view = await render(<NativeComposerInput binding={{ controller, document: [], onChange, onError }}
+  // `MobileThemeProvider` carries the `MenuHost` the paste-chip editor anchors into.
+  const view = await renderWithTheme(<NativeComposerInput binding={{ controller, document: [], onChange, onError }}
     tablet={false} editable placeholder="Message" onSubmit={() => {}} />)
   const change = async (extra: object = {}) => act(() => mockProps.onChange(parseMentionEditorSnapshot({
     text: '你好', tokens: [], start: 2, end: 2, eventCount: 1, composing: true, supportsPrepareSubmit: true, ...extra,

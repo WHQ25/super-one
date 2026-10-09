@@ -74,8 +74,10 @@ describe('portable turn tool metadata', () => {
     expect(within(container).getByText('-1')).toBeInTheDocument()
 
     fireEvent.click(container.querySelector('.tool-node > div')!)
-    expect(screen.getByText('const previewEnabled = true')).toBeInTheDocument()
-    expect(screen.getByText('const previewEnabled = false')).toBeInTheDocument()
+    // Highlighted lines split into one span per token.
+    const lines = [...container.querySelectorAll('.tool-node .whitespace-pre')].map(line => line.textContent)
+    expect(lines).toContain('+const previewEnabled = true')
+    expect(lines).toContain('-const previewEnabled = false')
   })
 
   it('bounds the expanded diff to the desktop scroll window instead of growing the turn', () => {
@@ -90,13 +92,13 @@ describe('portable turn tool metadata', () => {
     )
     fireEvent.click(container.querySelector('.tool-node > div')!)
 
-    // Same shell the desktop `DiffView` uses: a 300px window that scrolls, with the
-    // line-number gutter outside the horizontally scrolling code column.
+    // A 300px window that owns both scroll axes, with a line-number gutter that
+    // sticks to the left edge while the code scrolls horizontally.
     const shell = container.querySelector('.tool-node .grid div.font-mono')!
     expect(shell.className).toContain('max-h-[300px]')
-    expect(shell.className).toContain('overflow-y-auto')
-    expect(shell.children).toHaveLength(2)
-    expect(shell.lastElementChild!.className).toContain('overflow-x-auto')
+    expect(shell.className).toContain('overflow-auto')
+    expect(shell.children).toHaveLength(1)
     expect(shell.firstElementChild!.children).toHaveLength(rows.length)
+    expect(shell.firstElementChild!.firstElementChild!.firstElementChild!.className).toContain('sticky left-0')
   })
 })

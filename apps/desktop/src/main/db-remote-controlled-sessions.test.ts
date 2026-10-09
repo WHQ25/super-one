@@ -24,6 +24,7 @@ beforeEach(() => {
       total_cost_usd REAL, context_tokens INTEGER, is_worktree INTEGER, git_branch TEXT, api_provider_id TEXT,
       acp_agent_id TEXT, selected_model TEXT, selected_effort TEXT, codex_service_tier TEXT
     );
+    CREATE TABLE session_collaboration_grants (parent_session_id TEXT, child_session_id TEXT, kind TEXT);
     CREATE TABLE chat_messages (
       id TEXT, session_id TEXT, sort_order INTEGER, role TEXT, status TEXT, content_json TEXT, created_at TEXT,
       provider_id TEXT, metadata_json TEXT, checkpoint_id TEXT, resume_point_id TEXT

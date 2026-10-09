@@ -1032,6 +1032,8 @@ export const zh: Messages = {
       upgradingNode: '正在升级节点…',
       upgradeNodeSuccess: '节点已升级到 {{version}}',
       accessOff: '对方设备已关闭本机的访问，重新开启后会自动连接。',
+      accessPaused: '对方已暂停控制权限',
+      offline: '离线',
       state: {
         available: '未连接',
         connecting: '连接中',

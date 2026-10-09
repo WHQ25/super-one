@@ -961,6 +961,8 @@ export type Messages = {
       upgradingNode: string
       upgradeNodeSuccess: string
       accessOff: string
+      accessPaused: string
+      offline: string
       state: {
         available: string
         connecting: string
@@ -5288,6 +5290,8 @@ export const en: Messages = {
       upgradingNode: 'Upgrading node…',
       upgradeNodeSuccess: 'Node upgraded to {{version}}',
       accessOff: 'That device turned off access for this computer. It reconnects once access is back on.',
+      accessPaused: 'Control paused on that computer',
+      offline: 'Offline',
       state: {
         available: 'Not Connected',
         connecting: 'Connecting',

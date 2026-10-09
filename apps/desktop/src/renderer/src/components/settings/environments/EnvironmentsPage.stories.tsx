@@ -3,7 +3,7 @@ import i18n from 'i18next'
 import { expect, userEvent, within } from 'storybook/test'
 import type { EnvironmentListItem } from '@superone/shared/environment'
 import { EnvironmentsPage } from './EnvironmentsPage'
-import { DESKTOP_PATH_ITEMS, ENVIRONMENT_ITEMS, mockEnvironmentApi } from './story-fixtures'
+import { DESKTOP_PATH_ITEMS, DESKTOP_STATUS_ITEMS, ENVIRONMENT_ITEMS, mockEnvironmentApi } from './story-fixtures'
 
 type Params = { items?: EnvironmentListItem[] | null; labReachable?: boolean; width?: number }
 
@@ -54,6 +54,26 @@ export const ConnectionPaths: Story = {
 }
 
 export const ConnectionPathsNarrow: Story = { parameters: { items: DESKTOP_PATH_ITEMS, width: 460 } }
+
+/**
+ * Desktop rows read like Control This Mac: online with its path, or why not
+ * (offline, control paused on that computer, connecting, unpaired) and Retry.
+ * No endpoint URL, no separate Connect, and the raw error only as a tooltip.
+ */
+export const DesktopStates: Story = {
+  parameters: { items: DESKTOP_STATUS_ITEMS },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(await canvas.findByText(i18n.t('settings.environments.offline'))).toBeInTheDocument()
+    await expect(canvas.getByText(i18n.t('settings.environments.accessPaused'))).toBeInTheDocument()
+    await expect(canvas.queryByText(/not connected to the relay/)).toBeNull()
+    await expect(canvas.queryByText('http://VensendeMac-mini.local:7792')).toBeNull()
+    await expect(canvas.queryByRole('button', { name: i18n.t('settings.environments.connect') })).toBeNull()
+    await expect(canvas.getAllByRole('button', { name: i18n.t('settings.environments.retryNow') })).toHaveLength(2)
+  },
+}
+
+export const DesktopStatesNarrow: Story = { parameters: { items: DESKTOP_STATUS_ITEMS, width: 460 } }
 
 /** Desktop card → Add Desktop (+) opens the pairing dialog with a QR for the phone. */
 export const AddDesktop: Story = {

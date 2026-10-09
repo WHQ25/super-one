@@ -373,7 +373,20 @@ export function EnvironmentsPage() {
                   </p>
                 ) : (
                   <ul className={deviceListClassName}>
-                    {devices.map((item) => (
+                    {devices.map((item) => channel === 'desktop' ? (
+                      <li key={item.connectionId}>
+                        <DesktopNodeRow
+                          item={item}
+                          busy={busyId === item.connectionId}
+                          actionsLocked={anyBusy && busyId !== item.connectionId}
+                          onRetry={() =>
+                            void run(item.connectionId, () => window.environment.connect(item.connectionId))
+                          }
+                          onRepair={() => handleRepair(item)}
+                          onForget={() => handleForget(item)}
+                        />
+                      </li>
+                    ) : (
                       <li key={item.connectionId}>
                         <EnvironmentDeviceRow
                           item={item}
@@ -615,6 +628,90 @@ function LocalLabSection({
   )
 }
 
+/** The node turned this computer away because its user paused control (the node's auth refusal). */
+export function isAccessPaused(item: EnvironmentListItem): boolean {
+  return !!item.lastError && /client session suspended/i.test(item.lastError)
+}
+
+/**
+ * A paired SuperOne desktop, shown like the controller rows on Control This
+ * Mac: whether it is online and how, why not when it is not, and Retry. The
+ * raw connection error stays in the status tooltip.
+ */
+export function DesktopNodeRow({
+  item,
+  busy,
+  actionsLocked = false,
+  onRetry,
+  onRepair,
+  onForget,
+}: {
+  item: EnvironmentListItem
+  busy: boolean
+  actionsLocked?: boolean
+  onRetry: () => void
+  onRepair: () => void
+  onForget: () => void
+}) {
+  const { t } = useTranslation()
+  const live = LIVE_STATES.includes(item.state)
+  const blocked = item.state === 'blocked'
+  const identityConflict = blocked && item.blockReason === 'identity_conflict'
+  const authBlocked = blocked && (item.blockReason === 'auth' || item.blockReason === 'revoked')
+  const paused = !live && isAccessPaused(item)
+  const connecting = item.state === 'connecting'
+  const status = identityConflict
+    ? { text: t('settings.environments.identityConflict', { defaultValue: 'Identity mismatch — forget and re-add' }), tone: 'error' as const }
+    : authBlocked
+      ? { text: t(`settings.environments.blockReason.${item.blockReason}`, { defaultValue: item.blockReason ?? '' }), tone: 'error' as const }
+      : paused
+        ? { text: t('settings.environments.accessPaused'), tone: 'warning' as const, title: t('settings.environments.accessOff') }
+        : live
+          ? { text: t('settings.environments.state.connected'), tone: 'muted' as const }
+          : connecting
+            ? { text: t('settings.environments.state.connecting'), tone: 'muted' as const }
+            : { text: t('settings.environments.offline'), tone: 'muted' as const, title: item.lastError }
+  const action = busy
+    ? <Loader2 className="size-4 animate-spin text-muted-foreground" />
+    : actionsLocked || live || connecting || identityConflict
+      ? null
+      : authBlocked
+        ? (
+            <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground" onClick={onRepair}>
+              <RefreshCw className="size-3.5" />
+              {t('settings.environments.repairPairing', { defaultValue: 'Repair pairing' })}
+            </Button>
+          )
+        : (
+            <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground" onClick={onRetry}>
+              <RefreshCw className="size-3.5" />
+              {t('settings.environments.retryNow', { defaultValue: 'Retry' })}
+            </Button>
+          )
+
+  return (
+    <DeviceRow
+      kind={computerKind(item.platform?.os)}
+      name={item.label}
+      online={live}
+      path={live ? item.activePath : null}
+      status={status.text}
+      statusTone={status.tone}
+      statusTitle={'title' in status ? status.title : undefined}
+      actions={action}
+      removeLabel={t('settings.environments.forget')}
+      onRemove={onForget}
+      removeDisabled={busy || actionsLocked}
+    >
+      {item.credentialInMemoryOnly && (
+        <p className="mt-1.5 text-xs text-destructive">
+          {t('settings.environments.credentialInMemoryOnly')}
+        </p>
+      )}
+    </DeviceRow>
+  )
+}
+
 interface EnvironmentDeviceRowProps {
   item: EnvironmentListItem
   busy: boolean
@@ -741,7 +838,7 @@ function EnvironmentDeviceRow({
               })
             : null}
           {item.blockReason ? ' — ' : ''}
-          {/client session suspended/i.test(item.lastError) ? t('settings.environments.accessOff') : item.lastError}
+          {isAccessPaused(item) ? t('settings.environments.accessOff') : item.lastError}
         </p>
       )}
 

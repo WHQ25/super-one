@@ -56,6 +56,30 @@ export const DESKTOP_PATH_ITEMS: EnvironmentListItem[] = [
   desktop('home', 'Home-Mini', 'http://Home-Mini.local:7791', { state: 'backoff', lastError: 'node left the relay' }),
 ]
 
+/** Desktop nodes that are not simply online: offline, control paused there, connecting, unpaired, replaced. */
+export const DESKTOP_STATUS_ITEMS: EnvironmentListItem[] = [
+  desktop('studio', 'Hangqis-Studio', 'http://Hangqis-Studio.local:7791', { state: 'connected', activePath: 'lan' }),
+  desktop('mini', 'VensendeMac-mini', 'http://VensendeMac-mini.local:7792', {
+    state: 'backoff',
+    lastError: 'the node is offline: it is not connected to the relay',
+  }),
+  desktop('office', 'Office-iMac', 'http://Office-iMac.local:7791', {
+    state: 'backoff',
+    lastError: 'unauthorized: client session suspended',
+  }),
+  desktop('home', 'Home-Mini', 'http://Home-Mini.local:7791', { state: 'connecting' }),
+  desktop('old', 'Old-MacBook', 'http://Old-MacBook.local:7791', {
+    state: 'blocked',
+    blockReason: 'revoked',
+    lastError: 'client session revoked',
+  }),
+  desktop('rebuilt', 'rebuilt-mac-studio-with-a-rather-long-bonjour-name-that-truncates', 'http://rebuilt.local:7791', {
+    state: 'blocked',
+    blockReason: 'identity_conflict',
+    lastError: 'Node fingerprint changed since pairing',
+  }),
+]
+
 const REMOTE_HARNESSES = [
   { id: 'claude', runtimeSource: 'bundled', enabled: true, state: 'ready', requiresAuth: true },
   { id: 'codex', runtimeSource: 'bundled', enabled: true, state: 'needs_auth', requiresAuth: true },

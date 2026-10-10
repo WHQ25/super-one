@@ -1,0 +1,213 @@
+import {
+  DATABASE_SCHEMA_GENERATION,
+  PROTOCOL_GENERATION,
+  negotiateHandshake,
+} from '@superone/shared/environment'
+import type { AuthenticatedClient } from './auth-service'
+import type { ConnectionWire } from './connection-wire'
+import type { EventStreamHandle } from './event-stream'
+import type { NodeIdentity } from './identity'
+import type { RpcContext, RpcResult, RpcStreams } from './rpc-context'
+import { ConnectionDelivery } from '../stream/delivery/connection-delivery'
+import { deliveryPolicy, type ClientSurface, type ConnectionRoute } from '../stream/delivery-policy'
+
+/** Per-request fields the transport adds to the host's context. */
+export interface NodeRpcRequestContext {
+  client: AuthenticatedClient
+  requestId?: string
+  idempotencyKey?: string
+  streams?: RpcStreams
+}
+
+export type NodeRpcDispatch<C extends NodeRpcRequestContext = RpcContext> = (
+  method: string,
+  payload: unknown,
+  ctx: C,
+) => Promise<RpcResult>
+
+/** One connection's RPC handler; `dispose` closes its push streams with the connection. */
+export type ConnectionRpc = ((read: () => unknown) => Promise<void>) & { dispose: () => void }
+
+export interface ConnectionRpcOptions<C extends NodeRpcRequestContext> {
+  identity: Pick<NodeIdentity, 'environmentId' | 'aliases'>
+  client: AuthenticatedClient
+  wire: ConnectionWire
+  /** The link this connection came over; picks its delivery tier. */
+  route: ConnectionRoute
+  surface: ClientSurface
+  context: Omit<C, keyof NodeRpcRequestContext>
+  dispatch: NodeRpcDispatch<C>
+  isRevoked: (clientSessionId: string) => boolean
+  close: (code: number, reason: string) => void
+}
+
+/**
+ * The protocol on one authenticated connection, whatever carries it (a node
+ * socket, a relay slot, a phone link): generation handshake, envelope checks,
+ * dispatch with the connection's push streams and delivery, replies to the
+ * asking connection.
+ */
+export function createConnectionRpc<C extends NodeRpcRequestContext>(opts: ConnectionRpcOptions<C>): ConnectionRpc {
+  const { wire, client, identity } = opts
+  const send = wire.reply
+  let negotiatedGeneration: { protocol: number; databaseSchema: number } | undefined
+  const openStreams = new Map<string, EventStreamHandle>()
+  const streams: RpcStreams = {
+    open(subscriptionId, stream) {
+      openStreams.get(subscriptionId)?.close()
+      openStreams.set(subscriptionId, stream)
+    },
+    close(subscriptionId) {
+      openStreams.get(subscriptionId)?.close()
+      openStreams.delete(subscriptionId)
+    },
+    get: (subscriptionId) => openStreams.get(subscriptionId),
+    push: wire.push,
+    flow: wire.flow,
+    delivery: new ConnectionDelivery(deliveryPolicy(opts.route, opts.surface)),
+  }
+
+  const handle = async (read: () => unknown): Promise<void> => {
+    let requestId = 'unknown'
+    try {
+      if (opts.isRevoked(client.clientSessionId)) {
+        opts.close(4001, 'session_revoked')
+        return
+      }
+
+      const msg = read() as {
+        type?: string
+        requestId?: string
+        method?: string
+        payload?: unknown
+        environmentId?: string
+        protocolVersion?: number
+        idempotencyKey?: string
+      }
+      requestId = msg.requestId || 'unknown'
+
+      if (msg.type === 'ping') {
+        send({ type: 'pong', requestId })
+        return
+      }
+
+      if (msg.type === 'handshake') {
+        const remote = (msg.payload || {}) as {
+          protocol?: unknown
+          databaseSchema?: unknown
+        }
+        const result = negotiateHandshake(
+          {
+            protocol: { ...PROTOCOL_GENERATION },
+            databaseSchema: { ...DATABASE_SCHEMA_GENERATION },
+          },
+          {
+            protocol: remote.protocol as { current: number; min: number; max: number },
+            databaseSchema: remote.databaseSchema as { current: number; min: number; max: number },
+          },
+        )
+        if (!result.ok) {
+          send({
+            type: 'rpc_error',
+            requestId,
+            error: { code: 'protocol_incompatible', message: result.reason },
+          })
+          opts.close(4002, 'protocol_incompatible')
+          return
+        }
+        negotiatedGeneration = { protocol: result.protocol, databaseSchema: result.databaseSchema }
+        send({
+          type: 'handshake_ok',
+          requestId,
+          result: {
+            protocol: result.protocol,
+            databaseSchema: result.databaseSchema,
+            environmentId: identity.environmentId,
+          },
+        })
+        wire.startFraming()
+        return
+      }
+
+      if (msg.type !== 'rpc' && !msg.method) {
+        send({
+          type: 'rpc_error',
+          requestId,
+          error: { code: 'invalid_argument', message: 'expected rpc message' },
+        })
+        return
+      }
+
+      const method = msg.method || ''
+      const bootstrapRead =
+        method === 'environment.descriptor' ||
+        method === 'environment.health' ||
+        method === 'environment.systemInfo'
+      if (!negotiatedGeneration && !bootstrapRead) {
+        send({
+          type: 'rpc_error',
+          requestId,
+          error: {
+            code: 'failed_precondition',
+            message: 'handshake required before non-bootstrap RPC',
+          },
+        })
+        return
+      }
+      if (negotiatedGeneration && msg.protocolVersion !== negotiatedGeneration.protocol) {
+        send({
+          type: 'rpc_error',
+          requestId,
+          error: {
+            code: 'protocol_incompatible',
+            message:
+              msg.protocolVersion === undefined
+                ? 'protocolVersion required on RPC envelopes after handshake'
+                : `protocolVersion ${msg.protocolVersion} not negotiated`,
+          },
+        })
+        return
+      }
+
+      if (!msg.environmentId || (msg.environmentId !== identity.environmentId && !identity.aliases?.includes(msg.environmentId))) {
+        send({
+          type: 'rpc_error',
+          requestId,
+          error: {
+            code: 'environment_mismatch',
+            message: msg.environmentId
+              ? 'environmentId does not match this node'
+              : 'environmentId is required on every RPC envelope',
+          },
+        })
+        return
+      }
+
+      const result = await opts.dispatch(method, msg.payload, {
+        ...opts.context,
+        client,
+        requestId,
+        idempotencyKey: msg.idempotencyKey,
+        streams,
+      } as C)
+      if (result.error) {
+        send({ type: 'rpc_error', requestId, error: result.error })
+      } else {
+        send({ type: 'rpc_result', requestId, result: result.result })
+      }
+    } catch (err) {
+      const e = err as { message?: string; code?: string }
+      send({
+        type: 'rpc_error',
+        requestId,
+        error: { code: e.code || 'internal', message: e.message || 'internal error' },
+      })
+    }
+  }
+  return Object.assign(handle, {
+    dispose: () => {
+      for (const stream of openStreams.values()) stream.close()
+      openStreams.clear()
+    },
+  })
+}

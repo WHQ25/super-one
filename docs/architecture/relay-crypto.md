@@ -127,6 +127,13 @@ connection) run the channel above over JSON text envelopes:
   (and request id), so a relabelled frame fails. Host payloads are the host
   application frame below; commands are raw JSON. The header is capped at
   1 KiB (`REMOTE_LINK_HEADER_MAX_BYTES`).
+- Protocol frames: a sealed `rpc` header carries one node-protocol frame
+  (JSON before the generation handshake, wire frames after it, as on the node
+  channel). The phone sends them in `command` envelopes; the host answers in
+  `terminal` envelopes addressed to that phone, which the relay forwards
+  as-is. Each link (LAN socket, relay slot) is one protocol connection, opened
+  on its first `rpc` frame and closed with the link
+  (`apps/desktop/src/main/node-host/phone-endpoint.ts`).
 - Channels are per connection. A LAN socket handshakes once; a relay phone
   handshakes when its socket opens and again whenever the relay announces the
   desktop (`peer_connected`). The host seals each event once per phone channel

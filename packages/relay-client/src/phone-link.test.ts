@@ -48,6 +48,8 @@ describe('phone link frames', () => {
     const { phone, host } = pair()
     const command = new TextEncoder().encode('{"type":"list_projects"}')
     expect(openLinkFrame(host, sealLinkFrame(phone, { t: 'command' }, command))).toEqual({ header: { t: 'command' }, payload: command })
+    expect(openLinkFrame(phone, sealLinkFrame(host, { t: 'rpc' }, command))).toEqual({ header: { t: 'rpc' }, payload: command })
+    expect(openLinkFrame(host, sealLinkFrame(phone, { t: 'rpc' }, command))).toEqual({ header: { t: 'rpc' }, payload: command })
     const opened = openLinkFrame(phone, sealLinkFrame(host, { t: 'handshake', hostName: 'Mac', lan: { hosts: ['10.0.0.2'], port: 7788 } }))
     expect(opened.header).toEqual({ t: 'handshake', hostName: 'Mac', lan: { hosts: ['10.0.0.2'], port: 7788 } })
     const info = { appVersion: '0.60.0', protocol: 3, environmentId: 'env-1' }

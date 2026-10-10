@@ -10,7 +10,8 @@ import { SecureChannelError, type SecureChannel } from './secure-channel'
  * `headerLen:u16be || header JSON || payload`: the header binds the frame's
  * kind (and request id) so a relay cannot relabel an event as a response.
  * Host payloads are host application frames (flag + length + JSON/DEFLATE);
- * phone commands are raw JSON. Format: docs/architecture/relay-crypto.md.
+ * phone commands are raw JSON; `rpc` frames carry the protocol's wire frames.
+ * Format: docs/architecture/relay-crypto.md.
  */
 
 /** Envelope type carrying the handshake messages and the host's sealed `handshake` frame. */
@@ -36,6 +37,8 @@ export type LinkHeader =
   | { t: 'response'; requestId: string }
   | { t: 'terminal' }
   | { t: 'command' }
+  /** A protocol frame (`@superone/shared/environment/wire`), either way. */
+  | { t: 'rpc' }
 
 export type LinkKind = LinkHeader['t']
 
@@ -87,6 +90,7 @@ function readHeader(raw: unknown): LinkHeader {
     case 'event':
     case 'terminal':
     case 'command':
+    case 'rpc':
       return { t: h.t }
     case 'response':
       if (typeof h.requestId === 'string' && h.requestId) return { t: 'response', requestId: h.requestId }

@@ -386,7 +386,7 @@ describe('sendMessageImpl: remote node', () => {
     expect(mockToastError).not.toHaveBeenCalled()
   })
 
-  it('does not fail a send the node took when only its stream dropped', async () => {
+  it('leaves the turn to the session stream once the node took the message', async () => {
     seedProject(remotePath, 'node-sid-detached', {
       preferredProvider: 'claude',
       sessionProvider: 'claude',
@@ -396,13 +396,13 @@ describe('sendMessageImpl: remote node', () => {
       status: 'idle',
       transcript: [],
     })
-    mockEnvSendSessionMessage.mockResolvedValueOnce({ streamDetached: true, error: 'network offline' })
+    mockEnvSendSessionMessage.mockResolvedValueOnce({ sessionId: 'node-sid-detached', status: 'streaming', transcript: [] })
 
     await useChatStore.getState().sendMessage('hello')
 
     const sess = getActiveSession(remotePath)
     expect(sess.messages.at(-1)?.metadata?.sendFailure).toBeUndefined()
-    // Reconnect recovery owns the turn from here.
+    // The turn settles on its events, not on the send.
     expect(sess.status).toBe('streaming')
     expect(sess.awaitingAssistantReply).toBe(true)
   })

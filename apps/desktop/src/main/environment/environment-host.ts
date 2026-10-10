@@ -99,7 +99,6 @@ import type {
 } from '@superone/shared/environment'
 import type { PinnedSessionEntry, SessionHistoryEntry } from '@superone/shared/agent-types'
 import { remoteProjectKey } from '@superone/shared/remote-resource-key'
-import type { RemoteSendDetached } from '@superone/shared/send-failure'
 import { parseTagsJson } from '@superone/shared/session-tags'
 import {
   deletePendingDraft,
@@ -178,11 +177,10 @@ const SESSION_LIST_EVENTS = new Set<string>([
  * Main-process environment host — constructs the product path for local + remote
  * gateways, WorkspaceRouter, and credential-backed reconnection.
  */
-/** A remote session this desktop follows; `waiters` are drains awaiting its turn. */
+/** A remote session this desktop follows. */
 interface FollowedRemoteSession {
   input: RemoteSessionTarget
   unfollow: () => void
-  waiters: Set<{ settle: () => void; fail: (err: unknown) => void }>
 }
 
 /** Which remote session, and how its events route into the chat. */
@@ -1668,16 +1666,12 @@ export class EnvironmentHost {
     return decision.abort ? decision.reason : null
   }
 
-  /** Stop following one session; turns waiting on it settle with no record. */
+  /** Stop following one session. */
   private unfollowRemoteSession(key: string): void {
     const followed = this.followedSessions.get(key)
     if (!followed) return
     this.followedSessions.delete(key)
-    void followed.then((session) => {
-      session.unfollow()
-      for (const waiter of session.waiters) waiter.settle()
-      session.waiters.clear()
-    }, () => {})
+    void followed.then((session) => session.unfollow(), () => {})
   }
 
   private abortConnectionSessionDrains(connectionId: string, _reason: string): void {
@@ -1764,7 +1758,7 @@ export class EnvironmentHost {
   /**
    * Follow a remote session: its events map to AgentEvents for the chat from
    * the barrier version on (by default the session's current version). One
-   * follower per session; `drainRemoteSessionEvents` waits on it.
+   * follower per session.
    */
   private followRemoteSession(
     connectionId: string,
@@ -1785,26 +1779,16 @@ export class EnvironmentHost {
         providerId: input.providerId,
         skipUserMessage: false,
       })
-      const session: FollowedRemoteSession = { input, unfollow: () => {}, waiters: new Set() }
+      const session: FollowedRemoteSession = { input, unfollow: () => {} }
       session.unfollow = await this.feedFor(connectionId).follow(input.sessionId, {
         event: (envelope) => {
           if (envelope.eventType === SESSION_DURABLE_EVENT.closed || envelope.eventType === SESSION_DURABLE_EVENT.removed) {
             notifySessionClosed({ environmentId: connectionId, sessionId: input.sessionId })
           }
-          for (const agentEvent of mapper.map(envelope)) {
-            this.agentEventSink?.(agentEvent)
-            if (agentEvent.type === 'status_change' && agentEvent.status !== 'streaming') {
-              for (const waiter of session.waiters) waiter.settle()
-              session.waiters.clear()
-            }
-          }
+          for (const agentEvent of mapper.map(envelope)) this.agentEventSink?.(agentEvent)
         },
-        end: (err) => {
+        end: () => {
           if (this.followedSessions.get(key) === followed) this.followedSessions.delete(key)
-          const reason = this.remoteDrainBlock(connectionId)
-          const failure = reason ? Object.assign(new Error(reason), { code: 'failed_precondition' }) : err
-          for (const waiter of session.waiters) waiter.fail(failure)
-          session.waiters.clear()
         },
         resync: () => this.resync(connectionId, input),
       }, barrier ?? (async () => (await gateway.sessions.load!({ session: { environmentId, sessionId: input.sessionId }, limit: 1 })).cursor.version))
@@ -1816,51 +1800,8 @@ export class EnvironmentHost {
   }
 
   /**
-   * Follow a remote session's events into agentEventSink until its turn settles.
-   *
-   * A pending interaction does not settle the turn: the node can resolve it
-   * without this client (another client answering), and the rest of the turn
-   * still has to reach the chat. No deadline while streaming unless the caller
-   * asks for one (`timeoutMs`); a turn may run for hours. Resolves with the
-   * node's session record once settled.
-   */
-  async drainRemoteSessionEvents(
-    connectionId: string,
-    input: {
-      sessionId: string
-      projectPath?: string
-      providerId?: string
-      /** Optional deadline (ms from now). */
-      timeoutMs?: number
-    },
-  ): Promise<unknown> {
-    const { gateway, environmentId } = this.resolveRemote(connectionId)
-    const session = await this.followRemoteSession(connectionId, input)
-    const read = () => gateway.sessions.get({ environmentId, sessionId: input.sessionId }).catch(() => null)
-    let waiter!: { settle: () => void; fail: (err: unknown) => void }
-    const settled = new Promise<void>((resolve, reject) => {
-      waiter = { settle: () => resolve(), fail: reject }
-      session.waiters.add(waiter)
-      if (typeof input.timeoutMs === 'number' && input.timeoutMs > 0) {
-        setTimeout(() => { session.waiters.delete(waiter); resolve() }, input.timeoutMs).unref?.()
-      }
-    })
-    // Registered first: a turn that settles while this read is in flight still resolves.
-    const current = await read()
-    if ((current as { status?: string } | null)?.status !== 'streaming') {
-      session.waiters.delete(waiter)
-      settled.catch(() => {})
-      return current
-    }
-    await settled
-    return read()
-  }
-
-  /**
-   * Send a user message on a remote session, then poll until the turn settles.
-   * While waiting, drain `session.events`, map node events → AgentEvent,
-   * and emit them via `agentEventSink` for live remote chat UI.
-   * Returns the final node session record (transcript + status).
+   * Send a user message on a remote session. Resolves once the node took it,
+   * with its session record; the turn reaches the chat on the session's stream.
    */
   async sendSessionMessage(
     connectionId: string,
@@ -2007,43 +1948,15 @@ export class EnvironmentHost {
       ...(Object.keys(options).length > 0 ? { options } : {}),
     })
     input.onAccepted?.()
-
-    try {
-      return await this.drainRemoteSessionEvents(connectionId, {
-        sessionId: input.sessionId,
-        projectPath: input.projectPath,
-        providerId: input.providerId,
-      })
-    } catch (err) {
-      // The node already holds the message; only following its turn broke off.
-      const detached: RemoteSendDetached = {
-        streamDetached: true,
-        error: err instanceof Error ? err.message : String(err),
-      }
-      return detached
-    }
+    return gateway.sessions.get({ environmentId, sessionId: input.sessionId }).catch(() => null)
   }
 
   /**
-   * Follow a remote session opened here (reconnect, open while a turn runs,
-   * after a permission answer) and wait for a running turn to settle. Does not
-   * send. Following outlives the turn: later turns, from any client, stream in.
+   * Follow a remote session opened here (reconnect, open while a turn runs) so
+   * its events reach the chat: the running turn, and later turns from any client.
    */
-  async resumeRemoteSessionEvents(
-    connectionId: string,
-    input: {
-      sessionId: string
-      projectPath?: string
-      providerId?: string
-      timeoutMs?: number
-    },
-  ): Promise<unknown> {
-    return this.drainRemoteSessionEvents(connectionId, {
-      sessionId: input.sessionId,
-      projectPath: input.projectPath,
-      providerId: input.providerId,
-      timeoutMs: input.timeoutMs,
-    })
+  async resumeRemoteSessionEvents(connectionId: string, input: RemoteSessionTarget): Promise<void> {
+    await this.followRemoteSession(connectionId, input)
   }
 
   /**

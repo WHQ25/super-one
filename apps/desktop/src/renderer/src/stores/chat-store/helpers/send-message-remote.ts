@@ -14,7 +14,7 @@ import { providerSessionIdFromResume } from '@superone/shared/environment'
 import { expandPathRefTagsForAgent, stripMiniAppMarkup } from '@superone/shared/miniapp-prompt-tags'
 import { isBuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
 import { deliverUserSend } from './send-replay'
-import { isRemoteSendDetached, withoutSendFailure, type FailedMessageResend } from '@superone/shared/send-failure'
+import { withoutSendFailure, type FailedMessageResend } from '@superone/shared/send-failure'
 import { shouldInterceptHostSlash } from './send-command-policy'
 import type { SendWriteScope } from './send-write-scope'
 
@@ -481,12 +481,7 @@ async function deliverRemoteTurn(
       remoteKey.connectionId,
       sendInput,
     ),
-    onDelivered: (result) => {
-      // The node holds the message and only the stream dropped: reconnect
-      // recovery picks the turn back up, so this is not a send failure.
-      if (isRemoteSendDetached(result)) return
-      applyFinalSnapshot(result as NodeSessionSnapshot | null)
-    },
+    onDelivered: (result) => applyFinalSnapshot(result as NodeSessionSnapshot | null),
     retryState: () => ({ awaitingAssistantReply: true, status: 'streaming' }),
     // A concurrent turn this send was queued behind is still running.
     failureState: () => ({ status: statusBeforeSend === 'streaming' ? 'streaming' : 'idle' }),

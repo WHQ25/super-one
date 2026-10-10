@@ -465,7 +465,6 @@ export function clearMessagesImpl(set: ChatStoreSet, get: () => ChatStore): void
       codexPlanRejectHintActive: false,
       chatInputFocusNonce: 0,
       queuedMessages: [],
-      _remoteTurnQueue: [],
     })),
     _bashOutputs: remainingOutputs,
   }))

@@ -11,6 +11,7 @@ import {
   type RpcHostHooks,
   type TerminalsPort,
   type DraftsPort,
+  type RpcExtensionDispatch,
 } from '@superone/runtime/server'
 import { openNodeDatabase, type NodeDatabase } from '@superone/runtime/db'
 import { ControlLeaseService } from '@superone/runtime/lease'
@@ -102,6 +103,8 @@ export interface DesktopDomainDeps {
   terminals?: TerminalsPort
   /** This desktop's composer drafts and their leases, shared with its window. */
   drafts?: DraftsPort
+  /** Desktop methods for phones beyond the shared families (`remote/phone-methods.ts`). */
+  phoneMethods?: { dispatch: RpcExtensionDispatch; methods: ReadonlySet<string> }
 }
 
 /** What one RPC needs besides who asks and how it is delivered. */
@@ -126,7 +129,7 @@ export class DesktopDomain {
     /** The node home (identity, channel root, config). */
     readonly nodeHome: string,
     private readonly context: DesktopRpcContext,
-    private readonly phonePorts: Pick<DesktopDomainDeps, 'terminals' | 'drafts'>,
+    private readonly phonePorts: Pick<DesktopDomainDeps, 'terminals' | 'drafts' | 'phoneMethods'>,
   ) {}
 
   static open(deps: DesktopDomainDeps): DesktopDomain {
@@ -169,7 +172,7 @@ export class DesktopDomain {
         subscriptionUsage: { claudeAccounts: claudeUsageAccounts, log: usageLog },
       }
       const localSessions = new LocalSessionHost({ sessions: deps.sessions, events, rows: deps.rows })
-      return new DesktopDomain(db, identity, auth, sessions, localSessions, recorder, paths.nodeHome, context, { terminals: deps.terminals, drafts: deps.drafts })
+      return new DesktopDomain(db, identity, auth, sessions, localSessions, recorder, paths.nodeHome, context, { terminals: deps.terminals, drafts: deps.drafts, phoneMethods: deps.phoneMethods })
     } catch (err) {
       db.close()
       throw err
@@ -210,6 +213,8 @@ export class DesktopDomain {
       workspaceTailWatch,
       terminals: this.phonePorts.terminals,
       drafts: this.phonePorts.drafts,
+      extensions: this.phonePorts.phoneMethods?.dispatch,
+      extensionMethods: this.phonePorts.phoneMethods?.methods,
       unservedMethods: new Set([...DESKTOP_UNSERVED_METHODS, ...LOCAL_SESSION_MUTATIONS, ...LOCAL_TERMINAL_MUTATIONS]),
     }
   }

@@ -3,7 +3,6 @@ import { app } from 'electron'
 import type { AppSettings, NodeHostController, NodeHostStatus } from '@superone/shared/agent-types'
 import { encodeNodePairingCode } from '@superone/shared/environment/node-pairing-code'
 import type { HostActionTerminalResult } from '@superone/shared/environment'
-import type { TerminalsPort } from '@superone/runtime/server'
 import { assertSessionHarnessRuntimeReady } from '@superone/runtime/harness'
 import { getMachineInfo } from '@superone/runtime/machine'
 import { isPrivateNetworkAddress, networkAddressScope } from '@superone/shared/private-network-address'
@@ -27,10 +26,12 @@ import { listSessionAgentProfiles } from '../session/agent-profiles'
 import { createDesktopProjectsPort } from './desktop-projects-port'
 import type { NodeHostSessionManager, NodeHostSessionStore } from './desktop-session-host'
 import { DesktopNodeHost } from './node-host-server'
-import { DesktopDomain } from './desktop-domain'
+import { DesktopDomain, type DesktopDomainDeps } from './desktop-domain'
 import { defaultDesktopNodePort } from './paths'
 
 type NodeHostSettings = Pick<AppSettings, 'remoteNodeAccessEnabled' | 'remoteNodeAccessPort'>
+/** What main gives the domain for its phones: its PTYs and its desktop methods. */
+type PhonePorts = Pick<DesktopDomainDeps, 'terminals' | 'phoneMethods'>
 
 let host: DesktopNodeHost | null = null
 /** This desktop's environment backend, open from the first settings pass until quit. */
@@ -92,12 +93,12 @@ function tailscaleAddress(): string | undefined {
 export function applyNodeHostSettings(
   settings: NodeHostSettings,
   sessions: NodeHostSessionManager,
-  options: { relayUrl?: string; terminals?: TerminalsPort } = {},
+  options: { relayUrl?: string; phonePorts?: PhonePorts } = {},
 ): Promise<NodeHostStatus> {
   const next = transition.then(async () => {
     // The domain serves this desktop's phones too, so it opens whether or not controllers may connect.
     try {
-      openDesktopDomain(sessions, options.terminals)
+      openDesktopDomain(sessions, options.phonePorts)
     } catch (err) {
       log.warn('[node-host] domain failed to open: %s', err instanceof Error ? err.message : String(err))
     }
@@ -113,7 +114,7 @@ export function applyNodeHostSettings(
     try {
       void getMachineInfo()
       host = await DesktopNodeHost.start(
-        openDesktopDomain(sessions, options.terminals),
+        openDesktopDomain(sessions, options.phonePorts),
         {
           bindPort: port,
           bindHost: '0.0.0.0',
@@ -143,9 +144,9 @@ export function applyNodeHostSettings(
 }
 
 /** This desktop's environment backend, opened once; every connection is served from it. */
-export function openDesktopDomain(sessions: NodeHostSessionManager, terminals?: TerminalsPort): DesktopDomain {
+export function openDesktopDomain(sessions: NodeHostSessionManager, phonePorts: PhonePorts = {}): DesktopDomain {
   return domain ??= DesktopDomain.open({
-    terminals,
+    ...phonePorts,
     drafts: localDraftStore(),
     userDataDir: app.getPath('userData'),
     appVersion: app.getVersion(),

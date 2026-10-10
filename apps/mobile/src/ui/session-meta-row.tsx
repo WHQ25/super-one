@@ -36,15 +36,16 @@ export function SessionMetaRow(props: {
   const connection = describeDeviceStatus(props.deviceStatus)
   const busy = showConnectionStatus && connection.spin
   const showConnectionLabel = busy || !isConnected(props.deviceStatus)
+  // Reserve the project name; the checkout takes the remaining width and truncates.
   return (
-    <View style={styles.headerMetaRow}>
+    <View style={[styles.headerMetaRow, { maxWidth: '100%' }]}>
       {showConnectionStatus ? (
         <ConnectionStatusIndicator status={props.deviceStatus} reconnect={props.reconnect}
           showLabel={showConnectionLabel} iconSize={12} fontSize={11} />
       ) : null}
       {busy ? null : <>
         {props.subtitle ? (
-          <Text numberOfLines={1} style={{ color: tokens.colors.mutedForeground, fontSize: 11, flexShrink: 1 }}>
+          <Text numberOfLines={1} style={{ color: tokens.colors.mutedForeground, fontSize: 11, flexShrink: 0 }}>
             {props.subtitle}
           </Text>
         ) : null}

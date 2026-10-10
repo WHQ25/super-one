@@ -16,6 +16,7 @@ type Row = {
   reconnect?: ReconnectInfo
   subtitle?: string
   git?: SessionGitView | null
+  width?: number
 }
 
 /** How long the two waiting rows count down before the gallery re-arms them. */
@@ -42,6 +43,10 @@ function buildRows(deadlineMs: number): Row[] {
   return [
     { label: 'Connected · LAN', status: 'connectedLan', subtitle: 'super-one', git: BRANCH },
     { label: 'Connected · relay (cloud)', status: 'connectedCloud', subtitle: 'super-one', git: BRANCH },
+    { label: 'Narrow header · project before long branch', status: 'connectedLan', subtitle: 'super-one', width: 220,
+      git: { kind: 'branch', branch: 'refactor/unified-session-state-and-remote-control-architecture', dirtyFiles: 2 } },
+    { label: 'Narrow header · project before long worktree branch', status: 'connectedLan', subtitle: 'super-one', width: 220,
+      git: { kind: 'worktreeBranch', branch: 'refactor/unified-session-state-and-remote-control-architecture' } },
     { label: 'Reconnecting · attempting now', status: 'connecting', git: BRANCH,
       reconnect: { attempting: true, waiting: false, delayMs: 500, nextAtMs: null } },
     { label: 'Reconnecting · waiting out a short backoff', status: 'connecting', git: BRANCH, reconnect: waiting(2_000) },
@@ -106,8 +111,10 @@ export function SessionStatusGallery(props: { onOpenBranch: () => void }) {
       {rows.map((row) => (
         <View key={row.label} style={{ gap: 2, paddingTop: 10 }}>
           <Text style={{ fontSize: 11, color: colors.mutedForeground }}>{row.label}</Text>
-          <SessionMetaRow deviceStatus={row.status} reconnect={row.reconnect}
-            subtitle={row.subtitle} git={row.git} onOpenBranch={props.onOpenBranch} />
+          <View style={{ width: row.width, alignSelf: 'center' }}>
+            <SessionMetaRow deviceStatus={row.status} reconnect={row.reconnect}
+              subtitle={row.subtitle} git={row.git} onOpenBranch={props.onOpenBranch} />
+          </View>
         </View>
       ))}
     </ScrollView>

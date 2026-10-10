@@ -2,12 +2,13 @@ import { useState } from 'react'
 import { useComposerDraft } from '../navigation/use-composer-draft'
 import { useComposerSend } from '../navigation/use-composer-send'
 import { Text } from '../ui/text'
-import { View } from 'react-native'
+import { Pressable, View } from 'react-native'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { MobileThemeProvider } from '../theme/context'
 import type { SessionGoal } from '@superone/shared/agent-types'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { ChatComposer, type ChatComposerProps } from './chat-composer'
+import { useSessionIndicators } from '../navigation/use-session-indicators'
 
 const noop = () => {}
 
@@ -74,6 +75,32 @@ export default {
 
 export const Default = {
   name: 'Phone · compact empty hides send',
+}
+
+function SessionTransitionPreview() {
+  const indicators = useSessionIndicators()
+  return <MobileThemeProvider>
+    <View style={{ width: 390, gap: 16 }}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Open session with goal" onPress={() => indicators.sync({
+        sandboxInfo: null,
+        worktree: { isWorktree: false, worktreePath: null, gitBranch: 'main' },
+        contextTokens: 10_000, contextWindow: 200_000, totalCostUsd: 0.42,
+        session: { sessionGoal: { objective: 'Finish the mobile fixes', status: 'active' },
+          sessionAgents: null, _worktreeRemoved: false, rateLimitInfo: null },
+      })}><Text>Open session with goal</Text></Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel="Create new session" onPress={indicators.reset}>
+        <Text>Create new session</Text>
+      </Pressable>
+      <Preview {...base} tablet={false} provider="claude" sandboxInfo={indicators.sandboxInfo}
+        contextTokens={indicators.usage.contextTokens} totalCostUsd={indicators.usage.totalCostUsd}
+        goal={indicators.sessionGoal} goalCapability={HARNESS_CAPABILITIES.claude.goal} />
+    </View>
+  </MobileThemeProvider>
+}
+
+export const NewSessionAfterGoal = {
+  name: 'Phone · new session clears the previous goal',
+  render: SessionTransitionPreview,
 }
 
 function OpenCodeAgentsPreview() {

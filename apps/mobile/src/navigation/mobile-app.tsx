@@ -22,6 +22,7 @@ import { useNativeInputRequests } from './use-native-input-requests'
 import { useComposerSend } from './use-composer-send'
 import { useMcpAppFullscreen } from './use-mcp-app-fullscreen'
 import { useTranscriptSync } from './use-transcript-sync'
+import { useSessionIndicators } from './use-session-indicators'
 import { SessionActivityContext, useWorkspaceActivity } from './use-session-activity'
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { StatusBar } from 'expo-status-bar'
@@ -40,11 +41,11 @@ import {
 import type {
   ChatMessage, GitDirtyStatus, HarnessId, ImageAttachment, PermissionRequest,
   ListHarnessOptionsResponse, PlanApprovalRequest, RemoteCommand, RemoteHarnessOption,
-  OpenCodeAgentOption, SandboxInfo, SandboxMode, SessionAgentLaunchProposal, SessionForkMode, SessionForkResult, SessionGoal, TodoItem, WorktreeInfo,
+  SandboxMode, SessionAgentLaunchProposal, SessionForkMode, SessionForkResult, TodoItem, WorktreeInfo,
 } from '@superone/shared/agent-types'
 import { resolveRingContextWindow, SESSION_AGENT_LAUNCHES_FIELD } from '@superone/shared/agent-types'
 import { selectedCatalogContextWindow } from '@superone/shared/model-option-params'
-import { ChatRuntime, type SessionWorktreeFacts } from '../runtime'
+import { ChatRuntime } from '../runtime'
 import { mcpMentionContentForModel, previewMcpMention } from '../mention-search'
 import { openedSessionSelection } from '../session-restore-selection'
 import { TerminalRuntime, type TerminalUi } from '../terminal-runtime'
@@ -109,7 +110,6 @@ import { useRemoteDirectory } from './use-remote-directory'
 import { useProjectGitStatus } from './use-project-git-status'
 import { useProjectGitInfo } from './use-project-git-info'
 import { useComposerUsage } from './use-harness-usage'
-import type { LiveRateLimit } from '../harness-usage'
 import { useFileSearch } from './use-file-search'
 import { completeTypedPath, usePathAutocomplete } from './use-path-autocomplete'
 import { useAdditionalDirs } from './use-additional-dirs'
@@ -271,23 +271,16 @@ export function MobileApp() {
     { open: false, loading: false, rows: [] },
   )
   const [workflowsOpen, setWorkflowsOpen] = useState(false)
-  const [sandboxInfo, setSandboxInfo] = useState<SandboxInfo | null>(null)
-  const [sessionGoal, setSessionGoal] = useState<SessionGoal | null>(null)
-  /** The live session's project agents; the harness catalog lacks project-defined ones. */
-  const [sessionAgents, setSessionAgents] = useState<OpenCodeAgentOption[] | null>(null)
+  const {
+    sandboxInfo, sessionGoal, sessionAgents, sessionWorktree, usage, rateLimit,
+    sync: syncSessionIndicators, reset: resetSessionIndicators,
+  } = useSessionIndicators()
   /**
    * A sandbox picked before the session exists. There is no runtime to push it
    * to yet, so it is held here, drives the chip, and rides `create_session` —
    * without it the tap on the landing screen resolved to nothing at all.
    */
   const [pendingSandboxMode, setPendingSandboxMode] = useState<SandboxMode | null>(null)
-  const [sessionWorktree, setSessionWorktree] = useState<SessionWorktreeFacts & { removed: boolean }>(
-    { isWorktree: false, worktreePath: null, gitBranch: null, removed: false },
-  )
-  const [usage, setUsage] = useState({ contextTokens: 0, contextWindow: null as number | null, totalCostUsd: 0 })
-  // The live `rate_limit` event, already reduced by chat-core; the meter chip
-  // tints on it before the next polled reading confirms the limit.
-  const [rateLimit, setRateLimit] = useState<LiveRateLimit | null>(null)
   /**
    * The single gate for the whole goal surface: the slash row, the composer
    * intercept and the chip all hang off it, so a harness without a goal has no
@@ -579,24 +572,7 @@ export function MobileApp() {
     setTodos(runtime.session.todos)
     setPromptSuggestions(runtime.session.promptSuggestions)
     setPermMode(runtime.permissionMode)
-    setSandboxInfo(runtime.sandboxInfo)
-    setSessionGoal(runtime.session.sessionGoal)
-    setSessionAgents(runtime.session.sessionAgents)
-    setSessionWorktree((current) => {
-      const next = { ...runtime.worktree, removed: runtime.session._worktreeRemoved }
-      return current.isWorktree === next.isWorktree && current.worktreePath === next.worktreePath
-        && current.gitBranch === next.gitBranch && current.removed === next.removed
-        ? current
-        : next
-    })
-    setUsage((current) => (
-      current.contextTokens === runtime.contextTokens
-        && current.contextWindow === runtime.contextWindow
-        && current.totalCostUsd === runtime.totalCostUsd
-        ? current
-        : { contextTokens: runtime.contextTokens, contextWindow: runtime.contextWindow, totalCostUsd: runtime.totalCostUsd }
-    ))
-    setRateLimit(runtime.session.rateLimitInfo)
+    syncSessionIndicators(runtime)
     setPerm(surfaces.permission)
     setPlan(surfaces.showPlan ? runtime.session.pendingPlanApproval : null)
     if (runtime.sessionTitle) {
@@ -1427,7 +1403,7 @@ export function MobileApp() {
   const resetSessionChrome = () => {
     transcriptSync.reset()
     systemInfoRequestRef.current++
-    setSessionWorktree({ isWorktree: false, worktreePath: null, gitBranch: null, removed: false })
+    resetSessionIndicators()
     setPerm(null)
     nativeInputs.resetView()
     setPlan(null)
@@ -1439,10 +1415,7 @@ export function MobileApp() {
     setContextAttachments([])
     setRemovingContextViews([])
     setContextError('')
-    setSandboxInfo(null)
     setPendingSandboxMode(null)
-    setUsage({ contextTokens: 0, contextWindow: null, totalCostUsd: 0 })
-    setRateLimit(null)
   }
   const clearActiveSession = () => {
     runtimeRef.current?.dispose()

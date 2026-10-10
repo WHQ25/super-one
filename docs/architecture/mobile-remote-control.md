@@ -133,17 +133,23 @@ generation is discarded rather than sent on a new connection.
 
 A phone reaches a CLI-node or desktop-node session only through its paired
 desktop (`apps/desktop/src/main/remote/environment-commands.ts`); there is no
-phone-to-node link. The desktop opens the session at a `session.load` barrier,
-follows it on its one node subscription ([remote-node-service.md](remote-node-service.md#92-event-log)),
-reduces the node's events with chat-core, and sends them through the same
-`mobile` profile. The node runs no phone profile: the desktop already holds
-that projection state, and the wire stays the desktop's.
+phone-to-node link. The desktop follows the session on its one node feed
+([remote-node-service.md](remote-node-service.md#92-event-log)), opens it at
+a `session.load` barrier, reduces the node's events with chat-core, and sends
+them through the same `mobile` profile. The node runs no phone profile: the
+desktop already holds that projection state, and the wire stays the desktop's.
 
+- When the desktop's link to the node is the relay, the node sends the
+  session summarized. The desktop does not hold the bodies then, so a phone's
+  `subscribe_detail` is forwarded to the node and its packets back to the
+  phone; over LAN the desktop serves the detail from its own copy.
 - A connected phone does not restore on the relay's `reset` frame. When the
-  node reports that events the phone missed are gone (`resnapshot`), the
-  desktop reloads the snapshot and sends the difference as `message_start`,
-  `content_delta` and terminal events (`routed-catch-up.ts`). A phone whose
-  messages are not a prefix of the snapshot gets `status_change: error`.
+  node reports that events are gone (`resnapshot`), or the desktop's link to
+  the node changes tier, the desktop replaces its copy with a fresh snapshot
+  and sends the phone the difference between the summaries it has and the
+  fresh ones as `message_start`, `content_delta` and terminal events
+  (`routed-catch-up.ts`). A phone whose messages are not a prefix of the
+  snapshot gets `status_change: error`.
 - The desktop holds the node's control lease for each phone with the phone's
   device id as `delegate`; its own window acquires with `yields`. A second
   phone is refused while one holds the session.

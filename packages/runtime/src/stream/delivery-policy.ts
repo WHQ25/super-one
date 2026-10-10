@@ -23,6 +23,11 @@ export function tierOfRoute(route: ConnectionRoute): LinkTier {
   return 'lan'
 }
 
+/** Whether a connection receives transcripts summarized, their bodies behind `remoteDetail`. */
+export function summarizesTranscripts(policy: DeliveryPolicy): boolean {
+  return policy.surface === 'phone' || policy.tier === 'relay'
+}
+
 export function deliveryPolicy(route: ConnectionRoute, surface: ClientSurface): DeliveryPolicy {
   return { tier: tierOfRoute(route), surface }
 }

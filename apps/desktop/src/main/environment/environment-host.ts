@@ -58,7 +58,7 @@ import type { CodexMcpOauthLoginOptions } from '@superone/shared/agent-types'
 import { SshTunnelManager } from './ssh-tunnel-manager'
 import { formatConnectionLog } from './connection-log'
 import { shouldAbortRemoteSessionDrain } from './session-drain-policy'
-import { RemoteSessionFeed } from './remote-session-feed'
+import { RemoteSessionFeed, type RemoteSessionListener } from './remote-session-feed'
 import { createRemoteSession, type RemoteSessionCreateInput } from './create-remote-session'
 import {
   bootstrapNodeOverSsh,
@@ -165,15 +165,6 @@ export interface AddRemoteOverSshInput {
 }
 
 /** Node events that change what a session list shows. */
-const SESSION_LIST_EVENTS = new Set<string>([
-  SESSION_DURABLE_EVENT.created,
-  SESSION_DURABLE_EVENT.renamed,
-  SESSION_DURABLE_EVENT.uiFlags,
-  SESSION_DURABLE_EVENT.tagsChanged,
-  SESSION_DURABLE_EVENT.closed,
-  SESSION_DURABLE_EVENT.removed,
-])
-
 /**
  * Main-process environment host — constructs the product path for local + remote
  * gateways, WorkspaceRouter, and credential-backed reconnection.
@@ -1647,15 +1638,17 @@ export class EnvironmentHost {
     const { gateway, environmentId } = this.resolveRemote(connectionId)
     feed = new RemoteSessionFeed({
       head: () => gateway.eventHeadSequence(),
-      subscribe: (afterSequence, signal, onResnapshot) => gateway.subscribeEvents({
+      subscribe: (afterSequence, signal, { interest, onResnapshot, onRealign }) => gateway.subscribeEvents({
         environmentId,
         afterSequence,
-        aggregateTypes: ['session'],
+        topics: interest.current(),
+        interest,
         signal,
         shouldStop: () => this.remoteDrainBlock(connectionId) !== null,
         onResnapshot,
+        onRealign,
       }),
-    })
+    }, environmentId)
     this.sessionFeeds.set(connectionId, feed)
     return feed
   }
@@ -1711,15 +1704,23 @@ export class EnvironmentHost {
   private watchSessionList(connectionId: string): void {
     if (this.watchedSessionLists.has(connectionId)) return
     this.watchedSessionLists.add(connectionId)
-    this.feedFor(connectionId).observe((envelope) => {
-      if (!SESSION_LIST_EVENTS.has(envelope.eventType)) return
+    this.feedFor(connectionId).observe(() => {
       for (const listener of [...this.sessionListListeners]) listener(connectionId)
     }).catch(() => { this.watchedSessionLists.delete(connectionId) })
   }
 
   /** Calls `onEvent` as each event of a remote session is pushed, without mapping it for the chat. */
   async watchRemoteSessionEvents(connectionId: string, sessionId: string, onEvent: () => void): Promise<() => void> {
-    return this.feedFor(connectionId).follow(sessionId, { event: () => onEvent(), end: () => {} }, async () => 0)
+    return this.followSessionEvents(connectionId, sessionId, { event: () => onEvent(), end: () => {} }, async () => 0)
+  }
+
+  /**
+   * A remote session's raw events above `barrier`, on the node's shared feed
+   * (`RemoteSessionFeed.follow`). For consumers that reduce them themselves,
+   * such as a phone this desktop routes to the session.
+   */
+  followSessionEvents(connectionId: string, sessionId: string, listener: RemoteSessionListener, barrier: () => Promise<number>): Promise<() => void> {
+    return this.feedFor(connectionId).follow(sessionId, listener, barrier)
   }
 
   /** Listeners told which remote session's chat must read its snapshot again. */
@@ -1985,12 +1986,12 @@ export class EnvironmentHost {
 
   /**
    * Expand a summarized row of a remote session. The machine holding the
-   * session serves it; packets after the snapshot arrive on the session's stream.
+   * session serves it; packets after the snapshot go to `onUpdate`.
    */
-  async subscribeSessionDetail(target: DetailTarget, subscriptionId: string): Promise<DetailUpdate> {
+  async subscribeSessionDetail(target: DetailTarget, subscriptionId: string, onUpdate: (update: DetailUpdate) => void): Promise<DetailUpdate> {
     const { gateway, environmentId } = this.resolveRemote(target.environmentId)
     if (!gateway.sessions.subscribeDetail) throw new Error('This machine sends full rows; there is no detail to load')
-    return gateway.sessions.subscribeDetail({ session: { environmentId, sessionId: target.sessionId }, detailRef: target.detailRef, subscriptionId })
+    return gateway.sessions.subscribeDetail({ session: { environmentId, sessionId: target.sessionId }, detailRef: target.detailRef, subscriptionId, onUpdate })
   }
 
   async unsubscribeSessionDetail(target: DetailTarget, subscriptionId: string): Promise<void> {

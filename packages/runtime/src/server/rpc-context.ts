@@ -28,9 +28,11 @@ import type {
   SessionProviderStore,
   SessionRuntime,
 } from '../session/index'
-import type { HarnessInstallationStatus, SessionStreamMessage } from '@superone/shared/environment'
+import type { HarnessInstallationStatus, SessionDetailMessage, SessionStreamMessage } from '@superone/shared/environment'
+import type { ChatMessage } from '@superone/shared/agent-types'
+import type { ConnectionDelivery } from '../stream/delivery/connection-delivery'
 import type { AuthenticatedClient } from './auth-service'
-import type { EventStreamFlow } from './event-stream'
+import type { EventStreamFlow, EventStreamHandle } from './event-stream'
 import type { NodeIdentity } from './identity'
 import type { ClaudeUsageAccount, UsageLog } from '../usage/index'
 
@@ -293,6 +295,8 @@ export interface SessionHostPort {
   listMessages(input: SessionRuntimeInput<'listMessages'>): SessionMessagesListResult
   /** `session.load`: reduced state and a page of messages at the session's current version. */
   load(input: SessionRuntimeInput<'load'>): SessionLoadResult
+  /** The session's whole reduced transcript now, for summaries and expanded detail. */
+  messages(sessionId: string): readonly ChatMessage[]
 
   /**
    * Gate a lease just acquired on a session: refuse it while the host has taken
@@ -432,10 +436,14 @@ export interface RpcContext {
 
 /** Push streams bound to one client connection; all close with the socket. */
 export interface RpcStreams {
-  /** Registers a stream's closer, replacing (and closing) one with the same id. */
-  open(subscriptionId: string, close: () => void): void
+  /** Registers a stream, replacing (and closing) one with the same id. */
+  open(subscriptionId: string, stream: EventStreamHandle): void
   close(subscriptionId: string): void
-  push(message: SessionStreamMessage): void
+  /** The open stream with this id, if any. */
+  get(subscriptionId: string): EventStreamHandle | undefined
+  push(message: SessionStreamMessage | SessionDetailMessage): void
   /** The connection's pace, for flow-controlled streams. */
   flow?: EventStreamFlow
+  /** What this connection receives of a session under its delivery policy. */
+  delivery?: ConnectionDelivery
 }

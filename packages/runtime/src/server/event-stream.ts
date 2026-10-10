@@ -58,6 +58,16 @@ export interface EventStreamFlow {
   budgetBytes: number
 }
 
+/** An open stream: its topics change in place (`topic.update`). */
+export interface EventStreamHandle {
+  close(): void
+  /**
+   * From now on, only these topics' events. A topic added here gets live
+   * events only; its earlier events come from the reader's own snapshot.
+   */
+  setTopics(topics: readonly TopicRef[]): void
+}
+
 export interface EventStreamCursor {
   afterSequence: string
   /** Versions read per session, meaningful only within `epoch`. */
@@ -96,8 +106,9 @@ export function openEventStream(input: {
   filter: EventStreamFilter
   push: (frame: SessionStreamFrame) => void
   flow?: EventStreamFlow
-}): () => void {
-  const { source, environmentId, reader, filter, push, flow } = input
+}): EventStreamHandle {
+  const { source, environmentId, reader, push, flow } = input
+  let filter = input.filter
   const epoch = source.streamEpoch()
   let sequence = input.cursor.afterSequence
   const sameEpoch = input.cursor.epoch === epoch
@@ -114,7 +125,7 @@ export function openEventStream(input: {
   /** Sessions whose held streaming events were dropped; they go out as `resnapshot`. */
   const degraded = new Set<string>()
 
-  const matches = streamFilterMatcher(filter)
+  let matches = streamFilterMatcher(filter)
 
   /** Whether the reader still needs this event; records it as read. */
   const take = (envelope: EnvironmentEventEnvelope): boolean => {
@@ -242,9 +253,15 @@ export function openEventStream(input: {
   caughtUp = true
   if (live.length) flush()
 
-  return () => {
-    closed = true
-    unsubscribe()
-    stopDrain?.()
+  return {
+    close() {
+      closed = true
+      unsubscribe()
+      stopDrain?.()
+    },
+    setTopics(topics) {
+      filter = { ...filter, topics }
+      matches = streamFilterMatcher(filter)
+    },
   }
 }

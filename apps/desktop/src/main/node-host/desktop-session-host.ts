@@ -599,7 +599,7 @@ export class DesktopSessionHost implements SessionHostPort {
     const live = this.deps.sessions.getSession(sessionId)
     let state: ChatCoreSession = createDefaultChatCoreSession()
     for (const event of live?.getPendingInteractions() ?? []) state = { ...state, ...applyEventToSession(state, event) }
-    const all = live ? [...live.snapshot.messages] : this.deps.store.loadMessages(sessionId, Number.MAX_SAFE_INTEGER).messages
+    const all = this.messages(sessionId)
     const limit = Math.min(Math.max(1, input.limit ?? 50), 200)
     const end = Math.min(input.before ?? all.length, all.length)
     const start = Math.max(0, end - limit)
@@ -611,6 +611,12 @@ export class DesktopSessionHost implements SessionHostPort {
       before: start > 0 ? start : null,
       cursor: { sequence: this.deps.events.headSequence(), epoch: this.deps.events.epoch, version: this.deps.events.sessionVersion(sessionId) },
     }
+  }
+
+  messages(sessionId: string): ChatMessage[] {
+    this.requireRow(sessionId)
+    const live = this.deps.sessions.getSession(sessionId)
+    return live ? [...live.snapshot.messages] : this.deps.store.loadMessages(sessionId, Number.MAX_SAFE_INTEGER).messages
   }
 
   listMessages(input: Parameters<SessionHostPort['listMessages']>[0]): ReturnType<SessionHostPort['listMessages']> {

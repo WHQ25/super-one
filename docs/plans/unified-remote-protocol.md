@@ -228,7 +228,13 @@ points code comments there, and deletes this plan and the proposal.
 - Step 4 (in progress): generation 3 with wire framing (DEFLATE, fragments)
   after the generation handshake, the per-connection outbox (control first,
   socket high-water mark) and stream flow control (hold while congested,
-  resnapshot past the budget).
+  resnapshot past the budget). `topic.subscribe` / `topic.update` /
+  `topic.unsubscribe` replace `session.subscribe`; node connections deliver
+  by policy (relay: summarized load and stream, `session.subscribeDetail`);
+  the desktop feed is an interest union that routed phones join, detail
+  forwards to the node when the desktop's copy is summarized, and a tier
+  change realigns followers through snapshots. Remaining: shared envelope and
+  coalescer, per-method capabilities, node lab acceptance.
 
 ## Open decisions
 

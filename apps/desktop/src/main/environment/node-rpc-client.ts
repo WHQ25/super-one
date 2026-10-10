@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import WebSocket from 'ws'
-import type { ControlLease, EnvironmentLiveStatus, EnvironmentUsageReport, ExecutionEnvironmentDescriptor, SessionStreamFrame, SessionStreamMessage, SessionSubscribeInput, TerminalReadResult } from '@superone/shared/environment'
+import type { ControlLease, EnvironmentLiveStatus, EnvironmentUsageReport, ExecutionEnvironmentDescriptor, SessionStreamFrame, SessionDetailMessage, SessionStreamMessage, TerminalReadResult, TopicSubscribeInput } from '@superone/shared/environment'
 import { DATABASE_SCHEMA_GENERATION, PROTOCOL_GENERATION } from '@superone/shared/environment'
 import { isNodeMutatingCall } from '@superone/runtime/server/rpc-mutating-methods'
 import { dialWebSocket } from '@superone/runtime/server/node-socket'
@@ -13,6 +13,8 @@ import {
 } from '@superone/runtime/server/secure-channel-client'
 import { nodeWireCompression } from '@superone/runtime/server/wire-compression'
 import { WireDecoder, WireEncoder } from '@superone/shared/environment/wire'
+import type { DetailUpdate } from '@superone/shared/environment/detail'
+import type { TopicRef } from '@superone/shared/environment/topics'
 import { signWithDeviceKey } from './node-auth-client'
 
 /** A socket's encrypted channel; wire framing starts once the generation handshake succeeds. */
@@ -71,12 +73,25 @@ type Pending = {
   socketId: number
 }
 
-/** A `session.subscribe` stream lives on the socket it was opened on. */
+/** A `topic.subscribe` stream lives on the socket it was opened on. */
 type Stream = {
   socketId: number
   onFrame: (frame: SessionStreamFrame) => void
   /** The socket went away; resubscribe from the last frame's `sequence`. */
   onEnd: (err: Error) => void
+}
+
+/** An open `topic.subscribe` stream. */
+export interface TopicStream {
+  close(): void
+  /** Change the stream's topics in place; resolves once the node applied them. */
+  update(topics: TopicRef[]): Promise<void>
+}
+
+/** An expanded row's detail packets; they end with the socket's connection state. */
+type DetailListener = {
+  socketId: number
+  onUpdate: (update: DetailUpdate) => void
 }
 
 const RPC_TIMEOUT_MS = 15_000
@@ -143,6 +158,7 @@ export class NodeRpcClient {
   private connectingWs: NodeSocket | null = null
   private pending = new Map<string, Pending>()
   private readonly streams = new Map<string, Stream>()
+  private readonly detailListeners = new Map<string, DetailListener>()
   private closed = false
   private connectPromise: Promise<void> | null = null
   private connectGeneration = 0
@@ -585,30 +601,68 @@ export class NodeRpcClient {
   }
 
   /**
-   * Push the node's events after `afterSequence` (`session.subscribe`). The
+   * Push the node's topic events after `afterSequence` (`topic.subscribe`). The
    * stream is bound to the current socket and ends with it; the caller
    * resubscribes from the last frame's `sequence`. Returns the unsubscribe.
    */
   async subscribeEvents(
-    input: Omit<SessionSubscribeInput, 'subscriptionId'>,
+    input: Omit<TopicSubscribeInput, 'subscriptionId'>,
     handlers: Omit<Stream, 'socketId'>,
-  ): Promise<() => void> {
+  ): Promise<TopicStream> {
     if (this.closed) throw transportError('client closed')
     const envId = this.opts.expectedEnvironmentId
     if (!envId) throw rpcResponseError('invalid_argument', 'environmentId required')
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) throw transportError('not connected')
     const subscriptionId = randomUUID()
+    const socketId = this.wsSocketId
     this.streams.set(subscriptionId, { socketId: this.wsSocketId, ...handlers })
     try {
-      await this.sendOnce('session.subscribe', { ...input, subscriptionId }, envId, undefined)
+      await this.sendOnce('topic.subscribe', { ...input, subscriptionId }, envId, undefined)
     } catch (err) {
       this.streams.delete(subscriptionId)
       throw err
     }
-    return () => {
-      if (!this.streams.delete(subscriptionId)) return
-      void this.rpc('session.unsubscribe', { subscriptionId }).catch(() => {})
+    return {
+      close: () => {
+        if (!this.streams.delete(subscriptionId)) return
+        void this.rpc('topic.unsubscribe', { subscriptionId }).catch(() => {})
+      },
+      update: async (topics) => {
+        // A stream whose socket is gone resubscribes with the current topics.
+        if (this.streams.get(subscriptionId)?.socketId !== socketId || this.wsSocketId !== socketId) return
+        await this.sendOnce('topic.update', { subscriptionId, topics }, envId, undefined)
+      },
     }
+  }
+
+  /** The link this client dials: a relay slot, or a socket of its own. */
+  get tier(): 'relay' | 'lan' {
+    return this.dial ? 'relay' : 'lan'
+  }
+
+  /**
+   * Expand a summarized row of a session this connection loaded: the
+   * revision-0 detail now, later packets to `onUpdate` while the socket lives.
+   */
+  async subscribeDetail(
+    input: { sessionId: string; detailRef: string; subscriptionId: string },
+    onUpdate: (update: DetailUpdate) => void,
+  ): Promise<DetailUpdate> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) throw transportError('not connected')
+    const envId = this.opts.expectedEnvironmentId
+    if (!envId) throw rpcResponseError('invalid_argument', 'environmentId required')
+    this.detailListeners.set(input.subscriptionId, { socketId: this.wsSocketId, onUpdate })
+    try {
+      return await this.sendOnce<DetailUpdate>('session.subscribeDetail', input, envId, undefined)
+    } catch (err) {
+      this.detailListeners.delete(input.subscriptionId)
+      throw err
+    }
+  }
+
+  async unsubscribeDetail(input: { sessionId: string; subscriptionId: string }): Promise<void> {
+    if (!this.detailListeners.delete(input.subscriptionId)) return
+    await this.rpc('session.unsubscribeDetail', input).catch(() => {})
   }
 
   async getDescriptor(): Promise<ExecutionEnvironmentDescriptor> {
@@ -805,6 +859,11 @@ export class NodeRpcClient {
       this.streams.get(subscriptionId)?.onFrame(frame)
       return
     }
+    if (msg.type === 'detail') {
+      const { update } = raw as SessionDetailMessage
+      this.detailListeners.get(update.subscriptionId)?.onUpdate(update)
+      return
+    }
     if (!msg.requestId) return
     const pending = this.pending.get(msg.requestId)
     if (!pending) return
@@ -830,6 +889,9 @@ export class NodeRpcClient {
       this.streams.delete(id)
       stream.onEnd(err)
     }
+    for (const [id, listener] of this.detailListeners) {
+      if (listener.socketId === socketId) this.detailListeners.delete(id)
+    }
   }
 
   private rejectAll(err: Error): void {
@@ -842,6 +904,7 @@ export class NodeRpcClient {
       this.streams.delete(id)
       stream.onEnd(err)
     }
+    this.detailListeners.clear()
   }
 }
 

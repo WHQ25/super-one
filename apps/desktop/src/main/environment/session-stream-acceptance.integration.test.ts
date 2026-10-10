@@ -12,14 +12,27 @@ import { applyEventToSession, createDefaultChatCoreSession, createStreamingToolI
 import type { AgentEvent, ChatMessage } from '@superone/shared/agent-types'
 import type { EnvironmentGateway } from '@superone/shared/environment'
 import { createNodeSessionEventMapper } from '@superone/shared/node-session-event-map'
+import type { RemoteSessionListener } from './remote-session-feed'
 
 const electron = vi.hoisted(() => ({ store: new Map<string, string>() }))
 /** The node a routed phone reaches through this desktop. */
-const routed = vi.hoisted(() => ({ gateway: null as unknown, environmentId: '', connectionId: '' }))
+const routed = vi.hoisted(() => ({ gateway: null as unknown, environmentId: '', connectionId: '', feed: null as unknown }))
 vi.mock('./environment-host', () => ({
   getEnvironmentHost: () => ({
     listEnvironments: async () => [{ environmentId: routed.environmentId, connectionId: routed.connectionId, kind: 'remote' }],
     getGateway: () => routed.gateway,
+    // The host's per-node feed (`EnvironmentHost.feedFor`), over the routed gateway.
+    followSessionEvents: async (_connectionId: string, sessionId: string, listener: RemoteSessionListener, barrier: () => Promise<number>) => {
+      const { RemoteSessionFeed } = await import('./remote-session-feed')
+      const gateway = routed.gateway as EnvironmentGateway
+      routed.feed ??= new RemoteSessionFeed({
+        head: () => gateway.eventHeadSequence(),
+        subscribe: (afterSequence, signal, { interest, onResnapshot, onRealign }) => gateway.subscribeEvents({
+          environmentId: routed.environmentId, afterSequence, topics: interest.current(), interest, signal, onResnapshot, onRealign,
+        }),
+      }, routed.environmentId)
+      return (routed.feed as InstanceType<typeof RemoteSessionFeed>).follow(sessionId, listener, barrier)
+    },
   }),
 }))
 vi.mock('electron', () => ({
@@ -92,7 +105,7 @@ async function openReader(gateway: EnvironmentGateway, ref: { environmentId: str
   void (async () => {
     for await (const envelope of gateway.subscribeEvents({
       environmentId: ref.environmentId, afterSequence: loaded.cursor.sequence, epoch: loaded.cursor.epoch,
-      versions: { [ref.sessionId]: loaded.cursor.version }, aggregateIds: [ref.sessionId], aggregateTypes: ['session'], signal: abort.signal,
+      versions: { [ref.sessionId]: loaded.cursor.version }, topics: [{ kind: 'session', environmentId: ref.environmentId, sessionId: ref.sessionId }], signal: abort.signal,
       onResnapshot: () => {
         reader.resnapshots++
         reloading = load().then((fresh) => {
@@ -179,7 +192,7 @@ describe('pushed session stream against a node', () => {
   it('keeps a routed phone whole across a dropped upstream, and holds the session for one phone at a time', async () => {
     const runtime = await bootNode({ chunks: Array.from({ length: 10 }, (_, i) => `p${i} `), delayMs: 40 })
     const desktop = await pairDesktop(runtime, 'desktop')
-    Object.assign(routed, { gateway: desktop.gateway, environmentId: desktop.environmentId, connectionId: desktop.connectionId })
+    Object.assign(routed, { gateway: desktop.gateway, environmentId: desktop.environmentId, connectionId: desktop.connectionId, feed: null })
     const ref = await newSession(desktop.gateway, desktop.environmentId)
     const sent: AgentEvent[] = []
     const opened = await executeEnvironmentCommand(ref.environmentId, { type: 'subscribe_session', requestId: 'r', projectPath: ref.path, sessionId: ref.sessionId }, 'phone-a', async (event) => { sent.push(event) }) as { historyPage: { messages: ChatMessage[] } }

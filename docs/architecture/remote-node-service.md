@@ -433,12 +433,14 @@ On connect:
 2. Negotiate protocol and capabilities.
 3. Open a session with `session.load`: its read-model state and newest
    messages, with the cursor `{ sequence, epoch, version }` they reflect.
-4. `session.subscribe` from that cursor. The node pushes frames over the
-   WebSocket, filtered on the server by aggregate or by topic (`topics`:
-   scoped refs from `@superone/shared/environment/topics`, a `*` session id
-   covering every session): durable events after the sequence merged with the
-   ring's events after each session's version, then live events as they are
-   appended.
+4. `topic.subscribe` from that cursor with the topics to receive (scoped
+   refs from `@superone/shared/environment/topics`; a `*` session id covers
+   every session, and `sessionList` carries the session events that change
+   the list). The node pushes frames over the WebSocket: durable events after
+   the sequence merged with the ring's events after each session's version,
+   then live events as they are appended. `topic.update` changes an open
+   stream's topics in place; an added topic gets live events from then on, so
+   a client reads its snapshot after the update is acknowledged.
 5. A frame names in `resnapshot` the sessions whose missed events are gone
    (retired on commit, evicted from the ring, or lost with a node restart's
    epoch), and the same sessions as scoped topics in `recover`. The client
@@ -450,12 +452,24 @@ change events (`VersionedTopicLog`, `@superone/runtime/stream`); a terminal by
 output sequence plus the attach snapshot.
 
 The desktop keeps one subscription per node (`remote-session-feed.ts`), shared
-by the chat, relayed phones and the collaboration watcher. A followed session
-delivers only events above the version its snapshot reflects, and resumes by
-version across reconnects. A phone the desktop relays to a node session is
-repaired from a fresh snapshot with catch-up events its reducer already
-applies (`routed-catch-up.ts`), since a connected phone does not restore on
-the relay's `reset`. No session reads poll.
+by the chat, routed phones and the collaboration watcher. It carries the union
+of their interests, counted per follower: `sessionList` while the session list
+is watched, and each followed session. A follower joins once the node applied
+its topic, reads its snapshot, and gets the session's events above that
+version; it resumes by version across reconnects. No session reads poll.
+
+Each node connection has a delivery policy (`ConnectionDelivery`,
+`@superone/runtime/stream/delivery`) from the socket it came in on: a relay
+slot is the `relay` tier, any socket the node accepted (a loopback forward
+included) is `lan`. Over the relay, `session.load` returns the session
+summarized (`summarized: true`, bulky bodies behind `remoteDetail`) and the
+stream's events for it are projected the same way (`session-delivery.ts`).
+`session.subscribeDetail { sessionId, detailRef, subscriptionId }` answers a
+row's revision-0 detail, and `detail` messages carry its later packets on the
+same connection until `session.unsubscribeDetail` or the socket ends. The
+event log and persisted transcripts stay complete. When the desktop's stream
+comes back on a link of another tier, every follower reads its snapshot again
+(`onRealign`), so rows are never half summarized.
 
 Client acknowledgement is a delivery cursor, not a shared `read` flag.
 

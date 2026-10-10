@@ -329,13 +329,16 @@ describe('SessionRuntime.patchSettings + send fallbacks', () => {
 })
 
 describe('SessionRuntime.setTags', () => {
-  it('persists tags on the live record', () => {
+  it('persists tags on the live record and records the change', () => {
     const { store, events, leases } = memoryPorts()
+    const appended: Array<{ eventType: string; payload: unknown }> = []
+    events.appendSession = (e) => { appended.push({ eventType: e.eventType, payload: e.payload }) }
     const rt = new SessionRuntime(store, events, leases, 'env-1', createSimulatedTurnRunner({ delayMs: 0 }))
     const created = rt.create({ projectId: 'p1', title: 'Auto' })
     const out = rt.setTags(created.sessionId, ['oauth', 'auth'])
     expect(out.tags).toEqual(['oauth', 'auth'])
     expect(rt.get(created.sessionId)!.tags).toEqual(['oauth', 'auth'])
+    expect(appended.at(-1)).toEqual({ eventType: 'session.tags_changed', payload: { tags: ['oauth', 'auth'] } })
   })
 })
 

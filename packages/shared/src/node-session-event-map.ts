@@ -631,6 +631,7 @@ export function createNodeSessionEventMapper(ctx: NodeSessionEventMapContext): N
       case SESSION_DURABLE_EVENT.created:
       case SESSION_DURABLE_EVENT.reconciled:
       case SESSION_DURABLE_EVENT.uiFlags:
+      case SESSION_DURABLE_EVENT.tagsChanged:
         // Lifecycle/metadata only — no chat stream side effects yet.
         break
 

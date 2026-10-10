@@ -54,6 +54,23 @@ describe('RemoteSessionFeed', () => {
     feed.close()
   })
 
+  it('hands every session event to observers', async () => {
+    const source = pushSource()
+    const feed = new RemoteSessionFeed(source)
+    const seen: string[] = []
+    const unobserve = await feed.observe((e) => seen.push(e.aggregateId))
+    source.push(envelope(8, 'a'))
+    source.push(envelope(9, 'p', 'project'))
+    source.push(envelope(10, 'b'))
+    await flush()
+    expect(seen).toEqual(['a', 'b'])
+    unobserve()
+    source.push(envelope(11, 'c'))
+    await flush()
+    expect(seen).toEqual(['a', 'b'])
+    feed.close()
+  })
+
   it('ends every follower when the stream fails, and refuses new follows', async () => {
     const source = pushSource()
     const feed = new RemoteSessionFeed(source)

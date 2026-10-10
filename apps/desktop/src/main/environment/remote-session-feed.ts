@@ -20,6 +20,8 @@ export interface RemoteSessionListener {
  */
 export class RemoteSessionFeed {
   private readonly listeners = new Map<string, Set<RemoteSessionListener>>()
+  /** Called with every session event, of any session. */
+  private readonly observers = new Set<(envelope: EnvironmentEventEnvelope) => void>()
   private readonly abort = new AbortController()
   private started: Promise<void> | null = null
   private failure: Error | null = null
@@ -44,9 +46,24 @@ export class RemoteSessionFeed {
     return unfollow
   }
 
+  /** Calls `observer` with every session event from the node's head on, until the feed ends. */
+  async observe(observer: (envelope: EnvironmentEventEnvelope) => void): Promise<() => void> {
+    if (this.failure) throw this.failure
+    this.observers.add(observer)
+    const unobserve = () => { this.observers.delete(observer) }
+    try {
+      await this.start()
+    } catch (err) {
+      unobserve()
+      throw err
+    }
+    return unobserve
+  }
+
   close(): void {
     this.abort.abort('closed')
     this.listeners.clear()
+    this.observers.clear()
   }
 
   private start(): Promise<void> {
@@ -60,12 +77,14 @@ export class RemoteSessionFeed {
     try {
       for await (const envelope of this.source.subscribe(after, this.abort.signal)) {
         if (envelope.aggregateType !== 'session') continue
+        for (const observer of [...this.observers]) observer(envelope)
         for (const listener of [...(this.listeners.get(envelope.aggregateId) ?? [])]) listener.event(envelope)
       }
     } catch (err) {
       this.failure = err instanceof Error ? err : new Error(String(err))
       const listeners = [...this.listeners.values()].flatMap((set) => [...set])
       this.listeners.clear()
+      this.observers.clear()
       for (const listener of listeners) listener.end(this.failure)
     }
   }

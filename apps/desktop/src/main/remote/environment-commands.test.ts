@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentEvent, ChatMessage } from '@superone/shared/agent-types'
 import type { EnvironmentGateway, SubscribeEventsInput } from '@superone/shared/environment'
-import { executeEnvironmentCommand, releaseEnvironmentDevice } from './environment-commands'
+import { executeEnvironmentCommand, kickRoutedSessions, releaseEnvironmentDevice, setRoutedPresence } from './environment-commands'
 import { routedHistory } from './environment-session-view'
 
 const m = vi.hoisted(() => ({ list: vi.fn(), get: vi.fn(), project: vi.fn(), acquire: vi.fn(), release: vi.fn(), renew: vi.fn(), load: vi.fn(), send: vi.fn(), stream: vi.fn() }))
@@ -64,6 +64,22 @@ describe('paired phone environment route', () => {
     expect(result).toMatchObject({ historyPage: { cursor: null, hasMore: false } })
     await vi.waitFor(() => expect(send.mock.calls.map(([event]) => (event as AgentEvent).type)).toEqual(['content_delta', 'message_complete', 'message_start']))
     expect(send.mock.calls[0]![0]).toMatchObject({ messageId: 'a', delta: { type: 'text', text: 'lo' } })
+  })
+})
+describe('routed phone presence on this desktop', () => {
+  it('puts the window in observation mode while the phone holds the session, and takes it back on Disconnect', async () => {
+    const publish = vi.fn()
+    const kick = vi.fn()
+    setRoutedPresence({ publish, kick })
+    await executeEnvironmentCommand('node', { type: 'subscribe_session', requestId: 'r', projectPath: '/app', sessionId: 'same' }, 'phone', vi.fn())
+    // A repeated open does not announce again.
+    await executeEnvironmentCommand('node', { type: 'subscribe_session', requestId: 'r2', projectPath: '/app', sessionId: 'same' }, 'phone', vi.fn())
+    expect(publish.mock.calls).toEqual([[{ type: 'remote_session_start', remoteProjectPath: 'remote:route:/app', remoteSessionId: 'same', harnessId: 'acp', isSubscribe: true }]])
+
+    await kickRoutedSessions('same')
+    expect(kick).toHaveBeenCalledWith('phone', 'same')
+    expect(publish).toHaveBeenLastCalledWith({ type: 'remote_session_end', remoteProjectPath: 'remote:route:/app', remoteSessionId: 'same', isSubscribe: true })
+    expect(m.release).toHaveBeenCalledWith(expect.objectContaining({ leaseId: 'lease' }))
   })
 })
 describe('routed history anchors', () => {

@@ -40,11 +40,15 @@ export class ConnectionDelivery {
     return [...this.event(event, sessionId, messages), ...this.details(sessionId, messages)]
   }
 
-  /** The event itself: summarized when the session is, then shaped. */
+  /**
+   * The event itself: summarized when the session is, then shaped. A tool's
+   * streamed input is its body, behind the row's detail; the profile still
+   * reads it (a phone's todo list) before it is left out.
+   */
   event(event: AgentEvent, sessionId: string, messages: readonly ChatMessage[]): AgentEvent[] {
     if (!this.views.has(sessionId)) return this.shape(event)
     const projected = projectProgressiveEvent(event, messages)
-    return projected ? this.shape(projected) : []
+    return projected ? this.shape(projected).filter((shaped) => shaped.type !== 'tool_input_delta') : []
   }
 
   /** The detail packets for the rows this connection expanded that `messages` changed. */

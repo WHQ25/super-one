@@ -1,5 +1,4 @@
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
-import { createServer, connect, type Server, type Socket } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -34,7 +33,7 @@ import { NodeConnectionManager } from '../environment/node-connection-manager'
 import { NodeCredentialStore } from '../environment/node-credential-store'
 import { NodeRouteResolver } from '../environment/node-route-resolver'
 import { probeEndpointHealth } from '../environment/endpoint-probes'
-import { startSpoofedLanNode, startTestDesktopNode } from './node-host-test-fixtures'
+import { lanPath, startSpoofedLanNode, startTestDesktopNode } from './node-host-test-fixtures'
 
 const cleanup: Array<() => unknown> = []
 afterEach(async () => {
@@ -46,41 +45,6 @@ function tempDir(prefix: string): string {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), prefix)))
   cleanup.push(() => rmSync(dir, { recursive: true, force: true }))
   return dir
-}
-
-/** A's LAN path to B: a TCP forward that can be cut (A leaves the network) and restored. */
-async function lanPath(targetPort: number) {
-  const sockets = new Set<Socket>()
-  let server: Server | null = null
-  const probe = createServer()
-  await new Promise<void>((resolve) => probe.listen(0, '127.0.0.1', resolve))
-  const port = (probe.address() as { port: number }).port
-  await new Promise<void>((resolve) => probe.close(() => resolve()))
-  const path = {
-    url: `http://127.0.0.1:${port}`,
-    up: () =>
-      new Promise<void>((resolve) => {
-        server = createServer((inbound) => {
-          const outbound = connect(targetPort, '127.0.0.1')
-          for (const s of [inbound, outbound]) {
-            sockets.add(s)
-            s.on('close', () => sockets.delete(s))
-            s.on('error', () => {})
-          }
-          inbound.pipe(outbound).pipe(inbound)
-        })
-        server.listen(port, '127.0.0.1', resolve)
-      }),
-    cut: () =>
-      new Promise<void>((resolve) => {
-        for (const s of sockets) s.destroy()
-        if (!server) return resolve()
-        server.close(() => resolve())
-        server = null
-      }),
-  }
-  cleanup.push(path.cut)
-  return path
 }
 
 describe('desktop node over the relay', () => {
@@ -164,6 +128,7 @@ describe('desktop node over the relay', () => {
 
     // The code B shows; its LAN hint is A's (cuttable) path to B, down for now.
     const lan = await lanPath(host.port)
+    cleanup.push(lan.cut)
     const code = decodeNodePairingCode(encodeNodePairingCode(host.mintPairingToken()), Date.now())
     expect(code.relay).toEqual({ url: relay.url, room: expect.stringMatching(/^[0-9a-f]{32}$/) })
     const endpointProfiles = nodePairingEndpointProfiles({ ...code, lan: { host: '127.0.0.1', port: Number(new URL(lan.url).port) } })

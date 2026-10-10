@@ -419,7 +419,12 @@ handshake are sealed JSON, so a peer of another generation can still read the
 refusal. After it, each sealed frame carries a wire frame
 (`packages/shared/src/environment/wire.ts`): the remote payload header (flag,
 u32 size) with the JSON raw, or DEFLATE-compressed when it is over 512 bytes.
-A frame over 256 KiB is split into fragments (flag 2, u32 message id, u16
+Pushed messages (`stream` and `detail`) instead always deflate against the
+last 32 KiB of the pushes before them (flag 3, the same header), which both
+ends keep: the keys and ids every event repeats cost a back-reference, so a
+recorded turn costs about half what the phone link did. Pushes travel in one
+lane and are encoded in send order, which the shared history relies on. A
+frame over 256 KiB is split into fragments (flag 2, u32 message id, u16
 index, u16 total); fragments of one message arrive in order but may
 interleave with other messages. Plain ticketed sockets carry JSON text.
 Compression is injected: Node uses zlib, Expo a pure-JS inflater.
@@ -475,7 +480,14 @@ Each node connection has a delivery policy (`ConnectionDelivery`,
 slot is the `relay` tier, any socket the node accepted (a loopback forward
 included) is `lan`. Over the relay, `session.load` returns the session
 summarized (`summarized: true`, bulky bodies behind `remoteDetail`) and the
-stream's events for it are projected the same way (`session-delivery.ts`).
+stream's events for it are projected the same way (`session-delivery.ts`);
+a tool's streamed input is its body and is left out. Off the local link the
+stream lets deltas and bookkeeping (usage, progress, stream markers,
+checkpoints) wait up to one batch window (33 ms) for the next event that
+cannot wait, folds adjacent deltas of a session into one envelope, and sends
+no frame that the policy emptied without moving the cursor. The step 0
+recordings followed over the relay stay within the phone link's frames and
+bytes (`node-host-protocol.integration.test.ts`).
 `session.subscribeDetail { sessionId, detailRef, subscriptionId }` answers a
 row's revision-0 detail, and `detail` messages carry its later packets on the
 same connection until `session.unsubscribeDetail` or the socket ends. The

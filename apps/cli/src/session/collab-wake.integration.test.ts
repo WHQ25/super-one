@@ -12,7 +12,7 @@ import { SessionRuntime } from './session-runtime'
 import { HarnessManager } from './harness-manager'
 import { ProviderStore } from '../provider/provider-store'
 import { ProjectRegistry } from '../workspace/project-registry'
-import { WorkspaceGitService } from '../workspace/git-service'
+import { WorkspaceGitService } from '@superone/runtime/workspace/git-service'
 import { CollaborationService } from './collaboration'
 
 const dirs: string[] = []

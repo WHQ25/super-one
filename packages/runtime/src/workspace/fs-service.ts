@@ -24,7 +24,7 @@ import {
   resolveProjectPath,
   type WorkspaceFileEntry,
 } from '@superone/runtime/fs'
-import type { ProjectRegistry } from './project-registry'
+import type { WorkspaceProjects } from './workspace-projects'
 
 export type { WorkspaceFileEntry }
 
@@ -72,7 +72,7 @@ export interface WorkspaceSkillInfo {
 }
 
 export class WorkspaceFsService {
-  constructor(private readonly projects: ProjectRegistry) {}
+  constructor(private readonly projects: WorkspaceProjects) {}
 
   private projectRoot(projectId: string): string {
     const p = this.projects.get(projectId)

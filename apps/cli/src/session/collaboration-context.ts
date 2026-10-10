@@ -7,7 +7,7 @@ import type {
 } from '@superone/runtime/collaboration'
 import type { NodeDatabase } from '../db/database'
 import type { ProviderStore } from '../provider/provider-store'
-import type { WorkspaceGitService } from '../workspace/git-service'
+import type { WorkspaceGitService } from '@superone/runtime/workspace/git-service'
 import type { ProjectRegistry } from '../workspace/project-registry'
 import type { EventLog } from './event-log'
 import type { HarnessManager } from './harness-manager'

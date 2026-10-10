@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { execFileSync } from 'node:child_process'
 import { WorkspaceFsService } from './fs-service'
-import type { ProjectRegistry } from './project-registry'
+import type { WorkspaceProjects } from './workspace-projects'
 
 function git(cwd: string, args: string[]) {
   execFileSync('git', ['-C', cwd, ...args], { stdio: 'ignore' })
@@ -32,7 +32,7 @@ describe('WorkspaceFsService listFiles + listSkillsAndCommands', () => {
     const projects = {
       get: () => ({ projectId: 'p1', path: dir, name: 't', repoIdentity: null }),
       touch: () => {},
-    } as unknown as ProjectRegistry
+    } as unknown as WorkspaceProjects
     svc = new WorkspaceFsService(projects)
   })
 

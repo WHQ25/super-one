@@ -883,6 +883,10 @@ new PresenceCoordinator(sessionManager, {
   broadcastToRenderer: (event) => sessionEvents.publish({ event, source: 'presence' }),
   sendToMobile: (event, targetDeviceIds) => remoteControlService.sendEventToMobile(event, targetDeviceIds),
 })
+void import('./remote/environment-commands').then(({ setRoutedPresence }) => setRoutedPresence({
+  publish: (event) => sessionEvents.publish({ event, source: 'presence' }),
+  kick: (deviceId, sessionId) => void remoteControlService.sendEventToMobile({ type: 'session_kicked', sessionId }, [deviceId]),
+}))
 
 const mobileReceiveService = new MobileReceiveService({
   resolveTarget: (sessionId): MobileReceiveTarget | null => {

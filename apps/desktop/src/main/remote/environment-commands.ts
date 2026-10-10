@@ -1,7 +1,8 @@
-import type { AgentEvent, RemoteCommand } from '@superone/shared/agent-types'
+import type { AgentEvent, HarnessId, RemoteCommand } from '@superone/shared/agent-types'
 import type { EnvironmentGateway, MutatingControlContext, SessionRef } from '@superone/shared/environment'
 import { createNodeSessionEventMapper } from '@superone/shared/node-session-event-map'
 import { nodeHarnessToProviderId } from '@superone/shared/node-session-messages'
+import { remoteProjectKey } from '@superone/shared/remote-resource-key'
 import { applyEventToSession, createDefaultChatCoreSession, createStreamingToolInputStore, defaultChatCorePorts } from '@superone/chat-core'
 import { getEnvironmentHost } from '../environment/environment-host'
 import { detailMessageId, detailUpdates, projectProgressiveEvent, projectProgressiveMessage, setProgressiveSession, subscribeDetail, unsubscribeDetail } from './progressive-session'
@@ -9,20 +10,41 @@ import { routedDetailMessage, routedHistory, routedHistoryIndex, routedSnapshot,
 import { routedResources } from './environment-session-resources'
 import { catchUpEvents } from './routed-catch-up'
 
-type Subscription = { deviceId: string; abort: AbortController; gateway: EnvironmentGateway; ref: SessionRef; control: MutatingControlContext; timer: ReturnType<typeof setInterval> }
+type Subscription = { deviceId: string; abort: AbortController; gateway: EnvironmentGateway; ref: SessionRef; projectKey: string; control: MutatingControlContext; timer: ReturnType<typeof setInterval> }
 const subscriptions = new Map<string, Subscription>()
 const key = (deviceId: string, ref: SessionRef) => JSON.stringify([deviceId, ref.environmentId, ref.sessionId])
 
+/** How a routed phone's hold on a node session shows on this desktop, as a local session's does. */
+export interface RoutedPresence {
+  /** `remote_session_start` / `remote_session_end`: the window shows observation mode meanwhile. */
+  publish(event: AgentEvent): void
+  /** Tell a phone the desktop took its session back. */
+  kick(deviceId: string, sessionId: string): void
+}
+let presence: RoutedPresence | null = null
+export function setRoutedPresence(port: RoutedPresence): void { presence = port }
+
 async function release(subscription: Subscription): Promise<void> {
+  const subscriptionKey = key(subscription.deviceId, subscription.ref)
+  if (subscriptions.get(subscriptionKey) === subscription) {
+    presence?.publish({ type: 'remote_session_end', remoteProjectPath: subscription.projectKey, remoteSessionId: subscription.ref.sessionId, isSubscribe: true })
+  }
   subscription.abort.abort()
   clearInterval(subscription.timer)
-  const subscriptionKey = key(subscription.deviceId, subscription.ref)
   if (subscriptions.get(subscriptionKey) === subscription) subscriptions.delete(subscriptionKey)
   setProgressiveSession(subscriptionKey)
   await subscription.gateway.sessions.releaseControl(subscription.control).catch(() => {})
 }
 export async function releaseEnvironmentDevice(deviceId: string): Promise<void> {
   await Promise.all([...subscriptions.values()].filter(item => item.deviceId === deviceId).map(release))
+}
+
+/** The window's Disconnect: take a routed session (or every one) back from its phone. */
+export async function kickRoutedSessions(sessionId?: string): Promise<void> {
+  await Promise.all([...subscriptions.values()].filter(item => !sessionId || item.ref.sessionId === sessionId).map(item => {
+    presence?.kick(item.deviceId, item.ref.sessionId)
+    return release(item)
+  }))
 }
 
 /** Paired phone → authenticated configured CLI gateway. Never falls back to local. */
@@ -65,7 +87,8 @@ export async function executeEnvironmentCommand(environmentId: string, command: 
     current?.abort.abort()
     if (current) clearInterval(current.timer)
     const abort = new AbortController()
-    const subscription: Subscription = { deviceId, abort, gateway, ref, control, timer: setInterval(() => {
+    const projectKey = remoteProjectKey(item.connectionId, project.path)
+    const subscription: Subscription = { deviceId, abort, gateway, ref, projectKey, control, timer: setInterval(() => {
       void gateway.sessions.renewControl({ ...subscription.control, ttlMs: 60_000 }).then(lease => {
         if (!abort.signal.aborted) subscription.control = { leaseId: lease.leaseId, generation: lease.generation }
       }).catch(async () => {
@@ -76,6 +99,7 @@ export async function executeEnvironmentCommand(environmentId: string, command: 
     }, 15_000) }
     subscription.timer.unref()
     subscriptions.set(subscriptionKey, subscription)
+    if (!current) presence?.publish({ type: 'remote_session_start', remoteProjectPath: projectKey, remoteSessionId: sessionId, harnessId: snapshot.harnessId as HarnessId, isSubscribe: true })
     setProgressiveSession(subscriptionKey, sessionId)
     let state = { ...createDefaultChatCoreSession(), ...loaded.state, messages: loaded.messages }
     const mapper = createNodeSessionEventMapper({ projectPath: project.path, sessionId, providerId })

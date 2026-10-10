@@ -3300,6 +3300,9 @@ export class AgentService {
         if (session.owner.kind === 'remote') session.release(session.owner.deviceId, 'desktop_kick')
         for (const d of Array.from(session.subscribers)) session.unsubscribe(d, 'desktop_kick')
       }
+      // A phone this desktop routes to a node session.
+      const { kickRoutedSessions } = await import('../remote/environment-commands')
+      await kickRoutedSessions(sessionId)
     })
 
     // --- Plugins (session-scoped — need cwd) ---

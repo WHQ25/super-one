@@ -21,6 +21,7 @@ import { mergeMessagesByMaxSeq } from '../helpers/event-helpers'
 import { clearUnseenCompleted } from '../helpers/unseen-completed'
 import { applyRemoteControlChange } from '../helpers/remote-control'
 import { inferProviderFromHarnessId } from '../helpers/provider-routing'
+import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { createDefaultPerSessionState, createDefaultProjectState, getDefaultEffortForModel } from '../defaults'
 import { clearStreamingToolInputsForSession } from '../event-reducer/shared'
 import { shouldReviveStreaming } from '../event-reducer/stream-revive'
@@ -150,7 +151,8 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
           },
         }
       })
-      if (event.isSubscribe) {
+      // A node session's phone is routed through this desktop: the chat opens it from the node.
+      if (event.isSubscribe && !parseRemoteProjectKey(projectPath)) {
         _hydrateSessionState(set, projectPath, sessionId)
       }
       return

@@ -15,13 +15,9 @@ import type {
 import type { NodeIdentity } from './identity'
 
 const flags: HostCapabilityFlags = {
-  mcp: false,
-  fileTransfer: false,
-  nodeAdmin: false,
   coldSessionResume: false,
   turnReattach: false,
   hostActionV1: false,
-  drafts: false,
 }
 
 const projects = {
@@ -79,16 +75,13 @@ describe('node rpc dispatch on a partial host', () => {
   it('advertises only the served families in the descriptor', async () => {
     const res = await dispatchRpc('environment.descriptor', {}, projectsOnlyHost())
     const descriptor = res.result as ExecutionEnvironmentDescriptor
-    expect(descriptor.capabilities).toMatchObject({
-      sessions: false,
-      terminal: false,
-      workspaceFs: false,
-      git: false,
-      worktrees: false,
-      collaboration: false,
-      syncZone: false,
-      harnessIds: [],
-    })
+    expect(descriptor.capabilities.harnessIds).toEqual([])
+    // Only what its one port serves, and the environment family every host has.
+    expect(descriptor.capabilities.methods).toContain('project.list')
+    expect(descriptor.capabilities.methods).toContain('environment.descriptor')
+    for (const method of ['session.get', 'terminal.create', 'workspace.readFile', 'git.status', 'collaboration.send', 'artifact.put']) {
+      expect(descriptor.capabilities.methods).not.toContain(method)
+    }
     expect(descriptor.syncRoot).toBeUndefined()
   })
 
@@ -197,11 +190,13 @@ describe('a partial git port', () => {
     expect(fetch).toHaveBeenCalledTimes(1)
   })
 
-  it('does not advertise git or worktree listing', async () => {
+  it('advertises only the git methods it serves', async () => {
     const { ctx } = worktreeOnlyHost()
     const res = await dispatchRpc('environment.descriptor', {}, ctx)
-    const descriptor = res.result as ExecutionEnvironmentDescriptor
-    expect(descriptor.capabilities).toMatchObject({ git: false, worktrees: false })
+    const { methods } = (res.result as ExecutionEnvironmentDescriptor).capabilities
+    expect(methods).toEqual(expect.arrayContaining(['git.worktreeActivate', 'git.fetch']))
+    expect(methods).not.toContain('git.status')
+    expect(methods).not.toContain('git.worktrees')
   })
 })
 
@@ -247,8 +242,10 @@ describe('a partial collaboration port', () => {
     expect(send.error).toMatchObject({ code: 'not_found', details: { method: 'collaboration.send', unsupported: true } })
   })
 
-  it('does not advertise collaboration', async () => {
-    const res = await dispatchRpc('environment.descriptor', {}, ctx())
-    expect((res.result as ExecutionEnvironmentDescriptor).capabilities.collaboration).toBe(false)
+  it('advertises exactly the methods a partial port serves, and its extensions', async () => {
+    const res = await dispatchRpc('environment.descriptor', {}, { ...ctx(), extensionMethods: new Set(['collaboration.history']) })
+    const { methods } = (res.result as ExecutionEnvironmentDescriptor).capabilities
+    expect(methods).toEqual(expect.arrayContaining(['collaboration.listProfiles', 'collaboration.history']))
+    expect(methods).not.toContain('collaboration.send')
   })
 })

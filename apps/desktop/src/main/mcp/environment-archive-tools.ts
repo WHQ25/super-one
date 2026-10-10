@@ -1,3 +1,4 @@
+import { servesMethod } from '@superone/shared/environment'
 import { decode, encode } from '@toon-format/toon'
 import type { ArchiveToolResult, SessionArchiveTool } from '@superone/shared/session-archive'
 import type { EnvironmentListItem, EnvironmentLiveStatus, EnvironmentMachine, SubscriptionUsage } from '@superone/shared/environment'
@@ -44,7 +45,7 @@ export function createEnvironmentArchiveTools(sessionId: string, connectionId?: 
         if (!target) throw new Error('Unknown environment. Discover IDs with environment_list.')
         if (target.kind !== 'local') {
           const descriptor = await host.connect(target.connectionId)
-          if (!descriptor.capabilities.sessionArchive) throw new Error('This host does not support archive queries. Upgrade it.')
+          if (!servesMethod(descriptor.capabilities, 'session.archive')) throw new Error('This host does not support archive queries. Upgrade it.')
           if (descriptor.environmentId !== environmentId) throw new Error('Environment identity changed')
           const gateway = host.getGateway(environmentId)
           if (!gateway?.sessions.archive) throw new Error('This host does not support archive queries. Upgrade it.')
@@ -82,7 +83,7 @@ export function environmentRow(item: EnvironmentListItem, isLocal: boolean) {
     label: item.label,
     isLocal,
     state: item.state,
-    searchable: item.kind === 'local' || item.capabilities?.sessionArchive === true,
+    searchable: item.kind === 'local' || servesMethod(item.capabilities, 'session.archive'),
   }
 }
 

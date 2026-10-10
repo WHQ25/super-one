@@ -131,7 +131,8 @@ describe('DesktopNodeHost', () => {
     const client = manager.getClient(connectionId)!
 
     const described = await client.rpc<ExecutionEnvironmentDescriptor>('environment.descriptor')
-    expect(described.capabilities).toMatchObject({ sessions: true, terminal: false, workspaceFs: false, git: false, collaboration: false })
+    expect(described.capabilities.methods).toContain('session.get')
+    for (const method of ['terminal.create', 'workspace.readFile', 'git.status', 'collaboration.send']) expect(described.capabilities.methods).not.toContain(method)
     expect(described.capabilities.harnessIds).toContain('claude')
 
     const listed = await client.rpc<ProjectSnapshot[]>('project.list')
@@ -184,7 +185,8 @@ describe('DesktopNodeHost collaboration children', () => {
     const { host, sessions, store, projectDir, connectionId, client } = await pairedDesktops()
 
     const described = await client.rpc<ExecutionEnvironmentDescriptor>('environment.descriptor')
-    expect(described.capabilities).toMatchObject({ hostActionV1: true, git: false })
+    expect(described.capabilities).toMatchObject({ hostActionV1: true })
+    expect(described.capabilities.methods).toEqual(expect.arrayContaining(['git.fetch', 'git.worktreeActivate']))
     // Only fetching and worktree creation of the git family are served.
     await expect(client.rpc('git.status', { projectId: 'p1' })).rejects.toMatchObject({ code: 'not_found' })
     // Pushed work B's checkout has not seen yet: the fetch makes it the base.

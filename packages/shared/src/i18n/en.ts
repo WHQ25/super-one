@@ -433,6 +433,7 @@ export type Messages = {
     }
     empty: string
     noFiles: string
+    filesUnavailable: string
     refreshFiles: string
     createFailed: string
     search: {
@@ -4719,6 +4720,7 @@ export const en: Messages = {
     },
     empty: 'No projects yet',
     noFiles: 'No files',
+    filesUnavailable: 'This machine does not share its files',
     refreshFiles: 'Refresh file tree',
     createFailed: 'Could not create {{name}}: {{error}}',
     search: {

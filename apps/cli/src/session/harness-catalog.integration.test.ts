@@ -175,9 +175,9 @@ describe('Harness catalog (Stage 1)', () => {
     const rt = await boot()
     const client = await connectAuthedRpc(rt)
     const desc = (await client.rpc('environment.descriptor')) as {
-      capabilities: { harnessIds: string[]; sessions: boolean }
+      capabilities: { harnessIds: string[]; methods: string[] }
     }
-    expect(desc.capabilities.sessions).toBe(true)
+    expect(desc.capabilities.methods).toContain('session.get')
     expect(desc.capabilities.harnessIds).toEqual(withRunnableOverrides([]))
 
     const list = (await client.rpc('harness.list')) as HarnessInstallationStatus[]

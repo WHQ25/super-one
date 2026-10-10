@@ -94,6 +94,7 @@ import { listSessionsForProjectId, listPinnedSessions as listLocalPinnedSessions
 import type {
   ClonedProject,
   DraftListEntry,
+  DraftGateway,
   DraftRecord,
   DraftUpsertRequest,
   ProjectSnapshot,
@@ -599,7 +600,7 @@ export class EnvironmentHost {
     let remote: DraftRecord[] = []
     try {
       const gateway = this.requireRemoteGateway(connectionId)
-      remote = await gateway.drafts.list(projectPath ? { projectPath } : undefined)
+      remote = await gateway.drafts?.list(projectPath ? { projectPath } : undefined) ?? []
     } catch {
       // Node unreachable: its drafts live there and are simply not available
       // right now. Never fabricate a stale mirror — show only what we hold.
@@ -617,10 +618,10 @@ export class EnvironmentHost {
       const local = this.registry.getLocal()
       return (await local.drafts!.upsert(draft)) as DraftListEntry
     }
+    if (this.keepsNoDrafts(connectionId)) throw new Error('This machine keeps no drafts')
     enqueuePendingDraft(connectionId, draft)
     try {
-      const gateway = this.requireRemoteGateway(connectionId)
-      const saved = await gateway.drafts.upsert(draft)
+      const saved = await this.remoteDrafts(connectionId).upsert(draft)
       deletePendingDraft(draft.id)
       return saved
     } catch (err) {
@@ -646,10 +647,26 @@ export class EnvironmentHost {
     const wasQueued = listPendingDrafts(connectionId).some((p) => p.draft.id === draftId)
     deletePendingDraft(draftId)
     try {
-      await this.requireRemoteGateway(connectionId).drafts.delete(draftId)
+      await this.remoteDrafts(connectionId).delete(draftId)
     } catch (err) {
       if (!wasQueued) throw err
     }
+  }
+
+  /** A connected node that says it serves no drafts; an unreachable one may still have them. */
+  private keepsNoDrafts(connectionId: string): boolean {
+    try {
+      return this.requireRemoteGateway(connectionId).drafts === undefined
+    } catch {
+      return false
+    }
+  }
+
+  /** A connected node's drafts. */
+  private remoteDrafts(connectionId: string): DraftGateway {
+    const drafts = this.requireRemoteGateway(connectionId).drafts
+    if (!drafts) throw new Error('This machine keeps no drafts')
+    return drafts
   }
 
   async disconnectDraft(connectionId: string, draftId: string): Promise<void> {
@@ -667,12 +684,12 @@ export class EnvironmentHost {
     if (queued.length === 0) return { flushed: 0, failed: 0 }
     let flushed = 0
     let failed = 0
-    const gateway = this.requireRemoteGateway(connectionId)
+    const drafts = this.remoteDrafts(connectionId)
     for (const item of queued) {
       const result = await flushPendingDraftItem(item.draft, {
         isStillQueued: isPendingDraftQueued,
-        upsert: (draft) => gateway.drafts.upsert(draft).then(() => undefined),
-        remoteDelete: (draftId) => gateway.drafts.delete(draftId),
+        upsert: (draft) => drafts.upsert(draft).then(() => undefined),
+        remoteDelete: (draftId) => drafts.delete(draftId),
         dequeue: deletePendingDraft,
         recordFailure: recordPendingDraftFailure,
       })

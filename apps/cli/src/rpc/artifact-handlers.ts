@@ -173,24 +173,23 @@ async function handleDelete(payload: unknown, ctx: ArtifactRpcContext): Promise<
   }
 }
 
+const ARTIFACT_HANDLERS: Readonly<Record<string, (payload: unknown, ctx: ArtifactRpcContext, method: string) => ArtifactRpcResult | Promise<ArtifactRpcResult>>> = {
+  [ARTIFACT_RPC_METHODS.stat]: (payload, ctx) => handleStat(payload, ctx),
+  [ARTIFACT_RPC_METHODS.list]: (payload, ctx) => handleList(payload, ctx),
+  [ARTIFACT_RPC_METHODS.get]: (payload, ctx) => handleGet(payload, ctx),
+  [ARTIFACT_RPC_METHODS.put]: (payload, ctx) => handlePut(payload, ctx),
+  [ARTIFACT_RPC_METHODS.delete]: (payload, ctx) => handleDelete(payload, ctx),
+}
+
+/** Every method this table serves. */
+export const ARTIFACT_RPC_METHOD_SET: ReadonlySet<string> = new Set(Object.keys(ARTIFACT_HANDLERS))
+
 /** Returns null for methods outside the `artifact.*` family. */
 export function dispatchArtifactRpc(
   method: string,
   payload: unknown,
   ctx: ArtifactRpcContext,
 ): ArtifactRpcResult | Promise<ArtifactRpcResult> | null {
-  switch (method) {
-    case ARTIFACT_RPC_METHODS.stat:
-      return handleStat(payload, ctx)
-    case ARTIFACT_RPC_METHODS.list:
-      return handleList(payload, ctx)
-    case ARTIFACT_RPC_METHODS.get:
-      return handleGet(payload, ctx)
-    case ARTIFACT_RPC_METHODS.put:
-      return handlePut(payload, ctx)
-    case ARTIFACT_RPC_METHODS.delete:
-      return handleDelete(payload, ctx)
-    default:
-      return null
-  }
+  const handler = Object.hasOwn(ARTIFACT_HANDLERS, method) ? ARTIFACT_HANDLERS[method] : undefined
+  return handler ? handler(payload, ctx, method) : null
 }

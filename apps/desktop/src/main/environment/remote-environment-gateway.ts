@@ -1,3 +1,4 @@
+import { ARTIFACT_RPC_METHODS, servesMethod } from '@superone/shared/environment'
 import { randomUUID } from 'node:crypto'
 import type {
   ArtifactDeleteResult,
@@ -94,7 +95,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
   readonly interactions: InteractionGateway
   readonly terminals: TerminalGateway
   readonly workspace: WorkspaceGateway
-  readonly drafts: DraftGateway
+  private readonly draftGateway: DraftGateway
   readonly artifacts: ArtifactGateway
 
   private descriptorCache: ExecutionEnvironmentDescriptor | null = null
@@ -105,18 +106,27 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     this.interactions = this.createInteractionGateway()
     this.terminals = this.createTerminalGateway()
     this.workspace = this.createWorkspaceGateway()
-    this.drafts = this.createDraftGateway()
+    this.draftGateway = this.createDraftGateway()
     this.artifacts = this.createArtifactGateway()
   }
 
   /**
-   * The node's side of the session sync zone, or null when the node predates
-   * it (`capabilities.syncZone` absent). Read from the descriptor cached at
-   * connect; the root is compared textually, never resolved here.
+   * The node's drafts, unless its descriptor (cached at connect) says it
+   * serves none (no `draft.list`).
+   */
+  get drafts(): DraftGateway | undefined {
+    const capabilities = this.descriptorCache?.capabilities
+    return !capabilities || servesMethod(capabilities, 'draft.list') ? this.draftGateway : undefined
+  }
+
+  /**
+   * The node's side of the session sync zone, or null when the node serves
+   * none (no `artifact.put`). Read from the descriptor cached at connect; the
+   * root is compared textually, never resolved here.
    */
   syncZone(): { syncRoot: string; os: ExecutionEnvironmentDescriptor['platform']['os'] } | null {
     const descriptor = this.descriptorCache
-    if (!descriptor?.capabilities?.syncZone || !descriptor.syncRoot) return null
+    if (!servesMethod(descriptor?.capabilities, ARTIFACT_RPC_METHODS.put) || !descriptor?.syncRoot) return null
     return { syncRoot: descriptor.syncRoot, os: descriptor.platform.os }
   }
 
@@ -1267,13 +1277,10 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
         this.assertEnv(input.session.environmentId)
         // Unique once per logical send — never derive from text length/content.
         const clientMessageId = input.clientMessageId || randomUUID()
-        // On a host that dedupes by message id, the RPC's idempotency key is
-        // the client's per-call attempt key: its transport retries reuse it,
-        // while a Resend of a row that failed after acceptance reaches the
-        // host's send again and its guard holds a taken message. Without that
-        // guard (an older node, or a descriptor not read yet) the message id
-        // stays the key, so a Resend after a lost response cannot run it twice.
-        const attemptKeyed = this.descriptorCache?.capabilities?.messageIdempotency === true
+        // The host dedupes by message id, so the RPC's idempotency key is the
+        // client's per-call attempt key: its transport retries reuse it, while
+        // a Resend of a row that failed after acceptance reaches the host's
+        // send again and its guard holds a taken message.
         await this.client.rpc(
           'session.send',
           {
@@ -1286,8 +1293,6 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
               ? { options: input.options }
               : {}),
           },
-          undefined,
-          attemptKeyed ? undefined : clientMessageId,
         )
       },
       patchSettings: async (input) => {

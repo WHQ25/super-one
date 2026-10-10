@@ -380,15 +380,11 @@ export type RpcExtensionDispatch = (
 ) => RpcResult | null | Promise<RpcResult | null>
 
 /**
- * Capability flags that are host policy rather than a consequence of which
- * ports the host provides. The port-backed flags (sessions, terminal,
- * workspaceFs, git, worktrees, collaboration, syncZone) are derived from the
- * ports, so the descriptor never advertises a family the host cannot serve.
+ * Capability flags that are host policy. What the host serves is its
+ * `methods`, derived from its ports and extensions, so the descriptor never
+ * advertises a method the host cannot serve.
  */
-export type HostCapabilityFlags = Omit<
-  EnvironmentCapabilities,
-  'harnessIds' | 'sessions' | 'terminal' | 'workspaceFs' | 'git' | 'worktrees' | 'collaboration' | 'syncZone'
->
+export type HostCapabilityFlags = Pick<EnvironmentCapabilities, 'coldSessionResume' | 'turnReattach' | 'hostActionV1'>
 
 /**
  * Context of one node RPC. Each port family is optional: a host serves the
@@ -423,6 +419,8 @@ export interface RpcContext {
   sessionProviders?: Pick<SessionProviderStore, 'get'>
   artifacts?: ArtifactZonePort
   extensions?: RpcExtensionDispatch
+  /** Every method `extensions` serves, for the descriptor's `methods`. */
+  extensionMethods?: ReadonlySet<string>
   /** Host knowledge for `environment.usage`; without it the node reads each CLI's default login. */
   subscriptionUsage?: SubscriptionUsagePort
 

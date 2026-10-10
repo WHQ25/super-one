@@ -1,24 +1,15 @@
 import type { HarnessId } from '../session-types'
 
 /**
- * Negotiated environment capabilities — not inferred from version strings.
- * Unknown flags on either side must be ignored; absence means unsupported.
+ * What an environment can do, as it reports it — never inferred from version
+ * strings. A client gates a feature on the RPC methods the environment
+ * serves; absence means unsupported.
  */
-
 export interface EnvironmentCapabilities {
-  sessions: boolean
-  /** Environment-qualified archive reads and session-link restore baseline. */
-  sessionArchive?: boolean
+  /** Every RPC method this environment serves. */
+  methods: string[]
   /** Harness IDs this environment can host. */
   harnessIds: HarnessId[]
-  terminal: boolean
-  workspaceFs: boolean
-  git: boolean
-  worktrees: boolean
-  mcp: boolean
-  fileTransfer: boolean
-  collaboration: boolean
-  nodeAdmin: boolean
   /**
    * After cold node restart, Sessions remain usable and later turns may resume
    * from durable provider metadata when the Harness supports it.
@@ -32,130 +23,21 @@ export interface EnvironmentCapabilities {
    * are stamped on session.create separately.
    */
   hostActionV1: boolean
-  /**
-   * Environment-scoped draft store (draft.list/upsert/delete). Absent on nodes
-   * predating the feature — their sidebar simply shows no drafts group.
-   */
-  drafts: boolean
-  /**
-   * Session sync zone (`docs/architecture/session-sync-zone.md`): the environment
-   * reports `descriptor.syncRoot` and serves `artifact.stat/put/get/delete`
-   * scoped to `<syncRoot>/<sessionId>`. Absent on older nodes — the desktop
-   * then neither rewrites Host Action paths nor mirrors node artifacts.
-   */
-  syncZone: boolean
-  /**
-   * `session.send` is idempotent by `clientMessageId` on the host: a message
-   * it took is held, one that never ran runs again under the same id. Only
-   * then may a controller key each send attempt on its own; an older node
-   * dedupes by the RPC key alone, so its controller keys by message id.
-   */
-  messageIdempotency?: boolean
 }
 
+/**
+ * Whether the environment serves `method`; false while its capabilities are
+ * unknown, and for a descriptor a release before method lists cached.
+ */
+export function servesMethod(capabilities: Partial<Pick<EnvironmentCapabilities, 'methods'>> | undefined, method: string): boolean {
+  return capabilities?.methods?.includes(method) ?? false
+}
+
+/** This desktop's own environment: the window calls its host in-process, not by method. */
 export const LOCAL_ENVIRONMENT_CAPABILITIES: EnvironmentCapabilities = {
-  sessions: true,
-  sessionArchive: true,
+  methods: [],
   harnessIds: ['claude', 'codex', 'acp', 'opencode'],
-  terminal: true,
-  workspaceFs: true,
-  git: true,
-  worktrees: true,
-  mcp: true,
-  fileTransfer: true,
-  collaboration: true,
-  nodeAdmin: false,
   coldSessionResume: true,
   turnReattach: false,
   hostActionV1: true,
-  drafts: true,
-  // Local artifacts already live on this machine; there is no peer to sync with.
-  syncZone: false,
-  messageIdempotency: true,
-}
-
-/** Baseline node capabilities; Phase 2 enables workspaceFs/git/worktrees at runtime. */
-export const PHASE1_NODE_CAPABILITIES: EnvironmentCapabilities = {
-  sessions: false,
-  harnessIds: [],
-  terminal: true,
-  workspaceFs: true,
-  git: true,
-  worktrees: true,
-  mcp: false,
-  fileTransfer: false,
-  collaboration: false,
-  nodeAdmin: true,
-  coldSessionResume: false,
-  turnReattach: false,
-  hostActionV1: true,
-  drafts: true,
-  syncZone: true,
-}
-
-/**
- * Intersect two capability sets for negotiation.
- * Boolean flags AND; harnessIds is the intersection of both lists.
- */
-export function intersectCapabilities(
-  a: EnvironmentCapabilities,
-  b: EnvironmentCapabilities,
-): EnvironmentCapabilities {
-  const harnessSet = new Set(b.harnessIds)
-  return {
-    sessions: a.sessions && b.sessions,
-    sessionArchive: Boolean(a.sessionArchive && b.sessionArchive),
-    harnessIds: a.harnessIds.filter((id) => harnessSet.has(id)),
-    terminal: a.terminal && b.terminal,
-    workspaceFs: a.workspaceFs && b.workspaceFs,
-    git: a.git && b.git,
-    worktrees: a.worktrees && b.worktrees,
-    mcp: a.mcp && b.mcp,
-    fileTransfer: a.fileTransfer && b.fileTransfer,
-    collaboration: a.collaboration && b.collaboration,
-    nodeAdmin: a.nodeAdmin && b.nodeAdmin,
-    coldSessionResume: a.coldSessionResume && b.coldSessionResume,
-    turnReattach: a.turnReattach && b.turnReattach,
-    hostActionV1: a.hostActionV1 && b.hostActionV1,
-    drafts: a.drafts && b.drafts,
-    syncZone: a.syncZone && b.syncZone,
-    messageIdempotency: Boolean(a.messageIdempotency && b.messageIdempotency),
-  }
-}
-
-/**
- * Drop unknown capability keys from a wire payload so older/newer peers
- * remain forward-compatible. Known keys keep their values; missing booleans
- * default to false; harnessIds defaults to [].
- */
-export function normalizeCapabilities(raw: unknown): EnvironmentCapabilities {
-  const obj = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
-  const harnessIds = Array.isArray(obj.harnessIds)
-    ? obj.harnessIds.filter((id): id is HarnessId =>
-        id === 'claude' || id === 'codex' || id === 'acp' || id === 'opencode',
-      )
-    : []
-
-  const flag = (key: keyof EnvironmentCapabilities): boolean =>
-    key === 'harnessIds' ? false : Boolean(obj[key])
-
-  return {
-    sessions: flag('sessions'),
-    sessionArchive: flag('sessionArchive'),
-    harnessIds,
-    terminal: flag('terminal'),
-    workspaceFs: flag('workspaceFs'),
-    git: flag('git'),
-    worktrees: flag('worktrees'),
-    mcp: flag('mcp'),
-    fileTransfer: flag('fileTransfer'),
-    collaboration: flag('collaboration'),
-    nodeAdmin: flag('nodeAdmin'),
-    coldSessionResume: flag('coldSessionResume'),
-    turnReattach: flag('turnReattach'),
-    hostActionV1: flag('hostActionV1'),
-    drafts: flag('drafts'),
-    syncZone: flag('syncZone'),
-    messageIdempotency: flag('messageIdempotency'),
-  }
 }

@@ -133,7 +133,7 @@ describe('environment list', () => {
     expect(list[0]!.connectionId).toBe('local')
     expect(list[0]!.kind).toBe('local')
     expect(list[0]!.state).toBe('connected')
-    expect(list[0]!.capabilities?.sessions).toBe(true)
+    expect(list[0]!.capabilities?.harnessIds).toContain('claude')
     host.dispose()
   })
 
@@ -155,7 +155,7 @@ describe('environment list', () => {
     expect(remote?.nodePublicKeyFingerprint).toBe(rt.identity.publicKeyFingerprint)
     expect(remote?.state).toBe('connected')
     // Production node is fail-closed on sessions until a real harness is injected.
-    expect(remote?.capabilities?.terminal).toBe(true)
+    expect(remote?.capabilities?.methods).toContain('terminal.create')
     host.dispose()
   })
 

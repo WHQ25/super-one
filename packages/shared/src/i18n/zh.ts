@@ -462,6 +462,7 @@ export const zh: Messages = {
     },
     empty: '还没有项目',
     noFiles: '没有文件',
+    filesUnavailable: '这台机器不提供文件浏览',
     refreshFiles: '刷新文件树',
     createFailed: '无法创建 {{name}}：{{error}}',
     search: {

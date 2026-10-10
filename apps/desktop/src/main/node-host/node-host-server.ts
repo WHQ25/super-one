@@ -33,19 +33,11 @@ import { desktopNodeHostPaths, DESKTOP_NODE_LOOPBACK_HOST } from './paths'
 import { claudeUsageAccounts } from '../agent/subscription-usage'
 import { usageLog } from '../agent/usage-log'
 
-/**
- * Policy flags of the desktop node. The port-backed families (sessions, git, …)
- * are derived by the dispatcher from the ports this host passes.
- */
+/** Policy flags of the desktop node; its methods follow from the ports this host passes. */
 const DESKTOP_NODE_CAPABILITIES: HostCapabilityFlags = {
-  mcp: false,
-  fileTransfer: false,
-  nodeAdmin: false,
   coldSessionResume: true,
   turnReattach: false,
   hostActionV1: true,
-  drafts: false,
-  messageIdempotency: true,
 }
 
 /**

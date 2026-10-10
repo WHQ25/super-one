@@ -1,3 +1,4 @@
+import type { SessionEventHub } from '../stream/session-event-hub'
 import { getMcpAppResourceStore as resourceStore } from './resource-store'
 import { mcpAppServerTitle } from '@superone/shared/mcp-apps-metadata'
 import type { McpAppResourceSnapshot } from '@superone/shared/mcp-app-resource'
@@ -22,7 +23,6 @@ import { hostFileApp, readHostFile, releaseHostFileApps, subscribeHostFile, unsu
 
 interface MobileSender {
   handleRemoteCommand(command: RemoteCommand, respond?: RemoteResponder, source?: { deviceId: string; transport: 'lan' | 'relay' }): Promise<void>
-  notifyEventSubscribers(event: AgentEvent): void
 }
 
 let executor: McpAppExecutor | undefined
@@ -38,7 +38,7 @@ function acceptedSend(deliver: (onAccepted: () => void) => Promise<unknown>, sig
   })
 }
 
-export function initializeMcpAppExecutor(manager: SessionManagerImpl, mobile: MobileSender, publish: (event: AgentEvent) => void): void {
+export function initializeMcpAppExecutor(manager: SessionManagerImpl, mobile: MobileSender, hub: SessionEventHub): void {
   if (executor) return
   const local = (id: string) => manager.getSession(id) ?? manager.resumeSession(id, { passive: true })
   const resolve = async (ref: SessionRef, appInstanceId: string, messageId: string | undefined, signal: AbortSignal): Promise<McpAppResolvedTarget> => {
@@ -75,8 +75,7 @@ export function initializeMcpAppExecutor(manager: SessionManagerImpl, mobile: Mo
         const { getEnvironmentHost } = await import('../environment/environment-host')
         const result = await getEnvironmentHost().updateMcpAppState(target.ref.environmentId, { sessionId: target.ref.sessionId, appInstanceId: target.app.appInstanceId, update })
         if (!result.ok) throw new McpAppsError(result.error.code, result.error.message)
-        publish(event)
-        mobile.notifyEventSubscribers(event)
+        hub.publish({ event, source: 'remote-update' })
       }
     },
     async hydrateResource(target, signal) {
@@ -165,9 +164,13 @@ export function initializeMcpAppExecutor(manager: SessionManagerImpl, mobile: Mo
       }
     },
   })
-  manager.onAny((sid, event, replay) => {
-    if (replay) return
-    for (const app of mcpAppEventAttachments(event)) executor!.observeLive({ environmentId: 'local', sessionId: sid }, app)
+  hub.subscribe({
+    name: 'mcp-apps',
+    sources: ['session'],
+    replay: false,
+    deliver: ({ event, sessionId }) => {
+      for (const app of mcpAppEventAttachments(event)) executor!.observeLive({ environmentId: 'local', sessionId: sessionId! }, app)
+    },
   })
   const releaseSession = (ref: SessionRef) => { executor!.releaseSession(ref); remoteFreshness.releaseSession(ref); releaseHostFileApps(ref) }
   watchSessionCloses(releaseSession)

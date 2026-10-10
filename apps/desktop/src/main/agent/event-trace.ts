@@ -84,6 +84,11 @@ export function trace(
   )
 }
 
+/** Whether `trace` writes anything: lets a caller skip building an expensive payload. */
+export function traceEnabled(): boolean {
+  return insertStmt !== null
+}
+
 export function closeTraceDb(): void {
   db?.close()
   db = null

@@ -1638,7 +1638,7 @@ describe('AgentService.handleRemoteCommand', () => {
       getSession: vi.fn(() => activeSession),
       forEachSession: (fn: (s: unknown) => void) => sessions.forEach(fn),
     }
-    ;(service as unknown as { broadcastEventToRenderer: (event: unknown) => void }).broadcastEventToRenderer = () => {}
+    ;(service as unknown as { publishEnvironmentEvent: (event: unknown) => void }).publishEnvironmentEvent = () => {}
     service.setDeviceRegistry({
       handleDeviceDisconnected: vi.fn(),
       unsubscribeAll: (deviceId: string) => sessions.forEach((s) => (s as { unsubscribe: (d: string) => void }).unsubscribe(deviceId)),
@@ -2372,7 +2372,7 @@ describe('AgentService.handleRemoteCommand', () => {
       getActiveSession: vi.fn(() => activeSession),
       getSession: vi.fn(() => activeSession),
     }
-    ;(service as unknown as { broadcastEventToRenderer: (e: unknown) => void }).broadcastEventToRenderer = (e) => { broadcasts.push(e) }
+    ;(service as unknown as { publishEnvironmentEvent: (e: unknown) => void }).publishEnvironmentEvent = (e) => { broadcasts.push(e) }
 
     const fakeRemote = {
       getSubscribedSession: () => ({ projectPath: '/p', sessionId: 'sid-1' }),
@@ -2407,7 +2407,7 @@ describe('AgentService.handleRemoteCommand', () => {
     const activeSession = makeMockSession({ id: 'sid-1', projectPath: '/p', respondToPermission: vi.fn(() => false) })
     const service = new AgentService()
     ;(service as { sessionManager: unknown }).sessionManager = { getActiveSession: vi.fn(() => activeSession), getSession: vi.fn(() => activeSession) }
-    ;(service as unknown as { broadcastEventToRenderer: (e: unknown) => void }).broadcastEventToRenderer = () => {}
+    ;(service as unknown as { publishEnvironmentEvent: (e: unknown) => void }).publishEnvironmentEvent = () => {}
     service.setRemoteControlService({ getSubscribedSession: () => ({ projectPath: '/p', sessionId: 'sid-1' }), setRemoteSessionFilter: vi.fn(), clearRemoteSessionFilter: vi.fn() } as never)
     const { requestId, outcome } = openInputRequest({ id: 'sid-1', emitHostEvent: () => {} }, { meta: inputRequestMeta(admitted.spec, { kind: 'agent' }, 'caller'), form: admitted.form })
     const respond = vi.fn(async () => {})
@@ -3729,19 +3729,22 @@ describe('IPC interaction responses', () => {
       getSession: vi.fn(() => session),
       getActiveSession: vi.fn(() => session),
     }
-    ;(service as unknown as { broadcastEventToRenderer: (e: unknown) => void }).broadcastEventToRenderer = (e) => { broadcasts.push(e) }
+    ;(service as unknown as { publishEnvironmentEvent: (e: unknown) => void }).publishEnvironmentEvent = (e) => { broadcasts.push(e) }
     service.setup()
     return { service, broadcasts }
   }
 
-  it('broadcastEventToRenderer routes events through the injected broadcast fn so every window (incl. mini-window) receives them', () => {
-    const fanOut: unknown[] = []
+  it('publishes environment events through the injected publisher only', () => {
+    const published: unknown[] = []
+    const subscribed: unknown[] = []
     const service = new AgentService()
-    service.setBroadcastFn((e) => { fanOut.push(e) })
-    const event = { type: 'project_list_changed' }
-    ;(service as unknown as { broadcastEventToRenderer: (e: unknown) => void }).broadcastEventToRenderer(event)
+    service.setEnvironmentEventPublisher((e) => { published.push(e) })
+    service.addEventSubscriber((e) => { subscribed.push(e) })
+    const event = { type: 'provider_changed', harnessId: 'claude', provider: null }
+    ;(service as unknown as { publishEnvironmentEvent: (e: unknown) => void }).publishEnvironmentEvent(event)
 
-    expect(fanOut).toEqual([event])
+    expect(published).toEqual([event])
+    expect(subscribed).toEqual([])
   })
 
   // Each handler only delegates: `Session` announces `interaction_resolved`

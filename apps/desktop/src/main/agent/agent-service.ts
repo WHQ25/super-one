@@ -195,23 +195,20 @@ export class AgentService {
     this.terminalManager = mgr
   }
 
-  setBroadcastFn(fn: (event: AgentEvent) => void): void {
-    this.broadcastFn = fn
+  /** Where environment events (no session) go: the main event hub in production. */
+  setEnvironmentEventPublisher(fn: (event: AgentEvent) => void): void {
+    this.environmentEventPublisher = fn
   }
 
-  private broadcastFn: ((event: AgentEvent) => void) | null = null
+  private environmentEventPublisher: ((event: AgentEvent) => void) | null = null
 
-  private broadcastEventToRenderer(event: AgentEvent): void {
-    trace('remote.debug', 'broadcastEventToRenderer', { type: event.type, projectPath: event.projectPath, sessionId: event.sessionId, messageId: 'messageId' in event ? event.messageId : undefined })
-    if (event.type === 'permission_request') {
-      const alive = !!this.mainWindow && !this.mainWindow.isDestroyed()
-      log.info('[broadcast] permission_request requestId=%s toolName=%s sessionId=%s projectPath=%s windowAlive=%s',
-        event.request.requestId, event.request.toolName, event.sessionId ?? '(none)', event.projectPath ?? '(none)', alive)
-    }
-    if (this.broadcastFn) {
-      this.broadcastFn(event)
+  private publishEnvironmentEvent(event: AgentEvent): void {
+    trace('remote.debug', 'publishEnvironmentEvent', { type: event.type, projectPath: event.projectPath, sessionId: event.sessionId })
+    if (this.environmentEventPublisher) {
+      this.environmentEventPublisher(event)
       return
     }
+    this.notifyEventSubscribers(event)
     this.mainWindow && !this.mainWindow.isDestroyed() && this.mainWindow.webContents.send(AgentIpcChannels.EVENT, event)
   }
 
@@ -417,8 +414,7 @@ export class AgentService {
       experimentalClaudeOpenAiChatEnabled: readAppSettings().experimentalClaudeOpenAiChatEnabled,
     }), harnessId)
     const event: AgentEvent = { type: 'provider_changed', harnessId, provider }
-    this.notifyEventSubscribers(event)
-    this.broadcastEventToRenderer(event)
+    this.publishEnvironmentEvent(event)
   }
 
   /**
@@ -518,8 +514,7 @@ export class AgentService {
       sessionAdditionalDirs: sessionDirs,
       workspaceDirs,
     }
-    this.notifyEventSubscribers(event)
-    this.broadcastEventToRenderer(event)
+    this.publishEnvironmentEvent(event)
   }
 
   private async ensureRemoteOwnership<T>(

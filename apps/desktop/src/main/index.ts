@@ -112,6 +112,8 @@ import { DesktopNotificationChannel } from './notifications/desktop-notification
 import { PresenceCoordinator } from './remote/presence-coordinator'
 import { getSessionRecord, listWorktreePaths, loadSessionStateBySid, resolveProviderSessionIdForResume, saveSessionStateBySid, updateProviderSessionId } from './session/session-repo'
 import { applyRealtimeTimelineEvent } from './session/realtime-timeline-repo'
+import { SessionEventHub } from './stream/session-event-hub'
+import { recordHubEvents } from './stream/hub-recorder'
 import { deepseekTrajectorySource } from './deepseek/trajectory-source'
 import { clearTrajectoryWatches, setTrajectoryWatch } from './deepseek/trajectory-watch'
 import type { TrajectoryPayloadRef } from '@superone/shared/trajectory-types'
@@ -607,26 +609,73 @@ function migrateLegacyRemotePowerMode(): AppSettings {
   }
   return current
 }
-sessionManager.onAny((_sid, event, replay) => {
-  if (
-    event.type === 'realtime_started'
-    || event.type === 'realtime_transcript_item'
-    || event.type === 'realtime_closed'
-  ) {
-    try {
-      applyRealtimeTimelineEvent(_sid, event)
-    } catch (err) {
-      log.warn('[realtime] failed to persist timeline sid=%s: %s', _sid, err instanceof Error ? err.message : String(err))
+/**
+ * Every event in main leaves through this hub; the consumers below are the
+ * whole routing table (who receives which source).
+ */
+const sessionEvents = new SessionEventHub()
+sessionManager.onAny((sessionId, event, replay) => sessionEvents.publish({ event, source: 'session', sessionId, replay }))
+recordHubEvents(sessionEvents, (sessionId) => sessionManager.getSession(sessionId) ?? undefined)
+sessionEvents.subscribe({
+  name: 'session-bookkeeping',
+  sources: ['session'],
+  replay: false,
+  deliver: ({ event, sessionId }) => {
+    const sid = sessionId!
+    if (
+      event.type === 'realtime_started'
+      || event.type === 'realtime_transcript_item'
+      || event.type === 'realtime_closed'
+    ) {
+      try {
+        applyRealtimeTimelineEvent(sid, event)
+      } catch (err) {
+        log.warn('[realtime] failed to persist timeline sid=%s: %s', sid, err instanceof Error ? err.message : String(err))
+      }
     }
-  }
-  if (event.type === 'permission_request') {
-    const alive = !!mainWindow && !mainWindow.isDestroyed()
-    log.info('[onAny] permission_request sid=%s sessionId=%s projectPath=%s windowAlive=%s requestId=%s',
-      _sid, event.sessionId ?? '(none)', event.projectPath ?? '(none)', alive, event.request.requestId)
-  }
-  agentService.notifyEventSubscribers(event)
-  scheduledSendService.observe(_sid, event, replay)
-  publishAgentEvent(event)
+    if (event.type === 'permission_request') {
+      const alive = !!mainWindow && !mainWindow.isDestroyed()
+      log.info('[hub] permission_request sid=%s projectPath=%s windowAlive=%s requestId=%s',
+        sid, event.projectPath ?? '(none)', alive, event.request.requestId)
+    }
+  },
+})
+sessionEvents.subscribe({
+  name: 'phones-and-automations',
+  sources: ['session', 'environment', 'draft', 'list', 'remote-update'],
+  replay: true,
+  // Phones keep drafts as rows and load a composer through `open_draft`;
+  // the change notice needs no attachment bytes (seconds of decryption each).
+  deliver: ({ event }) => agentService.notifyEventSubscribers(
+    event.type === 'draft_changed' && event.draft ? { ...event, draft: withoutDraftAttachmentBytes(event.draft) } : event,
+  ),
+})
+sessionEvents.subscribe({
+  name: 'scheduled-send',
+  sources: ['session', 'remote-node'],
+  replay: false,
+  deliver: ({ event, sessionId }) => {
+    const sid = sessionId ?? event.sessionId
+    if (sid) scheduledSendService.observe(sid, event)
+  },
+})
+sessionEvents.subscribe({
+  name: 'renderer',
+  sources: ['session', 'environment', 'draft', 'presence', 'settings', 'remote-update'],
+  replay: true,
+  deliver: ({ event }) => publishAgentEvent(event),
+})
+sessionEvents.subscribe({
+  name: 'remote-node',
+  sources: ['remote-node'],
+  replay: false,
+  deliver: ({ event }) => {
+    observeRemoteMcpAppEvent(event)
+    // Sent raw, not through publishAgentEvent: the renderer transport encodes
+    // Codex items as patches against baselines that a remote rehydrate does
+    // not reset, so a patch would append to the rehydrated item.
+    safeSend(AgentIpcChannels.EVENT, event)
+  },
 })
 const deviceRegistry = new DeviceRegistry(sessionManager)
 const remoteCallbacks: RemoteControlCallbacks = {
@@ -815,7 +864,12 @@ const collaborationChildMonitor = new CollaborationChildMonitor({
   notifyStalled: (sessionId) => notificationService.notifyStalled(sessionId),
   clearStalled: (sessionId) => notificationService.clearStalled(sessionId),
 })
-sessionManager.onAny((sessionId, event, replay) => collaborationChildMonitor.handleEvent(sessionId, event, replay))
+sessionEvents.subscribe({
+  name: 'collaboration',
+  sources: ['session'],
+  replay: false,
+  deliver: ({ event, sessionId }) => collaborationChildMonitor.handleEvent(sessionId!, event, false),
+})
 setInterval(() => {
   void collaborationChildMonitor.checkStalls()
   // Stop wakes an idle parent has not observed yet, from this run or before a restart.
@@ -824,18 +878,14 @@ setInterval(() => {
 // Children on other machines: their runs reach the monitor from the node's event log.
 new RemoteChildWatcher(collaborationChildMonitor).start()
 
-/**
- * Single convergence point for everything the renderer sees, so notifications
- * observe exactly what the renderer does: session events, remote-node events,
- * drafts and the environment events AgentService publishes.
- */
+/** The renderer consumer: notifications observe exactly what the renderer does. */
 function publishAgentEvent(event: AgentEvent): void {
   notificationService.handleEvent(event)
   rendererAgentEventTransport.push(event)
 }
 
 new PresenceCoordinator(sessionManager, {
-  broadcastToRenderer: (event) => publishAgentEvent(event),
+  broadcastToRenderer: (event) => sessionEvents.publish({ event, source: 'presence' }),
   sendToMobile: (event, targetDeviceIds) => remoteControlService.sendEventToMobile(event, targetDeviceIds),
 })
 
@@ -1315,9 +1365,9 @@ function createWindow(): void {
     refreshAppDefinitions(projectDir, appId, manifest)
     return restartMiniAppHost(projectDir, appId, args)
   })
-  agentService.setBroadcastFn((event) => publishAgentEvent(event))
+  agentService.setEnvironmentEventPublisher((event) => sessionEvents.publish({ event, source: 'environment' }))
   agentService.setSessionManager(sessionManager)
-  initializeMcpAppExecutor(sessionManager, agentService, publishAgentEvent)
+  initializeMcpAppExecutor(sessionManager, agentService, sessionEvents)
   registerMcpAppsProviderIpc(id => sessionManager.getSession(id), id => sessionManager.resumeSession(id, { passive: true }))
   automationService.setMainWindow(mainWindow)
   automationService.setAgentService(agentService)
@@ -1735,14 +1785,7 @@ function attachEnvironmentStatusBridge(host: EnvironmentHost): void {
     safeSend(AgentIpcChannels.ENVIRONMENT_STATUS_EVENT, snapshot)
   })
   // Remote node turns: map session.events → AgentEvent and stream into chat.
-  host.setAgentEventSink((event) => {
-    observeRemoteMcpAppEvent(event)
-    if (event.sessionId) scheduledSendService.observe(event.sessionId, event)
-    // Sent raw, not through publishAgentEvent: the renderer transport encodes
-    // Codex items as patches against baselines that a remote rehydrate does
-    // not reset, so a patch would append to the rehydrated item.
-    safeSend(AgentIpcChannels.EVENT, event)
-  })
+  host.setAgentEventSink((event) => sessionEvents.publish({ event, source: 'remote-node' }))
   // Auto-connect desired remotes + network-online edge wake.
   // (powerMonitor resume also wakes via registerAgentService.)
   void import('./environment/environment-connectivity-monitor')
@@ -4671,10 +4714,10 @@ function registerIpcHandlers(): void {
   // session's subscribers). Wired here rather than inside `AgentService` so
   // constructing the service in a test leaves no process-wide watcher behind.
   watchSessionList((projectPath) => {
-    agentService.notifyEventSubscribers({ type: 'session_list_changed', projectPath })
+    sessionEvents.publish({ event: { type: 'session_list_changed', projectPath }, source: 'list' })
   })
   watchProjectList(() => {
-    agentService.notifyEventSubscribers({ type: 'project_list_changed' })
+    sessionEvents.publish({ event: { type: 'project_list_changed' }, source: 'list' })
   })
   // A deleted session takes its sync zone and transfer jobs with it
   // (docs/architecture/session-sync-zone.md §7) — off the db-layer signal, so the
@@ -4712,12 +4755,7 @@ function registerIpcHandlers(): void {
   deviceRegistry.setDraftControl(localDraftStore())
   agentService.setPrepareDraftOpen(installDraftOpenFlush(allWindows))
   agentService.setDesktopPairCommand(async (command) => (await desktopPairing()).handleDesktopPairCommand(command))
-  localDraftStore().watch((event) => {
-    publishAgentEvent(event)
-    // Phones keep drafts as rows and load a composer through `open_draft`;
-    // the change notice needs no attachment bytes (seconds of decryption each).
-    agentService.notifyEventSubscribers(event.draft ? { ...event, draft: withoutDraftAttachmentBytes(event.draft) } : event)
-  })
+  localDraftStore().watch((event) => sessionEvents.publish({ event, source: 'draft' }))
 
   const savedRemoteConfig = readRemoteConfig()
   if (savedRemoteConfig) remoteControlService.start(savedRemoteConfig)
@@ -4807,7 +4845,7 @@ function registerIpcHandlers(): void {
       session.broadcastSettingsPatch(patch)
       return
     }
-    publishAgentEvent({ type: 'agent_setting_change', sessionId, patch })
+    sessionEvents.publish({ event: { type: 'agent_setting_change', sessionId, patch }, source: 'settings' })
   })
 
   ipcMain.handle(AgentIpcChannels.SET_MIN_WINDOW_SIZE, (_e, width: number, height: number) => {

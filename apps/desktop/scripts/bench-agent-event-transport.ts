@@ -14,7 +14,7 @@
 import { performance } from 'node:perf_hooks'
 import { serialize } from 'node:v8'
 import type { AgentEvent, CodexThreadItem } from '@superone/shared/agent-types'
-import { createRendererAgentEventTransport } from '../src/main/agent/renderer-agent-event-transport'
+import { createLocalDelivery as createRendererAgentEventTransport } from '@superone/runtime/stream'
 
 const DEFAULT_SAMPLES = 15
 const WARMUP_SAMPLES = 3

@@ -3,7 +3,7 @@ import { applyContentDelta } from '@superone/shared/content-delta'
 import { assertMcpAppSize, McpAppsError, mcpAppResourceUri, mcpAppToolVisible, type ToolAppAttachment } from '@superone/shared/mcp-apps'
 import type { AgentEvent, ChatMessage, ContentBlock, CodexMcpToolCallItem } from '@superone/shared/agent-types'
 import { stripEventForRemote, stripMessagesForRemote } from '../remote-content'
-import { projectProgressiveMessage } from './progressive-session'
+import { projectProgressiveMessage } from '@superone/runtime/stream'
 
 const app: ToolAppAttachment = {
   appInstanceId: 'view-1', binding: { node: 'n', session: 's', server: 'fixture', configGeneration: 1, configFingerprint: 'stable' },

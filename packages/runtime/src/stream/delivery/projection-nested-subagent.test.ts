@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
-vi.mock('../remote-content', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../remote-content')>()
+vi.mock('./remote-content', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./remote-content')>()
   return { ...actual, stripMessagesForRemote: (messages: unknown) => messages }
 })
 import { applyEventToSession, createDefaultChatCoreSession } from '@superone/chat-core'
 import type { AgentEvent, ChatMessage } from '@superone/shared/agent-types'
-import { projectProgressiveEvent, projectProgressiveMessage } from './progressive-session'
+import { projectProgressiveEvent, projectProgressiveMessage } from './projection'
 
 const agent = (toolUseId: string, parentToolUseId?: string) => ({
   type: 'tool_use' as const,

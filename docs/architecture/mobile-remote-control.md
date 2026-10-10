@@ -76,38 +76,55 @@ controls it; a terminal while it watches or controls it.
 `MobileBroadcaster` (`apps/desktop/src/main/remote/mobile-broadcaster.ts`) is the
 phones' delivery group: the topic hub hands it each item once with the phones
 it reached. List and environment topics go to every phone; a session's events
-go to the phones its topic reached and, for progressive devices, get the
-summary projection ([below](#progressive-session-loading)).
-`RemoteControlService#sendAgentEvent` then runs the `mobile` profile
-(`MobileEventProfile`, `apps/desktop/src/main/stream/mobile-profile.ts`) and
-batches before encryption. A golden test on recorded sessions
-(`profiles.golden.test.ts`) pins the frames this produces; it is the phone wire
-guard.
+go to each phone its topic reached.
 
-1. Drop `SKIPPED_EVENTS`, throttle `tool_progress`, truncate
-   `slash_command_output` ([chat-core.md](chat-core.md#remote-omitted-events)).
-2. Strip or summarize heavy tool payloads
-   (`apps/desktop/src/main/remote-content.ts`): bash output, todo tool results,
-   project paths.
-3. Batch per target set with the shared `createEventBatcher`
-   (`packages/runtime/src/stream/event-batcher.ts`, also the renderer
-   transport's batcher):
-   - Only `content_delta` and `codex_item_delta` wait, up to 33 ms. Any other
-     event flushes the batch it joins immediately, so completions, status
-     changes, interactions and interrupts are never delayed behind text.
-   - A change of target devices flushes first; a batch never mixes recipient
-     sets. Batches are also capped at 64 KiB and 128 events.
-   - `coalesceAgentEventBatch` (`packages/shared/src/agent-event-batcher.ts`)
-     folds only adjacent unsequenced text/thinking deltas of the same block, and
-     successive `codex_item_delta` snapshots of the same item. Deltas carrying
-     `seq` may share a frame but are never folded, so replay deduplication can
-     advance one sequence at a time.
-   - Non-`AgentEvent` payloads sent through `sendEventToMobile` flush the batcher
-     first, preserving order.
-4. One serial queue frames each batch once, then seals one copy per phone
-   channel: relay copies are addressed to that phone, LAN copies go to its
-   socket, and each copy is ordered by that phone's channel sequence. Phones
-   without a channel get nothing. Terminal frames use their own serial queue.
+Each phone has its own `ConnectionDelivery` (`@superone/runtime/stream`,
+`packages/runtime/src/stream/delivery/`; per device in
+`apps/desktop/src/main/remote/phone-deliveries.ts`): its delivery policy, its
+summarized sessions and expanded details, and its profile state. The policy is
+a link tier (`relay` or `lan`, from the transport the phone uses, re-set when
+it switches) and the `phone` surface. One delivery covers a session's open
+(`buildProgressiveBootstrap`), history pages, live events and detail, so two
+frontends on one session never share projection, detail or throttle state.
+Each event runs through these stages (`EventProfile`, `delivery/profile.ts`):
+
+1. Phone surface: accumulate todo input deltas, then drop events that feed
+   desktop-only state ([chat-core.md](chat-core.md#remote-omitted-events)).
+2. Relay tier: truncate `slash_command_output`, throttle `tool_progress`.
+3. Phone surface: rewrite tool rows and strip or summarize heavy payloads
+   (`delivery/remote-content.ts`): bash output, todo tool results, project
+   paths, highlighting, picture thumbnails. The desktop supplies highlighting,
+   thumbnails and subagent/workflow reads as ports (`apps/desktop/src/main/remote-content.ts`).
+
+A progressive phone gets the summary projection first
+([below](#progressive-session-loading)). `RemoteControlService` then batches per
+phone with the shared `createEventBatcher`
+(`packages/runtime/src/stream/event-batcher.ts`, also the renderer's `local`
+tier, `delivery/local-delivery.ts`):
+
+- Only `content_delta` and `codex_item_delta` wait, up to 33 ms. Any other
+  event flushes the batch it joins immediately, so completions, status
+  changes, interactions and interrupts are never delayed behind text.
+- Batches are capped at 64 KiB and 128 events (`batchingFor`).
+- `coalesceAgentEventBatch` (`packages/shared/src/agent-event-batcher.ts`)
+  folds only adjacent unsequenced text/thinking deltas of the same block, and
+  successive `codex_item_delta` snapshots of the same item. Deltas carrying
+  `seq` may share a frame but are never folded, so replay deduplication can
+  advance one sequence at a time.
+- Non-`AgentEvent` payloads sent through `sendEventToMobile` flush the
+  recipients' batchers first, preserving order.
+
+One serial queue frames each phone's batch and seals it for that phone's
+channel: a relay copy is addressed to that phone, a LAN copy goes to its socket,
+and each is ordered by the channel's sequence. Phones without a channel get
+nothing. Terminal frames use their own serial queue.
+
+Two tests guard the phone wire on recorded sessions:
+`stream/profiles.golden.test.ts` pins the frames after the profile, and
+`stream/wire-baseline.test.ts` measures relay bytes and frames for a live turn,
+an open, a history page and detail expansion against the phone link before the
+unified protocol (`fixtures/wire-baseline.json`): the phone must apply the same
+events at no more frames or bytes.
 
 `stop()` disposes the batcher and bumps `sendGeneration`; queued work from the old
 generation is discarded rather than sent on a new connection.
@@ -192,7 +209,7 @@ anchor.
 
 ### Hidden detail
 
-The projection (`apps/desktop/src/main/remote/progressive-session.ts`,
+The projection (`packages/runtime/src/stream/delivery/projection.ts`,
 `progressive-tools.ts`) empties bulky content and replaces it with an opaque
 `remoteDetail` reference (`[messageId, kind, key]`): thinking blocks, Codex
 reasoning items, tool inputs and results, command output, file diffs, and the

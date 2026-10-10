@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentEvent, CodexThreadItem } from '@superone/shared/agent-types'
 import { AGENT_EVENT_BATCH_MS } from '@superone/shared/agent-event-batcher'
-import { createRendererAgentEventTransport } from './renderer-agent-event-transport'
+import { createLocalDelivery } from './local-delivery'
 
 function textDelta(text: string, seq?: number): AgentEvent {
   return {
@@ -31,7 +31,7 @@ describe('renderer agent event transport', () => {
 
   it('coalesces a stream window before sending one IPC payload', () => {
     const sent: AgentEvent[][] = []
-    const transport = createRendererAgentEventTransport((events) => sent.push(events))
+    const transport = createLocalDelivery((events) => sent.push(events))
     transport.push(textDelta('a'))
     transport.push(textDelta('b'))
 
@@ -44,7 +44,7 @@ describe('renderer agent event transport', () => {
 
   it('keeps sequenced deltas separate but sends them in one IPC payload', () => {
     const sent: AgentEvent[][] = []
-    const transport = createRendererAgentEventTransport((events) => sent.push(events))
+    const transport = createLocalDelivery((events) => sent.push(events))
     transport.push(textDelta('a', 1))
     transport.push(textDelta('b', 2))
 
@@ -56,7 +56,7 @@ describe('renderer agent event transport', () => {
 
   it('flushes queued deltas and a lifecycle event in one ordered payload', () => {
     const sent: AgentEvent[][] = []
-    const transport = createRendererAgentEventTransport((events) => sent.push(events))
+    const transport = createLocalDelivery((events) => sent.push(events))
     transport.push(textDelta('a'))
     transport.push({ type: 'message_complete', messageId: 'm1' })
 
@@ -66,7 +66,7 @@ describe('renderer agent event transport', () => {
 
   it('encodes additive Codex text updates as suffix patches', () => {
     const sent: AgentEvent[][] = []
-    const transport = createRendererAgentEventTransport((events) => sent.push(events))
+    const transport = createLocalDelivery((events) => sent.push(events))
     transport.push(codexDelta({ id: 'i1', type: 'reasoning', text: 'first', startedAt: 10 }, 'started'))
     transport.flush()
     transport.push(codexDelta({ id: 'i1', type: 'reasoning', text: 'first second', startedAt: 10, endedAt: 20 }))
@@ -82,7 +82,7 @@ describe('renderer agent event transport', () => {
 
   it('encodes additive command output only while command metadata is stable', () => {
     const sent: AgentEvent[][] = []
-    const transport = createRendererAgentEventTransport((events) => sent.push(events))
+    const transport = createLocalDelivery((events) => sent.push(events))
     transport.push(codexDelta({
       id: 'c1', type: 'command_execution', command: 'pwd', aggregatedOutput: '/a', status: 'in_progress',
     }, 'started'))
@@ -105,7 +105,7 @@ describe('renderer agent event transport', () => {
 
   it('falls back to a full snapshot for non-additive text', () => {
     const sent: AgentEvent[][] = []
-    const transport = createRendererAgentEventTransport((events) => sent.push(events))
+    const transport = createLocalDelivery((events) => sent.push(events))
     transport.push(codexDelta({ id: 'i1', type: 'agent_message', text: 'first' }, 'started'))
     transport.flush()
     transport.push(codexDelta({ id: 'i1', type: 'agent_message', text: 'replacement' }))
@@ -116,7 +116,7 @@ describe('renderer agent event transport', () => {
 
   it('sends a full snapshot after a message baseline is cleared', () => {
     const sent: AgentEvent[][] = []
-    const transport = createRendererAgentEventTransport((events) => sent.push(events))
+    const transport = createLocalDelivery((events) => sent.push(events))
     transport.push(codexDelta({ id: 'i1', type: 'agent_message', text: 'a' }, 'started'))
     transport.flush()
     transport.push({ type: 'message_complete', projectPath: '/p', sessionId: 's1', messageId: 'm1' })
@@ -128,7 +128,7 @@ describe('renderer agent event transport', () => {
 
   it('sends a full snapshot for one session after its baselines are reset', () => {
     const sent: AgentEvent[][] = []
-    const transport = createRendererAgentEventTransport((events) => sent.push(events))
+    const transport = createLocalDelivery((events) => sent.push(events))
     const other = (text: string): AgentEvent => ({ ...codexDelta({ id: 'i1', type: 'agent_message', text }), sessionId: 's2' })
     transport.push(codexDelta({ id: 'i1', type: 'agent_message', text: 'a' }, 'started'))
     transport.push({ ...other('a'), phase: 'started' } as AgentEvent)
@@ -143,7 +143,7 @@ describe('renderer agent event transport', () => {
 
   it('flushes pending output on dispose', () => {
     const sent: AgentEvent[][] = []
-    const transport = createRendererAgentEventTransport((events) => sent.push(events))
+    const transport = createLocalDelivery((events) => sent.push(events))
     transport.push(textDelta('last'))
     transport.dispose()
 

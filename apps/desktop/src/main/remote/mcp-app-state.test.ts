@@ -9,7 +9,7 @@ import { applyEventToSession, upsertCodexItem } from '@superone/chat-core'
 import type { ChatCoreSession } from '@superone/chat-core'
 import { buildSessionMessageCatalog } from '@superone/runtime/session/message-catalog'
 import { stripEventForRemote } from '../remote-content'
-import { projectProgressiveEvent } from './progressive-session'
+import { projectProgressiveEvent } from '@superone/runtime/stream'
 
 const app: ToolAppAttachment = { appInstanceId: 'view', binding: { node: 'node', session: 's', server: 'fixture', configGeneration: 0, configFingerprint: 'config' },
   origin: { providerSessionId: 'thread' }, resourceUri: 'ui://fixture/view', status: 'result', toolResult: { content: [], _meta: { secret: 'view-only' } } }

@@ -1,5 +1,6 @@
 import type { DeliveryPolicy, TopicConnection, TopicGroup } from '@superone/runtime/stream'
 import { deliveryPolicy } from '@superone/runtime/stream'
+import { setPhonePolicy } from './phone-deliveries'
 import type { TopicRef } from '@superone/shared/environment/topics'
 import type { DesktopTopicHub, DesktopTopicItem } from '../stream/desktop-topics'
 import type { Session, SessionLifecycleEvent } from '../session/types'
@@ -24,6 +25,7 @@ export class PhoneTopics {
   /** The phone came online, or switched link. */
   online(deviceId: string, transport: 'lan' | 'relay'): void {
     const policy = deliveryPolicy(transport, 'phone')
+    setPhonePolicy(deviceId, policy)
     const existing = this.connections.get(deviceId)
     if (existing && !existing.closed) {
       existing.setPolicy(policy)

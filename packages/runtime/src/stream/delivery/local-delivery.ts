@@ -1,8 +1,8 @@
 import type { AgentEvent, CodexThreadItem } from '@superone/shared/agent-types'
 import { AGENT_EVENT_BATCH_MS } from '@superone/shared/agent-event-batcher'
-import { createEventBatcher } from '@superone/runtime/stream'
+import { createEventBatcher } from '../event-batcher'
 
-export interface RendererAgentEventTransport {
+export interface LocalDelivery {
   push(event: AgentEvent): void
   flush(): void
   /** Forget the items sent so far (all, or one session's), so the next update is sent whole. */
@@ -70,11 +70,11 @@ function makeCodexPatch(
   return null
 }
 
-/** The `local-ui` profile: batch, then encode Codex items as patches. */
-export function createRendererAgentEventTransport(
+/** The `local` tier (in-process IPC to the renderer): batch, then encode Codex items as patches against per-item baselines. */
+export function createLocalDelivery(
   send: (events: AgentEvent[]) => void,
   batchMs: number = AGENT_EVENT_BATCH_MS,
-): RendererAgentEventTransport {
+): LocalDelivery {
   const codexBaselines = new Map<string, CodexThreadItem>()
   let disposed = false
   const forget = (prefix: string) => {

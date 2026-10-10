@@ -6,7 +6,7 @@ import { sanitizeRemoteToolInput } from '@superone/shared/remote-tool-input'
 import { isSubagentToolName, normalizeTranscriptTool } from '@superone/shared/tool-ui'
 import { isPatchToolCall, isPatchToolName, patchToolFiles } from '@superone/shared/patch-tool'
 import { mcpAppMessageAttachments } from '@superone/shared/mcp-apps-state'
-import { compactMediaToolResult, computeToolLineDelta, computeToolMeta, stripMessagesForRemote } from '../remote-content'
+import { compactMediaToolResult, computeToolLineDelta, computeToolMeta, stripMessagesForRemote } from './remote-content'
 
 const SHELL_INPUT_MAX = 1024
 

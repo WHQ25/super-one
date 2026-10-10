@@ -7,3 +7,4 @@ export { createEventBatcher, type EventBatcher, type EventBatcherOptions } from 
 export { TopicHub, type TopicConnection, type TopicConnectionOptions, type TopicGroup, type TopicHubOptions, type TopicSink } from './topic-hub'
 export { VersionedTopicLog } from './topic-log'
 export { deliveryPolicy, tierOfRoute, type ClientSurface, type ConnectionRoute, type DeliveryPolicy, type LinkTier } from './delivery-policy'
+export { ConnectionDelivery, batchingFor, createLocalDelivery, configureRemoteContent, DetailViews, detailMessageId, projectProgressiveEvent, projectProgressiveMessage, type LocalDelivery, type RemoteContentPorts } from './delivery'

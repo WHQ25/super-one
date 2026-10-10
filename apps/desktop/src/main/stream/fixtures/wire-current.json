@@ -1,0 +1,108 @@
+{
+  "permission-flow": {
+    "live": {
+      "frames": 160,
+      "bytes": 89760,
+      "payload": {
+        "events": 194,
+        "sha256": "b30787d9b9556283251419a11aca9e0ad4ffe605f0b48485adf6addc327846cf"
+      }
+    },
+    "open": {
+      "frames": 1,
+      "bytes": 4427
+    },
+    "detail": {
+      "frames": 11,
+      "bytes": 6118,
+      "refs": 11
+    }
+  },
+  "claude-todos": {
+    "live": {
+      "frames": 152,
+      "bytes": 89120,
+      "payload": {
+        "events": 164,
+        "sha256": "fcea02eafecdbdc3e64a6bc244165949364c61dd72207610bdcfb780ee57d3b6"
+      }
+    },
+    "open": {
+      "frames": 1,
+      "bytes": 4119
+    },
+    "detail": {
+      "frames": 4,
+      "bytes": 5468,
+      "refs": 4
+    }
+  },
+  "queued-mid-turn": {
+    "live": {
+      "frames": 66,
+      "bytes": 40080,
+      "payload": {
+        "events": 104,
+        "sha256": "7efd9bb2b70a24d81267bf74e587dc10a28eab7fe89eca4a20214a007664efec"
+      }
+    },
+    "open": {
+      "frames": 1,
+      "bytes": 3183
+    },
+    "detail": {
+      "frames": 9,
+      "bytes": 8331,
+      "refs": 9
+    }
+  },
+  "queued-interrupt": {
+    "live": {
+      "frames": 34,
+      "bytes": 21936,
+      "payload": {
+        "events": 47,
+        "sha256": "65cfab3c8ac376ce71e118d875ee71289dc98c19802e4b1805ecc860d79596f8"
+      }
+    },
+    "open": {
+      "frames": 1,
+      "bytes": 2319
+    },
+    "detail": {
+      "frames": 3,
+      "bytes": 1753,
+      "refs": 3
+    }
+  },
+  "mermaid-latex": {
+    "live": {
+      "frames": 25,
+      "bytes": 19416,
+      "payload": {
+        "events": 27,
+        "sha256": "83181c909f0657d571c203fcae9414cc14f81238bf259a315cb669330e1f20e5"
+      }
+    },
+    "open": {
+      "frames": 1,
+      "bytes": 1459
+    },
+    "detail": {
+      "frames": 1,
+      "bytes": 327,
+      "refs": 1
+    }
+  },
+  "combined": {
+    "open": {
+      "frames": 1,
+      "bytes": 4123
+    },
+    "history": {
+      "frames": 1,
+      "bytes": 7518,
+      "messages": 7
+    }
+  }
+}

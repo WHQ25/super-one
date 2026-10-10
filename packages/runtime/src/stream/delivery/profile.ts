@@ -1,26 +1,31 @@
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { isSubagentToolName } from '@superone/shared/tool-ui'
-import { trace } from '../agent/event-trace'
-import { readOutputFile } from '../agent/claude-session-runtime'
-import { listWorkflowAgentsSync } from '../workflow-transcripts'
+import type { DeliveryPolicy } from '../delivery-policy'
 import {
   TODO_TOOLS,
   parseWorkflowTranscriptDir,
   remoteBashResult,
+  remoteContentPorts,
   resolveTodoToolTodos,
   stripEventForRemote,
   stripProjectPath,
-} from '../remote-content'
+} from './remote-content'
 
 /**
- * The `mobile` profile: what a phone receives for each emitted session event,
- * before batching and sealing (docs/architecture/mobile-remote-control.md,
- * "Host event pipeline"). Stages run in this order: accumulate, filter,
- * truncate, throttle, rewrite, enrich, strip.
+ * What one connection receives for each emitted event, before batching
+ * (docs/architecture/mobile-remote-control.md, "Host event pipeline"). The
+ * policy picks the stages: the link tier its cost controls, the client
+ * surface its presentation adapters. They run in this order:
+ *
+ * 1. accumulate (phone): todo input deltas, which the filter drops next;
+ * 2. filter (phone): events that feed desktop-only state;
+ * 3. truncate (relay): slash command output;
+ * 4. throttle (relay): tool progress;
+ * 5. rewrite (phone): tool rows, subagent enrichment, heavy payload summaries.
  */
 
 /** Events that feed desktop-only state; the phone never renders them. */
-const SKIPPED_EVENTS = new Set([
+const DESKTOP_ONLY_EVENTS = new Set([
   'files_persisted', 'elicitation_complete', 'tool_input_delta',
   'subagent_usage', 'checkpoint_captured', 'hook_started', 'hook_complete', 'hook_progress',
   'stream_message_start', 'stream_message_stop',
@@ -58,47 +63,51 @@ function emptyLiveToolState(): LiveToolState {
   }
 }
 
-export interface MobileProfilePorts {
+export interface ProfilePorts {
   now(): number
-  readAgentOutput: typeof readOutputFile
-  listWorkflowAgents: typeof listWorkflowAgentsSync
+  /** Dev tracing of what leaves; optional. */
+  trace?(category: string, label: string, data: unknown, key?: string): void
 }
 
-const defaultPorts: MobileProfilePorts = {
-  now: () => Date.now(),
-  readAgentOutput: readOutputFile,
-  listWorkflowAgents: listWorkflowAgentsSync,
-}
+const defaultPorts: ProfilePorts = { now: () => Date.now() }
 
-export class MobileEventProfile {
+export class EventProfile {
   private readonly lastThrottledAt = new Map<string, number>()
   /**
-   * What each live tool_result needs to know about its tool_use, per session: one
-   * profile carries every session's stream, so a `message_start` in one session
-   * must not drop another session's in-flight calls (a widget result would then
-   * be truncated like any other and reach the phone as unparseable JSON).
+   * What each live tool_result needs to know about its tool_use, per session:
+   * a `message_start` in one session must not drop another session's
+   * in-flight calls (a widget result would then be truncated like any other
+   * and reach the phone as unparseable JSON).
    */
   private readonly liveTools = new Map<string, LiveToolState>()
 
-  constructor(private readonly ports: MobileProfilePorts = defaultPorts) {}
+  constructor(
+    private policy: DeliveryPolicy,
+    private readonly ports: ProfilePorts = defaultPorts,
+  ) {}
 
-  /** The events a phone receives for one emitted event, in order. */
+  setPolicy(policy: DeliveryPolicy): void {
+    this.policy = policy
+  }
+
+  /** The events this connection receives for one emitted event, in order. */
   apply(event: AgentEvent): AgentEvent[] {
+    const phone = this.policy.surface === 'phone'
+    const relay = this.policy.tier === 'relay'
     if (event.type === 'provider_changed') {
-      trace('remote.out', event.type, event)
+      this.ports.trace?.('remote.out', event.type, event)
       return [event]
     }
-    trace('remote.debug', 'sendAgentEvent:pass', { eventType: event.type, eventProject: event.projectPath, eventSession: event.sessionId })
-
-    this.accumulate(event)
-    if (SKIPPED_EVENTS.has(event.type)) return []
-    if (event.type === 'slash_command_output' && event.content.length > MAX_SLASH_OUTPUT) {
+    if (phone) this.accumulate(event)
+    if (phone && DESKTOP_ONLY_EVENTS.has(event.type)) return []
+    if (relay && event.type === 'slash_command_output' && event.content.length > MAX_SLASH_OUTPUT) {
       return [{ ...event, content: `${event.content.slice(0, MAX_SLASH_OUTPUT)}\n\n… output truncated` }]
     }
-    if (this.throttled(event)) return []
+    if (relay && this.throttled(event)) return []
+    if (!phone) return [event]
     const out = this.rewrite(event)
     if (!out) return []
-    trace('remote.out', out.type, out, (out as Record<string, unknown>).messageId as string ?? '')
+    this.ports.trace?.('remote.out', out.type, out, (out as Record<string, unknown>).messageId as string ?? '')
     return [out]
   }
 
@@ -180,14 +189,14 @@ export class MobileEventProfile {
     if (event.remoteView !== 'summary' && event.type === 'task_progress' && event.toolUseId) {
       const outputFile = tools.agentOutputFiles.get(event.toolUseId)
       if (outputFile) {
-        const { resultText: activityText, toolEntries } = this.ports.readAgentOutput(outputFile, event.projectPath)
+        const { resultText: activityText, toolEntries } = remoteContentPorts().readAgentOutput(outputFile, event.projectPath)
         enriched = { ...event, ...(activityText ? { activityText } : {}), ...(toolEntries.length > 0 ? { toolEntries } : {}) }
       }
     }
     if (event.remoteView !== 'summary' && (enriched.type === 'task_progress' || enriched.type === 'task_notification') && enriched.toolUseId && tools.workflowIds.has(enriched.toolUseId)) {
       const dir = tools.workflowTranscriptDirs.get(enriched.toolUseId)
       if (dir) {
-        const workflowAgents = this.ports.listWorkflowAgents(dir)
+        const workflowAgents = remoteContentPorts().listWorkflowAgents(dir)
         if (workflowAgents.length > 0) enriched = { ...enriched, workflowAgents }
       }
     }

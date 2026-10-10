@@ -7,7 +7,7 @@ vi.mock('../logger', () => ({
 }))
 
 import { RemoteControlService } from '../remote-control-service'
-import { createRendererAgentEventTransport } from '../agent/renderer-agent-event-transport'
+import { createLocalDelivery } from '@superone/runtime/stream'
 
 /**
  * Frames each subscriber pipeline produced for recorded session output
@@ -44,7 +44,7 @@ async function mobileFrames(events: AgentEvent[]): Promise<unknown[]> {
 function rendererFrames(events: AgentEvent[]): unknown[] {
   vi.useFakeTimers({ now: 0 })
   const frames: unknown[] = []
-  const transport = createRendererAgentEventTransport((batch) => { frames.push(batch) })
+  const transport = createLocalDelivery((batch) => { frames.push(batch) })
   for (const event of events) {
     transport.push(event)
     vi.advanceTimersByTime(EVENT_SPACING_MS)

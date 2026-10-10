@@ -2350,7 +2350,6 @@ function registerIpcHandlers(): void {
         sessionId: string
         projectPath?: string
         providerId?: string
-        timeoutMs?: number
       },
     ) => {
       const { getEnvironmentHost } = await import('./environment')

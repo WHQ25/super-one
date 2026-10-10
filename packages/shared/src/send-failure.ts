@@ -11,20 +11,6 @@ export function isTransportSendError(error: string): boolean {
 }
 
 /**
- * `sendSessionMessage` result when the node accepted the message but following its
- * turn broke off (connection lost mid-stream). Not a send failure: reconnect
- * recovery picks the turn back up, and a resend would run it twice.
- */
-export interface RemoteSendDetached {
-  streamDetached: true
-  error: string
-}
-
-export function isRemoteSendDetached(value: unknown): value is RemoteSendDetached {
-  return typeof value === 'object' && value !== null && (value as { streamDetached?: unknown }).streamDetached === true
-}
-
-/**
  * `Session.send` result for a user message id the host already took (admitted,
  * queued, answered or running): nothing is sent again. A Resend from a stale
  * client lands here instead of running the task twice.

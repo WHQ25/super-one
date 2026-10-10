@@ -1260,16 +1260,15 @@ export interface EnvironmentAPI extends MediaComposerAPI {
       options?: Record<string, unknown>
     },
   ): Promise<void>
-  /** Resume live event drain for a still-streaming remote session. */
+  /** Follow a remote session so its events reach the chat. */
   resumeRemoteSessionEvents(
     connectionId: string,
     input: {
       sessionId: string
       projectPath?: string
       providerId?: string
-      timeoutMs?: number
     },
-  ): Promise<unknown>
+  ): Promise<void>
   /** Directory listing for the add-project path browser. */
   browsePath(
     connectionId: string,

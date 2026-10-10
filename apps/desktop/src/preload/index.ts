@@ -769,7 +769,6 @@ const environmentAPI = {
       sessionId: string
       projectPath?: string
       providerId?: string
-      timeoutMs?: number
     },
   ) =>
     ipcRenderer.invoke(

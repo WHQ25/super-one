@@ -41,7 +41,6 @@ export function createDefaultPerSessionState(): PerSessionState {
     _worktreePath: null,
     additionalDirs: [],
     additionalDirsDirty: false,
-    _remoteTurnQueue: [],
     activeCodexMessageId: null,
     miniAppContexts: {},
     userSelections: [],

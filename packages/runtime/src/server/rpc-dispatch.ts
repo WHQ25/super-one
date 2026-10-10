@@ -2184,6 +2184,8 @@ function handleSessionAcquireControl(payload: unknown, ctx: RpcContext): RpcResu
     const lease = ctx.leases.acquire({
       resource,
       holderClientId: ctx.client.clientSessionId,
+      ...(typeof p.delegate === 'string' && p.delegate ? { delegate: p.delegate } : {}),
+      ...(p.yields === true ? { yields: true } : {}),
       ttlMs: typeof p.ttlMs === 'number' ? p.ttlMs : undefined,
     })
     try {

@@ -36,6 +36,8 @@ describe('paired phone environment route', () => {
   it('prepares a baseline, retains images and turn settings, and cleans up after host removal', async () => {
     const result = await executeEnvironmentCommand('node', { type: 'subscribe_session', requestId: 'r', projectPath: '/app', sessionId: 'same' }, 'phone', vi.fn())
     expect(result).toMatchObject({ snapshot: { sourceEnvironmentId: 'node' } })
+    // Held for this phone, not for the desktop as a whole.
+    expect(m.acquire).toHaveBeenCalledWith(expect.objectContaining({ resource: ref, delegate: 'phone' }))
     const images = [{ id: 'img', name: 'a.png', mimeType: 'image/png', base64: 'AA==' }]
     await executeEnvironmentCommand('node', { type: 'send_message', projectPath: '/app', sessionId: 'same', content: 'Hello', images, model: 'actual-model', serviceTier: 'fast', inputRequest: { requestId: 'form', answers: {} } } as never, 'phone', vi.fn())
     expect(m.send).toHaveBeenCalledWith(expect.objectContaining({ session: ref, leaseId: 'lease', generation: 4, options: expect.objectContaining({ images, model: 'actual-model', serviceTier: 'fast', inputRequest: expect.anything() }) }))

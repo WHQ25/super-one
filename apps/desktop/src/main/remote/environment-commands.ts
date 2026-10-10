@@ -55,10 +55,10 @@ export async function executeEnvironmentCommand(environmentId: string, command: 
   }
   const providerId = nodeHarnessToProviderId(snapshot.harnessId)
   if (command.type === 'subscribe_session') {
-    if ([...subscriptions.values()].some(subscription => subscription.ref.environmentId === environmentId && subscription.ref.sessionId === sessionId && subscription.deviceId !== deviceId)) throw new Error('Session is controlled by another device')
     if (!gateway.sessions.load) throw new Error('This host does not support session links. Upgrade it.')
     const load = gateway.sessions.load
-    const control = current?.control ?? await gateway.sessions.acquireControl({ resource: ref, ttlMs: 60_000 })
+    // The node holds one device at a time; another phone's open is refused there.
+    const control = current?.control ?? await gateway.sessions.acquireControl({ resource: ref, ttlMs: 60_000, delegate: deviceId })
     let loaded: Awaited<ReturnType<typeof load>>
     try { loaded = await load({ session: ref, limit: 8 }) }
     catch (error) { if (!current) await gateway.sessions.releaseControl(control).catch(() => {}); throw error }

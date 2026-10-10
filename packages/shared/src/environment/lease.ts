@@ -9,6 +9,8 @@ export interface ControlLease {
   leaseId: string
   resource: SessionRef | TerminalRef
   holderClientId: string
+  /** The holder inside that client (`LeaseAcquireInput.delegate`); empty for the client itself. */
+  delegate?: string
   /** Increments on administrative takeover; commands must match current generation. */
   generation: string
   expiresAt: string
@@ -20,6 +22,17 @@ export interface LeaseAcquireInput {
   ttlMs?: number
   /** Take a session back after its host released it from this client (the user's Reconnect). */
   reclaim?: boolean
+  /**
+   * A holder inside the authenticated client: a device it relays for, such as
+   * a phone through a desktop. One client's delegates hold a resource one at
+   * a time, like separate clients.
+   */
+  delegate?: string
+  /**
+   * The client's own interface, which steps aside: another delegate of the
+   * same client takes the lease over instead of being refused.
+   */
+  yields?: boolean
 }
 
 export interface LeaseRenewInput {

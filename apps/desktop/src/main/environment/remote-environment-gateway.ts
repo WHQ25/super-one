@@ -1331,6 +1331,8 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
           sessionId: input.resource.sessionId,
           ttlMs: input.ttlMs,
           ...(input.reclaim ? { reclaim: true } : {}),
+          ...(input.delegate ? { delegate: input.delegate } : {}),
+          ...(input.yields ? { yields: true } : {}),
         })
       },
       renewControl: async (input: LeaseRenewInput) => {

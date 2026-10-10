@@ -14,6 +14,8 @@ export interface PhoneMethodHost {
   agent: Pick<AgentService,
     | 'remoteSystemInfo' | 'remoteProjectResources' | 'remoteHarnessOptions' | 'remoteAttachment' | 'remoteSessionActivity'
     | 'remoteSearchMentions' | 'remoteSearchMcpMentions' | 'remoteReadMcpMentions' | 'remoteMcpServers' | 'markRemoteSeen'
+    | 'remoteReadFile' | 'remoteVideoPoster' | 'remoteUpload' | 'remoteUploadComplete' | 'remoteListDirectory' | 'remoteCreateDirectory'
+    | 'remoteUsage' | 'remoteConsumeRateLimitReset'
   >
   /** Phone-assisted desktop pairing; absent when this desktop cannot pair. */
   desktopPair?: (input: { kind: 'mint'; controllerName: string } | { kind: 'pair'; nodeCode: string; nodeName: string }) => Promise<unknown>
@@ -51,6 +53,16 @@ function sessionProjectPath(ctx: RpcContext, sessionId: string): string {
 /** The paired device behind a phone's client session (`phone:<deviceId>`). */
 function deviceOf(ctx: RpcContext): string {
   return ctx.client.clientSessionId.replace(/^phone:/, '')
+}
+
+/** How file bytes reach this phone: a signed LAN URL, or sealed through relay storage. */
+function transportOf(ctx: RpcContext): 'lan' | 'relay' {
+  return ctx.streams?.delivery?.policy.tier === 'relay' ? 'relay' : 'lan'
+}
+
+/** A file named by a host path, or by a session root and a path under it. */
+function fileInput(p: Record<string, unknown>) {
+  return { path: text(p, 'path'), root: optionalText(p, 'root'), sessionId: optionalText(p, 'sessionId') }
 }
 
 function createHandlers(host: PhoneMethodHost): Record<string, Handler> {
@@ -107,6 +119,16 @@ function createHandlers(host: PhoneMethodHost): Record<string, Handler> {
     'harness.projectResources': (p, ctx) =>
       host.agent.remoteProjectResources(projectPath(ctx, text(p, 'projectId')), text(p, 'harnessId') as HarnessId),
     'harness.options': () => host.agent.remoteHarnessOptions(),
+    'harness.usage': (p, ctx) => host.agent.remoteUsage({
+      projectPath: projectPath(ctx, text(p, 'projectId')),
+      provider: text(p, 'harnessId') as HarnessId,
+      sessionId: optionalText(p, 'sessionId') ?? null,
+      apiProviderId: optionalText(p, 'apiProviderId') ?? null,
+      acpAgentId: optionalText(p, 'acpAgentId') ?? null,
+      force: p.force === true,
+    }),
+    'codex.consumeRateLimitReset': (p, ctx) =>
+      host.agent.remoteConsumeRateLimitReset(projectPath(ctx, text(p, 'projectId')), optionalText(p, 'apiProviderId') ?? null, optionalText(p, 'creditId') ?? null),
     'workspace.searchMentions': (p, ctx) =>
       host.agent.remoteSearchMentions(projectPath(ctx, text(p, 'projectId')), typeof p.query === 'string' ? p.query : '', {
         scopeDir: optionalText(p, 'scopeDir'),
@@ -174,6 +196,35 @@ function createHandlers(host: PhoneMethodHost): Record<string, Handler> {
       const saved = saveTemplate(roots, { ...input, id: allocateTemplateId(roots, input.id, input.scope) })
       return { template: { id: saved.id, scope: saved.scope, version: saved.version } }
     },
+
+    // Host files: inline when small, otherwise a transfer URL for the phone's link.
+    'files.read': (p, ctx) => host.agent.remoteReadFile({
+      ...fileInput(p),
+      ...(typeof p.maxBytes === 'number' ? { maxBytes: p.maxBytes } : {}),
+      ...(p.statOnly === true ? { statOnly: true } : {}),
+      ...(p.preferInline === true ? { preferInline: true } : {}),
+    }, { deviceId: deviceOf(ctx), transport: transportOf(ctx) }),
+    'files.listDir': (p) => host.agent.remoteListDirectory(text(p, 'path'), {
+      showHidden: p.showHidden === true,
+      ignoreMode: p.ignoreMode === 'excluded-dirs' || p.ignoreMode === 'gitignore' ? p.ignoreMode : 'none',
+    }),
+    'files.mkdir': async (p) => {
+      await host.agent.remoteCreateDirectory(text(p, 'path'), text(p, 'name'))
+      return { ok: true }
+    },
+    'files.videoPoster': (p) => host.agent.remoteVideoPoster(fileInput(p)),
+    'files.upload': (p, ctx) => host.agent.remoteUpload({
+      uploadId: text(p, 'uploadId'),
+      sessionId: optionalText(p, 'sessionId'),
+      targetDir: optionalText(p, 'targetDir') ?? '',
+      ...(p.inputRequest && typeof p.inputRequest === 'object' ? { inputRequest: p.inputRequest as never } : {}),
+      name: text(p, 'name'),
+      mimeType: optionalText(p, 'mimeType') ?? 'application/octet-stream',
+      size: typeof p.size === 'number' ? p.size : 0,
+      inlineBase64: optionalText(p, 'inlineBase64'),
+      transport: transportOf(ctx),
+    }),
+    'files.uploadComplete': (p) => host.agent.remoteUploadComplete(text(p, 'uploadId')),
 
     // Client-scoped: about the phone itself, served by its paired desktop only.
     'client.markSeen': (p, ctx) => {

@@ -1090,6 +1090,10 @@ async function applyNodeHostSettings(settings: AppSettings): Promise<void> {
         terminalEventListeners.add(listener)
         return () => terminalEventListeners.delete(listener)
       }),
+      projectEdits: {
+        update: (path, input) => agentService.remoteUpdateProjectDirs(path, input),
+        opened: (path) => void agentService.openFolder(path),
+      },
       phoneMethods: createPhoneMethods({
         agent: agentService,
         desktopPair: async (input) => (await desktopPairing()).handleDesktopPairCommand(input.kind === 'mint'

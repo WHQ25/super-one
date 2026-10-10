@@ -26,3 +26,19 @@ describe('phone endpoint: workspace files and Git', () => {
     for (const method of ['workspace.listDir', 'git.status']) expect(methods).not.toContain(method)
   })
 })
+
+describe('phone endpoint: projects', () => {
+  it('opens a project into the window and edits its extra folders as deltas', async () => {
+    const opened: string[] = []
+    const updates: Array<{ path: string; input: unknown }> = []
+    const { domain, projectDir } = phoneDomain(cleanup, {
+      projectEdits: { update: (path, input) => { updates.push({ path, input }) }, opened: (path) => { opened.push(path) } },
+    })
+    const phone = await connectPhone(domain)
+    const updated = await phone.rpc('project.update', { projectId: 'p1', addExtraDirs: ['/tmp/shared'] })
+    expect(updated).toMatchObject({ projectId: 'p1' })
+    expect(updates).toEqual([{ path: projectDir, input: expect.objectContaining({ addExtraDirs: ['/tmp/shared'] }) }])
+    await expect(phone.rpc('project.open', { path: join(projectDir, 'missing-dir') })).rejects.toMatchObject({ code: 'invalid_argument' })
+    expect(opened).toEqual([])
+  })
+})

@@ -103,6 +103,8 @@ export interface DesktopDomainDeps {
   terminals?: TerminalsPort
   /** This desktop's composer drafts and their leases, shared with its window. */
   drafts?: DraftsPort
+  /** What a phone's project changes do beyond the registry; controllers cannot edit projects. */
+  projectEdits?: DesktopProjectEdits
   /** Desktop methods for phones beyond the shared families (`remote/phone-methods.ts`). */
   phoneMethods?: { dispatch: RpcExtensionDispatch; methods: ReadonlySet<string> }
 }
@@ -129,7 +131,7 @@ export class DesktopDomain {
     /** The node home (identity, channel root, config). */
     readonly nodeHome: string,
     private readonly context: DesktopRpcContext,
-    private readonly phonePorts: Pick<DesktopDomainDeps, 'terminals' | 'drafts' | 'phoneMethods'>,
+    private readonly phonePorts: Pick<DesktopDomainDeps, 'terminals' | 'drafts' | 'phoneMethods' | 'projectEdits'>,
   ) {}
 
   static open(deps: DesktopDomainDeps): DesktopDomain {
@@ -172,7 +174,7 @@ export class DesktopDomain {
         subscriptionUsage: { claudeAccounts: claudeUsageAccounts, log: usageLog },
       }
       const localSessions = new LocalSessionHost({ sessions: deps.sessions, events, rows: deps.rows })
-      return new DesktopDomain(db, identity, auth, sessions, localSessions, recorder, paths.nodeHome, context, { terminals: deps.terminals, drafts: deps.drafts, phoneMethods: deps.phoneMethods })
+      return new DesktopDomain(db, identity, auth, sessions, localSessions, recorder, paths.nodeHome, context, { terminals: deps.terminals, drafts: deps.drafts, phoneMethods: deps.phoneMethods, projectEdits: deps.projectEdits })
     } catch (err) {
       db.close()
       throw err
@@ -204,8 +206,10 @@ export class DesktopDomain {
     const workspaceWatch = new WorkspaceWatchService(projects)
     const workspaceTailWatch = new WorkspaceTailWatchService(projects, workspaceFs)
     this.watches.push(workspaceWatch, workspaceTailWatch)
+    const edits = this.phonePorts.projectEdits
     return {
       ...this.context,
+      ...(edits ? { projects: withProjectEdits(this.context.projects!, edits) } : {}),
       sessions: this.localSessions,
       workspaceFs,
       workspaceGit: new WorkspaceGitService(projects),
@@ -225,6 +229,31 @@ export class DesktopDomain {
     this.localSessions.dispose()
     this.sessions.dispose()
     this.db.close()
+  }
+}
+
+export interface DesktopProjectEdits {
+  /** Apply a project edit (its extra folders) the way the window does. */
+  update(projectPath: string, input: Parameters<ProjectsPort['update']>[0]): void
+  /** A project the phone added or cloned opens in the window too. */
+  opened(projectPath: string): void
+}
+
+/** The desktop's projects with the changes its phones may make; answers are the project after the change. */
+function withProjectEdits(projects: ProjectsPort, edits: DesktopProjectEdits): ProjectsPort {
+  return {
+    ...projects,
+    open(path, name) {
+      const opened = projects.open(path, name)
+      edits.opened(opened.path)
+      return opened
+    },
+    update(input) {
+      const project = input.projectId ? projects.get(input.projectId) : projects.list().find((p) => p.path === input.path) ?? null
+      if (!project) return null
+      edits.update(project.path, input)
+      return projects.get(project.projectId)
+    },
   }
 }
 

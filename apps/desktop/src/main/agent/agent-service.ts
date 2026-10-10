@@ -7,6 +7,7 @@ import { buildProgressiveBootstrap } from './progressive-bootstrap'
 import { phoneDelivery } from '../remote/phone-deliveries'
 import { rememberAttachmentOrigin } from '../remote/attachment-echo'
 import { appendMobileLog } from '../remote/mobile-log'
+import { resolveProjectExtraDirs } from '@superone/shared/project-extra-dirs'
 import { findAttachment } from '../remote/attachment-thumbnail'
 import { videoPosterService } from '../remote/video-poster'
 import { handleDetailCommand } from '../remote/detail-command'
@@ -830,6 +831,73 @@ export class AgentService {
     this.sessionManager?.getSession(sessionId)?.markSeen()
   }
 
+  /** `read_desktop_file`'s answer, for the protocol's `files.read`. */
+  remoteReadFile(input: Omit<Extract<RemoteCommand, { type: 'read_desktop_file' }>, 'type' | 'requestId'>, source: { deviceId: string; transport: 'lan' | 'relay' }): Promise<unknown> {
+    return capturedResponse((respond) => this.handleReadDesktopFile({ ...input, type: 'read_desktop_file', requestId: '' }, respond, source))
+  }
+
+  /** `read_video_poster`'s answer, for the protocol's `files.videoPoster`. */
+  remoteVideoPoster(input: Omit<Extract<RemoteCommand, { type: 'read_video_poster' }>, 'type' | 'requestId'>): Promise<unknown> {
+    return capturedResponse((respond) => this.handleReadVideoPoster({ ...input, type: 'read_video_poster', requestId: '' }, respond))
+  }
+
+  /** Start a phone upload; `uploadId` keys its completion (`files.upload`). */
+  async remoteUpload(input: Omit<Parameters<import('../remote/mobile-receive-service').MobileReceiveService['handleUploadFile']>[0], 'requestId'> & { uploadId: string }): Promise<unknown> {
+    const { uploadId, ...rest } = input
+    if (!this.mobileReceiveService) return { ok: false, error: 'no_transport', message: 'upload service unavailable' }
+    return this.mobileReceiveService.handleUploadFile({ ...rest, requestId: uploadId })
+  }
+
+  async remoteUploadComplete(uploadId: string): Promise<unknown> {
+    if (!this.mobileReceiveService) return { ok: false, error: 'no_transport', message: 'upload service unavailable' }
+    return this.mobileReceiveService.handleUploadComplete({ requestId: uploadId })
+  }
+
+  /**
+   * A phone's change to a project's extra folders (`project.update`). Added
+   * folders are checked like `/add-dir`; deltas compose with concurrent edits.
+   */
+  remoteUpdateProjectDirs(projectPath: string, patch: import('@superone/shared/project-extra-dirs').ProjectExtraDirsPatch): void {
+    for (const dir of patch.addExtraDirs ?? []) {
+      const verdict = this.validateAddDirCandidate(projectPath, dir)
+      if (!verdict.ok) throw Object.assign(new Error(`cannot add ${dir}: ${verdict.reason}`), { code: 'invalid_argument', details: { reason: verdict.reason } })
+    }
+    this.setProjectExtraDirs(projectPath, (dirs) => resolveProjectExtraDirs(dirs, patch) ?? dirs)
+  }
+
+  /** A host folder's entries for the phone's folder browser, directories first. */
+  async remoteListDirectory(path: string, opts: { showHidden?: boolean; ignoreMode?: 'none' | 'excluded-dirs' | 'gitignore' }): Promise<{ items: Array<{ name: string; isDirectory: boolean }>; appliedIgnoreMode: string }> {
+    const entries = await readdir(path, { withFileTypes: true })
+    const ignoreMode = opts.ignoreMode ?? 'none'
+    const ignored = ignoreMode === 'gitignore'
+      ? await import('./remote-directory-ignores').then((m) => m.projectIgnoreFilter(path))
+      : null
+    const items = entries
+      .filter((e) => opts.showHidden || !e.name.startsWith('.'))
+      .filter((e) => ignoreMode === 'none' || !EXCLUDED_DIRS.has(e.name))
+      .filter((e) => !ignored?.(e.name, e.isDirectory()))
+      .map((e) => ({ name: e.name, isDirectory: e.isDirectory() }))
+      .sort((a, b) => (a.isDirectory === b.isDirectory ? a.name.localeCompare(b.name) : a.isDirectory ? -1 : 1))
+    return { items, appliedIgnoreMode: ignoreMode }
+  }
+
+  /** A new folder named `name` directly inside `path`. */
+  async remoteCreateDirectory(path: string, name: string): Promise<void> {
+    if (name.includes('..') || name.includes('/') || name.includes('\\')) {
+      throw Object.assign(new Error('Invalid directory name'), { code: 'invalid_argument' })
+    }
+    await mkdir(join(path, name))
+  }
+
+  /** A harness's usage meter for a phone composer (`get_usage`, `harness.usage`). */
+  async remoteUsage(request: import('./harness-usage').HarnessUsageRequest): Promise<{ usage: import('@superone/shared/agent-types').RemoteUsage | null }> {
+    return { usage: this.readHarnessUsage ? await this.readHarnessUsage(request) : null }
+  }
+
+  async remoteConsumeRateLimitReset(projectPath: string, apiProviderId: string | null, creditId: string | null): Promise<{ outcome: import('@superone/shared/agent-types').CodexRateLimitResetOutcome | null }> {
+    return { outcome: this.codexConsumeRateLimitReset ? await this.codexConsumeRateLimitReset(projectPath, apiProviderId, creditId) : null }
+  }
+
   async handleRemoteCommand(command: RemoteCommand, respond?: RemoteResponder, source?: { deviceId: string; transport: 'lan' | 'relay' }): Promise<void> {
     if (!source?.deviceId) {
       log.warn('[AgentService] handleRemoteCommand without source.deviceId for command=%s; using "unknown-device" fallback', command.type)
@@ -1612,18 +1680,7 @@ export class AgentService {
       }
       case 'list_directory': {
         try {
-          const entries = await readdir(command.path, { withFileTypes: true })
-          const ignoreMode = command.ignoreMode ?? 'none'
-          const ignored = ignoreMode === 'gitignore'
-            ? await import('./remote-directory-ignores').then((m) => m.projectIgnoreFilter(command.path))
-            : null
-          const items = entries
-            .filter((e) => command.showHidden || !e.name.startsWith('.'))
-            .filter((e) => ignoreMode === 'none' || !EXCLUDED_DIRS.has(e.name))
-            .filter((e) => !ignored?.(e.name, e.isDirectory()))
-            .map((e) => ({ name: e.name, isDirectory: e.isDirectory() }))
-            .sort((a, b) => (a.isDirectory === b.isDirectory ? a.name.localeCompare(b.name) : a.isDirectory ? -1 : 1))
-          await respond?.(command.requestId, { items, appliedIgnoreMode: ignoreMode })
+          await respond?.(command.requestId, await this.remoteListDirectory(command.path, command))
         } catch (err) {
           await respond?.(command.requestId, { error: (err as Error).message })
         }
@@ -1778,10 +1835,7 @@ export class AgentService {
       }
       case 'create_directory': {
         try {
-          if (command.name.includes('..') || command.name.includes('/') || command.name.includes('\\')) {
-            throw new Error('Invalid directory name')
-          }
-          await mkdir(join(command.path, command.name))
+          await this.remoteCreateDirectory(command.path, command.name)
           await respond?.(command.requestId, { success: true })
         } catch (err) {
           await respond?.(command.requestId, { error: (err as Error).message })
@@ -2214,8 +2268,7 @@ export class AgentService {
       }
       case 'get_usage': {
         try {
-          const usage = this.readHarnessUsage ? await this.readHarnessUsage(command) : null
-          await respond?.(command.requestId, { usage })
+          await respond?.(command.requestId, await this.remoteUsage(command))
         } catch (err) {
           await respond?.(command.requestId, { error: (err as Error).message })
         }
@@ -2223,10 +2276,7 @@ export class AgentService {
       }
       case 'consume_rate_limit_reset': {
         try {
-          const outcome = this.codexConsumeRateLimitReset
-            ? await this.codexConsumeRateLimitReset(command.projectPath, command.apiProviderId ?? null, command.creditId ?? null)
-            : null
-          await respond?.(command.requestId, { outcome })
+          await respond?.(command.requestId, await this.remoteConsumeRateLimitReset(command.projectPath, command.apiProviderId ?? null, command.creditId ?? null))
         } catch (err) {
           await respond?.(command.requestId, { error: (err as Error).message })
         }
@@ -4523,4 +4573,11 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_HIDE)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_LIST_PINNED)
   }
+}
+
+/** What a responder-style phone handler answers, as a value. */
+async function capturedResponse(run: (respond: RemoteResponder) => Promise<void>): Promise<unknown> {
+  let answer: unknown
+  await run(async (_requestId, data) => { answer = data })
+  return answer
 }

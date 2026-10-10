@@ -1,6 +1,6 @@
 # Unified remote protocol
 
-Status: in progress · Updated: 2026-10-10
+Status: in progress · Updated: 2026-10-10 (step 6 next)
 Goal: One backend serves its own window, controller desktops and phones through one topic/connection core, one per-connection delivery policy and one protocol; every existing phone feature runs on it.
 Proposal: [unified-remote-protocol.md](../proposals/unified-remote-protocol.md)
 Long-term docs affected: [mobile-remote-control.md](../architecture/mobile-remote-control.md), [remote-node-service.md](../architecture/remote-node-service.md), [chat-core.md](../architecture/chat-core.md), [relay-crypto.md](../architecture/relay-crypto.md) (framing), `apps/desktop/docs/agent-reference/architecture.md`, `apps/desktop/CLAUDE.md` (session control boundary), `apps/mobile/docs/agent-reference/transport.md`
@@ -215,31 +215,31 @@ through the desktop today (`environment-commands.ts`), by envelope
 | `subscribe_session`, `unsubscribe_session`, `leave_session` | `session.load` + `topic.subscribe` / `topic.update`, `session.acquireControl` / `session.releaseControl` | yes |
 | `subscribe_detail`, `unsubscribe_detail` | `session.subscribeDetail`, `session.unsubscribeDetail` | yes |
 | `load_session_messages`, `get_session_history_index` | `session.load` (`before`), **`session.historyIndex`** | yes |
-| `get_session_state` | `session.get` | yes |
+| `get_session_state` | `session.load` | yes |
 | `get_attachment` | **`session.attachment`** | |
 | `mod_ui_request` | `session.modUi` | |
 | `mcp_app_request` | `mcpApps.*` | |
-| `list_sessions`, `list_pinned_sessions`, `find_session`, `search_sessions`, `list_session_activity` | `session.list`, `session.listPinned`, `session.get`, **`session.search`**, `session.list` (activity in the record) | |
+| `list_sessions`, `list_pinned_sessions`, `find_session`, `search_sessions`, `list_session_activity` | **`sessionList.page`**, **`sessionList.pinned`**, **`sessionList.find`**, **`sessionList.search`**, **`session.activity`** (the sidebar's projections) | |
 | `pin_session`, `archive_session`, `delete_session`, `fork_session` | `session.setUiFlags`, **`session.setArchived`**, `session.remove`, `session.fork` | |
-| `session_link_identity`, `session_link_metadata`, `session_link_resolve` | `environment.descriptor`, `session.linkMetadata`, `session.get` | |
+| `session_link_identity`, `session_link_metadata`, `session_link_resolve` | **`environment.list`**, **`session.linkMetadata`**, **`session.linkResolve`** | |
 | `list_drafts`, `save_draft`, `delete_draft` | `draft.list`, `draft.upsert`, `draft.delete` | |
 | `open_draft`, `close_draft` | **`draft.open`**, **`draft.close`** (draft lease, `expectedUpdatedAt`) | |
 | `composer_open`, `composer_cancel`, `composer_outcome`, `open_widget_input_request` | **`composer.open`**, **`composer.cancel`**, **`composer.outcome`**, **`composer.openInputRequest`** | |
 | `save_widget_template` | **`widget.saveTemplate`** | |
 | `search_mcp_mentions`, `read_mcp_mentions`, `list_mcp_servers`, `get_mcp_icons` | **`mcp.searchMentions`**, **`mcp.readMentions`**, `mcp.list`, **`mcp.icons`** | |
-| `list_directory`, `browse_host_directory`, `create_directory` | `workspace.listDir`, `fs.listDir`, `workspace.mkdir` | |
+| `list_directory`, `browse_host_directory`, `create_directory` | **`files.listDir`**, `fs.listDir`, **`files.mkdir`** | |
 | `search_files`, `search_mentions`, `get_mention_icons` | `workspace.search`, **`workspace.searchMentions`**, **`workspace.mentionIcons`** | |
-| `read_desktop_file`, `read_video_poster` | `workspace.readFile`, **`workspace.videoPoster`** | |
-| `upload_file`, `upload_file_complete` | **`workspace.upload`**, **`workspace.uploadComplete`** | |
+| `read_desktop_file`, `read_video_poster` | **`files.read`**, **`files.videoPoster`** | |
+| `upload_file`, `upload_file_complete` | **`files.upload`**, **`files.uploadComplete`** (client-minted `uploadId`) | |
 | `resolve_favicon` | **`environment.favicon`** | |
-| `list_projects`, `add_project`, `add_project_additional_dir`, `remove_project_additional_dir` | `project.list`, `project.open`, `project.update` | list |
-| `get_default_clone_path`, `set_default_clone_path` | `settings.get`, `settings.patch` (`expectedVersion`) | |
+| `list_projects`, `add_project`, `add_project_additional_dir`, `remove_project_additional_dir` | `project.list`, `project.open` (`createIfMissing`), `project.update` (`addExtraDirs` / `removeExtraDirs`) | list |
+| `get_default_clone_path`, `set_default_clone_path` | **`git.defaultClonePath`**, **`git.setDefaultClonePath`** | |
 | `clone_repository`, `search_github_repos` | `git.clone`, **`git.searchGithub`** | |
 | `get_git_info`, `get_git_file_status`, `get_git_branches`, `list_git_mention_refs` | `git.status`, `git.status` (`paths`), `git.branches`, `git.mentionRefs` | |
 | `switch_git_branch`, `create_git_branch` | `git.switchBranch`, `git.createBranch` | |
 | `get_worktree_info`, `get_checked_out_branches` | `git.worktrees`, `git.worktreeCheckedOutBranches` | |
-| `list_harness_options`, `get_system_info`, `get_project_resources` | `harness.list`, `environment.systemInfo`, `harness.resources` | yes |
-| `get_usage`, `consume_rate_limit_reset`, `list_media_providers` | `environment.usage`, `codex.consumeRateLimitReset`, **`media.listProviders`** | |
+| `list_harness_options`, `get_system_info`, `get_project_resources` | **`harness.options`**, **`harness.systemInfo`**, **`harness.projectResources`** (a routing desktop builds them from the node's `harness.resources`) | yes |
+| `get_usage`, `consume_rate_limit_reset`, `list_media_providers` | **`harness.usage`**, **`codex.consumeRateLimitReset`**, **`media.listProviders`** | |
 | `terminal_create`, `terminal_subscribe`, `terminal_unsubscribe`, `terminal_input`, `terminal_resize`, `terminal_kill` | `terminal.create`, `terminal.attach` + `topic.subscribe`, `topic.update`, `terminal.write`, `terminal.resize`, `terminal.kill` | |
 | `terminal_list`, `terminal_claim` | **`terminal.list`**, `terminal.acquireControl` | |
 | `mark_session_seen`, `append_mobile_log` | **`client.markSeen`**, **`client.appendLog`** (client-scoped) | |
@@ -252,9 +252,14 @@ Defined but never sent, removed without a method: `list_models`,
 connection; there is no push-token command.
 
 Conditional writes: drafts keep `expectedUpdatedAt` and their lease; MCP app
-files keep `ifMatch`; `workspace.writeFile` keeps `expectedHash`;
-`settings.patch` and `project.update` gain `expectedVersion`. Session and
-terminal mutations are fenced by leases (step 6).
+files keep `ifMatch`; `workspace.writeFile` keeps `expectedHash`. A project's
+extra folders change by `addExtraDirs` / `removeExtraDirs` deltas that compose
+with concurrent edits (`resolveProjectExtraDirs`), and the default clone path
+is a single value whose last write wins, so neither needs a version. Session
+and terminal mutations are fenced by leases (step 6).
+
+The phone's composer catalogs come from the desktop that pairs it, not from
+the CLI's `harness.resources`, so those handlers stay with the CLI.
 
 ## Verification
 
@@ -315,14 +320,23 @@ terminal mutations are fenced by leases (step 6).
   folded deltas, summarized tool input left out), and keeps following a
   session across LAN → relay → LAN mid-turn with a realign each time;
   generation 2 refusal is `node-server.secure-channel.test.ts`. Step 4 done.
-- Step 5 in progress. Coverage list above. Done: a host names the shared
-  methods it refuses (`unservedMethods`), so descriptors list only served
-  ones; one environment id per desktop (node identity canonical, local id an
-  alias in `environmentAliases`, resolved by `isEnvironment`, the registry and
-  the envelope check); `DesktopDomain` open apart from the controller
-  listener. Next: phone handshake version and generation, phone-scoped
-  session host and desktop ports, CLI handlers into runtime, phone channel
-  adapter, conditional writes, contract suite.
+- Step 5 done: descriptors list only served methods (`unservedMethods`); one
+  environment id per desktop (node identity canonical, local id an alias in
+  `environmentAliases`); `DesktopDomain` open apart from the controller
+  listener, recording every desktop session; host version and generation in
+  the phone link handshake. Phone endpoint: `rpc` link frames carry the
+  protocol, and each link is a `createConnectionRpc` connection
+  (`node-host/phone-endpoint.ts`, shared with node sockets) over the domain's
+  phone context: every session to read, workspace files and Git, terminals
+  (list, attach, pushed `terminal`/`terminalList` topics), drafts with their
+  leases (`draft.*` and `DraftControl` now in the runtime, pushed `drafts`
+  topic), project open and extra-folder edits, and the desktop methods in
+  `remote/phone-methods.ts` (session list pages, composer catalogs, mentions,
+  MCP views, host files, usage, client-scoped methods), sharing their bodies
+  with the old commands through `AgentService` methods. Session and terminal
+  changes stay refused until step 6. Contract suite:
+  `node-host/phone-contract/*.contract.test.ts`. Not wired to live phone
+  links until step 6.
 
 ## Open decisions
 

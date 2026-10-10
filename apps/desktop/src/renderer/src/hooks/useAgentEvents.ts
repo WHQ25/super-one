@@ -35,7 +35,8 @@ export function useAgentEvents(): void {
     let disposed = false
     const buffer: AgentEvent[] = []
     const cleanup = window.agent.onAgentEvent((event) => {
-      if (disposed) return
+      // Detail packets belong to the detail client, not to a session's state.
+      if (disposed || event.type === 'remote_detail') return
       if (!hydrated) {
         buffer.push(event as AgentEvent)
         return

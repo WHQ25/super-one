@@ -1,4 +1,5 @@
 import type { EnvironmentEventEnvelope } from './events'
+import { SESSION_DURABLE_EVENT } from './session-events'
 
 /**
  * What a frontend subscribes to on a backend: one scoped resource whose
@@ -84,10 +85,23 @@ export function readTopicRef(value: unknown): TopicRef | null {
  * The topic an environment event log entry belongs to. Session lifecycle
  * rows also reach the session list; terminal rows reach their terminal.
  */
+/** Session events that change the session list: they also belong to the `sessionList` topic. */
+export const SESSION_LIST_EVENT_TYPES: ReadonlySet<string> = new Set([
+  SESSION_DURABLE_EVENT.created,
+  SESSION_DURABLE_EVENT.renamed,
+  SESSION_DURABLE_EVENT.uiFlags,
+  SESSION_DURABLE_EVENT.tagsChanged,
+  SESSION_DURABLE_EVENT.closed,
+  SESSION_DURABLE_EVENT.removed,
+])
+
 export function topicsOfEnvelope(envelope: EnvironmentEventEnvelope): TopicRef[] {
   const environmentId = envelope.environmentId
   switch (envelope.aggregateType) {
     case 'session':
+      return SESSION_LIST_EVENT_TYPES.has(envelope.eventType)
+        ? [{ kind: 'session', environmentId, sessionId: envelope.aggregateId }, { kind: 'sessionList', environmentId }]
+        : [{ kind: 'session', environmentId, sessionId: envelope.aggregateId }]
     case 'interaction':
       return [{ kind: 'session', environmentId, sessionId: envelope.aggregateId }]
     case 'terminal':

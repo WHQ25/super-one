@@ -1,16 +1,28 @@
 import type { AgentEvent, HarnessId, RemoteCommand } from '@superone/shared/agent-types'
-import type { EnvironmentGateway, MutatingControlContext, SessionRef } from '@superone/shared/environment'
+import type { EnvironmentGateway, MutatingControlContext, SessionLoadResult, SessionRef } from '@superone/shared/environment'
 import { createNodeSessionEventMapper } from '@superone/shared/node-session-event-map'
 import { nodeHarnessToProviderId } from '@superone/shared/node-session-messages'
 import { remoteProjectKey } from '@superone/shared/remote-resource-key'
-import { applyEventToSession, createDefaultChatCoreSession, createStreamingToolInputStore, defaultChatCorePorts } from '@superone/chat-core'
+import { applyEventToSession, createDefaultChatCoreSession, createStreamingToolInputStore, defaultChatCorePorts, type ChatCoreSession } from '@superone/chat-core'
 import { getEnvironmentHost } from '../environment/environment-host'
 import { DetailViews, detailMessageId, projectProgressiveEvent, projectProgressiveMessage } from '@superone/runtime/stream'
 import { routedDetailMessage, routedHistory, routedHistoryIndex, routedSnapshot, type RoutedSessionSnapshot } from './environment-session-view'
 import { routedResources } from './environment-session-resources'
 import { catchUpEvents } from './routed-catch-up'
 
-type Subscription = { deviceId: string; abort: AbortController; gateway: EnvironmentGateway; ref: SessionRef; projectKey: string; control: MutatingControlContext; timer: ReturnType<typeof setInterval> }
+type Subscription = {
+  deviceId: string
+  abort: AbortController
+  gateway: EnvironmentGateway
+  ref: SessionRef
+  projectKey: string
+  control: MutatingControlContext
+  timer: ReturnType<typeof setInterval>
+  /** Stops following the session on the node's shared feed. */
+  unfollow?: () => void
+  /** The node sends this desktop's connection the session summarized: detail is the node's to serve. */
+  summarized: boolean
+}
 const subscriptions = new Map<string, Subscription>()
 const key = (deviceId: string, ref: SessionRef) => JSON.stringify([deviceId, ref.environmentId, ref.sessionId])
 /** Each routed subscription's summarized session and expanded rows. */
@@ -37,6 +49,7 @@ async function release(subscription: Subscription): Promise<void> {
     presence?.publish({ type: 'remote_session_end', remoteProjectPath: subscription.projectKey, remoteSessionId: subscription.ref.sessionId, isSubscribe: true })
   }
   subscription.abort.abort()
+  subscription.unfollow?.()
   clearInterval(subscription.timer)
   if (subscriptions.get(subscriptionKey) === subscription) subscriptions.delete(subscriptionKey)
   routedViews.delete(subscriptionKey)
@@ -88,14 +101,12 @@ export async function executeEnvironmentCommand(environmentId: string, command: 
     const load = gateway.sessions.load
     // The node holds one device at a time; another phone's open is refused there.
     const control = current?.control ?? await gateway.sessions.acquireControl({ resource: ref, ttlMs: 60_000, delegate: deviceId })
-    let loaded: Awaited<ReturnType<typeof load>>
-    try { loaded = await load({ session: ref, limit: 8 }) }
-    catch (error) { if (!current) await gateway.sessions.releaseControl(control).catch(() => {}); throw error }
     current?.abort.abort()
+    current?.unfollow?.()
     if (current) clearInterval(current.timer)
     const abort = new AbortController()
     const projectKey = remoteProjectKey(item.connectionId, project.path)
-    const subscription: Subscription = { deviceId, abort, gateway, ref, projectKey, control, timer: setInterval(() => {
+    const subscription: Subscription = { deviceId, abort, gateway, ref, projectKey, control, summarized: false, timer: setInterval(() => {
       void gateway.sessions.renewControl({ ...subscription.control, ttlMs: 60_000 }).then(lease => {
         if (!abort.signal.aborted) subscription.control = { leaseId: lease.leaseId, generation: lease.generation }
       }).catch(async () => {
@@ -106,20 +117,24 @@ export async function executeEnvironmentCommand(environmentId: string, command: 
     }, 15_000) }
     subscription.timer.unref()
     subscriptions.set(subscriptionKey, subscription)
-    if (!current) presence?.publish({ type: 'remote_session_start', remoteProjectPath: projectKey, remoteSessionId: sessionId, harnessId: snapshot.harnessId as HarnessId, isSubscribe: true })
-    viewsOf(subscriptionKey).open(sessionId)
-    let state = { ...createDefaultChatCoreSession(), ...loaded.state, messages: loaded.messages }
     const mapper = createNodeSessionEventMapper({ projectPath: project.path, sessionId, providerId })
     const ports = { ...defaultChatCorePorts, streaming: createStreamingToolInputStore() }
+    let loaded!: SessionLoadResult
+    let state!: ChatCoreSession
+    // Events at or below the snapshot this phone's messages were last brought to.
+    let barrier = 0
+    const adopt = (fresh: SessionLoadResult) => {
+      loaded = fresh
+      state = { ...createDefaultChatCoreSession(), ...fresh.state, messages: fresh.messages } as ChatCoreSession
+      subscription.summarized = fresh.summarized === true
+      barrier = fresh.cursor.version
+    }
     const deliver = async (event: AgentEvent) => {
       state = { ...state, ...applyEventToSession(state, event, ports) }
       const projected = projectProgressiveEvent(event, state.messages)
       if (projected) await send({ ...projected, environmentId })
       for (const update of viewsOf(subscriptionKey).updates(sessionId, state.messages)) await send({ ...update, environmentId })
     }
-    // The node no longer holds events this phone missed: bring its messages to
-    // a fresh snapshot, and skip the events that snapshot already reflects.
-    let barrier = loaded.cursor.version
     let queue = Promise.resolve()
     const serial = (task: () => Promise<void>) => (queue = queue.then(task))
     const fail = async () => {
@@ -127,40 +142,58 @@ export async function executeEnvironmentCommand(environmentId: string, command: 
       await send({ type: 'status_change', environmentId, sessionId, status: 'error' })
       await release(subscription)
     }
-    const repair = async () => {
+    // Some events are gone, or the node's link changed tier: this desktop's
+    // copy is replaced by a fresh snapshot, and the phone gets the difference
+    // between the summaries it has and the fresh ones.
+    const realign = async () => {
+      const shown = state.messages.map(projectProgressiveMessage)
       const fresh = await load({ session: ref, limit: 8 })
-      const events = catchUpEvents(state.messages, fresh.messages)
+      const events = catchUpEvents(shown, fresh.messages.map(projectProgressiveMessage))
       if (!events) throw new Error('Session diverged from its host')
-      barrier = fresh.cursor.version
-      for (const event of events) await deliver(event)
+      adopt(fresh)
+      for (const event of events) await send({ ...event, environmentId })
     }
-    void (async () => {
-      try {
-        for await (const envelope of gateway.subscribeEvents({
-          environmentId, afterSequence: loaded.cursor.sequence, epoch: loaded.cursor.epoch, versions: { [sessionId]: loaded.cursor.version },
-          aggregateIds: [sessionId], aggregateTypes: ['session'], signal: abort.signal,
-          onResnapshot: () => { void serial(repair).catch(fail) },
-        })) {
-          if (abort.signal.aborted || subscriptions.get(subscriptionKey) !== subscription) break
-          await serial(async () => {
-            if (envelope.aggregateId !== sessionId || (envelope.sessionVersion ?? Infinity) <= barrier) return
+    try {
+      subscription.unfollow = await getEnvironmentHost().followSessionEvents(item.connectionId, sessionId, {
+        event: (envelope) => {
+          void serial(async () => {
+            if (abort.signal.aborted || (envelope.sessionVersion ?? Infinity) <= barrier) return
             for (const event of mapper.map(envelope)) await deliver(event)
-          })
-        }
-        await queue
-      } catch { await fail() }
-      finally { if (!abort.signal.aborted) await release(subscription) }
-    })()
+          }).catch(fail)
+        },
+        end: () => { void fail() },
+        resync: () => { void serial(realign).catch(fail) },
+      }, async () => {
+        adopt(await load({ session: ref, limit: 8 }))
+        return loaded.cursor.version
+      })
+    } catch (error) {
+      clearInterval(subscription.timer)
+      if (subscriptions.get(subscriptionKey) === subscription) subscriptions.delete(subscriptionKey)
+      await gateway.sessions.releaseControl(control).catch(() => {})
+      throw error
+    }
+    if (!current) presence?.publish({ type: 'remote_session_start', remoteProjectPath: projectKey, remoteSessionId: sessionId, harnessId: snapshot.harnessId as HarnessId, isSubscribe: true })
+    viewsOf(subscriptionKey).open(sessionId)
     const messages = loaded.messages
     return { ok: true, historyPage: { sessionId, messages: messages.map(projectProgressiveMessage), cursor: loaded.before, hasMore: loaded.before != null, provider: snapshot.harnessId, navigationAvailable: true }, snapshot: routedSnapshot(snapshot, environmentId, messages) }
   }
   if (command.type === 'load_session_messages') return routedHistory(gateway, ref, providerId, command)
   if (command.type === 'get_session_history_index') return routedHistoryIndex(snapshot)
   if (command.type === 'subscribe_detail') {
+    // A summarized copy lacks the bodies: the node that holds them serves the detail.
+    if (current?.summarized && gateway.sessions.subscribeDetail) {
+      return gateway.sessions.subscribeDetail({ session: ref, detailRef: command.detailRef, subscriptionId: command.subscriptionId,
+        onUpdate: (update) => { void send({ type: 'remote_detail', sessionId, environmentId, ...update }) } })
+    }
     const message = await routedDetailMessage(gateway, ref, providerId, detailMessageId(command.detailRef))
     return viewsOf(subscriptionKey).subscribe(sessionId, command.subscriptionId, command.detailRef, message)
   }
-  if (command.type === 'unsubscribe_detail') { routedViews.get(subscriptionKey)?.unsubscribe(sessionId, command.subscriptionId); return { ok: true } }
+  if (command.type === 'unsubscribe_detail') {
+    routedViews.get(subscriptionKey)?.unsubscribe(sessionId, command.subscriptionId)
+    await gateway.sessions.unsubscribeDetail?.({ session: ref, subscriptionId: command.subscriptionId }).catch(() => {})
+    return { ok: true }
+  }
   if (command.type === 'get_session_state') return routedSnapshot(snapshot, environmentId)
   if (!current) throw new Error('Open this session before operating it')
   // Reject a stale lease after takeover instead of acquiring another one.

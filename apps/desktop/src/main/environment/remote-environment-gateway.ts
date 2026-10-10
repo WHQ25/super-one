@@ -54,7 +54,7 @@ import type {
   ResourceProvider,
 } from '@superone/shared/environment'
 import type { ProjectExtraDirsPatch } from '@superone/shared/project-extra-dirs'
-import type { NodeRpcClient } from './node-rpc-client'
+import type { NodeRpcClient, TopicStream } from './node-rpc-client'
 import type { CodexMcpOauthLoginOptions } from '@superone/shared/agent-types'
 import type { GitMentionRefKind } from '@superone/shared/git-mention-query'
 
@@ -258,7 +258,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
 
   /**
    * Events after `afterSequence`, pushed by the node as they commit
-   * (`session.subscribe`). A stream ends with its socket; this resubscribes
+   * (`topic.subscribe`). A stream ends with its socket; this resubscribes
    * from the last frame's cursor once the connection is back — its durable
    * sequence, and the version reached in each session for streaming events —
    * so the caller sees one gapless sequence, or hears through `onResnapshot`
@@ -270,23 +270,35 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     let after = input.afterSequence ?? '0'
     let epoch = input.epoch
     const versions: Record<string, number> = { ...input.versions }
+    let lastTier: string | null = null
+    const topicsNow = () => input.interest?.current() ?? input.topics
     while (!signal?.aborted) {
       const frames: SessionStreamFrame[] = []
       let ended: Error | null = null
       let wake: (() => void) | null = null
       const notify = () => { const w = wake; wake = null; w?.() }
-      let unsubscribe: (() => void) | null = null
+      let stream: TopicStream | null = null
+      let stopWatch: (() => void) | undefined
       try {
-        unsubscribe = await this.client.subscribeEvents(
+        const tier = this.client.tier
+        const opening = this.client.subscribeEvents(
           {
             afterSequence: after,
             ...(epoch ? { epoch, versions } : {}),
-            ...(input.aggregateIds ? { aggregateIds: input.aggregateIds } : {}),
-            ...(input.aggregateTypes ? { aggregateTypes: input.aggregateTypes } : {}),
+            topics: topicsNow(),
           },
           { onFrame: (frame) => { frames.push(frame); notify() }, onEnd: (err) => { ended = err; notify() } },
         )
+        // Watching from before the subscribe: a change made while it is in
+        // flight is applied once it opens. If it never opens, the next
+        // subscribe reads the set again and catches up from the cursor.
+        stopWatch = input.interest?.watch(async (next) => { await (await opening).update(next) })
+        stream = await opening
+        if (lastTier !== null && tier !== lastTier) input.onRealign?.()
+        lastTier = tier
       } catch (err) {
+        stopWatch?.()
+        stream?.close()
         if (!isTransportFailure(err) || input.shouldStop?.(err as Error)) throw err
         await abortableDelay(RESUBSCRIBE_DELAY_MS, signal)
         continue
@@ -315,7 +327,8 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
           })
         }
       } finally {
-        unsubscribe?.()
+        stopWatch?.()
+        stream?.close()
       }
       if (ended && input.shouldStop?.(ended)) throw ended
     }
@@ -1195,6 +1208,14 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
           ...(input.before != null ? { before: input.before } : {}),
           ...(input.limit !== undefined ? { limit: input.limit } : {}),
         })
+      },
+      subscribeDetail: (input) => {
+        this.assertEnv(input.session.environmentId)
+        return this.client.subscribeDetail({ sessionId: input.session.sessionId, detailRef: input.detailRef, subscriptionId: input.subscriptionId }, input.onUpdate)
+      },
+      unsubscribeDetail: async (input) => {
+        this.assertEnv(input.session.environmentId)
+        await this.client.unsubscribeDetail({ sessionId: input.session.sessionId, subscriptionId: input.subscriptionId })
       },
       getMetadataBatch: async refs => {
         for (const ref of refs) this.assertEnv(ref.environmentId)

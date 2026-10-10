@@ -36,6 +36,7 @@ import { isNodeMutatingCall } from './rpc-mutating-methods'
 import { unsupportedMethodError } from './unsupported'
 import { openEventStream, streamFilterMatcher, type EventStreamFilter } from './event-stream'
 import { readTopicRef, type TopicRef } from '@superone/shared/environment/topics'
+import { deliverFrame, deliverLoad, subscribeDetail } from './session-delivery'
 import type {
   ArtifactZonePort,
   RpcContext as HostRpcContext,
@@ -89,6 +90,8 @@ function requiredPorts(method: string): readonly FamilyPort[] {
       return method === 'git.clone' ? ['projects'] : ['workspaceGit']
     case 'session.':
       return method === 'session.create' ? ['sessions', 'projects', 'harnesses'] : ['sessions', 'projects']
+    case 'topic.':
+      return ['sessions']
     case 'collaboration.':
       return ['collaboration']
     default:
@@ -402,14 +405,20 @@ async function dispatchRpcInner(method: string, payload: unknown, hostCtx: HostR
       return handleSessionNotifyArtifactCompleted(payload, ctx)
     case 'session.events':
       return handleSessionEvents(payload, ctx)
-    case 'session.subscribe':
-      return handleSessionSubscribe(payload, ctx)
-    case 'session.unsubscribe':
-      return handleSessionUnsubscribe(payload, ctx)
+    case 'topic.subscribe':
+      return handleTopicSubscribe(payload, ctx)
+    case 'topic.unsubscribe':
+      return handleTopicUnsubscribe(payload, ctx)
+    case 'topic.update':
+      return handleTopicUpdate(payload, ctx)
     case 'session.messages.list':
       return handleSessionMessagesList(payload, ctx)
     case 'session.load':
       return handleSessionLoad(payload, ctx)
+    case 'session.subscribeDetail':
+      return handleSessionSubscribeDetail(payload, ctx)
+    case 'session.unsubscribeDetail':
+      return handleSessionUnsubscribeDetail(payload, ctx)
     case 'session.snapshot':
       return handleSessionSnapshot(ctx)
     case 'session.close':
@@ -2901,11 +2910,11 @@ function handleSessionEvents(payload: unknown, ctx: RpcContext): RpcResult {
  * one as it commits (`openEventStream`). Frames can precede this result, so
  * the client picks `subscriptionId`.
  */
-function handleSessionSubscribe(payload: unknown, ctx: RpcContext): RpcResult {
+function handleTopicSubscribe(payload: unknown, ctx: RpcContext): RpcResult {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readSession)
   if (denied) return denied
   const streams = ctx.streams
-  if (!streams) return { error: { code: 'failed_precondition', message: 'session.subscribe needs a socket connection' } }
+  if (!streams) return { error: { code: 'failed_precondition', message: 'topic.subscribe needs a socket connection' } }
   const p = asRecord(payload)
   const subscriptionId = String(p.subscriptionId ?? '').trim()
   const afterSequence = String(p.afterSequence ?? '').trim()
@@ -2913,17 +2922,46 @@ function handleSessionSubscribe(payload: unknown, ctx: RpcContext): RpcResult {
   if (!/^\d+$/.test(afterSequence)) return { error: { code: 'invalid_argument', message: 'afterSequence must be a decimal sequence' } }
   const versions = streamVersions(p.versions)
   if (versions === null) return { error: { code: 'invalid_argument', message: 'versions must map session ids to versions' } }
-  const close = openEventStream({
-    source: ctx.sessions,
+  const topics = readTopics(p.topics)
+  if (!topics) return { error: { code: 'invalid_argument', message: 'topics must be a list of topic refs' } }
+  const sessions = ctx.sessions
+  const stream = openEventStream({
+    source: sessions,
     environmentId: ctx.identity.environmentId,
     reader: ctx.client,
     cursor: { afterSequence, epoch: typeof p.epoch === 'string' ? p.epoch : undefined, versions },
-    filter: streamFilter(p),
-    push: (frame) => streams.push({ type: 'stream', subscriptionId, frame }),
+    filter: { topics },
+    push: (frame) => {
+      if (!streams.delivery) {
+        streams.push({ type: 'stream', subscriptionId, frame })
+        return
+      }
+      const delivered = deliverFrame(frame, streams.delivery, sessions)
+      streams.push({ type: 'stream', subscriptionId, frame: delivered.frame })
+      for (const { sessionId, update } of delivered.details) streams.push({ type: 'detail', sessionId, update })
+    },
     flow: streams.flow,
   })
-  streams.open(subscriptionId, close)
+  streams.open(subscriptionId, stream)
   return { result: { subscriptionId } }
+}
+
+/** A stream's topics, or null when any entry is not a topic ref. An empty list is a stream that is idle for now. */
+function readTopics(value: unknown): TopicRef[] | null {
+  if (!Array.isArray(value)) return null
+  const topics = value.map(readTopicRef)
+  return topics.every((topic): topic is TopicRef => topic !== null) ? topics : null
+}
+
+/** Change an open stream's topics in place; events of added topics flow from now on. */
+function handleTopicUpdate(payload: unknown, ctx: RpcContext): RpcResult {
+  const p = asRecord(payload)
+  const stream = ctx.streams?.get(String(p.subscriptionId ?? '').trim())
+  if (!stream) return { error: { code: 'not_found', message: 'no open stream with this subscriptionId' } }
+  const topics = readTopics(p.topics)
+  if (!topics) return { error: { code: 'invalid_argument', message: 'topics must be a list of topic refs' } }
+  stream.setTopics(topics)
+  return { result: { ok: true } }
 }
 
 /** A subscribe cursor's per-session versions, or null when malformed. */
@@ -2943,19 +2981,42 @@ function handleSessionLoad(payload: unknown, ctx: RpcContext): RpcResult {
   const sessionId = String(p.sessionId ?? '').trim()
   if (!sessionId) return { error: { code: 'invalid_argument', message: 'sessionId required' } }
   try {
-    return {
-      result: ctx.sessions.load({
-        sessionId,
-        before: typeof p.before === 'number' ? p.before : null,
-        limit: typeof p.limit === 'number' ? p.limit : undefined,
-      }),
-    }
+    const loaded = ctx.sessions.load({
+      sessionId,
+      before: typeof p.before === 'number' ? p.before : null,
+      limit: typeof p.limit === 'number' ? p.limit : undefined,
+    })
+    return { result: deliverLoad(loaded, ctx.streams?.delivery) }
   } catch (err) {
     return mapThrown(err)
   }
 }
 
-function handleSessionUnsubscribe(payload: unknown, ctx: RpcContext): RpcResult {
+/** Expand a row of a session this connection loaded summarized; packets follow as `detail` messages. */
+function handleSessionSubscribeDetail(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readSession)
+  if (denied) return denied
+  const delivery = ctx.streams?.delivery
+  if (!delivery) return { error: { code: 'failed_precondition', message: 'session.subscribeDetail needs a socket connection' } }
+  const p = asRecord(payload)
+  const sessionId = String(p.sessionId ?? '').trim()
+  const detailRef = String(p.detailRef ?? '')
+  const subscriptionId = String(p.subscriptionId ?? '').trim()
+  if (!sessionId || !detailRef || !subscriptionId) return { error: { code: 'invalid_argument', message: 'sessionId, detailRef and subscriptionId required' } }
+  try {
+    return { result: subscribeDetail(delivery, ctx.sessions, { sessionId, detailRef, subscriptionId }) }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+function handleSessionUnsubscribeDetail(payload: unknown, ctx: RpcContext): RpcResult {
+  const p = asRecord(payload)
+  ctx.streams?.delivery?.views.unsubscribe(String(p.sessionId ?? '').trim(), String(p.subscriptionId ?? '').trim())
+  return { result: { ok: true } }
+}
+
+function handleTopicUnsubscribe(payload: unknown, ctx: RpcContext): RpcResult {
   const subscriptionId = String(asRecord(payload).subscriptionId ?? '').trim()
   ctx.streams?.close(subscriptionId)
   return { result: { ok: true } }

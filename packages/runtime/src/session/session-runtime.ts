@@ -937,11 +937,15 @@ export class SessionRuntime {
     return input.before == null ? { ...snapshot, messages: this.withProviderResume(sessionId, snapshot.messages) } : snapshot
   }
 
+  /** The session's reduced transcript now; a host without a read model keeps none. */
+  messages(sessionId: string): ChatMessage[] {
+    sessionId = this.requireSessionId(sessionId)
+    return this.withProviderResume(sessionId, this.readModel?.messages(sessionId) ?? [])
+  }
+
   /** The session's messages as catalog blocks; a host without a read model keeps none. */
   private mcpAppMessageCatalog(sessionId: string) {
-    sessionId = this.requireSessionId(sessionId)
-    const messages = this.withProviderResume(sessionId, this.readModel?.messages(sessionId) ?? [])
-    return messages.map((message, i) => chatMessageToSessionMessageBlock(message, i))
+    return this.messages(sessionId).map((message, i) => chatMessageToSessionMessageBlock(message, i))
   }
 
   /** The last assistant message carries the harness resume id, which forks resume from. */

@@ -1,6 +1,6 @@
 /**
- * session.subscribe: catch-up from a cursor, then pushes as events commit,
- * filtered by aggregate, until unsubscribed.
+ * topic.subscribe: catch-up from a cursor, then pushes as events commit,
+ * filtered by topic, until unsubscribed.
  */
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -34,7 +34,7 @@ async function until(check: () => boolean): Promise<void> {
   expect(check()).toBe(true)
 }
 
-describe('session.subscribe', () => {
+describe('topic.subscribe', () => {
   it('pushes the events after the cursor, then each new one, for the subscribed session only', async () => {
     const { client, project } = await boot()
     const a = (await client.rpc('session.create', { projectId: project.projectId, harnessId: 'claude' })) as { sessionId: string }
@@ -44,7 +44,8 @@ describe('session.subscribe', () => {
       if (msg.type === 'stream' && msg.subscriptionId === 'sub-1') frames.push((msg as unknown as SessionStreamMessage).frame)
     })
 
-    await client.rpc('session.subscribe', { subscriptionId: 'sub-1', afterSequence: '0', aggregateIds: [a.sessionId] })
+    const { environmentId } = (await client.rpc('environment.descriptor')) as { environmentId: string }
+    await client.rpc('topic.subscribe', { subscriptionId: 'sub-1', afterSequence: '0', topics: [{ kind: 'session', environmentId, sessionId: a.sessionId }] })
     expect(frames.flatMap((f) => f.events.map((e) => e.eventType))).toContain('session.created')
     expect(frames.flatMap((f) => f.events.map((e) => e.aggregateId))).not.toContain(b.sessionId)
 
@@ -55,15 +56,16 @@ describe('session.subscribe', () => {
     expect(frames.slice(seen).flatMap((f) => f.events.map((e) => [e.aggregateId, e.eventType])))
       .toEqual([[a.sessionId, 'session.renamed']])
 
-    await client.rpc('session.unsubscribe', { subscriptionId: 'sub-1' })
+    await client.rpc('topic.unsubscribe', { subscriptionId: 'sub-1' })
     const after = frames.length
     await client.rpc('session.rename', { sessionId: a.sessionId, title: 'again' })
     await new Promise((r) => setTimeout(r, 50))
     expect(frames).toHaveLength(after)
   })
 
-  it('refuses a cursor that is not a decimal sequence', async () => {
+  it('refuses a cursor that is not a decimal sequence, and a subscribe without topics', async () => {
     const { client } = await boot()
-    await expect(client.rpc('session.subscribe', { subscriptionId: 's', afterSequence: 'x' })).rejects.toMatchObject({ code: 'invalid_argument' })
+    await expect(client.rpc('topic.subscribe', { subscriptionId: 's', afterSequence: 'x', topics: [{ kind: 'sessionList', environmentId: 'e' }] })).rejects.toMatchObject({ code: 'invalid_argument' })
+    await expect(client.rpc('topic.subscribe', { subscriptionId: 's', afterSequence: '0' })).rejects.toMatchObject({ code: 'invalid_argument' })
   })
 })

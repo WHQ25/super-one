@@ -36,9 +36,11 @@ const flush = () => new Promise<void>((resolve) => queueMicrotask(resolve))
 
 function open(events: EventLog, cursor: EventStreamCursor, filter = {}) {
   const frames: SessionStreamFrame[] = []
-  const close = openEventStream({ source: source(events), environmentId: 'env', reader: { clientSessionId: 'c' }, cursor, filter, push: (f) => { frames.push(f) } })
+  const stream = openEventStream({ source: source(events), environmentId: 'env', reader: { clientSessionId: 'c' }, cursor, filter, push: (f) => { frames.push(f) } })
+  const close = () => stream.close()
+  const setTopics = stream.setTopics
   const texts = () => frames.flatMap((f) => f.events).map((e) => (e.payload as { event: { delta?: { text: string } } }).event.delta?.text).filter(Boolean)
-  return { frames, close, texts }
+  return { frames, close, texts, setTopics }
 }
 
 describe('openEventStream', () => {
@@ -213,5 +215,26 @@ describe('openEventStream flow control', () => {
     text(events, 's1', 'm3', 'after')
     await flush()
     expect(frames.at(-1)!.events.map((e) => (e.payload as { event: { delta?: { text: string } } }).event.delta?.text)).toEqual(['after'])
+  })
+})
+
+describe('openEventStream topic changes', () => {
+  it('follows a topic added in place from then on, and stops one removed', async () => {
+    const events = log()
+    const { frames, setTopics } = open(events, { afterSequence: '0' }, { topics: [{ kind: 'sessionList', environmentId: 'env' }] })
+    events.appendSession({ sessionId: 's1', eventType: 'session.created', payload: {} })
+    durable(events, 's1', 1)
+    await flush()
+    expect(frames.flatMap((f) => f.events.map((e) => e.eventType))).toEqual(['session.created'])
+
+    setTopics([{ kind: 'session', environmentId: 'env', sessionId: 's1' }])
+    durable(events, 's1', 2)
+    await flush()
+    expect(frames.at(-1)!.events.map((e) => (e.payload as { n: number }).n)).toEqual([2])
+
+    setTopics([])
+    durable(events, 's1', 3)
+    await flush()
+    expect(frames.at(-1)!.events.map((e) => (e.payload as { n: number }).n)).toEqual([2])
   })
 })

@@ -1,18 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentEvent, ChatMessage } from '@superone/shared/agent-types'
-import type { EnvironmentGateway, SubscribeEventsInput } from '@superone/shared/environment'
+import type { EnvironmentEventEnvelope, EnvironmentGateway } from '@superone/shared/environment'
+import type { RemoteSessionListener } from '../environment/remote-session-feed'
 import { executeEnvironmentCommand, kickRoutedSessions, releaseEnvironmentDevice, setRoutedPresence } from './environment-commands'
 import { routedHistory } from './environment-session-view'
 
-const m = vi.hoisted(() => ({ list: vi.fn(), get: vi.fn(), project: vi.fn(), acquire: vi.fn(), release: vi.fn(), renew: vi.fn(), load: vi.fn(), send: vi.fn(), stream: vi.fn() }))
-vi.mock('../environment/environment-host', () => ({ getEnvironmentHost: () => ({ listEnvironments: m.list, getGateway: () => gateway }) }))
+const m = vi.hoisted(() => ({ list: vi.fn(), get: vi.fn(), project: vi.fn(), acquire: vi.fn(), release: vi.fn(), renew: vi.fn(), load: vi.fn(), send: vi.fn(), follow: vi.fn(), unfollow: vi.fn(), subscribeDetail: vi.fn() }))
+vi.mock('../environment/environment-host', () => ({ getEnvironmentHost: () => ({ listEnvironments: m.list, getGateway: () => gateway, followSessionEvents: m.follow }) }))
 vi.mock('./environment-session-resources', () => ({ routedResources: vi.fn() }))
 const ref = { environmentId: 'node', sessionId: 'same' }
 const gateway = {
-  sessions: { get: m.get, acquireControl: m.acquire, releaseControl: m.release, renewControl: m.renew, load: m.load, send: m.send }, getProject: m.project,
-  subscribeEvents: (input: SubscribeEventsInput & { signal: AbortSignal }) => m.stream(input),
+  sessions: { get: m.get, acquireControl: m.acquire, releaseControl: m.release, renewControl: m.renew, load: m.load, send: m.send, subscribeDetail: m.subscribeDetail }, getProject: m.project,
 }
-async function* idle(input: { signal: AbortSignal }) { await new Promise<void>(resolve => input.signal.addEventListener('abort', () => resolve(), { once: true })) }
+/** Joins the node's feed: reads the barrier, then the test drives the listener. */
+const follows = async (_connectionId: string, _sessionId: string, _listener: RemoteSessionListener, barrier: () => Promise<number>) => {
+  await barrier()
+  return m.unfollow
+}
 const loaded = (messages: ChatMessage[], version: number) => ({ sessionId: 'same', state: {}, messages, before: null, cursor: { sequence: '42', epoch: 'e', version } })
 const message = (id: string, text: string, status: ChatMessage['status'] = 'complete'): ChatMessage =>
   ({ id, role: 'assistant', status, providerId: 'grok', createdAt: new Date(0).toISOString(), content: [{ type: 'text', text }] })
@@ -26,7 +30,7 @@ beforeEach(async () => {
   m.release.mockResolvedValue(undefined)
   m.renew.mockResolvedValue({ leaseId: 'lease', generation: 4 })
   m.load.mockResolvedValue(loaded([], 3))
-  m.stream.mockImplementation(idle)
+  m.follow.mockImplementation(follows)
 })
 describe('paired phone environment route', () => {
   it('requires the explicit owning project before acquiring control', async () => {
@@ -53,17 +57,32 @@ describe('paired phone environment route', () => {
   it('follows from the snapshot it opened at, and repairs the phone when the node lost events it missed', async () => {
     const send = vi.fn(async () => {})
     m.load.mockResolvedValueOnce(loaded([message('a', 'Hel', 'streaming')], 3)).mockResolvedValueOnce(loaded([message('a', 'Hello'), message('b', 'Next')], 9))
-    m.stream.mockImplementation(async function* (input: SubscribeEventsInput & { signal: AbortSignal }) {
-      expect(input).toMatchObject({ afterSequence: '42', epoch: 'e', versions: { same: 3 } })
-      input.onResnapshot?.(['same'])
+    m.follow.mockImplementation(async (connectionId: string, sessionId: string, listener: RemoteSessionListener, barrier: () => Promise<number>) => {
+      expect([connectionId, sessionId, await barrier()]).toEqual(['route', 'same', 3])
+      listener.resync?.()
       // Already reflected by the repaired snapshot.
-      yield { aggregateType: 'session', aggregateId: 'same', sessionVersion: 9, eventType: 'session.agent_event', payload: { event: { type: 'content_delta', messageId: 'b', delta: { type: 'text', text: 'dup' } } } }
-      yield* idle(input)
+      listener.event({ aggregateType: 'session', aggregateId: 'same', sessionVersion: 9, eventType: 'session.agent_event', payload: { event: { type: 'content_delta', messageId: 'b', delta: { type: 'text', text: 'dup' } } } } as unknown as EnvironmentEventEnvelope)
+      return m.unfollow
     })
     const result = await executeEnvironmentCommand('node', { type: 'subscribe_session', requestId: 'r', projectPath: '/app', sessionId: 'same' }, 'phone', send)
     expect(result).toMatchObject({ historyPage: { cursor: null, hasMore: false } })
     await vi.waitFor(() => expect(send.mock.calls.map(([event]) => (event as AgentEvent).type)).toEqual(['content_delta', 'message_complete', 'message_start']))
     expect(send.mock.calls[0]![0]).toMatchObject({ messageId: 'a', delta: { type: 'text', text: 'lo' } })
+  })
+  it('leaves the detail of a session the node sends summarized to the node, and stops following on release', async () => {
+    m.load.mockResolvedValue({ ...loaded([], 3), summarized: true })
+    const send = vi.fn(async () => {})
+    m.subscribeDetail.mockImplementation(async (input: { onUpdate: (update: unknown) => void }) => {
+      input.onUpdate({ subscriptionId: 'sub', revision: 1, offset: 0, text: 'more' })
+      return { subscriptionId: 'sub', revision: 0, offset: 0, text: 'body' }
+    })
+    await executeEnvironmentCommand('node', { type: 'subscribe_session', requestId: 'r', projectPath: '/app', sessionId: 'same' }, 'phone', send)
+    const first = await executeEnvironmentCommand('node', { type: 'subscribe_detail', sessionId: 'same', detailRef: '["m","tool","t"]', subscriptionId: 'sub' } as never, 'phone', send)
+    expect(first).toEqual({ subscriptionId: 'sub', revision: 0, offset: 0, text: 'body' })
+    expect(m.subscribeDetail).toHaveBeenCalledWith(expect.objectContaining({ session: ref, detailRef: '["m","tool","t"]', subscriptionId: 'sub' }))
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ type: 'remote_detail', subscriptionId: 'sub', revision: 1, text: 'more' }))
+    await releaseEnvironmentDevice('phone')
+    expect(m.unfollow).toHaveBeenCalled()
   })
 })
 describe('routed phone presence on this desktop', () => {

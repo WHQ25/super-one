@@ -94,4 +94,10 @@ export interface SessionLoadResult {
   /** Index of the first returned message: pass as `before` for the older page; null at the start. */
   before: number | null
   cursor: SessionLoadCursor
+  /**
+   * The connection receives this session summarized: bulky bodies sit behind
+   * `remoteDetail` and load through `session.subscribeDetail`, and live
+   * events come the same way.
+   */
+  summarized?: true
 }

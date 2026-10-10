@@ -2172,9 +2172,13 @@ function registerIpcHandlers(): void {
     },
   )
   /** Expand a summarized row: the machine that holds the session answers. */
-  ipcMain.handle(AgentIpcChannels.ENVIRONMENT_SUBSCRIBE_DETAIL, async (_e, target: DetailTarget, subscriptionId: string) => {
+  ipcMain.handle(AgentIpcChannels.ENVIRONMENT_SUBSCRIBE_DETAIL, async (e, target: DetailTarget, subscriptionId: string) => {
     const { getEnvironmentHost } = await import('./environment')
-    return getEnvironmentHost().subscribeSessionDetail(target, subscriptionId)
+    // Packets answer this window's expansion; no other window asked for them.
+    const sender = e.sender
+    return getEnvironmentHost().subscribeSessionDetail(target, subscriptionId, (update) => {
+      if (!sender.isDestroyed()) sender.send(AgentIpcChannels.EVENT, { type: 'remote_detail', sessionId: target.sessionId, ...update })
+    })
   })
   ipcMain.handle(AgentIpcChannels.ENVIRONMENT_UNSUBSCRIBE_DETAIL, async (_e, target: DetailTarget, subscriptionId: string) => {
     const { getEnvironmentHost } = await import('./environment')

@@ -20,6 +20,9 @@ import type { NodeIdentity } from './identity'
 import { MAX_NODE_FRAME_BYTES, type NodeSocket } from './node-socket'
 import type { RpcContext, RpcResult, RpcStreams } from './rpc-context'
 import { createConnectionWire, type ConnectionWire } from './connection-wire'
+import type { EventStreamHandle } from './event-stream'
+import { ConnectionDelivery } from '../stream/delivery/connection-delivery'
+import { deliveryPolicy, type ConnectionRoute } from '../stream/delivery-policy'
 
 const MAX_JSON_BYTES = {
   pair: 16 * 1024,
@@ -272,7 +275,7 @@ export async function startNodeServer<C extends NodeRpcRequestContext = RpcConte
       }
       wss.handleUpgrade(req, socket, head, (ws) => {
         socketPeers.set(ws, req.socket.remoteAddress ?? null)
-        serveSecureChannel(ws, opts.secureChannel!)
+        serveSecureChannel(ws, opts.secureChannel!, 'lan')
       })
       return
     }
@@ -294,7 +297,7 @@ export async function startNodeServer<C extends NodeRpcRequestContext = RpcConte
         activeSockets.set(ws, client)
         opts.onClientConnected?.(client.clientSessionId)
         const wire = createConnectionWire(ws, null)
-        const handle = createRpcHandler(wire, (code, reason) => ws.close(code, reason), client)
+        const handle = createRpcHandler(wire, (code, reason) => ws.close(code, reason), client, 'lan')
         ws.on('message', (data, isBinary) => void handle(() => wire.read(data as Buffer, isBinary)))
         trackClose(ws, () => {
           handle.dispose()
@@ -313,7 +316,7 @@ export async function startNodeServer<C extends NodeRpcRequestContext = RpcConte
    * proof), then sealed binary frames. Before `attach` only auth exchanges are
    * served; after it, the same RPC handler as a ticketed plain socket.
    */
-  const serveSecureChannel = (ws: NodeSocket, channelOpts: NodeSecureChannelOptions): void => {
+  const serveSecureChannel = (ws: NodeSocket, channelOpts: NodeSecureChannelOptions, route: ConnectionRoute): void => {
     let accept: ReturnType<typeof acceptClientHello> | null = null
     let wire: ConnectionWire | null = null
     let rpc: RpcHandler | null = null
@@ -387,7 +390,7 @@ export async function startNodeServer<C extends NodeRpcRequestContext = RpcConte
         clearTimeout(setupTimer)
         activeSockets.set(ws, client)
         opts.onClientConnected?.(client.clientSessionId)
-        rpc = createRpcHandler(wire!, (code, reason) => ws.close(code, reason), client)
+        rpc = createRpcHandler(wire!, (code, reason) => ws.close(code, reason), client, route)
         send({ type: 'attach_ok', requestId })
         return
       }
@@ -423,22 +426,26 @@ export async function startNodeServer<C extends NodeRpcRequestContext = RpcConte
     wire: ConnectionWire,
     closeSocket: (code: number, reason: string) => void,
     client: AuthenticatedClient,
+    /** Relay slots are `relay`; sockets this server accepted, loopback forwards included, are `lan`. */
+    route: ConnectionRoute,
   ): RpcHandler => {
     const send = wire.reply
     const ctxBase = opts.createRpcContext(client)
     let negotiatedGeneration: { protocol: number; databaseSchema: number } | undefined
-    const streamClosers = new Map<string, () => void>()
+    const openStreams = new Map<string, EventStreamHandle>()
     const streams: RpcStreams = {
-      open(subscriptionId, close) {
-        streamClosers.get(subscriptionId)?.()
-        streamClosers.set(subscriptionId, close)
+      open(subscriptionId, stream) {
+        openStreams.get(subscriptionId)?.close()
+        openStreams.set(subscriptionId, stream)
       },
       close(subscriptionId) {
-        streamClosers.get(subscriptionId)?.()
-        streamClosers.delete(subscriptionId)
+        openStreams.get(subscriptionId)?.close()
+        openStreams.delete(subscriptionId)
       },
+      get: (subscriptionId) => openStreams.get(subscriptionId),
       push: wire.push,
       flow: wire.flow,
+      delivery: new ConnectionDelivery(deliveryPolicy(route, 'desktop')),
     }
 
     const handle = async (read: () => unknown): Promise<void> => {
@@ -582,8 +589,8 @@ export async function startNodeServer<C extends NodeRpcRequestContext = RpcConte
     }
     return Object.assign(handle, {
       dispose: () => {
-        for (const close of streamClosers.values()) close()
-        streamClosers.clear()
+        for (const stream of openStreams.values()) stream.close()
+        openStreams.clear()
       },
     })
   }
@@ -611,7 +618,7 @@ export async function startNodeServer<C extends NodeRpcRequestContext = RpcConte
     acceptChannelSocket(socket) {
       if (!opts.secureChannel) throw new Error('acceptChannelSocket requires secureChannel')
       socketPeers.set(socket, null)
-      serveSecureChannel(socket, opts.secureChannel)
+      serveSecureChannel(socket, opts.secureChannel, 'relay')
     },
     async close() {
       for (const ws of activeSockets.keys()) ws.close()

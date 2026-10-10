@@ -37,12 +37,19 @@ export class ConnectionDelivery {
    * transcript including this event.
    */
   live(event: AgentEvent, sessionId: string, messages: readonly ChatMessage[]): AgentEvent[] {
+    return [...this.event(event, sessionId, messages), ...this.details(sessionId, messages)]
+  }
+
+  /** The event itself: summarized when the session is, then shaped. */
+  event(event: AgentEvent, sessionId: string, messages: readonly ChatMessage[]): AgentEvent[] {
     if (!this.views.has(sessionId)) return this.shape(event)
     const projected = projectProgressiveEvent(event, messages)
-    return [
-      ...(projected ? this.shape(projected) : []),
-      ...this.views.updates(sessionId, messages).flatMap((update) => this.shape(update)),
-    ]
+    return projected ? this.shape(projected) : []
+  }
+
+  /** The detail packets for the rows this connection expanded that `messages` changed. */
+  details(sessionId: string, messages: readonly ChatMessage[]): AgentEvent[] {
+    return this.views.updates(sessionId, messages).flatMap((update) => this.shape(update))
   }
 
   /** An event outside a session's projection (replays, notices, list changes). */

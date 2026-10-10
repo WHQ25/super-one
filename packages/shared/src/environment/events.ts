@@ -1,3 +1,4 @@
+import type { DetailUpdate } from './detail'
 import type { TopicRef } from './topics'
 
 /**
@@ -63,9 +64,15 @@ export interface SubscribeEventsInput {
   /** With `versions`: resume streaming events too, from a cursor of this epoch (`SessionLoadCursor`). */
   epoch?: string
   versions?: Record<string, number>
-  /** Optional aggregate filters. */
-  aggregateTypes?: EnvironmentAggregateType[]
-  aggregateIds?: string[]
+  /** The topics to receive; a `*` instance covers its kind. */
+  topics: TopicRef[]
+  /** Local only: a topic set that changes while the stream runs; replaces `topics`. */
+  interest?: TopicInterest
+  /**
+   * Local only: the stream came back on a link of another tier, which delivers
+   * transcripts differently (summarized or full); read every followed session again.
+   */
+  onRealign?: () => void
   /**
    * Local only: whether a lost connection is gone for good (blocked, removed),
    * so the stream should end with that error instead of resubscribing.
@@ -78,21 +85,26 @@ export interface SubscribeEventsInput {
   onResnapshot?: (sessionIds: string[]) => void
 }
 
-/** `session.subscribe`: push the events after `afterSequence`, then every new one. */
-export interface SessionSubscribeInput {
+/** A topic set that changes over time; a running stream follows it in place (`topic.update`). */
+export interface TopicInterest {
+  current(): TopicRef[]
+  /** `apply` runs with each new set and resolves once the host has it; returns the stop. */
+  watch(apply: (topics: TopicRef[]) => Promise<void>): () => void
+}
+
+/** `topic.subscribe`: push the topics' events after `afterSequence`, then every new one. */
+export interface TopicSubscribeInput {
   /** Client-chosen; frames may arrive before the RPC result. */
   subscriptionId: string
   afterSequence: string
   /** With `versions`: resume streaming events too, from a cursor of this epoch. */
   epoch?: string
   versions?: Record<string, number>
-  aggregateTypes?: EnvironmentAggregateType[]
-  aggregateIds?: string[]
-  /** Only these topics' events; a `*` instance covers its kind. */
-  topics?: TopicRef[]
+  /** The topics to receive; a `*` instance covers its kind. */
+  topics: TopicRef[]
 }
 
-/** One push of a `session.subscribe` stream. */
+/** One push of a `topic.subscribe` stream. */
 export interface SessionStreamFrame {
   /** Last durable sequence scanned, including filtered-out events; the resume cursor. */
   sequence: string
@@ -113,6 +125,13 @@ export interface SessionStreamMessage {
   type: 'stream'
   subscriptionId: string
   frame: SessionStreamFrame
+}
+
+/** Server → client packet of a row's detail this connection expanded (`session.subscribeDetail`). */
+export interface SessionDetailMessage {
+  type: 'detail'
+  sessionId: string
+  update: DetailUpdate
 }
 
 export interface EnvironmentSnapshot {

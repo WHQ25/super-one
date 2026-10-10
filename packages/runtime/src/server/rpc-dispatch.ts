@@ -38,6 +38,7 @@ import { AGENT_EVENT_BATCH_MS } from '@superone/shared/agent-event-batcher'
 import { openEventStream, streamFilterMatcher, type EventStreamFilter } from './event-stream'
 import { readTopicRef, type TopicRef } from '@superone/shared/environment/topics'
 import { deliverFrame, deliverLoad, subscribeDetail } from './session-delivery'
+import { combineStreams, openTerminalStream } from './terminal-stream'
 import type {
   ArtifactZonePort,
   RpcContext as HostRpcContext,
@@ -252,6 +253,7 @@ const HANDLERS: Readonly<Record<string, (payload: unknown, ctx: RpcContext, meth
   'harness.probe': (payload, ctx) => handleHarnessProbe(payload, ctx),
   'harness.enable': (payload, ctx) => handleHarnessEnable(payload, ctx),
   'harness.disable': (payload, ctx) => handleHarnessDisable(payload, ctx),
+  'terminal.list': (_payload, ctx) => handleTerminalList(ctx),
   'terminal.create': (payload, ctx) => handleTerminalCreate(payload, ctx),
   'terminal.attach': (payload, ctx) => handleTerminalAttach(payload, ctx),
   'terminal.read': (payload, ctx) => handleTerminalRead(payload, ctx),
@@ -777,26 +779,31 @@ function handleTerminalCreate(payload: unknown, ctx: RpcContext): RpcResult {
   }
 }
 
-function handleTerminalAttach(payload: unknown, ctx: RpcContext): RpcResult {
+function handleTerminalList(ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateTerminal)
+  if (denied) return denied
+  return { result: { terminals: ctx.terminals.list() } }
+}
+
+async function handleTerminalAttach(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateTerminal)
   if (denied) return denied
   const p = asRecord(payload)
   const terminalId = String(p.terminalId ?? '')
   try {
-    const attached = ctx.terminals.attach(terminalId)
-    return { result: attached }
+    return { result: await ctx.terminals.attach(terminalId) }
   } catch (err) {
     return mapThrown(err)
   }
 }
 
-function handleTerminalRead(payload: unknown, ctx: RpcContext): RpcResult {
+async function handleTerminalRead(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateTerminal)
   if (denied) return denied
   const p = asRecord(payload)
   try {
     return {
-      result: ctx.terminals.readAfter(
+      result: await ctx.terminals.readAfter(
         String(p.terminalId ?? ''),
         typeof p.afterSequence === 'string' ? p.afterSequence : '0',
       ),
@@ -2837,7 +2844,15 @@ function handleTopicSubscribe(payload: unknown, ctx: RpcContext): RpcResult {
     flow: streams.flow,
     batchMs: streams.delivery && streams.delivery.policy.tier !== 'local' ? AGENT_EVENT_BATCH_MS : 0,
   })
-  streams.open(subscriptionId, stream)
+  const terminals = ctx.terminals?.onEvent && serves(ctx, 'terminal.attach')
+    ? openTerminalStream({
+        source: { onEvent: (listener) => ctx.terminals!.onEvent!(listener) },
+        environmentId: ctx.identity.environmentId,
+        topics,
+        push: (event) => streams.push({ type: 'terminal', subscriptionId, event }),
+      })
+    : null
+  streams.open(subscriptionId, combineStreams(stream, terminals))
   return { result: { subscriptionId } }
 }
 

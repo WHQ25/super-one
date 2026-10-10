@@ -28,8 +28,8 @@ import type {
   SessionProviderStore,
   SessionRuntime,
 } from '../session/index'
-import type { HarnessInstallationStatus, SessionDetailMessage, SessionStreamMessage } from '@superone/shared/environment'
-import type { ChatMessage } from '@superone/shared/agent-types'
+import type { HarnessInstallationStatus, SessionDetailMessage, SessionStreamMessage, TerminalStreamMessage } from '@superone/shared/environment'
+import type { ChatMessage, TerminalEvent, TerminalListItem } from '@superone/shared/agent-types'
 import type { ConnectionDelivery } from '../stream/delivery/connection-delivery'
 import type { AuthenticatedClient } from './auth-service'
 import type { EventStreamFlow, EventStreamHandle } from './event-stream'
@@ -53,17 +53,25 @@ export interface ProjectsPort {
 
 /** Host-owned PTY terminals (CLI: NodeTerminalManager). */
 export interface TerminalsPort {
+  /** Every terminal the host holds, for `terminal.list`. */
+  list(): TerminalListItem[]
   create(opts: {
     cwd: string
     title?: string
     cols?: number
     rows?: number
   }): { terminalId: string; cwd: string; title: string; cols: number; rows: number }
-  attach(terminalId: string): unknown
-  readAfter(terminalId: string, afterSequence: string): unknown
+  /** Snapshot plus the output sequence it covers. */
+  attach(terminalId: string): unknown | Promise<unknown>
+  readAfter(terminalId: string, afterSequence: string): unknown | Promise<unknown>
   write(terminalId: string, data: string): void
   resize(terminalId: string, cols: number, rows: number): void
   kill(terminalId: string): void
+  /**
+   * Every terminal event of the host, for streams that follow terminal topics.
+   * Hosts without it serve terminals by `terminal.read` polling only.
+   */
+  onEvent?(listener: (event: TerminalEvent) => void): () => void
 }
 
 /** Host-owned workspace filesystem (CLI: WorkspaceFsService). */
@@ -444,7 +452,7 @@ export interface RpcStreams {
   close(subscriptionId: string): void
   /** The open stream with this id, if any. */
   get(subscriptionId: string): EventStreamHandle | undefined
-  push(message: SessionStreamMessage | SessionDetailMessage): void
+  push(message: SessionStreamMessage | SessionDetailMessage | TerminalStreamMessage): void
   /** The connection's pace, for flow-controlled streams. */
   flow?: EventStreamFlow
   /** What this connection receives of a session under its delivery policy. */

@@ -979,9 +979,12 @@ const mobileReceiveService = new MobileReceiveService({
 })
 agentService.setMobileReceiveService(mobileReceiveService)
 
+/** Readers of every terminal event besides the topic hub: the domain's terminal port. */
+const terminalEventListeners = new Set<(event: TerminalEvent) => void>()
 const terminalManager = new TerminalManager({
   spawner: nodePtySpawner,
   onEvent: (event) => {
+    for (const listener of terminalEventListeners) listener(event)
     if (event.type === 'terminal_created') {
       const ownership = terminalManager.get(event.terminalId)?.ownership
       if (ownership) phoneTopics.watchTerminal(event.terminalId, ownership)
@@ -1076,7 +1079,14 @@ async function applyNodeHostSettings(settings: AppSettings): Promise<void> {
   const { applyNodeHostSettings: apply, setNodeHostAccessAllowed } = await import('./node-host/node-host-controller')
   setNodeHostAccessAllowed(readRemoteConfig()?.enabled === true)
   // The same relay the phone link uses carries the node channel across networks.
-  await apply(settings, sessionManager, { relayUrl: readRemoteConfig()?.relayUrl || __CF_RELAY_URL__ })
+  const { createDesktopTerminalsPort } = await import('./node-host/desktop-terminals-port')
+  await apply(settings, sessionManager, {
+    relayUrl: readRemoteConfig()?.relayUrl || __CF_RELAY_URL__,
+    terminals: createDesktopTerminalsPort(terminalManager, (listener) => {
+      terminalEventListeners.add(listener)
+      return () => terminalEventListeners.delete(listener)
+    }),
+  })
 }
 
 async function applyAppSettingsPatch(patch: AppSettingsPatch): Promise<AppSettings> {

@@ -68,7 +68,7 @@ for (const mode of ['full', 'deferred', 'deferred metadata'] as const) {
 
 test('mixed read/search actions are all visible inside one exploration call', async ({ page }) => {
   const row = await open(page, true, true)
-  await row.getByText('Code Explored', { exact: true }).click()
+  await row.getByText('Explored', { exact: true }).click()
   await expect(row.getByText('a.ts', { exact: true })).toBeVisible()
   await expect(row.getByText('Grep', { exact: true })).toBeVisible()
   await expect(row).toContainText('TODO')

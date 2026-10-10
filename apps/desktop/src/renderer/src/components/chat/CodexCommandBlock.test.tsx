@@ -32,7 +32,7 @@ describe('Codex command details', () => {
   it('preserves all known mixed actions and treats an unknown action as Bash', () => {
     const actions = [{ type: 'read', path: '/repo/a.ts' }, { type: 'search', query: 'TODO', path: '/repo/src' }, { type: 'listFiles', path: '/repo/tests' }]
     const { container, rerender } = mount({ ...item, command: 'opaque', commandActions: actions })
-    fireEvent.click(screen.getByText('Code Explored'))
+    fireEvent.click(screen.getByText('Explored'))
     expect(screen.getByText('Grep')).toBeInTheDocument()
     expect(screen.getByText('LS')).toBeInTheDocument()
     expect(screen.getByText('TODO in /repo/src')).toBeInTheDocument()

@@ -6361,7 +6361,7 @@ export const en: Messages = {
       commandGroupCombined: '{{read}}, {{search}}',
       exploringCode: 'Exploring code',
       exploreCode: 'Explore Code',
-      codeExplored: 'Code Explored',
+      codeExplored: 'Explored',
       modelFallback: 'Codex model',
       permissionPreset: 'Permission Preset',
     },

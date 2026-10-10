@@ -5,7 +5,8 @@ import { createEventBatcher } from '@superone/runtime/stream'
 export interface RendererAgentEventTransport {
   push(event: AgentEvent): void
   flush(): void
-  resetCodexBaselines(): void
+  /** Forget the items sent so far (all, or one session's), so the next update is sent whole. */
+  resetCodexBaselines(session?: { projectPath?: string; sessionId: string }): void
   dispose(): void
 }
 
@@ -17,6 +18,11 @@ function routeKey(event: AgentEvent, messageId: string, itemId: string): string 
     messageId,
     itemId,
   ])
+}
+
+/** The shared start of every route key under `parts`. */
+function routePrefix(...parts: string[]): string {
+  return JSON.stringify(parts).slice(0, -1)
 }
 
 function isTextItem(item: CodexThreadItem): item is Extract<CodexThreadItem, {
@@ -71,6 +77,11 @@ export function createRendererAgentEventTransport(
 ): RendererAgentEventTransport {
   const codexBaselines = new Map<string, CodexThreadItem>()
   let disposed = false
+  const forget = (prefix: string) => {
+    for (const key of codexBaselines.keys()) {
+      if (key.startsWith(prefix)) codexBaselines.delete(key)
+    }
+  }
 
   const encode = (event: AgentEvent): AgentEvent => {
     if (event.type === 'codex_item_delta') {
@@ -101,15 +112,7 @@ export function createRendererAgentEventTransport(
       || event.type === 'message_interrupted'
       || event.type === 'message_error'
     ) {
-      const prefix = JSON.stringify([
-        event.projectPath ?? '',
-        event.sessionId ?? '',
-        event.draftSessionId ?? '',
-        event.messageId,
-      ]).slice(0, -1)
-      for (const key of codexBaselines.keys()) {
-        if (key.startsWith(prefix)) codexBaselines.delete(key)
-      }
+      forget(routePrefix(event.projectPath ?? '', event.sessionId ?? '', event.draftSessionId ?? '', event.messageId))
     }
     return event
   }
@@ -121,8 +124,9 @@ export function createRendererAgentEventTransport(
       if (!disposed) batcher.push(event)
     },
     flush: batcher.flush,
-    resetCodexBaselines() {
-      codexBaselines.clear()
+    resetCodexBaselines(session) {
+      if (session) forget(routePrefix(session.projectPath ?? '', session.sessionId, ''))
+      else codexBaselines.clear()
     },
     dispose() {
       if (disposed) return

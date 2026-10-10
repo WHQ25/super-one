@@ -126,6 +126,21 @@ describe('renderer agent event transport', () => {
     expect(sent.at(-1)?.[0].type).toBe('codex_item_delta')
   })
 
+  it('sends a full snapshot for one session after its baselines are reset', () => {
+    const sent: AgentEvent[][] = []
+    const transport = createRendererAgentEventTransport((events) => sent.push(events))
+    const other = (text: string): AgentEvent => ({ ...codexDelta({ id: 'i1', type: 'agent_message', text }), sessionId: 's2' })
+    transport.push(codexDelta({ id: 'i1', type: 'agent_message', text: 'a' }, 'started'))
+    transport.push({ ...other('a'), phase: 'started' } as AgentEvent)
+    transport.flush()
+    transport.resetCodexBaselines({ projectPath: '/p', sessionId: 's1' })
+    transport.push(codexDelta({ id: 'i1', type: 'agent_message', text: 'ab' }))
+    transport.push(other('ab'))
+    transport.flush()
+
+    expect(sent.at(-1)?.map((e) => e.type)).toEqual(['codex_item_delta', 'codex_item_patch'])
+  })
+
   it('flushes pending output on dispose', () => {
     const sent: AgentEvent[][] = []
     const transport = createRendererAgentEventTransport((events) => sent.push(events))

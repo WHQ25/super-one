@@ -20,7 +20,8 @@ Every alpha release keeps its own notes on its GitHub Release.
   or the relay.
 - Control who may drive a desktop with an Allow Control switch and one
   switch per controlling desktop or phone. Sessions started from another
-  device show a "Started from <device>" badge and are read-only locally.
+  device show a "Started from <device>" badge; take control to edit a session
+  currently controlled by another device.
 - Spawn collaboration children on another connected machine, using that
   machine's own models and keys. The child clones or fetches the repository
   and works in a fresh worktree there.
@@ -33,10 +34,15 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Changed
 
-- Each paired phone now uses its own encrypted channel with per-connection
-  keys and replay protection. Phones paired earlier must be paired again:
-  remove each device marked "Re-pair Required" on the desktop and pair it
-  from Pair New Phone. Older phone and desktop builds cannot connect.
+- Phones, controller desktops and the local window share one protocol and
+  session/terminal control leases. Taking control prevents the previous
+  controller from making further writes.
+- Phones require desktop or node host `0.73.0-alpha.1` or newer. Upgrade hosts
+  first; phones keep their pairing and show an upgrade prompt for older or
+  unreported versions.
+- Each paired phone uses its own encrypted channel with per-connection keys
+  and replay protection. Devices marked "Re-pair Required" from the earlier
+  encryption migration must be removed and paired again from Pair New Phone.
 - The Grok credits gauge reads the Grok CLI login directly, with no running
   agent.
 
@@ -44,13 +50,48 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 - Keep a send that never started, or a refused queued send, as a failed row
   that can be retried; hold duplicate sends instead of running them twice.
-- Restore the session goal and todo list after a reconnect or reload.
+- Restore session state from one snapshot boundary after reconnect or reload,
+  including goals, todo lists, settings, queued sends and tool details.
 - Keep newly spawned sessions under their parent in the sidebar.
 - Show every file read by a single Codex shell command.
 - Phone: paste chips match desktop, file diffs are highlighted with line
   numbers that scroll with the code, and restores retry until they reach
   the current connection.
+- Preserve draft attachment chips when parking and reopening a composer.
 - Retry usage readings whose connection was reset by a proxy or VPN.
+
+### Performance
+
+- Compress and batch remote streams, share routed session subscriptions and
+  load full tool-result bodies on demand on desktop and phone.
+
+## [0.73.0-alpha.1] - 2026-10-11
+
+### Changed
+
+- Phones, controller desktops and the local window use the same remote
+  protocol and session/terminal control leases. Taking control fences the
+  previous controller's writes and updates the source desktop's control badge.
+- Phones require desktop or node host `0.73.0-alpha.1` or newer. Older or
+  unreported desktop versions show an upgrade prompt and keep their pairing.
+  Upgrade desktop and node hosts before installing this phone update.
+- Read tool-result details on demand on desktop and phone, scoped to the
+  source environment and session.
+
+### Fixed
+
+- Restore sessions from one snapshot boundary and recover missed updates
+  without replaying stale control, settings, goals, queues or tool details.
+- Preserve draft attachment chips when parking and reopening a composer.
+- Send each phone its own subscribed topic updates and report revoked routed
+  control before accepting another session or terminal mutation.
+
+### Performance
+
+- Compress and batch remote streams, share routed session subscriptions and
+  keep full tool-result bodies out of summary streams.
+- Retain five-second draft-save coalescing over the relay while LAN saves
+  remain immediate; version ranges preserve recovery across compacted saves.
 
 ## [0.73.0-alpha] - 2026-10-09
 

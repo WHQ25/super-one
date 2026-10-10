@@ -146,12 +146,13 @@ export async function focusProjectImpl(
   const focusedSid = get().projectSessions[projectPath]?._activeSessionId
   const focusedSession = focusedSid ? get().projectSessions[projectPath]?._sessions[focusedSid] : null
   useAppStore.getState().setActiveWorktree(projectPath, _getSessionWorktreePath(focusedSession))
-  // Local: SessionManager.resume. Remote: start event drain if turn still live.
+  // Local: SessionManager.resume. Remote: follow the node session (a draft
+  // the node has not seen yet has nothing to follow).
   if (targetSid) {
     const remoteKey = parseRemoteProjectKey(projectPath)
     if (remoteKey) {
       const targetSession = targetProject?._sessions[targetSid]
-      if (targetSession) {
+      if (targetSession?.hostSessionOwned) {
         const { followRemoteSessionEvents } = await import('@/lib/remote-session-ops')
         followRemoteSessionEvents(projectPath, targetSid, targetSession)
       }

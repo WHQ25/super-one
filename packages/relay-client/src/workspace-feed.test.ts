@@ -42,11 +42,17 @@ describe('native phone workspace feed', () => {
   it('advances a compacted draft span before an immediate deletion without mistaking it for lost versions', async () => {
     const f = setup()
     const drafts = { kind: 'drafts', environmentId: 'env' } as const
+    const draft = {
+      id: 'a', title: 'Draft', text: 'Latest save', docJson: null,
+      attachments: [], projectPath: '/p', harness: null, model: null,
+      permissionMode: null, settings: {}, originSessionId: null,
+      createdAt: '2026-10-11T00:00:00Z', updatedAt: '2026-10-11T00:00:01Z',
+    }
     await f.feed.follow('env')
     f.handlers().onTopic!({ topic: drafts, cursor: cursor(2), events: [], snapshot: { drafts: [] } })
-    f.handlers().onTopic!({ topic: drafts, cursor: cursor(7), afterVersion: 2, events: [{ type: 'draft_changed', draftId: 'a', reason: 'saved' }] })
+    f.handlers().onTopic!({ topic: drafts, cursor: cursor(7), afterVersion: 2, events: [{ type: 'draft_changed', draftId: 'a', draft, reason: 'saved' }] })
     f.handlers().onTopic!({ topic: drafts, cursor: cursor(8), afterVersion: 7, events: [] })
-    f.handlers().onTopic!({ topic: drafts, cursor: cursor(9), events: [{ type: 'draft_changed', draftId: 'a', reason: 'deleted' }] })
+    f.handlers().onTopic!({ topic: drafts, cursor: cursor(9), events: [{ type: 'draft_changed', draftId: 'a', draft: null, reason: 'deleted' }] })
     expect(f.hooks.onRecover).not.toHaveBeenCalled()
     expect(f.hooks.onEvents).toHaveBeenCalledTimes(2)
     await f.feed.stop()

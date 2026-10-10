@@ -1264,8 +1264,8 @@ describe('ChatContent foreground visibility', () => {
     unmount()
 
     expect(setSessionForeground).toHaveBeenCalledTimes(2)
-    expect(setSessionForeground).toHaveBeenNthCalledWith(1, 'sid-1', true)
-    expect(setSessionForeground).toHaveBeenNthCalledWith(2, 'sid-1', false)
+    expect(setSessionForeground).toHaveBeenNthCalledWith(1, 'sid-1', true, '/tmp/project')
+    expect(setSessionForeground).toHaveBeenNthCalledWith(2, 'sid-1', false, '/tmp/project')
   })
 })
 

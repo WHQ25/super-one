@@ -162,3 +162,56 @@ describe('openEventStream', () => {
     expect(frames[0]?.recover).toEqual([{ kind: 'session', environmentId: 'env', sessionId: 's2' }])
   })
 })
+
+describe('openEventStream flow control', () => {
+  function flowControl(budgetBytes: number) {
+    let congested = false
+    const listeners = new Set<() => void>()
+    return {
+      flow: { congested: () => congested, onDrain: (l: () => void) => { listeners.add(l); return () => listeners.delete(l) }, budgetBytes },
+      setCongested(value: boolean) {
+        congested = value
+        if (!value) for (const l of listeners) l()
+      },
+    }
+  }
+
+  function openWithFlow(events: EventLog, budgetBytes: number) {
+    const control = flowControl(budgetBytes)
+    const frames: SessionStreamFrame[] = []
+    openEventStream({ source: source(events), environmentId: 'env', reader: { clientSessionId: 'c' }, cursor: { afterSequence: '0' }, filter: {}, push: (f) => { frames.push(f) }, flow: control.flow })
+    return { frames, control }
+  }
+
+  it('holds events while the link is congested and sends them on drain', async () => {
+    const events = log()
+    const { frames, control } = openWithFlow(events, 1_000_000)
+    control.setCongested(true)
+    text(events, 's1', 'm', 'a')
+    text(events, 's1', 'm', 'b')
+    await flush()
+    expect(frames).toEqual([])
+    control.setCongested(false)
+    expect(frames.flatMap((f) => f.events).map((e) => (e.payload as { event: { delta: { text: string } } }).event.delta.text)).toEqual(['a', 'b'])
+    expect(frames[0]!.resnapshot).toBeUndefined()
+  })
+
+  it('past the budget, drops held streaming events for a resnapshot and keeps durable ones', async () => {
+    const events = log()
+    const { frames, control } = openWithFlow(events, 500)
+    control.setCongested(true)
+    for (let i = 0; i < 20; i++) text(events, 's1', 'm', `chunk-${i}`)
+    complete(events, 's1', 'm')
+    text(events, 's1', 'm2', 'dropped too')
+    control.setCongested(false)
+    const frame = frames.at(-1)!
+    expect(frame.resnapshot).toEqual(['s1'])
+    expect(frame.recover).toEqual([{ kind: 'session', environmentId: 'env', sessionId: 's1' }])
+    expect(frame.events.every((e) => !e.ephemeral)).toBe(true)
+    expect(frame.events.map((e) => (e.payload as { event: { type: string } }).event.type)).toContain('message_complete')
+
+    text(events, 's1', 'm3', 'after')
+    await flush()
+    expect(frames.at(-1)!.events.map((e) => (e.payload as { event: { delta?: { text: string } } }).event.delta?.text)).toEqual(['after'])
+  })
+})

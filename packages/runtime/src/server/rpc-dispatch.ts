@@ -2920,6 +2920,7 @@ function handleSessionSubscribe(payload: unknown, ctx: RpcContext): RpcResult {
     cursor: { afterSequence, epoch: typeof p.epoch === 'string' ? p.epoch : undefined, versions },
     filter: streamFilter(p),
     push: (frame) => streams.push({ type: 'stream', subscriptionId, frame }),
+    flow: streams.flow,
   })
   streams.open(subscriptionId, close)
   return { result: { subscriptionId } }

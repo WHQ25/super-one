@@ -59,7 +59,7 @@ describe('ConnectionDelivery', () => {
 
   it('pages transcripts under the same policy as live events', () => {
     const phone = new ConnectionDelivery(deliveryPolicy('relay', 'phone'))
-    const desktop = new ConnectionDelivery(deliveryPolicy('local', 'desktop'))
+    const desktop = new ConnectionDelivery(deliveryPolicy('ipc', 'desktop'))
     phone.views.open('s')
     expect(JSON.stringify(phone.messages([message('secret')], 's'))).not.toContain('secret')
     expect(desktop.messages([message('secret')], 's')).toEqual([message('secret')])

@@ -419,6 +419,11 @@ export interface RpcContext {
   sessionProviders?: Pick<SessionProviderStore, 'get'>
   artifacts?: ArtifactZonePort
   extensions?: RpcExtensionDispatch
+  /**
+   * Shared methods of families this host serves that it still refuses (its
+   * port has no meaning for them); answered unsupported and left out of `methods`.
+   */
+  unservedMethods?: ReadonlySet<string>
   /** Every method `extensions` serves, for the descriptor's `methods`. */
   extensionMethods?: ReadonlySet<string>
   /** Host knowledge for `environment.usage`; without it the node reads each CLI's default login. */

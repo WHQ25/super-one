@@ -95,3 +95,14 @@ export function negotiateHandshake(
   const databaseSchema = Math.min(local.databaseSchema.max, remote.databaseSchema.max)
   return { ok: true, protocol, databaseSchema }
 }
+
+/**
+ * The newest protocol generation of a peer that refused this process, read
+ * from its {@link negotiateHandshake} reason (`local` there is the peer), or
+ * null for any other refusal. Every generation words the refusal this way, so
+ * a peer too old to report its version still says how old it is.
+ */
+export function refusingPeerProtocolMax(reason: string | null | undefined): number | null {
+  const match = /^protocol generation mismatch: local \d+-(\d+),/.exec(reason ?? '')
+  return match ? Number(match[1]) : null
+}

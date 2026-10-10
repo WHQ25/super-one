@@ -32,7 +32,9 @@ import {
   SESSION_DURABLE_EVENT,
   DEFAULT_REMOTE_INSTALL_SOURCE,
   DESKTOP_UPGRADE_REQUIRED,
+  PROTOCOL_GENERATION,
   decideRemoteCliAction,
+  refusingPeerProtocolMax,
   isControlReleasedError,
   desktopUpgradeRequiredMessage,
   providerSessionIdFromResume,
@@ -2574,7 +2576,7 @@ export class EnvironmentHost {
         activePath: this.connections.getActivePath(known.connectionId) ?? undefined,
         installationProfile: known.installationProfile,
         credentialInMemoryOnly: !this.credentials.isSecureStorageAvailable(),
-        nodeUpgrade: this.nodeUpgradeFor(known, descriptor?.cliVersion),
+        nodeUpgrade: this.nodeUpgradeFor(known, descriptor?.cliVersion, snapshot),
         updatedAt: known.updatedAt,
       })
     }
@@ -3131,6 +3133,7 @@ export class EnvironmentHost {
   private nodeUpgradeFor(
     known: KnownEnvironmentRecord,
     remoteCliVersion: string | null | undefined,
+    supervisor?: SupervisorSnapshot | null,
   ): NodeUpgradeAvailability | undefined {
     let targetVersion: string
     try {
@@ -3138,9 +3141,13 @@ export class EnvironmentHost {
     } catch {
       return undefined
     }
-    if (!shouldOfferNodeUpgrade(targetVersion, remoteCliVersion)) return undefined
+    // A node on an older protocol generation refuses the connection before it
+    // reports a version; only an upgrade lets it connect again.
+    const refusedAsOlder = supervisor?.blockReason === 'protocol_incompatible'
+      && (refusingPeerProtocolMax(supervisor.lastError) ?? Infinity) < PROTOCOL_GENERATION.min
+    if (!refusedAsOlder && !shouldOfferNodeUpgrade(targetVersion, remoteCliVersion)) return undefined
     return {
-      remoteVersion: remoteCliVersion!.trim(),
+      remoteVersion: refusedAsOlder ? null : remoteCliVersion!.trim(),
       targetVersion,
       canUpgradeOverSsh: known.endpointProfiles.some(
         (p) => p.kind === 'ssh-forward' && !!p.target,

@@ -32,6 +32,12 @@ export const ENVIRONMENT_ITEMS: EnvironmentListItem[] = [
   ssh('gpu', 'gpu-workstation', 'hangqi@10.0.0.42', {
     nodeUpgrade: { remoteVersion: '0.69.0', targetVersion: '0.71.2', canUpgradeOverSsh: true },
   }),
+  ssh('legacy', 'legacy-node', 'dev@legacy.internal', {
+    state: 'blocked',
+    blockReason: 'protocol_incompatible',
+    lastError: 'protocol generation mismatch: local 1-1, remote 2-2',
+    nodeUpgrade: { remoteVersion: null, targetVersion: '0.71.2', canUpgradeOverSsh: true },
+  }),
   ssh('staging', 'staging', 'deploy@staging.example.com', {
     state: 'backoff',
     lastError: 'connect ECONNREFUSED 127.0.0.1:7788',

@@ -1,10 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { WebSocketServer, type WebSocket } from 'ws'
-import {
-  DATABASE_SCHEMA_GENERATION,
-  PROTOCOL_GENERATION,
-  negotiateHandshake,
-} from '@superone/shared/environment'
 import type {
   AccessTokenResult,
   AuthService,
@@ -18,11 +13,12 @@ import {
 } from '@superone/relay-client/secure-channel'
 import type { NodeIdentity } from './identity'
 import { MAX_NODE_FRAME_BYTES, type NodeSocket } from './node-socket'
-import type { RpcContext, RpcResult, RpcStreams } from './rpc-context'
+import type { RpcContext } from './rpc-context'
 import { createConnectionWire, type ConnectionWire } from './connection-wire'
-import type { EventStreamHandle } from './event-stream'
-import { ConnectionDelivery } from '../stream/delivery/connection-delivery'
-import { deliveryPolicy, type ConnectionRoute } from '../stream/delivery-policy'
+import { createConnectionRpc, type ConnectionRpc, type NodeRpcDispatch, type NodeRpcRequestContext } from './connection-rpc'
+import type { ConnectionRoute } from '../stream/delivery-policy'
+
+export type { NodeRpcDispatch, NodeRpcRequestContext } from './connection-rpc'
 
 const MAX_JSON_BYTES = {
   pair: 16 * 1024,
@@ -32,9 +28,6 @@ const MAX_JSON_BYTES = {
 } as const
 
 const MAX_WS_PAYLOAD = MAX_NODE_FRAME_BYTES
-
-/** One connection's RPC handler; `dispose` closes its push streams with the socket. */
-type RpcHandler = ((read: () => unknown) => Promise<void>) & { dispose: () => void }
 
 interface JsonBody {
   [key: string]: unknown
@@ -75,20 +68,6 @@ function getBearer(req: IncomingMessage): string | null {
   const m = /^Bearer\s+(.+)$/i.exec(h)
   return m?.[1] ?? null
 }
-
-/** Per-request fields the transport adds to the host's context. */
-export interface NodeRpcRequestContext {
-  client: AuthenticatedClient
-  requestId?: string
-  idempotencyKey?: string
-  streams?: RpcStreams
-}
-
-export type NodeRpcDispatch<C extends NodeRpcRequestContext = RpcContext> = (
-  method: string,
-  payload: unknown,
-  ctx: C,
-) => Promise<RpcResult>
 
 /** Auth surface the transport needs. AuthService satisfies this. */
 export interface NodeAuthPort {
@@ -319,7 +298,7 @@ export async function startNodeServer<C extends NodeRpcRequestContext = RpcConte
   const serveSecureChannel = (ws: NodeSocket, channelOpts: NodeSecureChannelOptions, route: ConnectionRoute): void => {
     let accept: ReturnType<typeof acceptClientHello> | null = null
     let wire: ConnectionWire | null = null
-    let rpc: RpcHandler | null = null
+    let rpc: ConnectionRpc | null = null
     const send = (msg: unknown) => wire?.reply(msg)
     const setupTimer = setTimeout(() => ws.close(4408, 'channel_setup_timeout'), CHANNEL_SETUP_TIMEOUT_MS)
     setupTimer.unref?.()
@@ -428,172 +407,18 @@ export async function startNodeServer<C extends NodeRpcRequestContext = RpcConte
     client: AuthenticatedClient,
     /** Relay slots are `relay`; sockets this server accepted, loopback forwards included, are `lan`. */
     route: ConnectionRoute,
-  ): RpcHandler => {
-    const send = wire.reply
-    const ctxBase = opts.createRpcContext(client)
-    let negotiatedGeneration: { protocol: number; databaseSchema: number } | undefined
-    const openStreams = new Map<string, EventStreamHandle>()
-    const streams: RpcStreams = {
-      open(subscriptionId, stream) {
-        openStreams.get(subscriptionId)?.close()
-        openStreams.set(subscriptionId, stream)
-      },
-      close(subscriptionId) {
-        openStreams.get(subscriptionId)?.close()
-        openStreams.delete(subscriptionId)
-      },
-      get: (subscriptionId) => openStreams.get(subscriptionId),
-      push: wire.push,
-      flow: wire.flow,
-      delivery: new ConnectionDelivery(deliveryPolicy(route, 'desktop')),
-    }
-
-    const handle = async (read: () => unknown): Promise<void> => {
-      let requestId = 'unknown'
-      try {
-        if (opts.auth.isRevoked(client.clientSessionId)) {
-          closeSocket(4001, 'session_revoked')
-          return
-        }
-
-        const msg = read() as {
-          type?: string
-          requestId?: string
-          method?: string
-          payload?: unknown
-          environmentId?: string
-          protocolVersion?: number
-          idempotencyKey?: string
-        }
-        requestId = msg.requestId || 'unknown'
-
-        if (msg.type === 'ping') {
-          send({ type: 'pong', requestId })
-          return
-        }
-
-        if (msg.type === 'handshake') {
-          const remote = (msg.payload || {}) as {
-            protocol?: unknown
-            databaseSchema?: unknown
-          }
-          const result = negotiateHandshake(
-            {
-              protocol: { ...PROTOCOL_GENERATION },
-              databaseSchema: { ...DATABASE_SCHEMA_GENERATION },
-            },
-            {
-              protocol: remote.protocol as { current: number; min: number; max: number },
-              databaseSchema: remote.databaseSchema as { current: number; min: number; max: number },
-            },
-          )
-          if (!result.ok) {
-            send({
-              type: 'rpc_error',
-              requestId,
-              error: { code: 'protocol_incompatible', message: result.reason },
-            })
-            closeSocket(4002, 'protocol_incompatible')
-            return
-          }
-          negotiatedGeneration = { protocol: result.protocol, databaseSchema: result.databaseSchema }
-          send({
-            type: 'handshake_ok',
-            requestId,
-            result: {
-              protocol: result.protocol,
-              databaseSchema: result.databaseSchema,
-              environmentId: opts.identity.environmentId,
-            },
-          })
-          wire.startFraming()
-          return
-        }
-
-        if (msg.type !== 'rpc' && !msg.method) {
-          send({
-            type: 'rpc_error',
-            requestId,
-            error: { code: 'invalid_argument', message: 'expected rpc message' },
-          })
-          return
-        }
-
-        const method = msg.method || ''
-        const bootstrapRead =
-          method === 'environment.descriptor' ||
-          method === 'environment.health' ||
-          method === 'environment.systemInfo'
-        if (!negotiatedGeneration && !bootstrapRead) {
-          send({
-            type: 'rpc_error',
-            requestId,
-            error: {
-              code: 'failed_precondition',
-              message: 'handshake required before non-bootstrap RPC',
-            },
-          })
-          return
-        }
-        if (negotiatedGeneration) {
-          if (msg.protocolVersion !== negotiatedGeneration.protocol) {
-            send({
-              type: 'rpc_error',
-              requestId,
-              error: {
-                code: 'protocol_incompatible',
-                message:
-                  msg.protocolVersion === undefined
-                    ? 'protocolVersion required on RPC envelopes after handshake'
-                    : `protocolVersion ${msg.protocolVersion} not negotiated`,
-              },
-            })
-            return
-          }
-        }
-
-        if (!msg.environmentId || (msg.environmentId !== opts.identity.environmentId && !opts.identity.aliases?.includes(msg.environmentId))) {
-          send({
-            type: 'rpc_error',
-            requestId,
-            error: {
-              code: 'environment_mismatch',
-              message: msg.environmentId
-                ? 'environmentId does not match this node'
-                : 'environmentId is required on every RPC envelope',
-            },
-          })
-          return
-        }
-
-        const result = await opts.dispatchRpc(method, msg.payload, {
-          ...ctxBase,
-          client,
-          requestId,
-          idempotencyKey: msg.idempotencyKey,
-          streams,
-        } as C)
-        if (result.error) {
-          send({ type: 'rpc_error', requestId, error: result.error })
-        } else {
-          send({ type: 'rpc_result', requestId, result: result.result })
-        }
-      } catch (err) {
-        const e = err as { message?: string; code?: string }
-        send({
-          type: 'rpc_error',
-          requestId,
-          error: { code: e.code || 'internal', message: e.message || 'internal error' },
-        })
-      }
-    }
-    return Object.assign(handle, {
-      dispose: () => {
-        for (const stream of openStreams.values()) stream.close()
-        openStreams.clear()
-      },
+  ): ConnectionRpc =>
+    createConnectionRpc<C>({
+      identity: opts.identity,
+      client,
+      wire,
+      route,
+      surface: 'desktop',
+      context: opts.createRpcContext(client),
+      dispatch: opts.dispatchRpc,
+      isRevoked: (clientSessionId) => opts.auth.isRevoked(clientSessionId),
+      close: closeSocket,
     })
-  }
 
   await new Promise<void>((resolve, reject) => {
     httpServer.once('error', reject)

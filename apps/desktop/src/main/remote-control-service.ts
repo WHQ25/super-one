@@ -1,6 +1,7 @@
 import { frameHostPayload } from './remote/payload-codec'
 import type { ChannelEnvelope, PhoneHandshake, PhoneKey, PhoneLinkHost } from './remote/phone-link-host'
 import type { SecureChannel } from '@superone/relay-client/secure-channel'
+import type { PhoneConnection, PhoneLink } from './node-host/phone-endpoint'
 import type { LinkHandshakeInfo, LinkHostInfo } from '@superone/relay-client/phone-link'
 import { RelayDraftSaveThrottle } from './remote/relay-draft-save-throttle'
 import { batchingFor, createEventBatcher, type EventBatcher } from '@superone/runtime/stream'
@@ -82,6 +83,8 @@ export interface RemoteControlCallbacks {
   /** Release, protocol generation and canonical environment id, told to each phone in the sealed handshake. */
   hostInfo?: () => LinkHostInfo
   onCommand: (cmd: RemoteCommand, respond: RemoteResponder, source: RemoteCommandSource) => void
+  /** Open a phone's protocol connection on a link, on its first protocol frame; null when none is served. */
+  openPhoneConnection?: (link: PhoneLink) => PhoneConnection | null
   onClientRegistered?: (info: { deviceName: string; deviceId: string; transport: 'lan' | 'relay'; firstConnect: boolean }) => void
   onClientDisconnected?: (info: { deviceId: string }) => void
   onPairingCodeReceived?: (info: { code: string; deviceName: string }) => void
@@ -99,7 +102,13 @@ export interface RemoteControlCallbacks {
 type DeviceTransport = 'lan' | 'relay'
 type ConnectedDevice = { name: string; transports: Set<DeviceTransport> }
 /** One phone's channel through the relay; replaced whenever the phone says hello again. */
-type RelayLink = { handshake: PhoneHandshake; channel: SecureChannel | null; device: PhoneKey | null }
+type RelayLink = {
+  handshake: PhoneHandshake
+  channel: SecureChannel | null
+  device: PhoneKey | null
+  /** The phone's protocol connection on this slot, from its first protocol frame. */
+  rpc?: PhoneConnection | null
+}
 
 /** The channel crypto loads with remote control, never on the startup path. */
 let phoneLinkHost: Promise<PhoneLinkHost> | null = null
@@ -326,6 +335,7 @@ export class RemoteControlService {
       resolveKey: (keyId) => this.resolvePhoneKey(keyId),
       handshakeInfo: () => this.handshakeInfo(),
       onCommand: (cmd, respond, source) => this.callbacks.onCommand(cmd, respond, { deviceId: source.deviceId, transport: 'lan' }),
+      openPhoneConnection: (link) => this.callbacks.openPhoneConnection?.(link) ?? null,
       onClientRegistered: ({ deviceName, deviceId }) => this.markDeviceOnline(deviceName, deviceId, 'lan'),
       onClientDisconnected: ({ deviceId }) => this.markDeviceOffline(deviceId, 'lan'),
       getFileTokenSigner: () => this.fileTokenSigner,
@@ -397,7 +407,7 @@ export class RemoteControlService {
    */
   revokeDevice(deviceId: string): void {
     for (const key of this.deviceFileKeys.keys()) if (key.startsWith(`${deviceId}:`)) this.deviceFileKeys.delete(key)
-    this.relayLinks.delete(deviceId)
+    this.dropRelayLink(deviceId)
     if (this.relayWs?.readyState === WebSocket.OPEN) {
       this.relayWs.send(JSON.stringify({ type: 'kicked', mobileDeviceId: deviceId }))
     }
@@ -411,7 +421,7 @@ export class RemoteControlService {
    * pairing and gets back in once switched on again.
    */
   disconnectDevice(deviceId: string): void {
-    this.relayLinks.delete(deviceId)
+    this.dropRelayLink(deviceId)
     this.lanServer?.disconnectDevice(deviceId)
     this.markDeviceOffline(deviceId, 'relay')
     this.markDeviceOffline(deviceId, 'lan')
@@ -471,7 +481,7 @@ export class RemoteControlService {
       this.callbacks.onRelayStatusChanged?.(false)
     }
     await this.stopLanServer()
-    this.relayLinks.clear()
+    this.dropRelayLinks()
     this.deviceFileKeys.clear()
     this.keys = null
     this.fileTokenSigner = null
@@ -518,7 +528,7 @@ export class RemoteControlService {
     const ws = new WebSocket(url)
     this.relayWs = ws
     // Phones open new channels when the relay announces this socket.
-    this.relayLinks.clear()
+    this.dropRelayLinks()
     // A half-open socket never emits 'close' on its own; terminate() does,
     // which hands the dead link to the reconnect path below.
     const heartbeat = createRelayHeartbeat({
@@ -583,9 +593,9 @@ export class RemoteControlService {
           log.warn('[RemoteControl] relay command without an open channel, dropping')
           return
         }
-        let command: RemoteCommand
+        let opened: ReturnType<PhoneLinkHost['openPhoneFrame']>
         try {
-          command = this.link().openCommand(channel, frame.data)
+          opened = this.link().openPhoneFrame(channel, frame.data)
         } catch (err) {
           // Only the relay could have injected it; the channel itself stays usable.
           log.warn('[RemoteControl] rejected relay command from %s: %s', deviceId, err instanceof Error ? err.message : String(err))
@@ -601,6 +611,11 @@ export class RemoteControlService {
           this.disconnectDevice(deviceId)
           return
         }
+        if (opened.kind === 'rpc') {
+          this.receiveRelayRpc(deviceId, link, opened.frame)
+          return
+        }
+        const command = opened.command
         trace('remote.in', command.type, command)
         this.callbacks.onCommand(command, (requestId, data) => this.sendResponse(requestId, data, deviceId, channel, ws, generation), { deviceId, transport: 'relay' })
         break
@@ -615,11 +630,11 @@ export class RemoteControlService {
         const deviceId = frame.mobileDeviceId as string | undefined
         if (deviceId) {
           log.info('[RemoteControl] Mobile peer disconnected: %s', deviceId)
-          this.relayLinks.delete(deviceId)
+          this.dropRelayLink(deviceId)
           this.markDeviceOffline(deviceId, 'relay')
         } else {
           log.info('[RemoteControl] Mobile peer disconnected (no deviceId)')
-          this.relayLinks.clear()
+          this.dropRelayLinks()
           for (const [id, info] of Array.from(this.connectedDevices)) {
             if (info.transports.has('relay')) this.markDeviceOffline(id, 'relay')
           }
@@ -629,6 +644,36 @@ export class RemoteControlService {
     }
   }
 
+  private receiveRelayRpc(deviceId: string, link: RelayLink, frame: Uint8Array): void {
+    const ws = this.relayWs
+    const channel = link.channel
+    if (!ws || !channel || !link.device) return
+    link.rpc ??= this.callbacks.openPhoneConnection?.({
+      deviceId,
+      keyId: link.device.keyId,
+      transport: 'relay',
+      write: (out) => {
+        // A connection belongs to the slot and channel it opened on.
+        if (this.relayWs !== ws || this.relayLinks.get(deviceId) !== link) return
+        const data = this.link().sealHostFrame(channel, { t: 'rpc' }, out)
+        ws.send(JSON.stringify({ type: this.link().PHONE_RPC_ENVELOPE, targets: [deviceId], data }))
+      },
+      buffered: () => ws.bufferedAmount,
+      close: () => this.dropRelayLink(deviceId),
+    }) ?? null
+    link.rpc?.receive(frame)
+  }
+
+  private dropRelayLink(deviceId: string): void {
+    this.relayLinks.get(deviceId)?.rpc?.close()
+    this.relayLinks.delete(deviceId)
+  }
+
+  private dropRelayLinks(): void {
+    for (const link of this.relayLinks.values()) link.rpc?.close()
+    this.relayLinks.clear()
+  }
+
   private handleRelayChannel(frame: ChannelEnvelope & { mobileDeviceId?: unknown }): void {
     const deviceId = typeof frame.mobileDeviceId === 'string' ? frame.mobileDeviceId : null
     const ws = this.relayWs
@@ -636,6 +681,7 @@ export class RemoteControlService {
     let link = this.relayLinks.get(deviceId)
     if ((frame.msg as { type?: unknown } | undefined)?.type === 'channel_hello' || !link) {
       // A hello starts over: whatever channel this phone had is abandoned.
+      link?.rpc?.close()
       link = { handshake: new (this.link().PhoneHandshake)((keyId) => this.resolvePhoneKey(keyId), deviceId), channel: null, device: null }
       this.relayLinks.set(deviceId, link)
     }
@@ -646,17 +692,17 @@ export class RemoteControlService {
         return
       case 'rejected':
         log.warn('[RemoteControl] Rejecting relay phone %s: %s', deviceId, step.reason)
-        this.relayLinks.delete(deviceId)
+        this.dropRelayLink(deviceId)
         ws.send(JSON.stringify({ type: 'kicked', mobileDeviceId: deviceId }))
         return
       case 'failed':
         log.warn('[RemoteControl] Relay channel handshake failed for %s: %s', deviceId, step.reason)
-        this.relayLinks.delete(deviceId)
+        this.dropRelayLink(deviceId)
         return
       case 'established':
         if (!step.device.enabled) {
           log.info('[RemoteControl] Relay phone %s is switched off; not opening its channel', deviceId)
-          this.relayLinks.delete(deviceId)
+          this.dropRelayLink(deviceId)
           return
         }
         link.channel = step.channel

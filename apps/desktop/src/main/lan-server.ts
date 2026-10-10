@@ -14,6 +14,7 @@ import { isPrivateNetworkAddress } from '@superone/shared/private-network-addres
 import type { LinkHandshakeInfo } from '@superone/relay-client/phone-link'
 import type { SecureChannel } from '@superone/relay-client/secure-channel'
 import type { LanFileTokenSigner } from './lan-file-token'
+import type { PhoneConnection, PhoneLink } from './node-host/phone-endpoint'
 import { inferMimeType } from './file-bridge'
 
 export function listLanIpAddresses(): string[] {
@@ -43,6 +44,8 @@ export interface LanServerCallbacks {
   resolveKey: ResolvePhoneKey
   handshakeInfo: () => LinkHandshakeInfo
   onCommand: (cmd: RemoteCommand, respond: LanRemoteResponder, source: { deviceId: string }) => void
+  /** Open a phone's protocol connection on a link, on its first protocol frame; null when none is served. */
+  openPhoneConnection?: (link: PhoneLink) => PhoneConnection | null
   onClientRegistered?: (info: { deviceName: string; deviceId: string }) => void
   onClientDisconnected?: (info: { deviceId: string }) => void
   getFileTokenSigner?: () => LanFileTokenSigner | null
@@ -56,6 +59,8 @@ interface ClientState {
   handshake: PhoneHandshake
   channel: SecureChannel | null
   registerTimer: ReturnType<typeof setTimeout> | null
+  /** The phone's protocol connection on this socket, from its first protocol frame. */
+  rpc: PhoneConnection | null
 }
 
 export class LanServer {
@@ -242,6 +247,7 @@ export class LanServer {
         log.warn('[LanServer] Register timeout, closing connection')
         ws.close(1008, 'register_timeout')
       }, REGISTER_TIMEOUT_MS),
+      rpc: null,
     }
     this.clients.set(ws, state)
 
@@ -259,6 +265,7 @@ export class LanServer {
       const st = this.clients.get(ws)
       if (!st) return
       if (st.registerTimer) clearTimeout(st.registerTimer)
+      st.rpc?.close()
       this.clients.delete(ws)
       if (!st.deviceId) return
       // A phone that redialled already registered its new socket; the old one
@@ -355,9 +362,9 @@ export class LanServer {
     const data = frame.data
     if (typeof data !== 'string') return
 
-    let command: RemoteCommand
+    let opened: ReturnType<PhoneLinkHost['openPhoneFrame']>
     try {
-      command = this.callbacks.phoneLink.openCommand(channel, data)
+      opened = this.callbacks.phoneLink.openPhoneFrame(channel, data)
     } catch (err) {
       // Tampered, replayed or reordered: this connection can no longer be trusted.
       log.error('[LanServer] Rejected command frame, disconnecting:', err)
@@ -374,9 +381,29 @@ export class LanServer {
       ws.close(1008, 'access_off')
       return
     }
+    if (opened.kind === 'rpc') {
+      this.receiveRpc(ws, state, channel, opened.frame)
+      return
+    }
+    const command = opened.command
     trace('remote.in', (command as { type?: string }).type ?? 'unknown', command)
     const respond: LanRemoteResponder = (requestId, payload) => this.sendResponse(ws, channel, requestId, payload)
     this.callbacks.onCommand(command, respond, { deviceId: state.deviceId })
+  }
+
+  private receiveRpc(ws: WebSocket, state: ClientState, channel: SecureChannel, frame: Uint8Array): void {
+    state.rpc ??= this.callbacks.openPhoneConnection?.({
+      deviceId: state.deviceId,
+      keyId: state.device!.keyId,
+      transport: 'lan',
+      write: (out) => {
+        const data = this.callbacks.phoneLink.sealHostFrame(channel, { t: 'rpc' }, out)
+        ws.send(JSON.stringify({ type: this.callbacks.phoneLink.PHONE_RPC_ENVELOPE, data }))
+      },
+      buffered: () => ws.bufferedAmount,
+      close: (code, reason) => ws.close(code, reason),
+    }) ?? null
+    state.rpc?.receive(frame)
   }
 
   private async handleFileRequest(req: IncomingMessage, res: ServerResponse, path: string): Promise<void> {

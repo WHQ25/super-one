@@ -225,6 +225,10 @@ points code comments there, and deletes this plan and the proposal.
   `environment:subscribeDetail` to the gateway's optional
   `sessions.subscribeDetail`, which step 4 implements. Stories:
   `components/chat/DeferredRows.stories.tsx`.
+- Step 4 (in progress): generation 3 with wire framing (DEFLATE, fragments)
+  after the generation handshake, the per-connection outbox (control first,
+  socket high-water mark) and stream flow control (hold while congested,
+  resnapshot past the budget).
 
 ## Open decisions
 

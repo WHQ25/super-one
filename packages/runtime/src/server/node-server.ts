@@ -15,11 +15,11 @@ import type {
 import {
   acceptClientHello,
   SecureChannelError,
-  type SecureChannel,
 } from '@superone/relay-client/secure-channel'
 import type { NodeIdentity } from './identity'
 import { MAX_NODE_FRAME_BYTES, type NodeSocket } from './node-socket'
 import type { RpcContext, RpcResult, RpcStreams } from './rpc-context'
+import { createConnectionWire, type ConnectionWire } from './connection-wire'
 
 const MAX_JSON_BYTES = {
   pair: 16 * 1024,
@@ -293,9 +293,13 @@ export async function startNodeServer<C extends NodeRpcRequestContext = RpcConte
         socketPeers.set(ws, req.socket.remoteAddress ?? null)
         activeSockets.set(ws, client)
         opts.onClientConnected?.(client.clientSessionId)
-        const handle = createRpcHandler((msg) => ws.send(JSON.stringify(msg)), (code, reason) => ws.close(code, reason), client)
-        ws.on('message', (data) => void handle(() => JSON.parse(data.toString())))
-        trackClose(ws, handle.dispose)
+        const wire = createConnectionWire(ws, null)
+        const handle = createRpcHandler(wire, (code, reason) => ws.close(code, reason), client)
+        ws.on('message', (data, isBinary) => void handle(() => wire.read(data as Buffer, isBinary)))
+        trackClose(ws, () => {
+          handle.dispose()
+          wire.close()
+        })
       })
     } catch (err) {
       socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n')
@@ -311,22 +315,21 @@ export async function startNodeServer<C extends NodeRpcRequestContext = RpcConte
    */
   const serveSecureChannel = (ws: NodeSocket, channelOpts: NodeSecureChannelOptions): void => {
     let accept: ReturnType<typeof acceptClientHello> | null = null
-    let channel: SecureChannel | null = null
+    let wire: ConnectionWire | null = null
     let rpc: RpcHandler | null = null
-    const send = (msg: unknown) => {
-      if (channel) ws.send(channel.seal(msg))
-    }
+    const send = (msg: unknown) => wire?.reply(msg)
     const setupTimer = setTimeout(() => ws.close(4408, 'channel_setup_timeout'), CHANNEL_SETUP_TIMEOUT_MS)
     setupTimer.unref?.()
     trackClose(ws, () => {
       clearTimeout(setupTimer)
       rpc?.dispose()
+      wire?.close()
     })
 
     ws.on('message', (data, isBinary) => {
       const bytes = data as Buffer
       try {
-        if (!channel) {
+        if (!wire) {
           if (isBinary || bytes.length > MAX_CHANNEL_HANDSHAKE_BYTES) {
             throw new SecureChannelError('channel_protocol', 'expected a handshake text frame')
           }
@@ -336,12 +339,13 @@ export async function startNodeServer<C extends NodeRpcRequestContext = RpcConte
             ws.send(JSON.stringify(accept.challenge))
             return
           }
-          channel = accept.finish(msg)
+          wire = createConnectionWire(ws, accept.finish(msg))
           send({ type: 'channel_ready' })
           return
         }
         if (!isBinary) throw new SecureChannelError('channel_protocol', 'expected a sealed binary frame')
-        const payload = channel.open(bytes)
+        const payload = wire.read(bytes, isBinary)
+        if (payload === undefined) return
         if (rpc) {
           void rpc(() => payload)
           return
@@ -383,7 +387,7 @@ export async function startNodeServer<C extends NodeRpcRequestContext = RpcConte
         clearTimeout(setupTimer)
         activeSockets.set(ws, client)
         opts.onClientConnected?.(client.clientSessionId)
-        rpc = createRpcHandler(send, (code, reason) => ws.close(code, reason), client)
+        rpc = createRpcHandler(wire!, (code, reason) => ws.close(code, reason), client)
         send({ type: 'attach_ok', requestId })
         return
       }
@@ -416,10 +420,11 @@ export async function startNodeServer<C extends NodeRpcRequestContext = RpcConte
 
   /** RPC message handling shared by plain ticketed sockets and attached channels. */
   const createRpcHandler = (
-    send: (msg: unknown) => void,
+    wire: ConnectionWire,
     closeSocket: (code: number, reason: string) => void,
     client: AuthenticatedClient,
   ): RpcHandler => {
+    const send = wire.reply
     const ctxBase = opts.createRpcContext(client)
     let negotiatedGeneration: { protocol: number; databaseSchema: number } | undefined
     const streamClosers = new Map<string, () => void>()
@@ -432,7 +437,8 @@ export async function startNodeServer<C extends NodeRpcRequestContext = RpcConte
         streamClosers.get(subscriptionId)?.()
         streamClosers.delete(subscriptionId)
       },
-      push: send,
+      push: wire.push,
+      flow: wire.flow,
     }
 
     const handle = async (read: () => unknown): Promise<void> => {
@@ -493,6 +499,7 @@ export async function startNodeServer<C extends NodeRpcRequestContext = RpcConte
               environmentId: opts.identity.environmentId,
             },
           })
+          wire.startFraming()
           return
         }
 

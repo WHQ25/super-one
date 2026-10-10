@@ -99,7 +99,9 @@ it is described in [remote-node-service.md §11.3](remote-node-service.md).
   receiver rejects any sequence number that is not higher than the last one it
   accepted (replay, reorder). The node's first frame is `channel_ready`.
 
-Frame bodies are bytes (`sealChannelBytes`); the node channel's bodies are JSON.
+Frame bodies are bytes (`sealChannelBytes`). The node channel's bodies are JSON
+until the generation handshake and wire frames after it
+([remote-node-service.md](remote-node-service.md#wire-framing)).
 
 ## Phone link
 

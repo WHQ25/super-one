@@ -64,8 +64,14 @@ export class RelaySlotSocket extends EventEmitter {
     private readonly write: (envelope: NodeRelayEnvelope) => boolean,
     /** This end closed the connection; tell the peer and release the slot. */
     private readonly onLocalClose: (code: number, reason: string) => void,
+    /** Bytes the relay socket under this slot has not sent yet; slots of one socket share it. */
+    private readonly buffered: () => number = () => 0,
   ) {
     super()
+  }
+
+  get bufferedAmount(): number {
+    return this.buffered()
   }
 
   asNodeSocket(): NodeSocket {
@@ -164,6 +170,7 @@ export function createRelayNodeDialer(input: { relayUrl: string; roomId: string 
         heartbeat.stop()
         ws.close(1000, 'closed')
       },
+      () => ws.bufferedAmount,
     )
     ws.on('open', () => {
       heartbeat.start()
@@ -329,6 +336,7 @@ export class RelayNodeHost {
         if (this.slots.get(slotId) === slot) this.slots.delete(slotId)
         send({ type: 'kicked', mobileDeviceId: slotId, code, reason })
       },
+      () => this.ws?.bufferedAmount ?? 0,
     )
     this.slots.set(slotId, slot)
     slot.markOpen()

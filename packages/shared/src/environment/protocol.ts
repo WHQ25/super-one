@@ -7,17 +7,17 @@
  */
 
 /**
- * Generation 2: `session.subscribe` pushes session events; clients no longer
- * poll `session.events`, so a generation-1 peer is refused and the desktop
- * offers the node upgrade.
+ * Generation 3: messages after the generation handshake travel framed
+ * (`wire.ts`: DEFLATE, fragments) and streams are flow-controlled. Generation
+ * 2 peers are refused, and the desktop offers the node upgrade.
  */
 export const PROTOCOL_GENERATION = {
   /** Generation this process speaks when offering connections. */
-  current: 2,
+  current: 3,
   /** Oldest generation this process will accept. */
-  min: 2,
+  min: 3,
   /** Newest generation this process understands. */
-  max: 2,
+  max: 3,
 } as const
 
 export const DATABASE_SCHEMA_GENERATION = {

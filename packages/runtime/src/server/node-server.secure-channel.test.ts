@@ -16,6 +16,8 @@ import { AuthService } from './auth-service'
 import { loadOrCreateChannelRoot, loadOrCreateIdentity } from './identity'
 import { startNodeServer, type NodeServerHandle } from './node-server'
 import { establishSecureChannel, secureChannelAuthRequest } from './secure-channel-client'
+import { WireDecoder, WireEncoder, WIRE_FRAGMENT_BYTES } from '@superone/shared/environment/wire'
+import { nodeWireCompression } from './wire-compression'
 
 const dirs: string[] = []
 const servers: NodeServerHandle[] = []
@@ -38,7 +40,7 @@ async function setup() {
     auth,
     bindHost: '127.0.0.1',
     bindPort: 0,
-    dispatchRpc: async (method) => ({ result: { method } }),
+    dispatchRpc: async (method, payload) => ({ result: { method, payload } }),
     createRpcContext: () => ({}) as never,
     onClientDisconnected: () => {},
     verifyDeviceProof: verifyPayload,
@@ -70,45 +72,82 @@ function nextClose(ws: WebSocket): Promise<{ code: number; reason: string }> {
   return new Promise((resolve) => ws.once('close', (code, reason) => resolve({ code, reason: reason.toString() })))
 }
 
+/** Pairs a device over the channel and returns a WebSocket ticket for it. */
+async function pairOverChannel(setupResult: Awaited<ReturnType<typeof setup>>) {
+  const { identity, wsUrl, pairing, credential, server } = setupResult
+  const plainPair = await fetch(`${server.url}/v1/pair`, { method: 'POST', body: '{}' })
+  expect(plainPair.status).toBe(403)
+  expect(((await plainPair.json()) as { error: { code: string } }).error.code).toBe('channel_required')
+  expect((await fetch(`${server.url}/health`)).status).toBe(200)
+
+  const device = generateEd25519KeyPair()
+  const paired = await secureChannelAuthRequest({
+    wsUrl,
+    credential,
+    path: '/v1/pair',
+    body: { pairingToken: pairing.token, devicePublicKeyPem: device.publicKeyPem, label: 'peer' },
+    timeoutMs: 5_000,
+  })
+  expect(paired.status).toBe(200)
+  const pairBody = paired.body as { clientSessionId: string; refreshToken: string; environmentId: string }
+  expect(pairBody.environmentId).toBe(identity.environmentId)
+
+  const proofPayload = `refresh:${pairBody.clientSessionId}:${Date.now()}`
+  const token = await secureChannelAuthRequest({
+    wsUrl,
+    credential,
+    path: '/v1/token',
+    body: { refreshToken: pairBody.refreshToken, proofPayload, proofSignature: signPayload(device.privateKeyPem, proofPayload) },
+    timeoutMs: 5_000,
+  })
+  expect(token.status).toBe(200)
+  const ticketResponse = await secureChannelAuthRequest({
+    wsUrl,
+    credential,
+    path: '/v1/ws-ticket',
+    body: {},
+    accessToken: (token.body as { accessToken: string }).accessToken,
+    timeoutMs: 5_000,
+  })
+  const ticket = (ticketResponse.body as { ticket: string }).ticket
+
+  return { device, ticket }
+}
+
+/** An attached channel with generation 3 agreed. */
+async function framedChannel() {
+  const setupResult = await setup()
+  const { device, ticket } = await pairOverChannel(setupResult)
+  const { ws, channel } = await openChannel(setupResult.wsUrl, setupResult.credential)
+  const ticketId = ticket.split('.')[0]!
+  ws.send(channel.seal({ type: 'attach', requestId: 'a1', ticket, proof: ticketId, sig: signPayload(device.privateKeyPem, ticketId) }))
+  expect(await nextSealed(ws, channel)).toEqual({ type: 'attach_ok', requestId: 'a1' })
+  ws.send(channel.seal({ type: 'handshake', requestId: 'h1', payload: { protocol: { ...PROTOCOL_GENERATION }, databaseSchema: { ...DATABASE_SCHEMA_GENERATION } } }))
+  expect(await nextSealed(ws, channel)).toMatchObject({ type: 'handshake_ok', requestId: 'h1' })
+  return { ws, channel, environmentId: setupResult.identity.environmentId }
+}
+
+/** The next whole message on a framed channel, with the frames that carried it. */
+function nextFramed(ws: WebSocket, channel: SecureChannel, decoder: WireDecoder): Promise<{ message: Record<string, unknown>; frames: Uint8Array[] }> {
+  const frames: Uint8Array[] = []
+  return new Promise((resolve) => {
+    const onMessage = (data: Buffer) => {
+      const body = channel.openBytes(data)
+      frames.push(body)
+      const message = decoder.decode(body)
+      if (message === undefined) return
+      ws.off('message', onMessage)
+      resolve({ message: message as Record<string, unknown>, frames })
+    }
+    ws.on('message', onMessage)
+  })
+}
+
 describe('node server encrypted channel', () => {
   it('pairs, refreshes, attaches and serves RPC entirely inside the channel', async () => {
-    const { identity, wsUrl, pairing, credential, server } = await setup()
-
-    const plainPair = await fetch(`${server.url}/v1/pair`, { method: 'POST', body: '{}' })
-    expect(plainPair.status).toBe(403)
-    expect(((await plainPair.json()) as { error: { code: string } }).error.code).toBe('channel_required')
-    expect((await fetch(`${server.url}/health`)).status).toBe(200)
-
-    const device = generateEd25519KeyPair()
-    const paired = await secureChannelAuthRequest({
-      wsUrl,
-      credential,
-      path: '/v1/pair',
-      body: { pairingToken: pairing.token, devicePublicKeyPem: device.publicKeyPem, label: 'peer' },
-      timeoutMs: 5_000,
-    })
-    expect(paired.status).toBe(200)
-    const pairBody = paired.body as { clientSessionId: string; refreshToken: string; environmentId: string }
-    expect(pairBody.environmentId).toBe(identity.environmentId)
-
-    const proofPayload = `refresh:${pairBody.clientSessionId}:${Date.now()}`
-    const token = await secureChannelAuthRequest({
-      wsUrl,
-      credential,
-      path: '/v1/token',
-      body: { refreshToken: pairBody.refreshToken, proofPayload, proofSignature: signPayload(device.privateKeyPem, proofPayload) },
-      timeoutMs: 5_000,
-    })
-    expect(token.status).toBe(200)
-    const ticketResponse = await secureChannelAuthRequest({
-      wsUrl,
-      credential,
-      path: '/v1/ws-ticket',
-      body: {},
-      accessToken: (token.body as { accessToken: string }).accessToken,
-      timeoutMs: 5_000,
-    })
-    const ticket = (ticketResponse.body as { ticket: string }).ticket
+    const setupResult = await setup()
+    const { identity, wsUrl, credential } = setupResult
+    const { device, ticket } = await pairOverChannel(setupResult)
 
     const { ws, channel } = await openChannel(wsUrl, credential)
     const ticketId = ticket.split('.')[0]!
@@ -135,7 +174,9 @@ describe('node server encrypted channel', () => {
       protocolVersion: PROTOCOL_GENERATION.current,
     })
     ws.send(rpcFrame)
-    expect(await nextSealed(ws, channel)).toEqual({ type: 'rpc_result', requestId: 'r1', result: { method: 'environment.health' } })
+    // Replies after the generation handshake are wire frames.
+    expect((await nextFramed(ws, channel, new WireDecoder(nodeWireCompression))).message)
+      .toEqual({ type: 'rpc_result', requestId: 'r1', result: { method: 'environment.health' } })
 
     // A captured frame replayed on the same connection closes it.
     const closed = nextClose(ws)
@@ -170,5 +211,40 @@ describe('node server encrypted channel', () => {
     const closed = nextClose(ws)
     ws.send(frame)
     expect(await closed).toEqual({ code: 4401, reason: 'channel_decrypt' })
+  })
+
+  it('frames messages after the handshake: compressed, fragmented, and read either way', async () => {
+    const { ws, channel, environmentId } = await framedChannel()
+    const encoder = new WireEncoder(nodeWireCompression)
+    const decoder = new WireDecoder(nodeWireCompression)
+    // Random text barely compresses, so the echo needs several fragments.
+    const text = Array.from({ length: 3 * WIRE_FRAGMENT_BYTES / 8 }, () => Math.random().toString(36).slice(2, 10)).join('')
+    const request = { type: 'rpc', requestId: 'big', method: 'workspace.writeFile', environmentId, protocolVersion: PROTOCOL_GENERATION.current, payload: { text } }
+    const sent = encoder.encode(request)
+    expect(sent.length).toBeGreaterThan(1)
+    const reply = nextFramed(ws, channel, decoder)
+    for (const frame of sent) ws.send(channel.sealBytes(frame))
+    const { message, frames } = await reply
+    expect(message).toEqual({ type: 'rpc_result', requestId: 'big', result: { method: 'workspace.writeFile', payload: { text } } })
+    expect(frames.length).toBeGreaterThan(1)
+
+    const small = nextFramed(ws, channel, decoder)
+    ws.send(channel.sealBytes(encoder.encode({ type: 'rpc', requestId: 'zip', method: 'm', environmentId, protocolVersion: PROTOCOL_GENERATION.current, payload: { text: 'a'.repeat(4000) } })[0]!))
+    const compressed = await small
+    expect(compressed.frames[0]![0]).toBe(1)
+    expect(compressed.frames[0]!.length).toBeLessThan(500)
+  })
+
+  it('refuses a generation 2 peer in plain JSON it can read', async () => {
+    const setupResult = await setup()
+    const { device, ticket } = await pairOverChannel(setupResult)
+    const { ws, channel } = await openChannel(setupResult.wsUrl, setupResult.credential)
+    const ticketId = ticket.split('.')[0]!
+    ws.send(channel.seal({ type: 'attach', requestId: 'a1', ticket, proof: ticketId, sig: signPayload(device.privateKeyPem, ticketId) }))
+    await nextSealed(ws, channel)
+    const closed = nextClose(ws)
+    ws.send(channel.seal({ type: 'handshake', requestId: 'h2', payload: { protocol: { current: 2, min: 2, max: 2 }, databaseSchema: { ...DATABASE_SCHEMA_GENERATION } } }))
+    expect(await nextSealed(ws, channel)).toMatchObject({ type: 'rpc_error', error: { code: 'protocol_incompatible', message: expect.stringContaining('local 3-3, remote 2-2') } })
+    expect((await closed).code).toBe(4002)
   })
 })

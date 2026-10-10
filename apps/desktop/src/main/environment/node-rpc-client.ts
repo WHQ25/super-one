@@ -11,7 +11,17 @@ import {
   type NodeSocketDialer,
   type SecureChannel,
 } from '@superone/runtime/server/secure-channel-client'
+import { nodeWireCompression } from '@superone/runtime/server/wire-compression'
+import { WireDecoder, WireEncoder } from '@superone/shared/environment/wire'
 import { signWithDeviceKey } from './node-auth-client'
+
+/** A socket's encrypted channel; wire framing starts once the generation handshake succeeds. */
+type ChannelState = {
+  channel: SecureChannel
+  encoder: WireEncoder
+  decoder: WireDecoder
+  framing: boolean
+}
 
 export interface NodeRpcClientOptions {
   /** http(s) base URL, e.g. http://127.0.0.1:7788 */
@@ -144,7 +154,7 @@ export class NodeRpcClient {
   private missedPongs = 0
   private readonly heartbeatIntervalMs: number
   /** Established encrypted channel per socket; absent on plain sockets. */
-  private readonly channels = new WeakMap<NodeSocket, SecureChannel>()
+  private readonly channels = new WeakMap<NodeSocket, ChannelState>()
   private dial: NodeSocketDialer | undefined
 
   constructor(private readonly opts: NodeRpcClientOptions) {
@@ -293,8 +303,8 @@ export class NodeRpcClient {
               requestId?: string
               type?: string
               error?: { code?: string; message?: string }
-            }
-            if (msg.requestId !== requestId) return
+            } | undefined
+            if (msg?.requestId !== requestId) return
             if (timer) clearTimeout(timer)
             timer = null
             ws.off('message', onHs)
@@ -315,6 +325,8 @@ export class NodeRpcClient {
             }
             this.connectingWs = null
             if (this.connectFail === fail) this.connectFail = null
+            const state = this.channels.get(ws)
+            if (state) state.framing = true
             const socketId = this.nextSocketId++
             this.ws = ws
             this.wsSocketId = socketId
@@ -330,7 +342,7 @@ export class NodeRpcClient {
                 }
                 return
               }
-              this.onMessage(msg)
+              if (msg !== undefined) this.onMessage(msg)
             })
             ws.on('close', () => {
               // Intentional drop/close remove listeners first — only unexpected
@@ -726,7 +738,12 @@ export class NodeRpcClient {
       if (e.code === 'unauthorized') throw rpcResponseError('unauthorized', e.message || 'channel authentication failed')
       throw transportError(e.message || 'encrypted channel failed')
     }
-    this.channels.set(ws, channel)
+    this.channels.set(ws, {
+      channel,
+      encoder: new WireEncoder(nodeWireCompression),
+      decoder: new WireDecoder(nodeWireCompression),
+      framing: false,
+    })
     const requestId = randomUUID()
     await new Promise<void>((resolve, reject) => {
       const onAttach = (raw: WebSocket.RawData) => {
@@ -748,14 +765,25 @@ export class NodeRpcClient {
   }
 
   private sendFrame(ws: NodeSocket, msg: unknown): void {
-    const channel = this.channels.get(ws)
-    ws.send(channel ? channel.seal(msg) : JSON.stringify(msg))
+    const state = this.channels.get(ws)
+    if (!state) {
+      ws.send(JSON.stringify(msg))
+      return
+    }
+    if (!state.framing) {
+      ws.send(state.channel.seal(msg))
+      return
+    }
+    for (const frame of state.encoder.encode(msg)) ws.send(state.channel.sealBytes(frame))
   }
 
-  /** Throws on malformed JSON, and on channel tampering or replay. */
+  /**
+   * Throws on malformed JSON, and on channel tampering or replay. `undefined`
+   * while a fragmented message is still arriving.
+   */
   private decodeFrame(ws: NodeSocket, data: WebSocket.RawData): unknown {
-    const channel = this.channels.get(ws)
-    return channel ? channel.open(data as Buffer) : JSON.parse(data.toString())
+    const state = this.channels.get(ws)
+    return state ? state.decoder.decode(state.channel.openBytes(data as Buffer)) : JSON.parse(data.toString())
   }
 
   private onMessage(raw: unknown): void {

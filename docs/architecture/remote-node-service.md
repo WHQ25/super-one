@@ -396,7 +396,29 @@ instead of repeating the mutation.
 The descriptor advertises protocol and database-schema generations as
 `{ current, min, max }` (`PROTOCOL_GENERATION`, `DATABASE_SCHEMA_GENERATION` in
 `protocol.ts`); `negotiateHandshake` blocks the connection before mutable RPC
-when the ranges do not overlap.
+when the ranges do not overlap. Generation 3 is the current and oldest
+accepted generation; a generation 2 peer is refused, and the desktop offers
+the node upgrade from the refusal's range.
+
+#### Wire framing
+
+On the encrypted channel, messages up to and including the generation
+handshake are sealed JSON, so a peer of another generation can still read the
+refusal. After it, each sealed frame carries a wire frame
+(`packages/shared/src/environment/wire.ts`): the remote payload header (flag,
+u32 size) with the JSON raw, or DEFLATE-compressed when it is over 512 bytes.
+A frame over 256 KiB is split into fragments (flag 2, u32 message id, u16
+index, u16 total); fragments of one message arrive in order but may
+interleave with other messages. Plain ticketed sockets carry JSON text.
+Compression is injected: Node uses zlib, Expo a pure-JS inflater.
+
+Each connection sends through an outbox (`connection-wire.ts`,
+`wire-outbox.ts` in `packages/runtime/src/server`): RPC replies and control
+go before stream frames, frames are sealed as they leave so channel sequence
+numbers follow socket order, and the socket buffer is kept under 1 MiB. While
+the link is behind, `openEventStream` holds new events; past 4 MiB held, a
+session's streaming events are dropped and the session goes to `resnapshot`.
+Durable events are never dropped.
 
 ### 9.2 Event log
 
@@ -613,7 +635,8 @@ sealed frames:
   ticket and device proof that a plain socket sends as upgrade headers. Before
   attach, RPC is answered with `unauthorized`; handshake plus attach must finish
   within 30 s.
-- After attach, the usual `handshake` / `rpc` / `ping` messages.
+- After attach, the usual `handshake` / `rpc` / `ping` messages; after the
+  generation handshake they travel as wire frames ([Wire framing](#wire-framing)).
 
 Node auth (§12) runs unchanged inside the channel. The desktop client
 (`node-auth-client.ts`, `node-rpc-client.ts`) uses short-lived sockets for the

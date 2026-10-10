@@ -47,6 +47,17 @@ function coversSession(filter: EventStreamFilter, environmentId: string, session
   return streamFilterMatcher(filter)({ aggregateType: 'session', aggregateId: sessionId, environmentId } as EnvironmentEventEnvelope)
 }
 
+/**
+ * The connection's pace. While it is congested the stream holds new events;
+ * past `budgetBytes` held, a session's streaming events are dropped and the
+ * session goes to `resnapshot` instead. Durable events are never dropped.
+ */
+export interface EventStreamFlow {
+  congested(): boolean
+  onDrain(listener: () => void): () => void
+  budgetBytes: number
+}
+
 export interface EventStreamCursor {
   afterSequence: string
   /** Versions read per session, meaningful only within `epoch`. */
@@ -84,8 +95,9 @@ export function openEventStream(input: {
   cursor: EventStreamCursor
   filter: EventStreamFilter
   push: (frame: SessionStreamFrame) => void
+  flow?: EventStreamFlow
 }): () => void {
-  const { source, environmentId, reader, filter, push } = input
+  const { source, environmentId, reader, filter, push, flow } = input
   const epoch = source.streamEpoch()
   let sequence = input.cursor.afterSequence
   const sameEpoch = input.cursor.epoch === epoch
@@ -96,6 +108,11 @@ export function openEventStream(input: {
   let closed = false
   let live: EnvironmentEventEnvelope[] = []
   let flushing = false
+  /** Approximate bytes of `live` while the connection is congested. */
+  let heldBytes = 0
+  let heldSizes: number[] = []
+  /** Sessions whose held streaming events were dropped; they go out as `resnapshot`. */
+  const degraded = new Set<string>()
 
   const matches = streamFilterMatcher(filter)
 
@@ -161,21 +178,65 @@ export function openEventStream(input: {
 
   const flush = (): void => {
     flushing = false
+    if (flow?.congested()) return
     const batch = live
     live = []
+    heldSizes = []
+    heldBytes = 0
+    const dropped = [...degraded]
+    degraded.clear()
+    for (const sessionId of dropped) versions.delete(sessionId)
     const events = batch.filter(take)
     for (const envelope of batch) {
       if (!envelope.ephemeral && BigInt(envelope.sequence) > BigInt(sequence)) sequence = envelope.sequence
     }
-    send(events)
+    send(events, dropped)
+  }
+
+  const isStreamingSessionEvent = (envelope: EnvironmentEventEnvelope): boolean =>
+    envelope.ephemeral === true && envelope.aggregateType === 'session'
+
+  /** Over budget: the held streaming events give way to a resnapshot of their sessions. */
+  const degrade = (): void => {
+    const kept: EnvironmentEventEnvelope[] = []
+    const keptSizes: number[] = []
+    live.forEach((envelope, index) => {
+      if (isStreamingSessionEvent(envelope) && matches(envelope)) {
+        degraded.add(envelope.aggregateId)
+        return
+      }
+      kept.push(envelope)
+      keptSizes.push(heldSizes[index]!)
+    })
+    live = kept
+    heldSizes = keptSizes
+    heldBytes = keptSizes.reduce((sum, size) => sum + size, 0)
+  }
+
+  const hold = (envelope: EnvironmentEventEnvelope): void => {
+    if (isStreamingSessionEvent(envelope) && degraded.has(envelope.aggregateId)) return
+    const size = JSON.stringify(envelope).length
+    live.push(envelope)
+    heldSizes.push(size)
+    heldBytes += size
+    if (heldBytes > flow!.budgetBytes) degrade()
   }
 
   const unsubscribe = source.onEventsAppended((envelope) => {
     if (closed) return
-    live.push(envelope.ephemeral ? envelope : source.viewEvent(envelope, reader))
+    const viewed = envelope.ephemeral ? envelope : source.viewEvent(envelope, reader)
+    if (caughtUp && flow?.congested()) {
+      hold(viewed)
+      return
+    }
+    live.push(viewed)
+    heldSizes.push(0)
     if (!caughtUp || flushing) return
     flushing = true
     queueMicrotask(flush)
+  })
+  const stopDrain = flow?.onDrain(() => {
+    if (!closed && !flushing && (live.length > 0 || degraded.size > 0)) flush()
   })
   catchUp()
   caughtUp = true
@@ -184,5 +245,6 @@ export function openEventStream(input: {
   return () => {
     closed = true
     unsubscribe()
+    stopDrain?.()
   }
 }

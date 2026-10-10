@@ -5,7 +5,7 @@ import WebSocket from 'ws'
  * WebSocket is one; a relay slot (`relay-node-link.ts`) is another, so the
  * channel handshake, attach and RPC code run unchanged over both.
  */
-export type NodeSocket = Pick<WebSocket, 'readyState' | 'send' | 'close' | 'on' | 'once' | 'off' | 'removeAllListeners'>
+export type NodeSocket = Pick<WebSocket, 'readyState' | 'bufferedAmount' | 'send' | 'close' | 'on' | 'once' | 'off' | 'removeAllListeners'>
 
 /** Opens a socket to a node's `/ws` URL (or, for the relay, to the node's room). */
 export type NodeSocketDialer = (wsUrl: string) => NodeSocket

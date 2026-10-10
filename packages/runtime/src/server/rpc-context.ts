@@ -30,6 +30,7 @@ import type {
 } from '../session/index'
 import type { HarnessInstallationStatus, SessionStreamMessage } from '@superone/shared/environment'
 import type { AuthenticatedClient } from './auth-service'
+import type { EventStreamFlow } from './event-stream'
 import type { NodeIdentity } from './identity'
 import type { ClaudeUsageAccount, UsageLog } from '../usage/index'
 
@@ -435,4 +436,6 @@ export interface RpcStreams {
   open(subscriptionId: string, close: () => void): void
   close(subscriptionId: string): void
   push(message: SessionStreamMessage): void
+  /** The connection's pace, for flow-controlled streams. */
+  flow?: EventStreamFlow
 }

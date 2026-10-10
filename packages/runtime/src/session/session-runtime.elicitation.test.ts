@@ -15,7 +15,7 @@ function fixture(runner: TurnRunner = async () => ({ finalText: '' })) {
   const rows = new Map<string, NodeSessionRecord>()
   const log: Array<{ eventType: string; payload: unknown }> = []
   const store: SessionStore = { loadAll: () => [...rows.values()], save: s => { rows.set(s.sessionId, structuredClone(s)) }, delete: id => { rows.delete(id) } }
-  const events: SessionEventLog = { headSequence: () => String(log.length), listAfter: () => [], appendSession: input => { log.push(input) } }
+  const events: SessionEventLog = { headSequence: () => String(log.length), onAppend: () => () => {}, listAfter: () => [], appendSession: input => { log.push(input) } }
   const assertValid = vi.fn((input: { holderClientId: string }) => { if (input.holderClientId !== client.clientSessionId) throw new Error('invalid lease') })
   const runtime = new SessionRuntime(store, events, { assertValid }, 'node', runner)
   const session = runtime.create({ projectId: 'project', harnessId: 'codex' })

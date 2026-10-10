@@ -25,7 +25,8 @@ function runtimeWith(inputs: RunnerInput[]) {
   }
   return new SessionRuntime(
     store,
-    { headSequence: () => '0', listAfter: () => [], appendSession: () => {} },
+    { headSequence: () => '0',
+    onAppend: () => () => {}, listAfter: () => [], appendSession: () => {} },
     { assertValid: () => {} },
     'env-source',
     runner,

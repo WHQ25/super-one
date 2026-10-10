@@ -19,6 +19,8 @@ export interface SessionEventLog {
   }): unknown
   headSequence(): string
   listAfter(afterSequence: string, limit?: number): EnvironmentEventEnvelope[]
+  /** Called after each committed append (push streams pull on it). */
+  onAppend(listener: () => void): () => void
   /**
    * Optional session-scoped read for message catalog expansion.
    * When omitted, listMessages falls back to listAfter('0') + filter.

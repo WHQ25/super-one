@@ -1,6 +1,7 @@
 /**
  * Host Action channel — RPC integration (claim races, controller filter, reconnect).
  */
+import { PROTOCOL_GENERATION } from '@superone/shared/environment'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -103,7 +104,7 @@ async function openSecondSocket(
         type: 'handshake',
         requestId,
         payload: {
-          protocol: { current: 1, min: 1, max: 1 },
+          protocol: { ...PROTOCOL_GENERATION },
           databaseSchema: { current: 1, min: 1, max: 1 },
         },
       }),
@@ -138,7 +139,7 @@ async function openSecondSocket(
           method,
           payload,
           environmentId: first.environmentId,
-          protocolVersion: 1,
+          protocolVersion: PROTOCOL_GENERATION.current,
           idempotencyKey: mutating ? crypto.randomUUID() : undefined,
         }),
       )

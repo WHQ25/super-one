@@ -13,7 +13,8 @@ const RECORD = {
 
 function runtime(modUi?: TurnRunner['modUi'], extra: Partial<TurnRunner> = {}, logged: EnvironmentEventEnvelope[] = []) {
   const store: SessionStore = { loadAll: () => [{ ...RECORD }], save: () => {}, delete: () => {} }
-  const events: SessionEventLog = { headSequence: () => '0', listAfter: () => logged, appendSession: () => {} }
+  const events: SessionEventLog = { headSequence: () => '0',
+    onAppend: () => () => {}, listAfter: () => logged, appendSession: () => {} }
   const assertValid = vi.fn()
   const runner = Object.assign((async () => ({ finalText: '' })) as TurnRunner, modUi ? { modUi } : {}, extra)
   return { rt: new SessionRuntime(store, events, { assertValid }, 'env', runner, { runtimeReaperIntervalMs: 0 }), assertValid }

@@ -860,6 +860,10 @@ export class SessionRuntime {
     return this.events.headSequence()
   }
 
+  onEventsAppended(listener: () => void): () => void {
+    return this.events.onAppend(listener)
+  }
+
   /**
    * Events after a cursor, as `reader` sees them. Mod events are delivered
    * through this durable log although only their moment matters: a host

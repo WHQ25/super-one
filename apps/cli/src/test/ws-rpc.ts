@@ -1,3 +1,4 @@
+import { PROTOCOL_GENERATION } from '@superone/shared/environment'
 import WebSocket from 'ws'
 import { generateEd25519KeyPair, signPayload } from '../crypto-util'
 import type { NodeRuntime } from '../runtime'
@@ -75,7 +76,7 @@ export async function connectAuthedRpc(rt: NodeRuntime, label = 'test-client') {
         type: 'handshake',
         requestId,
         payload: {
-          protocol: { current: 1, min: 1, max: 1 },
+          protocol: { ...PROTOCOL_GENERATION },
           databaseSchema: { current: 1, min: 1, max: 1 },
         },
       }),
@@ -112,14 +113,22 @@ export async function connectAuthedRpc(rt: NodeRuntime, label = 'test-client') {
           method,
           payload,
           environmentId,
-          protocolVersion: 1,
+          protocolVersion: PROTOCOL_GENERATION.current,
           idempotencyKey: key,
         }),
       )
     })
 
+  /** Every server message, including pushed `stream` frames. */
+  const onMessage = (listener: (msg: Record<string, unknown>) => void) => {
+    const handler = (data: WebSocket.RawData) => listener(JSON.parse(data.toString()) as Record<string, unknown>)
+    ws.on('message', handler)
+    return () => { ws.off('message', handler) }
+  }
+
   return {
     rpc,
+    onMessage,
     close: () => ws.close(),
     device,
     clientSessionId: paired.clientSessionId,

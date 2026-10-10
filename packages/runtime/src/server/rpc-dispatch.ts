@@ -13,6 +13,7 @@ import {
   OPERATION_SCOPES,
   providerSessionIdFromResume,
   type AuthScope,
+  type EnvironmentAggregateType,
   type EnvironmentUsageReport,
   type ExecutionEnvironmentDescriptor,
   type NodeAgentSettingsPatch,
@@ -33,6 +34,7 @@ import { settingsFromSessionProviderConfig, type NodeSessionRecord } from '../se
 import type { AuthenticatedClient } from './auth-service'
 import { isNodeMutatingCall } from './rpc-mutating-methods'
 import { unsupportedMethodError } from './unsupported'
+import { openEventStream, type EventStreamFilter } from './event-stream'
 import type {
   ArtifactZonePort,
   RpcContext as HostRpcContext,
@@ -399,6 +401,10 @@ async function dispatchRpcInner(method: string, payload: unknown, hostCtx: HostR
       return handleSessionNotifyArtifactCompleted(payload, ctx)
     case 'session.events':
       return handleSessionEvents(payload, ctx)
+    case 'session.subscribe':
+      return handleSessionSubscribe(payload, ctx)
+    case 'session.unsubscribe':
+      return handleSessionUnsubscribe(payload, ctx)
     case 'session.messages.list':
       return handleSessionMessagesList(payload, ctx)
     case 'session.snapshot':
@@ -2863,12 +2869,58 @@ async function handleSessionNotifyArtifactCompleted(payload: unknown, ctx: RpcCo
   }
 }
 
+function streamFilter(p: Record<string, unknown>): EventStreamFilter {
+  const strings = (value: unknown): string[] | null =>
+    Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string' && v.length > 0) : null
+  const ids = strings(p.aggregateIds)
+  const types = strings(p.aggregateTypes) as EnvironmentAggregateType[] | null
+  return {
+    ...(ids ? { aggregateIds: new Set(ids) } : {}),
+    ...(types ? { aggregateTypes: new Set(types) } : {}),
+  }
+}
+
 function handleSessionEvents(payload: unknown, ctx: RpcContext): RpcResult {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readSession)
   if (denied) return denied
   const p = asRecord(payload)
   const after = String(p.afterSequence ?? '0')
-  return { result: { events: ctx.sessions.listEventsAfter(after, ctx.client) } }
+  const { aggregateIds, aggregateTypes } = streamFilter(p)
+  const events = ctx.sessions.listEventsAfter(after, ctx.client).filter((e) =>
+    (!aggregateIds || aggregateIds.has(e.aggregateId)) && (!aggregateTypes || aggregateTypes.has(e.aggregateType)))
+  return { result: { events } }
+}
+
+/**
+ * Push the events after `afterSequence` on this connection, then every new
+ * one as it commits (`openEventStream`). Frames can precede this result, so
+ * the client picks `subscriptionId`.
+ */
+function handleSessionSubscribe(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readSession)
+  if (denied) return denied
+  const streams = ctx.streams
+  if (!streams) return { error: { code: 'failed_precondition', message: 'session.subscribe needs a socket connection' } }
+  const p = asRecord(payload)
+  const subscriptionId = String(p.subscriptionId ?? '').trim()
+  const afterSequence = String(p.afterSequence ?? '').trim()
+  if (!subscriptionId) return { error: { code: 'invalid_argument', message: 'subscriptionId required' } }
+  if (!/^\d+$/.test(afterSequence)) return { error: { code: 'invalid_argument', message: 'afterSequence must be a decimal sequence' } }
+  const close = openEventStream({
+    source: ctx.sessions,
+    reader: ctx.client,
+    afterSequence,
+    filter: streamFilter(p),
+    push: (frame) => streams.push({ type: 'stream', subscriptionId, frame }),
+  })
+  streams.open(subscriptionId, close)
+  return { result: { subscriptionId } }
+}
+
+function handleSessionUnsubscribe(payload: unknown, ctx: RpcContext): RpcResult {
+  const subscriptionId = String(asRecord(payload).subscriptionId ?? '').trim()
+  ctx.streams?.close(subscriptionId)
+  return { result: { ok: true } }
 }
 
 /**

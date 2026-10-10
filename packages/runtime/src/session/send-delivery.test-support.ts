@@ -14,7 +14,8 @@ export function sendDeliveryHarness(runner: TurnRunner, harnessId: string, cwd?:
     save: (s) => { rows.set(s.sessionId, structuredClone(s)) },
     delete: (id) => { rows.delete(id) },
   }
-  const events: SessionEventLog = { headSequence: () => '0', listAfter: () => [], appendSession: () => {} }
+  const events: SessionEventLog = { headSequence: () => '0',
+    onAppend: () => () => {}, listAfter: () => [], appendSession: () => {} }
   const leases: LeaseGuard = { assertValid: () => {} }
   const runtime = new SessionRuntime(store, events, leases, `env-${harnessId}`, runner)
   const { sessionId } = runtime.create({ projectId: 'p', harnessId, ...(cwd ? { cwd } : {}) })

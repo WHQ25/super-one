@@ -56,6 +56,7 @@ function memoryPorts() {
   }
   const events: SessionEventLog = {
     headSequence: () => '0',
+    onAppend: () => () => {},
     listAfter: () => [],
     appendSession: () => {},
   }

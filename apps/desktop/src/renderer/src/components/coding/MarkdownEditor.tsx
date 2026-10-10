@@ -181,7 +181,7 @@ export function MarkdownEditor({ content, filePath, onDirtyChange, onContentChan
       <MediaBaseDirProvider value={mediaBaseDir}>
         <EditorContent
           editor={editor}
-          className="markdown-editor size-full overflow-auto text-sm [&_.tiptap]:size-full [&_.tiptap]:p-6 [&_.tiptap]:outline-none"
+          className="markdown-editor size-full overflow-auto [&_.tiptap]:size-full [&_.tiptap]:p-6 [&_.tiptap]:outline-none"
         />
       </MediaBaseDirProvider>
       {editor && tableMenu && (

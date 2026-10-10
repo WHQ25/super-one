@@ -239,12 +239,8 @@ export class TerminalSession {
     if (this._status === 'running') this.pty.resize(cols, rows)
   }
 
-  private composeSnapshotFrames(
-    requester: 'local' | string,
-    cut: number,
-    ansi: string,
-  ): { snapshot: TerminalSnapshot; frames: TerminalEvent[] } {
-    const snapshot: TerminalSnapshot = {
+  private snapshotMeta(requester: 'local' | string, cut: number): TerminalSnapshot {
+    return {
       terminalId: this.terminalId,
       cwd: this.cwd,
       title: this.title,
@@ -256,6 +252,10 @@ export class TerminalSession {
       writableByMe: this.ownership.isWritableBy(requester),
       subscriberCount: this.ownership.subscriberCount,
     }
+  }
+
+  private composeSnapshotFrames(snapshot: TerminalSnapshot, ansi: string): TerminalEvent[] {
+    const cut = snapshot.lastSeq
     const frames: TerminalEvent[] = []
     if (ansi.length <= this.snapshotSoftLimit) {
       frames.push({ type: 'terminal_snapshot', terminalId: this.terminalId, snapshot, ansi })
@@ -274,7 +274,7 @@ export class TerminalSession {
         })
       }
     }
-    return { snapshot, frames }
+    return frames
   }
 
   async snapshot(requester: 'local' | string): Promise<TerminalSnapshot> {
@@ -286,8 +286,8 @@ export class TerminalSession {
     const ansi = this.serializer.serialize()
     this.lastAnsi = ansi
 
-    const { snapshot, frames } = this.composeSnapshotFrames(requester, cut, ansi)
-    for (const f of frames) this.rawEmit(f)
+    const snapshot = this.snapshotMeta(requester, cut)
+    for (const f of this.composeSnapshotFrames(snapshot, ansi)) this.rawEmit(f)
 
     this.snapshotting = false
     const queued = this.deferred
@@ -301,12 +301,20 @@ export class TerminalSession {
     return this.seq
   }
 
-  async snapshotFrames(requester: 'local' | string): Promise<TerminalEvent[]> {
+  /** The screen now and the output sequence it covers, for a reader attaching. */
+  async attachState(requester: 'local' | string): Promise<{ snapshot: TerminalSnapshot; ansi: string }> {
+    // Coalesced output goes out first, so output after the cut starts above it.
+    this.flushBuffer(false)
     await new Promise<void>((resolve) => this.term.write('', resolve))
     const cut = this.seq
     const ansi = this.serializer.serialize()
     this.lastAnsi = ansi
-    return this.composeSnapshotFrames(requester, cut, ansi).frames
+    return { snapshot: this.snapshotMeta(requester, cut), ansi }
+  }
+
+  async snapshotFrames(requester: 'local' | string): Promise<TerminalEvent[]> {
+    const { snapshot, ansi } = await this.attachState(requester)
+    return this.composeSnapshotFrames(snapshot, ansi)
   }
 
   kill(): void {

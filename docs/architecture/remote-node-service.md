@@ -1106,6 +1106,13 @@ active Session.
 PTYs are created on the node. Terminal references are environment-scoped with
 authenticated ownership; output events carry a monotonic sequence, and the node
 keeps a bounded snapshot so a reconnect does not replay unlimited output.
+`terminal.list` lists the host's terminals; `terminal.attach` answers the
+screen and the output sequence it covers. A host whose terminal port has
+`onEvent` (the desktop) pushes the terminal topics on `topic.subscribe`
+streams as `terminal` messages (`terminal-stream.ts`): every event of a
+followed `terminal`, and row changes (created, exited, title, agent control)
+for `terminalList`; a reader applies output above its attach sequence. Hosts
+without it (the CLI node today) serve output by `terminal.read` polling.
 
 ### 14.2 Filesystem
 

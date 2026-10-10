@@ -1,4 +1,5 @@
 import type { DetailUpdate } from './detail'
+import type { TerminalEvent } from '../agent-types'
 import type { TopicRef } from './topics'
 
 /**
@@ -132,6 +133,13 @@ export interface SessionDetailMessage {
   type: 'detail'
   sessionId: string
   update: DetailUpdate
+}
+
+/** Server → client terminal event of a terminal or the terminal list this stream follows. */
+export interface TerminalStreamMessage {
+  type: 'terminal'
+  subscriptionId: string
+  event: TerminalEvent
 }
 
 export interface EnvironmentSnapshot {

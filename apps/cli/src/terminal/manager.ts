@@ -2,6 +2,7 @@ import { createRequire } from 'node:module'
 import { existsSync } from 'node:fs'
 import type { IPty } from 'node-pty'
 import type { TerminalReadResult } from '@superone/shared/environment'
+import type { TerminalListItem } from '@superone/shared/agent-types'
 import type { NodeDatabase } from '../db/database'
 
 const nodeRequire = createRequire(import.meta.url)
@@ -129,6 +130,16 @@ export class NodeTerminalManager {
   get(terminalId: string): NodeTerminalInfo | null {
     const live = this.byId.get(terminalId)
     return live ? { ...live.info } : null
+  }
+
+  list(): TerminalListItem[] {
+    return [...this.byId.values()].map(({ info }) => ({
+      terminalId: info.terminalId,
+      cwd: info.cwd,
+      title: info.title,
+      status: info.exitedAt === null ? 'running' : 'exited',
+      ownerDeviceId: null,
+    }))
   }
 
   attach(terminalId: string): { snapshot: string; sequence: string } {

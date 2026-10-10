@@ -9,6 +9,7 @@ import {
   type ProjectsPort,
   type RpcContext,
   type RpcHostHooks,
+  type TerminalsPort,
 } from '@superone/runtime/server'
 import { openNodeDatabase, type NodeDatabase } from '@superone/runtime/db'
 import { ControlLeaseService } from '@superone/runtime/lease'
@@ -54,6 +55,15 @@ const DESKTOP_UNSERVED_METHODS: ReadonlySet<string> = new Set([
 ])
 
 /**
+ * Terminal methods phones are refused until local terminals move onto control
+ * leases: until then a terminal's ownership is the only authority for writing to it.
+ */
+const LOCAL_TERMINAL_MUTATIONS: ReadonlySet<string> = new Set([
+  'terminal.create', 'terminal.write', 'terminal.resize', 'terminal.kill',
+  'terminal.acquireControl', 'terminal.renewControl', 'terminal.releaseControl',
+])
+
+/**
  * Only the agent catalog of the collaboration family: a controller lists what
  * it can launch here (harnesses, models, key ids and labels; never key
  * material). The mailbox stays with the controller that launches the child.
@@ -87,6 +97,8 @@ export interface DesktopDomainDeps {
   listAgentProfiles: () => SessionAgentProfile[]
   /** Harness readiness probes and runtime checks (desktop resolver). */
   hooks: Pick<RpcHostHooks, 'probeHarnessReadiness' | 'assertSessionHarnessRuntimeReady'>
+  /** This desktop's PTYs, which its phones see and controllers do not. */
+  terminals?: TerminalsPort
 }
 
 /** What one RPC needs besides who asks and how it is delivered. */
@@ -111,6 +123,7 @@ export class DesktopDomain {
     /** The node home (identity, channel root, config). */
     readonly nodeHome: string,
     private readonly context: DesktopRpcContext,
+    private readonly terminals: TerminalsPort | undefined,
   ) {}
 
   static open(deps: DesktopDomainDeps): DesktopDomain {
@@ -153,7 +166,7 @@ export class DesktopDomain {
         subscriptionUsage: { claudeAccounts: claudeUsageAccounts, log: usageLog },
       }
       const localSessions = new LocalSessionHost({ sessions: deps.sessions, events, rows: deps.rows })
-      return new DesktopDomain(db, identity, auth, sessions, localSessions, recorder, paths.nodeHome, context)
+      return new DesktopDomain(db, identity, auth, sessions, localSessions, recorder, paths.nodeHome, context, deps.terminals)
     } catch (err) {
       db.close()
       throw err
@@ -167,8 +180,8 @@ export class DesktopDomain {
 
   /**
    * The context this desktop's phones run in. They are its user's devices:
-   * every session (only read for now), and the workspace files and Git the
-   * window has, which controllers do not get.
+   * every session and terminal (only read for now), and the workspace files
+   * and Git the window has, which controllers do not get.
    */
   phoneContext(): DesktopRpcContext {
     return this.phone ??= this.openPhoneContext()
@@ -192,7 +205,8 @@ export class DesktopDomain {
       workspaceGit: new WorkspaceGitService(projects),
       workspaceWatch,
       workspaceTailWatch,
-      unservedMethods: new Set([...DESKTOP_UNSERVED_METHODS, ...LOCAL_SESSION_MUTATIONS]),
+      terminals: this.terminals,
+      unservedMethods: new Set([...DESKTOP_UNSERVED_METHODS, ...LOCAL_SESSION_MUTATIONS, ...LOCAL_TERMINAL_MUTATIONS]),
     }
   }
 

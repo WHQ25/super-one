@@ -3,6 +3,7 @@ import { app } from 'electron'
 import type { AppSettings, NodeHostController, NodeHostStatus } from '@superone/shared/agent-types'
 import { encodeNodePairingCode } from '@superone/shared/environment/node-pairing-code'
 import type { HostActionTerminalResult } from '@superone/shared/environment'
+import type { TerminalsPort } from '@superone/runtime/server'
 import { assertSessionHarnessRuntimeReady } from '@superone/runtime/harness'
 import { getMachineInfo } from '@superone/runtime/machine'
 import { isPrivateNetworkAddress, networkAddressScope } from '@superone/shared/private-network-address'
@@ -90,12 +91,12 @@ function tailscaleAddress(): string | undefined {
 export function applyNodeHostSettings(
   settings: NodeHostSettings,
   sessions: NodeHostSessionManager,
-  options: { relayUrl?: string } = {},
+  options: { relayUrl?: string; terminals?: TerminalsPort } = {},
 ): Promise<NodeHostStatus> {
   const next = transition.then(async () => {
     // The domain serves this desktop's phones too, so it opens whether or not controllers may connect.
     try {
-      openDesktopDomain(sessions)
+      openDesktopDomain(sessions, options.terminals)
     } catch (err) {
       log.warn('[node-host] domain failed to open: %s', err instanceof Error ? err.message : String(err))
     }
@@ -111,7 +112,7 @@ export function applyNodeHostSettings(
     try {
       void getMachineInfo()
       host = await DesktopNodeHost.start(
-        openDesktopDomain(sessions),
+        openDesktopDomain(sessions, options.terminals),
         {
           bindPort: port,
           bindHost: '0.0.0.0',
@@ -141,8 +142,9 @@ export function applyNodeHostSettings(
 }
 
 /** This desktop's environment backend, opened once; every connection is served from it. */
-export function openDesktopDomain(sessions: NodeHostSessionManager): DesktopDomain {
+export function openDesktopDomain(sessions: NodeHostSessionManager, terminals?: TerminalsPort): DesktopDomain {
   return domain ??= DesktopDomain.open({
+    terminals,
     userDataDir: app.getPath('userData'),
     appVersion: app.getVersion(),
     sessions,

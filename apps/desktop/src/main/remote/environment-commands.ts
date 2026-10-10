@@ -1,3 +1,4 @@
+import { isVoiceCommand } from '@superone/shared/realtime-voice'
 import type { AgentEvent, RemoteCommand } from '@superone/shared/agent-types'
 import type { EnvironmentGateway, MutatingControlContext, SessionRef } from '@superone/shared/environment'
 import { sessionMessageBlocksToChatMessages } from '@superone/shared/node-message-catalog'
@@ -27,6 +28,10 @@ export async function releaseEnvironmentDevice(deviceId: string): Promise<void> 
 
 /** Paired phone → authenticated configured CLI gateway. Never falls back to local. */
 export async function executeEnvironmentCommand(environmentId: string, command: RemoteCommand, deviceId: string, send: (event: AgentEvent) => Promise<void>, routeSessionId?: string): Promise<unknown> {
+  if (isVoiceCommand(command)) {
+    if (command.type === 'voice_status') return { protocol: 1, supported: false, reason: 'Voice is unavailable on routed environments.', call: null }
+    throw new Error('Voice is unavailable on routed environments.')
+  }
   if (command.type === 'environment_command') throw new Error('Nested environment routes are not allowed')
   const ref = { environmentId, sessionId: 'sessionId' in command ? command.sessionId ?? '' : routeSessionId ?? '' }
   const subscriptionKey = key(deviceId, ref)

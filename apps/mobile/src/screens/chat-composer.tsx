@@ -18,6 +18,7 @@ import { ScrollView, TextInput, View, useWindowDimensions } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { shouldUseTabletComposer } from '../layout-state'
 import { useKeyboardVisible } from '../ui/use-keyboard-visible'
+import { COMPOSER_HORIZONTAL_INSET, COMPOSER_TOP_GAP, PHONE_COMPOSER_RADIUS, composerBottomGap } from '../ui/composer-frame'
 import type {
   HarnessId, ModelOption, ImageAttachment, RemoteActiveProvider, RemoteAgentOption,
   RemoteEffortOption, RemoteModeOption, RemoteProviderOption, SandboxInfo, SandboxMode,
@@ -56,6 +57,7 @@ export type ComposerSelection = {
 }
 
 export type ChatComposerProps = {
+  voiceEntry?: ReactNode
   nativeDraft?: NativeComposerBinding
   provider: HarnessId
   contextAttachments?: ContextAttachment[]
@@ -162,9 +164,6 @@ export type ChatComposerProps = {
   overlay?: ReactNode
 }
 
-/** The phone input's pill corners. */
-const PHONE_INPUT_RADIUS = 20
-
 export function ChatComposer(props: ChatComposerProps) {
   const { tokens: { colors, radius } } = useMobileTheme()
   const mode = props.loadingConversation ? null : props.composerMode ?? null
@@ -184,7 +183,7 @@ export function ChatComposer(props: ChatComposerProps) {
   useEffect(() => {
     if (!keyboardVisible) setInputFocused(false)
   }, [keyboardVisible])
-  const bottomGap = keyboardVisible || !insets.bottom ? 8 : 0
+  const bottomGap = composerBottomGap(keyboardVisible, insets.bottom)
   const focused = props.focused ?? (inputFocused || keyboardVisible)
   const phoneActions = !tablet && focused
   const onFocus = () => setInputFocused(true)
@@ -237,13 +236,19 @@ export function ChatComposer(props: ChatComposerProps) {
   const steerSoon = !empty && props.streaming && props.canSteerSoon
     ? <IconButton icon={ChevronsUp} label="Steer soon" chrome={tablet ? 'circle' : 'plain'}
       iconSize={tablet ? 13 : 18} onPress={() => props.onSteerSoon?.()} /> : null
-  const sendCluster = <>{steerSoon}{steer}{send}{stop}</>
+  const voiceEntry = props.voiceEntry ? <View testID="composer-voice-entry">{props.voiceEntry}</View> : null
+  // Move both delivery modes together without remounting the native editor.
+  const phoneDelivery = voiceEntry || send ? <View testID="phone-composer-delivery"
+    style={{ flexDirection: 'row', alignItems: 'center' }}>{voiceEntry}{send}</View> : null
+  const sendCluster = <>{steerSoon}{steer}{tablet ? send : phoneDelivery}{stop}</>
   const actionBar = phoneActions ? <View testID="phone-composer-actions" style={{ flexDirection: 'row', alignItems: 'center' }}>
-    <IconButton icon={ImageIcon} label="Add image" onPress={props.onAttachImage} />
-    <IconButton icon={FileText} label="Add PDF" onPress={props.onAttachPdf} />
-    <IconButton glyph="/" label="Insert slash command" onPress={() => props.onInsertSnippet('/')} />
-    <IconButton icon={AtSign} label="Insert mention" onPress={() => props.onInsertSnippet('@')} />
-    <View style={{ flex: 1 }} />
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always"
+      style={{ flex: 1 }} contentContainerStyle={{ alignItems: 'center' }}>
+      <IconButton icon={ImageIcon} label="Add image" onPress={props.onAttachImage} />
+      <IconButton icon={FileText} label="Add PDF" onPress={props.onAttachPdf} />
+      <IconButton glyph="/" label="Insert slash command" onPress={() => props.onInsertSnippet('/')} />
+      <IconButton icon={AtSign} label="Insert mention" onPress={() => props.onInsertSnippet('@')} />
+    </ScrollView>
     {sendCluster}
   </View> : null
   // Header, transcript, todo strip and input are **one background**; the input's
@@ -253,7 +258,7 @@ export function ChatComposer(props: ChatComposerProps) {
   //
   // `keyboardShouldPersistTaps` keeps `/` and `@` from dismissing the keyboard
   // before they can write into the still-focused field.
-  return <View style={{ paddingHorizontal: 12, paddingTop: 4, paddingBottom: bottomGap, gap: 4, backgroundColor: colors.background }}>
+  return <View style={{ paddingHorizontal: COMPOSER_HORIZONTAL_INSET, paddingTop: COMPOSER_TOP_GAP, paddingBottom: bottomGap, gap: 4, backgroundColor: colors.background }}>
     {!tablet && !props.loadingConversation ? <View testID="phone-composer-status" style={{ flexDirection: 'row', minHeight: CHIP_HEIGHT }}>{controls}</View> : null}
     {props.overlay ?? <>
       {/* Only while there is nothing to send: a draft, or a typed `/` or `@`, is an
@@ -279,33 +284,38 @@ export function ChatComposer(props: ChatComposerProps) {
           ? { borderWidth: 1, borderColor: mode ? 'transparent' : colors.border, borderRadius: radius.lg, padding: 6 }
           : { flexDirection: 'row', alignItems: 'flex-end', gap: 4 }}>
           <View style={tablet ? undefined : { flex: 1 }}>
-            {!tablet && mode ? <ComposerModeBorder mode={mode} radius={PHONE_INPUT_RADIUS} /> : null}
-            <View style={tablet ? undefined : { borderWidth: 1, borderColor: mode ? 'transparent' : colors.border, borderRadius: PHONE_INPUT_RADIUS, overflow: 'hidden' }}>
+            {!tablet && mode ? <ComposerModeBorder mode={mode} radius={PHONE_COMPOSER_RADIUS} /> : null}
+            <View style={tablet ? undefined : { borderWidth: 1, borderColor: mode ? 'transparent' : colors.border, borderRadius: PHONE_COMPOSER_RADIUS, overflow: 'hidden' }}>
               <ContextAttachments items={props.contextAttachments ?? []} removing={props.removingContexts} error={props.contextError} onRemove={props.onRemoveContext} />
               {props.previewMcpMention ? <McpMentionPreviewMenu press={mcpPreview} read={props.previewMcpMention} onDismiss={() => setMcpPreview(null)} /> : null}
               {props.attachments.length ? <View style={{ padding: 6 }}><AttachmentStrip attachments={props.attachments} onRemove={props.onRemoveAttachment} /></View> : null}
-              {props.nativeDraft && nativeMentionEditorAvailable ? <NativeComposerInput key={props.nativeDraft.generation ?? 0} binding={props.nativeDraft} tablet={tablet}
-                editable={!props.loadingConversation} placeholder={props.placeholder ?? 'Ask anything…'} onSubmit={props.onSubmitFromKeyboard}
-                promptKeywords={HARNESS_CAPABILITIES[props.provider].promptKeywords}
-                onFocus={onFocus} onBlur={onBlur}
-                onMentionPress={props.previewMcpMention ? (press, editor) => {
-                  if (press.kind !== 'mcp-resource') return
-                  menuHost.measure(editor, (at) => setMcpPreview({ value: press.value, anchor: { ...press.frame, x: at.x + press.frame.x, y: at.y + press.frame.y } }))
-                } : undefined} /> : <TextInput
-                accessibilityLabel="Message"
-                editable={!props.loadingConversation}
-                style={{ color: colors.foreground, fontSize: 15, lineHeight: 22, minHeight: composerInputMinHeight(tablet), maxHeight: COMPOSER_INPUT_MAX_HEIGHT, paddingHorizontal: 12, paddingTop: 10, paddingBottom: 10, textAlignVertical: 'top' }}
-                placeholder={props.placeholder ?? 'Ask anything…'} placeholderTextColor={colors.mutedForeground}
-                value={props.draft} onChangeText={props.onDraft} multiline submitBehavior={tablet ? 'submit' : 'newline'}
-                selection={props.requestedCursor}
-                onSelectionChange={(event) => props.onCursorChange?.(event.nativeEvent.selection)}
-                onFocus={onFocus} onBlur={onBlur}
-                onSubmitEditing={props.onSubmitFromKeyboard} autoCorrect
-              />}
+              <View testID="composer-input-row" style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
+                <View style={{ flex: 1 }}>
+                  {props.nativeDraft && nativeMentionEditorAvailable ? <NativeComposerInput key={props.nativeDraft.generation ?? 0} binding={props.nativeDraft} tablet={tablet}
+                    editable={!props.loadingConversation} placeholder={props.placeholder ?? 'Ask anything…'} onSubmit={props.onSubmitFromKeyboard}
+                    promptKeywords={HARNESS_CAPABILITIES[props.provider].promptKeywords}
+                    onFocus={onFocus} onBlur={onBlur}
+                    onMentionPress={props.previewMcpMention ? (press, editor) => {
+                      if (press.kind !== 'mcp-resource') return
+                      menuHost.measure(editor, (at) => setMcpPreview({ value: press.value, anchor: { ...press.frame, x: at.x + press.frame.x, y: at.y + press.frame.y } }))
+                    } : undefined} /> : <TextInput
+                    accessibilityLabel="Message"
+                    editable={!props.loadingConversation}
+                    style={{ color: colors.foreground, fontSize: 15, lineHeight: 22, minHeight: composerInputMinHeight(tablet), maxHeight: COMPOSER_INPUT_MAX_HEIGHT, paddingHorizontal: 12, paddingTop: 10, paddingBottom: 10, textAlignVertical: 'top' }}
+                    placeholder={props.placeholder ?? 'Ask anything…'} placeholderTextColor={colors.mutedForeground}
+                    value={props.draft} onChangeText={props.onDraft} multiline submitBehavior={tablet ? 'submit' : 'newline'}
+                    selection={props.requestedCursor}
+                    onSelectionChange={(event) => props.onCursorChange?.(event.nativeEvent.selection)}
+                    onFocus={onFocus} onBlur={onBlur}
+                    onSubmitEditing={props.onSubmitFromKeyboard} autoCorrect
+                  />}
+                </View>
+                {!tablet && !phoneActions && phoneDelivery ? <View style={{ paddingRight: 2, paddingBottom: 2 }}>{phoneDelivery}</View> : null}
+              </View>
             </View>
           </View>
-          {tablet ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>{attach}{props.loadingConversation ? null : controls}{sendCluster}</View>
-            : phoneActions ? null : <>{send}{stop}</>}
+          {tablet ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>{attach}{props.loadingConversation ? null : controls}{sendCluster}{voiceEntry}</View>
+            : phoneActions ? null : stop}
         </View>
       </View>
     </ScrollView>

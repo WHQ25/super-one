@@ -64,10 +64,13 @@ const agentAPI = {
     ipcRenderer.invoke(AgentIpcChannels.WORKTREE_REMOVED, sessionId) as Promise<void>,
 
   startRealtimeVoice: (projectPath: string, sessionId: string, request: RealtimeVoiceStartRequest) =>
-    ipcRenderer.invoke(AgentIpcChannels.START_REALTIME_VOICE, projectPath, sessionId, request) as Promise<void>,
+    ipcRenderer.invoke(AgentIpcChannels.START_REALTIME_VOICE, projectPath, sessionId, request) as Promise<import('@superone/shared/realtime-voice').VoiceStatus>,
 
-  stopRealtimeVoice: (projectPath: string, sessionId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.STOP_REALTIME_VOICE, projectPath, sessionId) as Promise<void>,
+  stopRealtimeVoice: (projectPath: string, sessionId: string, attemptId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.STOP_REALTIME_VOICE, projectPath, sessionId, attemptId) as Promise<void>,
+
+  readyRealtimeVoice: (projectPath: string, sessionId: string, identity: import('@superone/shared/realtime-voice').VoiceIdentity) =>
+    ipcRenderer.invoke(AgentIpcChannels.READY_REALTIME_VOICE, projectPath, sessionId, identity) as Promise<void>,
 
   loadRealtimeTimeline: (sessionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.LOAD_REALTIME_TIMELINE, sessionId) as Promise<RealtimeTimelineResult | null>,
@@ -1859,8 +1862,8 @@ const appAPI = {
       ipcRenderer.removeListener(AgentIpcChannels.CODEX_SKILLS_CHANGED, handler)
     }
   },
-  onSessionChanged: (callback: () => void) => {
-    const handler = (): void => { callback() }
+  onSessionChanged: (callback: (projectPath?: string) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, projectPath?: string): void => { callback(projectPath) }
     ipcRenderer.on(AgentIpcChannels.SESSIONS_CHANGED, handler)
     return () => {
       ipcRenderer.removeListener(AgentIpcChannels.SESSIONS_CHANGED, handler)

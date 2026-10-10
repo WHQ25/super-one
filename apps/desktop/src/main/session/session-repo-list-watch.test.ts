@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ChatMessage } from '@superone/shared/agent-types'
+import type { AgentEvent, ChatMessage } from '@superone/shared/agent-types'
 
 const { getDbMock, getProjectIdMock } = vi.hoisted(() => ({
   getDbMock: vi.fn(),
@@ -18,6 +18,7 @@ vi.mock('../usage-stats-service', () => ({
 
 import { forkSessionRecord, insertSessionRecord, saveSessionStateBySid } from './session-repo'
 import { watchSessionList } from '../session-list-watch'
+import { bindSessionListNotifications } from '../session-list-notifications'
 
 /**
  * Only two reads decide anything here: whether the session already had a row,
@@ -106,6 +107,26 @@ describe('session list watchers on the session-repo writes', () => {
     getDbMock.mockReturnValue(fakeDb({ sessionExists: true }))
     persist()
     expect(changed).toEqual([])
+  })
+
+  it('invalidates desktop and phone lists when a voice-only session first becomes durable', () => {
+    const desktopChanged = vi.fn()
+    const remoteEvents: AgentEvent[] = []
+    const unbind = bindSessionListNotifications(desktopChanged, event => remoteEvents.push(event))
+    const voice = {
+      sid: 'voice-session', projectPath: '/repo', providerId: 'codex-base',
+      providerSessionId: 'thread-voice', messages: [], totalCostUsd: 0, contextTokens: 0,
+    }
+    try {
+      saveSessionStateBySid(voice)
+      expect(desktopChanged).toHaveBeenCalledTimes(1)
+      expect(desktopChanged).toHaveBeenCalledWith('/repo')
+      expect(remoteEvents).toEqual([{ type: 'session_list_changed', projectPath: '/repo' }])
+      getDbMock.mockReturnValue(fakeDb({ sessionExists: true }))
+      saveSessionStateBySid(voice)
+      expect(desktopChanged).toHaveBeenCalledTimes(1)
+      expect(remoteEvents).toHaveLength(1)
+    } finally { unbind() }
   })
 
   it('reports a session inserted ahead of its first message', () => {

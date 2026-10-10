@@ -289,3 +289,42 @@ The phone does not pay for its own bytes twice: the host echoes
 - A generic `batch` read command; independent reads are separate requests.
 - `get_mcp_icon_bytes` / content-hash MCP icons; `get_mcp_icons` returns the
   full server name → icon src map (https or data URI) on every call.
+
+
+## Foreground realtime voice control
+
+Voice uses protocol 1 in `packages/shared/src/realtime-voice.ts`:
+`voice_status`, `voice_start`, `voice_ready`, `voice_stop`. Start carries an SDP
+offer, optional voice/directories, and the displayed backing thread model, effort
+and service tier. Its expected account must match the host's effective session
+account. The existing Session settings path applies the selection before negotiation;
+there is no realtime audio model override or credential switch. Receipts carry
+capability and call identity/state; `realtime_call_signal` carries the directed
+answer/error/closed state. Session snapshots expose optional `realtimeVoice`;
+`get_system_info` also exposes harness/protocol capability before a session exists,
+with account eligibility checked against the phone's current selection. Landing
+voice creates an empty session through the ordinary creation path before capture.
+Creation/restore snapshots refresh the entry after optimistic session-ID races;
+missing capability hides the entry on older desktops. Routed CLI environments
+report unsupported without falling back to another agent or account.
+
+`RealtimeVoiceHost` in the desktop SessionManager admits one endpoint including
+pending starts. Phone identity comes from authenticated transport, never command
+payload. Start retains Session authorization/subscription interest, independent
+of the current chat; self-leave and self-switch defer release for that interest.
+Explicit device cleanup/kick still removes navigation ownership. Reconnection
+checks the same host epoch/call/attempt; loss is bounded by an eight-second grace.
+
+Raw SDP is intercepted before Session tracing/reduction/fanout and never cached,
+restored, persisted or replayed. Answers go through `sendEventToMobile` with exactly
+the initiating device ID, or its renderer WebContents. Generic broadcast paths
+reject signaling events; app-server and command/response trace serialization
+redacts SDP, including upstream errors that echo it. Audio frames do not use the
+relay event channel. The normal shared timeline carries completed speech items
+and delegated turns using its existing reduction and deduplication rules.
+
+The phone's app-lifetime media service outlives screens and ChatRuntime.
+Foreground controls stay visible across chat navigation. Actual AppState
+`background` (including lock) releases local media immediately and requests host
+stop; iOS permission-sheet `inactive` does not. Returning to the foreground never
+reopens capture. See [mobile voice](../features/mobile-codex-realtime-voice.md).

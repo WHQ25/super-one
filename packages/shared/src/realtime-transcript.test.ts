@@ -74,6 +74,28 @@ describe('mergeRealtimeTranscript', () => {
     expect(textOf(mergeRealtimeTranscript([], segments))).toEqual(['question', 'first half\n\nsecond half'])
   })
 
+  it('keeps live captions ordered beside unstamped history from an earlier call', () => {
+    const completed = [
+      segment('old', 'user', 'Earlier call', { realtimeSessionId: 'old-call' }),
+      segment('answer', 'assistant', 'Current answer', { startedAtMs: ms(3) }),
+    ]
+    const pending = [segment('question', 'user', 'Current question', { startedAtMs: ms(2) })]
+    const rows = mergeRealtimeTranscript([], completed, pending)
+    expect(textOf(rows)).toEqual(['Earlier call', 'Current question', 'Current answer'])
+    expect(rows.map(row => row.status)).toEqual(['complete', 'streaming', 'complete'])
+  })
+
+  it('keeps a grouped assistant row streaming until its last item completes', () => {
+    const completed = [segment('first', 'assistant', 'First part', { startedAtMs: ms(1) })]
+    const pending = [segment('second', 'assistant', 'Second part', { startedAtMs: ms(2) })]
+    const partial = mergeRealtimeTranscript([], completed, pending)[0]
+    expect(partial.status).toBe('streaming')
+    const final = mergeRealtimeTranscript([], [...completed, ...pending])[0]
+    expect(final.id).toBe(partial.id)
+    expect(final.status).toBe('complete')
+    expect(textOf([final])).toEqual(['First part\n\nSecond part'])
+  })
+
   it('keeps an unstamped turn where the previous one left the cursor', () => {
     const spine = [message('u1', 'user', 'typed first', 10), message('u2', 'user', 'typed last', 40)]
     const segments = [

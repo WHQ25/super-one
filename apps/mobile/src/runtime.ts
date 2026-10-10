@@ -29,6 +29,7 @@ import { applyEventToSession, createDefaultChatCoreSession, failedMessageResend,
 import { AGENT_EVENT_BATCH_MS } from '@superone/shared/agent-event-batcher'
 import { sandboxInfoFromMode } from '@superone/shared/harness/harness-sandbox'
 import type { CachedTranscript, RelayClient } from '@superone/relay-client'
+import type { VoiceCapability } from '@superone/shared/realtime-voice'
 import { restoreSession } from '@superone/relay-client'
 import { randomId } from './ids'
 import { newMessageId } from '@superone/shared/message-id'
@@ -63,6 +64,7 @@ export class ChatRuntime {
   worktree: SessionWorktreeFacts = NO_WORKTREE
   projectPath = ''
   sessionId = ''
+  realtimeVoice?: VoiceCapability
   provider: HarnessId | string = 'claude'
   permissionModes: string[] = ['default', 'acceptEdits', 'plan', 'bypassPermissions']
   sessionTitle = ''
@@ -107,6 +109,7 @@ export class ChatRuntime {
     if (this.projectPath !== projectPath || this.sessionId !== sessionId) this.widgetComposers.releaseAll()
     this.projectPath = projectPath
     this.sessionId = sessionId
+    this.realtimeVoice = undefined
     this.appContexts.restore(undefined)
     this.resolvedQuestionIds.clear()
     this.resolvedPermissionIds.clear()
@@ -133,6 +136,7 @@ export class ChatRuntime {
       const restored = prepared ?? await restoreSession(this.client, projectPath, sessionId, cached)
       if (generation !== this.restoreGeneration) return
       this.sourceEnvironmentId = restored.snapshot.sourceEnvironmentId ?? null
+      this.realtimeVoice = restored.snapshot.realtimeVoice
       this.restoreMetrics = restored.metrics
       this.appContexts.restore(restored.snapshot.mcpAppContexts)
       this.navigationAvailable = restored.navigationAvailable === true
@@ -177,6 +181,8 @@ export class ChatRuntime {
       // broadcasts it, so a buffered event is a duplicate of something already here
       // and the reducer needs the baseline present to recognise it as one.
       session.realtimeSegments = restored.snapshot.realtimeSegments ?? []
+      session.realtimeThreadMessages = restored.snapshot.realtimeThreadMessages ?? []
+      session.realtimeHasTimeline = restored.snapshot.realtimeHasTimeline ?? session.realtimeSegments.length > 0
       session.realtimeSessionId = restored.snapshot.activeRealtimeSessionId ?? null
       const restoreEvents = [
         ...(restored.snapshot.pendingInteractions ?? []),
@@ -288,6 +294,7 @@ export class ChatRuntime {
     this.projectPath = projectPath
     this.sessionId = sessionId
     this.sourceEnvironmentId = null
+    this.realtimeVoice = undefined
     this.creating = true
     try {
       const id = await this.createOnHost(projectPath, sessionId, opts)
@@ -326,6 +333,7 @@ export class ChatRuntime {
       // The subscription reports the authenticated owner before buffered events
       // are replayed, just as restore does for an existing session.
       this.sourceEnvironmentId = subscribed.snapshot?.sourceEnvironmentId ?? null
+      this.realtimeVoice = subscribed.snapshot?.realtimeVoice
       const { epoch, batches } = this.client.releaseBuffer()
       this.eventEpoch = epoch
       for (const batch of batches) this.ingest(batch as AgentEvent[], epoch)

@@ -26,6 +26,7 @@ describe('normalizeCapabilities', () => {
       drafts: false,
       syncZone: false,
       messageIdempotency: false,
+      mobileRealtimeVoice: false,
     })
   })
 
@@ -57,6 +58,12 @@ describe('intersectCapabilities', () => {
     expect(intersectCapabilities(node, node).syncZone).toBe(true)
     expect(intersectCapabilities(node, normalizeCapabilities({ ...node, syncZone: undefined })).syncZone).toBe(false)
     expect(normalizeCapabilities({ syncZone: true }).syncZone).toBe(true)
+  })
+
+  it('keeps mobile voice disabled on nodes that do not explicitly support it', () => {
+    expect(LOCAL_ENVIRONMENT_CAPABILITIES.mobileRealtimeVoice).toBe(true)
+    expect(intersectCapabilities(LOCAL_ENVIRONMENT_CAPABILITIES, PHASE1_NODE_CAPABILITIES).mobileRealtimeVoice).toBe(false)
+    expect(normalizeCapabilities({ mobileRealtimeVoice: true }).mobileRealtimeVoice).toBe(true)
   })
 })
 

@@ -172,9 +172,14 @@ export function useSidebarSessions({ currentFolder, selectedHostConnectionId, ho
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentFolder, currentStatus, currentActiveSid])
   useEffect(() => {
-    if (!currentFolder) return
-    return window.app.onSessionChanged(() => {
-      refreshFolderSessions(currentFolder)
+    return window.app.onSessionChanged((projectPath) => {
+      // A phone can create voice in another expanded project while desktop stays
+      // in its current chat. Refresh that cached list without switching chats.
+      if (projectPath) {
+        if (projectPath === currentFolder || folderSessionsRef.current[projectPath]) refreshFolderSessions(projectPath)
+      } else {
+        for (const folder of new Set([...Object.keys(folderSessionsRef.current), ...(currentFolder ? [currentFolder] : [])])) refreshFolderSessions(folder)
+      }
       refreshPinned()
       // A collaboration child pointed outside every open project registers its
       // own — without this the new project row only appears after a restart.

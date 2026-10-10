@@ -67,6 +67,11 @@ export interface SessionProjection {
 export type QueuedMessageAction = 'edit' | 'steer' | 'steerSoon'
 
 export interface ReductionProjection extends SessionProjection {
+  /** Native selects the empty-history hint independently of media/history arrival. */
+  emptyState?: 'voice-starting' | 'voice-ready' | 'voice-stopping' | 'voice-empty' | 'codex' | null
+  /** Voice and backing-thread records remain separate; activity rows are never chat messages. */
+  conversationView?: 'realtime' | 'thread'
+  realtimeActivities?: import('@superone/shared/realtime-transcript-projection').ProjectedRealtimeActivity[]
   /** Optional reliable-delivery receipt; legacy hosts can keep sending bare projections. */
   delivery?: { channelId: string; sequence: number }
   messagePatches?: ChatMessage[]

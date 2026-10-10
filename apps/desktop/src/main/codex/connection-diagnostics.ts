@@ -1,3 +1,4 @@
+import { redactVoiceText } from '@superone/shared/realtime-voice'
 import { redactHarnessDiagnosticText } from '@superone/shared/environment'
 import type { ResolvedService } from '@superone/shared/platform-registry'
 import log from '../logger'
@@ -47,6 +48,7 @@ export function createCodexConnectionDiagnostics(options: {
     ...Object.entries(env).filter(([key]) => /key|token|secret|password|authorization/i.test(key)).map(([, value]) => value),
   ].filter((value): value is string => Boolean(value)))].sort((a, b) => b.length - a.length)
   const redact = (value: string): string => {
+    value = redactVoiceText(value)
     value = value.replace(/\x1b\[[0-9;]*m/g, '')
     for (const secret of secrets) value = value.split(secret).join('[REDACTED]')
     value = value.replace(/https?:\/\/[^\s"'<>]+/g, diagnosticUrl)

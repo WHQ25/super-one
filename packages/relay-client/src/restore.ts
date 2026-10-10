@@ -19,6 +19,7 @@ export type HistoryPage = {
 }
 
 export type SessionSnapshot = {
+  realtimeVoice?: import('@superone/shared/realtime-voice').VoiceCapability
   sourceEnvironmentId?: string | null
   /** All active context, including Views outside the loaded history pages. */
   mcpAppContexts?: McpAppContextSource[]
@@ -47,6 +48,9 @@ export type SessionSnapshot = {
    * them in their own table — so they ride the snapshot rather than the history pages.
    */
   realtimeSegments?: RealtimeTimelineSegment[]
+  /** Canonical backing rows supply delegated activity even outside the current history page. */
+  realtimeThreadMessages?: ChatMessage[]
+  realtimeHasTimeline?: boolean
   activeRealtimeSessionId?: string | null
   /**
    * The session's goal as the host last heard it; null when there is none. The

@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { act, renderHook, waitFor } from '@testing-library/react'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { appState, mockEnvironment, sessionFixtures } from '../AppSidebar.test-setup'
 import { useSidebarSessions } from './use-sidebar-sessions'
 
@@ -54,4 +54,17 @@ it('clears the in-flight request after a failed load so a later refresh can reco
   await act(async () => { await result.current.loadFolderSessions(FOLDER, 'refresh') })
   expect(result.current.folderSessions[FOLDER]).toMatchObject(sessionFixtures.byFolder[FOLDER])
   expect(mockEnvironment.listSessions).toHaveBeenCalledTimes(2)
+})
+
+it('refreshes a phone-created voice session in another cached project without selecting it', async () => {
+  let changed!: (projectPath?: string) => void
+  vi.mocked(window.app.onSessionChanged).mockImplementation(callback => { changed = callback; return () => {} })
+  const { result } = setup()
+  await act(async () => { await result.current.loadFolderSessions(FOLDER, 'expand') })
+  const voice = { sessionId: 'phone-voice', title: 'Voice conversation', provider: 'codex', lastActiveAt: '2026-10-10T00:00:00.000Z', messageCount: 0 }
+  sessionFixtures.byFolder[FOLDER] = [voice, ...sessionFixtures.byFolder[FOLDER]]
+  mockEnvironment.listSessions.mockClear()
+  await act(async () => { changed(FOLDER) })
+  await waitFor(() => expect(result.current.folderSessions[FOLDER][0]).toMatchObject(voice))
+  expect(mockEnvironment.listSessions).toHaveBeenCalledWith('local', FOLDER, { limit: 13, offset: 0 })
 })

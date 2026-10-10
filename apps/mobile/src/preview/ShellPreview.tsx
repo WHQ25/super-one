@@ -1,3 +1,4 @@
+import { MobileVoiceGallery } from '../voice/voice-preview'
 import { Empty as EmptyLedger, TrafficAndReset, Narrow as NarrowLedger } from '../ui/network-ledger-panel.stories'
 import { networkLedger } from '../network-ledger'
 import { DraftsPreview } from '../navigation/workspace-drafts.stories'
@@ -440,7 +441,7 @@ export function ShellPreview({ initialPage = 'New session', initialHarness = 'cl
   }, (message) => Alert.alert('Could not send', message))
   const chat = page === 'New session' || page === 'Chat' || page === 'Workspace'
   // Standalone galleries share the catch-all 'files' route but draw themselves.
-  const gallery = page === 'Network ledger' || page === 'Drafts' || page === 'Icons' || page === 'Git indicators' || page === 'Session status' || page === 'Composer suggestions' || page === 'Composer modes' || page === 'Chip editor' || page === 'LAN browser' || page === 'Loading states' || page === 'Usage'
+  const gallery = page === 'Network ledger' || page === 'Drafts' || page === 'Icons' || page === 'Git indicators' || page === 'Session status' || page === 'Composer suggestions' || page === 'Composer modes' || page === 'Chip editor' || page === 'LAN browser' || page === 'Loading states' || page === 'Usage' || page === 'Voice'
   const route = chat ? 'chat' : page === 'Project' ? 'project-picker' : page === 'Add project' ? 'add-project' : page === 'Worktree' ? 'worktree' : page === 'Branch' ? 'branch' : page === 'Additional folders' || page === 'Browse folders' ? 'add-dir' : page === 'Collaboration request' ? 'collab-request' : page === 'Devices' || page === 'Pairing' ? 'pair' : page === 'Terminal' ? 'terminal' : page === 'Session search' ? 'session-search' : page === 'Settings' ? 'settings' : 'files'
   /** One workspace, two mounts: the drawer below and the sidebar in the row. */
   const previewWorkspace = {
@@ -616,6 +617,7 @@ todos={page === 'Chat' ? previewTodos : {}} draft={chatDraft.draft} streaming={p
           {page === 'Composer modes' ? <ComposerModeGallery /> : null}
           {page === 'Loading states' ? <LoadingStateGallery /> : null}
           {page === 'Usage' ? <UsageGallery /> : null}
+          {page === 'Voice' ? <MobileVoiceGallery /> : null}
           {page === 'Chip editor' ? <><PasteChipComposerPreview /><MentionEditorPreview /></> : null}
           {route === 'files' && !gallery ? (page === 'File search' ? <FileFinderView
             query="chat" busy={false} onQuery={() => {}}

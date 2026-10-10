@@ -77,6 +77,22 @@ async function send(page: Page, envelope: unknown): Promise<void> {
 
 test.beforeEach(async ({ page }) => openChat(page))
 
+test('voice and backing empty hints follow connection and view changes without messages', async ({ page }) => {
+  await send(page, { type: 'setViewport', fontScale: 1, locale: 'zh' })
+  await send(page, { type: 'hydrate', messages: [], emptyState: 'voice-starting' })
+  await expect(page.getByTestId('transcript-empty')).toHaveText('正在连接语音…')
+  await send(page, { type: 'applyReductionPatch', emptyState: 'voice-ready' })
+  await expect(page.getByTestId('transcript-empty')).toHaveText('语音已接通，可以开始说话。')
+  await send(page, { type: 'hydrate', messages: [], conversationView: 'thread', emptyState: 'codex' })
+  await expect(page.getByTestId('transcript-empty')).toHaveText('Codex 的消息和执行过程会显示在这里。')
+  await send(page, { type: 'setViewport', fontScale: 1, locale: 'en' })
+  await expect(page.getByTestId('transcript-empty')).toHaveText('Codex messages and work will appear here.')
+  await send(page, { type: 'applyReductionPatch', emptyState: 'voice-stopping' })
+  await expect(page.getByTestId('transcript-empty')).toHaveText('Ending voice…')
+  await send(page, { type: 'hydrate', messages: [], emptyState: null })
+  await expect(page.getByTestId('transcript-empty')).toHaveText('Waiting for session…')
+})
+
 test('provider mention brands retain visible artwork in both themes', async ({ page }, testInfo) => {
   const refs = ['claude-base', 'codex-review', 'acp-base:grok-build', 'opencode-base', 'cursor-base', 'dsh-base', 'acp-base:custom']
   await send(page, { type: 'hydrate', messages: refs.map((ref) => textMessage(ref, wrapAgentMention(ref, ref), { role: 'user' })) })

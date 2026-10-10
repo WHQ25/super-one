@@ -31,3 +31,11 @@ describe('serializeTraceData', () => {
     expect(parsed.head.startsWith('[{"i":0')).toBe(true)
   })
 })
+
+
+it('redacts nested offers/answers and SDP echoed in receipt errors', () => {
+  const sdp = 'v=0\r\na=ice-pwd:private\r\na=fingerprint:private'
+  const serialized = serializeTraceData({ command: { request: { sdp } }, result: { transport: { sdp } }, error: `upstream ${JSON.stringify({ sdp })}` })
+  expect(serialized).not.toContain('private')
+  expect(JSON.parse(serialized).command.request.sdp).toBe('[REDACTED]')
+})

@@ -94,8 +94,6 @@ export function RealtimeCallControls({ disabled = false, layout = 'toolbar', mic
       {outputMuted ? <VolumeX /> : <Volume2 />}
     </IconButton>
   )
-  // Keep the hang-up visually consistent; the tooltip carries the destructive
-  // meaning without turning the action into a red alert.
   const hangUp = (
     <IconButton
       key="hang-up"
@@ -104,7 +102,7 @@ export function RealtimeCallControls({ disabled = false, layout = 'toolbar', mic
       disabled={disabled}
       tooltip={t('chat.realtimeVoice.stop')}
       className={cn(
-        'rounded-full bg-muted-foreground text-background hover:bg-foreground hover:text-background',
+        'rounded-full bg-error text-white hover:bg-error/90 hover:text-white',
         centered && 'size-6 [&_svg:not([class*=size-])]:size-3.5',
       )}
       onClick={() => { void stopRealtimeCall() }}

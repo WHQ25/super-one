@@ -1,4 +1,5 @@
 import { detailUpdates, isProgressiveSession, projectProgressiveEvent } from './progressive-session'
+import { isVoiceSignalingEvent } from '@superone/shared/realtime-voice'
 import { takeAttachmentOrigin, withoutAttachmentBytes } from './attachment-echo'
 import { SESSION_ACTIVITY_EVENTS } from '@superone/shared/session-activity'
 import type { AgentEvent, ChatMessage } from '@superone/shared/agent-types'
@@ -31,6 +32,7 @@ export class MobileBroadcaster {
   ) {}
 
   async broadcast(event: AgentEvent): Promise<void> {
+    if (isVoiceSignalingEvent(event)) return
     if (!event.sessionId) {
       await this.transport.sendAgentEvent(event)
       return

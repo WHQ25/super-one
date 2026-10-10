@@ -60,6 +60,15 @@ function dependencies(
 }
 
 describe('remote harness system info', () => {
+  it('advertises voice before a Codex session exists, independently of the default account', async () => {
+    const deps = dependencies({ codex: { models: [], prompts: [] } })
+    deps.activeProvider = vi.fn(() => ({ id: 'custom', type: 'custom' }) as never)
+    expect((await buildRemoteHarnessSystemInfo('/project', 'codex', deps)).realtimeVoice)
+      .toEqual({ protocol: 1, supported: true })
+    expect((await buildRemoteHarnessSystemInfo('/project', 'claude', dependencies({}))).realtimeVoice)
+      .toEqual({ protocol: 1, supported: false })
+  })
+
   it.each([
     ['opencode', []],
     ['cursor', ['agent', 'plan', 'bypassPermissions']],

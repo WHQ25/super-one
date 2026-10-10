@@ -78,6 +78,8 @@ export function MobileHeader(props: {
   onOpenFiles: () => void
   /** Chat only: fork the open session. Passed only when the session can fork — see `SessionMenuBody`. */
   onFork?: (mode: SessionForkMode) => void
+  conversationView?: 'realtime' | 'thread'
+  onToggleConversationView?: () => void
   /** Files only: return to the folder the browser is anchored to. */
   onOpenFilesRoot?: () => void
   /**
@@ -203,6 +205,8 @@ export function MobileHeader(props: {
           />
         ) : (
           <SessionMenuBody
+            conversationView={props.conversationView}
+            onToggleConversationView={props.onToggleConversationView ? () => { menu.close(); props.onToggleConversationView?.() } : undefined}
             onOpenTerminal={() => { menu.close(); props.onOpenTerminal() }}
             onOpenFiles={() => { menu.close(); props.onOpenFiles() }}
             onFork={props.onFork ? (mode) => { menu.close(); props.onFork?.(mode) } : undefined}

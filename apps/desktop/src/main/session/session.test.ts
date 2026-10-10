@@ -3478,6 +3478,26 @@ describe('Session persist hook', () => {
     })
   })
 
+  it('starts voice with the displayed backing model, effort and Fast selection', async () => {
+    const { session, backend } = makeSession({ harnessId: 'codex', model: 'old', effort: 'low', apiProviderId: 'codex-account:cli' })
+    await session.startRealtimeVoice({ sdp: 'offer', selection: {
+      model: 'displayed', reasoningEffort: 'ultra', serviceTier: 'fast', apiProviderId: 'codex-account:cli',
+    } })
+    expect(backend.startOpts).toMatchObject({ model: 'displayed', effort: 'ultra', serviceTier: 'fast', apiProviderId: 'codex-account:cli' })
+    expect(session.snapshot.messages).toEqual([])
+    expect(session.getUiSettings()).toMatchObject({ selectedCodexModel: 'displayed', selectedCodexReasoningEffort: 'ultra', selectedCodexServiceTier: 'fast' })
+  })
+
+  it('rebuilds a started backing thread for voice effort changes and rejects custom defaults', async () => {
+    const { session, backend } = makeSession({ harnessId: 'codex', model: 'old', effort: 'low' })
+    await session.getRealtimeTimeline()
+    await session.startRealtimeVoice({ sdp: 'offer', selection: { model: 'displayed', reasoningEffort: 'high', serviceTier: null } })
+    expect(backend.rebuildCalls).toMatchObject([{ model: 'displayed', effort: 'high', serviceTier: null }])
+    const custom = makeSession({ harnessId: 'codex', getActiveDefaultApiProviderId: () => 'custom' })
+    await expect(custom.session.startRealtimeVoice({ sdp: 'offer' })).rejects.toThrow(/official Codex account/)
+    expect(custom.backend.realtimeCalls).toEqual([])
+  })
+
   it('moves a live delegated Codex turn timeline stamp from start to completion', () => {
     const { session, backend } = makeSession({
       providerId: 'codex-base',
@@ -4349,5 +4369,31 @@ describe('attachment admission before normal and queued turns', () => {
     backend.resolveSend?.()
     await sending
     session.dispose()
+  })
+})
+
+
+describe('Session transient voice signaling', () => {
+  it('pins the runtime while voice startup has an interest but no realtime-started event yet', () => {
+    const { session, backend } = makeSession()
+    backend.activeRuntime = true
+    const now = Date.now() + 120_000
+    expect(session.isRuntimeIdle(now, 30_000)).toBe(true)
+    const release = session.retainRealtimeVoice()
+    expect(session.isRuntimeIdle(now, 30_000)).toBe(false)
+    release()
+    expect(session.isRuntimeIdle(now, 30_000)).toBe(true)
+  })
+  it('directs raw SDP before normal fanout, trace, replay, or message reduction', () => {
+    const { session, backend } = makeSession()
+    const signals = vi.fn(); const broadcast = vi.fn()
+    session.onRealtimeSignal(signals); session.on(broadcast)
+    traceMock.mockClear(); broadcast.mockClear()
+    backend.emit({ type: 'realtime_sdp', sdp: 'private-answer' })
+    expect(signals).toHaveBeenCalledWith({ type: 'realtime_sdp', sdp: 'private-answer' })
+    expect(broadcast).not.toHaveBeenCalled()
+    expect(traceMock).not.toHaveBeenCalled()
+    expect(JSON.stringify(session.getReplayEvents())).not.toContain('private-answer')
+    expect(session.snapshot.messages).toEqual([])
   })
 })

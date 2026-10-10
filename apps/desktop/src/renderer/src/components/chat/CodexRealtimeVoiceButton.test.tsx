@@ -2,7 +2,8 @@
 
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AgentEvent } from '@superone/shared/agent-types'
+import type { AgentEvent, RealtimeVoiceStartRequest } from '@superone/shared/agent-types'
+import type { VoiceStatus } from '@superone/shared/realtime-voice'
 import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
 import { resetRealtimeCallForTests, useRealtimeCallStore } from '@/stores/realtime-call'
 import { VOICE_READY_CUE_MIC_GUARD_MS } from '@/lib/audio-cue'
@@ -65,7 +66,11 @@ function VoiceSurfaces({ sessionId = 'session-1' }: { sessionId?: string }) {
 
 describe('realtime voice surfaces', () => {
   let emit: ((event: AgentEvent) => void) | null
-  const startRealtimeVoice = vi.fn(async () => {})
+  const startRealtimeVoice = vi.fn(async (projectPath: string, sessionId: string, request: RealtimeVoiceStartRequest): Promise<VoiceStatus> => ({
+    protocol: 1, supported: true,
+    call: { projectPath, sessionId, attemptId: request.attemptId!, hostEpoch: 'host-1', callId: 'call-1', generation: 1, state: 'starting', owned: true },
+  }))
+  const readyRealtimeVoice = vi.fn(async () => {})
   const stopRealtimeVoice = vi.fn(async () => {})
   const stopTrack = vi.fn()
   const microphoneTrack = { enabled: true, stop: stopTrack }
@@ -83,6 +88,7 @@ describe('realtime voice surfaces', () => {
     useCodexRealtimeViewStore.setState({ sessions: {} })
     resetRealtimeCallForTests()
     startRealtimeVoice.mockClear()
+    readyRealtimeVoice.mockClear()
     stopRealtimeVoice.mockClear()
     stopTrack.mockClear()
     microphoneTrack.enabled = true
@@ -108,6 +114,7 @@ describe('realtime voice surfaces', () => {
       configurable: true,
       value: {
         startRealtimeVoice,
+        readyRealtimeVoice,
         stopRealtimeVoice,
         getRealtimeTimeline: vi.fn(async () => ({ segments: [], threadMessages: [], activeRealtimeSessionId: null, hasTimeline: false })),
         onAgentEvent: (callback: (event: AgentEvent) => void) => {
@@ -123,11 +130,25 @@ describe('realtime voice surfaces', () => {
     vi.useRealTimers()
   })
 
-  async function reachConnectedCall(): Promise<void> {
+  function answerCall(sdp = 'v=0\r\n'): void {
+    emit?.({ type: 'realtime_call_signal', sessionId: 'session-1', signal: {
+      kind: 'answer', sdp, attemptId: startRealtimeVoice.mock.calls.at(-1)![2].attemptId!,
+      hostEpoch: 'host-1', callId: 'call-1', generation: 1,
+    } })
+  }
+
+  async function reachAnsweredCall(): Promise<void> {
     fireEvent.click(screen.getByRole('button', { name: 'Start Voice Conversation' }))
     await waitFor(() => expect(startRealtimeVoice).toHaveBeenCalled())
-    emit?.({ type: 'realtime_sdp', sessionId: 'session-1', sdp: 'v=0\r\n' })
+    act(() => answerCall())
+    await waitFor(() => expect(peerConnections[0]?.setRemoteDescription).toHaveBeenCalled())
+  }
+
+  async function reachConnectedCall(): Promise<void> {
+    await reachAnsweredCall()
+    await act(async () => driveConnectionState('connected'))
     await waitFor(() => expect(screen.getByRole('button', { name: 'Mute microphone' })).toBeEnabled())
+    await waitFor(() => expect(microphoneTrack.enabled).toBe(true))
   }
 
   it('hides other session voice entries until the global call is idle', () => {
@@ -195,6 +216,7 @@ describe('realtime voice surfaces', () => {
     fireEvent.click(voiceButton)
 
     await waitFor(() => expect(startRealtimeVoice).toHaveBeenCalledWith('/repo', 'session-1', {
+      attemptId: expect.any(String),
       sdp: 'local-offer',
       additionalDirs: ['/extra'],
     }))
@@ -209,11 +231,9 @@ describe('realtime voice surfaces', () => {
     expect(started?.realtimeSessionId).toBe('realtime-1')
     expect(started?.starting).toBe(false)
 
-    emit?.({
-      type: 'realtime_sdp',
-      sessionId: 'session-1',
-      sdp: 'v=0\r\na=candidate:tcp 1 tcp 1671430143 192.0.2.1 443 typ host tcptype passive\r\n',
-    })
+    act(() => answerCall('v=0\r\na=candidate:tcp 1 tcp 1671430143 192.0.2.1 443 typ host tcptype passive\r\n'))
+    await act(async () => driveConnectionState('connected'))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Mute microphone' })).toBeEnabled())
 
     // The entry point gives its slot over to the call's own controls.
     await waitFor(() => expect(screen.getByTestId('realtime-call-indicator')).toBeInTheDocument())
@@ -229,15 +249,15 @@ describe('realtime voice surfaces', () => {
     expect(stopButton.querySelector('.lucide-power')).not.toBeNull()
     expect(stopButton).toHaveClass(
       'rounded-full',
-      'bg-muted-foreground',
-      'text-background',
-      'hover:bg-foreground',
+      'bg-error',
+      'text-white',
+      'hover:bg-error/90',
     )
     expect(stopButton).not.toHaveClass('bg-destructive', 'text-destructive-foreground')
 
     fireEvent.click(stopButton)
 
-    await waitFor(() => expect(stopRealtimeVoice).toHaveBeenCalledWith('/repo', 'session-1'))
+    await waitFor(() => expect(stopRealtimeVoice).toHaveBeenCalledWith('/repo', 'session-1', startRealtimeVoice.mock.calls[0]![2].attemptId))
     expect(stopTrack).toHaveBeenCalled()
     expect(useCodexRealtimeViewStore.getState().sessions['session-1']?.realtimeSessionId).toBeNull()
     await waitFor(() => expect(screen.queryByTestId('realtime-call-indicator')).toBeNull())
@@ -361,10 +381,10 @@ describe('realtime voice surfaces', () => {
 
   it('plays the ready cue once the media path connects, not when the answer arrives', async () => {
     render(<VoiceSurfaces />)
-    await reachConnectedCall()
+    await reachAnsweredCall()
     expect(playVoiceReadyCue).not.toHaveBeenCalled()
 
-    driveConnectionState('connected')
+    await act(async () => driveConnectionState('connected'))
     expect(playVoiceReadyCue).toHaveBeenCalledTimes(1)
 
     // An ICE restart re-enters `connected`; the call is still the same call.
@@ -375,10 +395,10 @@ describe('realtime voice surfaces', () => {
 
   it('stays silent and leaves capture alone when the speaker is muted', async () => {
     render(<VoiceSurfaces />)
-    await reachConnectedCall()
-    fireEvent.click(screen.getByRole('button', { name: 'Mute speaker' }))
+    await reachAnsweredCall()
+    act(() => useRealtimeCallStore.setState({ outputMuted: true }))
 
-    driveConnectionState('connected')
+    await act(async () => driveConnectionState('connected'))
     expect(playVoiceReadyCue).not.toHaveBeenCalled()
     expect(microphoneTrack.enabled).toBe(true)
   })
@@ -386,9 +406,9 @@ describe('realtime voice surfaces', () => {
   it('closes capture while the voice-shaped cue plays, then reopens it', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     render(<VoiceSurfaces />)
-    await reachConnectedCall()
+    await reachAnsweredCall()
 
-    driveConnectionState('connected')
+    await act(async () => driveConnectionState('connected'))
     expect(microphoneTrack.enabled).toBe(false)
 
     await vi.advanceTimersByTimeAsync(VOICE_READY_CUE_MIC_GUARD_MS - 1)
@@ -401,9 +421,9 @@ describe('realtime voice surfaces', () => {
   it('does not reopen a microphone the user muted during the cue', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     render(<VoiceSurfaces />)
-    await reachConnectedCall()
+    await reachAnsweredCall()
 
-    driveConnectionState('connected')
+    await act(async () => driveConnectionState('connected'))
     fireEvent.click(screen.getByRole('button', { name: 'Mute microphone' }))
 
     await vi.advanceTimersByTimeAsync(VOICE_READY_CUE_MIC_GUARD_MS)

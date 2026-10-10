@@ -6,6 +6,8 @@ import type { HarnessId } from '../session-types'
  */
 
 export interface EnvironmentCapabilities {
+  /** Desktop-hosted phone voice control v1; absent on older/CLI nodes. */
+  mobileRealtimeVoice?: boolean
   sessions: boolean
   /** Environment-qualified archive reads and session-link restore baseline. */
   sessionArchive?: boolean
@@ -54,6 +56,7 @@ export interface EnvironmentCapabilities {
 }
 
 export const LOCAL_ENVIRONMENT_CAPABILITIES: EnvironmentCapabilities = {
+  mobileRealtimeVoice: true,
   sessions: true,
   sessionArchive: true,
   harnessIds: ['claude', 'codex', 'acp', 'opencode'],
@@ -103,6 +106,7 @@ export function intersectCapabilities(
 ): EnvironmentCapabilities {
   const harnessSet = new Set(b.harnessIds)
   return {
+    mobileRealtimeVoice: Boolean(a.mobileRealtimeVoice && b.mobileRealtimeVoice),
     sessions: a.sessions && b.sessions,
     sessionArchive: Boolean(a.sessionArchive && b.sessionArchive),
     harnessIds: a.harnessIds.filter((id) => harnessSet.has(id)),
@@ -140,6 +144,7 @@ export function normalizeCapabilities(raw: unknown): EnvironmentCapabilities {
     key === 'harnessIds' ? false : Boolean(obj[key])
 
   return {
+    mobileRealtimeVoice: flag('mobileRealtimeVoice'),
     sessions: flag('sessions'),
     sessionArchive: flag('sessionArchive'),
     harnessIds,

@@ -1,3 +1,4 @@
+import { redactVoiceText } from '@superone/shared/realtime-voice'
 import { CODEX_CLIENT_EXTENSIONS } from '@superone/codex/client-extensions'
 import { CodexUserInputBudget } from '@superone/codex/user-input-budget'
 import { invalidateCodexMcpAppsCatalog } from '@superone/codex/mcp-apps-catalog'
@@ -642,11 +643,11 @@ export async function createAppServerConnection(
   const liveStderr = process.env.NODE_ENV === 'development' && !!process.env.RUST_LOG
   child.stderr?.setEncoding('utf8')
   child.stderr?.on('data', (chunk: string) => {
-    stderrChunks.push(chunk)
+    stderrChunks.push(redactVoiceText(chunk))
     diagnostics.stderr(chunk)
     if (liveStderr) {
       const line = chunk.replace(/\s+$/, '')
-      if (line) log.info('[codex.stderr] %s', line)
+      if (line) log.info('[codex.stderr] %s', redactVoiceText(line))
     }
   })
 

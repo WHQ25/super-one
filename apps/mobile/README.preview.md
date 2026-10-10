@@ -172,3 +172,11 @@ Toolchain notes for repeating this: `expo prebuild` does not run `pod install`, 
 CocoaPods needs `LANG=en_US.UTF-8`. `expo run:android` needs `JAVA_HOME` (Android
 Studio's bundled JBR works) and rejects a wireless-adb serial passed to `--device`,
 so omit the flag when one device is attached.
+
+
+The **Voice** shell gallery uses the production call controls with offline data:
+`superone-dev://native-preview?page=Voice&theme=dark&locale=zh`. It covers starting,
+silence, microphone input, agent output, simultaneous audio, muted microphone with
+agent playback, stopping, denied permission and connection failure. Samples are
+fixed offline fixtures; it never opens a microphone or calls a desktop/provider.
+Colocated story fixtures are in `src/voice/mobile-voice-controls.stories.tsx`.

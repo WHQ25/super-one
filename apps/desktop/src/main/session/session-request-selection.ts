@@ -1,10 +1,20 @@
-import type { SendMessageRequest } from '@superone/shared/agent-types'
+import type { RealtimeVoiceStartRequest, SendMessageRequest, SessionSettingsPatch } from '@superone/shared/agent-types'
 import type { HarnessId, SendProviderOrigin } from './types'
 
 export interface PendingSessionRequest {
   request: SendMessageRequest
   providerOrigin: SendProviderOrigin
   selectionRevision?: number
+}
+
+/** Voice shares the existing picker/default path without admitting a text turn. */
+export function voiceThreadSettings(request: RealtimeVoiceStartRequest): SessionSettingsPatch {
+  const selection = request.selection
+  return {
+    ...(selection?.model !== undefined ? { selectedCodexModel: selection.model } : {}),
+    ...(selection?.reasoningEffort !== undefined ? { selectedCodexReasoningEffort: selection.reasoningEffort } : {}),
+    ...(selection?.serviceTier !== undefined ? { selectedCodexServiceTier: selection.serviceTier } : {}),
+  }
 }
 
 /** Resolve request settings once for both durable session state and the backend. */

@@ -37,6 +37,14 @@ function makeFakeTransport(): MobileTransport & { sent: SentEntry[] } {
 }
 
 describe('MobileBroadcaster', () => {
+  it('never fans out voice signaling, even if it is accidentally submitted with session subscribers', async () => {
+    const session = makeFakeSession({ id: 's1', subscribers: ['owner', 'observer'] })
+    const transport = makeFakeTransport()
+    const broadcaster = new MobileBroadcaster(makeFakeManager(new Map([['s1', session]])), transport)
+    await broadcaster.broadcast({ type: 'realtime_sdp', sessionId: 's1', sdp: 'private-answer' })
+    await broadcaster.broadcast({ type: 'realtime_call_signal', sessionId: 's1', signal: { kind: 'answer', attemptId: 'one', callId: 'call', hostEpoch: 'epoch', generation: 1, sdp: 'private-answer' } })
+    expect(transport.sent).toEqual([])
+  })
   it('broadcasts events without sessionId to all peers (targets undefined)', async () => {
     const transport = makeFakeTransport()
     const broadcaster = new MobileBroadcaster(makeFakeManager(new Map()), transport)

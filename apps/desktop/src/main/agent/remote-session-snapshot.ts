@@ -1,3 +1,4 @@
+import { voiceCapability } from '../session/realtime-voice-host'
 import { projectProgressiveMessage } from '../remote/progressive-session'
 import type { Session } from '../session/types'
 import { remoteRestoreMessages, stripEventForRemote, stripMessagesForRemote } from '../remote-content'
@@ -7,6 +8,7 @@ import { mcpAppContextSources } from '@superone/shared/mcp-apps-state'
 import type { ChatMessage } from '@superone/shared/agent-types'
 import { localSessionEnvironmentId } from '../environment/session-identity'
 import type { SessionSnapshot } from '@superone/relay-client'
+import { mergeCodexThreadMessages } from '@superone/shared/realtime-thread-messages'
 
 export async function buildRemoteSessionSnapshot(session: Session | undefined | null, projectPath: string, sessionId: string, progressive = false, history: readonly ChatMessage[] = []): Promise<SessionSnapshot & Required<Pick<SessionSnapshot, 'inProgressMessages' | 'pendingInteractions' | 'status'>>> {
   await whenHighlighterReady()
@@ -21,7 +23,12 @@ export async function buildRemoteSessionSnapshot(session: Session | undefined | 
     ? await import('../acp/grok-sandbox').then((m) => m.currentGrokSandbox()).catch(() => undefined)
     : session?.getCurrentSandboxInfo()
   const realtimeTimeline = loadRealtimeTimeline(sessionId)
+  const realtimeThreadMessages = realtimeTimeline ? mergeCodexThreadMessages(
+    (snapshot?.messages ?? history).filter(message => message.metadata?.codexTimeline?.provenance === 'realtime-delegated'),
+    realtimeTimeline, { keepDelegationPrompts: true },
+  ) : []
   return {
+    realtimeVoice: voiceCapability(session),
     sourceEnvironmentId: localSessionEnvironmentId(),
     mcpAppContexts: mcpAppContextSources(snapshot?.messages ?? history),
     inProgressMessages,
@@ -35,6 +42,9 @@ export async function buildRemoteSessionSnapshot(session: Session | undefined | 
     ...(sandboxInfo ? { sandboxInfo } : {}),
     ...(realtimeTimeline ? {
       realtimeSegments: realtimeTimeline.segments,
+      realtimeHasTimeline: realtimeTimeline.hasTimeline,
+      realtimeThreadMessages: stripMessagesForRemote(realtimeThreadMessages
+        .map(message => progressive ? projectProgressiveMessage(message) : message), projectPath),
       activeRealtimeSessionId: realtimeTimeline.activeRealtimeSessionId,
     } : {}),
     contextTokens: snapshot?.contextTokens ?? 0,

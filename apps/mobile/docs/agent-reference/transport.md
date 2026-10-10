@@ -126,3 +126,22 @@ supported existing-session operations and device-level verification boundary.
   contiguous newest suffix (≤200 messages / 8 MiB) and recomputes `cursor` /
   `hasMore` for the oldest retained message (`transcript-cache-policy.ts`). Reusing
   the pre-trim cursor would skip the trimmed messages.
+
+
+## Foreground Codex voice
+
+`src/voice/use-mobile-voice.ts` owns one app-lifetime `MobileVoiceService`, not a
+ChatRuntime or navigation screen. Its raw `onArrived` consumer receives directed
+signaling even while a chat restore buffers transcript traffic. `relay-voice-control`
+uses the paired desktop's authenticated control transport; native media connects
+from the phone to the upstream WebRTC endpoint. No audio frames ride relay events.
+Session call interest keeps ownership and event subscriptions through self-leave
+and self-switch; normal device disconnect/kick cleanup remains explicit.
+
+Only real AppState `background` stops capture. Permission sheets can produce
+`inactive` on iOS and must not cancel microphone authorization. Capture resolving
+after cancellation stops every track and releases the native MediaStream. Ready
+requires connected native media with a live remote audio track and host acceptance;
+SDP application and `realtime_started` do not mark the call ready. Media/control
+loss has an eight-second recovery bound; a changed host epoch ends the call.
+See [mobile voice](../../../../docs/features/mobile-codex-realtime-voice.md).

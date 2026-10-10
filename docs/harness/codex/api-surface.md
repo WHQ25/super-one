@@ -176,8 +176,8 @@ feature integration. Unlisted new optional fields are tolerated and unused.
 | `thread/realtime/appendSpeech` | unused | No client call or dedicated handler. | — |
 | `thread/realtime/appendText` | unused | No client call or dedicated handler. | — |
 | `thread/realtime/listVoices` | partial | Desktop official-account voice catalog. | `apps/desktop/src/main/codex/codex-realtime.ts` |
-| `thread/realtime/start` | partial | Desktop official-account WebRTC; backendReasoningStatus and custom-provider/mobile audio are unused. | `apps/desktop/src/main/codex/codex-realtime.ts` |
-| `thread/realtime/stop` | partial | Desktop official-account voice lifecycle. | `apps/desktop/src/main/codex/codex-realtime.ts` |
+| `thread/realtime/start` | partial | Desktop and paired-phone official-account WebRTC; backendReasoningStatus and custom-provider audio are unused. | `apps/desktop/src/main/codex/codex-realtime.ts` |
+| `thread/realtime/stop` | partial | Host-owned desktop/paired-phone voice lifecycle; stop preserves delegated turns. | `apps/desktop/src/main/codex/codex-realtime.ts` |
 | `thread/search` | unused | No client call or dedicated handler. | — |
 | `thread/searchOccurrences` | unused | No client call or dedicated handler. | — |
 | `thread/settings/update` | partial | Desktop realtime/model/effort/tier synchronization; disabledPluginIds is unused. | `packages/codex/src/app-server-client.ts`, `apps/desktop/src/main/codex/codex-thread-selection.ts` |

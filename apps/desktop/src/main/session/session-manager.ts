@@ -1,3 +1,4 @@
+import { RealtimeVoiceHost } from './realtime-voice-host'
 import { randomUUID } from 'crypto'
 import { homedir } from 'os'
 import type {
@@ -94,6 +95,7 @@ export class SessionManagerImpl implements SessionManagerContract {
    * sidebar, a draft recreated on harness switch), and a completion landing
    * on screen must still count as read on every client.
    */
+  readonly realtimeVoice = new RealtimeVoiceHost()
   private foregroundViews = new Map<string, number>()
   private sessionProjects = new Map<string, string>()
   private activeByProject = new Map<string, string>()

@@ -7,8 +7,8 @@ import { isRealtimeDelegationText } from './realtime-timeline'
  * Voice utterances are not stored as chat messages — they live in their own
  * `session_realtime_timelines` row — so any surface that wants to show speech next
  * to typed turns has to merge two stores at read time. The desktop renderer does
- * that with two side-by-side surfaces; the phone is a read-only viewer and shows a
- * single list, which is what `mergeRealtimeTranscript` builds.
+ * that with separate voice and backing-thread surfaces. Live captions remain
+ * ephemeral on both surfaces.
  */
 
 /** A spoken turn: one user utterance and every assistant utterance answering it. */
@@ -87,12 +87,12 @@ export function buildRealtimeConversationTurns(
  * item boundary, not separate turns — they join into one markdown block, and identity
  * follows the first segment so it stays stable as later items arrive.
  */
-export function realtimeSegmentsToMessage(segments: readonly RealtimeTimelineSegment[]): ChatMessage {
+export function realtimeSegmentsToMessage(segments: readonly RealtimeTimelineSegment[], liveItems?: ReadonlySet<string>): ChatMessage {
   const head = segments[0]
   return {
     id: `codex-realtime-${segmentKey(head)}`,
     role: head.role,
-    status: 'complete',
+    status: segments.some(segment => liveItems?.has(segmentKey(segment))) ? 'streaming' : 'complete',
     content: [{
       type: 'text',
       text: segments.map((segment) => segment.text.trim()).filter(Boolean).join('\n\n'),
@@ -195,10 +195,10 @@ function turnStartedAt(turn: RealtimeConversationTurn): number | null {
   return earliest
 }
 
-function turnMessages(turn: RealtimeConversationTurn): ChatMessage[] {
+function turnMessages(turn: RealtimeConversationTurn, liveItems: ReadonlySet<string>): ChatMessage[] {
   const rows: ChatMessage[] = []
-  if (turn.user) rows.push(realtimeSegmentsToMessage([turn.user]))
-  if (turn.assistant.length > 0) rows.push(realtimeSegmentsToMessage(turn.assistant))
+  if (turn.user?.text.trim()) rows.push(realtimeSegmentsToMessage([turn.user], liveItems))
+  if (turn.assistant.some(item => item.text.trim())) rows.push(realtimeSegmentsToMessage(turn.assistant, liveItems))
   return rows
 }
 
@@ -223,17 +223,12 @@ function turnMessages(turn: RealtimeConversationTurn): ChatMessage[] {
 export function mergeRealtimeTranscript(
   messages: readonly ChatMessage[],
   segments: readonly RealtimeTimelineSegment[] | undefined,
+  liveSegments: readonly RealtimeTimelineSegment[] = [],
 ): ChatMessage[] {
   const spine = messages.filter((message) => !isRealtimeDelegationMessage(message))
-  if (!segments || segments.length === 0) return spine
+  if (!segments?.length && !liveSegments.length) return spine
 
-  const deduped = dedupeSegmentsByItem(segments)
-  // Provider positions are authoritative among voice segments, but only once every
-  // segment has one; a partial set would sort the stamped ones out of the stream.
-  const ordered = deduped.every((segment) => segment.position !== undefined)
-    ? [...deduped].sort((left, right) => left.position! - right.position!)
-    : deduped
-
+  const { segments: ordered, liveItems } = selectRealtimeSegments(segments ?? [], liveSegments)
   const spineTimes = spine.map((message) => Date.parse(message.createdAt))
   const out: ChatMessage[] = []
   let cursor = 0
@@ -248,11 +243,46 @@ export function mergeRealtimeTranscript(
         cursor += 1
       }
     }
-    out.push(...turnMessages(turn))
+    out.push(...turnMessages(turn, liveItems))
   }
   while (cursor < spine.length) {
     out.push(spine[cursor])
     cursor += 1
   }
   return out
+}
+
+/** A voice-only timeline, including partial captions but never duplicate committed items. */
+export function selectRealtimeSegments(
+  segments: readonly RealtimeTimelineSegment[],
+  liveSegments: readonly RealtimeTimelineSegment[] = [],
+): { segments: RealtimeTimelineSegment[]; liveItems: Set<string> } {
+  const completed = new Set(segments.map(segmentKey))
+  const liveItems = new Set(liveSegments.filter(item => !completed.has(segmentKey(item))).map(segmentKey))
+  const deduped = dedupeSegmentsByItem([...segments, ...liveSegments.filter(item => liveItems.has(segmentKey(item)))])
+  // Provider positions are authoritative among voice segments, but only once every
+  // segment has one; a partial set would sort the stamped ones out of the stream.
+  const ordered = deduped.every((segment) => segment.position !== undefined)
+    ? [...deduped].sort((left, right) => left.position! - right.position!)
+    : orderStampedCalls(deduped)
+
+  return { segments: ordered, liveItems }
+}
+
+/** Order concurrent captions within each call without moving legacy unstamped history. */
+function orderStampedCalls(segments: RealtimeTimelineSegment[]): RealtimeTimelineSegment[] {
+  const ordered = [...segments]
+  const calls = new Map<string, number[]>()
+  segments.forEach((segment, index) => {
+    const indices = calls.get(segment.realtimeSessionId) ?? []
+    indices.push(index)
+    calls.set(segment.realtimeSessionId, indices)
+  })
+  for (const indices of calls.values()) {
+    const items = indices.map(index => segments[index])
+    if (!items.every(item => item.startedAtMs !== undefined)) continue
+    items.sort((left, right) => left.startedAtMs! - right.startedAtMs!)
+    indices.forEach((index, at) => { ordered[index] = items[at] })
+  }
+  return ordered
 }

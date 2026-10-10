@@ -1,3 +1,4 @@
+import { containsVoiceCommand } from '@superone/shared/realtime-voice'
 import { frameHostPayload } from './remote/payload-codec'
 import type { ChannelEnvelope, PhoneHandshake, PhoneKey, PhoneLinkHost, ResolvePhoneKey } from './remote/phone-link-host'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
@@ -374,7 +375,7 @@ export class LanServer {
       ws.close(1008, 'access_off')
       return
     }
-    trace('remote.in', (command as { type?: string }).type ?? 'unknown', command)
+    if (!containsVoiceCommand(command)) trace('remote.in', command.type, command)
     const respond: LanRemoteResponder = (requestId, payload) => this.sendResponse(ws, channel, requestId, payload)
     this.callbacks.onCommand(command, respond, { deviceId: state.deviceId })
   }

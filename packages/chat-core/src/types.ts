@@ -197,10 +197,14 @@ export interface ChatCoreSession {
   /**
    * Codex realtime ("voice") utterances, which are not chat messages — the desktop
    * keeps them in their own `session_realtime_timelines` row. Held here so a remote
-   * viewer can weave speech back into the transcript it renders; the desktop reads
-   * its own `codex-realtime-view` store instead and ignores these two fields.
+   * viewer can render a separate spoken timeline; the desktop reads
+   * its own `codex-realtime-view` store instead.
    */
   realtimeSegments: RealtimeTimelineSegment[]
+  realtimeThreadMessages: ChatMessage[]
+  realtimeHasTimeline: boolean
+  /** Item-scoped speech still being transcribed; never persisted in snapshots. */
+  realtimeLiveSegments: RealtimeTimelineSegment[]
   realtimeSessionId: string | null
   _latestCodexTodoList: CodexTodoListItem | null
 }

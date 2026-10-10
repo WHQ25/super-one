@@ -41,8 +41,9 @@ interface AgentAPI {
   prewarm(projectPath: string, hint?: AgentPrewarmHint): Promise<void>
   interrupt(sessionId: string): Promise<boolean>
   reportWorktreeRemoved(sessionId: string): Promise<void>
-  startRealtimeVoice(projectPath: string, sessionId: string, request: RealtimeVoiceStartRequest): Promise<void>
-  stopRealtimeVoice(projectPath: string, sessionId: string): Promise<void>
+  startRealtimeVoice(projectPath: string, sessionId: string, request: RealtimeVoiceStartRequest): Promise<import('@superone/shared/realtime-voice').VoiceStatus>
+  stopRealtimeVoice(projectPath: string, sessionId: string, attemptId: string): Promise<void>
+  readyRealtimeVoice(projectPath: string, sessionId: string, identity: import('@superone/shared/realtime-voice').VoiceIdentity): Promise<void>
   loadRealtimeTimeline(sessionId: string): Promise<RealtimeTimelineResult | null>
   getRealtimeTimeline(projectPath: string, sessionId: string): Promise<RealtimeTimelineResult>
   stopTask(sessionId: string, taskId: string): Promise<boolean>
@@ -529,7 +530,7 @@ interface AppAPI {
   onFileChangeEvent(callback: (event: { folderPath: string }) => void): () => void
   onGitHeadChange(callback: (event: { folderPath: string }) => void): () => void
   onCodexSkillsChanged(callback: (event: { projectPath: string }) => void): () => void
-  onSessionChanged(callback: () => void): () => void
+  onSessionChanged(callback: (projectPath?: string) => void): () => void
 
   // Bash output watcher
   watchBashOutput(toolUseId: string, filePath: string, tailLines?: number): Promise<void>

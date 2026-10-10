@@ -1,3 +1,5 @@
+import { isVoiceCommand, containsVoiceCommand, redactVoiceText } from '@superone/shared/realtime-voice'
+import { executeVoiceCommand, preferredVoiceRequest, windowVoiceEndpoint, readyWindowVoice } from './realtime-voice-control'
 import { admitTurnAttachments } from '@superone/shared/attachment-turn'
 import { MOD_UI_UNAVAILABLE, asDeviceModUiRequest } from '@superone/shared/mod-ui'
 import { withTurnReceipt } from '../remote/turn-receipt'
@@ -633,7 +635,16 @@ export class AgentService {
     if (command.type === 'list_projects' || command.type === 'get_system_info' || command.type === 'list_sessions' || command.type === 'list_models') {
       log.info('[CONN-DESK] %s start transport=%s deviceId=%s', command.type, source?.transport ?? '?', deviceId)
     }
-    trace('remote.cmd', command.type, command)
+    if (!containsVoiceCommand(command)) trace('remote.cmd', command.type, command)
+    if (isVoiceCommand(command)) {
+      try {
+        const result = await executeVoiceCommand(command, { manager: this.requireSessionManager(), deviceId: source?.deviceId ?? '', transport: this.remoteControlService, canAccess: (path, sid) => this.canAccessSession(path, sid), preferredVoice: readAppSettings().agentPreference.codex.realtimeVoice })
+        await respond?.(command.requestId, result)
+      } catch (error) {
+        await respond?.(command.requestId, { error: error instanceof Error ? redactVoiceText(error.message) : 'Voice control failed.' })
+      }
+      return
+    }
     if (command.type === 'environment_command') {
       try {
         const { executeEnvironmentCommand } = await import('../remote/environment-commands')
@@ -2912,28 +2923,27 @@ export class AgentService {
       await session.markWorktreeRemoved()
     })
 
-    ipcMain.handle(AgentIpcChannels.START_REALTIME_VOICE, async (_event, projectPath: string, sessionId: string, request: import('@superone/shared/agent-types').RealtimeVoiceStartRequest) => {
-      this.throwIfRemoteLocked(projectPath)
-      // Realtime voice forces the session onto codex. Record the harness it had first:
-      // if it was not codex, resolving below recreates the session, which reads in the
-      // UI as the call "jumping to a new session".
-      const harnessBefore = this.sessionManager?.getSession(sessionId)?.snapshot.harnessId ?? '(none)'
-      const session = await this.getOrCreateActiveSession(projectPath, sessionId, { provider: 'codex' })
-      log.info('[agent-service] realtime voice start sid=%s harnessBefore=%s thread=%s', session.id, harnessBefore, session.snapshot.providerSessionId ?? '(none)')
-      const preferredVoice = readAppSettings().agentPreference.codex.realtimeVoice
-      await session.startRealtimeVoice(
-        request.voice || !preferredVoice
-          ? request
-          : { ...request, voice: preferredVoice },
-      )
+    ipcMain.handle(AgentIpcChannels.START_REALTIME_VOICE, async (event, projectPath: string, sessionId: string, request: import('@superone/shared/agent-types').RealtimeVoiceStartRequest) => {
+      const mgr = this.requireSessionManager()
+      if (!request.attemptId) throw new Error('Voice attempt is required.')
+      const existing = mgr.getSession(sessionId)
+      if (existing && existing.projectPath !== projectPath) throw new Error('Session project mismatch.')
+      const session = existing ?? await this.getOrCreateActiveSession(projectPath, sessionId, { provider: 'codex' })
+      const endpoint = windowVoiceEndpoint(event.sender, session)
+      return mgr.realtimeVoice.start(session, endpoint, request.attemptId, preferredVoiceRequest(request, readAppSettings().agentPreference.codex.realtimeVoice))
     })
 
-    ipcMain.handle(AgentIpcChannels.STOP_REALTIME_VOICE, async (_event, projectPath: string, sessionId: string) => {
-      const session = this.sessionManager?.getSession(sessionId)
-      if (!session) return
-      if (session.snapshot.projectPath !== projectPath) return
-      this.throwIfRemoteLocked(projectPath)
-      await session.stopRealtimeVoice()
+    ipcMain.handle(AgentIpcChannels.STOP_REALTIME_VOICE, (event, projectPath: string, sessionId: string, attemptId: string) => {
+      const mgr = this.requireSessionManager()
+      const session = mgr.getSession(sessionId)
+      if (!session || session.projectPath !== projectPath) return
+      return mgr.realtimeVoice.stop(session, windowVoiceEndpoint(event.sender, session), attemptId)
+    })
+    ipcMain.handle(AgentIpcChannels.READY_REALTIME_VOICE, (event, projectPath: string, sessionId: string, identity: import('@superone/shared/realtime-voice').VoiceIdentity) => {
+      const mgr = this.requireSessionManager()
+      const session = mgr.getSession(sessionId)
+      if (!session || session.projectPath !== projectPath) throw new Error('Session unavailable.')
+      readyWindowVoice(mgr, session, event.sender, identity)
     })
 
     ipcMain.handle(AgentIpcChannels.LOAD_REALTIME_TIMELINE, (_event, sessionId: string) => {

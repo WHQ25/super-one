@@ -8,6 +8,7 @@
     "eas-build-pre-install": "bun scripts/prepare-eas-install.ts",
     "eas-build-post-install": "bun run build:chat-view",
     "generate:theme": "bun scripts/generate-theme-tokens.ts",
+    "generate:voice-cue": "bun scripts/generate-voice-ready-cue.ts",
     "generate:icons": "bun run build:chat-view && bun scripts/generate-file-icons.ts && bun scripts/generate-harness-icons.ts && bun scripts/generate-permission-modes.ts && bun scripts/generate-mention-artwork.ts && bun scripts/generate-mention-brands.ts && bun scripts/generate-provider-brands.ts",
     "check:icons": "bun run build:chat-view && bun scripts/generate-file-icons.ts --check && bun scripts/generate-harness-icons.ts --check && bun scripts/generate-permission-modes.ts --check && bun scripts/generate-mention-artwork.ts --check && bun scripts/generate-mention-brands.ts --check && bun scripts/generate-provider-brands.ts --check",
     "predev": "bun run build:chat-view",
@@ -30,6 +31,7 @@
     "test:ui": "bun scripts/maestro.ts"
   },
   "dependencies": {
+    "@config-plugins/react-native-webrtc": "13.0.0",
     "@react-navigation/native": "^7.1.17",
     "@react-navigation/native-stack": "^7.3.26",
     "@shopify/react-native-skia": "2.2.12",
@@ -66,6 +68,7 @@
     "marked": "16.4.2",
     "react": "19.1.0",
     "react-native": "0.81.5",
+    "react-native-incall-manager": "4.3.0",
     "react-native-mmkv": "^4.3.2",
     "react-native-nitro-modules": "^0.37.1",
     "react-native-quick-base64": "3.0.1",
@@ -74,6 +77,7 @@
     "react-native-safe-area-context": "~5.6.0",
     "react-native-screens": "~4.16.0",
     "react-native-svg": "15.12.1",
+    "react-native-webrtc": "124.0.6",
     "react-native-webview": "13.15.0"
   },
   "devDependencies": {

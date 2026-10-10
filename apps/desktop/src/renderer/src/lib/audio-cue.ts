@@ -7,22 +7,8 @@
  * rendering the impulse is the only expensive part of a cue.
  */
 
-interface Voice {
-  /** Pitch in Hz. */
-  frequency: number
-  /** Seconds after the cue starts. */
-  startAt: number
-  /** Seconds the voice rings for. */
-  duration: number
-  /** Peak linear gain. */
-  gain: number
-  /** -1 hard left … 1 hard right. */
-  pan: number
-  /** Seconds to swell from silence to peak. */
-  attack: number
-  /** Vibrato rate in Hz. Detuned per voice so the parts never lock together. */
-  vibratoHz: number
-}
+import { VOICE_READY_CUE, VOICE_READY_CUE_REVERB_SECONDS as REVERB_SECONDS, type VoiceReadyPart as Voice } from '@superone/shared/voice-ready-cue'
+export { VOICE_READY_CUE_MIC_GUARD_MS } from '@superone/shared/voice-ready-cue'
 
 interface Formant {
   /** Band centre at onset — the "oo" vowel. */
@@ -47,30 +33,6 @@ const FORMANTS: Formant[] = [
   { from: 2530, to: 2600, gain: 0.18 },
 ]
 
-/** D major, voiced low-to-high and entering in sequence, as a choir would. */
-const VOICE_READY_CUE: Voice[] = [
-  { frequency: 146.83, startAt: 0, duration: 2.2, gain: 0.075, pan: 0, attack: 0.18, vibratoHz: 4.3 },
-  { frequency: 220, startAt: 0.04, duration: 2.2, gain: 0.055, pan: -0.3, attack: 0.2, vibratoHz: 4.9 },
-  { frequency: 293.66, startAt: 0.08, duration: 2.2, gain: 0.05, pan: 0.28, attack: 0.22, vibratoHz: 5.4 },
-  { frequency: 369.99, startAt: 0.13, duration: 2.2, gain: 0.038, pan: -0.18, attack: 0.24, vibratoHz: 4.6 },
-  { frequency: 440, startAt: 0.18, duration: 2.2, gain: 0.032, pan: 0.34, attack: 0.26, vibratoHz: 5.1 },
-]
-
-/** Seconds after a part peaks before it has decayed out of a VAD's way. */
-const MIC_GUARD_TAIL_SECONDS = 0.5
-
-/**
- * How long a live microphone should stay closed while the ready cue plays.
- *
- * The cue is a sawtooth shaped by vocal-tract formants, so its spectrum is by
- * construction the one voice-activity detection is trained to fire on — echo
- * cancellation is not a safe enough bet on its own. Derived from the cue so that
- * retuning the parts cannot silently leave the guard too short.
- */
-export const VOICE_READY_CUE_MIC_GUARD_MS = Math.round(
-  (Math.max(...VOICE_READY_CUE.map((voice) => voice.startAt + voice.attack)) + MIC_GUARD_TAIL_SECONDS) * 1000,
-)
-
 /** Fraction of a voice's duration spent morphing "oo" into "ah". */
 const VOWEL_MORPH_FRACTION = 0.55
 /** Narrow enough to read as a resonance rather than a tone control. */
@@ -79,12 +41,13 @@ const FORMANT_Q = 7
 const VIBRATO_DEPTH_RATIO = 0.005
 /** exponentialRampToValueAtTime cannot ramp to 0, so silence is approximated. */
 const SILENCE = 0.0001
-const REVERB_SECONDS = 2.6
 /** Higher exponents make the tail die away faster; ~2.1 reads as a large hall. */
 const REVERB_DECAY = 2.1
 const REVERB_WET = 0.42
 const REVERB_DRY = 0.85
-const MASTER_GAIN = 0.62
+// Formant filtering attenuates the chord heavily. Offline rendering at this gain
+// peaks near -12 dBFS, keeping the cue audible with headroom for the reverb.
+const MASTER_GAIN = 8
 
 interface CueBus {
   context: AudioContext

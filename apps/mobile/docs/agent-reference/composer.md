@@ -19,7 +19,26 @@ Modal dismissed the editor keyboard on Android. Non-primary overlay controls sha
 row instead of taking a 44 pt row of their own: dismiss is drawn at 28 pt with
 `hitSlop` (still a 44 pt target), retry sits beside the error message; mention paging auto-loads within 48 px of
 the end rather than offering a Load more row (`ui/composer-suggestions.tsx`).
-Phone layout: status row above a bordered input, Return inserts a newline. Tablet
+Phone layout: status row above a bordered input, Return inserts a newline.
+With the keyboard down, voice and Send share the input's right edge, voice first.
+With it up, both move together to the upper action row; attachment/slash/mention
+actions scroll horizontally on narrow phones. Send stays hidden for an empty draft
+without attachments. During a call in the voice view, the compact bottom voice
+Composer replaces the text surface while retaining its mounted draft editor;
+pending native decisions have priority. The top-right session menu switches between
+voice and backing Codex histories. Outside the live voice view, a circular audio-driven
+waveform replaces the disabled start icon in every text composer and returns to
+the owning voice session; other chat sessions do not stack an extra voice row.
+Acknowledged connection plays the bundled desktop cue through the native call
+player. UI hangup paints the stopping state before native cleanup, while
+background still releases capture immediately. Phone playback uses the distance sensor to switch
+between receiver and speaker, blanking the screen near the ear and restoring it
+when moved away. The voice row shares the text composer's inset and rounded border,
+with microphone mute on the left and hangup on the right. Connecting/stopping use
+text only; active calls fill the middle with thin Ultrathink rainbow waves and no
+visible listening label. Native WebRTC capture and decoded playback levels drive
+their amplitude, with silence returning to a flat line. Playback volume uses
+the phone's system controls; history navigation lives in the session menu. See [mobile voice](../../../../docs/features/mobile-codex-realtime-voice.md). Tablet
 (`shouldUseTabletComposer`): the desktop editor card with its toolbar inside, Return
 submits (`submitBehavior` in `screens/chat-composer.tsx`).
 

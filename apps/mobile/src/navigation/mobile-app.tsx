@@ -1,3 +1,7 @@
+import { useMobileVoice } from '../voice/use-mobile-voice'
+import type { VoiceCapability } from '@superone/shared/realtime-voice'
+import { sessionCreationOptions } from './session-creation-options'
+import { voicePresentation } from '../voice/voice-presentation'
 import { lookupSessionLinkMetadata, resolveSessionLink, sessionLinkBaseClient, type SessionLinkPreparation, type ResolvedSessionLink } from '../session-link-navigation'
 import { readConnectionWorkspace, readProjects } from '../connection-workspace'
 import { activatePreparedSessionLink } from '../session-link-transition'
@@ -79,7 +83,7 @@ import { resolveGoalCapability } from '@superone/shared/harness/harness-capabili
 import { goalComposerAction } from '@superone/shared/session-goal'
 import { sessionGoalTransitions, type GoalTransitions } from '../session-goal-actions'
 import { useAutoRecap } from './use-auto-recap'
-import { harnessSupportsSandbox, sandboxInfoFromMode } from '@superone/shared/harness/harness-sandbox'
+import { sandboxInfoFromMode } from '@superone/shared/harness/harness-sandbox'
 import { suggestionHarnessKey } from '@superone/shared/suggestion-harness-order'
 import { fileBrowserHome, joinRemotePath, parentRemotePath, resolveRemoteFilePath, type FileBrowserMode } from '../shell-state'
 import { getMobileDeviceName } from '../mobile-device-name'
@@ -90,7 +94,6 @@ import { ConnectedAppSettingsScreen } from '../screens/app-settings-screen'
 import type { ShellGitInfo } from '../project-types'
 import { describeSessionGit } from '../session-git-status'
 import {
-  buildWorktreeCreateOptions,
   LOCAL_WORKTREE_SELECTION,
   worktreeSelectionError,
   type NewSessionWorktreeSelection,
@@ -364,11 +367,32 @@ export function MobileApp() {
     clientRef, projectPath: project?.path, provider: selectedProvider, sessionId,
     projectDirs: workspaceDirs, onDirs: setWorkspaceDirs,
   })
+  const runtimeRef = useRef<ChatRuntime | null>(null)
+  const [sessionVoiceCapability, setSessionVoiceCapability] = useState<VoiceCapability>()
   // The relay's event callback is built once per connection, so it cannot close
   // over this render's hook — the same reason `runtimeRef` exists.
+  const mobileVoice = useMobileVoice({ clientRef,
+    target: project && sessionId ? { projectPath: project.path, sessionId, title: activeSessionTitle, harnessId: selectedProvider } : null,
+    sessionCapability: sessionVoiceCapability,
+    landing: project && !sessionId ? {
+      projectPath: project.path, harnessId: selectedProvider, capability: harnessSelection.realtimeVoice,
+      create: async (signal) => {
+        const target = await createSession(undefined, signal)
+        if (!target) throw new Error('Could not create voice conversation.')
+        return target
+      },
+    } : undefined,
+    connected: connectionState === 'connected', routed: !!routedEnvironmentId, additionalDirs: additionalDirs.sessionDirs,
+    providerId: harnessSelection.selectedProviderId ?? harnessSelection.defaultProviderId,
+    catalogReady: harnessSelection.catalogReady,
+    selection: { ...(selectedModel ? { model: selectedModel } : {}),
+      ...(selectedEffort ? { reasoningEffort: selectedEffort as CodexReasoningEffort } : {}),
+      serviceTier: harnessSelection.serviceTier, apiProviderId: harnessSelection.selectedProviderId ?? harnessSelection.defaultProviderId },
+  })
+  const mobileVoiceRef = useRef(mobileVoice)
+  mobileVoiceRef.current = mobileVoice
   const additionalDirsRef = useRef(additionalDirs)
   additionalDirsRef.current = additionalDirs
-  const runtimeRef = useRef<ChatRuntime | null>(null)
   const termRuntimeRef = useRef<TerminalRuntime | null>(null)
   // A collaboration request is a page, not a sheet; walking away from it rejects.
   const collab = useCollabRequest({
@@ -508,7 +532,7 @@ export function MobileApp() {
   useEffect(() => {
     inject(webRef, modSession)
   }, [modSession])
-  const transcriptSync = useTranscriptSync(webRef)
+  const transcriptSync = useTranscriptSync(webRef, mobileVoice.state)
   const queuedSentRef = useRef<ChatMessage[] | null>(null)
   // Read at publish time, which runs from runtime callbacks rather than renders.
   const queuedSteerRef = useRef({ now: false, soon: false })
@@ -516,6 +540,7 @@ export function MobileApp() {
   const promptKeywordsRef = useRef(HARNESS_CAPABILITIES[selectedProvider].promptKeywords)
   promptKeywordsRef.current = HARNESS_CAPABILITIES[selectedProvider].promptKeywords
   const syncSheets = (runtime: ChatRuntime, hydrate = false) => {
+    setSessionVoiceCapability(runtime.realtimeVoice)
     if (connectionRef.current.epoch !== runtime.epoch) {
       connectionRef.current = { state: 'connected', epoch: runtime.epoch }
       setConnectionState('connected')
@@ -925,6 +950,7 @@ export function MobileApp() {
       // batch held back while a session restores reaches only that session.
       onArrived: (events) => {
         if (connectGeneration !== connectGenerationRef.current) return
+        mobileVoiceRef.current.ingest(events)
         remoteDraftsRef.current.ingest(events)
         workspaceActivity.ingest(events)
         const invalidated = sessionListInvalidations(events)
@@ -986,6 +1012,7 @@ export function MobileApp() {
       currentEpoch: (activeClient) => runtimeRef.current?.epoch ?? activeClient.buffer.epoch,
       onConnection: (state, epoch) => {
         if (connectGeneration !== connectGenerationRef.current) return
+        mobileVoiceRef.current.service.connection(state === 'connected')
         setComposerConnection(client, state === 'connected')
         // A socket that was down missed every invalidation sent meanwhile.
         if (state === 'connected' && connectionRef.current?.state !== 'connected') {
@@ -1369,6 +1396,7 @@ export function MobileApp() {
     runtimeRef.current?.dispose()
     const runtime = preparedRuntime ?? createRuntime(client, environmentId)
     runtimeRef.current = runtime
+    setSessionVoiceCapability(runtime.realtimeVoice)
     setTerminalUi({ writable: false, title: 'Terminal', tabs: [], activeId: '' })
     const term = new TerminalRuntime(client, (paints) => {
       for (const p of paints) inject(termRef, p)
@@ -1420,6 +1448,7 @@ export function MobileApp() {
   const clearActiveSession = () => {
     runtimeRef.current?.dispose()
     runtimeRef.current = null
+    setSessionVoiceCapability(undefined)
     termRuntimeRef.current = null
     setSessionId(null)
     setActiveSessionTitle('New session')
@@ -1771,7 +1800,7 @@ export function MobileApp() {
    * host round trips, so the tap lands like a desktop send — bubble, title, and
    * a "Creating session…" line under it — instead of a blank wait.
    */
-  const createSession = async (turn: { clientMessageId: string; text: string; images: ImageAttachment[]; title: string; userMessageContent: import('@superone/shared/agent-types').ContentBlock[] }) => {
+  const createSession = async (turn?: { clientMessageId: string; text: string; images: ImageAttachment[]; title: string; userMessageContent: import('@superone/shared/agent-types').ContentBlock[] }, signal?: AbortSignal) => {
     const client = clientRef.current
     const p = project
     if (!client || !p) return
@@ -1781,55 +1810,40 @@ export function MobileApp() {
       return
     }
     return sessionTransitionRef.current.run(async () => {
+      if (signal?.aborted) return
+      // Voice leaves any typed text saved as a draft; it never submits a fake first turn.
+      if (!turn) {
+        await remoteDrafts.park()
+        if (signal?.aborted) { remoteDrafts.begin(); return }
+      }
       const previousId = runtimeRef.current?.sessionId
       if (previousId) client.send({ type: 'leave_session', sessionId: previousId })
       const runtime = bindRuntime(client)
-      const startupDirs = [...new Set([...workspaceDirs, ...additionalDirs.sessionDirs])]
-      const id = remoteDrafts.originSessionId ?? randomId()
+      const id = (turn ? remoteDrafts.originSessionId : null) ?? randomId()
       // Leave the landing immediately — the first send should look like desktop,
       // not a "Starting session…" wait. Host errors still land on the status line.
       setSessionId(id)
-      setActiveSessionTitle(turn.title.slice(0, 72) || 'New session')
+      setActiveSessionTitle(turn?.title.slice(0, 72) || 'New session')
       setScreen('chat')
-      runtime.stageTurn(turn.clientMessageId, turn.text, turn.images, turn.userMessageContent)
-      const draftControl = await remoteDrafts.prepareSend()
+      if (turn) runtime.stageTurn(turn.clientMessageId, turn.text, turn.images, turn.userMessageContent)
+      const draftControl = turn ? await remoteDrafts.prepareSend() : {}
       await runtime.create(p.path, {
         ...draftControl,
         sessionId: id,
-        provider: selectedProvider,
-        ...(selectedProvider === 'acp' && selectedAcpAgentId
-          ? { acpAgentId: selectedAcpAgentId }
-          : {}),
-        permissionMode: permMode,
-        ...(selectedModel ? { model: selectedModel } : {}),
-        ...(selectedEffort ? { effort: selectedEffort } : {}),
-        ...buildWorktreeCreateOptions(worktreeSelection, gitInfo?.branch),
-        // Project folders plus anything `/add-dir session …` collected before
-        // there was a session to write it to — the desktop's draft session does
-        // the same, and there is no other moment these could be handed over.
-        ...(harnessSupportsAdditionalDirs(selectedProvider) && startupDirs.length
-          ? { additionalDirectories: startupDirs }
-          : {}),
-        // Only an explicit pick travels: staying silent leaves the host on its
-        // own default rather than forcing whatever the chip happened to show.
-        ...(pendingSandboxMode && harnessSupportsSandbox(selectedProvider)
-          ? { sandboxMode: pendingSandboxMode }
-          : {}),
-        // A mode is a session mode for ACP and a composition preset for DeepSeek.
-        ...(harnessSelection.selectedModeId
-          ? selectedProvider === 'dsh'
-            ? { agentPreset: harnessSelection.selectedModeId }
-            : { mode: harnessSelection.selectedModeId }
-          : {}),
-        ...(harnessSelection.selectedProviderId !== null
-          ? { apiProviderId: harnessSelection.selectedProviderId }
-          : {}),
+        ...sessionCreationOptions({
+          provider: selectedProvider, acpAgentId: selectedAcpAgentId, permissionMode: permMode,
+          model: selectedModel, effort: selectedEffort, worktree: worktreeSelection, branch: gitInfo?.branch,
+          directories: [...workspaceDirs, ...additionalDirs.sessionDirs], sandboxMode: pendingSandboxMode,
+          modeId: harnessSelection.selectedModeId,
+          apiProviderId: turn ? harnessSelection.selectedProviderId : harnessSelection.selectedProviderId ?? harnessSelection.defaultProviderId,
+        }),
       })
       setWorktreeSelection(LOCAL_WORKTREE_SELECTION)
       if (runtime.sessionId !== id) setSessionId(runtime.sessionId)
       // The picks made on the landing screen are already claimed in the hook —
       // the session was just created from them.
       refreshRuntimeCatalog(runtime, selectedProvider)
+      return { projectPath: p.path, sessionId: runtime.sessionId, title: turn?.title || 'New session', harnessId: selectedProvider }
     }).catch(failSessionTransition)
   }
 
@@ -1854,6 +1868,7 @@ export function MobileApp() {
       setStatus(t('Agent settings are unavailable. Refresh the model list and try again.'))
       return
     }
+    if (transcriptSync.hasTimeline) transcriptSync.setView('thread')
     if (isManualRecapCommand(text) && shouldInterceptGrokRecap(selectedProvider, selectedAcpAgentId)) {
       const runtime = runtimeRef.current
       if (!runtime?.sessionId) return
@@ -2270,6 +2285,8 @@ export function MobileApp() {
       onSwitchSession={() => setSessionSwitcherOpen(true)}
       onOpenTerminal={openTerminal}
       onFork={route === 'chat' && canForkSession ? forkSession : undefined}
+      conversationView={route === 'chat' && transcriptSync.hasTimeline ? transcriptSync.view : undefined}
+      onToggleConversationView={() => transcriptSync.setView(transcriptSync.view === 'realtime' ? 'thread' : 'realtime')}
       mcpApp={route === 'chat' && mcpApp.view ? {
         title: mcpApp.view.title,
         composerOpen: mcpApp.composerOpen,
@@ -2364,6 +2381,20 @@ export function MobileApp() {
       runs={workflowRunRows(runtimeRef.current?.session.messages ?? [])} />
   ) : undefined
 
+  const voiceUi = voicePresentation({ voice: mobileVoice, connected: connectionState === 'connected', sessionId,
+    projectPath: project?.path, routed: !!routedEnvironmentId, view: transcriptSync.view,
+    onStart: () => { transcriptSync.setView('realtime'); mobileVoice.start() },
+    onReturn: target => runUiAction(async () => {
+      if (routedEnvironmentId || target.sessionId !== sessionId || target.projectPath !== project?.path) {
+        await openSessionAnywhere({ sessionId: target.sessionId, projectPath: target.projectPath, title: target.title ?? 'Voice conversation', provider: 'codex' })
+      }
+      if (runtimeRef.current?.sessionId === target.sessionId && runtimeRef.current.projectPath === target.projectPath) {
+        transcriptSync.setView('realtime')
+      }
+    }, setStatus, 'failed to open voice conversation'),
+    onSettings: () => { void Linking.openSettings() },
+  })
+
   return (
     <SessionActivityContext.Provider value={workspaceActivity.sessions}>
     <SafeAreaView style={styles.root}>
@@ -2383,6 +2414,7 @@ export function MobileApp() {
           />
         ) : null}
           <View style={styles.mainPane}>
+
             <View style={styles.flex}>
             <MobileNavigator
             route={screen}
@@ -2530,6 +2562,8 @@ export function MobileApp() {
           loadingConversation={sessionLoading || remoteDrafts.opening}
           composerHidden={!!mcpApp.view && !mcpApp.composerOpen && !nativeInputs.slot}
           inputComposer={nativeInputs.slot}
+          voiceComposer={voiceUi.composer}
+          voiceEntry={voiceUi.entry}
           // The tablet keeps the session list on screen, so it has nothing to
           // pull out and the gutter stays free for the transcript.
           onEdgeSwipe={mcpApp.view ? exitMcpAppFullscreen : tabletMultiPane ? undefined : () => setSessionSwitcherOpen(true)}
@@ -2785,6 +2819,7 @@ export function MobileApp() {
             )}
             />
             </View>
+            {screen !== 'chat' || (mcpApp.view && !mcpApp.composerOpen && !nativeInputs.slot) ? voiceUi.controls : null}
           </View>
         </View>
       </MobileKeyboardFrame>

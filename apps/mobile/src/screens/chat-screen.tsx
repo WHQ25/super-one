@@ -40,6 +40,8 @@ const CHAT_SOURCE = { html: CHAT_VIEW_HTML }
 const coverStyle = { zIndex: 1, elevation: 4, shadowColor: 'transparent' } as const
 
 export function ChatScreen(props: {
+  voiceEntry?: ReactNode
+  voiceComposer?: ReactNode
   contextAttachments?: ContextAttachment[]
   removingContexts?: string[]
   contextError?: string
@@ -172,8 +174,8 @@ export function ChatScreen(props: {
   // send (landing → live transcript) is not a switch: both of these are then
   // false, and the keyboard stays for the next message.
   useEffect(() => {
-    if (showLanding || props.loadingConversation) Keyboard.dismiss()
-  }, [showLanding, props.loadingConversation])
+    if (showLanding || props.loadingConversation || props.voiceComposer) Keyboard.dismiss()
+  }, [showLanding, props.loadingConversation, !!props.voiceComposer])
   const coveringRestore = props.loadingConversation || hold || (coverUntilReady && !rendererReady)
   const hideRenderer = coveringRestore || showLanding || !rendererReady
   // Captured on first mount: changing `injectedJavaScriptBeforeContentLoaded`
@@ -236,9 +238,9 @@ export function ChatScreen(props: {
       {/* Hidden, never unmounted: the native editor clears a sent draft asynchronously, and
           unmounting it mid-send would restore the draft on the way back. */}
       <View testID="chat-composer-stack" style={props.composerHidden ? { display: 'none' } : undefined}>
-        {!props.loadingConversation ? <TodoPanel todos={props.todos} /> : null}
-        {props.inputComposer}
-        <View style={props.inputComposer ? { display: 'none' } : undefined}><ChatComposer {...props} /></View>
+        {!props.loadingConversation && !props.voiceComposer ? <TodoPanel todos={props.todos} /> : null}
+        {props.inputComposer ?? props.voiceComposer}
+        <View testID="chat-text-composer" style={props.inputComposer || props.voiceComposer ? { display: 'none' } : undefined}><ChatComposer {...props} /></View>
       </View>
     </View>
   )

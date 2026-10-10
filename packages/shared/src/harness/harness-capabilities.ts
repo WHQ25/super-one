@@ -48,6 +48,8 @@ export interface GoalCapability {
  *    with `HARNESS_CAPABILITIES[provider].supportsXxx`.
  */
 export interface HarnessCapabilities {
+  /** Official-account realtime backend; host/native availability is negotiated separately. */
+  supportsRealtimeVoice?: boolean
   /** Supports MCP server tool surface. */
   supportsMcp: boolean
   /** Has explicit plan/approve mode workflow. Both harnesses do, but the protocol differs. */
@@ -159,6 +161,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     displayName: 'Claude',
   },
   codex: {
+    supportsRealtimeVoice: true,
     supportsMcp: true,
     supportsPlanMode: true,
     supportsTodos: false,

@@ -26,8 +26,9 @@ instead. **No `.fingerprintignore` is needed**: `@expo/fingerprint` asks the VCS
 each workflow marker is ignored (`ProjectWorkflow.resolveProjectWorkflowAsync`), and
 because `ios/` and `android/` are gitignored here it resolves to `managed` and hashes
 neither tree — locally-built and EAS-built binaries land on the same runtime version.
-Verify with `createFingerprintAsync(process.cwd())` and check `sources` for any
-`ios/` or `android/` entry; there should be none. Do not surface
+Verify with `createFingerprintAsync(process.cwd())` and check `sources` for hashed
+native-tree entries. Ignored `ios`/`android` roots may appear as `bareNativeDir`
+markers with `hash: null`; their contents must not be hashed. Do not surface
 `Updates.runtimeVersion` in the UI — it is an opaque hash now.
 
 Android's `UpdatesConfiguration.getRuntimeVersion()` opens `assets/fingerprint`
@@ -201,3 +202,25 @@ dev-client rebuild, not just a Metro restart. The same applies to
 `expo-media-library` (Save to Photos in the file preview): its config plugin writes
 the add-only photo-library usage string, and `app.json` blocks the read-side Android
 media permissions it would otherwise request.
+
+
+## Voice native runtime
+
+Foreground voice pins `react-native-webrtc` 124.0.6 with
+`@config-plugins/react-native-webrtc` 13.0.0 (Expo 54), plus
+`react-native-incall-manager` 4.3.0 for audio focus and routing. The WebRTC plugin
+sets microphone usage text; Android declares Bluetooth connect access for headset
+routing. Permission prompts occur only on explicit voice start. No background
+voice entitlement/service is added.
+Keep the camera and image-picker microphone usage strings enabled as well:
+image-picker's `microphonePermission: false` adds a manifest removal that defeats
+WebRTC's `RECORD_AUDIO`. Verify the complete plugin chain using
+`scripts/voice-native-config.test.ts`; old ignored native trees need `--clean`.
+
+A new iOS/Android binary is required. Existing binaries without either native
+module disable voice rather than attempting a WebView or JS media fallback.
+The fingerprint includes both native modules and the config plugin; ignored
+native build trees remain excluded. Rebuild the dev client and create fresh EAS
+binaries for delivery; an OTA update alone cannot add these modules. A native
+compile does not validate actual microphone capture, Bluetooth routing or mobile
+Codex service connectivity. See the [acceptance matrix](../../../../docs/features/mobile-codex-realtime-voice.md#acceptance).

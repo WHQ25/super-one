@@ -9,6 +9,7 @@ import type { SessionGoal } from '@superone/shared/agent-types'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { ChatComposer, type ChatComposerProps } from './chat-composer'
 import { useSessionIndicators } from '../navigation/use-session-indicators'
+import { MobileVoiceEntry } from '../voice/mobile-voice-controls'
 
 const noop = () => {}
 
@@ -53,13 +54,15 @@ const base: ChatComposerProps = {
   },
 }
 
-function Preview(props: ChatComposerProps) {
-  return <MobileThemeProvider>
+function Preview({ frameWidth = 390, colorScheme, locale, ...props }: ChatComposerProps & {
+  frameWidth?: number; colorScheme?: 'light' | 'dark'; locale?: 'en' | 'zh'
+}) {
+  return <MobileThemeProvider colorScheme={colorScheme} locale={locale}>
     <SafeAreaProvider initialMetrics={{
-      frame: { x: 0, y: 0, width: 390, height: 844 },
+      frame: { x: 0, y: 0, width: frameWidth, height: 844 },
       insets: { top: 47, left: 0, right: 0, bottom: 34 },
     }}>
-      <View style={{ width: 390, justifyContent: 'flex-end', minHeight: 160 }}>
+      <View style={{ width: frameWidth, justifyContent: 'flex-end', minHeight: 160 }}>
         <ChatComposer {...props} />
       </View>
     </SafeAreaProvider>
@@ -202,6 +205,29 @@ export const PhoneCompactWithDraft = {
   args: { tablet: false, draft: 'Keep the input short' },
   name: 'Phone · compact send on the input row',
 }
+
+function VoiceDeliveryPreview({ expanded = false, empty = false, light = false, loading = false }: {
+  expanded?: boolean; empty?: boolean; light?: boolean; loading?: boolean
+}) {
+  const [focused, setFocused] = useState(expanded)
+  const [draft, setDraft] = useState(empty ? '' : '检查 Composer 按钮的位置和顺序\n切换键盘布局时保留这条草稿。')
+  const [feedback, setFeedback] = useState('Offline preview: voice and send only update this fixture.')
+  return <MobileThemeProvider colorScheme={light ? 'light' : 'dark'} locale="zh"><View style={{ gap: 8 }}>
+    <Pressable accessibilityRole="button" accessibilityLabel="Toggle keyboard layout" onPress={() => setFocused(!focused)}>
+      <Text>Toggle keyboard layout</Text>
+    </Pressable>
+    <Text>{feedback}</Text>
+    <Preview {...base} tablet={false} focused={focused} draft={draft} onDraft={setDraft}
+      frameWidth={320} colorScheme={light ? 'light' : 'dark'} locale="zh" loadingConversation={loading}
+      onSend={() => { setFeedback(`Sent: ${draft}`); setDraft('') }}
+      voiceEntry={<MobileVoiceEntry enabled busy={loading} onStart={() => setFeedback('Voice requested (offline preview).')} />} />
+  </View></MobileThemeProvider>
+}
+
+export const PhoneVoiceDelivery = { name: 'Phone · voice then send move together with keyboard', render: () => <VoiceDeliveryPreview /> }
+export const PhoneVoiceExpandedLight = { name: 'Phone · expanded voice and send, narrow light Chinese', render: () => <VoiceDeliveryPreview expanded light /> }
+export const PhoneVoiceEmpty = { name: 'Phone · empty voice entry in either keyboard state', render: () => <VoiceDeliveryPreview empty /> }
+export const PhoneVoiceRestoring = { name: 'Phone · disabled delivery modes during restore', render: () => <VoiceDeliveryPreview loading /> }
 
 export const PhoneFocusedActionBar = {
   args: { tablet: false, focused: true, draft: 'Ask about the diff' },

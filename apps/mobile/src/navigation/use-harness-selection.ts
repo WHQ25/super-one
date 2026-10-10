@@ -336,6 +336,9 @@ export function useHarnessSelection() {
     selectMode,
     providers: (systemInfo.providers ?? []) as RemoteProviderOption[],
     selectedProviderId,
+    /** A null picker follows this discovered host default, rather than a bound session account. */
+    defaultProviderId: systemInfo.selectedProviderId ?? null,
+    realtimeVoice: systemInfo.realtimeVoice,
     selectProvider,
     optionParams,
     setOptionParam,

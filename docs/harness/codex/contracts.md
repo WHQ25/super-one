@@ -95,7 +95,7 @@ enabled by `apps/desktop/src/main/codex/app-server-connection.ts`).
   `threadId`).
 - **Guard:** `apps/desktop/src/main/codex/codex-realtime.test.ts` (timeline
   projections); `apps/desktop/src/main/codex/app-server-connection.test.ts`
-  (feature flag).
+  (feature flag); `codex-realtime-lifecycle.test.ts` (closure barrier and delegated-task continuation).
 
 ### Prompt fields replace defaults; empty is not unset
 
@@ -228,3 +228,30 @@ enabled by `apps/desktop/src/main/codex/app-server-connection.ts`).
   without another local IPC cap. Tool previews, remote/phone pickers and previews
   are deferred. Phone clients reject implicit selection and retain supplied
   explicit options.
+
+
+### Paired-phone voice retains the desktop thread and its account
+
+- **Behavior:** The phone creates a native WebRTC offer and sends it through its
+  authenticated LAN/relay channel. Desktop uses the existing Session/account to
+  call `thread/realtime/start`. Only the initiating endpoint receives the answer;
+  audio flows between the phone and the service. No account credential or
+  ephemeral API token is sent to the phone.
+- **Ownership:** One host reservation covers starting, active and stopping calls
+  across renderer windows and phones. Endpoint identity, attempt ID, host epoch
+  and generation fence readiness, stop and stale signaling. Session retains the
+  phone's call interest through navigation; confirmed teardown releases it.
+- **Teardown:** A stop RPC receipt alone does not free the reservation. Voice
+  closure or authoritative runtime disposal does. An uncertain start retains a
+  cleanup handle; a cleanup failure holds admission until teardown is confirmed.
+  Voice stop does not interrupt the ordinary Codex turn or its pending approvals.
+- **Privacy:** SDP bypasses Session reduction, normal event fanout and replay.
+  Generic broadcasters refuse signaling events. Trace serialization redacts SDP
+  fields and echoed SDP in errors, including app-server wire/receipt diagnostics.
+- **Guard:** `realtime-voice-host.test.ts`, `realtime-voice-interest.test.ts`,
+  `agent-service.test.ts` (actual remote ingress), `session.test.ts`,
+  `event-trace.test.ts`, `mobile-broadcaster.test.ts`,
+  `codex-realtime-selection.test.ts` and mobile `src/voice/*test*`.
+- **Boundary:** Native builds and mocks do not establish actual upstream mobile
+  media behavior. The real acceptance matrix is in
+  [mobile voice](../../features/mobile-codex-realtime-voice.md).

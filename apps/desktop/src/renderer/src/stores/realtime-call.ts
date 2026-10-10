@@ -1,3 +1,4 @@
+import { redactVoiceText, type VoiceIdentity } from '@superone/shared/realtime-voice'
 import { create } from 'zustand'
 import { toast } from 'sonner'
 import type { AgentEvent } from '@superone/shared/agent-types'
@@ -38,6 +39,8 @@ export const useRealtimeCallStore = create<RealtimeCallStore>(() => ({
 }))
 
 interface CallMedia {
+  attemptId: string
+  identity: VoiceIdentity | null
   projectPath: string
   sessionId: string
   peer: RTCPeerConnection | null
@@ -76,7 +79,7 @@ function view() {
 }
 
 function reportError(error: unknown): void {
-  toast.error(error instanceof Error ? error.message : String(error))
+  toast.error(redactVoiceText(error instanceof Error ? error.message : String(error)))
 }
 
 // Capture can be suppressed for two unrelated reasons — the user muted it, or a cue
@@ -178,18 +181,30 @@ function guardMicrophoneDuringCue(): void {
   media.cueGuarded = true
   applyMicrophoneEnabled()
   if (media.cueGuardTimer !== null) window.clearTimeout(media.cueGuardTimer)
+  const current = media
   media.cueGuardTimer = window.setTimeout(() => {
-    if (!media) return
+    if (media !== current) return
     media.cueGuardTimer = null
     media.cueGuarded = false
     applyMicrophoneEnabled()
   }, VOICE_READY_CUE_MIC_GUARD_MS)
 }
 
-function handleAgentEvent(event: AgentEvent): void {
+function handleAgentEvent(event: AgentEvent, directed = false): void {
   const current = media
   if (!current || event.sessionId !== current.sessionId) return
   const { sessionId, projectPath } = current
+
+  if (event.type === 'realtime_call_signal') {
+    const signal = event.signal
+    if (signal.attemptId !== current.attemptId) return
+    if (current.identity && (current.identity.callId !== signal.callId || current.identity.hostEpoch !== signal.hostEpoch || current.identity.generation !== signal.generation)) return
+    current.identity = signal
+    if (signal.kind === 'answer') handleAgentEvent({ ...event, type: 'realtime_sdp', sdp: signal.sdp }, true)
+    else if (signal.kind === 'closed') finishCall(sessionId, projectPath)
+    else if (signal.kind === 'error') { reportError(new Error(signal.error)); void stopRealtimeCall() }
+    return
+  }
 
   if (event.type === 'realtime_started') {
     view().setRealtimeSession(sessionId, event.realtimeSessionId ?? 'live')
@@ -198,6 +213,7 @@ function handleAgentEvent(event: AgentEvent): void {
   }
 
   if (event.type === 'realtime_sdp') {
+    if (!directed) return
     const peer = current.peer
     if (!peer || peer.signalingState === 'closed') return
     const tcpPreference = preferTcpIceCandidates(event.sdp)
@@ -208,12 +224,12 @@ function handleAgentEvent(event: AgentEvent): void {
       reprioritizedCandidateCount: tcpPreference.reprioritizedCandidateCount,
     }, sessionId)
     void peer.setRemoteDescription({ type: 'answer', sdp: tcpPreference.sdp }).then(() => {
-      useRealtimeCallStore.setState({ state: 'active', activity: 'listening' })
+      // Media connection, not SDP application, owns readiness.
+      if (media !== current) return
     }).catch((error) => {
+      if (media !== current) return
       reportError(error)
-      releaseMedia()
-      useRealtimeCallStore.setState({ sessionId: null, state: 'idle' })
-      view().setRealtimeStarting(sessionId, false)
+      void stopRealtimeCall()
     })
     return
   }
@@ -251,14 +267,10 @@ function handleAgentEvent(event: AgentEvent): void {
   }
 
   if (event.type === 'realtime_error') {
-    toast.error(event.error)
-    releaseMedia()
-    useRealtimeCallStore.setState({ sessionId: null, state: 'idle' })
-    view().setRealtimeStarting(sessionId, false)
+    // The directed signal already owns errors/closure; a queued generic event
+    // from the previous call must not tear down its replacement.
     return
   }
-
-  if (event.type === 'realtime_closed') finishCall(sessionId, projectPath)
 }
 
 export interface StartRealtimeCallOptions {
@@ -288,6 +300,7 @@ export async function startRealtimeCall({
   if (timelineLoadedFor !== `${projectPath}::${sessionId}`) void refreshTimeline(projectPath, sessionId)
 
   media = {
+    attemptId: crypto.randomUUID(), identity: null,
     projectPath,
     sessionId,
     peer: null,
@@ -302,6 +315,7 @@ export async function startRealtimeCall({
     cueGuarded: false,
     readyCuePlayed: false,
   }
+  const callMedia = media
   // The subscription's lifetime is the call's, so it is set up here rather than by a
   // component that may unmount mid-call.
   media.unsubscribe = window.agent.onAgentEvent(handleAgentEvent)
@@ -310,7 +324,7 @@ export async function startRealtimeCall({
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
     })
-    if (!media) return
+    if (media !== callMedia) { for (const track of stream.getTracks()) track.stop(); return }
     media.stream = stream
     media.stopInputLevelMonitor = startInputLevelMonitor(stream)
     const peer = new RTCPeerConnection()
@@ -323,7 +337,7 @@ export async function startRealtimeCall({
     peer.createDataChannel('oai-events')
     for (const track of stream.getAudioTracks()) peer.addTrack(track, stream)
     peer.ontrack = (event) => {
-      if (!media) return
+      if (media !== callMedia) return
       const audio = media.audio ?? new Audio()
       audio.autoplay = true
       audio.muted = useRealtimeCallStore.getState().outputMuted
@@ -332,8 +346,15 @@ export async function startRealtimeCall({
       void audio.play().catch(() => {})
     }
     peer.onconnectionstatechange = () => {
-      if (!media) return
+      if (media !== callMedia) return
       if (peer.connectionState === 'connected') {
+        if (media !== callMedia) return
+        if (callMedia.identity) void window.agent.readyRealtimeVoice(projectPath, sessionId, callMedia.identity).then(() => {
+          if (media === callMedia) useRealtimeCallStore.setState({ state: 'active', activity: 'listening' })
+        }).catch(error => {
+          if (media !== callMedia) return
+          reportError(error); void stopRealtimeCall()
+        })
         if (media.disconnectTimer !== null) {
           window.clearTimeout(media.disconnectTimer)
           media.disconnectTimer = null
@@ -352,8 +373,7 @@ export async function startRealtimeCall({
         return
       }
       const endCall = () => {
-        releaseMedia()
-        useRealtimeCallStore.setState({ sessionId: null, state: 'idle' })
+        void stopRealtimeCall()
       }
       if (peer.connectionState === 'failed') {
         endCall()
@@ -367,18 +387,23 @@ export async function startRealtimeCall({
       }, DISCONNECT_GRACE_MS)
     }
     const offer = await peer.createOffer({ offerToReceiveAudio: true })
+    if (media !== callMedia) return
     await peer.setLocalDescription(offer)
     await waitForIceGathering(peer)
     const sdp = peer.localDescription?.sdp
     if (!sdp) throw new Error(messages.offerFailed)
-    await window.agent.startRealtimeVoice(projectPath, sessionId, {
-      sdp,
+    if (media !== callMedia) return
+    const receipt = await window.agent.startRealtimeVoice(projectPath, sessionId, {
+      attemptId: callMedia.attemptId, sdp,
       ...(additionalDirs !== undefined ? { additionalDirs } : {}),
     })
-    if (useRealtimeCallStore.getState().state === 'starting' && media) {
+    if (media !== callMedia) return
+    if (!receipt.call?.owned || receipt.call.attemptId !== callMedia.attemptId) throw new Error('Voice start was not accepted.')
+    callMedia.identity = receipt.call
+    if (useRealtimeCallStore.getState().state === 'starting' && media === callMedia) {
       media.negotiationTimer = window.setTimeout(() => {
-        if (useRealtimeCallStore.getState().state !== 'starting') return
-        void window.agent.stopRealtimeVoice(projectPath, sessionId)
+        if (media !== callMedia || useRealtimeCallStore.getState().state !== 'starting') return
+        void window.agent.stopRealtimeVoice(projectPath, sessionId, callMedia.attemptId)
         releaseMedia()
         useRealtimeCallStore.setState({ sessionId: null, state: 'idle' })
         view().setRealtimeStarting(sessionId, false)
@@ -386,6 +411,8 @@ export async function startRealtimeCall({
       }, NEGOTIATION_TIMEOUT_MS)
     }
   } catch (error) {
+    if (media !== callMedia) return
+    void window.agent.stopRealtimeVoice(projectPath, sessionId, callMedia.attemptId).catch(() => {})
     releaseMedia()
     useRealtimeCallStore.setState({ sessionId: null, state: 'idle' })
     view().setRealtimeStarting(sessionId, false)
@@ -396,14 +423,16 @@ export async function startRealtimeCall({
 export async function stopRealtimeCall(): Promise<void> {
   const current = media
   if (!current) return
-  const { projectPath, sessionId } = current
+  const { projectPath, sessionId, attemptId } = current
   useRealtimeCallStore.setState({ state: 'stopping' })
+  releaseMedia()
   try {
-    await window.agent.stopRealtimeVoice(projectPath, sessionId)
+    await window.agent.stopRealtimeVoice(projectPath, sessionId, attemptId)
   } catch (error) {
     reportError(error)
   } finally {
-    finishCall(sessionId, projectPath)
+    const state = useRealtimeCallStore.getState()
+    if (!media && state.sessionId === sessionId && state.state === 'stopping') finishCall(sessionId, projectPath)
   }
 }
 

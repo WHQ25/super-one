@@ -42,6 +42,8 @@ import { PortableQueuedMessages } from './PortableQueuedMessages'
 import { PortableCommandOutput, PortableQuestion } from './PortableDecisionCards'
 import { applyDocumentViewport } from './document-viewport'
 import { PortableMessage } from './PortableMessage'
+import { PortableRealtimeActivity } from './PortableRealtimeActivity'
+import { TranscriptEmptyState } from './TranscriptEmptyState'
 import { isRealtimeVoiceMessage } from '@superone/shared/realtime-transcript'
 import { extractTurnOutline } from '@superone/shared/turn-outline'
 import { ChatScrollIndicator } from './ChatScrollIndicator'
@@ -52,6 +54,8 @@ import type { HostInbound, ReductionProjection, SessionProjection } from './prot
 type PendingPermission = ReductionProjection['pendingPermission']
 
 interface ViewState {
+  emptyState: ReductionProjection['emptyState']
+  realtimeActivities: NonNullable<ReductionProjection['realtimeActivities']>
   messages: ChatMessage[]
   hasMoreHistory: boolean
   historyNavigation: boolean
@@ -106,6 +110,8 @@ function mergeSessionFacts(previous: SessionFacts, projection: SessionProjection
 }
 
 const EMPTY_STATE: ViewState = {
+  emptyState: null,
+  realtimeActivities: [],
   messages: [],
   hasMoreHistory: false,
   historyNavigation: false,
@@ -175,6 +181,8 @@ function applyProjection(
     ? (projection.messageOrder ?? previous.messages.map(message => message.id)).flatMap(id => mergedRows.has(id) ? [mergedRows.get(id)!] : []) : previous.messages)
   return {
     ...previous,
+    emptyState: projection.emptyState === undefined ? previous.emptyState : projection.emptyState,
+    realtimeActivities: projection.realtimeActivities ?? previous.realtimeActivities,
     messages,
     hasMoreHistory: projection.hasMoreHistory ?? previous.hasMoreHistory,
     historyNavigation: projection.historyNavigation ?? previous.historyNavigation,
@@ -691,7 +699,7 @@ export function ChatView() {
       {visible.length === 0
         ? (historyLoading || navigationLoading || indexLoading
           ? <div className="flex justify-center py-12 text-muted-foreground" role="status" data-testid="initial-loading"><Loader2 className="size-5 animate-spin" aria-hidden /></div>
-          : <p className="py-12 text-center text-sm text-muted-foreground">Waiting for session…</p>)
+          : <TranscriptEmptyState state={state.emptyState} locale={state.locale} />)
         : visible.map((message) => {
           const row = transcriptRow(message, state.messages)
           if (row.kind === 'hidden') return null
@@ -727,10 +735,16 @@ export function ChatView() {
               promptKeywords={promptKeywords}
             />
           )
-          if (separatorAt === undefined) return turn
-          return <Fragment key={message.id}><MessageDateSeparator at={separatorAt} />{turn}</Fragment>
+          return <Fragment key={message.id}>
+            {separatorAt !== undefined && <MessageDateSeparator at={separatorAt} />}
+            {turn}
+            {state.realtimeActivities.filter(row => row.afterMessageId === message.id)
+              .map(row => <PortableRealtimeActivity key={row.turnId} row={row} />)}
+          </Fragment>
         })}
       </AsyncQuestionMessagesContext.Provider>
+      {!moreAfter && state.realtimeActivities.filter(row => row.afterMessageId === null)
+        .map(row => <PortableRealtimeActivity key={row.turnId} row={row} />)}
       {visible.length > 0 && moreAfter && (
         <EdgeLoader edge="bottom" loading={navigationLoading && navigationEdge === 'bottom'}
           error={!!navigationRetry && navigationEdge === 'bottom'} onLoad={bottomRetry ?? loadNext} />

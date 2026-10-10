@@ -1,3 +1,4 @@
+import { containsVoiceCommand } from '@superone/shared/realtime-voice'
 import { providerSettingsEnv } from '@superone/claude'
 import { registerSessionLinkIpc } from './environment/session-link-ipc'
 import { registerComputerUseViewfinderIpc } from './computer-use/viewfinder-ipc'
@@ -102,7 +103,8 @@ import { spawnParentOf } from './session/collaboration-mailbox'
 import { CHILD_STALL_CHECK_INTERVAL_MS, CollaborationChildMonitor, childActivityView } from './session/collaboration-lifecycle'
 import { RemoteChildWatcher } from './session/collaboration-remote-watch'
 import { remoteChildLabel } from './session/collaboration-remote'
-import { watchProjectList, watchSessionDeletes, watchSessionList } from './session-list-watch'
+import { watchProjectList, watchSessionDeletes } from './session-list-watch'
+import { bindSessionListNotifications } from './session-list-notifications'
 import { localDraftStore } from './db-drafts'
 import { withoutDraftAttachmentBytes } from '@superone/shared/environment/draft-content'
 import { installDraftOpenFlush } from './remote/draft-open-flush'
@@ -632,7 +634,7 @@ const deviceRegistry = new DeviceRegistry(sessionManager)
 const remoteCallbacks: RemoteControlCallbacks = {
   onCommand: async (command, respond, source) => {
     await agentService.handleRemoteCommand(command, respond, source)
-    safeSend(AgentIpcChannels.REMOTE_COMMAND, command)
+    if (!containsVoiceCommand(command)) safeSend(AgentIpcChannels.REMOTE_COMMAND, command)
     if (command.type === 'add_project') {
       const folders = getRecentFolders()
       safeSend(AgentIpcChannels.RECENT_FOLDERS_CHANGED, folders)
@@ -645,6 +647,7 @@ const remoteCallbacks: RemoteControlCallbacks = {
   onClientDisconnected: ({ deviceId }) => {
     releaseMcpAppRequester({ kind: 'mobile', deviceId })
     safeSend(AgentIpcChannels.REMOTE_DEVICE_STATUS_CHANGED, { id: deviceId, online: false })
+    sessionManager.realtimeVoice.disconnected(deviceId)
     deviceRegistry.handleDeviceDisconnected(deviceId)
     void import('./remote/environment-commands').then(module => module.releaseEnvironmentDevice(deviceId))
   },
@@ -4668,9 +4671,10 @@ function registerIpcHandlers(): void {
   // device (no `sessionId`, so `MobileBroadcaster` does not scope it to one
   // session's subscribers). Wired here rather than inside `AgentService` so
   // constructing the service in a test leaves no process-wide watcher behind.
-  watchSessionList((projectPath) => {
-    agentService.notifyEventSubscribers({ type: 'session_list_changed', projectPath })
-  })
+  bindSessionListNotifications(
+    projectPath => safeSend(AgentIpcChannels.SESSIONS_CHANGED, projectPath),
+    event => agentService.notifyEventSubscribers(event),
+  )
   watchProjectList(() => {
     agentService.notifyEventSubscribers({ type: 'project_list_changed' })
   })

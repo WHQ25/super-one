@@ -31,7 +31,8 @@
     "android": {
       "package": "com.superone.superone_remote",
       "permissions": [
-        "android.permission.REQUEST_INSTALL_PACKAGES"
+        "android.permission.REQUEST_INSTALL_PACKAGES",
+        "android.permission.BLUETOOTH_CONNECT"
       ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
@@ -57,7 +58,7 @@
         "expo-camera",
         {
           "cameraPermission": "Allow SuperOne to scan desktop pairing QR codes.",
-          "microphonePermission": false,
+          "microphonePermission": "Allow SuperOne to use your microphone for voice calls.",
           "recordAudioAndroid": false
         }
       ],
@@ -66,7 +67,7 @@
         {
           "photosPermission": "Allow SuperOne to attach images to chat.",
           "cameraPermission": "Allow SuperOne to scan desktop pairing QR codes.",
-          "microphonePermission": false
+          "microphonePermission": "Allow SuperOne to use your microphone for voice calls."
         }
       ],
       [
@@ -86,7 +87,15 @@
         }
       ],
       "./plugins/with-dev-client-updates.js",
-      "./plugins/with-android-adaptive-icon-inset.js"
+      "./plugins/with-voice-ready-cue.js",
+      "./plugins/with-android-adaptive-icon-inset.js",
+      [
+        "@config-plugins/react-native-webrtc",
+        {
+          "microphonePermission": "Allow SuperOne to use your microphone for voice calls.",
+          "cameraPermission": "Allow SuperOne to scan desktop pairing QR codes."
+        }
+      ]
     ],
     "extra": {
       "supportsExpoGo": false,

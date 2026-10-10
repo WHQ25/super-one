@@ -519,6 +519,8 @@ export interface Session {
   interrupt(): Promise<boolean>
   /** Worktree deleted under the live session: go read-only and stop the turn. */
   markWorktreeRemoved(): Promise<void>
+  retainRealtimeVoice(deviceId?: string): () => void
+  onRealtimeSignal(handler: (event: AgentEvent) => void): () => void
   startRealtimeVoice(request: import('@superone/shared/agent-types').RealtimeVoiceStartRequest): Promise<void>
   stopRealtimeVoice(): Promise<void>
   getRealtimeTimeline(): Promise<import('@superone/shared/agent-types').RealtimeTimelineResult>
@@ -536,7 +538,7 @@ export interface Session {
   getSelectedModel(): string | undefined
   getSelectedEffort(): SendMessageRequest['effort']
   setApiProviderId(apiProviderId: string | null): void
-  getApiProviderId(): string | null
+  getApiProviderId(resolveDefault?: boolean): string | null
   setAcpAgentId(agentId: string | null): void
   setTitle(title: string, source: 'user' | 'agent'): void
   emitHostEvent(event: import('@superone/shared/agent-types').AgentEvent): void

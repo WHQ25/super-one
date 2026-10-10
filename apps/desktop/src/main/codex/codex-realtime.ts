@@ -1,3 +1,4 @@
+import { redactVoiceText, VoiceCleanupPendingError } from '@superone/shared/realtime-voice'
 import { isCodexAccountProvider } from '@superone/shared/codex-accounts'
 import type {
   AgentEvent,
@@ -41,6 +42,12 @@ export interface CodexRealtimeHandle {
   stop(): Promise<void>
   closed: Promise<void>
   delegatedTurns: Promise<void>
+}
+
+export class CodexRealtimeCleanupError extends VoiceCleanupPendingError {
+  constructor(readonly handle: CodexRealtimeHandle) {
+    super('Voice cleanup pending: reconnect the desktop before retrying.')
+  }
 }
 
 export interface CodexRealtimeDelegatedTurnHandler {
@@ -210,11 +217,11 @@ export function mapCodexRealtimeNotification(notification: AppServerNotification
       return text ? { type: 'realtime_transcript', role: transcriptRole(params.role), text, final: true } : null
     }
     case 'thread/realtime/error':
-      return { type: 'realtime_error', error: readString(params.message) ?? 'Realtime voice failed.' }
+      return { type: 'realtime_error', error: redactVoiceText(readString(params.message) ?? 'Realtime voice failed.') }
     case 'thread/realtime/closed':
       return {
         type: 'realtime_closed',
-        ...(readString(params.reason) ? { reason: readString(params.reason)! } : {}),
+        ...(readString(params.reason) ? { reason: redactVoiceText(readString(params.reason)!) } : {}),
       }
     default:
       return null
@@ -420,7 +427,7 @@ async function pumpRealtime(
     }
   } catch (error) {
     if (!cancellation.cancelled) {
-      emit({ type: 'realtime_error', error: error instanceof Error ? error.message : String(error) })
+      emit({ type: 'realtime_error', error: redactVoiceText(error instanceof Error ? error.message : String(error)) })
     }
   } finally {
     dispatcher.unregisterRealtimeInbox(threadId)
@@ -491,6 +498,15 @@ async function pumpRealtimeDelegatedTurns(
   }
 }
 
+async function awaitRealtimeClosure(closed: Promise<void>): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    await Promise.race([closed, new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('Voice cleanup pending: upstream did not close.')), 10_000)
+    })])
+  } finally { clearTimeout(timer) }
+}
+
 export async function startCodexRealtime(
   session: CodexSession,
   auth: CodexProjectAuth,
@@ -527,27 +543,33 @@ export async function startCodexRealtime(
         closed,
         delegatedTurnHandler,
       )
+      const handle: CodexRealtimeHandle = {
+        threadId, closed, delegatedTurns,
+        stop: async () => {
+          await connection.request('thread/realtime/stop', { threadId })
+          await awaitRealtimeClosure(closed)
+        },
+      }
       try {
         await connection.request(
           'thread/realtime/start',
           buildCodexRealtimeStartParams(threadId, request),
         )
       } catch (error) {
+        // A timed-out start may have succeeded upstream. Fence a new attempt until
+        // stop/closure is confirmed; never reset the backing thread or its task.
+        try {
+          await connection.request('thread/realtime/stop', { threadId })
+          await awaitRealtimeClosure(closed)
+        } catch {
+          throw new CodexRealtimeCleanupError(handle)
+        }
         cancellation.cancelled = true
         dispatcher.unregisterRealtimeInbox(threadId)
-        dispatcher.unregisterRealtimeTurnInbox(threadId)
-        void closed
         void delegatedTurns
         throw error
       }
-      return {
-        threadId,
-        closed,
-        delegatedTurns,
-        stop: async () => {
-          await connection.request('thread/realtime/stop', { threadId })
-        },
-      }
+      return handle
     },
   )
 }

@@ -1,11 +1,58 @@
 import { expect, test } from '@jest/globals'
-import { act, fireEvent, screen } from '@testing-library/react-native'
+import { act, fireEvent, screen, within } from '@testing-library/react-native'
 import { DeviceEventEmitter, Text } from 'react-native'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { renderWithTheme } from '../test-render'
 import type { MatchedSlashCommand } from '../slash'
 import { ChatComposer, type ChatComposerProps } from './chat-composer'
 import { ultracodeOptionParam } from '../model-picker-state'
+import { MobileVoiceEntry } from '../voice/mobile-voice-controls'
+
+test('an empty Codex composer exposes voice at the right of its input before the first message', async () => {
+  await renderWithTheme(composer({ provider: 'codex', voiceEntry: <MobileVoiceEntry enabled busy={false} onStart={() => {}} /> }))
+  expect(within(screen.getByTestId('composer-input-row')).getByLabelText('Start voice')).toBeTruthy()
+  expect(within(screen.getByTestId('phone-composer-status')).queryByLabelText('Start voice')).toBeNull()
+})
+
+test('moves voice and send together onto the expanded phone action row, voice first', async () => {
+  const actions: string[] = []
+  await renderWithTheme(composer({ provider: 'codex', focused: true, draft: 'Saved draft',
+    onSend: () => actions.push('send'), voiceEntry: <MobileVoiceEntry enabled busy={false} onStart={() => actions.push('voice')} /> }))
+  const row = within(screen.getByTestId('phone-composer-actions'))
+  expect(row.getByLabelText('Start voice')).toBeTruthy()
+  expect(row.getByLabelText('Send')).toBeTruthy()
+  expect(within(screen.getByTestId('composer-input-row')).queryByLabelText('Start voice')).toBeNull()
+  expect(within(screen.getByTestId('composer-input-row')).queryByLabelText('Send')).toBeNull()
+  expect(within(screen.getByTestId('phone-composer-delivery')).getAllByRole('button').map(button => button.props.accessibilityLabel)).toEqual(['Start voice', 'Send'])
+  await act(async () => { fireEvent.press(row.getByLabelText('Start voice')) })
+  await act(async () => { fireEvent.press(row.getByLabelText('Send')) })
+  expect(actions).toEqual(['voice', 'send'])
+})
+
+test('keeps both delivery modes inside the collapsed phone input, voice first', async () => {
+  await renderWithTheme(composer({ provider: 'codex', focused: false, draft: 'Saved draft', voiceEntry: <MobileVoiceEntry enabled busy={false} onStart={() => {}} /> }))
+  const row = within(screen.getByTestId('composer-input-row'))
+  expect(row.getByLabelText('Start voice')).toBeTruthy()
+  expect(row.getByLabelText('Send')).toBeTruthy()
+  expect(within(screen.getByTestId('phone-composer-delivery')).getAllByRole('button').map(button => button.props.accessibilityLabel)).toEqual(['Start voice', 'Send'])
+  expect(screen.queryByTestId('phone-composer-actions')).toBeNull()
+  expect(screen.getAllByLabelText('Start voice')).toHaveLength(1)
+  expect(screen.getAllByLabelText('Send')).toHaveLength(1)
+})
+
+test('shows voice alone in the expanded action row when there is no message', async () => {
+  await renderWithTheme(composer({ provider: 'codex', focused: true, voiceEntry: <MobileVoiceEntry enabled busy={false} onStart={() => {}} /> }))
+  expect(within(screen.getByTestId('phone-composer-actions')).getByLabelText('Start voice')).toBeTruthy()
+  expect(within(screen.getByTestId('composer-input-row')).queryByLabelText('Start voice')).toBeNull()
+  expect(screen.queryByLabelText('Send')).toBeNull()
+})
+
+test('places the tablet voice entry last in the composer toolbar', async () => {
+  await renderWithTheme(composer({ provider: 'codex', tablet: true, draft: 'Saved draft', voiceEntry: <MobileVoiceEntry enabled busy={false} onStart={() => {}} /> }))
+  const entry = screen.getByTestId('composer-voice-entry')
+  expect(entry.parent?.children.at(-1)).toBe(entry)
+  expect(within(screen.getByTestId('tablet-composer')).getByLabelText('Start voice')).toBeTruthy()
+})
 
 function command(name: string): MatchedSlashCommand {
   return { name, description: '', argumentHint: '', isSkill: false, matchIndices: [], score: 0, matched: true }
@@ -216,20 +263,28 @@ test('an empty unfocused streaming phone keeps Stop on the input row without Sen
   expect(screen.getByLabelText('Stop')).toBeTruthy()
 })
 
-test('hiding the keyboard collapses the phone action bar', async () => {
-  await renderWithTheme(composer({ tablet: false, draft: 'hello' }))
+test('keyboard transitions move both delivery modes together and retain the draft', async () => {
+  await renderWithTheme(composer({ tablet: false, draft: 'hello', voiceEntry: <MobileVoiceEntry enabled busy={false} onStart={() => {}} /> }))
+  const editor = screen.getByLabelText('Message')
+  expect(within(screen.getByTestId('composer-input-row')).getByLabelText('Send')).toBeTruthy()
   await act(async () => {
     fireEvent(screen.getByLabelText('Message'), 'focus')
     DeviceEventEmitter.emit('keyboardWillShow', { endCoordinates: { screenY: 500, height: 350 } })
     DeviceEventEmitter.emit('keyboardDidShow', { endCoordinates: { screenY: 500, height: 350 } })
   })
   expect(screen.getByTestId('phone-composer-actions')).toBeTruthy()
+  expect(within(screen.getByTestId('phone-composer-actions')).getByLabelText('Start voice')).toBeTruthy()
+  expect(within(screen.getByTestId('phone-composer-actions')).getByLabelText('Send')).toBeTruthy()
 
   await act(async () => {
     DeviceEventEmitter.emit('keyboardWillHide', { endCoordinates: { screenY: 850, height: 0 } })
     DeviceEventEmitter.emit('keyboardDidHide', { endCoordinates: { screenY: 850, height: 0 } })
   })
   expect(screen.queryByTestId('phone-composer-actions')).toBeNull()
+  expect(within(screen.getByTestId('composer-input-row')).getByLabelText('Start voice')).toBeTruthy()
+  expect(within(screen.getByTestId('composer-input-row')).getByLabelText('Send')).toBeTruthy()
+  expect(screen.getByLabelText('Message')).toBe(editor)
+  expect(editor.props.value).toBe('hello')
 })
 
 test('focusing the phone input opens the action bar and moves Send onto it', async () => {

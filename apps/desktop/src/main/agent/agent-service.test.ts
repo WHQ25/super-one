@@ -1,3 +1,5 @@
+import { RealtimeVoiceHost } from '../session/realtime-voice-host'
+import { trace } from './event-trace'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TerminalManager } from '../terminal/terminal-manager'
 import { getSandboxCapability } from '../sandbox-platform'
@@ -32,6 +34,8 @@ const remoteDshMcpMocks = vi.hoisted(() => ({
   toggle: vi.fn(),
   delete: vi.fn(),
 }))
+
+vi.mock('./event-trace', () => ({ trace: vi.fn() }))
 
 vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn() },
@@ -787,6 +791,7 @@ describe('AgentService Realtime Voice', () => {
     const created = makeMockSession({
       id: 'draft-voice',
       cwd: '/repo/main',
+      projectPath: '/repo/main',
       snapshot: { harnessId: 'codex', messages: [] },
       isStreaming: vi.fn(() => false),
       startRealtimeVoice,
@@ -797,10 +802,11 @@ describe('AgentService Realtime Voice', () => {
       getActiveSession: vi.fn(() => null),
       resumeSession: vi.fn(() => { throw new Error('Session not found: draft-voice') }),
       createSession,
+      realtimeVoice: { start: vi.fn((_session, _endpoint, _attempt, request) => startRealtimeVoice(request)) },
     }
     service.setup()
     const handler = getRegisteredIpcHandler(AgentIpcChannels.START_REALTIME_VOICE)!
-    const request = { sdp: 'offer' }
+    const request = { sdp: 'v=0\na=offer', attemptId: 'draft-attempt' }
     const currentSettings = appSettings.readAppSettings()
     // Not `...Once`: creating the session reads the settings too, now that every
     // harness resolves its own defaults, and a one-shot would be spent there.
@@ -813,7 +819,7 @@ describe('AgentService Realtime Voice', () => {
     })
 
     try {
-      await handler(null, '/repo/main', 'draft-voice', request)
+      await handler({ sender: { id: 1 } }, '/repo/main', 'draft-voice', request)
 
       expect(createSession).toHaveBeenCalledWith(expect.objectContaining({
         projectPath: '/repo/main',
@@ -4313,5 +4319,42 @@ describe('mobile attachment admission receipt', () => {
     await service.handleRemoteCommand({ type: 'send_message', requestId: 'receipt', projectPath: '/p', sessionId: 'sid-1', content: 'look', images: [{ id: 'bad', name: 'bad.png', mimeType: 'image/png', base64: 'invalid' }] }, respond, { deviceId: 'phone', transport: 'relay' })
     expect(respond).toHaveBeenCalledWith('receipt', { error: expect.stringContaining('Attachment: ') })
     expect(send).not.toHaveBeenCalled()
+  })
+})
+
+
+describe('AgentService remote voice ingress', () => {
+  it('never traces the command offer, answers only its authenticated owner, and keeps receipts SDP-free', async () => {
+    const service = new AgentService()
+    let receive = (_event: import('@superone/shared/agent-types').AgentEvent) => {}
+    const session = makeMockSession({
+      id: 'voice-sid', projectPath: '/p', snapshot: { harnessId: 'codex' },
+      getApiProviderId: () => undefined, retainRealtimeVoice: () => vi.fn(),
+      onRealtimeSignal: (fn: typeof receive) => { receive = fn; return vi.fn() },
+      startRealtimeVoice: vi.fn(async () => {}), stopRealtimeVoice: vi.fn(async () => {}),
+    })
+    const host = new RealtimeVoiceHost()
+    ;(service as { sessionManager: unknown }).sessionManager = { getSession: () => session, realtimeVoice: host }
+    const sendEventToMobile = vi.fn(async () => {})
+    ;(service as unknown as { remoteControlService: unknown }).remoteControlService = { sendEventToMobile }
+    vi.mocked(dbSessions.sessionBelongsToProject).mockReturnValue(true)
+    const respond = vi.fn()
+    vi.mocked(trace).mockClear()
+    const command = { type: 'voice_start' as const, projectPath: '/p', sessionId: 'voice-sid', requestId: 'receipt', attemptId: 'one', request: { sdp: 'v=0\r\na=ice-pwd:private-offer' } }
+    await service.handleRemoteCommand(command, respond, { deviceId: 'phone-a', transport: 'relay' })
+    receive({ type: 'realtime_sdp', sdp: 'private-answer' })
+    expect(sendEventToMobile).toHaveBeenCalledWith(expect.objectContaining({ type: 'realtime_call_signal', signal: expect.objectContaining({ kind: 'answer', sdp: 'private-answer' }) }), ['phone-a'])
+    expect(JSON.stringify(vi.mocked(trace).mock.calls)).not.toContain('private-')
+    expect(JSON.stringify(respond.mock.calls)).not.toContain('sdp')
+    await service.handleRemoteCommand({ ...command, type: 'voice_stop' }, respond, { deviceId: 'phone-a', transport: 'lan' })
+    expect(session.stopRealtimeVoice).toHaveBeenCalledTimes(1)
+  })
+  it('redacts an echoed offer from an ingress error receipt', async () => {
+    const service = new AgentService()
+    ;(service as { sessionManager: unknown }).sessionManager = { getSession: () => { throw new Error('bad payload v=0\na=ice-pwd:private') } }
+    vi.mocked(dbSessions.sessionBelongsToProject).mockReturnValue(true)
+    const respond = vi.fn()
+    await service.handleRemoteCommand({ type: 'voice_start', projectPath: '/p', sessionId: 'sid', requestId: 'receipt', attemptId: 'one', request: { sdp: 'v=0\na=ice-pwd:private' } }, respond, { deviceId: 'phone', transport: 'relay' })
+    expect(respond).toHaveBeenCalledWith('receipt', { error: 'Voice signaling detail redacted.' })
   })
 })

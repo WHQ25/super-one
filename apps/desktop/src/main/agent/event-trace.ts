@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3'
+import { redactVoiceTraceValue } from '@superone/shared/realtime-voice'
 import { devRunFile } from '../dev-run-file'
 
 const isDev = process.env.NODE_ENV === 'development'
@@ -56,9 +57,10 @@ function capString(value: string, limit: number): string {
 
 /** Exported for tests: JSON for `events.data`, bounded and still parseable. */
 export function serializeTraceData(data: unknown): string {
-  const json = JSON.stringify(data, (_key, value: unknown) => (
-    typeof value === 'string' ? capString(value, MAX_TRACE_STRING_CHARS) : value
-  ))
+  const json = JSON.stringify(data, (key, value: unknown) => {
+    const safe = redactVoiceTraceValue(key, value)
+    return typeof safe === 'string' ? capString(safe, MAX_TRACE_STRING_CHARS) : safe
+  })
   if (json === undefined) return 'null'
   if (json.length <= MAX_TRACE_ROW_CHARS) return json
   return JSON.stringify({

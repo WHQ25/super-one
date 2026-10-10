@@ -81,6 +81,9 @@ export function createDefaultChatCoreSession(): ChatCoreSession {
     acpSlashCommandsStatus: 'idle',
     sessionGoal: null,
     realtimeSegments: [],
+    realtimeThreadMessages: [],
+    realtimeHasTimeline: false,
+    realtimeLiveSegments: [],
     realtimeSessionId: null,
     _latestCodexTodoList: null,
   }

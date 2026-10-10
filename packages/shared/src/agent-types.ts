@@ -2186,6 +2186,7 @@ export type AgentEventBase =
    * `goal: null` means there is no longer a goal (cleared, or condition met).
    */
   | { type: 'session_goal'; goal: SessionGoal | null }
+  | { type: 'realtime_call_signal'; signal: import('./realtime-voice').VoiceSignal }
   | { type: 'realtime_started'; realtimeSessionId?: string; version: string }
   | { type: 'realtime_sdp'; sdp: string }
   | { type: 'realtime_transcript'; role: RealtimeTranscriptRole; text: string; final: boolean }
@@ -2262,9 +2263,18 @@ export interface CodexTimelineMetadata {
 }
 
 export interface RealtimeVoiceStartRequest {
+  attemptId?: string
   sdp: string
   voice?: string
   additionalDirs?: string[]
+  /** Backing Codex thread selection; never overrides the realtime audio model. */
+  selection?: {
+    model?: string
+    reasoningEffort?: CodexReasoningEffort
+    serviceTier?: string | null
+    /** Expected session credential. Voice must not switch accounts. */
+    apiProviderId?: string | null
+  }
 }
 
 /** Codex realtime voices flattened for the protocol version SuperOne uses. */
@@ -4148,6 +4158,7 @@ export const AgentIpcChannels = {
   INTERRUPT: 'agent:interrupt',
   WORKTREE_REMOVED: 'agent:worktree-removed',
   START_REALTIME_VOICE: 'agent:start-realtime-voice',
+  READY_REALTIME_VOICE: 'agent:ready-realtime-voice',
   STOP_REALTIME_VOICE: 'agent:stop-realtime-voice',
   LOAD_REALTIME_TIMELINE: 'agent:load-realtime-timeline',
   GET_REALTIME_TIMELINE: 'agent:get-realtime-timeline',
@@ -5039,6 +5050,8 @@ export interface RemoteProviderOption {
 }
 
 export interface RemoteSystemInfo {
+  /** Host protocol support before a session exists; the chosen account is checked separately. */
+  realtimeVoice?: import('./realtime-voice').VoiceCapability
   models?: ModelOption[]
   efforts?: RemoteEffortOption[]
   /** Primary agents; picking one is sent back as `send_message.agent`. */
@@ -5124,6 +5137,7 @@ export type McpAppDeviceRequest = Exclude<McpAppHostOperation, { operation: 'ope
 export type MobileLogEntry = { at: string; tag: string; fields?: Record<string, string | number | boolean | null> }
 
 export type RemoteCommand =
+  | import('./realtime-voice').VoiceCommand
   | { type: 'session_link_identity'; requestId: string }
   /**
    * Desktop pairing through the phone (`@superone/relay-client/desktop-pair`).

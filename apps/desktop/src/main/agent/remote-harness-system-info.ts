@@ -14,6 +14,7 @@ import type {
 } from '@superone/shared/agent-types'
 import { findCodexFastServiceTier } from '@superone/shared/codex-fast-mode'
 import { HARNESS_LAUNCH_OPTIONS } from '@superone/shared/launch-options'
+import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { sessionDefaultsForHarness } from '@superone/shared/harness/session-defaults'
 import {
   coerceSandboxModeForHarness,
@@ -132,6 +133,7 @@ export async function buildRemoteHarnessSystemInfo(
   const catalog = harnessId === 'cursor' ? null : await deps.catalogModels?.()
   return {
     ...info,
+    realtimeVoice: { protocol: 1, supported: HARNESS_CAPABILITIES[harnessId]?.supportsRealtimeVoice === true },
     ...(catalog && info.models ? { models: info.models.map((model) => withCatalogContextWindow(model, catalog)) } : {}),
     brandHue: deps.settings.agentPreference[harnessId]?.brandHue ?? null,
     locale: deps.currentLocale,

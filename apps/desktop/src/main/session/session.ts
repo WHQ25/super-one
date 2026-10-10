@@ -1,3 +1,5 @@
+import { RealtimeVoiceInterest } from './realtime-voice-interest'
+import { assertVoiceAccount } from '@superone/shared/realtime-voice'
 import { McpAppsError, type McpAppsBinding, type McpAppOrigin, type McpAppsProvider } from '@superone/shared/mcp-apps'
 import { MOD_UI_MUTATING_OPS, MOD_UI_UNAVAILABLE, type ModUiOp, type ModUiRequest, type ModUiResult } from '@superone/shared/mod-ui'
 import { updateMcpAppAttachments } from '@superone/shared/mcp-apps-state'
@@ -14,7 +16,7 @@ import { SessionLiveness } from './session-liveness'
 import { hostPendingInteractions, trackHostInteraction } from './host-pending-interactions'
 import { dispatchBackendSteer } from './dispatch-backend-steer'
 import { broadcastSessionSettings } from './session-settings-broadcast'
-import { sessionRequestSelection, type PendingSessionRequest } from './session-request-selection'
+import { sessionRequestSelection, voiceThreadSettings, type PendingSessionRequest } from './session-request-selection'
 import type {
   AgentEvent,
   AgentStatus,
@@ -313,6 +315,25 @@ export class Session implements SessionContract {
   private readonly shutdown = new SessionShutdown()
   private abortController: AbortController | null = null
   private backendStarted = false
+  private realtimeSignalListeners = new Set<(event: AgentEvent) => void>()
+  private voiceInterest = new RealtimeVoiceInterest({
+    owner: () => this.owner, subscribers: () => this.subscribers,
+    claim: deviceId => this.claim({ kind: 'remote', deviceId }),
+    subscribe: deviceId => this.subscribe(deviceId),
+    release: deviceId => this.release(deviceId, 'self_leave'),
+    unsubscribe: deviceId => this.unsubscribe(deviceId, 'self_leave'),
+  })
+
+  retainRealtimeVoice(deviceId?: string): () => void {
+    this.assertNotDisposed()
+    return this.voiceInterest.retain(deviceId)
+  }
+
+  onRealtimeSignal(handler: (event: AgentEvent) => void): () => void {
+    this.realtimeSignalListeners.add(handler)
+    return () => { this.realtimeSignalListeners.delete(handler) }
+  }
+
   private eventListeners = new Set<(e: AgentEvent, replay: boolean) => void>()
   private unsubs: Array<() => void> = []
   private _cachedInitReady: AgentEvent | null = null
@@ -424,6 +445,7 @@ export class Session implements SessionContract {
     if (this.isStreaming()) return false
     // A quiet voice call is still a call; releasing the runtime would hang it up.
     if (this.liveness.realtimeActive) return false
+    if (this.voiceInterest.active()) return false
     if (this._pendingQueuedRequests.size > 0) return false
     if (this.backend.hasActiveBackgroundTasks?.()) return false
     if (this.backend.getPendingInteractions().length > 0) return false
@@ -529,6 +551,7 @@ export class Session implements SessionContract {
   }
 
   release(deviceId: string, reason?: SessionLeaveReason): void {
+    if (!this.voiceInterest.releaseAllowed(deviceId, reason)) return
     if (this._owner.kind !== 'remote' || this._owner.deviceId !== deviceId) return
     const previous = this._owner
     this._owner = LOCAL_OWNER
@@ -537,6 +560,7 @@ export class Session implements SessionContract {
   }
 
   subscribe(deviceId: string): void {
+    this.voiceInterest.subscribed(deviceId)
     if (this._status === 'disposed') return
     if (this._subscribers.has(deviceId)) return
     if (this._owner.kind === 'remote' && this._owner.deviceId !== deviceId) {
@@ -553,6 +577,7 @@ export class Session implements SessionContract {
   }
 
   unsubscribe(deviceId: string, reason?: SessionLeaveReason): void {
+    if (!this.voiceInterest.unsubscribeAllowed(deviceId, reason)) return
     if (!this._subscribers.delete(deviceId)) return
     trace('session.lifecycle', 'unsubscribe', { sid: this.id, deviceId, reason: reason ?? null, remainingSubs: [...this._subscribers] })
     this.emitLifecycle({ type: 'subscriber_removed', sessionId: this.id, deviceId, reason })
@@ -730,8 +755,8 @@ export class Session implements SessionContract {
     }
   }
 
-  getApiProviderId(): string | null {
-    return this._apiProviderId
+  getApiProviderId(resolveDefault = false): string | null {
+    return this._apiProviderId ?? (resolveDefault ? this.getActiveDefaultApiProviderId?.(this.harnessId) ?? null : null)
   }
 
   setApiProviderId(apiProviderId: string | null): void {
@@ -1016,16 +1041,21 @@ export class Session implements SessionContract {
     if (this._status === 'starting') await this.ensureStarted()
     if (this.isStreaming()) throw new Error('Wait for the current turn to finish before starting voice.')
     await this.waitForRuntimeRelease()
+    assertVoiceAccount(this.getApiProviderId(true), request.selection?.apiProviderId)
+    this.snapEffectiveApiProviderId()
+    this.broadcastSettingsPatch(voiceThreadSettings(request))
     if (request.additionalDirs !== undefined) this.callerScopedDirs = [...request.additionalDirs]
     const nextDirs = this.resolveEffectiveDirs()
     const dirsChanged = this.dirsReachBackend() && !sameStringArray(nextDirs, this.additionalDirectories)
     this.additionalDirectories = nextDirs
-    if (dirsChanged && this.backendStarted) {
-      const applied = (await this.backend.setAdditionalDirectories?.(this.additionalDirectories)) ?? false
+    if ((dirsChanged || this._needsRebuild) && this.backendStarted) {
+      const applied = !this._needsRebuild && ((await this.backend.setAdditionalDirectories?.(this.additionalDirectories)) ?? false)
       if (!applied) await this.rebuildBackend()
     }
     const shouldTitleFromFirstUtterance = this._title === null && this._messages.length === 0
     await this.ensureStarted()
+    this._needsRebuild = false
+    this.assertNotDisposed()
     await this.backend.startRealtimeVoice(request)
     if (shouldTitleFromFirstUtterance && this._title === null && this._messages.length === 0) {
       this._realtimeTitlePending = true
@@ -1802,6 +1832,7 @@ export class Session implements SessionContract {
     }
     this.unsubs = []
     this.eventListeners.clear()
+    this.realtimeSignalListeners.clear()
   }
 
   on(handler: (event: AgentEvent, replay: boolean) => void): () => void {
@@ -2093,6 +2124,13 @@ export class Session implements SessionContract {
   }
 
   private forwardEvent(event: AgentEvent): AgentEvent {
+    if (event.type.startsWith('realtime_')) {
+      for (const listener of this.realtimeSignalListeners) {
+        try { listener(event) } catch { log.warn('[Session] realtime signal listener failed') }
+      }
+      // Negotiation is transient and endpoint-directed, never transcript/event-log data.
+      if (event.type === 'realtime_sdp' || event.type === 'realtime_call_signal') return event
+    }
     this.observeDelivery(event)
     // A read receipt is about the user, not the agent, and a mod redrawing is
     // not agent work: neither may bump the session's recency nor postpone its

@@ -69,6 +69,7 @@ import { CodexTurnUsageAccumulator } from '../../codex/codex-usage-accumulator'
 import { CodexGoalController } from '../../codex/codex-goal-controller'
 import { codexGoalEventCallbacks } from '../../codex/codex-goal-events'
 import {
+  CodexRealtimeCleanupError,
   listCodexRealtimeTimeline,
   startCodexRealtime,
   type CodexRealtimeHandle,
@@ -1098,9 +1099,17 @@ export class CodexBackend implements SessionBackend {
         },
       )
     } catch (error) {
+      if (error instanceof CodexRealtimeCleanupError) {
+        this.adoptRealtimeHandle(error.handle)
+        throw error
+      }
       this.swapRunAssistantId = null
       throw error
     }
+    this.adoptRealtimeHandle(handle)
+  }
+
+  private adoptRealtimeHandle(handle: CodexRealtimeHandle): void {
     this.fireProviderSessionId(handle.threadId)
     this.realtimeHandle = handle
     const turnPump = handle.delegatedTurns.finally(() => {

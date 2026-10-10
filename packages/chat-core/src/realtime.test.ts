@@ -21,11 +21,19 @@ const completed = (itemId: string, role: 'user' | 'assistant', text: string, sta
 })
 
 describe('realtime voice reduction', () => {
+  it('retains the speech start order for delegated-work association through partials and completion', () => {
+    let state = session({ realtimeSessionId: 'rt-1' })
+    state = { ...state, ...applyEventToSession(state, { ...completed('item-1', 'user', ''), phase: 'started', seq: 10 }) }
+    state = { ...state, ...applyEventToSession(state, { ...completed('item-1', 'user', 'Inspect'), phase: 'delta', seq: 11 }) }
+    state = { ...state, ...applyEventToSession(state, { ...completed('item-1', 'user', 'Inspect auth'), seq: 15 }) }
+    expect(state.realtimeSegments[0].localOrder).toBe(10)
+    expect(state.realtimeLiveSegments).toEqual([])
+  })
   it('tracks the live call id across start and close', () => {
     expect(applyEventToSession(session(), { type: 'realtime_started', realtimeSessionId: 'rt-1', version: '1' }))
-      .toEqual({ realtimeSessionId: 'rt-1' })
+      .toEqual({ realtimeSessionId: 'rt-1', realtimeLiveSegments: [], realtimeHasTimeline: true })
     expect(applyEventToSession(session({ realtimeSessionId: 'rt-1' }), { type: 'realtime_closed' }))
-      .toEqual({ realtimeSessionId: null })
+      .toEqual({ realtimeSessionId: null, realtimeLiveSegments: [] })
   })
 
   it('keeps a completed utterance', () => {
@@ -41,16 +49,51 @@ describe('realtime voice reduction', () => {
     }])
   })
 
-  it('ignores partials, blank text, and role-less events', () => {
+  it('ignores unowned deltas, blank completions, and role-less events', () => {
     const base = session({ realtimeSessionId: 'rt-1' })
     for (const event of [
       { type: 'realtime_transcript_item', phase: 'delta', itemId: 'item-1', text: 'hel' },
-      { type: 'realtime_transcript_item', phase: 'started', itemId: 'item-1', text: '', role: 'user' },
       { type: 'realtime_transcript_item', phase: 'completed', itemId: 'item-1', text: '   ', role: 'user' },
       { type: 'realtime_transcript_item', phase: 'completed', itemId: 'item-1', text: 'hi' },
     ] as AgentEvent[]) {
       expect(applyEventToSession(base, event)).toEqual({})
     }
+  })
+
+  it('projects concurrent user and agent captions in start order with stable row ids', () => {
+    let state = session({ realtimeSessionId: 'rt-1' })
+    const ingest = (event: AgentEvent) => { state = { ...state, ...applyEventToSession(state, event) } }
+    const rows = () => mergeRealtimeTranscript(state.messages, state.realtimeSegments, state.realtimeLiveSegments)
+    ingest({ type: 'realtime_transcript_item', phase: 'started', itemId: 'u', role: 'user', text: '', startedAtMs: 1000 })
+    expect(rows()).toEqual([])
+    ingest({ type: 'realtime_transcript_item', phase: 'delta', itemId: 'u', text: 'Inspect ' })
+    ingest({ type: 'realtime_transcript_item', phase: 'delta', itemId: 'u', text: 'the logs' })
+    const userId = rows()[0].id
+    expect(rows()[0]).toMatchObject({ role: 'user', status: 'streaming', content: [{ type: 'text', text: 'Inspect the logs' }] })
+    ingest({ type: 'realtime_transcript_item', phase: 'started', itemId: 'a', role: 'assistant', text: '', startedAtMs: 2000 })
+    ingest({ type: 'realtime_transcript_item', phase: 'delta', itemId: 'a', text: 'Checking now' })
+    const assistantId = rows()[1].id
+    expect(state.realtimeSegments).toEqual([])
+    // The assistant can complete while the user's transcription is still pending.
+    ingest(completed('a', 'assistant', 'Checking now', 2000))
+    expect(rows().map(row => row.id)).toEqual([userId, assistantId])
+    ingest(completed('u', 'user', 'Inspect the logs.', 1000))
+    expect(rows().map(row => row.id)).toEqual([userId, assistantId])
+    expect(rows().map(row => row.status)).toEqual(['complete', 'complete'])
+    expect(state.realtimeLiveSegments).toEqual([])
+    ingest({ type: 'realtime_transcript_item', phase: 'delta', itemId: 'u', text: 'duplicate' })
+    ingest({ type: 'realtime_transcript_item', phase: 'started', itemId: 'u', role: 'user', text: '' })
+    expect(rows()).toHaveLength(2)
+  })
+
+  it('clears unfinished captions at call boundaries and fences the previous call', () => {
+    const live: RealtimeTimelineSegment = { id: 'live-u', sourceItemId: 'u', realtimeSessionId: 'rt-1', role: 'user', text: 'unfinished' }
+    let state = session({ realtimeSessionId: 'rt-1', realtimeLiveSegments: [live] })
+    state = { ...state, ...applyEventToSession(state, { type: 'realtime_closed' }) }
+    expect(state.realtimeLiveSegments).toEqual([])
+    expect(applyEventToSession(state, { type: 'realtime_transcript_item', phase: 'delta', itemId: 'u', text: 'late' })).toEqual({})
+    state = { ...state, ...applyEventToSession(state, { type: 'realtime_started', realtimeSessionId: 'rt-2', version: '1' }) }
+    expect(applyEventToSession(state, completed('u', 'user', 'old call'))).toEqual({})
   })
 
   it('falls back to the session call id when the event omits one', () => {

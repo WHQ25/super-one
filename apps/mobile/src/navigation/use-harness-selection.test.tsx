@@ -8,6 +8,15 @@ import { useHarnessSelection } from './use-harness-selection'
 const wrapper = ({ children }: { children: ReactNode }) =>
   <MobileThemeProvider>{children}</MobileThemeProvider>
 
+test('a default provider pick resolves the discovered account without changing a bound account pick', async () => {
+  const { result } = await renderHook(() => useHarnessSelection(), { wrapper })
+  await act(async () => { result.current.applySystemInfo('codex', { selectedProviderId: 'codex-account:cli' }) })
+  await act(async () => { result.current.selectProvider('codex-account:bound') })
+  expect(result.current.selectedProviderId ?? result.current.defaultProviderId).toBe('codex-account:bound')
+  await act(async () => { result.current.selectProvider(null) })
+  expect(result.current.selectedProviderId ?? result.current.defaultProviderId).toBe('codex-account:cli')
+})
+
 test('retains a draft model, mode, provider and effort when the catalog refreshes', async () => {
   const { result } = await renderHook(() => useHarnessSelection(), { wrapper })
   await act(async () => { result.current.restoreDraft({ harness: 'claude', model: 'saved-model', effort: 'max', permissionMode: 'plan', apiProviderId: 'saved-provider', selectedAcpModeId: 'saved-mode' }) })

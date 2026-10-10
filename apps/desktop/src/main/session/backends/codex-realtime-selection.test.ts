@@ -85,6 +85,21 @@ describe('realtime backend selection at the app-server boundary', () => {
     expect(request).not.toHaveBeenCalledWith('thread/realtime/stop', expect.anything())
   })
 
+  it('retains a cleanup handle after uncertain startup so a retry really stops upstream', async () => {
+    const { backend, opts, request } = setup()
+    await backend.start(opts)
+    const original = request.getMockImplementation()!
+    let stopAttempts = 0
+    request.mockImplementation(async (method, params) => {
+      if (method === 'thread/realtime/start') throw new Error('start outcome unknown')
+      if (method === 'thread/realtime/stop' && ++stopAttempts === 1) throw new Error('connection unavailable')
+      return original(method, params)
+    })
+    await expect(backend.startRealtimeVoice({ sdp: 'v=0\na=offer' })).rejects.toThrow('Voice cleanup pending')
+    await backend.stopRealtimeVoice()
+    expect(stopAttempts).toBe(2)
+  })
+
   it('does not start voice when app-server rejects the selected defaults', async () => {
     const { backend, request, opts } = setup()
     await backend.start(opts)

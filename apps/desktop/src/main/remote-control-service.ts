@@ -16,6 +16,7 @@ import { createRelayHeartbeat } from '@superone/shared/relay-heartbeat'
 
 export type { RemoteDeviceConfig }
 import { trace } from './agent/event-trace'
+import { isVoiceSignalingEvent, containsVoiceCommand } from '@superone/shared/realtime-voice'
 import { readOutputFile } from './agent/claude-session-runtime'
 import { listWorkflowAgentsSync } from './workflow-transcripts'
 import { initHighlighter } from './remote-highlighter'
@@ -641,7 +642,7 @@ export class RemoteControlService {
           this.disconnectDevice(deviceId)
           return
         }
-        trace('remote.in', command.type, command)
+        if (!containsVoiceCommand(command)) trace('remote.in', command.type, command)
         this.callbacks.onCommand(command, (requestId, data) => this.sendResponse(requestId, data, deviceId, channel, ws, generation), { deviceId, transport: 'relay' })
         break
       }
@@ -848,6 +849,7 @@ export class RemoteControlService {
   }
 
   async sendAgentEvent(event: AgentEvent, targetDeviceIds?: string[]): Promise<void> {
+    if (isVoiceSignalingEvent(event)) return
     if (!this.keys) return
     if (!this.hasAnyMobileTransport()) return
 

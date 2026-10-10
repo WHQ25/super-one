@@ -1,7 +1,7 @@
 import { expect, jest, test } from '@jest/globals'
-import { createRef } from 'react'
-import { Keyboard } from 'react-native'
-import { screen } from '@testing-library/react-native'
+import { createRef, type ReactNode } from 'react'
+import { Keyboard, Text } from 'react-native'
+import { screen, within } from '@testing-library/react-native'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import type { WebView } from 'react-native-webview'
 import { renderWithTheme } from '../test-render'
@@ -26,6 +26,8 @@ function screenUi(overrides: {
   todos?: boolean
   landing?: NewSessionLandingProps
   composerHidden?: boolean
+  voiceComposer?: ReactNode
+  inputComposer?: ReactNode
 } = {}) {
   return <SafeAreaProvider initialMetrics={{
     frame: { x: 0, y: 0, width: 390, height: 844 },
@@ -37,6 +39,8 @@ function screenUi(overrides: {
       loadingConversation={overrides.loadingConversation}
       landing={overrides.landing}
       composerHidden={overrides.composerHidden}
+      voiceComposer={overrides.voiceComposer}
+      inputComposer={overrides.inputComposer}
       permissionModes={['default']}
       permissionMode="default"
       sandboxInfo={null}
@@ -95,6 +99,29 @@ test('the first send of a new session is just the live transcript, with no start
   expect(screen.queryByText('Loading…')).toBeNull()
   expect(screen.queryByTestId('conversation-loading')).toBeNull()
   expect(screen.queryByTestId('session-starting')).toBeNull()
+})
+
+test('replaces the bottom composer during voice, preserves the draft editor and restores it on hangup', async () => {
+  const dismiss = jest.spyOn(Keyboard, 'dismiss').mockImplementation(() => {})
+  const view = await renderWithTheme(screenUi())
+  dismiss.mockClear()
+  await view.rerender(screenUi({ voiceComposer: <Text>Voice controls</Text>, todos: true }))
+  expect(within(screen.getByTestId('chat-composer-stack')).getByText('Voice controls')).toBeTruthy()
+  expect(screen.queryByLabelText('Message')).toBeNull()
+  expect(screen.getByLabelText('Message', { includeHiddenElements: true })).toBeTruthy()
+  expect(screen.queryByText('Ship it')).toBeNull()
+  expect(dismiss).toHaveBeenCalled()
+  await view.rerender(screenUi())
+  expect(screen.getByLabelText('Message')).toBeTruthy()
+  expect(screen.queryByText('Voice controls')).toBeNull()
+  dismiss.mockRestore()
+})
+
+test('a pending native decision temporarily owns the composer slot during voice', async () => {
+  await renderWithTheme(screenUi({ voiceComposer: <Text>Voice controls</Text>, inputComposer: <Text>Answer question</Text> }))
+  expect(screen.getByText('Answer question')).toBeTruthy()
+  expect(screen.queryByText('Voice controls')).toBeNull()
+  expect(screen.queryByLabelText('Message')).toBeNull()
 })
 
 test('the new-session landing is not a conversation restore', async () => {

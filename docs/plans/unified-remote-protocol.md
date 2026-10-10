@@ -567,3 +567,18 @@ None.
   verification, and deletion of this plan and its accepted proposal after
   acceptance. This plan does not require two physical machines; its desktop
   lab uses two isolated development profiles on the same Mac.
+- 2026-10-11: The native cut-over is committed as `fca0f22d7`. Final CI
+  exposed two test-only defects: a fixed 50 ms wait for parallel MCP host
+  actions and draft-change fixtures missing their required record. They are
+  corrected in `6d08c5c13` and `40bd7975a`. All release checks pass on
+  `40bd7975a`: dependency lock, lint, all workspace typechecks, desktop 14,062
+  tests (35 existing skips), runtime 775, CLI 399, relay 56, mobile Vitest
+  1,070 and native Jest 504, and generated icons. The additional relay-client
+  suite passes 160 tests. The immutable step-0 wire fixture remains unchanged.
+  The next alpha is `0.73.0-alpha.1`, with the same CLI version; Android and
+  iOS both qualify for build-35 OTA. Release notes and the desktop-first
+  publication sequence are drafted. No release was pushed or published.
+  Live desktop pairing and contention remain pending the explicitly denied
+  Electron Computer Use permission; the authorization clarification has no
+  reply. Publication, artifact verification and final plan/proposal deletion
+  remain pending that acceptance.

@@ -1,3 +1,4 @@
+import type { AgentEvent } from '@superone/shared/agent-types'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ToolAppAttachment } from '@superone/shared/mcp-apps'
 import type { SessionManagerImpl } from '../session/session-manager'
@@ -16,6 +17,7 @@ vi.mock('../environment/environment-host', () => ({ getEnvironmentHost: () => ({
 }) }))
 import { executeMcpAppHostRequest, initializeMcpAppExecutor, isMcpAppHostActive, releaseMcpAppRequester, resolveMcpAppHostAttachment } from './executor'
 import { notifySessionClosed, notifySessionsDeleted } from '../session-list-watch'
+import { SessionEventHub } from '../stream/session-event-hub'
 
 const app: ToolAppAttachment = { appInstanceId: 'view', binding: { node: 'local', session: 's', server: 'fixture', configGeneration: 0, configFingerprint: 'config' },
   presentation: { toolTitle: 'Library', serverTitle: 'Fixture CAD' }, origin: { providerSessionId: 'thread' }, resourceUri: 'ui://fixture/view', resource: { html: '<html>saved</html>', hash: 'hash', meta: {} } }
@@ -23,9 +25,10 @@ const send = vi.fn(async (_request, callbacks) => { callbacks.onAccepted() })
 const newSession = { id: 'new', send, snapshot: { harnessId: 'claude' }, broadcastSettingsPatch: vi.fn() }
 const createSession = vi.fn(() => newSession)
 const session = { getUiSettings: () => ({ selectedModel: 'sonnet', selectedEffort: 'high', permissionMode: 'auto', sandboxInfo: { enabled: true, autoAllowBash: true } }), getCurrentSandboxInfo: () => ({ enabled: true, autoAllowBash: true }), getCurrentPermissionMode: () => 'auto', getSelectedEffort: () => 'high', projectPath: '/project', send, snapshot: { projectPath: '/project', cwd: '/project/worktree', gitBranch: 'feature', harnessId: 'claude', acpAgentId: null, selectedModel: 'sonnet', selectedEffort: 'high', providerId: 'claude-base', apiProviderId: 'account', messages: [{ id: 'm', content: [{ type: 'tool_result', toolUseId: 'call', summary: '', app }] }] } }
-const manager = { getSession: (id: string) => id === 'new' ? newSession : session, createSession, onAny: vi.fn() } as unknown as SessionManagerImpl
-const mobile = { handleRemoteCommand: vi.fn<Parameters<typeof initializeMcpAppExecutor>[1]['handleRemoteCommand']>(async (command, respond) => { await respond?.(command.requestId, { ok: true }) }), notifyEventSubscribers: vi.fn() }
-initializeMcpAppExecutor(manager, mobile, vi.fn())
+const manager = { getSession: (id: string) => id === 'new' ? newSession : session, createSession } as unknown as SessionManagerImpl
+const mobile = { handleRemoteCommand: vi.fn<Parameters<typeof initializeMcpAppExecutor>[1]['handleRemoteCommand']>(async (command, respond) => { await respond?.(command.requestId, { ok: true }) }) }
+const hub = new SessionEventHub()
+initializeMcpAppExecutor(manager, mobile, hub)
 
 beforeEach(() => { mocks.resolve.mockReset(); mocks.provider.mockClear(); mobile.handleRemoteCommand.mockClear(); send.mockClear(); createSession.mockClear(); mocks.remoteSession.mockReset(); mocks.createRemoteSession.mockReset(); mocks.remoteSend.mockReset() })
 
@@ -36,7 +39,7 @@ describe('main MCP App executor adapters', () => {
     const row = { id: 'parent', content: [], metadata: { codex: { items: [item] } } }
     session.snapshot.messages.push(row as unknown as typeof session.snapshot.messages[number])
     try {
-      const notify = (manager.onAny as ReturnType<typeof vi.fn>).mock.calls[0]![0]
+      const notify = (sessionId: string, event: unknown, replay: boolean) => hub.publish({ event: event as AgentEvent, source: 'session', sessionId, replay })
       const event = { type: 'codex_item_delta', messageId: 'parent', phase: 'updated', item }
       notify('s', event, true)
       for (const child of children) expect(isMcpAppHostActive(await resolveMcpAppHostAttachment({ sessionKey: 'local:s', appInstanceId: child.id }))).toBe(false)

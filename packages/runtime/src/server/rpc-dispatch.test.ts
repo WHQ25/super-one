@@ -198,6 +198,14 @@ describe('a partial git port', () => {
     expect(methods).not.toContain('git.status')
     expect(methods).not.toContain('git.worktrees')
   })
+
+  it('refuses and leaves out the methods a host names unserved', async () => {
+    const { ctx } = worktreeOnlyHost()
+    const host = { ...ctx, unservedMethods: new Set(['git.fetch']) }
+    const res = await dispatchRpc('environment.descriptor', {}, host)
+    expect((res.result as ExecutionEnvironmentDescriptor).capabilities.methods).not.toContain('git.fetch')
+    expect((await dispatchRpc('git.fetch', {}, host)).error).toMatchObject({ details: { unsupported: true } })
+  })
 })
 
 describe('git.clone into an existing folder', () => {

@@ -101,6 +101,7 @@ function requiredPorts(method: string): readonly FamilyPort[] {
 }
 
 function serves(ctx: HostRpcContext, method: string): boolean {
+  if (ctx.unservedMethods?.has(method)) return false
   // A partial port (`servedMethods`) serves only the methods it names.
   return requiredPorts(method).every((port) => {
     const served = ctx[port] as { readonly servedMethods?: ReadonlySet<string> } | undefined

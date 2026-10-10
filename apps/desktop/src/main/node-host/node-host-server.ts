@@ -16,7 +16,6 @@ import {
   type NodeServerHandle,
   type ProjectsPort,
   type RpcContext,
-  type RpcExtensionDispatch,
   type RpcHostHooks,
 } from '@superone/runtime/server'
 import { openNodeDatabase, type NodeDatabase } from '@superone/runtime/db'
@@ -41,17 +40,16 @@ const DESKTOP_NODE_CAPABILITIES: HostCapabilityFlags = {
 }
 
 /**
- * Methods the shared families would serve without a port but that have no
- * desktop meaning yet: node settings belong to this desktop's own settings,
- * and a fork would cut a worktree before learning sessions cannot fork here.
+ * Shared methods with no desktop meaning yet: node settings belong to this
+ * desktop's own settings, a fork would cut a worktree before learning sessions
+ * cannot fork here, harness installs stay with this desktop's user, and a
+ * controller's session keeps its cwd, tags and lifetime as this desktop has them.
  */
-const DESKTOP_UNSERVED_METHODS = new Set(['settings.patch', 'sandbox.probe', 'session.fork'])
-
-const desktopExtensions: RpcExtensionDispatch = (method) => {
-  if (!DESKTOP_UNSERVED_METHODS.has(method)) return null
-  const { code, message, details } = unsupportedMethodError(method)
-  return { error: { code, message, details } }
-}
+const DESKTOP_UNSERVED_METHODS: ReadonlySet<string> = new Set([
+  'settings.patch', 'sandbox.probe', 'harness.enable', 'harness.disable',
+  'session.fork', 'session.setCwd', 'session.setTags', 'session.setUiFlags', 'session.close', 'session.remove',
+  'session.modUi', 'session.notifyArtifactCompleted',
+])
 
 /**
  * Only the agent catalog of the collaboration family: a controller lists what
@@ -179,7 +177,7 @@ export class DesktopNodeHost {
             sessions: sessionHost,
             harnesses: deps.harnesses,
             collaboration,
-            extensions: desktopExtensions,
+            unservedMethods: DESKTOP_UNSERVED_METHODS,
             subscriptionUsage: { claudeAccounts: claudeUsageAccounts, log: usageLog },
           }),
         })

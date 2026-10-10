@@ -141,6 +141,7 @@ async function enableDesktopHarnessOnce(
 ): Promise<HarnessInstallationStatus> {
   const m = getHarnessManager()
   const id = input.harnessId
+  if (scriptedHarnessEnabled()) return m.get(id)
   log.info(`[harness] enable ${id}`)
   try {
     // Mark installing for managed downloads so the UI can show progress immediately.
@@ -221,6 +222,7 @@ export async function ensureManagedHarnessReady(
  * runtime. Used to skip the blocking harness-align UI on the happy path.
  */
 export function enabledManagedHarnessesNeedAlign(): boolean {
+  if (scriptedHarnessEnabled()) return false
   const m = getHarnessManager()
   const homeRoot = resolveHarnessHomeRoot()
   for (const id of ['claude', 'codex'] as const) {
@@ -240,6 +242,7 @@ export async function alignEnabledManagedHarnesses(): Promise<{
   aligned: Array<{ id: 'claude' | 'codex'; runtimeVersion?: string }>
   failed: Array<{ id: 'claude' | 'codex'; error: string }>
 }> {
+  if (scriptedHarnessEnabled()) return { aligned: [], failed: [] }
   const m = getHarnessManager()
   const aligned: Array<{ id: 'claude' | 'codex'; runtimeVersion?: string }> = []
   const failed: Array<{ id: 'claude' | 'codex'; error: string }> = []

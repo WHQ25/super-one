@@ -5,6 +5,7 @@
  * `session.send` under the control lease this desktop holds.
  */
 
+import { isEnvironment } from '@superone/shared/environment/client-view'
 import type {
   RemoteAgentProfiles,
   SessionAgentLaunchConfig,
@@ -116,7 +117,7 @@ export function isLocalEnvironment(environment: string | undefined, localEnviron
 }
 
 export async function connectedEnvironment(environmentId: string): Promise<RemoteCollabEnvironment> {
-  const env = (await (await remotePort()).listEnvironments()).find((item) => item.environmentId === environmentId)
+  const env = (await (await remotePort()).listEnvironments()).find((item) => isEnvironment(item, environmentId))
   if (!env) throw failed(`Unknown environment ${environmentId}. Pick one from session_collab_list_agents → environments[].`)
   if (!env.connected) throw failed(`${env.label} is not connected. Connect it in Settings → Environments, then request again.`)
   return env

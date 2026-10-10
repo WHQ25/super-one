@@ -29,7 +29,7 @@ export class EnvironmentRegistryImpl implements EnvironmentRegistry {
   }
 
   get(environmentId: string): EnvironmentGateway | null {
-    if (environmentId === this.local.getEnvironmentId()) return this.local
+    if (environmentId === this.local.getEnvironmentId() || this.local.environmentAliases.includes(environmentId)) return this.local
     const fromManager = this.connectionManager?.getGateway(environmentId)
     if (fromManager) return fromManager
     return this.remotes.get(environmentId) ?? null

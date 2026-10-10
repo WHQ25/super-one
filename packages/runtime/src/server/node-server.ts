@@ -552,7 +552,7 @@ export async function startNodeServer<C extends NodeRpcRequestContext = RpcConte
           }
         }
 
-        if (!msg.environmentId || msg.environmentId !== opts.identity.environmentId) {
+        if (!msg.environmentId || (msg.environmentId !== opts.identity.environmentId && !opts.identity.aliases?.includes(msg.environmentId))) {
           send({
             type: 'rpc_error',
             requestId,

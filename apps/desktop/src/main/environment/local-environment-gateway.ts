@@ -39,7 +39,7 @@ import {
 } from '@superone/shared/environment'
 import type { DraftStore } from '@superone/runtime/drafts'
 import { localDraftStore } from '../db-drafts'
-import { loadOrCreateLocalEnvironmentId } from './local-identity'
+import { loadDesktopEnvironmentIdentity } from './local-identity'
 
 /** Minimal session port so local gateway can share harness parity with remote. */
 export interface LocalSessionPort {
@@ -156,6 +156,8 @@ export class LocalEnvironmentGateway implements EnvironmentGateway {
   readonly drafts: DraftGateway
 
   private readonly environmentId: string
+  /** Earlier ids of this desktop that references may carry. */
+  readonly environmentAliases: string[]
   private readonly label: string
   private readonly nodeVersion: string
   private readonly listProjectsFn: () => Promise<ProjectSnapshot[]> | ProjectSnapshot[]
@@ -166,7 +168,9 @@ export class LocalEnvironmentGateway implements EnvironmentGateway {
   private readonly draftStoreFn: () => DraftStore
 
   constructor(opts: LocalEnvironmentGatewayOptions) {
-    this.environmentId = loadOrCreateLocalEnvironmentId(opts.dataDir)
+    const identity = loadDesktopEnvironmentIdentity(opts.dataDir)
+    this.environmentId = identity.environmentId
+    this.environmentAliases = identity.aliases
     this.label = opts.label ?? (hostname() || LOCAL_ENVIRONMENT_LABEL)
     this.nodeVersion = opts.nodeVersion ?? process.version
     this.listProjectsFn = opts.listProjects ?? (() => [])
@@ -190,6 +194,7 @@ export class LocalEnvironmentGateway implements EnvironmentGateway {
   async getDescriptor(): Promise<ExecutionEnvironmentDescriptor> {
     return {
       environmentId: this.environmentId,
+      ...(this.environmentAliases.length ? { environmentAliases: [...this.environmentAliases] } : {}),
       label: this.label,
       platform: {
         os: mapOs(),

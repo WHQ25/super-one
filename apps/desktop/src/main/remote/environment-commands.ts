@@ -1,4 +1,5 @@
 import { isVoiceCommand } from '@superone/shared/realtime-voice'
+import { isEnvironment } from '@superone/shared/environment/client-view'
 import type { AgentEvent, HarnessId, RemoteCommand } from '@superone/shared/agent-types'
 import type { EnvironmentGateway, MutatingControlContext, SessionLoadResult, SessionRef } from '@superone/shared/environment'
 import { createNodeSessionEventMapper } from '@superone/shared/node-session-event-map'
@@ -84,7 +85,7 @@ export async function executeEnvironmentCommand(environmentId: string, command: 
     return { ok: true }
   }
   const host = getEnvironmentHost()
-  const item = (await host.listEnvironments({ includeDescriptors: false })).find(item => item.environmentId === environmentId && item.kind === 'remote')
+  const item = (await host.listEnvironments({ includeDescriptors: false })).find(item => isEnvironment(item, environmentId) && item.kind === 'remote')
   if (!item) throw new Error('Unknown remote environment')
   const gateway = host.getGateway(environmentId)
   if (!gateway) throw new Error('Remote environment is disconnected')

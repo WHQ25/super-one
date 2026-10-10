@@ -2492,6 +2492,7 @@ export class EnvironmentHost {
       {
         connectionId: 'local',
         environmentId: localDescriptor.environmentId,
+        ...(localDescriptor.environmentAliases ? { environmentAliases: localDescriptor.environmentAliases } : {}),
         label: localDescriptor.label,
         kind: 'local',
         state: 'connected',
@@ -2519,6 +2520,7 @@ export class EnvironmentHost {
       items.push({
         connectionId: known.connectionId,
         environmentId: known.environmentId,
+        ...(known.environmentAliases?.length ? { environmentAliases: known.environmentAliases } : {}),
         label: known.label,
         kind: 'remote',
         state,

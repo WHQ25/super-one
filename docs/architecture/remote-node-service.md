@@ -184,7 +184,13 @@ type TerminalRef = { environmentId: string; terminalId: string }
 
 An `ExecutionEnvironment` is one node runtime instance with a stable random
 `environmentId` persisted in `<node dir>/environment-id`. The local desktop
-runtime is also an environment.
+runtime is also an environment, and has one id: its node identity's
+(`<userData>/node-host/environment-id`), which its window, phones and
+controllers all use (`local-identity.ts`). A desktop that had a separate local
+id (`<userData>/environment-id`) before keeps it as an alias: descriptors report
+it in `environmentAliases`, controllers store it with the known environment,
+and lookups by environment id (`isEnvironment`, the gateway registry, the RPC
+envelope check) accept it, so earlier session links keep resolving.
 
 `ExecutionEnvironmentDescriptor` (`packages/shared/src/environment/descriptor.ts`)
 carries `environmentId`, `label`, `platform { os, arch }`, `nodeVersion`,

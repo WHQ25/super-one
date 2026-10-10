@@ -540,6 +540,7 @@ async function handleDescriptor(ctx: HostRpcContext): Promise<RpcResult> {
 
   const descriptor: ExecutionEnvironmentDescriptor = {
     environmentId: ctx.identity.environmentId,
+    ...(ctx.identity.aliases?.length ? { environmentAliases: [...ctx.identity.aliases] } : {}),
     label: ctx.identity.label,
     platform: { os: mapOs(), arch: arch() },
     nodeVersion: process.version,

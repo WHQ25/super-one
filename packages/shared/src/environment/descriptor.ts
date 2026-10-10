@@ -14,6 +14,11 @@ export interface ExecutionEnvironmentPlatform {
  */
 export interface ExecutionEnvironmentDescriptor {
   environmentId: string
+  /**
+   * Earlier ids of this environment that references may still carry (a
+   * desktop's local id from before its node identity became canonical).
+   */
+  environmentAliases?: string[]
   label: string
   platform: ExecutionEnvironmentPlatform
   /**

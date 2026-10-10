@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -21,6 +21,18 @@ function tempDir(): string {
 }
 
 describe('LocalEnvironmentGateway', () => {
+  it('reports its earlier local id as an alias, which the registry resolves to it', async () => {
+    const dataDir = tempDir()
+    writeFileSync(join(dataDir, 'environment-id'), 'local-id\n')
+    mkdirSync(join(dataDir, 'node-host'))
+    writeFileSync(join(dataDir, 'node-host', 'environment-id'), 'node-id\n')
+    const registry = new EnvironmentRegistryImpl({ dataDir })
+    const descriptor = await registry.getLocal().getDescriptor()
+    expect(descriptor).toMatchObject({ environmentId: 'node-id', environmentAliases: ['local-id'] })
+    expect(registry.get('local-id')).toBe(registry.getLocal())
+    expect(registry.get('node-id')).toBe(registry.getLocal())
+  })
+
   it('returns a stable descriptor with local capabilities', async () => {
     const dataDir = tempDir()
     const gw = new LocalEnvironmentGateway({

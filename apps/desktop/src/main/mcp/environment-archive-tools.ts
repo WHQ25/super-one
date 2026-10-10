@@ -1,3 +1,4 @@
+import { isEnvironment } from '@superone/shared/environment/client-view'
 import { servesMethod } from '@superone/shared/environment'
 import { decode, encode } from '@toon-format/toon'
 import type { ArchiveToolResult, SessionArchiveTool } from '@superone/shared/session-archive'
@@ -24,7 +25,7 @@ export function createEnvironmentArchiveTools(sessionId: string, connectionId?: 
         const include = new Set<EnvironmentInfoGroup>(args.include ?? ['hardware'])
         const { host, items, source } = await environments(include.has('hardware'))
         const unique = [...new Map(items.map(item => [item.environmentId, item])).values()]
-        const unknown = (args.environmentIds ?? []).filter(id => !unique.some(item => item.environmentId === id))
+        const unknown = (args.environmentIds ?? []).filter(id => !unique.some(item => isEnvironment(item, id)))
         if (unknown.length) throw new Error(`Unknown environment: ${unknown.join(', ')}. Call environment_get_info without environmentIds to list them.`)
         const selected = args.environmentIds ? unique.filter(item => args.environmentIds!.includes(item.environmentId)) : unique
         const rows = await Promise.all(selected.map(async (item) => {
@@ -41,7 +42,7 @@ export function createEnvironmentArchiveTools(sessionId: string, connectionId?: 
         const { host, items, source } = await environments()
         const selector = typeof args.environmentId === 'string' ? args.environmentId : 'localhost'
         const environmentId = selector === 'localhost' ? source.environmentId : selector
-        const target = items.find(item => item.environmentId === environmentId)
+        const target = items.find(item => isEnvironment(item, environmentId))
         if (!target) throw new Error('Unknown environment. Discover IDs with environment_list.')
         if (target.kind !== 'local') {
           const descriptor = await host.connect(target.connectionId)

@@ -14,6 +14,8 @@ import { nodeIdentityPaths } from './node-paths'
 
 export interface NodeIdentity {
   environmentId: string
+  /** Earlier ids of this environment (`ExecutionEnvironmentDescriptor.environmentAliases`). */
+  aliases?: string[]
   label: string
   privateKeyPem: string
   publicKeyPem: string

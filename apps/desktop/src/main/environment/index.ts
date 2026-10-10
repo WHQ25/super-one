@@ -1,4 +1,4 @@
-export { loadOrCreateLocalEnvironmentId } from './local-identity'
+export { loadDesktopEnvironmentIdentity } from './local-identity'
 export {
   LocalEnvironmentGateway,
   type LocalEnvironmentGatewayOptions,

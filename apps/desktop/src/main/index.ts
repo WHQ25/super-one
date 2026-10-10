@@ -1079,13 +1079,24 @@ async function applyNodeHostSettings(settings: AppSettings): Promise<void> {
   const { applyNodeHostSettings: apply, setNodeHostAccessAllowed } = await import('./node-host/node-host-controller')
   setNodeHostAccessAllowed(readRemoteConfig()?.enabled === true)
   // The same relay the phone link uses carries the node channel across networks.
-  const { createDesktopTerminalsPort } = await import('./node-host/desktop-terminals-port')
+  const [{ createDesktopTerminalsPort }, { createPhoneMethods }] = await Promise.all([
+    import('./node-host/desktop-terminals-port'),
+    import('./remote/phone-methods'),
+  ])
   await apply(settings, sessionManager, {
     relayUrl: readRemoteConfig()?.relayUrl || __CF_RELAY_URL__,
-    terminals: createDesktopTerminalsPort(terminalManager, (listener) => {
-      terminalEventListeners.add(listener)
-      return () => terminalEventListeners.delete(listener)
-    }),
+    phonePorts: {
+      terminals: createDesktopTerminalsPort(terminalManager, (listener) => {
+        terminalEventListeners.add(listener)
+        return () => terminalEventListeners.delete(listener)
+      }),
+      phoneMethods: createPhoneMethods({
+        agent: agentService,
+        desktopPair: async (input) => (await desktopPairing()).handleDesktopPairCommand(input.kind === 'mint'
+          ? { type: 'node_mint', requestId: '', controllerName: input.controllerName }
+          : { type: 'node_pair', requestId: '', nodeCode: input.nodeCode, nodeName: input.nodeName }),
+      }),
+    },
   })
 }
 

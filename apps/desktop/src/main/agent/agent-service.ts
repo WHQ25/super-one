@@ -621,6 +621,215 @@ export class AgentService {
     }
   }
 
+  /** A harness's catalog and defaults for a phone composer (`get_system_info`, `harness.systemInfo`). */
+  async remoteSystemInfo(projectPath: string, provider: HarnessId, force?: boolean): Promise<import('@superone/shared/agent-types').RemoteSystemInfo> {
+    const settings = readAppSettings()
+    // Claude account choices retain their credential domain even with one account.
+    const claudeAccounts = provider === 'claude'
+      ? (await listClaudeAccounts().catch(() => [])).filter((account) => account.loggedIn)
+      : []
+    const info = await buildRemoteHarnessSystemInfo(projectPath, provider, {
+      settings,
+      currentLocale: getCurrentLocale(),
+      getCachedResources: getCachedHarnessResources,
+      fetchClaudeModels: fetchModels,
+      connectOpenCodeResources: async (projectPath) => {
+        const { connectOpenCodeResources } = await import('../opencode/opencode-resources')
+        return connectOpenCodeResources(projectPath, force)
+      },
+      listCodexModels: this.codexListModels,
+      codexAccount: this.codexGetAuthStatus,
+      activeProvider: (harnessId) => buildRemoteActiveService(
+        harnessId === 'claude'
+          ? resolveChatService('claude', null, {
+              experimentalClaudeOpenAiChatEnabled: settings.experimentalClaudeOpenAiChatEnabled,
+            })
+          : resolveChatService('codex'),
+        harnessId,
+      ),
+      providerCatalog: (harnessId) => {
+        if (harnessId !== 'claude' && harnessId !== 'codex') return { providers: [], selectedProviderId: null }
+        // The credential store is optional context here: a client that
+        // cannot switch provider must still get its models and defaults.
+        try {
+        const credentials = listCredentials()
+        const options = { experimentalClaudeOpenAiChatEnabled: settings.experimentalClaudeOpenAiChatEnabled }
+        return harnessProviderCatalog(harnessId, {
+          credentials,
+          // Resolve through the store the same way `activeProvider` does, so
+          // the bound credential picks up its binding-level mapping overrides
+          // and every row carries the mapping the client cannot compute itself.
+          servesHarness: (credentialId) => {
+            const resolved = resolveChatService(harnessId, credentialId, options)
+            if (!resolved) return null
+            return { brand: resolved.brand, modelEnv: resolved.modelMapping }
+          },
+          platformDisplay,
+          claudeAccounts,
+          codexAccounts: harnessId === 'codex' ? codexAccountStore().list() : [],
+          selectedProviderId: resolveChatService(harnessId, null, options)?.credentialId ?? (harnessId === 'codex' ? codexAccountStore().defaultProviderId() : claudeAccountStore().defaultProviderId()),
+        })
+        } catch (err) {
+          log.warn('[get_system_info] provider catalog unavailable: %s', err instanceof Error ? err.message : String(err))
+          return { providers: [], selectedProviderId: null }
+        }
+      },
+      // Same answer `Session` reaches for at construction: the stored
+      // preference when there is one, the platform's own default otherwise.
+      defaultSandboxMode: () => this.readDefaultSessionPrefs(provider).sandboxMode
+        ?? getSandboxCapability().defaultMode,
+      sandboxSupport: () => getSandboxCapability().supportLevel,
+      catalogModels: async () => {
+        try {
+          const { getModelCatalog } = await import('../model-catalog')
+          const { buildCatalogModelIndex } = await import('@superone/shared/platform-registry')
+          return buildCatalogModelIndex(await getModelCatalog())
+        } catch (err) {
+          log.warn('[get_system_info] model catalog unavailable: %s', err instanceof Error ? err.message : String(err))
+          return new Map()
+        }
+      },
+      deepseekPresets: async () => {
+        try {
+          const { getDeepseekRuntime } = await import('../deepseek/deepseek-runtime-host')
+          const { listDeepseekPresets } = await import('@superone/deepseek/presets')
+          const runtime = await getDeepseekRuntime()
+          return { presets: await listDeepseekPresets(runtime.context), current: null, switchable: true }
+        } catch (err) {
+          log.warn('[get_system_info] deepseek presets unavailable: %s', err instanceof Error ? err.message : String(err))
+          return null
+        }
+      },
+    })
+    return info
+  }
+
+  /** Skills, agents and commands a phone composer offers in a project (`get_project_resources`, `harness.projectResources`). */
+  async remoteProjectResources(projectPath: string, provider: HarnessId): Promise<Record<string, unknown>> {
+    if (provider === 'claude') {
+      const skills = listSkills(projectPath)
+      const agents = discoverAllAgents(projectPath)
+      const projectSlashCommands = discoverProjectCommands(projectPath)
+      return {
+        skills: skills.map((s) => ({ name: s.name, description: s.description ?? '', argumentHint: s.argumentHint ?? '' })),
+        agents: agents.map((a) => ({ name: a.name, description: a.description ?? '', model: a.model })),
+        projectSlashCommands: projectSlashCommands.map((c) => ({ name: c.name, description: c.description ?? '', argumentHint: c.argumentHint ?? '' })),
+        workspaceDirs: getProjectExtraDirs(projectPath),
+        cwd: projectPath,
+        homedir: homedir(),
+      }
+    } else if (provider === 'codex') {
+      const skills = await getSharedCodexSkillsService().list(projectPath)
+      return {
+        skills: skills.map((s) => ({ name: s.name, description: s.description ?? '', argumentHint: s.argumentHint ?? '' })),
+        workspaceDirs: getProjectExtraDirs(projectPath),
+        cwd: projectPath,
+        homedir: homedir(),
+      }
+    } else {
+      return {
+        skills: [],
+        agents: [],
+        projectSlashCommands: [],
+        workspaceDirs: getProjectExtraDirs(projectPath),
+        cwd: projectPath,
+        homedir: homedir(),
+      }
+    }
+  }
+
+  /** The harnesses a phone offers for a new chat, in the desktop's suggestion order (`list_harness_options`, `harness.options`). */
+  async remoteHarnessOptions(): Promise<{ options: Array<{ key: string; provider: string; acpAgentId: string | null; label: string }> }> {
+    const [{ listHarnessInstallations }, { detectBuiltinAgents }, { orderSuggestionHarnesses }, { isGrokAcpAgent }] =
+      await Promise.all([
+        import('../harness/service'),
+        import('../acp/acp-detect'),
+        import('@superone/shared/suggestion-harness-order'),
+        import('@superone/shared/acp-brand'),
+      ])
+    const settings = readAppSettings()
+    await ensureShellPath()
+    const catalog = listHarnessInstallations()
+    const catalogOn = (id: string) => catalog.some((row) => row.id === id && row.enabled)
+    // Same visibility rules as the desktop `ChatSuggestions`: OpenCode has
+    // its own harness row, and a non-Grok ACP agent needs the experimental
+    // opt-in that names it.
+    const acpAgents = (await detectBuiltinAgents())
+      .filter((agent) => agent.id !== 'opencode' && (isGrokAcpAgent(agent.id)
+        ? catalogOn('acp-grok')
+        : settings.experimentalAgentsEnabled || settings.enabledExperimentalAgents.includes(agent.id)))
+      .map((agent) => ({ id: agent.id, name: agent.name }))
+    const options = orderSuggestionHarnesses({
+      ranks: queryHarnessSessionRanks(7),
+      acpAgents,
+      includeClaude: catalogOn('claude'),
+      includeCodex: catalogOn('codex'),
+      includeOpenCode: catalogOn('opencode') || settings.experimentalAgentsEnabled,
+      includeCursor: catalogOn('cursor'),
+      includeDeepseek: catalogOn('dsh'),
+      harnessOrder: settings.harnessOrder,
+      defaultHarness: settings.suggestionHarness,
+      secondaryHarness: settings.secondaryHarness,
+    })
+    return { options: options.map(({ key, provider, acpAgentId, label }) => ({ key, provider, acpAgentId, label })) }
+  }
+
+  /**
+   * A message attachment's bytes: in the live session while the turn runs or
+   * the message is queued, otherwise in the persisted message.
+   */
+  remoteAttachment(sessionId: string, messageId: string, selector: { attachmentId?: string; name: string }): ReturnType<typeof findAttachment> {
+    const live = this.sessionManager?.getSession(sessionId)
+    const message = live?.snapshot.messages.find((item) => item.id === messageId)
+      ?? live?.getQueuedMessagesEvent()?.messages.find((item) => item.id === messageId)
+      ?? loadSessionMessage(sessionId, messageId)
+    return message ? findAttachment(message, selector) : undefined
+  }
+
+  /** What every live session is doing, for the phone's sidebar. */
+  remoteSessionActivity(): SessionActivity[] {
+    const sessions: SessionActivity[] = []
+    this.sessionManager?.forEachSession((session) => {
+      if (!session.ephemeral) sessions.push(liveSessionActivity(session, spawnParentOf(session.id)))
+    })
+    return sessions
+  }
+
+  /** `@` mention candidates in a project, from its active session's checkout and roots. */
+  async remoteSearchMentions(projectPath: string, query: string, opts: { scopeDir?: string; additionalDirs?: string[]; iconsById?: boolean }): Promise<unknown> {
+    const session = this.sessionManager?.getActiveSession(projectPath)
+    const cwd = session?.cwd ?? projectPath
+    // The session already knows its extra roots; a phone would have to ask
+    // for them in a separate round trip and could only ever be stale.
+    const additionalDirs = opts.additionalDirs ?? session?.getAdditionalDirectoriesSnapshot()
+    const { searchRemoteMentions } = await import('./remote-mention-search')
+    return searchRemoteMentions(projectPath, cwd, query, {
+      ...(opts.scopeDir !== undefined ? { scopeDir: opts.scopeDir } : {}),
+      ...(additionalDirs?.length ? { additionalDirs } : {}),
+      ...(opts.iconsById ? { iconsById: true } : {}),
+    })
+  }
+
+  async remoteSearchMcpMentions(projectPath: string, sessionId: string, query: string): Promise<unknown> {
+    const { searchMcpMentions } = await import('../mcp-apps/mention-search-ipc')
+    return searchMcpMentions(this.mcpMentionSession(sessionId), projectPath, query)
+  }
+
+  async remoteReadMcpMentions(projectPath: string, sessionId: string, targets: Array<{ server: string; uri: string }>): Promise<{ resources: unknown }> {
+    const { readMcpMentions } = await import('../mcp-apps/mention-search-ipc')
+    return { resources: await readMcpMentions(this.mcpMentionSession(sessionId), projectPath, targets) }
+  }
+
+  async remoteMcpServers(projectPath: string): Promise<{ servers: unknown[] }> {
+    const session = this.sessionManager?.getActiveSession(projectPath)
+    return { servers: (await session?.getMcpServerStatus()) ?? [] }
+  }
+
+  /** The phone read a session: clear its unseen mark. */
+  markRemoteSeen(sessionId: string): void {
+    this.sessionManager?.getSession(sessionId)?.markSeen()
+  }
+
   async handleRemoteCommand(command: RemoteCommand, respond?: RemoteResponder, source?: { deviceId: string; transport: 'lan' | 'relay' }): Promise<void> {
     if (!source?.deviceId) {
       log.warn('[AgentService] handleRemoteCommand without source.deviceId for command=%s; using "unknown-device" fallback', command.type)
@@ -1244,7 +1453,7 @@ export class AgentService {
       }
       case 'mark_session_seen': {
         if (!this.canAccessSession(command.projectPath, command.sessionId)) break
-        this.sessionManager?.getSession(command.sessionId)?.markSeen()
+        this.markRemoteSeen(command.sessionId)
         break
       }
       case 'append_mobile_log': {
@@ -1465,11 +1674,9 @@ export class AgentService {
           if (!this.canAccessSession(command.projectPath, command.sessionId)) {
             throw new Error(this.buildSessionAccessError(command.projectPath, command.sessionId))
           }
-          const { readMcpMentions, searchMcpMentions } = await import('../mcp-apps/mention-search-ipc')
-          const session = this.mcpMentionSession(command.sessionId)
           await respond?.(command.requestId, command.type === 'search_mcp_mentions'
-            ? await searchMcpMentions(session, command.projectPath, command.query)
-            : { resources: await readMcpMentions(session, command.projectPath, command.targets) })
+            ? await this.remoteSearchMcpMentions(command.projectPath, command.sessionId, command.query)
+            : await this.remoteReadMcpMentions(command.projectPath, command.sessionId, command.targets))
         } catch (err) {
           await respond?.(command.requestId, { error: (err as Error).message })
         }
@@ -1485,8 +1692,7 @@ export class AgentService {
       }
       case 'list_mcp_servers': {
         try {
-          const session = this.sessionManager?.getActiveSession(command.projectPath)
-          await respond?.(command.requestId, { servers: (await session?.getMcpServerStatus()) ?? [] })
+          await respond?.(command.requestId, await this.remoteMcpServers(command.projectPath))
         } catch (err) {
           await respond?.(command.requestId, { error: (err as Error).message })
         }
@@ -1527,17 +1733,7 @@ export class AgentService {
       }
       case 'search_mentions': {
         try {
-          const session = this.sessionManager?.getActiveSession(command.projectPath)
-          const cwd = session?.cwd ?? command.projectPath
-          // The session already knows its extra roots; a phone would have to ask
-          // for them in a separate round trip and could only ever be stale.
-          const additionalDirs = command.additionalDirs ?? session?.getAdditionalDirectoriesSnapshot()
-          const { searchRemoteMentions } = await import('./remote-mention-search')
-          await respond?.(command.requestId, await searchRemoteMentions(command.projectPath, cwd, command.query, {
-            ...(command.scopeDir !== undefined ? { scopeDir: command.scopeDir } : {}),
-            ...(additionalDirs?.length ? { additionalDirs } : {}),
-            ...(command.iconsById ? { iconsById: true } : {}),
-          }))
+          await respond?.(command.requestId, await this.remoteSearchMentions(command.projectPath, command.query, command))
         } catch (err) {
           await respond?.(command.requestId, { error: (err as Error).message })
         }
@@ -1551,11 +1747,7 @@ export class AgentService {
         // The transcript carried a thumbnail; the bytes are in the live session
         // when the turn is still running or the message is still queued,
         // otherwise in the persisted message.
-        const live = this.findSessionBySid(command.projectPath, command.sessionId)
-        const message = live?.snapshot.messages.find((item) => item.id === command.messageId)
-          ?? live?.getQueuedMessagesEvent()?.messages.find((item) => item.id === command.messageId)
-          ?? loadSessionMessage(command.sessionId, command.messageId)
-        const attachment = message ? findAttachment(message, command) : undefined
+        const attachment = this.remoteAttachment(command.sessionId, command.messageId, command)
         if (!attachment?.base64) {
           await respond?.(command.requestId, { error: 'That attachment is no longer available' })
           break
@@ -1609,40 +1801,7 @@ export class AgentService {
       }
       case 'list_harness_options': {
         try {
-          const [{ listHarnessInstallations }, { detectBuiltinAgents }, { orderSuggestionHarnesses }, { isGrokAcpAgent }] =
-            await Promise.all([
-              import('../harness/service'),
-              import('../acp/acp-detect'),
-              import('@superone/shared/suggestion-harness-order'),
-              import('@superone/shared/acp-brand'),
-            ])
-          const settings = readAppSettings()
-          await ensureShellPath()
-          const catalog = listHarnessInstallations()
-          const catalogOn = (id: string) => catalog.some((row) => row.id === id && row.enabled)
-          // Same visibility rules as the desktop `ChatSuggestions`: OpenCode has
-          // its own harness row, and a non-Grok ACP agent needs the experimental
-          // opt-in that names it.
-          const acpAgents = (await detectBuiltinAgents())
-            .filter((agent) => agent.id !== 'opencode' && (isGrokAcpAgent(agent.id)
-              ? catalogOn('acp-grok')
-              : settings.experimentalAgentsEnabled || settings.enabledExperimentalAgents.includes(agent.id)))
-            .map((agent) => ({ id: agent.id, name: agent.name }))
-          const options = orderSuggestionHarnesses({
-            ranks: queryHarnessSessionRanks(7),
-            acpAgents,
-            includeClaude: catalogOn('claude'),
-            includeCodex: catalogOn('codex'),
-            includeOpenCode: catalogOn('opencode') || settings.experimentalAgentsEnabled,
-            includeCursor: catalogOn('cursor'),
-            includeDeepseek: catalogOn('dsh'),
-            harnessOrder: settings.harnessOrder,
-            defaultHarness: settings.suggestionHarness,
-            secondaryHarness: settings.secondaryHarness,
-          })
-          await respond?.(command.requestId, {
-            options: options.map(({ key, provider, acpAgentId, label }) => ({ key, provider, acpAgentId, label })),
-          })
+          await respond?.(command.requestId, await this.remoteHarnessOptions())
         } catch (err) {
           await respond?.(command.requestId, { error: (err as Error).message })
         }
@@ -1723,11 +1882,7 @@ export class AgentService {
         break
       }
       case 'list_session_activity': {
-        const sessions: SessionActivity[] = []
-        this.sessionManager?.forEachSession((session) => {
-          if (!session.ephemeral) sessions.push(liveSessionActivity(session, spawnParentOf(session.id)))
-        })
-        await respond?.(command.requestId, { sessions })
+        await respond?.(command.requestId, { sessions: this.remoteSessionActivity() })
         break
       }
       case 'list_sessions':
@@ -1818,85 +1973,7 @@ export class AgentService {
       }
       case 'get_system_info': {
         try {
-          const settings = readAppSettings()
-          // Claude account choices retain their credential domain even with one account.
-          const claudeAccounts = command.provider === 'claude'
-            ? (await listClaudeAccounts().catch(() => [])).filter((account) => account.loggedIn)
-            : []
-          const info = await buildRemoteHarnessSystemInfo(command.projectPath, command.provider, {
-            settings,
-            currentLocale: getCurrentLocale(),
-            getCachedResources: getCachedHarnessResources,
-            fetchClaudeModels: fetchModels,
-            connectOpenCodeResources: async (projectPath) => {
-              const { connectOpenCodeResources } = await import('../opencode/opencode-resources')
-              return connectOpenCodeResources(projectPath, command.force)
-            },
-            listCodexModels: this.codexListModels,
-            codexAccount: this.codexGetAuthStatus,
-            activeProvider: (harnessId) => buildRemoteActiveService(
-              harnessId === 'claude'
-                ? resolveChatService('claude', null, {
-                    experimentalClaudeOpenAiChatEnabled: settings.experimentalClaudeOpenAiChatEnabled,
-                  })
-                : resolveChatService('codex'),
-              harnessId,
-            ),
-            providerCatalog: (harnessId) => {
-              if (harnessId !== 'claude' && harnessId !== 'codex') return { providers: [], selectedProviderId: null }
-              // The credential store is optional context here: a client that
-              // cannot switch provider must still get its models and defaults.
-              try {
-              const credentials = listCredentials()
-              const options = { experimentalClaudeOpenAiChatEnabled: settings.experimentalClaudeOpenAiChatEnabled }
-              return harnessProviderCatalog(harnessId, {
-                credentials,
-                // Resolve through the store the same way `activeProvider` does, so
-                // the bound credential picks up its binding-level mapping overrides
-                // and every row carries the mapping the client cannot compute itself.
-                servesHarness: (credentialId) => {
-                  const resolved = resolveChatService(harnessId, credentialId, options)
-                  if (!resolved) return null
-                  return { brand: resolved.brand, modelEnv: resolved.modelMapping }
-                },
-                platformDisplay,
-                claudeAccounts,
-                codexAccounts: harnessId === 'codex' ? codexAccountStore().list() : [],
-                selectedProviderId: resolveChatService(harnessId, null, options)?.credentialId ?? (harnessId === 'codex' ? codexAccountStore().defaultProviderId() : claudeAccountStore().defaultProviderId()),
-              })
-              } catch (err) {
-                log.warn('[get_system_info] provider catalog unavailable: %s', err instanceof Error ? err.message : String(err))
-                return { providers: [], selectedProviderId: null }
-              }
-            },
-            // Same answer `Session` reaches for at construction: the stored
-            // preference when there is one, the platform's own default otherwise.
-            defaultSandboxMode: () => this.readDefaultSessionPrefs(command.provider).sandboxMode
-              ?? getSandboxCapability().defaultMode,
-            sandboxSupport: () => getSandboxCapability().supportLevel,
-            catalogModels: async () => {
-              try {
-                const { getModelCatalog } = await import('../model-catalog')
-                const { buildCatalogModelIndex } = await import('@superone/shared/platform-registry')
-                return buildCatalogModelIndex(await getModelCatalog())
-              } catch (err) {
-                log.warn('[get_system_info] model catalog unavailable: %s', err instanceof Error ? err.message : String(err))
-                return new Map()
-              }
-            },
-            deepseekPresets: async () => {
-              try {
-                const { getDeepseekRuntime } = await import('../deepseek/deepseek-runtime-host')
-                const { listDeepseekPresets } = await import('@superone/deepseek/presets')
-                const runtime = await getDeepseekRuntime()
-                return { presets: await listDeepseekPresets(runtime.context), current: null, switchable: true }
-              } catch (err) {
-                log.warn('[get_system_info] deepseek presets unavailable: %s', err instanceof Error ? err.message : String(err))
-                return null
-              }
-            },
-          })
-          await respond?.(command.requestId, info)
+          await respond?.(command.requestId, await this.remoteSystemInfo(command.projectPath, command.provider, command.force))
         } catch (err) {
           log.error('[get_system_info] error: %s', err instanceof Error ? err.message : String(err))
           await respond?.(command.requestId, { error: (err as Error).message })
@@ -1906,36 +1983,7 @@ export class AgentService {
       }
       case 'get_project_resources': {
         try {
-          if (command.provider === 'claude') {
-            const skills = listSkills(command.projectPath)
-            const agents = discoverAllAgents(command.projectPath)
-            const projectSlashCommands = discoverProjectCommands(command.projectPath)
-            await respond?.(command.requestId, {
-              skills: skills.map((s) => ({ name: s.name, description: s.description ?? '', argumentHint: s.argumentHint ?? '' })),
-              agents: agents.map((a) => ({ name: a.name, description: a.description ?? '', model: a.model })),
-              projectSlashCommands: projectSlashCommands.map((c) => ({ name: c.name, description: c.description ?? '', argumentHint: c.argumentHint ?? '' })),
-              workspaceDirs: getProjectExtraDirs(command.projectPath),
-              cwd: command.projectPath,
-              homedir: homedir(),
-            })
-          } else if (command.provider === 'codex') {
-            const skills = await getSharedCodexSkillsService().list(command.projectPath)
-            await respond?.(command.requestId, {
-              skills: skills.map((s) => ({ name: s.name, description: s.description ?? '', argumentHint: s.argumentHint ?? '' })),
-              workspaceDirs: getProjectExtraDirs(command.projectPath),
-              cwd: command.projectPath,
-              homedir: homedir(),
-            })
-          } else {
-            await respond?.(command.requestId, {
-              skills: [],
-              agents: [],
-              projectSlashCommands: [],
-              workspaceDirs: getProjectExtraDirs(command.projectPath),
-              cwd: command.projectPath,
-              homedir: homedir(),
-            })
-          }
+          await respond?.(command.requestId, await this.remoteProjectResources(command.projectPath, command.provider))
         } catch (err) {
           await respond?.(command.requestId, { error: (err as Error).message })
         }

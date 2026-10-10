@@ -42,7 +42,9 @@
     "./async-coalescer": "./src/async-coalescer.ts",
     "./usage": "./src/usage/index.ts",
     "./server": "./src/server/index.ts",
-    "./server/*": "./src/server/*.ts"
+    "./server/*": "./src/server/*.ts",
+    "./stream": "./src/stream/index.ts",
+    "./stream/*": "./src/stream/*.ts"
   },
   "scripts": {
     "test": "vitest run",

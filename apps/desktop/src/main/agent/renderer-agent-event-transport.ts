@@ -1,8 +1,6 @@
 import type { AgentEvent, CodexThreadItem } from '@superone/shared/agent-types'
-import {
-  AGENT_EVENT_BATCH_MS,
-  coalesceAgentEventBatch,
-} from '@superone/shared/agent-event-batcher'
+import { AGENT_EVENT_BATCH_MS } from '@superone/shared/agent-event-batcher'
+import { createEventBatcher } from '@superone/runtime/stream'
 
 export interface RendererAgentEventTransport {
   push(event: AgentEvent): void
@@ -66,13 +64,12 @@ function makeCodexPatch(
   return null
 }
 
+/** The `local-ui` profile: batch, then encode Codex items as patches. */
 export function createRendererAgentEventTransport(
   send: (events: AgentEvent[]) => void,
   batchMs: number = AGENT_EVENT_BATCH_MS,
 ): RendererAgentEventTransport {
-  const queue: AgentEvent[] = []
   const codexBaselines = new Map<string, CodexThreadItem>()
-  let timer: ReturnType<typeof setTimeout> | null = null
   let disposed = false
 
   const encode = (event: AgentEvent): AgentEvent => {
@@ -117,44 +114,19 @@ export function createRendererAgentEventTransport(
     return event
   }
 
-  const flush = (): void => {
-    if (timer != null) {
-      clearTimeout(timer)
-      timer = null
-    }
-    if (queue.length === 0) return
-    const events = coalesceAgentEventBatch(queue.splice(0, queue.length)).map(encode)
-    if (events.length > 0) send(events)
-  }
-
-  const flushWith = (event: AgentEvent): void => {
-    if (timer != null) {
-      clearTimeout(timer)
-      timer = null
-    }
-    const pending = queue.length > 0
-      ? coalesceAgentEventBatch(queue.splice(0, queue.length))
-      : []
-    send([...pending, event].map(encode))
-  }
+  const batcher = createEventBatcher((events) => send(events.map(encode)), { delayMs: batchMs })
 
   return {
     push(event) {
-      if (disposed) return
-      if (event.type === 'content_delta' || event.type === 'codex_item_delta') {
-        queue.push(event)
-        if (timer == null) timer = setTimeout(flush, batchMs)
-        return
-      }
-      flushWith(event)
+      if (!disposed) batcher.push(event)
     },
-    flush,
+    flush: batcher.flush,
     resetCodexBaselines() {
       codexBaselines.clear()
     },
     dispose() {
       if (disposed) return
-      flush()
+      batcher.flush()
       disposed = true
       codexBaselines.clear()
     },

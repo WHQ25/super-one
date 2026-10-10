@@ -3,16 +3,16 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { SessionChip, SessionLinkContext } from './SessionChip'
 import { createSessionLinkCache } from './session-link-cache'
 
-function Preview({ harness = 'codex', unavailable = false, delay = 0, fail = false, width = 390, label = 'Investigate session links' }) {
+function Preview({ harness = 'codex', unavailable = false, delay = 0, openDelay = 800, fail = false, width = 390, label = 'Investigate session links' }) {
   const [error, setError] = useState('')
   const ports = useMemo(() => ({
     cache: createSessionLinkCache(async refs => {
       if (delay) await new Promise(resolve => setTimeout(resolve, delay))
       return refs.map(ref => unavailable ? { status: 'unavailable' as const, ref } : { status: 'ok' as const, metadata: { ref, harness, acpAgentId: harness === 'acp' ? 'grok-build' : null, environmentLabel: 'My desktop' } })
     }),
-    open: async () => { await new Promise(resolve => setTimeout(resolve, 800)); if (fail) throw new Error('Host is offline'); setError('Session opened') },
+    open: async () => { await new Promise(resolve => setTimeout(resolve, openDelay)); if (fail) throw new Error('Host is offline'); setError('Session opened') },
     onError: (reason: unknown) => setError(String(reason)),
-  }), [harness, unavailable, delay, fail])
+  }), [harness, unavailable, delay, openDelay, fail])
   return <SessionLinkContext.Provider value={{ sourceEnvironmentId: 'source-host', ports }}><div style={{ width, maxWidth: '100%' }} className="text-sm">Continue in <SessionChip href="session://localhost/example-session" label={label} /> to see the investigation.{error && <p role="status">{error}</p>}</div></SessionLinkContext.Provider>
 }
 const meta = { title: 'Chat/SuperOne/Session chip', component: Preview, parameters: { layout: 'padded' } } satisfies Meta<typeof Preview>
@@ -20,6 +20,12 @@ export default meta
 type Story = StoryObj<typeof meta>
 export const Normal: Story = {}
 export const Loading: Story = { args: { delay: 6000 } }
+export const Opening: Story = {
+  args: { openDelay: 6000 },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByTitle('Investigate session links · My desktop'))
+  },
+}
 export const AcpBrand: Story = { args: { harness: 'acp' } }
 export const LongTitle: Story = { args: { width: 200, label: '调研跨宿主会话跳转、移动端草稿保护与远程节点身份校验的完整实现细节' } }
 export const Offline: Story = { args: { unavailable: true, fail: true } }

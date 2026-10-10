@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
-import { Loader2, MessageSquare } from 'lucide-react'
+import { MessageSquare } from 'lucide-react'
 import { resolveSessionIcon } from '@superone/ui/components/harness/resolve-session-icon'
 import type { SessionRef } from '@superone/shared/environment/refs'
 import { buildSessionLink, parseSessionLink, resolveSessionLink, sessionLinkMarkdown, type SessionLinkMetadata } from '@superone/shared/session-link'
@@ -62,7 +62,7 @@ export function SessionChip({ href, label }: { href: string; label: string }) {
       {/* Layout containment drops the harness marks' nested-span baselines, so the chip
           sits on the icon's bottom edge like a file chip does. */}
       <span aria-hidden="true" className="flex size-3 shrink-0 items-center justify-center contain-layout">
-        {opening ? <Loader2 className="size-3 animate-spin" /> : Icon ? <Icon status="default" size={12} renderLevel="compact" /> : <MessageSquare className="size-3 text-muted-foreground" />}
+        {Icon ? <Icon status="default" size={12} renderLevel="compact" /> : <MessageSquare className="size-3 text-muted-foreground" />}
       </span>
       <span className="min-w-0 max-w-[24em] truncate">{label}</span>
     </a>

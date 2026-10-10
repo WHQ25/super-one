@@ -19,6 +19,8 @@ export interface ProjectedApiRetry {
 export interface SessionProjection {
   /** Authenticated owner of this transcript; localhost links bind here. */
   sourceEnvironmentId?: string | null
+  /** The session shown; with the owner, it scopes the detail rows expand. */
+  sessionId?: string | null
   /** Mirrors the host's session status; gates the live-turn spinner. */
   sessionStatus?: AgentStatus
   streamingTokens?: { input: number; output: number }
@@ -86,7 +88,7 @@ export interface ReductionProjection extends SessionProjection {
 }
 
 export type HostInbound =
-  | ({ type: 'detailUpdate' } & import('./detail-stream').DetailUpdate)
+  | ({ type: 'detailUpdate' } & import('@superone/chat-core').DetailUpdate)
   | ({ type: 'initialize' | 'hydrate' } & ReductionProjection)
   | ({ type: 'applyReductionPatch' } & ReductionProjection)
   | ({ type: 'prependHistory' } & ReductionProjection)

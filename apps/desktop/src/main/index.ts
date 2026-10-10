@@ -252,6 +252,7 @@ import { getRemoteControlledSession } from './db-remote-controlled-sessions'
 import { getInstallId } from './install-id'
 import { reportMainException, reportProcessGone } from './crash-telemetry'
 import { systemDownloadDir } from './agent/browser-download-store'
+import type { DetailTarget } from '@superone/shared/environment/detail'
 import type { AppSettings, AppSettingsPatch, TerminalEvent, GitInfoResult, ScheduledSendPatch, ScheduledSendSessionInit, ThemeMode, WindowFoldStep, WindowMiniMode } from '@superone/shared/agent-types'
 import { MOD_UI_UNAVAILABLE, type ModUiOp, type ModUiRequest } from '@superone/shared/mod-ui'
 import { MINI_WINDOW_SIZE } from '@superone/shared/agent-types'
@@ -2170,6 +2171,15 @@ function registerIpcHandlers(): void {
       return getEnvironmentHost().openRemoteSession(connectionId, input)
     },
   )
+  /** Expand a summarized row: the machine that holds the session answers. */
+  ipcMain.handle(AgentIpcChannels.ENVIRONMENT_SUBSCRIBE_DETAIL, async (_e, target: DetailTarget, subscriptionId: string) => {
+    const { getEnvironmentHost } = await import('./environment')
+    return getEnvironmentHost().subscribeSessionDetail(target, subscriptionId)
+  })
+  ipcMain.handle(AgentIpcChannels.ENVIRONMENT_UNSUBSCRIBE_DETAIL, async (_e, target: DetailTarget, subscriptionId: string) => {
+    const { getEnvironmentHost } = await import('./environment')
+    await getEnvironmentHost().unsubscribeSessionDetail(target, subscriptionId)
+  })
   // Node provider credentials (CRUD + push/pull)
   ipcMain.handle(
     AgentIpcChannels.ENVIRONMENT_PROVIDER_LIST_CREDENTIALS,

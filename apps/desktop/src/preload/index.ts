@@ -686,6 +686,10 @@ const environmentAPI = {
       connectionId,
       input,
     ),
+  subscribeDetail: (target: { environmentId: string; sessionId: string; detailRef: string }, subscriptionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_SUBSCRIBE_DETAIL, target, subscriptionId),
+  unsubscribeDetail: (target: { environmentId: string; sessionId: string; detailRef: string }, subscriptionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_UNSUBSCRIBE_DETAIL, target, subscriptionId),
   interruptSession: (connectionId: string, sessionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_INTERRUPT_SESSION, connectionId, sessionId),
   reclaimSessionControl: (connectionId: string, sessionId: string) =>

@@ -454,7 +454,7 @@ function GenericToolRow({
             <div className="px-2 pb-1.5">
               {expanded && (
                 <>
-                  {detailStatus && <div role="status">{detailStatus}{onDetailRetry && <button type="button" className="ml-2 underline" onClick={onDetailRetry}>{t('common.retry')}</button>}</div>}
+                  {detailStatus && <div role="status" className="text-xs text-muted-foreground">{detailStatus}{onDetailRetry && <button type="button" className="ml-2 underline" onClick={onDetailRetry}>{t('common.retry')}</button>}</div>}
                   {/* Header already names the call; dumping the same args as JSON repeats it. */}
                   {hasDeferredDetails && input !== '{}' && !DIFF_TOOLS.has(toolName) && toolName !== 'NotebookEdit' && !summary && (
                     <div className="mb-2">{ports.renderJson(input)}</div>

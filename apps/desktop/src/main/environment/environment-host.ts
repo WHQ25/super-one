@@ -1,3 +1,4 @@
+import type { DetailTarget, DetailUpdate } from '@superone/shared/environment/detail'
 import { notifySessionClosed } from '../session-list-watch'
 import { MOD_UI_MUTATING_OPS, MOD_UI_UNAVAILABLE, type ModUiOp, type ModUiRequest } from '@superone/shared/mod-ui'
 import { parseMessageDisplay, type MessageDisplayFields } from '@superone/shared/message-display'
@@ -1981,6 +1982,21 @@ export class EnvironmentHost {
 
   private agentEventSink: ((event: import('@superone/shared/agent-types').AgentEvent) => void) | null =
     null
+
+  /**
+   * Expand a summarized row of a remote session. The machine holding the
+   * session serves it; packets after the snapshot arrive on the session's stream.
+   */
+  async subscribeSessionDetail(target: DetailTarget, subscriptionId: string): Promise<DetailUpdate> {
+    const { gateway, environmentId } = this.resolveRemote(target.environmentId)
+    if (!gateway.sessions.subscribeDetail) throw new Error('This machine sends full rows; there is no detail to load')
+    return gateway.sessions.subscribeDetail({ session: { environmentId, sessionId: target.sessionId }, detailRef: target.detailRef, subscriptionId })
+  }
+
+  async unsubscribeSessionDetail(target: DetailTarget, subscriptionId: string): Promise<void> {
+    const { gateway, environmentId } = this.resolveRemote(target.environmentId)
+    await gateway.sessions.unsubscribeDetail?.({ session: { environmentId, sessionId: target.sessionId }, subscriptionId })
+  }
 
   /** Main wires this to `agent:event` so remote turns stream into the chat store. */
   setAgentEventSink(

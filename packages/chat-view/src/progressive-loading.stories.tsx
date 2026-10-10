@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { installHostBridge } from './bridge'
-import { deliverDetail } from './detail-stream'
+import { deliverDetail } from './document-detail'
 import { DeferredReasoning } from './DeferredReasoning'
 import { DeferredCodexTool, DeferredTool } from './DeferredTool'
 import { PortableMessage } from './PortableMessage'

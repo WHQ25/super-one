@@ -14,7 +14,7 @@ import {
 import { ImageGalleryBlock } from './ImageGalleryBlock'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { ToolBlock } from './ToolBlock'
-import { ReasoningBlock } from './ReasoningBlock'
+import { DesktopReasoning, ReasoningBlock } from './ReasoningBlock'
 import { isAlwaysHiddenToolBlock, isHiddenToolBlock } from './tool-display'
 import { isMediaGenerateImageTool, isMediaVideoStatusTool } from './media-generation'
 import { summarizeCodexProcess } from './turn-process-stats'
@@ -67,7 +67,7 @@ const DESKTOP_PARTS: CodexTurnViewPresenterParts = {
   CodexItem: DesktopCodexItem,
   Command: CodexCommandBlock,
   Subagent: CodexSubagentMarker,
-  Reasoning: ReasoningBlock,
+  Reasoning: DesktopReasoning,
   Tool: ToolBlock,
   ImageGallery: ImageGalleryBlock,
   TurnDetail: TurnDetailSection,

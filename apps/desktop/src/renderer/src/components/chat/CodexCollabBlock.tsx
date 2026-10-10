@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
+import { DeferredDetailStatus, useDeferredToolDetail } from '@superone/chat-view/use-deferred-tool-detail'
+import { mergeCodexCollabDetail } from '@superone/chat-view/codex-collab-detail'
 import { useTranslation } from 'react-i18next'
 import { Bot, ChevronRight, Check, Loader2, Wrench, ArrowUp, ArrowDown } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
@@ -373,16 +375,20 @@ function DesktopCollabMarkdown({ text }: { text: string }) {
 function CodexCollabActivityTool({ item }: { item: CodexThreadItem }) {
   if (item.type === 'collab_tool_call') return <CodexSubagentMarker item={item} />
   if (item.type === 'mcp_tool_call' && item.app) return <ToolBlock
-    toolName={`mcp__${item.server}__${item.tool}`} toolUseId={item.id} app={item.app}
+    toolName={`mcp__${item.server}__${item.tool}`} toolUseId={item.id} app={item.app} remoteDetail={item.remoteDetail}
     input={codexMcpItemInput(item)} result={codexMcpItemResultText(item)}
     status={item.status === 'in_progress' ? 'streaming' : 'complete'} isError={codexMcpItemIsError(item)} />
   return <CodexCollabMiniTool item={item} />
 }
 
-export function CodexSubagentMarker({ item }: { item: CodexCollabToolCallItem }) {
+export function CodexSubagentMarker({ item: shellItem }: { item: CodexCollabToolCallItem }) {
   const forkNav = useForkNavigation()
-  const view = useMemo(() => codexCollabViewModel(item), [item])
   const [expanded, setExpanded] = useState(false)
+  // A summarized card (`remoteDetail`) loads its prompt and child items when it opens.
+  const deferred = useDeferredToolDetail(shellItem.remoteDetail, expanded, shellItem.status !== 'in_progress')
+  const loaded = deferred.detail.item
+  const item = useMemo(() => loaded?.type === 'collab_tool_call' ? mergeCodexCollabDetail(shellItem, loaded) : shellItem, [shellItem, loaded])
+  const view = useMemo(() => codexCollabViewModel(item), [item])
   useEffect(() => {
     if (view.colorKey) useChatStore.getState().assignSubagentColor(view.colorKey)
   }, [view.colorKey])
@@ -399,13 +405,14 @@ export function CodexSubagentMarker({ item }: { item: CodexCollabToolCallItem })
         onOpenFullView={() => {
           if (view.receiverId) forkNav.open({ collabId: item.id, threadId: view.receiverId })
         }}
-        childContent={view.activityItems.length > 0 ? (
-          <CollabScrollArea borderClass={colors.borderL}>
+        childContent={deferred.status || view.activityItems.length > 0 ? <>
+          <DeferredDetailStatus status={deferred.status} onRetry={deferred.retry} />
+          {view.activityItems.length > 0 && <CollabScrollArea borderClass={colors.borderL}>
             {view.activityItems.map((child, index) => (
               <CodexCollabActivityTool key={`${child.id}-${index}`} item={child} />
             ))}
-          </CollabScrollArea>
-        ) : undefined}
+          </CollabScrollArea>}
+        </> : undefined}
         formatTokens={formatTokens}
         Markdown={DesktopCollabMarkdown}
       />

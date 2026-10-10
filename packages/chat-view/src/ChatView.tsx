@@ -2,7 +2,8 @@ import { invalidateSessionLinkMetadata } from './PortableMarkdown'
 import { contiguousHistoryRange, needsHistoryPage, globalHistoryRange } from './history-navigation'
 import { extendHistoryIndex, mergeIndexedHistory, type SessionHistoryIndex } from '@superone/shared/session-history-index'
 import { EdgeLoader } from './EdgeLoader'
-import { deliverDetail } from './detail-stream'
+import { deliverDetail, documentDetailClient } from './document-detail'
+import { DetailScopeProvider, type DetailScope } from './detail-scope'
 import { applyDocumentTheme, initialDocumentScheme } from './document-theme'
 import { AsyncQuestionMessagesContext } from './PortableAsyncQuestion'
 import {
@@ -86,6 +87,7 @@ const EMPTY_SESSION: SessionFacts = {
   pendingTurn: null,
   projectPath: null,
   sourceEnvironmentId: null,
+  sessionId: null,
   pendingQuestion: null,
   slashCommandOutput: null,
   queuedMessages: [],
@@ -659,6 +661,11 @@ export function ChatView() {
   const promptKeywords = useMemo(() => state.session.promptKeywords, [promptKeywordKey])
   // A window request paints on the edge it concerns even when that edge has
   // nothing else to say (a jump to an unloaded turn, for instance).
+  const detailScope = useMemo((): DetailScope => ({
+    client: documentDetailClient,
+    environmentId: state.session.sourceEnvironmentId ?? '',
+    sessionId: state.session.sessionId ?? '',
+  }), [state.session.sourceEnvironmentId, state.session.sessionId])
   const topBusy = (navigationLoading || !!navigationRetry) && navigationEdge === 'top'
   const bottomBusy = (navigationLoading || !!navigationRetry) && navigationEdge === 'bottom'
   const moreAfter = bottomBusy || state.range.end < state.messages.length
@@ -666,6 +673,7 @@ export function ChatView() {
   const topRetry = navigationRetry && navigationEdge === 'top' ? navigationRetry : null
   const bottomRetry = navigationRetry && navigationEdge === 'bottom' ? navigationRetry : null
   return (
+    <DetailScopeProvider scope={detailScope}>
     <MobileModUiProvider client={mods.client} scheme={state.scheme}>
     <main
       className="chat-view-shell"
@@ -752,6 +760,7 @@ export function ChatView() {
       </BottomDock>
     </main>
     </MobileModUiProvider>
+    </DetailScopeProvider>
   )
 }
 

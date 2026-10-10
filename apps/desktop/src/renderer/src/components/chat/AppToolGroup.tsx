@@ -61,7 +61,7 @@ export function AppToolGroup({ appId, blocks, sealed = false }: AppToolGroupProp
       {expanded && (
         <div ref={scrollRef} className="mt-0.5 max-h-30 space-y-0.5 overflow-y-auto pl-2">
           {toolUses.map((block, i) => (
-            <ToolBlock key={i} toolName={block.toolName} toolUseId={block.toolUseId} input={block.input} status={block.status} elapsedSeconds={block.elapsedSeconds} grouped />
+            <ToolBlock key={i} toolName={block.toolName} toolUseId={block.toolUseId} input={block.input} status={block.status} elapsedSeconds={block.elapsedSeconds} remoteDetail={block.remoteDetail} grouped />
           ))}
         </div>
       )}

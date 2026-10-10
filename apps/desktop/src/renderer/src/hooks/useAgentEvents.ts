@@ -9,6 +9,7 @@ import { coalesceAgentEventBatch } from '@/lib/agent-event-batcher'
 import { applyDraftChange, flushDraftBeforeOpen, startDraftAutosave } from '@/lib/draft-sync'
 import { startComposerDraftMirror } from '@/lib/composer-draft-mirror'
 import { useDraftsStore } from '@/stores/drafts'
+import { desktopDetailClient } from '@/lib/desktop-detail-client'
 
 export function useAgentEvents(): void {
   const handleAgentEvent = useChatStore((s) => s.handleAgentEvent)
@@ -19,6 +20,7 @@ export function useAgentEvents(): void {
     const stopHandover = window.environment.onDraftOpenRequested?.(flushDraftBeforeOpen)
     const unsub = window.agent.onAgentEvent((event) => {
       if (event.type === 'draft_changed') applyDraftChange(event)
+      else if (event.type === 'remote_detail') desktopDetailClient.deliver(event)
     })
     void useDraftsStore.getState().loadDrafts('local').then(() => {
       for (const draft of useDraftsStore.getState().byConnection.local ?? []) {

@@ -562,6 +562,7 @@ export function MobileApp() {
       pendingTurn: runtime.pendingTurn,
       projectPath: runtime.projectPath || null,
       sourceEnvironmentId: runtime.sourceEnvironmentId,
+      sessionId: runtime.sessionId || null,
       // Drawn by the document above the composer; at most one patch is in flight, so
       // resending them with every patch costs little and survives the delivery's own hydrates.
       pendingQuestion: runtime.session.pendingQuestion,

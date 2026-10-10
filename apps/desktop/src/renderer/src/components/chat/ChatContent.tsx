@@ -47,6 +47,8 @@ import { MessageDateSeparator } from '@superone/chat-view/presenters/MessageTime
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { isGrokAcpAgent } from '@superone/shared/acp-brand'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
+import { DetailScopeProvider } from '@superone/chat-view/detail-scope'
+import { desktopDetailClient } from '@/lib/desktop-detail-client'
 import {
   EMPTY_CODEX_REALTIME_SESSION_VIEW,
   hydrateCodexRealtimeTimeline,
@@ -499,6 +501,11 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     preferredProvider: s.preferredProvider,
   })))
   const projectPath = scope?.projectPath ?? activeProject
+  // Rows of a remote session may arrive summarized; their detail loads from that machine.
+  const remoteConnectionId = parseRemoteProjectKey(projectPath ?? '')?.connectionId
+  const detailScope = useMemo(() => remoteConnectionId && displayedSessionId
+    ? { client: desktopDetailClient, environmentId: remoteConnectionId, sessionId: displayedSessionId }
+    : null, [remoteConnectionId, displayedSessionId])
   const isCodexSession = resolveProvider({ sessionProvider, preferredProvider }) === 'codex'
   const drawsMods = HARNESS_CAPABILITIES[resolveProvider({ sessionProvider, preferredProvider })].modUi
   const realtime = useCodexRealtimeViewStore(
@@ -680,6 +687,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
       style={densityStyle}
     >
       <ChatRootContext.Provider value={containerRef}>
+      <DetailScopeProvider scope={detailScope}>
       <DesktopModUi projectPath={projectPath} sessionId={displayedSessionId ?? null} enabled={drawsMods}>
       {foreground && drawsMods && projectPath && displayedSessionId ? <ModPaneDockSync projectPath={projectPath} sessionId={displayedSessionId} /> : null}
       {workflowView ? (
@@ -758,6 +766,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
         </>
       )}
       </DesktopModUi>
+      </DetailScopeProvider>
       </ChatRootContext.Provider>
     </div>
     </PlanFullscreenContext.Provider>

@@ -4751,6 +4751,8 @@ export const AgentIpcChannels = {
   ENVIRONMENT_SEND_SESSION_MESSAGE: 'environment:sendSessionMessage',
   /** Open a remote session in the chat at a node snapshot (`session.load`) and follow it. */
   ENVIRONMENT_OPEN_REMOTE_SESSION: 'environment:openRemoteSession',
+  ENVIRONMENT_SUBSCRIBE_DETAIL: 'environment:subscribeDetail',
+  ENVIRONMENT_UNSUBSCRIBE_DETAIL: 'environment:unsubscribeDetail',
   ENVIRONMENT_INTERRUPT_SESSION: 'environment:interruptSession',
   /** Take control of a remote session back after its host released it (Reconnect). */
   ENVIRONMENT_RECLAIM_SESSION_CONTROL: 'environment:reclaimSessionControl',

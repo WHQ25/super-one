@@ -2,6 +2,7 @@ import { useContext, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { requestNative } from './bridge'
+import { stripLegacyCommandEcho } from './codex-command-detail'
 import { PortableMarkdown } from './PortableMarkdown'
 import { PortableFilesPreviewer } from './PortableFilesPreviewer'
 import { PortableNativeGallery } from './PortableNativeGallery'
@@ -364,12 +365,4 @@ export function PortableToolRow({ allowExpand = true, inSubagent = false, ...pro
   )
 }
 
-/**
- * Older remote histories include the transport's colored command echo. Match
- * that exact format only: a program may legitimately print `$ command`.
- */
-export function stripLegacyCommandEcho(command: string, output: string): string {
-  if (!command) return output
-  const legacyEcho = `\x1b[32m$\x1b[0m ${command}`
-  return output.startsWith(`${legacyEcho}\n`) ? output.slice(legacyEcho.length + 1) : output === legacyEcho ? '' : output
-}
+export { stripLegacyCommandEcho }

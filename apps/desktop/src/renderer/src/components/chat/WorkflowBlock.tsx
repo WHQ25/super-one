@@ -1,3 +1,4 @@
+import { useDeferredToolDetail } from '@superone/chat-view/use-deferred-tool-detail'
 import { useEffect, useMemo, useState } from 'react'
 import type { ContentBlock } from '@superone/shared/agent-types'
 import { useActiveSession, useChatStore } from '@/stores/chat'
@@ -45,12 +46,21 @@ function DesktopStructuredOutput({ data, fill }: WorkflowStructuredOutputProps) 
 
 /** Desktop session/filesystem adapter for the portable workflow presenter. */
 export function WorkflowBlock({
-  toolBlock,
-  resultBlock,
+  toolBlock: shellToolBlock,
+  resultBlock: shellResultBlock,
   isStreaming,
   defaultExpanded,
 }: WorkflowBlockProps) {
   const [expanded, setExpanded] = useState(defaultExpanded ?? false)
+  // A summarized card (`remoteDetail`) loads its script and result when it opens.
+  const remoteDetail = shellToolBlock.remoteDetail
+  const { detail } = useDeferredToolDetail(remoteDetail, expanded, !isStreaming && !!shellResultBlock)
+  const toolBlock = useMemo(() => remoteDetail
+    ? { ...shellToolBlock, ...(detail.input ? { input: detail.input } : {}), taskResultText: detail.taskResultText ?? shellToolBlock.taskResultText }
+    : shellToolBlock, [remoteDetail, shellToolBlock, detail])
+  const resultBlock = remoteDetail && shellResultBlock?.type === 'tool_result' && detail.result !== undefined
+    ? { ...shellResultBlock, summary: detail.result }
+    : shellResultBlock
   const launch = useMemo(
     () => parseWorkflowLaunch(resultBlock?.type === 'tool_result' ? resultBlock.summary : undefined),
     [resultBlock],

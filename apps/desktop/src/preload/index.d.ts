@@ -1,3 +1,4 @@
+import type { DetailTarget, DetailUpdate } from '@superone/shared/environment/detail'
 import type { CodexAccount, CodexManagedLoginStart } from '@superone/shared/codex-accounts'
 import type { CollaborationMailboxAPI } from '@superone/shared/collaboration-mailbox'
 import type { MediaComposerAPI } from '@superone/shared/media-composer'
@@ -1212,6 +1213,9 @@ export interface EnvironmentAPI extends MediaComposerAPI {
     connectionId: string,
     input: { sessionId: string; projectPath?: string; providerId?: string; limit?: number },
   ): Promise<SessionLoadResult>
+  /** Expand a summarized row of a session: its revision-0 detail; packets follow as `remote_detail` events. */
+  subscribeDetail(target: DetailTarget, subscriptionId: string): Promise<DetailUpdate>
+  unsubscribeDetail(target: DetailTarget, subscriptionId: string): Promise<void>
   interruptSession(connectionId: string, sessionId: string): Promise<void>
   /** Control a session again after the computer it runs on took it back. */
   reclaimSessionControl(connectionId: string, sessionId: string): Promise<void>

@@ -26,8 +26,10 @@ import { useNestedToolDefaults } from './nested-tool-context'
 import { StandaloneToolBlock } from './StandaloneToolBlock'
 import { ToolIcon } from './ToolIcon'
 import { ExitPlanModeBlockPresenter } from './presenters/PlanModeBlocks'
+import { DeferredDetailStatus, useDeferredToolDetail } from '@superone/chat-view/use-deferred-tool-detail'
 import {
   ToolBlockPresenter,
+  hasDedicatedToolRow,
   type BashToolPresenterProps,
   type MiniAppToolPresenterProps,
   type ToolBlockPresenterPorts,
@@ -285,7 +287,7 @@ function renderDesktopMiniAppTool(
   }
 }
 
-export const ToolBlock = memo(function ToolBlock(props: ToolBlockProps) {
+const ToolBlockBody = memo(function ToolBlockBody(props: ToolBlockProps) {
   const { requestInput: onWidgetRequestInput, composerPorts: widgetComposerPorts } = useWidgetInputs(props.toolUseId)
   const { t } = useTranslation()
   const nestedDefaults = useNestedToolDefaults()
@@ -366,6 +368,39 @@ export const ToolBlock = memo(function ToolBlock(props: ToolBlockProps) {
 
 export { FileChip }
 export { DebugToolBlock, ToolBlockPresenter } from './ToolBlockPresenter'
+
+export const ToolBlock = memo(function ToolBlock(props: ToolBlockProps) {
+  return props.remoteDetail ? <DeferredToolBlock {...props} remoteDetail={props.remoteDetail} /> : <ToolBlockBody {...props} />
+})
+
+/**
+ * A summarized row (`remoteDetail`) in a desktop chat: the same desktop block,
+ * hydrated from the session's detail. Generic and Bash rows load their body
+ * when opened; a block with its own chrome loads when shown, because its
+ * collapsed header reads the result.
+ */
+function DeferredToolBlock({ remoteDetail, ...props }: ToolBlockProps & { remoteDetail: string }) {
+  const onOpen = !hasDedicatedToolRow(props.toolName)
+  const [expanded, setExpanded] = useState(false)
+  const { detail, text, error, status, retry } = useDeferredToolDetail(remoteDetail, onOpen ? expanded : true, props.status !== 'streaming')
+  const loaded = {
+    ...(detail.input ? { input: detail.input } : {}),
+    ...(detail.result !== undefined ? { result: detail.result } : {}),
+    ...(detail.bashEditDiff ? { bashEditDiff: detail.bashEditDiff } : {}),
+  }
+  if (onOpen) {
+    return <ToolBlockBody {...props} {...loaded} autoExpand={false}
+      deferred={{ onExpandedChange: setExpanded, detailStatus: status, onDetailRetry: retry }} />
+  }
+  const ready = Boolean(text) || Boolean(error)
+  return (
+    <>
+      {/* In flight until the payload lands, so the header does not flash an empty result. */}
+      <ToolBlockBody {...props} {...loaded} status={ready ? props.status : 'streaming'} />
+      <DeferredDetailStatus status={error ? status : undefined} onRetry={retry} />
+    </>
+  )
+}
 
 function readBashOutputFile(path: string, lines: number): Promise<string> {
   return window.app.readBashOutputFile(path, lines)

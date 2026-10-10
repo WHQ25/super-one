@@ -23,6 +23,7 @@ function renderDesktopTool(block: ToolGroupToolUse, index: number): ReactElement
       toolSummary={block.toolSummary}
       status={block.status}
       elapsedSeconds={block.elapsedSeconds}
+      remoteDetail={block.remoteDetail}
     />
   )
 }

@@ -34,7 +34,7 @@ import { userCopyHtml } from './chat-message/user-copy-html'
 import { userMessageParts } from '@superone/shared/user-message-parts'
 import { tryCopy, tryCopyRich } from '@/lib/clipboard'
 import { fileLinkComponents } from './chat-markdown-components'
-import { ReasoningBlock } from './ReasoningBlock'
+import { DesktopReasoning, ReasoningBlock } from './ReasoningBlock'
 import { promptKeywordsIn } from '@superone/shared/prompt-keywords'
 import { UserMessageContentPresenter } from '@superone/chat-view/presenters/UserMessageContent'
 import { MessageContextChips } from '@superone/chat-view/presenters/MessageContextChips'
@@ -98,7 +98,7 @@ const CLAUDE_TURN_PARTS: ClaudeTurnBodyPresenterParts = {
   Insight: InsightBlock,
   Document: DesktopDocumentIcon,
   Tool: ToolBlock,
-  Reasoning: ReasoningBlock,
+  Reasoning: DesktopReasoning,
   Subagent: SubagentBlock,
   Workflow: WorkflowBlock,
   ToolGroup,

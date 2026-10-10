@@ -117,6 +117,27 @@ export interface ToolBlockProps {
   trailingAction?: ReactNode
   /** `*_run` only: the resume calls folded into this block (see groupContent). */
   runContinuations?: RunContinuation[]
+  /** A summarized row (`remoteDetail`): its body loads when the row opens. */
+  remoteDetail?: string
+  /** Set by the deferred row: the expand signal and the load's status. */
+  deferred?: DeferredRowControls
+}
+
+/** How a row whose body loads on open reports opening and shows the load. */
+export interface DeferredRowControls {
+  onExpandedChange: (expanded: boolean) => void
+  detailStatus?: string
+  onDetailRetry?: () => void
+}
+
+/**
+ * Tools drawn by their own block rather than the generic row. A summarized
+ * one loads its body when shown, since its collapsed chrome reads it; Bash
+ * and generic rows load when opened.
+ */
+export function hasDedicatedToolRow(toolName: string): boolean {
+  if (toolName === 'EnterPlanMode' || toolName === 'ExitPlanMode' || toolName === 'ReportFindings' || toolName === 'ListAgents') return true
+  return parseMcpToolName(toolName)?.serverName === SUPERONE_SERVER
 }
 
 export interface BashToolPresenterProps {
@@ -136,6 +157,9 @@ export interface BashToolPresenterProps {
   allowExpand?: boolean
   backgroundActivity?: boolean
   trailingAction?: ReactNode
+  onExpandedChange?: (expanded: boolean) => void
+  detailStatus?: string
+  onDetailRetry?: () => void
 }
 
 export interface MiniAppToolPresenterProps {
@@ -196,6 +220,7 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
   grouped = false,
   trailingAction,
   runContinuations,
+  deferred,
   allowExpand,
   defaultAutoExpand,
   autoExpandFileDiffs,
@@ -254,6 +279,7 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
       allowExpand,
       backgroundActivity,
       trailingAction,
+      ...deferred,
     })
   }
 
@@ -563,6 +589,10 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
       allowExpand={allowExpand}
       defaultAutoExpand={defaultAutoExpand}
       autoExpandFileDiffs={autoExpandFileDiffs}
+      hasDeferredDetails={deferred !== undefined}
+      detailStatus={deferred?.detailStatus}
+      onDetailRetry={deferred?.onDetailRetry}
+      onExpandedChange={deferred?.onExpandedChange}
       ports={ports}
     />
   )

@@ -1,3 +1,4 @@
+import { DeferredDetailStatus, useDeferredToolDetail } from '@superone/chat-view/use-deferred-tool-detail'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Streamdown } from 'streamdown'
 import type { ContentBlock } from '@superone/shared/agent-types'
@@ -89,6 +90,7 @@ function renderChildBlock(
           input={block.input}
           status={!isStreaming && block.status === 'streaming' ? undefined : block.status}
           elapsedSeconds={block.elapsedSeconds}
+          remoteDetail={block.remoteDetail}
           result={toolResultMap.get(block.toolUseId)}
           isError={errorMaps.errorIds.has(block.toolUseId)}
           isTimedOut={errorMaps.timedOutIds.has(block.toolUseId)}
@@ -110,17 +112,28 @@ function renderChildBlock(
   }
 }
 
+const EMPTY_BLOCKS: ContentBlock[] = []
+
 /** Desktop data and filesystem adapter for the portable subagent presenter. */
 export function SubagentBlock({
-  taskBlock,
+  taskBlock: shellTaskBlock,
   childBlocks: childBlocksProp,
-  resultBlock,
+  resultBlock: shellResultBlock,
   isStreaming,
   defaultExpanded,
   trailingAction,
 }: SubagentBlockProps) {
-  const childBlocks = useStableArray(childBlocksProp)
   const [expanded, setExpanded] = useState(defaultExpanded ?? false)
+  // A summarized card (`remoteDetail`) carries no children: they load when it opens.
+  const remoteDetail = shellTaskBlock.remoteDetail
+  const deferred = useDeferredToolDetail(remoteDetail, expanded, !isStreaming && !!shellResultBlock)
+  const taskBlock = useMemo(() => remoteDetail
+    ? { ...shellTaskBlock, ...(deferred.detail.input ? { input: deferred.detail.input } : {}), taskResultText: deferred.detail.taskResultText ?? shellTaskBlock.taskResultText }
+    : shellTaskBlock, [remoteDetail, shellTaskBlock, deferred.detail])
+  const resultBlock = remoteDetail && shellResultBlock?.type === 'tool_result' && deferred.detail.result !== undefined
+    ? { ...shellResultBlock, summary: deferred.detail.result }
+    : shellResultBlock
+  const childBlocks = useStableArray(remoteDetail ? deferred.detail.childBlocks ?? EMPTY_BLOCKS : childBlocksProp)
   const tokens = useActiveSession(
     (state) => state.subagentTokens[taskBlock.toolUseId] ?? ZERO_TOKENS,
   )
@@ -221,8 +234,9 @@ export function SubagentBlock({
     </NestedToolContext.Provider>
   ) : undefined
 
-  const childContent = childItems.length > 0 ? (
+  const childContent = childItems.length > 0 || deferred.status ? (
     <NestedToolContext.Provider value={{ defaultAutoExpand: false, allowExpand: false }}>
+      <DeferredDetailStatus status={deferred.status} onRetry={deferred.retry} />
       <SubagentScrollArea borderClass={colors.borderL}>
         {childItems.map((item, index) => item.kind === 'subagent' ? (
           <SubagentBlock

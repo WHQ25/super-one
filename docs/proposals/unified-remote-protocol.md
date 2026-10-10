@@ -1,6 +1,7 @@
 # Unified remote protocol
 
 Status: draft · Updated: 2026-10-10
+Plan: [unified-remote-protocol.md](../plans/unified-remote-protocol.md)
 
 Scope: one backend serves many frontends. An environment's backend (a desktop's
 main process, a CLI node) serves its own window, controller desktops and

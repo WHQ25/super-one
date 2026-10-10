@@ -27,7 +27,8 @@ export interface RemoteControllerRecord {
   released?: boolean
 }
 
-export interface RemoteControlledSessionRow {
+/** A desktop session row as the node surfaces read it; `controller` when another device started it here. */
+export interface DesktopSessionRow {
   sessionId: string
   projectId: string
   projectPath: string
@@ -42,8 +43,11 @@ export interface RemoteControlledSessionRow {
   tags: string[]
   createdAt: number
   updatedAt: number
-  controller: RemoteControllerRecord
+  controller: RemoteControllerRecord | null
 }
+
+/** A session another device started here through the node surface. */
+export type RemoteControlledSessionRow = DesktopSessionRow & { controller: RemoteControllerRecord }
 
 /** The renderer-facing part of a stored controller; null when the column is unset or unreadable. */
 export function remoteControllerInfo(json: string | null | undefined): SessionRemoteControllerInfo | null {
@@ -73,8 +77,8 @@ const SELECT = `
   SELECT s.id, s.project_id, p.path AS project_path, s.title, s.provider, s.provider_id, s.provider_session_id,
          s.worktree_path, s.is_pinned, s.is_hidden, s.is_user_renamed, s.tags_json, s.created_at,
          COALESCE(s.last_user_message_at, s.created_at) AS updated_at, s.remote_controller_json
-  FROM sessions s JOIN projects p ON p.id = s.project_id
-  WHERE s.remote_controller_json IS NOT NULL`
+  FROM sessions s JOIN projects p ON p.id = s.project_id`
+const CONTROLLED = 'WHERE s.remote_controller_json IS NOT NULL'
 
 interface Row {
   id: string
@@ -91,12 +95,10 @@ interface Row {
   tags_json: string | null
   created_at: string
   updated_at: string
-  remote_controller_json: string
+  remote_controller_json: string | null
 }
 
-function toRow(r: Row): RemoteControlledSessionRow | null {
-  const controller = parseRemoteController(r.remote_controller_json)
-  if (!controller) return null
+function toRow(r: Row): DesktopSessionRow {
   return {
     sessionId: r.id,
     projectId: r.project_id,
@@ -112,19 +114,37 @@ function toRow(r: Row): RemoteControlledSessionRow | null {
     tags: parseTagsJson(r.tags_json),
     createdAt: Date.parse(r.created_at) || 0,
     updatedAt: Date.parse(r.updated_at) || 0,
-    controller,
+    controller: parseRemoteController(r.remote_controller_json),
   }
 }
 
-export function getRemoteControlledSession(sessionId: string): RemoteControlledSessionRow | null {
-  const row = getDb().prepare(`${SELECT} AND s.id = ?`).get(sessionId) as Row | undefined
+function controlled(row: DesktopSessionRow): row is RemoteControlledSessionRow {
+  return row.controller !== null
+}
+
+/** Any session of this desktop, controlled or not. */
+export function getDesktopSessionRow(sessionId: string): DesktopSessionRow | null {
+  const row = getDb().prepare(`${SELECT} WHERE s.id = ?`).get(sessionId) as Row | undefined
   return row ? toRow(row) : null
+}
+
+/** Every session of this desktop, newest first; no projectId spans every project. */
+export function listDesktopSessionRows(projectId?: string): DesktopSessionRow[] {
+  const rows = (projectId
+    ? getDb().prepare(`${SELECT} WHERE s.project_id = ? ORDER BY updated_at DESC`).all(projectId)
+    : getDb().prepare(`${SELECT} ORDER BY updated_at DESC`).all()) as Row[]
+  return rows.map(toRow)
+}
+
+export function getRemoteControlledSession(sessionId: string): RemoteControlledSessionRow | null {
+  const row = getDesktopSessionRow(sessionId)
+  return row && controlled(row) ? row : null
 }
 
 /** Newest first; no projectId spans every project. */
 export function listRemoteControlledSessions(projectId?: string): RemoteControlledSessionRow[] {
   const rows = (projectId
-    ? getDb().prepare(`${SELECT} AND s.project_id = ? ORDER BY updated_at DESC`).all(projectId)
-    : getDb().prepare(`${SELECT} ORDER BY updated_at DESC`).all()) as Row[]
-  return rows.flatMap((r) => toRow(r) ?? [])
+    ? getDb().prepare(`${SELECT} ${CONTROLLED} AND s.project_id = ? ORDER BY updated_at DESC`).all(projectId)
+    : getDb().prepare(`${SELECT} ${CONTROLLED} ORDER BY updated_at DESC`).all()) as Row[]
+  return rows.map(toRow).filter(controlled)
 }

@@ -182,8 +182,8 @@ function controlReleasedError(): Error {
  * surface; the desktop's own sessions stay private to it.
  */
 export class DesktopSessionHost implements SessionHostPort {
-  /** Live Session objects whose events are being recorded (a resume makes a new one). */
-  private readonly recording = new WeakSet<Session>()
+  /** Live Session objects this host watches for its controller (a resume makes a new one). */
+  private readonly watched = new WeakSet<Session>()
   /** Event subscriptions on adopted sessions, dropped when the host stops. */
   private readonly sessionListeners = new Set<() => void>()
   /** When each live prompt was first seen, so its `createdAt` is stable across reads. */
@@ -209,7 +209,7 @@ export class DesktopSessionHost implements SessionHostPort {
     })
     this.hostActions.reconcileAfterRestart()
     // Fires for live sessions now and every session registered later — a
-    // resume from this desktop's sidebar included — so recording and the
+    // resume from this desktop's sidebar included — so the turn hooks and the
     // controller's claim survive a dispose/resume cycle.
     this.unsubscribe = deps.sessions.onSession((session) => this.adopt(session))
   }
@@ -256,10 +256,10 @@ export class DesktopSessionHost implements SessionHostPort {
   }
 
   private adopt(session: Session): void {
-    if (this.recording.has(session)) return
+    if (this.watched.has(session)) return
     const row = this.deps.store.get(session.id)
     if (!row) return
-    this.recording.add(session)
+    this.watched.add(session)
     if (!row.controller.released) this.claim(session, row.controller.clientSessionId)
     const off = session.on((event, replay) => {
       if (replay) return
@@ -267,12 +267,6 @@ export class DesktopSessionHost implements SessionHostPort {
       // A Host Action belongs to the turn that asked for it.
       if (event.type === 'status_change' && (event.status === 'idle' || event.status === 'error')) {
         this.hostActions.cancelForSession(session.id, 'turn_ended')
-      }
-      try {
-        const { eventType, payload } = durableEventOf(event)
-        this.deps.events.appendSession({ sessionId: session.id, eventType, payload })
-      } catch (err) {
-        log.warn('[node-host] event append failed sid=%s: %s', session.id, err instanceof Error ? err.message : String(err))
       }
     })
     this.sessionListeners.add(off)
@@ -569,8 +563,24 @@ export class DesktopSessionHost implements SessionHostPort {
     return this.deps.events.headSequence()
   }
 
+  /**
+   * The log records every session of this desktop (`SessionEventRecorder`);
+   * a controller reads only the sessions it can see. A page with none of them
+   * reads on, so an empty answer still means the end of the log.
+   */
   listEventsAfter(afterSequence: string): EnvironmentEventEnvelope[] {
-    return this.deps.events.listAfter(afterSequence)
+    let cursor = afterSequence
+    for (;;) {
+      const page = this.deps.events.listAfter(cursor)
+      if (page.length === 0) return []
+      const visible = page.filter((envelope) => this.visible(envelope))
+      if (visible.length > 0) return visible
+      cursor = page.at(-1)!.sequence
+    }
+  }
+
+  private visible(envelope: EnvironmentEventEnvelope): boolean {
+    return envelope.aggregateType !== 'session' || this.deps.store.get(envelope.aggregateId) !== null
   }
 
   streamEpoch(): string {
@@ -578,15 +588,17 @@ export class DesktopSessionHost implements SessionHostPort {
   }
 
   streamingAfter(sessionId: string, version: number): EnvironmentEventEnvelope[] | null {
-    return this.deps.events.streamingAfter(sessionId, version)
+    return this.deps.store.get(sessionId) ? this.deps.events.streamingAfter(sessionId, version) : []
   }
 
   streamingEvents(): EnvironmentEventEnvelope[] {
-    return this.deps.events.streaming()
+    return this.deps.events.streaming().filter((envelope) => this.visible(envelope))
   }
 
   onEventsAppended(listener: (envelope: EnvironmentEventEnvelope) => void): () => void {
-    return this.deps.events.onAppend(listener)
+    return this.deps.events.onAppend((envelope) => {
+      if (this.visible(envelope)) listener(envelope)
+    })
   }
 
   viewEvent(envelope: EnvironmentEventEnvelope): EnvironmentEventEnvelope {

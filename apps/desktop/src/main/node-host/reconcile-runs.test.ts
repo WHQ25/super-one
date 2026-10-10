@@ -3,7 +3,6 @@ import { openNodeDatabase } from '@superone/runtime/db'
 import { EventLog } from '@superone/runtime/session'
 import type { Session } from '../session/types'
 import { reconcileRunsAfterRestart } from './reconcile-runs'
-import type { RemoteControlledSessionRow } from '../db-remote-controlled-sessions'
 
 function setup(live: Record<string, string> = {}) {
   const db = openNodeDatabase(':memory:')
@@ -13,7 +12,6 @@ function setup(live: Record<string, string> = {}) {
   const reconcile = () => reconcileRunsAfterRestart({
     db,
     events,
-    store: { list: () => ['running', 'settled', 'live', 'quiet'].map((sessionId) => ({ sessionId }) as RemoteControlledSessionRow) },
     sessions: { getSession: (id) => (live[id] ? ({ activityStatus: () => live[id] } as unknown as Session) : null) },
   })
   const reconciled = () => events.listAfter('0').filter((e) => e.eventType === 'session.reconciled').map((e) => e.aggregateId)

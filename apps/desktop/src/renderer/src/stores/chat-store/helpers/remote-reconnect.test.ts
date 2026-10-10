@@ -14,7 +14,7 @@ vi.stubGlobal('window', {
 /**
  * Defaults are stubbed to keep this file out of the chat-store index ↔ selectors
  * init cycle (same isolation trick as remote-session-ops.test.ts). Everything
- * under test — _isLiveSession, hydrate, merge, catalog preference — stays real.
+ * under test — hydrate and the snapshot replace — stays real.
  */
 const createDefaultPerSessionState = (): PerSessionState =>
   ({
@@ -107,7 +107,7 @@ describe('remote session resync', () => {
           createdAt: new Date(2_000).toISOString(),
         },
       ],
-      state: {},
+      state: { status: 'idle', awaitingAssistantReply: false },
       before: null,
       cursor: { sequence: '9', epoch: 'e', version: 9 },
     })
@@ -138,14 +138,12 @@ describe('remote session resync', () => {
       sessionId: SID,
       status: 'streaming',
       harnessId: 'claude',
-      transcript: [],
-      pendingInteraction: {
-        interactionId: 'perm-1',
-        kind: 'permission',
-        toolName: 'Bash',
-        toolUseId: 'tu-1',
-        input: { command: 'ls' },
-      },
+    })
+    openRemoteSession.mockResolvedValue({
+      messages: [],
+      state: { status: 'streaming', awaitingAssistantReply: true, pendingPermissions: [{ requestId: 'perm-1', toolName: 'Bash', toolUseId: 'tu-1', input: { command: 'ls' } }] },
+      before: null,
+      cursor: { sequence: '9', epoch: 'e', version: 9 },
     })
 
     const store = makeStore({

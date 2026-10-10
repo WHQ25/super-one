@@ -89,13 +89,8 @@ function applyRemoteQuestionSnapshot(
     const pendingFields = remoteMsgs.nodePendingInteractionFields(nodeSnap?.pendingInteraction, nodeSnap?.pendingInputRequests)
     const stillLive =
       pendingFields.awaitingAssistantReply || nodeSnap?.status === 'streaming'
-    const providerId = nodeSnap?.harnessId || nodeSnap?.providerId || 'codex'
     const partial = updatePerSession(s, projectPath, targetSid, (sess) => {
-      let messages = remoteMsgs.reconcileTranscriptWithLocalMessages(
-        sess.messages,
-        nodeSnap?.transcript,
-        providerId,
-      )
+      let messages = sess.messages
       if (codexQaItem) {
         const lastIdx = messages.length - 1
         const lastMsg = messages[lastIdx]
@@ -268,14 +263,8 @@ export async function respondToPermissionImpl(
             )
             const stillLive =
               pendingFields.awaitingAssistantReply || nodeSnap?.status === 'streaming'
-            const providerId = nodeSnap?.harnessId || nodeSnap?.providerId || 'codex'
             set((s) => owner && !s.projectSessions[owner.projectPath]?._sessions[owner.sessionId] ? {} :
-              commitPerSession(s, owner, (sess) => ({
-                messages: remoteMsgs.reconcileTranscriptWithLocalMessages(
-                  sess.messages,
-                  nodeSnap?.transcript,
-                  providerId,
-                ),
+              commitPerSession(s, owner, () => ({
                 awaitingAssistantReply: stillLive,
                 status: stillLive
                   ? 'streaming'

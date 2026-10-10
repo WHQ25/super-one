@@ -1859,126 +1859,47 @@ describe('remote switchSession hydrate race (agent reply loss)', () => {
     })
   }
 
-  it('keeps stream deltas that arrive while getSession is in flight', async () => {
+  it('takes the node snapshot over what memory streamed while it loaded', async () => {
     seedRemoteTwoSessions('Hello')
 
     let resolveGet!: (value: unknown) => void
-    const getPromise = new Promise((resolve) => {
-      resolveGet = resolve
-    })
+    const getPromise = new Promise((resolve) => { resolveGet = resolve })
     mockWindowEnvironment.getSession.mockImplementation(() => getPromise)
-    mockWindowEnvironment.openRemoteSession.mockResolvedValue({ messages: [] })
+    // Read after the events below: the node already holds them.
+    mockWindowEnvironment.openRemoteSession.mockResolvedValue({
+      messages: [
+        { id: 'user-1', role: 'user', status: 'complete', content: [{ type: 'text', text: 'hi' }], createdAt: new Date(1).toISOString(), providerId: 'claude' },
+        { id: 'asst-1', role: 'assistant', status: 'complete', content: [{ type: 'text', text: 'Hello world' }], createdAt: new Date(2).toISOString(), providerId: 'claude', _lastAppliedSeq: 7 },
+      ],
+      state: { status: 'idle', awaitingAssistantReply: false },
+      before: null,
+      cursor: { sequence: '7', epoch: 'e', version: 7 },
+    })
 
     const switchPromise = useChatStore.getState().switchSession(sidA)
-
-    // Concurrent stream while hydrate awaits the node snapshot.
     useChatStore.getState().handleAgentEvent({
-      type: 'content_delta',
-      projectPath: projectKey,
-      sessionId: sidA,
-      messageId: 'asst-1',
-      delta: { type: 'text', text: ' world' },
+      type: 'content_delta', projectPath: projectKey, sessionId: sidA, messageId: 'asst-1', delta: { type: 'text', text: ' world' }, seq: 6,
     } as AgentEvent)
-    useChatStore.getState().handleAgentEvent({
-      type: 'message_complete',
-      projectPath: projectKey,
-      sessionId: sidA,
-      messageId: 'asst-1',
-    } as AgentEvent)
-    useChatStore.getState().handleAgentEvent({
-      type: 'status_change',
-      projectPath: projectKey,
-      sessionId: sidA,
-      status: 'idle',
-    } as AgentEvent)
-
-    // Stale node snapshot: still streaming, assistant not on transcript yet.
-    resolveGet({
-      sessionId: sidA,
-      status: 'streaming',
-      harnessId: 'claude',
-      transcript: [{ id: 'user-1', role: 'user', text: 'hi', createdAt: 1 }],
-      pendingInteraction: null,
-    })
-
+    resolveGet({ sessionId: sidA, status: 'streaming', harnessId: 'claude', pendingInteraction: null })
     await switchPromise
+    // An event the snapshot already holds, delivered late, is skipped.
+    useChatStore.getState().handleAgentEvent({
+      type: 'content_delta', projectPath: projectKey, sessionId: sidA, messageId: 'asst-1', delta: { type: 'text', text: ' world' }, seq: 7,
+    } as AgentEvent)
 
     const sess = useChatStore.getState().projectSessions[projectKey]!._sessions[sidA]!
-    const asst = sess.messages.find((m) => m.id === 'asst-1')
-    expect(asst).toBeDefined()
-    const text = (asst!.content as Array<{ type: string; text?: string }>)
-      .filter((b) => b.type === 'text')
-      .map((b) => b.text ?? '')
-      .join('')
-    // Bug: unconditional set(hydrated from pre-await prev) drops " world".
-    expect(text).toContain('world')
-    // Bug: stale snap re-opens a turn that already settled in memory.
+    const asst = sess.messages.find((m) => m.id === 'asst-1')!
+    expect(asst.content).toEqual([{ type: 'text', text: 'Hello world' }])
     expect(sess.status).toBe('idle')
     expect(sess.awaitingAssistantReply).toBe(false)
-  })
-
-  it('keeps a completed assistant when node catalog lags behind the stream', async () => {
-    seedRemoteTwoSessions('done')
-
-    // Session already idle in memory with a full assistant turn.
-    useChatStore.setState((s) => {
-      const proj = s.projectSessions[projectKey]!
-      const a = proj._sessions[sidA]!
-      return {
-        projectSessions: {
-          ...s.projectSessions,
-          [projectKey]: {
-            ...proj,
-            _sessions: {
-              ...proj._sessions,
-              [sidA]: {
-                ...a,
-                status: 'idle',
-                awaitingAssistantReply: false,
-                messages: a.messages.map((m) =>
-                  m.id === 'asst-1'
-                    ? { ...m, status: 'complete' as const, content: [{ type: 'text' as const, text: 'full agent reply' }] }
-                    : m,
-                ),
-              },
-            },
-          },
-        },
-      }
-    })
-
-    // Node still has empty/incomplete catalog (race: turn just finished).
-    mockWindowEnvironment.getSession.mockResolvedValue({
-      sessionId: sidA,
-      status: 'idle',
-      harnessId: 'claude',
-      transcript: [{ id: 'node-user', role: 'user', text: 'hi', createdAt: 1 }],
-      pendingInteraction: null,
-    })
-    mockWindowEnvironment.openRemoteSession.mockResolvedValue({
-      messages: [{ id: 'node-user', role: 'user', status: 'complete', content: [{ type: 'text', text: 'hi' }], createdAt: new Date(1).toISOString() }],
-    })
-
-    await useChatStore.getState().switchSession(sidA)
-
-    const sess = useChatStore.getState().projectSessions[projectKey]!._sessions[sidA]!
-    const asst = sess.messages.find((m) => m.role === 'assistant')
-    expect(asst).toBeDefined()
-    expect(
-      (asst!.content as Array<{ type: string; text?: string }>)
-        .filter((b) => b.type === 'text')
-        .map((b) => b.text ?? '')
-        .join(''),
-    ).toContain('full agent reply')
   })
 
   /**
    * User report end-to-end: already chatted several rounds on remote session A,
    * switch to B then back to A → earlier agent replies missing from thread head.
    *
-   * switchSession always rehydrates with session.get + messages.list; list only
-   * returns a newest-page suffix (hasMore). Merge must not reorder early turns
-   * behind the latest ones.
+   * switchSession reopens at a node snapshot of the newest page; the older
+   * messages already held stay, in order, ahead of it.
    */
   it('switchSession multi-turn: early agent replies stay at head when messages.list is a suffix', async () => {
     const turn = (id: string, role: 'user' | 'assistant', text: string): ChatMessage => ({
@@ -2043,7 +1964,9 @@ describe('remote switchSession hydrate race (agent reply loss)', () => {
     // Node session.load: newest page only (`before` points at older messages).
     mockWindowEnvironment.openRemoteSession.mockResolvedValue({
       messages: fullMessages.slice(2),
+      state: {},
       before: 2,
+      cursor: { sequence: '6', epoch: 'e', version: 6 },
     })
 
     // Switch back to the multi-turn session.

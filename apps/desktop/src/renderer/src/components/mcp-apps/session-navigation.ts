@@ -6,10 +6,10 @@ import type { McpAppRoute } from './desktop-executor'
 /** Adopt the host-created empty session before DB-only navigation can apply defaults. */
 export async function navigateMcpAppSession(route: McpAppRoute): Promise<void> {
   if (parseRemoteProjectKey(route.projectPath)) {
-    const { hydrateRemoteSessionWithCatalog } = await import('@/lib/remote-session-ops')
+    const { hydrateRemoteSession } = await import('@/lib/remote-session-ops')
     const state = useChatStore.getState()
     const previous = state.projectSessions[route.projectPath]?._sessions[route.sessionId]
-    const { hydrated, snap } = await hydrateRemoteSessionWithCatalog(route.projectPath, route.sessionId, previous, { adoptSession: true })
+    const { hydrated, snap } = await hydrateRemoteSession(route.projectPath, route.sessionId, previous, { adoptSession: true })
     if (!snap?.sessionId || !snap.harnessId) throw new McpAppsError('not_connected', 'The host-created node conversation is unavailable')
     useChatStore.setState(state => {
       const project = state.projectSessions[route.projectPath]

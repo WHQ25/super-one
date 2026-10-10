@@ -1202,8 +1202,6 @@ export interface EnvironmentAPI extends MediaComposerAPI {
       ultracode?: boolean
     },
   ): Promise<unknown>
-  /** Poll durable node `session.events` after sequence (exclusive). */
-  listSessionEvents(connectionId: string, afterSequence?: string): Promise<unknown[]>
   /**
    * Open a remote session in the chat: main follows it, then returns its
    * snapshot (`session.load`); every later event above the snapshot's version

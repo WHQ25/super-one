@@ -663,31 +663,24 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
       }))
     }
 
-    // Remote node: hydrate from CLI session.get (+ optional messages.list denser catalog).
-    // Live catch-up uses session.events afterSequence via followRemoteSessionEvents — not
-    // desktop-only resumeSession IPC.
+    // Remote node: open the session at a node snapshot; main follows it from there.
     const { parseRemoteProjectKey } = await import('@/lib/remote-project-key')
     const remoteKey = parseRemoteProjectKey(activeProject)
     if (remoteKey) {
-      const {
-        hydrateRemoteSessionWithCatalog,
-        followRemoteSessionEvents,
-        mergeRemoteHydrateWithCurrent,
-      } = await import('@/lib/remote-session-ops')
+      const { hydrateRemoteSession, followRemoteSessionEvents, keepRendererOwnedState } = await import('@/lib/remote-session-ops')
       const prev = project._sessions[sessionId] ?? null
-      const { hydrated, snap } = await hydrateRemoteSessionWithCatalog(
+      const { hydrated, snap } = await hydrateRemoteSession(
         activeProject,
         sessionId,
         prev,
         { adoptSession: true },
       )
-      // Re-merge with whatever landed in _sessions during the awaits above.
-      // Unconditional set(hydrated) dropped concurrent stream deltas (race).
+      // Keep the composer typed into during the awaits above.
       let applied = hydrated
       set((s) => {
         const proj = getProject(s, activeProject)
         const current = proj._sessions[sessionId]
-        applied = mergeRemoteHydrateWithCurrent(current, hydrated)
+        applied = keepRendererOwnedState(current, hydrated)
         return {
           projectSessions: {
             ...s.projectSessions,

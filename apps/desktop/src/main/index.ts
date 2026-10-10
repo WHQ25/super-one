@@ -2231,13 +2231,6 @@ function registerIpcHandlers(): void {
     },
   )
   ipcMain.handle(
-    AgentIpcChannels.ENVIRONMENT_LIST_SESSION_EVENTS,
-    async (_e, connectionId: string, afterSequence?: string) => {
-      const { getEnvironmentHost } = await import('./environment')
-      return getEnvironmentHost().listSessionEvents(connectionId, afterSequence ?? '0')
-    },
-  )
-  ipcMain.handle(
     AgentIpcChannels.ENVIRONMENT_MOD_UI,
     async (_e, connectionId: string, sessionId: string, op: ModUiOp, request: ModUiRequest) => {
       if (connectionId === 'local') {

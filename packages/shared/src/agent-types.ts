@@ -4749,9 +4749,7 @@ export const AgentIpcChannels = {
   ENVIRONMENT_CREATE_SESSION: 'environment:createSession',
   ENVIRONMENT_GET_SESSION: 'environment:getSession',
   ENVIRONMENT_SEND_SESSION_MESSAGE: 'environment:sendSessionMessage',
-  /** Poll durable node session.events after a sequence (exclusive). */
-  ENVIRONMENT_LIST_SESSION_EVENTS: 'environment:listSessionEvents',
-  /** Paged denser message catalog (session.messages.list) for remote UI hydrate. */
+  /** Open a remote session in the chat at a node snapshot (`session.load`) and follow it. */
   ENVIRONMENT_OPEN_REMOTE_SESSION: 'environment:openRemoteSession',
   ENVIRONMENT_INTERRUPT_SESSION: 'environment:interruptSession',
   /** Take control of a remote session back after its host released it (Reconnect). */

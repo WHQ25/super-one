@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentEvent, ChatMessage, CodexUsageInfo } from '@superone/shared/agent-types'
 import { ChatRuntime } from '../../../mobile/src/runtime'
 import { remoteRestoreMessages, stripEventForRemote, stripMessagesForRemote } from './remote-content'
-import { preferCatalogMessages, sessionMessageBlocksToChatMessages } from '../renderer/src/stores/chat-store/helpers/remote-message-catalog'
+import { sessionMessageBlocksToChatMessages } from '@superone/shared/node-message-catalog'
 
 vi.mock('./logger', () => ({ default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 
@@ -20,13 +20,12 @@ function message(id: string, overrides: Partial<ChatMessage> = {}): ChatMessage 
 
 describe('Codex restore through the mobile transport and chat runtime', () => {
   it('retains cold-hydrated catalog item rows through the phone projection', async () => {
-    const transcript = message('turn', { content: [{ type: 'text', text: 'Done' }] })
     const catalog = sessionMessageBlocksToChatMessages([{ id: 'turn', role: 'assistant', text: 'Done', createdAt: 1, sortOrder: 0,
       metadata: { codex: { threadId: 'thread', usage: null, items: [
         { id: 'shell', type: 'command_execution', command: 'bun test', aggregatedOutput: 'passed', status: 'completed' },
       ] } },
     }], 'codex')
-    const restored = stripMessagesForRemote(remoteRestoreMessages(preferCatalogMessages([transcript], catalog)))
+    const restored = stripMessagesForRemote(remoteRestoreMessages(catalog))
     const client = { startBuffering() {}, releaseBuffer: () => ({ epoch: 1, batches: [] }),
       request: async (command: { type: string }) => command.type === 'load_session_messages'
         ? { messages: restored, provider: 'codex', hasMore: false } : { status: 'idle' },

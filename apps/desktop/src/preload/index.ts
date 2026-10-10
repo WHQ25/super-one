@@ -677,12 +677,6 @@ const environmentAPI = {
       connectionId,
       input,
     ),
-  listSessionEvents: (connectionId: string, afterSequence?: string) =>
-    ipcRenderer.invoke(
-      AgentIpcChannels.ENVIRONMENT_LIST_SESSION_EVENTS,
-      connectionId,
-      afterSequence ?? '0',
-    ),
   openRemoteSession: (
     connectionId: string,
     input: { sessionId: string; projectPath?: string; providerId?: string; limit?: number },

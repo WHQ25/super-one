@@ -3,7 +3,7 @@ import i18n from 'i18next'
 import { toast } from 'sonner'
 import { ModUiClient, windowViewport } from '@superone/chat-view/mod-ui'
 import type { AgentEvent, AppSettings } from '@superone/shared/agent-types'
-import { MOD_UI_MUTATING_OPS, MOD_UI_UNAVAILABLE, type ModHostReply, type ModHostRequest, type ModUiRequest, type ModUiResult } from '@superone/shared/mod-ui'
+import { MOD_UI_UNAVAILABLE, type ModHostReply, type ModHostRequest, type ModUiRequest, type ModUiResult } from '@superone/shared/mod-ui'
 import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
 import { useChatStore } from '@/stores/chat'
 import { tryCopy } from '@/lib/clipboard'
@@ -23,23 +23,6 @@ const heldToasts = new Map<string, Array<() => void>>()
 
 function connectionOf(projectPath: string): string {
   return parseRemoteProjectKey(projectPath)?.connectionId ?? 'local'
-}
-
-const pulls = new Map<string, ReturnType<typeof setTimeout>>()
-
-/**
- * A remote node's events reach this window only while a drain runs, and a
- * drain runs during turns. Acting on a mod while idle makes the plugin redraw
- * (now, and often a beat later), so pull the session's events twice.
- */
-function pullRemoteEvents(connectionId: string, projectPath: string, sessionId: string): void {
-  const pull = () => void window.environment.resumeRemoteSessionEvents(connectionId, { sessionId, projectPath, timeoutMs: 3_000 }).catch(() => {})
-  pull()
-  clearTimeout(pulls.get(sessionId))
-  pulls.set(sessionId, setTimeout(() => {
-    pulls.delete(sessionId)
-    pull()
-  }, 600))
 }
 
 function isUnavailable(err: unknown): boolean {
@@ -113,11 +96,7 @@ export function getModUiClient(projectPath: string, sessionId: string): ModUiCli
     surface: 'desktop',
     clientId: CLIENT_ID,
     answers: ['copy', 'promptRead', 'promptFill', 'promptSuggest'],
-    transport: async (op, request) => {
-      const result = await window.environment.modUi(connectionId, sessionId, op, request)
-      if (connectionId !== 'local' && (op === 'attach' || MOD_UI_MUTATING_OPS.has(op))) pullRemoteEvents(connectionId, projectPath, sessionId)
-      return result
-    },
+    transport: (op, request) => window.environment.modUi(connectionId, sessionId, op, request),
     viewport: () => windowViewport(true),
     hostHandler: (request) => answerHostRequest(projectPath, sessionId, request),
     onError: (op, err) => {
@@ -223,6 +202,4 @@ export function disposeModUiClient(sessionId: string): void {
   sessionProject.delete(sessionId)
   heldToasts.delete(sessionId)
   pendingSessions.delete(sessionId)
-  clearTimeout(pulls.get(sessionId))
-  pulls.delete(sessionId)
 }

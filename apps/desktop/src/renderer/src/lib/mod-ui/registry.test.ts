@@ -6,7 +6,6 @@ import type { AppSettings } from '@superone/shared/agent-types'
 const getAppSettings = vi.fn()
 let settingsChanged: ((settings: AppSettings) => void) | undefined
 const modUi = vi.fn(async (_connection: string, _session: string, op: string) => (op === 'panes' ? { panes: [], shownId: null, focusedId: null, focusRequestedId: null } : {}))
-const resumeRemoteSessionEvents = vi.fn(async () => {})
 
 Object.assign(window, {
   app: {
@@ -16,7 +15,7 @@ Object.assign(window, {
       return () => {}
     },
   },
-  environment: { modUi, resumeRemoteSessionEvents },
+  environment: { modUi },
 })
 
 const settings = (drawModInterfaces: boolean) => ({ agentPreference: { claude: { drawModInterfaces } } }) as AppSettings
@@ -36,7 +35,6 @@ const { disposeModUiClient, getModUiClient, routeModEvent } = await import('./re
 
 beforeEach(() => {
   modUi.mockClear()
-  resumeRemoteSessionEvents.mockClear()
 })
 
 describe('mod clients and the Draw Mod Interfaces preference', () => {
@@ -63,20 +61,5 @@ describe('mod clients and the Draw Mod Interfaces preference', () => {
 
     settingsChanged!(settings(true))
     expect(getModUiClient('/p', 's3')).not.toBe(client)
-  })
-
-  it('stops pulling a deleted remote session', async () => {
-    vi.useFakeTimers()
-    try {
-      const remote = 'remote:conn-1:/srv/app'
-      const client = getModUiClient(remote, 'r1')
-      expect(client).not.toBeNull()
-      await vi.waitFor(() => expect(resumeRemoteSessionEvents).toHaveBeenCalledTimes(1))
-      disposeModUiClient('r1')
-      vi.advanceTimersByTime(1_000)
-      expect(resumeRemoteSessionEvents).toHaveBeenCalledTimes(1)
-    } finally {
-      vi.useRealTimers()
-    }
   })
 })

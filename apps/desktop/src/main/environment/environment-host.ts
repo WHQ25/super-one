@@ -2177,14 +2177,8 @@ export class EnvironmentHost {
       formAnswers?: Record<string, unknown>
       /** True when the multi-launch dialog was cancelled. */
       cancel?: boolean
-      /** When set, continue draining events until turn settles or next pending. */
-      continueDrain?: {
-        projectPath?: string
-        providerId?: string
-        timeoutMs?: number
-      }
     },
-  ): Promise<unknown> {
+  ): Promise<void> {
     const { gateway, environmentId } = this.resolveRemote(connectionId)
     const control = await this.ensureSessionLease(connectionId, input.sessionId)
     await gateway.interactions.respondPermission({
@@ -2198,13 +2192,6 @@ export class EnvironmentHost {
         ...(input.cancel ? { cancel: true } : {}),
       },
     })
-    if (!input.continueDrain) return undefined
-    return this.resumeRemoteSessionEvents(connectionId, {
-      sessionId: input.sessionId,
-      projectPath: input.continueDrain.projectPath,
-      providerId: input.continueDrain.providerId,
-      timeoutMs: input.continueDrain.timeoutMs,
-    })
   }
 
   async respondSessionQuestion(
@@ -2213,13 +2200,8 @@ export class EnvironmentHost {
       sessionId: string
       interactionId: string
       answers: unknown
-      continueDrain?: {
-        projectPath?: string
-        providerId?: string
-        timeoutMs?: number
-      }
     },
-  ): Promise<unknown> {
+  ): Promise<void> {
     const { gateway, environmentId } = this.resolveRemote(connectionId)
     const control = await this.ensureSessionLease(connectionId, input.sessionId)
     await gateway.interactions.respondQuestion({
@@ -2228,13 +2210,6 @@ export class EnvironmentHost {
       answers: input.answers,
       leaseId: control.leaseId,
       generation: control.generation,
-    })
-    if (!input.continueDrain) return undefined
-    return this.resumeRemoteSessionEvents(connectionId, {
-      sessionId: input.sessionId,
-      projectPath: input.continueDrain.projectPath,
-      providerId: input.continueDrain.providerId,
-      timeoutMs: input.continueDrain.timeoutMs,
     })
   }
 
@@ -2245,13 +2220,8 @@ export class EnvironmentHost {
       interactionId: string
       decision: 'approve' | 'reject'
       options?: Record<string, unknown>
-      continueDrain?: {
-        projectPath?: string
-        providerId?: string
-        timeoutMs?: number
-      }
     },
-  ): Promise<unknown> {
+  ): Promise<void> {
     const { gateway, environmentId } = this.resolveRemote(connectionId)
     const control = await this.ensureSessionLease(connectionId, input.sessionId)
     await gateway.interactions.respondPlan({
@@ -2261,13 +2231,6 @@ export class EnvironmentHost {
       options: input.options,
       leaseId: control.leaseId,
       generation: control.generation,
-    })
-    if (!input.continueDrain) return undefined
-    return this.resumeRemoteSessionEvents(connectionId, {
-      sessionId: input.sessionId,
-      projectPath: input.continueDrain.projectPath,
-      providerId: input.continueDrain.providerId,
-      timeoutMs: input.continueDrain.timeoutMs,
     })
   }
 

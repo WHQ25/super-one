@@ -9,7 +9,7 @@ import { isGrokAcpAgent } from '@superone/shared/acp-brand'
 import { CLAUDE_INTERCEPTED_COMMANDS } from '../index'
 import type { ChatProvider, ChatStore, InputSegment, Mention, PerSessionState } from '../types'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
-import { nodeStatusToAgentStatus, type NodeSessionSnapshot } from '@/lib/remote-session-messages'
+import type { NodeSessionSnapshot } from '@/lib/remote-session-messages'
 import { providerSessionIdFromResume } from '@superone/shared/environment'
 import { expandPathRefTagsForAgent, stripMiniAppMarkup } from '@superone/shared/miniapp-prompt-tags'
 import { isBuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
@@ -412,11 +412,7 @@ async function deliverRemoteTurn(
 ): Promise<void> {
   const { projectPath, remoteKey, sid, preferredHarness, sendInput, titleText, statusBeforeSend } = turn
   const patchSession = writeScope.patch
-  const applyFinalSnapshot = async (finalSnap: NodeSessionSnapshot | null) => {
-    const { nodePendingInteractionFields } = await import('@/lib/remote-session-messages')
-    const pendingFields = nodePendingInteractionFields(finalSnap?.pendingInteraction, finalSnap?.pendingInputRequests)
-    const stillLive =
-      pendingFields.awaitingAssistantReply || finalSnap?.status === 'streaming'
+  const applyFinalSnapshot = (finalSnap: NodeSessionSnapshot | null) => {
     const snapTitle =
       typeof finalSnap?.title === 'string' && finalSnap.title.trim()
         ? finalSnap.title.trim()
@@ -430,14 +426,8 @@ async function deliverRemoteTurn(
           ? `${titleSource.slice(0, SESSION_TITLE_MAX_CHARS)}…`
           : titleSource
         : null)
-    patchSession(() => ({
-      awaitingAssistantReply: stillLive,
-      status: stillLive ? 'streaming' : nodeStatusToAgentStatus(finalSnap?.status),
-      pendingPermissions: pendingFields.pendingPermissions,
-      pendingQuestion: pendingFields.pendingQuestion,
-      pendingPlanApproval: pendingFields.pendingPlanApproval,
-      ...(derivedTitle ? { _title: derivedTitle } : {}),
-    }))
+    // Status and interactions arrive on the session's stream; the title is derived here.
+    if (derivedTitle) patchSession(() => ({ _title: derivedTitle }))
     // Keep sidebar history in sync: title + harness session id for Copy Session ID.
     const bareProviderSessionId =
       (typeof finalSnap?.providerSessionId === 'string' && finalSnap.providerSessionId.trim()
@@ -491,11 +481,11 @@ async function deliverRemoteTurn(
       remoteKey.connectionId,
       sendInput,
     ),
-    onDelivered: async (result) => {
+    onDelivered: (result) => {
       // The node holds the message and only the stream dropped: reconnect
       // recovery picks the turn back up, so this is not a send failure.
       if (isRemoteSendDetached(result)) return
-      await applyFinalSnapshot(result as NodeSessionSnapshot | null)
+      applyFinalSnapshot(result as NodeSessionSnapshot | null)
     },
     retryState: () => ({ awaitingAssistantReply: true, status: 'streaming' }),
     // A concurrent turn this send was queued behind is still running.

@@ -2307,11 +2307,6 @@ function registerIpcHandlers(): void {
         sessionId: string
         interactionId: string
         decision: 'allow' | 'deny' | 'allow_always'
-        continueDrain?: {
-          projectPath?: string
-          providerId?: string
-          timeoutMs?: number
-        }
       },
     ) => {
       const { getEnvironmentHost } = await import('./environment')
@@ -2327,11 +2322,6 @@ function registerIpcHandlers(): void {
         sessionId: string
         interactionId: string
         answers: unknown
-        continueDrain?: {
-          projectPath?: string
-          providerId?: string
-          timeoutMs?: number
-        }
       },
     ) => {
       const { getEnvironmentHost } = await import('./environment')
@@ -2348,11 +2338,6 @@ function registerIpcHandlers(): void {
         interactionId: string
         decision: 'approve' | 'reject'
         options?: Record<string, unknown>
-        continueDrain?: {
-          projectPath?: string
-          providerId?: string
-          timeoutMs?: number
-        }
       },
     ) => {
       const { getEnvironmentHost } = await import('./environment')

@@ -1,0 +1,4704 @@
+[
+ [
+  {
+   "type": "init_ready",
+   "skills": [
+    {
+     "name": "agent-canvas",
+     "description": "Draw diagrams, flowcharts, and visualizations on an Excalidraw canvas. Use when the user asks to draw, visualize, create diagrams, or sketch ideas.",
+     "argumentHint": "",
+     "isSkill": true
+    },
+    {
+     "name": "agent-speak",
+     "description": "Speak to the user using text-to-speech via `rawgenai <provider> tts --speak`. Use this skill when the user asks you to \"speak\", \"talk to me\", \"read aloud\", \"say this\", or when in voice conversation mode. This skill enables the agent to have voice conversations with users, replacing text output with spoken audio. Trigger on any request for voice interaction, verbal response, or spoken output.",
+     "argumentHint": "",
+     "isSkill": true
+    },
+    {
+     "name": "find-skills",
+     "description": "Helps users discover and install agent skills when they ask questions like \"how do I do X\", \"find a skill for X\", \"is there a skill that can...\", or express interest in extending capabilities. This skill should be used when the user is looking for functionality that might exist as an installable skill.",
+     "argumentHint": "",
+     "isSkill": true
+    },
+    {
+     "name": "parallel-dev",
+     "description": "Create git worktree and launch AI coding agent (Claude Code / Codex / Gemini) in a new terminal window. Use when user says \"parallel dev\", \"new worktree\", \"parallel branch\", \"spin up branch\", \"work on feature in parallel\", \"launch agent on branch\", \"start parallel task\", or wants to work on multiple features simultaneously without switching branches.",
+     "argumentHint": "",
+     "isSkill": true
+    },
+    {
+     "name": "frontend-design",
+     "description": "Create distinctive, production-grade frontend interfaces with high design quality. Use this skill when the user asks to build web components, pages, or applications. Generates creative, polished code that avoids generic AI aesthetics.",
+     "argumentHint": "",
+     "isSkill": true
+    },
+    {
+     "name": "skill-creator",
+     "description": "Create new skills, modify and improve existing skills, and measure skill performance. Use when users want to create a skill from scratch, update or optimize an existing skill, run evals to test a skill, benchmark skill performance with variance analysis, or optimize a skill's description for better triggering accuracy.",
+     "argumentHint": "",
+     "isSkill": true
+    }
+   ],
+   "projectCommands": [],
+   "projectAgents": [],
+   "cwd": "/Users/wuhangqi25/Developer/Projects/test-super-one",
+   "homedir": "/Users/wuhangqi25",
+   "sandboxInfo": {
+    "enabled": true,
+    "autoAllowBash": false
+   }
+  }
+ ],
+ [
+  {
+   "type": "init_ready",
+   "skills": [
+    {
+     "name": "agent-canvas",
+     "description": "Draw diagrams, flowcharts, and visualizations on an Excalidraw canvas. Use when the user asks to draw, visualize, create diagrams, or sketch ideas.",
+     "argumentHint": "",
+     "isSkill": true
+    },
+    {
+     "name": "agent-speak",
+     "description": "Speak to the user using text-to-speech via `rawgenai <provider> tts --speak`. Use this skill when the user asks you to \"speak\", \"talk to me\", \"read aloud\", \"say this\", or when in voice conversation mode. This skill enables the agent to have voice conversations with users, replacing text output with spoken audio. Trigger on any request for voice interaction, verbal response, or spoken output.",
+     "argumentHint": "",
+     "isSkill": true
+    },
+    {
+     "name": "find-skills",
+     "description": "Helps users discover and install agent skills when they ask questions like \"how do I do X\", \"find a skill for X\", \"is there a skill that can...\", or express interest in extending capabilities. This skill should be used when the user is looking for functionality that might exist as an installable skill.",
+     "argumentHint": "",
+     "isSkill": true
+    },
+    {
+     "name": "parallel-dev",
+     "description": "Create git worktree and launch AI coding agent (Claude Code / Codex / Gemini) in a new terminal window. Use when user says \"parallel dev\", \"new worktree\", \"parallel branch\", \"spin up branch\", \"work on feature in parallel\", \"launch agent on branch\", \"start parallel task\", or wants to work on multiple features simultaneously without switching branches.",
+     "argumentHint": "",
+     "isSkill": true
+    },
+    {
+     "name": "frontend-design",
+     "description": "Create distinctive, production-grade frontend interfaces with high design quality. Use this skill when the user asks to build web components, pages, or applications. Generates creative, polished code that avoids generic AI aesthetics.",
+     "argumentHint": "",
+     "isSkill": true
+    },
+    {
+     "name": "skill-creator",
+     "description": "Create new skills, modify and improve existing skills, and measure skill performance. Use when users want to create a skill from scratch, update or optimize an existing skill, run evals to test a skill, benchmark skill performance with variance analysis, or optimize a skill's description for better triggering accuracy.",
+     "argumentHint": "",
+     "isSkill": true
+    }
+   ],
+   "projectCommands": [],
+   "projectAgents": [],
+   "cwd": "/Users/wuhangqi25/Developer/Projects/test-super-one",
+   "homedir": "/Users/wuhangqi25",
+   "sandboxInfo": {
+    "enabled": true,
+    "autoAllowBash": false
+   }
+  }
+ ],
+ [
+  {
+   "type": "status_change",
+   "status": "streaming"
+  }
+ ],
+ [
+  {
+   "type": "message_start",
+   "message": {
+    "id": "msg_1774128968977_qri0yn",
+    "role": "assistant",
+    "status": "streaming",
+    "content": [],
+    "createdAt": "2026-03-21T21:36:08.977Z",
+    "providerId": "claude"
+   }
+  }
+ ],
+ [
+  {
+   "type": "session_init",
+   "session": {
+    "sessionId": "798bc24a-260d-44b5-9322-9b98989acd60",
+    "model": "claude-opus-4-6[1m]",
+    "tools": [
+     "Task",
+     "TaskOutput",
+     "Bash",
+     "Glob",
+     "Grep",
+     "ExitPlanMode",
+     "Read",
+     "Edit",
+     "Write",
+     "NotebookEdit",
+     "WebFetch",
+     "TodoWrite",
+     "WebSearch",
+     "TaskStop",
+     "AskUserQuestion",
+     "Skill",
+     "EnterPlanMode",
+     "EnterWorktree",
+     "ExitWorktree",
+     "TeamCreate",
+     "TeamDelete",
+     "SendMessage",
+     "CronCreate",
+     "CronDelete",
+     "CronList",
+     "ToolSearch",
+     "mcp__context7__resolve-library-id",
+     "mcp__context7__query-docs",
+     "mcp__widget__read_guidelines",
+     "mcp__widget__show_widget"
+    ],
+    "mcpServers": [
+     {
+      "name": "context7",
+      "status": "connected"
+     },
+     {
+      "name": "claude.ai Gmail",
+      "status": "needs-auth"
+     },
+     {
+      "name": "claude.ai Google Calendar",
+      "status": "needs-auth"
+     },
+     {
+      "name": "widget",
+      "status": "connected"
+     }
+    ],
+    "permissionMode": "default",
+    "slashCommands": [
+     "debug",
+     "simplify",
+     "batch",
+     "loop",
+     "claude-api",
+     "agent-canvas",
+     "agent-speak",
+     "find-skills",
+     "parallel-dev",
+     "tdd",
+     "wiki",
+     "align",
+     "deep-dive",
+     "code-review:code-review",
+     "frontend-design:frontend-design",
+     "skill-creator:skill-creator",
+     "compact",
+     "context",
+     "cost",
+     "heapdump",
+     "init",
+     "pr-comments",
+     "release-notes",
+     "review",
+     "security-review",
+     "extra-usage",
+     "insights"
+    ],
+    "skills": [
+     "debug",
+     "simplify",
+     "batch",
+     "loop",
+     "claude-api",
+     "agent-canvas",
+     "agent-speak",
+     "find-skills",
+     "parallel-dev",
+     "frontend-design:frontend-design",
+     "skill-creator:skill-creator"
+    ],
+    "claudeCodeVersion": "2.1.76",
+    "cwd": "/Users/wuhangqi25/Developer/Projects/test-super-one",
+    "agents": [
+     "general-purpose",
+     "statusline-setup",
+     "Explore",
+     "Plan",
+     "gemini-peer",
+     "codex-peer"
+    ],
+    "apiKeySource": "none",
+    "outputStyle": "default",
+    "plugins": [
+     {
+      "name": "code-review",
+      "path": "/Users/wuhangqi25/.claude/plugins/cache/claude-plugins-official/code-review/61c0597779bd"
+     },
+     {
+      "name": "frontend-design",
+      "path": "/Users/wuhangqi25/.claude/plugins/cache/claude-plugins-official/frontend-design/61c0597779bd"
+     },
+     {
+      "name": "skill-creator",
+      "path": "/Users/wuhangqi25/.claude/plugins/cache/claude-plugins-official/skill-creator/61c0597779bd"
+     },
+     {
+      "name": "typescript-lsp",
+      "path": "/Users/wuhangqi25/.claude/plugins/cache/claude-plugins-official/typescript-lsp/1.0.0"
+     }
+    ],
+    "fastModeState": "off"
+   }
+  }
+ ],
+ [
+  {
+   "type": "stream_message_start",
+   "messageId": "msg_1774128968977_qri0yn",
+   "apiMessageId": "msg_01Rg8wncaLaiULpzavw44d62",
+   "model": "claude-opus-4-6",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "thinking",
+    "thinking": "The user wants to test various",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "thinking",
+    "thinking": " permission request UIs. They want",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "thinking",
+    "thinking": " me to trigger different types of permission requests:\n\n1. Write",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "thinking",
+    "thinking": " file\n2. Edit file\n3. Plan exit\n4. Sandbox requests",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "thinking",
+    "thinking": "\n\nLet me do these one by one so they",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "thinking",
+    "thinking": " can see each permission dialog.",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "message_usage",
+   "messageId": "msg_1774128968977_qri0yn",
+   "inputTokens": 17547,
+   "outputTokens": 0
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "text",
+    "text": "好的，我来依次触",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "text",
+    "text": "发各种权限请求，让你测",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "text",
+    "text": "试 UI。\n\n**1. 写文件 ",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "text",
+    "text": "(Write)**",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "message_usage",
+   "messageId": "msg_1774128968977_qri0yn",
+   "inputTokens": 17547,
+   "outputTokens": 0
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "tool_use",
+    "toolName": "Write",
+    "toolUseId": "toolu_017FDjuPnaKG7ePLy18G2MgN",
+    "input": "",
+    "status": "streaming",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017FDjuPnaKG7ePLy18G2MgN",
+   "partialJson": "{\"fi",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017FDjuPnaKG7ePLy18G2MgN",
+   "partialJson": "le_path\": \"",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017FDjuPnaKG7ePLy18G2MgN",
+   "partialJson": "/U",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017FDjuPnaKG7ePLy18G2MgN",
+   "partialJson": "sers/wuhang",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017FDjuPnaKG7ePLy18G2MgN",
+   "partialJson": "qi25/Devel",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017FDjuPnaKG7ePLy18G2MgN",
+   "partialJson": "oper",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017FDjuPnaKG7ePLy18G2MgN",
+   "partialJson": "/Pr",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017FDjuPnaKG7ePLy18G2MgN",
+   "partialJson": "ojects/test",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017FDjuPnaKG7ePLy18G2MgN",
+   "partialJson": "-super-one",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017FDjuPnaKG7ePLy18G2MgN",
+   "partialJson": "/test-permis",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017FDjuPnaKG7ePLy18G2MgN",
+   "partialJson": "sion-ui.",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017FDjuPnaKG7ePLy18G2MgN",
+   "partialJson": "txt\"",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017FDjuPnaKG7ePLy18G2MgN",
+   "partialJson": ", \"con",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017FDjuPnaKG7ePLy18G2MgN",
+   "partialJson": "tent\"",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017FDjuPnaKG7ePLy18G2MgN",
+   "partialJson": ": \"This ",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017FDjuPnaKG7ePLy18G2MgN",
+   "partialJson": "is a",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017FDjuPnaKG7ePLy18G2MgN",
+   "partialJson": " test file",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017FDjuPnaKG7ePLy18G2MgN",
+   "partialJson": " for ",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017FDjuPnaKG7ePLy18G2MgN",
+   "partialJson": "pe",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017FDjuPnaKG7ePLy18G2MgN",
+   "partialJson": "rmission",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017FDjuPnaKG7ePLy18G2MgN",
+   "partialJson": " UI testin",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017FDjuPnaKG7ePLy18G2MgN",
+   "partialJson": "g.\"}",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "message_usage",
+   "messageId": "msg_1774128968977_qri0yn",
+   "inputTokens": 17547,
+   "outputTokens": 0
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "tool_use",
+    "toolName": "Write",
+    "toolUseId": "toolu_017FDjuPnaKG7ePLy18G2MgN",
+    "input": "{\"file_path\":\"/Users/wuhangqi25/Developer/Projects/test-super-one/test-permission-ui.txt\",\"content\":\"This is a test file for permission UI testing.\"}",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "message_usage",
+   "messageId": "msg_1774128968977_qri0yn",
+   "inputTokens": 17547,
+   "outputTokens": 214
+  }
+ ],
+ [
+  {
+   "type": "stream_message_stop",
+   "messageId": "msg_1774128968977_qri0yn",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "permission_request",
+   "request": {
+    "requestId": "perm_1774128979687_tu5w5e",
+    "toolName": "Write",
+    "toolUseId": "toolu_017FDjuPnaKG7ePLy18G2MgN",
+    "input": {
+     "file_path": "/Users/wuhangqi25/Developer/Projects/test-super-one/test-permission-ui.txt",
+     "content": "This is a test file for permission UI testing."
+    },
+    "allowAlwaysAllow": true,
+    "suggestions": [
+     {
+      "type": "setMode",
+      "mode": "acceptEdits",
+      "destination": "session"
+     }
+    ]
+   }
+  }
+ ],
+ [
+  {
+   "type": "rate_limit",
+   "status": "allowed",
+   "resetsAt": 1774137600,
+   "rateLimitType": "five_hour",
+   "overageStatus": "allowed",
+   "overageResetsAt": 1774130400,
+   "isUsingOverage": false
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "tool_result",
+    "toolUseId": "toolu_017FDjuPnaKG7ePLy18G2MgN",
+    "summary": "File created successfully at: /Users/wuhangqi25/Developer/Projects/test-super-one/test-permission-ui.txt",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "checkpoint_captured",
+   "messageId": "msg_1774128968977_qri0yn",
+   "checkpointId": "7baf3fb0-6028-4afd-9ba0-2e9298ab5ade",
+   "resumePointId": "16d9654d-73e9-4290-a5e2-393271367252"
+  }
+ ],
+ [
+  {
+   "type": "stream_message_start",
+   "messageId": "msg_1774128968977_qri0yn",
+   "apiMessageId": "msg_01TK3XSK1aBKSH1AcNDVzqAm",
+   "model": "claude-opus-4-6",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "text",
+    "text": "**2. 编辑文件 (Edit)**",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "message_usage",
+   "messageId": "msg_1774128968977_qri0yn",
+   "inputTokens": 17805,
+   "outputTokens": 214
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "tool_use",
+    "toolName": "Edit",
+    "toolUseId": "toolu_01VonGZRfqMnKGP9XcUiXMM8",
+    "input": "",
+    "status": "streaming",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01VonGZRfqMnKGP9XcUiXMM8",
+   "partialJson": "{\"file_path",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01VonGZRfqMnKGP9XcUiXMM8",
+   "partialJson": "\": \"/U",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01VonGZRfqMnKGP9XcUiXMM8",
+   "partialJson": "sers/wuhangq",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01VonGZRfqMnKGP9XcUiXMM8",
+   "partialJson": "i25/D",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01VonGZRfqMnKGP9XcUiXMM8",
+   "partialJson": "ev",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01VonGZRfqMnKGP9XcUiXMM8",
+   "partialJson": "eloper/Proj",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01VonGZRfqMnKGP9XcUiXMM8",
+   "partialJson": "ects/t",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01VonGZRfqMnKGP9XcUiXMM8",
+   "partialJson": "est-super",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01VonGZRfqMnKGP9XcUiXMM8",
+   "partialJson": "-one/test-",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01VonGZRfqMnKGP9XcUiXMM8",
+   "partialJson": "permis",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01VonGZRfqMnKGP9XcUiXMM8",
+   "partialJson": "sion-ui.",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01VonGZRfqMnKGP9XcUiXMM8",
+   "partialJson": "txt\"",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01VonGZRfqMnKGP9XcUiXMM8",
+   "partialJson": ", \"ol",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01VonGZRfqMnKGP9XcUiXMM8",
+   "partialJson": "d_stri",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01VonGZRfqMnKGP9XcUiXMM8",
+   "partialJson": "ng\": \"T",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01VonGZRfqMnKGP9XcUiXMM8",
+   "partialJson": "hi",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01VonGZRfqMnKGP9XcUiXMM8",
+   "partialJson": "s is a t",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01VonGZRfqMnKGP9XcUiXMM8",
+   "partialJson": "est file",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01VonGZRfqMnKGP9XcUiXMM8",
+   "partialJson": " for perm",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01VonGZRfqMnKGP9XcUiXMM8",
+   "partialJson": "ission UI",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01VonGZRfqMnKGP9XcUiXMM8",
+   "partialJson": " testing.\"",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01VonGZRfqMnKGP9XcUiXMM8",
+   "partialJson": ", \"new_",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01VonGZRfqMnKGP9XcUiXMM8",
+   "partialJson": "string\": \"Th",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01VonGZRfqMnKGP9XcUiXMM8",
+   "partialJson": "is",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01VonGZRfqMnKGP9XcUiXMM8",
+   "partialJson": " is an",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01VonGZRfqMnKGP9XcUiXMM8",
+   "partialJson": " edited t",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01VonGZRfqMnKGP9XcUiXMM8",
+   "partialJson": "est fil",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01VonGZRfqMnKGP9XcUiXMM8",
+   "partialJson": "e ",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01VonGZRfqMnKGP9XcUiXMM8",
+   "partialJson": "for permissi",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01VonGZRfqMnKGP9XcUiXMM8",
+   "partialJson": "on UI t",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01VonGZRfqMnKGP9XcUiXMM8",
+   "partialJson": "esting.\\nLi",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01VonGZRfqMnKGP9XcUiXMM8",
+   "partialJson": "ne 2 add",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01VonGZRfqMnKGP9XcUiXMM8",
+   "partialJson": "ed.\"}",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "message_usage",
+   "messageId": "msg_1774128968977_qri0yn",
+   "inputTokens": 17805,
+   "outputTokens": 214
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "tool_use",
+    "toolName": "Edit",
+    "toolUseId": "toolu_01VonGZRfqMnKGP9XcUiXMM8",
+    "input": "{\"replace_all\":false,\"file_path\":\"/Users/wuhangqi25/Developer/Projects/test-super-one/test-permission-ui.txt\",\"old_string\":\"This is a test file for permission UI testing.\",\"new_string\":\"This is an edited test file for permission UI testing.\\nLine 2 added.\"}",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "message_usage",
+   "messageId": "msg_1774128968977_qri0yn",
+   "inputTokens": 17805,
+   "outputTokens": 368
+  }
+ ],
+ [
+  {
+   "type": "stream_message_stop",
+   "messageId": "msg_1774128968977_qri0yn",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "permission_request",
+   "request": {
+    "requestId": "perm_1774128988863_l0xsit",
+    "toolName": "Edit",
+    "toolUseId": "toolu_01VonGZRfqMnKGP9XcUiXMM8",
+    "input": {
+     "file_path": "/Users/wuhangqi25/Developer/Projects/test-super-one/test-permission-ui.txt",
+     "old_string": "This is a test file for permission UI testing.",
+     "new_string": "This is an edited test file for permission UI testing.\nLine 2 added.",
+     "replace_all": false
+    },
+    "allowAlwaysAllow": true,
+    "suggestions": [
+     {
+      "type": "setMode",
+      "mode": "acceptEdits",
+      "destination": "session"
+     }
+    ]
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "tool_result",
+    "toolUseId": "toolu_01VonGZRfqMnKGP9XcUiXMM8",
+    "summary": "The file /Users/wuhangqi25/Developer/Projects/test-super-one/test-permission-ui.txt has been updated successfully.",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "checkpoint_captured",
+   "messageId": "msg_1774128968977_qri0yn",
+   "checkpointId": "832058a0-da52-47a4-9cd7-0da0b8974b68",
+   "resumePointId": "ccec1e83-fdcb-4768-a455-9be563cfe090"
+  }
+ ],
+ [
+  {
+   "type": "stream_message_start",
+   "messageId": "msg_1774128968977_qri0yn",
+   "apiMessageId": "msg_01N4L6BPAqCXsjpjU2MiHGbG",
+   "model": "claude-opus-4-6",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "text",
+    "text": "**3. Plan 模式退",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "text",
+    "text": "出 (ExitPlanMode)**",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "message_usage",
+   "messageId": "msg_1774128968977_qri0yn",
+   "inputTokens": 18023,
+   "outputTokens": 368
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "tool_use",
+    "toolName": "ToolSearch",
+    "toolUseId": "toolu_018rDM8igsX2U3gdbPP9YWrp",
+    "input": "",
+    "status": "streaming",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_018rDM8igsX2U3gdbPP9YWrp",
+   "partialJson": "{\"query\"",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_018rDM8igsX2U3gdbPP9YWrp",
+   "partialJson": ": \"sele",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_018rDM8igsX2U3gdbPP9YWrp",
+   "partialJson": "ct",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_018rDM8igsX2U3gdbPP9YWrp",
+   "partialJson": ":Exit",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_018rDM8igsX2U3gdbPP9YWrp",
+   "partialJson": "Pla",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_018rDM8igsX2U3gdbPP9YWrp",
+   "partialJson": "nMode\"",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_018rDM8igsX2U3gdbPP9YWrp",
+   "partialJson": ", ",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_018rDM8igsX2U3gdbPP9YWrp",
+   "partialJson": "\"max_result",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_018rDM8igsX2U3gdbPP9YWrp",
+   "partialJson": "s\": 1}",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "message_usage",
+   "messageId": "msg_1774128968977_qri0yn",
+   "inputTokens": 18023,
+   "outputTokens": 368
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "tool_use",
+    "toolName": "ToolSearch",
+    "toolUseId": "toolu_018rDM8igsX2U3gdbPP9YWrp",
+    "input": "{\"query\":\"select:ExitPlanMode\",\"max_results\":1}",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "message_usage",
+   "messageId": "msg_1774128968977_qri0yn",
+   "inputTokens": 18023,
+   "outputTokens": 464
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "tool_result",
+    "toolUseId": "toolu_018rDM8igsX2U3gdbPP9YWrp",
+    "summary": "",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "checkpoint_captured",
+   "messageId": "msg_1774128968977_qri0yn",
+   "checkpointId": "3f862a1d-a86d-4177-9d40-64d57bf07777",
+   "resumePointId": "d0245f58-ade9-46e4-89a4-7085d95795aa"
+  }
+ ],
+ [
+  {
+   "type": "stream_message_stop",
+   "messageId": "msg_1774128968977_qri0yn",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "stream_message_start",
+   "messageId": "msg_1774128968977_qri0yn",
+   "apiMessageId": "msg_01WcKQsuZdVUZWDxha3hhcju",
+   "model": "claude-opus-4-6",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "thinking",
+    "thinking": "The user wants me to trigger an ExitPlanMode permission",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "thinking",
+    "thinking": " request. But I'm not actually in plan mode,",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "thinking",
+    "thinking": " so this might not work",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "thinking",
+    "thinking": " or might show an error. Let me try it anyway since",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "thinking",
+    "thinking": " the user wants to test the UI.\n\nLet me also",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "thinking",
+    "thinking": " trigger a sandbox-",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "thinking",
+    "thinking": "busting Bash command.",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "message_usage",
+   "messageId": "msg_1774128968977_qri0yn",
+   "inputTokens": 18782,
+   "outputTokens": 464
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "text",
+    "text": "继续触发剩余的权限请求：\n\n**",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "text",
+    "text": "3. ExitPlanMode**",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "message_usage",
+   "messageId": "msg_1774128968977_qri0yn",
+   "inputTokens": 18782,
+   "outputTokens": 464
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "tool_use",
+    "toolName": "ExitPlanMode",
+    "toolUseId": "toolu_01QJmntH3pJPY5DhGHoYf1MY",
+    "input": "",
+    "status": "streaming",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "message_usage",
+   "messageId": "msg_1774128968977_qri0yn",
+   "inputTokens": 18782,
+   "outputTokens": 464
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "tool_use",
+    "toolName": "ExitPlanMode",
+    "toolUseId": "toolu_01QJmntH3pJPY5DhGHoYf1MY",
+    "input": "{}",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "tool_result",
+    "toolUseId": "toolu_01QJmntH3pJPY5DhGHoYf1MY",
+    "summary": "<tool_use_error>You are not in plan mode. This tool is only for exiting plan mode after writing a plan. If your plan was already approved, continue with implementation.</tool_use_error>",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "checkpoint_captured",
+   "messageId": "msg_1774128968977_qri0yn",
+   "checkpointId": "6d9809a5-1fce-4338-a0d2-dd4ede8596bc",
+   "resumePointId": "02c142c1-48d3-44ac-a334-b74920391308"
+  }
+ ],
+ [
+  {
+   "type": "message_usage",
+   "messageId": "msg_1774128968977_qri0yn",
+   "inputTokens": 18782,
+   "outputTokens": 605
+  }
+ ],
+ [
+  {
+   "type": "stream_message_stop",
+   "messageId": "msg_1774128968977_qri0yn",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "stream_message_start",
+   "messageId": "msg_1774128968977_qri0yn",
+   "apiMessageId": "msg_014PAQjQCpJuwKEe47YWXx5K",
+   "model": "claude-opus-4-6",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "text",
+    "text": "ExitPlanMode 需要在 ",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "text",
+    "text": "Plan 模式下才能触发。让我先进",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "text",
+    "text": "入 Plan 模式。",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "message_usage",
+   "messageId": "msg_1774128968977_qri0yn",
+   "inputTokens": 18988,
+   "outputTokens": 605
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "tool_use",
+    "toolName": "ToolSearch",
+    "toolUseId": "toolu_01NB8fMGC8uDnrw92ooTmFXE",
+    "input": "",
+    "status": "streaming",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01NB8fMGC8uDnrw92ooTmFXE",
+   "partialJson": "{\"query\": ",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01NB8fMGC8uDnrw92ooTmFXE",
+   "partialJson": "\"select:En",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01NB8fMGC8uDnrw92ooTmFXE",
+   "partialJson": "terP",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01NB8fMGC8uDnrw92ooTmFXE",
+   "partialJson": "lanM",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01NB8fMGC8uDnrw92ooTmFXE",
+   "partialJson": "ode\"",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01NB8fMGC8uDnrw92ooTmFXE",
+   "partialJson": ", \"max_resul",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01NB8fMGC8uDnrw92ooTmFXE",
+   "partialJson": "ts\": 1}",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "message_usage",
+   "messageId": "msg_1774128968977_qri0yn",
+   "inputTokens": 18988,
+   "outputTokens": 605
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "tool_use",
+    "toolName": "ToolSearch",
+    "toolUseId": "toolu_01NB8fMGC8uDnrw92ooTmFXE",
+    "input": "{\"query\":\"select:EnterPlanMode\",\"max_results\":1}",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "message_usage",
+   "messageId": "msg_1774128968977_qri0yn",
+   "inputTokens": 18988,
+   "outputTokens": 715
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "tool_result",
+    "toolUseId": "toolu_01NB8fMGC8uDnrw92ooTmFXE",
+    "summary": "",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "checkpoint_captured",
+   "messageId": "msg_1774128968977_qri0yn",
+   "checkpointId": "8d58cf19-d676-4c4c-9a52-c4598890b48e",
+   "resumePointId": "ae7759b3-b819-4f6e-8e5a-650f2f2571a9"
+  }
+ ],
+ [
+  {
+   "type": "stream_message_stop",
+   "messageId": "msg_1774128968977_qri0yn",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "stream_message_start",
+   "messageId": "msg_1774128968977_qri0yn",
+   "apiMessageId": "msg_01C2HHAe1QSELqmJ7Ccr3Shq",
+   "model": "claude-opus-4-6",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "text",
+    "text": "\n\n**3. EnterPlanMode**",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "message_usage",
+   "messageId": "msg_1774128968977_qri0yn",
+   "inputTokens": 20334,
+   "outputTokens": 715
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "tool_use",
+    "toolName": "EnterPlanMode",
+    "toolUseId": "toolu_01JfwxG4YaYDydn4Y8KnBa9o",
+    "input": "",
+    "status": "streaming",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "message_usage",
+   "messageId": "msg_1774128968977_qri0yn",
+   "inputTokens": 20334,
+   "outputTokens": 715
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "tool_use",
+    "toolName": "EnterPlanMode",
+    "toolUseId": "toolu_01JfwxG4YaYDydn4Y8KnBa9o",
+    "input": "{}",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "status_indicator",
+   "indicator": null,
+   "permissionMode": "plan"
+  }
+ ],
+ [
+  {
+   "type": "message_usage",
+   "messageId": "msg_1774128968977_qri0yn",
+   "inputTokens": 20334,
+   "outputTokens": 764
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "tool_result",
+    "toolUseId": "toolu_01JfwxG4YaYDydn4Y8KnBa9o",
+    "summary": "Entered plan mode. You should now focus on exploring the codebase and designing an implementation approach.\n\nIn plan mode, you should:\n1. Thoroughly explore the codebase to understand existing patterns\n2. Identify similar features and architectural approaches\n3. Consider multiple approaches and their trade-offs\n4. Use AskUserQuestion if you need to clarify the approach\n5. Design a concrete implementation strategy\n6. When ready, use ExitPlanMode to present your plan for approval\n\nRemember: DO NOT write or edit any files yet. This is a read-only exploration and planning phase.",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "checkpoint_captured",
+   "messageId": "msg_1774128968977_qri0yn",
+   "checkpointId": "a481b562-350a-4af8-bb5e-d7fb1232ed89",
+   "resumePointId": "c437ff2e-5c6c-47ea-b9fb-7b357ff09cb7"
+  }
+ ],
+ [
+  {
+   "type": "stream_message_stop",
+   "messageId": "msg_1774128968977_qri0yn",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "stream_message_start",
+   "messageId": "msg_1774128968977_qri0yn",
+   "apiMessageId": "msg_01A5cyXC9GVEN2oiskspE64A",
+   "model": "claude-opus-4-6",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "text",
+    "text": "好，已进",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "text",
+    "text": "入 Plan 模式。现在触发 ",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "text",
+    "text": "ExitPlanMode：",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "message_usage",
+   "messageId": "msg_1774128968977_qri0yn",
+   "inputTokens": 21608,
+   "outputTokens": 764
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "tool_use",
+    "toolName": "Write",
+    "toolUseId": "toolu_017kaTfjoXckcwtMNcVNpk6s",
+    "input": "",
+    "status": "streaming",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017kaTfjoXckcwtMNcVNpk6s",
+   "partialJson": "{\"",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017kaTfjoXckcwtMNcVNpk6s",
+   "partialJson": "file_pat",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017kaTfjoXckcwtMNcVNpk6s",
+   "partialJson": "h\":",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017kaTfjoXckcwtMNcVNpk6s",
+   "partialJson": " \"",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017kaTfjoXckcwtMNcVNpk6s",
+   "partialJson": "/Users/wuhan",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017kaTfjoXckcwtMNcVNpk6s",
+   "partialJson": "gqi25/.",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017kaTfjoXckcwtMNcVNpk6s",
+   "partialJson": "clau",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017kaTfjoXckcwtMNcVNpk6s",
+   "partialJson": "de/plans/zaz",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017kaTfjoXckcwtMNcVNpk6s",
+   "partialJson": "zy-t",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017kaTfjoXckcwtMNcVNpk6s",
+   "partialJson": "inker",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017kaTfjoXckcwtMNcVNpk6s",
+   "partialJson": "ing-donut.",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017kaTfjoXckcwtMNcVNpk6s",
+   "partialJson": "md\"",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017kaTfjoXckcwtMNcVNpk6s",
+   "partialJson": ", \"c",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017kaTfjoXckcwtMNcVNpk6s",
+   "partialJson": "ontent\": \"",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017kaTfjoXckcwtMNcVNpk6s",
+   "partialJson": "# Test Plan",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017kaTfjoXckcwtMNcVNpk6s",
+   "partialJson": " - P",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017kaTfjoXckcwtMNcVNpk6s",
+   "partialJson": "ermission UI",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017kaTfjoXckcwtMNcVNpk6s",
+   "partialJson": " Testing\\",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017kaTfjoXckcwtMNcVNpk6s",
+   "partialJson": "n\\n## ",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017kaTfjoXckcwtMNcVNpk6s",
+   "partialJson": "Contex",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017kaTfjoXckcwtMNcVNpk6s",
+   "partialJson": "t\\nTh",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017kaTfjoXckcwtMNcVNpk6s",
+   "partialJson": "is is ",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017kaTfjoXckcwtMNcVNpk6s",
+   "partialJson": "a t",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017kaTfjoXckcwtMNcVNpk6s",
+   "partialJson": "est plan ",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017kaTfjoXckcwtMNcVNpk6s",
+   "partialJson": "for testing",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017kaTfjoXckcwtMNcVNpk6s",
+   "partialJson": " the per",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017kaTfjoXckcwtMNcVNpk6s",
+   "partialJson": "missi",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017kaTfjoXckcwtMNcVNpk6s",
+   "partialJson": "on reque",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017kaTfjoXckcwtMNcVNpk6s",
+   "partialJson": "st UI.\\n\\n##",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017kaTfjoXckcwtMNcVNpk6s",
+   "partialJson": " Steps\\n",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017kaTfjoXckcwtMNcVNpk6s",
+   "partialJson": "1.",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017kaTfjoXckcwtMNcVNpk6s",
+   "partialJson": " No act",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017kaTfjoXckcwtMNcVNpk6s",
+   "partialJson": "ual imple",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017kaTfjoXckcwtMNcVNpk6s",
+   "partialJson": "mentat",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017kaTfjoXckcwtMNcVNpk6s",
+   "partialJson": "ion nee",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017kaTfjoXckcwtMNcVNpk6s",
+   "partialJson": "ded - thi",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017kaTfjoXckcwtMNcVNpk6s",
+   "partialJson": "s is jus",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017kaTfjoXckcwtMNcVNpk6s",
+   "partialJson": "t for UI t",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017kaTfjoXckcwtMNcVNpk6s",
+   "partialJson": "esting.",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_017kaTfjoXckcwtMNcVNpk6s",
+   "partialJson": "\\n\"}",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "message_usage",
+   "messageId": "msg_1774128968977_qri0yn",
+   "inputTokens": 21608,
+   "outputTokens": 764
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "tool_use",
+    "toolName": "Write",
+    "toolUseId": "toolu_017kaTfjoXckcwtMNcVNpk6s",
+    "input": "{\"file_path\":\"/Users/wuhangqi25/.claude/plans/zazzy-tinkering-donut.md\",\"content\":\"# Test Plan - Permission UI Testing\\n\\n## Context\\nThis is a test plan for testing the permission request UI.\\n\\n## Steps\\n1. No actual implementation needed - this is just for UI testing.\\n\"}",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "message_usage",
+   "messageId": "msg_1774128968977_qri0yn",
+   "inputTokens": 21608,
+   "outputTokens": 921
+  }
+ ],
+ [
+  {
+   "type": "stream_message_stop",
+   "messageId": "msg_1774128968977_qri0yn",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "tool_result",
+    "toolUseId": "toolu_017kaTfjoXckcwtMNcVNpk6s",
+    "summary": "File created successfully at: /Users/wuhangqi25/.claude/plans/zazzy-tinkering-donut.md",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "checkpoint_captured",
+   "messageId": "msg_1774128968977_qri0yn",
+   "checkpointId": "a68ac222-e7f5-49db-a078-c3b5e903042c",
+   "resumePointId": "fd6f9c6e-d29d-47e1-bfac-553323350584"
+  }
+ ],
+ [
+  {
+   "type": "stream_message_start",
+   "messageId": "msg_1774128968977_qri0yn",
+   "apiMessageId": "msg_01YN8Zd6uwK8wNCf2FAiUe8u",
+   "model": "claude-opus-4-6",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "tool_use",
+    "toolName": "ExitPlanMode",
+    "toolUseId": "toolu_01AhXaDmoEppopdGsNjapvwq",
+    "input": "",
+    "status": "streaming",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01AhXaDmoEppopdGsNjapvwq",
+   "partialJson": "{\"allo",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01AhXaDmoEppopdGsNjapvwq",
+   "partialJson": "wedPro",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01AhXaDmoEppopdGsNjapvwq",
+   "partialJson": "mpts\"",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01AhXaDmoEppopdGsNjapvwq",
+   "partialJson": ": [{\"tool\":",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01AhXaDmoEppopdGsNjapvwq",
+   "partialJson": "\"Bash\",\"p",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01AhXaDmoEppopdGsNjapvwq",
+   "partialJson": "rompt\":\"run ",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01AhXaDmoEppopdGsNjapvwq",
+   "partialJson": "tests\"}]}",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "message_usage",
+   "messageId": "msg_1774128968977_qri0yn",
+   "inputTokens": 21807,
+   "outputTokens": 921
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "tool_use",
+    "toolName": "ExitPlanMode",
+    "toolUseId": "toolu_01AhXaDmoEppopdGsNjapvwq",
+    "input": "{\"allowedPrompts\":[{\"tool\":\"Bash\",\"prompt\":\"run tests\"}],\"plan\":\"# Test Plan - Permission UI Testing\\n\\n## Context\\nThis is a test plan for testing the permission request UI.\\n\\n## Steps\\n1. No actual implementation needed - this is just for UI testing.\\n\",\"planFilePath\":\"/Users/wuhangqi25/.claude/plans/zazzy-tinkering-donut.md\"}",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "plan_approval",
+   "request": {
+    "requestId": "plan_1774129016352_18l250",
+    "planContent": "# Test Plan - Permission UI Testing\n\n## Context\nThis is a test plan for testing the permission request UI.\n\n## Steps\n1. No actual implementation needed - this is just for UI testing.\n",
+    "planFilePath": "/Users/wuhangqi25/.claude/plans/zazzy-tinkering-donut.md",
+    "allowedPrompts": [
+     {
+      "tool": "Bash",
+      "prompt": "run tests"
+     }
+    ]
+   }
+  }
+ ],
+ [
+  {
+   "type": "message_usage",
+   "messageId": "msg_1774128968977_qri0yn",
+   "inputTokens": 21807,
+   "outputTokens": 994
+  }
+ ],
+ [
+  {
+   "type": "stream_message_stop",
+   "messageId": "msg_1774128968977_qri0yn",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "status_indicator",
+   "indicator": null,
+   "permissionMode": "default"
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "tool_result",
+    "toolUseId": "toolu_01AhXaDmoEppopdGsNjapvwq",
+    "summary": "User has approved your plan. You can now start coding. Start with updating your todo list if applicable\n\nYour plan has been saved to: /Users/wuhangqi25/.claude/plans/zazzy-tinkering-donut.md\nYou can refer back to it if needed during implementation.\n\nIf this plan can be broken down into multiple independent tasks, consider using the TeamCreate tool to create a team and parallelize the work.\n\n## Approved Plan:\n# Test Plan - Permission UI Testing\n\n## Context\nThis is a test plan for testing the permission request UI.\n\n## Steps\n1. No actual implementation needed - this is just for UI testing.\n",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "checkpoint_captured",
+   "messageId": "msg_1774128968977_qri0yn",
+   "checkpointId": "eb76c853-3ef7-4346-8c22-b5f5a6ae31bb",
+   "resumePointId": "b04bacc1-25ad-4a5f-adc2-536a8d217cef"
+  }
+ ],
+ [
+  {
+   "type": "stream_message_start",
+   "messageId": "msg_1774128968977_qri0yn",
+   "apiMessageId": "msg_01DeEdbyjZYPkxqDaUT7u5yQ",
+   "model": "claude-opus-4-6",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "text",
+    "text": "好，Plan 模式已完",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "text",
+    "text": "成。现在触发 **4.",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "text",
+    "text": " Sandbox 请求**",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "text",
+    "text": " — 访问沙箱外",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "text",
+    "text": "的网络或",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "text",
+    "text": "文件：",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "message_usage",
+   "messageId": "msg_1774128968977_qri0yn",
+   "inputTokens": 22111,
+   "outputTokens": 994
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "tool_use",
+    "toolName": "Bash",
+    "toolUseId": "toolu_01WMcM4hHdaMdrTPbMd1odCr",
+    "input": "",
+    "status": "streaming",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01WMcM4hHdaMdrTPbMd1odCr",
+   "partialJson": "{\"c",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01WMcM4hHdaMdrTPbMd1odCr",
+   "partialJson": "om",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01WMcM4hHdaMdrTPbMd1odCr",
+   "partialJson": "mand\": \"c",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01WMcM4hHdaMdrTPbMd1odCr",
+   "partialJson": "url -s ht",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01WMcM4hHdaMdrTPbMd1odCr",
+   "partialJson": "tps://h",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01WMcM4hHdaMdrTPbMd1odCr",
+   "partialJson": "ttpbin.or",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01WMcM4hHdaMdrTPbMd1odCr",
+   "partialJson": "g/get",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01WMcM4hHdaMdrTPbMd1odCr",
+   "partialJson": "\"",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01WMcM4hHdaMdrTPbMd1odCr",
+   "partialJson": ", \"descri",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01WMcM4hHdaMdrTPbMd1odCr",
+   "partialJson": "ption",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01WMcM4hHdaMdrTPbMd1odCr",
+   "partialJson": "\": \"A",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01WMcM4hHdaMdrTPbMd1odCr",
+   "partialJson": "ccess ",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01WMcM4hHdaMdrTPbMd1odCr",
+   "partialJson": "non-wh",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01WMcM4hHdaMdrTPbMd1odCr",
+   "partialJson": "itelis",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01WMcM4hHdaMdrTPbMd1odCr",
+   "partialJson": "ted host",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01WMcM4hHdaMdrTPbMd1odCr",
+   "partialJson": " t",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01WMcM4hHdaMdrTPbMd1odCr",
+   "partialJson": "o trigger sa",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01WMcM4hHdaMdrTPbMd1odCr",
+   "partialJson": "ndbox n",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01WMcM4hHdaMdrTPbMd1odCr",
+   "partialJson": "etwork r",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01WMcM4hHdaMdrTPbMd1odCr",
+   "partialJson": "estric",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01WMcM4hHdaMdrTPbMd1odCr",
+   "partialJson": "tion\"}",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "message_usage",
+   "messageId": "msg_1774128968977_qri0yn",
+   "inputTokens": 22111,
+   "outputTokens": 994
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "tool_use",
+    "toolName": "Bash",
+    "toolUseId": "toolu_01WMcM4hHdaMdrTPbMd1odCr",
+    "input": "{\"command\":\"curl -s https://httpbin.org/get\",\"description\":\"Access non-whitelisted host to trigger sandbox network restriction\"}",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "permission_request",
+   "request": {
+    "requestId": "perm_1774129022858_ns9d7d",
+    "toolName": "Bash",
+    "toolUseId": "toolu_01WMcM4hHdaMdrTPbMd1odCr",
+    "input": {
+     "command": "curl -s https://httpbin.org/get",
+     "description": "Access non-whitelisted host to trigger sandbox network restriction"
+    },
+    "decisionReason": "This command requires approval",
+    "allowAlwaysAllow": true,
+    "suggestions": [
+     {
+      "type": "addRules",
+      "rules": [
+       {
+        "toolName": "Bash",
+        "ruleContent": "curl -s https://httpbin.org/get"
+       }
+      ],
+      "behavior": "allow",
+      "destination": "localSettings"
+     }
+    ]
+   }
+  }
+ ],
+ [
+  {
+   "type": "message_usage",
+   "messageId": "msg_1774128968977_qri0yn",
+   "inputTokens": 22111,
+   "outputTokens": 1125
+  }
+ ],
+ [
+  {
+   "type": "stream_message_stop",
+   "messageId": "msg_1774128968977_qri0yn",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "permission_request",
+   "request": {
+    "requestId": "perm_1774129027520_64glrc",
+    "toolName": "SandboxNetworkAccess",
+    "toolUseId": "523b8268-fe08-4ff2-ba92-b5bb3058bdf7",
+    "input": {
+     "host": "httpbin.org"
+    },
+    "allowAlwaysAllow": false
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "tool_result",
+    "toolUseId": "toolu_01WMcM4hHdaMdrTPbMd1odCr",
+    "summary": "{\n  \"args\": {}, \n  \"headers\": {\n    \"Accept\": \"*/*\", \n    \"Host\": \"httpbin.org\", \n    \"User-Agent\": \"curl/8.7.1\", \n    \"X-Amzn-Trace-Id\": \"Root=1-69bf0f87-1f7de33f3b501d8606a88d16\"\n  }, \n  \"origin\": \"98.98.91.157\", \n  \"url\": \"https://httpbin.org/get\"\n}",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "checkpoint_captured",
+   "messageId": "msg_1774128968977_qri0yn",
+   "checkpointId": "ea7cbe3d-880e-467a-9b03-5493b5e72744",
+   "resumePointId": "3c8bd620-cb76-49c9-a2f3-9e856d91cfb9"
+  }
+ ],
+ [
+  {
+   "type": "stream_message_start",
+   "messageId": "msg_1774128968977_qri0yn",
+   "apiMessageId": "msg_014i1NmeB6esJSGf82tfGnxk",
+   "model": "claude-opus-4-6",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "text",
+    "text": "这个没被",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "text",
+    "text": "拦截。让我试一",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "text",
+    "text": "个写入沙箱外路",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "text",
+    "text": "径的操作：",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "message_usage",
+   "messageId": "msg_1774128968977_qri0yn",
+   "inputTokens": 22385,
+   "outputTokens": 1125
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "tool_use",
+    "toolName": "Bash",
+    "toolUseId": "toolu_01DBHB1KgNgXRTZhT8t7PvEE",
+    "input": "",
+    "status": "streaming",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01DBHB1KgNgXRTZhT8t7PvEE",
+   "partialJson": "{\"",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01DBHB1KgNgXRTZhT8t7PvEE",
+   "partialJson": "comman",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01DBHB1KgNgXRTZhT8t7PvEE",
+   "partialJson": "d\": \"",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01DBHB1KgNgXRTZhT8t7PvEE",
+   "partialJson": "echo \\\"te",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01DBHB1KgNgXRTZhT8t7PvEE",
+   "partialJson": "st\\\" > ",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01DBHB1KgNgXRTZhT8t7PvEE",
+   "partialJson": "/Users/wuh",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01DBHB1KgNgXRTZhT8t7PvEE",
+   "partialJson": "angq",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01DBHB1KgNgXRTZhT8t7PvEE",
+   "partialJson": "i25/Desk",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01DBHB1KgNgXRTZhT8t7PvEE",
+   "partialJson": "top/sandbox",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01DBHB1KgNgXRTZhT8t7PvEE",
+   "partialJson": "-test.txt\"",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01DBHB1KgNgXRTZhT8t7PvEE",
+   "partialJson": ", \"descripti",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01DBHB1KgNgXRTZhT8t7PvEE",
+   "partialJson": "on\": \"Write ",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01DBHB1KgNgXRTZhT8t7PvEE",
+   "partialJson": "to a path o",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01DBHB1KgNgXRTZhT8t7PvEE",
+   "partialJson": "utside san",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01DBHB1KgNgXRTZhT8t7PvEE",
+   "partialJson": "dbox ",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01DBHB1KgNgXRTZhT8t7PvEE",
+   "partialJson": "all",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01DBHB1KgNgXRTZhT8t7PvEE",
+   "partialJson": "owed di",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01DBHB1KgNgXRTZhT8t7PvEE",
+   "partialJson": "rectorie",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01DBHB1KgNgXRTZhT8t7PvEE",
+   "partialJson": "s\"}",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "message_usage",
+   "messageId": "msg_1774128968977_qri0yn",
+   "inputTokens": 22385,
+   "outputTokens": 1125
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "tool_use",
+    "toolName": "Bash",
+    "toolUseId": "toolu_01DBHB1KgNgXRTZhT8t7PvEE",
+    "input": "{\"command\":\"echo \\\"test\\\" > /Users/wuhangqi25/Desktop/sandbox-test.txt\",\"description\":\"Write to a path outside sandbox allowed directories\"}",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "permission_request",
+   "request": {
+    "requestId": "perm_1774129037046_y3nga3",
+    "toolName": "Bash",
+    "toolUseId": "toolu_01DBHB1KgNgXRTZhT8t7PvEE",
+    "input": {
+     "command": "echo \"test\" > /Users/wuhangqi25/Desktop/sandbox-test.txt",
+     "description": "Write to a path outside sandbox allowed directories"
+    },
+    "blockedPath": "/Users/wuhangqi25/Desktop/sandbox-test.txt",
+    "allowAlwaysAllow": true,
+    "suggestions": [
+     {
+      "type": "addDirectories",
+      "directories": [
+       "/Users/wuhangqi25/Desktop"
+      ],
+      "destination": "session"
+     }
+    ]
+   }
+  }
+ ],
+ [
+  {
+   "type": "message_usage",
+   "messageId": "msg_1774128968977_qri0yn",
+   "inputTokens": 22385,
+   "outputTokens": 1248
+  }
+ ],
+ [
+  {
+   "type": "stream_message_stop",
+   "messageId": "msg_1774128968977_qri0yn",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "tool_result",
+    "toolUseId": "toolu_01DBHB1KgNgXRTZhT8t7PvEE",
+    "summary": "Exit code 1\n(eval):1: operation not permitted: /Users/wuhangqi25/Desktop/sandbox-test.txt",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "checkpoint_captured",
+   "messageId": "msg_1774128968977_qri0yn",
+   "checkpointId": "44e77f1d-97c5-4841-b6bd-b3ec5d7d6ede",
+   "resumePointId": "23d4052d-8716-4173-8eb8-06eeee6e2bcd"
+  }
+ ],
+ [
+  {
+   "type": "stream_message_start",
+   "messageId": "msg_1774128968977_qri0yn",
+   "apiMessageId": "msg_015nBDHgnZojjyN6ZQPAfsn7",
+   "model": "claude-opus-4-6",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "text",
+    "text": "沙箱限制生效了。现在用 ",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "text",
+    "text": "`dangerouslyDisabl",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "text",
+    "text": "eSandbox` 绕过来触发",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "text",
+    "text": "沙箱权限请求：",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "message_usage",
+   "messageId": "msg_1774128968977_qri0yn",
+   "inputTokens": 22559,
+   "outputTokens": 1248
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "tool_use",
+    "toolName": "Bash",
+    "toolUseId": "toolu_01KcwoxZGvX2J5vzvMyMBTgs",
+    "input": "",
+    "status": "streaming",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01KcwoxZGvX2J5vzvMyMBTgs",
+   "partialJson": "{\"c",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01KcwoxZGvX2J5vzvMyMBTgs",
+   "partialJson": "ommand\":",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01KcwoxZGvX2J5vzvMyMBTgs",
+   "partialJson": " \"echo \\\"te",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01KcwoxZGvX2J5vzvMyMBTgs",
+   "partialJson": "st\\\" > /Us",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01KcwoxZGvX2J5vzvMyMBTgs",
+   "partialJson": "ers/",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01KcwoxZGvX2J5vzvMyMBTgs",
+   "partialJson": "wuhang",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01KcwoxZGvX2J5vzvMyMBTgs",
+   "partialJson": "qi",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01KcwoxZGvX2J5vzvMyMBTgs",
+   "partialJson": "25/Desktop",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01KcwoxZGvX2J5vzvMyMBTgs",
+   "partialJson": "/sandbox-",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01KcwoxZGvX2J5vzvMyMBTgs",
+   "partialJson": "test.txt\"",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01KcwoxZGvX2J5vzvMyMBTgs",
+   "partialJson": ", \"descript",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01KcwoxZGvX2J5vzvMyMBTgs",
+   "partialJson": "ion\": \"Wr",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01KcwoxZGvX2J5vzvMyMBTgs",
+   "partialJson": "ite to De",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01KcwoxZGvX2J5vzvMyMBTgs",
+   "partialJson": "sktop w",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01KcwoxZGvX2J5vzvMyMBTgs",
+   "partialJson": "ith sand",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01KcwoxZGvX2J5vzvMyMBTgs",
+   "partialJson": "box d",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01KcwoxZGvX2J5vzvMyMBTgs",
+   "partialJson": "isab",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01KcwoxZGvX2J5vzvMyMBTgs",
+   "partialJson": "le",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01KcwoxZGvX2J5vzvMyMBTgs",
+   "partialJson": "d to trigge",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01KcwoxZGvX2J5vzvMyMBTgs",
+   "partialJson": "r permi",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01KcwoxZGvX2J5vzvMyMBTgs",
+   "partialJson": "ssion prom",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01KcwoxZGvX2J5vzvMyMBTgs",
+   "partialJson": "pt\"",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01KcwoxZGvX2J5vzvMyMBTgs",
+   "partialJson": ", \"danger",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01KcwoxZGvX2J5vzvMyMBTgs",
+   "partialJson": "ously",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01KcwoxZGvX2J5vzvMyMBTgs",
+   "partialJson": "Disabl",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01KcwoxZGvX2J5vzvMyMBTgs",
+   "partialJson": "eSandbox\": t",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "toolUseId": "toolu_01KcwoxZGvX2J5vzvMyMBTgs",
+   "partialJson": "rue}",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "message_usage",
+   "messageId": "msg_1774128968977_qri0yn",
+   "inputTokens": 22559,
+   "outputTokens": 1248
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "tool_use",
+    "toolName": "Bash",
+    "toolUseId": "toolu_01KcwoxZGvX2J5vzvMyMBTgs",
+    "input": "{\"command\":\"echo \\\"test\\\" > /Users/wuhangqi25/Desktop/sandbox-test.txt\",\"description\":\"Write to Desktop with sandbox disabled to trigger permission prompt\",\"dangerouslyDisableSandbox\":true}",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "permission_request",
+   "request": {
+    "requestId": "perm_1774129043196_dhk5vy",
+    "toolName": "Bash",
+    "toolUseId": "toolu_01KcwoxZGvX2J5vzvMyMBTgs",
+    "input": {
+     "command": "echo \"test\" > /Users/wuhangqi25/Desktop/sandbox-test.txt",
+     "description": "Write to Desktop with sandbox disabled to trigger permission prompt",
+     "dangerouslyDisableSandbox": true
+    },
+    "blockedPath": "/Users/wuhangqi25/Desktop/sandbox-test.txt",
+    "allowAlwaysAllow": true,
+    "suggestions": [
+     {
+      "type": "addDirectories",
+      "directories": [
+       "/Users/wuhangqi25/Desktop"
+      ],
+      "destination": "session"
+     }
+    ]
+   }
+  }
+ ],
+ [
+  {
+   "type": "message_usage",
+   "messageId": "msg_1774128968977_qri0yn",
+   "inputTokens": 22559,
+   "outputTokens": 1413
+  }
+ ],
+ [
+  {
+   "type": "stream_message_stop",
+   "messageId": "msg_1774128968977_qri0yn",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "tool_result",
+    "toolUseId": "toolu_01KcwoxZGvX2J5vzvMyMBTgs",
+    "summary": "(Bash completed with no output)",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "checkpoint_captured",
+   "messageId": "msg_1774128968977_qri0yn",
+   "checkpointId": "37b6cd51-3adb-4209-b575-c0cbfe68d79e",
+   "resumePointId": "67fb294c-7bf1-4fb3-a51b-5a7c3ce71f38"
+  }
+ ],
+ [
+  {
+   "type": "stream_message_start",
+   "messageId": "msg_1774128968977_qri0yn",
+   "apiMessageId": "msg_01B1S7rKVgABvpBvPEaXhQ4P",
+   "model": "claude-opus-4-6",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "text",
+    "text": "以上触发了以",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "text",
+    "text": "下权限请求 UI：\n\n1. **Write",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "text",
+    "text": "** — 写入新文件\n2. **Edit** — 编辑已",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "text",
+    "text": "有文件\n3. **EnterPlanMode** — 进入计划模式\n4. **Ex",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "text",
+    "text": "itPlanMode** — 退出计划模式（含 ",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "text",
+    "text": "allowedPrompts）\n5. **Bash (",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "text",
+    "text": "sandbox)** — 沙箱内命",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "text",
+    "text": "令执行\n6. **Bash (dangerouslyDisableSandbox)** — ",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "text",
+    "text": "绕过沙箱的权限请求\n\n需要测",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "text",
+    "text": "试其他类型的权限请求吗？比",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "text",
+    "text": "如 Agent、M",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774128968977_qri0yn",
+   "delta": {
+    "type": "text",
+    "text": "CP 工具调用等。",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "message_usage",
+   "messageId": "msg_1774128968977_qri0yn",
+   "inputTokens": 22847,
+   "outputTokens": 1413
+  }
+ ],
+ [
+  {
+   "type": "message_usage",
+   "messageId": "msg_1774128968977_qri0yn",
+   "inputTokens": 22847,
+   "outputTokens": 1586
+  }
+ ],
+ [
+  {
+   "type": "stream_message_stop",
+   "messageId": "msg_1774128968977_qri0yn",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "message_complete",
+   "messageId": "msg_1774128968977_qri0yn",
+   "metadata": {
+    "durationMs": 62860,
+    "durationApiMs": 54686,
+    "costUsd": 0.29333775,
+    "numTurns": 12,
+    "stopReason": "end_turn",
+    "resultText": "以上触发了以下权限请求 UI：\n\n1. **Write** — 写入新文件\n2. **Edit** — 编辑已有文件\n3. **EnterPlanMode** — 进入计划模式\n4. **ExitPlanMode** — 退出计划模式（含 allowedPrompts）\n5. **Bash (sandbox)** — 沙箱内命令执行\n6. **Bash (dangerouslyDisableSandbox)** — 绕过沙箱的权限请求\n\n需要测试其他类型的权限请求吗？比如 Agent、MCP 工具调用等。",
+    "fastModeState": "off",
+    "usage": {
+     "inputTokens": 1,
+     "outputTokens": 1,
+     "cacheReadInputTokens": 22542,
+     "cacheCreationInputTokens": 287
+    },
+    "modelUsage": {
+     "claude-opus-4-6[1m]": {
+      "inputTokens": 18,
+      "outputTokens": 1586,
+      "cacheReadInputTokens": 221833,
+      "cacheCreationInputTokens": 22829,
+      "costUSD": 0.29333775,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 32000
+     }
+    }
+   }
+  }
+ ],
+ [
+  {
+   "type": "status_change",
+   "status": "idle"
+  }
+ ],
+ [
+  {
+   "type": "prompt_suggestion",
+   "suggestion": "再试试 MCP 工具调用"
+  }
+ ],
+ [
+  {
+   "type": "status_change",
+   "status": "streaming"
+  }
+ ],
+ [
+  {
+   "type": "message_start",
+   "message": {
+    "id": "msg_1774129085628_b2w48u",
+    "role": "assistant",
+    "status": "streaming",
+    "content": [],
+    "createdAt": "2026-03-21T21:38:05.628Z",
+    "providerId": "claude"
+   }
+  }
+ ],
+ [
+  {
+   "type": "session_init",
+   "session": {
+    "sessionId": "798bc24a-260d-44b5-9322-9b98989acd60",
+    "model": "claude-opus-4-6[1m]",
+    "tools": [
+     "Task",
+     "TaskOutput",
+     "Bash",
+     "Glob",
+     "Grep",
+     "ExitPlanMode",
+     "Read",
+     "Edit",
+     "Write",
+     "NotebookEdit",
+     "WebFetch",
+     "TodoWrite",
+     "WebSearch",
+     "TaskStop",
+     "AskUserQuestion",
+     "Skill",
+     "EnterPlanMode",
+     "EnterWorktree",
+     "ExitWorktree",
+     "TeamCreate",
+     "TeamDelete",
+     "SendMessage",
+     "CronCreate",
+     "CronDelete",
+     "CronList",
+     "ToolSearch",
+     "mcp__context7__resolve-library-id",
+     "mcp__context7__query-docs",
+     "mcp__widget__read_guidelines",
+     "mcp__widget__show_widget"
+    ],
+    "mcpServers": [
+     {
+      "name": "context7",
+      "status": "connected"
+     },
+     {
+      "name": "claude.ai Gmail",
+      "status": "needs-auth"
+     },
+     {
+      "name": "claude.ai Google Calendar",
+      "status": "needs-auth"
+     },
+     {
+      "name": "widget",
+      "status": "connected"
+     }
+    ],
+    "permissionMode": "default",
+    "slashCommands": [
+     "debug",
+     "simplify",
+     "batch",
+     "loop",
+     "claude-api",
+     "agent-canvas",
+     "agent-speak",
+     "find-skills",
+     "parallel-dev",
+     "tdd",
+     "wiki",
+     "align",
+     "deep-dive",
+     "code-review:code-review",
+     "frontend-design:frontend-design",
+     "skill-creator:skill-creator",
+     "compact",
+     "context",
+     "cost",
+     "heapdump",
+     "init",
+     "pr-comments",
+     "release-notes",
+     "review",
+     "security-review",
+     "extra-usage",
+     "insights"
+    ],
+    "skills": [
+     "debug",
+     "simplify",
+     "batch",
+     "loop",
+     "claude-api",
+     "agent-canvas",
+     "agent-speak",
+     "find-skills",
+     "parallel-dev",
+     "frontend-design:frontend-design",
+     "skill-creator:skill-creator"
+    ],
+    "claudeCodeVersion": "2.1.76",
+    "cwd": "/Users/wuhangqi25/Developer/Projects/test-super-one",
+    "agents": [
+     "general-purpose",
+     "statusline-setup",
+     "Explore",
+     "Plan",
+     "gemini-peer",
+     "codex-peer"
+    ],
+    "apiKeySource": "none",
+    "outputStyle": "default",
+    "plugins": [
+     {
+      "name": "code-review",
+      "path": "/Users/wuhangqi25/.claude/plugins/cache/claude-plugins-official/code-review/61c0597779bd"
+     },
+     {
+      "name": "frontend-design",
+      "path": "/Users/wuhangqi25/.claude/plugins/cache/claude-plugins-official/frontend-design/61c0597779bd"
+     },
+     {
+      "name": "skill-creator",
+      "path": "/Users/wuhangqi25/.claude/plugins/cache/claude-plugins-official/skill-creator/61c0597779bd"
+     },
+     {
+      "name": "typescript-lsp",
+      "path": "/Users/wuhangqi25/.claude/plugins/cache/claude-plugins-official/typescript-lsp/1.0.0"
+     }
+    ],
+    "fastModeState": "off"
+   }
+  }
+ ],
+ [
+  {
+   "type": "stream_message_start",
+   "messageId": "msg_1774129085628_b2w48u",
+   "apiMessageId": "msg_01CFU4ZwhT2pvaEkkCPWzPKR",
+   "model": "claude-opus-4-6",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "delta": {
+    "type": "text",
+    "text": "\n\n好，触发 A",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "delta": {
+    "type": "text",
+    "text": "skUserQuestion：",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "status_change",
+   "status": "streaming"
+  }
+ ],
+ [
+  {
+   "type": "message_usage",
+   "messageId": "msg_1774129085628_b2w48u",
+   "inputTokens": 302,
+   "outputTokens": 0
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "delta": {
+    "type": "tool_use",
+    "toolName": "ToolSearch",
+    "toolUseId": "toolu_01KkJWixdKxuro5a6cx8Hxbh",
+    "input": "",
+    "status": "streaming",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01KkJWixdKxuro5a6cx8Hxbh",
+   "partialJson": "{\"query\": \"s",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01KkJWixdKxuro5a6cx8Hxbh",
+   "partialJson": "elect:AskUse",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01KkJWixdKxuro5a6cx8Hxbh",
+   "partialJson": "rQ",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01KkJWixdKxuro5a6cx8Hxbh",
+   "partialJson": "ue",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01KkJWixdKxuro5a6cx8Hxbh",
+   "partialJson": "stion\"",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01KkJWixdKxuro5a6cx8Hxbh",
+   "partialJson": ", \"max_",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01KkJWixdKxuro5a6cx8Hxbh",
+   "partialJson": "result",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01KkJWixdKxuro5a6cx8Hxbh",
+   "partialJson": "s\": 1}",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "message_usage",
+   "messageId": "msg_1774129085628_b2w48u",
+   "inputTokens": 302,
+   "outputTokens": 0
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "delta": {
+    "type": "tool_use",
+    "toolName": "ToolSearch",
+    "toolUseId": "toolu_01KkJWixdKxuro5a6cx8Hxbh",
+    "input": "{\"query\":\"select:AskUserQuestion\",\"max_results\":1}",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "message_usage",
+   "messageId": "msg_1774129085628_b2w48u",
+   "inputTokens": 302,
+   "outputTokens": 89
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "delta": {
+    "type": "tool_result",
+    "toolUseId": "toolu_01KkJWixdKxuro5a6cx8Hxbh",
+    "summary": "",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "checkpoint_captured",
+   "messageId": "msg_1774129085628_b2w48u",
+   "checkpointId": "e4ce4c1b-de4d-4545-a677-aac32e4f0733",
+   "resumePointId": "879a26a4-a786-4e5b-9631-b2ad20fb5c99"
+  }
+ ],
+ [
+  {
+   "type": "stream_message_stop",
+   "messageId": "msg_1774129085628_b2w48u",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "stream_message_start",
+   "messageId": "msg_1774129085628_b2w48u",
+   "apiMessageId": "msg_019Bbjt6tQwMej5aTirxy1yA",
+   "model": "claude-opus-4-6",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "delta": {
+    "type": "tool_use",
+    "toolName": "AskUserQuestion",
+    "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+    "input": "",
+    "status": "streaming",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+   "partialJson": "{\"questions\"",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+   "partialJson": ": [",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+   "partialJson": "{\"questio",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+   "partialJson": "n\":\"你还想测试哪些",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+   "partialJson": "权限请求 UI？\"",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+   "partialJson": ",\"header\":\"",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+   "partialJson": "测试范围\",\"opt",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+   "partialJson": "ions",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+   "partialJson": "\":[{\"label",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+   "partialJson": "\":\"Agent 工",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+   "partialJson": "具\",\"descri",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+   "partialJson": "ption\":\"触发",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+   "partialJson": " Agent",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+   "partialJson": " 子代理的",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+   "partialJson": "权限请求\"},{\"lab",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+   "partialJson": "el\":\"MCP ",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+   "partialJson": "工具\",\"",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+   "partialJson": "descriptio",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+   "partialJson": "n\":\"触",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+   "partialJson": "发 ",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+   "partialJson": "MCP 服",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+   "partialJson": "务器工具（如 wi",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+   "partialJson": "dget、con",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+   "partialJson": "text",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+   "partialJson": "7）的权限请",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+   "partialJson": "求\"},{\"label\"",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+   "partialJson": ":\"",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+   "partialJson": "We",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+   "partialJson": "bF",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+   "partialJson": "etch/WebS",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+   "partialJson": "earch\",\"des",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+   "partialJson": "cription\":",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+   "partialJson": "\"触发网",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+   "partialJson": "络访问类工具的权",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+   "partialJson": "限请求\"},{\"",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+   "partialJson": "label\":\"全部都",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+   "partialJson": "要\",\"des",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+   "partialJson": "cription",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+   "partialJson": "\":\"",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+   "partialJson": "依次测试",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+   "partialJson": "以上",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+   "partialJson": "所有类",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+   "partialJson": "型\"}],\"mu",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+   "partialJson": "ltiSelect\"",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "tool_input_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+   "partialJson": ":true}]}",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "message_usage",
+   "messageId": "msg_1774129085628_b2w48u",
+   "inputTokens": 1500,
+   "outputTokens": 89
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "delta": {
+    "type": "tool_use",
+    "toolName": "AskUserQuestion",
+    "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+    "input": "{\"questions\":[{\"question\":\"你还想测试哪些权限请求 UI？\",\"header\":\"测试范围\",\"options\":[{\"label\":\"Agent 工具\",\"description\":\"触发 Agent 子代理的权限请求\"},{\"label\":\"MCP 工具\",\"description\":\"触发 MCP 服务器工具（如 widget、context7）的权限请求\"},{\"label\":\"WebFetch/WebSearch\",\"description\":\"触发网络访问类工具的权限请求\"},{\"label\":\"全部都要\",\"description\":\"依次测试以上所有类型\"}],\"multiSelect\":true}]}",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "ask_user_question",
+   "request": {
+    "requestId": "ask_1774129095837_s3kw5b",
+    "questions": [
+     {
+      "question": "你还想测试哪些权限请求 UI？",
+      "header": "测试范围",
+      "options": [
+       {
+        "label": "Agent 工具",
+        "description": "触发 Agent 子代理的权限请求"
+       },
+       {
+        "label": "MCP 工具",
+        "description": "触发 MCP 服务器工具（如 widget、context7）的权限请求"
+       },
+       {
+        "label": "WebFetch/WebSearch",
+        "description": "触发网络访问类工具的权限请求"
+       },
+       {
+        "label": "全部都要",
+        "description": "依次测试以上所有类型"
+       }
+      ],
+      "multiSelect": true
+     }
+    ]
+   }
+  }
+ ],
+ [
+  {
+   "type": "message_usage",
+   "messageId": "msg_1774129085628_b2w48u",
+   "inputTokens": 1500,
+   "outputTokens": 308
+  }
+ ],
+ [
+  {
+   "type": "stream_message_stop",
+   "messageId": "msg_1774129085628_b2w48u",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "delta": {
+    "type": "tool_result",
+    "toolUseId": "toolu_01CZNKnVHsk8SA6tKmZUiD9o",
+    "summary": "User has answered your questions: \"你还想测试哪些权限请求 UI？\"=\"不用了\". You can now continue with the user's answers in mind.",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "checkpoint_captured",
+   "messageId": "msg_1774129085628_b2w48u",
+   "checkpointId": "ca1fff46-3c54-47a2-b1f3-6782f3db0150",
+   "resumePointId": "aa53387a-ca25-433a-a3d7-e50f24c29232"
+  }
+ ],
+ [
+  {
+   "type": "stream_message_start",
+   "messageId": "msg_1774129085628_b2w48u",
+   "apiMessageId": "msg_015pqfYfC6Z7Ykymjes1Tb8j",
+   "model": "claude-opus-4-6",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "delta": {
+    "type": "text",
+    "text": "好的，测试完成！",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "delta": {
+    "type": "text",
+    "text": "总结一下已触发的权限请求 UI",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "delta": {
+    "type": "text",
+    "text": " 类型：\n\n| #",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "delta": {
+    "type": "text",
+    "text": " | 类型 | 说明 |\n|---|------|------|\n| 1 | **",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "delta": {
+    "type": "text",
+    "text": "Write** | 写入新文件 |\n| 2 | **Edit** | 编辑",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "delta": {
+    "type": "text",
+    "text": "已有文件 |\n| 3 | **EnterPlanMode** | 进入计划模式 |\n| ",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "delta": {
+    "type": "text",
+    "text": "4 | **ExitPlanMode** | 退出计划模式 |\n| 5 | **Bash**",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "delta": {
+    "type": "text",
+    "text": " | 沙箱内命令执行 |\n| 6 | **Bash (dis",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "delta": {
+    "type": "text",
+    "text": "ableSandbox)** | 绕过沙箱权限请求 |",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "delta": {
+    "type": "text",
+    "text": "\n| 7 | **AskUserQuestion** | 向用户提问 |\n\n如果后",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "delta": {
+    "type": "text",
+    "text": "续还需要测试其他类型，随",
+    "parentToolUseId": null
+   }
+  }
+ ],
+ [
+  {
+   "type": "content_delta",
+   "messageId": "msg_1774129085628_b2w48u",
+   "delta": {
+    "type": "text",
+    "text": "时告诉我。",
+    "parentToolUseId": null
+   }
+  },
+  {
+   "type": "message_usage",
+   "messageId": "msg_1774129085628_b2w48u",
+   "inputTokens": 2034,
+   "outputTokens": 308
+  }
+ ],
+ [
+  {
+   "type": "message_usage",
+   "messageId": "msg_1774129085628_b2w48u",
+   "inputTokens": 2034,
+   "outputTokens": 540
+  }
+ ],
+ [
+  {
+   "type": "stream_message_stop",
+   "messageId": "msg_1774129085628_b2w48u",
+   "parentToolUseId": null
+  }
+ ],
+ [
+  {
+   "type": "message_complete",
+   "messageId": "msg_1774129085628_b2w48u",
+   "metadata": {
+    "durationMs": -1884,
+    "durationApiMs": 74162,
+    "costUsd": 0.36901475,
+    "numTurns": 3,
+    "stopReason": "end_turn",
+    "resultText": "好的，测试完成！总结一下已触发的权限请求 UI 类型：\n\n| # | 类型 | 说明 |\n|---|------|------|\n| 1 | **Write** | 写入新文件 |\n| 2 | **Edit** | 编辑已有文件 |\n| 3 | **EnterPlanMode** | 进入计划模式 |\n| 4 | **ExitPlanMode** | 退出计划模式 |\n| 5 | **Bash** | 沙箱内命令执行 |\n| 6 | **Bash (disableSandbox)** | 绕过沙箱权限请求 |\n| 7 | **AskUserQuestion** | 向用户提问 |\n\n如果后续还需要测试其他类型，随时告诉我。",
+    "fastModeState": "off",
+    "usage": {
+     "inputTokens": 1,
+     "outputTokens": 1,
+     "cacheReadInputTokens": 24323,
+     "cacheCreationInputTokens": 533
+    },
+    "modelUsage": {
+     "claude-opus-4-6[1m]": {
+      "inputTokens": 320,
+      "outputTokens": 2141,
+      "cacheReadInputTokens": 314942,
+      "cacheCreationInputTokens": 25027,
+      "costUSD": 0.36901475,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 32000
+     }
+    }
+   }
+  }
+ ],
+ [
+  {
+   "type": "status_change",
+   "status": "idle"
+  }
+ ]
+]

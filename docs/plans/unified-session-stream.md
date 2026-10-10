@@ -46,6 +46,13 @@ Long-term docs affected: [chat-core.md](../architecture/chat-core.md), [mobile-r
   - Disconnect mid-turn and reconnect: complete ordered transcript, no rehydrate.
   - Desktop restart with a remote child running: the parent is woken once.
   - A node below the new generation is refused with the upgrade offer.
+- Progress (2026-10-10): done on `refactor/unified-session-stream` (`55d66661f`…`4e0a535e2`). `session.subscribe` pushes per connection (`event-stream.ts`); the desktop keeps one `RemoteSessionFeed` per node shared by the chat, phones and the child watcher, follows every open remote session, refreshes remote session lists from list events (`session.tags_changed` added), and routes remote events through the renderer transport with per-session Codex baseline reset on rehydrate. Protocol generation 2; an older node is offered the upgrade from its refusal. Unit and CLI integration tests pass; the node lab run is still due.
+- Moved out, found while implementing:
+  - `SourceCursor`, `FrameCoverage`, `ack`, `cursor_too_old`, the per-session `version` and the `epoch` only mean something once events leave the durable log; they land with the ring in phase 4. Frames carry the scanned environment `sequence`, which covers every durable event.
+  - The applied-position barrier lands on the phase 4 `snapshot`: `session.get` and `messages.list` are replaced there, and a cursor on two separate reads cannot be exact.
+  - Node session rows are written before their events, synchronously, so no reader sees an event before its row. One transaction with the receipt comes with the message commit transaction in phase 4.
+  - Persisted per-connection cursors are not needed: the child watcher keeps its cursors in grants, the chat resumes in memory across reconnects and rehydrates after a restart.
+  - Node project, draft and provider topics have no consumer: node projects and providers change only through the controlling desktop's own calls, and drafts are desktop-only. Add them with the first consumer.
 
 ## 4. Durable log, streaming ring and read model on every node
 

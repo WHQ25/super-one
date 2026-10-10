@@ -163,7 +163,11 @@ Features must not bypass the gateway with environment-specific raw IPC.
 
 `RemoteEnvironmentGateway` delegates to an authenticated node RPC session.
 `LocalEnvironmentGateway` delegates to in-process services; its Session port
-wires only `list` today, and local Session create/send still use the agent IPC.
+wires only `list`, and local Session create/send use the agent IPC: a local
+session lives in the desktop's own process, where its `Session` is the read
+model. The renderer reads both kinds on one path (events into the chat
+reducer); a remote session opens at a node snapshot (§9.2), and its writes
+settle on the session's stream like local ones.
 
 UI stores use scoped references and never route by a bare project or Session ID:
 
@@ -326,22 +330,39 @@ owner-only files, not ordinary rows.
 
 Durability rules:
 
-- The target invariant: a mutating command's idempotency receipt, aggregate
-  state and durable events commit in one SQLite transaction or not at all, so a
-  crash can never leave state without its event (which would break cursor
-  recovery) or a mutation without its receipt. The code does not meet it yet:
-  `SessionRuntime` writes the session row and calls `EventLog.appendSession` as
-  separate statements, and `apps/cli/src/auth/idempotency.ts` runs the command
-  under an in-memory in-flight lock and stores the receipt afterwards.
+- A durable event and the read-model change it causes commit in one SQLite
+  transaction before any subscriber sees it (`EventLog.append` runs the read
+  model's applier inside the transaction). The target invariant also puts the
+  mutating command's idempotency receipt and the session row in that
+  transaction, so a crash can never leave state without its event or a mutation
+  without its receipt. The code does not meet that part yet: `SessionRuntime`
+  writes the session row synchronously before appending its event, and
+  `apps/cli/src/auth/idempotency.ts` runs the command under an in-memory
+  in-flight lock and stores the receipt afterwards.
 - Receipts are keyed `(client_identity, operation, idempotency_key)` and store a
   request-payload hash; reusing a key with a different payload returns
   `idempotency_conflict`.
-- `SessionRuntime` projects every turn into the durable log
+- `SessionRuntime` projects every turn into the session log
   (`SESSION_DURABLE_EVENT` in `packages/shared/src/environment/session-events.ts`):
-  user message, turn start/completion/interruption/error, assistant deltas and
-  final blocks, tool start/input/result, permission/question/plan requests and
-  responses, and status changes. The session row's `transcript_json` is the
-  committed transcript. A disconnect loses no acknowledged semantic transition.
+  user message, turn start/completion/interruption/error, assistant blocks,
+  tool start/input/result, permission/question/plan requests and responses,
+  and status changes. Durability is decided by payload (`streamingEventKey`):
+  text and thinking deltas, tool input deltas, Codex item updates and tool
+  progress go to an in-memory streaming ring (`streaming-ring.ts`, 16 MiB cap)
+  and are retired when their message commits (`committedStreamingMessage`);
+  everything else is a durable `environment_events` row. Rows written before
+  this split, one per delta, stay.
+- Every session event carries a per-session `session_version`, contiguous
+  across both tiers within the node process `epoch`; a version identifies an
+  event for resume (§9.2). Rows from before versions read as their sequence.
+- The read model (`packages/runtime/src/session/read-model.ts`) reduces each
+  session's events with the shared chat reducer and checkpoints its messages
+  and state (`session_messages`, `session_read_models`) in the committing
+  transaction. After a restart it replays durable events above the
+  checkpoint; a session logged before it bootstraps once from the stored
+  transcript and log. `session.load`, `session.messages.list` and MCP App
+  lookups read it. The session row's `transcript_json` stays the plain-text
+  transcript. A disconnect loses no acknowledged semantic transition.
 - Old events may be deleted only after a snapshot at or beyond their sequence
   is durable, and a cursor older than retained history receives `cursor_too_old`
   rather than a partial stream. `environment_events` is currently append-only
@@ -388,9 +409,23 @@ On connect:
 
 1. Authenticate and verify the expected `environmentId`.
 2. Negotiate protocol and capabilities.
-3. Request a consistent snapshot and its `snapshotSequence`.
-4. Subscribe from `snapshotSequence + 1`.
-5. Detect gaps and resnapshot rather than silently continuing.
+3. Open a session with `session.load`: its read-model state and newest
+   messages, with the cursor `{ sequence, epoch, version }` they reflect.
+4. `session.subscribe` from that cursor. The node pushes frames over the
+   WebSocket, filtered by aggregate on the server: durable events after the
+   sequence merged with the ring's events after each session's version, then
+   live events as they are appended.
+5. A frame names in `resnapshot` the sessions whose missed events are gone
+   (retired on commit, evicted from the ring, or lost with a node restart's
+   epoch). The client reads those sessions again instead of continuing.
+
+The desktop keeps one subscription per node (`remote-session-feed.ts`), shared
+by the chat, relayed phones and the collaboration watcher. A followed session
+delivers only events above the version its snapshot reflects, and resumes by
+version across reconnects. A phone the desktop relays to a node session is
+repaired from a fresh snapshot with catch-up events its reducer already
+applies (`routed-catch-up.ts`), since a connected phone does not restore on
+the relay's `reset`. No session reads poll.
 
 Client acknowledgement is a delivery cursor, not a shared `read` flag.
 
@@ -421,6 +456,7 @@ interface ControlLease {
   leaseId: string
   resource: SessionRef | TerminalRef
   holderClientId: string
+  delegate?: string
   generation: string
   expiresAt: string
 }
@@ -428,6 +464,13 @@ interface ControlLease {
 
 - One live control lease per resource; observers never acquire one and never
   block the holder.
+- A client that relays devices acquires for each as a `delegate` (a desktop
+  for each phone it routes, by device ID). Delegates of one client hold a
+  resource one at a time, like separate clients, except that the client's own
+  window acquires with `yields`: a phone opening the session takes the
+  window's lease over, as it does a local session, and the window is refused
+  until the phone leaves. Renew, release and commands check the client; the
+  lease ID and generation fence its delegates.
 - The holder renews before expiry. Disconnect does not transfer control
   instantly; the short TTL bounds takeover delay. Explicit release permits
   immediate acquisition.

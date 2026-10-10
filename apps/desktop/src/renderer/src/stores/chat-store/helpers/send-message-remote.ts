@@ -18,7 +18,7 @@ import { withoutSendFailure, type FailedMessageResend } from '@superone/shared/s
 import { shouldInterceptHostSlash } from './send-command-policy'
 import type { SendWriteScope } from './send-write-scope'
 
-/** Remote-node sends keep lease/drain behavior separate from the desktop dispatch. */
+/** Remote-node sends go through the environment gateway, which holds the session lease. */
 export async function sendRemoteMessageImpl(
   set: ChatStoreSet,
   get: () => ChatStore,
@@ -323,8 +323,7 @@ export async function sendRemoteMessageImpl(
   }
 
 
-  // Node accepts send while streaming (FIFO queue / codex steer). Drain stays
-  // open across queued turns until the session is fully idle.
+  // Node accepts send while streaming (FIFO queue / codex steer).
   // turnKind / collaborationMode / reviewTarget are forwarded to node session.send
   // (preload types lag; cast keeps remote codex on the session path, not desktop IPC).
   const sendInput = {

@@ -258,9 +258,11 @@ startBuffering
   → release buffered event batches in order, epoch += 1
 ```
 
-- Every `type: 'event'` frame queues while buffering. A
-  server `reset` frame discards the queued batches and restarts buffering, and
-  the app runs the same restore.
+- Every `type: 'event'` frame queues while buffering. The phone restores when
+  it opens a session and when its channel is established again; the host has
+  no frame that makes a connected phone restore. A session the desktop relays
+  from a node is kept whole by the desktop instead
+  ([remote-node-service.md](remote-node-service.md#92-event-log)).
 - `ChatRuntime` seeds the snapshot (live turn, pending interactions, usage,
   sandbox, worktree, voice segments, goal), replays the released batches through the
   reducer, then hydrates the document. The first batch is the host's
@@ -275,29 +277,20 @@ startBuffering
 - Cache merge, reconnect backoff, liveness probing and discovery are phone-side:
   [transport.md](../../apps/mobile/docs/agent-reference/transport.md).
 
-## Transports and ACK
+## Transports
 
 `RelayClient` (`packages/relay-client/src/client.ts`) has exactly one active
 socket; connecting over LAN replaces relay and vice versa. The desktop seals
-each event once per phone channel and sends it on that phone's transport: the
-relay copy gets its sequence number from the relay, and the LAN copy gets the
-desktop's own `lanFrameSeq` (`remote-control-service.ts#sendEventFrame`). The two
-number spaces never mix.
+each event once per phone channel and sends it on that phone's transports
+(`remote-control-service.ts#sendEventFrame`).
 
-Frame handling is `handleInboundFrame` in `packages/relay-client/src/frames.ts`;
-ACK state is `SeqAckTracker` in `ack.ts`:
+Frame handling is `handleInboundFrame` in `packages/relay-client/src/frames.ts`:
 
-- The sequence is recorded before decrypt (`see`), and the watermark advances
-  even when decrypt fails, so a bad frame cannot stall ACKs.
-- The processed set is bounded (`PROCESSED_SEQ_CAP` = 2048).
-- ACKs are cumulative: the highest contiguous sequence. Sent immediately after 10
-  newly contiguous frames, otherwise after 2 s.
-- Only relay `event` frames produce ACKs. LAN frames are deduplicated by their
-  sequence but never ACKed, and terminal, response and control frames have no
-  sequence path.
-- Every new socket rebases the tracker (`rebase()`), and `reset`,
-  `desktop_shutdown` and disconnect clear it. Frames are sealed for one
-  connection's channel ([relay-crypto.md](relay-crypto.md#phone-link)), so a
-  reconnect over either transport asks for no replay and is a full restore.
-- The envelope sequence is transport state only. It is never written onto
-  `AgentEvent.seq`, which the session assigns for replay deduplication.
+- The envelope sequence is ignored. The secure channel orders and deduplicates
+  every sealed frame (a replayed or reordered one fails to open), so there is
+  no envelope ACK.
+- Frames are sealed for one connection's channel
+  ([relay-crypto.md](relay-crypto.md#phone-link)), so a reconnect over either
+  transport asks for no replay and is a full restore.
+- The envelope sequence is never written onto `AgentEvent.seq`, which the
+  session assigns for replay deduplication.

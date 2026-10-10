@@ -409,6 +409,69 @@ describe('Session.respondToPermission host confirms', () => {
   })
 })
 
+describe('Session interaction resolution', () => {
+  function resolutions(session: Session): AgentEvent[] {
+    const seen: AgentEvent[] = []
+    session.on((event) => { if (event.type === 'interaction_resolved') seen.push(event) })
+    return seen
+  }
+
+  it('announces a handled permission response once, for every caller', () => {
+    const { session, backend } = makeSession()
+    backend.respondToPermissionResult = true
+    const seen = resolutions(session)
+
+    session.respondToPermission('perm-1', true)
+
+    expect(seen).toEqual([expect.objectContaining({ interactionType: 'permission', requestId: 'perm-1', sessionId: 'sess-1' })])
+  })
+
+  it('announces nothing when no handler took the permission response', () => {
+    const { session } = makeSession()
+    const seen = resolutions(session)
+
+    expect(session.respondToPermission('perm-orphan', true)).toBe(false)
+
+    expect(seen).toEqual([])
+  })
+
+  it('keeps the backend announcement and drops the duplicate, before or after the response returns', () => {
+    const { session, backend } = makeSession()
+    const seen = resolutions(session)
+    backend.respondToQuestion = () => backend.emit({ type: 'interaction_resolved', interactionType: 'question', requestId: 'q-sync' })
+
+    session.respondToQuestion('q-sync', { a: 'b' })
+    session.respondToPlanApproval('plan-late', true)
+    backend.emit({ type: 'interaction_resolved', interactionType: 'plan_approval', requestId: 'plan-late', approved: true })
+
+    expect(seen.map((e) => (e as { requestId: string }).requestId)).toEqual(['q-sync', 'plan-late'])
+  })
+
+  it('announces question dismissal and plan outcome with its feedback', () => {
+    const { session } = makeSession()
+    const seen = resolutions(session)
+
+    session.dismissQuestion('q-1')
+    session.respondToPlanApproval('plan-1', false, 'looks risky')
+
+    expect(seen).toEqual([
+      expect.objectContaining({ interactionType: 'question', requestId: 'q-1' }),
+      expect.objectContaining({ interactionType: 'plan_approval', requestId: 'plan-1', approved: false, feedback: 'looks risky' }),
+    ])
+  })
+
+  it('announces again when a request reuses a resolved id', () => {
+    const { session } = makeSession()
+    const seen = resolutions(session)
+
+    session.dismissQuestion('q-1')
+    session.emitHostEvent({ type: 'ask_user_question', request: { requestId: 'q-1', questions: [] } } as unknown as AgentEvent)
+    session.dismissQuestion('q-1')
+
+    expect(seen).toHaveLength(2)
+  })
+})
+
 describe('Session state machine', () => {
   let session: Session
   let backend: FakeBackend

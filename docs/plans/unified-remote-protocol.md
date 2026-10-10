@@ -1,6 +1,6 @@
 # Unified remote protocol
 
-Status: planned · Updated: 2026-10-10
+Status: in progress · Updated: 2026-10-10
 Goal: One backend serves its own window, controller desktops and phones through one topic/connection core, one per-connection delivery policy and one protocol; every existing phone feature runs on it.
 Proposal: [unified-remote-protocol.md](../proposals/unified-remote-protocol.md)
 Long-term docs affected: [mobile-remote-control.md](../architecture/mobile-remote-control.md), [remote-node-service.md](../architecture/remote-node-service.md), [chat-core.md](../architecture/chat-core.md), [relay-crypto.md](../architecture/relay-crypto.md) (framing), `apps/desktop/docs/agent-reference/architecture.md`, `apps/desktop/CLAUDE.md` (session control boundary), `apps/mobile/docs/agent-reference/transport.md`
@@ -196,6 +196,19 @@ points code comments there, and deletes this plan and the proposal.
   over Tailscale and relay.
 - Live phone pairing on the iOS simulator and a device, LAN and relay.
 - Bytes and frames against the step 0 baseline at steps 4 and 6 only.
+
+## Progress
+
+- Step 0 done: `apps/desktop/src/main/stream/wire-baseline.test.ts` pins
+  `fixtures/wire-baseline.json` (relay bytes, frames and the decoded event
+  digest per recording).
+- Step 1 done: `TopicHub`, `VersionedTopicLog` and `DeliveryPolicy` in
+  `@superone/runtime/stream`; `TopicRef` in `@superone/shared/environment/topics`;
+  `openEventStream` filters by topic and names `recover` topics. Desktop
+  publishes hub events by topic (`stream/desktop-topics.ts`); the renderer
+  (`renderer-interest.ts`) and each phone (`remote/phone-topics.ts`) are
+  connections; list/draft/terminal recovery in `stream/topic-recovery.ts`.
+  The wire baseline is unchanged.
 
 ## Open decisions
 

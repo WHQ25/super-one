@@ -1,4 +1,5 @@
 import type { EnvironmentAggregateType, EnvironmentEventEnvelope, SessionStreamFrame } from '@superone/shared/environment'
+import { topicKey, topicsOfEnvelope, topicWildcardKey, type TopicRef } from '@superone/shared/environment/topics'
 
 /** What a stream reads from: the host's session log as one reader sees it. */
 export interface EventStreamSource {
@@ -18,6 +19,32 @@ export interface EventStreamSource {
 export interface EventStreamFilter {
   aggregateIds?: ReadonlySet<string>
   aggregateTypes?: ReadonlySet<EnvironmentAggregateType>
+  /** Only events of these topics (a `*` instance covers its kind). */
+  topics?: readonly TopicRef[]
+}
+
+/** Whether an envelope belongs to one of `topics`. */
+function topicMatcher(topics: readonly TopicRef[] | undefined): ((envelope: EnvironmentEventEnvelope) => boolean) | null {
+  if (!topics) return null
+  const keys = new Set(topics.map(topicKey))
+  return (envelope) => topicsOfEnvelope(envelope).some((topic) => {
+    const wildcard = topicWildcardKey(topic)
+    return keys.has(topicKey(topic)) || (wildcard !== null && keys.has(wildcard))
+  })
+}
+
+/** The filter as a predicate over envelopes. */
+export function streamFilterMatcher(filter: EventStreamFilter): (envelope: EnvironmentEventEnvelope) => boolean {
+  const inTopics = topicMatcher(filter.topics)
+  return (envelope) =>
+    (!filter.aggregateIds || filter.aggregateIds.has(envelope.aggregateId))
+    && (!filter.aggregateTypes || filter.aggregateTypes.has(envelope.aggregateType))
+    && (!inTopics || inTopics(envelope))
+}
+
+/** Whether a session id is inside the stream's filter. */
+function coversSession(filter: EventStreamFilter, environmentId: string, sessionId: string): boolean {
+  return streamFilterMatcher(filter)({ aggregateType: 'session', aggregateId: sessionId, environmentId } as EnvironmentEventEnvelope)
 }
 
 export interface EventStreamCursor {
@@ -51,12 +78,14 @@ function byPosition(a: EnvironmentEventEnvelope, b: EnvironmentEventEnvelope): n
  */
 export function openEventStream(input: {
   source: EventStreamSource
+  /** The environment the log belongs to; names the topics a recovery signal covers. */
+  environmentId: string
   reader: { clientSessionId: string }
   cursor: EventStreamCursor
   filter: EventStreamFilter
   push: (frame: SessionStreamFrame) => void
 }): () => void {
-  const { source, reader, filter, push } = input
+  const { source, environmentId, reader, filter, push } = input
   const epoch = source.streamEpoch()
   let sequence = input.cursor.afterSequence
   const sameEpoch = input.cursor.epoch === epoch
@@ -68,9 +97,7 @@ export function openEventStream(input: {
   let live: EnvironmentEventEnvelope[] = []
   let flushing = false
 
-  const matches = (envelope: EnvironmentEventEnvelope): boolean =>
-    (!filter.aggregateIds || filter.aggregateIds.has(envelope.aggregateId))
-    && (!filter.aggregateTypes || filter.aggregateTypes.has(envelope.aggregateType))
+  const matches = streamFilterMatcher(filter)
 
   /** Whether the reader still needs this event; records it as read. */
   const take = (envelope: EnvironmentEventEnvelope): boolean => {
@@ -86,12 +113,20 @@ export function openEventStream(input: {
 
   const send = (events: EnvironmentEventEnvelope[], gone: string[] = []): void => {
     if (events.length === 0 && gone.length === 0) return
-    push({ sequence, epoch, events, ...(gone.length ? { resnapshot: gone } : {}) })
+    push({
+      sequence,
+      epoch,
+      events,
+      ...(gone.length ? {
+        resnapshot: gone,
+        recover: gone.map((sessionId): TopicRef => ({ kind: 'session', environmentId: environmentId, sessionId })),
+      } : {}),
+    })
   }
 
   // Ring events held for catch-up, per session, and the sessions found gone.
   const held: EnvironmentEventEnvelope[] = []
-  const gone: string[] = [...resnapshot].filter((id) => !filter.aggregateIds || filter.aggregateIds.has(id))
+  const gone: string[] = [...resnapshot].filter((id) => coversSession(filter, environmentId, id))
   for (const [sessionId, version] of versions) {
     const streaming = source.streamingAfter(sessionId, version)
     if (streaming === null) {

@@ -23,6 +23,8 @@ interface RemoteTerminalState {
 export interface RemoteTerminalControllerOptions {
   getHost: () => EnvironmentHost | Promise<EnvironmentHost>
   onEvent: (event: TerminalEvent) => void
+  /** A terminal this desktop shows started or stopped being read. */
+  onAttach?: (ref: { environmentId: string; terminalId: string }, attached: boolean) => void
   pollMs?: number
 }
 
@@ -85,6 +87,7 @@ export class RemoteTerminalController {
       readQueue: Promise.resolve(),
     }
     this.terminals.set(terminalId, state)
+    this.options.onAttach?.({ environmentId: remote.connectionId, terminalId: created.terminalId }, true)
     this.schedule(state, 0)
     return this.listItem(state)
   }
@@ -135,6 +138,7 @@ export class RemoteTerminalController {
     state.stopped = true
     if (state.timer) clearTimeout(state.timer)
     this.terminals.delete(terminalId)
+    this.options.onAttach?.({ environmentId: state.connectionId, terminalId: state.remoteTerminalId }, false)
     const host = await this.options.getHost()
     await host.killRemoteTerminal(state.connectionId, state.remoteTerminalId)
   }
@@ -143,6 +147,7 @@ export class RemoteTerminalController {
     for (const state of this.terminals.values()) {
       state.stopped = true
       if (state.timer) clearTimeout(state.timer)
+      this.options.onAttach?.({ environmentId: state.connectionId, terminalId: state.remoteTerminalId }, false)
     }
     this.terminals.clear()
   }

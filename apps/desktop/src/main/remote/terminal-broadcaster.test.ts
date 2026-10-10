@@ -1,76 +1,40 @@
 import { describe, expect, it, vi } from 'vitest'
 import { TerminalBroadcaster } from './terminal-broadcaster'
-import { TerminalManager } from '../terminal/terminal-manager'
-import type { PtyLike, PtySpawner } from '../terminal/pty'
 
-function fakeSpawner(): PtySpawner {
-  return {
-    spawn: (): PtyLike => ({
-      write: () => {},
-      resize: () => {},
-      onData: () => {},
-      onExit: () => {},
-      kill: () => {},
-      foregroundProcess: () => 'zsh',
-    }),
-  }
-}
-
-describe('TerminalBroadcaster title changes', () => {
-  it('sends title changes to every paired device, not just PTY subscribers', async () => {
+describe('TerminalBroadcaster', () => {
+  it('sends list metadata to every paired device, not just the terminal\'s watchers', () => {
     const send = vi.fn(async () => {})
-    const manager = new TerminalManager({ spawner: fakeSpawner(), onEvent: () => {} })
-    const term = manager.create({ cwd: '/p', title: 'bash' })
-    const broadcaster = new TerminalBroadcaster(manager, { sendTerminalFrame: send })
-
-    await broadcaster.broadcast({
-      type: 'terminal_title_changed',
-      terminalId: term.terminalId,
-      title: 'npm run dev',
-    })
-
-    expect(send).toHaveBeenCalledWith({
-      type: 'terminal_title_changed',
-      terminalId: term.terminalId,
-      title: 'npm run dev',
-    })
-    expect(send.mock.calls[0]).toHaveLength(1)
+    const broadcaster = new TerminalBroadcaster({ sendTerminalFrame: send })
+    broadcaster.deliver({ type: 'terminal_title_changed', terminalId: 't1', title: 'npm run dev' }, ['phone'])
+    broadcaster.deliver({ type: 'terminal_exited', terminalId: 't1', exitCode: 0, signal: null }, ['phone'])
+    expect(send.mock.calls).toEqual([
+      [{ type: 'terminal_title_changed', terminalId: 't1', title: 'npm run dev' }],
+      [{ type: 'terminal_exited', terminalId: 't1', exitCode: 0, signal: null }],
+    ])
   })
 
-  it('broadcasts newly created terminals to every paired device', async () => {
+  it('sends output to the devices the topic reached, and nothing when none', () => {
     const send = vi.fn(async () => {})
-    const manager = new TerminalManager({ spawner: fakeSpawner(), onEvent: () => {} })
-    const term = manager.create({ cwd: '/p', title: 'bash' })
-    const broadcaster = new TerminalBroadcaster(manager, { sendTerminalFrame: send })
-    const item = term.listItem()
-
-    await broadcaster.broadcast({ type: 'terminal_created', terminalId: term.terminalId, item })
-
-    expect(send).toHaveBeenCalledWith({
-      type: 'terminal_created',
-      terminalId: term.terminalId,
-      item,
-    })
+    const broadcaster = new TerminalBroadcaster({ sendTerminalFrame: send })
+    const output = { type: 'terminal_output', terminalId: 't1', data: 'x', fromSeq: 1, toSeq: 1, createdAt: 0 } as const
+    broadcaster.deliver(output, ['a', 'b'])
+    broadcaster.deliver(output, [])
+    expect(send.mock.calls).toEqual([[output, ['a', 'b']]])
   })
 
-  it('broadcasts exits to every paired device so close stays in sync', async () => {
+  it('tells each device whether it may write after an owner change', () => {
     const send = vi.fn(async () => {})
-    const manager = new TerminalManager({ spawner: fakeSpawner(), onEvent: () => {} })
-    const term = manager.create({ cwd: '/p', title: 'bash' })
-    const broadcaster = new TerminalBroadcaster(manager, { sendTerminalFrame: send })
+    const broadcaster = new TerminalBroadcaster({ sendTerminalFrame: send })
+    broadcaster.deliver({ type: 'terminal_owner_changed', terminalId: 't1', ownerDeviceId: 'a', writableByMe: false }, ['a', 'b'])
+    expect(send.mock.calls).toEqual([
+      [{ type: 'terminal_owner_changed', terminalId: 't1', ownerDeviceId: 'a', writableByMe: true }, ['a']],
+      [{ type: 'terminal_owner_changed', terminalId: 't1', ownerDeviceId: 'a', writableByMe: false }, ['b']],
+    ])
+  })
 
-    await broadcaster.broadcast({
-      type: 'terminal_exited',
-      terminalId: term.terminalId,
-      exitCode: 0,
-      signal: null,
-    })
-
-    expect(send).toHaveBeenCalledWith({
-      type: 'terminal_exited',
-      terminalId: term.terminalId,
-      exitCode: 0,
-      signal: null,
-    })
+  it('leaves answers and snapshots to the asking device', () => {
+    const send = vi.fn(async () => {})
+    new TerminalBroadcaster({ sendTerminalFrame: send }).deliver({ type: 'terminal_command_result', requestId: 'r', ok: true }, ['a'])
+    expect(send).not.toHaveBeenCalled()
   })
 })

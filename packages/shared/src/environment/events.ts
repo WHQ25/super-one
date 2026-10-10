@@ -1,3 +1,5 @@
+import type { TopicRef } from './topics'
+
 /**
  * Durable environment event log contracts.
  * Sequence is a decimal string on the wire and a SQLite integer internally.
@@ -86,6 +88,8 @@ export interface SessionSubscribeInput {
   versions?: Record<string, number>
   aggregateTypes?: EnvironmentAggregateType[]
   aggregateIds?: string[]
+  /** Only these topics' events; a `*` instance covers its kind. */
+  topics?: TopicRef[]
 }
 
 /** One push of a `session.subscribe` stream. */
@@ -100,6 +104,8 @@ export interface SessionStreamFrame {
    * again, then apply only events above its version.
    */
   resnapshot?: string[]
+  /** The same sessions as scoped topics: the recovery signal every topic kind shares. */
+  recover?: TopicRef[]
 }
 
 /** Server → client message carrying a stream frame. */

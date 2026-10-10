@@ -57,7 +57,8 @@ vi.mock('../../acp/acp-recap-focus', () => ({
   notifySessionRecapReceived: vi.fn(),
 }))
 
-import { MobileBroadcaster, type MobileTransport } from '../../remote/mobile-broadcaster'
+import type { MobileTransport } from '../../remote/mobile-broadcaster'
+import { phoneEventPath } from '../../remote/test-phone-topics'
 import { Session } from '../session'
 import { CursorBackend } from './cursor-backend'
 
@@ -140,13 +141,13 @@ function makeSession(permissionMode: 'agent' | 'plan' = 'agent') {
   })
   const transport = makeTransport()
   const manager = { getSession: (id: string) => (id === session.id ? session : null) } as unknown as SessionManager
-  const broadcaster = new MobileBroadcaster(manager, transport)
-  // AgentService wiring: every session event reaches the mobile broadcaster,
+  const path = phoneEventPath((id) => manager.getSession(id), transport)
+  // Main's wiring: every session event reaches the phones' topics,
   // whether or not a phone has this session open.
   const events: AgentEvent[] = []
   session.on((event) => {
     events.push(event)
-    void broadcaster.broadcast(event)
+    path.publish(event, session.id)
   })
   return { session: session as unknown as SessionType & Session, backend, transport, events }
 }

@@ -98,6 +98,12 @@ import { TerminalBroadcaster } from './remote/terminal-broadcaster'
 import { nodePtySpawner } from './terminal/pty'
 import { DeviceRegistry } from './remote/device-registry'
 import { MobileBroadcaster } from './remote/mobile-broadcaster'
+import { PhoneTopics } from './remote/phone-topics'
+import { createDesktopTopicHub, publishHubEvent, topicOfTerminalEvent } from './stream/desktop-topics'
+import { RendererInterest } from './stream/renderer-interest'
+import { LocalTopicRecovery } from './stream/topic-recovery'
+import { deliveryPolicy } from '@superone/runtime/stream'
+import { localSessionEnvironmentId } from './environment/session-identity'
 import { spawnParentOf } from './session/collaboration-mailbox'
 import { CHILD_STALL_CHECK_INTERVAL_MS, CollaborationChildMonitor, childActivityView } from './session/collaboration-lifecycle'
 import { RemoteChildWatcher } from './session/collaboration-remote-watch'
@@ -247,7 +253,7 @@ import { getRemoteControlledSession } from './db-remote-controlled-sessions'
 import { getInstallId } from './install-id'
 import { reportMainException, reportProcessGone } from './crash-telemetry'
 import { systemDownloadDir } from './agent/browser-download-store'
-import type { AppSettings, AppSettingsPatch, GitInfoResult, ScheduledSendPatch, ScheduledSendSessionInit, ThemeMode, WindowFoldStep, WindowMiniMode } from '@superone/shared/agent-types'
+import type { AppSettings, AppSettingsPatch, TerminalEvent, GitInfoResult, ScheduledSendPatch, ScheduledSendSessionInit, ThemeMode, WindowFoldStep, WindowMiniMode } from '@superone/shared/agent-types'
 import { MOD_UI_UNAVAILABLE, type ModUiOp, type ModUiRequest } from '@superone/shared/mod-ui'
 import { MINI_WINDOW_SIZE } from '@superone/shared/agent-types'
 import { foldWindow, unfoldWindow } from './window-fold'
@@ -614,6 +620,13 @@ function migrateLegacyRemotePowerMode(): AppSettings {
  * whole routing table (who receives which source).
  */
 const sessionEvents = new SessionEventHub()
+/**
+ * What frontends see: every event is also published to its topic, and the
+ * renderer and each phone receive the topics they follow.
+ */
+const topics = createDesktopTopicHub()
+const localEnvironmentId = localSessionEnvironmentId()
+const topicRecovery = new LocalTopicRecovery(localEnvironmentId, (terminalId) => terminalManager.get(terminalId)?.outputSequence ?? null)
 sessionManager.onAny((sessionId, event, replay) => sessionEvents.publish({ event, source: 'session', sessionId, replay }))
 recordHubEvents(sessionEvents, (sessionId) => sessionManager.getSession(sessionId) ?? undefined)
 sessionEvents.subscribe({
@@ -641,11 +654,10 @@ sessionEvents.subscribe({
   },
 })
 sessionEvents.subscribe({
-  name: 'phones-and-automations',
+  name: 'automations',
   sources: ['session', 'environment', 'draft', 'list', 'remote-update'],
   replay: true,
-  // Phones keep drafts as rows and load a composer through `open_draft`;
-  // the change notice needs no attachment bytes (seconds of decryption each).
+  // Drafts reach automations as rows; the change notice needs no attachment bytes.
   deliver: ({ event }) => agentService.notifyEventSubscribers(
     event.type === 'draft_changed' && event.draft ? { ...event, draft: withoutDraftAttachmentBytes(event.draft) } : event,
   ),
@@ -660,11 +672,50 @@ sessionEvents.subscribe({
   },
 })
 sessionEvents.subscribe({
-  name: 'renderer',
+  name: 'notifications',
   sources: ['session', 'environment', 'draft', 'presence', 'settings', 'remote-update', 'remote-node'],
   replay: true,
-  deliver: ({ event }) => publishAgentEvent(event),
+  deliver: ({ event }) => notificationService.handleEvent(event),
 })
+sessionEvents.subscribe({
+  name: 'topics',
+  sources: ['session', 'environment', 'draft', 'list', 'presence', 'settings', 'remote-node', 'remote-update'],
+  replay: true,
+  deliver: (hubEvent) => publishHubEvent(topics, hubEvent, {
+    localEnvironmentId,
+    recovery: topicRecovery,
+    getSession: (sessionId) => sessionManager.getSession(sessionId),
+    spawnParentOf,
+  }),
+})
+const rendererInterest = new RendererInterest(topics.open({
+  id: 'renderer',
+  policy: deliveryPolicy('ipc', 'desktop'),
+  sink: {
+    deliver: (_topic, item) => {
+      if (item.kind === 'agent') rendererAgentEventTransport.push(item.event)
+      else safeSend(AgentIpcChannels.TERMINAL_EVENT, item.event)
+    },
+  },
+}), localEnvironmentId)
+const rendererInterestWindows = new Set<number>()
+agentService.setSessionForegroundListener((windowId, ref, foreground, sender) => {
+  if (!rendererInterestWindows.has(windowId)) {
+    rendererInterestWindows.add(windowId)
+    sender.once('destroyed', () => {
+      rendererInterestWindows.delete(windowId)
+      // A closed window never runs its views' cleanup; release what it still showed.
+      for (const shown of rendererInterest.closeWindow(windowId)) sessionManager.setSessionForeground(shown.sessionId, false)
+    })
+  }
+  rendererInterest.setShown(windowId, ref, foreground)
+})
+/** A terminal event to the frontends following its terminal; responses with no terminal go to the windows. */
+function publishTerminalEvent(event: TerminalEvent): void {
+  const topic = topicOfTerminalEvent(event, localEnvironmentId)
+  if (topic) topics.publish(topic, { kind: 'terminal', event })
+  else safeSend(AgentIpcChannels.TERMINAL_EVENT, event)
+}
 sessionEvents.subscribe({
   name: 'remote-mcp-apps',
   sources: ['remote-node'],
@@ -682,6 +733,7 @@ const remoteCallbacks: RemoteControlCallbacks = {
     }
   },
   onClientRegistered: ({ deviceName, deviceId, transport, firstConnect }) => {
+    phoneTopics.online(deviceId, transport)
     const name = recordPairedDeviceSeen(deviceId, deviceName)
     safeSend(AgentIpcChannels.REMOTE_DEVICE_STATUS_CHANGED, { id: deviceId, online: true, name, transport, firstConnect })
   },
@@ -689,6 +741,7 @@ const remoteCallbacks: RemoteControlCallbacks = {
     releaseMcpAppRequester({ kind: 'mobile', deviceId })
     safeSend(AgentIpcChannels.REMOTE_DEVICE_STATUS_CHANGED, { id: deviceId, online: false })
     deviceRegistry.handleDeviceDisconnected(deviceId)
+    phoneTopics.offline(deviceId)
     void import('./remote/environment-commands').then(module => module.releaseEnvironmentDevice(deviceId))
   },
   onPairingCodeReceived: ({ code, deviceName }) => {
@@ -718,6 +771,12 @@ const remoteCallbacks: RemoteControlCallbacks = {
 }
 declare const __CF_RELAY_URL__: string
 const remoteControlService = new RemoteControlService(__CF_RELAY_URL__, remoteCallbacks)
+const phoneTopics = new PhoneTopics(
+  topics,
+  new MobileBroadcaster(sessionManager, remoteControlService, localEnvironmentId, new TerminalBroadcaster(remoteControlService)),
+  localEnvironmentId,
+)
+sessionManager.onSession((session) => { phoneTopics.watchSession(session) })
 let mainWindow: BrowserWindow | null = null
 const miniAppSessionRefs = new Map<string, Set<string>>()
 const allWindows = new Set<BrowserWindow>()
@@ -873,11 +932,6 @@ setInterval(() => {
 const remoteChildWatcher = new RemoteChildWatcher(collaborationChildMonitor)
 remoteChildWatcher.start()
 
-/** The renderer consumer: notifications observe exactly what the renderer does. */
-function publishAgentEvent(event: AgentEvent): void {
-  notificationService.handleEvent(event)
-  rendererAgentEventTransport.push(event)
-}
 
 new PresenceCoordinator(sessionManager, {
   broadcastToRenderer: (event) => sessionEvents.publish({ event, source: 'presence' }),
@@ -925,8 +979,11 @@ agentService.setMobileReceiveService(mobileReceiveService)
 const terminalManager = new TerminalManager({
   spawner: nodePtySpawner,
   onEvent: (event) => {
-    safeSend(AgentIpcChannels.TERMINAL_EVENT, event)
-    void terminalBroadcaster.broadcast(event)
+    if (event.type === 'terminal_created') {
+      const ownership = terminalManager.get(event.terminalId)?.ownership
+      if (ownership) phoneTopics.watchTerminal(event.terminalId, ownership)
+    }
+    publishTerminalEvent(event)
   },
 })
 const remoteTerminalController = new RemoteTerminalController({
@@ -934,9 +991,9 @@ const remoteTerminalController = new RemoteTerminalController({
     const { getEnvironmentHost } = await import('./environment')
     return getEnvironmentHost()
   },
-  onEvent: (event) => safeSend(AgentIpcChannels.TERMINAL_EVENT, event),
+  onEvent: publishTerminalEvent,
+  onAttach: (ref, attached) => rendererInterest.attachTerminal(ref, attached),
 })
-const terminalBroadcaster = new TerminalBroadcaster(terminalManager, remoteControlService)
 deviceRegistry.setTerminalManager(terminalManager)
 agentService.setTerminalManager(terminalManager)
 setTerminalToolDeps({
@@ -1785,6 +1842,7 @@ function attachEnvironmentStatusBridge(host: EnvironmentHost): void {
   })
   // Remote node turns: map session.events → AgentEvent and stream into chat.
   host.setAgentEventSink((event) => sessionEvents.publish({ event, source: 'remote-node' }))
+  host.setFollowListener((ref, followed) => rendererInterest.follow(ref, followed))
   // Sessions another client creates, renames or removes on a machine show up here.
   host.onSessionListChanged(() => safeSend(AgentIpcChannels.SESSIONS_CHANGED))
   // A remote session whose missed events are gone: the chat reads its snapshot again.
@@ -4686,10 +4744,6 @@ function registerIpcHandlers(): void {
 
   agentService.setRemoteControlService(remoteControlService)
   agentService.setDeviceRegistry(deviceRegistry)
-  const mobileBroadcaster = new MobileBroadcaster(sessionManager, remoteControlService, spawnParentOf)
-  agentService.addEventSubscriber((event) => {
-    void mobileBroadcaster.broadcast(event)
-  })
   // A mobile client used to re-read a project's session list every time its
   // drawer opened, because nothing told it when the list had changed. This is
   // that signal: an invalidation carrying no rows, fanned out to every paired

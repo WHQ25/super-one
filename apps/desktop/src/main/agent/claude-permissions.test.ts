@@ -42,7 +42,7 @@ import {
   type PendingPlanApproval,
 } from './claude-permissions'
 import type { AgentEvent } from '@superone/shared/agent-types'
-import { MobileBroadcaster } from '../remote/mobile-broadcaster'
+import { phoneEventPath } from '../remote/test-phone-topics'
 import type { Session, SessionManager } from '../session/types'
 
 function makeSignal(aborted = false): AbortSignal {
@@ -68,7 +68,7 @@ describe('mobile attention from Claude prompts', () => {
         ...permissions.values(), ...questions.values(), ...plans.values(), ...elicitations.values(),
       ].map(entry => entry.event),
     } as unknown as Session
-    const broadcaster = new MobileBroadcaster({ getSession: () => session } as unknown as SessionManager, {
+    const path = phoneEventPath(() => session, {
       sendAgentEvent: async (event, targets) => {
         // The phone has never opened this session, so only global summaries reach it.
         expect(targets).toBeUndefined()
@@ -76,7 +76,8 @@ describe('mobile attention from Claude prompts', () => {
       },
     })
     const emit = (event: AgentEvent) => {
-      broadcasts.push(broadcaster.broadcast({ ...event, sessionId: session.id }))
+      path.publish({ ...event, sessionId: session.id })
+      broadcasts.push(Promise.resolve())
     }
     const { canUseTool } = createCanUseTool(permissions, questions, plans, emit)
     const onElicitation = createOnElicitation(elicitations, emit)

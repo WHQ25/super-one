@@ -30,6 +30,7 @@ import { fetchModels } from './claude-models'
 import { AgentIpcChannels, type AgentEvent, type AgentPrewarmHint, type CodexCollaborationMode, type CodexPermissionPreset, type CodexReasoningEffort, type ModelOption, type PermissionMode, type QuestionAnnotations, type RemoteCommand, type ResourceScope, type SandboxMode, type SendMessageRequest, type TerminalEvent } from '@superone/shared/agent-types'
 import { baseSessionProviderId } from '@superone/shared/session-provider-definitions'
 import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
+import { localSessionEnvironmentId } from '../environment/session-identity'
 import type { RemoteControlService, RemoteResponder } from '../remote-control-service'
 import { stripMessagesForRemote, stripEventForRemote } from '../remote-control-service'
 import { trace } from './event-trace'
@@ -193,6 +194,13 @@ export class AgentService {
 
   setTerminalManager(mgr: import('../terminal/terminal-manager').TerminalManager): void {
     this.terminalManager = mgr
+  }
+
+  private sessionForegroundListener: ((windowId: number, ref: { environmentId: string; sessionId: string }, foreground: boolean, sender: Electron.WebContents) => void) | null = null
+
+  /** Told which session each window's views show; main keeps the renderer's topics from it. */
+  setSessionForegroundListener(listener: (windowId: number, ref: { environmentId: string; sessionId: string }, foreground: boolean, sender: Electron.WebContents) => void): void {
+    this.sessionForegroundListener = listener
   }
 
   /** Where environment events (no session) go: the main event hub in production. */
@@ -4217,8 +4225,10 @@ export class AgentService {
       try { mgr.setActiveSession(projectPath, sessionId) } catch { /* belongs to another project */ }
     })
 
-    ipcMain.handle(AgentIpcChannels.SET_SESSION_FOREGROUND, (_event, sessionId: string, foreground: boolean) => {
+    ipcMain.handle(AgentIpcChannels.SET_SESSION_FOREGROUND, (event, sessionId: string, foreground: boolean, projectPath?: string) => {
       this.requireSessionManager().setSessionForeground(sessionId, foreground)
+      const environmentId = (projectPath && parseRemoteProjectKey(projectPath)?.connectionId) || localSessionEnvironmentId()
+      this.sessionForegroundListener?.(event.sender.id, { environmentId, sessionId }, foreground, event.sender)
     })
 
     ipcMain.handle(AgentIpcChannels.GET_LIVE_SNAPSHOTS, () => {

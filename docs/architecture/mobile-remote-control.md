@@ -65,12 +65,19 @@ Rules:
 Every event in desktop main leaves through `SessionEventHub`
 (`apps/desktop/src/main/stream/session-event-hub.ts`), tagged with where it
 entered (a local `Session`, environment state, lists, presence, a remote node).
-The renderer transport, notifications, the phone pipeline and the other
-in-process consumers subscribe by source; none is sent from its call site.
+In-process consumers subscribe by source; frontends receive by topic. Each event
+is published to its one topic (`publishHubEvent` in `stream/desktop-topics.ts`),
+and a local session's event first publishes its `session_activity` summary to
+the session list topic. Each online phone holds a topic connection
+(`remote/phone-topics.ts`): the session list, projects, drafts, terminal list
+and environment notices always; a session while the phone subscribes to or
+controls it; a terminal while it watches or controls it.
 
-`MobileBroadcaster` (`apps/desktop/src/main/remote/mobile-broadcaster.ts`) routes
-each session event to its subscribed devices and, for progressive devices, applies
-the summary projection ([below](#progressive-session-loading)).
+`MobileBroadcaster` (`apps/desktop/src/main/remote/mobile-broadcaster.ts`) is the
+phones' delivery group: the topic hub hands it each item once with the phones
+it reached. List and environment topics go to every phone; a session's events
+go to the phones its topic reached and, for progressive devices, get the
+summary projection ([below](#progressive-session-loading)).
 `RemoteControlService#sendAgentEvent` then runs the `mobile` profile
 (`MobileEventProfile`, `apps/desktop/src/main/stream/mobile-profile.ts`) and
 batches before encryption. A golden test on recorded sessions

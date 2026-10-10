@@ -33,10 +33,12 @@ vi.mock('../db-sessions', () => ({
 
 import { RemoteControlService } from '../remote-control-service'
 import { MobileBroadcaster } from '../remote/mobile-broadcaster'
+import { PhoneTopics } from '../remote/phone-topics'
+import { createDesktopTopicHub, publishHubEvent } from './desktop-topics'
 import { setProgressiveSession, projectProgressiveMessage, subscribeDetail, unsetProgressiveSession } from '../remote/progressive-session'
 import { buildProgressiveBootstrap } from '../agent/progressive-bootstrap'
 import { stripMessagesForRemote } from '../remote-content'
-import type { Session, SessionManager } from '../session/types'
+import type { Session, SessionLifecycleEvent, SessionManager } from '../session/types'
 
 /**
  * What a relayed phone pays today for recorded session output, measured on the
@@ -108,8 +110,11 @@ async function relayService() {
   }
 }
 
-function fakeSession(sessionId: string, messages: () => ChatMessage[]): Session {
+function fakeSession(sessionId: string, messages: () => ChatMessage[]): Session & { emit(event: SessionLifecycleEvent): void } {
+  const listeners = new Set<(event: SessionLifecycleEvent) => void>()
   return {
+    onLifecycle: (listener: (event: SessionLifecycleEvent) => void) => { listeners.add(listener); return () => listeners.delete(listener) },
+    emit: (event: SessionLifecycleEvent) => { for (const listener of listeners) listener(event) },
     id: sessionId,
     projectPath: PROJECT,
     ephemeral: false,
@@ -126,7 +131,7 @@ function fakeSession(sessionId: string, messages: () => ChatMessage[]): Session 
     activityStatus: () => 'idle',
     seenCompletedMessageId: null,
     realtimeActive: false,
-  } as unknown as Session
+  } as unknown as Session & { emit(event: SessionLifecycleEvent): void }
 }
 
 const reducerPorts = (): ChatCorePorts => ({ now: () => 0, id: (prefix) => `${prefix}id`, streaming: createStreamingToolInputStore() })
@@ -156,14 +161,21 @@ async function measureRecording({ recording, events }: Recording) {
   let reduced = createDefaultChatCoreSession()
   const ports = reducerPorts()
   const session = fakeSession(sessionId, () => reduced.messages)
-  const broadcaster = new MobileBroadcaster({ getSession: (id: string) => id === sessionId ? session : undefined } as unknown as SessionManager, relay.service)
+  const getSession = (id: string) => id === sessionId ? session : undefined
+  // Main's phone path: hub event → topic → the phones' delivery group.
+  const topics = createDesktopTopicHub()
+  const phones = new PhoneTopics(topics, new MobileBroadcaster({ getSession } as unknown as SessionManager, relay.service, 'env-local'), 'env-local')
+  phones.online(PHONE, 'relay')
+  phones.watchSession(session)
+  session.emit({ type: 'subscriber_added', sessionId, deviceId: PHONE })
 
   // Live turn: a progressive phone watching the session while it streams.
   setProgressiveSession(PHONE, sessionId)
   for (const raw of events.filter((event) => typeof event.type === 'string')) {
     const event = { ...raw, sessionId, projectPath: PROJECT } as AgentEvent
     reduced = { ...reduced, ...applyEventToSession(reduced, event, ports) }
-    await broadcaster.broadcast(event)
+    publishHubEvent(topics, { event, source: 'session', sessionId }, { localEnvironmentId: 'env-local', getSession, spawnParentOf: () => null })
+    await vi.advanceTimersByTimeAsync(0)
     vi.advanceTimersByTime(EVENT_SPACING_MS)
   }
   vi.advanceTimersByTime(1_000)

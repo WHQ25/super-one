@@ -80,14 +80,15 @@ Session ownership is a **first-class property of the `Session` class itself**, n
 
 This owner model covers sessions this desktop runs. A phone on a remote-node session holds the node's control lease instead, as a `delegate` of this desktop ([mobile-remote-control.md](../../../../docs/architecture/mobile-remote-control.md#sessions-on-a-remote-node)); the node database is opened only when the desktop node host runs, so local sessions do not move onto leases.
 
-Main publishes every event through `SessionEventHub` (`src/main/stream/`). Renderer IPC is a broadcast to every window: the main window holds every session it lists, and a session window also follows its side chats and draft-to-session id changes, so a per-window session filter would drop events it needs.
+Main publishes every event through `SessionEventHub` (`src/main/stream/`). In-process consumers with their own state (bookkeeping, automations, notifications, collaboration, scheduled sends) subscribe by source. Frontends receive by topic: `publishHubEvent` (`stream/desktop-topics.ts`) publishes each event to its one topic (a session, the session list, projects, drafts, a terminal, the terminal list, environment notices) on the `TopicHub` from `@superone/runtime/stream`, and each frontend connection receives the topics it follows. The renderer connection follows the union of what the windows show (`stream/renderer-interest.ts`): every local session and terminal (the sidebar and terminal panel list them), plus the remote sessions a window shows (`setSessionForeground`, per window, released on window close) or the chat follows, and attached remote terminals. Delivery to windows stays a broadcast: a session window also follows its side chats and draft-to-session id changes, so a per-window filter would drop events it needs. Each online phone has its own connection (`remote/phone-topics.ts`); list, draft and recovery cursors for topics live in `stream/topic-recovery.ts`.
 
 Modules under `apps/desktop/src/main/remote/`:
 
 | Module | Responsibility |
 |---|---|
 | `device-registry.ts` | Single device-disconnect entry: `handleDeviceDisconnected(deviceId)` walks `sessionManager.forEachSession` and calls `release(deviceId) + unsubscribe(deviceId)`. Also `unsubscribeAll` / `releaseAll` for partial cleanups |
-| `mobile-broadcaster.ts` | Routes agent events to mobile transport based on `session.subscribers` / `session.owner`. Filter decision lives here, not in transport |
+| `phone-topics.ts` | One topic connection per online phone: lists, drafts and environment notices always; a session while the phone subscribes to or holds it; a terminal while it watches or writes it |
+| `mobile-broadcaster.ts` | The phones' delivery group: list topics to every phone, a session's events to the phones its topic reached, summarized for progressive phones; terminal topics through `terminal-broadcaster.ts` |
 
 `RemoteControlService` is a pure transport (relay + LAN, frame encoding, encryption). It no longer holds session-control state — `subscribedSession` and `remoteSessionFilter` were deleted; `subscribeSession/unsubscribeSession/setRemoteSessionFilter/clearRemoteSessionFilter/getSubscribedSession` were removed.
 

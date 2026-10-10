@@ -133,8 +133,8 @@ const agentAPI = {
   activateSession: (projectPath: string, sessionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.ACTIVATE_SESSION, projectPath, sessionId),
 
-  setSessionForeground: (sessionId: string, foreground: boolean) =>
-    ipcRenderer.invoke(AgentIpcChannels.SET_SESSION_FOREGROUND, sessionId, foreground),
+  setSessionForeground: (sessionId: string, foreground: boolean, projectPath?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.SET_SESSION_FOREGROUND, sessionId, foreground, projectPath),
 
   getLiveSnapshots: () =>
     ipcRenderer.invoke(AgentIpcChannels.GET_LIVE_SNAPSHOTS),

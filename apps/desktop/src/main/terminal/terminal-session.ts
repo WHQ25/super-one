@@ -296,6 +296,11 @@ export class TerminalSession {
     return snapshot
   }
 
+  /** Last output sequence; output frames carry `fromSeq..toSeq` above the attach snapshot's cut. */
+  get outputSequence(): number {
+    return this.seq
+  }
+
   async snapshotFrames(requester: 'local' | string): Promise<TerminalEvent[]> {
     await new Promise<void>((resolve) => this.term.write('', resolve))
     const cut = this.seq

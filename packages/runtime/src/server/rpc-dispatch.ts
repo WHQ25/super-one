@@ -34,7 +34,8 @@ import { settingsFromSessionProviderConfig, type NodeSessionRecord } from '../se
 import type { AuthenticatedClient } from './auth-service'
 import { isNodeMutatingCall } from './rpc-mutating-methods'
 import { unsupportedMethodError } from './unsupported'
-import { openEventStream, type EventStreamFilter } from './event-stream'
+import { openEventStream, streamFilterMatcher, type EventStreamFilter } from './event-stream'
+import { readTopicRef, type TopicRef } from '@superone/shared/environment/topics'
 import type {
   ArtifactZonePort,
   RpcContext as HostRpcContext,
@@ -2878,9 +2879,11 @@ function streamFilter(p: Record<string, unknown>): EventStreamFilter {
     Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string' && v.length > 0) : null
   const ids = strings(p.aggregateIds)
   const types = strings(p.aggregateTypes) as EnvironmentAggregateType[] | null
+  const topics = Array.isArray(p.topics) ? p.topics.map(readTopicRef).filter((topic): topic is TopicRef => topic !== null) : null
   return {
     ...(ids ? { aggregateIds: new Set(ids) } : {}),
     ...(types ? { aggregateTypes: new Set(types) } : {}),
+    ...(topics ? { topics } : {}),
   }
 }
 
@@ -2889,9 +2892,7 @@ function handleSessionEvents(payload: unknown, ctx: RpcContext): RpcResult {
   if (denied) return denied
   const p = asRecord(payload)
   const after = String(p.afterSequence ?? '0')
-  const { aggregateIds, aggregateTypes } = streamFilter(p)
-  const events = ctx.sessions.listEventsAfter(after, ctx.client).filter((e) =>
-    (!aggregateIds || aggregateIds.has(e.aggregateId)) && (!aggregateTypes || aggregateTypes.has(e.aggregateType)))
+  const events = ctx.sessions.listEventsAfter(after, ctx.client).filter(streamFilterMatcher(streamFilter(p)))
   return { result: { events } }
 }
 
@@ -2914,6 +2915,7 @@ function handleSessionSubscribe(payload: unknown, ctx: RpcContext): RpcResult {
   if (versions === null) return { error: { code: 'invalid_argument', message: 'versions must map session ids to versions' } }
   const close = openEventStream({
     source: ctx.sessions,
+    environmentId: ctx.identity.environmentId,
     reader: ctx.client,
     cursor: { afterSequence, epoch: typeof p.epoch === 'string' ? p.epoch : undefined, versions },
     filter: streamFilter(p),

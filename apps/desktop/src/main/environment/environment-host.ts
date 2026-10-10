@@ -1672,8 +1672,15 @@ export class EnvironmentHost {
   private unfollowRemoteSession(key: string): void {
     const followed = this.followedSessions.get(key)
     if (!followed) return
-    this.followedSessions.delete(key)
+    this.dropFollowed(key, followed)
     void followed.then((session) => session.unfollow(), () => {})
+  }
+
+  private dropFollowed(key: string, followed: Promise<FollowedRemoteSession>): void {
+    if (this.followedSessions.get(key) !== followed) return
+    this.followedSessions.delete(key)
+    const separator = key.indexOf(':')
+    this.followListener?.({ environmentId: key.slice(0, separator), sessionId: key.slice(separator + 1) }, false)
   }
 
   private abortConnectionSessionDrains(connectionId: string, _reason: string): void {
@@ -1789,15 +1796,14 @@ export class EnvironmentHost {
           }
           for (const agentEvent of mapper.map(envelope)) this.agentEventSink?.(agentEvent)
         },
-        end: () => {
-          if (this.followedSessions.get(key) === followed) this.followedSessions.delete(key)
-        },
+        end: () => this.dropFollowed(key, followed),
         resync: () => this.resync(connectionId, input),
       }, barrier ?? (async () => (await gateway.sessions.load!({ session: { environmentId, sessionId: input.sessionId }, limit: 1 })).cursor.version))
       return session
     })()
     this.followedSessions.set(key, followed)
-    followed.catch(() => { if (this.followedSessions.get(key) === followed) this.followedSessions.delete(key) })
+    this.followListener?.({ environmentId: connectionId, sessionId: input.sessionId }, true)
+    followed.catch(() => this.dropFollowed(key, followed))
     return followed
   }
 
@@ -1981,6 +1987,13 @@ export class EnvironmentHost {
     sink: ((event: import('@superone/shared/agent-types').AgentEvent) => void) | null,
   ): void {
     this.agentEventSink = sink
+  }
+
+  private followListener: ((ref: { environmentId: string; sessionId: string }, followed: boolean) => void) | null = null
+
+  /** Told when the chat starts or stops following a remote session; its events reach the window meanwhile. */
+  setFollowListener(listener: ((ref: { environmentId: string; sessionId: string }, followed: boolean) => void) | null): void {
+    this.followListener = listener
   }
 
   /** One op on a remote session's mod surface; mutating ops take the control lease. */

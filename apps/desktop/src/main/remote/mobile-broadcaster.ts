@@ -1,16 +1,31 @@
 import { detailUpdates, isProgressiveSession, projectProgressiveEvent } from './progressive-session'
 import { takeAttachmentOrigin, withoutAttachmentBytes } from './attachment-echo'
 import { SESSION_ACTIVITY_EVENTS } from '@superone/shared/session-activity'
-import type { AgentEvent, ChatMessage } from '@superone/shared/agent-types'
+import { withoutDraftAttachmentBytes } from '@superone/shared/environment/draft-content'
+import type { AgentEvent, ChatMessage, TerminalEvent } from '@superone/shared/agent-types'
+import type { TopicRef } from '@superone/shared/environment/topics'
+import type { TopicGroup } from '@superone/runtime/stream'
 import type { Session, SessionManager } from '../session/types'
+import type { DesktopTopicItem } from '../stream/desktop-topics'
+import type { HubSource } from '../stream/session-event-hub'
 import { trace } from '../agent/event-trace'
 import { liveSessionActivity } from './live-session-activity'
 import log from '../logger'
-import { localSessionEnvironmentId } from '../environment/session-identity'
 
 export interface MobileTransport {
   sendAgentEvent(event: AgentEvent, targetDeviceIds?: string[]): Promise<void>
 }
+
+export interface PhoneTerminalTransport {
+  deliver(event: TerminalEvent, deviceIds: readonly string[]): void
+}
+
+/**
+ * Sources a phone renders. Presence reaches phones as its own notices
+ * (`PresenceCoordinator`), settings fallbacks and remote-node events are
+ * desktop-window state, and routed node sessions have their own stream.
+ */
+const PHONE_SOURCES = new Set<HubSource>(['session', 'environment', 'draft', 'list', 'remote-update'])
 
 /**
  * Prompts are rare and block the agent until answered, so their routing goes to
@@ -22,46 +37,67 @@ function logInteractionRoute(event: AgentEvent, outcome: string, detail: Record<
   log.info('[MobileBroadcaster] %s %s requestId=%s sessionId=%s %o', event.type, outcome, event.request.requestId, event.sessionId, detail)
 }
 
-export class MobileBroadcaster {
+/**
+ * The sidebar summary a session event changes, for every phone's session
+ * list (`sessionList` topic); null when the event leaves the summary alone.
+ */
+export function sessionActivityEvent(session: Session, event: AgentEvent, parentSessionId: string | null): AgentEvent | null {
+  if (session.ephemeral || !SESSION_ACTIVITY_EVENTS.has(event.type)) return null
+  return {
+    type: 'session_activity',
+    activity: liveSessionActivity(session, parentSessionId),
+    ...(event.type === 'status_change' && event.status === 'idle' ? { completed: true } : {}),
+  }
+}
+
+/**
+ * The phones' delivery group: the topic hub hands it each item once with the
+ * phones it reaches. List, draft and environment topics go to every phone; a
+ * session's events go to the phones following it, summarized for progressive
+ * ones (docs/architecture/mobile-remote-control.md).
+ */
+export class MobileBroadcaster implements TopicGroup<DesktopTopicItem> {
   constructor(
     private readonly sessionManager: SessionManager,
     private readonly transport: MobileTransport,
-    /** Spawn grants live in the database; without one, no session has a parent. */
-    private readonly spawnParentOf: (sessionId: string) => string | null = () => null,
+    /** Stamped on session events, so a phone can tell this desktop's sessions from routed ones. */
+    private readonly localEnvironmentId: string,
+    private readonly terminals?: PhoneTerminalTransport,
   ) {}
 
-  async broadcast(event: AgentEvent): Promise<void> {
-    if (!event.sessionId) {
-      await this.transport.sendAgentEvent(event)
+  deliver(topic: TopicRef, item: DesktopTopicItem, deviceIds: readonly string[]): void {
+    if (item.kind === 'terminal') {
+      this.terminals?.deliver(item.event, deviceIds)
       return
     }
-    const session = this.sessionManager.getSession(event.sessionId)
+    if (item.source && !PHONE_SOURCES.has(item.source)) return
+    const event = item.event
+    if (topic.kind === 'session') {
+      // Routed node sessions reach phones on their own stream.
+      if (topic.environmentId === this.localEnvironmentId) void this.deliverSession(event, deviceIds)
+      return
+    }
+    void this.transport.sendAgentEvent(
+      event.type === 'draft_changed' && event.draft ? { ...event, draft: withoutDraftAttachmentBytes(event.draft) } : event,
+    )
+  }
+
+  /** A local session's event, to the phones following the session. */
+  async deliverSession(event: AgentEvent, deviceIds: readonly string[]): Promise<void> {
+    const session = event.sessionId ? this.sessionManager.getSession(event.sessionId) : null
     if (!session) {
       trace('remote.broadcast', 'drop:no-session', { type: event.type, sessionId: event.sessionId })
       logInteractionRoute(event, 'drop:no-session', {})
       return
     }
-    const messages = session.snapshot.messages
-    if (!session.ephemeral && SESSION_ACTIVITY_EVENTS.has(event.type)) {
-      await this.transport.sendAgentEvent({
-        type: 'session_activity',
-        activity: liveSessionActivity(session, this.spawnParentOf(session.id)),
-        ...(event.type === 'status_change' && event.status === 'idle' ? { completed: true } : {}),
-      })
-    }
-    const targets = new Set<string>(session.subscribers)
-    if (session.owner.kind === 'remote') targets.add(session.owner.deviceId)
+    const targets = new Set(deviceIds)
     if (targets.size === 0) {
-      trace('remote.broadcast', 'drop:no-target', {
-        type: event.type,
-        sessionId: event.sessionId,
-        owner: session.owner.kind,
-        subscribers: [...session.subscribers],
-      })
+      trace('remote.broadcast', 'drop:no-target', { type: event.type, sessionId: event.sessionId, owner: session.owner.kind })
       logInteractionRoute(event, 'drop:no-target', { owner: session.owner.kind })
       return
     }
-    event = { ...event, environmentId: localSessionEnvironmentId() }
+    const messages = session.snapshot.messages
+    event = { ...event, environmentId: this.localEnvironmentId }
     trace('remote.broadcast', 'route', { type: event.type, sessionId: event.sessionId, targets: [...targets] })
     logInteractionRoute(event, 'route', { targets: [...targets] })
     // The sender of a message with attachments gets the echo without the bytes.
@@ -70,12 +106,12 @@ export class MobileBroadcaster {
       : undefined
     if (origin && targets.has(origin)) {
       targets.delete(origin)
-      await this.deliver(withoutAttachmentBytes(event), [origin], session, messages)
+      await this.send(withoutAttachmentBytes(event), [origin], session, messages)
     }
-    await this.deliver(event, [...targets], session, messages)
+    await this.send(event, [...targets], session, messages)
   }
 
-  private async deliver(event: AgentEvent, targets: string[], session: Session, messages: readonly ChatMessage[]): Promise<void> {
+  private async send(event: AgentEvent, targets: string[], session: Session, messages: readonly ChatMessage[]): Promise<void> {
     const legacy = targets.filter(deviceId => !isProgressiveSession(deviceId, session.id))
     const progressive = targets.filter(deviceId => isProgressiveSession(deviceId, session.id))
     if (legacy.length) await this.transport.sendAgentEvent(event, legacy)

@@ -568,11 +568,11 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
   // (rather than in mosaic/mini-window-specific code) covers all three for free.
   useEffect(() => {
     if (!displayedSessionId || !foreground) return
-    void window.agent.setSessionForeground(displayedSessionId, true)
+    void window.agent.setSessionForeground(displayedSessionId, true, projectPath ?? undefined)
     return () => {
-      void window.agent.setSessionForeground(displayedSessionId, false)
+      void window.agent.setSessionForeground(displayedSessionId, false, projectPath ?? undefined)
     }
-  }, [displayedSessionId, foreground])
+  }, [displayedSessionId, foreground, projectPath])
 
   useEffect(() => {
     void useSettingsStore.getState().ensureMcpIconSources()

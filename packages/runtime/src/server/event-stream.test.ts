@@ -36,7 +36,7 @@ const flush = () => new Promise<void>((resolve) => queueMicrotask(resolve))
 
 function open(events: EventLog, cursor: EventStreamCursor, filter = {}) {
   const frames: SessionStreamFrame[] = []
-  const close = openEventStream({ source: source(events), reader: { clientSessionId: 'c' }, cursor, filter, push: (f) => { frames.push(f) } })
+  const close = openEventStream({ source: source(events), environmentId: 'env', reader: { clientSessionId: 'c' }, cursor, filter, push: (f) => { frames.push(f) } })
   const texts = () => frames.flatMap((f) => f.events).map((e) => (e.payload as { event: { delta?: { text: string } } }).event.delta?.text).filter(Boolean)
   return { frames, close, texts }
 }
@@ -114,6 +114,7 @@ describe('openEventStream', () => {
 
     const { frames, texts } = open(events, { afterSequence: '0', epoch: events.epoch, versions: { s1: 1 } })
     expect(frames[0]?.resnapshot).toEqual(['s1'])
+    expect(frames[0]?.recover).toEqual([{ kind: 'session', environmentId: 'env', sessionId: 's1' }])
     expect(frames.flatMap((f) => f.events)).toEqual([])
 
     text(events, 's1', 'm2', 'c')
@@ -135,5 +136,29 @@ describe('openEventStream', () => {
     text(events, 's1', 'm1', 'after')
     const { texts } = open(events, { afterSequence: '1' })
     expect(texts()).toEqual(['after'])
+  })
+
+  it('follows only the subscribed topics, a wildcard covering every session', async () => {
+    const events = log()
+    durable(events, 's1', 1)
+    durable(events, 's2', 2)
+    const one = open(events, { afterSequence: '0' }, { topics: [{ kind: 'session', environmentId: 'env', sessionId: 's2' }] })
+    const all = open(events, { afterSequence: '0' }, { topics: [{ kind: 'session', environmentId: 'env', sessionId: '*' }] })
+    const elsewhere = open(events, { afterSequence: '0' }, { topics: [{ kind: 'session', environmentId: 'other', sessionId: '*' }] })
+    durable(events, 's1', 3)
+    await flush()
+    expect(one.frames.flatMap((f) => f.events.map((e) => e.aggregateId))).toEqual(['s2'])
+    expect(all.frames.flatMap((f) => f.events.map((e) => e.aggregateId))).toEqual(['s1', 's2', 's1'])
+    expect(elsewhere.frames.flatMap((f) => f.events)).toEqual([])
+    // The cursor still moves past what the topic filter dropped.
+    expect(one.frames.at(-1)?.sequence).toBe('2')
+  })
+
+  it('names only the subscribed topics to recover after the node restarted', () => {
+    const events = log()
+    const { frames } = open(events, { afterSequence: '0', epoch: 'previous-process', versions: { s1: 1, s2: 4 } }, {
+      topics: [{ kind: 'session', environmentId: 'env', sessionId: 's2' }],
+    })
+    expect(frames[0]?.recover).toEqual([{ kind: 'session', environmentId: 'env', sessionId: 's2' }])
   })
 })

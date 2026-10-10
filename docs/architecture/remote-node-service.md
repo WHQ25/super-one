@@ -412,12 +412,20 @@ On connect:
 3. Open a session with `session.load`: its read-model state and newest
    messages, with the cursor `{ sequence, epoch, version }` they reflect.
 4. `session.subscribe` from that cursor. The node pushes frames over the
-   WebSocket, filtered by aggregate on the server: durable events after the
-   sequence merged with the ring's events after each session's version, then
-   live events as they are appended.
+   WebSocket, filtered on the server by aggregate or by topic (`topics`:
+   scoped refs from `@superone/shared/environment/topics`, a `*` session id
+   covering every session): durable events after the sequence merged with the
+   ring's events after each session's version, then live events as they are
+   appended.
 5. A frame names in `resnapshot` the sessions whose missed events are gone
    (retired on commit, evicted from the ring, or lost with a node restart's
-   epoch). The client reads those sessions again instead of continuing.
+   epoch), and the same sessions as scoped topics in `recover`. The client
+   reads those sessions again instead of continuing.
+
+Every topic kind recovers its own way: a session by this cursor and
+`resnapshot`; the session list, projects and drafts by snapshot plus versioned
+change events (`VersionedTopicLog`, `@superone/runtime/stream`); a terminal by
+output sequence plus the attach snapshot.
 
 The desktop keeps one subscription per node (`remote-session-feed.ts`), shared
 by the chat, relayed phones and the collaboration watcher. A followed session

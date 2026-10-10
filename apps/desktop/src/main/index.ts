@@ -661,21 +661,15 @@ sessionEvents.subscribe({
 })
 sessionEvents.subscribe({
   name: 'renderer',
-  sources: ['session', 'environment', 'draft', 'presence', 'settings', 'remote-update'],
+  sources: ['session', 'environment', 'draft', 'presence', 'settings', 'remote-update', 'remote-node'],
   replay: true,
   deliver: ({ event }) => publishAgentEvent(event),
 })
 sessionEvents.subscribe({
-  name: 'remote-node',
+  name: 'remote-mcp-apps',
   sources: ['remote-node'],
   replay: false,
-  deliver: ({ event }) => {
-    observeRemoteMcpAppEvent(event)
-    // Sent raw, not through publishAgentEvent: the renderer transport encodes
-    // Codex items as patches against baselines that a remote rehydrate does
-    // not reset, so a patch would append to the rehydrated item.
-    safeSend(AgentIpcChannels.EVENT, event)
-  },
+  deliver: ({ event }) => observeRemoteMcpAppEvent(event),
 })
 const deviceRegistry = new DeviceRegistry(sessionManager)
 const remoteCallbacks: RemoteControlCallbacks = {
@@ -2375,6 +2369,9 @@ function registerIpcHandlers(): void {
       },
     ) => {
       const { getEnvironmentHost } = await import('./environment')
+      // The renderer just rehydrated this session: Codex items it holds are the
+      // node's, not the ones sent before, so the next update goes whole.
+      rendererAgentEventTransport.resetCodexBaselines({ projectPath: input.projectPath, sessionId: input.sessionId })
       return getEnvironmentHost().resumeRemoteSessionEvents(connectionId, input)
     },
   )

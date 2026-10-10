@@ -233,8 +233,9 @@ points code comments there, and deletes this plan and the proposal.
   by policy (relay: summarized load and stream, `session.subscribeDetail`);
   the desktop feed is an interest union that routed phones join, detail
   forwards to the node when the desktop's copy is summarized, and a tier
-  change realigns followers through snapshots. Remaining: shared envelope and
-  coalescer, per-method capabilities, node lab acceptance.
+  change realigns followers through snapshots. The client protocol
+  connection and request coalescer are shared (`rpc-connection.ts`).
+  Remaining: per-method capabilities, node lab acceptance.
 
 ## Open decisions
 

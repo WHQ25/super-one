@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import WebSocket from 'ws'
-import type { ControlLease, EnvironmentLiveStatus, EnvironmentUsageReport, ExecutionEnvironmentDescriptor, SessionStreamFrame, SessionDetailMessage, SessionStreamMessage, TerminalReadResult, TopicSubscribeInput } from '@superone/shared/environment'
+import type { ControlLease, EnvironmentLiveStatus, EnvironmentUsageReport, ExecutionEnvironmentDescriptor, TerminalReadResult, TopicSubscribeInput } from '@superone/shared/environment'
 import { DATABASE_SCHEMA_GENERATION, PROTOCOL_GENERATION } from '@superone/shared/environment'
 import { isNodeMutatingCall } from '@superone/runtime/server/rpc-mutating-methods'
 import { dialWebSocket } from '@superone/runtime/server/node-socket'
@@ -12,6 +12,7 @@ import {
   type SecureChannel,
 } from '@superone/runtime/server/secure-channel-client'
 import { nodeWireCompression } from '@superone/runtime/server/wire-compression'
+import { RpcConnection, type RpcStreamHandlers } from '@superone/shared/environment/rpc-connection'
 import { WireDecoder, WireEncoder } from '@superone/shared/environment/wire'
 import type { DetailUpdate } from '@superone/shared/environment/detail'
 import type { TopicRef } from '@superone/shared/environment/topics'
@@ -65,22 +66,6 @@ export interface NodeRoute {
   dial?: NodeSocketDialer
 }
 
-type Pending = {
-  resolve: (value: unknown) => void
-  reject: (err: Error) => void
-  timer: ReturnType<typeof setTimeout> | undefined
-  /** Socket that sent this request — stale close events must not touch other sockets. */
-  socketId: number
-}
-
-/** A `topic.subscribe` stream lives on the socket it was opened on. */
-type Stream = {
-  socketId: number
-  onFrame: (frame: SessionStreamFrame) => void
-  /** The socket went away; resubscribe from the last frame's `sequence`. */
-  onEnd: (err: Error) => void
-}
-
 /** An open `topic.subscribe` stream. */
 export interface TopicStream {
   close(): void
@@ -88,11 +73,11 @@ export interface TopicStream {
   update(topics: TopicRef[]): Promise<void>
 }
 
-/** An expanded row's detail packets; they end with the socket's connection state. */
-type DetailListener = {
-  socketId: number
-  onUpdate: (update: DetailUpdate) => void
-}
+/** Pure reads the sidebar, status bar and pickers issue alike; identical ones in flight share a request. */
+const COALESCED_READS: ReadonlySet<string> = new Set([
+  'environment.descriptor', 'environment.health', 'environment.status', 'environment.usage',
+  'project.list', 'session.list', 'git.status', 'git.branches',
+])
 
 const RPC_TIMEOUT_MS = 15_000
 /** Read-only git that still shells out on the node (status/branches/diff). */
@@ -156,9 +141,8 @@ export class NodeRpcClient {
   private nextSocketId = 1
   /** Socket mid-handshake; not yet promoted to `ws`. Closed by `close()`. */
   private connectingWs: NodeSocket | null = null
-  private pending = new Map<string, Pending>()
-  private readonly streams = new Map<string, Stream>()
-  private readonly detailListeners = new Map<string, DetailListener>()
+  /** The promoted socket's protocol connection: its requests, streams and detail. */
+  private conn: RpcConnection | null = null
   private closed = false
   private connectPromise: Promise<void> | null = null
   private connectGeneration = 0
@@ -346,6 +330,20 @@ export class NodeRpcClient {
             const socketId = this.nextSocketId++
             this.ws = ws
             this.wsSocketId = socketId
+            const conn = new RpcConnection((message) => {
+              try {
+                this.sendFrame(ws, message)
+              } catch (err) {
+                throw transportError(err instanceof Error ? err.message : String(err))
+              }
+            }, {
+              protocolVersion: PROTOCOL_GENERATION.current,
+              newId: randomUUID,
+              responseError: (error) => rpcResponseError(error.code, error.message, error.details),
+              timeoutError: (method) => transportError(`rpc timeout: ${method}`),
+              coalesces: (method) => COALESCED_READS.has(method),
+            })
+            this.conn = conn
             ws.on('message', (data) => {
               let msg: unknown
               try {
@@ -358,7 +356,7 @@ export class NodeRpcClient {
                 }
                 return
               }
-              if (msg !== undefined) this.onMessage(msg)
+              if (msg !== undefined) this.onMessage(conn, msg)
             })
             ws.on('close', () => {
               // Intentional drop/close remove listeners first — only unexpected
@@ -367,10 +365,11 @@ export class NodeRpcClient {
               if (wasCurrent) {
                 this.ws = null
                 this.wsSocketId = 0
+                this.conn = null
                 this.stopHeartbeat()
               }
-              // Only reject requests sent on THIS socket — never a replacement socket.
-              this.rejectPendingForSocket(socketId, transportError('websocket closed'))
+              // Only this socket's requests — never a replacement socket's.
+              conn.close(transportError('websocket closed'))
               if (wasCurrent && !this.closed) {
                 this.opts.onUnexpectedDisconnect?.('websocket closed')
               }
@@ -477,13 +476,12 @@ export class NodeRpcClient {
 
   private dropCurrentSocket(): void {
     const old = this.ws
-    const oldId = this.wsSocketId
+    const oldConn = this.conn
     this.ws = null
     this.wsSocketId = 0
+    this.conn = null
     this.stopHeartbeat()
-    if (oldId) {
-      this.rejectPendingForSocket(oldId, transportError('websocket closed'))
-    }
+    oldConn?.close(transportError('websocket closed'))
     if (old) {
       try {
         old.removeAllListeners()
@@ -559,44 +557,19 @@ export class NodeRpcClient {
     envId: string,
     idempotencyKey: string | undefined,
   ): Promise<T> {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+    const conn = this.conn
+    if (!conn || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
       throw transportError('not connected')
     }
     const socketId = this.wsSocketId
-    const requestId = randomUUID()
-    const message = {
-      type: 'rpc',
-      requestId,
-      method,
-      payload,
+    return conn.request<T>(method, payload, {
       environmentId: envId,
-      protocolVersion: PROTOCOL_GENERATION.current,
       idempotencyKey,
-    }
-
-    return new Promise<T>((resolve, reject) => {
-      const timeoutMs = rpcTimeoutMs(method)
-      const timer = timeoutMs === undefined ? undefined : setTimeout(() => {
-        this.pending.delete(requestId)
-        reject(transportError(`rpc timeout: ${method}`))
-        // A silent timeout on the live socket means the transport is gone even
-        // though no `close` arrived (dead SSH tunnel). Escalate so the supervisor
-        // reconnects instead of leaving every later send to time out too.
-        this.reportTransportDead(`rpc timeout: ${method}`, socketId)
-      }, timeoutMs)
-      this.pending.set(requestId, {
-        resolve: (v) => resolve(v as T),
-        reject,
-        timer,
-        socketId,
-      })
-      try {
-        this.sendFrame(this.ws!, message)
-      } catch (err) {
-        this.pending.delete(requestId)
-        clearTimeout(timer)
-        reject(transportError(err instanceof Error ? err.message : String(err)))
-      }
+      timeoutMs: rpcTimeoutMs(method),
+      // A silent timeout on the live socket means the transport is gone even
+      // though no `close` arrived (dead SSH tunnel). Escalate so the supervisor
+      // reconnects instead of leaving every later send to time out too.
+      onTimeout: () => this.reportTransportDead(`rpc timeout: ${method}`, socketId),
     })
   }
 
@@ -607,29 +580,29 @@ export class NodeRpcClient {
    */
   async subscribeEvents(
     input: Omit<TopicSubscribeInput, 'subscriptionId'>,
-    handlers: Omit<Stream, 'socketId'>,
+    handlers: RpcStreamHandlers,
   ): Promise<TopicStream> {
     if (this.closed) throw transportError('client closed')
     const envId = this.opts.expectedEnvironmentId
     if (!envId) throw rpcResponseError('invalid_argument', 'environmentId required')
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) throw transportError('not connected')
+    const conn = this.conn
+    if (!conn || !this.ws || this.ws.readyState !== WebSocket.OPEN) throw transportError('not connected')
     const subscriptionId = randomUUID()
-    const socketId = this.wsSocketId
-    this.streams.set(subscriptionId, { socketId: this.wsSocketId, ...handlers })
+    conn.openStream(subscriptionId, handlers)
     try {
       await this.sendOnce('topic.subscribe', { ...input, subscriptionId }, envId, undefined)
     } catch (err) {
-      this.streams.delete(subscriptionId)
+      conn.closeStream(subscriptionId)
       throw err
     }
     return {
       close: () => {
-        if (!this.streams.delete(subscriptionId)) return
+        if (!conn.closeStream(subscriptionId)) return
         void this.rpc('topic.unsubscribe', { subscriptionId }).catch(() => {})
       },
       update: async (topics) => {
         // A stream whose socket is gone resubscribes with the current topics.
-        if (this.streams.get(subscriptionId)?.socketId !== socketId || this.wsSocketId !== socketId) return
+        if (this.conn !== conn || !conn.hasStream(subscriptionId)) return
         await this.sendOnce('topic.update', { subscriptionId, topics }, envId, undefined)
       },
     }
@@ -648,20 +621,21 @@ export class NodeRpcClient {
     input: { sessionId: string; detailRef: string; subscriptionId: string },
     onUpdate: (update: DetailUpdate) => void,
   ): Promise<DetailUpdate> {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) throw transportError('not connected')
+    const conn = this.conn
+    if (!conn || !this.ws || this.ws.readyState !== WebSocket.OPEN) throw transportError('not connected')
     const envId = this.opts.expectedEnvironmentId
     if (!envId) throw rpcResponseError('invalid_argument', 'environmentId required')
-    this.detailListeners.set(input.subscriptionId, { socketId: this.wsSocketId, onUpdate })
+    conn.watchDetail(input.subscriptionId, onUpdate)
     try {
       return await this.sendOnce<DetailUpdate>('session.subscribeDetail', input, envId, undefined)
     } catch (err) {
-      this.detailListeners.delete(input.subscriptionId)
+      conn.unwatchDetail(input.subscriptionId)
       throw err
     }
   }
 
   async unsubscribeDetail(input: { sessionId: string; subscriptionId: string }): Promise<void> {
-    if (!this.detailListeners.delete(input.subscriptionId)) return
+    if (!this.conn?.unwatchDetail(input.subscriptionId)) return
     await this.rpc('session.unsubscribeDetail', input).catch(() => {})
   }
 
@@ -750,7 +724,8 @@ export class NodeRpcClient {
     if (cancelConnect) {
       cancelConnect(transportError('client closed'))
     }
-    this.rejectAll(transportError('client closed'))
+    this.conn?.close(transportError('client closed'))
+    this.conn = null
     const connecting = this.connectingWs
     this.connectingWs = null
     if (connecting) {
@@ -840,71 +815,14 @@ export class NodeRpcClient {
     return state ? state.decoder.decode(state.channel.openBytes(data as Buffer)) : JSON.parse(data.toString())
   }
 
-  private onMessage(raw: unknown): void {
-    const msg = raw as {
-      type: string
-      requestId?: string
-      result?: unknown
-      error?: { code: string; message: string; details?: Record<string, unknown> }
-    }
-    if (!msg || typeof msg !== 'object') return
-    if (msg.type === 'pong') {
+  private onMessage(conn: RpcConnection, raw: unknown): void {
+    if ((raw as { type?: unknown } | null)?.type === 'pong') {
       // Any pong proves liveness, even a late one from a previous tick.
       this.pendingPingId = null
       this.missedPongs = 0
       return
     }
-    if (msg.type === 'stream') {
-      const { subscriptionId, frame } = raw as SessionStreamMessage
-      this.streams.get(subscriptionId)?.onFrame(frame)
-      return
-    }
-    if (msg.type === 'detail') {
-      const { update } = raw as SessionDetailMessage
-      this.detailListeners.get(update.subscriptionId)?.onUpdate(update)
-      return
-    }
-    if (!msg.requestId) return
-    const pending = this.pending.get(msg.requestId)
-    if (!pending) return
-    this.pending.delete(msg.requestId)
-    clearTimeout(pending.timer)
-    if (msg.type === 'rpc_error') {
-      // Server application/protocol errors — never classified as transport.
-      pending.reject(rpcResponseError(msg.error?.code || 'internal', msg.error?.message || 'rpc error', msg.error?.details))
-    } else {
-      pending.resolve(msg.result)
-    }
-  }
-
-  private rejectPendingForSocket(socketId: number, err: Error): void {
-    for (const [id, p] of this.pending) {
-      if (p.socketId !== socketId) continue
-      clearTimeout(p.timer)
-      p.reject(err)
-      this.pending.delete(id)
-    }
-    for (const [id, stream] of this.streams) {
-      if (stream.socketId !== socketId) continue
-      this.streams.delete(id)
-      stream.onEnd(err)
-    }
-    for (const [id, listener] of this.detailListeners) {
-      if (listener.socketId === socketId) this.detailListeners.delete(id)
-    }
-  }
-
-  private rejectAll(err: Error): void {
-    for (const [id, p] of this.pending) {
-      clearTimeout(p.timer)
-      p.reject(err)
-      this.pending.delete(id)
-    }
-    for (const [id, stream] of this.streams) {
-      this.streams.delete(id)
-      stream.onEnd(err)
-    }
-    this.detailListeners.clear()
+    conn.receive(raw)
   }
 }
 

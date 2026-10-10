@@ -393,6 +393,14 @@ interface RpcCommandEnvelope<T> {
 A retry with the same authenticated client and key returns the prior receipt
 instead of repeating the mutation.
 
+The client half of a connection is shared and Metro-safe
+(`packages/shared/src/environment/rpc-connection.ts`): request envelopes and
+their receipts, deadlines, pushed stream frames and detail packets, and
+sharing of identical in-flight reads (`request-coalescer.ts`). Each client
+keeps its own socket adapter for dialing, the channel and heartbeats, and
+starts a new connection with each socket (the desktop's
+`node-rpc-client.ts`).
+
 The descriptor advertises protocol and database-schema generations as
 `{ current, min, max }` (`PROTOCOL_GENERATION`, `DATABASE_SCHEMA_GENERATION` in
 `protocol.ts`); `negotiateHandshake` blocks the connection before mutable RPC

@@ -10,6 +10,9 @@ import {
   type SessionStore,
   type TurnRunner,
 } from './session-runtime'
+import { openNodeDatabase } from '../db'
+import { EventLog } from './event-log'
+import { sessionReadModel } from './read-model'
 
 function memoryPorts() {
   const rows = new Map<string, NodeSessionRecord>()
@@ -35,7 +38,7 @@ function memoryPorts() {
   }
   const events: SessionEventLog = {
     headSequence: () => '0',
-    onAppend: () => () => {},
+    epoch: 'test', streamingAfter: () => [], streaming: () => [], onAppend: () => () => {},
     listAfter: () => [],
     appendSession: () => {},
   }
@@ -259,8 +262,10 @@ describe('SessionRuntime send of a message that never ran', () => {
       if (!spawnable) throw new Error('spawn claude ENOENT')
       return { finalText: `re: ${text}`, providerResume: null }
     }
-    const { store, events, leases } = memoryPorts()
-    const runtime = new SessionRuntime(store, events, leases, 'env-retry', runner)
+    const { store, leases } = memoryPorts()
+    const db = openNodeDatabase(':memory:')
+    const events = new EventLog(db, 'env-retry')
+    const runtime = new SessionRuntime(store, events, leases, 'env-retry', runner, { readModel: sessionReadModel(db, events) })
     const session = runtime.create({ projectId: 'p', harnessId: 'claude' })
     const send = () => runtime.send({ sessionId: session.sessionId, text: 'task', clientMessageId: 'u1', client, ...lease })
 

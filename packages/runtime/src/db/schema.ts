@@ -74,8 +74,27 @@ CREATE TABLE IF NOT EXISTS environment_events (
   event_version INTEGER NOT NULL,
   payload_json TEXT NOT NULL,
   causation_request_id TEXT,
-  environment_id TEXT NOT NULL
+  environment_id TEXT NOT NULL,
+  session_version INTEGER
 );
+CREATE INDEX IF NOT EXISTS idx_environment_events_aggregate
+  ON environment_events(aggregate_type, aggregate_id, sequence);
+
+CREATE TABLE IF NOT EXISTS session_read_models (
+  session_id TEXT PRIMARY KEY NOT NULL,
+  applied_version INTEGER NOT NULL,
+  state_json TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS session_messages (
+  session_id TEXT NOT NULL,
+  message_id TEXT NOT NULL,
+  sort_order INTEGER NOT NULL,
+  message_json TEXT NOT NULL,
+  PRIMARY KEY (session_id, message_id)
+);
+CREATE INDEX IF NOT EXISTS idx_session_messages_order ON session_messages(session_id, sort_order);
 
 CREATE TABLE IF NOT EXISTS terminals (
   terminal_id TEXT PRIMARY KEY NOT NULL,

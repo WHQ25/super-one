@@ -773,6 +773,7 @@
       "name": "@superone/runtime",
       "version": "0.0.0",
       "dependencies": {
+        "@superone/chat-core": "workspace:*",
         "@superone/relay-client": "workspace:*",
         "@superone/shared": "workspace:*",
         "better-sqlite3": "^13.0.1",

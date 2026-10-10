@@ -7,7 +7,7 @@
  * Live catch-up still uses `session.events` with `afterSequence`.
  */
 
-import type { ChatMessageContext, ContentBlock, ImageAttachment } from '../agent-types'
+import type { ChatMessage, ChatMessageContext, ContentBlock, ImageAttachment } from '../agent-types'
 
 /** Tool use + result summary attached to an assistant message block. */
 export interface SessionMessageToolSummary {
@@ -71,4 +71,27 @@ export interface SessionMessagesListResult {
    */
   cursor: string | null
   hasMore: boolean
+}
+
+/** Where a `session.load` snapshot stands: everything at or below `version` is in it. */
+export interface SessionLoadCursor {
+  /** Durable environment sequence at the snapshot. */
+  sequence: string
+  epoch: string
+  /** The session's version at the snapshot; apply only events above it. */
+  version: number
+}
+
+/** `session.load`: a session's reduced state and newest messages at one position. */
+export interface SessionLoadResult {
+  sessionId: string
+  /**
+   * The read model's session state (status, pending interactions, todos,
+   * usage, …): the chat reducer's session without its messages.
+   */
+  state: Record<string, unknown>
+  messages: ChatMessage[]
+  /** Index of the first returned message: pass as `before` for the older page; null at the start. */
+  before: number | null
+  cursor: SessionLoadCursor
 }

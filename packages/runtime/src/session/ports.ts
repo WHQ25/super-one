@@ -10,6 +10,7 @@ export interface SessionStore {
 
 /** Durable environment event log for session aggregates. */
 export interface SessionEventLog {
+  /** Durable or streaming, as the payload decides (see `streamingEventKey`). */
   appendSession(input: {
     sessionId: string
     eventType: string
@@ -17,15 +18,13 @@ export interface SessionEventLog {
     causationRequestId?: string
     eventVersion?: number
   }): unknown
+  readonly epoch: string
   headSequence(): string
   listAfter(afterSequence: string, limit?: number): EnvironmentEventEnvelope[]
-  /** Called after each committed append (push streams pull on it). */
-  onAppend(listener: () => void): () => void
-  /**
-   * Optional session-scoped read for message catalog expansion.
-   * When omitted, listMessages falls back to listAfter('0') + filter.
-   */
-  listForSession?(sessionId: string, limit?: number): EnvironmentEventEnvelope[]
+  streamingAfter(sessionId: string, version: number): EnvironmentEventEnvelope[] | null
+  streaming(): EnvironmentEventEnvelope[]
+  /** Called after each committed event (push streams forward it). */
+  onAppend(listener: (envelope: EnvironmentEventEnvelope) => void): () => void
 }
 
 /** Control-lease validation for mutating session ops. */

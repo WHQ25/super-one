@@ -140,6 +140,70 @@ export const SESSION_DURABLE_EVENT = {
   hostActionRequested: 'session.host_action_requested',
 } as const
 
+/** How a streaming-tier event is retired: with its message's commit, or replaced by a newer one. */
+export interface StreamingEventKey {
+  /** Retired when this message commits; null retires at the end of the turn. */
+  messageId: string | null
+  /** A newer event with the same key carries everything this one did. */
+  supersedes?: string
+}
+
+/**
+ * Whether a session event belongs to the streaming tier, decided by payload
+ * and phase: text and thinking deltas, partial tool input, Codex item updates
+ * and tool progress are superseded by what their message commits. Null means
+ * the event is durable.
+ */
+export function streamingEventKey(eventType: string, payload: unknown): StreamingEventKey | null {
+  const record = (payload ?? {}) as Record<string, unknown>
+  if (eventType === SESSION_DURABLE_EVENT.assistantDelta) {
+    return { messageId: typeof record.blockId === 'string' ? record.blockId : null }
+  }
+  if (eventType === SESSION_DURABLE_EVENT.toolInputDelta) return { messageId: null }
+  if (eventType !== SESSION_DURABLE_EVENT.agentEvent) return null
+  const event = record.event as AgentEvent | undefined
+  switch (event?.type) {
+    case 'content_delta':
+      return event.delta.type === 'text' || event.delta.type === 'thinking' ? { messageId: event.messageId } : null
+    case 'tool_input_delta':
+    case 'tool_progress':
+      return { messageId: event.messageId }
+    case 'codex_item_delta':
+      return event.phase === 'updated'
+        ? { messageId: event.messageId, supersedes: `${event.messageId}\u0000${event.item.id}` }
+        : null
+    default:
+      return null
+  }
+}
+
+/**
+ * The streaming events a durable session event commits: one message's (its
+ * completion, interruption or error), every one of the turn's (`null`, the turn
+ * ended), or none (`undefined`).
+ */
+export function committedStreamingMessage(eventType: string, payload: unknown): string | null | undefined {
+  const record = (payload ?? {}) as Record<string, unknown>
+  switch (eventType) {
+    case SESSION_DURABLE_EVENT.assistantMessage:
+      return typeof record.blockId === 'string' ? record.blockId : null
+    case SESSION_DURABLE_EVENT.turnCompleted:
+    case SESSION_DURABLE_EVENT.turnInterrupted:
+    case SESSION_DURABLE_EVENT.turnError:
+    case SESSION_DURABLE_EVENT.closed:
+    case SESSION_DURABLE_EVENT.removed:
+      return null
+    case SESSION_DURABLE_EVENT.agentEvent: {
+      const event = record.event as AgentEvent | undefined
+      if (event?.type === 'message_complete' || event?.type === 'message_interrupted' || event?.type === 'message_error') return event.messageId
+      if (event?.type === 'status_change' && event.status !== 'streaming') return null
+      return undefined
+    }
+    default:
+      return undefined
+  }
+}
+
 export type SessionDurableEventType =
   (typeof SESSION_DURABLE_EVENT)[keyof typeof SESSION_DURABLE_EVENT]
 

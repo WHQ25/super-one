@@ -71,12 +71,16 @@ function coerceToolInput(value: unknown): string {
   }
 }
 
+/**
+ * `seq` is the event's session version (streaming events share their durable
+ * `sequence`); an event the mapper adds around the envelope's own carries none.
+ */
 function stamp(
   event: AgentEvent,
   ctx: NodeSessionEventMapContext,
-  sequence?: string,
+  envelope?: EnvironmentEventEnvelope,
 ): AgentEvent {
-  const seqNum = sequence && /^\d+$/.test(sequence) ? Number(sequence) : undefined
+  const seqNum = !envelope ? undefined : envelope.sessionVersion ?? (/^\d+$/.test(envelope.sequence ?? '') ? Number(envelope.sequence) : undefined)
   return {
     ...event,
     ...(ctx.projectPath ? { projectPath: ctx.projectPath } : {}),
@@ -230,7 +234,7 @@ export function createNodeSessionEventMapper(ctx: NodeSessionEventMapContext): N
    * all turn content onto the first opened message.
    */
   const ensureAssistant = (
-    push: (event: AgentEvent) => void,
+    push: (event: AgentEvent, positioned?: boolean) => void,
     preferredId?: string,
   ): string => {
     if (lastAssistantId) return lastAssistantId
@@ -239,10 +243,12 @@ export function createNodeSessionEventMapper(ctx: NodeSessionEventMapContext): N
       : `assistant-${ctx.sessionId}`
     if (!startedAssistantIds.has(id)) {
       startedAssistantIds.add(id)
+      // Unpositioned: the envelope's own event, which follows, carries its seq,
+      // and a reducer would take a second event at the same seq for a replay.
       push({
         type: 'message_start',
         message: assistantMessage(ctx, id, nowIso()),
-      })
+      }, false)
     }
     lastAssistantId = id
     return id
@@ -256,9 +262,9 @@ export function createNodeSessionEventMapper(ctx: NodeSessionEventMapContext): N
     const eventType = envelope.eventType
     const payload = asRecord(envelope.payload)
     const out: AgentEvent[] = []
-    const push = (event: AgentEvent) => {
+    const push = (event: AgentEvent, positioned = true) => {
       // The envelope time is when the node logged the event, not when this client saw it.
-      out.push(stamp(stampCompletedAt(event, new Date(envelope.timestamp).toISOString()), ctx, envelope.sequence))
+      out.push(stamp(stampCompletedAt(event, new Date(envelope.timestamp).toISOString()), ctx, positioned ? envelope : undefined))
     }
 
     switch (eventType) {
@@ -466,8 +472,10 @@ export function createNodeSessionEventMapper(ctx: NodeSessionEventMapContext): N
           rawTerminalThisTurn = false
           break
         }
-        if (lastAssistantId) {
-          push({ type: 'message_interrupted', messageId: lastAssistantId })
+        // After a node restart the interrupted message is named in the event.
+        const interruptedId = lastAssistantId ?? asString(payload.messageId)
+        if (interruptedId) {
+          push({ type: 'message_interrupted', messageId: interruptedId })
         }
         lastAssistantId = null
         push({ type: 'status_change', status: 'idle' })

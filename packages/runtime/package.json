@@ -51,6 +51,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@superone/chat-core": "workspace:*",
     "@superone/relay-client": "workspace:*",
     "@superone/shared": "workspace:*",
     "better-sqlite3": "^13.0.1",

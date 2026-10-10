@@ -74,3 +74,28 @@ export function sessionMessageBlocksToChatMessages(
   }
   return out
 }
+
+/** The plain text of a message's text blocks, one per line. */
+export function messageText(content: ContentBlock[] | undefined): string {
+  return (content ?? [])
+    .map((block) => (block.type === 'text' ? block.text : ''))
+    .filter(Boolean)
+    .join('\n')
+}
+
+/** A host's message as a `session.messages.list` block (the inverse of the mapping above). */
+export function chatMessageToSessionMessageBlock(message: ChatMessage, sortOrder: number): SessionMessageBlock {
+  return {
+    id: message.id,
+    role: message.role,
+    text: messageText(message.content),
+    createdAt: Date.parse(message.createdAt) || 0,
+    sortOrder,
+    content: message.content,
+    ...(message.contexts ? { contexts: message.contexts } : {}),
+    ...(message.attachments ? { attachments: message.attachments } : {}),
+    ...(message.metadata ? { metadata: message.metadata as Record<string, unknown> } : {}),
+    ...(message.checkpointId ? { checkpointId: message.checkpointId } : {}),
+    ...(message.resumePointId ? { resumePointId: message.resumePointId } : {}),
+  }
+}

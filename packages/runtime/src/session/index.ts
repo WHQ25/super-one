@@ -34,6 +34,8 @@ export {
 } from './runtime-policy'
 export type { TurnImageAttachment } from './types'
 export { EventLog } from './event-log'
+export { SessionReadModel, sessionReadModel } from './read-model'
+export { StreamingRing, STREAMING_RING_MAX_BYTES } from './streaming-ring'
 export {
   buildSessionMessageCatalog,
   collectContentByAssistantId,

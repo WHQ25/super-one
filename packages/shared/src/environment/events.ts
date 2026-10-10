@@ -26,6 +26,27 @@ export interface EnvironmentEventEnvelope<T = unknown> {
   /** Causation request ID when the event was produced by an RPC command. */
   causationRequestId?: string
   environmentId: string
+  /**
+   * Position within its session, across both tiers: increasing, never reused
+   * within an epoch. Rows written before versions existed read as their
+   * `sequence`, and new versions continue above it.
+   */
+  sessionVersion?: number
+  /**
+   * Streaming tier: kept in memory while its message streams, never stored.
+   * `sequence` is then the last durable sequence before it.
+   */
+  ephemeral?: true
+}
+
+/** Where a stream reader stands in one environment's log. */
+export interface SessionStreamCursor {
+  /** Last durable sequence read. */
+  sequence: string
+  /** Process epoch the versions belong to; streaming events do not outlive it. */
+  epoch: string
+  /** Last version read, per session. */
+  versions: Record<string, number>
 }
 
 export interface SubscribeEventsInput {
@@ -45,6 +66,11 @@ export interface SubscribeEventsInput {
    * so the stream should end with that error instead of resubscribing.
    */
   shouldStop?: (err: Error) => boolean
+  /**
+   * Local only: sessions whose missed events are gone after a resubscribe;
+   * read their snapshot again (`SessionStreamFrame.resnapshot`).
+   */
+  onResnapshot?: (sessionIds: string[]) => void
 }
 
 /** `session.subscribe`: push the events after `afterSequence`, then every new one. */
@@ -52,6 +78,9 @@ export interface SessionSubscribeInput {
   /** Client-chosen; frames may arrive before the RPC result. */
   subscriptionId: string
   afterSequence: string
+  /** With `versions`: resume streaming events too, from a cursor of this epoch. */
+  epoch?: string
+  versions?: Record<string, number>
   aggregateTypes?: EnvironmentAggregateType[]
   aggregateIds?: string[]
 }
@@ -60,7 +89,14 @@ export interface SessionSubscribeInput {
 export interface SessionStreamFrame {
   /** Last durable sequence scanned, including filtered-out events; the resume cursor. */
   sequence: string
+  epoch: string
   events: EnvironmentEventEnvelope[]
+  /**
+   * Sessions whose missed events are gone (their message committed, the
+   * streaming tier was evicted, or the node restarted): read their snapshot
+   * again, then apply only events above its version.
+   */
+  resnapshot?: string[]
 }
 
 /** Server → client message carrying a stream frame. */

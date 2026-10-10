@@ -407,6 +407,8 @@ async function dispatchRpcInner(method: string, payload: unknown, hostCtx: HostR
       return handleSessionUnsubscribe(payload, ctx)
     case 'session.messages.list':
       return handleSessionMessagesList(payload, ctx)
+    case 'session.load':
+      return handleSessionLoad(payload, ctx)
     case 'session.snapshot':
       return handleSessionSnapshot(ctx)
     case 'session.close':
@@ -2906,15 +2908,46 @@ function handleSessionSubscribe(payload: unknown, ctx: RpcContext): RpcResult {
   const afterSequence = String(p.afterSequence ?? '').trim()
   if (!subscriptionId) return { error: { code: 'invalid_argument', message: 'subscriptionId required' } }
   if (!/^\d+$/.test(afterSequence)) return { error: { code: 'invalid_argument', message: 'afterSequence must be a decimal sequence' } }
+  const versions = streamVersions(p.versions)
+  if (versions === null) return { error: { code: 'invalid_argument', message: 'versions must map session ids to versions' } }
   const close = openEventStream({
     source: ctx.sessions,
     reader: ctx.client,
-    afterSequence,
+    cursor: { afterSequence, epoch: typeof p.epoch === 'string' ? p.epoch : undefined, versions },
     filter: streamFilter(p),
     push: (frame) => streams.push({ type: 'stream', subscriptionId, frame }),
   })
   streams.open(subscriptionId, close)
   return { result: { subscriptionId } }
+}
+
+/** A subscribe cursor's per-session versions, or null when malformed. */
+function streamVersions(value: unknown): Record<string, number> | null {
+  if (value === undefined) return {}
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const entries = Object.entries(value as Record<string, unknown>)
+  if (entries.some(([, version]) => !Number.isSafeInteger(version) || (version as number) < 0)) return null
+  return Object.fromEntries(entries) as Record<string, number>
+}
+
+/** A session's reduced state and newest messages, with the version they reflect. */
+function handleSessionLoad(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readSession)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const sessionId = String(p.sessionId ?? '').trim()
+  if (!sessionId) return { error: { code: 'invalid_argument', message: 'sessionId required' } }
+  try {
+    return {
+      result: ctx.sessions.load({
+        sessionId,
+        before: typeof p.before === 'number' ? p.before : null,
+        limit: typeof p.limit === 'number' ? p.limit : undefined,
+      }),
+    }
+  } catch (err) {
+    return mapThrown(err)
+  }
 }
 
 function handleSessionUnsubscribe(payload: unknown, ctx: RpcContext): RpcResult {

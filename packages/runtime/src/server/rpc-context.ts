@@ -7,6 +7,7 @@ import type {
   ProjectSnapshot,
   RespondHostActionResult,
   RpcErrorCode,
+  SessionLoadResult,
   SessionMessagesListResult,
   WorkspaceEntry,
 } from '@superone/shared/environment'
@@ -276,11 +277,21 @@ export interface SessionHostPort {
 
   /** Durable event cursor (decimal string) for `session.snapshot`. */
   snapshotSequence(): string
-  /** Events strictly after `afterSequence`, as `reader` sees them. */
+  /** Durable events strictly after `afterSequence`, as `reader` sees them. */
   listEventsAfter(afterSequence: string, reader?: { clientSessionId: string }): EnvironmentEventEnvelope[]
-  /** Wakes `session.subscribe` streams after each durable append. */
-  onEventsAppended(listener: () => void): () => void
+  /** The session log's process epoch; streaming events and their versions do not outlive it. */
+  streamEpoch(): string
+  /** A session's streaming events above `version`, or null when some are gone. */
+  streamingAfter(sessionId: string, version: number): EnvironmentEventEnvelope[] | null
+  /** Every streaming event held now, oldest first. */
+  streamingEvents(): EnvironmentEventEnvelope[]
+  /** Each committed event, durable or streaming, for `session.subscribe` streams. */
+  onEventsAppended(listener: (envelope: EnvironmentEventEnvelope) => void): () => void
+  /** A live event as `reader` sees it (mod events are per reader). */
+  viewEvent(envelope: EnvironmentEventEnvelope, reader: { clientSessionId: string }): EnvironmentEventEnvelope
   listMessages(input: SessionRuntimeInput<'listMessages'>): SessionMessagesListResult
+  /** `session.load`: reduced state and a page of messages at the session's current version. */
+  load(input: SessionRuntimeInput<'load'>): SessionLoadResult
 
   /**
    * Gate a lease just acquired on a session: refuse it while the host has taken

@@ -8,7 +8,7 @@ import { McpAppAttachmentIndex } from './mcp-apps-index'
 import type { McpAppsResolvedAttachment } from '@superone/shared/environment/mcp-apps-state-rpc'
 import { assertCodexAccountSwitchAllowed } from '@superone/shared/codex-accounts'
 import { randomUUID } from 'node:crypto'
-import type { AgentEvent, ChatMessageSource } from '@superone/shared/agent-types'
+import type { AgentEvent, ChatMessage, ChatMessageSource } from '@superone/shared/agent-types'
 import { isAgentOutputEvent } from '@superone/shared/send-failure'
 import { MOD_UI_MUTATING_OPS, MOD_UI_UNAVAILABLE, asNodeCallerModUiRequest, asNodeReaderModEvent, type ModUiOp, type ModUiRequest, type ModUiResult } from '@superone/shared/mod-ui'
 import { acceptedElicitationContent } from '@superone/shared/schema-form'
@@ -23,18 +23,20 @@ import {
   type HostActionsPollResult,
   type HostActionTerminalResult,
   type RespondHostActionResult,
+  type SessionLoadResult,
   type SessionMessagesListResult,
   type EnvironmentEventEnvelope,
   type SessionRef,
 } from '@superone/shared/environment'
 import {
-  buildSessionMessageCatalog,
   pageSessionMessageCatalog,
 } from './message-catalog'
 import { stripMiniAppMarkup } from '@superone/shared/miniapp-prompt-tags'
 import { SESSION_TITLE_MAX_CHARS } from '@superone/shared/session-title'
 import { isModelOnlyHostWake } from '@superone/shared/host-wake'
 import type { LeaseGuard, SessionEventLog, SessionStore } from './ports'
+import type { SessionReadModel } from './read-model'
+import { chatMessageToSessionMessageBlock } from '@superone/shared/node-message-catalog'
 import type { HostActionStore } from './host-action-store'
 import { HostActionChannel } from './host-action-channel'
 import { collaborationSystemPrompt } from '../collaboration/text'
@@ -218,6 +220,7 @@ export class SessionRuntime {
   private readonly mcpAppGc?: ReturnType<typeof createMcpAppResourceGc>
   private readonly hostActions: HostActionStore | null
   private readonly hostActionChannel: HostActionChannel | null
+  private readonly readModel: SessionReadModel | null
   private runtimeReaperTimer: ReturnType<typeof setInterval> | null = null
   async getMcpAppsProvider(binding: McpAppsBinding, origin: McpAppOrigin): Promise<McpAppsProvider> {
     const session = this.get(binding.session)
@@ -299,6 +302,11 @@ export class SessionRuntime {
       runtimeReaperIntervalMs?: number
       /** Pairing label of a controller, so its agent's launch tasks say which device sent them. */
       controllerLabel?: (clientSessionId: string) => string | null
+      /**
+       * Builds the read model over this runtime's sessions, before restart
+       * reconciliation appends anything; messages and snapshots come from it.
+       */
+      readModel?: (records: { get(sessionId: string): NodeSessionRecord | null }) => SessionReadModel
     },
   ) {
     this.controllerLabel = opts?.controllerLabel
@@ -334,6 +342,7 @@ export class SessionRuntime {
       : null
     this.mcpAppResources = opts?.mcpAppResources
     this.hydrateFromStore()
+    this.readModel = opts?.readModel?.({ get: (sessionId) => this.live.get(sessionId) ?? null }) ?? null
     this.reconcileAfterRestart()
     if (this.mcpAppResources) {
       this.mcpAppGc = createMcpAppResourceGc(this.mcpAppResources, () => mcpAppResourceHashes(this.store.loadAll().flatMap(session => this.mcpAppMessageCatalog(session.sessionId))))
@@ -419,9 +428,15 @@ export class SessionRuntime {
   private reconcileAfterRestart(): void {
     for (const session of this.live.values()) {
       let changed = false
+      // Recorded as events so the read model shows the interruption, not a message streaming forever.
       if (session.status === 'streaming') {
         session.status = 'interrupted'
         changed = true
+        this.events.appendSession({
+          sessionId: session.sessionId,
+          eventType: SESSION_DURABLE_EVENT.turnInterrupted,
+          payload: { reason: 'node_restart', messageId: this.readModel?.streamingMessageId(session.sessionId) ?? undefined },
+        })
       }
       // The FIFO is in memory only: what it held never ran, so each queued
       // message becomes a failed row the user can resend, rather than work the
@@ -431,8 +446,16 @@ export class SessionRuntime {
       }
       // No live permissionWaiters after restart — drop sticky pending UI or clients hang.
       if (session.pendingInteraction != null) {
+        const { interactionId, kind } = session.pendingInteraction
         session.pendingInteraction = null
         changed = true
+        this.events.appendSession({
+          sessionId: session.sessionId,
+          eventType: kind === 'question' ? SESSION_DURABLE_EVENT.questionAborted
+            : kind === 'plan' ? SESSION_DURABLE_EVENT.planAborted
+            : SESSION_DURABLE_EVENT.permissionAborted,
+          payload: { interactionId, reason: 'node_restart' },
+        })
       }
       // Backfill controller fields for rows loaded from older schema.
       if (session.controllerClientSessionId === undefined) {
@@ -860,64 +883,88 @@ export class SessionRuntime {
     return this.events.headSequence()
   }
 
-  onEventsAppended(listener: () => void): () => void {
+  onEventsAppended(listener: (envelope: EnvironmentEventEnvelope) => void): () => void {
     return this.events.onAppend(listener)
   }
 
-  /**
-   * Events after a cursor, as `reader` sees them. Mod events are delivered
-   * through this durable log although only their moment matters: a host
-   * request that no longer waits for its client is read without its event
-   * (the envelope stays so the cursor moves past it), so a clipboard write or
-   * composer fill is never replayed; mod client ids read as the reader's own.
-   */
-  listEventsAfter(afterSequence: string, reader?: { clientSessionId: string }): EnvironmentEventEnvelope[] {
-    return this.events.listAfter(afterSequence).map((envelope) => {
-      if (envelope.aggregateType !== 'session' || envelope.eventType !== SESSION_DURABLE_EVENT.agentEvent) return envelope
-      const payload = envelope.payload as { event?: AgentEvent } | null
-      const event = payload?.event
-      if (!event?.type.startsWith('mod_')) return envelope
-      if (event.type === 'mod_host_request' && !this.turnRunner.isModHostRequestPending?.(envelope.aggregateId, event.requestId)) {
-        return { ...envelope, payload: {} }
-      }
-      return reader ? { ...envelope, payload: { ...payload, event: asNodeReaderModEvent(event, reader.clientSessionId) } } : envelope
-    })
+  streamEpoch(): string {
+    return this.events.epoch
   }
 
-  /**
-   * Paged denser message catalog for remote UI hydrate.
-   * Source of truth: durable transcript; tool summaries / optional checkpoint
-   * and resume ids are expanded from the session event log when present.
-   */
+  streamingAfter(sessionId: string, version: number): EnvironmentEventEnvelope[] | null {
+    return this.events.streamingAfter(sessionId, version)
+  }
+
+  streamingEvents(): EnvironmentEventEnvelope[] {
+    return this.events.streaming()
+  }
+
+  listEventsAfter(afterSequence: string, reader?: { clientSessionId: string }): EnvironmentEventEnvelope[] {
+    return this.events.listAfter(afterSequence).map((envelope) => this.viewEvent(envelope, reader))
+  }
+
+  /** Mod events are addressed per reader; a host request no longer pending reads as empty. */
+  viewEvent(envelope: EnvironmentEventEnvelope, reader?: { clientSessionId: string }): EnvironmentEventEnvelope {
+    if (envelope.aggregateType !== 'session' || envelope.eventType !== SESSION_DURABLE_EVENT.agentEvent) return envelope
+    const payload = envelope.payload as { event?: AgentEvent } | null
+    const event = payload?.event
+    if (!event?.type.startsWith('mod_')) return envelope
+    if (event.type === 'mod_host_request' && !this.turnRunner.isModHostRequestPending?.(envelope.aggregateId, event.requestId)) {
+      return { ...envelope, payload: {} }
+    }
+    return reader ? { ...envelope, payload: { ...payload, event: asNodeReaderModEvent(event, reader.clientSessionId) } } : envelope
+  }
+
+  /** Paged messages for `session.messages.list`, from the read model. */
   listMessages(input: {
     sessionId: string
     cursor?: string | number | null
     limit?: number
   }): SessionMessagesListResult {
     const sessionId = String(input.sessionId ?? '').trim()
+    this.requireReadModel()
     return pageSessionMessageCatalog(sessionId, this.mcpAppMessageCatalog(sessionId), {
       cursor: input.cursor,
       limit: input.limit,
     })
   }
 
+  /** `session.load`: the session's reduced state and a page of its messages, at its current version. */
+  load(input: { sessionId: string; before?: number | null; limit?: number }): SessionLoadResult {
+    const sessionId = this.requireSessionId(input.sessionId)
+    const snapshot = this.requireReadModel().snapshot(sessionId, { before: input.before, limit: input.limit })
+    // The newest page ends with the session's last message.
+    return input.before == null ? { ...snapshot, messages: this.withProviderResume(sessionId, snapshot.messages) } : snapshot
+  }
+
+  /** The session's messages as catalog blocks; a host without a read model keeps none. */
   private mcpAppMessageCatalog(sessionId: string) {
+    sessionId = this.requireSessionId(sessionId)
+    const messages = this.withProviderResume(sessionId, this.readModel?.messages(sessionId) ?? [])
+    return messages.map((message, i) => chatMessageToSessionMessageBlock(message, i))
+  }
+
+  /** The last assistant message carries the harness resume id, which forks resume from. */
+  private withProviderResume(sessionId: string, messages: ChatMessage[]): ChatMessage[] {
+    const resume = this.live.get(sessionId)?.providerResume
+    const last = messages.at(-1)
+    if (!resume || last?.role !== 'assistant' || last.resumePointId) return messages
+    return [...messages.slice(0, -1), { ...last, resumePointId: resume }]
+  }
+
+  private requireSessionId(sessionId: string): string {
     if (!sessionId) {
       throw Object.assign(new Error('sessionId required'), { code: 'invalid_argument' })
     }
-    const session = this.live.get(sessionId)
-    if (!session) {
+    if (!this.live.has(sessionId)) {
       throw Object.assign(new Error('session not found'), { code: 'not_found' })
     }
-    const events =
-      typeof this.events.listForSession === 'function'
-        ? this.events.listForSession(sessionId)
-        : this.events.listAfter('0', 50_000).filter(
-            (e) =>
-              (!e.aggregateType || e.aggregateType === 'session') &&
-              (!e.aggregateId || e.aggregateId === sessionId),
-          )
-    return buildSessionMessageCatalog(session, events)
+    return sessionId
+  }
+
+  private requireReadModel(): SessionReadModel {
+    if (!this.readModel) throw Object.assign(new Error('this host keeps no read model'), { code: 'unsupported' })
+    return this.readModel
   }
 
   resolveMcpAppAttachment(sessionId: string, appInstanceId: string): McpAppsResolvedAttachment {

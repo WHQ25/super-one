@@ -552,7 +552,7 @@ describe('Phase 3 disconnect-safe remote Session', () => {
         role: string
         text: string
         sortOrder: number
-        tools?: Array<{ toolName: string; toolUseId: string }>
+        content?: Array<{ type: string; toolName?: string }>
         resumePointId?: string
       }>
       cursor: string | null
@@ -564,9 +564,8 @@ describe('Phase 3 disconnect-safe remote Session', () => {
     expect(full.cursor).toBeNull()
     const assistants = full.messages.filter((m) => m.role === 'assistant')
     expect(assistants.length).toBeGreaterThanOrEqual(2)
-    // Structured tool events densify at least one assistant block.
-    expect(assistants.some((m) => (m.tools?.length ?? 0) > 0)).toBe(true)
-    expect(assistants.some((m) => m.tools?.some((t) => t.toolName === 'Read'))).toBe(true)
+    // Structured tool events land in the assistant content, in emission order.
+    expect(assistants.some((m) => m.content?.some((b) => b.type === 'tool_use' && b.toolName === 'Read'))).toBe(true)
     // Provider resume stamped on the last assistant when present.
     expect(assistants.at(-1)?.resumePointId).toBeTruthy()
 

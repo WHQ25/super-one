@@ -2,7 +2,7 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { SESSION_DURABLE_EVENT } from '@superone/shared/environment'
+import { SESSION_DURABLE_EVENT, type EnvironmentEventEnvelope } from '@superone/shared/environment'
 import { mapNodeSessionEvents } from '@superone/shared/node-session-event-map'
 import type { ClaudeQueryFn } from '@superone/claude'
 import { createCodexAgentEventMapper } from '@superone/codex'
@@ -32,7 +32,10 @@ function boot(runner: TurnRunner) {
   const events = new EventLog(db, envId)
   const leases = new ControlLeaseService(db)
   const runtime = new SessionRuntime(db, events, leases, envId, runner)
-  return { db, events, leases, runtime, envId }
+  // Everything the log published, stored or streaming, in order.
+  const published: EnvironmentEventEnvelope[] = []
+  events.onAppend((envelope) => published.push(envelope))
+  return { db, events, leases, runtime, envId, published }
 }
 
 async function waitForIdle(runtime: SessionRuntime, sessionId: string, ms = 4000) {
@@ -74,7 +77,7 @@ describe('SessionRuntime onEvent durable projection (Stage 5-A)', () => {
       resolveProjectPath: () => projectDir,
       queryFn,
     })
-    const { db, events, leases, runtime, envId } = boot(runner)
+    const { db, events, leases, runtime, envId, published } = boot(runner)
     const session = runtime.create({ projectId: 'p1', harnessId: 'claude' })
     const lease = leases.acquire({
       resource: { environmentId: envId, sessionId: session.sessionId },
@@ -90,7 +93,7 @@ describe('SessionRuntime onEvent durable projection (Stage 5-A)', () => {
     })
     await waitForIdle(runtime, session.sessionId)
 
-    const mapped = mapNodeSessionEvents(events.listAfter('0'), {
+    const mapped = mapNodeSessionEvents(published, {
       projectPath: 'remote:env:/project',
       sessionId: session.sessionId,
       providerId: 'claude',
@@ -119,7 +122,7 @@ describe('SessionRuntime onEvent durable projection (Stage 5-A)', () => {
       onAgentEvent?.({ type: 'status_change', status: 'idle' })
       return { finalText: 'done' }
     }
-    const { db, events, leases, runtime, envId } = boot(runner)
+    const { db, events, leases, runtime, envId, published } = boot(runner)
     const session = runtime.create({ projectId: 'p1', harnessId: 'claude' })
     const lease = leases.acquire({
       resource: { environmentId: envId, sessionId: session.sessionId },
@@ -135,7 +138,7 @@ describe('SessionRuntime onEvent durable projection (Stage 5-A)', () => {
     })
     await waitForIdle(runtime, session.sessionId)
 
-    const rawEvents = events.listAfter('0').filter(
+    const rawEvents = published.filter(
       (event) => event.eventType === SESSION_DURABLE_EVENT.agentEvent,
     )
     expect(rawEvents).toHaveLength(4)
@@ -223,7 +226,7 @@ describe('SessionRuntime onEvent durable projection (Stage 5-A)', () => {
       const finalText = project(messageId!, onAgentEvent!)
       return { finalText }
     }
-    const { db, events, leases, runtime, envId } = boot(runner)
+    const { db, events, leases, runtime, envId, published } = boot(runner)
     const session = runtime.create({ projectId: 'p1', harnessId })
     const lease = leases.acquire({
       resource: { environmentId: envId, sessionId: session.sessionId },
@@ -239,7 +242,7 @@ describe('SessionRuntime onEvent durable projection (Stage 5-A)', () => {
     })
     await waitForIdle(runtime, session.sessionId)
 
-    const mapped = mapNodeSessionEvents(events.listAfter('0'), {
+    const mapped = mapNodeSessionEvents(published, {
       projectPath: 'remote:env:/project',
       sessionId: session.sessionId,
       providerId: harnessId,
@@ -252,7 +255,7 @@ describe('SessionRuntime onEvent durable projection (Stage 5-A)', () => {
   })
 
   it('projects structured text/tool/status events into the durable log', async () => {
-    const { db, events, leases, runtime, envId } = boot(
+    const { db, events, leases, runtime, envId, published } = boot(
       createSimulatedCodexRunner({
         delayMs: 5,
         chunks: ['Hi', '!'],
@@ -275,7 +278,7 @@ describe('SessionRuntime onEvent durable projection (Stage 5-A)', () => {
     const done = await waitForIdle(runtime, session.sessionId)
     expect(done?.status).toBe('idle')
 
-    const types = events.listAfter('0').map((e) => e.eventType)
+    const types = published.map((e) => e.eventType)
     expect(types).toContain(SESSION_DURABLE_EVENT.turnStarted)
     expect(types).toContain(SESSION_DURABLE_EVENT.statusChanged)
     expect(types).toContain(SESSION_DURABLE_EVENT.toolStarted)
@@ -286,11 +289,11 @@ describe('SessionRuntime onEvent durable projection (Stage 5-A)', () => {
     expect(types).toContain(SESSION_DURABLE_EVENT.turnCompleted)
 
     // Status payload shape
-    const statusEv = events.listAfter('0').find((e) => e.eventType === SESSION_DURABLE_EVENT.statusChanged)
+    const statusEv = published.find((e) => e.eventType === SESSION_DURABLE_EVENT.statusChanged)
     expect(statusEv?.payload).toMatchObject({ status: expect.any(String) })
 
     // Tool payload shape
-    const toolStart = events.listAfter('0').find((e) => e.eventType === SESSION_DURABLE_EVENT.toolStarted)
+    const toolStart = published.find((e) => e.eventType === SESSION_DURABLE_EVENT.toolStarted)
     expect(toolStart?.payload).toMatchObject({
       toolUseId: expect.any(String),
       toolName: 'Read',
@@ -310,7 +313,7 @@ describe('SessionRuntime onEvent durable projection (Stage 5-A)', () => {
       if (signal.aborted) throw new Error('aborted')
       return { finalText: 'codex-only', providerResume: 'thread:x' }
     }
-    const { db, events, leases, runtime, envId } = boot(codexOnly)
+    const { db, events, leases, runtime, envId, published } = boot(codexOnly)
     const session = runtime.create({ projectId: 'p1', harnessId: 'codex' })
     const lease = leases.acquire({
       resource: { environmentId: envId, sessionId: session.sessionId },
@@ -328,7 +331,7 @@ describe('SessionRuntime onEvent durable projection (Stage 5-A)', () => {
     expect(done?.status).toBe('idle')
     expect(done?.transcript.some((t) => t.text.includes('codex-only'))).toBe(true)
 
-    const types = events.listAfter('0').map((e) => e.eventType)
+    const types = published.map((e) => e.eventType)
     expect(types.filter((t) => t === SESSION_DURABLE_EVENT.assistantDelta).length).toBe(2)
     expect(types).toContain(SESSION_DURABLE_EVENT.turnCompleted)
     // No tool events when runner never calls onEvent with tool kinds

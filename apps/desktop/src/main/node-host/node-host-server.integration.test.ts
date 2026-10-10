@@ -68,7 +68,7 @@ async function pairedDesktops() {
   harnesses.enableSimulatedOverlay()
   const host = await startDesktopNode(
     {
-      userDataDir: userData, label: 'Desktop B', appVersion: '0.0.0-test', sessions, store, projects, harnesses,
+      userDataDir: userData, label: 'Desktop B', appVersion: '0.0.0-test', sessions, store, rows: store.all, projects, harnesses,
       listAgentProfiles: () => AGENT_PROFILES,
       hooks: {
         probeHarnessReadiness: () => ({ ok: true }) as never,
@@ -105,6 +105,7 @@ describe('DesktopNodeHost', () => {
         appVersion: '0.0.0-test',
         sessions,
         store,
+        rows: store.all,
         projects,
         harnesses,
         listAgentProfiles: () => AGENT_PROFILES,

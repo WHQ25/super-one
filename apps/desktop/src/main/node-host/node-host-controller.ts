@@ -13,6 +13,8 @@ import { variantId } from '../variant'
 import { addRecentFolder, getRecentFolders } from '../recent-folders'
 import { createSession as createSessionRow, loadSessionMessagesPaginated, renameSession } from '../db-sessions'
 import {
+  getDesktopSessionRow,
+  listDesktopSessionRows,
   getRemoteControlledSession,
   listRemoteControlledSessions,
   setSessionRemoteController,
@@ -145,6 +147,7 @@ export function openDesktopDomain(sessions: NodeHostSessionManager): DesktopDoma
     appVersion: app.getVersion(),
     sessions,
     store: desktopSessionStore,
+    rows: { get: getDesktopSessionRow, list: listDesktopSessionRows, loadMessages: loadSessionMessagesPaginated },
     projects: createDesktopProjectsPort({ list: getRecentFolders, add: addRecentFolder }),
     harnesses: getHarnessManager(),
     listAgentProfiles: listSessionAgentProfiles,

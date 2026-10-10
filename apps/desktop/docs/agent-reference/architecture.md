@@ -78,6 +78,10 @@ Session ownership is a **first-class property of the `Session` class itself**, n
 
 `Session.send()` self-guards: when `providerOrigin === 'local'` and the session is owned remotely or has remote subscribers, it throws `SessionLockedError`. Lock checks live inside the session, not in IPC handler `if`-walls.
 
+This owner model covers sessions this desktop runs. A phone on a remote-node session holds the node's control lease instead, as a `delegate` of this desktop ([mobile-remote-control.md](../../../../docs/architecture/mobile-remote-control.md#sessions-on-a-remote-node)); the node database is opened only when the desktop node host runs, so local sessions do not move onto leases.
+
+Main publishes every event through `SessionEventHub` (`src/main/stream/`). Renderer IPC is a broadcast to every window: the main window holds every session it lists, and a session window also follows its side chats and draft-to-session id changes, so a per-window session filter would drop events it needs.
+
 Modules under `apps/desktop/src/main/remote/`:
 
 | Module | Responsibility |

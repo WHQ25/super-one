@@ -62,19 +62,29 @@ Rules:
 
 ## Host event pipeline
 
+Every event in desktop main leaves through `SessionEventHub`
+(`apps/desktop/src/main/stream/session-event-hub.ts`), tagged with where it
+entered (a local `Session`, environment state, lists, presence, a remote node).
+The renderer transport, notifications, the phone pipeline and the other
+in-process consumers subscribe by source; none is sent from its call site.
+
 `MobileBroadcaster` (`apps/desktop/src/main/remote/mobile-broadcaster.ts`) routes
 each session event to its subscribed devices and, for progressive devices, applies
 the summary projection ([below](#progressive-session-loading)).
-`RemoteControlService#sendAgentEvent` then filters, strips and batches before
-encryption:
+`RemoteControlService#sendAgentEvent` then runs the `mobile` profile
+(`MobileEventProfile`, `apps/desktop/src/main/stream/mobile-profile.ts`) and
+batches before encryption. A golden test on recorded sessions
+(`profiles.golden.test.ts`) pins the frames this produces; it is the phone wire
+guard.
 
 1. Drop `SKIPPED_EVENTS`, throttle `tool_progress`, truncate
    `slash_command_output` ([chat-core.md](chat-core.md#remote-omitted-events)).
 2. Strip or summarize heavy tool payloads
    (`apps/desktop/src/main/remote-content.ts`): bash output, todo tool results,
    project paths.
-3. Batch per target set in `RemoteEventBatcher`
-   (`apps/desktop/src/main/remote/event-batcher.ts`):
+3. Batch per target set with the shared `createEventBatcher`
+   (`packages/runtime/src/stream/event-batcher.ts`, also the renderer
+   transport's batcher):
    - Only `content_delta` and `codex_item_delta` wait, up to 33 ms. Any other
      event flushes the batch it joins immediately, so completions, status
      changes, interactions and interrupts are never delayed behind text.
@@ -94,6 +104,28 @@ encryption:
 
 `stop()` disposes the batcher and bumps `sendGeneration`; queued work from the old
 generation is discarded rather than sent on a new connection.
+
+### Sessions on a remote node
+
+A phone reaches a CLI-node or desktop-node session only through its paired
+desktop (`apps/desktop/src/main/remote/environment-commands.ts`); there is no
+phone-to-node link. The desktop opens the session at a `session.load` barrier,
+follows it on its one node subscription ([remote-node-service.md](remote-node-service.md#92-event-log)),
+reduces the node's events with chat-core, and sends them through the same
+`mobile` profile. The node runs no phone profile: the desktop already holds
+that projection state, and the wire stays the desktop's.
+
+- A connected phone does not restore on the relay's `reset` frame. When the
+  node reports that events the phone missed are gone (`resnapshot`), the
+  desktop reloads the snapshot and sends the difference as `message_start`,
+  `content_delta` and terminal events (`routed-catch-up.ts`). A phone whose
+  messages are not a prefix of the snapshot gets `status_change: error`.
+- The desktop holds the node's control lease for each phone with the phone's
+  device id as `delegate`; its own window acquires with `yields`. A second
+  phone is refused while one holds the session.
+- While a phone holds it, the desktop window shows observation mode for that
+  node session (`remote_session_start` presence). Disconnect there kicks the
+  phone (`session_kicked`) and releases its lease.
 
 ## Requests and responses
 

@@ -240,7 +240,13 @@ points code comments there, and deletes this plan and the proposal.
   except `coldSessionResume`/`turnReattach`/`hostActionV1`. Gateway gates
   drafts and the sync zone, agent tools gate archive, and the file tree
   says when a node does not share files (`useEnvironmentServes`).
-  Remaining: node lab acceptance.
+  Acceptance: `e2e/desktop-node-orchestration.spec.ts` (A and B, scripted
+  harness) passes on generation 3; `node-host-protocol.integration.test.ts`
+  follows the step 0 recordings from A over the relay at 47–61% of the phone
+  link's bytes and fewer frames (push history DEFLATE, a 33 ms batch window,
+  folded deltas, summarized tool input left out), and keeps following a
+  session across LAN → relay → LAN mid-turn with a realign each time;
+  generation 2 refusal is `node-server.secure-channel.test.ts`. Step 4 done.
 
 ## Open decisions
 

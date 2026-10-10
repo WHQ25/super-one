@@ -45,4 +45,18 @@ describe('node session delivery', () => {
     expect(() => subscribeDetail(lan, sessions, { sessionId: 's', detailRef: 'nope', subscriptionId: 'sub' }))
       .toThrow(expect.objectContaining({ code: 'invalid_argument' }))
   })
+
+  it('folds adjacent deltas of a session into the later envelope, and leaves a summarized tool input out', () => {
+    const lan = new ConnectionDelivery(deliveryPolicy('lan', 'desktop'))
+    transcript = [message('ab')]
+    const folded = deliverFrame(frame(envelope(thinkingDelta('a'), 2), envelope(thinkingDelta('b'), 3)), lan, sessions)
+    expect(folded.frame.events).toHaveLength(1)
+    expect(folded.frame.events[0]).toMatchObject({ eventId: 'e3', sessionVersion: 3, payload: { event: { delta: { thinking: 'ab' } } } })
+
+    const relay = new ConnectionDelivery(deliveryPolicy('relay', 'desktop'))
+    deliverLoad(load(), relay)
+    const input: AgentEvent = { type: 'tool_input_delta', sessionId: 's', messageId: 'm', toolUseId: 't', partialJson: '{"a"' } as AgentEvent
+    expect(deliverFrame(frame(envelope(input, 4)), relay, sessions).frame.events).toEqual([])
+    expect(deliverFrame(frame(envelope(input, 4)), lan, sessions).frame.events).toHaveLength(1)
+  })
 })

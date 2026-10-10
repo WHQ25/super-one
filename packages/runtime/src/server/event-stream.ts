@@ -97,6 +97,21 @@ function byPosition(a: EnvironmentEventEnvelope, b: EnvironmentEventEnvelope): n
  * Every frame carries `sequence`, the last durable sequence scanned, including
  * events the filter dropped, and the epoch, so the reader can resume from it.
  */
+/**
+ * Events a frame may wait for (`batchMs`): streaming deltas and bookkeeping
+ * nobody watches arrive. Status, interactions and completions go out at once.
+ */
+const DEFERRABLE_EVENTS: ReadonlySet<string> = new Set([
+  'content_delta', 'codex_item_delta', 'tool_input_delta',
+  'message_usage', 'subagent_usage', 'task_progress', 'tool_progress',
+  'stream_message_start', 'stream_message_stop', 'checkpoint_captured',
+])
+
+function isDeferrable(envelope: EnvironmentEventEnvelope): boolean {
+  const type = (envelope.payload as { event?: { type?: unknown } } | null)?.event?.type
+  return envelope.aggregateType === 'session' && typeof type === 'string' && DEFERRABLE_EVENTS.has(type)
+}
+
 export function openEventStream(input: {
   source: EventStreamSource
   /** The environment the log belongs to; names the topics a recovery signal covers. */
@@ -106,8 +121,15 @@ export function openEventStream(input: {
   filter: EventStreamFilter
   push: (frame: SessionStreamFrame) => void
   flow?: EventStreamFlow
+  /**
+   * How long streaming deltas may wait to share a frame; 0 sends each event's
+   * frame on the next tick. Any other event flushes the waiting deltas with it.
+   */
+  batchMs?: number
 }): EventStreamHandle {
   const { source, environmentId, reader, push, flow } = input
+  const batchMs = input.batchMs ?? 0
+  let batchTimer: ReturnType<typeof setTimeout> | null = null
   let filter = input.filter
   const epoch = source.streamEpoch()
   let sequence = input.cursor.afterSequence
@@ -189,6 +211,8 @@ export function openEventStream(input: {
 
   const flush = (): void => {
     flushing = false
+    if (batchTimer) clearTimeout(batchTimer)
+    batchTimer = null
     if (flow?.congested()) return
     const batch = live
     live = []
@@ -243,6 +267,10 @@ export function openEventStream(input: {
     live.push(viewed)
     heldSizes.push(0)
     if (!caughtUp || flushing) return
+    if (batchMs > 0 && isDeferrable(viewed) && live.every(isDeferrable)) {
+      batchTimer ??= setTimeout(flush, batchMs)
+      return
+    }
     flushing = true
     queueMicrotask(flush)
   })
@@ -256,6 +284,7 @@ export function openEventStream(input: {
   return {
     close() {
       closed = true
+      if (batchTimer) clearTimeout(batchTimer)
       unsubscribe()
       stopDrain?.()
     },

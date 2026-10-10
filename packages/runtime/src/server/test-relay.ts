@@ -23,6 +23,8 @@ export async function startTestRelay() {
   const rooms = new Map<string, { desktop: WebSocket | null; mobiles: Map<string, WebSocket> }>()
   /** Every text frame the relay received, to check nothing secret crosses it. */
   const seen: string[] = []
+  /** The frames desktops sent, in order: what a client's relay link carried to it. */
+  const fromDesktop: string[] = []
   const roomOf = (id: string) => {
     let room = rooms.get(id)
     if (!room) rooms.set(id, (room = { desktop: null, mobiles: new Map() }))
@@ -51,6 +53,7 @@ export async function startTestRelay() {
       seen.push(text)
       const frame = JSON.parse(text) as Record<string, unknown>
       if (role === 'desktop') {
+        fromDesktop.push(text)
         if (frame.type === 'channel' || frame.type === 'kicked') {
           room.mobiles.get(String(frame.mobileDeviceId))?.send(text)
         }
@@ -73,6 +76,7 @@ export async function startTestRelay() {
   return {
     url: `ws://127.0.0.1:${port}`,
     seen,
+    fromDesktop,
     hasDesktop: (roomId: string) => rooms.get(roomId)?.desktop != null,
     /** Cut every client slot, as a network change on the client side would. */
     dropClients: () => {

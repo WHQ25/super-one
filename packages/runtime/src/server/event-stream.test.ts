@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { EnvironmentEventEnvelope, SessionStreamFrame } from '@superone/shared/environment'
 import { openNodeDatabase, type NodeDatabase } from '../db'
 import { EventLog } from '../session/event-log'
@@ -34,9 +34,9 @@ const complete = (events: EventLog, sessionId: string, messageId: string) =>
 
 const flush = () => new Promise<void>((resolve) => queueMicrotask(resolve))
 
-function open(events: EventLog, cursor: EventStreamCursor, filter = {}) {
+function open(events: EventLog, cursor: EventStreamCursor, filter = {}, batchMs?: number) {
   const frames: SessionStreamFrame[] = []
-  const stream = openEventStream({ source: source(events), environmentId: 'env', reader: { clientSessionId: 'c' }, cursor, filter, push: (f) => { frames.push(f) } })
+  const stream = openEventStream({ source: source(events), environmentId: 'env', reader: { clientSessionId: 'c' }, cursor, filter, push: (f) => { frames.push(f) }, batchMs })
   const close = () => stream.close()
   const setTopics = stream.setTopics
   const texts = () => frames.flatMap((f) => f.events).map((e) => (e.payload as { event: { delta?: { text: string } } }).event.delta?.text).filter(Boolean)
@@ -236,5 +236,32 @@ describe('openEventStream topic changes', () => {
     durable(events, 's1', 3)
     await flush()
     expect(frames.at(-1)!.events.map((e) => (e.payload as { n: number }).n)).toEqual([2])
+  })
+})
+
+describe('openEventStream batching', () => {
+  afterEach(() => { vi.useRealTimers() })
+
+  it('lets deltas and bookkeeping wait to share a frame, and sends them with the next event that cannot wait', async () => {
+    vi.useFakeTimers()
+    const events = log()
+    const { frames, texts } = open(events, { afterSequence: '0' }, {}, 33)
+    text(events, 's1', 'm1', 'a')
+    events.appendSession({ sessionId: 's1', eventType: 'session.agent_event', payload: { event: { type: 'message_usage', messageId: 'm1' } } })
+    text(events, 's1', 'm1', 'b')
+    await flush()
+    expect(frames).toHaveLength(0)
+    await vi.advanceTimersByTimeAsync(33)
+    expect(frames).toHaveLength(1)
+    expect(texts()).toEqual(['a', 'b'])
+    expect(frames[0]!.sequence).toBe('1')
+
+    text(events, 's1', 'm1', 'c')
+    complete(events, 's1', 'm1')
+    await flush()
+    expect(frames).toHaveLength(2)
+    expect(frames[1]!.events.map((e) => (e.payload as { event: { type: string } }).event.type)).toEqual(['content_delta', 'message_complete'])
+    await vi.advanceTimersByTimeAsync(33)
+    expect(frames).toHaveLength(2)
   })
 })

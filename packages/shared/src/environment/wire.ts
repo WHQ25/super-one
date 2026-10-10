@@ -1,7 +1,10 @@
 /**
  * Message framing inside the node channel from protocol generation 3. A
  * message is its JSON in the remote payload frame (`remote-payload.ts`):
- * DEFLATE above {@link WIRE_COMPRESS_MIN_BYTES}, raw otherwise. A frame larger
+ * DEFLATE above {@link WIRE_COMPRESS_MIN_BYTES}, raw otherwise. Pushed
+ * messages (the stream lane) instead deflate against the last
+ * {@link WIRE_HISTORY_BYTES} of the pushes before them, which both ends keep,
+ * so the keys and ids every event repeats cost a back-reference. A frame larger
  * than {@link WIRE_FRAGMENT_BYTES} travels as fragments, so the sender can put
  * control messages between the parts of a large result. Frames exchanged
  * before the generation handshake are plain JSON, so a peer of another
@@ -16,18 +19,24 @@ import {
   frameRemotePayload,
   MAX_REMOTE_PAYLOAD_BYTES,
   REMOTE_PAYLOAD_HEADER_BYTES,
-  type RemotePayloadInflate,
 } from '../remote-payload'
 
 export interface WireCompression {
-  deflate(json: Uint8Array): Uint8Array
-  inflate: RemotePayloadInflate
+  /** Raw DEFLATE, primed with `dictionary` when given. */
+  deflate(json: Uint8Array, dictionary?: Uint8Array): Uint8Array
+  /** Raw INFLATE into a buffer of the authenticated size, primed like the deflate. */
+  inflate(body: Uint8Array, out: Uint8Array, dictionary?: Uint8Array): Uint8Array
 }
 
 export const WIRE_COMPRESS_MIN_BYTES = 512
 export const WIRE_FRAGMENT_BYTES = 256 * 1024
 
+/** DEFLATE's window: the pushed plaintext a pushed message may refer back to. */
+export const WIRE_HISTORY_BYTES = 32 * 1024
+
 const FRAGMENT_FLAG = 2
+/** A pushed message, deflated against the push history; header as the remote payload's. */
+const HISTORY_FLAG = 3
 /** Flag, message id (u32), index (u16), total (u16). */
 const FRAGMENT_HEADER_BYTES = 9
 const MAX_FRAGMENTS = Math.ceil((MAX_REMOTE_PAYLOAD_BYTES + REMOTE_PAYLOAD_HEADER_BYTES) / WIRE_FRAGMENT_BYTES)
@@ -41,15 +50,33 @@ export function encodePlainMessage(message: unknown): Uint8Array {
   return encoder.encode(JSON.stringify(message))
 }
 
-/** Splits outgoing messages into frames; message ids are per connection and direction. */
+/** The last {@link WIRE_HISTORY_BYTES} of pushed plaintext, kept alike on both ends. */
+class PushHistory {
+  bytes = new Uint8Array(0)
+
+  append(json: Uint8Array): void {
+    const keep = Math.min(this.bytes.length, WIRE_HISTORY_BYTES - Math.min(json.length, WIRE_HISTORY_BYTES))
+    const next = new Uint8Array(keep + Math.min(json.length, WIRE_HISTORY_BYTES))
+    next.set(this.bytes.subarray(this.bytes.length - keep))
+    next.set(json.subarray(json.length - (next.length - keep)), keep)
+    this.bytes = next
+  }
+}
+
+/**
+ * Splits outgoing messages into frames; message ids are per connection and
+ * direction. Pushes must reach the decoder in the order they were encoded.
+ */
 export class WireEncoder {
   private nextId = 0
+  private readonly history = new PushHistory()
 
   constructor(private readonly compression: Pick<WireCompression, 'deflate'>) {}
 
-  encode(message: unknown): Uint8Array[] {
+  encode(message: unknown, opts: { push?: boolean } = {}): Uint8Array[] {
     const json = encoder.encode(JSON.stringify(message))
-    const frame = frameRemotePayload(json, json.length > WIRE_COMPRESS_MIN_BYTES ? this.compression.deflate(json) : undefined)
+    if (json.length > MAX_REMOTE_PAYLOAD_BYTES) throw new Error('remote payload exceeds 32 MiB')
+    const frame = opts.push ? this.pushFrame(json) : frameRemotePayload(json, json.length > WIRE_COMPRESS_MIN_BYTES ? this.compression.deflate(json) : undefined)
     if (frame.length <= WIRE_FRAGMENT_BYTES) return [frame]
     const id = this.nextId = (this.nextId + 1) >>> 0
     const total = Math.ceil(frame.length / WIRE_FRAGMENT_BYTES)
@@ -67,6 +94,16 @@ export class WireEncoder {
     }
     return parts
   }
+
+  private pushFrame(json: Uint8Array): Uint8Array {
+    const body = this.compression.deflate(json, this.history.bytes.length ? this.history.bytes : undefined)
+    this.history.append(json)
+    const frame = new Uint8Array(REMOTE_PAYLOAD_HEADER_BYTES + body.length)
+    frame[0] = HISTORY_FLAG
+    new DataView(frame.buffer).setUint32(1, json.length)
+    frame.set(body, REMOTE_PAYLOAD_HEADER_BYTES)
+    return frame
+  }
 }
 
 /**
@@ -77,13 +114,14 @@ export class WireEncoder {
 export class WireDecoder {
   private readonly partial = new Map<number, { total: number; parts: Uint8Array[]; bytes: number }>()
   private partialBytes = 0
+  private readonly history = new PushHistory()
 
   constructor(private readonly compression: Pick<WireCompression, 'inflate'>) {}
 
   /** The message a frame completes, or `undefined` while fragments are outstanding. */
   decode(frame: Uint8Array): unknown {
     if (frame[0] === JSON_OPEN_BRACE) return JSON.parse(decoder.decode(frame))
-    if (frame[0] !== FRAGMENT_FLAG) return decodeRemotePayload(frame, this.compression.inflate)
+    if (frame[0] !== FRAGMENT_FLAG) return this.payload(frame)
     if (frame.length <= FRAGMENT_HEADER_BYTES) throw new Error('empty wire fragment')
     const view = new DataView(frame.buffer, frame.byteOffset, frame.byteLength)
     const id = view.getUint32(1)
@@ -107,6 +145,17 @@ export class WireDecoder {
       whole.set(part, offset)
       offset += part.length
     }
-    return decodeRemotePayload(whole, this.compression.inflate)
+    return this.payload(whole)
+  }
+
+  private payload(frame: Uint8Array): unknown {
+    if (frame[0] !== HISTORY_FLAG) return decodeRemotePayload(frame, (body, out) => this.compression.inflate(body, out))
+    if (frame.length < REMOTE_PAYLOAD_HEADER_BYTES) throw new Error('invalid remote payload length')
+    const size = new DataView(frame.buffer, frame.byteOffset, frame.byteLength).getUint32(1)
+    if (size > MAX_REMOTE_PAYLOAD_BYTES) throw new Error('remote payload exceeds 32 MiB')
+    const json = this.compression.inflate(frame.subarray(REMOTE_PAYLOAD_HEADER_BYTES), new Uint8Array(size + 1), this.history.bytes.length ? this.history.bytes : undefined)
+    if (json.length !== size) throw new Error('remote payload size mismatch')
+    this.history.append(json)
+    return JSON.parse(decoder.decode(json))
   }
 }

@@ -36,13 +36,14 @@ export function createConnectionWire(ws: NodeSocket, channel: SecureChannel | nu
   const encoder = new WireEncoder(nodeWireCompression)
   const decoder = new WireDecoder(nodeWireCompression)
   let framing = false
-  const encode = (message: unknown): Array<string | Uint8Array> => {
+  const encode = (message: unknown, push: boolean): Array<string | Uint8Array> => {
     if (!channel) return [JSON.stringify(message)]
-    return framing ? encoder.encode(message) : [encodePlainMessage(message)]
+    return framing ? encoder.encode(message, { push }) : [encodePlainMessage(message)]
   }
   return {
-    reply: (message) => outbox.send(encode(message), 'control'),
-    push: (message) => outbox.send(encode(message), 'stream'),
+    reply: (message) => outbox.send(encode(message, false), 'control'),
+    // The stream lane keeps its order, which the push history needs.
+    push: (message) => outbox.send(encode(message, true), 'stream'),
     startFraming: () => { framing = true },
     read: (data, isBinary) => {
       if (!channel) return JSON.parse(data.toString())

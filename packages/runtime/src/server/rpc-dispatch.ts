@@ -34,6 +34,7 @@ import { settingsFromSessionProviderConfig, type NodeSessionRecord } from '../se
 import type { AuthenticatedClient } from './auth-service'
 import { isNodeMutatingCall } from './rpc-mutating-methods'
 import { unsupportedMethodError } from './unsupported'
+import { AGENT_EVENT_BATCH_MS } from '@superone/shared/agent-event-batcher'
 import { openEventStream, streamFilterMatcher, type EventStreamFilter } from './event-stream'
 import { readTopicRef, type TopicRef } from '@superone/shared/environment/topics'
 import { deliverFrame, deliverLoad, subscribeDetail } from './session-delivery'
@@ -2810,6 +2811,7 @@ function handleTopicSubscribe(payload: unknown, ctx: RpcContext): RpcResult {
   const topics = readTopics(p.topics)
   if (!topics) return { error: { code: 'invalid_argument', message: 'topics must be a list of topic refs' } }
   const sessions = ctx.sessions
+  let sentSequence = afterSequence
   const stream = openEventStream({
     source: sessions,
     environmentId: ctx.identity.environmentId,
@@ -2822,10 +2824,16 @@ function handleTopicSubscribe(payload: unknown, ctx: RpcContext): RpcResult {
         return
       }
       const delivered = deliverFrame(frame, streams.delivery, sessions)
-      streams.push({ type: 'stream', subscriptionId, frame: delivered.frame })
+      // A frame the policy emptied says nothing new unless it moves the cursor.
+      const { events, resnapshot, sequence } = delivered.frame
+      if (events.length > 0 || resnapshot?.length || sequence !== sentSequence) {
+        sentSequence = sequence
+        streams.push({ type: 'stream', subscriptionId, frame: delivered.frame })
+      }
       for (const { sessionId, update } of delivered.details) streams.push({ type: 'detail', sessionId, update })
     },
     flow: streams.flow,
+    batchMs: streams.delivery && streams.delivery.policy.tier !== 'local' ? AGENT_EVENT_BATCH_MS : 0,
   })
   streams.open(subscriptionId, stream)
   return { result: { subscriptionId } }

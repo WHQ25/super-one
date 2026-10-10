@@ -1,4 +1,5 @@
 import type { AgentEvent } from '@superone/shared/agent-types'
+import { agentEventCoalesceKey, coalesceAgentEventBatch } from '@superone/shared/agent-event-batcher'
 import type { DetailUpdate } from '@superone/shared/environment/detail'
 import type { EnvironmentEventEnvelope, SessionLoadResult, SessionStreamFrame } from '@superone/shared/environment'
 import type { ConnectionDelivery } from '../stream/delivery/connection-delivery'
@@ -27,7 +28,8 @@ export function deliverLoad(result: SessionLoadResult, delivery: ConnectionDeliv
 /**
  * A stream frame as this connection receives it, and the detail packets the
  * frame's sessions changed. An event the policy drops leaves no envelope; the
- * frame's cursor still covers it.
+ * frame's cursor still covers it. Adjacent additive deltas of one session fold
+ * into the later envelope, whose `sessionVersion` covers both.
  */
 export function deliverFrame(
   frame: SessionStreamFrame,
@@ -49,7 +51,26 @@ export function deliverFrame(
       event.type === 'remote_detail'
         ? [{ sessionId, update: { subscriptionId: event.subscriptionId, revision: event.revision, offset: event.offset, text: event.text } }]
         : []))
-  return { frame: { ...frame, events }, details }
+  return { frame: { ...frame, events: foldDeltas(events) }, details }
+}
+
+function foldDeltas(envelopes: EnvironmentEventEnvelope[]): EnvironmentEventEnvelope[] {
+  const out: EnvironmentEventEnvelope[] = []
+  for (const envelope of envelopes) {
+    const prev = out.at(-1)
+    const prevEvent = prev && agentEventOf(prev)
+    const event = agentEventOf(envelope)
+    const key = event && envelope.ephemeral && agentEventCoalesceKey(event)
+    if (key && prevEvent && prev.ephemeral && prev.aggregateId === envelope.aggregateId && agentEventCoalesceKey(prevEvent) === key) {
+      const folded = coalesceAgentEventBatch([prevEvent, event])
+      if (folded.length === 1) {
+        out[out.length - 1] = { ...envelope, payload: { ...(envelope.payload as object), event: folded[0] } }
+        continue
+      }
+    }
+    out.push(envelope)
+  }
+  return out
 }
 
 /** Expand one row of a session this connection loaded summarized: its revision-0 detail. */

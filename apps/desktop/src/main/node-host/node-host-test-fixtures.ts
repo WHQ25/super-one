@@ -1,9 +1,11 @@
 import { execFileSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { createServer } from 'node:http'
+import { createServer as createTcpServer, connect, type Server, type Socket } from 'node:net'
 import { WebSocketServer } from 'ws'
 import type { AgentEvent, ChatMessage, RecentFolder, SendMessageRequest, SessionAgentProfile } from '@superone/shared/agent-types'
 import { HarnessManager } from '@superone/runtime/harness'
+import { applyEventToSession, createDefaultChatCoreSession, type ChatCoreSession } from '@superone/chat-core'
 import { openNodeDatabase } from '@superone/runtime/db'
 import type { ProjectSnapshot } from '@superone/shared/environment'
 import type { RemoteControlledSessionRow, RemoteControllerRecord } from '../db-remote-controlled-sessions'
@@ -63,7 +65,12 @@ export class FakeSession {
   emitHostEvent(event: AgentEvent) {
     this.emit(event)
   }
+  /** The transcript the session's events reduce to, as a live desktop Session keeps it. */
+  private state: ChatCoreSession = createDefaultChatCoreSession()
+  get snapshot() { return { messages: this.state.messages } }
+  isStreaming() { return this.status === 'streaming' }
   private emit(event: AgentEvent) {
+    this.state = { ...this.state, ...applyEventToSession(this.state, event) }
     for (const h of this.handlers) h(event, false)
   }
 }
@@ -174,4 +181,38 @@ export async function startSpoofedLanNode(identity: { environmentId: string; nod
         http.close(() => resolve())
       }),
   }
+}
+
+/** A's LAN path to B: a TCP forward that can be cut (A leaves the network) and restored. */
+export async function lanPath(targetPort: number) {
+  const sockets = new Set<Socket>()
+  let server: Server | null = null
+  const probe = createTcpServer()
+  await new Promise<void>((resolve) => probe.listen(0, '127.0.0.1', resolve))
+  const port = (probe.address() as { port: number }).port
+  await new Promise<void>((resolve) => probe.close(() => resolve()))
+  const path = {
+    url: `http://127.0.0.1:${port}`,
+    up: () =>
+      new Promise<void>((resolve) => {
+        server = createTcpServer((inbound) => {
+          const outbound = connect(targetPort, '127.0.0.1')
+          for (const s of [inbound, outbound]) {
+            sockets.add(s)
+            s.on('close', () => sockets.delete(s))
+            s.on('error', () => {})
+          }
+          inbound.pipe(outbound).pipe(inbound)
+        })
+        server.listen(port, '127.0.0.1', resolve)
+      }),
+    cut: () =>
+      new Promise<void>((resolve) => {
+        for (const s of sockets) s.destroy()
+        if (!server) return resolve()
+        server.close(() => resolve())
+        server = null
+      }),
+  }
+  return path
 }

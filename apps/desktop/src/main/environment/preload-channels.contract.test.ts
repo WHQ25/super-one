@@ -38,7 +38,6 @@ describe('environment preload ↔ Main IPC contract', () => {
     expect(AgentIpcChannels.ENVIRONMENT_CREATE_SESSION).toBe('environment:createSession')
     expect(AgentIpcChannels.ENVIRONMENT_GET_SESSION).toBe('environment:getSession')
     expect(AgentIpcChannels.ENVIRONMENT_SEND_SESSION_MESSAGE).toBe('environment:sendSessionMessage')
-    expect(AgentIpcChannels.ENVIRONMENT_LIST_SESSION_EVENTS).toBe('environment:listSessionEvents')
     expect(AgentIpcChannels.ENVIRONMENT_INTERRUPT_SESSION).toBe('environment:interruptSession')
     expect(AgentIpcChannels.ENVIRONMENT_RENAME_SESSION).toBe('environment:renameSession')
     expect(AgentIpcChannels.ENVIRONMENT_REMOVE_SESSION).toBe('environment:removeSession')
@@ -94,7 +93,6 @@ describe('environment preload ↔ Main IPC contract', () => {
       'ENVIRONMENT_CREATE_SESSION',
       'ENVIRONMENT_GET_SESSION',
       'ENVIRONMENT_SEND_SESSION_MESSAGE',
-      'ENVIRONMENT_LIST_SESSION_EVENTS',
       'ENVIRONMENT_INTERRUPT_SESSION',
       'ENVIRONMENT_RENAME_SESSION',
       'ENVIRONMENT_REMOVE_SESSION',

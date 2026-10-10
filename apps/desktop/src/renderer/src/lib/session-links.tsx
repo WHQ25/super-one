@@ -21,10 +21,7 @@ export async function openSessionLink(ref: SessionRef): Promise<void> {
   if (target.ref.environmentId !== ref.environmentId || target.ref.sessionId !== ref.sessionId) throw new Error('Session target mismatch')
   if (target.projectPath === sourceProject && ref.sessionId === sourceSession) return
   if (target.connectionId) {
-    const { hydrateRemoteSessionWithCatalog } = await import('./remote-session-ops')
-    const previous = useChatStore.getState().projectSessions[target.projectPath]?._sessions[ref.sessionId] ?? null
-    const prepared = await hydrateRemoteSessionWithCatalog(target.projectPath, ref.sessionId, previous)
-    if (!prepared.snap) throw new Error('Session could not be restored')
+    if (!await window.environment.getSession(target.connectionId, ref.sessionId)) throw new Error('Session could not be restored')
   } else if (!await window.app.loadSessionState(ref.sessionId)) throw new Error('Session could not be restored')
   if (generation !== navigationGeneration || useChatStore.getState().activeProject !== sourceProject) return
   if (sourceProject && useChatStore.getState().projectSessions[sourceProject]?._activeSessionId !== sourceSession) return

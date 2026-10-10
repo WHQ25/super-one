@@ -2,38 +2,16 @@
  * Renderer helpers for remote-node session operations.
  * All host-scoped project keys use `remote:<connectionId>:<hostPath>`.
  */
-import type { AgentEvent, SessionHistoryEntry } from '@superone/shared/agent-types'
+import type { SessionHistoryEntry } from '@superone/shared/agent-types'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness-capabilities'
-import type { EnvironmentEventEnvelope } from '@superone/shared/environment'
-import {
-  createNodeSessionEventMapper,
-  mapNodeSessionEvents,
-  type NodeSessionEventMapContext,
-  type NodeSessionEventMapper,
-} from '@superone/shared/node-session-event-map'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import {
   nodeHarnessToProviderId,
-  nodePendingInteractionFields,
-  nodeStatusToAgentStatus,
-  reconcileTranscriptWithLocalMessages,
   type NodeSessionSnapshot,
 } from '@/lib/remote-session-messages'
 import { mapEnvironmentSessionRow } from '@/lib/session-list-ops'
 import { createDefaultPerSessionState } from '@/stores/chat-store/defaults'
-import { preferCatalogMessages } from '@/stores/chat-store/helpers/remote-message-catalog'
-import { _isLiveSession } from '@/stores/chat-store/helpers/lifecycle'
 import type { ChatProvider, PerSessionState } from '@/stores/chat-store/types'
-
-/** @deprecated Prefer mapEnvironmentSessionRow from session-list-ops. */
-export const mapNodeRowToHistoryEntry = mapEnvironmentSessionRow
-
-export {
-  createNodeSessionEventMapper,
-  mapNodeSessionEvents,
-  type NodeSessionEventMapContext,
-  type NodeSessionEventMapper,
-}
 
 export function isRemoteProjectKey(projectPath: string): boolean {
   return parseRemoteProjectKey(projectPath) !== null
@@ -63,36 +41,19 @@ export async function resolveRemoteProjectId(
   }
 }
 
-export async function hydrateRemotePerSession(
-  projectKey: string,
-  sessionId: string,
-  previous?: PerSessionState | null,
-  /** Already-fetched node snapshot — pass to avoid a second `session.get`. */
-  knownSnap?: NodeSessionSnapshot | null,
+/**
+ * The session's row on the node (settings, title, control) applied over
+ * `previous`. Messages, status and interactions come from the snapshot
+ * `hydrateRemoteSession` reads; a draft the node has never seen keeps its own.
+ */
+function applyRemoteSessionRow(
+  remote: NonNullable<ReturnType<typeof parseRemoteProjectKey>>,
+  previous: PerSessionState | null | undefined,
+  snap: NodeSessionSnapshot | null,
   opts?: { adoptSession?: boolean },
-): Promise<PerSessionState> {
-  const remote = parseRemoteProjectKey(projectKey)
-  if (!remote) {
-    return previous ?? createDefaultPerSessionState()
-  }
-  const snap =
-    knownSnap !== undefined
-      ? knownSnap
-      : ((await window.environment.getSession(
-          remote.connectionId,
-          sessionId,
-        )) as NodeSessionSnapshot | null)
+): PerSessionState {
   const providerId = nodeHarnessToProviderId(snap?.harnessId || snap?.providerId)
   const base = previous ?? createDefaultPerSessionState()
-  // Prefer locally streamed rich content; transcript only fills stream gaps.
-  const messages = reconcileTranscriptWithLocalMessages(
-    base.messages,
-    snap?.transcript,
-    providerId,
-  )
-  const pendingFields = nodePendingInteractionFields(snap?.pendingInteraction, snap?.pendingInputRequests)
-  const isLive =
-    snap?.status === 'streaming' || pendingFields.awaitingAssistantReply
   const chatProvider = (Object.hasOwn(HARNESS_CAPABILITIES, providerId)
     ? providerId
     : 'claude') as ChatProvider
@@ -116,31 +77,32 @@ export async function hydrateRemotePerSession(
     sessionProvider: chatProvider,
     preferredProvider: chatProvider,
     ...(chatProvider === 'acp' && snap?.acpAgentId !== undefined ? { acpAgentId: snap.acpAgentId } : {}),
-    messages,
-    status: isLive ? 'streaming' : nodeStatusToAgentStatus(snap?.status),
     _title: snap?.title ?? base._title ?? null,
-    awaitingAssistantReply: isLive,
-    pendingPermissions: pendingFields.pendingPermissions,
-    pendingQuestion: pendingFields.pendingQuestion,
-    pendingPlanApproval: pendingFields.pendingPlanApproval,
-    _historyHydrated: true,
   }
 }
 
+/** The fields of a node snapshot's state its event reducer derives; the rest stay the renderer's. */
+const SNAPSHOT_STATE_KEYS = [
+  'status', 'awaitingAssistantReply', 'lastAssistantMessageId',
+  'pendingPermissions', 'pendingQuestion', 'pendingPlanApproval',
+  'todos', 'showTodos', 'taskProgress', 'totalCostUsd', 'contextTokens', 'contextWindow',
+] as const satisfies readonly (keyof PerSessionState)[]
+
 /**
- * Hydrate one remote session from the node: `session.get` for the session row
- * (settings, title, control) and `openRemoteSession` for its messages, which
- * main reads as a snapshot while it starts following the session, so every
- * later event reaches the chat exactly once.
+ * Open one remote session: `session.get` for its row and `openRemoteSession`
+ * for its state and messages, which main reads as a snapshot while it starts
+ * following the session. The snapshot replaces what the chat held: every event
+ * above it reaches the chat after this resolves, and one it already holds is
+ * skipped by message `seq`.
  *
- * Returns the raw snapshot too, so callers can drive `followRemoteSessionEvents`
+ * Returns the raw row too, so callers can drive `followRemoteSessionEvents`
  * off node truth instead of the (possibly stale) in-memory session state.
  */
-export async function hydrateRemoteSessionWithCatalog(
+export async function hydrateRemoteSession(
   projectKey: string,
   sessionId: string,
   previous?: PerSessionState | null,
-  opts?: { catalogLimit?: number; adoptSession?: boolean },
+  opts?: { adoptSession?: boolean },
 ): Promise<{ hydrated: PerSessionState; snap: NodeSessionSnapshot | null }> {
   const remote = parseRemoteProjectKey(projectKey)
   if (!remote) {
@@ -150,68 +112,31 @@ export async function hydrateRemoteSessionWithCatalog(
     remote.connectionId,
     sessionId,
   )) as NodeSessionSnapshot | null
-  let hydrated = await hydrateRemotePerSession(projectKey, sessionId, previous, snap, opts)
-
-  // Draft session ids only exist in the renderer until first send — nothing to page.
+  const hydrated = applyRemoteSessionRow(remote, previous, snap, opts)
+  // Draft session ids only exist in the renderer until first send.
   if (!snap?.sessionId) return { hydrated, snap }
-
-  try {
-    const loaded = await window.environment.openRemoteSession(remote.connectionId, {
-      sessionId,
-      projectPath: projectKey,
-      providerId: hydrated.sessionProvider || hydrated.preferredProvider || 'claude',
-      limit: opts?.catalogLimit ?? 200,
-    })
-    if (loaded.messages.length > 0) {
-      hydrated = {
-        ...hydrated,
-        messages: preferCatalogMessages(hydrated.messages, loaded.messages),
-        _historyHydrated: true,
-      }
-    }
-  } catch (err) {
-    console.warn('[chat] openRemoteSession hydrate failed:', err)
-  }
-
-  return { hydrated, snap }
+  const loaded = await window.environment.openRemoteSession(remote.connectionId, {
+    sessionId,
+    projectPath: projectKey,
+    providerId: hydrated.sessionProvider || hydrated.preferredProvider || 'claude',
+    limit: 200,
+  })
+  const state = loaded.state as Partial<PerSessionState>
+  const derived = Object.fromEntries(SNAPSHOT_STATE_KEYS.filter((key) => key in state).map((key) => [key, state[key]]))
+  // Older pages are committed and never change: keep those already held.
+  const first = loaded.before == null ? -1 : hydrated.messages.findIndex((message) => message.id === loaded.messages[0]?.id)
+  const messages = first > 0 ? [...hydrated.messages.slice(0, first), ...loaded.messages] : loaded.messages
+  return { hydrated: { ...hydrated, ...derived, messages, _historyHydrated: true }, snap }
 }
 
-/**
- * Apply a remote hydrate result without clobbering messages/interaction state
- * that landed via handleAgentEvent while getSession / messages.list were in flight.
- *
- * switchSession snapshots `previous` before those awaits; unconditionally
- * `set(hydrated)` dropped concurrent stream deltas (and can re-open a turn that
- * already settled in memory).
- *
- * `preferNodeState` inverts that bias for the reconnect path: there the
- * in-memory status is frozen from the moment the socket dropped (a turn may
- * have finished, or a permission may have been raised, while offline), so the
- * node snapshot is authoritative. Composer/queue fields stay renderer-owned
- * either way. Safe because reconnect rehydrates *before* re-owning the drain,
- * so no agent event can be racing it.
- */
-export function mergeRemoteHydrateWithCurrent(
+/** A hydrated session with the composer and queue the renderer owns kept from `current`. */
+export function keepRendererOwnedState(
   current: PerSessionState | null | undefined,
   hydrated: PerSessionState,
-  opts?: { preferNodeState?: boolean },
 ): PerSessionState {
   if (!current) return hydrated
-
-  const messages = preferCatalogMessages(current.messages, hydrated.messages)
-  const currentLive = _isLiveSession(current)
-  const hydratedLive = _isLiveSession(hydrated)
-  // Prefer in-memory interaction when:
-  // - still live (stream advanced during await), or
-  // - already settled while the node snapshot still looked live (stale snap).
-  const preferCurrentInteraction =
-    !opts?.preferNodeState &&
-    (currentLive || (!currentLive && current.messages.length > 0 && hydratedLive))
-
   return {
     ...hydrated,
-    messages,
-    // Composer / queue are renderer-only — never take the pre-await snapshot.
     draftText: current.draftText,
     draftJson: current.draftJson,
     draftId: current.draftId,
@@ -223,18 +148,6 @@ export function mergeRemoteHydrateWithCurrent(
     // Carrying only one leaves the composer showing half a suggestion set.
     promptSuggestion: current.promptSuggestion,
     promptSuggestions: current.promptSuggestions,
-    ...(preferCurrentInteraction
-      ? {
-          status: current.status,
-          awaitingAssistantReply: current.awaitingAssistantReply,
-          pendingPermissions: current.pendingPermissions,
-          pendingQuestion: current.pendingQuestion,
-          pendingPlanApproval: current.pendingPlanApproval,
-          lastAssistantMessageId:
-            current.lastAssistantMessageId ?? hydrated.lastAssistantMessageId,
-        }
-      : {}),
-    _historyHydrated: true,
   }
 }
 
@@ -287,7 +200,7 @@ export async function createRemoteSession(
   })
   return {
     sessionId: created.sessionId,
-    entry: mapNodeRowToHistoryEntry({
+    entry: mapEnvironmentSessionRow({
       ...created,
       provider: created.provider ?? harnessId,
     }),
@@ -354,49 +267,4 @@ export async function resolveNodeSessionId(
     }
     throw err
   }
-}
-
-/** Build a mapper scoped to a remote project key + node session id. */
-export function createRemoteSessionEventMapper(
-  projectKey: string,
-  sessionId: string,
-  providerId = 'claude',
-): NodeSessionEventMapper {
-  return createNodeSessionEventMapper({
-    projectPath: projectKey,
-    sessionId,
-    providerId,
-  })
-}
-
-/**
- * Poll `session.events` after `afterSequence` and map to AgentEvents for one session.
- * Returns mapped events plus the exclusive cursor for the next poll.
- */
-export async function pollRemoteSessionAgentEvents(
-  projectKey: string,
-  sessionId: string,
-  afterSequence: string,
-  mapper?: NodeSessionEventMapper,
-  providerId = 'claude',
-): Promise<{ agentEvents: AgentEvent[]; nextSequence: string; raw: EnvironmentEventEnvelope[] }> {
-  const remote = parseRemoteProjectKey(projectKey)
-  if (!remote) throw new Error('not a remote project key')
-
-  const raw = (await window.environment.listSessionEvents(
-    remote.connectionId,
-    afterSequence,
-  )) as EnvironmentEventEnvelope[]
-  const events = Array.isArray(raw) ? raw : []
-  let nextSequence = afterSequence
-  const activeMapper =
-    mapper ?? createRemoteSessionEventMapper(projectKey, sessionId, providerId)
-  const agentEvents: AgentEvent[] = []
-  for (const ev of events) {
-    nextSequence = ev.sequence
-    if (ev.aggregateType === 'session' && ev.aggregateId === sessionId) {
-      agentEvents.push(...activeMapper.map(ev))
-    }
-  }
-  return { agentEvents, nextSequence, raw: events }
 }

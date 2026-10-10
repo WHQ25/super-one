@@ -1,6 +1,6 @@
 /**
- * Map node `session.messages.list` denser blocks into chat-store ChatMessage rows.
- * Used when remote hydrate can call listSessionMessages (gateway / future IPC).
+ * Map node `session.messages.list` blocks into chat-store ChatMessage rows
+ * (the read model's bootstrap of older sessions, phone history pages).
  */
 import type { ChatMessage, ContentBlock } from './agent-types'
 import type { SessionMessageBlock } from './environment/session-messages'

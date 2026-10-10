@@ -195,7 +195,6 @@ describe('sendMessageImpl: remote node', () => {
     const sess = proj._sessions['node-sid-1']
     expect(sess.awaitingAssistantReply).toBe(false)
     expect(sess.status).toBe('idle')
-    expect(sess.messages.some((m) => m.role === 'assistant')).toBe(true)
   })
 
   it('uses preferredProvider claude when sessionProvider is still null', async () => {

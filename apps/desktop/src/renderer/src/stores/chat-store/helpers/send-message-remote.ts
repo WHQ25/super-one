@@ -9,7 +9,7 @@ import { isGrokAcpAgent } from '@superone/shared/acp-brand'
 import { CLAUDE_INTERCEPTED_COMMANDS } from '../index'
 import type { ChatProvider, ChatStore, InputSegment, Mention, PerSessionState } from '../types'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
-import { nodeHarnessToProviderId, nodeStatusToAgentStatus, reconcileTranscriptWithLocalMessages, type NodeSessionSnapshot } from '@/lib/remote-session-messages'
+import { nodeStatusToAgentStatus, type NodeSessionSnapshot } from '@/lib/remote-session-messages'
 import { providerSessionIdFromResume } from '@superone/shared/environment'
 import { expandPathRefTagsForAgent, stripMiniAppMarkup } from '@superone/shared/miniapp-prompt-tags'
 import { isBuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
@@ -413,9 +413,6 @@ async function deliverRemoteTurn(
   const { projectPath, remoteKey, sid, preferredHarness, sendInput, titleText, statusBeforeSend } = turn
   const patchSession = writeScope.patch
   const applyFinalSnapshot = async (finalSnap: NodeSessionSnapshot | null) => {
-    const providerId = nodeHarnessToProviderId(
-      finalSnap?.harnessId || finalSnap?.providerId || preferredHarness,
-    )
     const { nodePendingInteractionFields } = await import('@/lib/remote-session-messages')
     const pendingFields = nodePendingInteractionFields(finalSnap?.pendingInteraction, finalSnap?.pendingInputRequests)
     const stillLive =
@@ -433,12 +430,7 @@ async function deliverRemoteTurn(
           ? `${titleSource.slice(0, SESSION_TITLE_MAX_CHARS)}…`
           : titleSource
         : null)
-    patchSession((sess) => ({
-      messages: reconcileTranscriptWithLocalMessages(
-        sess.messages,
-        finalSnap?.transcript,
-        providerId,
-      ),
+    patchSession(() => ({
       awaitingAssistantReply: stillLive,
       status: stillLive ? 'streaming' : nodeStatusToAgentStatus(finalSnap?.status),
       pendingPermissions: pendingFields.pendingPermissions,

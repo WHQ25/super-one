@@ -54,6 +54,22 @@ describe('RemoteSessionFeed', () => {
     feed.close()
   })
 
+  it('gives a follower only events committed after it joined, though the stream lags behind', async () => {
+    const source = pushSource('7')
+    const feed = new RemoteSessionFeed(source)
+    await feed.observe(() => {})
+    // The node has moved to 9 while the stream has not read 8 and 9 yet.
+    source.head.mockResolvedValue('9')
+    const a = { event: vi.fn(), end: vi.fn() }
+    await feed.follow('a', a)
+    source.push(envelope(8, 'a'))
+    source.push(envelope(9, 'a'))
+    source.push(envelope(10, 'a'))
+    await flush()
+    expect(a.event.mock.calls.map(([e]) => e.sequence)).toEqual(['10'])
+    feed.close()
+  })
+
   it('hands every session event to observers', async () => {
     const source = pushSource()
     const feed = new RemoteSessionFeed(source)

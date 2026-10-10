@@ -31,7 +31,7 @@ import { defaultDesktopNodePort } from './paths'
 
 type NodeHostSettings = Pick<AppSettings, 'remoteNodeAccessEnabled' | 'remoteNodeAccessPort'>
 /** What main gives the domain for its phones: its PTYs and its desktop methods. */
-type PhonePorts = Pick<DesktopDomainDeps, 'terminals' | 'phoneMethods'>
+type PhonePorts = Pick<DesktopDomainDeps, 'terminals' | 'phoneMethods' | 'projectEdits'>
 
 let host: DesktopNodeHost | null = null
 /** This desktop's environment backend, open from the first settings pass until quit. */

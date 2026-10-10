@@ -25,6 +25,14 @@ function methodsDomain() {
     remoteReadMcpMentions: vi.fn(async () => ({ resources: [] })),
     remoteMcpServers: vi.fn(async () => ({ servers: [] })),
     markRemoteSeen: vi.fn(),
+    remoteListDirectory: vi.fn(async (path: string) => ({ items: [{ name: 'src', isDirectory: true }], appliedIgnoreMode: 'none', path })),
+    remoteCreateDirectory: vi.fn(async () => {}),
+    remoteUsage: vi.fn(async () => ({ usage: null })),
+    remoteConsumeRateLimitReset: vi.fn(async () => ({ outcome: null })),
+    remoteReadFile: vi.fn(async () => ({ ok: true, inline: true, text: 'hi' })),
+    remoteVideoPoster: vi.fn(async () => ({ ok: true, poster: null })),
+    remoteUpload: vi.fn(async () => ({ ok: true })),
+    remoteUploadComplete: vi.fn(async () => ({ ok: true })),
   }
   const desktopPair = vi.fn(async () => ({ code: 'abc' }))
   const host = { agent, desktopPair } as unknown as PhoneMethodHost
@@ -59,5 +67,17 @@ describe('phone endpoint: desktop methods', () => {
     const phone = await connectPhone(domain)
     expect(await phone.rpc('session.historyIndex', { sessionId: 'own' })).toEqual({ sessionId: 'own', turns: [] })
     await expect(phone.rpc('session.attachment', { sessionId: 'own', messageId: 'm', name: 'a.png' })).rejects.toMatchObject({ code: 'not_found' })
+  })
+
+  it('reads host files over the asking phone\'s link', async () => {
+    const { domain, agent } = methodsDomain()
+    const lan = await connectPhone(domain, { transport: 'lan' })
+    expect(await lan.rpc('files.read', { path: '/tmp/a.txt', preferInline: true })).toEqual({ ok: true, inline: true, text: 'hi' })
+    expect(agent.remoteReadFile).toHaveBeenLastCalledWith(expect.objectContaining({ path: '/tmp/a.txt', preferInline: true }), { deviceId: 'phone-1', transport: 'lan' })
+    const relay = await connectPhone(domain, { transport: 'relay' })
+    await relay.rpc('files.upload', { uploadId: 'u1', name: 'a.png', size: 3, targetDir: '/tmp' })
+    expect(agent.remoteUpload).toHaveBeenLastCalledWith(expect.objectContaining({ uploadId: 'u1', transport: 'relay' }))
+    await relay.rpc('files.uploadComplete', { uploadId: 'u1' })
+    expect(agent.remoteUploadComplete).toHaveBeenCalledWith('u1')
   })
 })

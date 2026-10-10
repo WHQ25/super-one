@@ -112,10 +112,12 @@ permission/question/plan responses and supported permission/sandbox settings.
 Other commands return an explicit unsupported error. This route does not imply
 full remote-node workspace, terminal, file or new-session UI parity.
 
-CLI restore takes a synchronous snapshot/catalog/event-sequence baseline before
-subscribing to catch-up events. Each routed phone session holds a renewable
-control lease and an abortable event subscription. Leave, disconnect, bootstrap
-failure and lease loss release ownership. Routed events carry `environmentId`;
+CLI restore opens the session with `session.load` and subscribes from the
+cursor it reflects; when the node no longer holds events the phone missed, the
+desktop brings the phone to a fresh snapshot with catch-up events. Each routed
+phone session holds a renewable control lease, acquired for that phone's
+device, and an abortable event subscription. Leave, disconnect, load failure
+and lease loss release ownership. Routed events carry `environmentId`;
 the phone drops traffic/removal events for another environment even if its
 session ID matches. CLI sends retain the caller's `clientMessageId` as the
 canonical user block ID in live events and persisted history. The sender's

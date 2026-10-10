@@ -61,9 +61,8 @@ a press whose only effect is a held toast still shows. `$.ui.ask` and the dev-fo
   need the control lease and an idempotency key, so a retried press runs once.
   The node runs every op under the caller's pairing (`<clientId>.<pairing>`)
   and `session.events` reads those ids back as the caller's own, so two
-  desktops on one node keep separate clients. The desktop pulls the node's
-  events after attaching and after each such op, since an idle session has no
-  drain running.
+  desktops on one node keep separate clients. The plugin's redraws reach the
+  desktop on the session's pushed stream, idle or not.
 
 ## How it is built
 

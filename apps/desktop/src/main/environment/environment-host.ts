@@ -376,7 +376,7 @@ export class EnvironmentHost {
 
   /**
    * Test helper: whether the Host Action consumer for a connection is running.
-   * The consumer is independent of chat views and sendSessionMessage drains.
+   * The consumer is independent of chat views and sends.
    */
   isHostActionConsumerRunning(connectionId: string): boolean {
     return this.hostActionConsumers.get(connectionId)?.isRunning === true

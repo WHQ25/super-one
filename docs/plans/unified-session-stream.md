@@ -1,6 +1,6 @@
 # Unified session stream
 
-Status: in-progress · Updated: 2026-10-10
+Status: implemented, live verification due · Updated: 2026-10-10
 Goal: Every consumer of session data (renderer, controlling desktop, relayed phone, in-process services) reads one log per node through one subscription contract with its own profile.
 Proposal: [unified-session-stream.md](../proposals/unified-session-stream.md)
 Long-term docs affected: [chat-core.md](../architecture/chat-core.md), [mobile-remote-control.md](../architecture/mobile-remote-control.md), [remote-node-service.md](../architecture/remote-node-service.md) §5.2, §8, §9; `apps/desktop/docs/agent-reference/architecture.md`
@@ -92,6 +92,15 @@ Long-term docs affected: [chat-core.md](../architecture/chat-core.md), [mobile-r
   - A phone on a CLI-node session shows the same transcript as the desktop.
   - The mobile frame golden test passes unchanged; a phone build from before this phase works against the new desktop.
   - That older phone stays connected while the desktop's upstream to the node drops across a message completion and across a ring eviction: it ends with the complete transcript.
+- Progress (2026-10-10): done on `refactor/unified-session-stream` (`24d56eb4d`…`79df45acd`).
+  - Routed phones open at a `session.load` barrier, resume the node stream by version, and on `resnapshot` the desktop brings the phone to a fresh snapshot with catch-up events its reducer already applies (`routed-catch-up.ts`). `session.linkBootstrap` is removed.
+  - The renderer opens remote sessions at the node snapshot and takes it as is; the catalog/transcript merge stack, the post-send and post-respond `session.get` patches, `continueDrain`, the drain waiters, `RemoteSendDetached` and the renderer polling path are removed. Remote sends resolve once the node takes them, as local sends do; answers, stops and turn ends settle on the session stream.
+- Moved out or changed, found while implementing:
+  - The phone drops the relay `reset` frame and restores only when its channel reconnects, so a `reset` cannot make a connected phone restore. The desktop repairs the phone itself: it reloads the node snapshot and sends the difference as `message_start` / `content_delta` / terminal events. A phone whose messages are not a prefix of the snapshot gets `status_change: error`. No wire change.
+  - The node does not run the `mobile` profile for relayed phones: the desktop already runs the same shared stages over the node's events, and moving them would add a second copy of the phone projection state on every node for no change on the wire. `environment-commands.ts` keeps its chat-core reduction for that projection.
+  - `EnvironmentClient` and a full `LocalEnvironmentGateway` session port are not built. Reads are on one path already (events into `handleAgentEvent`, remote sessions opened at a snapshot barrier), and writes differ only in which IPC they call. The remaining renderer branches on remote keys (123 non-import lines) are environment capabilities: settings a local session applies live and a node applies on the next send, worktrees, devices, resources. A facade over them adds a layer without removing a behavior difference.
+  - IPC stays a broadcast. The main window holds every session it lists; a mini session window shows one session but opens side chats and follows draft-to-session id changes, so a per-window session filter would drop events it needs.
+  - Local snapshots (`getLiveSnapshots`, `buildRemoteSessionSnapshot`, `buildProgressiveBootstrap`) stay: they read the in-process `Session`, which is the desktop's read model (phase 4), and the phone ones produce the unchanged wire.
 
 ## 6. Control
 
@@ -100,6 +109,10 @@ Long-term docs affected: [chat-core.md](../architecture/chat-core.md), [mobile-r
 - Remove the device map in `environment-commands.ts`.
 - Drafts keep `draft-control.ts`.
 - Acceptance: two phones and the desktop UI racing on one CLI-node session end with one holder; the others get `failed_precondition`; Disconnect and Reconnect on the banner still hand control back and forth.
+- Progress (2026-10-10): done on `refactor/unified-session-stream` (`ae3ac54f5`). A lease names a `delegate` inside its client; delegates hold a resource one at a time, except that the client's own window `yields` and a phone opening the session takes it over. The desktop acquires for each relayed phone with its device id and for its window with `yields`; the node refuses a second phone. Additive `control_leases` columns. Unit test covers the two-phones-and-window race.
+- Moved out, found while implementing:
+  - `Session` owner/subscribers stay the local holder model. Moving them onto leases needs the node database open on every desktop (phase 4 keeps it closed unless the node host runs), and the node host already maps leases onto `Session.claim`.
+  - The per-device subscription registry in `environment-commands.ts` stays: it is the forwarding state a device's disconnect releases. Its cross-device control check is removed.
 
 ## Shadow comparison
 
@@ -112,6 +125,8 @@ Long-term docs affected: [chat-core.md](../architecture/chat-core.md), [mobile-r
 - Any difference fails.
 
 ## Verification
+
+Due before this plan and its proposal are folded into the long-term docs and deleted: the node lab runs for phases 3–6 and the live phone pairing for phases 1, 2, 5 and 6 below. Unit, golden, shadow and CLI/desktop integration tests pass.
 
 - Unit, golden and shadow tests per phase in the touched packages.
 - Node lab (`bun run dev:cli:lab`) for phases 3–6: idle traffic, disconnect mid-turn, node restart with a pending interaction, older-node refusal.

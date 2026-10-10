@@ -372,20 +372,21 @@ Each phase ships on its own. The phone wire format does not change.
 
 ## 7. Expected outcomes
 
-Baselines measured 2026-10-10; the plan verifies each.
+Baselines measured 2026-10-10, before phase 1; results measured 2026-10-10 on
+`refactor/unified-session-stream` after phase 6.
 
-| Measure | Today | Target |
-|---|---|---|
-| Session read polling | 80 ms per running remote turn; 100 ms per phone-relayed node session; 2 s per environment with remote children | none (lease renewal and connection heartbeats remain) |
-| Open idle remote session sees another client's activity | no, until rehydrate | yes, pushed |
-| CLI writes per streamed text delta | one SQLite row | none; one consolidated row per committed message |
-| Direct `safeSend(EVENT)` bypassing the convergence point | 3 (presence, node sink, settings fallback) | 0 |
-| Events created outside their aggregate | `AgentService` synthesized events and most interaction resolutions | 0 |
-| Event position schemes on desktop and node paths | 2 (process `{epoch, seq}`, node rowid in `AgentEvent.seq`) | 1 |
-| Snapshot / hydrate APIs | 5 | 1 |
-| Host-side reducers | 3 | 1 |
-| Renderer lines branching on remote keys | 171 in 50 files | only genuinely environment-specific capabilities |
-| Session control models | 3 | 1 |
-| Desktop reconnect mid-turn | rehydrate (remote), live snapshot (local) | resume from cursor |
-| Phone reconnect | `restoreSession` | unchanged |
-| Streaming ring memory | — | peak measured on the plan's workloads, within the byte cap |
+| Measure | Before | Target | After |
+|---|---|---|---|
+| Session read polling | 80 ms per running remote turn; 100 ms per phone-relayed node session; 2 s per environment with remote children | none (lease renewal and connection heartbeats remain) | none |
+| Open idle remote session sees another client's activity | no, until rehydrate | yes, pushed | yes, pushed |
+| CLI writes per streamed text delta | one SQLite row | none; one consolidated row per committed message | none; the read model checkpoints committed messages |
+| Direct `safeSend(EVENT)` bypassing the convergence point | 3 (presence, node sink, settings fallback) | 0 | 0 |
+| Events created outside their aggregate | `AgentService` synthesized events and most interaction resolutions | 0 | 0 |
+| Event position schemes on desktop and node paths | 2 (process `{epoch, seq}`, node rowid in `AgentEvent.seq`) | 1 | 2: process `{epoch, seq}` for local sessions, per-session version for node sessions |
+| Snapshot / hydrate APIs | 5 | 1 | 4: `session.load` for node sessions; the three local ones read the in-process `Session` |
+| Host-side reducers | 3 | 1 | 2: desktop dialect reducers for local sessions, chat-core for node read models and routed phones |
+| Renderer lines branching on remote keys | 171 in 50 files | only genuinely environment-specific capabilities | 168 in 49 files; the merge stack and remote-only write paths are gone, the rest are environment capabilities |
+| Session control models | 3 | 1 | 2: `Session` owner for local sessions, leases with delegated holders on nodes |
+| Desktop reconnect mid-turn | rehydrate (remote), live snapshot (local) | resume from cursor | resume by version; snapshot only for a missed committed range |
+| Phone reconnect | `restoreSession` | unchanged | unchanged |
+| Streaming ring memory | — | peak measured on the plan's workloads, within the byte cap | 164 KiB peak on ten concurrent recorded sessions; cap 16 MiB |

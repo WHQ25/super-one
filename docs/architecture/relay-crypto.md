@@ -118,7 +118,9 @@ connection) run the channel above over JSON text envelopes:
   mid-handshake, or while its channel is open, is refused; removing a device
   also closes its pending handshakes and channels. After the proof the host sends
   `{ type: 'channel', data }`, a sealed `handshake` frame (host name, LAN
-  addresses); only then does the phone send requests.
+  addresses, and `host { appVersion, protocol, environmentId }`: its release,
+  protocol generation and canonical environment id, as authentic as the
+  pairing); only then does the phone send requests.
 - Frames: `command`, `event`, `response`, `response_chunk` and `terminal` keep
   their envelopes, and `data` is one sealed channel frame, base64. The sealed
   body is `headerLen:u16be || header JSON || payload`; the header names the kind

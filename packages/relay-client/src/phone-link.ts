@@ -16,7 +16,19 @@ import { SecureChannelError, type SecureChannel } from './secure-channel'
 /** Envelope type carrying the handshake messages and the host's sealed `handshake` frame. */
 export const LINK_CHANNEL_FRAME = 'channel'
 
-export type LinkHandshakeInfo = { hostName: string; lan?: { hosts: string[]; port: number } }
+/**
+ * What a host says about itself once the channel is up. Sealed, so it is as
+ * authentic as the pairing: `host` is its release, the protocol generation it
+ * serves and its canonical environment id. Hosts before the unified protocol
+ * omit `host`.
+ */
+export type LinkHandshakeInfo = {
+  hostName: string
+  lan?: { hosts: string[]; port: number }
+  host?: LinkHostInfo
+}
+
+export type LinkHostInfo = { appVersion: string; protocol: number; environmentId: string }
 
 export type LinkHeader =
   | ({ t: 'handshake' } & LinkHandshakeInfo)
@@ -84,9 +96,21 @@ function readHeader(raw: unknown): LinkHeader {
         const lan = h.lan as { hosts?: unknown; port?: unknown } | undefined
         const validLan = lan && Array.isArray(lan.hosts) && lan.hosts.every((x) => typeof x === 'string')
           && typeof lan.port === 'number'
-        return { t: 'handshake', hostName: h.hostName, ...(validLan ? { lan: { hosts: lan.hosts as string[], port: lan.port as number } } : {}) }
+        const host = readHostInfo(h.host)
+        return {
+          t: 'handshake',
+          hostName: h.hostName,
+          ...(validLan ? { lan: { hosts: lan.hosts as string[], port: lan.port as number } } : {}),
+          ...(host ? { host } : {}),
+        }
       }
       break
   }
   throw new SecureChannelError('channel_protocol', 'invalid link header')
+}
+
+function readHostInfo(raw: unknown): LinkHostInfo | null {
+  const host = raw as Record<string, unknown> | null | undefined
+  if (!host || typeof host.appVersion !== 'string' || typeof host.environmentId !== 'string' || !Number.isInteger(host.protocol)) return null
+  return { appVersion: host.appVersion, protocol: host.protocol as number, environmentId: host.environmentId }
 }

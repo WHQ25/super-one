@@ -104,6 +104,7 @@ import { RendererInterest } from './stream/renderer-interest'
 import { LocalTopicRecovery } from './stream/topic-recovery'
 import { createLocalDelivery, deliveryPolicy } from '@superone/runtime/stream'
 import { localSessionEnvironmentId } from './environment/session-identity'
+import { PROTOCOL_GENERATION } from '@superone/shared/environment/protocol'
 import { spawnParentOf } from './session/collaboration-mailbox'
 import { CHILD_STALL_CHECK_INTERVAL_MS, CollaborationChildMonitor, childActivityView } from './session/collaboration-lifecycle'
 import { RemoteChildWatcher } from './session/collaboration-remote-watch'
@@ -726,6 +727,7 @@ sessionEvents.subscribe({
 })
 const deviceRegistry = new DeviceRegistry(sessionManager)
 const remoteCallbacks: RemoteControlCallbacks = {
+  hostInfo: () => ({ appVersion: app.getVersion(), protocol: PROTOCOL_GENERATION.current, environmentId: localEnvironmentId }),
   onCommand: async (command, respond, source) => {
     await agentService.handleRemoteCommand(command, respond, source)
     if (!containsVoiceCommand(command)) safeSend(AgentIpcChannels.REMOTE_COMMAND, command)

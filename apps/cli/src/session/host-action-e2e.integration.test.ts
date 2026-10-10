@@ -5,7 +5,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { HOST_ACTION_TOOL_GROUPS } from '@superone/shared/environment'
@@ -111,12 +111,13 @@ describe('Host Action E2E via MCP + RPC', () => {
     // Use schema field `filter` as a correlator (unknown keys are stripped by Zod).
     const p1 = mcpClient.callTool({ name: 'browser_snapshot', arguments: { filter: 'one', description: 'Read the first section' } })
     const p2 = mcpClient.callTool({ name: 'browser_snapshot', arguments: { filter: 'two', description: 'Read the second section' } })
-    await new Promise((r) => setTimeout(r, 50))
-
-    const poll = (await client.rpc('session.hostActionsPoll', {})) as {
-      outstanding: Array<{ actionId: string; version: number; state: string }>
-    }
-    expect(poll.outstanding.length).toBe(2)
+    const poll = await vi.waitFor(async () => {
+      const result = (await client.rpc('session.hostActionsPoll', {})) as {
+        outstanding: Array<{ actionId: string; version: number; state: string }>
+      }
+      expect(result.outstanding.length).toBe(2)
+      return result
+    }, { timeout: 5_000 })
 
     // Claim and respond both (controller path)
     await Promise.all(

@@ -8,7 +8,8 @@ import { HarnessManager } from '@superone/runtime/harness'
 import { applyEventToSession, createDefaultChatCoreSession, type ChatCoreSession } from '@superone/chat-core'
 import { openNodeDatabase } from '@superone/runtime/db'
 import type { ProjectSnapshot } from '@superone/shared/environment'
-import type { RemoteControlledSessionRow, RemoteControllerRecord } from '../db-remote-controlled-sessions'
+import type { DesktopSessionRow, RemoteControlledSessionRow } from '../db-remote-controlled-sessions'
+import type { DesktopSessionRows } from './desktop-session-reads'
 import type { Session } from '../session/types'
 import { createDesktopProjectsPort } from './desktop-projects-port'
 import type { NodeHostSessionManager, NodeHostSessionStore } from './desktop-session-host'
@@ -100,16 +101,23 @@ export class FakeSessionManager implements NodeHostSessionManager {
   }
 }
 
-export function memoryStore(projects: () => ProjectSnapshot[]): NodeHostSessionStore & { rows: Map<string, RemoteControlledSessionRow> } {
-  const rows = new Map<string, RemoteControlledSessionRow>()
+/** Desktop session rows in memory: `rows` holds every session, the store sees the controlled ones, `all` every one. */
+export function memoryStore(projects: () => ProjectSnapshot[]): NodeHostSessionStore & { rows: Map<string, DesktopSessionRow>; all: DesktopSessionRows<DesktopSessionRow> } {
+  const rows = new Map<string, DesktopSessionRow>()
+  const loadMessages = () => ({ messages: [], cursor: null, hasMore: false })
   return {
     rows,
+    all: {
+      get: (sessionId) => rows.get(sessionId) ?? null,
+      list: (projectId) => [...rows.values()].filter((r) => !projectId || r.projectId === projectId),
+      loadMessages,
+    },
     createRow: ({ sessionId, projectPath, title }) => {
       const project = projects().find((p) => p.path === projectPath)!
       rows.set(sessionId, {
         sessionId, projectId: project.projectId, projectPath, title: title ?? null, harnessId: 'claude', providerId: null,
         providerSessionId: null, worktreePath: null, isPinned: false, isHidden: false, isUserRenamed: false, tags: [],
-        createdAt: Date.now(), updatedAt: Date.now(), controller: null as unknown as RemoteControllerRecord,
+        createdAt: Date.now(), updatedAt: Date.now(), controller: null,
       })
     },
     setController: (sessionId, controller, providerId) => {
@@ -120,11 +128,11 @@ export function memoryStore(projects: () => ProjectSnapshot[]): NodeHostSessionS
     },
     get: (sessionId) => {
       const row = rows.get(sessionId)
-      return row?.controller ? row : null
+      return row?.controller ? row as RemoteControlledSessionRow : null
     },
-    list: (projectId) => [...rows.values()].filter((r) => r.controller && (!projectId || r.projectId === projectId)),
+    list: (projectId) => [...rows.values()].filter((r): r is RemoteControlledSessionRow => r.controller !== null && (!projectId || r.projectId === projectId)),
     rename: () => {},
-    loadMessages: () => ({ messages: [], cursor: null, hasMore: false }),
+    loadMessages,
   }
 }
 
@@ -136,12 +144,13 @@ export async function startTestDesktopNode(input: { userDataDir: string; project
   const folders: RecentFolder[] = [{ id: 'p1', path: input.projectDir, name: 'app', addedAt: '', lastOpened: new Date().toISOString() }]
   const projects = createDesktopProjectsPort({ list: () => folders, add: () => {} })
   const sessions = new FakeSessionManager()
+  const store = memoryStore(() => projects.list())
   const harnesses = new HarnessManager(openNodeDatabase(':memory:'))
   harnesses.enableSimulatedOverlay()
   const host = await startDesktopNode(
     {
       userDataDir: input.userDataDir, label: 'Desktop B', appVersion: '0.0.0-test', sessions,
-      store: memoryStore(() => projects.list()), projects, harnesses,
+      store, rows: store.all, projects, harnesses,
       listAgentProfiles: () => AGENT_PROFILES,
       hooks: {
         probeHarnessReadiness: () => ({ ok: true }) as never,
@@ -150,7 +159,7 @@ export async function startTestDesktopNode(input: { userDataDir: string; project
     },
     input.listen,
   )
-  return { host, sessions, close: () => stopDesktopNode(host) }
+  return { host, sessions, store, close: () => stopDesktopNode(host) }
 }
 
 /**

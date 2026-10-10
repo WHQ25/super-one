@@ -20,6 +20,9 @@ import { DesktopSessionHost, type NodeHostSessionManager, type NodeHostSessionSt
 import { createDesktopWorktreePort } from './desktop-worktree-port'
 import { reconcileRunsAfterRestart } from './reconcile-runs'
 import { SessionEventRecorder } from './session-event-recorder'
+import { LocalSessionHost, LOCAL_SESSION_MUTATIONS } from './local-session-host'
+import type { DesktopSessionRows } from './desktop-session-reads'
+import type { DesktopSessionRow } from '../db-remote-controlled-sessions'
 import { desktopNodeHostPaths } from './paths'
 import { claudeUsageAccounts } from '../agent/subscription-usage'
 import { usageLog } from '../agent/usage-log'
@@ -63,6 +66,8 @@ function desktopCollaborationPort(listProfiles: () => SessionAgentProfile[]): Co
 }
 
 export interface DesktopDomainDeps {
+  /** Every session row of this desktop, for the devices that see all of them. */
+  rows: DesktopSessionRows<DesktopSessionRow>
   userDataDir: string
   /** Shown to controllers as this environment's name; the host name by default. */
   label?: string
@@ -93,6 +98,8 @@ export class DesktopDomain {
     readonly identity: NodeIdentity,
     readonly auth: AuthService,
     readonly sessions: DesktopSessionHost,
+    /** Every session of this desktop, read-only until local sessions move onto leases. */
+    readonly localSessions: LocalSessionHost,
     private readonly recorder: SessionEventRecorder,
     /** The node home (identity, channel root, config). */
     readonly nodeHome: string,
@@ -138,20 +145,31 @@ export class DesktopDomain {
         unservedMethods: DESKTOP_UNSERVED_METHODS,
         subscriptionUsage: { claudeAccounts: claudeUsageAccounts, log: usageLog },
       }
-      return new DesktopDomain(db, identity, auth, sessions, recorder, paths.nodeHome, context)
+      const localSessions = new LocalSessionHost({ sessions: deps.sessions, events, rows: deps.rows })
+      return new DesktopDomain(db, identity, auth, sessions, localSessions, recorder, paths.nodeHome, context)
     } catch (err) {
       db.close()
       throw err
     }
   }
 
-  /** The context every connection's RPCs run in, before its client and delivery. */
+  /** The context a controller's RPCs run in, before its client and delivery: the sessions it started. */
   rpcContext(): DesktopRpcContext {
     return this.context
   }
 
+  /** The context this desktop's phones run in: every session, which they only read for now. */
+  phoneContext(): DesktopRpcContext {
+    return {
+      ...this.context,
+      sessions: this.localSessions,
+      unservedMethods: new Set([...DESKTOP_UNSERVED_METHODS, ...LOCAL_SESSION_MUTATIONS]),
+    }
+  }
+
   close(): void {
     this.recorder.dispose()
+    this.localSessions.dispose()
     this.sessions.dispose()
     this.db.close()
   }

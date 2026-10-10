@@ -4,7 +4,6 @@ import {
   HOST_ACTION_CAPABILITY_VERSION,
   HOST_ACTION_TOOL_GROUPS,
   SESSION_DURABLE_EVENT,
-  type EnvironmentEventEnvelope,
   type HostActionTerminalResult,
 } from '@superone/shared/environment'
 import type {
@@ -23,13 +22,14 @@ import {
   type HostActionStore,
   type NodeSessionRecord,
   type NodeSessionSettings,
-  type PendingInteraction,
 } from '@superone/runtime/session'
-import { chatMessageToSessionMessageBlock, messageText } from '@superone/shared/node-message-catalog'
-import { applyEventToSession, createDefaultChatCoreSession, type ChatCoreSession } from '@superone/chat-core'
+import { messageText } from '@superone/shared/node-message-catalog'
+import { DESKTOP_HOST_ACTION_TOOL_GROUPS, DesktopSessionReads } from './desktop-session-reads'
 import type { RemoteControlledSessionRow, RemoteControllerRecord } from '../db-remote-controlled-sessions'
 import type { Session, SessionCreateOptions } from '../session/types'
 import log from '../logger'
+
+export { pendingInteractionOf } from './desktop-session-reads'
 
 /** The SessionManager operations the node surface drives. */
 export interface NodeHostSessionManager {
@@ -65,63 +65,6 @@ export interface DesktopSessionHostDeps {
   projectPath(projectId: string): string | null
   /** Pairing label of a controller, for the "started from" badge. */
   controllerLabel(clientSessionId: string): string | null
-}
-
-/**
- * Host Action tool groups a controller runs for sessions served here. Only the
- * mailbox tools of a collaboration child whose parent is on the controller use
- * the channel today; the desktop runs every other tool itself.
- */
-const DESKTOP_HOST_ACTION_TOOL_GROUPS = [HOST_ACTION_TOOL_GROUPS.superone]
-
-/**
- * A live desktop prompt in the node's pending-interaction contract — the shape
- * the CLI node keeps on its session record and A's interaction gateway and
- * event mapper read. Null for events that are not prompts.
- */
-export function pendingInteractionOf(event: AgentEvent, createdAt: number): PendingInteraction | null {
-  switch (event.type) {
-    case 'permission_request': {
-      const r = event.request
-      return {
-        interactionId: r.requestId,
-        kind: r.requestKind === 'session_agents_confirm' ? 'session_agents_confirm' : 'permission',
-        toolName: r.toolName,
-        ...(r.toolUseId ? { toolUseId: r.toolUseId } : {}),
-        input: r.input,
-        createdAt,
-        allowAlwaysAllow: r.allowAlwaysAllow,
-        ...(r.requestKind ? { requestKind: r.requestKind } : {}),
-        ...(r.message ? { message: r.message } : {}),
-        ...(r.serverName ? { serverName: r.serverName } : {}),
-        ...(r.sessionAgentsConfirm ? { sessionAgentsConfirm: r.sessionAgentsConfirm as unknown as PendingInteraction['sessionAgentsConfirm'] } : {}),
-        ...(r.schemaForm ? { schemaForm: r.schemaForm } : {}),
-        ...(r.elicitationForm ? { elicitationForm: r.elicitationForm } : {}),
-        ...(r.subtitle ? { subtitle: r.subtitle } : {}),
-        ...(r.riskLevel ? { riskLevel: r.riskLevel } : {}),
-        ...(r.supportsAlwaysPersist !== undefined ? { supportsAlwaysPersist: r.supportsAlwaysPersist } : {}),
-        ...(r.inputRequest ? { inputRequest: r.inputRequest } : {}),
-      }
-    }
-    case 'ask_user_question':
-      return {
-        interactionId: event.request.requestId,
-        kind: 'question',
-        toolName: 'AskUserQuestion',
-        input: { questions: event.request.questions },
-        createdAt,
-      }
-    case 'plan_approval':
-      return {
-        interactionId: event.request.requestId,
-        kind: 'plan',
-        toolName: 'ExitPlanMode',
-        input: { plan: event.request.planContent, planFilePath: event.request.planFilePath },
-        createdAt,
-      }
-    default:
-      return null
-  }
 }
 
 /** Session owner id a node controller claims, so the desktop's own UI only watches. */
@@ -161,10 +104,6 @@ export function durableEventOf(event: AgentEvent): { eventType: string; payload:
   return { eventType: SESSION_DURABLE_EVENT.agentEvent, payload: { event: rest } }
 }
 
-function notFound(): Error {
-  return Object.assign(new Error('session not found'), { code: 'not_found' })
-}
-
 /** The refusal a controller gets after this desktop took the session back. */
 function controlReleasedError(): Error {
   return Object.assign(new Error('this computer took the session back; reconnect to control it again'), {
@@ -181,17 +120,18 @@ function controlReleasedError(): Error {
  * restarts of this app. Only those sessions are visible through the node
  * surface; the desktop's own sessions stay private to it.
  */
-export class DesktopSessionHost implements SessionHostPort {
+export class DesktopSessionHost extends DesktopSessionReads<RemoteControlledSessionRow> implements SessionHostPort {
   /** Live Session objects this host watches for its controller (a resume makes a new one). */
   private readonly watched = new WeakSet<Session>()
   /** Event subscriptions on adopted sessions, dropped when the host stops. */
   private readonly sessionListeners = new Set<() => void>()
-  /** When each live prompt was first seen, so its `createdAt` is stable across reads. */
-  private readonly promptSeenAt = new Map<string, number>()
   private readonly unsubscribe: () => void
   private readonly hostActions: HostActionChannel
+  /** Which sessions a controller started here, asked for every event read; a session joins only through `create`. */
+  private readonly controlled = new Map<string, boolean>()
 
   constructor(private readonly deps: DesktopSessionHostDeps) {
+    super({ sessions: deps.sessions, events: deps.events, rows: deps.store })
     this.hostActions = new HostActionChannel({
       store: deps.hostActions,
       session: (sessionId) => {
@@ -225,7 +165,14 @@ export class DesktopSessionHost implements SessionHostPort {
     this.hostActions.cancelWaiting(reason)
   }
 
+  protected override serves(sessionId: string): boolean {
+    let served = this.controlled.get(sessionId)
+    if (served === undefined) this.controlled.set(sessionId, served = this.deps.store.get(sessionId) !== null)
+    return served
+  }
+
   dispose(): void {
+    this.disposeReads()
     this.unsubscribe()
     for (const off of this.sessionListeners) off()
     this.sessionListeners.clear()
@@ -263,25 +210,12 @@ export class DesktopSessionHost implements SessionHostPort {
     if (!row.controller.released) this.claim(session, row.controller.clientSessionId)
     const off = session.on((event, replay) => {
       if (replay) return
-      if (event.type === 'interaction_resolved') this.promptSeenAt.delete(event.requestId)
       // A Host Action belongs to the turn that asked for it.
       if (event.type === 'status_change' && (event.status === 'idle' || event.status === 'error')) {
         this.hostActions.cancelForSession(session.id, 'turn_ended')
       }
     })
     this.sessionListeners.add(off)
-  }
-
-  /** The live session's open prompt (one at a time on the wire, as on the CLI node). */
-  private pendingInteraction(live: Session | null): PendingInteraction | null {
-    for (const event of live?.getPendingInteractions() ?? []) {
-      const id = 'request' in event && event.request && typeof event.request === 'object' ? (event.request as { requestId?: string }).requestId : undefined
-      if (!id) continue
-      if (!this.promptSeenAt.has(id)) this.promptSeenAt.set(id, Date.now())
-      const pending = pendingInteractionOf(event, this.promptSeenAt.get(id)!)
-      if (pending) return pending
-    }
-    return null
   }
 
   private claim(session: Session, clientSessionId: string): void {
@@ -291,47 +225,6 @@ export class DesktopSessionHost implements SessionHostPort {
       // Another device (a phone) is already attached; the lease still gates the node surface.
       log.warn('[node-host] controller claim skipped sid=%s: %s', session.id, err instanceof Error ? err.message : String(err))
     }
-  }
-
-  private record(row: RemoteControlledSessionRow): NodeSessionRecord {
-    const live = this.deps.sessions.getSession(row.sessionId)
-    const activity = live?.activityStatus()
-    return {
-      sessionId: row.sessionId,
-      projectId: row.projectId,
-      harnessId: row.harnessId,
-      providerId: row.providerId ?? `${row.harnessId}-base`,
-      title: row.title,
-      status: activity === 'streaming' || activity === 'background' ? 'streaming' : activity === 'error' ? 'error' : 'idle',
-      // Messages are served by session.messages.list from the desktop transcript.
-      transcript: [],
-      pendingInteraction: this.pendingInteraction(live),
-      providerResume: row.providerSessionId,
-      cwd: live?.cwd ?? row.worktreePath ?? row.projectPath,
-      permissionMode: row.controller.permissionMode ?? null,
-      sandboxMode: row.controller.sandboxMode ?? null,
-      model: row.controller.model ?? null,
-      effort: row.controller.effort ?? null,
-      apiProviderId: row.controller.apiProviderId ?? null,
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-      isPinned: row.isPinned,
-      isHidden: row.isHidden,
-      isUserRenamed: row.isUserRenamed,
-      tags: row.tags,
-      controllerClientSessionId: row.controller.clientSessionId,
-      ...(row.controller.released ? { controlReleased: true } : {}),
-      hostActionCapabilityVersion: HOST_ACTION_CAPABILITY_VERSION,
-      hostActionToolGroups: [...DESKTOP_HOST_ACTION_TOOL_GROUPS],
-      alwaysAllowedTools: [],
-      ...(row.controller.externalParent ? { externalParent: row.controller.externalParent } : {}),
-    }
-  }
-
-  private requireRow(sessionId: string): RemoteControlledSessionRow {
-    const row = this.deps.store.get(sessionId)
-    if (!row) throw notFound()
-    return row
   }
 
   private assertLease(sessionId: string, clientSessionId: string, leaseId: string, generation: string): void {
@@ -374,6 +267,7 @@ export class DesktopSessionHost implements SessionHostPort {
       ...(input.externalParent ? { externalParent: { sessionId: input.externalParent.sessionId } } : {}),
     }
     this.deps.store.setController(sessionId, controller, providerId)
+    this.controlled.set(sessionId, true)
     // A remote launch must not take over which session this desktop shows.
     const previousActive = this.deps.sessions.getActiveSession(projectPath)?.id ?? null
     const session = this.deps.sessions.createSession({
@@ -395,18 +289,6 @@ export class DesktopSessionHost implements SessionHostPort {
       payload: { projectId: input.projectId, harnessId: input.harnessId ?? 'claude', title: input.title ?? null },
     })
     return this.record(this.requireRow(sessionId))
-  }
-
-  get(sessionId: string): NodeSessionRecord | null {
-    const row = this.deps.store.get(sessionId)
-    return row ? this.record(row) : null
-  }
-
-  list(projectId?: string, options?: { limit?: number; offset?: number }): NodeSessionRecord[] {
-    const rows = this.deps.store.list(projectId)
-    const offset = options?.offset ?? 0
-    const page = options?.limit != null ? rows.slice(offset, offset + options.limit) : rows.slice(offset)
-    return page.map((row) => this.record(row))
   }
 
   patchSettings(sessionId: string, patch: NodeSessionSettings): NodeSessionRecord {
@@ -557,98 +439,6 @@ export class DesktopSessionHost implements SessionHostPort {
 
   async modUi(): Promise<unknown> {
     throw unsupportedMethodError('session.modUi')
-  }
-
-  snapshotSequence(): string {
-    return this.deps.events.headSequence()
-  }
-
-  /**
-   * The log records every session of this desktop (`SessionEventRecorder`);
-   * a controller reads only the sessions it can see. A page with none of them
-   * reads on, so an empty answer still means the end of the log.
-   */
-  listEventsAfter(afterSequence: string): EnvironmentEventEnvelope[] {
-    let cursor = afterSequence
-    for (;;) {
-      const page = this.deps.events.listAfter(cursor)
-      if (page.length === 0) return []
-      const visible = page.filter((envelope) => this.visible(envelope))
-      if (visible.length > 0) return visible
-      cursor = page.at(-1)!.sequence
-    }
-  }
-
-  private visible(envelope: EnvironmentEventEnvelope): boolean {
-    return envelope.aggregateType !== 'session' || this.deps.store.get(envelope.aggregateId) !== null
-  }
-
-  streamEpoch(): string {
-    return this.deps.events.epoch
-  }
-
-  streamingAfter(sessionId: string, version: number): EnvironmentEventEnvelope[] | null {
-    return this.deps.store.get(sessionId) ? this.deps.events.streamingAfter(sessionId, version) : []
-  }
-
-  streamingEvents(): EnvironmentEventEnvelope[] {
-    return this.deps.events.streaming().filter((envelope) => this.visible(envelope))
-  }
-
-  onEventsAppended(listener: (envelope: EnvironmentEventEnvelope) => void): () => void {
-    return this.deps.events.onAppend((envelope) => {
-      if (this.visible(envelope)) listener(envelope)
-    })
-  }
-
-  viewEvent(envelope: EnvironmentEventEnvelope): EnvironmentEventEnvelope {
-    return envelope
-  }
-
-  /**
-   * The live session's messages and prompts (its stored transcript when it is
-   * not loaded), at the version its recorded events have reached: the desktop
-   * `Session` is this host's read model and records each event as it emits it.
-   */
-  load(input: Parameters<SessionHostPort['load']>[0]): ReturnType<SessionHostPort['load']> {
-    const sessionId = String(input.sessionId ?? '').trim()
-    this.requireRow(sessionId)
-    const live = this.deps.sessions.getSession(sessionId)
-    let state: ChatCoreSession = createDefaultChatCoreSession()
-    for (const event of live?.getPendingInteractions() ?? []) state = { ...state, ...applyEventToSession(state, event) }
-    const all = this.messages(sessionId)
-    const limit = Math.min(Math.max(1, input.limit ?? 50), 200)
-    const end = Math.min(input.before ?? all.length, all.length)
-    const start = Math.max(0, end - limit)
-    const { messages: _messages, ...rest } = { ...state, status: live?.isStreaming() ? 'streaming' as const : 'idle' as const }
-    return {
-      sessionId,
-      state: rest as unknown as Record<string, unknown>,
-      messages: all.slice(start, end),
-      before: start > 0 ? start : null,
-      cursor: { sequence: this.deps.events.headSequence(), epoch: this.deps.events.epoch, version: this.deps.events.sessionVersion(sessionId) },
-    }
-  }
-
-  messages(sessionId: string): ChatMessage[] {
-    this.requireRow(sessionId)
-    const live = this.deps.sessions.getSession(sessionId)
-    return live ? [...live.snapshot.messages] : this.deps.store.loadMessages(sessionId, Number.MAX_SAFE_INTEGER).messages
-  }
-
-  listMessages(input: Parameters<SessionHostPort['listMessages']>[0]): ReturnType<SessionHostPort['listMessages']> {
-    const sessionId = String(input.sessionId ?? '').trim()
-    this.requireRow(sessionId)
-    // Same end-cursor paging as the CLI node's catalog, read from the desktop transcript.
-    const cursor = input.cursor == null ? undefined : Number(input.cursor)
-    const page = this.deps.store.loadMessages(sessionId, input.limit ?? 50, Number.isFinite(cursor) ? cursor : undefined)
-    const start = page.cursor ?? 0
-    return {
-      sessionId,
-      messages: page.messages.map((message, i) => chatMessageToSessionMessageBlock(message, start + i)),
-      cursor: page.cursor === null ? null : String(page.cursor),
-      hasMore: page.hasMore,
-    }
   }
 
   /**

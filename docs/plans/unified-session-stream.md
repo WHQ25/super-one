@@ -75,6 +75,12 @@ Long-term docs affected: [chat-core.md](../architecture/chat-core.md), [mobile-r
   - Ring peak memory measured on the recorded workloads and on ten concurrent sessions, within the cap.
   - A CLI session with tool calls and an MCP App shows the same content before and after the upgrade.
   - The previous release opens the migrated database and lists its sessions.
+- Progress (2026-10-10): node side done (`ae010aa3c`…`e1179e522`). `EventLog` classifies by payload (`streamingEventKey`), versions every session event, holds streaming events in `StreamingRing` (16 MiB cap; peak 164 KiB on ten concurrent recorded sessions) and retires them on commit (`committedStreamingMessage`). `SessionReadModel` reduces with chat-core, checkpoints messages and state in the committing transaction, replays durable events above the checkpoint after a restart, and bootstraps older sessions once from the catalog. `session.load` serves it; `session.messages.list` and MCP App lookups read it. Restart records the interruption and cleared prompts as events. The desktop opens remote sessions at a `session.load` barrier, resumes its stream by version, and resyncs only sessions the node names. Shadow test: read model equals direct reduction on all five recordings.
+- Moved out or changed, found while implementing:
+  - Gaps are signalled by `resnapshot` (per session) instead of per-frame `FrameCoverage` ranges: every event carries its version, the node knows the reader's versions, so it decides gaps itself; frames covering retired versions do not carry the committed row, the reader reads the snapshot.
+  - Desktop sessions stay on the desktop's own persistence: its `Session` is already the read model, local subscribers are in-process and need no resume positions, and opening the node database for every desktop at startup only to record them would add startup work. The desktop node host records the sessions a controller started, as before. Revisit if crash recovery of an in-flight desktop turn is wanted.
+  - Replacing `getLiveSnapshots`, `buildRemoteSessionSnapshot`, `buildProgressiveBootstrap` and `linkBootstrap` with `snapshot` moves to phase 5, where the renderer and phones read through the contract.
+  - The event mapper gave a synthesized `message_start` the envelope's `seq`, so chat-core dropped the envelope's own event as a replay; fixed in the mapper.
 
 ## 5. Renderer on the contract, federated phone sessions
 

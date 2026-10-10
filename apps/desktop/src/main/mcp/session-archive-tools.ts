@@ -26,10 +26,11 @@ import {
   countTools,
   extractToolIndex,
   findToolDetail,
-  formatTextMessages,
+  formatTextBlocks,
   formatToolIndex,
   messageSearchText,
   pageItems,
+  pageTextBlocks,
   type SessionArchiveView,
 } from '../session/session-transcript-view'
 import type { BuiltInSuperoneToolDeps } from './superone-mcp-builtins'
@@ -736,46 +737,18 @@ export function sessionReadHandler(args: SessionReadArgs, deps: BuiltInSuperoneT
     ].join('\n'))
   }
 
-  // user / assistant / text — pure conversation text, no tool lines
-  let source: ChatMessage[]
-  if (view === 'user') {
-    source = allMessages.filter((m) => m.role === 'user')
-  } else if (view === 'assistant') {
-    source = allMessages.filter((m) => m.role === 'assistant')
-  } else {
-    source = allMessages
-  }
-
-  // messageId+around: anchor on the full timeline, then keep only matching roles
-  let page: ReturnType<typeof pageItems<ChatMessage>>
-  if (messageId && (view === 'user' || view === 'assistant')) {
-    const global = pageItems(allMessages, { limit, cursor, messageId, around })
-    const filtered = global.items.filter((m) =>
-      view === 'user' ? m.role === 'user' : m.role === 'assistant',
-    )
-    page = {
-      items: filtered,
-      cursor: global.cursor,
-      hasMore: global.hasMore,
-      total: source.length,
-      startIndex: global.startIndex,
-      endIndex: global.endIndex,
-    }
-  } else {
-    page = pageItems(source, { limit, cursor, messageId, around })
-  }
-
-  const body = formatTextMessages(page.items, {
-    includeThinking,
+  // Text views paginate visible blocks, including within a single long task.
+  const page = pageTextBlocks(allMessages, { view, limit, cursor, messageId, around, includeThinking })
+  const body = formatTextBlocks(page.items, {
     withToolCount: view === 'assistant' || view === 'text',
   })
 
   return toolResult([
     `# Session ${sessionId} — ${view}`,
     `title: ${header.title} · harness: ${header.harness} · messages: ${header.messageCount}`,
-    `page: ${page.items.length} · cursor: ${page.cursor === null ? 'null' : page.cursor} · hasMore: ${page.hasMore} · totalInView: ${page.total}`,
+    `page: ${page.items.length} · unit: text_blocks · cursor: ${page.cursor === null ? 'null' : page.cursor} · hasMore: ${page.hasMore} · totalInView: ${page.total}`,
     '',
-    body || '_(no messages)_',
+    body || '_(no text blocks)_',
   ].join('\n'))
 }
 

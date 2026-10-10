@@ -8,6 +8,11 @@ import {
   SESSION_LIST_DESCRIPTION,
   SESSION_SEARCH_DESCRIPTION,
   SESSION_READ_DESCRIPTION,
+  SESSION_READ_MESSAGE_ID_DESCRIPTION,
+  SESSION_READ_AROUND_DESCRIPTION,
+  SESSION_READ_CURSOR_DESCRIPTION,
+  SESSION_READ_LIMIT_DESCRIPTION,
+  SESSION_READ_THINKING_DESCRIPTION,
   SESSION_TAGS_FILTER_DESCRIPTION,
   SESSION_TAG_MATCH_DESCRIPTION,
   SESSION_CLEANUP_DESCRIPTION
@@ -352,30 +357,30 @@ export const HOST_ACTION_ARCHIVE_DESCRIPTORS: HostActionSuperoneToolDescriptor[]
         },
         "messageId": {
           "type": "string",
-          "description": "Anchor page at this message id (from search or a prior read)."
+          "description": SESSION_READ_MESSAGE_ID_DESCRIPTION
         },
         "around": {
           "type": "integer",
           "minimum": 0,
           "maximum": 50,
-          "description": "With messageId: include this many messages before and after on the global timeline."
+          "description": SESSION_READ_AROUND_DESCRIPTION
         },
         "cursor": {
           "type": [
             "integer",
             "null"
           ],
-          "description": "Exclusive end index for the next older page (from a prior read). Omit for newest page."
+          "description": SESSION_READ_CURSOR_DESCRIPTION
         },
         "limit": {
           "type": "integer",
           "minimum": 1,
           "maximum": 50,
-          "description": "Max messages this page. Default 20, max 50."
+          "description": SESSION_READ_LIMIT_DESCRIPTION
         },
         "includeThinking": {
           "type": "boolean",
-          "description": "Include thinking blocks in text views. Default false."
+          "description": SESSION_READ_THINKING_DESCRIPTION
         },
         "toolUseId": {
           "type": "string",

@@ -48,4 +48,27 @@ describe('environment archive RPC', () => {
     vi.mocked(ctx.sessions.listMessages).mockReturnValue({ sessionId: 'one', cursor: null, hasMore: false, messages: [{ id: 'm', role: 'assistant', text: 'result', createdAt: 2, sortOrder: 0, content: [{ type: 'tool_use', toolUseId: 't', toolName: 'Bash', input: '{"command":"pwd"}', status: 'complete' }] }] })
     expect(archive(ctx, { sessionId: 'one', view: 'tools' }, 'session_read').content[0].text).toContain('Bash')
   })
+  it('pages assistant text blocks within one native message', () => {
+    const ctx = context()
+    vi.mocked(ctx.sessions.listMessages).mockReturnValue({
+      sessionId: 'one', cursor: null, hasMore: false,
+      messages: [{
+        id: 'long', role: 'assistant', text: 'legacy fallback', createdAt: 2, sortOrder: 0,
+        content: Array.from({ length: 25 }, (_, i) => ({ type: 'text', text: `Progress ${i}.` })),
+      }],
+    })
+    const read = (args = {}) => archive(ctx, { sessionId: 'one', view: 'assistant', ...args }, 'session_read').content[0].text
+    const newest = read()
+    expect(newest).toContain('page: 20 · unit: text_blocks · cursor: 5 · hasMore: true · totalInView: 25')
+    expect(newest).toContain('textBlocks:6-25/25')
+    expect(newest).not.toContain('Progress 4.')
+    expect(newest).not.toContain('legacy fallback')
+    const older = read({ cursor: 5 })
+    expect(older).toContain('page: 5 · unit: text_blocks · cursor: null · hasMore: false')
+    expect(older).toContain('Progress 0.')
+    expect(older).not.toContain('Progress 5.')
+    const single = read({ limit: 1 })
+    expect(single).toContain('Progress 24.')
+    expect(single).not.toContain('Progress 23.')
+  })
 })

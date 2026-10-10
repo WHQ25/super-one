@@ -87,7 +87,18 @@ export const SESSION_SEARCH_DESCRIPTION =
   'Returns matching message hits with short snippets and projectId. Then call session_read with sessionId/messageId. Snippets are pointers only — not full bodies. environmentId defaults to the calling session host and is returned once for the result; reuse it for session_read and session:// links. Discover unknown remote IDs with environment_get_info.'
 
 export const SESSION_READ_DESCRIPTION =
-  "Read a saved transcript by sessionId without resuming its harness. Choose the view needed: meta, user, assistant, text, tools (index), or tool_detail (requires toolUseId). Paginate with limit/cursor; anchor with messageId/around. Read current-session history only when needed content is absent from context, such as after compaction."
+  'Read a saved transcript by sessionId without resuming its harness. Choose meta, user, assistant, text, tools (index), or tool_detail (requires toolUseId). Text views return the latest 20 text blocks by default, not whole messages or turns. Read more with limit/cursor; anchor with messageId/around. Read current-session history only when needed content is absent from context, such as after compaction.'
+
+export const SESSION_READ_MESSAGE_ID_DESCRIPTION =
+  "Anchor at this message's last visible text block (tools view: message)."
+export const SESSION_READ_AROUND_DESCRIPTION =
+  'With messageId: text blocks before/after the anchor (tools view: messages). Text views stay within limit.'
+export const SESSION_READ_CURSOR_DESCRIPTION =
+  'Cursor from a prior read for the same view/includeThinking. Continues older blocks (tools view: messages). Omit for newest page.'
+export const SESSION_READ_LIMIT_DESCRIPTION =
+  'Max text blocks in user/assistant/text views, or messages in tools view. Default 20, max 50.'
+export const SESSION_READ_THINKING_DESCRIPTION =
+  'Include thinking blocks in text views; they count toward limit. Default false.'
 
 export const SESSION_TAGS_FILTER_DESCRIPTION =
   'Tags from session_tag_list. Filter sessions that have these labels.'

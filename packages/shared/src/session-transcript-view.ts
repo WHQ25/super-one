@@ -57,21 +57,15 @@ export function countTools(message: ChatMessage): number {
   return message.content.filter(isToolUseBlock).length
 }
 
+function extractBlockText(block: ContentBlock, includeThinking = false): string {
+  if (block.type === 'text' && typeof block.text === 'string') return stripInternalTags(block.text)
+  if (includeThinking && block.type === 'thinking' && typeof block.thinking === 'string') return block.thinking.trim()
+  if (block.type === 'codex_plan' && typeof block.text === 'string') return block.text.trim()
+  return ''
+}
+
 export function extractMessageText(message: ChatMessage, opts?: { includeThinking?: boolean }): string {
-  const parts: string[] = []
-  for (const block of message.content) {
-    if (block.type === 'text' && typeof block.text === 'string') {
-      const t = stripInternalTags(block.text)
-      if (t) parts.push(t)
-    } else if (opts?.includeThinking && block.type === 'thinking' && typeof block.thinking === 'string') {
-      const t = block.thinking.trim()
-      if (t) parts.push(t)
-    } else if (block.type === 'codex_plan' && typeof block.text === 'string') {
-      const t = block.text.trim()
-      if (t) parts.push(t)
-    }
-  }
-  return parts.join('\n\n')
+  return message.content.map((block) => extractBlockText(block, opts?.includeThinking)).filter(Boolean).join('\n\n')
 }
 
 function toolTarget(block: ContentBlock & { toolName: string; input: string; toolFilePath?: string; toolSummary?: string }): string | undefined {
@@ -228,6 +222,82 @@ export function pageItems<T extends { id: string }>(
   }
 }
 
+export type SessionTextView = 'user' | 'assistant' | 'text'
+
+export interface TranscriptTextBlock {
+  message: ChatMessage
+  text: string
+  /** Position and total among this message's non-empty visible text blocks. */
+  index: number
+  total: number
+}
+
+/**
+ * Text-view cursors always index the role-filtered visible block list.
+ * messageId anchors at its last visible block, or at its insertion boundary
+ * when the message has no blocks in this view. around counts blocks, and never
+ * overrides limit. A supplied cursor continues the older page without re-anchoring.
+ */
+export function pageTextBlocks(
+  messages: ChatMessage[],
+  opts: {
+    view: SessionTextView
+    limit: number
+    cursor?: number | null
+    messageId?: string
+    around?: number
+    includeThinking?: boolean
+  },
+): PageResult<TranscriptTextBlock> {
+  const items: TranscriptTextBlock[] = []
+  let anchor: { start: number; end: number } | undefined
+  for (const message of messages) {
+    const start = items.length
+    if (opts.view === 'text' || message.role === opts.view) {
+      const texts = message.content.map((block) => extractBlockText(block, opts.includeThinking)).filter(Boolean)
+      texts.forEach((text, index) => items.push({ message, text, index, total: texts.length }))
+    }
+    if (message.id === opts.messageId) anchor = { start, end: items.length }
+  }
+
+  const total = items.length
+  const cursor = typeof opts.cursor === 'number' && Number.isFinite(opts.cursor) ? Math.floor(opts.cursor) : null
+  let end = Math.max(0, Math.min(total, cursor ?? anchor?.end ?? total))
+  let start = Math.max(0, end - opts.limit)
+  if (opts.messageId && cursor === null) {
+    if (!anchor) return { items: [], cursor: null, hasMore: false, total, startIndex: 0, endIndex: 0 }
+    if (typeof opts.around === 'number' && Number.isFinite(opts.around)) {
+      const around = Math.max(0, Math.floor(opts.around))
+      const hasBlock = anchor.end > anchor.start
+      const center = anchor.end - (hasBlock ? 1 : 0)
+      const windowStart = Math.max(0, center - around)
+      const windowEnd = Math.min(total, anchor.end + around)
+      start = Math.max(windowStart, center - Math.floor((opts.limit - (hasBlock ? 1 : 0)) / 2))
+      end = Math.min(windowEnd, start + opts.limit)
+      start = Math.max(windowStart, end - opts.limit)
+    }
+  }
+  return { items: items.slice(start, end), cursor: start > 0 ? start : null, hasMore: start > 0, total, startIndex: start, endIndex: end }
+}
+
+function formatMessageHeader(message: ChatMessage, withToolCount = false): string {
+  const meta = withToolCount && message.role === 'assistant' ? ` · tools:${countTools(message)}` : ''
+  return `## [${message.id}] ${message.role} · ${message.createdAt}${meta}`
+}
+
+export function formatTextBlocks(blocks: TranscriptTextBlock[], opts?: { withToolCount?: boolean }): string {
+  const lines: string[] = []
+  for (let i = 0; i < blocks.length;) {
+    const first = blocks[i]!
+    let end = i + 1
+    while (end < blocks.length && blocks[end]!.message.id === first.message.id) end++
+    const last = blocks[end - 1]!
+    lines.push(`${formatMessageHeader(first.message, opts?.withToolCount)} · textBlocks:${first.index + 1}-${last.index + 1}/${first.total}`)
+    for (; i < end; i++) lines.push(blocks[i]!.text, '')
+  }
+  return lines.join('\n').trimEnd()
+}
+
 export function formatTextMessages(
   messages: ChatMessage[],
   opts?: { includeThinking?: boolean; withToolCount?: boolean },
@@ -235,12 +305,7 @@ export function formatTextMessages(
   const lines: string[] = []
   for (const msg of messages) {
     const text = extractMessageText(msg, { includeThinking: opts?.includeThinking })
-    const toolCount = opts?.withToolCount ? countTools(msg) : 0
-    const meta =
-      opts?.withToolCount && msg.role === 'assistant'
-        ? ` · tools:${toolCount}`
-        : ''
-    lines.push(`## [${msg.id}] ${msg.role} · ${msg.createdAt}${meta}`)
+    lines.push(formatMessageHeader(msg, opts?.withToolCount))
     lines.push(text || '_(empty)_')
     lines.push('')
   }

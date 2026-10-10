@@ -67,6 +67,17 @@ function makeDeps(overrides?: Partial<BuiltInSuperoneToolDeps>): BuiltInSuperone
   }
 }
 
+function mockReadSession(messages: ChatMessage[]) {
+  getDbMock.mockReturnValue({
+    prepare: (sql: string) => ({
+      get: () => sql.includes('FROM sessions s')
+        ? { id: 'other', title: 'Long task', created_at: '2026-01-01T00:00:00.000Z', provider: 'claude' }
+        : sql.includes('COUNT(*)') ? { n: messages.length } : undefined,
+    }),
+  })
+  loadSessionStateMock.mockReturnValue({ messages })
+}
+
 describe('session archive tools', () => {
   beforeEach(() => {
     getDbMock.mockReset()
@@ -415,6 +426,49 @@ describe('session archive tools', () => {
       toolUseId: 't1',
       toolName: 'Edit',
     })
+  })
+
+  it('session_read pages text blocks within a long assistant message', () => {
+    mockReadSession([{
+      id: 'long', role: 'assistant', status: 'complete', providerId: 'claude',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      content: Array.from({ length: 25 }, (_, i) => ({ type: 'text', text: `Progress ${i}.` })),
+    }])
+    const read = (args = {}) => textResult(sessionReadHandler({ sessionId: 'other', view: 'assistant', ...args }, makeDeps()))
+    const newest = read()
+    expect(newest).toContain('page: 20 · unit: text_blocks · cursor: 5 · hasMore: true · totalInView: 25')
+    expect(newest).toContain('textBlocks:6-25/25')
+    expect(newest).toContain('Progress 5.')
+    expect(newest).toContain('Progress 24.')
+    expect(newest).not.toContain('Progress 4.')
+
+    const older = read({ cursor: 5 })
+    expect(older).toContain('page: 5 · unit: text_blocks · cursor: null · hasMore: false')
+    expect(older).toContain('Progress 0.')
+    expect(older).toContain('Progress 4.')
+    expect(older).not.toContain('Progress 5.')
+    const single = read({ limit: 1, messageId: 'long' })
+    expect(single).toContain('Progress 24.')
+    expect(single).not.toContain('Progress 23.')
+  })
+
+  it('session_read limits default and user views by visible blocks and enforces the cap', () => {
+    mockReadSession([{
+      id: 'user', role: 'user', status: 'complete', providerId: 'claude',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      content: [
+        { type: 'thinking', thinking: 'hidden' },
+        { type: 'text', text: '  ' },
+        ...Array.from({ length: 60 }, (_, i) => ({ type: 'text' as const, text: `Prompt ${i}.` })),
+      ],
+    }])
+    const newest = textResult(sessionReadHandler({ sessionId: 'other' }, makeDeps()))
+    expect(newest).toContain('page: 20 · unit: text_blocks · cursor: 40')
+    expect(newest).not.toContain('hidden')
+    const capped = textResult(sessionReadHandler({ sessionId: 'other', view: 'user', limit: 100 }, makeDeps()))
+    expect(capped).toContain('page: 50 · unit: text_blocks · cursor: 10')
+    expect(capped).not.toContain('Prompt 9.')
+    expect(capped).toContain('Prompt 10.')
   })
 
   it('session_search finds messages by text', () => {

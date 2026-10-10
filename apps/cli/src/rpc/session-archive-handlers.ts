@@ -4,7 +4,7 @@ import { sessionMessageBlocksToChatMessages } from '@superone/shared/node-messag
 import { normalizeSessionTagList } from '@superone/shared/session-tags'
 import type { ChatMessage } from '@superone/shared/agent-types'
 import { isSessionArchiveReadTool, type ArchiveToolResult, type SessionArchiveRequest } from '@superone/shared/session-archive'
-import { countTools, extractToolIndex, findToolDetail, formatTextMessages, formatToolIndex, messageSearchText, pageItems } from '@superone/shared/session-transcript-view'
+import { countTools, extractToolIndex, findToolDetail, formatTextBlocks, formatToolIndex, messageSearchText, pageItems, pageTextBlocks, type SessionTextView } from '@superone/shared/session-transcript-view'
 import type { SessionLinkMetadataResult } from '@superone/shared/session-link'
 import type { RpcContext, RpcResult } from './handlers'
 import type { NodeSessionRecord } from '../session/session-runtime'
@@ -77,10 +77,8 @@ function readArchive(request: SessionArchiveRequest, ctx: RpcContext): ArchiveTo
       const page = pageItems(catalog.filter(message => countTools(message) > 0), { limit: limit(args.limit), cursor: args.cursor as number | null, messageId: args.messageId as string, around: args.around as number })
       return result(`# Session ${session.sessionId} — tools\nenvironmentId: ${environmentId}\ntitle: ${header.title} · harness: ${header.harness}\ncursor: ${page.cursor} · hasMore: ${page.hasMore}\n\n${formatToolIndex(page.items.flatMap(extractToolIndex))}`)
     }
-    const filtered = view === 'user' || view === 'assistant' ? messages.filter(message => message.role === view) : messages
-    const page = pageItems(args.messageId ? messages : filtered, { limit: limit(args.limit), cursor: args.cursor as number | null, messageId: args.messageId as string, around: args.around as number })
-    const body = args.messageId && (view === 'user' || view === 'assistant') ? page.items.filter(message => message.role === view) : page.items
-    return result(`# Session ${session.sessionId} — ${view}\nenvironmentId: ${environmentId}\ntitle: ${header.title} · harness: ${header.harness} · messages: ${messages.length}\npage: ${body.length} · cursor: ${page.cursor} · hasMore: ${page.hasMore} · totalInView: ${filtered.length}\n\n${formatTextMessages(body, { includeThinking: args.includeThinking === true, withToolCount: true })}`)
+    const page = pageTextBlocks(messages, { view: view as SessionTextView, limit: limit(args.limit), cursor: args.cursor as number | null, messageId: args.messageId as string, around: args.around as number, includeThinking: args.includeThinking === true })
+    return result(`# Session ${session.sessionId} — ${view}\nenvironmentId: ${environmentId}\ntitle: ${header.title} · harness: ${header.harness} · messages: ${messages.length}\npage: ${page.items.length} · unit: text_blocks · cursor: ${page.cursor} · hasMore: ${page.hasMore} · totalInView: ${page.total}\n\n${formatTextBlocks(page.items, { withToolCount: view !== 'user' }) || '_(no text blocks)_'}`)
   }
   if (request.tool === 'project_list') {
     const query = String(args.query ?? '').toLowerCase()

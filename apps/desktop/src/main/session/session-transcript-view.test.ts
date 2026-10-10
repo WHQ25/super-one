@@ -6,8 +6,10 @@ import {
   extractToolIndex,
   findToolDetail,
   formatTextMessages,
+  formatTextBlocks,
   formatToolIndex,
   pageItems,
+  pageTextBlocks,
 } from './session-transcript-view'
 
 function msg(
@@ -101,5 +103,61 @@ describe('session-transcript-view', () => {
     )
     expect(text).toContain('tools:1')
     expect(text).not.toContain('Bash')
+  })
+
+  it('pages across roles and message boundaries without losing or repeating blocks', () => {
+    const messages = [
+      msg('a1', 'assistant', [{ type: 'text', text: 'one' }, { type: 'text', text: 'two' }]),
+      msg('u1', 'user', [{ type: 'text', text: 'prompt' }]),
+      msg('a2', 'assistant', [{ type: 'text', text: 'three' }, { type: 'text', text: 'four' }]),
+    ]
+    const newest = pageTextBlocks(messages, { view: 'assistant', limit: 3 })
+    expect(newest.items.map(block => block.text)).toEqual(['two', 'three', 'four'])
+    expect(newest).toMatchObject({ total: 4, cursor: 1, hasMore: true })
+    const older = pageTextBlocks(messages, { view: 'assistant', limit: 3, cursor: newest.cursor })
+    expect(older.items.map(block => block.text)).toEqual(['one'])
+    expect(older).toMatchObject({ cursor: null, hasMore: false })
+    const text = formatTextBlocks(newest.items)
+    expect(text).toContain('textBlocks:2-2/2')
+    expect(text).toContain('textBlocks:1-2/2')
+    expect(text).not.toContain('prompt')
+    expect(pageTextBlocks(messages, { view: 'text', limit: 3 }).items.map(block => block.text))
+      .toEqual(['prompt', 'three', 'four'])
+  })
+
+  it('skips empty, internal and tool blocks, and counts optional thinking and plans', () => {
+    const messages = [msg('a1', 'assistant', [
+      { type: 'text', text: '  ' },
+      { type: 'text', text: '<task-notification>internal</task-notification>' },
+      { type: 'tool_use', toolName: 'Read', toolUseId: 't1', input: '{}' },
+      { type: 'thinking', thinking: 'thought' },
+      { type: 'codex_plan', text: 'plan', itemId: 'plan-1' },
+      { type: 'text', text: 'reply\n\nwith two paragraphs' },
+    ])]
+    const page = pageTextBlocks(messages, { view: 'text', limit: 20 })
+    expect(page.items.map(block => block.text)).toEqual(['plan', 'reply\n\nwith two paragraphs'])
+    expect(page.total).toBe(2)
+    const thinking = pageTextBlocks(messages, { view: 'text', limit: 1, cursor: 1, includeThinking: true })
+    expect(thinking.items.map(block => block.text)).toEqual(['thought'])
+    expect(thinking.total).toBe(3)
+  })
+
+  it('anchors at the last block and keeps cursors in the selected view', () => {
+    const messages = [
+      msg('a1', 'assistant', [{ type: 'text', text: 'before' }]),
+      msg('u1', 'user', [{ type: 'text', text: 'prompt' }]),
+      msg('a2', 'assistant', Array.from({ length: 60 }, (_, i) => ({ type: 'text', text: `block ${i}` }))),
+    ]
+    const anchored = pageTextBlocks(messages, { view: 'assistant', limit: 1, messageId: 'a2' })
+    expect(anchored.items.map(block => block.text)).toEqual(['block 59'])
+    const around = pageTextBlocks(messages, { view: 'assistant', limit: 1, messageId: 'a2', around: 50 })
+    expect(around.items.map(block => block.text)).toEqual(['block 59'])
+    const crossRole = pageTextBlocks(messages, { view: 'assistant', limit: 20, messageId: 'u1', around: 1 })
+    expect(crossRole.items.map(block => block.text)).toEqual(['before', 'block 0'])
+    expect(crossRole.cursor).toBeNull()
+    const continued = pageTextBlocks(messages, { view: 'assistant', limit: 2, cursor: anchored.cursor, messageId: 'a2', around: 0 })
+    expect(continued.items.map(block => block.text)).toEqual(['block 57', 'block 58'])
+    expect(pageTextBlocks(messages, { view: 'assistant', limit: 20, messageId: 'missing' }).items).toEqual([])
+    expect(pageTextBlocks([], { view: 'text', limit: 20 })).toMatchObject({ items: [], total: 0, cursor: null })
   })
 })

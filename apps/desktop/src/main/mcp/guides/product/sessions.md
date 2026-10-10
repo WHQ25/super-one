@@ -40,13 +40,22 @@ use the explicit environment URL. Selection-copy exports the resolved reference.
 | view | Content |
 |------|---------|
 | `meta` | Title, harness, counts, pin/hidden, branch, cost |
-| `user` | **User messages only** (full text, no tools) |
+| `user` | **User text blocks only** (no tools) |
 | `assistant` | **Assistant text only** + `toolCount` (no tool lines) |
 | `text` | Interleaved user + assistant text (still no tool lines) |
 | `tools` | Tool **index** (name, path/target, toolUseId) — prefer with `messageId` |
 | `tool_detail` | One tool’s input/result (`toolUseId` required) |
 
-Overload control is **view + `limit`/`cursor` (and optional `messageId`/`around`)**, not mid-message truncation.
+Text views (`user`, `assistant`, `text`) paginate **non-empty text blocks**, not whole messages or turns. Default: the latest **20 blocks**; `limit` can request up to **50**. Each stored text block counts once even when it contains several paragraphs. Plans also count; thinking counts only with `includeThinking: true`. Tools and empty/internal-only text do not consume the limit. Individual blocks are returned in full.
+
+The result's `page` and `totalInView` count blocks (`unit: text_blocks`). Message headers retain the message id and show `textBlocks:start-end/total` so a partial message is explicit; `tools` counts tools on the whole message. Pass the returned `cursor` to read older blocks, keeping the same view and `includeThinking`. Pages can continue within one long message:
+
+```js
+session_read({ sessionId, view: "assistant" }) // latest 20 text blocks
+session_read({ sessionId, view: "assistant", cursor }) // next older page
+```
+
+`messageId` anchors at that message's last visible block; `around` counts blocks before/after it, still bounded by `limit`. If the anchor has no text in the chosen view (for example a user message in `assistant` view), `around` reads blocks on either side of its position. A supplied cursor continues pagination instead of re-anchoring. `tools` view continues to paginate messages; `meta` and `tool_detail` do not paginate.
 
 ## Recipes
 

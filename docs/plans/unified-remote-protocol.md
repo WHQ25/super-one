@@ -315,6 +315,14 @@ terminal mutations are fenced by leases (step 6).
   folded deltas, summarized tool input left out), and keeps following a
   session across LAN → relay → LAN mid-turn with a realign each time;
   generation 2 refusal is `node-server.secure-channel.test.ts`. Step 4 done.
+- Step 5 in progress. Coverage list above. Done: a host names the shared
+  methods it refuses (`unservedMethods`), so descriptors list only served
+  ones; one environment id per desktop (node identity canonical, local id an
+  alias in `environmentAliases`, resolved by `isEnvironment`, the registry and
+  the envelope check); `DesktopDomain` open apart from the controller
+  listener. Next: phone handshake version and generation, phone-scoped
+  session host and desktop ports, CLI handlers into runtime, phone channel
+  adapter, conditional writes, contract suite.
 
 ## Open decisions
 

@@ -1,9 +1,18 @@
 import { app } from 'electron'
-import { loadOrCreateLocalEnvironmentId } from './local-identity'
+import { loadDesktopEnvironmentIdentity, type DesktopEnvironmentIdentity } from './local-identity'
 
-let identity: string | undefined
+let identity: DesktopEnvironmentIdentity | undefined
 
-/** Stable local identity without initializing the environment gateway registry. */
+function load(): DesktopEnvironmentIdentity {
+  return identity ??= loadDesktopEnvironmentIdentity(app.getPath('userData'))
+}
+
+/** This desktop's environment id, without initializing the environment gateway registry. */
 export function localSessionEnvironmentId(): string {
-  return identity ??= loadOrCreateLocalEnvironmentId(app.getPath('userData'))
+  return load().environmentId
+}
+
+/** This desktop's earlier ids (see `loadDesktopEnvironmentIdentity`). */
+export function localEnvironmentAliases(): string[] {
+  return load().aliases
 }

@@ -9,6 +9,7 @@
  * machine connecting or disconnecting, and by a child starting (`wake`).
  */
 
+import { isEnvironment } from '@superone/shared/environment/client-view'
 import type { AgentEvent, SessionAgentRemoteLaunch, SessionAgentRunState } from '@superone/shared/agent-types'
 import { SESSION_DURABLE_EVENT, type EnvironmentEventEnvelope } from '@superone/shared/environment'
 import { createNodeSessionEventMapper, type NodeSessionEventMapper } from '@superone/shared/node-session-event-map'
@@ -108,7 +109,7 @@ export class RemoteChildWatcher {
       return
     }
     await Promise.all([...byEnvironment].map(async ([environmentId, children]) => {
-      const env = environments.find((item) => item.environmentId === environmentId)
+      const env = environments.find((item) => isEnvironment(item, environmentId))
       if (!env?.connected) {
         // Read the run state again once the machine is back, and watch again then.
         for (const child of children) {

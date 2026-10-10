@@ -16,6 +16,8 @@ export interface EnvironmentListItem {
   /** `local` for the desktop runtime; a UUID for paired remote nodes. */
   connectionId: string
   environmentId: string
+  /** Earlier ids references may carry (`ExecutionEnvironmentDescriptor.environmentAliases`). */
+  environmentAliases?: string[]
   label: string
   kind: 'local' | 'remote'
   /** Local is always `connected`; remote reflects its supervisor. */
@@ -208,3 +210,8 @@ export const CONNECTABLE_ENDPOINT_KINDS: EndpointKind[] = [
   'relay',
   'local',
 ]
+
+/** Whether `environmentId` names this environment, by its id or an alias. */
+export function isEnvironment(item: Pick<EnvironmentListItem, 'environmentId' | 'environmentAliases'>, environmentId: string): boolean {
+  return item.environmentId === environmentId || (item.environmentAliases?.includes(environmentId) ?? false)
+}

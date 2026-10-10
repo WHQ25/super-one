@@ -1,3 +1,4 @@
+import { loadDesktopEnvironmentIdentity } from '../environment/local-identity'
 import {
   AuthService,
   IdempotencyService,
@@ -123,7 +124,9 @@ export class DesktopNodeHost {
 
   static async start(deps: DesktopNodeHostDeps, listen: DesktopNodeHostListen): Promise<DesktopNodeHost> {
     const paths = desktopNodeHostPaths(deps.userDataDir)
-    const identity = loadOrCreateIdentity(paths.nodeHome, deps.label)
+    // The node identity is this desktop's one id; its earlier local id stays an alias.
+    const { aliases } = loadDesktopEnvironmentIdentity(deps.userDataDir)
+    const identity = { ...loadOrCreateIdentity(paths.nodeHome, deps.label), aliases }
     const db = openNodeDatabase(paths.db)
     try {
       const auth = new AuthService(db, identity)

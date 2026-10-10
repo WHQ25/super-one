@@ -1,3 +1,4 @@
+import { isEnvironment } from '@superone/shared/environment/client-view'
 import type { SessionRef } from '@superone/shared/environment/refs'
 import { buildSessionLink, type SessionLinkMetadataResult, type SessionLinkTarget } from '@superone/shared/session-link'
 import { parseRemoteProjectKey, remoteProjectKey } from '@superone/shared/remote-resource-key'
@@ -23,7 +24,7 @@ export async function sessionLinkMetadata(refs: SessionRef[]): Promise<SessionLi
   const results: SessionLinkMetadataResult[] = []
   for (const environmentId of new Set(refs.map(ref => ref.environmentId))) {
     const group = refs.filter(ref => ref.environmentId === environmentId)
-    const item = items.find(item => item.environmentId === environmentId)
+    const item = items.find(item => isEnvironment(item, environmentId))
     if (item?.kind === 'local') {
       const rows = getDb().prepare(`SELECT id, provider, provider_id, acp_agent_id FROM sessions
         WHERE COALESCE(is_hidden, 0) = 0 AND id IN (${group.map(() => '?').join(',')})`).all(...group.map(ref => ref.sessionId)) as Array<{ id: string; provider: string | null; provider_id: string | null; acp_agent_id: string | null }>
@@ -44,7 +45,7 @@ export async function sessionLinkMetadata(refs: SessionRef[]): Promise<SessionLi
 export async function resolveSessionLinkTarget(ref: SessionRef): Promise<SessionLinkTarget> {
   buildSessionLink(ref)
   const host = getEnvironmentHost()
-  const item = (await host.listEnvironments({ includeDescriptors: false })).find(item => item.environmentId === ref.environmentId)
+  const item = (await host.listEnvironments({ includeDescriptors: false })).find(item => isEnvironment(item, ref.environmentId))
   if (!item) throw Object.assign(new Error('Unknown session environment. Add or pair this host in Settings → Environments.'), { code: 'unknown_environment' })
   if (item.kind === 'local') {
     const row = findSessionAcrossProjects(ref.sessionId)

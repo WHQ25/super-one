@@ -76,6 +76,8 @@ export interface PendingConnectionProfile {
 export interface KnownEnvironment {
   connectionId: string
   environmentId: string
+  /** The descriptor's `environmentAliases`, kept so links resolve while offline. */
+  environmentAliases?: string[]
   nodePublicKeyFingerprint: string
   label: string
   endpointProfiles: EndpointProfile[]

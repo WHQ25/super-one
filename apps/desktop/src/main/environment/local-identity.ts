@@ -1,21 +1,36 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 
-const ENVIRONMENT_ID_FILE = 'environment-id'
+/** This desktop's id: the node identity's (`<userData>/node-host`), which every resource, topic and lease uses. */
+const NODE_ENVIRONMENT_ID_FILE = join('node-host', 'environment-id')
+/** The id the desktop had before its node identity became canonical. */
+const LEGACY_ENVIRONMENT_ID_FILE = 'environment-id'
+
+export interface DesktopEnvironmentIdentity {
+  environmentId: string
+  /** Earlier ids references may carry; resolved before looking anything up. */
+  aliases: string[]
+}
+
+function readId(path: string): string | null {
+  if (!existsSync(path)) return null
+  return readFileSync(path, 'utf8').trim() || null
+}
 
 /**
- * Load or create a stable local environment id under `dataDir`.
- * Pure filesystem helper — callers pass Electron userData (or a temp dir in tests).
+ * Load this desktop's environment identity under `dataDir` (Electron userData,
+ * or a temp dir in tests). A desktop without a node identity takes its local
+ * id for it; one that has both keeps the local id as an alias, so links and
+ * pairings made with either keep resolving.
  */
-export function loadOrCreateLocalEnvironmentId(dataDir: string): string {
-  mkdirSync(dataDir, { recursive: true })
-  const path = join(dataDir, ENVIRONMENT_ID_FILE)
-  if (existsSync(path)) {
-    const existing = readFileSync(path, 'utf8').trim()
-    if (existing.length > 0) return existing
-  }
-  const id = randomUUID()
-  writeFileSync(path, `${id}\n`, { encoding: 'utf8', mode: 0o600 })
-  return id
+export function loadDesktopEnvironmentIdentity(dataDir: string): DesktopEnvironmentIdentity {
+  const nodePath = join(dataDir, NODE_ENVIRONMENT_ID_FILE)
+  const legacy = readId(join(dataDir, LEGACY_ENVIRONMENT_ID_FILE))
+  const existing = readId(nodePath)
+  if (existing) return { environmentId: existing, aliases: legacy && legacy !== existing ? [legacy] : [] }
+  const environmentId = legacy ?? randomUUID()
+  mkdirSync(dirname(nodePath), { recursive: true })
+  writeFileSync(nodePath, `${environmentId}\n`, { encoding: 'utf8', mode: 0o600 })
+  return { environmentId, aliases: [] }
 }

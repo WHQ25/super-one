@@ -129,8 +129,8 @@ export class NodeConnectionManager {
   }
 
   getGateway(environmentId: string): RemoteEnvironmentGateway | null {
-    for (const live of this.lives.values()) {
-      if (live.environmentId === environmentId) return live.gateway
+    for (const [connectionId, live] of this.lives) {
+      if (live.environmentId === environmentId || this.known.get(connectionId)?.environmentAliases?.includes(environmentId)) return live.gateway
     }
     return null
   }
@@ -673,7 +673,10 @@ export class NodeConnectionManager {
               })
             }
             await client.connect()
-            await client.getDescriptor()
+            const { environmentAliases = [] } = await client.getDescriptor()
+            if (known && JSON.stringify(known.environmentAliases ?? []) !== JSON.stringify(environmentAliases)) {
+              this.updateKnown(known.connectionId, { environmentAliases })
+            }
             return
           } catch (err) {
             if (!known || !this.opts.onRouteFailed || !this.opts.resolveReconnectRoute || isRouteIndependentFailure(err)) throw err

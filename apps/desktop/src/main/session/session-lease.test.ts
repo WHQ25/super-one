@@ -45,6 +45,25 @@ describe('desktop session leases', () => {
     ])
   })
 
+  it('renews the call grant across navigation, but never reacquires a revoked grant', async () => {
+    vi.useFakeTimers()
+    try {
+      const authority = controlLeaseAuthority()
+      const session = new SessionLease('s', authority)
+      const phone = acquirePhoneControl(authority, 's', 'a')
+      const release = runFencedSessionControl('s', 'phone:a', phone, () => session.retainVoice('a'))
+      expect(() => session.retainVoice('b')).toThrow('session control')
+      await vi.advanceTimersByTimeAsync(90_000)
+      expect(session.current).toMatchObject({ leaseId: phone.leaseId, generation: phone.generation })
+      session.revoke()
+      runWindowControl(2, () => session.assertMutation())
+      const window = session.current!
+      await vi.advanceTimersByTimeAsync(20_000)
+      expect(session.current).toEqual(window)
+      release()
+    } finally { vi.useRealTimers() }
+  })
+
   it('expires control, publishes its authority projection and keeps host work available', async () => {
     vi.useFakeTimers()
     try {

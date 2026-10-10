@@ -69,6 +69,20 @@ describe('native RelayClient socket adapter', () => {
     expect(onEvents).not.toHaveBeenCalled()
     expect(client.releaseBuffer().batches).toEqual([[event]])
   })
+  it('delivers private voice signaling immediately without retaining it in the restore buffer', async () => {
+    const onArrived = vi.fn(), onEvents = vi.fn()
+    const { client, sockets } = fixture({ onArrived, onEvents })
+    await client.connectRelay(RELAY)
+    const socket = sockets[0]!
+    const host = completeNativeHandshake(socket, TEST_LINK, 'desk')
+    await client.verifyHost()
+    client.startBuffering()
+    const event = { type: 'realtime_call_signal', sessionId: 's', projectPath: '/repo', signal: { kind: 'answer', sdp: 'private-answer' } }
+    host.sendRpc(socket, { type: 'client', event }, { push: true })
+    expect(onArrived).toHaveBeenCalledWith([event])
+    expect(onEvents).not.toHaveBeenCalled()
+    expect(client.releaseBuffer().batches).toEqual([])
+  })
   it('reruns both handshakes for a returning desktop and reports only verified host contracts', async () => {
     const onControl = vi.fn()
     const { client, sockets } = fixture({ onControl })
@@ -154,6 +168,22 @@ describe('native RelayClient socket adapter', () => {
     const host = completeNativeHandshake(sockets[1]!); await client.verifyHost()
     sockets[1]!.emit({ type: 'terminal', data: 'invalid-native-frame' })
     expect(client.connected).toBe(false)
+  })
+  it('keeps call retention across a new channel while retiring old navigation references', async () => {
+    const { client, sockets } = fixture()
+    await client.connectRelay(RELAY)
+    completeNativeHandshake(sockets[0]!); await client.verifyHost()
+    const ref = { environmentId: 'desk', sessionId: 's' }
+    const release = vi.spyOn(client, 'releaseControl').mockResolvedValue()
+    const oldChat = client.retainSession(ref)
+    const call = client.retainSession(ref, { acrossReconnect: true })
+    await client.reconnect()
+    completeNativeHandshake(sockets[1]!); await client.verifyHost()
+    const newChat = client.retainSession(ref)
+    await oldChat(); await newChat()
+    expect(release).not.toHaveBeenCalled()
+    await call(); await call()
+    expect(release).toHaveBeenCalledTimes(1)
   })
   it('downloads a LAN file using the connected host', async () => {
     const { client } = fixture()

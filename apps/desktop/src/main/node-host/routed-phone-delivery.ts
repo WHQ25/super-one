@@ -20,6 +20,7 @@ export class RoutedPhoneDelivery {
         ...(loaded.activeTurn ?? [])].map(message => [message.id, message])).values()].slice(-400)
       const retained = !includeState && previous?.epoch === loaded.cursor.epoch ? previous : undefined
       const state = { ...createDefaultChatCoreSession(), ...retained?.state, ...loaded.state, messages } as ChatCoreSession
+      state.realtimeThreadMessages = loaded.restore?.realtimeThreadMessages ?? retained?.state.realtimeThreadMessages ?? []
       this.views.set(id, { state,
         version: loaded.cursor.version, epoch: loaded.cursor.epoch, summarized: loaded.summarized === true,
         mapper: retained?.mapper ?? createNodeSessionEventMapper({ sessionId: loaded.sessionId, projectPath: '', providerId: String(state.sessionProvider ?? loaded.state.providerId ?? loaded.state.harnessId ?? '') }),
@@ -30,7 +31,8 @@ export class RoutedPhoneDelivery {
   has(environmentId: string, sessionId: string): boolean { return this.views.has(JSON.stringify([environmentId, sessionId])) }
   summarized(environmentId: string, sessionId: string): boolean { return this.views.get(JSON.stringify([environmentId, sessionId]))?.summarized === true }
   detail(environmentId: string, input: { sessionId: string; detailRef: string; subscriptionId: string }, delivery: ConnectionDelivery): DetailUpdate {
-    const message = this.views.get(JSON.stringify([environmentId, input.sessionId]))?.state.messages.find(row => row.id === detailMessageId(input.detailRef))
+    const view = this.views.get(JSON.stringify([environmentId, input.sessionId]))
+    const message = view && [...view.state.messages, ...view.state.realtimeThreadMessages].find(row => row.id === detailMessageId(input.detailRef))
     if (!message) throw Object.assign(new Error('Detail not found in loaded rows'), { code: 'not_found' })
     return delivery.views.subscribe(input.sessionId, input.subscriptionId, input.detailRef, message)
   }
@@ -47,8 +49,9 @@ export class RoutedPhoneDelivery {
         for (const event of events) view.state = { ...view.state, ...applyEventToSession(view.state, event, view.ports) }
       }
       view.version = Math.max(view.version, version)
-      const shaped = events.flatMap((event): AgentEvent[] => view.summarized ? delivery.shape(event) : delivery.event(event, envelope.aggregateId, view.state.messages))
-      if (!view.summarized) for (const event of delivery.details(envelope.aggregateId, view.state.messages)) {
+      const detailRows = [...view.state.messages, ...view.state.realtimeThreadMessages]
+      const shaped = events.flatMap((event): AgentEvent[] => view.summarized ? delivery.shape(event) : delivery.event(event, envelope.aggregateId, detailRows))
+      if (!view.summarized) for (const event of delivery.details(envelope.aggregateId, detailRows)) {
         if (event.type === 'remote_detail') pushDetail(envelope.aggregateId, { subscriptionId: event.subscriptionId, revision: event.revision, offset: event.offset, text: event.text })
       }
       return shaped.map(event => ({ ...envelope, eventType: 'session.agent_event', payload: { event } }))

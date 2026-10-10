@@ -314,13 +314,9 @@ export class Session implements SessionContract {
   private abortController: AbortController | null = null
   private backendStarted = false
   private realtimeSignalListeners = new Set<(event: AgentEvent) => void>()
-  private voiceInterest = new RealtimeVoiceInterest({
-    owner: () => this.owner, subscribers: () => this.subscribers,
-    claim: deviceId => this.claim({ kind: 'remote', deviceId }),
-    subscribe: deviceId => this.subscribe(deviceId),
-    release: deviceId => this.release(deviceId, 'self_leave'),
-    unsubscribe: deviceId => this.unsubscribe(deviceId, 'self_leave'),
-  })
+  private voiceInterest = new RealtimeVoiceInterest(deviceId => this.lease.retainVoice(deviceId))
+
+  hasRealtimeVoiceInterest(deviceId: string): boolean { return this.voiceInterest.active(deviceId) }
 
   retainRealtimeVoice(deviceId?: string): () => void {
     this.assertNotDisposed()
@@ -979,6 +975,7 @@ export class Session implements SessionContract {
     if (this._status === 'starting') await this.ensureStarted()
     if (this.isStreaming()) throw new Error('Wait for the current turn to finish before starting voice.')
     await this.waitForRuntimeRelease()
+    this.lease.assertMutation()
     assertVoiceAccount(this.getApiProviderId(true), request.selection?.apiProviderId)
     this.snapEffectiveApiProviderId()
     this.broadcastSettingsPatch(voiceThreadSettings(request))

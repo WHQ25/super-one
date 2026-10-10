@@ -38,6 +38,7 @@ export interface DesktopSessionRow {
   title: string | null
   harnessId: HarnessId
   providerId: string | null
+  apiProviderId?: string | null
   providerSessionId: string | null
   worktreePath: string | null
   isWorktree?: boolean
@@ -81,7 +82,7 @@ export function setSessionRemoteController(sessionId: string, controller: Remote
 }
 
 const SELECT = `
-  SELECT s.id, s.project_id, p.path AS project_path, s.title, s.provider, s.provider_id, s.provider_session_id,
+  SELECT s.id, s.project_id, p.path AS project_path, s.title, s.provider, s.provider_id, s.api_provider_id, s.provider_session_id,
          s.worktree_path, s.is_worktree, s.git_branch, s.context_tokens, s.total_cost_usd,
          s.is_pinned, s.is_hidden, s.is_user_renamed, s.tags_json, s.created_at,
          COALESCE(s.last_user_message_at, s.created_at) AS updated_at, s.remote_controller_json
@@ -95,6 +96,7 @@ interface Row {
   title: string | null
   provider: string | null
   provider_id: string | null
+  api_provider_id: string | null
   provider_session_id: string | null
   worktree_path: string | null
   is_worktree: number | null
@@ -118,6 +120,7 @@ function toRow(r: Row): DesktopSessionRow {
     title: r.title,
     harnessId: deriveHarnessId(r),
     providerId: r.provider_id,
+    apiProviderId: r.api_provider_id,
     providerSessionId: r.provider_session_id,
     worktreePath: r.worktree_path,
     isWorktree: !!r.is_worktree,

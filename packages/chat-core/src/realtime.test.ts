@@ -10,7 +10,7 @@ const session = (overrides: Partial<ChatCoreSession> = {}): ChatCoreSession => (
   ...overrides,
 })
 
-const completed = (itemId: string, role: 'user' | 'assistant', text: string, startedAtMs?: number): AgentEvent => ({
+const completed = (itemId: string, role: 'user' | 'assistant', text: string, startedAtMs?: number): Extract<AgentEvent, { type: 'realtime_transcript_item' }> => ({
   type: 'realtime_transcript_item',
   phase: 'completed',
   itemId,

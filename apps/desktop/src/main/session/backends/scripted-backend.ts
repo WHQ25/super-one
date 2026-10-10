@@ -77,6 +77,13 @@ export class ScriptedBackend implements SessionBackend {
   async rebuild(opts: BackendStartOptions): Promise<void> { await this.start(opts) }
   prewarm(opts: BackendStartOptions): void { void this.start(opts) }
 
+  /** Exercises signaling and authority without opening an upstream media call. */
+  async startRealtimeVoice(): Promise<void> {
+    this.emit({ type: 'realtime_started', realtimeSessionId: `scripted-voice-${this.sessionId}`, version: 'scripted' })
+    this.emit({ type: 'realtime_sdp', sdp: 'v=0\r\na=scripted-answer' })
+  }
+  async stopRealtimeVoice(): Promise<void> { this.emit({ type: 'realtime_closed' }) }
+
   async send(request: SendMessageRequest, delivery?: SendDelivery): Promise<void> {
     // Resolve once the turn is accepted, as real harnesses do. A message that
     // arrives mid-turn (a mailbox wake) runs after it, like a queued prompt.

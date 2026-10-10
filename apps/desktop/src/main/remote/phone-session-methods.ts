@@ -5,17 +5,13 @@ import { answerRemoteAsyncQuestion } from '../agent/remote-async-question'
 import { runFencedSessionControl } from '../session/control-context'
 import { enqueueSessionQueueOp, queuedSteerCommand } from '../session/session-queue'
 import type { Session } from '../session/types'
+import { phoneMethodText as text, invalidPhoneArgument as invalid } from './phone-method-input'
 
 export interface PhoneSessionMethodHost {
   getSession(sessionId: string): Session | null | undefined
 }
 
 type Handler = (p: Record<string, unknown>, ctx: RpcContext) => unknown | Promise<unknown>
-const invalid = (message: string) => Object.assign(new Error(message), { code: 'invalid_argument' })
-function text(p: Record<string, unknown>, key: string): string {
-  if (typeof p[key] !== 'string' || !p[key]) throw invalid(`${key} is required`)
-  return p[key] as string
-}
 const GOAL_STATUSES: ReadonlySet<string> = new Set(['active', 'paused', 'blocked', 'usageLimited', 'budgetLimited', 'complete'])
 
 /** Session operations already exposed by the desktop, beyond the shared node family. */

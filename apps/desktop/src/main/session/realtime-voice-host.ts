@@ -4,6 +4,7 @@ import { isCodexAccountProvider } from '@superone/shared/codex-accounts'
 import { assertVoiceAccount, validateVoiceAttempt, validateVoiceStart, sameVoice, redactVoiceText, VoiceCleanupPendingError, VOICE_DISCONNECT_GRACE_MS, VOICE_START_TIMEOUT_MS, type VoiceCapability, type VoiceIdentity, type VoiceSignal, type VoiceStatus } from '@superone/shared/realtime-voice'
 import type { AgentEvent, RealtimeVoiceStartRequest } from '@superone/shared/agent-types'
 import type { Session } from './types'
+import { runHostReaction } from './control-context'
 
 export type VoiceEndpoint = { id: string; deviceId?: string; onDisconnect?: (listener: () => void) => () => void; send(signal: VoiceSignal): void }
 type Call = VoiceIdentity & {
@@ -14,7 +15,7 @@ type Call = VoiceIdentity & {
   timer?: ReturnType<typeof setTimeout>; disconnect?: ReturnType<typeof setTimeout>
 }
 
-export function voiceCapability(session: Session | null | undefined): VoiceCapability {
+export function voiceCapability(session: { snapshot: Pick<Session['snapshot'], 'harnessId'>; getApiProviderId: Session['getApiProviderId'] } | null | undefined): VoiceCapability {
   if (!session || !HARNESS_CAPABILITIES[session.snapshot.harnessId]?.supportsRealtimeVoice) return { protocol: 1, supported: false, reason: 'Voice is unavailable for this agent.' }
   const provider = session.getApiProviderId(true)
   if (provider && !isCodexAccountProvider(provider)) return { protocol: 1, supported: false, reason: 'Voice requires an official Codex account.' }
@@ -67,11 +68,14 @@ export class RealtimeVoiceHost {
       release, unsubscribe: () => {}, lifecycle: () => {},
     }
     this.call = call
+    const proof = session.lease.current
     call.windowCleanup = endpoint.onDisconnect?.(() => { void this.stop(session, endpoint, attemptId) })
     call.unsubscribe = session.onRealtimeSignal(event => this.event(call, event))
     call.lifecycle = session.onLifecycle(event => {
       if (event.type === 'closed') { call.ended = true; call.settled = true; this.finish(call, 'Session closed') }
-      else if (event.type === 'subscriber_removed' && event.deviceId === endpoint.deviceId && event.reason === 'desktop_kick') void this.stop(session, endpoint, attemptId)
+      else if (event.type === 'control_changed' && (!event.lease || event.lease.leaseId !== proof?.leaseId || event.lease.generation !== proof?.generation)) {
+        void runHostReaction(() => this.stop(session, endpoint, attemptId))
+      }
     })
     call.timer = setTimeout(() => {
       this.emit(call, { kind: 'error', error: 'Voice connection timed out.' })
@@ -132,7 +136,7 @@ export class RealtimeVoiceHost {
     if (this.call !== call || call.stopSent) return
     call.stopSent = true
     try {
-      await call.session.stopRealtimeVoice()
+      await runHostReaction(() => call.session.stopRealtimeVoice())
       // The stop receipt is a teardown barrier; the backend drains closed before returning.
       call.ended = true
       this.finish(call)
@@ -152,20 +156,21 @@ export class RealtimeVoiceHost {
   disconnected(deviceId: string): void {
     const call = this.call
     if (!call || call.endpoint.deviceId !== deviceId || call.disconnect) return
-    call.disconnect = setTimeout(() => { void this.stop(call.session, call.endpoint, call.attemptId) }, VOICE_DISCONNECT_GRACE_MS)
+    call.disconnect = setTimeout(() => {
+      void runHostReaction(() => this.stop(call.session, call.endpoint, call.attemptId))
+      runHostReaction(() => call.session.lease.releaseDelegate(`phone:${deviceId}`))
+    }, VOICE_DISCONNECT_GRACE_MS)
+  }
+  kicked(deviceId: string): void {
+    const call = this.call
+    if (!call || call.endpoint.deviceId !== deviceId) return
+    void runHostReaction(() => this.stop(call.session, call.endpoint, call.attemptId))
+    runHostReaction(() => call.session.lease.releaseDelegate(`phone:${deviceId}`))
   }
   reconnect(session: Session, endpoint: VoiceEndpoint): void {
     const call = this.call
     if (call?.session !== session || call.endpoint.id !== endpoint.id) return
-    // Transport recovery must not release the durable call interest: navigation
-    // may have left the chat while this call still owns its Session subscription.
-    if (!session.subscribers.has(endpoint.deviceId ?? '')) {
-      call.release()
-      try { call.release = session.retainRealtimeVoice(endpoint.deviceId) } catch (error) {
-        void this.stop(session, call.endpoint, call.attemptId)
-        throw error
-      }
-    }
+    // The call retains its grant independently of the chat topic and socket.
     clearTimeout(call.disconnect); call.disconnect = undefined
     call.endpoint = endpoint
   }

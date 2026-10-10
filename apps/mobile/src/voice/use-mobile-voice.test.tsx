@@ -1,5 +1,5 @@
 import { beforeEach, expect, it, jest } from '@jest/globals'
-import { act, renderHook } from '@testing-library/react-native'
+import { act, renderHook, waitFor } from '@testing-library/react-native'
 import type { VoiceCapability } from '@superone/shared/realtime-voice'
 import type { VoiceMedia } from './voice-service'
 import { useMobileVoice } from './use-mobile-voice'
@@ -17,57 +17,66 @@ const capability: VoiceCapability = { protocol: 1, supported: true }
 const target = { projectPath: '/repo', sessionId: 'created', harnessId: 'codex' as const }
 type Input = Parameters<typeof useMobileVoice>[0]
 function fixture() {
-  const request = jest.fn(async (cmd: { type: string; attemptId?: string }) => {
-    if (cmd.type === 'get_session_state') return { realtimeVoice: capability }
-    return { ...capability, call: cmd.type === 'voice_start'
-      ? { ...target, attemptId: cmd.attemptId, callId: 'call', hostEpoch: 'host', generation: 1, owned: true, state: 'starting' }
-      : null }
-  })
+  const status = jest.fn(async (): Promise<unknown> => ({ ...capability, call: null }))
+  const rpc = jest.fn(async (method: string): Promise<unknown> => method === 'environment.descriptor'
+    ? { capabilities: { methods: ['session.voiceStatus', 'session.voiceStart', 'session.voiceReady', 'session.voiceStop'] } }
+    : status())
+  const controlledRpc = jest.fn(async (_ref: unknown, method: string, p: { attemptId?: string }): Promise<unknown> => ({
+    ...capability, call: method === 'session.voiceStart'
+      ? { ...target, attemptId: p.attemptId, callId: 'call', hostEpoch: 'host', generation: 1, owned: true, state: 'starting' }
+      : null,
+  }))
+  const release = jest.fn(async () => {})
+  const client = { rpc, controlledRpc, environmentId: 'desktop',
+    resolveProject: jest.fn(async () => ({ environmentId: 'desktop', projectId: 'p' })),
+    acquireControl: jest.fn(async () => ({})), retainSession: jest.fn(() => release),
+  }
   const create = jest.fn(async (_signal: AbortSignal) => target)
-  const input: Input = { clientRef: { current: { request } as never }, target: null,
+  const input: Input = { clientRef: { current: client as never }, target: null,
     landing: { projectPath: '/repo', harnessId: 'codex', capability, create },
     connected: true, routed: false, additionalDirs: ['/tools'], providerId: 'codex-account:cli', catalogReady: true,
     selection: { model: 'gpt-6.1-sol', reasoningEffort: 'high', serviceTier: 'fast', apiProviderId: 'codex-account:cli' },
   }
-  return { input, request, create }
+  return { input, rpc, status, controlledRpc, client, release, create }
 }
 beforeEach(() => { jest.clearAllMocks(); mockAvailable.mockReturnValue(true) })
 
 it('offers voice on the new-session landing and carries the displayed selection after empty creation', async () => {
   const f = fixture()
   const { result } = await renderHook(() => useMobileVoice(f.input))
-  expect(result.current.capability).toEqual(capability)
+  await waitFor(() => expect(result.current.capability).toEqual(capability))
   expect(result.current.supported).toBe(true)
-  expect(f.request).not.toHaveBeenCalled()
+  expect(f.controlledRpc).not.toHaveBeenCalled()
   expect(f.create).not.toHaveBeenCalled()
   await act(async () => { result.current.start() })
   expect(f.create).toHaveBeenCalledTimes(1)
-  expect(f.request).toHaveBeenCalledWith(expect.objectContaining({ type: 'voice_start', ...target,
-    request: { sdp: 'offer', additionalDirs: ['/tools'], selection: f.input.selection },
-  }))
+  expect(f.controlledRpc).toHaveBeenCalledWith({ environmentId: 'desktop', sessionId: target.sessionId }, 'session.voiceStart', { attemptId: expect.any(String), request: { sdp: 'offer', additionalDirs: ['/tools'], selection: f.input.selection } })
   await act(async () => { result.current.service.stop() })
 })
 
 it.each(['failed', 'unsupported'] as const)('refreshes the same session ID after an early %s capability response', async (response) => {
   const f = fixture()
-  if (response === 'failed') f.request.mockRejectedValueOnce(new Error('Session not created yet'))
-  else f.request.mockResolvedValueOnce({ realtimeVoice: { protocol: 1, supported: false } })
+  if (response === 'failed') f.status.mockRejectedValueOnce(new Error('Session not created yet'))
+  else f.status.mockResolvedValueOnce({ protocol: 1, supported: false, call: null })
   const { result, rerender } = await renderHook((input: Input) => useMobileVoice(input),
     { initialProps: { ...f.input, target, landing: undefined } })
+  await waitFor(() => expect(f.status).toHaveBeenCalledTimes(1))
   expect(result.current.supported).toBe(false)
   await rerender({ ...f.input, target, landing: undefined, sessionCapability: capability })
-  expect(result.current.supported).toBe(true)
-  expect(result.current.capability).toEqual(capability)
+  await waitFor(() => expect(result.current.supported).toBe(true))
+  await waitFor(() => expect(result.current.capability).toEqual(capability))
 })
 
 it('ignores a pre-creation response arriving after the authoritative subscription snapshot', async () => {
   const f = fixture()
-  let stale!: (value: { realtimeVoice: VoiceCapability }) => void
-  f.request.mockImplementationOnce(() => new Promise(resolve => { stale = resolve }))
+  let stale!: (value: unknown) => void
+  f.status.mockImplementationOnce(() => new Promise(resolve => { stale = resolve }))
   const { result, rerender } = await renderHook((input: Input) => useMobileVoice(input),
     { initialProps: { ...f.input, target, landing: undefined } })
+  await waitFor(() => expect(f.status).toHaveBeenCalledTimes(1))
   await rerender({ ...f.input, target, landing: undefined, sessionCapability: capability })
-  await act(async () => { stale({ realtimeVoice: { protocol: 1, supported: false } }) })
+  await waitFor(() => expect(result.current.supported).toBe(true))
+  await act(async () => { stale({ protocol: 1, supported: false, call: null }) })
   expect(result.current.supported).toBe(true)
 })
 
@@ -88,9 +97,21 @@ it('keeps the entry visible but disabled when the native binary lacks voice modu
   mockAvailable.mockReturnValue(false)
   const f = fixture()
   const { result } = await renderHook(() => useMobileVoice(f.input))
-  expect(result.current.capability).toEqual(capability)
+  await waitFor(() => expect(result.current.capability).toEqual(capability))
   expect(result.current.supported).toBe(false)
   await act(async () => { result.current.start() })
   expect(f.create).not.toHaveBeenCalled()
+  expect(mockOpen).not.toHaveBeenCalled()
+})
+
+it('hides voice when the authenticated host does not serve every native voice method', async () => {
+  const f = fixture()
+  f.rpc.mockResolvedValue({ capabilities: { methods: ['session.voiceStatus'] } })
+  const { result } = await renderHook(() => useMobileVoice({ ...f.input, target, sessionCapability: capability }))
+  await waitFor(() => expect(f.rpc).toHaveBeenCalled())
+  expect(result.current.supported).toBe(false)
+  expect(result.current.capability).toBeUndefined()
+  expect(f.status).not.toHaveBeenCalled()
+  await act(async () => { result.current.start() })
   expect(mockOpen).not.toHaveBeenCalled()
 })

@@ -6,8 +6,6 @@ import type { HarnessId } from '../session-types'
  * serves; absence means unsupported.
  */
 export interface EnvironmentCapabilities {
-  /** Desktop-hosted phone voice control v1; absent on older/CLI nodes. */
-  mobileRealtimeVoice?: boolean
   /** Every RPC method this environment serves. */
   methods: string[]
   /** Harness IDs this environment can host. */
@@ -37,7 +35,6 @@ export function servesMethod(capabilities: Partial<Pick<EnvironmentCapabilities,
 
 /** This desktop's own environment: the window calls its host in-process, not by method. */
 export const LOCAL_ENVIRONMENT_CAPABILITIES: EnvironmentCapabilities = {
-  mobileRealtimeVoice: true,
   methods: [],
   harnessIds: ['claude', 'codex', 'acp', 'opencode'],
   coldSessionResume: true,

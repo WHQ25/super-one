@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import WebSocket from 'ws'
 import { RelayClient } from '@superone/relay-client'
+import type { VoiceStatus } from '@superone/shared/realtime-voice'
 import { startPairingHandshake, type PairResult } from '../../../packages/relay-client/src/pair'
 import { decodeNodePairingCode, encodeNodePairingCode } from '@superone/shared/environment/node-pairing-code'
 import { CURRENT_ONBOARDING_EPOCH } from '@superone/shared/onboarding'
@@ -49,7 +50,7 @@ async function pairPhone(index: number): Promise<PairResult> {
 }
 
 async function connect(index: number, route: 'lan' | 'relay', lost: string[] = [], events: unknown[] = []): Promise<RelayClient> {
-  const client = new RelayClient({ onEvents: batch => events.push(...batch), onControlLost: resource => lost.push('sessionId' in resource ? resource.sessionId : resource.terminalId) })
+  const client = new RelayClient({ onEvents: batch => events.push(...batch), onArrived: batch => events.push(...batch.filter(event => (event as { type?: string }).type === 'realtime_call_signal')), onControlLost: resource => lost.push('sessionId' in resource ? resource.sessionId : resource.terminalId) })
   phones.push(client)
   const link = pairings[index]
   if (route === 'lan') await client.connectLan('127.0.0.1', lanPort, link)
@@ -294,4 +295,44 @@ test('phone link changes LAN to relay during a real turn without reloading eithe
   expect(JSON.stringify(realigned.messages)).toContain('BEFORE-FAILOVER')
   await client.followSession({ session: ref, projectPath: project, cursor: realigned.cursor })
   await expect.poll(() => JSON.stringify(events), { timeout: 30_000 }).toContain('AFTER-FAILOVER')
+})
+
+
+test('native voice signaling is private on LAN and Alpha Relay and outlives chat navigation', async () => {
+  for (const route of ['lan', 'relay'] as const) {
+    const events: unknown[] = [], peerEvents: unknown[] = [], lost: string[] = []
+    const one = await connect(0, route, lost, events)
+    const two = await connect(1, route, [], peerEvents)
+    const target = await one.resolveProject(project)
+    const created = await one.rpc<{ sessionId: string }>('session.create', { projectId: target.projectId, harnessId: 'codex', title: `Voice ${route}` })
+    const ref = { environmentId: one.environmentId!, sessionId: created.sessionId }
+    const loaded = await one.rpc<import('@superone/shared/environment').SessionLoadResult>('session.load', { sessionId: ref.sessionId })
+    expect(loaded.restore?.realtimeVoice?.supported).toBe(true)
+    await one.acquireControl(ref)
+    await one.followSession({ session: ref, projectPath: project, provider: 'codex', cursor: loaded.cursor })
+    const releaseCall = one.retainSession(ref, { acrossReconnect: true })
+    try {
+      const started = await one.controlledRpc<VoiceStatus>(ref, 'session.voiceStart', { attemptId: `voice-${route}`, request: { sdp: 'v=0\na=ice-pwd:isolated-voice-offer' } })
+      expect(started.call?.owned).toBe(true)
+      await expect.poll(() => events.some(event => (event as { signal?: { kind?: string } }).signal?.kind === 'answer')).toBe(true)
+      expect(JSON.stringify(peerEvents)).not.toContain('scripted-answer')
+      await expect(two.acquireControl(ref)).rejects.toMatchObject({ code: 'failed_precondition' })
+      await one.controlledRpc(ref, 'session.voiceReady', { attemptId: started.call!.attemptId, identity: started.call })
+      if (route === 'lan') {
+        await one.connectRelay({ relayUrl: pairings[0].relayUrl, link: pairings[0], deviceId: 'protocol-live-phone-0' })
+        await one.verifyHost()
+        const status = await one.rpc<VoiceStatus>('session.voiceStatus', { sessionId: ref.sessionId })
+        expect(status.call?.callId).toBe(started.call?.callId)
+        await one.acquireControl(ref)
+        const fresh = await one.rpc<import('@superone/shared/environment').SessionLoadResult>('session.load', { sessionId: ref.sessionId })
+        await one.followSession({ session: ref, projectPath: project, provider: 'codex', cursor: fresh.cursor })
+      }
+      await one.stopSession()
+      expect((await one.rpc<VoiceStatus>('session.voiceStatus', { sessionId: ref.sessionId })).call?.state).toBe('active')
+      const restored = await one.rpc<import('@superone/shared/environment').SessionLoadResult>('session.load', { sessionId: ref.sessionId })
+      expect(JSON.stringify(restored)).not.toContain('scripted-answer')
+      await one.controlledRpc(ref, 'session.voiceStop', { attemptId: started.call!.attemptId })
+      expect((await one.rpc<VoiceStatus>('session.voiceStatus', { sessionId: ref.sessionId })).call).toBeNull()
+    } finally { await releaseCall(); one.disconnect(); two.disconnect() }
+  }
 })

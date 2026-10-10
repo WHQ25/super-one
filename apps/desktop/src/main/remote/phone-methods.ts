@@ -3,6 +3,8 @@ import type { RpcContext, RpcExtensionDispatch, RpcResult } from '@superone/runt
 import { mapThrown, requireScopes } from '@superone/runtime/server/rpc-helpers'
 import type { AgentService } from '../agent/agent-service'
 import { createPhoneSessionMethods, type PhoneSessionMethodHost } from './phone-session-methods'
+import { createPhoneVoiceMethods, type PhoneVoiceHost } from './phone-voice-methods'
+import { phoneMethodText as text } from './phone-method-input'
 import { phoneMethodScopes } from './phone-method-scopes'
 import { MCP_APP_CONTROL_OPERATIONS } from '@superone/shared/environment/mcp-apps-rpc'
 import type { McpAppDeviceRequest } from '@superone/shared/agent-types'
@@ -10,12 +12,12 @@ import { deviceMcpAppHostRequest, executeDeviceMcpAppRequest } from '../mcp-apps
 
 /**
  * What the phone methods ask of the desktop: the projections its window and
- * the phone link already build, shared with the old phone commands until the
- * phone client moves onto the protocol.
+ * the phone link already build, served as native RPC extensions.
  */
 export interface PhoneMethodHost {
   mcpAppsRequest?: typeof executeDeviceMcpAppRequest
   sessions?: PhoneSessionMethodHost
+  voice?: PhoneVoiceHost
   agent: Pick<AgentService,
     | 'remoteSystemInfo' | 'remoteProjectResources' | 'remoteHarnessOptions' | 'remoteAttachment' | 'remoteSessionActivity'
     | 'remoteSearchMentions' | 'remoteSearchMcpMentions' | 'remoteReadMcpMentions' | 'remoteMcpServers' | 'markRemoteSeen'
@@ -30,12 +32,6 @@ type Handler = (p: Record<string, unknown>, ctx: RpcContext) => unknown | Promis
 
 class InvalidArgument extends Error {
   readonly code = 'invalid_argument'
-}
-
-function text(p: Record<string, unknown>, key: string): string {
-  const value = p[key]
-  if (typeof value !== 'string' || !value) throw new InvalidArgument(`${key} is required`)
-  return value
 }
 
 function optionalText(p: Record<string, unknown>, key: string): string | undefined {
@@ -288,12 +284,13 @@ function createHandlers(host: PhoneMethodHost): Record<string, Handler> {
  */
 export function createPhoneMethods(host: PhoneMethodHost): { dispatch: RpcExtensionDispatch; methods: ReadonlySet<string> } {
   const sessionHandlers = host.sessions ? createPhoneSessionMethods(host.sessions) : {}
-  const handlers = { ...createHandlers(host), ...sessionHandlers }
+  const voiceHandlers = host.voice ? createPhoneVoiceMethods(host.voice) : {}
+  const handlers = { ...createHandlers(host), ...sessionHandlers, ...voiceHandlers }
   const dispatch: RpcExtensionDispatch = async (method, payload, ctx): Promise<RpcResult | null> => {
     const handler = Object.hasOwn(handlers, method) ? handlers[method] : undefined
     if (!handler) return null
     const p = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {}
-    const denied = requireScopes(ctx.client, phoneMethodScopes(method, Object.hasOwn(sessionHandlers, method), p))
+    const denied = requireScopes(ctx.client, phoneMethodScopes(method, Object.hasOwn(sessionHandlers, method) || (Object.hasOwn(voiceHandlers, method) && method !== 'session.voiceStatus'), p))
     if (denied) return denied
     try {
       return { result: await handler(p, ctx) }

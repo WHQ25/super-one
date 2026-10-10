@@ -105,10 +105,11 @@ The desktop must stay online throughout the call.
 
 | Responsibility | Implementation |
 |---|---|
-| Typed capability, identity, commands and signals | `packages/shared/src/realtime-voice.ts` |
+| Typed capability, identity and signals | `packages/shared/src/realtime-voice.ts` |
 | Host-wide reservation and directed signaling | `apps/desktop/src/main/session/realtime-voice-host.ts` |
 | Session-owned call interest | `apps/desktop/src/main/session/realtime-voice-interest.ts` |
-| Authenticated remote and renderer ingress | `apps/desktop/src/main/agent/realtime-voice-control.ts` |
+| Authenticated native phone RPCs | `apps/desktop/src/main/remote/phone-voice-methods.ts` |
+| Renderer ingress and directed window signaling | `apps/desktop/src/main/agent/realtime-voice-control.ts` |
 | Codex start/stop and closure barrier | `apps/desktop/src/main/codex/codex-realtime.ts` |
 | Phone call lifecycle and transport adapter | `apps/mobile/src/voice/voice-service.ts`, `relay-voice-control.ts` |
 | Native microphone, playback, mute and audio focus | `apps/mobile/src/voice/native-voice-media.ts` |
@@ -121,6 +122,12 @@ answers, readiness reports and stops from affecting a new call. Cancellation
 before start retires that attempt. Stop waits for voice closure; uncertain cleanup
 holds admission. A start failure retains its cleanup handle until upstream teardown
 can be confirmed. Session disposal is an authoritative teardown boundary.
+
+The authenticated descriptor must serve all four `session.voice*` methods before
+the phone offers voice. Mutations use the endpoint's exact session lease proof.
+Call interest survives chat navigation and encrypted channel replacement; the
+host renews that admitted grant without reacquiring after takeover. Revocation or
+pairing removal ends the call, and disconnect releases it after the recovery grace.
 
 The phone creates the offer with native WebRTC. Authenticated encrypted LAN/relay
 control carries it to desktop, which starts official Codex realtime on the

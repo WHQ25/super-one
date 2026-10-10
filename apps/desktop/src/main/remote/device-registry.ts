@@ -22,7 +22,7 @@ export class DeviceRegistry {
     releaseComposerClient({ kind: 'device', id: deviceId })
     let releasedCount = 0
     this.sessionManager.forEachSession((session) => {
-      if (session.lease.releaseDelegate(`phone:${deviceId}`)) releasedCount++
+      if (!session.hasRealtimeVoiceInterest(deviceId) && session.lease.releaseDelegate(`phone:${deviceId}`)) releasedCount++
       // A killed app never detaches its mod client; the plugin would keep routing requests to it.
       session.detachModClient(mobileModClientId(deviceId))
     })

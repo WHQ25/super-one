@@ -89,6 +89,22 @@ export class SessionLease {
     this.assertMutation()
   }
 
+  /** Keep the admitted call's exact grant alive, never reacquire after takeover. */
+  retainVoice(deviceId?: string): () => void {
+    this.assertMutation()
+    const lease = this.current
+    if (!this.authority) return () => {}
+    if (!lease || (deviceId ? lease.delegate !== `phone:${deviceId}` : !lease.delegate?.startsWith('window:'))) {
+      throw Object.assign(new Error('Voice requires this endpoint\'s session control'), { code: 'lease_required' })
+    }
+    const timer = setInterval(() => {
+      try { this.authority!.leases.renew({ ...lease, ttlMs: 60_000 }) }
+      catch { clearInterval(timer) }
+    }, 20_000)
+    timer.unref?.()
+    return () => { clearInterval(timer) }
+  }
+
   /** Trusted host reactions release only the currently authenticated delegate. */
   releaseDelegate(delegate: string): boolean {
     const lease = this.current

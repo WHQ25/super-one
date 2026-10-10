@@ -136,8 +136,10 @@ ChatRuntime or navigation screen. Its raw `onArrived` consumer receives directed
 signaling even while a chat restore buffers transcript traffic. `relay-voice-control`
 uses the paired desktop's authenticated control transport; native media connects
 from the phone to the upstream WebRTC endpoint. No audio frames ride relay events.
-Session call interest keeps ownership and event subscriptions through self-leave
-and self-switch; normal device disconnect/kick cleanup remains explicit.
+A call retains its session lease independently of the chat topic and navigation.
+The host renews only the admitted grant; takeover/revocation ends the call.
+Disconnect keeps that grant for the eight-second recovery grace, then tears down
+the call and releases it. Raw signals bypass the transcript restore buffer.
 
 Only real AppState `background` stops capture. Permission sheets can produce
 `inactive` on iOS and must not cancel microphone authorization. Capture resolving

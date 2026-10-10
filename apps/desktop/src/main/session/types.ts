@@ -487,6 +487,7 @@ export interface Session {
   /** Worktree deleted under the live session: go read-only and stop the turn. */
   markWorktreeRemoved(): Promise<void>
   retainRealtimeVoice(deviceId?: string): () => void
+  hasRealtimeVoiceInterest(deviceId: string): boolean
   onRealtimeSignal(handler: (event: AgentEvent) => void): () => void
   startRealtimeVoice(request: import('@superone/shared/agent-types').RealtimeVoiceStartRequest): Promise<void>
   stopRealtimeVoice(): Promise<void>

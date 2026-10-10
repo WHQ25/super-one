@@ -318,6 +318,8 @@ export interface SessionHostPort {
   load(input: SessionRuntimeInput<'load'>): SessionLoadResult | Promise<SessionLoadResult>
   /** The session's whole reduced transcript now, for summaries and expanded detail. */
   messages(sessionId: string): readonly ChatMessage[]
+  /** Canonical voice backing rows may lie outside the persisted chat spine. */
+  detailMessages?(sessionId: string): readonly ChatMessage[]
 
   /**
    * Gate a lease just acquired on a session: refuse it while the host has taken

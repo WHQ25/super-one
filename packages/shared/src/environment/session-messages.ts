@@ -96,6 +96,9 @@ export interface SessionLoadRequest {
 
 /** Host facts a transcript reducer cannot reconstruct, read at the load cursor. */
 export interface SessionRestoreFacts {
+  realtimeVoice?: import('../realtime-voice').VoiceCapability
+  realtimeThreadMessages?: ChatMessage[]
+  realtimeHasTimeline?: boolean
   sourceEnvironmentId: string
   mcpAppContexts: McpAppContextSource[]
   sandboxInfo?: SandboxInfo

@@ -1090,6 +1090,7 @@ async function applyNodeHostSettings(settings: AppSettings): Promise<void> {
       phoneMethods: createPhoneMethods({
         agent: agentService,
         sessions: sessionManager,
+        voice: { manager: sessionManager, preferredVoice: () => readAppSettings().agentPreference.codex.realtimeVoice },
         desktopPair: async (input) => (await desktopPairing()).handleDesktopPairCommand(input),
       }),
   }
@@ -4709,6 +4710,7 @@ function registerIpcHandlers(): void {
   })
   ipcMain.handle(AgentIpcChannels.REMOTE_REMOVE_PAIRED, (_, id: string) => {
     deletePairedDevice(id)
+    sessionManager.realtimeVoice.kicked(id)
     remoteControlService.revokeDevice(id)
   })
   ipcMain.handle(AgentIpcChannels.REMOTE_START_PAIRING, async () => {

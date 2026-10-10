@@ -101,7 +101,7 @@ export function notFound(): Error {
  */
 export abstract class DesktopSessionReads<Row extends DesktopSessionRow> implements Pick<SessionHostPort,
   'get' | 'list' | 'load' | 'messages' | 'listMessages' | 'snapshotSequence' | 'listEventsAfter' | 'streamEpoch'
-  | 'streamingAfter' | 'streamingEvents' | 'onEventsAppended' | 'viewEvent'> {
+  | 'streamingAfter' | 'streamingEvents' | 'onEventsAppended' | 'viewEvent' | 'detailMessages'> {
   /** When each live prompt was first seen, so its `createdAt` is stable across reads. */
   private readonly promptSeenAt = new Map<string, number>()
   private readonly watchedPrompts = new WeakSet<Session>()
@@ -235,6 +235,14 @@ export abstract class DesktopSessionReads<Row extends DesktopSessionRow> impleme
     this.requireRow(sessionId)
     const live = this.reads.sessions.getSession(sessionId)
     return live ? [...live.snapshot.messages] : this.reads.rows.loadMessages(sessionId, Number.MAX_SAFE_INTEGER).messages
+  }
+
+  detailMessages(sessionId: string): ChatMessage[] {
+    const messages = this.messages(sessionId)
+    const canonical = this.reads.restore?.realtime?.(sessionId)?.threadMessages ?? []
+    const byId = new Map(messages.map(message => [message.id, message]))
+    for (const message of canonical) if (!byId.has(message.id)) byId.set(message.id, message)
+    return [...byId.values()]
   }
 
   listMessages(input: Parameters<SessionHostPort['listMessages']>[0]): ReturnType<SessionHostPort['listMessages']> {

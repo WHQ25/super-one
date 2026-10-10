@@ -15,7 +15,7 @@ import { SessionLease } from '../session/session-lease'
 import { releaseComposerClient } from '../session/composer-delivery'
 
 function makeFakeSession(id: string): Session {
-  return { id, lease: new SessionLease(id, controlLeaseAuthority()), detachModClient: vi.fn() } as unknown as Session
+  return { id, lease: new SessionLease(id, controlLeaseAuthority()), detachModClient: vi.fn(), hasRealtimeVoiceInterest: () => false } as unknown as Session
 }
 
 function makeFakeManager(sessions: Session[]): SessionManager {

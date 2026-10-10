@@ -211,6 +211,7 @@ through the desktop today (`environment-commands.ts`), by envelope
 | `request_session_recap` | **`session.recap`** | |
 | `set_session_goal`, `clear_session_goal` | **`session.setGoal`** | |
 | `dequeue_message`, `steer_queued_message` | **`session.dequeue`**, **`session.steer`** | |
+| `voice_status`, `voice_start`, `voice_ready`, `voice_stop` | `session.voiceStatus`, `session.voiceStart`, `session.voiceReady`, `session.voiceStop` (private signaling, exact lease proofs) | local desktop only |
 | `subscribe_session`, `unsubscribe_session`, `leave_session` | `session.load` + `topic.subscribe` / `topic.update`, `session.acquireControl` / `session.releaseControl` | yes |
 | `subscribe_detail`, `unsubscribe_detail` | `session.subscribeDetail`, `session.unsubscribeDetail` | yes |
 | `load_session_messages`, `get_session_history_index` | `session.load` (`before` or `anchorId`/`direction`), **`session.historyIndex`** | yes |
@@ -268,6 +269,30 @@ the CLI's `harness.resources`, so those handlers stay with the CLI.
   over Tailscale and relay.
 - Live phone pairing on the iOS simulator and a device, LAN and relay.
 - Bytes and frames against the step 0 baseline at steps 4 and 6 only.
+
+## Current execution boundary (2026-10-11)
+
+The branch is rebased onto main `100bb9739`, including native Codex mobile voice
+and Codex 0.162.1. Earlier checkpoint SHAs and green gates below describe their
+historical trees; they are not verification of this rebased tree.
+
+Voice now uses native fenced `session.voice*` RPCs, private connection pushes,
+independent call lease retention across navigation/channel replacement, and
+complete restore/detail facts. All four served methods gate the phone entry.
+Takeover, revoked pairing, cancelled acquisition and disconnect grace have
+regression coverage; unexpanded live frames do not reread canonical voice history.
+Both mobile native fingerprints changed; shipped build-35 OTA is no longer
+eligible. The Codex pin changed, so later approved publication must mirror the
+new harness pin before promoting desktop artifacts.
+
+Publication is paused by the user's explicit stop. The previous release attempt
+was cancelled: desktop promotion/release and mobile dispatch did not happen;
+the CLI publish step and Alpha Relay deployment did run. A fresh read of the official npm registry confirms CLI `0.73.0-alpha.1` exists.
+That version cannot be reused for this rebased code; a later approved release
+needs a fresh coordinated desktop/CLI version.
+Do not resume publishing, deploy, push main or roll back as part of local
+implementation and acceptance. Artifact verification and plan/proposal removal
+remain after an explicitly authorized completed publication.
 
 ## Progress
 
@@ -612,3 +637,25 @@ None.
   prepared. Android/iOS fingerprints match shipped build 35. Publication must
   retain desktop-first ordering; artifact verification and final plan/proposal
   deletion remain pending publication.
+
+- 2026-10-11: Rebased voice migration is implemented. SDP uses private native
+  client pushes and bypasses the phone restore buffer; no legacy command adapter
+  or owner/subscriber authority was restored. Calls retain and renew only their
+  admitted lease and survive chat navigation and secure channel replacement.
+  Pairing removal and takeover stop the call; short disconnects keep the exact
+  grant only for the bounded recovery grace. Canonical backing rows ride atomic
+  restore facts and retain deferred detail outside saved history pages on LAN,
+  relay and routed delivery. Phone entry uses the actual served-method list.
+  Relevant desktop/session/phone contracts, SDK/restore/control tests, runtime
+  delivery, shared contracts, mobile Vitest and 33 native voice Jest tests pass.
+  Workspace typechecks pass after fixing upstream voice-event and SVG-selector
+  test typing. Dependency lock, lint, production build, immutable wire gate and
+  desktop protocol byte/frame regression pass. The expanded four-case live CDP
+  suite passes on LAN and Alpha Relay, including two SDK phone actors, routed
+  session/terminal contention, forms, mid-turn link changes and simulated voice
+  signaling across navigation/LAN-to-relay. No managed harness is downloaded.
+  This is protocol/native-mock acceptance; physical upstream voice audio and
+  the separate mobile voice plan's remaining device matrix are not claimed.
+  Remaining here: approved desktop/CLI publication with a fresh version and
+  Codex 0.162.1 mirror, compatible native Android/iOS builds, published-artifact
+  verification, then final plan/proposal removal. Publication remains paused.

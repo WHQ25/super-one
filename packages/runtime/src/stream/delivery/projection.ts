@@ -114,6 +114,7 @@ export class DetailViews {
   has(sessionId: string): boolean {
     return this.sessions.has(sessionId)
   }
+  hasDetails(sessionId: string): boolean { return (this.sessions.get(sessionId)?.details.size ?? 0) > 0 }
 
   subscribe(sessionId: string, subscriptionId: string, ref: string, message: ChatMessage) {
     const view = this.sessions.get(sessionId)

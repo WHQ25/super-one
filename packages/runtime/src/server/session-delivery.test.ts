@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { configureRemoteContent, remoteContentPorts } from '../stream/delivery/remote-content'
 import { createDefaultChatCoreSession } from '@superone/chat-core'
 import type { AgentEvent, ChatMessage } from '@superone/shared/agent-types'
@@ -90,6 +90,30 @@ describe('node session delivery', () => {
       .toThrow(expect.objectContaining({ code: 'invalid_argument' }))
   })
 
+  it('does not reread canonical voice history for unexpanded live frames', () => {
+    const relay = new ConnectionDelivery(deliveryPolicy('relay', 'phone'))
+    transcript = [message('current thought')]
+    deliverLoad(load(), relay)
+    const canonical = vi.fn(() => transcript)
+    const ports = { ...sessions, detailMessages: canonical }
+    deliverFrame(frame(envelope(thinkingDelta('next'), 2)), relay, ports)
+    expect(canonical).not.toHaveBeenCalled()
+    subscribeDetail(relay, ports, { sessionId: 's', subscriptionId: 'detail', detailRef: '["m","thinking",0]' })
+    canonical.mockClear()
+    transcript = [message('updated thought')]
+    expect(deliverFrame(frame(envelope(thinkingDelta('next'), 3)), relay, ports).details).toHaveLength(1)
+    expect(canonical).toHaveBeenCalledTimes(1)
+  })
+  it('summarizes canonical voice backing rows and expands them outside the chat history', () => {
+    const canonical = { ...message('private backing thought'), id: 'voice-task', status: 'complete' as const }
+    const relay = new ConnectionDelivery(deliveryPolicy('relay', 'phone'))
+    const raw = { ...load(), messages: [], restore: { sourceEnvironmentId: 'env', mcpAppContexts: [], isWorktree: false, worktreePath: null, gitBranch: null, worktreeMissing: false, realtimeHasTimeline: true, realtimeThreadMessages: [canonical] } }
+    const loaded = deliverLoad(raw, relay)
+    expect(loaded.restore?.realtimeThreadMessages?.[0].content[0]).toMatchObject({ thinking: '', remoteDetail: '["voice-task","thinking",0]' })
+    expect(canonical.content[0]).toEqual({ type: 'thinking', thinking: 'private backing thought' })
+    const detail = subscribeDetail(relay, { messages: () => [], detailMessages: () => [canonical] }, { sessionId: 's', subscriptionId: 'voice-detail', detailRef: '["voice-task","thinking",0]' })
+    expect(detail.text).toBe('private backing thought')
+  })
   it('folds adjacent deltas of a session into the later envelope, and leaves a summarized tool input out', () => {
     const lan = new ConnectionDelivery(deliveryPolicy('lan', 'desktop'))
     transcript = [message('ab')]

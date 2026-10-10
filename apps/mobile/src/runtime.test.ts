@@ -11,12 +11,12 @@ afterEach(() => vi.useRealTimers())
 describe('ChatRuntime', () => {
   it('restores canonical backing rows separately from speech and paged chat messages', async () => {
     const client = fakeClient()
-    const answer = client.request.getMockImplementation()!
+    const answer = client.dispatch.getMockImplementation()!
     const speech = [{ id: 'spoken', realtimeSessionId: 'rt', role: 'user', text: 'Check login', localOrder: 1 }]
     const backing = [{ id: 'task', role: 'assistant', status: 'complete', content: [{ type: 'text', text: 'Login reviewed' }], createdAt: '',
       metadata: { codexTimeline: { provenance: 'realtime-delegated', localOrder: 2 } } }]
-    client.request.mockImplementation(async cmd => cmd.type === 'get_session_state'
-      ? { status: 'idle', realtimeHasTimeline: true, realtimeSegments: speech, realtimeThreadMessages: backing }
+    client.dispatch.mockImplementation(async cmd => cmd.method === 'session.load'
+      ? sessionLoadFixture({ state: { status: 'idle', realtimeSegments: speech }, restore: { sourceEnvironmentId: 'desktop', mcpAppContexts: [], isWorktree: false, worktreePath: null, gitBranch: null, worktreeMissing: false, realtimeHasTimeline: true, realtimeThreadMessages: backing as never } })
       : answer(cmd))
     const runtime = new ChatRuntime(client as never, () => {})
     await runtime.open('/p', 'voice')
@@ -28,8 +28,8 @@ describe('ChatRuntime', () => {
   })
   it('creates an empty voice session with landing selections and publishes its authoritative capability', async () => {
     const client = fakeClient()
-    client.request.mockResolvedValueOnce({ ok: true, sessionId: 'voice' })
-      .mockResolvedValueOnce({ snapshot: { realtimeVoice: { protocol: 1, supported: true } } })
+    const answer = client.dispatch.getMockImplementation()!
+    client.dispatch.mockImplementation(async cmd => cmd.method === 'session.load' ? sessionLoadFixture({ restore: { sourceEnvironmentId: 'desktop', mcpAppContexts: [], isWorktree: false, worktreePath: null, gitBranch: null, worktreeMissing: false, realtimeVoice: { protocol: 1, supported: true } } }) : answer(cmd))
     const runtime = new ChatRuntime(client as never, () => {})
     await runtime.create('/repo', { sessionId: 'voice', ...sessionCreationOptions({
       provider: 'codex', acpAgentId: null, permissionMode: 'auto',
@@ -37,12 +37,12 @@ describe('ChatRuntime', () => {
       worktree: { kind: 'create', baseBranch: 'main', mode: 'branch', branchName: 'codex/voice', carryLocalChanges: true },
       directories: ['/shared', '/shared', '/tools'], sandboxMode: 'auto',
     }) })
-    expect(client.request).toHaveBeenCalledWith(expect.objectContaining({ type: 'create_session', provider: 'codex',
+    expect(client.dispatch).toHaveBeenCalledWith(expect.objectContaining({ method: 'session.create', harnessId: 'codex',
       sessionId: 'voice', model: 'gpt-6.1-sol', effort: 'high', apiProviderId: 'codex-account:cli',
       permissionMode: 'auto', additionalDirectories: ['/shared', '/tools'],
       worktreeBranch: 'main', worktreeMode: 'branch', worktreeBranchName: 'codex/voice', worktreeCarryLocalChanges: true,
     }))
-    expect(client.sent.some(command => (command as { type: string }).type === 'send_message')).toBe(false)
+    expect(client.sent.some(command => (command as { method: string }).method === 'session.send')).toBe(false)
     expect(runtime.session.messages).toEqual([])
     expect(runtime.realtimeVoice).toEqual({ protocol: 1, supported: true })
     runtime.dispose()

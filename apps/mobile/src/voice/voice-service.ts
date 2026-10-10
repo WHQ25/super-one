@@ -15,10 +15,12 @@ export type VoiceMediaPort = {
   open(signal: AbortSignal, onState: (state: 'ready' | 'disconnected' | 'failed') => void, onLevels?: (levels: VoiceAudioLevels) => void): Promise<VoiceMedia>
 }
 export type VoiceControlPort = {
+  fork?(): VoiceControlPort
   status(): Promise<VoiceStatus>
   start(attemptId: string, sdp: string): Promise<VoiceStatus>
   stop(attemptId: string, session?: VoiceSession): Promise<unknown>
   ready(identity: VoiceIdentity): Promise<unknown>
+  release?(): Promise<void>
 }
 export type VoiceTarget = VoiceSession & { title?: string; harnessId?: string }
 export type MobileVoiceState = {
@@ -85,8 +87,9 @@ export class MobileVoiceService {
   async start(target: VoiceTarget, control: VoiceControlPort): Promise<void> {
     if (this.preparing || this.attempt || this.state.phase === 'stopping') return
     if (!this.available()) { this.update({ phase: 'error', target, error: 'Rebuild the mobile app to enable voice.' }); return }
-    const attempt: Attempt = { id: this.makeId(), control, abort: new AbortController(), ready: false, reportingReady: false }
     this.lastStart = { target, control }
+    control = control.fork?.() ?? control
+    const attempt: Attempt = { id: this.makeId(), control, abort: new AbortController(), ready: false, reportingReady: false }
     this.stoppedId = undefined
     this.attempt = attempt
     this.state = { ...initialState(), phase: 'starting', target }
@@ -205,7 +208,8 @@ export class MobileVoiceService {
       cleaned = true
       this.pendingStopCleanup = undefined
       this.disposeMedia(attempt)
-      void attempt.control.stop(attempt.id).catch(() => {}).finally(() => {
+      void attempt.control.stop(attempt.id).catch(() => {}).finally(async () => {
+        if (attempt.control.release) await attempt.control.release()
         if (!this.attempt && this.stoppedId === attempt.id) this.update(initialState())
       })
     }
@@ -215,13 +219,14 @@ export class MobileVoiceService {
   private fail(attempt: Attempt, error: unknown): void {
     if (!this.current(attempt)) return
     this.disposeMedia(attempt)
-    void attempt.control.stop(attempt.id).catch(() => {})
+    void attempt.control.stop(attempt.id).catch(() => {}).finally(() => attempt.control.release?.())
     this.attempt = null
     this.update({ phase: error instanceof MicrophoneDeniedError ? 'denied' : 'error', error: error instanceof Error ? redactVoiceText(error.message) : 'Voice could not start.' })
   }
   private end(attempt: Attempt): void {
     if (this.attempt !== attempt) return
     this.disposeMedia(attempt); this.attempt = null
+    void attempt.control.release?.()
     this.update({ phase: 'idle', target: null, error: null })
   }
   private disposeMedia(attempt: Attempt): void {

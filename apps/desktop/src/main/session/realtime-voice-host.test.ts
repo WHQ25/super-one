@@ -11,7 +11,7 @@ function fixture() {
   const start = new Promise<void>(resolve => { complete = resolve })
   const release = vi.fn()
   const session = {
-    id: 'sid', projectPath: '/repo', snapshot: { harnessId: 'codex' }, subscribers: new Set(['a']),
+    id: 'sid', projectPath: '/repo', snapshot: { harnessId: 'codex' }, lease: { current: { leaseId: 'lease', generation: '1' }, releaseDelegate: vi.fn() },
     getApiProviderId: () => undefined, retainRealtimeVoice: vi.fn(() => release),
     onRealtimeSignal: vi.fn(fn => { receive = fn; return vi.fn() }),
     onLifecycle: vi.fn(fn => { lifecycle = fn; return vi.fn() }),
@@ -81,6 +81,24 @@ describe('host-wide voice ownership', () => {
     f.host.disconnected('a'); await vi.advanceTimersByTimeAsync(8000)
     expect(f.raw.stopRealtimeVoice).toHaveBeenCalledTimes(1)
     expect(f.release).toHaveBeenCalledTimes(1)
+  })
+  it('stops on grant takeover and ignores SDP arriving after revocation', async () => {
+    const f = fixture()
+    f.host.start(f.session, f.a, 'one', offer)
+    f.lifecycle({ type: 'control_changed', lease: { leaseId: 'replacement', generation: '2' } } as never)
+    f.receive({ type: 'realtime_sdp', sdp: 'late-secret' })
+    expect(f.a.send).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'answer' }))
+    f.complete(); await Promise.resolve(); await Promise.resolve()
+    expect(f.raw.stopRealtimeVoice).toHaveBeenCalledTimes(1)
+    expect(f.release).toHaveBeenCalledTimes(1)
+  })
+  it('ends a removed pairing immediately instead of waiting for disconnect grace', async () => {
+    const f = fixture()
+    f.host.start(f.session, f.a, 'one', offer); f.complete(); await Promise.resolve()
+    f.host.kicked('a'); await Promise.resolve(); await Promise.resolve()
+    expect(f.raw.stopRealtimeVoice).toHaveBeenCalledTimes(1)
+    expect(f.raw.lease.releaseDelegate).toHaveBeenCalledWith('phone:a')
+    expect(f.host.status(f.session, f.a).call).toBeNull()
   })
   it('keeps the slot on teardown failure and redacts upstream errors', async () => {
     const f = fixture()

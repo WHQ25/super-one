@@ -4,6 +4,7 @@ import { mcpAppContextSources } from '@superone/shared/mcp-apps-state'
 import type { DesktopSessionRow } from '../db-remote-controlled-sessions'
 import type { Session } from './types'
 import { existsSync } from 'node:fs'
+import { voiceCapability } from './realtime-voice-host'
 
 export interface DesktopRestorePorts {
   /** Complete asynchronous preparation before reading state and its cursor. */
@@ -24,6 +25,11 @@ export function sessionRestoreFacts(input: {
   const snapshot = session?.snapshot
   const sandboxInfo = input.sandboxInfo ?? session?.getCurrentSandboxInfo()
   const restore: SessionRestoreFacts = {
+    realtimeVoice: voiceCapability(session ?? (row ? {
+      snapshot: { harnessId: row.harnessId }, getApiProviderId: () => row.apiProviderId ?? null,
+    } : null)),
+    realtimeThreadMessages: realtime?.threadMessages ?? [],
+    realtimeHasTimeline: realtime?.hasTimeline ?? false,
     sourceEnvironmentId: input.environmentId,
     mcpAppContexts: mcpAppContextSources(snapshot?.messages ?? input.history),
     isWorktree: snapshot?.isWorktree ?? row?.isWorktree ?? !!row?.worktreePath,

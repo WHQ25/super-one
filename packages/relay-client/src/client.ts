@@ -69,6 +69,7 @@ export class RelayClient {
   private readonly projects = new PhoneProjectCatalog((method, payload, options) => this.rpc(method, payload, options), () => this.host!.environmentId!)
   private readonly sessionFeed = new PhoneSessionFeed((input, handlers) => this.subscribeTopics(input, handlers), events => this.deliverEvents(events), (session, error) => this.hooks.onSessionRecovery?.(session, error), session => this.retainSession(session))
   private sessionUses = new Map<string, number>()
+  private readonly durableSessionUses = new Map<string, number>()
   private activeSessionStop: (() => Promise<void>) | null = null
   private readonly defaultSessionStop = () => this.sessionFeed.stop()
   private readonly workspaceFeeds = new Map<string, { feed: PhoneWorkspaceFeed; ready: Promise<void> }>()
@@ -146,8 +147,8 @@ export class RelayClient {
   }
   publishSessionEvents(events: unknown[]): void { this.deliverEvents(events) }
   recoverSession(session: SessionRef, error?: Error): void { this.hooks.onSessionRecovery?.(session, error) }
-  retainSession(session: SessionRef): (proof?: MutatingControlContext) => Promise<void> {
-    const key = sessionKey(session), uses = this.sessionUses
+  retainSession(session: SessionRef, options: { acrossReconnect?: boolean } = {}): (proof?: MutatingControlContext) => Promise<void> {
+    const key = sessionKey(session), uses = options.acrossReconnect ? this.durableSessionUses : this.sessionUses
     uses.set(key, (uses.get(key) ?? 0) + 1)
     let released = false
     return async (proof) => {
@@ -155,7 +156,10 @@ export class RelayClient {
       released = true
       const count = uses.get(key) ?? 0
       if (count > 1) uses.set(key, count - 1)
-      else if (count === 1) { uses.delete(key); await this.releaseControl(session, proof).catch(() => {}) }
+      else if (count === 1) {
+        uses.delete(key)
+        if (!(this.sessionUses.get(key) ?? 0) && !(this.durableSessionUses.get(key) ?? 0)) await this.releaseControl(session, proof).catch(() => {})
+      }
     }
   }
 
@@ -400,6 +404,7 @@ export class RelayClient {
           this.sendFrame(ws, JSON.stringify({ type: 'command', data: sealLinkFrame(channel, { t: 'rpc' }, out) }))
         }, (message) => {
           if ((message as { type?: string })?.type === 'composer_settled') this.deliverEvents([message])
+          if (['realtime_call_signal', 'control_lost'].includes((message as { type?: string })?.type ?? '')) this.hooks.onArrived?.([message])
           this.hooks.onProtocolMessage?.(message)
         }, undefined, (resource, error) => this.hooks.onControlLost?.(resource, error))
         this.protocol = protocol

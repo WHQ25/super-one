@@ -4356,7 +4356,7 @@ describe('Session transient voice signaling', () => {
     backend.activeRuntime = true
     const now = Date.now() + 120_000
     expect(session.isRuntimeIdle(now, 30_000)).toBe(true)
-    const release = session.retainRealtimeVoice()
+    const release = runWindowControl(7, () => session.retainRealtimeVoice())
     expect(session.isRuntimeIdle(now, 30_000)).toBe(false)
     release()
     expect(session.isRuntimeIdle(now, 30_000)).toBe(true)

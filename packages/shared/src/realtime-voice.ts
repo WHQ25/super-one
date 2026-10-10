@@ -23,21 +23,6 @@ export type VoiceSignal = VoiceIdentity & (
   | { kind: 'closed'; reason?: string }
   | { kind: 'error'; error: string }
 )
-export type VoiceCommand = VoiceSession & { requestId: string } & (
-  | { type: 'voice_status' }
-  | { type: 'voice_start'; attemptId: string; request: RealtimeVoiceStartRequest }
-  | { type: 'voice_stop'; attemptId: string }
-  | { type: 'voice_ready'; attemptId: string; identity: VoiceIdentity }
-)
-
-export function isVoiceCommand(command: { type: string }): command is VoiceCommand {
-  return ['voice_status', 'voice_start', 'voice_stop', 'voice_ready'].includes(command.type)
-}
-
-export function containsVoiceCommand(command: { type: string; command?: { type: string } }): boolean {
-  return isVoiceCommand(command) || (command.type === 'environment_command' && !!command.command && isVoiceCommand(command.command))
-}
-
 export function isVoiceSignalingEvent(event: { type: string }): boolean {
   return event.type === 'realtime_sdp' || event.type === 'realtime_call_signal'
 }

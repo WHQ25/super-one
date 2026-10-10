@@ -24,7 +24,7 @@ describe('phone endpoint: restore and history', () => {
     expect(await phone.rpc('session.load', { projectId: 'p1', sessionId: 'own', limit: 8 })).toMatchObject({ sessionId: 'own' })
   })
   it.each(['lan', 'relay'] as const)('restores host facts, pending controls and the active turn outside its page over %s', async (transport) => {
-    const timeline: RealtimeTimelineResult = { segments: [{ id: 'voice', role: 'user', realtimeSessionId: 'rt', text: 'Continue' }], activeRealtimeSessionId: 'rt', threadMessages: [], hasTimeline: true }
+    const timeline: RealtimeTimelineResult = { segments: [{ id: 'voice', role: 'user', realtimeSessionId: 'rt', text: 'Continue' }], activeRealtimeSessionId: 'rt', threadMessages: [message('canonical-work', 'assistant', [{ type: 'thinking', thinking: 'private voice work' }])], hasTimeline: true }
     const { domain, own, store, sessions, projectDir } = phoneDomain(cleanup, { restore: { realtime: () => timeline } })
     const app: ToolAppAttachment = { appInstanceId: 'view', binding: { node: domain.identity.environmentId, session: 'own', server: 'fixture', configGeneration: 1, configFingerprint: 'cfg' }, resourceUri: 'ui://fixture/view', status: 'result', resource: { hash: 'a'.repeat(64), html: 'private View HTML', meta: {} }, modelContext: { updateId: 'selected', content: [{ type: 'text', text: 'selected row' }], source: { appInstanceId: 'view', server: 'fixture' } } }
     const messages = [
@@ -42,6 +42,11 @@ describe('phone endpoint: restore and history', () => {
     const loaded = await phone.rpc<SessionLoadResult>('session.load', { sessionId: 'own', limit: 1 })
     expect(loaded.state).toMatchObject({ status: 'streaming', pendingQuestion: { requestId: 'ask' }, queuedMessages: [{ id: 'queued' }], todos: { todo: { content: 'Verify' } }, permissionMode: 'plan', ultracode: true, sessionGoal: { objective: 'Ship it', status: 'paused' }, contextTokens: 82_400, totalCostUsd: 0.42, realtimeSegments: timeline.segments, realtimeSessionId: 'rt', _worktreeRemoved: true })
     expect(loaded.restore).toMatchObject({ sourceEnvironmentId: domain.identity.environmentId, sandboxInfo: { enabled: true, autoAllowBash: false }, isWorktree: true, worktreePath: `${projectDir}/wt`, gitBranch: 'feature', worktreeMissing: true, mcpAppContexts: [{ messageId: 'old-app', app: { appInstanceId: 'view', modelContext: app.modelContext } }] })
+    expect(loaded.restore?.realtimeHasTimeline).toBe(true)
+    const canonical = loaded.restore?.realtimeThreadMessages?.[0]
+    expect(canonical?.id).toBe('canonical-work')
+    expect(canonical?.content[0]).toMatchObject({ thinking: '', remoteDetail: '["canonical-work","thinking",0]' })
+    expect(await phone.rpc('session.subscribeDetail', { sessionId: 'own', subscriptionId: 'voice-work', detailRef: '["canonical-work","thinking",0]' })).toMatchObject({ text: 'private voice work' })
     expect(loaded.restore?.mcpAppContexts[0].app.resource).toBeUndefined()
     expect(loaded.messages.map(row => row.id)).toEqual(['stream'])
     expect(loaded.activeTurn?.map(row => row.id)).toEqual(['new-u', 'finished-tool'])

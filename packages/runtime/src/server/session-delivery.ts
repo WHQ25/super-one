@@ -17,7 +17,8 @@ import type { SessionHostPort } from './rpc-context'
  * the session changes. Persisted transcripts and the event log stay complete.
  */
 
-type Messages = Pick<SessionHostPort, 'messages'>
+type Messages = Pick<SessionHostPort, 'messages' | 'detailMessages'>
+const detailMessages = (sessions: Messages, sessionId: string) => sessions.detailMessages?.(sessionId) ?? sessions.messages(sessionId)
 
 /** A load or history page as this connection receives it; loading over a summarizing link summarizes the session. */
 export function deliverLoad(result: SessionLoadResult, delivery: ConnectionDelivery | undefined): SessionLoadResult {
@@ -25,6 +26,9 @@ export function deliverLoad(result: SessionLoadResult, delivery: ConnectionDeliv
   if (summarizesTranscripts(delivery.policy) && !delivery.views.has(result.sessionId)) delivery.views.open(result.sessionId, true)
   const messages = delivery.messages(result.messages, result.sessionId)
   const activeTurn = result.activeTurn && delivery.messages(result.activeTurn, result.sessionId)
+  const restore = result.restore && { ...result.restore,
+    ...(result.restore.realtimeThreadMessages ? { realtimeThreadMessages: delivery.messages(result.restore.realtimeThreadMessages, result.sessionId) } : {}),
+  }
   const state = { ...result.state }
   if (Array.isArray(state.queuedMessages)) {
     const queued = delivery.shape({ type: 'queued_messages_changed', sessionId: result.sessionId, messages: state.queuedMessages } as AgentEvent).find(event => event.type === 'queued_messages_changed')
@@ -34,7 +38,7 @@ export function deliverLoad(result: SessionLoadResult, delivery: ConnectionDeliv
     state.pendingPermissions = state.pendingPermissions.map(request => delivery.shape({ type: 'permission_request', sessionId: result.sessionId, request } as AgentEvent).find(event => event.type === 'permission_request')).flatMap(event => event?.type === 'permission_request' ? [event.request] : [])
   }
   const delivered = { ...result, state: delivery.policy.surface === 'phone' ? compactChatCoreState(state) : state,
-    messages, ...(activeTurn ? { activeTurn } : {}) }
+    messages, ...(restore ? { restore } : {}), ...(activeTurn ? { activeTurn } : {}) }
   return delivery.views.has(result.sessionId) ? { ...delivered, summarized: true } : delivered
 }
 
@@ -61,10 +65,10 @@ export function deliverFrame(
       payload: envelope.eventType === SESSION_DURABLE_EVENT.userMessage ? { event: next } : { ...(envelope.payload as object), event: next } }))
   })
   const details = [...changed].flatMap((sessionId) =>
-    delivery.details(sessionId, sessions.messages(sessionId)).flatMap((event) =>
+    delivery.views.hasDetails(sessionId) ? delivery.details(sessionId, detailMessages(sessions, sessionId)).flatMap((event) =>
       event.type === 'remote_detail'
         ? [{ sessionId, update: { subscriptionId: event.subscriptionId, revision: event.revision, offset: event.offset, text: event.text } }]
-        : []))
+        : []) : [])
   return { frame: { ...frame, events: foldDeltas(events) }, details }
 }
 
@@ -99,7 +103,7 @@ export function subscribeDetail(
   } catch (err) {
     throw Object.assign(err as Error, { code: 'invalid_argument' })
   }
-  const message = sessions.messages(input.sessionId).find((candidate) => candidate.id === messageId)
+  const message = detailMessages(sessions, input.sessionId).find((candidate) => candidate.id === messageId)
   if (!message) throw Object.assign(new Error('Detail not found'), { code: 'not_found' })
   try {
     return delivery.views.subscribe(input.sessionId, input.subscriptionId, input.detailRef, message)

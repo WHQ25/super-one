@@ -4,12 +4,12 @@ import log from '../logger'
 import type { SessionLeaveReason, SessionManager } from '../session/types'
 
 export class DeviceRegistry {
-  private draftControl?: import('./draft-control').DraftControl
+  private draftControl?: import('@superone/runtime/drafts').DraftControl
   private terminalManager?: import('../terminal/terminal-manager').TerminalManager
 
   constructor(private readonly sessionManager: SessionManager) {}
 
-  setDraftControl(drafts: import('./draft-control').DraftControl): void {
+  setDraftControl(drafts: import('@superone/runtime/drafts').DraftControl): void {
     this.draftControl = drafts
   }
 

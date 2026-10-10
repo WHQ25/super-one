@@ -6,13 +6,11 @@ import { MOD_UI_MUTATING_OPS, MOD_UI_UNAVAILABLE, type ModUiOp, type ModUiReques
 import {
   DATABASE_SCHEMA_GENERATION,
   PROTOCOL_GENERATION,
-  hasAllScopes,
   isNodeHarnessId,
   nodeProjectsDir,
   normalizeSessionHarnessId,
   OPERATION_SCOPES,
   providerSessionIdFromResume,
-  type AuthScope,
   type EnvironmentAggregateType,
   type EnvironmentUsageReport,
   type ExecutionEnvironmentDescriptor,
@@ -31,14 +29,15 @@ import { probeSandboxRpc } from '../sandbox/index'
 import { getMachineInfo, readLiveStatus } from '../machine/index'
 import { readSubscriptionUsage } from '../usage/index'
 import { settingsFromSessionProviderConfig, type NodeSessionRecord } from '../session/index'
-import type { AuthenticatedClient } from './auth-service'
 import { isNodeMutatingCall } from './rpc-mutating-methods'
 import { unsupportedMethodError } from './unsupported'
 import { AGENT_EVENT_BATCH_MS } from '@superone/shared/agent-event-batcher'
 import { openEventStream, streamFilterMatcher, type EventStreamFilter } from './event-stream'
 import { readTopicRef, type TopicRef } from '@superone/shared/environment/topics'
 import { deliverFrame, deliverLoad, subscribeDetail } from './session-delivery'
-import { combineStreams, openTerminalStream } from './terminal-stream'
+import { combineStreams, openDraftStream, openTerminalStream } from './topic-streams'
+import { asRecord, mapThrown, requireScopes } from './rpc-helpers'
+import { DRAFT_HANDLERS } from './rpc-drafts'
 import type {
   ArtifactZonePort,
   RpcContext as HostRpcContext,
@@ -58,6 +57,7 @@ type FamilyPort =
   | 'harnesses'
   | 'collaboration'
   | 'providers'
+  | 'drafts'
 
 /**
  * The context a handler sees once {@link requiredPorts} admitted its method.
@@ -96,6 +96,8 @@ function requiredPorts(method: string): readonly FamilyPort[] {
       return ['sessions']
     case 'collaboration.':
       return ['collaboration']
+    case 'draft.':
+      return ['drafts']
     default:
       return []
   }
@@ -129,13 +131,6 @@ function isAllowedSessionCwd(ctx: RpcContext, projectId: string, cwd: string): b
   if (git) return git.isAllowedSessionCwd(projectId, cwd)
   const root = ctx.projects.get(projectId)?.path
   return !!root && pathResolve(cwd) === pathResolve(root)
-}
-
-function requireScopes(client: AuthenticatedClient, scopes: readonly AuthScope[]): RpcResult | null {
-  if (!hasAllScopes(client.scopes, scopes)) {
-    return { error: { code: 'forbidden', message: `missing scopes: ${scopes.join(', ')}` } }
-  }
-  return null
 }
 
 function mapOs(): ExecutionEnvironmentDescriptor['platform']['os'] {
@@ -354,6 +349,7 @@ const HANDLERS: Readonly<Record<string, (payload: unknown, ctx: RpcContext, meth
   'provider.exportBundle': (_payload, ctx) => handleProviderExportBundle(ctx),
   'provider.importBundle': (payload, ctx) => handleProviderImportBundle(payload, ctx),
   'provider.listModels': (payload, ctx) => handleProviderListModels(payload, ctx),
+  ...DRAFT_HANDLERS,
 }
 
 /** Every method this table serves. */
@@ -749,10 +745,6 @@ async function handleSandboxProbe(ctx: RpcContext): Promise<RpcResult> {
   }
 }
 
-function asRecord(payload: unknown): Record<string, unknown> {
-  return payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {}
-}
-
 function handleTerminalCreate(payload: unknown, ctx: RpcContext): RpcResult {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateTerminal)
   if (denied) return denied
@@ -927,14 +919,6 @@ function handleTerminalReleaseControl(payload: unknown, ctx: RpcContext): RpcRes
     return { result: { ok: true } }
   } catch (err) {
     return mapThrown(err)
-  }
-}
-
-function mapThrown(err: unknown): RpcResult {
-  const e = err as { code?: string; message?: string; details?: Record<string, unknown> }
-  const code = (e.code as RpcErrorCode | undefined) ?? 'internal'
-  return {
-    error: { code, message: e.message || 'internal error', ...(e.details ? { details: e.details } : {}) },
   }
 }
 
@@ -2852,7 +2836,16 @@ function handleTopicSubscribe(payload: unknown, ctx: RpcContext): RpcResult {
         push: (event) => streams.push({ type: 'terminal', subscriptionId, event }),
       })
     : null
-  streams.open(subscriptionId, combineStreams(stream, terminals))
+  const drafts = ctx.drafts?.watch && serves(ctx, 'draft.list')
+    ? openDraftStream({
+        source: { watch: (listener) => ctx.drafts!.watch!(listener) },
+        environmentId: ctx.identity.environmentId,
+        topics,
+        throttleSaves: streams.delivery?.policy.tier === 'relay',
+        push: (event) => streams.push({ type: 'draft', subscriptionId, event }),
+      })
+    : null
+  streams.open(subscriptionId, combineStreams(stream, terminals, drafts))
   return { result: { subscriptionId } }
 }
 

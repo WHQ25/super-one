@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { createDraftStore } from '@superone/runtime/drafts'
+import { createDraftStore } from './store'
 import { DraftControl } from './draft-control'
 
 describe('shared desktop and mobile drafts', () => {

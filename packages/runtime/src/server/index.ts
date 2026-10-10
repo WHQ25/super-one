@@ -51,6 +51,7 @@ export type {
   IdempotencyPort,
   ProvidersPort,
 } from './rpc-context'
+export type { DraftsPort } from './rpc-drafts'
 export { createConnectionRpc, type ConnectionRpc, type ConnectionRpcOptions } from './connection-rpc'
 export { createFramedWire, type ConnectionWire, type FrameTransport } from './connection-wire'
 export { dialWebSocket, type NodeSocket, type NodeSocketDialer } from './node-socket'

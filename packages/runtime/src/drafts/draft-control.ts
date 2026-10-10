@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { DraftStore } from '@superone/runtime/drafts'
+import type { DraftStore } from './store'
 import { hasPersistableDraftContent, withoutDraftAttachmentBytes } from '@superone/shared/environment/draft-content'
 import { DRAFT_ATTACHMENTS_MAX_BYTES, type DraftChangedEvent, type DraftListEntry, type DraftOpenResult, type DraftRemoteCommand, type DraftUpsertRequest } from '@superone/shared/environment/draft-rpc'
 

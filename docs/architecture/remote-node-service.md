@@ -1139,6 +1139,19 @@ Each Session has a sync zone mirrored between the controlling desktop and the
 node (`<node dir>/sync/<sessionId>/`) so Host Action outputs and agent-written
 files are readable on both sides; see [session-sync-zone.md](session-sync-zone.md).
 
+### 14.5 Drafts
+
+`draft.*` (`packages/runtime/src/server/rpc-drafts.ts`) serves a host's unsent
+composer drafts through `DraftControl` (`@superone/runtime/drafts`), the same
+authority the desktop window writes through. A composer takes a draft's lease
+with `draft.open` (refused when `expectedUpdatedAt` is stale or another client
+holds it), writes with `draft.upsert` under its `leaseId` (or `open: true` for
+a draft it just minted) and releases it with `draft.close`; a plain upsert,
+such as a controller's outbox, writes while nobody holds the draft. Leases
+belong to the client session. Streams following `drafts` get `draft` messages
+without attachment bytes; off the local link a draft's autosaves go out at
+most every 5 s.
+
 ## 15. Installation, Service Lifecycle, and Upgrade
 
 The Linux installation provides:

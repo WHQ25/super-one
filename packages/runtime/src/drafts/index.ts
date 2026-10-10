@@ -5,3 +5,4 @@ export {
   DRAFTS_TABLE_DDL,
   type DraftStore,
 } from './store'
+export { DraftControl } from './draft-control'

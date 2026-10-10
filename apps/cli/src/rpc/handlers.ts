@@ -7,7 +7,7 @@ import {
 } from '@superone/runtime/server'
 import { loadNodeAgentSettings } from '@superone/runtime/settings'
 import type { AutomationService, AutomationStore } from '@superone/runtime/automations'
-import type { DraftStore } from '@superone/runtime/drafts'
+import type { DraftControl } from '@superone/runtime/drafts'
 import type { SessionProviderStore } from '@superone/runtime/session'
 import type { NodeTerminalManager } from '../terminal/manager'
 import type { ProjectRegistry } from '../workspace/project-registry'
@@ -27,7 +27,6 @@ import { dispatchSessionArchiveRpc, SESSION_ARCHIVE_RPC_METHODS } from './sessio
 import { dispatchMcpAppsRpc, MCP_APPS_RPC_METHODS } from './mcp-apps-handlers'
 import { dispatchResourceRpc, RESOURCE_RPC_METHODS } from './resource-handlers'
 import { AUTOMATION_RPC_METHODS, dispatchAutomationRpc } from './automation-handlers'
-import { dispatchDraftRpc, DRAFT_RPC_METHODS } from './draft-handlers'
 import { ARTIFACT_RPC_METHOD_SET, dispatchArtifactRpc } from './artifact-handlers'
 import { CODEX_RPC_METHODS, dispatchCodexRpc } from './codex-handlers'
 import { dispatchSessionProviderRpc, SESSION_PROVIDER_RPC_METHODS } from './session-provider-handlers'
@@ -58,12 +57,12 @@ export interface RpcContext
   /** Project-scoped automations store (CRUD). */
   automations: AutomationStore
   /**
-   * Unsent composer drafts stored on this node. Deliberately absent from
-   * the node's mutating set: upsert/delete key off a controller-minted draft id, so
-   * they are idempotent by construction and the controller outbox can retry
-   * a queued write freely without replay receipts.
+   * Unsent composer drafts stored on this node (shared `draft.*`). Deliberately
+   * absent from the node's mutating set: writes key off a client-minted draft
+   * id, so they are idempotent by construction and the controller outbox can
+   * retry a queued write freely without replay receipts.
    */
-  drafts: DraftStore
+  drafts: DraftControl
   /**
    * Session sync zone under `<nodeHome>/sync` (`artifact.*`). Like drafts,
    * absent from the mutating set: `put` is idempotent by its offset contract.
@@ -91,7 +90,6 @@ const CLI_EXTENSION_METHODS: ReadonlySet<string> = new Set([
   ...SESSION_ARCHIVE_RPC_METHODS,
   ...RESOURCE_RPC_METHODS,
   ...AUTOMATION_RPC_METHODS,
-  ...DRAFT_RPC_METHODS,
   ...ARTIFACT_RPC_METHOD_SET,
   ...SESSION_PROVIDER_RPC_METHODS,
   ...HARNESS_RESOURCES_RPC_METHODS,
@@ -135,9 +133,6 @@ async function dispatchCliRpc(method: string, payload: unknown, ctx: RpcContext)
     automationService: ctx.automationService,
   })
   if (automation) return await automation
-
-  const draft = dispatchDraftRpc(method, payload, { client: ctx.client, drafts: ctx.drafts })
-  if (draft) return draft
 
   const artifact = dispatchArtifactRpc(method, payload, {
     client: ctx.client,

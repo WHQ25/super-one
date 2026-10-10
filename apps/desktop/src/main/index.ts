@@ -835,7 +835,7 @@ function publishAgentEvent(event: AgentEvent): void {
 }
 
 new PresenceCoordinator(sessionManager, {
-  broadcastToRenderer: (event) => safeSend(AgentIpcChannels.EVENT, event),
+  broadcastToRenderer: (event) => publishAgentEvent(event),
   sendToMobile: (event, targetDeviceIds) => remoteControlService.sendEventToMobile(event, targetDeviceIds),
 })
 
@@ -1738,6 +1738,9 @@ function attachEnvironmentStatusBridge(host: EnvironmentHost): void {
   host.setAgentEventSink((event) => {
     observeRemoteMcpAppEvent(event)
     if (event.sessionId) scheduledSendService.observe(event.sessionId, event)
+    // Sent raw, not through publishAgentEvent: the renderer transport encodes
+    // Codex items as patches against baselines that a remote rehydrate does
+    // not reset, so a patch would append to the rehydrated item.
     safeSend(AgentIpcChannels.EVENT, event)
   })
   // Auto-connect desired remotes + network-online edge wake.
@@ -4804,7 +4807,7 @@ function registerIpcHandlers(): void {
       session.broadcastSettingsPatch(patch)
       return
     }
-    safeSend(AgentIpcChannels.EVENT, { type: 'agent_setting_change', sessionId, patch })
+    publishAgentEvent({ type: 'agent_setting_change', sessionId, patch })
   })
 
   ipcMain.handle(AgentIpcChannels.SET_MIN_WINDOW_SIZE, (_e, width: number, height: number) => {

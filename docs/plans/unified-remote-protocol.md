@@ -1,6 +1,6 @@
 # Unified remote protocol
 
-Status: in progress · Updated: 2026-10-11 (step 6 in progress)
+Status: in progress · Updated: 2026-10-11 (step 6 code and local acceptance complete; delivery pending)
 Goal: One backend serves its own window, controller desktops and phones through one topic/connection core, one per-connection delivery policy and one protocol; every existing phone feature runs on it.
 Proposal: [unified-remote-protocol.md](../proposals/unified-remote-protocol.md)
 Long-term docs affected: [mobile-remote-control.md](../architecture/mobile-remote-control.md), [remote-node-service.md](../architecture/remote-node-service.md), [chat-core.md](../architecture/chat-core.md), [relay-crypto.md](../architecture/relay-crypto.md) (framing), `apps/desktop/docs/agent-reference/architecture.md`, `apps/desktop/CLAUDE.md` (session control boundary), `apps/mobile/docs/agent-reference/transport.md`
@@ -287,9 +287,15 @@ new harness pin before promoting desktop artifacts.
 
 Publication is paused by the user's explicit stop. The previous release attempt
 was cancelled: desktop promotion/release and mobile dispatch did not happen;
-the CLI publish step and Alpha Relay deployment did run. A fresh read of the official npm registry confirms CLI `0.73.0-alpha.1` exists.
+the CLI publish step and Alpha Relay deployment did run. A fresh read of the
+official npm registry confirms CLI `0.73.0-alpha.1` exists.
 That version cannot be reused for this rebased code; a later approved release
 needs a fresh coordinated desktop/CLI version.
+The prepared candidate is `0.73.0-alpha.2` (base remains `0.73.0`), with native
+Android/internal and iOS/production build 36, inheriting the published build floor
+of 0. Both current fingerprints have no finished compatible EAS build. Relay
+already deployed the previous tree, and `apps/relay` is unchanged from that SHA,
+so this continuation does not need another relay deployment.
 Do not resume publishing, deploy, push main or roll back as part of local
 implementation and acceptance. Artifact verification and plan/proposal removal
 remain after an explicitly authorized completed publication.
@@ -659,3 +665,17 @@ None.
   Remaining here: approved desktop/CLI publication with a fresh version and
   Codex 0.162.1 mirror, compatible native Android/iOS builds, published-artifact
   verification, then final plan/proposal removal. Publication remains paused.
+
+- 2026-10-11: Fresh post-rebase release gates pass: desktop 14,118 tests
+  (35 existing skips), runtime 779, CLI 401, relay 56, relay-client 162, mobile
+  Vitest 1,103 and native Jest 555 (17,174 total). All workspace typechecks,
+  dependency lock, lint and generated mobile icons pass. The desktop gate
+  exposed a retired detail-command test and two stale main fixtures; the test
+  now drives native cold canonical restore/detail over LAN and relay, and the
+  fixtures verify provider identity and preserved Codex completion/turn metadata.
+  The previously published main's 62 commits all map into the rebased history.
+  A local ancestry-only merge keeps the validated file tree unchanged and allows
+  later integration through a normal fast-forward push. Release notes and native
+  build 36 are prepared locally for `0.73.0-alpha.2`; publication is still paused.
+  The build-36 release-config/mobile gate also passes; the version-only bump
+  leaves both native fingerprints unchanged.

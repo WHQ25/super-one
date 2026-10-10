@@ -15,6 +15,10 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
+- Start Codex realtime voice from a phone with native audio and call control
+  retained while browsing other chats.
+- Expand Markdown tables and Mermaid previews, and scale Markdown preview
+  text with the pane width.
 - Preserve native Codex subagent creation models, reasoning effort and turn roots
   across session persistence and phone projection; UI consumption is deferred.
 - Prepare Codex follow-up prompt suggestions for the existing desktop and mobile
@@ -38,6 +42,8 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Changed
 
+- Paginate session text reads by content block, with a cursor for the next
+  complete block.
 - Update the managed Codex runtime to 0.162.1 for more reliable thread history
   recovery, response retries and cross-platform sandbox behavior.
 - Phones, controller desktops and the local window share one protocol and
@@ -54,6 +60,11 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Fixed
 
+- Stop voice calls when control is taken over or pairing is removed, and
+  recover the same call across short link interruptions.
+- Keep phone goal state and project names current after session changes.
+- Persist Codex goal submissions and consume the submitted composer draft.
+- Preserve session-link icons while opening a session.
 - Keep a send that never started, or a refused queued send, as a failed row
   that can be retried; hold duplicate sends instead of running them twice.
 - Restore session state from one snapshot boundary after reconnect or reload,
@@ -68,10 +79,55 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Performance
 
+- Virtualize long transcripts and activity details to keep scrolling responsive.
 - Compress and batch remote streams, share routed session subscriptions and
   load full tool-result bodies on demand on desktop and phone.
 
+## [0.73.0-alpha.2] - 2026-10-11
+
+### Added
+
+- Add native phone audio and private, lease-fenced signaling for Codex
+  realtime voice; keep calls active while browsing other chats.
+- Expand Markdown tables and Mermaid previews, and scale Markdown preview
+  text with the pane width.
+
+### Changed
+
+- Phones, controller desktops and the local window use one remote protocol
+  and session/terminal control leases. Upgrade hosts before the phone update;
+  phones require desktop or node host 0.73.0-alpha.1 or newer.
+- Update the managed Codex runtime to 0.162.1 and preserve subagent creation
+  models, reasoning effort and turn roots across session persistence.
+- Paginate session text reads by content block rather than line count.
+
+### Fixed
+
+- Restore session state at one snapshot boundary, recover missed updates and
+  load full tool and voice-message details on demand.
+- Stop voice calls on control takeover or pairing removal; preserve the call
+  across chat navigation and short LAN-to-relay interruptions.
+- Preserve parked draft attachments, goal submissions and session-link icons;
+  keep phone goal state and project names current after session changes.
+- Deliver each phone its subscribed updates and report revoked routed control
+  before accepting another session or terminal write.
+
+### Performance
+
+- Virtualize long transcripts and activity details.
+- Compress and batch remote streams, share routed session subscriptions and
+  keep full tool-result bodies out of summary streams.
+- Coalesce relay draft saves for five seconds while LAN saves remain immediate.
+
+### Tests
+
+- Verify native phone and routed desktop control through isolated LAN/Alpha
+  Relay CDP acceptance, including simulated voice without harness downloads.
+
 ## [0.73.0-alpha.1] - 2026-10-11
+
+Desktop publication was cancelled; CLI npm publication and Alpha Relay
+deployment completed.
 
 ### Changed
 

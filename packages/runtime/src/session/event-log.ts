@@ -7,10 +7,18 @@ import type {
 import type { SqliteDatabase } from '../sqlite'
 
 export class EventLog {
+  private readonly appendListeners = new Set<() => void>()
+
   constructor(
     private readonly db: SqliteDatabase,
     private readonly environmentId: string,
   ) {}
+
+  /** Called after each committed append; a reader then pulls with `listAfter`. */
+  onAppend(listener: () => void): () => void {
+    this.appendListeners.add(listener)
+    return () => { this.appendListeners.delete(listener) }
+  }
 
   append(input: {
     aggregateType: EnvironmentAggregateType
@@ -62,6 +70,7 @@ export class EventLog {
       }
       throw err
     }
+    for (const listener of [...this.appendListeners]) listener()
 
     return {
       eventId,

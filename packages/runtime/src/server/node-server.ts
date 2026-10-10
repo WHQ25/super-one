@@ -19,7 +19,7 @@ import {
 } from '@superone/relay-client/secure-channel'
 import type { NodeIdentity } from './identity'
 import { MAX_NODE_FRAME_BYTES, type NodeSocket } from './node-socket'
-import type { RpcContext, RpcResult } from './rpc-context'
+import type { RpcContext, RpcResult, RpcStreams } from './rpc-context'
 
 const MAX_JSON_BYTES = {
   pair: 16 * 1024,
@@ -29,6 +29,9 @@ const MAX_JSON_BYTES = {
 } as const
 
 const MAX_WS_PAYLOAD = MAX_NODE_FRAME_BYTES
+
+/** One connection's RPC handler; `dispose` closes its push streams with the socket. */
+type RpcHandler = ((read: () => unknown) => Promise<void>) & { dispose: () => void }
 
 interface JsonBody {
   [key: string]: unknown
@@ -75,6 +78,7 @@ export interface NodeRpcRequestContext {
   client: AuthenticatedClient
   requestId?: string
   idempotencyKey?: string
+  streams?: RpcStreams
 }
 
 export type NodeRpcDispatch<C extends NodeRpcRequestContext = RpcContext> = (
@@ -291,7 +295,7 @@ export async function startNodeServer<C extends NodeRpcRequestContext = RpcConte
         opts.onClientConnected?.(client.clientSessionId)
         const handle = createRpcHandler((msg) => ws.send(JSON.stringify(msg)), (code, reason) => ws.close(code, reason), client)
         ws.on('message', (data) => void handle(() => JSON.parse(data.toString())))
-        trackClose(ws)
+        trackClose(ws, handle.dispose)
       })
     } catch (err) {
       socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n')
@@ -308,13 +312,16 @@ export async function startNodeServer<C extends NodeRpcRequestContext = RpcConte
   const serveSecureChannel = (ws: NodeSocket, channelOpts: NodeSecureChannelOptions): void => {
     let accept: ReturnType<typeof acceptClientHello> | null = null
     let channel: SecureChannel | null = null
-    let rpc: ((read: () => unknown) => Promise<void>) | null = null
+    let rpc: RpcHandler | null = null
     const send = (msg: unknown) => {
       if (channel) ws.send(channel.seal(msg))
     }
     const setupTimer = setTimeout(() => ws.close(4408, 'channel_setup_timeout'), CHANNEL_SETUP_TIMEOUT_MS)
     setupTimer.unref?.()
-    trackClose(ws, () => clearTimeout(setupTimer))
+    trackClose(ws, () => {
+      clearTimeout(setupTimer)
+      rpc?.dispose()
+    })
 
     ws.on('message', (data, isBinary) => {
       const bytes = data as Buffer
@@ -412,11 +419,23 @@ export async function startNodeServer<C extends NodeRpcRequestContext = RpcConte
     send: (msg: unknown) => void,
     closeSocket: (code: number, reason: string) => void,
     client: AuthenticatedClient,
-  ) => {
+  ): RpcHandler => {
     const ctxBase = opts.createRpcContext(client)
     let negotiatedGeneration: { protocol: number; databaseSchema: number } | undefined
+    const streamClosers = new Map<string, () => void>()
+    const streams: RpcStreams = {
+      open(subscriptionId, close) {
+        streamClosers.get(subscriptionId)?.()
+        streamClosers.set(subscriptionId, close)
+      },
+      close(subscriptionId) {
+        streamClosers.get(subscriptionId)?.()
+        streamClosers.delete(subscriptionId)
+      },
+      push: send,
+    }
 
-    return async (read: () => unknown): Promise<void> => {
+    const handle = async (read: () => unknown): Promise<void> => {
       let requestId = 'unknown'
       try {
         if (opts.auth.isRevoked(client.clientSessionId)) {
@@ -538,6 +557,7 @@ export async function startNodeServer<C extends NodeRpcRequestContext = RpcConte
           client,
           requestId,
           idempotencyKey: msg.idempotencyKey,
+          streams,
         } as C)
         if (result.error) {
           send({ type: 'rpc_error', requestId, error: result.error })
@@ -553,6 +573,12 @@ export async function startNodeServer<C extends NodeRpcRequestContext = RpcConte
         })
       }
     }
+    return Object.assign(handle, {
+      dispose: () => {
+        for (const close of streamClosers.values()) close()
+        streamClosers.clear()
+      },
+    })
   }
 
   await new Promise<void>((resolve, reject) => {

@@ -1,3 +1,4 @@
+import { PROTOCOL_GENERATION } from '@superone/shared/environment'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -127,7 +128,7 @@ async function connectWithScopes(rt: NodeRuntime, scopes: readonly AuthScope[]) 
         type: 'handshake',
         requestId,
         payload: {
-          protocol: { current: 1, min: 1, max: 1 },
+          protocol: { ...PROTOCOL_GENERATION },
           databaseSchema: { current: 1, min: 1, max: 1 },
         },
       }),
@@ -160,7 +161,7 @@ async function connectWithScopes(rt: NodeRuntime, scopes: readonly AuthScope[]) 
           method,
           payload,
           environmentId,
-          protocolVersion: 1,
+          protocolVersion: PROTOCOL_GENERATION.current,
           idempotencyKey: crypto.randomUUID(),
         }),
       )

@@ -27,7 +27,7 @@ import type {
   SessionProviderStore,
   SessionRuntime,
 } from '../session/index'
-import type { HarnessInstallationStatus } from '@superone/shared/environment'
+import type { HarnessInstallationStatus, SessionStreamMessage } from '@superone/shared/environment'
 import type { AuthenticatedClient } from './auth-service'
 import type { NodeIdentity } from './identity'
 import type { ClaudeUsageAccount, UsageLog } from '../usage/index'
@@ -278,6 +278,8 @@ export interface SessionHostPort {
   snapshotSequence(): string
   /** Events strictly after `afterSequence`, as `reader` sees them. */
   listEventsAfter(afterSequence: string, reader?: { clientSessionId: string }): EnvironmentEventEnvelope[]
+  /** Wakes `session.subscribe` streams after each durable append. */
+  onEventsAppended(listener: () => void): () => void
   listMessages(input: SessionRuntimeInput<'listMessages'>): SessionMessagesListResult
 
   /**
@@ -408,7 +410,18 @@ export interface RpcContext {
   /** Host knowledge for `environment.usage`; without it the node reads each CLI's default login. */
   subscriptionUsage?: SubscriptionUsagePort
 
+  /** The connection's push streams; absent outside a socket (tests, in-process calls). */
+  streams?: RpcStreams
+
   simulatedHarness?: boolean
   requestId?: string
   idempotencyKey?: string
+}
+
+/** Push streams bound to one client connection; all close with the socket. */
+export interface RpcStreams {
+  /** Registers a stream's closer, replacing (and closing) one with the same id. */
+  open(subscriptionId: string, close: () => void): void
+  close(subscriptionId: string): void
+  push(message: SessionStreamMessage): void
 }

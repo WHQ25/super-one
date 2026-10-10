@@ -40,6 +40,34 @@ export interface SubscribeEventsInput {
   /** Optional aggregate filters. */
   aggregateTypes?: EnvironmentAggregateType[]
   aggregateIds?: string[]
+  /**
+   * Local only: whether a lost connection is gone for good (blocked, removed),
+   * so the stream should end with that error instead of resubscribing.
+   */
+  shouldStop?: (err: Error) => boolean
+}
+
+/** `session.subscribe`: push the events after `afterSequence`, then every new one. */
+export interface SessionSubscribeInput {
+  /** Client-chosen; frames may arrive before the RPC result. */
+  subscriptionId: string
+  afterSequence: string
+  aggregateTypes?: EnvironmentAggregateType[]
+  aggregateIds?: string[]
+}
+
+/** One push of a `session.subscribe` stream. */
+export interface SessionStreamFrame {
+  /** Last durable sequence scanned, including filtered-out events; the resume cursor. */
+  sequence: string
+  events: EnvironmentEventEnvelope[]
+}
+
+/** Server → client message carrying a stream frame. */
+export interface SessionStreamMessage {
+  type: 'stream'
+  subscriptionId: string
+  frame: SessionStreamFrame
 }
 
 export interface EnvironmentSnapshot {

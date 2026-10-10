@@ -6,13 +6,18 @@
  * the oldest generation still supported by this build.
  */
 
+/**
+ * Generation 2: `session.subscribe` pushes session events; clients no longer
+ * poll `session.events`, so a generation-1 peer is refused and the desktop
+ * offers the node upgrade.
+ */
 export const PROTOCOL_GENERATION = {
   /** Generation this process speaks when offering connections. */
-  current: 1,
+  current: 2,
   /** Oldest generation this process will accept. */
-  min: 1,
+  min: 2,
   /** Newest generation this process understands. */
-  max: 1,
+  max: 2,
 } as const
 
 export const DATABASE_SCHEMA_GENERATION = {

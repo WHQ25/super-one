@@ -31,12 +31,12 @@ describe('rangesOverlap', () => {
 describe('negotiateHandshake', () => {
   it('accepts identical current generations', () => {
     const result = negotiateHandshake(currentLocal, currentLocal)
-    expect(result).toEqual({ ok: true, protocol: 1, databaseSchema: 1 })
+    expect(result).toEqual({ ok: true, protocol: PROTOCOL_GENERATION.current, databaseSchema: 1 })
   })
 
   it('blocks when protocol ranges do not overlap', () => {
     const remote: HandshakeGenerations = {
-      protocol: { current: 3, min: 2, max: 3 },
+      protocol: { current: 1, min: 1, max: 1 },
       databaseSchema: { ...DATABASE_SCHEMA_GENERATION },
     }
     const result = negotiateHandshake(currentLocal, remote)

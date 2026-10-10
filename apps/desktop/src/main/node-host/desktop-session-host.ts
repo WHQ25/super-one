@@ -591,6 +591,10 @@ export class DesktopSessionHost implements SessionHostPort {
     return this.deps.events.listAfter(afterSequence)
   }
 
+  onEventsAppended(listener: () => void): () => void {
+    return this.deps.events.onAppend(listener)
+  }
+
   listMessages(input: Parameters<SessionHostPort['listMessages']>[0]): ReturnType<SessionHostPort['listMessages']> {
     const sessionId = String(input.sessionId ?? '').trim()
     this.requireRow(sessionId)

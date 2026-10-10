@@ -29,18 +29,20 @@ export function MarkdownTable({ node: _node, children, ...rest }: ComponentProps
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   return (
-    <div data-streamdown="table-wrapper" className="group/mdtable relative">
-      <div className="overflow-x-auto">
-        <table data-streamdown="table" {...rest}>{children}</table>
+    <div className="flex justify-center">
+      <div data-streamdown="table-wrapper" className="group/mdtable relative w-full min-w-0">
+        <div className="overflow-x-auto">
+          <table data-streamdown="table" {...rest}>{children}</table>
+        </div>
+        <button
+          onClick={() => setOpen(true)}
+          className="absolute right-1.5 top-1.5 z-10 rounded bg-background/80 p-1 text-muted-foreground opacity-0 shadow-sm backdrop-blur transition-opacity hover:text-foreground group-hover/mdtable:opacity-100"
+          title={t('tooltips.expand')}
+        >
+          <Expand className="size-3.5" />
+        </button>
+        <TableFullscreen open={open} onOpenChange={setOpen}>{children}</TableFullscreen>
       </div>
-      <button
-        onClick={() => setOpen(true)}
-        className="absolute right-1.5 top-1.5 z-10 rounded bg-background/80 p-1 text-muted-foreground opacity-0 shadow-sm backdrop-blur transition-opacity hover:text-foreground group-hover/mdtable:opacity-100"
-        title={t('tooltips.expand')}
-      >
-        <Expand className="size-3.5" />
-      </button>
-      <TableFullscreen open={open} onOpenChange={setOpen}>{children}</TableFullscreen>
     </div>
   )
 }

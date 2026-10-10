@@ -4269,6 +4269,8 @@ export const zh: Messages = {
     createWorktreeFrom: '从 {{branch}} 创建 Worktree',
     mermaidPreview: '预览',
     mermaidSource: '源码',
+    copyCode: '复制代码',
+    copyImage: '复制图片',
     expand: '展开',
     fastMode: '快速模式：{{state}}',
     ultracode: 'Ultracode：每个任务都使用动态 workflow',

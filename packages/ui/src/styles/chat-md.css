@@ -98,6 +98,22 @@
   margin: 0.6em 0;
 }
 
+/* Keep blocks in the reading column until their intrinsic width needs the
+   unused margins of this chat pane. Their flex frame keeps them centered. */
+.chat-transcript-layout {
+  container-type: inline-size;
+}
+.chat-transcript-layout .assistant-reply .chat-md :is([data-streamdown="table-wrapper"], [data-chat-mermaid="preview"]) {
+  --chat-wide-gutter: max(0px, calc((100cqw - var(--container-3xl, 48rem)) / 2));
+  width: max-content;
+  min-width: 100%;
+  max-width: calc(100% + 2 * var(--chat-wide-gutter));
+  flex-shrink: 0;
+}
+.chat-transcript-layout .assistant-reply .chat-md [data-chat-mermaid="preview"] {
+  width: calc(var(--mermaid-preview-width, 0px) + 8 * var(--spacing, 0.25rem));
+}
+
 /* --- Tables (GitHub style) --- */
 .chat-md [data-streamdown="table-wrapper"] {
   border: 0 !important;

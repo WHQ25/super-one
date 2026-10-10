@@ -23,6 +23,25 @@ export async function tryCopyImage(mimeType: string, base64: string): Promise<bo
   }
 }
 
+/** Mermaid uses percentage SVG dimensions; give the exported image its viewBox size. */
+export async function tryCopySvg(svg: string): Promise<boolean> {
+  try {
+    const root = new DOMParser().parseFromString(svg, 'image/svg+xml').documentElement
+    const [, , width, height] = (root.getAttribute('viewBox') ?? '').split(/[\s,]+/).map(Number)
+    if (root.localName !== 'svg' || !Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return false
+    root.setAttribute('width', String(width))
+    root.setAttribute('height', String(height))
+    const source = new XMLSerializer().serializeToString(root)
+    // Start the clipboard request while the click still has user activation.
+    await navigator.clipboard.write([new ClipboardItem({
+      'image/png': redrawAsPng(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(source)}`),
+    })])
+    return true
+  } catch {
+    return false
+  }
+}
+
 async function redrawAsPng(src: string): Promise<Blob> {
   const img = new Image()
   img.src = src

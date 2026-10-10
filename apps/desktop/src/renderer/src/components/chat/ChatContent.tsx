@@ -289,7 +289,7 @@ function ChatTranscript({
               // landing's entrance animation under the cursor.
               : <ChatSuggestions draft={!!draftId || (queueProvider === 'codex' && hasRealtimeTimeline)} />
       ) : (
-        <ScrollArea key={displayedSessionId ?? 'default'} className="chat-scroll-area h-full min-w-0" viewportRef={scrollViewportRef}>
+        <ScrollArea key={displayedSessionId ?? 'default'} className="chat-scroll-area chat-transcript-layout h-full min-w-0" viewportRef={scrollViewportRef}>
           <SelectionContextMenuZone className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-1 p-3 @lg:gap-1.5 @lg:p-3.5 @2xl:gap-1.5 @2xl:p-4">
             <VirtualTranscriptList key={displayedSessionId ?? 'default'} viewportRef={scrollViewportRef} apiRef={transcriptRef} items={visibleMessages.map((msg) => {
               const fallbackMeta = msg.metadata?.modelFallback

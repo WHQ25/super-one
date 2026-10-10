@@ -4189,6 +4189,8 @@ export type Messages = {
     createWorktreeFrom: string
     mermaidPreview: string
     mermaidSource: string
+    copyCode: string
+    copyImage: string
     expand: string
     fastMode: string
     ultracode: string
@@ -8542,6 +8544,8 @@ export const en: Messages = {
     createWorktreeFrom: 'Create worktree from {{branch}}',
     mermaidPreview: 'Preview',
     mermaidSource: 'Source',
+    copyCode: 'Copy Code',
+    copyImage: 'Copy Image',
     expand: 'Expand',
     fastMode: 'Fast mode: {{state}}',
     ultracode: 'Ultracode: dynamic workflows on every task',

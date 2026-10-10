@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import type { CodeHighlighterPlugin } from '@streamdown/code'
-import { tryCopy } from '@/lib/clipboard'
+import { tryCopy, tryCopySvg } from '@/lib/clipboard'
 import { useIsDark } from '@/hooks/use-is-dark'
 import { useAppStore } from '@/stores/app'
 import { HighlightedCodeBlock } from './CodeBlock'
@@ -37,6 +37,7 @@ export function MermaidBlock({ code, isComplete, codePlugin }: MermaidBlockProps
   )
   const ports = useMemo<MermaidBlockPresenterPorts>(() => ({
     copyText: tryCopy,
+    copyImage: tryCopySvg,
     renderHighlightedCode: (props) => (
       <HighlightedCodeBlock {...props} codePlugin={codePlugin} />
     ),

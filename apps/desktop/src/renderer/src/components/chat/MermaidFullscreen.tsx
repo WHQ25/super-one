@@ -3,7 +3,7 @@ import { Kbd } from '@superone/ui/components/ui/kbd'
 import { FullscreenGlassDialog } from './FullscreenGlassDialog'
 
 const MINIMAP_SIZE = { width: 180, height: 135 }
-const ZOOM_MIN = 0.5
+const ZOOM_MIN = 0.25
 const ZOOM_MAX = 3
 const FIT_PADDING = 60
 const PAN_MARGIN = 350

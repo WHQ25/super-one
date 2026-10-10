@@ -505,6 +505,7 @@
         "katex": "^0.16.38",
         "lucide-react": "^1.41.0",
         "mermaid": "^11.12.3",
+        "motion": "^13.1.1",
         "react-i18next": "^17.0.4",
         "rehype-harden": "^1.1.8",
         "rehype-sanitize": "^6.0.0",

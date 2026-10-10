@@ -3,7 +3,8 @@ import type { ChannelEnvelope, PhoneHandshake, PhoneKey, PhoneLinkHost } from '.
 import type { SecureChannel } from '@superone/relay-client/secure-channel'
 import type { LinkHandshakeInfo } from '@superone/relay-client/phone-link'
 import { RelayDraftSaveThrottle } from './remote/relay-draft-save-throttle'
-import { RemoteEventBatcher } from './remote/event-batcher'
+import { createEventBatcher } from '@superone/runtime/stream'
+import { MobileEventProfile } from './stream/mobile-profile'
 import { webcrypto } from 'node:crypto'
 import { hostname } from 'node:os'
 import WebSocket from 'ws'
@@ -11,13 +12,10 @@ import log from './logger'
 import { resolvePairedDeviceDisplayName } from './paired-device-name'
 import { variant, variantId } from './variant'
 import type { AgentEvent, RemoteCommand, ContentBlock, ChatMessage, RemoteDeviceConfig, TerminalEvent } from '@superone/shared/agent-types'
-import { isSubagentToolName } from '@superone/shared/tool-ui'
 import { createRelayHeartbeat } from '@superone/shared/relay-heartbeat'
 
 export type { RemoteDeviceConfig }
 import { trace } from './agent/event-trace'
-import { readOutputFile } from './agent/claude-session-runtime'
-import { listWorkflowAgentsSync } from './workflow-transcripts'
 import { initHighlighter } from './remote-highlighter'
 
 /**
@@ -46,26 +44,10 @@ import { uploadFileToRelay, relayWsToHttp, computeRelayUploadKey, signRelayUploa
 
 const PAIRING_TIMEOUT_MS = 3 * 60 * 1000
 const MAX_RECONNECT_DELAY_MS = 30_000
-const SKIPPED_EVENTS = new Set([
-  'files_persisted', 'elicitation_complete', 'tool_input_delta',
-  'subagent_usage', 'checkpoint_captured', 'hook_started', 'hook_complete', 'hook_progress',
-  'stream_message_start', 'stream_message_stop',
-])
-/**
- * A slash command's stdout can be the whole deliverable — a review is the
- * answer the user asked for — so it is forwarded rather than dropped. It is
- * still bounded: `/doctor`-style commands emit output the client discards, and
- * a megabyte of it would be paid for over the relay before being thrown away.
- */
-const MAX_SLASH_OUTPUT = 200_000
-const THROTTLED_EVENTS = new Set(['tool_progress'])
-
 const WS_CHUNK_SIZE = 800_000
-import { TODO_TOOLS, stripEventForRemote, remoteBashResult, resolveTodoToolTodos, parseWorkflowTranscriptDir, stripProjectPath } from './remote-content'
 export { computeTodoItems, countLines, countEditDelta, stripProjectPath, computeToolMeta, computeToolLineDelta, truncateBashOutput, stripEventForRemote, stripMessagesForRemote, parseWorkflowMeta, parseWorkflowTranscriptDir, resolveTodoToolTodos } from './remote-content'
 export type { TextSegment, SplitResult } from './split-text-blocks'
 
-const THROTTLE_INTERVAL_MS = 2_000
 
 interface PairingSession {
   channelId: string
@@ -129,29 +111,6 @@ function newChannelKeyId(): string {
   return bytesToHex(webcrypto.getRandomValues(new Uint8Array(16)).buffer)
 }
 
-/** One session's in-flight tool calls, keyed by tool_use id; reset when the session starts a reply. */
-interface LiveToolState {
-  bashCommands: Map<string, string>
-  todoInputs: Map<string, { toolName: string; input: string }>
-  widgetIds: Set<string>
-  agentIds: Set<string>
-  agentOutputFiles: Map<string, string>
-  workflowIds: Set<string>
-  workflowTranscriptDirs: Map<string, string>
-}
-
-function emptyLiveToolState(): LiveToolState {
-  return {
-    bashCommands: new Map(),
-    todoInputs: new Map(),
-    widgetIds: new Set(),
-    agentIds: new Set(),
-    agentOutputFiles: new Map(),
-    workflowIds: new Set(),
-    workflowTranscriptDirs: new Map(),
-  }
-}
-
 export class RemoteControlService {
   private relayWs: WebSocket | null = null
   /**
@@ -174,7 +133,12 @@ export class RemoteControlService {
   private sendQueue: Promise<void> = Promise.resolve()
   private terminalQueue: Promise<void> = Promise.resolve()
   private sendGeneration = 0
-  private readonly eventBatcher = new RemoteEventBatcher((events, targets) => this.enqueueEvents(events, targets))
+  /** Batches stay within one recipient set and a relay frame's size budget. */
+  private readonly eventBatcher = createEventBatcher<string[]>(
+    (events, targets) => this.enqueueEvents(events, targets),
+    { maxBytes: 64 * 1024, maxEvents: 128 },
+  )
+  private readonly mobileProfile = new MobileEventProfile()
   private readonly draftSaves = new RelayDraftSaveThrottle(
     (event, targets) => this.queueSend([event], targets),
     (targets) => this.draftRecipients(targets),
@@ -183,14 +147,6 @@ export class RemoteControlService {
   private reconnectDelay = 1_000
   private intentionallyClosed = false
 
-  private lastThrottledAt = new Map<string, number>()
-  /**
-   * What each live tool_result needs to know about its tool_use, per session: one
-   * service carries every session's stream, so a `message_start` in one session
-   * must not drop another session's in-flight calls (a widget result would then
-   * be truncated like any other and reach the phone as unparseable JSON).
-   */
-  private liveTools = new Map<string, LiveToolState>()
 
   private relayUrl = ''
   private lastLanActive = false
@@ -495,7 +451,7 @@ export class RemoteControlService {
   async stop(): Promise<void> {
     await this.cancelPairing()
     this.intentionallyClosed = true
-    this.eventBatcher.dispose()
+    this.eventBatcher.clear()
     this.draftSaves.dispose()
     this.sendGeneration++
     this.sendQueue = Promise.resolve()
@@ -850,112 +806,12 @@ export class RemoteControlService {
   async sendAgentEvent(event: AgentEvent, targetDeviceIds?: string[]): Promise<void> {
     if (!this.keys) return
     if (!this.hasAnyMobileTransport()) return
-
-    if (event.type === 'provider_changed') {
-      trace('remote.out', event.type, event)
-      this.queueSend([event], targetDeviceIds)
-      return
-    }
-    trace('remote.debug', 'sendAgentEvent:pass', { eventType: event.type, eventProject: event.projectPath, eventSession: event.sessionId, targets: targetDeviceIds })
-
-    if (event.type === 'tool_input_delta' && 'toolUseId' in event) {
-      const entry = this.liveTools.get(event.sessionId ?? '')?.todoInputs.get(event.toolUseId as string)
-      if (entry) entry.input += (event as { partialJson: string }).partialJson
-    }
-
-    if (SKIPPED_EVENTS.has(event.type)) return
-
     if (event.type === 'draft_changed') {
       this.draftSaves.route(event, targetDeviceIds)
       return
     }
-
-    if (event.type === 'slash_command_output' && event.content.length > MAX_SLASH_OUTPUT) {
-      this.queueSend([{ ...event, content: `${event.content.slice(0, MAX_SLASH_OUTPUT)}\n\n… output truncated` }], targetDeviceIds)
-      return
-    }
-
-    if (THROTTLED_EVENTS.has(event.type)) {
-      const now = Date.now()
-      const last = this.lastThrottledAt.get(event.type) ?? 0
-      if (now - last < THROTTLE_INTERVAL_MS) return
-      this.lastThrottledAt.set(event.type, now)
-    }
-
-    const sessionKey = event.sessionId ?? ''
-    if (event.type === 'message_start') this.liveTools.set(sessionKey, emptyLiveToolState())
-    const tools = this.liveToolsOf(sessionKey)
-
-    if (event.type === 'content_delta') {
-      if (event.delta.type === 'text' || event.delta.type === 'thinking') {
-        // Forward additive deltas unchanged, including whitespace, sequencing and
-        // reasoning timestamps. Markdown parsing belongs to the chat renderer.
-        trace('remote.out', event.type, event, event.messageId)
-        this.queueSend([event], targetDeviceIds)
-        return
-      }
-      if (event.delta.type === 'tool_use' && event.delta.toolName === 'Bash') {
-        try { const p = JSON.parse(event.delta.input); tools.bashCommands.set(event.delta.toolUseId, String(p.command ?? '')) } catch {}
-      }
-      if (event.delta.type === 'tool_use' && event.delta.toolName.endsWith('__widget_show')) {
-        tools.widgetIds.add(event.delta.toolUseId)
-      }
-      if (event.delta.type === 'tool_use' && isSubagentToolName(event.delta.toolName)) {
-        tools.agentIds.add(event.delta.toolUseId)
-      }
-      if (event.delta.type === 'tool_use' && event.delta.toolName === 'Workflow') {
-        tools.workflowIds.add(event.delta.toolUseId)
-      }
-      if (event.delta.type === 'tool_use' && TODO_TOOLS.has(event.delta.toolName)) {
-        tools.todoInputs.set(event.delta.toolUseId, { toolName: event.delta.toolName, input: event.delta.input })
-        return
-      }
-      let stripped: AgentEvent
-      if (event.delta.type === 'tool_result' && tools.todoInputs.has(event.delta.toolUseId)) {
-        const entry = tools.todoInputs.get(event.delta.toolUseId)!
-        const toolTodos = resolveTodoToolTodos(entry.toolName, entry.input, event.delta.toolTodos)
-        stripped = { ...event, delta: { type: 'todo_result', toolUseId: event.delta.toolUseId, summary: event.delta.summary, parentToolUseId: event.delta.parentToolUseId, todoToolName: entry.toolName, toolTodos } }
-      } else if (event.delta.type === 'tool_result' && tools.widgetIds.has(event.delta.toolUseId)) {
-        stripped = { ...event, delta: event.delta }
-      } else if (event.delta.type === 'tool_result' && tools.bashCommands.has(event.delta.toolUseId)) {
-        stripped = { ...event, delta: remoteBashResult(event.delta) }
-      } else if (event.delta.type === 'tool_result' && tools.agentIds.has(event.delta.toolUseId)) {
-        const outputMatch = event.delta.summary?.match(/output_file:\s*(\S+)/)
-        if (outputMatch) tools.agentOutputFiles.set(event.delta.toolUseId, outputMatch[1])
-        stripped = { ...event, delta: event.delta }
-      } else if (event.delta.type === 'tool_result' && tools.workflowIds.has(event.delta.toolUseId)) {
-        const dir = parseWorkflowTranscriptDir(event.delta.summary)
-        if (dir) tools.workflowTranscriptDirs.set(event.delta.toolUseId, dir)
-        stripped = stripEventForRemote(event, event.projectPath)
-      } else {
-        stripped = stripEventForRemote(event, event.projectPath)
-      }
-      trace('remote.out', stripped.type, stripped, (stripped as Record<string, unknown>).messageId as string ?? '')
-      this.queueSend([stripped], targetDeviceIds)
-      return
-    }
-
-    let enriched = event
-    if (event.remoteView !== 'summary' && event.type === 'task_progress' && event.toolUseId) {
-      const outputFile = tools.agentOutputFiles.get(event.toolUseId)
-      if (outputFile) {
-        const { resultText: activityText, toolEntries } = readOutputFile(outputFile, event.projectPath)
-        enriched = { ...event, ...(activityText ? { activityText } : {}), ...(toolEntries.length > 0 ? { toolEntries } : {}) }
-      }
-    }
-    if (event.remoteView !== 'summary' && (enriched.type === 'task_progress' || enriched.type === 'task_notification') && enriched.toolUseId && tools.workflowIds.has(enriched.toolUseId)) {
-      const dir = tools.workflowTranscriptDirs.get(enriched.toolUseId)
-      if (dir) {
-        const workflowAgents = listWorkflowAgentsSync(dir)
-        if (workflowAgents.length > 0) enriched = { ...enriched, workflowAgents }
-      }
-    }
-    if ((enriched.type === 'task_progress' || enriched.type === 'task_started') && enriched.description && event.projectPath) {
-      enriched = { ...enriched, description: stripProjectPath(enriched.description, event.projectPath) }
-    }
-    const stripped = stripEventForRemote(enriched, event.projectPath)
-    trace('remote.out', stripped.type, stripped, (stripped as Record<string, unknown>).messageId as string ?? '')
-    this.queueSend([stripped], targetDeviceIds)
+    const events = this.mobileProfile.apply(event)
+    if (events.length) this.queueSend(events, targetDeviceIds)
   }
 
   private async sendResponse(
@@ -990,14 +846,9 @@ export class RemoteControlService {
     }
   }
 
-  private liveToolsOf(sessionKey: string): LiveToolState {
-    let state = this.liveTools.get(sessionKey)
-    if (!state) this.liveTools.set(sessionKey, state = emptyLiveToolState())
-    return state
-  }
-
   private queueSend(events: AgentEvent[], targetDeviceIds?: string[]): void {
-    for (const event of events) this.eventBatcher.push(event, targetDeviceIds)
+    const targets = targetDeviceIds?.length ? [...new Set(targetDeviceIds)].sort() : undefined
+    for (const event of events) this.eventBatcher.push(event, targets)
   }
 
   private enqueueEvents(events: AgentEvent[], targetDeviceIds?: string[]): void {

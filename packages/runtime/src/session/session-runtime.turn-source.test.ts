@@ -26,7 +26,7 @@ function runtimeWith(inputs: RunnerInput[]) {
   return new SessionRuntime(
     store,
     { headSequence: () => '0',
-    onAppend: () => () => {}, listAfter: () => [], appendSession: () => {} },
+    epoch: 'test', streamingAfter: () => [], streaming: () => [], onAppend: () => () => {}, listAfter: () => [], appendSession: () => {} },
     { assertValid: () => {} },
     'env-source',
     runner,

@@ -7,6 +7,7 @@ import { createMcpAppResourceStore } from '@superone/runtime/mcp-apps/resource-s
 
 import {
   SessionRuntime as CoreSessionRuntime,
+  sessionReadModel,
   createSqliteHostActionStore,
   createSqliteSessionStore,
   type LeaseGuard,
@@ -34,7 +35,8 @@ export {
 
 /**
  * Drop-in constructor matching the historical `(db, events, leases, …)` signature.
- * Wires SQLite session store + durable host action store.
+ * Wires SQLite session store + durable host action store, and the read model
+ * the event log applies every event to before publishing it.
  */
 export class SessionRuntime extends CoreSessionRuntime {
   constructor(
@@ -51,6 +53,7 @@ export class SessionRuntime extends CoreSessionRuntime {
     super(createSqliteSessionStore(db), events, leases, environmentId, turnRunner, {
       ...opts,
       hostActions: createSqliteHostActionStore(db),
+      readModel: sessionReadModel(db, events),
       ...(db.name !== ':memory:' ? { mcpAppResources: createMcpAppResourceStore(join(dirname(db.name), 'mcp-app-resources')) } : {}),
     })
   }

@@ -32,7 +32,7 @@ function memoryPorts(leases?: LeaseGuard) {
   const eventTypes: string[] = []
   const events: SessionEventLog = {
     headSequence: () => String(eventTypes.length),
-    onAppend: () => () => {},
+    epoch: 'test', streamingAfter: () => [], streaming: () => [], onAppend: () => () => {},
     listAfter: () => [],
     appendSession: (input) => {
       eventTypes.push(input.eventType)

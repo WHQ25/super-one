@@ -47,6 +47,8 @@ export function openNodeDatabase(dbPath: string): NodeDatabase {
   ensureSessionProvidersSupport(db)
   // Per-client access switch and the client's OS; an older binary ignores both.
   ensureClientSessionColumns(db)
+  // Session versions and the read model's committed messages; an older binary ignores them.
+  ensureSessionLogSupport(db)
 
   const row = db.prepare('SELECT value FROM meta WHERE key = ?').get('schema_generation') as
     | { value: string }
@@ -81,6 +83,12 @@ function ensureSessionUiColumns(db: NodeDatabase): void {
   if (!names.has('is_user_renamed')) {
     db.exec(`ALTER TABLE sessions ADD COLUMN is_user_renamed INTEGER NOT NULL DEFAULT 0`)
   }
+}
+
+/** Databases from before session versions: the tables and index come from SCHEMA_SQL. */
+function ensureSessionLogSupport(db: NodeDatabase): void {
+  const cols = new Set((db.prepare(`PRAGMA table_info(environment_events)`).all() as Array<{ name: string }>).map((c) => c.name))
+  if (!cols.has('session_version')) db.exec(`ALTER TABLE environment_events ADD COLUMN session_version INTEGER`)
 }
 
 function ensureClientSessionColumns(db: NodeDatabase): void {

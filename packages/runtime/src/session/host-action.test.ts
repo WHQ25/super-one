@@ -69,7 +69,8 @@ function openDb() {
       event_version INTEGER NOT NULL,
       payload_json TEXT NOT NULL,
       causation_request_id TEXT,
-      environment_id TEXT NOT NULL
+      environment_id TEXT NOT NULL,
+      session_version INTEGER
     );
   `)
   dbs.push(db)

@@ -20,7 +20,7 @@ function memoryPorts() {
   }
   const events: SessionEventLog = {
     headSequence: () => '0',
-    onAppend: () => () => {},
+    epoch: 'test', streamingAfter: () => [], streaming: () => [], onAppend: () => () => {},
     listAfter: () => [],
     appendSession: () => {},
   }

@@ -24,6 +24,7 @@ import type {
   ExecutionEnvironmentDescriptor,
   NodeUpgradeAvailability,
   ProjectRef,
+  SessionLoadResult,
   SupervisorSnapshot,
   TerminalReadResult,
   ResourceProvider,
@@ -179,8 +180,17 @@ const SESSION_LIST_EVENTS = new Set<string>([
  */
 /** A remote session this desktop follows; `waiters` are drains awaiting its turn. */
 interface FollowedRemoteSession {
+  input: RemoteSessionTarget
   unfollow: () => void
   waiters: Set<{ settle: () => void; fail: (err: unknown) => void }>
+}
+
+/** Which remote session, and how its events route into the chat. */
+interface RemoteSessionTarget {
+  sessionId: string
+  /** Desktop project key for AgentEvent routing (`remote:<id>:<path>`). */
+  projectPath?: string
+  providerId?: string
 }
 
 export class EnvironmentHost {
@@ -1002,31 +1012,6 @@ export class EnvironmentHost {
     await gateway.artifacts.delete({ sessionId, relativePath }, control)
   }
 
-  /**
-   * Paged denser message catalog from the node (`session.messages.list`).
-   * Use with listSessionEvents(afterSequence) for remote open/hydrate without
-   * desktop-only resumeSession IPC.
-   */
-  async listSessionMessages(
-    connectionId: string,
-    input: { sessionId: string; cursor?: string | number | null; limit?: number },
-  ): Promise<import('@superone/shared/environment').SessionMessagesListResult> {
-    const { gateway, environmentId } = this.resolveRemote(connectionId)
-    if (gateway.sessions.listMessages) {
-      return gateway.sessions.listMessages({
-        session: { environmentId, sessionId: input.sessionId },
-        sessionId: input.sessionId,
-        cursor: input.cursor,
-        limit: input.limit,
-      })
-    }
-    if (gateway instanceof RemoteEnvironmentGateway) {
-      return gateway.listSessionMessages(input)
-    }
-    throw Object.assign(new Error('session.messages.list not supported on this gateway'), {
-      code: 'failed_precondition',
-    })
-  }
 
   private asRemoteProviderGw(connectionId: string): RemoteEnvironmentGateway {
     const { gateway } = this.resolveRemote(connectionId)
@@ -1661,12 +1646,13 @@ export class EnvironmentHost {
     const { gateway, environmentId } = this.resolveRemote(connectionId)
     feed = new RemoteSessionFeed({
       head: () => gateway.eventHeadSequence(),
-      subscribe: (afterSequence, signal) => gateway.subscribeEvents({
+      subscribe: (afterSequence, signal, onResnapshot) => gateway.subscribeEvents({
         environmentId,
         afterSequence,
         aggregateTypes: ['session'],
         signal,
         shouldStop: () => this.remoteDrainBlock(connectionId) !== null,
+        onResnapshot,
       }),
     })
     this.sessionFeeds.set(connectionId, feed)
@@ -1697,7 +1683,10 @@ export class EnvironmentHost {
   private abortConnectionSessionDrains(connectionId: string, _reason: string): void {
     const prefix = `${connectionId}:`
     for (const key of [...this.followedSessions.keys()]) {
-      if (key.startsWith(prefix)) this.unfollowRemoteSession(key)
+      if (!key.startsWith(prefix)) continue
+      // Read again once the machine is back: what it streamed meanwhile is not followed.
+      void this.followedSessions.get(key)!.then((followed) => this.lostSessions(connectionId).set(followed.input.sessionId, followed.input), () => {})
+      this.unfollowRemoteSession(key)
     }
     this.sessionFeeds.get(connectionId)?.close()
     this.sessionFeeds.delete(connectionId)
@@ -1726,21 +1715,66 @@ export class EnvironmentHost {
 
   /** Calls `onEvent` as each event of a remote session is pushed, without mapping it for the chat. */
   async watchRemoteSessionEvents(connectionId: string, sessionId: string, onEvent: () => void): Promise<() => void> {
-    return this.feedFor(connectionId).follow(sessionId, { event: () => onEvent(), end: () => {} })
+    return this.feedFor(connectionId).follow(sessionId, { event: () => onEvent(), end: () => {} }, async () => 0)
+  }
+
+  /** Listeners told which remote session's chat must read its snapshot again. */
+  private readonly resyncListeners = new Set<(target: RemoteSessionTarget & { connectionId: string }) => void>()
+  /** Sessions whose following stopped with their connection, to read again when it is back. */
+  private readonly lostFollows = new Map<string, Map<string, RemoteSessionTarget>>()
+
+  onRemoteSessionResync(listener: (target: RemoteSessionTarget & { connectionId: string }) => void): () => void {
+    this.resyncListeners.add(listener)
+    return () => { this.resyncListeners.delete(listener) }
+  }
+
+  private lostSessions(connectionId: string): Map<string, RemoteSessionTarget> {
+    let lost = this.lostFollows.get(connectionId)
+    if (!lost) this.lostFollows.set(connectionId, lost = new Map())
+    return lost
+  }
+
+  private resync(connectionId: string, target: RemoteSessionTarget): void {
+    for (const listener of [...this.resyncListeners]) listener({ connectionId, ...target })
+  }
+
+  /** Ask the chat to read again every session whose following stopped while the machine was away. */
+  private resyncLostSessions(connectionId: string): void {
+    const lost = this.lostFollows.get(connectionId)
+    if (!lost) return
+    this.lostFollows.delete(connectionId)
+    for (const target of lost.values()) this.resync(connectionId, target)
+  }
+
+  /**
+   * Open a remote session in the chat: follow it, then read its snapshot while
+   * its events are held, so every event above the snapshot's version reaches
+   * the chat and none below it does. Returns the snapshot.
+   */
+  async openRemoteSession(connectionId: string, input: RemoteSessionTarget & { limit?: number }): Promise<SessionLoadResult> {
+    const { gateway } = this.resolveRemote(connectionId)
+    let snapshot: SessionLoadResult | null = null
+    const load = () => gateway.loadSession({ sessionId: input.sessionId, limit: input.limit })
+    await this.followRemoteSession(connectionId, input, async () => (snapshot = await load()).cursor.version)
+    // Already followed: its events flow above an earlier barrier, and the chat
+    // reducer skips those a snapshot already holds (message `seq`).
+    return snapshot ?? load()
   }
 
   /**
    * Follow a remote session: its events map to AgentEvents for the chat from
-   * now on. Resolves once the feed reads from a position no later than now,
-   * so a send issued afterwards loses none of its events.
+   * the barrier version on (by default the session's current version). One
+   * follower per session; `drainRemoteSessionEvents` waits on it.
    */
   private followRemoteSession(
     connectionId: string,
-    input: { sessionId: string; projectPath?: string; providerId?: string },
+    input: RemoteSessionTarget,
+    barrier?: () => Promise<number>,
   ): Promise<FollowedRemoteSession> {
     const key = this.sessionCursorKey(connectionId, input.sessionId)
     const existing = this.followedSessions.get(key)
     if (existing) return existing
+    const { gateway } = this.resolveRemote(connectionId)
     const followed = (async (): Promise<FollowedRemoteSession> => {
       const { createNodeSessionEventMapper } = await import('@superone/shared/node-session-event-map')
       // User rows are mapped too: their id is the sender's clientMessageId, so
@@ -1751,7 +1785,7 @@ export class EnvironmentHost {
         providerId: input.providerId,
         skipUserMessage: false,
       })
-      const session: FollowedRemoteSession = { unfollow: () => {}, waiters: new Set() }
+      const session: FollowedRemoteSession = { input, unfollow: () => {}, waiters: new Set() }
       session.unfollow = await this.feedFor(connectionId).follow(input.sessionId, {
         event: (envelope) => {
           if (envelope.eventType === SESSION_DURABLE_EVENT.closed || envelope.eventType === SESSION_DURABLE_EVENT.removed) {
@@ -1772,7 +1806,8 @@ export class EnvironmentHost {
           for (const waiter of session.waiters) waiter.fail(failure)
           session.waiters.clear()
         },
-      })
+        resync: () => this.resync(connectionId, input),
+      }, barrier ?? (async () => (await gateway.loadSession({ sessionId: input.sessionId, limit: 1 })).cursor.version))
       return session
     })()
     this.followedSessions.set(key, followed)
@@ -3301,6 +3336,7 @@ export class EnvironmentHost {
       // attach Host Action here so remote tools work without a manual Connect.
       this.startHostActionConsumer(snapshot.connectionId)
       this.watchSessionList(snapshot.connectionId)
+      this.resyncLostSessions(snapshot.connectionId)
       void this.loadRemoteProjects(snapshot.connectionId, snapshot.generation).catch(() => {})
       // Drain drafts queued while this node was unreachable. Upserts are
       // idempotent by draft id, so a partially-applied earlier flush is safe.

@@ -4752,7 +4752,7 @@ export const AgentIpcChannels = {
   /** Poll durable node session.events after a sequence (exclusive). */
   ENVIRONMENT_LIST_SESSION_EVENTS: 'environment:listSessionEvents',
   /** Paged denser message catalog (session.messages.list) for remote UI hydrate. */
-  ENVIRONMENT_LIST_SESSION_MESSAGES: 'environment:listSessionMessages',
+  ENVIRONMENT_OPEN_REMOTE_SESSION: 'environment:openRemoteSession',
   ENVIRONMENT_INTERRUPT_SESSION: 'environment:interruptSession',
   /** Take control of a remote session back after its host released it (Reconnect). */
   ENVIRONMENT_RECLAIM_SESSION_CONTROL: 'environment:reclaimSessionControl',
@@ -4790,6 +4790,8 @@ export const AgentIpcChannels = {
   ENVIRONMENT_DEV_PAIR_NODE_CODE: 'environment:devPairNodeCode',
   /** Main → renderer supervisor state push. */
   ENVIRONMENT_STATUS_EVENT: 'environment:statusEvent',
+  /** A remote session the chat must read again (`EnvironmentHost.onRemoteSessionResync`). */
+  ENVIRONMENT_SESSION_RESYNC_EVENT: 'environment:sessionResyncEvent',
   /** Main → renderer SSH probe/install progress push. */
   ENVIRONMENT_INSTALL_PROGRESS: 'environment:installProgress',
   /** Node-local AI provider credentials (masked). */

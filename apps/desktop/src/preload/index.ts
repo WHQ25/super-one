@@ -683,16 +683,12 @@ const environmentAPI = {
       connectionId,
       afterSequence ?? '0',
     ),
-  /**
-   * Paged denser message catalog from the node (tool summaries / metadata).
-   * Chat-store remote hydrate prefers this over text-only recovery.
-   */
-  listSessionMessages: (
+  openRemoteSession: (
     connectionId: string,
-    input: { sessionId: string; cursor?: string | number | null; limit?: number },
+    input: { sessionId: string; projectPath?: string; providerId?: string; limit?: number },
   ) =>
     ipcRenderer.invoke(
-      AgentIpcChannels.ENVIRONMENT_LIST_SESSION_MESSAGES,
+      AgentIpcChannels.ENVIRONMENT_OPEN_REMOTE_SESSION,
       connectionId,
       input,
     ),
@@ -910,6 +906,11 @@ const environmentAPI = {
     const handler = (_e: unknown, snapshot: unknown): void => callback(snapshot)
     ipcRenderer.on(AgentIpcChannels.ENVIRONMENT_STATUS_EVENT, handler)
     return () => ipcRenderer.removeListener(AgentIpcChannels.ENVIRONMENT_STATUS_EVENT, handler)
+  },
+  onSessionResync: (callback: (target: unknown) => void) => {
+    const handler = (_e: unknown, target: unknown): void => callback(target)
+    ipcRenderer.on(AgentIpcChannels.ENVIRONMENT_SESSION_RESYNC_EVENT, handler)
+    return () => ipcRenderer.removeListener(AgentIpcChannels.ENVIRONMENT_SESSION_RESYNC_EVENT, handler)
   },
   onCloneProgress: (callback: (percent: number) => void) => {
     const handler = (_e: unknown, percent: number): void => callback(percent)

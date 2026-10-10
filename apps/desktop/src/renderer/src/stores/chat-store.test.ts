@@ -103,7 +103,7 @@ const mockWindowApp = {
 /** Remote node EnvironmentHost surface used by switchSession remote path. */
 const mockWindowEnvironment = {
   getSession: vi.fn().mockResolvedValue(null),
-  listSessionMessages: vi.fn().mockResolvedValue({ messages: [] }),
+  openRemoteSession: vi.fn().mockResolvedValue({ messages: [] }),
   resumeRemoteSessionEvents: vi.fn().mockResolvedValue(undefined),
   listProjects: vi.fn().mockResolvedValue([]),
   listSessions: vi.fn().mockResolvedValue([]),
@@ -260,7 +260,7 @@ beforeEach(() => {
   invalidateDefaultClaudePreferencesCache()
   invalidateDefaultCodexPreferencesCache()
   mockWindowEnvironment.getSession.mockResolvedValue(null)
-  mockWindowEnvironment.listSessionMessages.mockResolvedValue({ messages: [] })
+  mockWindowEnvironment.openRemoteSession.mockResolvedValue({ messages: [] })
   mockWindowEnvironment.resumeRemoteSessionEvents.mockResolvedValue(undefined)
 })
 
@@ -1867,7 +1867,7 @@ describe('remote switchSession hydrate race (agent reply loss)', () => {
       resolveGet = resolve
     })
     mockWindowEnvironment.getSession.mockImplementation(() => getPromise)
-    mockWindowEnvironment.listSessionMessages.mockResolvedValue({ messages: [] })
+    mockWindowEnvironment.openRemoteSession.mockResolvedValue({ messages: [] })
 
     const switchPromise = useChatStore.getState().switchSession(sidA)
 
@@ -1955,8 +1955,8 @@ describe('remote switchSession hydrate race (agent reply loss)', () => {
       transcript: [{ id: 'node-user', role: 'user', text: 'hi', createdAt: 1 }],
       pendingInteraction: null,
     })
-    mockWindowEnvironment.listSessionMessages.mockResolvedValue({
-      messages: [{ id: 'node-user', role: 'user', text: 'hi', createdAt: 1, sortOrder: 0 }],
+    mockWindowEnvironment.openRemoteSession.mockResolvedValue({
+      messages: [{ id: 'node-user', role: 'user', status: 'complete', content: [{ type: 'text', text: 'hi' }], createdAt: new Date(1).toISOString() }],
     })
 
     await useChatStore.getState().switchSession(sidA)
@@ -2040,17 +2040,10 @@ describe('remote switchSession hydrate race (agent reply loss)', () => {
       })),
       pendingInteraction: null,
     })
-    // Node messages.list: newest-page suffix only (limit window / hasMore=true).
-    mockWindowEnvironment.listSessionMessages.mockResolvedValue({
-      messages: fullMessages.slice(2).map((m, i) => ({
-        id: m.id,
-        role: m.role,
-        text: (m.content[0] as { text: string }).text,
-        createdAt: i + 3,
-        sortOrder: i + 2,
-      })),
-      hasMore: true,
-      cursor: '2',
+    // Node session.load: newest page only (`before` points at older messages).
+    mockWindowEnvironment.openRemoteSession.mockResolvedValue({
+      messages: fullMessages.slice(2),
+      before: 2,
     })
 
     // Switch back to the multi-turn session.

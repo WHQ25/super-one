@@ -21,6 +21,7 @@ import type {
   EnvironmentInstallProgress,
   EnvironmentListItem,
   ProjectSnapshot,
+  SessionLoadResult,
   SupervisorSnapshot,
 } from '@superone/shared/environment'
 import type { IosSimulatorChrome, IosSimulatorCreateRequest, IosSimulatorDevice, IosSimulatorRuntimeOption, IosSimulatorStatus } from '@superone/shared/ios-simulator'
@@ -1204,17 +1205,14 @@ export interface EnvironmentAPI extends MediaComposerAPI {
   /** Poll durable node `session.events` after sequence (exclusive). */
   listSessionEvents(connectionId: string, afterSequence?: string): Promise<unknown[]>
   /**
-   * Paged denser message catalog (`session.messages.list`) for remote UI hydrate.
-   * Prefer over text-only recovery when available.
+   * Open a remote session in the chat: main follows it, then returns its
+   * snapshot (`session.load`); every later event above the snapshot's version
+   * arrives as an agent event.
    */
-  listSessionMessages(
+  openRemoteSession(
     connectionId: string,
-    input: { sessionId: string; cursor?: string | number | null; limit?: number },
-  ): Promise<{
-    messages?: Array<Record<string, unknown>>
-    nextCursor?: string | number | null
-    hasMore?: boolean
-  }>
+    input: { sessionId: string; projectPath?: string; providerId?: string; limit?: number },
+  ): Promise<SessionLoadResult>
   interruptSession(connectionId: string, sessionId: string): Promise<void>
   /** Control a session again after the computer it runs on took it back. */
   reclaimSessionControl(connectionId: string, sessionId: string): Promise<void>
@@ -1347,6 +1345,8 @@ export interface EnvironmentAPI extends MediaComposerAPI {
   deleteRemoteSessionProvider(connectionId: string, id: string): Promise<unknown>
 
   onStatusEvent(callback: (snapshot: SupervisorSnapshot) => void): () => void
+  /** A remote session whose missed events are gone: read it again with `openRemoteSession`. */
+  onSessionResync(callback: (target: { connectionId: string; sessionId: string; projectPath?: string; providerId?: string }) => void): () => void
   onInstallProgress(callback: (progress: EnvironmentInstallProgress) => void): () => void
   /** Download percent of the in-flight local `cloneRepository` from this window. */
   onCloneProgress(callback: (percent: number) => void): () => void

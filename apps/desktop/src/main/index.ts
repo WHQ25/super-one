@@ -1783,6 +1783,8 @@ function attachEnvironmentStatusBridge(host: EnvironmentHost): void {
   host.setAgentEventSink((event) => sessionEvents.publish({ event, source: 'remote-node' }))
   // Sessions another client creates, renames or removes on a machine show up here.
   host.onSessionListChanged(() => safeSend(AgentIpcChannels.SESSIONS_CHANGED))
+  // A remote session whose missed events are gone: the chat reads its snapshot again.
+  host.onRemoteSessionResync((target) => safeSend(AgentIpcChannels.ENVIRONMENT_SESSION_RESYNC_EVENT, target))
   // Auto-connect desired remotes + network-online edge wake.
   // (powerMonitor resume also wakes via registerAgentService.)
   void import('./environment/environment-connectivity-monitor')
@@ -2091,16 +2093,19 @@ function registerIpcHandlers(): void {
       return getEnvironmentHost().getSession(connectionId, sessionId)
     },
   )
-  /** Paged denser message catalog for remote open/hydrate (session.messages.list). */
+  /** Open a remote session in the chat: follow it and return its snapshot (`session.load`). */
   ipcMain.handle(
-    AgentIpcChannels.ENVIRONMENT_LIST_SESSION_MESSAGES,
+    AgentIpcChannels.ENVIRONMENT_OPEN_REMOTE_SESSION,
     async (
       _e,
       connectionId: string,
-      input: { sessionId: string; cursor?: string | number | null; limit?: number },
+      input: { sessionId: string; projectPath?: string; providerId?: string; limit?: number },
     ) => {
       const { getEnvironmentHost } = await import('./environment')
-      return getEnvironmentHost().listSessionMessages(connectionId, input)
+      // The renderer replaces this session from the snapshot: Codex items it
+      // holds are the node's, not the ones sent before, so the next update goes whole.
+      rendererAgentEventTransport.resetCodexBaselines({ projectPath: input.projectPath, sessionId: input.sessionId })
+      return getEnvironmentHost().openRemoteSession(connectionId, input)
     },
   )
   // Node provider credentials (CRUD + push/pull)
@@ -2371,9 +2376,6 @@ function registerIpcHandlers(): void {
       },
     ) => {
       const { getEnvironmentHost } = await import('./environment')
-      // The renderer just rehydrated this session: Codex items it holds are the
-      // node's, not the ones sent before, so the next update goes whole.
-      rendererAgentEventTransport.resetCodexBaselines({ projectPath: input.projectPath, sessionId: input.sessionId })
       return getEnvironmentHost().resumeRemoteSessionEvents(connectionId, input)
     },
   )

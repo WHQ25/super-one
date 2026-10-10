@@ -10,7 +10,6 @@ import {
 import type {
   AgentEvent,
   ChatMessage,
-  ContentBlock,
   EffortLevel,
   PermissionMode,
   SandboxMode,
@@ -26,7 +25,8 @@ import {
   type NodeSessionSettings,
   type PendingInteraction,
 } from '@superone/runtime/session'
-import type { SessionMessageBlock } from '@superone/shared/environment'
+import { chatMessageToSessionMessageBlock, messageText } from '@superone/shared/node-message-catalog'
+import { applyEventToSession, createDefaultChatCoreSession, type ChatCoreSession } from '@superone/chat-core'
 import type { RemoteControlledSessionRow, RemoteControllerRecord } from '../db-remote-controlled-sessions'
 import type { Session, SessionCreateOptions } from '../session/types'
 import log from '../logger'
@@ -129,13 +129,6 @@ export function nodeControllerDeviceId(clientSessionId: string): string {
   return `node:${clientSessionId}`
 }
 
-function textOf(content: ContentBlock[] | undefined): string {
-  return (content ?? [])
-    .map((block) => (block.type === 'text' ? block.text : ''))
-    .filter(Boolean)
-    .join('\n')
-}
-
 /**
  * The wire record of one desktop event. A user bubble becomes
  * `session.user_message` (so a controller that echoed it optimistically can
@@ -149,7 +142,7 @@ export function durableEventOf(event: AgentEvent): { eventType: string; payload:
       eventType: SESSION_DURABLE_EVENT.userMessage,
       payload: {
         blockId: message.id,
-        text: textOf(message.content),
+        text: messageText(message.content),
         userMessageContent: message.content,
         ...(message.contexts ? { contexts: message.contexts } : {}),
         ...(message.metadata?.collaboration?.kind === 'initial_task'
@@ -166,22 +159,6 @@ export function durableEventOf(event: AgentEvent): { eventType: string; payload:
     epoch?: number
   }
   return { eventType: SESSION_DURABLE_EVENT.agentEvent, payload: { event: rest } }
-}
-
-function catalogBlock(message: ChatMessage, sortOrder: number): SessionMessageBlock {
-  return {
-    id: message.id,
-    role: message.role,
-    text: textOf(message.content),
-    createdAt: Date.parse(message.createdAt) || 0,
-    sortOrder,
-    content: message.content,
-    ...(message.contexts ? { contexts: message.contexts } : {}),
-    ...(message.attachments ? { attachments: message.attachments } : {}),
-    ...(message.metadata ? { metadata: message.metadata as Record<string, unknown> } : {}),
-    ...(message.checkpointId ? { checkpointId: message.checkpointId } : {}),
-    ...(message.resumePointId ? { resumePointId: message.resumePointId } : {}),
-  }
 }
 
 function notFound(): Error {
@@ -591,8 +568,49 @@ export class DesktopSessionHost implements SessionHostPort {
     return this.deps.events.listAfter(afterSequence)
   }
 
-  onEventsAppended(listener: () => void): () => void {
+  streamEpoch(): string {
+    return this.deps.events.epoch
+  }
+
+  streamingAfter(sessionId: string, version: number): EnvironmentEventEnvelope[] | null {
+    return this.deps.events.streamingAfter(sessionId, version)
+  }
+
+  streamingEvents(): EnvironmentEventEnvelope[] {
+    return this.deps.events.streaming()
+  }
+
+  onEventsAppended(listener: (envelope: EnvironmentEventEnvelope) => void): () => void {
     return this.deps.events.onAppend(listener)
+  }
+
+  viewEvent(envelope: EnvironmentEventEnvelope): EnvironmentEventEnvelope {
+    return envelope
+  }
+
+  /**
+   * The live session's messages and prompts (its stored transcript when it is
+   * not loaded), at the version its recorded events have reached: the desktop
+   * `Session` is this host's read model and records each event as it emits it.
+   */
+  load(input: Parameters<SessionHostPort['load']>[0]): ReturnType<SessionHostPort['load']> {
+    const sessionId = String(input.sessionId ?? '').trim()
+    this.requireRow(sessionId)
+    const live = this.deps.sessions.getSession(sessionId)
+    let state: ChatCoreSession = createDefaultChatCoreSession()
+    for (const event of live?.getPendingInteractions() ?? []) state = { ...state, ...applyEventToSession(state, event) }
+    const all = live ? [...live.snapshot.messages] : this.deps.store.loadMessages(sessionId, Number.MAX_SAFE_INTEGER).messages
+    const limit = Math.min(Math.max(1, input.limit ?? 50), 200)
+    const end = Math.min(input.before ?? all.length, all.length)
+    const start = Math.max(0, end - limit)
+    const { messages: _messages, ...rest } = { ...state, status: live?.isStreaming() ? 'streaming' as const : 'idle' as const }
+    return {
+      sessionId,
+      state: rest as unknown as Record<string, unknown>,
+      messages: all.slice(start, end),
+      before: start > 0 ? start : null,
+      cursor: { sequence: this.deps.events.headSequence(), epoch: this.deps.events.epoch, version: this.deps.events.sessionVersion(sessionId) },
+    }
   }
 
   listMessages(input: Parameters<SessionHostPort['listMessages']>[0]): ReturnType<SessionHostPort['listMessages']> {
@@ -604,7 +622,7 @@ export class DesktopSessionHost implements SessionHostPort {
     const start = page.cursor ?? 0
     return {
       sessionId,
-      messages: page.messages.map((message, i) => catalogBlock(message, start + i)),
+      messages: page.messages.map((message, i) => chatMessageToSessionMessageBlock(message, start + i)),
       cursor: page.cursor === null ? null : String(page.cursor),
       hasMore: page.hasMore,
     }

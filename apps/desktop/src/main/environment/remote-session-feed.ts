@@ -1,30 +1,37 @@
 import type { EnvironmentEventEnvelope } from '@superone/shared/environment'
 
 export interface RemoteSessionFeedSource {
-  /** The node's durable head now. */
+  /** The node's durable head now: the stream starts after it. */
   head(): Promise<string>
-  subscribe(afterSequence: string, signal: AbortSignal): AsyncIterable<EnvironmentEventEnvelope>
+  subscribe(
+    afterSequence: string,
+    signal: AbortSignal,
+    onResnapshot: (sessionIds: string[]) => void,
+  ): AsyncIterable<EnvironmentEventEnvelope>
 }
 
 export interface RemoteSessionListener {
   event(envelope: EnvironmentEventEnvelope): void
   /** The feed stopped for good (the connection will not come back). */
   end(err: Error): void
+  /** Some of the session's events are gone; read its snapshot again. */
+  resync?(): void
 }
 
 interface Follower {
   listener: RemoteSessionListener
-  /** The node's head when the follower joined; null until read, while its events wait in `held`. */
-  from: bigint | null
+  /** Version the follower starts above; null while its barrier is read, with its events held. */
+  from: number | null
   held: EnvironmentEventEnvelope[]
 }
 
 /**
  * One pushed event stream per connected node, shared by everything on this
- * desktop that follows a session there (chat, phones, collaboration). Each
- * follower gets the session's events committed after it joined, so a caller
- * that awaits `follow` before sending sees every event its send causes and
- * none from before, however far behind the node's head the shared stream is.
+ * desktop that follows a session there (chat, phones, collaboration). A
+ * follower joins at a barrier — usually the version of a snapshot it reads
+ * while its events are held — and gets the session's events above it, so
+ * nothing is missed or applied twice however far behind the node the shared
+ * stream is.
  */
 export class RemoteSessionFeed {
   private readonly followers = new Map<string, Set<Follower>>()
@@ -36,11 +43,11 @@ export class RemoteSessionFeed {
 
   constructor(private readonly source: RemoteSessionFeedSource) {}
 
-  async follow(sessionId: string, listener: RemoteSessionListener): Promise<() => void> {
+  /** Follows a session above the version `barrier` returns, read after joining. */
+  async follow(sessionId: string, listener: RemoteSessionListener, barrier: () => Promise<number>): Promise<() => void> {
     if (this.failure) throw this.failure
     let set = this.followers.get(sessionId)
     if (!set) this.followers.set(sessionId, set = new Set())
-    // Joined before the head is read: an event committed in between is held, not lost.
     const follower: Follower = { listener, from: null, held: [] }
     set.add(follower)
     const unfollow = () => {
@@ -49,7 +56,7 @@ export class RemoteSessionFeed {
     }
     try {
       await this.start()
-      follower.from = BigInt(await this.source.head())
+      follower.from = await barrier()
     } catch (err) {
       unfollow()
       throw err
@@ -87,12 +94,18 @@ export class RemoteSessionFeed {
 
   private deliver(follower: Follower, envelope: EnvironmentEventEnvelope): void {
     if (follower.from === null) follower.held.push(envelope)
-    else if (BigInt(envelope.sequence) > follower.from) follower.listener.event(envelope)
+    else if ((envelope.sessionVersion ?? Number(envelope.sequence)) > follower.from) follower.listener.event(envelope)
+  }
+
+  private resync(sessionIds: string[]): void {
+    for (const id of sessionIds) {
+      for (const follower of [...(this.followers.get(id) ?? [])]) follower.listener.resync?.()
+    }
   }
 
   private async run(after: string): Promise<void> {
     try {
-      for await (const envelope of this.source.subscribe(after, this.abort.signal)) {
+      for await (const envelope of this.source.subscribe(after, this.abort.signal, (ids) => this.resync(ids))) {
         if (envelope.aggregateType !== 'session') continue
         for (const observer of [...this.observers]) observer(envelope)
         for (const follower of [...(this.followers.get(envelope.aggregateId) ?? [])]) this.deliver(follower, envelope)

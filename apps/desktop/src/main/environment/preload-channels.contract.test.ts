@@ -129,7 +129,7 @@ describe('environment preload ↔ Main IPC contract', () => {
     expect(main).toContain('AgentIpcChannels.ENVIRONMENT_LIST')
     expect(main).toContain('AgentIpcChannels.ENVIRONMENT_PAIR_REMOTE')
     expect(main).toContain('getEnvironmentHost()')
-    expect(main).toContain('AgentIpcChannels.ENVIRONMENT_LIST_SESSION_MESSAGES')
+    expect(main).toContain('AgentIpcChannels.ENVIRONMENT_OPEN_REMOTE_SESSION')
   })
 
   it('preload exposes environmentAPI with matching channel constants', () => {
@@ -139,8 +139,8 @@ describe('environment preload ↔ Main IPC contract', () => {
     expect(preload).toContain('AgentIpcChannels.ENVIRONMENT_LIST')
     expect(preload).toContain('AgentIpcChannels.ENVIRONMENT_WORKSPACE_LIST_DIR')
     expect(preload).toContain('AgentIpcChannels.ENVIRONMENT_CONNECT_FAILOVER')
-    expect(preload).toContain('AgentIpcChannels.ENVIRONMENT_LIST_SESSION_MESSAGES')
-    expect(preload).toContain('listSessionMessages:')
+    expect(preload).toContain('AgentIpcChannels.ENVIRONMENT_OPEN_REMOTE_SESSION')
+    expect(preload).toContain('openRemoteSession:')
   })
 
   it('defines remote Skills/MCP resource channels for node skills.*/mcp.*', () => {

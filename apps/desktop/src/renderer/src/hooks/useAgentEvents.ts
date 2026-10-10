@@ -52,26 +52,15 @@ export function useAgentEvents(): void {
     }
   }, [handleAgentEvent])
 
-  // Remote reconnect: re-sync from the node, then re-own event drains.
-  // Resuming alone is not enough — drains restart at the current log head, so
-  // anything the node appended while offline would never reach the store.
+  // A remote session whose missed events are gone: read it again from the node.
   useEffect(() => {
-    const unsub = window.environment?.onStatusEvent?.((snapshot: {
-      connectionId?: string
-      state?: string
-    }) => {
-      if (snapshot?.state !== 'connected' || !snapshot.connectionId) return
-      const connectionId = snapshot.connectionId
+    const unsub = window.environment?.onSessionResync?.((target) => {
+      if (!target.projectPath) return
+      const projectPath = target.projectPath
       void (async () => {
-        const { rehydrateRemoteSessionsForConnection } = await import(
-          '@/stores/chat-store/helpers/remote-reconnect'
-        )
-        await rehydrateRemoteSessionsForConnection(
-          connectionId,
-          useChatStore.setState,
-          useChatStore.getState,
-        )
-      })()
+        const { resyncRemoteSession } = await import('@/stores/chat-store/helpers/remote-reconnect')
+        await resyncRemoteSession(projectPath, target.sessionId, useChatStore.setState, useChatStore.getState)
+      })().catch((err) => console.warn('[chat] remote session resync failed:', target.sessionId, err))
     })
     return () => {
       unsub?.()

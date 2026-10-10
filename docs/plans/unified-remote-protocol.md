@@ -188,6 +188,74 @@ Behavior docs change in the commit that changes the behavior. This step
 finishes the long-term docs in the header (model, tiers, topics, protocol),
 points code comments there, and deletes this plan and the proposal.
 
+## Step 5 coverage list
+
+From the `RemoteCommand` union (`packages/shared/src/agent-types.ts`,
+`DraftRemoteCommand`, `CodexAsyncQuestionAnswerCommand`) and its call sites in
+`apps/mobile`, `packages/relay-client` and `mcp-apps/executor.ts`. Existing
+methods are the node dispatcher's (`rpc-dispatch.ts`) or the CLI tables moved
+into runtime; **new** methods are added in step 5. Client-scoped methods are
+served by the paired desktop endpoint only. Routed: served for a node session
+through the desktop today (`environment-commands.ts`), by envelope
+`environmentId` after the cut-over.
+
+| Old command | Method | Routed |
+|---|---|---|
+| `create_session` | `session.create` | |
+| `send_message` | `session.send` | yes |
+| `interrupt` | `session.interrupt` | yes |
+| `respond_permission` | `session.respondPermission` | yes |
+| `answer_question`, `dismiss_question` | `session.respondQuestion` (`dismiss`) | yes |
+| `respond_plan_approval`, `codex_plan_approval` | `session.respondPlan` | yes |
+| `codex_async_question_answer` | **`session.answerAsyncQuestion`** | |
+| `set_permission_mode`, `set_sandbox_mode`, `set_session_settings`, `set_session_api_provider_id`, `set_session_additional_dirs` | `session.patchSettings` | modes |
+| `request_session_recap` | **`session.recap`** | |
+| `set_session_goal`, `clear_session_goal` | **`session.setGoal`** | |
+| `dequeue_message`, `steer_queued_message` | **`session.dequeue`**, **`session.steer`** | |
+| `subscribe_session`, `unsubscribe_session`, `leave_session` | `session.load` + `topic.subscribe` / `topic.update`, `session.acquireControl` / `session.releaseControl` | yes |
+| `subscribe_detail`, `unsubscribe_detail` | `session.subscribeDetail`, `session.unsubscribeDetail` | yes |
+| `load_session_messages`, `get_session_history_index` | `session.load` (`before`), **`session.historyIndex`** | yes |
+| `get_session_state` | `session.get` | yes |
+| `get_attachment` | **`session.attachment`** | |
+| `mod_ui_request` | `session.modUi` | |
+| `mcp_app_request` | `mcpApps.*` | |
+| `list_sessions`, `list_pinned_sessions`, `find_session`, `search_sessions`, `list_session_activity` | `session.list`, `session.listPinned`, `session.get`, **`session.search`**, `session.list` (activity in the record) | |
+| `pin_session`, `archive_session`, `delete_session`, `fork_session` | `session.setUiFlags`, **`session.setArchived`**, `session.remove`, `session.fork` | |
+| `session_link_identity`, `session_link_metadata`, `session_link_resolve` | `environment.descriptor`, `session.linkMetadata`, `session.get` | |
+| `list_drafts`, `save_draft`, `delete_draft` | `draft.list`, `draft.upsert`, `draft.delete` | |
+| `open_draft`, `close_draft` | **`draft.open`**, **`draft.close`** (draft lease, `expectedUpdatedAt`) | |
+| `composer_open`, `composer_cancel`, `composer_outcome`, `open_widget_input_request` | **`composer.open`**, **`composer.cancel`**, **`composer.outcome`**, **`composer.openInputRequest`** | |
+| `save_widget_template` | **`widget.saveTemplate`** | |
+| `search_mcp_mentions`, `read_mcp_mentions`, `list_mcp_servers`, `get_mcp_icons` | **`mcp.searchMentions`**, **`mcp.readMentions`**, `mcp.list`, **`mcp.icons`** | |
+| `list_directory`, `browse_host_directory`, `create_directory` | `workspace.listDir`, `fs.listDir`, `workspace.mkdir` | |
+| `search_files`, `search_mentions`, `get_mention_icons` | `workspace.search`, **`workspace.searchMentions`**, **`workspace.mentionIcons`** | |
+| `read_desktop_file`, `read_video_poster` | `workspace.readFile`, **`workspace.videoPoster`** | |
+| `upload_file`, `upload_file_complete` | **`workspace.upload`**, **`workspace.uploadComplete`** | |
+| `resolve_favicon` | **`environment.favicon`** | |
+| `list_projects`, `add_project`, `add_project_additional_dir`, `remove_project_additional_dir` | `project.list`, `project.open`, `project.update` | list |
+| `get_default_clone_path`, `set_default_clone_path` | `settings.get`, `settings.patch` (`expectedVersion`) | |
+| `clone_repository`, `search_github_repos` | `git.clone`, **`git.searchGithub`** | |
+| `get_git_info`, `get_git_file_status`, `get_git_branches`, `list_git_mention_refs` | `git.status`, `git.status` (`paths`), `git.branches`, `git.mentionRefs` | |
+| `switch_git_branch`, `create_git_branch` | `git.switchBranch`, `git.createBranch` | |
+| `get_worktree_info`, `get_checked_out_branches` | `git.worktrees`, `git.worktreeCheckedOutBranches` | |
+| `list_harness_options`, `get_system_info`, `get_project_resources` | `harness.list`, `environment.systemInfo`, `harness.resources` | yes |
+| `get_usage`, `consume_rate_limit_reset`, `list_media_providers` | `environment.usage`, `codex.consumeRateLimitReset`, **`media.listProviders`** | |
+| `terminal_create`, `terminal_subscribe`, `terminal_unsubscribe`, `terminal_input`, `terminal_resize`, `terminal_kill` | `terminal.create`, `terminal.attach` + `topic.subscribe`, `topic.update`, `terminal.write`, `terminal.resize`, `terminal.kill` | |
+| `terminal_list`, `terminal_claim` | **`terminal.list`**, `terminal.acquireControl` | |
+| `mark_session_seen`, `append_mobile_log` | **`client.markSeen`**, **`client.appendLog`** (client-scoped) | |
+| `node_mint`, `node_pair` | **`client.mintNodeCode`**, **`client.pairNode`** (client-scoped) | |
+| `environment_command` | removed: the envelope's `environmentId` routes | |
+
+Defined but never sent, removed without a method: `list_models`,
+`activate_worktree`, `list_directory_for_add_dir`, `validate_add_dir`,
+`list_providers`, `terminal_release`. Presence stays implicit in the
+connection; there is no push-token command.
+
+Conditional writes: drafts keep `expectedUpdatedAt` and their lease; MCP app
+files keep `ifMatch`; `workspace.writeFile` keeps `expectedHash`;
+`settings.patch` and `project.update` gain `expectedVersion`. Session and
+terminal mutations are fenced by leases (step 6).
+
 ## Verification
 
 - Unit, contract and golden tests per step from `apps/desktop`

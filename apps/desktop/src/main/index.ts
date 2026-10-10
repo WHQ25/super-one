@@ -825,10 +825,9 @@ setInterval(() => {
 new RemoteChildWatcher(collaborationChildMonitor).start()
 
 /**
- * Single convergence point for everything the renderer sees. Notifications tap
- * here rather than at `sessionManager.onAny` alone, because interaction
- * *resolutions* are broadcast by AgentService and never pass through onAny —
- * without this the banner would never be withdrawn.
+ * Single convergence point for everything the renderer sees, so notifications
+ * observe exactly what the renderer does: session events, remote-node events,
+ * drafts and the environment events AgentService publishes.
  */
 function publishAgentEvent(event: AgentEvent): void {
   notificationService.handleEvent(event)

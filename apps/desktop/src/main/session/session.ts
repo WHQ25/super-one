@@ -314,6 +314,12 @@ export class Session implements SessionContract {
   private abortController: AbortController | null = null
   private backendStarted = false
   private eventListeners = new Set<(e: AgentEvent, replay: boolean) => void>()
+  /**
+   * Interactions already announced as resolved. A response can be announced by
+   * the backend, by a host confirm registry and by `announceResolved`; every
+   * listener sees the first only.
+   */
+  private readonly resolvedInteractions = new Set<string>()
   private unsubs: Array<() => void> = []
   private _cachedInitReady: AgentEvent | null = null
   private _cachedWorktreeMissing: AgentEvent | null = null
@@ -1245,7 +1251,17 @@ export class Session implements SessionContract {
   getSelectedModel(): string | undefined { return this.model }
   getSelectedEffort(): SendMessageRequest['effort'] { return this.effort }
 
+  /**
+   * Answers a permission prompt. Every caller (renderer, phone, desktop-node
+   * RPC) gets the same `interaction_resolved` when something handled it.
+   */
   respondToPermission(requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], decision?: 'cancel', formAnswers?: Record<string, unknown>): boolean {
+    const handled = this.dispatchPermissionResponse(requestId, allow, alwaysAllow, reason, selectedSuggestions, decision, formAnswers)
+    if (handled) this.announceResolved({ interactionType: 'permission', requestId })
+    return handled
+  }
+
+  private dispatchPermissionResponse(requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], decision?: 'cancel', formAnswers?: Record<string, unknown>): boolean {
     this.assertNotDisposed()
     this.touchRuntimeActivity()
     // Host-owned confirms (config / video / miniapp / WebMCP / collab) must resolve here
@@ -1313,18 +1329,26 @@ export class Session implements SessionContract {
     this.assertNotDisposed()
     this.touchRuntimeActivity()
     this.backend.respondToQuestion(requestId, answers, annotations)
+    this.announceResolved({ interactionType: 'question', requestId })
   }
 
   dismissQuestion(requestId: string): void {
     this.assertNotDisposed()
     this.touchRuntimeActivity()
     this.backend.dismissQuestion(requestId)
+    this.announceResolved({ interactionType: 'question', requestId })
   }
 
   respondToPlanApproval(requestId: string, approved: boolean, feedback?: string): void {
     this.assertNotDisposed()
     this.touchRuntimeActivity()
     this.backend.respondToPlanApproval(requestId, approved, feedback)
+    this.announceResolved({ interactionType: 'plan_approval', requestId, approved, feedback })
+  }
+
+  /** Withdraws an answered prompt on every client unless its handler already did. */
+  private announceResolved(resolution: Omit<Extract<AgentEvent, { type: 'interaction_resolved' }>, 'type'>): void {
+    this.forwardEvent({ type: 'interaction_resolved', ...resolution })
   }
 
   async getContextUsage(): Promise<ContextUsageInfo | null> {
@@ -2093,6 +2117,12 @@ export class Session implements SessionContract {
   }
 
   private forwardEvent(event: AgentEvent): AgentEvent {
+    if (event.type === 'interaction_resolved') {
+      if (this.resolvedInteractions.has(event.requestId)) return event
+      this.resolvedInteractions.add(event.requestId)
+    } else if (event.type === 'permission_request' || event.type === 'ask_user_question' || event.type === 'plan_approval') {
+      this.resolvedInteractions.delete(event.request.requestId)
+    }
     this.observeDelivery(event)
     // A read receipt is about the user, not the agent, and a mod redrawing is
     // not agent work: neither may bump the session's recency nor postpone its

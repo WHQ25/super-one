@@ -412,12 +412,6 @@ export class AgentService {
     this.eventSubscribers.forEach((cb) => cb(event))
   }
 
-  /** Publish events synthesized outside SessionManager to every active surface. */
-  private publishSyntheticEvent(event: AgentEvent): void {
-    this.notifyEventSubscribers(event)
-    this.broadcastEventToRenderer(event)
-  }
-
   private broadcastProviderChanged(harnessId: 'claude' | 'codex'): void {
     const provider = buildRemoteActiveService(resolveChatService(harnessId, null, {
       experimentalClaudeOpenAiChatEnabled: readAppSettings().experimentalClaudeOpenAiChatEnabled,
@@ -1035,9 +1029,6 @@ export class AgentService {
             allow: command.decision,
             ...(command.formAnswers ? { formAnswers: command.formAnswers } : {}),
           })
-          if (result.ok) {
-            this.publishSyntheticEvent({ type: 'interaction_resolved', interactionType: 'permission', requestId: command.requestId, projectPath, sessionId: command.sessionId })
-          }
           await reply(result.ok, result.ok ? undefined : result.error)
         } else if (agent) {
           const handled = agent.respondToPermission(
@@ -1049,9 +1040,7 @@ export class AgentService {
             undefined,
             command.formAnswers,
           )
-          if (handled) {
-            this.publishSyntheticEvent({ type: 'interaction_resolved', interactionType: 'permission', requestId: command.requestId, projectPath, sessionId: command.sessionId })
-          } else {
+          if (!handled) {
             log.warn('[AgentService] respond_permission: request %s not found for session %s', command.requestId, command.sessionId)
           }
           await reply(handled, handled ? undefined : 'This prompt is no longer open')
@@ -1074,7 +1063,6 @@ export class AgentService {
         const agent = this.findSessionBySid(projectPath, command.sessionId)
         if (agent) {
           agent.respondToQuestion(command.requestId, command.answers, command.annotations)
-          this.publishSyntheticEvent({ type: 'interaction_resolved', interactionType: 'question', requestId: command.requestId, projectPath, sessionId: command.sessionId })
         } else {
           log.warn('[AgentService] answer_question: no agent for session %s', command.sessionId)
         }
@@ -1093,7 +1081,6 @@ export class AgentService {
         const agent = this.findSessionBySid(projectPath, command.sessionId)
         if (agent) {
           agent.dismissQuestion(command.requestId)
-          this.publishSyntheticEvent({ type: 'interaction_resolved', interactionType: 'question', requestId: command.requestId, projectPath, sessionId: command.sessionId })
         } else {
           log.warn('[AgentService] dismiss_question: no agent for session %s', command.sessionId)
         }
@@ -1112,7 +1099,6 @@ export class AgentService {
         const agent = this.findSessionBySid(projectPath, command.sessionId)
         if (agent) {
           agent.respondToPlanApproval(command.requestId, command.approved, command.feedback)
-          this.publishSyntheticEvent({ type: 'interaction_resolved', interactionType: 'plan_approval', requestId: command.requestId, approved: command.approved, feedback: command.feedback, projectPath, sessionId: command.sessionId })
         } else {
           log.warn('[AgentService] respond_plan_approval: no agent for session %s', command.sessionId)
         }
@@ -2993,14 +2979,7 @@ export class AgentService {
       this.throwIfRemoteLocked(session.snapshot.projectPath)
       trace('agent.emit', 'permission_responded', { requestId, allow, reason, sessionId })
       trace('permission.flow', 'ipc_response', { projectPath: session.snapshot.projectPath, sessionId, allow, alwaysAllow, reason, decision, formAnswers }, requestId)
-      const result = session.respondToPermission(requestId, allow, alwaysAllow, reason, selectedSuggestions, decision, formAnswers)
-      // Only clear the pending UI when something actually handled the response.
-      // Unconditional broadcast used to dismiss config/video confirms on harnesses
-      // that did not resolve the host gate, leaving config_apply hung until timeout.
-      if (result) {
-        this.publishSyntheticEvent({ type: 'interaction_resolved', interactionType: 'permission', requestId, projectPath: session.snapshot.projectPath, sessionId })
-      }
-      return result
+      return session.respondToPermission(requestId, allow, alwaysAllow, reason, selectedSuggestions, decision, formAnswers)
     })
 
     ipcMain.handle(AgentIpcChannels.SET_PERMISSION_MODE, async (
@@ -3090,7 +3069,6 @@ export class AgentService {
       this.throwIfRemoteLocked(session.snapshot.projectPath)
       trace('agent.emit', 'question_answered', { requestId, answers, sessionId })
       session.respondToQuestion(requestId, answers, annotations)
-      this.publishSyntheticEvent({ type: 'interaction_resolved', interactionType: 'question', requestId, projectPath: session.snapshot.projectPath, sessionId })
     })
 
     ipcMain.handle(AgentIpcChannels.DISMISS_QUESTION, (_event, sessionId: string, requestId: string) => {
@@ -3099,7 +3077,6 @@ export class AgentService {
       this.throwIfRemoteLocked(session.snapshot.projectPath)
       trace('agent.emit', 'question_dismissed', { requestId, sessionId })
       session.dismissQuestion(requestId)
-      this.publishSyntheticEvent({ type: 'interaction_resolved', interactionType: 'question', requestId, projectPath: session.snapshot.projectPath, sessionId })
     })
 
     ipcMain.handle(AgentIpcChannels.RESPOND_PLAN_APPROVAL, (_event, sessionId: string, requestId: string, approved: boolean, feedback?: string) => {
@@ -3108,7 +3085,6 @@ export class AgentService {
       this.throwIfRemoteLocked(session.snapshot.projectPath)
       trace('agent.emit', 'plan_approval_responded', { requestId, approved, feedback, sessionId })
       session.respondToPlanApproval(requestId, approved, feedback)
-      this.publishSyntheticEvent({ type: 'interaction_resolved', interactionType: 'plan_approval', requestId, approved, feedback, projectPath: session.snapshot.projectPath, sessionId })
     })
 
     ipcMain.handle(AgentIpcChannels.CREATE_SESSION, async (_event, projectPath: string) => {

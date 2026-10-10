@@ -2394,12 +2394,9 @@ describe('AgentService.handleRemoteCommand', () => {
     expect(respondToPermission).toHaveBeenCalledWith(
       'req-1', true, true, undefined, undefined, undefined, formAnswers,
     )
-    expect(broadcasts).toContainEqual({
-      type: 'interaction_resolved', interactionType: 'permission', requestId: 'req-1', projectPath: '/p', sessionId: 'sid-1',
-    })
-    expect(subscriberEvents).toContainEqual({
-      type: 'interaction_resolved', interactionType: 'permission', requestId: 'req-1', projectPath: '/p', sessionId: 'sid-1',
-    })
+    // The session announces the resolution; the service adds no second copy.
+    expect(broadcasts).toEqual([])
+    expect(subscriberEvents).toEqual([])
   })
 
   it('respond_permission answers a form request and keeps the form open on a rejected answer', async () => {
@@ -2428,7 +2425,7 @@ describe('AgentService.handleRemoteCommand', () => {
     }
   })
 
-  it('remote question and plan responses publish resolution events to mobile subscribers', async () => {
+  it('remote question and plan responses reach the session, which announces the resolution', async () => {
     const session = makeMockSession({
       id: 'sid-1',
       projectPath: '/p',
@@ -2466,11 +2463,10 @@ describe('AgentService.handleRemoteCommand', () => {
       sessionId: 'sid-1',
     } as never)
 
-    expect(subscriberEvents).toEqual(expect.arrayContaining([
-      expect.objectContaining({ type: 'interaction_resolved', interactionType: 'question', requestId: 'question-answer' }),
-      expect.objectContaining({ type: 'interaction_resolved', interactionType: 'question', requestId: 'question-dismiss' }),
-      expect.objectContaining({ type: 'interaction_resolved', interactionType: 'plan_approval', requestId: 'plan-1', approved: true }),
-    ]))
+    expect(session.respondToQuestion).toHaveBeenCalledWith('question-answer', { Continue: 'Yes' }, undefined)
+    expect(session.dismissQuestion).toHaveBeenCalledWith('question-dismiss')
+    expect(session.respondToPlanApproval).toHaveBeenCalledWith('plan-1', true, undefined)
+    expect(subscriberEvents).toEqual([])
   })
 
   it.skip('send_message creates remote agent when sessionId differs from desktop agent', async () => {
@@ -3725,7 +3721,7 @@ describe('AgentService.handleRemoteCommand', () => {
   })
 })
 
-describe('IPC interaction-response broadcasts', () => {
+describe('IPC interaction responses', () => {
   function setupServiceWithSession(session: ReturnType<typeof makeMockSession>) {
     const broadcasts: unknown[] = []
     const service = new AgentService()
@@ -3738,35 +3734,19 @@ describe('IPC interaction-response broadcasts', () => {
     return { service, broadcasts }
   }
 
-  it('broadcastEventToRenderer routes events through the injected broadcast fn so every window (incl. mini-window) receives them', async () => {
+  it('broadcastEventToRenderer routes events through the injected broadcast fn so every window (incl. mini-window) receives them', () => {
     const fanOut: unknown[] = []
-    const respondToPermission = vi.fn(() => true)
-    const session = makeMockSession({
-      id: 'sid-fan',
-      snapshot: { projectPath: '/p-fan', harnessId: 'claude', messages: [] },
-      respondToPermission,
-    })
     const service = new AgentService()
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getSession: vi.fn(() => session),
-      getActiveSession: vi.fn(() => session),
-    }
     service.setBroadcastFn((e) => { fanOut.push(e) })
-    service.setup()
-    const handler = getRegisteredIpcHandler(AgentIpcChannels.PERMISSION_RESPONSE)!
+    const event = { type: 'project_list_changed' }
+    ;(service as unknown as { broadcastEventToRenderer: (e: unknown) => void }).broadcastEventToRenderer(event)
 
-    await handler(null, 'sid-fan', 'req-fan', true, false)
-
-    expect(fanOut).toContainEqual({
-      type: 'interaction_resolved',
-      interactionType: 'permission',
-      requestId: 'req-fan',
-      projectPath: '/p-fan',
-      sessionId: 'sid-fan',
-    })
+    expect(fanOut).toEqual([event])
   })
 
-  it('PERMISSION_RESPONSE handler broadcasts interaction_resolved so other windows clear the pending permission', async () => {
+  // Each handler only delegates: `Session` announces `interaction_resolved`
+  // (session.test.ts), so every caller gets it once.
+  it('PERMISSION_RESPONSE delegates to the session and returns whether it was handled', async () => {
     const respondToPermission = vi.fn(() => true)
     const session = makeMockSession({
       id: 'sid-1',
@@ -3776,48 +3756,22 @@ describe('IPC interaction-response broadcasts', () => {
     const { broadcasts } = setupServiceWithSession(session)
     const handler = getRegisteredIpcHandler(AgentIpcChannels.PERMISSION_RESPONSE)!
 
-    await handler(null, 'sid-1', 'req-1', true, false)
+    expect(await handler(null, 'sid-1', 'req-1', true, false)).toBe(true)
 
     expect(respondToPermission).toHaveBeenCalledWith('req-1', true, false, undefined, undefined, undefined, undefined)
-    expect(broadcasts).toContainEqual({
-      type: 'interaction_resolved',
-      interactionType: 'permission',
-      requestId: 'req-1',
-      projectPath: '/p',
-      sessionId: 'sid-1',
-    })
+    expect(broadcasts).toEqual([])
   })
 
-  it('PERMISSION_RESPONSE handler does not broadcast when the session is missing', async () => {
-    const broadcasts: unknown[] = []
+  it('PERMISSION_RESPONSE answers false when the session is missing', async () => {
     const service = new AgentService()
     ;(service as { sessionManager: unknown }).sessionManager = {
       getSession: vi.fn(() => undefined),
       getActiveSession: vi.fn(() => undefined),
     }
-    ;(service as unknown as { broadcastEventToRenderer: (e: unknown) => void }).broadcastEventToRenderer = (e) => { broadcasts.push(e) }
     service.setup()
     const handler = getRegisteredIpcHandler(AgentIpcChannels.PERMISSION_RESPONSE)!
 
-    await handler(null, 'missing-sid', 'req-1', true, false)
-
-    expect(broadcasts).toHaveLength(0)
-  })
-
-  it('PERMISSION_RESPONSE handler does not broadcast when nothing handled the response', async () => {
-    const respondToPermission = vi.fn(() => false)
-    const session = makeMockSession({
-      id: 'sid-miss',
-      snapshot: { projectPath: '/p', harnessId: 'opencode', messages: [] },
-      respondToPermission,
-    })
-    const { broadcasts } = setupServiceWithSession(session)
-    const handler = getRegisteredIpcHandler(AgentIpcChannels.PERMISSION_RESPONSE)!
-
-    await handler(null, 'sid-miss', 'req-orphan', true, false)
-
-    expect(respondToPermission).toHaveBeenCalled()
-    expect(broadcasts.filter((b) => (b as { type?: string }).type === 'interaction_resolved')).toHaveLength(0)
+    expect(await handler(null, 'missing-sid', 'req-1', true, false)).toBe(false)
   })
 
   it('SET_PERMISSION_MODE applies only to the explicitly targeted session', async () => {
@@ -3852,72 +3806,27 @@ describe('IPC interaction-response broadcasts', () => {
     await expect(handler(null, '/p', 'sid-disposed', 'default')).resolves.toBe(false)
   })
 
-  it('ANSWER_QUESTION handler broadcasts interaction_resolved to sync mini-window state', async () => {
+  it('ANSWER_QUESTION, DISMISS_QUESTION and RESPOND_PLAN_APPROVAL delegate to the session', async () => {
     const respondToQuestion = vi.fn()
+    const dismissQuestion = vi.fn()
+    const respondToPlanApproval = vi.fn()
     const session = makeMockSession({
       id: 'sid-2',
       snapshot: { projectPath: '/p2', harnessId: 'claude', messages: [] },
       respondToQuestion,
-    })
-    const { broadcasts } = setupServiceWithSession(session)
-    const handler = getRegisteredIpcHandler(AgentIpcChannels.ANSWER_QUESTION)!
-
-    await handler(null, 'sid-2', 'q-1', { foo: 'bar' })
-
-    expect(respondToQuestion).toHaveBeenCalledWith('q-1', { foo: 'bar' }, undefined)
-    expect(broadcasts).toContainEqual({
-      type: 'interaction_resolved',
-      interactionType: 'question',
-      requestId: 'q-1',
-      projectPath: '/p2',
-      sessionId: 'sid-2',
-    })
-  })
-
-  it('DISMISS_QUESTION handler broadcasts interaction_resolved so other windows hide the prompt', async () => {
-    const dismissQuestion = vi.fn()
-    const session = makeMockSession({
-      id: 'sid-3',
-      snapshot: { projectPath: '/p3', harnessId: 'claude', messages: [] },
       dismissQuestion,
-    })
-    const { broadcasts } = setupServiceWithSession(session)
-    const handler = getRegisteredIpcHandler(AgentIpcChannels.DISMISS_QUESTION)!
-
-    await handler(null, 'sid-3', 'q-2')
-
-    expect(dismissQuestion).toHaveBeenCalledWith('q-2')
-    expect(broadcasts).toContainEqual({
-      type: 'interaction_resolved',
-      interactionType: 'question',
-      requestId: 'q-2',
-      projectPath: '/p3',
-      sessionId: 'sid-3',
-    })
-  })
-
-  it('RESPOND_PLAN_APPROVAL handler broadcasts interaction_resolved with approved and feedback so other windows reflect the outcome', async () => {
-    const respondToPlanApproval = vi.fn()
-    const session = makeMockSession({
-      id: 'sid-4',
-      snapshot: { projectPath: '/p4', harnessId: 'claude', messages: [] },
       respondToPlanApproval,
     })
     const { broadcasts } = setupServiceWithSession(session)
-    const handler = getRegisteredIpcHandler(AgentIpcChannels.RESPOND_PLAN_APPROVAL)!
 
-    await handler(null, 'sid-4', 'plan-1', false, 'looks risky')
+    await getRegisteredIpcHandler(AgentIpcChannels.ANSWER_QUESTION)!(null, 'sid-2', 'q-1', { foo: 'bar' })
+    await getRegisteredIpcHandler(AgentIpcChannels.DISMISS_QUESTION)!(null, 'sid-2', 'q-2')
+    await getRegisteredIpcHandler(AgentIpcChannels.RESPOND_PLAN_APPROVAL)!(null, 'sid-2', 'plan-1', false, 'looks risky')
 
+    expect(respondToQuestion).toHaveBeenCalledWith('q-1', { foo: 'bar' }, undefined)
+    expect(dismissQuestion).toHaveBeenCalledWith('q-2')
     expect(respondToPlanApproval).toHaveBeenCalledWith('plan-1', false, 'looks risky')
-    expect(broadcasts).toContainEqual({
-      type: 'interaction_resolved',
-      interactionType: 'plan_approval',
-      requestId: 'plan-1',
-      approved: false,
-      feedback: 'looks risky',
-      projectPath: '/p4',
-      sessionId: 'sid-4',
-    })
+    expect(broadcasts).toEqual([])
   })
 })
 

@@ -729,11 +729,6 @@ const environmentAPI = {
       decision: 'allow' | 'deny' | 'allow_always'
       formAnswers?: Record<string, unknown>
       cancel?: boolean
-      continueDrain?: {
-        projectPath?: string
-        providerId?: string
-        timeoutMs?: number
-      }
     },
   ) =>
     ipcRenderer.invoke(
@@ -747,11 +742,6 @@ const environmentAPI = {
       sessionId: string
       interactionId: string
       answers: unknown
-      continueDrain?: {
-        projectPath?: string
-        providerId?: string
-        timeoutMs?: number
-      }
     },
   ) =>
     ipcRenderer.invoke(
@@ -766,11 +756,6 @@ const environmentAPI = {
       interactionId: string
       decision: 'approve' | 'reject'
       options?: Record<string, unknown>
-      continueDrain?: {
-        projectPath?: string
-        providerId?: string
-        timeoutMs?: number
-      }
     },
   ) =>
     ipcRenderer.invoke(

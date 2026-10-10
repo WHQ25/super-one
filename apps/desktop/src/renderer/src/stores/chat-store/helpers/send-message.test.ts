@@ -2,6 +2,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { parseSchemaForm } from '@superone/shared/schema-form'
+import type { AgentEvent } from '@superone/shared/agent-types'
 
 const mockSetActiveWorktree = vi.fn()
 const mockWorktreeState: {
@@ -192,7 +193,12 @@ describe('sendMessageImpl: remote node', () => {
 
     const proj = useChatStore.getState().projectSessions[remotePath]
     expect(proj._activeSessionId).toBe('node-sid-1')
-    const sess = proj._sessions['node-sid-1']
+    // The turn settles on the session's own stream, not from the send's reply.
+    const turn = { projectPath: remotePath, sessionId: 'node-sid-1' }
+    useChatStore.getState().handleAgentEvent({ ...turn, type: 'message_start', message: { id: 'a1', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'claude' } } as AgentEvent)
+    useChatStore.getState().handleAgentEvent({ ...turn, type: 'message_complete', messageId: 'a1' } as AgentEvent)
+    useChatStore.getState().handleAgentEvent({ ...turn, type: 'status_change', status: 'idle' } as AgentEvent)
+    const sess = useChatStore.getState().projectSessions[remotePath]._sessions['node-sid-1']
     expect(sess.awaitingAssistantReply).toBe(false)
     expect(sess.status).toBe('idle')
   })

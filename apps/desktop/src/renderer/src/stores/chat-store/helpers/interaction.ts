@@ -34,7 +34,6 @@ import {
   updateProjectState,
 } from './store-helpers'
 import type { ChatStore, PerSessionState, SessionWriteTarget } from '../types'
-import type { NodeSessionSnapshot } from '@/lib/remote-session-messages'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 
 /** In-flight remote answer/dismiss keys: projectPath\0sessionId\0requestId */
@@ -71,137 +70,6 @@ function withProjectPendingFlag(
   }
 }
 
-/**
- * Apply a node snapshot to a *specific* remote session (not whatever is active).
- * No-ops if the project/session was removed while the RPC was in flight.
- */
-function applyRemoteQuestionSnapshot(
-  set: ChatStoreSet,
-  projectPath: string,
-  targetSid: string,
-  nodeSnap: NodeSessionSnapshot | null,
-  codexQaItem: ReturnType<typeof _buildQuestionAnswerItem> | null,
-  remoteMsgs: typeof import('@/lib/remote-session-messages'),
-): void {
-  set((s) => {
-    const proj = s.projectSessions[projectPath]
-    if (!proj?._sessions[targetSid]) return {}
-    const pendingFields = remoteMsgs.nodePendingInteractionFields(nodeSnap?.pendingInteraction, nodeSnap?.pendingInputRequests)
-    const stillLive =
-      pendingFields.awaitingAssistantReply || nodeSnap?.status === 'streaming'
-    const partial = updatePerSession(s, projectPath, targetSid, (sess) => {
-      let messages = sess.messages
-      if (codexQaItem) {
-        const lastIdx = messages.length - 1
-        const lastMsg = messages[lastIdx]
-        if (lastMsg?.metadata?.codex) {
-          const prevCodex = lastMsg.metadata.codex
-          messages = messages.map((msg, i) =>
-            i !== lastIdx
-              ? msg
-              : {
-                  ...msg,
-                  metadata: {
-                    ...msg.metadata,
-                    codex: { ...prevCodex, items: [...prevCodex.items, codexQaItem] },
-                  },
-                },
-          )
-        }
-      }
-      return {
-        messages,
-        awaitingAssistantReply: stillLive,
-        status: stillLive
-          ? 'streaming'
-          : remoteMsgs.nodeStatusToAgentStatus(nodeSnap?.status),
-        pendingPermissions: pendingFields.pendingPermissions,
-        pendingQuestion: pendingFields.pendingQuestion,
-        pendingPlanApproval: pendingFields.pendingPlanApproval,
-        ...(nodeSnap?.title ? { _title: nodeSnap.title } : {}),
-      }
-    })
-    return withProjectPendingFlag(s, projectPath, partial)
-  })
-}
-
-/** Clear pendingQuestion only if it still matches the answered requestId. */
-function clearMatchingPendingQuestion(
-  set: ChatStoreSet,
-  projectPath: string,
-  targetSid: string,
-  requestId: string,
-  codexQaItem: ReturnType<typeof _buildQuestionAnswerItem> | null,
-): void {
-  set((s) => {
-    const sess = s.projectSessions[projectPath]?._sessions[targetSid]
-    if (!sess || sess.pendingQuestion?.requestId !== requestId) return {}
-    const partial = updatePerSession(s, projectPath, targetSid, (prev) => {
-      if (!codexQaItem) return { pendingQuestion: null }
-      const lastMsg = prev.messages[prev.messages.length - 1]
-      if (!lastMsg?.metadata?.codex) return { pendingQuestion: null }
-      const prevCodex = lastMsg.metadata.codex
-      return {
-        pendingQuestion: null,
-        messages: prev.messages.map((msg, i) =>
-          i !== prev.messages.length - 1
-            ? msg
-            : {
-                ...msg,
-                metadata: {
-                  ...msg.metadata,
-                  codex: { ...prevCodex, items: [...prevCodex.items, codexQaItem] },
-                },
-              },
-        ),
-      }
-    })
-    return withProjectPendingFlag(s, projectPath, partial)
-  })
-}
-
-/**
- * After respond RPC reject or hydrate failure: re-fetch node state.
- * - If the answered question is still pending on the node → keep local prompt (true fail).
- * - If the node moved on (or hydrate failed after ACK) → apply snapshot / clear matching pending.
- */
-async function recoverRemoteQuestionState(
-  set: ChatStoreSet,
-  projectPath: string,
-  connectionId: string,
-  targetSid: string,
-  answeredRequestId: string,
-  codexQaItem: ReturnType<typeof _buildQuestionAnswerItem> | null,
-  mode: 'after_reject' | 'after_success',
-): Promise<void> {
-  try {
-    const remoteMsgs = await import('@/lib/remote-session-messages')
-    const nodeSnap = (await window.environment.getSession(
-      connectionId,
-      targetSid,
-    )) as NodeSessionSnapshot | null
-    if (!nodeSnap) {
-      if (mode === 'after_success') {
-        clearMatchingPendingQuestion(set, projectPath, targetSid, answeredRequestId, codexQaItem)
-      }
-      return
-    }
-    const stillSameQuestion =
-      nodeSnap.pendingInteraction?.kind === 'question' &&
-      nodeSnap.pendingInteraction.interactionId === answeredRequestId
-    if (mode === 'after_reject' && stillSameQuestion) {
-      // Node still waiting on this interaction — leave local pendingQuestion intact.
-      return
-    }
-    applyRemoteQuestionSnapshot(set, projectPath, targetSid, nodeSnap, codexQaItem, remoteMsgs)
-  } catch (err) {
-    console.warn('[chat] remote question recover failed:', err)
-    if (mode === 'after_success') {
-      clearMatchingPendingQuestion(set, projectPath, targetSid, answeredRequestId, codexQaItem)
-    }
-  }
-}
-
 export async function respondToPermissionImpl(
   set: ChatStoreSet,
   get: () => ChatStore,
@@ -234,51 +102,15 @@ export async function respondToPermissionImpl(
     if (remote && targetSid) {
       const decisionValue: 'allow' | 'deny' | 'allow_always' =
         decision === 'cancel' ? 'deny' : alwaysAllow ? 'allow_always' : allow ? 'allow' : 'deny'
-      // continueDrain joins (or, after a reload, re-owns) the session's event drain
-      // so tool_use blocks after allow keep streaming.
       // formAnswers carries multi-launch edits (session_agents_confirm).
-      const response = window.environment
-        .respondSessionPermission(remote.connectionId, {
-          sessionId: targetSid,
-          interactionId: requestId,
-          decision: decisionValue,
-          ...(formAnswers ? { formAnswers } : {}),
-          ...(decision === 'cancel' ? { cancel: true } : {}),
-          continueDrain: {
-            projectPath: activeProject,
-            providerId: session.sessionProvider || undefined,
-          },
-        })
-        .then(async (snap) => {
-          try {
-            const remoteMsgs = await import('@/lib/remote-session-messages')
-            const nodeSnap = (snap ??
-              (await window.environment.getSession(
-                remote.connectionId,
-                targetSid,
-              ))) as NodeSessionSnapshot | null
-            const pendingFields = remoteMsgs.nodePendingInteractionFields(
-              nodeSnap?.pendingInteraction,
-              nodeSnap?.pendingInputRequests,
-            )
-            const stillLive =
-              pendingFields.awaitingAssistantReply || nodeSnap?.status === 'streaming'
-            set((s) => owner && !s.projectSessions[owner.projectPath]?._sessions[owner.sessionId] ? {} :
-              commitPerSession(s, owner, () => ({
-                awaitingAssistantReply: stillLive,
-                status: stillLive
-                  ? 'streaming'
-                  : remoteMsgs.nodeStatusToAgentStatus(nodeSnap?.status),
-                pendingPermissions: pendingFields.pendingPermissions,
-                pendingQuestion: pendingFields.pendingQuestion,
-                pendingPlanApproval: pendingFields.pendingPlanApproval,
-                ...(nodeSnap?.title ? { _title: nodeSnap.title } : {}),
-              })),
-            )
-          } catch (err) {
-            console.warn('[chat] remote permission post-respond hydrate failed:', err)
-          }
-        })
+      // The rest of the turn reaches the chat on the session's own stream.
+      const response = window.environment.respondSessionPermission(remote.connectionId, {
+        sessionId: targetSid,
+        interactionId: requestId,
+        decision: decisionValue,
+        ...(formAnswers ? { formAnswers } : {}),
+        ...(decision === 'cancel' ? { cancel: true } : {}),
+      })
       if (respondedRequest.requestKind === 'input_request') await response
       else void response.catch(error => { console.warn('[chat] remote permission response failed:', error) })
       handled = true
@@ -355,38 +187,28 @@ export async function setPermissionModeImpl(
 }
 
 /**
- * After a remote question respond/dismiss ACK, merge the node snapshot into the
- * session that answered (explicit projectPath + targetSid — not active focus).
- * Hydrate fields match the remote permission *success* path; unlike permission,
- * we do not clear pending until ACK (issue #21).
+ * Answer a node question. The prompt stays until the node acknowledges
+ * (issue #21): a rejected answer leaves it to retry, and a question the node
+ * resolved some other way is cleared by its own `interaction_resolved` event.
  */
-async function hydrateAfterRemoteQuestionRespond(
+function respondRemoteQuestion(
   set: ChatStoreSet,
-  projectPath: string,
   connectionId: string,
-  targetSid: string,
-  answeredRequestId: string,
-  snap: unknown,
-  codexQaItem: ReturnType<typeof _buildQuestionAnswerItem> | null = null,
-): Promise<void> {
-  try {
-    const remoteMsgs = await import('@/lib/remote-session-messages')
-    const nodeSnap = (snap ??
-      (await window.environment.getSession(connectionId, targetSid))) as NodeSessionSnapshot | null
-    applyRemoteQuestionSnapshot(set, projectPath, targetSid, nodeSnap, codexQaItem, remoteMsgs)
-  } catch (err) {
-    console.warn('[chat] remote question post-respond hydrate failed:', err)
-    // RPC already succeeded — do not leave a stuck prompt inviting a doomed retry.
-    await recoverRemoteQuestionState(
-      set,
-      projectPath,
-      connectionId,
-      targetSid,
-      answeredRequestId,
-      codexQaItem,
-      'after_success',
-    )
-  }
+  owner: SessionWriteTarget,
+  requestId: string,
+  answers: unknown,
+  codexQaItem: ReturnType<typeof _buildQuestionAnswerItem> | null,
+): void {
+  const flightKey = remoteQuestionFlightKey(owner.projectPath, owner.sessionId, requestId)
+  if (remoteQuestionInFlight.has(flightKey)) return
+  remoteQuestionInFlight.add(flightKey)
+  void window.environment
+    .respondSessionQuestion(connectionId, { sessionId: owner.sessionId, interactionId: requestId, answers })
+    .then(() => {
+      clearLocalPendingQuestion(set, owner.projectPath, codexQaItem, owner)
+    })
+    .catch((err) => console.warn('[chat] remote question response failed:', err))
+    .finally(() => remoteQuestionInFlight.delete(flightKey))
 }
 
 function clearLocalPendingQuestion(
@@ -396,6 +218,8 @@ function clearLocalPendingQuestion(
   target?: SessionWriteTarget,
 ): void {
   set((s) => {
+    // Answered asynchronously: the session may be gone by now.
+    if (target && !s.projectSessions[target.projectPath]?._sessions[target.sessionId]) return {}
     const partial = commitPerSession(s, target, (prev) => {
       if (!codexQaItem) return { pendingQuestion: null }
       const lastMsg = prev.messages[prev.messages.length - 1]
@@ -439,47 +263,7 @@ export function answerQuestionImpl(
   if (targetSid) {
     const remote = parseRemoteProjectKey(activeProject)
     if (remote) {
-      // Do not clear pendingQuestion until the node ACK succeeds (issue #21).
-      // continueDrain joins the session's event drain only after both lease + respond win.
-      const flightKey = remoteQuestionFlightKey(activeProject, targetSid, requestId)
-      if (remoteQuestionInFlight.has(flightKey)) return
-      remoteQuestionInFlight.add(flightKey)
-      void window.environment
-        .respondSessionQuestion(remote.connectionId, {
-          sessionId: targetSid,
-          interactionId: requestId,
-          answers: { answers, annotations },
-          continueDrain: {
-            projectPath: activeProject,
-            providerId: session.sessionProvider || undefined,
-          },
-        })
-        .then((snap) =>
-          hydrateAfterRemoteQuestionRespond(
-            set,
-            activeProject,
-            remote.connectionId,
-            targetSid,
-            requestId,
-            snap,
-            codexQaItem,
-          ),
-        )
-        .catch(async (err) => {
-          console.warn('[chat] remote answerQuestion failed:', err)
-          await recoverRemoteQuestionState(
-            set,
-            activeProject,
-            remote.connectionId,
-            targetSid,
-            requestId,
-            codexQaItem,
-            'after_reject',
-          )
-        })
-        .finally(() => {
-          remoteQuestionInFlight.delete(flightKey)
-        })
+      respondRemoteQuestion(set, remote.connectionId, { projectPath: activeProject, sessionId: targetSid }, requestId, { answers, annotations }, codexQaItem)
       return
     }
     void window.agent.answerQuestion(targetSid, requestId, answers, annotations)
@@ -501,45 +285,7 @@ export function dismissQuestionImpl(
     const remote = parseRemoteProjectKey(activeProject)
     if (remote) {
       // Node has no dedicated dismiss — empty answers unblock the waiter.
-      // Same ACK-before-clear contract as answerQuestion (issue #21).
-      const flightKey = remoteQuestionFlightKey(activeProject, targetSid, requestId)
-      if (remoteQuestionInFlight.has(flightKey)) return
-      remoteQuestionInFlight.add(flightKey)
-      void window.environment
-        .respondSessionQuestion(remote.connectionId, {
-          sessionId: targetSid,
-          interactionId: requestId,
-          answers: {},
-          continueDrain: {
-            projectPath: activeProject,
-            providerId: session.sessionProvider || undefined,
-          },
-        })
-        .then((snap) =>
-          hydrateAfterRemoteQuestionRespond(
-            set,
-            activeProject,
-            remote.connectionId,
-            targetSid,
-            requestId,
-            snap,
-          ),
-        )
-        .catch(async (err) => {
-          console.warn('[chat] remote dismissQuestion failed:', err)
-          await recoverRemoteQuestionState(
-            set,
-            activeProject,
-            remote.connectionId,
-            targetSid,
-            requestId,
-            null,
-            'after_reject',
-          )
-        })
-        .finally(() => {
-          remoteQuestionInFlight.delete(flightKey)
-        })
+      respondRemoteQuestion(set, remote.connectionId, { projectPath: activeProject, sessionId: targetSid }, requestId, {}, null)
       return
     }
     void window.agent.dismissQuestion(targetSid, requestId)
@@ -566,10 +312,6 @@ export function respondToPlanApprovalImpl(
         interactionId: requestId,
         decision: approved ? 'approve' : 'reject',
         options: feedback ? { feedback } : undefined,
-        continueDrain: {
-          projectPath: activeProject,
-          providerId: session.sessionProvider || undefined,
-        },
       })
     } else {
       window.agent.respondToPlanApproval(targetSid, requestId, approved, feedback)

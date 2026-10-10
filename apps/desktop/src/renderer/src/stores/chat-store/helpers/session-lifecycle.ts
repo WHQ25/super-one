@@ -376,38 +376,16 @@ export async function interruptImpl(
   if (!activeProject) return
   set((s) => commitPerSession(s, target, () => ({ awaitingAssistantReply: false })))
 
-  // Remote node session: EnvironmentHost → CLI session.interrupt
+  // A remote node's turnInterrupted arrives on the session's stream like a local backend's.
   const remote = parseRemoteProjectKey(activeProject)
-  if (remote && sid) {
-    try {
-      await window.environment.interruptSession(remote.connectionId, sid)
-    } catch {
-      /* fall through to idle reset */
-    }
-    // Short drain so turnInterrupted / status events still reach the store
-    // (local interrupt also relies on backend status events).
-    try {
-      await window.environment.resumeRemoteSessionEvents(remote.connectionId, {
-        sessionId: sid,
-        projectPath: activeProject,
-        timeoutMs: 3_000,
-      })
-    } catch {
-      /* ignore */
-    }
-    set((s) => commitPerSession(s, target, () => ({
-      status: 'idle',
-      awaitingAssistantReply: false,
-      pendingPermissions: [],
-      pendingQuestion: null,
-      pendingPlanApproval: null,
-    })))
-    return
-  }
-
   let interrupted = false
   try {
-    interrupted = sid ? await window.agent.interrupt(sid) : false
+    if (remote && sid) {
+      await window.environment.interruptSession(remote.connectionId, sid)
+      interrupted = true
+    } else {
+      interrupted = sid ? await window.agent.interrupt(sid) : false
+    }
   } catch {
     interrupted = false
   }

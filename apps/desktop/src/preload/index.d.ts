@@ -1241,26 +1241,16 @@ export interface EnvironmentAPI extends MediaComposerAPI {
       decision: 'allow' | 'deny' | 'allow_always'
       formAnswers?: Record<string, unknown>
       cancel?: boolean
-      continueDrain?: {
-        projectPath?: string
-        providerId?: string
-        timeoutMs?: number
-      }
     },
-  ): Promise<unknown>
+  ): Promise<void>
   respondSessionQuestion(
     connectionId: string,
     input: {
       sessionId: string
       interactionId: string
       answers: unknown
-      continueDrain?: {
-        projectPath?: string
-        providerId?: string
-        timeoutMs?: number
-      }
     },
-  ): Promise<unknown>
+  ): Promise<void>
   respondSessionPlan(
     connectionId: string,
     input: {
@@ -1268,13 +1258,8 @@ export interface EnvironmentAPI extends MediaComposerAPI {
       interactionId: string
       decision: 'approve' | 'reject'
       options?: Record<string, unknown>
-      continueDrain?: {
-        projectPath?: string
-        providerId?: string
-        timeoutMs?: number
-      }
     },
-  ): Promise<unknown>
+  ): Promise<void>
   /** Resume live event drain for a still-streaming remote session. */
   resumeRemoteSessionEvents(
     connectionId: string,

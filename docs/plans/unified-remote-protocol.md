@@ -1,6 +1,6 @@
 # Unified remote protocol
 
-Status: in progress · Updated: 2026-10-10 (step 6 next)
+Status: in progress · Updated: 2026-10-11 (step 6 in progress)
 Goal: One backend serves its own window, controller desktops and phones through one topic/connection core, one per-connection delivery policy and one protocol; every existing phone feature runs on it.
 Proposal: [unified-remote-protocol.md](../proposals/unified-remote-protocol.md)
 Long-term docs affected: [mobile-remote-control.md](../architecture/mobile-remote-control.md), [remote-node-service.md](../architecture/remote-node-service.md), [chat-core.md](../architecture/chat-core.md), [relay-crypto.md](../architecture/relay-crypto.md) (framing), `apps/desktop/docs/agent-reference/architecture.md`, `apps/desktop/CLAUDE.md` (session control boundary), `apps/mobile/docs/agent-reference/transport.md`
@@ -8,8 +8,7 @@ Long-term docs affected: [mobile-remote-control.md](../architecture/mobile-remot
 Scope is proposal phases 1–4. Poll-to-push for terminals and watched
 directories, Git/workspace parity on the desktop node, configuration families
 and features the phone does not have today are phase 5 and get their own plan.
-This plan absorbs [mobile-desktop-compatibility.md](mobile-desktop-compatibility.md)
-(deleted in step 6).
+This plan absorbs the former mobile-desktop-compatibility plan (deleted in step 6).
 
 ## Starting point (verified 2026-10-10)
 
@@ -167,8 +166,8 @@ layer.
   Terminal acquire gains `delegate`/`yields`. Window and phone actors come
   from the authenticated client and pairing. IPC, phone and controller
   mutations are fenced.
-- Phone client speaks the protocol, reusing `RpcInbox` pending and chunk
-  handling. `RemoteCommand` phone commands, `environment_command` and
+- Phone client speaks the protocol, reusing `RpcInbox` for pending receipts
+  and native wire decoding for bounded fragments. `RemoteCommand` phone commands, `environment_command` and
   `handleRemoteCommand` are removed; `mcp-apps/executor.ts` calls the new
   methods.
 - Minimum desktop version: an older or unreported host gets upgrade-required;
@@ -214,11 +213,11 @@ through the desktop today (`environment-commands.ts`), by envelope
 | `dequeue_message`, `steer_queued_message` | **`session.dequeue`**, **`session.steer`** | |
 | `subscribe_session`, `unsubscribe_session`, `leave_session` | `session.load` + `topic.subscribe` / `topic.update`, `session.acquireControl` / `session.releaseControl` | yes |
 | `subscribe_detail`, `unsubscribe_detail` | `session.subscribeDetail`, `session.unsubscribeDetail` | yes |
-| `load_session_messages`, `get_session_history_index` | `session.load` (`before`), **`session.historyIndex`** | yes |
+| `load_session_messages`, `get_session_history_index` | `session.load` (`before` or `anchorId`/`direction`), **`session.historyIndex`** | yes |
 | `get_session_state` | `session.load` | yes |
 | `get_attachment` | **`session.attachment`** | |
 | `mod_ui_request` | `session.modUi` | |
-| `mcp_app_request` | `mcpApps.*` | |
+| `mcp_app_request` | **`mcpApps.request`** (frontend View operations) | |
 | `list_sessions`, `list_pinned_sessions`, `find_session`, `search_sessions`, `list_session_activity` | **`sessionList.page`**, **`sessionList.pinned`**, **`sessionList.find`**, **`sessionList.search`**, **`session.activity`** (the sidebar's projections) | |
 | `pin_session`, `archive_session`, `delete_session`, `fork_session` | `session.setUiFlags`, **`session.setArchived`**, `session.remove`, `session.fork` | |
 | `session_link_identity`, `session_link_metadata`, `session_link_resolve` | **`environment.list`**, **`session.linkMetadata`**, **`session.linkResolve`** | |
@@ -337,7 +336,234 @@ the CLI's `harness.resources`, so those handlers stay with the CLI.
   changes stay refused until step 6. Contract suite:
   `node-host/phone-contract/*.contract.test.ts`. Not wired to live phone
   links until step 6.
+- Step 6 (in progress): terminals now use the domain's `ControlLeaseService`;
+  `TerminalOwnership` removed. `TerminalLease` derives the writer from the
+  authority and retains watchers only. Terminal RPC acquire carries
+  `delegate`/`yields`; `bindControlActor` binds a phone to its authenticated
+  pairing, refusing payload impersonation. Terminal IPC is extracted into
+  `terminal-ipc.ts` and fences write, resize and kill by the sender window;
+  explicit reclaim revokes the previous grant. Lease renewal preserves the
+  delegate; expiry updates observers. Attach snapshots and pushed control
+  hints describe the asking device. The endpoint's terminal writes are now
+  served, although live phone links still use the old application protocol.
+  `phone-contract/terminals.contract.test.ts` exercises two phones and a
+  window over both LAN and relay endpoint policies, including forged delegate,
+  stale write, takeover, renewal, release and kill. Remaining: phone client/link cut-over and
+  old command removal, minimum-version floor and release ordering, live
+  pairing/device/lab acceptance, wire-baseline comparison and step 7 docs.
+  Verification of the terminal migration: desktop targeted checks (terminal
+  lifecycle, tools, phone topics, endpoint terminal/session/desktop-method
+  contracts and AgentService) 227 passed, 21 existing skips; runtime lease,
+  dispatcher and topic-stream checks 35 passed; desktop node and runtime
+  typechecks passed. The old-wire budget gate is still unresolved:
+  `mermaid-latex` live is 19,456 bytes against 19,416, with the same 25
+  frames and decoded-event digest. It reproduces with the HEAD baseline test
+  and HEAD PhoneTopics in an isolated temporary copy. The immutable step-0
+  budget has not been raised; investigate and verify it again through the
+  actual protocol phone sender during cut-over. No live phone/device or
+  two-machine acceptance has been performed for this migration.
 
 ## Open decisions
 
 None.
+
+- 2026-10-10: Step 6 session migration and local gateway wiring are in place.
+  `SessionLease` uses the domain service, bound before controller adoption to
+  every live/resumed Session. Legacy owner APIs now derive their view from
+  the lease; their removal still belongs to the old phone dispatcher cut-over.
+  Session mutations validate authenticated IPC/phone/RPC scopes. Exact proofs
+  survive awaits; sends revalidate after admission waits and backend startup.
+  Controller operations no longer claim/release a separate Session owner.
+  LocalSessionHost serves fenced create/send/settings/metadata/lifetime and
+  interaction operations. Local gateways use InProcessRpcClient and the same
+  resource helpers and dispatcher as network clients. Phone endpoint contracts
+  cover two phones and a window over LAN/relay policies, stolen proofs,
+  delegation spoofing, renewal, expiry, takeover and initial create settings.
+  Verified: session/core/agent/node protocol checks 443 passed, 21 existing skips;
+  local/network gateway and endpoint checks 48 passed; runtime lease/dispatcher/
+  topics checks 35 passed. Desktop node and runtime typechecks passed. These are
+  automated contract checks; live phone switching, two-machine acceptance,
+  protocol cut-over, version floor, release, wire budget and step 7 remain.
+
+- 2026-10-10: Step 6 phone method coverage now includes fenced recap, Goal,
+  queued dequeue/steer and durable Codex async answers. Queued phone operations
+  use a common session queue and revalidate their admitted lease after waiting.
+  The shared settings parser retains native mode, agent preset and directory
+  selections; unsupported node settings fail before session creation or a
+  partial defaults write. Permission responses retain reasons and suggestions;
+  question responses retain dismissals and annotations; persisted Codex plan
+  approvals use `session.respondPlan`. Composer open/input-request, cancel and
+  outcome methods reuse the desktop form registry. Result collection is
+  frontend-bound and replayable by an idempotency receipt. Extension file,
+  template, settings and access writes require their corresponding write scopes.
+  `RpcInbox` moved to the Metro-safe shared layer; `RpcConnection` uses it instead
+  of a second pending-request map. The relay client temporarily re-exports it
+  while its old application commands await cut-over. A removed worktree remains
+  an internal host reaction, so it can stop a turn even when a different frontend
+  holds the lease. Verified: desktop session/agent/phone regressions 440 passed,
+  21 existing skips; later composer/input-request checks 35 passed; final phone,
+  node-server, resend and in-process client checks 29 passed; runtime settings,
+  dispatcher, interaction and queue checks 46 passed; shared RPC checks 9 passed;
+  relay inbox/client checks 18 passed. Desktop node, runtime and relay-client
+  typechecks passed. No live device or two-machine acceptance was performed.
+  Still required before the phone client can switch: full send-option parity,
+  fork and draft-control operations, restore/history facts, MCP Apps and the
+  client-scoped composer push binding. The actual phone link/client cut-over,
+  old dispatcher deletion, version floor/release ordering, immutable wire gate,
+  live acceptance and final documentation cleanup remain in the original scope.
+
+- 2026-10-10: Step 6 rich sends now retain priority, steering, agent/thread,
+  Codex permission/service/effort/collaboration selections and InputRequest
+  correlation. Unsupported selections fail before settings or history writes.
+  Native fork revalidates the source grant across worktree activation and harness
+  cloning, rolling back created worktrees on revocation. Draft open waits for the
+  editor flush, and an expired open receipt cannot replay an invalid draft lease.
+  `session.load` returns host restore facts, active-turn rows and reduced pending,
+  queued, todo, Goal and usage state at one cursor; bounded anchor pages share one
+  range parser. MCP Apps use `mcpApps.request`, authenticated target binding and
+  the native send queue, with the exact grant rechecked after provider readiness,
+  approval and queued waits. Desktop IPC queue, MCP App and provider actions carry
+  the window actor; queue wait takeover cannot silently reacquire control.
+  Verified: final desktop IPC/App/phone checks 210 passed, 21 existing skips;
+  added queue takeover regression 156 passed, 21 existing skips; earlier restore/
+  draft checks 184 passed, 21 existing skips; runtime restore checks 38 passed;
+  provider checks 22 passed; CLI MCP cancel/state checks 6 passed. Desktop node,
+  runtime and CLI typechecks passed. The actual phone transport/client cut-over,
+  client-scoped composer pushes, old dispatcher deletion, version floor/release,
+  immutable wire gate, live acceptance and final documentation cleanup remain.
+
+- 2026-10-11: Step 6 phone reads and mutations now use native RPCs for chat,
+  history/details, rich sends, questions/permissions/plans, settings, Goal,
+  recap, composer/widgets, MCP Apps, files/mentions, Git, project management,
+  diagnostics, usage and sidebar actions. Restore binds canonical project and
+  environment identities, validates the project of every bounded history page,
+  and seeds reduced state at the atomic cursor. A prepared session view has its
+  own feed; cancellation preserves the source grant and commit retires it.
+  Sidebar operations release temporary grants while a visible feed retains its
+  own grant. Terminal commands use native RPC and exact proofs; the output feed
+  subscribes before attaching, discards covered output, bounds pre-snapshot
+  buffering and resnapshots sequence gaps. Native terminal list/create resolve
+  the session checkout on the host; failed reads never create another PTY, kill
+  failures retain the tab, interrupted creates reuse their receipt key, and tab
+  disposal releases the grant and stream. The CLI terminal port now publishes
+  native output/control/exit events and returns full attach metadata. Verified:
+  latest native relay terminal/control checks 12 passed; mobile terminal/link
+  checks 21 passed; shared RPC/desktop terminal checks 10 passed; runtime
+  dispatch/topic checks 28 passed; encrypted session/terminal contracts 16
+  passed; real CLI PTY checks 4 passed. Desktop node, mobile, runtime, CLI and
+  relay-client typechecks passed at this checkpoint. Workspace background
+  topics, native routed RPC, deletion of old command/owner/broadcast adapters,
+  concrete version floor and upgrade UI, desktop-first release, the immutable
+  wire gate, live phone/two-machine acceptance and documentation cleanup remain
+  required. No live device or two-machine acceptance was performed.
+
+- 2026-10-11: Workspace topic subscriptions now share the desktop's existing
+  topic hub and bounded change logs. Native `topic` packets carry scoped
+  snapshots and independent versions; retained cursors replay changes and old
+  cursors receive fresh snapshots. Project/list/draft/environment subscriptions
+  enforce their own permissions and environment identity. Subscription dispatch
+  moved into a separate runtime module. The phone follows these topics outside
+  transcript buffering, applies project and draft snapshots, and invalidates
+  session pages. Draft snapshots preserve phone outbox edits and revoke missing
+  or transferred grants; late list receipts cannot overwrite newer pushed state.
+  Terminal list notices update matching tabs without feeding output twice.
+  Main no longer starts the old automatic phone broadcaster; a native channel
+  ignores old application events. The remaining mobile session-exit command
+  now retires native subscriptions and control. Replacement feed cancellation
+  cannot open a new stream after its owner left; session replacement retains
+  the new use before releasing the old use of the same grant. Verified: native
+  workspace/session/terminal feed checks 22 passed; encrypted workspace/session
+  contracts 12 passed; desktop topic/terminal checks 12 passed; runtime
+  dispatcher permission/cursor checks 28 passed; mobile draft/connection checks
+  19 passed; mobile exit/terminal/draft checks 24 passed; draft hook check 1
+  passed; upload transport matrix 6 passed. Mobile, desktop node, runtime, CLI
+  and relay-client typechecks passed during this checkpoint. Native routed RPC,
+  old dispatcher/owner/codec adapter deletion, the concrete version floor and
+  upgrade UI, desktop-first release, immutable wire gate, live acceptance and
+  final documentation cleanup remain in scope.
+
+- 2026-10-11: Native phone RPC now runs end to end over encrypted LAN and Relay
+  links, including routed node reads, streams and delegated control. Both
+  transports reject retired application-command frames. The mobile SDK no longer
+  exposes the old command API; it requires protocol 3, canonical environment
+  identity and desktop version `0.73.0-alpha.1` before opening the native channel.
+  The upgrade sheet has production stories and passing component tests; visual
+  review and publication remain. `RpcInbox` now owns receipts only; native wire
+  decoding owns bounded fragments. The immutable recordings gate passes through
+  the production encrypted endpoint and Expo decoder without changing the
+  baseline. A real native MCP App response also passes a 2 MiB fragmented-output
+  round trip. The desktop's old application dispatcher, renderer forwarding,
+  phone/terminal broadcasters and progressive bootstrap were deleted. File reads
+  use a typed host service retaining path authorization and device-bound transfer.
+  Local lease revocation now invalidates the SDK's exact proof immediately,
+  including revocation before an acquire receipt arrives. Verified: AgentService
+  and native session/Git contracts 97 passed with 4 existing skips; receipt checks
+  11 passed; native LAN/Relay, pairing and shutdown checks 96 passed; native
+  background interaction/workspace/composer checks 69 passed; SDK control/restore
+  checks 25 passed; upgrade component checks 3 passed. Desktop node and mobile
+  typechecks pass. The native codec benchmark completes. The routed command
+  adapter and legacy Session owner/subscriber model still require deletion with
+  native disconnect/takeover coverage. Remaining scope also includes dead codecs,
+  affected UI checks, desktop-first release, physical phone/two-machine/lab
+  acceptance and final documentation cleanup. The minimum desktop build has not
+  been published, and no live device acceptance has been performed.
+
+- 2026-10-11: The routed application-command adapter, legacy Session owner and
+  subscriber APIs, retired payload codecs and phone command types are deleted.
+  Native routed grants serialize admission and retirement at each resource;
+  overlapping LAN/Relay links share the same actor proof, and only the final
+  link retires it. Disconnect during admission releases the returned grant;
+  desktop kicks push exact-proof loss to all active holders. Renderer presence
+  and startup snapshots now derive from native control leases. A reconnecting
+  local phone watches a reused native proof even when acquire emits no change.
+  Real paired CLI acceptance now uses encrypted native phone links and SDK
+  recovery across a terminated node socket. Verified: session/native phone
+  contracts 450 passed; routed grants/router contracts 16 passed; AgentService,
+  routed contracts and real CLI acceptance 83 passed, 4 existing skips; renderer
+  control, encrypted link and frozen wire gate 320 passed. Native relay mailbox
+  delivery and draft outbox checks pass. Desktop node, renderer, mobile, runtime
+  and relay-client typechecks pass; corrected mobile Git fixtures pass (7 unit
+  and 4 hook cases). Remaining: upstream revocation forwarding, routed renderer
+  control projection, terminal adapter cleanup, affected UI/CI checks,
+  desktop-first alpha publication, physical pairing/lab acceptance and final
+  documentation cleanup. The minimum desktop build remains unpublished.
+
+- 2026-10-11: Upstream native proof loss is now delivered privately through
+  `ConnectionRpc`, the node client and routed-phone grant manager. Exact-proof
+  admission, expiry and disconnect rules are shared by local and routed phones;
+  a real paired CLI test revokes its authority and verifies SDK invalidation.
+  Routed renderer presence resolves source metadata without transcript bodies
+  and cannot apply stale async metadata over a newer grant. The terminal's
+  legacy claim/subscriber adapters and the last legacy restore-snapshot helper
+  are deleted. IPC responses and realtime/queue actions fence the addressed
+  Session rather than another Session active in the same project.
+- 2026-10-11: Full checks before the final draft-policy correction passed:
+  desktop 14,060 tests with 35 existing skips; runtime 775; CLI 399; relay 56;
+  mobile Vitest 1,070 plus native Jest 504; relay-client 156. Dependency-lock,
+  lint, all workspace typechecks and generated-icon checks passed. Old restore
+  and deferred-presenter test fixtures now use atomic native loads and scoped
+  detail clients. Production upgrade-sheet UI was checked on iOS simulators at
+  440 and 375 logical pixels, English/Chinese and dark/light, including dismiss,
+  busy and long-name retry states. Both simulators and the preview server were
+  released after checking. These are preview checks, not a live pairing.
+- 2026-10-11: The final audit found that the desktop's versioned workspace
+  notices bypassed relay draft-save throttling. Notice connections now receive
+  their actual delivery policy. Relay saves compact by draft over five seconds
+  and declare their `(afterVersion, cursor.version]` range; LAN is immediate,
+  lease/delete changes flush prior versions, and removal/disposal cancels saves.
+  Encrypted endpoint-to-SDK LAN/relay contracts and the frozen wire gate pass
+  (16 tests); SDK version-span recovery checks pass (13 tests), and desktop node
+  typechecking passes. Full release checks must be rerun on the committed tree.
+- 2026-10-11: The absorbed mobile-desktop-compatibility plan is deleted, and
+  long-term protocol, framing, restore, native control and transport manuals
+  describe the implemented contract. The desktop version floor remains
+  unpublished. Fresh EAS checks found build 35 already shipping the current
+  runtime on Android/internal and iOS/production, so both mobile updates are OTA.
+  Both isolated development desktops started from the current worktree, but
+  Electron Computer Use permission was denied before UI pairing acceptance;
+  their development services were then closed. A clarification is pending.
+  Remaining: authorized live A/B pairing and contention acceptance, the
+  desktop-first alpha release and subsequent mobile OTAs, published-artifact
+  verification, and deletion of this plan and its accepted proposal after
+  acceptance. This plan does not require two physical machines; its desktop
+  lab uses two isolated development profiles on the same Mac.

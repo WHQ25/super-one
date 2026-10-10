@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import type { RelayClient } from '@superone/relay-client'
-import type { RemoteCommand } from '@superone/shared/agent-types'
 import type { RemoteDirectoryEntry } from '../shell-state'
-import { randomId } from '../ids'
 
 /** Split a partly typed path into the folder to list and the prefix to filter by. */
 export function splitTypedPath(value: string): { parent: string; prefix: string } {
@@ -45,7 +43,7 @@ export function usePathAutocomplete(clientRef: RefObject<RelayClient | null>, va
     if (!client) return
     const request = ++generation.current
     setLoading(true)
-    void client.request({ type: 'list_directory', requestId: randomId(), path: parent, showHidden: true } as RemoteCommand)
+    void client.rpc('files.listDir', { path: parent, showHidden: true })
       .then((response) => {
         if (request !== generation.current) return
         const entries = (response as { items?: RemoteDirectoryEntry[] }).items ?? []

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { encodePlainMessage, WireDecoder, WireEncoder, WIRE_FRAGMENT_BYTES, WIRE_HISTORY_BYTES } from '@superone/shared/environment/wire'
 import { nodeWireCompression } from './wire-compression'
+import { frameRemotePayload } from '@superone/shared/remote-payload'
 
 const randomText = (chars: number) => Array.from({ length: Math.ceil(chars / 8) }, () => Math.random().toString(36).slice(2, 10)).join('')
 
@@ -11,10 +12,27 @@ describe('wire framing', () => {
     const [small] = encoder.encode({ a: 1 })
     expect(small![0]).toBe(0)
     const [large] = encoder.encode({ text: 'x'.repeat(5000) })
-    expect(large![0]).toBe(1)
+    expect(large![0]).toBe(4)
     expect(decoder.decode(small!)).toEqual({ a: 1 })
     expect(decoder.decode(large!)).toEqual({ text: 'x'.repeat(5000) })
+    const original = encodePlainMessage({ text: 'old raw deflate '.repeat(100) })
+    expect(decoder.decode(frameRemotePayload(original, nodeWireCompression.deflate(original)))).toEqual(JSON.parse(new TextDecoder().decode(original)))
     expect(decoder.decode(encodePlainMessage({ type: 'handshake' }))).toEqual({ type: 'handshake' })
+  })
+
+  it('decodes a schema-compressed reply before pending pushes and rejects an invalid advertised size', () => {
+    const encoder = new WireEncoder(nodeWireCompression)
+    const decoder = new WireDecoder(nodeWireCompression)
+    const push = encoder.encode({ type: 'stream', text: 'later '.repeat(200) }, { push: true })
+    const result = { type: 'rpc_result', requestId: 'r1', result: { messages: Array.from({ length: 8 }, (_, id) =>
+      ({ id, role: 'assistant', content: [{ type: 'text', text: 'content' }], status: 'complete' })), state: {}, before: null } }
+    const [reply] = encoder.encode(result)
+    expect(reply![0]).toBe(4)
+    expect(decoder.decode(reply!)).toEqual(result)
+    expect(decoder.decode(push[0]!)).toEqual({ type: 'stream', text: 'later '.repeat(200) })
+    const malformed = reply!.slice()
+    new DataView(malformed.buffer).setUint32(1, 1)
+    expect(() => new WireDecoder(nodeWireCompression).decode(malformed)).toThrow()
   })
 
   it('reassembles fragments that interleave with other messages', () => {

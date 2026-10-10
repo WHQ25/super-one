@@ -1,8 +1,6 @@
 import { useRef, useState, type RefObject } from 'react'
 import type { RelayClient } from '@superone/relay-client'
-import type { RemoteCommand } from '@superone/shared/agent-types'
 import type { RemoteDirectoryEntry } from '../shell-state'
-import { randomId } from '../ids'
 
 export function useRemoteDirectory(clientRef: RefObject<RelayClient | null>) {
   const [path, setPath] = useState('')
@@ -24,7 +22,7 @@ export function useRemoteDirectory(clientRef: RefObject<RelayClient | null>) {
       try {
         // Always on: a dotfile is a normal part of a repo (`.github`, `.claude`), and
         // hiding them by default made the browser disagree with what the agent sees.
-        const result = await client.request({ type: 'list_directory', requestId: randomId(), path: nextPath, showHidden: true } as RemoteCommand) as { items?: RemoteDirectoryEntry[]; error?: string }
+        const result = await client.rpc('files.listDir', { path: nextPath, showHidden: true }) as { items?: RemoteDirectoryEntry[]; error?: string }
         if (result.error) throw new Error(result.error)
         if (request !== generation.current || client !== clientRef.current) return false
         setItems(result.items ?? [])

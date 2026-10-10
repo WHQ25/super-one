@@ -6,14 +6,16 @@ import type { ChatRuntime } from '../runtime'
 import { useComposerSuggestions } from './use-composer-suggestions'
 import { preloadHarnessResources } from '../harness-resource-cache'
 
-type Command = { type: string }
+const resolveProject = async () => ({ environmentId: 'desk', projectId: 'p' })
+function catalogClient() { return { resolveProject, rpc: jest.fn(async (_method: string) => ({ userSlashCommands: [{ name: 'clear' }] })) } }
 
 /** Resolves `get_system_info` only when the test says so. */
 function deferredClient() {
   let release: (() => void) | undefined
   const client = {
-    request: jest.fn(async (command: Command) => {
-      if (command.type !== 'get_system_info') return {}
+    resolveProject,
+    rpc: jest.fn(async (method: string) => {
+      if (method !== 'harness.systemInfo') return {}
       await new Promise<void>((resolve) => { release = resolve })
       return { userSlashCommands: [{ name: 'clear' }, { name: 'compact' }] }
     }),
@@ -64,7 +66,7 @@ test('opens the overlay when the catalog lands after the user typed', async () =
 })
 
 test('loads a catalog with no session, for the new-session landing', async () => {
-  const client = { request: jest.fn(async () => ({ userSlashCommands: [{ name: 'clear' }] })) }
+  const client = catalogClient()
   const { result } = await mount(client)
   await act(async () => { result.current.update('/') })
   await waitFor(() => expect(result.current.slashCatalogStatus).toBe('ready'))
@@ -75,7 +77,7 @@ test('loads a catalog with no session, for the new-session landing', async () =>
 })
 
 test('reports a catalog the host could not answer for', async () => {
-  const client = { request: jest.fn(async () => { throw new Error('offline') }) }
+  const client = { resolveProject, rpc: jest.fn(async () => { throw new Error('offline') }) }
   const { result } = await mount(client)
   await act(async () => { result.current.update('/') })
   await waitFor(() => expect(result.current.slashCatalogStatus).toBe('error'))
@@ -99,7 +101,7 @@ test('keeps the catalog load and its failure off screen until a slash is typed',
 })
 
 test('dismissing hides the overlay until the next edit re-arms it', async () => {
-  const client = { request: jest.fn(async () => ({ userSlashCommands: [{ name: 'clear' }] })) }
+  const client = catalogClient()
   const { result } = await mount(client)
 
   await act(async () => { result.current.update('/c') })
@@ -113,9 +115,9 @@ test('dismissing hides the overlay until the next edit re-arms it', async () => 
 })
 
 test('a toolbar slash inserts at the caret and opens the overlay', async () => {
-  const client = { request: jest.fn(async () => ({ userSlashCommands: [{ name: 'clear' }] })) }
+  const client = catalogClient()
   const { result } = await mount(client)
-  await waitFor(() => expect(client.request).toHaveBeenCalled())
+  await waitFor(() => expect(client.rpc).toHaveBeenCalled())
 
   let value = ''
   await act(async () => { value = result.current.insertSnippet('/') })
@@ -125,7 +127,7 @@ test('a toolbar slash inserts at the caret and opens the overlay', async () => {
 })
 
 test('a draft the app rewrote does not re-open the overlay', async () => {
-  const client = { request: jest.fn(async () => ({ userSlashCommands: [{ name: 'clear' }] })) }
+  const client = catalogClient()
   const { result } = await mount(client)
 
   await act(async () => { result.current.update('/c') })
@@ -135,7 +137,7 @@ test('a draft the app rewrote does not re-open the overlay', async () => {
 })
 
 test('keeps matching once the draft grows a second line', async () => {
-  const client = { request: jest.fn(async () => ({ userSlashCommands: [{ name: 'clear' }] })) }
+  const client = catalogClient()
   const { result } = await mount(client)
 
   await act(async () => { result.current.update('/cl\nand the diff') })
@@ -144,14 +146,14 @@ test('keeps matching once the draft grows a second line', async () => {
 
 
 test('uses the connection-preloaded catalog without loading or another request', async () => {
-  const client = { request: jest.fn(async (_command: Command) => ({ userSlashCommands: [{ name: 'clear' }] })) }
+  const client = catalogClient()
   await preloadHarnessResources(client, '/work/app', ['claude'])
   const { result } = await mount(client)
   await act(async () => { result.current.update('/c') })
   expect(result.current.slashCatalogStatus).toBe('ready')
   expect(result.current.slashHits.map((command) => command.name)).toEqual(['clear'])
   // Only the two preloaded harness resources; the `@` catalog is its own request.
-  expect(client.request.mock.calls.filter(([command]) => command.type !== 'search_mentions')).toHaveLength(2)
+  expect(client.rpc.mock.calls.filter(([method]) => method.startsWith('harness.'))).toHaveLength(2)
 })
 
 const mentionCatalog = {
@@ -168,9 +170,9 @@ const mentionCatalog = {
 }
 
 function mentionClient() {
-  return { request: jest.fn(async (command: Command & { path?: string }): Promise<unknown> => {
-    if (command.type === 'search_mentions') return mentionCatalog
-    if (command.type === 'list_directory') return { items: command.path?.endsWith('/src')
+  return { resolveProject, rpc: jest.fn(async (method: string, payload: { path?: string } = {}, _options?: unknown): Promise<unknown> => {
+    if (method === 'workspace.searchMentions') return mentionCatalog
+    if (method === 'files.listDir') return { items: payload.path?.endsWith('/src')
       ? [{ name: 'nested.ts', isDirectory: false }]
       : [{ name: 'src', isDirectory: true }, { name: 'README.md', isDirectory: false }] }
     return {}
@@ -201,14 +203,14 @@ test.each(['typed', 'native', 'toolbar'])('loads collaborators and miniapps on t
 test('opens the first @ already matching the desktop, from the catalog fetched on connect', async () => {
   let answer: ((value: unknown) => void) | undefined
   const client = mentionClient()
-  const request = client.request.getMockImplementation()!
+  const rpc = client.rpc.getMockImplementation()!
   const { result } = await mount(client)
   await waitFor(() => expect(result.current.mentionRows).toEqual([]))
-  await waitFor(() => expect(client.request).toHaveBeenCalledWith(expect.objectContaining({ type: 'search_mentions', query: '' })))
+  await waitFor(() => expect(client.rpc).toHaveBeenCalledWith('workspace.searchMentions', expect.objectContaining({ query: '' }), { environmentId: 'desk' }))
 
   // The `@` search itself is still out; collaborators and switches are not waiting on it.
-  client.request.mockImplementation((command) => command.type === 'search_mentions'
-    ? new Promise((resolve) => { answer = resolve }) : request(command))
+  client.rpc.mockImplementation((method, payload, options) => method === 'workspace.searchMentions'
+    ? new Promise((resolve) => { answer = resolve }) : rpc(method, payload, options))
   await act(async () => { result.current.update('@') })
   const rows = result.current.mentionRows
   expect(rows.map((row) => row.item)).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'agent-profile', path: 'codex-review' })]))
@@ -239,7 +241,7 @@ test('loads the slash catalog once the link comes up', async () => {
   await act(async () => { result.current.update('/') })
   expect(result.current.slashCatalogStatus).toBe('loading')
 
-  clientRef.current = { request: jest.fn(async () => ({ userSlashCommands: [{ name: 'clear' }] })) } as unknown as RelayClient
+  clientRef.current = catalogClient() as unknown as RelayClient
   await rerender({ connected: true })
 
   await waitFor(() => expect(result.current.slashCatalogStatus).toBe('ready'))
@@ -272,7 +274,7 @@ test('loads the bare @ catalog through the active runtime and browses its worktr
   await act(async () => { result.current.update('@') })
   await waitFor(() => expect(result.current.mentionSearch.loading).toBe(false))
   expect(runtime.searchMentions).toHaveBeenCalledWith('', {})
-  expect(client.request).toHaveBeenCalledWith(expect.objectContaining({ type: 'list_directory', path: '/work/review-tree' }))
+  expect(client.rpc).toHaveBeenCalledWith('files.listDir', expect.objectContaining({ path: '/work/review-tree' }), { environmentId: 'desk' })
   expect(result.current.mentionRows.some((row) => row.item.path === 'board')).toBe(true)
 })
 
@@ -283,8 +285,8 @@ test('browses a nested directory without loading unrelated mention targets', asy
   await waitFor(() => expect(result.current.mentionSearch.loading).toBe(false))
   expect(result.current.mentionRows.map((row) => row.item.path)).toEqual(['src/nested.ts'])
   // The one search is the catalog fetched on connect, not one for this folder.
-  expect(client.request.mock.calls.filter(([command]) => command.type === 'search_mentions')).toEqual([
-    [expect.objectContaining({ query: '' })],
+  expect(client.rpc.mock.calls.filter(([method]) => method === 'workspace.searchMentions')).toEqual([
+    ['workspace.searchMentions', expect.objectContaining({ query: '' }), { environmentId: 'desk' }],
   ])
 })
 
@@ -301,10 +303,10 @@ test('restores collaborators and miniapps when a breadcrumb returns to the root'
 
 test('reports a failed root catalog and reloads it on retry', async () => {
   const client = mentionClient()
-  const request = client.request.getMockImplementation()!
+  const rpc = client.rpc.getMockImplementation()!
   let failed = true
-  client.request.mockImplementation(async (command) => command.type === 'search_mentions' && failed
-    ? { error: 'Host unavailable' } : request(command))
+  client.rpc.mockImplementation(async (method, payload, options) => method === 'workspace.searchMentions' && failed
+    ? { error: 'Host unavailable' } : rpc(method, payload, options))
   const { result } = await mount(client)
   await act(async () => { result.current.update('@') })
   await waitFor(() => expect(result.current.mentionSearch.error).toBe('Host unavailable'))

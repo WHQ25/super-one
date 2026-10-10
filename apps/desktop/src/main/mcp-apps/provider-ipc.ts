@@ -9,6 +9,7 @@ import { registerMcpAppDocumentIpc } from './document-ipc'
 import { registerMcpAppFileIpc } from './file-apps-ipc'
 import { registerMcpAppMentionIpc } from './mention-search-ipc'
 import { registerMcpFormResourceIpc } from './form-resources-ipc'
+import { windowControlIpc } from '../session/control-context'
 
 let registered = false
 
@@ -27,7 +28,7 @@ export async function routeMcpAppsProviderRequest(
     }
     const session = getSession(input.binding.session)
     if (!session?.getMcpAppsProvider) throw new McpAppsError('not_connected', 'MCP Apps session unavailable')
-    return dispatchMcpAppsProviderRequest(input, await session.getMcpAppsProvider(input.binding, input.origin), signal)
+    return dispatchMcpAppsProviderRequest(input, await session.getMcpAppsProvider(input.binding, input.origin), signal, () => session.lease.assertMutation())
   } catch (error) {
     if (options.propagateTransportErrors && (error as { transport?: boolean })?.transport === true) throw error
     return { ok: false, error: error instanceof McpAppsError ? error.toJSON() : { code: 'not_connected', message: error instanceof Error ? error.message : String(error) } }
@@ -37,14 +38,15 @@ export async function routeMcpAppsProviderRequest(
 export function registerMcpAppsProviderIpc(getSession: (id: string) => Session | null, resumeSession: (id: string) => Session): void {
   if (registered) return
   registered = true
+  const windowIpc = windowControlIpc(ipcMain)
   registerMcpAppDocumentIpc()
   registerMcpAppFileIpc(getSession, resumeSession)
   registerMcpAppMentionIpc(getSession, resumeSession)
   registerMcpFormResourceIpc(getSession)
-  ipcMain.handle(AgentIpcChannels.ENVIRONMENT_MCP_APPS_PROVIDER, (_event, connectionId: string, input: McpAppsProviderRpcRequest) =>
+  windowIpc.handle(AgentIpcChannels.ENVIRONMENT_MCP_APPS_PROVIDER, (_event, connectionId: string, input: McpAppsProviderRpcRequest) =>
     routeMcpAppsProviderRequest(getSession, connectionId, input))
 
-  ipcMain.handle(AgentIpcChannels.ENVIRONMENT_MCP_APPS_AUTHENTICATE, (_event, connectionId: string, target: { binding: McpAppsBinding; origin: McpAppOrigin }) =>
+  windowIpc.handle(AgentIpcChannels.ENVIRONMENT_MCP_APPS_AUTHENTICATE, (_event, connectionId: string, target: { binding: McpAppsBinding; origin: McpAppOrigin }) =>
     authenticateMcpApp({
       request: (op) => routeMcpAppsProviderRequest(getSession, connectionId, { ...op, binding: target.binding, origin: target.origin }),
       openUrl: (url) => shell.openExternal(url),

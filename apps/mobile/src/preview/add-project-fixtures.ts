@@ -1,4 +1,4 @@
-import type { GithubRepoHit, RemoteCommand } from '@superone/shared/agent-types'
+import type { GithubRepoHit } from '@superone/shared/agent-types'
 
 const HOME = '/Users/preview'
 
@@ -49,26 +49,26 @@ const SEARCH_HITS: GithubRepoHit[] = [
  * Offline stand-in for the paired desktop. Covers every command the add-project
  * flow issues, so each of its four steps is reachable in the preview shell.
  */
-export async function previewAddProjectRequest(command: RemoteCommand): Promise<unknown> {
-  if (command.type === 'browse_host_directory') {
-    const path = command.path.replace(/^~/, HOME).replace(/\/+$/, '') || HOME
+export async function previewAddProjectRequest(method: string, payload: Record<string, unknown> = {}): Promise<unknown> {
+  if (method === 'fs.listDir') {
+    const path = String(payload.path ?? '').replace(/^~/, HOME).replace(/\/+$/, '') || HOME
     const names = TREE[path]
     if (!names) return { error: `path not found: ${path}` }
     return { path, entries: names.map((name) => ({ name, path: `${path}/${name}` })) }
   }
-  if (command.type === 'search_github_repos') {
-    if (command.mode === 'mine') return { repos: MY_REPOS, hasMore: false }
-    if (command.mode === 'owner') {
-      return { repos: OWNER_REPOS[(command.value ?? '').toLowerCase()] ?? [] }
+  if (method === 'git.searchGithub') {
+    if (payload.mode === 'mine') return { repos: MY_REPOS, hasMore: false }
+    if (payload.mode === 'owner') {
+      return { repos: OWNER_REPOS[String(payload.value ?? '').toLowerCase()] ?? [] }
     }
     return { repos: SEARCH_HITS }
   }
-  if (command.type === 'get_default_clone_path') return { path: `${HOME}/Developer/Projects/` }
-  if (command.type === 'set_default_clone_path') return { success: true }
-  if (command.type === 'add_project') return { success: true }
-  if (command.type === 'clone_repository') {
-    const name = command.directoryName ?? 'cloned-repo'
-    return { path: `${command.parentPath.replace(/\/+$/, '')}/${name}`, name }
+  if (method === 'git.defaultClonePath') return { path: `${HOME}/Developer/Projects/` }
+  if (method === 'git.setDefaultClonePath') return { ok: true }
+  if (method === 'project.open') return { path: String(payload.path) }
+  if (method === 'git.clone') {
+    const name = payload.directoryName ?? 'cloned-repo'
+    return { path: `${String(payload.parentPath).replace(/\/+$/, '')}/${name}`, name }
   }
-  return { error: `preview has no fixture for ${command.type}` }
+  throw new Error(`preview has no fixture for ${method}`)
 }

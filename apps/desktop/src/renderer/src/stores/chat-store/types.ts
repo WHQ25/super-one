@@ -101,6 +101,7 @@ export interface MiniAppContextSlot {
 }
 
 export interface PerSessionState extends ChatCoreSession {
+  _controlLease?: import('@superone/shared/environment').ControlLease | null
   cwd: string
   _title: string | null
   messages: ChatMessage[]

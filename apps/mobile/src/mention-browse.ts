@@ -1,7 +1,5 @@
-import type { RelayClient } from '@superone/relay-client'
 import { LIST_FILES_EXCLUDED } from '@superone/shared/list-files-excluded'
-import type { RemoteCommand } from '@superone/shared/agent-types'
-import { randomId } from './ids'
+import { projectRpc, type ProjectRpcClient } from './project-rpc'
 import { resolveBrowsePath } from './mention-browse-state'
 import type { MentionItem } from './mentions'
 
@@ -57,17 +55,16 @@ export function browseItems(entries: BrowseEntry[], dir: string): MentionItem[] 
  * listing is at least never a wall of dependencies.
  */
 export async function requestDirectory(
-  client: Pick<RelayClient, 'request'>,
+  client: ProjectRpcClient,
+  projectPath: string,
   root: string,
   dir: string,
 ): Promise<BrowseResult> {
-  const reply = await client.request({
-    type: 'list_directory',
-    requestId: randomId(),
+  const reply = await projectRpc(client, projectPath, 'files.listDir', {
     path: resolveBrowsePath(root, dir),
     showHidden: true,
     ignoreMode: 'gitignore',
-  } as RemoteCommand) as ListDirectoryReply
+  }) as ListDirectoryReply
   if (typeof reply?.error === 'string' && reply.error) return { items: [], error: reply.error }
   const entries = parseEntries(reply?.items)
   const filtered = reply?.appliedIgnoreMode === 'gitignore'

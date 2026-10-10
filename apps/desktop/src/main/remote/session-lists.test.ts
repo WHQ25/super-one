@@ -9,12 +9,13 @@ vi.mock('../logger', () => ({ default: { debug: vi.fn(), info: vi.fn(), warn: vi
 import { deleteScheduledSend, deleteScheduledSendBySource, ensureScheduledSendsSchema, upsertScheduledSend } from '../db-scheduled-sends'
 import { watchSessionList } from '../session-list-watch'
 import { readRemoteSessionList } from './session-lists'
+import type { Session } from '../session/types'
 
 let db: Database.Database
 let unwatch = () => {}
 const changed: string[] = []
 const sendAt = Date.UTC(2026, 8, 15, 10)
-const projectList = () => readRemoteSessionList({ type: 'list_sessions', requestId: 'r', projectPath: '/repo' })
+const projectList = () => readRemoteSessionList({ kind: 'page', projectPath: '/repo' })
 
 beforeEach(() => {
   db = new Database(':memory:')
@@ -43,6 +44,16 @@ beforeEach(() => {
 afterEach(() => { unwatch(); db.close() })
 
 describe('mobile session list scheduled sends', () => {
+  it('reads the live model and activity rather than the stale stored defaults', () => {
+    db.prepare('UPDATE sessions SET selected_model = ? WHERE id = ?').run('old-model', 'one')
+    const live = { snapshot: { selectedModel: 'live-model' }, activityStatus: () => 'streaming' } as unknown as Session
+    const page = readRemoteSessionList({ kind: 'page', projectPath: '/repo' }, { getSession: id => id === 'one' ? live : null })
+    expect(page.sessions).toContainEqual(expect.objectContaining({ sessionId: 'one', selectedModel: 'live-model', status: 'streaming' }))
+    expect(page.sessions).toContainEqual(expect.objectContaining({ sessionId: 'two', status: 'idle' }))
+  })
+  it.each([-1, 0, 201, 1.5, NaN, Infinity])('rejects the unbounded page limit %s', limit => {
+    expect(() => readRemoteSessionList({ kind: 'page', projectPath: '/repo', limit })).toThrow('limit must be')
+  })
   it('refreshes the sidebar when a send is armed, retimed, disarmed and delivered', () => {
     upsertScheduledSend('one', { sendAt, armed: false, source: 'rate_limit' })
     expect(projectList().sessions[0].scheduledSendAt).toBeNull()
@@ -69,32 +80,32 @@ describe('mobile session list scheduled sends', () => {
   it('includes the same armed state in pinned and search results after reconnect', () => {
     upsertScheduledSend('one', { sendAt, armed: true })
     for (const command of [
-      { type: 'list_pinned_sessions', requestId: 'p' } as const,
-      { type: 'search_sessions', requestId: 's', query: 'review' } as const,
+      { kind: 'pinned' } as const,
+      { kind: 'search', query: 'review' } as const,
     ]) {
       expect(readRemoteSessionList(command).sessions).toEqual([
         expect.objectContaining({ sessionId: 'one', scheduledSendAt: sendAt, projectPath: '/repo' }),
       ])
     }
-    expect(readRemoteSessionList({ type: 'list_sessions', requestId: 'r', projectPath: '/repo', limit: 1, offset: 1 }))
+    expect(readRemoteSessionList({ kind: 'page', projectPath: '/repo', limit: 1, offset: 1 }))
       .toMatchObject({ totalCount: 2, sessions: [{ sessionId: 'two', scheduledSendAt: null }] })
   })
 
   it('pages an armed send in first, ahead of more recent sessions', () => {
     upsertScheduledSend('two', { sendAt, armed: true })
-    expect(readRemoteSessionList({ type: 'list_sessions', requestId: 'r', projectPath: '/repo', limit: 1 }))
+    expect(readRemoteSessionList({ kind: 'page', projectPath: '/repo', limit: 1 }))
       .toMatchObject({ totalCount: 2, sessions: [{ sessionId: 'two', scheduledSendAt: sendAt }] })
-    expect(readRemoteSessionList({ type: 'list_sessions', requestId: 'r', projectPath: '/repo', limit: 1, offset: 1 }).sessions)
+    expect(readRemoteSessionList({ kind: 'page', projectPath: '/repo', limit: 1, offset: 1 }).sessions)
       .toEqual([expect.objectContaining({ sessionId: 'one' })])
   })
 
   it('finds one session by id with its project, and nothing for a hidden or unknown id', () => {
-    expect(readRemoteSessionList({ type: 'find_session', requestId: 'f', sessionId: 'two' })).toEqual({
+    expect(readRemoteSessionList({ kind: 'find', sessionId: 'two' })).toEqual({
       session: expect.objectContaining({ sessionId: 'two', title: 'Other session', provider: 'claude', projectPath: '/repo', projectName: 'repo' }),
     })
     db.prepare('UPDATE sessions SET is_hidden = 1 WHERE id = ?').run('two')
-    expect(readRemoteSessionList({ type: 'find_session', requestId: 'f', sessionId: 'two' })).toEqual({ session: null })
-    expect(readRemoteSessionList({ type: 'find_session', requestId: 'f', sessionId: 'missing' })).toEqual({ session: null })
+    expect(readRemoteSessionList({ kind: 'find', sessionId: 'two' })).toEqual({ session: null })
+    expect(readRemoteSessionList({ kind: 'find', sessionId: 'missing' })).toEqual({ session: null })
   })
 
   it('only invalidates a source-scoped deletion when it removes an armed send', () => {

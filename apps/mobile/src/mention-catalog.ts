@@ -1,4 +1,3 @@
-import type { RelayClient } from '@superone/relay-client'
 import { parseGitAvailability, type GitMentionCapabilities } from './git-mention'
 import type { MentionSearchResult } from './mention-search'
 import { parseAgentMentionItems, type MentionItem } from './mentions'
@@ -10,7 +9,7 @@ export type MentionCatalog = {
   gitAvailability?: GitMentionCapabilities
 }
 
-type Client = Pick<RelayClient, 'request'>
+type Client = object
 
 /** Per connection, like the harness catalogs: a new device gets a new client. */
 const catalogs = new WeakMap<Client, Map<string, MentionCatalog>>()

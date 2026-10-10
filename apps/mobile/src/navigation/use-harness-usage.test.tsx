@@ -5,6 +5,7 @@ import type { RelayClient } from '@superone/relay-client'
 import type { RemoteUsage } from '@superone/shared/agent-types'
 import type { UsageTarget } from '../harness-usage'
 import { useComposerUsage, useHarnessUsage } from './use-harness-usage'
+import { resolveTestProject } from '../project-rpc.test-fixtures'
 
 const claude: UsageTarget = { projectPath: '/p', provider: 'claude', sessionId: 's1', apiProviderId: null, acpAgentId: null }
 
@@ -26,12 +27,12 @@ function renderUsage(client: RelayClient, initial: { target: UsageTarget | null;
 
 test('reads the meter for the credential on mount and again when a turn starts and ends', async () => {
   const request = jest.fn(async () => ({ usage: meter(Date.now()) }))
-  const client = { request } as unknown as RelayClient
+  const client = { rpc: request, resolveProject: resolveTestProject } as unknown as RelayClient
   const { result, rerender } = await renderUsage(client, { target: claude, streaming: false })
 
   await waitFor(() => expect(result.current.usage?.windows[0]?.label).toBe('5h'))
   expect(request).toHaveBeenCalledTimes(1)
-  expect(request).toHaveBeenCalledWith(expect.objectContaining({ type: 'get_usage', provider: 'claude', force: false }))
+  expect(request).toHaveBeenCalledWith('harness.usage', expect.objectContaining({ harnessId: 'claude', force: false }), { environmentId: 'desktop' })
 
   await rerender({ target: claude, streaming: true })
   await waitFor(() => expect(request).toHaveBeenCalledTimes(2))
@@ -43,7 +44,7 @@ test('keeps sampling a long-running turn and stops polling when it ends', async 
   jest.useFakeTimers()
   try {
     const request = jest.fn(async () => ({ usage: meter(Date.now()) }))
-    const { rerender, unmount } = await renderUsage({ request } as unknown as RelayClient, { target: claude, streaming: true })
+    const { rerender, unmount } = await renderUsage({ rpc: request, resolveProject: resolveTestProject } as unknown as RelayClient, { target: claude, streaming: true })
     expect(request).toHaveBeenCalledTimes(1)
     await act(async () => { jest.advanceTimersByTime(5 * 60_000) })
     expect(request).toHaveBeenCalledTimes(2)
@@ -59,7 +60,7 @@ test('keeps sampling a long-running turn and stops polling when it ends', async 
 
 test('switching sessions on the same credential keeps the reading; a new credential clears it', async () => {
   const request = jest.fn(async () => ({ usage: meter(Date.now()) }))
-  const client = { request } as unknown as RelayClient
+  const client = { rpc: request, resolveProject: resolveTestProject } as unknown as RelayClient
   const { result, rerender } = await renderUsage(client, { target: claude, streaming: false })
   await waitFor(() => expect(result.current.usage).not.toBeNull())
 
@@ -77,7 +78,7 @@ test('switching sessions on the same credential keeps the reading; a new credent
 
 test('refresh forces a host read only when the reading on screen is stale', async () => {
   const request = jest.fn(async () => ({ usage: meter(Date.now()) }))
-  const client = { request } as unknown as RelayClient
+  const client = { rpc: request, resolveProject: resolveTestProject } as unknown as RelayClient
   const { result } = await renderUsage(client, { target: claude, streaming: false })
   await waitFor(() => expect(result.current.usage).not.toBeNull())
 
@@ -88,28 +89,28 @@ test('refresh forces a host read only when the reading on screen is stale', asyn
 
 test('a stale reading makes refresh ask the host with force', async () => {
   const request = jest.fn(async () => ({ usage: meter(Date.now() - 6 * 60_000) }))
-  const client = { request } as unknown as RelayClient
+  const client = { rpc: request, resolveProject: resolveTestProject } as unknown as RelayClient
   const { result } = await renderUsage(client, { target: claude, streaming: false })
   await waitFor(() => expect(result.current.usage).not.toBeNull())
 
   await act(async () => { await result.current.refresh() })
   expect(request).toHaveBeenCalledTimes(2)
-  expect(request).toHaveBeenLastCalledWith(expect.objectContaining({ force: true }))
+  expect(request).toHaveBeenLastCalledWith('harness.usage', expect.objectContaining({ force: true }), { environmentId: 'desktop' })
   expect(result.current.refreshing).toBe(false)
 })
 
 test('no target means no request', async () => {
   const request = jest.fn(async () => ({ usage: meter(Date.now()) }))
-  const client = { request } as unknown as RelayClient
+  const client = { rpc: request, resolveProject: resolveTestProject } as unknown as RelayClient
   await renderUsage(client, { target: null, streaming: false })
   expect(request).not.toHaveBeenCalled()
 })
 
 test('returning to a credential shows its last reading at once while the host confirms it', async () => {
-  const request = jest.fn(async (command: { provider: string }) => ({
-    usage: meter(Date.now(), command.provider === 'codex' ? '7d' : '5h'),
+  const request = jest.fn(async (_method: string, payload: { harnessId: string }) => ({
+    usage: meter(Date.now(), payload.harnessId === 'codex' ? '7d' : '5h'),
   }))
-  const client = { request } as unknown as RelayClient
+  const client = { rpc: request, resolveProject: resolveTestProject } as unknown as RelayClient
   const { result, rerender } = await renderUsage(client, { target: claude, streaming: false })
   await waitFor(() => expect(result.current.usage?.windows[0]?.label).toBe('5h'))
 
@@ -127,7 +128,7 @@ test('returning to a credential shows its last reading at once while the host co
 
 test('the composer meter keeps its credential while an opened session waits for its catalog', async () => {
   const request = jest.fn(async () => ({ usage: meter(Date.now()) }))
-  const client = { request } as unknown as RelayClient
+  const client = { rpc: request, resolveProject: resolveTestProject } as unknown as RelayClient
   type Props = { sessionId: string; apiProviderId: string | null; catalogReady: boolean }
   const { result, rerender } = await renderHook(
     (props: Props) => {
@@ -139,7 +140,7 @@ test('the composer meter keeps its credential while an opened session waits for 
     { initialProps: { sessionId: 's1', apiProviderId: 'cred-a', catalogReady: true } },
   )
   await waitFor(() => expect(result.current.usage).not.toBeNull())
-  expect(request).toHaveBeenLastCalledWith(expect.objectContaining({ apiProviderId: 'cred-a' }))
+  expect(request).toHaveBeenLastCalledWith('harness.usage', expect.objectContaining({ apiProviderId: 'cred-a' }), { environmentId: 'desktop' })
 
   // Opening s2 blanks the selection until its catalog answers: not a change of credential.
   await rerender({ sessionId: 's2', apiProviderId: null, catalogReady: false })
@@ -153,5 +154,5 @@ test('the composer meter keeps its credential while an opened session waits for 
   // The catalog naming another credential is a real switch.
   await rerender({ sessionId: 's2', apiProviderId: 'cred-b', catalogReady: true })
   await waitFor(() => expect(request).toHaveBeenCalledTimes(2))
-  expect(request).toHaveBeenLastCalledWith(expect.objectContaining({ apiProviderId: 'cred-b' }))
+  expect(request).toHaveBeenLastCalledWith('harness.usage', expect.objectContaining({ apiProviderId: 'cred-b' }), { environmentId: 'desktop' })
 })

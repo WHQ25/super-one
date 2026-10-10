@@ -30,7 +30,9 @@ async function persistFork(
   worktreePath: string | null,
   gitBranch: string | null,
   rollback: () => Promise<void>,
+  assertControl: () => void,
 ): Promise<SessionForkResult> {
+  try { assertControl() } catch (error) { await rollback(); throw error }
   let newProviderSessionId: string
   try {
     newProviderSessionId = await harness.forkTranscript(
@@ -49,6 +51,7 @@ async function persistFork(
     return { ok: false, error: `Fork transcript failed: ${err instanceof Error ? err.message : String(err)}` }
   }
 
+  try { assertControl() } catch (error) { await rollback(); throw error }
   const newSessionId = randomUUID()
   try {
     forkSessionRecord({
@@ -80,6 +83,7 @@ async function forkToNewWorktree(
   ctx: ForkContext,
   sourceCwd: string,
   carryLocalChanges: boolean,
+  assertControl: () => void,
 ): Promise<SessionForkResult> {
   let worktreePath: string
   try {
@@ -97,7 +101,7 @@ async function forkToNewWorktree(
     }
   }
 
-  const result = await persistFork(record, harness, ctx, sourceCwd, worktreePath, worktreePath, null, rollback)
+  const result = await persistFork(record, harness, ctx, sourceCwd, worktreePath, worktreePath, null, rollback, assertControl)
   if (result.ok) log.info('[session-fork] forked %s → %s (worktree %s)', record.id, result.sessionId, worktreePath)
   return result
 }
@@ -112,8 +116,9 @@ async function forkToLocal(
   harness: Harness,
   ctx: ForkContext,
   sourceCwd: string,
+  assertControl: () => void,
 ): Promise<SessionForkResult> {
-  const result = await persistFork(record, harness, ctx, sourceCwd, sourceCwd, record.worktreePath, record.gitBranch, async () => {})
+  const result = await persistFork(record, harness, ctx, sourceCwd, sourceCwd, record.worktreePath, record.gitBranch, async () => {}, assertControl)
   if (result.ok) log.info('[session-fork] forked %s → %s (local %s)', record.id, result.sessionId, sourceCwd)
   return result
 }
@@ -130,7 +135,8 @@ async function forkToLocal(
  * needs a live `Session`. All harness-specific cloning lives behind
  * `Harness.forkTranscript`, so adding a harness touches only its registry entry.
  */
-export async function forkSession(req: SessionForkRequest): Promise<SessionForkResult> {
+export async function forkSession(req: SessionForkRequest, assertControl: () => void = () => {}): Promise<SessionForkResult> {
+  assertControl()
   const record = getSessionRecord(req.sessionId)
   if (!record) return { ok: false, error: 'Source session not found' }
   if (!record.providerSessionId) {
@@ -150,6 +156,6 @@ export async function forkSession(req: SessionForkRequest): Promise<SessionForkR
   const ctx: ForkContext = { messages, forkFromMessageId: req.forkFromMessageId }
 
   return (req.mode ?? 'worktree') === 'local'
-    ? forkToLocal(record, harness, ctx, sourceCwd)
-    : forkToNewWorktree(record, harness, ctx, sourceCwd, req.carryLocalChanges ?? true)
+    ? forkToLocal(record, harness, ctx, sourceCwd, assertControl)
+    : forkToNewWorktree(record, harness, ctx, sourceCwd, req.carryLocalChanges ?? true, assertControl)
 }

@@ -1,5 +1,5 @@
 import { networkLedger, networkMetricsEnabled } from './network-ledger'
-import { RelayClient, type HostLink, type MobileIdentity, type OpenSocket } from '@superone/relay-client'
+import { DesktopUpgradeRequiredError, RelayClient, RestoreRejectedError, type HostLink, type MobileIdentity, type OpenSocket } from '@superone/relay-client'
 import { ReconnectController, RECONNECT_DELAYS_MS, type ConnectionState } from './reconnect-controller'
 import type { ReconnectInfo } from './device-status'
 import type { LanAddress } from './device-discovery'
@@ -13,10 +13,14 @@ export type MobileRelayConnectionHooks = {
   /** Every batch on arrival, buffered or not; see `RelayClient`'s `onArrived`. */
   onArrived?: (events: unknown[]) => void
   onTerminal: (payload: unknown) => void
+  onControlLost?: NonNullable<ConstructorParameters<typeof RelayClient>[0]>['onControlLost']
+  onWorkspaceSnapshot?: NonNullable<ConstructorParameters<typeof RelayClient>[0]>['onWorkspaceSnapshot']
+  onWorkspaceRecovery?: NonNullable<ConstructorParameters<typeof RelayClient>[0]>['onWorkspaceRecovery']
   restore: (client: RelayClient) => Promise<number>
   currentEpoch: (client: RelayClient) => number
   onConnection: (state: ConnectionState, epoch: number) => void
   onStatus: (message: string) => void
+  onFatalError?: (error: Error) => void
   /** Backoff state for the device list's countdown; null once settled. */
   onReconnectInfo?: (info: ReconnectInfo) => void
   onShutdown: () => void
@@ -80,7 +84,8 @@ export function createMobileRelayConnection(hooks: MobileRelayConnectionHooks): 
     logConnection('state', { state, epoch, transport: client.transport })
     hooks.onConnection(state, epoch)
   }
-  const restore = () => hooks.restore(client)
+  const restore = async () => { await client.verifyHost(); return hooks.restore(client) }
+  const permanent = (error: unknown) => error instanceof DesktopUpgradeRequiredError || error instanceof RestoreRejectedError
   const peerRestoreWanted = () => !stopped && peerLost && peerPresent && client.connected && !reconnectController.isActive
   /**
    * Restores over the desktop's current channel until one restore completes on
@@ -107,6 +112,13 @@ export function createMobileRelayConnection(hooks: MobileRelayConnectionHooks): 
           return
         } catch (error) {
           if (generation !== channelGeneration || !peerRestoreWanted()) continue
+          if (permanent(error)) {
+            peerLost = false
+            report('offline', hooks.currentEpoch(client))
+            hooks.onStatus((error as Error).message)
+            hooks.onFatalError?.(error as Error)
+            return
+          }
           const delayMs = RECONNECT_DELAYS_MS[Math.min(failures++, RECONNECT_DELAYS_MS.length - 1)]
           const reason = error instanceof Error ? error.message : 'rehydrate failed'
           logConnection('restore retry', { transport: client.transport, reason, delayMs })
@@ -158,6 +170,11 @@ export function createMobileRelayConnection(hooks: MobileRelayConnectionHooks): 
           nextAtMs: Date.now() + delayMs,
         })
       },
+      shouldRetry: error => !permanent(error),
+      onFailure: error => {
+        hooks.onStatus(error instanceof Error ? error.message : String(error))
+        if (error instanceof Error) hooks.onFatalError?.(error)
+      },
     },
   )
 
@@ -166,6 +183,15 @@ export function createMobileRelayConnection(hooks: MobileRelayConnectionHooks): 
     onEvents: (events, epoch) => hooks.onEvents(events, epoch),
     onArrived: events => hooks.onArrived?.(events),
     onTerminal: payload => hooks.onTerminal(payload),
+    onControlLost: (resource, error) => hooks.onControlLost?.(resource, error),
+    onWorkspaceSnapshot: (topic, snapshot) => hooks.onWorkspaceSnapshot?.(topic, snapshot),
+    onWorkspaceRecovery: (topic, error) => hooks.onWorkspaceRecovery?.(topic, error),
+    onSessionRecovery: (_session, error) => {
+      if (error || stopped || !client.connected || reconnectController.isActive) return
+      peerLost = true
+      report('reconnecting', hooks.currentEpoch(client))
+      restorePeer()
+    },
     onShutdown: () => {
       stopped = true
       reconnectController.cancel()
@@ -207,8 +233,19 @@ export function createMobileRelayConnection(hooks: MobileRelayConnectionHooks): 
       handshakeSeen = true
       peerPresent = true
       channelGeneration += 1
-      if (!peerLost || reconnectController.isActive) return
+      if (reconnectController.isActive) return
+      if (!peerLost) { report('connected', hooks.currentEpoch(client)); return }
       restorePeer()
+    },
+    onConnectionError: error => {
+      if (!permanent(error)) return
+      stopped = true
+      peerLost = false
+      reconnectController.cancel()
+      wakeRestore?.()
+      report('offline', hooks.currentEpoch(client))
+      hooks.onStatus(error.message)
+      hooks.onFatalError?.(error)
     },
     onStatus: (connected) => {
       if (stopped) return
@@ -219,7 +256,6 @@ export function createMobileRelayConnection(hooks: MobileRelayConnectionHooks): 
           hooks.onStatus('reconnected — rehydrating')
           return
         }
-        report('connected', hooks.currentEpoch(client))
         return
       }
       logConnection('transport lost', { transport: client.transport, looping: reconnectController.isActive })

@@ -3,12 +3,14 @@ import { act, renderHook, waitFor } from '@testing-library/react-native'
 import type { RelayClient } from '@superone/relay-client'
 import type { ChatRuntime } from '../runtime'
 import { useComposerSuggestions } from './use-composer-suggestions'
+import { resolveTestProject } from '../project-rpc.test-fixtures'
 
-type Command = { type: string; query?: string; sessionId?: string }
+type Payload = { query?: string; sessionId?: string }
 
 function hostClient() {
   return {
-    request: jest.fn(async (command: Command) => command.type === 'search_mcp_mentions'
+    resolveProject: resolveTestProject,
+    rpc: jest.fn(async (method: string, _payload: Payload) => method === 'mcp.searchMentions'
       ? { sources: [{ server: 'bits', tool: 'search_parts', title: 'Bits CAD', items: [{ uri: 'cad://parts/hex-bolt', label: 'Hex bolt' }] }] }
       : {}),
   }
@@ -24,7 +26,7 @@ async function mount(client: ReturnType<typeof hostClient>, sessionId: string | 
 }
 
 const mcpRequests = (client: ReturnType<typeof hostClient>) =>
-  client.request.mock.calls.map(([command]) => command).filter((command) => command.type === 'search_mcp_mentions')
+  client.rpc.mock.calls.filter(([method]) => method === 'mcp.searchMentions').map(([, payload]) => payload)
 
 test("asks the session's servers and lists what they answer", async () => {
   const client = hostClient()

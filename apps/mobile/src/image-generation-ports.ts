@@ -1,6 +1,5 @@
-import type { RelayClient } from '@superone/relay-client'
-import type { ListMediaProvidersResponse, MediaProviderLabel, RemoteCommand } from '@superone/shared/agent-types'
-import { randomId } from './ids'
+import type { MobileRpcClient } from './runtime-session-rpc'
+import type { ListMediaProvidersResponse, MediaProviderLabel } from '@superone/shared/agent-types'
 
 /**
  * What the image viewer's info panel needs from the host beyond the facts the
@@ -31,10 +30,8 @@ function isProviderLabel(value: unknown): value is MediaProviderLabel {
  * command never answers and the request times out; that surfaces as an empty
  * list and the panel keeps showing ids — the same thing an unknown id gets.
  */
-export async function requestMediaProviderLabels(client: Pick<RelayClient, 'request'>): Promise<MediaProviderLabel[]> {
-  const reply = await client.request({
-    type: 'list_media_providers', requestId: randomId(),
-  } as RemoteCommand, MEDIA_PROVIDERS_TIMEOUT_MS) as ListMediaProvidersResponse | null
+export async function requestMediaProviderLabels(client: Pick<MobileRpcClient, 'rpc'>): Promise<MediaProviderLabel[]> {
+  const reply = await client.rpc('media.listProviders', {}, { timeoutMs: MEDIA_PROVIDERS_TIMEOUT_MS }) as ListMediaProvidersResponse | null
   if (!reply || !('providers' in reply) || !Array.isArray(reply.providers)) return []
   return reply.providers.filter(isProviderLabel)
 }

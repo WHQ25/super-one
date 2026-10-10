@@ -28,14 +28,17 @@ import type {
   SessionProviderStore,
   SessionRuntime,
 } from '../session/index'
-import type { HarnessInstallationStatus, SessionDetailMessage, SessionStreamMessage, TerminalStreamMessage, DraftStreamMessage } from '@superone/shared/environment'
-import type { ChatMessage, TerminalEvent, TerminalListItem } from '@superone/shared/agent-types'
+import type { HarnessInstallationStatus, SessionDetailMessage, SessionStreamMessage, TerminalStreamMessage, DraftStreamMessage, ClientStreamMessage, TopicNoticeMessage, TopicNoticeFrame } from '@superone/shared/environment'
+import type { TopicRef, TopicVersionCursor } from '@superone/shared/environment/topics'
+import type { ChatMessage, TerminalEvent, TerminalListItem, QuestionAnnotations, SessionForkRequest, SessionForkResult } from '@superone/shared/agent-types'
 import type { ConnectionDelivery } from '../stream/delivery/connection-delivery'
+import type { DeliveryPolicy } from '../stream/delivery-policy'
 import type { DraftsPort } from './rpc-drafts'
 import type { AuthenticatedClient } from './auth-service'
 import type { EventStreamFlow, EventStreamHandle } from './event-stream'
 import type { NodeIdentity } from './identity'
 import type { ClaudeUsageAccount, UsageLog } from '../usage/index'
+import type { SessionCreateSelections } from '@superone/shared/environment/session-create'
 
 /** Host-owned project catalog (CLI: ProjectRegistry). */
 export interface ProjectsPort {
@@ -58,12 +61,13 @@ export interface TerminalsPort {
   list(): TerminalListItem[]
   create(opts: {
     cwd: string
+    projectPath?: string
     title?: string
     cols?: number
     rows?: number
   }): { terminalId: string; cwd: string; title: string; cols: number; rows: number }
   /** Snapshot plus the output sequence it covers. */
-  attach(terminalId: string): unknown | Promise<unknown>
+  attach(terminalId: string, clientSessionId?: string): unknown | Promise<unknown>
   readAfter(terminalId: string, afterSequence: string): unknown | Promise<unknown>
   write(terminalId: string, data: string): void
   resize(terminalId: string, cols: number, rows: number): void
@@ -73,6 +77,8 @@ export interface TerminalsPort {
    * Hosts without it serve terminals by `terminal.read` polling only.
    */
   onEvent?(listener: (event: TerminalEvent) => void): () => void
+  /** Tailor control hints to the authenticated reader, without changing terminal output. */
+  eventForClient?(event: TerminalEvent, clientSessionId: string): TerminalEvent
 }
 
 /** Host-owned workspace filesystem (CLI: WorkspaceFsService). */
@@ -261,23 +267,29 @@ type SessionRuntimeInput<K extends keyof SessionRuntime> = SessionRuntime[K] ext
  */
 export interface SessionHostPort {
   create(input: SessionRuntimeInput<'create'>): NodeSessionRecord
+  /** Desktop-native creation, including worktree and promoted-draft choices. */
+  createOnHost?(input: SessionRuntimeInput<'create'> & SessionCreateSelections, options: { settings: NodeSessionSettings; assertCreate(): void }): Promise<NodeSessionRecord>
   get(sessionId: string): NodeSessionRecord | null
   /** Newest first; `limit`/`offset` paginate after sorting. No projectId spans every project. */
   list(projectId?: string, options?: { limit?: number; offset?: number }): NodeSessionRecord[]
-  setCwd(sessionId: string, cwd: string | null): NodeSessionRecord
-  patchSettings(sessionId: string, patch: NodeSessionSettings): NodeSessionRecord
+  setCwd(sessionId: string, cwd: string | null): NodeSessionRecord | Promise<NodeSessionRecord>
+  patchSettings(sessionId: string, patch: NodeSessionSettings): NodeSessionRecord | Promise<NodeSessionRecord>
+  /** Reject unsupported selections before create writes a session or starts a harness. */
+  validateSettings?(patch: NodeSessionSettings): void
   fork(input: SessionRuntimeInput<'fork'>): NodeSessionRecord
+  /** A host's native transcript/worktree fork, when its own harness owns that operation. */
+  forkOnHost?(input: SessionForkRequest & { client: { clientSessionId: string }; leaseId: string; generation: string }): Promise<SessionForkResult & { session?: NodeSessionRecord }>
   rename(sessionId: string, title: string, source?: 'user' | 'agent'): NodeSessionRecord
   setTags(sessionId: string, tags: string[]): NodeSessionRecord
   setUiFlags(sessionId: string, flags: { isPinned?: boolean; isHidden?: boolean }): NodeSessionRecord
-  close(sessionId: string): void
-  remove(sessionId: string): NodeSessionRecord | null
+  close(sessionId: string): void | Promise<void>
+  remove(sessionId: string): NodeSessionRecord | null | Promise<NodeSessionRecord | null>
 
   send(input: SessionRuntimeInput<'send'>): Promise<unknown>
   interrupt(sessionId: string, client: { clientSessionId: string }, leaseId: string, generation: string): void
-  respondPermission(input: SessionRuntimeInput<'respondPermission'>): void
-  respondQuestion(input: SessionRuntimeInput<'respondQuestion'>): void
-  respondPlan(input: SessionRuntimeInput<'respondPlan'>): void
+  respondPermission(input: SessionRuntimeInput<'respondPermission'> & { reason?: string; selectedSuggestions?: number[] }): void
+  respondQuestion(input: SessionRuntimeInput<'respondQuestion'> & { dismiss?: boolean; annotations?: QuestionAnnotations }): void
+  respondPlan(input: SessionRuntimeInput<'respondPlan'>): void | Promise<void>
   modUi(input: {
     sessionId: string
     op: ModUiOp
@@ -303,7 +315,7 @@ export interface SessionHostPort {
   viewEvent(envelope: EnvironmentEventEnvelope, reader: { clientSessionId: string }): EnvironmentEventEnvelope
   listMessages(input: SessionRuntimeInput<'listMessages'>): SessionMessagesListResult
   /** `session.load`: reduced state and a page of messages at the session's current version. */
-  load(input: SessionRuntimeInput<'load'>): SessionLoadResult
+  load(input: SessionRuntimeInput<'load'>): SessionLoadResult | Promise<SessionLoadResult>
   /** The session's whole reduced transcript now, for summaries and expanded detail. */
   messages(sessionId: string): readonly ChatMessage[]
 
@@ -416,6 +428,16 @@ export interface RpcContext {
 
   projects?: ProjectsPort
   terminals?: TerminalsPort
+  /** Workspace notices whose host already owns a snapshot and versioned change log. */
+  topicNotices?: {
+    open(input: {
+      topics: TopicRef[]
+      policy?: DeliveryPolicy
+      cursors: Record<string, TopicVersionCursor>
+      snapshot(topic: TopicRef): unknown
+      push(frame: TopicNoticeFrame): void
+    }): EventStreamHandle
+  }
   workspaceFs?: WorkspaceFsPort
   workspaceGit?: WorkspaceGitPort
   workspaceWatch?: WorkspaceWatchPort
@@ -429,6 +451,8 @@ export interface RpcContext {
   artifacts?: ArtifactZonePort
   /** Composer drafts and their leases (`draft.*`). */
   drafts?: DraftsPort
+  /** Host editor handover barrier, completed before draft.open acquires its lease. */
+  beforeDraftOpen?(draftId: string): Promise<void>
   extensions?: RpcExtensionDispatch
   /**
    * Shared methods of families this host serves that it still refuses (its
@@ -455,7 +479,7 @@ export interface RpcStreams {
   close(subscriptionId: string): void
   /** The open stream with this id, if any. */
   get(subscriptionId: string): EventStreamHandle | undefined
-  push(message: SessionStreamMessage | SessionDetailMessage | TerminalStreamMessage | DraftStreamMessage): void
+  push(message: SessionStreamMessage | SessionDetailMessage | TerminalStreamMessage | DraftStreamMessage | ClientStreamMessage | TopicNoticeMessage): void
   /** The connection's pace, for flow-controlled streams. */
   flow?: EventStreamFlow
   /** What this connection receives of a session under its delivery policy. */

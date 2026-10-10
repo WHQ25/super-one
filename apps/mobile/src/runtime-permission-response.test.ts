@@ -1,7 +1,8 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import type { RelayClient } from '@superone/relay-client'
-import type { PermissionRequest, RemoteCommand } from '@superone/shared/agent-types'
+import type { PermissionRequest } from '@superone/shared/agent-types'
 import { ChatRuntime } from './runtime'
+import { runtimeTestClient } from './runtime-test-client'
 
 const permission: PermissionRequest = {
   requestId: 'permission-1', toolName: 'Bash', input: { command: 'pwd' }, allowAlwaysAllow: false,
@@ -12,10 +13,10 @@ afterEach(() => vi.useRealTimers())
 function openPermission() {
   vi.useFakeTimers()
   // Commands leave the phone, but the desktop does not echo a resolution yet.
-  const send = vi.fn<(command: RemoteCommand) => void>()
+  const client = runtimeTestClient(); const send = client.dispatch
   // MobileApp.syncSheets sets the native sheet's permission from this paint callback.
   const paint = vi.fn()
-  const runtime = new ChatRuntime({ send } as unknown as RelayClient, session => {
+  const runtime = new ChatRuntime(client as unknown as RelayClient, session => {
     paint(session.pendingPermissions[0] ?? null)
   })
   runtime.projectPath = '/test-project'
@@ -38,8 +39,8 @@ it.each([
 
     expect(send).toHaveBeenCalledTimes(1)
     expect(send).toHaveBeenCalledWith(expect.objectContaining({
-      type: 'respond_permission', requestId: permission.requestId, decision,
-      projectPath: '/test-project', sessionId: 'continuous-session',
+      method: 'session.respondPermission', interactionId: permission.requestId, decision: decision ? 'allow' : 'deny',
+      environmentId: 'desktop', sessionId: 'continuous-session',
     }))
     // No time advance and no interaction_resolved: both local state and the rendered sheet must clear.
     expect.soft(runtime.pendingPermission).toBeUndefined()
@@ -67,13 +68,13 @@ it('clears the native permission sheet when a delayed desktop resolution arrives
   }
 })
 
-it('keeps a permission actionable when sending the decision fails', () => {
+it('keeps a permission actionable when sending the decision fails', async () => {
   const { runtime, send, paint } = openPermission()
   try {
-    send.mockImplementationOnce(() => { throw new Error('connection closed') })
-    expect(() => runtime.respondPermission(permission.requestId, true)).toThrow('connection closed')
+    send.mockRejectedValueOnce(new Error('connection closed'))
+    await expect(runtime.respondPermission(permission.requestId, true)).rejects.toThrow('connection closed')
     expect(runtime.pendingPermission).toEqual(permission)
-    expect(paint).not.toHaveBeenCalled()
+    expect(paint).toHaveBeenLastCalledWith(permission)
     runtime.respondPermission(permission.requestId, true)
     expect(runtime.pendingPermission).toBeUndefined()
     expect(paint).toHaveBeenLastCalledWith(null)

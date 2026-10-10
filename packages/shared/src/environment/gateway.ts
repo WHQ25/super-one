@@ -10,7 +10,7 @@ import type {
 import type { ControlLease, LeaseAcquireInput, LeaseReleaseInput, LeaseRenewInput, MutatingControlContext } from './lease'
 import type { DraftListRequest, DraftRecord, DraftUpsertRequest } from './draft-rpc'
 import type { ProjectRef, SessionRef, TerminalRef } from './refs'
-import type { SessionLoadResult, SessionMessagesListRequest, SessionMessagesListResult } from './session-messages'
+import type { SessionLoadRequest, SessionLoadResult, SessionMessagesListRequest, SessionMessagesListResult } from './session-messages'
 
 /**
  * Environment-scoped gateway — the only boundary desktop features should use
@@ -95,7 +95,7 @@ export interface SessionGateway {
    * `before`), with the version they reflect (`session.load`). Optional:
    * hosts without a read model have none.
    */
-  load?(input: { session: SessionRef; before?: number | null; limit?: number }): Promise<SessionLoadResult>
+  load?(input: { session: SessionRef } & Omit<SessionLoadRequest, 'sessionId'>): Promise<SessionLoadResult>
   /**
    * Expand a summarized row (`remoteDetail`): its revision-0 text; later
    * packets for `subscriptionId` reach `onUpdate` (local only) until

@@ -43,6 +43,7 @@ async function setup() {
 
   const db = openNodeDatabase(':memory:')
   const leases = new ControlLeaseService(db)
+  session.lease.bind({ environmentId: ENV, leases })
   const projects = [{ projectId: 'p1', path: '/b/project', name: 'project' }]
   const store = memoryStore(() => projects as never)
   store.createRow({ sessionId: SID, projectPath: '/b/project', cwd: '/b/project' })

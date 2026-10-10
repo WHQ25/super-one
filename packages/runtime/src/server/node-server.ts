@@ -91,6 +91,7 @@ export interface NodeAuthPort {
 }
 
 export interface NodeServerOptions<C extends NodeRpcRequestContext = RpcContext> {
+  control?: import('./connection-rpc').ConnectionRpcOptions<C>['control']
   identity: NodeIdentity
   auth: NodeAuthPort | AuthService
   bindHost: string
@@ -416,6 +417,7 @@ export async function startNodeServer<C extends NodeRpcRequestContext = RpcConte
       surface: 'desktop',
       context: opts.createRpcContext(client),
       dispatch: opts.dispatchRpc,
+      control: opts.control,
       isRevoked: (clientSessionId) => opts.auth.isRevoked(clientSessionId),
       close: closeSocket,
     })

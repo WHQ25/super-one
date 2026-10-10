@@ -1,6 +1,6 @@
 import { hostname } from 'node:os'
 import { Notification } from 'electron'
-import { AgentIpcChannels, type RemoteCommand } from '@superone/shared/agent-types'
+import { AgentIpcChannels } from '@superone/shared/agent-types'
 import { t } from '../i18n'
 import { openPairRoomSocket } from '../remote/pair-room-socket'
 import type { EnvironmentHost } from '../environment/environment-host'
@@ -15,7 +15,7 @@ import {
 /**
  * Desktop pairing through a phone, wired into main: the controller QR and
  * controller list on the computer being controlled, the node QR on the
- * controller, and the phone's `node_mint` / `node_pair` commands.
+ * controller, and the phone's native desktop pairing methods.
  * Contract: docs/architecture/remote-node-service.md §11.5.
  */
 
@@ -145,12 +145,12 @@ export async function mintNodeCode(): Promise<string> {
  * grant control of this computer too; the person sees a notification.
  */
 export async function handleDesktopPairCommand(
-  command: Extract<RemoteCommand, { type: 'node_mint' | 'node_pair' }>,
+  command: { kind: 'mint'; controllerName: string } | { kind: 'pair'; nodeCode: string; nodeName: string },
 ): Promise<unknown> {
   if (!required().remoteNodesEnabled()) {
     throw new Error('Turn on remote nodes in SuperOne settings on this computer first')
   }
-  if (command.type === 'node_mint') {
+  if (command.kind === 'mint') {
     const nodeCode = await mintNodeCode()
     if (Notification.isSupported()) {
       new Notification({

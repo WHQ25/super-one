@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { RelayClient, type SocketLike } from '@superone/relay-client'
-import { TEST_LINK, completeHandshake, type TestHost } from '../../../packages/relay-client/src/test-host-link'
+import { TEST_LINK, completeNativeHandshake, type TestHost } from '../../../packages/relay-client/src/test-host-link'
 import { ChatRuntime } from './runtime'
+import type { AgentEvent, ChatMessage } from '@superone/shared/agent-types'
+
+const message = (text: string): ChatMessage => ({ id: 'm', role: 'assistant', status: 'streaming',
+  content: text ? [{ type: 'text', text }] : [], createdAt: '', providerId: 'claude' })
 
 class MockSocket implements SocketLike {
   sent: string[] = []
@@ -9,114 +13,90 @@ class MockSocket implements SocketLike {
   onmessage: ((event: { data: string }) => void) | null = null
   onclose: ((event?: unknown) => void) | null = null
   onerror: ((event?: unknown) => void) | null = null
-  send(data: string): void { this.sent.push(data) }
+  host?: TestHost
+  subscriptionId = ''
+  constructor(readonly phase: number) {}
+  send(data: string): void {
+    this.sent.push(data)
+    if (!this.host || !data.startsWith('{')) return
+    const frame = JSON.parse(data)
+    if (frame.type !== 'command') return
+    const request = this.host.openRpc(frame.data)
+    if (request?.type !== 'rpc') return
+    queueMicrotask(() => this.answer(request))
+  }
+  private answer(request: Record<string, unknown>): void {
+    const p = request.payload as Record<string, unknown>
+    let result: unknown
+    switch (request.method) {
+      case 'project.list': result = [{ projectId: 'p', path: '/project', name: 'project' }]; break
+      case 'environment.descriptor': result = { capabilities: { methods: [] } }; break
+      case 'session.load': result = { sessionId: 'session', projectId: 'p', messages: this.phase ? [message('before')] : [],
+        state: { status: 'streaming', sessionProvider: 'claude' }, before: null,
+        cursor: { sequence: this.phase ? '2' : '0', version: this.phase ? 2 : 0, epoch: 'e' } }; break
+      case 'session.acquireControl': result = { resource: { environmentId: 'desk', sessionId: 'session' }, leaseId: `grant-${this.phase}`,
+        generation: '1', holderClientId: 'desktop:desk', delegate: 'phone:phone-1', expiresAt: new Date(Date.now() + 60_000).toISOString() }; break
+      case 'topic.subscribe':
+        this.subscriptionId = String(p.subscriptionId)
+        // Native follow registers its stream before the receipt. Restore must
+        // retain these pushed frames while it installs the atomic snapshot.
+        this.event(this.phase ? 3 : 1, this.phase
+          ? { type: 'content_delta', messageId: 'm', delta: { type: 'text', text: ' during' } }
+          : { type: 'message_start', message: message('') })
+        result = { subscriptionId: this.subscriptionId }; break
+      case 'topic.unsubscribe': case 'session.releaseControl': result = { ok: true }; break
+      default: throw new Error(`Unexpected native RPC ${request.method}`)
+    }
+    this.host!.sendRpc(this, { type: 'rpc_result', requestId: request.requestId, result })
+  }
+  event(sequence: number, event: AgentEvent): void {
+    this.host!.sendRpc(this, { type: 'stream', subscriptionId: this.subscriptionId, frame: { sequence: String(sequence), epoch: 'e', events: [{
+      eventId: `event-${sequence}`, sequence: String(sequence), timestamp: 0, environmentId: 'desk', aggregateType: 'session', aggregateId: 'session',
+      eventType: 'session.agent_event', eventVersion: 1, sessionVersion: sequence, payload: { event },
+    }] } }, { push: true })
+  }
   close(): void {}
   emit(frame: unknown): void { this.onmessage?.({ data: JSON.stringify(frame) }) }
   drop(): void { this.onclose?.() }
+  handshake(): void { this.host = completeNativeHandshake(this) }
 }
 
 afterEach(() => vi.useRealTimers())
 
-describe('live RN ↔ relay integration', () => {
-  it('rehydrates a mid-stream flap, releases buffered events, and rejects the stale epoch', async () => {
+describe('live RN native relay integration', () => {
+  it('restores a mid-stream flap, releases native buffered frames, and rejects the stale epoch', async () => {
     vi.useFakeTimers()
     const sockets: MockSocket[] = []
-    const hosts = new WeakMap<MockSocket, TestHost>()
     let runtime!: ChatRuntime
     const paints: string[] = []
-    const client = new RelayClient({
-      openSocket: () => {
-        const socket = new MockSocket()
-        sockets.push(socket)
-        queueMicrotask(() => socket.onopen?.())
-        return socket
-      },
-      onEvents: (events, epoch) => runtime.ingest(events, epoch),
-    })
-    runtime = new ChatRuntime(client, (session) => {
-      const message = session.messages.find((item) => item.id === 'm')
-      const text = message?.content.find((block) => block.type === 'text')
+    const client = new RelayClient({ openSocket: () => {
+      const socket = new MockSocket(sockets.length)
+      sockets.push(socket); queueMicrotask(() => socket.onopen?.()); return socket
+    }, onEvents: (events, epoch) => runtime.ingest(events, epoch) })
+    runtime = new ChatRuntime(client, session => {
+      const text = session.messages.find(item => item.id === 'm')?.content.find(block => block.type === 'text')
       paints.push(text?.type === 'text' ? text.text : '')
     })
-
-    const cursors = new WeakMap<MockSocket, number>()
-    const nextCommand = async (socket: MockSocket) => {
-      for (let attempt = 0; attempt < 20; attempt++) {
-        const start = cursors.get(socket) ?? 0
-        for (let index = start; index < socket.sent.length; index++) {
-          const frame = JSON.parse(socket.sent[index]) as { type?: string; data?: string }
-          if (frame.type !== 'command' || !frame.data) continue
-          cursors.set(socket, index + 1)
-          return hosts.get(socket)!.openCommand(frame.data) as { requestId: string; type: string }
-        }
-        await Promise.resolve()
-      }
-      throw new Error('expected RPC command')
-    }
-    const respond = async (socket: MockSocket, body: unknown) => {
-      const command = await nextCommand(socket)
-      socket.emit({
-        type: 'response',
-        requestId: command.requestId,
-        data: hosts.get(socket)!.seal('response', body, command.requestId),
-      })
-      return command
-    }
-    const emitEvent = (socket: MockSocket, seq: number, event: unknown) => socket.emit({
-      type: 'event',
-      seq,
-      data: hosts.get(socket)!.seal('event', event),
-    })
-
     const connected = client.connectRelay({ relayUrl: 'wss://relay.example', link: TEST_LINK, deviceId: 'phone-1' })
-    await vi.runAllTicks()
-    await connected
-    const first = sockets[0]
-    hosts.set(first, completeHandshake(first))
-    const opening = runtime.open('/project', 'session')
-    expect((await respond(first, { ok: true })).type).toBe('subscribe_session')
-    expect((await respond(first, { messages: [], hasMore: false, provider: 'claude' })).type).toBe('load_session_messages')
-    emitEvent(first, 1, {
-      type: 'message_start',
-      message: { id: 'm', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'claude' },
-    })
-    expect((await respond(first, { status: 'streaming', pendingInteractions: [], inProgressMessages: [] })).type).toBe('get_session_state')
-    await opening
+    await vi.runAllTicks(); await connected
+    sockets[0]!.handshake()
+    await runtime.open('/project', 'session')
     expect(runtime.epoch).toBe(1)
-
-    emitEvent(first, 2, { type: 'content_delta', messageId: 'm', delta: { type: 'text', text: 'before' } })
+    sockets[0]!.event(2, { type: 'content_delta', messageId: 'm', delta: { type: 'text', text: 'before' } })
     vi.advanceTimersByTime(33)
     expect(paints.at(-1)).toBe('before')
 
-    first.drop()
+    sockets[0]!.drop()
     const reconnecting = client.reconnect()
-    await vi.runAllTicks()
-    await reconnecting
-    const second = sockets[1]
-    hosts.set(second, completeHandshake(second))
-    const reopening = runtime.reopen()
-    await respond(second, { ok: true })
-    await respond(second, {
-      messages: [{
-        id: 'm',
-        role: 'assistant',
-        status: 'streaming',
-        content: [{ type: 'text', text: 'before' }],
-        createdAt: '',
-        providerId: 'claude',
-      }],
-      hasMore: false,
-      provider: 'claude',
-    })
-    emitEvent(second, 3, { type: 'content_delta', messageId: 'm', delta: { type: 'text', text: ' during' } })
-    await respond(second, { status: 'streaming', pendingInteractions: [], inProgressMessages: [] })
-    await reopening
+    await vi.runAllTicks(); await reconnecting
+    sockets[1]!.handshake()
+    await runtime.reopen()
     expect(runtime.epoch).toBe(2)
     expect(paints.at(-1)).toBe('before during')
-
     runtime.ingest([{ type: 'content_delta', messageId: 'm', delta: { type: 'text', text: ' stale' } }], 1)
-    emitEvent(second, 4, { type: 'content_delta', messageId: 'm', delta: { type: 'text', text: ' after' } })
+    sockets[1]!.event(4, { type: 'content_delta', messageId: 'm', delta: { type: 'text', text: ' after' } })
     vi.advanceTimersByTime(33)
     expect(paints.at(-1)).toBe('before during after')
+    runtime.dispose(); client.disconnect()
   })
 })

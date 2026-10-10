@@ -68,14 +68,7 @@ describe('mobile attention from Claude prompts', () => {
         ...permissions.values(), ...questions.values(), ...plans.values(), ...elicitations.values(),
       ].map(entry => entry.event),
     } as unknown as Session
-    const path = phoneEventPath(() => session, {
-      sendAgentEvent: async (event, targets) => {
-        // The phone has never opened this session, so only global summaries reach it.
-        expect(targets).toBeUndefined()
-        sent.push(event)
-      },
-      sendDeviceEvents: (_deviceId, events) => { sent.push(...events) },
-    })
+    const path = phoneEventPath(() => session, { onEvents: events => { sent.push(...events) } })
     const emit = (event: AgentEvent) => {
       path.publish({ ...event, sessionId: session.id })
       broadcasts.push(Promise.resolve())

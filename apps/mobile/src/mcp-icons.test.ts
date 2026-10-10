@@ -1,3 +1,4 @@
+import { resolveTestProject } from './project-rpc.test-fixtures'
 import { describe, expect, it } from 'vitest'
 import { clearMcpIconsForTests, loadMcpIcons, mcpIconsRevision, mcpIconsSnapshot } from './mcp-icons'
 
@@ -6,7 +7,7 @@ describe('loadMcpIcons', () => {
     clearMcpIconsForTests()
     const start = mcpIconsRevision()
     const client = {
-      request: async () => ({ icons: { github: 'https://example.com/g.png' } }),
+      resolveProject: resolveTestProject, rpc: async () => ({ icons: { github: 'https://example.com/g.png' } }),
     }
     await loadMcpIcons(client, '/repo')
     expect(mcpIconsSnapshot()).toEqual({ github: 'https://example.com/g.png' })
@@ -17,9 +18,9 @@ describe('loadMcpIcons', () => {
 
   it('ignores a missing or failing host command', async () => {
     clearMcpIconsForTests()
-    await loadMcpIcons({ request: async () => { throw new Error('unknown command') } })
+    await loadMcpIcons({ resolveProject: resolveTestProject, rpc: async () => { throw new Error('unknown command') } })
     expect(mcpIconsSnapshot()).toEqual({})
-    await loadMcpIcons({ request: async () => ({ error: 'unsupported' }) })
+    await loadMcpIcons({ resolveProject: resolveTestProject, rpc: async () => ({ error: 'unsupported' }) })
     expect(mcpIconsSnapshot()).toEqual({})
   })
 })

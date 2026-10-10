@@ -10,6 +10,8 @@ import type { NodeIdentity } from './identity'
 import type { RpcContext, RpcResult, RpcStreams } from './rpc-context'
 import { ConnectionDelivery } from '../stream/delivery/connection-delivery'
 import { deliveryPolicy, type ClientSurface, type ConnectionRoute } from '../stream/delivery-policy'
+import type { ControlLeaseService } from '../lease/control-lease'
+import type { ControlLease } from '@superone/shared/environment'
 
 /** Per-request fields the transport adds to the host's context. */
 export interface NodeRpcRequestContext {
@@ -37,6 +39,11 @@ export interface ConnectionRpcOptions<C extends NodeRpcRequestContext> {
   surface: ClientSurface
   context: Omit<C, keyof NodeRpcRequestContext>
   dispatch: NodeRpcDispatch<C>
+  /** Authority notices are private to this authenticated principal. */
+  control?: Pick<ControlLeaseService, 'get' | 'onChange'>
+  holdsControl?: (lease: ControlLease) => boolean
+  /** Trusted host routing, available only on surfaces authorized to reach other environments. */
+  routeRpc?: (environmentId: string, method: string, payload: unknown, ctx: C) => Promise<RpcResult>
   isRevoked: (clientSessionId: string) => boolean
   close: (code: number, reason: string) => void
 }
@@ -50,6 +57,19 @@ export interface ConnectionRpcOptions<C extends NodeRpcRequestContext> {
 export function createConnectionRpc<C extends NodeRpcRequestContext>(opts: ConnectionRpcOptions<C>): ConnectionRpc {
   const { wire, client, identity } = opts
   const send = wire.reply
+  const granted = new Map<string, ControlLease>()
+  const resourceKey = (resource: ControlLease['resource']) => JSON.stringify([resource.environmentId,
+    'sessionId' in resource ? 'session' : 'terminal', 'sessionId' in resource ? resource.sessionId : resource.terminalId])
+  const holds = opts.holdsControl ?? ((lease: ControlLease) => lease.holderClientId === client.clientSessionId)
+  const stopControl = opts.control?.onChange((resource, lease) => {
+    const key = resourceKey(resource)
+    const previous = granted.get(key)
+    if (lease && holds(lease)) granted.set(key, lease)
+    else granted.delete(key)
+    if (previous && (!lease || !holds(lease) || lease.leaseId !== previous.leaseId || lease.generation !== previous.generation)) {
+      wire.reply({ type: 'client', event: { type: 'control_lost', resource, leaseId: previous.leaseId, generation: previous.generation } })
+    }
+  })
   let negotiatedGeneration: { protocol: number; databaseSchema: number } | undefined
   const openStreams = new Map<string, EventStreamHandle>()
   const streams: RpcStreams = {
@@ -169,7 +189,8 @@ export function createConnectionRpc<C extends NodeRpcRequestContext>(opts: Conne
         return
       }
 
-      if (!msg.environmentId || (msg.environmentId !== identity.environmentId && !identity.aliases?.includes(msg.environmentId))) {
+      const local = msg.environmentId === identity.environmentId || identity.aliases?.includes(msg.environmentId ?? '')
+      if (!msg.environmentId || (!local && !opts.routeRpc)) {
         send({
           type: 'rpc_error',
           requestId,
@@ -183,13 +204,26 @@ export function createConnectionRpc<C extends NodeRpcRequestContext>(opts: Conne
         return
       }
 
-      const result = await opts.dispatch(method, msg.payload, {
+      const context = {
         ...opts.context,
         client,
         requestId,
         idempotencyKey: msg.idempotencyKey,
         streams,
-      } as C)
+      } as C
+      const result = local
+        ? await opts.dispatch(method, msg.payload, context)
+        : await opts.routeRpc!(msg.environmentId!, method, msg.payload, context)
+      if (local && opts.control && !result.error && result.result
+        && (method === 'session.acquireControl' || method === 'terminal.acquireControl')) {
+        const lease = result.result as ControlLease
+        const current = opts.control.get(lease.resource)
+        if (!current || !holds(current) || current.leaseId !== lease.leaseId || current.generation !== lease.generation) {
+          send({ type: 'rpc_error', requestId, error: { code: 'lease_stale', message: 'Control changed before admission completed' } })
+          return
+        }
+        granted.set(resourceKey(current.resource), current)
+      }
       if (result.error) {
         send({ type: 'rpc_error', requestId, error: result.error })
       } else {
@@ -206,6 +240,8 @@ export function createConnectionRpc<C extends NodeRpcRequestContext>(opts: Conne
   }
   return Object.assign(handle, {
     dispose: () => {
+      stopControl?.()
+      granted.clear()
       for (const stream of openStreams.values()) stream.close()
       openStreams.clear()
     },

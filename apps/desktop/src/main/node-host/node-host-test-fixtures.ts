@@ -10,7 +10,8 @@ import { openNodeDatabase } from '@superone/runtime/db'
 import type { ProjectSnapshot } from '@superone/shared/environment'
 import type { DesktopSessionRow, RemoteControlledSessionRow } from '../db-remote-controlled-sessions'
 import type { DesktopSessionRows } from './desktop-session-reads'
-import type { Session } from '../session/types'
+import type { Session, BackendCommand } from '../session/types'
+import { SessionLease } from '../session/session-lease'
 import { createDesktopProjectsPort } from './desktop-projects-port'
 import type { NodeHostSessionManager, NodeHostSessionStore } from './desktop-session-host'
 import { DesktopNodeHost, type DesktopNodeHostListen } from './node-host-server'
@@ -31,10 +32,10 @@ export const AGENT_PROFILES: SessionAgentProfile[] = [{
 
 /** A desktop Session stand-in: records the owner and answers a turn with canned events. */
 export class FakeSession {
-  owner: { kind: 'local' } | { kind: 'remote'; deviceId: string } = { kind: 'local' }
+  readonly lease: SessionLease
   readonly sent: SendMessageRequest[] = []
   private readonly handlers = new Set<(event: AgentEvent, replay: boolean) => void>()
-  constructor(readonly id: string, readonly cwd: string) {}
+  constructor(readonly id: string, readonly cwd: string, readonly projectPath = cwd) { this.lease = new SessionLease(id) }
   on(handler: (event: AgentEvent, replay: boolean) => void) {
     this.handlers.add(handler)
     return () => this.handlers.delete(handler)
@@ -42,18 +43,39 @@ export class FakeSession {
   apiProviderId: string | null = null
   getApiProviderId() { return this.apiProviderId }
   setApiProviderId(id: string | null) { this.apiProviderId = id }
-  claim(owner: { kind: 'remote'; deviceId: string }) { this.owner = owner }
-  release() { this.owner = { kind: 'local' } }
   status: 'idle' | 'streaming' = 'idle'
+  harnessId = 'claude'
   pending: AgentEvent[] = []
   getPendingInteractions() { return this.pending }
+  getReplayEvents(): AgentEvent[] { return [] }
+  getSessionGoal() { return null }
   activityStatus() { return this.status }
   setTitle() {}
-  getCurrentPermissionMode() { return 'default' }
-  async setPermissionMode() {}
-  async setSandboxMode() {}
+  permissionMode = 'default'
+  getCurrentPermissionMode() { return this.permissionMode }
+  sandbox = { enabled: false, autoAllowBash: false }
+  getCurrentSandboxInfo() { return this.sandbox }
+  model: string | undefined
+  effort: string | undefined
+  mode: string | undefined
+  agentPreset: string | null = null
+  getUiSettings() { return { selectedAcpModeId: this.mode ?? null } }
+  getAgentPreset() { return this.agentPreset }
+  additionalDirectories: string[] = []
+  getCallerScopedDirsSnapshot() { return this.additionalDirectories }
+  async dispatchBackendCommand(command: BackendCommand) {
+    this.lease.assertMutation()
+    if (command.kind === 'session.set_additional_dirs') this.additionalDirectories = [...command.dirs]
+  }
+  setAgentPreset(value: string | null) { this.lease.assertMutation(); this.agentPreset = value }
+  getSelectedModel() { return this.model }
+  getSelectedEffort() { return this.effort }
+  setSelectedSettings(patch: { model?: string | null; effort?: string | null; mode?: string | null }) { this.lease.assertMutation(); if (patch.model !== undefined) this.model = patch.model ?? undefined; if (patch.effort !== undefined) this.effort = patch.effort ?? undefined; if (patch.mode !== undefined) this.mode = patch.mode ?? undefined }
+  async setPermissionMode(mode: string) { this.lease.assertMutation(); this.permissionMode = mode }
+  async setSandboxMode(mode: string) { this.lease.assertMutation(); this.sandbox = { enabled: mode !== 'off', autoAllowBash: mode === 'auto' } }
   async interrupt() { return true }
   async send(request: SendMessageRequest, opts?: { onAccepted?: () => void }) {
+    this.lease.assertMutation()
     this.sent.push(request)
     opts?.onAccepted?.()
     const user: ChatMessage = {
@@ -69,7 +91,7 @@ export class FakeSession {
   }
   /** The transcript the session's events reduce to, as a live desktop Session keeps it. */
   private state: ChatCoreSession = createDefaultChatCoreSession()
-  get snapshot() { return { messages: this.state.messages } }
+  get snapshot() { return { harnessId: this.harnessId, messages: this.state.messages } }
   isStreaming() { return this.status === 'streaming' }
   private emit(event: AgentEvent) {
     this.state = { ...this.state, ...applyEventToSession(this.state, event) }
@@ -82,7 +104,7 @@ export class FakeSessionManager implements NodeHostSessionManager {
   private readonly listeners = new Set<(s: Session) => void>()
   active: string | null = 'local-session'
   createSession(opts: { id?: string; cwd?: string; projectPath: string; apiProviderId?: string | null }) {
-    const session = new FakeSession(opts.id!, opts.cwd ?? opts.projectPath)
+    const session = new FakeSession(opts.id!, opts.cwd ?? opts.projectPath, opts.projectPath)
     session.apiProviderId = opts.apiProviderId ?? null
     this.live.set(session.id, session)
     this.active = session.id
@@ -91,6 +113,7 @@ export class FakeSessionManager implements NodeHostSessionManager {
   }
   getSession(id: string) { return (this.live.get(id) as unknown as Session) ?? null }
   resumeSession(id: string) { return this.createSession({ id, projectPath: '/' }) }
+  async disposeSession(id: string) { this.live.get(id)?.lease.dispose(); this.live.delete(id) }
   getActiveSession() { return this.active ? ({ id: this.active } as Session) : null }
   setActiveSession(_p: string, id: string) { this.active = id }
   clearActiveSession() { this.active = null }

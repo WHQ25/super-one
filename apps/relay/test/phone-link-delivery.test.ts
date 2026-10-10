@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest'
 import { RelayClient, type HostLink, type SocketLike } from '@superone/relay-client'
 import { LINK_CHANNEL_FRAME, sealLinkFrame } from '@superone/relay-client/phone-link'
 import { acceptClientHello, issueChannelCredential, type SecureChannel } from '@superone/relay-client/secure-channel'
-import { frameRemotePayload } from '@superone/shared/remote-payload'
+import { WireEncoder, WireDecoder, encodePlainMessage } from '@superone/shared/environment/wire'
+import { deflateRawSync, inflateRawSync } from 'node:zlib'
+import { openLinkFrame } from '@superone/relay-client/phone-link'
+import { MIN_PHONE_DESKTOP_VERSION } from '@superone/relay-client/phone-protocol'
 import { RelaySession } from '../src/relay-session'
 import { createMockState, createMockWebSocket } from '../src/test-durable-object'
 
@@ -23,6 +26,7 @@ function setup() {
 
   /** The host's channels by device; a hello starts that device over. */
   const channels = new Map<string, SecureChannel>()
+  const codecs = new Map<string, { encoder: WireEncoder; decoder: WireDecoder }>()
   const pending = new Map<string, ReturnType<typeof acceptClientHello>>()
   let desktop: ServerSocket | undefined
 
@@ -33,6 +37,7 @@ function setup() {
     state.acceptWebSocket(ws, ['desktop'])
     desktop = ws
     channels.clear()
+    codecs.clear()
     pending.clear()
     // As `RelaySession.fetch` does for a desktop that (re)joins.
     for (const mobile of state.getWebSockets() as ServerSocket[]) {
@@ -46,9 +51,19 @@ function setup() {
     return session.webSocketMessage(desktop! as any, JSON.stringify(frame))
   }
 
-  function onRelayFrame(frame: { type: string; mobileDeviceId?: string; msg?: { type?: string; nonce?: string } }): void {
+  function onRelayFrame(frame: { type: string; mobileDeviceId?: string; data?: string; msg?: { type?: string; nonce?: string } }): void {
     const deviceId = frame.mobileDeviceId
-    if (frame.type !== LINK_CHANNEL_FRAME || !deviceId) return
+    if (!deviceId) return
+    if (frame.type === 'command' && frame.data) {
+      const channel = channels.get(deviceId)!
+      const opened = openLinkFrame(channel, frame.data)
+      if (opened.header.t !== 'rpc') throw new Error('native RPC required')
+      const request = codecs.get(deviceId)!.decoder.decode(opened.payload) as { type?: string; requestId?: string } | undefined
+      if (request?.type === 'handshake') void toRelay({ type: 'terminal', targets: [deviceId], data: sealLinkFrame(channel, { t: 'rpc' },
+        encodePlainMessage({ type: 'handshake_ok', requestId: request.requestId, result: { protocol: 3, databaseSchema: 1, environmentId: 'desk' } })) })
+      return
+    }
+    if (frame.type !== LINK_CHANNEL_FRAME) return
     if (frame.msg?.type === 'channel_hello') {
       channels.delete(deviceId)
       const accept = acceptClientHello(frame.msg, (keyId) => keyId === PHONES[deviceId] ? issueChannelCredential(ROOT, keyId).secretHex : null)
@@ -61,15 +76,18 @@ function setup() {
     pending.delete(deviceId)
     const channel = accept.finish(frame.msg)
     channels.set(deviceId, channel)
-    void toRelay({ type: LINK_CHANNEL_FRAME, data: sealLinkFrame(channel, { t: 'handshake', hostName: 'Desk' }), mobileDeviceId: deviceId })
+    codecs.set(deviceId, { encoder: new WireEncoder({ deflate: (bytes, dictionary) => deflateRawSync(bytes, { dictionary }) }),
+      decoder: new WireDecoder({ inflate: (bytes, _out, dictionary) => inflateRawSync(bytes, { dictionary }) }) })
+    void toRelay({ type: LINK_CHANNEL_FRAME, data: sealLinkFrame(channel, { t: 'handshake', hostName: 'Desk', host: { appVersion: MIN_PHONE_DESKTOP_VERSION, protocol: 3, environmentId: 'desk' } }), mobileDeviceId: deviceId })
   }
 
   /** One sealed copy per phone with a channel, each addressed to that phone alone. */
   async function send(event: unknown, targets?: string[]): Promise<void> {
-    const framed = frameRemotePayload(new TextEncoder().encode(JSON.stringify(event)))
     for (const [deviceId, channel] of channels) {
       if (targets && !targets.includes(deviceId)) continue
-      await toRelay({ type: 'event', targets: [deviceId], data: sealLinkFrame(channel, { t: 'event' }, framed) })
+      for (const framed of codecs.get(deviceId)!.encoder.encode({ type: 'client', event }, { push: true })) {
+        await toRelay({ type: 'terminal', targets: [deviceId], data: sealLinkFrame(channel, { t: 'rpc' }, framed) })
+      }
     }
   }
 
@@ -101,7 +119,7 @@ function setup() {
     }
     const client = new RelayClient({
       openSocket,
-      onArrived: (events) => received.push(...events),
+      onProtocolMessage: message => received.push(message),
       onControl: (frame) => { if (frame.type === 'handshake') handshakes += 1 },
     })
     const link: HostLink = { credential: issueChannelCredential(ROOT, PHONES[deviceId]), roomId: '0f'.repeat(16) }

@@ -1,10 +1,11 @@
 /** @vitest-environment jsdom */
 
-import { act, fireEvent, render, waitFor } from '@testing-library/react'
+import { act, fireEvent, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { PortableMessage } from '@superone/chat-view/PortableMessage'
 import { installFakeNativeHost } from '@superone/chat-view/fixtures/native-host'
 import type { ChatMessage, ContentBlock } from '@superone/shared/agent-types'
+import { renderWithNativeDetails as render } from './portable-detail.test-fixtures'
 
 /**
  * Fake native host: answers every `subscribeDetail` with the detail JSON registered for
@@ -20,7 +21,7 @@ function installFakeHost(details: Record<string, string>): () => void {
   })
 }
 
-/** Detail references are cached module-wide by the WebView, so each case needs its own. */
+/** Each tool is addressed within the session's deferred detail scope. */
 function detailRef(toolName: string): string {
   return JSON.stringify(['turn-1', 'tool', `call-${toolName}`])
 }

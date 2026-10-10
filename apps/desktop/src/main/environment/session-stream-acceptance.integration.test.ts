@@ -12,29 +12,9 @@ import { applyEventToSession, createDefaultChatCoreSession, createStreamingToolI
 import type { AgentEvent, ChatMessage } from '@superone/shared/agent-types'
 import type { EnvironmentGateway } from '@superone/shared/environment'
 import { createNodeSessionEventMapper } from '@superone/shared/node-session-event-map'
-import type { RemoteSessionListener } from './remote-session-feed'
+import { RemoteSessionFeed } from './remote-session-feed'
 
 const electron = vi.hoisted(() => ({ store: new Map<string, string>() }))
-/** The node a routed phone reaches through this desktop. */
-const routed = vi.hoisted(() => ({ gateway: null as unknown, environmentId: '', connectionId: '', feed: null as unknown }))
-vi.mock('./environment-host', () => ({
-  getEnvironmentHost: () => ({
-    listEnvironments: async () => [{ environmentId: routed.environmentId, connectionId: routed.connectionId, kind: 'remote' }],
-    getGateway: () => routed.gateway,
-    // The host's per-node feed (`EnvironmentHost.feedFor`), over the routed gateway.
-    followSessionEvents: async (_connectionId: string, sessionId: string, listener: RemoteSessionListener, barrier: () => Promise<number>) => {
-      const { RemoteSessionFeed } = await import('./remote-session-feed')
-      const gateway = routed.gateway as EnvironmentGateway
-      routed.feed ??= new RemoteSessionFeed({
-        head: () => gateway.eventHeadSequence(),
-        subscribe: (afterSequence, signal, { interest, onResnapshot, onRealign }) => gateway.subscribeEvents({
-          environmentId: routed.environmentId, afterSequence, topics: interest.current(), interest, signal, onResnapshot, onRealign,
-        }),
-      }, routed.environmentId)
-      return (routed.feed as InstanceType<typeof RemoteSessionFeed>).follow(sessionId, listener, barrier)
-    },
-  }),
-}))
 vi.mock('electron', () => ({
   safeStorage: {
     isEncryptionAvailable: () => true,
@@ -47,16 +27,19 @@ import { startNodeRuntime, type NodeRuntime } from '../../../../../apps/cli/src/
 import { createSimulatedTurnRunner } from '@superone/runtime/session'
 import { NodeConnectionManager } from './node-connection-manager'
 import { NodeCredentialStore } from './node-credential-store'
-import { executeEnvironmentCommand, kickRoutedSessions, releaseEnvironmentDevice } from '../remote/environment-commands'
+import { createPhoneRpcRouter } from '../node-host/routed-phone-rpc'
+import { phoneDomain } from '../node-host/phone-endpoint-test-fixtures'
+import { encryptedPhone } from '../node-host/encrypted-phone-test-fixtures'
+import type { SessionLoadResult, SessionStreamFrame } from '@superone/shared/environment'
 
 const dirs: string[] = []
 const runtimes: NodeRuntime[] = []
 const managers: NodeConnectionManager[] = []
 const aborts: AbortController[] = []
+const cleanup: Array<() => void> = []
 
 afterEach(async () => {
-  await releaseEnvironmentDevice('phone-a')
-  await releaseEnvironmentDevice('phone-b')
+  while (cleanup.length) cleanup.pop()!()
   for (const abort of aborts.splice(0)) abort.abort()
   for (const manager of managers.splice(0)) manager.disconnectAll()
   while (runtimes.length) await runtimes.pop()!.stop().catch(() => {})
@@ -192,34 +175,73 @@ describe('pushed session stream against a node', () => {
   it('keeps a routed phone whole across a dropped upstream, and holds the session for one phone at a time', async () => {
     const runtime = await bootNode({ chunks: Array.from({ length: 10 }, (_, i) => `p${i} `), delayMs: 40 })
     const desktop = await pairDesktop(runtime, 'desktop')
-    Object.assign(routed, { gateway: desktop.gateway, environmentId: desktop.environmentId, connectionId: desktop.connectionId, feed: null })
     const ref = await newSession(desktop.gateway, desktop.environmentId)
+    const client = desktop.manager.getClient(desktop.connectionId)!
+    const feed = new RemoteSessionFeed({ head: () => desktop.gateway.eventHeadSequence(),
+      subscribe: (afterSequence, signal, handlers) => desktop.gateway.subscribeEvents({ environmentId: ref.environmentId,
+        afterSequence, signal, topics: handlers.interest.current(), ...handlers }) }, ref.environmentId)
+    cleanup.push(() => feed.close())
+    const router = createPhoneRpcRouter(() => ({ environmentId: ref.environmentId, client,
+      follow: (input, handlers) => feed.followTopics(input, handlers, () => client.rpc<SessionStreamFrame>('topic.catchUp', input, ref.environmentId)) }))
+    const root = phoneDomain(cleanup, { rpcRouter: router })
+    const lost = vi.fn()
+    const ports = { ...defaultChatCorePorts, streaming: createStreamingToolInputStore() }
+    let phoneState = createDefaultChatCoreSession()
     const sent: AgentEvent[] = []
-    const opened = await executeEnvironmentCommand(ref.environmentId, { type: 'subscribe_session', requestId: 'r', projectPath: ref.path, sessionId: ref.sessionId }, 'phone-a', async (event) => { sent.push(event) }) as { historyPage: { messages: ChatMessage[] } }
-    await expect(executeEnvironmentCommand(ref.environmentId, { type: 'subscribe_session', requestId: 'r2', projectPath: ref.path, sessionId: ref.sessionId }, 'phone-b', async () => {}))
-      .rejects.toMatchObject({ code: 'failed_precondition' })
+    let resnapshots = 0
+    let recovery: Promise<void> | undefined
+    let a!: Awaited<ReturnType<typeof encryptedPhone>>
+    const load = () => a.rpc<SessionLoadResult>('session.load', { sessionId: ref.sessionId, limit: 200 }, { environmentId: ref.environmentId })
+    const follow = (loaded: SessionLoadResult) => a.followSession({ session: ref, projectPath: ref.path, provider: 'codex', cursor: loaded.cursor })
+    a = await encryptedPhone(cleanup, root.domain, 'relay', 'phone-a', [], {
+      onControlLost: lost,
+      onEvents: batch => {
+        for (const value of batch) {
+          const event = value as AgentEvent
+          sent.push(event)
+          phoneState = { ...phoneState, ...applyEventToSession(phoneState, event, ports) }
+        }
+      },
+      onSessionRecovery: () => {
+        if (recovery) return
+        resnapshots++
+        recovery = load().then(async fresh => {
+          phoneState = { ...createDefaultChatCoreSession(), ...fresh.state, messages: fresh.messages }
+          await follow(fresh)
+        }).finally(() => { recovery = undefined })
+        void recovery.catch(() => {})
+      },
+    })
+    const lostB = vi.fn()
+    const b = await encryptedPhone(cleanup, root.domain, 'lan', 'phone-b', [], { onControlLost: lostB })
+    await a.acquireControl(ref)
+    await expect(b.acquireControl(ref)).rejects.toMatchObject({ code: 'failed_precondition' })
+    const opened = await load()
+    phoneState = { ...createDefaultChatCoreSession(), ...opened.state, messages: opened.messages }
+    await follow(opened)
+    await a.controlledRpc(ref, 'session.send', { text: 'go', clientMessageId: 'u-go' })
+    await until(() => sent.some(event => event.type === 'content_delta'))
+    ;(client as unknown as { ws: { terminate(): void } }).ws.terminate()
 
-    await executeEnvironmentCommand(ref.environmentId, { type: 'send_message', sessionId: ref.sessionId, projectPath: ref.path, content: 'go', clientMessageId: 'u-go' } as never, 'phone-a', async () => {})
-    await until(() => sent.some((event) => event.type === 'content_delta'))
-    ;(desktop.manager.getClient(desktop.connectionId) as unknown as { ws: { terminate(): void } }).ws.terminate()
-
-    // The phone's own reducer over what it was sent.
-    const phone = () => {
-      const ports = { ...defaultChatCorePorts, streaming: createStreamingToolInputStore() }
-      let state = { ...createDefaultChatCoreSession(), messages: opened.historyPage.messages } as ChatCoreSession
-      for (const event of sent) state = { ...state, ...applyEventToSession(state, event, ports) }
-      return state.messages.filter((m) => m.role === 'assistant')
-    }
-    const assistants = async () => (await desktop.gateway.sessions.load!({ session: ref, limit: 200 })).messages.filter((m) => m.role === 'assistant')
+    const phone = () => phoneState.messages.filter(m => m.role === 'assistant')
+    const assistants = async () => (await desktop.gateway.sessions.load!({ session: ref, limit: 200 })).messages.filter(m => m.role === 'assistant')
     await until(async () => (await assistants()).at(-1)?.status === 'complete' && phone().at(-1)?.status === 'complete', 15_000)
     expect(view(phone())).toEqual(view(await assistants()))
-    expect(sent.some((event) => event.type === 'status_change' && event.status === 'error')).toBe(false)
+    expect(resnapshots).toBeGreaterThan(0)
+    expect(sent.some(event => event.type === 'status_change' && event.status === 'error')).toBe(false)
 
-    // The window's Disconnect hands the session to the next phone.
-    await kickRoutedSessions(ref.sessionId)
-    await expect(executeEnvironmentCommand(ref.environmentId, { type: 'subscribe_session', requestId: 'r3', projectPath: ref.path, sessionId: ref.sessionId }, 'phone-b', async () => {}))
-      .resolves.toMatchObject({ ok: true })
-  })
+    await router.releaseSessions(ref.sessionId)
+    expect(lost).toHaveBeenCalledTimes(1)
+    await expect(a.controlledRpc(ref, 'session.send', { text: 'kicked' })).rejects.toMatchObject({ code: 'lease_required' })
+    await expect(b.acquireControl(ref)).resolves.toMatchObject({ delegate: 'phone:phone-b' })
+    const lostAtNode = vi.fn()
+    client.onControlLost(lostAtNode)
+    runtime.leases.revoke(ref)
+    await until(() => lostAtNode.mock.calls.length === 1)
+    await until(() => lostB.mock.calls.length === 1)
+    await expect(b.controlledRpc(ref, 'session.send', { text: 'node revoked' })).rejects.toMatchObject({ code: 'lease_required' })
+    await a.stopSession()
+  }, 25_000)
 
   it('after a node restart mid-turn reads the interruption and the cleared prompt, signalled by the new epoch', async () => {
     const nodeHome = tmp('stream-restart-')

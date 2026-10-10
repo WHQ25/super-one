@@ -1,6 +1,5 @@
-import type { RelayClient } from '@superone/relay-client'
-import type { McpServerInfo, RemoteCommand } from '@superone/shared/agent-types'
-import { randomId } from './ids'
+import type { McpServerInfo } from '@superone/shared/agent-types'
+import { projectRpc, type ProjectRpcClient } from './project-rpc'
 
 export type McpServerRow = {
   name: string
@@ -47,12 +46,10 @@ export function mcpServerRows(servers: readonly McpServerInfo[]): McpServerRow[]
  * flow, and a phone that cannot finish one should not offer to begin it.
  */
 export async function requestMcpServers(
-  client: Pick<RelayClient, 'request'>,
+  client: ProjectRpcClient,
   projectPath: string,
 ): Promise<{ rows: McpServerRow[]; error?: string }> {
-  const reply = await client.request({
-    type: 'list_mcp_servers', requestId: randomId(), projectPath,
-  } as RemoteCommand) as { servers?: McpServerInfo[]; error?: string }
+  const reply = await projectRpc(client, projectPath, 'mcp.list') as { servers?: McpServerInfo[]; error?: string }
   if (typeof reply?.error === 'string' && reply.error) return { rows: [], error: reply.error }
   return { rows: mcpServerRows(Array.isArray(reply?.servers) ? reply.servers : []) }
 }

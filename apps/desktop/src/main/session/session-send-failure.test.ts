@@ -1,3 +1,4 @@
+import { nativeRestoreClient, nativeSessionLoad } from './native-restore.test-fixtures'
 import { describe, expect, it, vi } from 'vitest'
 import type { AgentEvent, SendMessageRequest } from '@superone/shared/agent-types'
 import { ChatRuntime } from '../../../../mobile/src/runtime'
@@ -21,13 +22,7 @@ function fixture(start: () => Promise<void>) {
 }
 
 async function openOnMobile(session: Session) {
-  const client = {
-    startBuffering() {}, releaseBuffer: () => ({ epoch: 1, batches: [session.getReplayEvents()] }),
-    async request(command: { type: string }) {
-      if (command.type !== 'subscribe_session') return { ok: true }
-      return { historyPage: { messages: session.snapshot.messages, provider: 'claude', hasMore: false }, snapshot: { status: 'idle' } }
-    },
-  }
+  const client = nativeRestoreClient(() => nativeSessionLoad(session), () => [session.getReplayEvents()])
   const runtime = new ChatRuntime(client as never, () => {})
   await runtime.open('/project', 'session')
   return runtime

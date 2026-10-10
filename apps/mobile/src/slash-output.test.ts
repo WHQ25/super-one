@@ -12,13 +12,10 @@ import { ChatRuntime } from './runtime'
  * behind, which is why the host used to drop the event instead of sending it.
  */
 function runtime() {
-  const client = {
-    startBuffering() {},
-    releaseBuffer() { return { epoch: 1, batches: [] } },
-    send: vi.fn(),
-    request: vi.fn(async () => ({ ok: true })),
-  }
+  const client = { environmentId: 'desktop', controlledRpc: vi.fn(async () => ({ ok: true })) }
   const instance = new ChatRuntime(client as never, () => {})
+  instance.sessionId = 'session'
+  instance.projectPath = '/p'
   return { instance, client }
 }
 

@@ -1,9 +1,10 @@
 import { McpAppResourceCache, mcpAppResourceReadKey, type McpAppResourceSnapshot } from '@superone/shared/mcp-app-resource'
 import { McpAppsError, type McpAppHostResult, type ToolAppAttachment } from '@superone/shared/mcp-apps'
-import type { RelayClient } from '@superone/relay-client'
-import type { McpAppDeviceRequest, RemoteCommand } from '@superone/shared/agent-types'
+import type { MobileRpcClient } from './runtime-session-rpc'
+import type { McpAppDeviceRequest } from '@superone/shared/agent-types'
 import type { McpAppsErrorCode } from '@superone/shared/mcp-apps'
-import { randomId } from './ids'
+import { runtimeSessionRef } from './runtime-session-rpc'
+import { MCP_APP_CONTROL_OPERATIONS } from '@superone/shared/environment/mcp-apps-rpc'
 import { isMcpAppHttpDownload, type McpAppLocalDownload } from '@superone/shared/mcp-app-download'
 
 /** What a phone View may ask the host for. Links open on the phone and never cross. */
@@ -35,27 +36,25 @@ function failure(code: McpAppsErrorCode, message: string) {
  * by whether the command could have reached the host.
  */
 async function invokeMcpApp(
-  client: Pick<RelayClient, 'request'>,
-  session: { projectPath: string; sessionId: string },
+  client: Pick<MobileRpcClient, 'rpc' | 'controlledRpc' | 'environmentId'>,
+  session: { projectPath: string; sessionId: string; environmentId?: string | null },
   request: McpAppDeviceRequest,
 ): Promise<unknown> {
   const call = request.operation === 'callTool'
-  let reply: { response?: unknown; error?: string } | null
   try {
-    reply = await client.request(
-      { type: 'mcp_app_request', requestId: randomId(), ...session, request } as RemoteCommand,
-      call ? CALL_TIMEOUT_MS : REQUEST_TIMEOUT_MS,
-    ) as { response?: unknown; error?: string } | null
+    const resource = runtimeSessionRef(client, session.sessionId, session.environmentId ?? null)
+    const options = { timeoutMs: call ? CALL_TIMEOUT_MS : REQUEST_TIMEOUT_MS }
+    return await (MCP_APP_CONTROL_OPERATIONS.has(request.operation)
+      ? client.controlledRpc(resource, 'mcpApps.request', { request }, options)
+      : client.rpc('mcpApps.request', { sessionId: session.sessionId, request }, { ...options, environmentId: resource.environmentId }))
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    // Refused before anything left the phone.
-    if (message === 'not connected') return failure('not_connected', message)
-    // Sent and then lost: a tool call may have run, so it must never be resent.
+    if (message === 'not connected' || message === 'No authenticated session') return failure('not_connected', message)
+    // An explicit server refusal has a known outcome; lost receipts do not.
+    const code = (error as { code?: string }).code
+    if (code && code !== 'unavailable') return failure(code === 'invalid_argument' ? 'invalid' : 'denied', message)
     return failure(call ? 'unknown_outcome' : 'timeout', message)
   }
-  // The host refused the command itself, e.g. a session this device may not reach.
-  if (reply?.error) return failure('denied', reply.error)
-  return reply?.response
 }
 
 
@@ -63,8 +62,8 @@ const resourceCaches = new WeakMap<object, McpAppResourceCache>()
 
 /** Two-phase trusted shell load: metadata is small, HTML crosses the relay once per cached hash. */
 export async function requestMcpApp(
-  client: Pick<RelayClient, 'request'>,
-  session: { projectPath: string; sessionId: string },
+  client: Pick<MobileRpcClient, 'rpc' | 'controlledRpc' | 'environmentId'>,
+  session: { projectPath: string; sessionId: string; environmentId?: string | null },
   request: McpAppDeviceRequest,
   app?: ToolAppAttachment,
 ): Promise<unknown> {

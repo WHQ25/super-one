@@ -1,5 +1,4 @@
-import type { RelayClient } from '@superone/relay-client'
-import { randomId } from './ids'
+import { projectRpc, type ProjectRpcClient } from './project-rpc'
 
 let icons: Record<string, string> = {}
 let revision = 0
@@ -23,13 +22,9 @@ function sameMap(a: Record<string, string>, b: Record<string, string>): boolean 
   return keys.every((key) => a[key] === b[key])
 }
 
-export async function loadMcpIcons(client: Pick<RelayClient, 'request'>, projectPath?: string): Promise<void> {
+export async function loadMcpIcons(client: ProjectRpcClient, projectPath?: string): Promise<void> {
   try {
-    const reply = await client.request({
-      type: 'get_mcp_icons',
-      requestId: randomId(),
-      ...(projectPath ? { projectPath } : {}),
-    }) as {
+    const reply = await (projectPath ? projectRpc(client, projectPath, 'mcp.icons') : client.rpc('mcp.icons')) as {
       icons?: Record<string, string>
       error?: string
     } | null

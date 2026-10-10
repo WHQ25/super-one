@@ -97,6 +97,72 @@ describe('node rpc dispatch on a partial host', () => {
   })
 })
 
+describe('terminal control delegates', () => {
+  it('resolves a session worktree and filters its project terminals on the host', async () => {
+    const create = vi.fn(input => ({ terminalId: 'new', ...input }))
+    const ctx = projectsOnlyHost({
+      terminals: { create, list: () => [
+        { terminalId: 'root', cwd: '/tmp/p1' }, { terminalId: 'nested', cwd: '/tmp/p1/sub' },
+        { terminalId: 'worktree', cwd: '/tmp/worktree' }, { terminalId: 'other', cwd: '/tmp/p11' },
+      ] } as unknown as RpcContext['terminals'],
+      sessions: { get: () => ({ projectId: 'p1', cwd: '/tmp/worktree' }) } as unknown as SessionHostPort,
+    })
+    const payload = { projectId: 'p1', sessionId: 's' }
+    expect(await dispatchRpc('terminal.create', payload, ctx)).toMatchObject({ result: { cwd: '/tmp/worktree' } })
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ cwd: '/tmp/worktree', projectPath: '/tmp/p1' }))
+    expect(await dispatchRpc('terminal.list', payload, ctx)).toMatchObject({ result: { terminals: [
+      { terminalId: 'root' }, { terminalId: 'nested' }, { terminalId: 'worktree' },
+    ] } })
+  })
+
+  it('refuses an unknown project or a session outside it before creating a PTY', async () => {
+    const create = vi.fn()
+    const ctx = projectsOnlyHost({ terminals: { create } as unknown as RpcContext['terminals'], sessions: { get: () => ({ projectId: 'other', cwd: '/secret' }) } as unknown as SessionHostPort })
+    for (const payload of [{ projectId: 'missing' }, { projectId: 'p1', sessionId: 's' }, { sessionId: 's' }]) {
+      expect((await dispatchRpc('terminal.create', payload, ctx)).error).toBeDefined()
+    }
+    expect(create).not.toHaveBeenCalled()
+  })
+
+  it('passes delegate and yields through acquire just as session control does', async () => {
+    const acquire = vi.fn(() => ({ leaseId: 'lease' }))
+    const ctx = projectsOnlyHost({
+      terminals: {} as RpcContext['terminals'],
+      leases: { acquire } as unknown as RpcContext['leases'],
+    })
+    expect(await dispatchRpc('terminal.acquireControl', { terminalId: 't', delegate: 'phone-a', yields: true, ttlMs: 60_000 }, ctx)).toEqual({ result: { leaseId: 'lease' } })
+    expect(acquire).toHaveBeenCalledWith({
+      resource: { environmentId: 'env-1', terminalId: 't' }, holderClientId: 'c1',
+      delegate: 'phone-a', yields: true, ttlMs: 60_000,
+    })
+  })
+})
+
+describe('scoped native topic subscriptions', () => {
+  it('refuses topics of another environment and unauthorized topic kinds before opening anything', async () => {
+    const open = vi.fn()
+    const ctx = projectsOnlyHost({
+      sessions: {} as SessionHostPort,
+      streams: { open } as unknown as RpcContext['streams'],
+      client: { ...projectsOnlyHost().client, scopes: ['session:read'] },
+    })
+    const base = { subscriptionId: 'sub', afterSequence: '0' }
+    expect((await dispatchRpc('topic.subscribe', { ...base, topics: [{ kind: 'sessionList', environmentId: 'other' }] }, ctx)).error?.code).toBe('identity_conflict')
+    for (const kind of ['projects', 'terminalList', 'environment']) {
+      expect((await dispatchRpc('topic.subscribe', { ...base, topics: [{ kind, environmentId: 'env-1' }] }, ctx)).error?.code).toBe('forbidden')
+    }
+    expect(open).not.toHaveBeenCalled()
+  })
+
+  it('rejects malformed workspace cursors before opening a stream', async () => {
+    const ctx = projectsOnlyHost({ sessions: {} as SessionHostPort, streams: {} as RpcContext['streams'] })
+    const payload = { subscriptionId: 'sub', afterSequence: '0', topics: [{ kind: 'sessionList', environmentId: 'env-1' }] }
+    for (const topicCursors of [{ list: { epoch: '', version: 0 } }, { list: { epoch: 'e', version: -1 } }, { list: { epoch: 'e', version: 0.5 } }, []]) {
+      expect((await dispatchRpc('topic.subscribe', { ...payload, topicCursors }, ctx)).error?.code).toBe('invalid_argument')
+    }
+  })
+})
+
 describe('session.create', () => {
   function sessionHost() {
     const create = vi.fn((input: { projectId: string }) => ({ sessionId: 's1', ...input }))
@@ -136,6 +202,13 @@ describe('session.create', () => {
     const res = await dispatchRpc('session.create', { projectId: 'p1', externalParent: { sessionId: 'parent-a' } }, ctx)
     expect(res.error).toBeUndefined()
     expect(create).toHaveBeenCalledWith(expect.objectContaining({ externalParent: { sessionId: 'parent-a' } }))
+  })
+
+  it.each([{ sessionId: 'native-id' }, { acpAgentId: 'grok' }, { worktreeBranch: 'HEAD', worktreeMode: 'detach' }])('refuses native creation on a host without the native port before writes: %j', async (selection) => {
+    const { ctx, create } = sessionHost()
+    const result = await dispatchRpc('session.create', { projectId: 'p1', ...selection }, ctx)
+    expect(result.error?.code).toBe('unsupported')
+    expect(create).not.toHaveBeenCalled()
   })
 
   it.each([

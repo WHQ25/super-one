@@ -1,11 +1,11 @@
+import { resolveTestProject } from './project-rpc.test-fixtures'
 import { describe, expect, it, vi } from 'vitest'
-import type { RemoteCommand } from '@superone/shared/agent-types'
 import { loadTextFile, type TextFileHost } from './text-files'
 
 const META = { name: 'notes.md', mimeType: 'text/markdown', size: 120, modifiedAt: 1 }
 
-function host(answer: (command: RemoteCommand) => unknown): TextFileHost & { request: ReturnType<typeof vi.fn> } {
-  return { request: vi.fn(async (command: RemoteCommand) => answer(command)) }
+function host(answer: (command: Record<string, unknown>) => unknown): TextFileHost & { rpc: ReturnType<typeof vi.fn> } {
+  return { resolveProject: resolveTestProject, rpc: vi.fn(async (_method: string, payload: unknown = {}) => answer(payload as Record<string, unknown>)) }
 }
 
 const base = { projectPath: '/proj', sessionId: 's1', path: 'docs/notes.md' }
@@ -14,8 +14,8 @@ describe('loadTextFile', () => {
   it('asks for the file inline by resolved path and hands back the text', async () => {
     const h = host(() => ({ ok: true, ...META, inline: true, text: '# Notes\n' }))
     await expect(loadTextFile({ ...base, host: h })).resolves.toEqual({ text: '# Notes\n' })
-    expect(h.request.mock.calls[0][0]).toMatchObject({
-      type: 'read_desktop_file', path: '/proj/docs/notes.md', projectPath: '/proj', sessionId: 's1', preferInline: true, statOnly: true,
+    expect(h.rpc.mock.calls[0][1]).toMatchObject({
+      projectId: 'p', path: '/proj/docs/notes.md', sessionId: 's1', preferInline: true, statOnly: true,
     })
   })
 

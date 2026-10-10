@@ -1,9 +1,10 @@
 import type { RelayClient } from '@superone/relay-client'
-import type { PermissionRequest, RemoteCommand } from '@superone/shared/agent-types'
+import type { PermissionRequest } from '@superone/shared/agent-types'
 import { isInputRequest } from '@superone/shared/input-request-presentation'
 import { inputRequestMessageText } from '@superone/shared/input-request'
 import type { SchemaFormValue } from '@superone/shared/schema-form'
 import type { ChatRuntime } from './runtime'
+import { runtimeSessionRef } from './runtime-session-rpc'
 
 /** Capture the session before any host round-trip; a later navigation never redirects it. */
 export function inputRequestActions(options: {
@@ -12,17 +13,18 @@ export function inputRequestActions(options: {
 }) {
   const { client, runtime, request } = options
   const owner = { projectPath: runtime.projectPath, sessionId: runtime.sessionId }
+  const resource = runtimeSessionRef(client, owner.sessionId, runtime.sourceEnvironmentId)
   const live = () => {
     if (runtime.projectPath !== owner.projectPath || runtime.sessionId !== owner.sessionId
       || !runtime.session.pendingPermissions.some(item => item.requestId === request.requestId)) throw new Error('This input request is no longer active.')
   }
   const answer = async (values?: Record<string, SchemaFormValue>) => {
     live()
-    const response = await client.request({ type: 'respond_permission', requestId: request.requestId,
-      ...owner, decision: values !== undefined,
+    const response = await client.controlledRpc(resource, 'session.respondPermission', {
+      interactionId: request.requestId, decision: values !== undefined ? 'allow' : 'deny',
       ...(values !== undefined ? { formAnswers: values } : {}),
-    } as RemoteCommand) as { handled?: boolean; error?: string } | null
-    if (response?.error || response?.handled !== true) throw new Error(response?.error ?? 'Could not submit. Please try again.')
+    }) as { ok?: boolean }
+    if (response.ok !== true) throw new Error('Could not submit. Please try again.')
   }
   return {
     cancel: () => answer(),

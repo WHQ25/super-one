@@ -7,6 +7,28 @@ const DEFAULT_TTL_MS = 30_000
 const MAX_TTL_MS = 15 * 60 * 1000
 
 type ResourceRef = SessionRef | TerminalRef
+type LeaseListener = (resource: ResourceRef, lease: ControlLease | null) => void
+
+interface LeaseRow {
+  lease_id: string
+  resource_json: string
+  holder_client_id: string
+  generation: string
+  expires_at: number
+  epoch: string
+  delegate: string
+}
+
+function leaseOf(row: LeaseRow): ControlLease {
+  return {
+    leaseId: row.lease_id,
+    resource: JSON.parse(row.resource_json) as ResourceRef,
+    holderClientId: row.holder_client_id,
+    ...(row.delegate ? { delegate: row.delegate } : {}),
+    generation: row.generation,
+    expiresAt: new Date(row.expires_at).toISOString(),
+  }
+}
 
 function resourceKey(resource: ResourceRef): string {
   if ('sessionId' in resource) {
@@ -23,6 +45,8 @@ function clampTtlMs(ttlMs: number | undefined): number {
 
 export class ControlLeaseService {
   private readonly leaseEpoch: string
+  private readonly listeners = new Set<LeaseListener>()
+  private readonly expirations = new Map<string, ReturnType<typeof setTimeout>>()
 
   constructor(private readonly db: SqliteDatabase) {
     this.leaseEpoch = randomUUID()
@@ -30,6 +54,43 @@ export class ControlLeaseService {
 
   get epoch(): string {
     return this.leaseEpoch
+  }
+
+  /** Read the authority; no cached owner object is needed by host surfaces. */
+  get(resource: ResourceRef): ControlLease | null {
+    const row = this.db.prepare(`SELECT * FROM control_leases WHERE resource_key = ?`).get(resourceKey(resource)) as LeaseRow | undefined
+    return row && row.epoch === this.leaseEpoch && row.expires_at > Date.now() ? leaseOf(row) : null
+  }
+
+  onChange(listener: LeaseListener): () => void {
+    this.listeners.add(listener)
+    return () => { this.listeners.delete(listener) }
+  }
+
+  private changed(resource: ResourceRef, lease: ControlLease | null): void {
+    for (const listener of this.listeners) {
+      try { listener(resource, lease) } catch (error) { console.warn('control lease observer failed', error) }
+    }
+  }
+
+  private watchExpiry(resource: ResourceRef, expiresAt?: number): void {
+    const key = resourceKey(resource)
+    clearTimeout(this.expirations.get(key))
+    this.expirations.delete(key)
+    if (expiresAt === undefined) return
+    const timer = setTimeout(() => {
+      this.expirations.delete(key)
+      this.changed(resource, null)
+    }, Math.max(0, expiresAt - Date.now()))
+    timer.unref?.()
+    this.expirations.set(key, timer)
+  }
+
+  /** Stop host observers before its database and frontends close. */
+  dispose(): void {
+    for (const timer of this.expirations.values()) clearTimeout(timer)
+    this.expirations.clear()
+    this.listeners.clear()
   }
 
   /**
@@ -77,6 +138,7 @@ export class ControlLeaseService {
       this.db
         .prepare(`UPDATE control_leases SET expires_at = ?, yields = ? WHERE lease_id = ?`)
         .run(expiresAt, input.yields ? 1 : 0, existing.lease_id)
+      this.watchExpiry(input.resource, expiresAt)
       return {
         leaseId: existing.lease_id,
         resource: input.resource,
@@ -123,7 +185,7 @@ export class ControlLeaseService {
         input.yields ? 1 : 0,
       )
 
-    return {
+    const lease: ControlLease = {
       leaseId,
       resource: input.resource,
       holderClientId: input.holderClientId,
@@ -131,18 +193,23 @@ export class ControlLeaseService {
       generation,
       expiresAt: new Date(expiresAt).toISOString(),
     }
+    this.watchExpiry(input.resource, expiresAt)
+    this.changed(input.resource, lease)
+    return lease
   }
 
   renew(input: {
     leaseId: string
     generation: string
     holderClientId: string
+    /** When provided by a host adapter, fence the authenticated device too. */
+    delegate?: string
     ttlMs?: number
   }): ControlLease {
     const now = Date.now()
     const row = this.db
       .prepare(
-        `SELECT lease_id, resource_key, resource_json, holder_client_id, generation, expires_at, epoch
+        `SELECT lease_id, resource_key, resource_json, holder_client_id, generation, expires_at, epoch, delegate
          FROM control_leases WHERE lease_id = ?`,
       )
       .get(input.leaseId) as
@@ -154,6 +221,7 @@ export class ControlLeaseService {
           generation: string
           expires_at: number
           epoch: string
+          delegate: string
         }
       | undefined
     if (!row || row.epoch !== this.leaseEpoch) {
@@ -162,18 +230,17 @@ export class ControlLeaseService {
     if (row.generation !== input.generation || row.holder_client_id !== input.holderClientId) {
       throw Object.assign(new Error('stale lease generation'), { code: 'lease_stale' })
     }
+    if (input.delegate !== undefined && row.delegate !== input.delegate) {
+      throw Object.assign(new Error('lease delegate mismatch'), { code: 'lease_stale' })
+    }
     if (row.expires_at <= now) {
       throw Object.assign(new Error('lease expired'), { code: 'lease_stale' })
     }
     const expiresAt = now + clampTtlMs(input.ttlMs)
     this.db.prepare(`UPDATE control_leases SET expires_at = ? WHERE lease_id = ?`).run(expiresAt, row.lease_id)
-    return {
-      leaseId: row.lease_id,
-      resource: JSON.parse(row.resource_json) as ResourceRef,
-      holderClientId: row.holder_client_id,
-      generation: row.generation,
-      expiresAt: new Date(expiresAt).toISOString(),
-    }
+    const lease = leaseOf({ ...row, expires_at: expiresAt })
+    this.watchExpiry(lease.resource, expiresAt)
+    return lease
   }
 
   /**
@@ -183,17 +250,26 @@ export class ControlLeaseService {
    */
   revoke(resource: ResourceRef): void {
     this.db.prepare(`UPDATE control_leases SET expires_at = 0 WHERE resource_key = ?`).run(resourceKey(resource))
+    this.watchExpiry(resource)
+    this.changed(resource, null)
   }
 
-  release(leaseId: string, generation: string, holderClientId: string): void {
+  release(leaseId: string, generation: string, holderClientId: string, delegate?: string): void {
+    const row = this.db.prepare(`SELECT * FROM control_leases WHERE lease_id = ?`).get(leaseId) as LeaseRow | undefined
+    if (!row || (delegate !== undefined && row.delegate !== delegate)) {
+      throw Object.assign(new Error('lease release failed'), { code: 'lease_stale' })
+    }
     const result = this.db
       .prepare(
-        `DELETE FROM control_leases WHERE lease_id = ? AND generation = ? AND holder_client_id = ? AND epoch = ?`,
+        `UPDATE control_leases SET expires_at = 0 WHERE lease_id = ? AND generation = ? AND holder_client_id = ? AND epoch = ? AND expires_at > ?`,
       )
-      .run(leaseId, generation, holderClientId, this.leaseEpoch)
+      .run(leaseId, generation, holderClientId, this.leaseEpoch, Date.now())
     if (result.changes !== 1) {
       throw Object.assign(new Error('lease release failed'), { code: 'lease_stale' })
     }
+    const resource = JSON.parse(row.resource_json) as ResourceRef
+    this.watchExpiry(resource)
+    this.changed(resource, null)
   }
 
   assertValid(input: {
@@ -201,11 +277,12 @@ export class ControlLeaseService {
     leaseId: string
     generation: string
     holderClientId: string
+    delegate?: string
   }): void {
     const key = resourceKey(input.resource)
     const row = this.db
       .prepare(
-        `SELECT lease_id, holder_client_id, generation, expires_at, epoch FROM control_leases WHERE resource_key = ?`,
+        `SELECT lease_id, holder_client_id, generation, expires_at, epoch, delegate FROM control_leases WHERE resource_key = ?`,
       )
       .get(key) as
       | {
@@ -214,6 +291,7 @@ export class ControlLeaseService {
           generation: string
           expires_at: number
           epoch: string
+          delegate: string
         }
       | undefined
 
@@ -225,6 +303,9 @@ export class ControlLeaseService {
     }
     if (row.holder_client_id !== input.holderClientId) {
       throw Object.assign(new Error('lease holder mismatch'), { code: 'lease_stale' })
+    }
+    if (input.delegate !== undefined && row.delegate !== input.delegate) {
+      throw Object.assign(new Error('lease delegate mismatch'), { code: 'lease_stale' })
     }
     if (row.expires_at <= Date.now()) {
       throw Object.assign(new Error('lease expired'), { code: 'lease_stale' })

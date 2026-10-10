@@ -12,7 +12,7 @@ import { NODE_LAN_SERVICE_TYPE } from '../lan-service-type'
 import { variantId } from '../variant'
 import { addRecentFolder, getRecentFolders } from '../recent-folders'
 import { localDraftStore } from '../db-drafts'
-import { createSession as createSessionRow, loadSessionMessagesPaginated, renameSession } from '../db-sessions'
+import { createSession as createSessionRow, loadSessionMessagesPaginated, renameSession, setSessionTags, pinSession, hideSession, deleteSession } from '../db-sessions'
 import {
   getDesktopSessionRow,
   listDesktopSessionRows,
@@ -27,11 +27,14 @@ import { createDesktopProjectsPort } from './desktop-projects-port'
 import type { NodeHostSessionManager, NodeHostSessionStore } from './desktop-session-host'
 import { DesktopNodeHost } from './node-host-server'
 import { DesktopDomain, type DesktopDomainDeps } from './desktop-domain'
+import { getEnvironmentHost } from '../environment/environment-host'
+import { InProcessRpcClient } from '../environment/in-process-rpc-client'
 import { defaultDesktopNodePort } from './paths'
+import { desktopRestorePorts } from '../session/session-restore-ports'
 
 type NodeHostSettings = Pick<AppSettings, 'remoteNodeAccessEnabled' | 'remoteNodeAccessPort'>
 /** What main gives the domain for its phones: its PTYs and its desktop methods. */
-type PhonePorts = Pick<DesktopDomainDeps, 'terminals' | 'phoneMethods' | 'projectEdits'>
+type PhonePorts = Pick<DesktopDomainDeps, 'terminals' | 'phoneMethods' | 'projectEdits' | 'bindLocalControl' | 'beforeDraftOpen' | 'topicNotices' | 'rpcRouter'>
 
 let host: DesktopNodeHost | null = null
 /** This desktop's environment backend, open from the first settings pass until quit. */
@@ -145,14 +148,28 @@ export function applyNodeHostSettings(
 
 /** This desktop's environment backend, opened once; every connection is served from it. */
 export function openDesktopDomain(sessions: NodeHostSessionManager, phonePorts: PhonePorts = {}): DesktopDomain {
-  return domain ??= DesktopDomain.open({
+  if (domain) return domain
+  domain = DesktopDomain.open({
     ...phonePorts,
     drafts: localDraftStore(),
     userDataDir: app.getPath('userData'),
     appVersion: app.getVersion(),
     sessions,
     store: desktopSessionStore,
+    sessionEdits: {
+      create: desktopSessionStore.createRow,
+      rename: renameSession,
+      tags: (id, tags) => { setSessionTags(id, tags) },
+      flags: (id, flags) => {
+        if (flags.isPinned !== undefined) pinSession(id, flags.isPinned)
+        if (flags.isHidden !== undefined) hideSession(id, flags.isHidden)
+      },
+      remove: deleteSession,
+      close: (id) => sessions.disposeSession(id),
+      fork: async (input, assertControl) => (await import('../session/session-fork')).forkSession(input, assertControl),
+    },
     rows: { get: getDesktopSessionRow, list: listDesktopSessionRows, loadMessages: loadSessionMessagesPaginated },
+    restore: desktopRestorePorts,
     projects: createDesktopProjectsPort({ list: getRecentFolders, add: addRecentFolder }),
     harnesses: getHarnessManager(),
     listAgentProfiles: listSessionAgentProfiles,
@@ -162,6 +179,8 @@ export function openDesktopDomain(sessions: NodeHostSessionManager, phonePorts: 
         assertSessionHarnessRuntimeReady(id, harnesses, desktopHarnessResolver),
     },
   })
+  getEnvironmentHost().registry.getLocal().bindProtocol(new InProcessRpcClient(domain))
+  return domain
 }
 
 /**

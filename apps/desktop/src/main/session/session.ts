@@ -12,6 +12,8 @@ import { buildCompactBoundaryMessage, compactBoundaryInsertIndex, isCompactSlash
 import { newMessageId } from '@superone/shared/message-id'
 import { isAgentOutputEvent, withSendFailure, withoutSendFailure, type DuplicateSend } from '@superone/shared/send-failure'
 import { SessionShutdown } from './session-shutdown'
+import { SessionLease, type SessionLeaseAuthority } from './session-lease'
+import { runHostReaction } from './control-context'
 import { SessionLiveness } from './session-liveness'
 import { hostPendingInteractions, trackHostInteraction } from './host-pending-interactions'
 import { dispatchBackendSteer } from './dispatch-backend-steer'
@@ -88,9 +90,6 @@ import { ensureShellPath, isShellPathReady } from '../shell-path'
 import { buildModelFallbackMessage, modelFallbackSignature } from './model-fallback-notification'
 import { buildPluginNoticeMessage, isPluginLogEvent } from './plugin-notice-message'
 import {
-  LOCAL_OWNER,
-  SessionClaimConflictError,
-  SessionLockedError,
   SessionWorktreeRemovedError,
   type BackendCommand,
   type BackendStartOptions,
@@ -101,9 +100,7 @@ import {
   type SendProviderOrigin,
   type Session as SessionContract,
   type SessionBackend,
-  type SessionLeaveReason,
   type SessionLifecycleEvent,
-  type SessionOwner,
   type SessionSnapshot,
   type SessionStateChange,
   type SessionStatus,
@@ -119,6 +116,7 @@ interface SendDeliveryState extends SendDelivery {
 }
 
 export interface SessionConstructorOptions {
+  leaseAuthority?: SessionLeaseAuthority
   id: string
   projectPath: string
   cwd: string
@@ -522,72 +520,8 @@ export class Session implements SessionContract {
     this._lastRuntimeActivityAt = Date.now()
   }
 
-  private _owner: SessionOwner = LOCAL_OWNER
-  private _subscribers = new Set<string>()
-  private _lifecycleListeners = new Set<(event: SessionLifecycleEvent) => void>()
-  get owner(): SessionOwner { return this._owner }
-  get subscribers(): ReadonlySet<string> { return this._subscribers }
-
-  onLifecycle(handler: (event: SessionLifecycleEvent) => void): () => void {
-    this._lifecycleListeners.add(handler)
-    return () => { this._lifecycleListeners.delete(handler) }
-  }
-
-  private emitLifecycle(event: SessionLifecycleEvent): void {
-    for (const cb of this._lifecycleListeners) {
-      try { cb(event) } catch (err) { log.warn('[Session] lifecycle handler error:', err) }
-    }
-  }
-
-  claim(owner: Extract<SessionOwner, { kind: 'remote' }>): void {
-    if (this._status === 'disposed') return
-    if (this._owner.kind === 'remote' && this._owner.deviceId !== owner.deviceId) {
-      throw new SessionClaimConflictError(this.id, this._owner.deviceId, owner.deviceId)
-    }
-    for (const sub of this._subscribers) {
-      if (sub !== owner.deviceId) {
-        throw new SessionClaimConflictError(this.id, sub, owner.deviceId)
-      }
-    }
-    if (this._owner.kind === 'remote' && this._owner.deviceId === owner.deviceId) return
-    const previous = this._owner
-    this._owner = owner
-    trace('session.lifecycle', 'claim', { sid: this.id, deviceId: owner.deviceId, prevOwner: previous.kind === 'remote' ? previous.deviceId : 'local' })
-    this.emitLifecycle({ type: 'owner_changed', sessionId: this.id, previous, current: owner })
-  }
-
-  release(deviceId: string, reason?: SessionLeaveReason): void {
-    if (!this.voiceInterest.releaseAllowed(deviceId, reason)) return
-    if (this._owner.kind !== 'remote' || this._owner.deviceId !== deviceId) return
-    const previous = this._owner
-    this._owner = LOCAL_OWNER
-    trace('session.lifecycle', 'release', { sid: this.id, deviceId, reason: reason ?? null })
-    this.emitLifecycle({ type: 'owner_changed', sessionId: this.id, previous, current: LOCAL_OWNER, reason })
-  }
-
-  subscribe(deviceId: string): void {
-    this.voiceInterest.subscribed(deviceId)
-    if (this._status === 'disposed') return
-    if (this._subscribers.has(deviceId)) return
-    if (this._owner.kind === 'remote' && this._owner.deviceId !== deviceId) {
-      throw new SessionClaimConflictError(this.id, this._owner.deviceId, deviceId)
-    }
-    for (const sub of this._subscribers) {
-      if (sub !== deviceId) {
-        throw new SessionClaimConflictError(this.id, sub, deviceId)
-      }
-    }
-    this._subscribers.add(deviceId)
-    trace('session.lifecycle', 'subscribe', { sid: this.id, deviceId, owner: this._owner.kind === 'remote' ? this._owner.deviceId : 'local' })
-    this.emitLifecycle({ type: 'subscriber_added', sessionId: this.id, deviceId })
-  }
-
-  unsubscribe(deviceId: string, reason?: SessionLeaveReason): void {
-    if (!this.voiceInterest.unsubscribeAllowed(deviceId, reason)) return
-    if (!this._subscribers.delete(deviceId)) return
-    trace('session.lifecycle', 'unsubscribe', { sid: this.id, deviceId, reason: reason ?? null, remainingSubs: [...this._subscribers] })
-    this.emitLifecycle({ type: 'subscriber_removed', sessionId: this.id, deviceId, reason })
-  }
+  readonly lease: SessionLease
+  onLifecycle(handler: (event: SessionLifecycleEvent) => void): () => void { return this.lease.onLifecycle(handler) }
 
   /**
    * Composer withdraws when the worktree checkout is gone. Main process must
@@ -604,19 +538,12 @@ export class Session implements SessionContract {
   private assertCanSend(providerOrigin: SendProviderOrigin): void {
     const worktreeErr = this.rejectIfWorktreeRemoved()
     if (worktreeErr) throw worktreeErr
-    // remote: device that owns/subscribes the session
-    // host: trusted main-process wakes (mailbox, download settle) — not UI ownership
-    if (providerOrigin === 'remote' || providerOrigin === 'host') return
-    if (this._owner.kind === 'remote') {
-      throw new SessionLockedError(this.id, 'remote-owned', this._owner.deviceId)
-    }
-    if (this._subscribers.size > 0) {
-      throw new SessionLockedError(this.id, 'remote-subscribed')
-    }
+    this.lease.assertSend(providerOrigin)
   }
 
   constructor(opts: SessionConstructorOptions) {
     this.id = opts.id
+    this.lease = new SessionLease(opts.id, opts.leaseAuthority)
     this.projectPath = opts.projectPath
     this._cwd = opts.cwd
     this.providerId = opts.providerId
@@ -729,7 +656,7 @@ export class Session implements SessionContract {
     if (this._cwd === this.projectPath) return
     this._missingWorktreePath = this._cwd
     this.emitWorktreeMissing(this.projectPath)
-    await this.interrupt()
+    await runHostReaction(() => this.interrupt())
   }
 
   get snapshot(): SessionSnapshot {
@@ -766,6 +693,7 @@ export class Session implements SessionContract {
   }
 
   setApiProviderId(apiProviderId: string | null): void {
+    this.lease.assertMutation()
     this.assertNotDisposed()
     if (this._apiProviderId === apiProviderId) return
     if (this.harnessId === 'codex') assertCodexAccountSwitchAllowed(this._apiProviderId, apiProviderId, this._messages.length > 0 || this.isStreaming())
@@ -876,6 +804,7 @@ export class Session implements SessionContract {
       await prev.catch(() => {})
       await this.waitForRuntimeRelease()
       this.assertNotDisposed()
+      this.assertCanSend(providerOrigin)
       const effortChanged = this.applyRequestSelection(request)
       // The project's workspace folders are re-applied here rather than trusted
       // from the caller. A renderer that has not hydrated them — a detached
@@ -916,6 +845,7 @@ export class Session implements SessionContract {
           this._needsRebuild = false
         }
         this.assertNotDisposed()
+        this.assertCanSend(providerOrigin)
         this._status = 'streaming'
         try {
           this.flushFirstTurnPreamble()
@@ -1001,6 +931,7 @@ export class Session implements SessionContract {
   }
 
   async interrupt(): Promise<boolean> {
+    this.lease.assertMutation()
     if (this._status === 'disposed') return false
     if (this._status === 'interrupting') return true
     // Not `_status`-only: a continuation turn runs with `_status === 'ended'`,
@@ -1038,6 +969,7 @@ export class Session implements SessionContract {
   }
 
   async startRealtimeVoice(request: import('@superone/shared/agent-types').RealtimeVoiceStartRequest): Promise<void> {
+    this.lease.assertMutation()
     this.assertNotDisposed()
     if (this.harnessId !== 'codex' || !this.backend.startRealtimeVoice) {
       throw new Error('Realtime voice is not supported by this agent.')
@@ -1062,6 +994,7 @@ export class Session implements SessionContract {
     await this.ensureStarted()
     this._needsRebuild = false
     this.assertNotDisposed()
+    this.lease.assertMutation()
     await this.backend.startRealtimeVoice(request)
     if (shouldTitleFromFirstUtterance && this._title === null && this._messages.length === 0) {
       this._realtimeTitlePending = true
@@ -1072,6 +1005,7 @@ export class Session implements SessionContract {
   }
 
   async stopRealtimeVoice(): Promise<void> {
+    this.lease.assertMutation()
     if (this._status === 'disposed') return
     await this.backend.stopRealtimeVoice?.()
   }
@@ -1087,6 +1021,7 @@ export class Session implements SessionContract {
   }
 
   async requestSessionRecap(auto: boolean): Promise<boolean> {
+    this.lease.assertMutation()
     if (this._status === 'disposed') return false
     if (this.harnessId !== 'acp') return false
     // No transcript → nothing for the agent to recap (skip auto and manual).
@@ -1111,6 +1046,7 @@ export class Session implements SessionContract {
   }
 
   async setPermissionMode(mode: PermissionMode): Promise<void> {
+    this.lease.assertMutation()
     this.assertNotDisposed()
     this.touchRuntimeActivity()
     // A harness that declares no modes runs its own permission configuration;
@@ -1143,6 +1079,7 @@ export class Session implements SessionContract {
   }
 
   async setSandboxMode(mode: SandboxMode): Promise<SandboxInfo> {
+    this.lease.assertMutation()
     this.assertNotDisposed()
     this.touchRuntimeActivity()
     if (mode !== 'off') {
@@ -1179,6 +1116,7 @@ export class Session implements SessionContract {
   }
 
   async setModel(model: string, opts?: { contextWindow?: number }): Promise<void> {
+    this.lease.assertMutation()
     this.assertNotDisposed()
     this.touchRuntimeActivity()
     this.model = model
@@ -1192,6 +1130,7 @@ export class Session implements SessionContract {
   }
 
   async setSessionMode(modeId: string): Promise<void> {
+    this.lease.assertMutation()
     this.assertNotDisposed()
     this.touchRuntimeActivity()
     // Always push: Grok effort (session/set_model + reasoningEffort) must apply on
@@ -1210,6 +1149,7 @@ export class Session implements SessionContract {
    * Other harness-specific settings are forwarded through the UI snapshot.
    */
   broadcastSettingsPatch(patch: import('@superone/shared/agent-types').SessionSettingsPatch): void {
+    this.lease.assertMutation()
     broadcastSessionSettings(patch, {
       harnessId: this.harnessId,
       setSelectedSettings: (settings) => this.setSelectedSettings(settings),
@@ -1220,6 +1160,7 @@ export class Session implements SessionContract {
   }
 
   setSelectedSettings(opts: { model?: string | null; effort?: SendMessageRequest['effort'] | null; ultracode?: boolean; mode?: string | null; contextWindow?: number | null }): void | Promise<void> {
+    this.lease.assertMutation()
     this.assertNotDisposed()
     if (opts.model !== undefined || opts.effort !== undefined) this._selectionRevision += 1
     if (opts.ultracode !== undefined) this.setUltracode(opts.ultracode)
@@ -1286,6 +1227,7 @@ export class Session implements SessionContract {
    * RPC) gets the same `interaction_resolved` when something handled it.
    */
   respondToPermission(requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], decision?: 'cancel', formAnswers?: Record<string, unknown>): boolean {
+    this.lease.assertMutation()
     const handled = this.dispatchPermissionResponse(requestId, allow, alwaysAllow, reason, selectedSuggestions, decision, formAnswers)
     if (handled) this.announceResolved({ interactionType: 'permission', requestId })
     return handled
@@ -1356,6 +1298,7 @@ export class Session implements SessionContract {
   }
 
   respondToQuestion(requestId: string, answers: Record<string, string>, annotations?: QuestionAnnotations): void {
+    this.lease.assertMutation()
     this.assertNotDisposed()
     this.touchRuntimeActivity()
     this.backend.respondToQuestion(requestId, answers, annotations)
@@ -1363,6 +1306,7 @@ export class Session implements SessionContract {
   }
 
   dismissQuestion(requestId: string): void {
+    this.lease.assertMutation()
     this.assertNotDisposed()
     this.touchRuntimeActivity()
     this.backend.dismissQuestion(requestId)
@@ -1370,6 +1314,7 @@ export class Session implements SessionContract {
   }
 
   respondToPlanApproval(requestId: string, approved: boolean, feedback?: string): void {
+    this.lease.assertMutation()
     this.assertNotDisposed()
     this.touchRuntimeActivity()
     this.backend.respondToPlanApproval(requestId, approved, feedback)
@@ -1408,6 +1353,7 @@ export class Session implements SessionContract {
   }
 
   async authenticateMcp(serverName: string): Promise<void> {
+    this.lease.assertMutation()
     this.assertStarted()
     this.touchRuntimeActivity()
     if (!this.backend.authenticateMcp) throw new Error(`MCP authentication is not supported by ${this.harnessId}`)
@@ -1415,11 +1361,13 @@ export class Session implements SessionContract {
   }
 
   async rewindFiles(userMessageId: string, opts?: { dryRun?: boolean; includeConversation?: boolean }): Promise<RewindFilesResult> {
+    if (!opts?.dryRun) this.lease.assertMutation()
     if (this.harnessId === 'acp') {
       const index = grokPromptIndexForUserMessage(this._messages, userMessageId)
       if (index == null) return { canRewind: false, error: 'Grok prompt boundary not found' }
       await this.ensureStarted()
       this.touchRuntimeActivity()
+      if (!opts?.dryRun) this.lease.assertMutation()
       return this.backend.rewindFiles(String(index), opts)
     }
     if (!this.backendStarted) return { canRewind: false, error: 'No active session' }
@@ -1428,6 +1376,7 @@ export class Session implements SessionContract {
   }
 
   async rewindConversation(userMessageId: string): Promise<RewindFilesResult> {
+    this.lease.assertMutation()
     this.assertNotDisposed()
     if (this.harnessId === 'acp') {
       const index = grokPromptIndexForUserMessage(this._messages, userMessageId)
@@ -1436,6 +1385,7 @@ export class Session implements SessionContract {
       if (!this.backend.rewindConversation) {
         return { canRewind: false, error: 'Conversation rewind is not supported by ACP' }
       }
+      this.lease.assertMutation()
       return this.backend.rewindConversation(String(index))
     }
     if (this.harnessId !== 'codex') return { canRewind: true }
@@ -1448,16 +1398,19 @@ export class Session implements SessionContract {
     if (!this.backend.rewindConversation) {
       return { canRewind: false, error: 'Conversation rewind is not supported by Codex' }
     }
+    this.lease.assertMutation()
     return this.backend.rewindConversation(turnId)
   }
 
   async reconnectMcp(serverName: string): Promise<void> {
+    this.lease.assertMutation()
     this.assertStarted()
     this.touchRuntimeActivity()
     return this.backend.reconnectMcp(serverName)
   }
 
   async reloadMcpServers(): Promise<void> {
+    this.lease.assertMutation()
     if (!this.backendStarted) return
     this.touchRuntimeActivity()
     // A pending rebuild already discards the connection and re-snapshots tools on the
@@ -1468,12 +1421,14 @@ export class Session implements SessionContract {
   }
 
   async toggleMcpServer(serverName: string, enabled: boolean): Promise<void> {
+    this.lease.assertMutation()
     this.assertStarted()
     this.touchRuntimeActivity()
     return this.backend.toggleMcpServer(serverName, enabled)
   }
 
   async modUi<O extends ModUiOp>(op: O, request: ModUiRequest<O>): Promise<ModUiResult<O>> {
+    if (MOD_UI_MUTATING_OPS.has(op)) this.lease.assertMutation()
     if (!this.backendStarted || !this.backend.modUi) {
       throw Object.assign(new Error('This session draws no mod interfaces'), { name: MOD_UI_UNAVAILABLE })
     }
@@ -1495,16 +1450,19 @@ export class Session implements SessionContract {
   }
 
   async reloadPlugins(): Promise<boolean> {
+    this.lease.assertMutation()
     if (!this.backendStarted) return false
     this.touchRuntimeActivity()
     return this.backend.reloadPlugins()
   }
 
   async stopBackgroundTasks(): Promise<void> {
+    this.lease.assertMutation()
     await this.backend.stopBackgroundTasks?.()
   }
 
   async startQueuedMessages(): Promise<boolean> {
+    this.lease.assertMutation()
     this.assertNotDisposed()
     if (this.harnessId !== 'codex' || this.isStreaming()) return false
     await this.ensureStarted()
@@ -1520,6 +1478,7 @@ export class Session implements SessionContract {
 
   /** Cursor local: expire wedged run via LocalSendOptions.force. */
   async forceRecoverRun(message?: string): Promise<void> {
+    this.lease.assertMutation()
     this.assertStarted()
     const backend = this.backend as SessionBackend & {
       forceRecover?: (msg?: string) => Promise<void>
@@ -1585,6 +1544,7 @@ export class Session implements SessionContract {
   }
 
   setAcpAgentId(agentId: string | null): void {
+    this.lease.assertMutation()
     if (this.harnessId !== 'acp') return
     if (this._acpAgentId === agentId) {
       this.applyAcpAgentToConfig()
@@ -1620,6 +1580,7 @@ export class Session implements SessionContract {
   }
 
   setAgentPreset(presetId: string | null): void {
+    this.lease.assertMutation()
     this.assertNotDisposed()
     if (this.harnessId !== 'dsh') return
     const current = (this.providerConfig as { agentPreset?: string } | null)?.agentPreset ?? null
@@ -1635,6 +1596,7 @@ export class Session implements SessionContract {
   }
 
   async dequeueMessage(clientMessageId: string): Promise<boolean> {
+    this.lease.assertMutation()
     if (!this.backendStarted) return false
     const removed = await this.backend.dequeueMessage(clientMessageId)
     if (removed && this._pendingQueuedRequests.delete(clientMessageId)) this.emitQueuedMessages()
@@ -1682,6 +1644,7 @@ export class Session implements SessionContract {
   }
 
   async setCodexGoal(threadId: string | null, objective: string, status?: CodexGoalStatus): Promise<CodexGoal | null> {
+    this.lease.assertMutation()
     this.assertNotDisposed()
     this.touchRuntimeActivity()
     if (this.harnessId !== 'codex') throw new Error(`Session ${this.id} is not a Codex session`)
@@ -1691,6 +1654,7 @@ export class Session implements SessionContract {
   }
 
   async clearCodexGoal(threadId: string | null): Promise<boolean> {
+    this.lease.assertMutation()
     this.assertNotDisposed()
     this.touchRuntimeActivity()
     if (this.harnessId !== 'codex') throw new Error(`Session ${this.id} is not a Codex session`)
@@ -1700,6 +1664,7 @@ export class Session implements SessionContract {
   }
 
   async dispatchBackendCommand(cmd: BackendCommand): Promise<void> {
+    this.lease.assertMutation()
     this.assertNotDisposed()
     this.touchRuntimeActivity()
     switch (cmd.kind) {
@@ -1801,6 +1766,7 @@ export class Session implements SessionContract {
   }
 
   truncateMessagesAt(checkpointId: string): void {
+    this.lease.assertMutation()
     const idx = this._messages.findIndex((m) => m.checkpointId === checkpointId)
     if (idx < 0) return
     // Prefix slice: remaining message objects keep identity; stale-id delete removes the rest.
@@ -1824,7 +1790,7 @@ export class Session implements SessionContract {
     if (this.harnessId === 'acp') {
       notifySessionRecapSessionRemoved(this.id)
     }
-    trace('session.lifecycle', 'dispose', { sid: this.id, owner: this._owner.kind === 'remote' ? this._owner.deviceId : 'local', subscribers: [...this._subscribers] })
+    trace('session.lifecycle', 'dispose', { sid: this.id, control: this.lease.current })
     // Before the status flips: clients still hear each form's resolution.
     cancelInputRequestsForSession(this.id)
     this._status = 'disposed'
@@ -1840,17 +1806,7 @@ export class Session implements SessionContract {
     // A start already in flight must settle before its newly created runtime is closed.
     try { await this._startPromise } catch { /* cancellation during startup is expected */ }
     await this.backend.close()
-    if (this._owner.kind === 'remote') {
-      const previous = this._owner
-      this._owner = LOCAL_OWNER
-      this.emitLifecycle({ type: 'owner_changed', sessionId: this.id, previous, current: LOCAL_OWNER, reason: 'session_closed' })
-    }
-    for (const deviceId of Array.from(this._subscribers)) {
-      this._subscribers.delete(deviceId)
-      this.emitLifecycle({ type: 'subscriber_removed', sessionId: this.id, deviceId, reason: 'session_closed' })
-    }
-    this.emitLifecycle({ type: 'closed', sessionId: this.id })
-    this._lifecycleListeners.clear()
+    this.lease.dispose()
     for (const unsub of this.unsubs) {
       try { unsub() } catch { /* ignore */ }
     }
@@ -2068,6 +2024,7 @@ export class Session implements SessionContract {
    * still change (assigning a branch to a detached worktree).
    */
   async applyWorktreeSelection(nextCwd: string, gitBranch?: string | null): Promise<void> {
+    this.lease.assertMutation()
     if (nextCwd !== this._cwd && this._messages.length > 0) {
       log.warn('[Session] kept sid=%s in %s; ignored worktree selection %s', this.id, this._cwd, nextCwd)
       return
@@ -2076,6 +2033,7 @@ export class Session implements SessionContract {
   }
 
   async switchCwd(nextCwd: string, gitBranch?: string | null): Promise<void> {
+    this.lease.assertMutation()
     this.assertNotDisposed()
     this.touchRuntimeActivity()
     const branchChanged = gitBranch !== undefined && gitBranch !== this._gitBranch
@@ -2096,6 +2054,7 @@ export class Session implements SessionContract {
     }
     await this.waitForRuntimeRelease()
     this.assertNotDisposed()
+    this.lease.assertMutation()
     await this.rebuildBackend()
   }
 
@@ -2743,6 +2702,7 @@ export class Session implements SessionContract {
   }
 
   setTitle(title: string, source: 'user' | 'agent'): void {
+    if (source === 'user') this.lease.assertMutation()
     if (this._status === 'disposed') return
     const trimmed = title.trim()
     if (!trimmed) return

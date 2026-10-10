@@ -1,7 +1,7 @@
 import { bytesToBase64String, type TransportKind } from '@superone/relay-client'
-import type { ReadDesktopFileError, ReadDesktopFileResponse, RemoteCommand } from '@superone/shared/agent-types'
+import type { ReadDesktopFileError, ReadDesktopFileResponse } from '@superone/shared/agent-types'
 import { resolveRemoteFilePath } from './shell-state'
-import { randomId } from './ids'
+import { projectRpc, type ProjectRpcClient } from './project-rpc'
 
 function isInlineBase64(response: ReadDesktopFileResponse): response is ReadDesktopFileResponse & { inline: true; base64: string } {
   return 'inline' in response && 'base64' in response
@@ -22,8 +22,7 @@ export type InlineImageResult =
   | { confirmRequired: true; size?: number }
 
 /** The slice of `RelayClient` the loader needs; tests hand in a fake. */
-export interface InlineImageHost {
-  request(command: RemoteCommand, timeoutMs: number): Promise<unknown>
+export interface InlineImageHost extends ProjectRpcClient {
   downloadDesktopFile(response: Extract<ReadDesktopFileResponse, { url: string }>): Promise<Uint8Array>
 }
 
@@ -63,18 +62,15 @@ export function resetInlineImageCache(): void {
   cachedBytes = 0
 }
 
-function readCommand(req: InlineImageRequest, target: string, statOnly: boolean): RemoteCommand {
-  return {
-    type: 'read_desktop_file',
-    requestId: randomId(),
-    projectPath: req.projectPath,
+function readFile(req: InlineImageRequest, target: string, statOnly: boolean): Promise<ReadDesktopFileResponse | ReadDesktopFileError> {
+  return projectRpc(req.host, req.projectPath, 'files.read', {
     ...(req.sessionId ? { sessionId: req.sessionId } : {}),
     ...(req.root ? { root: req.root } : {}),
     path: target,
     maxBytes: INLINE_IMAGE_MAX_BYTES,
     preferInline: true,
     ...(statOnly ? { statOnly: true } : {}),
-  } as RemoteCommand
+  }, { timeoutMs: INLINE_IMAGE_TIMEOUT_MS })
 }
 
 function dataUriFromInline(response: ReadDesktopFileResponse & { inline: true; base64: string }): string {
@@ -102,7 +98,7 @@ export async function loadInlineImage(req: InlineImageRequest): Promise<InlineIm
   if (cached) return { dataUri: cached }
 
   if (req.transport !== 'lan' && !req.confirmed) {
-    const stat = await req.host.request(readCommand(req, target, true), INLINE_IMAGE_TIMEOUT_MS) as ReadDesktopFileResponse | ReadDesktopFileError
+    const stat = await readFile(req, target, true)
     if (!stat.ok) throw new Error(stat.message ?? stat.error)
     if (isInlineBase64(stat)) {
       const dataUri = dataUriFromInline(stat)
@@ -113,7 +109,7 @@ export async function loadInlineImage(req: InlineImageRequest): Promise<InlineIm
     return { confirmRequired: true, size: stat.size }
   }
 
-  const response = await req.host.request(readCommand(req, target, false), INLINE_IMAGE_TIMEOUT_MS) as ReadDesktopFileResponse | ReadDesktopFileError
+  const response = await readFile(req, target, false)
   if (!response.ok) throw new Error(response.message ?? response.error)
   if (isInlineBase64(response)) {
     const dataUri = dataUriFromInline(response)

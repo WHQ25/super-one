@@ -10,14 +10,14 @@ describe('media provider labels over the relay', () => {
         'junk',
       ],
     }))
-    await expect(requestMediaProviderLabels({ request })).resolves.toEqual([
+    await expect(requestMediaProviderLabels({ rpc: request })).resolves.toEqual([
       { id: 'openai', label: 'OpenAI Images', providerLabel: 'OpenAI', models: [{ id: 'gpt-image-1', label: 'GPT Image 1' }] },
     ])
-    expect(request).toHaveBeenCalledWith(expect.objectContaining({ type: 'list_media_providers' }), expect.any(Number))
+    expect(request).toHaveBeenCalledWith('media.listProviders', {}, { timeoutMs: 15_000 })
   })
 
   it('answers an empty list when the host errors or is too old to know the command', async () => {
-    await expect(requestMediaProviderLabels({ request: vi.fn(async () => ({ error: 'nope' })) })).resolves.toEqual([])
-    await expect(requestMediaProviderLabels({ request: vi.fn(async () => null) })).resolves.toEqual([])
+    await expect(requestMediaProviderLabels({ rpc: vi.fn(async () => ({ error: 'nope' })) })).resolves.toEqual([])
+    await expect(requestMediaProviderLabels({ rpc: vi.fn(async () => null) })).resolves.toEqual([])
   })
 })

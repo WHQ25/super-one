@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { RelayClient } from '@superone/relay-client'
+import { resolveTestProject } from './project-rpc.test-fixtures'
 import { fetchProjectGitInfo, gitTurnEnded } from './session-git-refresh'
 
 const idle = (sessionId: string | null): { sessionId: string | null; streaming: boolean } => (
@@ -35,14 +36,14 @@ describe('gitTurnEnded', () => {
 
 describe('fetchProjectGitInfo', () => {
   it('asks the host for the project checkout', async () => {
-    const request = vi.fn(async () => ({ branch: 'main', dirty: { files: 2, insertions: 4, deletions: 1 } }))
-    const git = await fetchProjectGitInfo({ request } as unknown as RelayClient, '/repo')
-    expect(request).toHaveBeenCalledWith(expect.objectContaining({ type: 'get_git_info', projectPath: '/repo' }))
+    const rpc = vi.fn(async () => ({ branch: 'main', porcelain: ' M a\n?? b', insertions: 4, deletions: 1 }))
+    const git = await fetchProjectGitInfo({ rpc, resolveProject: resolveTestProject } as unknown as RelayClient, '/repo')
+    expect(rpc).toHaveBeenCalledWith('git.status', { projectId: 'p' }, { environmentId: 'desktop' })
     expect(git?.dirty?.files).toBe(2)
   })
 
   it('swallows a failed read so the chip can stay on the last known state', async () => {
-    const request = vi.fn(async () => { throw new Error('offline') })
-    await expect(fetchProjectGitInfo({ request } as unknown as RelayClient, '/repo')).resolves.toBeNull()
+    const rpc = vi.fn(async () => { throw new Error('offline') })
+    await expect(fetchProjectGitInfo({ rpc, resolveProject: resolveTestProject } as unknown as RelayClient, '/repo')).resolves.toBeNull()
   })
 })

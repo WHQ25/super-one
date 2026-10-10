@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { TerminalSession } from './terminal-session'
-import { TerminalOwnership } from './terminal-ownership'
+import { terminalLease } from './terminal-lease.test-fixtures'
 import type { PtyLike, PtySpawner } from './pty'
 import { hasWaitCondition, waitForTerminal } from './terminal-wait'
 
@@ -24,7 +24,7 @@ function makeSession() {
     cols: 80,
     rows: 24,
     spawner,
-    ownership: new TerminalOwnership(),
+    lease: terminalLease(),
     shell: '/bin/zsh',
     onEvent: () => {},
     control: { pollMs: 10 },

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ChatMessage } from '@superone/shared/agent-types'
 import { ChatRuntime } from '../../../mobile/src/runtime'
 import { ConnectionDelivery, deliveryPolicy } from '@superone/runtime/stream'
-import { buildRemoteSessionSnapshot } from './agent/remote-session-snapshot'
+import { nativeRestoreClient, nativeSessionLoad } from './session/native-restore.test-fixtures'
 
 /** A phone's delivery; `summarized` when it opened the session progressively. */
 function phone(summarized = false): ConnectionDelivery {
@@ -32,25 +32,17 @@ describe('opening a running session from mobile', () => {
     expect(persisted.status).toBe('interrupted')
     // A row completed in memory may still have its last streaming checkpoint on disk.
     const earlier = { ...running, id: 'earlier', status: 'complete' as const }
-    const staleEarlier = { ...persisted, id: 'earlier' }
+    expect({ ...persisted, id: 'earlier' }.status).toBe('interrupted')
     const host = {
       snapshot: { messages: [earlier, running], harnessId: providerId },
       isStreaming: () => true,
-      getPendingInteractions: () => [],
+      getPendingInteractions: () => [], getReplayEvents: () => [],
       getQueuedMessagesEvent: () => null,
       getCurrentSandboxInfo: () => undefined,
       getCurrentPermissionMode: () => 'default',
       getUiSettings: () => ({}), getSessionGoal: () => null,
     }
-    const client = {
-      startBuffering() {},
-      releaseBuffer: () => ({ epoch: 1, batches: [] }),
-      request: async (command: { type: string }) => {
-        if (command.type === 'load_session_messages') return { messages: [staleEarlier, persisted], hasMore: false, provider: providerId }
-        if (command.type === 'get_session_state') return buildRemoteSessionSnapshot(host as never, '/project', 'session', phone())
-        return { ok: true }
-      },
-    }
+    const client = nativeRestoreClient(() => nativeSessionLoad(host as never, phone()))
     const paint = vi.fn()
     const runtime = new ChatRuntime(client as never, paint)
     await runtime.open('/project', 'session')
@@ -78,30 +70,24 @@ it('restores all composer context from passive history without sending View HTML
     modelContext: { updateId: 'r1', content: [{ type: 'text', text: 'Selected part' }], source: { appInstanceId: 'view', server: 'CAD' } } }
   const history: ChatMessage[] = [{ id: 'old-view', role: 'assistant', status: 'complete', createdAt: '',
     content: [{ type: 'tool_result', toolUseId: 'call', summary: '', app }] }]
-  const restored = await buildRemoteSessionSnapshot(null, '/project', 'session', phone(true), history)
-  expect(restored.inProgressMessages).toEqual([])
-  expect(restored.mcpAppContexts).toHaveLength(1)
-  expect(restored.mcpAppContexts[0]).toMatchObject({ messageId: 'old-view', app: { modelContext: { updateId: 'r1' } } })
-  expect(JSON.stringify(restored.mcpAppContexts)).not.toMatch(/private-html|tool-private/)
+  const restored = await nativeSessionLoad(null, phone(true), history)
+  expect((restored.activeTurn ?? [])).toEqual([])
+  expect(restored.restore!.mcpAppContexts).toHaveLength(1)
+  expect(restored.restore!.mcpAppContexts[0]).toMatchObject({ messageId: 'old-view', app: { modelContext: { updateId: 'r1' } } })
+  expect(JSON.stringify(restored.restore!.mcpAppContexts)).not.toMatch(/private-html|tool-private/)
 })
 
 it('opens a session on the phone with the Ultracode the desktop session runs with', async () => {
   const host = {
     snapshot: { messages: [], harnessId: 'claude' },
     isStreaming: () => false,
-    getPendingInteractions: () => [],
+    getPendingInteractions: () => [], getReplayEvents: () => [],
     getQueuedMessagesEvent: () => null,
     getCurrentSandboxInfo: () => undefined,
     getCurrentPermissionMode: () => 'default',
     getUiSettings: () => ({ ultracode: true }), getSessionGoal: () => null,
   }
-  const client = {
-    startBuffering() {},
-    releaseBuffer: () => ({ epoch: 1, batches: [] }),
-    request: async (command: { type: string }) => command.type === 'get_session_state'
-      ? buildRemoteSessionSnapshot(host as never, '/project', 'session', phone())
-      : command.type === 'load_session_messages' ? { messages: [], hasMore: false, provider: 'claude' } : { ok: true },
-  }
+  const client = nativeRestoreClient(() => nativeSessionLoad(host as never, phone()))
   const runtime = new ChatRuntime(client as never, () => {})
   await runtime.open('/project', 'session')
   expect(runtime.session.ultracode).toBe(true)

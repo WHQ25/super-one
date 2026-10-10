@@ -1,4 +1,6 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { TerminalEvent } from '@superone/shared/agent-types'
+import { ControlLeaseService } from '@superone/runtime/lease'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -36,6 +38,35 @@ async function settlePtyExit(): Promise<void> {
 }
 
 describe('NodeTerminalManager exit bookkeeping', () => {
+  it('publishes native output and control hints with an attach sequence and releases control on kill', async () => {
+    const { db } = freshDb()
+    const terminals = new NodeTerminalManager(db)
+    const leases = new ControlLeaseService(db)
+    terminals.bindLeases('env', leases)
+    const events: TerminalEvent[] = []
+    const off = terminals.onEvent(event => events.push(event))
+    const dir = mkdtempSync(join(tmpdir(), 'sroe-terminal-native-'))
+    dirs.push(dir)
+    const info = terminals.create({ cwd: dir, shell: '/bin/sh' })
+    const resource = { environmentId: 'env', terminalId: info.terminalId }
+    leases.acquire({ resource, holderClientId: 'controller', ttlMs: 60_000 })
+    expect(terminals.attach(info.terminalId, 'controller').terminal.writableByMe).toBe(true)
+    expect(terminals.attach(info.terminalId, 'observer').terminal.writableByMe).toBe(false)
+    terminals.write(info.terminalId, "printf 'native marker\\n'\n")
+    await vi.waitFor(() => expect(events.some(event => event.type === 'terminal_output')).toBe(true))
+    const attach = terminals.attach(info.terminalId, 'controller')
+    expect(attach.terminal.lastSeq).toBe(Number(attach.sequence))
+    expect(terminals.readAfter(info.terminalId, attach.sequence).data).toBe('')
+    expect(events).toContainEqual(expect.objectContaining({ type: 'terminal_created', terminalId: info.terminalId }))
+    expect(events).toContainEqual(expect.objectContaining({ type: 'terminal_owner_changed', ownerDeviceId: 'controller' }))
+    terminals.kill(info.terminalId)
+    expect(leases.get(resource)).toBeNull()
+    expect(events).toContainEqual(expect.objectContaining({ type: 'terminal_exited', terminalId: info.terminalId }))
+    off()
+    db.close()
+    await settlePtyExit()
+  })
+
   it('does not touch the database when a killed terminal reports its exit', async () => {
     // Shutdown runs killAll() and then db.close(); the pty's exit event lands
     // after both, so writing from it hits a closed connection.

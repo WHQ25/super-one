@@ -1,14 +1,14 @@
-import type { RemoteCommand, WorktreeInfo } from '@superone/shared/agent-types'
+import type { WorktreeInfo } from '@superone/shared/agent-types'
 import type { ShellGitInfo } from './project-types'
-import { randomId } from './ids'
+import { projectRpc, type ProjectRpcClient } from './project-rpc'
 
 type Resources = {
-  get_git_info: ShellGitInfo
-  get_worktree_info: WorktreeInfo
-  get_git_branches: { branches?: string[] }
-  get_checked_out_branches: { branches?: string[] }
+  'git.status': ShellGitInfo
+  'git.worktreeInfo': WorktreeInfo
+  'git.branches': { branches?: string[] }
+  'git.worktreeCheckedOutBranches': { branches?: string[] }
 }
-type Client = { request(command: RemoteCommand): Promise<unknown> }
+type Client = ProjectRpcClient
 type Entry = { pending: Promise<unknown>; expires: number }
 const clients = new WeakMap<Client, Map<string, Entry>>()
 const keyFor = (type: string, project: string) => JSON.stringify([project, type])
@@ -21,9 +21,14 @@ export function requestGitResource<T extends keyof Resources>(client: Client, ty
   const previous = cache.get(key)
   if (previous && previous.expires > Date.now()) return previous.pending as Promise<Resources[T]>
   const entry: Entry = { pending: Promise.resolve(), expires: Infinity }
-  entry.pending = Promise.resolve().then(() => client.request({ type, requestId: randomId(), projectPath } as RemoteCommand)).then(value => {
+  entry.pending = projectRpc(client, projectPath, type).then(value => {
     if (!value || (value as { error?: string }).error) throw new Error((value as { error?: string })?.error || 'Git info unavailable')
-    entry.expires = Date.now() + (type === 'get_git_info' ? 5_000 : 30_000)
+    entry.expires = Date.now() + (type === 'git.status' ? 5_000 : 30_000)
+    if (type === 'git.status') {
+      const status = value as { branch: string | null; head?: string; ahead?: number; behind?: number; porcelain?: string; insertions?: number; deletions?: number }
+      return { branch: status.branch, ...(status.head ? { head: status.head } : {}), ahead: status.ahead ?? 0, behind: status.behind ?? 0,
+        dirty: { files: status.porcelain?.split('\n').filter(Boolean).length ?? 0, insertions: status.insertions ?? 0, deletions: status.deletions ?? 0 } } satisfies ShellGitInfo
+    }
     return value
   }).catch(error => {
     if (cache.get(key) === entry) cache.delete(key)

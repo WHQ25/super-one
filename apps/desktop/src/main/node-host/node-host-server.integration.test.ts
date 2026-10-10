@@ -31,7 +31,6 @@ import { NodeConnectionManager } from '../environment/node-connection-manager'
 import { RemoteHostActionConsumer } from '../environment/remote-host-action-consumer'
 import { NodeCredentialStore } from '../environment/node-credential-store'
 import { createDesktopProjectsPort } from './desktop-projects-port'
-import { nodeControllerDeviceId } from './desktop-session-host'
 import { AGENT_PROFILES, FakeSessionManager, memoryStore, startDesktopNode, stopDesktopNode, type FakeSession } from './node-host-test-fixtures'
 import { DesktopNodeHost } from './node-host-server'
 import { mapNodeSessionEvents } from '@superone/shared/node-session-event-map'
@@ -144,7 +143,7 @@ describe('DesktopNodeHost', () => {
     })
     const live = sessions.live.get(created.sessionId)!
     // Owned by the controller: this desktop's own UI cannot send into it, and its own active session is kept.
-    expect(live.owner).toEqual({ kind: 'remote', deviceId: nodeControllerDeviceId(created.controllerClientSessionId) })
+    expect(live.lease.current).toMatchObject({ holderClientId: created.controllerClientSessionId })
     expect(sessions.active).toBe('local-session')
     expect(store.rows.get(created.sessionId)?.controller).toMatchObject({ label: 'Desktop A', systemPromptAppend: 'report back', permissionMode: 'acceptEdits' })
 
@@ -345,7 +344,7 @@ describe('DesktopNodeHost takeback', () => {
 
     // Disconnect here: this desktop drives it, the controller's lease is gone.
     host.sessions.releaseControl(created.sessionId)
-    expect(live.owner).toEqual({ kind: 'local' })
+    expect(live.lease.current).toBeNull()
     await expect(client.rpc('session.send', { sessionId: created.sessionId, text: 'hi', leaseId: lease.leaseId, generation: lease.generation }))
       .rejects.toMatchObject({ code: 'failed_precondition', details: { reason: 'control_released' } })
     await expect(client.rpc('session.renewControl', { leaseId: lease.leaseId, generation: lease.generation })).rejects.toMatchObject({ code: 'lease_stale' })
@@ -361,14 +360,14 @@ describe('DesktopNodeHost takeback', () => {
     // Reconnect: an explicit reclaim drives it again, and again, like a phone.
     const reclaimed = await client.rpc<{ leaseId: string; generation: string }>('session.acquireControl', { sessionId: created.sessionId, reclaim: true })
     expect(Number(reclaimed.generation)).toBeGreaterThan(Number(lease.generation))
-    expect(live.owner).toEqual({ kind: 'remote', deviceId: nodeControllerDeviceId(created.controllerClientSessionId) })
+    expect(live.lease.current).toMatchObject({ holderClientId: created.controllerClientSessionId })
     await client.rpc('session.send', { sessionId: created.sessionId, text: 'go on', leaseId: reclaimed.leaseId, generation: reclaimed.generation })
     expect(live.sent.at(-1)).toMatchObject({ content: 'go on' })
     expect(await client.rpc('session.get', { sessionId: created.sessionId })).not.toHaveProperty('controlReleased')
 
     host.sessions.releaseControl(created.sessionId)
     await client.rpc('session.acquireControl', { sessionId: created.sessionId, reclaim: true })
-    expect(live.owner).toMatchObject({ kind: 'remote' })
+    expect(live.lease.current?.holderClientId).toBe(created.controllerClientSessionId)
   })
 })
 

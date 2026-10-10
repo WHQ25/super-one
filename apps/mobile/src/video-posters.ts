@@ -1,6 +1,6 @@
-import type { ReadVideoPosterResponse, RemoteCommand } from '@superone/shared/agent-types'
+import type { ReadVideoPosterResponse } from '@superone/shared/agent-types'
 import { resolveRemoteFilePath } from './shell-state'
-import { randomId } from './ids'
+import { projectRpc, type ProjectRpcClient } from './project-rpc'
 
 /** The answer the chat WebView's `PortableHostVideo` paints. */
 export interface VideoPosterResult {
@@ -11,9 +11,7 @@ export interface VideoPosterResult {
 }
 
 /** The slice of `RelayClient` the loader needs; tests hand in a fake. */
-export interface VideoPosterHost {
-  request(command: RemoteCommand, timeoutMs: number): Promise<unknown>
-}
+export type VideoPosterHost = ProjectRpcClient
 
 export interface VideoPosterRequest {
   host: VideoPosterHost
@@ -62,14 +60,11 @@ export async function loadVideoPoster(req: VideoPosterRequest): Promise<VideoPos
   const cached = cache.get(key)
   if (cached !== undefined) return cached
 
-  const response = await req.host.request({
-    type: 'read_video_poster',
-    requestId: randomId(),
-    projectPath: req.projectPath,
+  const response = await projectRpc(req.host, req.projectPath, 'files.videoPoster', {
     ...(req.sessionId ? { sessionId: req.sessionId } : {}),
     ...(req.root ? { root: req.root } : {}),
     path: target,
-  } as RemoteCommand, POSTER_TIMEOUT_MS) as ReadVideoPosterResponse | { error?: string } | undefined
+  }, { timeoutMs: POSTER_TIMEOUT_MS }) as ReadVideoPosterResponse | { error?: string } | undefined
   if (!response || !('ok' in response)) throw new Error('host cannot cut video posters')
   if (!response.ok) throw new Error(response.message ?? response.error)
   const poster = response.poster

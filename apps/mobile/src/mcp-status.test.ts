@@ -1,3 +1,4 @@
+import { resolveTestProject } from './project-rpc.test-fixtures'
 import { describe, expect, it } from 'vitest'
 import type { McpServerInfo } from '@superone/shared/agent-types'
 import { mcpServerRow, requestMcpServers } from './mcp-status'
@@ -32,7 +33,7 @@ describe('mcpServerRow', () => {
 })
 
 describe('requestMcpServers', () => {
-  const client = (reply: unknown) => ({ request: async () => reply })
+  const client = (reply: unknown) => ({ resolveProject: resolveTestProject, rpc: async () => reply })
 
   it('reads the servers the session is running', async () => {
     const { rows } = await requestMcpServers(client({ servers: [server({ toolCount: 2 })] }), '/work/app')

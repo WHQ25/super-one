@@ -1,7 +1,7 @@
-import type { RelayClient } from '@superone/relay-client'
-import type { RemoteCommand } from '@superone/shared/agent-types'
-import { MOD_UI_UNAVAILABLE, type ModUiOp, type ModUiRequest } from '@superone/shared/mod-ui'
-import { randomId } from './ids'
+import type { MobileRpcClient } from './runtime-session-rpc'
+import { MOD_UI_MUTATING_OPS, type ModUiOp, type ModUiRequest } from '@superone/shared/mod-ui'
+import { runtimeSessionRef } from './runtime-session-rpc'
+import { projectRpc } from './project-rpc'
 
 /** The CLI answers a mod op within 15 s; the relay waits a little longer. */
 const MOD_UI_TIMEOUT_MS = 20_000
@@ -23,15 +23,12 @@ export function parseModUiPayload(payload: unknown): ModUiPayload {
  * document's client can tell "no mods here" (`mod-ui-unavailable`) apart.
  */
 export async function invokeModUi(
-  client: Pick<RelayClient, 'request'>,
-  session: { projectPath: string; sessionId: string },
+  client: Pick<MobileRpcClient, 'rpc' | 'controlledRpc' | 'resolveProject' | 'environmentId'>,
+  session: { projectPath: string; sessionId: string; environmentId?: string | null },
   { op, request }: ModUiPayload,
 ): Promise<unknown> {
-  const reply = await client.request(
-    { type: 'mod_ui_request', requestId: randomId(), ...session, op, request } as RemoteCommand,
-    MOD_UI_TIMEOUT_MS,
-  ) as { response?: unknown; error?: string } | null
-  if (reply?.error) throw new Error(reply.error)
-  if (!reply) throw new Error(`${MOD_UI_UNAVAILABLE}: no reply`)
-  return reply.response
+  const payload = { op, request }
+  return MOD_UI_MUTATING_OPS.has(op)
+    ? client.controlledRpc(runtimeSessionRef(client, session.sessionId, session.environmentId ?? null), 'session.modUi', payload, { timeoutMs: MOD_UI_TIMEOUT_MS })
+    : projectRpc(client, session.projectPath, 'session.modUi', { ...payload, sessionId: session.sessionId }, { timeoutMs: MOD_UI_TIMEOUT_MS })
 }

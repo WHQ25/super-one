@@ -9,10 +9,10 @@
     "./crypto": "./src/crypto.ts",
     "./secure-channel": "./src/secure-channel.ts",
     "./phone-link": "./src/phone-link.ts",
+    "./phone-protocol": "./src/phone-protocol.ts",
     "./desktop-pair": "./src/desktop-pair.ts",
     "./pair-room": "./src/pair-room.ts",
     "./presence": "./src/presence.ts",
-    "./host-payload": "./src/host-payload.ts",
     "./transport-ledger": "./src/transport-ledger.ts"
   },
   "scripts": {
@@ -20,6 +20,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@superone/chat-core": "workspace:*",
     "@noble/ciphers": "2.3.0",
     "@noble/hashes": "2.3.0",
     "@superone/shared": "workspace:*",

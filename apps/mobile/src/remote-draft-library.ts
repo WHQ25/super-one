@@ -1,5 +1,5 @@
 import type { Kv } from '@superone/relay-client'
-import type { DraftChangedEvent, DraftListEntry, DraftOpenResult, DraftRemoteCommand, DraftUpsertRequest } from '@superone/shared/environment/draft-rpc'
+import type { DraftChangedEvent, DraftListEntry, DraftOpenResult, DraftUpsertRequest } from '@superone/shared/environment/draft-rpc'
 import { randomId } from './ids'
 import { hasPersistableDraftContent } from '@superone/shared/environment/draft-content'
 
@@ -8,7 +8,7 @@ class DraftResponseError extends Error {}
 type Ports = {
   kv: Kv
   key: string
-  request(command: DraftRemoteCommand): Promise<unknown>
+  rpc(method: string, payload: Record<string, unknown>): Promise<unknown>
   changed(): void
   revoked(id: string): void
 }
@@ -26,6 +26,7 @@ function entry(input: DraftUpsertRequest): DraftListEntry {
  * started before navigation cannot land after close/delete and resurrect it. */
 export class RemoteDraftLibrary {
   private records = new Map<string, DraftListEntry>()
+  private recordRevision = 0
   private pending = new Map<string, Pending>()
   private leases = new Map<string, string>()
   private deleted = new Set<string>()
@@ -66,10 +67,12 @@ export class RemoteDraftLibrary {
     this.queue = next
     return next
   }
-  private async request<T>(command: DraftRemoteCommand): Promise<T> {
-    const result = await this.ports.request(command) as T & { error?: string; ok?: boolean }
-    if (result?.error || result?.ok === false) throw new DraftResponseError(result.error ?? 'Could not synchronize draft')
-    return result
+  private async rpc<T>(method: string, payload: Record<string, unknown> = {}): Promise<T> {
+    try { return await this.ports.rpc(method, payload) as T }
+    catch (error) {
+      if ((error as { code?: string } | null)?.code === 'failed_precondition') throw new DraftResponseError(error instanceof Error ? error.message : String(error))
+      throw error
+    }
   }
   stage(input: DraftUpsertRequest): Promise<unknown> {
     const previous = this.pending.get(input.id)
@@ -78,8 +81,9 @@ export class RemoteDraftLibrary {
     return this.ready.then(() => this.persist())
   }
   private async loadRecords(): Promise<void> {
-    const { drafts } = await this.request<{ drafts: DraftListEntry[] }>({ type: 'list_drafts', requestId: randomId() })
-    this.records = new Map(drafts.map((row) => [row.id, row]))
+    const revision = this.recordRevision
+    const { drafts } = await this.rpc<{ drafts: DraftListEntry[] }>('draft.list')
+    if (this.recordRevision === revision) this.records = new Map(drafts.map((row) => [row.id, row]))
   }
   refresh(): Promise<void> {
     return this.run(async () => {
@@ -100,7 +104,7 @@ export class RemoteDraftLibrary {
         await this.persist()
         await this.flushOne(id)
       }
-      const result = await this.request<DraftOpenResult>({ type: 'open_draft', draftId: id, requestId: randomId() })
+      const result = await this.rpc<DraftOpenResult>('draft.open', { draftId: id })
       this.leases.set(id, result.leaseId)
       this.records.set(id, result.draft)
       this.ports.changed()
@@ -111,10 +115,10 @@ export class RemoteDraftLibrary {
     while (this.pending.has(id)) {
       const item = this.pending.get(id)!
       if (!this.leases.has(id) && (item.baseUpdatedAt || this.records.has(id))) {
-        const opened = await this.request<DraftOpenResult>({ type: 'open_draft', requestId: randomId(), draftId: id, expectedUpdatedAt: item.baseUpdatedAt })
+        const opened = await this.rpc<DraftOpenResult>('draft.open', { draftId: id, expectedUpdatedAt: item.baseUpdatedAt })
         this.leases.set(id, opened.leaseId)
       }
-      const result = await this.request<DraftOpenResult>({ type: 'save_draft', requestId: randomId(), draft: item.input, leaseId: this.leases.get(id) })
+      const result = await this.rpc<DraftOpenResult>('draft.upsert', { ...item.input, leaseId: this.leases.get(id), open: true })
       this.leases.set(id, result.leaseId)
       this.records.set(id, result.draft)
       if (this.pending.get(id) === item) this.pending.delete(id)
@@ -128,7 +132,7 @@ export class RemoteDraftLibrary {
     return this.run(async () => {
       await this.flushOne(id)
       // Lease only: the composer already holds this draft, bytes and all.
-      const opened = await this.request<DraftOpenResult>({ type: 'open_draft', requestId: randomId(), draftId: id, omitContent: true })
+      const opened = await this.rpc<DraftOpenResult>('draft.open', { draftId: id, omitContent: true })
       this.leases.set(id, opened.leaseId)
       return { draftId: id, draftLeaseId: opened.leaseId }
     })
@@ -137,7 +141,7 @@ export class RemoteDraftLibrary {
     return this.run(async () => {
       await this.flushOne(id)
       const leaseId = this.leases.get(id)
-      if (leaseId) await this.request({ type: 'close_draft', requestId: randomId(), draftId: id, leaseId })
+      if (leaseId) await this.rpc('draft.close', { draftId: id, leaseId })
       this.leases.delete(id)
       const draft = this.get(id)
       if (draft && !hasPersistableDraftContent(draft)) this.records.delete(id)
@@ -163,7 +167,7 @@ export class RemoteDraftLibrary {
     })
   }
   private async deleteOne(id: string): Promise<void> {
-    await this.request({ type: 'delete_draft', requestId: randomId(), draftId: id, leaseId: this.leases.get(id) })
+    await this.rpc('draft.delete', { draftId: id, leaseId: this.leases.get(id) })
     this.records.delete(id); this.leases.delete(id); this.deleted.delete(id)
     await this.persist()
     this.ports.changed()
@@ -175,7 +179,7 @@ export class RemoteDraftLibrary {
       for (const id of this.pending.keys()) {
         await this.flushOne(id)
         if (id !== activeId) {
-          await this.request({ type: 'close_draft', requestId: randomId(), draftId: id, leaseId: this.leases.get(id)! })
+          await this.rpc('draft.close', { draftId: id, leaseId: this.leases.get(id)! })
           this.leases.delete(id)
         }
       }
@@ -183,7 +187,7 @@ export class RemoteDraftLibrary {
       // deleted on the desktop) is gone; only the host's list still knows.
       await this.loadRecords()
       if (activeId && !this.leases.has(activeId)) {
-        const result = await this.request<DraftOpenResult>({ type: 'open_draft', requestId: randomId(), draftId: activeId })
+        const result = await this.rpc<DraftOpenResult>('draft.open', { draftId: activeId })
         this.leases.set(activeId, result.leaseId)
         this.records.set(activeId, result.draft)
       }
@@ -191,10 +195,29 @@ export class RemoteDraftLibrary {
     })
   }
   ingest(event: DraftChangedEvent): void {
+    this.recordRevision++
     if (event.draft) this.records.set(event.draftId, event.draft)
     else this.records.delete(event.draftId)
     if (!event.draft?.controllerDeviceId) this.leases.delete(event.draftId)
     if (event.reason === 'disconnected' || event.reason === 'deleted') this.ports.revoked(event.draftId)
+    this.ports.changed()
+  }
+
+  /** Replace host rows at a topic snapshot cut; phone outbox edits remain separate. */
+  ingestSnapshot(drafts: DraftListEntry[]): void {
+    this.recordRevision++
+    const next = new Map(drafts.map(draft => [draft.id, draft]))
+    const revoked: string[] = []
+    for (const id of this.leases.keys()) {
+      const previousOwner = this.records.get(id)?.controllerDeviceId
+      const owner = next.get(id)?.controllerDeviceId
+      if (!owner || (previousOwner && previousOwner !== owner)) {
+        this.leases.delete(id)
+        revoked.push(id)
+      }
+    }
+    this.records = next
+    for (const id of revoked) this.ports.revoked(id)
     this.ports.changed()
   }
 }

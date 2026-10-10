@@ -37,7 +37,7 @@ export class McpAppContextAttachments {
       this.sources = [...sources.filter(value => value.app.appInstanceId !== next!.app.appInstanceId), ...compact]
     }
   }
-  async remove(id: string, client: Pick<RelayClient, 'request'>, session: { projectPath: string; sessionId: string }, messages: readonly McpAppMessage[]): Promise<void> {
+  async remove(id: string, client: Pick<import('./runtime-session-rpc').MobileRpcClient, 'rpc' | 'controlledRpc' | 'environmentId'>, session: { projectPath: string; sessionId: string; environmentId?: string | null }, messages: readonly McpAppMessage[]): Promise<void> {
     const item = this.items(messages).find(value => value.id === id)
     if (!item) throw new Error('Context attachment is unavailable')
     const response = await requestMcpApp(client, session, {

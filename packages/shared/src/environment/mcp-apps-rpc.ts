@@ -1,5 +1,9 @@
 import type { McpAppsBinding, McpAppOrigin, McpAppsErrorData } from '../mcp-apps'
 
+/** View operations that mutate the conversation or invoke its provider. */
+export const MCP_APP_CONTROL_OPERATIONS: ReadonlySet<string> = new Set(['callTool', 'sendMessage', 'sendPreparedMessage', 'updateModelContext', 'removeModelContext'])
+export const MCP_APP_WRITE_OPERATIONS: ReadonlySet<string> = new Set([...MCP_APP_CONTROL_OPERATIONS, 'writeResource'])
+
 /** Host-authored binding. The untrusted View never receives this API. */
 export interface McpAppsProviderRpcRequest {
   binding: McpAppsBinding

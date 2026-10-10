@@ -26,11 +26,11 @@ const newSession = { id: 'new', send, snapshot: { harnessId: 'claude' }, broadca
 const createSession = vi.fn(() => newSession)
 const session = { getUiSettings: () => ({ selectedModel: 'sonnet', selectedEffort: 'high', permissionMode: 'auto', sandboxInfo: { enabled: true, autoAllowBash: true } }), getCurrentSandboxInfo: () => ({ enabled: true, autoAllowBash: true }), getCurrentPermissionMode: () => 'auto', getSelectedEffort: () => 'high', projectPath: '/project', send, snapshot: { projectPath: '/project', cwd: '/project/worktree', gitBranch: 'feature', harnessId: 'claude', acpAgentId: null, selectedModel: 'sonnet', selectedEffort: 'high', providerId: 'claude-base', apiProviderId: 'account', messages: [{ id: 'm', content: [{ type: 'tool_result', toolUseId: 'call', summary: '', app }] }] } }
 const manager = { getSession: (id: string) => id === 'new' ? newSession : session, createSession } as unknown as SessionManagerImpl
-const mobile = { handleRemoteCommand: vi.fn<Parameters<typeof initializeMcpAppExecutor>[1]['handleRemoteCommand']>(async (command, respond) => { await respond?.(command.requestId, { ok: true }) }) }
+const mobile = { remoteSendMcpAppMessage: vi.fn<Parameters<typeof initializeMcpAppExecutor>[1]['remoteSendMcpAppMessage']>(async (_input, _source, onAccepted) => { onAccepted() }) }
 const hub = new SessionEventHub()
 initializeMcpAppExecutor(manager, mobile, hub)
 
-beforeEach(() => { mocks.resolve.mockReset(); mocks.provider.mockClear(); mobile.handleRemoteCommand.mockClear(); send.mockClear(); createSession.mockClear(); mocks.remoteSession.mockReset(); mocks.createRemoteSession.mockReset(); mocks.remoteSend.mockReset() })
+beforeEach(() => { mocks.resolve.mockReset(); mocks.provider.mockClear(); mobile.remoteSendMcpAppMessage.mockClear(); send.mockClear(); createSession.mockClear(); mocks.remoteSession.mockReset(); mocks.createRemoteSession.mockReset(); mocks.remoteSend.mockReset() })
 
 describe('main MCP App executor adapters', () => {
   it('auto-activates every child View on a live collab event, but never on replay', async () => {
@@ -60,7 +60,7 @@ describe('main MCP App executor adapters', () => {
     else releaseMcpAppRequester(requester)
     const result = await executeMcpAppHostRequest({ ...identity, operation: 'sendMessage', params: { role: 'user', content: [] } }, requester)
     expect(result).toMatchObject({ ok: false, error: { code: 'inactive' } })
-    expect(mobile.handleRemoteCommand).not.toHaveBeenCalled()
+    expect(mobile.remoteSendMcpAppMessage).not.toHaveBeenCalled()
   })
 
   it('resolves a remote View in one scoped RPC without downloading session history', async () => {
@@ -117,6 +117,6 @@ describe('main MCP App executor adapters', () => {
     const prompt = await executeMcpAppHostRequest(request, requester)
     if (prompt.ok || prompt.error.code !== 'approval_required') throw new Error('Expected approval')
     expect(await executeMcpAppHostRequest({ ...request, approval: { challenge: prompt.error.challenge } }, requester)).toMatchObject({ ok: true })
-    expect(mobile.handleRemoteCommand).toHaveBeenCalledWith(expect.objectContaining({ type: 'send_message', priority: 'next', sessionId: 's', projectPath: '/project', content: '[MCP App: fixture]\nselected page 2' }), expect.any(Function), { deviceId: 'phone', transport: 'relay' })
+    expect(mobile.remoteSendMcpAppMessage).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's', projectPath: '/project', request: expect.objectContaining({ priority: 'next', content: '[MCP App: fixture]\nselected page 2' }) }), { deviceId: 'phone', transport: 'relay' }, expect.any(Function))
   })
 })

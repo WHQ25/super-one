@@ -1,9 +1,12 @@
 import type { HarnessId } from '@superone/shared/agent-types'
-import type { SessionRef } from '@superone/shared/environment'
-import { OPERATION_SCOPES } from '@superone/shared/environment'
 import type { RpcContext, RpcExtensionDispatch, RpcResult } from '@superone/runtime/server'
 import { mapThrown, requireScopes } from '@superone/runtime/server/rpc-helpers'
 import type { AgentService } from '../agent/agent-service'
+import { createPhoneSessionMethods, type PhoneSessionMethodHost } from './phone-session-methods'
+import { phoneMethodScopes } from './phone-method-scopes'
+import { MCP_APP_CONTROL_OPERATIONS } from '@superone/shared/environment/mcp-apps-rpc'
+import type { McpAppDeviceRequest } from '@superone/shared/agent-types'
+import { deviceMcpAppHostRequest, executeDeviceMcpAppRequest } from '../mcp-apps/mobile-request'
 
 /**
  * What the phone methods ask of the desktop: the projections its window and
@@ -11,6 +14,8 @@ import type { AgentService } from '../agent/agent-service'
  * phone client moves onto the protocol.
  */
 export interface PhoneMethodHost {
+  mcpAppsRequest?: typeof executeDeviceMcpAppRequest
+  sessions?: PhoneSessionMethodHost
   agent: Pick<AgentService,
     | 'remoteSystemInfo' | 'remoteProjectResources' | 'remoteHarnessOptions' | 'remoteAttachment' | 'remoteSessionActivity'
     | 'remoteSearchMentions' | 'remoteSearchMcpMentions' | 'remoteReadMcpMentions' | 'remoteMcpServers' | 'markRemoteSeen'
@@ -67,6 +72,24 @@ function fileInput(p: Record<string, unknown>) {
 
 function createHandlers(host: PhoneMethodHost): Record<string, Handler> {
   return {
+    'mcpApps.request': async (p, ctx) => {
+      if (!ctx.client.clientSessionId.startsWith('phone:')) throw Object.assign(new Error('Authenticated phone required'), { code: 'forbidden' })
+      const sessionId = text(p, 'sessionId')
+      const path = sessionProjectPath(ctx, sessionId)
+      if (!p.request || typeof p.request !== 'object' || Array.isArray(p.request)) throw new InvalidArgument('request is required')
+      const request = p.request as McpAppDeviceRequest
+      const controls = MCP_APP_CONTROL_OPERATIONS.has(request.operation)
+      const assertControl = () => {
+        if (!controls) return
+        if (typeof p.leaseId !== 'string' || !p.leaseId || typeof p.generation !== 'string' || !p.generation) throw new InvalidArgument('leaseId and generation are required')
+        ctx.leases.assertValid({ resource: { environmentId: ctx.identity.environmentId, sessionId }, leaseId: p.leaseId, generation: p.generation, holderClientId: ctx.client.clientSessionId })
+      }
+      assertControl()
+      return (host.mcpAppsRequest ?? executeDeviceMcpAppRequest)(deviceMcpAppHostRequest(path, sessionId, request), { kind: 'mobile', deviceId: deviceOf(ctx), transport: transportOf(ctx) }, new AbortController().signal, target => {
+        if (target.ref.sessionId !== sessionId || target.projectPath !== path) throw Object.assign(new Error('MCP App session mismatch'), { code: 'forbidden' })
+        assertControl()
+      })
+    },
     // Session reads beyond the shared session family.
     'session.historyIndex': async (p) => {
       const { loadSessionHistoryIndex } = await import('../session/history-navigation')
@@ -81,36 +104,36 @@ function createHandlers(host: PhoneMethodHost): Record<string, Handler> {
     },
     'session.activity': () => ({ sessions: host.agent.remoteSessionActivity() }),
     'session.linkMetadata': async (p) => {
-      const { readSessionLinkCommand } = await import('./session-link-commands')
-      return readSessionLinkCommand({ type: 'session_link_metadata', requestId: '', refs: (p.refs as SessionRef[] | undefined) ?? [] })
+      const { readPhoneSessionLinkMetadata } = await import('./session-link-commands')
+      return readPhoneSessionLinkMetadata(p.refs)
     },
     'session.linkResolve': async (p) => {
-      const { readSessionLinkCommand } = await import('./session-link-commands')
-      return readSessionLinkCommand({ type: 'session_link_resolve', requestId: '', ref: p.ref as SessionRef })
+      const { readPhoneSessionLinkTarget } = await import('./session-link-commands')
+      return readPhoneSessionLinkTarget(p.ref)
     },
     'environment.list': async () => {
-      const { readSessionLinkCommand } = await import('./session-link-commands')
-      return readSessionLinkCommand({ type: 'session_link_identity', requestId: '' })
+      const { readPhoneEnvironments } = await import('./session-link-commands')
+      return readPhoneEnvironments()
     },
 
     // Session list pages as the phone's sidebar shows them.
     'sessionList.page': async (p, ctx) => {
-      const { readRemoteSessionList } = await import('./session-lists')
-      const limit = typeof p.limit === 'number' ? p.limit : undefined
-      const offset = typeof p.offset === 'number' ? p.offset : undefined
-      return readRemoteSessionList({ type: 'list_sessions', requestId: '', projectPath: projectPath(ctx, text(p, 'projectId')), limit, offset })
+      const { readRemoteSessionList, sessionListPageNumber } = await import('./session-lists')
+      const limit = sessionListPageNumber(p.limit, 'limit')
+      const offset = sessionListPageNumber(p.offset, 'offset')
+      return readRemoteSessionList({ kind: 'page', projectPath: projectPath(ctx, text(p, 'projectId')), limit, offset }, host.sessions)
     },
     'sessionList.pinned': async () => {
       const { readRemoteSessionList } = await import('./session-lists')
-      return readRemoteSessionList({ type: 'list_pinned_sessions', requestId: '' })
+      return readRemoteSessionList({ kind: 'pinned' })
     },
     'sessionList.search': async (p) => {
-      const { readRemoteSessionList } = await import('./session-lists')
-      return readRemoteSessionList({ type: 'search_sessions', requestId: '', query: text(p, 'query'), limit: typeof p.limit === 'number' ? p.limit : undefined })
+      const { readRemoteSessionList, sessionListPageNumber } = await import('./session-lists')
+      return readRemoteSessionList({ kind: 'search', query: text(p, 'query'), limit: sessionListPageNumber(p.limit, 'limit') })
     },
     'sessionList.find': async (p) => {
       const { readRemoteSessionList } = await import('./session-lists')
-      return readRemoteSessionList({ type: 'find_session', requestId: '', sessionId: text(p, 'sessionId') })
+      return readRemoteSessionList({ kind: 'find', sessionId: text(p, 'sessionId') })
     },
 
     // Composer catalogs.
@@ -174,6 +197,10 @@ function createHandlers(host: PhoneMethodHost): Record<string, Handler> {
       if (p.mode === 'owner') return { repos: await listGithubReposForOwner(optionalText(p, 'value') ?? '') }
       return { repos: await searchGithubRepositories(optionalText(p, 'value') ?? '') }
     },
+    'git.worktreeInfo': async (p, ctx) => {
+      const { getWorktreeInfo } = await import('../git/worktree-ops')
+      return await getWorktreeInfo(projectPath(ctx, text(p, 'projectId'))) ?? { isWorktree: false, currentBranch: '', entries: [] }
+    },
     'git.defaultClonePath': async () => {
       // A phone drives the desktop's own environment, which the sidebar keys `local`.
       const { readAppSettings } = await import('../app-settings-service')
@@ -182,7 +209,8 @@ function createHandlers(host: PhoneMethodHost): Record<string, Handler> {
     },
     'git.setDefaultClonePath': async (p) => {
       const { saveAppSettings } = await import('../app-settings-service')
-      saveAppSettings({ defaultClonePaths: { local: text(p, 'path').trim() } })
+      if (typeof p.path !== 'string') throw new InvalidArgument('path must be a string')
+      saveAppSettings({ defaultClonePaths: { local: p.path.trim() } })
       return { ok: true }
     },
     'widget.saveTemplate': async (p, ctx) => {
@@ -204,7 +232,7 @@ function createHandlers(host: PhoneMethodHost): Record<string, Handler> {
       ...(p.statOnly === true ? { statOnly: true } : {}),
       ...(p.preferInline === true ? { preferInline: true } : {}),
     }, { deviceId: deviceOf(ctx), transport: transportOf(ctx) }),
-    'files.listDir': (p) => host.agent.remoteListDirectory(text(p, 'path'), {
+    'files.listDir': (p) => host.agent.remoteListDirectory(typeof p.path === 'string' ? p.path : '', {
       showHidden: p.showHidden === true,
       ignoreMode: p.ignoreMode === 'excluded-dirs' || p.ignoreMode === 'gitignore' ? p.ignoreMode : 'none',
     }),
@@ -213,6 +241,10 @@ function createHandlers(host: PhoneMethodHost): Record<string, Handler> {
       return { ok: true }
     },
     'files.videoPoster': (p) => host.agent.remoteVideoPoster(fileInput(p)),
+    'files.search': async (p, ctx) => {
+      const { searchFiles } = await import('../agent/fuzzy-file-search')
+      return { results: searchFiles([projectPath(ctx, text(p, 'projectId'))], text(p, 'query'), typeof p.limit === 'number' ? p.limit : 30) }
+    },
     'files.upload': (p, ctx) => host.agent.remoteUpload({
       uploadId: text(p, 'uploadId'),
       sessionId: optionalText(p, 'sessionId'),
@@ -248,9 +280,6 @@ function createHandlers(host: PhoneMethodHost): Record<string, Handler> {
   }
 }
 
-/** Methods that only describe the phone or this desktop's window state, never an environment's resources. */
-const CLIENT_SCOPED = new Set(['client.markSeen', 'client.appendLog', 'client.mintNodeCode', 'client.pairNode'])
-
 /**
  * The desktop's methods for its phones beyond the shared families, as a
  * dispatcher extension: projections its window and the phone link already
@@ -258,14 +287,15 @@ const CLIENT_SCOPED = new Set(['client.markSeen', 'client.appendLog', 'client.mi
  * client-scoped methods.
  */
 export function createPhoneMethods(host: PhoneMethodHost): { dispatch: RpcExtensionDispatch; methods: ReadonlySet<string> } {
-  const handlers = createHandlers(host)
+  const sessionHandlers = host.sessions ? createPhoneSessionMethods(host.sessions) : {}
+  const handlers = { ...createHandlers(host), ...sessionHandlers }
   const dispatch: RpcExtensionDispatch = async (method, payload, ctx): Promise<RpcResult | null> => {
     const handler = Object.hasOwn(handlers, method) ? handlers[method] : undefined
     if (!handler) return null
-    const denied = requireScopes(ctx.client, CLIENT_SCOPED.has(method) ? OPERATION_SCOPES.readEnvironment : OPERATION_SCOPES.readSession)
+    const p = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {}
+    const denied = requireScopes(ctx.client, phoneMethodScopes(method, Object.hasOwn(sessionHandlers, method), p))
     if (denied) return denied
     try {
-      const p = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {}
       return { result: await handler(p, ctx) }
     } catch (err) {
       return mapThrown(err)

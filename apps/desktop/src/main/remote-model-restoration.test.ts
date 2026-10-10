@@ -1,5 +1,5 @@
+import { nativeRestoreClient, nativeSessionLoad } from './session/native-restore.test-fixtures'
 import { describe, expect, it, vi } from 'vitest'
-import type { AgentEvent } from '@superone/shared/agent-types'
 import { ChatRuntime } from '../../../mobile/src/runtime'
 import { Session } from './session/session'
 import type { SessionBackend, SessionStateChange } from './session/types'
@@ -32,30 +32,17 @@ describe('mobile Codex model restoration', () => {
     let saved: SessionStateChange | undefined
     const host = createHost(state => { saved = state })
     if (desktopSettings) host.broadcastSettingsPatch({ selectedCodexModel: 'gpt-6-astra', selectedCodexReasoningEffort: 'medium' })
-    // AgentService handles mobile set_session_settings through this API.
+    // The native session settings RPC uses this host API.
     host.setSelectedSettings({ model: 'gpt-5.6-sol', effort: 'high' })
     expect(saved?.selectedModel).toBe('gpt-5.6-sol')
-    let buffered: AgentEvent[][] = []
-    const sent: Record<string, unknown>[] = []
-    const client = {
-      startBuffering() { buffered = [] },
-      releaseBuffer() { return { epoch: 1, batches: buffered } },
-      send(command: Record<string, unknown>) { sent.push(command) },
-      async request(command: { type: string }) {
-        // Sends go out as requests so the phone gets the host's receipt.
-        if (command.type === 'send_message') { sent.push(command); return { ok: true } }
-        if (command.type === 'subscribe_session') { buffered.push(host.getReplayEvents()); return { ok: true } }
-        if (command.type === 'load_session_messages') return { messages: [], provider: 'codex', hasMore: false }
-        if (command.type === 'get_session_state') return { status: 'idle', pendingInteractions: [], inProgressMessages: [] }
-        return { ok: true }
-      },
-    }
+    const client = nativeRestoreClient(() => nativeSessionLoad(host), () => [host.getReplayEvents()])
+    const sent = client.sent
     const runtime = new ChatRuntime(client as never, () => {})
     await runtime.open('/project', 'session')
     expect(runtime.session.selectedCodexModel).toBe('gpt-5.6-sol')
     expect(runtime.session.selectedCodexReasoningEffort).toBe('high')
     await runtime.send('Continue', { model: runtime.session.selectedCodexModel, effort: runtime.session.selectedCodexReasoningEffort })
-    expect(sent).toContainEqual(expect.objectContaining({ type: 'send_message', model: 'gpt-5.6-sol', effort: 'high' }))
+    expect(sent).toContainEqual(expect.objectContaining({ method: 'session.send', model: 'gpt-5.6-sol', effort: 'high' }))
     runtime.dispose()
   })
 
@@ -65,18 +52,8 @@ describe('mobile Codex model restoration', () => {
   ])('restores Codex Fast $label from replay so a mobile open does not inherit the host default', async ({ tier }) => {
     const host = createHost(() => {})
     host.broadcastSettingsPatch({ selectedCodexModel: 'gpt-6-astra', selectedCodexServiceTier: tier })
-    let buffered: AgentEvent[][] = []
-    const client = {
-      startBuffering() { buffered = [] },
-      releaseBuffer() { return { epoch: 1, batches: buffered } },
-      send() {},
-      async request(command: { type: string }) {
-        if (command.type === 'subscribe_session') { buffered.push(host.getReplayEvents()); return { ok: true } }
-        if (command.type === 'load_session_messages') return { messages: [], provider: 'codex', hasMore: false }
-        if (command.type === 'get_session_state') return { status: 'idle', pendingInteractions: [], inProgressMessages: [] }
-        return { ok: true }
-      },
-    }
+    const client = nativeRestoreClient(() => nativeSessionLoad(host), () => [host.getReplayEvents()])
+    const sent = client.sent
     const runtime = new ChatRuntime(client as never, () => {})
     await runtime.open('/project', 'session')
     expect(runtime.session.selectedCodexServiceTier).toBe(tier)

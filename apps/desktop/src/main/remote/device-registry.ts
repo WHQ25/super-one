@@ -1,7 +1,7 @@
 import { mobileModClientId } from '@superone/shared/mod-ui'
-import { dropPhoneDelivery } from './phone-deliveries'
 import log from '../logger'
-import type { SessionLeaveReason, SessionManager } from '../session/types'
+import { releaseComposerClient } from '../session/composer-delivery'
+import type { SessionManager } from '../session/types'
 
 export class DeviceRegistry {
   private draftControl?: import('@superone/runtime/drafts').DraftControl
@@ -18,49 +18,17 @@ export class DeviceRegistry {
   }
 
   handleDeviceDisconnected(deviceId: string): void {
-    this.draftControl?.releaseDevice(deviceId)
+    this.draftControl?.releaseDevice(`phone:${deviceId}`)
+    releaseComposerClient({ kind: 'device', id: deviceId })
     let releasedCount = 0
-    dropPhoneDelivery(deviceId)
-    let unsubscribedCount = 0
     this.sessionManager.forEachSession((session) => {
-      if (session.owner.kind === 'remote' && session.owner.deviceId === deviceId) {
-        session.release(deviceId, 'transport_disconnect')
-        releasedCount++
-      }
-      if (session.subscribers.has(deviceId)) {
-        session.unsubscribe(deviceId, 'transport_disconnect')
-        unsubscribedCount++
-      }
+      if (session.lease.releaseDelegate(`phone:${deviceId}`)) releasedCount++
       // A killed app never detaches its mod client; the plugin would keep routing requests to it.
       session.detachModClient(mobileModClientId(deviceId))
     })
     for (const item of this.terminalManager?.list() ?? []) {
-      this.terminalManager?.get(item.terminalId)?.ownership.handleDeviceDisconnected(deviceId)
+      this.terminalManager?.get(item.terminalId)?.lease.handleDeviceDisconnected(deviceId)
     }
-    if (releasedCount || unsubscribedCount) {
-      log.info('[DeviceRegistry] device=%s offline released=%d unsubscribed=%d', deviceId, releasedCount, unsubscribedCount)
-    }
-  }
-
-  unsubscribeAll(deviceId: string, reason: SessionLeaveReason = 'self_leave'): void {
-    let count = 0
-    this.sessionManager.forEachSession((session) => {
-      if (session.subscribers.has(deviceId)) {
-        session.unsubscribe(deviceId, reason)
-        count++
-      }
-    })
-    if (count) log.info('[DeviceRegistry] device=%s unsubscribe-all reason=%s count=%d', deviceId, reason, count)
-  }
-
-  releaseAll(deviceId: string, reason: SessionLeaveReason = 'self_leave'): void {
-    let count = 0
-    this.sessionManager.forEachSession((session) => {
-      if (session.owner.kind === 'remote' && session.owner.deviceId === deviceId) {
-        session.release(deviceId, reason)
-        count++
-      }
-    })
-    if (count) log.info('[DeviceRegistry] device=%s release-all reason=%s count=%d', deviceId, reason, count)
+    if (releasedCount) log.info('[DeviceRegistry] device=%s offline released=%d', deviceId, releasedCount)
   }
 }

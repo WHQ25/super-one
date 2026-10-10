@@ -260,18 +260,12 @@ export type BackendCommand =
 
 export type BackendEvent = AgentEvent
 
-export type SessionOwner =
-  | { kind: 'local' }
-  | { kind: 'remote'; deviceId: string }
-
-export const LOCAL_OWNER: SessionOwner = { kind: 'local' }
-
-export type SessionLockReason = 'remote-owned' | 'remote-subscribed'
+export type SessionLockReason = 'remote-owned'
 
 /**
  * Who initiated a Session.send:
- * - local: desktop UI / local IPC (blocked while remote-owned or subscribed)
- * - remote: mobile remote-control owner/subscriber
+ * - local: desktop UI / local IPC (fenced by the domain control lease)
+ * - remote: mobile paired native RPC client
  * - host: trusted main-process background work (task notifications, mailbox wakes)
  */
 export type SendProviderOrigin = 'local' | 'remote' | 'host'
@@ -320,30 +314,8 @@ export class SessionWorktreeRemovedError extends Error {
   }
 }
 
-export class SessionClaimConflictError extends Error {
-  readonly sessionId: string
-  readonly currentOwnerDeviceId: string
-  readonly attemptedDeviceId: string
-  constructor(sessionId: string, currentOwnerDeviceId: string, attemptedDeviceId: string) {
-    super(`Session ${sessionId} already claimed by device ${currentOwnerDeviceId}; ${attemptedDeviceId} cannot take over`)
-    this.name = 'SessionClaimConflictError'
-    this.sessionId = sessionId
-    this.currentOwnerDeviceId = currentOwnerDeviceId
-    this.attemptedDeviceId = attemptedDeviceId
-  }
-}
-
-export type SessionLeaveReason =
-  | 'self_leave'
-  | 'self_switch'
-  | 'desktop_kick'
-  | 'transport_disconnect'
-  | 'session_closed'
-
 export type SessionLifecycleEvent =
-  | { type: 'owner_changed'; sessionId: string; previous: SessionOwner; current: SessionOwner; reason?: SessionLeaveReason }
-  | { type: 'subscriber_added'; sessionId: string; deviceId: string }
-  | { type: 'subscriber_removed'; sessionId: string; deviceId: string; reason?: SessionLeaveReason }
+  | { type: 'control_changed'; sessionId: string; lease: import('@superone/shared/environment').ControlLease | null }
   | { type: 'closed'; sessionId: string }
 
 /**
@@ -486,6 +458,7 @@ export interface SessionBackend {
 }
 
 export interface Session {
+  readonly lease: import('./session-lease').SessionLease
   /**
    * Record the dsh agent preset this session composes from. A no-op on every
    * other harness — the concept is dsh's own.
@@ -499,10 +472,6 @@ export interface Session {
   /** Side chat: process-local only, never persisted. See `SessionCreateOptions.ephemeral`. */
   readonly ephemeral: boolean
   readonly snapshot: SessionSnapshot
-  readonly owner: SessionOwner
-  readonly subscribers: ReadonlySet<string>
-  claim(owner: Extract<SessionOwner, { kind: 'remote' }>): void
-  release(deviceId: string, reason?: SessionLeaveReason): void
   setForeground(visible: boolean): void
   /** Host-recorded read receipt for the latest completion; null until something is read. */
   readonly seenCompletedMessageId: string | null
@@ -511,8 +480,6 @@ export interface Session {
   hasActiveRuntime(): boolean
   isRuntimeIdle(now: number, timeoutMs: number): boolean
   releaseRuntime(reason: 'idle', afterRelease?: () => Promise<void>): Promise<boolean>
-  subscribe(deviceId: string): void
-  unsubscribe(deviceId: string, reason?: SessionLeaveReason): void
   onLifecycle(handler: (event: SessionLifecycleEvent) => void): () => void
   /** Resolves (and accepts with) `{ duplicate: true }` when the host already took this user message id; nothing runs again. */
   send(request: SendMessageRequest, opts?: { providerOrigin?: SendProviderOrigin; onAccepted?: (receipt?: import('@superone/shared/send-failure').DuplicateSend) => void }): Promise<import('@superone/shared/send-failure').DuplicateSend | void>

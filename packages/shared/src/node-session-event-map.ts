@@ -274,7 +274,9 @@ export function createNodeSessionEventMapper(ctx: NodeSessionEventMapContext): N
         const text = asString(payload.text) ?? ''
         push({
           type: 'user_message_appended',
-          message: userMessage(ctx, blockId, text, nowIso(), payload),
+          message: (payload.message as ChatMessage | undefined)?.role === 'user'
+            && typeof (payload.message as ChatMessage).id === 'string' && Array.isArray((payload.message as ChatMessage).content)
+            ? payload.message as ChatMessage : userMessage(ctx, blockId, text, nowIso(), payload),
         })
         break
       }

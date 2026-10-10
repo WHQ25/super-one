@@ -2,8 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import type { RelayClient } from '@superone/relay-client'
 import type { SessionActivity } from '@superone/shared/session-activity'
 import { AppState } from 'react-native'
-import { completionSeen, countAttentionSessions, mergeSessionActivity, type MobileSessionActivity, type WorkspaceActivity } from '../session-activity-state'
-import { randomId } from '../ids'
+import { completionSeen, countAttentionSessions, mergeSessionActivity, replaceWorkspaceActivity, type MobileSessionActivity, type WorkspaceActivity } from '../session-activity-state'
 
 export const SessionActivityContext = createContext<WorkspaceActivity>({})
 export const useSessionActivity = (sessionId: string) => useContext(SessionActivityContext)[sessionId]
@@ -21,6 +20,13 @@ export function useWorkspaceActivity(client: RelayClient | null, connected: bool
   const latest = useRef(sessions)
   latest.current = sessions
   const updates = useRef<Record<string, SessionActivity>>({})
+  const owner = useRef(client)
+  const snapshotRevision = useRef(0)
+  const claimSource = useCallback((source: RelayClient | null) => {
+    if (owner.current === source) return false
+    owner.current = source; updates.current = {}; snapshotRevision.current++
+    return true
+  }, [])
   const viewed = useRef(viewedSessionId)
   viewed.current = viewedSessionId
   const visibleSession = useCallback(() => AppState.currentState === 'background' || AppState.currentState === 'inactive' ? null : viewed.current, [])
@@ -31,13 +37,9 @@ export function useWorkspaceActivity(client: RelayClient | null, connected: bool
    * receipt lost to a dead socket is re-sent from the reconnect snapshot below.
    */
   const reportSeen = useCallback((activity: Pick<SessionActivity, 'sessionId' | 'projectPath' | 'completedMessageId' | 'seenCompletedMessageId'>) => {
-    if (!client || completionSeen(activity)) return
-    try {
-      client.send({ type: 'mark_session_seen', projectPath: activity.projectPath, sessionId: activity.sessionId })
-    } catch {
-      // `send` throws while the socket is down (app resumed before reconnect).
-    }
-  }, [client])
+    if (!owner.current || completionSeen(activity)) return
+    void owner.current.rpc('client.markSeen', { sessionId: activity.sessionId }).catch(() => {})
+  }, [])
   useEffect(() => {
     const clearViewed = () => {
       const id = visibleSession()
@@ -50,54 +52,54 @@ export function useWorkspaceActivity(client: RelayClient | null, connected: bool
     const subscription = AppState.addEventListener('change', clearViewed)
     return () => subscription.remove()
   }, [viewedSessionId, visibleSession, reportSeen])
-  const ingest = useCallback((events: unknown[]) => {
+  const ingest = useCallback((events: unknown[], source = client) => {
     const changed: { activity: SessionActivity; completed?: boolean }[] = []
     for (const event of events) {
       const frame = event as { type?: string; activity?: SessionActivity; completed?: boolean } | null
       if (frame?.type === 'session_activity' && frame.activity) changed.push({ activity: frame.activity, completed: frame.completed })
     }
     if (!changed.length) return
+    const reset = claimSource(source)
     for (const frame of changed) updates.current[frame.activity.sessionId] = frame.activity
     const viewing = visibleSession()
     // A run finishing in the session on screen is read as it lands.
     for (const frame of changed) if (frame.completed && frame.activity.sessionId === viewing) reportSeen(frame.activity)
     setSessions(current => {
-      const next = { ...current }
+      const next: Record<string, MobileSessionActivity> = reset ? {} : { ...current }
       for (const frame of changed) {
         const id = frame.activity.sessionId
         next[id] = mergeSessionActivity(next[id], frame.activity, viewing, frame.completed)
       }
       return next
     })
-  }, [visibleSession, reportSeen])
-  useEffect(() => { setSessions({}); updates.current = {} }, [client])
+  }, [client, claimSource, visibleSession, reportSeen])
+  const ingestSnapshot = useCallback((rows: SessionActivity[], source = client) => {
+    const reset = claimSource(source)
+    snapshotRevision.current++
+    updates.current = {}
+    const viewing = visibleSession()
+    const shown = rows.find(row => row.sessionId === viewing)
+    if (shown?.completedMessageId) reportSeen(shown)
+    setSessions(current => replaceWorkspaceActivity(reset ? {} : current, rows, viewing))
+  }, [client, claimSource, visibleSession, reportSeen])
+  useEffect(() => { if (claimSource(client)) setSessions({}) }, [client, claimSource])
   useEffect(() => {
     if (!client || !connected) return
     let active = true
+    const revision = snapshotRevision.current
     updates.current = {}
-    void client.request({ type: 'list_session_activity', requestId: randomId() }).then(result => {
-      if (!active) return
+    void client.rpc('session.activity').then(result => {
+      if (!active || owner.current !== client || snapshotRevision.current !== revision) return
       const rows = (result as { sessions?: SessionActivity[] }).sessions
       if (rows) {
         const viewing = visibleSession()
         // The session on screen was read whatever happened while offline.
         const shown = rows.find(row => row.sessionId === viewing)
         if (shown?.completedMessageId) reportSeen(shown)
-        setSessions(current => {
-          const next: Record<string, MobileSessionActivity> = {}
-          // Idle runtimes may have been released; unread completions belong to
-          // the client and outlive the host's in-memory session.
-          for (const [id, session] of Object.entries(current)) {
-            if (session.isUnseen) next[id] = { ...session, status: 'idle', pendingCount: 0, pendingReason: { en: null, zh: null } }
-          }
-          for (const row of rows) next[row.sessionId] = mergeSessionActivity(current[row.sessionId], row, viewing)
-          // A push received during this request is newer than its snapshot.
-          for (const id of Object.keys(updates.current)) if (current[id]) next[id] = current[id]
-          return next
-        })
+        setSessions(current => replaceWorkspaceActivity(current, rows, viewing, Object.keys(updates.current)))
       }
     }).catch(() => {})
     return () => { active = false }
   }, [client, connected, visibleSession, reportSeen])
-  return { sessions, ingest, pendingCount: countAttentionSessions(sessions) }
+  return { sessions, ingest, ingestSnapshot, pendingCount: countAttentionSessions(sessions) }
 }

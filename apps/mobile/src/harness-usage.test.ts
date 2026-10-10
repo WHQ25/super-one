@@ -1,3 +1,4 @@
+import { resolveTestProject } from './project-rpc.test-fixtures'
 import { describe, expect, it, vi } from 'vitest'
 import type { RelayClient } from '@superone/relay-client'
 import type { RemoteUsage } from '@superone/shared/agent-types'
@@ -13,15 +14,15 @@ const usage: RemoteUsage = {
 describe('fetchHarnessUsage', () => {
   it('sends the target as a get_usage command and unwraps the meter', async () => {
     const request = vi.fn(async () => ({ usage }))
-    const client = { request } as unknown as RelayClient
+    const client = { resolveProject: resolveTestProject, rpc: request } as unknown as RelayClient
     await expect(fetchHarnessUsage(client, target, true)).resolves.toEqual(usage)
-    expect(request).toHaveBeenCalledWith(expect.objectContaining({ type: 'get_usage', ...target, force: true }))
+    expect(request).toHaveBeenCalledWith('harness.usage', { projectId: 'p', harnessId: 'claude', sessionId: 's1', apiProviderId: null, acpAgentId: null, force: true }, { environmentId: 'desktop' })
   })
 
   it('reads a host error, a transport failure and an absent meter all as null', async () => {
-    const error = { request: async () => ({ error: 'nope' }) } as unknown as RelayClient
-    const thrown = { request: async () => { throw new Error('offline') } } as unknown as RelayClient
-    const empty = { request: async () => ({ usage: null }) } as unknown as RelayClient
+    const error = { resolveProject: resolveTestProject, rpc: async () => ({ error: 'nope' }) } as unknown as RelayClient
+    const thrown = { resolveProject: resolveTestProject, rpc: async () => { throw new Error('offline') } } as unknown as RelayClient
+    const empty = { resolveProject: resolveTestProject, rpc: async () => ({ usage: null }) } as unknown as RelayClient
     await expect(fetchHarnessUsage(error, target)).resolves.toBeNull()
     await expect(fetchHarnessUsage(thrown, target)).resolves.toBeNull()
     await expect(fetchHarnessUsage(empty, target)).resolves.toBeNull()
@@ -67,14 +68,14 @@ describe('remainingPercent', () => {
 describe('consumeRateLimitReset', () => {
   it('names the credential and credit, and unwraps the outcome', async () => {
     const request = vi.fn(async () => ({ outcome: 'reset' }))
-    const client = { request } as unknown as RelayClient
+    const client = { resolveProject: resolveTestProject, rpc: request } as unknown as RelayClient
     await expect(consumeRateLimitReset(client, target, 'rc-1')).resolves.toBe('reset')
-    expect(request).toHaveBeenCalledWith(expect.objectContaining({ type: 'consume_rate_limit_reset', projectPath: '/p', apiProviderId: null, creditId: 'rc-1' }))
+    expect(request).toHaveBeenCalledWith('codex.consumeRateLimitReset', { projectId: 'p', apiProviderId: null, creditId: 'rc-1' }, { environmentId: 'desktop' })
   })
 
   it('reads a host error or transport failure as null', async () => {
-    await expect(consumeRateLimitReset({ request: async () => ({ error: 'x' }) } as unknown as RelayClient, target)).resolves.toBeNull()
-    await expect(consumeRateLimitReset({ request: async () => { throw new Error('offline') } } as unknown as RelayClient, target)).resolves.toBeNull()
+    await expect(consumeRateLimitReset({ resolveProject: resolveTestProject, rpc: async () => ({ error: 'x' }) } as unknown as RelayClient, target)).resolves.toBeNull()
+    await expect(consumeRateLimitReset({ resolveProject: resolveTestProject, rpc: async () => { throw new Error('offline') } } as unknown as RelayClient, target)).resolves.toBeNull()
   })
 })
 

@@ -11,7 +11,6 @@ const {
   composerFormOutcome,
   openComposerForm,
   releaseComposerClient,
-  setComposerDevicePush,
 } = await import('./composer-delivery')
 const { claimInputRequestForSend, clearInputRequestsForTests, isInputRequestId, openInputRequest, respondToInputRequest } = await import('./input-requests')
 
@@ -33,8 +32,8 @@ function show(output: InputRequestOutput) {
   return { requestId, sessionId: target.id, output, outcome }
 }
 
-function opened(client: typeof win | typeof phone, frame: { viewId: string; localId: string; output?: InputRequestOutput }) {
-  const result = openComposerForm(client, frame, show)
+function opened(client: typeof win | typeof phone, frame: { viewId: string; localId: string; output?: InputRequestOutput }, push?: (event: ComposerSettledEvent) => void) {
+  const result = openComposerForm(client, frame, show, push)
   if (!result.ok) throw new Error(result.error.message)
   return result.requestId
 }
@@ -113,8 +112,7 @@ describe('composer delivery to a desktop window', () => {
 describe('composer delivery to a phone', () => {
   it('pushes the answer to the opening device only and lets it collect a missed push once', async () => {
     const pushed: Array<[string, ComposerSettledEvent]> = []
-    setComposerDevicePush((deviceId, event) => { pushed.push([deviceId, event]) })
-    const requestId = opened(phone, { viewId: 'v1', localId: 'l1' })
+    const requestId = opened(phone, { viewId: 'v1', localId: 'l1' }, event => { pushed.push([phone.id, event]) })
     expect(composerFormOutcome(phone, requestId)).toEqual({ state: 'pending' })
     respondToInputRequest('s1', requestId, { allow: true, formAnswers: { color: 'red' } })
     await settle()

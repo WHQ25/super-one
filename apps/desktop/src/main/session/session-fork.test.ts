@@ -43,6 +43,9 @@ vi.mock('./backends/opencode-backend', () => ({ OpenCodeBackend: class {} }))
 
 import { forkSession } from './session-fork'
 
+const gitRunMock = vi.hoisted(() => vi.fn(async () => ''))
+vi.mock('../git-run', () => ({ gitRun: gitRunMock }))
+
 let tmpRoot: string
 let configDir: string
 let projectPath: string
@@ -91,6 +94,40 @@ function stubClaudeSdkFork() {
 }
 
 describe('forkSession harness dispatch', () => {
+  it('rolls back a worktree when the admitted control is revoked during transcript cloning', async () => {
+    const worktreePath = join(tmpRoot, 'worktree')
+    mkdirSync(worktreePath)
+    activateWorktreeMock.mockResolvedValue({ path: worktreePath })
+    setupSource(makeRecord({}), [])
+    let controlled = true
+    sdkForkSessionMock.mockImplementation(async () => {
+      const dir = join(configDir, 'projects', 'src-slug')
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, 'claude-forked.jsonl'), '{}')
+      controlled = false
+      return { sessionId: 'claude-forked' }
+    })
+    const assertControl = () => {
+      if (!controlled) throw Object.assign(new Error('lease stale'), { code: 'lease_stale' })
+    }
+    await expect(forkSession({ sessionId: 's-src', mode: 'worktree' }, assertControl)).rejects.toMatchObject({ code: 'lease_stale' })
+    expect(forkSessionRecordMock).not.toHaveBeenCalled()
+    expect(gitRunMock).toHaveBeenCalledWith(projectPath, ['worktree', 'remove', '--force', worktreePath])
+  })
+
+  it('rolls back without cloning when control is revoked during worktree creation', async () => {
+    setupSource(makeRecord({}), [])
+    let controlled = true
+    const worktreePath = join(tmpRoot, 'worktree')
+    activateWorktreeMock.mockImplementationOnce(async () => { controlled = false; return { path: worktreePath } })
+    await expect(forkSession({ sessionId: 's-src' }, () => {
+      if (!controlled) throw Object.assign(new Error('lease stale'), { code: 'lease_stale' })
+    })).rejects.toMatchObject({ code: 'lease_stale' })
+    expect(sdkForkSessionMock).not.toHaveBeenCalled()
+    expect(forkSessionRecordMock).not.toHaveBeenCalled()
+    expect(gitRunMock).toHaveBeenCalledWith(projectPath, ['worktree', 'remove', '--force', worktreePath])
+  })
+
   it('creates a clean worktree when carrying local changes is disabled', async () => {
     const worktreePath = join(tmpRoot, 'worktree')
     mkdirSync(worktreePath)

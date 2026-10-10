@@ -3,15 +3,16 @@ vi.mock('./agent/event-trace', () => ({ trace: vi.fn() }))
 
 import WebSocket from 'ws'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { decodeHostPlaintext } from '@superone/relay-client/host-payload'
 import { openLinkFrame } from '@superone/relay-client/phone-link'
 import { issueChannelCredential, startClientHandshake, type ChannelCredential } from '@superone/relay-client/secure-channel'
 import { RelayClient } from '@superone/relay-client'
 import { LanServer, type LanServerCallbacks } from './lan-server'
-import { frameHostPayload } from './remote/payload-codec'
 import * as phoneLink from './remote/phone-link-host'
-import { connectTestPhone, nextFrame, openLanSocket, sealTestCommand } from './remote/test-phone'
+import { connectTestPhone, nextFrame, openLanSocket, sealTestRpc } from './remote/test-phone'
 import log from './logger'
+import { phoneDomain } from './node-host/phone-endpoint-test-fixtures'
+import { openPhoneConnection as openNativePhoneConnection } from './node-host/phone-endpoint'
+import type { SessionLoadResult } from '@superone/shared/environment'
 
 const ROOT = 'ab'.repeat(32)
 const ROOM = '0f'.repeat(16)
@@ -28,14 +29,13 @@ function makeServer(overrides: Partial<LanServerCallbacks> = {}, paired = PHONES
       ? { enabled: true, ...paired[keyId], keyId, secretHex: credentialOf(keyId).secretHex }
       : null,
     handshakeInfo: () => ({ hostName: 'test-host' }),
-    onCommand: vi.fn(),
     ...overrides,
   })
 }
 
 const connectPhone = (port: number, credential = credentialOf('key-dev-1')) => connectTestPhone(port, credential)
 const open = openLanSocket
-const command = sealTestCommand
+const command = sealTestRpc
 
 const closed = (socket: WebSocket) => new Promise<{ code: number; reason: string }>((r) =>
   socket.once('close', (code, reason) => r({ code, reason: reason.toString() })))
@@ -43,6 +43,7 @@ const closed = (socket: WebSocket) => new Promise<{ code: number; reason: string
 describe('LanServer', () => {
   let server: LanServer | null = null
   const sockets: WebSocket[] = []
+  const domains: Array<() => void> = []
   const track = <T extends { socket: WebSocket }>(value: T): T => { sockets.push(value.socket); return value }
 
   afterEach(async () => {
@@ -52,6 +53,7 @@ describe('LanServer', () => {
     }
     await server?.stop()
     server = null
+    while (domains.length) domains.pop()!()
   })
 
   it('accepts a phone that proves its key and sends the sealed handshake', async () => {
@@ -132,8 +134,8 @@ describe('LanServer', () => {
     it('revoking the device closes its pending handshake', async () => {
       const paired = { ...PHONES }
       const onClientRegistered = vi.fn()
-      const onCommand = vi.fn()
-      server = makeServer({ onClientRegistered, onCommand }, paired)
+      const openPhoneConnection = vi.fn(() => ({ receive: vi.fn(), close: vi.fn() }))
+      server = makeServer({ onClientRegistered, openPhoneConnection }, paired)
       const { port } = await server.start({ host: '127.0.0.1' })
       const phone = await challenged(port)
       const kicked = nextFrame(phone.socket, (f) => f.type === 'kicked')
@@ -143,102 +145,97 @@ describe('LanServer', () => {
       expect(await kicked).toEqual({ type: 'kicked', mobileDeviceId: 'dev-1' })
       expect(await socketClosed).toEqual({ code: 1000, reason: 'kicked' })
       expect(onClientRegistered).not.toHaveBeenCalled()
-      expect(onCommand).not.toHaveBeenCalled()
+      expect(openPhoneConnection).not.toHaveBeenCalled()
     })
 
     it('a proof that arrives after the pairing was deleted is rejected', async () => {
       const paired = { ...PHONES }
       const onClientRegistered = vi.fn()
-      const onCommand = vi.fn()
-      server = makeServer({ onClientRegistered, onCommand }, paired)
+      const openPhoneConnection = vi.fn(() => ({ receive: vi.fn(), close: vi.fn() }))
+      server = makeServer({ onClientRegistered, openPhoneConnection }, paired)
       const { port } = await server.start({ host: '127.0.0.1' })
       const phone = await challenged(port)
       delete paired['key-dev-1']
       const socketClosed = closed(phone.socket)
       phone.sendProof()
-      phone.socket.send(command(phone.channel, { type: 'list_projects', requestId: 'r1' }))
+      phone.socket.send(command(phone.channel, { type: 'rpc', method: 'project.list', requestId: 'r1' }))
       expect(await socketClosed).toEqual({ code: 1008, reason: 'not_paired' })
       expect(onClientRegistered).not.toHaveBeenCalled()
-      expect(onCommand).not.toHaveBeenCalled()
+      expect(openPhoneConnection).not.toHaveBeenCalled()
       expect(server.isEmpty()).toBe(true)
     })
 
     it('a command on an open channel is refused once the pairing is gone', async () => {
       const paired = { ...PHONES }
-      const onCommand = vi.fn()
-      server = makeServer({ onCommand }, paired)
+      const openPhoneConnection = vi.fn(() => ({ receive: vi.fn(), close: vi.fn() }))
+      server = makeServer({ openPhoneConnection }, paired)
       const { port } = await server.start({ host: '127.0.0.1' })
       const phone = track(await connectPhone(port))
       delete paired['key-dev-1']
       const socketClosed = closed(phone.socket)
-      phone.socket.send(command(phone.channel, { type: 'list_projects', requestId: 'r1' }))
+      phone.socket.send(command(phone.channel, { type: 'rpc', method: 'project.list', requestId: 'r1' }))
       expect(await socketClosed).toEqual({ code: 1000, reason: 'kicked' })
-      expect(onCommand).not.toHaveBeenCalled()
+      expect(openPhoneConnection).not.toHaveBeenCalled()
     })
   })
 
-  it('runs a command round trip and binds the response to the channel', async () => {
-    const onCommand = vi.fn<LanServerCallbacks['onCommand']>((_cmd, respond) => { void respond('req-1', { ok: true, value: 42 }) })
-    server = makeServer({ onCommand })
+  it('binds native protocol frames to the authenticated socket and device', async () => {
+    const received = vi.fn()
+    server = makeServer({ openPhoneConnection: link => ({ receive: frame => { received(link.deviceId, frame); link.write(frame) }, close: () => {} }) })
     const { port } = await server.start({ host: '127.0.0.1' })
     const phone = track(await connectPhone(port))
-
-    const response = nextFrame(phone.socket, (f) => f.type === 'response')
-    phone.socket.send(command(phone.channel, { type: 'list_projects', requestId: 'req-1' }))
-    const frame = await response
-    expect(onCommand.mock.calls[0]?.[0]).toMatchObject({ type: 'list_projects', requestId: 'req-1' })
-    expect(onCommand.mock.calls[0]?.[2]).toEqual({ deviceId: 'dev-1' })
-    const { header, payload } = openLinkFrame(phone.channel, frame.data as string)
-    expect(header).toEqual({ t: 'response', requestId: 'req-1' })
-    expect(decodeHostPlaintext(payload)).toEqual({ ok: true, value: 42 })
+    const response = nextFrame(phone.socket, f => f.type === 'terminal')
+    const payload = { type: 'rpc_result', requestId: 'r1', result: { value: 42 } }
+    phone.socket.send(command(phone.channel, payload))
+    const frame = openLinkFrame(phone.channel, (await response).data as string)
+    expect(frame.header).toEqual({ t: 'rpc' })
+    expect(JSON.parse(new TextDecoder().decode(frame.payload))).toEqual(payload)
+    expect(received).toHaveBeenCalledWith('dev-1', expect.any(Uint8Array))
   })
 
   it('drops the connection on a replayed or tampered command', async () => {
-    const onCommand = vi.fn()
-    server = makeServer({ onCommand })
+    const openPhoneConnection = vi.fn(() => ({ receive: vi.fn(), close: vi.fn() }))
+    server = makeServer({ openPhoneConnection })
     const { port } = await server.start({ host: '127.0.0.1' })
 
     const phone = track(await connectPhone(port))
-    const frame = command(phone.channel, { type: 'list_projects', requestId: 'once' })
+    const frame = command(phone.channel, { type: 'rpc', method: 'project.list', requestId: 'once' })
     phone.socket.send(frame)
-    await vi.waitFor(() => expect(onCommand).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => expect(openPhoneConnection).toHaveBeenCalledTimes(1))
     const replayClosed = closed(phone.socket)
     phone.socket.send(frame)
     expect(await replayClosed).toEqual({ code: 1008, reason: 'decryption_failed' })
-    expect(onCommand).toHaveBeenCalledTimes(1)
+    expect(openPhoneConnection).toHaveBeenCalledTimes(1)
 
     const other = track(await connectPhone(port))
-    const tampered = JSON.parse(command(other.channel, { type: 'list_projects' })) as { data: string }
+    const tampered = JSON.parse(command(other.channel, { type: 'rpc', method: 'project.list' })) as { data: string }
     const bytes = Buffer.from(tampered.data, 'base64')
     bytes[bytes.length - 1] ^= 1
     const tamperClosed = closed(other.socket)
     other.socket.send(JSON.stringify({ type: 'command', data: bytes.toString('base64') }))
     expect(await tamperClosed).toEqual({ code: 1008, reason: 'decryption_failed' })
-    expect(onCommand).toHaveBeenCalledTimes(1)
+    expect(openPhoneConnection).toHaveBeenCalledTimes(1)
   })
 
-  it('seals events per device channel and honours targets', async () => {
-    server = makeServer()
+  it('seals native frames per socket without forwarding frames to other phones', async () => {
+    server = makeServer({ openPhoneConnection: link => ({ receive: frame => link.write(frame), close: () => {} }) })
     const { port } = await server.start({ host: '127.0.0.1' })
     const a = track(await connectPhone(port, credentialOf('key-dev-1')))
     const b = track(await connectPhone(port, credentialOf('key-dev-2')))
-
-    const framed = await frameHostPayload([{ type: 'pong' }])
-    const both = Promise.all([nextFrame(a.socket, (f) => f.type === 'event'), nextFrame(b.socket, (f) => f.type === 'event')])
-    server.sendFramed('event', framed)
+    const both = Promise.all([nextFrame(a.socket, f => f.type === 'terminal'), nextFrame(b.socket, f => f.type === 'terminal')])
+    const payload = { type: 'rpc_result', requestId: 'r1', result: {} }
+    a.socket.send(command(a.channel, payload))
+    b.socket.send(command(b.channel, payload))
     const [fa, fb] = await both
-    expect(fa.seq).toBeUndefined()
-    expect(decodeHostPlaintext(openLinkFrame(a.channel, fa.data as string).payload)).toEqual([{ type: 'pong' }])
-    expect(decodeHostPlaintext(openLinkFrame(b.channel, fb.data as string).payload)).toEqual([{ type: 'pong' }])
-    // One phone's copy is useless to the other.
     expect(fa.data).not.toBe(fb.data)
-
+    expect(openLinkFrame(a.channel, fa.data as string).header).toEqual({ t: 'rpc' })
+    expect(openLinkFrame(b.channel, fb.data as string).header).toEqual({ t: 'rpc' })
     let bReceived = false
     b.socket.on('message', () => { bReceived = true })
-    const onlyA = nextFrame(a.socket, (f) => f.type === 'terminal')
-    server.sendFramed('terminal', framed, ['dev-1'])
-    expect(openLinkFrame(a.channel, (await onlyA).data as string).header).toEqual({ t: 'terminal' })
-    await new Promise((r) => setTimeout(r, 50))
+    const onlyA = nextFrame(a.socket, f => f.type === 'terminal')
+    a.socket.send(command(a.channel, { ...payload, requestId: 'r2' }))
+    expect(openLinkFrame(a.channel, (await onlyA).data as string).header).toEqual({ t: 'rpc' })
+    await new Promise(r => setTimeout(r, 50))
     expect(bReceived).toBe(false)
   })
 
@@ -273,12 +270,12 @@ describe('LanServer', () => {
     await vi.waitFor(() => expect(onClientDisconnected).toHaveBeenCalledWith({ deviceId: 'dev-1' }), { timeout: 2000 })
   })
 
-  it('serves the phone transport end to end: handshake, request, events, revocation', async () => {
+  it('serves the native phone transport end to end: handshake, RPC, events, revocation', async () => {
+    const { domain, projectDir, own } = phoneDomain(domains)
     const paired = { ...PHONES }
     server = makeServer({
-      onCommand: (cmd, respond) => {
-        if ('requestId' in cmd && typeof cmd.requestId === 'string') void respond(cmd.requestId, { projects: [{ path: '/p', name: 'p' }] })
-      },
+      handshakeInfo: () => ({ hostName: 'test-host', host: { appVersion: '0.73.0-alpha.1', protocol: 3, environmentId: domain.identity.environmentId } }),
+      openPhoneConnection: link => openNativePhoneConnection(domain, link),
     }, paired)
     const { port } = await server.start({ host: '127.0.0.1' })
 
@@ -287,11 +284,14 @@ describe('LanServer', () => {
     const client = new RelayClient({ onControl: (f) => controls.push(f), onEvents: (batch) => events.push(batch) })
     const link = { credential: credentialOf('key-dev-1'), roomId: ROOM }
     await client.connectLan('127.0.0.1', port, link)
-    await expect(client.request({ type: 'list_projects', requestId: 'r1' } as never)).resolves.toEqual({ projects: [{ path: '/p', name: 'p' }] })
-    expect(controls).toContainEqual({ type: 'handshake', hostName: 'test-host' })
+    await client.verifyHost()
+    await expect(client.rpc('project.list')).resolves.toMatchObject([{ path: projectDir, name: 'app' }])
+    expect(controls).toContainEqual(expect.objectContaining({ type: 'handshake', hostName: 'test-host' }))
+    const loaded = await client.rpc<SessionLoadResult>('session.load', { sessionId: 'own' })
+    await client.followSession({ session: { environmentId: domain.identity.environmentId, sessionId: 'own' }, projectPath: projectDir, cursor: loaded.cursor })
 
-    server.sendFramed('event', await frameHostPayload({ type: 'status_change', status: 'idle' }), ['dev-1'])
-    await vi.waitFor(() => expect(events).toEqual([[{ type: 'status_change', status: 'idle' }]]))
+    own.emitHostEvent({ type: 'status_change', status: 'error' })
+    await vi.waitFor(() => expect(events.flat()).toContainEqual(expect.objectContaining({ type: 'status_change', status: 'error' })))
 
     // Removing the device: its live socket is kicked and its key no longer opens a channel.
     delete paired['key-dev-1']
@@ -302,7 +302,7 @@ describe('LanServer', () => {
     const retry = new RelayClient({ onControl: (f) => again.push(f) })
     await retry.connectLan('127.0.0.1', port, link)
     await vi.waitFor(() => expect(again).toContainEqual({ type: 'kicked' }))
-    await expect(retry.request({ type: 'list_projects', requestId: 'r2' } as never, 500)).rejects.toThrow()
+    await expect(retry.rpc('project.list', {}, { timeoutMs: 500 })).rejects.toThrow()
     retry.disconnect()
   })
 })

@@ -77,6 +77,12 @@ describe('WorkspaceGitService worktree activate', () => {
     expect((st.insertions ?? 0) + (st.deletions ?? 0)).toBeGreaterThan(0)
   })
 
+  it('names the detached commit instead of presenting HEAD as a branch', () => {
+    git(dir, ['checkout', '--detach'])
+    const head = execFileSync('git', ['-C', dir, 'rev-parse', '--short=7', 'HEAD'], { encoding: 'utf8' }).trim()
+    expect(svc.status('p1')).toMatchObject({ branch: null, head })
+  })
+
   it('creates a branch worktree under ~/.worktrees', () => {
     const result = svc.activateWorktree('p1', {
       baseBranch: 'main',

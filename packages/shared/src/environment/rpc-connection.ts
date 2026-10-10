@@ -8,8 +8,11 @@
 
 import { RequestCoalescer, canonicalJson } from '../request-coalescer'
 import type { DetailUpdate } from './detail'
-import type { SessionDetailMessage, SessionStreamFrame, SessionStreamMessage } from './events'
+import type { DraftStreamMessage, SessionDetailMessage, SessionStreamFrame, SessionStreamMessage, TerminalStreamMessage, TopicNoticeFrame, TopicNoticeMessage } from './events'
 import type { RpcError } from './rpc'
+import type { HandshakeGenerations } from './protocol'
+import type { ControlLostEvent, ClientStreamMessage } from './events'
+import { RpcInbox } from './rpc-inbox'
 
 export interface RpcConnectionOptions {
   protocolVersion: number
@@ -20,6 +23,7 @@ export interface RpcConnectionOptions {
   timeoutError(method: string): Error
   /** Reads that identical concurrent calls may share. */
   coalesces?(method: string): boolean
+  onControlLost?(event: ControlLostEvent): void
 }
 
 export interface RpcRequestOptions {
@@ -35,18 +39,15 @@ export interface RpcRequestOptions {
 
 export interface RpcStreamHandlers {
   onFrame(frame: SessionStreamFrame): void
+  onTerminal?(event: TerminalStreamMessage['event']): void
+  onDraft?(event: DraftStreamMessage['event']): void
+  onTopic?(frame: TopicNoticeFrame): void
   /** The connection ended; the stream with it. */
   onEnd(err: Error): void
 }
 
-interface Pending {
-  resolve(value: unknown): void
-  reject(err: Error): void
-  timer: ReturnType<typeof setTimeout> | undefined
-}
-
 export class RpcConnection {
-  private readonly pending = new Map<string, Pending>()
+  private readonly inbox: RpcInbox
   private readonly streams = new Map<string, RpcStreamHandlers>()
   private readonly details = new Map<string, (update: DetailUpdate) => void>()
   private readonly reads = new RequestCoalescer()
@@ -55,7 +56,15 @@ export class RpcConnection {
   constructor(
     private readonly send: (message: unknown) => void,
     private readonly opts: RpcConnectionOptions,
-  ) {}
+  ) { this.inbox = new RpcInbox(() => opts.newId()) }
+
+  /** Generation handshake shares the same registered-before-send receipt handling. */
+  handshake(payload: HandshakeGenerations, timeoutMs = 10_000): Promise<{ protocol: number; databaseSchema: number; environmentId: string }> {
+    if (this.ended) return Promise.reject(this.ended)
+    return this.inbox.begin({ type: 'handshake', payload }, this.send, timeoutMs, {
+      timeoutError: () => this.opts.timeoutError('handshake'),
+    })
+  }
 
   request<T>(method: string, payload: unknown, options: RpcRequestOptions): Promise<T> {
     const key = this.opts.coalesces?.(method) && !options.idempotencyKey
@@ -91,10 +100,29 @@ export class RpcConnection {
   /** Handles a decoded message from the server; false when it is not a reply or a push. */
   receive(message: unknown): boolean {
     const msg = message as { type?: string; requestId?: string; result?: unknown; error?: RpcError }
+    if (this.opts.onControlLost && msg.type === 'client' && (message as ClientStreamMessage).event?.type === 'control_lost') {
+      this.opts.onControlLost((message as ClientStreamMessage).event as ControlLostEvent)
+      return true
+    }
     if (!msg || typeof msg !== 'object') return false
     if (msg.type === 'stream') {
       const { subscriptionId, frame } = message as SessionStreamMessage
       this.streams.get(subscriptionId)?.onFrame(frame)
+      return true
+    }
+    if (msg.type === 'terminal') {
+      const { subscriptionId, event } = message as TerminalStreamMessage
+      this.streams.get(subscriptionId)?.onTerminal?.(event)
+      return true
+    }
+    if (msg.type === 'draft') {
+      const { subscriptionId, event } = message as DraftStreamMessage
+      this.streams.get(subscriptionId)?.onDraft?.(event)
+      return true
+    }
+    if (msg.type === 'topic') {
+      const { subscriptionId, frame } = message as TopicNoticeMessage
+      this.streams.get(subscriptionId)?.onTopic?.(frame)
       return true
     }
     if (msg.type === 'detail') {
@@ -102,15 +130,12 @@ export class RpcConnection {
       this.details.get(update.subscriptionId)?.(update)
       return true
     }
-    if ((msg.type !== 'rpc_result' && msg.type !== 'rpc_error') || !msg.requestId) return false
-    const pending = this.pending.get(msg.requestId)
-    if (!pending) return true
-    this.pending.delete(msg.requestId)
-    clearTimeout(pending.timer)
+    if ((msg.type !== 'rpc_result' && msg.type !== 'rpc_error' && msg.type !== 'handshake_ok') || !msg.requestId) return false
+    if (!this.inbox.has(msg.requestId)) return true
     if (msg.type === 'rpc_error') {
-      pending.reject(this.opts.responseError({ code: msg.error?.code ?? 'internal', message: msg.error?.message ?? 'rpc error', details: msg.error?.details }))
+      this.inbox.fail(msg.requestId, this.opts.responseError({ code: msg.error?.code ?? 'internal', message: msg.error?.message ?? 'rpc error', details: msg.error?.details }))
     } else {
-      pending.resolve(msg.result)
+      this.inbox.complete(msg.requestId, msg.result)
     }
     return true
   }
@@ -119,11 +144,7 @@ export class RpcConnection {
   close(err: Error): void {
     if (this.ended) return
     this.ended = err
-    for (const pending of this.pending.values()) {
-      clearTimeout(pending.timer)
-      pending.reject(err)
-    }
-    this.pending.clear()
+    this.inbox.failAll(err)
     const streams = [...this.streams.values()]
     this.streams.clear()
     this.details.clear()
@@ -133,29 +154,19 @@ export class RpcConnection {
 
   private dispatch<T>(method: string, payload: unknown, options: RpcRequestOptions): Promise<T> {
     if (this.ended) return Promise.reject(this.ended)
-    const requestId = this.opts.newId()
-    return new Promise<T>((resolve, reject) => {
-      const timer = options.timeoutMs === undefined ? undefined : setTimeout(() => {
-        this.pending.delete(requestId)
-        reject(this.opts.timeoutError(method))
-        options.onTimeout?.()
-      }, options.timeoutMs)
-      this.pending.set(requestId, { resolve: (value) => resolve(value as T), reject, timer })
-      try {
-        this.send({
-          type: 'rpc',
-          requestId,
-          method,
-          payload,
-          environmentId: options.environmentId,
-          protocolVersion: this.opts.protocolVersion,
-          idempotencyKey: options.idempotencyKey,
-        })
-      } catch (err) {
-        this.pending.delete(requestId)
-        clearTimeout(timer)
-        reject(err instanceof Error ? err : new Error(String(err)))
-      }
+    return this.inbox.begin<T>({
+      type: 'rpc',
+      method,
+      payload,
+      environmentId: options.environmentId,
+      protocolVersion: this.opts.protocolVersion,
+      idempotencyKey: options.idempotencyKey,
+    }, (message) => {
+      try { this.send(message) }
+      catch (err) { throw err instanceof Error ? err : new Error(String(err)) }
+    }, options.timeoutMs ?? null, {
+      timeoutError: () => this.opts.timeoutError(method),
+      onTimeout: options.onTimeout,
     })
   }
 }

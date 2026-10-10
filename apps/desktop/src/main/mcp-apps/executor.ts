@@ -3,7 +3,7 @@ import { getMcpAppResourceStore as resourceStore } from './resource-store'
 import { mcpAppServerTitle } from '@superone/shared/mcp-apps-metadata'
 import type { McpAppResourceSnapshot } from '@superone/shared/mcp-app-resource'
 import { randomUUID } from 'node:crypto'
-import type { AgentEvent, RemoteCommand } from '@superone/shared/agent-types'
+import type { AgentEvent } from '@superone/shared/agent-types'
 import { mcpAppContent } from '@superone/shared/mcp-apps-content'
 import { parseSessionKey, type SessionRef } from '@superone/shared/environment/refs'
 import { McpAppsError } from '@superone/shared/mcp-apps'
@@ -11,7 +11,7 @@ import type { McpAppHostRequest, McpAppHostResult, McpAppRequester, ToolAppAttac
 import { findMcpAppAttachment, mcpAppEventAttachments } from '@superone/shared/mcp-apps-state'
 import { RemoteMcpAppFreshness } from './remote-freshness'
 import type { SessionManagerImpl } from '../session/session-manager'
-import type { RemoteResponder } from '../remote-control-service'
+import type { sendPhoneMcpAppMessage } from '../session/mcp-app-send'
 import { McpAppExecutor, type McpAppResolvedTarget } from './executor-core'
 import { routeMcpAppsProviderRequest } from './provider-ipc'
 import { mcpAppSessionKey } from './session-key'
@@ -22,7 +22,7 @@ import { saveMcpAppDownloads } from './download-file'
 import { hostFileApp, readHostFile, releaseHostFileApps, subscribeHostFile, unsubscribeHostFile, updateHostFileApp, writeHostFile } from './host-files'
 
 interface MobileSender {
-  handleRemoteCommand(command: RemoteCommand, respond?: RemoteResponder, source?: { deviceId: string; transport: 'lan' | 'relay' }): Promise<void>
+  remoteSendMcpAppMessage(input: Parameters<typeof sendPhoneMcpAppMessage>[1], source: Parameters<typeof sendPhoneMcpAppMessage>[2], onAccepted: () => void): Promise<void>
 }
 
 let executor: McpAppExecutor | undefined
@@ -70,7 +70,11 @@ export function initializeMcpAppExecutor(manager: SessionManagerImpl, mobile: Mo
       if (file) { updateHostFileApp(file, compact); return }
       const event: AgentEvent = { type: 'mcp_app_updated', sessionId: target.ref.sessionId, projectPath: target.projectPath,
         messageId: target.messageId, appInstanceId: target.app.appInstanceId, update: compact }
-      if (target.ref.environmentId === 'local') local(target.ref.sessionId).emitHostEvent(event)
+      if (target.ref.environmentId === 'local') {
+        const session = local(target.ref.sessionId)
+        if (update.modelContext !== undefined) session.lease.assertMutation()
+        session.emitHostEvent(event)
+      }
       else {
         const { getEnvironmentHost } = await import('../environment/environment-host')
         const result = await getEnvironmentHost().updateMcpAppState(target.ref.environmentId, { sessionId: target.ref.sessionId, appInstanceId: target.app.appInstanceId, update })
@@ -150,10 +154,9 @@ export function initializeMcpAppExecutor(manager: SessionManagerImpl, mobile: Mo
       const content = `[MCP App: ${target.app.binding.server}]\n${text}`
       const { images, userMessageContent, contexts } = display
       if (requester.kind === 'mobile' && target.ref.environmentId === 'local') {
-        await acceptedSend(onAccepted => mobile.handleRemoteCommand({ type: 'send_message', requestId: randomUUID(),
-          projectPath: target.projectPath, sessionId: target.ref.sessionId, content, images, userMessageContent, contexts, clientMessageId, priority: 'next' },
-        async (_id, data) => { const response = data as { error?: unknown; ok?: boolean }; if (response.error) throw new McpAppsError('denied', String(response.error)); if (response.ok) onAccepted() },
-        { deviceId: requester.deviceId, transport: requester.transport ?? 'lan' }), signal)
+        await acceptedSend(onAccepted => mobile.remoteSendMcpAppMessage({ projectPath: target.projectPath, sessionId: target.ref.sessionId,
+          request: { content, images, userMessageContent, contexts, clientMessageId, priority: 'next' } },
+        { deviceId: requester.deviceId, transport: requester.transport ?? 'lan' }, onAccepted), signal)
       } else if (target.ref.environmentId === 'local') {
         await acceptedSend(onAccepted => local(target.ref.sessionId).send({ content, images, userMessageContent, contexts, clientMessageId, priority: 'next' }, { onAccepted }), signal)
       } else {

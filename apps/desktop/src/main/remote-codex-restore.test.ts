@@ -1,3 +1,4 @@
+import { nativeRestoreClient, nativeLoadFixture } from './session/native-restore.test-fixtures'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentEvent, ChatMessage, CodexUsageInfo } from '@superone/shared/agent-types'
 import { ChatRuntime } from '../../../mobile/src/runtime'
@@ -26,10 +27,7 @@ describe('Codex restore through the mobile transport and chat runtime', () => {
       ] } },
     }], 'codex')
     const restored = stripMessagesForRemote(remoteRestoreMessages(catalog))
-    const client = { startBuffering() {}, releaseBuffer: () => ({ epoch: 1, batches: [] }),
-      request: async (command: { type: string }) => command.type === 'load_session_messages'
-        ? { messages: restored, provider: 'codex', hasMore: false } : { status: 'idle' },
-    }
+    const client = nativeRestoreClient(() => nativeLoadFixture({ status: 'idle', sessionProvider: 'codex' }, restored))
     const runtime = new ChatRuntime(client as never, vi.fn())
     try {
       await runtime.open('/project', 'session')
@@ -52,20 +50,9 @@ describe('Codex restore through the mobile transport and chat runtime', () => {
       type: 'codex_item_patch', messageId: 'running', itemId: 'shell', phase: 'updated', seq, epoch: 1,
       patch: { type: 'command_execution', aggregatedOutputDelta: text },
     })
-    const client = {
-      startBuffering() {},
-      releaseBuffer: () => ({ epoch: 1, batches: [[patch(10, 'first\n'), patch(11, 'second\n')]] }),
-      request: async (command: { type: string }) => {
-        if (command.type === 'load_session_messages') return {
-          provider: 'codex', hasMore: false, messages: [user, message('running', { status: 'streaming' })],
-        }
-        if (command.type === 'get_session_state') return {
-          status: 'streaming', contextTokens: 82400,
-          inProgressMessages: stripMessagesForRemote(remoteRestoreMessages([user, earlier, running])),
-        }
-        return { ok: true }
-      },
-    }
+    const client = nativeRestoreClient(() => nativeLoadFixture({ status: 'streaming', sessionProvider: 'codex', contextTokens: 82400,
+      codexUsage: usage }, [user, message('running', { status: 'streaming' })], stripMessagesForRemote(remoteRestoreMessages([user, earlier, running]))),
+      () => [[patch(10, 'first\n'), patch(11, 'second\n')]])
     const runtime = new ChatRuntime(client as never, vi.fn())
     await runtime.open('/project', 'session')
 

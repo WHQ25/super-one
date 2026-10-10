@@ -1,24 +1,17 @@
-import type { RemoteCommand } from '@superone/shared/agent-types'
+import type { SessionRef } from '@superone/shared/environment/refs'
+import type { MobileRpcClient } from './runtime-session-rpc'
 import {
   createRecapFocusController,
   type FocusTracker,
   type RecapFocusController,
 } from '@superone/shared/recap-focus'
-import { randomId } from './ids'
 
 export async function requestAutoSessionRecap(
-  request: (cmd: RemoteCommand) => Promise<unknown>,
-  sessionId: string,
-  projectPath: string,
+  client: Pick<MobileRpcClient, 'controlledRpc'>,
+  session: SessionRef,
 ): Promise<boolean> {
   try {
-    const result = await request({
-      type: 'request_session_recap',
-      requestId: randomId(),
-      sessionId,
-      projectPath,
-      auto: true,
-    }) as { ok?: boolean }
+    const result = await client.controlledRpc(session, 'session.recap', { auto: true }) as { ok?: boolean }
     return result.ok === true
   } catch {
     return false

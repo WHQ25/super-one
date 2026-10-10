@@ -4,23 +4,23 @@ import { leaveMobileSession, sessionRemovalStatus } from './session-exit'
 const makeRuntime = () => ({ sessionId: 'active', epoch: 3, dispose: vi.fn() })
 
 describe('mobile session exit', () => {
-  it('releases ownership and removes the runtime used by reconnect', () => {
+  it('releases ownership and removes the runtime used by reconnect', async () => {
     const runtime = makeRuntime()
     const ref = { current: runtime as ReturnType<typeof makeRuntime> | null }
-    const send = vi.fn()
-    leaveMobileSession({ send }, ref)
-    expect(send).toHaveBeenCalledWith({ type: 'leave_session', sessionId: 'active' })
+    const stopSession = vi.fn().mockResolvedValue(undefined)
+    await leaveMobileSession({ stopSession }, ref)
+    expect(stopSession).toHaveBeenCalledOnce()
     expect(runtime.dispose).toHaveBeenCalledOnce()
     expect(ref.current).toBeNull()
-    leaveMobileSession({ send }, ref)
-    expect(send).toHaveBeenCalledOnce()
+    await leaveMobileSession({ stopSession }, ref)
+    expect(stopSession).toHaveBeenCalledOnce()
   })
 
-  it('does not retain a restorable runtime when the socket is unavailable', () => {
+  it('does not retain a restorable runtime when the socket is unavailable', async () => {
     const runtime = makeRuntime()
     const ref = { current: runtime as ReturnType<typeof makeRuntime> | null }
-    const send = vi.fn(() => { throw new Error('disconnected') })
-    expect(() => leaveMobileSession({ send }, ref)).toThrow('disconnected')
+    const stopSession = vi.fn().mockRejectedValue(new Error('disconnected'))
+    await expect(leaveMobileSession({ stopSession }, ref)).rejects.toThrow('disconnected')
     expect(ref.current).toBeNull()
     expect(runtime.dispose).toHaveBeenCalledOnce()
   })

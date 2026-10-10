@@ -1,13 +1,14 @@
 import { describe, expect, it, vi } from 'vitest'
 import { requestSlashCatalog } from './slash-catalog'
 
-type Command = { type: string }
 
 function client(replies: Record<string, unknown>, onCall?: (type: string) => void) {
   return {
-    request: vi.fn(async (command: Command) => {
-      onCall?.(command.type)
-      const reply = replies[command.type]
+    resolveProject: async () => ({ environmentId: 'desk', projectId: 'p' }),
+    rpc: vi.fn(async (method: string) => {
+      const type = method === 'harness.systemInfo' ? 'get_system_info' : 'get_project_resources'
+      onCall?.(type)
+      const reply = replies[type]
       if (reply instanceof Error) throw reply
       return reply ?? {}
     }),

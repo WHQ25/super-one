@@ -8,14 +8,15 @@ import { SecureChannelError, type SecureChannel } from './secure-channel'
  * `channel` envelopes, then every application frame is one sealed channel
  * frame, base64 in the envelope's `data`. The sealed body is
  * `headerLen:u16be || header JSON || payload`: the header binds the frame's
- * kind (and request id) so a relay cannot relabel an event as a response.
- * Host payloads are host application frames (flag + length + JSON/DEFLATE);
- * phone commands are raw JSON; `rpc` frames carry the protocol's wire frames.
+ * kind so a relay cannot relabel a handshake as a protocol frame.
+ * `rpc` frames carry the native protocol's bounded wire frames in either direction.
  * Format: docs/architecture/relay-crypto.md.
  */
 
 /** Envelope type carrying the handshake messages and the host's sealed `handshake` frame. */
 export const LINK_CHANNEL_FRAME = 'channel'
+/** The relay forwards protocol pushes through its sealed terminal lane, which has no envelope ACK. */
+export const PHONE_RPC_ENVELOPE = 'terminal'
 
 /**
  * What a host says about itself once the channel is up. Sealed, so it is as
@@ -33,10 +34,6 @@ export type LinkHostInfo = { appVersion: string; protocol: number; environmentId
 
 export type LinkHeader =
   | ({ t: 'handshake' } & LinkHandshakeInfo)
-  | { t: 'event' }
-  | { t: 'response'; requestId: string }
-  | { t: 'terminal' }
-  | { t: 'command' }
   /** A protocol frame (`@superone/shared/environment/wire`), either way. */
   | { t: 'rpc' }
 
@@ -87,14 +84,8 @@ export function openLinkFrame(channel: SecureChannel, data: string): { header: L
 function readHeader(raw: unknown): LinkHeader {
   const h = raw as Record<string, unknown> | null
   switch (h?.t) {
-    case 'event':
-    case 'terminal':
-    case 'command':
     case 'rpc':
       return { t: h.t }
-    case 'response':
-      if (typeof h.requestId === 'string' && h.requestId) return { t: 'response', requestId: h.requestId }
-      break
     case 'handshake':
       if (typeof h.hostName === 'string') {
         const lan = h.lan as { hosts?: unknown; port?: unknown } | undefined

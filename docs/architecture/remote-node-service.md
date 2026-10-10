@@ -424,7 +424,12 @@ On the encrypted channel, messages up to and including the generation
 handshake are sealed JSON, so a peer of another generation can still read the
 refusal. After it, each sealed frame carries a wire frame
 (`packages/shared/src/environment/wire.ts`): the remote payload header (flag,
-u32 size) with the JSON raw, or DEFLATE-compressed when it is over 512 bytes.
+u32 size) with the JSON raw (flag 0), or DEFLATE-compressed when it is over
+512 bytes. Small RPC receipts also compress when the dictionary saves bytes.
+Control replies use a frozen generation-3 schema dictionary (flag
+4, `wire-dictionary.ts`); it cannot depend on queued pushes because replies
+may overtake them. Dictionary-free DEFLATE (flag 1) remains readable. Changing
+the dictionary bytes requires a new protocol generation.
 Pushed messages (`stream` and `detail`) instead always deflate against the
 last 32 KiB of the pushes before them (flag 3, the same header), which both
 ends keep: the keys and ids every event repeats cost a back-reference, so a
@@ -456,6 +461,15 @@ On connect:
 2. Negotiate protocol and capabilities.
 3. Open a session with `session.load`: its read-model state and newest
    messages, with the cursor `{ sequence, epoch, version }` they reflect.
+   `before` pages older messages; `anchorId` with `direction` (`around`,
+   `before`, `after`) navigates by stable message identity. `before` and `after`
+   in the response bound the page. Active-turn rows outside it ride `activeTurn`
+   so a completed tool absent from persisted history survives restoration.
+   Desktop loads include `restore` host facts (canonical environment, worktree
+   and sandbox, all active MCP App contexts), and reduced state carries queued
+   messages, pending controls, Goal, usage and the realtime timeline. Async
+   preparation finishes before the host reads state and its cursor; the
+   connection's delivery policy shapes each message once.
 4. `topic.subscribe` from that cursor with the topics to receive (scoped
    refs from `@superone/shared/environment/topics`; a `*` session id covers
    every session, and `sessionList` carries the session events that change
@@ -553,6 +567,34 @@ interface ControlLease {
   endpoint failover.
 - Permission, question and plan responses require scope plus the current
   Session lease.
+- Desktop session methods (`session.recap`, `session.setGoal`,
+  `session.dequeue`, `session.steer`, `session.answerAsyncQuestion`) use the
+  same lease. A queued operation rechecks its admitted proof after waiting.
+  `session.respondQuestion` carries dismissals and annotations;
+  `session.respondPlan` uses `options.messageId` for a persisted Codex plan.
+- `session.patchSettings` also carries the desktop harness's `mode`,
+  `agentPreset` and `additionalDirectories`. The shared parser preserves
+  explicit null resets. Hosts that do not implement these settings refuse
+  them before creating a session or updating any defaults.
+- `session.send` preserves native queue priority and steer, agent, input-request
+  answers, model parameters and Codex permission preset, service tier and thread.
+  Malformed or unsupported selections fail before a turn is appended. Queued
+  admission may acknowledge before parking finishes; dequeue and steer still
+  wait for that park through the shared session queue.
+- A phone's `session.fork` uses the desktop's cold transcript fork. It validates
+  source control before worktree creation and after async harness cloning,
+  rolls back a new worktree on failure, and dedupes a lost-response retry.
+- `mcpApps.request` scopes a View operation to the named session and authenticated
+  phone. App invocations and conversation changes require the Session grant;
+  file saves also require workspace write scope and keep their `ifMatch`.
+  Approved messages use native Session admission rather than phone commands.
+  Provider readiness and tool discovery revalidate control before invocation.
+- Composer forms open through `composer.open` or
+  `composer.openInputRequest` with the Session lease. Cancel and outcome
+  collection are bound to the authenticated frontend's own view, never a
+  device ID supplied in the payload. `composer.outcome` claims a settled
+  result once; its idempotency receipt preserves that result for a lost-ACK
+  retry.
 - The lease epoch is random per node process, so a restart invalidates every
   prior lease; clients reacquire after synchronization.
 - Whichever side cannot drive a session its controller started on a desktop
@@ -624,6 +666,14 @@ Failover to another endpoint (`endpoint-failover.ts`) proceeds only after the
 resolved descriptor carries the same `environmentId` and key fingerprint.
 
 ## 11. Access Methods
+
+The desktop's local sessions use this same service. `SessionLease` derives its
+control view from the domain lease and fences IPC by window identity; the phone
+endpoint binds identity to the pairing. Main-process async context retains an
+exact grant across waits, rather than re-acquiring when work resumes. Background
+host work remains a separate trusted origin. The local Environment gateway
+calls the domain through `InProcessRpcClient`, sharing the network client's RPC
+resource methods; there is no separate local writer authority.
 
 ### 11.1 SSH bootstrap and forward
 
@@ -1109,10 +1159,23 @@ keeps a bounded snapshot so a reconnect does not replay unlimited output.
 `terminal.list` lists the host's terminals; `terminal.attach` answers the
 screen and the output sequence it covers. A host whose terminal port has
 `onEvent` (the desktop) pushes the terminal topics on `topic.subscribe`
-streams as `terminal` messages (`terminal-stream.ts`): every event of a
+streams as `terminal` messages (`topic-streams.ts`): every event of a
 followed `terminal`, and row changes (created, exited, title, agent control)
 for `terminalList`; a reader applies output above its attach sequence. Hosts
 without it (the CLI node today) serve output by `terminal.read` polling.
+
+Terminal writes, resize and kill require the current lease id and generation.
+`terminal.acquireControl` accepts `delegate` and `yields`, with the same takeover
+rules as sessions. On a desktop, local IPC and phones use the domain's one
+`ControlLeaseService`: the canonical environment identifies the resource,
+windows and paired phones are separate delegates of that desktop principal,
+and a window's yielding lease permits a phone takeover. A second phone is
+refused; the window reclaims explicitly, fencing the previous phone. IPC actors
+come from the sender's `webContents.id`; phone actors come from the authenticated
+pairing. A phone cannot override its delegate or yielding policy in a payload.
+Control hints in attach snapshots and pushes describe the asking connection.
+Lease expiry releases the displayed writer and notifies its observers; renewing
+preserves the delegate and postpones expiry.
 
 ### 14.2 Filesystem
 
@@ -1148,9 +1211,18 @@ with `draft.open` (refused when `expectedUpdatedAt` is stale or another client
 holds it), writes with `draft.upsert` under its `leaseId` (or `open: true` for
 a draft it just minted) and releases it with `draft.close`; a plain upsert,
 such as a controller's outbox, writes while nobody holds the draft. Leases
-belong to the client session. Streams following `drafts` get `draft` messages
-without attachment bytes; off the local link a draft's autosaves go out at
-most every 5 s.
+belong to the client session. Draft notifications omit attachment bytes; relay
+autosaves are coalesced at most every 5 s, while LAN delivers each save. A
+desktop's versioned `topic` notice declares the compacted draft span with
+`afterVersion` and its final cursor. Clients check that span against the version
+they applied; lease/delete changes remain immediate. Hosts without a versioned
+workspace log deliver these changes as `draft` messages.
+
+On a desktop, `draft.open` first flushes the existing composer and refuses the
+handover if saving fails. Opens and writes use idempotency receipts; a repeated
+open whose lease was discarded after disconnect reacquires a live grant, while
+a repeated save never reapplies stale text. Disconnect releases only that
+phone's draft grants and composer views.
 
 ## 15. Installation, Service Lifecycle, and Upgrade
 

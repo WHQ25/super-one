@@ -1,0 +1,5 @@
+/** Generation-3 schema vocabulary. Frozen bytes: changing these requires a new protocol generation. */
+export const WIRE_SCHEMA_DICTIONARY = new TextEncoder().encode(
+  '{"type":"rpc_result","protocolVersion":3,"requestId":"","result":{"sessionId":"","state":{"sessionProvider":"claude","preferredProvider":"claude","cwd":"","status":"idle","permissionMode":"default","queuedMessages":[],"pendingPermissions":[],"contextTokens":0,"totalCostUsd":0,"sessionGoal":null},"restore":{"sourceEnvironmentId":"","mcpAppContexts":[],"isWorktree":false,"worktreePath":null,"gitBranch":null,"worktreeMissing":false,"sandboxInfo":{"enabled":false,"autoAllowBash":false}},"messages":[{"id":"","role":"assistant","status":"complete","content":[{"type":"text","text":"","parentToolUseId":null},{"type":"thinking","thinking":"","remoteDetail":""}],"createdAt":"","providerId":"claude","metadata":{}}],"before":null,"after":null,"cursor":{"sequence":"0","epoch":"","version":0},"summarized":true}}'
+  + '{"subscriptionId":"","revision":0,"offset":0,"text":""}',
+)

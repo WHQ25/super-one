@@ -1,21 +1,47 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { RelayClient, SocketLike } from '@superone/relay-client'
-import type { RemoteCommand } from '@superone/shared/agent-types'
 import { createMobileRelayConnection } from './mobile-relay-connection'
-import { TEST_LINK, completeHandshake } from '../../../packages/relay-client/src/test-host-link'
+import { TEST_LINK, completeHandshake, completeNativeHandshake, type TestHost } from '../../../packages/relay-client/src/test-host-link'
 
 const ENDPOINT = { relayUrl: 'wss://relay.example', link: TEST_LINK, identity: { deviceId: 'phone-1', deviceName: 'Phone' } }
 
 class MockSocket implements SocketLike {
+  constructor(private readonly autoHandshake = true) {}
   onopen: (() => void) | null = null
   onmessage: ((event: { data: string }) => void) | null = null
   onclose: (() => void) | null = null
   onerror: (() => void) | null = null
   sent: string[] = []
+  host: TestHost | null = null
+  private nonce = ''
+  requests: Record<string, unknown>[] = []
   /** The relay answers heartbeat pings itself, so a parked mailbox socket stays alive. */
   send(data: string): void {
     this.sent.push(data)
     if (data === 'ping') queueMicrotask(() => this.onmessage?.({ data: 'pong' }))
+    if (!data.startsWith('{')) return
+    const frame = JSON.parse(data)
+    if (frame.msg?.type === 'channel_hello' && this.autoHandshake) queueMicrotask(() => this.handshake())
+    if (frame.type === 'command' && this.host) {
+      const request = this.host.openRpc(frame.data)
+      if (request?.type !== 'rpc') return
+      this.requests.push(request)
+      if (request.method === 'topic.subscribe') this.host.sendRpc(this, { type: 'rpc_result', requestId: request.requestId,
+        result: { subscriptionId: (request.payload as { subscriptionId: string }).subscriptionId } })
+    }
+  }
+  handshake(): TestHost {
+    const hello = this.sent.flatMap(raw => { try { return [JSON.parse(raw)] } catch { return [] } }).filter(frame => frame.msg?.type === 'channel_hello').at(-1)
+    if (!hello) throw new Error('no hello')
+    if (hello.msg.nonce === this.nonce && this.host) return this.host
+    this.host = null
+    this.nonce = hello.msg.nonce
+    return this.host = completeNativeHandshake(this, TEST_LINK, 'desktop')
+  }
+  reply(result: unknown): void {
+    const request = this.requests.at(-1)
+    if (!request || !this.host) throw new Error('no native request')
+    this.host.sendRpc(this, { type: 'rpc_result', requestId: request.requestId, result })
   }
   close(): void {}
   drop(): void { this.onclose?.() }
@@ -25,17 +51,36 @@ class MockSocket implements SocketLike {
 afterEach(() => vi.useRealTimers())
 
 describe('mobile relay connection lifecycle', () => {
+  it('keeps an old desktop offline, reports the concrete upgrade and does not retry it', async () => {
+    vi.useFakeTimers()
+    const socket = new MockSocket(false)
+    const onConnection = vi.fn(), onFatalError = vi.fn()
+    const openSocket = vi.fn(() => { queueMicrotask(() => socket.onopen?.()); return socket })
+    const connection = createMobileRelayConnection({ onEvents: vi.fn(), onTerminal: vi.fn(), restore: vi.fn(), currentEpoch: () => 1,
+      onConnection, onStatus: vi.fn(), onFatalError, onShutdown: vi.fn(), suppressDisconnect: () => false, endpoint: ENDPOINT, resolveLan: async () => null, openSocket })
+    await connection.dial(null)
+    expect(onConnection).not.toHaveBeenCalledWith('connected', 1)
+    completeHandshake(socket)
+    expect(onConnection).toHaveBeenLastCalledWith('offline', 1)
+    expect(onFatalError).toHaveBeenCalledWith(expect.objectContaining({ code: 'desktop_upgrade_required', minimumVersion: '0.73.0-alpha.1' }))
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(openSocket).toHaveBeenCalledTimes(1)
+    expect(connection.reconnectController.isActive).toBe(false)
+  })
   it('delivers events and terminal traffic to adopted hooks after link preparation', async () => {
     const oldEvents = vi.fn(), newEvents = vi.fn(), oldTerminal = vi.fn(), newTerminal = vi.fn()
     const socket = new MockSocket()
     const hooks = { onEvents: oldEvents, onTerminal: oldTerminal, restore: vi.fn().mockResolvedValue(1), currentEpoch: () => 1, onConnection: vi.fn(), onStatus: vi.fn(), onShutdown: vi.fn(), suppressDisconnect: () => false, endpoint: ENDPOINT, resolveLan: async () => null, openSocket: () => { queueMicrotask(() => socket.onopen?.()); return socket } }
     const connection = createMobileRelayConnection(hooks)
     await connection.dial(null)
+    await connection.client.verifyHost()
     connection.client.releaseBuffer()
     connection.adoptHooks({ ...hooks, onEvents: newEvents, onTerminal: newTerminal })
-    const host = completeHandshake(socket)
-    socket.emit({ type: 'event', seq: 1, data: host.seal('event', { type: 'status_change', sessionId: 'same', status: 'idle' }) })
-    socket.emit({ type: 'terminal', data: host.seal('terminal', { type: 'output', text: 'ready' }) })
+    const host = socket.handshake()
+    await connection.client.followWorkspace()
+    const subscriptionId = (socket.requests.at(-1)!.payload as { subscriptionId: string }).subscriptionId
+    host.sendRpc(socket, { type: 'client', event: { type: 'composer_settled', formId: 'same' } })
+    host.sendRpc(socket, { type: 'terminal', subscriptionId, event: { type: 'terminal_title_changed', terminalId: 'shell', title: 'ready' } })
     expect(newEvents).toHaveBeenCalledOnce()
     expect(newTerminal).toHaveBeenCalledOnce()
     expect(oldEvents).not.toHaveBeenCalled()
@@ -47,13 +92,17 @@ describe('mobile relay connection lifecycle', () => {
     const socket = new MockSocket()
     const connection = createMobileRelayConnection({ onEvents, onArrived, onTerminal: vi.fn(), restore: vi.fn().mockResolvedValue(1), currentEpoch: () => 1, onConnection: vi.fn(), onStatus: vi.fn(), onShutdown: vi.fn(), suppressDisconnect: () => false, endpoint: ENDPOINT, resolveLan: async () => null, openSocket: () => { queueMicrotask(() => socket.onopen?.()); return socket } })
     await connection.dial(null)
-    const host = completeHandshake(socket)
+    await connection.client.verifyHost()
+    const host = socket.handshake()
+    await connection.client.followWorkspace()
+    const subscriptionId = (socket.requests.at(-1)!.payload as { subscriptionId: string }).subscriptionId
     connection.client.startBuffering()
     const changed = { type: 'session_list_changed', projectPath: '/repo' }
-    socket.emit({ type: 'event', seq: 1, data: host.seal('event', changed) })
-    expect(onArrived).toHaveBeenCalledWith([changed])
+    host.sendRpc(socket, { type: 'topic', subscriptionId, frame: { topic: { kind: 'sessionList', environmentId: 'desk' },
+      cursor: { epoch: 'e', version: 1 }, snapshot: [], events: [changed] } })
+    expect(onArrived).toHaveBeenCalledWith([{ ...changed, environmentId: 'desk' }])
     expect(onEvents).not.toHaveBeenCalled()
-    expect(connection.client.releaseBuffer().batches).toEqual([[changed]])
+    expect(connection.client.releaseBuffer().batches).toEqual([])
     connection.client.disconnect()
   })
   it('does not report a reopened transport as connected before session restore', async () => {
@@ -85,6 +134,7 @@ describe('mobile relay connection lifecycle', () => {
     })
 
     await connection.dial(null)
+    await connection.client.verifyHost()
     expect(onConnection).toHaveBeenLastCalledWith('connected', 1)
 
     sockets[0].drop()
@@ -96,7 +146,7 @@ describe('mobile relay connection lifecycle', () => {
 
     finishRestore()
     await vi.runAllTicks()
-    expect(onConnection).toHaveBeenLastCalledWith('connected', 2)
+    await vi.waitFor(() => expect(onConnection).toHaveBeenLastCalledWith('connected', 2))
   })
 
   it('rehydrates when the desktop peer returns without replacing the relay socket', async () => {
@@ -125,10 +175,11 @@ describe('mobile relay connection lifecycle', () => {
     })
 
     await connection.dial(null)
+    await connection.client.verifyHost()
     sockets[0].emit({ type: 'peer_disconnected' })
     expect(onConnection).toHaveBeenLastCalledWith('offline', 2)
     sockets[0].emit({ type: 'peer_connected' })
-    completeHandshake(sockets[0], TEST_LINK, 'desktop')
+    sockets[0].handshake()
     await vi.waitFor(() => expect(restore).toHaveBeenCalledTimes(1))
     expect(sockets).toHaveLength(1)
     expect(onConnection).toHaveBeenLastCalledWith('connected', 3)
@@ -162,10 +213,11 @@ describe('mobile relay connection lifecycle', () => {
     })
 
     await connection.dial(null)
+    await connection.client.verifyHost()
     // No `peer_disconnected` first: the replaced desktop socket closed silently.
     sockets[0].emit({ type: 'peer_connected' })
     expect(onConnection).toHaveBeenLastCalledWith('reconnecting', 2)
-    completeHandshake(sockets[0], TEST_LINK, 'desktop')
+    sockets[0].handshake()
     await vi.waitFor(() => expect(restore).toHaveBeenCalledTimes(1))
     expect(onConnection).toHaveBeenLastCalledWith('connected', 3)
     expect(sockets).toHaveLength(1)
@@ -175,7 +227,7 @@ describe('mobile relay connection lifecycle', () => {
   it('restores again when the desktop reattaches while a restore is in flight', async () => {
     const sockets: MockSocket[] = []
     const restore = vi.fn(async (client: RelayClient) => {
-      const result = await client.request({ type: 'subscribe_session', projectPath: '/repo', sessionId: 's1' } as RemoteCommand) as { epoch: number }
+      const result = await client.rpc<{ epoch: number }>('session.load', { sessionId: 's1' })
       return result.epoch
     })
     const onConnection = vi.fn()
@@ -199,15 +251,16 @@ describe('mobile relay connection lifecycle', () => {
     })
 
     await connection.dial(null)
+    await connection.client.verifyHost()
     sockets[0].emit({ type: 'peer_connected' })
-    completeHandshake(sockets[0], TEST_LINK, 'desktop')
+    sockets[0].handshake()
     await vi.waitFor(() => expect(restore).toHaveBeenCalledTimes(1))
     // The desktop reattaches again before answering: the relay client cancels
     // the restore RPC and a second channel comes up over the same socket.
     sockets[0].emit({ type: 'peer_connected' })
-    const host = completeHandshake(sockets[0], TEST_LINK, 'desktop')
+    sockets[0].handshake()
     await vi.waitFor(() => expect(restore).toHaveBeenCalledTimes(2))
-    await vi.waitFor(() => host.reply(sockets[0], { epoch: 9 }))
+    await vi.waitFor(() => sockets[0].reply({ epoch: 9 }))
     await vi.waitFor(() => expect(onConnection).toHaveBeenLastCalledWith('connected', 9))
     expect(sockets).toHaveLength(1)
     expect(connection.reconnectController.isActive).toBe(false)
@@ -218,7 +271,7 @@ describe('mobile relay connection lifecycle', () => {
     vi.useFakeTimers()
     const sockets: MockSocket[] = []
     const restore = vi.fn()
-      .mockRejectedValueOnce(new Error('rpc timeout: subscribe_session'))
+      .mockRejectedValueOnce(new Error('rpc timeout: topic.subscribe'))
       .mockResolvedValue(9)
     const onConnection = vi.fn()
     const onStatus = vi.fn()
@@ -242,12 +295,13 @@ describe('mobile relay connection lifecycle', () => {
     })
 
     await connection.dial(null)
+    await connection.client.verifyHost()
     sockets[0].emit({ type: 'peer_disconnected' })
     sockets[0].emit({ type: 'peer_connected' })
-    completeHandshake(sockets[0], TEST_LINK, 'desktop')
+    sockets[0].handshake()
     await vi.advanceTimersByTimeAsync(0)
     expect(restore).toHaveBeenCalledTimes(1)
-    expect(onStatus).toHaveBeenLastCalledWith('rpc timeout: subscribe_session — retrying in 1s')
+    expect(onStatus).toHaveBeenLastCalledWith('rpc timeout: topic.subscribe — retrying in 1s')
     expect(onConnection).toHaveBeenLastCalledWith('offline', 2)
 
     await vi.advanceTimersByTimeAsync(1_000)
@@ -260,7 +314,7 @@ describe('mobile relay connection lifecycle', () => {
   it('stops retrying a peer restore once the desktop leaves the relay', async () => {
     vi.useFakeTimers()
     const sockets: MockSocket[] = []
-    const restore = vi.fn().mockRejectedValue(new Error('rpc timeout: subscribe_session'))
+    const restore = vi.fn().mockRejectedValue(new Error('rpc timeout: topic.subscribe'))
     const connection = createMobileRelayConnection({
       onEvents: vi.fn(),
       onTerminal: vi.fn(),
@@ -281,8 +335,9 @@ describe('mobile relay connection lifecycle', () => {
     })
 
     await connection.dial(null)
+    await connection.client.verifyHost()
     sockets[0].emit({ type: 'peer_connected' })
-    completeHandshake(sockets[0], TEST_LINK, 'desktop')
+    sockets[0].handshake()
     await vi.advanceTimersByTimeAsync(0)
     expect(restore).toHaveBeenCalledTimes(1)
     sockets[0].emit({ type: 'peer_disconnected' })
@@ -314,6 +369,7 @@ describe('mobile relay connection lifecycle', () => {
     })
 
     await connection.dial(null)
+    await connection.client.verifyHost()
     sockets[0].emit({ type: 'desktop_shutdown' })
     expect(onShutdown).toHaveBeenCalledOnce()
     expect(connection.client.connected).toBe(false)
@@ -341,7 +397,7 @@ describe('mobile relay connection lifecycle', () => {
       endpoint: ENDPOINT,
       resolveLan: async () => null,
       openSocket: () => {
-        const socket = new MockSocket()
+        const socket = new MockSocket(sockets.length === 0)
         sockets.push(socket)
         queueMicrotask(() => socket.onopen?.())
         return socket
@@ -349,6 +405,7 @@ describe('mobile relay connection lifecycle', () => {
     })
 
     await connection.dial(null)
+    await connection.client.verifyHost()
     sockets[0].drop()
     expect(onConnection).toHaveBeenLastCalledWith('reconnecting', 4)
 
@@ -365,7 +422,7 @@ describe('mobile relay connection lifecycle', () => {
     expect(sockets).toHaveLength(2)
 
     sockets[1].emit({ type: 'peer_connected' })
-    completeHandshake(sockets[1], TEST_LINK, 'desktop')
+    sockets[1].handshake()
     await vi.waitFor(() => expect(restore).toHaveBeenCalledTimes(1))
     expect(onConnection).toHaveBeenLastCalledWith('connected', 5)
   })
@@ -398,13 +455,14 @@ describe('mobile relay connection lifecycle', () => {
     })
 
     await connection.dial(null)
+    await connection.client.verifyHost()
     sockets[0].drop()
     await vi.advanceTimersByTimeAsync(1_000)
     expect(isDesktopOnline).toHaveBeenCalledTimes(1)
 
     // The desktop answers our attach before the relay's presence probe returns
     // — the probe sampled a heartbeat timestamp the redial has since superseded.
-    completeHandshake(sockets[1], TEST_LINK, 'desktop')
+    sockets[1].handshake()
     answerProbe(false)
     await vi.runAllTicks()
     await vi.waitFor(() => expect(restore).toHaveBeenCalledTimes(1))
@@ -439,6 +497,7 @@ describe('mobile relay connection lifecycle', () => {
     })
 
     await connection.dial({ host: '192.168.1.2', port: 7788 })
+    await connection.client.verifyHost()
     sockets[0].drop()
     await vi.advanceTimersByTimeAsync(1_000)
 
@@ -477,6 +536,7 @@ describe('mobile relay connection lifecycle', () => {
     })
 
     await connection.dial({ host: '192.168.1.2', port: 7788 })
+    await connection.client.verifyHost()
     sockets[0].drop()
     await vi.advanceTimersByTimeAsync(1_000)
 
@@ -518,6 +578,7 @@ describe('mobile relay connection lifecycle', () => {
     })
 
     await connection.dial({ host: '192.168.1.2', port: 7788 })
+    await connection.client.verifyHost()
     first.drop()
     await vi.advanceTimersByTimeAsync(1_000)
     expect(urls.at(-1)).toBe('ws://192.168.1.2:7788/ws')

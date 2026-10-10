@@ -52,12 +52,12 @@ describe('native input ownership', () => {
   it('requires a caller acknowledgement and keeps a rejected form editable', async () => {
     const caller = { ...request, inputRequest: { ...request.inputRequest!, output: 'caller' as const } }
     const runtime = { projectPath: '/p', sessionId: 'owner', session: { pendingPermissions: [caller] }, send: vi.fn() }
-    const client = { request: vi.fn().mockResolvedValueOnce({ handled: false, error: 'Invalid answer' }).mockResolvedValue({ handled: true }) }
+    const client = { environmentId: 'desktop', controlledRpc: vi.fn().mockRejectedValueOnce(new Error('Invalid answer')).mockResolvedValue({ ok: true }) }
     const actions = inputRequestActions({ client: client as never, runtime: runtime as never, request: caller })
     await expect(actions.submit({ notes: 'draft' })).rejects.toThrow('Invalid answer')
     expect(runtime.session.pendingPermissions).toEqual([caller])
     await actions.submit({ notes: 'fixed' })
-    expect(client.request).toHaveBeenLastCalledWith(expect.objectContaining({ projectPath: '/p', sessionId: 'owner', formAnswers: { notes: 'fixed' } }))
+    expect(client.controlledRpc).toHaveBeenLastCalledWith({ environmentId: 'desktop', sessionId: 'owner' }, 'session.respondPermission', expect.objectContaining({ formAnswers: { notes: 'fixed' } }))
     expect(runtime.send).not.toHaveBeenCalled()
     runtime.sessionId = 'other'
     await expect(actions.cancel()).rejects.toThrow('no longer active')
@@ -65,10 +65,10 @@ describe('native input ownership', () => {
 
   it('sends widget values with the selected settings and captured metadata', async () => {
     const runtime = { projectPath: '/p', sessionId: 'owner', session: { pendingPermissions: [request] }, send: vi.fn() }
-    const client = { request: vi.fn() }
+    const client = { environmentId: 'desktop', controlledRpc: vi.fn() }
     const actions = inputRequestActions({ client: client as never, runtime: runtime as never, request, sendOptions: { model: 'chosen', effort: 'high', priority: 'next' } })
     await actions.submit({ notes: 'First\nSecond' })
     expect(runtime.send).toHaveBeenCalledWith('Notes\nnotes:\n  First\n  Second', { model: 'chosen', effort: 'high', priority: 'next', inputRequest: { requestId: 'form', values: { notes: 'First\nSecond' } } })
-    expect(client.request).not.toHaveBeenCalled()
+    expect(client.controlledRpc).not.toHaveBeenCalled()
   })
 })

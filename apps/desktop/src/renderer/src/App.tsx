@@ -35,7 +35,6 @@ import { ComputerUseHostLayer } from '@/components/computer-use/ComputerUseHostL
 import { DebugPanel } from '@/components/DebugPanel'
 import { useResizeHandle } from '@/hooks/useResizeHandle'
 import { useAgentEvents } from '@/hooks/useAgentEvents'
-import { useRemoteControl } from '@/hooks/useRemoteControl'
 import { useFullscreen } from '@/hooks/useFullscreen'
 import { useReactScan } from '@/hooks/useReactScan'
 import { useAgentViewfinder } from '@/hooks/useAgentViewfinder'
@@ -74,7 +73,6 @@ const SettingsLayout = lazy(() => import('@/components/SettingsLayout').then((m)
 
 function App(): React.JSX.Element {
   useAgentEvents()
-  useRemoteControl()
   useHarnessTheme()
   useMobileUploadToasts()
   useMiniAppHostActions()

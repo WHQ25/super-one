@@ -1,10 +1,11 @@
 /** @vitest-environment jsdom */
 
-import { act, fireEvent, render, waitFor } from '@testing-library/react'
+import { act, fireEvent, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { PortableMessage } from '@superone/chat-view/PortableMessage'
 import { installFakeNativeHost } from '@superone/chat-view/fixtures/native-host'
 import type { ChatMessage, CodexCollabToolCallItem, CodexMcpToolCallItem, CodexThreadItem, ContentBlock } from '@superone/shared/agent-types'
+import { renderWithNativeDetails as render } from './portable-detail.test-fixtures'
 
 /**
  * A `widget_code` call can come back with only the short acknowledgement the model read.

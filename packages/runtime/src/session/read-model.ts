@@ -12,7 +12,9 @@ import {
   committedStreamingMessage,
   type EnvironmentEventEnvelope,
   type SessionLoadResult,
+  type SessionLoadRequest,
 } from '@superone/shared/environment'
+import { activeTurnOutsidePage, sessionMessageRange } from '@superone/shared/environment/session-message-range'
 import { createNodeSessionEventMapper, type NodeSessionEventMapper } from '@superone/shared/node-session-event-map'
 import { sessionMessageBlocksToChatMessages } from '@superone/shared/node-message-catalog'
 import { nodePendingInteractionFields } from '@superone/shared/node-session-messages'
@@ -21,8 +23,6 @@ import type { EventLog } from './event-log'
 import { buildSessionMessageCatalog } from './message-catalog'
 import type { NodeSessionRecord } from './types'
 
-const DEFAULT_PAGE = 50
-const MAX_PAGE = 200
 /** Idle sessions kept reduced in memory; others reload from their checkpoint. */
 const MAX_IDLE_SESSIONS = 64
 
@@ -76,17 +76,18 @@ export class SessionReadModel {
   }
 
   /** The session's state and newest messages (or those before `before`), at its current version. */
-  snapshot(sessionId: string, page?: { before?: number | null; limit?: number }): SessionLoadResult {
+  snapshot(sessionId: string, page?: Omit<SessionLoadRequest, 'sessionId'>): SessionLoadResult {
     const session = this.load(sessionId)
     const { messages, ...state } = session.core
-    const limit = Math.min(Math.max(1, Math.floor(page?.limit ?? DEFAULT_PAGE)), MAX_PAGE)
-    const end = Math.min(page?.before ?? messages.length, messages.length)
-    const start = Math.max(0, end - limit)
+    const { start, end } = sessionMessageRange(messages, page)
+    const activeTurn = page?.includeState === false ? [] : activeTurnOutsidePage(messages, { start, end })
     return {
       sessionId,
-      state: state as unknown as Record<string, unknown>,
+      state: page?.includeState === false ? {} : state as unknown as Record<string, unknown>,
       messages: messages.slice(start, end),
+      ...(activeTurn.length ? { activeTurn } : {}),
       before: start > 0 ? start : null,
+      after: end < messages.length ? end : null,
       cursor: { sequence: this.log.headSequence(), epoch: this.log.epoch, version: session.applied },
     }
   }

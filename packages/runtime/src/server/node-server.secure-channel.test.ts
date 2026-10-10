@@ -231,7 +231,7 @@ describe('node server encrypted channel', () => {
     const small = nextFramed(ws, channel, decoder)
     ws.send(channel.sealBytes(encoder.encode({ type: 'rpc', requestId: 'zip', method: 'm', environmentId, protocolVersion: PROTOCOL_GENERATION.current, payload: { text: 'a'.repeat(4000) } })[0]!))
     const compressed = await small
-    expect(compressed.frames[0]![0]).toBe(1)
+    expect(compressed.frames[0]![0]).toBe(4)
     expect(compressed.frames[0]!.length).toBeLessThan(500)
   })
 

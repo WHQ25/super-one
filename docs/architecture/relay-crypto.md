@@ -121,11 +121,11 @@ connection) run the channel above over JSON text envelopes:
   addresses, and `host { appVersion, protocol, environmentId }`: its release,
   protocol generation and canonical environment id, as authentic as the
   pairing); only then does the phone send requests.
-- Frames: `command`, `event`, `response`, `response_chunk` and `terminal` keep
-  their envelopes, and `data` is one sealed channel frame, base64. The sealed
+- Protocol transport containers keep their envelopes, and `data` is one sealed
+  channel frame, base64. The sealed
   body is `headerLen:u16be || header JSON || payload`; the header names the kind
-  (and request id), so a relabelled frame fails. Host payloads are the host
-  application frame below; commands are raw JSON. The header is capped at
+  (and request id), so a relabelled frame fails. Application traffic uses the native
+  protocol frame described below in both directions. The header is capped at
   1 KiB (`REMOTE_LINK_HEADER_MAX_BYTES`).
 - Protocol frames: a sealed `rpc` header carries one node-protocol frame
   (JSON before the generation handshake, wire frames after it, as on the node

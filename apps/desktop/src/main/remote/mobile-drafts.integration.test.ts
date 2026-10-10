@@ -2,6 +2,9 @@ import Database from 'better-sqlite3'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createDraftStore } from '@superone/runtime/drafts'
 import { DraftControl } from '@superone/runtime/drafts'
+import { DRAFT_HANDLERS } from '@superone/runtime/server/rpc-drafts'
+import type { RpcContext } from '@superone/runtime/server'
+import { ADMIN_PAIRING_SCOPES } from '@superone/shared/environment'
 import { RemoteDraftLibrary } from '../../../../mobile/src/remote-draft-library'
 
 describe('mobile draft outbox against the host', () => {
@@ -12,9 +15,11 @@ describe('mobile draft outbox against the host', () => {
   const storage = new Map<string, string>()
   const makeMobile = () => new RemoteDraftLibrary({ key: 'desktop', kv: {
     get: async (key) => storage.get(key) ?? null, set: async (key, value) => { storage.set(key, value) },
-  }, request: async (command) => {
+  }, rpc: async (method, payload) => {
     if (!online) throw new Error('offline')
-    try { return host.handle(command, 'phone') } catch (error) { return { ok: false, error: (error as Error).message } }
+    const reply = await DRAFT_HANDLERS[method]!(payload, { drafts: host, client: { clientSessionId: 'phone', scopes: [...ADMIN_PAIRING_SCOPES] } } as RpcContext & { drafts: DraftControl })
+    if (reply.error) throw Object.assign(new Error(reply.error.message), reply.error)
+    return reply.result
   }, changed() {}, revoked() {} })
   beforeEach(() => { db = new Database(':memory:'); host = new DraftControl(createDraftStore(db)); online = true; storage.clear(); mobile = makeMobile() })
   afterEach(() => db.close())

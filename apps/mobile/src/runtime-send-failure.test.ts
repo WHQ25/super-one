@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import { ChatRuntime } from './runtime'
+import { runtimeTestClient, type TestRpc } from './runtime-test-client'
 
 const IMAGE = { id: 'i', name: 'a.png', mimeType: 'image/png', base64: 'a' }
 
-function runtimeWith(request: (cmd: { type: string }) => Promise<unknown>) {
-  const client = { send: vi.fn(), request: vi.fn(request) }
+function runtimeWith(request: (cmd: TestRpc) => Promise<unknown>) {
+  const client = runtimeTestClient(); client.dispatch.mockImplementation(request)
   const runtime = new ChatRuntime(client as never, vi.fn())
   runtime.projectPath = '/p'
   runtime.sessionId = 's'
@@ -20,14 +21,13 @@ describe('send failure', () => {
     const { client, runtime } = runtimeWith(async () => ({ ok: true }))
     runtime.send('hello', { clientMessageId: 'u' })
     await settle()
-    expect(client.send).not.toHaveBeenCalled()
-    expect(client.request).toHaveBeenCalledWith(expect.objectContaining({ type: 'send_message', clientMessageId: 'u', requestId: expect.any(String) }))
+    expect(client.dispatch).toHaveBeenCalledWith(expect.objectContaining({ method: 'session.send', clientMessageId: 'u' }))
     expect(runtime.session.messages[0]?.metadata?.sendFailure).toBeUndefined()
     runtime.dispose()
   })
 
   it('keeps a refused send on its bubble and stops "Sending…"', async () => {
-    const { runtime } = runtimeWith(async () => ({ error: 'Attachment: Could not save file. Retry.' }))
+    const { runtime } = runtimeWith(async () => { throw new Error('Attachment: Could not save file. Retry.') })
     runtime.send('look', { clientMessageId: 'u', images: [IMAGE] })
     await settle()
     expect(runtime.session.messages).toHaveLength(1)
@@ -81,7 +81,7 @@ describe('send failure', () => {
     fail = false
     runtime.resendFailedMessage('u')
     await settle()
-    const sends = client.request.mock.calls.map(([cmd]) => cmd as { type: string; requestId?: string })
+    const sends = client.dispatch.mock.calls.map(([cmd]) => cmd as { method: string; requestId?: string })
     expect(sends).toHaveLength(2)
     const strip = ({ requestId: _, ...rest }: { requestId?: string }) => rest
     expect(strip(sends[1]!)).toEqual(strip(sends[0]!))
@@ -92,7 +92,7 @@ describe('send failure', () => {
   })
 
   it('resends a failure the host recorded from the restored row, with the original pictures', async () => {
-    const { client, runtime } = runtimeWith(async (cmd) => cmd.type === 'get_attachment'
+    const { client, runtime } = runtimeWith(async (cmd) => cmd.method === 'session.attachment'
       ? { attachment: IMAGE }
       : { ok: true })
     const content = [{ type: 'image' as const, name: 'a.png' }, { type: 'text' as const, text: 'look' }]
@@ -104,8 +104,8 @@ describe('send failure', () => {
 
     await runtime.resendFailedMessage('u')
     await settle()
-    expect(client.request).toHaveBeenLastCalledWith(expect.objectContaining({
-      type: 'send_message', clientMessageId: 'u', content: 'look', userMessageContent: content, images: [IMAGE],
+    expect(client.dispatch).toHaveBeenLastCalledWith(expect.objectContaining({
+      method: 'session.send', clientMessageId: 'u', text: 'look', userMessageContent: content, images: [IMAGE],
     }))
     expect(runtime.session.messages.map((m) => m.id)).toEqual(['u'])
     expect(runtime.session.messages[0]?.metadata?.sendFailure).toBeUndefined()
@@ -113,7 +113,7 @@ describe('send failure', () => {
   })
 
   it('moves a failed queued send into the transcript', async () => {
-    const { runtime } = runtimeWith(async () => ({ error: 'refused' }))
+    const { runtime } = runtimeWith(async () => { throw new Error('refused') })
     runtime.send('later', { clientMessageId: 'q', priority: 'next' })
     await settle()
     expect(runtime.session.queuedMessages).toEqual([])
@@ -122,7 +122,7 @@ describe('send failure', () => {
   })
 
   it('takes a failed message out for editing and forgets its replay', async () => {
-    const { client, runtime } = runtimeWith(async () => ({ error: 'refused' }))
+    const { client, runtime } = runtimeWith(async () => { throw new Error('refused') })
     runtime.send('hello', { clientMessageId: 'u', images: [IMAGE] })
     await settle()
     const taken = runtime.takeFailedMessage('u')
@@ -130,14 +130,14 @@ describe('send failure', () => {
     expect(runtime.session.messages).toEqual([])
     runtime.resendFailedMessage('u')
     await settle()
-    expect(client.request).toHaveBeenCalledTimes(1)
+    expect(client.dispatch).toHaveBeenCalledTimes(1)
     expect(runtime.takeFailedMessage('missing')).toBeNull()
     runtime.dispose()
   })
 
   it('does not cache a failed bubble, so it cannot outlive its replay', async () => {
     const put = vi.fn()
-    const client = { send: vi.fn(), request: vi.fn(async () => ({ error: 'refused' })) }
+    const client = runtimeTestClient(); client.dispatch.mockRejectedValue(new Error('refused'))
     const runtime = new ChatRuntime(client as never, vi.fn(), { pairingId: () => 'host', transcripts: { get: () => null, put } as never })
     runtime.projectPath = '/p'
     runtime.sessionId = 's'

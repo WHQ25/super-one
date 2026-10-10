@@ -63,9 +63,10 @@ export async function dispatchMcpAppsRpc(method: string, payload: unknown, ctx: 
   const clientSessionId = ctx.client.clientSessionId
   const controller = typeof input.invocationId === 'string' && input.invocationId ? invocation(clientSessionId, input.invocationId) : undefined
   try {
-    ctx.leases.assertValid({ resource: { environmentId: ctx.identity.environmentId, sessionId: input.binding.session }, leaseId: input.leaseId ?? '', generation: input.generation ?? '', holderClientId: clientSessionId })
+    const assertControl = () => ctx.leases.assertValid({ resource: { environmentId: ctx.identity.environmentId, sessionId: input.binding.session }, leaseId: input.leaseId ?? '', generation: input.generation ?? '', holderClientId: clientSessionId })
+    assertControl()
     const provider = await ctx.sessions.getMcpAppsProvider(input.binding, input.origin)
-    return { result: await dispatchMcpAppsProviderRequest(input, provider, controller?.signal) }
+    return { result: await dispatchMcpAppsProviderRequest(input, provider, controller?.signal, assertControl) }
   } catch (error) {
     if (error instanceof McpAppsError) return { result: { ok: false, error: error.toJSON() } }
     return { error: { code: 'failed_precondition', message: error instanceof Error ? error.message : String(error) } }

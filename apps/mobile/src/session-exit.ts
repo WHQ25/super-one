@@ -3,15 +3,12 @@ import type { RelayClient } from '@superone/relay-client'
 type SessionRuntime = { sessionId: string; epoch: number; sourceEnvironmentId?: string | null; dispose(): void }
 type RuntimeRef = { current: SessionRuntime | null }
 
-/** Clear the runtime even if transport send fails, so reconnect cannot reopen it. */
-export function leaveMobileSession(client: Pick<RelayClient, 'send'> | null, runtimeRef: RuntimeRef): void {
+/** Clear synchronously so reconnect cannot reopen a session while its stream is retiring. */
+export async function leaveMobileSession(client: Pick<RelayClient, 'stopSession'> | null, runtimeRef: RuntimeRef): Promise<void> {
   const runtime = runtimeRef.current
   runtimeRef.current = null
-  try {
-    if (runtime?.sessionId) client?.send({ type: 'leave_session', sessionId: runtime.sessionId })
-  } finally {
-    runtime?.dispose()
-  }
+  runtime?.dispose()
+  if (runtime?.sessionId) await client?.stopSession()
 }
 
 export function sessionRemovalStatus(events: unknown[], runtime: SessionRuntime | null, epoch: number): string | null {

@@ -6,6 +6,7 @@ import { isPatchToolCall, patchToolLineDelta } from '@superone/shared/patch-tool
 import { remoteToolBlockType, sanitizeRemoteToolInput } from '@superone/shared/remote-tool-input'
 import type { WorkflowAgentRow } from '@superone/shared/agent-types'
 import { compactRunResult } from './compact-run-result'
+import { activeTurnMessages } from '@superone/shared/environment/session-message-range'
 
 /** One highlighted line: `[text, color | null]` runs. */
 export type DiffToken = [string, string | null]
@@ -738,11 +739,5 @@ export function stripMessagesForRemote(messages: ChatMessage[], projectPath?: st
 
 /** Include completed items from the active turn, not only its streaming row. */
 export function remoteRestoreMessages(messages: readonly ChatMessage[]): ChatMessage[] {
-  let start = 0
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i].role === 'user') { start = i; break }
-  }
-  const streaming = messages.findIndex((message) => message.status === 'streaming')
-  if (streaming >= 0) start = Math.min(start, streaming)
-  return messages.slice(start)
+  return activeTurnMessages(messages)
 }

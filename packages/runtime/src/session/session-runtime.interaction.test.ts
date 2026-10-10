@@ -73,6 +73,37 @@ const client = { clientSessionId: 'client-1' }
 const lease = { leaseId: 'lease-1', generation: 'gen-1' }
 
 describe('SessionRuntime question / plan', () => {
+  it('refuses unsupported native composer options before appending a user turn', async () => {
+    const { store, events, leases, eventTypes } = memoryPorts()
+    const runtime = new SessionRuntime(store, events, leases, 'env-q', createSimulatedTurnRunner())
+    const session = runtime.create({ projectId: 'p1', harnessId: 'claude' })
+    await expect(runtime.send({ sessionId: session.sessionId, text: 'queued', priority: 'later', client, ...lease })).rejects.toThrow('does not support desktop composer send selections')
+    expect(runtime.get(session.sessionId)?.transcript).toEqual([])
+    expect(eventTypes).not.toContain('session.turn_started')
+    await runtime.dispose()
+  })
+
+  it('dismisses a question through the fenced response without recording an answer', async () => {
+    const { store, events, leases, eventTypes } = memoryPorts()
+    const runtime = new SessionRuntime(store, events, leases, 'env-q', createSimulatedTurnRunner({ delayMs: 5, chunks: ['ok'], requestQuestion: true }))
+    const session = runtime.create({ projectId: 'p1', harnessId: 'codex' })
+    await runtime.send({ sessionId: session.sessionId, text: 'ask me', client, ...lease })
+    const interactionId = await waitForPending(runtime, session.sessionId, 'question')
+    runtime.respondQuestion({ sessionId: session.sessionId, interactionId, answers: {}, dismiss: true, client, ...lease })
+    await waitIdle(runtime, session.sessionId)
+    expect(eventTypes).toContain('session.question_aborted')
+    expect(eventTypes).not.toContain('session.question_responded')
+    await runtime.dispose()
+  })
+
+  it('refuses unsupported desktop settings before changing any node defaults', () => {
+    const { store, events, leases } = memoryPorts()
+    const runtime = new SessionRuntime(store, events, leases, 'env-q', createSimulatedTurnRunner())
+    const session = runtime.create({ projectId: 'p1', harnessId: 'claude', model: 'original' })
+    expect(() => runtime.patchSettings(session.sessionId, { model: 'new', mode: 'build' })).toThrow('does not support desktop harness settings')
+    expect(runtime.get(session.sessionId)?.model).toBe('original')
+  })
+
   it('respondQuestion continues the turn', async () => {
     const { store, events, leases, eventTypes } = memoryPorts()
     const runtime = new SessionRuntime(

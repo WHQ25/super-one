@@ -1,6 +1,5 @@
-import type { RelayClient } from '@superone/relay-client'
-import type { MobileLogEntry, RemoteCommand } from '@superone/shared/agent-types'
-import { randomId } from './ids'
+import type { MobileRpcClient } from './runtime-session-rpc'
+import type { MobileLogEntry } from '@superone/shared/agent-types'
 
 export type DiagnosticFields = NonNullable<MobileLogEntry['fields']>
 
@@ -23,14 +22,12 @@ export function recordDiagnostic(tag: string, fields?: DiagnosticFields): void {
  * a batch — an older one never answers the command — so the caller stops until
  * the next connection instead of asking again every interval.
  */
-export async function uploadDiagnostics(client: Pick<RelayClient, 'request'>): Promise<boolean> {
+export async function uploadDiagnostics(client: Pick<MobileRpcClient, 'rpc'>): Promise<boolean> {
   while (held.length) {
     const batch = held.slice(0, BATCH)
     const last = batch[batch.length - 1].seq
     try {
-      const result = await client.request({
-        type: 'append_mobile_log', requestId: randomId(), entries: batch.map(({ seq: _seq, ...entry }) => entry),
-      } as RemoteCommand) as { written?: unknown } | null
+      const result = await client.rpc('client.appendLog', { entries: batch.map(({ seq: _seq, ...entry }) => entry) }) as { written?: unknown } | null
       if (typeof result?.written !== 'number') return false
     } catch {
       return false
@@ -41,7 +38,7 @@ export async function uploadDiagnostics(client: Pick<RelayClient, 'request'>): P
 }
 
 /** Upload now, then on an interval, for as long as one connection lasts. */
-export function startDiagnosticUpload(client: Pick<RelayClient, 'request'>, intervalMs = 30_000): { flush(): void; stop(): void } {
+export function startDiagnosticUpload(client: Pick<MobileRpcClient, 'rpc'>, intervalMs = 30_000): { flush(): void; stop(): void } {
   let stopped = false
   let running = false
   const stop = () => { stopped = true; clearInterval(timer) }

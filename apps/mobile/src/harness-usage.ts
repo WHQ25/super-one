@@ -1,6 +1,5 @@
-import type { RelayClient } from '@superone/relay-client'
-import type { ClaudeRateLimitWindow, CodexRateLimitResetOutcome, HarnessId, RemoteCommand, RemoteUsage } from '@superone/shared/agent-types'
-import { randomId } from './ids'
+import type { ClaudeRateLimitWindow, CodexRateLimitResetOutcome, HarnessId, RemoteUsage } from '@superone/shared/agent-types'
+import { projectRpc, type ProjectRpcClient } from './project-rpc'
 import { relevantUsageLimit } from '@superone/shared/subscription-alerts'
 import { usageWindowTone, type UsageWindow } from '@superone/shared/subscription-usage'
 
@@ -38,13 +37,12 @@ export function remainingPercent(usedPercent: number): number {
 
 /** A host error or an older desktop without `get_usage` both read as "no meter". */
 export async function fetchHarnessUsage(
-  client: Pick<RelayClient, 'request'>,
+  client: ProjectRpcClient,
   target: UsageTarget,
   force = false,
 ): Promise<RemoteUsage | null> {
-  const result = await client.request({
-    type: 'get_usage', requestId: randomId(), ...target, force,
-  } as RemoteCommand).catch(() => null) as { usage?: RemoteUsage | null; error?: string } | null
+  const { projectPath, provider, ...selection } = target
+  const result = await projectRpc(client, projectPath, 'harness.usage', { ...selection, harnessId: provider, force }).catch(() => null) as { usage?: RemoteUsage | null; error?: string } | null
   if (!result || result.error) return null
   return result.usage ?? null
 }
@@ -54,14 +52,11 @@ export async function fetchHarnessUsage(
  * session, or a desktop without the command. Re-read the meter afterwards.
  */
 export async function consumeRateLimitReset(
-  client: Pick<RelayClient, 'request'>,
+  client: ProjectRpcClient,
   target: Pick<UsageTarget, 'projectPath' | 'apiProviderId'>,
   creditId: string | null = null,
 ): Promise<CodexRateLimitResetOutcome | null> {
-  const result = await client.request({
-    type: 'consume_rate_limit_reset', requestId: randomId(),
-    projectPath: target.projectPath, apiProviderId: target.apiProviderId, creditId,
-  } as RemoteCommand).catch(() => null) as { outcome?: CodexRateLimitResetOutcome | null; error?: string } | null
+  const result = await projectRpc(client, target.projectPath, 'codex.consumeRateLimitReset', { apiProviderId: target.apiProviderId, creditId }).catch(() => null) as { outcome?: CodexRateLimitResetOutcome | null; error?: string } | null
   if (!result || result.error) return null
   return result.outcome ?? null
 }

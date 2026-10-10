@@ -15,6 +15,22 @@ function connection(coalesces?: (method: string) => boolean) {
 }
 
 describe('RpcConnection', () => {
+  it('registers with the shared inbox before synchronous delivery can reply', async () => {
+    const conn = new RpcConnection((message) => {
+      const { requestId } = message as { requestId: string }
+      conn.receive({ type: 'rpc_result', requestId, result: 1 })
+    }, { protocolVersion: 3, newId: () => 'r', responseError: (error) => new Error(error.message), timeoutError: () => new Error('late') })
+    await expect(conn.request('session.load', {}, { environmentId: 'env' })).resolves.toBe(1)
+  })
+
+  it('ignores late error receipts after the shared inbox has closed', () => {
+    const responseError = vi.fn(() => { throw new Error('must not parse a stale receipt') })
+    const conn = new RpcConnection(() => {}, { protocolVersion: 3, newId: () => 'r', responseError, timeoutError: () => new Error('late') })
+    conn.close(new Error('gone'))
+    expect(conn.receive({ type: 'rpc_error', requestId: 'r', error: { code: 'internal', message: 'late' } })).toBe(true)
+    expect(responseError).not.toHaveBeenCalled()
+  })
+
   it('sends envelopes and settles them by request id', async () => {
     const { conn, sent } = connection()
     const ok = conn.request('session.load', { sessionId: 's' }, { environmentId: 'env' })
@@ -43,7 +59,7 @@ describe('RpcConnection', () => {
 
   it('routes stream frames and detail packets, and ends them with the connection', async () => {
     const { conn } = connection()
-    const stream = { onFrame: vi.fn(), onEnd: vi.fn() }
+    const stream = { onFrame: vi.fn(), onEnd: vi.fn(), onTerminal: vi.fn(), onDraft: vi.fn() }
     const detail = vi.fn()
     conn.openStream('sub', stream)
     conn.watchDetail('row', detail)
@@ -51,6 +67,14 @@ describe('RpcConnection', () => {
     conn.receive({ type: 'detail', sessionId: 's', update: { subscriptionId: 'row', revision: 1, offset: 0, text: 'x' } })
     expect(stream.onFrame).toHaveBeenCalledWith({ sequence: '1', epoch: 'e', events: [] })
     expect(detail).toHaveBeenCalledWith({ subscriptionId: 'row', revision: 1, offset: 0, text: 'x' })
+    conn.receive({ type: 'terminal', subscriptionId: 'sub', event: { type: 'terminal_exited', terminalId: 't', exitCode: 0, signal: null } })
+    conn.receive({ type: 'draft', subscriptionId: 'sub', event: { draftId: 'd', reason: 'deleted' } })
+    expect(stream.onTerminal).toHaveBeenCalledWith(expect.objectContaining({ terminalId: 't' }))
+    expect(stream.onDraft).toHaveBeenCalledWith({ draftId: 'd', reason: 'deleted' })
+    conn.closeStream('sub')
+    conn.receive({ type: 'terminal', subscriptionId: 'sub', event: { type: 'terminal_exited', terminalId: 't', exitCode: 0, signal: null } })
+    expect(stream.onTerminal).toHaveBeenCalledOnce()
+    conn.openStream('sub', stream)
     const pending = conn.request('m', {}, { environmentId: 'env' })
     conn.close(new Error('gone'))
     await expect(pending).rejects.toThrow('gone')

@@ -30,6 +30,8 @@ export { parseShortstat } from '@superone/runtime/git'
 export interface GitStatusResult {
   isRepo: boolean
   branch: string | null
+  /** Commit label for a detached checkout. */
+  head?: string
   dirty: boolean
   ahead: number
   behind: number
@@ -167,6 +169,7 @@ export class WorkspaceGitService {
       return {
         isRepo: true,
         branch: parsed.branch,
+        ...(parsed.branch === null ? { head: git(cwd, ['rev-parse', '--short=7', 'HEAD']).trim() } : {}),
         dirty,
         ahead: parsed.ahead,
         behind: parsed.behind,

@@ -253,36 +253,31 @@ Every restore is buffer-first, owned by the client (`restoreSession` in
 
 ```
 startBuffering
-  → subscribe_session { progressive: true }   (newest page + snapshot in one reply)
-  → merge with the phone's cached transcript, if any
-  → release buffered event batches in order, epoch += 1
+  → session.load (atomic state, projected page, active turn and cursor)
+  → merge cached complete rows / bounded after-anchor history
+  → control.acquire, then topic.subscribe from the snapshot cursor
+  → release newer buffered batches in order, epoch += 1
 ```
 
-- Every `type: 'event'` frame queues while buffering. The phone restores when
-  it opens a session and when its channel is established again; the host has
-  no frame that makes a connected phone restore. A session the desktop relays
-  from a node is kept whole by the desktop instead
-  ([remote-node-service.md](remote-node-service.md#92-event-log)).
-- `ChatRuntime` seeds the snapshot (live turn, pending interactions, usage,
-  sandbox, worktree, voice segments, goal), replays the released batches through the
-  reducer, then hydrates the document. The first batch is the host's
-  `Session.getReplayEvents()` (settings, catalogs, queue, compaction, goal, harness
-  todo list). Session state a harness reports only when it changes must be in one
-  of the two, since no event from before the restore is replayed. Batches carrying an older epoch are
-  dropped; overlapping restores commit only their newest generation.
-- Creating a session subscribes and releases without a history fetch.
-- Hosts that do not return a bootstrap page get the fallback sequence
-  (`load_session_messages` then `get_session_state`); see
-  [mobile-remote-control.md](mobile-remote-control.md#progressive-session-loading).
+- Native topic batches queue while buffering. Reconnect or `resnapshot` performs
+  the same atomic load; the source environment and cursor decide which events
+  can apply, including when the paired desktop routes a node session.
+- `ChatRuntime` seeds the load's reducer state and host facts (live turn, pending
+  interactions, usage, sandbox, worktree, voice segments and goal), then replays
+  only batches newer than the snapshot version before hydrating the document.
+  Compact wire defaults are restored with `createDefaultChatCoreSession`.
+  Harness properties reported only on change are already in the atomic state.
+- Older runtime epochs are dropped; overlapping restores commit only their
+  newest generation. The authenticated desktop-version and generation gate
+  rejects unsupported hosts before restore; there are no old-command probes.
 - Cache merge, reconnect backoff, liveness probing and discovery are phone-side:
   [transport.md](../../apps/mobile/docs/agent-reference/transport.md).
 
 ## Transports
 
 `RelayClient` (`packages/relay-client/src/client.ts`) has exactly one active
-socket; connecting over LAN replaces relay and vice versa. The desktop seals
-each event once per phone channel and sends it on that phone's transports
-(`remote-control-service.ts#sendEventFrame`).
+socket; connecting over LAN replaces relay and vice versa. The desktop's per-link native wire seals protocol frames on the channel that
+requested or subscribed to them (`node-host/phone-endpoint.ts`).
 
 Frame handling is `handleInboundFrame` in `packages/relay-client/src/frames.ts`:
 

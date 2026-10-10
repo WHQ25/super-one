@@ -1,13 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import { browseItems, filterBrowseItems, requestDirectory } from './mention-browse'
+import { resolveTestProject } from './project-rpc.test-fixtures'
 
 function fakeClient(reply: unknown) {
   const sent: Record<string, unknown>[] = []
   return {
     sent,
     client: {
-      request: async (command: unknown) => {
-        sent.push(command as Record<string, unknown>)
+      resolveProject: resolveTestProject,
+      rpc: async (method: string, payload: unknown) => {
+        sent.push({ method, ...payload as Record<string, unknown> })
         return reply
       },
     },
@@ -31,13 +33,13 @@ describe('browseItems', () => {
 describe('requestDirectory', () => {
   it('asks the host to apply gitignore and resolves the path against the root', async () => {
     const { client, sent } = fakeClient({ items: entries, appliedIgnoreMode: 'gitignore' })
-    await requestDirectory(client, '/work/app', 'src/')
-    expect(sent[0]).toMatchObject({ type: 'list_directory', path: '/work/app/src', ignoreMode: 'gitignore', showHidden: true })
+    await requestDirectory(client, '/work/app', '/work/app', 'src/')
+    expect(sent[0]).toMatchObject({ method: 'files.listDir', projectId: 'p', path: '/work/app/src', ignoreMode: 'gitignore', showHidden: true })
   })
 
   it('trusts a host that says it filtered', async () => {
     const { client } = fakeClient({ items: entries, appliedIgnoreMode: 'gitignore' })
-    const { items } = await requestDirectory(client, '/work/app', '')
+    const { items } = await requestDirectory(client, '/work/app', '/work/app', '')
     expect(items.map((item) => item.path)).toEqual(['src', 'node_modules', 'README.md'])
   })
 
@@ -45,18 +47,18 @@ describe('requestDirectory', () => {
     // No `appliedIgnoreMode` means the reply is unfiltered, and a phone has no
     // keyboard to scroll past a dependency tree.
     const { client } = fakeClient({ items: entries })
-    const { items } = await requestDirectory(client, '/work/app', '')
+    const { items } = await requestDirectory(client, '/work/app', '/work/app', '')
     expect(items.map((item) => item.path)).toEqual(['src', 'README.md'])
   })
 
   it('reports a directory it could not read instead of showing it as empty', async () => {
     const { client } = fakeClient({ error: 'ENOENT' })
-    expect(await requestDirectory(client, '/work/app', 'gone/')).toEqual({ items: [], error: 'ENOENT' })
+    expect(await requestDirectory(client, '/work/app', '/work/app', 'gone/')).toEqual({ items: [], error: 'ENOENT' })
   })
 
   it('survives a reply with no items at all', async () => {
     const { client } = fakeClient({})
-    expect(await requestDirectory(client, '/work/app', '')).toEqual({ items: [] })
+    expect(await requestDirectory(client, '/work/app', '/work/app', '')).toEqual({ items: [] })
   })
 })
 

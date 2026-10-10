@@ -1,8 +1,9 @@
-import { deflateRawSync } from 'node:zlib'
-import { frameRemotePayload } from '@superone/shared/remote-payload'
-import { LINK_CHANNEL_FRAME, openLinkFrame, sealLinkFrame, type LinkHeader } from './phone-link'
+import { deflateRawSync, inflateRawSync } from 'node:zlib'
+import { WireEncoder, WireDecoder, encodePlainMessage } from '@superone/shared/environment/wire'
+import { LINK_CHANNEL_FRAME, openLinkFrame, sealLinkFrame, type LinkHostInfo } from './phone-link'
 import { acceptClientHello, issueChannelCredential, type SecureChannel } from './secure-channel'
 import type { HostLink } from './client'
+import { MIN_PHONE_DESKTOP_VERSION } from './phone-version'
 
 /** Test-only host half of the phone link, independent of the phone's decoder. */
 
@@ -12,58 +13,50 @@ export const TEST_LINK: HostLink = {
   roomId: '0f'.repeat(16),
 }
 
-export function hostFrame(payload: unknown): Uint8Array {
-  const json = new TextEncoder().encode(JSON.stringify(payload))
-  return frameRemotePayload(json, json.length > 512 ? deflateRawSync(json) : undefined)
-}
-
 type TestSocket = { sent: string[]; emit(obj: unknown): void }
 
 export class TestHost {
-  constructor(readonly channel: SecureChannel) {}
+  private readonly encoder = new WireEncoder({ deflate: (bytes, dictionary) => deflateRawSync(bytes, { dictionary }) })
+  private readonly decoder = new WireDecoder({ inflate: (bytes, _out, dictionary) => inflateRawSync(bytes, { dictionary }) })
+  constructor(readonly channel: SecureChannel, private offset = 0) {}
 
-  /** `data` for an event, terminal or response envelope. */
-  seal(kind: 'event' | 'terminal', payload: unknown): string
-  seal(kind: 'response', payload: unknown, requestId: string): string
-  seal(kind: 'event' | 'terminal' | 'response', payload: unknown, requestId?: string): string {
-    const header: LinkHeader = kind === 'response' ? { t: 'response', requestId: requestId! } : { t: kind }
-    return sealLinkFrame(this.channel, header, hostFrame(payload))
-  }
-
-  /** Open one `command` envelope's data. */
-  openCommand(data: string): Record<string, unknown> {
+  openRpc(data: string): Record<string, unknown> | undefined {
     const { header, payload } = openLinkFrame(this.channel, data)
-    if (header.t !== 'command') throw new Error(`expected command, got ${header.t}`)
-    return JSON.parse(new TextDecoder().decode(payload)) as Record<string, unknown>
+    if (header.t !== 'rpc') throw new Error(`expected rpc, got ${header.t}`)
+    return this.decoder.decode(payload) as Record<string, unknown> | undefined
   }
 
-  /** Open the newest `command` the phone sent on `socket`. */
-  lastCommand(socket: TestSocket): Record<string, unknown> {
-    const frame = parsed(socket).filter((f) => f.type === 'command').at(-1)
-    if (!frame) throw new Error('no command sent')
-    return this.openCommand(frame.data as string)
+  sendRpc(socket: TestSocket, message: unknown, options: { plain?: boolean; push?: boolean } = {}): void {
+    const frames = options.plain ? [encodePlainMessage(message)] : this.encoder.encode(message, options)
+    for (const frame of frames) socket.emit({ type: 'terminal', data: sealLinkFrame(this.channel, { t: 'rpc' }, frame) })
   }
 
-  /** Answer the newest command with `body`. */
-  reply(socket: TestSocket, body: unknown): Record<string, unknown> {
-    const command = this.lastCommand(socket)
-    const requestId = command.requestId as string
-    socket.emit({ type: 'response', requestId, data: this.seal('response', body, requestId) })
-    return command
+  readRpc(socket: TestSocket): Record<string, unknown>[] {
+    return socket.sent.slice(this.offset, this.offset = socket.sent.length).flatMap(raw => {
+      if (!raw.startsWith('{')) return []
+      const frame = JSON.parse(raw) as { type?: string; data?: string }
+      if (frame.type !== 'command' || !frame.data) return []
+      const message = this.openRpc(frame.data)
+      return message ? [message] : []
+    })
+  }
+  replyRpc(socket: TestSocket, result: unknown): Record<string, unknown> {
+    const request = this.readRpc(socket).at(-1)
+    if (!request) throw new Error('no native request sent')
+    this.sendRpc(socket, { type: 'rpc_result', requestId: request.requestId, result })
+    return request
   }
 }
 
 function parsed(socket: TestSocket): Record<string, unknown>[] {
-  return socket.sent.flatMap((raw) => {
-    try { return [JSON.parse(raw) as Record<string, unknown>] } catch { return [] }
-  })
+  return socket.sent.flatMap(raw => { try { return [JSON.parse(raw)] } catch { return [] } })
 }
 
 /**
  * Answer the phone's newest hello on `socket` as the host would, and send the
  * sealed handshake. Socket emits are synchronous, so the proof is already sent.
  */
-export function completeHandshake(socket: TestSocket, link: HostLink = TEST_LINK, hostName = 'Desk'): TestHost {
+export function completeHandshake(socket: TestSocket, link: HostLink = TEST_LINK, hostName = 'Desk', host?: LinkHostInfo): TestHost {
   const hello = parsed(socket).filter((f) => f.type === LINK_CHANNEL_FRAME && (f.msg as { type?: string })?.type === 'channel_hello').at(-1)
   if (!hello) throw new Error('no channel hello sent')
   const accept = acceptClientHello(hello.msg, (keyId) => keyId === link.credential.keyId ? link.credential.secretHex : null)
@@ -71,6 +64,18 @@ export function completeHandshake(socket: TestSocket, link: HostLink = TEST_LINK
   const proof = parsed(socket).filter((f) => f.type === LINK_CHANNEL_FRAME && (f.msg as { type?: string })?.type === 'channel_proof').at(-1)
   if (!proof) throw new Error('no channel proof sent')
   const channel = accept.finish(proof.msg)
-  socket.emit({ type: LINK_CHANNEL_FRAME, data: sealLinkFrame(channel, { t: 'handshake', hostName }) })
-  return new TestHost(channel)
+  const offset = socket.sent.length
+  socket.emit({ type: LINK_CHANNEL_FRAME, data: sealLinkFrame(channel, { t: 'handshake', hostName, ...(host ? { host } : {}) }) })
+  return new TestHost(channel, offset)
+}
+
+export const NATIVE_TEST_HOST = { appVersion: MIN_PHONE_DESKTOP_VERSION, protocol: 3, environmentId: 'desk' }
+/** Completes both independent handshakes; receipts and pushes still use the production phone decoder. */
+export function completeNativeHandshake(socket: TestSocket, link = TEST_LINK, hostName = 'Desk'): TestHost {
+  const host = completeHandshake(socket, link, hostName, NATIVE_TEST_HOST)
+  const handshake = host.readRpc(socket).at(-1)
+  if (handshake?.type !== 'handshake') throw new Error('no native handshake sent')
+  host.sendRpc(socket, { type: 'handshake_ok', requestId: handshake.requestId,
+    result: { protocol: 3, databaseSchema: 1, environmentId: NATIVE_TEST_HOST.environmentId } }, { plain: true })
+  return host
 }

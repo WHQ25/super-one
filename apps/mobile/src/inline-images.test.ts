@@ -1,5 +1,6 @@
+import { resolveTestProject } from './project-rpc.test-fixtures'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ReadDesktopFileResponse, RemoteCommand } from '@superone/shared/agent-types'
+import type { ReadDesktopFileResponse } from '@superone/shared/agent-types'
 import { INLINE_IMAGE_MAX_BYTES, loadInlineImage, resetInlineImageCache, type InlineImageHost } from './inline-images'
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47])
@@ -8,9 +9,9 @@ const FILE: ReadDesktopFileResponse = {
   url: 'http://10.0.0.2:7788/files/x', expiresAt: Date.now() + 60_000,
 }
 
-function host(answer: (command: RemoteCommand) => unknown): InlineImageHost & { request: ReturnType<typeof vi.fn>; downloadDesktopFile: ReturnType<typeof vi.fn> } {
+function host(answer: (command: Record<string, unknown>) => unknown): InlineImageHost & { rpc: ReturnType<typeof vi.fn>; downloadDesktopFile: ReturnType<typeof vi.fn> } {
   return {
-    request: vi.fn(async (command: RemoteCommand) => answer(command)),
+    resolveProject: resolveTestProject, rpc: vi.fn(async (_method: string, payload: unknown = {}) => answer(payload as Record<string, unknown>)),
     downloadDesktopFile: vi.fn(async () => PNG),
   }
 }
@@ -24,8 +25,8 @@ describe('loadInlineImage', () => {
     const h = host(() => FILE)
     const result = await loadInlineImage({ ...base, host: h })
     expect(result).toEqual({ dataUri: 'data:image/png;base64,iVBORw==' })
-    const command = h.request.mock.calls[0][0] as Extract<RemoteCommand, { type: 'read_desktop_file' }>
-    expect(command).toMatchObject({ type: 'read_desktop_file', path: '/proj/.superone/shot.png', maxBytes: INLINE_IMAGE_MAX_BYTES, sessionId: 's1', preferInline: true })
+    const command = h.rpc.mock.calls[0][1] as Record<string, unknown>
+    expect(command).toMatchObject({ projectId: 'p', path: '/proj/.superone/shot.png', maxBytes: INLINE_IMAGE_MAX_BYTES, sessionId: 's1', preferInline: true })
     expect(command.statOnly).toBeUndefined()
     expect(h.downloadDesktopFile).toHaveBeenCalledWith(FILE)
   })
@@ -36,7 +37,7 @@ describe('loadInlineImage', () => {
     }))
     const result = await loadInlineImage({ ...base, transport: 'relay', host: h })
     expect(result).toEqual({ dataUri: 'data:image/png;base64,iVBORw==' })
-    const command = h.request.mock.calls[0][0] as Extract<RemoteCommand, { type: 'read_desktop_file' }>
+    const command = h.rpc.mock.calls[0][1] as Record<string, unknown>
     expect(command).toMatchObject({ preferInline: true, statOnly: true })
     expect(h.downloadDesktopFile).not.toHaveBeenCalled()
   })
@@ -45,7 +46,7 @@ describe('loadInlineImage', () => {
     const h = host(() => ({ ok: true, statOnly: true, name: 'shot.png', mimeType: 'image/png', size: 400_000, modifiedAt: 1 }))
     const result = await loadInlineImage({ ...base, transport: 'relay', host: h })
     expect(result).toEqual({ confirmRequired: true, size: 400_000 })
-    const command = h.request.mock.calls[0][0] as Extract<RemoteCommand, { type: 'read_desktop_file' }>
+    const command = h.rpc.mock.calls[0][1] as Record<string, unknown>
     expect(command.statOnly).toBe(true)
     expect(h.downloadDesktopFile).not.toHaveBeenCalled()
   })
@@ -54,7 +55,7 @@ describe('loadInlineImage', () => {
     const h = host(() => ({ ...FILE, encryption: { key: 'k', size: 4 } }))
     const result = await loadInlineImage({ ...base, transport: 'relay', confirmed: true, host: h })
     expect(result).toMatchObject({ dataUri: expect.stringMatching(/^data:image\/png;base64,/) })
-    const command = h.request.mock.calls[0][0] as Extract<RemoteCommand, { type: 'read_desktop_file' }>
+    const command = h.rpc.mock.calls[0][1] as Record<string, unknown>
     expect(command.preferInline).toBe(true)
     expect(command.statOnly).toBeUndefined()
     expect(h.downloadDesktopFile).toHaveBeenCalledTimes(1)
@@ -74,7 +75,7 @@ describe('loadInlineImage', () => {
     await loadInlineImage({ ...base, host: h })
     const again = await loadInlineImage({ ...base, transport: 'relay', host: h })
     expect(again).toEqual({ dataUri: 'data:image/png;base64,iVBORw==' })
-    expect(h.request).toHaveBeenCalledTimes(1)
+    expect(h.rpc).toHaveBeenCalledTimes(1)
   })
 
   it('refuses files that are not images and surfaces desktop errors', async () => {

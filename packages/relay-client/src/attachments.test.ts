@@ -44,7 +44,7 @@ describe('finishUpload', () => {
 
 describe('uploadBytes transport matrix', () => {
   it('sends small files inline without PUT', async () => {
-    const request = vi.fn(async () => ({ ok: true, status: 'saved', savedPath: '/p/a.txt' }))
+    const rpc = vi.fn(async () => ({ ok: true, status: 'saved', savedPath: '/p/a.txt' }))
     const put = vi.fn()
     await expect(uploadBytes({
       requestId: 'inline',
@@ -53,11 +53,10 @@ describe('uploadBytes transport matrix', () => {
       mimeType: 'text/plain',
       bytes: new TextEncoder().encode('hello'),
       transport: 'relay',
-      request,
+      rpc,
       put,
     })).resolves.toBe('/p/a.txt')
-    expect(request).toHaveBeenCalledWith(expect.objectContaining({
-      type: 'upload_file',
+    expect(rpc).toHaveBeenCalledWith('files.upload', expect.objectContaining({
       size: 5,
       inlineBase64: 'aGVsbG8=',
     }), 180_000)
@@ -66,7 +65,7 @@ describe('uploadBytes transport matrix', () => {
 
   it('uses raw LAN PUT and resolves the advertised host placeholder', async () => {
     const bytes = new Uint8Array(INLINE_UPLOAD_MAX_BYTES + 1).fill(7)
-    const request = vi.fn(async () => ({
+    const rpc = vi.fn(async () => ({
       ok: true,
       status: 'need_lan_put',
       uploadUrl: 'http://{lanHost}:7788/upload/token',
@@ -81,7 +80,7 @@ describe('uploadBytes transport matrix', () => {
       bytes,
       transport: 'lan',
       lanHost: '10.0.0.8',
-      request,
+      rpc,
       put,
     })).resolves.toBe('/p/b.bin')
     expect(put).toHaveBeenCalledWith(
@@ -89,13 +88,13 @@ describe('uploadBytes transport matrix', () => {
       bytes,
       'application/octet-stream',
     )
-    expect(request).toHaveBeenCalledTimes(1)
+    expect(rpc).toHaveBeenCalledTimes(1)
   })
 
   it('encrypts relay R2 bytes and completes with the same request id', async () => {
     const plain = new Uint8Array(INLINE_UPLOAD_MAX_BYTES + 1).fill(11)
     const keys = deriveKeys(MASTER)
-    const request = vi.fn(async (command: { type: string }) => command.type === 'upload_file'
+    const rpc = vi.fn(async (method: string) => method === 'files.upload'
       ? { ok: true, status: 'need_r2_put', uploadUrl: 'https://r2.example/upload', key: 'r2-key', savedPath: '/p/c.bin' }
       : { ok: true, savedPath: '/p/c.bin' })
     let encrypted: Uint8Array<ArrayBufferLike> = new Uint8Array()
@@ -109,18 +108,18 @@ describe('uploadBytes transport matrix', () => {
       transport: 'relay',
       aesKeyBytes: keys.aesKeyBytes,
       channelKeyHex: keys.channelKeyHex,
-      request,
+      rpc,
       put,
     })).resolves.toBe('/p/c.bin')
     expect(put).toHaveBeenCalledWith('https://r2.example/upload', expect.any(Uint8Array), 'application/octet-stream')
     expect(decryptBytesChunked(keys.aesKeyBytes, encrypted, 'r2-key', keys.channelKeyHex)).toEqual(plain)
-    expect(request).toHaveBeenLastCalledWith({ type: 'upload_file_complete', requestId: 'relay' }, 180_000)
+    expect(rpc).toHaveBeenLastCalledWith('files.uploadComplete', { uploadId: 'relay' }, 180_000)
   })
 
   it('rejects unsafe URLs, missing LAN substitution, and oversized files', async () => {
     expect(() => resolveLanUploadUrl('http://{lanHost}:7788/put')).toThrow('LAN host')
     expect(() => resolveLanUploadUrl('file:///tmp/put', '127.0.0.1')).toThrow('rejected')
-    const request = vi.fn()
+    const rpc = vi.fn()
     await expect(uploadBytes({
       requestId: 'large',
       targetDir: '/p',
@@ -128,9 +127,9 @@ describe('uploadBytes transport matrix', () => {
       mimeType: 'application/octet-stream',
       bytes: { byteLength: MAX_UPLOAD_BYTES + 1 } as Uint8Array,
       transport: 'relay',
-      request,
+      rpc,
       put: vi.fn(),
     })).rejects.toThrow('100 MB')
-    expect(request).not.toHaveBeenCalled()
+    expect(rpc).not.toHaveBeenCalled()
   })
 })

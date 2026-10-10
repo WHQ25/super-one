@@ -1,9 +1,8 @@
-import type { RelayClient } from '@superone/relay-client'
-import type { RemoteCommand } from '@superone/shared/agent-types'
+import type { MobileRpcClient } from './runtime-session-rpc'
 import {
   createMcpMentionPreviewCache, formatMcpResourceReminder, mcpResourceTargets, parseMcpMentionValue, type McpMentionReadResource, type McpMentionSearchResult,
 } from '@superone/shared/mcp-app-mentions'
-import { randomId } from './ids'
+import { projectRpc, type ProjectRpcClient } from './project-rpc'
 import { mentionIconPngPayload } from './mentions'
 
 export type MentionSearchResult = {
@@ -40,30 +39,25 @@ const ICONS_BY_ID = true
 
 /** Works before session creation as well as inside an active chat. */
 export function requestMentionSearch(
-  client: Pick<RelayClient, 'request'>,
+  client: ProjectRpcClient,
   projectPath: string,
   query: string,
   options: MentionSearchOptions = {},
 ): Promise<MentionSearchResult> {
-  return client.request({
-    type: 'search_mentions',
-    requestId: randomId(),
-    projectPath,
+  return projectRpc(client, projectPath, 'workspace.searchMentions', {
     query,
     iconsById: ICONS_BY_ID,
     ...(options.scopeDir !== undefined ? { scopeDir: options.scopeDir } : {}),
-  }) as Promise<MentionSearchResult>
+  })
 }
 
 /** Fetch icon bytes for ids the device has never seen. */
 export async function requestMentionIcons(
-  client: Pick<RelayClient, 'request'>,
+  client: Pick<MobileRpcClient, 'rpc'>,
   ids: readonly string[],
 ): Promise<Record<string, string>> {
   if (!ids.length) return {}
-  const reply = await client.request({
-    type: 'get_mention_icons', requestId: randomId(), ids: [...ids],
-  } as RemoteCommand) as { icons?: unknown } | null
+  const reply = await client.rpc('workspace.mentionIcons', { ids: [...ids] }) as { icons?: unknown } | null
   const raw = reply?.icons
   if (!raw || typeof raw !== 'object') return {}
   const icons: Record<string, string> = {}
@@ -82,28 +76,24 @@ const MCP_MENTION_SEARCH_TIMEOUT_MS = 20_000
  * start its harness to answer, so this waits as long as the host does.
  */
 export async function requestMcpMentionSearch(
-  client: Pick<RelayClient, 'request'>,
+  client: ProjectRpcClient,
   projectPath: string,
   sessionId: string,
   query: string,
 ): Promise<McpMentionSearchResult> {
-  const reply = await client.request({
-    type: 'search_mcp_mentions', requestId: randomId(), projectPath, sessionId, query,
-  }, MCP_MENTION_SEARCH_TIMEOUT_MS) as (McpMentionSearchResult & { error?: string }) | null
+  const reply = await projectRpc(client, projectPath, 'mcp.searchMentions', { sessionId, query }, { timeoutMs: MCP_MENTION_SEARCH_TIMEOUT_MS }) as (McpMentionSearchResult & { error?: string }) | null
   if (!reply || reply.error || !Array.isArray(reply.sources)) throw new Error(reply?.error ?? 'MCP mention search failed')
   return reply
 }
 
 /** The text of mentioned MCP resources, read through the session's servers as the desktop composer reads them. */
 export async function requestMcpMentionRead(
-  client: Pick<RelayClient, 'request'>,
+  client: ProjectRpcClient,
   projectPath: string,
   sessionId: string,
   targets: Array<{ server: string; uri: string }>,
 ): Promise<McpMentionReadResource[]> {
-  const reply = await client.request({
-    type: 'read_mcp_mentions', requestId: randomId(), projectPath, sessionId, targets,
-  }, MCP_MENTION_SEARCH_TIMEOUT_MS) as { resources?: McpMentionReadResource[]; error?: string } | null
+  const reply = await projectRpc(client, projectPath, 'mcp.readMentions', { sessionId, targets }, { timeoutMs: MCP_MENTION_SEARCH_TIMEOUT_MS }) as { resources?: McpMentionReadResource[]; error?: string } | null
   if (!reply || reply.error || !Array.isArray(reply.resources)) throw new Error(reply?.error ?? 'MCP mention read failed')
   return reply.resources
 }
@@ -114,7 +104,7 @@ export async function requestMcpMentionRead(
  * Empty when nothing is mentioned or the read fails: the tags still name the resources.
  */
 export async function mcpMentionContentForModel(
-  client: Pick<RelayClient, 'request'>,
+  client: ProjectRpcClient,
   projectPath: string,
   sessionId: string,
   text: string,
@@ -132,7 +122,7 @@ const previews = createMcpMentionPreviewCache()
 
 /** What sending would inline for one composer chip, read now as a send will. `null`: no answer. */
 export function previewMcpMention(
-  client: Pick<RelayClient, 'request'>,
+  client: ProjectRpcClient,
   projectPath: string,
   sessionId: string,
   value: string,

@@ -68,6 +68,18 @@ export function mergeSessionActivity(
   return { ...incoming, isUnseen }
 }
 
+/** Replace host-owned status while retaining unread completions whose idle runtime was released. */
+export function replaceWorkspaceActivity(current: WorkspaceActivity, rows: SessionActivity[], viewedSessionId: string | null,
+  pushedIds: readonly string[] = []): Record<string, MobileSessionActivity> {
+  const next: Record<string, MobileSessionActivity> = {}
+  for (const [id, session] of Object.entries(current)) if (session.isUnseen) {
+    next[id] = { ...session, status: 'idle', pendingCount: 0, pendingReason: { en: null, zh: null } }
+  }
+  for (const row of rows) next[row.sessionId] = mergeSessionActivity(current[row.sessionId], row, viewedSessionId)
+  for (const id of pushedIds) if (current[id]) next[id] = current[id]
+  return next
+}
+
 /** Desktop sidebar precedence: running, background, unseen, then automation. */
 export function sessionActivityIconStatus(session: { status?: string; isUnseen?: boolean; isAutomation?: boolean }): string | undefined {
   if (LIVE_SESSION_STATUSES.has(session.status ?? '')) return session.status

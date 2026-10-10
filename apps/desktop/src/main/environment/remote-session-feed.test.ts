@@ -1,23 +1,25 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { EnvironmentEventEnvelope, TopicInterest } from '@superone/shared/environment'
+import type { EnvironmentEventEnvelope } from '@superone/shared/environment'
+import type { TerminalEvent } from '@superone/shared/agent-types'
 import type { TopicRef } from '@superone/shared/environment/topics'
-import { RemoteSessionFeed } from './remote-session-feed'
+import { RemoteSessionFeed, type RemoteSessionFeedSource } from './remote-session-feed'
+import type { SessionStreamFrame } from '@superone/shared/environment'
 
 const envelope = (version: number, aggregateId: string, aggregateType = 'session', eventType = 'session.agent_event') =>
-  ({ sequence: String(version), sessionVersion: version, aggregateType, aggregateId, eventType, payload: {} }) as unknown as EnvironmentEventEnvelope
+  ({ environmentId: 'env', sequence: String(version), sessionVersion: version, aggregateType, aggregateId, eventType, payload: {} }) as unknown as EnvironmentEventEnvelope
 
 /** A node stream the test pushes into; `fail` ends it with an error. */
-function pushSource(head = '7') {
+function pushSource(head = '7', apply?: (topics: TopicRef[]) => Promise<void>) {
   const queue: EnvironmentEventEnvelope[] = []
   let wake: (() => void) | null = null
   let error: Error | null = null
-  let handlers: { interest: TopicInterest; onResnapshot: (ids: string[]) => void; onRealign: () => void } | null = null
+  let handlers: Parameters<RemoteSessionFeedSource['subscribe']>[2] | null = null
   /** The topics the node applied, in order. */
   const applied: TopicRef[][] = []
   const subscribe = vi.fn(async function* (_after: string, signal: AbortSignal, next: NonNullable<typeof handlers>) {
     handlers = next
     applied.push(next.interest.current())
-    next.interest.watch(async (topics) => { applied.push(topics) })
+    next.interest.watch(async (topics) => { await apply?.(topics); applied.push(topics) })
     while (!signal.aborted) {
       if (error) throw error
       const next = queue.shift()
@@ -33,6 +35,8 @@ function pushSource(head = '7') {
     fail: (err: Error) => { error = err; poke() },
     resnapshot: (ids: string[]) => handlers?.onResnapshot(ids),
     realign: () => handlers?.onRealign(),
+    frame: (frame: SessionStreamFrame) => { handlers?.onFrame?.(frame); for (const event of frame.events) queue.push(event); poke() },
+    terminal: (event: TerminalEvent) => handlers?.onTerminal?.(event),
     applied,
   }
 }
@@ -40,6 +44,85 @@ function pushSource(head = '7') {
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 describe('RemoteSessionFeed', () => {
+  it('rejects a native join without reading its cut when the upstream rejects its interest', async () => {
+    const source = pushSource('7', async topics => { if (topics.length) throw new Error('subscription denied') })
+    const feed = new RemoteSessionFeed(source, 'env')
+    const catchUp = vi.fn(async () => ({ sequence: '7', epoch: 'e', events: [] }))
+    await expect(feed.followTopics({ afterSequence: '7', topics: [{ kind: 'sessionList', environmentId: 'env' }] },
+      { onFrame: vi.fn(), onEnd: vi.fn() }, catchUp)).rejects.toThrow('subscription denied')
+    expect(catchUp).not.toHaveBeenCalled()
+    await flush()
+    expect(source.applied.at(-1)).toEqual([])
+    feed.close()
+  })
+  it('restores the accepted interest after a failed update and keeps delivering its original topic', async () => {
+    const original: TopicRef[] = [{ kind: 'session', environmentId: 'env', sessionId: 'a' }]
+    const source = pushSource('7', async topics => { if (topics.some(topic => topic.kind === 'session' && topic.sessionId === 'b')) throw new Error('subscription denied') })
+    const feed = new RemoteSessionFeed(source, 'env')
+    const onFrame = vi.fn()
+    const stream = await feed.followTopics({ afterSequence: '7', epoch: 'e', topics: original },
+      { onFrame, onEnd: vi.fn() }, async () => ({ sequence: '7', epoch: 'e', events: [] }))
+    await expect(stream.update([{ kind: 'session', environmentId: 'env', sessionId: 'b' }])).rejects.toThrow('subscription denied')
+    await flush()
+    expect(source.applied.at(-1)).toEqual(original)
+    source.frame({ sequence: '9', epoch: 'e', events: [envelope(8, 'a'), envelope(9, 'b')] })
+    expect(onFrame.mock.calls.flatMap(([frame]) => frame.events.map((event: EnvironmentEventEnvelope) => event.aggregateId))).toEqual(['a'])
+    stream.close(); feed.close()
+  })
+  it.each(['epoch', 'utf8', 'realign'] as const)('requests a scoped recovery for %s changes during a native cut', async reason => {
+    const source = pushSource()
+    const feed = new RemoteSessionFeed(source, 'env')
+    const topics: TopicRef[] = [{ kind: 'session', environmentId: 'env', sessionId: 'a' }]
+    const onFrame = vi.fn()
+    let complete!: (frame: SessionStreamFrame) => void
+    const joining = feed.followTopics({ afterSequence: '7', epoch: 'e', topics }, { onFrame, onEnd: vi.fn() },
+      () => new Promise(resolve => { complete = resolve }))
+    await flush()
+    source.frame({ sequence: '8', epoch: reason === 'epoch' ? 'old' : 'e', events: [
+      { ...envelope(8, 'a'), payload: { text: reason === 'utf8' ? '汉'.repeat(1_500_000) : 'held' } },
+    ] })
+    if (reason === 'realign') source.realign()
+    complete({ sequence: '7', epoch: 'e', events: [] })
+    const stream = await joining
+    expect(onFrame.mock.calls.flatMap(([frame]) => frame.events)).toEqual([])
+    expect(onFrame).toHaveBeenCalledWith(expect.objectContaining({ epoch: 'e', recover: topics, resnapshot: ['a'] }))
+    stream.close(); feed.close()
+  })
+  it('shares desktop/native interests and deduplicates a cursor cut against frames held during its read', async () => {
+    const source = pushSource()
+    const feed = new RemoteSessionFeed(source, 'env')
+    const desktop = { event: vi.fn(), end: vi.fn() }
+    await feed.follow('a', desktop, async () => 7)
+    let complete!: (frame: SessionStreamFrame) => void
+    const onFrame = vi.fn()
+    const subscribing = feed.followTopics({ afterSequence: '7', epoch: 'e', versions: { a: 7 }, topics: [{ kind: 'session', environmentId: 'env', sessionId: 'a' }] },
+      { onFrame, onEnd: vi.fn() }, () => new Promise(resolve => { complete = resolve }))
+    await flush()
+    const event = (version: number, id = 'a') => ({ ...envelope(version, id), environmentId: 'env' })
+    source.frame({ sequence: '10', epoch: 'e', events: [event(8), event(9, 'b'), event(10)] })
+    source.frame({ sequence: '11', epoch: 'e', events: [event(11)] })
+    complete({ sequence: '10', epoch: 'e', events: [event(8), event(10)] })
+    const stream = await subscribing
+    expect(onFrame.mock.calls.flatMap(([frame]) => frame.events.map((event: { sessionVersion: number }) => event.sessionVersion))).toEqual([8, 10, 11])
+    expect(source.subscribe).toHaveBeenCalledTimes(1)
+    expect(source.applied.at(-1)).toEqual([{ kind: 'session', environmentId: 'env', sessionId: 'a' }])
+    stream.close(); feed.close()
+  })
+  it('cancels a joining native reader on node close and excludes output from terminal-list readers', async () => {
+    const source = pushSource()
+    const feed = new RemoteSessionFeed(source, 'env')
+    const onTerminal = vi.fn()
+    const stream = await feed.followTopics({ afterSequence: '7', topics: [{ kind: 'terminalList', environmentId: 'env' }] },
+      { onFrame: vi.fn(), onTerminal, onEnd: vi.fn() }, async () => ({ sequence: '7', epoch: 'e', events: [] }))
+    source.terminal({ type: 'terminal_output', terminalId: 'private', data: 'private screen', fromSeq: 1, toSeq: 1 })
+    source.terminal({ type: 'terminal_title_changed', terminalId: 'private', title: 'Shell' })
+    expect(onTerminal).toHaveBeenCalledTimes(1)
+    stream.close()
+    let complete!: (frame: SessionStreamFrame) => void
+    const opening = feed.followTopics({ afterSequence: '7', topics: [] }, { onFrame: vi.fn(), onEnd: vi.fn() }, () => new Promise(resolve => { complete = resolve }))
+    const rejected = expect(opening).rejects.toThrow('topic stream closed')
+    await flush(); feed.close(); complete({ sequence: '7', epoch: 'e', events: [] }); await rejected
+  })
   it('opens one stream from the head and routes events to the followers of their session', async () => {
     const source = pushSource()
     const feed = new RemoteSessionFeed(source, 'env')

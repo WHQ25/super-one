@@ -1,18 +1,19 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import scenarios from './fixtures/emitted.generated.json'
+// Desktop content ports provide the same ANSI/highlight transforms as production.
+import '../remote-content'
 
 vi.mock('../logger', () => ({
   default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
 }))
 
-import { RemoteControlService } from '../remote-control-service'
-import { createLocalDelivery } from '@superone/runtime/stream'
+import { batchingFor, ConnectionDelivery, createEventBatcher, createLocalDelivery, deliveryPolicy } from '@superone/runtime/stream'
 
 /**
- * Frames each subscriber pipeline produced for recorded session output
- * (`scripts/export-stream-fixtures.ts`). The phone wire must not change, so a
- * difference here is a protocol change, not a snapshot to update.
+ * Surface transformations and renderer batches from recorded session output.
+ * The actual phone protocol sender, projection and sealed frame budgets are
+ * covered by wire-baseline.test.ts.
  */
 const recorded = scenarios as Array<{ recording: string; events: AgentEvent[] }>
 const EVENT_SPACING_MS = 10
@@ -24,17 +25,10 @@ afterEach(() => {
 async function mobileFrames(events: AgentEvent[]): Promise<unknown[]> {
   vi.useFakeTimers({ now: 0 })
   const frames: unknown[] = []
-  const service = new RemoteControlService('wss://relay.example', { onCommand: vi.fn() })
-  const internals = service as unknown as {
-    keys: unknown
-    hasAnyMobileTransport: () => boolean
-    enqueuePayload: (payload: unknown, targets?: string[]) => Promise<void>
-  }
-  internals.keys = { rootSecret: 'r', channelKeyHex: 'c' }
-  internals.hasAnyMobileTransport = () => true
-  internals.enqueuePayload = async (payload, targets) => { frames.push({ payload, targets }) }
+  const delivery = new ConnectionDelivery(deliveryPolicy('relay', 'phone'))
+  const batcher = createEventBatcher<undefined>(payload => { frames.push({ payload, targets: ['phone-1'] }) }, batchingFor(delivery.policy))
   for (const event of events) {
-    await service.sendAgentEvent(event, ['phone-1'])
+    for (const shaped of delivery.shape(event)) batcher.push(shaped)
     vi.advanceTimersByTime(EVENT_SPACING_MS)
   }
   vi.advanceTimersByTime(1_000)

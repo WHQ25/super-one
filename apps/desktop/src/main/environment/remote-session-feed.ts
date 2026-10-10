@@ -1,5 +1,7 @@
-import type { EnvironmentEventEnvelope, TopicInterest } from '@superone/shared/environment'
-import { SESSION_LIST_EVENT_TYPES, type TopicRef } from '@superone/shared/environment/topics'
+import type { EnvironmentEventEnvelope, SessionStreamFrame, TopicInterest, TopicSubscribeInput } from '@superone/shared/environment'
+import { SESSION_LIST_EVENT_TYPES, topicKey, type TopicRef } from '@superone/shared/environment/topics'
+import type { RpcStreamHandlers } from '@superone/shared/environment/rpc-connection'
+import { RemoteTopicFollowers, type RemoteTopicStream } from './remote-topic-followers'
 
 export interface RemoteSessionFeedSource {
   /** The node's durable head now: the stream starts after it. */
@@ -13,6 +15,10 @@ export interface RemoteSessionFeedSource {
       onResnapshot: (sessionIds: string[]) => void
       /** The stream came back on a link of another tier. */
       onRealign: () => void
+      onFrame?: (frame: SessionStreamFrame) => void
+      onTerminal?: RpcStreamHandlers['onTerminal']
+      onDraft?: RpcStreamHandlers['onDraft']
+      onTopic?: RpcStreamHandlers['onTopic']
     },
   ): AsyncIterable<EnvironmentEventEnvelope>
 }
@@ -51,6 +57,7 @@ export class RemoteSessionFeed {
   private readonly abort = new AbortController()
   private started: Promise<void> | null = null
   private failure: Error | null = null
+  private readonly native = new RemoteTopicFollowers(() => this.applyInterest())
   private readonly interest: TopicInterest = {
     current: () => this.topics(),
     watch: (apply) => {
@@ -65,6 +72,13 @@ export class RemoteSessionFeed {
     private readonly environmentId: string,
   ) {}
 
+  /** A native downstream joins this same upstream, with a one-shot cursor cut rather than another socket stream. */
+  followTopics(input: Omit<TopicSubscribeInput, 'subscriptionId'>, handlers: RpcStreamHandlers,
+    catchUp: () => Promise<SessionStreamFrame>): Promise<RemoteTopicStream> {
+    if (this.failure) return Promise.reject(this.failure)
+    return this.native.open(input, handlers, async () => { await this.start(); await this.applyInterest() }, catchUp)
+  }
+
   /** Follows a session above the version `barrier` returns, read once the stream carries the session. */
   async follow(sessionId: string, listener: RemoteSessionListener, barrier: () => Promise<number>): Promise<() => void> {
     if (this.failure) throw this.failure
@@ -77,7 +91,7 @@ export class RemoteSessionFeed {
       set!.delete(follower)
       if (set!.size > 0 || this.followers.get(sessionId) !== set) return
       this.followers.delete(sessionId)
-      void this.applyInterest()
+      void this.applyInterest().catch(() => {})
     }
     try {
       await this.start()
@@ -97,7 +111,7 @@ export class RemoteSessionFeed {
     const added = this.observers.size === 0
     this.observers.add(observer)
     const unobserve = () => {
-      if (this.observers.delete(observer) && this.observers.size === 0) void this.applyInterest()
+      if (this.observers.delete(observer) && this.observers.size === 0) void this.applyInterest().catch(() => {})
     }
     try {
       await this.start()
@@ -114,14 +128,16 @@ export class RemoteSessionFeed {
     this.followers.clear()
     this.observers.clear()
     this.watchers.clear()
+    this.native.close()
   }
 
   private topics(): TopicRef[] {
     const environmentId = this.environmentId
-    return [
+    return [...new Map([
       ...(this.observers.size > 0 ? [{ kind: 'sessionList' as const, environmentId }] : []),
       ...[...this.followers.keys()].map((sessionId) => ({ kind: 'session' as const, environmentId, sessionId })),
-    ]
+      ...this.native.topics(),
+    ].map(topic => [topicKey(topic), topic])).values()]
   }
 
   /**
@@ -131,7 +147,7 @@ export class RemoteSessionFeed {
    */
   private async applyInterest(): Promise<void> {
     const topics = this.topics()
-    await Promise.all([...this.watchers].map((apply) => apply(topics).catch(() => {})))
+    await Promise.all([...this.watchers].map((apply) => apply(topics)))
   }
 
   private start(): Promise<void> {
@@ -157,7 +173,11 @@ export class RemoteSessionFeed {
       const handlers = {
         interest: this.interest,
         onResnapshot: (ids: string[]) => this.resync(ids),
-        onRealign: () => this.resync([...this.followers.keys()]),
+        onRealign: () => { this.resync([...this.followers.keys()]); this.native.realign() },
+        onFrame: (frame: SessionStreamFrame) => this.native.frame(frame),
+        onTerminal: (event: Parameters<NonNullable<RpcStreamHandlers['onTerminal']>>[0]) => this.native.terminal(event),
+        onDraft: (event: Parameters<NonNullable<RpcStreamHandlers['onDraft']>>[0]) => this.native.draft(event),
+        onTopic: (frame: Parameters<NonNullable<RpcStreamHandlers['onTopic']>>[0]) => this.native.topic(frame),
       }
       for await (const envelope of this.source.subscribe(after, this.abort.signal, handlers)) {
         if (envelope.aggregateType !== 'session') continue
@@ -171,6 +191,7 @@ export class RemoteSessionFeed {
       const followers = [...this.followers.values()].flatMap((set) => [...set])
       this.followers.clear()
       this.observers.clear()
+      this.native.close(this.failure)
       for (const follower of followers) follower.listener.end(this.failure)
     }
   }

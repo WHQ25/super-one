@@ -1,5 +1,6 @@
+import { resolveTestProject } from './project-rpc.test-fixtures'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ReadVideoPosterResponse, RemoteCommand } from '@superone/shared/agent-types'
+import type { ReadVideoPosterResponse } from '@superone/shared/agent-types'
 import { loadVideoPoster, resetVideoPosterCache, type VideoPosterHost } from './video-posters'
 
 const CUT: ReadVideoPosterResponse = {
@@ -7,8 +8,8 @@ const CUT: ReadVideoPosterResponse = {
   poster: { base64: 'ZnJhbWU=', mimeType: 'image/jpeg', width: 512, height: 288, durationMs: 27_051 },
 }
 
-function host(answer: (command: RemoteCommand) => unknown): VideoPosterHost & { request: ReturnType<typeof vi.fn> } {
-  return { request: vi.fn(async (command: RemoteCommand) => answer(command)) }
+function host(answer: (command: Record<string, unknown>) => unknown): VideoPosterHost & { rpc: ReturnType<typeof vi.fn> } {
+  return { resolveProject: resolveTestProject, rpc: vi.fn(async (_method: string, payload: unknown = {}) => answer(payload as Record<string, unknown>)) }
 }
 
 const base = { projectPath: '/proj', sessionId: 's1', path: 'out/clip.mp4' }
@@ -21,7 +22,7 @@ describe('loadVideoPoster', () => {
     await expect(loadVideoPoster({ ...base, host: h })).resolves.toEqual({
       dataUri: 'data:image/jpeg;base64,ZnJhbWU=', width: 512, height: 288, durationMs: 27_051,
     })
-    expect(h.request.mock.calls[0][0]).toMatchObject({ type: 'read_video_poster', path: '/proj/out/clip.mp4', projectPath: '/proj', sessionId: 's1' })
+    expect(h.rpc.mock.calls[0][1]).toMatchObject({ projectId: 'p', path: '/proj/out/clip.mp4', sessionId: 's1' })
   })
 
   it('answers from memory the second time, for a cut frame and for a clip the host gave up on', async () => {
@@ -30,7 +31,7 @@ describe('loadVideoPoster', () => {
     await loadVideoPoster({ ...base, host: h })
     await expect(loadVideoPoster({ ...base, host: h, path: 'out/odd.mkv' })).resolves.toBeNull()
     await expect(loadVideoPoster({ ...base, host: h, path: 'out/odd.mkv' })).resolves.toBeNull()
-    expect(h.request).toHaveBeenCalledTimes(2)
+    expect(h.rpc).toHaveBeenCalledTimes(2)
   })
 
   it('throws on a host error or a host too old to know the command, so the tile keeps its chip', async () => {

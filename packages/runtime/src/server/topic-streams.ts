@@ -1,19 +1,16 @@
 import type { TerminalEvent } from '@superone/shared/agent-types'
 import type { DraftChangedEvent } from '@superone/shared/environment/draft-rpc'
 import { withoutDraftAttachmentBytes } from '@superone/shared/environment/draft-content'
-import { TOPIC_WILDCARD, type TopicRef } from '@superone/shared/environment/topics'
+import { TERMINAL_LIST_EVENT_TYPES, TOPIC_WILDCARD, type TopicRef } from '@superone/shared/environment/topics'
 import type { EventStreamHandle } from './event-stream'
+import { DRAFT_SAVE_INTERVAL_MS } from '../stream/delivery-policy'
+export { DRAFT_SAVE_INTERVAL_MS } from '../stream/delivery-policy'
 
 /**
  * Topics a host publishes from its own ports rather than its event log:
  * terminals and drafts. Each stream part follows its kinds of a stream's
  * topics and changes with them.
  */
-
-/** Events that change a terminal's row in the list, besides belonging to the terminal itself. */
-const LIST_EVENTS: ReadonlySet<TerminalEvent['type']> = new Set([
-  'terminal_created', 'terminal_exited', 'terminal_title_changed', 'terminal_control_changed',
-])
 
 /** A host's terminal events as a stream follows them (`TerminalsPort.onEvent`). */
 export interface TerminalEventSource {
@@ -48,13 +45,10 @@ export function openTerminalStream(opts: {
     const terminalId = 'terminalId' in event ? event.terminalId : undefined
     if (!terminalId) return
     const followed = terminals.has(terminalId) || terminals.has(TOPIC_WILDCARD)
-    if (followed || (list && LIST_EVENTS.has(event.type))) opts.push(event)
+    if (followed || (list && TERMINAL_LIST_EVENT_TYPES.has(event.type))) opts.push(event)
   })
   return { setTopics, close: off }
 }
-
-/** Off the local link, a draft's autosaves reach a reader at most this often. */
-export const DRAFT_SAVE_INTERVAL_MS = 5_000
 
 /** A host's draft changes (`DraftControl.watch`). */
 export interface DraftEventSource {

@@ -9,9 +9,10 @@ export {
   parseLanHostPort,
 } from './presence'
 export type { PresenceFetch, PresenceResponse } from './presence'
-export { RpcInbox } from './rpc'
 export { RelayClient } from './client'
 export type { HostLink, MobileIdentity, OpenSocket, SocketLike } from './client'
+export { DesktopUpgradeRequiredError, MIN_PHONE_DESKTOP_VERSION } from './phone-protocol'
+export type { PhoneRpcOptions, PhoneTopicStream } from './phone-protocol'
 export { RestoreRejectedError, restoreSession, mergeCachedHistory, appendHistory, dropIncompleteTail } from './restore'
 export type { CachedTranscript, HistoryPage, RestoredSession, SessionSnapshot } from './restore'
 export {
@@ -37,6 +38,7 @@ export {
 export type { HttpPut, HttpPutResult, UploadBytesOptions } from './attachments'
 export { TerminalAssembler } from './terminal'
 export type { TerminalPaint } from './terminal'
+export type { PhoneTerminalStream } from './terminal-feed'
 export {
   PAIRINGS_KEY,
   MOBILE_ID_KEY,
@@ -71,7 +73,7 @@ export {
   startNodePairing,
 } from './desktop-pair'
 export type { DesktopPairQr, DesktopPairQrKind, NodePairing } from './desktop-pair'
-export type { FrameDecrypt, FrameEffect, InboundFrame, RelayControlFrame, TransportKind } from './frames'
+export type { FrameEffect, InboundFrame, RelayControlFrame, TransportKind } from './frames'
 export {
   FILE_CHUNK_SIZE,
   FILE_ENVELOPE_FORMAT_CHUNKED,

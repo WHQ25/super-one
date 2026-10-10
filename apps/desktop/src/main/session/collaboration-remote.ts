@@ -84,6 +84,10 @@ export interface RemoteCollaborationPort {
   eventHead(connectionId: string): Promise<string>
   /** Node events strictly after `afterSequence`, one page. */
   listEvents(connectionId: string, afterSequence: string): Promise<EnvironmentEventEnvelope[]>
+  /** Calls `onEvent` as the node pushes each event of the session; resolves to the unwatch. */
+  watchEvents(connectionId: string, sessionId: string, onEvent: () => void): Promise<() => void>
+  /** Calls `listener` whenever a machine connects or disconnects. */
+  onConnectionChange(listener: () => void): () => void
 }
 
 let port: RemoteCollaborationPort | null = null

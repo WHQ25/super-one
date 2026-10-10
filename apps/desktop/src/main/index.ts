@@ -876,7 +876,8 @@ setInterval(() => {
   void collaborationChildMonitor.resendStopWakes()
 }, CHILD_STALL_CHECK_INTERVAL_MS).unref()
 // Children on other machines: their runs reach the monitor from the node's event log.
-new RemoteChildWatcher(collaborationChildMonitor).start()
+const remoteChildWatcher = new RemoteChildWatcher(collaborationChildMonitor)
+remoteChildWatcher.start()
 
 /** The renderer consumer: notifications observe exactly what the renderer does. */
 function publishAgentEvent(event: AgentEvent): void {
@@ -5522,7 +5523,11 @@ function registerIpcHandlers(): void {
   initBrowserAutomation(() => mainWindow)
   setSessionHostProvider(() => sessionManager)
   setSessionCollaborationCallbacks({
-    sessionsChanged: () => safeSend(AgentIpcChannels.SESSIONS_CHANGED),
+    sessionsChanged: () => {
+      safeSend(AgentIpcChannels.SESSIONS_CHANGED)
+      // A child may have started on another machine.
+      remoteChildWatcher.wake()
+    },
   })
   setAppSettingsApplier(applyAppSettingsPatch)
   setBrowserDownloadTaskHost({

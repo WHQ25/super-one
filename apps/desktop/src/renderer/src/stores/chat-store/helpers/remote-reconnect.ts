@@ -12,7 +12,7 @@ import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import {
   hydrateRemoteSessionWithCatalog,
   mergeRemoteHydrateWithCurrent,
-  resumeRemoteSessionIfLive,
+  followRemoteSessionEvents,
 } from '@/lib/remote-session-ops'
 import type { ChatStore, PerSessionState } from '../types'
 import { _isLiveSession, type ChatStoreSet } from './lifecycle'
@@ -70,7 +70,7 @@ async function rehydrateOne(
     }
   })
 
-  resumeRemoteSessionIfLive(projectPath, sessionId, applied, snap)
+  followRemoteSessionEvents(projectPath, sessionId, applied, snap)
 }
 
 /**

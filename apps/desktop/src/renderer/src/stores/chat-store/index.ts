@@ -664,14 +664,14 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     }
 
     // Remote node: hydrate from CLI session.get (+ optional messages.list denser catalog).
-    // Live catch-up uses session.events afterSequence via resumeRemoteSessionIfLive — not
+    // Live catch-up uses session.events afterSequence via followRemoteSessionEvents — not
     // desktop-only resumeSession IPC.
     const { parseRemoteProjectKey } = await import('@/lib/remote-project-key')
     const remoteKey = parseRemoteProjectKey(activeProject)
     if (remoteKey) {
       const {
         hydrateRemoteSessionWithCatalog,
-        resumeRemoteSessionIfLive,
+        followRemoteSessionEvents,
         mergeRemoteHydrateWithCurrent,
       } = await import('@/lib/remote-session-ops')
       const prev = project._sessions[sessionId] ?? null
@@ -702,7 +702,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
       // Local parity: open a live session → keep agent:event flowing (Session resume).
       // Pass the node snapshot: a turn (or pending permission) that started while
       // this tab was closed is only visible there, not in the merged state.
-      resumeRemoteSessionIfLive(activeProject, sessionId, applied, snap)
+      followRemoteSessionEvents(activeProject, sessionId, applied, snap)
       return
     }
 

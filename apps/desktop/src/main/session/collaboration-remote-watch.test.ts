@@ -12,6 +12,9 @@ const state = vi.hoisted(() => ({
   wake: vi.fn(async (..._args: unknown[]) => {}),
   /** Events of the second machine, `env-c`. */
   eventsC: [] as EnvironmentEventEnvelope[],
+  /** Pushes the node makes, by session. */
+  watchers: new Map<string, () => void>(),
+  connectionListeners: new Set<() => void>(),
 }))
 
 vi.mock('../logger', () => ({ default: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() } }))
@@ -31,6 +34,14 @@ vi.mock('./collaboration-remote', () => ({
     getSession: async () => ({ status: state.status, pendingInteraction: null }),
     listEvents: async (connectionId: string, after: string) =>
       (connectionId === 'conn-c' ? state.eventsC : state.events).filter((e) => BigInt(e.sequence) > BigInt(after)).slice(0, 1000),
+    watchEvents: async (_connectionId: string, sessionId: string, onEvent: () => void) => {
+      state.watchers.set(sessionId, onEvent)
+      return () => state.watchers.delete(sessionId)
+    },
+    onConnectionChange: (listener: () => void) => {
+      state.connectionListeners.add(listener)
+      return () => state.connectionListeners.delete(listener)
+    },
   }),
 }))
 
@@ -86,6 +97,8 @@ describe('RemoteChildWatcher', () => {
     state.status = 'idle'
     state.wake.mockClear()
     state.eventsC = []
+    state.watchers.clear()
+    state.connectionListeners.clear()
     state.events = [statusEvent(10, 'streaming', 'other'), statusEvent(11, 'streaming')]
     state.store = new CollaborationStore(openNodeDatabase(':memory:'))
     grantId = state.store.createGrant({
@@ -109,6 +122,30 @@ describe('RemoteChildWatcher', () => {
     expect(remoteOf().run).toBeUndefined()
     expect(state.wake).toHaveBeenCalledTimes(1)
     expect(state.wake).toHaveBeenCalledWith(expect.anything(), 'parent', 'child', 'idle')
+  })
+
+  it('reads again when the node pushes an event of a child or a machine reconnects', async () => {
+    const desktop = startDesktop()
+    desktop.watcher.start()
+    await vi.waitFor(() => expect(remoteOf().eventCursor).toBe('11'))
+    expect(state.watchers.has('child')).toBe(true)
+
+    state.events.push(statusEvent(12, 'idle'))
+    state.watchers.get('child')!()
+    await vi.waitFor(() => expect(state.wake).toHaveBeenCalledWith(expect.anything(), 'parent', 'child', 'idle'))
+
+    state.connected = false
+    for (const listener of state.connectionListeners) listener()
+    await vi.waitFor(() => expect(state.watchers.has('child')).toBe(false))
+    state.connected = true
+    state.events.push(statusEvent(13, 'streaming'))
+    for (const listener of state.connectionListeners) listener()
+    await vi.waitFor(() => expect(remoteOf().eventCursor).toBe('13'))
+    expect(state.watchers.has('child')).toBe(true)
+
+    desktop.watcher.stop()
+    expect(state.watchers.size).toBe(0)
+    expect(state.connectionListeners.size).toBe(0)
   })
 
   it('after a restart of this desktop resumes the open run and wakes for its stop exactly once', async () => {

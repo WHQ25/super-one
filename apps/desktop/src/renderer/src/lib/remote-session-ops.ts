@@ -18,7 +18,6 @@ import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import {
   nodeHarnessToProviderId,
   nodePendingInteractionFields,
-  nodeSnapshotNeedsLiveDrain,
   nodeStatusToAgentStatus,
   reconcileTranscriptWithLocalMessages,
   type NodeSessionSnapshot,
@@ -139,7 +138,7 @@ export async function hydrateRemotePerSession(
  * pending interaction / transcript) plus the denser `session.messages.list`
  * catalog when the host exposes it.
  *
- * Returns the raw snapshot too, so callers can drive `resumeRemoteSessionIfLive`
+ * Returns the raw snapshot too, so callers can drive `followRemoteSessionEvents`
  * off node truth instead of the (possibly stale) in-memory session state.
  */
 export async function hydrateRemoteSessionWithCatalog(
@@ -253,32 +252,18 @@ export function mergeRemoteHydrateWithCurrent(
 }
 
 /**
- * After hydrate/focus: if the node turn is still live, own a drain so events
- * keep flowing into handleAgentEvent (local Session resume parity).
+ * After hydrate/focus: follow the node session so every later event reaches
+ * handleAgentEvent — a running turn, and turns another client starts while it
+ * sits idle here. Main keeps one follower per session.
  */
-export function resumeRemoteSessionIfLive(
+export function followRemoteSessionEvents(
   projectKey: string,
   sessionId: string,
-  sess: Pick<
-    PerSessionState,
-    'status' | 'awaitingAssistantReply' | 'sessionProvider' | 'preferredProvider'
-  > & {
-    pendingPermissions?: unknown[]
-    pendingQuestion?: unknown
-    pendingPlanApproval?: unknown
-  },
+  sess: Pick<PerSessionState, 'sessionProvider' | 'preferredProvider'>,
   snap?: NodeSessionSnapshot | null,
 ): void {
   const remote = parseRemoteProjectKey(projectKey)
   if (!remote || !sessionId) return
-  const needsDrain =
-    nodeSnapshotNeedsLiveDrain(snap ?? null) ||
-    sess.status === 'streaming' ||
-    sess.awaitingAssistantReply ||
-    (sess.pendingPermissions?.length ?? 0) > 0 ||
-    Boolean(sess.pendingQuestion) ||
-    Boolean(sess.pendingPlanApproval)
-  if (!needsDrain) return
   const providerId =
     sess.sessionProvider || sess.preferredProvider || snap?.harnessId || 'claude'
   void window.environment

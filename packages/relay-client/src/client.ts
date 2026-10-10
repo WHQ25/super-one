@@ -1,4 +1,4 @@
-import { RequestCoalescer } from './request-coalescer'
+import { phoneReadKey, RequestCoalescer } from './request-coalescer'
 import { jsonBytes, type TransportMetric } from './transport-ledger'
 import type { ReadDesktopFileResponse, RemoteCommand } from '@superone/shared/agent-types'
 import { EventBuffer } from './buffer'
@@ -139,7 +139,7 @@ export class RelayClient {
   request(command: RemoteCommand, timeoutMs = 15_000): Promise<unknown> {
     if (!this.ws) return Promise.reject(new Error('not connected'))
     const ws = this.ws
-    const result = this.reads.run(command, timeoutMs, async () => {
+    const result = this.reads.run(phoneReadKey(command, timeoutMs), async () => {
       const started = performance.now()
       await this.whenChannelReady(ws, timeoutMs, command.type)
       const encoding = performance.now()

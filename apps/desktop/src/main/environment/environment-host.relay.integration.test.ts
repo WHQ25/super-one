@@ -52,12 +52,12 @@ describe('EnvironmentHost with a relay-only desktop node', () => {
   it('pairs through the relay when the LAN answers /health but fails the channel', async () => {
     const relay = await startTestRelay()
     cleanup.push(() => relay.close())
-    const { host: b } = await startTestDesktopNode({
+    const { host: b, close: closeB } = await startTestDesktopNode({
       userDataDir: tempDir('superone-ehr-b-'),
       projectDir: tempDir('superone-ehr-project-'),
       listen: { bindPort: 0, relayUrl: relay.url },
     })
-    cleanup.push(() => b.stop())
+    cleanup.push(closeB)
     await vi.waitFor(() => expect(b.relayConnected).toBe(true))
     const spoof = await startSpoofedLanNode({ environmentId: b.identity.environmentId, nodePublicKeyFingerprint: b.identity.publicKeyFingerprint })
     cleanup.push(spoof.close)
@@ -82,13 +82,13 @@ describe('EnvironmentHost with a relay-only desktop node', () => {
   it('pairs, reconnects after a drop, fails over and re-pairs through the relay; reports an offline node fast', async () => {
     const relay = await startTestRelay()
     cleanup.push(() => relay.close())
-    const { host: b } = await startTestDesktopNode({
+    const { host: b, close: closeB } = await startTestDesktopNode({
       userDataDir: tempDir('superone-ehr-b-'),
       projectDir: tempDir('superone-ehr-project-'),
       listen: { bindPort: 0, relayUrl: relay.url },
     })
     let bRunning = true
-    cleanup.push(() => (bRunning ? b.stop() : undefined))
+    cleanup.push(() => (bRunning ? closeB() : b.domain.close()))
     await vi.waitFor(() => expect(b.relayConnected).toBe(true))
 
     electron.userData = tempDir('superone-ehr-a-')

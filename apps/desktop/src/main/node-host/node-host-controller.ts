@@ -23,11 +23,14 @@ import { listSessionAgentProfiles } from '../session/agent-profiles'
 import { createDesktopProjectsPort } from './desktop-projects-port'
 import type { NodeHostSessionManager, NodeHostSessionStore } from './desktop-session-host'
 import { DesktopNodeHost } from './node-host-server'
+import { DesktopDomain } from './desktop-domain'
 import { defaultDesktopNodePort } from './paths'
 
 type NodeHostSettings = Pick<AppSettings, 'remoteNodeAccessEnabled' | 'remoteNodeAccessPort'>
 
 let host: DesktopNodeHost | null = null
+/** This desktop's environment backend, open from the first settings pass until quit. */
+let domain: DesktopDomain | null = null
 let hostPort: number | null = null
 let hostRelayUrl: string | null = null
 let advertiser: LanAdvertiser | null = null
@@ -88,6 +91,12 @@ export function applyNodeHostSettings(
   options: { relayUrl?: string } = {},
 ): Promise<NodeHostStatus> {
   const next = transition.then(async () => {
+    // The domain serves this desktop's phones too, so it opens whether or not controllers may connect.
+    try {
+      openDesktopDomain(sessions)
+    } catch (err) {
+      log.warn('[node-host] domain failed to open: %s', err instanceof Error ? err.message : String(err))
+    }
     const port = settings.remoteNodeAccessPort ?? defaultDesktopNodePort(variantId())
     const relayUrl = options.relayUrl || null
     if (!settings.remoteNodeAccessEnabled) {
@@ -100,20 +109,7 @@ export function applyNodeHostSettings(
     try {
       void getMachineInfo()
       host = await DesktopNodeHost.start(
-        {
-          userDataDir: app.getPath('userData'),
-          appVersion: app.getVersion(),
-          sessions,
-          store: desktopSessionStore,
-          projects: createDesktopProjectsPort({ list: getRecentFolders, add: addRecentFolder }),
-          harnesses: getHarnessManager(),
-          listAgentProfiles: listSessionAgentProfiles,
-          hooks: {
-            probeHarnessReadiness: (_harnesses, id) => probeDesktopHarness(id),
-            assertSessionHarnessRuntimeReady: (id, harnesses) =>
-              assertSessionHarnessRuntimeReady(id, harnesses, desktopHarnessResolver),
-          },
-        },
+        openDesktopDomain(sessions),
         {
           bindPort: port,
           bindHost: '0.0.0.0',
@@ -140,6 +136,24 @@ export function applyNodeHostSettings(
   void next.then(notifyChanged)
   transition = next.catch(() => {})
   return next
+}
+
+/** This desktop's environment backend, opened once; every connection is served from it. */
+export function openDesktopDomain(sessions: NodeHostSessionManager): DesktopDomain {
+  return domain ??= DesktopDomain.open({
+    userDataDir: app.getPath('userData'),
+    appVersion: app.getVersion(),
+    sessions,
+    store: desktopSessionStore,
+    projects: createDesktopProjectsPort({ list: getRecentFolders, add: addRecentFolder }),
+    harnesses: getHarnessManager(),
+    listAgentProfiles: listSessionAgentProfiles,
+    hooks: {
+      probeHarnessReadiness: (_harnesses, id) => probeDesktopHarness(id),
+      assertSessionHarnessRuntimeReady: (id, harnesses) =>
+        assertSessionHarnessRuntimeReady(id, harnesses, desktopHarnessResolver),
+    },
+  })
 }
 
 /**
@@ -180,7 +194,11 @@ async function stopHost(): Promise<void> {
 
 /** Stop serving (app quit). */
 export function stopNodeHost(): Promise<void> {
-  const next = transition.then(stopHost)
+  const next = transition.then(async () => {
+    await stopHost()
+    domain?.close()
+    domain = null
+  })
   transition = next.catch(() => {})
   return next
 }
@@ -266,10 +284,10 @@ export async function removeNodeHostController(id: string): Promise<void> {
 
 /** This desktop's user takes a session another desktop started here back from it. */
 export function releaseNodeHostSession(sessionId: string): void {
-  if (!host) {
+  if (!domain) {
     throw Object.assign(new Error('Remote node access is off'), { code: 'failed_precondition' })
   }
-  host.sessions.releaseControl(sessionId)
+  domain.sessions.releaseControl(sessionId)
 }
 
 /**

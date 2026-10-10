@@ -63,12 +63,12 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 async function pairedOverRelay(opts: { lan?: boolean } = {}) {
   const relay = await startTestRelay()
   cleanup.push(() => relay.close())
-  const { host: b, sessions } = await startTestDesktopNode({
+  const { host: b, sessions, close: closeB } = await startTestDesktopNode({
     userDataDir: tempDir('superone-proto-b-'),
     projectDir: tempDir('superone-proto-project-'),
     listen: { bindPort: 0, relayUrl: relay.url },
   })
-  cleanup.push(() => b.stop())
+  cleanup.push(closeB)
   await vi.waitFor(() => expect(b.relayConnected).toBe(true))
 
   electron.userData = tempDir('superone-proto-a-')

@@ -32,7 +32,7 @@ import { RemoteHostActionConsumer } from '../environment/remote-host-action-cons
 import { NodeCredentialStore } from '../environment/node-credential-store'
 import { createDesktopProjectsPort } from './desktop-projects-port'
 import { nodeControllerDeviceId } from './desktop-session-host'
-import { AGENT_PROFILES, FakeSessionManager, memoryStore } from './node-host-test-fixtures'
+import { AGENT_PROFILES, FakeSessionManager, memoryStore, startDesktopNode, stopDesktopNode } from './node-host-test-fixtures'
 import { DesktopNodeHost } from './node-host-server'
 import { mapNodeSessionEvents } from '@superone/shared/node-session-event-map'
 
@@ -42,7 +42,7 @@ const managers: NodeConnectionManager[] = []
 
 afterEach(async () => {
   for (const m of managers.splice(0)) m.disconnectAll()
-  for (const h of hosts.splice(0)) await h.stop()
+  for (const h of hosts.splice(0)) await stopDesktopNode(h)
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
   electron.store.clear()
 })
@@ -66,7 +66,7 @@ async function pairedDesktops() {
   const store = memoryStore(() => projects.list())
   const harnesses = new HarnessManager(openNodeDatabase(':memory:'))
   harnesses.enableSimulatedOverlay()
-  const host = await DesktopNodeHost.start(
+  const host = await startDesktopNode(
     {
       userDataDir: userData, label: 'Desktop B', appVersion: '0.0.0-test', sessions, store, projects, harnesses,
       listAgentProfiles: () => AGENT_PROFILES,
@@ -98,7 +98,7 @@ describe('DesktopNodeHost', () => {
     const harnesses = new HarnessManager(openNodeDatabase(':memory:'))
     harnesses.enableSimulatedOverlay()
     const port = 23000 + Math.floor(Math.random() * 10000)
-    const start = (bindPort: number) => DesktopNodeHost.start(
+    const start = (bindPort: number) => startDesktopNode(
       {
         userDataDir: userData,
         label: 'Desktop B',
@@ -165,7 +165,7 @@ describe('DesktopNodeHost', () => {
 
     // Restart B (on a fresh port: fetch would reuse the closed keep-alive socket): the cursor continues from the durable log.
     manager.disconnectAll()
-    await host.stop()
+    await stopDesktopNode(host)
     hosts.splice(0)
     host = await start(port + 1)
     hosts.push(host)
@@ -283,11 +283,13 @@ describe('DesktopNodeHost lifecycle and prompts', () => {
     sessions.live.get(created.sessionId)!.status = 'streaming'
     const pending = host.sessions.requestHostAction({ sessionId: created.sessionId, toolName: 'session_collab_retrieve', args: {} })
 
-    // Turning remote access off (or changing its port) stops the host.
+    // Turning remote access off (or changing its port) stops the listener; no controller can answer.
     await host.stop()
-    hosts.splice(hosts.indexOf(host), 1)
-
     await expect(pending).resolves.toMatchObject({ state: 'cancelled' })
+
+    // Quitting closes the domain, which takes no more.
+    hosts.splice(hosts.indexOf(host), 1)
+    host.domain.close()
     await expect(host.sessions.requestHostAction({ sessionId: created.sessionId, toolName: 'session_collab_send', args: {} }))
       .rejects.toMatchObject({ code: 'failed_precondition' })
   })

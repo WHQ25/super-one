@@ -96,6 +96,13 @@ export interface SessionGateway {
    * hosts without a read model have none.
    */
   load?(input: { session: SessionRef; before?: number | null; limit?: number }): Promise<SessionLoadResult>
+  /**
+   * Expand a summarized row (`remoteDetail`): its revision-0 text, with later
+   * `remote_detail` packets for `subscriptionId` on the session's stream.
+   * Optional: hosts that send full rows have nothing to expand.
+   */
+  subscribeDetail?(input: { session: SessionRef; detailRef: string; subscriptionId: string }): Promise<import('./detail').DetailUpdate>
+  unsubscribeDetail?(input: { session: SessionRef; subscriptionId: string }): Promise<void>
   getMetadataBatch?(refs: SessionRef[]): Promise<import('../session-link').SessionLinkMetadataResult[]>
   archive?(request: import('../session-archive').SessionArchiveRequest): Promise<import('../session-archive').ArchiveToolResult>
   create(input: CreateSessionInput): Promise<{ sessionId: string }>

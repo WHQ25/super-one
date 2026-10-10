@@ -20,6 +20,7 @@ for (const deferred of [false, true]) test(`non-zero command exit stays normal b
   await page.goto(pathToFileURL(resolve(import.meta.dirname, '../dist/index.html')).href)
   await expect(page.locator('html')).toHaveAttribute('data-chat-view-ready', 'true')
   await page.evaluate((deferred) => {
+    (window as unknown as { __applyHost(value: unknown): void }).__applyHost({ type: 'channelToken', token: 'command-status-test' });
     (window as unknown as { __applyHost(value: unknown): void }).__applyHost({
       type: 'hydrate', messages: [{
         id: 'turn', role: 'assistant', status: 'complete', content: [], createdAt: '', providerId: 'codex',

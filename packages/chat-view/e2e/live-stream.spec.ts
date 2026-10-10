@@ -24,6 +24,7 @@ test.beforeEach(async ({ page }) => {
   })
   await page.goto(documentUrl)
   await expect(page.locator('html')).toHaveAttribute('data-chat-view-ready', 'true')
+  await send(page, { type: 'channelToken', token: 'live-stream-test' })
   await page.clock.pauseAt(new Date(Date.now() + 1000))
 })
 
@@ -149,23 +150,23 @@ test('tool shell fetches full output on expansion and reuses completed cache', a
       const request = JSON.parse(raw)
       ;(globalThis as any).requests.push(request)
       if (request.action === 'subscribeDetail') (globalThis as any).__applyHost({ type: 'nativeActionResult', requestId: request.requestId,
-        result: { subscriptionId: request.payload.subscriptionId, offset: 0, revision: 0, text: JSON.stringify({ input: '{"file_path":"a.txt"}', result: 'Full file content loaded on demand' }) } })
+        result: { subscriptionId: request.payload.subscriptionId, offset: 0, revision: 0, text: JSON.stringify({ input: '{"pattern":"needle"}', result: 'Full file content loaded on demand' }) } })
     } } })
   })
   await send(page, { type: 'hydrate', messages: [message('tool-detail', '', { status: 'complete', content: [
-    { type: 'tool_use', toolUseId: 'read', toolName: 'Read', input: '{"file_path":"a.txt"}', status: 'complete', remoteDetail: '["tool-detail","tool","read"]' },
-    { type: 'tool_result', toolUseId: 'read', summary: '' },
+    { type: 'tool_use', toolUseId: 'grep', toolName: 'Grep', input: '{"pattern":"needle"}', status: 'complete', remoteDetail: '["tool-detail","tool","grep"]' },
+    { type: 'tool_result', toolUseId: 'grep', summary: '' },
   ] })] })
   const article = page.locator('article[data-turn-id="tool-detail"]')
   await expect(article).not.toContainText('Full file content')
-  await article.getByText('Read', { exact: true }).click()
+  await article.getByText('Grep', { exact: true }).click()
   await expect(article).toContainText('Full file content loaded on demand')
   await page.clock.runFor(250)
   await page.screenshot({ path: '/tmp/superone-progressive-tool.png', animations: 'disabled' })
   await expect(article.getByText('Full file content loaded on demand', { exact: true })).toBeVisible()
-  await article.getByText('Read', { exact: true }).click()
+  await article.getByText('Grep', { exact: true }).click()
   await page.clock.runFor(34)
-  await article.getByText('Read', { exact: true }).click()
+  await article.getByText('Grep', { exact: true }).click()
   await expect(article).toContainText('Full file content loaded on demand')
   expect(await page.evaluate(() => (globalThis as any).requests.filter((request: any) => request.action === 'subscribeDetail'))).toHaveLength(1)
 })

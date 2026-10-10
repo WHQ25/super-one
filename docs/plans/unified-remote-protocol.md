@@ -217,6 +217,14 @@ points code comments there, and deletes this plan and the proposal.
   detail, and one batcher each; the renderer's `local` tier is
   `createLocalDelivery`. Live relay frames dropped (e.g. 166 → 160 on
   permission-flow) with the same decoded events.
+- Step 3 done: `createDetailClient` in `@superone/chat-core` (transport
+  injected); the phone document and desktop renderer each provide one through
+  `DetailScopeProvider`. Desktop renders `remoteDetail` rows with its own blocks
+  (tool, Bash, reasoning, subagent, workflow, Codex command/file change/MCP/
+  collab) and routes `remote_detail` to its client; main forwards
+  `environment:subscribeDetail` to the gateway's optional
+  `sessions.subscribeDetail`, which step 4 implements. Stories:
+  `components/chat/DeferredRows.stories.tsx`.
 
 ## Open decisions
 

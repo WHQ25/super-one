@@ -1,6 +1,7 @@
 import { Check, Clock, MessageSquare, ScanSearch, TriangleAlert } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import type { CodexPlanApprovalState, CodexThreadItem } from '@superone/shared/agent-types'
+import type { CodexFileChangeItem, CodexFileUpdateChange, CodexPlanApprovalState, CodexThreadItem } from '@superone/shared/agent-types'
+import { useDeferredToolDetail } from '@superone/chat-view/use-deferred-tool-detail'
 import { ToolBlock } from './ToolBlock'
 import { CopyableMarkdown } from './CopyableMarkdown'
 import { ReasoningBlock } from './ReasoningBlock'
@@ -131,6 +132,29 @@ function DesktopCodexPlanBlock({
   )
 }
 
+/** Summarized file changes: each file's diff loads when its row opens. */
+function DeferredCodexFileChange({ item, remoteDetail }: { item: CodexFileChangeItem; remoteDetail: string }) {
+  const changes = item.changes.length ? item.changes : [{ path: '', kind: 'update' as const }]
+  return (
+    <div className="my-0.5 space-y-0.5">
+      {changes.map((change, i) => <DeferredCodexFileChangeRow key={i} item={item} change={change} index={i} remoteDetail={remoteDetail} />)}
+    </div>
+  )
+}
+
+function DeferredCodexFileChangeRow({ item, change, index, remoteDetail }: {
+  item: CodexFileChangeItem; change: CodexFileUpdateChange; index: number; remoteDetail: string
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const { detail, status, retry } = useDeferredToolDetail(remoteDetail, expanded, true)
+  const loaded = detail.item?.type === 'file_change' ? detail.item.changes[index] : undefined
+  const failed = item.status === 'failed'
+  return <ToolBlock toolName="FileChange" toolUseId={`${item.id}-${index}`}
+    input={JSON.stringify({ file_path: change.path, kind: change.kind, diff: loaded?.diff ?? '' })}
+    status="complete" result={failed && index === 0 ? 'Failed to apply file changes.' : undefined} isError={failed}
+    autoExpand={false} deferred={{ onExpandedChange: setExpanded, detailStatus: status, onDetailRetry: retry }} />
+}
+
 export function renderCodexItem(
   item: CodexThreadItem,
   index: number,
@@ -179,6 +203,7 @@ export function renderCodexItem(
       return <CodexCommandBlock key={`${item.id}-${index}`} item={item} isStreaming={isStreaming} />
 
     case 'file_change':
+      if (item.remoteDetail) return <DeferredCodexFileChange key={`${item.id}-${index}`} item={item} remoteDetail={item.remoteDetail} />
       if (item.changes.length === 0) {
         return (
           <ToolBlock
@@ -214,6 +239,7 @@ export function renderCodexItem(
             <ToolBlock
               toolName={`mcp__${item.server}__${item.tool}`}
               app={item.app}
+              remoteDetail={item.remoteDetail}
               input={codexMcpItemInput(item)}
               status={toToolStatus(item.status)}
               result={codexMcpItemResultText(item)}

@@ -231,17 +231,29 @@ Expanding a row:
    the unchanged common prefix and `text` the new suffix. Prefix replacement
    covers both appended reasoning and tool JSON whose closing characters move.
    Suffixes are split into 64,000-character packets.
-3. The document (`packages/chat-view/src/use-deferred-text.ts`) buffers packets
-   that arrive before the snapshot, applies them in revision order, and ignores
-   stale revisions. A gap (offset beyond the current text) surfaces as an error
-   with Retry.
+3. The frontend's detail client (`createDetailClient` in
+   `packages/chat-core/src/detail.ts`) buffers packets that arrive before the
+   snapshot, applies them in revision order, and ignores stale revisions. A gap
+   (offset beyond the current text) surfaces as an error with Retry.
 4. Collapse or unmount sends `unsubscribe_detail`. Subscribing to another
    session, `leave_session` and `unsubscribe_session` drop all of a device's
    interests.
 
-Completed detail text is cached in the document in an LRU bounded to 1,000,000
-UTF-16 code units (`packages/chat-view/src/detail-cache.ts`); reopening a cached
-completed block does not fetch again.
+Completed detail text is cached by the client in an LRU bounded to 1,000,000
+UTF-16 code units; reopening a cached completed block does not fetch again.
+
+The same client serves every frontend; only its transport differs. The phone
+document uses the native bridge (`packages/chat-view/src/document-detail.ts`).
+The desktop renderer uses `window.environment.subscribeDetail`, which main
+forwards to the session's environment gateway
+(`apps/desktop/src/renderer/src/lib/desktop-detail-client.ts`), and routes
+`remote_detail` events to it. Rows find the client through `DetailScopeProvider`
+(`packages/chat-view/src/detail-scope.tsx`), which the chat view sets per
+session; desktop sets it only for sessions of a remote machine. Desktop renders
+summarized rows with its own blocks: generic, Bash, file-change and command rows
+load when opened, rows with their own chrome (dedicated tools, MCP calls) load
+when shown, and subagent, workflow and Codex collaboration cards load their
+children when opened.
 
 ### History navigation
 

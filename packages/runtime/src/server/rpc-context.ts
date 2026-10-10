@@ -28,9 +28,10 @@ import type {
   SessionProviderStore,
   SessionRuntime,
 } from '../session/index'
-import type { HarnessInstallationStatus, SessionDetailMessage, SessionStreamMessage, TerminalStreamMessage } from '@superone/shared/environment'
+import type { HarnessInstallationStatus, SessionDetailMessage, SessionStreamMessage, TerminalStreamMessage, DraftStreamMessage } from '@superone/shared/environment'
 import type { ChatMessage, TerminalEvent, TerminalListItem } from '@superone/shared/agent-types'
 import type { ConnectionDelivery } from '../stream/delivery/connection-delivery'
+import type { DraftsPort } from './rpc-drafts'
 import type { AuthenticatedClient } from './auth-service'
 import type { EventStreamFlow, EventStreamHandle } from './event-stream'
 import type { NodeIdentity } from './identity'
@@ -426,6 +427,8 @@ export interface RpcContext {
   /** Session-layer provider profiles (claude-base, custom multi-profile, …). */
   sessionProviders?: Pick<SessionProviderStore, 'get'>
   artifacts?: ArtifactZonePort
+  /** Composer drafts and their leases (`draft.*`). */
+  drafts?: DraftsPort
   extensions?: RpcExtensionDispatch
   /**
    * Shared methods of families this host serves that it still refuses (its
@@ -452,7 +455,7 @@ export interface RpcStreams {
   close(subscriptionId: string): void
   /** The open stream with this id, if any. */
   get(subscriptionId: string): EventStreamHandle | undefined
-  push(message: SessionStreamMessage | SessionDetailMessage | TerminalStreamMessage): void
+  push(message: SessionStreamMessage | SessionDetailMessage | TerminalStreamMessage | DraftStreamMessage): void
   /** The connection's pace, for flow-controlled streams. */
   flow?: EventStreamFlow
   /** What this connection receives of a session under its delivery policy. */

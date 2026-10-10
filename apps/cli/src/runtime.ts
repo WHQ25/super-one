@@ -36,7 +36,7 @@ import {
   createAutomationStore,
   type AutomationStore,
 } from '@superone/runtime/automations'
-import { createDraftStore, type DraftStore } from '@superone/runtime/drafts'
+import { createDraftStore, DraftControl } from '@superone/runtime/drafts'
 import { ArtifactZoneService } from './workspace/artifact-zone'
 import { withSessionZone } from './session/session-zone-runner'
 import {
@@ -62,7 +62,7 @@ export interface NodeRuntime {
   collaboration: CollaborationService
   idempotency: IdempotencyService
   providers: ProviderStore
-  drafts: DraftStore
+  drafts: DraftControl
   automations: AutomationStore
   automationService: AutomationService
   sessionProviders: SessionProviderStore
@@ -266,7 +266,7 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
   const idempotency = new IdempotencyService(db)
   const startedAt = Date.now()
 
-  const drafts = createDraftStore(db)
+  const drafts = new DraftControl(createDraftStore(db))
   const artifacts = new ArtifactZoneService(paths.syncRoot)
   const automations = createAutomationStore(db, (projectId) => projects.get(projectId)?.path ?? null)
   const automationService = new AutomationService({

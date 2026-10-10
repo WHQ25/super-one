@@ -12,6 +12,7 @@ import { LanAdvertiser } from '../lan-advertiser'
 import { NODE_LAN_SERVICE_TYPE } from '../lan-service-type'
 import { variantId } from '../variant'
 import { addRecentFolder, getRecentFolders } from '../recent-folders'
+import { localDraftStore } from '../db-drafts'
 import { createSession as createSessionRow, loadSessionMessagesPaginated, renameSession } from '../db-sessions'
 import {
   getDesktopSessionRow,
@@ -145,6 +146,7 @@ export function applyNodeHostSettings(
 export function openDesktopDomain(sessions: NodeHostSessionManager, terminals?: TerminalsPort): DesktopDomain {
   return domain ??= DesktopDomain.open({
     terminals,
+    drafts: localDraftStore(),
     userDataDir: app.getPath('userData'),
     appVersion: app.getVersion(),
     sessions,

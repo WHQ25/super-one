@@ -10,6 +10,7 @@ import {
   type RpcContext,
   type RpcHostHooks,
   type TerminalsPort,
+  type DraftsPort,
 } from '@superone/runtime/server'
 import { openNodeDatabase, type NodeDatabase } from '@superone/runtime/db'
 import { ControlLeaseService } from '@superone/runtime/lease'
@@ -99,6 +100,8 @@ export interface DesktopDomainDeps {
   hooks: Pick<RpcHostHooks, 'probeHarnessReadiness' | 'assertSessionHarnessRuntimeReady'>
   /** This desktop's PTYs, which its phones see and controllers do not. */
   terminals?: TerminalsPort
+  /** This desktop's composer drafts and their leases, shared with its window. */
+  drafts?: DraftsPort
 }
 
 /** What one RPC needs besides who asks and how it is delivered. */
@@ -123,7 +126,7 @@ export class DesktopDomain {
     /** The node home (identity, channel root, config). */
     readonly nodeHome: string,
     private readonly context: DesktopRpcContext,
-    private readonly terminals: TerminalsPort | undefined,
+    private readonly phonePorts: Pick<DesktopDomainDeps, 'terminals' | 'drafts'>,
   ) {}
 
   static open(deps: DesktopDomainDeps): DesktopDomain {
@@ -166,7 +169,7 @@ export class DesktopDomain {
         subscriptionUsage: { claudeAccounts: claudeUsageAccounts, log: usageLog },
       }
       const localSessions = new LocalSessionHost({ sessions: deps.sessions, events, rows: deps.rows })
-      return new DesktopDomain(db, identity, auth, sessions, localSessions, recorder, paths.nodeHome, context, deps.terminals)
+      return new DesktopDomain(db, identity, auth, sessions, localSessions, recorder, paths.nodeHome, context, { terminals: deps.terminals, drafts: deps.drafts })
     } catch (err) {
       db.close()
       throw err
@@ -180,8 +183,8 @@ export class DesktopDomain {
 
   /**
    * The context this desktop's phones run in. They are its user's devices:
-   * every session and terminal (only read for now), and the workspace files
-   * and Git the window has, which controllers do not get.
+   * every session and terminal (only read for now), the workspace files and
+   * Git the window has, and its drafts, which controllers do not get.
    */
   phoneContext(): DesktopRpcContext {
     return this.phone ??= this.openPhoneContext()
@@ -205,7 +208,8 @@ export class DesktopDomain {
       workspaceGit: new WorkspaceGitService(projects),
       workspaceWatch,
       workspaceTailWatch,
-      terminals: this.terminals,
+      terminals: this.phonePorts.terminals,
+      drafts: this.phonePorts.drafts,
       unservedMethods: new Set([...DESKTOP_UNSERVED_METHODS, ...LOCAL_SESSION_MUTATIONS, ...LOCAL_TERMINAL_MUTATIONS]),
     }
   }

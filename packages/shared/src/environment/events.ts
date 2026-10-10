@@ -142,6 +142,13 @@ export interface TerminalStreamMessage {
   event: TerminalEvent
 }
 
+/** Server → client draft change of the drafts this stream follows (attachment bytes left out). */
+export interface DraftStreamMessage {
+  type: 'draft'
+  subscriptionId: string
+  event: import('./draft-rpc').DraftChangedEvent
+}
+
 export interface EnvironmentSnapshot {
   environmentId: string
   /** Sequence included in this snapshot; subscribe from snapshotSequence + 1. */

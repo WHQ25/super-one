@@ -13,7 +13,7 @@
 import { createDraftStore, deriveDraftTitle } from '@superone/runtime/drafts'
 import type { DraftListEntry, DraftRecord, DraftUpsertRequest } from '@superone/shared/environment'
 import { getDb } from './database'
-import { DraftControl } from './remote/draft-control'
+import { DraftControl } from '@superone/runtime/drafts'
 
 let store: DraftControl | null = null
 

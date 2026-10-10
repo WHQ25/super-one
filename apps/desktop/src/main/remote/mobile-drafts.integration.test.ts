@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createDraftStore } from '@superone/runtime/drafts'
-import { DraftControl } from './draft-control'
+import { DraftControl } from '@superone/runtime/drafts'
 import { RemoteDraftLibrary } from '../../../../mobile/src/remote-draft-library'
 
 describe('mobile draft outbox against the host', () => {

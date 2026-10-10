@@ -18,7 +18,7 @@ import type { WorkspaceTailWatchService } from '@superone/runtime/workspace/tail
 import type { IdempotencyService } from '../auth/idempotency'
 import type { ProviderStore } from '../provider/provider-store'
 import type { AutomationService, AutomationStore } from '@superone/runtime/automations'
-import type { DraftStore } from '@superone/runtime/drafts'
+import type { DraftControl } from '@superone/runtime/drafts'
 import type { ArtifactZoneService } from '../workspace/artifact-zone'
 import type { SessionProviderStore } from '@superone/runtime/session'
 import {
@@ -45,7 +45,7 @@ export interface NodeServerOptions {
   idempotency: IdempotencyService
   providers: ProviderStore
   settingsConfigPath: string
-  drafts: DraftStore
+  drafts: DraftControl
   artifacts: ArtifactZoneService
   automations: AutomationStore
   automationService: AutomationService

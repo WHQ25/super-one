@@ -93,3 +93,31 @@ run the scripted harness (`src/main/session/backends/scripted-backend.ts`): ever
 harness follows the `<scripted>` steps in its message instead of calling a model.
 It is enabled only by `SUPERONE_E2E_SCRIPTED_HARNESS=1` in an unpackaged build
 (`scripted-harness-gate.ts`); a packaged app ignores the variable.
+
+Native phone acceptance uses `e2e/unified-remote-protocol.live.spec.ts`. It
+starts two isolated Electron profiles and pairs two real SDK clients through
+the production encrypted pairing flow. The desktops connect to each other
+through the Alpha Relay; each phone case runs over both LAN and relay. It
+checks native reads, drafts, forms, upload, conditional file writes, project
+and Git edits, session lifetime, session/PTY contention, source-desktop
+takeover and mid-turn phone transport switching. It also asserts that the
+scripted harness never downloads managed Claude or Codex runtimes.
+
+This opt-in test transmits only its own temporary pairing credentials and
+synthetic content to `relay-alpha.super-one.dev`. Obtain authorization for
+that live destination before running it. After `bunx electron-vite build`,
+run from `apps/desktop`:
+
+```bash
+SUPERONE_E2E_LIVE_RELAY=1 env -u ELECTRON_RUN_AS_NODE bun run test:e2e:fast -- e2e/unified-remote-protocol.live.spec.ts
+```
+
+Clearing `ELECTRON_RUN_AS_NODE` matters when the agent's shell inherited it:
+Playwright must launch Electron as an app, not a Node process. The test closes
+both apps and removes its profiles and temporary repositories. Its paired SDK
+actors exercise the production transport; physical-phone UI smoke is separate.
+Every former phone-command family is covered by the local endpoint contracts
+under `src/main/node-host/phone-contract`, including provider-specific pending
+interactions and MCP App Views. The immutable sender/codec budget gate is
+`src/main/stream/wire-baseline.test.ts`; never raise its fixture to accept a
+regression.

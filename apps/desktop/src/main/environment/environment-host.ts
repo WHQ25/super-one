@@ -914,9 +914,11 @@ export class EnvironmentHost {
         this.sessionLeases.delete(key)
       }
     }
+    // This window's own control steps aside for a phone this desktop relays.
     const lease = await gateway.sessions.acquireControl({
       resource: { environmentId, sessionId },
       ttlMs: 60_000,
+      yields: true,
       ...(opts?.reclaim ? { reclaim: true } : {}),
     })
     this.sessionLeases.set(key, {

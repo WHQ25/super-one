@@ -187,7 +187,9 @@ CREATE TABLE IF NOT EXISTS control_leases (
   holder_client_id TEXT NOT NULL,
   generation TEXT NOT NULL,
   expires_at INTEGER NOT NULL,
-  epoch TEXT NOT NULL
+  epoch TEXT NOT NULL,
+  delegate TEXT NOT NULL DEFAULT '',
+  yields INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS collaboration_messages (

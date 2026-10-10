@@ -32,18 +32,26 @@ export class ControlLeaseService {
     return this.leaseEpoch
   }
 
+  /**
+   * Grant `resource` to a holder. A live lease of another client refuses it;
+   * one of another delegate of the same client refuses it too, unless that
+   * delegate `yields` (the client's own interface), whose lease is taken over.
+   */
   acquire(input: {
     resource: ResourceRef
     holderClientId: string
+    delegate?: string
+    yields?: boolean
     ttlMs?: number
   }): ControlLease {
     const now = Date.now()
     const ttl = clampTtlMs(input.ttlMs)
     const key = resourceKey(input.resource)
+    const delegate = input.delegate ?? ''
 
     const existing = this.db
       .prepare(
-        `SELECT lease_id, holder_client_id, generation, expires_at, epoch
+        `SELECT lease_id, holder_client_id, generation, expires_at, epoch, delegate, yields
          FROM control_leases WHERE resource_key = ?`,
       )
       .get(key) as
@@ -53,26 +61,35 @@ export class ControlLeaseService {
           generation: string
           expires_at: number
           epoch: string
+          delegate: string
+          yields: number
         }
       | undefined
 
-    if (existing && existing.epoch === this.leaseEpoch && existing.expires_at > now) {
-      if (existing.holder_client_id !== input.holderClientId) {
-        throw Object.assign(new Error('control lease held by another client'), {
-          code: 'failed_precondition',
-        })
-      }
+    const live = existing && existing.epoch === this.leaseEpoch && existing.expires_at > now
+    if (live && existing.holder_client_id !== input.holderClientId) {
+      throw Object.assign(new Error('control lease held by another client'), {
+        code: 'failed_precondition',
+      })
+    }
+    if (live && existing.delegate === delegate) {
       const expiresAt = now + ttl
       this.db
-        .prepare(`UPDATE control_leases SET expires_at = ? WHERE lease_id = ?`)
-        .run(expiresAt, existing.lease_id)
+        .prepare(`UPDATE control_leases SET expires_at = ?, yields = ? WHERE lease_id = ?`)
+        .run(expiresAt, input.yields ? 1 : 0, existing.lease_id)
       return {
         leaseId: existing.lease_id,
         resource: input.resource,
         holderClientId: input.holderClientId,
+        ...(delegate ? { delegate } : {}),
         generation: existing.generation,
         expiresAt: new Date(expiresAt).toISOString(),
       }
+    }
+    if (live && !existing.yields) {
+      throw Object.assign(new Error('control lease held by another device'), {
+        code: 'failed_precondition',
+      })
     }
 
     const leaseId = randomUUID()
@@ -82,15 +99,17 @@ export class ControlLeaseService {
     const expiresAt = now + ttl
     this.db
       .prepare(
-        `INSERT INTO control_leases (lease_id, resource_key, resource_json, holder_client_id, generation, expires_at, epoch)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO control_leases (lease_id, resource_key, resource_json, holder_client_id, generation, expires_at, epoch, delegate, yields)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(resource_key) DO UPDATE SET
            lease_id = excluded.lease_id,
            holder_client_id = excluded.holder_client_id,
            generation = excluded.generation,
            expires_at = excluded.expires_at,
            epoch = excluded.epoch,
-           resource_json = excluded.resource_json`,
+           resource_json = excluded.resource_json,
+           delegate = excluded.delegate,
+           yields = excluded.yields`,
       )
       .run(
         leaseId,
@@ -100,12 +119,15 @@ export class ControlLeaseService {
         generation,
         expiresAt,
         this.leaseEpoch,
+        delegate,
+        input.yields ? 1 : 0,
       )
 
     return {
       leaseId,
       resource: input.resource,
       holderClientId: input.holderClientId,
+      ...(delegate ? { delegate } : {}),
       generation,
       expiresAt: new Date(expiresAt).toISOString(),
     }

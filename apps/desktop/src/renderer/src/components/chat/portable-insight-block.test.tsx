@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { PortableMessage } from '@superone/chat-view/PortableMessage'
 import { applyContentDelta } from '@superone/shared/content-delta'
 import type { ChatMessage, ContentBlock } from '@superone/shared/agent-types'
-import { splitTextIntoBlocks } from '@/../../main/split-text-blocks'
+import { splitTextIntoBlocks } from '@superone/runtime/stream/delivery/split-text-blocks'
 
 /**
  * Insight callouts take a different route to the phone than to the desktop. Desktop

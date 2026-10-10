@@ -1,13 +1,5 @@
-vi.mock('../remote-highlighter', () => ({
-  initHighlighter: vi.fn(),
-  highlightCodeSync: vi.fn(() => null),
-  highlightCodeByLang: vi.fn(() => null),
-  parseAnsiTokens: vi.fn(() => []),
-}))
-vi.mock('../logger', () => ({ default: { info: vi.fn(), error: vi.fn(), warn: vi.fn() } }))
-vi.mock('../agent/event-trace', () => ({ trace: vi.fn() }))
-vi.mock('../agent/claude-session-runtime', () => ({ readOutputFile: vi.fn(() => ({ resultText: '', toolEntries: [] })) }))
-vi.mock('../split-text-blocks', () => ({
+import { vi } from 'vitest'
+vi.mock('./split-text-blocks', () => ({
   splitTextIntoBlocks: vi.fn((text: string) => ({ segments: [{ type: 'text', text }], remainder: '' })),
 }))
 
@@ -174,7 +166,7 @@ describe('progressive file-edit projection', () => {
   })
 
   it('keeps child App branches live while deferring ordinary child detail', () => {
-    const app = { appInstanceId: 'child-view', binding: { node: 'local', session: 's', server: 'fixture', configGeneration: 0, configFingerprint: 'cfg' }, resourceUri: 'ui://fixture/view' }
+    const app = { appInstanceId: 'child-view', status: 'result' as const, binding: { node: 'local', session: 's', server: 'fixture', configGeneration: 0, configFingerprint: 'cfg' }, resourceUri: 'ui://fixture/view' }
     const call: CodexThreadItem = { id: 'call', type: 'mcp_tool_call', server: 'fixture', tool: 'next', status: 'completed', arguments: {}, app }
     const item: CodexThreadItem = { id: 'spawn', type: 'collab_tool_call', tool: 'spawnAgent', status: 'completed', receiverThreadIds: ['child'], agentsStates: {}, prompt: 'large private prompt', childItems: { child: [{ id: 'bash', type: 'command_execution', command: 'secret command', aggregatedOutput: 'huge output', status: 'completed' }, call] } }
     const projected = projectCodexTool(item, '["m","item","spawn"]')

@@ -1,7 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ChatMessage } from '@superone/shared/agent-types'
 import { ChatRuntime } from '../../../mobile/src/runtime'
+import { ConnectionDelivery, deliveryPolicy } from '@superone/runtime/stream'
 import { buildRemoteSessionSnapshot } from './agent/remote-session-snapshot'
+
+/** A phone's delivery; `summarized` when it opened the session progressively. */
+function phone(summarized = false): ConnectionDelivery {
+  const delivery = new ConnectionDelivery(deliveryPolicy('relay', 'phone'))
+  if (summarized) delivery.views.open('session')
+  return delivery
+}
 import { rowToChatMessage } from './session/session-repo'
 
 vi.mock('./logger', () => ({ default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
@@ -39,7 +47,7 @@ describe('opening a running session from mobile', () => {
       releaseBuffer: () => ({ epoch: 1, batches: [] }),
       request: async (command: { type: string }) => {
         if (command.type === 'load_session_messages') return { messages: [staleEarlier, persisted], hasMore: false, provider: providerId }
-        if (command.type === 'get_session_state') return buildRemoteSessionSnapshot(host as never, '/project', 'session')
+        if (command.type === 'get_session_state') return buildRemoteSessionSnapshot(host as never, '/project', 'session', phone())
         return { ok: true }
       },
     }
@@ -70,7 +78,7 @@ it('restores all composer context from passive history without sending View HTML
     modelContext: { updateId: 'r1', content: [{ type: 'text', text: 'Selected part' }], source: { appInstanceId: 'view', server: 'CAD' } } }
   const history: ChatMessage[] = [{ id: 'old-view', role: 'assistant', status: 'complete', createdAt: '',
     content: [{ type: 'tool_result', toolUseId: 'call', summary: '', app }] }]
-  const restored = await buildRemoteSessionSnapshot(null, '/project', 'session', true, history)
+  const restored = await buildRemoteSessionSnapshot(null, '/project', 'session', phone(true), history)
   expect(restored.inProgressMessages).toEqual([])
   expect(restored.mcpAppContexts).toHaveLength(1)
   expect(restored.mcpAppContexts[0]).toMatchObject({ messageId: 'old-view', app: { modelContext: { updateId: 'r1' } } })
@@ -91,7 +99,7 @@ it('opens a session on the phone with the Ultracode the desktop session runs wit
     startBuffering() {},
     releaseBuffer: () => ({ epoch: 1, batches: [] }),
     request: async (command: { type: string }) => command.type === 'get_session_state'
-      ? buildRemoteSessionSnapshot(host as never, '/project', 'session')
+      ? buildRemoteSessionSnapshot(host as never, '/project', 'session', phone())
       : command.type === 'load_session_messages' ? { messages: [], hasMore: false, provider: 'claude' } : { ok: true },
   }
   const runtime = new ChatRuntime(client as never, () => {})

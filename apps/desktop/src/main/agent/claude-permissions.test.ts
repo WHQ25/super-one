@@ -74,6 +74,7 @@ describe('mobile attention from Claude prompts', () => {
         expect(targets).toBeUndefined()
         sent.push(event)
       },
+      sendDeviceEvents: (_deviceId, events) => { sent.push(...events) },
     })
     const emit = (event: AgentEvent) => {
       path.publish({ ...event, sessionId: session.id })

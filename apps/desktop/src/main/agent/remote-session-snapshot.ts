@@ -1,6 +1,6 @@
-import { projectProgressiveMessage } from '../remote/progressive-session'
+import type { ConnectionDelivery } from '@superone/runtime/stream'
 import type { Session } from '../session/types'
-import { remoteRestoreMessages, stripEventForRemote, stripMessagesForRemote } from '../remote-content'
+import { remoteRestoreMessages, stripEventForRemote } from '../remote-content'
 import { whenHighlighterReady } from '../remote-highlighter'
 import { loadRealtimeTimeline } from '../session/realtime-timeline-repo'
 import { mcpAppContextSources } from '@superone/shared/mcp-apps-state'
@@ -8,10 +8,11 @@ import type { ChatMessage } from '@superone/shared/agent-types'
 import { localSessionEnvironmentId } from '../environment/session-identity'
 import type { SessionSnapshot } from '@superone/relay-client'
 
-export async function buildRemoteSessionSnapshot(session: Session | undefined | null, projectPath: string, sessionId: string, progressive = false, history: readonly ChatMessage[] = []): Promise<SessionSnapshot & Required<Pick<SessionSnapshot, 'inProgressMessages' | 'pendingInteractions' | 'status'>>> {
+/** A session's restore snapshot as `delivery`'s connection receives it. */
+export async function buildRemoteSessionSnapshot(session: Session | undefined | null, projectPath: string, sessionId: string, delivery: ConnectionDelivery, history: readonly ChatMessage[] = []): Promise<SessionSnapshot & Required<Pick<SessionSnapshot, 'inProgressMessages' | 'pendingInteractions' | 'status'>>> {
   await whenHighlighterReady()
   const snapshot = session?.snapshot
-  const inProgressMessages = stripMessagesForRemote(remoteRestoreMessages(snapshot?.messages ?? []).map(message => progressive ? projectProgressiveMessage(message) : message), projectPath)
+  const inProgressMessages = delivery.messages(remoteRestoreMessages(snapshot?.messages ?? []), sessionId, projectPath)
   const queued = session?.getQueuedMessagesEvent()
   // Replayed by the phone on restore, so a queue built before it subscribed shows up.
   const pendingInteractions = [...(session?.getPendingInteractions() ?? []), ...(queued ? [queued] : [])]

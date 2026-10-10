@@ -3,7 +3,7 @@ import type { EnvironmentGateway, SessionRef } from '@superone/shared/environmen
 import { sessionMessageBlocksToChatMessages } from '@superone/shared/node-message-catalog'
 import { nodeHarnessToProviderId, nodePendingInteractionFields, nodeStatusToAgentStatus, type NodeSessionSnapshot } from '@superone/shared/node-session-messages'
 import { extendHistoryIndex } from '@superone/shared/session-history-index'
-import { projectProgressiveMessage } from './progressive-session'
+import { projectProgressiveMessage } from '@superone/runtime/stream'
 
 export type RoutedSessionSnapshot = NodeSessionSnapshot & { projectId: string; isHidden?: boolean }
 

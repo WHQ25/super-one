@@ -209,6 +209,14 @@ points code comments there, and deletes this plan and the proposal.
   (`renderer-interest.ts`) and each phone (`remote/phone-topics.ts`) are
   connections; list/draft/terminal recovery in `stream/topic-recovery.ts`.
   The wire baseline is unchanged.
+- Step 2 done: `ConnectionDelivery` (`@superone/runtime/stream/delivery`) holds
+  a connection's policy, projection views, detail subscriptions and profile
+  state; `EventProfile` splits tier stages (relay: truncate, throttle) from
+  phone-surface stages; desktop reads are `RemoteContentPorts`. Phones get one
+  delivery each (`remote/phone-deliveries.ts`) for open, history, live and
+  detail, and one batcher each; the renderer's `local` tier is
+  `createLocalDelivery`. Live relay frames dropped (e.g. 166 → 160 on
+  permission-flow) with the same decoded events.
 
 ## Open decisions
 

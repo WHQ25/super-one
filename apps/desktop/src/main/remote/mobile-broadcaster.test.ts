@@ -32,6 +32,9 @@ function makeFakeTransport(): MobileTransport & { sent: SentEntry[] } {
     async sendAgentEvent(event: AgentEvent, targets?: string[]) {
       sent.push({ event, targets })
     },
+    sendDeviceEvents(deviceId: string, events: AgentEvent[]) {
+      for (const event of events) sent.push({ event, targets: [deviceId] })
+    },
   }
 }
 
@@ -54,8 +57,7 @@ describe('MobileBroadcaster', () => {
     const broadcaster = new MobileBroadcaster(makeFakeManager(new Map([['s1', makeFakeSession({ id: 's1' })]])), transport, 'desktop-env')
     broadcaster.deliver(session('s1'), agent({ type: 'message_complete', sessionId: 's1' } as AgentEvent), ['dev-A', 'dev-B'])
     await Promise.resolve()
-    expect(transport.sent).toHaveLength(1)
-    expect(transport.sent[0].targets).toEqual(['dev-A', 'dev-B'])
+    expect(transport.sent.map((entry) => entry.targets)).toEqual([['dev-A'], ['dev-B']])
     expect(transport.sent[0].event.environmentId).toBe('desktop-env')
   })
 
@@ -85,8 +87,8 @@ describe('MobileBroadcaster', () => {
     // The origin is consumed: a replay of the same message goes out in full.
     transport.sent.length = 0
     await broadcaster.deliverSession(event, ['phone', 'tablet'])
-    expect(transport.sent).toHaveLength(1)
-    expect(new Set(transport.sent[0].targets)).toEqual(new Set(['phone', 'tablet']))
+    expect(transport.sent.map((entry) => entry.targets)).toEqual([['phone'], ['tablet']])
+    expect(transport.sent.every((entry) => (entry.event as { message: { attachments: Array<{ base64: string }> } }).message.attachments[0].base64 === 'AAAA')).toBe(true)
   })
 
   it('drops session events no phone follows, and events for unknown sessions', async () => {

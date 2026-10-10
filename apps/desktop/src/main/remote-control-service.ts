@@ -3,8 +3,8 @@ import type { ChannelEnvelope, PhoneHandshake, PhoneKey, PhoneLinkHost } from '.
 import type { SecureChannel } from '@superone/relay-client/secure-channel'
 import type { LinkHandshakeInfo } from '@superone/relay-client/phone-link'
 import { RelayDraftSaveThrottle } from './remote/relay-draft-save-throttle'
-import { createEventBatcher } from '@superone/runtime/stream'
-import { MobileEventProfile } from './stream/mobile-profile'
+import { batchingFor, createEventBatcher, type EventBatcher } from '@superone/runtime/stream'
+import { phoneDelivery } from './remote/phone-deliveries'
 import { webcrypto } from 'node:crypto'
 import { hostname } from 'node:os'
 import WebSocket from 'ws'
@@ -46,7 +46,6 @@ const PAIRING_TIMEOUT_MS = 3 * 60 * 1000
 const MAX_RECONNECT_DELAY_MS = 30_000
 const WS_CHUNK_SIZE = 800_000
 export { computeTodoItems, countLines, countEditDelta, stripProjectPath, computeToolMeta, computeToolLineDelta, truncateBashOutput, stripEventForRemote, stripMessagesForRemote, parseWorkflowMeta, parseWorkflowTranscriptDir, resolveTodoToolTodos } from './remote-content'
-export type { TextSegment, SplitResult } from './split-text-blocks'
 
 
 interface PairingSession {
@@ -133,12 +132,8 @@ export class RemoteControlService {
   private sendQueue: Promise<void> = Promise.resolve()
   private terminalQueue: Promise<void> = Promise.resolve()
   private sendGeneration = 0
-  /** Batches stay within one recipient set and a relay frame's size budget. */
-  private readonly eventBatcher = createEventBatcher<string[]>(
-    (events, targets) => this.enqueueEvents(events, targets),
-    { maxBytes: 64 * 1024, maxEvents: 128 },
-  )
-  private readonly mobileProfile = new MobileEventProfile()
+  /** One batcher per phone: each phone's frames are sealed for its own channel. */
+  private readonly deviceBatchers = new Map<string, EventBatcher<undefined>>()
   private readonly draftSaves = new RelayDraftSaveThrottle(
     (event, targets) => this.queueSend([event], targets),
     (targets) => this.draftRecipients(targets),
@@ -290,6 +285,8 @@ export class RemoteControlService {
     current.transports.delete(via)
     if (current.transports.size === 0) {
       this.connectedDevices.delete(deviceId)
+      this.deviceBatchers.get(deviceId)?.flush()
+      this.deviceBatchers.delete(deviceId)
       this.callbacks.onClientDisconnected?.({ deviceId })
       return
     }
@@ -451,7 +448,8 @@ export class RemoteControlService {
   async stop(): Promise<void> {
     await this.cancelPairing()
     this.intentionallyClosed = true
-    this.eventBatcher.clear()
+    for (const batcher of this.deviceBatchers.values()) batcher.clear()
+    this.deviceBatchers.clear()
     this.draftSaves.dispose()
     this.sendGeneration++
     this.sendQueue = Promise.resolve()
@@ -757,7 +755,8 @@ export class RemoteControlService {
   }
 
   async sendEventToMobile(event: Record<string, unknown>, targetDeviceIds?: string[]): Promise<void> {
-    this.eventBatcher.flush()
+    // Batched events to these phones go first, preserving order.
+    for (const deviceId of this.recipients(targetDeviceIds)) this.deviceBatchers.get(deviceId)?.flush()
     return this.enqueuePayload(event, targetDeviceIds)
   }
 
@@ -803,6 +802,7 @@ export class RemoteControlService {
     this.lanServer?.sendFramed('event', framed, targetDeviceIds)
   }
 
+  /** One event to these phones (every phone when omitted), shaped by each phone's delivery policy. */
   async sendAgentEvent(event: AgentEvent, targetDeviceIds?: string[]): Promise<void> {
     if (!this.keys) return
     if (!this.hasAnyMobileTransport()) return
@@ -810,8 +810,33 @@ export class RemoteControlService {
       this.draftSaves.route(event, targetDeviceIds)
       return
     }
-    const events = this.mobileProfile.apply(event)
-    if (events.length) this.queueSend(events, targetDeviceIds)
+    for (const deviceId of this.recipients(targetDeviceIds)) {
+      this.queueDevice(deviceId, phoneDelivery(deviceId).shape(event))
+    }
+  }
+
+  /** Events already shaped for one phone (`ConnectionDelivery.live`). */
+  sendDeviceEvents(deviceId: string, events: AgentEvent[]): void {
+    if (!this.keys || !this.hasAnyMobileTransport()) return
+    this.queueDevice(deviceId, events)
+  }
+
+  /** The phones a send reaches: the named ones, or every phone with a channel. */
+  private recipients(targetDeviceIds?: string[]): string[] {
+    return targetDeviceIds?.length ? [...new Set(targetDeviceIds)] : [...this.connectedDevices.keys()]
+  }
+
+  private queueDevice(deviceId: string, events: AgentEvent[]): void {
+    if (events.length === 0) return
+    let batcher = this.deviceBatchers.get(deviceId)
+    if (!batcher) {
+      batcher = createEventBatcher<undefined>(
+        (batch) => { if (batch.length) void this.enqueuePayload(batch, [deviceId]) },
+        batchingFor(phoneDelivery(deviceId).policy),
+      )
+      this.deviceBatchers.set(deviceId, batcher)
+    }
+    for (const event of events) batcher.push(event)
   }
 
   private async sendResponse(
@@ -847,12 +872,7 @@ export class RemoteControlService {
   }
 
   private queueSend(events: AgentEvent[], targetDeviceIds?: string[]): void {
-    const targets = targetDeviceIds?.length ? [...new Set(targetDeviceIds)].sort() : undefined
-    for (const event of events) this.eventBatcher.push(event, targets)
-  }
-
-  private enqueueEvents(events: AgentEvent[], targetDeviceIds?: string[]): void {
-    if (events.length) void this.enqueuePayload(events, targetDeviceIds)
+    for (const deviceId of this.recipients(targetDeviceIds)) this.queueDevice(deviceId, events)
   }
 
   private enqueuePayload(payload: unknown, targetDeviceIds?: string[]): Promise<void> {

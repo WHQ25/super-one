@@ -1,5 +1,5 @@
 import { mobileModClientId } from '@superone/shared/mod-ui'
-import { setProgressiveSession } from './progressive-session'
+import { dropPhoneDelivery } from './phone-deliveries'
 import log from '../logger'
 import type { SessionLeaveReason, SessionManager } from '../session/types'
 
@@ -20,7 +20,7 @@ export class DeviceRegistry {
   handleDeviceDisconnected(deviceId: string): void {
     this.draftControl?.releaseDevice(deviceId)
     let releasedCount = 0
-    setProgressiveSession(deviceId)
+    dropPhoneDelivery(deviceId)
     let unsubscribedCount = 0
     this.sessionManager.forEachSession((session) => {
       if (session.owner.kind === 'remote' && session.owner.deviceId === deviceId) {

@@ -11,9 +11,6 @@ vi.mock('./remote-highlighter', () => ({
 vi.mock('./logger', () => ({ default: { info: vi.fn(), error: vi.fn(), warn: vi.fn() } }))
 vi.mock('./agent/event-trace', () => ({ trace: vi.fn() }))
 vi.mock('./agent/claude-session-runtime', () => ({ readOutputFile: vi.fn(() => ({ resultText: '', toolEntries: [] })) }))
-vi.mock('./split-text-blocks', () => ({
-  splitTextIntoBlocks: vi.fn((text: string) => ({ segments: [{ type: 'text', text }], remainder: '' })),
-}))
 
 import { RemoteControlService } from './remote-control-service'
 import { bytesToHex } from './remote-control-crypto'

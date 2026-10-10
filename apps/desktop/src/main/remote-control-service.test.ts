@@ -8,9 +8,6 @@ vi.mock('./remote-highlighter', () => ({
 vi.mock('./logger', () => ({ default: { info: vi.fn(), error: vi.fn(), warn: vi.fn() } }))
 vi.mock('./agent/event-trace', () => ({ trace: vi.fn() }))
 vi.mock('./agent/claude-session-runtime', () => ({ readOutputFile: vi.fn(() => ({ resultText: '', toolEntries: [] })) }))
-vi.mock('./split-text-blocks', () => ({
-  splitTextIntoBlocks: vi.fn((text: string) => ({ segments: [{ type: 'text', text }], remainder: '' })),
-}))
 
 import type { ContentBlock, ChatMessage } from '@superone/shared/agent-types'
 import {
@@ -518,11 +515,13 @@ describe('RemoteControlService content_delta ordering', () => {
     const internals = service as unknown as {
       keys: unknown
       hasAnyMobileTransport: () => boolean
-      queueSend: (events: AgentEvent[], targets?: string[]) => void
+      queueDevice: (deviceId: string, events: AgentEvent[]) => void
+      connectedDevices: Map<string, unknown>
     }
     internals.keys = { aesKey: {} }
     internals.hasAnyMobileTransport = () => true
-    internals.queueSend = (events) => { captured.push(...events) }
+    internals.queueDevice = (_deviceId, events) => { captured.push(...events) }
+    internals.connectedDevices.set('phone', { name: 'iPhone', transports: new Set(['relay']) })
     return { service, captured }
   }
 
@@ -1007,11 +1006,13 @@ describe('slash command output over the wire', () => {
     const internals = service as unknown as {
       keys: unknown
       hasAnyMobileTransport: () => boolean
-      queueSend: (events: AgentEvent[], targets?: string[]) => void
+      queueDevice: (deviceId: string, events: AgentEvent[]) => void
+      connectedDevices: Map<string, unknown>
     }
     internals.keys = { aesKey: {} }
     internals.hasAnyMobileTransport = () => true
-    internals.queueSend = (events) => { captured.push(...events) }
+    internals.queueDevice = (_deviceId, events) => { captured.push(...events) }
+    internals.connectedDevices.set('phone', { name: 'iPhone', transports: new Set(['relay']) })
     return { service, captured }
   }
 

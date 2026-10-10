@@ -84,7 +84,6 @@ import { resolveProbeCwd } from './agent/probe-cwd'
 import { ensureShellPath, refreshShellPath } from './shell-path'
 import { buildSafeEnv } from './spawn-env'
 import { AgentService } from './agent/agent-service'
-import { createRendererAgentEventTransport } from './agent/renderer-agent-event-transport'
 import { SessionManagerImpl } from './session/session-manager'
 import { TerminalManager } from './terminal/terminal-manager'
 import { addTerminalCommandRule, isTerminalCommandPreapproved, listAllTerminalCommandRules, removeTerminalCommandRule } from './db-terminal-command-rules'
@@ -102,7 +101,7 @@ import { PhoneTopics } from './remote/phone-topics'
 import { createDesktopTopicHub, publishHubEvent, topicOfTerminalEvent } from './stream/desktop-topics'
 import { RendererInterest } from './stream/renderer-interest'
 import { LocalTopicRecovery } from './stream/topic-recovery'
-import { deliveryPolicy } from '@superone/runtime/stream'
+import { createLocalDelivery, deliveryPolicy } from '@superone/runtime/stream'
 import { localSessionEnvironmentId } from './environment/session-identity'
 import { spawnParentOf } from './session/collaboration-mailbox'
 import { CHILD_STALL_CHECK_INTERVAL_MS, CollaborationChildMonitor, childActivityView } from './session/collaboration-lifecycle'
@@ -860,7 +859,8 @@ void import('./device-agent').then(({ setDeviceAgentViewfinderClaimSink }) => {
   })
 })
 
-const rendererAgentEventTransport = createRendererAgentEventTransport((events) => {
+/** The renderer connection's `local` tier: batching and Codex item patches. */
+const rendererAgentEventTransport = createLocalDelivery((events) => {
   safeSend(AgentIpcChannels.EVENT, events)
 })
 

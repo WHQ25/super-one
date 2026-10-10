@@ -1,3 +1,4 @@
+import { describe, expect, it } from 'vitest'
 import { splitTextIntoBlocks, type TextSegment } from './split-text-blocks'
 
 describe('splitTextIntoBlocks', () => {

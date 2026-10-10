@@ -7,6 +7,7 @@ import { issueChannelCredential, startClientHandshake, acceptClientHello, type S
 import { openLinkFrame } from '@superone/relay-client/phone-link'
 import { decodeHostPlaintext } from '@superone/relay-client/host-payload'
 import scenarios from './fixtures/emitted.generated.json'
+import baseline from './fixtures/wire-baseline.json'
 
 const history = vi.hoisted(() => ({ messages: [] as ChatMessage[] }))
 
@@ -35,16 +36,17 @@ import { RemoteControlService } from '../remote-control-service'
 import { MobileBroadcaster } from '../remote/mobile-broadcaster'
 import { PhoneTopics } from '../remote/phone-topics'
 import { createDesktopTopicHub, publishHubEvent } from './desktop-topics'
-import { setProgressiveSession, projectProgressiveMessage, subscribeDetail, unsetProgressiveSession } from '../remote/progressive-session'
+import { projectProgressiveMessage } from '@superone/runtime/stream'
+import { dropPhoneDelivery, phoneDelivery } from '../remote/phone-deliveries'
 import { buildProgressiveBootstrap } from '../agent/progressive-bootstrap'
-import { stripMessagesForRemote } from '../remote-content'
 import type { Session, SessionLifecycleEvent, SessionManager } from '../session/types'
 
 /**
- * What a relayed phone pays today for recorded session output, measured on the
+ * What a relayed phone pays for recorded session output, measured on the
  * relay socket after the real profile, projection, batching, DEFLATE, sealing
- * and chunking. Later protocol steps compare against `wire-baseline.json`; a
- * change here is a wire change, not a snapshot to update.
+ * and chunking. `wire-baseline.json` is the phone link before the unified
+ * protocol (step 0) and never changes: the phone must apply the same events
+ * at no more frames or bytes. `wire-current.json` records today's numbers.
  */
 
 const ROOT = 'ab'.repeat(32)
@@ -53,6 +55,9 @@ const PROJECT = '/Users/me/project'
 const EVENT_SPACING_MS = 10
 
 type Wire = { frames: number; bytes: number }
+type Measured = Wire & { payload?: { events: number; sha256: string }; refs?: number; messages?: number }
+/** One recording's costs; `combined` holds the paging scenario. */
+type Baseline = Record<string, Partial<Record<'live' | 'open' | 'history' | 'detail', Measured>>>
 type Recording = { recording: string; events: AgentEvent[] }
 
 function openChannels(): { host: SecureChannel; phone: SecureChannel } {
@@ -170,7 +175,7 @@ async function measureRecording({ recording, events }: Recording) {
   session.emit({ type: 'subscriber_added', sessionId, deviceId: PHONE })
 
   // Live turn: a progressive phone watching the session while it streams.
-  setProgressiveSession(PHONE, sessionId)
+  phoneDelivery(PHONE).views.open(sessionId)
   for (const raw of events.filter((event) => typeof event.type === 'string')) {
     const event = { ...raw, sessionId, projectPath: PROJECT } as AgentEvent
     reduced = { ...reduced, ...applyEventToSession(reduced, event, ports) }
@@ -186,7 +191,7 @@ async function measureRecording({ recording, events }: Recording) {
   // Session open: one `subscribe_session { progressive: true }` response.
   history.messages = reduced.messages
   let mark = relay.sent.length
-  await relay.respond('open', await buildProgressiveBootstrap(session, PROJECT, sessionId))
+  await relay.respond('open', await buildProgressiveBootstrap(session, PROJECT, sessionId, phoneDelivery(PHONE)))
   const open = relay.measure(mark)
 
   // Detail expansion: every deferred row opened once.
@@ -195,11 +200,11 @@ async function measureRecording({ recording, events }: Recording) {
   for (const [index, { messageId, ref }] of refs.entries()) {
     const message = reduced.messages.find((candidate) => candidate.id === messageId)!
     let response: unknown
-    try { response = subscribeDetail(PHONE, sessionId, `d${index}`, ref, message) } catch (error) { response = { error: (error as Error).message } }
+    try { response = phoneDelivery(PHONE).views.subscribe(sessionId, `d${index}`, ref, message) } catch (error) { response = { error: (error as Error).message } }
     await relay.respond(`detail-${index}`, response)
   }
   const detail = { ...relay.measure(mark), refs: refs.length }
-  unsetProgressiveSession(PHONE)
+  dropPhoneDelivery(PHONE)
 
   relay.drain()
   return { recording, live: { ...live, payload: payloadDigest(relay.decoded.slice(0, live.frames)) }, open, detail, messages: reduced.messages, decodedFrames: relay.decoded.length }
@@ -227,14 +232,14 @@ async function measureHistory(messages: ChatMessage[]) {
   const relay = await relayService()
   const sessionId = 'recorded-combined'
   history.messages = messages
-  setProgressiveSession(PHONE, sessionId)
-  await relay.respond('open', await buildProgressiveBootstrap(fakeSession(sessionId, () => []), PROJECT, sessionId))
+  phoneDelivery(PHONE).views.open(sessionId)
+  await relay.respond('open', await buildProgressiveBootstrap(fakeSession(sessionId, () => []), PROJECT, sessionId, phoneDelivery(PHONE)))
   const open = relay.measure(0)
   const before = messages.length - 8
   const page = messages.slice(Math.max(0, before - 24), before)
-  await relay.respond('history', { messages: stripMessagesForRemote(page.map(projectProgressiveMessage), PROJECT), hasMore: before > 24, cursor: before > 24 ? before - 24 : null, provider: 'claude' })
+  await relay.respond('history', { messages: phoneDelivery(PHONE).messages(page, sessionId, PROJECT), hasMore: before > 24, cursor: before > 24 ? before - 24 : null, provider: 'claude' })
   const historyPage = { ...relay.measure(1), messages: page.length }
-  unsetProgressiveSession(PHONE)
+  dropPhoneDelivery(PHONE)
   relay.drain()
   expect(relay.decoded).toHaveLength(2)
   return { open, history: historyPage }
@@ -249,10 +254,21 @@ describe('relay wire baseline', () => {
       expect(result.decodedFrames).toBeGreaterThan(0)
     }
     const combined = await measureHistory(results.flatMap((result) => result.messages))
-    const baseline = {
+    const measured = {
       ...Object.fromEntries(results.map(({ recording, decodedFrames: _d, messages: _m, ...wire }) => [recording, wire])),
       combined,
+    } as unknown as Baseline
+    // The phone applies the same events; framing may only get cheaper.
+    for (const [name, step0] of Object.entries(baseline as unknown as Baseline)) {
+      const now = measured[name]!
+      for (const kind of ['live', 'open', 'history', 'detail'] as const) {
+        if (!step0[kind]) continue
+        expect(now[kind]!.frames, `${name} ${kind} frames`).toBeLessThanOrEqual(step0[kind]!.frames)
+        expect(now[kind]!.bytes, `${name} ${kind} bytes`).toBeLessThanOrEqual(step0[kind]!.bytes)
+      }
+      if (step0.live) expect(now.live!.payload, `${name} live payload`).toEqual(step0.live.payload)
+      if (step0.detail) expect(now.detail!.refs).toBe(step0.detail.refs)
     }
-    await expect(JSON.stringify(baseline, null, 2) + '\n').toMatchFileSnapshot('./fixtures/wire-baseline.json')
+    await expect(JSON.stringify(measured, null, 2) + '\n').toMatchFileSnapshot('./fixtures/wire-current.json')
   })
 })

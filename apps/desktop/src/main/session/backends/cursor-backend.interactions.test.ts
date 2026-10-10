@@ -124,7 +124,7 @@ function installRuntimeFactory(configure?: (runtime: FakeRuntime, index: number)
 
 function makeTransport(): MobileTransport & { sent: AgentEvent[] } {
   const sent: AgentEvent[] = []
-  return { sent, async sendAgentEvent(event) { sent.push(event) } }
+  return { sent, async sendAgentEvent(event) { sent.push(event) }, sendDeviceEvents(_deviceId, events) { sent.push(...events) } }
 }
 
 function makeSession(permissionMode: 'agent' | 'plan' = 'agent') {

@@ -5,7 +5,7 @@ import { nodeHarnessToProviderId } from '@superone/shared/node-session-messages'
 import { remoteProjectKey } from '@superone/shared/remote-resource-key'
 import { applyEventToSession, createDefaultChatCoreSession, createStreamingToolInputStore, defaultChatCorePorts } from '@superone/chat-core'
 import { getEnvironmentHost } from '../environment/environment-host'
-import { detailMessageId, detailUpdates, projectProgressiveEvent, projectProgressiveMessage, setProgressiveSession, subscribeDetail, unsubscribeDetail } from './progressive-session'
+import { DetailViews, detailMessageId, projectProgressiveEvent, projectProgressiveMessage } from '@superone/runtime/stream'
 import { routedDetailMessage, routedHistory, routedHistoryIndex, routedSnapshot, type RoutedSessionSnapshot } from './environment-session-view'
 import { routedResources } from './environment-session-resources'
 import { catchUpEvents } from './routed-catch-up'
@@ -13,6 +13,13 @@ import { catchUpEvents } from './routed-catch-up'
 type Subscription = { deviceId: string; abort: AbortController; gateway: EnvironmentGateway; ref: SessionRef; projectKey: string; control: MutatingControlContext; timer: ReturnType<typeof setInterval> }
 const subscriptions = new Map<string, Subscription>()
 const key = (deviceId: string, ref: SessionRef) => JSON.stringify([deviceId, ref.environmentId, ref.sessionId])
+/** Each routed subscription's summarized session and expanded rows. */
+const routedViews = new Map<string, DetailViews>()
+function viewsOf(subscriptionKey: string): DetailViews {
+  let views = routedViews.get(subscriptionKey)
+  if (!views) routedViews.set(subscriptionKey, views = new DetailViews())
+  return views
+}
 
 /** How a routed phone's hold on a node session shows on this desktop, as a local session's does. */
 export interface RoutedPresence {
@@ -32,7 +39,7 @@ async function release(subscription: Subscription): Promise<void> {
   subscription.abort.abort()
   clearInterval(subscription.timer)
   if (subscriptions.get(subscriptionKey) === subscription) subscriptions.delete(subscriptionKey)
-  setProgressiveSession(subscriptionKey)
+  routedViews.delete(subscriptionKey)
   await subscription.gateway.sessions.releaseControl(subscription.control).catch(() => {})
 }
 export async function releaseEnvironmentDevice(deviceId: string): Promise<void> {
@@ -100,7 +107,7 @@ export async function executeEnvironmentCommand(environmentId: string, command: 
     subscription.timer.unref()
     subscriptions.set(subscriptionKey, subscription)
     if (!current) presence?.publish({ type: 'remote_session_start', remoteProjectPath: projectKey, remoteSessionId: sessionId, harnessId: snapshot.harnessId as HarnessId, isSubscribe: true })
-    setProgressiveSession(subscriptionKey, sessionId)
+    viewsOf(subscriptionKey).open(sessionId)
     let state = { ...createDefaultChatCoreSession(), ...loaded.state, messages: loaded.messages }
     const mapper = createNodeSessionEventMapper({ projectPath: project.path, sessionId, providerId })
     const ports = { ...defaultChatCorePorts, streaming: createStreamingToolInputStore() }
@@ -108,7 +115,7 @@ export async function executeEnvironmentCommand(environmentId: string, command: 
       state = { ...state, ...applyEventToSession(state, event, ports) }
       const projected = projectProgressiveEvent(event, state.messages)
       if (projected) await send({ ...projected, environmentId })
-      for (const update of detailUpdates(subscriptionKey, sessionId, state.messages)) await send({ ...update, environmentId })
+      for (const update of viewsOf(subscriptionKey).updates(sessionId, state.messages)) await send({ ...update, environmentId })
     }
     // The node no longer holds events this phone missed: bring its messages to
     // a fresh snapshot, and skip the events that snapshot already reflects.
@@ -151,9 +158,9 @@ export async function executeEnvironmentCommand(environmentId: string, command: 
   if (command.type === 'get_session_history_index') return routedHistoryIndex(snapshot)
   if (command.type === 'subscribe_detail') {
     const message = await routedDetailMessage(gateway, ref, providerId, detailMessageId(command.detailRef))
-    return subscribeDetail(subscriptionKey, sessionId, command.subscriptionId, command.detailRef, message)
+    return viewsOf(subscriptionKey).subscribe(sessionId, command.subscriptionId, command.detailRef, message)
   }
-  if (command.type === 'unsubscribe_detail') { unsubscribeDetail(subscriptionKey, sessionId, command.subscriptionId); return { ok: true } }
+  if (command.type === 'unsubscribe_detail') { routedViews.get(subscriptionKey)?.unsubscribe(sessionId, command.subscriptionId); return { ok: true } }
   if (command.type === 'get_session_state') return routedSnapshot(snapshot, environmentId)
   if (!current) throw new Error('Open this session before operating it')
   // Reject a stale lease after takeover instead of acquiring another one.

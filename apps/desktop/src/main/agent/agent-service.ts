@@ -4,7 +4,7 @@ import { withTurnReceipt } from '../remote/turn-receipt'
 import { codexAccountStore } from '../codex/codex-account-store'
 import { loadSessionHistoryIndex, loadSessionMessageWindow } from '../session/history-navigation'
 import { buildProgressiveBootstrap } from './progressive-bootstrap'
-import { isProgressiveSession, projectProgressiveMessage, setProgressiveSession, unsetProgressiveSession } from '../remote/progressive-session'
+import { phoneDelivery } from '../remote/phone-deliveries'
 import { rememberAttachmentOrigin } from '../remote/attachment-echo'
 import { appendMobileLog } from '../remote/mobile-log'
 import { findAttachment } from '../remote/attachment-thumbnail'
@@ -1222,7 +1222,9 @@ export class AgentService {
           }
           throw err
         }
-        setProgressiveSession(deviceId, command.progressive ? command.sessionId : undefined, command.preserveSubscriptions)
+        const views = phoneDelivery(deviceId).views
+        if (command.progressive) views.open(command.sessionId, command.preserveSubscriptions)
+        else if (!command.preserveSubscriptions) views.close()
         if (!command.preserveSubscriptions) this.releaseDeviceFromOtherSessions(deviceId, command.sessionId)
         for (const event of subSession.getReplayEvents()) {
           try {
@@ -1233,7 +1235,7 @@ export class AgentService {
         }
         if (reqId) {
           try {
-            await respond?.(reqId, command.progressive ? await buildProgressiveBootstrap(subSession, command.projectPath, command.sessionId) : { ok: true })
+            await respond?.(reqId, command.progressive ? await buildProgressiveBootstrap(subSession, command.projectPath, command.sessionId, phoneDelivery(deviceId)) : { ok: true })
           } catch (error) {
             await respond?.(reqId, { error: error instanceof Error ? error.message : String(error) })
           }
@@ -1250,7 +1252,7 @@ export class AgentService {
         break
       }
       case 'unsubscribe_session': {
-        unsetProgressiveSession(deviceId, command.sessionId)
+        phoneDelivery(deviceId).views.close(command.sessionId)
         const targetSessionId = command.sessionId
         if (targetSessionId) {
           const s = this.sessionManager?.getSession(targetSessionId)
@@ -1261,7 +1263,7 @@ export class AgentService {
         break
       }
       case 'leave_session': {
-        unsetProgressiveSession(deviceId, command.sessionId)
+        phoneDelivery(deviceId).views.close(command.sessionId)
         const session = this.sessionManager?.getSession(command.sessionId)
         if (!session) break
         if (session.owner.kind === 'remote' && session.owner.deviceId === deviceId) {
@@ -1389,7 +1391,7 @@ export class AgentService {
             ? loadSessionMessageWindow(command.sessionId, command.anchorId, command.direction ?? 'around', command.limit)
             : loadSessionMessagesPaginated(command.sessionId, command.limit ?? 10, command.cursor)
           await whenHighlighterReady()
-          const stripped = stripMessagesForRemote(isProgressiveSession(deviceId, command.sessionId) ? result.messages.map(projectProgressiveMessage) : result.messages, command.projectPath)
+          const stripped = phoneDelivery(deviceId).messages(result.messages, command.sessionId, command.projectPath)
           const sessionProvider = readSessionHarnessId(command.sessionId) ?? 'claude'
           trace('remote.cmd', 'load_session_messages_result', { projectPath: command.projectPath, sessionId: command.sessionId, messageCount: stripped.length, hasMore: result.hasMore, cursor: result.cursor, provider: sessionProvider })
           await respond?.(command.requestId, { messages: stripped, hasMore: result.hasMore, cursor: result.cursor, provider: sessionProvider })
@@ -1568,7 +1570,7 @@ export class AgentService {
         }
         try {
           const session = this.findSessionBySid(command.projectPath, command.sessionId)
-          const state = await buildRemoteSessionSnapshot(session, command.projectPath, command.sessionId, isProgressiveSession(deviceId, command.sessionId), session ? [] : loadSessionState(command.sessionId)?.messages ?? [])
+          const state = await buildRemoteSessionSnapshot(session, command.projectPath, command.sessionId, phoneDelivery(deviceId), session ? [] : loadSessionState(command.sessionId)?.messages ?? [])
           trace('remote.cmd', 'get_session_state', {
             projectPath: command.projectPath,
             sessionId: command.sessionId,

@@ -1,28 +1,9 @@
-import { compactMediaToolResult } from '../remote-content'
+import { compactMediaToolResult } from './remote-content'
 import { codexToolDetail, nestedCodexItem, deferTool, isFileMutationChild, projectCodexTool, projectTool, taskFileChanges, toolDetail } from './progressive-tools'
 import type { AgentEvent, BashEditDiff, ChatMessage, ContentBlock } from '@superone/shared/agent-types'
 import { bashEditFileChanges, summarizeBashEditDiff } from '@superone/shared/bash-edit-diff'
 import { isSubagentToolName } from '@superone/shared/tool-ui'
 
-/** View preferences are device-scoped; persisted transcripts remain complete. */
-const views = new Map<string, Map<string, { details: Map<string, DetailSubscription> }>>()
-type DetailSubscription = { ref: string; text: string; revision: number }
-
-export function setProgressiveSession(deviceId: string, sessionId?: string, preserve = false): void {
-  if (!preserve) views.delete(deviceId)
-  if (sessionId) {
-    const sessions = views.get(deviceId) ?? new Map()
-    sessions.set(sessionId, { details: new Map() })
-    views.set(deviceId, sessions)
-  }
-}
-export function unsetProgressiveSession(deviceId: string, sessionId?: string): void {
-  if (sessionId) views.get(deviceId)?.delete(sessionId)
-  else views.delete(deviceId)
-}
-export function isProgressiveSession(deviceId: string, sessionId: string): boolean {
-  return views.get(deviceId)?.has(sessionId) ?? false
-}
 const reference = (messageId: string, kind: string, key: string | number) => JSON.stringify([messageId, kind, key])
 
 /**
@@ -102,41 +83,75 @@ function detailText(message: ChatMessage, ref: string): string {
   }
   throw new Error('Detail not found')
 }
-export function subscribeDetail(deviceId: string, sessionId: string, subscriptionId: string, ref: string, message: ChatMessage) {
-  const view = views.get(deviceId)?.get(sessionId)
-  if (!view) throw new Error('Session subscription expired')
-  if (view.details.size >= 64 && !view.details.has(subscriptionId)) throw new Error('Too many expanded details')
-  const text = detailText(message, ref)
-  view.details.set(subscriptionId, { ref, text, revision: 0 })
-  return { subscriptionId, revision: 0, offset: 0, text }
-}
-export function unsubscribeDetail(deviceId: string, sessionId: string, subscriptionId: string): void {
-  const view = views.get(deviceId)?.get(sessionId)
-  if (view) view.details.delete(subscriptionId)
-}
-export function detailUpdates(deviceId: string, sessionId: string, messages: readonly ChatMessage[]): AgentEvent[] {
-  const view = views.get(deviceId)?.get(sessionId)
-  if (!view?.details.size) return []
-  const updates: AgentEvent[] = []
-  for (const [subscriptionId, detail] of view.details) {
-    const message = messages.find(message => message.id === detailMessageId(detail.ref))
-    if (!message) continue
-    let text: string
-    try { text = detailText(message, detail.ref) } catch { continue }
-    if (text === detail.text) continue
-    // Prefix replacement also handles tool JSON: an appended output changes the
-    // closing quote/braces, so testing startsWith(previous) would resend it all.
-    let offset = 0
-    const shared = Math.min(text.length, detail.text.length)
-    while (offset < shared && text.charCodeAt(offset) === detail.text.charCodeAt(offset)) offset++
-    detail.text = text
-    do {
-      const chunk = text.slice(offset, offset + 64_000)
-      updates.push({ type: 'remote_detail', sessionId, subscriptionId, revision: ++detail.revision, offset, text: chunk })
-      offset += chunk.length
-    } while (offset < text.length)
+type DetailSubscription = { ref: string; text: string; revision: number }
+
+/** Live detail packets are split so one never outgrows a relay frame. */
+const DETAIL_PACKET_CHARS = 64_000
+/** Expanded rows one connection may hold in one session. */
+const MAX_DETAILS = 64
+
+/**
+ * One connection's summarized sessions and the rows it expanded in them. View
+ * state belongs to the connection: two frontends on one session each see
+ * their own projection and details; persisted transcripts stay complete.
+ */
+export class DetailViews {
+  private readonly sessions = new Map<string, { details: Map<string, DetailSubscription> }>()
+
+  /** Summarize `sessionId` for this connection; without `preserve` it is the only one. */
+  open(sessionId: string, preserve = false): void {
+    if (!preserve) this.sessions.clear()
+    this.sessions.set(sessionId, { details: new Map() })
   }
-  return updates
+
+  /** Stop summarizing one session, or all. */
+  close(sessionId?: string): void {
+    if (sessionId) this.sessions.delete(sessionId)
+    else this.sessions.clear()
+  }
+
+  has(sessionId: string): boolean {
+    return this.sessions.has(sessionId)
+  }
+
+  subscribe(sessionId: string, subscriptionId: string, ref: string, message: ChatMessage) {
+    const view = this.sessions.get(sessionId)
+    if (!view) throw new Error('Session subscription expired')
+    if (view.details.size >= MAX_DETAILS && !view.details.has(subscriptionId)) throw new Error('Too many expanded details')
+    const text = detailText(message, ref)
+    view.details.set(subscriptionId, { ref, text, revision: 0 })
+    return { subscriptionId, revision: 0, offset: 0, text }
+  }
+
+  unsubscribe(sessionId: string, subscriptionId: string): void {
+    this.sessions.get(sessionId)?.details.delete(subscriptionId)
+  }
+
+  /** `remote_detail` packets for the expanded rows `messages` changed. */
+  updates(sessionId: string, messages: readonly ChatMessage[]): AgentEvent[] {
+    const view = this.sessions.get(sessionId)
+    if (!view?.details.size) return []
+    const updates: AgentEvent[] = []
+    for (const [subscriptionId, detail] of view.details) {
+      const message = messages.find(message => message.id === detailMessageId(detail.ref))
+      if (!message) continue
+      let text: string
+      try { text = detailText(message, detail.ref) } catch { continue }
+      if (text === detail.text) continue
+      // Prefix replacement also handles tool JSON: an appended output changes the
+      // closing quote/braces, so testing startsWith(previous) would resend it all.
+      let offset = 0
+      const shared = Math.min(text.length, detail.text.length)
+      while (offset < shared && text.charCodeAt(offset) === detail.text.charCodeAt(offset)) offset++
+      detail.text = text
+      do {
+        const chunk = text.slice(offset, offset + DETAIL_PACKET_CHARS)
+        updates.push({ type: 'remote_detail', sessionId, subscriptionId, revision: ++detail.revision, offset, text: chunk })
+        offset += chunk.length
+      } while (offset < text.length)
+    }
+    return updates
+  }
 }
 
 /** The top-level subagent card a nested block belongs to, if it is under one. */

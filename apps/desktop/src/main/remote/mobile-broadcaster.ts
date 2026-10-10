@@ -1,4 +1,4 @@
-import { detailUpdates, isProgressiveSession, projectProgressiveEvent } from './progressive-session'
+import { phoneDelivery } from './phone-deliveries'
 import { takeAttachmentOrigin, withoutAttachmentBytes } from './attachment-echo'
 import { SESSION_ACTIVITY_EVENTS } from '@superone/shared/session-activity'
 import { withoutDraftAttachmentBytes } from '@superone/shared/environment/draft-content'
@@ -14,6 +14,8 @@ import log from '../logger'
 
 export interface MobileTransport {
   sendAgentEvent(event: AgentEvent, targetDeviceIds?: string[]): Promise<void>
+  /** Events already shaped for one phone. */
+  sendDeviceEvents(deviceId: string, events: AgentEvent[]): void
 }
 
 export interface PhoneTerminalTransport {
@@ -106,23 +108,13 @@ export class MobileBroadcaster implements TopicGroup<DesktopTopicItem> {
       : undefined
     if (origin && targets.has(origin)) {
       targets.delete(origin)
-      await this.send(withoutAttachmentBytes(event), [origin], session, messages)
+      this.send(withoutAttachmentBytes(event), [origin], session, messages)
     }
-    await this.send(event, [...targets], session, messages)
+    this.send(event, [...targets], session, messages)
   }
 
-  private async send(event: AgentEvent, targets: string[], session: Session, messages: readonly ChatMessage[]): Promise<void> {
-    const legacy = targets.filter(deviceId => !isProgressiveSession(deviceId, session.id))
-    const progressive = targets.filter(deviceId => isProgressiveSession(deviceId, session.id))
-    if (legacy.length) await this.transport.sendAgentEvent(event, legacy)
-    if (progressive.length) {
-      const projected = projectProgressiveEvent(event, messages)
-      if (projected) await this.transport.sendAgentEvent(projected, progressive)
-      for (const deviceId of progressive) {
-        for (const update of detailUpdates(deviceId, session.id, session.snapshot.messages)) {
-          await this.transport.sendAgentEvent(update, [deviceId])
-        }
-      }
-    }
+  /** Each phone gets the event under its own delivery: summarized if it opened the session so. */
+  private send(event: AgentEvent, targets: string[], session: Session, messages: readonly ChatMessage[]): void {
+    for (const deviceId of targets) this.transport.sendDeviceEvents(deviceId, phoneDelivery(deviceId).live(event, session.id, messages))
   }
 }

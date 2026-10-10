@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ChatMessage } from '@superone/shared/agent-types'
 import { stripMessagesForRemote } from './remote-content'
-import { projectProgressiveMessage } from './remote/progressive-session'
+import { projectProgressiveMessage } from '@superone/runtime/stream'
 
 describe('remote Bash edit projection', () => {
   it('keeps the compact diff through the mobile snapshot conversion', () => {

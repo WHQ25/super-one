@@ -1,17 +1,25 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-vi.mock('../remote-content', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../remote-content')>()
+vi.mock('./remote-content', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./remote-content')>()
   return { ...actual, stripMessagesForRemote: (messages: unknown) => messages }
 })
 import type { BashEditDiff, ChatMessage } from '@superone/shared/agent-types'
 import { bashEditFileChanges, bashEditToolUses, summarizeBashEditDiff } from '@superone/shared/bash-edit-diff'
-import { detailUpdates, projectProgressiveEvent, projectProgressiveMessage, setProgressiveSession, subscribeDetail, unsubscribeDetail } from './progressive-session'
+import { DetailViews, projectProgressiveEvent, projectProgressiveMessage } from './projection'
+
+/** Two connections, `a` and `b`, each with its own views. */
+let connections = new Map<string, DetailViews>()
+const viewsOf = (id: string) => connections.get(id) ?? connections.set(id, new DetailViews()).get(id)!
+const setProgressiveSession = (id: string, sessionId?: string) => sessionId ? viewsOf(id).open(sessionId) : viewsOf(id).close()
+const subscribeDetail = (id: string, sessionId: string, subscriptionId: string, ref: string, message: ChatMessage) => viewsOf(id).subscribe(sessionId, subscriptionId, ref, message)
+const unsubscribeDetail = (id: string, sessionId: string, subscriptionId: string) => viewsOf(id).unsubscribe(sessionId, subscriptionId)
+const detailUpdates = (id: string, sessionId: string, messages: ChatMessage[]) => viewsOf(id).updates(sessionId, messages)
 const message = (): ChatMessage => ({ id: 'm', role: 'assistant', status: 'streaming', createdAt: '', providerId: 'claude', content: [
   { type: 'thinking', thinking: 'private reasoning', startedAt: 100 },
   { type: 'tool_use', toolName: 'Write', toolUseId: 't', input: JSON.stringify({ file_path: 'a.ts', content: 'large code' }), status: 'streaming' },
   { type: 'tool_result', toolUseId: 't', summary: 'large output' },
 ] })
-afterEach(() => { setProgressiveSession('a'); setProgressiveSession('b') })
+afterEach(() => { connections = new Map() })
 describe('progressive session projection', () => {
   it('sends Bash file names and line totals, then loads full hunks on expand', () => {
     const bashEditDiff: BashEditDiff = {

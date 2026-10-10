@@ -10,7 +10,8 @@ import { RemoteControlService } from './remote-control-service'
 function fixture() {
   const service = new RemoteControlService('wss://relay.example', { onCommand: vi.fn() })
   const send = vi.fn()
-  Object.assign(service, { keys: { aesKey: {} }, hasAnyMobileTransport: () => true, queueSend: send })
+  Object.assign(service, { keys: { aesKey: {} }, hasAnyMobileTransport: () => true, queueDevice: (deviceId: string, events: AgentEvent[]) => { if (events.length) send(events, [deviceId]) } })
+  ;(service as unknown as { connectedDevices: Map<string, unknown> }).connectedDevices.set('phone', { name: 'iPhone', transports: new Set(['relay']) })
   return { service, send }
 }
 

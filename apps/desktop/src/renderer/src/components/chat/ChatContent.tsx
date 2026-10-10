@@ -27,6 +27,7 @@ const WorkflowFullView = lazy(() => import('./WorkflowFullView').then((m) => ({ 
 import { WorkflowNavigationContext, type WorkflowViewState } from './workflow-navigation-context'
 import { SelectionContextMenuZone } from './SelectionContextMenu'
 import { ChatScrollIndicator } from './ChatScrollIndicator'
+import { VirtualTranscriptList, type VirtualTranscriptHandle } from './VirtualTranscriptList'
 import { mergeCodexThreadMessages } from './codex-realtime-messages'
 import { CodexRealtimeTranscript } from './CodexRealtimeTranscript'
 import { ComposerSwitch } from './ComposerSwitch'
@@ -63,9 +64,6 @@ interface ChatContentProps {
   stopAutoScroll?: () => void
   foreground?: boolean
 }
-
-const INITIAL_RENDER_COUNT = 12
-const LOAD_MORE_COUNT = 4
 
 // Preserve the old responsive visual scale through native layout tokens. A
 // zoomed or transformed transcript can force Chromium to repaint a giant layer.
@@ -184,7 +182,8 @@ function ChatTranscript({
   const displayLastAssistantMessageId = findLastAssistantMessageId(displayMessages)
     ?? lastAssistantMessageId
 
-  const prevScrollHeightRef = useRef(0)
+  const transcriptRef = useRef<VirtualTranscriptHandle>(null)
+  const messageTop = useCallback((id: string) => transcriptRef.current?.topOf(id) ?? null, [])
   const [expandLevel, setExpandLevel] = useState(0)
   const messagesLen = displayMessages.length
   const messagesTailId = displayMessages[messagesLen - 1]?.id
@@ -201,11 +200,6 @@ function ChatTranscript({
       : 0
   const visibleMessages = visibleStart > 0 ? displayMessages.slice(visibleStart) : displayMessages
 
-  const [renderCount, setRenderCount] = useState(INITIAL_RENDER_COUNT)
-  const sentinelRef = useRef<HTMLDivElement>(null)
-  useEffect(() => { setRenderCount(INITIAL_RENDER_COUNT) }, [displayedSessionId])
-  const hasMore = renderCount < visibleMessages.length
-  const renderedMessages = hasMore ? visibleMessages.slice(-renderCount) : visibleMessages
   const messagesTailCreatedAt = displayMessages[messagesLen - 1]?.createdAt
   const dateSeparatorAt = useMemo(
     () => dateSeparators(displayMessages, Date.now()),
@@ -216,45 +210,6 @@ function ChatTranscript({
   // A fallback id can name a model from either catalog: model_fallback is emitted
   // by the Claude SDK and by the ACP backends.
   const modelCatalog = useMemo(() => [...claudeModels, ...acpModels], [claudeModels, acpModels])
-
-  useEffect(() => {
-    const sentinel = sentinelRef.current
-    const viewport = scrollViewportRef.current
-    if (!sentinel || !viewport || !hasMore) return
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setRenderCount((c) => Math.min(c + LOAD_MORE_COUNT, visibleMessages.length))
-        }
-      },
-      { root: viewport, rootMargin: '800px 0px 0px 0px' },
-    )
-    observer.observe(sentinel)
-    return () => observer.disconnect()
-  }, [hasMore, visibleMessages.length, scrollViewportRef])
-
-  // Memory: when user returns to bottom after scroll-up load-more, shrink the
-  // reverse window so off-screen history unmounts (not full virtualization).
-  useEffect(() => {
-    const viewport = scrollViewportRef.current
-    if (!viewport) return
-    let raf = 0
-    const onScroll = (): void => {
-      if (raf) return
-      raf = requestAnimationFrame(() => {
-        raf = 0
-        if (sessionStatus === 'streaming') return
-        const nearBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 96
-        if (!nearBottom) return
-        setRenderCount((c) => (c > INITIAL_RENDER_COUNT ? INITIAL_RENDER_COUNT : c))
-      })
-    }
-    viewport.addEventListener('scroll', onScroll, { passive: true })
-    return () => {
-      viewport.removeEventListener('scroll', onScroll)
-      if (raf) cancelAnimationFrame(raf)
-    }
-  }, [scrollViewportRef, sessionStatus, displayedSessionId])
 
   const outline = useMemo(
     () => extractTurnOutline(visibleMessages),
@@ -272,7 +227,6 @@ function ChatTranscript({
   const compactSplit = Math.max(0, outline.length - recentTurnCount)
   const compactExpanded = expandLevel >= compactIndices.length
   const toggleCompact = useCallback(() => {
-    prevScrollHeightRef.current = scrollViewportRef.current?.scrollHeight ?? 0
     setExpandLevel((lvl) => (lvl >= compactIndices.length ? 0 : compactIndices.length))
   }, [compactIndices.length, scrollViewportRef])
   const [jumpNonce, setJumpNonce] = useState(0)
@@ -288,7 +242,6 @@ function ChatTranscript({
     stopAutoScroll?.()
     const needed = compactIndicesRef.current.filter((ci) => ci > targetIdx).length
     setExpandLevel((prev) => Math.max(prev, needed))
-    setRenderCount((prev) => Math.max(prev, msgs.length - targetIdx + LOAD_MORE_COUNT))
     pendingScrollIdRef.current = id
     setJumpNonce((n) => n + 1)
   }, [stopAutoScroll])
@@ -312,24 +265,9 @@ function ChatTranscript({
   useEffect(() => {
     const id = pendingScrollIdRef.current
     if (!id) return
-    const viewport = scrollViewportRef.current
-    if (!viewport) return
-    const raf = requestAnimationFrame(() => {
-      const el = viewport.querySelector(`[data-message-id="${CSS.escape(id)}"]`)
-      if (!el) return
-      pendingScrollIdRef.current = null
-      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    })
-    return () => cancelAnimationFrame(raf)
-  }, [jumpNonce, scrollViewportRef])
-
-  useLayoutEffect(() => {
-    const viewport = scrollViewportRef.current
-    if (!viewport || prevScrollHeightRef.current === 0) return
-    const delta = viewport.scrollHeight - prevScrollHeightRef.current
-    viewport.scrollTop += delta
-    prevScrollHeightRef.current = 0
-  }, [expandLevel, scrollViewportRef])
+    transcriptRef.current?.jumpTo(id)
+    pendingScrollIdRef.current = null
+  }, [jumpNonce, expandLevel])
 
   return (
     <div className="relative min-w-0 flex-1 overflow-hidden">
@@ -353,8 +291,7 @@ function ChatTranscript({
       ) : (
         <ScrollArea key={displayedSessionId ?? 'default'} className="chat-scroll-area h-full min-w-0" viewportRef={scrollViewportRef}>
           <SelectionContextMenuZone className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-1 p-3 @lg:gap-1.5 @lg:p-3.5 @2xl:gap-1.5 @2xl:p-4">
-            {hasMore && <div ref={sentinelRef} className="h-px" style={{ overflowAnchor: 'none' }} />}
-            {renderedMessages.map((msg) => {
+            <VirtualTranscriptList key={displayedSessionId ?? 'default'} viewportRef={scrollViewportRef} apiRef={transcriptRef} items={visibleMessages.map((msg) => {
               const fallbackMeta = msg.metadata?.modelFallback
               if (fallbackMeta) {
                 return (
@@ -386,7 +323,6 @@ function ChatTranscript({
                     durationMs={compactInfo.durationMs}
                     expanded={isExpanded}
                     onToggle={() => {
-                      prevScrollHeightRef.current = scrollViewportRef.current?.scrollHeight ?? 0
                       setExpandLevel(isExpanded ? rank : rank + 1)
                     }}
                   />
@@ -410,7 +346,7 @@ function ChatTranscript({
                   <ChatMessage message={msg} sessionStatus={sessionStatus} isLastAssistant={msg.id === displayLastAssistantMessageId} />
                 </div>
               )
-            })}
+            }).map((content, index) => ({ id: visibleMessages[index].id, content })).filter(item => item.content !== null)} />
             {queuedMessages.map((msg, index) => (
               <div key={msg.id} className="group/queued chat-message-wrapper opacity-50">
                 <ChatMessage message={msg} sessionStatus={sessionStatus} isLastAssistant={false} hideUserActions />
@@ -460,7 +396,7 @@ function ChatTranscript({
         </ScrollArea>
       )}
       {displayMessages.length > 0 && (
-        <ChatScrollIndicator entries={outline} hasCompact={hasCompact} compactExpanded={compactExpanded} compactSplit={compactSplit} viewportRef={scrollViewportRef} onJump={jumpToMessage} onToggleCompact={toggleCompact} />
+        <ChatScrollIndicator entries={outline} hasCompact={hasCompact} compactExpanded={compactExpanded} compactSplit={compactSplit} viewportRef={scrollViewportRef} getMessageTop={messageTop} onJump={jumpToMessage} onToggleCompact={toggleCompact} />
       )}
       {!liquidGlass && <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-6 bg-linear-to-t from-card to-transparent" />}
       <AnimatePresence>

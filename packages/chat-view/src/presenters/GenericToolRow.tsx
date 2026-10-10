@@ -1,6 +1,7 @@
+import { useTranscriptState } from '@superone/ui/lib/transcript-state'
 import type { McpAppPresentation } from '@superone/shared/mcp-apps'
 import { mcpAppPresentationIcon } from '@superone/shared/mcp-apps-metadata'
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Ban, ChevronRight, TriangleAlert } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
@@ -140,11 +141,11 @@ function ScrollableToolResult({ text }: { text: string }) {
 }
 
 /** Truncated tool output with secondary expand for long results. */
-function ToolResult({ text }: { text: string }) {
+function ToolResult({ text, cacheKey }: { text: string; cacheKey: string }) {
   const { t } = useTranslation()
   const lines = text.split('\n')
   const isLong = lines.length > RESULT_PREVIEW_LINES
-  const [showAll, setShowAll] = useState(false)
+  const [showAll, setShowAll] = useTranscriptState(`tool-result-${cacheKey}`, false)
   const hiddenCount = lines.length - RESULT_PREVIEW_LINES
 
   const visibleText = showAll || !isLong ? text : lines.slice(0, RESULT_PREVIEW_LINES).join('\n')
@@ -292,12 +293,12 @@ function GenericToolRow({
         : Object.keys(params).some((key) => key !== 'file_path'))
   )
   const hasDiff = hasCompleteDiff || hasStreamingDiffContent
-  const [expanded, setExpanded] = useState(defaultExpanded ?? false)
+  const [expanded, setExpanded, restored] = useTranscriptState(`tool-${toolUseId ?? toolName}`, defaultExpanded ?? false)
   useEffect(() => { onExpandedChange?.(expanded) }, [expanded, onExpandedChange])
   const gridRef = useRef<HTMLDivElement>(null)
 
   useLayoutEffect(() => {
-    if (DIFF_TOOLS.has(toolName) && hasDiff && shouldAutoExpandDiff) {
+    if (!restored && DIFF_TOOLS.has(toolName) && hasDiff && shouldAutoExpandDiff) {
       setExpanded(true)
       const grid = gridRef.current
       if (grid && !isStreaming) {
@@ -307,8 +308,10 @@ function GenericToolRow({
     }
   }, [isStreaming, hasDiff, toolName, shouldAutoExpandDiff])
 
+  const previousError = useRef(isError)
   useLayoutEffect(() => {
-    if (isError) setExpanded(false)
+    if (isError && (!restored || !previousError.current)) setExpanded(false)
+    previousError.current = isError
   }, [isError])
 
   // A dismissed question arrives as a permission deny (`[denied] …` + is_error), but it is an
@@ -480,7 +483,7 @@ function GenericToolRow({
                       ) : toolName === 'LS' || toolName === 'ToolSearch' || toolName === 'SearchTools' ? (
                         <ScrollableToolResult text={cleanResult!} />
                       ) : (
-                        <ToolResult text={cleanResult!} />
+                        <ToolResult text={cleanResult!} cacheKey={toolUseId ?? toolName} />
                       )}
                     </div>
                   )}

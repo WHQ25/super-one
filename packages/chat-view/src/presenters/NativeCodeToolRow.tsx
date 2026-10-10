@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo } from 'react'
+import { useTranscriptState } from '@superone/ui/lib/transcript-state'
 import { useTranslation } from 'react-i18next'
 import { patchToolFiles, summarizePatchToolFiles, type PatchToolFile } from '@superone/shared/patch-tool'
 import type { ReactNode } from 'react'
@@ -16,8 +17,8 @@ function outcome(result: string | undefined, isError: boolean | undefined) {
   return { denied, tone: toolRowTone(denied, isError), result: denied ? result!.slice('[denied] '.length) : result }
 }
 
-function useExpansion(initial: boolean | undefined, onChange: GenericToolRowProps['onExpandedChange']) {
-  const [expanded, setExpanded] = useState(initial ?? false)
+function useExpansion(id: string, initial: boolean | undefined, onChange: GenericToolRowProps['onExpandedChange']) {
+  const [expanded, setExpanded] = useTranscriptState(`native-code-${id}`, initial ?? false)
   // Match GenericToolRow: a remote row opened by navigation must fetch detail
   // on mount too, not only after a header click.
   useEffect(() => { onChange?.(expanded) }, [expanded, onChange])
@@ -33,7 +34,7 @@ export function PatchToolRow(props: GenericToolRowProps & { renderFileTool: (fil
   const { denied, tone, result } = outcome(props.result, props.isError)
   const streaming = props.status === 'streaming'
   const interrupted = denied || !!props.isError
-  const expansion = useExpansion(props.allowExpand && (props.defaultExpanded ?? props.autoExpand ?? props.defaultAutoExpand ?? props.autoExpandFileDiffs), props.onExpandedChange)
+  const expansion = useExpansion(props.toolUseId ?? props.toolName, props.allowExpand && (props.defaultExpanded ?? props.autoExpand ?? props.defaultAutoExpand ?? props.autoExpandFileDiffs), props.onExpandedChange)
   const collapsed = !props.allowExpand || !expansion.expanded
   const label = toolOutcomeLabel({
     streaming, interrupted,
@@ -75,7 +76,7 @@ export function CodeExecutionToolRow(props: GenericToolRowProps) {
   const code = typeof params.code === 'string' ? params.code : ''
   const { denied, tone, result } = outcome(props.result, props.isError)
   const streaming = props.status === 'streaming'
-  const expansion = useExpansion(props.allowExpand && props.defaultExpanded, props.onExpandedChange)
+  const expansion = useExpansion(props.toolUseId ?? props.toolName, props.allowExpand && props.defaultExpanded, props.onExpandedChange)
   const label = toolOutcomeLabel({
     streaming, interrupted: denied || !!props.isError,
     streamingLabel: t('chat.toolBlock.nativeCode.executingCode'),

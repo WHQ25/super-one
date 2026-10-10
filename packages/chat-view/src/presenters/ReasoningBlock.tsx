@@ -1,3 +1,4 @@
+import { useTranscriptState } from '@superone/ui/lib/transcript-state'
 import { memo, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Brain, ChevronRight } from 'lucide-react'
@@ -31,7 +32,8 @@ export const ReasoningBlock = memo(function ReasoningBlock({
   const { t } = useTranslation()
   const [now, setNow] = useState(() => Date.now())
   // Expansion follows the real block lifecycle on both desktop and mobile.
-  const [expanded, setExpanded] = useState(autoExpand && showContent && (!blockDone || !collapseOnDone))
+  const [expanded, setExpanded, restored] = useTranscriptState('reasoning', autoExpand && showContent && (!blockDone || !collapseOnDone))
+  const previousDone = useRef(blockDone)
   const autoExpandedRef = useRef(autoExpand && showContent && !blockDone)
   const scrollRef = useRef<HTMLDivElement>(null)
   const rafRef = useRef(0)
@@ -39,10 +41,13 @@ export const ReasoningBlock = memo(function ReasoningBlock({
   // Prefer persisted timestamps (Claude): derived from data, they survive session
   // switches / history reload instead of resetting on remount. Providers that don't
   // stamp them (Codex) fall back to mount-time measurement — same as the old behavior.
-  const mountStartRef = useRef(!blockDone ? Date.now() : 0)
-  const fallbackEndRef = useRef(0)
-  const start = startedAt ?? (mountStartRef.current || undefined)
-  const end = startedAt != null ? endedAt : (fallbackEndRef.current || undefined)
+  const [fallbackStart, setFallbackStart] = useTranscriptState('reasoning-start', 0)
+  const [fallbackEnd, setFallbackEnd] = useTranscriptState('reasoning-end', 0)
+  const start = startedAt ?? (fallbackStart || undefined)
+  const end = startedAt != null ? endedAt : (fallbackEnd || undefined)
+  useEffect(() => {
+    if (!blockDone && !fallbackStart && startedAt == null) setFallbackStart(Date.now())
+  }, [blockDone, fallbackStart, startedAt])
   const elapsed = start == null
     ? 0
     : Math.max(0, Math.round(((blockDone ? (end ?? now) : now) - start) / 1000))
@@ -64,12 +69,14 @@ export const ReasoningBlock = memo(function ReasoningBlock({
     if (!blockDone) return
     // Freeze the fallback end once so a (Codex) block that finishes without
     // persisted timestamps keeps a stable duration instead of drifting.
-    if (startedAt == null && start != null && !fallbackEndRef.current) {
-      fallbackEndRef.current = Date.now()
-      setNow(fallbackEndRef.current)
+    if (startedAt == null && start != null && !fallbackEnd) {
+      const ended = Date.now()
+      setFallbackEnd(ended)
+      setNow(ended)
     }
-    if (showContent && collapseOnDone) setExpanded(false)
-  }, [blockDone, showContent, collapseOnDone, startedAt, start])
+    if (showContent && collapseOnDone && (!restored || !previousDone.current)) setExpanded(false)
+    previousDone.current = blockDone
+  }, [blockDone, showContent, collapseOnDone, startedAt, start, fallbackEnd])
 
   useEffect(() => {
     if (!showContent) return

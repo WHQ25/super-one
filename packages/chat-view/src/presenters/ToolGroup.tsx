@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef, type ReactNode } from 'react'
+import { useTranscriptState } from '@superone/ui/lib/transcript-state'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { ChevronRight, BookOpenText } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import type { ContentBlock } from '@superone/shared/agent-types'
@@ -21,7 +22,8 @@ export function ToolGroupPresenter({
 }: ToolGroupPresenterProps) {
   const toolUses = blocks.filter((b) => b.type === 'tool_use')
   const hasStreamingTool = toolUses.some((b) => b.type === 'tool_use' && b.status === 'streaming')
-  const [expanded, setExpanded] = useState(hasStreamingTool && !sealed)
+  const [expanded, setExpanded] = useTranscriptState(`tool-group-${toolUses[0]?.toolUseId ?? ''}`, hasStreamingTool && !sealed)
+  const wasSealed = useRef(sealed)
 
   const summary = generateToolGroupSummary(toolUses)
   const streamingTool = hasStreamingTool
@@ -32,7 +34,8 @@ export function ToolGroupPresenter({
   const isNearBottomRef = useRef(true)
 
   useEffect(() => {
-    if (sealed) setExpanded(false)
+    if (sealed && !wasSealed.current) setExpanded(false)
+    wasSealed.current = sealed
   }, [sealed])
 
   useEffect(() => {

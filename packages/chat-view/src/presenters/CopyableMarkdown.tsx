@@ -1,8 +1,9 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type ComponentType, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Check, Copy } from 'lucide-react'
 import {
   Streamdown,
   type Components,
+  type BlockProps,
   type ControlsConfig,
   type LinkSafetyConfig,
   type MathPlugin,
@@ -23,6 +24,7 @@ export interface CopyableMarkdownRuntime {
   copyText: (text: string) => Promise<boolean>
   /** Streamdown table scroll cap; `Infinity` disables it. Falls back to Streamdown's default when unset. */
   tableMaxHeight?: number | string
+  BlockComponent?: ComponentType<BlockProps>
 }
 
 export interface CopyableMarkdownPresenterProps {
@@ -30,6 +32,13 @@ export interface CopyableMarkdownPresenterProps {
   isStreaming: boolean
   components?: Components
   runtime: CopyableMarkdownRuntime
+}
+
+function markdownBlockOptions(text: string, runtime: CopyableMarkdownRuntime) {
+  const BlockComponent = text.length >= 8192 ? runtime.BlockComponent : undefined
+  // Definitions may be referenced by any block: keep these documents atomic.
+  const atomic = !!BlockComponent && /^ {0,3}\[[^\]]+\]:/m.test(text)
+  return { BlockComponent, mode: atomic ? 'static' as const : 'streaming' as const }
 }
 
 export { splitByInsightBlocks }
@@ -201,6 +210,7 @@ export const InsightBlockPresenter = memo(function InsightBlock({ title, content
         </button>
       </div>
       <Streamdown
+        {...markdownBlockOptions(normalized, runtime)}
         className="chat-md"
         plugins={plugins}
         remarkPlugins={runtime.remarkPlugins}
@@ -234,6 +244,7 @@ const MarkdownRenderer = memo(function MarkdownRenderer({ text, isStreaming, com
 
   return (
     <Streamdown
+      {...markdownBlockOptions(normalized, runtime)}
       className="chat-md"
       plugins={plugins}
       remarkPlugins={runtime.remarkPlugins}

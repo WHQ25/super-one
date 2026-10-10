@@ -12,6 +12,18 @@ const runs = [
 ]
 
 describe('turn detail disclosure', () => {
+  it('opens virtual runs immediately and removes them on collapse', () => {
+    render(<TurnDetailSection runs={runs} animate={false} />)
+    const button = screen.getByRole('button')
+    fireEvent.click(button)
+    expect(button).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByText('tools-1')).toBeVisible()
+    expect(screen.getByText('tools-2')).toBeVisible()
+    fireEvent.click(button)
+    expect(screen.queryByText('tools-1')).toBeNull()
+    expect(screen.getByText('markdown')).toBeVisible()
+  })
+
   it('keeps pinned runs visible while every collapsible run stays unmounted', () => {
     render(<TurnDetailSection runs={runs} />)
     expect(screen.getByText('markdown')).toBeInTheDocument()

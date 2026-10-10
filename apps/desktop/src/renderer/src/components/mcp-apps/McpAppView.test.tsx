@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { useEffect } from 'react'
+import { useEffect, useLayoutEffect } from 'react'
 import { act, fireEvent, render, screen, waitFor, within, cleanup } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ToolAppAttachment } from '@superone/shared/mcp-apps'
@@ -19,7 +19,8 @@ vi.mock('./McpAppFrame', () => ({ default: (props: McpAppFrameProps) => { frame.
 import McpAppView from './McpAppView'
 import { McpAppHostLayer } from './McpAppHostLayer'
 import { McpAppConsentComposer } from './McpAppConsent'
-import { useMcpAppLayout } from './layout-store'
+import { retainMcpAppTranscript, useMcpAppLayout } from './layout-store'
+import { McpAppTranscriptRetention } from './transcript-retention'
 vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
 vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ width: 600, height: 240 } as DOMRect)
 Object.defineProperty(HTMLElement.prototype, 'checkVisibility', { configurable: true, value() {
@@ -39,6 +40,30 @@ function setup() {
 }
 afterEach(() => { cleanup(); frame.props = null; frame.initialized = []; frame.modes = ['inline', 'fullscreen', 'pip']; vi.clearAllMocks() })
 describe('MCP App desktop View lifecycle', () => {
+  it('preserves an encountered document across virtual row eviction and releases it when its transcript closes', async () => {
+    const s = setup()
+    vi.mocked(s.api.mcpAppRegister).mockResolvedValue(live)
+    const token = Symbol('transcript')
+    function Transcript({ visible }: { visible: boolean }) {
+      useLayoutEffect(() => retainMcpAppTranscript(token), [])
+      return <McpAppTranscriptRetention.Provider value={token}>{visible && <McpAppView app={app} route={{ projectPath: '/original-project', sessionId: 'original' }} api={s.api} />}</McpAppTranscriptRetention.Provider>
+    }
+    const ui = render(<><McpAppHostLayer /><Transcript visible /></>)
+    await screen.findByTestId('frame')
+    const document = frame.props?.registration
+    ui.rerender(<><McpAppHostLayer /><Transcript visible={false} /></>)
+    await act(async () => {})
+    expect(s.api.mcpAppRelease).not.toHaveBeenCalled()
+    expect(frame.initialized).toHaveLength(1)
+    ui.rerender(<><McpAppHostLayer /><Transcript visible /></>)
+    await screen.findByTestId('frame')
+    expect(frame.props?.registration).toBe(document)
+    expect(s.api.mcpAppRegister).toHaveBeenCalledTimes(1)
+    ui.rerender(<McpAppHostLayer />)
+    await waitFor(() => expect(s.api.mcpAppRelease).toHaveBeenCalledWith('doc'))
+    expect(useMcpAppLayout.getState().views).toEqual({})
+  })
+
   it('renders safe tool metadata and keeps fullscreen preference inline on initialize', async () => {
     const s = setup()
     vi.mocked(s.api.mcpAppRegister).mockResolvedValue({ ok: true, value: { ...prepared, active: true, meta: { 'openai/ui': { preferredDisplayMode: 'fullscreen', availableDisplayModes: ['inline', 'fullscreen'] } } } })

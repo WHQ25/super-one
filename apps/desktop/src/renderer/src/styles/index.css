@@ -537,11 +537,11 @@ html:not(.dark) [data-sidebar-inner] .is-scrolling::-webkit-scrollbar-thumb:hove
   contain-intrinsic-size: auto 200px;
 }
 
-/* Tail rows need real height. A 200px placeholder undershoots scrollHeight, so
-   stick-to-bottom lands short of live output (wide command blocks, tool groups).
-   nth-last-child covers the live turn plus queued/compact chrome after it. */
-.chat-scroll-area .chat-message-wrapper:nth-last-child(-n+16) {
+/* Virtual rows have measured geometry and bounded content. CSS placeholders
+   would report a fake height to the virtualizer and break end anchoring. */
+[data-virtual-transcript] .chat-message-wrapper {
   content-visibility: visible;
+  contain-intrinsic-size: none;
 }
 
 /* Neutral tool-call cards read as bg-muted/20, which is nearly invisible over

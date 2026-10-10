@@ -1,0 +1,579 @@
+{
+  "baselineCommit": "f32101934",
+  "environment": "Playwright Chromium, desktop Storybook development renderer; real ChatContent and useChatScroll; adjacent panel reproduces Activity Panel width animation",
+  "method": {
+    "viewport": {
+      "width": 1280,
+      "height": 800
+    },
+    "chatWidthAfter": 398,
+    "shellHeight": 560,
+    "panelTransitionMs": 300,
+    "sampleWindowMs": 500,
+    "warmup": "one open/close cycle after initialization",
+    "repetitions": 5,
+    "summary": "median of each metric across five runs",
+    "scenarios": {
+      "short-history": {
+        "messages": 120,
+        "paragraphsPerAssistant": 1
+      },
+      "long-history": {
+        "messages": 120,
+        "paragraphsPerAssistant": 60
+      },
+      "huge-reply": {
+        "messages": 2,
+        "paragraphsPerAssistant": 360
+      }
+    },
+    "shellWidth": 760
+  },
+  "commands": {
+    "cwd": "apps/desktop",
+    "server": "node ./.storybook/run.mjs dev -p 6107 --ci --no-open",
+    "regression": "bunx playwright test --config playwright.transcript.config.ts",
+    "benchmarkFromRepositoryRoot": "bun apps/desktop/scripts/bench-chat-transcript.ts --output /tmp/chat-transcript-performance.json"
+  },
+  "validation": {
+    "focusedVitestFiles": 15,
+    "focusedVitestTests": 242,
+    "browserRegressionScenarios": 7,
+    "desktopTypecheckWeb": "passed",
+    "sharedChatViewBuild": "passed"
+  },
+  "limitations": [
+    "Development Chromium results are not packaged Electron results.",
+    "Reference-definition documents remain atomic to preserve cross-block references; very large individual paragraphs, code fences and tables remain whole semantic blocks.",
+    "Short text reduced layout/style work, but median maximum frame increased from 16.7ms to 25ms. It had no frames above 32ms."
+  ],
+  "comparison": [
+    {
+      "scenario": "short-history",
+      "layoutAndStyleMs": {
+        "before": 61.083999999999996,
+        "after": 50.384,
+        "reductionPercent": 17.516862026062462
+      },
+      "maxFrameMs": {
+        "before": 16.699999999999818,
+        "after": 25
+      },
+      "domNodes": {
+        "before": 401,
+        "after": 322
+      },
+      "framesOver32ms": {
+        "before": 0,
+        "after": 0
+      }
+    },
+    {
+      "scenario": "long-history",
+      "layoutAndStyleMs": {
+        "before": 219.05899999999988,
+        "after": 58.01300000000002,
+        "reductionPercent": 73.51718030302337
+      },
+      "maxFrameMs": {
+        "before": 83.30000000000018,
+        "after": 25
+      },
+      "domNodes": {
+        "before": 3237,
+        "after": 396
+      },
+      "framesOver32ms": {
+        "before": 3,
+        "after": 0
+      }
+    },
+    {
+      "scenario": "huge-reply",
+      "layoutAndStyleMs": {
+        "before": 200.76099999999997,
+        "after": 52.86199999999998,
+        "reductionPercent": 73.66918873685626
+      },
+      "maxFrameMs": {
+        "before": 75,
+        "after": 9.300000000000182
+      },
+      "domNodes": {
+        "before": 2965,
+        "after": 496
+      },
+      "framesOver32ms": {
+        "before": 2,
+        "after": 0
+      }
+    }
+  ],
+  "baseline": {
+    "viewport": {
+      "width": 1280,
+      "height": 800
+    },
+    "transitionMs": 300,
+    "repetitions": 5,
+    "results": [
+      {
+        "story": "short-history",
+        "nodes": 401,
+        "mountedMessages": 12,
+        "layoutMs": 18.182000000000002,
+        "styleMs": 42.901999999999994,
+        "maxFrameMs": 16.699999999999818,
+        "framesOver32ms": 0,
+        "bottomDistance": 0,
+        "runs": [
+          {
+            "maxFrameMs": 16.599999999999454,
+            "framesOver32ms": 0,
+            "mountedMessages": 12,
+            "nodes": 401,
+            "bottomDistance": 0,
+            "chatWidth": 398,
+            "layoutMs": 17.541,
+            "styleMs": 40.714,
+            "scriptMs": 39.57600000000006,
+            "taskMs": 145.18600000000004
+          },
+          {
+            "maxFrameMs": 16.699999999999818,
+            "framesOver32ms": 0,
+            "mountedMessages": 12,
+            "nodes": 401,
+            "bottomDistance": 0,
+            "chatWidth": 398,
+            "layoutMs": 18.676000000000013,
+            "styleMs": 44.035999999999994,
+            "scriptMs": 40.19399999999995,
+            "taskMs": 153.82399999999996
+          },
+          {
+            "maxFrameMs": 16.600000000000364,
+            "framesOver32ms": 0,
+            "mountedMessages": 12,
+            "nodes": 401,
+            "bottomDistance": 0,
+            "chatWidth": 398,
+            "layoutMs": 17.857999999999986,
+            "styleMs": 42.901999999999994,
+            "scriptMs": 40.825,
+            "taskMs": 150.24899999999963
+          },
+          {
+            "maxFrameMs": 25,
+            "framesOver32ms": 0,
+            "mountedMessages": 12,
+            "nodes": 401,
+            "bottomDistance": 0,
+            "chatWidth": 398,
+            "layoutMs": 19.297000000000008,
+            "styleMs": 49.57,
+            "scriptMs": 54.423,
+            "taskMs": 173.5770000000003
+          },
+          {
+            "maxFrameMs": 17.600000000000364,
+            "framesOver32ms": 0,
+            "mountedMessages": 12,
+            "nodes": 401,
+            "bottomDistance": 0,
+            "chatWidth": 398,
+            "layoutMs": 18.182000000000002,
+            "styleMs": 36.15600000000002,
+            "scriptMs": 37.660999999999945,
+            "taskMs": 137.85899999999972
+          }
+        ]
+      },
+      {
+        "story": "long-history",
+        "nodes": 3237,
+        "mountedMessages": 12,
+        "layoutMs": 65.49300000000002,
+        "styleMs": 153.56599999999986,
+        "maxFrameMs": 83.30000000000018,
+        "framesOver32ms": 3,
+        "bottomDistance": 4145,
+        "runs": [
+          {
+            "maxFrameMs": 83.30000000000018,
+            "framesOver32ms": 3,
+            "mountedMessages": 12,
+            "nodes": 3237,
+            "bottomDistance": 4145,
+            "chatWidth": 398,
+            "layoutMs": 71.96999999999998,
+            "styleMs": 137.886,
+            "scriptMs": 18.592,
+            "taskMs": 304.76999999999975
+          },
+          {
+            "maxFrameMs": 91.80000000000018,
+            "framesOver32ms": 3,
+            "mountedMessages": 12,
+            "nodes": 3237,
+            "bottomDistance": 4145,
+            "chatWidth": 398,
+            "layoutMs": 68.394,
+            "styleMs": 153.47100000000003,
+            "scriptMs": 18.62200000000003,
+            "taskMs": 313.26400000000024
+          },
+          {
+            "maxFrameMs": 83.30000000000018,
+            "framesOver32ms": 3,
+            "mountedMessages": 12,
+            "nodes": 3237,
+            "bottomDistance": 4145,
+            "chatWidth": 398,
+            "layoutMs": 63.62499999999993,
+            "styleMs": 154.513,
+            "scriptMs": 17.964000000000034,
+            "taskMs": 301.9270000000001
+          },
+          {
+            "maxFrameMs": 83.39999999999964,
+            "framesOver32ms": 3,
+            "mountedMessages": 12,
+            "nodes": 3237,
+            "bottomDistance": 4145,
+            "chatWidth": 398,
+            "layoutMs": 62.40999999999997,
+            "styleMs": 153.56599999999986,
+            "scriptMs": 21.36199999999999,
+            "taskMs": 305.5669999999999
+          },
+          {
+            "maxFrameMs": 83.19999999999982,
+            "framesOver32ms": 3,
+            "mountedMessages": 12,
+            "nodes": 3237,
+            "bottomDistance": 4145,
+            "chatWidth": 398,
+            "layoutMs": 65.49300000000002,
+            "styleMs": 155.424,
+            "scriptMs": 21.91599999999999,
+            "taskMs": 313.16299999999944
+          }
+        ]
+      },
+      {
+        "story": "huge-reply",
+        "nodes": 2965,
+        "mountedMessages": 2,
+        "layoutMs": 70.654,
+        "styleMs": 130.10699999999997,
+        "maxFrameMs": 75,
+        "framesOver32ms": 2,
+        "bottomDistance": 0,
+        "runs": [
+          {
+            "maxFrameMs": 75.80000000000018,
+            "framesOver32ms": 3,
+            "mountedMessages": 2,
+            "nodes": 2965,
+            "bottomDistance": 0,
+            "chatWidth": 398,
+            "layoutMs": 70.654,
+            "styleMs": 136.59799999999998,
+            "scriptMs": 11.158000000000001,
+            "taskMs": 286.63300000000015
+          },
+          {
+            "maxFrameMs": 74.09999999999945,
+            "framesOver32ms": 2,
+            "mountedMessages": 2,
+            "nodes": 2965,
+            "bottomDistance": 0,
+            "chatWidth": 398,
+            "layoutMs": 75.44000000000001,
+            "styleMs": 127.69799999999998,
+            "scriptMs": 8.595999999999993,
+            "taskMs": 282.52500000000015
+          },
+          {
+            "maxFrameMs": 83.90000000000055,
+            "framesOver32ms": 3,
+            "mountedMessages": 2,
+            "nodes": 2965,
+            "bottomDistance": 0,
+            "chatWidth": 398,
+            "layoutMs": 64.444,
+            "styleMs": 130.10699999999997,
+            "scriptMs": 17.067999999999973,
+            "taskMs": 296.35199999999975
+          },
+          {
+            "maxFrameMs": 75,
+            "framesOver32ms": 2,
+            "mountedMessages": 2,
+            "nodes": 2965,
+            "bottomDistance": 0,
+            "chatWidth": 398,
+            "layoutMs": 70.30199999999998,
+            "styleMs": 128.05600000000007,
+            "scriptMs": 11.969000000000008,
+            "taskMs": 276.6199999999999
+          },
+          {
+            "maxFrameMs": 74.89999999999964,
+            "framesOver32ms": 2,
+            "mountedMessages": 2,
+            "nodes": 2965,
+            "bottomDistance": 0,
+            "chatWidth": 398,
+            "layoutMs": 73.23499999999994,
+            "styleMs": 130.63000000000002,
+            "scriptMs": 12.272000000000006,
+            "taskMs": 285.1919999999999
+          }
+        ]
+      }
+    ]
+  },
+  "virtualized": {
+    "viewport": {
+      "width": 1280,
+      "height": 800
+    },
+    "transitionMs": 300,
+    "repetitions": 5,
+    "results": [
+      {
+        "story": "short-history",
+        "nodes": 322,
+        "mountedMessages": 7,
+        "layoutMs": 17.952,
+        "styleMs": 32.432,
+        "maxFrameMs": 25,
+        "framesOver32ms": 0,
+        "bottomDistance": 0,
+        "runs": [
+          {
+            "maxFrameMs": 25.099999999999454,
+            "framesOver32ms": 0,
+            "mountedMessages": 7,
+            "nodes": 322,
+            "renderedParagraphs": 4,
+            "bottomDistance": 0,
+            "chatWidth": 398,
+            "layoutMs": 17.952,
+            "styleMs": 32.432,
+            "scriptMs": 57.71700000000002,
+            "taskMs": 148.54599999999985
+          },
+          {
+            "maxFrameMs": 25,
+            "framesOver32ms": 0,
+            "mountedMessages": 7,
+            "nodes": 322,
+            "renderedParagraphs": 4,
+            "bottomDistance": 0,
+            "chatWidth": 398,
+            "layoutMs": 17.45300000000001,
+            "styleMs": 31.522999999999996,
+            "scriptMs": 57.872999999999955,
+            "taskMs": 166.53000000000006
+          },
+          {
+            "maxFrameMs": 25.099999999999454,
+            "framesOver32ms": 0,
+            "mountedMessages": 7,
+            "nodes": 322,
+            "renderedParagraphs": 4,
+            "bottomDistance": 0,
+            "chatWidth": 398,
+            "layoutMs": 17.529000000000018,
+            "styleMs": 32.70500000000001,
+            "scriptMs": 54.49599999999999,
+            "taskMs": 142.61499999999992
+          },
+          {
+            "maxFrameMs": 16.800000000000182,
+            "framesOver32ms": 0,
+            "mountedMessages": 7,
+            "nodes": 322,
+            "renderedParagraphs": 4,
+            "bottomDistance": 0,
+            "chatWidth": 398,
+            "layoutMs": 18.702999999999996,
+            "styleMs": 27.996999999999993,
+            "scriptMs": 58.08700000000011,
+            "taskMs": 144.6529999999999
+          },
+          {
+            "maxFrameMs": 25,
+            "framesOver32ms": 0,
+            "mountedMessages": 7,
+            "nodes": 322,
+            "renderedParagraphs": 4,
+            "bottomDistance": 0,
+            "chatWidth": 398,
+            "layoutMs": 18.47399999999999,
+            "styleMs": 33.316999999999986,
+            "scriptMs": 59.92900000000012,
+            "taskMs": 161.91300000000018
+          }
+        ]
+      },
+      {
+        "story": "long-history",
+        "nodes": 396,
+        "mountedMessages": 3,
+        "layoutMs": 20.830000000000002,
+        "styleMs": 37.18300000000002,
+        "maxFrameMs": 25,
+        "framesOver32ms": 0,
+        "bottomDistance": 0,
+        "runs": [
+          {
+            "maxFrameMs": 25,
+            "framesOver32ms": 0,
+            "mountedMessages": 3,
+            "nodes": 396,
+            "renderedParagraphs": 6,
+            "bottomDistance": 0,
+            "chatWidth": 398,
+            "layoutMs": 20.830000000000002,
+            "styleMs": 35.71499999999998,
+            "scriptMs": 65.15199999999999,
+            "taskMs": 167.31399999999996
+          },
+          {
+            "maxFrameMs": 25,
+            "framesOver32ms": 0,
+            "mountedMessages": 3,
+            "nodes": 396,
+            "renderedParagraphs": 6,
+            "bottomDistance": 0,
+            "chatWidth": 398,
+            "layoutMs": 21.65199999999999,
+            "styleMs": 38.23800000000002,
+            "scriptMs": 65.34300000000005,
+            "taskMs": 169.867
+          },
+          {
+            "maxFrameMs": 25.100000000000364,
+            "framesOver32ms": 0,
+            "mountedMessages": 3,
+            "nodes": 396,
+            "renderedParagraphs": 6,
+            "bottomDistance": 0,
+            "chatWidth": 398,
+            "layoutMs": 19.982,
+            "styleMs": 38.304,
+            "scriptMs": 64.284,
+            "taskMs": 211.35100000000006
+          },
+          {
+            "maxFrameMs": 24.900000000000546,
+            "framesOver32ms": 0,
+            "mountedMessages": 3,
+            "nodes": 396,
+            "renderedParagraphs": 6,
+            "bottomDistance": 0,
+            "chatWidth": 398,
+            "layoutMs": 20.55499999999999,
+            "styleMs": 35.51399999999999,
+            "scriptMs": 64.79600000000008,
+            "taskMs": 166.45699999999985
+          },
+          {
+            "maxFrameMs": 24.099999999999454,
+            "framesOver32ms": 0,
+            "mountedMessages": 3,
+            "nodes": 396,
+            "renderedParagraphs": 6,
+            "bottomDistance": 0,
+            "chatWidth": 398,
+            "layoutMs": 21.30499999999999,
+            "styleMs": 37.18300000000002,
+            "scriptMs": 60.699000000000055,
+            "taskMs": 167.13500000000005
+          }
+        ]
+      },
+      {
+        "story": "huge-reply",
+        "nodes": 496,
+        "mountedMessages": 2,
+        "layoutMs": 23.959999999999994,
+        "styleMs": 28.901999999999983,
+        "maxFrameMs": 9.300000000000182,
+        "framesOver32ms": 0,
+        "bottomDistance": 0,
+        "runs": [
+          {
+            "maxFrameMs": 9.399999999999636,
+            "framesOver32ms": 0,
+            "mountedMessages": 2,
+            "nodes": 496,
+            "renderedParagraphs": 6,
+            "bottomDistance": 0,
+            "chatWidth": 398,
+            "layoutMs": 24.156000000000002,
+            "styleMs": 28.634000000000007,
+            "scriptMs": 60.775999999999996,
+            "taskMs": 156.366
+          },
+          {
+            "maxFrameMs": 9,
+            "framesOver32ms": 0,
+            "mountedMessages": 2,
+            "nodes": 496,
+            "renderedParagraphs": 6,
+            "bottomDistance": 0,
+            "chatWidth": 398,
+            "layoutMs": 23.959999999999994,
+            "styleMs": 28.901999999999983,
+            "scriptMs": 60.333999999999996,
+            "taskMs": 154.76200000000006
+          },
+          {
+            "maxFrameMs": 9.300000000000182,
+            "framesOver32ms": 0,
+            "mountedMessages": 2,
+            "nodes": 496,
+            "renderedParagraphs": 6,
+            "bottomDistance": 0,
+            "chatWidth": 398,
+            "layoutMs": 23.070000000000007,
+            "styleMs": 30.82800000000002,
+            "scriptMs": 60.18699999999999,
+            "taskMs": 154.56199999999987
+          },
+          {
+            "maxFrameMs": 9.399999999999636,
+            "framesOver32ms": 0,
+            "mountedMessages": 2,
+            "nodes": 496,
+            "renderedParagraphs": 6,
+            "bottomDistance": 0,
+            "chatWidth": 398,
+            "layoutMs": 23.265000000000008,
+            "styleMs": 28.03899999999998,
+            "scriptMs": 61.12899999999999,
+            "taskMs": 153.97899999999987
+          },
+          {
+            "maxFrameMs": 9.099999999998545,
+            "framesOver32ms": 0,
+            "mountedMessages": 2,
+            "nodes": 496,
+            "renderedParagraphs": 6,
+            "bottomDistance": 0,
+            "chatWidth": 398,
+            "layoutMs": 24.746999999999993,
+            "styleMs": 29.262999999999984,
+            "scriptMs": 59.71199999999999,
+            "taskMs": 156.52900000000037
+          }
+        ]
+      }
+    ]
+  }
+}

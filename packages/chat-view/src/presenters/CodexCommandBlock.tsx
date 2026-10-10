@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
+import { useTranscriptState } from '@superone/ui/lib/transcript-state'
 import { useTranslation } from 'react-i18next'
 import { BookOpenText, FileText, Folder, Search, Terminal } from 'lucide-react'
 import type { CodexCommandExecutionItem } from '@superone/shared/agent-types'
@@ -24,7 +25,7 @@ export function CodexCommandBlockPresenter({ item, isStreaming, cwd, renderFileC
 }) {
   const { t } = useTranslation()
   const view = codexCommandPresentation(item, cwd)
-  const [internalExpanded, setInternalExpanded] = useState(false)
+  const [internalExpanded, setInternalExpanded] = useTranscriptState(`command-${item.id}`, false)
   const expanded = controlledExpanded ?? internalExpanded
   const realRunning = item.status === 'in_progress'
   const [showRunning, setShowRunning] = useState(realRunning)
@@ -36,7 +37,7 @@ export function CodexCommandBlockPresenter({ item, isStreaming, cwd, renderFileC
   const running = isStreaming && showRunning
   const error = isCodexCommandToolError(item)
   const tone = error ? 'error' : 'default'
-  const [outputOpen, setOutputOpen] = useState(error)
+  const [outputOpen, setOutputOpen] = useTranscriptState(`command-output-${item.id}`, error)
   const Icon = icons[view.kind]
   const multi = view.kind !== 'bash' && view.actions.length > 1
   const label = view.kind === 'explore' ? t(running ? 'chat.codex.exploringCode' : 'chat.codex.codeExplored')

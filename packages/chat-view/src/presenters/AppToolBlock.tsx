@@ -1,4 +1,5 @@
-import { useState, type ReactNode } from 'react'
+import { useTranscriptState } from '@superone/ui/lib/transcript-state'
+import type { ReactNode } from 'react'
 import { ChevronRight } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { CompactToolRow, ToolName, ToolSummary, withStreamingEllipsis } from './ToolRow'
@@ -27,6 +28,7 @@ export interface AppToolBlockPresenterProps {
   isStreaming: boolean
   expandable: boolean
   result?: string
+  toolUseId?: string
   /** Host-rendered JSON body — highlighted on the desktop, plain in the WebView. */
   renderJson: (text: string) => ReactNode
 }
@@ -45,8 +47,9 @@ export function AppToolBlockPresenter({
   expandable,
   result,
   renderJson,
+  toolUseId,
 }: AppToolBlockPresenterProps) {
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useTranscriptState(`app-tool-${toolUseId ?? toolText}`, false)
   if (!expandable) {
     return (
       <CompactToolRow icon={icon}>

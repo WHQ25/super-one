@@ -1,3 +1,4 @@
+import { useTranscriptState } from '@superone/ui/lib/transcript-state'
 import {
   Fragment,
   useLayoutEffect,
@@ -22,6 +23,8 @@ export interface TurnDetailRun {
 }
 
 interface TurnDetailSectionProps {
+  /** Huge virtual turns should not animate and measure every process run. */
+  animate?: boolean
   /** Turn content in original order; pinned runs stay visible between collapsed ones. */
   runs: TurnDetailRun[]
   /** Visible tool / file / line stats collapsed under Detail. */
@@ -115,9 +118,9 @@ function TurnDetailRegion({ expanded, children }: { expanded: boolean; children:
   )
 }
 
-export function TurnDetailSection({ runs, stats, workingSince, className }: TurnDetailSectionProps) {
+export function TurnDetailSection({ runs, stats, workingSince, className, animate = true }: TurnDetailSectionProps) {
   const { t, i18n } = useTranslation()
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useTranscriptState('turn-detail', false)
   const workingDuration = useWorkingDuration(workingSince, expanded)
   const label = !expanded && workingSince !== undefined
     ? t('chat.compactMode.workingFor', {
@@ -128,6 +131,7 @@ export function TurnDetailSection({ runs, stats, workingSince, className }: Turn
     <div className={cn('turn-detail-section mb-1.5', className)}>
       <button
         type="button"
+        aria-expanded={expanded}
         onClick={() => setExpanded((v) => !v)}
         className={cn(
           'group flex w-full items-center gap-1.5 border-b border-border/50 py-1 text-left text-xs text-muted-foreground/80',
@@ -185,10 +189,10 @@ export function TurnDetailSection({ runs, stats, workingSince, className }: Turn
     <>
       {indicator}
       {runs.map((run) =>
-        run.collapsible ? (
+        run.collapsible && animate ? (
           <TurnDetailRegion key={run.key} expanded={expanded}>{run.content}</TurnDetailRegion>
         ) : (
-          <Fragment key={run.key}>{run.content}</Fragment>
+          <Fragment key={run.key}>{!run.collapsible || expanded ? run.content : null}</Fragment>
         ),
       )}
     </>

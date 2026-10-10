@@ -1,4 +1,5 @@
-import { useState, useMemo, useEffect, useRef } from 'react'
+import { useTranscriptState } from '@superone/ui/lib/transcript-state'
+import { useMemo, useEffect, useRef } from 'react'
 import { ChevronRight } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { ToolBlock } from './ToolBlock'
@@ -17,13 +18,15 @@ export function AppToolGroup({ appId, blocks, sealed = false }: AppToolGroupProp
   const appName = app?.manifest.name ?? appId
   const toolUses = useMemo(() => blocks.filter((b): b is ContentBlock & { type: 'tool_use' } => b.type === 'tool_use'), [blocks])
   const streamingTool = useMemo(() => toolUses.find((b) => b.status === 'streaming') ?? null, [toolUses])
-  const [expanded, setExpanded] = useState(!!streamingTool && !sealed)
+  const [expanded, setExpanded] = useTranscriptState(`app-group-${toolUses[0]?.toolUseId ?? appId}`, !!streamingTool && !sealed)
+  const wasSealed = useRef(sealed)
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const isNearBottomRef = useRef(true)
 
   useEffect(() => {
-    if (sealed) setExpanded(false)
+    if (sealed && !wasSealed.current) setExpanded(false)
+    wasSealed.current = sealed
   }, [sealed])
 
   useEffect(() => {

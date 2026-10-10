@@ -13,6 +13,7 @@ interface ChatScrollIndicatorProps {
   compactExpanded: boolean
   compactSplit: number
   viewportRef: React.RefObject<HTMLDivElement | null>
+  getMessageTop?: (id: string) => number | null
   onJump: (id: string) => void
   onToggleCompact: () => void
 }
@@ -25,7 +26,7 @@ function splitTitle(text: string): { title: string; summary: string } {
   return { title: text.slice(0, nl), summary: text.slice(nl + 1).trim() }
 }
 
-function ChatScrollIndicatorImpl({ entries, hasCompact, compactExpanded, compactSplit, viewportRef, onJump, onToggleCompact }: ChatScrollIndicatorProps) {
+function ChatScrollIndicatorImpl({ entries, hasCompact, compactExpanded, compactSplit, viewportRef, getMessageTop, onJump, onToggleCompact }: ChatScrollIndicatorProps) {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [hovered, setHovered] = useState<{ index: number; top: number } | null>(null)
   const [compactHovered, setCompactHovered] = useState<{ top: number } | null>(null)
@@ -59,6 +60,7 @@ function ChatScrollIndicatorImpl({ entries, hasCompact, compactExpanded, compact
     const threshold = viewport.getBoundingClientRect().top + viewport.clientHeight * 0.25
     const cache = elCacheRef.current
     const topOf = (id: string): number | null => {
+      if (getMessageTop) return getMessageTop(id)
       let el = cache.get(id)
       if (!el || !el.isConnected) {
         el = viewport.querySelector(`[data-message-id="${CSS.escape(id)}"]`) as HTMLElement | null ?? undefined
@@ -68,7 +70,7 @@ function ChatScrollIndicatorImpl({ entries, hasCompact, compactExpanded, compact
       return el.getBoundingClientRect().top
     }
     setActiveId(findActiveTurnId(entriesRef.current, topOf, threshold))
-  }, [viewportRef])
+  }, [viewportRef, getMessageTop])
 
   useEffect(() => {
     const viewport = viewportRef.current

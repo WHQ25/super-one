@@ -14,6 +14,7 @@ export interface McpAppOwner {
   title?: string
   toolName?: string
   details?: ReactNode
+  retention?: symbol | null
   /** A View the host opened outside the transcript: it has no inline row and closes with its tab. */
   onClose?: () => void
 }
@@ -21,6 +22,31 @@ interface FrameOwner { iframe: HTMLIFrameElement; revoke(): void; failed: boolea
 const frames = new Map<string, FrameOwner>()
 const surfaces = new Map<string, Partial<Record<McpAppSurface, HTMLElement>>>()
 const claims = new Map<string, Map<symbol, Omit<McpAppOwner, 'mode'>>>()
+const transcripts = new Set<symbol>()
+const retainedViews = new Map<string, Set<symbol>>()
+
+function pruneUnclaimedView(key: string): void {
+  const state = useMcpAppLayout.getState()
+  if (state.views[key]?.row || claims.get(key)?.size) return
+  state.surface(key, 'inline', null)
+  if (state.views[key]?.mode !== 'inline' || [...(retainedViews.get(key) ?? [])].some(token => transcripts.has(token))) return
+  useMcpAppLayout.setState(current => { const views = { ...current.views }; delete views[key]; return { views } })
+  surfaces.delete(key)
+  retainedViews.delete(key)
+}
+
+export function retainMcpAppTranscript(token: symbol): () => void {
+  transcripts.add(token)
+  return () => {
+    transcripts.delete(token)
+    for (const [key, tokens] of retainedViews) {
+      tokens.delete(token)
+      if (!tokens.size) retainedViews.delete(key)
+      // Row cleanup may run after the parent layout-effect cleanup.
+      queueMicrotask(() => pruneUnclaimedView(key))
+    }
+  }
+}
 function visibleRow(row: HTMLElement | null): row is HTMLElement {
   if (!row?.isConnected) return false
   const container = row.closest<HTMLElement>('[data-chat-root]') ?? row
@@ -94,6 +120,10 @@ export const useMcpAppLayout = create<McpAppLayoutState>((set, get) => ({
   views: {},
   claim(owner) {
     const key = owner.app.appInstanceId
+    if (owner.retention) {
+      const tokens = retainedViews.get(key) ?? new Set<symbol>()
+      tokens.add(owner.retention); retainedViews.set(key, tokens)
+    }
     const token = Symbol(key)
     const rows = claims.get(key) ?? new Map()
     rows.set(token, owner); claims.set(key, rows)
@@ -115,13 +145,7 @@ export const useMcpAppLayout = create<McpAppLayoutState>((set, get) => ({
       refreshClaim(key)
       // A props update or StrictMode can reclaim the same row immediately. Its
       // stable surface ref will not fire again, so retain that destination.
-      queueMicrotask(() => {
-        if (get().views[key]?.row || claims.get(key)?.size) return
-        get().surface(key, 'inline', null)
-        if (get().views[key]?.mode !== 'inline') return
-        set(state => { const views = { ...state.views }; delete views[key]; return { views } })
-        surfaces.delete(key)
-      })
+      queueMicrotask(() => pruneUnclaimedView(key))
     }
   },
   openHost(owner, maximized = false) {
@@ -146,6 +170,7 @@ export const useMcpAppLayout = create<McpAppLayoutState>((set, get) => ({
     set(state => ({ views: { ...state.views, [key]: { ...owner, mode } } }))
     syncMcpAppTab(key, mode, maximized)
     refreshClaim(key)
+    if (mode === 'inline') queueMicrotask(() => pruneUnclaimedView(key))
   },
   surface(key, mode, element) {
     const targets = surfaces.get(key) ?? {}
@@ -170,6 +195,6 @@ export const useMcpAppLayout = create<McpAppLayoutState>((set, get) => ({
   },
   clear() {
     for (const key of Object.keys(get().views)) get().setMode(key, 'inline')
-    set({ views: {} }); surfaces.clear(); claims.clear()
+    set({ views: {} }); surfaces.clear(); claims.clear(); retainedViews.clear()
   },
 }))

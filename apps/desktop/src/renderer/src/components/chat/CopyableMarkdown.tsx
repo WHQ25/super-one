@@ -3,6 +3,7 @@ import { SessionChip, sessionChipLabel } from '@superone/chat-view/presenters/Se
 import { rehypeSessionLinks } from '@superone/chat-view/presenters/markdown-media'
 import { memo, useMemo, type ComponentProps, type ComponentType } from 'react'
 import { defaultRemarkPlugins, type Components } from 'streamdown'
+import { VirtualMarkdownBlock } from './VirtualMarkdownBlock'
 import { remarkMediaPaths } from './remark-media-paths'
 import { tryCopy } from '@/lib/clipboard'
 import {
@@ -39,6 +40,7 @@ const desktopMarkdownRuntime: CopyableMarkdownRuntime = {
   plugins: streamdownPlugins,
   rehypePlugins: [...streamdownRehypePlugins, rehypeSessionLinks],
   copyText: tryCopy,
+  BlockComponent: VirtualMarkdownBlock,
 }
 
 /**

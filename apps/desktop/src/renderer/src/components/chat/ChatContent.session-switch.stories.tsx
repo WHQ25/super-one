@@ -4,29 +4,12 @@ import { useEffect, useRef, useState } from 'react'
 import type { ChatMessage } from '@superone/shared/agent-types'
 import { Button } from '@superone/ui/components/ui/button'
 import { TooltipProvider } from '@superone/ui/components/ui/tooltip'
-import { mockIpc } from '../../../../../.storybook/mock-ipc'
+import { mockTranscriptIpc } from './chat-transcript-story-mocks'
 import { useAppStore } from '@/stores/app'
 import { createDefaultPerSessionState, createDefaultProjectState, useChatStore } from '@/stores/chat'
 import { ChatContent } from './ChatContent'
 
-mockIpc('app', 'resumeSession', async () => null)
-mockIpc('app', 'getMediaServerPort', async () => 6007)
-mockIpc('app', 'getModelCatalog', async () => ({ providers: [] }))
-mockIpc('app', 'getScheduledSend', async () => null)
-mockIpc('app', 'getStartupData', async () => ({ cached: {} }))
-mockIpc('app', 'getMcpMetaCache', async () => ({}))
-for (const method of ['trace', 'probeMcpIcons']) mockIpc('app', method, async () => undefined)
-mockIpc('app', 'getAppSettings', async () => ({ agentPreference: { claude: { drawModInterfaces: false } } }))
-mockIpc('app', 'connectClaude', async () => ({ models: [], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [] }))
-mockIpc('app', 'collaborationMailbox', Object.assign(() => {}, { list: async () => [], onChanged: () => () => {} }))
-for (const method of [
-  'listPlatforms', 'listCredentials', 'listBindings', 'claudeListAccounts',
-  'listMcpLibrary', 'listInstalledMcpb', 'listHarnesses', 'queryHarnessSessionRanks',
-]) {
-  mockIpc('app', method, async () => [])
-}
-const EMPTY_ACP_RESOURCES = { agents: [], selectedAgentId: null, modelsByAgentId: {}, configByAgentId: {} }
-for (const method of ['listAcpAgents', 'refreshAcpModels']) mockIpc('app', method, async () => EMPTY_ACP_RESOURCES)
+mockTranscriptIpc()
 
 const PROJECT = '__session_switch__'
 const SESSION_IDS = ['session-a', 'session-b', 'session-empty'] as const

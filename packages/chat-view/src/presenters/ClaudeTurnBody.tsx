@@ -1,3 +1,4 @@
+import { TranscriptStateScope } from '@superone/ui/lib/transcript-state'
 import { Fragment, useMemo, type ComponentType, type ReactNode } from 'react'
 import { ImageIcon } from 'lucide-react'
 import type { BashEditDiff, ContentBlock } from '@superone/shared/agent-types'
@@ -283,7 +284,7 @@ function renderSegments(
 ): ReactNode[] {
   const from = range?.start ?? 0
   const to = range?.end ?? segments.length
-  return segments.slice(from, to).map((segment, index) => {
+  const rendered = segments.slice(from, to).map((segment, index) => {
     const segmentIndex = from + index
     const sealed = options.forceSealed
       || !options.isStreaming
@@ -395,6 +396,11 @@ function renderSegments(
       )
     }
     return renderBlocks(segment.blocks, segment.startIndex, options)
+  })
+  return rendered.map((content, index) => {
+    const segment = segments[from + index]
+    const id = segment.kind === 'block' ? segment.index : segment.startIndex
+    return <TranscriptStateScope key={id} id={`claude-${id}`}>{content}</TranscriptStateScope>
   })
 }
 

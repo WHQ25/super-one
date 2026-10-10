@@ -19,6 +19,7 @@ import { isAlwaysHiddenToolBlock, isHiddenToolBlock } from './tool-display'
 import { isMediaGenerateImageTool, isMediaVideoStatusTool } from './media-generation'
 import { summarizeCodexProcess } from './turn-process-stats'
 import { TurnDetailSection } from './TurnDetailSection'
+import { VirtualTurnSegment } from './VirtualTranscriptBlock'
 import { isCodexPinnedSegment } from './compact-chat-mode'
 import { useActiveSession, useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
@@ -28,6 +29,7 @@ import {
   codexMcpItemResultText,
   isHiddenCodexMcpItem,
   type CodexItemPresenterProps,
+  type CodexTurnDetailPresenterProps,
   type CodexTurnViewPresenterParts,
   type CodexTurnViewPresenterRuntime,
 } from './presenters/CodexTurnView'
@@ -73,6 +75,12 @@ const DESKTOP_PARTS: CodexTurnViewPresenterParts = {
   TurnDetail: TurnDetailSection,
   AppIcon: MiniAppIcon,
 }
+
+function LongTurnDetail(props: CodexTurnDetailPresenterProps) {
+  return <TurnDetailSection {...props} animate={false} />
+}
+
+const LONG_TURN_PARTS: CodexTurnViewPresenterParts = { ...DESKTOP_PARTS, Segment: VirtualTurnSegment, TurnDetail: LongTurnDetail }
 
 const DESKTOP_RUNTIME: CodexTurnViewPresenterRuntime = {
   isHiddenMcpItem: isHiddenCodexMcpItem,
@@ -124,7 +132,7 @@ export function CodexTurnView(props: CodexTurnViewProps) {
       onRejectPlan={rejectCodexPlan}
       groupableAppByTool={groupableAppByTool}
       appNameById={appNameById}
-      parts={DESKTOP_PARTS}
+      parts={(props.message.metadata?.codex?.items.length ?? 0) >= 80 ? LONG_TURN_PARTS : DESKTOP_PARTS}
       runtime={DESKTOP_RUNTIME}
     />
   )

@@ -1,10 +1,10 @@
+import { TranscriptStateScope, useTranscriptState } from '@superone/ui/lib/transcript-state'
 import { codexCommandPresentation, summarizeCodexCommandActions } from '@superone/shared/codex-command-actions'
 import {
   Fragment,
   memo,
   useEffect,
   useRef,
-  useState,
   type ComponentType,
   type ReactNode,
 } from 'react'
@@ -85,6 +85,8 @@ export interface CodexTurnDetailPresenterProps {
 }
 
 export interface CodexTurnViewPresenterParts {
+  /** Desktop can evict off-screen segments within exceptionally long turns. */
+  Segment?: ComponentType<{ children: ReactNode; estimate?: number; id: string }>
   Markdown: ComponentType<CodexMarkdownPresenterProps>
   CodexItem: ComponentType<CodexItemPresenterProps>
   Command: ComponentType<CodexCommandPresenterProps>
@@ -184,11 +186,12 @@ const CodexAppToolGroup = memo(function CodexAppToolGroup({
 }: CodexAppToolGroupProps) {
   const { t } = useTranslation()
   const runningItem = isStreaming ? items.find((i) => i.status === 'in_progress') ?? null : null
-  const [expanded, setExpanded] = useState(!!runningItem && !sealed)
+  const [expanded, setExpanded] = useTranscriptState(`codex-app-${items[0]?.id}`, !!runningItem && !sealed)
+  const wasSealed = useRef(sealed)
   const scrollRef = useRef<HTMLDivElement>(null)
   const isNearBottomRef = useRef(true)
 
-  useEffect(() => { if (sealed) setExpanded(false) }, [sealed])
+  useEffect(() => { if (sealed && !wasSealed.current) setExpanded(false); wasSealed.current = sealed }, [sealed])
 
   useEffect(() => {
     const el = scrollRef.current
@@ -434,15 +437,17 @@ const CodexCommandGroup = memo(function CodexCommandGroup({
   const { t } = useTranslation()
   const hasRunning = items.some((item) => isStreaming && item.status === 'in_progress')
   const runningItem = hasRunning ? items.find((item) => item.status === 'in_progress') : null
-  const [expanded, setExpanded] = useState(hasRunning && !sealed)
+  const [expanded, setExpanded, restored] = useTranscriptState(`codex-command-${items[0]?.id}`, hasRunning && !sealed)
+  const wasSealed = useRef(sealed)
 
   useEffect(() => {
-    if (sealed) {
+    if (sealed && !wasSealed.current) {
       setExpanded(false)
-    } else if (hasRunning) {
+    } else if (hasRunning && !restored) {
       setExpanded(true)
     }
-  }, [hasRunning, sealed])
+    wasSealed.current = sealed
+  }, [hasRunning, sealed, restored])
 
   return (
     <div className="tool-group my-0.5 min-w-0">
@@ -553,6 +558,7 @@ export function CodexTurnViewPresenter({
     ImageGallery,
     TurnDetail,
     AppIcon,
+    Segment,
   } = parts
   const sourceCodexItems = codex?.items ?? EMPTY_CODEX_ITEMS
   // Terminal Codex failures already live in the message footer. App Server can
@@ -617,8 +623,9 @@ export function CodexTurnViewPresenter({
     segs: CodexSegment[],
     forceSealed: boolean,
     range?: { start: number; end: number },
-  ): ReactNode[] =>
-    segs.slice(range?.start ?? 0, range?.end ?? segs.length).map((seg, i) => {
+  ): ReactNode[] => {
+    const sliced = segs.slice(range?.start ?? 0, range?.end ?? segs.length)
+    const contents = sliced.map((seg, i) => {
       const segIdx = (range?.start ?? 0) + i
       const sealed = forceSealed || !isStreaming || segIdx < segs.length - 1
       if (seg.kind === 'subagent') {
@@ -702,7 +709,34 @@ export function CodexTurnViewPresenter({
         )
       }
       return null
+    }).map((content, index) => {
+      const segment = segs[(range?.start ?? 0) + index]
+      const itemIndex = 'index' in segment ? segment.index : segment.indices[0]
+      const item = codexItems[itemIndex]
+      return <TranscriptStateScope key={item?.id ?? itemIndex} id={`codex-${item?.id ?? itemIndex}`}>
+        {content}
+      </TranscriptStateScope>
     })
+    if (!Segment) return contents
+    // A small chunk keeps the visible work bounded without allocating an
+    // observer, DOM placeholder and React state for every activity in the turn.
+    const chunks: ReactNode[] = []
+    for (let start = 0; start < sliced.length; start += 8) {
+      const chunk = sliced.slice(start, start + 8)
+      const first = chunk[0]
+      const firstIndex = 'index' in first ? first.index : first.indices[0]
+      const id = codexItems[firstIndex]?.id ?? String(firstIndex)
+      const estimate = chunk.reduce((height, segment) => {
+        const index = 'index' in segment ? segment.index : segment.indices[0]
+        const item = codexItems[index]
+        return height + (item?.type === 'agent_message'
+          ? Math.max(32, Math.ceil(item.text.length / 60) * 24 + 12)
+          : 48)
+      }, 0)
+      chunks.push(<Segment key={id} id={id} estimate={estimate}>{contents.slice(start, start + 8)}</Segment>)
+    }
+    return chunks
+  }
 
   if (collapseEntireTurn) {
     const hasFallback = !hasAssistantMessage && !!fallbackText

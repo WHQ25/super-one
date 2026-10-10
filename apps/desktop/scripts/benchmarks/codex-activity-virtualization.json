@@ -1,0 +1,336 @@
+{
+  "capturedAt": "2026-10-10T18:24:42.968153+00:00",
+  "baselineCommit": "f32101934",
+  "environment": "Electron development renderer; existing user instrumentation unchanged",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "dataset": {
+    "fixture": "isolated copy of an existing long Codex conversation",
+    "messages": 7,
+    "activityItems": 2005,
+    "transcriptBytes": 10004311
+  },
+  "method": {
+    "repetitions": 3,
+    "summary": "median of per-open metrics",
+    "baseline": "LONG_TURN_PARTS disabled in the desktop adapter; earlier message/Markdown virtualization retained",
+    "after": "8-segment chunks with shared viewport observer, persistent disclosure state and no per-run Detail height animation",
+    "panelCondition": "Detail expanded",
+    "frameSampling": "performance.now intervals, including initial click-to-first-frame delay; wait for a frame before ending the sample",
+    "detailSampleWindowMs": 1500,
+    "panelSampleWindowMs": 800,
+    "cooldownMs": 500,
+    "performanceMetrics": "Chrome Performance.getMetrics deltas around each open"
+  },
+  "commands": {
+    "benchmark": "node apps/desktop/scripts/bench-codex-activity.mjs --port 9337 --page-url http://localhost:5177/ --output /tmp/codex-activity-performance.json",
+    "browserRegression": "cd apps/desktop && bunx playwright test --config playwright.transcript.config.ts"
+  },
+  "validation": {
+    "focusedVitestFiles": 6,
+    "focusedVitestTests": 65,
+    "browserRegressionScenarios": 8,
+    "desktopTypecheckWeb": "passed",
+    "sharedChatViewBuild": "passed",
+    "benchmarkSyntaxCheck": "passed"
+  },
+  "limitations": [
+    "Electron development measurements include the existing diagnostic instrumentation; packaged release performance was not measured.",
+    "Detail still has one frame above 32ms per open in this development profile.",
+    "Results cover the copied conversation and synthetic browser regression fixtures."
+  ],
+  "comparison": [
+    {
+      "operation": "detail",
+      "metrics": {
+        "maxFrameMs": {
+          "before": 1575.5,
+          "after": 71.70000004768372,
+          "reductionPercent": 95.44906378624667
+        },
+        "chatDomNodes": {
+          "before": 35343,
+          "after": 1632,
+          "reductionPercent": 95.38239538239537
+        },
+        "mountedTools": {
+          "before": 1004,
+          "after": 35,
+          "reductionPercent": 96.51394422310757
+        },
+        "layoutMs": {
+          "before": 92.65399999999998,
+          "after": 3.281000000000001,
+          "reductionPercent": 96.4588684784251
+        },
+        "styleMs": {
+          "before": 1009.2089999999994,
+          "after": 81.84799999999998,
+          "reductionPercent": 91.88988603946258
+        },
+        "scriptMs": {
+          "before": 1023.09,
+          "after": 71.14899999999999,
+          "reductionPercent": 93.04567535602929
+        },
+        "taskMs": {
+          "before": 2188.1240000000003,
+          "after": 240.52300000000005,
+          "reductionPercent": 89.00779846114753
+        },
+        "framesOver32ms": {
+          "before": 2,
+          "after": 1,
+          "reductionPercent": 50.0
+        }
+      }
+    },
+    {
+      "operation": "panel",
+      "metrics": {
+        "maxFrameMs": {
+          "before": 423.39999997615814,
+          "after": 28.899999976158142,
+          "reductionPercent": 93.17430326457593
+        },
+        "chatDomNodes": {
+          "before": 35343,
+          "after": 1632,
+          "reductionPercent": 95.38239538239537
+        },
+        "mountedTools": {
+          "before": 1004,
+          "after": 35,
+          "reductionPercent": 96.51394422310757
+        },
+        "layoutMs": {
+          "before": 99.10100000000006,
+          "after": 13.043,
+          "reductionPercent": 86.83867973077972
+        },
+        "styleMs": {
+          "before": 1770.7069999999999,
+          "after": 64.16,
+          "reductionPercent": 96.37658856038858
+        },
+        "scriptMs": {
+          "before": 74.15599999999944,
+          "after": 17.11299999999999,
+          "reductionPercent": 76.92297319164987
+        },
+        "taskMs": {
+          "before": 2117.653999999998,
+          "after": 153.71499999999983,
+          "reductionPercent": 92.7412599036481
+        },
+        "framesOver32ms": {
+          "before": 2,
+          "after": 0,
+          "reductionPercent": 100.0
+        }
+      }
+    }
+  ],
+  "baseline": [
+    {
+      "operation": "detail",
+      "summary": {
+        "maxFrameMs": 1575.5,
+        "frameSamples": 2,
+        "framesOver32ms": 2,
+        "chatDomNodes": 35343,
+        "mountedTools": 1004,
+        "layoutMs": 92.65399999999998,
+        "styleMs": 1009.2089999999994,
+        "scriptMs": 1023.09,
+        "taskMs": 2188.1240000000003
+      },
+      "runs": [
+        {
+          "maxFrameMs": 1575.5,
+          "frameSamples": 2,
+          "framesOver32ms": 2,
+          "chatDomNodes": 35343,
+          "mountedTools": 1004,
+          "layoutMs": 93.849,
+          "styleMs": 1017.7600000000002,
+          "scriptMs": 1023.09,
+          "taskMs": 2188.1240000000003
+        },
+        {
+          "maxFrameMs": 1563.2000000476837,
+          "frameSamples": 3,
+          "framesOver32ms": 3,
+          "chatDomNodes": 35343,
+          "mountedTools": 1004,
+          "layoutMs": 92.433,
+          "styleMs": 1006.3369999999998,
+          "scriptMs": 994.3460000000002,
+          "taskMs": 2153.46
+        },
+        {
+          "maxFrameMs": 1590,
+          "frameSamples": 2,
+          "framesOver32ms": 2,
+          "chatDomNodes": 35343,
+          "mountedTools": 1004,
+          "layoutMs": 92.65399999999998,
+          "styleMs": 1009.2089999999994,
+          "scriptMs": 1043.2630000000001,
+          "taskMs": 2195.545000000001
+        }
+      ]
+    },
+    {
+      "operation": "panel",
+      "summary": {
+        "maxFrameMs": 423.39999997615814,
+        "frameSamples": 3,
+        "framesOver32ms": 2,
+        "chatDomNodes": 35343,
+        "mountedTools": 1004,
+        "layoutMs": 99.10100000000006,
+        "styleMs": 1770.7069999999999,
+        "scriptMs": 74.15599999999944,
+        "taskMs": 2117.653999999998
+      },
+      "runs": [
+        {
+          "maxFrameMs": 473.5,
+          "frameSamples": 7,
+          "framesOver32ms": 5,
+          "chatDomNodes": 35343,
+          "mountedTools": 1004,
+          "layoutMs": 99.10100000000006,
+          "styleMs": 2010.0549999999994,
+          "scriptMs": 78.36199999999937,
+          "taskMs": 2333.3629999999985
+        },
+        {
+          "maxFrameMs": 422.10000002384186,
+          "frameSamples": 3,
+          "framesOver32ms": 2,
+          "chatDomNodes": 35343,
+          "mountedTools": 1004,
+          "layoutMs": 178.22899999999998,
+          "styleMs": 1770.7069999999999,
+          "scriptMs": 74.15599999999944,
+          "taskMs": 2117.653999999998
+        },
+        {
+          "maxFrameMs": 423.39999997615814,
+          "frameSamples": 3,
+          "framesOver32ms": 2,
+          "chatDomNodes": 35343,
+          "mountedTools": 1004,
+          "layoutMs": 96.67500000000007,
+          "styleMs": 1419.8240000000003,
+          "scriptMs": 68.41100000000023,
+          "taskMs": 1678.566
+        }
+      ]
+    }
+  ],
+  "after": [
+    {
+      "operation": "detail",
+      "summary": {
+        "maxFrameMs": 71.70000004768372,
+        "frameSamples": 171,
+        "framesOver32ms": 1,
+        "chatDomNodes": 1632,
+        "mountedTools": 35,
+        "layoutMs": 3.281000000000001,
+        "styleMs": 81.84799999999998,
+        "scriptMs": 71.14899999999999,
+        "taskMs": 240.52300000000005
+      },
+      "runs": [
+        {
+          "maxFrameMs": 71.80000007152557,
+          "frameSamples": 171,
+          "framesOver32ms": 1,
+          "chatDomNodes": 1632,
+          "mountedTools": 35,
+          "layoutMs": 3.581,
+          "styleMs": 81.88799999999999,
+          "scriptMs": 77.355,
+          "taskMs": 245.70999999999998
+        },
+        {
+          "maxFrameMs": 71.70000004768372,
+          "frameSamples": 171,
+          "framesOver32ms": 1,
+          "chatDomNodes": 1632,
+          "mountedTools": 35,
+          "layoutMs": 3.281000000000001,
+          "styleMs": 81.84799999999998,
+          "scriptMs": 71.14899999999999,
+          "taskMs": 240.52300000000005
+        },
+        {
+          "maxFrameMs": 69.79999995231628,
+          "frameSamples": 171,
+          "framesOver32ms": 1,
+          "chatDomNodes": 1632,
+          "mountedTools": 35,
+          "layoutMs": 3.2010000000000005,
+          "styleMs": 81.47699999999999,
+          "scriptMs": 69.69000000000003,
+          "taskMs": 229.63999999999996
+        }
+      ]
+    },
+    {
+      "operation": "panel",
+      "summary": {
+        "maxFrameMs": 28.899999976158142,
+        "frameSamples": 93,
+        "framesOver32ms": 0,
+        "chatDomNodes": 1632,
+        "mountedTools": 35,
+        "layoutMs": 13.043,
+        "styleMs": 64.16,
+        "scriptMs": 17.11299999999999,
+        "taskMs": 153.71499999999983
+      },
+      "runs": [
+        {
+          "maxFrameMs": 28.899999976158142,
+          "frameSamples": 92,
+          "framesOver32ms": 0,
+          "chatDomNodes": 1632,
+          "mountedTools": 35,
+          "layoutMs": 12.808999999999997,
+          "styleMs": 78.43300000000004,
+          "scriptMs": 17.11299999999999,
+          "taskMs": 164.49599999999998
+        },
+        {
+          "maxFrameMs": 28.399999976158142,
+          "frameSamples": 93,
+          "framesOver32ms": 0,
+          "chatDomNodes": 1632,
+          "mountedTools": 35,
+          "layoutMs": 13.043,
+          "styleMs": 62.182999999999986,
+          "scriptMs": 16.66200000000001,
+          "taskMs": 148.21099999999987
+        },
+        {
+          "maxFrameMs": 32.90000009536743,
+          "frameSamples": 93,
+          "framesOver32ms": 1,
+          "chatDomNodes": 1632,
+          "mountedTools": 35,
+          "layoutMs": 13.170999999999989,
+          "styleMs": 64.16,
+          "scriptMs": 20.814,
+          "taskMs": 153.71499999999983
+        }
+      ]
+    }
+  ]
+}

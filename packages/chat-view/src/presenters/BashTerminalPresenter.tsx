@@ -1,3 +1,4 @@
+import { useTranscriptState } from '@superone/ui/lib/transcript-state'
 import {
   useCallback,
   useEffect,
@@ -134,24 +135,32 @@ export function BashTerminalPresenter({
   // An edit block opens on the file-diff setting (`autoExpand` carries it); a
   // plain command only holds itself open while a background task runs.
   const autoExpanded = allowExpand && (holdOpenForBackgroundTask || (autoExpand === true && hasEdits))
-  const [expanded, setExpanded] = useState(allowExpand && autoExpand ? autoExpanded : false)
+  const [expanded, setExpanded, expandedRestored] = useTranscriptState(`bash-${toolUseId}`, allowExpand && autoExpand ? autoExpanded : false)
   // Behind the file rows the output is a second toggle, shut unless the command
   // itself went wrong — a half-applied sed is what the user needs to see first.
   const outputWentWrong = isError || isDenied || isTimedOut === true
-  const [outputOpen, setOutputOpen] = useState(outputWentWrong)
-  useEffect(() => { if (outputWentWrong) setOutputOpen(true) }, [outputWentWrong])
+  const [outputOpen, setOutputOpen, outputRestored] = useTranscriptState(`bash-output-${toolUseId}`, outputWentWrong)
+  const previousWrong = useRef(outputWentWrong)
+  useEffect(() => {
+    if (outputWentWrong && (!outputRestored || !previousWrong.current)) setOutputOpen(true)
+    previousWrong.current = outputWentWrong
+  }, [outputWentWrong])
   const outputVisible = expanded && (!hasEdits || outputOpen)
-  const [outputFull, setOutputFull] = useState(false)
-  const [extraContent, setExtraContent] = useState('')
-  const [loadedLines, setLoadedLines] = useState(BASH_LOAD_CHUNK)
-  const [hasMore, setHasMore] = useState(true)
+  const [outputFull, setOutputFull] = useTranscriptState(`bash-full-${toolUseId}`, false)
+  const [extraContent, setExtraContent] = useTranscriptState(`bash-extra-${toolUseId}`, '')
+  const [loadedLines, setLoadedLines] = useTranscriptState(`bash-lines-${toolUseId}`, BASH_LOAD_CHUNK)
+  const [hasMore, setHasMore] = useTranscriptState(`bash-more-${toolUseId}`, true)
   const loadingRef = useRef(false)
   const prevExtraRef = useRef('')
   const prevScrollHeightRef = useRef(0)
-  const [restoredContent, setRestoredContent] = useState<string | null>(outputExpired ? null : '')
-  const restoredRef = useRef(false)
+  const [restoredContent, setRestoredContent, contentRestored] = useTranscriptState<string | null>(`bash-content-${toolUseId}`, outputExpired ? null : '')
+  const restoredRef = useRef(contentRestored && restoredContent !== null)
+  const previousAuto = useRef({ allowExpand, autoExpand, autoExpanded })
 
   useEffect(() => {
+    const previous = previousAuto.current
+    previousAuto.current = { allowExpand, autoExpand, autoExpanded }
+    if (expandedRestored && previous.allowExpand === allowExpand && previous.autoExpand === autoExpand && previous.autoExpanded === autoExpanded) return
     if (!allowExpand) {
       setExpanded(false)
       return

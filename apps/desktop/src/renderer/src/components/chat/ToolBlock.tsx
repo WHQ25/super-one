@@ -1,4 +1,5 @@
 import { lazy, Suspense, memo, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useTranscriptState } from '@superone/ui/lib/transcript-state'
 import { useTranslation } from 'react-i18next'
 import { ChevronRight } from 'lucide-react'
 import { diffLines } from 'diff'
@@ -83,7 +84,7 @@ function AppResultRendererBlock({ appId, toolUseId, toolName, appName, toolReada
   result: unknown
   autoExpand: boolean
 }) {
-  const [expanded, setExpanded] = useState(autoExpand)
+  const [expanded, setExpanded] = useTranscriptState(`app-renderer-${toolUseId}`, autoExpand)
   return (
     <div className={cn('tool-node my-0.5 rounded bg-muted/20', 'cursor-pointer hover:bg-muted/40')}>
       <div
@@ -271,6 +272,7 @@ function renderDesktopMiniAppTool(
     handled: true,
     node: (
       <AppToolBlock
+        toolUseId={toolUseId}
         icon={canvasApp
           ? <MiniAppIcon appId={canvasApp.id} className="size-3.5 shrink-0" />
           : <ToolIcon icon="plug" className="size-3 shrink-0 text-muted-foreground" />}

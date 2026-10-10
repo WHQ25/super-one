@@ -1,6 +1,7 @@
+import { controlLeaseAuthority, acquirePhoneControl } from '../control-lease.test-fixtures'
 import { describe, expect, it, vi } from 'vitest'
 import type { AgentEvent, ChatMessage, SendMessageRequest } from '@superone/shared/agent-types'
-import type { CodexAsyncQuestionAnswerCommand } from '@superone/shared/codex-async-question'
+import { nativeAsyncAnswerClient } from './native-async-answer-client.test-fixtures'
 import { ChatRuntime } from '../../../../mobile/src/runtime'
 import { answerRemoteAsyncQuestion } from '../agent/remote-async-question'
 import { Session } from './session'
@@ -16,9 +17,10 @@ function fixture(initialMessages: ChatMessage[] = []) {
     onEvent: (listener: typeof emit) => { emit = listener; return () => {} },
     onProviderSessionId: () => () => {}, onPermissionModeApplied: () => () => {},
   }
-  const session = new Session({ id: 'session', projectPath: '/project', cwd: '/project',
+  const authority = controlLeaseAuthority()
+  const session = new Session({ leaseAuthority: authority, id: 'session', projectPath: '/project', cwd: '/project',
     providerId: 'codex', harnessId: 'codex', providerConfig: {}, backend: backend as unknown as SessionBackend, initialMessages })
-  return { session, backend, emit: (event: AgentEvent) => emit(event) }
+  return { session, backend, authority, emit: (event: AgentEvent) => emit(event) }
 }
 
 const answer = { kind: 'codex.steer' as const, input: 'Production', newAssistantMessageId: '',
@@ -26,24 +28,12 @@ const answer = { kind: 'codex.steer' as const, input: 'Production', newAssistant
 
 describe('Codex async answers across turn completion', () => {
   it('delivers a mobile answer after completion and restores its submitted state', async () => {
-    const { session, backend } = fixture([{
+    const { session, backend, authority } = fixture([{
       id: 'turn', role: 'assistant', status: 'complete', content: [], createdAt: '', providerId: 'codex',
       metadata: { codex: { threadId: 'thread', usage: null, items: [{ id: 'question', type: 'agent_message',
         text: '', delivery: 'async', questions: [{ title: 'Environment?', options: ['Production'] }] }] } },
     }])
-    session.claim({ kind: 'remote', deviceId: 'phone' })
-    session.subscribe('phone')
-    const client = {
-      startBuffering() {}, releaseBuffer: () => ({ epoch: 1, batches: [] }),
-      async request(command: { type: string }) {
-        if (command.type === 'load_session_messages') return { messages: session.snapshot.messages, provider: 'codex', hasMore: false }
-        if (command.type === 'get_session_state') return { status: 'idle' }
-        if (command.type === 'codex_async_question_answer') {
-          return { ok: true, reply: await answerRemoteAsyncQuestion(session, command as CodexAsyncQuestionAnswerCommand) }
-        }
-        return { ok: true }
-      },
-    }
+    const client = nativeAsyncAnswerClient(session, authority)
     const runtime = new ChatRuntime(client as never, () => {})
     await runtime.open('/project', 'session')
     await runtime.answerCodexAsyncQuestion('turn', 'question', ['Production'])
@@ -57,8 +47,8 @@ describe('Codex async answers across turn completion', () => {
   })
 
   it('keeps desktop send ownership checks when answering after completion', async () => {
-    const { session, backend } = fixture()
-    session.claim({ kind: 'remote', deviceId: 'phone' })
+    const { session, backend, authority } = fixture()
+    acquirePhoneControl(authority, session.id, 'phone')
     await expect(session.dispatchBackendCommand(answer)).rejects.toThrow(/controlled by remote/)
     expect(backend.send).not.toHaveBeenCalled()
     expect(session.snapshot.messages).toHaveLength(0)

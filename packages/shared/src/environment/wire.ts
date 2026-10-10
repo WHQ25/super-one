@@ -1,7 +1,10 @@
 /**
  * Message framing inside the node channel from protocol generation 3. A
  * message is its JSON in the remote payload frame (`remote-payload.ts`):
- * DEFLATE above {@link WIRE_COMPRESS_MIN_BYTES}, raw otherwise. Pushed
+ * DEFLATE above {@link WIRE_COMPRESS_MIN_BYTES}; small RPC receipts can also
+ * use schema compression when it saves bytes. Control
+ * messages use the generation's frozen schema dictionary; unlike pushes,
+ * they can overtake pending stream frames. Pushed
  * messages (the stream lane) instead deflate against the last
  * {@link WIRE_HISTORY_BYTES} of the pushes before them, which both ends keep,
  * so the keys and ids every event repeats cost a back-reference. A frame larger
@@ -20,6 +23,7 @@ import {
   MAX_REMOTE_PAYLOAD_BYTES,
   REMOTE_PAYLOAD_HEADER_BYTES,
 } from '../remote-payload'
+import { WIRE_SCHEMA_DICTIONARY } from './wire-dictionary'
 
 export interface WireCompression {
   /** Raw DEFLATE, primed with `dictionary` when given. */
@@ -37,6 +41,8 @@ export const WIRE_HISTORY_BYTES = 32 * 1024
 const FRAGMENT_FLAG = 2
 /** A pushed message, deflated against the push history; header as the remote payload's. */
 const HISTORY_FLAG = 3
+/** A control reply deflated against the generation's frozen schema vocabulary. */
+const SCHEMA_FLAG = 4
 /** Flag, message id (u32), index (u16), total (u16). */
 const FRAGMENT_HEADER_BYTES = 9
 const MAX_FRAGMENTS = Math.ceil((MAX_REMOTE_PAYLOAD_BYTES + REMOTE_PAYLOAD_HEADER_BYTES) / WIRE_FRAGMENT_BYTES)
@@ -76,7 +82,7 @@ export class WireEncoder {
   encode(message: unknown, opts: { push?: boolean } = {}): Uint8Array[] {
     const json = encoder.encode(JSON.stringify(message))
     if (json.length > MAX_REMOTE_PAYLOAD_BYTES) throw new Error('remote payload exceeds 32 MiB')
-    const frame = opts.push ? this.pushFrame(json) : frameRemotePayload(json, json.length > WIRE_COMPRESS_MIN_BYTES ? this.compression.deflate(json) : undefined)
+    const frame = opts.push ? this.pushFrame(json) : this.controlFrame(json, message)
     if (frame.length <= WIRE_FRAGMENT_BYTES) return [frame]
     const id = this.nextId = (this.nextId + 1) >>> 0
     const total = Math.ceil(frame.length / WIRE_FRAGMENT_BYTES)
@@ -93,6 +99,15 @@ export class WireEncoder {
       parts.push(part)
     }
     return parts
+  }
+
+  private controlFrame(json: Uint8Array, message: unknown): Uint8Array {
+    if (json.length <= WIRE_COMPRESS_MIN_BYTES && (message as { type?: string } | null)?.type !== 'rpc_result') return frameRemotePayload(json)
+    const schema = this.compression.deflate(json, WIRE_SCHEMA_DICTIONARY)
+    if (schema.length >= json.length) return frameRemotePayload(json)
+    const frame = frameRemotePayload(json, schema)
+    frame[0] = SCHEMA_FLAG
+    return frame
   }
 
   private pushFrame(json: Uint8Array): Uint8Array {
@@ -149,6 +164,12 @@ export class WireDecoder {
   }
 
   private payload(frame: Uint8Array): unknown {
+    if (frame[0] === SCHEMA_FLAG) {
+      // Reuse the same bounded payload validation, with this flag's dictionary.
+      const standard = frame.slice()
+      standard[0] = 1
+      return decodeRemotePayload(standard, (body, out) => this.compression.inflate(body, out, WIRE_SCHEMA_DICTIONARY))
+    }
     if (frame[0] !== HISTORY_FLAG) return decodeRemotePayload(frame, (body, out) => this.compression.inflate(body, out))
     if (frame.length < REMOTE_PAYLOAD_HEADER_BYTES) throw new Error('invalid remote payload length')
     const size = new DataView(frame.buffer, frame.byteOffset, frame.byteLength).getUint32(1)

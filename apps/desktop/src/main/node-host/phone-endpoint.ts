@@ -1,7 +1,8 @@
-import { createConnectionRpc, createFramedWire, dispatchRpc, type AuthenticatedClient, type RpcContext } from '@superone/runtime/server'
+import { createConnectionRpc, createFramedWire, type AuthenticatedClient, type RpcContext } from '@superone/runtime/server'
 import { ADMIN_PAIRING_SCOPES } from '@superone/shared/environment'
 import log from '../logger'
 import type { DesktopDomain } from './desktop-domain'
+import { bindControlActor } from '@superone/runtime/lease'
 
 /** One open link of a paired phone (a LAN socket or its relay slot), as the endpoint writes to it. */
 export interface PhoneLink {
@@ -43,14 +44,27 @@ export function phoneClient(link: Pick<PhoneLink, 'deviceId' | 'keyId'>): Authen
  */
 export function openPhoneConnection(domain: DesktopDomain, link: PhoneLink): PhoneConnection {
   const wire = createFramedWire({ write: link.write, buffered: link.buffered })
+  const client = phoneClient(link)
+  const routed = domain.openPhoneRoute(client)
   const rpc = createConnectionRpc<RpcContext>({
     identity: domain.identity,
-    client: phoneClient(link),
+    client,
     wire,
     route: link.transport,
     surface: 'phone',
-    context: domain.phoneContext(),
-    dispatch: dispatchRpc,
+    context: {
+      ...domain.phoneContext(),
+      leases: bindControlActor(domain.leases, {
+        clientSessionId: client.clientSessionId,
+        holderClientId: `desktop:${domain.identity.environmentId}`,
+        delegate: client.clientSessionId,
+        yields: false,
+      }),
+    },
+    dispatch: domain.dispatchRpc,
+    control: domain.leases,
+    holdsControl: lease => lease.delegate === client.clientSessionId,
+    routeRpc: routed?.dispatch,
     isRevoked: () => false,
     close: link.close,
   })
@@ -68,6 +82,7 @@ export function openPhoneConnection(domain: DesktopDomain, link: PhoneLink): Pho
     },
     close() {
       rpc.dispose()
+      routed?.close()
       wire.close()
     },
   }

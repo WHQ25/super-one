@@ -1,3 +1,5 @@
+import { runWindowControl, runFencedSessionControl } from './control-context'
+import { controlLeaseAuthority, acquirePhoneControl } from '../control-lease.test-fixtures'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentEvent, ChatMessage, SendMessageRequest } from '@superone/shared/agent-types'
 import type { BackendStartOptions, SessionBackend, SessionStateChange } from './types'
@@ -281,9 +283,14 @@ class FakeBackend implements SessionBackend {
   }
 }
 
+const sessionAuthorities = new WeakMap<Session, NonNullable<SessionConstructorOptions['leaseAuthority']>>()
+function grantPhone(session: Session, deviceId: string) { return acquirePhoneControl(sessionAuthorities.get(session)!, session.id, deviceId) }
+
 function makeSession(overrides: Partial<SessionConstructorOptions> = {}): { session: Session; backend: FakeBackend } {
   const backend = new FakeBackend()
+  const authority = overrides.leaseAuthority ?? controlLeaseAuthority()
   const session = new Session({
+    leaseAuthority: authority,
     id: 'sess-1',
     projectPath: '/tmp/proj',
     cwd: '/tmp/proj',
@@ -293,6 +300,7 @@ function makeSession(overrides: Partial<SessionConstructorOptions> = {}): { sess
     backend,
     ...overrides,
   })
+  sessionAuthorities.set(session, authority)
   return { session, backend }
 }
 
@@ -3265,7 +3273,7 @@ describe('Session persist hook', () => {
       expect(backend.sendCalls).toHaveLength(0)
     })
 
-    it('markWorktreeRemoved stops a turn waiting on the user and goes read-only', async () => {
+    it('markWorktreeRemoved stops a phone-controlled turn even inside another frontend scope', async () => {
       const { session, backend } = makeSession({ cwd: '/tmp/proj/.worktrees/feat' })
       const captured: AgentEvent[] = []
       session.on((e) => captured.push(e))
@@ -3273,7 +3281,8 @@ describe('Session persist hook', () => {
       await new Promise((r) => setTimeout(r, 0))
       expect(session.snapshot.status).toBe('streaming')
 
-      const mark = session.markWorktreeRemoved()
+      grantPhone(session, 'phone')
+      const mark = runWindowControl(7, () => session.markWorktreeRemoved())
       backend.resolveInterrupt?.()
       backend.resolveSend?.()
       await Promise.all([send, mark])
@@ -3780,110 +3789,20 @@ describe('Session persist hook', () => {
   })
 })
 
-describe('Session ownership', () => {
-  it('starts with local owner and empty subscribers', () => {
+describe('Session frontend control', () => {
+  it('starts without a frontend control grant', () => {
     const { session } = makeSession()
-    expect(session.owner.kind).toBe('local')
-    expect(session.subscribers.size).toBe(0)
+    expect(session.lease.current).toBeNull()
   })
-
-  it('claim emits owner_changed only when owner actually changes', () => {
+  it('refuses a local-origin send while a phone holds the native grant', async () => {
     const { session } = makeSession()
-    const events: import('./types').SessionLifecycleEvent[] = []
-    session.onLifecycle((e) => events.push(e))
-    session.claim({ kind: 'remote', deviceId: 'dev-A' })
-    session.claim({ kind: 'remote', deviceId: 'dev-A' })
-    expect(events).toHaveLength(1)
-    expect(events[0]).toMatchObject({ type: 'owner_changed', current: { kind: 'remote', deviceId: 'dev-A' } })
-  })
-
-  it('claim throws SessionClaimConflictError when another remote device already holds ownership', async () => {
-    const { SessionClaimConflictError } = await import('./types')
-    const { session } = makeSession()
-    session.claim({ kind: 'remote', deviceId: 'dev-A' })
-    expect(() => session.claim({ kind: 'remote', deviceId: 'dev-B' })).toThrow(SessionClaimConflictError)
-    expect(session.owner).toEqual({ kind: 'remote', deviceId: 'dev-A' })
-  })
-
-  it('claim throws SessionClaimConflictError when another remote device is already subscribed', async () => {
-    const { SessionClaimConflictError } = await import('./types')
-    const { session } = makeSession()
-    session.subscribe('dev-A')
-    expect(() => session.claim({ kind: 'remote', deviceId: 'dev-B' })).toThrow(SessionClaimConflictError)
-  })
-
-  it('subscribe throws SessionClaimConflictError when another remote device owns the session', async () => {
-    const { SessionClaimConflictError } = await import('./types')
-    const { session } = makeSession()
-    session.claim({ kind: 'remote', deviceId: 'dev-A' })
-    expect(() => session.subscribe('dev-B')).toThrow(SessionClaimConflictError)
-    expect(session.subscribers.has('dev-B')).toBe(false)
-  })
-
-  it('subscribe throws SessionClaimConflictError when another remote device is already subscribed', async () => {
-    const { SessionClaimConflictError } = await import('./types')
-    const { session } = makeSession()
-    session.subscribe('dev-A')
-    expect(() => session.subscribe('dev-B')).toThrow(SessionClaimConflictError)
-    expect(session.subscribers.has('dev-B')).toBe(false)
-  })
-
-  it('subscribe is idempotent for same device that already owns', () => {
-    const { session } = makeSession()
-    session.claim({ kind: 'remote', deviceId: 'dev-A' })
-    session.subscribe('dev-A')
-    expect(session.subscribers.has('dev-A')).toBe(true)
-    expect(session.owner).toEqual({ kind: 'remote', deviceId: 'dev-A' })
-  })
-
-  it('release returns owner to local and emits owner_changed', () => {
-    const { session } = makeSession()
-    session.claim({ kind: 'remote', deviceId: 'dev-A' })
-    const events: import('./types').SessionLifecycleEvent[] = []
-    session.onLifecycle((e) => events.push(e))
-    session.release('dev-A')
-    expect(session.owner.kind).toBe('local')
-    expect(events).toContainEqual(expect.objectContaining({ type: 'owner_changed', current: { kind: 'local' } }))
-  })
-
-  it('release by non-owner deviceId is no-op', () => {
-    const { session } = makeSession()
-    session.claim({ kind: 'remote', deviceId: 'dev-A' })
-    const events: import('./types').SessionLifecycleEvent[] = []
-    session.onLifecycle((e) => events.push(e))
-    session.release('dev-B')
-    expect(session.owner).toEqual({ kind: 'remote', deviceId: 'dev-A' })
-    expect(events).toHaveLength(0)
-  })
-
-  it('subscribe/unsubscribe emits subscriber_added/removed and dedupes the same device', () => {
-    const { session } = makeSession()
-    const events: import('./types').SessionLifecycleEvent[] = []
-    session.onLifecycle((e) => events.push(e))
-    session.subscribe('dev-A')
-    session.subscribe('dev-A')
-    session.unsubscribe('dev-A')
-    session.unsubscribe('dev-A')
-    expect(events.map((e) => e.type)).toEqual(['subscriber_added', 'subscriber_removed'])
-    expect(session.subscribers.has('dev-A')).toBe(false)
-  })
-
-  it('local-origin send is rejected with SessionLockedError when owner is remote', async () => {
-    const { session } = makeSession()
-    session.claim({ kind: 'remote', deviceId: 'dev-A' })
+    grantPhone(session, 'dev-A')
     await expect(session.send({ content: 'hi' }, { providerOrigin: 'local' })).rejects.toThrow(/controlled by remote/)
-  })
-
-  it('local-origin send is rejected when remote subscribers exist', async () => {
-    const { session } = makeSession()
-    session.subscribe('dev-A')
-    await expect(session.send({ content: 'hi' }, { providerOrigin: 'local' })).rejects.toThrow(/being viewed/)
   })
 
   it('host-origin task notification bypasses remote ownership locks', async () => {
     const { session, backend } = makeSession()
-    session.claim({ kind: 'remote', deviceId: 'dev-A' })
-    session.subscribe('dev-A')
+    grantPhone(session, 'dev-A')
     const sendPromise = session.send(
       { content: 'mailbox ready', source: 'task-notification' },
       { providerOrigin: 'host' },
@@ -3897,7 +3816,7 @@ describe('Session ownership', () => {
 
   it('injectTaskNotification reaches backend while remote-owned', async () => {
     const { session, backend } = makeSession()
-    session.claim({ kind: 'remote', deviceId: 'dev-A' })
+    grantPhone(session, 'dev-A')
     const injectPromise = session.injectTaskNotification('mailbox ready')
     await new Promise((r) => setTimeout(r, 0))
     backend.resolveSend?.()
@@ -3993,11 +3912,11 @@ describe('Session ownership', () => {
     expect(backend.sendCalls.length).toBeGreaterThanOrEqual(1)
   })
 
-  it('remote-origin send bypasses both locks (so the device that owns/subscribes can act)', async () => {
+  it('a fenced phone send uses its admitted proof', async () => {
     const { session, backend } = makeSession()
-    session.claim({ kind: 'remote', deviceId: 'dev-A' })
-    session.subscribe('dev-A')
-    const sendPromise = session.send({ content: 'hi' }, { providerOrigin: 'remote' })
+    grantPhone(session, 'dev-A')
+    const proof = session.lease.current!
+    const sendPromise = runFencedSessionControl(session.id, 'phone:dev-A', proof, () => session.send({ content: 'hi' }, { providerOrigin: 'remote' }))
     await new Promise((r) => setTimeout(r, 0))
     backend.resolveSend?.()
     await sendPromise
@@ -4006,10 +3925,11 @@ describe('Session ownership', () => {
 
   it('remote-origin send forwards user_message_appended so desktop UI can echo the message', async () => {
     const { session, backend } = makeSession()
-    session.claim({ kind: 'remote', deviceId: 'dev-A' })
+    grantPhone(session, 'dev-A')
     const events: import('@superone/shared/agent-types').AgentEvent[] = []
     session.on((e) => events.push(e))
-    const sendPromise = session.send({ content: 'hello from mobile' }, { providerOrigin: 'remote' })
+    const proof = session.lease.current!
+    const sendPromise = runFencedSessionControl(session.id, 'phone:dev-A', proof, () => session.send({ content: 'hello from mobile' }, { providerOrigin: 'remote' }))
     await new Promise((r) => setTimeout(r, 0))
     backend.resolveSend?.()
     await sendPromise
@@ -4210,29 +4130,23 @@ describe('Session ownership', () => {
     expect(event.patch?.selectedCodexServiceTier).toBeNull()
   })
 
-  it('dispose clears subscribers, releases owner, emits closed event', async () => {
+  it('dispose revokes native control and emits closed', async () => {
     const { session } = makeSession()
-    session.claim({ kind: 'remote', deviceId: 'dev-A' })
-    session.subscribe('dev-A')
+    grantPhone(session, 'dev-A')
     const events: import('./types').SessionLifecycleEvent[] = []
     session.onLifecycle((e) => events.push(e))
     await session.dispose()
-    expect(session.owner.kind).toBe('local')
-    expect(session.subscribers.size).toBe(0)
+    expect(session.lease.current).toBeNull()
     expect(events.map((e) => e.type)).toContain('closed')
   })
 
-  it('dispose tags owner_changed and subscriber_removed with reason=session_closed', async () => {
+  it('dispose projects the revoked exact proof before closing its listeners', async () => {
     const { session } = makeSession()
-    session.claim({ kind: 'remote', deviceId: 'dev-A' })
-    session.subscribe('dev-A')
+    grantPhone(session, 'dev-A')
     const events: import('./types').SessionLifecycleEvent[] = []
-    session.onLifecycle((e) => events.push(e))
+    session.onLifecycle(event => events.push(event))
     await session.dispose()
-    const ownerChanged = events.find((e) => e.type === 'owner_changed')
-    const subscriberRemoved = events.find((e) => e.type === 'subscriber_removed')
-    expect(ownerChanged && 'reason' in ownerChanged && ownerChanged.reason).toBe('session_closed')
-    expect(subscriberRemoved && 'reason' in subscriberRemoved && subscriberRemoved.reason).toBe('session_closed')
+    expect(events).toEqual([{ type: 'control_changed', sessionId: session.id, lease: null }, { type: 'closed', sessionId: session.id }])
   })
 })
 
@@ -4412,5 +4326,30 @@ describe('attachment admission before normal and queued turns', () => {
     backend.resolveSend?.()
     await sending
     session.dispose()
+  })
+})
+
+
+describe('Session fenced asynchronous admission', () => {
+  it('rejects a window send taken over while the backend starts, before sending input', async () => {
+    const { session, backend } = makeSession()
+    backend.startBlocked = true
+    const sending = runWindowControl(7, () => session.send({ content: 'old grant', clientMessageId: 'old' }))
+    const rejected = expect(sending).rejects.toThrow('stale lease')
+    await vi.waitFor(() => expect(backend.resolveStart).not.toBeNull())
+    grantPhone(session, 'phone')
+    backend.resolveStart!()
+    await rejected
+    expect(backend.sendCalls).toEqual([])
+    expect(session.snapshot.messages.find((message) => message.id === 'old')?.metadata?.sendFailure).toBeDefined()
+  })
+
+  it('rejects settings and pending answers from a window while the phone holds control', async () => {
+    const { session, backend } = makeSession()
+    grantPhone(session, 'phone')
+    await expect(runWindowControl(7, () => session.setPermissionMode('bypassPermissions'))).rejects.toThrow('held by another device')
+    expect(() => runWindowControl(7, () => session.respondToQuestion('q', {}))).toThrow('held by another device')
+    expect(() => runWindowControl(7, () => session.setApiProviderId('other'))).toThrow('held by another device')
+    expect(backend.setPermissionModeCalls).toEqual([])
   })
 })

@@ -1,3 +1,4 @@
+import { sessionControlLeaseFixture } from '../session-control.test-fixtures'
 /** @vitest-environment jsdom */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -91,15 +92,15 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
-describe('remote_session_start', () => {
-  it('subscribe=true seeds remoteSessions, creates session with _historyHydrated=false, and infers provider from harnessId', () => {
+describe('session control projection', () => {
+  it('a native phone grant creates its observation state and carries the harness identity', () => {
     useChatStore.getState().handleAgentEvent({
-      type: 'remote_session_start',
-      remoteProjectPath: '/p',
-      remoteSessionId: 'sess-A',
-      isSubscribe: true,
-      harnessId: 'codex',
-    } as AgentEvent)
+    type: "session_control_changed",
+    projectPath: '/p',
+    sessionId: 'sess-A',
+    harnessId: 'codex',
+    lease: sessionControlLeaseFixture('sess-A')
+} as AgentEvent)
 
     const state = useChatStore.getState()
     expect(state.remoteSessions['/p']).toEqual(['sess-A'])
@@ -114,14 +115,14 @@ describe('remote_session_start', () => {
     // The phone subscribes before its first message; main has no row to read yet.
     mockWindowApp.loadSessionState.mockResolvedValueOnce(null)
     useChatStore.getState().handleAgentEvent({
-      type: 'remote_session_start',
-      remoteProjectPath: '/p',
-      remoteSessionId: 'sess-wt',
-      isSubscribe: true,
-      harnessId: 'claude',
-      worktreePath: '/p/.worktrees/feat',
-      gitBranch: 'feat/x',
-    } as AgentEvent)
+    type: "session_control_changed",
+    projectPath: '/p',
+    sessionId: 'sess-wt',
+    harnessId: 'claude',
+    worktreePath: '/p/.worktrees/feat',
+    gitBranch: 'feat/x',
+    lease: sessionControlLeaseFixture('sess-wt')
+} as AgentEvent)
     await vi.waitFor(() => {
       expect(useChatStore.getState().projectSessions['/p']._sessions['sess-wt']._historyHydrated).toBe(true)
     })
@@ -131,20 +132,20 @@ describe('remote_session_start', () => {
     expect(session._gitBranch).toBe('feat/x')
   })
 
-  it('subscribe=false does NOT add to remoteSessions but still creates the session entry', () => {
+  it('a window grant keeps its composer writable and leaves history to the snapshot', () => {
     useChatStore.getState().handleAgentEvent({
-      type: 'remote_session_start',
-      remoteProjectPath: '/p',
-      remoteSessionId: 'sess-B',
-      isSubscribe: false,
-      harnessId: 'claude',
-    } as AgentEvent)
+    type: "session_control_changed",
+    projectPath: '/p',
+    sessionId: 'sess-B',
+    harnessId: 'claude',
+    lease: sessionControlLeaseFixture('sess-B', "window:test")
+} as AgentEvent)
 
     const state = useChatStore.getState()
     expect(state.remoteSessions['/p']).toBeUndefined()
     const session = state.projectSessions['/p']._sessions['sess-B']
     expect(session).toBeDefined()
-    expect(session._historyHydrated).toBe(true)
+    expect(session._historyHydrated).toBe(false)
     expect(session.sessionProvider).toBe('claude')
   })
 })
@@ -228,42 +229,46 @@ describe('mounted session eviction protection', () => {
   })
 })
 
-describe('remote_session_end', () => {
-  it('subscribe=true removes the entry from remoteSessions', () => {
+describe('session control revocation', () => {
+  it('revocation removes the exact controlled session', () => {
     useChatStore.getState().handleAgentEvent({
-      type: 'remote_session_start',
-      remoteProjectPath: '/p',
-      remoteSessionId: 'sess-A',
-      isSubscribe: true,
-    } as AgentEvent)
+    type: "session_control_changed",
+    projectPath: '/p',
+    sessionId: 'sess-A',
+    lease: sessionControlLeaseFixture('sess-A'),
+    harnessId: "claude"
+} as AgentEvent)
     expect(useChatStore.getState().remoteSessions['/p']).toEqual(['sess-A'])
 
     useChatStore.getState().handleAgentEvent({
-      type: 'remote_session_end',
-      remoteProjectPath: '/p',
-      remoteSessionId: 'sess-A',
-      isSubscribe: true,
-    } as AgentEvent)
+    type: "session_control_changed",
+    projectPath: '/p',
+    sessionId: 'sess-A',
+    lease: null,
+    harnessId: "claude"
+} as AgentEvent)
 
     expect(useChatStore.getState().remoteSessions['/p']).toBeUndefined()
   })
 
-  it('subscribe=false is a noop and leaves remoteSessions unchanged', () => {
+  it('a revoked grant clears observation state without a subscription flag', () => {
     useChatStore.getState().handleAgentEvent({
-      type: 'remote_session_start',
-      remoteProjectPath: '/p',
-      remoteSessionId: 'sess-A',
-      isSubscribe: true,
-    } as AgentEvent)
-    const before = useChatStore.getState().remoteSessions
+    type: "session_control_changed",
+    projectPath: '/p',
+    sessionId: 'sess-A',
+    lease: sessionControlLeaseFixture('sess-A'),
+    harnessId: "claude"
+} as AgentEvent)
 
     useChatStore.getState().handleAgentEvent({
-      type: 'remote_session_end',
-      remoteProjectPath: '/p',
-      remoteSessionId: 'sess-A',
-    } as AgentEvent)
+    type: "session_control_changed",
+    projectPath: '/p',
+    sessionId: 'sess-A',
+    lease: null,
+    harnessId: "claude"
+} as AgentEvent)
 
-    expect(useChatStore.getState().remoteSessions).toBe(before)
+    expect(useChatStore.getState().remoteSessions).toEqual({})
   })
 })
 
@@ -672,5 +677,36 @@ describe('stalled streaming status', () => {
 
     expect(sessionAt().status).toBe('idle')
     expect(sessionAt().pendingPermissions).toHaveLength(1)
+  })
+})
+
+
+describe('native control snapshot recovery', () => {
+  const live = (controlLease: ReturnType<typeof sessionControlLeaseFixture> | null) => ({
+    sid: 's', projectPath: '/p', isActive: true, isStreaming: false, controlLease,
+    permissionMode: 'default', sandboxInfo: { enabled: false, autoAllowBash: false }, uiSettings: {},
+    snapshot: { messages: [], harnessId: 'claude', status: 'idle', totalCostUsd: 0, contextTokens: 0 },
+    replayEvents: [], pendingInteractions: [],
+  })
+  it('restores a missed phone grant on window focus and clears it from a newer snapshot', async () => {
+    const grant = sessionControlLeaseFixture('s')
+    mockGetLiveSnapshots.mockResolvedValueOnce([live(grant)])
+    await useChatStore.getState().syncLiveSnapshots()
+    expect(useChatStore.getState().projectSessions['/p']._sessions.s._controlLease).toEqual(grant)
+    expect(useChatStore.getState().remoteSessions['/p']).toEqual(['s'])
+    mockGetLiveSnapshots.mockResolvedValueOnce([live(null)])
+    await useChatStore.getState().syncLiveSnapshots()
+    expect(useChatStore.getState().projectSessions['/p']._sessions.s._controlLease).toBeNull()
+    expect(useChatStore.getState().remoteSessions['/p']).toBeUndefined()
+  })
+  it('keeps a control notice newer than an in-flight snapshot receipt', async () => {
+    let resume!: (value: ReturnType<typeof live>[]) => void
+    mockGetLiveSnapshots.mockReturnValueOnce(new Promise(resolve => { resume = resolve }))
+    const syncing = useChatStore.getState().syncLiveSnapshots()
+    useChatStore.getState().handleAgentEvent({ type: 'session_control_changed', projectPath: '/p', sessionId: 's', lease: null, harnessId: 'claude' })
+    resume([live(sessionControlLeaseFixture('s'))])
+    await syncing
+    expect(useChatStore.getState().projectSessions['/p']._sessions.s._controlLease).toBeNull()
+    expect(useChatStore.getState().remoteSessions['/p']).toBeUndefined()
   })
 })

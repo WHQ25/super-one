@@ -1,6 +1,6 @@
 import type { DetailUpdate } from './detail'
-import type { TerminalEvent } from '../agent-types'
-import type { TopicRef } from './topics'
+import type { AgentEvent, TerminalEvent } from '../agent-types'
+import type { TopicRef, TopicVersionCursor } from './topics'
 
 /**
  * Durable environment event log contracts.
@@ -84,6 +84,11 @@ export interface SubscribeEventsInput {
    * read their snapshot again (`SessionStreamFrame.resnapshot`).
    */
   onResnapshot?: (sessionIds: string[]) => void
+  /** Local observers of the shared native stream, before individual envelopes are yielded. */
+  onFrame?: (frame: SessionStreamFrame) => void
+  onTerminal?: (event: TerminalStreamMessage['event']) => void
+  onDraft?: (event: DraftStreamMessage['event']) => void
+  onTopic?: (frame: TopicNoticeFrame) => void
 }
 
 /** A topic set that changes over time; a running stream follows it in place (`topic.update`). */
@@ -103,6 +108,24 @@ export interface TopicSubscribeInput {
   versions?: Record<string, number>
   /** The topics to receive; a `*` instance covers its kind. */
   topics: TopicRef[]
+  /** Snapshot-plus-changes topics resume independently of session log cursors. */
+  topicCursors?: Record<string, TopicVersionCursor>
+}
+
+/** A host-owned workspace topic, recovered from its version or a fresh snapshot. */
+export interface TopicNoticeFrame {
+  topic: TopicRef
+  cursor?: TopicVersionCursor
+  /** Compacted draft saves cover (afterVersion, cursor.version] within the cursor's epoch. */
+  afterVersion?: number
+  events: AgentEvent[]
+  snapshot?: unknown
+}
+
+export interface TopicNoticeMessage {
+  type: 'topic'
+  subscriptionId: string
+  frame: TopicNoticeFrame
 }
 
 /** One push of a `topic.subscribe` stream. */
@@ -147,6 +170,20 @@ export interface DraftStreamMessage {
   type: 'draft'
   subscriptionId: string
   event: import('./draft-rpc').DraftChangedEvent
+}
+
+/** Revokes only this exact resource proof, including an acquire receipt still in flight. */
+export interface ControlLostEvent {
+  type: 'control_lost'
+  resource: import('./refs').SessionRef | import('./refs').TerminalRef
+  leaseId: string
+  generation: string
+}
+
+/** A private frontend result or control notice, bound to its authenticated connection. */
+export interface ClientStreamMessage {
+  type: 'client'
+  event: import('../agent-types').ComposerSettledEvent | ControlLostEvent
 }
 
 export interface EnvironmentSnapshot {

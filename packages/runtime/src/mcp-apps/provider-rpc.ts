@@ -1,9 +1,10 @@
 import { assertMcpAppSize, MCP_APP_DATA_MAX_BYTES, MCP_APP_HTML_MAX_BYTES, MCP_APP_OUTPUT_MAX_BYTES, McpAppsError, mcpAppToolVisible, type McpAppsProvider } from '@superone/shared/mcp-apps'
 import type { McpAppsProviderRpcRequest, McpAppsRpcResult } from '@superone/shared/environment/mcp-apps-rpc'
 
-export async function dispatchMcpAppsProviderRequest(input: McpAppsProviderRpcRequest, provider: McpAppsProvider, signal = new AbortController().signal): Promise<McpAppsRpcResult> {
+export async function dispatchMcpAppsProviderRequest(input: McpAppsProviderRpcRequest, provider: McpAppsProvider, signal = new AbortController().signal, assertControl?: () => void): Promise<McpAppsRpcResult> {
   try {
     if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App request cancelled')
+    if (input.operation === 'callTool' || input.operation === 'authenticate' || input.operation === 'submitAuthCallback') assertControl?.()
     switch (input.operation) {
       case 'ready': return { ok: true, value: await provider.ready(signal) }
       case 'tools': return { ok: true, value: [...(await provider.tools()).values()] }
@@ -20,6 +21,7 @@ export async function dispatchMcpAppsProviderRequest(input: McpAppsProviderRpcRe
         if (!tool || !mcpAppToolVisible(tool)) throw new McpAppsError('denied', 'This tool is not available to the App')
         if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App request cancelled')
         assertMcpAppSize(input.args ?? {})
+        assertControl?.()
         const value = await provider.callTool({ tool: tool.name, args: input.args ?? {}, origin: input.origin, ...(input.meta ? { meta: input.meta } : {}) }, signal)
         assertMcpAppSize(value.result, MCP_APP_OUTPUT_MAX_BYTES)
         return { ok: true, value }

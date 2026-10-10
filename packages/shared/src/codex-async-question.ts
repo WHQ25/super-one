@@ -33,13 +33,3 @@ export function parseCodexAsyncQuestionReply(questions: CodexAsyncUserInputQuest
   answers.push(reply.slice(start))
   return answers
 }
-
-export type CodexAsyncQuestionAnswerCommand = {
-  type: 'codex_async_question_answer'
-  requestId: string
-  projectPath: string
-  sessionId: string
-  messageId: string
-  itemId: string
-  answers: string[]
-}

@@ -1,4 +1,5 @@
 import { requestMentionSearch } from './mention-search'
+import { resolveTestProject } from './project-rpc.test-fixtures'
 import { describe, expect, it } from 'vitest'
 import { buildAgentMentionTargets } from '@superone/shared/agent-mention-tags'
 import { parseUserMentions } from '@superone/shared/user-mention-parser'
@@ -30,11 +31,11 @@ describe('remote provider search to structured message', () => {
   })
   it('queries host targets before a chat session exists and selects their actual refs', async () => {
     const commands: unknown[] = []
-    const result = await requestMentionSearch({ request: async (command: unknown) => {
-      commands.push(command)
+    const result = await requestMentionSearch({ resolveProject: resolveTestProject, rpc: async (method: string, payload: unknown) => {
+      commands.push({ method, ...payload as Record<string, unknown> })
       return { agentTargets: targets, items: [] }
     } } as never, '/workspace/project', 'xai')
-    expect(commands).toEqual([expect.objectContaining({ type: 'search_mentions', projectPath: '/workspace/project', query: 'xai' })])
+    expect(commands).toEqual([expect.objectContaining({ method: 'workspace.searchMentions', projectId: 'p', query: 'xai' })])
     expect(commands[0]).not.toHaveProperty('sessionId')
     const item = buildMentionRows('xai', { remote: [], agentProfiles: parseAgentMentionItems(result.agentTargets), capabilityIds: [] })
       .find((row) => row.item.kind === 'agent-profile')!.item

@@ -1,6 +1,8 @@
 import { lookupSessionLinkMetadata, resolveSessionLink, sessionLinkBaseClient, type SessionLinkPreparation, type ResolvedSessionLink } from '../session-link-navigation'
 import { readConnectionWorkspace, readProjects } from '../connection-workspace'
 import { activatePreparedSessionLink } from '../session-link-transition'
+import { projectRpc, operateProjectSession } from '../project-rpc'
+import { runtimeSessionRef } from '../runtime-session-rpc'
 import type { SessionRef } from '@superone/shared/environment/refs'
 import { openWidgetInputRequest } from '../widget-input-request'
 import { setComposerConnection } from '../widget-composer-client'
@@ -35,11 +37,11 @@ import { WebView } from 'react-native-webview'
 import type { HostInbound, HostOutbound } from '@superone/chat-view'
 import {
   checkRelayDesktopOnline, hostLinkOf, loadPairings, OutdatedDesktopPairingError, parseLanHostPort, parsePairQr, RelayClient,
-  RestoreRejectedError, savePairings, startPairingHandshake, upsertPairing, type HostLink, type SavedPairing,
+  DesktopUpgradeRequiredError, RestoreRejectedError, savePairings, startPairingHandshake, upsertPairing, type HostLink, type SavedPairing,
 } from '@superone/relay-client'
 import type {
   ChatMessage, GitDirtyStatus, HarnessId, ImageAttachment, PermissionRequest,
-  ListHarnessOptionsResponse, PlanApprovalRequest, RemoteCommand, RemoteHarnessOption,
+  ListHarnessOptionsResponse, PlanApprovalRequest, RemoteHarnessOption,
   OpenCodeAgentOption, SandboxInfo, SandboxMode, SessionAgentLaunchProposal, SessionForkMode, SessionForkResult, SessionGoal, TodoItem, WorktreeInfo,
 } from '@superone/shared/agent-types'
 import { resolveRingContextWindow, SESSION_AGENT_LAUNCHES_FIELD } from '@superone/shared/agent-types'
@@ -157,6 +159,7 @@ import { dynamicMentionArtworkRevision, dynamicMentionArtworkSnapshot } from '..
 import { loadMcpIcons, mcpIconsRevision, mcpIconsSnapshot } from '../mcp-icons'
 import { useMobileLocale } from '../i18n/context'
 import { useOrientationLock } from './use-orientation-lock'
+import { useDesktopUpgrade } from './use-desktop-upgrade'
 const kv = mobileKv
 /** Host-side `git worktree add` plus a transcript clone; comfortably past the 15 s read default. */
 const FORK_SESSION_TIMEOUT_MS = 60_000
@@ -175,6 +178,14 @@ export function MobileApp() {
   const [scannerOpen, setScannerOpen] = useState(false)
   const [cameraPermission, requestCameraPermission] = useCameraPermissions()
   const [pairings, setPairings] = useState<SavedPairing[]>([])
+  const desktopUpgrade = useDesktopUpgrade({
+    reconnect: async pairingId => {
+      const item = pairings.find(row => row.id === pairingId)
+      if (!item) throw new Error(t('Desktop is unavailable. Choose another device.'))
+      await connectToPairing(item, true)
+    },
+    dismiss: () => disconnectDevice(),
+  })
   const [activePairingId, setActivePairingId] = useState<string | null>(null)
   const activePairingIdRef = useRef(activePairingId)
   activePairingIdRef.current = activePairingId
@@ -334,10 +345,12 @@ export function MobileApp() {
   const sessionLinkGenerationRef = useRef(0)
   const sessionLinkQueueRef = useRef<Promise<void>>(Promise.resolve())
   const sessionLinkCandidateRef = useRef<Pick<SessionLinkPreparation, 'ingest'> | null>(null)
+  const runtimeRef = useRef<ChatRuntime | null>(null)
   const autoRecap = useAutoRecap({
     clientRef,
     sessionId,
     projectPath: project?.path ?? null,
+    sourceEnvironmentId: runtimeRef.current?.sourceEnvironmentId ?? null,
     eligible: shouldInterceptGrokRecap(selectedProvider, selectedAcpAgentId) && hasTranscript,
   })
   const filePreview = useFilePreview({ clientRef, transport: activeTransport, project, sessionId, pairingId: activePairingId })
@@ -368,14 +381,13 @@ export function MobileApp() {
     catalogReady: harnessSelection.catalogReady, streaming, rateLimit,
   })
   const additionalDirs = useAdditionalDirs({
-    clientRef, projectPath: project?.path, provider: selectedProvider, sessionId,
+    clientRef, sourceEnvironmentId: runtimeRef.current?.sourceEnvironmentId, projectPath: project?.path, provider: selectedProvider, sessionId,
     projectDirs: workspaceDirs, onDirs: setWorkspaceDirs,
   })
   // The relay's event callback is built once per connection, so it cannot close
   // over this render's hook — the same reason `runtimeRef` exists.
   const additionalDirsRef = useRef(additionalDirs)
   additionalDirsRef.current = additionalDirs
-  const runtimeRef = useRef<ChatRuntime | null>(null)
   const termRuntimeRef = useRef<TerminalRuntime | null>(null)
   // A collaboration request is a page, not a sheet; walking away from it rejects.
   const collab = useCollabRequest({
@@ -630,7 +642,7 @@ export function MobileApp() {
       const runtime = runtimeRef.current
       const client = clientRef.current
       if (!runtime || !client) throw new Error('No active session')
-      await openWidgetInputRequest(client, { projectPath: runtime.projectPath, sessionId: runtime.sessionId }, messageId, spec)
+      await openWidgetInputRequest(client, { projectPath: runtime.projectPath, sessionId: runtime.sessionId, environmentId: runtime.sourceEnvironmentId }, messageId, spec)
     },
     subscribeDetail: async (detailRef, subscriptionId) => {
       const runtime = runtimeRef.current
@@ -702,7 +714,7 @@ export function MobileApp() {
       // Fetched before the dequeue: the host serves a queued original only while it is queued.
       const originals = await runtime.originalAttachments(message)
       if (!runtime.session.queuedMessages.some((item) => item.id === messageId)) return
-      runtime.dequeueMessage(messageId)
+      if (!await runtime.dequeueMessage(messageId)) return
       const restoredDraft = composerDraftFromMessage(message)
       composerDraft.replaceWith(restoredDraft)
       suggestions.applyProgrammatic(restoredDraft.text)
@@ -792,12 +804,12 @@ export function MobileApp() {
       const client = clientRef.current
       if (!client || !project || !sessionId) throw new Error('no active session')
       const app = findMcpAppAttachment(runtimeRef.current?.messages ?? [], request.appInstanceId, request.messageId)?.app
-      return requestMcpApp(client, { projectPath: project.path, sessionId }, request, app)
+      return requestMcpApp(client, { projectPath: project.path, sessionId, environmentId: runtimeRef.current?.sourceEnvironmentId }, request, app)
     },
     modUi: async (payload) => {
       const client = clientRef.current
       if (!client || !project || !sessionId) throw new Error('no active session')
-      return invokeModUi(client, { projectPath: project.path, sessionId }, payload)
+      return invokeModUi(client, { projectPath: project.path, sessionId, environmentId: runtimeRef.current?.sourceEnvironmentId }, payload)
     },
     mcpAppFullscreen: async (view) => { mcpApp.show(view) },
     mcpAppDownload: async (items) => {
@@ -905,6 +917,7 @@ export function MobileApp() {
     reconnectControllerRef.current?.cancel()
     runtimeRef.current?.dispose()
     runtimeRef.current = null
+    termRuntimeRef.current?.dispose()
     termRuntimeRef.current = null
     suppressReconnectRef.current = true
     clientRef.current?.disconnect()
@@ -951,7 +964,8 @@ export function MobileApp() {
       onArrived: (events) => {
         if (connectGeneration !== connectGenerationRef.current) return
         remoteDraftsRef.current.ingest(events)
-        workspaceActivity.ingest(events)
+        workspaceActivity.ingest(events, client)
+        additionalDirsRef.current.ingest(events)
         const invalidated = sessionListInvalidations(events)
         if (invalidated.length) {
           for (const path of invalidated) cache.invalidate(path)
@@ -975,7 +989,6 @@ export function MobileApp() {
           setStatus(removed === 'Desktop disconnected this session' ? '' : removed)
           return
         }
-        additionalDirsRef.current.ingest(events)
         runtimeRef.current?.ingest(events, epoch)
         // The runtime does not reduce mod events; the document's mod client does.
         const openSession = runtimeRef.current?.sessionId
@@ -984,7 +997,36 @@ export function MobileApp() {
         }
       },
       onTerminal: (payload) => termRuntimeRef.current?.ingest(payload),
+      onControlLost: (resource, error) => {
+        if (connectGeneration !== connectGenerationRef.current) return
+        if ('terminalId' in resource) termRuntimeRef.current?.controlLost(resource, error)
+        else if (runtimeRef.current?.sessionId === resource.sessionId && (runtimeRef.current.sourceEnvironmentId ?? client.environmentId) === resource.environmentId) {
+          composerSwitchRef.current(null)
+          clearActiveSession()
+          returnToWorkspace()
+          setStatus('')
+        }
+      },
+      onWorkspaceSnapshot: (topic, snapshot) => {
+        if (connectGeneration !== connectGenerationRef.current || topic.environmentId !== client.environmentId) return
+        const value = snapshot as { projects?: Project[]; drafts?: import('@superone/shared/environment/draft-rpc').DraftListEntry[]; activities?: import('@superone/shared/session-activity').SessionActivity[] }
+        if (topic.kind === 'projects' && Array.isArray(value.projects)) {
+          persisted.set('projects', value.projects)
+          setProjects(value.projects)
+        } else if (topic.kind === 'drafts' && Array.isArray(value.drafts)) remoteDraftsRef.current.ingestSnapshot(value.drafts)
+        else if (topic.kind === 'sessionList') {
+          cache.invalidateAll()
+          setSessionListRevision(n => n + 1)
+          if (Array.isArray(value.activities)) workspaceActivity.ingestSnapshot(value.activities, client)
+        }
+      },
+      onWorkspaceRecovery: (topic, error) => {
+        if (connectGeneration !== connectGenerationRef.current || !client.connected || error) return
+        void client.stopWorkspace(topic.environmentId).then(() => client.followWorkspace(topic.environmentId))
+          .catch(cause => { if (connectGeneration === connectGenerationRef.current) setStatus(cause instanceof Error ? cause.message : 'Could not recover workspace') })
+      },
       restore: async (activeClient) => {
+        await activeClient.followWorkspace()
         setComposerConnection(activeClient, true)
         invalidateGitResources(activeClient)
         await remoteDraftsRef.current.reconnect().catch((error) => setStatus(error instanceof Error ? error.message : 'Could not restore drafts'))
@@ -1022,6 +1064,7 @@ export function MobileApp() {
         setConnectionState(state)
         // A redial may have switched routes (LAN ↔ relay).
         if (state === 'connected') setActiveTransport(client.transport)
+        if (state === 'connected') desktopUpgrade.clear()
         inject(webRef, { type: 'setConnection', state, epoch })
         // The row falls back to discovery's verdict now; make sure it is current.
         if (state === 'offline') void discovery.refresh({ reset: false })
@@ -1030,6 +1073,11 @@ export function MobileApp() {
         setStatus('')
       },
       onStatus: () => { /* DeviceStatus + reconnect own connection feedback. */ },
+      onFatalError: error => {
+        if (connectGeneration !== connectGenerationRef.current) return
+        if (error instanceof DesktopUpgradeRequiredError) desktopUpgrade.show(error, hostName ?? t('Desktop'), pairingId)
+        else setStatus(error.message)
+      },
       onReconnectInfo: setReconnect,
       isDesktopOnline: () => checkRelayDesktopOnline({ relayUrl, roomId: link.roomId }).catch(() => false),
       endpoint: { relayUrl, link, identity: { deviceId: activeDeviceId, deviceName: getMobileDeviceName() } },
@@ -1060,6 +1108,8 @@ export function MobileApp() {
     setWorkspaceCache(cache)
     if (!preparedConnection) await dial(parseLanHostPort(hp))
     if (connectGeneration !== connectGenerationRef.current) return false
+    await client.followWorkspace()
+    if (connectGeneration !== connectGenerationRef.current) return false
     setActiveTransport(client.transport)
     if (preparedConnection) {
       persisted.set('projects', preparedWorkspace!.projects)
@@ -1073,8 +1123,9 @@ export function MobileApp() {
       })
       return true
     }
-    // Optional identity discovery must not hold up an older desktop's landing.
-    const identity = client.request({ type: 'session_link_identity', requestId: randomId() }, 8_000).catch(() => null) as Promise<{ environmentId?: string } | null>
+    const identity = client.rpc<{ environmentId?: string }>('environment.list', {}, { timeoutMs: 8_000 })
+    // Pairing persistence may outlive this RPC; observe an early handshake refusal immediately.
+    void identity.catch(() => {})
     await rememberPairing({
       id: desktopDeviceId || hostName || relayUrl,
       relayUrl,
@@ -1129,7 +1180,7 @@ export function MobileApp() {
    * dead route, and dialling it would time out where the relay would have
    * connected — the row said Online because the relay answered.
    */
-  const connectToPairing = async (item: SavedPairing) => {
+  const connectToPairing = async (item: SavedPairing, reportErrors = false) => {
     if (connectingPairingId) return
     // Unknown link hosts open the device list without retiring the source.
     // Tapping that still-connected device should resume it, not reset its chat.
@@ -1149,13 +1200,15 @@ export function MobileApp() {
       if (!isReachable(discovery.statusOf(item))) {
         await discovery.refresh({ reset: false })
         if (!isReachable(discovery.statusOf(item))) {
+          if (reportErrors) throw new Error(t('Desktop is unavailable. Choose another device.'))
           return
         }
       }
       const discovered = discovery.lanAddressOf(item.id)
       const lanHostPort = discovered ? `${discovered.host}:${discovered.port}` : undefined
       await connectWithLink(item.relayUrl, link, lanHostPort, item.hostName, item.desktopDeviceId)
-    } catch {
+    } catch (error) {
+      if (reportErrors) throw error
       // The device row moves from Connecting back to Offline; connection
       // failures do not create a second, page-level status message.
     } finally {
@@ -1356,9 +1409,7 @@ export function MobileApp() {
   const createFolder = (name: string) => {
     const client = clientRef.current
     if (!client) return
-    void client.request({
-      type: 'create_directory', requestId: randomId(), path: directoryPath, name,
-    } as RemoteCommand).then((response) => {
+    void client.rpc('files.mkdir', { path: directoryPath, name }).then((response) => {
       const error = (response as { error?: string }).error
       if (error) { setFolderPrompt((current) => current && { ...current, error }); return }
       setFolderPrompt(null)
@@ -1395,8 +1446,13 @@ export function MobileApp() {
     const runtime = preparedRuntime ?? createRuntime(client, environmentId)
     runtimeRef.current = runtime
     setTerminalUi({ writable: false, title: 'Terminal', tabs: [], activeId: '' })
+    termRuntimeRef.current?.dispose()
     const term = new TerminalRuntime(client, (paints) => {
-      for (const p of paints) inject(termRef, p)
+      if (termRuntimeRef.current !== term) return
+      for (const p of paints) {
+        inject(termRef, p)
+        if (p.kind === 'error') setStatus(p.message)
+      }
       setTerminalUi((current) => {
         const next = term.ui
         return current.writable === next.writable
@@ -1446,8 +1502,10 @@ export function MobileApp() {
     setRateLimit(null)
   }
   const clearActiveSession = () => {
+    if (runtimeRef.current) void clientRef.current?.stopSession().catch(() => {})
     runtimeRef.current?.dispose()
     runtimeRef.current = null
+    termRuntimeRef.current?.dispose()
     termRuntimeRef.current = null
     setSessionId(null)
     setActiveSessionTitle('New session')
@@ -1459,8 +1517,8 @@ export function MobileApp() {
     additionalDirsRef.current.clearSessionDirs()
   }
   const leaveActiveSession = () => {
-    runUiAction(() => {
-      try { leaveMobileSession(clientRef.current, runtimeRef) } finally { clearActiveSession() }
+    runUiAction(async () => {
+      try { await leaveMobileSession(clientRef.current, runtimeRef) } finally { clearActiveSession() }
     }, setStatus, 'leave session failed')
   }
   const failSessionTransition = (error: unknown) => {
@@ -1500,8 +1558,6 @@ export function MobileApp() {
     switchComposerDraft(row.sessionId, p.path, null)
     setSessionLoading(true)
     try {
-      const previousId = runtimeRef.current?.sessionId
-      if (previousId && previousId !== row.sessionId) client.send({ type: 'leave_session', sessionId: previousId })
       resetSessionChrome()
       setSessionId(row.sessionId)
       setActiveSessionTitle(row.title || 'Untitled')
@@ -1573,7 +1629,8 @@ export function MobileApp() {
               return connectWithLink(pairing.relayUrl, link, pairing.lan, pairing.hostName, pairing.desktopDeviceId, candidate, stillSource)
             },
             ownsConnection: () => clientRef.current === candidate.connection?.client && !runtimeRef.current,
-            leaveSource: () => { if (sourceRuntime?.sessionId) sourceClient.send({ type: 'leave_session', sessionId: sourceRuntime.sessionId }) },
+            // The view commits its native stream and retires the source on this channel.
+            leaveSource: () => {},
             activate: detached => {
               clientRef.current = candidate.client
               const targetProject = { path: candidate.target.projectPath, name: candidate.target.projectPath.split('/').pop() || candidate.target.projectPath }
@@ -1625,14 +1682,7 @@ export function MobileApp() {
     const client = workspaceClientRef.current
     const p = targetProject
     if (!client || !p) throw new Error('no active project')
-    const result = await client.request({
-      type: 'pin_session',
-      requestId: randomId(),
-      projectPath: p.path,
-      sessionId: row.sessionId,
-      pinned,
-    } as RemoteCommand) as { ok?: boolean; error?: string }
-    if (!result.ok) throw new Error(result.error ?? `failed to ${pinned ? 'pin' : 'unpin'} session`)
+    await operateProjectSession(client, p.path, row.sessionId, 'session.setUiFlags', { isPinned: pinned })
     if (p.path === project?.path) {
       setSessions((current) => current.map((item) => (
         item.sessionId === row.sessionId ? { ...item, isPinned: pinned } : item
@@ -1644,13 +1694,7 @@ export function MobileApp() {
     const client = workspaceClientRef.current
     const p = targetProject
     if (!client || !p) throw new Error('no active project')
-    const result = await client.request({
-      type,
-      requestId: randomId(),
-      projectPath: p.path,
-      sessionId: row.sessionId,
-    } as RemoteCommand) as { ok?: boolean; error?: string }
-    if (!result.ok) throw new Error(result.error ?? `failed to ${type === 'archive_session' ? 'archive' : 'delete'} session`)
+    await operateProjectSession(client, p.path, row.sessionId, type === 'archive_session' ? 'session.setUiFlags' : 'session.remove', type === 'archive_session' ? { isHidden: true } : {})
 
     if (p.path === project?.path) setSessions((current) => current.filter((item) => item.sessionId !== row.sessionId))
     if (!routedEnvironmentIdRef.current && runtimeRef.current?.sessionId === row.sessionId && runtimeRef.current.projectPath === p.path) {
@@ -1715,10 +1759,10 @@ export function MobileApp() {
       setStatus, 'failed to open project')
 
   const addProjectFlow = useAddProject({
-    request: (command) => {
+    rpc: (method, payload) => {
       const client = workspaceClientRef.current
       if (!client) throw new Error('Connect to a desktop to browse projects')
-      return client.request(command)
+      return client.rpc(method, payload)
     },
     onAdded: (path) => {
       const name = path.split(/[\\/]/).filter(Boolean).pop() ?? path
@@ -1760,7 +1804,7 @@ export function MobileApp() {
     void refreshGitInfo(project?.path).catch(() => {})
     const client = clientRef.current
     const request = ++shellDetailsRequestRef.current
-    if (client && project) void requestGitResource(client, 'get_git_branches', project.path).then(result => {
+    if (client && project) void requestGitResource(client, 'git.branches', project.path).then(result => {
       if (clientRef.current === client && request === shellDetailsRequestRef.current) setBranches(result.branches ?? [])
     }).catch(() => {})
   }
@@ -1769,9 +1813,7 @@ export function MobileApp() {
   const changeBranch = async (branch: string, type: 'switch_git_branch' | 'create_git_branch') => {
     const client = clientRef.current
     if (!client || !project) throw new Error('Connect to a desktop to change branches')
-    const result = await client.request({
-      type, requestId: randomId(), projectPath: project.path, branch,
-    } as RemoteCommand) as { ok?: boolean; error?: string }
+    const result = await projectRpc(client, project.path, type === 'switch_git_branch' ? 'git.switchBranch' : 'git.createBranch', { branch }) as { ok?: boolean; error?: string }
     if (result?.ok === false) throw new Error(result.error || 'Could not change branch')
     invalidateGitResources(client, project.path)
     await loadShellDetails()
@@ -1809,8 +1851,7 @@ export function MobileApp() {
       return
     }
     return sessionTransitionRef.current.run(async () => {
-      const previousId = runtimeRef.current?.sessionId
-      if (previousId) client.send({ type: 'leave_session', sessionId: previousId })
+      await client.stopSession()
       const runtime = bindRuntime(client)
       const startupDirs = [...new Set([...workspaceDirs, ...additionalDirs.sessionDirs])]
       const id = remoteDrafts.originSessionId ?? randomId()
@@ -2090,6 +2131,7 @@ export function MobileApp() {
     filePreview.close()
     runtimeRef.current?.dispose()
     runtimeRef.current = null
+    termRuntimeRef.current?.dispose()
     termRuntimeRef.current = null
     switchComposerDraft(null)
     reconnectControllerRef.current?.cancel()
@@ -2174,9 +2216,7 @@ export function MobileApp() {
       try {
         // A worktree fork checks out the whole tree and may copy uncommitted
         // changes; the default 15 s is for reads.
-        result = await client.request({
-          type: 'fork_session', requestId: randomId(), projectPath: p.path, sessionId: sourceId, mode,
-        } as RemoteCommand, FORK_SESSION_TIMEOUT_MS) as SessionForkResult
+        result = await client.controlledRpc(runtimeSessionRef(client, sourceId, runtimeRef.current?.sourceEnvironmentId ?? null), 'session.fork', { mode }, { timeoutMs: FORK_SESSION_TIMEOUT_MS }) as SessionForkResult
       } catch (error) {
         setSessionLoading(false)
         throw error
@@ -2204,7 +2244,7 @@ export function MobileApp() {
       // request and discard the model/effort `openSession` is restoring.
       if (result.worktreePath) {
         invalidateGitResources(client, p.path)
-        void requestGitResource(client, 'get_worktree_info', p.path).then(setWorktreeInfo).catch(() => {})
+        void requestGitResource(client, 'git.worktreeInfo', p.path).then(setWorktreeInfo).catch(() => {})
       }
     }, setStatus, 'fork failed')
   }
@@ -2839,6 +2879,9 @@ export function MobileApp() {
         filePreview={filePreview}
         mediaPorts={mediaPorts}
         documentPorts={nativeActionPorts}
+        desktopUpgrade={{ problem: desktopUpgrade.problem, busy: desktopUpgrade.busy, error: desktopUpgrade.error,
+          onReconnect: () => void desktopUpgrade.reconnect(),
+          onDismiss: () => void runUiAction(desktopUpgrade.dismiss, setStatus, 'Could not close the workspace') }}
       />
       {folderPrompt ? <NewFolderSheet
         parent={directoryPath}

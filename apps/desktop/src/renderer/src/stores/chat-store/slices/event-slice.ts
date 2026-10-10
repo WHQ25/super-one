@@ -94,7 +94,7 @@ function sessionPatchFromUiSettings(
  *
  * - `handleAgentEvent` is the central agent → store dispatch reducer. It
  *   handles four route classes:
- *   1. Global (no projectPath): remote_session_start/end, provider_changed,
+ *   1. Global: session_control_changed, provider_changed,
  *      session_title_changed.
  *   2. Per-session (with projectPath/sessionId): routed through one of
  *      exact / lazy_session / fallback_active match modes, then delegated
@@ -113,48 +113,26 @@ export interface EventSlice {
 
 export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (set, get) => ({
   handleAgentEvent: (event: AgentEvent) => {
-    if (event.type === 'remote_session_start') {
-      const projectPath = event.remoteProjectPath
-      const sessionId = event.remoteSessionId
+    if (event.type === 'session_control_changed') {
+      const { projectPath, sessionId, lease } = event
+      const external = !!lease && !lease.delegate?.startsWith('window:')
       const remoteProvider = inferProviderFromHarnessId(event.harnessId)
-      set((s) => {
+      set(s => {
         const project = s.projectSessions[projectPath] ?? createDefaultProjectState()
-        const existingSession = project._sessions[sessionId]
-        const baseSession = existingSession ?? {
-          ...applyCachedCodexPermissionPreset(createDefaultPerSessionState()),
-          _historyHydrated: !event.isSubscribe,
-        }
-        const nextSession = {
-          ...baseSession,
-          ...(remoteProvider && !baseSession.sessionProvider
-            ? { sessionProvider: remoteProvider, preferredProvider: remoteProvider }
-            : {}),
-          // Mobile Grok sessions arrive as harnessId=acp; without the agent id
-          // the sidebar brands them as the generic ACP fallback.
-          acpAgentId: baseSession.acpAgentId ?? event.acpAgentId ?? null,
-          // Main's answer, not a hint: the hydrate below reads a row the first
-          // message has not written yet, and a missing worktree reads as local.
-          ...(event.worktreePath !== undefined
-            ? { _worktreePath: event.worktreePath, _gitBranch: event.gitBranch ?? null }
-            : {}),
-        }
+        const previous = project._sessions[sessionId]
+        const base = previous ?? { ...applyCachedCodexPermissionPreset(createDefaultPerSessionState()), _historyHydrated: false }
         return {
-          remoteSessions: event.isSubscribe
-            ? addRemoteSession(s.remoteSessions, projectPath, sessionId)
-            : s.remoteSessions,
-          projectSessions: {
-            ...s.projectSessions,
-            [projectPath]: {
-              ...project,
-              _sessions: { ...project._sessions, [sessionId]: nextSession },
-            },
-          },
+          remoteSessions: external ? addRemoteSession(s.remoteSessions, projectPath, sessionId)
+            : removeRemoteSession(s.remoteSessions, projectPath, sessionId),
+          projectSessions: { ...s.projectSessions, [projectPath]: { ...project, _sessions: { ...project._sessions,
+            [sessionId]: { ...base, _controlLease: lease,
+              ...(remoteProvider && !base.sessionProvider ? { sessionProvider: remoteProvider, preferredProvider: remoteProvider } : {}),
+              acpAgentId: base.acpAgentId ?? event.acpAgentId ?? null,
+              ...(event.worktreePath !== undefined ? { _worktreePath: event.worktreePath, _gitBranch: event.gitBranch ?? null } : {}),
+            } } } },
         }
       })
-      // A node session's phone is routed through this desktop: the chat opens it from the node.
-      if (event.isSubscribe && !parseRemoteProjectKey(projectPath)) {
-        _hydrateSessionState(set, projectPath, sessionId)
-      }
+      if (external && !parseRemoteProjectKey(projectPath)) _hydrateSessionState(set, projectPath, sessionId)
       return
     }
     if (event.type === 'provider_changed') {
@@ -163,14 +141,6 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
       }
       return
     }
-    if (event.type === 'remote_session_end') {
-      if (!event.isSubscribe) return
-      set((s) => ({
-        remoteSessions: removeRemoteSession(s.remoteSessions, event.remoteProjectPath, event.remoteSessionId),
-      }))
-      return
-    }
-
     if (event.type === 'session_title_changed') {
       const { sessionId, title, projectPath: targetProjectPath } = event
       set((s) => {
@@ -825,9 +795,16 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
 
     set((s) => {
       const nextProjects = { ...s.projectSessions }
+      let remoteSessions = s.remoteSessions
       for (const entry of entries) {
         const prevProject = nextProjects[entry.projectPath] ?? createDefaultProjectState()
         const prevSession = prevProject._sessions[entry.sid] ?? applyCachedCodexPermissionPreset(createDefaultPerSessionState())
+        const requestedLease = projectsAtRequest[entry.projectPath]?._sessions[entry.sid]?._controlLease
+        const controlLease = entry.controlLease !== undefined && requestedLease === prevSession._controlLease
+          ? entry.controlLease : prevSession._controlLease
+        if (controlLease !== undefined) remoteSessions = controlLease && !controlLease.delegate?.startsWith('window:')
+          ? addRemoteSession(remoteSessions, entry.projectPath, entry.sid)
+          : removeRemoteSession(remoteSessions, entry.projectPath, entry.sid)
         const mergedMessages = mergeMessagesByMaxSeq(entry.snapshot.messages as ChatMessage[], prevSession.messages)
         const provider: ChatProvider = inferProviderFromHarnessId(entry.snapshot.harnessId) ?? 'claude'
         const inferredStatus: AgentStatus = entry.isStreaming ? 'streaming' : prevSession.status === 'error' ? 'error' : 'idle'
@@ -872,6 +849,7 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
           // Live UI settings first (permission / codex presets / effort / …), then
           // explicit snapshot fields as authoritative fallbacks.
           ...fromUi,
+          _controlLease: controlLease,
           permissionMode: fromUi.permissionMode ?? entry.permissionMode ?? prevSession.permissionMode,
           lastAssistantMessageId: entry.snapshot.currentMessageId ?? prevSession.lastAssistantMessageId,
           _worktreePath: entry.snapshot.worktreePath ?? prevSession._worktreePath,
@@ -907,7 +885,7 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
           sandboxInfo: entry.sandboxInfo,
         }
       }
-      return { projectSessions: nextProjects }
+      return { projectSessions: nextProjects, remoteSessions }
     })
 
     for (const entry of entries) {

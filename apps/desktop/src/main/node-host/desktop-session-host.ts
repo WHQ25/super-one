@@ -9,7 +9,6 @@ import {
 import type {
   AgentEvent,
   ChatMessage,
-  EffortLevel,
   PermissionMode,
   SandboxMode,
   SendMessageRequest,
@@ -28,6 +27,9 @@ import { DESKTOP_HOST_ACTION_TOOL_GROUPS, DesktopSessionReads } from './desktop-
 import type { RemoteControlledSessionRow, RemoteControllerRecord } from '../db-remote-controlled-sessions'
 import type { Session, SessionCreateOptions } from '../session/types'
 import log from '../logger'
+import { admitDesktopSessionSend, applyDesktopSessionSettings, desktopSendRequest, respondDesktopPermission, respondDesktopQuestion, respondDesktopPlan } from './desktop-session-mutations'
+import { runFencedSessionControl } from '../session/control-context'
+import type { DesktopRestorePorts } from '../session/session-restore-facts'
 
 export { pendingInteractionOf } from './desktop-session-reads'
 
@@ -39,6 +41,7 @@ export interface NodeHostSessionManager {
   getActiveSession(projectPath: string): Session | null
   setActiveSession(projectPath: string, sessionId: string): void
   clearActiveSession(projectPath: string): void
+  disposeSession(sessionId: string): Promise<void>
   onSession(handler: (session: Session) => void): () => void
 }
 
@@ -56,6 +59,7 @@ export interface NodeHostSessionStore {
 
 export interface DesktopSessionHostDeps {
   environmentId: string
+  restore?: DesktopRestorePorts
   sessions: NodeHostSessionManager
   store: NodeHostSessionStore
   leases: ControlLeasePort
@@ -67,10 +71,7 @@ export interface DesktopSessionHostDeps {
   controllerLabel(clientSessionId: string): string | null
 }
 
-/** Session owner id a node controller claims, so the desktop's own UI only watches. */
-export function nodeControllerDeviceId(clientSessionId: string): string {
-  return `node:${clientSessionId}`
-}
+
 
 /**
  * The wire record of one desktop event. A user bubble becomes
@@ -84,6 +85,7 @@ export function durableEventOf(event: AgentEvent): { eventType: string; payload:
     return {
       eventType: SESSION_DURABLE_EVENT.userMessage,
       payload: {
+        message,
         blockId: message.id,
         text: messageText(message.content),
         userMessageContent: message.content,
@@ -131,7 +133,7 @@ export class DesktopSessionHost extends DesktopSessionReads<RemoteControlledSess
   private readonly controlled = new Map<string, boolean>()
 
   constructor(private readonly deps: DesktopSessionHostDeps) {
-    super({ sessions: deps.sessions, events: deps.events, rows: deps.store })
+    super({ sessions: deps.sessions, events: deps.events, rows: deps.store, environmentId: deps.environmentId, restore: deps.restore })
     this.hostActions = new HostActionChannel({
       store: deps.hostActions,
       session: (sessionId) => {
@@ -207,7 +209,7 @@ export class DesktopSessionHost extends DesktopSessionReads<RemoteControlledSess
     const row = this.deps.store.get(session.id)
     if (!row) return
     this.watched.add(session)
-    if (!row.controller.released) this.claim(session, row.controller.clientSessionId)
+    if (!row.controller.released) this.restoreControl(session, row.controller.clientSessionId)
     const off = session.on((event, replay) => {
       if (replay) return
       // A Host Action belongs to the turn that asked for it.
@@ -218,9 +220,9 @@ export class DesktopSessionHost extends DesktopSessionReads<RemoteControlledSess
     this.sessionListeners.add(off)
   }
 
-  private claim(session: Session, clientSessionId: string): void {
+  private restoreControl(session: Session, clientSessionId: string): void {
     try {
-      session.claim({ kind: 'remote', deviceId: nodeControllerDeviceId(clientSessionId) })
+      this.deps.leases.acquire({ resource: { environmentId: this.deps.environmentId, sessionId: session.id }, holderClientId: clientSessionId, ttlMs: 60_000 })
     } catch (err) {
       // Another device (a phone) is already attached; the lease still gates the node surface.
       log.warn('[node-host] controller claim skipped sid=%s: %s', session.id, err instanceof Error ? err.message : String(err))
@@ -283,6 +285,7 @@ export class DesktopSessionHost extends DesktopSessionReads<RemoteControlledSess
     else this.deps.sessions.clearActiveSession(projectPath)
     if (input.title) session.setTitle(input.title, 'agent')
     this.adopt(session)
+    session.lease.grantCreatedSession()
     this.deps.events.appendSession({
       sessionId,
       eventType: SESSION_DURABLE_EVENT.created,
@@ -291,7 +294,7 @@ export class DesktopSessionHost extends DesktopSessionReads<RemoteControlledSess
     return this.record(this.requireRow(sessionId))
   }
 
-  patchSettings(sessionId: string, patch: NodeSessionSettings): NodeSessionRecord {
+  async patchSettings(sessionId: string, patch: NodeSessionSettings): Promise<NodeSessionRecord> {
     const row = this.requireRow(sessionId)
     const pick = (value: string | null | undefined, current: string | null | undefined) => (value === undefined ? current : value)
     const controller: RemoteControllerRecord = {
@@ -301,25 +304,26 @@ export class DesktopSessionHost extends DesktopSessionReads<RemoteControlledSess
       model: pick(patch.model, row.controller.model),
       effort: pick(patch.effort, row.controller.effort),
       apiProviderId: pick(patch.apiProviderId, row.controller.apiProviderId),
+      mode: pick(patch.mode, row.controller.mode),
+      agentPreset: pick(patch.agentPreset, row.controller.agentPreset),
+      additionalDirectories: patch.additionalDirectories === undefined ? row.controller.additionalDirectories : patch.additionalDirectories,
     }
+    const live = this.live(row)
+    live.lease.assertMutation()
+    await applyDesktopSessionSettings(live, patch)
+    live.lease.assertMutation()
     this.deps.store.setController(sessionId, controller)
-    const live = this.deps.sessions.getSession(sessionId)
-    if (live) void this.applySettings(live, controller)
     return this.record(this.requireRow(sessionId))
   }
+
+  validateSettings(): void { /* Desktop Session applies native harness selections. */ }
 
   /** Bring a live session to the stored launch settings before it runs a turn. */
   private async applySettings(session: Session, settings: RemoteControllerRecord): Promise<void> {
     try {
-      if (settings.permissionMode && settings.permissionMode !== session.getCurrentPermissionMode()) {
-        await session.setPermissionMode(settings.permissionMode as PermissionMode)
-      }
-      if (settings.sandboxMode) await session.setSandboxMode(settings.sandboxMode as SandboxMode)
-      // Only an explicit key: without one the session follows this desktop's binding.
-      if (settings.apiProviderId && settings.apiProviderId !== session.getApiProviderId()) {
-        session.setApiProviderId(settings.apiProviderId)
-      }
+      await applyDesktopSessionSettings(session, settings)
     } catch (err) {
+      if (['failed_precondition', 'forbidden', 'lease_stale', 'lease_required'].includes((err as { code?: string }).code ?? '')) throw err
       log.warn('[node-host] applying settings failed sid=%s: %s', session.id, err instanceof Error ? err.message : String(err))
     }
   }
@@ -333,10 +337,10 @@ export class DesktopSessionHost extends DesktopSessionReads<RemoteControlledSess
   }
 
   rename(sessionId: string, title: string, source: 'user' | 'agent' = 'user'): NodeSessionRecord {
-    this.requireRow(sessionId)
-    const live = this.deps.sessions.getSession(sessionId)
-    if (live) live.setTitle(title, source)
-    else this.deps.store.rename(sessionId, title, source)
+    const row = this.requireRow(sessionId)
+    const live = this.live(row)
+    live.lease.assertMutation()
+    live.setTitle(title, source)
     return this.record(this.requireRow(sessionId))
   }
 
@@ -359,48 +363,34 @@ export class DesktopSessionHost extends DesktopSessionReads<RemoteControlledSess
   async send(input: Parameters<SessionHostPort['send']>[0]): Promise<unknown> {
     const row = this.requireRow(input.sessionId)
     this.assertLease(input.sessionId, input.client.clientSessionId, input.leaseId, input.generation)
-    const session = this.live(row)
-    await this.applySettings(session, {
-      ...row.controller,
-      permissionMode: input.permissionMode ?? row.controller.permissionMode,
-      sandboxMode: input.sandboxMode ?? row.controller.sandboxMode,
-      apiProviderId: input.apiProviderId ?? row.controller.apiProviderId,
+    return runFencedSessionControl(input.sessionId, input.client.clientSessionId, input, async () => {
+      const session = this.live(row)
+      const sendRequest = desktopSendRequest(input, session.snapshot.harnessId)
+      await this.applySettings(session, {
+        ...row.controller,
+        permissionMode: input.permissionMode ?? row.controller.permissionMode,
+        sandboxMode: input.sandboxMode ?? row.controller.sandboxMode,
+        apiProviderId: input.apiProviderId ?? row.controller.apiProviderId,
+      })
+      const request: SendMessageRequest = {
+        ...sendRequest,
+        ...(input.collaboration ? {
+          source: 'collaboration' as const,
+          collaboration: {
+            kind: 'initial_task' as const, direction: 'inbound' as const,
+            ...(row.controller.label ? { fromSessionTitle: row.controller.label } : {}),
+          },
+        } : {}),
+      }
+      await admitDesktopSessionSend(session, request, input)
+      return this.record(this.requireRow(input.sessionId))
     })
-    const request: SendMessageRequest = {
-      content: input.text,
-      ...(input.clientMessageId ? { clientMessageId: input.clientMessageId } : {}),
-      ...(input.model ? { model: input.model } : {}),
-      ...(input.effort ? { effort: input.effort as EffortLevel } : {}),
-      ...(input.images?.length
-        ? { images: input.images.map((image) => ({ mimeType: image.mimeType, base64: image.base64, name: image.name ?? 'Attachment', ...(image.id ? { id: image.id } : {}) })) }
-        : {}),
-      ...(input.additionalDirectories?.length ? { additionalDirs: input.additionalDirectories } : {}),
-      ...(input.userMessageContent ? { userMessageContent: input.userMessageContent } : {}),
-      ...(input.contexts ? { contexts: input.contexts } : {}),
-      ...(input.ultracode !== undefined ? { ultracode: input.ultracode } : {}),
-      // A launch task from the controller's agent reads as one here, named after that device.
-      ...(input.collaboration
-        ? {
-            source: 'collaboration' as const,
-            collaboration: {
-              kind: 'initial_task' as const,
-              direction: 'inbound' as const,
-              ...(row.controller.label ? { fromSessionTitle: row.controller.label } : {}),
-            },
-          }
-        : {}),
-    }
-    // Answer once the turn is admitted; the rest streams through session.events.
-    await new Promise<void>((resolve, reject) => {
-      session.send(request, { providerOrigin: 'remote', onAccepted: () => resolve() }).then(() => resolve(), reject)
-    })
-    return this.record(this.requireRow(input.sessionId))
   }
 
   interrupt(sessionId: string, client: { clientSessionId: string }, leaseId: string, generation: string): void {
     this.requireRow(sessionId)
     this.assertLease(sessionId, client.clientSessionId, leaseId, generation)
-    void this.deps.sessions.getSession(sessionId)?.interrupt()
+    runFencedSessionControl(sessionId, client.clientSessionId, { leaseId, generation }, () => { void this.deps.sessions.getSession(sessionId)?.interrupt() })
   }
 
   private liveForResponse(sessionId: string, client: { clientSessionId: string }, leaseId: string, generation: string): Session {
@@ -412,29 +402,24 @@ export class DesktopSessionHost extends DesktopSessionReads<RemoteControlledSess
   }
 
   respondPermission(input: Parameters<SessionHostPort['respondPermission']>[0]): void {
-    const session = this.liveForResponse(input.sessionId, input.client, input.leaseId, input.generation)
-    const allow = input.decision === 'allow' || input.decision === 'allow_always'
-    const handled = session.respondToPermission(
-      input.interactionId,
-      allow,
-      input.decision === 'allow_always',
-      undefined,
-      undefined,
-      input.cancel ? 'cancel' : undefined,
-      input.formAnswers,
-    )
-    if (!handled) throw Object.assign(new Error('no matching pending permission'), { code: 'failed_precondition' })
+    runFencedSessionControl(input.sessionId, input.client.clientSessionId, input, () => {
+      const session = this.liveForResponse(input.sessionId, input.client, input.leaseId, input.generation)
+      respondDesktopPermission(session, input)
+    })
   }
 
   respondQuestion(input: Parameters<SessionHostPort['respondQuestion']>[0]): void {
-    const session = this.liveForResponse(input.sessionId, input.client, input.leaseId, input.generation)
-    session.respondToQuestion(input.interactionId, (input.answers ?? {}) as Record<string, string>)
+    runFencedSessionControl(input.sessionId, input.client.clientSessionId, input, () => {
+      const session = this.liveForResponse(input.sessionId, input.client, input.leaseId, input.generation)
+      respondDesktopQuestion(session, input)
+    })
   }
 
-  respondPlan(input: Parameters<SessionHostPort['respondPlan']>[0]): void {
-    const session = this.liveForResponse(input.sessionId, input.client, input.leaseId, input.generation)
-    const feedback = typeof input.options?.feedback === 'string' ? input.options.feedback : undefined
-    session.respondToPlanApproval(input.interactionId, input.decision === 'approve', feedback)
+  async respondPlan(input: Parameters<SessionHostPort['respondPlan']>[0]): Promise<void> {
+    await runFencedSessionControl(input.sessionId, input.client.clientSessionId, input, () => {
+      const session = this.liveForResponse(input.sessionId, input.client, input.leaseId, input.generation)
+      return respondDesktopPlan(session, input)
+    })
   }
 
   async modUi(): Promise<unknown> {
@@ -452,7 +437,6 @@ export class DesktopSessionHost extends DesktopSessionReads<RemoteControlledSess
     this.deps.store.setController(sessionId, { ...row.controller, released: true })
     this.deps.leases.revoke({ environmentId: this.deps.environmentId, sessionId })
     const session = this.live(row)
-    session.release(nodeControllerDeviceId(row.controller.clientSessionId))
     session.emitHostEvent({ type: 'remote_control_changed', released: true })
   }
 
@@ -463,7 +447,6 @@ export class DesktopSessionHost extends DesktopSessionReads<RemoteControlledSess
     const controller: RemoteControllerRecord = { ...row.controller, released: false }
     this.deps.store.setController(sessionId, controller)
     const session = this.live({ ...row, controller })
-    this.claim(session, row.controller.clientSessionId)
     session.emitHostEvent({ type: 'remote_control_changed', released: false })
   }
 
@@ -475,11 +458,6 @@ export class DesktopSessionHost extends DesktopSessionReads<RemoteControlledSess
       clientSessionId: controllerClientSessionId,
       label: this.deps.controllerLabel(controllerClientSessionId),
     })
-    const live = this.deps.sessions.getSession(sessionId)
-    if (live && !row.controller.released) {
-      live.release(nodeControllerDeviceId(row.controller.clientSessionId), 'self_switch')
-      this.claim(live, controllerClientSessionId)
-    }
     this.hostActions.rebind(sessionId, controllerClientSessionId)
     return null
   }

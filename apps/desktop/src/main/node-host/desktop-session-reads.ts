@@ -12,6 +12,8 @@ import type { DesktopSessionRow } from '../db-remote-controlled-sessions'
 import type { Session } from '../session/types'
 import type { NodeHostSessionManager } from './desktop-session-host'
 import type { AgentEvent } from '@superone/shared/agent-types'
+import { activeTurnOutsidePage, sessionMessageRange } from '@superone/shared/environment/session-message-range'
+import { sessionRestoreFacts, type DesktopRestorePorts } from '../session/session-restore-facts'
 
 /**
  * Host Action tool groups a controller runs for sessions served here. Only the
@@ -29,6 +31,8 @@ export interface DesktopSessionRows<Row extends DesktopSessionRow> {
 }
 
 export interface DesktopSessionReadsDeps<Row extends DesktopSessionRow> {
+  environmentId: string
+  restore?: DesktopRestorePorts
   sessions: NodeHostSessionManager
   events: EventLog
   rows: DesktopSessionRows<Row>
@@ -156,10 +160,13 @@ export abstract class DesktopSessionReads<Row extends DesktopSessionRow> impleme
       cwd: live?.cwd ?? row.worktreePath ?? row.projectPath,
       // A controller's launch settings; this desktop's own sessions report what they run with now.
       permissionMode: controller ? controller.permissionMode ?? null : live?.getCurrentPermissionMode() ?? null,
-      sandboxMode: controller?.sandboxMode ?? null,
-      model: controller?.model ?? null,
-      effort: controller?.effort ?? null,
+      sandboxMode: controller ? controller.sandboxMode ?? null : live ? (live.getCurrentSandboxInfo().enabled ? live.getCurrentSandboxInfo().autoAllowBash ? 'auto' : 'on' : 'off') : null,
+      model: controller ? controller.model ?? null : live?.getSelectedModel() ?? null,
+      effort: controller ? controller.effort ?? null : live?.getSelectedEffort() ?? null,
       apiProviderId: controller ? controller.apiProviderId ?? null : live?.getApiProviderId() ?? null,
+      mode: live?.getUiSettings().selectedAcpModeId ?? controller?.mode ?? null,
+      agentPreset: live?.getAgentPreset() ?? controller?.agentPreset ?? null,
+      additionalDirectories: live?.getCallerScopedDirsSnapshot() ?? controller?.additionalDirectories ?? null,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
       isPinned: row.isPinned,
@@ -191,23 +198,35 @@ export abstract class DesktopSessionReads<Row extends DesktopSessionRow> impleme
    * The live session's messages and prompts (its stored transcript when it is
    * not loaded), at the version its recorded events have reached.
    */
-  load(input: Parameters<SessionHostPort['load']>[0]): ReturnType<SessionHostPort['load']> {
+  async load(input: Parameters<SessionHostPort['load']>[0]) {
     const sessionId = String(input.sessionId ?? '').trim()
     this.requireRow(sessionId)
+    const sandboxInfo = input.includeState === false ? undefined : await this.reads.restore?.prepare?.(this.reads.sessions.getSession(sessionId))
+    // No awaits after this point: facts, rows and cursor cover the same session version.
+    const row = this.requireRow(sessionId)
     const live = this.reads.sessions.getSession(sessionId)
     let state: ChatCoreSession = createDefaultChatCoreSession()
-    for (const event of live?.getPendingInteractions() ?? []) state = { ...state, ...applyEventToSession(state, event) }
+    for (const event of [...(live?.getReplayEvents() ?? []), ...(live?.getPendingInteractions() ?? [])]) state = { ...state, ...applyEventToSession(state, event) }
     const all = this.messages(sessionId)
-    const limit = Math.min(Math.max(1, input.limit ?? 50), 200)
-    const end = Math.min(input.before ?? all.length, all.length)
-    const start = Math.max(0, end - limit)
-    const { messages: _messages, ...rest } = { ...state, status: live?.isStreaming() ? 'streaming' as const : 'idle' as const }
+    const { start, end } = sessionMessageRange(all, input)
+    const messages = all.slice(start, end)
+    if (input.includeState === false) return {
+      sessionId, state: {}, messages, before: start > 0 ? start : null, after: end < all.length ? end : null,
+      cursor: { sequence: this.reads.events.headSequence(), epoch: this.reads.events.epoch, version: this.reads.events.sessionVersion(sessionId) },
+    }
+    const activeTurn = live ? activeTurnOutsidePage(all, { start, end }) : []
+    const facts = sessionRestoreFacts({ session: live, row, history: all, environmentId: this.reads.environmentId, sandboxInfo, realtime: this.reads.restore?.realtime?.(sessionId) })
+    const { restore, ...current } = facts
+    const { messages: _messages, ...rest } = { ...state, ...current, cwd: live?.cwd ?? row.worktreePath ?? row.projectPath, _providerSessionId: row.providerSessionId, sessionProvider: row.harnessId, preferredProvider: row.harnessId, _worktreeRemoved: restore.worktreeMissing }
     const { events } = this.reads
     return {
       sessionId,
       state: rest as unknown as Record<string, unknown>,
-      messages: all.slice(start, end),
+      messages,
+      ...(activeTurn.length ? { activeTurn } : {}),
+      restore,
       before: start > 0 ? start : null,
+      after: end < all.length ? end : null,
       cursor: { sequence: events.headSequence(), epoch: events.epoch, version: events.sessionVersion(sessionId) },
     }
   }

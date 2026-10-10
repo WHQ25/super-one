@@ -9,6 +9,14 @@ type Copy = Record<string, string>
  * and in-progress states use sentence case.
  */
 const en: Copy = {
+  'Update Your Desktop': 'Update Your Desktop',
+  'Update the paired desktop to the version below, restart SuperOne, then reconnect.': 'Update the paired desktop to the version below, restart SuperOne, then reconnect.',
+  'or later': 'or later',
+  'Current version': 'Current Version',
+  'Your pairing is saved. You can reconnect after the desktop is updated.': 'Your pairing is saved. You can reconnect after the desktop is updated.',
+  'Reconnect': 'Reconnect',
+  'Desktop is unavailable. Choose another device.': 'Desktop is unavailable. Choose another device.',
+  'Could not reconnect. Please try again.': 'Could not reconnect. Please try again.',
   'Widget': 'Widget',
   'Add files…': 'Add Files…',
   'Uploading…': 'Uploading…',
@@ -577,6 +585,14 @@ const en: Copy = {
 }
 
 const zh: Copy = {
+  'Update Your Desktop': '请更新桌面端',
+  'Update the paired desktop to the version below, restart SuperOne, then reconnect.': '请将配对的桌面端更新到以下版本，重启 SuperOne 后再连接。',
+  'or later': '或更高版本',
+  'Current version': '当前版本',
+  'Your pairing is saved. You can reconnect after the desktop is updated.': '配对信息已保留，桌面端更新后即可重新连接。',
+  'Reconnect': '重新连接',
+  'Desktop is unavailable. Choose another device.': '桌面端暂时无法连接，请选择其他设备。',
+  'Could not reconnect. Please try again.': '无法重新连接，请再试一次。',
   'Widget': '小组件',
   'Add files…': '添加文件…',
   'Uploading…': '正在上传…',

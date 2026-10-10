@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
 import type { TerminalEvent, TerminalListItem } from '@superone/shared/agent-types'
 import type { PtySpawner } from './pty'
-import { TerminalOwnership } from './terminal-ownership'
+import { TerminalLease, type TerminalLeaseAuthority } from './terminal-lease'
 import { TerminalSession } from './terminal-session'
 
 export interface TerminalManagerOptions {
@@ -10,6 +10,7 @@ export interface TerminalManagerOptions {
   exists?: (path: string) => boolean
   coalesceMs?: number
   snapshotSoftLimit?: number
+  leaseAuthority?: TerminalLeaseAuthority
 }
 
 export function terminalMatchesProject(cwd: string, projectPath: string, sessionCwd?: string): boolean {
@@ -36,13 +37,19 @@ export class TerminalManager {
   private readonly opts: TerminalManagerOptions
   private readonly exists: (path: string) => boolean
   private readonly byId = new Map<string, TerminalSession>()
+  private leaseAuthority: TerminalLeaseAuthority | undefined
 
   constructor(opts: TerminalManagerOptions) {
     this.opts = opts
     this.exists = opts.exists ?? existsSync
+    this.leaseAuthority = opts.leaseAuthority
   }
 
+  bindLeases(authority: TerminalLeaseAuthority): void { this.leaseAuthority = authority }
+  get hasLeases(): boolean { return this.leaseAuthority !== undefined }
+
   create(opts: CreateTerminalOptions): TerminalSession {
+    if (!this.leaseAuthority) throw new Error('desktop control leases are not ready')
     const terminalId = globalThis.crypto.randomUUID()
     const session = new TerminalSession({
       terminalId,
@@ -52,7 +59,7 @@ export class TerminalManager {
       cols: opts.cols ?? 80,
       rows: opts.rows ?? 24,
       spawner: this.opts.spawner,
-      ownership: new TerminalOwnership(),
+      lease: new TerminalLease(this.leaseAuthority, terminalId),
       onEvent: this.opts.onEvent,
       env: opts.env,
       shell: opts.shell,

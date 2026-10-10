@@ -23,8 +23,11 @@ test scope, commit rules, and UI story coverage.
 - Keep Electron APIs in main/preload; use the existing IPC and environment gateway
   for renderer operations. `window.environment` is preferred where the capability
   has migrated; do not add a second permanent local/remote implementation.
-- Session control and subscriber ownership belong to `Session`, not transport or
-  scattered IPC guards. Shared contracts live in `@superone/shared`.
+- Session and terminal control belong to the desktop domain's `ControlLeaseService`.
+  `SessionLease` and `TerminalLease` fence authenticated window, phone and controller
+  operations by the admitted lease ID and generation, including after awaits.
+  Topic connections describe observers independently of control. Shared contracts
+  live in `@superone/shared`.
 - Database changes preserve old-client compatibility. Read the migration section
   of architecture before editing migrations; destructive schema changes require
   the documented staged compatibility process.

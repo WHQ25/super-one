@@ -13,6 +13,7 @@ import {
   DRAFT_ATTACHMENTS_MAX_BYTES,
   OPERATION_SCOPES,
   type DraftAttachment,
+  type DraftOpenResult,
   type DraftUpsertRequest,
 } from '@superone/shared/environment'
 import { withoutDraftAttachmentBytes } from '@superone/shared/environment/draft-content'
@@ -23,7 +24,7 @@ import { asRecord, mapThrown, optionalString, requireScopes, type RpcHandlerTabl
 
 /** The host's drafts and their leases (`DraftControl` over its draft store). */
 export type DraftsPort = Pick<DraftControl, 'list' | 'upsert' | 'save' | 'open' | 'close' | 'delete'> &
-  Partial<Pick<DraftControl, 'watch'>>
+  Partial<Pick<DraftControl, 'watch' | 'assertControl'>>
 
 type DraftRpcContext = RpcContext & { drafts: DraftsPort }
 
@@ -34,7 +35,7 @@ function parseAttachments(value: unknown): DraftAttachment[] {
     const name = typeof a.name === 'string' ? a.name : ''
     const mimeType = typeof a.mimeType === 'string' ? a.mimeType : ''
     const data = typeof a.data === 'string' ? a.data : ''
-    return data ? [{ name, mimeType, data }] : []
+    return data ? [{ name, mimeType, data, ...(typeof a.id === 'string' ? { id: a.id } : {}) }] : []
   })
 }
 
@@ -92,13 +93,14 @@ export const DRAFT_HANDLERS: RpcHandlerTable<DraftRpcContext> = {
       return mapThrown(err)
     }
   },
-  'draft.open': (payload, ctx) => {
+  'draft.open': async (payload, ctx) => {
     const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
     if (denied) return denied
     const p = asRecord(payload)
     const draftId = optionalString(p.draftId)
     if (!draftId) return invalid('draftId is required')
     try {
+      await ctx.beforeDraftOpen?.(draftId)
       const opened = ctx.drafts.open(draftId, ctx.client.clientSessionId, optionalString(p.expectedUpdatedAt) ?? undefined)
       // A composer about to send a draft already holds its attachments.
       return { result: p.omitContent === true ? { ...opened, draft: withoutDraftAttachmentBytes(opened.draft) } : opened }
@@ -134,4 +136,13 @@ export const DRAFT_HANDLERS: RpcHandlerTable<DraftRpcContext> = {
       return mapThrown(err)
     }
   },
+}
+
+/** Replaying an open after disconnect must grant a live lease rather than a discarded token. */
+export function isDraftOpenReceiptLive(ctx: RpcContext, receipt: unknown): boolean {
+  const opened = receipt as Partial<DraftOpenResult> | null
+  if (!opened?.leaseId || !opened.draft?.id) return false
+  if (!ctx.drafts?.assertControl) return true
+  try { ctx.drafts.assertControl(opened.draft.id, ctx.client.clientSessionId, opened.leaseId); return true }
+  catch { return false }
 }

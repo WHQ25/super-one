@@ -1,6 +1,7 @@
 import type { McpAppDeviceRequest } from '@superone/shared/agent-types'
 import type { McpAppHostRequest, McpAppHostResult, McpAppRequester } from '@superone/shared/mcp-apps'
 import { mcpAppSessionKey } from './session-key'
+import type { McpAppResolvedTarget } from './executor-core'
 
 /**
  * Scope a paired device's View operation to the session its command named. The caller
@@ -13,7 +14,7 @@ export function deviceMcpAppHostRequest(projectPath: string, sessionId: string, 
   return { ...request, sessionKey: mcpAppSessionKey(projectPath, sessionId) }
 }
 
-export async function executeDeviceMcpAppRequest(request: McpAppHostRequest, requester: Extract<McpAppRequester, { kind: 'mobile' }>, signal = new AbortController().signal): Promise<McpAppHostResult> {
+export async function executeDeviceMcpAppRequest(request: McpAppHostRequest, requester: Extract<McpAppRequester, { kind: 'mobile' }>, signal = new AbortController().signal, validateTarget?: (target: McpAppResolvedTarget) => void): Promise<McpAppHostResult> {
   const { executeMcpAppHostRequest } = await import('./executor')
-  return executeMcpAppHostRequest(request, requester, signal)
+  return validateTarget ? executeMcpAppHostRequest(request, requester, signal, validateTarget) : executeMcpAppHostRequest(request, requester, signal)
 }

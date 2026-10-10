@@ -18,6 +18,11 @@ import { issueChannelCredential, startClientHandshake } from '@superone/relay-cl
 import { sealLinkFrame } from '@superone/relay-client/phone-link'
 import { nextFrame } from './remote/test-phone'
 import { RemoteControlService, type PairedPhone } from './remote-control-service'
+import { phoneDomain } from './node-host/phone-endpoint-test-fixtures'
+import { openPhoneConnection } from './node-host/phone-endpoint'
+import type { DesktopDomain } from './node-host/desktop-domain'
+import type { SessionLoadResult } from '@superone/shared/environment'
+import { encodePlainMessage } from '@superone/shared/environment/wire'
 
 const ROOT = 'ab'.repeat(32)
 
@@ -63,6 +68,7 @@ async function startRelay() {
 }
 
 describe('RemoteControlService phone channel over the relay', () => {
+  const domains: Array<() => void> = []
   let service: RemoteControlService | null = null
   let relay: Awaited<ReturnType<typeof startRelay>> | null = null
   const clients: RelayClient[] = []
@@ -73,13 +79,16 @@ describe('RemoteControlService phone channel over the relay', () => {
     service = null
     relay?.server.close()
     relay = null
+    while (domains.length) domains.pop()!()
   })
 
-  async function start(phones: Array<Omit<PairedPhone, 'enabled'> & { enabled?: boolean }>, onCommand = vi.fn()) {
+  async function start(phones: Array<Omit<PairedPhone, 'enabled'> & { enabled?: boolean }>, domain?: DesktopDomain) {
+    domain ??= phoneDomain(domains).domain
     relay = await startRelay()
     const paired = new Map(phones.map((phone) => [phone.keyId, { enabled: true, ...phone }]))
     service = new RemoteControlService(relay.url, {
-      onCommand,
+      hostInfo: () => ({ appVersion: '0.73.0-alpha.1', protocol: 3, environmentId: domain!.identity.environmentId }),
+      openPhoneConnection: (link: Parameters<typeof openPhoneConnection>[1]) => openPhoneConnection(domain!, link),
       pairedPhones: {
         byKey: (keyId) => paired.get(keyId) ?? null,
         byId: (id) => [...paired.values()].find((phone) => phone.deviceId === id) ?? null,
@@ -99,36 +108,49 @@ describe('RemoteControlService phone channel over the relay', () => {
     return { client, controls, events, connect: () => client.connectRelay({ relayUrl: relay!.url, link, deviceId }) }
   }
 
-  it('runs the handshake through the relay, answers a command and delivers events', async () => {
-    const onCommand = vi.fn((cmd: { requestId?: string }, respond: (id: string, data: unknown) => Promise<void>) => {
-      if (cmd.requestId) void respond(cmd.requestId, { ok: true })
-    })
-    await start([{ deviceId: 'dev-1', deviceName: 'iPhone', keyId: 'key-dev-1' }], onCommand)
+  it('serves the native endpoint through the real relay sender and sealed phone channel', async () => {
+    const { domain, own } = phoneDomain(domains)
+    await start([{ deviceId: 'native', deviceName: 'Phone', keyId: 'native-key' }], domain)
+    const a = phone('native', 'native-key'); await a.connect(); await a.client.verifyHost()
+    const resource = { environmentId: domain.identity.environmentId, sessionId: 'own' }
+    await a.client.acquireControl(resource)
+    await a.client.controlledRpc(resource, 'session.send', { text: 'native relay', clientMessageId: 'native' })
+    expect(own.sent).toContainEqual(expect.objectContaining({ content: 'native relay' }))
+    expect(JSON.stringify(relay!.fromMobiles)).not.toContain('native relay')
+    await a.client.releaseControl(resource)
+  })
+
+  it('runs both handshakes through the relay and follows native session events', async () => {
+    const { domain, own, projectDir } = phoneDomain(domains)
+    await start([{ deviceId: 'dev-1', deviceName: 'iPhone', keyId: 'key-dev-1' }], domain)
     const a = phone('dev-1', 'key-dev-1')
     await a.connect()
-    await expect(a.client.request({ type: 'list_projects', requestId: 'r1' } as never)).resolves.toEqual({ ok: true })
-    expect(onCommand.mock.calls[0]?.[2]).toEqual({ deviceId: 'dev-1', transport: 'relay' })
+    await a.client.verifyHost()
+    const loaded = await a.client.rpc<SessionLoadResult>('session.load', { sessionId: 'own' })
+    await a.client.followSession({ session: { environmentId: domain.identity.environmentId, sessionId: 'own' }, projectPath: projectDir, cursor: loaded.cursor })
     expect(a.controls).toContainEqual(expect.objectContaining({ type: 'handshake' }))
     expect(service!.getOnlineDevices().get('dev-1')).toEqual({ name: 'iPhone', transport: 'relay' })
 
-    await service!.sendEventToMobile({ type: 'status_change', status: 'idle' }, ['dev-1'])
-    await vi.waitFor(() => expect(a.events).toEqual([[{ type: 'status_change', status: 'idle' }]]))
+    own.emitHostEvent({ type: 'status_change', status: 'error' })
+    await vi.waitFor(() => expect(a.events.flat()).toContainEqual(expect.objectContaining({ type: 'status_change', status: 'error', environmentId: domain.identity.environmentId })))
     // Nothing secret or readable crossed the relay.
     const wire = JSON.stringify(relay!.fromMobiles)
     expect(wire).not.toContain(issueChannelCredential(ROOT, 'key-dev-1').secretHex)
-    expect(wire).not.toContain('list_projects')
+    expect(wire).not.toContain('session.load')
   })
 
-  it('ignores a command the relay replays', async () => {
-    const onCommand = vi.fn()
-    await start([{ deviceId: 'dev-1', deviceName: 'iPhone', keyId: 'key-dev-1' }], onCommand)
+  it('does not admit a native mutation the relay replays', async () => {
+    const { domain, own } = phoneDomain(domains)
+    await start([{ deviceId: 'dev-1', deviceName: 'iPhone', keyId: 'key-dev-1' }], domain)
     const a = phone('dev-1', 'key-dev-1')
     await a.connect()
-    a.client.send({ type: 'terminal_input', terminalId: 't', data: 'ls\n' } as never)
-    await vi.waitFor(() => expect(onCommand).toHaveBeenCalledTimes(1))
+    const resource = { environmentId: domain.identity.environmentId, sessionId: 'own' }
+    await a.client.acquireControl(resource)
+    await a.client.controlledRpc(resource, 'session.send', { text: 'once', clientMessageId: 'once' })
+    expect(own.sent).toHaveLength(1)
     relay!.inject(relay!.fromMobiles.filter((frame) => frame.type === 'command').at(-1))
     await new Promise((resolve) => setTimeout(resolve, 100))
-    expect(onCommand).toHaveBeenCalledTimes(1)
+    expect(own.sent).toHaveLength(1)
   })
 
   it('kicks a key presented from another device slot, and a revoked device', async () => {
@@ -143,6 +165,7 @@ describe('RemoteControlService phone channel over the relay', () => {
 
     const b = phone('dev-2', 'key-dev-2')
     await b.connect()
+    await b.client.verifyHost()
     await vi.waitFor(() => expect(service!.getOnlineDevices().has('dev-2')).toBe(true))
     paired.delete('key-dev-2')
     service!.revokeDevice('dev-2')
@@ -152,7 +175,7 @@ describe('RemoteControlService phone channel over the relay', () => {
     const again = phone('dev-2', 'key-dev-2')
     await again.connect()
     await vi.waitFor(() => expect(again.controls).toContainEqual(expect.objectContaining({ type: 'kicked' })))
-    await expect(again.client.request({ type: 'list_projects', requestId: 'r2' } as never, 300)).rejects.toThrow()
+    await expect(again.client.rpc('project.list', {}, { timeoutMs: 300 })).rejects.toThrow()
   })
 
   describe('removing a device mid-handshake', () => {
@@ -171,50 +194,45 @@ describe('RemoteControlService phone channel over the relay', () => {
         frames,
         proveAndCommand: () => {
           socket.send(JSON.stringify({ type: 'channel', msg: proof }))
-          const data = sealLinkFrame(channel, { t: 'command' }, new TextEncoder().encode(JSON.stringify({ type: 'list_projects', requestId: 'r1' })))
+          const data = sealLinkFrame(channel, { t: 'rpc' }, encodePlainMessage({ type: 'handshake', requestId: 'r1', payload: { protocol: { current: 3, min: 3, max: 3 }, databaseSchema: { current: 1, min: 1, max: 1 } } }))
           socket.send(JSON.stringify({ type: 'command', data }))
         },
       }
     }
 
     it('revoking the device cancels its pending relay handshake', async () => {
-      const onCommand = vi.fn()
-      const paired = await start([{ deviceId: 'dev-1', deviceName: 'iPhone', keyId: 'key-dev-1' }], onCommand)
+      const paired = await start([{ deviceId: 'dev-1', deviceName: 'iPhone', keyId: 'key-dev-1' }])
       const phone = await challenged('dev-1', 'key-dev-1')
       paired.delete('key-dev-1')
       service!.revokeDevice('dev-1')
       phone.proveAndCommand()
       await vi.waitFor(() => expect(phone.frames).toContainEqual(expect.objectContaining({ type: 'kicked', mobileDeviceId: 'dev-1' })))
       await new Promise((resolve) => setTimeout(resolve, 100))
-      expect(onCommand).not.toHaveBeenCalled()
       expect(phone.frames.some((f) => f.type === 'channel' && 'data' in f)).toBe(false)
       expect(service!.getOnlineDevices().has('dev-1')).toBe(false)
       phone.socket.close()
     })
 
     it('rejects a proof that arrives after the pairing was deleted', async () => {
-      const onCommand = vi.fn()
-      const paired = await start([{ deviceId: 'dev-1', deviceName: 'iPhone', keyId: 'key-dev-1' }], onCommand)
+      const paired = await start([{ deviceId: 'dev-1', deviceName: 'iPhone', keyId: 'key-dev-1' }])
       const phone = await challenged('dev-1', 'key-dev-1')
       paired.delete('key-dev-1')
       phone.proveAndCommand()
       await vi.waitFor(() => expect(phone.frames).toContainEqual(expect.objectContaining({ type: 'kicked', mobileDeviceId: 'dev-1' })))
       await new Promise((resolve) => setTimeout(resolve, 100))
-      expect(onCommand).not.toHaveBeenCalled()
       expect(service!.getOnlineDevices().has('dev-1')).toBe(false)
       phone.socket.close()
     })
 
     it('refuses a command on an open channel once the pairing is gone', async () => {
-      const onCommand = vi.fn()
-      const paired = await start([{ deviceId: 'dev-1', deviceName: 'iPhone', keyId: 'key-dev-1' }], onCommand)
+      const paired = await start([{ deviceId: 'dev-1', deviceName: 'iPhone', keyId: 'key-dev-1' }])
       const a = phone('dev-1', 'key-dev-1')
       await a.connect()
+      await a.client.verifyHost()
       await vi.waitFor(() => expect(service!.getOnlineDevices().has('dev-1')).toBe(true))
       paired.delete('key-dev-1')
-      a.client.send({ type: 'terminal_input', terminalId: 't', data: 'ls\n' } as never)
+      await expect(a.client.rpc('environment.health', {}, { timeoutMs: 300 })).rejects.toThrow()
       await vi.waitFor(() => expect(a.controls).toContainEqual(expect.objectContaining({ type: 'kicked' })))
-      expect(onCommand).not.toHaveBeenCalled()
       expect(service!.getOnlineDevices().has('dev-1')).toBe(false)
     })
   })

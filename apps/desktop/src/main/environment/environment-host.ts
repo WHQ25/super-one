@@ -1,4 +1,7 @@
 import type { DetailTarget, DetailUpdate } from '@superone/shared/environment/detail'
+import type { RpcStreamHandlers } from '@superone/shared/environment/rpc-connection'
+import type { SessionStreamFrame, TopicSubscribeInput } from '@superone/shared/environment'
+import type { RemoteTopicStream } from './remote-topic-followers'
 import { notifySessionClosed } from '../session-list-watch'
 import { MOD_UI_MUTATING_OPS, MOD_UI_UNAVAILABLE, type ModUiOp, type ModUiRequest } from '@superone/shared/mod-ui'
 import { parseMessageDisplay, type MessageDisplayFields } from '@superone/shared/message-display'
@@ -101,6 +104,7 @@ import type {
 } from '@superone/shared/environment'
 import type { PinnedSessionEntry, SessionHistoryEntry } from '@superone/shared/agent-types'
 import { remoteProjectKey } from '@superone/shared/remote-resource-key'
+import { RoutedControlPresence } from '../node-host/routed-control-presence'
 import { parseTagsJson } from '@superone/shared/session-tags'
 import {
   deletePendingDraft,
@@ -272,30 +276,7 @@ export class EnvironmentHost {
           lastActiveAt: Date.parse(f.lastOpened) || undefined,
         }
       },
-      // Local session list is the first Environment API surface for desktop DB.
-      // create/send/etc. still use app/agent IPC until those migrate.
-      sessions: {
-        create: () => {
-          throw new Error(
-            'LocalEnvironmentGateway.sessions.create is not wired yet; use app/agent session IPC',
-          )
-        },
-        get: () => null,
-        list: (projectId, options) => {
-          if (!projectId) return []
-          return listSessionsForProjectId(projectId, options?.limit, options?.offset)
-        },
-        send: async () => {
-          throw new Error(
-            'LocalEnvironmentGateway.sessions.send is not wired yet; use agent IPC',
-          )
-        },
-        acquireControl: () => {
-          throw new Error(
-            'LocalEnvironmentGateway.sessions.acquireControl is not wired yet',
-          )
-        },
-      },
+
     })
     this.tunnels = options.tunnels ?? new SshTunnelManager()
     this.routes = new NodeRouteResolver({
@@ -333,6 +314,30 @@ export class EnvironmentHost {
 
   getGateway(environmentId: string): EnvironmentGateway | null {
     return this.registry.get(environmentId)
+  }
+
+  /** A paired phone may route only to a canonical, currently connected configured environment. */
+  private readonly routedPhonePresence = new RoutedControlPresence(environmentId => {
+    const target = this.phoneRouteTarget(environmentId)
+    const known = this.connections.listKnown().find(item => item.environmentId === environmentId)!
+    return { client: target.client, projectKey: path => remoteProjectKey(known.connectionId, path) }
+  }, event => this.agentEventSink?.(event), error => { void import('../logger').then(({ default: log }) => log.warn('[routed-control] %s', String(error))) })
+
+  publishPhoneControl(resource: import('@superone/shared/environment').SessionRef | import('@superone/shared/environment').TerminalRef,
+    lease: import('@superone/shared/environment').ControlLease | null): void {
+    this.routedPhonePresence.changed(resource, lease)
+  }
+
+  phoneRouteTarget(environmentId: string) {
+    const known = this.connections.listKnown().find(item => item.environmentId === environmentId)
+    if (!known) throw Object.assign(new Error('Unknown remote environment'), { code: 'not_found' })
+    const client = this.connections.getClient(known.connectionId)
+    if (!client || !this.connections.isConnected(known.connectionId)) throw Object.assign(new Error('Remote environment is disconnected'), { code: 'unavailable' })
+    return {
+      client, environmentId,
+      follow: (input: Omit<TopicSubscribeInput, 'subscriptionId'>, handlers: RpcStreamHandlers): Promise<RemoteTopicStream> =>
+        this.feedFor(known.connectionId).followTopics(input, handlers, () => client.rpc<SessionStreamFrame>('topic.catchUp', input, environmentId)),
+    }
   }
 
   /** Route workspace ops for a project ref (product path — never raw local FS for remote). */
@@ -1655,7 +1660,7 @@ export class EnvironmentHost {
     const { gateway, environmentId } = this.resolveRemote(connectionId)
     feed = new RemoteSessionFeed({
       head: () => gateway.eventHeadSequence(),
-      subscribe: (afterSequence, signal, { interest, onResnapshot, onRealign }) => gateway.subscribeEvents({
+      subscribe: (afterSequence, signal, { interest, onResnapshot, onRealign, onFrame, onTerminal, onDraft, onTopic }) => gateway.subscribeEvents({
         environmentId,
         afterSequence,
         topics: interest.current(),
@@ -1664,6 +1669,7 @@ export class EnvironmentHost {
         shouldStop: () => this.remoteDrainBlock(connectionId) !== null,
         onResnapshot,
         onRealign,
+        onFrame, onTerminal, onDraft, onTopic,
       }),
     }, environmentId)
     this.sessionFeeds.set(connectionId, feed)

@@ -26,11 +26,11 @@ export function useRemoteDrafts(opts: {
   const error = (cause: unknown) => current.current.onError(cause instanceof Error ? cause.message : String(cause))
   const library = useMemo(() => new RemoteDraftLibrary({
     kv: opts.kv, key: `composer.drafts.${opts.pairingId ?? 'none'}`,
-    request: (command) => {
+    rpc: (method, payload) => {
       if (current.current.pairingId !== opts.pairingId) throw new Error('The connected desktop changed. Draft remains saved on this phone.')
       const client = current.current.clientRef.current
       if (!client) throw new Error('Draft saved on this phone. Connect to synchronize it.')
-      return client.request(command)
+      return client.rpc(method, payload)
     },
     changed: () => update((n) => n + 1),
     revoked: (id) => {
@@ -112,6 +112,7 @@ export function useRemoteDrafts(opts: {
     ingest: (events: readonly unknown[]) => {
       for (const event of events) if ((event as { type?: string }).type === 'draft_changed') library.ingest(event as DraftChangedEvent)
     },
+    ingestSnapshot: (drafts: DraftListEntry[]) => library.ingestSnapshot(drafts),
     reconnect: async () => {
       await library.reconnect(active.current)
     },

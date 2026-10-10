@@ -23,6 +23,7 @@ interface Delivery {
   sessionId: string
   output: InputRequestOutput
   waiters: Array<(outcome: SuperOneComposerOutcome) => void>
+  push?: (event: ComposerSettledEvent) => void
 }
 
 const MAX_ID_LENGTH = 128
@@ -32,12 +33,6 @@ const MAX_UNCOLLECTED = 128
 const open = new Map<string, Delivery>()
 const byLocalId = new Map<string, string>()
 const uncollected = new LruMap<string, { client: ComposerClient; viewId: string; outcome: SuperOneComposerOutcome }>(MAX_UNCOLLECTED)
-
-let pushToDevice: ((deviceId: string, event: ComposerSettledEvent) => void) | null = null
-
-export function setComposerDevicePush(push: (deviceId: string, event: ComposerSettledEvent) => void): void {
-  pushToDevice = push
-}
 
 function sameClient(a: ComposerClient, b: ComposerClient): boolean {
   return a.kind === b.kind && a.id === b.id
@@ -66,14 +61,15 @@ function deliver(requestId: string, outcome: SuperOneComposerOutcome): void {
   }
   uncollected.set(requestId, { client: delivery.client, viewId: delivery.viewId, outcome })
   if (delivery.client.kind === 'device') {
-    pushToDevice?.(delivery.client.id, {
+    const event: ComposerSettledEvent = {
       type: 'composer_settled',
       sessionId: delivery.sessionId,
       requestId,
       viewId: delivery.viewId,
       localId: delivery.localId,
       outcome,
-    })
+    }
+    delivery.push?.(event)
   }
 }
 
@@ -86,6 +82,7 @@ export function openComposerForm(
   client: ComposerClient,
   frame: { viewId: unknown; localId: unknown; output?: unknown },
   show: (output: InputRequestOutput) => OpenedInputRequest,
+  push?: (event: ComposerSettledEvent) => void,
 ): ComposerOpenResult {
   return composerOpenResult(() => {
     const { viewId, localId } = frame
@@ -95,7 +92,7 @@ export function openComposerForm(
     const key = localKey(client, viewId, localId)
     if (byLocalId.has(key)) throw new InputRequestOpenError('invalid', 'This local id already has an open form')
     const opened = show(output)
-    const delivery: Delivery = { client, viewId, localId, sessionId: opened.sessionId, output: opened.output, waiters: [] }
+    const delivery: Delivery = { client, viewId, localId, sessionId: opened.sessionId, output: opened.output, waiters: [], push }
     open.set(opened.requestId, delivery)
     byLocalId.set(key, opened.requestId)
     void opened.outcome.then(outcome => deliver(opened.requestId, composerOutcome(opened.output, outcome)))
@@ -162,5 +159,4 @@ export function clearComposerDeliveriesForTests(): void {
   open.clear()
   byLocalId.clear()
   uncollected.clear()
-  pushToDevice = null
 }

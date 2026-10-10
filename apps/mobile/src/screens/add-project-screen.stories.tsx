@@ -68,9 +68,9 @@ export const Narrow = { render: (props: ComponentProps<typeof AddProjectScreen>)
 
 function InteractivePage() {
   const flow = useAddProject({
-    request: async (command) => {
+    rpc: async (method, payload) => {
       await new Promise((resolve) => setTimeout(resolve, 1200))
-      return previewAddProjectRequest(command)
+      return previewAddProjectRequest(method, payload)
     },
     onAdded: noop,
   })

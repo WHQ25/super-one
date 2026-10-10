@@ -2437,15 +2437,7 @@ const appAPI = {
       ipcRenderer.removeListener(AgentIpcChannels.RECENT_FOLDERS_CHANGED, handler)
     }
   },
-  onRemoteCommand: (callback: (command: unknown) => void) => {
-    const handler = (_ipcEvent: Electron.IpcRendererEvent, command: unknown): void => {
-      callback(command)
-    }
-    ipcRenderer.on(AgentIpcChannels.REMOTE_COMMAND, handler)
-    return () => {
-      ipcRenderer.removeListener(AgentIpcChannels.REMOTE_COMMAND, handler)
-    }
-  },
+
   onClientRegistered: (callback: (info: { deviceName: string }) => void) => {
     const handler = (_ipcEvent: Electron.IpcRendererEvent, info: { deviceName: string }): void => {
       callback(info)

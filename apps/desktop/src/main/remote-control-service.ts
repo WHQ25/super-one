@@ -1,18 +1,14 @@
-import { frameHostPayload } from './remote/payload-codec'
 import type { ChannelEnvelope, PhoneHandshake, PhoneKey, PhoneLinkHost } from './remote/phone-link-host'
 import type { SecureChannel } from '@superone/relay-client/secure-channel'
 import type { PhoneConnection, PhoneLink } from './node-host/phone-endpoint'
 import type { LinkHandshakeInfo, LinkHostInfo } from '@superone/relay-client/phone-link'
-import { RelayDraftSaveThrottle } from './remote/relay-draft-save-throttle'
-import { batchingFor, createEventBatcher, type EventBatcher } from '@superone/runtime/stream'
-import { phoneDelivery } from './remote/phone-deliveries'
 import { webcrypto } from 'node:crypto'
 import { hostname } from 'node:os'
 import WebSocket from 'ws'
 import log from './logger'
 import { resolvePairedDeviceDisplayName } from './paired-device-name'
 import { variant, variantId } from './variant'
-import type { AgentEvent, RemoteCommand, ContentBlock, ChatMessage, RemoteDeviceConfig, TerminalEvent } from '@superone/shared/agent-types'
+import type { AgentEvent, ContentBlock, ChatMessage, RemoteDeviceConfig, TerminalEvent } from '@superone/shared/agent-types'
 import { createRelayHeartbeat } from '@superone/shared/relay-heartbeat'
 
 export type { RemoteDeviceConfig }
@@ -45,7 +41,6 @@ import { uploadFileToRelay, relayWsToHttp, computeRelayUploadKey, signRelayUploa
 
 const PAIRING_TIMEOUT_MS = 3 * 60 * 1000
 const MAX_RECONNECT_DELAY_MS = 30_000
-const WS_CHUNK_SIZE = 800_000
 export { computeTodoItems, countLines, countEditDelta, stripProjectPath, computeToolMeta, computeToolLineDelta, truncateBashOutput, stripEventForRemote, stripMessagesForRemote, parseWorkflowMeta, parseWorkflowTranscriptDir, resolveTodoToolTodos } from './remote-content'
 
 
@@ -57,13 +52,6 @@ interface PairingSession {
   pendingMobileDeviceId: string | null
   pendingDeviceName: string | null
   expiryTimer: ReturnType<typeof setTimeout>
-}
-
-export type RemoteResponder = (requestId: string, data: unknown) => Promise<void>
-
-export interface RemoteCommandSource {
-  deviceId: string
-  transport: 'relay' | 'lan'
 }
 
 /** A phone paired with a per-device channel key. Rows without a key must re-pair. */
@@ -82,7 +70,6 @@ export interface PairedPhoneLookup {
 export interface RemoteControlCallbacks {
   /** Release, protocol generation and canonical environment id, told to each phone in the sealed handshake. */
   hostInfo?: () => LinkHostInfo
-  onCommand: (cmd: RemoteCommand, respond: RemoteResponder, source: RemoteCommandSource) => void
   /** Open a phone's protocol connection on a link, on its first protocol frame; null when none is served. */
   openPhoneConnection?: (link: PhoneLink) => PhoneConnection | null
   onClientRegistered?: (info: { deviceName: string; deviceId: string; transport: 'lan' | 'relay'; firstConnect: boolean }) => void
@@ -140,15 +127,6 @@ export class RemoteControlService {
   private currentConfig: RemoteDeviceConfig | null = null
   private pairingSession: PairingSession | null = null
 
-  private sendQueue: Promise<void> = Promise.resolve()
-  private terminalQueue: Promise<void> = Promise.resolve()
-  private sendGeneration = 0
-  /** One batcher per phone: each phone's frames are sealed for its own channel. */
-  private readonly deviceBatchers = new Map<string, EventBatcher<undefined>>()
-  private readonly draftSaves = new RelayDraftSaveThrottle(
-    (event, targets) => this.queueSend([event], targets),
-    (targets) => this.draftRecipients(targets),
-  )
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private reconnectDelay = 1_000
   private intentionallyClosed = false
@@ -259,14 +237,6 @@ export class RemoteControlService {
     return uploadFileToRelay(realPath, meta, sessionId, this.relayFileContext(deviceId), onProgress)
   }
 
-  private draftRecipients(targets?: string[]): { lan: string[]; relay: string[] } {
-    const recipients = { lan: [] as string[], relay: [] as string[] }
-    for (const [id, info] of this.connectedDevices) {
-      if (!targets || targets.includes(id)) recipients[this.primaryTransport(info)].push(id)
-    }
-    return recipients
-  }
-
   private primaryTransport(info: ConnectedDevice): DeviceTransport {
     return info.transports.has('lan') ? 'lan' : 'relay'
   }
@@ -296,8 +266,6 @@ export class RemoteControlService {
     current.transports.delete(via)
     if (current.transports.size === 0) {
       this.connectedDevices.delete(deviceId)
-      this.deviceBatchers.get(deviceId)?.flush()
-      this.deviceBatchers.delete(deviceId)
       this.callbacks.onClientDisconnected?.({ deviceId })
       return
     }
@@ -334,7 +302,6 @@ export class RemoteControlService {
       phoneLink: this.link(),
       resolveKey: (keyId) => this.resolvePhoneKey(keyId),
       handshakeInfo: () => this.handshakeInfo(),
-      onCommand: (cmd, respond, source) => this.callbacks.onCommand(cmd, respond, { deviceId: source.deviceId, transport: 'lan' }),
       openPhoneConnection: (link) => this.callbacks.openPhoneConnection?.(link) ?? null,
       onClientRegistered: ({ deviceName, deviceId }) => this.markDeviceOnline(deviceName, deviceId, 'lan'),
       onClientDisconnected: ({ deviceId }) => this.markDeviceOffline(deviceId, 'lan'),
@@ -464,12 +431,6 @@ export class RemoteControlService {
   async stop(): Promise<void> {
     await this.cancelPairing()
     this.intentionallyClosed = true
-    for (const batcher of this.deviceBatchers.values()) batcher.clear()
-    this.deviceBatchers.clear()
-    this.draftSaves.dispose()
-    this.sendGeneration++
-    this.sendQueue = Promise.resolve()
-    this.terminalQueue = Promise.resolve()
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null
@@ -584,8 +545,6 @@ export class RemoteControlService {
   private async handleRelayMessage(frame: { type: string; [key: string]: unknown }): Promise<void> {
     switch (frame.type) {
       case 'command': {
-        const ws = this.relayWs
-        const generation = this.sendGeneration
         const deviceId = typeof frame.mobileDeviceId === 'string' ? frame.mobileDeviceId : null
         const link = deviceId ? this.relayLinks.get(deviceId) : undefined
         const channel = link?.channel
@@ -611,13 +570,7 @@ export class RemoteControlService {
           this.disconnectDevice(deviceId)
           return
         }
-        if (opened.kind === 'rpc') {
-          this.receiveRelayRpc(deviceId, link, opened.frame)
-          return
-        }
-        const command = opened.command
-        trace('remote.in', command.type, command)
-        this.callbacks.onCommand(command, (requestId, data) => this.sendResponse(requestId, data, deviceId, channel, ws, generation), { deviceId, transport: 'relay' })
+        this.receiveRelayRpc(deviceId, link, opened.frame)
         break
       }
       case 'channel':
@@ -806,135 +759,4 @@ export class RemoteControlService {
     this.pairingSession = null
   }
 
-  async sendEventToMobile(event: Record<string, unknown>, targetDeviceIds?: string[]): Promise<void> {
-    // Batched events to these phones go first, preserving order.
-    for (const deviceId of this.recipients(targetDeviceIds)) this.deviceBatchers.get(deviceId)?.flush()
-    return this.enqueuePayload(event, targetDeviceIds)
-  }
-
-  async sendTerminalFrame(event: TerminalEvent, targetDeviceIds?: string[]): Promise<void> {
-    const generation = this.sendGeneration
-    this.terminalQueue = this.terminalQueue.then(async () => {
-      if (!this.keys || generation !== this.sendGeneration || !this.hasAnyMobileTransport()) return
-      const framed = await frameHostPayload(event)
-      if (generation !== this.sendGeneration) return
-      this.sendRelayFramed('terminal', framed, targetDeviceIds)
-      this.lanServer?.sendFramed('terminal', framed, targetDeviceIds)
-    }).catch(err => {
-      log.error('[RemoteControl] Failed to send terminal frame:', err)
-    })
-    return this.terminalQueue
-  }
-
-  private hasAnyMobileTransport(): boolean {
-    const relayOpen = this.relayWs !== null && this.relayWs.readyState === WebSocket.OPEN
-    const relayChannel = relayOpen && [...this.relayLinks.values()].some((link) => link.channel)
-    return relayChannel || this.lanServer?.hasRegisteredClient() === true
-  }
-
-  /**
-   * Seal a framed payload once per phone holding a relay channel, skipping
-   * phones on the LAN, and address each copy to that phone alone. A frame
-   * sealed for a channel is unreadable on any other, so phones without a
-   * channel get nothing; the channel's own sequence numbers order each copy.
-   */
-  private sendRelayFramed(kind: 'event' | 'terminal', framed: Uint8Array, targetDeviceIds?: string[]): void {
-    const ws = this.relayWs
-    if (ws?.readyState !== WebSocket.OPEN) return
-    const targets = targetDeviceIds?.length ? new Set(targetDeviceIds) : null
-    for (const [deviceId, link] of this.relayLinks) {
-      if (!link.channel || (targets && !targets.has(deviceId))) continue
-      if (this.connectedDevices.get(deviceId)?.transports.has('lan')) continue
-      ws.send(JSON.stringify({ type: kind, targets: [deviceId], data: this.link().sealHostFrame(link.channel, { t: kind }, framed) }))
-    }
-  }
-
-  private sendEventFrame(framed: Uint8Array, targetDeviceIds?: string[]): void {
-    this.sendRelayFramed('event', framed, targetDeviceIds)
-    this.lanServer?.sendFramed('event', framed, targetDeviceIds)
-  }
-
-  /** One event to these phones (every phone when omitted), shaped by each phone's delivery policy. */
-  async sendAgentEvent(event: AgentEvent, targetDeviceIds?: string[]): Promise<void> {
-    if (!this.keys) return
-    if (!this.hasAnyMobileTransport()) return
-    if (event.type === 'draft_changed') {
-      this.draftSaves.route(event, targetDeviceIds)
-      return
-    }
-    for (const deviceId of this.recipients(targetDeviceIds)) {
-      this.queueDevice(deviceId, phoneDelivery(deviceId).shape(event))
-    }
-  }
-
-  /** Events already shaped for one phone (`ConnectionDelivery.live`). */
-  sendDeviceEvents(deviceId: string, events: AgentEvent[]): void {
-    if (!this.keys || !this.hasAnyMobileTransport()) return
-    this.queueDevice(deviceId, events)
-  }
-
-  /** The phones a send reaches: the named ones, or every phone with a channel. */
-  private recipients(targetDeviceIds?: string[]): string[] {
-    return targetDeviceIds?.length ? [...new Set(targetDeviceIds)] : [...this.connectedDevices.keys()]
-  }
-
-  private queueDevice(deviceId: string, events: AgentEvent[]): void {
-    if (events.length === 0) return
-    let batcher = this.deviceBatchers.get(deviceId)
-    if (!batcher) {
-      batcher = createEventBatcher<undefined>(
-        (batch) => { if (batch.length) void this.enqueuePayload(batch, [deviceId]) },
-        batchingFor(phoneDelivery(deviceId).policy),
-      )
-      this.deviceBatchers.set(deviceId, batcher)
-    }
-    for (const event of events) batcher.push(event)
-  }
-
-  private async sendResponse(
-    requestId: string,
-    data: unknown,
-    mobileDeviceId: string,
-    channel: SecureChannel,
-    ws = this.relayWs,
-    generation = this.sendGeneration,
-  ): Promise<void> {
-    const current = () => !!ws && this.relayWs === ws && ws.readyState === WebSocket.OPEN && generation === this.sendGeneration
-      && this.relayLinks.get(mobileDeviceId)?.channel === channel
-    if (!this.keys || !current()) return
-    try {
-      trace('remote.resp', requestId, data)
-      const framed = await frameHostPayload(data)
-      // A response belongs to the channel its command arrived on.
-      if (!current()) return
-      const encrypted = this.link().sealHostFrame(channel, { t: 'response', requestId }, framed)
-      if (encrypted.length <= WS_CHUNK_SIZE) {
-        ws!.send(JSON.stringify({ type: 'response', requestId, data: encrypted, mobileDeviceId }))
-      } else {
-        const totalChunks = Math.ceil(encrypted.length / WS_CHUNK_SIZE)
-        log.info(`[RemoteControl] Chunking response ${requestId}: ${encrypted.length} bytes → ${totalChunks} chunks`)
-        for (let i = 0; i < totalChunks; i++) {
-          const chunk = encrypted.slice(i * WS_CHUNK_SIZE, (i + 1) * WS_CHUNK_SIZE)
-          ws!.send(JSON.stringify({ type: 'response_chunk', requestId, index: i, total: totalChunks, data: chunk, mobileDeviceId }))
-        }
-      }
-    } catch (err) {
-      log.error('[RemoteControl] Failed to send response:', err)
-    }
-  }
-
-  private queueSend(events: AgentEvent[], targetDeviceIds?: string[]): void {
-    for (const deviceId of this.recipients(targetDeviceIds)) this.queueDevice(deviceId, events)
-  }
-
-  private enqueuePayload(payload: unknown, targetDeviceIds?: string[]): Promise<void> {
-    const generation = this.sendGeneration
-    this.sendQueue = this.sendQueue.then(async () => {
-      if (!this.keys || generation !== this.sendGeneration) return
-      if (!this.hasAnyMobileTransport()) return
-      const framed = await frameHostPayload(payload)
-      if (generation === this.sendGeneration) this.sendEventFrame(framed, targetDeviceIds)
-    }).catch(err => log.error('[RemoteControl] Failed to send events:', err))
-    return this.sendQueue
-  }
 }

@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState, type RefObject } from 'react'
 import { File, Paths } from 'expo-file-system'
 import { MAX_DOWNLOAD_BYTES, type HttpGet, type RelayClient, type TransportKind } from '@superone/relay-client'
-import type { MediaProviderLabel, ReadDesktopFileError, ReadDesktopFileResponse, RemoteCommand } from '@superone/shared/agent-types'
+import type { MediaProviderLabel, ReadDesktopFileError, ReadDesktopFileResponse } from '@superone/shared/agent-types'
 import { hydratePreviewFromCache, hydrateTransferFromCache, persistPreviewToCache } from '../file-preview-cache'
 import { getFilePreviewCache } from '../file-preview-cache-store'
 import {
@@ -19,6 +19,7 @@ import { requestMediaProviderLabels, type ImageGenerationPorts } from '../image-
 import type { ImagePreviewTarget } from '../image-preview-state'
 import { loadInlineImage } from '../inline-images'
 import { resolveRemoteFilePath } from '../shell-state'
+import { projectRpc } from '../project-rpc'
 import { randomId } from '../ids'
 import type { CachedDownload } from '../mcp-app-downloads'
 
@@ -151,16 +152,13 @@ export function useFilePreview(ports: FilePreviewPorts) {
     }
     let next: FilePreviewState
     try {
-      const response = await client.request({
-        type: 'read_desktop_file',
-        requestId: randomId(),
-        projectPath: project.path,
+      const response = await projectRpc(client, project.path, 'files.read', {
         ...(sessionId ? { sessionId } : {}),
         ...(transfer.root ? { root: transfer.root } : {}),
         path: transfer.path,
         maxBytes: MAX_DOWNLOAD_BYTES,
         preferInline: true,
-      } as RemoteCommand, TRANSFER_TIMEOUT_MS) as ReadDesktopFileResponse | ReadDesktopFileError
+      }, { timeoutMs: TRANSFER_TIMEOUT_MS }) as ReadDesktopFileResponse | ReadDesktopFileError
       if (!response.ok) throw new Error(response.message ?? response.error)
       let bytes: Uint8Array
       if ('base64' in response) bytes = decodeInlineBase64(response.base64, response.size)
@@ -202,17 +200,14 @@ export function useFilePreview(ports: FilePreviewPorts) {
     }
     const mine = ++generation.current
     setState(loading)
-    const read = (preferInline: boolean, statOnly: boolean) => client.request({
-      type: 'read_desktop_file',
-      requestId: randomId(),
-      projectPath: project.path,
+    const read = (preferInline: boolean, statOnly: boolean) => projectRpc<ReadDesktopFileResponse | ReadDesktopFileError>(client, project.path, 'files.read', {
       ...(sessionId ? { sessionId } : {}),
       ...(root ? { root } : {}),
       path: target,
       maxBytes: MAX_DOWNLOAD_BYTES,
       preferInline,
       statOnly,
-    } as RemoteCommand, PREVIEW_REQUEST_TIMEOUT_MS) as Promise<ReadDesktopFileResponse | ReadDesktopFileError>
+    }, { timeoutMs: PREVIEW_REQUEST_TIMEOUT_MS })
     let next: FilePreviewState
     try {
       const cache = getFilePreviewCache()

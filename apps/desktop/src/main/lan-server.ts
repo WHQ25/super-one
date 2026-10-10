@@ -1,4 +1,3 @@
-import { frameHostPayload } from './remote/payload-codec'
 import type { ChannelEnvelope, PhoneHandshake, PhoneKey, PhoneLinkHost, ResolvePhoneKey } from './remote/phone-link-host'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { AddressInfo } from 'node:net'
@@ -9,7 +8,6 @@ import { Transform } from 'node:stream'
 import { WebSocket, WebSocketServer } from 'ws'
 import log from './logger'
 import { trace } from './agent/event-trace'
-import type { RemoteCommand } from '@superone/shared/agent-types'
 import { isPrivateNetworkAddress } from '@superone/shared/private-network-address'
 import type { LinkHandshakeInfo } from '@superone/relay-client/phone-link'
 import type { SecureChannel } from '@superone/relay-client/secure-channel'
@@ -33,9 +31,6 @@ export function listLanIpAddresses(): string[] {
 }
 
 const REGISTER_TIMEOUT_MS = 5_000
-const WS_CHUNK_SIZE = 800_000
-
-export type LanRemoteResponder = (requestId: string, data: unknown) => Promise<void>
 
 export interface LanServerCallbacks {
   /** The loaded phone link module (`loadPhoneLinkHost`). */
@@ -43,7 +38,6 @@ export interface LanServerCallbacks {
   /** Key id → paired phone; null once the device is removed. */
   resolveKey: ResolvePhoneKey
   handshakeInfo: () => LinkHandshakeInfo
-  onCommand: (cmd: RemoteCommand, respond: LanRemoteResponder, source: { deviceId: string }) => void
   /** Open a phone's protocol connection on a link, on its first protocol frame; null when none is served. */
   openPhoneConnection?: (link: PhoneLink) => PhoneConnection | null
   onClientRegistered?: (info: { deviceName: string; deviceId: string }) => void
@@ -156,24 +150,6 @@ export class LanServer {
     if (!this.httpServer) return null
     const addr = this.httpServer.address() as AddressInfo | null
     return addr?.port ?? null
-  }
-
-  /**
-   * Seal one framed payload for every target socket's own channel. Sealing and
-   * sending stay synchronous so channel sequence numbers follow send order.
-   */
-  sendFramed(kind: 'event' | 'terminal', framed: Uint8Array, targetDeviceIds?: string[]): void {
-    const filter = targetDeviceIds ? new Set(targetDeviceIds) : null
-    for (const ws of this.registeredTargets(filter)) {
-      const channel = this.clients.get(ws)?.channel
-      if (!channel) continue
-      try {
-        const data = this.callbacks.phoneLink.sealHostFrame(channel, { t: kind }, framed)
-        ws.send(JSON.stringify({ type: kind, data }))
-      } catch (err) {
-        log.warn('[LanServer] send %s failed: %s', kind, err instanceof Error ? err.message : String(err))
-      }
-    }
   }
 
   hasRegisteredClient(): boolean {
@@ -381,14 +357,7 @@ export class LanServer {
       ws.close(1008, 'access_off')
       return
     }
-    if (opened.kind === 'rpc') {
-      this.receiveRpc(ws, state, channel, opened.frame)
-      return
-    }
-    const command = opened.command
-    trace('remote.in', (command as { type?: string }).type ?? 'unknown', command)
-    const respond: LanRemoteResponder = (requestId, payload) => this.sendResponse(ws, channel, requestId, payload)
-    this.callbacks.onCommand(command, respond, { deviceId: state.deviceId })
+    this.receiveRpc(ws, state, channel, opened.frame)
   }
 
   private receiveRpc(ws: WebSocket, state: ClientState, channel: SecureChannel, frame: Uint8Array): void {
@@ -545,25 +514,4 @@ export class LanServer {
     res.end(JSON.stringify({ ok: true, savedPath: payload.path }))
   }
 
-  private async sendResponse(ws: WebSocket, channel: SecureChannel, requestId: string, data: unknown): Promise<void> {
-    if (ws.readyState !== WebSocket.OPEN) return
-    try {
-      trace('remote.resp', requestId, data)
-      const framed = await frameHostPayload(data)
-      // A response belongs to the channel its command arrived on.
-      if (ws.readyState !== WebSocket.OPEN || this.clients.get(ws)?.channel !== channel) return
-      const encrypted = this.callbacks.phoneLink.sealHostFrame(channel, { t: 'response', requestId }, framed)
-      if (encrypted.length <= WS_CHUNK_SIZE) {
-        ws.send(JSON.stringify({ type: 'response', requestId, data: encrypted }))
-      } else {
-        const totalChunks = Math.ceil(encrypted.length / WS_CHUNK_SIZE)
-        for (let i = 0; i < totalChunks; i++) {
-          const chunk = encrypted.slice(i * WS_CHUNK_SIZE, (i + 1) * WS_CHUNK_SIZE)
-          ws.send(JSON.stringify({ type: 'response_chunk', requestId, index: i, total: totalChunks, data: chunk }))
-        }
-      }
-    } catch (err) {
-      log.error('[LanServer] Failed to send response:', err)
-    }
-  }
 }

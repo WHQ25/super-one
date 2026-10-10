@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, jest, test } from '@jest/globals'
 import { act, fireEvent, screen } from '@testing-library/react-native'
-import type { GithubRepoHit, RemoteCommand } from '@superone/shared/agent-types'
+import type { GithubRepoHit } from '@superone/shared/agent-types'
 import { ADD_PROJECT_TEXT } from '../add-project-state'
 import { useAddProject } from '../navigation/use-add-project'
 import { renderWithTheme } from '../test-render'
@@ -12,13 +12,13 @@ const REPO: GithubRepoHit = {
 }
 
 function setup() {
-  const pending: Array<{ command: Extract<RemoteCommand, { type: 'search_github_repos' }>; resolve: (value: unknown) => void }> = []
-  const request = (command: RemoteCommand): Promise<unknown> => {
-    if (command.type !== 'search_github_repos') return Promise.resolve({ path: null })
-    return new Promise((resolve) => pending.push({ command, resolve }))
+  const pending: Array<{ command: Record<string, unknown>; resolve: (value: unknown) => void }> = []
+  const request = (method: string, payload: Record<string, unknown> = {}): Promise<unknown> => {
+    if (method !== 'git.searchGithub') return Promise.resolve({ path: null })
+    return new Promise((resolve) => pending.push({ command: payload, resolve }))
   }
   function Page() {
-    const flow = useAddProject({ request, onAdded: () => {} })
+    const flow = useAddProject({ rpc: request, onAdded: () => {} })
     return <AddProjectScreen flow={flow} />
   }
   return { Page, pending }

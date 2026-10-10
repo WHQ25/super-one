@@ -1,274 +1,133 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createHash } from 'node:crypto'
-import WebSocket from 'ws'
+import { createHash, randomUUID } from 'node:crypto'
+import { writeFileSync } from 'node:fs'
 import type { AgentEvent, ChatMessage } from '@superone/shared/agent-types'
-import { applyEventToSession, createDefaultChatCoreSession, createStreamingToolInputStore, type ChatCorePorts } from '@superone/chat-core'
-import { issueChannelCredential, startClientHandshake, acceptClientHello, type SecureChannel } from '@superone/relay-client/secure-channel'
-import { openLinkFrame } from '@superone/relay-client/phone-link'
-import { decodeHostPlaintext } from '@superone/relay-client/host-payload'
+import type { SessionLoadResult, SessionStreamMessage, TopicNoticeMessage } from '@superone/shared/environment'
+import { applyEventToSession, createDefaultChatCoreSession, createStreamingToolInputStore } from '@superone/chat-core'
+import { projectProgressiveMessage } from '@superone/runtime/stream'
+import { createNodeSessionEventMapper } from '@superone/shared/node-session-event-map'
 import scenarios from './fixtures/emitted.generated.json'
 import baseline from './fixtures/wire-baseline.json'
-
-const history = vi.hoisted(() => ({ messages: [] as ChatMessage[] }))
-
+import baselineEvents from './fixtures/wire-baseline-events.json'
 vi.mock('../logger', () => ({ default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() } }))
 vi.mock('../agent/event-trace', () => ({ trace: vi.fn() }))
-vi.mock('../remote-highlighter', () => ({
-  initHighlighter: vi.fn(),
-  whenHighlighterReady: async () => {},
-  highlightCodeSync: () => null,
-  highlightCodeByLang: () => null,
-  parseAnsiTokens: () => [],
-}))
-vi.mock('../environment/session-identity', () => ({ localSessionEnvironmentId: () => 'env-local' }))
-vi.mock('../session/realtime-timeline-repo', () => ({ loadRealtimeTimeline: () => null }))
-vi.mock('../db-sessions', () => ({
-  /** `loadSessionMessagesPaginated`'s windowing over the reduced transcript. */
-  loadSessionMessagesPaginated: (_sessionId: string, limit: number, cursor?: number) => {
-    const count = history.messages.length
-    const end = Math.min(count, Math.max(0, Math.floor(cursor ?? count)))
-    const start = Math.max(0, end - Math.min(200, Math.max(1, Math.floor(limit))))
-    return { messages: history.messages.slice(start, end), cursor: start > 0 ? start : null, hasMore: start > 0 }
-  },
-}))
+vi.mock('../remote-highlighter', () => ({ initHighlighter: vi.fn(), whenHighlighterReady: async () => {}, highlightCodeSync: () => null,
+  highlightCodeByLang: () => null, parseAnsiTokens: () => [] }))
+import { nativePhoneWire } from './native-phone-wire-fixture'
+import { publishHubEvent } from './desktop-topics'
+import type { Session } from '../session/types'
 
-import { RemoteControlService } from '../remote-control-service'
-import { MobileBroadcaster } from '../remote/mobile-broadcaster'
-import { PhoneTopics } from '../remote/phone-topics'
-import { createDesktopTopicHub, publishHubEvent } from './desktop-topics'
-import { projectProgressiveMessage } from '@superone/runtime/stream'
-import { dropPhoneDelivery, phoneDelivery } from '../remote/phone-deliveries'
-import { buildProgressiveBootstrap } from '../agent/progressive-bootstrap'
-import type { Session, SessionLifecycleEvent, SessionManager } from '../session/types'
-
-/**
- * What a relayed phone pays for recorded session output, measured on the
- * relay socket after the real profile, projection, batching, DEFLATE, sealing
- * and chunking. `wire-baseline.json` is the phone link before the unified
- * protocol (step 0) and never changes: the phone must apply the same events
- * at no more frames or bytes. `wire-current.json` records today's numbers.
- */
-
-const ROOT = 'ab'.repeat(32)
-const PHONE = 'phone-1'
-const PROJECT = '/Users/me/project'
-const EVENT_SPACING_MS = 10
-
-type Wire = { frames: number; bytes: number }
-type Measured = Wire & { payload?: { events: number; sha256: string }; refs?: number; messages?: number }
-/** One recording's costs; `combined` holds the paging scenario. */
-type Baseline = Record<string, Partial<Record<'live' | 'open' | 'history' | 'detail', Measured>>>
-type Recording = { recording: string; events: AgentEvent[] }
-
-function openChannels(): { host: SecureChannel; phone: SecureChannel } {
-  const credential = issueChannelCredential(ROOT, 'key-phone-1')
-  const client = startClientHandshake(credential)
-  const accept = acceptClientHello(client.hello, () => credential.secretHex)
-  const { proof, channel: phone } = client.finish(accept.challenge)
-  return { host: accept.finish(proof), phone }
+const cleanup: Array<() => void> = []
+afterEach(() => { vi.useRealTimers(); while (cleanup.length) cleanup.pop()!() })
+function detailRefs(messages: ChatMessage[]): string[] {
+  const refs = new Set<string>()
+  const visit = (value: unknown): void => {
+    if (!value || typeof value !== 'object') return
+    if (Array.isArray(value)) { value.forEach(visit); return }
+    for (const [key, child] of Object.entries(value)) if (key === 'remoteDetail' && typeof child === 'string') refs.add(child); else visit(child)
+  }
+  for (const message of messages.map(projectProgressiveMessage)) { visit(message.content); visit(message.metadata?.codex?.items) }
+  return [...refs]
 }
-
-/** The service with one relay phone and a socket that records what it is asked to send. */
-async function relayService() {
-  const { host, phone } = openChannels()
-  const sent: string[] = []
-  const service = new RemoteControlService('wss://relay.example', { onCommand: vi.fn() })
-  const ws = { readyState: WebSocket.OPEN, send: (text: string) => { sent.push(text) } }
-  const internals = service as unknown as {
-    keys: unknown
-    phoneLink: unknown
-    relayWs: unknown
-    relayLinks: Map<string, unknown>
-    connectedDevices: Map<string, unknown>
-    sendQueue: Promise<void>
-    sendResponse: (requestId: string, data: unknown, deviceId: string, channel: SecureChannel) => Promise<void>
+// Native cursors and completion timestamps are additional host facts. Compare
+// application semantics separately from framing and additive-delta grouping.
+function semanticEvent(event: AgentEvent): AgentEvent {
+  const { seq: _seq, epoch: _epoch, environmentId: _env, projectPath: _path, sessionId: _sid, ...value } = event as AgentEvent & { seq?: number; epoch?: number }
+  if ('metadata' in value && value.metadata) {
+    const { completedAt: _at, ...metadata } = value.metadata
+    return { ...value, metadata } as AgentEvent
   }
-  internals.keys = { rootSecret: ROOT, channelKeyHex: 'c' }
-  internals.phoneLink = await import('../remote/phone-link-host')
-  internals.relayWs = ws
-  internals.relayLinks.set(PHONE, { handshake: null, channel: host, device: { keyId: 'key-phone-1', deviceId: PHONE, deviceName: 'iPhone', secretHex: '', enabled: true } })
-  internals.connectedDevices.set(PHONE, { name: 'iPhone', transports: new Set(['relay']) })
-
-  /** Frames opened as the phone would, so the baseline only counts readable frames. */
-  const decoded: unknown[] = []
-  let read = 0
-  const drain = (): void => {
-    for (; read < sent.length; read++) {
-      const frame = JSON.parse(sent[read]) as { type: string; data: string }
-      if (frame.type === 'response_chunk') continue
-      const { payload } = openLinkFrame(phone, frame.data)
-      decoded.push(decodeHostPlaintext(payload))
-    }
-  }
-  const measure = (from: number): Wire => {
-    const frames = sent.slice(from)
-    return { frames: frames.length, bytes: frames.reduce((sum, text) => sum + Buffer.byteLength(text), 0) }
-  }
-  return {
-    service,
-    sent,
-    decoded,
-    drain,
-    measure,
-    settle: () => internals.sendQueue,
-    respond: (requestId: string, data: unknown) => internals.sendResponse(requestId, data, PHONE, host),
-  }
+  return value as AgentEvent
 }
-
-function fakeSession(sessionId: string, messages: () => ChatMessage[]): Session & { emit(event: SessionLifecycleEvent): void } {
-  const listeners = new Set<(event: SessionLifecycleEvent) => void>()
-  return {
-    onLifecycle: (listener: (event: SessionLifecycleEvent) => void) => { listeners.add(listener); return () => listeners.delete(listener) },
-    emit: (event: SessionLifecycleEvent) => { for (const listener of listeners) listener(event) },
-    id: sessionId,
-    projectPath: PROJECT,
-    ephemeral: false,
-    get snapshot() { return { messages: messages(), harnessId: 'claude' } },
-    owner: { kind: 'local' },
-    subscribers: new Set([PHONE]),
-    getQueuedMessagesEvent: () => null,
-    getPendingInteractions: () => [],
-    isStreaming: () => false,
-    getCurrentSandboxInfo: () => undefined,
-    getCurrentPermissionMode: () => 'default',
-    getUiSettings: () => ({ ultracode: false }),
-    getSessionGoal: () => null,
-    activityStatus: () => 'idle',
-    seenCompletedMessageId: null,
-    realtimeActive: false,
-  } as unknown as Session & { emit(event: SessionLifecycleEvent): void }
+function reduceWire(events: AgentEvent[]) {
+  let state = createDefaultChatCoreSession()
+  const ports = { now: () => 0, id: (prefix: string) => `${prefix}id`, streaming: createStreamingToolInputStore() }
+  for (const event of events) state = { ...state, ...applyEventToSession(state, semanticEvent(event), ports) }
+  return state
 }
-
-const reducerPorts = (): ChatCorePorts => ({ now: () => 0, id: (prefix) => `${prefix}id`, streaming: createStreamingToolInputStore() })
-
-/** Every detail reference a projected transcript exposes, in order. */
-function detailRefs(messages: ChatMessage[]): Array<{ messageId: string; ref: string }> {
-  const refs: Array<{ messageId: string; ref: string }> = []
-  for (const message of messages.map(projectProgressiveMessage)) {
-    const visit = (value: unknown): void => {
-      if (!value || typeof value !== 'object') return
-      if (Array.isArray(value)) { value.forEach(visit); return }
-      for (const [key, child] of Object.entries(value)) {
-        if (key === 'remoteDetail' && typeof child === 'string') refs.push({ messageId: message.id, ref: child })
-        else visit(child)
+function interactions(events: AgentEvent[]) {
+  return events.filter(event => ['permission_request', 'ask_user_question', 'plan_approval', 'interaction_resolved',
+    'user_message_appended', 'queued_message_consumed', 'queued_messages_changed', 'session_title_changed',
+    'message_complete', 'message_interrupted', 'message_error'].includes(event.type)).map(semanticEvent)
+}
+describe('native relay sender against immutable step-0 budgets', () => {
+  it('measures recorded live, load, history and detail through native RPC and the sealed production sender', async () => {
+    const measured: Record<string, Record<string, unknown>> = {}
+    const all: ChatMessage[] = []
+    for (const recording of scenarios as Array<{ recording: string; events: AgentEvent[] }>) {
+      const wire = await nativePhoneWire(cleanup)
+      const sessionId = `recorded-${recording.recording}`
+      wire.store.createRow({ sessionId, projectPath: wire.projectDir, cwd: wire.projectDir })
+      const session = wire.sessions.createSession({ id: sessionId, projectPath: wire.projectDir })
+      const emitter = wire.sessions.live.get(sessionId)!
+      Object.assign(emitter, { seenCompletedMessageId: null })
+      let reduced = createDefaultChatCoreSession()
+      const ports = { now: () => 0, id: (prefix: string) => `${prefix}id`, streaming: createStreamingToolInputStore() }
+      Object.defineProperty(emitter, 'snapshot', { get: () => ({ messages: reduced.messages, harnessId: 'claude' }) })
+      await wire.subscribe(sessionId)
+      const mark = wire.mark()
+      vi.useFakeTimers({ now: 0 })
+      for (const raw of recording.events.filter(event => typeof event.type === 'string')) {
+        const event = { ...raw, sessionId, projectPath: wire.projectDir } as AgentEvent
+        reduced = { ...reduced, ...applyEventToSession(reduced, event, ports) }
+        emitter.emitHostEvent(event)
+        publishHubEvent(wire.hub, { event, source: 'session', sessionId }, { localEnvironmentId: wire.domain.identity.environmentId,
+          recovery: wire.recovery(), getSession: id => id === sessionId ? session as Session : null, spawnParentOf: () => null })
+        await vi.advanceTimersByTimeAsync(0); await vi.advanceTimersByTimeAsync(10)
       }
+      await vi.advanceTimersByTimeAsync(1000); vi.useRealTimers()
+      const live = wire.measure(mark)
+      const mapper = createNodeSessionEventMapper({ sessionId, projectPath: '/Users/me/project', providerId: 'claude' })
+      const events = live.messages.flatMap(message => {
+        const packet = message as SessionStreamMessage | TopicNoticeMessage
+        if (packet.type === 'stream') return packet.frame.events.flatMap(event => mapper.map(event)).map(event => {
+          const { seq: _seq, environmentId: _env, projectPath: _path, sessionId: _sid, ...rest } = event as AgentEvent & { seq?: number }
+          return { ...rest, sessionId, projectPath: '/Users/me/project', environmentId: 'env-local' }
+        })
+        return packet.type === 'topic' ? packet.frame.events : []
+      })
+      const original = (baselineEvents as unknown as Record<string, AgentEvent[]>)[recording.recording]!
+      const immutable = (baseline as Record<string, { live?: { payload: { events: number; sha256: string } } }>)[recording.recording]!.live!.payload
+      expect({ events: original.length, sha256: createHash('sha256').update(JSON.stringify(original)).digest('hex') }).toEqual(immutable)
+      expect(reduceWire(events as AgentEvent[]), `${recording.recording} reducer state`).toEqual(reduceWire(original))
+      expect(interactions(events as AgentEvent[]), `${recording.recording} interactions`).toEqual(interactions(original))
+      const openMark = wire.mark()
+      const loaded = await wire.rpc<SessionLoadResult>('session.load', { sessionId, limit: 8 })
+      const open = wire.measure(openMark)
+      expect(loaded.summarized).toBe(true)
+      expect(loaded.messages.map(message => message.id)).toEqual(reduced.messages.slice(-8).map(message => message.id))
+      const refs = detailRefs(reduced.messages)
+      const detailMark = wire.mark()
+      for (const ref of refs) {
+        const detail = await wire.rpc<{ text: string }>('session.subscribeDetail', { sessionId, detailRef: ref, subscriptionId: randomUUID() })
+        expect(detail.text).toBeTypeOf('string')
+      }
+      const detail = wire.measure(detailMark)
+      measured[recording.recording] = { live: { frames: live.frames, bytes: live.bytes, payload: { events: events.length,
+        sha256: createHash('sha256').update(JSON.stringify(events)).digest('hex') } }, open: { frames: open.frames, bytes: open.bytes },
+        detail: { frames: detail.frames, bytes: detail.bytes, refs: refs.length } }
+      all.push(...reduced.messages)
+      while (cleanup.length) cleanup.pop()!()
     }
-    visit(message.content)
-    visit(message.metadata?.codex?.items)
-  }
-  return [...new Map(refs.map((entry) => [entry.ref, entry])).values()]
-}
-
-async function measureRecording({ recording, events }: Recording) {
-  vi.useFakeTimers({ now: 0 })
-  const sessionId = `recorded-${recording}`
-  const relay = await relayService()
-  let reduced = createDefaultChatCoreSession()
-  const ports = reducerPorts()
-  const session = fakeSession(sessionId, () => reduced.messages)
-  const getSession = (id: string) => id === sessionId ? session : undefined
-  // Main's phone path: hub event → topic → the phones' delivery group.
-  const topics = createDesktopTopicHub()
-  const phones = new PhoneTopics(topics, new MobileBroadcaster({ getSession } as unknown as SessionManager, relay.service, 'env-local'), 'env-local')
-  phones.online(PHONE, 'relay')
-  phones.watchSession(session)
-  session.emit({ type: 'subscriber_added', sessionId, deviceId: PHONE })
-
-  // Live turn: a progressive phone watching the session while it streams.
-  phoneDelivery(PHONE).views.open(sessionId)
-  for (const raw of events.filter((event) => typeof event.type === 'string')) {
-    const event = { ...raw, sessionId, projectPath: PROJECT } as AgentEvent
-    reduced = { ...reduced, ...applyEventToSession(reduced, event, ports) }
-    publishHubEvent(topics, { event, source: 'session', sessionId }, { localEnvironmentId: 'env-local', getSession, spawnParentOf: () => null })
-    await vi.advanceTimersByTimeAsync(0)
-    vi.advanceTimersByTime(EVENT_SPACING_MS)
-  }
-  vi.advanceTimersByTime(1_000)
-  vi.useRealTimers()
-  await relay.settle()
-  const live = relay.measure(0)
-
-  // Session open: one `subscribe_session { progressive: true }` response.
-  history.messages = reduced.messages
-  let mark = relay.sent.length
-  await relay.respond('open', await buildProgressiveBootstrap(session, PROJECT, sessionId, phoneDelivery(PHONE)))
-  const open = relay.measure(mark)
-
-  // Detail expansion: every deferred row opened once.
-  mark = relay.sent.length
-  const refs = detailRefs(reduced.messages)
-  for (const [index, { messageId, ref }] of refs.entries()) {
-    const message = reduced.messages.find((candidate) => candidate.id === messageId)!
-    let response: unknown
-    try { response = phoneDelivery(PHONE).views.subscribe(sessionId, `d${index}`, ref, message) } catch (error) { response = { error: (error as Error).message } }
-    await relay.respond(`detail-${index}`, response)
-  }
-  const detail = { ...relay.measure(mark), refs: refs.length }
-  dropPhoneDelivery(PHONE)
-
-  relay.drain()
-  return { recording, live: { ...live, payload: payloadDigest(relay.decoded.slice(0, live.frames)) }, open, detail, messages: reduced.messages, decodedFrames: relay.decoded.length }
-}
-
-/**
- * The event sequence the phone applies, independent of how it was framed:
- * batches flattened, so a change that only regroups frames keeps the digest.
- */
-function payloadDigest(frames: unknown[]): { events: number; sha256: string } {
-  const events = frames.flatMap((frame) => Array.isArray(frame) ? frame : [frame])
-  return { events: events.length, sha256: createHash('sha256').update(JSON.stringify(events)).digest('hex') }
-}
-
-afterEach(() => {
-  vi.useRealTimers()
-})
-
-/**
- * Each recording is a short session, so paging is measured on all of them
- * back to back: the open, then the page before the bootstrap's eight, as
- * `load_session_messages { cursor, limit: 24 }` answers it.
- */
-async function measureHistory(messages: ChatMessage[]) {
-  const relay = await relayService()
-  const sessionId = 'recorded-combined'
-  history.messages = messages
-  phoneDelivery(PHONE).views.open(sessionId)
-  await relay.respond('open', await buildProgressiveBootstrap(fakeSession(sessionId, () => []), PROJECT, sessionId, phoneDelivery(PHONE)))
-  const open = relay.measure(0)
-  const before = messages.length - 8
-  const page = messages.slice(Math.max(0, before - 24), before)
-  await relay.respond('history', { messages: phoneDelivery(PHONE).messages(page, sessionId, PROJECT), hasMore: before > 24, cursor: before > 24 ? before - 24 : null, provider: 'claude' })
-  const historyPage = { ...relay.measure(1), messages: page.length }
-  dropPhoneDelivery(PHONE)
-  relay.drain()
-  expect(relay.decoded).toHaveLength(2)
-  return { open, history: historyPage }
-}
-
-describe('relay wire baseline', () => {
-  it('records bytes and frames a relayed phone receives for recorded sessions', async () => {
-    const results = []
-    for (const recording of scenarios as Recording[]) results.push(await measureRecording(recording))
-    for (const result of results) {
-      // Every frame the relay carried opens on the phone's channel.
-      expect(result.decodedFrames).toBeGreaterThan(0)
-    }
-    const combined = await measureHistory(results.flatMap((result) => result.messages))
-    const measured = {
-      ...Object.fromEntries(results.map(({ recording, decodedFrames: _d, messages: _m, ...wire }) => [recording, wire])),
-      combined,
-    } as unknown as Baseline
-    // The phone applies the same events; framing may only get cheaper.
-    for (const [name, step0] of Object.entries(baseline as unknown as Baseline)) {
-      const now = measured[name]!
+    const wire = await nativePhoneWire(cleanup)
+    Object.defineProperty(wire.own, 'snapshot', { get: () => ({ messages: all, harnessId: 'claude' }) })
+    const mark = wire.mark(); await wire.rpc('session.load', { sessionId: 'own', limit: 8 })
+    const open = wire.measure(mark)
+    const pageMark = wire.mark()
+    const page = await wire.rpc<SessionLoadResult>('session.load', { sessionId: 'own', before: all.length - 8, limit: 24, includeState: false })
+    const history = wire.measure(pageMark)
+    measured.combined = { open: { frames: open.frames, bytes: open.bytes }, history: { frames: history.frames, bytes: history.bytes, messages: page.messages.length } }
+    // Optional measurement report; the immutable step-0 budgets and digests never update.
+    if (process.env.SUPERONE_WIRE_REPORT === '1') writeFileSync(new URL('./fixtures/wire-current.json', import.meta.url), JSON.stringify(measured, null, 2) + '\n')
+    for (const [name, budget] of Object.entries(baseline)) {
       for (const kind of ['live', 'open', 'history', 'detail'] as const) {
-        if (!step0[kind]) continue
-        expect(now[kind]!.frames, `${name} ${kind} frames`).toBeLessThanOrEqual(step0[kind]!.frames)
-        expect(now[kind]!.bytes, `${name} ${kind} bytes`).toBeLessThanOrEqual(step0[kind]!.bytes)
+        const maximum = (budget as Record<string, { frames: number; bytes: number }>)[kind]
+        if (!maximum) continue
+        const actual = measured[name]![kind] as { frames: number; bytes: number }
+        expect.soft(actual.frames, `${name} ${kind} frames`).toBeLessThanOrEqual(maximum.frames)
+        expect.soft(actual.bytes, `${name} ${kind} bytes`).toBeLessThanOrEqual(maximum.bytes)
       }
-      if (step0.live) expect(now.live!.payload, `${name} live payload`).toEqual(step0.live.payload)
-      if (step0.detail) expect(now.detail!.refs).toBe(step0.detail.refs)
+      if ('detail' in budget) expect((measured[name]!.detail as { refs: number }).refs).toBe(budget.detail.refs)
     }
-    await expect(JSON.stringify(measured, null, 2) + '\n').toMatchFileSnapshot('./fixtures/wire-current.json')
   })
 })

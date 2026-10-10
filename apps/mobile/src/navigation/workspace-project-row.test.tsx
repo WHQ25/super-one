@@ -8,6 +8,7 @@ import { SessionActivityContext } from './use-session-activity'
 import { WorkspaceProjectRow, type WorkspaceProjectRowProps } from './workspace-project-row'
 import type { SessionListRow } from '../session-list-state'
 import { WorkspaceListCache } from '../workspace-list-cache'
+import { resolveTestProject } from '../project-rpc.test-fixtures'
 
 jest.mock('../ui/use-icon-motion', () => ({ useIconMotion: () => true }))
 
@@ -125,7 +126,7 @@ test('keeps the loaded list mounted across a collapse, so re-expanding costs no 
 
 test('keeps the seed and does not paint a dropped-transport error in the list', async () => {
   const request = jest.fn(() => Promise.reject(new Error('not connected')))
-  await renderWithTheme(row({ expanded: true, client: { request } as unknown as RelayClient }))
+  await renderWithTheme(row({ expanded: true, client: { rpc: request, resolveProject: resolveTestProject } as unknown as RelayClient }))
   await waitFor(() => expect(request).toHaveBeenCalled())
   expect(screen.getByText('Fix the drawer')).toBeTruthy()
   expect(screen.queryByText(/not connected/i)).toBeNull()
@@ -133,7 +134,7 @@ test('keeps the seed and does not paint a dropped-transport error in the list', 
 
 test('still reports a host failure that is not a dropped transport', async () => {
   const request = jest.fn(() => Promise.reject(new Error('no such project')))
-  await renderWithTheme(row({ expanded: true, client: { request } as unknown as RelayClient, seed: [] }))
+  await renderWithTheme(row({ expanded: true, client: { rpc: request, resolveProject: resolveTestProject } as unknown as RelayClient, seed: [] }))
   await waitFor(() => expect(screen.getByText('no such project')).toBeTruthy())
 })
 
@@ -141,7 +142,7 @@ test('shows the first read beside the project name, not inside the list', async 
   // The spinner used to sit above the seeded rows and push them down for the
   // duration of the read; on the header it changes nothing below it.
   const request = jest.fn(() => new Promise(() => {}))
-  await renderWithTheme(row({ expanded: true, client: { request } as unknown as RelayClient }))
+  await renderWithTheme(row({ expanded: true, client: { rpc: request, resolveProject: resolveTestProject } as unknown as RelayClient }))
   expect(screen.getByRole('button', { name: 'repo', expanded: true, busy: true })).toBeTruthy()
   // The spinner takes the folder glyph's slot, so nothing else on the row moves.
   expect(screen.getByTestId('project-list-loading')).toHaveStyle({ width: 18, height: 18 })
@@ -160,7 +161,7 @@ test('does not spin on a collapsed project', async () => {
         pendingCount: 1, pendingReason: { en: 'Allow Bash?', zh: '允许 Bash？' }, title: 'Needs input',
       },
     }}>
-      {row({ client: { request } as unknown as RelayClient })}
+      {row({ client: { rpc: request, resolveProject: resolveTestProject } as unknown as RelayClient })}
     </SessionActivityContext.Provider>,
   )
   await waitFor(() => expect(request).toHaveBeenCalled())
@@ -189,10 +190,10 @@ test('plays the unfold when the project row itself is tapped', async () => {
   expect(unfoldPlayed()).toBe(true)
 })
 
-/** A host that answers `list_sessions` at once, and counts how often it was asked. */
+/** A host that answers `sessionList.page` at once, and counts how often it was asked. */
 const answering = (rows: SessionListRow[]) => {
   const request = jest.fn(async () => ({ sessions: rows, totalCount: rows.length }))
-  return { client: { request } as unknown as RelayClient, request }
+  return { client: { rpc: request, resolveProject: resolveTestProject } as unknown as RelayClient, request }
 }
 
 test('updates the scheduled icon from a host list invalidation without reopening the drawer', async () => {
@@ -212,11 +213,11 @@ test('reads past a page that ends inside a collaboration parent\'s children', as
   // one parent's children, which expanded to show only that first half.
   const children = Array.from({ length: 34 }, (_, index) => ({ sessionId: `c${index}`, title: `Child ${index}`, parentSessionId: 'p' }))
   const hosted: SessionListRow[] = [{ sessionId: 'p', title: 'Parent' }, ...children, { sessionId: 'q', title: 'Next parent' }]
-  const request = jest.fn(async (command: { offset?: number; limit?: number }) => {
-    const offset = command.offset ?? 0
-    return { sessions: hosted.slice(offset, offset + (command.limit ?? 30)), totalCount: hosted.length }
+  const request = jest.fn(async (_method: string, payload: { offset?: number; limit?: number }) => {
+    const offset = payload.offset ?? 0
+    return { sessions: hosted.slice(offset, offset + (payload.limit ?? 30)), totalCount: hosted.length }
   })
-  const client = { request } as unknown as RelayClient
+  const client = { rpc: request, resolveProject: resolveTestProject } as unknown as RelayClient
   await renderWithTheme(row({ expanded: true, client, seed: [] }))
   await waitFor(() => expect(request).toHaveBeenCalledTimes(2))
   await act(async () => { fireEvent.press(await screen.findByRole('button', { name: 'Show sessions started by Parent' })) })
@@ -249,7 +250,7 @@ const remountable = (mounted: boolean, overrides: Partial<WorkspaceProjectRowPro
 
 test('a remount paints the cached list without a request or a spinner', async () => {
   // The drawer unmounts its rows on every close. Before the cache, every open
-  // was a first mount: spinner on the folder and one list_sessions per row.
+  // was a first mount: spinner on the folder and one sessionList.page per row.
   const { client, request } = answering([{ sessionId: 'h1', title: 'From the host' }])
   const { rerender } = await renderWithTheme(remountable(true, { expanded: true, client, seed: [] }))
   await waitFor(() => expect(screen.getByText('From the host')).toBeTruthy())
@@ -316,7 +317,7 @@ test('a collapsed list does not chase an invalidation until it is opened', async
 
 test('a seed left standing by a failed read is not remembered as a read', async () => {
   const request = jest.fn(() => Promise.reject(new Error('not connected')))
-  const client = { request } as unknown as RelayClient
+  const client = { rpc: request, resolveProject: resolveTestProject } as unknown as RelayClient
   const { rerender } = await renderWithTheme(remountable(true, { expanded: true, client }))
   await waitFor(() => expect(request).toHaveBeenCalledTimes(1))
   await rerender(remountable(false, { expanded: true, client }))

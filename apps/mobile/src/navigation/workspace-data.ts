@@ -1,6 +1,5 @@
 import type { RelayClient } from '@superone/relay-client'
-import type { RemoteCommand } from '@superone/shared/agent-types'
-import { randomId } from '../ids'
+import { projectRpc } from '../project-rpc'
 import type { SessionListRow } from '../session-list-state'
 
 /** One list request's worth of rows, plus how many the project has in total. */
@@ -13,9 +12,7 @@ export async function readProjectSessions(
   projectPath: string,
   { limit = SESSION_PAGE_SIZE, offset = 0 }: { limit?: number; offset?: number } = {},
 ): Promise<SessionPage> {
-  const result = await client.request({
-    type: 'list_sessions', requestId: randomId(), projectPath, limit, offset,
-  } as RemoteCommand) as { sessions?: SessionListRow[]; totalCount?: number; error?: string }
+  const result = await projectRpc(client, projectPath, 'sessionList.page', { limit, offset }) as { sessions?: SessionListRow[]; totalCount?: number; error?: string }
   if (result.error) throw new Error(result.error)
   const sessions = result.sessions ?? []
   // An older desktop omits totalCount; a full page then implies there is more.
@@ -24,7 +21,7 @@ export async function readProjectSessions(
 
 /** Every pinned session across the host's projects, most recent first. */
 export async function readPinnedSessions(client: RelayClient): Promise<SessionListRow[]> {
-  return crossProjectSessions(client, { type: 'list_pinned_sessions', requestId: randomId() })
+  return crossProjectSessions(client, 'sessionList.pinned')
 }
 
 /** Host-side title search across every project; `query` must already be trimmed. */
@@ -33,20 +30,20 @@ export async function searchSessions(
   query: string,
   limit = 50,
 ): Promise<SessionListRow[]> {
-  return crossProjectSessions(client, { type: 'search_sessions', requestId: randomId(), query, limit })
+  return crossProjectSessions(client, 'sessionList.search', { query, limit })
 }
 
 /** One session by id from any project; null when the host has no such row. */
 export async function findSession(client: RelayClient, sessionId: string): Promise<SessionListRow | null> {
-  const result = await client.request({ type: 'find_session', requestId: randomId(), sessionId } as RemoteCommand) as {
+  const result = await client.rpc('sessionList.find', { sessionId }) as {
     session?: SessionListRow | null; error?: string
   }
   if (result.error) throw new Error(result.error)
   return result.session ?? null
 }
 
-async function crossProjectSessions(client: RelayClient, command: unknown): Promise<SessionListRow[]> {
-  const result = await client.request(command as RemoteCommand) as {
+async function crossProjectSessions(client: RelayClient, method: string, payload: Record<string, unknown> = {}): Promise<SessionListRow[]> {
+  const result = await client.rpc(method, payload) as {
     sessions?: SessionListRow[]; error?: string
   }
   if (result.error) throw new Error(result.error)

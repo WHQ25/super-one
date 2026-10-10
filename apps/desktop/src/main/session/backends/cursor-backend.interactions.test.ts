@@ -57,7 +57,7 @@ vi.mock('../../acp/acp-recap-focus', () => ({
   notifySessionRecapReceived: vi.fn(),
 }))
 
-import type { MobileTransport } from '../../remote/mobile-broadcaster'
+import type { TestPhoneWorkspaceSink } from '../../remote/test-phone-topics'
 import { phoneEventPath } from '../../remote/test-phone-topics'
 import { Session } from '../session'
 import { CursorBackend } from './cursor-backend'
@@ -122,9 +122,9 @@ function installRuntimeFactory(configure?: (runtime: FakeRuntime, index: number)
   return runtimes
 }
 
-function makeTransport(): MobileTransport & { sent: AgentEvent[] } {
+function makeTransport(): TestPhoneWorkspaceSink & { sent: AgentEvent[] } {
   const sent: AgentEvent[] = []
-  return { sent, async sendAgentEvent(event) { sent.push(event) }, sendDeviceEvents(_deviceId, events) { sent.push(...events) } }
+  return { sent, onEvents(events) { sent.push(...events) } }
 }
 
 function makeSession(permissionMode: 'agent' | 'plan' = 'agent') {
@@ -158,7 +158,7 @@ function activities(sent: AgentEvent[]) {
   return sent.flatMap((event) => (event.type === 'session_activity' ? [event.activity] : []))
 }
 
-describe('CursorBackend host interactions through Session + MobileBroadcaster', () => {
+describe('CursorBackend host interactions through Session and native workspace notices', () => {
   beforeEach(() => {
     factoryMock.mockReset()
     prewarmMock.mockReset().mockResolvedValue(undefined)

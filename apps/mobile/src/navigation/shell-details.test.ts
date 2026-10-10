@@ -1,18 +1,19 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { RelayClient } from '@superone/relay-client'
+import { resolveTestProject } from '../project-rpc.test-fixtures'
 import { fetchShellDetails } from './shell-details'
 
 function stubClient() {
-  const request = vi.fn(async (command: { type: string }) => {
-    if (command.type === 'get_system_info') return { models: [], defaults: { effort: 'high' } }
-    if (command.type === 'get_project_resources') return { workspaceDirs: [] }
+  const request = vi.fn(async (method: string) => {
+    if (method === 'harness.systemInfo') return { models: [], defaults: { effort: 'high' } }
+    if (method === 'harness.projectResources') return { workspaceDirs: [] }
     return null
   })
-  return { client: { request } as unknown as RelayClient, request }
+  return { client: { rpc: request, resolveProject: resolveTestProject } as unknown as RelayClient, request }
 }
 
-const systemInfoCalls = (request: { mock: { calls: [{ type: string }][] } }) =>
-  request.mock.calls.filter(([command]) => command.type === 'get_system_info').length
+const systemInfoCalls = (request: { mock: { calls: [string, ...unknown[]][] } }) =>
+  request.mock.calls.filter(([method]) => method === 'harness.systemInfo').length
 
 describe('fetchShellDetails', () => {
   it('serves the harness catalog from the per-connection cache by default', async () => {
@@ -45,7 +46,7 @@ describe('fetchShellDetails', () => {
     await fetchShellDetails(client, '/repo', 'claude', true)
 
     const resourceCalls = request.mock.calls
-      .filter(([command]) => command.type === 'get_project_resources').length
+      .filter(([method]) => method === 'harness.projectResources').length
     expect(resourceCalls).toBe(1)
   })
 })

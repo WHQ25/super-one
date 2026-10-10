@@ -30,12 +30,16 @@ import {
   type WorkspaceProjects,
 } from '@superone/runtime/workspace'
 import { SessionEventRecorder } from './session-event-recorder'
-import { LocalSessionHost, LOCAL_SESSION_MUTATIONS } from './local-session-host'
+import { runRpcControl } from '../session/control-context'
+import { dispatchRpc } from '@superone/runtime/server'
+import { LocalSessionHost, type LocalSessionEdits } from './local-session-host'
 import type { DesktopSessionRows } from './desktop-session-reads'
 import type { DesktopSessionRow } from '../db-remote-controlled-sessions'
 import { desktopNodeHostPaths } from './paths'
 import { claudeUsageAccounts } from '../agent/subscription-usage'
 import { usageLog } from '../agent/usage-log'
+import type { TerminalLeaseAuthority } from '../terminal/terminal-lease'
+import type { PhoneRpcRouter } from './routed-phone-rpc'
 
 /** Policy flags of the desktop node; its methods follow from the ports this host passes. */
 const DESKTOP_NODE_CAPABILITIES: HostCapabilityFlags = {
@@ -54,15 +58,6 @@ const DESKTOP_UNSERVED_METHODS: ReadonlySet<string> = new Set([
   'settings.patch', 'sandbox.probe', 'harness.enable', 'harness.disable',
   'session.fork', 'session.setCwd', 'session.setTags', 'session.setUiFlags', 'session.close', 'session.remove',
   'session.modUi', 'session.notifyArtifactCompleted',
-])
-
-/**
- * Terminal methods phones are refused until local terminals move onto control
- * leases: until then a terminal's ownership is the only authority for writing to it.
- */
-const LOCAL_TERMINAL_MUTATIONS: ReadonlySet<string> = new Set([
-  'terminal.create', 'terminal.write', 'terminal.resize', 'terminal.kill',
-  'terminal.acquireControl', 'terminal.renewControl', 'terminal.releaseControl',
 ])
 
 /**
@@ -85,6 +80,7 @@ function desktopCollaborationPort(listProfiles: () => SessionAgentProfile[]): Co
 }
 
 export interface DesktopDomainDeps {
+  restore?: import('../session/session-restore-facts').DesktopRestorePorts
   /** Every session row of this desktop, for the devices that see all of them. */
   rows: DesktopSessionRows<DesktopSessionRow>
   userDataDir: string
@@ -103,10 +99,16 @@ export interface DesktopDomainDeps {
   terminals?: TerminalsPort
   /** This desktop's composer drafts and their leases, shared with its window. */
   drafts?: DraftsPort
+  beforeDraftOpen?(draftId: string): Promise<void>
+  topicNotices?: RpcContext['topicNotices']
+  rpcRouter?: PhoneRpcRouter
   /** What a phone's project changes do beyond the registry; controllers cannot edit projects. */
   projectEdits?: DesktopProjectEdits
   /** Desktop methods for phones beyond the shared families (`remote/phone-methods.ts`). */
   phoneMethods?: { dispatch: RpcExtensionDispatch; methods: ReadonlySet<string> }
+  sessionEdits?: LocalSessionEdits
+  /** Bind local terminal reads and IPC mutations to this domain's one lease authority. */
+  bindLocalControl?: (authority: TerminalLeaseAuthority) => void
 }
 
 /** What one RPC needs besides who asks and how it is delivered. */
@@ -124,14 +126,16 @@ export class DesktopDomain {
     private readonly db: NodeDatabase,
     readonly identity: NodeIdentity,
     readonly auth: AuthService,
+    readonly leases: ControlLeaseService,
     readonly sessions: DesktopSessionHost,
-    /** Every session of this desktop, read-only until local sessions move onto leases. */
+    /** Every session of this desktop, fenced by the same domain leases. */
     readonly localSessions: LocalSessionHost,
     private readonly recorder: SessionEventRecorder,
+    private readonly unbindSessions: () => void,
     /** The node home (identity, channel root, config). */
     readonly nodeHome: string,
     private readonly context: DesktopRpcContext,
-    private readonly phonePorts: Pick<DesktopDomainDeps, 'terminals' | 'drafts' | 'phoneMethods' | 'projectEdits'>,
+    private readonly phonePorts: Pick<DesktopDomainDeps, 'terminals' | 'drafts' | 'beforeDraftOpen' | 'phoneMethods' | 'projectEdits' | 'topicNotices' | 'rpcRouter'>,
   ) {}
 
   static open(deps: DesktopDomainDeps): DesktopDomain {
@@ -145,9 +149,11 @@ export class DesktopDomain {
       const leases = new ControlLeaseService(db)
       const events = new EventLog(db, identity.environmentId)
       reconcileRunsAfterRestart({ db, events, sessions: deps.sessions })
+      const unbindSessions = deps.sessions.onSession((session) => session.lease.bind({ environmentId: identity.environmentId, leases }))
       const recorder = new SessionEventRecorder(deps.sessions, events)
       const sessions = new DesktopSessionHost({
         environmentId: identity.environmentId,
+        restore: deps.restore,
         sessions: deps.sessions,
         store: deps.store,
         leases,
@@ -173,8 +179,9 @@ export class DesktopDomain {
         unservedMethods: DESKTOP_UNSERVED_METHODS,
         subscriptionUsage: { claudeAccounts: claudeUsageAccounts, log: usageLog },
       }
-      const localSessions = new LocalSessionHost({ sessions: deps.sessions, events, rows: deps.rows })
-      return new DesktopDomain(db, identity, auth, sessions, localSessions, recorder, paths.nodeHome, context, { terminals: deps.terminals, drafts: deps.drafts, phoneMethods: deps.phoneMethods, projectEdits: deps.projectEdits })
+      const localSessions = new LocalSessionHost({ sessions: deps.sessions, events, rows: deps.rows, edits: deps.sessionEdits, drafts: deps.drafts, projectPath: (id) => deps.projects.get(id)?.path ?? null, environmentId: identity.environmentId, restore: deps.restore })
+      deps.bindLocalControl?.({ environmentId: identity.environmentId, leases })
+      return new DesktopDomain(db, identity, auth, leases, sessions, localSessions, recorder, unbindSessions, paths.nodeHome, context, { terminals: deps.terminals, drafts: deps.drafts, beforeDraftOpen: deps.beforeDraftOpen, phoneMethods: deps.phoneMethods, projectEdits: deps.projectEdits, topicNotices: deps.topicNotices, rpcRouter: deps.rpcRouter })
     } catch (err) {
       db.close()
       throw err
@@ -188,16 +195,21 @@ export class DesktopDomain {
 
   /**
    * The context this desktop's phones run in. They are its user's devices:
-   * every session and terminal (only read for now), the workspace files and
+   * every session and terminal, the workspace files and
    * Git the window has, and its drafts, which controllers do not get.
    */
   phoneContext(): DesktopRpcContext {
     return this.phone ??= this.openPhoneContext()
   }
 
+  openPhoneRoute(client: import('@superone/runtime/server').AuthenticatedClient) { return this.phonePorts.rpcRouter?.open(client) }
+
   private phone: DesktopRpcContext | null = null
   /** Watches phones hold, closed with the domain. */
   private readonly watches: Array<{ closeAll(): void }> = []
+  private readonly closeListeners = new Set<() => void>()
+
+  onClose(listener: () => void): void { this.closeListeners.add(listener) }
 
   private openPhoneContext(): DesktopRpcContext {
     // Recency stays with the window's own project opens.
@@ -216,18 +228,30 @@ export class DesktopDomain {
       workspaceWatch,
       workspaceTailWatch,
       terminals: this.phonePorts.terminals,
+      topicNotices: this.phonePorts.topicNotices,
       drafts: this.phonePorts.drafts,
+      beforeDraftOpen: this.phonePorts.beforeDraftOpen,
       extensions: this.phonePorts.phoneMethods?.dispatch,
       extensionMethods: this.phonePorts.phoneMethods?.methods,
-      unservedMethods: new Set([...DESKTOP_UNSERVED_METHODS, ...LOCAL_SESSION_MUTATIONS, ...LOCAL_TERMINAL_MUTATIONS]),
+      unservedMethods: new Set([...DESKTOP_UNSERVED_METHODS].filter((method) => !method.startsWith('session.')).concat([...this.localSessions.unservedMethods])),
     }
   }
 
+  dispatchRpc: typeof dispatchRpc = (method, payload, ctx) =>
+    runRpcControl(ctx.client.clientSessionId, payload, () => dispatchRpc(method, payload, ctx))
+
   close(): void {
+    this.phonePorts.rpcRouter?.close()
+    for (const listener of this.closeListeners) {
+      try { listener() } catch (error) { console.warn('[desktop-domain] close listener failed', error) }
+    }
+    this.closeListeners.clear()
+    this.unbindSessions()
     for (const watch of this.watches) watch.closeAll()
     this.recorder.dispose()
     this.localSessions.dispose()
     this.sessions.dispose()
+    this.leases.dispose()
     this.db.close()
   }
 }

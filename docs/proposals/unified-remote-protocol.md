@@ -13,8 +13,7 @@ policy, not phone-only code.
 Related: [mobile-remote-control.md](../architecture/mobile-remote-control.md),
 [remote-node-service.md](../architecture/remote-node-service.md),
 [desktop-node-orchestration.md](../plans/desktop-node-orchestration.md),
-[remote-node.md](../plans/remote-node.md),
-[mobile-desktop-compatibility.md](../plans/mobile-desktop-compatibility.md).
+[remote-node.md](../plans/remote-node.md).
 
 ## 1. Model
 

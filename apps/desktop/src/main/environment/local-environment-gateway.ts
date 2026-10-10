@@ -40,6 +40,8 @@ import {
 import type { DraftStore } from '@superone/runtime/drafts'
 import { localDraftStore } from '../db-drafts'
 import { loadDesktopEnvironmentIdentity } from './local-identity'
+import { RemoteEnvironmentGateway } from './remote-environment-gateway'
+import type { EnvironmentRpcClient } from './environment-rpc-client'
 
 /** Minimal session port so local gateway can share harness parity with remote. */
 export interface LocalSessionPort {
@@ -114,7 +116,7 @@ export interface LocalEnvironmentGatewayOptions {
   getProject?: (projectId: string) => Promise<ProjectSnapshot | null> | ProjectSnapshot | null
   /** Optional node version string; defaults to process.version. */
   nodeVersion?: string
-  /** Optional session port (gateway-parity path; Electron SessionManager remains separate). */
+  /** Test adapter; production binds its domain protocol with bindProtocol. */
   sessions?: LocalSessionPort
   /** Optional workspace port for local FS gateway routing. */
   workspace?: LocalWorkspacePort
@@ -137,23 +139,17 @@ function mapOs(): ExecutionEnvironmentDescriptor['platform']['os'] {
 
 function notWired(method: string): never {
   throw new Error(
-    `LocalEnvironmentGateway.${method} is not wired yet; existing desktop Session/terminal IPC remains authoritative until Phase 0 routing migrates`,
+    `LocalEnvironmentGateway.${method} is not wired yet; the desktop domain protocol has not been bound`,
   )
 }
 
-/**
- * In-process environment gateway for the desktop runtime.
- *
- * Local is one ExecutionEnvironment. Call sites should prefer EnvironmentHost /
- * window.environment over raw app IPC; session list is the first fully wired
- * local session surface (create/send/etc. still migrate incrementally).
- */
+/** The local gateway uses the same RPC resource methods and domain as network clients. */
 export class LocalEnvironmentGateway implements EnvironmentGateway {
-  readonly sessions: SessionGateway
-  readonly interactions: InteractionGateway
-  readonly terminals: TerminalGateway
-  readonly workspace: WorkspaceGateway
-  readonly drafts: DraftGateway
+  private readonly fallbackSessions: SessionGateway
+  private readonly fallbackInteractions: InteractionGateway
+  private readonly fallbackTerminals: TerminalGateway
+  private readonly fallbackWorkspace: WorkspaceGateway
+  private readonly fallbackDrafts: DraftGateway
 
   private readonly environmentId: string
   /** Earlier ids of this desktop that references may carry. */
@@ -180,18 +176,27 @@ export class LocalEnvironmentGateway implements EnvironmentGateway {
     this.clientSessionId = opts.clientSessionId ?? 'local-desktop'
     this.draftStoreFn = opts.draftStore ?? localDraftStore
 
-    this.sessions = this.createSessionGateway()
-    this.interactions = this.createInteractionGateway()
-    this.terminals = this.createTerminalGateway()
-    this.workspace = this.createWorkspaceGateway()
-    this.drafts = this.createDraftGateway()
+    this.fallbackSessions = this.createSessionGateway()
+    this.fallbackInteractions = this.createInteractionGateway()
+    this.fallbackTerminals = this.createTerminalGateway()
+    this.fallbackWorkspace = this.createWorkspaceGateway()
+    this.fallbackDrafts = this.createDraftGateway()
   }
+
+  private protocol: RemoteEnvironmentGateway | null = null
+  bindProtocol(client: EnvironmentRpcClient): void { this.protocol = new RemoteEnvironmentGateway(client) }
+  get sessions(): SessionGateway { return this.protocol?.sessions ?? this.fallbackSessions }
+  get interactions(): InteractionGateway { return this.protocol?.interactions ?? this.fallbackInteractions }
+  get terminals(): TerminalGateway { return this.protocol?.terminals ?? this.fallbackTerminals }
+  get workspace(): WorkspaceGateway { return this.protocol?.workspace ?? this.fallbackWorkspace }
+  get drafts(): DraftGateway { return this.protocol?.drafts ?? this.fallbackDrafts }
 
   getEnvironmentId(): string {
     return this.environmentId
   }
 
   async getDescriptor(): Promise<ExecutionEnvironmentDescriptor> {
+    if (this.protocol) return this.protocol.getDescriptor()
     return {
       environmentId: this.environmentId,
       ...(this.environmentAliases.length ? { environmentAliases: [...this.environmentAliases] } : {}),
@@ -211,14 +216,17 @@ export class LocalEnvironmentGateway implements EnvironmentGateway {
   }
 
   async listProjects(): Promise<ProjectSnapshot[]> {
+    if (this.protocol) return this.protocol.listProjects()
     return await this.listProjectsFn()
   }
 
   async getProject(projectId: string): Promise<ProjectSnapshot | null> {
+    if (this.protocol) return this.protocol.getProject(projectId)
     return await this.getProjectFn(projectId)
   }
 
   async getSnapshot(): Promise<EnvironmentSnapshot> {
+    if (this.protocol) return this.protocol.getSnapshot()
     const projects = await this.listProjects()
     return {
       environmentId: this.environmentId,
@@ -231,7 +239,8 @@ export class LocalEnvironmentGateway implements EnvironmentGateway {
     }
   }
 
-  async *subscribeEvents(_input: SubscribeEventsInput): AsyncIterable<EnvironmentEventEnvelope> {
+  async *subscribeEvents(input: SubscribeEventsInput): AsyncIterable<EnvironmentEventEnvelope> {
+    if (this.protocol) { yield* this.protocol.subscribeEvents(input); return }
     // Local event log is not durable yet; consumers should keep using existing
     // SessionManager / renderer transports until Phase 3 projection lands.
     return

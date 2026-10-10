@@ -1,107 +1,107 @@
 {
   "permission-flow": {
     "live": {
-      "frames": 160,
-      "bytes": 89760,
+      "frames": 135,
+      "bytes": 40241,
       "payload": {
-        "events": 194,
-        "sha256": "b30787d9b9556283251419a11aca9e0ad4ffe605f0b48485adf6addc327846cf"
+        "events": 195,
+        "sha256": "ec7f62252a637e728c28bfd93dcadb78e69bff19f179dea03f42b06251779120"
       }
     },
     "open": {
       "frames": 1,
-      "bytes": 4427
+      "bytes": 3931
     },
     "detail": {
       "frames": 11,
-      "bytes": 6118,
+      "bytes": 4717,
       "refs": 11
     }
   },
   "claude-todos": {
     "live": {
-      "frames": 152,
-      "bytes": 89120,
+      "frames": 145,
+      "bytes": 40655,
       "payload": {
-        "events": 164,
-        "sha256": "fcea02eafecdbdc3e64a6bc244165949364c61dd72207610bdcfb780ee57d3b6"
+        "events": 167,
+        "sha256": "68d6aa3e83dab12382cec6d4d52109826defba828d6f382365c7e30f079ac286"
       }
     },
     "open": {
       "frames": 1,
-      "bytes": 4119
+      "bytes": 3571
     },
     "detail": {
       "frames": 4,
-      "bytes": 5468,
+      "bytes": 4852,
       "refs": 4
     }
   },
   "queued-mid-turn": {
     "live": {
-      "frames": 66,
-      "bytes": 40080,
+      "frames": 61,
+      "bytes": 21027,
       "payload": {
-        "events": 104,
-        "sha256": "7efd9bb2b70a24d81267bf74e587dc10a28eab7fe89eca4a20214a007664efec"
+        "events": 88,
+        "sha256": "49963350b28a6c8905aa5c13e3d94d9a54f13f702bed51792e6c4680e6eae735"
       }
     },
     "open": {
       "frames": 1,
-      "bytes": 3183
+      "bytes": 2823
     },
     "detail": {
       "frames": 9,
-      "bytes": 8331,
+      "bytes": 7207,
       "refs": 9
     }
   },
   "queued-interrupt": {
     "live": {
-      "frames": 34,
-      "bytes": 21936,
+      "frames": 33,
+      "bytes": 12507,
       "payload": {
-        "events": 47,
-        "sha256": "65cfab3c8ac376ce71e118d875ee71289dc98c19802e4b1805ecc860d79596f8"
+        "events": 42,
+        "sha256": "cabca9df987bb7941e5e9d525ddd3200859b660208144431e596470619331b46"
       }
     },
     "open": {
       "frames": 1,
-      "bytes": 2319
+      "bytes": 1991
     },
     "detail": {
       "frames": 3,
-      "bytes": 1753,
+      "bytes": 1453,
       "refs": 3
     }
   },
   "mermaid-latex": {
     "live": {
-      "frames": 25,
-      "bytes": 19416,
+      "frames": 24,
+      "bytes": 9000,
       "payload": {
         "events": 27,
-        "sha256": "83181c909f0657d571c203fcae9414cc14f81238bf259a315cb669330e1f20e5"
+        "sha256": "f580805ca593ed6995b6231481ee0638512e0add6ef89898b0724aff026785b1"
       }
     },
     "open": {
       "frames": 1,
-      "bytes": 1459
+      "bytes": 1171
     },
     "detail": {
       "frames": 1,
-      "bytes": 327,
+      "bytes": 263,
       "refs": 1
     }
   },
   "combined": {
     "open": {
       "frames": 1,
-      "bytes": 4123
+      "bytes": 3727
     },
     "history": {
       "frames": 1,
-      "bytes": 7518,
+      "bytes": 7191,
       "messages": 7
     }
   }

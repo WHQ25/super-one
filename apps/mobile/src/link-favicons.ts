@@ -1,6 +1,4 @@
-import type { RelayClient } from '@superone/relay-client'
-import type { RemoteCommand } from '@superone/shared/agent-types'
-import { randomId } from './ids'
+import type { MobileRpcClient } from './runtime-session-rpc'
 
 /**
  * Resolving one favicon can cost the desktop an HTML fetch (8 s budget) plus
@@ -15,13 +13,11 @@ const FAVICON_TIMEOUT_MS = 20_000
  * that surfaces as null and the link keeps its globe.
  */
 export async function requestLinkFavicon(
-  client: Pick<RelayClient, 'request'>,
+  client: Pick<MobileRpcClient, 'rpc'>,
   url: string,
   isDark: boolean,
 ): Promise<string | null> {
-  const reply = await client.request({
-    type: 'resolve_favicon', requestId: randomId(), url, isDark,
-  } as RemoteCommand, FAVICON_TIMEOUT_MS) as { dataUrl?: unknown } | null
+  const reply = await client.rpc('environment.favicon', { url, isDark }, { timeoutMs: FAVICON_TIMEOUT_MS }) as { dataUrl?: unknown } | null
   const dataUrl = reply?.dataUrl
   return typeof dataUrl === 'string' && dataUrl.startsWith('data:image/') ? dataUrl : null
 }

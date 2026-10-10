@@ -1,3 +1,4 @@
+import { terminalLeaseAuthority } from './terminal-lease.test-fixtures'
 import { describe, it, expect } from 'vitest'
 import type { TerminalEvent } from '@superone/shared/agent-types'
 import { TerminalManager } from './terminal-manager'
@@ -18,7 +19,7 @@ function fakeSpawner(): PtySpawner {
 
 function makeManager(exists?: (p: string) => boolean) {
   const events: TerminalEvent[] = []
-  const manager = new TerminalManager({
+  const manager = new TerminalManager({ leaseAuthority: terminalLeaseAuthority(),
     spawner: fakeSpawner(),
     onEvent: (e) => events.push(e),
     exists: exists ?? (() => true),

@@ -4,7 +4,6 @@ import type {
   CloneRepositoryResponse,
   DefaultClonePathResponse,
   GithubRepoHit,
-  RemoteCommand,
   SearchGithubReposResponse,
 } from '@superone/shared/agent-types'
 import {
@@ -42,7 +41,6 @@ import {
   type AddProjectRow,
   type AddProjectSectionModel,
 } from '../add-project-state'
-import { randomId } from '../ids'
 
 /** Where browsing starts when nothing has been typed; the host expands it. */
 const INITIAL_PATH = '~/'
@@ -86,7 +84,7 @@ export interface AddProjectFlow {
  */
 export function useAddProject(input: {
   /** Issues one command against the paired host; the preview supplies fixtures. */
-  request: (command: RemoteCommand) => Promise<unknown>
+  rpc: (method: string, payload?: Record<string, unknown>) => Promise<unknown>
   onAdded: (path: string) => void
 }): AddProjectFlow {
   const [step, setStep] = useState<AddProjectStep>({ kind: 'source' })
@@ -112,18 +110,18 @@ export function useAddProject(input: {
 
   // Held in a ref so a caller passing an inline lambda cannot retrigger every
   // listing effect on each render.
-  const requestRef = useRef(input.request)
-  requestRef.current = input.request
+  const requestRef = useRef(input.rpc)
+  requestRef.current = input.rpc
   // An unpaired caller throws where the desktop would answer, and a throw from a
   // listing effect tears the app down instead of reaching the `.catch` below.
-  const request = useCallback(<T,>(command: RemoteCommand): Promise<T> =>
-    Promise.resolve().then(() => requestRef.current(command)) as Promise<T>, [])
+  const request = useCallback(<T,>(method: string, payload: Record<string, unknown> = {}): Promise<T> =>
+    Promise.resolve().then(() => requestRef.current(method, payload)) as Promise<T>, [])
 
   // The clone parent the host remembers, shared with the desktop dialog.
   const defaultClonePathRef = useRef<string | null>(null)
   useEffect(() => {
     let cancelled = false
-    void request<DefaultClonePathResponse>({ type: 'get_default_clone_path', requestId: randomId() })
+    void request<DefaultClonePathResponse>('git.defaultClonePath')
       .then((result) => {
         if (cancelled || 'error' in result) return
         defaultClonePathRef.current = result.path
@@ -158,9 +156,7 @@ export function useAddProject(input: {
     const generation = ++browseGeneration.current
     setBrowseLoading(true)
     setBrowseError('')
-    void request<BrowseHostDirectoryResponse>({
-      type: 'browse_host_directory', requestId: randomId(), path: directoryQuery,
-    }).then((result) => {
+    void request<BrowseHostDirectoryResponse>('fs.listDir', { path: directoryQuery }).then((result) => {
       if (generation !== browseGeneration.current) return
       if ('error' in result) {
         setEntries([])
@@ -218,8 +214,7 @@ export function useAddProject(input: {
     setGithubResultKey(null)
     let cancelled = false
     const load = () => {
-      void request<SearchGithubReposResponse>({
-        type: 'search_github_repos', requestId: randomId(),
+      void request<SearchGithubReposResponse>('git.searchGithub', {
         mode: githubOwner ? 'owner' : 'mine', value: githubOwner,
       }).then((result) => {
         if (cancelled) return
@@ -266,8 +261,8 @@ export function useAddProject(input: {
     let cancelled = false
     const timer = setTimeout(() => {
       searchSentAt.current = Date.now()
-      void request<SearchGithubReposResponse>({
-        type: 'search_github_repos', requestId: randomId(), mode: 'query', value: key,
+      void request<SearchGithubReposResponse>('git.searchGithub', {
+        mode: 'query', value: key,
       }).then((result) => {
         if (cancelled) return
         const hits = 'error' in result ? [] : result.repos
@@ -305,11 +300,11 @@ export function useAddProject(input: {
     setBusy(true)
     setError('')
     try {
-      const result = await request<{ success?: boolean; error?: string }>({
-        type: 'add_project', requestId: randomId(), path, createIfMissing,
+      const result = await request<{ path: string; error?: string }>('project.open', {
+        path, createIfMissing,
       })
       if (result.error) throw new Error(result.error)
-      input.onAdded(path)
+      input.onAdded(result.path)
     } catch (cause) {
       setError(formatAddProjectError(cause, (_key, options) => options?.path
         ? `"${options.path}" already exists. Pick another folder, or add that project instead of cloning.`
@@ -324,9 +319,7 @@ export function useAddProject(input: {
     setBusy(true)
     setError('')
     try {
-      const result = await request<CloneRepositoryResponse>({
-        type: 'clone_repository',
-        requestId: randomId(),
+      const result = await request<CloneRepositoryResponse>('git.clone', {
         remoteUrl: step.remoteUrl,
         parentPath: resolved.path,
         directoryName: step.repoName,
@@ -337,10 +330,10 @@ export function useAddProject(input: {
       const currentDir = ensureBrowseDirectoryPath(query.trim() || resolved.path)
       const saved = defaultClonePathRef.current
       if (saveAsDefault && currentDir) {
-        await request({ type: 'set_default_clone_path', requestId: randomId(), path: currentDir })
+        await request('git.setDefaultClonePath', { path: currentDir })
         defaultClonePathRef.current = currentDir
       } else if (!saveAsDefault && saved && ensureBrowseDirectoryPath(saved) === currentDir) {
-        await request({ type: 'set_default_clone_path', requestId: randomId(), path: '' })
+        await request('git.setDefaultClonePath', { path: '' })
         defaultClonePathRef.current = null
       }
       input.onAdded(result.path)

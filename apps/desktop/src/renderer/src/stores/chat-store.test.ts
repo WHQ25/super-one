@@ -1,3 +1,4 @@
+import { sessionControlLeaseFixture } from './chat-store/session-control.test-fixtures'
 /** @vitest-environment jsdom */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -781,11 +782,12 @@ describe('concurrent streaming sessions', () => {
     })
 
     useChatStore.getState().handleAgentEvent({
-      type: 'remote_session_start',
-      remoteProjectPath: '/test',
-      remoteSessionId: 'remote-1',
-      isSubscribe: true,
-    } as AgentEvent)
+    type: "session_control_changed",
+    projectPath: '/test',
+    sessionId: 'remote-1',
+    lease: sessionControlLeaseFixture('remote-1'),
+    harnessId: "claude"
+} as AgentEvent)
 
     await Promise.resolve()
     await Promise.resolve()
@@ -824,11 +826,12 @@ describe('concurrent streaming sessions', () => {
       mockWindowApp.loadSessionState.mockImplementation(() => loadPromise as Promise<never>)
 
       useChatStore.getState().handleAgentEvent({
-        type: 'remote_session_start',
-        remoteProjectPath: '/test',
-        remoteSessionId: 'remote-1',
-        isSubscribe: true,
-      } as AgentEvent)
+    type: "session_control_changed",
+    projectPath: '/test',
+    sessionId: 'remote-1',
+    lease: sessionControlLeaseFixture('remote-1'),
+    harnessId: "claude"
+} as AgentEvent)
 
       useChatStore.getState().handleAgentEvent(makeEvent({
         type: 'message_start',
@@ -5554,10 +5557,12 @@ describe('remote session interaction routing', () => {
       },
     })
     useChatStore.getState().handleAgentEvent({
-      type: 'remote_session_start',
-      remoteProjectPath: '/test',
-      remoteSessionId: 'remote-1',
-    } as AgentEvent)
+    type: "session_control_changed",
+    projectPath: '/test',
+    sessionId: 'remote-1',
+    lease: sessionControlLeaseFixture('remote-1'),
+    harnessId: "claude"
+} as AgentEvent)
   }
 
   it('routes remote session permission_request to its own session, not active session', () => {
@@ -5652,27 +5657,29 @@ describe('remote session interaction routing', () => {
     expect(after.planApprovalOutcome).toEqual({ approved: true })
   })
 
-  it('marks the lazily-created remote session as codex when harnessId=codex on remote_session_start', () => {
+  it('marks the lazily-created remote session as codex when harnessId=codex on session_control_changed', () => {
     setupProject('/test')
     useChatStore.getState().handleAgentEvent({
-      type: 'remote_session_start',
-      remoteProjectPath: '/test',
-      remoteSessionId: 'mobile-codex-1',
-      harnessId: 'codex',
-    } as AgentEvent)
+    type: "session_control_changed",
+    projectPath: '/test',
+    sessionId: 'mobile-codex-1',
+    harnessId: 'codex',
+    lease: sessionControlLeaseFixture('mobile-codex-1')
+} as AgentEvent)
     const after = useChatStore.getState().projectSessions['/test']
     expect(after._sessions['mobile-codex-1'].sessionProvider).toBe('codex')
     expect(after._sessions['mobile-codex-1'].preferredProvider).toBe('codex')
   })
 
-  it('marks the lazily-created remote session as claude when harnessId=claude on remote_session_start', () => {
+  it('marks the lazily-created remote session as claude when harnessId=claude on session_control_changed', () => {
     setupProject('/test')
     useChatStore.getState().handleAgentEvent({
-      type: 'remote_session_start',
-      remoteProjectPath: '/test',
-      remoteSessionId: 'mobile-claude-1',
-      harnessId: 'claude',
-    } as AgentEvent)
+    type: "session_control_changed",
+    projectPath: '/test',
+    sessionId: 'mobile-claude-1',
+    harnessId: 'claude',
+    lease: sessionControlLeaseFixture('mobile-claude-1')
+} as AgentEvent)
     const after = useChatStore.getState().projectSessions['/test']
     expect(after._sessions['mobile-claude-1'].sessionProvider).toBe('claude')
     expect(after._sessions['mobile-claude-1'].preferredProvider).toBe('claude')
@@ -5681,53 +5688,56 @@ describe('remote session interaction routing', () => {
   it('carries acpAgentId so a mobile Grok session is branded instead of ACP fallback', () => {
     setupProject('/test')
     useChatStore.getState().handleAgentEvent({
-      type: 'remote_session_start',
-      remoteProjectPath: '/test',
-      remoteSessionId: 'mobile-grok-1',
-      harnessId: 'acp',
-      acpAgentId: 'grok-build',
-    } as AgentEvent)
+    type: "session_control_changed",
+    projectPath: '/test',
+    sessionId: 'mobile-grok-1',
+    harnessId: 'acp',
+    acpAgentId: 'grok-build',
+    lease: sessionControlLeaseFixture('mobile-grok-1')
+} as AgentEvent)
     const after = useChatStore.getState().projectSessions['/test']
     expect(after._sessions['mobile-grok-1'].sessionProvider).toBe('acp')
     expect(after._sessions['mobile-grok-1'].preferredProvider).toBe('acp')
     expect(after._sessions['mobile-grok-1'].acpAgentId).toBe('grok-build')
   })
 
-  it('does not overwrite an already-set acpAgentId on later remote_session_start', () => {
+  it('does not overwrite an already-set acpAgentId on later session_control_changed', () => {
     setupProject('/test')
     useChatStore.getState().handleAgentEvent({
-      type: 'remote_session_start',
-      remoteProjectPath: '/test',
-      remoteSessionId: 'mobile-grok-2',
-      harnessId: 'acp',
-      acpAgentId: 'grok-build',
-    } as AgentEvent)
+    type: "session_control_changed",
+    projectPath: '/test',
+    sessionId: 'mobile-grok-2',
+    harnessId: 'acp',
+    acpAgentId: 'grok-build',
+    lease: sessionControlLeaseFixture('mobile-grok-2')
+} as AgentEvent)
     useChatStore.getState().handleAgentEvent({
-      type: 'remote_session_start',
-      remoteProjectPath: '/test',
-      remoteSessionId: 'mobile-grok-2',
-      harnessId: 'acp',
-      isSubscribe: true,
-    } as AgentEvent)
+    type: "session_control_changed",
+    projectPath: '/test',
+    sessionId: 'mobile-grok-2',
+    harnessId: 'acp',
+    lease: sessionControlLeaseFixture('mobile-grok-2')
+} as AgentEvent)
     const after = useChatStore.getState().projectSessions['/test']
     expect(after._sessions['mobile-grok-2'].acpAgentId).toBe('grok-build')
   })
 
-  it('does not overwrite an already-set sessionProvider on later remote_session_start (e.g. subscribe replay)', () => {
+  it('does not overwrite an already-set sessionProvider on later session_control_changed (e.g. subscribe replay)', () => {
     setupProject('/test')
     useChatStore.getState().handleAgentEvent({
-      type: 'remote_session_start',
-      remoteProjectPath: '/test',
-      remoteSessionId: 'mobile-codex-2',
-      harnessId: 'codex',
-    } as AgentEvent)
+    type: "session_control_changed",
+    projectPath: '/test',
+    sessionId: 'mobile-codex-2',
+    harnessId: 'codex',
+    lease: sessionControlLeaseFixture('mobile-codex-2')
+} as AgentEvent)
     useChatStore.getState().handleAgentEvent({
-      type: 'remote_session_start',
-      remoteProjectPath: '/test',
-      remoteSessionId: 'mobile-codex-2',
-      harnessId: 'claude',
-      isSubscribe: true,
-    } as AgentEvent)
+    type: "session_control_changed",
+    projectPath: '/test',
+    sessionId: 'mobile-codex-2',
+    harnessId: 'claude',
+    lease: sessionControlLeaseFixture('mobile-codex-2')
+} as AgentEvent)
     const after = useChatStore.getState().projectSessions['/test']
     expect(after._sessions['mobile-codex-2'].sessionProvider).toBe('codex')
   })
@@ -6669,28 +6679,48 @@ describe('multi-mobile remoteSessions tracking', () => {
   it('tracks two concurrent remote sessions independently (no overwrite)', () => {
     setupProject('/test')
     useChatStore.getState().handleAgentEvent({
-      type: 'remote_session_start', remoteProjectPath: '/test', remoteSessionId: 'sess-A', isSubscribe: true,
-    } as AgentEvent)
+    type: "session_control_changed",
+    projectPath: '/test',
+    sessionId: 'sess-A',
+    lease: sessionControlLeaseFixture('sess-A'),
+    harnessId: "claude"
+} as AgentEvent)
     useChatStore.getState().handleAgentEvent({
-      type: 'remote_session_start', remoteProjectPath: '/test', remoteSessionId: 'sess-B', isSubscribe: true,
-    } as AgentEvent)
+    type: "session_control_changed",
+    projectPath: '/test',
+    sessionId: 'sess-B',
+    lease: sessionControlLeaseFixture('sess-B'),
+    harnessId: "claude"
+} as AgentEvent)
 
     const ids = useChatStore.getState().remoteSessions['/test'] ?? []
     expect(new Set(ids)).toEqual(new Set(['sess-A', 'sess-B']))
   })
 
-  it('remote_session_end for one session does not clear the other', () => {
+  it('session control revocation for one session does not clear the other', () => {
     setupProject('/test')
     useChatStore.getState().handleAgentEvent({
-      type: 'remote_session_start', remoteProjectPath: '/test', remoteSessionId: 'sess-A', isSubscribe: true,
-    } as AgentEvent)
+    type: "session_control_changed",
+    projectPath: '/test',
+    sessionId: 'sess-A',
+    lease: sessionControlLeaseFixture('sess-A'),
+    harnessId: "claude"
+} as AgentEvent)
     useChatStore.getState().handleAgentEvent({
-      type: 'remote_session_start', remoteProjectPath: '/test', remoteSessionId: 'sess-B', isSubscribe: true,
-    } as AgentEvent)
+    type: "session_control_changed",
+    projectPath: '/test',
+    sessionId: 'sess-B',
+    lease: sessionControlLeaseFixture('sess-B'),
+    harnessId: "claude"
+} as AgentEvent)
 
     useChatStore.getState().handleAgentEvent({
-      type: 'remote_session_end', remoteProjectPath: '/test', remoteSessionId: 'sess-A', isSubscribe: true,
-    } as AgentEvent)
+    type: "session_control_changed",
+    projectPath: '/test',
+    sessionId: 'sess-A',
+    lease: null,
+    harnessId: "claude"
+} as AgentEvent)
 
     expect(useChatStore.getState().remoteSessions['/test']).toEqual(['sess-B'])
   })
@@ -6698,11 +6728,19 @@ describe('multi-mobile remoteSessions tracking', () => {
   it('removes the project key from remoteSessions when its last remote session ends', () => {
     setupProject('/test')
     useChatStore.getState().handleAgentEvent({
-      type: 'remote_session_start', remoteProjectPath: '/test', remoteSessionId: 'sess-A', isSubscribe: true,
-    } as AgentEvent)
+    type: "session_control_changed",
+    projectPath: '/test',
+    sessionId: 'sess-A',
+    lease: sessionControlLeaseFixture('sess-A'),
+    harnessId: "claude"
+} as AgentEvent)
     useChatStore.getState().handleAgentEvent({
-      type: 'remote_session_end', remoteProjectPath: '/test', remoteSessionId: 'sess-A', isSubscribe: true,
-    } as AgentEvent)
+    type: "session_control_changed",
+    projectPath: '/test',
+    sessionId: 'sess-A',
+    lease: null,
+    harnessId: "claude"
+} as AgentEvent)
 
     expect(useChatStore.getState().remoteSessions['/test']).toBeUndefined()
   })
@@ -6710,8 +6748,12 @@ describe('multi-mobile remoteSessions tracking', () => {
   it('user_message_appended event echoes a remote-origin user message into the routed session', () => {
     setupProject('/test')
     useChatStore.getState().handleAgentEvent({
-      type: 'remote_session_start', remoteProjectPath: '/test', remoteSessionId: 'sess-A', isSubscribe: true,
-    } as AgentEvent)
+    type: "session_control_changed",
+    projectPath: '/test',
+    sessionId: 'sess-A',
+    lease: sessionControlLeaseFixture('sess-A'),
+    harnessId: "claude"
+} as AgentEvent)
 
     const userMsg = makeMessage('user-1', 'user' as never)
     useChatStore.getState().handleAgentEvent(makeEvent({
@@ -6724,41 +6766,65 @@ describe('multi-mobile remoteSessions tracking', () => {
     expect(sess.messages.map((m) => m.id)).toContain('user-1')
   })
 
-  it('ownership-only remote_session_start (no isSubscribe) does NOT add to remoteSessions', () => {
+  it('a native phone grant marks its session controlled without an observation flag', () => {
     setupProject('/test')
     useChatStore.getState().handleAgentEvent({
-      type: 'remote_session_start', remoteProjectPath: '/test', remoteSessionId: 'sess-A',
-    } as AgentEvent)
-    expect(useChatStore.getState().remoteSessions['/test']).toBeUndefined()
-  })
-
-  it('ownership-only remote_session_end (no isSubscribe) does NOT remove a subscribed session', () => {
-    setupProject('/test')
-    useChatStore.getState().handleAgentEvent({
-      type: 'remote_session_start', remoteProjectPath: '/test', remoteSessionId: 'sess-A', isSubscribe: true,
-    } as AgentEvent)
-    useChatStore.getState().handleAgentEvent({
-      type: 'remote_session_end', remoteProjectPath: '/test', remoteSessionId: 'sess-A',
-    } as AgentEvent)
+    type: "session_control_changed",
+    projectPath: '/test',
+    sessionId: 'sess-A',
+    lease: sessionControlLeaseFixture('sess-A'),
+    harnessId: "claude"
+} as AgentEvent)
     expect(useChatStore.getState().remoteSessions['/test']).toEqual(['sess-A'])
   })
 
-  it('subscribe-tagged remote_session_end removes the session', () => {
+  it('native revocation clears the controlled session without an observation flag', () => {
     setupProject('/test')
     useChatStore.getState().handleAgentEvent({
-      type: 'remote_session_start', remoteProjectPath: '/test', remoteSessionId: 'sess-A', isSubscribe: true,
-    } as AgentEvent)
+    type: "session_control_changed",
+    projectPath: '/test',
+    sessionId: 'sess-A',
+    lease: sessionControlLeaseFixture('sess-A'),
+    harnessId: "claude"
+} as AgentEvent)
     useChatStore.getState().handleAgentEvent({
-      type: 'remote_session_end', remoteProjectPath: '/test', remoteSessionId: 'sess-A', isSubscribe: true,
-    } as AgentEvent)
+    type: "session_control_changed",
+    projectPath: '/test',
+    sessionId: 'sess-A',
+    lease: null,
+    harnessId: "claude"
+} as AgentEvent)
+    expect(useChatStore.getState().remoteSessions['/test']).toBeUndefined()
+  })
+
+  it('subscribe-tagged session control revocation removes the session', () => {
+    setupProject('/test')
+    useChatStore.getState().handleAgentEvent({
+    type: "session_control_changed",
+    projectPath: '/test',
+    sessionId: 'sess-A',
+    lease: sessionControlLeaseFixture('sess-A'),
+    harnessId: "claude"
+} as AgentEvent)
+    useChatStore.getState().handleAgentEvent({
+    type: "session_control_changed",
+    projectPath: '/test',
+    sessionId: 'sess-A',
+    lease: null,
+    harnessId: "claude"
+} as AgentEvent)
     expect(useChatStore.getState().remoteSessions['/test']).toBeUndefined()
   })
 
   it('user_message_appended is idempotent (duplicate id is not appended twice)', () => {
     setupProject('/test')
     useChatStore.getState().handleAgentEvent({
-      type: 'remote_session_start', remoteProjectPath: '/test', remoteSessionId: 'sess-A', isSubscribe: true,
-    } as AgentEvent)
+    type: "session_control_changed",
+    projectPath: '/test',
+    sessionId: 'sess-A',
+    lease: sessionControlLeaseFixture('sess-A'),
+    harnessId: "claude"
+} as AgentEvent)
 
     const userMsg = makeMessage('user-1', 'user' as never)
     useChatStore.getState().handleAgentEvent(makeEvent({

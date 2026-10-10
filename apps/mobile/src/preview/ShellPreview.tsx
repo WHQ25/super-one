@@ -338,7 +338,7 @@ export function ShellPreview({ initialPage = 'New session', initialHarness = 'cl
   // landing can name what the picker just cloned.
   const [projectList, setProjectList] = useState(previewProjects)
   const addProject = useAddProject({
-    request: previewAddProjectRequest,
+    rpc: previewAddProjectRequest,
     onAdded: (path) => {
       const name = path.split('/').filter(Boolean).pop() ?? path
       setProjectList((current) => current.some((item) => item.path === path)

@@ -11,6 +11,9 @@ export interface DeliveryPolicy {
   surface: ClientSurface
 }
 
+/** Relay draft readers need the latest autosave, not every typing pause. */
+export const DRAFT_SAVE_INTERVAL_MS = 5_000
+
 /**
  * The route a connection actually uses. Taken from the path the supervisor or
  * phone link chose, never from the URL: an SSH forward is loopback.

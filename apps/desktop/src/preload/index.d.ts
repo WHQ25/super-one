@@ -815,7 +815,6 @@ interface AppAPI {
   getRemoteConfig(): Promise<RemoteDeviceConfig | null>
   saveRemoteConfig(config: RemoteDeviceConfig): Promise<void>
   onRecentFoldersChanged(callback: (folders: unknown[]) => void): () => void
-  onRemoteCommand(callback: (command: unknown) => void): () => void
   onClientRegistered(callback: (info: { deviceName: string }) => void): () => void
   listPairedDevices(): Promise<import('@superone/shared/agent-types').PairedDevice[]>
   removePairedDevice(id: string): Promise<void>

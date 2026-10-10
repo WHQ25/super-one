@@ -79,7 +79,7 @@ const GOAL_COMMAND: SlashCommandInfo = {
  * failing the whole catalog.
  */
 export async function requestSlashCatalog(
-  client: Pick<RelayClient, 'request'>,
+  client: import('./harness-resource-cache').HarnessResourceClient,
   projectPath: string,
   provider: HarnessId,
   acpAgentId?: string | null,
@@ -92,7 +92,7 @@ export async function requestSlashCatalog(
 }
 
 export function peekSlashCatalog(
-  client: Pick<RelayClient, 'request'>,
+  client: import('./harness-resource-cache').HarnessResourceClient,
   projectPath: string,
   provider: HarnessId,
   acpAgentId?: string | null,

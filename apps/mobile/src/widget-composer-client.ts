@@ -1,12 +1,12 @@
 import type { RelayClient } from '@superone/relay-client'
-import type { ComposerOpenResult, ComposerOutcomeResult, ComposerSettledEvent, RemoteCommand } from '@superone/shared/agent-types'
+import type { ComposerOpenResult, ComposerOutcomeResult, ComposerSettledEvent } from '@superone/shared/agent-types'
 import type { SuperOneComposerOutcome } from '@superone/shared/composer-api'
 import type { ComposerViewRequest } from '@superone/shared/composer-view-bridge'
 import type { InputRequestSpec } from '@superone/shared/input-request'
-import { randomId } from './ids'
+import { runtimeSessionRef } from './runtime-session-rpc'
 
-type Owner = { projectPath: string; sessionId: string }
-type Release = Extract<RemoteCommand, { type: 'composer_cancel' }>
+type Owner = { projectPath: string; sessionId: string; environmentId?: string | null }
+type Release = Owner & { viewId: string; localId?: string }
 export type WidgetComposerResult = { viewId: string; localId: string; outcome?: SuperOneComposerOutcome; error?: string }
 type Pending = ComposerViewRequest & Owner & { requestId?: string; early?: ComposerSettledEvent }
 
@@ -22,16 +22,29 @@ export function setComposerConnection(client: RelayClient, ready: boolean): void
 function release(client: RelayClient, command: Release): void {
   let queue = releases.get(client)
   if (!queue) { queue = new Map(); releases.set(client, queue) }
-  queue.set(JSON.stringify([command.projectPath, command.sessionId, command.viewId, command.localId]), command)
+  queue.set(JSON.stringify([command.environmentId, command.projectPath, command.sessionId, command.viewId, command.localId]), command)
   flushComposerReleases(client)
 }
+const releasing = new WeakMap<RelayClient, Promise<void>>()
 export function flushComposerReleases(client: RelayClient): void {
-  if (!client.connected || connectionReady.get(client) === false) return
+  if (!client.connected || connectionReady.get(client) === false || releasing.has(client)) return
   const queue = releases.get(client)
-  if (!queue) return
-  for (const [key, command] of queue) {
-    try { client.send(command); queue.delete(key) } catch { return }
-  }
+  if (!queue?.size) return
+  let completed = false
+  const pending = (async () => {
+    for (const [key, command] of queue) {
+      try {
+        const session = runtimeSessionRef(client, command.sessionId, command.environmentId ?? null)
+        await client.rpc('composer.cancel', { sessionId: session.sessionId, viewId: command.viewId, ...(command.localId ? { localId: command.localId } : {}) }, { environmentId: session.environmentId })
+        if (queue.get(key) === command) queue.delete(key)
+      } catch { return }
+    }
+    completed = true
+  })().finally(() => {
+    releasing.delete(client)
+    if (completed && queue.size) flushComposerReleases(client)
+  })
+  releasing.set(client, pending)
 }
 
 /** Short opening receipt, private completion push, and one recovery read per reconnect. */
@@ -53,10 +66,11 @@ export class WidgetComposerClient {
     const entry: Pending = { ...request, ...owner }
     this.pending.set(key, entry)
     try {
-      const result = await this.client.request({ type: 'composer_open', requestId: randomId(), ...owner,
+      const resource = runtimeSessionRef(this.client, owner.sessionId, owner.environmentId ?? null)
+      const result = await this.client.controlledRpc<ComposerOpenResult>(resource, 'composer.open', {
         messageId: request.messageId, viewId: request.viewId, localId: request.localId,
         spec: request.spec as InputRequestSpec, output: request.output,
-      }) as ComposerOpenResult
+      })
       if (result?.ok !== true || typeof result.requestId !== 'string' || !result.requestId) {
         this.pending.delete(key)
         if (result?.ok === false) return result
@@ -66,13 +80,13 @@ export class WidgetComposerClient {
       if (this.pending.get(key) !== entry) {
         // Disposal can overtake the opening receipt. Release once more after
         // admission, when the host is guaranteed to have registered the holder.
-        release(this.client, { type: 'composer_cancel', ...owner, viewId: request.viewId })
+        release(this.client, { ...owner, viewId: request.viewId })
       } else if (entry.early?.requestId === result.requestId) this.settle(key, entry, entry.early.outcome)
       return result
     } catch (error) {
       this.pending.delete(key)
       // An acknowledgement lost in transit does not prove admission failed.
-      release(this.client, { type: 'composer_cancel', ...owner, viewId: request.viewId, localId: request.localId })
+      release(this.client, { ...owner, viewId: request.viewId, localId: request.localId })
       throw error
     }
   }
@@ -92,9 +106,10 @@ export class WidgetComposerClient {
     const recover = Promise.all([...this.pending].map(async ([key, entry]) => {
       if (!entry.requestId) return
       try {
-        const result = await this.client.request({ type: 'composer_outcome', requestId: randomId(),
-          projectPath: entry.projectPath, sessionId: entry.sessionId, inputRequestId: entry.requestId,
-        }) as ComposerOutcomeResult
+        const resource = runtimeSessionRef(this.client, entry.sessionId, entry.environmentId ?? null)
+        const result = await this.client.rpc<ComposerOutcomeResult>('composer.outcome', {
+          sessionId: entry.sessionId, inputRequestId: entry.requestId,
+        }, { environmentId: resource.environmentId })
         if (this.pending.get(key) !== entry) return
         if (result.state === 'settled') this.settle(key, entry, result.outcome)
         else if (result.state === 'unknown') {
@@ -117,7 +132,7 @@ export class WidgetComposerClient {
       this.deliver({ viewId, localId: entry.localId, outcome: { status: 'cancelled', reason: 'owner_disposed' } })
     }
     for (const owner of owners.values()) release(this.client, {
-      type: 'composer_cancel', projectPath: owner.projectPath, sessionId: owner.sessionId, viewId,
+      projectPath: owner.projectPath, sessionId: owner.sessionId, environmentId: owner.environmentId, viewId,
     })
   }
 

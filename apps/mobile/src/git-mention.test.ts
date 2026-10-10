@@ -1,3 +1,4 @@
+import { resolveTestProject } from './project-rpc.test-fixtures'
 import { describe, expect, it, vi } from 'vitest'
 import {
   gitEmptyLabel, gitKindItems, gitRefItems, isGitMentionQuery, parseGitMentionQuery, requestGitMentionRefs,
@@ -102,10 +103,10 @@ describe('portal availability', () => {
 describe('host request and empty copy', () => {
   it('asks the host with the session project and surfaces its answer', async () => {
     const request = vi.fn(async () => ({ ok: true, refs: [] }))
-    await expect(requestGitMentionRefs({ request }, '/work/super-one', 'tag', 'v0')).resolves.toEqual({ ok: true, refs: [] })
-    expect(request).toHaveBeenCalledWith(expect.objectContaining({ type: 'list_git_mention_refs', projectPath: '/work/super-one', kind: 'tag', query: 'v0' }))
+    await expect(requestGitMentionRefs({ resolveProject: resolveTestProject, rpc: request }, '/work/super-one', 'tag', 'v0')).resolves.toEqual({ ok: true, refs: [] })
+    expect(request).toHaveBeenCalledWith('git.mentionRefs', { projectId: 'p', kind: 'tag', query: 'v0' }, { environmentId: 'desktop' })
     const failing = vi.fn(async () => ({ error: 'offline' }))
-    await expect(requestGitMentionRefs({ request: failing }, '/p', 'tag', '')).rejects.toThrow('offline')
+    await expect(requestGitMentionRefs({ resolveProject: resolveTestProject, rpc: failing }, '/p', 'tag', '')).rejects.toThrow('offline')
   })
 
   it('names the phase, or the reason the host could not answer', () => {

@@ -1,5 +1,4 @@
 import { createCipheriv, createDecipheriv } from 'node:crypto'
-import type { RemoteCommand } from '@superone/shared/agent-types'
 import { setCryptoBackend, type AesGcm } from '@superone/relay-client'
 import { LINK_CHANNEL_FRAME, openLinkFrame, sealLinkFrame, type LinkHandshakeInfo, type LinkHeader } from '@superone/relay-client/phone-link'
 import { acceptClientHello, type SecureChannel } from '@superone/relay-client/secure-channel'
@@ -141,16 +140,15 @@ export function sealHostFrame(channel: SecureChannel, header: Exclude<LinkHeader
   return sealLinkFrame(channel, header, framed)
 }
 
-/** What a phone sent: a link command, or a protocol frame for its connection. */
-export type PhoneFrame = { kind: 'command'; command: RemoteCommand } | { kind: 'rpc'; frame: Uint8Array }
+/** The phone's native protocol frame for its authenticated connection. */
+export type PhoneFrame = { kind: 'rpc'; frame: Uint8Array }
 
 /** Open a phone's sealed frame; throws on tampering, replay or a frame a phone does not send. */
 export function openPhoneFrame(channel: SecureChannel, data: string): PhoneFrame {
   const { header, payload } = openLinkFrame(channel, data)
-  if (header.t === 'rpc') return { kind: 'rpc', frame: payload }
-  if (header.t !== 'command') throw new Error(`expected command, got ${header.t}`)
-  return { kind: 'command', command: JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(payload)) as RemoteCommand }
+  if (header.t !== 'rpc') throw new Error(`expected rpc, got ${header.t}`)
+  return { kind: 'rpc', frame: payload }
 }
 
 /** Envelope type of a host's protocol frames: forwarded by the relay to its `targets` as sealed. */
-export const PHONE_RPC_ENVELOPE = 'terminal'
+export { PHONE_RPC_ENVELOPE } from '@superone/relay-client/phone-link'

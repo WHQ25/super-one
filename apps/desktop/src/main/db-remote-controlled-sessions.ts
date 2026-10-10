@@ -18,6 +18,9 @@ export interface RemoteControllerRecord {
   sandboxMode?: string | null
   model?: string | null
   effort?: string | null
+  mode?: string | null
+  agentPreset?: string | null
+  additionalDirectories?: string[] | null
   /** Credential id on this desktop the session runs on; absent follows the binding. */
   apiProviderId?: string | null
   systemPromptAppend?: string | null
@@ -37,6 +40,10 @@ export interface DesktopSessionRow {
   providerId: string | null
   providerSessionId: string | null
   worktreePath: string | null
+  isWorktree?: boolean
+  gitBranch?: string | null
+  contextTokens?: number
+  totalCostUsd?: number
   isPinned: boolean
   isHidden: boolean
   isUserRenamed: boolean
@@ -75,7 +82,8 @@ export function setSessionRemoteController(sessionId: string, controller: Remote
 
 const SELECT = `
   SELECT s.id, s.project_id, p.path AS project_path, s.title, s.provider, s.provider_id, s.provider_session_id,
-         s.worktree_path, s.is_pinned, s.is_hidden, s.is_user_renamed, s.tags_json, s.created_at,
+         s.worktree_path, s.is_worktree, s.git_branch, s.context_tokens, s.total_cost_usd,
+         s.is_pinned, s.is_hidden, s.is_user_renamed, s.tags_json, s.created_at,
          COALESCE(s.last_user_message_at, s.created_at) AS updated_at, s.remote_controller_json
   FROM sessions s JOIN projects p ON p.id = s.project_id`
 const CONTROLLED = 'WHERE s.remote_controller_json IS NOT NULL'
@@ -89,6 +97,10 @@ interface Row {
   provider_id: string | null
   provider_session_id: string | null
   worktree_path: string | null
+  is_worktree: number | null
+  git_branch: string | null
+  context_tokens: number | null
+  total_cost_usd: number | null
   is_pinned: number | null
   is_hidden: number | null
   is_user_renamed: number | null
@@ -108,6 +120,10 @@ function toRow(r: Row): DesktopSessionRow {
     providerId: r.provider_id,
     providerSessionId: r.provider_session_id,
     worktreePath: r.worktree_path,
+    isWorktree: !!r.is_worktree,
+    gitBranch: r.git_branch,
+    contextTokens: r.context_tokens ?? 0,
+    totalCostUsd: r.total_cost_usd ?? 0,
     isPinned: !!r.is_pinned,
     isHidden: !!r.is_hidden,
     isUserRenamed: !!r.is_user_renamed,

@@ -24,11 +24,12 @@ export function createDesktopTerminalsPort(
     list: () => manager.list(),
     create: (opts) => {
       void ensureShellPath()
-      const term = manager.create({ cwd: opts.cwd, title: opts.title ?? (basename(opts.cwd) || 'Terminal'), cols: opts.cols, rows: opts.rows })
+      const term = manager.create({ cwd: opts.cwd, projectPath: opts.projectPath, title: opts.title ?? (basename(opts.cwd) || 'Terminal'), cols: opts.cols, rows: opts.rows })
       return { terminalId: term.terminalId, cwd: term.cwd, title: term.title, cols: term.cols, rows: term.rows }
     },
-    attach: async (terminalId) => {
-      const { snapshot, ansi } = await live(terminalId).attachState('local')
+    attach: async (terminalId, clientSessionId) => {
+      const requester = clientSessionId?.startsWith('phone:') ? clientSessionId.slice(6) : 'local'
+      const { snapshot, ansi } = await live(terminalId).attachState(requester)
       return { snapshot: ansi, sequence: String(snapshot.lastSeq), terminal: snapshot }
     },
     readAfter: async (terminalId, afterSequence): Promise<TerminalReadResult> => {
@@ -47,5 +48,8 @@ export function createDesktopTerminalsPort(
       manager.kill(terminalId)
     },
     onEvent,
+    eventForClient: (event, clientSessionId) => event.type === 'terminal_owner_changed'
+      ? { ...event, writableByMe: clientSessionId === `phone:${event.ownerDeviceId}` }
+      : event,
   }
 }

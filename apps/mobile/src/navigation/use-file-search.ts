@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import type { RelayClient } from '@superone/relay-client'
-import type { FileSearchResult, RemoteCommand } from '@superone/shared/agent-types'
-import { randomId } from '../ids'
+import type { FileSearchResult } from '@superone/shared/agent-types'
+import { projectRpc } from '../project-rpc'
 
 const DEBOUNCE_MS = 200
 
@@ -32,9 +32,7 @@ export function useFileSearch(clientRef: RefObject<RelayClient | null>, root: st
     const timer = setTimeout(() => {
       const client = clientRef.current
       if (!client) return
-      void client.request({
-        type: 'search_files', requestId: randomId(), root, query: trimmed, limit: 40,
-      } as RemoteCommand).then((response) => {
+      void projectRpc(client, root, 'files.search', { query: trimmed, limit: 40 }).then((response) => {
         if (request !== generation.current) return
         setResults((response as { results?: FileSearchResult[] }).results ?? [])
         setSearched(true)

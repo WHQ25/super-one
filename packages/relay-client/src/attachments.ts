@@ -1,6 +1,5 @@
 import type {
   InputRequestUploadBinding,
-  RemoteCommand,
   UploadFileCompleteResponse,
   UploadFileResponse,
 } from '@superone/shared/agent-types'
@@ -28,7 +27,7 @@ export type UploadBytesOptions = {
   lanHost?: string
   aesKeyBytes?: Uint8Array
   channelKeyHex?: string
-  request: (command: RemoteCommand, timeoutMs: number) => Promise<unknown>
+  rpc: (method: 'files.upload' | 'files.uploadComplete', payload: Record<string, unknown>, timeoutMs: number) => Promise<unknown>
   put: HttpPut
 }
 
@@ -69,7 +68,7 @@ function parseCompleteResponse(value: unknown): UploadFileCompleteResponse {
 }
 
 /**
- * Finish an upload_file RPC. Small files come back `saved`; large ones need a
+ * Finish a native upload RPC. Small files come back `saved`; large ones need a
  * LAN PUT (which saves directly) or encrypted relay R2 PUT plus completion.
  */
 export async function finishUpload(opts: {
@@ -98,9 +97,8 @@ export async function uploadBytes(opts: UploadBytesOptions): Promise<string> {
   if (size > MAX_UPLOAD_BYTES) throw new Error('File too large to upload (max 100 MB)')
   if (!opts.name || !opts.targetDir || !opts.mimeType) throw new Error('upload: missing file metadata')
 
-  const command: RemoteCommand = {
-    type: 'upload_file',
-    requestId: opts.requestId,
+  const payload = {
+    uploadId: opts.requestId,
     ...(opts.projectPath ? { projectPath: opts.projectPath } : {}),
     ...(opts.sessionId ? { sessionId: opts.sessionId } : {}),
     targetDir: opts.targetDir,
@@ -110,7 +108,7 @@ export async function uploadBytes(opts: UploadBytesOptions): Promise<string> {
     ...(size <= INLINE_UPLOAD_MAX_BYTES ? { inlineBase64: bytesToBase64String(opts.bytes) } : {}),
     ...(opts.inputRequest ? { inputRequest: opts.inputRequest } : {}),
   }
-  const response = parseUploadResponse(await opts.request(command, 180_000))
+  const response = parseUploadResponse(await opts.rpc('files.upload', payload, 180_000))
   if (!response.ok || response.status === 'saved') {
     return finishUpload({
       response,
@@ -134,10 +132,7 @@ export async function uploadBytes(opts: UploadBytesOptions): Promise<string> {
     mimeType: putMimeType,
     lanHost: opts.transport === 'lan' ? opts.lanHost : undefined,
     put: opts.put,
-    complete: async () => parseCompleteResponse(await opts.request({
-      type: 'upload_file_complete',
-      requestId: opts.requestId,
-    }, 180_000)),
+    complete: async () => parseCompleteResponse(await opts.rpc('files.uploadComplete', { uploadId: opts.requestId }, 180_000)),
   })
 }
 

@@ -1,5 +1,4 @@
 import { hostLinkOf, type MobileIdentity, type RelayClient, type SavedPairing } from '@superone/relay-client'
-import type { RemoteCommand } from '@superone/shared/agent-types'
 import type { LanAddress } from './device-discovery'
 import { createMobileRelayConnection } from './mobile-relay-connection'
 
@@ -40,16 +39,17 @@ export async function requestSavedDesktop(opts: {
   identity: MobileIdentity
   resolveLan: (pairingId: string) => Promise<LanAddress | null>
   active: { pairingId: string | null; client: RelayClient | null }
-  command: RemoteCommand
+  method: string
+  payload: Record<string, unknown>
   timeoutMs?: number
 }): Promise<unknown> {
   if (opts.active.client && opts.active.pairingId === opts.pairing.id) {
-    return opts.active.client.request(opts.command, opts.timeoutMs)
+    return opts.active.client.rpc(opts.method, opts.payload, { timeoutMs: opts.timeoutMs, ...(opts.pairing.environmentId ? { environmentId: opts.pairing.environmentId } : {}) })
   }
   const connection = createSideConnection(opts)
   try {
     await connection.dial(await opts.resolveLan(opts.pairing.id))
-    return await connection.client.request(opts.command, opts.timeoutMs)
+    return await connection.client.rpc(opts.method, opts.payload, { timeoutMs: opts.timeoutMs, ...(opts.pairing.environmentId ? { environmentId: opts.pairing.environmentId } : {}) })
   } finally {
     closeSideConnection(connection)
   }

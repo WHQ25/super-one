@@ -70,35 +70,51 @@ When adding or refactoring session (or project/workspace) product surfaces, exte
 
 ### Remote Control (Mobile) Architecture
 
-Session ownership is a **first-class property of the `Session` class itself**, not global service state. Each session carries:
+Session and terminal control comes from the one `DesktopDomain` lease service.
+`SessionLease` and `TerminalLease` derive their control hints from it; neither
+keeps a separate owner authority. The remaining session owner/subscriber API
+adapts legacy phone commands and delivery while the phone client is cut over.
+Observers on protocol topics acquire no control.
 
-- `owner: { kind: 'local' } | { kind: 'remote'; deviceId }` — who is currently driving turns
-- `subscribers: Set<deviceId>` — which mobile devices are viewing
-- `claim/release/subscribe/unsubscribe` API + `onLifecycle` event channel emitting `owner_changed` / `subscriber_added` / `subscriber_removed` / `closed`
+IPC actors come from `event.sender.id` (`window:<id>`); phone actors come from
+an authenticated pairing (`phone:<deviceId>`). Both delegate for this desktop's
+canonical principal. Window grants yield to a phone; phones refuse competing
+phones and windows until release, expiry or explicit reclaim. Every frontend
+mutation checks its grant. A request retains its exact proof across asynchronous
+admission and startup; takeover cannot silently give it a fresh grant. Trusted
+host work uses a separate origin.
 
-`Session.send()` self-guards: when `providerOrigin === 'local'` and the session is owned remotely or has remote subscribers, it throws `SessionLockedError`. Lock checks live inside the session, not in IPC handler `if`-walls.
-
-This owner model covers sessions this desktop runs. A phone on a remote-node session holds the node's control lease instead, as a `delegate` of this desktop ([mobile-remote-control.md](../../../../docs/architecture/mobile-remote-control.md#sessions-on-a-remote-node)); the node database (`DesktopDomain`) is open while the app runs, but local sessions do not move onto its leases yet.
+The local Environment gateway uses `InProcessRpcClient` to dispatch the same
+resource methods as node and phone connections. Network and in-process clients
+share `EnvironmentRpcClient` resource helpers and `RemoteEnvironmentGateway`.
+The domain binds live and resumed sessions before controller adoption; terminal
+IPC is in `terminal/terminal-ipc.ts`.
 
 Main publishes every event through `SessionEventHub` (`src/main/stream/`). In-process consumers with their own state (bookkeeping, automations, notifications, collaboration, scheduled sends) subscribe by source. Frontends receive by topic: `publishHubEvent` (`stream/desktop-topics.ts`) publishes each event to its one topic (a session, the session list, projects, drafts, a terminal, the terminal list, environment notices) on the `TopicHub` from `@superone/runtime/stream`, and each frontend connection receives the topics it follows. The renderer connection follows the union of what the windows show (`stream/renderer-interest.ts`): every local session and terminal (the sidebar and terminal panel list them), plus the remote sessions a window shows (`setSessionForeground`, per window, released on window close) or the chat follows, and attached remote terminals. Delivery to windows stays a broadcast: a session window also follows its side chats and draft-to-session id changes, so a per-window filter would drop events it needs. Each online phone has its own connection (`remote/phone-topics.ts`); list, draft and recovery cursors for topics live in `stream/topic-recovery.ts`.
 
-Modules under `apps/desktop/src/main/remote/`:
+The paired phone endpoint (`node-host/phone-endpoint.ts`) uses the same
+`createConnectionRpc` and native dispatcher as node sockets. `RemoteControlService`
+and `LanServer` authenticate and seal per-link frames; they do not own session
+control or application commands. The authenticated pairing yields the actor
+`phone:<deviceId>` and its key fingerprint. Local IPC, phones and controller
+mutations are fenced by the domain's single `ControlLeaseService`; `SessionLease`
+and `TerminalLease` project the current writer for presentation and recheck
+admitted proofs after async work. Backends have no frontend ownership branches.
 
-| Module | Responsibility |
-|---|---|
-| `device-registry.ts` | Single device-disconnect entry: `handleDeviceDisconnected(deviceId)` walks `sessionManager.forEachSession` and calls `release(deviceId) + unsubscribe(deviceId)`. Also `unsubscribeAll` / `releaseAll` for partial cleanups |
-| `phone-topics.ts` | One topic connection per online phone: lists, drafts and environment notices always; a session while the phone subscribes to or holds it; a terminal while it watches or writes it |
-| `mobile-broadcaster.ts` | The phones' delivery group: list topics to every phone, a session's events to the phones its topic reached, summarized for progressive phones; terminal topics through `terminal-broadcaster.ts` |
+`RoutedPhoneRpcRouter` forwards scoped RPCs to source environments. Its grant
+manager shares a pairing's proof across overlapping links, retires it only after
+the last link and forwards exact upstream loss notices. Renderer observation
+state derives from native `control_changed` events and a startup lease snapshot.
+`RoutedControlPresence` resolves source metadata and projects current routed
+phone control into that same renderer state.
 
-`RemoteControlService` is a pure transport (relay + LAN, frame encoding, encryption). It no longer holds session-control state — `subscribedSession` and `remoteSessionFilter` were deleted; `subscribeSession/unsubscribeSession/setRemoteSessionFilter/clearRemoteSessionFilter/getSubscribedSession` were removed.
-
-Codex and Claude remote turns share a single `ensureRemoteOwnership(deviceId, session, fn, opts?)` helper inside `AgentService`. The helper claims ownership and runs the turn but **does not auto-release** afterwards (mobile claim is persistent; release happens on `leave_session`, `unsubscribe_session`, device disconnect, or desktop kick). Provider backends (Claude, Codex) have zero awareness of ownership.
-
-**Sender deviceId propagation**: `RemoteControlCallbacks.onCommand` carries `source: { deviceId, transport: 'lan' | 'relay' }`. `LanServer` reads it from the per-socket `ClientState`. **Relay** reads it from `frame.mobileDeviceId` injected by `RelaySession` Durable Object (relay protocol now supports `1 desktop : N mobile` per channel — sockets tagged `mobile:<deviceId>`). `AgentService.handleRemoteCommand(cmd, respond, source)` passes the real `source.deviceId` into `session.claim/release/subscribe/unsubscribe` — no placeholder strings, no inference.
-
-**Multi-mobile per channel** (`super-one-relay`): one desktop's channel can host multiple mobile peers concurrently. Each mobile WS is tagged with its `mobileDeviceId` (passed via `?deviceId=` query). Mobile→desktop frames have `mobileDeviceId` injected by relay; desktop→mobile frames are broadcast to all mobile peers (except `kicked` which targets a specific deviceId). `peer_connected`/`peer_disconnected` carry `mobileDeviceId` so desktop only marks that specific device offline.
-
-**`unsubscribe_session` protocol**: optional `sessionId` field. With sessionId → unsubscribe only that session. Without sessionId → unsubscribe all sessions the device is viewing (back-compat). Mobile callers pass the relevant session id on session-scoped unsubscribe; omitting it unsubscribes all sessions.
+The relay can host multiple phones in one desktop room. It injects the sender's
+`mobileDeviceId`, and addressed desktop protocol frames reach that device's slot.
+Each link uses its own authenticated channel and connection state. Topic disposal
+removes read interest; lease release removes mutation authority. These are separate
+lifecycles, with no Session owner or subscriber table. The protocol, upgrade floor,
+recovery, framing and routed contracts are in
+[mobile-remote-control.md](../../../../docs/architecture/mobile-remote-control.md).
 
 ### Component Structure
 

@@ -5,7 +5,7 @@ import { TopicHub, type DeliveryPolicy } from '@superone/runtime/stream'
 import type { HubEvent, HubSource } from './session-event-hub'
 import log from '../logger'
 import type { Session } from '../session/types'
-import { sessionActivityEvent } from '../remote/mobile-broadcaster'
+import { sessionActivityEvent } from '../remote/live-session-activity'
 import type { LocalTopicRecovery } from './topic-recovery'
 
 /**

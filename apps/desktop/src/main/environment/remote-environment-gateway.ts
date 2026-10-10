@@ -55,7 +55,7 @@ import type {
   ResourceProvider,
 } from '@superone/shared/environment'
 import type { ProjectExtraDirsPatch } from '@superone/shared/project-extra-dirs'
-import type { NodeRpcClient, TopicStream } from './node-rpc-client'
+import type { EnvironmentRpcClient, TopicStream } from './environment-rpc-client'
 import type { CodexMcpOauthLoginOptions } from '@superone/shared/agent-types'
 import type { GitMentionRefKind } from '@superone/shared/git-mention-query'
 
@@ -101,7 +101,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
   private descriptorCache: ExecutionEnvironmentDescriptor | null = null
   private fixedEnvironmentId: string | null = null
 
-  constructor(private readonly client: NodeRpcClient) {
+  constructor(private readonly client: EnvironmentRpcClient) {
     this.sessions = this.createSessionGateway()
     this.interactions = this.createInteractionGateway()
     this.terminals = this.createTerminalGateway()
@@ -297,7 +297,8 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
             ...(epoch ? { epoch, versions } : {}),
             topics: topicsNow(),
           },
-          { onFrame: (frame) => { frames.push(frame); notify() }, onEnd: (err) => { ended = err; notify() } },
+          { onFrame: (frame) => { frames.push(frame); notify() }, onEnd: (err) => { ended = err; notify() },
+            onTerminal: input.onTerminal, onDraft: input.onDraft, onTopic: input.onTopic },
         )
         // Watching from before the subscribe: a change made while it is in
         // flight is applied once it opens. If it never opens, the next
@@ -317,6 +318,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
         while (!signal?.aborted) {
           const frame = frames.shift()
           if (frame) {
+            input.onFrame?.(frame)
             if (frame.epoch !== epoch) {
               epoch = frame.epoch
               for (const id of Object.keys(versions)) delete versions[id]
@@ -1217,6 +1219,8 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
           sessionId: input.session.sessionId,
           ...(input.before != null ? { before: input.before } : {}),
           ...(input.limit !== undefined ? { limit: input.limit } : {}),
+          ...(input.anchorId !== undefined ? { anchorId: input.anchorId } : {}),
+          ...(input.direction !== undefined ? { direction: input.direction } : {}),
         })
       },
       subscribeDetail: (input) => {
@@ -1560,7 +1564,10 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
       },
       acquireControl: async (input: LeaseAcquireInput & { resource: TerminalRef }) => {
         this.assertEnv(input.resource.environmentId)
-        return this.client.terminalAcquireControl(input.resource.terminalId, input.ttlMs)
+        return this.client.terminalAcquireControl(input.resource.terminalId, input.ttlMs, {
+          ...(input.delegate ? { delegate: input.delegate } : {}),
+          ...(input.yields !== undefined ? { yields: input.yields } : {}),
+        })
       },
       renewControl: async (input: LeaseRenewInput) => {
         return this.client.rpc<ControlLease>('terminal.renewControl', {

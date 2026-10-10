@@ -3,41 +3,7 @@ import type { CachedTranscript } from '@superone/relay-client'
 import { ChatRuntime } from './runtime'
 import { createNodeSessionEventMapper } from '@superone/shared/node-session-event-map'
 
-function fakeClient(epoch = 1) {
-  const sent: unknown[] = []
-  return {
-    sent,
-    startBuffering() {},
-    releaseBuffer() { return { epoch, batches: [] } },
-    send: vi.fn((cmd: { type: string }) => { sent.push(cmd) }),
-    request: vi.fn(async (cmd: {
-      type: string
-      sessionId?: string
-      attachmentId?: string
-      name?: string
-    }): Promise<Record<string, unknown>> => {
-      sent.push(cmd)
-      if (cmd.type === 'subscribe_session') return { ok: true }
-      if (cmd.type === 'load_session_messages') return { messages: [], hasMore: false }
-      if (cmd.type === 'get_session_state') return { status: 'idle', pendingInteractions: [], inProgressMessages: [] }
-      if (cmd.type === 'create_session') return { ok: true, sessionId: cmd.sessionId }
-      if (cmd.type === 'get_system_info') {
-        return { userSlashCommands: [{ name: 'help' }], permissionModes: ['default', 'plan'], models: [{ id: 'm' }] }
-      }
-      if (cmd.type === 'get_project_resources') {
-        return {
-          projectSlashCommands: [{ name: 'project' }],
-          skills: [{ name: 'ship', description: 'Release' }],
-        }
-      }
-      if (cmd.type === 'get_attachment') {
-        if (cmd.attachmentId === 'gone') return { error: 'That attachment is no longer available' }
-        return { attachment: { id: cmd.attachmentId, name: cmd.name, mimeType: 'image/jpeg', base64: '/9j/' } }
-      }
-      return { ok: true }
-    }),
-  }
-}
+import { runtimeTestClient as fakeClient, sessionLoadFixture } from './runtime-test-client'
 
 afterEach(() => vi.useRealTimers())
 
@@ -56,10 +22,8 @@ describe('ChatRuntime', () => {
   })
   it('sets a new session owner before replaying buffered events and rejects foreign same-ID events', async () => {
     const client = fakeClient()
-    client.request.mockResolvedValueOnce({ ok: true, sessionId: 'same' })
-      .mockResolvedValueOnce({ snapshot: { sourceEnvironmentId: 'desktop' } })
     const ownMessage = { id: 'own', role: 'user', content: [{ type: 'text', text: 'Own message' }], status: 'complete', createdAt: '' }
-    client.releaseBuffer = () => ({ epoch: 1, batches: [[
+    client.releaseBuffer.mockReturnValue({ epoch: 1, batches: [[
       { type: 'user_message_appended', environmentId: 'other', sessionId: 'same', message: { ...ownMessage, id: 'foreign' } },
       { type: 'user_message_appended', environmentId: 'desktop', sessionId: 'same', message: ownMessage },
       { type: 'status_change', environmentId: 'desktop', sessionId: 'same', status: 'streaming' },
@@ -84,26 +48,26 @@ describe('ChatRuntime', () => {
   })
   it('restores the host\'s Claude Ultracode and sends the phone\'s pick only when there is one', async () => {
     const client = fakeClient()
-    const answer = client.request.getMockImplementation()!
-    client.request.mockImplementation(async (cmd) => cmd.type === 'get_session_state'
-      ? { status: 'idle', pendingInteractions: [], inProgressMessages: [], ultracode: true }
+    const answer = client.dispatch.getMockImplementation()!
+    client.dispatch.mockImplementation(async (cmd) => cmd.method === 'session.load'
+      ? sessionLoadFixture({ state: { status: 'idle', ultracode: true } })
       : answer(cmd))
     const runtime = new ChatRuntime(client as never, () => {})
     await runtime.open('/p', 'uc')
     expect(runtime.session.ultracode).toBe(true)
     runtime.send('off now', { ultracode: false })
     runtime.send('no say')
-    const sends = client.sent.filter((cmd) => (cmd as { type: string }).type === 'send_message') as Array<{ content: string }>
-    expect(sends.find((cmd) => cmd.content === 'off now')).toMatchObject({ ultracode: false })
-    expect(sends.find((cmd) => cmd.content === 'no say')).not.toHaveProperty('ultracode')
+    const sends = client.sent.filter((cmd) => (cmd as { method: string }).method === 'session.send') as Array<{ text?: string }>
+    expect(sends.find((cmd) => cmd.text === 'off now')).toMatchObject({ options: { ultracode: false } })
+    expect(sends.find((cmd) => cmd.text === 'no say')).not.toHaveProperty('ultracode')
     runtime.dispose()
   })
   it('restores the session goal from the snapshot, including a goal cleared during the gap', async () => {
     const client = fakeClient()
-    const answer = client.request.getMockImplementation()!
+    const answer = client.dispatch.getMockImplementation()!
     let goal: unknown = { objective: 'ship the fix', status: 'active' }
-    client.request.mockImplementation(async (cmd) => cmd.type === 'get_session_state'
-      ? { status: 'idle', pendingInteractions: [], inProgressMessages: [], goal }
+    client.dispatch.mockImplementation(async (cmd) => cmd.method === 'session.load'
+      ? sessionLoadFixture({ state: { status: 'idle', sessionGoal: goal } })
       : answer(cmd))
     const runtime = new ChatRuntime(client as never, () => {})
     await runtime.open('/p', 'goal')
@@ -137,7 +101,7 @@ describe('ChatRuntime', () => {
     const runtime = new ChatRuntime(client as never, () => {})
     await runtime.create('/p', { provider: 'claude' })
     await runtime.loadSystemInfo('claude')
-    client.request.mockResolvedValueOnce({ permissionModes: [], models: [], agents: [{ id: 'build', name: 'Build' }] })
+    client.dispatch.mockResolvedValueOnce({ permissionModes: [], models: [], agents: [{ id: 'build', name: 'Build' }] })
     await runtime.loadSystemInfo('opencode')
     expect(runtime.permissionModes).toEqual([])
   })
@@ -155,9 +119,9 @@ describe('ChatRuntime', () => {
       sandboxMode: 'auto',
     })
     expect(id).toBeTruthy()
-    expect(client.sent.some((c) => (c as { type: string }).type === 'create_session')).toBe(true)
+    expect(client.sent.some((c) => (c as { method: string }).method === 'session.create')).toBe(true)
     expect(client.sent).toContainEqual(expect.objectContaining({
-      type: 'create_session',
+      method: 'session.create',
       worktreeBranch: 'main',
       worktreeMode: 'branch',
       worktreeBranchName: 'feat/mobile',
@@ -177,43 +141,43 @@ describe('ChatRuntime', () => {
       images: [{ name: 'a.png', mimeType: 'image/png', base64: 'AA==' }],
     })
     expect(client.sent).toContainEqual(expect.objectContaining({
-      type: 'send_message',
-      provider: 'claude',
+      method: 'session.send',
       model: 'm',
       effort: 'high',
       images: [{ name: 'a.png', mimeType: 'image/png', base64: 'AA==' }],
     }))
     runtime.send('fast-off', { serviceTier: null })
     expect(client.sent).toContainEqual(expect.objectContaining({
-      type: 'send_message',
-      content: 'fast-off',
+      method: 'session.send',
+      text: 'fast-off',
       serviceTier: null,
     }))
-    expect(client.request).toHaveBeenCalledWith(expect.objectContaining({ type: 'send_message', images: expect.any(Array), requestId: expect.any(String) }))
+    expect(client.dispatch).toHaveBeenCalledWith(expect.objectContaining({ method: 'session.send', images: expect.any(Array) }))
     runtime.session = { ...runtime.session, status: 'streaming' }
     runtime.send('later', { clientMessageId: 'user_q', priority: 'next' })
     expect(runtime.session.queuedMessages.map((message) => message.id)).toEqual(['user_q'])
     expect(paints.at(-1)).toMatchObject({ queuedMessages: [expect.objectContaining({ id: 'user_q' })] })
     expect(client.sent).toContainEqual(expect.objectContaining({
-      type: 'send_message', clientMessageId: 'user_q', priority: 'next',
+      method: 'session.send', clientMessageId: 'user_q', priority: 'next',
     }))
     runtime.interrupt()
-    expect(client.sent).toContainEqual(expect.objectContaining({ type: 'interrupt', sessionId: id }))
-    expect(client.request).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'interrupt' }))
-    expect(client.sent.some((c) => (c as { type: string }).type === 'subscribe_session')).toBe(true)
-    expect(client.sent.some((c) => (c as { type: string }).type === 'load_session_messages')).toBe(false)
+    expect(client.sent).toContainEqual(expect.objectContaining({ method: 'session.interrupt', sessionId: id }))
+    expect(client.dispatch).toHaveBeenCalledWith(expect.objectContaining({ method: 'session.interrupt' }))
+    expect(client.followSession).toHaveBeenCalledOnce()
+    expect(client.sent.some((c) => (c as { method: string }).method === 'session.load')).toBe(true)
   })
 
   it('paints the first bubble before the host has a session, then hands it to the send', async () => {
     const client = fakeClient()
     let releaseCreate: () => void = () => {}
-    client.request.mockImplementation(async (cmd: { type: string; sessionId?: string }) => {
-      client.sent.push(cmd)
-      if (cmd.type === 'create_session') {
+    const answer = client.dispatch.getMockImplementation()!
+    client.dispatch.mockImplementation(async (cmd: { method: string; sessionId?: string }) => {
+      if (cmd.method === 'session.create') {
         await new Promise<void>((resolve) => { releaseCreate = resolve })
-        return { ok: true, sessionId: cmd.sessionId }
+        client.sent.push(cmd)
+        return { sessionId: cmd.sessionId }
       }
-      return { ok: true }
+      return answer(cmd)
     })
     const paints: Array<{ messages: string[]; pendingTurn: string | null }> = []
     const runtime = new ChatRuntime(client as never, (s) => {
@@ -243,7 +207,7 @@ describe('ChatRuntime', () => {
     // Same id as the staged bubble: the transcript still holds one row.
     expect(runtime.session.messages.map((m) => m.id)).toEqual(['user_first'])
     expect(client.sent).toContainEqual(expect.objectContaining({
-      type: 'send_message', clientMessageId: 'user_first', content: 'hello',
+      method: 'session.send', clientMessageId: 'user_first', text: 'hello',
     }))
     // The host's echo carries the same id and is ignored as a duplicate…
     runtime.ingest([{ type: 'user_message_appended', message: {
@@ -267,7 +231,7 @@ describe('ChatRuntime', () => {
     runtime.projectPath = '/p'
     runtime.sessionId = 's'
     runtime.send('again')
-    const sent = client.sent.find((c) => (c as { type: string }).type === 'send_message') as { clientMessageId?: string }
+    const sent = client.sent.find((c) => (c as { method: string }).method === 'session.send') as { clientMessageId?: string }
     expect(sent.clientMessageId).toMatch(/^user/)
     expect(runtime.session.messages.map((m) => m.id)).toEqual([sent.clientMessageId])
     expect(runtime.session.queuedMessages).toEqual([])
@@ -285,37 +249,28 @@ describe('ChatRuntime', () => {
     runtime.interrupt()
     expect(runtime.pendingTurn).toBeNull()
     expect(runtime.streaming).toBe(false)
-    expect(client.sent).toContainEqual(expect.objectContaining({ type: 'interrupt', sessionId: 's' }))
+    expect(client.sent).toContainEqual(expect.objectContaining({ method: 'session.interrupt', sessionId: 's' }))
   })
 
-  it('takes a new session\'s worktree from the host, not from the landing picker', async () => {
-    const client = fakeClient()
-    client.request.mockImplementation(async (cmd: { type: string; sessionId?: string }) => {
-      if (cmd.type === 'create_session') {
-        // `create` mode: only the host knows the path it minted.
-        return { ok: true, sessionId: cmd.sessionId, cwd: '/p/.worktrees/feat', gitBranch: 'feat/mobile' }
-      }
-      return { ok: true }
-    })
+  it('takes a new session worktree from the atomic host snapshot', async () => {
+    const client = fakeClient(), answer = client.dispatch.getMockImplementation()!
+    client.dispatch.mockImplementation(async call => call.method === 'session.load'
+      ? sessionLoadFixture({ restore: { sourceEnvironmentId: 'desktop', mcpAppContexts: [], isWorktree: true, worktreePath: '/p/.worktrees/feat', gitBranch: 'feat/mobile', worktreeMissing: false } }) : answer(call))
     const runtime = new ChatRuntime(client as never, vi.fn())
     await runtime.create('/p', { sessionId: 's1', worktreeBranch: 'main', worktreeMode: 'branch', worktreeBranchName: 'feat/mobile' })
     expect(runtime.worktree).toEqual({ isWorktree: true, worktreePath: '/p/.worktrees/feat', gitBranch: 'feat/mobile' })
   })
 
   it('reads a local new session as local when the host runs it in the project folder', async () => {
-    const client = fakeClient()
-    client.request.mockImplementation(async (cmd: { type: string; sessionId?: string }) => (
-      cmd.type === 'create_session' ? { ok: true, sessionId: cmd.sessionId, cwd: '/p', gitBranch: null } : { ok: true }
-    ))
-    const runtime = new ChatRuntime(client as never, vi.fn())
+    const runtime = new ChatRuntime(fakeClient() as never, vi.fn())
     await runtime.create('/p', { sessionId: 's1', gitBranch: 'main' })
     expect(runtime.worktree).toEqual({ isWorktree: false, worktreePath: null, gitBranch: null })
   })
 
   it('forgets a staged session the host refused so it cannot be cached as a transcript', async () => {
     const client = fakeClient()
-    client.request.mockImplementation(async (cmd: { type: string }) => {
-      if (cmd.type === 'create_session') return { ok: false, error: 'Worktree path not found' }
+    client.dispatch.mockImplementation(async (cmd: { method: string }) => {
+      if (cmd.method === 'session.create') throw new Error('Worktree path not found')
       return { ok: true }
     })
     const put = vi.fn()
@@ -336,7 +291,7 @@ describe('ChatRuntime', () => {
     runtime.session = { ...runtime.session, status: 'streaming' }
     runtime.send('nudge', { clientMessageId: 'user_steer', priority: 'next', steer: 'now' })
     expect(client.sent).toContainEqual(expect.objectContaining({
-      type: 'send_message',
+      method: 'session.send',
       clientMessageId: 'user_steer',
       priority: 'next',
       steer: 'now',
@@ -344,7 +299,7 @@ describe('ChatRuntime', () => {
     expect(runtime.session.queuedMessages.map((message) => message.id)).toEqual(['user_steer'])
   })
 
-  it('paints a dequeue so a parked bubble can return to the composer', () => {
+  it('paints a confirmed dequeue so a parked bubble can return to the composer', async () => {
     const paint = vi.fn()
     const runtime = new ChatRuntime(fakeClient() as never, paint)
     runtime.projectPath = '/p'
@@ -352,15 +307,40 @@ describe('ChatRuntime', () => {
     runtime.session = { ...runtime.session, status: 'streaming' }
     runtime.send('later', { clientMessageId: 'user_q', priority: 'next' })
     paint.mockClear()
-    runtime.dequeueMessage('user_q')
+    await runtime.dequeueMessage('user_q')
     expect(runtime.session.queuedMessages).toEqual([])
     expect(paint).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps a queued message when the host refuses its dequeue', async () => {
+    const client = fakeClient(), answer = client.dispatch.getMockImplementation()!
+    client.dispatch.mockImplementation(async call => {
+      if (call.method === 'session.dequeue') throw Object.assign(new Error('control changed'), { code: 'lease_stale' })
+      return answer(call)
+    })
+    const runtime = new ChatRuntime(client as never, vi.fn())
+    runtime.projectPath = '/p'; runtime.sessionId = 's'; runtime.session.status = 'streaming'
+    runtime.send('later', { clientMessageId: 'user_q', priority: 'next' })
+    await expect(runtime.dequeueMessage('user_q')).rejects.toThrow('control changed')
+    expect(runtime.session.queuedMessages.map(message => message.id)).toEqual(['user_q'])
+    runtime.dispose()
+  })
+
+  it('does not move a bubble into the composer after the host already consumed it', async () => {
+    const client = fakeClient(), answer = client.dispatch.getMockImplementation()!
+    client.dispatch.mockImplementation(async call => call.method === 'session.dequeue' ? { removed: false } : answer(call))
+    const runtime = new ChatRuntime(client as never, vi.fn())
+    runtime.projectPath = '/p'; runtime.sessionId = 's'; runtime.session.status = 'streaming'
+    runtime.send('later', { clientMessageId: 'user_q', priority: 'next' })
+    expect(await runtime.dequeueMessage('user_q')).toBe(false)
+    expect(runtime.session.queuedMessages.map(message => message.id)).toEqual(['user_q'])
+    runtime.dispose()
+  })
+
   it('throws the host create_session error so the shell can show it', async () => {
     const client = fakeClient()
-    client.request.mockImplementation(async (cmd: { type: string }) => {
-      if (cmd.type === 'create_session') return { ok: false, error: 'Worktree path not found' }
+    client.dispatch.mockImplementation(async (cmd: { method: string }) => {
+      if (cmd.method === 'session.create') throw new Error('Worktree path not found')
       return { ok: true }
     })
     const runtime = new ChatRuntime(client as never, vi.fn())
@@ -372,21 +352,21 @@ describe('ChatRuntime', () => {
     const paint = vi.fn()
     const runtime = new ChatRuntime(client as never, paint)
     const id = await runtime.create('/p', { provider: 'acp', acpAgentId: 'grok-build' })
-    client.request.mockImplementation(async (cmd: { type: string }) => {
+    client.dispatch.mockImplementation(async (cmd: { method: string }) => {
       client.sent.push(cmd)
-      if (cmd.type === 'request_session_recap') return { ok: true }
+      if (cmd.method === 'session.recap') return { ok: true }
       return { ok: true, sessionId: id }
     })
 
     await expect(runtime.requestRecap()).resolves.toBe(true)
-    expect(client.request).toHaveBeenCalledWith(expect.objectContaining({
-      type: 'request_session_recap',
+    expect(client.dispatch).toHaveBeenCalledWith(expect.objectContaining({
+      method: 'session.recap',
       sessionId: id,
-      projectPath: '/p',
+      environmentId: 'desktop',
     }))
-    const recapCmd = client.sent.find((c) => (c as { type: string }).type === 'request_session_recap') as { auto?: boolean }
+    const recapCmd = client.sent.find((c) => (c as { method: string }).method === 'session.recap') as { auto?: boolean }
     expect(recapCmd.auto).toBeUndefined()
-    expect(client.sent.some((c) => (c as { type: string }).type === 'send_message')).toBe(false)
+    expect(client.sent.some((c) => (c as { method: string }).method === 'session.send')).toBe(false)
     expect(runtime.session.isRecapping).toBe(true)
     expect(paint).toHaveBeenCalled()
   })
@@ -404,7 +384,7 @@ describe('ChatRuntime', () => {
     const client = fakeClient()
     const runtime = new ChatRuntime(client as never, vi.fn())
     await runtime.create('/p', { provider: 'acp', acpAgentId: 'grok-build' })
-    client.request.mockResolvedValue({ ok: false })
+    client.dispatch.mockResolvedValue({ ok: false })
 
     await expect(runtime.requestRecap()).resolves.toBe(false)
     expect(runtime.session.isRecapping).toBe(false)
@@ -422,8 +402,8 @@ describe('ChatRuntime', () => {
     })
 
     expect(client.sent).toContainEqual(expect.objectContaining({
-      type: 'create_session',
-      provider: 'acp',
+      method: 'session.create',
+      harnessId: 'acp',
       acpAgentId: 'grok-build',
       model: 'grok-4',
       effort: 'deep',
@@ -450,22 +430,14 @@ describe('ChatRuntime', () => {
 
   it('hydrates restored messages on open, reconnect, and same-connection session switches', async () => {
     const base = fakeClient(7)
-    const client = {
-      ...base,
-      request: async (cmd: { type: string; sessionId?: string }) => {
-        if (cmd.type === 'load_session_messages') {
-          return {
-            messages: [{
-              id: `${cmd.sessionId}-history`, role: 'assistant', status: 'complete',
-              content: [{ type: 'text', text: 'Previously received answer' }],
-              createdAt: '', providerId: 'claude',
-            }],
-            hasMore: false,
-          }
-        }
-        return base.request(cmd)
-      },
-    }
+    const client = base, answer = client.dispatch.getMockImplementation()!
+    client.dispatch.mockImplementation(async cmd => {
+      if (cmd.method === 'session.load') return sessionLoadFixture({ messages: [{
+        id: `${cmd.sessionId}-history`, role: 'assistant', status: 'complete',
+        content: [{ type: 'text', text: 'Previously received answer' }], createdAt: '', providerId: 'claude',
+      }] })
+      return answer(cmd)
+    })
     const paint = vi.fn()
     const runtime = new ChatRuntime(client as never, paint)
 
@@ -490,12 +462,10 @@ describe('ChatRuntime', () => {
     }]
     const store = new Map<string, CachedTranscript>()
     const client = fakeClient()
-    client.request.mockImplementation(async (cmd: { type: string }) => {
-      client.sent.push(cmd)
-      if (cmd.type === 'subscribe_session') {
-        return { ok: true, historyPage: { messages: history, hasMore: false, cursor: null }, snapshot: { status: 'idle' } }
-      }
-      return { ok: true }
+    const answer = client.dispatch.getMockImplementation()!
+    client.dispatch.mockImplementation(async cmd => {
+      if (cmd.method === 'session.load') { client.sent.push(cmd); return sessionLoadFixture({ messages: history }) }
+      return answer(cmd)
     })
     const runtime = new ChatRuntime(client as never, vi.fn(), {
       pairingId: () => 'desk-1',
@@ -508,7 +478,7 @@ describe('ChatRuntime', () => {
     expect(store.get('/p\0s1')?.messages).toEqual(history)
     client.sent.length = 0
     await runtime.open('/p', 's1')
-    expect(client.sent.map((cmd) => (cmd as { type: string }).type)).toEqual(['subscribe_session'])
+    expect(client.sent.map((cmd) => (cmd as { method: string }).method)).toEqual(['session.load', 'environment.descriptor'])
   })
 
   it('does not persist an in-flight assistant turn into the connection cache', async () => {
@@ -611,24 +581,22 @@ describe('ChatRuntime', () => {
     expect(runtime.session.pendingQuestion).toBeNull()
     expect(client.sent).toEqual(expect.arrayContaining([
       expect.objectContaining({
-        type: 'respond_permission',
-        requestId: 'perm',
-        decision: true,
+        method: 'session.respondPermission',
+        interactionId: 'perm',
+        decision: 'allow_always',
         formAnswers,
-        alwaysAllow: true,
         reason: 'approved on mobile',
         selectedSuggestions: [1, 3],
       }),
-      expect.objectContaining({ type: 'respond_plan_approval', requestId: 'plan', approved: false }),
+      expect.objectContaining({ method: 'session.respondPlan', interactionId: 'plan', decision: 'reject', options: { feedback: 'change it' } }),
       expect.objectContaining({
-        type: 'codex_plan_approval',
-        messageId: 'assistant-1',
-        status: 'rejected',
-        feedback: 'revise it',
+        method: 'session.respondPlan',
+        interactionId: 'assistant-1', decision: 'reject',
+        options: { messageId: 'assistant-1', feedback: 'revise it' },
       }),
       expect.objectContaining({
-        type: 'answer_question',
-        requestId: 'question',
+        method: 'session.respondQuestion',
+        interactionId: 'question',
         annotations: { Scope: { notes: 'Include tests' } },
       }),
     ]))
@@ -671,17 +639,18 @@ it('pages older history without dropping live messages or requesting the same pa
   let resolvePage!: (value: unknown) => void
   let reads = 0
   const row = (id: string) => ({ id, role: 'assistant', status: 'complete', content: [], createdAt: '', providerId: 'claude' })
-  const client = { ...base, request: vi.fn(async (command: { type: string }) => {
-    if (command.type !== 'load_session_messages') return base.request(command)
-    if (++reads === 1) return { messages: [row('latest')], hasMore: true, cursor: 24 }
+  const client = base, answer = client.dispatch.getMockImplementation()!
+  client.dispatch.mockImplementation(async command => {
+    if (command.method !== 'session.load') return answer(command)
+    if (++reads === 1) return sessionLoadFixture({ messages: [row('latest') as never], before: 24 })
     return new Promise(resolve => { resolvePage = resolve })
-  }) }
+  })
   const runtime = new ChatRuntime(client as never, vi.fn())
   await runtime.open('/p', 's')
   const first = runtime.loadEarlier()
   expect(runtime.loadEarlier()).toBe(first)
   runtime.ingest([{ type: 'message_start', message: row('live') }])
-  resolvePage({ messages: [row('older'), row('latest')], hasMore: false, cursor: null })
+  resolvePage(sessionLoadFixture({ messages: [row('older'), row('latest')] as never }))
   await expect(first).resolves.toEqual([row('older')])
   expect(runtime.messages.map(message => message.id)).toEqual(['older', 'latest', 'live'])
   expect(runtime.hasMoreHistory).toBe(false)
@@ -696,8 +665,8 @@ describe('attachment originals behind transcript thumbnails', () => {
     runtime.sessionId = 's1'
     await expect(runtime.loadAttachment('user_1', { attachmentId: 'a1', name: 'IMG_0005.jpg' })).resolves.toBe('data:image/jpeg;base64,/9j/')
     await expect(runtime.loadAttachment('user_1', { attachmentId: 'a1', name: 'IMG_0005.jpg' })).resolves.toBe('data:image/jpeg;base64,/9j/')
-    expect(client.sent.filter((cmd) => (cmd as { type: string }).type === 'get_attachment')).toEqual([
-      expect.objectContaining({ type: 'get_attachment', projectPath: '/p', sessionId: 's1', messageId: 'user_1', attachmentId: 'a1', name: 'IMG_0005.jpg' }),
+    expect(client.sent.filter((cmd) => (cmd as { method: string }).method === 'session.attachment')).toEqual([
+      expect.objectContaining({ method: 'session.attachment', environmentId: 'desktop', sessionId: 's1', messageId: 'user_1', attachmentId: 'a1', name: 'IMG_0005.jpg' }),
     ])
     await expect(runtime.loadAttachment('user_1', { attachmentId: 'gone', name: 'x.jpg' })).rejects.toThrow('no longer available')
     runtime.dispose()
@@ -713,7 +682,7 @@ describe('attachment originals behind transcript thumbnails', () => {
       id: 'q1', role: 'user', status: 'complete', createdAt: '', providerId: 'remote', content: [], attachments: [own, thumb],
     })
     expect(originals).toEqual([own, { id: 'a1', name: 'desk.jpg', mimeType: 'image/jpeg', base64: '/9j/' }])
-    expect(client.sent.filter((cmd) => (cmd as { type: string }).type === 'get_attachment')).toEqual([
+    expect(client.sent.filter((cmd) => (cmd as { method: string }).method === 'session.attachment')).toEqual([
       expect.objectContaining({ messageId: 'q1', attachmentId: 'a1', name: 'desk.jpg' }),
     ])
     runtime.dispose()
@@ -724,7 +693,7 @@ describe('attachment originals behind transcript thumbnails', () => {
 it('paints the saved transcript before the subscribe response arrives', async () => {
   const client = fakeClient()
   let release!: (value: unknown) => void
-  client.request.mockImplementationOnce(() => new Promise(resolve => { release = resolve as typeof release }))
+  client.dispatch.mockImplementationOnce(() => new Promise(resolve => { release = resolve as typeof release }))
   const cached = { messages: [{ id: 'cached', role: 'user', content: [{ type: 'text', text: 'saved' }], createdAt: '', status: 'complete' }], cursor: null, hasMore: false }
   const paint = vi.fn()
   const onCachedHydrate = vi.fn()
@@ -734,7 +703,8 @@ it('paints the saved transcript before the subscribe response arrives', async ()
   expect(paint).toHaveBeenCalledWith(expect.objectContaining({ messages: cached.messages }), true)
   // The shell must uncover this page while subscribe is still pending.
   expect(onCachedHydrate).toHaveBeenCalledOnce()
-  release({ ok: true, history: { messages: [], hasMore: false, cursor: null }, snapshot: { status: 'idle' } })
+  await vi.waitFor(() => expect(release).toBeTypeOf('function'))
+  release(sessionLoadFixture())
   await opening
   runtime.dispose()
 })

@@ -1,43 +1,33 @@
-import { admitTurnAttachments } from '@superone/shared/attachment-turn'
-import { MOD_UI_UNAVAILABLE, asDeviceModUiRequest } from '@superone/shared/mod-ui'
-import { withTurnReceipt } from '../remote/turn-receipt'
+
 import { codexAccountStore } from '../codex/codex-account-store'
-import { loadSessionHistoryIndex, loadSessionMessageWindow } from '../session/history-navigation'
-import { buildProgressiveBootstrap } from './progressive-bootstrap'
-import { phoneDelivery } from '../remote/phone-deliveries'
-import { rememberAttachmentOrigin } from '../remote/attachment-echo'
-import { appendMobileLog } from '../remote/mobile-log'
 import { resolveProjectExtraDirs } from '@superone/shared/project-extra-dirs'
 import { findAttachment } from '../remote/attachment-thumbnail'
-import { videoPosterService } from '../remote/video-poster'
-import { handleDetailCommand } from '../remote/detail-command'
-import { readRemoteSessionList } from '../remote/session-lists'
+import { readPhoneFile, readPhoneVideoPoster, type PhoneFileInput, type PhoneFileSource } from '../remote/phone-files'
 import type { SessionActivity } from '@superone/shared/session-activity'
 import { liveSessionActivity } from '../remote/live-session-activity'
 import { spawnParentOf } from '../session/collaboration-mailbox'
-import { answerRemoteAsyncQuestion } from './remote-async-question'
+import { enqueueSessionQueueOp, queuedSteerCommand } from '../session/session-queue'
+import { sendPhoneMcpAppMessage } from '../session/mcp-app-send'
 import { randomUUID } from 'crypto'
 import { newMessageId } from '@superone/shared/message-id'
 import { execFileSync } from 'child_process'
 import { statSync } from 'fs'
 import log from '../logger'
 import { ensureShellPath } from '../shell-path'
-import { whenHighlighterReady } from '../remote-highlighter'
-import { gitRun } from '../git-run'
-import { resolve, join, basename, dirname, sep } from 'path'
+import { resolve, join } from 'path';
 import { ipcMain, type BrowserWindow } from 'electron'
+import { windowControlIpc } from '../session/control-context'
 import { WarmupManager } from './warmup-manager'
 import { fetchModels } from './claude-models'
-import { AgentIpcChannels, type AgentEvent, type AgentPrewarmHint, type CodexCollaborationMode, type CodexPermissionPreset, type CodexReasoningEffort, type ModelOption, type PermissionMode, type QuestionAnnotations, type RemoteCommand, type ResourceScope, type SandboxMode, type SendMessageRequest, type TerminalEvent } from '@superone/shared/agent-types'
+import { AgentIpcChannels, type AgentEvent, type AgentPrewarmHint, type CodexPermissionPreset, type CodexReasoningEffort, type ModelOption, type PermissionMode, type QuestionAnnotations, type ResourceScope, type SandboxMode, type SendMessageRequest } from '@superone/shared/agent-types';
 import { baseSessionProviderId } from '@superone/shared/session-provider-definitions'
 import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
 import { localSessionEnvironmentId } from '../environment/session-identity'
-import type { RemoteControlService, RemoteResponder } from '../remote-control-service'
-import { stripMessagesForRemote, stripEventForRemote } from '../remote-control-service'
+import type { RemoteControlService } from '../remote-control-service'
 import { trace } from './event-trace'
-import { getRecentFolders, addRecentFolder, getProjectExtraDirs, updateProject } from '../recent-folders'
+import { getProjectExtraDirs, updateProject } from '../recent-folders';
 import { readdir, mkdir } from 'fs/promises'
-import { existsSync, mkdirSync, readdirSync, readFileSync } from 'fs'
+import { existsSync, readdirSync, readFileSync } from 'fs';
 import { homedir } from 'os'
 import { getCachedHarnessResources } from '../database'
 import { resolveTestApiKey } from './provider-test-key'
@@ -58,25 +48,17 @@ import {
   type CreateCredentialInput,
   type UpdateCredentialInput,
 } from '../providers/credential-store'
-import { getMediaProviderStatuses } from '../media-gen/settings-service'
 import type { CapabilityTask, ConsumerBinding, ConsumerId, Platform, ServiceEndpoint } from '@superone/shared/platform-registry'
-import { sanitizeGitRef } from '../path-security'
-import { authorizeAndStat, FileBridgeError, readPreferInline, type AuthorizedFile } from '../file-bridge'
-import { tmpdir } from 'os'
-import { app } from 'electron'
-import { activateWorktree, getCheckedOutBranches, getWorktreeInfo, gitErrorMessage } from '../git/worktree-ops'
 import { worktreeExists } from '../git/worktree-alive'
 import { coerceSandboxModeForCapability, getSandboxCapability } from '../sandbox-platform'
 import { searchFiles, searchMentions, EXCLUDED_DIRS, type AgentEntry } from './fuzzy-file-search'
-import { SessionClaimConflictError, SessionLockedError, type BackendCommand, type Session as SessionContract } from '../session/types'
-import { claimAutoRecapDispatch, finishAutoRecapDispatch, installAcpRecapFocus } from '../acp/acp-recap-focus'
+import { type Session as SessionContract } from '../session/types';
+import { installAcpRecapFocus } from '../acp/acp-recap-focus';
 import { harnessProviderCatalog } from './remote-selector-catalog'
 import { claudeAccountStore } from './claude-account-store'
 import { listAccounts as listClaudeAccounts } from './claude-account-service'
 import { getCurrentLocale } from '../i18n'
 import { buildRemoteHarnessSystemInfo } from './remote-harness-system-info'
-import { buildRemoteSessionSnapshot } from './remote-session-snapshot'
-import type { DuplicateSend } from '@superone/shared/send-failure'
 import { sessionDefaultsForHarness } from '@superone/shared/harness/session-defaults'
 
 /** Resolve a path to its git common directory (shared across worktrees). */
@@ -91,7 +73,7 @@ function getGitRoot(cwd: string): string {
     return cwd // Fallback: not a git repo, use path itself
   }
 }
-import { listSessionsForFolder, createSession, createAutomationSession, renameSession as dbRenameSession, saveSessionState, loadSessionState, loadSessionMessage, loadSessionMessagesPaginated, sessionBelongsToProject, deleteSession as dbDeleteSession, deleteSessionsOlderThan as dbDeleteSessionsOlderThan, pinSession as dbPinSession, hideSession as dbHideSession, listPinnedSessions, readSessionHarnessId } from '../db-sessions'
+import { listSessionsForFolder, createSession, createAutomationSession, renameSession as dbRenameSession, loadSessionState, loadSessionMessage, deleteSession as dbDeleteSession, deleteSessionsOlderThan as dbDeleteSessionsOlderThan, pinSession as dbPinSession, hideSession as dbHideSession, listPinnedSessions, readSessionHarnessId } from '../db-sessions';
 import { loadSessionMessages } from '../session-history'
 import { listMcpConfigs, saveMcpConfig, deleteMcpConfig, toggleMcpConfig } from '../mcp-config-service'
 import {
@@ -112,7 +94,6 @@ import { discoverAllAgents, discoverProjectCommands, readAgentFile } from './dis
 import { listPlugins, readPluginContent, readPluginFile, deletePlugin, setPluginEnabled, readPluginUserConfig, savePluginUserConfig, reviewPluginMods, listMarketplacePlugins, installPlugin, updatePlugin, updateMarketplace, addMarketplace, removeMarketplace, readMarketplacePluginContent, readMarketplacePluginFile, getGithubStars, listGithubReposForOwner, searchGithubRepositories, listMyGithubRepos } from '../plugins-service'
 import { cacheRemoteImage } from '../image-cache'
 import { resolveFavicon, cacheCapturedFavicon } from '../favicon'
-import { deviceMcpAppHostRequest, executeDeviceMcpAppRequest } from '../mcp-apps/mobile-request'
 import { resolveSiteIdentity } from '../site-identity'
 import { backupMcpServers, listLibrary, deleteLibraryEntry, getLibraryEntry } from '../mcp-library-service'
 import { uninstallMcpbBundle } from '../mcpb/mcpb-installer'
@@ -120,17 +101,18 @@ import type { PluginModReview, HookSavePayload, SessionForkRequest, SideChatStar
 import { tryResolveHarnessRuntime } from '../harness/resolve-runtime'
 import { forkSession } from '../session/session-fork'
 import { closeSideChat, startSideChat } from '../session/side-chat'
-import { answerInputRequest, composerOpenResult, InputRequestOpenError, isInputRequestId, openWidgetInputRequest, type OpenedInputRequest } from '../session/input-requests'
-import { awaitComposerForm, cancelComposerForms, composerFormOutcome, openComposerForm, releaseComposerClient, type ComposerClient } from '../session/composer-delivery'
+import { composerOpenResult, InputRequestOpenError, openWidgetInputRequest, type OpenedInputRequest } from '../session/input-requests';
+import { awaitComposerForm, cancelComposerForms, openComposerForm, releaseComposerClient, type ComposerClient } from '../session/composer-delivery';
 import type { MiniAppInputRequest } from '../miniapp/miniapp-input-requests'
 import { loadRealtimeTimeline, reconcileRealtimeTimeline } from '../session/realtime-timeline-repo'
 
 export class AgentService {
   private prepareDraftOpen?: (draftId: string) => Promise<void>
   setPrepareDraftOpen(prepare: (draftId: string) => Promise<void>): void { this.prepareDraftOpen = prepare }
-  /** Desktop pairing a phone carries (`node_mint`, `node_pair`); main loads it on first use. */
-  private desktopPairCommand?: (command: Extract<RemoteCommand, { type: 'node_mint' | 'node_pair' }>) => Promise<unknown>
-  setDesktopPairCommand(handle: NonNullable<AgentService['desktopPairCommand']>): void { this.desktopPairCommand = handle }
+  async remotePrepareDraftOpen(draftId: string): Promise<void> { await this.prepareDraftOpen?.(draftId) }
+  remoteSendMcpAppMessage(input: Parameters<typeof sendPhoneMcpAppMessage>[1], source: Parameters<typeof sendPhoneMcpAppMessage>[2], onAccepted: () => void): Promise<void> {
+    return sendPhoneMcpAppMessage(this.requireSessionManager(), input, source, onAccepted)
+  }
   private mainWindow: BrowserWindow | null = null
   private sessionManager: import('../session/session-manager').SessionManagerImpl | null = null
   private eventSubscribers: Array<(event: AgentEvent) => void> = []
@@ -141,17 +123,7 @@ export class AgentService {
   private codexProviderChanged?: (invalidateModelCache?: boolean) => void
   private remoteControlService?: RemoteControlService
   private mobileReceiveService?: import('../remote/mobile-receive-service').MobileReceiveService
-  private deviceRegistry?: import('../remote/device-registry').DeviceRegistry
-  private terminalManager?: import('../terminal/terminal-manager').TerminalManager
   private warmupManager = new WarmupManager()
-  /**
-   * Serializes queued send / steer / dequeue per session. Remote `onCommand`
-   * is not awaited by the transport, so a composer Stair (`send_message` then
-   * `steer_queued_message`) would otherwise look up the park before `send()`
-   * had written it — `Queued ACP message not found`.
-   */
-  private sessionQueueOps = new Map<string, Promise<void>>()
-
   setCodexListModels(fn: (projectPath: string) => Promise<ModelOption[]>): void {
     this.codexListModels = fn
   }
@@ -189,14 +161,6 @@ export class AgentService {
     this.mobileReceiveService = svc
   }
 
-  setDeviceRegistry(reg: import('../remote/device-registry').DeviceRegistry): void {
-    this.deviceRegistry = reg
-  }
-
-  setTerminalManager(mgr: import('../terminal/terminal-manager').TerminalManager): void {
-    this.terminalManager = mgr
-  }
-
   private sessionForegroundListener: ((windowId: number, ref: { environmentId: string; sessionId: string }, foreground: boolean, sender: Electron.WebContents) => void) | null = null
 
   /** Told which session each window's views show; main keeps the renderer's topics from it. */
@@ -210,6 +174,9 @@ export class AgentService {
   }
 
   private environmentEventPublisher: ((event: AgentEvent) => void) | null = null
+
+  private releaseRoutedSessions?: (sessionId?: string) => Promise<void>
+  setRoutedSessionRelease(release: (sessionId?: string) => Promise<void>): void { this.releaseRoutedSessions = release }
 
   private publishEnvironmentEvent(event: AgentEvent): void {
     trace('remote.debug', 'publishEnvironmentEvent', { type: event.type, projectPath: event.projectPath, sessionId: event.sessionId })
@@ -235,9 +202,7 @@ export class AgentService {
    */
   private isSessionRemoteLocked(session: SessionContract | null | undefined): boolean {
     if (!session) return false
-    if (session.owner.kind === 'remote') return true
-    if (session.subscribers.size > 0) return true
-    return false
+    return session.lease.isExternal
   }
 
   /** A window's forms close with its page (reload or close): their answers have nowhere else to go. */
@@ -258,28 +223,7 @@ export class AgentService {
   private throwIfRemoteLocked(projectPath: string): void {
     const activeSession = this.sessionManager?.getActiveSession(projectPath)
     if (!activeSession) return
-    if (activeSession.owner.kind === 'remote') {
-      throw new SessionLockedError(activeSession.id, 'remote-owned', activeSession.owner.deviceId)
-    }
-    if (activeSession.subscribers.size > 0) {
-      throw new SessionLockedError(activeSession.id, 'remote-subscribed')
-    }
-  }
-
-  private resolveRemoteProjectPath(commandPath: string | undefined, sessionId: string): string | null {
-    if (commandPath) return commandPath
-    const session = this.sessionManager?.getSession(sessionId)
-    return session?.projectPath ?? null
-  }
-
-  private canAccessSession(projectPath: string, sessionId: string): boolean {
-    const session = this.sessionManager?.getSession(sessionId)
-    if (session && session.projectPath === projectPath) return true
-    return sessionBelongsToProject(projectPath, sessionId)
-  }
-
-  private buildSessionAccessError(projectPath: string, sessionId: string): string {
-    return `Session ${sessionId} does not belong to project ${projectPath}`
+    activeSession.lease.assertMutation()
   }
 
   addEventSubscriber(cb: (event: AgentEvent) => void): () => void {
@@ -526,102 +470,6 @@ export class AgentService {
     this.publishEnvironmentEvent(event)
   }
 
-  private async ensureRemoteOwnership<T>(
-    deviceId: string,
-    session: import('../session/types').Session,
-    fn: () => Promise<T>,
-    opts?: { onClaim?: () => void },
-  ): Promise<T> {
-    session.claim({ kind: 'remote', deviceId })
-    opts?.onClaim?.()
-    return fn()
-  }
-
-  private async notifySessionLocked(deviceId: string, sessionId: string, currentOwnerDeviceId: string): Promise<void> {
-    await this.remoteControlService?.sendEventToMobile(
-      { type: 'session_locked_by_other_device', sessionId, ownerDeviceId: currentOwnerDeviceId },
-      [deviceId],
-    )
-  }
-
-  private releaseDeviceFromOtherSessions(deviceId: string, exceptSessionId: string): void {
-    this.sessionManager?.forEachSession((s) => {
-      if (s.id === exceptSessionId) return
-      if (s.owner.kind === 'remote' && s.owner.deviceId === deviceId) s.release(deviceId, 'self_switch')
-      if (s.subscribers.has(deviceId)) s.unsubscribe(deviceId, 'self_switch')
-    })
-  }
-
-  private async runCodexRemoteTurn(projectPath: string, sessionId: string, deviceId: string, command: { content: string; userMessageContent?: SendMessageRequest['userMessageContent']; contexts?: SendMessageRequest['contexts']; model?: string; effort?: string; serviceTier?: string | null; permissionPreset?: string; collaborationMode?: string; threadId?: string; images?: SendMessageRequest['images']; gitBranch?: string | null; worktreeBranch?: string | null; clientMessageId?: string; priority?: 'now' | 'next' | 'later'; inputRequest?: SendMessageRequest['inputRequest'] }, onAccepted?: (receipt?: DuplicateSend) => void): Promise<void> {
-    const userMessageId = newMessageId('user')
-    const assistantMessageId = newMessageId('remote')
-    const mgr = this.requireSessionManager()
-    let session = mgr.getSession(sessionId)
-    if (!session) {
-      try { session = mgr.resumeSession(sessionId) } catch {
-        session = mgr.createSession({
-          projectPath,
-          providerId: 'codex-base',
-          id: sessionId,
-        })
-      }
-    }
-    if (session.snapshot.harnessId !== 'codex') {
-      throw new Error(`Session ${sessionId} has harness=${session.snapshot.harnessId}, expected codex`)
-    }
-    try {
-      await this.ensureRemoteOwnership(deviceId, session, async () => {
-        await session!.send({
-          content: command.content,
-          clientMessageId: command.clientMessageId ?? userMessageId,
-          assistantMessageId,
-          ...(command.inputRequest ? { inputRequest: command.inputRequest } : {}),
-          ...(command.priority ? { priority: command.priority } : {}),
-          images: command.images,
-          userMessageContent: command.userMessageContent,
-          contexts: command.contexts,
-          model: command.model,
-          effort: command.effort as SendMessageRequest['effort'] | undefined,
-          codex: {
-            permissionPreset: command.permissionPreset as CodexPermissionPreset | undefined,
-            collaborationMode: command.collaborationMode as CodexCollaborationMode | undefined,
-            threadId: command.threadId,
-            reasoningEffort: command.effort as CodexReasoningEffort | undefined,
-            ...(command.serviceTier !== undefined ? { serviceTier: command.serviceTier } : {}),
-          },
-        }, { providerOrigin: 'remote', ...(onAccepted ? { onAccepted } : {}) })
-      })
-    } catch (err) {
-      if (err instanceof SessionClaimConflictError) {
-        await this.notifySessionLocked(deviceId, sessionId, err.currentOwnerDeviceId)
-        if (onAccepted) throw err
-        return
-      }
-      throw err
-    }
-  }
-
-  private async sendTerminalResult(
-    deviceId: string,
-    requestId: string,
-    ok: boolean,
-    terminalId?: string,
-    code?: 'not_owner' | 'already_claimed' | 'no_terminal',
-  ): Promise<void> {
-    const event: TerminalEvent = { type: 'terminal_command_result', requestId, ok, terminalId, code }
-    await this.remoteControlService?.sendTerminalFrame(event, [deviceId])
-  }
-
-  private async sendTerminalSnapshot(
-    term: import('../terminal/terminal-session').TerminalSession,
-    deviceId: string,
-  ): Promise<void> {
-    const frames = await term.snapshotFrames(deviceId)
-    for (const frame of frames) {
-      await this.remoteControlService?.sendTerminalFrame(frame, [deviceId])
-    }
-  }
-
   /** A harness's catalog and defaults for a phone composer (`get_system_info`, `harness.systemInfo`). */
   async remoteSystemInfo(projectPath: string, provider: HarnessId, force?: boolean): Promise<import('@superone/shared/agent-types').RemoteSystemInfo> {
     const settings = readAppSettings()
@@ -831,14 +679,13 @@ export class AgentService {
     this.sessionManager?.getSession(sessionId)?.markSeen()
   }
 
-  /** `read_desktop_file`'s answer, for the protocol's `files.read`. */
-  remoteReadFile(input: Omit<Extract<RemoteCommand, { type: 'read_desktop_file' }>, 'type' | 'requestId'>, source: { deviceId: string; transport: 'lan' | 'relay' }): Promise<unknown> {
-    return capturedResponse((respond) => this.handleReadDesktopFile({ ...input, type: 'read_desktop_file', requestId: '' }, respond, source))
+  /** Read a host or node file over the requesting phone's authenticated transport. */
+  remoteReadFile(input: PhoneFileInput, source: PhoneFileSource): Promise<unknown> {
+    return readPhoneFile(input, source, this.remoteControlService)
   }
 
-  /** `read_video_poster`'s answer, for the protocol's `files.videoPoster`. */
-  remoteVideoPoster(input: Omit<Extract<RemoteCommand, { type: 'read_video_poster' }>, 'type' | 'requestId'>): Promise<unknown> {
-    return capturedResponse((respond) => this.handleReadVideoPoster({ ...input, type: 'read_video_poster', requestId: '' }, respond))
+  remoteVideoPoster(input: PhoneFileInput): Promise<unknown> {
+    return readPhoneVideoPoster(input)
   }
 
   /** Start a phone upload; `uploadId` keys its completion (`files.upload`). */
@@ -898,1630 +745,6 @@ export class AgentService {
     return { outcome: this.codexConsumeRateLimitReset ? await this.codexConsumeRateLimitReset(projectPath, apiProviderId, creditId) : null }
   }
 
-  async handleRemoteCommand(command: RemoteCommand, respond?: RemoteResponder, source?: { deviceId: string; transport: 'lan' | 'relay' }): Promise<void> {
-    if (!source?.deviceId) {
-      log.warn('[AgentService] handleRemoteCommand without source.deviceId for command=%s; using "unknown-device" fallback', command.type)
-    }
-    const deviceId = source?.deviceId ?? 'unknown-device'
-    const cmdStart = Date.now()
-    if (command.type === 'list_projects' || command.type === 'get_system_info' || command.type === 'list_sessions' || command.type === 'list_models') {
-      log.info('[CONN-DESK] %s start transport=%s deviceId=%s', command.type, source?.transport ?? '?', deviceId)
-    }
-    trace('remote.cmd', command.type, command)
-    if (command.type === 'environment_command') {
-      try {
-        const { executeEnvironmentCommand } = await import('../remote/environment-commands')
-        const result = await executeEnvironmentCommand(command.environmentId, command.command, deviceId, event => this.remoteControlService?.sendAgentEvent(event, [deviceId]) ?? Promise.resolve(), command.sessionId)
-        if (command.requestId) await respond?.(command.requestId, result)
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        if (command.requestId) await respond?.(command.requestId, { error: message })
-        // Fire-and-forget controls (permission ids are interaction ids) need visible failures too.
-        if (!command.requestId || command.command.type.startsWith('respond_')) {
-          const sessionId = 'sessionId' in command.command ? command.command.sessionId : command.sessionId
-          if (sessionId) await this.remoteControlService?.sendAgentEvent({ type: 'remote_command_error', command: command.command.type, environmentId: command.environmentId, sessionId, message }, [deviceId])
-        }
-      }
-      return
-    }
-    if (command.type === 'node_mint' || command.type === 'node_pair') {
-      try {
-        if (!this.desktopPairCommand) throw new Error('Desktop pairing is unavailable')
-        await respond?.(command.requestId, await this.desktopPairCommand(command))
-      } catch (error) {
-        await respond?.(command.requestId, { error: error instanceof Error ? error.message : String(error) })
-      }
-      return
-    }
-    if (['session_link_identity', 'session_link_metadata', 'session_link_resolve'].includes(command.type)) {
-      try {
-        const { readSessionLinkCommand } = await import('../remote/session-link-commands')
-        const result = await readSessionLinkCommand(command)
-        if ('requestId' in command && command.requestId) await respond?.(command.requestId, result)
-      } catch (error) { if ('requestId' in command && command.requestId) await respond?.(command.requestId, { error: error instanceof Error ? error.message : String(error) }) }
-      return
-    }
-    switch (command.type) {
-      case 'list_drafts':
-      case 'open_draft':
-      case 'save_draft':
-      case 'close_draft':
-      case 'delete_draft': {
-        try {
-          if (command.type === 'open_draft') await this.prepareDraftOpen?.(command.draftId)
-          const { localDraftStore } = await import('../db-drafts')
-          await respond?.(command.requestId, localDraftStore().handle(command, deviceId))
-        } catch (error) {
-          await respond?.(command.requestId, { ok: false, error: error instanceof Error ? error.message : String(error) })
-        }
-        break
-      }
-      case 'create_session': {
-        let draftOriginSessionId: string | null = null
-        if (command.draftId) {
-          try {
-            const { localDraftStore } = await import('../db-drafts')
-            if (!command.draftLeaseId) throw new Error('Draft control is required')
-            localDraftStore().assertControl(command.draftId, deviceId, command.draftLeaseId)
-            draftOriginSessionId = localDraftStore().get(command.draftId)?.originSessionId ?? null
-          } catch (error) {
-            await respond?.(command.requestId, { ok: false, error: error instanceof Error ? error.message : String(error) })
-            break
-          }
-        }
-        const { projectPath, sessionId, provider } = command
-        if (!projectPath || !sessionId) {
-          await respond?.(command.requestId, { ok: false, error: 'projectPath and sessionId required' })
-          break
-        }
-        const mgr = this.requireSessionManager()
-        // A phone that took over a desktop draft sends into its origin session
-        // id. The desktop composer may have prewarmed that id already; the
-        // phone's picks now define the session, so the empty runtime goes.
-        const prewarmed = sessionId === draftOriginSessionId ? mgr.getSession(sessionId) : undefined
-        if (prewarmed && prewarmed.snapshot.messages.length === 0 && !prewarmed.isStreaming()) {
-          await mgr.disposeSession(sessionId)
-        }
-
-        let cwd = projectPath
-        let recordedGitBranch: string | null | undefined = undefined
-        try {
-          if (command.worktreePath && command.worktreePath !== projectPath) {
-            if (!existsSync(command.worktreePath)) {
-              await respond?.(command.requestId, { ok: false, error: 'Worktree path not found' })
-              break
-            }
-            cwd = command.worktreePath
-            recordedGitBranch = command.gitBranch ?? undefined
-          } else if (command.worktreeBranch) {
-            const wtMode = command.worktreeMode ?? 'branch'
-            const wtBranchName = command.worktreeBranchName ?? (wtMode === 'branch' ? command.worktreeBranch : undefined)
-            const result = await activateWorktree(projectPath, {
-              baseBranch: command.worktreeBranch,
-              mode: wtMode,
-              branchName: wtBranchName,
-              carryLocalChanges: command.worktreeCarryLocalChanges,
-            })
-            cwd = result.path
-            recordedGitBranch = result.recordedBranch
-          } else if (command.gitBranch) {
-            try {
-              const currentBranch = (await gitRun(projectPath, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim()
-              if (currentBranch !== command.gitBranch) {
-                await gitRun(projectPath, ['checkout', sanitizeGitRef(command.gitBranch)])
-              }
-            } catch { /* branch may already be correct */ }
-          }
-
-          const created = mgr.createSession({
-            projectPath,
-            cwd,
-            providerId: this.baseProviderIdForHarness(provider ?? 'claude'),
-            id: sessionId,
-            ...(recordedGitBranch !== undefined ? { gitBranch: recordedGitBranch } : {}),
-            permissionMode: command.permissionMode as PermissionMode | undefined,
-            effort: command.effort as SendMessageRequest['effort'] | undefined,
-            model: command.model,
-            acpAgentId: command.acpAgentId ?? null,
-            ...(command.additionalDirectories?.length ? { additionalDirectories: command.additionalDirectories } : {}),
-          })
-          // Session mode, DeepSeek preset and credential are not creation
-          // arguments — they are settings the picker chose on the draft.
-          if (command.mode) created.setSelectedSettings({ mode: command.mode })
-          if (command.agentPreset) created.setAgentPreset(command.agentPreset)
-          if (command.apiProviderId != null) created.setApiProviderId(command.apiProviderId)
-          // A sandbox picked before the session existed has no `set_sandbox_mode`
-          // to ride on — the client had no session id yet. A host that cannot
-          // sandbox rejects it, and that must not sink the session already made.
-          if (command.sandboxMode) {
-            try {
-              await created.setSandboxMode(command.sandboxMode)
-            } catch (err) {
-              log.warn('[AgentService] create_session: sandbox %s rejected: %s', command.sandboxMode,
-                err instanceof Error ? err.message : String(err))
-            }
-          }
-          await respond?.(command.requestId, { ok: true, sessionId, cwd, gitBranch: recordedGitBranch ?? null })
-        } catch (err) {
-          await respond?.(command.requestId, { ok: false, error: gitErrorMessage(err) })
-        }
-        break
-      }
-      case 'send_message': {
-        const { projectPath, sessionId } = command
-        if (!projectPath || !sessionId) {
-          if (command.requestId) await respond?.(command.requestId, { error: 'Missing project or session' })
-          break
-        }
-
-        const mgr = this.requireSessionManager()
-        if (!this.canAccessSession(projectPath, sessionId)) {
-          if (command.requestId) await respond?.(command.requestId, { error: this.buildSessionAccessError(projectPath, sessionId) })
-          log.warn('[AgentService] %s', this.buildSessionAccessError(projectPath, sessionId))
-          break
-        }
-
-        const reportLateFailure = async (error: unknown) => {
-          // withTurnReceipt already answered the request (or there was none), so
-          // this event is the only way the phone learns its bubble never ran.
-          // A row the session kept without a failure reached the agent: the
-          // rejection is a turn failure (or interruption), and the reply's own
-          // event describes that outcome.
-          const row = this.findSessionBySid(projectPath, sessionId)?.snapshot?.messages
-            .find((message) => message.id === command.clientMessageId)
-          if (row && !row.metadata?.sendFailure) return
-          log.warn('[AgentService] remote send_message failed after admission:', error)
-          if (!command.clientMessageId) return
-          await this.remoteControlService?.sendEventToMobile({
-            type: 'user_message_send_failed',
-            sessionId,
-            clientMessageId: command.clientMessageId,
-            error: error instanceof Error ? error.message : String(error),
-          }, [deviceId])
-        }
-        await withTurnReceipt(command.requestId, respond, async (onAccepted) => {
-          admitTurnAttachments(command.content, command.images)
-          const saved = loadSessionState(sessionId)
-          const queueOp = command.priority === 'next' || command.priority === 'later' || Boolean(command.steer)
-          // The phone painted this bubble before sending; its echo needs no picture bytes.
-          if (command.clientMessageId && command.images?.length) rememberAttachmentOrigin(command.clientMessageId, deviceId)
-          if (command.provider === 'codex' || saved?.provider === 'codex') {
-            const run = async () => {
-              await this.runCodexRemoteTurn(projectPath, sessionId, deviceId, command, onAccepted)
-              const session = this.findSessionBySid(projectPath, sessionId)
-              if (session) await this.steerQueuedFromSend(session, command)
-            }
-            if (queueOp) await this.enqueueSessionQueueOp(sessionId, run)
-            else await run()
-            return
-          }
-
-          let session: import('../session/types').Session
-          const existing = mgr.getSession(sessionId)
-          if (existing) {
-            session = existing
-          } else {
-            try { session = mgr.resumeSession(sessionId) } catch {
-              log.warn('[AgentService] remote send_message: session %s not found', sessionId)
-              if (command.requestId) throw new Error(`Session ${sessionId} not found`)
-              return
-            }
-          }
-
-          trace('remote.debug', 'send_message:dispatch', { sid: sessionId, projectPath, deviceId })
-          const deliver = async () => {
-            try {
-              await this.ensureRemoteOwnership(deviceId, session, async () => {
-                await session.send({
-                  content: command.content,
-                  model: command.model,
-                  effort: command.effort as SendMessageRequest['effort'] | undefined,
-                  images: command.images,
-                  userMessageContent: command.userMessageContent,
-                  contexts: command.contexts,
-                  priority: command.priority,
-                  clientMessageId: command.clientMessageId,
-                  ...(command.inputRequest ? { inputRequest: command.inputRequest } : {}),
-                  ...(command.agent ? { agent: command.agent } : {}),
-                  ...(command.modelParams ? { cursor: { params: command.modelParams } } : {}),
-                  ...(command.ultracode !== undefined ? { ultracode: command.ultracode } : {}),
-                }, { providerOrigin: 'remote', ...(onAccepted ? { onAccepted } : {}) })
-                await this.steerQueuedFromSend(session, command)
-              })
-            } catch (err) {
-              if (err instanceof SessionClaimConflictError) {
-                await this.notifySessionLocked(deviceId, sessionId, err.currentOwnerDeviceId)
-                if (onAccepted) throw err
-                return
-              }
-              throw err
-            }
-          }
-          if (queueOp) await this.enqueueSessionQueueOp(sessionId, deliver)
-          else await deliver()
-        }).catch(reportLateFailure)
-        break
-      }
-      case 'dequeue_message': {
-        if (!command.projectPath) break
-        const session = this.findSessionBySid(command.projectPath, command.sessionId)
-        if (!session) break
-        await this.enqueueSessionQueueOp(command.sessionId, async () => {
-          await session.dequeueMessage(command.clientMessageId)
-        })
-        break
-      }
-      case 'steer_queued_message': {
-        try {
-          if (!this.canAccessSession(command.projectPath, command.sessionId)) {
-            await respond?.(command.requestId, {
-              ok: false,
-              error: this.buildSessionAccessError(command.projectPath, command.sessionId),
-            })
-            break
-          }
-          const session = this.findSessionBySid(command.projectPath, command.sessionId)
-          if (!session) {
-            await respond?.(command.requestId, { ok: false, error: 'session not found' })
-            break
-          }
-          const harnessId = session.snapshot.harnessId
-          const steer = this.queuedSteerCommand(harnessId, command.clientMessageId, command.priority ?? 'now')
-          if (!steer) {
-            await respond?.(command.requestId, {
-              ok: false,
-              error: harnessId === 'codex' ? 'Codex cannot steer without interrupting' : 'steer is not supported on this harness',
-            })
-            break
-          }
-          await this.enqueueSessionQueueOp(command.sessionId, async () => {
-            await session.dispatchBackendCommand(steer)
-          })
-          await respond?.(command.requestId, { ok: true })
-        } catch (err) {
-          await respond?.(command.requestId, { ok: false, error: err instanceof Error ? err.message : String(err) })
-        }
-        break
-      }
-      case 'interrupt': {
-        const projectPath = command.projectPath
-        if (!projectPath) break
-        if (!this.canAccessSession(projectPath, command.sessionId)) {
-          log.warn('[AgentService] %s', this.buildSessionAccessError(projectPath, command.sessionId))
-          break
-        }
-        const agent = this.findSessionBySid(projectPath, command.sessionId)
-        if (agent) await agent.interrupt()
-        break
-      }
-      case 'request_session_recap': {
-        try {
-          if (!this.canAccessSession(command.projectPath, command.sessionId)) {
-            await respond?.(command.requestId, {
-              ok: false,
-              error: this.buildSessionAccessError(command.projectPath, command.sessionId),
-            })
-            break
-          }
-          const session = this.sessionManager?.getSession(command.sessionId)
-          if (!session?.requestSessionRecap) {
-            await respond?.(command.requestId, { ok: false })
-            break
-          }
-          const auto = command.auto === true
-          if (auto && !claimAutoRecapDispatch(command.sessionId)) {
-            await respond?.(command.requestId, { ok: false })
-            break
-          }
-          try {
-            const ok = await session.requestSessionRecap(auto)
-            if (auto) finishAutoRecapDispatch(command.sessionId, ok)
-            await respond?.(command.requestId, { ok })
-          } catch (err) {
-            if (auto) finishAutoRecapDispatch(command.sessionId, false)
-            throw err
-          }
-        } catch (err) {
-          await respond?.(command.requestId, { ok: false, error: (err as Error).message })
-        }
-        break
-      }
-      /**
-       * Goal transitions for an `rpc`-transport harness (Codex). A `slash`
-       * harness never reaches here — its client posts `/goal …` as a turn.
-       * Both answer with the projected goal so the caller can fail loudly; the
-       * authoritative update still arrives as a `session_goal` event.
-       */
-      case 'set_session_goal':
-      case 'clear_session_goal': {
-        try {
-          if (!this.canAccessSession(command.projectPath, command.sessionId)) {
-            await respond?.(command.requestId, {
-              ok: false,
-              error: this.buildSessionAccessError(command.projectPath, command.sessionId),
-            })
-            break
-          }
-          const session = this.sessionManager?.getSession(command.sessionId)
-          if (!session) {
-            await respond?.(command.requestId, { ok: false, error: 'Session is not running' })
-            break
-          }
-          if (command.type === 'clear_session_goal') {
-            await session.clearCodexGoal(null)
-          } else {
-            await session.setCodexGoal(null, command.objective, command.status)
-          }
-          await respond?.(command.requestId, { ok: true })
-        } catch (err) {
-          await respond?.(command.requestId, { ok: false, error: (err as Error).message })
-        }
-        break
-      }
-      case 'open_widget_input_request': {
-        if (!respond) break
-        const projectPath = this.resolveRemoteProjectPath(command.projectPath, command.sessionId)
-        if (!projectPath || !this.canAccessSession(projectPath, command.sessionId)) {
-          await respond(command.requestId, { ok: false, error: { code: 'not_found', message: 'The session is not available' } })
-          break
-        }
-        const session = this.findSessionBySid(projectPath, command.sessionId)
-        await respond(command.requestId, composerOpenResult(() => openWidgetInputRequest(session, { ...command, projectPath, output: 'agent' })))
-        break
-      }
-      case 'composer_open': {
-        if (!respond) break
-        const projectPath = this.resolveRemoteProjectPath(command.projectPath, command.sessionId)
-        if (!projectPath || !this.canAccessSession(projectPath, command.sessionId)) {
-          await respond(command.requestId, { ok: false, error: { code: 'not_found', message: 'The session is not available' } })
-          break
-        }
-        const session = this.findSessionBySid(projectPath, command.sessionId)
-        await respond(command.requestId, openComposerForm({ kind: 'device', id: deviceId }, command, output =>
-          openWidgetInputRequest(session, { projectPath, sessionId: command.sessionId, messageId: command.messageId, spec: command.spec, output })))
-        break
-      }
-      case 'composer_cancel':
-        cancelComposerForms({ kind: 'device', id: deviceId }, command.viewId, command.localId)
-        break
-      case 'composer_outcome':
-        await respond?.(command.requestId, composerFormOutcome({ kind: 'device', id: deviceId }, command.inputRequestId))
-        break
-      case 'respond_permission': {
-        // Callers that `request` it learn whether the answer settled the prompt; a form
-        // rejected for missing or invalid values stays open. `send` callers ignore this.
-        const reply = (handled: boolean, error?: string) =>
-          respond?.(command.requestId, handled ? { handled } : { handled, ...(error ? { error } : {}) })
-        const projectPath = this.resolveRemoteProjectPath(command.projectPath, command.sessionId)
-        if (!projectPath) {
-          log.warn('[AgentService] respond_permission: missing projectPath and no subscribed session for sid=%s requestId=%s', command.sessionId, command.requestId)
-          await reply(false, 'The session is not available')
-          break
-        }
-        if (!this.canAccessSession(projectPath, command.sessionId)) {
-          log.warn('[AgentService] %s', this.buildSessionAccessError(projectPath, command.sessionId))
-          await reply(false, 'The session is not available')
-          break
-        }
-        const agent = this.findSessionBySid(projectPath, command.sessionId)
-        if (agent && isInputRequestId(command.requestId)) {
-          const result = answerInputRequest(agent.id, command.requestId, {
-            allow: command.decision,
-            ...(command.formAnswers ? { formAnswers: command.formAnswers } : {}),
-          })
-          await reply(result.ok, result.ok ? undefined : result.error)
-        } else if (agent) {
-          const handled = agent.respondToPermission(
-            command.requestId,
-            command.decision,
-            command.alwaysAllow,
-            command.reason,
-            command.selectedSuggestions,
-            undefined,
-            command.formAnswers,
-          )
-          if (!handled) {
-            log.warn('[AgentService] respond_permission: request %s not found for session %s', command.requestId, command.sessionId)
-          }
-          await reply(handled, handled ? undefined : 'This prompt is no longer open')
-        } else {
-          log.warn('[AgentService] respond_permission: no agent for session %s', command.sessionId)
-          await reply(false, 'The session is not available')
-        }
-        break
-      }
-      case 'answer_question': {
-        const projectPath = this.resolveRemoteProjectPath(command.projectPath, command.sessionId)
-        if (!projectPath) {
-          log.warn('[AgentService] answer_question: missing projectPath and no subscribed session for sid=%s requestId=%s', command.sessionId, command.requestId)
-          break
-        }
-        if (!this.canAccessSession(projectPath, command.sessionId)) {
-          log.warn('[AgentService] %s', this.buildSessionAccessError(projectPath, command.sessionId))
-          break
-        }
-        const agent = this.findSessionBySid(projectPath, command.sessionId)
-        if (agent) {
-          agent.respondToQuestion(command.requestId, command.answers, command.annotations)
-        } else {
-          log.warn('[AgentService] answer_question: no agent for session %s', command.sessionId)
-        }
-        break
-      }
-      case 'dismiss_question': {
-        const projectPath = this.resolveRemoteProjectPath(command.projectPath, command.sessionId)
-        if (!projectPath) {
-          log.warn('[AgentService] dismiss_question: missing projectPath and no subscribed session for sid=%s requestId=%s', command.sessionId, command.requestId)
-          break
-        }
-        if (!this.canAccessSession(projectPath, command.sessionId)) {
-          log.warn('[AgentService] %s', this.buildSessionAccessError(projectPath, command.sessionId))
-          break
-        }
-        const agent = this.findSessionBySid(projectPath, command.sessionId)
-        if (agent) {
-          agent.dismissQuestion(command.requestId)
-        } else {
-          log.warn('[AgentService] dismiss_question: no agent for session %s', command.sessionId)
-        }
-        break
-      }
-      case 'respond_plan_approval': {
-        const projectPath = this.resolveRemoteProjectPath(command.projectPath, command.sessionId)
-        if (!projectPath) {
-          log.warn('[AgentService] respond_plan_approval: missing projectPath and no subscribed session for sid=%s requestId=%s', command.sessionId, command.requestId)
-          break
-        }
-        if (!this.canAccessSession(projectPath, command.sessionId)) {
-          log.warn('[AgentService] %s', this.buildSessionAccessError(projectPath, command.sessionId))
-          break
-        }
-        const agent = this.findSessionBySid(projectPath, command.sessionId)
-        if (agent) {
-          agent.respondToPlanApproval(command.requestId, command.approved, command.feedback)
-        } else {
-          log.warn('[AgentService] respond_plan_approval: no agent for session %s', command.sessionId)
-        }
-        break
-      }
-      case 'codex_async_question_answer': {
-        try {
-          if (!this.canAccessSession(command.projectPath, command.sessionId)) {
-            throw new Error(this.buildSessionAccessError(command.projectPath, command.sessionId))
-          }
-          const reply = await answerRemoteAsyncQuestion(this.findSessionBySid(command.projectPath, command.sessionId), command)
-          await respond?.(command.requestId, { ok: true, reply })
-        } catch (error) {
-          await respond?.(command.requestId, { error: error instanceof Error ? error.message : String(error) })
-        }
-        break
-      }
-      case 'codex_plan_approval': {
-        if (!command.sessionId) break
-        const session = this.sessionManager?.getSession(command.sessionId)
-        if (session && session.snapshot.harnessId === 'codex') {
-          await session.dispatchBackendCommand({
-            kind: 'codex.plan_approval',
-            messageId: command.messageId,
-            status: command.status,
-            ...(command.feedback ? { feedback: command.feedback } : {}),
-          })
-        }
-        break
-      }
-      case 'set_permission_mode': {
-        const projectPath = command.projectPath
-        if (!projectPath) break
-        if (!this.canAccessSession(projectPath, command.sessionId)) {
-          log.warn('[AgentService] %s', this.buildSessionAccessError(projectPath, command.sessionId))
-          break
-        }
-        const agent = this.findSessionBySid(projectPath, command.sessionId)
-        if (agent) {
-          await agent.setPermissionMode(command.mode as PermissionMode)
-        } else {
-          log.warn('[AgentService] set_permission_mode: no agent for session %s', command.sessionId)
-        }
-        break
-      }
-      case 'save_widget_template': {
-        // The store is reached the same way the renderer's own dialog reaches it, so a
-        // template saved from a phone is indistinguishable from one saved on the desktop.
-        try {
-          const { allocateTemplateId, saveTemplate } = await import('../generative-ui/template-store')
-          const { superoneHome } = await import('../superone-home')
-          const roots = { project: command.projectPath ?? undefined, user: superoneHome() }
-          if (command.input.scope === 'project' && !roots.project) throw new Error('no project open')
-          const id = allocateTemplateId(roots, command.input.id, command.input.scope)
-          const saved = saveTemplate(roots, { ...command.input, id })
-          await respond?.(command.requestId, { template: { id: saved.id, scope: saved.scope, version: saved.version } })
-        } catch (err) {
-          await respond?.(command.requestId, { error: err instanceof Error ? err.message : String(err) })
-        }
-        break
-      }
-      case 'set_sandbox_mode': {
-        if (!this.canAccessSession(command.projectPath, command.sessionId)) {
-          await respond?.(command.requestId, { error: this.buildSessionAccessError(command.projectPath, command.sessionId) })
-          break
-        }
-        const agent = this.findSessionBySid(command.projectPath, command.sessionId)
-        if (!agent) {
-          await respond?.(command.requestId, { error: 'session_not_found' })
-          break
-        }
-        // The applied info is echoed back, not just broadcast: a host that cannot
-        // sandbox at all (no bubblewrap on Linux) throws instead of emitting
-        // agent_setting_change, and a client left holding its optimistic guess
-        // would claim a confinement the agent does not have.
-        try {
-          await respond?.(command.requestId, { sandboxInfo: await agent.setSandboxMode(command.mode) })
-        } catch (err) {
-          await respond?.(command.requestId, {
-            error: err instanceof Error ? err.message : String(err),
-            sandboxInfo: agent.getCurrentSandboxInfo(),
-          })
-        }
-        break
-      }
-      case 'subscribe_session': {
-        const reqId = command.requestId
-        if (!this.canAccessSession(command.projectPath, command.sessionId)) {
-          log.warn('[AgentService] %s', this.buildSessionAccessError(command.projectPath, command.sessionId))
-          if (reqId) await respond?.(reqId, { error: this.buildSessionAccessError(command.projectPath, command.sessionId) })
-          break
-        }
-        const mgr = this.sessionManager
-        if (!mgr) {
-          if (reqId) await respond?.(reqId, { error: 'session_manager_not_ready' })
-          break
-        }
-        let subSession = mgr.getSession(command.sessionId)
-        if (!subSession) {
-          try {
-            subSession = mgr.resumeSession(command.sessionId, { passive: true })
-          } catch (err) {
-            log.warn('[AgentService] subscribe_session: session %s not found: %s', command.sessionId, err instanceof Error ? err.message : String(err))
-            if (reqId) await respond?.(reqId, { error: 'session_not_found' })
-            break
-          }
-        }
-        try {
-          subSession.subscribe(deviceId)
-        } catch (err) {
-          if (err instanceof SessionClaimConflictError) {
-            if (reqId) {
-              await respond?.(reqId, { error: 'session_locked', ownerDeviceId: err.currentOwnerDeviceId })
-            } else {
-              await this.notifySessionLocked(deviceId, command.sessionId, err.currentOwnerDeviceId)
-            }
-            break
-          }
-          throw err
-        }
-        const views = phoneDelivery(deviceId).views
-        if (command.progressive) views.open(command.sessionId, command.preserveSubscriptions)
-        else if (!command.preserveSubscriptions) views.close()
-        if (!command.preserveSubscriptions) this.releaseDeviceFromOtherSessions(deviceId, command.sessionId)
-        for (const event of subSession.getReplayEvents()) {
-          try {
-            await this.remoteControlService?.sendAgentEvent(event, [deviceId])
-          } catch (err) {
-            log.warn('[AgentService] subscribe_session: replay event failed sid=%s type=%s: %s', command.sessionId, event.type, err instanceof Error ? err.message : String(err))
-          }
-        }
-        if (reqId) {
-          try {
-            await respond?.(reqId, command.progressive ? await buildProgressiveBootstrap(subSession, command.projectPath, command.sessionId, phoneDelivery(deviceId)) : { ok: true })
-          } catch (error) {
-            await respond?.(reqId, { error: error instanceof Error ? error.message : String(error) })
-          }
-        }
-        break
-      }
-      case 'mark_session_seen': {
-        if (!this.canAccessSession(command.projectPath, command.sessionId)) break
-        this.markRemoteSeen(command.sessionId)
-        break
-      }
-      case 'append_mobile_log': {
-        await respond?.(command.requestId, { written: appendMobileLog(deviceId, command.entries) })
-        break
-      }
-      case 'unsubscribe_session': {
-        phoneDelivery(deviceId).views.close(command.sessionId)
-        const targetSessionId = command.sessionId
-        if (targetSessionId) {
-          const s = this.sessionManager?.getSession(targetSessionId)
-          if (s && s.subscribers.has(deviceId)) s.unsubscribe(deviceId, 'self_leave')
-        } else {
-          this.deviceRegistry?.unsubscribeAll(deviceId, 'self_leave')
-        }
-        break
-      }
-      case 'leave_session': {
-        phoneDelivery(deviceId).views.close(command.sessionId)
-        const session = this.sessionManager?.getSession(command.sessionId)
-        if (!session) break
-        if (session.owner.kind === 'remote' && session.owner.deviceId === deviceId) {
-          session.release(deviceId, 'self_leave')
-        }
-        if (session.subscribers.has(deviceId)) session.unsubscribe(deviceId, 'self_leave')
-        break
-      }
-      case 'terminal_create': {
-        const mgr = this.terminalManager
-        if (!mgr) { await this.sendTerminalResult(deviceId, command.requestId, false, undefined, 'no_terminal'); break }
-        const cwd = (command.sessionId ? this.sessionManager?.getSession(command.sessionId)?.cwd : undefined) ?? command.projectPath
-        await ensureShellPath()
-        const term = mgr.create({ cwd, projectPath: command.projectPath, title: basename(cwd) || 'Terminal' })
-        term.ownership.subscribe(deviceId)
-        term.ownership.claim(deviceId)
-        mgr.notifyCreated(term.terminalId)
-        await this.sendTerminalResult(deviceId, command.requestId, true, term.terminalId)
-        await this.sendTerminalSnapshot(term, deviceId)
-        break
-      }
-      case 'terminal_list': {
-        const sessionCwd = command.sessionId ? this.sessionManager?.getSession(command.sessionId)?.cwd : undefined
-        await respond?.(command.requestId, {
-          terminals: this.terminalManager?.listForProject(command.projectPath, sessionCwd) ?? [],
-        })
-        break
-      }
-      case 'terminal_subscribe': {
-        const term = this.terminalManager?.get(command.terminalId)
-        if (!term) { await this.sendTerminalResult(deviceId, command.requestId, false, command.terminalId, 'no_terminal'); break }
-        term.ownership.subscribe(deviceId)
-        await this.sendTerminalResult(deviceId, command.requestId, true, term.terminalId)
-        await this.sendTerminalSnapshot(term, deviceId)
-        break
-      }
-      case 'terminal_unsubscribe': {
-        if (command.terminalId) {
-          const term = this.terminalManager?.get(command.terminalId)
-          term?.ownership.handleDeviceDisconnected(deviceId)
-        } else {
-          for (const item of this.terminalManager?.list() ?? []) {
-            this.terminalManager?.get(item.terminalId)?.ownership.handleDeviceDisconnected(deviceId)
-          }
-        }
-        break
-      }
-      case 'terminal_claim': {
-        const term = this.terminalManager?.get(command.terminalId)
-        if (!term) { await this.sendTerminalResult(deviceId, command.requestId, false, command.terminalId, 'no_terminal'); break }
-        const res = term.ownership.claim(deviceId)
-        if (res.ok) await this.sendTerminalResult(deviceId, command.requestId, true, term.terminalId)
-        else await this.sendTerminalResult(deviceId, command.requestId, false, term.terminalId, res.code)
-        break
-      }
-      case 'terminal_release': {
-        const term = this.terminalManager?.get(command.terminalId)
-        term?.ownership.release(deviceId)
-        await this.sendTerminalResult(deviceId, command.requestId, true, command.terminalId)
-        break
-      }
-      case 'terminal_input': {
-        const term = this.terminalManager?.get(command.terminalId)
-        if (!term) break
-        if (!term.ownership.isWritableBy(deviceId)) {
-          await this.remoteControlService?.sendTerminalFrame(
-            { type: 'terminal_error', terminalId: command.terminalId, code: 'not_owner', message: 'Terminal is controlled by another device' },
-            [deviceId],
-          )
-          break
-        }
-        term.input(command.data)
-        break
-      }
-      case 'terminal_resize': {
-        const term = this.terminalManager?.get(command.terminalId)
-        if (!term || !term.ownership.isWritableBy(deviceId)) break
-        term.resize(command.cols, command.rows)
-        break
-      }
-      case 'terminal_kill': {
-        const term = this.terminalManager?.get(command.terminalId)
-        if (!term) break
-        if (!term.ownership.isWritableBy(deviceId)) {
-          await this.remoteControlService?.sendTerminalFrame(
-            { type: 'terminal_error', terminalId: command.terminalId, code: 'not_owner', message: 'Only the controlling device can kill this terminal' },
-            [deviceId],
-          )
-          break
-        }
-        this.terminalManager?.kill(command.terminalId)
-        break
-      }
-      case 'subscribe_detail':
-      case 'unsubscribe_detail': {
-        if (!this.canAccessSession(command.projectPath, command.sessionId)) {
-          await respond?.(command.requestId, { error: 'Session access denied' })
-          break
-        }
-        try {
-          await respond?.(command.requestId, handleDetailCommand(command, deviceId,
-            this.findSessionBySid(command.projectPath, command.sessionId)))
-        } catch (error) {
-          await respond?.(command.requestId, { error: error instanceof Error ? error.message : String(error) })
-        }
-        break
-      }
-      case 'get_session_history_index': {
-        if (!this.canAccessSession(command.projectPath, command.sessionId)) {
-          await respond?.(command.requestId, { error: this.buildSessionAccessError(command.projectPath, command.sessionId) })
-          break
-        }
-        try { await respond?.(command.requestId, loadSessionHistoryIndex(command.sessionId)) }
-        catch (error) { await respond?.(command.requestId, { error: error instanceof Error ? error.message : String(error) }) }
-        break
-      }
-      case 'load_session_messages': {
-        if (!this.canAccessSession(command.projectPath, command.sessionId)) {
-          await respond?.(command.requestId, { error: this.buildSessionAccessError(command.projectPath, command.sessionId) })
-          break
-        }
-        try {
-          if (command.direction && !['around', 'before', 'after'].includes(command.direction)) throw new Error('Invalid history direction')
-          const result = command.anchorId
-            ? loadSessionMessageWindow(command.sessionId, command.anchorId, command.direction ?? 'around', command.limit)
-            : loadSessionMessagesPaginated(command.sessionId, command.limit ?? 10, command.cursor)
-          await whenHighlighterReady()
-          const stripped = phoneDelivery(deviceId).messages(result.messages, command.sessionId, command.projectPath)
-          const sessionProvider = readSessionHarnessId(command.sessionId) ?? 'claude'
-          trace('remote.cmd', 'load_session_messages_result', { projectPath: command.projectPath, sessionId: command.sessionId, messageCount: stripped.length, hasMore: result.hasMore, cursor: result.cursor, provider: sessionProvider })
-          await respond?.(command.requestId, { messages: stripped, hasMore: result.hasMore, cursor: result.cursor, provider: sessionProvider })
-        } catch (err) {
-          trace('remote.cmd', 'load_session_messages_error', { projectPath: command.projectPath, sessionId: command.sessionId, error: (err as Error).message })
-          await respond?.(command.requestId, { error: (err as Error).message })
-        }
-        break
-      }
-      case 'list_directory': {
-        try {
-          await respond?.(command.requestId, await this.remoteListDirectory(command.path, command))
-        } catch (err) {
-          await respond?.(command.requestId, { error: (err as Error).message })
-        }
-        break
-      }
-      case 'get_mention_icons': {
-        try {
-          const { lookupMentionIcons } = await import('./remote-mention-icons')
-          await respond?.(command.requestId, { icons: lookupMentionIcons(command.ids ?? []) })
-        } catch (err) {
-          await respond?.(command.requestId, { error: (err as Error).message })
-        }
-        break
-      }
-      case 'mcp_app_request': {
-        try {
-          if (!this.canAccessSession(command.projectPath, command.sessionId)) {
-            throw new Error(this.buildSessionAccessError(command.projectPath, command.sessionId))
-          }
-          const request = deviceMcpAppHostRequest(command.projectPath, command.sessionId, command.request)
-          await respond?.(command.requestId, { response: await executeDeviceMcpAppRequest(request, { kind: 'mobile', deviceId, transport: source?.transport }) })
-        } catch (err) {
-          await respond?.(command.requestId, { error: (err as Error).message })
-        }
-        break
-      }
-      case 'mod_ui_request': {
-        try {
-          if (!this.canAccessSession(command.projectPath, command.sessionId)) {
-            throw new Error(this.buildSessionAccessError(command.projectPath, command.sessionId))
-          }
-          // Remote-node sessions stream to the desktop window only; their mods draw there.
-          const session = this.sessionManager?.getSession(command.sessionId)
-          if (!session) throw Object.assign(new Error('No live session'), { name: MOD_UI_UNAVAILABLE })
-          const response = await session.modUi(command.op, asDeviceModUiRequest(command.request, deviceId))
-          await respond?.(command.requestId, { response })
-        } catch (err) {
-          const e = err as Error
-          // The phone's mod client keeps failures to itself, so release builds see them only here.
-          if (e.name !== MOD_UI_UNAVAILABLE) log.warn('[agent-service] mod_ui_request %s failed sid=%s device=%s: %s', command.op, command.sessionId, deviceId, e.message)
-          await respond?.(command.requestId, { error: e.name === MOD_UI_UNAVAILABLE ? `${MOD_UI_UNAVAILABLE}: ${e.message}` : e.message })
-        }
-        break
-      }
-      case 'search_mcp_mentions':
-      case 'read_mcp_mentions': {
-        try {
-          if (!this.canAccessSession(command.projectPath, command.sessionId)) {
-            throw new Error(this.buildSessionAccessError(command.projectPath, command.sessionId))
-          }
-          await respond?.(command.requestId, command.type === 'search_mcp_mentions'
-            ? await this.remoteSearchMcpMentions(command.projectPath, command.sessionId, command.query)
-            : await this.remoteReadMcpMentions(command.projectPath, command.sessionId, command.targets))
-        } catch (err) {
-          await respond?.(command.requestId, { error: (err as Error).message })
-        }
-        break
-      }
-      case 'resolve_favicon': {
-        try {
-          await respond?.(command.requestId, { dataUrl: await resolveFavicon(command.url, command.isDark === true) })
-        } catch (err) {
-          await respond?.(command.requestId, { error: (err as Error).message })
-        }
-        break
-      }
-      case 'list_mcp_servers': {
-        try {
-          await respond?.(command.requestId, await this.remoteMcpServers(command.projectPath))
-        } catch (err) {
-          await respond?.(command.requestId, { error: (err as Error).message })
-        }
-        break
-      }
-      case 'get_mcp_icons': {
-        try {
-          const { collectMcpServerIconMap, probeMcpIconsForAllHarnesses } = await import('../mcp-server-icons')
-          void probeMcpIconsForAllHarnesses(command.projectPath ?? '')
-          await respond?.(command.requestId, { icons: await collectMcpServerIconMap() })
-        } catch (err) {
-          await respond?.(command.requestId, { error: (err as Error).message })
-        }
-        break
-      }
-      case 'search_files': {
-        try {
-          const { searchFiles } = await import('./fuzzy-file-search')
-          await respond?.(command.requestId, { results: searchFiles([command.root], command.query, command.limit ?? 30) })
-        } catch (err) {
-          await respond?.(command.requestId, { error: (err as Error).message })
-        }
-        break
-      }
-      case 'get_git_file_status': {
-        try {
-          const { parseGitPorcelain } = await import('@superone/shared/git-file-status')
-          // `--ignored` is deliberately omitted: listing every node_modules entry
-          // would dwarf the real changes and cost more than the colour is worth.
-          const output = await gitRun(command.projectPath, ['status', '--porcelain'])
-          await respond?.(command.requestId, { entries: parseGitPorcelain(output) })
-        } catch (err) {
-          // A folder that is not a repository is the normal case, not a failure —
-          // the browser just shows no colours.
-          await respond?.(command.requestId, { entries: [] })
-        }
-        break
-      }
-      case 'search_mentions': {
-        try {
-          await respond?.(command.requestId, await this.remoteSearchMentions(command.projectPath, command.query, command))
-        } catch (err) {
-          await respond?.(command.requestId, { error: (err as Error).message })
-        }
-        break
-      }
-      case 'get_attachment': {
-        if (!this.canAccessSession(command.projectPath, command.sessionId)) {
-          await respond?.(command.requestId, { error: this.buildSessionAccessError(command.projectPath, command.sessionId) })
-          break
-        }
-        // The transcript carried a thumbnail; the bytes are in the live session
-        // when the turn is still running or the message is still queued,
-        // otherwise in the persisted message.
-        const attachment = this.remoteAttachment(command.sessionId, command.messageId, command)
-        if (!attachment?.base64) {
-          await respond?.(command.requestId, { error: 'That attachment is no longer available' })
-          break
-        }
-        await respond?.(command.requestId, { attachment })
-        break
-      }
-      case 'get_session_state': {
-        if (!this.canAccessSession(command.projectPath, command.sessionId)) {
-          await respond?.(command.requestId, { error: this.buildSessionAccessError(command.projectPath, command.sessionId) })
-          break
-        }
-        try {
-          const session = this.findSessionBySid(command.projectPath, command.sessionId)
-          const state = await buildRemoteSessionSnapshot(session, command.projectPath, command.sessionId, phoneDelivery(deviceId), session ? [] : loadSessionState(command.sessionId)?.messages ?? [])
-          trace('remote.cmd', 'get_session_state', {
-            projectPath: command.projectPath,
-            sessionId: command.sessionId,
-            inProgressCount: state.inProgressMessages.length,
-            pendingCount: state.pendingInteractions.length,
-            status: state.status,
-          })
-          await respond?.(command.requestId, state)
-        } catch (err) {
-          await respond?.(command.requestId, { error: (err as Error).message })
-        }
-        break
-      }
-      case 'create_directory': {
-        try {
-          await this.remoteCreateDirectory(command.path, command.name)
-          await respond?.(command.requestId, { success: true })
-        } catch (err) {
-          await respond?.(command.requestId, { error: (err as Error).message })
-        }
-        break
-      }
-      case 'add_project': {
-        try {
-          if (command.createIfMissing) await mkdir(command.path, { recursive: true })
-          addRecentFolder(command.path)
-          await this.openFolder(command.path)
-          await respond?.(command.requestId, { success: true })
-        } catch (err) {
-          await respond?.(command.requestId, { error: (err as Error).message })
-        }
-        break
-      }
-      case 'list_harness_options': {
-        try {
-          await respond?.(command.requestId, await this.remoteHarnessOptions())
-        } catch (err) {
-          await respond?.(command.requestId, { error: (err as Error).message })
-        }
-        break
-      }
-      case 'search_github_repos': {
-        try {
-          // Same three services the desktop add-project dialog uses, so a phone
-          // and the sidebar see identical results.
-          if (command.mode === 'mine') {
-            const page = await listMyGithubRepos(command.page ?? 1, 20)
-            await respond?.(command.requestId, page)
-          } else if (command.mode === 'owner') {
-            const repos = await listGithubReposForOwner(command.value ?? '')
-            await respond?.(command.requestId, { repos })
-          } else {
-            const repos = await searchGithubRepositories(command.value ?? '')
-            await respond?.(command.requestId, { repos })
-          }
-        } catch (err) {
-          await respond?.(command.requestId, { error: (err as Error).message })
-        }
-        break
-      }
-      case 'browse_host_directory': {
-        try {
-          const { getEnvironmentHost } = await import('../environment/environment-host')
-          await respond?.(command.requestId, await getEnvironmentHost().browsePath('local', command.path))
-        } catch (err) {
-          await respond?.(command.requestId, { error: (err as Error).message })
-        }
-        break
-      }
-      case 'get_default_clone_path': {
-        try {
-          // Keyed by connection like the sidebar dialog; a phone always drives
-          // the desktop's own environment, so it reads and writes `local`.
-          const saved = readAppSettings().defaultClonePaths?.local
-          await respond?.(command.requestId, { path: saved?.trim() ? saved.trim() : null })
-        } catch (err) {
-          await respond?.(command.requestId, { error: (err as Error).message })
-        }
-        break
-      }
-      case 'set_default_clone_path': {
-        try {
-          saveAppSettings({ defaultClonePaths: { local: command.path.trim() } })
-          await respond?.(command.requestId, { success: true })
-        } catch (err) {
-          await respond?.(command.requestId, { error: (err as Error).message })
-        }
-        break
-      }
-      case 'clone_repository': {
-        try {
-          await ensureShellPath()
-          const { cloneRepository } = await import('@superone/shared/git-clone')
-          const cloned = await cloneRepository({
-            remoteUrl: command.remoteUrl,
-            parentPath: command.parentPath,
-            directoryName: command.directoryName,
-            shallow: command.shallow,
-          })
-          addRecentFolder(cloned.path)
-          await this.openFolder(cloned.path)
-          await respond?.(command.requestId, { path: cloned.path, name: cloned.name })
-        } catch (err) {
-          await respond?.(command.requestId, { error: (err as Error).message })
-        }
-        break
-      }
-      case 'list_projects': {
-        const folders = getRecentFolders()
-        await respond?.(command.requestId, {
-          projects: folders.map((f) => ({ path: f.path, name: basename(f.path) })),
-        })
-        log.info('[CONN-DESK] list_projects done elapsed=%dms count=%d', Date.now() - cmdStart, folders.length)
-        break
-      }
-      case 'list_session_activity': {
-        await respond?.(command.requestId, { sessions: this.remoteSessionActivity() })
-        break
-      }
-      case 'list_sessions':
-      case 'list_pinned_sessions':
-      case 'search_sessions':
-      case 'find_session': {
-        try {
-          await respond?.(command.requestId, readRemoteSessionList(command, this.sessionManager))
-        } catch (err) {
-          await respond?.(command.requestId, { error: (err as Error).message })
-        }
-        break
-      }
-      case 'pin_session': {
-        if (!this.canAccessSession(command.projectPath, command.sessionId)) {
-          await respond?.(command.requestId, {
-            ok: false,
-            error: this.buildSessionAccessError(command.projectPath, command.sessionId),
-          })
-          break
-        }
-        dbPinSession(command.sessionId, command.pinned)
-        this.emitSessionsChanged()
-        await respond?.(command.requestId, { ok: true })
-        break
-      }
-      case 'archive_session': {
-        if (!this.canAccessSession(command.projectPath, command.sessionId)) {
-          await respond?.(command.requestId, {
-            ok: false,
-            error: this.buildSessionAccessError(command.projectPath, command.sessionId),
-          })
-          break
-        }
-        await this.setSessionHidden(command.sessionId, true)
-        await respond?.(command.requestId, { ok: true })
-        break
-      }
-      case 'delete_session': {
-        if (!this.canAccessSession(command.projectPath, command.sessionId)) {
-          await respond?.(command.requestId, {
-            ok: false,
-            error: this.buildSessionAccessError(command.projectPath, command.sessionId),
-          })
-          break
-        }
-        if (this.sessionManager?.getSession(command.sessionId)) {
-          try {
-            await this.sessionManager.disposeSession(command.sessionId)
-          } catch (err) {
-            log.warn(
-              '[AgentService] dispose before remote delete failed sid=%s: %s',
-              command.sessionId,
-              err instanceof Error ? err.message : String(err),
-            )
-          }
-        }
-        dbDeleteSession(command.sessionId)
-        this.emitSessionsChanged()
-        await respond?.(command.requestId, { ok: true })
-        break
-      }
-      case 'fork_session': {
-        if (!this.canAccessSession(command.projectPath, command.sessionId)) {
-          await respond?.(command.requestId, {
-            ok: false,
-            error: this.buildSessionAccessError(command.projectPath, command.sessionId),
-          })
-          break
-        }
-        // Same path as the desktop's SESSIONS_FORK IPC; the phone's own list
-        // refreshes off the db-layer `session_list_changed` signal.
-        const result = await forkSession({ sessionId: command.sessionId, mode: command.mode })
-        if (result.ok) this.emitSessionsChanged()
-        await respond?.(command.requestId, result)
-        break
-      }
-      case 'list_models': {
-        try {
-          const cached = getCachedHarnessResources('claude')
-          const cachedModels = cached?.models
-          const models = cachedModels?.length ? cachedModels : await fetchModels(command.projectPath)
-          await respond?.(command.requestId, { models })
-        } catch (err) {
-          await respond?.(command.requestId, { error: (err as Error).message })
-        }
-        break
-      }
-      case 'get_system_info': {
-        try {
-          await respond?.(command.requestId, await this.remoteSystemInfo(command.projectPath, command.provider, command.force))
-        } catch (err) {
-          log.error('[get_system_info] error: %s', err instanceof Error ? err.message : String(err))
-          await respond?.(command.requestId, { error: (err as Error).message })
-        }
-        log.info('[CONN-DESK] get_system_info done elapsed=%dms', Date.now() - cmdStart)
-        break
-      }
-      case 'get_project_resources': {
-        try {
-          await respond?.(command.requestId, await this.remoteProjectResources(command.projectPath, command.provider))
-        } catch (err) {
-          await respond?.(command.requestId, { error: (err as Error).message })
-        }
-        break
-      }
-      case 'get_git_info': {
-        try {
-          const branch = await gitRun(command.projectPath, ['rev-parse', '--abbrev-ref', 'HEAD'])
-            .catch(() => gitRun(command.projectPath, ['symbolic-ref', 'HEAD']).then((r) => r.replace('refs/heads/', '')))
-          // A detached HEAD makes `--abbrev-ref` answer the literal string `HEAD`.
-          // Reporting that as a branch name is how "HEAD" ends up in branch pickers
-          // and in `create_session.gitBranch`, so name the commit instead — the
-          // extra `rev-parse` only runs on the path that has no branch to report.
-          const detached = branch === 'HEAD'
-          const head = detached
-            ? await gitRun(command.projectPath, ['rev-parse', '--short=7', 'HEAD']).catch(() => null)
-            : null
-          const status = await gitRun(command.projectPath, ['status', '--porcelain'])
-          const files = status ? status.split('\n').filter(Boolean).length : 0
-          let insertions = 0
-          let deletions = 0
-          let ahead = 0
-          let behind = 0
-          if (files > 0) {
-            try {
-              const shortstat = await gitRun(command.projectPath, ['diff', 'HEAD', '--shortstat'])
-              const insMatch = shortstat.match(/(\d+) insertion/)
-              const delMatch = shortstat.match(/(\d+) deletion/)
-              if (insMatch) insertions = parseInt(insMatch[1])
-              if (delMatch) deletions = parseInt(delMatch[1])
-            } catch { /* no HEAD yet */ }
-          }
-          try {
-            const counts = await gitRun(command.projectPath, ['rev-list', '--left-right', '--count', '@{upstream}...HEAD'])
-            const [behindText, aheadText] = counts.trim().split(/\s+/)
-            behind = Number(behindText) || 0
-            ahead = Number(aheadText) || 0
-          } catch { /* no upstream */ }
-          await respond?.(command.requestId, {
-            branch: detached ? null : branch,
-            ...(head ? { head } : {}),
-            ahead,
-            behind,
-            ...(files > 0 ? { dirty: { files, insertions, deletions } } : {}),
-          })
-        } catch {
-          await respond?.(command.requestId, { branch: null })
-        }
-        break
-      }
-      case 'get_git_branches': {
-        try {
-          const raw = await gitRun(command.projectPath, ['branch', '--format=%(refname:short)'])
-          await respond?.(command.requestId, { branches: raw.split('\n').filter(Boolean) })
-        } catch {
-          await respond?.(command.requestId, { branches: [] })
-        }
-        break
-      }
-      case 'list_git_mention_refs': {
-        try {
-          // Same checkout the session runs in — a worktree, not the project root.
-          const cwd = this.sessionManager?.getActiveSession(command.projectPath)?.cwd ?? command.projectPath
-          const { resolveGitMentionRefs } = await import('../git/mention-refs')
-          await respond?.(command.requestId, await resolveGitMentionRefs(cwd, command.kind, command.query ?? ''))
-        } catch (err) {
-          await respond?.(command.requestId, { ok: false, reason: 'error', error: (err as Error).message })
-        }
-        break
-      }
-      case 'switch_git_branch': {
-        try {
-          await gitRun(command.projectPath, ['checkout', sanitizeGitRef(command.branch)])
-          await respond?.(command.requestId, { ok: true })
-        } catch (err) {
-          const stderr = (err as { stderr?: string })?.stderr?.trim()
-          await respond?.(command.requestId, { ok: false, error: stderr || (err as Error)?.message || 'Unknown git error' })
-        }
-        break
-      }
-      case 'create_git_branch': {
-        try {
-          await gitRun(command.projectPath, ['rev-parse', '--verify', 'HEAD'])
-        } catch {
-          await respond?.(command.requestId, { ok: false, error: 'Cannot create branch before the first commit.' })
-          break
-        }
-        try {
-          await gitRun(command.projectPath, ['checkout', '-b', sanitizeGitRef(command.branch)])
-          await respond?.(command.requestId, { ok: true })
-        } catch (err) {
-          const stderr = (err as { stderr?: string })?.stderr?.trim()
-          await respond?.(command.requestId, { ok: false, error: stderr || (err as Error)?.message || 'Unknown git error' })
-        }
-        break
-      }
-      case 'get_worktree_info': {
-        const info = await getWorktreeInfo(command.projectPath)
-        await respond?.(command.requestId, info ?? { isWorktree: false, currentBranch: '', entries: [] })
-        break
-      }
-      case 'get_checked_out_branches': {
-        const branches = await getCheckedOutBranches(command.projectPath)
-        await respond?.(command.requestId, { branches })
-        break
-      }
-      case 'activate_worktree': {
-        try {
-          if (command.baseBranch === null) {
-            await this.applyWorktreeSelection(command.projectPath, command.projectPath, null)
-            await respond?.(command.requestId, { ok: true, path: command.projectPath })
-            break
-          }
-          const mode = command.mode ?? 'branch'
-          const branchName = command.branchName ?? (mode === 'branch' ? command.baseBranch : undefined)
-          const result = await activateWorktree(command.projectPath, {
-            baseBranch: command.baseBranch,
-            mode,
-            branchName,
-            carryLocalChanges: command.carryLocalChanges,
-          })
-          await this.applyWorktreeSelection(command.projectPath, result.path, result.recordedBranch)
-          await respond?.(command.requestId, { ok: true, path: result.path })
-        } catch (err) {
-          await respond?.(command.requestId, { ok: false, error: gitErrorMessage(err) })
-        }
-        break
-      }
-      case 'list_directory_for_add_dir': {
-        try {
-          const result = this.listDirectoryForAddDir(command.projectPath, command.rawInput)
-          await respond?.(command.requestId, result)
-        } catch (err) {
-          await respond?.(command.requestId, { error: (err as Error).message })
-        }
-        break
-      }
-      case 'validate_add_dir': {
-        try {
-          const result = this.validateAddDirCandidate(command.projectPath, command.candidate)
-          await respond?.(command.requestId, result)
-        } catch (err) {
-          await respond?.(command.requestId, { error: (err as Error).message })
-        }
-        break
-      }
-      case 'add_project_additional_dir': {
-        try {
-          const v = this.validateAddDirCandidate(command.projectPath, command.dir)
-          if (!v.ok) {
-            await respond?.(command.requestId, v)
-            break
-          }
-          // Harness-neutral now: the folder lands on the SuperOne project,
-          // not in whichever config file the caller's harness happens to read.
-          this.setProjectExtraDirs(command.projectPath, (dirs) =>
-            dirs.includes(command.dir) ? dirs : [...dirs, command.dir])
-          await respond?.(command.requestId, { ok: true })
-        } catch (err) {
-          await respond?.(command.requestId, { ok: false, reason: (err as Error).message })
-        }
-        break
-      }
-      case 'remove_project_additional_dir': {
-        try {
-          this.setProjectExtraDirs(command.projectPath, (dirs) =>
-            dirs.filter((d) => d !== command.dir))
-          await respond?.(command.requestId, { ok: true })
-        } catch (err) {
-          await respond?.(command.requestId, { ok: false, reason: (err as Error).message })
-        }
-        break
-      }
-      case 'set_session_additional_dirs': {
-        try {
-          const session = this.sessionManager?.getSession(command.sessionId)
-          if (!session) {
-            await respond?.(command.requestId, { ok: false, reason: 'session-not-found' })
-            break
-          }
-          await session.dispatchBackendCommand({ kind: 'session.set_additional_dirs', dirs: command.dirs })
-          this.emitAdditionalDirsChanged(command.projectPath, command.sessionId)
-          await respond?.(command.requestId, { ok: true })
-        } catch (err) {
-          await respond?.(command.requestId, { ok: false, reason: (err as Error).message })
-        }
-        break
-      }
-      case 'read_desktop_file': {
-        await this.handleReadDesktopFile(command, respond, source)
-        break
-      }
-      case 'read_video_poster': {
-        await this.handleReadVideoPoster(command, respond)
-        break
-      }
-      case 'upload_file': {
-        if (!respond) break
-        const svc = this.mobileReceiveService
-        if (!svc) {
-          await respond(command.requestId, { ok: false, error: 'no_transport', message: 'upload service unavailable' })
-          break
-        }
-        const res = await svc.handleUploadFile({
-          requestId: command.requestId,
-          sessionId: command.sessionId,
-          targetDir: command.targetDir,
-          ...(command.inputRequest ? { inputRequest: command.inputRequest } : {}),
-          name: command.name,
-          mimeType: command.mimeType,
-          size: command.size,
-          inlineBase64: command.inlineBase64,
-          transport: source?.transport ?? 'relay',
-        })
-        await respond(command.requestId, res)
-        break
-      }
-      case 'upload_file_complete': {
-        if (!respond) break
-        const svc = this.mobileReceiveService
-        if (!svc) {
-          await respond(command.requestId, { ok: false, error: 'no_transport', message: 'upload service unavailable' })
-          break
-        }
-        const res = await svc.handleUploadComplete({ requestId: command.requestId })
-        await respond(command.requestId, res)
-        break
-      }
-      case 'get_usage': {
-        try {
-          await respond?.(command.requestId, await this.remoteUsage(command))
-        } catch (err) {
-          await respond?.(command.requestId, { error: (err as Error).message })
-        }
-        break
-      }
-      case 'consume_rate_limit_reset': {
-        try {
-          await respond?.(command.requestId, await this.remoteConsumeRateLimitReset(command.projectPath, command.apiProviderId ?? null, command.creditId ?? null))
-        } catch (err) {
-          await respond?.(command.requestId, { error: (err as Error).message })
-        }
-        break
-      }
-      case 'list_providers': {
-        try {
-          await respond?.(command.requestId, { providers: listCredentials() })
-        } catch (err) {
-          await respond?.(command.requestId, { error: (err as Error).message })
-        }
-        break
-      }
-      case 'list_media_providers': {
-        try {
-          // Labels only: the phone names params with these, it never configures providers.
-          const providers = (await getMediaProviderStatuses()).map(({ id, label, providerLabel, models }) => ({
-            id, label, ...(providerLabel ? { providerLabel } : {}), models,
-          }))
-          await respond?.(command.requestId, { providers })
-        } catch (err) {
-          await respond?.(command.requestId, { error: (err as Error).message })
-        }
-        break
-      }
-      case 'set_session_settings': {
-        const session = this.sessionManager?.getSession(command.sessionId)
-        if (!session) break
-        if (!this.canAccessSession(command.projectPath, command.sessionId)) {
-          log.warn('[AgentService] %s', this.buildSessionAccessError(command.projectPath, command.sessionId))
-          break
-        }
-        session.setSelectedSettings({
-          ...(command.model !== undefined ? { model: command.model } : {}),
-          ...(command.effort !== undefined ? { effort: command.effort as SendMessageRequest['effort'] | null } : {}),
-          ...(command.mode !== undefined ? { mode: command.mode } : {}),
-        })
-        if (command.agentPreset !== undefined) session.setAgentPreset(command.agentPreset)
-        break
-      }
-      case 'set_session_api_provider_id': {
-        const session = this.sessionManager?.getSession(command.sessionId)
-        if (!session) break
-        if (!this.canAccessSession(command.projectPath, command.sessionId)) {
-          log.warn('[AgentService] %s', this.buildSessionAccessError(command.projectPath, command.sessionId))
-          break
-        }
-        session.setApiProviderId(command.apiProviderId)
-        break
-      }
-    }
-  }
-
-  /**
-   * The same gate `read_desktop_file` applies, answered as the error shape
-   * both file RPCs share. `null` means the error has already been sent.
-   */
-  private async authorizeRemoteFile(
-    command: { requestId: string; path: string; maxBytes?: number; root?: string },
-    respond: RemoteResponder,
-  ): Promise<AuthorizedFile | null> {
-    try {
-      // A remote-session file (root is `remote:<conn>:<path>`) is resolved to a
-      // real local path first (session-sync-zone.md §4.2): a node-zone artifact
-      // via the desktop mirror, a node project file staged under the OS temp
-      // cache. Only then does it go through the same host-file gate as any local
-      // path. A bare path (no root, or a local root) authorizes as before.
-      const localPath = command.root ? await this.resolveRemoteSessionFilePath(command.root, command.path) : command.path
-      if (localPath === null) {
-        await respond(command.requestId, { ok: false, error: 'not_found', message: 'file does not exist' })
-        return null
-      }
-      return await authorizeAndStat(localPath, { allowedRoots: [] }, { maxBytes: command.maxBytes, skipRootCheck: true })
-    } catch (err) {
-      if (err instanceof FileBridgeError) {
-        await respond(command.requestId, { ok: false, error: err.code, message: err.message })
-      } else {
-        await respond(command.requestId, { ok: false, error: 'internal_error', message: (err as Error).message })
-      }
-      return null
-    }
-  }
-
-  /**
-   * A remote-session `(root, path)` as a real local file the phone bridge can
-   * serve: the desktop mirror of a node-zone artifact, or a node project file
-   * staged under the OS temp cache. Null when the file exists on neither side.
-   */
-  private async resolveRemoteSessionFilePath(root: string, path: string): Promise<string | null> {
-    const { getEnvironmentHost } = await import('../environment/environment-host')
-    const host = getEnvironmentHost()
-    const { resolveSessionFile, resolverDepsFor, materializeRemoteProjectFile } = await import('../environment/session-file-resolver')
-    const resolution = await resolveSessionFile(root, path, resolverDepsFor(host))
-    if (resolution.kind === 'local') return resolution.path
-    if (resolution.kind === 'missing') return null
-    const { resolveRemoteProjectContext } = await import('../environment/remote-file-tree')
-    const ctx = await resolveRemoteProjectContext(host, resolution.folderPath)
-    if (!ctx) return null
-    const ref = { environmentId: ctx.environmentId, projectId: ctx.projectId }
-    return materializeRemoteProjectFile(resolution.connectionId, resolution.folderPath, resolution.relativePath, {
-      stat: async (rel) => {
-        const parentRel = rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '.'
-        const entries = await host.workspace().listDir({ project: ref, relativePath: parentRel || '.' })
-        const self = entries.find((e) => e.name === rel.slice(rel.lastIndexOf('/') + 1))
-        return self && self.type === 'file' ? { size: self.size ?? 0, mtimeMs: self.mtimeMs ?? 0 } : null
-      },
-      read: async (rel) => {
-        const raw = await host.workspace().readFile({ project: ref, relativePath: rel })
-        return typeof raw.content === 'string' ? Buffer.from(raw.content, 'utf8') : Buffer.from(raw.content)
-      },
-    })
-  }
-
-  private async handleReadVideoPoster(
-    command: Extract<RemoteCommand, { type: 'read_video_poster' }>,
-    respond?: RemoteResponder,
-  ): Promise<void> {
-    if (!respond) return
-    // No size cap: only the first frame leaves the host, however long the clip.
-    const authorized = await this.authorizeRemoteFile({ requestId: command.requestId, path: command.path, root: command.root, maxBytes: Number.MAX_SAFE_INTEGER }, respond)
-    if (!authorized) return
-    const metadata = { mimeType: authorized.mimeType, name: authorized.name, size: authorized.size, modifiedAt: authorized.modifiedAt }
-    if (!authorized.mimeType.startsWith('video/')) {
-      await respond(command.requestId, { ok: true, ...metadata, poster: null })
-      return
-    }
-    try {
-      const poster = await videoPosterService().posterFor(authorized)
-      await respond(command.requestId, { ok: true, ...metadata, poster })
-    } catch (err) {
-      await respond(command.requestId, { ok: false, error: 'internal_error', message: (err as Error).message })
-    }
-  }
-
-  private async handleReadDesktopFile(
-    command: Extract<RemoteCommand, { type: 'read_desktop_file' }>,
-    respond?: RemoteResponder,
-    source?: { deviceId: string; transport: 'lan' | 'relay' },
-  ): Promise<void> {
-    if (!respond) return
-    const authorized = await this.authorizeRemoteFile(command, respond)
-    if (!authorized) return
-
-    // Small files ride back in the response itself: no LAN URL to sign and, over
-    // the relay, no encrypted R2 round-trip. Checked before `statOnly` so one
-    // request can ask "give me the bytes if they are small, otherwise just tell
-    // me about the file" and get either answer. A full fetch of a small relay
-    // file takes the same path so it never stages on R2 either.
-    try {
-      const inline = await readPreferInline(authorized, {
-        preferInline: command.preferInline,
-        statOnly: command.statOnly,
-        transport: source?.transport ?? 'relay',
-      })
-      if (inline.kind === 'text') {
-        await respond(command.requestId, {
-          ok: true,
-          inline: true,
-          text: inline.text,
-          mimeType: authorized.mimeType,
-          name: authorized.name,
-          size: authorized.size,
-          modifiedAt: authorized.modifiedAt,
-        })
-        return
-      }
-      if (inline.kind === 'bytes') {
-        await respond(command.requestId, {
-          ok: true,
-          inline: true,
-          base64: inline.bytes.toString('base64'),
-          mimeType: authorized.mimeType,
-          name: authorized.name,
-          size: authorized.size,
-          modifiedAt: authorized.modifiedAt,
-        })
-        return
-      }
-    } catch (err) {
-      await respond(command.requestId, { ok: false, error: 'internal_error', message: (err as Error).message })
-      return
-    }
-
-    if (command.statOnly) {
-      await respond(command.requestId, {
-        ok: true,
-        statOnly: true,
-        mimeType: authorized.mimeType,
-        name: authorized.name,
-        size: authorized.size,
-        modifiedAt: authorized.modifiedAt,
-      })
-      return
-    }
-
-    const transport = source?.transport ?? 'relay'
-    const remote = this.remoteControlService
-    if (!remote) {
-      await respond(command.requestId, { ok: false, error: 'no_transport', message: 'remote control unavailable' })
-      return
-    }
-
-    try {
-      let url: string
-      let expiresAt: number
-      let encryption: { version: number; format: string; key: string } | undefined
-      if (transport === 'lan') {
-        const lanUrl = await remote.signLanFileUrl(authorized.realPath, { ttlMs: 60_000 })
-        if (!lanUrl) {
-          await respond(command.requestId, { ok: false, error: 'no_transport', message: 'LAN file bridge unavailable' })
-          return
-        }
-        url = lanUrl
-        expiresAt = Date.now() + 60_000
-      } else {
-        if (!source?.deviceId) {
-          await respond(command.requestId, { ok: false, error: 'no_transport', message: 'relay file needs the requesting device' })
-          return
-        }
-        const result = await remote.uploadFileToRelay(
-          authorized.realPath,
-          { mimeType: authorized.mimeType, size: authorized.size },
-          command.sessionId ?? 'no-session',
-          source.deviceId,
-        )
-        url = result.downloadUrl
-        expiresAt = result.expiresAt
-        encryption = result.encryption
-      }
-      await respond(command.requestId, {
-        ok: true,
-        url,
-        mimeType: authorized.mimeType,
-        name: authorized.name,
-        size: authorized.size,
-        modifiedAt: authorized.modifiedAt,
-        expiresAt,
-        ...(encryption ? { encryption } : {}),
-      })
-    } catch (err) {
-      log.error('[AgentService] read_desktop_file failed:', err)
-      await respond(command.requestId, { ok: false, error: 'upload_failed', message: (err as Error).message })
-    }
-  }
-
   markAllNeedsRebuild(harnessId?: 'claude' | 'codex'): void {
     this.sessionManager?.markAllNeedsRebuild(harnessId)
   }
@@ -2543,54 +766,18 @@ export class AgentService {
     try { return mgr.resumeSession(sessionId, { passive: true }) } catch { return null }
   }
 
+  private async forkSessionControlled(request: SessionForkRequest) {
+    const manager = this.requireSessionManager()
+    const source = manager.getSession(request.sessionId) ?? manager.resumeSession(request.sessionId, { passive: true })
+    source.lease.assertMutation()
+    return forkSession(request, () => source.lease.assertMutation())
+  }
+
   private findSessionBySid(projectPath: string, sessionId: string): import('../session/types').Session | undefined {
     const session = this.sessionManager?.getSession(sessionId)
     if (!session) return undefined
     if (session.projectPath !== projectPath) return undefined
     return session
-  }
-
-  private enqueueSessionQueueOp(sessionId: string, op: () => Promise<void>): Promise<void> {
-    const prev = this.sessionQueueOps.get(sessionId) ?? Promise.resolve()
-    const next = prev.then(op, op)
-    this.sessionQueueOps.set(sessionId, next)
-    void next.finally(() => {
-      if (this.sessionQueueOps.get(sessionId) === next) this.sessionQueueOps.delete(sessionId)
-    })
-    return next
-  }
-
-  private queuedSteerCommand(
-    harnessId: string,
-    clientMessageId: string,
-    priority: ClaudeSteerPriority,
-  ): Extract<BackendCommand, { kind: 'claude.steer_queued' | 'acp.steer_queued' | 'codex.steer_queued' | 'dsh.steer_queued' }> | null {
-    if (harnessId === 'claude') return { kind: 'claude.steer_queued', clientMessageId, priority }
-    if (harnessId === 'acp') return { kind: 'acp.steer_queued', clientMessageId, priority }
-    // Codex's Core queue item has no non-aborting variant, so `next` would
-    // silently behave like `now`.
-    if (harnessId === 'codex' && priority !== 'next') return { kind: 'codex.steer_queued', clientMessageId }
-    // dsh has exactly one steer — the next step boundary, nothing cancelled.
-    if (harnessId === 'dsh') return { kind: 'dsh.steer_queued', clientMessageId }
-    return null
-  }
-
-  private async steerQueuedFromSend(
-    session: SessionContract,
-    command: Extract<RemoteCommand, { type: 'send_message' }>,
-  ): Promise<void> {
-    if (!command.steer || !command.clientMessageId) return
-    const steer = this.queuedSteerCommand(session.snapshot.harnessId, command.clientMessageId, command.steer)
-    if (!steer) return
-    try {
-      await session.dispatchBackendCommand(steer)
-    } catch (err) {
-      log.warn(
-        '[AgentService] send_message steer failed sid=%s: %s',
-        session.id,
-        err instanceof Error ? err.message : err,
-      )
-    }
   }
 
   private resolveInteractionSession(projectPath: string, sessionId: string | undefined): import('../session/types').Session | null {
@@ -2919,16 +1106,16 @@ export class AgentService {
   }
 
   setup(): void {
+    const windowIpc = windowControlIpc(ipcMain)
 
     // --- Session-scoped handlers (projectPath as first arg) ---
 
-    ipcMain.handle(AgentIpcChannels.SEND_MESSAGE, async (_event, projectPath: string, request: SendMessageRequest) => {
+    windowIpc.handle(AgentIpcChannels.SEND_MESSAGE, async (_event, projectPath: string, request: SendMessageRequest) => {
       // A node session runs on its node, sent through the environment gateway;
       // the key is not a local project path to resume or create a Session in.
       if (parseRemoteProjectKey(projectPath)) {
         throw new Error(`send_message: ${projectPath} is a remote project; send through the environment gateway`)
       }
-      this.throwIfRemoteLocked(projectPath)
       const session = await this.getOrCreateActiveSession(projectPath, request.sessionId, {
         worktreePath: request.worktreePath,
         gitBranch: request.gitBranch,
@@ -2944,37 +1131,42 @@ export class AgentService {
         cwd: session.cwd,
         worktreePath: request.worktreePath ?? null,
       })
+      if (request.priority === 'next' || request.priority === 'later') {
+        session.lease.assertMutation()
+        return enqueueSessionQueueOp(session.id, () => { session.lease.assertMutation(); return session.send(request) })
+      }
       return session.send(request)
     })
 
-    ipcMain.handle(AgentIpcChannels.DEQUEUE_MESSAGE, async (_event, projectPath: string, clientMessageId: string) => {
+    windowIpc.handle(AgentIpcChannels.DEQUEUE_MESSAGE, async (_event, projectPath: string, clientMessageId: string) => {
       const session = this.sessionManager?.getActiveSession(projectPath)
       if (!session) return false
-      return session.dequeueMessage(clientMessageId)
+      session.lease.assertMutation()
+      return enqueueSessionQueueOp(session.id, () => { session.lease.assertMutation(); return session.dequeueMessage(clientMessageId) })
     })
 
-    ipcMain.handle(AgentIpcChannels.STEER_QUEUED_MESSAGE, async (_event, projectPath: string, clientMessageId: string, sessionId?: string, priority?: ClaudeSteerPriority) => {
-      this.throwIfRemoteLocked(projectPath)
+    windowIpc.handle(AgentIpcChannels.STEER_QUEUED_MESSAGE, async (_event, projectPath: string, clientMessageId: string, sessionId?: string, priority?: ClaudeSteerPriority) => {
       const session = sessionId
         ? this.sessionManager?.getSession(sessionId)
         : this.sessionManager?.getActiveSession(projectPath)
       if (!session || session.snapshot.projectPath !== projectPath) return false
-      const steer = this.queuedSteerCommand(session.snapshot.harnessId, clientMessageId, priority ?? 'now')
+      const steer = queuedSteerCommand(session.snapshot.harnessId, clientMessageId, priority ?? 'now')
       if (!steer) return false
-      await session.dispatchBackendCommand(steer)
+      session.lease.assertMutation()
+      await enqueueSessionQueueOp(session.id, () => { session.lease.assertMutation(); return session.dispatchBackendCommand(steer) })
       return true
     })
 
-    ipcMain.handle(AgentIpcChannels.START_QUEUED_MESSAGES, async (_event, projectPath: string, sessionId?: string) => {
-      this.throwIfRemoteLocked(projectPath)
+    windowIpc.handle(AgentIpcChannels.START_QUEUED_MESSAGES, async (_event, projectPath: string, sessionId?: string) => {
       const session = sessionId
         ? this.sessionManager?.getSession(sessionId)
         : this.sessionManager?.getActiveSession(projectPath)
       if (!session || session.snapshot.projectPath !== projectPath) return false
-      return session.startQueuedMessages()
+      session.lease.assertMutation()
+      return enqueueSessionQueueOp(session.id, () => { session.lease.assertMutation(); return session.startQueuedMessages() })
     })
 
-    ipcMain.handle(AgentIpcChannels.PREWARM, async (_event, projectPath: string, hint?: AgentPrewarmHint) => {
+    windowIpc.handle(AgentIpcChannels.PREWARM, async (_event, projectPath: string, hint?: AgentPrewarmHint) => {
       if (!this.sessionManager) return
       // A remote project is executed by its node. Never instantiate a local
       // Session whose cwd is the renderer-only `remote:<connection>:<path>` key.
@@ -2986,14 +1178,14 @@ export class AgentService {
       try { session.prewarm(hint) } catch (err) { log.debug('[agent-service] prewarm failed: %s', err instanceof Error ? err.message : String(err)) }
     })
 
-    ipcMain.handle(AgentIpcChannels.INTERRUPT, async (_event, sessionId: string) => {
+    windowIpc.handle(AgentIpcChannels.INTERRUPT, async (_event, sessionId: string) => {
       const session = this.sessionManager?.getSession(sessionId)
       if (!session) return false
-      this.throwIfRemoteLocked(session.snapshot.projectPath)
+      session.lease.assertMutation()
       return session.interrupt()
     })
 
-    ipcMain.handle(AgentIpcChannels.WORKTREE_REMOVED, async (_event, sessionId: string) => {
+    windowIpc.handle(AgentIpcChannels.WORKTREE_REMOVED, async (_event, sessionId: string) => {
       const session = this.sessionManager?.getSession(sessionId)
       const { worktreePath, projectPath } = session?.snapshot ?? {}
       // Re-check here: the renderer only reports what it saw, main decides.
@@ -3001,8 +1193,8 @@ export class AgentService {
       await session.markWorktreeRemoved()
     })
 
-    ipcMain.handle(AgentIpcChannels.START_REALTIME_VOICE, async (_event, projectPath: string, sessionId: string, request: import('@superone/shared/agent-types').RealtimeVoiceStartRequest) => {
-      this.throwIfRemoteLocked(projectPath)
+    windowIpc.handle(AgentIpcChannels.START_REALTIME_VOICE, async (_event, projectPath: string, sessionId: string, request: import('@superone/shared/agent-types').RealtimeVoiceStartRequest) => {
+      this.sessionManager?.getSession(sessionId)?.lease.assertMutation()
       // Realtime voice forces the session onto codex. Record the harness it had first:
       // if it was not codex, resolving below recreates the session, which reads in the
       // UI as the call "jumping to a new session".
@@ -3017,41 +1209,41 @@ export class AgentService {
       )
     })
 
-    ipcMain.handle(AgentIpcChannels.STOP_REALTIME_VOICE, async (_event, projectPath: string, sessionId: string) => {
+    windowIpc.handle(AgentIpcChannels.STOP_REALTIME_VOICE, async (_event, projectPath: string, sessionId: string) => {
       const session = this.sessionManager?.getSession(sessionId)
       if (!session) return
       if (session.snapshot.projectPath !== projectPath) return
-      this.throwIfRemoteLocked(projectPath)
+      session.lease.assertMutation()
       await session.stopRealtimeVoice()
     })
 
-    ipcMain.handle(AgentIpcChannels.LOAD_REALTIME_TIMELINE, (_event, sessionId: string) => {
+    windowIpc.handle(AgentIpcChannels.LOAD_REALTIME_TIMELINE, (_event, sessionId: string) => {
       return loadRealtimeTimeline(sessionId)
     })
 
-    ipcMain.handle(AgentIpcChannels.GET_REALTIME_TIMELINE, async (_event, projectPath: string, sessionId: string) => {
-      this.throwIfRemoteLocked(projectPath)
+    windowIpc.handle(AgentIpcChannels.GET_REALTIME_TIMELINE, async (_event, projectPath: string, sessionId: string) => {
+      this.sessionManager?.getSession(sessionId)?.lease.assertMutation()
       const session = await this.getOrCreateActiveSession(projectPath, sessionId, { provider: 'codex' })
       const timeline = await session.getRealtimeTimeline()
       return reconcileRealtimeTimeline(sessionId, timeline)
     })
 
-    ipcMain.handle(AgentIpcChannels.STOP_TASK, async (_event, sessionId: string, taskId: string) => {
+    windowIpc.handle(AgentIpcChannels.STOP_TASK, async (_event, sessionId: string, taskId: string) => {
       const session = this.sessionManager?.getSession(sessionId)
       if (!session) return false
-      this.throwIfRemoteLocked(session.snapshot.projectPath)
+      session.lease.assertMutation()
       await session.dispatchBackendCommand({ kind: 'claude.stop_task', taskId })
       return true
     })
 
-    ipcMain.handle(AgentIpcChannels.OPEN_WIDGET_INPUT_REQUEST, (_event, input: { projectPath: string; sessionId: string; messageId: string; spec: unknown }) => {
+    windowIpc.handle(AgentIpcChannels.OPEN_WIDGET_INPUT_REQUEST, (_event, input: { projectPath: string; sessionId: string; messageId: string; spec: unknown }) => {
       const session = this.sessionManager?.getSession(input.sessionId)
-      if (session) this.throwIfRemoteLocked(session.snapshot.projectPath)
+      if (session) session.lease.assertMutation()
       return composerOpenResult(() => openWidgetInputRequest(session, { ...input, output: 'agent' }))
     })
 
     // The trusted container names the source; the frame supplies only the spec and output.
-    ipcMain.handle(AgentIpcChannels.COMPOSER_OPEN, (event, request: import('@superone/shared/agent-types').ComposerOpenRequest) => {
+    windowIpc.handle(AgentIpcChannels.COMPOSER_OPEN, (event, request: import('@superone/shared/agent-types').ComposerOpenRequest) => {
       const client = this.composerWindow(event.sender)
       const source = request.source
       return openComposerForm(client, request, (output) => {
@@ -3070,22 +1262,22 @@ export class AgentService {
         })
       })
     })
-    ipcMain.handle(AgentIpcChannels.COMPOSER_AWAIT, (event, requestId: string) =>
+    windowIpc.handle(AgentIpcChannels.COMPOSER_AWAIT, (event, requestId: string) =>
       awaitComposerForm({ kind: 'window', id: event.sender.id }, requestId))
-    ipcMain.handle(AgentIpcChannels.COMPOSER_CANCEL, (event, viewId: string, localId?: string) => {
+    windowIpc.handle(AgentIpcChannels.COMPOSER_CANCEL, (event, viewId: string, localId?: string) => {
       cancelComposerForms({ kind: 'window', id: event.sender.id }, viewId, localId)
     })
 
-    ipcMain.handle(AgentIpcChannels.PERMISSION_RESPONSE, (_event, sessionId: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], decision?: 'cancel', formAnswers?: Record<string, unknown>) => {
+    windowIpc.handle(AgentIpcChannels.PERMISSION_RESPONSE, (_event, sessionId: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], decision?: 'cancel', formAnswers?: Record<string, unknown>) => {
       const session = this.sessionManager?.getSession(sessionId)
       if (!session) return false
-      this.throwIfRemoteLocked(session.snapshot.projectPath)
+      session.lease.assertMutation()
       trace('agent.emit', 'permission_responded', { requestId, allow, reason, sessionId })
       trace('permission.flow', 'ipc_response', { projectPath: session.snapshot.projectPath, sessionId, allow, alwaysAllow, reason, decision, formAnswers }, requestId)
       return session.respondToPermission(requestId, allow, alwaysAllow, reason, selectedSuggestions, decision, formAnswers)
     })
 
-    ipcMain.handle(AgentIpcChannels.SET_PERMISSION_MODE, async (
+    windowIpc.handle(AgentIpcChannels.SET_PERMISSION_MODE, async (
       _event,
       projectPath: string,
       sessionId: string,
@@ -3120,7 +1312,7 @@ export class AgentService {
       }
     })
 
-    ipcMain.handle(AgentIpcChannels.SET_SANDBOX_MODE, async (_event, projectPath: string, mode: SandboxMode, sessionId?: string) => {
+    windowIpc.handle(AgentIpcChannels.SET_SANDBOX_MODE, async (_event, projectPath: string, mode: SandboxMode, sessionId?: string) => {
       if (!sessionId) this.throwIfRemoteLocked(projectPath)
       const capability = getSandboxCapability()
       if (mode !== 'off' && capability.supportLevel === 'unsupported') {
@@ -3140,7 +1332,7 @@ export class AgentService {
       return session.setSandboxMode(mode)
     })
 
-    ipcMain.handle(AgentIpcChannels.SET_SESSION_SETTINGS, (_event, projectPath: string, settings: { model?: string | null; effort?: SendMessageRequest['effort'] | null; ultracode?: boolean; mode?: string | null; agentPreset?: string | null; contextWindow?: number | null }, sessionId?: string) => {
+    windowIpc.handle(AgentIpcChannels.SET_SESSION_SETTINGS, (_event, projectPath: string, settings: { model?: string | null; effort?: SendMessageRequest['effort'] | null; ultracode?: boolean; mode?: string | null; agentPreset?: string | null; contextWindow?: number | null }, sessionId?: string) => {
       // An explicit id is a scoped write from a pane that is not the project's
       // active chat — a mosaic tile, or a side chat, whose picker would
       // otherwise re-configure the conversation it was forked from.
@@ -3159,45 +1351,45 @@ export class AgentService {
       return applied
     })
 
-    ipcMain.handle(AgentIpcChannels.SET_SESSION_API_PROVIDER, (_event, sessionId: string, apiProviderId: string | null) => {
+    windowIpc.handle(AgentIpcChannels.SET_SESSION_API_PROVIDER, (_event, sessionId: string, apiProviderId: string | null) => {
       const session = this.sessionManager?.getSession(sessionId)
       if (!session) return
-      this.throwIfRemoteLocked(session.snapshot.projectPath)
+      session.lease.assertMutation()
       session.setApiProviderId(apiProviderId)
     })
 
-    ipcMain.handle(AgentIpcChannels.ANSWER_QUESTION, (_event, sessionId: string, requestId: string, answers: Record<string, string>, annotations?: QuestionAnnotations) => {
+    windowIpc.handle(AgentIpcChannels.ANSWER_QUESTION, (_event, sessionId: string, requestId: string, answers: Record<string, string>, annotations?: QuestionAnnotations) => {
       const session = this.sessionManager?.getSession(sessionId)
       if (!session) return
-      this.throwIfRemoteLocked(session.snapshot.projectPath)
+      session.lease.assertMutation()
       trace('agent.emit', 'question_answered', { requestId, answers, sessionId })
       session.respondToQuestion(requestId, answers, annotations)
     })
 
-    ipcMain.handle(AgentIpcChannels.DISMISS_QUESTION, (_event, sessionId: string, requestId: string) => {
+    windowIpc.handle(AgentIpcChannels.DISMISS_QUESTION, (_event, sessionId: string, requestId: string) => {
       const session = this.sessionManager?.getSession(sessionId)
       if (!session) return
-      this.throwIfRemoteLocked(session.snapshot.projectPath)
+      session.lease.assertMutation()
       trace('agent.emit', 'question_dismissed', { requestId, sessionId })
       session.dismissQuestion(requestId)
     })
 
-    ipcMain.handle(AgentIpcChannels.RESPOND_PLAN_APPROVAL, (_event, sessionId: string, requestId: string, approved: boolean, feedback?: string) => {
+    windowIpc.handle(AgentIpcChannels.RESPOND_PLAN_APPROVAL, (_event, sessionId: string, requestId: string, approved: boolean, feedback?: string) => {
       const session = this.sessionManager?.getSession(sessionId)
       if (!session) return
-      this.throwIfRemoteLocked(session.snapshot.projectPath)
+      session.lease.assertMutation()
       trace('agent.emit', 'plan_approval_responded', { requestId, approved, feedback, sessionId })
       session.respondToPlanApproval(requestId, approved, feedback)
     })
 
-    ipcMain.handle(AgentIpcChannels.CREATE_SESSION, async (_event, projectPath: string) => {
+    windowIpc.handle(AgentIpcChannels.CREATE_SESSION, async (_event, projectPath: string) => {
       const mgr = this.requireSessionManager()
       const { permissionMode, sandboxMode } = this.readDefaultSessionPrefs()
       const session = mgr.createSession({ projectPath, providerId: 'claude-base', permissionMode, sandboxMode })
       return session.snapshot.id
     })
 
-    ipcMain.handle(AgentIpcChannels.RESET_SESSION, async (_event, sessionId: string, newSessionId?: string) => {
+    windowIpc.handle(AgentIpcChannels.RESET_SESSION, async (_event, sessionId: string, newSessionId?: string) => {
       const mgr = this.requireSessionManager()
       const existing = mgr.getSession(sessionId)
       if (!existing) {
@@ -3221,60 +1413,60 @@ export class AgentService {
     })
 
     // Manual `/recap` (Grok ACP) — fire-and-forget x.ai/recap; result is session_recap event.
-    ipcMain.handle(AgentIpcChannels.REQUEST_SESSION_RECAP, async (_event, sessionId: string) => {
+    windowIpc.handle(AgentIpcChannels.REQUEST_SESSION_RECAP, async (_event, sessionId: string) => {
       const session = this.sessionManager?.getSession(sessionId)
       if (!session?.requestSessionRecap) return false
       return session.requestSessionRecap(false)
     })
 
-    ipcMain.handle(AgentIpcChannels.TRUNCATE_AT_CHECKPOINT, (_event, projectPath: string, checkpointId: string) => {
+    windowIpc.handle(AgentIpcChannels.TRUNCATE_AT_CHECKPOINT, (_event, projectPath: string, checkpointId: string) => {
       const session = this.sessionManager?.getActiveSession(projectPath)
       if (!session) return false
       session.truncateMessagesAt(checkpointId)
       return true
     })
 
-    ipcMain.handle(AgentIpcChannels.REWIND_FILES, async (_event, projectPath: string, userMessageId: string) => {
+    windowIpc.handle(AgentIpcChannels.REWIND_FILES, async (_event, projectPath: string, userMessageId: string) => {
       const session = this.sessionManager?.getActiveSession(projectPath)
       if (!session) return { canRewind: false, error: 'No active session' }
       return session.rewindFiles(userMessageId)
     })
 
-    ipcMain.handle(AgentIpcChannels.REWIND_FILES_PREVIEW, async (_event, projectPath: string, userMessageId: string) => {
+    windowIpc.handle(AgentIpcChannels.REWIND_FILES_PREVIEW, async (_event, projectPath: string, userMessageId: string) => {
       const session = this.sessionManager?.getActiveSession(projectPath)
       if (!session) return { canRewind: false, error: 'No active session' }
       return session.rewindFiles(userMessageId, { dryRun: true })
     })
 
-    ipcMain.handle(AgentIpcChannels.REWIND_CODE_AND_CHAT, async (_event, projectPath: string, userMessageId: string) => {
+    windowIpc.handle(AgentIpcChannels.REWIND_CODE_AND_CHAT, async (_event, projectPath: string, userMessageId: string) => {
       const session = this.sessionManager?.getActiveSession(projectPath)
       if (!session) return { canRewind: false, error: 'No active session' }
       return session.rewindFiles(userMessageId, { includeConversation: true })
     })
 
-    ipcMain.handle(AgentIpcChannels.REWIND_CONVERSATION, async (_event, projectPath: string, userMessageId: string) => {
+    windowIpc.handle(AgentIpcChannels.REWIND_CONVERSATION, async (_event, projectPath: string, userMessageId: string) => {
       const session = this.sessionManager?.getActiveSession(projectPath)
       if (!session) return { canRewind: false, error: 'No active session' }
       return session.rewindConversation(userMessageId)
     })
 
-    ipcMain.handle(AgentIpcChannels.GET_SESSION_ID, (_event, projectPath: string) => {
+    windowIpc.handle(AgentIpcChannels.GET_SESSION_ID, (_event, projectPath: string) => {
       return this.sessionManager?.getActiveSession(projectPath)?.snapshot.providerSessionId ?? null
     })
 
-    ipcMain.handle(AgentIpcChannels.MCP_SERVER_STATUS, async (_event, projectPath: string) => {
+    windowIpc.handle(AgentIpcChannels.MCP_SERVER_STATUS, async (_event, projectPath: string) => {
       const session = this.sessionManager?.getActiveSession(projectPath)
       if (!session) return []
       return session.getMcpServerStatus()
     })
 
-    ipcMain.handle(AgentIpcChannels.MCP_SERVER_AUTHENTICATE, async (_event, projectPath: string, serverName: string) => {
+    windowIpc.handle(AgentIpcChannels.MCP_SERVER_AUTHENTICATE, async (_event, projectPath: string, serverName: string) => {
       const session = this.sessionManager?.getActiveSession(projectPath)
       if (!session) throw new Error('No active session')
       await session.authenticateMcp(serverName)
     })
 
-    ipcMain.handle(AgentIpcChannels.GET_CONTEXT_USAGE, async (_event, projectPath: string, sessionId?: string) => {
+    windowIpc.handle(AgentIpcChannels.GET_CONTEXT_USAGE, async (_event, projectPath: string, sessionId?: string) => {
       const session = sessionId
         ? this.sessionManager?.getSession(sessionId)
         : this.sessionManager?.getActiveSession(projectPath)
@@ -3283,7 +1475,7 @@ export class AgentService {
       return session.getContextUsage()
     })
 
-    ipcMain.handle(AgentIpcChannels.ACP_GET_RATE_LIMITS, async (
+    windowIpc.handle(AgentIpcChannels.ACP_GET_RATE_LIMITS, async (
       _event,
       projectPath: string,
       agentId: string,
@@ -3293,13 +1485,13 @@ export class AgentService {
       return getAcpRateLimits(agentId, force ?? false)
     })
 
-    ipcMain.handle(AgentIpcChannels.PLUGINS_RELOAD, async (_event, projectPath: string) => {
+    windowIpc.handle(AgentIpcChannels.PLUGINS_RELOAD, async (_event, projectPath: string) => {
       const session = this.sessionManager?.getActiveSession(projectPath)
       if (!session) return false
       return session.reloadPlugins()
     })
 
-    ipcMain.handle(AgentIpcChannels.LIST_DIRECTORY, async (_event, projectPath: string, relativePath: string) => {
+    windowIpc.handle(AgentIpcChannels.LIST_DIRECTORY, async (_event, projectPath: string, relativePath: string) => {
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
       if (parseRemoteProjectKey(projectPath)) {
         try {
@@ -3334,15 +1526,15 @@ export class AgentService {
       }
     })
 
-    ipcMain.handle(AgentIpcChannels.VALIDATE_ADD_DIR, async (_event, projectPath: string, candidate: string) => {
+    windowIpc.handle(AgentIpcChannels.VALIDATE_ADD_DIR, async (_event, projectPath: string, candidate: string) => {
       return this.validateAddDirCandidate(projectPath, candidate)
     })
 
-    ipcMain.handle(AgentIpcChannels.LIST_DIRECTORY_FOR_ADD_DIR, async (_event, projectPath: string, rawInput: string) => {
+    windowIpc.handle(AgentIpcChannels.LIST_DIRECTORY_FOR_ADD_DIR, async (_event, projectPath: string, rawInput: string) => {
       return this.listDirectoryForAddDir(projectPath, rawInput)
     })
 
-    ipcMain.handle(AgentIpcChannels.FIND_LINE_NUMBER, async (_event, _projectPath: string, filePath: string, text: string) => {
+    windowIpc.handle(AgentIpcChannels.FIND_LINE_NUMBER, async (_event, _projectPath: string, filePath: string, text: string) => {
       try {
         const content = readFileSync(filePath, 'utf-8')
         const idx = content.indexOf(text)
@@ -3353,7 +1545,7 @@ export class AgentService {
       }
     })
 
-    ipcMain.handle(AgentIpcChannels.SEARCH_FILES, async (_event, projectPath: string, query: string, additionalDirs?: string[]) => {
+    windowIpc.handle(AgentIpcChannels.SEARCH_FILES, async (_event, projectPath: string, query: string, additionalDirs?: string[]) => {
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
       if (parseRemoteProjectKey(projectPath)) {
         try {
@@ -3369,7 +1561,7 @@ export class AgentService {
       return searchFiles(roots, query, 20)
     })
 
-    ipcMain.handle(AgentIpcChannels.SEARCH_MENTIONS, async (_event, projectPath: string, query: string, agents: AgentEntry[], additionalDirs?: string[], scopeDir?: string) => {
+    windowIpc.handle(AgentIpcChannels.SEARCH_MENTIONS, async (_event, projectPath: string, query: string, agents: AgentEntry[], additionalDirs?: string[], scopeDir?: string) => {
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
       if (parseRemoteProjectKey(projectPath)) {
         try {
@@ -3394,28 +1586,26 @@ export class AgentService {
       return searchMentions(roots, query, agents, 20, scopeDir)
     })
 
-    ipcMain.handle(AgentIpcChannels.DISCONNECT_REMOTE_SESSION, async (_event, sessionId?: string) => {
+    windowIpc.handle(AgentIpcChannels.DISCONNECT_REMOTE_SESSION, async (_event, sessionId?: string) => {
       const targets: import('../session/types').Session[] = []
       if (sessionId) {
         const s = this.sessionManager?.getSession(sessionId)
         if (s) targets.push(s)
       } else {
         this.sessionManager?.forEachSession((s) => {
-          if (s.owner.kind === 'remote' || s.subscribers.size > 0) targets.push(s)
+          if (s.lease.isExternal) targets.push(s)
         })
       }
       for (const session of targets) {
-        if (session.owner.kind === 'remote') session.release(session.owner.deviceId, 'desktop_kick')
-        for (const d of Array.from(session.subscribers)) session.unsubscribe(d, 'desktop_kick')
+        if (session.lease.isExternal) session.lease.revoke()
       }
       // A phone this desktop routes to a node session.
-      const { kickRoutedSessions } = await import('../remote/environment-commands')
-      await kickRoutedSessions(sessionId)
+      await this.releaseRoutedSessions?.(sessionId)
     })
 
     // --- Plugins (session-scoped — need cwd) ---
 
-    ipcMain.handle(AgentIpcChannels.PLUGINS_LIST, async (_event, projectPath: string) => {
+    windowIpc.handle(AgentIpcChannels.PLUGINS_LIST, async (_event, projectPath: string) => {
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
       if (parseRemoteProjectKey(projectPath)) {
         try {
@@ -3429,7 +1619,7 @@ export class AgentService {
       return listPlugins(projectPath)
     })
 
-    ipcMain.handle(AgentIpcChannels.PLUGINS_READ, async (_event, projectPath: string, key: string) => {
+    windowIpc.handle(AgentIpcChannels.PLUGINS_READ, async (_event, projectPath: string, key: string) => {
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
       if (parseRemoteProjectKey(projectPath)) {
         const { getEnvironmentHost } = await import('../environment')
@@ -3439,7 +1629,7 @@ export class AgentService {
       return readPluginContent(projectPath, key)
     })
 
-    ipcMain.handle(AgentIpcChannels.PLUGINS_READ_FILE, async (_event, projectPath: string, key: string, relativePath: string) => {
+    windowIpc.handle(AgentIpcChannels.PLUGINS_READ_FILE, async (_event, projectPath: string, key: string, relativePath: string) => {
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
       if (parseRemoteProjectKey(projectPath)) {
         const { getEnvironmentHost } = await import('../environment')
@@ -3452,7 +1642,7 @@ export class AgentService {
       return readPluginFile(projectPath, key, relativePath)
     })
 
-    ipcMain.handle(AgentIpcChannels.PLUGINS_DELETE, async (_event, projectPath: string, key: string, scope: ResourceScope) => {
+    windowIpc.handle(AgentIpcChannels.PLUGINS_DELETE, async (_event, projectPath: string, key: string, scope: ResourceScope) => {
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
       if (parseRemoteProjectKey(projectPath)) {
         if (scope !== 'user' && scope !== 'project') {
@@ -3467,7 +1657,7 @@ export class AgentService {
       deletePlugin(key, scope, projectPath)
     })
 
-    ipcMain.handle(AgentIpcChannels.PLUGINS_SET_ENABLED, async (_event, projectPath: string, key: string, scope: ResourceScope, enabled: boolean) => {
+    windowIpc.handle(AgentIpcChannels.PLUGINS_SET_ENABLED, async (_event, projectPath: string, key: string, scope: ResourceScope, enabled: boolean) => {
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
       if (parseRemoteProjectKey(projectPath)) {
         if (scope !== 'user' && scope !== 'project') throw new Error('Remote plugin toggle only supports user or project scope')
@@ -3482,7 +1672,7 @@ export class AgentService {
 
     // Mod review and userConfig run the local CLI against the local install; a remote node has no route for them yet.
     const modReviews = new Map<string, Promise<PluginModReview | null>>()
-    ipcMain.handle(AgentIpcChannels.PLUGINS_REVIEW_MODS, async (_event, projectPath: string, key: string) => {
+    windowIpc.handle(AgentIpcChannels.PLUGINS_REVIEW_MODS, async (_event, projectPath: string, key: string) => {
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
       if (parseRemoteProjectKey(projectPath)) return null
       const plugin = listPlugins(projectPath).find((p) => p.key === key)
@@ -3495,18 +1685,18 @@ export class AgentService {
       if (!result) modReviews.delete(cacheKey)
       return result
     })
-    ipcMain.handle(AgentIpcChannels.PLUGINS_READ_CONFIG, async (_event, projectPath: string, key: string) => {
+    windowIpc.handle(AgentIpcChannels.PLUGINS_READ_CONFIG, async (_event, projectPath: string, key: string) => {
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
       return parseRemoteProjectKey(projectPath) ? null : readPluginUserConfig(projectPath, key)
     })
-    ipcMain.handle(AgentIpcChannels.PLUGINS_SAVE_CONFIG, async (_event, projectPath: string, key: string, values: Record<string, unknown>) => {
+    windowIpc.handle(AgentIpcChannels.PLUGINS_SAVE_CONFIG, async (_event, projectPath: string, key: string, values: Record<string, unknown>) => {
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
       if (parseRemoteProjectKey(projectPath)) throw new Error('Plugin options of a remote project are not editable yet')
       savePluginUserConfig(key, values)
       this.reloadLiveClaudePlugins()
     })
 
-    ipcMain.handle(AgentIpcChannels.PLUGINS_LIST_MARKETPLACE, async (_event, projectPath: string) => {
+    windowIpc.handle(AgentIpcChannels.PLUGINS_LIST_MARKETPLACE, async (_event, projectPath: string) => {
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
       if (parseRemoteProjectKey(projectPath)) {
         try {
@@ -3520,7 +1710,7 @@ export class AgentService {
       return listMarketplacePlugins(projectPath)
     })
 
-    ipcMain.handle(AgentIpcChannels.PLUGINS_INSTALL, async (_event, projectPath: string, key: string, scope: ResourceScope) => {
+    windowIpc.handle(AgentIpcChannels.PLUGINS_INSTALL, async (_event, projectPath: string, key: string, scope: ResourceScope) => {
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
       if (parseRemoteProjectKey(projectPath)) {
         if (scope !== 'user' && scope !== 'project') {
@@ -3536,7 +1726,7 @@ export class AgentService {
       try { await this.sessionManager?.getActiveSession(projectPath)?.reloadPlugins() } catch (err) { log.debug('[agent] reloadPlugins skipped:', err) }
     })
 
-    ipcMain.handle(AgentIpcChannels.PLUGINS_UPDATE, async (_event, projectPath: string, updates: Array<{ key: string; scope: ResourceScope }>) => {
+    windowIpc.handle(AgentIpcChannels.PLUGINS_UPDATE, async (_event, projectPath: string, updates: Array<{ key: string; scope: ResourceScope }>) => {
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
       if (parseRemoteProjectKey(projectPath)) {
         const { getEnvironmentHost } = await import('../environment')
@@ -3557,23 +1747,23 @@ export class AgentService {
       try { await this.sessionManager?.getActiveSession(projectPath)?.reloadPlugins() } catch (err) { log.debug('[agent] reloadPlugins skipped:', err) }
     })
 
-    ipcMain.handle(AgentIpcChannels.PLUGINS_UPDATE_MARKETPLACE, async (_event, name: string) => {
+    windowIpc.handle(AgentIpcChannels.PLUGINS_UPDATE_MARKETPLACE, async (_event, name: string) => {
       await updateMarketplace(name)
     })
 
-    ipcMain.handle(AgentIpcChannels.PLUGINS_GITHUB_STARS, async (_event, repoSlug: string) => {
+    windowIpc.handle(AgentIpcChannels.PLUGINS_GITHUB_STARS, async (_event, repoSlug: string) => {
       return getGithubStars(repoSlug)
     })
 
-    ipcMain.handle(AgentIpcChannels.PLUGINS_GITHUB_SEARCH_REPOS, async (_event, owner: string) => {
+    windowIpc.handle(AgentIpcChannels.PLUGINS_GITHUB_SEARCH_REPOS, async (_event, owner: string) => {
       return listGithubReposForOwner(owner)
     })
 
-    ipcMain.handle(AgentIpcChannels.PLUGINS_GITHUB_QUERY_REPOS, async (_event, query: string) => {
+    windowIpc.handle(AgentIpcChannels.PLUGINS_GITHUB_QUERY_REPOS, async (_event, query: string) => {
       return searchGithubRepositories(typeof query === 'string' ? query : '')
     })
 
-    ipcMain.handle(
+    windowIpc.handle(
       AgentIpcChannels.PLUGINS_GITHUB_LIST_MY_REPOS,
       async (_event, page?: number, perPage?: number) => {
         return listMyGithubRepos(
@@ -3583,23 +1773,23 @@ export class AgentService {
       },
     )
 
-    ipcMain.handle(AgentIpcChannels.CACHE_IMAGE, async (_event, url: string) => {
+    windowIpc.handle(AgentIpcChannels.CACHE_IMAGE, async (_event, url: string) => {
       return cacheRemoteImage(url)
     })
 
-    ipcMain.handle(AgentIpcChannels.RESOLVE_FAVICON, async (_event, url: string, isDark: boolean, force?: boolean) => {
+    windowIpc.handle(AgentIpcChannels.RESOLVE_FAVICON, async (_event, url: string, isDark: boolean, force?: boolean) => {
       return resolveFavicon(url, isDark, force)
     })
 
-    ipcMain.handle(AgentIpcChannels.RESOLVE_SITE_IDENTITY, async (_event, url: string, isDark: boolean, force?: boolean) => {
+    windowIpc.handle(AgentIpcChannels.RESOLVE_SITE_IDENTITY, async (_event, url: string, isDark: boolean, force?: boolean) => {
       return resolveSiteIdentity(url, isDark, force)
     })
 
-    ipcMain.handle(AgentIpcChannels.CACHE_FAVICON, async (_event, pageUrl: string, faviconUrl: string, isDark: boolean) => {
+    windowIpc.handle(AgentIpcChannels.CACHE_FAVICON, async (_event, pageUrl: string, faviconUrl: string, isDark: boolean) => {
       await cacheCapturedFavicon(pageUrl, faviconUrl, isDark)
     })
 
-    ipcMain.handle(AgentIpcChannels.PLUGINS_ADD_MARKETPLACE, async (_event, source: string, scope: ResourceScope, projectPath: string) => {
+    windowIpc.handle(AgentIpcChannels.PLUGINS_ADD_MARKETPLACE, async (_event, source: string, scope: ResourceScope, projectPath: string) => {
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
       if (parseRemoteProjectKey(projectPath)) {
         if (scope !== 'user' && scope !== 'project') {
@@ -3614,7 +1804,7 @@ export class AgentService {
       await addMarketplace(source, scope, projectPath)
     })
 
-    ipcMain.handle(AgentIpcChannels.PLUGINS_REMOVE_MARKETPLACE, async (_event, name: string, scope: 'user' | 'project' | 'local' | 'official', projectPath: string) => {
+    windowIpc.handle(AgentIpcChannels.PLUGINS_REMOVE_MARKETPLACE, async (_event, name: string, scope: 'user' | 'project' | 'local' | 'official', projectPath: string) => {
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
       if (parseRemoteProjectKey(projectPath)) {
         if (scope !== 'user' && scope !== 'project') {
@@ -3629,17 +1819,17 @@ export class AgentService {
       await removeMarketplace(name, scope, projectPath)
     })
 
-    ipcMain.handle(AgentIpcChannels.PLUGINS_READ_MARKETPLACE, (_event, marketplace: string, name: string) => {
+    windowIpc.handle(AgentIpcChannels.PLUGINS_READ_MARKETPLACE, (_event, marketplace: string, name: string) => {
       return readMarketplacePluginContent(marketplace, name)
     })
 
-    ipcMain.handle(AgentIpcChannels.PLUGINS_READ_MARKETPLACE_FILE, (_event, marketplace: string, name: string, relativePath: string) => {
+    windowIpc.handle(AgentIpcChannels.PLUGINS_READ_MARKETPLACE_FILE, (_event, marketplace: string, name: string, relativePath: string) => {
       return readMarketplacePluginFile(marketplace, name, relativePath)
     })
 
     // --- Skills (session-scoped) ---
 
-    ipcMain.handle(AgentIpcChannels.SKILLS_LIST, async (_event, projectPath: string) => {
+    windowIpc.handle(AgentIpcChannels.SKILLS_LIST, async (_event, projectPath: string) => {
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
       if (parseRemoteProjectKey(projectPath)) {
         try {
@@ -3664,7 +1854,7 @@ export class AgentService {
       return listSkills(projectPath)
     })
 
-    ipcMain.handle(AgentIpcChannels.SLASH_RESOURCES_LIST, async (_event, projectPath: string) => {
+    windowIpc.handle(AgentIpcChannels.SLASH_RESOURCES_LIST, async (_event, projectPath: string) => {
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
       if (parseRemoteProjectKey(projectPath)) {
         try {
@@ -3688,7 +1878,7 @@ export class AgentService {
       }
     })
 
-    ipcMain.handle(AgentIpcChannels.SKILLS_READ, async (_event, projectPath: string, name: string, sourcePath?: string) => {
+    windowIpc.handle(AgentIpcChannels.SKILLS_READ, async (_event, projectPath: string, name: string, sourcePath?: string) => {
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
       if (parseRemoteProjectKey(projectPath)) {
         try {
@@ -3702,7 +1892,7 @@ export class AgentService {
       return readSkillContent(projectPath, name, sourcePath)
     })
 
-    ipcMain.handle(AgentIpcChannels.SKILLS_READ_FILE, async (_event, projectPath: string, skillName: string, relativePath: string, sourcePath?: string) => {
+    windowIpc.handle(AgentIpcChannels.SKILLS_READ_FILE, async (_event, projectPath: string, skillName: string, relativePath: string, sourcePath?: string) => {
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
       if (parseRemoteProjectKey(projectPath)) {
         try {
@@ -3724,11 +1914,11 @@ export class AgentService {
       return readSkillFile(projectPath, skillName, relativePath, sourcePath)
     })
 
-    ipcMain.handle(AgentIpcChannels.SKILLS_INSTALL, (_event, sourcePath: string) => {
+    windowIpc.handle(AgentIpcChannels.SKILLS_INSTALL, (_event, sourcePath: string) => {
       return installSkill(sourcePath)
     })
 
-    ipcMain.handle(AgentIpcChannels.SKILLS_DELETE, async (_event, projectPath: string, sourcePath: string) => {
+    windowIpc.handle(AgentIpcChannels.SKILLS_DELETE, async (_event, projectPath: string, sourcePath: string) => {
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
       if (parseRemoteProjectKey(projectPath)) {
         const { getEnvironmentHost } = await import('../environment')
@@ -3740,7 +1930,7 @@ export class AgentService {
       deleteSkill(sourcePath, projectPath)
     })
 
-    ipcMain.handle(AgentIpcChannels.SKILLS_TOGGLE, (_event, name: string, disabled: boolean): string[] => {
+    windowIpc.handle(AgentIpcChannels.SKILLS_TOGGLE, (_event, name: string, disabled: boolean): string[] => {
       const current = readAppSettings().agentPreference.claude.disabledSkills
       const next = disabled
         ? Array.from(new Set([...current, name]))
@@ -3751,20 +1941,20 @@ export class AgentService {
 
     // --- Codex Skills (read-only) ---
 
-    ipcMain.handle(AgentIpcChannels.CODEX_SKILLS_LIST, async (_event, projectPath: string, opts?: { forceReload?: boolean }) => {
+    windowIpc.handle(AgentIpcChannels.CODEX_SKILLS_LIST, async (_event, projectPath: string, opts?: { forceReload?: boolean }) => {
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
       // Remote projects: do not scan local ~/.codex/skills for a remote: key.
       if (parseRemoteProjectKey(projectPath)) return []
       return getSharedCodexSkillsService().list(projectPath, opts)
     })
 
-    ipcMain.handle(AgentIpcChannels.CODEX_SKILLS_TOGGLE, async (_event, projectPath: string, selector: { name?: string; path?: string }, enabled: boolean) => {
+    windowIpc.handle(AgentIpcChannels.CODEX_SKILLS_TOGGLE, async (_event, projectPath: string, selector: { name?: string; path?: string }, enabled: boolean) => {
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
       if (parseRemoteProjectKey(projectPath)) throw new Error('Remote Codex skill toggle is not yet supported')
       return getSharedCodexSkillsService().setEnabled(projectPath, selector, enabled)
     })
 
-    ipcMain.handle(AgentIpcChannels.CODEX_SKILLS_READ, async (_event, projectPath: string, name: string, sourcePath?: string) => {
+    windowIpc.handle(AgentIpcChannels.CODEX_SKILLS_READ, async (_event, projectPath: string, name: string, sourcePath?: string) => {
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
       if (parseRemoteProjectKey(projectPath)) {
         try {
@@ -3783,7 +1973,7 @@ export class AgentService {
       return readCodexSkillContent(projectPath, name, sourcePath)
     })
 
-    ipcMain.handle(AgentIpcChannels.CODEX_SKILLS_READ_FILE, async (_event, projectPath: string, skillName: string, relativePath: string, sourcePath?: string) => {
+    windowIpc.handle(AgentIpcChannels.CODEX_SKILLS_READ_FILE, async (_event, projectPath: string, skillName: string, relativePath: string, sourcePath?: string) => {
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
       if (parseRemoteProjectKey(projectPath)) {
         try {
@@ -3805,7 +1995,7 @@ export class AgentService {
       return readCodexSkillFile(projectPath, skillName, relativePath, sourcePath)
     })
 
-    ipcMain.handle(AgentIpcChannels.CODEX_SKILLS_DELETE, async (_event, projectPath: string, sourcePath: string) => {
+    windowIpc.handle(AgentIpcChannels.CODEX_SKILLS_DELETE, async (_event, projectPath: string, sourcePath: string) => {
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
       if (parseRemoteProjectKey(projectPath)) {
         const { getEnvironmentHost } = await import('../environment')
@@ -3819,7 +2009,7 @@ export class AgentService {
 
     // --- Codex MCP config (read-only) ---
 
-    ipcMain.handle(AgentIpcChannels.CODEX_MCP_LIST_CONFIG, async (_event, projectPath: string) => {
+    windowIpc.handle(AgentIpcChannels.CODEX_MCP_LIST_CONFIG, async (_event, projectPath: string) => {
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
       if (parseRemoteProjectKey(projectPath)) {
         try {
@@ -3835,7 +2025,7 @@ export class AgentService {
 
     // --- dsh MCP config ---
 
-    ipcMain.handle(AgentIpcChannels.DSH_MCP_LIST_CONFIG, async (_event, projectPath: string) => {
+    windowIpc.handle(AgentIpcChannels.DSH_MCP_LIST_CONFIG, async (_event, projectPath: string) => {
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
       if (parseRemoteProjectKey(projectPath)) {
         try {
@@ -3849,7 +2039,7 @@ export class AgentService {
       return listDshMcpConfigs(projectPath)
     })
 
-    ipcMain.handle(AgentIpcChannels.DSH_MCP_SAVE_CONFIG, async (_event, projectPath: string, name: string, config: Record<string, unknown>, scope: ResourceScope) => {
+    windowIpc.handle(AgentIpcChannels.DSH_MCP_SAVE_CONFIG, async (_event, projectPath: string, name: string, config: Record<string, unknown>, scope: ResourceScope) => {
       if (scope !== 'user') throw new Error('dsh MCP save only supports user scope')
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
       if (parseRemoteProjectKey(projectPath)) {
@@ -3867,7 +2057,7 @@ export class AgentService {
       saveDshMcpConfig(name, config, scope, projectPath)
     })
 
-    ipcMain.handle(AgentIpcChannels.DSH_MCP_DELETE_CONFIG, async (_event, projectPath: string, name: string, scope: ResourceScope) => {
+    windowIpc.handle(AgentIpcChannels.DSH_MCP_DELETE_CONFIG, async (_event, projectPath: string, name: string, scope: ResourceScope) => {
       if (scope !== 'user') throw new Error('dsh MCP delete only supports user scope')
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
       if (parseRemoteProjectKey(projectPath)) {
@@ -3884,7 +2074,7 @@ export class AgentService {
       deleteDshMcpConfig(name, scope, projectPath)
     })
 
-    ipcMain.handle(AgentIpcChannels.DSH_MCP_TOGGLE_CONFIG, async (_event, projectPath: string, name: string, disabled: boolean, scope: ResourceScope) => {
+    windowIpc.handle(AgentIpcChannels.DSH_MCP_TOGGLE_CONFIG, async (_event, projectPath: string, name: string, disabled: boolean, scope: ResourceScope) => {
       if (scope !== 'user') throw new Error('dsh MCP toggle only supports user scope')
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
       if (parseRemoteProjectKey(projectPath)) {
@@ -3907,29 +2097,29 @@ export class AgentService {
     // Imported lazily: the plugin service pulls in @superone/deepseek, and a
     // build with no dsh session should not pay for it at startup.
 
-    ipcMain.handle(AgentIpcChannels.DSH_PLUGIN_LIST, async () => {
+    windowIpc.handle(AgentIpcChannels.DSH_PLUGIN_LIST, async () => {
       const { listDshPlugins } = await import('../deepseek/deepseek-plugins')
       return await listDshPlugins()
     })
 
-    ipcMain.handle(AgentIpcChannels.DSH_PLUGIN_INSTALL, async (_event, source: DshPluginInstallSource, force?: boolean) => {
+    windowIpc.handle(AgentIpcChannels.DSH_PLUGIN_INSTALL, async (_event, source: DshPluginInstallSource, force?: boolean) => {
       const { installDshPlugin } = await import('../deepseek/deepseek-plugins')
       return await installDshPlugin(source, force === true)
     })
 
-    ipcMain.handle(AgentIpcChannels.DSH_PLUGIN_SET_DISABLED, async (_event, id: string, disabled: boolean) => {
+    windowIpc.handle(AgentIpcChannels.DSH_PLUGIN_SET_DISABLED, async (_event, id: string, disabled: boolean) => {
       const { setDshPluginDisabled } = await import('../deepseek/deepseek-plugins')
       return await setDshPluginDisabled(id, disabled)
     })
 
-    ipcMain.handle(AgentIpcChannels.DSH_PLUGIN_UNINSTALL, async (_event, id: string) => {
+    windowIpc.handle(AgentIpcChannels.DSH_PLUGIN_UNINSTALL, async (_event, id: string) => {
       const { uninstallDshPlugin } = await import('../deepseek/deepseek-plugins')
       return await uninstallDshPlugin(id)
     })
 
     // --- Agents (read-only) ---
 
-    ipcMain.handle(AgentIpcChannels.AGENTS_LIST, async (_event, projectPath: string) => {
+    windowIpc.handle(AgentIpcChannels.AGENTS_LIST, async (_event, projectPath: string) => {
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
       if (parseRemoteProjectKey(projectPath)) {
         try {
@@ -3943,7 +2133,7 @@ export class AgentService {
       return discoverAllAgents(projectPath)
     })
 
-    ipcMain.handle(AgentIpcChannels.AGENTS_READ_FILE, async (_event, projectPath: string, name: string) => {
+    windowIpc.handle(AgentIpcChannels.AGENTS_READ_FILE, async (_event, projectPath: string, name: string) => {
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
       if (parseRemoteProjectKey(projectPath)) {
         try {
@@ -3959,7 +2149,7 @@ export class AgentService {
 
     // --- MCP config (session-scoped) ---
 
-    ipcMain.handle(AgentIpcChannels.MCP_LIST_CONFIG, async (_event, projectPath: string) => {
+    windowIpc.handle(AgentIpcChannels.MCP_LIST_CONFIG, async (_event, projectPath: string) => {
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
       if (parseRemoteProjectKey(projectPath)) {
         try {
@@ -3973,7 +2163,7 @@ export class AgentService {
       return listMcpConfigs(projectPath)
     })
 
-    ipcMain.handle(AgentIpcChannels.MCP_SAVE_CONFIG, async (_event, projectPath: string, name: string, config: Record<string, unknown>, scope: ResourceScope) => {
+    windowIpc.handle(AgentIpcChannels.MCP_SAVE_CONFIG, async (_event, projectPath: string, name: string, config: Record<string, unknown>, scope: ResourceScope) => {
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
       if (parseRemoteProjectKey(projectPath)) {
         if (scope !== 'user' && scope !== 'project') {
@@ -3998,7 +2188,7 @@ export class AgentService {
       }
     })
 
-    ipcMain.handle(AgentIpcChannels.MCP_DELETE_CONFIG, async (_event, projectPath: string, name: string, scope: ResourceScope) => {
+    windowIpc.handle(AgentIpcChannels.MCP_DELETE_CONFIG, async (_event, projectPath: string, name: string, scope: ResourceScope) => {
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
       if (parseRemoteProjectKey(projectPath)) {
         if (scope !== 'user' && scope !== 'project') {
@@ -4018,7 +2208,7 @@ export class AgentService {
       try { await this.sessionManager?.getActiveSession(projectPath)?.toggleMcpServer(name, false) } catch (err) { log.debug('[agent] MCP delete toggle skipped:', err) }
     })
 
-    ipcMain.handle(AgentIpcChannels.MCP_TOGGLE_CONFIG, async (_event, projectPath: string, name: string, disabled: boolean, scope: ResourceScope) => {
+    windowIpc.handle(AgentIpcChannels.MCP_TOGGLE_CONFIG, async (_event, projectPath: string, name: string, disabled: boolean, scope: ResourceScope) => {
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
       if (parseRemoteProjectKey(projectPath)) {
         if (scope !== 'user' && scope !== 'project') {
@@ -4039,7 +2229,7 @@ export class AgentService {
       try { await this.sessionManager?.getActiveSession(projectPath)?.toggleMcpServer(name, !disabled) } catch (err) { log.debug('[agent] MCP toggle skipped:', err) }
     })
 
-    ipcMain.handle(AgentIpcChannels.MCP_CHECK_SERVERS, async (_event, projectPath: string, harness?: HarnessId) => {
+    windowIpc.handle(AgentIpcChannels.MCP_CHECK_SERVERS, async (_event, projectPath: string, harness?: HarnessId) => {
       // Source the configs for the requesting harness so a Codex session probes
       // codex config.toml (not Claude's MCP config) and vice-versa. Falls back to the
       // active session's harness, then Claude (the settings page passes no harness).
@@ -4069,22 +2259,22 @@ export class AgentService {
       return result
     })
 
-    ipcMain.handle(AgentIpcChannels.MCP_META_CACHE, async () => {
+    windowIpc.handle(AgentIpcChannels.MCP_META_CACHE, async () => {
       return readMcpMetaCache()
     })
 
-    ipcMain.handle(AgentIpcChannels.MCP_PROBE_ICONS, async (_event, projectPath: string) => {
+    windowIpc.handle(AgentIpcChannels.MCP_PROBE_ICONS, async (_event, projectPath: string) => {
       const { probeMcpIconsForAllHarnesses } = await import('../mcp-server-icons')
       await probeMcpIconsForAllHarnesses(typeof projectPath === 'string' ? projectPath : '')
     })
 
-    ipcMain.handle(AgentIpcChannels.MCP_OAUTH_AUTHORIZE, async (_event, serverUrl: string, headers?: Record<string, string>, transport?: 'http' | 'sse') => {
+    windowIpc.handle(AgentIpcChannels.MCP_OAUTH_AUTHORIZE, async (_event, serverUrl: string, headers?: Record<string, string>, transport?: 'http' | 'sse') => {
       return authorizeHttpMcpServer(serverUrl, headers, transport)
     })
 
     // --- Hooks config (settings.json#hooks) ---
 
-    ipcMain.handle(AgentIpcChannels.HOOKS_LIST, async (_event, projectPath: string) => {
+    windowIpc.handle(AgentIpcChannels.HOOKS_LIST, async (_event, projectPath: string) => {
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
       if (parseRemoteProjectKey(projectPath)) {
         try {
@@ -4098,7 +2288,7 @@ export class AgentService {
       return listHooks(projectPath)
     })
 
-    ipcMain.handle(AgentIpcChannels.HOOKS_SAVE, async (_event, projectPath: string, payload: HookSavePayload, replaceId?: string) => {
+    windowIpc.handle(AgentIpcChannels.HOOKS_SAVE, async (_event, projectPath: string, payload: HookSavePayload, replaceId?: string) => {
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
       if (parseRemoteProjectKey(projectPath)) {
         const { getEnvironmentHost } = await import('../environment')
@@ -4110,7 +2300,7 @@ export class AgentService {
       saveHook(projectPath, payload, replaceId)
     })
 
-    ipcMain.handle(AgentIpcChannels.HOOKS_DELETE, async (_event, projectPath: string, id: string) => {
+    windowIpc.handle(AgentIpcChannels.HOOKS_DELETE, async (_event, projectPath: string, id: string) => {
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
       if (parseRemoteProjectKey(projectPath)) {
         const { getEnvironmentHost } = await import('../environment')
@@ -4124,30 +2314,30 @@ export class AgentService {
 
     // --- Providers ---
 
-    ipcMain.handle(AgentIpcChannels.PLATFORMS_LIST, () => getPlatforms())
-    ipcMain.handle(AgentIpcChannels.PLATFORMS_CREATE_CUSTOM, (_event, def: Platform) => upsertCustomPlatform(def))
-    ipcMain.handle(AgentIpcChannels.PLATFORMS_UPDATE_CUSTOM, (_event, def: Platform) => upsertCustomPlatform(def))
-    ipcMain.handle(AgentIpcChannels.PLATFORMS_DELETE_CUSTOM, (_event, id: string) => {
+    windowIpc.handle(AgentIpcChannels.PLATFORMS_LIST, () => getPlatforms())
+    windowIpc.handle(AgentIpcChannels.PLATFORMS_CREATE_CUSTOM, (_event, def: Platform) => upsertCustomPlatform(def))
+    windowIpc.handle(AgentIpcChannels.PLATFORMS_UPDATE_CUSTOM, (_event, def: Platform) => upsertCustomPlatform(def))
+    windowIpc.handle(AgentIpcChannels.PLATFORMS_DELETE_CUSTOM, (_event, id: string) => {
       const ok = deleteCustomPlatform(id)
       this.broadcastProviderConfigChanged()
       return ok
     })
 
-    ipcMain.handle(AgentIpcChannels.CREDENTIALS_LIST, () => listCredentials())
-    ipcMain.handle(AgentIpcChannels.CREDENTIALS_CREATE, (_event, input: CreateCredentialInput) => createCredential(input))
-    ipcMain.handle(AgentIpcChannels.CREDENTIALS_UPDATE, (_event, id: string, patch: UpdateCredentialInput) => {
+    windowIpc.handle(AgentIpcChannels.CREDENTIALS_LIST, () => listCredentials())
+    windowIpc.handle(AgentIpcChannels.CREDENTIALS_CREATE, (_event, input: CreateCredentialInput) => createCredential(input))
+    windowIpc.handle(AgentIpcChannels.CREDENTIALS_UPDATE, (_event, id: string, patch: UpdateCredentialInput) => {
       const result = updateCredential(id, patch)
       this.broadcastProviderConfigChanged()
       return result
     })
-    ipcMain.handle(AgentIpcChannels.CREDENTIALS_DELETE, (_event, id: string) => {
+    windowIpc.handle(AgentIpcChannels.CREDENTIALS_DELETE, (_event, id: string) => {
       const ok = deleteCredential(id)
       this.broadcastProviderConfigChanged()
       return ok
     })
 
-    ipcMain.handle(AgentIpcChannels.BINDINGS_GET, () => listBindings())
-    ipcMain.handle(AgentIpcChannels.BINDINGS_SET, (_event, binding: ConsumerBinding) => {
+    windowIpc.handle(AgentIpcChannels.BINDINGS_GET, () => listBindings())
+    windowIpc.handle(AgentIpcChannels.BINDINGS_SET, (_event, binding: ConsumerBinding) => {
       log.info('[bindings] set consumer=%s credential=%s', binding.consumer, binding.credentialId)
       setBinding(binding)
       const harness = binding.consumer === 'chat:codex' ? 'codex' : 'claude'
@@ -4155,7 +2345,7 @@ export class AgentService {
       if (harness === 'codex') this.codexProviderChanged?.(false)
       this.broadcastProviderChanged(harness)
     })
-    ipcMain.handle(AgentIpcChannels.BINDINGS_CLEAR, (_event, consumer: ConsumerId) => {
+    windowIpc.handle(AgentIpcChannels.BINDINGS_CLEAR, (_event, consumer: ConsumerId) => {
       log.info('[bindings] clear consumer=%s', consumer)
       deleteBinding(consumer)
       const harness = consumer === 'chat:codex' ? 'codex' : 'claude'
@@ -4164,14 +2354,14 @@ export class AgentService {
       this.broadcastProviderChanged(harness)
     })
 
-    ipcMain.handle(AgentIpcChannels.PROVIDERS_TEST_ENDPOINT, async (_event, data: { apiKey: string; credentialId?: string; baseUrl: string; endpoints: ServiceEndpoint[] }) => {
+    windowIpc.handle(AgentIpcChannels.PROVIDERS_TEST_ENDPOINT, async (_event, data: { apiKey: string; credentialId?: string; baseUrl: string; endpoints: ServiceEndpoint[] }) => {
       const apiKey = resolveTestApiKey({ api_key: data.apiKey, credential_id: data.credentialId })
       const results = await testServiceEndpoints(data.baseUrl, data.endpoints, apiKey)
       trace('providers.test', 'result', results)
       return { success: results.every((r) => r.success), results }
     })
 
-    ipcMain.handle(AgentIpcChannels.PROVIDERS_DISCOVER_MODELS, async (_event, data: { apiKey: string; credentialId?: string; baseUrl: string }) => {
+    windowIpc.handle(AgentIpcChannels.PROVIDERS_DISCOVER_MODELS, async (_event, data: { apiKey: string; credentialId?: string; baseUrl: string }) => {
       const apiKey = resolveTestApiKey({ api_key: data.apiKey, credential_id: data.credentialId })
       const catalogIndex = await this.buildDiscoveryCatalogIndex()
       const result = await discoverModels(data.baseUrl, apiKey, catalogIndex)
@@ -4180,13 +2370,13 @@ export class AgentService {
     })
 
     // Cache-only. Detection / model probes run on app open (see main process startup).
-    ipcMain.handle(AgentIpcChannels.ACP_LIST_AGENTS, async () => {
+    windowIpc.handle(AgentIpcChannels.ACP_LIST_AGENTS, async () => {
       const { readAcpResourcesCache } = await import('../acp/acp-model-cache')
       return readAcpResourcesCache()
     })
 
     // Once-per-launch model catalog refresh for installed ACP agents.
-    ipcMain.handle(AgentIpcChannels.ACP_REFRESH_MODELS, async (_event, agentId?: string) => {
+    windowIpc.handle(AgentIpcChannels.ACP_REFRESH_MODELS, async (_event, agentId?: string) => {
       const { refreshAcpModelsOnce } = await import('../acp/acp-model-cache')
       return refreshAcpModelsOnce(agentId ? { agentIds: [agentId] } : undefined)
     })
@@ -4194,14 +2384,14 @@ export class AgentService {
     // Observation, not configuration: Grok applies its sandbox at process start
     // from env / its own config, and SuperOne never sets it. Read so the status
     // bar can report the real state instead of assuming `off`.
-    ipcMain.handle(AgentIpcChannels.ACP_GET_SANDBOX, async () => {
+    windowIpc.handle(AgentIpcChannels.ACP_GET_SANDBOX, async () => {
       const { currentGrokSandbox } = await import('../acp/grok-sandbox')
       return currentGrokSandbox()
     })
 
     // --- Session Providers (new session_providers table) ---
 
-    ipcMain.handle(AgentIpcChannels.SESSION_PROVIDERS_LIST, async () => {
+    windowIpc.handle(AgentIpcChannels.SESSION_PROVIDERS_LIST, async () => {
       const { listSessionProviders } = await import('../session/session-provider-repo')
       return listSessionProviders()
     })
@@ -4209,48 +2399,48 @@ export class AgentService {
     // Composer @-mention list. Derived from the same usable-provider set as
     // session_collab_list_agents, so the popup can never offer an agent that
     // session_collab_request would reject.
-    ipcMain.handle(AgentIpcChannels.SESSION_PROVIDERS_MENTION_TARGETS, async () => {
+    windowIpc.handle(AgentIpcChannels.SESSION_PROVIDERS_MENTION_TARGETS, async () => {
       const { listAgentMentionTargets } = await import('../session/agent-profiles')
       return listAgentMentionTargets()
     })
 
-    ipcMain.handle(AgentIpcChannels.SESSION_PROVIDERS_LIST_BY_HARNESS, async (_event, harnessId: 'claude' | 'codex') => {
+    windowIpc.handle(AgentIpcChannels.SESSION_PROVIDERS_LIST_BY_HARNESS, async (_event, harnessId: 'claude' | 'codex') => {
       const { listByHarness } = await import('../session/session-provider-repo')
       return listByHarness(harnessId)
     })
 
-    ipcMain.handle(AgentIpcChannels.SESSION_PROVIDERS_GET, async (_event, id: string) => {
+    windowIpc.handle(AgentIpcChannels.SESSION_PROVIDERS_GET, async (_event, id: string) => {
       const { getSessionProvider } = await import('../session/session-provider-repo')
       return getSessionProvider(id)
     })
 
-    ipcMain.handle(AgentIpcChannels.SESSION_PROVIDERS_GET_BASE, async (_event, harnessId: 'claude' | 'codex') => {
+    windowIpc.handle(AgentIpcChannels.SESSION_PROVIDERS_GET_BASE, async (_event, harnessId: 'claude' | 'codex') => {
       const { getBaseProvider } = await import('../session/session-provider-repo')
       return getBaseProvider(harnessId)
     })
 
-    ipcMain.handle(AgentIpcChannels.SESSION_PROVIDERS_CREATE, async (_event, input: { harnessId: 'claude' | 'codex'; name: string; config: unknown; id?: string }) => {
+    windowIpc.handle(AgentIpcChannels.SESSION_PROVIDERS_CREATE, async (_event, input: { harnessId: 'claude' | 'codex'; name: string; config: unknown; id?: string }) => {
       const { createSessionProvider } = await import('../session/session-provider-repo')
       return createSessionProvider(input)
     })
 
-    ipcMain.handle(AgentIpcChannels.SESSION_PROVIDERS_UPDATE, async (_event, id: string, patch: { name?: string; config?: unknown }) => {
+    windowIpc.handle(AgentIpcChannels.SESSION_PROVIDERS_UPDATE, async (_event, id: string, patch: { name?: string; config?: unknown }) => {
       const { updateSessionProvider } = await import('../session/session-provider-repo')
       return updateSessionProvider(id, patch)
     })
 
-    ipcMain.handle(AgentIpcChannels.SESSION_PROVIDERS_DELETE, async (_event, id: string) => {
+    windowIpc.handle(AgentIpcChannels.SESSION_PROVIDERS_DELETE, async (_event, id: string) => {
       const { deleteSessionProvider } = await import('../session/session-provider-repo')
       return deleteSessionProvider(id)
     })
 
     // --- MCP library (global) ---
 
-    ipcMain.handle(AgentIpcChannels.MCP_LIST_LIBRARY, () => {
+    windowIpc.handle(AgentIpcChannels.MCP_LIST_LIBRARY, () => {
       return listLibrary()
     })
 
-    ipcMain.handle(AgentIpcChannels.MCP_DELETE_LIBRARY_ENTRY, async (_event, name: string) => {
+    windowIpc.handle(AgentIpcChannels.MCP_DELETE_LIBRARY_ENTRY, async (_event, name: string) => {
       const entry = getLibraryEntry(name)
       if (entry?.bundleId) {
         await uninstallMcpbBundle(name)
@@ -4260,19 +2450,19 @@ export class AgentService {
 
     // --- Session history (session-scoped) ---
 
-    ipcMain.handle(AgentIpcChannels.SESSIONS_LIST, (_event, projectPath: string) => {
+    windowIpc.handle(AgentIpcChannels.SESSIONS_LIST, (_event, projectPath: string) => {
       return listSessionsForFolder(projectPath)
     })
 
-    ipcMain.handle(AgentIpcChannels.SESSIONS_LIST_FOR_FOLDER, (_event, folderPath: string) => {
+    windowIpc.handle(AgentIpcChannels.SESSIONS_LIST_FOR_FOLDER, (_event, folderPath: string) => {
       return listSessionsForFolder(folderPath)
     })
 
-    ipcMain.handle(AgentIpcChannels.SESSIONS_LIST_FOR_FOLDER_PAGE, (_event, folderPath: string, limit: number, offset: number) => {
+    windowIpc.handle(AgentIpcChannels.SESSIONS_LIST_FOR_FOLDER_PAGE, (_event, folderPath: string, limit: number, offset: number) => {
       return listSessionsForFolder(folderPath, limit, offset)
     })
 
-    ipcMain.handle(AgentIpcChannels.SESSIONS_RESUME, async (_event, projectPath: string, sessionId: string, worktreeCwd?: string, permissionMode?: PermissionMode) => {
+    windowIpc.handle(AgentIpcChannels.SESSIONS_RESUME, async (_event, projectPath: string, sessionId: string, worktreeCwd?: string, permissionMode?: PermissionMode) => {
       const mgr = this.requireSessionManager()
       // A stored session resumes on its own harness, so its defaults must come
       // from there — not from whichever harness happens to be the fallback.
@@ -4304,7 +2494,7 @@ export class AgentService {
       }
     })
 
-    ipcMain.handle(AgentIpcChannels.PARK_SESSION, async (_event, projectPath: string) => {
+    windowIpc.handle(AgentIpcChannels.PARK_SESSION, async (_event, projectPath: string) => {
       const mgr = this.requireSessionManager()
       mgr.clearActiveSession(projectPath)
       // Parking has no harness to speak of, and every caller discards this
@@ -4316,7 +2506,7 @@ export class AgentService {
       return { permissionMode, sandboxInfo }
     })
 
-    ipcMain.handle(AgentIpcChannels.ACTIVATE_SESSION, async (_event, projectPath: string, sessionId: string) => {
+    windowIpc.handle(AgentIpcChannels.ACTIVATE_SESSION, async (_event, projectPath: string, sessionId: string) => {
       const mgr = this.requireSessionManager()
       let session = mgr.getSession(sessionId)
       if (!session) {
@@ -4325,21 +2515,21 @@ export class AgentService {
       try { mgr.setActiveSession(projectPath, sessionId) } catch { /* belongs to another project */ }
     })
 
-    ipcMain.handle(AgentIpcChannels.SET_SESSION_FOREGROUND, (event, sessionId: string, foreground: boolean, projectPath?: string) => {
+    windowIpc.handle(AgentIpcChannels.SET_SESSION_FOREGROUND, (event, sessionId: string, foreground: boolean, projectPath?: string) => {
       this.requireSessionManager().setSessionForeground(sessionId, foreground)
       const environmentId = (projectPath && parseRemoteProjectKey(projectPath)?.connectionId) || localSessionEnvironmentId()
       this.sessionForegroundListener?.(event.sender.id, { environmentId, sessionId }, foreground, event.sender)
     })
 
-    ipcMain.handle(AgentIpcChannels.GET_LIVE_SNAPSHOTS, () => {
+    windowIpc.handle(AgentIpcChannels.GET_LIVE_SNAPSHOTS, () => {
       return this.requireSessionManager().listLiveSnapshots()
     })
 
-    ipcMain.handle(AgentIpcChannels.SESSIONS_LOAD_MESSAGES, (_event, projectPath: string, sessionId: string, limit: number, cursor?: number) => {
+    windowIpc.handle(AgentIpcChannels.SESSIONS_LOAD_MESSAGES, (_event, projectPath: string, sessionId: string, limit: number, cursor?: number) => {
       return loadSessionMessages(projectPath, sessionId, limit, cursor)
     })
 
-    ipcMain.handle(AgentIpcChannels.SESSIONS_RENAME, (_event, sessionId: string, title: string) => {
+    windowIpc.handle(AgentIpcChannels.SESSIONS_RENAME, (_event, sessionId: string, title: string) => {
       const session = this.requireSessionManager().getSession(sessionId)
       if (session) {
         session.setTitle(title, 'user')
@@ -4349,11 +2539,11 @@ export class AgentService {
       this.emitSessionsChanged()
     })
 
-    ipcMain.handle(AgentIpcChannels.SESSIONS_LOAD_STATE, (_event, sessionId: string) => {
+    windowIpc.handle(AgentIpcChannels.SESSIONS_LOAD_STATE, (_event, sessionId: string) => {
       return loadSessionState(sessionId)
     })
 
-    ipcMain.handle(AgentIpcChannels.SESSIONS_DELETE, async (_event, sessionId: string) => {
+    windowIpc.handle(AgentIpcChannels.SESSIONS_DELETE, async (_event, sessionId: string) => {
       // Tear the runtime down first: session state is persisted with an upsert, so a
       // session still alive after the row is gone — a realtime call keeps streaming
       // transcript and titles — would INSERT itself straight back. Disposing also
@@ -4371,7 +2561,7 @@ export class AgentService {
       this.emitSessionsChanged()
     })
 
-    ipcMain.handle(AgentIpcChannels.SESSIONS_DELETE_OLDER, (_event, folderPath: string, cutoffDate: string) => {
+    windowIpc.handle(AgentIpcChannels.SESSIONS_DELETE_OLDER, (_event, folderPath: string, cutoffDate: string) => {
       const deleted = dbDeleteSessionsOlderThan(folderPath, cutoffDate)
       if (deleted.length > 0) {
         this.emitSessionsChanged()
@@ -4379,8 +2569,8 @@ export class AgentService {
       return deleted
     })
 
-    ipcMain.handle(AgentIpcChannels.SESSIONS_FORK, async (_event, request: SessionForkRequest) => {
-      const result = await forkSession(request)
+    windowIpc.handle(AgentIpcChannels.SESSIONS_FORK, async (_event, request: SessionForkRequest) => {
+      const result = await this.forkSessionControlled(request)
       if (result.ok) {
         this.emitSessionsChanged()
       }
@@ -4390,24 +2580,24 @@ export class AgentService {
     // Side chat deliberately does NOT emitSessionsChanged: an ephemeral session
     // is absent from the database, so refreshing the sidebar would show nothing
     // and only cost a re-query.
-    ipcMain.handle(AgentIpcChannels.SESSIONS_SIDE_CHAT_START, async (_event, request: SideChatStartRequest) => {
+    windowIpc.handle(AgentIpcChannels.SESSIONS_SIDE_CHAT_START, async (_event, request: SideChatStartRequest) => {
       return startSideChat(this.requireSessionManager(), request)
     })
 
-    ipcMain.handle(AgentIpcChannels.SESSIONS_SIDE_CHAT_CLOSE, async (_event, sessionId: string) => {
+    windowIpc.handle(AgentIpcChannels.SESSIONS_SIDE_CHAT_CLOSE, async (_event, sessionId: string) => {
       if (!this.sessionManager) return false
       return closeSideChat(this.sessionManager, sessionId)
     })
 
-    ipcMain.handle(AgentIpcChannels.SESSIONS_PIN, (_event, sessionId: string, pinned: boolean) => {
+    windowIpc.handle(AgentIpcChannels.SESSIONS_PIN, (_event, sessionId: string, pinned: boolean) => {
       dbPinSession(sessionId, pinned)
       this.emitSessionsChanged()
     })
 
-    ipcMain.handle(AgentIpcChannels.SESSIONS_HIDE, (_event, sessionId: string, hidden: boolean) =>
+    windowIpc.handle(AgentIpcChannels.SESSIONS_HIDE, (_event, sessionId: string, hidden: boolean) =>
       this.setSessionHidden(sessionId, hidden))
 
-    ipcMain.handle(AgentIpcChannels.SESSIONS_LIST_PINNED, () => {
+    windowIpc.handle(AgentIpcChannels.SESSIONS_LIST_PINNED, () => {
       return listPinnedSessions()
     })
   }
@@ -4573,11 +2763,4 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_HIDE)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_LIST_PINNED)
   }
-}
-
-/** What a responder-style phone handler answers, as a value. */
-async function capturedResponse(run: (respond: RemoteResponder) => Promise<void>): Promise<unknown> {
-  let answer: unknown
-  await run(async (_requestId, data) => { answer = data })
-  return answer
 }

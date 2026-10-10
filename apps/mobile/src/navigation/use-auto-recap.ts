@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { AppState } from 'react-native'
 import type { RelayClient } from '@superone/relay-client'
 import { createMobileAutoRecap, requestAutoSessionRecap } from '../auto-recap'
+import { runtimeSessionRef } from '../runtime-session-rpc'
 
 /** Grok auto recap: session switch and app background/inactive both count as away.
  * Recap is requested on return, not while the chat is still in the background. */
@@ -9,18 +10,21 @@ export function useAutoRecap(opts: {
   clientRef: { current: RelayClient | null }
   sessionId: string | null
   projectPath: string | null
+  sourceEnvironmentId: string | null
   eligible: boolean
 }): { markRecapShown: (sessionId: string) => void } {
   const recapRef = useRef<ReturnType<typeof createMobileAutoRecap> | null>(null)
   const clientRef = opts.clientRef
+  const source = useRef(opts.sourceEnvironmentId)
+  source.current = opts.sourceEnvironmentId
   const [appActive, setAppActive] = useState(() => AppState.currentState === 'active')
 
   useEffect(() => {
     const recap = createMobileAutoRecap({
-      requestAutoRecap: async (sessionId, projectPath) => {
+      requestAutoRecap: async (sessionId) => {
         const client = clientRef.current
         if (!client) return false
-        return requestAutoSessionRecap((cmd) => client.request(cmd), sessionId, projectPath)
+        return requestAutoSessionRecap(client, runtimeSessionRef(client, sessionId, source.current))
       },
     })
     recapRef.current = recap

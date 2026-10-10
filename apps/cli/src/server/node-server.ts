@@ -69,6 +69,7 @@ export async function startNodeServer(opts: NodeServerOptions): Promise<NodeServ
     startedAt,
     verifyDeviceProof: verifyPayload,
     dispatchRpc,
+    control: opts.leases,
     onClientDisconnected: (clientSessionId) => {
       opts.workspaceWatch.cancelForClient?.(clientSessionId)
       opts.workspaceTailWatch.cancelForClient?.(clientSessionId)

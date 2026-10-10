@@ -9,7 +9,7 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentEvent, TerminalListItem } from '@superone/shared/agent-types'
 import { nodePtySpawner } from '../terminal/pty'
-import { TerminalOwnership } from '../terminal/terminal-ownership'
+import { terminalLease } from '../terminal/terminal-lease.test-fixtures'
 import { TerminalSession } from '../terminal/terminal-session'
 import type { CreateTerminalOptions } from '../terminal/terminal-manager'
 import type { BuiltInSuperoneToolDeps } from './superone-mcp-builtins'
@@ -20,7 +20,7 @@ class RealManager implements TerminalToolHost {
   private n = 0
   create(opts: CreateTerminalOptions): TerminalSession {
     const terminalId = `real${++this.n}`
-    const s = new TerminalSession({ terminalId, cwd: opts.cwd, projectPath: opts.projectPath, title: opts.title ?? 'T', cols: opts.cols ?? 80, rows: opts.rows ?? 24, spawner: nodePtySpawner, ownership: new TerminalOwnership(), agentSessionId: opts.agentSessionId, onEvent: () => {}, control: { pollMs: 100 } })
+    const s = new TerminalSession({ terminalId, cwd: opts.cwd, projectPath: opts.projectPath, title: opts.title ?? 'T', cols: opts.cols ?? 80, rows: opts.rows ?? 24, spawner: nodePtySpawner, lease: terminalLease(), agentSessionId: opts.agentSessionId, onEvent: () => {}, control: { pollMs: 100 } })
     this.sessions.set(terminalId, s)
     return s
   }

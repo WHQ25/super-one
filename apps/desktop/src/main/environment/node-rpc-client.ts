@@ -1,6 +1,7 @@
+import { EnvironmentRpcClient, type TopicStream } from './environment-rpc-client'
 import { randomUUID } from 'node:crypto'
 import WebSocket from 'ws'
-import type { ControlLease, EnvironmentLiveStatus, EnvironmentUsageReport, ExecutionEnvironmentDescriptor, TerminalReadResult, TopicSubscribeInput } from '@superone/shared/environment'
+import type { ExecutionEnvironmentDescriptor, TopicSubscribeInput } from '@superone/shared/environment'
 import { DATABASE_SCHEMA_GENERATION, PROTOCOL_GENERATION } from '@superone/shared/environment'
 import { isNodeMutatingCall } from '@superone/runtime/server/rpc-mutating-methods'
 import { dialWebSocket } from '@superone/runtime/server/node-socket'
@@ -66,12 +67,7 @@ export interface NodeRoute {
   dial?: NodeSocketDialer
 }
 
-/** An open `topic.subscribe` stream. */
-export interface TopicStream {
-  close(): void
-  /** Change the stream's topics in place; resolves once the node applied them. */
-  update(topics: TopicRef[]): Promise<void>
-}
+export type { TopicStream } from './environment-rpc-client'
 
 /** Pure reads the sidebar, status bar and pickers issue alike; identical ones in flight share a request. */
 const COALESCED_READS: ReadonlySet<string> = new Set([
@@ -134,7 +130,12 @@ function rpcTimeoutMs(method: string): number | undefined {
  * Authenticated WebSocket RPC client for superone.
  * Lives in Electron Main only — renderer never holds the socket.
  */
-export class NodeRpcClient {
+export class NodeRpcClient extends EnvironmentRpcClient {
+  private readonly controlListeners = new Set<(event: import('@superone/shared/environment').ControlLostEvent) => void>()
+  onControlLost(listener: (event: import('@superone/shared/environment').ControlLostEvent) => void): () => void {
+    this.controlListeners.add(listener)
+    return () => { this.controlListeners.delete(listener) }
+  }
   private baseUrl: string
   private ws: NodeSocket | null = null
   private wsSocketId = 0
@@ -158,6 +159,7 @@ export class NodeRpcClient {
   private dial: NodeSocketDialer | undefined
 
   constructor(private readonly opts: NodeRpcClientOptions) {
+    super()
     this.baseUrl = opts.baseUrl.replace(/\/$/, '')
     this.dial = opts.dial
     this.heartbeatIntervalMs = opts.heartbeatIntervalMs ?? HEARTBEAT_INTERVAL_MS
@@ -342,6 +344,7 @@ export class NodeRpcClient {
               responseError: (error) => rpcResponseError(error.code, error.message, error.details),
               timeoutError: (method) => transportError(`rpc timeout: ${method}`),
               coalesces: (method) => COALESCED_READS.has(method),
+              onControlLost: event => { for (const listener of this.controlListeners) listener(event) },
             })
             this.conn = conn
             ws.on('message', (data) => {
@@ -659,60 +662,6 @@ export class NodeRpcClient {
     return descriptor
   }
 
-  async health(): Promise<{ ok: boolean; environmentId: string; uptimeMs: number }> {
-    return this.rpc('environment.health')
-  }
-
-  async systemInfo(): Promise<Record<string, unknown>> {
-    return this.rpc('environment.systemInfo')
-  }
-
-  async liveStatus(): Promise<EnvironmentLiveStatus> {
-    return this.rpc('environment.status')
-  }
-
-  async usage(): Promise<EnvironmentUsageReport> {
-    return this.rpc('environment.usage')
-  }
-
-  async terminalCreate(input: {
-    cwd: string
-    title?: string
-    cols?: number
-    rows?: number
-  }): Promise<{ terminalId: string }> {
-    return this.rpc('terminal.create', input)
-  }
-
-  async terminalAttach(terminalId: string): Promise<{ snapshot: string; sequence: string }> {
-    return this.rpc('terminal.attach', { terminalId })
-  }
-
-  async terminalRead(terminalId: string, afterSequence: string): Promise<TerminalReadResult> {
-    return this.rpc('terminal.read', { terminalId, afterSequence })
-  }
-
-  async terminalWrite(terminalId: string, data: string, leaseId: string, generation: string): Promise<void> {
-    await this.rpc('terminal.write', { terminalId, data, leaseId, generation })
-  }
-
-  async terminalResize(
-    terminalId: string,
-    cols: number,
-    rows: number,
-    leaseId: string,
-    generation: string,
-  ): Promise<void> {
-    await this.rpc('terminal.resize', { terminalId, cols, rows, leaseId, generation })
-  }
-
-  async terminalKill(terminalId: string, leaseId: string, generation: string): Promise<void> {
-    await this.rpc('terminal.kill', { terminalId, leaseId, generation })
-  }
-
-  async terminalAcquireControl(terminalId: string, ttlMs?: number): Promise<ControlLease> {
-    return this.rpc<ControlLease>('terminal.acquireControl', { terminalId, ttlMs })
-  }
 
   close(): void {
     this.closed = true

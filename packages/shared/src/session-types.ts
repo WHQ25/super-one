@@ -53,6 +53,7 @@ export interface SessionSnapshot {
 export type SessionUiSettings = SessionSettingsPatch
 
 export interface LiveSessionSnapshot {
+  controlLease?: import('./environment').ControlLease | null
   sid: string
   projectPath: string
   isActive: boolean

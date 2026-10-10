@@ -307,6 +307,8 @@ import { resetLock } from './helpers/lifecycle'
 export function isRemoteSession(state: ChatStore, projectPath: string, sessionId: string | null | undefined): boolean {
   if (!sessionId) return false
   if (state.projectSessions[projectPath]?._sessions[sessionId]?.draftRemoteDeviceId) return true
+  const lease = state.projectSessions[projectPath]?._sessions[sessionId]?._controlLease
+  if (lease !== undefined) return !!lease && Date.parse(lease.expiresAt) > Date.now() && !lease.delegate?.startsWith('window:')
   const ids = state.remoteSessions[projectPath]
   return !!ids && ids.includes(sessionId)
 }

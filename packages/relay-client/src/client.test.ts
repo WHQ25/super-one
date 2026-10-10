@@ -1,347 +1,166 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { RelayClient, type SocketLike } from './client'
-import { restoreSession } from './restore'
-import { LINK_CHANNEL_FRAME } from './phone-link'
+import { LINK_CHANNEL_FRAME, sealLinkFrame } from './phone-link'
+import { encodePlainMessage } from '@superone/shared/environment/wire'
 import { issueChannelCredential } from './secure-channel'
-import { TEST_LINK, TEST_ROOT_SECRET, completeHandshake } from './test-host-link'
+import { TEST_LINK, TEST_ROOT_SECRET, NATIVE_TEST_HOST, completeHandshake, completeNativeHandshake } from './test-host-link'
 
 const RELAY = { relayUrl: 'wss://relay.example', link: TEST_LINK, deviceId: 'dev-1' }
-
 class MockSocket implements SocketLike {
   sent: string[] = []
   closed = false
-  onopen: ((ev?: unknown) => void) | null = null
-  onmessage: ((ev: { data: string }) => void) | null = null
-  onclose: ((ev?: unknown) => void) | null = null
-  onerror: ((ev?: unknown) => void) | null = null
-  send(data: string): void {
-    this.sent.push(data)
-  }
-  close(): void {
-    this.closed = true
-    this.onclose?.()
-  }
-  emit(obj: unknown): void {
-    this.onmessage?.({ data: JSON.stringify(obj) })
-  }
+  onopen: SocketLike['onopen'] = null
+  onmessage: SocketLike['onmessage'] = null
+  onclose: SocketLike['onclose'] = null
+  onerror: SocketLike['onerror'] = null
+  send(data: string) { this.sent.push(data) }
+  close() { this.closed = true; this.onclose?.() }
+  emit(obj: unknown) { this.onmessage?.({ data: JSON.stringify(obj) }) }
+}
+const clients: RelayClient[] = []
+afterEach(() => { for (const client of clients.splice(0)) client.disconnect() })
+function fixture(hooks: ConstructorParameters<typeof RelayClient>[0] = {}) {
+  const sockets: MockSocket[] = []
+  const client = new RelayClient({ ...hooks, openSocket: () => {
+    const socket = new MockSocket(); sockets.push(socket)
+    queueMicrotask(() => socket.onopen?.())
+    return socket
+  } })
+  clients.push(client)
+  return { client, sockets }
 }
 
-afterEach(() => vi.useRealTimers())
-
-it('probes a healthy foreground socket once and resolves false when it closes', async () => {
-  const socket = new MockSocket()
-  const client = new RelayClient({ openSocket: () => { queueMicrotask(() => socket.onopen?.()); return socket } })
-  await client.connectRelay(RELAY)
-  const probe = client.probeConnection()
-  expect(client.probeConnection()).toBe(probe)
-  // The relay's auto-response pair is the literal text, as the heartbeat uses.
-  expect(socket.sent.at(-1)).toBe('ping')
-  socket.onmessage?.({ data: 'pong' })
-  await expect(probe).resolves.toBe(true)
-  const lost = client.probeConnection()
-  client.disconnect()
-  await expect(lost).resolves.toBe(false)
-})
-
-describe('RelayClient', () => {
-  it('connects, requests RPC, and applies buffered events after restore', async () => {
-    let sock: MockSocket | null = null
-    const events: unknown[][] = []
-    const client = new RelayClient({
-      openSocket: () => {
-        sock = new MockSocket()
-        queueMicrotask(() => sock?.onopen?.())
-        return sock
-      },
-      onEvents: (batch) => events.push(batch),
-    })
+describe('native RelayClient socket adapter', () => {
+  it('probes a foreground relay socket once and resolves false when it closes', async () => {
+    const { client, sockets } = fixture()
     await client.connectRelay(RELAY)
-    expect(sock).not.toBeNull()
-    // Nothing sealed for an earlier connection can be opened, so nothing is replayed.
-    expect(sock!.sent.some((s) => s.includes('"replay"'))).toBe(false)
-    const reqP = client.request({ type: 'list_projects', requestId: 'r1' })
-    // Commands wait for the channel; nothing goes out in the clear before it.
-    await Promise.resolve()
-    expect(sock!.sent.some((s) => s.includes('"command"'))).toBe(false)
-    const host = completeHandshake(sock!)
-
+    const socket = sockets[0]!
+    const probe = client.probeConnection()
+    expect(client.probeConnection()).toBe(probe)
+    expect(socket.sent.at(-1)).toBe('ping')
+    socket.onmessage?.({ data: 'pong' })
+    await expect(probe).resolves.toBe(true)
+    const lost = client.probeConnection(); client.disconnect()
+    await expect(lost).resolves.toBe(false)
+  })
+  it('waits for the native handshake, coalesces reads and buffers native client pushes', async () => {
+    const onEvents = vi.fn(), onControl = vi.fn()
+    const { client, sockets } = fixture({ onEvents, onControl })
+    await client.connectRelay(RELAY)
+    const socket = sockets[0]!
+    const first = client.rpc('project.list')
+    const second = client.rpc('project.list')
+    expect(socket.sent.some(raw => raw.includes('"command"'))).toBe(false)
+    const host = completeHandshake(socket, TEST_LINK, 'Desk', NATIVE_TEST_HOST)
+    const handshake = host.readRpc(socket).at(-1)!
+    expect(onControl).not.toHaveBeenCalled()
+    expect(host.readRpc(socket)).toEqual([])
+    host.sendRpc(socket, { type: 'handshake_ok', requestId: handshake.requestId,
+      result: { protocol: 3, databaseSchema: 1, environmentId: 'desk' } }, { plain: true })
+    await client.verifyHost()
+    let requests: Record<string, unknown>[] = []
+    await vi.waitFor(() => { requests.push(...host.readRpc(socket)); expect(requests).toHaveLength(1) })
+    expect(requests[0]).toMatchObject({ type: 'rpc', method: 'project.list' })
+    host.sendRpc(socket, { type: 'rpc_result', requestId: requests[0]!.requestId, result: { projects: [] } })
+    await expect(first).resolves.toEqual({ projects: [] }); await expect(second).resolves.toEqual({ projects: [] })
     client.startBuffering()
-    sock!.emit({ type: 'event', seq: 1, data: host.seal('event', { type: 'status_change', status: 'idle' }) })
-    expect(events).toEqual([])
-
-    await vi.waitFor(() => expect(sock!.sent.some((s) => s.includes('"command"'))).toBe(true))
-    expect(host.reply(sock!, { projects: [{ path: '/p', name: 'p' }] })).toMatchObject({ type: 'list_projects', requestId: 'r1' })
-    await expect(reqP).resolves.toEqual({ projects: [{ path: '/p', name: 'p' }] })
-
-    const released = client.releaseBuffer()
-    expect(released.epoch).toBe(1)
-    expect(released.batches).toHaveLength(1)
+    const event = { type: 'composer_settled', formId: 'form', outcome: 'sent' }
+    host.sendRpc(socket, { type: 'client', event }, { push: true })
+    expect(onEvents).not.toHaveBeenCalled()
+    expect(client.releaseBuffer().batches).toEqual([[event]])
   })
-
-  it('runs the channel handshake, re-runs it for a rejoining desktop, and surfaces control frames', async () => {
-    let sock: MockSocket | null = null
-    const controls: unknown[] = []
-    const client = new RelayClient({
-      openSocket: () => {
-        sock = new MockSocket()
-        queueMicrotask(() => sock?.onopen?.())
-        return sock
-      },
-      onControl: (frame) => controls.push(frame),
-    })
-
+  it('reruns both handshakes for a returning desktop and reports only verified host contracts', async () => {
+    const onControl = vi.fn()
+    const { client, sockets } = fixture({ onControl })
     await client.connectRelay(RELAY)
-    const hello = JSON.parse(sock!.sent[0]!)
-    expect(hello).toMatchObject({ type: LINK_CHANNEL_FRAME, msg: { type: 'channel_hello', keyId: TEST_LINK.credential.keyId } })
-    // The secret never appears on the wire.
-    expect(sock!.sent.join('')).not.toContain(TEST_LINK.credential.secretHex)
-    completeHandshake(sock!, TEST_LINK, 'desktop')
-    sock!.emit({ type: 'peer_disconnected' })
-    sock!.emit({ type: 'peer_connected' })
-    const hellos = sock!.sent.filter((s) => s.includes('channel_hello'))
-    expect(hellos).toHaveLength(2)
-    completeHandshake(sock!, TEST_LINK, 'desktop')
-    expect(controls).toEqual([
-      { type: 'handshake', hostName: 'desktop' },
-      { type: 'peer_disconnected' },
-      { type: 'peer_connected' },
-      { type: 'handshake', hostName: 'desktop' },
-    ])
+    const socket = sockets[0]!
+    expect(JSON.parse(socket.sent[0]!)).toMatchObject({ type: LINK_CHANNEL_FRAME, msg: { type: 'channel_hello', keyId: TEST_LINK.credential.keyId } })
+    expect(socket.sent.join('')).not.toContain(TEST_LINK.credential.secretHex)
+    completeNativeHandshake(socket, TEST_LINK, 'desktop'); await client.verifyHost()
+    socket.emit({ type: 'peer_disconnected' }); socket.emit({ type: 'peer_connected' })
+    completeNativeHandshake(socket, TEST_LINK, 'desktop'); await client.verifyHost()
+    expect(onControl.mock.calls.map(([frame]) => frame.type)).toEqual(['handshake', 'peer_disconnected', 'peer_connected', 'handshake'])
+    expect(socket.sent.filter(raw => raw.includes('channel_hello'))).toHaveLength(2)
   })
-
-  it('ignores a challenge for an older hello and drops a host that cannot prove the secret', async () => {
-    let sock: MockSocket | null = null
-    const statuses: boolean[] = []
-    const client = new RelayClient({
-      openSocket: () => {
-        sock = new MockSocket()
-        queueMicrotask(() => sock?.onopen?.())
-        return sock
-      },
-      onStatus: (connected) => statuses.push(connected),
-    })
+  it('ignores a stale challenge and drops a host that cannot prove its pairing secret', async () => {
+    const onStatus = vi.fn()
+    const { client, sockets } = fixture({ onStatus })
     await client.connectRelay(RELAY)
-    sock!.emit({ type: LINK_CHANNEL_FRAME, msg: { type: 'channel_challenge', v: 1, nonce: 'aa'.repeat(32), proof: 'bb'.repeat(32) }, hello: 'stale' })
-    expect(sock!.sent.some((s) => s.includes('channel_proof'))).toBe(false)
-    const impostor = { credential: issueChannelCredential(TEST_ROOT_SECRET, 'test-phone-key-x'), roomId: TEST_LINK.roomId }
-    expect(() => completeHandshake(sock!, { ...impostor, credential: { ...impostor.credential, keyId: TEST_LINK.credential.keyId } })).toThrow('no channel proof sent')
-    expect(statuses).toEqual([true, false])
+    const socket = sockets[0]!
+    socket.emit({ type: LINK_CHANNEL_FRAME, msg: { type: 'channel_challenge', v: 1, nonce: 'aa'.repeat(32), proof: 'bb'.repeat(32) }, hello: 'stale' })
+    expect(socket.sent.some(raw => raw.includes('channel_proof'))).toBe(false)
+    const wrong = issueChannelCredential(TEST_ROOT_SECRET, 'wrong-key')
+    expect(() => completeHandshake(socket, { credential: { ...wrong, keyId: TEST_LINK.credential.keyId }, roomId: TEST_LINK.roomId })).toThrow('no channel proof sent')
+    expect(onStatus.mock.calls.map(([status]) => status)).toEqual([true, false])
   })
-
-  it('restoreSession is subscribe → history → snapshot → release', async () => {
-    let sock: MockSocket | null = null
-    const client = new RelayClient({
-      openSocket: () => {
-        sock = new MockSocket()
-        queueMicrotask(() => sock?.onopen?.())
-        return sock
-      },
-    })
-    await client.connectRelay(RELAY)
-    const host = completeHandshake(sock!)
-    const restoreP = restoreSession(client, '/proj', 'sess-1')
-    let answered = 0
-    const reply = async (body: unknown) => {
-      await vi.waitFor(() => expect(sock!.sent.filter((s) => s.includes('"command"')).length).toBeGreaterThan(answered))
-      answered += 1
-      host.reply(sock!, body)
-    }
-    await reply({ ok: true })
-    await reply({ messages: [{ id: 'm1', role: 'user', status: 'complete', content: [], createdAt: '', providerId: 'claude' }], hasMore: false, cursor: null })
-    await reply({ status: 'idle', pendingInteractions: [], inProgressMessages: [] })
-    const restored = await restoreP
-    expect(restored.messages).toHaveLength(1)
-    expect(restored.snapshot.status).toBe('idle')
-  })
-
-  it('send() is fire-and-forget and delivers terminal frames', async () => {
-    let sock: MockSocket | null = null
-    const terms: unknown[] = []
-    const client = new RelayClient({
-      openSocket: () => {
-        sock = new MockSocket()
-        queueMicrotask(() => sock?.onopen?.())
-        return sock
-      },
-      onTerminal: (p) => terms.push(p),
-    })
-    await client.connectRelay(RELAY)
-    const host = completeHandshake(sock!)
-    await Promise.resolve()
-    const before = sock!.sent.length
-    client.send({ type: 'terminal_input', terminalId: 't1', data: 'ls\n' })
-    expect(sock!.sent.length).toBe(before + 1)
-    expect(host.lastCommand(sock!)).toEqual({ type: 'terminal_input', terminalId: 't1', data: 'ls\n' })
-    sock!.emit({ type: 'terminal', data: host.seal('terminal', { type: 'terminal_output', data: 'ok' }) })
-    expect(terms).toEqual([{ type: 'terminal_output', data: 'ok' }])
-  })
-
-  it('delivers every event the channel opens, whatever its envelope seq, and never ACKs or asks for replay', async () => {
-    vi.useFakeTimers()
-    let sock: MockSocket | null = null
-    let delivered = 0
-    const client = new RelayClient({
-      openSocket: () => {
-        sock = new MockSocket()
-        queueMicrotask(() => sock?.onopen?.())
-        return sock
-      },
-      onEvents: () => { delivered += 1 },
-    })
-    const connected = client.connectRelay(RELAY)
-    await vi.runAllTicks()
-    await connected
-    const host = completeHandshake(sock!)
-    // A phone shares the relay with others, so its envelope seqs can skip; the
-    // channel, not the envelope, decides what is new.
-    const total = 2_200
-    for (let i = 0; i < total; i++) sock!.emit({ type: 'event', seq: 1 + i * 2, data: host.seal('event', { type: 'e', i }) })
-    sock!.emit({ type: 'event', seq: 1, data: 'invalid-ciphertext' })
-    vi.advanceTimersByTime(10_000)
-    expect(delivered).toBe(total)
-    expect(sock!.sent.some((frame) => frame.includes('"ack"') || frame.includes('"replay"'))).toBe(false)
-  })
-
-  it('buffers events after a reconnect, on a fresh channel, with one exclusive socket', async () => {
-    const sockets: MockSocket[] = []
-    const client = new RelayClient({
-      openSocket: () => {
-        const socket = new MockSocket()
-        sockets.push(socket)
-        queueMicrotask(() => socket.onopen?.())
-        return socket
-      },
-    })
-    await client.connectRelay(RELAY)
-    const first = completeHandshake(sockets[0])
-    const stale = first.seal('event', { type: 'sealed-for-the-old-connection' })
-    await client.reconnect()
-    expect(sockets).toHaveLength(2)
-    expect(sockets[0].closed).toBe(true)
-    expect(client.buffer.isBuffering).toBe(true)
-
-    const host = completeHandshake(sockets[1])
-    sockets[1].emit({ type: 'event', seq: 7, data: stale })
-    sockets[1].emit({
-      type: 'event',
-      seq: 8,
-      data: host.seal('event', { type: 'during-replay' }),
-    })
-    client.startBuffering()
-    expect(client.releaseBuffer().batches).toEqual([[{ type: 'during-replay' }]])
-  })
-
-  it('does not emit a false status while opening a replacement socket', async () => {
-    const statuses: boolean[] = []
-    const sockets: MockSocket[] = []
-    const client = new RelayClient({
-      openSocket: () => {
-        const socket = new MockSocket()
-        sockets.push(socket)
-        queueMicrotask(() => socket.onopen?.())
-        return socket
-      },
-      onStatus: (connected) => statuses.push(connected),
-    })
-    await client.connectRelay(RELAY)
-    await client.reconnect()
-    expect(statuses).toEqual([true, true])
-    expect(sockets[0].closed).toBe(true)
-  })
-
-  it('keeps relay and LAN delivery exclusive', async () => {
-    const sockets: MockSocket[] = []
-    const events: unknown[][] = []
-    const client = new RelayClient({
-      openSocket: () => {
-        const socket = new MockSocket()
-        sockets.push(socket)
-        queueMicrotask(() => socket.onopen?.())
-        return socket
-      },
-      onEvents: (batch) => events.push(batch),
-    })
-    await client.connectRelay(RELAY)
+  it('probes LAN through environment.health on the native connection', async () => {
+    const { client, sockets } = fixture()
     await client.connectLan('192.0.2.1', 7788, TEST_LINK)
-    expect(sockets).toHaveLength(2)
-    expect(sockets[0].closed).toBe(true)
+    const host = completeNativeHandshake(sockets[0]!); await client.verifyHost()
+    const probe = client.probeConnection()
+    let request!: Record<string, unknown>
+    await vi.waitFor(() => { request = host.replyRpc(sockets[0]!, { ok: true }) })
+    expect(request).toMatchObject({ type: 'rpc', method: 'environment.health' })
+    await expect(probe).resolves.toBe(true)
+  })
+  it('replaces sockets exclusively and ignores the old socket callback', async () => {
+    const onEvents = vi.fn(), onStatus = vi.fn()
+    const { client, sockets } = fixture({ onEvents, onStatus })
+    await client.connectRelay(RELAY)
+    const first = completeNativeHandshake(sockets[0]!); await client.verifyHost()
+    const oldMessage = sockets[0]!.onmessage
+    const stale = sealLinkFrame(first.channel, { t: 'rpc' }, encodePlainMessage({ type: 'client', event: { type: 'composer_settled', formId: 'old' } }))
+    await client.connectLan('192.0.2.1', 7788, TEST_LINK)
+    expect(sockets[0]!.closed).toBe(true)
+    const host = completeNativeHandshake(sockets[1]!); await client.verifyHost()
+    oldMessage?.({ data: JSON.stringify({ type: 'terminal', data: stale }) })
+    const event = { type: 'composer_settled', formId: 'new' }
+    host.sendRpc(sockets[1]!, { type: 'client', event }, { push: true })
+    expect(onEvents).toHaveBeenCalledExactlyOnceWith([event], 0)
     expect(client.transport).toBe('lan')
-
-    const host = completeHandshake(sockets[1])
-    sockets[1].emit({
-      type: 'event',
-      seq: 42,
-      data: host.seal('event', [{ type: 'lan-event' }]),
-    })
-    expect(events).toEqual([[{ type: 'lan-event' }]])
+    expect(onStatus.mock.calls.map(([status]) => status)).toEqual([true, true])
   })
-
-  it('downloads a desktop file over LAN by resolving {lanHost} to the connected host', async () => {
-    const client = new RelayClient({
-      openSocket: () => {
-        const socket = new MockSocket()
-        queueMicrotask(() => socket.onopen?.())
-        return socket
-      },
-    })
+  it('reconnects with a fresh buffered channel and never replays application envelopes', async () => {
+    const { client, sockets } = fixture()
+    await client.connectRelay(RELAY)
+    completeNativeHandshake(sockets[0]!); await client.verifyHost()
+    await client.reconnect()
+    const host = completeNativeHandshake(sockets[1]!); await client.verifyHost()
+    const event = { type: 'composer_settled', formId: 'returned' }
+    host.sendRpc(sockets[1]!, { type: 'client', event }, { push: true })
+    expect(client.releaseBuffer().batches).toEqual([[event]])
+    expect(sockets.flatMap(socket => socket.sent).some(raw => raw.includes('"replay"') || raw.includes('"ack"'))).toBe(false)
+  })
+  it('rejects a replayed authenticated native packet rather than delivering it twice', async () => {
+    const onEvents = vi.fn()
+    const { client, sockets } = fixture({ onEvents })
+    await client.connectRelay(RELAY)
+    const host = completeNativeHandshake(sockets[0]!); await client.verifyHost()
+    const data = sealLinkFrame(host.channel, { t: 'rpc' }, encodePlainMessage({ type: 'client', event: { type: 'composer_settled', formId: 'once' } }))
+    sockets[0]!.emit({ type: 'terminal', data }); sockets[0]!.emit({ type: 'terminal', data })
+    expect(onEvents).toHaveBeenCalledTimes(1)
+    expect(client.connected).toBe(false)
+  })
+  it('fails a pending native receipt on malformed ciphertext and refuses an application frame on the wrong lane', async () => {
+    const { client, sockets } = fixture()
+    await client.connectRelay(RELAY)
+    completeNativeHandshake(sockets[0]!); await client.verifyHost()
+    const pending = client.rpc('project.list')
+    const rejected = expect(pending).rejects.toBeInstanceOf(Error)
+    sockets[0]!.emit({ type: 'terminal', data: 'invalid' })
+    await rejected
+    expect(client.connected).toBe(false)
+    await client.reconnect()
+    const host = completeNativeHandshake(sockets[1]!); await client.verifyHost()
+    sockets[1]!.emit({ type: 'terminal', data: 'invalid-native-frame' })
+    expect(client.connected).toBe(false)
+  })
+  it('downloads a LAN file using the connected host', async () => {
+    const { client } = fixture()
     await client.connectLan('192.0.2.1', 7788, TEST_LINK)
-
     const bytes = new TextEncoder().encode('png')
-    const get = vi.fn(async () => ({
-      ok: true,
-      status: 200,
-      arrayBuffer: async () => bytes.slice().buffer as ArrayBuffer,
-    }))
-    await expect(client.downloadDesktopFile({
-      ok: true,
-      url: 'http://{lanHost}:7788/files/token',
-      name: 'shot.png',
-      mimeType: 'image/png',
-      size: bytes.byteLength,
-      modifiedAt: 1,
-      expiresAt: Date.now() + 60_000,
-    }, get)).resolves.toEqual(bytes)
+    const get = vi.fn(async () => ({ ok: true, status: 200, arrayBuffer: async () => bytes.slice().buffer as ArrayBuffer }))
+    await expect(client.downloadDesktopFile({ ok: true, url: 'http://{lanHost}:7788/files/token', name: 'shot.png', mimeType: 'image/png', size: bytes.length, modifiedAt: 1, expiresAt: Date.now() + 60_000 }, get)).resolves.toEqual(bytes)
     expect(get).toHaveBeenCalledWith('http://192.0.2.1:7788/files/token')
-  })
-
-  it('rejects an RPC response that cannot be decrypted', async () => {
-    let sock: MockSocket | null = null
-    const client = new RelayClient({
-      openSocket: () => {
-        sock = new MockSocket()
-        queueMicrotask(() => sock?.onopen?.())
-        return sock
-      },
-    })
-    await client.connectRelay(RELAY)
-    const host = completeHandshake(sock!)
-    const result = client.request({ type: 'list_projects', requestId: 'bad-response' })
-    await vi.waitFor(() => expect(sock!.sent.some((s) => s.includes('"command"'))).toBe(true))
-    sock!.emit({ type: 'response', requestId: 'bad-response', data: 'invalid' })
-    await expect(result).rejects.toBeInstanceOf(Error)
-  })
-
-  it('rejects a replayed frame and an event relabelled as a response', async () => {
-    let sock: MockSocket | null = null
-    const events: unknown[][] = []
-    const client = new RelayClient({
-      openSocket: () => {
-        sock = new MockSocket()
-        queueMicrotask(() => sock?.onopen?.())
-        return sock
-      },
-      onEvents: (batch) => events.push(batch),
-    })
-    await client.connectRelay(RELAY)
-    const host = completeHandshake(sock!)
-    const once = host.seal('event', { type: 'once' })
-    sock!.emit({ type: 'event', data: once })
-    sock!.emit({ type: 'event', data: once })
-    expect(events).toEqual([[{ type: 'once' }]])
-
-    const result = client.request({ type: 'list_projects', requestId: 'r-relabel' })
-    await vi.waitFor(() => expect(sock!.sent.some((s) => s.includes('"command"'))).toBe(true))
-    sock!.emit({ type: 'response', requestId: 'r-relabel', data: host.seal('event', { projects: [] }) })
-    await expect(result).rejects.toThrow('link frame kind event')
   })
 })

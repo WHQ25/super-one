@@ -10,7 +10,7 @@ import type {
   TerminalStatus,
 } from '@superone/shared/agent-types'
 import { defaultShell, type PtyLike, type PtySpawner } from './pty'
-import { TerminalOwnership } from './terminal-ownership'
+import { TerminalLease } from './terminal-lease'
 import { TerminalControl, type TerminalControlOptions } from './terminal-control'
 
 const nodeRequire = createRequire(import.meta.url)
@@ -25,7 +25,7 @@ export interface TerminalSessionOptions {
   cols: number
   rows: number
   spawner: PtySpawner
-  ownership: TerminalOwnership
+  lease: TerminalLease
   onEvent: (event: TerminalEvent) => void
   env?: Record<string, string>
   shell?: string
@@ -56,7 +56,7 @@ export class TerminalSession {
   readonly terminalId: string
   readonly cwd: string
   readonly projectPath: string
-  readonly ownership: TerminalOwnership
+  readonly lease: TerminalLease
   readonly control: TerminalControl
   readonly agentSessionId: string | undefined
   readonly openedInActivity: boolean
@@ -90,7 +90,7 @@ export class TerminalSession {
     this.cwd = opts.cwd
     this.projectPath = opts.projectPath ?? opts.cwd
     this.title = opts.title
-    this.ownership = opts.ownership
+    this.lease = opts.lease
     this.onEvent = opts.onEvent
     this.coalesceMs = opts.coalesceMs ?? DEFAULT_COALESCE_MS
     this.snapshotSoftLimit = opts.snapshotSoftLimit ?? DEFAULT_SNAPSHOT_SOFT_LIMIT
@@ -115,7 +115,7 @@ export class TerminalSession {
     this.pty.onData((data) => this.onPtyData(data))
     this.pty.onExit(({ exitCode, signal }) => this.onPtyExit(exitCode, signal))
 
-    this.ownership.onChange((owner) => {
+    this.lease.onChange((owner) => {
       this.emit({
         type: 'terminal_owner_changed',
         terminalId: this.terminalId,
@@ -153,7 +153,7 @@ export class TerminalSession {
       projectPath: this.projectPath,
       title: this.title,
       status: this._status,
-      ownerDeviceId: this.ownership.ownerDeviceId,
+      ownerDeviceId: this.lease.ownerDeviceId,
       agentControl: this.control.current,
       agentSessionId: this.agentSessionId,
       ...(this.openedInActivity ? { openedInActivity: true } : {}),
@@ -248,9 +248,9 @@ export class TerminalSession {
       cols: this._cols,
       rows: this._rows,
       lastSeq: cut,
-      ownerDeviceId: this.ownership.ownerDeviceId,
-      writableByMe: this.ownership.isWritableBy(requester),
-      subscriberCount: this.ownership.subscriberCount,
+      ownerDeviceId: this.lease.ownerDeviceId,
+      writableByMe: this.lease.isWritableBy(requester),
+      subscriberCount: 0,
     }
   }
 
@@ -392,6 +392,7 @@ export class TerminalSession {
 
   private disposeTerm(): void {
     this.control.dispose()
+    this.lease.dispose()
     try {
       this.titleDisposable?.dispose()
     } catch {

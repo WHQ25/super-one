@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ExecutionEnvironmentDescriptor } from '@superone/shared/environment'
+import type { RpcContext } from '@superone/runtime/server'
 
 vi.mock('../../logger', () => ({ default: { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} } }))
 vi.mock('../../remote/mobile-log', () => ({ appendMobileLog: (deviceId: string, entries: unknown[]) => (deviceId === 'phone-1' ? entries.length : -1) }))
@@ -36,10 +37,23 @@ function methodsDomain() {
   }
   const desktopPair = vi.fn(async () => ({ code: 'abc' }))
   const host = { agent, desktopPair } as unknown as PhoneMethodHost
-  return { ...phoneDomain(cleanup, { phoneMethods: createPhoneMethods(host) }), agent, desktopPair }
+  const methods = createPhoneMethods(host)
+  return { ...phoneDomain(cleanup, { phoneMethods: methods }), agent, desktopPair, methods }
 }
 
 describe('phone endpoint: desktop methods', () => {
+  it('requires write or access scopes before invoking extension side effects', async () => {
+    const { domain, methods, agent, desktopPair } = methodsDomain()
+    const ctx = { ...domain.phoneContext(), client: { clientSessionId: 'reader', scopes: ['session:read', 'workspace:read', 'environment:read'] } } as RpcContext
+    for (const method of ['files.mkdir', 'files.upload', 'files.uploadComplete', 'widget.saveTemplate', 'git.setDefaultClonePath', 'client.mintNodeCode', 'client.pairNode']) {
+      expect(await methods.dispatch(method, {}, ctx)).toMatchObject({ error: { code: 'forbidden' } })
+    }
+    expect(agent.remoteCreateDirectory).not.toHaveBeenCalled()
+    expect(agent.remoteUpload).not.toHaveBeenCalled()
+    expect(agent.remoteUploadComplete).not.toHaveBeenCalled()
+    expect(desktopPair).not.toHaveBeenCalled()
+  })
+
   it('advertises them to phones and resolves projects and sessions by id', async () => {
     const { domain, agent, projectDir } = methodsDomain()
     const phone = await connectPhone(domain)

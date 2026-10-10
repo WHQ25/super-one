@@ -105,6 +105,7 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
   const workspaceTailWatch = new WorkspaceTailWatchService(projects, workspaceFs)
   const events = new EventLog(db, identity.environmentId)
   const leases = new ControlLeaseService(db)
+  terminals.bindLeases(identity.environmentId, leases)
   const harnesses = new HarnessManager(db)
   const simulatedHarness = partial.simulatedHarness === true
   // Contract/CI tests: in-memory readiness overlay only (never persisted).

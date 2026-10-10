@@ -1,6 +1,12 @@
+import { acquirePhoneControl, controlLeaseAuthority } from '../control-lease.test-fixtures'
+import { createPhoneMethods } from '../remote/phone-methods'
+import { ADMIN_PAIRING_SCOPES } from '@superone/shared/environment'
+import type { RpcContext } from '@superone/runtime/server'
+import { terminalLeaseAuthority } from '../terminal/terminal-lease.test-fixtures'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { TerminalManager } from '../terminal/terminal-manager'
 import { getSandboxCapability } from '../sandbox-platform'
+import { SessionLease } from '../session/session-lease'
+import { enqueueSessionQueueOp } from '../session/session-queue'
 
 const { createdAgents } = vi.hoisted(() => ({
   createdAgents: [] as Array<{
@@ -271,7 +277,6 @@ vi.mock('./resolve-cli', () => ({
 }))
 
 const { AgentService } = await import('./agent-service')
-const { SessionClaimConflictError } = await import('../session/types')
 const { AgentIpcChannels } = await import('@superone/shared/agent-types')
 const { ipcMain } = await import('electron')
 const dbSessions = await import('../db-sessions')
@@ -280,63 +285,11 @@ const claudeModels = await import('./claude-models')
 const database = await import('../database')
 const { BASE_SESSION_PROVIDERS } = await import('@superone/shared/session-provider-definitions')
 const { HARNESS_LAUNCH_OPTIONS } = await import('@superone/shared/launch-options')
-type MockSessionExtras = {
-  owner: { kind: 'local' } | { kind: 'remote'; deviceId: string }
-  subscribers: Set<string>
-  claim: (o: { kind: 'local' } | { kind: 'remote'; deviceId: string }) => void
-  release: (deviceId: string) => void
-  subscribe: (deviceId: string) => void
-  unsubscribe: (deviceId: string) => void
-  onLifecycle: (handler: (event: unknown) => void) => () => void
-}
+type MockSessionExtras = { lease: SessionLease; onLifecycle: SessionLease['onLifecycle'] }
 function makeMockSession<T extends Record<string, unknown>>(props: T): T & MockSessionExtras {
-  const subscribers = new Set<string>()
-  const lifecycleListeners = new Set<(event: unknown) => void>()
-  const s = {
-    getReplayEvents: () => [] as unknown[],
-    setAcpAgentId: vi.fn(),
-    setApiProviderId: vi.fn(),
-    ...props,
-    owner: { kind: 'local' as const },
-    subscribers,
-    claim(o: { kind: 'local' } | { kind: 'remote'; deviceId: string }) {
-      const cur = (s as { owner: { kind: 'local' } | { kind: 'remote'; deviceId: string } }).owner
-      if (o.kind === 'remote') {
-        if (cur.kind === 'remote' && cur.deviceId !== o.deviceId) {
-          throw new SessionClaimConflictError(String((s as { id: unknown }).id), cur.deviceId, o.deviceId)
-        }
-        for (const sub of subscribers) {
-          if (sub !== o.deviceId) {
-            throw new SessionClaimConflictError(String((s as { id: unknown }).id), sub, o.deviceId)
-          }
-        }
-      }
-      (s as { owner: unknown }).owner = o
-    },
-    release(deviceId: string) {
-      const o = (s as { owner: { kind: 'local' } | { kind: 'remote'; deviceId: string } }).owner
-      if (o.kind === 'remote' && o.deviceId === deviceId) (s as { owner: unknown }).owner = { kind: 'local' }
-    },
-    subscribe(deviceId: string) {
-      if (subscribers.has(deviceId)) return
-      const cur = (s as { owner: { kind: 'local' } | { kind: 'remote'; deviceId: string } }).owner
-      if (cur.kind === 'remote' && cur.deviceId !== deviceId) {
-        throw new SessionClaimConflictError(String((s as { id: unknown }).id), cur.deviceId, deviceId)
-      }
-      for (const sub of subscribers) {
-        if (sub !== deviceId) {
-          throw new SessionClaimConflictError(String((s as { id: unknown }).id), sub, deviceId)
-        }
-      }
-      subscribers.add(deviceId)
-    },
-    unsubscribe(deviceId: string) { subscribers.delete(deviceId) },
-    onLifecycle(handler: (event: unknown) => void) {
-      lifecycleListeners.add(handler)
-      return () => { lifecycleListeners.delete(handler) }
-    },
-  } as T & MockSessionExtras
-  return s
+  const lease = new SessionLease(String(props.id ?? 'test-session'), controlLeaseAuthority())
+  return { lease, onLifecycle: lease.onLifecycle.bind(lease), getReplayEvents: () => [] as unknown[],
+    setAcpAgentId: vi.fn(), setApiProviderId: vi.fn(), ...props } as T & MockSessionExtras
 }
 
 beforeEach(() => {
@@ -348,7 +301,8 @@ beforeEach(() => {
 function getRegisteredIpcHandler(channel: string) {
   const handleMock = ipcMain.handle as unknown as ReturnType<typeof vi.fn>
   const call = handleMock.mock.calls.find(([registered]) => registered === channel)
-  return call?.[1] as ((event: unknown, ...args: unknown[]) => unknown) | undefined
+  const handler = call?.[1] as ((event: unknown, ...args: unknown[]) => unknown) | undefined
+  return handler ? (event: unknown, ...args: unknown[]) => handler({ ...(event as object ?? {}), sender: (event as { sender?: unknown } | null)?.sender ?? { id: 99 } }, ...args) : undefined
 }
 
 describe('dsh MCP config IPC', () => {
@@ -992,212 +946,6 @@ describe('AgentService SEND_MESSAGE', () => {
     await expect(handler(null, 'missing')).resolves.toBe(false)
   })
 
-  it('request_session_recap remote command calls session.requestSessionRecap(false)', async () => {
-    const service = new AgentService()
-    const requestSessionRecap = vi.fn().mockResolvedValue(true)
-    const existing = makeMockSession({
-      id: 'sid-grok',
-      projectPath: '/p',
-      requestSessionRecap,
-    })
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getSession: vi.fn(() => existing),
-    }
-    const respond = vi.fn()
-
-    await service.handleRemoteCommand(
-      { type: 'request_session_recap', requestId: 'r-recap', projectPath: '/p', sessionId: 'sid-grok' },
-      respond,
-    )
-
-    expect(requestSessionRecap).toHaveBeenCalledWith(false)
-    expect(respond).toHaveBeenCalledWith('r-recap', { ok: true })
-  })
-
-  it('request_session_recap remote command with auto true calls requestSessionRecap(true)', async () => {
-    const service = new AgentService()
-    const requestSessionRecap = vi.fn().mockResolvedValue(true)
-    const existing = makeMockSession({
-      id: 'sid-grok',
-      projectPath: '/p',
-      requestSessionRecap,
-    })
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getSession: vi.fn(() => existing),
-    }
-    const respond = vi.fn()
-
-    await service.handleRemoteCommand(
-      { type: 'request_session_recap', requestId: 'r-recap', projectPath: '/p', sessionId: 'sid-grok', auto: true },
-      respond,
-    )
-
-    expect(requestSessionRecap).toHaveBeenCalledWith(true)
-    expect(respond).toHaveBeenCalledWith('r-recap', { ok: true })
-  })
-
-  it('request_session_recap remote auto shares in-flight with the focus tracker', async () => {
-    const { claimAutoRecapDispatch, installAcpRecapFocus } = await import('../acp/acp-recap-focus')
-    const controller = installAcpRecapFocus({ requestAutoRecap: async () => true })
-    try {
-      expect(claimAutoRecapDispatch('sid-grok')).toBe(true)
-      const service = new AgentService()
-      const requestSessionRecap = vi.fn().mockResolvedValue(true)
-      const existing = makeMockSession({
-        id: 'sid-grok',
-        projectPath: '/p',
-        requestSessionRecap,
-      })
-      ;(service as { sessionManager: unknown }).sessionManager = {
-        getSession: vi.fn(() => existing),
-      }
-      const respond = vi.fn()
-
-      await service.handleRemoteCommand(
-        { type: 'request_session_recap', requestId: 'r-recap', projectPath: '/p', sessionId: 'sid-grok', auto: true },
-        respond,
-      )
-
-      expect(requestSessionRecap).not.toHaveBeenCalled()
-      expect(respond).toHaveBeenCalledWith('r-recap', { ok: false })
-    } finally {
-      controller.dispose()
-    }
-  })
-
-  it('request_session_recap remote command refuses a session from another project', async () => {
-    vi.mocked(dbSessions.sessionBelongsToProject).mockReturnValue(false)
-    const service = new AgentService()
-    const requestSessionRecap = vi.fn().mockResolvedValue(true)
-    const existing = makeMockSession({
-      id: 'sid-grok',
-      projectPath: '/other',
-      requestSessionRecap,
-    })
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getSession: vi.fn(() => existing),
-    }
-    const respond = vi.fn()
-
-    await service.handleRemoteCommand(
-      { type: 'request_session_recap', requestId: 'r-recap', projectPath: '/p', sessionId: 'sid-grok' },
-      respond,
-    )
-
-    expect(requestSessionRecap).not.toHaveBeenCalled()
-    expect(respond).toHaveBeenCalledWith('r-recap', {
-      ok: false,
-      error: 'Session sid-grok does not belong to project /p',
-    })
-  })
-
-  /**
-   * The goal commands exist for `rpc`-transport harnesses only — Codex. A
-   * `slash` harness never sends them: its client posts `/goal …` as a turn.
-   */
-  it('set_session_goal remote command sets the goal, leaving the thread to the host', async () => {
-    const service = new AgentService()
-    const setCodexGoal = vi.fn().mockResolvedValue({ objective: 'Ship login', status: 'active' })
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getSession: vi.fn(() => makeMockSession({ id: 'sid-codex', projectPath: '/p', setCodexGoal })),
-    }
-    const respond = vi.fn()
-
-    await service.handleRemoteCommand(
-      { type: 'set_session_goal', requestId: 'r-goal', projectPath: '/p', sessionId: 'sid-codex', objective: 'Ship login' },
-      respond,
-    )
-
-    // `null` thread: a remote client has never seen one, and main already holds
-    // the prewarmed thread this resolves against.
-    expect(setCodexGoal).toHaveBeenCalledWith(null, 'Ship login', undefined)
-    expect(respond).toHaveBeenCalledWith('r-goal', { ok: true })
-  })
-
-  it('set_session_goal carries a status, which is how pause and resume travel', async () => {
-    const service = new AgentService()
-    const setCodexGoal = vi.fn().mockResolvedValue(null)
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getSession: vi.fn(() => makeMockSession({ id: 'sid-codex', projectPath: '/p', setCodexGoal })),
-    }
-
-    await service.handleRemoteCommand(
-      { type: 'set_session_goal', requestId: 'r-goal', projectPath: '/p', sessionId: 'sid-codex', objective: 'Ship login', status: 'paused' },
-      vi.fn(),
-    )
-
-    expect(setCodexGoal).toHaveBeenCalledWith(null, 'Ship login', 'paused')
-  })
-
-  it('clear_session_goal remote command clears it', async () => {
-    const service = new AgentService()
-    const clearCodexGoal = vi.fn().mockResolvedValue(true)
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getSession: vi.fn(() => makeMockSession({ id: 'sid-codex', projectPath: '/p', clearCodexGoal })),
-    }
-    const respond = vi.fn()
-
-    await service.handleRemoteCommand(
-      { type: 'clear_session_goal', requestId: 'r-goal', projectPath: '/p', sessionId: 'sid-codex' },
-      respond,
-    )
-
-    expect(clearCodexGoal).toHaveBeenCalledWith(null)
-    expect(respond).toHaveBeenCalledWith('r-goal', { ok: true })
-  })
-
-  it('set_session_goal refuses a session from another project', async () => {
-    vi.mocked(dbSessions.sessionBelongsToProject).mockReturnValue(false)
-    const service = new AgentService()
-    const setCodexGoal = vi.fn()
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getSession: vi.fn(() => makeMockSession({ id: 'sid-codex', projectPath: '/other', setCodexGoal })),
-    }
-    const respond = vi.fn()
-
-    await service.handleRemoteCommand(
-      { type: 'set_session_goal', requestId: 'r-goal', projectPath: '/p', sessionId: 'sid-codex', objective: 'Ship login' },
-      respond,
-    )
-
-    expect(setCodexGoal).not.toHaveBeenCalled()
-    expect(respond).toHaveBeenCalledWith('r-goal', {
-      ok: false,
-      error: 'Session sid-codex does not belong to project /p',
-    })
-  })
-
-  it('set_session_goal reports a harness that has no goal to set', async () => {
-    // `Session.setCodexGoal` throws for a backend without goal operations; the
-    // caller sees why rather than a silent no-op.
-    const service = new AgentService()
-    const setCodexGoal = vi.fn().mockRejectedValue(new Error('Codex goal operations are unavailable'))
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getSession: vi.fn(() => makeMockSession({ id: 'sid-claude', projectPath: '/p', setCodexGoal })),
-    }
-    const respond = vi.fn()
-
-    await service.handleRemoteCommand(
-      { type: 'set_session_goal', requestId: 'r-goal', projectPath: '/p', sessionId: 'sid-claude', objective: 'Ship login' },
-      respond,
-    )
-
-    expect(respond).toHaveBeenCalledWith('r-goal', { ok: false, error: 'Codex goal operations are unavailable' })
-  })
-
-  it('set_session_goal reports a session that is not running', async () => {
-    const service = new AgentService()
-    ;(service as { sessionManager: unknown }).sessionManager = { getSession: vi.fn(() => undefined) }
-    const respond = vi.fn()
-
-    await service.handleRemoteCommand(
-      { type: 'set_session_goal', requestId: 'r-goal', projectPath: '/p', sessionId: 'sid-gone', objective: 'Ship login' },
-      respond,
-    )
-
-    expect(respond).toHaveBeenCalledWith('r-goal', { ok: false, error: 'Session is not running' })
-  })
-
   it('prewarm switches existing session cwd when worktreePath differs', async () => {
     const service = new AgentService()
     const applyWorktreeSelection = vi.fn().mockResolvedValue(undefined)
@@ -1310,52 +1058,11 @@ describe('AgentService.resolveInteractionSession', () => {
   })
 })
 
-describe('AgentService.handleRemoteCommand', () => {
+describe('AgentService phone projections', () => {
   it('get_mcp_icons returns the host brand-icon map', async () => {
     const respond = vi.fn()
-    await new AgentService().handleRemoteCommand(
-      { type: 'get_mcp_icons', requestId: 'mcp-icons' }, respond,
-    )
+    await captureValue(respond, 'mcp-icons', () => nativePhoneProjection(new AgentService(), 'mcp.icons', {}))
     expect(respond).toHaveBeenCalledWith('mcp-icons', { icons: { github: 'https://example.com/g.png' } })
-  })
-
-  /** Answers one `gitRun` per argv prefix; anything unlisted rejects like git would. */
-  function stubGit(replies: Record<string, string>): void {
-    gitRunMock.mockImplementation((_cwd: string, args: string[]) => {
-      const hit = Object.entries(replies).find(([prefix]) => args.join(' ').startsWith(prefix))
-      return hit ? Promise.resolve(hit[1]) : Promise.reject(new Error(`no stub for git ${args.join(' ')}`))
-    })
-  }
-
-  it('get_git_info names the commit instead of a branch on a detached HEAD', async () => {
-    // `rev-parse --abbrev-ref` answers the literal string HEAD when detached, and
-    // passing that on is how "HEAD" reaches a branch picker as a switchable name.
-    stubGit({
-      'rev-parse --abbrev-ref HEAD': 'HEAD',
-      'rev-parse --short=7 HEAD': 'a1b2c3d',
-      'status --porcelain': '',
-    })
-    const respond = vi.fn()
-    await new AgentService().handleRemoteCommand(
-      { type: 'get_git_info', requestId: 'g1', projectPath: '/repo' }, respond,
-    )
-    expect(respond).toHaveBeenCalledWith('g1', expect.objectContaining({ branch: null, head: 'a1b2c3d' }))
-  })
-
-  it('get_git_info leaves out head on a checkout that is on a branch', async () => {
-    stubGit({
-      'rev-parse --abbrev-ref HEAD': 'feat/mobile-ui',
-      'status --porcelain': ' M src/a.ts',
-      'diff HEAD --shortstat': ' 1 file changed, 3 insertions(+), 1 deletion(-)',
-    })
-    const respond = vi.fn()
-    await new AgentService().handleRemoteCommand(
-      { type: 'get_git_info', requestId: 'g2', projectPath: '/repo' }, respond,
-    )
-    const payload = respond.mock.calls[0][1] as Record<string, unknown>
-    expect(payload.branch).toBe('feat/mobile-ui')
-    expect(payload).not.toHaveProperty('head')
-    expect(payload.dirty).toEqual({ files: 1, insertions: 3, deletions: 1 })
   })
 
   it('list_directory returns sorted items with directories first', async () => {
@@ -1367,7 +1074,7 @@ describe('AgentService.handleRemoteCommand', () => {
     ])
     const respond = vi.fn()
     const service = new AgentService()
-    await service.handleRemoteCommand({ type: 'list_directory', requestId: 'r1', path: '/test' }, respond)
+    await captureValue(respond, 'r1', () => service.remoteListDirectory('/test', {}))
     expect(respond).toHaveBeenCalledWith('r1', {
       // Echoed so a client can tell an unfiltered answer from a host that
       // predates the option entirely.
@@ -1388,7 +1095,7 @@ describe('AgentService.handleRemoteCommand', () => {
     ])
     const respond = vi.fn()
     const service = new AgentService()
-    await service.handleRemoteCommand({ type: 'list_directory', requestId: 'r2', path: '/test' }, respond)
+    await captureValue(respond, 'r2', () => service.remoteListDirectory('/test', {}))
     expect(respond).toHaveBeenCalledWith('r2', {
       appliedIgnoreMode: 'none',
       items: [{ name: 'src', isDirectory: true }],
@@ -1399,7 +1106,7 @@ describe('AgentService.handleRemoteCommand', () => {
     mockReaddir.mockRejectedValue(new Error('ENOENT: no such directory'))
     const respond = vi.fn()
     const service = new AgentService()
-    await service.handleRemoteCommand({ type: 'list_directory', requestId: 'r3', path: '/nonexistent' }, respond)
+    await captureValue(respond, 'r3', () => service.remoteListDirectory('/nonexistent', {}))
     expect(respond).toHaveBeenCalledWith('r3', { error: 'ENOENT: no such directory' })
   })
 
@@ -1407,15 +1114,15 @@ describe('AgentService.handleRemoteCommand', () => {
     mockMkdir.mockResolvedValue(undefined)
     const respond = vi.fn()
     const service = new AgentService()
-    await service.handleRemoteCommand({ type: 'create_directory', requestId: 'r4', path: '/projects', name: 'new-app' }, respond)
+    await captureValue(respond, 'r4', () => service.remoteCreateDirectory('/projects', 'new-app').then(() => ({ ok: true })))
     expect(mockMkdir).toHaveBeenCalledWith('/projects/new-app')
-    expect(respond).toHaveBeenCalledWith('r4', { success: true })
+    expect(respond).toHaveBeenCalledWith('r4', { ok: true })
   })
 
   it('create_directory rejects names with path traversal', async () => {
     const respond = vi.fn()
     const service = new AgentService()
-    await service.handleRemoteCommand({ type: 'create_directory', requestId: 'r5', path: '/projects', name: '../escape' }, respond)
+    await captureValue(respond, 'r5', () => service.remoteCreateDirectory('/projects', '../escape').then(() => ({ ok: true })))
     expect(mockMkdir).not.toHaveBeenCalled()
     expect(respond).toHaveBeenCalledWith('r5', { error: 'Invalid directory name' })
   })
@@ -1423,21 +1130,9 @@ describe('AgentService.handleRemoteCommand', () => {
   it('create_directory rejects names with slashes', async () => {
     const respond = vi.fn()
     const service = new AgentService()
-    await service.handleRemoteCommand({ type: 'create_directory', requestId: 'r6', path: '/projects', name: 'a/b' }, respond)
+    await captureValue(respond, 'r6', () => service.remoteCreateDirectory('/projects', 'a/b').then(() => ({ ok: true })))
     expect(mockMkdir).not.toHaveBeenCalled()
     expect(respond).toHaveBeenCalledWith('r6', { error: 'Invalid directory name' })
-  })
-
-  it('list_projects returns formatted project list', async () => {
-    const respond = vi.fn()
-    const service = new AgentService()
-    await service.handleRemoteCommand({ type: 'list_projects', requestId: 'r7' }, respond)
-    expect(respond).toHaveBeenCalledWith('r7', {
-      projects: [
-        { path: '/projects/app-one', name: 'app-one' },
-        { path: '/projects/app-two', name: 'app-two' },
-      ],
-    })
   })
 
   describe('status-bar facts a mobile client cannot replay from events', () => {
@@ -1473,24 +1168,6 @@ describe('AgentService.handleRemoteCommand', () => {
       return { service, session }
     }
 
-    it('get_session_state carries context usage, sandbox and goal alongside the transcript', async () => {
-      const { service } = serviceWithSession()
-      const respond = vi.fn()
-
-      await service.handleRemoteCommand(
-        { type: 'get_session_state', requestId: 'r1', projectPath: '/p', sessionId: 'sid-1' },
-        respond,
-      )
-
-      expect(respond).toHaveBeenCalledWith('r1', expect.objectContaining({
-        contextTokens: 82_400,
-        totalCostUsd: 0.4213,
-        sandboxInfo: { enabled: true, autoAllowBash: false },
-        ultracode: true,
-        goal: { objective: 'ship it', status: 'paused' },
-      }))
-    })
-
     it('get_attachment serves the original behind a queued message thumbnail', async () => {
       const picture = { id: 'a1', name: 'shot.png', mimeType: 'image/png', base64: 'iVBORw0KGgo=' }
       const { service } = serviceWithSession({
@@ -1501,167 +1178,10 @@ describe('AgentService.handleRemoteCommand', () => {
       })
       const respond = vi.fn()
 
-      await service.handleRemoteCommand(
-        { type: 'get_attachment', requestId: 'r3', projectPath: '/p', sessionId: 'sid-1', messageId: 'q1', attachmentId: 'a1', name: 'shot.png' },
-        respond,
-      )
+      await captureValue(respond, 'r3', () => ({ attachment: service.remoteAttachment('sid-1', 'q1', { attachmentId: 'a1', name: 'shot.png' }) }))
 
       expect(respond).toHaveBeenCalledWith('r3', { attachment: picture })
     })
-
-    it('set_sandbox_mode echoes back the sandbox the session actually applied', async () => {
-      const { service, session } = serviceWithSession()
-      const respond = vi.fn()
-
-      await service.handleRemoteCommand(
-        { type: 'set_sandbox_mode', requestId: 'r2', projectPath: '/p', sessionId: 'sid-1', mode: 'auto' },
-        respond,
-      )
-
-      expect(session.setSandboxMode).toHaveBeenCalledWith('auto')
-      expect(respond).toHaveBeenCalledWith('r2', { sandboxInfo: { enabled: true, autoAllowBash: true } })
-    })
-
-    // A host that cannot sandbox throws instead of emitting agent_setting_change, so
-    // a client holding its optimistic guess would claim a confinement it does not have.
-    it('answers a refused sandbox change with the error and the unchanged state', async () => {
-      const { service } = serviceWithSession({
-        setSandboxMode: vi.fn(async () => { throw new Error('sandbox unsupported on this platform') }),
-      })
-      const respond = vi.fn()
-
-      await service.handleRemoteCommand(
-        { type: 'set_sandbox_mode', requestId: 'r3', projectPath: '/p', sessionId: 'sid-1', mode: 'on' },
-        respond,
-      )
-
-      expect(respond).toHaveBeenCalledWith('r3', {
-        error: 'sandbox unsupported on this platform',
-        sandboxInfo: { enabled: true, autoAllowBash: false },
-      })
-    })
-  })
-
-  it('send_message does not throw when no active agent', async () => {
-    const service = new AgentService()
-    await expect(
-      service.handleRemoteCommand({ type: 'send_message', content: 'hello' }),
-    ).resolves.toBeUndefined()
-  })
-
-  it('remote lock follows mobile subscribed state — releases when mobile unsubscribes without disconnecting', async () => {
-    const service = new AgentService()
-    const activeSession = makeMockSession({ id: 'sid-1', projectPath: '/p' })
-    const sessions = [activeSession]
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getActiveSession: vi.fn(() => activeSession),
-      getSession: vi.fn(() => activeSession),
-      forEachSession: (fn: (s: unknown) => void) => sessions.forEach(fn),
-    }
-    service.setDeviceRegistry({
-      handleDeviceDisconnected: vi.fn(),
-      unsubscribeAll: (deviceId: string) => sessions.forEach((s) => (s as { unsubscribe: (d: string) => void }).unsubscribe(deviceId)),
-      releaseAll: vi.fn(),
-    } as never)
-
-    const isLocked = () => (service as unknown as { isRemoteLockedSession: (p: string) => boolean }).isRemoteLockedSession('/p')
-
-    expect(isLocked()).toBe(false)
-
-    await service.handleRemoteCommand({ type: 'subscribe_session', projectPath: '/p', sessionId: 'sid-1' } as never)
-    expect(isLocked()).toBe(true)
-
-    await service.handleRemoteCommand({ type: 'unsubscribe_session', projectPath: '/p', sessionId: 'sid-1' } as never)
-    expect(isLocked()).toBe(false)
-  })
-
-  it('unsubscribe_session with sessionId only releases that session, not other subscribed sessions on the same device', async () => {
-    const service = new AgentService()
-    const sessionA = makeMockSession({ id: 'sid-A', projectPath: '/p' })
-    const sessionB = makeMockSession({ id: 'sid-B', projectPath: '/p' })
-    const sessions = [sessionA, sessionB]
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getActiveSession: vi.fn(() => sessionA),
-      getSession: vi.fn((id: string) => sessions.find((s) => s.id === id)),
-      forEachSession: (fn: (s: unknown) => void) => sessions.forEach(fn),
-    }
-    sessionA.subscribe('device-1')
-    sessionB.subscribe('device-1')
-    expect(sessionA.subscribers.has('device-1')).toBe(true)
-    expect(sessionB.subscribers.has('device-1')).toBe(true)
-
-    await service.handleRemoteCommand(
-      { type: 'unsubscribe_session', sessionId: 'sid-A' } as never,
-      undefined,
-      { deviceId: 'device-1', transport: 'lan' },
-    )
-
-    expect(sessionA.subscribers.has('device-1')).toBe(false)
-    expect(sessionB.subscribers.has('device-1')).toBe(true)
-  })
-
-  it('unsubscribe_session without sessionId releases all subscriptions for that device', async () => {
-    const service = new AgentService()
-    const sessionA = makeMockSession({ id: 'sid-A', projectPath: '/p' })
-    const sessionB = makeMockSession({ id: 'sid-B', projectPath: '/p' })
-    const sessions = [sessionA, sessionB]
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getActiveSession: vi.fn(() => sessionA),
-      getSession: vi.fn((id: string) => sessions.find((s) => s.id === id)),
-      forEachSession: (fn: (s: unknown) => void) => sessions.forEach(fn),
-    }
-    service.setDeviceRegistry({
-      handleDeviceDisconnected: vi.fn(),
-      unsubscribeAll: (deviceId: string) => sessions.forEach((s) => (s as { unsubscribe: (d: string) => void }).unsubscribe(deviceId)),
-      releaseAll: vi.fn(),
-    } as never)
-    sessionA.subscribe('device-1')
-    sessionB.subscribe('device-1')
-
-    await service.handleRemoteCommand(
-      { type: 'unsubscribe_session' } as never,
-      undefined,
-      { deviceId: 'device-1', transport: 'lan' },
-    )
-
-    expect(sessionA.subscribers.has('device-1')).toBe(false)
-    expect(sessionB.subscribers.has('device-1')).toBe(false)
-  })
-
-  it('after claude remote turn, mobile leave_session releases ownership and desktop is no longer locked', async () => {
-    const service = new AgentService()
-    const send = vi.fn().mockResolvedValue(undefined)
-    const activeSession = makeMockSession({ id: 'sid-1', projectPath: '/p', send, snapshot: { harnessId: 'claude' } })
-    const sessions = [activeSession]
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getActiveSession: vi.fn(() => activeSession),
-      getSession: vi.fn(() => activeSession),
-      forEachSession: (fn: (s: unknown) => void) => sessions.forEach(fn),
-    }
-    ;(service as unknown as { publishEnvironmentEvent: (event: unknown) => void }).publishEnvironmentEvent = () => {}
-    service.setDeviceRegistry({
-      handleDeviceDisconnected: vi.fn(),
-      unsubscribeAll: (deviceId: string) => sessions.forEach((s) => (s as { unsubscribe: (d: string) => void }).unsubscribe(deviceId)),
-      releaseAll: vi.fn(),
-    } as never)
-
-    await service.handleRemoteCommand({
-      type: 'send_message',
-      content: 'hello',
-      projectPath: '/p',
-      sessionId: 'sid-1',
-    } as never, undefined, { deviceId: 'mobile-A', transport: 'lan' })
-
-    expect((service as unknown as { isRemoteLockedSession: (p: string) => boolean }).isRemoteLockedSession('/p')).toBe(true)
-
-    await service.handleRemoteCommand(
-      { type: 'leave_session', sessionId: 'sid-1' } as never,
-      undefined,
-      { deviceId: 'mobile-A', transport: 'lan' },
-    )
-
-    expect(activeSession.owner.kind).toBe('local')
-    expect((service as unknown as { isRemoteLockedSession: (p: string) => boolean }).isRemoteLockedSession('/p')).toBe(false)
   })
 
   it('read_mcp_mentions answers with the mentioned resources\' text', async () => {
@@ -1677,7 +1197,7 @@ describe('AgentService.handleRemoteCommand', () => {
     const respond = vi.fn()
     const targets = [{ server: 'bits', uri: 'cad://hex' }]
 
-    await service.handleRemoteCommand({ type: 'read_mcp_mentions', requestId: 'r1', projectPath: '/p', sessionId: 'sid-1', targets } as never, respond)
+    await captureValue(respond, 'r1', () => service.remoteReadMcpMentions('/p', 'sid-1', targets))
 
     expect(mcpMentionMocks.readMcpMentions).toHaveBeenCalledWith(activeSession, '/p', targets)
     expect(respond).toHaveBeenCalledWith('r1', { resources })
@@ -1695,7 +1215,7 @@ describe('AgentService.handleRemoteCommand', () => {
     mcpMentionMocks.searchMcpMentions.mockResolvedValueOnce(result)
     const respond = vi.fn()
 
-    await service.handleRemoteCommand({ type: 'search_mcp_mentions', requestId: 'r1', projectPath: '/p', sessionId: 'sid-1', query: 'he' } as never, respond)
+    await captureValue(respond, 'r1', () => service.remoteSearchMcpMentions('/p', 'sid-1', 'he'))
 
     expect(mcpMentionMocks.searchMcpMentions).toHaveBeenCalledWith(activeSession, '/p', 'he')
     expect(respond).toHaveBeenCalledWith('r1', result)
@@ -1708,218 +1228,13 @@ describe('AgentService.handleRemoteCommand', () => {
       getActiveSession: vi.fn(() => activeSession),
       forEachSession: vi.fn(),
     }
-    activeSession.claim({ kind: 'remote', deviceId: 'mobile' })
+    const authority = controlLeaseAuthority()
+    activeSession.lease.bind(authority)
+    acquirePhoneControl(authority, activeSession.id, 'mobile')
 
     const isLocked = () => (service as unknown as { isRemoteLockedSession: (p: string) => boolean }).isRemoteLockedSession('/p')
 
     expect(isLocked()).toBe(true)
-  })
-
-  it('send_message claims ownership and holds it past the send for claude remote-owned sessions', async () => {
-    const service = new AgentService()
-    const send = vi.fn().mockResolvedValue(undefined)
-    const ownerSequence: string[] = []
-    const activeSession = makeMockSession({ id: 'sid-1', projectPath: '/p', send })
-    const realClaim = activeSession.claim
-    const realRelease = activeSession.release
-    activeSession.claim = (o) => { realClaim(o); ownerSequence.push(activeSession.owner.kind) }
-    activeSession.release = (d) => { realRelease(d); ownerSequence.push(activeSession.owner.kind) }
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getActiveSession: vi.fn(() => activeSession),
-      getSession: vi.fn(() => activeSession),
-      forEachSession: vi.fn(),
-    }
-
-    await service.handleRemoteCommand({
-      type: 'send_message',
-      content: 'hello',
-      projectPath: '/p',
-      sessionId: 'sid-1',
-    } as never)
-
-    expect(activeSession.owner.kind).toBe('remote')
-    expect(ownerSequence).toEqual(['remote'])
-    expect(send).toHaveBeenCalledWith({
-      content: 'hello',
-      model: undefined,
-      effort: undefined,
-      images: undefined,
-      priority: undefined,
-      clientMessageId: undefined,
-    }, { providerOrigin: 'remote' })
-  })
-
-  it('send_message tells the phone when its send fails after the receipt', async () => {
-    const service = new AgentService()
-    const send = vi.fn(async (_req: unknown, opts?: { onAccepted?: () => void }) => {
-      opts?.onAccepted?.()
-      throw new Error('backend failed to start')
-    })
-    const activeSession = makeMockSession({ id: 'sid-1', projectPath: '/p', send })
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getActiveSession: vi.fn(() => activeSession),
-      getSession: vi.fn(() => activeSession),
-      forEachSession: vi.fn(),
-    }
-    const sendEventToMobile = vi.fn().mockResolvedValue(undefined)
-    service.setRemoteControlService({ sendEventToMobile, sendAgentEvent: vi.fn() } as never)
-    const respond = vi.fn().mockResolvedValue(undefined)
-
-    await service.handleRemoteCommand({
-      type: 'send_message',
-      requestId: 'req-1',
-      content: 'hello',
-      projectPath: '/p',
-      sessionId: 'sid-1',
-      clientMessageId: 'user-1',
-    } as never, respond, { deviceId: 'mobile-A', transport: 'lan' })
-
-    expect(respond).toHaveBeenCalledWith('req-1', { ok: true })
-    expect(sendEventToMobile).toHaveBeenCalledWith({
-      type: 'user_message_send_failed',
-      sessionId: 'sid-1',
-      clientMessageId: 'user-1',
-      error: 'backend failed to start',
-    }, ['mobile-A'])
-  })
-
-  it('send_message tells the phone when the host already took its id', async () => {
-    const service = new AgentService()
-    const send = vi.fn(async (_req: unknown, opts?: { onAccepted?: (receipt?: { duplicate: true }) => void }) => {
-      opts?.onAccepted?.({ duplicate: true })
-      return { duplicate: true as const }
-    })
-    const activeSession = makeMockSession({ id: 'sid-1', projectPath: '/p', send })
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getActiveSession: vi.fn(() => activeSession),
-      getSession: vi.fn(() => activeSession),
-      forEachSession: vi.fn(),
-    }
-    const respond = vi.fn().mockResolvedValue(undefined)
-
-    await service.handleRemoteCommand({
-      type: 'send_message', requestId: 'req-1', content: 'hello',
-      projectPath: '/p', sessionId: 'sid-1', clientMessageId: 'user-1',
-    } as never, respond, { deviceId: 'mobile-A', transport: 'lan' })
-
-    expect(respond).toHaveBeenCalledWith('req-1', { ok: true, duplicate: true })
-  })
-
-  it('does not report an interrupted reply as a failed mobile send', async () => {
-    const service = new AgentService()
-    const snapshot = { harnessId: 'codex', messages: [] as Array<{ id: string; role: string }> }
-    const send = vi.fn(async (_req: unknown, opts?: { onAccepted?: () => void }) => {
-      opts?.onAccepted?.()
-      snapshot.messages.push({ id: 'user-1', role: 'user' }, { id: 'assistant-1', role: 'assistant' })
-      throw new Error('Turn interrupted')
-    })
-    const session = makeMockSession({ id: 'sid-1', projectPath: '/p', snapshot, send })
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getSession: vi.fn(() => session),
-      forEachSession: vi.fn(),
-    }
-    const sendEventToMobile = vi.fn().mockResolvedValue(undefined)
-    service.setRemoteControlService({ sendEventToMobile, sendAgentEvent: vi.fn() } as never)
-    const respond = vi.fn().mockResolvedValue(undefined)
-
-    await service.handleRemoteCommand({
-      type: 'send_message', provider: 'codex', requestId: 'req-1', content: 'hello',
-      projectPath: '/p', sessionId: 'sid-1', clientMessageId: 'user-1',
-    } as never, respond, { deviceId: 'mobile-A', transport: 'lan' })
-
-    expect(respond).toHaveBeenCalledWith('req-1', { ok: true })
-    expect(sendEventToMobile).not.toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'user_message_send_failed' }), expect.anything(),
-    )
-  })
-
-  it('send_message answers a failure before the receipt on the request, not as an event', async () => {
-    const service = new AgentService()
-    const send = vi.fn().mockRejectedValue(new Error('refused'))
-    const activeSession = makeMockSession({ id: 'sid-1', projectPath: '/p', send })
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getActiveSession: vi.fn(() => activeSession),
-      getSession: vi.fn(() => activeSession),
-      forEachSession: vi.fn(),
-    }
-    const sendEventToMobile = vi.fn().mockResolvedValue(undefined)
-    service.setRemoteControlService({ sendEventToMobile, sendAgentEvent: vi.fn() } as never)
-    const respond = vi.fn().mockResolvedValue(undefined)
-
-    await service.handleRemoteCommand({
-      type: 'send_message',
-      requestId: 'req-1',
-      content: 'hello',
-      projectPath: '/p',
-      sessionId: 'sid-1',
-      clientMessageId: 'user-1',
-    } as never, respond, { deviceId: 'mobile-A', transport: 'lan' })
-
-    expect(respond).toHaveBeenCalledWith('req-1', { error: 'refused' })
-    expect(sendEventToMobile).not.toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'user_message_send_failed' }),
-      expect.anything(),
-    )
-  })
-
-  it('codex remote turn claims ownership and holds it past the turn', async () => {
-    const service = new AgentService()
-    const send = vi.fn().mockResolvedValue(undefined)
-    const ownerSequence: string[] = []
-    const activeSession = makeMockSession({ id: 'sid-1', projectPath: '/p', snapshot: { harnessId: 'codex' }, send })
-    const realClaim = activeSession.claim
-    const realRelease = activeSession.release
-    activeSession.claim = (o) => { realClaim(o); ownerSequence.push(activeSession.owner.kind) }
-    activeSession.release = (d) => { realRelease(d); ownerSequence.push(activeSession.owner.kind) }
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getActiveSession: vi.fn(() => activeSession),
-      getSession: vi.fn(() => activeSession),
-      forEachSession: vi.fn(),
-    }
-    service.setRemoteControlService({
-      sendAgentEvent: vi.fn(),
-    } as never)
-
-    await service.handleRemoteCommand({
-      type: 'send_message',
-      content: 'hello',
-      projectPath: '/p',
-      sessionId: 'sid-1',
-      provider: 'codex',
-    } as never)
-
-    expect(activeSession.owner.kind).toBe('remote')
-    expect((service as unknown as { isRemoteLockedSession: (p: string) => boolean }).isRemoteLockedSession('/p')).toBe(true)
-    expect(ownerSequence).toEqual(['remote'])
-  })
-
-  it('send_message rejects a second mobile and notifies it with session_locked_by_other_device', async () => {
-    const service = new AgentService()
-    const send = vi.fn().mockResolvedValue(undefined)
-    const activeSession = makeMockSession({ id: 'sid-1', projectPath: '/p', send })
-    activeSession.claim({ kind: 'remote', deviceId: 'mobile-A' })
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getActiveSession: vi.fn(() => activeSession),
-      getSession: vi.fn(() => activeSession),
-      forEachSession: vi.fn(),
-    }
-    const sendEventToMobile = vi.fn().mockResolvedValue(undefined)
-    service.setRemoteControlService({ sendEventToMobile, sendAgentEvent: vi.fn() } as never)
-
-    await service.handleRemoteCommand({
-      type: 'send_message',
-      content: 'hi',
-      projectPath: '/p',
-      sessionId: 'sid-1',
-    } as never, undefined, { deviceId: 'mobile-B', transport: 'lan' })
-
-    expect(send).not.toHaveBeenCalled()
-    expect(activeSession.owner).toEqual({ kind: 'remote', deviceId: 'mobile-A' })
-    expect(sendEventToMobile).toHaveBeenCalledWith(
-      { type: 'session_locked_by_other_device', sessionId: 'sid-1', ownerDeviceId: 'mobile-A' },
-      ['mobile-B'],
-    )
-    expect(SessionClaimConflictError).toBeDefined()
   })
 
   function acpQueueSession(opts?: {
@@ -1944,609 +1259,6 @@ describe('AgentService.handleRemoteCommand', () => {
     }
     return { service, session, send, dispatchBackendCommand }
   }
-
-  it('send_message.steer parks then steers in the same command', async () => {
-    const { service, send, dispatchBackendCommand } = acpQueueSession()
-    const order: string[] = []
-    send.mockImplementation(async () => { order.push('send') })
-    dispatchBackendCommand.mockImplementation(async () => { order.push('steer') })
-
-    await service.handleRemoteCommand({
-      type: 'send_message',
-      projectPath: '/p',
-      sessionId: 'sid-1',
-      content: 'nudge',
-      clientMessageId: 'user_1',
-      priority: 'next',
-      steer: 'now',
-    }, undefined, { deviceId: 'mobile-A', transport: 'lan' })
-
-    expect(send).toHaveBeenCalled()
-    expect(dispatchBackendCommand).toHaveBeenCalledWith({
-      kind: 'acp.steer_queued',
-      clientMessageId: 'user_1',
-      priority: 'now',
-    })
-    expect(order).toEqual(['send', 'steer'])
-  })
-
-  it('holds steer_queued_message until an in-flight queued send parks', async () => {
-    let releaseSend!: () => void
-    const { service, send, dispatchBackendCommand } = acpQueueSession({
-      send: () => new Promise<void>((resolve) => { releaseSend = resolve }),
-    })
-    const respond = vi.fn()
-
-    const sending = service.handleRemoteCommand({
-      type: 'send_message',
-      projectPath: '/p',
-      sessionId: 'sid-1',
-      content: 'nudge',
-      clientMessageId: 'user_1',
-      priority: 'next',
-    }, undefined, { deviceId: 'mobile-A', transport: 'lan' })
-    await vi.waitFor(() => expect(send).toHaveBeenCalled())
-
-    const steering = service.handleRemoteCommand({
-      type: 'steer_queued_message',
-      requestId: 'r-steer',
-      projectPath: '/p',
-      sessionId: 'sid-1',
-      clientMessageId: 'user_1',
-    }, respond, { deviceId: 'mobile-A', transport: 'lan' })
-    await Promise.resolve()
-    expect(dispatchBackendCommand).not.toHaveBeenCalled()
-
-    releaseSend()
-    await Promise.all([sending, steering])
-    expect(dispatchBackendCommand).toHaveBeenCalledWith({
-      kind: 'acp.steer_queued',
-      clientMessageId: 'user_1',
-      priority: 'now',
-    })
-    expect(respond).toHaveBeenCalledWith('r-steer', { ok: true })
-  })
-
-  it('subscribe_session (legacy fire-and-forget) notifies via session_locked_by_other_device on conflict', async () => {
-    const service = new AgentService()
-    const session = makeMockSession({ id: 'sid-1', projectPath: '/p' })
-    session.claim({ kind: 'remote', deviceId: 'mobile-A' })
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getActiveSession: vi.fn(() => session),
-      getSession: vi.fn(() => session),
-      forEachSession: vi.fn(),
-    }
-    const sendEventToMobile = vi.fn().mockResolvedValue(undefined)
-    service.setRemoteControlService({ sendEventToMobile, sendAgentEvent: vi.fn() } as never)
-
-    await service.handleRemoteCommand(
-      { type: 'subscribe_session', projectPath: '/p', sessionId: 'sid-1' } as never,
-      undefined,
-      { deviceId: 'mobile-B', transport: 'lan' },
-    )
-
-    expect(session.subscribers.has('mobile-B')).toBe(false)
-    expect(sendEventToMobile).toHaveBeenCalledWith(
-      { type: 'session_locked_by_other_device', sessionId: 'sid-1', ownerDeviceId: 'mobile-A' },
-      ['mobile-B'],
-    )
-  })
-
-  it('subscribe_session (with requestId) responds with session_locked error synchronously', async () => {
-    const service = new AgentService()
-    const session = makeMockSession({ id: 'sid-1', projectPath: '/p' })
-    session.claim({ kind: 'remote', deviceId: 'mobile-A' })
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getActiveSession: vi.fn(() => session),
-      getSession: vi.fn(() => session),
-      forEachSession: vi.fn(),
-    }
-    const sendEventToMobile = vi.fn().mockResolvedValue(undefined)
-    service.setRemoteControlService({ sendEventToMobile, sendAgentEvent: vi.fn() } as never)
-    const respond = vi.fn().mockResolvedValue(undefined)
-
-    await service.handleRemoteCommand(
-      { type: 'subscribe_session', projectPath: '/p', sessionId: 'sid-1', requestId: 'req-1' } as never,
-      respond,
-      { deviceId: 'mobile-B', transport: 'lan' },
-    )
-
-    expect(respond).toHaveBeenCalledWith('req-1', { error: 'session_locked', ownerDeviceId: 'mobile-A' })
-    expect(sendEventToMobile).not.toHaveBeenCalled()
-    expect(session.subscribers.has('mobile-B')).toBe(false)
-  })
-
-  it('subscribe_session (with requestId) responds ok on success', async () => {
-    const service = new AgentService()
-    const session = makeMockSession({ id: 'sid-1', projectPath: '/p' })
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getActiveSession: vi.fn(() => session),
-      getSession: vi.fn(() => session),
-      forEachSession: vi.fn(),
-    }
-    const respond = vi.fn().mockResolvedValue(undefined)
-
-    await service.handleRemoteCommand(
-      { type: 'subscribe_session', projectPath: '/p', sessionId: 'sid-1', requestId: 'req-2' } as never,
-      respond,
-      { deviceId: 'mobile-A', transport: 'lan' },
-    )
-
-    expect(respond).toHaveBeenCalledWith('req-2', { ok: true })
-    expect(session.subscribers.has('mobile-A')).toBe(true)
-  })
-
-  it('subscribe_session releases the device from any other session it was on', async () => {
-    const service = new AgentService()
-    const sessionA = makeMockSession({ id: 'sid-A', projectPath: '/p' })
-    const sessionB = makeMockSession({ id: 'sid-B', projectPath: '/p' })
-    sessionA.subscribe('mobile-1')
-    const sessions = [sessionA, sessionB]
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getActiveSession: vi.fn(() => null),
-      getSession: vi.fn((id: string) => sessions.find((s) => s.id === id) ?? null),
-      forEachSession: (fn: (s: unknown) => void) => sessions.forEach(fn),
-    }
-    const respond = vi.fn().mockResolvedValue(undefined)
-
-    await service.handleRemoteCommand(
-      { type: 'subscribe_session', projectPath: '/p', sessionId: 'sid-B', requestId: 'req-X' } as never,
-      respond,
-      { deviceId: 'mobile-1', transport: 'lan' },
-    )
-
-    expect(respond).toHaveBeenCalledWith('req-X', { ok: true })
-    expect(sessionB.subscribers.has('mobile-1')).toBe(true)
-    expect(sessionA.subscribers.has('mobile-1')).toBe(false)
-  })
-
-  it('subscribe_session does NOT release device from the new session itself', async () => {
-    const service = new AgentService()
-    const session = makeMockSession({ id: 'sid-A', projectPath: '/p' })
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getActiveSession: vi.fn(() => null),
-      getSession: vi.fn(() => session),
-      forEachSession: (fn: (s: unknown) => void) => [session].forEach(fn),
-    }
-    const respond = vi.fn().mockResolvedValue(undefined)
-
-    await service.handleRemoteCommand(
-      { type: 'subscribe_session', projectPath: '/p', sessionId: 'sid-A', requestId: 'req-Y' } as never,
-      respond,
-      { deviceId: 'mobile-1', transport: 'lan' },
-    )
-
-    expect(respond).toHaveBeenCalledWith('req-Y', { ok: true })
-    expect(session.subscribers.has('mobile-1')).toBe(true)
-  })
-
-  it('subscribe_session releases ownership held by the device on a different session', async () => {
-    const service = new AgentService()
-    const sessionA = makeMockSession({ id: 'sid-A', projectPath: '/p' })
-    const sessionB = makeMockSession({ id: 'sid-B', projectPath: '/p' })
-    sessionA.claim({ kind: 'remote', deviceId: 'mobile-1' })
-    const sessions = [sessionA, sessionB]
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getActiveSession: vi.fn(() => null),
-      getSession: vi.fn((id: string) => sessions.find((s) => s.id === id) ?? null),
-      forEachSession: (fn: (s: unknown) => void) => sessions.forEach(fn),
-    }
-    const respond = vi.fn().mockResolvedValue(undefined)
-
-    await service.handleRemoteCommand(
-      { type: 'subscribe_session', projectPath: '/p', sessionId: 'sid-B', requestId: 'req-Z' } as never,
-      respond,
-      { deviceId: 'mobile-1', transport: 'lan' },
-    )
-
-    expect(respond).toHaveBeenCalledWith('req-Z', { ok: true })
-    expect(sessionA.owner.kind).toBe('local')
-    expect(sessionB.subscribers.has('mobile-1')).toBe(true)
-  })
-
-  it('subscribe_session resumes a cold session that is not active in memory', async () => {
-    const service = new AgentService()
-    const resumed = makeMockSession({ id: 'sid-1', projectPath: '/p' })
-    const resumeSession = vi.fn(() => resumed)
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getActiveSession: vi.fn(() => null),
-      getSession: vi.fn(() => null),
-      resumeSession,
-      forEachSession: vi.fn(),
-    }
-    const respond = vi.fn().mockResolvedValue(undefined)
-
-    await service.handleRemoteCommand(
-      { type: 'subscribe_session', projectPath: '/p', sessionId: 'sid-1', requestId: 'req-3' } as never,
-      respond,
-      { deviceId: 'mobile-A', transport: 'lan' },
-    )
-
-    expect(resumeSession).toHaveBeenCalledWith('sid-1', { passive: true })
-    expect(respond).toHaveBeenCalledWith('req-3', { ok: true })
-    expect(resumed.subscribers.has('mobile-A')).toBe(true)
-  })
-
-  it('subscribe_session replays cached init events to the new subscriber so first-time mobile sees session metadata', async () => {
-    const service = new AgentService()
-    const initReady = { type: 'init_ready', sessionId: 'sid-1', projectPath: '/p', cwd: '/p' }
-    const worktreeMissing = { type: 'worktree_missing', sessionId: 'sid-1', projectPath: '/p', worktreePath: '/wt', fallbackCwd: '/p' }
-    const session = makeMockSession({
-      id: 'sid-1',
-      projectPath: '/p',
-      getReplayEvents: vi.fn(() => [initReady, worktreeMissing]),
-    })
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getActiveSession: vi.fn(() => session),
-      getSession: vi.fn(() => session),
-      forEachSession: vi.fn(),
-    }
-    const sendAgentEvent = vi.fn().mockResolvedValue(undefined)
-    service.setRemoteControlService({ sendEventToMobile: vi.fn(), sendAgentEvent } as never)
-    const respond = vi.fn().mockResolvedValue(undefined)
-
-    await service.handleRemoteCommand(
-      { type: 'subscribe_session', projectPath: '/p', sessionId: 'sid-1', requestId: 'req-replay-1' } as never,
-      respond,
-      { deviceId: 'mobile-A', transport: 'lan' },
-    )
-
-    expect(respond).toHaveBeenCalledWith('req-replay-1', { ok: true })
-    expect(session.subscribers.has('mobile-A')).toBe(true)
-    expect(sendAgentEvent).toHaveBeenCalledWith(initReady, ['mobile-A'])
-    expect(sendAgentEvent).toHaveBeenCalledWith(worktreeMissing, ['mobile-A'])
-  })
-
-  it('subscribe_session on a cold session replays init_ready that was cached during resume', async () => {
-    const service = new AgentService()
-    const initReady = { type: 'init_ready', sessionId: 'sid-1', projectPath: '/p', cwd: '/p' }
-    const resumed = makeMockSession({
-      id: 'sid-1',
-      projectPath: '/p',
-      getReplayEvents: vi.fn(() => [initReady]),
-    })
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getActiveSession: vi.fn(() => null),
-      getSession: vi.fn(() => null),
-      resumeSession: vi.fn(() => resumed),
-      forEachSession: vi.fn(),
-    }
-    const sendAgentEvent = vi.fn().mockResolvedValue(undefined)
-    service.setRemoteControlService({ sendEventToMobile: vi.fn(), sendAgentEvent } as never)
-    const respond = vi.fn().mockResolvedValue(undefined)
-
-    await service.handleRemoteCommand(
-      { type: 'subscribe_session', projectPath: '/p', sessionId: 'sid-1', requestId: 'req-replay-cold' } as never,
-      respond,
-      { deviceId: 'mobile-A', transport: 'lan' },
-    )
-
-    expect(respond).toHaveBeenCalledWith('req-replay-cold', { ok: true })
-    expect(sendAgentEvent).toHaveBeenCalledWith(initReady, ['mobile-A'])
-  })
-
-  it('subscribe_session does not call sendAgentEvent when there are no cached events to replay', async () => {
-    const service = new AgentService()
-    const session = makeMockSession({
-      id: 'sid-1',
-      projectPath: '/p',
-      getReplayEvents: vi.fn(() => []),
-    })
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getActiveSession: vi.fn(() => session),
-      getSession: vi.fn(() => session),
-      forEachSession: vi.fn(),
-    }
-    const sendAgentEvent = vi.fn().mockResolvedValue(undefined)
-    service.setRemoteControlService({ sendEventToMobile: vi.fn(), sendAgentEvent } as never)
-    const respond = vi.fn().mockResolvedValue(undefined)
-
-    await service.handleRemoteCommand(
-      { type: 'subscribe_session', projectPath: '/p', sessionId: 'sid-1', requestId: 'req-replay-empty' } as never,
-      respond,
-      { deviceId: 'mobile-A', transport: 'lan' },
-    )
-
-    expect(respond).toHaveBeenCalledWith('req-replay-empty', { ok: true })
-    expect(sendAgentEvent).not.toHaveBeenCalled()
-  })
-
-  it('subscribe_session does not replay cached events when the subscribe call is rejected with session_locked', async () => {
-    const service = new AgentService()
-    const session = makeMockSession({
-      id: 'sid-1',
-      projectPath: '/p',
-      getReplayEvents: vi.fn(() => [{ type: 'init_ready', sessionId: 'sid-1' }]),
-    })
-    session.claim({ kind: 'remote', deviceId: 'mobile-A' })
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getActiveSession: vi.fn(() => session),
-      getSession: vi.fn(() => session),
-      forEachSession: vi.fn(),
-    }
-    const sendAgentEvent = vi.fn().mockResolvedValue(undefined)
-    service.setRemoteControlService({ sendEventToMobile: vi.fn(), sendAgentEvent } as never)
-    const respond = vi.fn().mockResolvedValue(undefined)
-
-    await service.handleRemoteCommand(
-      { type: 'subscribe_session', projectPath: '/p', sessionId: 'sid-1', requestId: 'req-locked' } as never,
-      respond,
-      { deviceId: 'mobile-B', transport: 'lan' },
-    )
-
-    expect(respond).toHaveBeenCalledWith('req-locked', { error: 'session_locked', ownerDeviceId: 'mobile-A' })
-    expect(sendAgentEvent).not.toHaveBeenCalled()
-  })
-
-  it('subscribe_session responds with session_not_found when resume fails', async () => {
-    const service = new AgentService()
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getActiveSession: vi.fn(() => null),
-      getSession: vi.fn(() => null),
-      resumeSession: vi.fn(() => { throw new Error('not in DB') }),
-      forEachSession: vi.fn(),
-    }
-    const respond = vi.fn().mockResolvedValue(undefined)
-
-    await service.handleRemoteCommand(
-      { type: 'subscribe_session', projectPath: '/p', sessionId: 'sid-ghost', requestId: 'req-4' } as never,
-      respond,
-      { deviceId: 'mobile-A', transport: 'lan' },
-    )
-
-    expect(respond).toHaveBeenCalledWith('req-4', { error: 'session_not_found' })
-  })
-
-  it('remote interrupt command does not unsubscribe mobile subscribers', async () => {
-    const service = new AgentService()
-    const interrupt = vi.fn().mockResolvedValue(undefined)
-    const session = makeMockSession({ id: 'sid-1', projectPath: '/p', interrupt })
-    session.subscribe('mobile-A')
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getActiveSession: vi.fn(() => session),
-      getSession: vi.fn(() => session),
-      forEachSession: (fn: (s: unknown) => void) => [session].forEach(fn),
-    }
-    vi.mocked(dbSessions.sessionBelongsToProject).mockReturnValue(true)
-    ;(service as unknown as { findSessionBySid: (p: string, s: string) => unknown }).findSessionBySid = () => session
-
-    await service.handleRemoteCommand(
-      { type: 'interrupt', projectPath: '/p', sessionId: 'sid-1' } as never,
-      undefined,
-      { deviceId: 'mobile-A', transport: 'lan' },
-    )
-
-    expect(interrupt).toHaveBeenCalledTimes(1)
-    expect(session.subscribers.has('mobile-A')).toBe(true)
-  })
-
-  it('leave_session releases ownership held by that device', async () => {
-    const service = new AgentService()
-    const session = makeMockSession({ id: 'sid-1', projectPath: '/p' })
-    session.claim({ kind: 'remote', deviceId: 'mobile-A' })
-    session.subscribe('mobile-A')
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getActiveSession: vi.fn(() => session),
-      getSession: vi.fn(() => session),
-      forEachSession: vi.fn(),
-    }
-
-    await service.handleRemoteCommand(
-      { type: 'leave_session', sessionId: 'sid-1' } as never,
-      undefined,
-      { deviceId: 'mobile-A', transport: 'lan' },
-    )
-
-    expect(session.owner.kind).toBe('local')
-    expect(session.subscribers.size).toBe(0)
-  })
-
-  it('leave_session is a no-op for a different device', async () => {
-    const service = new AgentService()
-    const session = makeMockSession({ id: 'sid-1', projectPath: '/p' })
-    session.claim({ kind: 'remote', deviceId: 'mobile-A' })
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getActiveSession: vi.fn(() => session),
-      getSession: vi.fn(() => session),
-      forEachSession: vi.fn(),
-    }
-
-    await service.handleRemoteCommand(
-      { type: 'leave_session', sessionId: 'sid-1' } as never,
-      undefined,
-      { deviceId: 'mobile-B', transport: 'lan' },
-    )
-
-    expect(session.owner).toEqual({ kind: 'remote', deviceId: 'mobile-A' })
-  })
-
-  it('respond_permission falls back to subscribed session when projectPath is missing', async () => {
-    const respondToPermission = vi.fn(() => true)
-    const activeSession = makeMockSession({ id: 'sid-1', projectPath: '/p', respondToPermission })
-    const broadcasts: unknown[] = []
-    const subscriberEvents: unknown[] = []
-
-    const service = new AgentService()
-    service.addEventSubscriber((event) => { subscriberEvents.push(event) })
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getActiveSession: vi.fn(() => activeSession),
-      getSession: vi.fn(() => activeSession),
-    }
-    ;(service as unknown as { publishEnvironmentEvent: (e: unknown) => void }).publishEnvironmentEvent = (e) => { broadcasts.push(e) }
-
-    const fakeRemote = {
-      getSubscribedSession: () => ({ projectPath: '/p', sessionId: 'sid-1' }),
-      setRemoteSessionFilter: vi.fn(),
-      clearRemoteSessionFilter: vi.fn(),
-    }
-    service.setRemoteControlService(fakeRemote as never)
-
-    const formAnswers = { sessionAgentLaunchesJson: '[{"mode":"handoff"}]' }
-    await service.handleRemoteCommand({
-      type: 'respond_permission',
-      requestId: 'req-1',
-      decision: true,
-      alwaysAllow: true,
-      sessionId: 'sid-1',
-      formAnswers,
-    } as never)
-
-    expect(respondToPermission).toHaveBeenCalledWith(
-      'req-1', true, true, undefined, undefined, undefined, formAnswers,
-    )
-    // The session announces the resolution; the service adds no second copy.
-    expect(broadcasts).toEqual([])
-    expect(subscriberEvents).toEqual([])
-  })
-
-  it('respond_permission answers a form request and keeps the form open on a rejected answer', async () => {
-    const { openInputRequest, clearInputRequestsForTests, isInputRequestId } = await import('../session/input-requests')
-    const { admitInputRequestSpec, inputRequestMeta } = await import('@superone/shared/input-request')
-    const admitted = admitInputRequestSpec({ title: 'Env', requestedSchema: { type: 'object', properties: { env: { type: 'string' } }, required: ['env'] } }, { userResources: true })
-    if (!admitted.ok) throw new Error(admitted.error)
-    const activeSession = makeMockSession({ id: 'sid-1', projectPath: '/p', respondToPermission: vi.fn(() => false) })
-    const service = new AgentService()
-    ;(service as { sessionManager: unknown }).sessionManager = { getActiveSession: vi.fn(() => activeSession), getSession: vi.fn(() => activeSession) }
-    ;(service as unknown as { publishEnvironmentEvent: (e: unknown) => void }).publishEnvironmentEvent = () => {}
-    service.setRemoteControlService({ getSubscribedSession: () => ({ projectPath: '/p', sessionId: 'sid-1' }), setRemoteSessionFilter: vi.fn(), clearRemoteSessionFilter: vi.fn() } as never)
-    const { requestId, outcome } = openInputRequest({ id: 'sid-1', emitHostEvent: () => {} }, { meta: inputRequestMeta(admitted.spec, { kind: 'agent' }, 'caller'), form: admitted.form })
-    const respond = vi.fn(async () => {})
-    try {
-      await service.handleRemoteCommand({ type: 'respond_permission', requestId, decision: true, sessionId: 'sid-1', projectPath: '/p' } as never, respond)
-      expect(respond).toHaveBeenLastCalledWith(requestId, { handled: false, error: 'The answer carries no form values' })
-      expect(isInputRequestId(requestId)).toBe(true)
-      await service.handleRemoteCommand({ type: 'respond_permission', requestId, decision: true, sessionId: 'sid-1', projectPath: '/p', formAnswers: { env: 'prod' } } as never, respond)
-      expect(respond).toHaveBeenLastCalledWith(requestId, { handled: true })
-      await expect(outcome).resolves.toEqual({ status: 'submitted', values: { env: 'prod' } })
-      await service.handleRemoteCommand({ type: 'respond_permission', requestId, decision: true, sessionId: 'sid-1', projectPath: '/p', formAnswers: { env: 'prod' } } as never, respond)
-      expect(respond).toHaveBeenLastCalledWith(requestId, { handled: false, error: 'This prompt is no longer open' })
-    } finally {
-      clearInputRequestsForTests()
-    }
-  })
-
-  it('remote question and plan responses reach the session, which announces the resolution', async () => {
-    const session = makeMockSession({
-      id: 'sid-1',
-      projectPath: '/p',
-      respondToQuestion: vi.fn(),
-      dismissQuestion: vi.fn(),
-      respondToPlanApproval: vi.fn(),
-    })
-    const subscriberEvents: unknown[] = []
-    const service = new AgentService()
-    service.addEventSubscriber((event) => { subscriberEvents.push(event) })
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getActiveSession: vi.fn(() => session),
-      getSession: vi.fn(() => session),
-    }
-    ;(service as unknown as { findSessionBySid: (p: string, s: string) => unknown }).findSessionBySid = () => session
-
-    await service.handleRemoteCommand({
-      type: 'answer_question',
-      requestId: 'question-answer',
-      answers: { Continue: 'Yes' },
-      projectPath: '/p',
-      sessionId: 'sid-1',
-    } as never)
-    await service.handleRemoteCommand({
-      type: 'dismiss_question',
-      requestId: 'question-dismiss',
-      projectPath: '/p',
-      sessionId: 'sid-1',
-    } as never)
-    await service.handleRemoteCommand({
-      type: 'respond_plan_approval',
-      requestId: 'plan-1',
-      approved: true,
-      projectPath: '/p',
-      sessionId: 'sid-1',
-    } as never)
-
-    expect(session.respondToQuestion).toHaveBeenCalledWith('question-answer', { Continue: 'Yes' }, undefined)
-    expect(session.dismissQuestion).toHaveBeenCalledWith('question-dismiss')
-    expect(session.respondToPlanApproval).toHaveBeenCalledWith('plan-1', true, undefined)
-    expect(subscriberEvents).toEqual([])
-  })
-
-  it.skip('send_message creates remote agent when sessionId differs from desktop agent', async () => {
-    vi.mocked(dbSessions.loadSessionState).mockReturnValue(null)
-    const service = new AgentService()
-    const desktopSendMessage = vi.fn().mockResolvedValue(undefined)
-    const currentAgent = {
-      isReady: vi.fn(() => true),
-      getSessionId: vi.fn(() => 'session-A'),
-      sendMessage: desktopSendMessage,
-      getCwd: vi.fn(() => '/project'),
-      isStreaming: vi.fn(() => false),
-    }
-    ;(service as any).agents.set('/project', currentAgent)
-    ;(service as any).remoteControlService = {
-      setRemoteSessionFilter: vi.fn(),
-      clearRemoteSessionFilter: vi.fn(),
-    }
-
-    await service.handleRemoteCommand({
-      type: 'send_message',
-      content: 'hello',
-      projectPath: '/project',
-      sessionId: 'session-B',
-    })
-
-    expect(createdAgents).toHaveLength(1)
-    expect(createdAgents[0].initialize).toHaveBeenCalledWith(
-      { cwd: '/project' },
-      expect.any(Function),
-      'session-B',
-    )
-    expect(desktopSendMessage).not.toHaveBeenCalled()
-    expect((service as any).remoteSession).not.toBeNull()
-    expect((service as any).remoteSession.agent).toBe(createdAgents[0])
-  })
-
-  it.skip('send_message persists merged history from main runtime instead of renderer snapshots', async () => {
-    vi.mocked(dbSessions.loadSessionState).mockReturnValue({
-      messages: [
-        { id: 'old-msg', role: 'assistant', content: [{ type: 'text', text: 'old' }], status: 'complete', createdAt: '', providerId: 'claude' },
-      ] as never[],
-      totalCostUsd: 1,
-      contextTokens: 2,
-      isWorktree: false,
-      gitBranch: null,
-      worktreePath: null,
-      provider: 'claude',
-    })
-    const service = new AgentService()
-    const sendMessage = vi.fn().mockResolvedValue(undefined)
-    const currentAgent = {
-      isReady: vi.fn(() => true),
-      getSessionId: vi.fn(() => 'session-A'),
-      sendMessage,
-      getCwd: vi.fn(() => '/project'),
-      isStreaming: vi.fn(() => false),
-    }
-    ;(service as any).agents.set('/project', currentAgent)
-
-    await service.handleRemoteCommand({
-      type: 'send_message',
-      content: 'hello',
-      projectPath: '/project',
-      sessionId: 'session-A',
-    })
-
-    expect(dbSessions.saveSessionState).toHaveBeenCalledWith(
-      'session-A',
-      expect.objectContaining({
-        messages: expect.arrayContaining([
-          expect.objectContaining({ id: 'old-msg' }),
-          expect.objectContaining({ role: 'user', providerId: 'remote' }),
-        ]),
-        totalCostUsd: 1,
-        contextTokens: 2,
-        provider: 'claude',
-      }),
-    )
-  })
 
   it.skip('session_init moves a just-appended user message into the rekeyed session', () => {
     vi.mocked(dbSessions.loadSessionState).mockImplementation((sessionId: string) => {
@@ -2747,541 +1459,6 @@ describe('AgentService.handleRemoteCommand', () => {
     }))
   })
 
-
-  it.skip('send_message skips resume when sessionId matches current agent', async () => {
-    const service = new AgentService()
-    const sendMessage = vi.fn().mockResolvedValue(undefined)
-    const currentAgent = {
-      isReady: vi.fn(() => true),
-      getSessionId: vi.fn(() => 'session-A'),
-      sendMessage,
-      getCwd: vi.fn(() => '/project'),
-      isStreaming: vi.fn(() => false),
-    }
-    ;(service as any).agents.set('/project', currentAgent)
-
-    await service.handleRemoteCommand({
-      type: 'send_message',
-      content: 'hello',
-      projectPath: '/project',
-      sessionId: 'session-A',
-    })
-
-    expect(createdAgents).toHaveLength(0)
-    expect(sendMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ content: 'hello' }),
-    )
-  })
-
-  it.skip('send_message ignores session ids that do not belong to the project', async () => {
-    vi.mocked(dbSessions.sessionBelongsToProject).mockReturnValue(false)
-    const service = new AgentService()
-    const sendMessage = vi.fn().mockResolvedValue(undefined)
-    const currentAgent = {
-      isReady: vi.fn(() => true),
-      getSessionId: vi.fn(() => 'session-A'),
-      sendMessage,
-      getCwd: vi.fn(() => '/project'),
-      isStreaming: vi.fn(() => false),
-    }
-    ;(service as any).agents.set('/project', currentAgent)
-
-    await service.handleRemoteCommand({
-      type: 'send_message',
-      content: 'hello',
-      projectPath: '/project',
-      sessionId: 'session-B',
-    })
-
-    expect(sendMessage).not.toHaveBeenCalled()
-    expect(createdAgents).toHaveLength(0)
-  })
-
-  it.skip('send_message with sessionId creates remote session instead of resuming desktop agent', async () => {
-    vi.mocked(dbSessions.loadSessionState).mockReturnValue(null)
-    const service = new AgentService()
-    const desktopAgent = {
-      isReady: vi.fn(() => true),
-      getSessionId: vi.fn(() => 'desktop-session'),
-      sendMessage: vi.fn().mockResolvedValue(undefined),
-      getCwd: vi.fn(() => '/project'),
-      isStreaming: vi.fn(() => false),
-    }
-    ;(service as any).agents.set('/project', desktopAgent)
-
-    const setFilter = vi.fn()
-    const clearFilter = vi.fn()
-    ;(service as any).remoteControlService = {
-      setRemoteSessionFilter: setFilter,
-      clearRemoteSessionFilter: clearFilter,
-    }
-
-    await service.handleRemoteCommand({
-      type: 'send_message',
-      content: 'hello from mobile',
-      projectPath: '/project',
-      sessionId: 'old-session-from-db',
-    })
-
-    expect(createdAgents).toHaveLength(1)
-    expect(createdAgents[0].initialize).toHaveBeenCalledWith(
-      { cwd: '/project' },
-      expect.any(Function),
-      'old-session-from-db',
-    )
-
-    const remoteSession = (service as any).remoteSession
-    expect(remoteSession).not.toBeNull()
-    expect(remoteSession.projectPath).toBe('/project')
-    expect(remoteSession.agent).toBe(createdAgents[0])
-
-    expect(clearFilter).toHaveBeenCalled()
-    expect(setFilter).toHaveBeenCalledWith('/project', 'old-session-from-db')
-
-    expect(desktopAgent.sendMessage).not.toHaveBeenCalled()
-    expect(desktopAgent.getSessionId()).toBe('desktop-session')
-  })
-
-  it.skip('send_message with sessionId uses worktree cwd from saved state', async () => {
-    vi.mocked(dbSessions.loadSessionState).mockReturnValue({
-      messages: [],
-      worktreePath: '/tmp/worktree-abc',
-    } as never)
-    const service = new AgentService()
-    ;(service as any).agents.set('/project', {
-      isReady: vi.fn(() => true),
-      getSessionId: vi.fn(() => 'desktop-session'),
-      sendMessage: vi.fn(),
-      getCwd: vi.fn(() => '/project'),
-      isStreaming: vi.fn(() => false),
-    })
-    ;(service as any).remoteControlService = {
-      setRemoteSessionFilter: vi.fn(),
-      clearRemoteSessionFilter: vi.fn(),
-    }
-
-    await service.handleRemoteCommand({
-      type: 'send_message',
-      content: 'hello',
-      projectPath: '/project',
-      sessionId: 'worktree-session',
-    })
-
-    expect(createdAgents).toHaveLength(1)
-    expect(createdAgents[0].initialize).toHaveBeenCalledWith(
-      { cwd: '/tmp/worktree-abc' },
-      expect.any(Function),
-      'worktree-session',
-    )
-  })
-
-  it.skip('send_message with sessionId disposes existing remote session before creating new one', async () => {
-    vi.mocked(dbSessions.loadSessionState).mockReturnValue(null)
-    const service = new AgentService()
-    ;(service as any).agents.set('/project', {
-      isReady: vi.fn(() => true),
-      getSessionId: vi.fn(() => 'desktop-session'),
-      sendMessage: vi.fn(),
-      getCwd: vi.fn(() => '/project'),
-      isStreaming: vi.fn(() => false),
-    })
-
-    const oldRemoteDispose = vi.fn().mockResolvedValue(undefined)
-    ;(service as any).remoteSession = {
-      projectPath: '/project',
-      agent: { dispose: oldRemoteDispose, getSessionId: vi.fn(() => 'prev-remote') },
-      bufferForRenderer: vi.fn(),
-    }
-    ;(service as any).remoteControlService = {
-      setRemoteSessionFilter: vi.fn(),
-      clearRemoteSessionFilter: vi.fn(),
-    }
-
-    await service.handleRemoteCommand({
-      type: 'send_message',
-      content: 'hello',
-      projectPath: '/project',
-      sessionId: 'new-old-session',
-    })
-
-    expect(oldRemoteDispose).toHaveBeenCalled()
-    expect(createdAgents).toHaveLength(1)
-    const remoteSession = (service as any).remoteSession
-    expect(remoteSession.agent).toBe(createdAgents[0])
-  })
-
-  it.skip('interrupt targets active agent when sessionId matches', async () => {
-    const service = new AgentService()
-    const interrupt = vi.fn().mockResolvedValue(undefined)
-    ;(service as any).agents.set('/project', {
-      getSessionId: vi.fn(() => 'session-A'),
-      interrupt,
-    })
-
-    await service.handleRemoteCommand({ type: 'interrupt', projectPath: '/project', sessionId: 'session-A' })
-    expect(interrupt).toHaveBeenCalledTimes(1)
-  })
-
-  it.skip('interrupt targets background agent when sessionId is in bgAgents', async () => {
-    const service = new AgentService()
-    const bgInterrupt = vi.fn().mockResolvedValue(undefined)
-    ;(service as any).agents.set('/project', {
-      getSessionId: vi.fn(() => 'session-A'),
-      interrupt: vi.fn(),
-    })
-    ;(service as any).bgAgents.set('session-B', {
-      agent: { getSessionId: vi.fn(() => 'session-B'), interrupt: bgInterrupt },
-      projectPath: '/project',
-      gitRoot: '/project',
-    })
-
-    await service.handleRemoteCommand({ type: 'interrupt', projectPath: '/project', sessionId: 'session-B' })
-    expect(bgInterrupt).toHaveBeenCalledTimes(1)
-  })
-
-  it.skip('interrupt is no-op when sessionId not found in active or bg', async () => {
-    const service = new AgentService()
-    const interrupt = vi.fn().mockResolvedValue(undefined)
-    ;(service as any).agents.set('/project', {
-      getSessionId: vi.fn(() => 'session-A'),
-      interrupt,
-    })
-
-    await service.handleRemoteCommand({ type: 'interrupt', projectPath: '/project', sessionId: 'session-X' })
-    expect(interrupt).not.toHaveBeenCalled()
-  })
-
-  it.skip('respond_permission routes to background agent by sessionId', async () => {
-    const service = new AgentService()
-    const bgRespond = vi.fn()
-    ;(service as any).agents.set('/project', {
-      getSessionId: vi.fn(() => 'session-A'),
-      respondToPermission: vi.fn(),
-    })
-    ;(service as any).bgAgents.set('session-B', {
-      agent: { getSessionId: vi.fn(() => 'session-B'), respondToPermission: bgRespond },
-      projectPath: '/project',
-      gitRoot: '/project',
-    })
-
-    await service.handleRemoteCommand({
-      type: 'respond_permission',
-      requestId: 'req-1',
-      decision: true,
-      projectPath: '/project',
-      sessionId: 'session-B',
-    })
-    expect(bgRespond).toHaveBeenCalledWith('req-1', true, undefined, undefined, undefined)
-  })
-
-  it.skip('respond_permission is no-op when sessionId not found', async () => {
-    const service = new AgentService()
-    const respond = vi.fn()
-    ;(service as any).agents.set('/project', {
-      getSessionId: vi.fn(() => 'session-A'),
-      respondToPermission: respond,
-    })
-
-    await service.handleRemoteCommand({
-      type: 'respond_permission',
-      requestId: 'req-1',
-      decision: true,
-      projectPath: '/project',
-      sessionId: 'session-X',
-    })
-    expect(respond).not.toHaveBeenCalled()
-  })
-
-  it.skip('respond_permission passes reason to agent', async () => {
-    const service = new AgentService()
-    const respond = vi.fn()
-    ;(service as any).agents.set('/project', {
-      getSessionId: vi.fn(() => 'session-A'),
-      respondToPermission: respond,
-    })
-
-    await service.handleRemoteCommand({
-      type: 'respond_permission',
-      requestId: 'req-1',
-      decision: false,
-      reason: 'not needed',
-      projectPath: '/project',
-      sessionId: 'session-A',
-    })
-    expect(respond).toHaveBeenCalledWith('req-1', false, undefined, 'not needed', undefined)
-  })
-
-  it.skip('answer_question routes to agent by sessionId', async () => {
-    const service = new AgentService()
-    const respond = vi.fn()
-    ;(service as any).agents.set('/project', {
-      getSessionId: vi.fn(() => 'session-A'),
-      respondToQuestion: respond,
-    })
-
-    await service.handleRemoteCommand({
-      type: 'answer_question',
-      requestId: 'ask-1',
-      answers: { 'Which?': 'Option A' },
-      projectPath: '/project',
-      sessionId: 'session-A',
-    })
-    expect(respond).toHaveBeenCalledWith('ask-1', { 'Which?': 'Option A' }, undefined)
-  })
-
-  it.skip('dismiss_question routes to agent by sessionId', async () => {
-    const service = new AgentService()
-    const dismiss = vi.fn()
-    ;(service as any).agents.set('/project', {
-      getSessionId: vi.fn(() => 'session-A'),
-      dismissQuestion: dismiss,
-    })
-
-    await service.handleRemoteCommand({
-      type: 'dismiss_question',
-      requestId: 'ask-1',
-      projectPath: '/project',
-      sessionId: 'session-A',
-    })
-    expect(dismiss).toHaveBeenCalledWith('ask-1')
-  })
-
-  it.skip('respond_plan_approval routes to agent by sessionId', async () => {
-    const service = new AgentService()
-    const respond = vi.fn()
-    ;(service as any).agents.set('/project', {
-      getSessionId: vi.fn(() => 'session-A'),
-      respondToPlanApproval: respond,
-    })
-
-    await service.handleRemoteCommand({
-      type: 'respond_plan_approval',
-      requestId: 'plan-1',
-      approved: true,
-      projectPath: '/project',
-      sessionId: 'session-A',
-    })
-    expect(respond).toHaveBeenCalledWith('plan-1', true, undefined)
-  })
-
-  it.skip('respond_plan_approval passes feedback', async () => {
-    const service = new AgentService()
-    const respond = vi.fn()
-    ;(service as any).agents.set('/project', {
-      getSessionId: vi.fn(() => 'session-A'),
-      respondToPlanApproval: respond,
-    })
-
-    await service.handleRemoteCommand({
-      type: 'respond_plan_approval',
-      requestId: 'plan-1',
-      approved: false,
-      feedback: 'needs more detail',
-      projectPath: '/project',
-      sessionId: 'session-A',
-    })
-    expect(respond).toHaveBeenCalledWith('plan-1', false, 'needs more detail')
-  })
-
-  it.each(['load_session_messages', 'get_session_history_index'] as const)('%s returns an error when session does not belong to the project', async (type) => {
-    vi.mocked(dbSessions.sessionBelongsToProject).mockReturnValue(false)
-    const respond = vi.fn()
-    const service = new AgentService()
-
-    await service.handleRemoteCommand({
-      type,
-      requestId: 'r9',
-      projectPath: '/project',
-      sessionId: 'session-X',
-    }, respond)
-
-    expect(respond).toHaveBeenCalledWith('r9', {
-      error: 'Session session-X does not belong to project /project',
-    })
-  })
-
-  it('refuses an MCP App request for a session outside the named project before it reaches the host', async () => {
-    vi.mocked(dbSessions.sessionBelongsToProject).mockReturnValue(false)
-    const respond = vi.fn()
-    const service = new AgentService()
-
-    await service.handleRemoteCommand({
-      type: 'mcp_app_request',
-      requestId: 'app-1',
-      projectPath: '/project',
-      sessionId: 'session-X',
-      request: { messageId: 'm', appInstanceId: 'view-1', operation: 'load' },
-    }, respond, { deviceId: 'phone-1', transport: 'relay' })
-
-    expect(respond).toHaveBeenCalledWith('app-1', {
-      error: 'Session session-X does not belong to project /project',
-    })
-  })
-
-  it('add_project calls addRecentFolder and openFolder', async () => {
-    const { addRecentFolder } = await import('../recent-folders')
-    const respond = vi.fn()
-    const service = new AgentService()
-    await service.handleRemoteCommand({ type: 'add_project', requestId: 'r8', path: '/projects/new' }, respond)
-    expect(addRecentFolder).toHaveBeenCalledWith('/projects/new')
-    expect(respond).toHaveBeenCalledWith('r8', { success: true })
-  })
-
-  it('add_project creates the directory first when asked to', async () => {
-    const { addRecentFolder } = await import('../recent-folders')
-    const respond = vi.fn()
-    await new AgentService().handleRemoteCommand(
-      { type: 'add_project', requestId: 'r8b', path: '/projects/new', createIfMissing: true }, respond)
-    expect(mockMkdir).toHaveBeenCalledWith('/projects/new', { recursive: true })
-    expect(addRecentFolder).toHaveBeenCalledWith('/projects/new')
-    expect(respond).toHaveBeenCalledWith('r8b', { success: true })
-  })
-
-  it('search_github_repos routes each mode to its own service', async () => {
-    const { listGithubReposForOwner, searchGithubRepositories, listMyGithubRepos } =
-      await import('../plugins-service')
-    const service = new AgentService()
-
-    const owner = vi.fn()
-    await service.handleRemoteCommand(
-      { type: 'search_github_repos', requestId: 'g1', mode: 'owner', value: 'vercel' }, owner)
-    expect(listGithubReposForOwner).toHaveBeenCalledWith('vercel')
-    expect(owner).toHaveBeenCalledWith('g1', { repos: [expect.objectContaining({ fullName: 'vercel/next.js' })] })
-
-    const query = vi.fn()
-    await service.handleRemoteCommand(
-      { type: 'search_github_repos', requestId: 'g2', mode: 'query', value: 'expo' }, query)
-    expect(searchGithubRepositories).toHaveBeenCalledWith('expo')
-
-    const mine = vi.fn()
-    await service.handleRemoteCommand(
-      { type: 'search_github_repos', requestId: 'g3', mode: 'mine' }, mine)
-    expect(listMyGithubRepos).toHaveBeenCalledWith(1, 20)
-    // `unavailable` has to survive: it is what tells the phone to mention gh.
-    expect(mine).toHaveBeenCalledWith('g3', { repos: [], hasMore: false, unavailable: true })
-  })
-
-  it.each(Object.entries(BASE_SESSION_PROVIDERS))(
-    'create_session routes %s through its own base provider',
-    async (provider, definition) => {
-      const createSession = vi.fn()
-      const respond = vi.fn()
-      const service = new AgentService()
-      ;(service as { sessionManager: unknown }).sessionManager = { createSession }
-
-      await service.handleRemoteCommand({
-        type: 'create_session',
-        requestId: `create-${provider}`,
-        sessionId: `session-${provider}`,
-        projectPath: '/project',
-        provider: provider as keyof typeof BASE_SESSION_PROVIDERS,
-        permissionMode: 'default',
-        model: 'catalog-model',
-        effort: 'high',
-        ...(provider === 'acp' ? { acpAgentId: 'grok-build' } : {}),
-      }, respond)
-
-      expect(createSession).toHaveBeenCalledWith(expect.objectContaining({
-        providerId: definition.id,
-        model: 'catalog-model',
-        effort: 'high',
-        permissionMode: 'default',
-        ...(provider === 'acp' ? { acpAgentId: 'grok-build' } : {}),
-      }))
-      expect(respond).toHaveBeenCalledWith(`create-${provider}`, expect.objectContaining({
-        ok: true,
-        sessionId: `session-${provider}`,
-      }))
-    },
-  )
-
-  it('create_session applies a sandbox picked before the session existed', async () => {
-    // The phone's chip has no session id to send `set_sandbox_mode` to on the
-    // new-session landing, so the pick has to ride creation or be lost silently.
-    const setSandboxMode = vi.fn().mockResolvedValue({ enabled: true, autoAllowBash: true })
-    const createSession = vi.fn().mockReturnValue({
-      setSelectedSettings: vi.fn(), setAgentPreset: vi.fn(), setApiProviderId: vi.fn(), setSandboxMode,
-    })
-    const respond = vi.fn()
-    const service = new AgentService()
-    ;(service as { sessionManager: unknown }).sessionManager = { createSession }
-
-    await service.handleRemoteCommand({
-      type: 'create_session',
-      requestId: 'create-sandbox',
-      sessionId: 'session-sandbox',
-      projectPath: '/project',
-      provider: 'claude',
-      sandboxMode: 'auto',
-    }, respond)
-
-    expect(setSandboxMode).toHaveBeenCalledWith('auto')
-    expect(respond).toHaveBeenCalledWith('create-sandbox', expect.objectContaining({ ok: true }))
-  })
-
-  it('create_session replaces the empty runtime a taken-over draft prewarmed', async () => {
-    // The phone sends into the draft's origin id, which the desktop composer
-    // may have prewarmed; that empty runtime must not reject the session.
-    draftStoreMock.get.mockReturnValue({ originSessionId: 'origin' })
-    const order: string[] = []
-    const prewarmed = { snapshot: { messages: [] }, isStreaming: () => false }
-    const disposeSession = vi.fn(async () => { order.push('dispose') })
-    const createSession = vi.fn(() => { order.push('create'); return { setSelectedSettings: vi.fn() } })
-    const respond = vi.fn()
-    const service = new AgentService()
-    ;(service as { sessionManager: unknown }).sessionManager = { getSession: () => prewarmed, disposeSession, createSession }
-
-    await service.handleRemoteCommand({
-      type: 'create_session', requestId: 'create-draft', sessionId: 'origin', projectPath: '/project',
-      provider: 'codex', draftId: 'draft-1', draftLeaseId: 'lease-1',
-    }, respond, { deviceId: 'phone', transport: 'lan' })
-
-    expect(draftStoreMock.assertControl).toHaveBeenCalledWith('draft-1', 'phone', 'lease-1')
-    expect(order).toEqual(['dispose', 'create'])
-    expect(respond).toHaveBeenCalledWith('create-draft', expect.objectContaining({ ok: true, sessionId: 'origin' }))
-  })
-
-  it('create_session keeps a draft origin that already has messages', async () => {
-    draftStoreMock.get.mockReturnValue({ originSessionId: 'origin' })
-    const disposeSession = vi.fn()
-    const createSession = vi.fn(() => { throw new Error('Session id already active: origin') })
-    const respond = vi.fn()
-    const service = new AgentService()
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getSession: () => ({ snapshot: { messages: [{ id: 'm1' }] }, isStreaming: () => false }), disposeSession, createSession,
-    }
-
-    await service.handleRemoteCommand({
-      type: 'create_session', requestId: 'create-used', sessionId: 'origin', projectPath: '/project',
-      draftId: 'draft-1', draftLeaseId: 'lease-1',
-    }, respond, { deviceId: 'phone', transport: 'lan' })
-
-    expect(disposeSession).not.toHaveBeenCalled()
-    expect(respond).toHaveBeenCalledWith('create-used', expect.objectContaining({ ok: false }))
-  })
-
-  it('create_session survives a sandbox the host refuses', async () => {
-    // The session already exists by then; answering `ok: false` would strand it.
-    const setSandboxMode = vi.fn().mockRejectedValue(new Error('当前平台不支持沙盒'))
-    const createSession = vi.fn().mockReturnValue({
-      setSelectedSettings: vi.fn(), setAgentPreset: vi.fn(), setApiProviderId: vi.fn(), setSandboxMode,
-    })
-    const respond = vi.fn()
-    const service = new AgentService()
-    ;(service as { sessionManager: unknown }).sessionManager = { createSession }
-
-    await service.handleRemoteCommand({
-      type: 'create_session',
-      requestId: 'create-sandbox-fail',
-      sessionId: 'session-sandbox-fail',
-      projectPath: '/project',
-      provider: 'claude',
-      sandboxMode: 'on',
-    }, respond)
-
-    expect(respond).toHaveBeenCalledWith('create-sandbox-fail', expect.objectContaining({ ok: true }))
-  })
-
   it('restores cross-project pending summaries without subscribing to chats', async () => {
     const service = new AgentService()
     const session = {
@@ -3298,177 +1475,11 @@ describe('AgentService.handleRemoteCommand', () => {
       },
     }
     const respond = vi.fn()
-    await service.handleRemoteCommand({ type: 'list_session_activity', requestId: 'activity' }, respond)
+    await captureValue(respond, 'activity', () => ({ sessions: service.remoteSessionActivity() }))
     expect(respond).toHaveBeenCalledWith('activity', { sessions: [expect.objectContaining({
       sessionId: 'background', projectPath: '/other', status: 'background', pendingCount: 1,
       pendingReason: { en: 'Which file?', zh: 'Which file?' },
     })] })
-  })
-
-  it('lists remote sessions with live metadata and their scheduled send', async () => {
-    const sendAt = Date.UTC(2026, 8, 15, 10)
-    vi.mocked(database.getDb).mockReturnValue({
-      prepare: () => ({ all: () => [{ session_id: 'session-acp', send_at: new Date(sendAt).toISOString(), armed: 1, source: 'manual', message: null }] }),
-    } as never)
-    vi.mocked(dbSessions.listSessionsForFolder).mockReturnValue([{
-      sessionId: 'session-acp',
-      title: 'Grok review',
-      lastActiveAt: '2026-09-04T00:00:00.000Z',
-      messageCount: 0,
-      provider: 'acp',
-      acpAgentId: 'grok-build',
-      selectedModel: 'stored-model',
-      tags: ['review'],
-      isAutomation: true,
-    }])
-    // One query for the whole page, not one per row.
-    vi.mocked(dbSessions.countMessagesForSessions).mockReturnValue(new Map([['session-acp', 7]]))
-    const service = new AgentService()
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      // A continuation turn: the send snapshot already reads `ended`.
-      getSession: vi.fn(() => ({ snapshot: { selectedModel: 'live-model', status: 'ended' }, activityStatus: () => 'streaming' })),
-    }
-    const respond = vi.fn()
-
-    await service.handleRemoteCommand({
-      type: 'list_sessions',
-      requestId: 'list-1',
-      projectPath: '/project',
-    }, respond)
-
-    expect(respond).toHaveBeenCalledWith('list-1', expect.objectContaining({
-      sessions: [expect.objectContaining({
-        sessionId: 'session-acp',
-        provider: 'acp',
-        acpAgentId: 'grok-build',
-        selectedModel: 'live-model',
-        status: 'streaming',
-        tags: ['review'],
-        isAutomation: true,
-        messageCount: 7,
-        scheduledSendAt: sendAt,
-      })],
-    }))
-    expect(dbSessions.countMessagesForSessions).toHaveBeenCalledWith(['session-acp'])
-  })
-
-  it('archives a remote session without deleting its transcript', async () => {
-    const respond = vi.fn()
-    const service = new AgentService()
-
-    await service.handleRemoteCommand({
-      type: 'archive_session',
-      requestId: 'archive-1',
-      projectPath: '/project',
-      sessionId: 'session-1',
-    }, respond)
-
-    // Both args are strings, so a swapped ownership check still type-checks and
-    // still passes a return-value-only assertion — pin the order explicitly.
-    expect(dbSessions.sessionBelongsToProject).toHaveBeenCalledWith('/project', 'session-1')
-    expect(dbSessions.hideSession).toHaveBeenCalledWith('session-1', true)
-    expect(dbSessions.deleteSession).not.toHaveBeenCalled()
-    expect(respond).toHaveBeenCalledWith('archive-1', { ok: true })
-  })
-
-  it('stops an archived session\'s background tasks and keeps the session', async () => {
-    const stopBackgroundTasks = vi.fn(async () => {})
-    const disposeSession = vi.fn(async () => {})
-    const respond = vi.fn()
-    const service = new AgentService()
-    ;(service as { sessionManager: unknown }).sessionManager = { getSession: vi.fn(() => null), stopBackgroundTasks, disposeSession }
-
-    await service.handleRemoteCommand({
-      type: 'archive_session',
-      requestId: 'archive-2',
-      projectPath: '/project',
-      sessionId: 'session-1',
-    }, respond)
-
-    expect(stopBackgroundTasks).toHaveBeenCalledWith('session-1')
-    expect(disposeSession).not.toHaveBeenCalled()
-    expect(respond).toHaveBeenCalledWith('archive-2', { ok: true })
-  })
-
-  it('disposes a live remote session before deleting its transcript', async () => {
-    const disposeSession = vi.fn(async () => {})
-    const respond = vi.fn()
-    const service = new AgentService()
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getSession: vi.fn(() => ({})),
-      disposeSession,
-    }
-
-    await service.handleRemoteCommand({
-      type: 'delete_session',
-      requestId: 'delete-1',
-      projectPath: '/project',
-      sessionId: 'session-1',
-    }, respond)
-
-    expect(disposeSession).toHaveBeenCalledWith('session-1')
-    expect(dbSessions.deleteSession).toHaveBeenCalledWith('session-1')
-    expect(disposeSession.mock.invocationCallOrder[0]).toBeLessThan(
-      vi.mocked(dbSessions.deleteSession).mock.invocationCallOrder[0]!,
-    )
-    expect(respond).toHaveBeenCalledWith('delete-1', { ok: true })
-  })
-
-  it('forks a remote session through the shared fork path and answers its result', async () => {
-    forkSessionMock.mockResolvedValue({ ok: true, sessionId: 'session-2', worktreePath: '/wt/x' })
-    const respond = vi.fn()
-    const service = new AgentService()
-
-    await service.handleRemoteCommand({
-      type: 'fork_session',
-      requestId: 'fork-1',
-      projectPath: '/project',
-      sessionId: 'session-1',
-      mode: 'worktree',
-    }, respond)
-
-    expect(dbSessions.sessionBelongsToProject).toHaveBeenCalledWith('/project', 'session-1')
-    expect(forkSessionMock).toHaveBeenCalledWith({ sessionId: 'session-1', mode: 'worktree' })
-    expect(respond).toHaveBeenCalledWith('fork-1', { ok: true, sessionId: 'session-2', worktreePath: '/wt/x' })
-  })
-
-  it('rejects a remote fork outside the requested project without touching the transcript', async () => {
-    vi.mocked(dbSessions.sessionBelongsToProject).mockReturnValue(false)
-    const respond = vi.fn()
-    const service = new AgentService()
-
-    await service.handleRemoteCommand({
-      type: 'fork_session',
-      requestId: 'fork-denied',
-      projectPath: '/other-project',
-      sessionId: 'session-1',
-      mode: 'local',
-    }, respond)
-
-    expect(forkSessionMock).not.toHaveBeenCalled()
-    expect(respond).toHaveBeenCalledWith('fork-denied', expect.objectContaining({
-      ok: false,
-      error: expect.stringContaining('does not belong'),
-    }))
-  })
-
-  it('rejects remote session removal outside the requested project', async () => {
-    vi.mocked(dbSessions.sessionBelongsToProject).mockReturnValue(false)
-    const respond = vi.fn()
-    const service = new AgentService()
-
-    await service.handleRemoteCommand({
-      type: 'archive_session',
-      requestId: 'archive-denied',
-      projectPath: '/other-project',
-      sessionId: 'session-1',
-    }, respond)
-
-    expect(dbSessions.hideSession).not.toHaveBeenCalled()
-    expect(respond).toHaveBeenCalledWith('archive-denied', expect.objectContaining({
-      ok: false,
-      error: expect.stringContaining('does not belong'),
-    }))
   })
 
   it('get_usage forwards the command to the harness usage reader and answers { usage }', async () => {
@@ -3478,20 +1489,20 @@ describe('AgentService.handleRemoteCommand', () => {
     const service = new AgentService()
     service.setHarnessUsageReader(reader)
     const command = { type: 'get_usage', requestId: 'u-1', projectPath: '/p', provider: 'claude', sessionId: 's1', apiProviderId: null, force: true }
-    await service.handleRemoteCommand(command as never, respond)
+    await captureValue(respond, 'u-1', () => service.remoteUsage({ projectPath: '/p', provider: 'claude', sessionId: 's1', apiProviderId: null, force: true }))
 
-    expect(reader).toHaveBeenCalledWith(command)
+    expect(reader).toHaveBeenCalledWith({ projectPath: '/p', provider: 'claude', sessionId: 's1', apiProviderId: null, force: true })
     expect(respond).toHaveBeenCalledWith('u-1', { usage })
   })
 
   it('get_usage answers null without a reader and { error } when the reader throws', async () => {
     const respond = vi.fn()
     const service = new AgentService()
-    await service.handleRemoteCommand({ type: 'get_usage', requestId: 'u-2', projectPath: '/p', provider: 'codex' } as never, respond)
+    await captureValue(respond, 'u-2', () => service.remoteUsage({ projectPath: '/p', provider: 'codex', sessionId: null, apiProviderId: null, force: false }))
     expect(respond).toHaveBeenCalledWith('u-2', { usage: null })
 
     service.setHarnessUsageReader(async () => { throw new Error('app-server down') })
-    await service.handleRemoteCommand({ type: 'get_usage', requestId: 'u-3', projectPath: '/p', provider: 'codex' } as never, respond)
+    await captureValue(respond, 'u-3', () => service.remoteUsage({ projectPath: '/p', provider: 'codex', sessionId: null, apiProviderId: null, force: false }))
     expect(respond).toHaveBeenLastCalledWith('u-3', { error: 'app-server down' })
   })
 
@@ -3500,10 +1511,7 @@ describe('AgentService.handleRemoteCommand', () => {
     const respond = vi.fn()
     const service = new AgentService()
     service.setCodexConsumeRateLimitReset(consume)
-    await service.handleRemoteCommand(
-      { type: 'consume_rate_limit_reset', requestId: 'r-1', projectPath: '/p', apiProviderId: null, creditId: 'rc-1' } as never,
-      respond,
-    )
+    await captureValue(respond, 'r-1', () => service.remoteConsumeRateLimitReset('/p', null, 'rc-1'))
     expect(consume).toHaveBeenCalledWith('/p', null, 'rc-1')
     expect(respond).toHaveBeenCalledWith('r-1', { outcome: 'reset' })
   })
@@ -3529,10 +1537,7 @@ describe('AgentService.handleRemoteCommand', () => {
 
     const respond = vi.fn()
     const service = new AgentService()
-    await service.handleRemoteCommand(
-      { type: 'get_system_info', requestId: 'sys-1', projectPath: '/p', provider: 'claude' } as never,
-      respond,
-    )
+    await captureValue(respond, 'sys-1', () => service.remoteSystemInfo('/p', 'claude', undefined))
 
     expect(respond).toHaveBeenCalledTimes(1)
     const [, payload] = respond.mock.calls[0] as [string, Record<string, unknown>]
@@ -3562,10 +1567,7 @@ describe('AgentService.handleRemoteCommand', () => {
 
     const respond = vi.fn()
     const service = new AgentService()
-    await service.handleRemoteCommand(
-      { type: 'get_system_info', requestId: 'sys-2', projectPath: '/p', provider: 'claude' } as never,
-      respond,
-    )
+    await captureValue(respond, 'sys-2', () => service.remoteSystemInfo('/p', 'claude', undefined))
 
     const [, payload] = respond.mock.calls[0] as [string, Record<string, unknown>]
     expect(payload.defaults).toEqual({
@@ -3603,10 +1605,7 @@ describe('AgentService.handleRemoteCommand', () => {
 
     const respond = vi.fn()
     const service = new AgentService()
-    await service.handleRemoteCommand(
-      { type: 'get_system_info', requestId: 'sys-term', projectPath: '/p', provider: 'claude' } as never,
-      respond,
-    )
+    await captureValue(respond, 'sys-term', () => service.remoteSystemInfo('/p', 'claude', undefined))
 
     const [, payload] = respond.mock.calls[0] as [string, Record<string, unknown>]
     expect(payload.userSlashCommands).toEqual([
@@ -3627,10 +1626,7 @@ describe('AgentService.handleRemoteCommand', () => {
     const respond = vi.fn()
     const service = new AgentService()
     ;(service as unknown as { codexListModels: () => Promise<unknown[]> }).codexListModels = async () => []
-    await service.handleRemoteCommand(
-      { type: 'get_system_info', requestId: 'sys-3', projectPath: '/p', provider: 'codex' } as never,
-      respond,
-    )
+    await captureValue(respond, 'sys-3', () => service.remoteSystemInfo('/p', 'codex', undefined))
 
     const [, payload] = respond.mock.calls[0] as [string, Record<string, unknown>]
     expect(payload.defaults).toEqual({
@@ -3651,12 +1647,7 @@ describe('AgentService.handleRemoteCommand', () => {
     const respond = vi.fn()
     const service = new AgentService()
 
-    await service.handleRemoteCommand({
-      type: 'get_project_resources',
-      requestId: 'resources-codex',
-      projectPath: '/p',
-      provider: 'codex',
-    }, respond)
+    await captureValue(respond, 'resources-codex', () => service.remoteProjectResources('/p', 'codex'))
 
     // One harness-neutral set now — no Codex config read at all.
     expect(respond).toHaveBeenCalledWith('resources-codex', expect.objectContaining({
@@ -3673,51 +1664,35 @@ describe('AgentService.handleRemoteCommand', () => {
       absolutePath: '/shared',
     })
 
-    await service.handleRemoteCommand({
-      type: 'add_project_additional_dir',
-      requestId: 'add-codex-dir',
-      projectPath: '/p',
-      dir: '/shared',
-      provider: 'codex',
-    }, respond)
-    await service.handleRemoteCommand({
-      type: 'remove_project_additional_dir',
-      requestId: 'remove-codex-dir',
-      projectPath: '/p',
-      dir: '/shared',
-      provider: 'codex',
-    }, respond)
+    await captureValue(respond, 'add-codex-dir', () => service.remoteUpdateProjectDirs('/p', { addExtraDirs: ['/shared'] }))
+    await captureValue(respond, 'remove-codex-dir', () => service.remoteUpdateProjectDirs('/p', { removeExtraDirs: ['/shared'] }))
 
     expect(updateProjectMock).toHaveBeenCalledWith({ path: '/p', extraDirs: ['/shared'] })
     expect(updateProjectMock).toHaveBeenLastCalledWith({ path: '/p', extraDirs: [] })
   })
+})
 
-  it('applies remote session directories through the provider-neutral session command', async () => {
-    const dispatchBackendCommand = vi.fn().mockResolvedValue(undefined)
-    const session = makeMockSession({
-      id: 'sid-codex',
-      snapshot: { harnessId: 'codex' },
-      dispatchBackendCommand,
-      getAdditionalDirectoriesSnapshot: vi.fn(() => ['/session-dir']),
-    })
+describe('IPC queue control', () => {
+  it('refuses dequeue admitted before a phone takes control while the queue is blocked', async () => {
+    const authority = terminalLeaseAuthority()
+    const lease = new SessionLease('sid-queue-control', authority)
+    const dequeueMessage = vi.fn(async () => true)
+    const session = makeMockSession({ id: lease.sessionId, lease, dequeueMessage })
     const service = new AgentService()
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getSession: vi.fn(() => session),
-      getActiveSession: vi.fn(() => session),
-    }
-
-    await service.handleRemoteCommand({
-      type: 'set_session_additional_dirs',
-      requestId: 'set-session-dirs',
-      projectPath: '/p',
-      sessionId: 'sid-codex',
-      dirs: ['/session-dir'],
-    }, vi.fn())
-
-    expect(dispatchBackendCommand).toHaveBeenCalledWith({
-      kind: 'session.set_additional_dirs',
-      dirs: ['/session-dir'],
-    })
+    ;(service as { sessionManager: unknown }).sessionManager = { getActiveSession: vi.fn(() => session) }
+    service.setup()
+    let release!: () => void
+    const blocked = enqueueSessionQueueOp(session.id, () => new Promise<void>((resolve) => { release = resolve }))
+    await Promise.resolve()
+    const pending = getRegisteredIpcHandler(AgentIpcChannels.DEQUEUE_MESSAGE)!(null, '/p', 'queued-1')
+    const rejected = expect(pending).rejects.toThrow('stale lease')
+    expect(authority.leases.get(lease.resource)?.delegate).toBe('window:99')
+    acquirePhoneControl(authority, lease.sessionId, 'phone-a')
+    release()
+    await blocked
+    await rejected
+    expect(dequeueMessage).not.toHaveBeenCalled()
+    expect(authority.leases.get(lease.resource)?.delegate).toBe('phone:phone-a')
   })
 })
 
@@ -3847,11 +1822,13 @@ const childProcessForAddDirTests = await import('child_process')
 describe('SET_SESSION_SETTINGS scoped writes', () => {
   const PROJECT = '/project-a'
 
-  function makeSession(over: Partial<{ projectPath: string; owner: { kind: string }; subscribers: Set<string> }> = {}) {
+  function makeSession(over: Partial<{ projectPath: string; phone: boolean }> = {}) {
+    const authority = controlLeaseAuthority()
+    const lease = new SessionLease('scoped', authority)
+    if (over.phone) acquirePhoneControl(authority, 'scoped', 'other')
     return {
+      lease,
       snapshot: { projectPath: over.projectPath ?? PROJECT },
-      owner: over.owner ?? { kind: 'local' },
-      subscribers: over.subscribers ?? new Set<string>(),
       setSelectedSettings: vi.fn(),
       setAgentPreset: vi.fn(),
     }
@@ -3880,7 +1857,7 @@ describe('SET_SESSION_SETTINGS scoped writes', () => {
 
   it('refuses a scoped write to a session owned by a remote device, even when the active session is free', async () => {
     const active = makeSession()
-    const pane = makeSession({ owner: { kind: 'remote' } })
+    const pane = makeSession({ phone: true })
     const handle = setup({ active, pane }, 'active')
 
     await handle({}, PROJECT, { model: 'opus-4-8' }, 'pane')
@@ -4030,200 +2007,15 @@ describe('add-dir IPC handlers', () => {
   })
 })
 
-describe('AgentService terminal remote commands', () => {
-  function setup() {
-    const ptyWrites: string[] = []
-    const spawner = {
-      spawn: () => ({
-        write: (d: string) => ptyWrites.push(d),
-        resize: () => {},
-        onData: () => {},
-        onExit: () => {},
-        kill: () => {},
-      }),
-    }
-    const sent: Array<{ event: { type: string; [k: string]: unknown }; targets?: string[] }> = []
-    const rcs = { sendTerminalFrame: vi.fn(async (event, targets) => { sent.push({ event, targets }) }) }
-    const service = new AgentService()
-    const tm = new TerminalManager({ spawner, onEvent: () => {} })
-    service.setTerminalManager(tm)
-    service.setRemoteControlService(rcs as never)
-    const src = (deviceId: string) => ({ deviceId, transport: 'relay' as const })
-    return { service, tm, sent, rcs, ptyWrites, src }
-  }
-
-  it('terminal_create subscribes+claims the creator and replies with result + snapshot', async () => {
-    const { service, sent, src } = setup()
-    await service.handleRemoteCommand(
-      { type: 'terminal_create', requestId: 'c1', projectPath: '/proj' },
-      undefined,
-      src('dev-a'),
-    )
-    const result = sent.find((s) => s.event.type === 'terminal_command_result')
-    expect(result?.event).toMatchObject({ ok: true, requestId: 'c1' })
-    expect(result?.targets).toEqual(['dev-a'])
-    const snap = sent.find((s) => s.event.type === 'terminal_snapshot')
-    expect(snap?.targets).toEqual(['dev-a'])
-    expect((snap?.event.snapshot as { writableByMe: boolean }).writableByMe).toBe(true)
-  })
-
-  it('rejects terminal_input from a non-owner with terminal_error and never writes the pty', async () => {
-    const { service, sent, ptyWrites, src } = setup()
-    await service.handleRemoteCommand({ type: 'terminal_create', requestId: 'c1', projectPath: '/p' }, undefined, src('dev-a'))
-    const termId = (sent.find((s) => s.event.type === 'terminal_command_result')!.event as { terminalId: string }).terminalId
-
-    await service.handleRemoteCommand({ type: 'terminal_subscribe', requestId: 's1', terminalId: termId }, undefined, src('dev-b'))
-    await service.handleRemoteCommand({ type: 'terminal_input', terminalId: termId, data: 'rm -rf /\n' }, undefined, src('dev-b'))
-
-    expect(ptyWrites).not.toContain('rm -rf /\n')
-    const err = sent.find((s) => s.event.type === 'terminal_error')
-    expect(err?.event).toMatchObject({ code: 'not_owner' })
-    expect(err?.targets).toEqual(['dev-b'])
-  })
-
-  it('allows N read-only subscribers without conflict; only the claiming device writes', async () => {
-    const { service, sent, ptyWrites, src } = setup()
-    await service.handleRemoteCommand({ type: 'terminal_create', requestId: 'c1', projectPath: '/p' }, undefined, src('dev-a'))
-    const termId = (sent.find((s) => s.event.type === 'terminal_command_result')!.event as { terminalId: string }).terminalId
-
-    await service.handleRemoteCommand({ type: 'terminal_subscribe', requestId: 's1', terminalId: termId }, undefined, src('dev-b'))
-    await service.handleRemoteCommand({ type: 'terminal_subscribe', requestId: 's2', terminalId: termId }, undefined, src('dev-c'))
-
-    const subResults = sent.filter((s) => s.event.type === 'terminal_command_result' && s.event.requestId !== 'c1')
-    expect(subResults.every((r) => r.event.ok === true)).toBe(true)
-
-    await service.handleRemoteCommand({ type: 'terminal_input', terminalId: termId, data: 'ls\n' }, undefined, src('dev-a'))
-    await service.handleRemoteCommand({ type: 'terminal_input', terminalId: termId, data: 'whoami\n' }, undefined, src('dev-c'))
-    expect(ptyWrites).toEqual(['ls\n'])
-  })
-
-  it('rejects a second remote claim while owned (already_claimed)', async () => {
-    const { service, sent, src } = setup()
-    await service.handleRemoteCommand({ type: 'terminal_create', requestId: 'c1', projectPath: '/p' }, undefined, src('dev-a'))
-    const termId = (sent.find((s) => s.event.type === 'terminal_command_result')!.event as { terminalId: string }).terminalId
-    await service.handleRemoteCommand({ type: 'terminal_subscribe', requestId: 's1', terminalId: termId }, undefined, src('dev-b'))
-    await service.handleRemoteCommand({ type: 'terminal_claim', requestId: 'k1', terminalId: termId }, undefined, src('dev-b'))
-    const claimRes = sent.find((s) => s.event.type === 'terminal_command_result' && s.event.requestId === 'k1')
-    expect(claimRes?.event).toMatchObject({ ok: false, code: 'already_claimed' })
-  })
-
-  it('rejects terminal_kill from a non-owner subscriber and keeps the terminal alive', async () => {
-    const { service, tm, sent, src } = setup()
-    await service.handleRemoteCommand({ type: 'terminal_create', requestId: 'c1', projectPath: '/p' }, undefined, src('dev-a'))
-    const termId = (sent.find((s) => s.event.type === 'terminal_command_result')!.event as { terminalId: string }).terminalId
-    await service.handleRemoteCommand({ type: 'terminal_subscribe', requestId: 's1', terminalId: termId }, undefined, src('dev-b'))
-
-    await service.handleRemoteCommand({ type: 'terminal_kill', terminalId: termId }, undefined, src('dev-b'))
-    expect(tm.get(termId)).toBeDefined()
-    const err = sent.find((s) => s.event.type === 'terminal_error' && s.targets?.[0] === 'dev-b')
-    expect(err?.event).toMatchObject({ code: 'not_owner' })
-
-    await service.handleRemoteCommand({ type: 'terminal_kill', terminalId: termId }, undefined, src('dev-a'))
-    expect(tm.get(termId)).toBeUndefined()
-  })
-
-  it('terminal_list returns project terminals including a session checkout', async () => {
-    const { service, tm, src } = setup()
-    tm.create({ cwd: '/p', title: 'root' })
-    tm.create({ cwd: '/p/.worktrees/feat', title: 'feat' })
-    tm.create({ cwd: '/other', title: 'other' })
-    const respond = vi.fn()
-    await service.handleRemoteCommand(
-      { type: 'terminal_list', requestId: 'l1', projectPath: '/p' },
-      respond,
-      src('dev-a'),
-    )
-    expect(respond).toHaveBeenCalledWith('l1', {
-      terminals: expect.arrayContaining([
-        expect.objectContaining({ cwd: '/p', title: 'root' }),
-        expect.objectContaining({ cwd: '/p/.worktrees/feat', title: 'feat' }),
-      ]),
-    })
-    const payload = respond.mock.calls[0][1] as { terminals: Array<{ cwd: string }> }
-    expect(payload.terminals).toHaveLength(2)
-  })
-})
-
-describe('mobile attachment admission receipt', () => {
-  it.each(['claude', 'codex'] as const)('phone send_message reaches the shared %s context boundary once', async (harness) => {
-    const { Session } = await import('../session/session')
-    const send = vi.fn(async (_request: import('@superone/shared/agent-types').SendMessageRequest) => {})
-    const app = { appInstanceId: 'view', binding: { server: 'fixture' }, resourceUri: 'ui://fixture',
-      modelContext: { content: [{ type: 'text', text: 'Selected item-4' }] }, toolResult: { _meta: { secret: 'private-result' } } }
-    const session = new Session({ id: 'sid-1', projectPath: '/p', cwd: '/p', harnessId: harness, providerId: harness, providerConfig: {},
-      backend: { start: async () => {}, send, onEvent: () => () => {}, onProviderSessionId: () => () => {}, onPermissionModeApplied: () => () => {} } as unknown as import('../session/types').SessionBackend,
-      initialMessages: [{ id: 'previous', role: 'assistant', status: 'complete', content: harness === 'claude' ? [{ type: 'tool_result', toolUseId: 'call', summary: 'done', app }] : [],
-        ...(harness === 'codex' ? { metadata: { codex: { items: [{ type: 'mcp_tool_call', app }] } } } : {}), createdAt: '', providerId: harness }] as import('@superone/shared/agent-types').ChatMessage[],
-    })
-    const service = new AgentService()
-    ;(service as unknown as { sessionManager: unknown }).sessionManager = { getSession: () => session }
-    await service.handleRemoteCommand({ type: 'send_message', provider: harness, requestId: 'receipt', projectPath: '/p', sessionId: 'sid-1', content: 'question' }, vi.fn(), { deviceId: 'phone', transport: 'relay' })
-    await vi.waitFor(() => expect(send).toHaveBeenCalledOnce())
-    const input = send.mock.calls[0]![0].content
-    expect(input).toContain('Selected item-4')
-    expect(input.match(/<mcp-app-context>/g)).toHaveLength(1)
-    expect(input).not.toContain('private-result')
-  })
-  it('rejects a session that cannot be resumed instead of acknowledging a dropped message', async () => {
-    const service = new AgentService()
-    ;(service as unknown as { sessionManager: unknown }).sessionManager = {
-      getSession: () => undefined,
-      resumeSession: () => { throw new Error('Session not found') },
-    }
-    const respond = vi.fn()
-    await service.handleRemoteCommand({ type: 'send_message', requestId: 'receipt', projectPath: '/p', sessionId: 'missing', content: 'look' }, respond, { deviceId: 'phone', transport: 'relay' })
-    expect(respond).toHaveBeenCalledExactlyOnceWith('receipt', { error: expect.stringContaining('not found') })
-  })
-
-  it.each(['claude', 'codex'] as const)('rejects a %s ownership conflict before confirming admission', async (provider) => {
-    const service = new AgentService()
-    const send = vi.fn()
-    const session = makeMockSession({ id: 'sid-1', projectPath: '/p', send, snapshot: { harnessId: provider } })
-    session.claim({ kind: 'remote', deviceId: 'another-phone' })
-    ;(service as unknown as { sessionManager: unknown }).sessionManager = { getSession: () => session }
-    const respond = vi.fn()
-    await service.handleRemoteCommand({ type: 'send_message', provider, requestId: 'receipt', projectPath: '/p', sessionId: 'sid-1', content: 'look' }, respond, { deviceId: 'phone', transport: 'relay' })
-    expect(respond).toHaveBeenCalledExactlyOnceWith('receipt', { error: expect.any(String) })
-    expect(send).not.toHaveBeenCalled()
-  })
-
-  it.each(['claude', 'codex'] as const)('waits for %s admission but not turn completion', async (provider) => {
-    const service = new AgentService()
-    let admit!: () => void
-    let finish!: () => void
-    const send = vi.fn((_request, opts) => {
-      admit = opts.onAccepted
-      return new Promise<void>(resolve => { finish = resolve })
-    })
-    const session = makeMockSession({ id: 'sid-1', projectPath: '/p', send, snapshot: { harnessId: provider } })
-    ;(service as unknown as { sessionManager: unknown }).sessionManager = { getSession: () => session }
-    const respond = vi.fn()
-    const running = service.handleRemoteCommand({ type: 'send_message', provider, requestId: 'receipt', projectPath: '/p', sessionId: 'sid-1', content: 'look' }, respond, { deviceId: 'phone', transport: 'relay' })
-    await vi.waitFor(() => expect(send).toHaveBeenCalledOnce())
-    expect(respond).not.toHaveBeenCalled()
-    admit()
-    expect(respond).toHaveBeenCalledExactlyOnceWith('receipt', { ok: true })
-    finish()
-    await running
-  })
-
-  it('reports a session admission failure without consuming the draft', async () => {
-    const service = new AgentService()
-    const session = makeMockSession({ id: 'sid-1', projectPath: '/p', send: vi.fn().mockRejectedValue(new Error('Worktree removed')) })
-    ;(service as unknown as { sessionManager: unknown }).sessionManager = { getSession: () => session }
-    const respond = vi.fn()
-    await service.handleRemoteCommand({ type: 'send_message', requestId: 'receipt', projectPath: '/p', sessionId: 'sid-1', content: 'look' }, respond, { deviceId: 'phone', transport: 'relay' })
-    expect(respond).toHaveBeenCalledExactlyOnceWith('receipt', { error: 'Worktree removed' })
-  })
-
-  it('reports invalid bytes without dispatching a turn', async () => {
-    const service = new AgentService()
-    const send = vi.fn()
-    const session = makeMockSession({ id: 'sid-1', projectPath: '/p', send, snapshot: { harnessId: 'claude' } })
-    ;(service as unknown as { sessionManager: unknown }).sessionManager = { getSession: () => session }
-    const respond = vi.fn()
-    await service.handleRemoteCommand({ type: 'send_message', requestId: 'receipt', projectPath: '/p', sessionId: 'sid-1', content: 'look', images: [{ id: 'bad', name: 'bad.png', mimeType: 'image/png', base64: 'invalid' }] }, respond, { deviceId: 'phone', transport: 'relay' })
-    expect(respond).toHaveBeenCalledWith('receipt', { error: expect.stringContaining('Attachment: ') })
-    expect(send).not.toHaveBeenCalled()
-  })
-})
+/** Observe the projection value and its error independently of transport receipts. */
+async function captureValue(observe: (id: string, value: unknown) => unknown, id: string, read: () => unknown): Promise<void> {
+  try { observe(id, await read()) }
+  catch (error) { observe(id, { error: error instanceof Error ? error.message : String(error) }) }
+}
+async function nativePhoneProjection(agent: AgentService, method: string, payload: Record<string, unknown>): Promise<unknown> {
+  const ctx = { identity: { environmentId: 'test-environment' }, client: { clientSessionId: 'phone:test', scopes: [...ADMIN_PAIRING_SCOPES] }, projects: { get: (id: string) => ({ projectId: id, path: id }) } } as unknown as RpcContext
+  const response = await createPhoneMethods({ agent }).dispatch(method, payload, ctx)
+  if (!response) throw new Error('Missing phone method')
+  if ('error' in response) throw Object.assign(new Error(response.error.message), response.error)
+  return response.result
+}

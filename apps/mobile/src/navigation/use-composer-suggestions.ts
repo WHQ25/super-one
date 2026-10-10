@@ -289,13 +289,13 @@ export function useComposerSuggestions(
       : client && projectPath ? () => requestMentionSearch(client, projectPath, needle, scoped) : null
     if (mode.kind === 'browse') {
       const root = browseRoot(runtime)
-      if (!client || !root) return null
+      if (!client || !root || !projectPath) return null
       return async () => {
         // Bare @ needs the host catalog even before the first keyword search.
         // Keep directory browsing authoritative for files: search results may
         // include deep descendants and duplicate the root's immediate entries.
         const [{ items, error }, catalog] = await Promise.all([
-          requestDirectory(client, root, mode.dir),
+          requestDirectory(client, projectPath, root, mode.dir),
           !mode.dir && search ? search() : null,
         ])
         if (error) throw new Error(error)
@@ -318,8 +318,8 @@ export function useComposerSuggestions(
       if (mode.scopeDir && !result.appliedOptions?.scopeDir) {
         const fetched = absorb(result)
         const root = browseRoot(runtime)
-        if (!client || !root) return fetched
-        const { items, error } = await requestDirectory(client, root, mode.scopeDir)
+        if (!client || !root || !projectPath) return fetched
+        const { items, error } = await requestDirectory(client, projectPath, root, mode.scopeDir)
         return error ? fetched : { ...fetched, remote: filterBrowseItems(items, mode.needle) }
       }
       return absorb(result)

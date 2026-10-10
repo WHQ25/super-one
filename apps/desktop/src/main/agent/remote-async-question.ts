@@ -1,11 +1,10 @@
 import type { Session } from '../session/types'
-import type { CodexAsyncQuestionAnswerCommand } from '@superone/shared/codex-async-question'
 import { codexAsyncAnswerId, codexAsyncReplyText, formatCodexAsyncQuestionReply } from '@superone/shared/codex-async-question'
 
 const pending = new WeakMap<Session, Map<string, Promise<string>>>()
 
 /** Use the same durable side-channel reply as desktop, including retries after a lost ACK. */
-export async function answerRemoteAsyncQuestion(session: Session | null | undefined, command: CodexAsyncQuestionAnswerCommand): Promise<string> {
+export async function answerRemoteAsyncQuestion(session: Session | null | undefined, command: { messageId: string; itemId: string; answers: string[] }): Promise<string> {
   if (!session || session.snapshot.harnessId !== 'codex') throw new Error('No active Codex session')
   const message = session.snapshot.messages.find(message => message.id === command.messageId)
   const item = message?.metadata?.codex?.items.find(item => item.id === command.itemId)

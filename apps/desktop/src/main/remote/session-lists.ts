@@ -1,4 +1,4 @@
-import type { PinnedSessionEntry, RemoteCommand } from '@superone/shared/agent-types'
+import type { PinnedSessionEntry } from '@superone/shared/agent-types'
 import {
   countMessagesForSessions,
   findSessionAcrossProjects,
@@ -7,12 +7,27 @@ import {
   searchSessionsByTitle,
 } from '../db-sessions'
 import { listScheduledSends } from '../db-scheduled-sends'
-import type { SessionManager } from '../session/types'
+import type { Session } from '../session/types'
 
-type SessionListCommand = Extract<RemoteCommand, { type: 'list_sessions' | 'list_pinned_sessions' | 'search_sessions' | 'find_session' }>
+export type SessionListQuery =
+  | { kind: 'page'; projectPath: string; limit?: number; offset?: number }
+  | { kind: 'pinned' }
+  | { kind: 'search'; query: string; limit?: number }
+  | { kind: 'find'; sessionId: string }
+
+/** Bounded native sidebar paging, validated before any storage reads. */
+export function sessionListPageNumber(value: unknown, name: 'limit' | 'offset'): number | undefined {
+  if (value === undefined) return undefined
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < (name === 'limit' ? 1 : 0) || name === 'limit' && value > 200) {
+    throw Object.assign(new Error(`${name} must be ${name === 'limit' ? 'an integer from 1 to 200' : 'a non-negative integer'}`), { code: 'invalid_argument' })
+  }
+  return value
+}
 
 /** Shared projection for the phone's project list, pinned section, search and links. */
-export function readRemoteSessionList(command: SessionListCommand, manager?: SessionManager | null) {
+export function readRemoteSessionList(command: SessionListQuery, manager?: { getSession(id: string): Pick<Session, 'snapshot' | 'activityStatus'> | null | undefined } | null) {
+  if ('limit' in command) sessionListPageNumber(command.limit, 'limit')
+  if ('offset' in command) sessionListPageNumber(command.offset, 'offset')
   // One read for the whole page, including sessions whose runtime was released.
   // An unarmed quota offer is not a promise to send; the sidebar must stay quiet.
   const scheduled = new Map(listScheduledSends().filter(row => row.armed).map(row => [row.sessionId, row.sendAt]))
@@ -24,12 +39,12 @@ export function readRemoteSessionList(command: SessionListCommand, manager?: Ses
     projectName: folderName,
     scheduledSendAt: scheduled.get(session.sessionId) ?? null,
   })
-  if (command.type === 'find_session') {
+  if (command.kind === 'find') {
     const row = findSessionAcrossProjects(command.sessionId)
     return { session: row ? crossProject(row) : null }
   }
-  if (command.type !== 'list_sessions') {
-    const rows = command.type === 'search_sessions'
+  if (command.kind !== 'page') {
+    const rows = command.kind === 'search'
       ? searchSessionsByTitle(command.query, command.limit)
       : listPinnedSessions()
     return { sessions: rows.map(crossProject) }

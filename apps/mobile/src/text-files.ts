@@ -1,7 +1,7 @@
 import { INLINE_RPC_MAX_BYTES } from '@superone/shared/file-preview'
-import type { ReadDesktopFileError, ReadDesktopFileResponse, RemoteCommand } from '@superone/shared/agent-types'
+import type { ReadDesktopFileError, ReadDesktopFileResponse } from '@superone/shared/agent-types'
 import { resolveRemoteFilePath } from './shell-state'
-import { randomId } from './ids'
+import { projectRpc, type ProjectRpcClient } from './project-rpc'
 
 /** The answer the chat WebView's files previewer renders. */
 export type TextFileResult =
@@ -10,9 +10,7 @@ export type TextFileResult =
   | { tooLarge: true; size?: number }
 
 /** The slice of `RelayClient` the loader needs; tests hand in a fake. */
-export interface TextFileHost {
-  request(command: RemoteCommand, timeoutMs: number): Promise<unknown>
-}
+export type TextFileHost = ProjectRpcClient
 
 export interface TextFileRequest {
   host: TextFileHost
@@ -42,17 +40,14 @@ const TEXT_TIMEOUT_MS = 60_000
  */
 export async function loadTextFile(req: TextFileRequest): Promise<TextFileResult> {
   const target = resolveRemoteFilePath(req.projectPath, req.path)
-  const response = await req.host.request({
-    type: 'read_desktop_file',
-    requestId: randomId(),
-    projectPath: req.projectPath,
+  const response = await projectRpc(req.host, req.projectPath, 'files.read', {
     ...(req.sessionId ? { sessionId: req.sessionId } : {}),
     ...(req.root ? { root: req.root } : {}),
     path: target,
     maxBytes: INLINE_RPC_MAX_BYTES,
     preferInline: true,
     statOnly: true,
-  } as RemoteCommand, TEXT_TIMEOUT_MS) as ReadDesktopFileResponse | ReadDesktopFileError | { error?: string } | undefined
+  }, { timeoutMs: TEXT_TIMEOUT_MS }) as ReadDesktopFileResponse | ReadDesktopFileError | { error?: string } | undefined
   if (!response || !('ok' in response)) throw new Error('host cannot read text files')
   if (!response.ok) {
     if (response.error === 'too_large') return { tooLarge: true }

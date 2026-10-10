@@ -4,16 +4,16 @@ import { createMobileAutoRecap, requestAutoSessionRecap } from './auto-recap'
 
 describe('requestAutoSessionRecap', () => {
   it('sends auto true and treats ok as success', async () => {
-    const request = vi.fn(async (cmd: { type: string; auto?: boolean }) => {
-      expect(cmd).toMatchObject({ type: 'request_session_recap', sessionId: 'sid', projectPath: '/p', auto: true })
-      return { ok: true }
-    })
-    await expect(requestAutoSessionRecap(request, 'sid', '/p')).resolves.toBe(true)
+    const controlledRpc = vi.fn(async () => ({ ok: true }))
+    const resource = { environmentId: 'desktop', sessionId: 'sid' }
+    await expect(requestAutoSessionRecap({ controlledRpc }, resource)).resolves.toBe(true)
+    expect(controlledRpc).toHaveBeenCalledWith(resource, 'session.recap', { auto: true })
   })
 
   it('returns false when the host skips or the RPC throws', async () => {
-    await expect(requestAutoSessionRecap(async () => ({ ok: false }), 'sid', '/p')).resolves.toBe(false)
-    await expect(requestAutoSessionRecap(async () => { throw new Error('offline') }, 'sid', '/p')).resolves.toBe(false)
+    const resource = { environmentId: 'desktop', sessionId: 'sid' }
+    await expect(requestAutoSessionRecap({ controlledRpc: async () => ({ ok: false }) }, resource)).resolves.toBe(false)
+    await expect(requestAutoSessionRecap({ controlledRpc: async () => { throw new Error('offline') } }, resource)).resolves.toBe(false)
   })
 })
 

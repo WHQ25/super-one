@@ -1,102 +1,36 @@
 import type { AgentEvent } from '@superone/shared/agent-types'
-import type { Session, SessionLeaveReason, SessionLifecycleEvent } from '../session/types'
-import log from '../logger'
+import type { Session, SessionLifecycleEvent } from '../session/types'
 
-export interface PresenceTransport {
-  broadcastToRenderer(event: AgentEvent): void
-  sendToMobile(event: Record<string, unknown>, targetDeviceIds?: string[]): void | Promise<void>
-}
+export interface PresenceTransport { broadcastToRenderer(event: AgentEvent): void }
+export interface PresenceSessionSource { onSession(handler: (session: Session) => void): () => void }
 
-export interface PresenceSessionSource {
-  onSession(handler: (session: Session) => void): () => void
-}
-
+/** Renderer presence is an authority projection; following a transcript never locks its composer. */
 export class PresenceCoordinator {
-  private unsubBySession = new Map<string, () => void>()
-  private detachSource: () => void
-
+  private readonly unsubBySession = new Map<string, () => void>()
+  private readonly detachSource: () => void
   constructor(source: PresenceSessionSource, private readonly transport: PresenceTransport) {
-    this.detachSource = source.onSession((session) => this.attach(session))
+    this.detachSource = source.onSession(session => this.attach(session))
   }
-
-  private notifyMobileLeave(sessionId: string, deviceId: string, reason: SessionLeaveReason | undefined): void {
-    if (reason === 'desktop_kick') {
-      void this.transport.sendToMobile({ type: 'session_kicked', sessionId }, [deviceId])
-    } else if (reason === 'session_closed') {
-      void this.transport.sendToMobile({ type: 'session_closed', sessionId }, [deviceId])
-    }
-  }
-
   dispose(): void {
-    try { this.detachSource() } catch { /* ignore */ }
-    for (const unsub of this.unsubBySession.values()) {
-      try { unsub() } catch { /* ignore */ }
-    }
+    this.detachSource()
+    for (const unsub of this.unsubBySession.values()) unsub()
     this.unsubBySession.clear()
   }
-
   private attach(session: Session): void {
     if (this.unsubBySession.has(session.id)) return
-    const unsub = session.onLifecycle((evt) => this.handle(session, evt))
-    this.unsubBySession.set(session.id, unsub)
+    this.unsubBySession.set(session.id, session.onLifecycle(event => this.handle(session, event)))
+    if (session.lease.current) this.publish(session, session.lease.current)
   }
-
-  private remoteStartEvent(session: Session, extra?: { isSubscribe?: boolean }): AgentEvent {
-    return {
-      type: 'remote_session_start',
-      remoteProjectPath: session.projectPath,
-      remoteSessionId: session.id,
-      harnessId: session.snapshot.harnessId,
-      ...(session.snapshot.acpAgentId ? { acpAgentId: session.snapshot.acpAgentId } : {}),
-      worktreePath: session.snapshot.worktreePath,
-      gitBranch: session.snapshot.gitBranch,
-      ...extra,
-    }
+  private publish(session: Session, lease: import('@superone/shared/environment').ControlLease | null): void {
+    this.transport.broadcastToRenderer({ type: 'session_control_changed', sessionId: session.id,
+      projectPath: session.projectPath, lease, harnessId: session.snapshot.harnessId,
+      acpAgentId: session.snapshot.acpAgentId, worktreePath: session.snapshot.worktreePath, gitBranch: session.snapshot.gitBranch })
   }
-
-  private handle(session: Session, evt: SessionLifecycleEvent): void {
-    const sessionId = session.id
-    const projectPath = session.projectPath
-    switch (evt.type) {
-      case 'owner_changed': {
-        if (evt.previous.kind === 'local' && evt.current.kind === 'remote') {
-          this.transport.broadcastToRenderer(this.remoteStartEvent(session))
-        } else if (evt.previous.kind === 'remote' && evt.current.kind === 'local') {
-          this.transport.broadcastToRenderer({
-            type: 'remote_session_end',
-            remoteProjectPath: projectPath,
-            remoteSessionId: sessionId,
-          })
-          this.notifyMobileLeave(sessionId, evt.previous.deviceId, evt.reason)
-        } else if (
-          evt.previous.kind === 'remote' && evt.current.kind === 'remote' &&
-          evt.previous.deviceId !== evt.current.deviceId
-        ) {
-          this.transport.broadcastToRenderer(this.remoteStartEvent(session))
-          this.notifyMobileLeave(sessionId, evt.previous.deviceId, evt.reason)
-        }
-        return
-      }
-      case 'subscriber_added':
-        this.transport.broadcastToRenderer(this.remoteStartEvent(session, { isSubscribe: true }))
-        return
-      case 'subscriber_removed':
-        this.transport.broadcastToRenderer({
-          type: 'remote_session_end',
-          remoteProjectPath: projectPath,
-          remoteSessionId: sessionId,
-          isSubscribe: true,
-        })
-        this.notifyMobileLeave(sessionId, evt.deviceId, evt.reason)
-        return
-      case 'closed': {
-        const unsub = this.unsubBySession.get(sessionId)
-        if (unsub) {
-          try { unsub() } catch (err) { log.debug('[PresenceCoordinator] unsub error:', err) }
-          this.unsubBySession.delete(sessionId)
-        }
-        return
-      }
+  private handle(session: Session, event: SessionLifecycleEvent): void {
+    if (event.type === 'control_changed') this.publish(session, event.lease)
+    else {
+      this.unsubBySession.get(session.id)?.()
+      this.unsubBySession.delete(session.id)
     }
   }
 }

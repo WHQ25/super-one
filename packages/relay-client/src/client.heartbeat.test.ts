@@ -64,7 +64,7 @@ describe('RelayClient heartbeat', () => {
     const { client, sockets, statuses } = makeClient()
     await client.connectRelay({ relayUrl: 'wss://relay.example', link: TEST_LINK, deviceId: 'd1' })
     const sock = sockets[0]!
-    const pending = client.request({ type: 'list_projects', requestId: 'r1' } as never, 60_000)
+    const pending = client.rpc('project.list', {}, { timeoutMs: 60_000 })
     vi.advanceTimersByTime(130)
     expect(sock.closed).toBe(true)
     expect(client.connected).toBe(false)

@@ -1,4 +1,5 @@
 import { writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ALL_AUTH_SCOPES, type ExecutionEnvironmentDescriptor } from '@superone/shared/environment'
@@ -14,6 +15,26 @@ afterEach(() => {
 })
 
 describe('phone endpoint: workspace files and Git', () => {
+  it.each(['lan', 'relay'] as const)('reports a real branch, dirty changes and detached commit through native git.status over %s', async transport => {
+    const { domain, projectDir } = phoneDomain(cleanup)
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: projectDir, encoding: 'utf8' }).trim()
+    git('config', 'user.email', 'phone-contract@example.invalid')
+    git('config', 'user.name', 'Phone contract')
+    git('checkout', '-q', '-b', 'fixture')
+    writeFileSync(join(projectDir, 'readme.md'), 'one\n')
+    git('add', 'readme.md')
+    git('commit', '-qm', 'fixture')
+    const phone = await connectPhone(domain, { transport })
+    cleanup.push(phone.close)
+    const clean = await phone.rpc('git.status', { projectId: 'p1' })
+    expect(clean).toMatchObject({ branch: 'fixture', dirty: false, ahead: 0, behind: 0 })
+    expect(clean).not.toHaveProperty('head')
+    writeFileSync(join(projectDir, 'readme.md'), 'one\ntwo\n')
+    expect(await phone.rpc('git.status', { projectId: 'p1' })).toMatchObject({ branch: 'fixture', dirty: true, insertions: 1, deletions: 0, porcelain: expect.stringContaining('readme.md') })
+    git('checkout', '-q', '--detach')
+    expect(await phone.rpc('git.status', { projectId: 'p1' })).toMatchObject({ branch: null, head: git('rev-parse', '--short=7', 'HEAD') })
+  })
+
   it('gives phones the workspace files and Git, which controllers do not get', async () => {
     const { domain, projectDir } = phoneDomain(cleanup)
     const phone = await connectPhone(domain)

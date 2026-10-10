@@ -761,6 +761,7 @@
       "dependencies": {
         "@noble/ciphers": "2.3.0",
         "@noble/hashes": "2.3.0",
+        "@superone/chat-core": "workspace:*",
         "@superone/shared": "workspace:*",
         "fflate": "0.8.3",
       },

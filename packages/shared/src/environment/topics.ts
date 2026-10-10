@@ -33,6 +33,11 @@ export const TOPIC_WILDCARD = '*'
 
 export const TOPIC_KINDS: readonly TopicKind[] = ['session', 'sessionList', 'projects', 'drafts', 'terminal', 'terminalList', 'environment']
 
+/** Terminal-list readers receive row metadata, never another terminal's output or screen. */
+export const TERMINAL_LIST_EVENT_TYPES: ReadonlySet<string> = new Set([
+  'terminal_created', 'terminal_exited', 'terminal_title_changed', 'terminal_control_changed',
+])
+
 function instanceOf(ref: TopicRef): string {
   if (ref.kind === 'session') return ref.sessionId
   if (ref.kind === 'terminal') return ref.terminalId

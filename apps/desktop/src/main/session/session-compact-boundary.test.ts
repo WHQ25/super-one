@@ -1,3 +1,4 @@
+import { nativeRestoreClient, nativeSessionLoad } from './native-restore.test-fixtures'
 import { describe, expect, it, vi } from 'vitest'
 import type { AgentEvent, ChatMessage, SendMessageRequest } from '@superone/shared/agent-types'
 import { ChatRuntime } from '../../../../mobile/src/runtime'
@@ -34,18 +35,7 @@ const systemRows = (messages: readonly ChatMessage[]) => messages.filter((m) => 
  * subscribe, then the host's replay events arrive as the first buffered batch.
  */
 async function openOnMobile(session: Session) {
-  const client = {
-    startBuffering() {}, releaseBuffer: () => ({ epoch: 1, batches: [session.getReplayEvents()] }),
-    async request(command: { type: string }) {
-      if (command.type === 'subscribe_session') {
-        return {
-          historyPage: { messages: session.snapshot.messages, provider: 'claude', hasMore: false },
-          snapshot: { status: session.getStatus() },
-        }
-      }
-      return { ok: true }
-    },
-  }
+  const client = nativeRestoreClient(() => nativeSessionLoad(session), () => [session.getReplayEvents()])
   const runtime = new ChatRuntime(client as never, () => {})
   await runtime.open('/project', 'session')
   return runtime
@@ -154,11 +144,10 @@ describe('mobile sending /compact', () => {
     const runtime = await openOnMobile(session)
     session.on((event) => runtime.apply(event))
     let sending: Promise<void> | undefined
-    const client = (runtime as unknown as { client: { request(cmd: { type: string; content?: string; clientMessageId?: string }): Promise<unknown> } }).client
-    const request = client.request.bind(client)
-    client.request = async (cmd) => {
-      if (cmd.type !== 'send_message') return request(cmd)
-      sending = session.send({ content: cmd.content!, clientMessageId: cmd.clientMessageId, assistantMessageId: 'a-compact' })
+    const client = (runtime as unknown as { client: ReturnType<typeof nativeRestoreClient> }).client
+    client.controlledRpc = async (_resource, method, payload) => {
+      if (method !== 'session.send') return { ok: true }
+      sending = session.send({ content: payload.text as string, clientMessageId: payload.clientMessageId as string, assistantMessageId: 'a-compact' })
       return { ok: true }
     }
 

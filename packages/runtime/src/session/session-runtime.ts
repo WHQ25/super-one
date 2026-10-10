@@ -8,6 +8,7 @@ import { McpAppAttachmentIndex } from './mcp-apps-index'
 import type { McpAppsResolvedAttachment } from '@superone/shared/environment/mcp-apps-state-rpc'
 import { assertCodexAccountSwitchAllowed } from '@superone/shared/codex-accounts'
 import { randomUUID } from 'node:crypto'
+import { SESSION_SEND_SELECTION_KEYS, type SessionSendSelections } from '@superone/shared/environment/session-send'
 import type { AgentEvent, ChatMessage, ChatMessageSource } from '@superone/shared/agent-types'
 import { isAgentOutputEvent } from '@superone/shared/send-failure'
 import { MOD_UI_MUTATING_OPS, MOD_UI_UNAVAILABLE, asNodeCallerModUiRequest, asNodeReaderModEvent, type ModUiOp, type ModUiRequest, type ModUiResult } from '@superone/shared/mod-ui'
@@ -716,10 +717,12 @@ export class SessionRuntime {
       throw Object.assign(new Error('session is closed'), { code: 'failed_precondition' })
     }
 
+    this.validateSettings(patch)
+
     if (session.harnessId === 'codex' && 'apiProviderId' in patch) {
       assertCodexAccountSwitchAllowed(session.apiProviderId, patch.apiProviderId, session.transcript.length > 0 || session.status === 'streaming')
     }
-    const apply = (key: keyof NodeSessionSettings): void => {
+    const apply = (key: 'permissionMode' | 'sandboxMode' | 'model' | 'effort' | 'apiProviderId'): void => {
       if (!(key in patch)) return
       const next = normalizeSettingValue(patch[key])
       if (next === undefined) return
@@ -745,6 +748,12 @@ export class SessionRuntime {
       },
     })
     return this.clone(session)
+  }
+
+  validateSettings(patch: NodeSessionSettings): void {
+    if (patch.mode !== undefined || patch.agentPreset !== undefined || patch.additionalDirectories !== undefined) {
+      throw Object.assign(new Error('This node does not support desktop harness settings'), { code: 'unsupported' })
+    }
   }
 
   /**
@@ -930,11 +939,11 @@ export class SessionRuntime {
   }
 
   /** `session.load`: the session's reduced state and a page of its messages, at its current version. */
-  load(input: { sessionId: string; before?: number | null; limit?: number }): SessionLoadResult {
+  load(input: import('@superone/shared/environment').SessionLoadRequest): SessionLoadResult {
     const sessionId = this.requireSessionId(input.sessionId)
-    const snapshot = this.requireReadModel().snapshot(sessionId, { before: input.before, limit: input.limit })
+    const snapshot = this.requireReadModel().snapshot(sessionId, input)
     // The newest page ends with the session's last message.
-    return input.before == null ? { ...snapshot, messages: this.withProviderResume(sessionId, snapshot.messages) } : snapshot
+    return snapshot.after == null ? { ...snapshot, messages: this.withProviderResume(sessionId, snapshot.messages) } : snapshot
   }
 
   /** The session's reduced transcript now; a host without a read model keeps none. */
@@ -1038,6 +1047,8 @@ export class SessionRuntime {
     sandboxMode?: string | null
     /** Extra readable directories. */
     additionalDirectories?: string[]
+    /** Caller scopes before the dispatcher adds project folders; desktop Session joins its own project set. */
+    callerAdditionalDirectories?: string[]
     /** Claude SDK skills allow-list (desktop disabled-skills parity). */
     enabledSkills?: string[]
     /** Skills to exclude when enabledSkills is not provided. */
@@ -1052,7 +1063,7 @@ export class SessionRuntime {
     reviewTarget?: unknown
     /** Claude Ultracode from this turn on; omitted keeps the live process's. */
     ultracode?: boolean
-  }): Promise<NodeSessionRecord> {
+  } & SessionSendSelections): Promise<NodeSessionRecord> {
     if (this.disposing) {
       throw Object.assign(new Error('runtime is shutting down'), { code: 'failed_precondition' })
     }
@@ -1069,6 +1080,9 @@ export class SessionRuntime {
 
     if (session.closed || session.status === 'ended') {
       throw Object.assign(new Error('session is closed'), { code: 'failed_precondition' })
+    }
+    if (SESSION_SEND_SELECTION_KEYS.some(key => input[key] !== undefined)) {
+      throw Object.assign(new Error('This node does not support desktop composer send selections'), { code: 'unsupported' })
     }
     // Each delivery attempt carries its own RPC idempotency key, so a Resend of
     // a message this node already took (queued, running or answered) is held
@@ -2111,6 +2125,7 @@ export class SessionRuntime {
     sessionId: string
     interactionId: string
     answers: QuestionAnswers
+    dismiss?: boolean
     client: { clientSessionId: string }
     leaseId: string
     generation: string
@@ -2134,7 +2149,7 @@ export class SessionRuntime {
     if (!waiter || waiter.sessionId !== input.sessionId) {
       throw Object.assign(new Error('no matching pending question'), { code: 'failed_precondition' })
     }
-    waiter.settle({ answers: input.answers, reason: 'responded' })
+    waiter.settle({ answers: input.dismiss ? {} : input.answers, reason: input.dismiss ? 'aborted' : 'responded' })
   }
 
   respondPlan(input: {

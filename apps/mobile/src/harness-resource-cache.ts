@@ -1,9 +1,9 @@
 import type { PersistedWorkspace } from './persisted-workspace'
-import type { RelayClient } from '@superone/relay-client'
-import type { HarnessId, RemoteCommand, RemoteSystemInfo } from '@superone/shared/agent-types'
-import { randomId } from './ids'
+import type { MobileRpcClient } from './runtime-session-rpc'
+import type { RemoteSystemInfo } from '@superone/shared/agent-types'
 
-type Client = Pick<RelayClient, 'request'>
+export type HarnessResourceClient = Pick<MobileRpcClient, 'rpc' | 'resolveProject'>
+type Client = HarnessResourceClient
 type ProjectResources = { workspaceDirs?: string[]; projectSlashCommands?: unknown[]; skills?: unknown[] }
 type Resources = { get_system_info: RemoteSystemInfo; get_project_resources: ProjectResources }
 type Entry = { value?: unknown; pending: Promise<unknown>; updatedAt: number; refreshing: boolean }
@@ -53,10 +53,13 @@ export function requestHarnessResource<T extends keyof Resources>(
   // A refresh keeps the last known value readable until the new one lands, so
   // a peek during reconnect serves the catalog it had instead of nothing.
   const entry: Entry = { value: existing?.value, pending: Promise.resolve(), updatedAt: existing?.updatedAt ?? 0, refreshing: true }
-  entry.pending = Promise.resolve().then(() => client.request({
-    type, requestId: randomId(), projectPath, provider: provider as HarnessId,
-    ...(type === 'get_system_info' && typeof refresh === 'object' ? { force: refresh.force } : {}),
-  } as RemoteCommand)).then((value) => {
+  entry.pending = Promise.resolve().then(async () => {
+    const project = await client.resolveProject(projectPath)
+    return client.rpc(type === 'get_system_info' ? 'harness.systemInfo' : 'harness.projectResources', {
+      projectId: project.projectId, harnessId: provider,
+      ...(type === 'get_system_info' && typeof refresh === 'object' ? { force: refresh.force } : {}),
+    }, { environmentId: project.environmentId })
+  }).then((value) => {
     if (!value || (value as { error?: string }).error) {
       throw new Error((value as { error?: string } | null)?.error || 'Could not load harness resources')
     }

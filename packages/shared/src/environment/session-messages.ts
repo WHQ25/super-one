@@ -7,7 +7,8 @@
  * Live catch-up still uses `session.events` with `afterSequence`.
  */
 
-import type { ChatMessage, ChatMessageContext, ContentBlock, ImageAttachment } from '../agent-types'
+import type { ChatMessage, ChatMessageContext, ContentBlock, ImageAttachment, SandboxInfo } from '../agent-types'
+import type { McpAppContextSource } from '../mcp-apps-state'
 
 /** Tool use + result summary attached to an assistant message block. */
 export interface SessionMessageToolSummary {
@@ -82,17 +83,46 @@ export interface SessionLoadCursor {
   version: number
 }
 
+export interface SessionLoadRequest {
+  sessionId: string
+  /** History paging needs only transcript rows and their cursor, without restore state or active-turn rows. */
+  includeState?: boolean
+  before?: number | null
+  limit?: number
+  /** Stable message anchor for navigation and catching up a cached transcript. */
+  anchorId?: string
+  direction?: 'around' | 'before' | 'after'
+}
+
+/** Host facts a transcript reducer cannot reconstruct, read at the load cursor. */
+export interface SessionRestoreFacts {
+  sourceEnvironmentId: string
+  mcpAppContexts: McpAppContextSource[]
+  sandboxInfo?: SandboxInfo
+  isWorktree: boolean
+  worktreePath: string | null
+  gitBranch: string | null
+  worktreeMissing: boolean
+}
+
 /** `session.load`: a session's reduced state and newest messages at one position. */
 export interface SessionLoadResult {
   sessionId: string
   /**
    * The read model's session state (status, pending interactions, todos,
-   * usage, …): the chat reducer's session without its messages.
+   * usage, …): the chat reducer's session without its messages. Phone snapshots
+   * omit fields equal to createDefaultChatCoreSession(); receivers merge those
+   * defaults before applying the overrides. Empty when includeState is false.
    */
   state: Record<string, unknown>
   messages: ChatMessage[]
   /** Index of the first returned message: pass as `before` for the older page; null at the start. */
   before: number | null
+  /** Exclusive start for the newer page; null at the end. */
+  after?: number | null
+  /** Active-turn rows outside this page, including completed rows not yet persisted. */
+  activeTurn?: ChatMessage[]
+  restore?: SessionRestoreFacts
   cursor: SessionLoadCursor
   /**
    * The connection receives this session summarized: bulky bodies sit behind

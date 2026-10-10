@@ -1,15 +1,29 @@
-import { phoneReadKey, RequestCoalescer } from './request-coalescer'
-import { jsonBytes, type TransportMetric } from './transport-ledger'
-import type { ReadDesktopFileResponse, RemoteCommand } from '@superone/shared/agent-types'
+import { type TransportMetric } from './transport-ledger'
+import type { ReadDesktopFileResponse } from '@superone/shared/agent-types'
 import { EventBuffer } from './buffer'
 import { buildLanWsUrl, buildRelayWsUrl, type TransportKind } from './connect'
 import { deriveKeys } from './crypto'
-import { handleInboundFrame, type FrameDecrypt, type InboundFrame, type RelayControlFrame } from './frames'
-import { decodeHostPlaintext } from './host-payload'
-import { LINK_CHANNEL_FRAME, openLinkFrame, sealLinkFrame } from './phone-link'
+import { handleInboundFrame, type InboundFrame, type RelayControlFrame } from './frames'
+import { LINK_CHANNEL_FRAME, PHONE_RPC_ENVELOPE, openLinkFrame, sealLinkFrame, type LinkHostInfo } from './phone-link'
+import { DesktopUpgradeRequiredError, PhoneProtocol, type PhoneRpcOptions, type PhoneTopicStream } from './phone-protocol'
+import { requirePhoneDesktop } from './phone-version'
+import type { TopicSubscribeInput } from '@superone/shared/environment/events'
+import type { RpcStreamHandlers } from '@superone/shared/environment/rpc-connection'
+import type { DetailUpdate } from '@superone/shared/environment/detail'
+import type { SessionRef, TerminalRef } from '@superone/shared/environment/refs'
+import type { ControlLease, MutatingControlContext } from '@superone/shared/environment/lease'
+import type { SessionLoadCursor } from '@superone/shared/environment/session-messages'
+import type { ProjectRef } from '@superone/shared/environment/refs'
+import { sessionKey } from '@superone/shared/environment/refs'
+import { PhoneProjectCatalog } from './project-catalog'
+import { PhoneSessionFeed } from './session-feed'
+import { PhoneTerminalFeed, type PhoneTerminalStream } from './terminal-feed'
+import { PhoneWorkspaceFeed } from './workspace-feed'
+import type { TopicRef } from '@superone/shared/environment/topics'
+import type { TerminalEvent, TerminalSnapshot } from '@superone/shared/agent-types'
+import { createSessionView } from './session-view'
 import { SecureChannel, SecureChannelError, startClientHandshake, type ChannelCredential } from './secure-channel'
 import { createRelayHeartbeat, RELAY_PING, RELAY_PONG, type RelayHeartbeat } from '@superone/shared/relay-heartbeat'
-import { RpcInbox } from './rpc'
 import { uploadBytes, type HttpPut, type UploadBytesOptions } from './attachments'
 import { downloadDesktopFileBytes, type DownloadProgress, type HttpGet } from './downloads'
 
@@ -40,8 +54,6 @@ function channelReady(): ChannelReady {
   return { promise, resolve, reject }
 }
 
-const encoder = new TextEncoder()
-
 const defaultOpenSocket: OpenSocket = (url) => new WebSocket(url) as unknown as SocketLike
 
 export class RelayClient {
@@ -52,8 +64,14 @@ export class RelayClient {
   private channel: SecureChannel | null = null
   private handshake: { nonce: string; finish: ReturnType<typeof startClientHandshake>['finish'] } | null = null
   private ready: ChannelReady = channelReady()
-  private readonly rpc = new RpcInbox()
-  private readonly reads = new RequestCoalescer()
+  private protocol: PhoneProtocol | null = null
+  private host: LinkHostInfo | undefined
+  private readonly projects = new PhoneProjectCatalog((method, payload, options) => this.rpc(method, payload, options), () => this.host!.environmentId!)
+  private readonly sessionFeed = new PhoneSessionFeed((input, handlers) => this.subscribeTopics(input, handlers), events => this.deliverEvents(events), (session, error) => this.hooks.onSessionRecovery?.(session, error), session => this.retainSession(session))
+  private sessionUses = new Map<string, number>()
+  private activeSessionStop: (() => Promise<void>) | null = null
+  private readonly defaultSessionStop = () => this.sessionFeed.stop()
+  private readonly workspaceFeeds = new Map<string, { feed: PhoneWorkspaceFeed; ready: Promise<void> }>()
   readonly buffer = new EventBuffer()
   private heartbeat: RelayHeartbeat | null = null
   private probe: { promise: Promise<boolean>; finish: (ok: boolean) => void } | null = null
@@ -76,9 +94,16 @@ export class RelayClient {
        */
       onArrived?: (events: unknown[]) => void
       onTerminal?: (payload: unknown) => void
+      onProtocolMessage?: (message: unknown) => void
+      onSessionRecovery?: (session: SessionRef, error?: Error) => void
+      onControlLost?: (resource: SessionRef | TerminalRef, error: Error) => void
+      onWorkspaceSnapshot?: (topic: TopicRef, snapshot: unknown) => void
+      onWorkspaceRecovery?: (topic: TopicRef, error?: Error) => void
       onShutdown?: () => void
       onControl?: (frame: RelayControlFrame) => void
       onStatus?: (connected: boolean) => void
+      /** Fatal authenticated-host contract failures, before disconnect status is reported. */
+      onConnectionError?: (error: Error) => void
       openSocket?: OpenSocket
       /** Test seam only; production keeps the shared relay heartbeat cadence. */
       heartbeat?: { intervalMs: number; timeoutMs: number }
@@ -91,6 +116,148 @@ export class RelayClient {
 
   get connected(): boolean {
     return this.ws != null
+  }
+
+  get environmentId(): string | null { return this.host?.environmentId ?? null }
+
+  async verifyHost(): Promise<void> { await (await this.protocolReady(15_000, 'handshake')).start() }
+
+  async resolveProject(projectPath: string): Promise<ProjectRef> {
+    await this.protocolReady(15_000, 'project.list')
+    return this.projects.resolve(projectPath)
+  }
+
+  async followSession(input: { session: SessionRef; projectPath: string; provider?: string; cursor: SessionLoadCursor }): Promise<void> {
+    await this.sessionFeed.follow(input)
+    this.activateSessionView(this.defaultSessionStop)
+  }
+
+  stopSession(): Promise<void> {
+    const stop = this.activeSessionStop
+    this.activeSessionStop = null
+    return stop ? stop() : this.sessionFeed.stop()
+  }
+
+  createSessionView() { return createSessionView(this) }
+  activateSessionView(stop: () => Promise<void>): void {
+    const previous = this.activeSessionStop
+    this.activeSessionStop = stop
+    if (previous && previous !== stop) void previous().catch(() => {})
+  }
+  publishSessionEvents(events: unknown[]): void { this.deliverEvents(events) }
+  recoverSession(session: SessionRef, error?: Error): void { this.hooks.onSessionRecovery?.(session, error) }
+  retainSession(session: SessionRef): (proof?: MutatingControlContext) => Promise<void> {
+    const key = sessionKey(session), uses = this.sessionUses
+    uses.set(key, (uses.get(key) ?? 0) + 1)
+    let released = false
+    return async (proof) => {
+      if (released) return
+      released = true
+      const count = uses.get(key) ?? 0
+      if (count > 1) uses.set(key, count - 1)
+      else if (count === 1) { uses.delete(key); await this.releaseControl(session, proof).catch(() => {}) }
+    }
+  }
+
+  private deliverEvents(events: unknown[]): void {
+    this.hooks.onArrived?.(events)
+    if (this.buffer.isBuffering) this.buffer.push(events)
+    else this.hooks.onEvents?.(events, this.buffer.epoch)
+  }
+
+  async rpc<T = unknown>(method: string, payload: unknown = {}, options: PhoneRpcOptions = {}): Promise<T> {
+    const protocol = await this.protocolReady(options.timeoutMs ?? 15_000, method)
+    const result = await protocol.rpc<T>(method, payload, options)
+    if (method === 'project.open' || method === 'project.update' || method === 'project.remove' || method === 'git.clone') this.projects.invalidate()
+    return result
+  }
+
+  async acquireControl(resource: SessionRef | TerminalRef, options: { reclaim?: boolean } = {}): Promise<ControlLease> {
+    return (await this.protocolReady(15_000, 'acquireControl')).control.acquire(resource, options)
+  }
+
+  /** An explicit sidebar action may control an unopened session for just this operation. */
+  async operateSession<T = unknown>(resource: SessionRef, method: string, payload: Record<string, unknown> = {}, options: Omit<PhoneRpcOptions, 'environmentId'> = {}): Promise<T> {
+    const protocol = await this.protocolReady(options.timeoutMs ?? 15_000, method)
+    const release = this.retainSession(resource)
+    let proof: MutatingControlContext | undefined
+    try {
+      const grant = await protocol.control.acquire(resource)
+      proof = { leaseId: grant.leaseId, generation: grant.generation }
+      return await protocol.rpc<T>(method, { ...payload, sessionId: resource.sessionId, ...proof }, { ...options, environmentId: resource.environmentId })
+    } finally {
+      await release(proof)
+    }
+  }
+
+  controlledRpc<T = unknown>(resource: SessionRef | TerminalRef, method: string, payload: Record<string, unknown> = {}, options: Omit<PhoneRpcOptions, 'environmentId'> = {}): Promise<T> {
+    // Snapshot this channel's proof before any await; a queued action cannot borrow a later grant.
+    if (!this.protocol) return Promise.reject(this.ws ? new DesktopUpgradeRequiredError(this.host) : new Error('not connected'))
+    return this.protocol.control.call<T>(resource, method, payload, options)
+  }
+
+  releaseControl(resource: SessionRef | TerminalRef, proof?: MutatingControlContext): Promise<void> {
+    return this.protocol?.control.release(resource, proof) ?? Promise.resolve()
+  }
+
+  async subscribeTopics(input: Omit<TopicSubscribeInput, 'subscriptionId'>, handlers: RpcStreamHandlers): Promise<PhoneTopicStream> {
+    return (await this.protocolReady(15_000, 'topic.subscribe')).subscribe(input, handlers)
+  }
+
+  followTerminal(resource: TerminalRef, onEvent: (event: TerminalEvent) => void, onEnd: (error: Error) => void): PhoneTerminalStream {
+    const protocol = this.protocolReady(15_000, 'terminal.attach')
+    return new PhoneTerminalFeed(resource, {
+      subscribe: async (input, handlers) => (await protocol).subscribe(input, handlers),
+      attach: async () => (await protocol).rpc<{ snapshot: string; sequence: string; terminal: TerminalSnapshot }>('terminal.attach', { terminalId: resource.terminalId }, { environmentId: resource.environmentId }),
+    }, onEvent, onEnd)
+  }
+
+  async followWorkspace(environmentId?: string): Promise<void> {
+    const protocol = await this.protocolReady(15_000, 'topic.subscribe')
+    const target = environmentId ?? protocol.host.environmentId!
+    const existing = this.workspaceFeeds.get(target)
+    if (existing) return existing.ready
+    const feed = new PhoneWorkspaceFeed((input, handlers) => protocol.subscribe(input, handlers), {
+      onSnapshot: (topic, snapshot) => {
+        if (this.protocol !== protocol) return
+        if (topic.kind === 'projects') this.projects.invalidate()
+        this.hooks.onWorkspaceSnapshot?.(topic, snapshot)
+      },
+      onEvents: events => {
+        if (this.protocol !== protocol) return
+        if (events.some(event => event.type === 'project_list_changed')) this.projects.invalidate()
+        this.hooks.onArrived?.(events)
+      },
+      onTerminal: event => { if (this.protocol === protocol) this.hooks.onTerminal?.({ ...event, environmentId: target }) },
+      onRecover: (topic, error) => { if (this.protocol === protocol) this.hooks.onWorkspaceRecovery?.(topic, error) },
+    })
+    const entry = { feed, ready: feed.follow(target) }
+    this.workspaceFeeds.set(target, entry)
+    try { await entry.ready }
+    catch (error) { if (this.workspaceFeeds.get(target) === entry) this.workspaceFeeds.delete(target); throw error }
+  }
+
+  async stopWorkspace(environmentId: string): Promise<void> {
+    const entry = this.workspaceFeeds.get(environmentId)
+    this.workspaceFeeds.delete(environmentId)
+    await entry?.feed.stop()
+  }
+
+  async subscribeDetail(input: { sessionId: string; detailRef: string; subscriptionId: string }, listener: (update: DetailUpdate) => void, options: PhoneRpcOptions = {}): Promise<DetailUpdate> {
+    return (await this.protocolReady(15_000, 'session.subscribeDetail')).subscribeDetail(input, listener, options)
+  }
+
+  async unsubscribeDetail(input: { sessionId: string; subscriptionId: string }, options: PhoneRpcOptions = {}): Promise<void> {
+    return (await this.protocolReady(15_000, 'session.unsubscribeDetail')).unsubscribeDetail(input, options)
+  }
+
+  private async protocolReady(timeoutMs: number, method: string): Promise<PhoneProtocol> {
+    const ws = this.ws
+    if (!ws) throw new Error('not connected')
+    await this.whenChannelReady(ws, timeoutMs, method)
+    if (this.ws !== ws) throw new Error('connection replaced')
+    if (!this.protocol) throw new DesktopUpgradeRequiredError(this.host)
+    return this.protocol
   }
 
   startBuffering(): void {
@@ -126,8 +293,6 @@ export class RelayClient {
     this.cancelConnect = null
     this.probe?.finish(false)
     this.stopHeartbeat()
-    this.reads.clear()
-    this.rpc.failAll(new Error('disconnected'))
     const ws = this.ws
     this.ws = null
     this.detachAndClose(ws)
@@ -136,26 +301,8 @@ export class RelayClient {
     if (ws) this.hooks.onStatus?.(false)
   }
 
-  request(command: RemoteCommand, timeoutMs = 15_000): Promise<unknown> {
-    if (!this.ws) return Promise.reject(new Error('not connected'))
-    const ws = this.ws
-    const result = this.reads.run(phoneReadKey(command, timeoutMs), async () => {
-      const started = performance.now()
-      await this.whenChannelReady(ws, timeoutMs, command.type)
-      const encoding = performance.now()
-      const pending = this.rpc.begin(command, payload => this.sendCommand(ws, payload), Math.max(1, timeoutMs - (encoding - started)))
-      this.metric({ kind: 'encode', name: command.type, durationMs: performance.now() - encoding, bytes: this.hooks.onMetric ? jsonBytes(command) : 0 })
-      if (this.hooks.onMetric) {
-        const record = () => this.metric({ kind: 'rpc', name: command.type, durationMs: performance.now() - started })
-        void pending.then(record, record)
-      }
-      return pending
-    })
-    return result
-  }
-
   uploadFile(
-    input: Omit<UploadBytesOptions, 'transport' | 'lanHost' | 'aesKeyBytes' | 'channelKeyHex' | 'request' | 'put'>,
+    input: Omit<UploadBytesOptions, 'transport' | 'lanHost' | 'aesKeyBytes' | 'channelKeyHex' | 'rpc' | 'put'>,
     put: HttpPut,
   ): Promise<string> {
     if (!this.ws || !this.fileKeys) return Promise.reject(new Error('not connected'))
@@ -165,7 +312,7 @@ export class RelayClient {
       lanHost: this.last?.kind === 'lan' ? this.last.host : undefined,
       aesKeyBytes: this.fileKeys.aesKeyBytes,
       channelKeyHex: this.fileKeys.channelKeyHex,
-      request: (command, timeoutMs) => this.request(command, timeoutMs),
+      rpc: (method, payload, timeoutMs) => this.rpc(method, payload, { timeoutMs }),
       put,
     })
   }
@@ -186,36 +333,9 @@ export class RelayClient {
     })
   }
 
-  /**
-   * Fire-and-forget encrypted command. Terminal I/O uses this — results arrive
-   * on the terminal channel. Before the channel is up it waits for it, in order.
-   */
-  send(command: RemoteCommand): void {
-    const ws = this.ws
-    if (!ws) throw new Error('not connected')
-    const deliver = () => {
-      const started = performance.now()
-      this.sendCommand(ws, command)
-      this.metric({ kind: 'encode', name: command.type, durationMs: performance.now() - started, bytes: this.hooks.onMetric ? jsonBytes(command) : 0 })
-    }
-    if (this.channel && this.handshake === null) {
-      deliver()
-      return
-    }
-    void this.ready.promise.then(() => { if (this.ws === ws) deliver() }, () => {})
-  }
-
-  private sendCommand(ws: SocketLike, command: unknown): void {
-    const channel = this.channel
-    if (this.ws !== ws || !channel) throw new Error('not connected')
-    const data = sealLinkFrame(channel, { t: 'command' }, encoder.encode(JSON.stringify(command)))
-    this.sendFrame(ws, JSON.stringify({ type: 'command', data }))
-  }
-
-  /** Resolves once the host has proven the pairing secret on this socket. */
+  /** Resolves once both the paired channel and the native host contract are verified. */
   private whenChannelReady(ws: SocketLike, timeoutMs: number, name: string): Promise<void> {
     if (this.ws !== ws) return Promise.reject(new Error('connection replaced'))
-    if (this.channel && this.handshake === null) return Promise.resolve()
     return new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error(`rpc timeout: ${name}`)), timeoutMs)
       this.ready.promise.then(
@@ -227,6 +347,16 @@ export class RelayClient {
 
   /** Forget the channel of the current socket; waiters fail with `error` and a new wait begins. */
   private resetChannel(error: Error): void {
+    for (const { feed } of this.workspaceFeeds.values()) feed.reset()
+    this.workspaceFeeds.clear()
+    this.activeSessionStop = null
+    this.sessionUses.clear()
+    this.sessionUses = new Map()
+    this.sessionFeed.reset()
+    this.projects.invalidate()
+    this.protocol?.close(error)
+    this.protocol = null
+    this.host = undefined
     this.channel = null
     this.handshake = null
     this.ready.reject(error)
@@ -261,8 +391,26 @@ export class RelayClient {
       const { header } = openLinkFrame(this.channel, frame.data)
       if (header.t !== 'handshake') throw new SecureChannelError('channel_protocol', 'expected handshake')
       this.handshake = null
-      this.ready.resolve()
-      this.hooks.onControl?.({ type: 'handshake', hostName: header.hostName, ...(header.host ? { host: header.host } : {}) })
+      this.host = header.host
+      requirePhoneDesktop(header.host)
+      {
+        const channel = this.channel
+        const protocol = new PhoneProtocol(header.host, (out) => {
+          if (this.ws !== ws || this.channel !== channel) throw new Error('connection replaced')
+          this.sendFrame(ws, JSON.stringify({ type: 'command', data: sealLinkFrame(channel, { t: 'rpc' }, out) }))
+        }, (message) => {
+          if ((message as { type?: string })?.type === 'composer_settled') this.deliverEvents([message])
+          this.hooks.onProtocolMessage?.(message)
+        }, undefined, (resource, error) => this.hooks.onControlLost?.(resource, error))
+        this.protocol = protocol
+        void protocol.start().then(() => {
+          if (this.protocol !== protocol) return
+          this.ready.resolve()
+          this.hooks.onControl?.({ type: 'handshake', hostName: header.hostName, host: header.host })
+        }).catch((error: unknown) => {
+          if (this.protocol === protocol) this.handleClosed(ws, error instanceof Error ? error : new Error(String(error)))
+        })
+      }
     } catch (error) {
       this.handleClosed(ws, error instanceof Error ? error : new Error('channel handshake failed'))
     }
@@ -284,9 +432,7 @@ export class RelayClient {
     const timer = setTimeout(() => finish(false), timeoutMs)
     this.probe = { promise, finish }
     if (this.kind === 'lan') {
-      // LAN has no ping command today. A small existing read probes the desktop.
-      void this.request({ type: 'list_session_activity' } as RemoteCommand, timeoutMs).then(
-        result => finish(!(result as { error?: string })?.error), () => finish(false))
+      void this.rpc('environment.health', {}, { timeoutMs }).then(() => finish(true), () => finish(false))
     } else {
       // The relay auto-responds only to the literal heartbeat text, never a JSON frame.
       try { this.sendFrame(ws, RELAY_PING) } catch { finish(false) }
@@ -307,8 +453,6 @@ export class RelayClient {
     this.cancelConnect = null
     this.probe?.finish(false)
     this.stopHeartbeat()
-    this.reads.clear()
-    this.rpc.failAll(new Error('connection replaced'))
     const previous = this.ws
     this.ws = null
     this.detachAndClose(previous)
@@ -382,8 +526,7 @@ export class RelayClient {
     this.stopHeartbeat()
     this.detachAndClose(ws)
     this.resetChannel(error)
-    this.reads.clear()
-    this.rpc.failAll(error)
+    this.hooks.onConnectionError?.(error)
     this.hooks.onStatus?.(false)
   }
 
@@ -427,38 +570,29 @@ export class RelayClient {
     }
     if (frame.type === 'peer_connected' && this.kind === 'relay') {
       // A desktop that (re)joined the room holds no channel for us yet.
-      this.rpc.failAll(new Error('desktop reconnected'))
-      this.reads.clear()
       this.startHandshake(ws)
     } else if (frame.type === 'peer_disconnected' && this.kind === 'relay') {
       this.resetChannel(new Error('desktop disconnected'))
     }
-    const decrypt: FrameDecrypt = (data, kind, requestId) => {
-      const channel = this.channel
-      if (!channel || this.handshake) throw new Error('channel not established')
-      const started = performance.now()
-      const { header, payload: framed } = openLinkFrame(channel, data)
-      if (header.t !== kind || (header.t === 'response' && header.requestId !== requestId)) {
-        throw new SecureChannelError('channel_protocol', `link frame kind ${header.t} where ${kind} was expected`)
+    if (frame.type === PHONE_RPC_ENVELOPE && typeof frame.data === 'string') {
+      try {
+        if (!this.channel || this.handshake) return
+        const { header, payload } = openLinkFrame(this.channel, frame.data)
+        if (header.t === 'rpc') {
+          if (!this.protocol) throw new DesktopUpgradeRequiredError(this.host)
+          this.protocol.receive(payload)
+        } else {
+          throw new SecureChannelError('channel_protocol', `unexpected ${header.t} on protocol lane`)
+        }
+      } catch (error) {
+        this.handleClosed(ws, error instanceof Error ? error : new Error(String(error)))
       }
-      const decryptMs = performance.now() - started
-      if (this.hooks.onMetric) this.metric({ kind: 'decrypt', name: frame.type ?? 'unknown', durationMs: decryptMs })
-      const payload = decodeHostPlaintext(framed)
-      if (this.hooks.onMetric) this.metric({ kind: 'decoded', name: frame.type ?? 'unknown', bytes: jsonBytes(payload), durationMs: performance.now() - started - decryptMs })
-      return payload
+      return
     }
-    const effect = handleInboundFrame(frame, decrypt)
+    const effect = handleInboundFrame(frame)
     switch (effect.kind) {
       case 'drop':
       case 'pong':
-        return
-      case 'events':
-        this.hooks.onArrived?.(effect.events)
-        if (this.buffer.isBuffering) this.buffer.push(effect.events)
-        else this.hooks.onEvents?.(effect.events, this.buffer.epoch)
-        return
-      case 'terminal':
-        this.hooks.onTerminal?.(effect.payload)
         return
       case 'desktop_shutdown':
         this.buffer.stop()
@@ -467,22 +601,6 @@ export class RelayClient {
       case 'control':
         this.hooks.onControl?.(effect.frame)
         return
-      case 'response':
-        this.rpc.complete(effect.requestId, effect.payload)
-        return
-      case 'response_error':
-        this.rpc.fail(effect.requestId, effect.error)
-        return
-      case 'response_chunk': {
-        try {
-          const assembled = this.rpc.ingestChunk(effect.requestId, effect.index, effect.total, effect.data)
-          if (assembled) {
-            this.rpc.complete(effect.requestId, decrypt(assembled, 'response', effect.requestId))
-          }
-        } catch (error) {
-          this.rpc.fail(effect.requestId, error)
-        }
-      }
     }
   }
 

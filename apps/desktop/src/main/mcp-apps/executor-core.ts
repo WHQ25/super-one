@@ -356,6 +356,7 @@ export class McpAppExecutor {
       const pending = this.challenge(request, requester, target, operation, prompt)
       if (pending) return pending
       if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App request cancelled')
+      validateTarget?.(target)
 
       switch (operation.operation) {
         case 'load': {

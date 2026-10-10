@@ -22,7 +22,8 @@ a `reset` refresh (mount, foreground, pull-to-refresh) **restarts** the browse r
 than reusing it, and `LanServiceCache` keeps *every* address a room is advertised at —
 after an unclean desktop restart the dead port sits beside the live one (often under
 `name (2)`) until its record expires — and discovery probes all of them. Terminal
-frames use `RelayClient.send` / `onTerminal` and never ACK. The separate terminal
+input uses controlled native RPCs and output uses topic streams; neither uses
+application-envelope ACKs. The separate terminal
 document embeds xterm.js, prefers the patched WebGL renderer, falls back to canvas,
 and reports input and bounded resize messages to RN.
 
@@ -37,8 +38,8 @@ and reports input and bounded resize messages to RN.
   saved pairing's `keyId`, so the device row reads Re-pair Required and only a new
   QR pairing reconnects it.
 - Open/reconnect starts event buffering before restore. Session restore then runs
-  subscribe → history → snapshot → release; a server `reset` discards pre-reset
-  batches and triggers the same restore path.
+  atomic `session.load` → control acquisition → topic subscription from the
+  snapshot cursor → release. A native recovery signal triggers that same path.
 - Transport loss retries with bounded backoff until it succeeds or a manual connection
   cancels the loop. Every redial asks discovery for the route first
   (`DeviceDiscovery.resolveLan` re-probes the LAN candidates, ignoring earlier
@@ -49,7 +50,7 @@ and reports input and bounded resize messages to RN.
   redialling. The loop logs `[reconnect]` lines (route, state, retry reason), and
   list sync logs `[sidebar]` lines, in release builds too. Both are also held in
   `diagnostic-log.ts` (1,000 lines, kept across disconnects) and uploaded with
-  `append_mobile_log` while connected and on backgrounding; the desktop writes them
+  `client.appendMobileLog` while connected and on backgrounding; the desktop writes them
   to `mobile.log` beside `main.log` (`dev-mobile.log` in dev), stamped with the
   phone's clock. Fields are transport and sync facts only.
   A reopened socket is still `reconnecting`: publish `connected` and
@@ -64,13 +65,13 @@ and reports input and bounded resize messages to RN.
   handshake-driven restore completes only on the channel it started on: a handshake
   that lands mid-restore runs it again, and a failed one retries with the same
   bounded backoff until the desktop leaves or the socket drops, since nothing else
-  is guaranteed to arrive on the open socket. Without the probe every retry burned three 15 s request timeouts
+  is guaranteed to arrive on the open socket. Without the probe every restore retry burned a request timeout
   and painted `Reconnecting…` for a desktop that was simply off. LAN never probes: there
   the desktop *is* the socket peer. Re-send the current connection
   snapshot whenever the Chat WebView reports `ready` after a renderer reload.
 - Opening and creating sessions are mutually exclusive because every restore uses the
-  client's single event buffer. Validate new-session worktree input before unsubscribing
-  the current session; on transition failure, dispose the incomplete runtime and reopen
+  client's single event buffer. Validate new-session worktree input before disposing
+  the current session grant and stream; on transition failure, dispose the incomplete runtime and reopen
   the workspace drawer instead of leaving a stale chat detail active.
 - Released buffers assign the runtime epoch. Live batches from older epochs are
   dropped, and overlapping restores may only commit their newest generation.
@@ -126,3 +127,14 @@ supported existing-session operations and device-level verification boundary.
   contiguous newest suffix (≤200 messages / 8 MiB) and recomputes `cursor` /
   `hasMore` for the oldest retained message (`transcript-cache-policy.ts`). Reusing
   the pre-trim cursor would skip the trimmed messages.
+
+## Desktop compatibility
+
+The authenticated phone-link handshake reports the app version, protocol and
+canonical environment id. Before an RPC, `PhoneProtocol` requires desktop
+0.73.0-alpha.1 or later and generation 3. Unknown or unsupported hosts produce
+the native desktop-upgrade sheet; the pairing remains saved. A newer native
+handshake never continues a legacy restore or reuses its compression history.
+Production sheet states (required, busy and retry with a long device name) are
+also in the native preview's Update gallery; light/dark and English/Chinese
+use the production component.

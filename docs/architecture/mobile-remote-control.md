@@ -1,287 +1,196 @@
 # Mobile remote control protocol
 
-How the phone and a desktop host talk beyond the shared reducer: payload framing,
-host-side event batching, request/response binding, progressive session loading,
-and attachments. The reducer, the RN ↔ WebView host protocol, buffer-first restore
-and ACK rules are in [chat-core.md](chat-core.md). Encryption and golden vectors
-are in [relay-crypto.md](relay-crypto.md). Phone-side discovery, reconnect and
-caches are in [transport.md](../../apps/mobile/docs/agent-reference/transport.md).
+The paired phone uses the same generation-3 RPC, topic streams and control leases
+as a controller desktop. Its encrypted channel remains the phone link; it needs
+no node pairing. The reducer and RN ↔ WebView contract are in
+[chat-core.md](chat-core.md), cryptographic vectors in
+[relay-crypto.md](relay-crypto.md), and phone discovery and reconnect in
+[transport.md](../../apps/mobile/docs/agent-reference/transport.md).
 
-| Side | Code |
+| Boundary | Code |
 |---|---|
-| Command and event types | `RemoteCommand`, `AgentEvent` in `packages/shared/src/agent-types.ts` |
-| Host transport | `apps/desktop/src/main/remote-control-service.ts` (relay), `apps/desktop/src/main/lan-server.ts` (LAN), `apps/desktop/src/main/remote/*` |
-| Host command handlers | `apps/desktop/src/main/agent/agent-service.ts` |
-| Phone transport | `packages/relay-client/src/*` (`RelayClient` in `client.ts`) |
-| Phone session | `apps/mobile/src/runtime.ts` (`ChatRuntime`) |
+| RPC, topics, scoped resources, framing | `packages/shared/src/environment/` |
+| Shared dispatcher and connection delivery | `packages/runtime/src/server/`, `packages/runtime/src/stream/delivery/` |
+| Desktop domain and paired endpoint | `apps/desktop/src/main/node-host/desktop-domain.ts`, `phone-endpoint.ts` |
+| Authenticated LAN / relay adapters | `apps/desktop/src/main/lan-server.ts`, `remote-control-service.ts`, `remote/phone-link-host.ts` |
+| Phone protocol and control proofs | `packages/relay-client/src/phone-protocol.ts`, `control-leases.ts` |
+| Phone session restore and reducer | `packages/relay-client/src/restore.ts`, `apps/mobile/src/runtime.ts` |
 
-## Payload framing
+## Authenticated compatibility and identity
 
-Every application payload is one sealed frame of the phone's per-connection
-channel, base64 encoded inside a JSON envelope (`{ type, data, … }`); the sealed
-body carries an authenticated link header before the payload
-([relay-crypto.md](relay-crypto.md#phone-link)). The two directions differ on purpose:
+The phone link handshake authenticates `host { appVersion, protocol,
+environmentId }` alongside the host name and LAN addresses. The client requires
+SuperOne **0.73.0-alpha.1 or later**, protocol generation 3 and a canonical
+identity before sending an application RPC. An older or unreported host raises
+`DesktopUpgradeRequiredError`; the native upgrade sheet shows the floor, saves
+the pairing and offers Reconnect or My Devices. There are no legacy probes.
+Desktop publication precedes the mobile update that enforces this floor.
 
-- **Host → phone** (events, responses, terminal frames): the plaintext is a
-  five-byte header, `flag:u8` (`0x00` raw, `0x01` raw DEFLATE) and the original
-  JSON byte length as `u32be`, followed by the body. The header is inside the
-  authenticated plaintext. Encoder: `frameHostPayload` in
-  `apps/desktop/src/main/remote/payload-codec.ts`, using `frameRemotePayload` from
-  `packages/shared/src/remote-payload.ts`; the frame is built once and sealed
-  per phone channel. Decoder: `decodeHostPlaintext` in
-  `packages/relay-client/src/host-payload.ts`.
-- **Phone → host** (commands): plain JSON, no header, no compression
-  (`RelayClient#sendCommand` in `packages/relay-client/src/client.ts`). Compressing this
-  direction would cost phone CPU and has not been shown to pay off; add it only on
-  measured benefit, as a header change on both sides.
+The desktop domain owns one identity, database, lease service, idempotency store,
+event log and session host. Disabling controller access stops its listener only;
+the local window and paired phones continue using the domain. An existing local
+identity can remain an alias of the canonical node-host identity; the endpoint
+normalizes aliases before resource lookup, authorization and lease checks.
+Session links and stored metadata therefore keep resolving without rewriting
+links or repairing pairings. See [remote-node-service.md](remote-node-service.md).
 
-Rules:
+## Framing and receipts
 
-- The host deflates only when the JSON exceeds 512 bytes, on Node's zlib worker
-  pool so Electron main is not blocked, and keeps the deflated body only if it
-  is smaller than the raw JSON.
-- JSON is capped at 32 MiB (`MAX_REMOTE_PAYLOAD_BYTES`) on both sides. The phone
-  rejects ciphertext above the matching base64 bound before decrypting, and
-  inflates into a buffer sized from the authenticated length plus one byte, so a
-  corrupt or lying stream cannot allocate unbounded memory. Unknown flags, corrupt
-  streams and size mismatches are errors.
-- Responses are chunked after encryption: ciphertext over 800,000 characters
-  (`REMOTE_RESPONSE_CHUNK_CHARS`) goes out as `response_chunk` frames. The phone
-  (`packages/relay-client/src/rpc.ts#ingestChunk`) validates index, total, chunk
-  size and aggregate size, reassembles, then decrypts and inflates once. Event
-  frames are not chunked; the batcher bounds them.
-- Relay and LAN use the same framing. Compression is inside the ciphertext, so
-  the relay forwards opaque payloads and its envelopes and control frames are
-  unaffected. There is no version negotiation: desktop and phone upgrade together,
-  and phones paired before per-device channel secrets must pair again.
-- The LAN server listens on every interface but drops peers outside private
-  networks (loopback, RFC 1918, link-local, IPv6 unique-local, Tailscale) on
-  `connection`, like the desktop node ([remote-node-service.md §11.3](remote-node-service.md)).
-- Fixture: [`host-payload-v1.json`](../../packages/relay-client/src/fixtures/host-payload-v1.json)
-  holds raw and deflated frames, checked by `host-payload.test.ts`.
+Each authenticated `rpc` link header carries one native protocol frame. Before
+the generation handshake it is JSON, so an incompatible peer can read the
+refusal; afterwards both directions use the shared `WireEncoder` / `WireDecoder`
+(`packages/shared/src/environment/wire.ts`). The transport seals each fragment
+separately. Phone requests travel in `command` envelopes, host protocol frames
+in addressed `terminal` envelopes; these are relay transport containers, not
+application command types. LAN and relay use identical application framing.
 
-## Host event pipeline
+- A five-byte header carries the flag and authenticated original JSON length.
+  Raw data is flag 0, raw DEFLATE flag 1. DEFLATE is considered above 512 bytes
+  and kept only when smaller. Flag 4 compresses control replies against the
+  generation's frozen schema vocabulary; flag 3 compresses pushes against the
+  preceding 32 KiB of pushed plaintext. Pushes retain their order and history
+  independently of control replies.
+- Frames above 256 KiB use flag-2 fragments with a message id, index and total.
+  The decoder bounds concurrent reassembly and aggregate bytes. Completed JSON
+  is capped at 32 MiB; inflation checks its authenticated length and rejects
+  malformed flags, corrupt data and oversized input. Expo uses a pure-JS
+  inflater, with no Node transport dependency.
+- `WireOutbox` serves the control lane before queued stream frames, including
+  between fragments of a large result. A connection has a 4 MiB stream budget;
+  congestion degrades the affected topic to `resnapshot` rather than retaining
+  an unbounded stream. A new channel gets fresh compression and stream state.
+- `RpcConnection` / `RpcInbox` own pending receipts and timeouts. An opening or
+  replaced socket rejects pending RPCs; late frames from it are ignored.
+  Identical selected in-flight reads share a request, without memoizing results.
+  Mutations carry durable idempotency keys and controlled resource mutations
+  also carry the admitted lease id and generation.
+- Replies are bound to the link and channel that requested them. Async work
+  cannot write a response on a replacement channel. Client-scoped pushes, such
+  as composer requests and control loss, go only to the authenticated recipient.
+- The secure channel supplies frame ordering and replay rejection. There is no
+  application-envelope ACK; `AgentEvent.seq` remains the session-log sequence,
+  independent of relay envelope numbers.
 
-Every event in desktop main leaves through `SessionEventHub`
-(`apps/desktop/src/main/stream/session-event-hub.ts`), tagged with where it
-entered (a local `Session`, environment state, lists, presence, a remote node).
-In-process consumers subscribe by source; frontends receive by topic. Each event
-is published to its one topic (`publishHubEvent` in `stream/desktop-topics.ts`),
-and a local session's event first publishes its `session_activity` summary to
-the session list topic. Each online phone holds a topic connection
-(`remote/phone-topics.ts`): the session list, projects, drafts, terminal list
-and environment notices always; a session while the phone subscribes to or
-controls it; a terminal while it watches or controls it.
+The LAN listener accepts only private-network peers (loopback, RFC 1918,
+link-local, unique-local IPv6 and Tailscale), as the node listener does. Full
+framing and backpressure contracts are in
+[remote-node-service.md](remote-node-service.md#wire-framing).
 
-`MobileBroadcaster` (`apps/desktop/src/main/remote/mobile-broadcaster.ts`) is the
-phones' delivery group: the topic hub hands it each item once with the phones
-it reached. List and environment topics go to every phone; a session's events
-go to each phone its topic reached.
+## Topics and per-connection delivery
 
-Each phone has its own `ConnectionDelivery` (`@superone/runtime/stream`,
-`packages/runtime/src/stream/delivery/`; per device in
-`apps/desktop/src/main/remote/phone-deliveries.ts`): its delivery policy, its
-summarized sessions and expanded details, and its profile state. The policy is
-a link tier (`relay` or `lan`, from the transport the phone uses, re-set when
-it switches) and the `phone` surface. One delivery covers a session's open
-(`buildProgressiveBootstrap`), history pages, live events and detail, so two
-frontends on one session never share projection, detail or throttle state.
-Each event runs through these stages (`EventProfile`, `delivery/profile.ts`):
+Main events enter `SessionEventHub`, tagged with their source. Bookkeeping,
+automation, notification and collaboration consumers remain source-based.
+Frontends subscribe through `TopicHub` to scoped `session`, `sessionList`,
+`projects`, `drafts`, `terminal`, `terminalList` and `environment` topics.
+`topic.subscribe`, `topic.update` and `topic.unsubscribe` own interest. Reading a
+resource never grants mutation control. Lists have snapshot/version recovery;
+terminals have an attach snapshot and output sequence; a recovery signal names
+its topic. Terminal-list readers receive metadata, not terminal output.
 
-1. Phone surface: accumulate todo input deltas, then drop events that feed
-   desktop-only state ([chat-core.md](chat-core.md#remote-omitted-events)).
-2. Relay tier: truncate `slash_command_output`, throttle `tool_progress`.
-3. Phone surface: rewrite tool rows and strip or summarize heavy payloads
-   (`delivery/remote-content.ts`): bash output, todo tool results, project
-   paths, highlighting, picture thumbnails. The desktop supplies highlighting,
-   thumbnails and subagent/workflow reads as ports (`apps/desktop/src/main/remote-content.ts`).
+Each connection has one `ConnectionDelivery`: tier, surface, projection,
+expanded detail and throttle state. IPC is `local`; LAN, Tailscale, direct and
+SSH are `lan`; relay is `relay`, taken from the chosen route rather than its
+URL. A local renderer keeps its batching and Codex patch baselines. A phone uses
+the `phone` surface on either link tier. Open, history, live events and detail
+all use this same connection policy.
 
-A progressive phone gets the summary projection first
-([below](#progressive-session-loading)). `RemoteControlService` then batches per
-phone with the shared `createEventBatcher`
-(`packages/runtime/src/stream/event-batcher.ts`, also the renderer's `local`
-tier, `delivery/local-delivery.ts`):
+The delivery profile accumulates todo input before filtering phone-omitted
+state, applies relay truncation and progress throttling, then performs phone
+presentation shaping (paths, thumbnails, highlighting and heavy tool bodies).
+Desktop reads are injected ports; the pipeline itself lives in runtime.
+Streaming text waits up to 33 ms; non-text events flush immediately. Remote
+batches cap at 64 KiB / 128 events. Sequenced deltas can share a frame but are
+not coalesced away, preserving cursor deduplication.
 
-- Only `content_delta` and `codex_item_delta` wait, up to 33 ms. Any other
-  event flushes the batch it joins immediately, so completions, status
-  changes, interactions and interrupts are never delayed behind text.
-- Batches are capped at 64 KiB and 128 events (`batchingFor`).
-- `coalesceAgentEventBatch` (`packages/shared/src/agent-event-batcher.ts`)
-  folds only adjacent unsequenced text/thinking deltas of the same block, and
-  successive `codex_item_delta` snapshots of the same item. Deltas carrying
-  `seq` may share a frame but are never folded, so replay deduplication can
-  advance one sequence at a time.
-- Non-`AgentEvent` payloads sent through `sendEventToMobile` flush the
-  recipients' batchers first, preserving order.
+Relay draft autosaves are coalesced per draft over five seconds; LAN readers
+receive each save immediately. A coalesced notice declares `afterVersion` and
+the final cursor, so the phone validates the whole compacted version span
+without inferring missing events. Lease/delete notices are immediate and flush
+the preceding span; disposal or removing draft interest cancels pending saves.
 
-One serial queue frames each phone's batch and seals it for that phone's
-channel: a relay copy is addressed to that phone, a LAN copy goes to its socket,
-and each is ordered by the channel's sequence. Phones without a channel get
-nothing. Terminal frames use their own serial queue.
+The renderer follows the union of open windows' interest and still broadcasts
+to windows. Remote-session interest is shared by the desktop, controllers and
+routed phones; each frontend retains its own delivery and detail state.
+`stream/wire-baseline.test.ts` drives the production native encrypted endpoint
+and Expo decoder against immutable pre-cutover recordings for a live turn,
+open, history and detail. Bytes and frames must stay within that baseline.
 
-Two tests guard the phone wire on recorded sessions:
-`stream/profiles.golden.test.ts` pins the frames after the profile, and
-`stream/wire-baseline.test.ts` measures relay bytes and frames for a live turn,
-an open, a history page and detail expansion against the phone link before the
-unified protocol (`fixtures/wire-baseline.json`): the phone must apply the same
-events at no more frames or bytes.
+## Sessions on a remote node
 
-`stop()` disposes the batcher and bumps `sendGeneration`; queued work from the old
-generation is discarded rather than sent on a new connection.
+The phone reaches another execution environment through its paired desktop.
+`RoutedPhoneRpcRouter` forwards scoped native methods and streams to that
+source; it does not translate application commands. Capabilities are exact
+served methods in the target descriptor. Local-only client methods remain on
+the paired desktop, while resource methods retain their target environment.
 
-### Sessions on a remote node
+The shared node feed reference-counts interest across the desktop's own window,
+controllers and routed phones. Detail RPCs go to the source even when the
+routing desktop has only summaries. A lost cursor, epoch or route-tier change
+realigns through an atomic snapshot; recovery does not infer a transcript
+prefix and synthesize missed output. A link reset starts a new native restore.
 
-A phone reaches a CLI-node or desktop-node session only through its paired
-desktop (`apps/desktop/src/main/remote/environment-commands.ts`); there is no
-phone-to-node link. The desktop follows the session on its one node feed
-([remote-node-service.md](remote-node-service.md#92-event-log)), opens it at
-a `session.load` barrier, reduces the node's events with chat-core, and sends
-them through the same `mobile` profile. The node runs no phone profile: the
-desktop already holds that projection state, and the wire stays the desktop's.
+The authenticated desktop holds a node lease with `phone:<deviceId>` as its
+delegate; its own window uses `yields`. `RoutedPhoneGrants` serializes admission
+and retirement per resource. Overlapping LAN and relay links for one pairing
+share a proof, and only the final link retires it. Exact upstream revocation
+and expiry invalidate the matching proof and notify the SDK. An older loss
+notice cannot revoke a newer grant, including a notice arriving before its
+acquire receipt. Routed renderer presence derives from the current lease and
+source session metadata, rather than another ownership authority.
 
-- When the desktop's link to the node is the relay, the node sends the
-  session summarized. The desktop does not hold the bodies then, so a phone's
-  `subscribe_detail` is forwarded to the node and its packets back to the
-  phone; over LAN the desktop serves the detail from its own copy.
-- A connected phone does not restore on the relay's `reset` frame. When the
-  node reports that events are gone (`resnapshot`), or the desktop's link to
-  the node changes tier, the desktop replaces its copy with a fresh snapshot
-  and sends the phone the difference between the summaries it has and the
-  fresh ones as `message_start`, `content_delta` and terminal events
-  (`routed-catch-up.ts`). A phone whose messages are not a prefix of the
-  snapshot gets `status_change: error`.
-- The desktop holds the node's control lease for each phone with the phone's
-  device id as `delegate`; its own window acquires with `yields`. A second
-  phone is refused while one holds the session.
-- While a phone holds it, the desktop window shows observation mode for that
-  node session (`remote_session_start` presence). Disconnect there kicks the
-  phone (`session_kicked`) and releases its lease.
+## Atomic open, history and control
 
-## Requests and responses
+`restoreSession` buffers events, resolves the authenticated project ref and
+reads `session.load` with its descriptor. The atomic load contains the newest
+8 projected messages, reducer state, active turn, host restore facts and an
+epoch/version cursor. Defaults omitted from compact wire state are restored
+with `createDefaultChatCoreSession`. Cached complete rows merge with the fresh
+tail; a bounded `session.load` after-anchor walk fills a reconnect gap, falling
+back to a newest page when the anchor is gone or the gap is too long.
 
-- `RelayClient.request` attaches a `requestId` and times out after 15 s.
-  Identical in-flight reads (`get_git_info`, `get_system_info`,
-  `get_project_resources`, `list_sessions`, `list_drafts`,
-  `list_pinned_sessions`) share one request (`request-coalescer.ts`); completed
-  results are never memoized there. `send` is fire-and-forget.
-- **Responses are bound to the connection the command arrived on.** The relay
-  responder captures the socket, `sendGeneration` and the phone's channel when the
-  command arrives and drops the response if any changed, including after the
-  asynchronous compression step. The LAN responder captures the originating
-  socket and its channel. A response
-  therefore never lands on a newer connection that did not ask for it.
-- On the phone, opening a socket fails every pending RPC (`connection replaced`)
-  and frames from a replaced socket are ignored.
-- Late responses are checked against the request that is still current, not
-  just the connection:
-  - `ChatRuntime.restoreGeneration` guards restore, history paging, the history
-    index, anchor jumps and send receipts; a switched session discards them.
-  - The shell's project and branch loads (`openProject`, `loadShellDetails`,
-    branch lists in `apps/mobile/src/navigation/mobile-app.tsx`) compare a request
-    counter and the client identity before applying, so a slow reply cannot
-    overwrite a newer project selection.
+The phone explicitly acquires control, then subscribes to the session topic
+from the load cursor. It releases buffered events in order, dropping another
+environment/session and sequences at or before the snapshot version. Pending
+interactions, settings, queues, usage, goal, sandbox, worktree and voice state
+are restored atomically; a property reported only on change is not dependent
+on a new event after reconnect. Host refusals settle to the workspace instead
+of repeatedly redialling a healthy link.
 
-## Progressive session loading
+Session and terminal mutations are fenced by the domain's existing
+`ControlLeaseService`, across IPC, phones and controller desktops. Backends
+remain unaware of frontend ownership. The SDK renews retained proofs, and
+stopping an owned session releases its grant and topic stream. Takeover,
+expiry, removal and channel loss invalidate admitted proofs; async mutations
+recheck the exact proof before applying their result.
 
-The phone opens a bounded summary of a session; the persisted host transcript
-stays complete.
-
-### Open
-
-`subscribe_session { progressive: true }` subscribes the device, replays pending
-events, and answers with `buildProgressiveBootstrap`
-(`apps/desktop/src/main/agent/progressive-bootstrap.ts`): the newest 8 messages
-as a summary projection, the history cursor, `navigationAvailable: true`, the
-harness id, and the session snapshot, in one response. The phone reveals its
-cached page first when it has one and merges it with this page.
-
-Older hosts that answer `subscribe_session` without a history page get the
-fallback in `packages/relay-client/src/restore.ts`: without a cached transcript,
-`load_session_messages { limit: 8 }` then `get_session_state` if the subscription
-did not include a snapshot. With cached complete rows, restore first asks for
-messages after the last cached ID and falls back to the newest page if that
-anchor fails. Without `navigationAvailable` the phone keeps the rail over loaded
-history only. Keep this compatibility path covered by `restore.test.ts`.
-
-No minimum desktop version is currently enforced by this protocol. The product
-policy is to introduce a minimum supported desktop version and retain tested
-fallbacks within that supported range. The floor, version handshake and rollout
-remain planned in [mobile desktop compatibility](../tasks/mobile-desktop-compatibility/README.md);
-the planned gate must not be described as active before it is implemented.
-
-`loadEarlier` fetches one older page by cursor (`load_session_messages
-{ cursor, limit: 24 }`), deduplicates against live rows, and keeps the scroll
-anchor.
+Earlier pages and anchored jumps use `session.load` with `includeState: false`;
+`session.historyIndex` supplies message ids, bounded question/reply previews
+and compact markers. The full index does not contain tool bodies. Sparse pages
+merge by index position and only a contiguous DOM window is mounted.
 
 ### Hidden detail
 
-The projection (`packages/runtime/src/stream/delivery/projection.ts`,
-`progressive-tools.ts`) empties bulky content and replaces it with an opaque
-`remoteDetail` reference (`[messageId, kind, key]`): thinking blocks, Codex
-reasoning items, tool inputs and results, command output, file diffs, and the
-children of subagent cards. What the row must show collapsed stays: tool summary
-and file path, `+N -M` line deltas, subagent usage and status, bash-edit file
-totals. Widgets, media and image tools, questions, todos, plan-mode and
-report-findings tools are not deferred (`deferTool`). Live events for progressive
-devices go through `projectProgressiveEvent`, so the same projection applies to
-streaming, completion metadata and reconnect snapshots.
+The projection replaces bulky reasoning, tool bodies, command output, diffs
+and subagent children with an opaque `remoteDetail` reference. Collapsed
+summaries, file paths, line counts, status and usage remain visible. Widgets,
+media, questions, todos, plans and report-findings retain their required input.
 
-Expanding a row:
+`session.subscribeDetail` returns revision 0 and registers connection interest;
+`remote_detail` packets carry `{ subscriptionId, revision, offset, text }`.
+The shared `createDetailClient` buffers packets before the snapshot, ignores
+stale revisions and applies common-prefix replacement. A gap shows Retry.
+Collapse/unmount calls `session.unsubscribeDetail`; connection disposal clears
+interests. Completed text has a 1,000,000 UTF-16-unit LRU keyed by environment,
+session and detail ref.
 
-1. The document asks RN (`subscribeDetail`), RN sends
-   `subscribe_detail { detailRef, subscriptionId }`. The host registers the
-   interest for that device and answers with a revision-0 snapshot. A device holds
-   at most 64 detail subscriptions, and only for its current progressive session.
-2. As the message changes, the host emits `remote_detail` events to that device:
-   `{ subscriptionId, revision, offset, text }`, where `offset` is the length of
-   the unchanged common prefix and `text` the new suffix. Prefix replacement
-   covers both appended reasoning and tool JSON whose closing characters move.
-   Suffixes are split into 64,000-character packets.
-3. The frontend's detail client (`createDetailClient` in
-   `packages/chat-core/src/detail.ts`) buffers packets that arrive before the
-   snapshot, applies them in revision order, and ignores stale revisions. A gap
-   (offset beyond the current text) surfaces as an error with Retry.
-4. Collapse or unmount sends `unsubscribe_detail`. Subscribing to another
-   session, `leave_session` and `unsubscribe_session` drop all of a device's
-   interests.
-
-Completed detail text is cached by the client in an LRU bounded to 1,000,000
-UTF-16 code units; reopening a cached completed block does not fetch again.
-
-The same client serves every frontend; only its transport differs. The phone
-document uses the native bridge (`packages/chat-view/src/document-detail.ts`).
-The desktop renderer uses `window.environment.subscribeDetail`, which main
-forwards to the session's environment gateway
-(`apps/desktop/src/renderer/src/lib/desktop-detail-client.ts`), and routes
-`remote_detail` events to it. Rows find the client through `DetailScopeProvider`
-(`packages/chat-view/src/detail-scope.tsx`), which the chat view sets per
-session; desktop sets it only for sessions of a remote machine. Desktop renders
-summarized rows with its own blocks: generic, Bash, file-change and command rows
-load when opened, rows with their own chrome (dedicated tools, MCP calls) load
-when shown, and subagent, workflow and Codex collaboration cards load their
-children when opened.
-
-### History navigation
-
-`get_session_history_index` (`apps/desktop/src/main/session/history-navigation.ts`)
-returns every message id, a turn outline with question/reply previews capped at
-160 characters (`HISTORY_PREVIEW_LENGTH`), and compact markers
-(`SessionHistoryIndex` in `packages/shared/src/session-history-index.ts`). SQLite
-extracts only text previews; tool bodies, reasoning and metadata never enter the
-response. The index covers the whole session and is not paged. The document
-requests it through RN (`loadNavigationIndex`) without blocking the first paint,
-and `ChatRuntime` extends it locally as new turns arrive.
-
-A jump outside loaded rows uses `load_session_messages { anchorId, direction:
-'around' | 'before' | 'after', limit: 8 }`; the host seeks the anchor directly
-(limit clamped to 1–40) instead of walking pages. Pages merge by index position
-(`mergeIndexedHistory`), so the loaded transcript can be sparse: the rail shows
-the full timeline, and crossing a gap requests the neighboring page first. Only a
-contiguous window is mounted. Both commands check project/session access.
+`DetailScopeProvider` supplies the session's client to the rows. The phone
+uses `document-detail.ts` through RN's native bridge; the desktop uses its IPC
+detail client and existing presenters. Dedicated tools load when shown,
+expandable rows and subagent/workflow/collaboration cards load when opened.
 
 ## Attachments (phone → host)
 
-Attachments travel as `send_message.images` (`ImageAttachment` with base64). The
+Attachments travel as `session.send.images` (`ImageAttachment` with base64). The
 phone re-encodes pictures before sending
 ([transcript.md](../../apps/mobile/docs/agent-reference/transcript.md)).
 
@@ -300,8 +209,7 @@ Base64 and padding are validated, and the sniffed signature must be JPEG, PNG,
 GIF, WebP or PDF and match the declared MIME type. The phone runs the same check
 before sending.
 
-On the host, `send_message` runs inside `withTurnReceipt`
-(`apps/desktop/src/main/remote/turn-receipt.ts`): access check, then
+The native dispatcher checks access and the admitted control proof, then
 `admitTurnAttachments` (`packages/shared/src/attachment-turn.ts`) validates and
 writes every file under `$TMPDIR/super-one-attachments` before the turn is
 recorded or queued. The receipt `{ ok: true }` is sent when the session admits the
@@ -322,7 +230,7 @@ send. Resend without the original request (`failedMessageResend` in
 host reuses the row, clears its failure and broadcasts `user_message_send_retried`
 so every other client drops its Resend. A send of an id the host already took
 (admitted, queued, answered or running) is held, not run again: `Session.send`
-resolves `{ duplicate: true }` and the phone's `send_message` receipt carries
+resolves `{ duplicate: true }` and the phone's `session.send` receipt carries
 the same flag, so either client stops waiting for a reply. A queued send the backend refuses becomes a
 failed row in the transcript, like any other.
 
@@ -331,7 +239,7 @@ The phone sends every turn, with or without attachments, as a request with a
 keeps the optimistic bubble with Resend and Edit; Edit returns its text and
 attachments to the composer. The composer can therefore clear as soon as the
 turn is dispatched. Before a session exists, an attachment draft stays in the
-composer until `create_session` succeeds.
+composer until `session.create` succeeds.
 
 ### Delivery to the agent
 
@@ -352,14 +260,12 @@ degrading to inline-only delivery.
 
 The phone does not pay for its own bytes twice: the host echoes
 `user_message_appended` to the sending device without base64, transcripts carry
-256 px thumbnails, and the original is fetched on demand with `get_attachment`
-(`apps/desktop/src/main/remote/attachment-echo.ts`, `attachment-thumbnail.ts`).
+256 px thumbnails, and the original is fetched on demand with `session.attachment`
+(`packages/runtime/src/stream/delivery/remote-content.ts`,
+`apps/desktop/src/main/remote/attachment-thumbnail.ts`).
 
 ## Not implemented
 
-- Conditional fetch (`ifNoneMatch` → `{ unchanged: true }`) for catalog RPCs.
-- `subscribe_session { afterMessageId }` delta paging; restore always returns the
-  newest page and merges on the phone.
-- A generic `batch` read command; independent reads are separate requests.
-- `get_mcp_icon_bytes` / content-hash MCP icons; `get_mcp_icons` returns the
-  full server name → icon src map (https or data URI) on every call.
+- Conditional catalog reads (`ifNoneMatch` → `{ unchanged: true }`).
+- A generic batch-read method; independent reads are separate RPCs.
+- Content-hash MCP icon reads; `mcp.icons` currently returns the server map.

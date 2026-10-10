@@ -20,6 +20,8 @@ import { spawn } from 'child_process'
 import { gitRun, isNotGitRepoError, type GitRunOptions } from './git-run'
 import { logGitFailure, logSlowGit } from './git-diagnostics'
 import { AsyncCoalescer } from '@superone/runtime/async-coalescer'
+import { deferredPhoneConnection } from './node-host/deferred-phone-connection'
+import type { PhoneConnection, PhoneLink } from './node-host/phone-endpoint'
 import { countAddedLines } from './git-added-lines'
 import { activateWorktree, assignBranch, getCheckedOutBranches, getHandoffPreview, getWorktreeInfo, gitErrorMessage, handoffToLocal } from './git/worktree-ops'
 import { is } from '@electron-toolkit/utils'
@@ -55,7 +57,6 @@ import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, unregister
 import { MobileReceiveService, type MobileReceiveTarget } from './remote/mobile-receive-service'
 import { inputRequestUploadTarget } from './session/input-requests'
 import { openMiniAppInputRequest, type MiniAppInputRequest } from './miniapp/miniapp-input-requests'
-import { setComposerDevicePush } from './session/composer-delivery'
 import { startSuperoneMcpStdioBridge, stopSuperoneMcpStdioBridge } from './mcp/superone-mcp-stdio-ipc'
 import {
   getComputerUsePermissionStatus,
@@ -85,6 +86,7 @@ import { ensureShellPath, refreshShellPath } from './shell-path'
 import { buildSafeEnv } from './spawn-env'
 import { AgentService } from './agent/agent-service'
 import { SessionManagerImpl } from './session/session-manager'
+import { registerTerminalIpc } from './terminal/terminal-ipc'
 import { TerminalManager } from './terminal/terminal-manager'
 import { addTerminalCommandRule, isTerminalCommandPreapproved, listAllTerminalCommandRules, removeTerminalCommandRule } from './db-terminal-command-rules'
 import { addSessionTerminalCommandRule, isTerminalCommandAllowedForSession } from './mcp/terminal-session-rules'
@@ -93,11 +95,8 @@ import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
 import { isGitMentionRefKind, type GitMentionRefKind } from '@superone/shared/git-mention-query'
 import { AUDIO_EXTENSIONS, BINARY_IMAGE_EXTENSIONS, MODEL_EXTENSIONS, PDF_EXTENSIONS, VIDEO_EXTENSIONS } from '@superone/shared/file-preview'
 import { newMessageId } from '@superone/shared/message-id'
-import { TerminalBroadcaster } from './remote/terminal-broadcaster'
 import { nodePtySpawner } from './terminal/pty'
 import { DeviceRegistry } from './remote/device-registry'
-import { MobileBroadcaster } from './remote/mobile-broadcaster'
-import { PhoneTopics } from './remote/phone-topics'
 import { createDesktopTopicHub, publishHubEvent, topicOfTerminalEvent } from './stream/desktop-topics'
 import { RendererInterest } from './stream/renderer-interest'
 import { LocalTopicRecovery } from './stream/topic-recovery'
@@ -273,7 +272,7 @@ import {
 import { applyLocale, getSystemLocale, getCurrentLocale, initMainI18n, t } from './i18n'
 import { applyAppIcon, clearStoredCustomIcons, getAppIcon, storeCustomIcon } from './app-icon'
 import { planStartDrag } from './start-drag'
-import type { RemoteCommand, PairedDevice, CreateAutomationRequest, RemoteDeviceConfig, UpdateAutomationRequest, ChatMessageContext, ContentBlock, WorktreeActivateRequest } from '@superone/shared/agent-types'
+import type { PairedDevice, CreateAutomationRequest, RemoteDeviceConfig, UpdateAutomationRequest, ChatMessageContext, ContentBlock, WorktreeActivateRequest } from '@superone/shared/agent-types'
 import type { RemoteControlCallbacks } from './remote-control-service'
 import { markStartup } from '@superone/shared/startup-marks'
 import { loadRendererPage, registerRendererProtocol, RENDERER_SCHEME, RENDERER_SCHEME_PRIVILEGES, usesRendererDevServer } from './renderer-protocol'
@@ -726,16 +725,11 @@ sessionEvents.subscribe({
 const deviceRegistry = new DeviceRegistry(sessionManager)
 const remoteCallbacks: RemoteControlCallbacks = {
   hostInfo: () => ({ appVersion: app.getVersion(), protocol: PROTOCOL_GENERATION.current, environmentId: localEnvironmentId }),
-  onCommand: async (command, respond, source) => {
-    await agentService.handleRemoteCommand(command, respond, source)
-    safeSend(AgentIpcChannels.REMOTE_COMMAND, command)
-    if (command.type === 'add_project') {
-      const folders = getRecentFolders()
-      safeSend(AgentIpcChannels.RECENT_FOLDERS_CHANGED, folders)
-    }
-  },
+  openPhoneConnection: link => deferredPhoneConnection(link, async () => {
+    await ensurePhoneDomain()
+    return nativePhoneOpen!(link)
+  }),
   onClientRegistered: ({ deviceName, deviceId, transport, firstConnect }) => {
-    phoneTopics.online(deviceId, transport)
     const name = recordPairedDeviceSeen(deviceId, deviceName)
     safeSend(AgentIpcChannels.REMOTE_DEVICE_STATUS_CHANGED, { id: deviceId, online: true, name, transport, firstConnect })
   },
@@ -743,8 +737,6 @@ const remoteCallbacks: RemoteControlCallbacks = {
     releaseMcpAppRequester({ kind: 'mobile', deviceId })
     safeSend(AgentIpcChannels.REMOTE_DEVICE_STATUS_CHANGED, { id: deviceId, online: false })
     deviceRegistry.handleDeviceDisconnected(deviceId)
-    phoneTopics.offline(deviceId)
-    void import('./remote/environment-commands').then(module => module.releaseEnvironmentDevice(deviceId))
   },
   onPairingCodeReceived: ({ code, deviceName }) => {
     safeSend(AgentIpcChannels.REMOTE_PAIRING_CODE_RECEIVED, { code, deviceName })
@@ -773,12 +765,6 @@ const remoteCallbacks: RemoteControlCallbacks = {
 }
 declare const __CF_RELAY_URL__: string
 const remoteControlService = new RemoteControlService(__CF_RELAY_URL__, remoteCallbacks)
-const phoneTopics = new PhoneTopics(
-  topics,
-  new MobileBroadcaster(sessionManager, remoteControlService, localEnvironmentId, new TerminalBroadcaster(remoteControlService)),
-  localEnvironmentId,
-)
-sessionManager.onSession((session) => { phoneTopics.watchSession(session) })
 let mainWindow: BrowserWindow | null = null
 const miniAppSessionRefs = new Map<string, Set<string>>()
 const allWindows = new Set<BrowserWindow>()
@@ -938,21 +924,16 @@ remoteChildWatcher.start()
 
 new PresenceCoordinator(sessionManager, {
   broadcastToRenderer: (event) => sessionEvents.publish({ event, source: 'presence' }),
-  sendToMobile: (event, targetDeviceIds) => remoteControlService.sendEventToMobile(event, targetDeviceIds),
 })
-void import('./remote/environment-commands').then(({ setRoutedPresence }) => setRoutedPresence({
-  publish: (event) => sessionEvents.publish({ event, source: 'presence' }),
-  kick: (deviceId, sessionId) => void remoteControlService.sendEventToMobile({ type: 'session_kicked', sessionId }, [deviceId]),
-}))
+
 
 const mobileReceiveService = new MobileReceiveService({
   resolveTarget: (sessionId): MobileReceiveTarget | null => {
     if (!sessionId) return null
     const session = sessionManager.getSession(sessionId)
     if (!session) return null
-    const deviceId = session.owner.kind === 'remote'
-      ? session.owner.deviceId
-      : session.subscribers.values().next().value
+    const delegate = session.lease.current?.delegate
+    const deviceId = delegate?.startsWith('phone:') ? delegate.slice(6) : null
     if (!deviceId) return null
     return {
       deviceId,
@@ -985,10 +966,6 @@ const terminalManager = new TerminalManager({
   spawner: nodePtySpawner,
   onEvent: (event) => {
     for (const listener of terminalEventListeners) listener(event)
-    if (event.type === 'terminal_created') {
-      const ownership = terminalManager.get(event.terminalId)?.ownership
-      if (ownership) phoneTopics.watchTerminal(event.terminalId, ownership)
-    }
     publishTerminalEvent(event)
   },
 })
@@ -1001,7 +978,6 @@ const remoteTerminalController = new RemoteTerminalController({
   onAttach: (ref, attached) => rendererInterest.attachTerminal(ref, attached),
 })
 deviceRegistry.setTerminalManager(terminalManager)
-agentService.setTerminalManager(terminalManager)
 setTerminalToolDeps({
   manager: terminalManager,
   rules: {
@@ -1074,18 +1050,33 @@ function desktopPairing(): Promise<typeof import('./node-host/desktop-pairing')>
 
 /** Start or stop the node surface other devices run tasks through; loaded only when it is on. */
 let nodeHostLoaded = false
+let phoneRpcRouter: ReturnType<typeof import('./node-host/routed-phone-rpc')['createPhoneRpcRouter']> | undefined
+let nativePhoneOpen: ((link: PhoneLink) => PhoneConnection) | null = null
+let phoneDomainReady: Promise<void> | null = null
+function ensurePhoneDomain(): Promise<void> {
+  return phoneDomainReady ??= applyNodeHostSettings(readAppSettings()).catch(error => { phoneDomainReady = null; throw error })
+}
 async function applyNodeHostSettings(settings: AppSettings): Promise<void> {
   nodeHostLoaded = true
-  const { applyNodeHostSettings: apply, setNodeHostAccessAllowed } = await import('./node-host/node-host-controller')
+  const { applyNodeHostSettings: apply, openDesktopDomain, setNodeHostAccessAllowed } = await import('./node-host/node-host-controller')
   setNodeHostAccessAllowed(readRemoteConfig()?.enabled === true)
   // The same relay the phone link uses carries the node channel across networks.
-  const [{ createDesktopTerminalsPort }, { createPhoneMethods }] = await Promise.all([
+  const [{ createDesktopTerminalsPort }, { createPhoneMethods }, { createDesktopTopicNotices }, { createPhoneRpcRouter }] = await Promise.all([
     import('./node-host/desktop-terminals-port'),
     import('./remote/phone-methods'),
+    import('./node-host/desktop-topic-notices'),
+    import('./node-host/routed-phone-rpc'),
   ])
-  await apply(settings, sessionManager, {
-    relayUrl: readRemoteConfig()?.relayUrl || __CF_RELAY_URL__,
-    phonePorts: {
+  const environmentHost = (await import('./environment')).getEnvironmentHost()
+  phoneRpcRouter ??= createPhoneRpcRouter(environmentId => environmentHost.phoneRouteTarget(environmentId),
+    (resource, lease) => environmentHost.publishPhoneControl(resource, lease))
+  agentService.setRoutedSessionRelease(sessionId => phoneRpcRouter!.releaseSessions(sessionId))
+  const phonePorts: NonNullable<Parameters<typeof apply>[2]>['phonePorts'] = {
+      rpcRouter: phoneRpcRouter,
+      topicNotices: createDesktopTopicNotices(topics, topicRecovery, localEnvironmentId, (topic, snapshot) => topic.kind === 'sessionList'
+        ? { ...(snapshot as object), activities: agentService.remoteSessionActivity() } : snapshot),
+      beforeDraftOpen: (draftId) => agentService.remotePrepareDraftOpen(draftId),
+      bindLocalControl: (authority) => terminalManager.bindLeases(authority),
       terminals: createDesktopTerminalsPort(terminalManager, (listener) => {
         terminalEventListeners.add(listener)
         return () => terminalEventListeners.delete(listener)
@@ -1096,12 +1087,14 @@ async function applyNodeHostSettings(settings: AppSettings): Promise<void> {
       },
       phoneMethods: createPhoneMethods({
         agent: agentService,
-        desktopPair: async (input) => (await desktopPairing()).handleDesktopPairCommand(input.kind === 'mint'
-          ? { type: 'node_mint', requestId: '', controllerName: input.controllerName }
-          : { type: 'node_pair', requestId: '', nodeCode: input.nodeCode, nodeName: input.nodeName }),
+        sessions: sessionManager,
+        desktopPair: async (input) => (await desktopPairing()).handleDesktopPairCommand(input),
       }),
-    },
-  })
+  }
+  const domain = openDesktopDomain(sessionManager, phonePorts)
+  const { openPhoneConnection } = await import('./node-host/phone-endpoint')
+  nativePhoneOpen = link => openPhoneConnection(domain, link)
+  await apply(settings, sessionManager, { relayUrl: readRemoteConfig()?.relayUrl || __CF_RELAY_URL__, phonePorts })
 }
 
 async function applyAppSettingsPatch(patch: AppSettingsPatch): Promise<AppSettings> {
@@ -1442,7 +1435,6 @@ function createWindow(): void {
   }, { ...request, appName: request.appName ?? miniAppHostName(request.projectDir, request.appId) })
   setMiniAppInputRequestOpener(openMiniAppForm)
   agentService.setMiniAppFormOpener(openMiniAppForm)
-  setComposerDevicePush((deviceId, event) => { void remoteControlService.sendEventToMobile({ ...event }, [deviceId]) })
   setAppToolExecutor(executeMiniAppTool)
   setMiniAppHostReloader(async (projectDir, appId) => {
     const { manifest, args } = await prepareMiniAppHostLaunch(appId, projectDir)
@@ -2522,65 +2514,12 @@ function registerIpcHandlers(): void {
     },
   )
 
-  ipcMain.handle(
-    AgentIpcChannels.TERMINAL_CREATE,
-    async (_e, opts: { projectPath: string; sessionId?: string; title?: string; cols?: number; rows?: number; openedInActivity?: boolean }) => {
-      if (parseRemoteProjectKey(opts.projectPath)) {
-        return remoteTerminalController.create(opts)
-      }
-      const cwd = resolveTerminalCwd(opts.projectPath, opts.sessionId)
-      // The pty inherits process.env and its shell is not a login shell.
-      await ensureShellPath()
-      const session = terminalManager.create({
-        cwd,
-        projectPath: opts.projectPath,
-        title: opts.title ?? (basename(cwd) || 'Terminal'),
-        cols: opts.cols,
-        rows: opts.rows,
-        openedInActivity: opts.openedInActivity,
-      })
-      return session.listItem()
+  registerTerminalIpc({
+    ipc: ipcMain, manager: terminalManager, remote: remoteTerminalController,
+    resolveCwd: resolveTerminalCwd, ensureShellPath,
+    ensureControl: async () => {
+      if (!terminalManager.hasLeases) await applyNodeHostSettings(readAppSettings())
     },
-  )
-  ipcMain.handle(AgentIpcChannels.TERMINAL_LIST, (_e, cwd?: string) => {
-    if (cwd && parseRemoteProjectKey(cwd)) return remoteTerminalController.list(cwd)
-    const local = terminalManager.list(cwd)
-    return cwd === undefined ? [...local, ...remoteTerminalController.list()] : local
-  })
-  ipcMain.handle(AgentIpcChannels.TERMINAL_SNAPSHOT, async (_e, terminalId: string) => {
-    if (remoteTerminalController.has(terminalId)) {
-      return remoteTerminalController.snapshot(terminalId)
-    }
-    const session = terminalManager.get(terminalId)
-    if (!session) return null
-    return session.snapshot('local')
-  })
-  ipcMain.handle(AgentIpcChannels.TERMINAL_WRITE, async (_e, terminalId: string, data: string) => {
-    if (remoteTerminalController.has(terminalId)) {
-      await remoteTerminalController.write(terminalId, data)
-      return
-    }
-    const session = terminalManager.get(terminalId)
-    if (session?.ownership.isWritableBy('local')) session.input(data)
-  })
-  ipcMain.handle(AgentIpcChannels.TERMINAL_RESIZE, async (_e, terminalId: string, cols: number, rows: number) => {
-    if (remoteTerminalController.has(terminalId)) {
-      await remoteTerminalController.resize(terminalId, cols, rows)
-      return
-    }
-    const session = terminalManager.get(terminalId)
-    if (session?.ownership.isWritableBy('local')) session.resize(cols, rows)
-  })
-  ipcMain.handle(AgentIpcChannels.TERMINAL_KILL, async (_e, terminalId: string) => {
-    if (remoteTerminalController.has(terminalId)) {
-      await remoteTerminalController.kill(terminalId)
-      return
-    }
-    terminalManager.kill(terminalId)
-  })
-  ipcMain.handle(AgentIpcChannels.TERMINAL_CLAIM, (_e, terminalId: string) => {
-    if (remoteTerminalController.has(terminalId)) return
-    terminalManager.get(terminalId)?.ownership.reclaimLocal()
   })
   ipcMain.handle(AgentIpcChannels.TERMINAL_COMMAND_RULES_LIST, () => listAllTerminalCommandRules())
   ipcMain.handle(AgentIpcChannels.TERMINAL_COMMAND_RULE_REMOVE, (_e, projectKey: string, pattern: string) =>
@@ -4735,13 +4674,14 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.REMOTE_GET_LAN_STATUS, () => remoteControlService.isLanActive())
   ipcMain.handle(AgentIpcChannels.REMOTE_GET_HOSTNAME, () => hostname())
   ipcMain.handle(AgentIpcChannels.REMOTE_GET_CONFIG, readRemoteConfig)
-  ipcMain.handle(AgentIpcChannels.REMOTE_SAVE_CONFIG, (_, config: RemoteDeviceConfig) => {
+  ipcMain.handle(AgentIpcChannels.REMOTE_SAVE_CONFIG, async (_, config: RemoteDeviceConfig) => {
     // The root is main-owned once stored: a renderer holding a stale copy must not undo a rotation.
     const stored = readRemoteConfig()
     const next: RemoteDeviceConfig = stored
       ? { ...config, masterSecret: stored.masterSecret, channelScheme: REMOTE_CHANNEL_SCHEME }
       : { ...config, channelScheme: REMOTE_CHANNEL_SCHEME }
     writeFileSync(getRemoteConfigPath(), JSON.stringify(next))
+    await ensurePhoneDomain()
     remoteControlService.start(next)
     // Allow Control covers desktops that run tasks here too.
     if (nodeHostLoaded) {
@@ -4784,13 +4724,9 @@ function registerIpcHandlers(): void {
   })
 
   agentService.setRemoteControlService(remoteControlService)
-  agentService.setDeviceRegistry(deviceRegistry)
-  // A mobile client used to re-read a project's session list every time its
-  // drawer opened, because nothing told it when the list had changed. This is
-  // that signal: an invalidation carrying no rows, fanned out to every paired
-  // device (no `sessionId`, so `MobileBroadcaster` does not scope it to one
-  // session's subscribers). Wired here rather than inside `AgentService` so
-  // constructing the service in a test leaves no process-wide watcher behind.
+  // Publish database invalidations to the versioned session-list topic. Native
+  // phone streams subscribe independently of the visible transcript. Wiring
+  // this here keeps process-wide watchers out of AgentService construction.
   watchSessionList((projectPath) => {
     sessionEvents.publish({ event: { type: 'session_list_changed', projectPath }, source: 'list' })
   })
@@ -4832,14 +4768,15 @@ function registerIpcHandlers(): void {
   })
   deviceRegistry.setDraftControl(localDraftStore())
   agentService.setPrepareDraftOpen(installDraftOpenFlush(allWindows))
-  agentService.setDesktopPairCommand(async (command) => (await desktopPairing()).handleDesktopPairCommand(command))
   localDraftStore().watch((event) => sessionEvents.publish({ event, source: 'draft' }))
 
-  const savedRemoteConfig = readRemoteConfig()
-  if (savedRemoteConfig) remoteControlService.start(savedRemoteConfig)
   const startupSettings = readAppSettings()
+  const domainReady = ensurePhoneDomain()
+  const savedRemoteConfig = readRemoteConfig()
+  void domainReady.then(() => { if (savedRemoteConfig) return remoteControlService.start(savedRemoteConfig) })
+    .catch(error => log.warn('[phone-endpoint] startup failed: %s', error instanceof Error ? error.message : String(error)))
   if (startupSettings.remoteNodeAccessEnabled) {
-    void applyNodeHostSettings(startupSettings)
+    void domainReady
       .then(async () => (await desktopPairing()).reconcileNodeHostAtStartup())
       .catch((error) => log.warn('[node-host] startup reconcile failed: %s', error instanceof Error ? error.message : String(error)))
   }

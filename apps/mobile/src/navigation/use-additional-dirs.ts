@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import type { RelayClient } from '@superone/relay-client'
-import type { BrowseHostDirectoryResponse, HarnessId, RemoteCommand } from '@superone/shared/agent-types'
+import type { BrowseHostDirectoryResponse, HarnessId } from '@superone/shared/agent-types'
 import {
   appendBrowsePathSegment, getBrowseDirectoryPath, normalizeHomePrefixInput,
 } from '@superone/shared/path-browse'
 import { resolveBrowsePath } from '@superone/shared/add-project-flow'
-import { randomId } from '../ids'
+import { projectRpc } from '../project-rpc'
+import { runtimeSessionRef } from '../runtime-session-rpc'
 import { requestHarnessResource } from '../harness-resource-cache'
 import { ADD_DIR_TEXT, type AddDirScope, type AddDirStep } from '../add-dir-state'
 import { additionalDirsFromEvents } from '../additional-dirs-events'
@@ -56,6 +57,7 @@ export function useAdditionalDirs(opts: {
   provider: HarnessId
   /** The live session, or `undefined` on the new-session landing. */
   sessionId?: string | null
+  sourceEnvironmentId?: string | null
   /** What the project currently carries — the other half of the effective set. */
   projectDirs: readonly string[]
   onDirs: (dirs: string[]) => void
@@ -87,7 +89,7 @@ export function useAdditionalDirs(opts: {
     }
     const request = ++generation.current
     setLoading(true)
-    void client.request({ type: 'browse_host_directory', requestId: randomId(), path: directoryQuery } as RemoteCommand)
+    void (opts.projectPath ? projectRpc(client, opts.projectPath, 'fs.listDir', { path: directoryQuery }) : client.rpc('fs.listDir', { path: directoryQuery }))
       .then((response) => {
         if (request !== generation.current) return
         const result = response as BrowseHostDirectoryResponse
@@ -100,7 +102,7 @@ export function useAdditionalDirs(opts: {
         setError(cause instanceof Error ? cause.message : String(cause))
       })
       .finally(() => { if (request === generation.current) setLoading(false) })
-  }, [opts.clientRef, directoryQuery])
+  }, [opts.clientRef, opts.projectPath, directoryQuery])
 
   /** What the field currently points at, and whether the host has it. */
   const resolved = useMemo(
@@ -114,14 +116,14 @@ export function useAdditionalDirs(opts: {
     opts.onDirs(resources?.workspaceDirs ?? [])
   }
 
-  const write = async (command: RemoteCommand, after?: () => void) => {
+  const write = async (call: (client: RelayClient, projectPath: string) => Promise<unknown>, after?: () => void) => {
     const client = opts.clientRef.current
     const projectPath = opts.projectPath
     if (!client || !projectPath) return
     setBusy(true)
     setError('')
     try {
-      const result = await client.request(command) as { ok?: boolean; reason?: unknown; error?: string }
+      const result = await call(client, projectPath) as { ok?: boolean; reason?: unknown; error?: string }
       if (result.error) throw new Error(result.error)
       if (result.ok === false) { setError(refusalMessage(result.reason)); return }
       if (after) after()
@@ -140,13 +142,7 @@ export function useAdditionalDirs(opts: {
     // held here and handed to `create_session` rather than written to a host
     // that has nothing to write them to.
     if (!sessionId) { setSessionDirs(dirs); setError(''); return true }
-    return write({
-      type: 'set_session_additional_dirs',
-      requestId: randomId(),
-      projectPath: opts.projectPath ?? '',
-      sessionId,
-      dirs,
-    }, () => setSessionDirs(dirs))
+    return write(client => client.controlledRpc(runtimeSessionRef(client, sessionId, opts.sourceEnvironmentId ?? null), 'session.patchSettings', { settings: { additionalDirectories: dirs } }), () => setSessionDirs(dirs))
   }
 
   const add = (dir: string, scope: AddDirScope) => {
@@ -154,13 +150,7 @@ export function useAdditionalDirs(opts: {
     if (scope === 'session') {
       return sessionDirs.includes(dir) ? Promise.resolve(true) : setSession([...sessionDirs, dir])
     }
-    return write({
-      type: 'add_project_additional_dir',
-      requestId: randomId(),
-      projectPath: opts.projectPath,
-      dir,
-      provider: opts.provider,
-    })
+    return write((client, path) => projectRpc(client, path, 'project.update', { addExtraDirs: [dir] }))
   }
 
   return {
@@ -210,13 +200,7 @@ export function useAdditionalDirs(opts: {
     restoreSessionDirs: setSessionDirs,
     remove: (dir: string, scope: AddDirScope) => {
       if (scope === 'session') return setSession(sessionDirs.filter((entry) => entry !== dir))
-      return write({
-        type: 'remove_project_additional_dir',
-        requestId: randomId(),
-        projectPath: opts.projectPath ?? '',
-        dir,
-        provider: opts.provider,
-      })
+      return write((client, path) => projectRpc(client, path, 'project.update', { removeExtraDirs: [dir] }))
     },
   }
 }

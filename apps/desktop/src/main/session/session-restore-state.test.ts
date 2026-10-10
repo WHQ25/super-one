@@ -1,10 +1,8 @@
+import { nativeRestoreClient, nativeSessionLoad } from './native-restore.test-fixtures'
 import { describe, expect, it, vi } from 'vitest'
 import type { AgentEvent, SendMessageRequest } from '@superone/shared/agent-types'
 import { ChatRuntime } from '../../../../mobile/src/runtime'
-import { ConnectionDelivery, deliveryPolicy } from '@superone/runtime/stream'
-import { buildRemoteSessionSnapshot } from '../agent/remote-session-snapshot'
 
-const phone = () => new ConnectionDelivery(deliveryPolicy('relay', 'phone'))
 import { Session } from './session'
 import type { SessionBackend } from './types'
 
@@ -26,16 +24,7 @@ function fixture() {
 
 /** The phone's restore: subscribe answers with the snapshot, the host's replay is the first buffered batch. */
 async function openOnMobile(session: Session) {
-  const client = {
-    startBuffering() {}, releaseBuffer: () => ({ epoch: 1, batches: [session.getReplayEvents()] }),
-    async request(command: { type: string }) {
-      if (command.type !== 'subscribe_session') return { ok: true }
-      return {
-        historyPage: { messages: [], provider: 'codex', hasMore: false },
-        snapshot: await buildRemoteSessionSnapshot(session, '/project', 'session', phone()),
-      }
-    },
-  }
+  const client = nativeRestoreClient(() => nativeSessionLoad(session), () => [session.getReplayEvents()])
   const runtime = new ChatRuntime(client as never, () => {})
   await runtime.open('/project', 'session')
   return runtime
@@ -44,14 +33,14 @@ async function openOnMobile(session: Session) {
 describe('session state that only events carry', () => {
   it('restores the goal the phone missed while it was away, including a cleared one', async () => {
     const { session, emit } = fixture()
-    expect((await buildRemoteSessionSnapshot(session, '/project', 'session', phone())).goal).toBeNull()
+    expect((await nativeSessionLoad(session)).state.sessionGoal ?? null).toBeNull()
 
     emit({ type: 'session_goal', goal: { objective: 'ship it', status: 'paused' } })
-    expect((await buildRemoteSessionSnapshot(session, '/project', 'session', phone())).goal).toEqual({ objective: 'ship it', status: 'paused' })
+    expect((await nativeSessionLoad(session)).state.sessionGoal).toEqual({ objective: 'ship it', status: 'paused' })
     expect((await openOnMobile(session)).session.sessionGoal).toEqual({ objective: 'ship it', status: 'paused' })
 
     emit({ type: 'session_goal', goal: null })
-    expect((await buildRemoteSessionSnapshot(session, '/project', 'session', phone())).goal).toBeNull()
+    expect((await nativeSessionLoad(session)).state.sessionGoal ?? null).toBeNull()
     expect((await openOnMobile(session)).session.sessionGoal).toBeNull()
   })
 

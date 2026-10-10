@@ -1,5 +1,3 @@
-import type { RelayClient } from '@superone/relay-client'
-import type { RemoteCommand } from '@superone/shared/agent-types'
 import {
   encodeGitMentionValue,
   gitMentionDisplayName,
@@ -16,7 +14,7 @@ import {
   type ParsedGitMentionQuery,
 } from '@superone/shared/git-mention-query'
 import { formatRelativeTime } from '@superone/shared/relative-time'
-import { randomId } from './ids'
+import { projectRpc, type ProjectRpcClient } from './project-rpc'
 import type { MentionItem } from './mentions'
 
 export {
@@ -87,14 +85,12 @@ export function gitRefItems(refs: readonly GitMentionRef[], query: string): Ment
 }
 
 export async function requestGitMentionRefs(
-  client: Pick<RelayClient, 'request'>,
+  client: ProjectRpcClient,
   projectPath: string,
   kind: GitMentionRefKind,
   query: string,
 ): Promise<GitMentionRefsResult> {
-  const result = await client.request({
-    type: 'list_git_mention_refs', requestId: randomId(), projectPath, kind, query,
-  } as RemoteCommand) as GitMentionRefsResult | { error?: string }
+  const result = await projectRpc(client, projectPath, 'git.mentionRefs', { kind, query }) as GitMentionRefsResult | { error?: string }
   if ('error' in result && result.error) throw new Error(result.error)
   return result as GitMentionRefsResult
 }

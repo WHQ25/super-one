@@ -1,4 +1,6 @@
-import { dirname as configDirname, isAbsolute, join as pathJoin, resolve as pathResolve, sep } from 'node:path'
+import { dirname as configDirname, join as pathJoin, resolve as pathResolve, sep } from 'node:path'
+import { handleSessionCreate } from './rpc-session-create'
+import { isAllowedSessionCwd } from './session-cwd'
 import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs'
 import { arch, cpus, freemem, homedir, hostname, platform, totalmem, uptime } from 'node:os'
 import { parseMessageDisplay } from '@superone/shared/message-display'
@@ -8,7 +10,6 @@ import {
   PROTOCOL_GENERATION,
   isNodeHarnessId,
   nodeProjectsDir,
-  normalizeSessionHarnessId,
   OPERATION_SCOPES,
   providerSessionIdFromResume,
   type EnvironmentAggregateType,
@@ -28,20 +29,23 @@ import { loadNodeAgentSettings, patchNodeAgentSettings, resolveAgentTurnDefaults
 import { probeSandboxRpc } from '../sandbox/index'
 import { getMachineInfo, readLiveStatus } from '../machine/index'
 import { readSubscriptionUsage } from '../usage/index'
-import { settingsFromSessionProviderConfig, type NodeSessionRecord } from '../session/index'
+import { type NodeSessionRecord } from '../session/index'
 import { isNodeMutatingCall } from './rpc-mutating-methods'
 import { unsupportedMethodError } from './unsupported'
-import { AGENT_EVENT_BATCH_MS } from '@superone/shared/agent-event-batcher'
-import { openEventStream, streamFilterMatcher, type EventStreamFilter } from './event-stream'
+import { streamFilterMatcher, type EventStreamFilter } from './event-stream'
 import { readTopicRef, type TopicRef } from '@superone/shared/environment/topics'
-import { deliverFrame, deliverLoad, subscribeDetail } from './session-delivery'
-import { combineStreams, openDraftStream, openTerminalStream } from './topic-streams'
+import { handleSessionGet, handleSessionLoad, handleSessionSubscribeDetail, handleSessionUnsubscribeDetail } from './rpc-session-reads'
+import { handleTopicCatchUp, handleTopicSubscribe, handleTopicUpdate, handleTopicUnsubscribe } from './rpc-topic-subscriptions'
 import { asRecord, mapThrown, requireScopes } from './rpc-helpers'
-import { DRAFT_HANDLERS } from './rpc-drafts'
+import { DRAFT_HANDLERS, isDraftOpenReceiptLive } from './rpc-drafts'
+import { TERMINAL_HANDLERS } from './rpc-terminals'
+import { parseSessionSettings } from './session-settings'
+import { parseSessionSendSelections } from './session-send-selections'
 import type {
   ArtifactZonePort,
   RpcContext as HostRpcContext,
   RpcResult,
+  SessionHostPort,
   WorkspaceGitPort,
 } from './rpc-context'
 
@@ -120,17 +124,6 @@ function unsupported(method: string): RpcResult {
 /** The git port when a non-git handler can use it; absent on hosts without git. */
 function optionalGit(ctx: HostRpcContext): WorkspaceGitPort | undefined {
   return ctx.workspaceGit
-}
-
-/**
- * Whether `cwd` may be a session's working directory. With a git port the
- * project root and its worktrees qualify; without one only the project root.
- */
-function isAllowedSessionCwd(ctx: RpcContext, projectId: string, cwd: string): boolean {
-  const git = optionalGit(ctx)
-  if (git) return git.isAllowedSessionCwd(projectId, cwd)
-  const root = ctx.projects.get(projectId)?.path
-  return !!root && pathResolve(cwd) === pathResolve(root)
 }
 
 function mapOs(): ExecutionEnvironmentDescriptor['platform']['os'] {
@@ -212,7 +205,7 @@ export async function dispatchRpc(method: string, payload: unknown, ctx: HostRpc
                     if (!watchId) return false
                     return !!ctx.workspaceTailWatch?.isLive(watchId, ctx.client.clientSessionId)
                   }
-                : undefined,
+                : method === 'draft.open' ? (receipt: unknown) => isDraftOpenReceiptLive(ctx, receipt) : undefined,
         },
       )
       return { result }
@@ -248,13 +241,6 @@ const HANDLERS: Readonly<Record<string, (payload: unknown, ctx: RpcContext, meth
   'harness.probe': (payload, ctx) => handleHarnessProbe(payload, ctx),
   'harness.enable': (payload, ctx) => handleHarnessEnable(payload, ctx),
   'harness.disable': (payload, ctx) => handleHarnessDisable(payload, ctx),
-  'terminal.list': (_payload, ctx) => handleTerminalList(ctx),
-  'terminal.create': (payload, ctx) => handleTerminalCreate(payload, ctx),
-  'terminal.attach': (payload, ctx) => handleTerminalAttach(payload, ctx),
-  'terminal.read': (payload, ctx) => handleTerminalRead(payload, ctx),
-  'terminal.write': (payload, ctx) => handleTerminalWrite(payload, ctx),
-  'terminal.resize': (payload, ctx) => handleTerminalResize(payload, ctx),
-  'terminal.kill': (payload, ctx) => handleTerminalKill(payload, ctx),
   'project.list': (_payload, ctx) => handleProjectList(ctx),
   'project.get': (payload, ctx) => handleProjectGet(payload, ctx),
   'project.open': (payload, ctx) => handleProjectOpen(payload, ctx),
@@ -302,9 +288,6 @@ const HANDLERS: Readonly<Record<string, (payload: unknown, ctx: RpcContext, meth
   'session.acquireControl': (payload, ctx) => handleSessionAcquireControl(payload, ctx),
   'session.renewControl': (payload, ctx) => handleSessionRenewControl(payload, ctx),
   'session.releaseControl': (payload, ctx) => handleSessionReleaseControl(payload, ctx),
-  'terminal.acquireControl': (payload, ctx) => handleTerminalAcquireControl(payload, ctx),
-  'terminal.renewControl': (payload, ctx) => handleTerminalRenewControl(payload, ctx),
-  'terminal.releaseControl': (payload, ctx) => handleTerminalReleaseControl(payload, ctx),
   'session.send': (payload, ctx) => handleSessionSend(payload, ctx),
   'session.modUi': (payload, ctx) => handleSessionModUi(payload, ctx),
   'session.interrupt': (payload, ctx) => handleSessionInterrupt(payload, ctx),
@@ -317,7 +300,8 @@ const HANDLERS: Readonly<Record<string, (payload: unknown, ctx: RpcContext, meth
   'session.renewHostActionClaim': (payload, ctx) => handleSessionRenewHostActionClaim(payload, ctx),
   'session.notifyArtifactCompleted': (payload, ctx) => handleSessionNotifyArtifactCompleted(payload, ctx),
   'session.events': (payload, ctx) => handleSessionEvents(payload, ctx),
-  'topic.subscribe': (payload, ctx) => handleTopicSubscribe(payload, ctx),
+  'topic.subscribe': (payload, ctx) => handleTopicSubscribe(payload, ctx, method => serves(ctx, method)),
+  'topic.catchUp': (payload, ctx) => handleTopicCatchUp(payload, ctx),
   'topic.unsubscribe': (payload, ctx) => handleTopicUnsubscribe(payload, ctx),
   'topic.update': (payload, ctx) => handleTopicUpdate(payload, ctx),
   'session.messages.list': (payload, ctx) => handleSessionMessagesList(payload, ctx),
@@ -350,6 +334,7 @@ const HANDLERS: Readonly<Record<string, (payload: unknown, ctx: RpcContext, meth
   'provider.importBundle': (payload, ctx) => handleProviderImportBundle(payload, ctx),
   'provider.listModels': (payload, ctx) => handleProviderListModels(payload, ctx),
   ...DRAFT_HANDLERS,
+  ...TERMINAL_HANDLERS,
 }
 
 /** Every method this table serves. */
@@ -740,183 +725,6 @@ async function handleSandboxProbe(ctx: RpcContext): Promise<RpcResult> {
   if (denied) return denied
   try {
     return { result: await probeSandboxRpc() }
-  } catch (err) {
-    return mapThrown(err)
-  }
-}
-
-function handleTerminalCreate(payload: unknown, ctx: RpcContext): RpcResult {
-  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateTerminal)
-  if (denied) return denied
-  const p = asRecord(payload)
-  const cwd = typeof p.cwd === 'string' ? p.cwd : process.cwd()
-  try {
-    const info = ctx.terminals.create({
-      cwd,
-      title: typeof p.title === 'string' ? p.title : undefined,
-      cols: typeof p.cols === 'number' ? p.cols : undefined,
-      rows: typeof p.rows === 'number' ? p.rows : undefined,
-    })
-    return {
-      result: {
-        terminalId: info.terminalId,
-        cwd: info.cwd,
-        title: info.title,
-        cols: info.cols,
-        rows: info.rows,
-      },
-    }
-  } catch (err) {
-    return mapThrown(err)
-  }
-}
-
-function handleTerminalList(ctx: RpcContext): RpcResult {
-  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateTerminal)
-  if (denied) return denied
-  return { result: { terminals: ctx.terminals.list() } }
-}
-
-async function handleTerminalAttach(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
-  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateTerminal)
-  if (denied) return denied
-  const p = asRecord(payload)
-  const terminalId = String(p.terminalId ?? '')
-  try {
-    return { result: await ctx.terminals.attach(terminalId) }
-  } catch (err) {
-    return mapThrown(err)
-  }
-}
-
-async function handleTerminalRead(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
-  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateTerminal)
-  if (denied) return denied
-  const p = asRecord(payload)
-  try {
-    return {
-      result: await ctx.terminals.readAfter(
-        String(p.terminalId ?? ''),
-        typeof p.afterSequence === 'string' ? p.afterSequence : '0',
-      ),
-    }
-  } catch (err) {
-    return mapThrown(err)
-  }
-}
-
-function requireTerminalLease(payload: Record<string, unknown>, ctx: RpcContext, terminalId: string): RpcResult | null {
-  try {
-    ctx.leases.assertValid({
-      resource: { environmentId: ctx.identity.environmentId, terminalId },
-      leaseId: String(payload.leaseId ?? ''),
-      generation: String(payload.generation ?? ''),
-      holderClientId: ctx.client.clientSessionId,
-    })
-    return null
-  } catch (err) {
-    return mapThrown(err)
-  }
-}
-
-function handleTerminalWrite(payload: unknown, ctx: RpcContext): RpcResult {
-  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateTerminal)
-  if (denied) return denied
-  const p = asRecord(payload)
-  const terminalId = String(p.terminalId ?? '')
-  const leaseErr = requireTerminalLease(p, ctx, terminalId)
-  if (leaseErr) return leaseErr
-  const data = String(p.data ?? '')
-  if (data.length > 64 * 1024) {
-    return { error: { code: 'invalid_argument', message: 'terminal write payload too large' } }
-  }
-  try {
-    ctx.terminals.write(terminalId, data)
-    return { result: { ok: true } }
-  } catch (err) {
-    return mapThrown(err)
-  }
-}
-
-function handleTerminalResize(payload: unknown, ctx: RpcContext): RpcResult {
-  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateTerminal)
-  if (denied) return denied
-  const p = asRecord(payload)
-  const terminalId = String(p.terminalId ?? '')
-  const leaseErr = requireTerminalLease(p, ctx, terminalId)
-  if (leaseErr) return leaseErr
-  const cols = Number(p.cols ?? 80)
-  const rows = Number(p.rows ?? 24)
-  try {
-    ctx.terminals.resize(terminalId, cols, rows)
-    return { result: { ok: true } }
-  } catch (err) {
-    return mapThrown(err)
-  }
-}
-
-function handleTerminalKill(payload: unknown, ctx: RpcContext): RpcResult {
-  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateTerminal)
-  if (denied) return denied
-  const p = asRecord(payload)
-  const terminalId = String(p.terminalId ?? '')
-  const leaseErr = requireTerminalLease(p, ctx, terminalId)
-  if (leaseErr) return leaseErr
-  try {
-    ctx.terminals.kill(terminalId)
-    return { result: { ok: true } }
-  } catch (err) {
-    return mapThrown(err)
-  }
-}
-
-function handleTerminalAcquireControl(payload: unknown, ctx: RpcContext): RpcResult {
-  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateTerminal)
-  if (denied) return denied
-  const p = asRecord(payload)
-  const terminalId = String(p.terminalId ?? '')
-  try {
-    return {
-      result: ctx.leases.acquire({
-        resource: { environmentId: ctx.identity.environmentId, terminalId },
-        holderClientId: ctx.client.clientSessionId,
-        ttlMs: typeof p.ttlMs === 'number' ? p.ttlMs : undefined,
-      }),
-    }
-  } catch (err) {
-    return mapThrown(err)
-  }
-}
-
-function handleTerminalRenewControl(payload: unknown, ctx: RpcContext): RpcResult {
-  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateTerminal)
-  if (denied) return denied
-  const p = asRecord(payload)
-  try {
-    return {
-      result: ctx.leases.renew({
-        leaseId: String(p.leaseId ?? ''),
-        generation: String(p.generation ?? ''),
-        holderClientId: ctx.client.clientSessionId,
-        ttlMs: typeof p.ttlMs === 'number' ? p.ttlMs : undefined,
-      }),
-    }
-  } catch (err) {
-    return mapThrown(err)
-  }
-}
-
-function handleTerminalReleaseControl(payload: unknown, ctx: RpcContext): RpcResult {
-  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateTerminal)
-  if (denied) return denied
-  const p = asRecord(payload)
-  try {
-    ctx.leases.release(
-      String(p.leaseId ?? ''),
-      String(p.generation ?? ''),
-      ctx.client.clientSessionId,
-    )
-    return { result: { ok: true } }
   } catch (err) {
     return mapThrown(err)
   }
@@ -1556,7 +1364,7 @@ function handleGitWorktreeHandoffPreview(payload: unknown, ctx: RpcContext): Rpc
   }
 }
 
-function handleSessionSetCwd(payload: unknown, ctx: RpcContext): RpcResult {
+async function handleSessionSetCwd(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
   if (denied) return denied
   const p = asRecord(payload)
@@ -1583,7 +1391,7 @@ function handleSessionSetCwd(payload: unknown, ctx: RpcContext): RpcResult {
     if (cwd !== null && !isAllowedSessionCwd(ctx, session.projectId, cwd)) {
       return { error: { code: 'invalid_argument', message: 'cwd not allowed for this project' } }
     }
-    return { result: ctx.sessions.setCwd(sessionId, cwd) }
+    return { result: await ctx.sessions.setCwd(sessionId, cwd) }
   } catch (err) {
     return mapThrown(err)
   }
@@ -1596,7 +1404,7 @@ function handleSessionSetCwd(payload: unknown, ctx: RpcContext): RpcResult {
  * turn omits the corresponding option — so remote chat need not re-send full
  * options every turn.
  */
-function handleSessionPatchSettings(payload: unknown, ctx: RpcContext): RpcResult {
+async function handleSessionPatchSettings(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
   if (denied) return denied
   const p = asRecord(payload)
@@ -1618,30 +1426,8 @@ function handleSessionPatchSettings(payload: unknown, ctx: RpcContext): RpcResul
       holderClientId: ctx.client.clientSessionId,
     })
     const settingsSrc = asRecord(p.settings ?? p)
-    const patch: {
-      permissionMode?: string | null
-      sandboxMode?: string | null
-      model?: string | null
-      effort?: string | null
-      apiProviderId?: string | null
-    } = {}
-    const take = (key: keyof typeof patch): void => {
-      if (!(key in settingsSrc)) return
-      const v = settingsSrc[key]
-      if (v === null) {
-        patch[key] = null
-        return
-      }
-      if (typeof v === 'string') {
-        patch[key] = v
-      }
-    }
-    take('permissionMode')
-    take('sandboxMode')
-    take('model')
-    take('effort')
-    take('apiProviderId')
-    return { result: ctx.sessions.patchSettings(sessionId, patch) }
+    const patch = parseSessionSettings(settingsSrc)
+    return { result: await ctx.sessions.patchSettings(sessionId, patch) }
   } catch (err) {
     return mapThrown(err)
   }
@@ -1661,6 +1447,7 @@ async function handleSessionFork(payload: unknown, ctx: RpcContext): Promise<Rpc
     return { error: { code: 'invalid_argument', message: 'sessionId required' } }
   }
   const mode = p.mode === 'local' ? 'local' : 'worktree'
+  if (p.mode !== undefined && p.mode !== 'local' && p.mode !== 'worktree') return { error: { code: 'invalid_argument', message: 'mode must be local|worktree' } }
   const forkFromMessageId =
     typeof p.forkFromMessageId === 'string' && p.forkFromMessageId.trim()
       ? p.forkFromMessageId.trim()
@@ -1677,6 +1464,15 @@ async function handleSessionFork(payload: unknown, ctx: RpcContext): Promise<Rpc
   let targetCwd: string | null = source.cwd
 
   try {
+    const assertControl = () => ctx.leases.assertValid({ resource: { environmentId: ctx.identity.environmentId, sessionId }, leaseId: String(p.leaseId ?? ''), generation: String(p.generation ?? ''), holderClientId: ctx.client.clientSessionId })
+    assertControl()
+    if (mode === 'worktree') {
+      const writeDenied = requireScopes(ctx.client, OPERATION_SCOPES.writeWorkspace)
+      if (writeDenied) return writeDenied
+    }
+    if (ctx.sessions.forkOnHost) {
+      return { result: await ctx.sessions.forkOnHost({ sessionId, mode, forkFromMessageId, carryLocalChanges: p.carryLocalChanges !== false, client: { clientSessionId: ctx.client.clientSessionId }, leaseId: String(p.leaseId ?? ''), generation: String(p.generation ?? '') }) }
+    }
     if (mode === 'worktree') {
       // writeWorkspace for git worktree create
       const writeDenied = requireScopes(ctx.client, OPERATION_SCOPES.writeWorkspace)
@@ -1685,11 +1481,13 @@ async function handleSessionFork(payload: unknown, ctx: RpcContext): Promise<Rpc
       const wt = await git.activateWorktree(source.projectId, {
         baseBranch: 'HEAD',
         mode: 'detach',
-        carryLocalChanges: true,
+        carryLocalChanges: p.carryLocalChanges !== false,
       })
       worktreePath = wt.path
       targetCwd = wt.path
     }
+
+    assertControl()
 
     const effectiveCwd =
       (targetCwd && targetCwd.trim()) ||
@@ -1712,7 +1510,7 @@ async function handleSessionFork(payload: unknown, ctx: RpcContext): Promise<Rpc
       const message = err instanceof Error ? err.message : String(err)
       if (worktreePath) {
         try {
-          git?.removeWorktree(source.projectId, worktreePath)
+          await git?.removeWorktree(source.projectId, worktreePath)
         } catch {
           /* best-effort */
         }
@@ -1725,6 +1523,7 @@ async function handleSessionFork(payload: unknown, ctx: RpcContext): Promise<Rpc
       }
     }
 
+    assertControl()
     const forked = ctx.sessions.fork({
       sourceSessionId: sessionId,
       cwd: targetCwd,
@@ -1742,7 +1541,7 @@ async function handleSessionFork(payload: unknown, ctx: RpcContext): Promise<Rpc
   } catch (err) {
     if (worktreePath) {
       try {
-        git?.removeWorktree(source.projectId, worktreePath)
+        await git?.removeWorktree(source.projectId, worktreePath)
       } catch {
         /* best-effort cleanup */
       }
@@ -1808,175 +1607,6 @@ async function handleGitClone(payload: unknown, ctx: RpcContext): Promise<RpcRes
   }
 }
 
-function handleSessionCreate(payload: unknown, ctx: RpcContext): RpcResult {
-  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
-  if (denied) return denied
-  const p = asRecord(payload)
-  const rawHarnessId = typeof p.harnessId === 'string' ? p.harnessId : 'claude'
-  // Stage 1 wire contract: normalize catalog id acp-grok → session wire acp
-  // before persistence so the turn runner never sees an unknown harness id.
-  const harnessId = normalizeSessionHarnessId(rawHarnessId)
-  if (!harnessId) {
-    return {
-      error: {
-        code: 'invalid_argument',
-        message: `unknown harnessId: ${rawHarnessId}`,
-      },
-    }
-  }
-  // Catalog ready OR a bundled/binary runtime that can launch without catalog install.
-  const catalogReady = ctx.harnesses.isSessionHarnessRunnable(harnessId)
-  const codexOverride =
-    harnessId === 'codex' && ctx.hooks.isCodexBinaryOverrideRunnable()
-  const claudeOverride =
-    harnessId === 'claude' && ctx.hooks.isClaudeBinaryOverrideRunnable()
-  if (!catalogReady && !codexOverride && !claudeOverride) {
-    return {
-      error: {
-        code: 'failed_precondition',
-        message: `harness not ready: ${harnessId}`,
-        details: {
-          harnessId,
-          requestedHarnessId: rawHarnessId,
-          readyHarnessIds: ctx.harnesses.readySessionHarnessIds(),
-        },
-      },
-    }
-  }
-  // Fail-closed: catalog ready must still have a real binary/runtime (no silent sim).
-  // Lab overrides (claude SDK / SUPERONE_CODEX_BINARY) satisfy assertSessionHarnessRuntimeReady.
-  if (!ctx.simulatedHarness) {
-    const runtime = ctx.hooks.assertSessionHarnessRuntimeReady(harnessId, ctx.harnesses)
-    if (!runtime.ok) {
-      return {
-        error: {
-          code: 'failed_precondition',
-          message: runtime.reason,
-          details: {
-            harnessId,
-            requestedHarnessId: rawHarnessId,
-            readyHarnessIds: ctx.harnesses.readySessionHarnessIds(),
-          },
-        },
-      }
-    }
-  }
-  const projectId = String(p.projectId ?? '').trim()
-  if (!projectId) {
-    return { error: { code: 'invalid_argument', message: 'projectId is required' } }
-  }
-  if (!ctx.projects.get(projectId)) {
-    return { error: { code: 'not_found', message: `unknown projectId: ${projectId}` } }
-  }
-  // Optional working directory: the project root or one of its worktrees.
-  if (p.cwd != null && typeof p.cwd !== 'string') {
-    return { error: { code: 'invalid_argument', message: 'cwd must be a string' } }
-  }
-  const cwd = typeof p.cwd === 'string' && p.cwd.trim() ? p.cwd.trim() : null
-  if (cwd !== null && (!isAbsolute(cwd) || !isAllowedSessionCwd(ctx, projectId, cwd))) {
-    return { error: { code: 'invalid_argument', message: 'cwd not allowed for this project' } }
-  }
-  // Optional system-prompt append (e.g. a collaboration prompt for a launched child).
-  if (p.systemPromptAppend != null && typeof p.systemPromptAppend !== 'string') {
-    return { error: { code: 'invalid_argument', message: 'systemPromptAppend must be a string' } }
-  }
-  const systemPromptAppend = typeof p.systemPromptAppend === 'string' ? p.systemPromptAppend : null
-  // A collaboration child launched by a session on another machine: its mailbox
-  // tools go to that machine through Host Actions instead of this node's own.
-  const externalParent = asRecord(p.externalParent)
-  const externalParentSessionId =
-    typeof externalParent.sessionId === 'string' ? externalParent.sessionId.trim() : ''
-  if (p.externalParent != null && !externalParentSessionId) {
-    return { error: { code: 'invalid_argument', message: 'externalParent.sessionId is required' } }
-  }
-  try {
-    // Resolve agent defaults at create so the client can seed UI without a second round-trip.
-    // Precedence: explicit create options → session_providers.config → node agent defaults.
-    const agentSettings = loadNodeAgentSettings(ctx.settingsConfigPath)
-    const defaults = resolveAgentTurnDefaults(agentSettings, harnessId)
-    const options = asRecord(p.options)
-    const providerId =
-      typeof p.providerId === 'string' && p.providerId.trim() ? p.providerId.trim() : undefined
-    const profile = providerId ? ctx.sessionProviders?.get(providerId) ?? null : null
-    const profileSettings = profile
-      ? settingsFromSessionProviderConfig(profile.config)
-      : {}
-    const pick = (
-      fromOptions: unknown,
-      fromPayload: unknown,
-      fromProfile: string | undefined,
-      fromDefaults: string | null | undefined,
-    ): string | null => {
-      if (typeof fromOptions === 'string' && fromOptions.trim()) return fromOptions.trim()
-      if (typeof fromPayload === 'string' && fromPayload.trim()) return fromPayload.trim()
-      if (fromProfile) return fromProfile
-      return fromDefaults ?? null
-    }
-    const model = pick(options.model, p.model, profileSettings.model, defaults.model)
-    const effort = pick(options.effort, p.effort, profileSettings.effort, defaults.effort)
-    const permissionMode = pick(
-      options.permissionMode,
-      p.permissionMode,
-      profileSettings.permissionMode,
-      defaults.permissionMode,
-    )
-    const sandboxMode = pick(
-      options.sandboxMode,
-      p.sandboxMode,
-      profileSettings.sandboxMode,
-      defaults.sandboxMode,
-    )
-    // A credential id on this node; null follows the node's provider binding.
-    const apiProviderId = pick(options.apiProviderId, p.apiProviderId, undefined, null)
-    let session = ctx.sessions.create({
-      projectId,
-      harnessId,
-      providerId,
-      ...(apiProviderId ? { apiProviderId } : {}),
-      title: typeof p.title === 'string' ? p.title : undefined,
-      cwd,
-      systemPromptAppend,
-      ...(externalParentSessionId ? { externalParent: { sessionId: externalParentSessionId } } : {}),
-      // Initial HA controller = creating client. Token refresh keeps the same
-      // clientSessionId; re-pair does not — acquireControl rebinds (see above).
-      controllerClientSessionId: ctx.client.clientSessionId,
-    })
-    // Seed durable settings from create-time options / profile / agent defaults so later
-    // session.send without options reuses the same model/effort/etc.
-    if (model || effort || permissionMode || sandboxMode) {
-      session = ctx.sessions.patchSettings(session.sessionId, {
-        ...(model ? { model } : {}),
-        ...(effort ? { effort } : {}),
-        ...(permissionMode ? { permissionMode } : {}),
-        ...(sandboxMode ? { sandboxMode } : {}),
-      })
-    }
-    return {
-      result: {
-        ...session,
-        defaults: {
-          model,
-          effort,
-          permissionMode,
-          sandboxMode,
-          permissionPreset: defaults.permissionPreset ?? null,
-          disabledSkills: defaults.disabledSkills ?? [],
-        },
-      },
-    }
-  } catch (err) {
-    return mapThrown(err)
-  }
-}
-
-function handleSessionGet(payload: unknown, ctx: RpcContext): RpcResult {
-  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readSession)
-  if (denied) return denied
-  const sessionId = String(asRecord(payload).sessionId ?? '')
-  const session = ctx.sessions.get(sessionId)
-  const config = session?.harnessId === 'acp' ? ctx.sessionProviders?.get(session.providerId)?.config as { agentId?: string } | undefined : undefined
-  return { result: session ? { ...session, ...(session.harnessId === 'acp' ? { acpAgentId: config?.agentId ?? null } : {}) } : null }
-}
 
 /**
  * Metadata-only session row. Transcript body is NOT returned — count via
@@ -2133,7 +1763,7 @@ function handleSessionReleaseControl(payload: unknown, ctx: RpcContext): RpcResu
   }
 }
 
-function handleSessionClose(payload: unknown, ctx: RpcContext): RpcResult {
+async function handleSessionClose(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
   if (denied) return denied
   const p = asRecord(payload)
@@ -2145,7 +1775,7 @@ function handleSessionClose(payload: unknown, ctx: RpcContext): RpcResult {
       generation: String(p.generation ?? ''),
       holderClientId: ctx.client.clientSessionId,
     })
-    ctx.sessions.close(sessionId)
+    await ctx.sessions.close(sessionId)
     try {
       ctx.leases.release(
         String(p.leaseId ?? ''),
@@ -2162,7 +1792,7 @@ function handleSessionClose(payload: unknown, ctx: RpcContext): RpcResult {
 }
 
 /** Unregister session from node registry (sidebar delete). Lease optional if already closed. */
-function handleSessionRemove(payload: unknown, ctx: RpcContext): RpcResult {
+async function handleSessionRemove(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
   if (denied) return denied
   const p = asRecord(payload)
@@ -2184,7 +1814,7 @@ function handleSessionRemove(payload: unknown, ctx: RpcContext): RpcResult {
         holderClientId: ctx.client.clientSessionId,
       })
     }
-    const removed = ctx.sessions.remove(sessionId)
+    const removed = await ctx.sessions.remove(sessionId)
     // The zone directory goes with the session (session-sync-zone.md §7); the
     // controller cannot call artifact.delete afterwards because the binding is gone.
     void ctx.artifacts?.delete(sessionId).catch(() => undefined)
@@ -2278,6 +1908,7 @@ async function handleSessionSend(payload: unknown, ctx: RpcContext): Promise<Rpc
   const p = asRecord(payload)
   try {
     const options = asRecord(p.options)
+    const selections = parseSessionSendSelections(p, options)
     const modelFromOptions =
       typeof options.model === 'string' && options.model.trim() ? options.model.trim() : null
     const modelTopLevel =
@@ -2455,6 +2086,7 @@ async function handleSessionSend(payload: unknown, ctx: RpcContext): Promise<Rpc
       text: String(p.text ?? ''),
       clientMessageId: typeof p.clientMessageId === 'string' ? p.clientMessageId : undefined,
       ...parseMessageDisplay(options),
+      ...selections,
       echoUserMessage: options.echoUserMessage === true,
       client: { clientSessionId: ctx.client.clientSessionId },
       leaseId: String(p.leaseId ?? ''),
@@ -2466,6 +2098,7 @@ async function handleSessionSend(payload: unknown, ctx: RpcContext): Promise<Rpc
       sandboxMode,
       additionalDirectories:
         additionalDirectories.length > 0 ? additionalDirectories : undefined,
+      callerAdditionalDirectories: Array.isArray(options.additionalDirectories) || Array.isArray(p.additionalDirectories) ? clientAdditionalDirectories : undefined,
       enabledSkills: enabledSkills.length > 0 ? enabledSkills : undefined,
       disabledSkills: disabledSkills.length > 0 ? disabledSkills : undefined,
       images: images.length > 0 ? images : undefined,
@@ -2554,6 +2187,8 @@ function handleSessionRespondPermission(payload: unknown, ctx: RpcContext): RpcR
       generation: String(p.generation ?? ''),
       formAnswers,
       cancel: p.cancel === true || (p.options as { cancel?: boolean } | undefined)?.cancel === true,
+      reason: typeof p.reason === 'string' ? p.reason : undefined,
+      selectedSuggestions: Array.isArray(p.selectedSuggestions) ? p.selectedSuggestions.filter((value): value is number => typeof value === 'number' && Number.isInteger(value) && value >= 0) : undefined,
     })
     return { result: { ok: true } }
   } catch (err) {
@@ -2570,6 +2205,8 @@ function handleSessionRespondQuestion(payload: unknown, ctx: RpcContext): RpcRes
       sessionId: String(p.sessionId ?? ''),
       interactionId: String(p.interactionId ?? ''),
       answers: p.answers,
+      dismiss: p.dismiss === true,
+      annotations: p.annotations && typeof p.annotations === 'object' && !Array.isArray(p.annotations) ? p.annotations as Parameters<SessionHostPort['respondQuestion']>[0]['annotations'] : undefined,
       client: { clientSessionId: ctx.client.clientSessionId },
       leaseId: String(p.leaseId ?? ''),
       generation: String(p.generation ?? ''),
@@ -2580,7 +2217,7 @@ function handleSessionRespondQuestion(payload: unknown, ctx: RpcContext): RpcRes
   }
 }
 
-function handleSessionRespondPlan(payload: unknown, ctx: RpcContext): RpcResult {
+async function handleSessionRespondPlan(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
   if (denied) return denied
   const p = asRecord(payload)
@@ -2589,7 +2226,7 @@ function handleSessionRespondPlan(payload: unknown, ctx: RpcContext): RpcResult 
     return { error: { code: 'invalid_argument', message: 'decision must be approve|reject' } }
   }
   try {
-    ctx.sessions.respondPlan({
+    await ctx.sessions.respondPlan({
       sessionId: String(p.sessionId ?? ''),
       interactionId: String(p.interactionId ?? ''),
       decision,
@@ -2784,146 +2421,7 @@ function handleSessionEvents(payload: unknown, ctx: RpcContext): RpcResult {
   return { result: { events } }
 }
 
-/**
- * Push the events after `afterSequence` on this connection, then every new
- * one as it commits (`openEventStream`). Frames can precede this result, so
- * the client picks `subscriptionId`.
- */
-function handleTopicSubscribe(payload: unknown, ctx: RpcContext): RpcResult {
-  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readSession)
-  if (denied) return denied
-  const streams = ctx.streams
-  if (!streams) return { error: { code: 'failed_precondition', message: 'topic.subscribe needs a socket connection' } }
-  const p = asRecord(payload)
-  const subscriptionId = String(p.subscriptionId ?? '').trim()
-  const afterSequence = String(p.afterSequence ?? '').trim()
-  if (!subscriptionId) return { error: { code: 'invalid_argument', message: 'subscriptionId required' } }
-  if (!/^\d+$/.test(afterSequence)) return { error: { code: 'invalid_argument', message: 'afterSequence must be a decimal sequence' } }
-  const versions = streamVersions(p.versions)
-  if (versions === null) return { error: { code: 'invalid_argument', message: 'versions must map session ids to versions' } }
-  const topics = readTopics(p.topics)
-  if (!topics) return { error: { code: 'invalid_argument', message: 'topics must be a list of topic refs' } }
-  const sessions = ctx.sessions
-  let sentSequence = afterSequence
-  const stream = openEventStream({
-    source: sessions,
-    environmentId: ctx.identity.environmentId,
-    reader: ctx.client,
-    cursor: { afterSequence, epoch: typeof p.epoch === 'string' ? p.epoch : undefined, versions },
-    filter: { topics },
-    push: (frame) => {
-      if (!streams.delivery) {
-        streams.push({ type: 'stream', subscriptionId, frame })
-        return
-      }
-      const delivered = deliverFrame(frame, streams.delivery, sessions)
-      // A frame the policy emptied says nothing new unless it moves the cursor.
-      const { events, resnapshot, sequence } = delivered.frame
-      if (events.length > 0 || resnapshot?.length || sequence !== sentSequence) {
-        sentSequence = sequence
-        streams.push({ type: 'stream', subscriptionId, frame: delivered.frame })
-      }
-      for (const { sessionId, update } of delivered.details) streams.push({ type: 'detail', sessionId, update })
-    },
-    flow: streams.flow,
-    batchMs: streams.delivery && streams.delivery.policy.tier !== 'local' ? AGENT_EVENT_BATCH_MS : 0,
-  })
-  const terminals = ctx.terminals?.onEvent && serves(ctx, 'terminal.attach')
-    ? openTerminalStream({
-        source: { onEvent: (listener) => ctx.terminals!.onEvent!(listener) },
-        environmentId: ctx.identity.environmentId,
-        topics,
-        push: (event) => streams.push({ type: 'terminal', subscriptionId, event }),
-      })
-    : null
-  const drafts = ctx.drafts?.watch && serves(ctx, 'draft.list')
-    ? openDraftStream({
-        source: { watch: (listener) => ctx.drafts!.watch!(listener) },
-        environmentId: ctx.identity.environmentId,
-        topics,
-        throttleSaves: streams.delivery?.policy.tier === 'relay',
-        push: (event) => streams.push({ type: 'draft', subscriptionId, event }),
-      })
-    : null
-  streams.open(subscriptionId, combineStreams(stream, terminals, drafts))
-  return { result: { subscriptionId } }
-}
 
-/** A stream's topics, or null when any entry is not a topic ref. An empty list is a stream that is idle for now. */
-function readTopics(value: unknown): TopicRef[] | null {
-  if (!Array.isArray(value)) return null
-  const topics = value.map(readTopicRef)
-  return topics.every((topic): topic is TopicRef => topic !== null) ? topics : null
-}
-
-/** Change an open stream's topics in place; events of added topics flow from now on. */
-function handleTopicUpdate(payload: unknown, ctx: RpcContext): RpcResult {
-  const p = asRecord(payload)
-  const stream = ctx.streams?.get(String(p.subscriptionId ?? '').trim())
-  if (!stream) return { error: { code: 'not_found', message: 'no open stream with this subscriptionId' } }
-  const topics = readTopics(p.topics)
-  if (!topics) return { error: { code: 'invalid_argument', message: 'topics must be a list of topic refs' } }
-  stream.setTopics(topics)
-  return { result: { ok: true } }
-}
-
-/** A subscribe cursor's per-session versions, or null when malformed. */
-function streamVersions(value: unknown): Record<string, number> | null {
-  if (value === undefined) return {}
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
-  const entries = Object.entries(value as Record<string, unknown>)
-  if (entries.some(([, version]) => !Number.isSafeInteger(version) || (version as number) < 0)) return null
-  return Object.fromEntries(entries) as Record<string, number>
-}
-
-/** A session's reduced state and newest messages, with the version they reflect. */
-function handleSessionLoad(payload: unknown, ctx: RpcContext): RpcResult {
-  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readSession)
-  if (denied) return denied
-  const p = asRecord(payload)
-  const sessionId = String(p.sessionId ?? '').trim()
-  if (!sessionId) return { error: { code: 'invalid_argument', message: 'sessionId required' } }
-  try {
-    const loaded = ctx.sessions.load({
-      sessionId,
-      before: typeof p.before === 'number' ? p.before : null,
-      limit: typeof p.limit === 'number' ? p.limit : undefined,
-    })
-    return { result: deliverLoad(loaded, ctx.streams?.delivery) }
-  } catch (err) {
-    return mapThrown(err)
-  }
-}
-
-/** Expand a row of a session this connection loaded summarized; packets follow as `detail` messages. */
-function handleSessionSubscribeDetail(payload: unknown, ctx: RpcContext): RpcResult {
-  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readSession)
-  if (denied) return denied
-  const delivery = ctx.streams?.delivery
-  if (!delivery) return { error: { code: 'failed_precondition', message: 'session.subscribeDetail needs a socket connection' } }
-  const p = asRecord(payload)
-  const sessionId = String(p.sessionId ?? '').trim()
-  const detailRef = String(p.detailRef ?? '')
-  const subscriptionId = String(p.subscriptionId ?? '').trim()
-  if (!sessionId || !detailRef || !subscriptionId) return { error: { code: 'invalid_argument', message: 'sessionId, detailRef and subscriptionId required' } }
-  try {
-    return { result: subscribeDetail(delivery, ctx.sessions, { sessionId, detailRef, subscriptionId }) }
-  } catch (err) {
-    return mapThrown(err)
-  }
-}
-
-function handleSessionUnsubscribeDetail(payload: unknown, ctx: RpcContext): RpcResult {
-  const p = asRecord(payload)
-  ctx.streams?.delivery?.views.unsubscribe(String(p.sessionId ?? '').trim(), String(p.subscriptionId ?? '').trim())
-  return { result: { ok: true } }
-}
-
-function handleTopicUnsubscribe(payload: unknown, ctx: RpcContext): RpcResult {
-  const subscriptionId = String(asRecord(payload).subscriptionId ?? '').trim()
-  ctx.streams?.close(subscriptionId)
-  return { result: { ok: true } }
-}
 
 /**
  * Paged denser message catalog (tool summaries, optional checkpoint/resume).

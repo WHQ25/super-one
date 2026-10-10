@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import type { TerminalEvent } from '@superone/shared/agent-types'
 import { TerminalSession } from './terminal-session'
-import { TerminalOwnership } from './terminal-ownership'
+import { terminalLease } from './terminal-lease.test-fixtures'
 import type { PtyLike, PtySpawner } from './pty'
 
 function fakePty() {
@@ -48,7 +48,7 @@ function makeSession(opts?: { coalesceMs?: number; snapshotSoftLimit?: number })
     cols: 80,
     rows: 24,
     spawner,
-    ownership: new TerminalOwnership(),
+    lease: terminalLease(),
     coalesceMs: opts?.coalesceMs ?? 8,
     snapshotSoftLimit: opts?.snapshotSoftLimit,
     shell: '/bin/zsh',

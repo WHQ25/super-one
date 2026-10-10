@@ -42,6 +42,6 @@ export async function connectTestPhone(port: number, credential: ChannelCredenti
   return { socket, channel, handshake: header as Record<string, unknown> }
 }
 
-export function sealTestCommand(channel: SecureChannel, body: unknown): string {
-  return JSON.stringify({ type: 'command', data: sealLinkFrame(channel, { t: 'command' }, new TextEncoder().encode(JSON.stringify(body))) })
+export function sealTestRpc(channel: SecureChannel, body: unknown): string {
+  return JSON.stringify({ type: 'command', data: sealLinkFrame(channel, { t: 'rpc' }, new TextEncoder().encode(JSON.stringify(body))) })
 }

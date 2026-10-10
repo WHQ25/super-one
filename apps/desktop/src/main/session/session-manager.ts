@@ -158,6 +158,7 @@ export class SessionManagerImpl implements SessionManagerContract {
       // session row — with no panel to render it and no database row behind it.
       if (session.ephemeral) continue
       out.push({
+        controlLease: session.lease.current,
         sid,
         projectPath,
         isActive: this.activeByProject.get(projectPath) === sid,

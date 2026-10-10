@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { RelayClient } from '@superone/relay-client'
 import { readProjectSessions, SESSION_PAGE_SIZE } from './workspace-data'
+import { resolveTestProject } from '../project-rpc.test-fixtures'
 
 function stubClient(reply: Record<string, unknown>): RelayClient {
-  return { request: async () => reply } as unknown as RelayClient
+  return { resolveProject: resolveTestProject, rpc: async () => reply } as unknown as RelayClient
 }
 
 const rows = (count: number) =>

@@ -23,6 +23,10 @@ export interface NodeSessionSettings {
   model?: string | null
   effort?: string | null
   apiProviderId?: string | null
+  /** Desktop harness selections; hosts without these features refuse an explicit patch. */
+  mode?: string | null
+  agentPreset?: string | null
+  additionalDirectories?: string[] | null
 }
 
 export interface NodeSessionRecord {
@@ -50,6 +54,9 @@ export interface NodeSessionRecord {
   model?: string | null
   effort?: string | null
   apiProviderId?: string | null
+  mode?: string | null
+  agentPreset?: string | null
+  additionalDirectories?: string[] | null
   createdAt: number
   updatedAt: number
   isPinned: boolean

@@ -11,6 +11,7 @@ import { runUiAction } from '../ui-action'
 import { FilePreviewModal } from '../ui/file-preview'
 import type { useFilePreview } from './use-file-preview'
 import { WorkspaceDrawer, type WorkspaceDrawerProps } from './workspace-drawer'
+import { DesktopUpgradeSheet, type DesktopUpgradeSheetProps } from '../screens/desktop-upgrade-sheet'
 
 export function MobileOverlays(props: {
   runtimeRef: RefObject<ChatRuntime | null>
@@ -27,6 +28,7 @@ export function MobileOverlays(props: {
   filePreview: ReturnType<typeof useFilePreview>
   mediaPorts: MediaPorts
   documentPorts: MarkdownDocumentPorts
+  desktopUpgrade: DesktopUpgradeSheetProps
 }) {
   const runtime = () => props.runtimeRef.current
   return (
@@ -61,8 +63,8 @@ export function MobileOverlays(props: {
           props.setStatus,
           'plan response failed',
         )}
-        onApproveAndContinue={(id, mode) => runUiAction(() => {
-          runtime()?.respondPlan(id, true)
+        onApproveAndContinue={(id, mode) => runUiAction(async () => {
+          await runtime()?.respondPlan(id, true)
           runtime()?.setPermissionMode(mode)
           props.onPlanContinueMode(mode)
         }, props.setStatus, 'plan response failed')}
@@ -83,6 +85,7 @@ export function MobileOverlays(props: {
         generationPorts={props.filePreview.generationPorts}
         documentPorts={props.documentPorts}
       />
+      <DesktopUpgradeSheet {...props.desktopUpgrade} />
     </>
   )
 }

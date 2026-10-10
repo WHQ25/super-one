@@ -457,7 +457,6 @@ describe('RemoteControlService connected devices', () => {
     const registered: unknown[] = []
     const disconnected: unknown[] = []
     const service = new RemoteControlService('wss://relay.example', {
-      onCommand: vi.fn(),
       onClientRegistered: (info) => registered.push(info),
       onClientDisconnected: (info) => disconnected.push(info),
     })
@@ -489,7 +488,7 @@ describe('RemoteControlService connected devices', () => {
 
 describe('RemoteControlService hasReachableDevice', () => {
   it('counts a relay device only while the relay socket is open, and a LAN device always', () => {
-    const service = new RemoteControlService('wss://relay.example', { onCommand: vi.fn() })
+    const service = new RemoteControlService('wss://relay.example', { })
     const internals = service as unknown as {
       markDeviceOnline: (name: string, id: string, via: 'lan' | 'relay') => void
       relayWs: { readyState: number } | null
@@ -505,117 +504,6 @@ describe('RemoteControlService hasReachableDevice', () => {
 
     internals.markDeviceOnline('Tablet', 'dev-2', 'lan')
     expect(service.hasReachableDevice()).toBe(true)
-  })
-})
-
-describe('RemoteControlService content_delta ordering', () => {
-  function makeService(): { service: RemoteControlService; captured: AgentEvent[] } {
-    const captured: AgentEvent[] = []
-    const service = new RemoteControlService('wss://relay.example', { onCommand: vi.fn() })
-    const internals = service as unknown as {
-      keys: unknown
-      hasAnyMobileTransport: () => boolean
-      queueDevice: (deviceId: string, events: AgentEvent[]) => void
-      connectedDevices: Map<string, unknown>
-    }
-    internals.keys = { aesKey: {} }
-    internals.hasAnyMobileTransport = () => true
-    internals.queueDevice = (_deviceId, events) => { captured.push(...events) }
-    internals.connectedDevices.set('phone', { name: 'iPhone', transports: new Set(['relay']) })
-    return { service, captured }
-  }
-
-  it.each(['file1\nfile2', '', '[denied] Not allowed', '$ ls\nreal command output'])(
-    'keeps live Bash output unchanged: %j', async (summary) => {
-      const { service, captured } = makeService()
-      await service.sendAgentEvent({ type: 'content_delta', messageId: 'm1',
-        delta: toolUseBlock('Bash', { command: 'ls' }, 'bash-1') })
-      await service.sendAgentEvent({ type: 'content_delta', messageId: 'm1',
-        delta: { type: 'tool_result', toolUseId: 'bash-1', summary } })
-      expect(captured).toContainEqual(expect.objectContaining({
-        type: 'content_delta', delta: expect.objectContaining({
-          type: 'bash_result', toolUseId: 'bash-1', summary,
-        }),
-      }))
-    },
-  )
-
-  it('keeps the working-tree diff on a live Bash result so the collapsed row shows its file stats', async () => {
-    const { service, captured } = makeService()
-    const bashEditDiff = { files: [], moreFiles: 1, changedFiles: ['/p/a.ts'], summary: { files: 1, added: 3, removed: 1, approximate: false } }
-    await service.sendAgentEvent({ type: 'content_delta', messageId: 'm1',
-      delta: toolUseBlock('Bash', { command: 'sed -i s/a/b/ a.ts' }, 'bash-1') })
-    await service.sendAgentEvent({ type: 'content_delta', messageId: 'm1',
-      delta: { type: 'tool_result', toolUseId: 'bash-1', summary: '', bashEditDiff } })
-    expect(captured).toContainEqual(expect.objectContaining({
-      type: 'content_delta', delta: expect.objectContaining({ type: 'bash_result', toolUseId: 'bash-1', bashEditDiff }),
-    }))
-  })
-
-  it('keeps a live widget result whole while another session starts a reply', async () => {
-    const { service, captured } = makeService()
-    const summary = JSON.stringify({ title: 'w', widget_code: `<div>${'x'.repeat(400)}</div>`, width: 800, height: 600, isSVG: false })
-    await service.sendAgentEvent({ type: 'content_delta', sessionId: 's1', messageId: 'm1',
-      delta: toolUseBlock('mcp__superone__widget_show', { title: 'w' }, 'widget-1') } as AgentEvent)
-    await service.sendAgentEvent({ type: 'message_start', sessionId: 's2',
-      message: { id: 'm2', role: 'assistant', status: 'streaming', createdAt: '', providerId: 'claude', content: [] } } as AgentEvent)
-    await service.sendAgentEvent({ type: 'content_delta', sessionId: 's1', messageId: 'm1',
-      delta: { type: 'tool_result', toolUseId: 'widget-1', summary } } as AgentEvent)
-    expect(captured).toContainEqual(expect.objectContaining({
-      type: 'content_delta', delta: expect.objectContaining({ type: 'tool_result', toolUseId: 'widget-1', summary }),
-    }))
-  })
-
-  function deltaSig(e: AgentEvent): string {
-    if (e.type !== 'content_delta') return e.type
-    const d = (e as Extract<AgentEvent, { type: 'content_delta' }>).delta
-    return `content_delta:${d.type}`
-  }
-
-  it('preserves thinking-before-text ordering across paragraph boundaries', async () => {
-    const { service, captured } = makeService()
-
-    await service.sendAgentEvent({ type: 'content_delta', messageId: 'm1', delta: { type: 'thinking', thinking: 'short reasoning', parentToolUseId: null } } as AgentEvent)
-    await service.sendAgentEvent({ type: 'content_delta', messageId: 'm1', delta: { type: 'text', text: 'visible answer\n\n', parentToolUseId: null } } as AgentEvent)
-    await service.sendAgentEvent({ type: 'content_delta', messageId: 'm1', delta: { type: 'text', text: 'tail', parentToolUseId: null } } as AgentEvent)
-    await service.sendAgentEvent({ type: 'message_complete', messageId: 'm1', metadata: {} } as AgentEvent)
-
-    const order = captured.map(deltaSig)
-    const thinkingIdx = order.indexOf('content_delta:thinking')
-    const firstTextIdx = order.indexOf('content_delta:text')
-    expect(thinkingIdx).toBeGreaterThanOrEqual(0)
-    expect(firstTextIdx).toBeGreaterThanOrEqual(0)
-    expect(thinkingIdx).toBeLessThan(firstTextIdx)
-  })
-
-  it('preserves thinking-before-text arrival order', async () => {
-    const { service, captured } = makeService()
-
-    await service.sendAgentEvent({ type: 'content_delta', messageId: 'm1', delta: { type: 'thinking', thinking: 'reasoning A', parentToolUseId: null } } as AgentEvent)
-    await service.sendAgentEvent({ type: 'content_delta', messageId: 'm1', delta: { type: 'text', text: 'answer A', parentToolUseId: null } } as AgentEvent)
-    await service.sendAgentEvent({ type: 'message_complete', messageId: 'm1', metadata: {} } as AgentEvent)
-
-    const order = captured.map(deltaSig).filter((t) => t.startsWith('content_delta:'))
-    const lastThinking = order.lastIndexOf('content_delta:thinking')
-    const firstText = order.indexOf('content_delta:text')
-    expect(lastThinking).toBeGreaterThanOrEqual(0)
-    expect(firstText).toBeGreaterThanOrEqual(0)
-    expect(lastThinking).toBeLessThan(firstText)
-  })
-
-  it('preserves text-before-thinking arrival order', async () => {
-    const { service, captured } = makeService()
-
-    await service.sendAgentEvent({ type: 'content_delta', messageId: 'm1', delta: { type: 'text', text: 'preamble', parentToolUseId: null } } as AgentEvent)
-    await service.sendAgentEvent({ type: 'content_delta', messageId: 'm1', delta: { type: 'thinking', thinking: 'mid-stream reasoning', parentToolUseId: null } } as AgentEvent)
-    await service.sendAgentEvent({ type: 'message_complete', messageId: 'm1', metadata: {} } as AgentEvent)
-
-    const order = captured.map(deltaSig).filter((t) => t.startsWith('content_delta:'))
-    const lastText = order.lastIndexOf('content_delta:text')
-    const firstThinking = order.indexOf('content_delta:thinking')
-    expect(lastText).toBeGreaterThanOrEqual(0)
-    expect(firstThinking).toBeGreaterThanOrEqual(0)
-    expect(lastText).toBeLessThan(firstThinking)
   })
 })
 
@@ -913,51 +801,6 @@ describe('RemoteControlService LAN delivery', () => {
     service = null
   })
 
-  it('seals LAN events in order on the phone\'s channel, with no envelope seq', async () => {
-    const { WebSocket } = await import('ws')
-    const { webcrypto } = await import('node:crypto')
-    const { bytesToHex } = await import('./remote-control-crypto')
-
-    const masterSecret = bytesToHex(webcrypto.getRandomValues(new Uint8Array(32)).buffer)
-    const deviceId = 'mobile-test'
-
-    service = new RemoteControlService('ws://127.0.0.1:1', {
-      onCommand: vi.fn(),
-      pairedPhones: testPhones(deviceId),
-    })
-    await service.start({
-      enabled: true,
-      masterSecret,
-      deviceId: 'desktop-test',
-      relayUrl: 'ws://127.0.0.1:1',
-    })
-
-    const port = service.getLanPort()
-    expect(port).not.toBeNull()
-
-    const phone = await connectTestPhone(port!, issueChannelCredential(masterSecret, TEST_KEY_ID))
-    client = phone.socket
-
-    const frames: Array<Record<string, unknown>> = []
-    client.on('message', (raw) => {
-      try {
-        const f = JSON.parse(raw.toString())
-        if (f.type === 'event') frames.push(f)
-      } catch { /* ignore */ }
-    })
-
-    for (let i = 0; i < 3; i++) {
-      await service.sendEventToMobile({ type: 'status_change', status: 'streaming', n: i }, [deviceId])
-    }
-    await new Promise((r) => setTimeout(r, 100))
-
-    const { openLinkFrame } = await import('@superone/relay-client/phone-link')
-    const { decodeHostPlaintext } = await import('@superone/relay-client/host-payload')
-    expect(frames.map((f) => f.seq)).toEqual([undefined, undefined, undefined])
-    const opened = frames.map((f) => decodeHostPlaintext(openLinkFrame(phone.channel, f.data as string).payload) as { n?: number })
-    expect(opened.map((event) => event.n)).toEqual([0, 1, 2])
-  })
-
   it('broadcasts desktop_shutdown to LAN clients before tearing down so mobiles can return to device list instead of reconnecting', async () => {
     const { WebSocket } = await import('ws')
     const { webcrypto } = await import('node:crypto')
@@ -967,7 +810,6 @@ describe('RemoteControlService LAN delivery', () => {
     const deviceId = 'mobile-test'
 
     service = new RemoteControlService('ws://127.0.0.1:1', {
-      onCommand: vi.fn(),
       pairedPhones: testPhones(deviceId),
     })
     await service.start({
@@ -997,86 +839,4 @@ describe('RemoteControlService LAN delivery', () => {
 
     service = null
   })
-})
-
-describe('slash command output over the wire', () => {
-  function makeService(): { service: RemoteControlService; captured: AgentEvent[] } {
-    const captured: AgentEvent[] = []
-    const service = new RemoteControlService('wss://relay.example', { onCommand: vi.fn() })
-    const internals = service as unknown as {
-      keys: unknown
-      hasAnyMobileTransport: () => boolean
-      queueDevice: (deviceId: string, events: AgentEvent[]) => void
-      connectedDevices: Map<string, unknown>
-    }
-    internals.keys = { aesKey: {} }
-    internals.hasAnyMobileTransport = () => true
-    internals.queueDevice = (_deviceId, events) => { captured.push(...events) }
-    internals.connectedDevices.set('phone', { name: 'iPhone', transports: new Set(['relay']) })
-    return { service, captured }
-  }
-
-  it('forwards the output, because for some commands it is the whole answer', async () => {
-    // It used to be dropped before the wire, so a review run from a phone
-    // produced nothing the phone could show.
-    const { service, captured } = makeService()
-    await service.sendAgentEvent({ type: 'slash_command_output', messageId: 'm1', content: '## Findings' } as AgentEvent)
-    expect(captured).toEqual([{ type: 'slash_command_output', messageId: 'm1', content: '## Findings' }])
-  })
-
-  it('bounds it, because some commands emit output the client discards', async () => {
-    const { service, captured } = makeService()
-    await service.sendAgentEvent({ type: 'slash_command_output', messageId: 'm1', content: 'x'.repeat(250_000) } as AgentEvent)
-    const sent = captured[0] as Extract<AgentEvent, { type: 'slash_command_output' }>
-    expect(sent.content.length).toBeLessThan(250_000)
-    expect(sent.content.endsWith('… output truncated')).toBe(true)
-  })
-})
-
-it('keeps terminal output before exit when compression of the first frame is slower', async () => {
-  const { acceptClientHello, startClientHandshake } = await import('@superone/relay-client/secure-channel')
-  const { openLinkFrame } = await import('@superone/relay-client/phone-link')
-  const { decodeHostPlaintext } = await import('@superone/relay-client/host-payload')
-  const credential = issueChannelCredential('ab'.repeat(32), TEST_KEY_ID)
-  const c = startClientHandshake(credential)
-  const s = acceptClientHello(c.hello, () => credential.secretHex)
-  const { proof, channel: phone } = c.finish(s.challenge)
-  const frames: string[] = []
-  const service = new RemoteControlService('', {} as never)
-  Object.assign(service, {
-    keys: { rootSecret: 'ab'.repeat(32), channelKeyHex: 'cd'.repeat(32) },
-    phoneLink: await import('./remote/phone-link-host'),
-    relayWs: { readyState: 1, send: (frame: string) => frames.push(frame) },
-    relayLinks: new Map([['phone', { channel: s.finish(proof) }]]),
-    connectedDevices: new Map([['phone', { name: 'Phone', transports: new Set(['relay']) }]]),
-  })
-  await Promise.all([
-    service.sendTerminalFrame({ type: 'terminal_output', terminalId: 't', data: 'x'.repeat(1_000_000), fromSeq: 1, toSeq: 1, createdAt: 0 }),
-    service.sendTerminalFrame({ type: 'terminal_exited', terminalId: 't', exitCode: 0, signal: null }),
-  ])
-  // Opening in order also proves the channel sequence follows send order.
-  expect(frames.map(frame => (decodeHostPlaintext(openLinkFrame(phone, JSON.parse(frame).data).payload) as { type: string }).type)).toEqual(['terminal_output', 'terminal_exited'])
-})
-
-it('drops a response when its relay connection is replaced during compression', async () => {
-  const { acceptClientHello, startClientHandshake } = await import('@superone/relay-client/secure-channel')
-  const credential = issueChannelCredential('ab'.repeat(32), TEST_KEY_ID)
-  const c = startClientHandshake(credential)
-  const s = acceptClientHello(c.hello, () => credential.secretHex)
-  const channel = s.finish(c.finish(s.challenge).proof)
-  const oldSend = vi.fn()
-  const newSend = vi.fn()
-  const service = new RemoteControlService('', {} as never)
-  Object.assign(service, {
-    keys: { rootSecret: 'ab'.repeat(32), channelKeyHex: 'cd'.repeat(32) },
-    phoneLink: await import('./remote/phone-link-host'),
-    relayWs: { readyState: 1, send: oldSend },
-    relayLinks: new Map([['phone', { channel }]]),
-  })
-  const pending = (service as unknown as { sendResponse(id: string, value: unknown, deviceId: string, channel: unknown): Promise<void> })
-    .sendResponse('old-request', { body: 'x'.repeat(1_000_000) }, 'phone', channel)
-  Object.assign(service, { relayWs: { readyState: 1, send: newSend } })
-  await pending
-  expect(oldSend).not.toHaveBeenCalled()
-  expect(newSend).not.toHaveBeenCalled()
 })

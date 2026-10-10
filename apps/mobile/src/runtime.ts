@@ -19,10 +19,8 @@ import type {
   QuestionAnnotations,
   ImageAttachment,
   PermissionRequest,
-  RemoteCommand,
   SandboxInfo,
   SaveWidgetTemplateRequest,
-  SavedWidgetTemplate,
   SandboxMode,
 } from '@superone/shared/agent-types'
 import { applyEventToSession, createDefaultChatCoreSession, failedMessageResend, pendingSlashCommandFrom, withoutSendFailure } from '@superone/chat-core'
@@ -33,20 +31,23 @@ import { restoreSession } from '@superone/relay-client'
 import { randomId } from './ids'
 import { newMessageId } from '@superone/shared/message-id'
 import { isDuplicateSend } from '@superone/shared/send-failure'
-import { createSessionCommand } from './runtime-create-session'
+import { createSessionPayload } from './runtime-create-session'
+import { runtimeSessionRef, readRuntimeSession } from './runtime-session-rpc'
+import type { SessionLoadResult } from '@superone/shared/environment/session-messages'
+import type { SessionSendSelections } from '@superone/shared/environment/session-send'
 
 type SessionState = ReturnType<typeof createDefaultChatCoreSession>
 
 const NO_WORKTREE: SessionWorktreeFacts = { isWorktree: false, worktreePath: null, gitBranch: null }
 
-type SendMessageCommand = Extract<RemoteCommand, { type: 'send_message' }>
+type SendMessageCommand = SessionSendSelections & SendMessageOptions & { sessionId: string; environmentId: string; text: string }
 
 export class ChatRuntime {
   sourceEnvironmentId: string | null = null
   private readonly appContexts = new McpAppContextAttachments()
   get contextAttachments() { return this.appContexts.items(this.session.messages) }
   removeContextAttachment(id: string): Promise<void> {
-    return this.appContexts.remove(id, this.client, { projectPath: this.projectPath, sessionId: this.sessionId }, this.session.messages)
+    return this.appContexts.remove(id, this.client, { projectPath: this.projectPath, sessionId: this.sessionId, environmentId: this.sourceEnvironmentId }, this.session.messages)
   }
   session: SessionState = createDefaultChatCoreSession()
   /**
@@ -98,8 +99,19 @@ export class ChatRuntime {
     private readonly onPaint: (session: SessionState, hydrate: boolean) => void,
     private readonly hooks: ChatRuntimeHooks = {},
   ) {
-    this.widgetComposers = new WidgetComposerClient(client, () => ({ projectPath: this.projectPath, sessionId: this.sessionId }),
+    this.widgetComposers = new WidgetComposerClient(client, () => ({ projectPath: this.projectPath, sessionId: this.sessionId, environmentId: this.sourceEnvironmentId }),
       result => this.hooks.onComposerResult?.(result))
+  }
+
+  private sessionRef() { return runtimeSessionRef(this.client, this.sessionId, this.sourceEnvironmentId) }
+  private read<T>(method: string, payload: Record<string, unknown> = {}): Promise<T> {
+    return readRuntimeSession<T>(this.client, this.sessionRef(), method, payload)
+  }
+  private control<T>(method: string, payload: Record<string, unknown> = {}): Promise<T> {
+    return this.client.controlledRpc<T>(this.sessionRef(), method, payload)
+  }
+  private command(method: string, payload: Record<string, unknown> = {}): void {
+    void this.control(method, payload).catch(error => this.hooks.onCommandError?.(error instanceof Error ? error.message : String(error)))
   }
 
   async open(projectPath: string, sessionId: string, prepared?: import('@superone/relay-client').RestoredSession): Promise<void> {
@@ -138,7 +150,7 @@ export class ChatRuntime {
       this.navigationAvailable = restored.navigationAvailable === true
       this.hasMoreHistory = restored.hasMore
       this.historyCursor = restored.cursor
-      let session = createDefaultChatCoreSession()
+      let session = { ...createDefaultChatCoreSession(), ...restored.state } as SessionState
       session.messages = [...restored.messages]
       if (restored.provider) session.sessionProvider = restored.provider as SessionState['sessionProvider']
       if (restored.snapshot.permissionMode) {
@@ -171,7 +183,7 @@ export class ChatRuntime {
         const metadata = session.messages[i]?.metadata
         const window = metadata?.codex?.usage?.contextWindow
           || Math.max(0, ...Object.values(metadata?.modelUsage ?? {}).map((usage) => usage.contextWindow ?? 0))
-        if (window > 0) { session.contextWindow = window; break }
+        if (window > 0) { if (!session.contextWindow) session.contextWindow = window; break }
       }
       // Seeded before the replay below: the host persists a voice utterance before it
       // broadcasts it, so a buffered event is a duplicate of something already here
@@ -210,11 +222,8 @@ export class ChatRuntime {
     const generation = this.restoreGeneration
     const cursor = this.historyCursor
     const request = (async () => {
-      const page = await this.client.request({
-        type: 'load_session_messages', requestId: randomId(),
-        projectPath: this.projectPath, sessionId: this.sessionId, limit: 24, cursor,
-      }) as { messages?: ChatMessage[]; hasMore?: boolean; cursor?: number | null; error?: string }
-      if (page.error) throw new Error(page.error)
+      const loaded = await this.read<SessionLoadResult>('session.load', { before: cursor, limit: 24, includeState: false })
+      const page = { messages: loaded.messages, hasMore: loaded.before != null, cursor: loaded.before }
       if (generation !== this.restoreGeneration) return []
       const ids = new Set(this.session.messages.map(message => message.id))
       const older = (page.messages ?? []).filter(message => !ids.has(message.id))
@@ -236,9 +245,7 @@ export class ChatRuntime {
     if (this.navigationIndex) return Promise.resolve(extendHistoryIndex(this.navigationIndex, this.session.messages))
     const generation = this.restoreGeneration
     const request = (async () => {
-      const result = await this.client.request({ type: 'get_session_history_index', requestId: randomId(),
-        projectPath: this.projectPath, sessionId: this.sessionId }) as SessionHistoryIndex & { error?: string }
-      if (result.error) throw new Error(result.error)
+      const result = await this.read<SessionHistoryIndex>('session.historyIndex')
       if (generation !== this.restoreGeneration) throw new Error('Session changed')
       if (!Array.isArray(result.messageIds) || !Array.isArray(result.entries) || !Array.isArray(result.compacts)) throw new Error('Navigation index unavailable')
       this.navigationIndex = extendHistoryIndex(result, this.session.messages)
@@ -253,10 +260,7 @@ export class ChatRuntime {
     const generation = this.restoreGeneration
     const index = await this.loadNavigationIndex()
     if (generation !== this.restoreGeneration) throw new Error('Session changed')
-    const result = await this.client.request({ type: 'load_session_messages', requestId: randomId(),
-      projectPath: this.projectPath, sessionId: this.sessionId, anchorId, direction, limit: 8,
-    }) as { messages?: ChatMessage[]; error?: string }
-    if (result.error) throw new Error(result.error)
+    const result = await this.read<SessionLoadResult>('session.load', { anchorId, direction, limit: 8, includeState: false })
     if (generation !== this.restoreGeneration) throw new Error('Session changed')
     if (!Array.isArray(result.messages)) throw new Error('History is unavailable')
     this.session = { ...this.session, messages: mergeIndexedHistory(index, result.messages, this.session.messages) }
@@ -265,15 +269,17 @@ export class ChatRuntime {
   }
 
   async subscribeDetail(detailRef: string, subscriptionId: string): Promise<Record<string, unknown>> {
-    const result = await this.client.request({ type: 'subscribe_detail', requestId: randomId(),
-      projectPath: this.projectPath, sessionId: this.sessionId, detailRef, subscriptionId }) as Record<string, unknown>
-    if (result.error) throw new Error(String(result.error))
-    return result
+    const session = this.sessionRef()
+    const projectPath = this.projectPath
+    const update = await this.client.subscribeDetail({ sessionId: session.sessionId, detailRef, subscriptionId }, value => {
+      this.hooks.onDetail?.({ type: 'remote_detail', ...value, ...session, projectPath })
+    }, { environmentId: session.environmentId })
+    return { ...update }
   }
 
   async unsubscribeDetail(subscriptionId: string): Promise<void> {
-    await this.client.request({ type: 'unsubscribe_detail', requestId: randomId(),
-      projectPath: this.projectPath, sessionId: this.sessionId, subscriptionId })
+    const session = this.sessionRef()
+    await this.client.unsubscribeDetail({ sessionId: session.sessionId, subscriptionId }, { environmentId: session.environmentId })
   }
 
   reopen(): Promise<void> {
@@ -306,33 +312,17 @@ export class ChatRuntime {
   }
 
   private async createOnHost(projectPath: string, sessionId: string, opts: CreateSessionOptions): Promise<string> {
-    const res = await this.client.request(createSessionCommand(projectPath, sessionId, opts)) as { ok?: boolean; sessionId?: string; error?: string; cwd?: string; gitBranch?: string | null }
-    if (res.error || res.ok === false) throw new Error(res.error ?? 'create_session failed')
-    const id = res.sessionId ?? sessionId
+    const project = await this.client.resolveProject(projectPath)
+    const res = await this.client.rpc<{ sessionId: string }>('session.create', createSessionPayload(project, sessionId, opts), { environmentId: project.environmentId })
+    const id = res.sessionId
     this.sessionId = id
-    // Where the session runs is the host's answer: a `create` pick names only a
-    // base branch, and the landing picker resets once the session exists.
-    this.worktree = res.cwd && res.cwd !== projectPath
-      ? { isWorktree: true, worktreePath: res.cwd, gitBranch: res.gitBranch ?? null }
-      : NO_WORKTREE
-    // A brand-new session has no history. Subscribe for live events without the
-    // restore round-trip `open()` uses when switching to an existing transcript.
-    this.client.startBuffering()
-    try {
-      const subscribed = await this.client.request({
-        type: 'subscribe_session', projectPath, sessionId: id, progressive: true,
-      } as RemoteCommand) as { error?: string; snapshot?: import('@superone/relay-client').SessionSnapshot }
-      if (subscribed.error) throw new Error(subscribed.error)
-      // The subscription reports the authenticated owner before buffered events
-      // are replayed, just as restore does for an existing session.
-      this.sourceEnvironmentId = subscribed.snapshot?.sourceEnvironmentId ?? null
-      const { epoch, batches } = this.client.releaseBuffer()
-      this.eventEpoch = epoch
-      for (const batch of batches) this.ingest(batch as AgentEvent[], epoch)
-    } catch (error) {
-      this.client.releaseBuffer()
-      throw error
-    }
+    this.sourceEnvironmentId = project.environmentId
+    const restored = await restoreSession(this.client, projectPath, id)
+    this.sourceEnvironmentId = restored.snapshot.sourceEnvironmentId ?? project.environmentId
+    this.worktree = { isWorktree: restored.snapshot.isWorktree ?? false, worktreePath: restored.snapshot.worktreePath ?? null, gitBranch: restored.snapshot.gitBranch ?? null }
+    this.sandboxInfo = restored.snapshot.sandboxInfo ?? null
+    this.eventEpoch = restored.epoch
+    for (const batch of restored.liveBatches) this.ingest(batch as AgentEvent[], restored.epoch)
     return id
   }
 
@@ -362,10 +352,7 @@ export class ChatRuntime {
     const key = `${messageId}:${ref.attachmentId ?? ref.name}`
     const cached = this.attachmentBytes.get(key)
     if (cached) return cached
-    const result = await this.client.request({ type: 'get_attachment', requestId: randomId(),
-      projectPath: this.projectPath, sessionId: this.sessionId, messageId, ...ref,
-    }) as { attachment?: ImageAttachment; error?: string }
-    if (result.error) throw new Error(result.error)
+    const result = await this.read<{ attachment?: ImageAttachment }>('session.attachment', { messageId, ...ref })
     if (!result.attachment?.base64) throw new Error('attachment unavailable')
     this.attachmentBytes.set(key, result.attachment)
     return result.attachment
@@ -436,12 +423,9 @@ export class ChatRuntime {
     const inputRequest = extra.inputRequest && this.session.pendingPermissions.find(request => request.requestId === extra.inputRequest!.requestId)
     if (inputRequest) this.inputRequestSends.capture(clientMessageId, inputRequest)
     const cmd: SendMessageCommand = {
-      type: 'send_message',
-      sessionId: this.sessionId,
-      projectPath: this.projectPath,
-      content,
+      ...this.sessionRef(),
+      text: content,
       userMessageContent: message.content,
-      provider: this.provider as HarnessId,
       ...(extra.model ? { model: extra.model } : {}),
       ...(extra.effort ? { effort: extra.effort } : {}),
       ...(extra.collaborationMode ? { collaborationMode: extra.collaborationMode } : {}),
@@ -486,9 +470,8 @@ export class ChatRuntime {
   private async deliver(cmd: SendMessageCommand): Promise<void> {
     const generation = this.restoreGeneration
     try {
-      const result = await this.client.request({ ...cmd, requestId: randomId() })
-      const error = (result as { error?: string } | null)?.error
-      if (error) throw new Error(error)
+      const { environmentId, sessionId, ultracode, ...payload } = cmd
+      const result = await this.client.controlledRpc({ environmentId, sessionId }, 'session.send', { ...payload, ...(ultracode !== undefined ? { options: { ultracode } } : {}) })
       if (generation === this.restoreGeneration && cmd.clientMessageId) {
         this.inputRequestSends.complete(cmd.clientMessageId)
         // The host already has this id (a stale Resend): nothing new will answer it.
@@ -535,12 +518,11 @@ export class ChatRuntime {
     const message = this.session.messages.find((item) => item.id === clientMessageId)
     const fromRow = message ? failedMessageResend(message) : null
     if (!message || !fromRow) return null
-    const { images: _, ...resend } = fromRow
+    const { images: _, content, ...resend } = fromRow
     // The transcript may hold thumbnails only; the turn needs the originals.
     const images = await this.originalAttachments(message)
     return {
-      type: 'send_message', sessionId: this.sessionId, projectPath: this.projectPath, provider: this.provider as HarnessId,
-      ...resend, ...(images.length ? { images } : {}),
+      ...this.sessionRef(), ...resend, text: content, ...(images.length ? { images } : {}),
     }
   }
 
@@ -581,33 +563,23 @@ export class ChatRuntime {
     return this.creating || !this.sessionId ? 'creating' : 'sending'
   }
 
-  dequeueMessage(clientMessageId: string): void {
+  async dequeueMessage(clientMessageId: string): Promise<boolean> {
+    const generation = this.restoreGeneration
+    const result = await this.control<{ removed: boolean }>('session.dequeue', { clientMessageId })
+    if (!result.removed || generation !== this.restoreGeneration) return false
     this.session = {
       ...this.session,
       queuedMessages: this.session.queuedMessages.filter((message) => message.id !== clientMessageId),
     }
     this.dirty = true
     this.flush()
-    this.client.send({
-      type: 'dequeue_message',
-      clientMessageId,
-      projectPath: this.projectPath,
-      sessionId: this.sessionId,
-    })
+    return true
   }
 
   async steerQueuedMessage(clientMessageId: string, priority: 'now' | 'next' = 'now'): Promise<boolean> {
     if (!this.sessionId || !this.projectPath) return false
-    const result = await this.client.request({
-      type: 'steer_queued_message',
-      requestId: randomId(),
-      projectPath: this.projectPath,
-      sessionId: this.sessionId,
-      clientMessageId,
-      priority,
-    } as RemoteCommand) as { ok?: boolean; error?: string }
-    if (result.error || result.ok === false) throw new Error(result.error ?? 'steer failed')
-    return result.ok === true
+    const result = await this.control<{ ok: boolean }>('session.steer', { clientMessageId, priority })
+    return result.ok
   }
 
   /**
@@ -621,12 +593,7 @@ export class ChatRuntime {
     this.dirty = true
     this.flush()
     try {
-      const result = await this.client.request({
-        type: 'request_session_recap',
-        requestId: randomId(),
-        sessionId: this.sessionId,
-        projectPath: this.projectPath,
-      }) as { ok?: boolean; error?: string }
+      const result = await this.control<{ ok: boolean }>('session.recap')
       const ok = result.ok === true
       if (!ok) {
         this.session = { ...this.session, isRecapping: false }
@@ -652,24 +619,11 @@ export class ChatRuntime {
    * status the app server owns.
    */
   async setSessionGoal(objective: string, status?: CodexGoalStatus): Promise<void> {
-    await this.goalCommand({ type: 'set_session_goal', objective, ...(status ? { status } : {}) })
+    await this.control('session.setGoal', { objective, ...(status ? { status } : {}) })
   }
 
   async clearSessionGoal(): Promise<void> {
-    await this.goalCommand({ type: 'clear_session_goal' })
-  }
-
-  private async goalCommand(
-    command: { type: 'set_session_goal'; objective: string; status?: CodexGoalStatus } | { type: 'clear_session_goal' },
-  ): Promise<void> {
-    if (!this.sessionId || !this.projectPath) throw new Error('goal needs a running session')
-    const result = await this.client.request({
-      ...command,
-      requestId: randomId(),
-      sessionId: this.sessionId,
-      projectPath: this.projectPath,
-    } as RemoteCommand) as { ok?: boolean; error?: string }
-    if (result.error || result.ok === false) throw new Error(result.error ?? 'goal failed')
+    await this.control('session.setGoal', { objective: null })
   }
 
   /**
@@ -692,32 +646,20 @@ export class ChatRuntime {
    */
   setSessionSettings(settings: { model?: string; effort?: string; mode?: string; agentPreset?: string }): void {
     if (!this.sessionId || !this.projectPath) return
-    this.client.send({
-      type: 'set_session_settings',
-      projectPath: this.projectPath,
-      sessionId: this.sessionId,
-      ...settings,
-    })
+    this.command('session.patchSettings', { settings })
   }
 
   setSessionApiProviderId(apiProviderId: string | null): void {
     if (!this.sessionId || !this.projectPath) return
-    this.client.send({
-      type: 'set_session_api_provider_id',
-      projectPath: this.projectPath,
-      sessionId: this.sessionId,
-      apiProviderId,
-    })
+    this.command('session.patchSettings', { settings: { apiProviderId } })
   }
 
   async answerCodexAsyncQuestion(messageId: string, itemId: string, answers: string[]): Promise<void> {
     const { projectPath, sessionId } = this
     if (!projectPath || !sessionId) throw new Error('No active session')
     if (!this.session.messages.some(message => message.id === messageId)) throw new Error('Question session is no longer active')
-    const result = await this.client.request({
-      type: 'codex_async_question_answer', requestId: randomId(), projectPath, sessionId, messageId, itemId, answers,
-    }) as { ok?: boolean; reply?: string; error?: string }
-    if (result.error || !result.ok || typeof result.reply !== 'string') throw new Error(result.error ?? 'Answer was not accepted')
+    const result = await this.control<{ reply: string }>('session.answerAsyncQuestion', { messageId, itemId, answers })
+    if (typeof result.reply !== 'string') throw new Error('Answer was not accepted')
     if (this.sessionId !== sessionId || this.projectPath !== projectPath) return
     this.ingest([{ type: 'user_message_appended', message: {
       id: codexAsyncAnswerId(itemId), role: 'user', status: 'complete', providerId: 'codex',
@@ -734,22 +676,12 @@ export class ChatRuntime {
       this.dirty = true
       this.flush()
     }
-    const cmd: RemoteCommand = {
-      type: 'interrupt',
-      sessionId: this.sessionId,
-      projectPath: this.projectPath,
-    }
-    this.client.send(cmd)
+    this.command('session.interrupt')
   }
 
   setPermissionMode(mode: string): void {
     this.session.permissionMode = mode as SessionState['permissionMode']
-    this.client.send({
-      type: 'set_permission_mode',
-      mode,
-      sessionId: this.sessionId,
-      projectPath: this.projectPath,
-    })
+    this.command('session.patchSettings', { settings: { permissionMode: mode } })
   }
 
   /**
@@ -759,33 +691,36 @@ export class ChatRuntime {
    */
   async setSandboxMode(mode: SandboxMode): Promise<void> {
     if (!this.sessionId || !this.projectPath) return
+    const previous = this.sandboxInfo
     this.sandboxInfo = sandboxInfoFromMode(mode)
     this.dirty = true
     this.flush()
-    const res = await this.client.request({
-      type: 'set_sandbox_mode',
-      requestId: randomId(),
-      mode,
-      sessionId: this.sessionId,
-      projectPath: this.projectPath,
-    } as RemoteCommand) as { sandboxInfo?: SandboxInfo; error?: string }
-    if (res.sandboxInfo) {
-      this.sandboxInfo = res.sandboxInfo
-      this.dirty = true
-      this.flush()
+    const session = this.sessionRef(), generation = this.restoreGeneration
+    let failure: unknown
+    try { await this.client.controlledRpc(session, 'session.patchSettings', { settings: { sandboxMode: mode } }) }
+    catch (error) { failure = error }
+    try {
+      const loaded = await readRuntimeSession<SessionLoadResult>(this.client, session, 'session.load', { limit: 1 })
+      if (generation === this.restoreGeneration) {
+        this.sandboxInfo = loaded.restore?.sandboxInfo ?? null
+        this.dirty = true
+        this.flush()
+      }
+    } catch (error) {
+      if (generation === this.restoreGeneration) {
+        this.sandboxInfo = previous
+        this.dirty = true
+        this.flush()
+      }
+      if (!failure) failure = error
     }
-    if (res.error) throw new Error(res.error)
+    if (failure) throw failure
   }
 
   /** Save the widget the phone is looking at into the host's template store. */
   async saveWidgetTemplate(input: SaveWidgetTemplateRequest): Promise<void> {
-    const res = await this.client.request({
-      type: 'save_widget_template',
-      requestId: randomId(),
-      projectPath: this.projectPath,
-      input,
-    } as RemoteCommand) as { template?: SavedWidgetTemplate; error?: string }
-    if (res.error) throw new Error(res.error)
+    const project = await this.client.resolveProject(this.projectPath)
+    await this.client.rpc('widget.saveTemplate', { projectId: project.projectId, input }, { environmentId: project.environmentId })
   }
 
   searchMentions(query: string, options?: MentionSearchOptions): Promise<MentionSearchResult> {
@@ -797,92 +732,76 @@ export class ChatRuntime {
     return this.worktree.worktreePath || this.projectPath
   }
 
-  respondPermission(
+  private readonly answering = new Set<string>()
+
+  async respondPermission(
     requestId: string,
     decision: boolean,
     formAnswers?: Record<string, unknown>,
     alwaysAllow?: boolean,
     reason?: string,
     selectedSuggestions?: number[],
-  ): void {
-    if (this.resolvedPermissionIds.has(requestId)) return
-    const cmd: RemoteCommand = {
-      type: 'respond_permission',
-      requestId,
-      decision,
-      sessionId: this.sessionId,
-      projectPath: this.projectPath,
-      ...(alwaysAllow !== undefined ? { alwaysAllow } : {}),
-      ...(reason ? { reason } : {}),
-      ...(selectedSuggestions?.length ? { selectedSuggestions } : {}),
+  ): Promise<void> {
+    if (this.resolvedPermissionIds.has(requestId) || this.answering.has(requestId)) return
+    const generation = this.restoreGeneration
+    const pending = this.session.pendingPermissions.find(request => request.requestId === requestId)
+    const receipt = this.control('session.respondPermission', {
+      interactionId: requestId, decision: decision ? (alwaysAllow ? 'allow_always' : 'allow') : 'deny',
+      ...(reason ? { reason } : {}), ...(selectedSuggestions?.length ? { selectedSuggestions } : {}),
       ...(formAnswers ? { formAnswers } : {}),
-    }
-    this.client.send(cmd)
-    if (this.session.pendingPermissions.find(request => request.requestId === requestId)?.requestKind !== 'input_request') {
-      this.ingest([{ type: 'interaction_resolved', interactionType: 'permission', requestId }])
-    }
-    this.flush()
-  }
-
-  respondPlan(requestId: string, approved: boolean, feedback?: string): void {
-    const cmd: RemoteCommand = {
-      type: 'respond_plan_approval',
-      requestId,
-      approved,
-      sessionId: this.sessionId,
-      projectPath: this.projectPath,
-      ...(feedback ? { feedback } : {}),
-    }
-    this.client.send(cmd)
-  }
-
-  respondCodexPlan(messageId: string, status: 'approved' | 'rejected', feedback?: string): void {
-    this.client.send({
-      type: 'codex_plan_approval',
-      messageId,
-      status,
-      sessionId: this.sessionId,
-      projectPath: this.projectPath,
-      ...(feedback ? { feedback } : {}),
     })
-  }
-
-  answerQuestion(
-    requestId: string,
-    answers: Record<string, string>,
-    annotations?: QuestionAnnotations,
-  ): void {
-    const cmd: RemoteCommand = {
-      type: 'answer_question',
-      requestId,
-      answers,
-      ...(annotations ? { annotations } : {}),
-      sessionId: this.sessionId,
-      projectPath: this.projectPath,
+    this.answering.add(requestId)
+    if (pending?.requestKind !== 'input_request') {
+      this.ingest([{ type: 'interaction_resolved', interactionType: 'permission', requestId }])
+      this.flush()
     }
-    this.client.send(cmd)
-    this.resolveQuestionLocally(requestId)
+    try { await receipt }
+    catch (error) {
+      if (generation === this.restoreGeneration && pending && !this.session.pendingPermissions.some(item => item.requestId === requestId)) {
+        this.resolvedPermissionIds.delete(requestId)
+        this.session = { ...this.session, pendingPermissions: [...this.session.pendingPermissions, pending] }
+        this.dirty = true
+        this.flush()
+      }
+      throw error
+    } finally { this.answering.delete(requestId) }
   }
 
-  dismissQuestion(requestId: string): void {
-    const cmd: RemoteCommand = {
-      type: 'dismiss_question',
-      requestId,
-      sessionId: this.sessionId,
-      projectPath: this.projectPath,
-    }
-    this.client.send(cmd)
-    this.resolveQuestionLocally(requestId)
+  async respondPlan(requestId: string, approved: boolean, feedback?: string): Promise<void> {
+    await this.control('session.respondPlan', { interactionId: requestId, decision: approved ? 'approve' : 'reject', options: { ...(feedback ? { feedback } : {}) } })
   }
 
-  /**
-   * Desktop continues as soon as the command is sent; waiting for
-   * `interaction_resolved` left the phone's card up (and answerable twice)
-   * while the host was already streaming.
-   */
-  private resolveQuestionLocally(requestId: string): void {
+  async respondCodexPlan(messageId: string, status: 'approved' | 'rejected', feedback?: string): Promise<void> {
+    await this.control('session.respondPlan', { interactionId: messageId, decision: status === 'approved' ? 'approve' : 'reject', options: { messageId, ...(feedback ? { feedback } : {}) } })
+  }
+
+  async answerQuestion(requestId: string, answers: Record<string, string>, annotations?: QuestionAnnotations): Promise<void> {
+    await this.questionResponse(requestId, { answers, ...(annotations ? { annotations } : {}) })
+  }
+
+  async dismissQuestion(requestId: string): Promise<void> {
+    await this.questionResponse(requestId, { dismiss: true })
+  }
+
+  private async questionResponse(requestId: string, response: Record<string, unknown>): Promise<void> {
+    if (this.resolvedQuestionIds.has(requestId)) return
+    const generation = this.restoreGeneration
+    const pending = this.session.pendingQuestion
+    const receipt = this.control('session.respondQuestion', { interactionId: requestId, ...response })
     this.ingest([{ type: 'interaction_resolved', interactionType: 'question', requestId }])
     this.flush()
+    try { await receipt }
+    catch (error) {
+      if (generation === this.restoreGeneration && pending?.requestId === requestId) {
+        this.resolvedQuestionIds.delete(requestId)
+        if (!this.session.pendingQuestion) {
+          this.session = { ...this.session, pendingQuestion: pending }
+          this.dirty = true
+          this.flush()
+        }
+      }
+      throw error
+    }
   }
 
   get pendingPermission(): PermissionRequest | undefined {

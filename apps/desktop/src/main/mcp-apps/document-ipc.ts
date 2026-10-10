@@ -5,6 +5,7 @@ import type { McpAppDesktopRequestContext } from '@superone/shared/mcp-apps-desk
 import { mcpAppResources, type McpAppResourceRegistry } from './protocol'
 import { mcpAppSessionKey } from './session-key'
 import { scheduleMcpAppResourceGc } from './resource-store'
+import { windowControlIpc } from '../session/control-context'
 
 function failure(error: unknown) {
   return { ok: false as const, error: error instanceof McpAppsError ? error.toJSON() : { code: 'invalid' as const, message: error instanceof Error ? error.message : String(error) } }
@@ -16,11 +17,12 @@ function assertHost(event: IpcMainInvokeEvent): void {
 
 /** The document handle binds all iframe-originated operations to native navigation lifetime. */
 export function registerMcpAppDocumentIpc(resources: McpAppResourceRegistry = mcpAppResources): void {
+  const windowIpc = windowControlIpc(ipcMain)
   // Sweep an existing CAS at host startup, even if no View is opened this run.
   scheduleMcpAppResourceGc()
   const pending = new Map<string, { owner: number; documentId: string; controller: AbortController }>()
   const owners = new Set<number>()
-  ipcMain.handle(AgentIpcChannels.MCP_APP_REGISTER_DOCUMENT, async (event, projectPath: string, sessionId: string, target: { appInstanceId: string; messageId?: string }) => {
+  windowIpc.handle(AgentIpcChannels.MCP_APP_REGISTER_DOCUMENT, async (event, projectPath: string, sessionId: string, target: { appInstanceId: string; messageId?: string }) => {
     try {
       assertHost(event)
       const sessionKey = mcpAppSessionKey(projectPath, sessionId)
@@ -47,16 +49,16 @@ export function registerMcpAppDocumentIpc(resources: McpAppResourceRegistry = mc
       return { ok: true, value: { state: 'ready', document: registration, active, meta: app.resource!.meta } }
     } catch (error) { return failure(error) }
   })
-  ipcMain.handle(AgentIpcChannels.MCP_APP_RELEASE_DOCUMENT, (event, id: string) => {
+  windowIpc.handle(AgentIpcChannels.MCP_APP_RELEASE_DOCUMENT, (event, id: string) => {
     assertHost(event)
     resources.release(id, event.sender.id)
   })
-  ipcMain.handle(AgentIpcChannels.MCP_APP_CANCEL_REQUEST, (event, context: McpAppDesktopRequestContext) => {
+  windowIpc.handle(AgentIpcChannels.MCP_APP_CANCEL_REQUEST, (event, context: McpAppDesktopRequestContext) => {
     assertHost(event)
     const request = pending.get(JSON.stringify([event.sender.id, context?.requestId]))
     if (request?.documentId === context?.documentId) request.controller.abort()
   })
-  ipcMain.handle(AgentIpcChannels.MCP_APP_HOST_REQUEST, async (event, projectPath: string, sessionId: string, request: McpAppViewRequest, context?: McpAppDesktopRequestContext) => {
+  windowIpc.handle(AgentIpcChannels.MCP_APP_HOST_REQUEST, async (event, projectPath: string, sessionId: string, request: McpAppViewRequest, context?: McpAppDesktopRequestContext) => {
     let key: string | undefined
     try {
       assertHost(event)

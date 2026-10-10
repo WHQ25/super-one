@@ -63,7 +63,8 @@ export class DesktopNodeHost {
       bindPort: listen.bindPort,
       startedAt: context.startedAt,
       verifyDeviceProof: verifyPayload,
-      dispatchRpc,
+      dispatchRpc: domain.dispatchRpc,
+      control: domain.leases,
       secureChannel: { resolveSecret: (keyId) => deriveIssuedChannelSecret(channelRoot, keyId) },
       ...(listen.allowRemoteAddress ? { allowRemoteAddress: listen.allowRemoteAddress } : {}),
       // Controllers coming and going change what the settings list shows.
@@ -196,4 +197,3 @@ export class DesktopNodeHost {
     await this.server.close()
   }
 }
-

@@ -8,7 +8,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { AGENT_EVENT_BATCH_MS } from '@superone/shared/agent-event-batcher'
 import { applySeqToMessage } from '@superone/shared/event-seq-utils'
-import type { RemoteCommand } from '@superone/shared/agent-types'
+import type { SessionRef } from '@superone/shared/environment/refs'
 
 const ALLOWED = [
   'agent-types',
@@ -41,8 +41,8 @@ if (stamped._lastAppliedSeq !== 1 || stamped._lastAppliedEpoch !== 2) {
   throw new Error('event-seq-utils failed to stamp seq')
 }
 
-const _cmd: RemoteCommand = { type: 'interrupt', sessionId: 's' }
-void _cmd
+const _ref: SessionRef = { environmentId: 'desktop', sessionId: 's' }
+void _ref
 
 for (const leaf of ALLOWED) {
   const key = `./${leaf}`

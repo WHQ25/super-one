@@ -14,7 +14,6 @@ import {
   type SavedPairing,
 } from '@superone/relay-client'
 import type { LanAddress } from '../device-discovery'
-import { randomId } from '../ids'
 import { requestSavedDesktop } from '../side-connection'
 import { deviceLabel } from '../ui/device-row'
 import type { DesktopPairingState } from './desktop-pairing-state'
@@ -54,14 +53,14 @@ export function useDesktopPairing(opts: {
     setState({ step: 'failed', message: failureMessage(error) })
   }, [])
 
-  const request = useCallback(async (other: SavedPairing, command: Parameters<typeof requestSavedDesktop>[0]['command'], timeoutMs: number) => {
+  const request = useCallback(async (other: SavedPairing, method: string, payload: Record<string, unknown>, timeoutMs: number) => {
     const { identity, resolveLan, active } = latest.current
     const result = await requestSavedDesktop({
       pairing: other,
       identity: await identity(),
       resolveLan,
       active: active(),
-      command,
+      method, payload,
       timeoutMs,
     }) as { error?: string; nodeCode?: string }
     if (result.error) throw new Error(result.error)
@@ -87,7 +86,7 @@ export function useDesktopPairing(opts: {
         const nodeCode = await controller.done
         if (gen !== generation.current) return
         setState({ step: 'working', qr, other })
-        await request(other, { type: 'node_pair', requestId: randomId(), nodeCode, nodeName: qr.desktopName }, 120_000)
+        await request(other, 'client.pairNode', { nodeCode, nodeName: qr.desktopName }, 120_000)
         if (gen === generation.current) setState({ step: 'done', qr, other })
       } catch (error) {
         fail(gen, error)
@@ -118,7 +117,7 @@ export function useDesktopPairing(opts: {
     const gen = generation.current
     setState({ step: 'working', qr, other })
     try {
-      const { nodeCode } = await request(other, { type: 'node_mint', requestId: randomId(), controllerName: qr.desktopName }, 60_000)
+      const { nodeCode } = await request(other, 'client.mintNodeCode', { controllerName: qr.desktopName }, 60_000)
       if (!nodeCode) throw new Error('The desktop did not return a pairing code')
       await pairing.grant(nodeCode)
       if (gen === generation.current) setState({ step: 'done', qr, other })

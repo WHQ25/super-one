@@ -3,7 +3,7 @@ import type { AgentEvent, PermissionRequest, TerminalListItem } from '@superone/
 import type { HarnessId } from '@superone/shared/session-types'
 import type { TerminalCommandRuleScope } from '@superone/shared/terminal-command-rules'
 import type { PtyLike, PtySpawner } from '../terminal/pty'
-import { TerminalOwnership } from '../terminal/terminal-ownership'
+import { terminalLease } from '../terminal/terminal-lease.test-fixtures'
 import { TerminalSession } from '../terminal/terminal-session'
 import type { CreateTerminalOptions } from '../terminal/terminal-manager'
 import type { BuiltInSuperoneToolDeps } from './superone-mcp-builtins'
@@ -66,7 +66,7 @@ class StubManager implements TerminalToolHost {
       cols: opts.cols ?? 80,
       rows: opts.rows ?? 24,
       spawner,
-      ownership: new TerminalOwnership(),
+      lease: terminalLease(),
       shell: '/bin/zsh',
       agentSessionId: opts.agentSessionId,
       onEvent: () => {},

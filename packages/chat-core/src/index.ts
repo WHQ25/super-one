@@ -1,4 +1,5 @@
 export { createDefaultChatCoreSession } from './defaults'
+export { compactChatCoreState } from './session-state'
 export { applyEventToSession } from './reducer'
 export {
   clearStreamingToolInput,

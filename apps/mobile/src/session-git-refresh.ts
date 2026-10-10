@@ -25,5 +25,5 @@ export async function fetchProjectGitInfo(
   client: RelayClient,
   projectPath: string,
 ): Promise<ShellGitInfo | null> {
-  return requestGitResource(client, 'get_git_info', projectPath).catch(() => null)
+  return requestGitResource(client, 'git.status', projectPath).catch(() => null)
 }

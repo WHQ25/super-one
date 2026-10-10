@@ -2,7 +2,8 @@ import { createRequire } from 'node:module'
 import { existsSync } from 'node:fs'
 import type { IPty } from 'node-pty'
 import type { TerminalReadResult } from '@superone/shared/environment'
-import type { TerminalListItem } from '@superone/shared/agent-types'
+import type { TerminalEvent, TerminalListItem, TerminalSnapshot } from '@superone/shared/agent-types'
+import type { ControlLeaseService } from '@superone/runtime/lease'
 import type { NodeDatabase } from '../db/database'
 
 const nodeRequire = createRequire(import.meta.url)
@@ -45,8 +46,40 @@ function defaultShell(): string {
  */
 export class NodeTerminalManager {
   private readonly byId = new Map<string, LiveTerminal>()
+  private readonly events = new Set<(event: TerminalEvent) => void>()
+  private authority: { environmentId: string; leases: ControlLeaseService } | null = null
+  private offLeases: (() => void) | null = null
 
   constructor(private readonly db: NodeDatabase) {}
+
+  bindLeases(environmentId: string, leases: ControlLeaseService): void {
+    this.offLeases?.()
+    this.authority = { environmentId, leases }
+    this.offLeases = leases.onChange(resource => {
+      if (!('terminalId' in resource) || resource.environmentId !== environmentId || !this.byId.has(resource.terminalId)) return
+      this.emit({ type: 'terminal_owner_changed', terminalId: resource.terminalId, ownerDeviceId: this.owner(resource.terminalId), writableByMe: false })
+    })
+  }
+
+  onEvent(listener: (event: TerminalEvent) => void): () => void {
+    this.events.add(listener)
+    return () => { this.events.delete(listener) }
+  }
+
+  eventForClient(event: TerminalEvent, clientSessionId: string): TerminalEvent {
+    return event.type === 'terminal_owner_changed' ? { ...event, writableByMe: this.writable(event.terminalId, clientSessionId) } : event
+  }
+
+  private lease(terminalId: string) { return this.authority?.leases.get({ environmentId: this.authority.environmentId, terminalId }) ?? null }
+  private owner(terminalId: string): string | null {
+    const lease = this.lease(terminalId)
+    return lease ? (lease.delegate ?? lease.holderClientId).replace(/^phone:/, '') : null
+  }
+  private writable(terminalId: string, clientSessionId: string): boolean {
+    const lease = this.lease(terminalId)
+    return !!lease && (lease.delegate ? lease.delegate === clientSessionId : lease.holderClientId === clientSessionId)
+  }
+  private emit(event: TerminalEvent): void { for (const listener of this.events) listener(event) }
 
   create(opts: { cwd: string; title?: string; cols?: number; rows?: number; shell?: string }): NodeTerminalInfo {
     if (!existsSync(opts.cwd)) {
@@ -104,6 +137,7 @@ export class NodeTerminalManager {
         live.chunkBytes -= live.chunks.shift()!.bytes
       }
       for (const listener of live.listeners) listener(chunk, info.sequence)
+      this.emit({ type: 'terminal_output', terminalId, data: chunk, fromSeq: info.sequence, toSeq: info.sequence, createdAt: info.updatedAt })
     }
     proc.onData(onChunk)
     proc.onExit(({ exitCode }) => {
@@ -122,8 +156,11 @@ export class NodeTerminalManager {
           `UPDATE terminals SET updated_at = ?, exited_at = ?, exit_code = ? WHERE terminal_id = ?`,
         )
         .run(info.updatedAt, info.exitedAt, exitCode, terminalId)
+      this.authority?.leases.revoke({ environmentId: this.authority.environmentId, terminalId })
+      this.emit({ type: 'terminal_exited', terminalId, exitCode, signal: null })
     })
 
+    this.emit({ type: 'terminal_created', terminalId, item: this.list().find(item => item.terminalId === terminalId)! })
     return { ...info }
   }
 
@@ -138,16 +175,21 @@ export class NodeTerminalManager {
       cwd: info.cwd,
       title: info.title,
       status: info.exitedAt === null ? 'running' : 'exited',
-      ownerDeviceId: null,
+      ownerDeviceId: this.owner(info.terminalId),
     }))
   }
 
-  attach(terminalId: string): { snapshot: string; sequence: string } {
+  attach(terminalId: string, clientSessionId = ''): { snapshot: string; sequence: string; terminal: TerminalSnapshot } {
     const live = this.byId.get(terminalId)
     if (!live) throw Object.assign(new Error('terminal not found'), { code: 'not_found' })
     return {
       snapshot: live.info.snapshot,
       sequence: String(live.info.sequence),
+      terminal: {
+        terminalId, cwd: live.info.cwd, title: live.info.title, cols: live.info.cols, rows: live.info.rows,
+        status: live.info.exitedAt === null ? 'running' : 'exited', lastSeq: live.info.sequence,
+        ownerDeviceId: this.owner(terminalId), writableByMe: this.writable(terminalId, clientSessionId), subscriberCount: 0,
+      },
     }
   }
 
@@ -212,6 +254,8 @@ export class NodeTerminalManager {
     this.db
       .prepare(`UPDATE terminals SET updated_at = ?, exited_at = COALESCE(exited_at, ?) WHERE terminal_id = ?`)
       .run(now, now, terminalId)
+    this.authority?.leases.revoke({ environmentId: this.authority.environmentId, terminalId })
+    this.emit({ type: 'terminal_exited', terminalId, exitCode: live.info.exitCode, signal: null })
   }
 
   subscribeOutput(terminalId: string, listener: (chunk: string, sequence: number) => void): () => void {

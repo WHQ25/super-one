@@ -63,6 +63,30 @@ const textOf = (message: { content: Array<{ type: string; text?: string }> }) =>
   message.content.filter((b) => b.type === 'text').map((b) => b.text).join('')
 
 describe('SessionReadModel', () => {
+  it('loads before and after stable anchors without losing the current turn outside a history window', async () => {
+    const node = boot(dbPath(), scriptedTurn())
+    const session = node.runtime.create({ projectId: 'p', harnessId: 'claude' })
+    await node.runtime.send({ sessionId: session.sessionId, text: 'first', clientMessageId: 'u1', client, ...lease })
+    await until(() => node.runtime.get(session.sessionId)?.status === 'idle')
+    await node.runtime.send({ sessionId: session.sessionId, text: 'second', clientMessageId: 'u2', client, ...lease })
+    await until(() => node.runtime.get(session.sessionId)?.status === 'idle')
+    const before = node.runtime.load({ sessionId: session.sessionId, anchorId: 'u2', direction: 'before', limit: 2 })
+    expect(before.messages.map(row => row.role)).toEqual(['user', 'assistant'])
+    expect(before.activeTurn?.map(row => row.role)).toEqual(['user', 'assistant'])
+    expect(before).toMatchObject({ before: null, after: 2 })
+    const history = node.runtime.load({ sessionId: session.sessionId, anchorId: 'u2', direction: 'before', limit: 2, includeState: false })
+    expect(history.messages).toEqual(before.messages)
+    expect(history.cursor).toEqual(before.cursor)
+    expect(history.state).toEqual({})
+    expect(history.activeTurn).toBeUndefined()
+    const after = node.runtime.load({ sessionId: session.sessionId, anchorId: 'u2', direction: 'after' })
+    expect(after.messages.map(row => row.role)).toEqual(['assistant'])
+    expect(after.activeTurn?.map(row => row.id)).toEqual(['u2'])
+    expect(after.after).toBeNull()
+    expect(() => node.runtime.load({ sessionId: session.sessionId, anchorId: 'missing' })).toThrow('History message no longer exists')
+    await node.runtime.dispose()
+  })
+
   it('keeps streamed text only in memory until its message commits, then from the checkpoint across a restart', async () => {
     const path = dbPath()
     const node = boot(path, scriptedTurn())

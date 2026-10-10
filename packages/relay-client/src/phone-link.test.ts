@@ -3,7 +3,6 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { hexToBytes } from '@noble/ciphers/utils.js'
 import { REMOTE_LINK_HEADER_MAX_BYTES } from '@superone/shared/remote-payload'
-import { decodeHostPlaintext } from './host-payload'
 import { decodeLinkBody, encodeLinkBody, openLinkFrame, sealLinkFrame } from './phone-link'
 import { acceptClientHello, issueChannelCredential, openChannelBytes, sealChannelBytes, startClientHandshake } from './secure-channel'
 
@@ -22,12 +21,14 @@ function pair() {
 
 describe('phone link golden vector', () => {
   it('seals the frozen link frame', () => {
-    const body = encodeLinkBody(v.linkFrame.header, hexToBytes(v.linkFrame.hostFrameHex))
+    const body = encodeLinkBody(v.linkFrame.header as never, hexToBytes(v.linkFrame.hostFrameHex))
     const sealed = sealChannelBytes(hexToBytes(v.s2cKeyHex), v.linkFrame.seq, body, hexToBytes(v.linkFrame.ivHex))
     expect(Buffer.from(sealed).toString('hex')).toBe(v.linkFrame.frameHex)
     const opened = openChannelBytes(hexToBytes(v.s2cKeyHex), hexToBytes(v.linkFrame.frameHex))
-    const { header, payload } = decodeLinkBody(opened.body)
-    expect({ seq: opened.seq, header, payload: decodeHostPlaintext(payload) }).toEqual({ seq: v.linkFrame.seq, header: v.linkFrame.header, payload: v.linkFrame.payload })
+    expect(opened.seq).toBe(v.linkFrame.seq)
+    expect(opened.body).toEqual(body)
+    // Historical crypto vectors stay frozen; their retired application header is refused.
+    expect(() => decodeLinkBody(opened.body)).toThrow('invalid link header')
   })
 
   it('matches an independent node:crypto reading', () => {
@@ -46,8 +47,7 @@ describe('phone link golden vector', () => {
 describe('phone link frames', () => {
   it('round-trips headers and payloads in both directions', () => {
     const { phone, host } = pair()
-    const command = new TextEncoder().encode('{"type":"list_projects"}')
-    expect(openLinkFrame(host, sealLinkFrame(phone, { t: 'command' }, command))).toEqual({ header: { t: 'command' }, payload: command })
+    const command = new TextEncoder().encode('{"type":"rpc","method":"project.list"}')
     expect(openLinkFrame(phone, sealLinkFrame(host, { t: 'rpc' }, command))).toEqual({ header: { t: 'rpc' }, payload: command })
     expect(openLinkFrame(host, sealLinkFrame(phone, { t: 'rpc' }, command))).toEqual({ header: { t: 'rpc' }, payload: command })
     const opened = openLinkFrame(phone, sealLinkFrame(host, { t: 'handshake', hostName: 'Mac', lan: { hosts: ['10.0.0.2'], port: 7788 } }))
@@ -62,20 +62,20 @@ describe('phone link frames', () => {
 
   it('rejects replayed, tampered and cross-direction frames', () => {
     const { phone, host } = pair()
-    const frame = sealLinkFrame(host, { t: 'event' })
+    const frame = sealLinkFrame(host, { t: 'rpc' })
     openLinkFrame(phone, frame)
     expect(() => openLinkFrame(phone, frame)).toThrow(expect.objectContaining({ code: 'channel_replay' }))
-    const tampered = Buffer.from(sealLinkFrame(host, { t: 'event' }), 'base64')
+    const tampered = Buffer.from(sealLinkFrame(host, { t: 'rpc' }), 'base64')
     tampered[tampered.length - 1] ^= 1
     expect(() => openLinkFrame(phone, tampered.toString('base64'))).toThrow(expect.objectContaining({ code: 'channel_decrypt' }))
-    expect(() => openLinkFrame(host, sealLinkFrame(host, { t: 'event' }))).toThrow(expect.objectContaining({ code: 'channel_decrypt' }))
+    expect(() => openLinkFrame(host, sealLinkFrame(host, { t: 'rpc' }))).toThrow(expect.objectContaining({ code: 'channel_decrypt' }))
   })
 
   it('rejects unknown kinds and oversized or malformed headers', () => {
     expect(() => decodeLinkBody(encodeLinkBody({ t: 'nope' } as never))).toThrow('invalid link header')
-    expect(() => decodeLinkBody(encodeLinkBody({ t: 'response' } as never))).toThrow('invalid link header')
+    for (const t of ['command', 'event', 'terminal', 'response']) expect(() => decodeLinkBody(encodeLinkBody({ t, requestId: 'old' } as never))).toThrow('invalid link header')
     expect(() => encodeLinkBody({ t: 'handshake', hostName: 'x'.repeat(REMOTE_LINK_HEADER_MAX_BYTES) })).toThrow('too large')
-    const lying = encodeLinkBody({ t: 'event' })
+    const lying = encodeLinkBody({ t: 'rpc' })
     new DataView(lying.buffer).setUint16(0, 500)
     expect(() => decodeLinkBody(lying)).toThrow('header length')
     expect(() => decodeLinkBody(new Uint8Array([0]))).toThrow('too short')

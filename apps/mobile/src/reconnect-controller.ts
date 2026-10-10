@@ -6,6 +6,8 @@ export type ReconnectControllerHooks = {
   onRetry?: (error: unknown, delayMs: number) => void
   /** A dial is in flight. Pairs with onRetry to tell waiting from attempting apart. */
   onAttempt?: () => void
+  shouldRetry?: (error: unknown) => boolean
+  onFailure?: (error: unknown) => void
   /**
    * Runs after the transport opened, before restore. The relay accepts a lone
    * mobile (mailbox semantics), so an open socket says nothing about the desktop;
@@ -91,6 +93,12 @@ export class ReconnectController {
       this.hooks.onState('connected', epoch)
     } catch (error) {
       if (!this.active || generation !== this.generation) return
+      if (this.hooks.shouldRetry?.(error) === false) {
+        this.active = false
+        this.hooks.onState('offline', this.epoch)
+        this.hooks.onFailure?.(error)
+        return
+      }
       this.attempt += 1
       const delay = RECONNECT_DELAYS_MS[Math.min(this.attempt, RECONNECT_DELAYS_MS.length - 1)]
       this.hooks.onRetry?.(error, delay)

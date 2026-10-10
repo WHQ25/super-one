@@ -1,9 +1,8 @@
 import { useCallback, useRef, useState, type RefObject } from 'react'
 import type { RelayClient } from '@superone/relay-client'
-import type { RemoteCommand } from '@superone/shared/agent-types'
 import type { GitFileStatusEntry, GitFileTone } from '@superone/shared/git-file-status'
-import { gitFileTone, strongestGitTone } from '@superone/shared/git-file-status'
-import { randomId } from '../ids'
+import { gitFileTone, strongestGitTone, parseGitPorcelain } from '@superone/shared/git-file-status'
+import { projectRpc } from '../project-rpc'
 
 /**
  * Per-file git state for the file browser, keyed by repo-relative path.
@@ -51,11 +50,9 @@ export function useProjectGitStatus(clientRef: RefObject<RelayClient | null>) {
     const client = clientRef.current
     if (!client || !projectPath) return
     const request = ++generation.current
-    const result = await client.request({
-      type: 'get_git_file_status', requestId: randomId(), projectPath,
-    } as RemoteCommand) as { entries?: GitFileStatusEntry[] }
+    const result = await projectRpc(client, projectPath, 'git.status') as { porcelain?: string }
     if (request !== generation.current) return
-    setTones(buildGitToneMap(result.entries ?? []))
+    setTones(buildGitToneMap(parseGitPorcelain(result.porcelain ?? '')))
   }, [clientRef])
   const clear = useCallback(() => { generation.current++; setTones(EMPTY) }, [])
   return { tones, refresh, clear }

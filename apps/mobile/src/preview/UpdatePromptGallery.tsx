@@ -6,6 +6,8 @@ import { useMobileTheme } from '../theme/context'
 import type { OtaView } from '../updates/ota-update-state'
 import type { UpdateFlowActions, UpdateFlowState } from '../updates/use-update-check'
 import { fakeAndroidManifest, fakeIosManifest } from './fake-update-ports'
+import { DesktopUpgradeSheet } from '../screens/desktop-upgrade-sheet'
+import type { ComponentProps } from 'react'
 
 /**
  * Every update state the shell can reach, on demand.
@@ -18,6 +20,7 @@ import { fakeAndroidManifest, fakeIosManifest } from './fake-update-ports'
 type Scenario =
   | { id: string; label: string; state: UpdateFlowState }
   | { id: string; label: string; ota: OtaView }
+  | { id: string; label: string; upgrade: Omit<ComponentProps<typeof DesktopUpgradeSheet>, 'onReconnect' | 'onDismiss'> }
 
 const ANDROID = fakeAndroidManifest()
 const IOS = fakeIosManifest()
@@ -32,6 +35,16 @@ const BASE = {
 } satisfies Omit<UpdateFlowState, 'verdict' | 'manifest'>
 
 const SCENARIOS: Scenario[] = [
+  { id: 'desktop', label: 'Desktop · upgrade required', upgrade: {
+    problem: { pairingId: 'preview', deviceName: 'Studio MacBook Pro', currentVersion: '0.72.2', minimumVersion: '0.73.0-alpha.1' },
+  } },
+  { id: 'desktop-reconnecting', label: 'Desktop · reconnecting', upgrade: {
+    problem: { pairingId: 'preview', deviceName: 'Studio MacBook Pro', currentVersion: '0.72.2', minimumVersion: '0.73.0-alpha.1' }, busy: true,
+  } },
+  { id: 'desktop-error', label: 'Desktop · retry failed, long name', upgrade: {
+    problem: { pairingId: 'preview', deviceName: 'My desktop computer in the remote production workspace with a long name', minimumVersion: '0.73.0-alpha.1' },
+    error: 'Desktop is unavailable. Choose another device.',
+  } },
   {
     id: 'optional',
     label: 'Optional · dismissible sheet',
@@ -118,7 +131,7 @@ const SCENARIOS: Scenario[] = [
 
 export function UpdatePromptGallery() {
   const { tokens: { colors, spacing, radius } } = useMobileTheme()
-  const [selected, setSelected] = useState(SCENARIOS[0])
+  const [selected, setSelected] = useState<Scenario | null>(SCENARIOS[0])
   const [lastAction, setLastAction] = useState<string>('—')
 
   const actions = useMemo<UpdateFlowActions>(
@@ -148,7 +161,7 @@ export function UpdatePromptGallery() {
               padding: spacing.sm,
               borderRadius: radius.md,
               borderWidth: 1,
-              borderColor: scenario.id === selected.id ? colors.primary : colors.border,
+              borderColor: scenario.id === selected?.id ? colors.primary : colors.border,
             }}
           >
             <Text style={{ color: colors.foreground, fontSize: 13 }}>{scenario.label}</Text>
@@ -158,9 +171,12 @@ export function UpdatePromptGallery() {
           {lastAction}
         </Text>
       </ScrollView>
-      {'ota' in selected
+      {selected && ('upgrade' in selected
+        ? <DesktopUpgradeSheet {...selected.upgrade} onReconnect={() => setLastAction('reconnect')}
+          onDismiss={() => { setLastAction('dismiss'); setSelected(null) }} />
+        : 'ota' in selected
         ? <OtaUpdatePrompt view={selected.ota} />
-        : <UpdatePrompt state={selected.state} actions={actions} />}
+        : <UpdatePrompt state={selected.state} actions={actions} />)}
     </View>
   )
 }

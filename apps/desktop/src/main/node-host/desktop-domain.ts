@@ -19,6 +19,7 @@ import { loadDesktopEnvironmentIdentity } from '../environment/local-identity'
 import { DesktopSessionHost, type NodeHostSessionManager, type NodeHostSessionStore } from './desktop-session-host'
 import { createDesktopWorktreePort } from './desktop-worktree-port'
 import { reconcileRunsAfterRestart } from './reconcile-runs'
+import { SessionEventRecorder } from './session-event-recorder'
 import { desktopNodeHostPaths } from './paths'
 import { claudeUsageAccounts } from '../agent/subscription-usage'
 import { usageLog } from '../agent/usage-log'
@@ -92,6 +93,7 @@ export class DesktopDomain {
     readonly identity: NodeIdentity,
     readonly auth: AuthService,
     readonly sessions: DesktopSessionHost,
+    private readonly recorder: SessionEventRecorder,
     /** The node home (identity, channel root, config). */
     readonly nodeHome: string,
     private readonly context: DesktopRpcContext,
@@ -107,7 +109,8 @@ export class DesktopDomain {
       const auth = new AuthService(db, identity)
       const leases = new ControlLeaseService(db)
       const events = new EventLog(db, identity.environmentId)
-      reconcileRunsAfterRestart({ db, events, store: deps.store, sessions: deps.sessions })
+      reconcileRunsAfterRestart({ db, events, sessions: deps.sessions })
+      const recorder = new SessionEventRecorder(deps.sessions, events)
       const sessions = new DesktopSessionHost({
         environmentId: identity.environmentId,
         sessions: deps.sessions,
@@ -135,7 +138,7 @@ export class DesktopDomain {
         unservedMethods: DESKTOP_UNSERVED_METHODS,
         subscriptionUsage: { claudeAccounts: claudeUsageAccounts, log: usageLog },
       }
-      return new DesktopDomain(db, identity, auth, sessions, paths.nodeHome, context)
+      return new DesktopDomain(db, identity, auth, sessions, recorder, paths.nodeHome, context)
     } catch (err) {
       db.close()
       throw err
@@ -148,6 +151,7 @@ export class DesktopDomain {
   }
 
   close(): void {
+    this.recorder.dispose()
     this.sessions.dispose()
     this.db.close()
   }

@@ -32,7 +32,7 @@ import { RemoteHostActionConsumer } from '../environment/remote-host-action-cons
 import { NodeCredentialStore } from '../environment/node-credential-store'
 import { createDesktopProjectsPort } from './desktop-projects-port'
 import { nodeControllerDeviceId } from './desktop-session-host'
-import { AGENT_PROFILES, FakeSessionManager, memoryStore, startDesktopNode, stopDesktopNode } from './node-host-test-fixtures'
+import { AGENT_PROFILES, FakeSessionManager, memoryStore, startDesktopNode, stopDesktopNode, type FakeSession } from './node-host-test-fixtures'
 import { DesktopNodeHost } from './node-host-server'
 import { mapNodeSessionEvents } from '@superone/shared/node-session-event-map'
 
@@ -273,6 +273,19 @@ describe('DesktopNodeHost agent catalog', () => {
     const lease = await client.rpc<{ leaseId: string; generation: string }>('session.acquireControl', { sessionId: created.sessionId })
     await client.rpc('session.send', { sessionId: created.sessionId, text: 'go', leaseId: lease.leaseId, generation: lease.generation })
     expect(live.sent[0]).toMatchObject({ content: 'go', model: 'claude-opus', effort: 'medium' })
+  })
+})
+
+describe('DesktopNodeHost visibility', () => {
+  it('records every session of the desktop but shows a controller only the ones it started', async () => {
+    const { sessions, client, projectDir } = await pairedDesktops()
+    const created = await client.rpc<{ sessionId: string }>('session.create', { projectId: 'p1', harnessId: 'claude' })
+    // A session this desktop's user runs: recorded, and private to the desktop.
+    const own = sessions.createSession({ id: 'own-session', projectPath: projectDir }) as unknown as FakeSession
+    own.emitHostEvent({ type: 'status_change', status: 'streaming' } as AgentEvent)
+    sessions.live.get(created.sessionId)!.emitHostEvent({ type: 'status_change', status: 'streaming' } as AgentEvent)
+    const { events } = await client.rpc<{ events: EnvironmentEventEnvelope[] }>('session.events', { afterSequence: '0' })
+    expect(new Set(events.map((e) => e.aggregateId))).toEqual(new Set([created.sessionId]))
   })
 })
 

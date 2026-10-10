@@ -116,6 +116,8 @@ export interface NotificationDispatcher {
 }
 
 export interface NotificationDispatcherOptions {
+  /** Persistent observer; true consumes a notification outside the turn inboxes. */
+  onNotification?: (notification: AppServerNotification) => boolean
   onSkillsChanged?: () => void
   onQueueChanged?: (threadId: string) => void
   isMainTurnActive?: () => boolean
@@ -265,6 +267,11 @@ export function createNotificationDispatcher(
       }
       if (OBSERVED_THREAD_NOTIFICATIONS.has(notif.method)) {
         log.info('[codex] %s %s', notif.method, summarizeThreadNotification(notif))
+      }
+      try {
+        if (options.onNotification?.(notif)) continue
+      } catch (err) {
+        log.warn('[codex] notification observer threw:', err)
       }
       if (notif.method === 'skills/changed' && options.onSkillsChanged) {
         try { options.onSkillsChanged() } catch (err) {

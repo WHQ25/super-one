@@ -979,6 +979,8 @@ describe('CodexBackend send()', () => {
     expect(cb).toBeDefined()
 
     cb.onThreadStarted!('thread-99')
+    cb.onTurnMetadata!({ threadId: 'thread-99', turnId: 'turn-99', rootTurnId: 'origin' }, { parentTurnId: 'parent' })
+    cb.onSubagentActivity!({ id: 'activity-1', sourceThreadId: 'thread-99', sourceTurnId: 'turn-99', agentThreadId: 'child', agentPath: 'root/child', kind: 'started', model: 'actual-model', reasoningEffort: 'high' })
     cb.onItemDelta!('started', { type: 'agent_message', id: 'it-1', text: 'hello' } as CodexThreadItem)
     cb.onUsageDelta!({ lastInputTokens: 10, lastOutputTokens: 20, contextWindow: 0 } as CodexUsageInfo)
     cb.onMcpServerStatus!([{ name: 'superone', status: 'ready' }, { name: 'linear', status: 'starting' }])
@@ -990,6 +992,9 @@ describe('CodexBackend send()', () => {
 
     const bodyTypes = events.map((e) => e.type)
     expect(bodyTypes).toContain('codex_thread_started')
+    expect(bodyTypes).toContain('codex_turn_metadata')
+    expect(bodyTypes).toContain('codex_subagent_activity')
+    expect(events.find(event => event.type === 'message_complete')).toMatchObject({ metadata: { codex: { rootTurnId: 'origin', requestedProvenance: { parentTurnId: 'parent' }, subagents: { child: { creationConfiguration: { model: 'actual-model', reasoningEffort: 'high' } } } } } })
     expect(bodyTypes).toContain('codex_item_delta')
     expect(bodyTypes).toContain('message_usage')
     expect(bodyTypes).toContain('permission_request')

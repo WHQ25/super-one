@@ -194,11 +194,10 @@ export function reduceSlash(
 ): Partial<ChatCoreSession> {
   switch (event.type) {
     case 'prompt_suggestion': {
-      const list = event.suggestions?.length
-        ? event.suggestions.filter((s) => s.trim().length > 0)
-        : [event.suggestion]
+      const list = (event.suggestions?.length ? event.suggestions : [event.suggestion])
+        .filter((s) => s.trim().length > 0)
       return {
-        promptSuggestion: list[0] ?? event.suggestion,
+        promptSuggestion: list[0] ?? null,
         promptSuggestions: list.slice(0, 6),
       }
     }

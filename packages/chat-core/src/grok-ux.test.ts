@@ -3,6 +3,16 @@ import { applyEventToSession } from './reducer'
 import { createDefaultChatCoreSession } from './defaults'
 
 describe('Grok UX reducer slices', () => {
+  it('clears prompt suggestions without leaving an empty mobile chip', () => {
+    const session = createDefaultChatCoreSession()
+    session.promptSuggestion = 'Run tests'
+    session.promptSuggestions = ['Run tests']
+    expect(applyEventToSession(session, { type: 'prompt_suggestion', suggestion: '' })).toEqual({
+      promptSuggestion: null,
+      promptSuggestions: [],
+    })
+  })
+
   it('keeps multiple follow-up suggestions', () => {
     const session = createDefaultChatCoreSession()
     const patch = applyEventToSession(session, {

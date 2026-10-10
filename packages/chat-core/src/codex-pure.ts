@@ -1,4 +1,4 @@
-import type { ChatMessage, CodexThreadItem, CodexUsageInfo } from '@superone/shared/agent-types'
+import type { ChatMessage, CodexThreadItem, CodexTurnInfo, CodexUsageInfo } from '@superone/shared/agent-types'
 import { mergeMcpAppBlocks } from '@superone/shared/mcp-apps-state'
 
 // Pure Codex transforms shared by Desktop and mobile reducers.
@@ -64,18 +64,14 @@ export function getCodexContextTokens(usage: CodexUsageInfo): number {
   return usage.lastInputTokens
 }
 
-export function getCodexCompletionEventMeta(metadata: ChatMessage['metadata'] | undefined): {
-  finalResponse?: string
-  durationMs?: number
-  threadId: string | null
-  turnId?: string
-  usage: CodexUsageInfo | null
-  items: CodexThreadItem[]
-} | null {
+export function getCodexCompletionEventMeta(metadata: ChatMessage['metadata'] | undefined): CodexTurnInfo | null {
   const rawCodex = metadata?.codex
   if (!rawCodex || typeof rawCodex !== 'object') return null
   const codex = rawCodex as unknown as Record<string, unknown>
   return {
+    ...rawCodex,
+    rootTurnId: typeof codex.rootTurnId === 'string' && codex.rootTurnId.trim()
+      ? codex.rootTurnId : codex.rootTurnId === null ? null : undefined,
     finalResponse: typeof codex.finalResponse === 'string' ? codex.finalResponse : undefined,
     durationMs: typeof codex.durationMs === 'number' && Number.isFinite(codex.durationMs) ? codex.durationMs : undefined,
     threadId: typeof codex.threadId === 'string' || codex.threadId === null ? codex.threadId : null,

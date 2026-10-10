@@ -1,5 +1,6 @@
 import type { McpAppsBinding } from '@superone/shared/mcp-apps'
 import type { AttachmentCodexInput } from '@superone/shared/attachment-turn'
+import { readCodexTurnProvenance } from '@superone/codex/protocol-v162'
 /**
  * Mid-turn-aware Codex run: starts turn/start, exposes turn id for steer,
  * then waits for turn/completed.
@@ -74,6 +75,8 @@ export async function openTurnAndStream(opts: {
   cwd: string
   additionalDirectories?: string[]
   threadId: string
+  parentTurnId?: string
+  rootTurnId?: string
   model?: string
   reasoningEffort?: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'
   collaborationMode?: Record<string, unknown> | string | null
@@ -100,6 +103,8 @@ export async function openTurnAndStream(opts: {
     'turn/start',
     compactRecord({
       threadId: opts.threadId,
+      ...(opts.parentTurnId ? { parentTurnId: opts.parentTurnId } : {}),
+      ...(opts.rootTurnId ? { rootTurnId: opts.rootTurnId } : {}),
       input: opts.input ?? [{ type: 'text', text: opts.prompt, text_elements: [] }],
       ...(opts.model ? { model: opts.model } : {}),
       ...(opts.reasoningEffort
@@ -130,6 +135,8 @@ export async function openTurnAndStream(opts: {
         mcpAppBinding: opts.mcpAppBinding,
         model: opts.model,
         turnId,
+        provenance: readCodexTurnProvenance(turn, opts.threadId),
+        ...(opts.parentTurnId || opts.rootTurnId ? { requestedProvenance: { ...(opts.parentTurnId ? { parentTurnId: opts.parentTurnId } : {}), ...(opts.rootTurnId ? { rootTurnId: opts.rootTurnId } : {}) } } : {}),
       })
     : null
   agentEventMapper?.start(opts.threadId)

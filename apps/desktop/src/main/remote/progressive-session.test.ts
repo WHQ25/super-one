@@ -5,6 +5,7 @@ vi.mock('../remote-content', async (importOriginal) => {
 })
 import type { BashEditDiff, ChatMessage } from '@superone/shared/agent-types'
 import { bashEditFileChanges, bashEditToolUses, summarizeBashEditDiff } from '@superone/shared/bash-edit-diff'
+import { collectCodexCollabMetadata } from '@superone/shared/codex-metadata'
 import { detailUpdates, projectProgressiveEvent, projectProgressiveMessage, setProgressiveSession, subscribeDetail, unsubscribeDetail } from './progressive-session'
 const message = (): ChatMessage => ({ id: 'm', role: 'assistant', status: 'streaming', createdAt: '', providerId: 'claude', content: [
   { type: 'thinking', thinking: 'private reasoning', startedAt: 100 },
@@ -13,6 +14,19 @@ const message = (): ChatMessage => ({ id: 'm', role: 'assistant', status: 'strea
 ] })
 afterEach(() => { setProgressiveSession('a'); setProgressiveSession('b') })
 describe('progressive session projection', () => {
+  it('carries data-only Codex metadata in live events and collapsed snapshots', () => {
+    const activity = { id: 'activity', sourceThreadId: 'root', sourceTurnId: 'turn', agentThreadId: 'child', agentPath: 'root/child', kind: 'started' as const, model: 'actual', reasoningEffort: 'high' }
+    const subagents = { child: { activities: [activity], creationConfiguration: { model: 'actual', reasoningEffort: 'high' } } }
+    const source: ChatMessage = { ...message(), providerId: 'codex', metadata: { codex: { threadId: 'root', turnId: 'turn', rootTurnId: 'origin', usage: null, subagents,
+      items: [{ id: 'spawn', type: 'collab_tool_call', tool: 'spawnAgent', status: 'completed', receiverThreadIds: ['child'], agentsStates: { child: { status: 'completed', requestedConfiguration: { model: 'requested', reasoningEffort: 'low' }, turns: { 'child-turn': { threadId: 'child', turnId: 'child-turn', rootTurnId: 'origin' } } } }, prompt: 'large task', childItems: { child: [{ id: 'answer', type: 'agent_message', text: 'large output' }] } }] } } }
+    source.metadata!.codex!.subagents = collectCodexCollabMetadata(source.metadata!.codex!.items, subagents)
+    expect(projectProgressiveMessage(source).metadata?.codex).toMatchObject({ rootTurnId: 'origin', subagents: { child: { creationConfiguration: { model: 'actual', reasoningEffort: 'high' }, requestedConfiguration: { model: 'requested' }, turns: { 'child-turn': { rootTurnId: 'origin' } } } }, items: [{ agentsStates: {} }] })
+    expect(JSON.stringify(projectProgressiveMessage(source))).not.toContain('large task')
+    expect(JSON.stringify(projectProgressiveMessage(source))).not.toContain('large output')
+    expect(projectProgressiveEvent({ type: 'codex_subagent_activity', messageId: 'm', activity }, [source])).toMatchObject({ type: 'codex_subagent_activity', activity, remoteView: 'summary' })
+    expect(projectProgressiveEvent({ type: 'codex_turn_metadata', messageId: 'm', provenance: { threadId: 'root', turnId: 'turn', rootTurnId: 'origin' } }, [source])).toMatchObject({ provenance: { rootTurnId: 'origin' } })
+    expect(projectProgressiveEvent({ type: 'codex_item_delta', messageId: 'm', phase: 'updated', item: source.metadata!.codex!.items[0] }, [source])).toMatchObject({ item: { agentsStates: {} }, subagents: { child: { requestedConfiguration: { model: 'requested' }, turns: { 'child-turn': { rootTurnId: 'origin' } } } } })
+  })
   it('sends Bash file names and line totals, then loads full hunks on expand', () => {
     const bashEditDiff: BashEditDiff = {
       files: [{ filePath: '/p/a.ts', hunks: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 1, lines: ['-before', '+after'] }] }],

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { elicitationFormRequest } from '@superone/shared/schema-form'
+import type { CodexSubagentActivity } from '@superone/shared/codex-metadata'
 
 // The harness install-root module (reached via the codex binary resolver) pulls
 // in electron, which has no ESM named exports under vitest.
@@ -3327,5 +3328,32 @@ describe('interruptCodex during a running turn', () => {
     }
 
     await expect(settled).resolves.toBe('rejected')
+  })
+})
+
+describe('Codex data-only subagent metadata', () => {
+  it('captures root and nested activity plus child-turn roots without adding card items', async () => {
+    const activity = { id: 'activity', type: 'subAgentActivity', kind: 'started', agentThreadId: 'child', agentPath: 'root/child', model: 'actual', reasoningEffort: 'high' }
+    const notes = [
+      { method: 'turn/started', params: { threadId: 'root', turn: { id: 't', rootTurnId: 'origin' } } },
+      { method: 'item/completed', params: { threadId: 'root', turnId: 't', item: activity } },
+      { method: 'item/completed', params: { threadId: 'root', turnId: 't', item: { id: 'spawn', type: 'collabAgentToolCall', tool: 'spawnAgent', status: 'completed', receiverThreadIds: ['child'], model: 'requested', reasoningEffort: 'low' } } },
+      { method: 'turn/started', params: { threadId: 'child', turn: { id: 'child-turn', rootTurnId: 'origin' } } },
+      { method: 'item/completed', params: { threadId: 'child', turnId: 'child-turn', item: { ...activity, id: 'nested', agentThreadId: 'grandchild' } } },
+      { method: 'turn/completed', params: { threadId: 'child', turn: { id: 'child-turn', rootTurnId: null, status: 'completed' } } },
+      { method: 'turn/completed', params: { threadId: 'root', turn: { id: 't', rootTurnId: 'origin', status: 'completed' } } },
+    ]
+    const connection = { request: vi.fn().mockResolvedValue({}), respond: vi.fn(), notify: vi.fn(), nextNotification: vi.fn(async () => {
+      const note = notes.shift()
+      if (!note) throw new Error('fixture exhausted')
+      return note
+    }) }
+    const onTurnMetadata = vi.fn(), onSubagentActivity = vi.fn<(activity: CodexSubagentActivity, ownerItemId?: string) => void>()
+    const result = await streamTurnEvents(connection as never, makeSession({ threadId: 'root' }), 't', new AbortController(), { onTurnMetadata, onSubagentActivity })
+    expect(onTurnMetadata).toHaveBeenCalledWith({ threadId: 'root', turnId: 't', rootTurnId: 'origin' })
+    expect(onSubagentActivity).toHaveBeenCalledWith(expect.objectContaining({ sourceThreadId: 'root', sourceTurnId: 't', model: 'actual', reasoningEffort: 'high' }))
+    expect(onSubagentActivity).toHaveBeenCalledWith(expect.objectContaining({ sourceThreadId: 'child', sourceTurnId: 'child-turn', agentThreadId: 'grandchild' }), 'spawn')
+    expect(result.items).toHaveLength(1)
+    expect(result.items[0]).toMatchObject({ type: 'collab_tool_call', agentsStates: { child: { requestedConfiguration: { model: 'requested', reasoningEffort: 'low' }, turns: { 'child-turn': { threadId: 'child', turnId: 'child-turn', rootTurnId: 'origin' } } } } })
   })
 })

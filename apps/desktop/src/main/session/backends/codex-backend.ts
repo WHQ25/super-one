@@ -1,3 +1,4 @@
+import { codexSegmentCompletionData, recordCodexSegmentActivity, recordCodexSegmentProvenance, type CodexMessageSegment } from './codex-message-data'
 import { attachCodexMcpAppTree, createCodexMcpAppsProvider, prewarmCodexMcpAppCatalog } from '@superone/codex/mcp-apps'
 import { ensureCodexMcpAppThread } from '@superone/codex/mcp-app-thread'
 import { withCodexMcpAppElicitation, cancelCodexMcpAppInvocations } from '@superone/codex/mcp-app-elicitation'
@@ -45,7 +46,7 @@ import {
 import { resolvePermissionProfile } from '../../codex/app-server-connection'
 import type { AppServerConnectionHandle, CodexProjectAuth } from '../../codex/app-server-connection'
 import { notifyCodexSkillsChanged } from '../../codex/codex-skills-watcher'
-import { createNotificationDispatcher } from '../../codex/codex-notification-dispatcher'
+import { createCodexSessionDispatcher } from '../../codex/codex-session-dispatcher'
 import {
   buildCodexQueuedInput,
   compactCodexTurn,
@@ -82,6 +83,8 @@ import {
 import type { BackendCommand, BackendStartOptions, HarnessId, SendDelivery, SessionBackend, TaskNotificationInjectResult } from '../types'
 
 export interface CodexRunStreamCallbacksDeps {
+  onTurnMetadata?: CodexRunStreamCallbacks['onTurnMetadata']
+  onSubagentActivity?: CodexRunStreamCallbacks['onSubagentActivity']
   onThreadStarted?: (threadId: string) => void
   onTurnStarted?: (info: { turnId?: string; queued: boolean }) => void
   onProviderUserMessage?: (info: { itemId: string; turnId?: string; text: string }) => void
@@ -245,7 +248,7 @@ export class CodexBackend implements SessionBackend {
   // steered bubble.
   private itemOwner = new Map<string, string>()
   private forkOwners = new Map<string, string>()
-  private segments = new Map<string, { order: string[]; map: Map<string, CodexThreadItem> }>()
+  private segments = new Map<string, CodexMessageSegment>()
   private finalizedSegments = new Set<string>()
   private lastUsageSnapshot: CodexUsageInfo | null = null
   private turnUsage = new CodexTurnUsageAccumulator()
@@ -808,6 +811,8 @@ export class CodexBackend implements SessionBackend {
           result = await compactCodexTurn(session, auth, projectPath, compactRequest, callbacks)
         } else {
           const codexRequest: CodexRunRequest = {
+            parentTurnId: request.codex?.parentTurnId,
+            rootTurnId: request.codex?.rootTurnId,
             prompt: request.codex?.prompt ?? request.content,
             clientMessageId: request.clientMessageId,
             images: request.images,
@@ -1375,11 +1380,7 @@ export class CodexBackend implements SessionBackend {
     await ensureCodexMcpAppThread(request, parentThreadId!, origin.providerSessionId, connection.request)
     assertBinding()
     const session = this.session!
-    session.notificationDispatcher ??= createNotificationDispatcher(connection, {
-      onSkillsChanged: () => notifyCodexSkillsChanged(session.projectPath),
-      onQueueChanged: threadId => session.queueChangedFn?.(threadId),
-      isMainTurnActive: () => Boolean(session.runningController),
-    })
+    session.notificationDispatcher ??= createCodexSessionDispatcher(session, connection)
     return withCodexMcpAppElicitation(createCodexMcpAppsProvider(binding, origin.providerSessionId, request, connection.request), connection,
       origin.providerSessionId, async (incoming, signal) => {
         assertBinding()
@@ -1891,6 +1892,22 @@ export class CodexBackend implements SessionBackend {
 
   private buildCallbacks(): CodexRunStreamCallbacks {
     return {
+      onTurnMetadata: (next, requestedProvenance) => {
+        const messageId = this.currentMessageId
+        if (!messageId) return
+        const segment = this.ensureSegment(messageId)
+        recordCodexSegmentProvenance(segment, next, requestedProvenance)
+        this.emit({ type: 'codex_turn_metadata', messageId, provenance: segment.metadata!.provenance!,
+          ...(segment.metadata!.requestedProvenance ? { requestedProvenance: segment.metadata!.requestedProvenance } : {}) })
+      },
+      onSubagentActivity: (activity, ownerItemId) => {
+        const messageId = (ownerItemId ? this.itemOwner.get(ownerItemId) : undefined) ?? this.forkOwners.get(activity.sourceThreadId) ?? this.currentMessageId
+        if (!messageId) return
+        const segment = this.ensureSegment(messageId)
+        recordCodexSegmentActivity(segment, activity)
+        this.emit({ type: 'codex_subagent_activity', messageId, activity })
+      },
+      onPromptSuggestion: suggestion => this.emit({ type: 'prompt_suggestion', suggestion }),
       hasQueuedMessages: () => this.durableQueue.size > 0,
       onQueuedMessageConsumed: (clientMessageId) => {
         // Both branches, not just the cold one. The live-stream drain reaches
@@ -2052,6 +2069,7 @@ export class CodexBackend implements SessionBackend {
       messageId,
       metadata: {
         codex: {
+          ...codexSegmentCompletionData(seg, items),
           finalResponse: finalText,
           durationMs: Date.now() - opts.startedAt,
           items,
@@ -2077,7 +2095,7 @@ export class CodexBackend implements SessionBackend {
     })
   }
 
-  private ensureSegment(messageId: string): { order: string[]; map: Map<string, CodexThreadItem> } {
+  private ensureSegment(messageId: string) {
     let seg = this.segments.get(messageId)
     if (!seg) {
       seg = { order: [], map: new Map() }

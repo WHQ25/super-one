@@ -1,3 +1,6 @@
+import { mapCodexCollabItem } from './collab-item'
+import { readCodexSubagentActivity, readCodexTurnProvenance } from './protocol-v162'
+import { applyCodexSubagentActivity, collectCodexCollabMetadata, mergeCodexTurnProvenance, type CodexRequestedTurnProvenance, type CodexSubagentMetadata, type CodexTurnProvenance } from '@superone/shared/codex-metadata'
 import { mapCodexCommandItem } from './command-item'
 import type { McpAppsBinding } from '@superone/shared/mcp-apps'
 import { attachCodexMcpApp, readCodexMcpAppFields } from './mcp-apps'
@@ -18,9 +21,6 @@ import { readCodexAsyncUserInputQuestions } from './protocol-v153'
 import { readCodexMcpWwwAuthenticate } from './protocol-v154'
 import type {
   AgentEvent,
-  CodexCollabAgentState,
-  CodexCollabAgentStatus,
-  CodexCollabTool,
   CodexMcpServerStartup,
   CodexMcpToolCallStatus,
   CodexPatchApplyStatus,
@@ -41,6 +41,8 @@ export interface CodexAgentEventMapperOptions {
   emit: (event: AgentEvent) => void
   model?: string
   turnId?: string | null
+  provenance?: CodexTurnProvenance | null
+  requestedProvenance?: CodexRequestedTurnProvenance
   turnKind?: 'run' | 'steer' | 'review' | 'compact'
   now?: () => number
 }
@@ -161,49 +163,7 @@ function mapMcpToolCallStatus(raw: unknown): CodexMcpToolCallStatus {
   }
 }
 
-function normalizeCollabTool(value: unknown): CodexCollabTool | null {
-  switch (readString(value)) {
-    case 'spawnAgent':
-    case 'spawn_agent':
-      return 'spawnAgent'
-    case 'sendInput':
-    case 'send_input':
-      return 'sendInput'
-    case 'wait':
-    case 'wait_agent':
-      return 'wait'
-    case 'closeAgent':
-    case 'close_agent':
-      return 'closeAgent'
-    case 'resumeAgent':
-    case 'resume_agent':
-      return 'resumeAgent'
-    default:
-      return null
-  }
-}
 
-function normalizeCollabAgentStatus(value: unknown): CodexCollabAgentStatus | null {
-  switch (readString(value)) {
-    case 'pendingInit':
-    case 'pending_init':
-      return 'pendingInit'
-    case 'running':
-      return 'running'
-    case 'completed':
-      return 'completed'
-    case 'errored':
-    case 'error':
-      return 'errored'
-    case 'shutdown':
-      return 'shutdown'
-    case 'notFound':
-    case 'not_found':
-      return 'notFound'
-    default:
-      return null
-  }
-}
 
 export function buildCodexReasoningItem(
   id: string,
@@ -359,54 +319,9 @@ export function mapCodexThreadItem(
     case 'contextCompaction':
       return { id, type: 'compaction' }
     case 'collabAgentToolCall':
-    case 'collabToolCall': {
-      const prev = previous?.type === 'collab_tool_call' ? previous : null
-      const receiverThreadIds = uniqueStrings([
-        ...readStringArray(rec.receiverThreadIds ?? rec.receiver_thread_ids),
-        readString(rec.receiverThreadId ?? rec.receiver_thread_id),
-        readString(rec.newThreadId ?? rec.new_thread_id),
-      ])
-      const agentsStates: Record<string, CodexCollabAgentState> = { ...(prev?.agentsStates ?? {}) }
-      const rawStates = asRecord(rec.agentsStates ?? rec.agents_states)
-      if (rawStates) {
-        for (const [agentId, value] of Object.entries(rawStates)) {
-          const state = asRecord(value)
-          if (!state) continue
-          const prior = prev?.agentsStates?.[agentId]
-          agentsStates[agentId] = {
-            ...prior,
-            status: normalizeCollabAgentStatus(state.status) ?? prior?.status ?? 'running',
-            ...(state.message != null ? { message: readString(state.message) ?? undefined } : {}),
-          }
-        }
-      }
-      const rawAgentStatus = rec.agentStatus ?? rec.agent_status
-      const agentStatus = asRecord(rawAgentStatus)
-      if (!rawStates && rawAgentStatus != null) {
-        for (const agentId of receiverThreadIds) {
-          const prior = prev?.agentsStates?.[agentId]
-          agentsStates[agentId] = {
-            ...prior,
-            status: normalizeCollabAgentStatus(agentStatus?.status ?? rawAgentStatus) ?? prior?.status ?? 'running',
-            ...(agentStatus?.message != null ? { message: readString(agentStatus.message) ?? undefined } : {}),
-          }
-        }
-      }
-      const rawStatus = readString(rec.status)
-      return {
-        id,
-        type: 'collab_tool_call',
-        tool: normalizeCollabTool(rec.tool) ?? prev?.tool ?? 'spawnAgent',
-        status: rawStatus === 'completed' ? 'completed' : rawStatus === 'failed' ? 'failed' : 'in_progress',
-        ...(readString(rec.senderThreadId) ?? readString(rec.sender_thread_id) ?? prev?.senderThreadId
-          ? { senderThreadId: readString(rec.senderThreadId) ?? readString(rec.sender_thread_id) ?? prev?.senderThreadId }
-          : {}),
-        receiverThreadIds: receiverThreadIds.length > 0 ? receiverThreadIds : (prev?.receiverThreadIds ?? []),
-        ...(readString(rec.prompt) ?? prev?.prompt ? { prompt: readString(rec.prompt) ?? prev?.prompt } : {}),
-        agentsStates,
-        ...(prev?.childItems ? { childItems: prev.childItems } : {}),
-      }
-    }
+    case 'collabToolCall':
+      return mapCodexCollabItem(rec, previous)
+
     default:
       return null
   }
@@ -476,6 +391,20 @@ export function createCodexAgentEventMapper(
   let currentUsage: CodexUsageInfo | null = null
   let currentThreadId: string | null = null
   let currentTurnId: string | null = options.turnId ?? null
+  let provenance = options.provenance ?? undefined
+  let emittedProvenance: CodexTurnProvenance | undefined
+  let subagents: Record<string, CodexSubagentMetadata> | undefined
+  const emitProvenance = (raw: unknown) => {
+    if (!currentThreadId) return
+    const next = readCodexTurnProvenance(raw, currentThreadId)
+    if (!next) return
+    provenance = mergeCodexTurnProvenance(provenance, next)
+    currentTurnId = next.turnId
+    if (emittedProvenance?.threadId === provenance.threadId && emittedProvenance.turnId === provenance.turnId && emittedProvenance.rootTurnId === provenance.rootTurnId) return
+    emittedProvenance = provenance
+    options.emit({ type: 'codex_turn_metadata', messageId: options.messageId, provenance,
+      ...(options.requestedProvenance && next.turnId === options.turnId ? { requestedProvenance: options.requestedProvenance } : {}) })
+  }
   let lastItemCompletedAt = startedAt
   let started = false
   let terminal = false
@@ -578,6 +507,7 @@ export function createCodexAgentEventMapper(
       })
       options.emit({ type: 'status_change', status: 'streaming' })
       if (threadId) options.emit({ type: 'codex_thread_started', messageId: options.messageId, threadId })
+      if (provenance) emitProvenance({ id: provenance.turnId, rootTurnId: provenance.rootTurnId })
       if (options.turnKind === 'compact') startCompaction({})
     },
 
@@ -585,9 +515,15 @@ export function createCodexAgentEventMapper(
       const result = emptyApplyResult()
       if (terminal) return result
       const params = note.params
+      const notificationThreadId = readString(params.threadId) ?? readString(params.thread_id)
+      if (notificationThreadId && currentThreadId && notificationThreadId !== currentThreadId) return result
       switch (note.method) {
+        case 'turn/started':
+          if (!params.threadId || params.threadId === currentThreadId) emitProvenance(params.turn)
+          break
         case 'thread/started': {
           const threadId = readString(asRecord(params.thread)?.id)
+          if (currentThreadId && threadId && threadId !== currentThreadId) break
           if (threadId && threadId !== currentThreadId) {
             currentThreadId = threadId
             options.emit({ type: 'codex_thread_started', messageId: options.messageId, threadId })
@@ -598,6 +534,14 @@ export function createCodexAgentEventMapper(
         case 'item/completed': {
           const raw = asRecord(params.item)
           if (!raw) break
+          if (currentThreadId && (!params.threadId || params.threadId === currentThreadId)) {
+            const activity = readCodexSubagentActivity(raw, currentThreadId, readString(params.turnId) ?? currentTurnId)
+            if (activity) {
+              subagents = applyCodexSubagentActivity(subagents, activity)
+              options.emit({ type: 'codex_subagent_activity', messageId: options.messageId, activity })
+              break
+            }
+          }
           if (readString(raw.type) === 'contextCompaction') {
             if (note.method === 'item/started') startCompaction(params)
             else completeCompaction(params)
@@ -759,6 +703,7 @@ export function createCodexAgentEventMapper(
         case 'turn/completed':
         case 'turn/completed/v2': {
           const turn = asRecord(params.turn)
+          emitProvenance(turn)
           currentTurnId = readString(turn?.id) ?? currentTurnId
           const status = readString(turn?.status) ?? readString(params.status) ?? 'completed'
           if (status === 'failed' || status === 'error') {
@@ -789,6 +734,7 @@ export function createCodexAgentEventMapper(
           terminal = true
           result.completed = true
           const finalItems = items()
+          subagents = collectCodexCollabMetadata(finalItems, subagents)
           options.emit({
             type: 'message_complete',
             messageId: options.messageId,
@@ -799,6 +745,9 @@ export function createCodexAgentEventMapper(
                 items: finalItems,
                 threadId: currentThreadId,
                 ...(currentTurnId ? { turnId: currentTurnId } : {}),
+                ...(provenance?.rootTurnId !== undefined ? { rootTurnId: provenance.rootTurnId } : {}),
+                ...(options.requestedProvenance && currentTurnId === options.turnId ? { requestedProvenance: options.requestedProvenance } : {}),
+                ...(subagents ? { subagents } : {}),
                 usage: currentUsage,
                 model: options.model,
               },

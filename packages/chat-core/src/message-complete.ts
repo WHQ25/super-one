@@ -1,4 +1,5 @@
 import { mergeMcpAppBlocks } from '@superone/shared/mcp-apps-state'
+import { collectCodexCollabMetadata, mergeCodexSubagentMetadata } from '@superone/shared/codex-metadata'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { isSubagentToolName } from '@superone/shared/tool-ui'
 import { getCodexCompletionEventMeta, getCodexContextTokens } from './codex-pure'
@@ -58,12 +59,23 @@ export function reduceMessageComplete(
     messages: session.messages.map((msg) => {
       if (msg.id !== event.messageId) return msg
       const prevCodex = msg.metadata?.codex
+      const { rootTurnId: previousRoot, requestedProvenance: previousRequest, ...previousFields } = prevCodex ?? {}
+      const sameProviderTurn = (!prevCodex?.threadId || !codexCompletionMeta?.threadId || prevCodex.threadId === codexCompletionMeta.threadId)
+        && (!prevCodex?.turnId || !codexCompletionMeta?.turnId || prevCodex.turnId === codexCompletionMeta.turnId)
+      const rootTurnId = codexCompletionMeta?.rootTurnId ?? (sameProviderTurn ? previousRoot : undefined)
+      const requestedProvenance = codexCompletionMeta?.requestedProvenance ?? (sameProviderTurn ? previousRequest : undefined)
+      const subagents = collectCodexCollabMetadata(codexCompletionMeta?.items ?? [], mergeCodexSubagentMetadata(prevCodex?.subagents, codexCompletionMeta?.subagents))
       const nextMetadata = codexCompletionMeta
         ? {
             ...msg.metadata,
             ...event.metadata,
             ...(codexCompletionMeta.durationMs !== undefined ? { durationMs: codexCompletionMeta.durationMs } : {}),
             codex: {
+              ...previousFields,
+              ...codexCompletionMeta,
+              ...(rootTurnId !== undefined ? { rootTurnId } : {}),
+              ...(requestedProvenance ? { requestedProvenance } : {}),
+              ...(subagents ? { subagents } : {}),
               threadId: codexCompletionMeta.threadId ?? prevCodex?.threadId ?? null,
               ...((codexCompletionMeta.turnId ?? prevCodex?.turnId)
                 ? { turnId: codexCompletionMeta.turnId ?? prevCodex?.turnId }

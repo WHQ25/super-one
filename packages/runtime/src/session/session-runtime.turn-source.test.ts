@@ -35,6 +35,17 @@ function runtimeWith(inputs: RunnerInput[]) {
 const control = { client: { clientSessionId: 'c1' }, leaseId: 'l1', generation: 'g1' }
 
 describe('SessionRuntime turn source', () => {
+  it('passes explicit Codex provider attribution to one turn without inheriting it', async () => {
+    const inputs: RunnerInput[] = []
+    const runtime = runtimeWith(inputs)
+    const { sessionId } = runtime.create({ projectId: 'p', harnessId: 'codex' })
+    await runtime.send({ sessionId, text: 'delegated', parentTurnId: 'provider-parent', rootTurnId: 'provider-root', ...control })
+    await runtime.send({ sessionId, text: 'direct', ...control })
+    expect(inputs.map(({ parentTurnId, rootTurnId }) => ({ parentTurnId, rootTurnId }))).toEqual([
+      { parentTurnId: 'provider-parent', rootTurnId: 'provider-root' },
+      { parentTurnId: undefined, rootTurnId: undefined },
+    ])
+  })
   it('sends a client turn as the user\'s own, with its Ultracode toggle', async () => {
     const inputs: RunnerInput[] = []
     const runtime = runtimeWith(inputs)

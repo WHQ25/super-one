@@ -1,3 +1,4 @@
+import { reduceCodexMetadata } from './codex-metadata'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { updateMcpAppAttachments } from '@superone/shared/mcp-apps-state'
 import type { ChatCorePatch, ChatCoreSession } from './types'
@@ -119,6 +120,10 @@ export function applyEventToSession(
     case 'session_recap':
     case 'session_recap_unavailable':
       return reduceSlash(session, event, ports)
+
+    case 'codex_turn_metadata':
+    case 'codex_subagent_activity':
+      return reduceCodexMetadata(session, event)
 
     case 'codex_thread_started':
     case 'codex_item_delta':

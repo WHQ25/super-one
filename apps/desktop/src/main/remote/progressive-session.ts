@@ -3,6 +3,7 @@ import { codexToolDetail, nestedCodexItem, deferTool, isFileMutationChild, proje
 import type { AgentEvent, BashEditDiff, ChatMessage, ContentBlock } from '@superone/shared/agent-types'
 import { bashEditFileChanges, summarizeBashEditDiff } from '@superone/shared/bash-edit-diff'
 import { isSubagentToolName } from '@superone/shared/tool-ui'
+import { collectCodexCollabMetadata } from '@superone/shared/codex-metadata'
 
 /** View preferences are device-scoped; persisted transcripts remain complete. */
 const views = new Map<string, Map<string, { details: Map<string, DetailSubscription> }>>()
@@ -204,7 +205,11 @@ function projectEvent(event: AgentEvent, messages: readonly ChatMessage[]): Agen
   if (event.type === 'codex_item_patch' && event.patch.type === 'reasoning') {
     return { ...event, patch: { ...event.patch, textDelta: '' } }
   }
-  if (event.type === 'codex_item_delta') return { ...event, item: projectCodexTool(event.item, reference(event.messageId, 'item', event.item.id)) }
+  if (event.type === 'codex_item_delta') {
+    const subagents = collectCodexCollabMetadata([event.item])
+    return { ...event, ...(subagents ? { subagents } : {}),
+      item: projectCodexTool(event.item, reference(event.messageId, 'item', event.item.id)) }
+  }
   if (event.type === 'codex_item_patch' && event.patch.type === 'command_execution') return { ...event, patch: { ...event.patch, aggregatedOutputDelta: '' } }
   if ('metadata' in event && event.metadata?.codex) {
     const projected = projectProgressiveMessage({ id: String(messageId), role: 'assistant', status: 'complete', createdAt: '', providerId: 'claude', content: [], metadata: event.metadata })

@@ -149,6 +149,7 @@ describe('createNodeCodexTurnRunner', () => {
 
     const deltas: string[] = []
     const agentEvents: AgentEvent[] = []
+    const ambientEvents: AgentEvent[] = []
     const onElicitation = vi.fn(async () => ({ action: 'accept' as const, content: { name: 'dial' }, _meta: null }))
     const turnAbort = new AbortController()
     const turnP = runner({
@@ -158,6 +159,7 @@ describe('createNodeCodexTurnRunner', () => {
       additionalDirectories: [join(dir, 'shared')],
       onDelta: (d) => deltas.push(d),
       onAgentEvent: (event) => agentEvents.push(event),
+      onAmbientEvent: (event) => ambientEvents.push(event),
       onElicitation,
       signal: turnAbort.signal,
     })
@@ -183,6 +185,7 @@ describe('createNodeCodexTurnRunner', () => {
     child.stdout.write(
       `${JSON.stringify({ jsonrpc: '2.0', id: turn.id, result: { turn: { id: 'u1' } } })}\n`,
     )
+    child.stdout.write(`${JSON.stringify({ method: 'turn/started', params: { threadId: 't-abc', turn: { id: 'u1' } } })}\n`)
     await pump()
     child.stdout.write(`${JSON.stringify({ id: 'form', method: 'mcpServer/elicitation/request', params: {
       threadId: 't-abc', serverName: 'fixture', mode: 'openai/form', message: 'Choose a part',
@@ -219,7 +222,7 @@ describe('createNodeCodexTurnRunner', () => {
       `${JSON.stringify({
         jsonrpc: '2.0',
         method: 'turn/completed',
-        params: { turn: { id: 'u1', status: 'completed' } },
+        params: { threadId: 't-abc', turn: { id: 'u1', status: 'completed' } },
       })}\n`,
     )
 
@@ -231,6 +234,7 @@ describe('createNodeCodexTurnRunner', () => {
       'message_start',
       'status_change',
       'codex_thread_started',
+      'codex_turn_metadata',
       'codex_item_delta',
       'codex_item_delta',
       'message_complete',
@@ -239,6 +243,15 @@ describe('createNodeCodexTurnRunner', () => {
 
     // Native View forms outlive the finished turn and its abort signal.
     turnAbort.abort()
+    // Predictions use the ambient sink, independent of the settled request's signal.
+    for (const [threadId, sourceTurnId] of [['other', 'u1'], ['t-abc', 'stale'], ['t-abc', 'u1']]) {
+      child.stdout.write(`${JSON.stringify({ method: 'thread/prediction/updated', params: {
+        threadId, sourceTurnId, result: { type: 'completed', text: 'Run tests' },
+      } })}\n`)
+    }
+    await vi.waitFor(() => expect(ambientEvents).toEqual([{ type: 'prompt_suggestion', suggestion: 'Run tests' }]))
+    expect(agentEvents.some(event => event.type === 'prompt_suggestion')).toBe(false)
+    expect(lines.some(line => line.includes('thread/prediction/request'))).toBe(false)
     const onIdleElicitation = vi.fn(async (_interaction, signal: AbortSignal) => {
       expect(signal.aborted).toBe(false)
       return { action: 'accept' as const, content: { name: 'idle-dial' }, _meta: null }

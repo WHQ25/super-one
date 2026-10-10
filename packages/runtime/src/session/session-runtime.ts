@@ -155,6 +155,8 @@ interface TurnOpts extends MessageDisplayFields {
   apiProviderId?: string | null
   /** Codex turn kind (run|steer|review|compact). */
   turnKind?: 'run' | 'steer' | 'review' | 'compact' | null
+  parentTurnId?: string
+  rootTurnId?: string
   collaborationMode?: string | Record<string, unknown> | null
   reviewTarget?: unknown
   /**
@@ -991,6 +993,9 @@ export class SessionRuntime {
     apiProviderId?: string | null
     /** Codex turn kind (run|steer|review|compact). */
     turnKind?: 'run' | 'steer' | 'review' | 'compact' | null
+    /** Explicit originating Codex provider identities for a new turn. */
+    parentTurnId?: string
+    rootTurnId?: string
     /** Codex collaboration mode. */
     collaborationMode?: string | Record<string, unknown> | null
     /** Codex review/start target. */
@@ -1055,6 +1060,8 @@ export class SessionRuntime {
       disabledSkills: input.disabledSkills,
       apiProviderId: session.harnessId === 'codex' ? input.apiProviderId ?? session.apiProviderId : pick(input.apiProviderId, session.apiProviderId),
       turnKind,
+      parentTurnId: input.parentTurnId,
+      rootTurnId: input.rootTurnId,
       collaborationMode: input.collaborationMode,
       reviewTarget: input.reviewTarget,
       ultracode: input.ultracode,
@@ -1452,6 +1459,8 @@ export class SessionRuntime {
         apiProviderId:
           opts.apiProviderId && opts.apiProviderId.trim() ? opts.apiProviderId.trim() : undefined,
         turnKind: opts.turnKind ?? undefined,
+        parentTurnId: opts.parentTurnId,
+        rootTurnId: opts.rootTurnId,
         collaborationMode: opts.collaborationMode ?? undefined,
         reviewTarget: opts.reviewTarget,
         source: opts.source,

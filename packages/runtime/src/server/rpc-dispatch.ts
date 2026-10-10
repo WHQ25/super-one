@@ -2572,6 +2572,8 @@ async function handleSessionSend(payload: unknown, ctx: RpcContext): Promise<Rpc
       images: images.length > 0 ? images : undefined,
       apiProviderId: apiProviderIdResolved,
       turnKind,
+      parentTurnId: typeof options.parentTurnId === 'string' && options.parentTurnId.trim() ? options.parentTurnId : undefined,
+      rootTurnId: typeof options.rootTurnId === 'string' && options.rootTurnId.trim() ? options.rootTurnId : undefined,
       collaborationMode:
         collaborationMode === null
           ? null

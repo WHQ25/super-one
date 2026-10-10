@@ -1,3 +1,4 @@
+import { readCodexTurnProvenance } from './protocol-v162'
 import { MCP_APPS_EXTENSION } from '@superone/shared/mcp-apps'
 import { CODEX_CLIENT_EXTENSIONS } from './client-extensions'
 import { CodexUserInputBudget } from './user-input-budget'
@@ -54,6 +55,8 @@ export interface CodexAppServerClientOptions {
   spawnFn?: CodexSpawnFn
   signal?: AbortSignal
   clientVersion?: string
+  /** Persistent observer; true consumes ambient output outside a turn's queue. */
+  onNotification?: (notification: { method: string; params: Record<string, unknown> }) => boolean
   /** User-waiting requests run independently; replies and notifications stay ordered. */
   onServerRequest?: (
     request: { id: string | number; method: string; params: Record<string, unknown> },
@@ -163,6 +166,9 @@ export async function openCodexAppServer(
   }
 
   const pushNotification = (n: { method: string; params: Record<string, unknown> }) => {
+    try {
+      if (opts.onNotification?.(n)) return
+    } catch { /* A host observer must not stop the ordered protocol reader. */ }
     if (n.method.startsWith('mcpServer/') && n.method.endsWith('/updated')) invalidateCodexMcpAppsCatalog(request)
     if (notificationWaiters.length) {
       const w = notificationWaiters.shift()!
@@ -564,6 +570,9 @@ export async function runCodexAppServerTurn(opts: {
    * steer requires an existing thread + expectedTurnId when possible.
    */
   turnKind?: CodexTurnKind
+  /** Genuine provider identities; ignored by steer/review/compact. */
+  parentTurnId?: string
+  rootTurnId?: string
   /** Desktop collaborationMode payload (object or mode string). */
   collaborationMode?: Record<string, unknown> | string | null
   /** review/start target (uncommitted / branch / commit). */
@@ -631,6 +640,7 @@ export async function runCodexAppServerTurn(opts: {
   }
 
   let turnId: string | null = null
+  let initialTurn: Record<string, unknown> | null = null
 
   if (turnKind === 'compact') {
     await opts.client.request('thread/settings/update', {
@@ -662,6 +672,8 @@ export async function runCodexAppServerTurn(opts: {
     const turnStartResult = await opts.client.request('turn/start', compactRecord({
       threadId,
       input: opts.input ?? [{ type: 'text', text: opts.prompt, text_elements: [] }],
+      ...(opts.parentTurnId ? { parentTurnId: opts.parentTurnId } : {}),
+      ...(opts.rootTurnId ? { rootTurnId: opts.rootTurnId } : {}),
       ...(opts.model ? { model: opts.model } : {}),
       ...(opts.reasoningEffort
         ? { effort: opts.reasoningEffort, reasoning_effort: opts.reasoningEffort, summary: 'concise' }
@@ -672,6 +684,7 @@ export async function runCodexAppServerTurn(opts: {
     }))
 
     const turn = asRecord(turnStartResult.turn)
+    initialTurn = turn
     turnId = readString(turn?.id)
   }
 
@@ -685,6 +698,9 @@ export async function runCodexAppServerTurn(opts: {
         emit: opts.onAgentEvent,
         model: opts.model,
         turnId,
+        provenance: threadId ? readCodexTurnProvenance(initialTurn, threadId) : null,
+        ...(turnKind === 'run' && (opts.parentTurnId || opts.rootTurnId)
+          ? { requestedProvenance: { ...(opts.parentTurnId ? { parentTurnId: opts.parentTurnId } : {}), ...(opts.rootTurnId ? { rootTurnId: opts.rootTurnId } : {}) } } : {}),
         turnKind,
       })
     : null

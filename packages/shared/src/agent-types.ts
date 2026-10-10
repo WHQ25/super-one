@@ -12,6 +12,7 @@ import type { MediaVideoCapabilities } from './media-composer'
 import type { SuperOneComposerOutcome } from './composer-api'
 import type { InputRequestMeta, InputRequestOutput, InputRequestSpec, InputRequestSubmission } from './input-request'
 import type { ModHostRequest, ModInstanceRef, ModPaneRoster, ModScrollComponent, ModUiOp, ModUiRequest } from './mod-ui'
+import type { CodexRequestedTurnProvenance, CodexSubagentActivity, CodexSubagentConfiguration, CodexSubagentMetadata, CodexTurnProvenance } from './codex-metadata'
 
 // --- Image attachments ---
 
@@ -518,6 +519,8 @@ export interface CodexCollabAgentState {
   message?: string
   forkedFromId?: string
   tokens?: { input: number; output: number }
+  requestedConfiguration?: CodexSubagentConfiguration
+  turns?: Record<string, CodexTurnProvenance>
 }
 
 export interface CodexCollabToolCallItem {
@@ -566,6 +569,9 @@ export interface CodexTurnInfo {
   durationMs?: number
   threadId: string | null
   turnId?: string
+  rootTurnId?: string | null
+  requestedProvenance?: CodexRequestedTurnProvenance
+  subagents?: Record<string, CodexSubagentMetadata>
   usage: CodexUsageInfo | null
   /** Full turn usage summed across every model response and child thread. */
   turnUsage?: UsageInfo
@@ -2038,7 +2044,9 @@ export type AgentEventBase =
   | { type: 'message_usage'; messageId: string; inputTokens: number; outputTokens: number; cacheReadTokens?: number; model?: string; codexUsage?: CodexUsageInfo; contextTokens?: number; contextWindow?: number; costUsd?: number }
   | { type: 'todos_updated'; todos: TodoItem[] }
   | { type: 'codex_thread_started'; messageId: string; threadId: string }
-  | { type: 'codex_item_delta'; messageId: string; phase: 'started' | 'updated' | 'completed'; item: CodexThreadItem }
+  | { type: 'codex_turn_metadata'; messageId: string; provenance: CodexTurnProvenance; requestedProvenance?: CodexRequestedTurnProvenance }
+  | { type: 'codex_subagent_activity'; messageId: string; activity: CodexSubagentActivity }
+  | { type: 'codex_item_delta'; messageId: string; phase: 'started' | 'updated' | 'completed'; item: CodexThreadItem; subagents?: Record<string, CodexSubagentMetadata> }
   | { type: 'codex_item_patch'; messageId: string; phase: 'updated'; itemId: string; patch: CodexItemPatch }
   | { type: 'codex_mcp_startup'; messageId: string; servers: CodexMcpServerStartup[] }
   | { type: 'checkpoint_captured'; messageId: string; checkpointId: string; resumePointId: string }
@@ -2415,6 +2423,9 @@ export interface SendMessageRequest {
 }
 
 export interface CodexSendExtras {
+  /** Genuine provider turn IDs supplied by an originating Codex turn. */
+  parentTurnId?: string
+  rootTurnId?: string
   mode?: 'run' | 'review' | 'compact'
   reviewTarget?: CodexReviewTarget
   permissionPreset?: CodexPermissionPreset
@@ -3731,6 +3742,9 @@ export interface DiscoverModelsResult {
 }
 
 export interface CodexRunRequest {
+  /** Request attribution; omitted for direct user work. */
+  parentTurnId?: string
+  rootTurnId?: string
   prompt: string
   /**
    * Echoed by Codex as the user item's `clientId`, so timeline copies of this

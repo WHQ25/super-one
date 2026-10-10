@@ -19,6 +19,8 @@ import type {
   CodexThreadItem,
 } from '@superone/shared/agent-types'
 import { appendAggregatedOutput } from '@superone/shared/codex-command-output'
+import { withCodexChildTurn } from '@superone/codex/collab-item'
+import { readCodexSubagentActivity } from '@superone/codex/protocol-v162'
 
 export interface ForkListenerHandle {
   readonly forkThreadId: string
@@ -127,9 +129,9 @@ export function startForkListener(opts: ForkListenerOptions): ForkListenerHandle
     return true
   }
 
-  const setAgentStatus = (status: CodexCollabAgentStatus): void => {
+  const setAgentStatus = (status: CodexCollabAgentStatus, metadataChanged = false): void => {
     const changed = mutateAgentState((prev) => prev.status === status ? {} : { status })
-    if (changed) emitCollabUpdate(`agent:${status}`)
+    if (changed || metadataChanged) emitCollabUpdate(`agent:${status}`)
   }
 
   const applyTokenUsage = (raw: unknown): void => {
@@ -163,6 +165,11 @@ export function startForkListener(opts: ForkListenerOptions): ForkListenerHandle
       case 'item/completed': {
         const rawItem = asRecord(params.item)
         if (!rawItem) return
+        const activity = readCodexSubagentActivity(rawItem, forkThreadId, readString(params.turnId))
+        if (activity) {
+          callbacks.onSubagentActivity?.(activity, slot.collab.id)
+          return
+        }
         const itemId = readString(rawItem.id)
         const previous = itemId ? slot.map.get(itemId) : undefined
         if (previous?.type === 'plan' && method === 'item/completed') {
@@ -229,13 +236,21 @@ export function startForkListener(opts: ForkListenerOptions): ForkListenerHandle
         return
       }
 
-      case 'turn/started':
-        setAgentStatus('running')
+      case 'turn/started': {
+        const next = withCodexChildTurn(slot.collab, forkThreadId, params.turn)
+        const changed = next !== slot.collab
+        slot.collab = next
+        setAgentStatus('running', changed)
         return
+      }
 
-      case 'turn/completed':
-        setAgentStatus('completed')
+      case 'turn/completed': {
+        const next = withCodexChildTurn(slot.collab, forkThreadId, params.turn)
+        const changed = next !== slot.collab
+        slot.collab = next
+        setAgentStatus('completed', changed)
         return
+      }
 
       case 'thread/tokenUsage/updated':
         applyTokenUsage(params.tokenUsage ?? params)

@@ -92,6 +92,7 @@ describe('Codex AgentEvent mapper', () => {
       'codex_item_delta',
       'message_usage',
       'codex_mcp_startup',
+      'codex_turn_metadata',
       'message_complete',
       'status_change',
     ])

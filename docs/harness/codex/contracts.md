@@ -34,6 +34,33 @@ enabled by `apps/desktop/src/main/codex/app-server-connection.ts`).
 
 ## Models and thread forks
 
+### Prediction protocol declarations do not imply a working suggestion engine
+
+- **Behavior:** 0.162.1 declares experimental `thread/prediction/request` and
+  `thread/prediction/updated { threadId, sourceTurnId, result }`, but the server
+  returns JSON-RPC `-32601` with `thread/prediction/request is not implemented yet`.
+  The release source contains no prediction notification producer. A completed
+  result allows nullable `text`; a failed result contains no suggestion.
+- **Observed:** Exact `rust-v0.162.1` source and an isolated npm-binary RPC check
+  on 2026-10-11. Its stable generated notification schema includes the event
+  despite the experimental source annotation and unavailable implementation.
+- **Depends on it:** `packages/codex/src/prompt-prediction.ts` is shared by the
+  desktop notification dispatcher and node client observer, both alive between
+  turns. It accepts only the current root thread's latest observed successful
+  `sourceTurnId` after `turn/completed`. Unknown, child, older, active, failed and
+  interrupted turns cannot update the composer. A new full input invalidates
+  the previous source before its submission RPC; new turn/compaction notifications
+  also invalidate it. Failed, null or blank prediction results clear a shown
+  suggestion through an empty `prompt_suggestion` event. Desktop reuses ghost text
+  and Tab-to-fill; mobile reuses tappable rows. Neither edits a nonempty draft or
+  sends input automatically. Node delivery uses the session's ambient sink after
+  the original user request settles.
+- **Guard:** `prompt-prediction.test.ts`, desktop dispatcher-to-chat-core tests,
+  node fake-process tests (including an aborted settled request), shared reducer
+  and existing composer tests. Upgrade smoke confirms the unavailable request.
+  No request or fallback model call is added. Real upstream prediction generation
+  and notification delivery cannot be exercised on this release.
+
 ### Model discovery depends on the app-server client version
 
 - **Behavior:** The same CLI account and `clientInfo.name: "super-one"` returned
@@ -255,3 +282,64 @@ enabled by `apps/desktop/src/main/codex/app-server-connection.ts`).
 - **Boundary:** Native builds and mocks do not establish actual upstream mobile
   media behavior. The real acceptance matrix is in
   [mobile voice](../../features/mobile-codex-realtime-voice.md).
+
+## Subagent creation metadata and turn provenance
+
+- **Observed:** pinned `rust-v0.162.1` protocol/source; integration checked with
+  protocol fixtures, not a new authenticated live subagent run.
+- **Resolved versus requested:** native `ThreadItem.subAgentActivity` carries
+  nullable `model` and `reasoningEffort` resolved at creation. Legacy
+  `collabAgentToolCall` carries requested spawn values. The shared collab mapper
+  stores requested values per receiver in `agentsStates.requestedConfiguration`;
+  it never substitutes them for confirmed creation configuration or copies
+  unrelated values from multi-child wait/input tools.
+- **Data-only activity:** `codex_subagent_activity` records item identity, source
+  thread/turn, child thread/path, kind and available configuration. The shared
+  reducer stores deduplicated activities and a per-child creation snapshot in
+  `CodexTurnInfo.subagents`, alongside requested configuration and child turn
+  provenance. Sparse interactions and terminal records do not clear creation
+  fields. No parent defaults are guessed. These records do not
+  append transcript content or create additional cards; UI consumption and
+  native-activity lifecycle presentation remain deferred.
+- **Turns:** `codex_turn_metadata` stores genuine provider thread/turn/root IDs.
+  Old/null roots remain unknown, and sparse completion does not erase a known
+  root for the same turn. Root-thread notifications update the owning message;
+  child listeners retain provenance per turn in `agentsStates.turns`, including
+  after the parent turn has ended. A reused child has separate records for each
+  turn rather than one permanent root attribution.
+- **Requests:** desktop `CodexRunRequest`/`CodexSendExtras`, the shared App Server
+  client, node live-turn helper and lease-gated node send options accept explicit
+  `parentTurnId`/`rootTurnId`. Callers must supply provider IDs from the originating
+  Codex turn. No automatic SuperOne session/message-ID conversion is performed.
+  Requests are retained as `requestedProvenance`, separately from returned root
+  identity: `turn/start` can add input to an active turn, in which case upstream
+  ignores attribution. `turn/steer`, review and compact do not send these fields.
+  The upstream `Turn` response reports root identity, **not** parent identity;
+  no confirmed parent is fabricated. Automatic collaboration attribution and
+  permission-context use are deferred; attribution grants no authorization.
+- **Delivery:** shared events and complete-message metadata retain these fields
+  through persistence/replay and compact phone snapshots/events without loading
+  tool detail. Compact collab deltas carry the new metadata index separately from
+  the existing omitted `agentsStates`; the UI retains its current read behavior.
+  Desktop fork activity uses the owning collaboration item/message,
+  while source thread and turn identities remain explicit. The shared completion
+  reducer merges data instead of replacing it with a sparse terminal snapshot.
+- **Guards:** `packages/codex/src/protocol-v162.test.ts`,
+  `packages/chat-core/src/codex-metadata.test.ts`, desktop `codex-turn.test.ts`,
+  `codex-backend.test.ts`, `codex-fork-listener.test.ts`,
+  `remote/progressive-session.test.ts`, the node Codex runner/client/live-turn
+  tests, and runtime turn-source/queue tests.
+
+### Data-layer validation (2026-10-11)
+
+- 297 targeted tests across desktop, shared Codex, chat-core, node CLI and runtime
+  cover source identity, nullable/partial values, duplicate activity, late fork
+  delivery, per-turn roots, sparse completion, replay, requested attribution and
+  compact phone projection. The UI does not read the new metadata.
+- Desktop main, shared Codex and CLI typechecks pass. Chat-core and desktop
+  renderer production plus other tests pass with only the unchanged failing
+  test files excluded: `packages/chat-core/src/realtime.test.ts:26-27` (phase on
+  a broad AgentEvent union) and renderer `session-chip.test.tsx:40,45` (Element
+  passed to a narrower DOM matcher). Full typechecks still report those errors.
+- Harness API inventory and whitespace checks pass. Authenticated native subagent
+  turns and a physical phone session were not exercised in this change.

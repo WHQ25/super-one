@@ -2,6 +2,7 @@ import type { AgentEvent, CodexItemPatch, CodexThreadItem } from '@superone/shar
 import { applySeqToMessage, isReplayedEventForMessage } from '@superone/shared/event-seq-utils'
 import { codexTodoListFromItem } from './helpers'
 import { upsertCodexItem } from './codex-pure'
+import { collectCodexCollabMetadata, mergeCodexSubagentMetadata } from '@superone/shared/codex-metadata'
 import type { ChatCoreSession } from './types'
 import { defaultChatCorePorts, type ChatCorePorts } from './ports'
 
@@ -123,6 +124,7 @@ export function reduceCodex(
           if (msg.id !== event.messageId) return msg
           const prevCodex = msg.metadata?.codex ?? { threadId: null, usage: null, items: [] }
           const nextItems = upsertCodexItem(prevCodex.items, event.item)
+          const subagents = collectCodexCollabMetadata([event.item], mergeCodexSubagentMetadata(prevCodex.subagents, event.subagents))
           return {
             ...msg,
             metadata: {
@@ -130,6 +132,7 @@ export function reduceCodex(
               codex: {
                 ...prevCodex,
                 items: nextItems,
+                ...(subagents ? { subagents } : {}),
               },
             },
             ...applySeqToMessage(event),

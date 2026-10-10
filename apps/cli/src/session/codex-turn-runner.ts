@@ -44,6 +44,7 @@ import { buildCodexAttachmentInput } from '@superone/shared/attachment-turn'
 import { ensureMcpMerge, type McpMergeMode } from '@superone/runtime/fs'
 import { openTurnAndStream } from './codex-live-turn'
 import { codexElicitationRequest } from '@superone/codex/elicitation'
+import { createCodexPromptPrediction, type CodexPromptPrediction } from '@superone/codex/prompt-prediction'
 import { randomUUID } from 'node:crypto'
 import { withCodexMcpAppElicitation, dispatchCodexMcpAppElicitation, cancelCodexMcpAppInvocations } from '@superone/codex/mcp-app-elicitation'
 
@@ -168,6 +169,8 @@ interface LiveCodexConnection {
   busyCount: number
   lastActivityAt: number
   onElicitation?: Parameters<TurnRunner>[0]['onElicitation']
+  promptPrediction: CodexPromptPrediction
+  onPromptSuggestion?: (suggestion: string) => void
 }
 
 function parseTurnKind(raw: unknown): CodexTurnKind {
@@ -201,11 +204,19 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
     }
     if (existing) await disposeLive(sessionId)
 
+    const promptPrediction = createCodexPromptPrediction({
+      getThreadId: () => liveBySession.get(sessionId)?.threadId ?? null,
+      onSuggestion: suggestion => {
+        const live = liveBySession.get(sessionId)
+        if (live?.promptPrediction === promptPrediction) live.onPromptSuggestion?.(suggestion)
+      },
+    })
     const client = await openCodexAppServer({
       binaryPath: binary,
       env: authEnv,
       cliArgs: authEnv.SUPERONE_CODEX_ACCOUNT_PROVIDER ? nodeCodexAccountStore(opts.nodeHome).cliOverrides(authEnv.SUPERONE_CODEX_ACCOUNT_PROVIDER) : undefined,
       spawnFn: opts.spawnFn,
+      onNotification: notification => promptPrediction.observe(notification),
       onServerRequest: async (request, signal) => {
         const live = liveBySession.get(sessionId)
         if (live) {
@@ -236,6 +247,7 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
       chain: Promise.resolve(),
       busyCount: 0,
       lastActivityAt: Date.now(),
+      promptPrediction,
     }
     liveBySession.set(sessionId, live)
     return live
@@ -371,6 +383,12 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
         ? (interaction, signal) => input.onElicitation!(interaction, AbortSignal.any([input.signal, interactionAbort.signal, ...(signal ? [signal] : [])]))
         : undefined
       conn.onElicitation = onElicitation
+      // Retain the session-owned ambient sink after this request's abort scope ends.
+      conn.onPromptSuggestion = suggestion => (input.onAmbientEvent ?? input.onAgentEvent)?.({ type: 'prompt_suggestion', suggestion })
+      const onInputAccepted = (): void => {
+        conn.promptPrediction.invalidate()
+        input.onInputAccepted?.()
+      }
 
       try {
         // Always ensure the server-side thread on a fresh connection (or when
@@ -388,6 +406,8 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
         if (turnKind === 'run') {
           const result = await openTurnAndStream({
             client: conn.client,
+            parentTurnId: input.parentTurnId,
+            rootTurnId: input.rootTurnId,
             prompt,
             input: attachmentInput,
             cwd,
@@ -410,7 +430,7 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
             onTurnStarted: (turnId) => {
               conn.activeTurnId = turnId
             },
-            onInputAccepted: input.onInputAccepted,
+            onInputAccepted,
           })
           if (result.threadId) conn.threadId = result.threadId
           conn.activeTurnId = null
@@ -438,7 +458,7 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
           onDelta: input.onDelta,
           signal: input.signal,
           threadConfig,
-          onInputAccepted: input.onInputAccepted,
+          onInputAccepted,
         })
         if (result.threadId) conn.threadId = result.threadId
         conn.activeTurnId = null
@@ -448,6 +468,7 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
           skipAssistantTranscript: result.skipAssistantTranscript,
         }
       } catch (err) {
+        conn.promptPrediction.invalidate()
         conn.activeTurnId = null
         const msg = err instanceof Error ? err.message : String(err)
         if (/closed|exited|broken pipe|spawn failed/i.test(msg)) {

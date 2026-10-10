@@ -238,6 +238,9 @@ export type TurnRunner = ((input: {
    * what the live harness process already runs with.
    */
   ultracode?: boolean
+  /** Genuine Codex provider identities for new delegated turns; never local message IDs. */
+  parentTurnId?: string
+  rootTurnId?: string
   /** Codex collaboration mode (string mode name or app-server object). */
   collaborationMode?: string | Record<string, unknown> | null
   /** Codex review/start target payload. */

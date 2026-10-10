@@ -12,11 +12,15 @@ vi.mock('../logger', () => ({
 vi.mock('../agent/event-trace', () => ({
   trace: vi.fn(),
 }))
+vi.mock('./codex-skills-watcher', () => ({ notifyCodexSkillsChanged: vi.fn() }))
 
 const { createNotificationDispatcher } = await import('./codex-notification-dispatcher')
 import type { AppServerConnection, AppServerNotification } from './app-server-connection'
 import { createCodexMcpAppsProvider } from '@superone/codex/mcp-apps'
 import { withCodexMcpAppElicitation } from '@superone/codex/mcp-app-elicitation'
+import { createCodexSession } from './codex-session'
+import { createCodexSessionDispatcher } from './codex-session-dispatcher'
+import { applyEventToSession, createDefaultChatCoreSession } from '@superone/chat-core'
 
 function makeQueueConnection(notifications: AppServerNotification[]): { connection: AppServerConnection; release: () => void } {
   const queue: AppServerNotification[] = [...notifications]
@@ -66,6 +70,46 @@ function pushNotification(connection: AppServerConnection, notif: AppServerNotif
 }
 
 describe('NotificationDispatcher', () => {
+  it('routes a late root prediction through the shared composer state, then clears it for new input', async () => {
+    const { connection, release } = makeQueueConnection([])
+    const session = createCodexSession('session-1', '/project', undefined, 'root')
+    const chat = createDefaultChatCoreSession()
+    chat.draftText = 'My own draft'
+    const onPromptSuggestion = vi.fn((suggestion: string) => Object.assign(chat, applyEventToSession(chat, { type: 'prompt_suggestion', suggestion })))
+    session.forkCallbacks = { onPromptSuggestion }
+    const dispatcher = createCodexSessionDispatcher(session, connection)
+    for (const method of ['turn/started', 'turn/completed']) {
+      pushNotification(connection, { method, params: { threadId: 'root', turn: { id: 'turn-1', status: 'completed' } } })
+      expect((await dispatcher.mainInbox.next()).method).toBe(method)
+    }
+    const result = { type: 'completed', text: 'Run tests' }
+    pushNotification(connection, { method: 'thread/prediction/updated', params: { threadId: 'child', sourceTurnId: 'turn-1', result } })
+    pushNotification(connection, { method: 'thread/prediction/updated', params: { threadId: 'root', sourceTurnId: 'turn-1', result } })
+    await vi.waitFor(() => expect(chat.promptSuggestion).toBe('Run tests'))
+    expect(chat.promptSuggestions).toEqual(['Run tests'])
+    expect(chat.draftText).toBe('My own draft')
+    session.promptPrediction!.invalidate()
+    expect(chat.promptSuggestion).toBeNull()
+    expect(chat.promptSuggestions).toEqual([])
+    dispatcher.close()
+    release()
+  })
+
+  it('delivers and consumes ambient notifications without an active turn consumer', async () => {
+    const { connection, release } = makeQueueConnection([])
+    const onNotification = vi.fn((notification: AppServerNotification) => notification.method === 'thread/prediction/updated')
+    const dispatcher = createNotificationDispatcher(connection, { onNotification })
+    const prediction = { method: 'thread/prediction/updated', params: { threadId: 'root', sourceTurnId: 'turn-1', result: { type: 'completed', text: 'Run tests' } } }
+    pushNotification(connection, prediction)
+    await vi.waitFor(() => expect(onNotification).toHaveBeenCalledWith(prediction))
+    pushNotification(connection, { method: 'turn/started', params: { threadId: 'root', turn: { id: 'turn-2' } } })
+    expect((await dispatcher.mainInbox.next()).method).toBe('turn/started')
+    dispatcher.close()
+    release()
+    pushNotification(connection, prediction)
+    expect(onNotification).toHaveBeenCalledTimes(2)
+  })
+
   it('cancels an unscoped idle form and leaves following notifications ordered', async () => {
     const { connection, release } = makeQueueConnection([
       { method: 'mcpServer/elicitation/request', requestIdRaw: 'old-form', params: { threadId: 'root', serverName: 'fixture' } },

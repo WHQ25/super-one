@@ -15,6 +15,10 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
+- Preserve native Codex subagent creation models, reasoning effort and turn roots
+  across session persistence and phone projection; UI consumption is deferred.
+- Prepare Codex follow-up prompt suggestions for the existing desktop and mobile
+  composer UI; suggestion generation awaits upstream App Server support.
 - Run tasks on another desktop: pair two desktops through a phone already
   paired with one of them, then reach the other desktop over LAN, Tailscale
   or the relay.
@@ -33,6 +37,8 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Changed
 
+- Update the managed Codex runtime to 0.162.1 for more reliable thread history
+  recovery, response retries and cross-platform sandbox behavior.
 - Each paired phone now uses its own encrypted channel with per-connection
   keys and replay protection. Phones paired earlier must be paired again:
   remove each device marked "Re-pair Required" on the desktop and pair it

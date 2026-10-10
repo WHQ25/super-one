@@ -1,3 +1,6 @@
+import { mapCodexCollabItem, withCodexChildTurn } from '@superone/codex/collab-item'
+import { readCodexSubagentActivity, readCodexTurnProvenance } from '@superone/codex/protocol-v162'
+import type { CodexSubagentActivity, CodexTurnProvenance, CodexRequestedTurnProvenance } from '@superone/shared/codex-metadata'
 import { mapCodexCommandItem } from '@superone/codex/command-item'
 import { readCodexMcpAppFields } from '@superone/codex/mcp-apps'
 import log from '../logger'
@@ -21,8 +24,8 @@ import {
   type AppServerNotification,
   type CodexProjectAuth,
 } from './app-server-connection'
-import { createNotificationDispatcher, type NotificationInbox } from './codex-notification-dispatcher'
-import { notifyCodexSkillsChanged } from './codex-skills-watcher'
+import type { NotificationInbox } from './codex-notification-dispatcher'
+import { createCodexSessionDispatcher } from './codex-session-dispatcher'
 import { startForkListener, cloneCollab } from './codex-fork-listener'
 import type {
   AppServerUserInputQuestion,
@@ -35,7 +38,6 @@ import { tearDownForkRuntime } from './codex-session'
 import type {
   AgentEvent,
   AskUserQuestionRequest,
-  CodexCollabAgentState,
   CodexCollabAgentStatus,
   CodexCollabTool,
   CodexCollabToolCallItem,
@@ -114,12 +116,15 @@ export function extractSuperoneMiniAppToolName(message: string): string | null {
 }
 
 export interface CodexRunStreamCallbacks {
+  onTurnMetadata?: (provenance: CodexTurnProvenance, requestedProvenance?: CodexRequestedTurnProvenance) => void
+  onSubagentActivity?: (activity: CodexSubagentActivity, ownerItemId?: string) => void
   /**
    * Just before the request that submits the input (turn/start, review/start,
    * thread/compact/start): from then Codex may act on it even if the response
    * is lost. Thread setup failures come before it (see `SendDelivery`).
    */
   onInputAccepted?: () => void
+  onPromptSuggestion?: (suggestion: string) => void
   onThreadStarted?: (threadId: string) => void
   /** A provider-created turn surfaced on the shared thread notification stream. */
   onTurnStarted?: (info: { turnId?: string; queued: boolean }) => void
@@ -234,49 +239,7 @@ function readNotificationTurnId(params: Record<string, unknown>): string | null 
     ?? readString(asRecord(params.turn)?.id)
 }
 
-function normalizeCollabTool(value: unknown): CodexCollabTool | null {
-  switch (readString(value)) {
-    case 'spawnAgent':
-    case 'spawn_agent':
-      return 'spawnAgent'
-    case 'sendInput':
-    case 'send_input':
-      return 'sendInput'
-    case 'wait':
-    case 'wait_agent':
-      return 'wait'
-    case 'closeAgent':
-    case 'close_agent':
-      return 'closeAgent'
-    case 'resumeAgent':
-    case 'resume_agent':
-      return 'resumeAgent'
-    default:
-      return null
-  }
-}
 
-function normalizeCollabAgentStatus(value: unknown): CodexCollabAgentStatus | null {
-  switch (readString(value)) {
-    case 'pendingInit':
-    case 'pending_init':
-      return 'pendingInit'
-    case 'running':
-      return 'running'
-    case 'completed':
-      return 'completed'
-    case 'errored':
-    case 'error':
-      return 'errored'
-    case 'shutdown':
-      return 'shutdown'
-    case 'notFound':
-    case 'not_found':
-      return 'notFound'
-    default:
-      return null
-  }
-}
 
 export function readDeltaText(rec: Record<string, unknown>): string {
   return readString(rec.delta)
@@ -522,62 +485,8 @@ export function mapThreadItemFromAppServer(raw: unknown, previous?: CodexThreadI
       return { id, type: 'compaction' }
 
     case 'collabAgentToolCall':
-    case 'collabToolCall': {
-      const prevCollab = previous?.type === 'collab_tool_call' ? previous : null
-      const tool = normalizeCollabTool(rec.tool) ?? prevCollab?.tool ?? 'spawnAgent'
-      const statusStr = readString(rec.status)
-      const status: 'in_progress' | 'completed' | 'failed' =
-        statusStr === 'completed' ? 'completed'
-          : statusStr === 'failed' ? 'failed'
-          : 'in_progress'
-      const senderThreadId = readString(rec.senderThreadId) ?? readString(rec.sender_thread_id) ?? prevCollab?.senderThreadId
-      const receiverThreadIds = uniqueStrings([
-        ...readStringArray(rec.receiverThreadIds ?? rec.receiver_thread_ids),
-        readString(rec.receiverThreadId ?? rec.receiver_thread_id),
-        readString(rec.newThreadId ?? rec.new_thread_id),
-      ])
-      const prompt = readString(rec.prompt) ?? prevCollab?.prompt
-
-      const agentsStates: Record<string, CodexCollabAgentState> = { ...(prevCollab?.agentsStates ?? {}) }
-      const rawStates = asRecord(rec.agentsStates ?? rec.agents_states)
-      if (rawStates) {
-        for (const [agentId, stateVal] of Object.entries(rawStates)) {
-          const stateRec = asRecord(stateVal)
-          if (!stateRec) continue
-          const prevAgentState = prevCollab?.agentsStates?.[agentId]
-          agentsStates[agentId] = {
-            ...prevAgentState,
-            status: normalizeCollabAgentStatus(stateRec.status) ?? prevAgentState?.status ?? 'running',
-            ...(stateRec.message != null ? { message: readString(stateRec.message) ?? undefined } : {}),
-          }
-        }
-      }
-
-      const rawAgentStatus = rec.agentStatus ?? rec.agent_status
-      const agentStatusRec = asRecord(rawAgentStatus)
-      if (!rawStates && receiverThreadIds.length > 0 && rawAgentStatus != null) {
-        for (const agentId of receiverThreadIds) {
-          const prevAgentState = prevCollab?.agentsStates?.[agentId]
-          agentsStates[agentId] = {
-            ...prevAgentState,
-            status: normalizeCollabAgentStatus(agentStatusRec?.status ?? rawAgentStatus) ?? prevAgentState?.status ?? 'running',
-            ...(agentStatusRec?.message != null ? { message: readString(agentStatusRec.message) ?? undefined } : {}),
-          }
-        }
-      }
-
-      return {
-        id,
-        type: 'collab_tool_call',
-        tool,
-        status,
-        ...(senderThreadId ? { senderThreadId } : {}),
-        receiverThreadIds: receiverThreadIds.length > 0 ? receiverThreadIds : (prevCollab?.receiverThreadIds ?? []),
-        ...(prompt ? { prompt } : {}),
-        agentsStates,
-        ...(prevCollab?.childItems ? { childItems: prevCollab.childItems } : {}),
-      }
-    }
+    case 'collabToolCall':
+      return mapCodexCollabItem(rec, previous)
 
     default:
       return null
@@ -1140,11 +1049,7 @@ export async function withSessionConnection<T>(
       })
       session.connectionHandle = handle
       session.connectionAuth = pendingAuth
-      session.notificationDispatcher = createNotificationDispatcher(handle.connection, {
-        onSkillsChanged: () => notifyCodexSkillsChanged(session.projectPath),
-        onQueueChanged: (threadId) => session.queueChangedFn?.(threadId),
-        isMainTurnActive: () => Boolean(session.runningController),
-      })
+      session.notificationDispatcher = createCodexSessionDispatcher(session, handle.connection)
       log.info(
         '[codex] connection attached sid=%s thread=%s conn=%s',
         session.superoneSessionId,
@@ -1167,11 +1072,7 @@ export async function withSessionConnection<T>(
     session.connectionPromiseAuth = pendingAuth
     await connectionPromise
   } else if (!session.notificationDispatcher) {
-    session.notificationDispatcher = createNotificationDispatcher(session.connectionHandle.connection, {
-      onSkillsChanged: () => notifyCodexSkillsChanged(session.projectPath),
-      onQueueChanged: (threadId) => session.queueChangedFn?.(threadId),
-      isMainTurnActive: () => Boolean(session.runningController),
-    })
+    session.notificationDispatcher = createCodexSessionDispatcher(session, session.connectionHandle.connection)
   }
 
   const handle = session.connectionHandle
@@ -1245,11 +1146,15 @@ export async function withThreadConnection<T>(
           connectionId: handle.id ?? null,
           threadId,
           wasThreadReady,
-          markMutationStarted: () => { mutationStarted = true },
+          markMutationStarted: () => {
+            mutationStarted = true
+            session.promptPrediction?.invalidate()
+          },
           markTurnAccepted: () => { turnAccepted = true },
         })
       })
     } catch (error) {
+      if (mutationStarted) session.promptPrediction?.invalidate()
       const message = error instanceof Error ? error.message : String(error)
       const canRetryResume = attempt === 0
         && !mutationStarted
@@ -1806,6 +1711,15 @@ export async function streamTurnEvents(
     callbacks?.onItemDelta?.('updated', collab)
   }
 
+  const recordChildTurnProvenance = (callId: string, threadId: string, raw: unknown): void => {
+    const item = itemMap.get(callId)
+    if (item?.type !== 'collab_tool_call') return
+    const next = withCodexChildTurn(item, threadId, raw)
+    if (next === item) return
+    upsertItem(itemOrder, itemMap, next)
+    callbacks?.onItemDelta?.('updated', next)
+  }
+
   const emitCollabUpdate = (collabId: string, trigger?: string): void => {
     const collab = itemMap.get(collabId)
     if (!collab || collab.type !== 'collab_tool_call') return
@@ -2033,6 +1947,11 @@ export async function streamTurnEvents(
         case 'item/completed': {
           const rawItem = asRecord(params.item)
           if (!rawItem) break
+          const activity = readCodexSubagentActivity(rawItem, notifThreadId, readNotificationTurnId(params))
+          if (activity) {
+            callbacks?.onSubagentActivity?.(activity, collabId)
+            break
+          }
           const itemId = readString(rawItem.id)
           const childData = childItemMaps.get(notifThreadId)
           const previous = itemId ? childData?.map.get(itemId) : undefined
@@ -2104,10 +2023,12 @@ export async function streamTurnEvents(
         }
 
         case 'turn/started':
+          recordChildTurnProvenance(collabId, notifThreadId, params.turn)
           setChildAgentStatus(collabId, notifThreadId, 'running')
           break
 
         case 'turn/completed':
+          recordChildTurnProvenance(collabId, notifThreadId, params.turn)
           setChildAgentStatus(collabId, notifThreadId, 'completed')
           break
 
@@ -2161,6 +2082,8 @@ export async function streamTurnEvents(
           ...(startedTurnId ? { turnId: startedTurnId } : {}),
           queued: isQueuedTurnStart,
         })
+        const provenance = session.threadId ? readCodexTurnProvenance(startedTurn, session.threadId) : null
+        if (provenance) callbacks?.onTurnMetadata?.(provenance)
         break
       }
 
@@ -2168,6 +2091,11 @@ export async function streamTurnEvents(
       case 'item/completed': {
         const rawItem = asRecord(params.item)
         if (!rawItem) break
+        const activity = session.threadId ? readCodexSubagentActivity(rawItem, session.threadId, readNotificationTurnId(params) ?? observedTurnId) : null
+        if (activity) {
+          callbacks?.onSubagentActivity?.(activity)
+          break
+        }
 
         if (readString(rawItem.type) === 'userMessage') {
           const clientMessageId = readString(rawItem.clientId)
@@ -2438,6 +2366,8 @@ export async function streamTurnEvents(
 
       case 'turn/completed': {
         const completedTurn = asRecord(params.turn)
+        const provenance = session.threadId ? readCodexTurnProvenance(completedTurn, session.threadId) : null
+        if (provenance) callbacks?.onTurnMetadata?.(provenance)
         const status = readString(completedTurn?.status) ?? 'completed'
         const completedTurnId = readString(completedTurn?.id) ?? observedTurnId ?? undefined
         if (status === 'failed') {
@@ -2554,6 +2484,8 @@ function buildTurnStartParams(
   return compactRecord({
     threadId,
     input,
+    ...(request.parentTurnId ? { parentTurnId: request.parentTurnId } : {}),
+    ...(request.rootTurnId ? { rootTurnId: request.rootTurnId } : {}),
     // Lands on the timeline's userMessage as `clientId`; the realtime thread
     // view keys local user rows by id, so without it every typed turn
     // renders twice once a voice timeline exists.
@@ -2594,6 +2526,7 @@ export async function startCodexRealtimeTypedTurn(
   const permissionProfile = resolvePermissionProfile(session.permissionPreset)
   // Never `resolveCwd` here: a differing cwd would reset the thread the voice call is bound to.
   const cwd = session.effectiveCwd || projectPath
+  session.promptPrediction?.invalidate()
   const result = await connection.request(
     'turn/start',
     buildTurnStartParams(session, threadId, input, request, permissionProfile, cwd),
@@ -2647,6 +2580,9 @@ export async function runCodexTurn(
 
         const turn = asRecord(turnStartResult.turn)
         const activeTurnId = readString(turn?.id)
+        const provenance = readCodexTurnProvenance(turn, resolvedThreadId)
+        if (provenance) callbacks?.onTurnMetadata?.(provenance,
+          request.parentTurnId || request.rootTurnId ? { ...(request.parentTurnId ? { parentTurnId: request.parentTurnId } : {}), ...(request.rootTurnId ? { rootTurnId: request.rootTurnId } : {}) } : undefined)
 
         session.activeTurnId = activeTurnId
         let steerSeq = 9000
@@ -2892,6 +2828,7 @@ export async function compactCodexTurn(
 
 export function interruptCodex(session: CodexSession): boolean {
   if (!session.runningController) return false
+  session.promptPrediction?.invalidate()
   const controller = session.runningController
   const interruptFn = session.interruptFn
   if (interruptFn) {

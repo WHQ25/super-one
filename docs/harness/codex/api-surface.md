@@ -1,10 +1,10 @@
 # Codex API surface
 
-Ledger version: `0.160.0` · Check: `bun scripts/harness-api-inventory.ts codex`
+Ledger version: `0.162.1` · Check: `bun scripts/harness-api-inventory.ts codex`
 
 Inventoried from the pinned npm binary, with and without `--experimental`. The
 checker covers RPC method names; field-level changes and feature flags are
-reviewed in [the upgrade record](upgrades/0.160.0.md). A notification appearing
+reviewed in [the upgrade record](upgrades/0.162.1.md). A notification appearing
 in the stable generated schema does not make its underlying feature stable.
 
 Statuses describe actual SuperOne integration, not every upstream field. `used`
@@ -90,6 +90,7 @@ feature integration. Unlisted new optional fields are tolerated and unused.
 | `thread/attachment/add` | unused | No client call or dedicated handler. | — |
 | `thread/attachment/list` | unused | No client call or dedicated handler. | — |
 | `thread/attachment/remove` | unused | No client call or dedicated handler. | — |
+| `thread/attachmentOwner/list` | unused | Reverse provider attachment lookup; SuperOne owns its attachment identities. | — |
 | `thread/compact/start` | used | Calls the app-server RPC. | `packages/codex/src/app-server-client.ts`, `apps/desktop/src/main/codex/codex-turn.ts` |
 | `thread/delete` | unused | No client call or dedicated handler. | — |
 | `thread/fork` | used | Calls the app-server RPC. | `packages/codex/src/fork-thread.ts`, `apps/desktop/src/main/session/backends/codex-backend.ts` |
@@ -116,7 +117,7 @@ feature integration. Unlisted new optional fields are tolerated and unused.
 | `threadSection/list` | n/a | SuperOne owns projects, remote hosts, sidebar sections and filesystem operations. | — |
 | `threadSection/update` | n/a | SuperOne owns projects, remote hosts, sidebar sections and filesystem operations. | — |
 | `turn/interrupt` | used | Calls the app-server RPC. | `apps/desktop/src/main/codex/codex-turn.ts`, `apps/desktop/src/main/codex/connection-diagnostics.ts` |
-| `turn/start` | used | Calls the app-server RPC. | `packages/codex/src/app-server-client.ts`, `apps/cli/src/session/codex-live-turn.ts` |
+| `turn/start` | used | Accepts explicit provider parentTurnId/rootTurnId; records returned rootTurnId separately from requested attribution. Direct user work supplies neither by default. | `packages/codex/src/app-server-client.ts`, `apps/cli/src/session/codex-live-turn.ts` |
 | `turn/steer` | used | Calls the app-server RPC. | `packages/codex/src/app-server-client.ts`, `apps/desktop/src/main/codex/codex-turn.ts` |
 | `windowsSandbox/readiness` | unused | No client call or dedicated handler. | — |
 | `windowsSandbox/setupStart` | unused | No client call or dedicated handler. | — |
@@ -125,6 +126,7 @@ feature integration. Unlisted new optional fields are tolerated and unused.
 
 | Name | Status | Usage | Code |
 |---|---|---|---|
+| `account/bedrock/checkGovCloudRequirements` | unused | No Bedrock GovCloud onboarding flow. | — |
 | `account/bedrock/discover` | unused | No client call or dedicated handler. | — |
 | `account/bedrock/setup` | unused | No client call or dedicated handler. | — |
 | `collaborationMode/list` | unused | No client call or dedicated handler. | — |
@@ -166,6 +168,7 @@ feature integration. Unlisted new optional fields are tolerated and unused.
 | `thread/decrement_elicitation` | unused | No client call or dedicated handler. | — |
 | `thread/increment_elicitation` | unused | No client call or dedicated handler. | — |
 | `thread/memoryMode/set` | unused | No client call or dedicated handler. | — |
+| `thread/prediction/request` | unused | 0.162.1 rejects the placeholder method as not implemented. | — |
 | `thread/queue/add` | used | Calls the app-server RPC. | `apps/desktop/src/main/session/backends/codex-backend.ts` |
 | `thread/queue/delete` | used | Calls the app-server RPC. | `apps/desktop/src/main/session/backends/codex-backend.ts` |
 | `thread/queue/list` | used | Calls the app-server RPC. | `apps/desktop/src/main/session/backends/codex-backend.ts` |
@@ -237,7 +240,7 @@ feature integration. Unlisted new optional fields are tolerated and unused.
 | `item/autoApprovalReview/started` | unused | No client call or dedicated handler. | — |
 | `item/commandExecution/outputDelta` | used | Consumes the notification. | `packages/codex/src/agent-event-mapper.ts`, `apps/desktop/src/main/codex/codex-fork-listener.ts` |
 | `item/commandExecution/terminalInteraction` | unused | No client call or dedicated handler. | — |
-| `item/completed` | partial | Maps native MCP Apps presentation and private View results alongside chat/tool items. Harness-neutral host updates persist snapshots/context on those items and node catalog rows. Desktop and paired-node View acceptance passes, including public Excalidraw, real next-turn context, native fullscreen/PiP lifecycle and restart activation gating. | `packages/codex/src/agent-event-mapper.ts`, `apps/desktop/src/main/codex/codex-fork-listener.ts`, `apps/desktop/src/main/mcp-apps/executor.ts` |
+| `item/completed` | partial | Captures data-only subAgentActivity metadata without adding transcript card items. Maps native MCP Apps presentation and private View results alongside chat/tool items. Harness-neutral host updates persist snapshots/context on those items and node catalog rows. Desktop and paired-node View acceptance passes, including public Excalidraw, real next-turn context, native fullscreen/PiP lifecycle and restart activation gating. | `packages/codex/src/agent-event-mapper.ts`, `apps/desktop/src/main/codex/codex-fork-listener.ts`, `apps/desktop/src/main/mcp-apps/executor.ts` |
 | `item/fileChange/outputDelta` | unused | No client call or dedicated handler. | — |
 | `item/fileChange/patchUpdated` | unused | No client call or dedicated handler. | — |
 | `item/mcpToolCall/progress` | unused | No client call or dedicated handler. | — |
@@ -245,7 +248,7 @@ feature integration. Unlisted new optional fields are tolerated and unused.
 | `item/reasoning/summaryPartAdded` | used | Consumes the notification. | `packages/codex/src/agent-event-mapper.ts`, `apps/desktop/src/main/codex/codex-fork-listener.ts` |
 | `item/reasoning/summaryTextDelta` | used | Consumes the notification. | `packages/codex/src/agent-event-mapper.ts`, `apps/desktop/src/main/codex/codex-fork-listener.ts` |
 | `item/reasoning/textDelta` | used | Consumes the notification. | `packages/codex/src/agent-event-mapper.ts`, `apps/desktop/src/main/codex/codex-fork-listener.ts` |
-| `item/started` | partial | Maps MCP Apps presentation and full private result. Observed 0.159 fixture items use mcpAppResourceUri with mcpAppUi:null; modern mcpAppUi stays preferred. | `packages/codex/src/agent-event-mapper.ts`, `apps/desktop/src/main/codex/codex-fork-listener.ts` |
+| `item/started` | partial | Captures subAgentActivity as data-only child creation/activity metadata on desktop and nodes, separately from requested legacy spawn configuration. Maps MCP Apps presentation and full private result. Observed 0.159 fixture items use mcpAppResourceUri with mcpAppUi:null; modern mcpAppUi stays preferred. | `packages/codex/src/agent-event-mapper.ts`, `apps/desktop/src/main/codex/codex-fork-listener.ts` |
 | `mcpServer/event/stream/notification` | unused | No client call or dedicated handler. | — |
 | `mcpServer/oauthLogin/completed` | used | Consumes the notification. | `packages/codex/src/codex-admin.ts`, `apps/desktop/src/main/codex/codex-experiment-service.ts` |
 | `mcpServer/startupStatus/updated` | used | Consumes the notification. | `packages/codex/src/agent-event-mapper.ts`, `apps/desktop/src/main/codex/codex-turn.ts` |
@@ -270,6 +273,7 @@ feature integration. Unlisted new optional fields are tolerated and unused.
 | `thread/goal/cleared` | unused | No client call or dedicated handler. | — |
 | `thread/goal/updated` | unused | No client call or dedicated handler. | — |
 | `thread/name/updated` | unused | No client call or dedicated handler. | — |
+| `thread/prediction/updated` | partial | Session-owned desktop/node receiver maps the latest successful root turn to shared `prompt_suggestion`; 0.162.1 has no producer. | `packages/codex/src/prompt-prediction.ts`, `apps/desktop/src/main/codex/codex-session-dispatcher.ts`, `apps/cli/src/session/codex-turn-runner.ts` |
 | `thread/project/updated` | unused | No client call or dedicated handler. | — |
 | `thread/queue/changed` | used | Consumes the notification. | `apps/desktop/src/main/codex/codex-notification-dispatcher.ts` |
 | `thread/realtime/closed` | used | Consumes the notification. | `apps/desktop/src/main/codex/codex-realtime.ts` |
@@ -289,11 +293,11 @@ feature integration. Unlisted new optional fields are tolerated and unused.
 | `thread/status/changed` | partial | Diagnostic logging/routing only; UI state follows session lifecycle. | `apps/desktop/src/main/codex/codex-notification-dispatcher.ts` |
 | `thread/tokenUsage/updated` | used | Consumes the notification. | `packages/codex/src/agent-event-mapper.ts`, `apps/desktop/src/main/codex/codex-fork-listener.ts` |
 | `thread/unarchived` | unused | No client call or dedicated handler. | — |
-| `turn/completed` | used | Consumes the notification. | `packages/codex/src/agent-event-mapper.ts`, `packages/codex/src/app-server-client.ts` |
+| `turn/completed` | used | Preserves provider turn/root identities, including failure and interruption; child roots are stored per turn. | `packages/codex/src/agent-event-mapper.ts`, `packages/codex/src/app-server-client.ts` |
 | `turn/diff/updated` | unused | No client call or dedicated handler. | — |
 | `turn/moderationMetadata` | unused | No client call or dedicated handler. | — |
 | `turn/plan/updated` | used | Consumes the notification. | `packages/codex/src/agent-event-mapper.ts`, `apps/desktop/src/main/codex/codex-turn.ts` |
-| `turn/started` | used | Consumes the notification. | `apps/desktop/src/main/codex/codex-fork-listener.ts`, `apps/desktop/src/main/codex/codex-turn.ts` |
+| `turn/started` | used | Preserves provider turn/root identities; child roots are stored per turn. | `apps/desktop/src/main/codex/codex-fork-listener.ts`, `apps/desktop/src/main/codex/codex-turn.ts` |
 | `warning` | unused | No client call or dedicated handler. | — |
 | `windows/worldWritableWarning` | unused | No client call or dedicated handler. | — |
 | `windowsSandbox/setupCompleted` | unused | No client call or dedicated handler. | — |

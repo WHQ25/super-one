@@ -96,8 +96,10 @@ describe('fork listener lifecycle', () => {
 
     const collabUpdates: CodexCollabToolCallItem[] = []
     const onUsageAccounted = vi.fn()
+    const onSubagentActivity = vi.fn()
     const callbacks: CodexRunStreamCallbacks = {
       onUsageAccounted,
+      onSubagentActivity,
       onItemDelta: (_phase, item) => {
         if (item.type === 'collab_tool_call' && item.id === 'collab-fork') {
           collabUpdates.push(item as CodexCollabToolCallItem)
@@ -114,6 +116,7 @@ describe('fork listener lifecycle', () => {
     expect(session.forkListeners.has('fork-thread')).toBe(true)
 
     // Now push fork-thread events; dispatcher should route to forkInbox.
+    push({ method: 'turn/started', params: { threadId: 'fork-thread', turn: { id: 'fork-turn', rootTurnId: 'origin' } } })
     push({
       method: 'thread/tokenUsage/updated',
       params: {
@@ -144,6 +147,8 @@ describe('fork listener lifecycle', () => {
     })
 
     push({ method: 'item/completed', params: { threadId: 'fork-thread', item: { id: 'fork-app', type: 'mcpToolCall', server: 'fixture', tool: 'next', status: 'completed', arguments: {}, appContext: null, mcpAppUi: { resourceUri: 'ui://fixture/view' }, result: { content: [], structuredContent: { page: 1 }, _meta: { private: 'View only' } } } } })
+    push({ method: 'item/completed', params: { threadId: 'fork-thread', turnId: 'fork-turn', item: { id: 'late-activity', type: 'subAgentActivity', kind: 'started', agentThreadId: 'grandchild', agentPath: 'root/child/grandchild', model: 'actual', reasoningEffort: 'high' } } })
+    push({ method: 'turn/completed', params: { threadId: 'fork-thread', turn: { id: 'fork-turn', rootTurnId: null, status: 'completed' } } })
 
     // Yield so fork listener consumes inbox.
     for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r))
@@ -155,6 +160,8 @@ describe('fork listener lifecycle', () => {
       lastOutputTokens: 10,
     }))
     expect(latest).toBeDefined()
+    expect(onSubagentActivity).toHaveBeenCalledWith(expect.objectContaining({ sourceThreadId: 'fork-thread', sourceTurnId: 'fork-turn', agentThreadId: 'grandchild', model: 'actual', reasoningEffort: 'high' }), 'collab-fork')
+    expect(latest.agentsStates['fork-thread'].turns?.['fork-turn']).toEqual({ threadId: 'fork-thread', turnId: 'fork-turn', rootTurnId: 'origin' })
     const forkChildItems: CodexThreadItem[] = latest.childItems?.['fork-thread'] ?? []
     expect(forkChildItems.find(item => item.id === 'fork-app')).toMatchObject({ type: 'mcp_tool_call', mcpAppUi: { resourceUri: 'ui://fixture/view' }, result: { structuredContent: { page: 1 }, meta: { private: 'View only' } } })
     const forkMsg = forkChildItems.find((i) => i.id === 'fork-msg-1')

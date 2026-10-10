@@ -10,6 +10,7 @@ import {
 } from '@superone/shared/agent-types'
 import type { AppServerConnectionHandle, CodexProjectAuth } from './app-server-connection'
 import type { NotificationDispatcher } from './codex-notification-dispatcher'
+import type { CodexPromptPrediction } from '@superone/codex/prompt-prediction'
 import type { ForkListenerHandle } from './codex-fork-listener'
 import type { CodexRunStreamCallbacks } from './codex-turn'
 
@@ -68,6 +69,7 @@ export interface CodexSession {
   connectionPromiseAuth: CodexProjectAuth | null
   apiProviderId: string | null
   notificationDispatcher: NotificationDispatcher | null
+  promptPrediction: CodexPromptPrediction | null
   queueChangedFn: ((threadId: string) => void) | null
   forkListeners: Map<string, ForkListenerHandle>
   forkCallbacks: CodexRunStreamCallbacks | null
@@ -124,6 +126,7 @@ export function createCodexSession(
     connectionPromiseAuth: null,
     apiProviderId: apiProviderId ?? null,
     notificationDispatcher: null,
+    promptPrediction: null,
     queueChangedFn: null,
     forkListeners: new Map(),
     forkCallbacks: null,
@@ -144,6 +147,7 @@ export function tearDownForkRuntime(session: CodexSession, reason: string): void
   session.threadReady = false
   session.effectiveCwd = null
   session.notificationDispatcher = null
+  session.promptPrediction = null
   for (const listener of forkListeners) {
     try { listener.stop(reason) } catch { /* ignore */ }
   }

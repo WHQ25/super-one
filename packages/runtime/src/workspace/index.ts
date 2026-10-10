@@ -1,1 +1,6 @@
 export { ProjectRegistry, detectRepoIdentity } from './project-registry'
+export type { WorkspaceProjects } from './workspace-projects'
+export { WorkspaceFsService } from './fs-service'
+export { WorkspaceGitService } from './git-service'
+export { WorkspaceWatchService } from './watch-service'
+export { WorkspaceTailWatchService } from './tail-watch-service'

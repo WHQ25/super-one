@@ -5,7 +5,7 @@ import {
   normalizeProjectRelativePath,
   resolveProjectPath,
 } from '@superone/runtime/fs'
-import type { ProjectRegistry } from './project-registry'
+import type { WorkspaceProjects } from './workspace-projects'
 import type { WorkspaceFsService } from './fs-service'
 
 export type TailWatchPollResult = {
@@ -40,7 +40,7 @@ export class WorkspaceTailWatchService {
   private readonly entries = new Map<string, TailWatchEntry>()
 
   constructor(
-    private readonly projects: ProjectRegistry,
+    private readonly projects: WorkspaceProjects,
     private readonly fs: WorkspaceFsService,
   ) {}
 

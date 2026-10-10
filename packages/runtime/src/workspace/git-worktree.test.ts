@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { tmpdir, homedir } from 'node:os'
 import { execFileSync } from 'node:child_process'
 import { WorkspaceGitService, parseShortstat, parseBranchPorcelain } from './git-service'
-import type { ProjectRegistry } from './project-registry'
+import type { WorkspaceProjects } from './workspace-projects'
 
 function git(cwd: string, args: string[]) {
   execFileSync('git', ['-C', cwd, ...args], { stdio: 'ignore' })
@@ -45,7 +45,7 @@ describe('parseBranchPorcelain', () => {
 
 describe('WorkspaceGitService worktree activate', () => {
   let dir: string
-  let projects: ProjectRegistry
+  let projects: WorkspaceProjects
   let svc: WorkspaceGitService
 
   beforeEach(() => {
@@ -61,7 +61,7 @@ describe('WorkspaceGitService worktree activate', () => {
     projects = {
       get: () => ({ projectId: 'p1', path: dir, name: 't', repoIdentity: null }),
       touch: () => {},
-    } as unknown as ProjectRegistry
+    } as unknown as WorkspaceProjects
     svc = new WorkspaceGitService(projects)
   })
 

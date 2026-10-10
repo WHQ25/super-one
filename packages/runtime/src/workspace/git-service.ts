@@ -19,7 +19,7 @@ import {
   recordedBranchForMode,
   parseNumstat,
 } from '@superone/runtime/git'
-import type { ProjectRegistry } from './project-registry'
+import type { WorkspaceProjects } from './workspace-projects'
 
 /** GitHub round-trips for `@gh`; a popup must never wait longer than this. */
 const GH_TIMEOUT_MS = 15_000
@@ -127,7 +127,7 @@ function samePath(a: string, b: string): boolean {
 }
 
 export class WorkspaceGitService {
-  constructor(private readonly projects: ProjectRegistry) {}
+  constructor(private readonly projects: WorkspaceProjects) {}
 
   private root(projectId: string): string {
     const p = this.projects.get(projectId)

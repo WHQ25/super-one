@@ -1,6 +1,6 @@
 import { watch, type FSWatcher } from 'node:fs'
-import { resolveProjectPath } from './path-security'
-import type { ProjectRegistry } from './project-registry'
+import { resolveProjectPath } from '../fs'
+import type { WorkspaceProjects } from './workspace-projects'
 
 export type WatchEvent = { path: string; type: string }
 
@@ -12,7 +12,7 @@ export class WorkspaceWatchService {
   private readonly ownerByWatch = new Map<string, string>()
   private readonly cancelByWatch = new Map<string, () => void>()
 
-  constructor(private readonly projects: ProjectRegistry) {}
+  constructor(private readonly projects: WorkspaceProjects) {}
 
   cancelForClient(clientSessionId: string): void {
     for (const [watchId, owner] of [...this.ownerByWatch]) {

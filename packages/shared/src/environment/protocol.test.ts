@@ -5,6 +5,7 @@ import {
   isValidProtocolRange,
   negotiateHandshake,
   rangesOverlap,
+  refusingPeerProtocolMax,
   type HandshakeGenerations,
   type ProtocolRange,
 } from './protocol'
@@ -88,6 +89,23 @@ describe('negotiateHandshake', () => {
     }
     const result = negotiateHandshake(currentLocal, remote)
     expect(result.ok).toBe(false)
+  })
+})
+
+describe('refusingPeerProtocolMax', () => {
+  it('reads the refusing peer\'s newest generation from its handshake reason', () => {
+    const peer: HandshakeGenerations = {
+      protocol: { current: 1, min: 1, max: 1 },
+      databaseSchema: { ...DATABASE_SCHEMA_GENERATION },
+    }
+    const refused = negotiateHandshake(peer, currentLocal)
+    expect(refused.ok).toBe(false)
+    expect(refusingPeerProtocolMax(refused.ok ? null : refused.reason)).toBe(1)
+  })
+
+  it('is null for other refusals', () => {
+    expect(refusingPeerProtocolMax('database schema generation mismatch: local 1-1, remote 2-2')).toBeNull()
+    expect(refusingPeerProtocolMax(undefined)).toBeNull()
   })
 })
 

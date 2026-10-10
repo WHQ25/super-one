@@ -957,6 +957,7 @@ export type Messages = {
       noSessionsCapability: string
       nodeOutdated: string
       nodeOutdatedManual: string
+      olderProtocolVersion: string
       upgradeNode: string
       upgradingNode: string
       upgradeNodeSuccess: string
@@ -5291,6 +5292,7 @@ export const en: Messages = {
         'This node runs SuperOne CLI {{remoteVersion}}; this desktop ships {{targetVersion}}. Older nodes can report stale model catalogs and fail to run turns.',
       nodeOutdatedManual:
         'Upgrade it on the host with `npm install -g @super-one/cli@alpha`, then restart the node.',
+      olderProtocolVersion: '(older protocol)',
       upgradeNode: 'Upgrade Node',
       upgradingNode: 'Upgrading node…',
       upgradeNodeSuccess: 'Node upgraded to {{version}}',

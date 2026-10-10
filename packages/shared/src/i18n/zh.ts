@@ -1028,6 +1028,7 @@ export const zh: Messages = {
       nodeOutdated:
         '该节点运行的是 SuperOne CLI {{remoteVersion}}，本机桌面为 {{targetVersion}}。旧节点可能返回过时的模型列表，或根本跑不了对话。',
       nodeOutdatedManual: '请在主机上执行 `npm install -g @super-one/cli@alpha` 后重启节点。',
+      olderProtocolVersion: '（旧协议）',
       upgradeNode: '升级节点',
       upgradingNode: '正在升级节点…',
       upgradeNodeSuccess: '节点已升级到 {{version}}',

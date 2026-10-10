@@ -32,6 +32,7 @@ import {
   type RemoteDeviceChannel,
 } from '@/lib/remote-channel-flags'
 import { PairDesktopDialog } from './PairDesktopDialog'
+import { nodeUpgradeVersions } from '@/lib/node-upgrade'
 import { AddEnvironmentDialog } from './AddEnvironmentDialog'
 import { DeviceRow, computerKind } from '../DeviceRow'
 import { SettingsSection, settingsRowClassName } from '../SettingsSection'
@@ -851,10 +852,7 @@ function EnvironmentDeviceRow({
       {item.nodeUpgrade && (
         <div className="mt-1.5 space-y-1.5">
           <p className="text-xs text-warning">
-            {t('settings.environments.nodeOutdated', {
-              remoteVersion: item.nodeUpgrade.remoteVersion,
-              targetVersion: item.nodeUpgrade.targetVersion,
-            })}
+            {t('settings.environments.nodeOutdated', nodeUpgradeVersions(item.nodeUpgrade, t))}
           </p>
           {item.nodeUpgrade.canUpgradeOverSsh ? (
             <Button

@@ -23,6 +23,7 @@ import {
 import { useChatStore } from '@/stores/chat'
 import { useAppStore, type SidebarTab } from '@/stores/app'
 import { parseRemoteProjectKey, remoteProjectKey } from '@/lib/remote-project-key'
+import { nodeUpgradeVersions } from '@/lib/node-upgrade'
 import { useShallow } from 'zustand/react/shallow'
 import { useFullscreen } from '@/hooks/useFullscreen'
 import { useRemoteStatus } from '@/hooks/useRemoteStatus'
@@ -355,11 +356,7 @@ export const AppSidebar = memo(function AppSidebar() {
 
     if (!upgrade.canUpgradeOverSsh) {
       toast.warning(
-        t('sidebar.hostOutdatedManual', {
-          label: host!.label,
-          remoteVersion: upgrade.remoteVersion,
-          targetVersion: upgrade.targetVersion,
-        }),
+        t('sidebar.hostOutdatedManual', { label: host!.label, ...nodeUpgradeVersions(upgrade, t) }),
       )
       return
     }
@@ -367,11 +364,7 @@ export const AppSidebar = memo(function AppSidebar() {
     const connectionId = host!.connectionId
     setUpgradingHostId(connectionId)
     const toastId = toast.loading(
-      t('sidebar.hostUpgrading', {
-        label: host!.label,
-        remoteVersion: upgrade.remoteVersion,
-        targetVersion: upgrade.targetVersion,
-      }),
+      t('sidebar.hostUpgrading', { label: host!.label, ...nodeUpgradeVersions(upgrade, t) }),
     )
     void (async () => {
       try {
@@ -626,8 +619,7 @@ export const AppSidebar = memo(function AppSidebar() {
                         className="ml-auto size-3 shrink-0 text-warning"
                         aria-label={t('sidebar.hostOutdatedManual', {
                           label: host.label,
-                          remoteVersion: host.nodeUpgrade.remoteVersion,
-                          targetVersion: host.nodeUpgrade.targetVersion,
+                          ...nodeUpgradeVersions(host.nodeUpgrade, t),
                         })}
                       />
                     )}

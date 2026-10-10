@@ -80,8 +80,11 @@ export interface RepairPairingInput {
 }
 
 export interface NodeUpgradeAvailability {
-  /** CLI version currently running on the node. */
-  remoteVersion: string
+  /**
+   * CLI version currently running on the node; null when the node refused
+   * this desktop's protocol generation before it could report one.
+   */
+  remoteVersion: string | null
   /** Version this desktop would install. */
   targetVersion: string
   /**

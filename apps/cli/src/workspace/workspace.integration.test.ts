@@ -265,9 +265,9 @@ describe('Phase 2 workspace integration', () => {
     const { rpc, close } = await connectAuthedRpc(rt)
     try {
     const desc = (await rpc('environment.descriptor', {})) as {
-      capabilities: { sessions: boolean; harnessIds: string[] }
+      capabilities: { methods: string[]; harnessIds: string[] }
     }
-    expect(desc.capabilities.sessions).toBe(true)
+    expect(desc.capabilities.methods).toContain('session.get')
     // Catalog entries fail closed, while directly runnable binary/SDK overrides are advertised.
     const runtimeOverrides = [
       ...(isCodexBinaryOverrideRunnable() ? ['codex'] : []),

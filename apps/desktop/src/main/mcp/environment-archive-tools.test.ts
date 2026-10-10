@@ -11,8 +11,8 @@ const local = vi.fn(() => ({ content: [{ type: 'text' as const, text: JSON.strin
 beforeEach(() => {
   vi.clearAllMocks()
   mocks.owner.mockReturnValue(undefined)
-  mocks.list.mockResolvedValue([{ connectionId: 'local', environmentId: 'desktop', kind: 'local', label: 'Desktop', state: 'connected' }, { connectionId: 'connection', environmentId: 'node', kind: 'remote', label: 'Node', state: 'connected', capabilities: { sessionArchive: true } }])
-  mocks.connect.mockResolvedValue({ environmentId: 'node', capabilities: { sessionArchive: true } })
+  mocks.list.mockResolvedValue([{ connectionId: 'local', environmentId: 'desktop', kind: 'local', label: 'Desktop', state: 'connected' }, { connectionId: 'connection', environmentId: 'node', kind: 'remote', label: 'Node', state: 'connected', capabilities: { methods: ['session.archive'] } }])
+  mocks.connect.mockResolvedValue({ environmentId: 'node', capabilities: { methods: ['session.archive'] } })
   mocks.archive.mockResolvedValue({ content: [{ type: 'text', text: 'remote result' }] })
   mocks.liveStatus.mockRejectedValue(new Error('unsupported method on this environment: environment.status'))
   mocks.localContext.mockResolvedValue({ machine: { os: 'macOS 26.0', cpuModel: 'Apple M3 Max', cpuCores: 16, memoryBytes: 64 * 2 ** 30, gpus: ['Apple M3 Max'] }, live: { freeMemoryBytes: 8 * 2 ** 30 } })
@@ -40,7 +40,7 @@ describe('environment archive tools', () => {
     expect(mocks.connect).not.toHaveBeenCalled()
   })
   it('never falls back to a local archive after an identity failure', async () => {
-    mocks.connect.mockResolvedValue({ environmentId: 'changed', capabilities: { sessionArchive: true } })
+    mocks.connect.mockResolvedValue({ environmentId: 'changed', capabilities: { methods: ['session.archive'] } })
     const result = await createEnvironmentArchiveTools('local').archiveRead('session_search', { environmentId: 'node', query: 'why', allProjects: true }, local)
     expect(result.isError).toBe(true); expect(local).not.toHaveBeenCalled(); expect(mocks.archive).not.toHaveBeenCalled()
   })

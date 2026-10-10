@@ -22,8 +22,10 @@ function branding(session: Readonly<NodeSessionRecord>, ctx: RpcContext) {
 function entry(session: Readonly<NodeSessionRecord>, ctx: RpcContext, source?: string) {
   return { sessionId: session.sessionId, title: session.title ?? 'Untitled', ...branding(session, ctx), projectId: session.projectId, createdAt: date(session.createdAt), lastActiveAt: date(lastActive(session)), messageCount: session.transcript.length, tags: session.tags ?? [], pinned: session.isPinned, hidden: session.isHidden, isSelf: session.sessionId === source }
 }
+export const SESSION_ARCHIVE_RPC_METHODS: ReadonlySet<string> = new Set(['session.archive', 'session.linkMetadata'])
+
 export function dispatchSessionArchiveRpc(method: string, payload: unknown, ctx: RpcContext): RpcResult | null {
-  if (method !== 'session.archive' && method !== 'session.linkMetadata') return null
+  if (!SESSION_ARCHIVE_RPC_METHODS.has(method)) return null
   if (!hasAllScopes(ctx.client.scopes, OPERATION_SCOPES.readSession)) return { error: { code: 'forbidden', message: 'Session read access is required' } }
   const input = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {}
   if (method === 'session.linkMetadata') {

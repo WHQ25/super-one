@@ -332,24 +332,23 @@ export async function handleAutomationRunNow(
   }
 }
 
+const AUTOMATION_HANDLERS: Readonly<Record<string, (payload: unknown, ctx: AutomationRpcContext, method: string) => AutomationRpcResult | Promise<AutomationRpcResult>>> = {
+  'automation.list': (payload, ctx) => handleAutomationList(payload, ctx),
+  'automation.create': (payload, ctx) => handleAutomationCreate(payload, ctx),
+  'automation.update': (payload, ctx) => handleAutomationUpdate(payload, ctx),
+  'automation.delete': (payload, ctx) => handleAutomationDelete(payload, ctx),
+  'automation.runNow': (payload, ctx) => handleAutomationRunNow(payload, ctx),
+}
+
+/** Every method this table serves. */
+export const AUTOMATION_RPC_METHODS: ReadonlySet<string> = new Set(Object.keys(AUTOMATION_HANDLERS))
+
 /** Route automation.* methods. Returns null if method is not an automation method. */
 export function dispatchAutomationRpc(
   method: string,
   payload: unknown,
   ctx: AutomationRpcContext,
 ): AutomationRpcResult | Promise<AutomationRpcResult> | null {
-  switch (method) {
-    case 'automation.list':
-      return handleAutomationList(payload, ctx)
-    case 'automation.create':
-      return handleAutomationCreate(payload, ctx)
-    case 'automation.update':
-      return handleAutomationUpdate(payload, ctx)
-    case 'automation.delete':
-      return handleAutomationDelete(payload, ctx)
-    case 'automation.runNow':
-      return handleAutomationRunNow(payload, ctx)
-    default:
-      return null
-  }
+  const handler = Object.hasOwn(AUTOMATION_HANDLERS, method) ? AUTOMATION_HANDLERS[method] : undefined
+  return handler ? handler(payload, ctx, method) : null
 }

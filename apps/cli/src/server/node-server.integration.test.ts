@@ -46,12 +46,12 @@ describe('node server integration', () => {
     const client = await connectAuthedRpc(runtime)
     const descriptor = (await client.rpc('environment.descriptor')) as {
       environmentId: string
-      capabilities: { terminal: boolean; sessions: boolean }
+      capabilities: { methods: string[] }
       nodePublicKeyFingerprint: string
     }
     expect(descriptor.environmentId).toBe(runtime.identity.environmentId)
-    expect(descriptor.capabilities.terminal).toBe(true)
-    expect(descriptor.capabilities.sessions).toBe(true)
+    expect(descriptor.capabilities.methods).toContain('terminal.create')
+    expect(descriptor.capabilities.methods).toContain('session.get')
     expect(descriptor.nodePublicKeyFingerprint).toBe(runtime.identity.publicKeyFingerprint)
 
     const healthRpc = (await client.rpc('environment.health')) as { ok: boolean }

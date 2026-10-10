@@ -38,7 +38,7 @@ describe('LocalEnvironmentGateway', () => {
     expect(d1.label).toBe('Test Mac')
     expect(d1.nodeVersion).toBe('v22.0.0')
     expect(d1.protocolVersion).toBe(PROTOCOL_GENERATION.current)
-    expect(d1.capabilities.sessions).toBe(LOCAL_ENVIRONMENT_CAPABILITIES.sessions)
+    expect(d1.capabilities.methods).toEqual(LOCAL_ENVIRONMENT_CAPABILITIES.methods)
     expect(d1.capabilities.harnessIds).toEqual(LOCAL_ENVIRONMENT_CAPABILITIES.harnessIds)
     expect(d1.generations?.protocol.current).toBe(PROTOCOL_GENERATION.current)
 

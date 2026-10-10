@@ -7,6 +7,7 @@ import { useFileTreeStore } from '@/stores/file-tree'
 import { useSourceControlStore } from '@/stores/source-control'
 
 const PROJECT = '/storybook/super-one'
+const REMOTE_PROJECT = 'remote:node-1:/home/dev/super-one'
 
 interface Mock {
   name: string
@@ -179,7 +180,17 @@ function useSimulatedFileDrag(
   }, [drag, visibleCount, hostRef])
 }
 
-function StoryHost({ items, drag, draft }: { items: Mock[]; drag?: SimulatedDrag; draft?: DraftSpec }) {
+/** Serves the remote project from a node whose descriptor lists `methods`. */
+function installRemoteNode(methods: string[]): void {
+  const w = window as unknown as { environment: Record<string, unknown> }
+  w.environment = {
+    ...(w.environment ?? {}),
+    listItems: async () => [{ connectionId: 'node-1', capabilities: { methods, harnessIds: [], coldSessionResume: false, turnReattach: false, hostActionV1: false } }],
+  }
+}
+
+function StoryHost({ items, drag, draft, remoteMethods }: { items: Mock[]; drag?: SimulatedDrag; draft?: DraftSpec; remoteMethods?: string[] }) {
+  const project = remoteMethods ? REMOTE_PROJECT : PROJECT
   const hostRef = useRef<HTMLDivElement>(null)
   const visibleCount = useFileTreeStore((s) => s._visibleList.length)
 
@@ -189,15 +200,16 @@ function StoryHost({ items, drag, draft }: { items: Mock[]; drag?: SimulatedDrag
   }, [draft, visibleCount])
 
   useEffect(() => {
-    installListDirMock(items)
+    installListDirMock(remoteMethods && !remoteMethods.includes('workspace.listDir') ? [] : items)
+    if (remoteMethods) installRemoteNode(remoteMethods)
     useFileTreeStore.getState().reset()
     useSourceControlStore.setState({ selectedFile: null })
-    useAppStore.setState({ currentFolder: PROJECT, _worktrees: {} })
-    void useFileTreeStore.getState().fetchTree(PROJECT)
+    useAppStore.setState({ currentFolder: project, _worktrees: {} })
+    void useFileTreeStore.getState().fetchTree(project)
     return () => {
       useFileTreeStore.getState().reset()
     }
-  }, [items])
+  }, [items, project, remoteMethods])
 
   useSimulatedFileDrag(hostRef, drag, visibleCount)
 
@@ -354,4 +366,25 @@ export const NewFileDark: Story = {
   name: 'New file · dark',
   globals: { theme: 'dark' },
   args: { items: TREE, draft: { parentDir: 'src', kind: 'file' } },
+}
+
+/*
+ * A remote project. Its node advertises the methods it serves; one that does not
+ * serve `workspace.listDir` says so instead of showing an empty tree.
+ */
+
+export const RemoteServesFiles: Story = {
+  name: 'Remote · node serves files',
+  args: { items: TREE, remoteMethods: ['workspace.listDir', 'workspace.createEntry'] },
+}
+
+export const RemoteNoFiles: Story = {
+  name: 'Remote · node does not share files',
+  args: { items: TREE, remoteMethods: [] },
+}
+
+export const RemoteNoFilesDark: Story = {
+  name: 'Remote · node does not share files (dark)',
+  globals: { theme: 'dark' },
+  args: { items: TREE, remoteMethods: [] },
 }

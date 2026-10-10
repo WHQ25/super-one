@@ -988,68 +988,45 @@ export function handleHooksDelete(payload: unknown, ctx: ResourceRpcContext): Re
   }
 }
 
+const RESOURCE_HANDLERS: Readonly<Record<string, (payload: unknown, ctx: ResourceRpcContext, method: string) => ResourceRpcResult | Promise<ResourceRpcResult>>> = {
+  'skills.list': (payload, ctx) => handleSkillsList(payload, ctx),
+  'skills.get': (payload, ctx) => handleSkillsGet(payload, ctx),
+  'skills.readFile': (payload, ctx) => handleSkillsReadFile(payload, ctx),
+  'skills.delete': (payload, ctx) => handleSkillsDelete(payload, ctx),
+  'skills.install': (payload, ctx) => handleSkillsInstall(payload, ctx),
+  'mcp.list': (payload, ctx) => handleMcpList(payload, ctx),
+  'mcp.save': (payload, ctx) => handleMcpSave(payload, ctx),
+  'mcp.toggle': (payload, ctx) => handleMcpToggle(payload, ctx),
+  'mcp.delete': (payload, ctx) => handleMcpDelete(payload, ctx),
+  'plugins.list': (payload, ctx) => handlePluginsList(payload, ctx),
+  'plugins.get': (payload, ctx) => handlePluginsGet(payload, ctx),
+  'plugins.readFile': (payload, ctx) => handlePluginsReadFile(payload, ctx),
+  'plugins.delete': (payload, ctx) => handlePluginsDelete(payload, ctx),
+  'plugins.setEnabled': (payload, ctx) => handlePluginsSetEnabled(payload, ctx),
+  'plugins.install': (payload, ctx) => handlePluginsInstall(payload, ctx),
+  'plugins.update': (payload, ctx) => handlePluginsUpdate(payload, ctx),
+  'plugins.listMarketplace': (payload, ctx) => handlePluginsListMarketplace(payload, ctx),
+  'plugins.addMarketplace': (payload, ctx) => handlePluginsAddMarketplace(payload, ctx),
+  'plugins.removeMarketplace': (payload, ctx) => handlePluginsRemoveMarketplace(payload, ctx),
+  'plugins.updateMarketplace': (payload, ctx) => handlePluginsUpdateMarketplace(payload, ctx),
+  'plugins.readMarketplace': (payload, ctx) => handlePluginsReadMarketplace(payload, ctx),
+  'plugins.readMarketplaceFile': (payload, ctx) => handlePluginsReadMarketplaceFile(payload, ctx),
+  'agents.list': (payload, ctx) => handleAgentsList(payload, ctx),
+  'agents.readFile': (payload, ctx) => handleAgentsReadFile(payload, ctx),
+  'hooks.list': (payload, ctx) => handleHooksList(payload, ctx),
+  'hooks.save': (payload, ctx) => handleHooksSave(payload, ctx),
+  'hooks.delete': (payload, ctx) => handleHooksDelete(payload, ctx),
+}
+
+/** Every method this table serves. */
+export const RESOURCE_RPC_METHODS: ReadonlySet<string> = new Set(Object.keys(RESOURCE_HANDLERS))
+
 /** Route skills.* / mcp.* / plugins.* / agents.* / hooks.* methods. */
 export function dispatchResourceRpc(
   method: string,
   payload: unknown,
   ctx: ResourceRpcContext,
 ): ResourceRpcResult | Promise<ResourceRpcResult> | null {
-  switch (method) {
-    case 'skills.list':
-      return handleSkillsList(payload, ctx)
-    case 'skills.get':
-      return handleSkillsGet(payload, ctx)
-    case 'skills.readFile':
-      return handleSkillsReadFile(payload, ctx)
-    case 'skills.delete':
-      return handleSkillsDelete(payload, ctx)
-    case 'skills.install':
-      return handleSkillsInstall(payload, ctx)
-    case 'mcp.list':
-      return handleMcpList(payload, ctx)
-    case 'mcp.save':
-      return handleMcpSave(payload, ctx)
-    case 'mcp.toggle':
-      return handleMcpToggle(payload, ctx)
-    case 'mcp.delete':
-      return handleMcpDelete(payload, ctx)
-    case 'plugins.list':
-      return handlePluginsList(payload, ctx)
-    case 'plugins.get':
-      return handlePluginsGet(payload, ctx)
-    case 'plugins.readFile':
-      return handlePluginsReadFile(payload, ctx)
-    case 'plugins.delete':
-      return handlePluginsDelete(payload, ctx)
-    case 'plugins.setEnabled':
-      return handlePluginsSetEnabled(payload, ctx)
-    case 'plugins.install':
-      return handlePluginsInstall(payload, ctx)
-    case 'plugins.update':
-      return handlePluginsUpdate(payload, ctx)
-    case 'plugins.listMarketplace':
-      return handlePluginsListMarketplace(payload, ctx)
-    case 'plugins.addMarketplace':
-      return handlePluginsAddMarketplace(payload, ctx)
-    case 'plugins.removeMarketplace':
-      return handlePluginsRemoveMarketplace(payload, ctx)
-    case 'plugins.updateMarketplace':
-      return handlePluginsUpdateMarketplace(payload, ctx)
-    case 'plugins.readMarketplace':
-      return handlePluginsReadMarketplace(payload, ctx)
-    case 'plugins.readMarketplaceFile':
-      return handlePluginsReadMarketplaceFile(payload, ctx)
-    case 'agents.list':
-      return handleAgentsList(payload, ctx)
-    case 'agents.readFile':
-      return handleAgentsReadFile(payload, ctx)
-    case 'hooks.list':
-      return handleHooksList(payload, ctx)
-    case 'hooks.save':
-      return handleHooksSave(payload, ctx)
-    case 'hooks.delete':
-      return handleHooksDelete(payload, ctx)
-    default:
-      return null
-  }
+  const handler = Object.hasOwn(RESOURCE_HANDLERS, method) ? RESOURCE_HANDLERS[method] : undefined
+  return handler ? handler(payload, ctx, method) : null
 }

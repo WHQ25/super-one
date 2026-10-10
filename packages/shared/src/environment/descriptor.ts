@@ -34,7 +34,7 @@ export interface ExecutionEnvironmentDescriptor {
   nodePublicKeyFingerprint?: string
   /**
    * Absolute root of this environment's session sync zone, in its own path
-   * separator (`<nodeHome>/sync`). Present iff `capabilities.syncZone`. The
+   * separator (`<nodeHome>/sync`). Present iff the node serves the artifact methods. The
    * desktop compares foreign paths against it textually and never resolves
    * it locally (`docs/architecture/session-sync-zone.md` §2).
    */

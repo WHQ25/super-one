@@ -71,6 +71,34 @@ function projectIdOf(p: Record<string, unknown>): string {
   return String(p.projectId ?? '')
 }
 
+const CODEX_HANDLERS: Readonly<Record<string, (payload: unknown, ctx: CodexRpcContext, method: string) => CodexRpcResult | Promise<CodexRpcResult>>> = {
+  'codex.listAccounts': (payload, ctx, method) => handleAccounts(method, payload, ctx),
+  'codex.setDefaultAccount': (payload, ctx, method) => handleAccounts(method, payload, ctx),
+  'codex.getAuthStatus': (payload, ctx) => handleGetAuthStatus(payload, ctx),
+  'codex.setAuth': (payload, ctx) => handleSetAuth(payload, ctx),
+  'codex.getAccountStatus': (payload, ctx) => handleGetAccountStatus(payload, ctx),
+  'codex.accountLoginStart': (payload, ctx) => handleAccountLoginStart(payload, ctx),
+  'codex.accountLoginCancel': (payload, ctx) => handleAccountLoginCancel(payload, ctx),
+  'codex.accountLogout': (payload, ctx) => handleAccountLogout(payload, ctx),
+  'codex.getRateLimits': (payload, ctx) => handleGetRateLimits(payload, ctx),
+  'codex.getAccountUsage': (payload, ctx) => handleGetAccountUsage(payload, ctx),
+  'codex.getServerDiagnostics': (payload, ctx) => handleGetServerDiagnostics(payload, ctx),
+  'codex.getConfigRequirements': (payload, ctx) => handleGetConfigRequirements(payload, ctx),
+  'codex.consumeRateLimitReset': (payload, ctx) => handleConsumeRateLimitReset(payload, ctx),
+  'codex.loginMcpOauth': (payload, ctx) => handleLoginMcpOauth(payload, ctx),
+  'codex.detectExternalAgent': (payload, ctx) => handleDetectExternalAgent(payload, ctx),
+  'codex.importExternalAgent': (payload, ctx) => handleImportExternalAgent(payload, ctx),
+  'codex.plugins.list': (payload, ctx) => handlePluginsList(payload, ctx),
+  'codex.plugins.install': (payload, ctx) => handlePluginsInstall(payload, ctx),
+  'codex.plugins.uninstall': (payload, ctx) => handlePluginsUninstall(payload, ctx),
+  'codex.marketplace.add': (payload, ctx) => handleMarketplaceAdd(payload, ctx),
+  'codex.marketplace.remove': (payload, ctx) => handleMarketplaceRemove(payload, ctx),
+  'codex.marketplace.upgrade': (payload, ctx) => handleMarketplaceUpgrade(payload, ctx),
+}
+
+/** Every method this table serves. */
+export const CODEX_RPC_METHODS: ReadonlySet<string> = new Set(Object.keys(CODEX_HANDLERS))
+
 export async function dispatchCodexRpc(
   method: string,
   payload: unknown,
@@ -78,55 +106,8 @@ export async function dispatchCodexRpc(
 ): Promise<CodexRpcResult | null> {
   if (!method.startsWith('codex.')) return null
 
-  switch (method) {
-    case 'codex.listAccounts':
-    case 'codex.setDefaultAccount':
-      return handleAccounts(method, payload, ctx)
-    case 'codex.getAuthStatus':
-      return handleGetAuthStatus(payload, ctx)
-    case 'codex.setAuth':
-      return handleSetAuth(payload, ctx)
-    case 'codex.getAccountStatus':
-      return handleGetAccountStatus(payload, ctx)
-    case 'codex.accountLoginStart':
-      return handleAccountLoginStart(payload, ctx)
-    case 'codex.accountLoginCancel':
-      return handleAccountLoginCancel(payload, ctx)
-    case 'codex.accountLogout':
-      return handleAccountLogout(payload, ctx)
-    case 'codex.getRateLimits':
-      return handleGetRateLimits(payload, ctx)
-    case 'codex.getAccountUsage':
-      return handleGetAccountUsage(payload, ctx)
-    case 'codex.getServerDiagnostics':
-      return handleGetServerDiagnostics(payload, ctx)
-    case 'codex.getConfigRequirements':
-      return handleGetConfigRequirements(payload, ctx)
-    case 'codex.consumeRateLimitReset':
-      return handleConsumeRateLimitReset(payload, ctx)
-    case 'codex.loginMcpOauth':
-      return handleLoginMcpOauth(payload, ctx)
-    case 'codex.detectExternalAgent':
-      return handleDetectExternalAgent(payload, ctx)
-    case 'codex.importExternalAgent':
-      return handleImportExternalAgent(payload, ctx)
-    case 'codex.plugins.list':
-      return handlePluginsList(payload, ctx)
-    case 'codex.plugins.install':
-      return handlePluginsInstall(payload, ctx)
-    case 'codex.plugins.uninstall':
-      return handlePluginsUninstall(payload, ctx)
-    case 'codex.marketplace.add':
-      return handleMarketplaceAdd(payload, ctx)
-    case 'codex.marketplace.remove':
-      return handleMarketplaceRemove(payload, ctx)
-    case 'codex.marketplace.upgrade':
-      return handleMarketplaceUpgrade(payload, ctx)
-    default:
-      return {
-        error: { code: 'not_found', message: `unknown method: ${method}` },
-      }
-  }
+  const handler = Object.hasOwn(CODEX_HANDLERS, method) ? CODEX_HANDLERS[method] : undefined
+  return handler ? handler(payload, ctx, method) : { error: { code: 'not_found', message: `unknown method: ${method}` } }
 }
 
 function handleGetAuthStatus(payload: unknown, ctx: CodexRpcContext): CodexRpcResult {

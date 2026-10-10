@@ -38,10 +38,10 @@ describe('Phase 4 harness parity + collaboration', () => {
     const rt = await boot({ simulatedHarness: true })
     const client = await connectAuthedRpc(rt)
     const descriptor = (await client.rpc('environment.descriptor')) as {
-      capabilities: { harnessIds: HarnessId[]; collaboration: boolean }
+      capabilities: { harnessIds: HarnessId[]; methods: string[] }
     }
     expect(descriptor.capabilities.harnessIds).toEqual(PHASE4_HARNESS_IDS)
-    expect(descriptor.capabilities.collaboration).toBe(true)
+    expect(descriptor.capabilities.methods).toContain('collaboration.send')
 
     const projectDir = mkdtempSync(join(tmpdir(), 'p4-proj-'))
     dirs.push(projectDir)
@@ -82,13 +82,13 @@ describe('Phase 4 harness parity + collaboration', () => {
     client.close()
   })
 
-  it('descriptor.capabilities.collaboration is true without simulatedHarness', async () => {
+  it('descriptor serves collaboration without simulatedHarness', async () => {
     const rt = await boot({ simulatedHarness: false })
     const client = await connectAuthedRpc(rt)
     const descriptor = (await client.rpc('environment.descriptor')) as {
-      capabilities: { collaboration: boolean }
+      capabilities: { methods: string[] }
     }
-    expect(descriptor.capabilities.collaboration).toBe(true)
+    expect(descriptor.capabilities.methods).toContain('collaboration.send')
     client.close()
   })
 

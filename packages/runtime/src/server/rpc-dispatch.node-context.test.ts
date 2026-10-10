@@ -26,7 +26,7 @@ function host(over: Partial<RpcContext> = {}): RpcContext {
     leases: {} as RpcContext['leases'],
     settingsConfigPath: join(dir, 'config.json'),
     hooks: { isCodexBinaryOverrideRunnable: () => false, isClaudeBinaryOverrideRunnable: () => false, resolveReleaseVersion: () => '1.0.0' } as unknown as RpcContext['hooks'],
-    capabilities: { mcp: false, fileTransfer: false, nodeAdmin: false, coldSessionResume: false, turnReattach: false, hostActionV1: false, drafts: false },
+    capabilities: { coldSessionResume: false, turnReattach: false, hostActionV1: false },
     startedAt: 0,
     ...over,
   }

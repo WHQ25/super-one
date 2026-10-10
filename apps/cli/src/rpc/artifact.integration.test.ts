@@ -81,7 +81,7 @@ describe('artifact RPC on a node', () => {
     const { rt, nodeHome } = await boot()
     const client = await connectAuthedRpc(rt)
     const descriptor = (await client.rpc('environment.descriptor')) as ExecutionEnvironmentDescriptor
-    expect(descriptor.capabilities.syncZone).toBe(true)
+    expect(descriptor.capabilities.methods).toContain('artifact.put')
     expect(descriptor.syncRoot).toBe(join(nodeHome, 'sync'))
 
     const { sessionId, lease } = await openSession(client)

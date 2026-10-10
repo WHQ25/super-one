@@ -191,12 +191,16 @@ carries `environmentId`, `label`, `platform { os, arch }`, `nodeVersion`,
 `protocolVersion`, `capabilities`, and optionally `cliVersion`, `generations`,
 `nodePublicKeyFingerprint` and `syncRoot`.
 
-Capabilities are negotiated, not inferred from version strings.
-`EnvironmentCapabilities` (`capabilities.ts`): `sessions`, `harnessIds`,
-`terminal`, `workspaceFs`, `git`, `worktrees`, `mcp`, `fileTransfer`,
-`collaboration`, `nodeAdmin`, `coldSessionResume`, `turnReattach`,
-`hostActionV1`, `drafts`, `syncZone`. Unknown keys are dropped and missing flags
-default to false (`normalizeCapabilities`).
+Capabilities are reported, not inferred from version strings.
+`EnvironmentCapabilities` (`capabilities.ts`) lists `methods` — every RPC method
+the environment serves — plus `harnessIds` and the behaviour flags that no
+method names: `coldSessionResume`, `turnReattach`, `hostActionV1`. The runtime
+derives `methods` from its handler table (`SHARED_RPC_METHODS`, filtered by the
+ports the host supplies) and the methods a host adds (`extensionMethods`, e.g.
+the CLI's drafts, artifacts, automations and archive), so the list cannot drift
+from what the dispatcher answers. Clients gate a feature on `servesMethod`
+(main: gateway and agent tools; renderer: `useEnvironmentServes`); an unknown
+or older descriptor serves nothing.
 
 The node persists an Ed25519 instance key (`secrets/instance.key`) and a binding
 hash of hostname, Unix UID and node directory (`secrets/binding-hash`,

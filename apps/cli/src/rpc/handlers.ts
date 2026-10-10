@@ -23,15 +23,15 @@ import type { WorkspaceTailWatchService } from '../workspace/tail-watch-service'
 import type { IdempotencyService } from '../auth/idempotency'
 import type { ProviderStore } from '../provider/provider-store'
 import type { ArtifactZoneService } from '../workspace/artifact-zone'
-import { dispatchSessionArchiveRpc } from './session-archive-handlers'
-import { dispatchMcpAppsRpc } from './mcp-apps-handlers'
-import { dispatchResourceRpc } from './resource-handlers'
-import { dispatchAutomationRpc } from './automation-handlers'
-import { dispatchDraftRpc } from './draft-handlers'
-import { dispatchArtifactRpc } from './artifact-handlers'
-import { dispatchCodexRpc } from './codex-handlers'
-import { dispatchSessionProviderRpc } from './session-provider-handlers'
-import { dispatchHarnessResourcesRpc } from './harness-resources-handlers'
+import { dispatchSessionArchiveRpc, SESSION_ARCHIVE_RPC_METHODS } from './session-archive-handlers'
+import { dispatchMcpAppsRpc, MCP_APPS_RPC_METHODS } from './mcp-apps-handlers'
+import { dispatchResourceRpc, RESOURCE_RPC_METHODS } from './resource-handlers'
+import { AUTOMATION_RPC_METHODS, dispatchAutomationRpc } from './automation-handlers'
+import { dispatchDraftRpc, DRAFT_RPC_METHODS } from './draft-handlers'
+import { ARTIFACT_RPC_METHOD_SET, dispatchArtifactRpc } from './artifact-handlers'
+import { CODEX_RPC_METHODS, dispatchCodexRpc } from './codex-handlers'
+import { dispatchSessionProviderRpc, SESSION_PROVIDER_RPC_METHODS } from './session-provider-handlers'
+import { dispatchHarnessResourcesRpc, HARNESS_RESOURCES_RPC_METHODS } from './harness-resources-handlers'
 
 export type { RpcResult }
 export { clearWatchBuffersForClient } from '@superone/runtime/server'
@@ -75,22 +75,29 @@ export interface RpcContext
   sessionProviders: SessionProviderStore
 }
 
-/** Capability flags the CLI node sets as policy; port-backed flags follow from its ports. */
+/** Capability flags the CLI node sets as policy; its methods follow from its ports and extensions. */
 const CLI_CAPABILITY_FLAGS: HostCapabilityFlags = {
-  mcp: false,
-  fileTransfer: false,
-  nodeAdmin: true,
   // provider_resume is durable in SQLite; Claude/Codex reopen after node restart
   // and continue from claude-session:<id> / thread:<id> on the next turn.
   coldSessionResume: true,
-  sessionArchive: true,
   // Mid-turn reattach across process restart is not implemented for any harness
   // yet — streaming rows are reconciled to interrupted (see SessionRuntime).
   turnReattach: false,
   hostActionV1: true,
-  drafts: true,
-  messageIdempotency: true,
 }
+
+/** Every method only the CLI node serves (`dispatchCliRpc`). */
+const CLI_EXTENSION_METHODS: ReadonlySet<string> = new Set([
+  ...SESSION_ARCHIVE_RPC_METHODS,
+  ...RESOURCE_RPC_METHODS,
+  ...AUTOMATION_RPC_METHODS,
+  ...DRAFT_RPC_METHODS,
+  ...ARTIFACT_RPC_METHOD_SET,
+  ...SESSION_PROVIDER_RPC_METHODS,
+  ...HARNESS_RESOURCES_RPC_METHODS,
+  ...MCP_APPS_RPC_METHODS,
+  ...CODEX_RPC_METHODS,
+])
 
 /** Serve one node RPC with the shared families plus the CLI's own. */
 export function dispatchRpc(method: string, payload: unknown, ctx: RpcContext): Promise<RpcResult> {
@@ -98,6 +105,7 @@ export function dispatchRpc(method: string, payload: unknown, ctx: RpcContext): 
     ...ctx,
     capabilities: CLI_CAPABILITY_FLAGS,
     extensions: (extMethod, extPayload) => dispatchCliRpc(extMethod, extPayload, ctx),
+    extensionMethods: CLI_EXTENSION_METHODS,
   })
 }
 

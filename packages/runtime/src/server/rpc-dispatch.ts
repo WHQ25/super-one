@@ -236,242 +236,133 @@ export async function dispatchRpc(method: string, payload: unknown, ctx: HostRpc
   return dispatchRpcInner(method, payload, ctx)
 }
 
+const HANDLERS: Readonly<Record<string, (payload: unknown, ctx: RpcContext, method: string) => RpcResult | Promise<RpcResult>>> = {
+  'environment.descriptor': (_payload, ctx) => handleDescriptor(ctx),
+  'environment.health': (_payload, ctx) => handleHealth(ctx),
+  'environment.systemInfo': (_payload, ctx) => handleSystemInfo(ctx),
+  'environment.status': (_payload, ctx) => handleStatus(ctx),
+  'environment.usage': (payload, ctx) => handleUsage(payload, ctx),
+  'settings.get': (_payload, ctx) => handleSettingsGet(ctx),
+  'settings.patch': (payload, ctx) => handleSettingsPatch(payload, ctx),
+  'sandbox.probe': (_payload, ctx) => handleSandboxProbe(ctx),
+  'harness.list': (_payload, ctx) => handleHarnessList(ctx),
+  'harness.show': (payload, ctx) => handleHarnessShow(payload, ctx),
+  'harness.probe': (payload, ctx) => handleHarnessProbe(payload, ctx),
+  'harness.enable': (payload, ctx) => handleHarnessEnable(payload, ctx),
+  'harness.disable': (payload, ctx) => handleHarnessDisable(payload, ctx),
+  'terminal.create': (payload, ctx) => handleTerminalCreate(payload, ctx),
+  'terminal.attach': (payload, ctx) => handleTerminalAttach(payload, ctx),
+  'terminal.read': (payload, ctx) => handleTerminalRead(payload, ctx),
+  'terminal.write': (payload, ctx) => handleTerminalWrite(payload, ctx),
+  'terminal.resize': (payload, ctx) => handleTerminalResize(payload, ctx),
+  'terminal.kill': (payload, ctx) => handleTerminalKill(payload, ctx),
+  'project.list': (_payload, ctx) => handleProjectList(ctx),
+  'project.get': (payload, ctx) => handleProjectGet(payload, ctx),
+  'project.open': (payload, ctx) => handleProjectOpen(payload, ctx),
+  'project.update': (payload, ctx) => handleProjectUpdate(payload, ctx),
+  'project.remove': (payload, ctx) => handleProjectRemove(payload, ctx),
+  'fs.listDir': (payload, ctx) => handleFsListDir(payload, ctx),
+  'workspace.listDir': (payload, ctx) => handleWorkspaceListDir(payload, ctx),
+  'workspace.listFiles': (payload, ctx) => handleWorkspaceListFiles(payload, ctx),
+  'workspace.listSkills': (payload, ctx) => handleWorkspaceListSkills(payload, ctx),
+  'workspace.readFile': (payload, ctx) => handleWorkspaceReadFile(payload, ctx),
+  'workspace.writeFile': (payload, ctx) => handleWorkspaceWriteFile(payload, ctx),
+  'workspace.rename': (payload, ctx) => handleWorkspaceRename(payload, ctx),
+  'workspace.move': (payload, ctx) => handleWorkspaceMove(payload, ctx),
+  'workspace.delete': (payload, ctx) => handleWorkspaceDelete(payload, ctx),
+  'workspace.mkdir': (payload, ctx) => handleWorkspaceMkdir(payload, ctx),
+  'workspace.search': (payload, ctx) => handleWorkspaceSearch(payload, ctx),
+  'workspace.watchStart': (payload, ctx) => handleWorkspaceWatchStart(payload, ctx),
+  'workspace.watchPoll': (payload, ctx) => handleWorkspaceWatchPoll(payload, ctx),
+  'workspace.watchStop': (payload, ctx) => handleWorkspaceWatchStop(payload, ctx),
+  'workspace.tailWatchStart': (payload, ctx) => handleWorkspaceTailWatchStart(payload, ctx),
+  'workspace.tailWatchPoll': (payload, ctx) => handleWorkspaceTailWatchPoll(payload, ctx),
+  'workspace.tailWatchStop': (payload, ctx) => handleWorkspaceTailWatchStop(payload, ctx),
+  'git.status': (payload, ctx) => handleGitStatus(payload, ctx),
+  'git.diff': (payload, ctx) => handleGitDiff(payload, ctx),
+  'git.branches': (payload, ctx) => handleGitBranches(payload, ctx),
+  'git.switchBranch': (payload, ctx) => handleGitSwitchBranch(payload, ctx),
+  'git.createBranch': (payload, ctx) => handleGitCreateBranch(payload, ctx),
+  'git.worktrees': (payload, ctx) => handleGitWorktrees(payload, ctx),
+  'git.mentionRefs': (payload, ctx) => handleGitMentionRefs(payload, ctx),
+  'git.mentionCapabilities': (payload, ctx) => handleGitMentionCapabilities(payload, ctx),
+  'git.worktreeActivate': (payload, ctx) => handleGitWorktreeActivate(payload, ctx),
+  'git.fetch': (payload, ctx) => handleGitFetch(payload, ctx),
+  'git.worktreeCheckedOutBranches': (payload, ctx) => handleGitWorktreeCheckedOutBranches(payload, ctx),
+  'git.worktreeAssignBranch': (payload, ctx) => handleGitWorktreeAssignBranch(payload, ctx),
+  'git.worktreeHandoff': (payload, ctx) => handleGitWorktreeHandoff(payload, ctx),
+  'git.worktreeHandoffPreview': (payload, ctx) => handleGitWorktreeHandoffPreview(payload, ctx),
+  'git.clone': (payload, ctx) => handleGitClone(payload, ctx),
+  'session.create': (payload, ctx) => handleSessionCreate(payload, ctx),
+  'session.setCwd': (payload, ctx) => handleSessionSetCwd(payload, ctx),
+  'session.patchSettings': (payload, ctx) => handleSessionPatchSettings(payload, ctx),
+  'session.fork': (payload, ctx) => handleSessionFork(payload, ctx),
+  'session.get': (payload, ctx) => handleSessionGet(payload, ctx),
+  'session.list': (payload, ctx) => handleSessionList(payload, ctx),
+  'session.listPinned': (payload, ctx) => handleSessionListPinned(payload, ctx),
+  'session.acquireControl': (payload, ctx) => handleSessionAcquireControl(payload, ctx),
+  'session.renewControl': (payload, ctx) => handleSessionRenewControl(payload, ctx),
+  'session.releaseControl': (payload, ctx) => handleSessionReleaseControl(payload, ctx),
+  'terminal.acquireControl': (payload, ctx) => handleTerminalAcquireControl(payload, ctx),
+  'terminal.renewControl': (payload, ctx) => handleTerminalRenewControl(payload, ctx),
+  'terminal.releaseControl': (payload, ctx) => handleTerminalReleaseControl(payload, ctx),
+  'session.send': (payload, ctx) => handleSessionSend(payload, ctx),
+  'session.modUi': (payload, ctx) => handleSessionModUi(payload, ctx),
+  'session.interrupt': (payload, ctx) => handleSessionInterrupt(payload, ctx),
+  'session.respondPermission': (payload, ctx) => handleSessionRespondPermission(payload, ctx),
+  'session.respondQuestion': (payload, ctx) => handleSessionRespondQuestion(payload, ctx),
+  'session.respondPlan': (payload, ctx) => handleSessionRespondPlan(payload, ctx),
+  'session.hostActionsPoll': (payload, ctx) => handleSessionHostActionsPoll(payload, ctx),
+  'session.claimHostAction': (payload, ctx) => handleSessionClaimHostAction(payload, ctx),
+  'session.respondHostAction': (payload, ctx) => handleSessionRespondHostAction(payload, ctx),
+  'session.renewHostActionClaim': (payload, ctx) => handleSessionRenewHostActionClaim(payload, ctx),
+  'session.notifyArtifactCompleted': (payload, ctx) => handleSessionNotifyArtifactCompleted(payload, ctx),
+  'session.events': (payload, ctx) => handleSessionEvents(payload, ctx),
+  'topic.subscribe': (payload, ctx) => handleTopicSubscribe(payload, ctx),
+  'topic.unsubscribe': (payload, ctx) => handleTopicUnsubscribe(payload, ctx),
+  'topic.update': (payload, ctx) => handleTopicUpdate(payload, ctx),
+  'session.messages.list': (payload, ctx) => handleSessionMessagesList(payload, ctx),
+  'session.load': (payload, ctx) => handleSessionLoad(payload, ctx),
+  'session.subscribeDetail': (payload, ctx) => handleSessionSubscribeDetail(payload, ctx),
+  'session.unsubscribeDetail': (payload, ctx) => handleSessionUnsubscribeDetail(payload, ctx),
+  'session.snapshot': (_payload, ctx) => handleSessionSnapshot(ctx),
+  'session.close': (payload, ctx) => handleSessionClose(payload, ctx),
+  'session.remove': (payload, ctx) => handleSessionRemove(payload, ctx),
+  'session.rename': (payload, ctx) => handleSessionRename(payload, ctx),
+  'session.setTags': (payload, ctx) => handleSessionSetTags(payload, ctx),
+  'session.setUiFlags': (payload, ctx) => handleSessionSetUiFlags(payload, ctx),
+  'collaboration.listProfiles': (_payload, ctx) => handleCollaborationListProfiles(ctx),
+  'collaboration.request': (payload, ctx) => handleCollaborationRequest(payload, ctx),
+  'collaboration.start': (payload, ctx) => handleCollaborationStart(payload, ctx),
+  'collaboration.send': (payload, ctx) => handleCollaborationSend(payload, ctx),
+  'collaboration.retrieve': (payload, ctx) => handleCollaborationRetrieve(payload, ctx),
+  'provider.listCredentials': (_payload, ctx) => handleProviderListCredentials(ctx),
+  'provider.getCredentialDecrypted': (payload, ctx) => handleProviderGetCredentialDecrypted(payload, ctx),
+  'provider.createCredential': (payload, ctx) => handleProviderCreateCredential(payload, ctx),
+  'provider.updateCredential': (payload, ctx) => handleProviderUpdateCredential(payload, ctx),
+  'provider.deleteCredential': (payload, ctx) => handleProviderDeleteCredential(payload, ctx),
+  'provider.listBindings': (_payload, ctx) => handleProviderListBindings(ctx),
+  'provider.setBinding': (payload, ctx) => handleProviderSetBinding(payload, ctx),
+  'provider.clearBinding': (payload, ctx) => handleProviderClearBinding(payload, ctx),
+  'provider.listCustomPlatforms': (_payload, ctx) => handleProviderListCustomPlatforms(ctx),
+  'provider.upsertCustomPlatform': (payload, ctx) => handleProviderUpsertCustomPlatform(payload, ctx),
+  'provider.deleteCustomPlatform': (payload, ctx) => handleProviderDeleteCustomPlatform(payload, ctx),
+  'provider.exportBundle': (_payload, ctx) => handleProviderExportBundle(ctx),
+  'provider.importBundle': (payload, ctx) => handleProviderImportBundle(payload, ctx),
+  'provider.listModels': (payload, ctx) => handleProviderListModels(payload, ctx),
+}
+
+/** Every method this table serves. */
+export const SHARED_RPC_METHODS: ReadonlySet<string> = new Set(Object.keys(HANDLERS))
+
 async function dispatchRpcInner(method: string, payload: unknown, hostCtx: HostRpcContext): Promise<RpcResult> {
   const extension = await hostCtx.extensions?.(method, payload, hostCtx)
   if (extension) return extension
   if (!serves(hostCtx, method)) return unsupported(method)
   const ctx = hostCtx as RpcContext
 
-  switch (method) {
-    case 'environment.descriptor':
-      return handleDescriptor(ctx)
-    case 'environment.health':
-      return handleHealth(ctx)
-    case 'environment.systemInfo':
-      return handleSystemInfo(ctx)
-    case 'environment.status':
-      return handleStatus(ctx)
-    case 'environment.usage':
-      return handleUsage(payload, ctx)
-    case 'settings.get':
-      return handleSettingsGet(ctx)
-    case 'settings.patch':
-      return handleSettingsPatch(payload, ctx)
-    case 'sandbox.probe':
-      return handleSandboxProbe(ctx)
-    case 'harness.list':
-      return handleHarnessList(ctx)
-    case 'harness.show':
-      return handleHarnessShow(payload, ctx)
-    case 'harness.probe':
-      return handleHarnessProbe(payload, ctx)
-    case 'harness.enable':
-      return handleHarnessEnable(payload, ctx)
-    case 'harness.disable':
-      return handleHarnessDisable(payload, ctx)
-    case 'terminal.create':
-      return handleTerminalCreate(payload, ctx)
-    case 'terminal.attach':
-      return handleTerminalAttach(payload, ctx)
-    case 'terminal.read':
-      return handleTerminalRead(payload, ctx)
-    case 'terminal.write':
-      return handleTerminalWrite(payload, ctx)
-    case 'terminal.resize':
-      return handleTerminalResize(payload, ctx)
-    case 'terminal.kill':
-      return handleTerminalKill(payload, ctx)
-    case 'project.list':
-      return handleProjectList(ctx)
-    case 'project.get':
-      return handleProjectGet(payload, ctx)
-    case 'project.open':
-      return handleProjectOpen(payload, ctx)
-    case 'project.update':
-      return handleProjectUpdate(payload, ctx)
-    case 'project.remove':
-      return handleProjectRemove(payload, ctx)
-    case 'fs.listDir':
-      return handleFsListDir(payload, ctx)
-    case 'workspace.listDir':
-      return handleWorkspaceListDir(payload, ctx)
-    case 'workspace.listFiles':
-      return handleWorkspaceListFiles(payload, ctx)
-    case 'workspace.listSkills':
-      return handleWorkspaceListSkills(payload, ctx)
-    case 'workspace.readFile':
-      return handleWorkspaceReadFile(payload, ctx)
-    case 'workspace.writeFile':
-      return handleWorkspaceWriteFile(payload, ctx)
-    case 'workspace.rename':
-      return handleWorkspaceRename(payload, ctx)
-    case 'workspace.move':
-      return handleWorkspaceMove(payload, ctx)
-    case 'workspace.delete':
-      return handleWorkspaceDelete(payload, ctx)
-    case 'workspace.mkdir':
-      return handleWorkspaceMkdir(payload, ctx)
-    case 'workspace.search':
-      return handleWorkspaceSearch(payload, ctx)
-    case 'workspace.watchStart':
-      return handleWorkspaceWatchStart(payload, ctx)
-    case 'workspace.watchPoll':
-      return handleWorkspaceWatchPoll(payload, ctx)
-    case 'workspace.watchStop':
-      return handleWorkspaceWatchStop(payload, ctx)
-    case 'workspace.tailWatchStart':
-      return handleWorkspaceTailWatchStart(payload, ctx)
-    case 'workspace.tailWatchPoll':
-      return handleWorkspaceTailWatchPoll(payload, ctx)
-    case 'workspace.tailWatchStop':
-      return handleWorkspaceTailWatchStop(payload, ctx)
-    case 'git.status':
-      return handleGitStatus(payload, ctx)
-    case 'git.diff':
-      return handleGitDiff(payload, ctx)
-    case 'git.branches':
-      return handleGitBranches(payload, ctx)
-    case 'git.switchBranch':
-      return handleGitSwitchBranch(payload, ctx)
-    case 'git.createBranch':
-      return handleGitCreateBranch(payload, ctx)
-    case 'git.worktrees':
-      return handleGitWorktrees(payload, ctx)
-    case 'git.mentionRefs':
-      return handleGitMentionRefs(payload, ctx)
-    case 'git.mentionCapabilities':
-      return handleGitMentionCapabilities(payload, ctx)
-    case 'git.worktreeActivate':
-      return handleGitWorktreeActivate(payload, ctx)
-    case 'git.fetch':
-      return handleGitFetch(payload, ctx)
-    case 'git.worktreeCheckedOutBranches':
-      return handleGitWorktreeCheckedOutBranches(payload, ctx)
-    case 'git.worktreeAssignBranch':
-      return handleGitWorktreeAssignBranch(payload, ctx)
-    case 'git.worktreeHandoff':
-      return handleGitWorktreeHandoff(payload, ctx)
-    case 'git.worktreeHandoffPreview':
-      return handleGitWorktreeHandoffPreview(payload, ctx)
-    case 'git.clone':
-      return handleGitClone(payload, ctx)
-    case 'session.create':
-      return handleSessionCreate(payload, ctx)
-    case 'session.setCwd':
-      return handleSessionSetCwd(payload, ctx)
-    case 'session.patchSettings':
-      return handleSessionPatchSettings(payload, ctx)
-    case 'session.fork':
-      return handleSessionFork(payload, ctx)
-    case 'session.get':
-      return handleSessionGet(payload, ctx)
-    case 'session.list':
-      return handleSessionList(payload, ctx)
-    case 'session.listPinned':
-      return handleSessionListPinned(payload, ctx)
-    case 'session.acquireControl':
-      return handleSessionAcquireControl(payload, ctx)
-    case 'session.renewControl':
-      return handleSessionRenewControl(payload, ctx)
-    case 'session.releaseControl':
-      return handleSessionReleaseControl(payload, ctx)
-    case 'terminal.acquireControl':
-      return handleTerminalAcquireControl(payload, ctx)
-    case 'terminal.renewControl':
-      return handleTerminalRenewControl(payload, ctx)
-    case 'terminal.releaseControl':
-      return handleTerminalReleaseControl(payload, ctx)
-    case 'session.send':
-      return handleSessionSend(payload, ctx)
-    case 'session.modUi':
-      return handleSessionModUi(payload, ctx)
-    case 'session.interrupt':
-      return handleSessionInterrupt(payload, ctx)
-    case 'session.respondPermission':
-      return handleSessionRespondPermission(payload, ctx)
-    case 'session.respondQuestion':
-      return handleSessionRespondQuestion(payload, ctx)
-    case 'session.respondPlan':
-      return handleSessionRespondPlan(payload, ctx)
-    case 'session.hostActionsPoll':
-      return handleSessionHostActionsPoll(payload, ctx)
-    case 'session.claimHostAction':
-      return handleSessionClaimHostAction(payload, ctx)
-    case 'session.respondHostAction':
-      return handleSessionRespondHostAction(payload, ctx)
-    case 'session.renewHostActionClaim':
-      return handleSessionRenewHostActionClaim(payload, ctx)
-    case 'session.notifyArtifactCompleted':
-      return handleSessionNotifyArtifactCompleted(payload, ctx)
-    case 'session.events':
-      return handleSessionEvents(payload, ctx)
-    case 'topic.subscribe':
-      return handleTopicSubscribe(payload, ctx)
-    case 'topic.unsubscribe':
-      return handleTopicUnsubscribe(payload, ctx)
-    case 'topic.update':
-      return handleTopicUpdate(payload, ctx)
-    case 'session.messages.list':
-      return handleSessionMessagesList(payload, ctx)
-    case 'session.load':
-      return handleSessionLoad(payload, ctx)
-    case 'session.subscribeDetail':
-      return handleSessionSubscribeDetail(payload, ctx)
-    case 'session.unsubscribeDetail':
-      return handleSessionUnsubscribeDetail(payload, ctx)
-    case 'session.snapshot':
-      return handleSessionSnapshot(ctx)
-    case 'session.close':
-      return handleSessionClose(payload, ctx)
-    case 'session.remove':
-      return handleSessionRemove(payload, ctx)
-    case 'session.rename':
-      return handleSessionRename(payload, ctx)
-    case 'session.setTags':
-      return handleSessionSetTags(payload, ctx)
-    case 'session.setUiFlags':
-      return handleSessionSetUiFlags(payload, ctx)
-    case 'collaboration.listProfiles':
-      return handleCollaborationListProfiles(ctx)
-    case 'collaboration.request':
-      return handleCollaborationRequest(payload, ctx)
-    case 'collaboration.start':
-      return handleCollaborationStart(payload, ctx)
-    case 'collaboration.send':
-      return handleCollaborationSend(payload, ctx)
-    case 'collaboration.retrieve':
-      return handleCollaborationRetrieve(payload, ctx)
-    case 'provider.listCredentials':
-      return handleProviderListCredentials(ctx)
-    case 'provider.getCredentialDecrypted':
-      return handleProviderGetCredentialDecrypted(payload, ctx)
-    case 'provider.createCredential':
-      return handleProviderCreateCredential(payload, ctx)
-    case 'provider.updateCredential':
-      return handleProviderUpdateCredential(payload, ctx)
-    case 'provider.deleteCredential':
-      return handleProviderDeleteCredential(payload, ctx)
-    case 'provider.listBindings':
-      return handleProviderListBindings(ctx)
-    case 'provider.setBinding':
-      return handleProviderSetBinding(payload, ctx)
-    case 'provider.clearBinding':
-      return handleProviderClearBinding(payload, ctx)
-    case 'provider.listCustomPlatforms':
-      return handleProviderListCustomPlatforms(ctx)
-    case 'provider.upsertCustomPlatform':
-      return handleProviderUpsertCustomPlatform(payload, ctx)
-    case 'provider.deleteCustomPlatform':
-      return handleProviderDeleteCustomPlatform(payload, ctx)
-    case 'provider.exportBundle':
-      return handleProviderExportBundle(ctx)
-    case 'provider.importBundle':
-      return handleProviderImportBundle(payload, ctx)
-    case 'provider.listModels':
-      return handleProviderListModels(payload, ctx)
-    default:
-      return { error: { code: 'not_found', message: `unknown method: ${method}` } }
-  }
+  const handler = Object.hasOwn(HANDLERS, method) ? HANDLERS[method] : undefined
+  return handler ? handler(payload, ctx, method) : { error: { code: 'not_found', message: `unknown method: ${method}` } }
 }
 
 function handleProviderListCredentials(ctx: RpcContext): RpcResult {
@@ -652,17 +543,11 @@ async function handleDescriptor(ctx: HostRpcContext): Promise<RpcResult> {
     nodeVersion: process.version,
     cliVersion,
     protocolVersion: PROTOCOL_GENERATION.current,
-    // Host policy flags plus the families whose ports this host provides.
+    // Host policy flags plus every method its ports and extensions serve.
     capabilities: {
       ...ctx.capabilities,
       harnessIds,
-      sessions: serves(ctx, 'session.get'),
-      terminal: serves(ctx, 'terminal.create'),
-      workspaceFs: serves(ctx, 'workspace.readFile'),
-      git: serves(ctx, 'git.status'),
-      worktrees: serves(ctx, 'git.worktrees'),
-      collaboration: serves(ctx, 'collaboration.send'),
-      syncZone: !!ctx.artifacts,
+      methods: [...SHARED_RPC_METHODS].filter((method) => serves(ctx, method)).concat([...ctx.extensionMethods ?? []]).sort(),
     },
     generations: {
       protocol: { ...PROTOCOL_GENERATION },

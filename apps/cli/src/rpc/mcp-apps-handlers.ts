@@ -25,8 +25,10 @@ export function cancelMcpAppsInvocationsForClient(clientSessionId: string): void
   invocations.delete(clientSessionId)
 }
 
+export const MCP_APPS_RPC_METHODS: ReadonlySet<string> = new Set(['mcpApps.provider', 'mcpApps.cancel', 'mcpApps.state', 'mcpApps.resolveAttachment', 'mcpApps.resource'])
+
 export async function dispatchMcpAppsRpc(method: string, payload: unknown, ctx: RpcContext): Promise<RpcResult | null> {
-  if (method !== 'mcpApps.provider' && method !== 'mcpApps.cancel' && method !== 'mcpApps.state' && method !== 'mcpApps.resolveAttachment' && method !== 'mcpApps.resource') return null
+  if (!MCP_APPS_RPC_METHODS.has(method)) return null
   if (method === 'mcpApps.resolveAttachment' || method === 'mcpApps.resource') {
     if (!hasAllScopes(ctx.client.scopes, OPERATION_SCOPES.readSession)) return { error: { code: 'forbidden', message: 'session:read required' } }
     const input = payload as McpAppsResolveAttachmentRequest

@@ -308,10 +308,9 @@ still arrives as a data URI under the 10 MiB cap
 ### 5.1 Root exchange
 
 `ExecutionEnvironmentDescriptor.syncRoot` (absolute, in the node's own
-separator) and `EnvironmentCapabilities.syncZone`
-(`packages/shared/src/environment/descriptor.ts`, `capabilities.ts`).
-`syncZone` goes through both the capability intersect and normalise steps — an
-interface field alone is not negotiated. An older node reports neither; the
+separator) and the artifact methods in `EnvironmentCapabilities.methods`
+(`packages/shared/src/environment/descriptor.ts`, `capabilities.ts`). A node
+without `syncRoot` or the `artifact.put` method gets no sync zone; the
 desktop then does no rewrite and no mirror, and consumers report desktop
 artifacts as `missing` in that session. No shim.
 

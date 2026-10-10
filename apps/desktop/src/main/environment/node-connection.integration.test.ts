@@ -68,7 +68,7 @@ describe('NodeConnectionManager integration', () => {
 
     expect(persisted).toBe(true)
     expect(descriptor.environmentId).toBe(runtime.identity.environmentId)
-    expect(descriptor.capabilities.terminal).toBe(true)
+    expect(descriptor.capabilities.methods).toContain('terminal.create')
 
     const gateway = manager.getGateway(descriptor.environmentId)
     expect(gateway).toBeTruthy()

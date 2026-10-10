@@ -42,7 +42,7 @@ export interface EnvironmentGateway {
   readonly interactions: InteractionGateway
   readonly terminals: TerminalGateway
   readonly workspace: WorkspaceGateway
-  /** Present when the environment reports `capabilities.drafts`. */
+  /** Present when the environment serves `draft.list`. */
   readonly drafts?: DraftGateway
 }
 
@@ -305,9 +305,9 @@ export interface WorkspaceMkdirInput {
 }
 
 /**
- * Unsent composer drafts stored inside this environment. Optional: gateways
- * predating the feature (and older nodes, which report `capabilities.drafts:
- * false`) simply omit it, and the UI hides the drafts group for that host.
+ * Unsent composer drafts stored inside this environment. Optional: a host
+ * that does not serve `draft.*` (a desktop node) has none, and the UI hides
+ * the drafts group for it.
  */
 export interface DraftGateway {
   list(input?: DraftListRequest): Promise<DraftRecord[]>

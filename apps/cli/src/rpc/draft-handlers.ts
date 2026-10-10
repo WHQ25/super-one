@@ -121,22 +121,23 @@ export function handleDraftDelete(payload: unknown, ctx: DraftRpcContext): Draft
   }
 }
 
+const DRAFT_HANDLERS: Readonly<Record<string, (payload: unknown, ctx: DraftRpcContext, method: string) => DraftRpcResult>> = {
+  'draft.list': (payload, ctx) => handleDraftList(payload, ctx),
+  'draft.upsert': (payload, ctx) => handleDraftUpsert(payload, ctx),
+  'draft.delete': (payload, ctx) => handleDraftDelete(payload, ctx),
+}
+
+/** Every method this table serves. */
+export const DRAFT_RPC_METHODS: ReadonlySet<string> = new Set(Object.keys(DRAFT_HANDLERS))
+
 /** Route draft.* methods. Returns null if method is not a draft method. */
 export function dispatchDraftRpc(
   method: string,
   payload: unknown,
   ctx: DraftRpcContext,
 ): DraftRpcResult | null {
-  switch (method) {
-    case 'draft.list':
-      return handleDraftList(payload, ctx)
-    case 'draft.upsert':
-      return handleDraftUpsert(payload, ctx)
-    case 'draft.delete':
-      return handleDraftDelete(payload, ctx)
-    default:
-      return null
-  }
+  const handler = Object.hasOwn(DRAFT_HANDLERS, method) ? DRAFT_HANDLERS[method] : undefined
+  return handler ? handler(payload, ctx, method) : null
 }
 
 export const DRAFT_MUTATING_METHODS = ['draft.upsert', 'draft.delete'] as const

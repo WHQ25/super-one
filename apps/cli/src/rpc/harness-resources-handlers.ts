@@ -79,6 +79,8 @@ function mapThrown(err: unknown): HarnessResourcesRpcResult {
   return { error: { code, message: e.message || 'internal error' } }
 }
 
+export const HARNESS_RESOURCES_RPC_METHODS: ReadonlySet<string> = new Set(['harness.resources', 'harness.connect'])
+
 /**
  * Dispatch harness.resources | harness.connect. Returns null for other methods.
  */
@@ -87,7 +89,7 @@ export async function dispatchHarnessResourcesRpc(
   payload: unknown,
   ctx: HarnessResourcesRpcContext,
 ): Promise<HarnessResourcesRpcResult | null> {
-  if (method !== 'harness.resources' && method !== 'harness.connect') return null
+  if (!HARNESS_RESOURCES_RPC_METHODS.has(method)) return null
   return handleHarnessResources(payload, ctx)
 }
 

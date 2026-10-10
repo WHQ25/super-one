@@ -235,7 +235,12 @@ points code comments there, and deletes this plan and the proposal.
   forwards to the node when the desktop's copy is summarized, and a tier
   change realigns followers through snapshots. The client protocol
   connection and request coalescer are shared (`rpc-connection.ts`).
-  Remaining: per-method capabilities, node lab acceptance.
+  Per-method capabilities: descriptors list `methods` derived from the
+  dispatcher's handler table plus host extensions; family flags removed
+  except `coldSessionResume`/`turnReattach`/`hostActionV1`. Gateway gates
+  drafts and the sync zone, agent tools gate archive, and the file tree
+  says when a node does not share files (`useEnvironmentServes`).
+  Remaining: node lab acceptance.
 
 ## Open decisions
 

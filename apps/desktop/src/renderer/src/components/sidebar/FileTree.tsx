@@ -7,6 +7,7 @@ import { projectDisplayName } from '@/lib/project-display-name'
 import { useFileTreeStore, type VisibleItem } from '@/stores/file-tree'
 import { useSourceControlStore } from '@/stores/source-control'
 import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
+import { useEnvironmentServes } from '@/hooks/use-environment-serves'
 import { TreeRow, DraftEntryRow, autoExpandedDirs } from './TreeRow'
 import { FileTreeSearch } from './FileTreeSearch'
 import { getDropAction, shouldCollapseAutoExpanded, computeDropOverlay, getDropTargetName, isWithinFolder, internalDragSource } from './drag-drop-utils'
@@ -96,6 +97,7 @@ export function FileTree() {
   // Remote projects have no file watcher (fs.watch cannot follow a `remote:` key),
   // so the tree only refreshes when a turn ends — offer a manual refresh there.
   const isRemote = !!fileRoot && parseRemoteProjectKey(fileRoot) !== null
+  const servesFiles = useEnvironmentServes(fileRoot, 'workspace.listDir')
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const dropZoneRef = useRef<HTMLDivElement>(null)
@@ -275,7 +277,7 @@ export function FileTree() {
         <span className="min-w-0 flex-1 truncate text-md font-medium text-sidebar-foreground/70">
           {folderName}
         </span>
-        {isRemote && (
+        {isRemote && servesFiles && (
           <IconButton
             size="sm"
             onClick={handleRefresh}
@@ -285,7 +287,7 @@ export function FileTree() {
             <RefreshCw className={refreshing ? 'animate-spin' : undefined} />
           </IconButton>
         )}
-        {fileRoot && (
+        {fileRoot && servesFiles && (
           <>
             <IconButton size="sm" onClick={() => startDraft(fileRoot, '', 'file')} tooltip={t('sidebar.contextMenu.newFile')}>
               <FilePlus />
@@ -311,7 +313,7 @@ export function FileTree() {
       >
         {isEmpty ? (
           <div className="flex h-full items-center justify-center p-4 text-xs text-sidebar-foreground/50">
-            {t('sidebar.noFiles')}
+            {servesFiles ? t('sidebar.noFiles') : t('sidebar.filesUnavailable')}
           </div>
         ) : (
           <div

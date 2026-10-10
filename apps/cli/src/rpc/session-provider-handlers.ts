@@ -42,6 +42,18 @@ function mapThrown(err: unknown): SessionProviderRpcResult {
   return { error: { code, message: e.message || 'internal error' } }
 }
 
+const SESSION_PROVIDER_HANDLERS: Readonly<Record<string, (payload: unknown, ctx: SessionProviderRpcContext, method: string) => SessionProviderRpcResult>> = {
+  'sessionProviders.list': (payload, ctx) => handleList(payload, ctx),
+  'sessionProviders.get': (payload, ctx) => handleGet(payload, ctx),
+  'sessionProviders.getBase': (payload, ctx) => handleGetBase(payload, ctx),
+  'sessionProviders.create': (payload, ctx) => handleCreate(payload, ctx),
+  'sessionProviders.update': (payload, ctx) => handleUpdate(payload, ctx),
+  'sessionProviders.delete': (payload, ctx) => handleDelete(payload, ctx),
+}
+
+/** Every method this table serves. */
+export const SESSION_PROVIDER_RPC_METHODS: ReadonlySet<string> = new Set(Object.keys(SESSION_PROVIDER_HANDLERS))
+
 /**
  * Dispatch sessionProviders.* methods. Returns null when method is not owned here.
  */
@@ -50,22 +62,8 @@ export function dispatchSessionProviderRpc(
   payload: unknown,
   ctx: SessionProviderRpcContext,
 ): SessionProviderRpcResult | null {
-  switch (method) {
-    case 'sessionProviders.list':
-      return handleList(payload, ctx)
-    case 'sessionProviders.get':
-      return handleGet(payload, ctx)
-    case 'sessionProviders.getBase':
-      return handleGetBase(payload, ctx)
-    case 'sessionProviders.create':
-      return handleCreate(payload, ctx)
-    case 'sessionProviders.update':
-      return handleUpdate(payload, ctx)
-    case 'sessionProviders.delete':
-      return handleDelete(payload, ctx)
-    default:
-      return null
-  }
+  const handler = Object.hasOwn(SESSION_PROVIDER_HANDLERS, method) ? SESSION_PROVIDER_HANDLERS[method] : undefined
+  return handler ? handler(payload, ctx, method) : null
 }
 
 function handleList(payload: unknown, ctx: SessionProviderRpcContext): SessionProviderRpcResult {

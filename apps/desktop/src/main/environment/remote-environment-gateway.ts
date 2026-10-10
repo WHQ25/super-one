@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type {
   ArtifactDeleteResult,
+  SessionStreamFrame,
   ArtifactGetRequest,
   ArtifactGetResult,
   ArtifactListRequest,
@@ -74,6 +75,19 @@ export interface ArtifactGateway {
  * Environment gateway that delegates to an authenticated node RPC session.
  * Sessions, interactions, terminals, and workspace (incl. watch) all go over RPC.
  */
+const RESUBSCRIBE_DELAY_MS = 1_000
+
+function isTransportFailure(err: unknown): boolean {
+  return (err as { transport?: boolean } | null)?.transport === true
+}
+
+function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms)
+    signal?.addEventListener('abort', () => { clearTimeout(timer); resolve() }, { once: true })
+  })
+}
+
 export class RemoteEnvironmentGateway implements EnvironmentGateway {
   readonly sessions: SessionGateway
   readonly interactions: InteractionGateway
@@ -241,17 +255,57 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     return typeof seq === 'string' && seq.length > 0 ? seq : '0'
   }
 
+  /**
+   * Events after `afterSequence`, pushed by the node as they commit
+   * (`session.subscribe`). A stream ends with its socket; this resubscribes
+   * from the last frame's cursor once the connection is back, so the caller
+   * sees one gapless sequence. Transport failures retry until `shouldStop`
+   * says the connection will not come back; any other error ends the iteration.
+   */
   async *subscribeEvents(input: SubscribeEventsInput): AsyncIterable<EnvironmentEventEnvelope> {
+    const { signal } = input
     let after = input.afterSequence ?? '0'
-    // Poll durable event log (WS push can replace this later).
-    while (!input.signal?.aborted) {
-      const batch = await this.listEvents(after)
-      for (const ev of batch) {
-        if (input.signal?.aborted) return
-        after = ev.sequence
-        yield ev
+    while (!signal?.aborted) {
+      const frames: SessionStreamFrame[] = []
+      let ended: Error | null = null
+      let wake: (() => void) | null = null
+      const notify = () => { const w = wake; wake = null; w?.() }
+      let unsubscribe: (() => void) | null = null
+      try {
+        unsubscribe = await this.client.subscribeEvents(
+          {
+            afterSequence: after,
+            ...(input.aggregateIds ? { aggregateIds: input.aggregateIds } : {}),
+            ...(input.aggregateTypes ? { aggregateTypes: input.aggregateTypes } : {}),
+          },
+          { onFrame: (frame) => { frames.push(frame); notify() }, onEnd: (err) => { ended = err; notify() } },
+        )
+      } catch (err) {
+        if (!isTransportFailure(err) || input.shouldStop?.(err as Error)) throw err
+        await abortableDelay(RESUBSCRIBE_DELAY_MS, signal)
+        continue
       }
-      await new Promise((r) => setTimeout(r, 100))
+      try {
+        while (!signal?.aborted) {
+          const frame = frames.shift()
+          if (frame) {
+            for (const event of frame.events) {
+              if (signal?.aborted) return
+              yield event
+            }
+            after = frame.sequence
+            continue
+          }
+          if (ended) break
+          await new Promise<void>((resolve) => {
+            wake = resolve
+            signal?.addEventListener('abort', () => resolve(), { once: true })
+          })
+        }
+      } finally {
+        unsubscribe?.()
+      }
+      if (ended && input.shouldStop?.(ended)) throw ended
     }
   }
 

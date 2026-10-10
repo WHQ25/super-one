@@ -127,10 +127,11 @@ describe('remote reconnect rehydrate', () => {
     // Node snapshot is authoritative on reconnect — stale in-memory "streaming" must not win.
     expect(after.status).toBe('idle')
     expect(after.awaitingAssistantReply).toBe(false)
-    expect(resumeRemoteSessionEvents).not.toHaveBeenCalled()
+    // Followed while idle too: a turn another client starts streams in.
+    expect(resumeRemoteSessionEvents).toHaveBeenCalledWith(CONN, expect.objectContaining({ sessionId: SID }))
   })
 
-  it('re-owns the event drain when the node turn is still running', async () => {
+  it('follows the session when the node turn is still running', async () => {
     getSession.mockResolvedValue({
       sessionId: SID,
       status: 'streaming',

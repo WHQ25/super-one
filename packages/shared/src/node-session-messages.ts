@@ -259,15 +259,6 @@ export function nodePendingToPlanPayload(
   }
 }
 
-/** Whether a node snapshot still needs a live event drain (local Session parity). */
-export function nodeSnapshotNeedsLiveDrain(
-  snap: Pick<NodeSessionSnapshot, 'status' | 'pendingInteraction' | 'pendingInputRequests'> | null | undefined,
-): boolean {
-  if (!snap) return false
-  if (snap.status === 'streaming') return true
-  return Boolean(snap.pendingInteraction?.interactionId || snap.pendingInputRequests?.length)
-}
-
 /** Build pending interaction fields for chat-store from a node session snapshot. */
 export function nodePendingInteractionFields(
   pending: NodePendingInteraction | null | undefined,

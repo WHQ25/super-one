@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import WebSocket from 'ws'
-import type { ControlLease, EnvironmentLiveStatus, EnvironmentUsageReport, ExecutionEnvironmentDescriptor, TerminalReadResult } from '@superone/shared/environment'
+import type { ControlLease, EnvironmentLiveStatus, EnvironmentUsageReport, ExecutionEnvironmentDescriptor, SessionStreamFrame, SessionStreamMessage, SessionSubscribeInput, TerminalReadResult } from '@superone/shared/environment'
 import { DATABASE_SCHEMA_GENERATION, PROTOCOL_GENERATION } from '@superone/shared/environment'
 import { isNodeMutatingCall } from '@superone/runtime/server/rpc-mutating-methods'
 import { dialWebSocket } from '@superone/runtime/server/node-socket'
@@ -59,6 +59,14 @@ type Pending = {
   timer: ReturnType<typeof setTimeout> | undefined
   /** Socket that sent this request — stale close events must not touch other sockets. */
   socketId: number
+}
+
+/** A `session.subscribe` stream lives on the socket it was opened on. */
+type Stream = {
+  socketId: number
+  onFrame: (frame: SessionStreamFrame) => void
+  /** The socket went away; resubscribe from the last frame's `sequence`. */
+  onEnd: (err: Error) => void
 }
 
 const RPC_TIMEOUT_MS = 15_000
@@ -124,6 +132,7 @@ export class NodeRpcClient {
   /** Socket mid-handshake; not yet promoted to `ws`. Closed by `close()`. */
   private connectingWs: NodeSocket | null = null
   private pending = new Map<string, Pending>()
+  private readonly streams = new Map<string, Stream>()
   private closed = false
   private connectPromise: Promise<void> | null = null
   private connectGeneration = 0
@@ -563,6 +572,33 @@ export class NodeRpcClient {
     })
   }
 
+  /**
+   * Push the node's events after `afterSequence` (`session.subscribe`). The
+   * stream is bound to the current socket and ends with it; the caller
+   * resubscribes from the last frame's `sequence`. Returns the unsubscribe.
+   */
+  async subscribeEvents(
+    input: Omit<SessionSubscribeInput, 'subscriptionId'>,
+    handlers: Omit<Stream, 'socketId'>,
+  ): Promise<() => void> {
+    if (this.closed) throw transportError('client closed')
+    const envId = this.opts.expectedEnvironmentId
+    if (!envId) throw rpcResponseError('invalid_argument', 'environmentId required')
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) throw transportError('not connected')
+    const subscriptionId = randomUUID()
+    this.streams.set(subscriptionId, { socketId: this.wsSocketId, ...handlers })
+    try {
+      await this.sendOnce('session.subscribe', { ...input, subscriptionId }, envId, undefined)
+    } catch (err) {
+      this.streams.delete(subscriptionId)
+      throw err
+    }
+    return () => {
+      if (!this.streams.delete(subscriptionId)) return
+      void this.rpc('session.unsubscribe', { subscriptionId }).catch(() => {})
+    }
+  }
+
   async getDescriptor(): Promise<ExecutionEnvironmentDescriptor> {
     const descriptor = await this.rpc<ExecutionEnvironmentDescriptor>('environment.descriptor')
     if (
@@ -736,6 +772,11 @@ export class NodeRpcClient {
       this.missedPongs = 0
       return
     }
+    if (msg.type === 'stream') {
+      const { subscriptionId, frame } = raw as SessionStreamMessage
+      this.streams.get(subscriptionId)?.onFrame(frame)
+      return
+    }
     if (!msg.requestId) return
     const pending = this.pending.get(msg.requestId)
     if (!pending) return
@@ -756,6 +797,11 @@ export class NodeRpcClient {
       p.reject(err)
       this.pending.delete(id)
     }
+    for (const [id, stream] of this.streams) {
+      if (stream.socketId !== socketId) continue
+      this.streams.delete(id)
+      stream.onEnd(err)
+    }
   }
 
   private rejectAll(err: Error): void {
@@ -763,6 +809,10 @@ export class NodeRpcClient {
       clearTimeout(p.timer)
       p.reject(err)
       this.pending.delete(id)
+    }
+    for (const [id, stream] of this.streams) {
+      this.streams.delete(id)
+      stream.onEnd(err)
     }
   }
 }

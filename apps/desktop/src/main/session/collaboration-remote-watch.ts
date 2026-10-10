@@ -4,6 +4,9 @@
  * child keeps the node event sequence processed so far, and the run open
  * there, in its grant, so a restart or reconnect of this desktop resumes from
  * there: no stop is missed and none is seen twice.
+ *
+ * Reads are woken, not timed: by the node pushing an event of a child, by a
+ * machine connecting or disconnecting, and by a child starting (`wake`).
  */
 
 import type { AgentEvent, SessionAgentRemoteLaunch, SessionAgentRunState } from '@superone/shared/agent-types'
@@ -14,7 +17,6 @@ import log from '../logger'
 import { collaborationStore } from './collaboration-mailbox'
 import { remotePort } from './collaboration-remote'
 
-export const REMOTE_CHILD_POLL_MS = 2_000
 /** A page of `session.events` holds at most this many events. */
 const EVENT_PAGE = 1000
 
@@ -46,19 +48,46 @@ export class RemoteChildWatcher {
   /** Children whose live run state was read since this desktop (re)connected their machine. */
   private readonly resumed = new Set<string>()
   private readonly polling = new Set<string>()
-  private timer: ReturnType<typeof setInterval> | null = null
+  /** Children whose node pushes wake this watcher, with their unwatch. */
+  private readonly watched = new Map<string, () => void>()
+  private started = false
+  private stopConnections: (() => void) | null = null
+  private running: Promise<void> | null = null
+  private again = false
 
   constructor(private readonly feed: RemoteChildRunFeed) {}
 
-  start(intervalMs = REMOTE_CHILD_POLL_MS): void {
-    if (this.timer) return
-    this.timer = setInterval(() => void this.tick(), intervalMs)
-    this.timer.unref?.()
+  start(): void {
+    if (this.started) return
+    this.started = true
+    void remotePort().then((port) => {
+      if (!this.started) return
+      this.stopConnections = port.onConnectionChange(() => this.wake())
+      this.wake()
+    })
   }
 
   stop(): void {
-    if (this.timer) clearInterval(this.timer)
-    this.timer = null
+    this.started = false
+    this.stopConnections?.()
+    this.stopConnections = null
+    for (const unwatch of this.watched.values()) unwatch()
+    this.watched.clear()
+  }
+
+  /** Read every connected machine again; a wake during a read runs one more. */
+  wake(): void {
+    if (this.running) {
+      this.again = true
+      return
+    }
+    this.running = this.tick().finally(() => {
+      this.running = null
+      if (this.again) {
+        this.again = false
+        this.wake()
+      }
+    })
   }
 
   /** One poll of every connected machine with remote children. */
@@ -81,8 +110,12 @@ export class RemoteChildWatcher {
     await Promise.all([...byEnvironment].map(async ([environmentId, children]) => {
       const env = environments.find((item) => item.environmentId === environmentId)
       if (!env?.connected) {
-        // Read the run state again once the machine is back.
-        for (const child of children) this.resumed.delete(child.sessionId)
+        // Read the run state again once the machine is back, and watch again then.
+        for (const child of children) {
+          this.resumed.delete(child.sessionId)
+          this.watched.get(child.sessionId)?.()
+          this.watched.delete(child.sessionId)
+        }
         return
       }
       if (this.polling.has(environmentId)) return
@@ -99,6 +132,11 @@ export class RemoteChildWatcher {
 
   private async poll(connectionId: string, children: Child[]): Promise<void> {
     const port = await remotePort()
+    // Watch before reading: an event committed after this read still wakes a new one.
+    for (const child of children) {
+      if (this.watched.has(child.sessionId)) continue
+      this.watched.set(child.sessionId, await port.watchEvents(connectionId, child.sessionId, () => this.wake()))
+    }
     /** Node status of children whose run state was just resumed while their node says it is not running. */
     const settled = new Map<string, string>()
     for (const child of children) {

@@ -152,8 +152,8 @@ export async function focusProjectImpl(
     if (remoteKey) {
       const targetSession = targetProject?._sessions[targetSid]
       if (targetSession) {
-        const { resumeRemoteSessionIfLive } = await import('@/lib/remote-session-ops')
-        resumeRemoteSessionIfLive(projectPath, targetSid, targetSession)
+        const { followRemoteSessionEvents } = await import('@/lib/remote-session-ops')
+        followRemoteSessionEvents(projectPath, targetSid, targetSession)
       }
     } else {
       const targetSession = targetProject?._sessions[targetSid]

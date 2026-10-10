@@ -72,6 +72,8 @@ export function environmentHostCollaborationPort(): RemoteCollaborationPort {
       return (await gateway(connectionId)).eventHeadSequence()
     },
     listEvents: (connectionId, afterSequence) => host.listSessionEvents(connectionId, afterSequence),
+    watchEvents: (connectionId, sessionId, onEvent) => host.watchRemoteSessionEvents(connectionId, sessionId, onEvent),
+    onConnectionChange: (listener) => host.onStatusChange(() => listener()),
     async getSession(connectionId, sessionId) {
       const record = await host.getSession(connectionId, sessionId) as { status?: string; pendingInteraction?: unknown } | null
       return record ? { status: record.status ?? 'idle', pendingInteraction: record.pendingInteraction ?? null } : null

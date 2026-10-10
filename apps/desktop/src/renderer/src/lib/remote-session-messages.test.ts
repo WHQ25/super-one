@@ -7,7 +7,6 @@ import {
   nodePendingToPermissionRequest,
   nodePendingToQuestionRequest,
   nodePendingToPlanApprovalRequest,
-  nodeSnapshotNeedsLiveDrain,
   nodeStatusToAgentStatus,
   reconcileTranscriptWithLocalMessages,
   transcriptToChatMessages,
@@ -118,7 +117,7 @@ describe('node pending question/plan + live drain helpers', () => {
     ).toBe('html')
   })
 
-  it('builds interaction fields and live-drain flags', () => {
+  it('builds interaction fields', () => {
     const fields = nodePendingInteractionFields({
       interactionId: 'q1',
       kind: 'question',
@@ -126,8 +125,6 @@ describe('node pending question/plan + live drain helpers', () => {
     })
     expect(fields.pendingQuestion?.requestId).toBe('q1')
     expect(fields.awaitingAssistantReply).toBe(true)
-    expect(nodeSnapshotNeedsLiveDrain({ status: 'streaming' })).toBe(true)
-    expect(nodeSnapshotNeedsLiveDrain({ status: 'idle', pendingInteraction: null })).toBe(false)
   })
 
   it('lists input forms after the harness prompt and keeps their metadata', () => {
@@ -140,7 +137,6 @@ describe('node pending question/plan + live drain helpers', () => {
     expect(fields.pendingPermissions.map(p => p.requestId)).toEqual(['p1', 'f1'])
     expect(fields.pendingPermissions[1]).toMatchObject({ requestKind: 'input_request', allowAlwaysAllow: false, inputRequest, schemaForm: { supported: true } })
     expect(nodePendingInteractionFields(null, [form]).awaitingAssistantReply).toBe(true)
-    expect(nodeSnapshotNeedsLiveDrain({ status: 'idle', pendingInteraction: null, pendingInputRequests: [form] })).toBe(true)
     expect(nodePendingInteractionFields(null, [{ ...form, inputRequest: undefined }]).pendingPermissions).toEqual([])
   })
 })

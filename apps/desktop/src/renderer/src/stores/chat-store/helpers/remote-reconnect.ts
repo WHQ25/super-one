@@ -1,62 +1,37 @@
 /**
- * Remote-node reconnect recovery.
+ * Remote session resync.
  *
- * A dropped connection aborts the main-process event drains and clears their
- * cursors, so re-owning a drain alone resumes from the *current* log head —
- * everything the node appended while offline is skipped. Re-hydrating from
- * `session.get` + `session.messages.list` first closes that gap, and hands the
- * fresh node snapshot to the drain decision so a turn that started (or a
- * permission that was raised) while offline is not missed either.
+ * Main follows every open remote session through the node's pushed stream and
+ * resumes it across dropped connections. When that is not enough — the events
+ * missed were committed away, the node restarted, or following stopped with an
+ * explicit disconnect — main asks for the session to be read again: hydrate
+ * from the node (which follows it again from the snapshot's version) and
+ * prefer the node's state over what memory froze.
  */
-import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import {
   hydrateRemoteSessionWithCatalog,
   mergeRemoteHydrateWithCurrent,
-  followRemoteSessionEvents,
 } from '@/lib/remote-session-ops'
-import type { ChatStore, PerSessionState } from '../types'
-import { _isLiveSession, type ChatStoreSet } from './lifecycle'
+import type { ChatStore } from '../types'
+import type { ChatStoreSet } from './lifecycle'
 
-/**
- * Sessions worth a round-trip on reconnect: the visible tab (the user is
- * looking at it) plus anything memory still believes is live. Deliberately not
- * every cached session — that would fan out to one `session.get` per history
- * row on every reconnect.
- */
-function reconnectTargets(project: {
-  _activeSessionId: string | null
-  _sessions: Record<string, PerSessionState>
-}): string[] {
-  const targets = new Set<string>()
-  if (project._activeSessionId && project._sessions[project._activeSessionId]) {
-    targets.add(project._activeSessionId)
-  }
-  for (const [sessionId, session] of Object.entries(project._sessions)) {
-    if (_isLiveSession(session)) targets.add(sessionId)
-  }
-  return [...targets]
-}
-
-async function rehydrateOne(
+export async function resyncRemoteSession(
   projectPath: string,
   sessionId: string,
   set: ChatStoreSet,
   get: () => ChatStore,
 ): Promise<void> {
-  const previous = get().projectSessions[projectPath]?._sessions[sessionId] ?? null
-  const { hydrated, snap } = await hydrateRemoteSessionWithCatalog(
-    projectPath,
-    sessionId,
-    previous,
-  )
+  const previous = get().projectSessions[projectPath]?._sessions[sessionId]
+  // Only sessions this window holds; another window reads its own.
+  if (!previous) return
+  const { hydrated, snap } = await hydrateRemoteSessionWithCatalog(projectPath, sessionId, previous)
   // Renderer-only draft id — the node has never seen it; leave local state alone.
   if (!snap?.sessionId) return
 
-  let applied = hydrated
   set((s) => {
     const project = s.projectSessions[projectPath]
     if (!project?._sessions[sessionId]) return {}
-    applied = mergeRemoteHydrateWithCurrent(project._sessions[sessionId], hydrated, {
+    const applied = mergeRemoteHydrateWithCurrent(project._sessions[sessionId], hydrated, {
       preferNodeState: true,
     })
     return {
@@ -69,33 +44,4 @@ async function rehydrateOne(
       },
     }
   })
-
-  followRemoteSessionEvents(projectPath, sessionId, applied, snap)
-}
-
-/**
- * Re-sync every remote session of `connectionId` after the environment comes
- * back online. Failures are per-session — one dead session must not stop the
- * others from recovering.
- */
-export async function rehydrateRemoteSessionsForConnection(
-  connectionId: string,
-  set: ChatStoreSet,
-  get: () => ChatStore,
-): Promise<void> {
-  const tasks: Array<Promise<void>> = []
-
-  for (const [projectPath, project] of Object.entries(get().projectSessions)) {
-    const remote = parseRemoteProjectKey(projectPath)
-    if (!remote || remote.connectionId !== connectionId) continue
-    for (const sessionId of reconnectTargets(project)) {
-      tasks.push(
-        rehydrateOne(projectPath, sessionId, set, get).catch((err) => {
-          console.warn('[chat] remote reconnect rehydrate failed:', sessionId, err)
-        }),
-      )
-    }
-  }
-
-  await Promise.all(tasks)
 }

@@ -32,6 +32,7 @@ import type {
   QuestionResponseInput,
   SendMessageInput,
   SessionGateway,
+  SessionLoadResult,
   SessionMessagesListResult,
   SessionRef,
   SubscribeEventsInput,
@@ -258,13 +259,17 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
   /**
    * Events after `afterSequence`, pushed by the node as they commit
    * (`session.subscribe`). A stream ends with its socket; this resubscribes
-   * from the last frame's cursor once the connection is back, so the caller
-   * sees one gapless sequence. Transport failures retry until `shouldStop`
+   * from the last frame's cursor once the connection is back — its durable
+   * sequence, and the version reached in each session for streaming events —
+   * so the caller sees one gapless sequence, or hears through `onResnapshot`
+   * which sessions to read again. Transport failures retry until `shouldStop`
    * says the connection will not come back; any other error ends the iteration.
    */
   async *subscribeEvents(input: SubscribeEventsInput): AsyncIterable<EnvironmentEventEnvelope> {
     const { signal } = input
     let after = input.afterSequence ?? '0'
+    let epoch: string | undefined
+    const versions: Record<string, number> = {}
     while (!signal?.aborted) {
       const frames: SessionStreamFrame[] = []
       let ended: Error | null = null
@@ -275,6 +280,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
         unsubscribe = await this.client.subscribeEvents(
           {
             afterSequence: after,
+            ...(epoch ? { epoch, versions } : {}),
             ...(input.aggregateIds ? { aggregateIds: input.aggregateIds } : {}),
             ...(input.aggregateTypes ? { aggregateTypes: input.aggregateTypes } : {}),
           },
@@ -289,8 +295,14 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
         while (!signal?.aborted) {
           const frame = frames.shift()
           if (frame) {
+            if (frame.epoch !== epoch) {
+              epoch = frame.epoch
+              for (const id of Object.keys(versions)) delete versions[id]
+            }
+            if (frame.resnapshot?.length) input.onResnapshot?.(frame.resnapshot)
             for (const event of frame.events) {
               if (signal?.aborted) return
+              if (event.sessionVersion !== undefined) versions[event.aggregateId] = event.sessionVersion
               yield event
             }
             after = frame.sequence
@@ -1330,18 +1342,11 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     }
   }
 
-  /**
-   * Paged denser message catalog for remote UI hydrate (tool summaries, metadata).
-   * Prefer this for historical open; use {@link listEvents} with afterSequence for live catch-up.
-   */
-  async listSessionMessages(input: {
-    sessionId: string
-    cursor?: string | number | null
-    limit?: number
-  }): Promise<SessionMessagesListResult> {
-    return this.client.rpc<SessionMessagesListResult>('session.messages.list', {
+  /** A session's reduced state and newest messages, with the version they reflect (`session.load`). */
+  async loadSession(input: { sessionId: string; before?: number | null; limit?: number }): Promise<SessionLoadResult> {
+    return this.client.rpc<SessionLoadResult>('session.load', {
       sessionId: input.sessionId,
-      ...(input.cursor !== undefined ? { cursor: input.cursor } : {}),
+      ...(input.before != null ? { before: input.before } : {}),
       ...(input.limit !== undefined ? { limit: input.limit } : {}),
     })
   }

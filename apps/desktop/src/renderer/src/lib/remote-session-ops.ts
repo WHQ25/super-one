@@ -4,10 +4,7 @@
  */
 import type { AgentEvent, SessionHistoryEntry } from '@superone/shared/agent-types'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness-capabilities'
-import type {
-  EnvironmentEventEnvelope,
-  SessionMessageBlock,
-} from '@superone/shared/environment'
+import type { EnvironmentEventEnvelope } from '@superone/shared/environment'
 import {
   createNodeSessionEventMapper,
   mapNodeSessionEvents,
@@ -24,10 +21,7 @@ import {
 } from '@/lib/remote-session-messages'
 import { mapEnvironmentSessionRow } from '@/lib/session-list-ops'
 import { createDefaultPerSessionState } from '@/stores/chat-store/defaults'
-import {
-  preferCatalogMessages,
-  sessionMessageBlocksToChatMessages,
-} from '@/stores/chat-store/helpers/remote-message-catalog'
+import { preferCatalogMessages } from '@/stores/chat-store/helpers/remote-message-catalog'
 import { _isLiveSession } from '@/stores/chat-store/helpers/lifecycle'
 import type { ChatProvider, PerSessionState } from '@/stores/chat-store/types'
 
@@ -134,9 +128,10 @@ export async function hydrateRemotePerSession(
 }
 
 /**
- * Hydrate one remote session from the node: `session.get` snapshot (status /
- * pending interaction / transcript) plus the denser `session.messages.list`
- * catalog when the host exposes it.
+ * Hydrate one remote session from the node: `session.get` for the session row
+ * (settings, title, control) and `openRemoteSession` for its messages, which
+ * main reads as a snapshot while it starts following the session, so every
+ * later event reaches the chat exactly once.
  *
  * Returns the raw snapshot too, so callers can drive `followRemoteSessionEvents`
  * off node truth instead of the (possibly stale) in-memory session state.
@@ -161,29 +156,21 @@ export async function hydrateRemoteSessionWithCatalog(
   if (!snap?.sessionId) return { hydrated, snap }
 
   try {
-    const env = window.environment as {
-      listSessionMessages?: (
-        connectionId: string,
-        input: { sessionId: string; limit?: number },
-      ) => Promise<{ messages?: SessionMessageBlock[] }>
-    }
-    if (typeof env.listSessionMessages === 'function') {
-      const listed = await env.listSessionMessages(remote.connectionId, {
-        sessionId,
-        limit: opts?.catalogLimit ?? 200,
-      })
-      const providerId = hydrated.sessionProvider || hydrated.preferredProvider || 'claude'
-      const denser = sessionMessageBlocksToChatMessages(listed?.messages, providerId)
-      if (denser.length > 0) {
-        hydrated = {
-          ...hydrated,
-          messages: preferCatalogMessages(hydrated.messages, denser),
-          _historyHydrated: true,
-        }
+    const loaded = await window.environment.openRemoteSession(remote.connectionId, {
+      sessionId,
+      projectPath: projectKey,
+      providerId: hydrated.sessionProvider || hydrated.preferredProvider || 'claude',
+      limit: opts?.catalogLimit ?? 200,
+    })
+    if (loaded.messages.length > 0) {
+      hydrated = {
+        ...hydrated,
+        messages: preferCatalogMessages(hydrated.messages, loaded.messages),
+        _historyHydrated: true,
       }
     }
   } catch (err) {
-    console.warn('[chat] session.messages.list hydrate failed:', err)
+    console.warn('[chat] openRemoteSession hydrate failed:', err)
   }
 
   return { hydrated, snap }

@@ -1737,6 +1737,11 @@ export class SessionRuntime {
     session.tags = [...tags]
     session.updatedAt = Date.now()
     this.persist(session)
+    this.events.appendSession({
+      sessionId: session.sessionId,
+      eventType: SESSION_DURABLE_EVENT.tagsChanged,
+      payload: { tags: session.tags },
+    })
     return this.clone(session)
   }
 

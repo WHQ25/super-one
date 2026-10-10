@@ -1781,6 +1781,8 @@ function attachEnvironmentStatusBridge(host: EnvironmentHost): void {
   })
   // Remote node turns: map session.events → AgentEvent and stream into chat.
   host.setAgentEventSink((event) => sessionEvents.publish({ event, source: 'remote-node' }))
+  // Sessions another client creates, renames or removes on a machine show up here.
+  host.onSessionListChanged(() => safeSend(AgentIpcChannels.SESSIONS_CHANGED))
   // Auto-connect desired remotes + network-online edge wake.
   // (powerMonitor resume also wakes via registerAgentService.)
   void import('./environment/environment-connectivity-monitor')

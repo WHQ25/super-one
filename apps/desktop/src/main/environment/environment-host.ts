@@ -161,6 +161,15 @@ export interface AddRemoteOverSshInput {
   label?: string
 }
 
+/** Node events that change what a session list shows. */
+const SESSION_LIST_EVENTS = new Set<string>([
+  SESSION_DURABLE_EVENT.created,
+  SESSION_DURABLE_EVENT.renamed,
+  SESSION_DURABLE_EVENT.uiFlags,
+  SESSION_DURABLE_EVENT.tagsChanged,
+  SESSION_DURABLE_EVENT.closed,
+  SESSION_DURABLE_EVENT.removed,
+])
 
 /**
  * Main-process environment host — constructs the product path for local + remote
@@ -1690,6 +1699,27 @@ export class EnvironmentHost {
     }
     this.sessionFeeds.get(connectionId)?.close()
     this.sessionFeeds.delete(connectionId)
+    this.watchedSessionLists.delete(connectionId)
+  }
+
+  /** Listeners told which machine's session list changed. */
+  private readonly sessionListListeners = new Set<(connectionId: string) => void>()
+  /** Machines whose list changes this desktop watches. */
+  private readonly watchedSessionLists = new Set<string>()
+
+  onSessionListChanged(listener: (connectionId: string) => void): () => void {
+    this.sessionListListeners.add(listener)
+    return () => { this.sessionListListeners.delete(listener) }
+  }
+
+  /** Tell the list listeners when a node's sessions are created, renamed, flagged, tagged or removed, by any client. */
+  private watchSessionList(connectionId: string): void {
+    if (this.watchedSessionLists.has(connectionId)) return
+    this.watchedSessionLists.add(connectionId)
+    this.feedFor(connectionId).observe((envelope) => {
+      if (!SESSION_LIST_EVENTS.has(envelope.eventType)) return
+      for (const listener of [...this.sessionListListeners]) listener(connectionId)
+    }).catch(() => { this.watchedSessionLists.delete(connectionId) })
   }
 
   /** Calls `onEvent` as each event of a remote session is pushed, without mapping it for the chat. */
@@ -3263,6 +3293,7 @@ export class EnvironmentHost {
       // Supervisor-only recovery (backoff / wake) never goes through host.connect;
       // attach Host Action here so remote tools work without a manual Connect.
       this.startHostActionConsumer(snapshot.connectionId)
+      this.watchSessionList(snapshot.connectionId)
       void this.loadRemoteProjects(snapshot.connectionId, snapshot.generation).catch(() => {})
       // Drain drafts queued while this node was unreachable. Upserts are
       // idempotent by draft id, so a partially-applied earlier flush is safe.

@@ -1,0 +1,202 @@
+# Unified remote protocol
+
+Status: planned · Updated: 2026-10-10
+Goal: One backend serves its own window, controller desktops and phones through one topic/connection core, one per-connection delivery policy and one protocol; every existing phone feature runs on it.
+Proposal: [unified-remote-protocol.md](../proposals/unified-remote-protocol.md)
+Long-term docs affected: [mobile-remote-control.md](../architecture/mobile-remote-control.md), [remote-node-service.md](../architecture/remote-node-service.md), [chat-core.md](../architecture/chat-core.md), [relay-crypto.md](../architecture/relay-crypto.md) (framing), `apps/desktop/docs/agent-reference/architecture.md`, `apps/desktop/CLAUDE.md` (session control boundary), `apps/mobile/docs/agent-reference/transport.md`
+
+Scope is proposal phases 1–4. Poll-to-push for terminals and watched
+directories, Git/workspace parity on the desktop node, configuration families
+and features the phone does not have today are phase 5 and get their own plan.
+This plan absorbs [mobile-desktop-compatibility.md](mobile-desktop-compatibility.md)
+(deleted in step 6).
+
+## Starting point (verified 2026-10-10)
+
+| Piece | Where | State |
+|---|---|---|
+| Desktop hub | `apps/desktop/src/main/stream/session-event-hub.ts`; consumers in `apps/desktop/src/main/index.ts` | `AgentEvent` only, routed by `HubSource`; no topic interest or per-connection state. Terminals bypass it (IPC and `remote/terminal-broadcaster.ts`). |
+| Renderer delivery | `agent/renderer-agent-event-transport.ts` | `local-ui` profile: batching plus per-item Codex patch baselines. Broadcast to every window. |
+| Phone delivery | `stream/mobile-profile.ts` (`MobileProfilePorts`, accumulate → filter → throttle → rewrite → enrich → strip), `remote/mobile-broadcaster.ts` (live progressive projection), `agent/progressive-bootstrap.ts` (open/history), `remote/progressive-session.ts`, `remote/progressive-tools.ts`, `remote/detail-command.ts`, `remote-control-service.ts`, `remote/payload-codec.ts` | Golden test `stream/profiles.golden.test.ts` checks payload JSON after the profile with the sender stubbed; it does not cover projection, bootstrap, DEFLATE, sealing or chunking. |
+| Phone commands | `AgentService.handleRemoteCommand` (`agent/agent-service.ts`, ~100 cases, incl. `node_mint`/`node_pair` and composer/widget forms), `remote/*`; routed node sessions `remote/environment-commands.ts`; internal caller `mcp-apps/executor.ts` | Keyed by `projectPath`/session id; per-device transport `'lan' \| 'relay'` known. Routed phones reduce locally, re-project, and open their own `subscribeEvents` stream. |
+| Phone client | `packages/relay-client` (`client.ts`, `rpc.ts` `RpcInbox`, `request-coalescer.ts`, `phone-link.ts`), `apps/mobile/src`, `packages/chat-view` | Handshake carries host name and LAN hint, no version. |
+| Node protocol | `packages/runtime/src/server/` (`rpc-dispatch.ts`, `event-stream.ts`, `node-server.ts`, `secure-channel-client.ts`); CLI extensions `apps/cli/src/rpc/handlers.ts`; desktop client `environment/node-rpc-client.ts`, `remote-environment-gateway.ts`, `remote-session-feed.ts`, `node-route-resolver.ts` | Aggregate filtering, microtask batching, cursors/epoch/`resnapshot`. Capabilities are family booleans; partial ports declare `servedMethods`. Drafts and harness resources are CLI-only extensions. Protocol generation min = max = 2. No compression, profile or per-connection policy. |
+| Desktop as node | `node-host/` | Separate identity under `userData/node-host`; sessions limited to controller-started ones (`desktop-session-host.ts`); Git `fetch`/`worktreeActivate` only. |
+| Local gateway | `environment/environment-host.ts`, `local-environment-gateway.ts` | Session create/send/acquire stubbed, `get` returns null; terminals `notWired`; workspace write ignores `expectedHash`. |
+| Detail client | `packages/chat-view` (`use-deferred-text.ts` calls the native bridge directly, `detail-cache.ts` keyed by bare ref, `Deferred*.tsx`) | Phone only. Desktop rows render through `GenericToolRowPresenter` and do not read `remoteDetail`. |
+| Control | `session/session.ts` owner model; `terminal/terminal-ownership.ts`; `packages/runtime/src/lease/control-lease.ts` | Lease service covers sessions and terminals on nodes; terminal acquire passes no `delegate`/`yields`. Local sessions and terminals use owner objects. |
+| Identity | `environment/session-identity.ts`, `local-identity.ts` vs `node-host/node-host-server.ts` | One desktop has two environment ids: local and node host. Lease keys include the environment id. |
+
+## Steps
+
+The phone stays on the old wire until step 6. Steps 1–3 extract and reconnect
+existing behavior; old-wire payloads stay the same. Steps 4–5 put the old phone
+entry points on the new internals as they land, without flags or a translation
+layer.
+
+### 0. Baseline
+
+- Using the existing recorded fixtures, record the current phone wire through
+  the real sender and codec: bytes and frame count for a live turn, session
+  open, a history page and a detail expansion, on relay.
+- Exit: the baseline is a test fixture that later steps compare against.
+
+### 1. Topic and connection core
+
+- Shared core in `@superone/runtime`: topics keyed by scoped refs, connections
+  with topics, policy and sink. Extend `openEventStream` for the node side;
+  keep its cursors, epochs and `resnapshot`.
+- Producers: desktop hub sources, `DesktopSessionHost`'s event log, terminals
+  (local IPC and `TerminalBroadcaster` paths), the CLI dispatcher.
+- Sinks: renderer, each phone, each controller connection. Bookkeeping,
+  automation, collaboration and notification consumers stay source-based.
+- Renderer interest: the union of what open windows show, updated on window
+  close and session switch; delivery to windows stays a broadcast.
+- Recovery per existing phone topic: session list, projects and drafts get an
+  initial snapshot, a version and change events (producers: today's mutation
+  notices in `session-list-watch.ts` and draft control); terminals keep
+  sequence plus attach snapshot. A recovery signal names a scoped topic, not
+  only session ids as `SessionStreamFrame.resnapshot` does. No new topic
+  kinds.
+- Exit: topic routing and per-topic recovery tests; old-wire payloads
+  unchanged against step 0.
+
+### 2. Per-connection delivery policy
+
+- Parameterize the existing `mobile` profile through `MobileProfilePorts`; no
+  stage plugin framework. Keep accumulate before filter. Split tier stages
+  from phone-surface stages.
+- One policy covers open, history pages (`progressive-bootstrap.ts`), live
+  events (`mobile-broadcaster.ts`) and detail.
+- Tier mapping: in-process IPC → `local`; `lan`, `tailscale`, `direct`, `ssh`
+  → `lan`; `relay` → `relay`. Taken from the path the supervisor or phone link
+  chose, never from the URL (SSH forwards to loopback).
+- `local` keeps the renderer transport's batching and Codex patch baselines,
+  including baseline reset.
+- Move the pipeline into `@superone/runtime` with desktop-only reads behind the
+  existing ports.
+- Exit: old-wire payloads unchanged against step 0; two connections with
+  different policies on one session do not share projection or detail state.
+
+### 3. Shared detail client
+
+- `packages/chat-core`: transport-independent detail state (subscribe,
+  unsubscribe, listen through injected ports), revision/offset application and
+  the cache, keyed by environment, session and detail ref.
+- `packages/chat-view` keeps React, i18n and presentation on top of it.
+- Desktop: every row the projection defers reads `remoteDetail` through the
+  same state with an IPC port, keeping the desktop presenters:
+  `GenericToolRowPresenter`, reasoning, Claude subagent and workflow cards,
+  Codex command, file change, MCP and collaboration items. Hydration reuses
+  the deferred adapters in `PortableTurnAdapters.tsx` and `DeferredTool.tsx`.
+- Exit: tests with a mock transport, including a subagent expansion and a
+  Codex diff; desktop Storybook stories for collapsed, loading, error/retry and
+  expanded deferred rows (light/dark, narrow).
+
+### 4. Protocol and routing
+
+- Topic subscribe/unsubscribe RPCs; `session.subscribe` becomes one topic kind.
+  Detail subscriptions and progressive open/history as RPCs.
+- Framing: DEFLATE inside the sealed frame above 512 bytes, chunked responses.
+  Backpressure: per-connection byte budget, control events first, over budget
+  the topic degrades to `resnapshot`.
+- Shared, Metro-safe envelope, receipt/stream handling and request coalescer in
+  `@superone/shared`; desktop, CLI and phone keep their own socket adapters. No
+  Node transport in Expo.
+- Capabilities per method: replace family booleans with served methods in the
+  descriptor; carry them through the gateway, preload and UI gating; a routing
+  desktop reports each target's methods.
+- Generation 3; generation 2 peers are refused.
+- Routing: extend `remote-session-feed.ts` into an interest union with ref
+  counts across the desktop's own window, controllers and routed phones; the
+  session-list observer keeps its notifications; routed phones (still on the
+  old wire) join this feed instead of their own stream. Detail requests forward
+  to the source environment; the routing desktop does not assume it holds full
+  bodies. A tier change realigns through snapshot, not the
+  `routed-catch-up.ts` prefix rule.
+- Summaries on desktop and CLI nodes turn on only after the above.
+- Exit: dev desktops A and B from this worktree (`scripts/desktop-node-lab.ts`)
+  over LAN and relay; A over relay within step 0's bytes and frames for the
+  same turn; LAN → relay failover mid-turn switches tier without reload;
+  generation 2 refused.
+
+### 5. Desktop endpoint for phones
+
+- Split the desktop's always-on domain context (identity, database, leases,
+  idempotency, event log, session host) from the optional controller listener
+  (LAN/relay node access). Turning controller access off stops the listener
+  only; the local window and phones keep the services.
+- Phone channel adapter: `phone-link-host.ts`, `remote-control-service.ts`
+  and `lan-server.ts` decode protocol messages into the shared dispatcher and
+  topic core; responses and pushes return to the asking connection; the actor
+  comes from the authenticated pairing. Same channel and keys; no node pairing
+  entry. Enabled together with the client in step 6.
+- Adapt `SessionManager`, the desktop database and `TerminalManager` to the
+  shared ports and wire the local gateway: reads and contracts here; local
+  mutation and control turn on with the lease move in step 6, so no resource
+  has two authorities at once. The phone endpoint covers every local and archived session it
+  can open today. Which sessions a controller desktop sees stays as is.
+- Move the CLI-only handlers the phone needs (drafts, harness resources, …)
+  into runtime ports on the existing dispatcher and `servedMethods`.
+- Coverage list generated from the actual old-command call sites: old command
+  → new method, desktop-only client state, routed support. Includes
+  phone-assisted desktop pairing (`node_mint`, `node_pair`), composer and
+  widget forms, client-scoped methods (push tokens, seen state, presence,
+  mobile logs).
+- Identity: the node-host identity is canonical for all resources, topics,
+  caches and lease keys. A desktop without one initializes it from its local
+  id. A desktop that has both keeps the old local id as one alias: session
+  links, metadata lookups and the registry resolve the alias before checking
+  the real resource; the authenticated descriptor reports the alias and paired
+  controllers persist it; the phone handshake reports the canonical id and the
+  endpoint normalizes old refs. No link rewriting, no scan for bare session
+  ids, no new pairings.
+- Conditional writes: file and configuration writes the phone performs today
+  carry the existing `expectedHash`/version through local, CLI and desktop
+  adapters; add compare-and-write where missing. No general conflict
+  framework.
+- Authenticated host version and protocol generation in the phone link
+  handshake (LAN and relay), so desktops ship it before phones enforce it.
+- Exit: a contract suite runs every listed family against the local desktop
+  endpoint; routed families against the node lab.
+
+### 6. Leases and phone cut-over
+
+- Local sessions and terminals move to the existing lease service with
+  today's takeover rules; `TerminalOwnership` and the `Session` owner model go.
+  Terminal acquire gains `delegate`/`yields`. Window and phone actors come
+  from the authenticated client and pairing. IPC, phone and controller
+  mutations are fenced.
+- Phone client speaks the protocol, reusing `RpcInbox` pending and chunk
+  handling. `RemoteCommand` phone commands, `environment_command` and
+  `handleRemoteCommand` are removed; `mcp-apps/executor.ts` calls the new
+  methods.
+- Minimum desktop version: an older or unreported host gets upgrade-required;
+  no probing or legacy restore paths. Desktop release first, then the mobile
+  build/OTA that enforces the floor, through alpha. Delete
+  `mobile-desktop-compatibility.md`.
+- `apps/desktop/CLAUDE.md` and the desktop architecture manual change their
+  session control rule in this step.
+- Exit: every coverage-list family on a live pairing over LAN and relay; bytes
+  and frames within step 0; fenced contract tests for local mutation and
+  control; two phones and a desktop contend for a session and a terminal with
+  the expected outcomes.
+
+### 7. Fold into long-term docs
+
+Behavior docs change in the commit that changes the behavior. This step
+finishes the long-term docs in the header (model, tiers, topics, protocol),
+points code comments there, and deletes this plan and the proposal.
+
+## Verification
+
+- Unit, contract and golden tests per step from `apps/desktop`
+  (`bunx vitest related …`) and the runtime package.
+- Node lab: dev desktops A and B from this worktree on one Mac, then two Macs
+  over Tailscale and relay.
+- Live phone pairing on the iOS simulator and a device, LAN and relay.
+- Bytes and frames against the step 0 baseline at steps 4 and 6 only.
+
+## Open decisions
+
+None.

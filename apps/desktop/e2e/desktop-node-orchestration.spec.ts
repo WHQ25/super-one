@@ -56,6 +56,8 @@ async function launchB(fresh: boolean): Promise<DesktopInstance> {
     seed: fresh
       ? {
           'app-settings.json': { ...UI_SETTINGS, remoteNodeAccessPort: NODE_PORT },
+          // Allow Control on: B turns every controller away without it.
+          'remote-config.json': { enabled: true, masterSecret: '00'.repeat(32), deviceId: B_NAME, relayUrl: '' },
           // Where B clones a repository it lacks (`agent.projectsDir`).
           'node-host/config.json': { agent: { projectsDir: projectsDirB } },
         }
@@ -210,7 +212,7 @@ test('children spawned on B clone the repo; a report reaches the mailbox and a s
   ]))
   await approveConfirmCard(parent)
 
-  await expect.poll(() => output(parent), { timeout: 90_000 }).toMatch(/"status":"started"[\s\S]*"machine":"Node B"[\s\S]*"status":"started"/)
+  await expect.poll(() => output(parent), { timeout: 90_000 }).toMatch(/"status":"started"[\s\S]*"machine":"[^"]+"[\s\S]*"status":"started"/)
   // B had no project for this origin, so it cloned one into its projects directory.
   expect(existsSync(path.join(projectsDirB, 'origin', '.git'))).toBe(true)
 

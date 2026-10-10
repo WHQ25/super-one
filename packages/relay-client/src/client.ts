@@ -262,7 +262,7 @@ export class RelayClient {
       if (header.t !== 'handshake') throw new SecureChannelError('channel_protocol', 'expected handshake')
       this.handshake = null
       this.ready.resolve()
-      this.hooks.onControl?.({ type: 'handshake', hostName: header.hostName })
+      this.hooks.onControl?.({ type: 'handshake', hostName: header.hostName, ...(header.host ? { host: header.host } : {}) })
     } catch (error) {
       this.handleClosed(ws, error instanceof Error ? error : new Error('channel handshake failed'))
     }

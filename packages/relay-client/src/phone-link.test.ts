@@ -50,6 +50,12 @@ describe('phone link frames', () => {
     expect(openLinkFrame(host, sealLinkFrame(phone, { t: 'command' }, command))).toEqual({ header: { t: 'command' }, payload: command })
     const opened = openLinkFrame(phone, sealLinkFrame(host, { t: 'handshake', hostName: 'Mac', lan: { hosts: ['10.0.0.2'], port: 7788 } }))
     expect(opened.header).toEqual({ t: 'handshake', hostName: 'Mac', lan: { hosts: ['10.0.0.2'], port: 7788 } })
+    const info = { appVersion: '0.60.0', protocol: 3, environmentId: 'env-1' }
+    expect(openLinkFrame(phone, sealLinkFrame(host, { t: 'handshake', hostName: 'Mac', host: info })).header)
+      .toEqual({ t: 'handshake', hostName: 'Mac', host: info })
+    // A malformed `host` reads as a host that did not say.
+    expect(decodeLinkBody(encodeLinkBody({ t: 'handshake', hostName: 'Mac', host: { appVersion: 1 } } as never)).header)
+      .toEqual({ t: 'handshake', hostName: 'Mac' })
   })
 
   it('rejects replayed, tampered and cross-direction frames', () => {

@@ -1,7 +1,7 @@
 import { frameHostPayload } from './remote/payload-codec'
 import type { ChannelEnvelope, PhoneHandshake, PhoneKey, PhoneLinkHost } from './remote/phone-link-host'
 import type { SecureChannel } from '@superone/relay-client/secure-channel'
-import type { LinkHandshakeInfo } from '@superone/relay-client/phone-link'
+import type { LinkHandshakeInfo, LinkHostInfo } from '@superone/relay-client/phone-link'
 import { RelayDraftSaveThrottle } from './remote/relay-draft-save-throttle'
 import { batchingFor, createEventBatcher, type EventBatcher } from '@superone/runtime/stream'
 import { phoneDelivery } from './remote/phone-deliveries'
@@ -79,6 +79,8 @@ export interface PairedPhoneLookup {
 }
 
 export interface RemoteControlCallbacks {
+  /** Release, protocol generation and canonical environment id, told to each phone in the sealed handshake. */
+  hostInfo?: () => LinkHostInfo
   onCommand: (cmd: RemoteCommand, respond: RemoteResponder, source: RemoteCommandSource) => void
   onClientRegistered?: (info: { deviceName: string; deviceId: string; transport: 'lan' | 'relay'; firstConnect: boolean }) => void
   onClientDisconnected?: (info: { deviceId: string }) => void
@@ -368,7 +370,11 @@ export class RemoteControlService {
   private handshakeInfo(): LinkHandshakeInfo {
     const port = this.lanServer?.getPort()
     const hosts = port ? listLanIpAddresses() : []
-    return { hostName: hostname(), ...(port && hosts.length > 0 ? { lan: { hosts, port } } : {}) }
+    return {
+      hostName: hostname(),
+      ...(port && hosts.length > 0 ? { lan: { hosts, port } } : {}),
+      ...(this.callbacks.hostInfo ? { host: this.callbacks.hostInfo() } : {}),
+    }
   }
 
   /** Key id → the phone it was issued to and its secret; null once the device is removed. */

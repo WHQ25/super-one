@@ -1,3 +1,4 @@
+import type { LinkHostInfo } from './phone-link'
 export type TransportKind = 'relay' | 'lan'
 
 export type InboundFrame = {
@@ -12,7 +13,7 @@ export type InboundFrame = {
 }
 
 export type RelayControlFrame =
-  | { type: 'handshake'; hostName?: string }
+  | { type: 'handshake'; hostName?: string; host?: LinkHostInfo }
   | { type: 'peer_connected' }
   | { type: 'peer_disconnected' }
   | { type: 'kicked'; mobileDeviceId?: string }

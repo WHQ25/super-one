@@ -19,6 +19,13 @@ import { loadDesktopEnvironmentIdentity } from '../environment/local-identity'
 import { DesktopSessionHost, type NodeHostSessionManager, type NodeHostSessionStore } from './desktop-session-host'
 import { createDesktopWorktreePort } from './desktop-worktree-port'
 import { reconcileRunsAfterRestart } from './reconcile-runs'
+import {
+  WorkspaceFsService,
+  WorkspaceGitService,
+  WorkspaceTailWatchService,
+  WorkspaceWatchService,
+  type WorkspaceProjects,
+} from '@superone/runtime/workspace'
 import { SessionEventRecorder } from './session-event-recorder'
 import { LocalSessionHost, LOCAL_SESSION_MUTATIONS } from './local-session-host'
 import type { DesktopSessionRows } from './desktop-session-reads'
@@ -158,16 +165,39 @@ export class DesktopDomain {
     return this.context
   }
 
-  /** The context this desktop's phones run in: every session, which they only read for now. */
+  /**
+   * The context this desktop's phones run in. They are its user's devices:
+   * every session (only read for now), and the workspace files and Git the
+   * window has, which controllers do not get.
+   */
   phoneContext(): DesktopRpcContext {
+    return this.phone ??= this.openPhoneContext()
+  }
+
+  private phone: DesktopRpcContext | null = null
+  /** Watches phones hold, closed with the domain. */
+  private readonly watches: Array<{ closeAll(): void }> = []
+
+  private openPhoneContext(): DesktopRpcContext {
+    // Recency stays with the window's own project opens.
+    const projects: WorkspaceProjects = { get: (projectId) => this.context.projects!.get(projectId), touch: () => {} }
+    const workspaceFs = new WorkspaceFsService(projects)
+    const workspaceWatch = new WorkspaceWatchService(projects)
+    const workspaceTailWatch = new WorkspaceTailWatchService(projects, workspaceFs)
+    this.watches.push(workspaceWatch, workspaceTailWatch)
     return {
       ...this.context,
       sessions: this.localSessions,
+      workspaceFs,
+      workspaceGit: new WorkspaceGitService(projects),
+      workspaceWatch,
+      workspaceTailWatch,
       unservedMethods: new Set([...DESKTOP_UNSERVED_METHODS, ...LOCAL_SESSION_MUTATIONS]),
     }
   }
 
   close(): void {
+    for (const watch of this.watches) watch.closeAll()
     this.recorder.dispose()
     this.localSessions.dispose()
     this.sessions.dispose()

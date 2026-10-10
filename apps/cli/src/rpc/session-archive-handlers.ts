@@ -23,16 +23,9 @@ function entry(session: Readonly<NodeSessionRecord>, ctx: RpcContext, source?: s
   return { sessionId: session.sessionId, title: session.title ?? 'Untitled', ...branding(session, ctx), projectId: session.projectId, createdAt: date(session.createdAt), lastActiveAt: date(lastActive(session)), messageCount: session.transcript.length, tags: session.tags ?? [], pinned: session.isPinned, hidden: session.isHidden, isSelf: session.sessionId === source }
 }
 export function dispatchSessionArchiveRpc(method: string, payload: unknown, ctx: RpcContext): RpcResult | null {
-  if (method !== 'session.archive' && method !== 'session.linkMetadata' && method !== 'session.linkBootstrap') return null
+  if (method !== 'session.archive' && method !== 'session.linkMetadata') return null
   if (!hasAllScopes(ctx.client.scopes, OPERATION_SCOPES.readSession)) return { error: { code: 'forbidden', message: 'Session read access is required' } }
   const input = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {}
-  if (method === 'session.linkBootstrap') {
-    const sessionId = String(input.sessionId ?? '')
-    const snapshot = ctx.sessions.get(sessionId)
-    if (!snapshot || snapshot.isHidden) return { error: { code: 'not_found', message: 'Session unavailable' } }
-    // No await between snapshot, catalog and high-water: one consistent baseline.
-    return { result: { snapshot: { ...snapshot, acpAgentId: branding(snapshot, ctx).acpAgentId }, page: ctx.sessions.listMessages({ sessionId, limit: 8 }), sequence: ctx.sessions.snapshotSequence() } }
-  }
   if (method === 'session.linkMetadata') {
     if (!Array.isArray(input.sessionIds) || input.sessionIds.length > 50 || input.sessionIds.some(id => typeof id !== 'string')) return { error: { code: 'invalid_argument', message: 'At most 50 session IDs are allowed' } }
     const wanted = new Set(input.sessionIds as string[])

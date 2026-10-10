@@ -1,16 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { EnvironmentGateway } from '@superone/shared/environment'
+import type { AgentEvent, ChatMessage } from '@superone/shared/agent-types'
+import type { EnvironmentGateway, SubscribeEventsInput } from '@superone/shared/environment'
 import { executeEnvironmentCommand, releaseEnvironmentDevice } from './environment-commands'
 import { routedHistory } from './environment-session-view'
 
-const m = vi.hoisted(() => ({ list: vi.fn(), get: vi.fn(), project: vi.fn(), acquire: vi.fn(), release: vi.fn(), renew: vi.fn(), bootstrap: vi.fn(), send: vi.fn() }))
+const m = vi.hoisted(() => ({ list: vi.fn(), get: vi.fn(), project: vi.fn(), acquire: vi.fn(), release: vi.fn(), renew: vi.fn(), load: vi.fn(), send: vi.fn(), stream: vi.fn() }))
 vi.mock('../environment/environment-host', () => ({ getEnvironmentHost: () => ({ listEnvironments: m.list, getGateway: () => gateway }) }))
 vi.mock('./environment-session-resources', () => ({ routedResources: vi.fn() }))
 const ref = { environmentId: 'node', sessionId: 'same' }
 const gateway = {
-  sessions: { get: m.get, acquireControl: m.acquire, releaseControl: m.release, renewControl: m.renew, linkBootstrap: m.bootstrap, send: m.send }, getProject: m.project,
-  async *subscribeEvents(input: { signal: AbortSignal }) { await new Promise<void>(resolve => input.signal.addEventListener('abort', () => resolve(), { once: true })) },
+  sessions: { get: m.get, acquireControl: m.acquire, releaseControl: m.release, renewControl: m.renew, load: m.load, send: m.send }, getProject: m.project,
+  subscribeEvents: (input: SubscribeEventsInput & { signal: AbortSignal }) => m.stream(input),
 }
+async function* idle(input: { signal: AbortSignal }) { await new Promise<void>(resolve => input.signal.addEventListener('abort', () => resolve(), { once: true })) }
+const loaded = (messages: ChatMessage[], version: number) => ({ sessionId: 'same', state: {}, messages, before: null, cursor: { sequence: '42', epoch: 'e', version } })
+const message = (id: string, text: string, status: ChatMessage['status'] = 'complete'): ChatMessage =>
+  ({ id, role: 'assistant', status, providerId: 'grok', createdAt: new Date(0).toISOString(), content: [{ type: 'text', text }] })
 beforeEach(async () => {
   await releaseEnvironmentDevice('phone')
   vi.clearAllMocks()
@@ -20,7 +25,8 @@ beforeEach(async () => {
   m.acquire.mockResolvedValue({ leaseId: 'lease', generation: 4 })
   m.release.mockResolvedValue(undefined)
   m.renew.mockResolvedValue({ leaseId: 'lease', generation: 4 })
-  m.bootstrap.mockResolvedValue({ snapshot: { projectId: 'p', harnessId: 'acp', status: 'idle' }, page: { messages: [], cursor: null, hasMore: false }, sequence: '42' })
+  m.load.mockResolvedValue(loaded([], 3))
+  m.stream.mockImplementation(idle)
 })
 describe('paired phone environment route', () => {
   it('requires the explicit owning project before acquiring control', async () => {
@@ -38,9 +44,24 @@ describe('paired phone environment route', () => {
     expect(m.release).toHaveBeenCalledWith(expect.objectContaining({ leaseId: 'lease' }))
   })
   it('releases a newly acquired lease on a failed bootstrap', async () => {
-    m.bootstrap.mockRejectedValue(new Error('offline'))
+    m.load.mockRejectedValue(new Error('offline'))
     await expect(executeEnvironmentCommand('node', { type: 'subscribe_session', requestId: 'r', projectPath: '/app', sessionId: 'same' }, 'phone', vi.fn())).rejects.toThrow('offline')
     expect(m.release).toHaveBeenCalledOnce()
+  })
+  it('follows from the snapshot it opened at, and repairs the phone when the node lost events it missed', async () => {
+    const send = vi.fn(async () => {})
+    m.load.mockResolvedValueOnce(loaded([message('a', 'Hel', 'streaming')], 3)).mockResolvedValueOnce(loaded([message('a', 'Hello'), message('b', 'Next')], 9))
+    m.stream.mockImplementation(async function* (input: SubscribeEventsInput & { signal: AbortSignal }) {
+      expect(input).toMatchObject({ afterSequence: '42', epoch: 'e', versions: { same: 3 } })
+      input.onResnapshot?.(['same'])
+      // Already reflected by the repaired snapshot.
+      yield { aggregateType: 'session', aggregateId: 'same', sessionVersion: 9, eventType: 'session.agent_event', payload: { event: { type: 'content_delta', messageId: 'b', delta: { type: 'text', text: 'dup' } } } }
+      yield* idle(input)
+    })
+    const result = await executeEnvironmentCommand('node', { type: 'subscribe_session', requestId: 'r', projectPath: '/app', sessionId: 'same' }, 'phone', send)
+    expect(result).toMatchObject({ historyPage: { cursor: null, hasMore: false } })
+    await vi.waitFor(() => expect(send.mock.calls.map(([event]) => (event as AgentEvent).type)).toEqual(['content_delta', 'message_complete', 'message_start']))
+    expect(send.mock.calls[0]![0]).toMatchObject({ messageId: 'a', delta: { type: 'text', text: 'lo' } })
   })
 })
 describe('routed history anchors', () => {

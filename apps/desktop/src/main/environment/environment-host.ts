@@ -1752,9 +1752,9 @@ export class EnvironmentHost {
    * the chat and none below it does. Returns the snapshot.
    */
   async openRemoteSession(connectionId: string, input: RemoteSessionTarget & { limit?: number }): Promise<SessionLoadResult> {
-    const { gateway } = this.resolveRemote(connectionId)
+    const { gateway, environmentId } = this.resolveRemote(connectionId)
     let snapshot: SessionLoadResult | null = null
-    const load = () => gateway.loadSession({ sessionId: input.sessionId, limit: input.limit })
+    const load = () => gateway.sessions.load!({ session: { environmentId, sessionId: input.sessionId }, limit: input.limit })
     await this.followRemoteSession(connectionId, input, async () => (snapshot = await load()).cursor.version)
     // Already followed: its events flow above an earlier barrier, and the chat
     // reducer skips those a snapshot already holds (message `seq`).
@@ -1774,7 +1774,7 @@ export class EnvironmentHost {
     const key = this.sessionCursorKey(connectionId, input.sessionId)
     const existing = this.followedSessions.get(key)
     if (existing) return existing
-    const { gateway } = this.resolveRemote(connectionId)
+    const { gateway, environmentId } = this.resolveRemote(connectionId)
     const followed = (async (): Promise<FollowedRemoteSession> => {
       const { createNodeSessionEventMapper } = await import('@superone/shared/node-session-event-map')
       // User rows are mapped too: their id is the sender's clientMessageId, so
@@ -1807,7 +1807,7 @@ export class EnvironmentHost {
           session.waiters.clear()
         },
         resync: () => this.resync(connectionId, input),
-      }, barrier ?? (async () => (await gateway.loadSession({ sessionId: input.sessionId, limit: 1 })).cursor.version))
+      }, barrier ?? (async () => (await gateway.sessions.load!({ session: { environmentId, sessionId: input.sessionId }, limit: 1 })).cursor.version))
       return session
     })()
     this.followedSessions.set(key, followed)

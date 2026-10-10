@@ -1,6 +1,5 @@
 import type { AgentEvent, RemoteCommand } from '@superone/shared/agent-types'
 import type { EnvironmentGateway, MutatingControlContext, SessionRef } from '@superone/shared/environment'
-import { sessionMessageBlocksToChatMessages } from '@superone/shared/node-message-catalog'
 import { createNodeSessionEventMapper } from '@superone/shared/node-session-event-map'
 import { nodeHarnessToProviderId } from '@superone/shared/node-session-messages'
 import { applyEventToSession, createDefaultChatCoreSession, createStreamingToolInputStore, defaultChatCorePorts } from '@superone/chat-core'
@@ -8,6 +7,7 @@ import { getEnvironmentHost } from '../environment/environment-host'
 import { detailMessageId, detailUpdates, projectProgressiveEvent, projectProgressiveMessage, setProgressiveSession, subscribeDetail, unsubscribeDetail } from './progressive-session'
 import { routedDetailMessage, routedHistory, routedHistoryIndex, routedSnapshot, type RoutedSessionSnapshot } from './environment-session-view'
 import { routedResources } from './environment-session-resources'
+import { catchUpEvents } from './routed-catch-up'
 
 type Subscription = { deviceId: string; abort: AbortController; gateway: EnvironmentGateway; ref: SessionRef; control: MutatingControlContext; timer: ReturnType<typeof setInterval> }
 const subscriptions = new Map<string, Subscription>()
@@ -56,10 +56,11 @@ export async function executeEnvironmentCommand(environmentId: string, command: 
   const providerId = nodeHarnessToProviderId(snapshot.harnessId)
   if (command.type === 'subscribe_session') {
     if ([...subscriptions.values()].some(subscription => subscription.ref.environmentId === environmentId && subscription.ref.sessionId === sessionId && subscription.deviceId !== deviceId)) throw new Error('Session is controlled by another device')
-    if (!gateway.sessions.linkBootstrap) throw new Error('This host does not support session links. Upgrade it.')
+    if (!gateway.sessions.load) throw new Error('This host does not support session links. Upgrade it.')
+    const load = gateway.sessions.load
     const control = current?.control ?? await gateway.sessions.acquireControl({ resource: ref, ttlMs: 60_000 })
-    let baseline: Awaited<ReturnType<NonNullable<typeof gateway.sessions.linkBootstrap>>>
-    try { baseline = await gateway.sessions.linkBootstrap(ref) }
+    let loaded: Awaited<ReturnType<typeof load>>
+    try { loaded = await load({ session: ref, limit: 8 }) }
     catch (error) { if (!current) await gateway.sessions.releaseControl(control).catch(() => {}); throw error }
     current?.abort.abort()
     if (current) clearInterval(current.timer)
@@ -76,26 +77,51 @@ export async function executeEnvironmentCommand(environmentId: string, command: 
     subscription.timer.unref()
     subscriptions.set(subscriptionKey, subscription)
     setProgressiveSession(subscriptionKey, sessionId)
-    const messages = sessionMessageBlocksToChatMessages(baseline.page.messages, providerId)
-    let state = { ...createDefaultChatCoreSession(), messages }
+    let state = { ...createDefaultChatCoreSession(), ...loaded.state, messages: loaded.messages }
     const mapper = createNodeSessionEventMapper({ projectPath: project.path, sessionId, providerId })
-    const streamingStore = createStreamingToolInputStore()
+    const ports = { ...defaultChatCorePorts, streaming: createStreamingToolInputStore() }
+    const deliver = async (event: AgentEvent) => {
+      state = { ...state, ...applyEventToSession(state, event, ports) }
+      const projected = projectProgressiveEvent(event, state.messages)
+      if (projected) await send({ ...projected, environmentId })
+      for (const update of detailUpdates(subscriptionKey, sessionId, state.messages)) await send({ ...update, environmentId })
+    }
+    // The node no longer holds events this phone missed: bring its messages to
+    // a fresh snapshot, and skip the events that snapshot already reflects.
+    let barrier = loaded.cursor.version
+    let queue = Promise.resolve()
+    const serial = (task: () => Promise<void>) => (queue = queue.then(task))
+    const fail = async () => {
+      if (abort.signal.aborted) return
+      await send({ type: 'status_change', environmentId, sessionId, status: 'error' })
+      await release(subscription)
+    }
+    const repair = async () => {
+      const fresh = await load({ session: ref, limit: 8 })
+      const events = catchUpEvents(state.messages, fresh.messages)
+      if (!events) throw new Error('Session diverged from its host')
+      barrier = fresh.cursor.version
+      for (const event of events) await deliver(event)
+    }
     void (async () => {
       try {
-        for await (const envelope of gateway.subscribeEvents({ environmentId, afterSequence: baseline.sequence, aggregateIds: [sessionId], aggregateTypes: ['session'], signal: abort.signal })) {
+        for await (const envelope of gateway.subscribeEvents({
+          environmentId, afterSequence: loaded.cursor.sequence, epoch: loaded.cursor.epoch, versions: { [sessionId]: loaded.cursor.version },
+          aggregateIds: [sessionId], aggregateTypes: ['session'], signal: abort.signal,
+          onResnapshot: () => { void serial(repair).catch(fail) },
+        })) {
           if (abort.signal.aborted || subscriptions.get(subscriptionKey) !== subscription) break
-          if (envelope.aggregateId !== sessionId) continue
-          for (const event of mapper.map(envelope)) {
-            state = { ...state, ...applyEventToSession(state, event, { ...defaultChatCorePorts, streaming: streamingStore }) }
-            const projected = projectProgressiveEvent(event, state.messages)
-            if (projected) await send({ ...projected, environmentId })
-            for (const update of detailUpdates(subscriptionKey, sessionId, state.messages)) await send({ ...update, environmentId })
-          }
+          await serial(async () => {
+            if (envelope.aggregateId !== sessionId || (envelope.sessionVersion ?? Infinity) <= barrier) return
+            for (const event of mapper.map(envelope)) await deliver(event)
+          })
         }
-      } catch { if (!abort.signal.aborted) await send({ type: 'status_change', environmentId, sessionId, status: 'error' }) }
+        await queue
+      } catch { await fail() }
       finally { if (!abort.signal.aborted) await release(subscription) }
     })()
-    return { ok: true, historyPage: { ...baseline.page, cursor: baseline.page.cursor == null ? null : Number(baseline.page.cursor), messages: messages.map(projectProgressiveMessage), provider: snapshot.harnessId, navigationAvailable: true }, snapshot: routedSnapshot(baseline.snapshot as RoutedSessionSnapshot, environmentId, messages) }
+    const messages = loaded.messages
+    return { ok: true, historyPage: { sessionId, messages: messages.map(projectProgressiveMessage), cursor: loaded.before, hasMore: loaded.before != null, provider: snapshot.harnessId, navigationAvailable: true }, snapshot: routedSnapshot(snapshot, environmentId, messages) }
   }
   if (command.type === 'load_session_messages') return routedHistory(gateway, ref, providerId, command)
   if (command.type === 'get_session_history_index') return routedHistoryIndex(snapshot)

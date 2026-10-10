@@ -219,7 +219,7 @@ through the desktop today (`environment-commands.ts`), by envelope
 | `mod_ui_request` | `session.modUi` | |
 | `mcp_app_request` | **`mcpApps.request`** (frontend View operations) | |
 | `list_sessions`, `list_pinned_sessions`, `find_session`, `search_sessions`, `list_session_activity` | **`sessionList.page`**, **`sessionList.pinned`**, **`sessionList.find`**, **`sessionList.search`**, **`session.activity`** (the sidebar's projections) | |
-| `pin_session`, `archive_session`, `delete_session`, `fork_session` | `session.setUiFlags`, **`session.setArchived`**, `session.remove`, `session.fork` | |
+| `pin_session`, `archive_session`, `delete_session`, `fork_session` | `session.setUiFlags` (`isPinned` / `isHidden`), `session.remove`, `session.fork` | |
 | `session_link_identity`, `session_link_metadata`, `session_link_resolve` | **`environment.list`**, **`session.linkMetadata`**, **`session.linkResolve`** | |
 | `list_drafts`, `save_draft`, `delete_draft` | `draft.list`, `draft.upsert`, `draft.delete` | |
 | `open_draft`, `close_draft` | **`draft.open`**, **`draft.close`** (draft lease, `expectedUpdatedAt`) | |
@@ -582,3 +582,33 @@ None.
   Electron Computer Use permission; the authorization clarification has no
   reply. Publication, artifact verification and final plan/proposal deletion
   remain pending that acceptance.
+
+- 2026-10-11: The user authorized CDP for desktop acceptance. Playwright's
+  Electron CDP launch works after clearing the inherited
+  `ELECTRON_RUN_AS_NODE` shell flag; native Computer Use is not needed.
+  `e2e/desktop-node-orchestration.spec.ts` passes all three tests on the
+  current production build, including pairing, collaboration and recovery.
+  The initial live protocol suite passes both LAN and the project Alpha
+  Relay with two freshly paired SDK phone identities: catalogs, projects,
+  Git and workspace reads, drafts, session lists/history/links, settings,
+  native transcript pushes, session and real PTY contention, spoofed proofs,
+  desktop takeover, exact SDK proof invalidation and a routed desktop
+  descriptor. CDP also confirms both phones online in the real Remote
+  Control settings. These are actual paired SDK actors, not physical-phone
+  UI coverage. A fresh local run passes 85 endpoint, protocol and immutable
+  wire-budget tests.
+
+- 2026-10-11: The user authorized isolated Alpha Relay acceptance. All three
+  expanded live cases pass, including forms and frontend isolation, upload,
+  conditional file writes, project/Git edits, session lifetime, routed desktop
+  session streams, source-desktop takeover and mid-turn LAN-to-relay switching.
+  The source/controller desktops use a relay-only pairing profile. Fresh
+  scripted profiles exposed startup pin alignment downloading real managed
+  harnesses; the scripted gate now skips alignment and installation, with three
+  regression tests and a live no-download assertion. Local release checks pass:
+  dependency lock, lint, workspace typechecks, desktop/runtime/CLI/relay/SDK/
+  mobile tests and mobile icons (17,029 tests passed, 35 existing skips).
+  Desktop `0.73.0-alpha.1`, matching CLI, Alpha Relay and both mobile OTAs are
+  prepared. Android/iOS fingerprints match shipped build 35. Publication must
+  retain desktop-first ordering; artifact verification and final plan/proposal
+  deletion remain pending publication.

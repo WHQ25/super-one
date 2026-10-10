@@ -13,6 +13,7 @@ import type { Session } from '../session/types'
 import { createDesktopProjectsPort } from './desktop-projects-port'
 import type { NodeHostSessionManager, NodeHostSessionStore } from './desktop-session-host'
 import { DesktopNodeHost, type DesktopNodeHostListen } from './node-host-server'
+import { DesktopDomain, type DesktopDomainDeps } from './desktop-domain'
 
 /** Fakes of B's session manager and store for node host integration tests. */
 
@@ -137,7 +138,7 @@ export async function startTestDesktopNode(input: { userDataDir: string; project
   const sessions = new FakeSessionManager()
   const harnesses = new HarnessManager(openNodeDatabase(':memory:'))
   harnesses.enableSimulatedOverlay()
-  const host = await DesktopNodeHost.start(
+  const host = await startDesktopNode(
     {
       userDataDir: input.userDataDir, label: 'Desktop B', appVersion: '0.0.0-test', sessions,
       store: memoryStore(() => projects.list()), projects, harnesses,
@@ -149,7 +150,7 @@ export async function startTestDesktopNode(input: { userDataDir: string; project
     },
     input.listen,
   )
-  return { host, sessions }
+  return { host, sessions, close: () => stopDesktopNode(host) }
 }
 
 /**
@@ -215,4 +216,21 @@ export async function lanPath(targetPort: number) {
       }),
   }
   return path
+}
+
+/** A desktop node as the app runs one: its domain, and the controller listener over it. */
+export async function startDesktopNode(deps: DesktopDomainDeps, listen: DesktopNodeHostListen): Promise<DesktopNodeHost> {
+  const domain = DesktopDomain.open(deps)
+  try {
+    return await DesktopNodeHost.start(domain, listen)
+  } catch (err) {
+    domain.close()
+    throw err
+  }
+}
+
+/** Quit: the listener, then the domain. */
+export async function stopDesktopNode(host: DesktopNodeHost): Promise<void> {
+  await host.stop()
+  host.domain.close()
 }

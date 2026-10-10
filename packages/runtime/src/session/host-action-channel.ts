@@ -351,12 +351,17 @@ export class HostActionChannel {
    */
   shutdown(reason: string): void {
     this.shutDown = true
+    this.cancelWaiting(reason)
+    this.dispose()
+  }
+
+  /** Cancel and settle every action a live waiter is blocked on; new actions are still taken. */
+  cancelWaiting(reason: string): void {
     for (const actionId of [...this.waiters.keys()]) this.cancelAction(actionId, reason)
     // A row the store could no longer cancel still owes its caller an answer.
     for (const actionId of [...this.waiters.keys()]) {
       this.settle({ actionId, state: 'cancelled', error: { code: reason } })
     }
-    this.dispose()
   }
 
   /** Stop the reconciliation timer and release long-pollers. Pending actions stay for the caller to cancel. */

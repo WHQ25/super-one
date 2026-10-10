@@ -51,12 +51,12 @@ describe('desktop node over the relay', () => {
   it('keeps a working relay connection when the LAN answers /health but not the channel, and dials past it', async () => {
     const relay = await startTestRelay()
     cleanup.push(() => relay.close())
-    const { host } = await startTestDesktopNode({
+    const { host, close: closeHost } = await startTestDesktopNode({
       userDataDir: tempDir('superone-spoof-b-'),
       projectDir: tempDir('superone-spoof-project-'),
       listen: { bindPort: 0, relayUrl: relay.url },
     })
-    cleanup.push(() => host.stop())
+    cleanup.push(closeHost)
     await vi.waitFor(() => expect(host.relayConnected).toBe(true))
     const spoof = await startSpoofedLanNode({ environmentId: host.identity.environmentId, nodePublicKeyFingerprint: host.identity.publicKeyFingerprint })
     cleanup.push(spoof.close)
@@ -118,12 +118,12 @@ describe('desktop node over the relay', () => {
   it('pairs through the relay alone, moves to the LAN, falls back to the relay on LAN loss, and resumes events', async () => {
     const relay = await startTestRelay()
     cleanup.push(() => relay.close())
-    const { host, sessions } = await startTestDesktopNode({
+    const { host, sessions, close: closeHost } = await startTestDesktopNode({
       userDataDir: tempDir('superone-relay-b-'),
       projectDir: tempDir('superone-relay-project-'),
       listen: { bindPort: 0, relayUrl: relay.url },
     })
-    cleanup.push(() => host.stop())
+    cleanup.push(closeHost)
     await vi.waitFor(() => expect(host.relayConnected).toBe(true))
 
     // The code B shows; its LAN hint is A's (cuttable) path to B, down for now.

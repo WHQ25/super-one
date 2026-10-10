@@ -220,6 +220,11 @@ export class DesktopSessionHost implements SessionHostPort {
    * waiting on a controller that can no longer reach it. Must run before the
    * node database closes.
    */
+  /** The controllers can no longer reach this desktop: every Host Action waiting on one is cancelled. */
+  cancelHostActions(reason: string): void {
+    this.hostActions.cancelWaiting(reason)
+  }
+
   dispose(): void {
     this.unsubscribe()
     for (const off of this.sessionListeners) off()

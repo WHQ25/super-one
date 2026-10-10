@@ -654,6 +654,13 @@ The channel to a node must be encrypted, either by the transport (loopback,
 SSH forward, Tailscale, a TLS reverse proxy) or by the node's encrypted channel.
 Forwarded headers are not trusted by default.
 
+A desktop's environment backend (`DesktopDomain`, `node-host/desktop-domain.ts`:
+identity, the node database with auth, leases, idempotency, the event log and
+Host Actions, and the session host) opens with the app and stays open until
+quit. The controller listener (`DesktopNodeHost`) runs over it only while
+controllers need it; stopping the listener cancels the Host Actions waiting on
+a controller and leaves the domain up.
+
 A desktop node listens on every interface while it serves (§11.5), but accepts
 TCP peers only from private networks: loopback, RFC 1918, link-local
 (169.254/16, fe80::/10), IPv6 unique-local (fc00::/7) and the Tailscale ranges

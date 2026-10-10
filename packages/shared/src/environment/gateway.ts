@@ -10,7 +10,7 @@ import type {
 import type { ControlLease, LeaseAcquireInput, LeaseReleaseInput, LeaseRenewInput, MutatingControlContext } from './lease'
 import type { DraftListRequest, DraftRecord, DraftUpsertRequest } from './draft-rpc'
 import type { ProjectRef, SessionRef, TerminalRef } from './refs'
-import type { SessionMessagesListRequest, SessionMessagesListResult } from './session-messages'
+import type { SessionLoadResult, SessionMessagesListRequest, SessionMessagesListResult } from './session-messages'
 
 /**
  * Environment-scoped gateway — the only boundary desktop features should use
@@ -90,7 +90,12 @@ export interface ListSessionsOptions {
 }
 
 export interface SessionGateway {
-  linkBootstrap?(ref: SessionRef): Promise<{ snapshot: unknown; page: SessionMessagesListResult; sequence: string }>
+  /**
+   * The session's reduced state and newest messages (or those before
+   * `before`), with the version they reflect (`session.load`). Optional:
+   * hosts without a read model have none.
+   */
+  load?(input: { session: SessionRef; before?: number | null; limit?: number }): Promise<SessionLoadResult>
   getMetadataBatch?(refs: SessionRef[]): Promise<import('../session-link').SessionLinkMetadataResult[]>
   archive?(request: import('../session-archive').SessionArchiveRequest): Promise<import('../session-archive').ArchiveToolResult>
   create(input: CreateSessionInput): Promise<{ sessionId: string }>

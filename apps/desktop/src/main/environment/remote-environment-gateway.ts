@@ -268,8 +268,8 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
   async *subscribeEvents(input: SubscribeEventsInput): AsyncIterable<EnvironmentEventEnvelope> {
     const { signal } = input
     let after = input.afterSequence ?? '0'
-    let epoch: string | undefined
-    const versions: Record<string, number> = {}
+    let epoch = input.epoch
+    const versions: Record<string, number> = { ...input.versions }
     while (!signal?.aborted) {
       const frames: SessionStreamFrame[] = []
       let ended: Error | null = null
@@ -1188,7 +1188,14 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
 
   private createSessionGateway(): SessionGateway {
     return {
-      linkBootstrap: ref => { this.assertEnv(ref.environmentId); return this.client.rpc('session.linkBootstrap', { sessionId: ref.sessionId }) },
+      load: (input) => {
+        this.assertEnv(input.session.environmentId)
+        return this.client.rpc<SessionLoadResult>('session.load', {
+          sessionId: input.session.sessionId,
+          ...(input.before != null ? { before: input.before } : {}),
+          ...(input.limit !== undefined ? { limit: input.limit } : {}),
+        })
+      },
       getMetadataBatch: async refs => {
         for (const ref of refs) this.assertEnv(ref.environmentId)
         return this.client.rpc('session.linkMetadata', { sessionIds: refs.map(ref => ref.sessionId) })
@@ -1340,15 +1347,6 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
         })
       },
     }
-  }
-
-  /** A session's reduced state and newest messages, with the version they reflect (`session.load`). */
-  async loadSession(input: { sessionId: string; before?: number | null; limit?: number }): Promise<SessionLoadResult> {
-    return this.client.rpc<SessionLoadResult>('session.load', {
-      sessionId: input.sessionId,
-      ...(input.before != null ? { before: input.before } : {}),
-      ...(input.limit !== undefined ? { limit: input.limit } : {}),
-    })
   }
 
   /**

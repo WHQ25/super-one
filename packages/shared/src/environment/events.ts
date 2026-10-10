@@ -58,6 +58,9 @@ export interface SubscribeEventsInput {
    * Omit or null to require a snapshot first.
    */
   afterSequence?: string | null
+  /** With `versions`: resume streaming events too, from a cursor of this epoch (`SessionLoadCursor`). */
+  epoch?: string
+  versions?: Record<string, number>
   /** Optional aggregate filters. */
   aggregateTypes?: EnvironmentAggregateType[]
   aggregateIds?: string[]

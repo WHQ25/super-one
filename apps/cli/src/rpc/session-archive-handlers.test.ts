@@ -16,7 +16,7 @@ function archive(ctx: RpcContext, args: Record<string, unknown>, tool = 'session
 describe('environment archive RPC', () => {
   it('requires session read scope for all read endpoints', () => {
     const ctx = context(); ctx.client.scopes = []
-    for (const method of ['session.archive', 'session.linkMetadata', 'session.linkBootstrap']) expect(dispatchSessionArchiveRpc(method, {}, ctx)).toMatchObject({ error: { code: 'forbidden' } })
+    for (const method of ['session.archive', 'session.linkMetadata']) expect(dispatchSessionArchiveRpc(method, {}, ctx)).toMatchObject({ error: { code: 'forbidden' } })
   })
   it('searches only its own archive and returns environment once with ACP branding', () => {
     const ctx = context([session(), session('hidden', { isHidden: true })])
@@ -37,9 +37,6 @@ describe('environment archive RPC', () => {
     const reply = dispatchSessionArchiveRpc('session.linkMetadata', { sessionIds: ['one', 'hidden'] }, ctx)
     expect(reply).toMatchObject({ result: [{ status: 'ok', metadata: { ref: { environmentId: 'node-A', sessionId: 'one' } } }, { status: 'unavailable' }] })
     expect(ctx.sessions.listMessages).not.toHaveBeenCalled()
-  })
-  it('takes a synchronous restore baseline with the durable sequence', () => {
-    expect(dispatchSessionArchiveRpc('session.linkBootstrap', { sessionId: 'one' }, context())).toMatchObject({ result: { snapshot: { sessionId: 'one' }, page: { hasMore: false }, sequence: '42' } })
   })
   it('uses the shared message_count sort and native transcript tools', () => {
     const ctx = context([session(), session('two', { transcript: [] })])

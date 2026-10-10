@@ -13,6 +13,7 @@ import type {
 } from '@superone/shared/agent-types'
 import { isAcpEffortConfigId, isAcpEffortConfigOption } from '@superone/shared/effort-labels'
 import { withoutProjectScopedWorkflows } from '@superone/shared/workflow-commands'
+import { goalComposerAction } from '@superone/shared/session-goal'
 import { useAppStore } from '../../app'
 import type { ChatProvider, ChatStore, PerSessionState } from '../types'
 import { buildSlashCommands } from '../helpers/chat-helpers'
@@ -268,6 +269,7 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
       }))
     }
     let hydrateSessionId: string | null = null
+    let submittedGoalSessionId: string | null = null
 
     set((s) => {
       let project = s.projectSessions[projectPath] ?? createDefaultProjectState()
@@ -358,6 +360,11 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
       const targetSession = project._sessions[targetSid]
       const delta = applyEventToSession(targetSession, event)
       const updatedSession = { ...targetSession, ...delta }
+      if (event.type === 'user_message_appended' && event.message.role === 'user'
+        && goalComposerAction(event.message.content.filter((block) => block.type === 'text').map((block) => block.text).join(''), [])?.type === 'set') {
+        updatedSession.draftId = null
+        submittedGoalSessionId = targetSid
+      }
       // Some harnesses start a native turn without init_ready. A scoped host
       // message is also authoritative receipt that this is no longer a draft.
       if (event.type === 'message_start' && eventSessionId) updatedSession.hostSessionOwned = true
@@ -784,6 +791,12 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
         },
       }
     })
+    if (submittedGoalSessionId) {
+      const sid = submittedGoalSessionId
+      void import('../helpers/draft-promote').then(({ consumeDraftForSession }) => {
+        void consumeDraftForSession(projectPath, sid)
+      })
+    }
     if (hydrateSessionId) {
       _hydrateSessionState(set, projectPath, hydrateSessionId)
     }

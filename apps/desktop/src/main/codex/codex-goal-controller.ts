@@ -1,4 +1,5 @@
-import type { CodexGoal, CodexGoalStatus, CodexRunResult } from '@superone/shared/agent-types'
+import type { ChatMessage, CodexGoal, CodexGoalStatus, CodexRunResult } from '@superone/shared/agent-types'
+import { newMessageId } from '@superone/shared/message-id'
 import type { CodexSession } from './codex-session'
 import type { AppServerConnection, CodexProjectAuth } from './app-server-connection'
 import { resolvePermissionProfile } from './app-server-connection'
@@ -26,6 +27,8 @@ interface CodexGoalControllerOptions {
    * without this the renderer would have to poll to notice a status change.
    */
   onGoalChange: (goal: CodexGoal | null) => void
+  /** Accepted composer submissions, before the first automatic assistant turn. */
+  onUserMessage: (message: ChatMessage) => void
 }
 
 export class CodexGoalController {
@@ -65,6 +68,18 @@ export class CodexGoalController {
       }))
     const goal = mapCodexGoal(result.goal)
     this.setCurrentGoal(goal)
+    // Status-only controls and reads do not submit a new objective. The RPC
+    // supplies no user row, so publish the accepted submission on our stream.
+    if (goal && status === undefined) {
+      this.options.onUserMessage({
+        id: newMessageId('user'),
+        role: 'user',
+        status: 'complete',
+        providerId: 'codex',
+        createdAt: new Date().toISOString(),
+        content: [{ type: 'text', text: `/goal ${trimmed}` }],
+      })
+    }
     if (goal?.status === 'active') this.schedule()
     return goal
   }

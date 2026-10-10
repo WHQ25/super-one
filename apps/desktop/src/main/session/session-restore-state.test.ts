@@ -3,22 +3,24 @@ import type { AgentEvent, SendMessageRequest } from '@superone/shared/agent-type
 import { ChatRuntime } from '../../../../mobile/src/runtime'
 import { buildRemoteSessionSnapshot } from '../agent/remote-session-snapshot'
 import { Session } from './session'
+import { codexGoalEventCallbacks } from '../codex/codex-goal-events'
 import type { SessionBackend } from './types'
 
 vi.mock('../logger', () => ({ default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() } }))
 vi.mock('./realtime-timeline-repo', () => ({ loadRealtimeTimeline: () => null }))
 vi.mock('../environment/session-identity', () => ({ localSessionEnvironmentId: () => 'desktop' }))
 
-function fixture() {
+function fixture(onStateChange?: (snapshot: import('./types').SessionStateChange) => void) {
   let emit!: (event: AgentEvent) => void
+  let publishThread!: (id: string) => void
   const backend = {
     kind: 'codex', start: vi.fn(async () => {}), send: vi.fn(async (_request: SendMessageRequest) => {}),
     onEvent: (listener: typeof emit) => { emit = listener; return () => {} },
-    onProviderSessionId: () => () => {}, onPermissionModeApplied: () => () => {},
+    onProviderSessionId: (listener: typeof publishThread) => { publishThread = listener; return () => {} }, onPermissionModeApplied: () => () => {},
   }
   const session = new Session({ id: 'session', projectPath: '/project', cwd: '/project',
-    providerId: 'codex', harnessId: 'codex', providerConfig: {}, backend: backend as unknown as SessionBackend })
-  return { session, emit: (event: AgentEvent) => emit(event) }
+    providerId: 'codex', harnessId: 'codex', providerConfig: {}, backend: backend as unknown as SessionBackend, onStateChange })
+  return { session, emit: (event: AgentEvent) => emit(event), publishThread: (id: string) => publishThread(id) }
 }
 
 /** The phone's restore: subscribe answers with the snapshot, the host's replay is the first buffered batch. */
@@ -39,6 +41,25 @@ async function openOnMobile(session: Session) {
 }
 
 describe('session state that only events carry', () => {
+  it('persists the submitted goal before an automatic assistant turn completes', () => {
+    const persist = vi.fn()
+    const { session, emit, publishThread } = fixture(persist)
+    const goalEvents = codexGoalEventCallbacks(emit, publishThread)
+    goalEvents.onGoalChange({
+      threadId: 'goal-thread', objective: 'Ship login', status: 'active', tokenBudget: null,
+      tokensUsed: 0, timeUsedSeconds: 0, createdAt: 0, updatedAt: 0,
+    })
+    goalEvents.onUserMessage({
+      id: 'goal-user', role: 'user', status: 'complete', providerId: 'codex', createdAt: '',
+      content: [{ type: 'text', text: '/goal Ship login' }],
+    })
+    expect(session.snapshot.messages).toHaveLength(1)
+    expect(persist).toHaveBeenCalledWith(expect.objectContaining({
+      messages: [expect.objectContaining({ id: 'goal-user' })],
+      providerSessionId: 'goal-thread',
+      messagePersistMode: { kind: 'incremental', dirtyMessageIds: ['goal-user'] },
+    }))
+  })
   it('restores the goal the phone missed while it was away, including a cleared one', async () => {
     const { session, emit } = fixture()
     expect((await buildRemoteSessionSnapshot(session, '/project', 'session')).goal).toBeNull()

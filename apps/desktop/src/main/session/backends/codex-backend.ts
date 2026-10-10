@@ -67,7 +67,7 @@ import {
 } from '../../codex/codex-turn'
 import { CodexTurnUsageAccumulator } from '../../codex/codex-usage-accumulator'
 import { CodexGoalController } from '../../codex/codex-goal-controller'
-import { sessionGoalFromCodex } from '../../codex/codex-goal-service'
+import { codexGoalEventCallbacks } from '../../codex/codex-goal-events'
 import {
   listCodexRealtimeTimeline,
   startCodexRealtime,
@@ -330,9 +330,7 @@ export class CodexBackend implements SessionBackend {
         this.currentMessageId = null
         this.flushPendingTaskNotifications()
       },
-      onGoalChange: (goal) => {
-        this.emit({ type: 'session_goal', goal: sessionGoalFromCodex(goal) })
-      },
+      ...codexGoalEventCallbacks((event) => this.emit(event), (threadId) => this.fireProviderSessionId(threadId)),
     })
   }
 

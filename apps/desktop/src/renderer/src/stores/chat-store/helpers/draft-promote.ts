@@ -718,8 +718,11 @@ export async function consumeDraftForSession(
   const draftId = draftIdBySession.get(sessionId)
   if (!draftId) return
   draftIdBySession.delete(sessionId)
+  releaseParkedDraft(draftId)
   const { connectionId } = resolveDraftTarget(projectPath)
   try {
+    // A save already in flight must not recreate a draft after its first send.
+    useDraftsStore.getState().markDraftDiscarded(draftId)
     await useDraftsStore.getState().removeDraft(connectionId, draftId)
   } catch {
     /* list will refresh; never block send */

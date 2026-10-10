@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { CodexGoalStatus } from '@superone/shared/agent-types'
+import type { ChatMessage, CodexGoalStatus } from '@superone/shared/agent-types'
 import type { CodexSession } from './codex-session'
 
 const turnMocks = vi.hoisted(() => ({
@@ -67,6 +67,7 @@ function makeHarness(request: (method: string, params?: Record<string, unknown>)
   const onRunError = vi.fn()
   const onIdle = vi.fn()
   const onGoalChange = vi.fn()
+  const onUserMessage = vi.fn<(message: ChatMessage) => void>()
   const controller = new CodexGoalController({
     getSession: () => session,
     getAuth: () => ({ mode: 'auto' }),
@@ -78,8 +79,9 @@ function makeHarness(request: (method: string, params?: Record<string, unknown>)
     onRunError,
     onIdle,
     onGoalChange,
+    onUserMessage,
   })
-  return { connection, session, controller, onRunStart, onRunComplete, onRunError, onIdle, onGoalChange }
+  return { connection, session, controller, onRunStart, onRunComplete, onRunError, onIdle, onGoalChange, onUserMessage }
 }
 
 describe('CodexGoalController', () => {
@@ -121,6 +123,12 @@ describe('CodexGoalController', () => {
     )
     expect(harness.onRunError).not.toHaveBeenCalled()
     expect(harness.onIdle).toHaveBeenCalledOnce()
+    expect(harness.onUserMessage).toHaveBeenCalledOnce()
+    expect(harness.onUserMessage).toHaveBeenCalledWith(expect.objectContaining({
+      role: 'user', status: 'complete', providerId: 'codex',
+      content: [{ type: 'text', text: '/goal Finish it' }],
+    }))
+    expect(harness.onUserMessage.mock.invocationCallOrder[0]).toBeLessThan(harness.onRunStart.mock.invocationCallOrder[0])
     // The renderer never polls, so every transition the controller sees has to
     // be announced — including the terminal one that ends the loop.
     expect(harness.onGoalChange).toHaveBeenCalledWith(goal('active'))
@@ -147,6 +155,7 @@ describe('CodexGoalController', () => {
       onRunError: harness.onRunError,
       onIdle: harness.onIdle,
       onGoalChange: harness.onGoalChange,
+      onUserMessage: harness.onUserMessage,
     })
     turnMocks.streamTurnEvents.mockResolvedValue({ threadId: 'thread-1', turnId: 'turn-1', usage: null, items: [] })
 
@@ -197,6 +206,14 @@ describe('CodexGoalController', () => {
     await expect(harness.controller.get('thread-1')).resolves.toEqual(goal('complete'))
     await expect(harness.controller.clear('thread-1')).resolves.toBe(true)
     expect(turnMocks.streamTurnEvents).not.toHaveBeenCalled()
+    expect(harness.onUserMessage).not.toHaveBeenCalled()
+  })
+
+  it('does not announce a submitted objective when the goal RPC rejects', async () => {
+    const harness = makeHarness(async () => { throw new Error('Goal unavailable') })
+    await expect(harness.controller.set(null, 'Finish it')).rejects.toThrow('Goal unavailable')
+    expect(harness.onUserMessage).not.toHaveBeenCalled()
+    expect(harness.onRunStart).not.toHaveBeenCalled()
   })
 
   it('updates goal status without scheduling continuation while paused', async () => {
@@ -220,6 +237,7 @@ describe('CodexGoalController', () => {
 
     await expect(harness.controller.set('thread-1', 'Finish it', 'paused')).resolves.toEqual(goal('paused'))
     expect(turnMocks.streamTurnEvents).not.toHaveBeenCalled()
+    expect(harness.onUserMessage).not.toHaveBeenCalled()
   })
 
   it('reschedules an active goal updated while the previous consumer is finishing', async () => {

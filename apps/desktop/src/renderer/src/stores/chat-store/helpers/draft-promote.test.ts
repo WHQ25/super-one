@@ -9,8 +9,9 @@ import type { DraftUpsertRequest } from '@superone/shared/environment'
 
 const saveDraft = vi.fn<(connectionId: string, draft: DraftUpsertRequest) => Promise<void>>()
 const removeDraft = vi.fn<(connectionId: string, draftId: string) => Promise<void>>()
+const markDraftDiscarded = vi.fn()
 vi.mock('../../drafts', () => ({
-  useDraftsStore: { getState: () => ({ saveDraft, removeDraft }) },
+  useDraftsStore: { getState: () => ({ saveDraft, removeDraft, markDraftDiscarded }) },
 }))
 
 import type { ChatStore, PerSessionState } from '../types'

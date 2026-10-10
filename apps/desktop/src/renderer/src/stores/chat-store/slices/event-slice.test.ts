@@ -2,6 +2,8 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { AgentEvent, ChatMessage } from '@superone/shared/agent-types'
+import { useDraftsStore } from '../../drafts'
+import { _resetDraftSessionMap, claimDraftForSession, promoteDraftIfUnsent } from '../helpers/draft-promote'
 
 const mockLocalStorage = {
   getItem: vi.fn().mockReturnValue(null),
@@ -86,9 +88,48 @@ function resetStore() {
 
 beforeEach(() => {
   resetStore()
+  _resetDraftSessionMap()
+  useDraftsStore.setState({ byConnection: {}, discardedIds: {} })
   mockGetLiveSnapshots.mockReset()
   mockTrace.mockReset()
   vi.clearAllMocks()
+})
+
+describe('submitted goal draft', () => {
+  it('consumes the goal draft after switching away even when an earlier autosave is still in flight', async () => {
+    const deleteDraft = vi.fn().mockResolvedValue(undefined)
+    let finishSave!: (draft: import('@superone/shared/environment').DraftListEntry) => void
+    const upsertDraft = vi.fn(() => new Promise<import('@superone/shared/environment').DraftListEntry>((resolve) => { finishSave = resolve }))
+    window.environment = { ...window.environment, deleteDraft, upsertDraft }
+    const project = createDefaultProjectState()
+    project._activeSessionId = 'other'
+    project._sessions = {
+      origin: { ...createDefaultPerSessionState(), preferredProvider: 'codex', sessionProvider: 'codex', draftId: 'goal-draft', _historyHydrated: true },
+      other: { ...createDefaultPerSessionState(), draftText: 'keep this draft' },
+    }
+    claimDraftForSession('origin', 'goal-draft')
+    useChatStore.setState({ activeProject: '/p', projectSessions: { '/p': project } })
+    useDraftsStore.setState({ byConnection: { local: [{
+      id: 'goal-draft', text: '/goal Ship login', title: 'Ship login', docJson: null, attachments: [],
+      projectPath: '/p', harness: 'codex', model: null, permissionMode: null, settings: {},
+      originSessionId: 'origin', createdAt: '', updatedAt: '',
+    }] } })
+    const savedDraft = useDraftsStore.getState().byConnection.local[0]
+    const saving = useDraftsStore.getState().saveDraft('local', savedDraft)
+
+    const message: ChatMessage = { ...makeMessage('goal-user', 'user'), providerId: 'codex', content: [{ type: 'text', text: '/goal Ship login' }] }
+    useChatStore.getState().handleAgentEvent({ type: 'user_message_appended', sessionId: 'origin', projectPath: '/p', message })
+    await vi.waitFor(() => expect(deleteDraft).toHaveBeenCalledWith('local', 'goal-draft'))
+    finishSave(savedDraft)
+    await saving
+    await promoteDraftIfUnsent(useChatStore.getState(), '/p', 'origin')
+
+    const sessions = useChatStore.getState().projectSessions['/p']._sessions
+    expect(sessions.origin.messages).toEqual([expect.objectContaining(message)])
+    expect(sessions.origin.draftId).toBeNull()
+    expect(sessions.other.draftText).toBe('keep this draft')
+    expect(useDraftsStore.getState().byConnection.local).toEqual([])
+  })
 })
 
 describe('remote_session_start', () => {

@@ -44,15 +44,17 @@ Consequences:
   | Human response over IPC or from a phone | `AgentService` synthesizes it, in addition to any backend emission |
   | Response through desktop-node RPC (`DesktopSessionHost`) | nobody: it calls `Session` directly and misses the `AgentService` synthesis |
   | Response through CLI-node RPC | `SessionRuntime` durable response events |
-  | Cursor question/plan answer or cancellation | the Cursor backend (`cursor-interactions.ts`) |
+  | Normal responses in DeepSeek, OpenCode and Cursor; Cursor cancellations | those backends |
   | ACP elicitation completion | the ACP backend's elicitation-complete path |
   | Codex MCP App elicitation abort | the Codex backend |
+  | Host confirms and input requests | `HostConfirmRegistry`, through `Session.emitHostEvent` |
 
 - **Publishes that bypass the convergence point.** Besides the renderer
   transport's own send, `index.ts` calls `safeSend(EVENT)` directly for
   presence, the remote-node sink and the settings fallback, skipping batching
-  and notifications. Replay events (`getReplayEvents`) pass through `onAny` to
-  every consumer.
+  and notifications. A newly registered session's replay events
+  (`getReplayEvents`) reach every `onAny` consumer: events stand in for the
+  snapshot a consumer needs to learn its settings and catalogs.
 - **Polling, and no live updates when idle.** Remote session reads are a
   per-turn 80 ms drain, a 100 ms poller per phone-relayed node session, and a
   2 s collaboration watcher per environment with remote children
@@ -319,13 +321,16 @@ takes a new baseline. No wire change.
 
 Each phase ships on its own. The phone wire format does not change.
 
-1. **One publish point on desktop.** Every event is created inside its
-   aggregate and leaves through one hub. `Session` owns interaction resolution
-   on every path, including node-host calls and backend cancellations.
-2. **Shared stages and profiles.** Extract the stages in today's order; the
-   renderer transport and the mobile pipeline become profiles.
+1. **Session-owned resolutions.** `Session` announces interaction
+   resolution once on every path, including desktop-node calls, backend
+   announcements and host confirms. Presence and the settings fallback join
+   the renderer publish point.
+2. **Hub, shared stages and profiles.** One hub in desktop main; extract the
+   stages in today's order; the renderer transport and the mobile pipeline
+   become profiles.
 3. **Node push.** `session.subscribe` with server-side topic filtering,
-   coverage and resume. The CLI still writes every event durably in this
+   coverage and resume; the remote-node sink and environment-level events join
+   the hub. The CLI still writes every event durably in this
    phase, so positions are durable-only until phase 4. Replaces all session
    read polling.
 4. **Durable log, streaming ring and read model on every node.** Commit before

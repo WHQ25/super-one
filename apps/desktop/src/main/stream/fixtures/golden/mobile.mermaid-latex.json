@@ -1,0 +1,720 @@
+[
+ {
+  "payload": [
+   {
+    "type": "init_ready",
+    "skills": [
+     {
+      "name": "agent-canvas",
+      "description": "Draw diagrams, flowcharts, and visualizations on an Excalidraw canvas. Use when the user asks to draw, visualize, create diagrams, or sketch ideas.",
+      "argumentHint": "",
+      "isSkill": true
+     },
+     {
+      "name": "agent-speak",
+      "description": "Speak to the user using text-to-speech via `rawgenai <provider> tts --speak`. Use this skill when the user asks you to \"speak\", \"talk to me\", \"read aloud\", \"say this\", or when in voice conversation mode. This skill enables the agent to have voice conversations with users, replacing text output with spoken audio. Trigger on any request for voice interaction, verbal response, or spoken output.",
+      "argumentHint": "",
+      "isSkill": true
+     },
+     {
+      "name": "find-skills",
+      "description": "Helps users discover and install agent skills when they ask questions like \"how do I do X\", \"find a skill for X\", \"is there a skill that can...\", or express interest in extending capabilities. This skill should be used when the user is looking for functionality that might exist as an installable skill.",
+      "argumentHint": "",
+      "isSkill": true
+     },
+     {
+      "name": "parallel-dev",
+      "description": "Create git worktree and launch AI coding agent (Claude Code / Codex / Gemini) in a new terminal window. Use when user says \"parallel dev\", \"new worktree\", \"parallel branch\", \"spin up branch\", \"work on feature in parallel\", \"launch agent on branch\", \"start parallel task\", or wants to work on multiple features simultaneously without switching branches.",
+      "argumentHint": "",
+      "isSkill": true
+     },
+     {
+      "name": "frontend-design",
+      "description": "Create distinctive, production-grade frontend interfaces with high design quality. Use this skill when the user asks to build web components, pages, or applications. Generates creative, polished code that avoids generic AI aesthetics.",
+      "argumentHint": "",
+      "isSkill": true
+     },
+     {
+      "name": "skill-creator",
+      "description": "Create new skills, modify and improve existing skills, and measure skill performance. Use when users want to create a skill from scratch, update or optimize an existing skill, run evals to test a skill, benchmark skill performance with variance analysis, or optimize a skill's description for better triggering accuracy.",
+      "argumentHint": "",
+      "isSkill": true
+     },
+     {
+      "name": "vercel-react-best-practices",
+      "description": "React and Next.js performance optimization guidelines from Vercel Engineering. This skill should be used when writing, reviewing, or refactoring React/Next.js code to ensure optimal performance patterns. Triggers on tasks involving React components, Next.js pages, data fetching, bundle optimization, or performance improvements.",
+      "argumentHint": "",
+      "isSkill": true
+     }
+    ],
+    "projectCommands": [],
+    "projectAgents": [],
+    "cwd": "/Users/wuhangqi25/Developer/Projects/super-one",
+    "homedir": "/Users/wuhangqi25",
+    "sandboxInfo": {
+     "enabled": true,
+     "autoAllowBash": false
+    }
+   }
+  ],
+  "targets": [
+   "phone-1"
+  ]
+ },
+ {
+  "payload": [
+   {
+    "type": "init_ready",
+    "skills": [
+     {
+      "name": "agent-canvas",
+      "description": "Draw diagrams, flowcharts, and visualizations on an Excalidraw canvas. Use when the user asks to draw, visualize, create diagrams, or sketch ideas.",
+      "argumentHint": "",
+      "isSkill": true
+     },
+     {
+      "name": "agent-speak",
+      "description": "Speak to the user using text-to-speech via `rawgenai <provider> tts --speak`. Use this skill when the user asks you to \"speak\", \"talk to me\", \"read aloud\", \"say this\", or when in voice conversation mode. This skill enables the agent to have voice conversations with users, replacing text output with spoken audio. Trigger on any request for voice interaction, verbal response, or spoken output.",
+      "argumentHint": "",
+      "isSkill": true
+     },
+     {
+      "name": "find-skills",
+      "description": "Helps users discover and install agent skills when they ask questions like \"how do I do X\", \"find a skill for X\", \"is there a skill that can...\", or express interest in extending capabilities. This skill should be used when the user is looking for functionality that might exist as an installable skill.",
+      "argumentHint": "",
+      "isSkill": true
+     },
+     {
+      "name": "parallel-dev",
+      "description": "Create git worktree and launch AI coding agent (Claude Code / Codex / Gemini) in a new terminal window. Use when user says \"parallel dev\", \"new worktree\", \"parallel branch\", \"spin up branch\", \"work on feature in parallel\", \"launch agent on branch\", \"start parallel task\", or wants to work on multiple features simultaneously without switching branches.",
+      "argumentHint": "",
+      "isSkill": true
+     },
+     {
+      "name": "frontend-design",
+      "description": "Create distinctive, production-grade frontend interfaces with high design quality. Use this skill when the user asks to build web components, pages, or applications. Generates creative, polished code that avoids generic AI aesthetics.",
+      "argumentHint": "",
+      "isSkill": true
+     },
+     {
+      "name": "skill-creator",
+      "description": "Create new skills, modify and improve existing skills, and measure skill performance. Use when users want to create a skill from scratch, update or optimize an existing skill, run evals to test a skill, benchmark skill performance with variance analysis, or optimize a skill's description for better triggering accuracy.",
+      "argumentHint": "",
+      "isSkill": true
+     }
+    ],
+    "projectCommands": [],
+    "projectAgents": [],
+    "cwd": "/Users/wuhangqi25/Developer/Projects/test-super-one",
+    "homedir": "/Users/wuhangqi25",
+    "sandboxInfo": {
+     "enabled": true,
+     "autoAllowBash": false
+    }
+   }
+  ],
+  "targets": [
+   "phone-1"
+  ]
+ },
+ {
+  "payload": [
+   {
+    "type": "init_ready",
+    "skills": [
+     {
+      "name": "agent-canvas",
+      "description": "Draw diagrams, flowcharts, and visualizations on an Excalidraw canvas. Use when the user asks to draw, visualize, create diagrams, or sketch ideas.",
+      "argumentHint": "",
+      "isSkill": true
+     },
+     {
+      "name": "agent-speak",
+      "description": "Speak to the user using text-to-speech via `rawgenai <provider> tts --speak`. Use this skill when the user asks you to \"speak\", \"talk to me\", \"read aloud\", \"say this\", or when in voice conversation mode. This skill enables the agent to have voice conversations with users, replacing text output with spoken audio. Trigger on any request for voice interaction, verbal response, or spoken output.",
+      "argumentHint": "",
+      "isSkill": true
+     },
+     {
+      "name": "find-skills",
+      "description": "Helps users discover and install agent skills when they ask questions like \"how do I do X\", \"find a skill for X\", \"is there a skill that can...\", or express interest in extending capabilities. This skill should be used when the user is looking for functionality that might exist as an installable skill.",
+      "argumentHint": "",
+      "isSkill": true
+     },
+     {
+      "name": "parallel-dev",
+      "description": "Create git worktree and launch AI coding agent (Claude Code / Codex / Gemini) in a new terminal window. Use when user says \"parallel dev\", \"new worktree\", \"parallel branch\", \"spin up branch\", \"work on feature in parallel\", \"launch agent on branch\", \"start parallel task\", or wants to work on multiple features simultaneously without switching branches.",
+      "argumentHint": "",
+      "isSkill": true
+     },
+     {
+      "name": "frontend-design",
+      "description": "Create distinctive, production-grade frontend interfaces with high design quality. Use this skill when the user asks to build web components, pages, or applications. Generates creative, polished code that avoids generic AI aesthetics.",
+      "argumentHint": "",
+      "isSkill": true
+     },
+     {
+      "name": "skill-creator",
+      "description": "Create new skills, modify and improve existing skills, and measure skill performance. Use when users want to create a skill from scratch, update or optimize an existing skill, run evals to test a skill, benchmark skill performance with variance analysis, or optimize a skill's description for better triggering accuracy.",
+      "argumentHint": "",
+      "isSkill": true
+     }
+    ],
+    "projectCommands": [],
+    "projectAgents": [],
+    "cwd": "/Users/wuhangqi25/Developer/Projects/test-super-one",
+    "homedir": "/Users/wuhangqi25",
+    "sandboxInfo": {
+     "enabled": true,
+     "autoAllowBash": false
+    }
+   }
+  ],
+  "targets": [
+   "phone-1"
+  ]
+ },
+ {
+  "payload": [
+   {
+    "type": "status_change",
+    "status": "streaming"
+   }
+  ],
+  "targets": [
+   "phone-1"
+  ]
+ },
+ {
+  "payload": [
+   {
+    "type": "message_start",
+    "message": {
+     "id": "msg_1774114642739_3bk9iy",
+     "role": "assistant",
+     "status": "streaming",
+     "content": [],
+     "createdAt": "2026-03-21T17:37:22.739Z",
+     "providerId": "claude"
+    }
+   }
+  ],
+  "targets": [
+   "phone-1"
+  ]
+ },
+ {
+  "payload": [
+   {
+    "type": "session_init",
+    "session": {
+     "sessionId": "c7278d41-6d9f-450c-ac96-f7b336b52ae7",
+     "model": "claude-opus-4-6[1m]",
+     "tools": [
+      "Task",
+      "TaskOutput",
+      "Bash",
+      "Glob",
+      "Grep",
+      "ExitPlanMode",
+      "Read",
+      "Edit",
+      "Write",
+      "NotebookEdit",
+      "WebFetch",
+      "TodoWrite",
+      "WebSearch",
+      "TaskStop",
+      "AskUserQuestion",
+      "Skill",
+      "EnterPlanMode",
+      "EnterWorktree",
+      "ExitWorktree",
+      "TeamCreate",
+      "TeamDelete",
+      "SendMessage",
+      "CronCreate",
+      "CronDelete",
+      "CronList",
+      "ToolSearch",
+      "mcp__context7__resolve-library-id",
+      "mcp__context7__query-docs",
+      "mcp__widget__read_guidelines",
+      "mcp__widget__show_widget"
+     ],
+     "mcpServers": [
+      {
+       "name": "context7",
+       "status": "connected"
+      },
+      {
+       "name": "claude.ai Gmail",
+       "status": "needs-auth"
+      },
+      {
+       "name": "claude.ai Google Calendar",
+       "status": "needs-auth"
+      },
+      {
+       "name": "widget",
+       "status": "connected"
+      }
+     ],
+     "permissionMode": "default",
+     "slashCommands": [
+      "debug",
+      "simplify",
+      "batch",
+      "loop",
+      "claude-api",
+      "agent-canvas",
+      "agent-speak",
+      "find-skills",
+      "parallel-dev",
+      "tdd",
+      "align",
+      "wiki",
+      "deep-dive",
+      "code-review:code-review",
+      "frontend-design:frontend-design",
+      "skill-creator:skill-creator",
+      "compact",
+      "context",
+      "cost",
+      "heapdump",
+      "init",
+      "pr-comments",
+      "release-notes",
+      "review",
+      "security-review",
+      "extra-usage",
+      "insights"
+     ],
+     "skills": [
+      "debug",
+      "simplify",
+      "batch",
+      "loop",
+      "claude-api",
+      "agent-canvas",
+      "agent-speak",
+      "find-skills",
+      "parallel-dev",
+      "frontend-design:frontend-design",
+      "skill-creator:skill-creator"
+     ],
+     "claudeCodeVersion": "2.1.76",
+     "cwd": "/Users/wuhangqi25/Developer/Projects/test-super-one",
+     "agents": [
+      "general-purpose",
+      "statusline-setup",
+      "Explore",
+      "Plan",
+      "codex-peer",
+      "gemini-peer"
+     ],
+     "apiKeySource": "none",
+     "outputStyle": "default",
+     "plugins": [
+      {
+       "name": "code-review",
+       "path": "/Users/wuhangqi25/.claude/plugins/cache/claude-plugins-official/code-review/61c0597779bd"
+      },
+      {
+       "name": "frontend-design",
+       "path": "/Users/wuhangqi25/.claude/plugins/cache/claude-plugins-official/frontend-design/61c0597779bd"
+      },
+      {
+       "name": "skill-creator",
+       "path": "/Users/wuhangqi25/.claude/plugins/cache/claude-plugins-official/skill-creator/61c0597779bd"
+      },
+      {
+       "name": "typescript-lsp",
+       "path": "/Users/wuhangqi25/.claude/plugins/cache/claude-plugins-official/typescript-lsp/1.0.0"
+      }
+     ],
+     "fastModeState": "off"
+    }
+   }
+  ],
+  "targets": [
+   "phone-1"
+  ]
+ },
+ {
+  "payload": [
+   {
+    "type": "content_delta",
+    "messageId": "msg_1774114642739_3bk9iy",
+    "delta": {
+     "type": "thinking",
+     "thinking": "用户想测试 ",
+     "parentToolUseId": null
+    }
+   }
+  ],
+  "targets": [
+   "phone-1"
+  ]
+ },
+ {
+  "payload": [
+   {
+    "type": "content_delta",
+    "messageId": "msg_1774114642739_3bk9iy",
+    "delta": {
+     "type": "thinking",
+     "thinking": "mermaid 和 LaTeX 的渲染。",
+     "parentToolUseId": null
+    }
+   },
+   {
+    "type": "message_usage",
+    "messageId": "msg_1774114642739_3bk9iy",
+    "inputTokens": 17539,
+    "outputTokens": 0
+   }
+  ],
+  "targets": [
+   "phone-1"
+  ]
+ },
+ {
+  "payload": [
+   {
+    "type": "content_delta",
+    "messageId": "msg_1774114642739_3bk9iy",
+    "delta": {
+     "type": "text",
+     "text": "Mermaid 图：\n\n```mermaid\ngraph L",
+     "parentToolUseId": null
+    }
+   }
+  ],
+  "targets": [
+   "phone-1"
+  ]
+ },
+ {
+  "payload": [
+   {
+    "type": "content_delta",
+    "messageId": "msg_1774114642739_3bk9iy",
+    "delta": {
+     "type": "text",
+     "text": "R\n    A[开始] --> B{条件判",
+     "parentToolUseId": null
+    }
+   }
+  ],
+  "targets": [
+   "phone-1"
+  ]
+ },
+ {
+  "payload": [
+   {
+    "type": "content_delta",
+    "messageId": "msg_1774114642739_3bk9iy",
+    "delta": {
+     "type": "text",
+     "text": "断}\n    B -->|是| C[执行操作]\n    B -->|否| D[结",
+     "parentToolUseId": null
+    }
+   }
+  ],
+  "targets": [
+   "phone-1"
+  ]
+ },
+ {
+  "payload": [
+   {
+    "type": "content_delta",
+    "messageId": "msg_1774114642739_3bk9iy",
+    "delta": {
+     "type": "text",
+     "text": "束]\n    C --> D\n```\n\nLaTeX 公式：\n\n行内公式：$",
+     "parentToolUseId": null
+    }
+   }
+  ],
+  "targets": [
+   "phone-1"
+  ]
+ },
+ {
+  "payload": [
+   {
+    "type": "content_delta",
+    "messageId": "msg_1774114642739_3bk9iy",
+    "delta": {
+     "type": "text",
+     "text": "E = mc^2$\n\n块级公式：",
+     "parentToolUseId": null
+    }
+   }
+  ],
+  "targets": [
+   "phone-1"
+  ]
+ },
+ {
+  "payload": [
+   {
+    "type": "content_delta",
+    "messageId": "msg_1774114642739_3bk9iy",
+    "delta": {
+     "type": "text",
+     "text": "\n\n$$\n\\int_{-\\infty}^{\\infty",
+     "parentToolUseId": null
+    }
+   }
+  ],
+  "targets": [
+   "phone-1"
+  ]
+ },
+ {
+  "payload": [
+   {
+    "type": "content_delta",
+    "messageId": "msg_1774114642739_3bk9iy",
+    "delta": {
+     "type": "text",
+     "text": "} e^{-x^2} dx = \\sqrt{\\pi}\n$$\n\n$$",
+     "parentToolUseId": null
+    }
+   }
+  ],
+  "targets": [
+   "phone-1"
+  ]
+ },
+ {
+  "payload": [
+   {
+    "type": "content_delta",
+    "messageId": "msg_1774114642739_3bk9iy",
+    "delta": {
+     "type": "text",
+     "text": "\n\\sum_{n=1}^{\\infty} \\frac{1}{n^2} = \\frac",
+     "parentToolUseId": null
+    }
+   }
+  ],
+  "targets": [
+   "phone-1"
+  ]
+ },
+ {
+  "payload": [
+   {
+    "type": "content_delta",
+    "messageId": "msg_1774114642739_3bk9iy",
+    "delta": {
+     "type": "text",
+     "text": "{\\pi^2}{6}\n$$",
+     "parentToolUseId": null
+    }
+   },
+   {
+    "type": "message_usage",
+    "messageId": "msg_1774114642739_3bk9iy",
+    "inputTokens": 17539,
+    "outputTokens": 0
+   }
+  ],
+  "targets": [
+   "phone-1"
+  ]
+ },
+ {
+  "payload": [
+   {
+    "type": "message_usage",
+    "messageId": "msg_1774114642739_3bk9iy",
+    "inputTokens": 17539,
+    "outputTokens": 200
+   }
+  ],
+  "targets": [
+   "phone-1"
+  ]
+ },
+ {
+  "payload": [
+   {
+    "type": "rate_limit",
+    "status": "allowed",
+    "resetsAt": 1774119600,
+    "rateLimitType": "five_hour",
+    "overageStatus": "allowed",
+    "overageResetsAt": 1774116000,
+    "isUsingOverage": false
+   }
+  ],
+  "targets": [
+   "phone-1"
+  ]
+ },
+ {
+  "payload": [
+   {
+    "type": "message_complete",
+    "messageId": "msg_1774114642739_3bk9iy",
+    "metadata": {
+     "durationMs": 9923,
+     "durationApiMs": 4850,
+     "costUsd": 0.11461500000000001,
+     "numTurns": 1,
+     "stopReason": "end_turn",
+     "resultText": "Mermaid 图：\n\n```mermaid\ngraph LR\n    A[开始] --> B{条件判断}\n    B -->|是| C[执行操作]\n    B -->|否| D[结束]\n    C --> D\n```\n\nLaTeX 公式：\n\n行内公式：$E = mc^2$\n\n块级公式：\n\n$$\n\\int_{-\\infty}^{\\infty} e^{-x^2} dx = \\sqrt{\\pi}\n$$\n\n$$\n\\sum_{n=1}^{\\infty} \\frac{1}{n^2} = \\frac{\\pi^2}{6}\n$$",
+     "fastModeState": "off",
+     "usage": {
+      "inputTokens": 3,
+      "outputTokens": 9,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 17536
+     },
+     "modelUsage": {
+      "claude-opus-4-6[1m]": {
+       "inputTokens": 3,
+       "outputTokens": 200,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 17536,
+       "costUSD": 0.11461500000000001,
+       "contextWindow": 1000000,
+       "maxOutputTokens": 32000
+      }
+     }
+    }
+   }
+  ],
+  "targets": [
+   "phone-1"
+  ]
+ },
+ {
+  "payload": [
+   {
+    "type": "status_change",
+    "status": "idle"
+   }
+  ],
+  "targets": [
+   "phone-1"
+  ]
+ },
+ {
+  "payload": [
+   {
+    "type": "init_ready",
+    "skills": [
+     {
+      "name": "agent-canvas",
+      "description": "Draw diagrams, flowcharts, and visualizations on an Excalidraw canvas. Use when the user asks to draw, visualize, create diagrams, or sketch ideas.",
+      "argumentHint": "",
+      "isSkill": true
+     },
+     {
+      "name": "agent-speak",
+      "description": "Speak to the user using text-to-speech via `rawgenai <provider> tts --speak`. Use this skill when the user asks you to \"speak\", \"talk to me\", \"read aloud\", \"say this\", or when in voice conversation mode. This skill enables the agent to have voice conversations with users, replacing text output with spoken audio. Trigger on any request for voice interaction, verbal response, or spoken output.",
+      "argumentHint": "",
+      "isSkill": true
+     },
+     {
+      "name": "find-skills",
+      "description": "Helps users discover and install agent skills when they ask questions like \"how do I do X\", \"find a skill for X\", \"is there a skill that can...\", or express interest in extending capabilities. This skill should be used when the user is looking for functionality that might exist as an installable skill.",
+      "argumentHint": "",
+      "isSkill": true
+     },
+     {
+      "name": "parallel-dev",
+      "description": "Create git worktree and launch AI coding agent (Claude Code / Codex / Gemini) in a new terminal window. Use when user says \"parallel dev\", \"new worktree\", \"parallel branch\", \"spin up branch\", \"work on feature in parallel\", \"launch agent on branch\", \"start parallel task\", or wants to work on multiple features simultaneously without switching branches.",
+      "argumentHint": "",
+      "isSkill": true
+     },
+     {
+      "name": "frontend-design",
+      "description": "Create distinctive, production-grade frontend interfaces with high design quality. Use this skill when the user asks to build web components, pages, or applications. Generates creative, polished code that avoids generic AI aesthetics.",
+      "argumentHint": "",
+      "isSkill": true
+     },
+     {
+      "name": "skill-creator",
+      "description": "Create new skills, modify and improve existing skills, and measure skill performance. Use when users want to create a skill from scratch, update or optimize an existing skill, run evals to test a skill, benchmark skill performance with variance analysis, or optimize a skill's description for better triggering accuracy.",
+      "argumentHint": "",
+      "isSkill": true
+     }
+    ],
+    "projectCommands": [],
+    "projectAgents": [],
+    "cwd": "/Users/wuhangqi25/Developer/Projects/test-super-one",
+    "homedir": "/Users/wuhangqi25",
+    "sandboxInfo": {
+     "enabled": true,
+     "autoAllowBash": false
+    }
+   }
+  ],
+  "targets": [
+   "phone-1"
+  ]
+ },
+ {
+  "payload": [
+   {
+    "type": "init_ready",
+    "skills": [
+     {
+      "name": "agent-canvas",
+      "description": "Draw diagrams, flowcharts, and visualizations on an Excalidraw canvas. Use when the user asks to draw, visualize, create diagrams, or sketch ideas.",
+      "argumentHint": "",
+      "isSkill": true
+     },
+     {
+      "name": "agent-speak",
+      "description": "Speak to the user using text-to-speech via `rawgenai <provider> tts --speak`. Use this skill when the user asks you to \"speak\", \"talk to me\", \"read aloud\", \"say this\", or when in voice conversation mode. This skill enables the agent to have voice conversations with users, replacing text output with spoken audio. Trigger on any request for voice interaction, verbal response, or spoken output.",
+      "argumentHint": "",
+      "isSkill": true
+     },
+     {
+      "name": "find-skills",
+      "description": "Helps users discover and install agent skills when they ask questions like \"how do I do X\", \"find a skill for X\", \"is there a skill that can...\", or express interest in extending capabilities. This skill should be used when the user is looking for functionality that might exist as an installable skill.",
+      "argumentHint": "",
+      "isSkill": true
+     },
+     {
+      "name": "parallel-dev",
+      "description": "Create git worktree and launch AI coding agent (Claude Code / Codex / Gemini) in a new terminal window. Use when user says \"parallel dev\", \"new worktree\", \"parallel branch\", \"spin up branch\", \"work on feature in parallel\", \"launch agent on branch\", \"start parallel task\", or wants to work on multiple features simultaneously without switching branches.",
+      "argumentHint": "",
+      "isSkill": true
+     },
+     {
+      "name": "frontend-design",
+      "description": "Create distinctive, production-grade frontend interfaces with high design quality. Use this skill when the user asks to build web components, pages, or applications. Generates creative, polished code that avoids generic AI aesthetics.",
+      "argumentHint": "",
+      "isSkill": true
+     },
+     {
+      "name": "skill-creator",
+      "description": "Create new skills, modify and improve existing skills, and measure skill performance. Use when users want to create a skill from scratch, update or optimize an existing skill, run evals to test a skill, benchmark skill performance with variance analysis, or optimize a skill's description for better triggering accuracy.",
+      "argumentHint": "",
+      "isSkill": true
+     }
+    ],
+    "projectCommands": [],
+    "projectAgents": [],
+    "cwd": "/Users/wuhangqi25/Developer/Projects/test-super-one",
+    "homedir": "/Users/wuhangqi25",
+    "sandboxInfo": {
+     "enabled": true,
+     "autoAllowBash": false
+    }
+   }
+  ],
+  "targets": [
+   "phone-1"
+  ]
+ }
+]

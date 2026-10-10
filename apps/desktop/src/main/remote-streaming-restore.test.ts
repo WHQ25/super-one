@@ -40,6 +40,7 @@ describe('opening a running session from mobile', () => {
       getQueuedMessagesEvent: () => null,
       getCurrentSandboxInfo: () => undefined,
       getCurrentPermissionMode: () => 'default',
+      getApiProviderId: () => null,
       getUiSettings: () => ({}), getSessionGoal: () => null,
     }
     const client = nativeRestoreClient(() => nativeSessionLoad(host as never, phone()))

@@ -3508,6 +3508,8 @@ describe('codex usage semantics', () => {
           finalResponse: 'all done',
           durationMs: 23000,
           threadId: 'thread-1',
+          turnId: 'turn-1',
+          rootTurnId: 'root-1',
           usage,
           items: [
             { id: 'reason-1', type: 'reasoning', text: 'thinking' },
@@ -3525,7 +3527,11 @@ describe('codex usage semantics', () => {
     expect(message.metadata?.durationMs).toBe(23000)
     expect(message.metadata?.consumedTokens).toEqual({ input: 1, output: 15 })
     expect(message.metadata?.codex).toEqual({
+      finalResponse: 'all done',
+      durationMs: 23000,
       threadId: 'thread-1',
+      turnId: 'turn-1',
+      rootTurnId: 'root-1',
       usage,
       items: [
         { id: 'reason-1', type: 'reasoning', text: 'thinking' },

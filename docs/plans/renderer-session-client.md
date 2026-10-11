@@ -316,6 +316,14 @@ the UI hides them through capabilities.
 
 ## Progress
 
+- 2026-10-12: Step 5 composer. Windows now use `composer.open/await/cancel`
+  through their environment, with widget requests on the session client.
+  Admission checks the session lease; mini-app ownership still uses the app
+  grants. Await has no deadline and needs no renewed lease. Navigation/close
+  release the window's caller forms. Endpoint tests simulate a day of waiting
+  and reject another window; seven scoped suites pass (58 tests), plus both
+  typechecks. The legacy agent IPC was removed.
+
 - 2026-10-12: Step 5 housekeeping. `sessionList.deleteOlderThan` obtains and
   checks proofs for the whole candidate set before deletion, preserves pinned
   and recent rows, and rechecks the current row before each removal. A phone

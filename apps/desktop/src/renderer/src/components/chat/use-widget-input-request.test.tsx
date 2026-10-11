@@ -21,7 +21,10 @@ beforeEach(() => {
   fixture.composerOpen.mockReset().mockResolvedValue({ ok: true, requestId: 'form' })
   fixture.composerAwait.mockReset().mockResolvedValue({ status: 'submitted', values: { notes: 'answer' } })
   fixture.composerCancel.mockReset()
-  Object.assign(window, { agent: { openWidgetInputRequest: fixture.open, composerOpen: fixture.composerOpen, composerAwait: fixture.composerAwait, composerCancel: fixture.composerCancel } })
+  Object.assign(window, { environment: {
+    callSession: vi.fn((_connection: string, sessionId: string, _method: string, input: object) => fixture.open({ projectPath: '/p', sessionId, ...input })),
+    callComposer: vi.fn((_connection: string, method: string, input: { inputRequestId?: string; viewId?: string }) => method === 'composer.open' ? fixture.composerOpen(input) : method === 'composer.await' ? fixture.composerAwait(input.inputRequestId) : fixture.composerCancel(input.viewId)),
+  } })
 })
 
 it('uses the same captured message and pane for unified frontend completion', async () => {

@@ -1,6 +1,6 @@
 import type { SessionOperationMethods } from './session-operations'
 import { SESSION_OPERATION_METHODS, SESSION_OPERATION_READS } from './session-operations'
-import type { CodexGoal, CodexGoalStatus } from '../agent-types'
+import type { CodexGoal, CodexGoalStatus, ComposerOpenResult } from '../agent-types'
 import type { MessageDisplayFields } from '../message-display'
 import type { PatchSessionSettingsInput } from './gateway'
 import type { SessionCreateSelections } from './session-create'
@@ -99,6 +99,7 @@ export interface SessionPlanAnswer {
  * environment call. A host that does not serve one answers `unsupported`.
  */
 export interface SessionCallMethods extends SessionOperationMethods {
+  'composer.openInputRequest': { input: { messageId: string; spec: unknown }; result: ComposerOpenResult }
   'session.dequeue': { input: { clientMessageId: string }; result: { removed: boolean } }
   'session.steer': { input: { clientMessageId: string; priority?: 'now' | 'next' }; result: { ok: boolean } }
   'session.recap': { input: { auto?: boolean }; result: { ok: boolean } }
@@ -112,6 +113,7 @@ export type SessionCallMethod = keyof SessionCallMethods
 
 export const SESSION_CALL_METHODS: ReadonlySet<SessionCallMethod> = new Set<SessionCallMethod>([
   ...SESSION_OPERATION_METHODS as ReadonlySet<keyof SessionOperationMethods>,
+  'composer.openInputRequest',
   'session.dequeue', 'session.steer', 'session.recap', 'session.getGoal', 'session.setGoal', 'session.answerAsyncQuestion',
 ])
 /** Calls that only read, so the window takes no control grant for them. */

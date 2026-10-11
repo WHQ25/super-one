@@ -9,6 +9,7 @@ import { phoneMethodText as text, invalidPhoneArgument as invalid } from './phon
 
 export interface PhoneSessionMethodHost {
   getSession(sessionId: string): Session | null | undefined
+  openMiniAppForm?(request: import('../miniapp/miniapp-input-requests').MiniAppInputRequest): import('../session/input-requests').OpenedInputRequest
 }
 
 type Handler = (p: Record<string, unknown>, ctx: RpcContext) => unknown | Promise<unknown>
@@ -90,8 +91,14 @@ export function createPhoneSessionMethods(host: PhoneSessionMethodHost): Record<
     'composer.open': fenced(async (session, p, ctx) => {
       const [{ openComposerForm }, { openWidgetInputRequest }] = await Promise.all([import('../session/composer-delivery'), import('../session/input-requests')])
       session.lease.assertMutation()
-      return openComposerForm(composerClient(ctx), { viewId: p.viewId, localId: p.localId, output: p.output }, output =>
-        openWidgetInputRequest(session, { projectPath: session.projectPath, sessionId: session.id, messageId: text(p, 'messageId'), spec: p.spec, output }),
+      const source = p.source as import('@superone/shared/agent-types').ComposerSource | undefined
+      return openComposerForm(composerClient(ctx), { viewId: p.viewId, localId: p.localId, output: p.output }, output => {
+        if (source?.kind === 'miniapp') {
+          if (!ctx.client.clientSessionId.startsWith('ipc:') || !host.openMiniAppForm) throw Object.assign(new Error('Mini-app forms require a desktop window'), { code: 'unsupported' })
+          return host.openMiniAppForm({ projectDir: source.projectDir, appId: source.appId, sessionId: session.id, spec: p.spec, output })
+        }
+        return openWidgetInputRequest(session, { projectPath: session.projectPath, sessionId: session.id, messageId: text(p, 'messageId'), spec: p.spec, output })
+      },
       ctx.streams ? (event) => ctx.streams!.push({ type: 'client', event }) : undefined)
     }),
     'composer.cancel': async (p, ctx) => {
@@ -100,6 +107,10 @@ export function createPhoneSessionMethods(host: PhoneSessionMethodHost): Record<
       if (p.localId !== undefined && typeof p.localId !== 'string') throw invalid('localId must be a string')
       cancelComposerForms(composerClient(ctx), viewId, p.localId as string | undefined)
       return { ok: true }
+    },
+    'composer.await': async (p, ctx) => {
+      const { awaitComposerForm } = await import('../session/composer-delivery')
+      return awaitComposerForm(composerClient(ctx), text(p, 'inputRequestId'))
     },
     'composer.outcome': async (p, ctx) => {
       const { composerFormOutcome } = await import('../session/composer-delivery')

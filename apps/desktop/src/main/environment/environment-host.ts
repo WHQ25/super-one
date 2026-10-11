@@ -5,6 +5,7 @@ import type { RemoteTopicStream } from './remote-topic-followers'
 import { notifySessionClosed } from '../session-list-watch'
 import { currentControlScope } from '../session/control-context'
 import { SESSION_LIST_OPERATION_METHODS, type SessionListOperationMethod, type SessionListOperationMethods } from '@superone/shared/environment/session-operations'
+import { COMPOSER_CALL_METHODS, type ComposerCallMethod, type ComposerCallMethods } from '@superone/shared/environment/composer-requests'
 import { MOD_UI_MUTATING_OPS, MOD_UI_UNAVAILABLE, type ModUiOp, type ModUiRequest } from '@superone/shared/mod-ui'
 import { parseMessageDisplay } from '@superone/shared/message-display'
 import { remoteSuperoneHome, remoteNodePort } from './remote-data-path'
@@ -2080,6 +2081,30 @@ export class EnvironmentHost {
       return gateway.callSessionList(method, { ...input, controls })
     }
     return gateway.callSessionList(method, input)
+  }
+
+  async callComposer<M extends ComposerCallMethod>(connectionId: string, method: M, input: ComposerCallMethods[M]['input']): Promise<ComposerCallMethods[M]['result']> {
+    if (!COMPOSER_CALL_METHODS.has(method)) throw Object.assign(new Error('invalid composer operation'), { code: 'invalid_argument' })
+    const { gateway } = this.resolveSession(connectionId)
+    if (method !== 'composer.open') return gateway.callComposer(method, { ...input })
+    const request = input as ComposerCallMethods['composer.open']['input']
+    const source = request.source
+    if (!source || !['widget', 'miniapp'].includes(source.kind)) throw Object.assign(new Error('composer source required'), { code: 'invalid_argument' })
+    let sessionId = source.sessionId
+    if (source.kind === 'miniapp') {
+      if (connectionId !== 'local') throw Object.assign(new Error('Mini-app forms require the local desktop'), { code: 'unsupported' })
+      const { sessionsAuthorizingApp } = await import('../mcp/superone-mcp-server')
+      const authorized = sessionsAuthorizingApp(source.projectDir, source.appId)
+      if (!sessionId) {
+        if (authorized.length !== 1) throw Object.assign(new Error('The app needs exactly one authorized session, or an explicit session id'), { code: 'failed_precondition' })
+        sessionId = authorized[0]
+      }
+      if (!sessionId || !authorized.includes(sessionId)) throw Object.assign(new Error('The app is not authorized in this session'), { code: 'forbidden' })
+    }
+    if (!sessionId) throw Object.assign(new Error('composer session required'), { code: 'invalid_argument' })
+    const control = await this.ensureSessionLease(connectionId, sessionId)
+    return gateway.callComposer(method, { ...request, source: { ...source, sessionId }, sessionId,
+      ...(source.kind === 'widget' ? { messageId: source.messageId } : {}), ...control })
   }
 
   async interruptSession(connectionId: string, sessionId: string): Promise<void> {

@@ -103,9 +103,6 @@ import { uninstallMcpbBundle } from '../mcpb/mcpb-installer'
 import type { PluginModReview, HookSavePayload, SessionForkRequest, HarnessId, DshPluginInstallSource } from '@superone/shared/agent-types'
 import { tryResolveHarnessRuntime } from '../harness/resolve-runtime'
 import { forkSession } from '../session/session-fork'
-import { composerOpenResult, InputRequestOpenError, openWidgetInputRequest, type OpenedInputRequest } from '../session/input-requests';
-import { awaitComposerForm, cancelComposerForms, openComposerForm, releaseComposerClient, type ComposerClient } from '../session/composer-delivery';
-import type { MiniAppInputRequest } from '../miniapp/miniapp-input-requests'
 import { loadRealtimeTimeline, reconcileRealtimeTimeline } from '../session/realtime-timeline-repo'
 
 export class AgentService {
@@ -150,14 +147,6 @@ export class AgentService {
   setRemoteControlService(svc: RemoteControlService): void {
     this.remoteControlService = svc
   }
-
-  private openMiniAppForm?: (request: MiniAppInputRequest) => OpenedInputRequest
-  /** Opens a mini-app WebView's form with the same rules as its MiniApp Host. */
-  setMiniAppFormOpener(open: (request: MiniAppInputRequest) => OpenedInputRequest): void {
-    this.openMiniAppForm = open
-  }
-
-  private readonly composerWindows = new Set<number>()
 
   setMobileReceiveService(svc: import('../remote/mobile-receive-service').MobileReceiveService): void {
     this.mobileReceiveService = svc
@@ -205,21 +194,6 @@ export class AgentService {
   private isSessionRemoteLocked(session: SessionContract | null | undefined): boolean {
     if (!session) return false
     return session.lease.isExternal
-  }
-
-  /** A window's forms close with its page (reload or close): their answers have nowhere else to go. */
-  private composerWindow(sender: Electron.WebContents): ComposerClient {
-    const client: ComposerClient = { kind: 'window', id: sender.id }
-    if (!this.composerWindows.has(sender.id)) {
-      this.composerWindows.add(sender.id)
-      const release = () => releaseComposerClient(client)
-      sender.on('did-navigate', release)
-      sender.once('destroyed', () => {
-        this.composerWindows.delete(client.id)
-        release()
-      })
-    }
-    return client
   }
 
   private throwIfRemoteLocked(projectPath: string): void {
@@ -1140,38 +1114,6 @@ export class AgentService {
       const session = await this.getOrCreateActiveSession(projectPath, sessionId, { provider: 'codex' })
       const timeline = await session.getRealtimeTimeline()
       return reconcileRealtimeTimeline(sessionId, timeline)
-    })
-
-    windowIpc.handle(AgentIpcChannels.OPEN_WIDGET_INPUT_REQUEST, (_event, input: { projectPath: string; sessionId: string; messageId: string; spec: unknown }) => {
-      const session = this.sessionManager?.getSession(input.sessionId)
-      if (session) session.lease.assertMutation()
-      return composerOpenResult(() => openWidgetInputRequest(session, { ...input, output: 'agent' }))
-    })
-
-    // The trusted container names the source; the frame supplies only the spec and output.
-    windowIpc.handle(AgentIpcChannels.COMPOSER_OPEN, (event, request: import('@superone/shared/agent-types').ComposerOpenRequest) => {
-      const client = this.composerWindow(event.sender)
-      const source = request.source
-      return openComposerForm(client, request, (output) => {
-        if (source.kind === 'widget') {
-          return openWidgetInputRequest(this.sessionManager?.getSession(source.sessionId), {
-            projectPath: source.projectPath, sessionId: source.sessionId, messageId: source.messageId, spec: request.spec, output,
-          })
-        }
-        if (!this.openMiniAppForm) throw new InputRequestOpenError('unsupported', 'Mini-app forms are unavailable')
-        return this.openMiniAppForm({
-          appId: source.appId,
-          projectDir: source.projectDir,
-          ...(source.sessionId ? { sessionId: source.sessionId } : {}),
-          spec: request.spec,
-          output,
-        })
-      })
-    })
-    windowIpc.handle(AgentIpcChannels.COMPOSER_AWAIT, (event, requestId: string) =>
-      awaitComposerForm({ kind: 'window', id: event.sender.id }, requestId))
-    windowIpc.handle(AgentIpcChannels.COMPOSER_CANCEL, (event, viewId: string, localId?: string) => {
-      cancelComposerForms({ kind: 'window', id: event.sender.id }, viewId, localId)
     })
 
     windowIpc.handle(AgentIpcChannels.CREATE_SESSION, async (_event, projectPath: string) => {
@@ -2269,10 +2211,6 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.STOP_REALTIME_VOICE)
     ipcMain.removeHandler(AgentIpcChannels.LOAD_REALTIME_TIMELINE)
     ipcMain.removeHandler(AgentIpcChannels.GET_REALTIME_TIMELINE)
-    ipcMain.removeHandler(AgentIpcChannels.OPEN_WIDGET_INPUT_REQUEST)
-    ipcMain.removeHandler(AgentIpcChannels.COMPOSER_OPEN)
-    ipcMain.removeHandler(AgentIpcChannels.COMPOSER_AWAIT)
-    ipcMain.removeHandler(AgentIpcChannels.COMPOSER_CANCEL)
     ipcMain.removeHandler(AgentIpcChannels.CREATE_SESSION)
     ipcMain.removeHandler(AgentIpcChannels.GET_SESSION_ID)
     ipcMain.removeHandler(AgentIpcChannels.PLUGINS_RELOAD)

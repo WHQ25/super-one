@@ -10,7 +10,7 @@ beforeEach(() => {
   open.mockReset().mockResolvedValue({ ok: true, requestId: 'form' })
   awaitResult.mockReset().mockReturnValue(new Promise(() => {}))
   cancel.mockReset().mockResolvedValue(undefined)
-  Object.assign(window, { miniapp: { getPreloadPath: async () => '/preload.js' }, agent: { composerOpen: open, composerAwait: awaitResult, composerCancel: cancel } })
+  Object.assign(window, { miniapp: { getPreloadPath: async () => '/preload.js' }, environment: { callComposer: vi.fn((_connection: string, method: string, input: { inputRequestId?: string; viewId?: string }) => method === 'composer.open' ? open(input) : method === 'composer.await' ? awaitResult(input.inputRequestId) : cancel(input.viewId)) } })
 })
 
 it('binds the guest to the trusted app/session and ignores subframe and same-document navigation', async () => {

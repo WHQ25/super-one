@@ -173,6 +173,10 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     return this.client.rpc(method, payload)
   }
 
+  callComposer<M extends import('@superone/shared/environment/composer-requests').ComposerCallMethod>(method: M, payload: Record<string, unknown>): Promise<import('@superone/shared/environment/composer-requests').ComposerCallMethods[M]['result']> {
+    return this.client.rpc(method, payload)
+  }
+
   renewHostActionClaim(input: { actionId: string; claimToken: string; ttlMs?: number }): Promise<{ claimExpiresAt: number; version: number }> {
     return this.client.rpc<{ claimExpiresAt: number; version: number }>('session.renewHostActionClaim', input)
   }

@@ -296,3 +296,31 @@ describe('session housekeeping on the local environment endpoint', () => {
     expect(store.rows.size).toBe(2)
   })
 })
+
+describe('composer forms on the local environment endpoint', () => {
+  it('keeps a human answer pending without a deadline and scopes delivery to its window', async () => {
+    const lookup: { get?: (id: string) => Session | null } = {}
+    const { host, own, sessions, projectDir } = localRoute({ phoneMethods: createPhoneMethods({ agent: {} as never, sessions: { getSession: id => lookup.get!(id) } }) })
+    lookup.get = id => sessions.getSession(id)
+    own.state.messages = [{ id: 'widget-message', role: 'assistant', status: 'complete', providerId: 'claude-base', createdAt: '', content: [{ type: 'tool_use', toolUseId: 'widget', toolName: 'mcp__superone__widget_show', status: 'complete', input: '{}' }] }]
+    const { respondToInputRequest, clearInputRequestsForTests } = await import('../session/input-requests')
+    const { clearComposerDeliveriesForTests } = await import('../session/composer-delivery')
+    cleanup.push(clearInputRequestsForTests, clearComposerDeliveriesForTests)
+    const result = await runWindowControl(7, () => host.callComposer('local', 'composer.open', {
+      source: { kind: 'widget', projectPath: projectDir, sessionId: 'own', messageId: 'widget-message' },
+      viewId: 'view', localId: 'call', spec: { title: 'Pick', requestedSchema: { type: 'object', properties: { color: { type: 'string' } }, required: ['color'] } }, output: 'caller',
+    }))
+    if (!result.ok) throw new Error(result.error.message)
+    await expect(runWindowControl(8, () => host.callComposer('local', 'composer.await', { inputRequestId: result.requestId }))).rejects.toThrow('not open in this window')
+    let settled = false
+    const answer = runWindowControl(7, () => host.callComposer('local', 'composer.await', { inputRequestId: result.requestId })).then(value => { settled = true; return value })
+    await new Promise(resolve => setTimeout(resolve, 10))
+    vi.useFakeTimers()
+    try {
+      await vi.advanceTimersByTimeAsync(86_400_000)
+      expect(settled).toBe(false)
+      expect(respondToInputRequest('own', result.requestId, { allow: true, formAnswers: { color: 'red' } })).toBe(true)
+      await expect(answer).resolves.toEqual({ status: 'submitted', values: { color: 'red' } })
+    } finally { vi.useRealTimers() }
+  })
+})

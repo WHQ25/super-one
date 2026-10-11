@@ -4145,10 +4145,6 @@ export const AgentIpcChannels = {
   EVENT: 'agent:event',
   SANDBOX_PROBE: 'sandbox:probe',
   /** A widget opens its `agent`-output form in a local session's composer. */
-  OPEN_WIDGET_INPUT_REQUEST: 'agent:open-widget-input-request',
-  COMPOSER_OPEN: 'agent:composer-open',
-  COMPOSER_AWAIT: 'agent:composer-await',
-  COMPOSER_CANCEL: 'agent:composer-cancel',
   CREATE_SESSION: 'agent:create-session',
   GET_SESSION_ID: 'agent:get-session-id',
   LIST_DIRECTORY: 'agent:list-directory',
@@ -4711,6 +4707,7 @@ export const AgentIpcChannels = {
   /** Change a session's durable settings (modes, model, effort, provider), local or remote. */
   ENVIRONMENT_PATCH_SESSION_SETTINGS: 'environment:patchSessionSettings',
   ENVIRONMENT_CALL_SESSION: 'environment:callSession',
+  ENVIRONMENT_CALL_COMPOSER: 'environment:callComposer',
   ENVIRONMENT_CALL_SESSION_LIST: 'environment:callSessionList',
   /** Take control of a remote session back after its host released it (Reconnect). */
   ENVIRONMENT_RECLAIM_SESSION_CONTROL: 'environment:reclaimSessionControl',
@@ -5212,7 +5209,7 @@ export type ComposerSource =
   /** `sessionId` when the container is bound to one; otherwise the app's only authorized local session. */
   | { kind: 'miniapp'; projectDir: string; appId: string; sessionId?: string }
 
-/** `window.agent.composerOpen`. `viewId` scopes cancellation to one frame; `localId` is unique within it. */
+/** `window.environment.callComposer`. `viewId` scopes cancellation to one frame; `localId` is unique within it. */
 export interface ComposerOpenRequest {
   source: ComposerSource
   viewId: string

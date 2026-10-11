@@ -46,14 +46,6 @@ interface AgentAPI {
   loadRealtimeTimeline(sessionId: string): Promise<RealtimeTimelineResult | null>
   getRealtimeTimeline(projectPath: string, sessionId: string): Promise<RealtimeTimelineResult>
   stopTask(sessionId: string, taskId: string): Promise<boolean>
-  /** Local sessions only: a completed widget message opens its `agent`-output form in the composer. */
-  openWidgetInputRequest(input: { projectPath: string; sessionId: string; messageId: string; spec: import('@superone/shared/input-request').InputRequestSpec }): Promise<import('@superone/shared/agent-types').OpenWidgetInputRequestResult>
-  /** Opens a mini-app or widget form; resolves once it is shown (or refused), not when it is answered. */
-  composerOpen(request: import('@superone/shared/agent-types').ComposerOpenRequest): Promise<import('@superone/shared/agent-types').ComposerOpenResult>
-  /** The answer to a form this window opened. No timeout; rejects at once for an unknown form or another window's form. */
-  composerAwait(requestId: string): Promise<import('@superone/shared/composer-api').SuperOneComposerOutcome>
-  /** Cancels one form of the view, or with no `localId` releases the view: its `caller` forms close, `agent` forms stay. */
-  composerCancel(viewId: string, localId?: string): Promise<void>
   broadcastSessionSetting(sessionId: string, patch: SessionSettingsPatch): Promise<void>
   createSession(projectPath: string): Promise<string>
   resetSession(sessionId: string, newSessionId?: string): Promise<{ permissionMode: PermissionMode; sandboxInfo: SandboxInfo } | null>
@@ -868,6 +860,7 @@ interface TerminalAPI {
 
 /** Multi-environment / remote node — Main EnvironmentHost product path. */
 export interface EnvironmentAPI extends MediaComposerAPI {
+  callComposer<M extends import('@superone/shared/environment/composer-requests').ComposerCallMethod>(connectionId: string, method: M, input: import('@superone/shared/environment/composer-requests').ComposerCallMethods[M]['input']): Promise<import('@superone/shared/environment/composer-requests').ComposerCallMethods[M]['result']>
   onScheduledSendChanged(callback: (event: { sessionId: string; scheduled: ScheduledSend | null; delivered: boolean }) => void): () => void
   callSessionList<M extends import('@superone/shared/environment/session-operations').SessionListOperationMethod>(connectionId: string, method: M, input: import('@superone/shared/environment/session-operations').SessionListOperationMethods[M]['input']): Promise<import('@superone/shared/environment/session-operations').SessionListOperationMethods[M]['result']>
 

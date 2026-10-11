@@ -559,6 +559,12 @@ const scheduledSendService = new ScheduledSendService({
     })
   },
 })
+function openMiniAppForm(request: MiniAppInputRequest) {
+  return openMiniAppInputRequest({
+    getSession: (sessionId) => sessionManager.getSession(sessionId) ?? null,
+    sessionsAuthorizingApp,
+  }, { ...request, appName: request.appName ?? miniAppHostName(request.projectDir, request.appId) })
+}
 const powerManagementService = createPowerManagementService()
 
 function getRemoteConfigPath(): string {
@@ -1085,7 +1091,7 @@ async function applyNodeHostSettings(settings: AppSettings): Promise<void> {
       },
       phoneMethods: createPhoneMethods({
         agent: agentService,
-        sessions: sessionManager,
+        sessions: { getSession: (id) => sessionManager.getSession(id), openMiniAppForm },
         voice: { manager: sessionManager, preferredVoice: () => readAppSettings().agentPreference.codex.realtimeVoice },
         desktopPair: async (input) => (await desktopPairing()).handleDesktopPairCommand(input),
       }),
@@ -1428,12 +1434,7 @@ function createWindow(): void {
   initMiniAppHost(() => mainWindow, () => getCurrentLocale())
   initMiniAppHostActionBridge(() => mainWindow)
   setMiniAppHostActionRunner(runMiniAppHostAction)
-  const openMiniAppForm = (request: MiniAppInputRequest) => openMiniAppInputRequest({
-    getSession: (sessionId) => sessionManager.getSession(sessionId) ?? null,
-    sessionsAuthorizingApp,
-  }, { ...request, appName: request.appName ?? miniAppHostName(request.projectDir, request.appId) })
   setMiniAppInputRequestOpener(openMiniAppForm)
-  agentService.setMiniAppFormOpener(openMiniAppForm)
   setAppToolExecutor(executeMiniAppTool)
   setMiniAppHostReloader(async (projectDir, appId) => {
     const { manifest, args } = await prepareMiniAppHostLaunch(appId, projectDir)
@@ -2245,6 +2246,11 @@ function registerIpcHandlers(): void {
       return getEnvironmentHost().patchSessionSettings(connectionId, sessionId, patch)
     },
   )
+  sessionIpc.handle(AgentIpcChannels.ENVIRONMENT_CALL_COMPOSER, async (event, connectionId: string, method: import('@superone/shared/environment/composer-requests').ComposerCallMethod, input: import('@superone/shared/environment/composer-requests').ComposerCallMethods[import('@superone/shared/environment/composer-requests').ComposerCallMethod]['input']) => {
+    if (method === 'composer.open') (await import('./session/composer-windows')).retainComposerWindow(event.sender)
+    const { getEnvironmentHost } = await import('./environment')
+    return getEnvironmentHost().callComposer(connectionId, method, input)
+  })
   sessionIpc.handle(AgentIpcChannels.ENVIRONMENT_CALL_SESSION_LIST, async (_e, connectionId: string, method: import('@superone/shared/environment/session-operations').SessionListOperationMethod, input: import('@superone/shared/environment/session-operations').SessionListOperationMethods[import('@superone/shared/environment/session-operations').SessionListOperationMethod]['input']) => {
     const { getEnvironmentHost } = await import('./environment')
     return getEnvironmentHost().callSessionList(connectionId, method, input)

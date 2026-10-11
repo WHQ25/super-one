@@ -4,6 +4,7 @@ import { admitInputRequestSpec } from '@superone/shared/input-request'
 import { desktopComposerPorts } from '@/lib/composer-view-ports'
 import { useChatStore } from '@/stores/chat'
 import { useSessionScope } from '@/stores/chat-store/session-scope'
+import { callSession } from '@/lib/session-client'
 
 /** The renderer supplies the widget's owner/message; iframe data supplies only the form spec. */
 export function useWidgetInputs(toolUseId: string | undefined) {
@@ -24,8 +25,7 @@ export function useWidgetInputs(toolUseId: string | undefined) {
     if (owner.kind !== 'widget') throw new Error('This widget has no active session.')
     const admitted = admitInputRequestSpec(spec, { userResources: true })
     if (!admitted.ok) throw new Error(admitted.error)
-    const { kind: _kind, ...scope } = owner
-    const opened = await window.agent.openWidgetInputRequest({ ...scope, spec: admitted.spec })
+    const opened = await callSession(owner.projectPath, owner.sessionId, 'composer.openInputRequest', { messageId: owner.messageId, spec: admitted.spec })
     if (!opened.ok) throw new Error(opened.error.message)
   }, [source])
   const composerPorts = useMemo(() => desktopComposerPorts(source), [source])

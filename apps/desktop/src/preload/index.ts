@@ -61,19 +61,6 @@ const agentAPI = {
     ipcRenderer.invoke(AgentIpcChannels.GET_REALTIME_TIMELINE, projectPath, sessionId) as Promise<RealtimeTimelineResult>,
 
 
-  openWidgetInputRequest: (input: { projectPath: string; sessionId: string; messageId: string; spec: import('@superone/shared/input-request').InputRequestSpec }) =>
-    ipcRenderer.invoke(AgentIpcChannels.OPEN_WIDGET_INPUT_REQUEST, input) as Promise<import('@superone/shared/agent-types').OpenWidgetInputRequestResult>,
-  composerOpen: (request: import('@superone/shared/agent-types').ComposerOpenRequest) =>
-    ipcRenderer.invoke(AgentIpcChannels.COMPOSER_OPEN, request) as Promise<import('@superone/shared/agent-types').ComposerOpenResult>,
-  composerAwait: (requestId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.COMPOSER_AWAIT, requestId) as Promise<import('@superone/shared/composer-api').SuperOneComposerOutcome>,
-  composerCancel: (viewId: string, localId?: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.COMPOSER_CANCEL, viewId, localId) as Promise<void>,
-
-
-
-
-
   broadcastSessionSetting: (sessionId: string, patch: import('@superone/shared/agent-types').SessionSettingsPatch) =>
     ipcRenderer.invoke(AgentIpcChannels.BROADCAST_SESSION_SETTING, sessionId, patch) as Promise<void>,
 
@@ -158,6 +145,8 @@ ipcRenderer.on(
 )
 
 const environmentAPI = {
+  callComposer: <M extends import('@superone/shared/environment/composer-requests').ComposerCallMethod>(connectionId: string, method: M, input: import('@superone/shared/environment/composer-requests').ComposerCallMethods[M]['input']) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_CALL_COMPOSER, connectionId, method, input) as Promise<import('@superone/shared/environment/composer-requests').ComposerCallMethods[M]['result']>,
   onScheduledSendChanged: (
     callback: (event: { sessionId: string; scheduled: ScheduledSend | null; delivered: boolean }) => void,
   ) => {

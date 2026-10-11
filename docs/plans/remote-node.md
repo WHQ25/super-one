@@ -89,10 +89,11 @@ node server and `EnvironmentGateway` path as remote. Desktop B as an
 execution node for agent orchestration goes first; see
 [desktop-node-orchestration.md](desktop-node-orchestration.md).
 
-- Server core is extracted to `packages/runtime/src/server/`, but only
-  `apps/cli` consumes it; the desktop does not embed it.
-- `LocalEnvironmentGateway` Session port wires only `list`; create/send/control
-  throw and local Sessions still use agent IPC.
+- Server core is extracted to `packages/runtime/src/server/`; the desktop
+  domain serves it in process for phones and the local gateway.
+- `LocalEnvironmentGateway` Session port serves the full family through
+  `InProcessRpcClient`; the desktop renderer still drives local Sessions over
+  agent IPC (see [renderer-session-client.md](renderer-session-client.md)).
 - Ownership merge: control lease becomes the single steering authority.
 - Desktop event log with `afterSequence` recovery.
 - Lifecycle: app-lifecycle backend by default; optional always-on service

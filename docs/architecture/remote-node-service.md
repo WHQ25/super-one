@@ -162,10 +162,10 @@ attach/input/resize/kill, file watch cancellation, and transfer cancellation.
 Features must not bypass the gateway with environment-specific raw IPC.
 
 `RemoteEnvironmentGateway` delegates to an authenticated node RPC session.
-`LocalEnvironmentGateway` delegates to in-process services; its Session port
-wires only `list`, and local Session create/send use the agent IPC: a local
-session lives in the desktop's own process, where its `Session` is the read
-model. The renderer reads both kinds on one path (events into the chat
+`LocalEnvironmentGateway` delegates to the desktop domain through
+`InProcessRpcClient`, the same dispatcher phones use, so its Session port
+serves the full family against `LocalSessionHost`. A local session lives in
+the desktop's own process, where its `Session` is the read model. The renderer reads both kinds on one path (events into the chat
 reducer); a remote session opens at a node snapshot (§9.2), and its writes
 settle on the session's stream like local ones.
 

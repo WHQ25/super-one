@@ -24,6 +24,19 @@ function fixture() {
 }
 afterEach(() => vi.useRealTimers())
 describe('host-wide voice ownership', () => {
+  it('rejects a running backing task before reserving media and permits starting after it finishes', async () => {
+    const f = fixture()
+    Object.assign(f.raw.snapshot, { status: 'streaming' })
+    expect(f.host.status(f.session, f.a)).toMatchObject({ supported: true, startBlockedReason: expect.stringContaining('task'), call: null })
+    expect(() => f.host.start(f.session, f.a, 'one', offer)).toThrow(/task is running/)
+    expect(f.raw.retainRealtimeVoice).not.toHaveBeenCalled()
+    Object.assign(f.raw.snapshot, { status: 'idle' })
+    expect(f.host.start(f.session, f.a, 'two', offer).call).not.toBeNull()
+    Object.assign(f.raw.snapshot, { status: 'streaming' })
+    // Existing calls and their idempotent receipts stay usable while a task runs.
+    expect(f.host.start(f.session, f.a, 'two', offer).call?.attemptId).toBe('two')
+    f.complete(); await Promise.resolve(); await f.host.stop(f.session, f.a, 'two')
+  })
   it('rejects a different displayed account before reserving or starting the call', () => {
     const f = fixture()
     f.session.getApiProviderId = () => 'codex-account:cli'

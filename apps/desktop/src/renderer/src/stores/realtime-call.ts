@@ -5,6 +5,7 @@ import type { AgentEvent } from '@superone/shared/agent-types'
 import { preferTcpIceCandidates, startWebRtcDiagnostics, waitForIceGathering } from '@/lib/realtime-webrtc'
 import { VOICE_READY_CUE_MIC_GUARD_MS, playVoiceReadyCue } from '@/lib/audio-cue'
 import { refreshCodexRealtimeTimeline, useCodexRealtimeViewStore } from './codex-realtime-view'
+import { BufferedVoicePlayback } from '@/lib/realtime-audio'
 
 export type RealtimeCallState = 'idle' | 'starting' | 'active' | 'stopping'
 export type RealtimeCallActivity = 'listening' | 'user-speaking' | 'thinking' | 'assistant-speaking'
@@ -14,7 +15,9 @@ interface RealtimeCallStore {
   sessionId: string | null
   state: RealtimeCallState
   microphoneMuted: boolean
-  outputMuted: boolean
+  paused: boolean
+  pauseReason: 'manual' | 'interrupted' | null
+  resuming: boolean
   /** Presentation state for the live call indicator. */
   activity: RealtimeCallActivity
   /** Smoothed microphone RMS, normalized to 0...1. */
@@ -33,7 +36,7 @@ export const useRealtimeCallStore = create<RealtimeCallStore>(() => ({
   sessionId: null,
   state: 'idle',
   microphoneMuted: false,
-  outputMuted: false,
+  paused: false, pauseReason: null, resuming: false,
   activity: 'listening',
   inputLevel: 0,
 }))
@@ -45,7 +48,7 @@ interface CallMedia {
   sessionId: string
   peer: RTCPeerConnection | null
   stream: MediaStream | null
-  audio: HTMLAudioElement | null
+  audio: BufferedVoicePlayback | null
   stopDiagnostics: (() => void) | null
   unsubscribe: (() => void) | null
   negotiationTimer: number | null
@@ -56,6 +59,7 @@ interface CallMedia {
   /** True while the ready cue is playing into a live channel. */
   cueGuarded: boolean
   readyCuePlayed: boolean
+  pauseEpoch: number
 }
 
 let media: CallMedia | null = null
@@ -87,7 +91,8 @@ function reportError(error: unknown): void {
 // derived from both instead of either one overwriting the other.
 function applyMicrophoneEnabled(): void {
   if (!media) return
-  const enabled = !useRealtimeCallStore.getState().microphoneMuted && !media.cueGuarded
+  const state = useRealtimeCallStore.getState()
+  const enabled = !state.microphoneMuted && !state.paused && !media.cueGuarded
   for (const track of media.stream?.getAudioTracks() ?? []) track.enabled = enabled
 }
 
@@ -147,7 +152,11 @@ function releaseMedia(): void {
   media.unsubscribe?.()
   for (const track of media.stream?.getTracks() ?? []) track.stop()
   media.peer?.close()
-  if (media.audio) media.audio.srcObject = null
+  media.audio?.close()
+  if ('mediaSession' in navigator) {
+    navigator.mediaSession.setActionHandler('pause', null)
+    navigator.mediaSession.setActionHandler('play', null)
+  }
   media = null
   useRealtimeCallStore.setState({ inputLevel: 0 })
 }
@@ -159,7 +168,7 @@ function finishCall(sessionId: string, projectPath: string): void {
     sessionId: null,
     state: 'idle',
     microphoneMuted: false,
-    outputMuted: false,
+    paused: false, pauseReason: null, resuming: false,
     activity: 'listening',
     inputLevel: 0,
   })
@@ -291,7 +300,7 @@ export async function startRealtimeCall({
     sessionId,
     state: 'starting',
     microphoneMuted: false,
-    outputMuted: false,
+    paused: false, pauseReason: null, resuming: false,
     activity: 'listening',
     inputLevel: 0,
   })
@@ -314,11 +323,17 @@ export async function startRealtimeCall({
     stopInputLevelMonitor: null,
     cueGuarded: false,
     readyCuePlayed: false,
+    pauseEpoch: 0,
   }
   const callMedia = media
   // The subscription's lifetime is the call's, so it is set up here rather than by a
   // component that may unmount mid-call.
   media.unsubscribe = window.agent.onAgentEvent(handleAgentEvent)
+  if ('mediaSession' in navigator) {
+    navigator.mediaSession.setActionHandler('pause', () => pauseRealtimeCall('interrupted'))
+    // Regaining focus never resumes speech. Play is an explicit user action.
+    navigator.mediaSession.setActionHandler('play', () => { if (useRealtimeCallStore.getState().paused) void toggleRealtimePlayback() })
+  }
 
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
@@ -338,12 +353,19 @@ export async function startRealtimeCall({
     for (const track of stream.getAudioTracks()) peer.addTrack(track, stream)
     peer.ontrack = (event) => {
       if (media !== callMedia) return
-      const audio = media.audio ?? new Audio()
-      audio.autoplay = true
-      audio.muted = useRealtimeCallStore.getState().outputMuted
-      audio.srcObject = event.streams[0] ?? new MediaStream([event.track])
+      if (media.audio || event.track.kind !== 'audio') return
+      const audio = new BufferedVoicePlayback(() => {
+        if (media === callMedia) pauseRealtimeCall('interrupted')
+      }, error => {
+        if (media !== callMedia) return
+        reportError(error); void stopRealtimeCall()
+      })
       media.audio = audio
-      void audio.play().catch(() => {})
+      if (useRealtimeCallStore.getState().paused) audio.pause()
+      void audio.connect(event.streams[0] ?? new MediaStream([event.track])).catch(error => {
+        if (media !== callMedia) return
+        reportError(error); void stopRealtimeCall()
+      })
     }
     peer.onconnectionstatechange = () => {
       if (media !== callMedia) return
@@ -365,7 +387,7 @@ export async function startRealtimeCall({
         // to fire once per call.
         if (media.readyCuePlayed) return
         media.readyCuePlayed = true
-        if (useRealtimeCallStore.getState().outputMuted) return
+        if (useRealtimeCallStore.getState().paused) return
         // Close capture first: the cue is voice-shaped, and the far end would
         // otherwise hear it as the user starting to talk.
         guardMicrophoneDuringCue()
@@ -442,10 +464,29 @@ export function toggleRealtimeMicrophone(): void {
   applyMicrophoneEnabled()
 }
 
-export function toggleRealtimeOutput(): void {
-  const next = !useRealtimeCallStore.getState().outputMuted
-  useRealtimeCallStore.setState({ outputMuted: next })
-  if (media?.audio) media.audio.muted = next
+export function pauseRealtimeCall(reason: 'manual' | 'interrupted' = 'manual'): void {
+  if (!media || !['active', 'starting'].includes(useRealtimeCallStore.getState().state)) return
+  media.audio?.pause()
+  media.pauseEpoch++
+  useRealtimeCallStore.setState({ paused: true, pauseReason: reason, inputLevel: 0 })
+  applyMicrophoneEnabled()
+}
+
+export async function toggleRealtimePlayback(): Promise<void> {
+  const current = media
+  const state = useRealtimeCallStore.getState()
+  if (!current || state.state !== 'active' || state.resuming) return
+  if (!state.paused) { pauseRealtimeCall(); return }
+  const epoch = current.pauseEpoch
+  useRealtimeCallStore.setState({ resuming: true })
+  try {
+    await current.audio?.resume()
+    if (media !== current) return
+    if (current.pauseEpoch !== epoch) { current.audio?.pause(); return }
+    useRealtimeCallStore.setState({ paused: false, pauseReason: null })
+    applyMicrophoneEnabled()
+  } catch (error) { if (media === current) reportError(error) }
+  finally { if (media === current) useRealtimeCallStore.setState({ resuming: false }) }
 }
 
 /** Test seam: drop any live call without going through the agent IPC. */
@@ -456,7 +497,7 @@ export function resetRealtimeCallForTests(): void {
     sessionId: null,
     state: 'idle',
     microphoneMuted: false,
-    outputMuted: false,
+    paused: false, pauseReason: null, resuming: false,
     activity: 'listening',
     inputLevel: 0,
   })

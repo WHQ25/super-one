@@ -1,0 +1,39 @@
+import com.android.build.api.instrumentation.*
+import org.objectweb.asm.*
+
+/** WebRTC 124 exposes decoded PCM only inside its audio device. Instrument the
+ * two I/O boundaries, retaining the SDK's JNI names and native echo cancellation.
+ * Fail the build if an SDK change removes the expected output call. */
+abstract class VoiceAudioVisitorFactory implements AsmClassVisitorFactory<InstrumentationParameters.None> {
+  boolean isInstrumentable(ClassData data) {
+    data.className == 'org.webrtc.audio.WebRtcAudioTrack$AudioTrackThread' ||
+      data.className == 'org.webrtc.audio.WebRtcAudioRecord$AudioRecordThread'
+  }
+  ClassVisitor createClassVisitor(ClassContext context, ClassVisitor next) {
+    return new ClassVisitor(Opcodes.ASM9, next) {
+      int replaced = 0
+      MethodVisitor visitMethod(int access, String name, String descriptor, String signature, String[] exceptions) {
+        def downstream = super.visitMethod(access, name, descriptor, signature, exceptions)
+        return new MethodVisitor(Opcodes.ASM9, downstream) {
+          void visitMethodInsn(int opcode, String owner, String method, String desc, boolean itf) {
+            if (owner == 'android/media/AudioTrack' && method == 'write' && desc == '(Ljava/nio/ByteBuffer;II)I') {
+              replaced++
+              super.visitMethodInsn(Opcodes.INVOKESTATIC, 'expo/modules/voiceaudio/VoicePlayback', 'write', '(Landroid/media/AudioTrack;Ljava/nio/ByteBuffer;II)I', false)
+            } else if (owner == 'android/media/AudioRecord' && method == 'read' && desc == '(Ljava/nio/ByteBuffer;I)I') {
+              replaced++
+              super.visitMethodInsn(Opcodes.INVOKESTATIC, 'expo/modules/voiceaudio/VoicePlayback', 'read', '(Landroid/media/AudioRecord;Ljava/nio/ByteBuffer;I)I', false)
+            } else super.visitMethodInsn(opcode, owner, method, desc, itf)
+          }
+        }
+      }
+      void visitEnd() {
+        if (replaced != 1) throw new GradleException("WebRTC voice I/O boundary changed: ${context.currentClassData.className}, hooks=${replaced}")
+        super.visitEnd()
+      }
+    }
+  }
+}
+androidComponents.onVariants(androidComponents.selector().all()) { variant ->
+  variant.instrumentation.transformClassesWith(VoiceAudioVisitorFactory, InstrumentationScope.ALL) {}
+  variant.instrumentation.setAsmFramesComputationMode(FramesComputationMode.COMPUTE_FRAMES_FOR_INSTRUMENTED_METHODS)
+}

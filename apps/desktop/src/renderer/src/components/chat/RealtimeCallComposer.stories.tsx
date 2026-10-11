@@ -29,9 +29,11 @@ interface PreviewProps {
   muted?: boolean
   width?: number
   otherSession?: boolean
+  paused?: boolean
+  interrupted?: boolean
 }
 
-function Preview({ state, activity = 'listening', captions = false, permission = false, muted = false, width = 620, otherSession = false }: PreviewProps) {
+function Preview({ state, activity = 'listening', captions = false, permission = false, muted = false, width = 620, otherSession = false, paused = false, interrupted = false }: PreviewProps) {
   const [ready, setReady] = useState(false)
   useEffect(() => {
     const previous = useChatStore.getState()
@@ -51,7 +53,7 @@ function Preview({ state, activity = 'listening', captions = false, permission =
       activity,
       inputLevel: activity === 'user-speaking' ? 0.6 : 0,
       microphoneMuted: muted,
-      outputMuted: muted,
+      paused, pauseReason: paused ? interrupted ? 'interrupted' : 'manual' : null, resuming: false,
     })
     if (captions) {
       const store = useCodexRealtimeViewStore.getState()
@@ -64,7 +66,7 @@ function Preview({ state, activity = 'listening', captions = false, permission =
       useCodexRealtimeViewStore.setState({ sessions: {} })
       useChatStore.setState(previous)
     }
-  }, [activity, captions, muted, permission, state])
+  }, [activity, captions, muted, permission, state, paused, interrupted])
   return (
     <div className="@container flex max-w-full flex-col rounded-xl border bg-card pt-2" style={{ width }}>
       {ready && <TooltipProvider><RealtimeCallComposer />{otherSession && <CodexRealtimeVoiceButton projectPath={projectPath} sessionId="new-session" />}</TooltipProvider>}
@@ -83,6 +85,9 @@ type Story = StoryObj<typeof RealtimeCallComposer>
 /** Negotiating: the mark breathes in its final place with a connecting line instead of controls. */
 export const Connecting: Story = { render: () => <Preview state="starting" /> }
 export const Listening: Story = { render: () => <Preview state="active" /> }
+export const Paused: Story = { render: () => <Preview state="active" paused /> }
+export const AudioInterrupted: Story = { globals: { theme: 'dark', locale: 'zh' }, render: () => <Preview state="active" paused interrupted width={320} /> }
+export const TaskRunning: Story = { render: () => <CodexRealtimeVoiceButton projectPath={projectPath} sessionId={sessionId} disabled /> }
 /** Muted channels turn their icon red so the state is visible at a glance. */
 export const Muted: Story = { render: () => <Preview state="active" muted /> }
 export const SpeakingWithCaptions: Story = { render: () => <Preview state="active" activity="user-speaking" captions /> }

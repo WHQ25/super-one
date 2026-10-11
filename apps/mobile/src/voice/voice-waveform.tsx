@@ -12,7 +12,7 @@ const COLORS = ULTRATHINK_COLORS.map(([r, g, b]) => `rgb(${r},${g},${b})`)
 type Meters = { input: SharedValue<number>; output: SharedValue<number> }
 type WaveProps = Meters & { width: number; shimmer: readonly Rgb[] }
 
-export function VoiceWaveform({ levels, compact = false }: { levels?: VoiceAudioLevelSource; compact?: boolean }) {
+export function VoiceWaveform({ levels, compact = false, paused = false }: { levels?: VoiceAudioLevelSource; compact?: boolean; paused?: boolean }) {
   // Canvas has its own React root: read RN context here and pass plain values in.
   const { tokens: { scheme, colors } } = useMobileTheme()
   const shimmer = ULTRATHINK_SHIMMER_COLORS[scheme]
@@ -21,20 +21,20 @@ export function VoiceWaveform({ levels, compact = false }: { levels?: VoiceAudio
   const moving = useIconMotion()
   useEffect(() => {
     const publish = (sample: ReturnType<VoiceAudioLevelSource['snapshot']>) => {
-      const mic = normalizedVoiceAudioLevel(sample.input)
-      const speaker = normalizedVoiceAudioLevel(sample.output)
+      const mic = paused ? 0 : normalizedVoiceAudioLevel(sample.input)
+      const speaker = paused ? 0 : normalizedVoiceAudioLevel(sample.output)
       input.value = withTiming(mic, { duration: mic > input.value ? 60 : 180 })
       output.value = withTiming(speaker, { duration: speaker > output.value ? 60 : 180 })
     }
     publish(levels?.snapshot() ?? SILENT_VOICE_LEVELS)
     return levels?.subscribe(publish)
-  }, [levels, input, output])
+  }, [levels, input, output, paused])
   return <View testID="mobile-voice-waveform" pointerEvents="none" style={compact
     ? { width: 32, height: 32, borderRadius: 16, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' }
     : { flex: 1, height: VOICE_WAVEFORM.height }}
     onLayout={({ nativeEvent: { layout } }) => setWidth(current => current === layout.width ? current : layout.width)}>
     {width > 4 ? <Canvas pointerEvents="none" style={{ width, height: VOICE_WAVEFORM.height, top: compact ? -2 : 0 }}>
-      {moving ? <MovingWaves width={width} input={input} output={output} shimmer={shimmer} /> : <Waves width={width} input={input} output={output} shimmer={shimmer} />}
+      {moving && !paused ? <MovingWaves width={width} input={input} output={output} shimmer={shimmer} /> : <Waves width={width} input={input} output={output} shimmer={shimmer} />}
     </Canvas> : null}
   </View>
 }

@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Mic, MicOff, Power, Volume2, VolumeX } from 'lucide-react'
+import { Mic, MicOff, Power, Pause, Play } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { CommandShortcut } from '@superone/ui/components/ui/command'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
@@ -7,7 +7,7 @@ import { cn } from '@superone/ui/lib/utils'
 import {
   stopRealtimeCall,
   toggleRealtimeMicrophone,
-  toggleRealtimeOutput,
+  toggleRealtimePlayback,
   useRealtimeCallStore,
 } from '@/stores/realtime-call'
 
@@ -17,21 +17,23 @@ interface RealtimeCallControlsProps {
   /**
    * `toolbar` sits in the composer strip beside the session's other actions;
    * `centered` is the voice composer's own row under the voice mark, hang-up in
-   * the middle with microphone and speaker either side.
+   * the middle with microphone and pause/play either side.
    */
   layout?: 'toolbar' | 'centered'
+  onPlayback?: () => void
 }
 
 /**
- * The running call's whole control set — microphone, speaker, hang up.
+ * The running call's whole control set — microphone, pause/play, hang up.
  *
  * Shared by the composer toolbar (backing-thread view) and the voice composer, so
  * both surfaces expose the same three actions with the same affordances.
  */
-export function RealtimeCallControls({ disabled = false, layout = 'toolbar', microphoneShortcutEnabled = false }: RealtimeCallControlsProps) {
+export function RealtimeCallControls({ disabled = false, layout = 'toolbar', microphoneShortcutEnabled = false, onPlayback = () => { void toggleRealtimePlayback() } }: RealtimeCallControlsProps) {
   const { t } = useTranslation()
   const microphoneMuted = useRealtimeCallStore((store) => store.microphoneMuted)
-  const outputMuted = useRealtimeCallStore((store) => store.outputMuted)
+  const paused = useRealtimeCallStore((store) => store.paused)
+  const resuming = useRealtimeCallStore((store) => store.resuming)
   useEffect(() => {
     if (!microphoneShortcutEnabled || disabled) return
     const onKeyDown = (event: KeyboardEvent) => {
@@ -78,20 +80,19 @@ export function RealtimeCallControls({ disabled = false, layout = 'toolbar', mic
       {microphoneMuted ? <MicOff /> : <Mic />}
     </IconButton>
   )
-  const speaker = (
+  const playback = (
     <IconButton
-      key="speaker"
+      key="playback"
       size="sm"
       variant="ghost"
-      disabled={disabled}
-      aria-pressed={outputMuted}
-      tooltip={t(outputMuted
-        ? 'chat.realtimeVoice.unmuteOutput'
-        : 'chat.realtimeVoice.muteOutput')}
-      className={cn(compact, outputMuted && 'text-error hover:text-error')}
-      onClick={toggleRealtimeOutput}
+      disabled={disabled || resuming}
+      aria-pressed={paused}
+      aria-label={t(paused ? 'chat.realtimeVoice.resume' : 'chat.realtimeVoice.pause')}
+      tooltip={t(paused ? 'chat.realtimeVoice.resume' : 'chat.realtimeVoice.pause')}
+      className={compact}
+      onClick={onPlayback}
     >
-      {outputMuted ? <VolumeX /> : <Volume2 />}
+      {paused ? <Play /> : <Pause />}
     </IconButton>
   )
   const hangUp = (
@@ -111,5 +112,5 @@ export function RealtimeCallControls({ disabled = false, layout = 'toolbar', mic
     </IconButton>
   )
 
-  return centered ? <>{microphone}{hangUp}{speaker}</> : <>{microphone}{speaker}{hangUp}</>
+  return centered ? <>{microphone}{hangUp}{playback}</> : <>{microphone}{playback}{hangUp}</>
 }

@@ -1551,6 +1551,11 @@ export type Messages = {
       unmuteMicrophone: string
       muteOutput: string
       unmuteOutput: string
+      pause: string
+      resume: string
+      paused: string
+      interrupted: string
+      taskRunning: string
       listening: string
       timeline: string
       waiting: string
@@ -5919,6 +5924,11 @@ export const en: Messages = {
       unmuteMicrophone: 'Unmute microphone',
       muteOutput: 'Mute speaker',
       unmuteOutput: 'Unmute speaker',
+      pause: 'Pause Voice',
+      resume: 'Resume Voice',
+      paused: 'Voice paused',
+      interrupted: 'Audio interrupted. Tap Play to continue.',
+      taskRunning: 'A task is running. Start voice when it finishes.',
       listening: 'Realtime Voice',
       timeline: 'Voice Timeline',
       waiting: 'Listening for speech…',

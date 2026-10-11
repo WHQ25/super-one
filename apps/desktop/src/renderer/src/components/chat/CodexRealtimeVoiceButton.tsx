@@ -46,7 +46,8 @@ export function CodexRealtimeVoiceButton({
       size="sm"
       variant="ghost"
       disabled={disabled || busy}
-      tooltip={t('chat.realtimeVoice.start')}
+      tooltip={t(disabled ? 'chat.realtimeVoice.taskRunning' : 'chat.realtimeVoice.start')}
+      aria-label={t(disabled ? 'chat.realtimeVoice.taskRunning' : 'chat.realtimeVoice.start')}
       className="rounded-full border border-foreground bg-foreground text-background hover:bg-foreground/90 hover:text-background"
       onClick={() => {
         void startRealtimeCall({

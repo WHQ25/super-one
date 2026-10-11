@@ -8,7 +8,7 @@ import type { MobileVoiceState } from './voice-service'
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }))
 
 const target = { sessionId: 'voice-task', projectPath: '/repo' }
-const state: MobileVoiceState = { phase: 'active', target, inputMuted: false, outputMuted: false, error: null }
+const state: MobileVoiceState = { phase: 'active', target, inputMuted: false, paused: false, pauseReason: null, resuming: false, error: null }
 const levels = new VoiceAudioLevelStore()
 it('waits for a painted stopping frame and falls back if frame callbacks pause', async () => {
   jest.useFakeTimers()
@@ -30,7 +30,7 @@ it('waits for a painted stopping frame and falls back if frame callbacks pause',
   } finally { raf.mockRestore(); jest.useRealTimers() }
 })
 function fixture() {
-  const voice = { state, service: { audioLevels: levels, stop: jest.fn(), muteInput: jest.fn() },
+  const voice = { state, service: { audioLevels: levels, stop: jest.fn(), muteInput: jest.fn(), togglePlayback: jest.fn(async () => {}) },
     supported: true, capability: { supported: true }, retry: jest.fn() } as unknown as ReturnType<typeof useMobileVoice>
   const onReturn = jest.fn(); const onStart = jest.fn()
   return { voice, connected: true, routed: false, sessionId: target.sessionId, projectPath: '/repo',
@@ -64,4 +64,17 @@ it('uses full controls only in the owning voice view and restores start after ha
   expect(result.queryByTestId('mobile-voice-controls')).toBeNull()
   await act(async () => { fireEvent.press(result.getByLabelText('Start voice')) })
   expect(f.onStart).toHaveBeenCalledTimes(1)
+})
+it('disables a new start while the backing task runs but keeps an existing paused call reachable', async () => {
+  const f = fixture()
+  f.voice.state = { ...state, phase: 'idle', target: null }
+  const blocked = voicePresentation({ ...f, streaming: true })
+  const result = await renderWithTheme(<>{blocked.entry}</>, 'light', 'zh')
+  const entry = result.getByLabelText('任务执行中，完成后可发起语音')
+  expect(entry).toBeDisabled()
+  await act(async () => fireEvent.press(entry)); expect(f.onStart).not.toHaveBeenCalled()
+  f.voice.state = { ...state, paused: true, pauseReason: 'interrupted' }
+  const live = voicePresentation({ ...f, streaming: true })
+  await result.rerender(<>{live.entry}</>)
+  expect(result.getByLabelText('返回语音会话')).toBeEnabled()
 })

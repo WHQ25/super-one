@@ -384,6 +384,7 @@ export function MobileApp() {
   // The relay's event callback is built once per connection, so it cannot close
   // over this render's hook — the same reason `runtimeRef` exists.
   const mobileVoice = useMobileVoice({ clientRef,
+    streaming,
     target: project && sessionId ? { projectPath: project.path, sessionId, title: activeSessionTitle, harnessId: selectedProvider } : null,
     sessionCapability: sessionVoiceCapability,
     landing: project && !sessionId ? {
@@ -2427,6 +2428,7 @@ export function MobileApp() {
   ) : undefined
 
   const voiceUi = voicePresentation({ voice: mobileVoice, connected: connectionState === 'connected', sessionId,
+    streaming,
     projectPath: project?.path, routed: !!routedEnvironmentId, view: transcriptSync.view,
     onStart: () => { transcriptSync.setView('realtime'); mobileVoice.start() },
     onReturn: target => runUiAction(async () => {

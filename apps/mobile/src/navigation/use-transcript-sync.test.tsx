@@ -15,7 +15,7 @@ test('updates empty voice hints on media state alone and separates the empty bac
   } } } as unknown as { current: WebView | null }
   const target = { sessionId: 'voice-task', projectPath: '/repo' }
   const runtime = { ...target, session: createDefaultChatCoreSession() } as unknown as ChatRuntime
-  const state: MobileVoiceState = { phase: 'starting', target, inputMuted: false, outputMuted: false, error: null }
+  const state: MobileVoiceState = { phase: 'starting', target, inputMuted: false, paused: false, pauseReason: null, resuming: false, error: null }
   const { result, rerender, unmount } = await renderHook((voice: MobileVoiceState) => useTranscriptSync(web, voice), { initialProps: state })
   const ack = async () => {
     const latest = envelopes.at(-1)!

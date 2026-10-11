@@ -2271,11 +2271,12 @@ export function ChatInput({
               onDismiss={clearScheduled}
               onSetSendAt={setSendAt}
             />
-            {activeProviderForResources === 'codex' && (!isStreaming || realtimeVoiceEngaged) && activeProject && displayedSessionId && (
+            {activeProviderForResources === 'codex' && activeProject && displayedSessionId && (
               <CodexRealtimeVoiceButton
                 projectPath={activeProject}
                 sessionId={displayedSessionId}
                 additionalDirs={additionalDirs}
+                disabled={isStreaming && !realtimeVoiceEngaged}
               />
             )}
           </div>

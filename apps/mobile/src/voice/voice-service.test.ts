@@ -10,14 +10,46 @@ const active: VoiceStatus = { ...idle, call: { ...identity, ...target, owned: tr
 function fixture() {
   let state = (_: 'ready' | 'disconnected' | 'failed') => {}
   let levels = (_: VoiceAudioLevels) => {}
-  const media: VoiceMedia = { offer: vi.fn(async () => 'v=0\na=offer'), answer: vi.fn(async () => {}), close: vi.fn(), inputMuted: vi.fn(), outputMuted: vi.fn(), readyCue: vi.fn() }
-  const port: VoiceMediaPort = { available: () => true, open: vi.fn(async (_, fn, onLevels) => { state = fn; levels = onLevels ?? (() => {}); return media }) }
+  let interrupt = () => {}
+  const media: VoiceMedia = { offer: vi.fn(async () => 'v=0\na=offer'), answer: vi.fn(async () => {}), close: vi.fn(), inputMuted: vi.fn(), pause: vi.fn(async () => {}), resume: vi.fn(async () => {}), outputMuted: vi.fn(), readyCue: vi.fn() }
+  const port: VoiceMediaPort = { available: () => true, open: vi.fn(async (_, fn, onLevels, _permission, onInterruption) => { state = fn; levels = onLevels ?? (() => {}); interrupt = onInterruption ?? (() => {}); return media }) }
   const control = { status: vi.fn(async () => idle), start: vi.fn(async () => active), stop: vi.fn(async () => idle), ready: vi.fn(async () => active) }
   const service = new MobileVoiceService(port, () => 'one')
-  return { service, media, port, control, state: (s: 'ready' | 'disconnected' | 'failed') => state(s), levels: (sample: VoiceAudioLevels) => levels(sample) }
+  return { service, media, port, control, interrupt: () => interrupt(), state: (s: 'ready' | 'disconnected' | 'failed') => state(s), levels: (sample: VoiceAudioLevels) => levels(sample) }
 }
 afterEach(() => vi.useRealTimers())
 describe('mobile voice service', () => {
+  it('keeps capture and signalling alive on background, auto-pauses only on interruption and restores the microphone preference on manual resume', async () => {
+    const f = fixture(); await f.service.start(target, f.control); f.state('ready'); await Promise.resolve()
+    f.service.muteInput(); f.service.background()
+    expect(f.media.close).not.toHaveBeenCalled(); expect(f.media.pause).not.toHaveBeenCalled()
+    f.interrupt()
+    expect(f.service.snapshot()).toMatchObject({ phase: 'active', paused: true, pauseReason: 'interrupted', inputMuted: true })
+    expect(f.media.inputMuted).toHaveBeenLastCalledWith(true)
+    f.state('ready'); await Promise.resolve()
+    expect(f.media.resume).not.toHaveBeenCalled()
+    await f.service.togglePlayback()
+    expect(f.service.snapshot()).toMatchObject({ paused: false, inputMuted: true })
+    expect(f.media.inputMuted).toHaveBeenLastCalledWith(true)
+    f.service.stop(); await Promise.resolve(); await Promise.resolve()
+  })
+  it('leaves audio and capture paused after a rejected resume or a new interruption during resume', async () => {
+    const f = fixture(); await f.service.start(target, f.control); f.state('ready'); await Promise.resolve(); f.interrupt()
+    vi.mocked(f.media.resume).mockRejectedValueOnce(new Error('Audio is occupied'))
+    await f.service.togglePlayback()
+    expect(f.service.snapshot()).toMatchObject({ paused: true, error: 'Audio is occupied', resuming: false })
+    let resumed!: () => void
+    vi.mocked(f.media.resume).mockImplementationOnce(() => new Promise(resolve => { resumed = resolve }))
+    const pending = f.service.togglePlayback(); f.interrupt(); resumed(); await pending
+    expect(f.service.snapshot().paused).toBe(true)
+    expect(f.media.inputMuted).toHaveBeenLastCalledWith(true)
+    f.service.stop(); await Promise.resolve(); await Promise.resolve()
+  })
+  it('checks task admission before requesting permissions or opening media', async () => {
+    const f = fixture(); f.control.status.mockResolvedValue({ ...idle, startBlockedReason: 'A task is running. Start voice when it finishes.' })
+    await f.service.start(target, f.control)
+    expect(f.port.open).not.toHaveBeenCalled(); expect(f.control.start).not.toHaveBeenCalled()
+  })
   it('plays the ready cue once after acknowledged readiness and ignores reconnects', async () => {
     const f = fixture(); await f.service.start(target, f.control)
     expect(f.media.readyCue).not.toHaveBeenCalled()
@@ -68,7 +100,7 @@ describe('mobile voice service', () => {
     expect(f.service.audioLevels.snapshot()).toEqual({ input: 0, output: 0.2 })
     f.levels({ input: 0.8, output: 0.3 })
     expect(f.service.audioLevels.snapshot()).toEqual({ input: 0, output: 0.3 })
-    f.service.muteOutput()
+    f.service.pause()
     expect(f.service.audioLevels.snapshot()).toEqual({ input: 0, output: 0 })
     f.service.stop(); f.levels({ input: 1, output: 1 })
     expect(f.service.audioLevels.snapshot()).toEqual({ input: 0, output: 0 })
@@ -125,12 +157,13 @@ describe('mobile voice service', () => {
     expect(f.media.answer).toHaveBeenCalledTimes(1)
     f.state('ready'); await Promise.resolve()
     expect(f.service.snapshot().phase).toBe('active')
-    f.service.muteInput(); f.service.muteOutput()
+    f.service.muteInput(); f.service.pause()
     expect(f.media.inputMuted).toHaveBeenCalledWith(true)
-    expect(f.media.outputMuted).toHaveBeenCalledWith(true)
+    expect(f.media.pause).toHaveBeenCalledTimes(1)
     expect(f.control.start).toHaveBeenCalledTimes(1)
     f.service.background()
-    expect(f.media.close).toHaveBeenCalledTimes(1)
+    expect(f.media.close).not.toHaveBeenCalled()
+    f.service.stop()
     await Promise.resolve(); await Promise.resolve()
   })
   it('cancelled permission/capture result is immediately released and never sent upstream', async () => {

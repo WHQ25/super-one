@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentEvent, RealtimeVoiceStartRequest } from '@superone/shared/agent-types'
 import type { VoiceStatus } from '@superone/shared/realtime-voice'
 import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
-import { resetRealtimeCallForTests, useRealtimeCallStore } from '@/stores/realtime-call'
+import { pauseRealtimeCall, resetRealtimeCallForTests, useRealtimeCallStore } from '@/stores/realtime-call'
 import { VOICE_READY_CUE_MIC_GUARD_MS } from '@/lib/audio-cue'
 import { CodexRealtimeVoiceButton } from './CodexRealtimeVoiceButton'
 import { RealtimeCallControls } from './RealtimeCallControls'
@@ -13,6 +13,10 @@ import { RealtimeCallIndicator } from './RealtimeCallIndicator'
 import { mergeCodexRealtimeMessages } from './codex-realtime-messages'
 
 const { playVoiceReadyCue } = vi.hoisted(() => ({ playVoiceReadyCue: vi.fn() }))
+const playback = vi.hoisted(() => ({ connect: vi.fn(async () => {}), pause: vi.fn(), resume: vi.fn(async () => {}), close: vi.fn() }))
+vi.mock('@/lib/realtime-audio', () => ({ BufferedVoicePlayback: class {
+  connect = playback.connect; pause = playback.pause; resume = playback.resume; close = playback.close
+} }))
 vi.mock('@/lib/audio-cue', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/audio-cue')>()),
   playVoiceReadyCue,
@@ -82,6 +86,7 @@ describe('realtime voice surfaces', () => {
   }
 
   beforeEach(() => {
+    Object.values(playback).forEach(mock => mock.mockClear())
     emit = null
     peerConnections.length = 0
     playVoiceReadyCue.mockClear()
@@ -240,7 +245,7 @@ describe('realtime voice surfaces', () => {
     expect(screen.queryByRole('button', { name: 'Start Voice Conversation' })).toBeNull()
     // Every control sits in the composer, not on the indicator.
     const indicator = screen.getByTestId('realtime-call-indicator')
-    for (const name of ['Mute microphone', 'Mute speaker', 'Stop Voice Conversation']) {
+    for (const name of ['Mute microphone', 'Pause Voice', 'Stop Voice Conversation']) {
       expect(screen.getByRole('button', { name })).toBeInTheDocument()
       expect(indicator.contains(screen.getByRole('button', { name }))).toBe(false)
     }
@@ -353,7 +358,7 @@ describe('realtime voice surfaces', () => {
     await waitFor(() => expect(column.scrollTop).toBe(240))
   })
 
-  it('toggles microphone capture and speaker playback without closing the voice stream', async () => {
+  it('pauses output and capture, attaches a late remote track paused, and manually resumes without closing the stream', async () => {
     render(<VoiceSurfaces />)
     await reachConnectedCall()
 
@@ -364,18 +369,19 @@ describe('realtime voice surfaces', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Unmute microphone' }))
     expect(microphoneTrack.enabled).toBe(true)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Mute speaker' }))
-    expect(screen.getByRole('button', { name: 'Unmute speaker' })).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(screen.getByRole('button', { name: 'Pause Voice' }))
+    expect(screen.getByRole('button', { name: 'Resume Voice' })).toHaveAttribute('aria-pressed', 'true')
+    expect(microphoneTrack.enabled).toBe(false)
 
     const remoteStream = {} as MediaStream
     const onTrack = peerConnections[0]?.ontrack as ((event: RTCTrackEvent) => void) | null
-    onTrack?.({ streams: [remoteStream] } as unknown as RTCTrackEvent)
-    expect(remoteAudio.srcObject).toBe(remoteStream)
-    expect(remoteAudio.play).toHaveBeenCalled()
-    expect(remoteAudio.muted).toBe(true)
+    onTrack?.({ streams: [remoteStream], track: { kind: 'audio' } } as unknown as RTCTrackEvent)
+    expect(playback.connect).toHaveBeenCalledWith(remoteStream)
+    expect(playback.pause).toHaveBeenCalledTimes(1)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Unmute speaker' }))
-    expect(remoteAudio.muted).toBe(false)
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Resume Voice' })))
+    expect(playback.resume).toHaveBeenCalledTimes(1)
+    expect(microphoneTrack.enabled).toBe(true)
     expect(stopRealtimeVoice).not.toHaveBeenCalled()
   })
 
@@ -393,14 +399,23 @@ describe('realtime voice surfaces', () => {
     expect(playVoiceReadyCue).toHaveBeenCalledTimes(1)
   })
 
-  it('stays silent and leaves capture alone when the speaker is muted', async () => {
+  it('skips the ready cue and preserves an interruption that occurred while connecting', async () => {
     render(<VoiceSurfaces />)
     await reachAnsweredCall()
-    act(() => useRealtimeCallStore.setState({ outputMuted: true }))
+    act(() => pauseRealtimeCall('interrupted'))
 
     await act(async () => driveConnectionState('connected'))
     expect(playVoiceReadyCue).not.toHaveBeenCalled()
-    expect(microphoneTrack.enabled).toBe(true)
+    expect(microphoneTrack.enabled).toBe(false)
+    expect(useRealtimeCallStore.getState().paused).toBe(true)
+  })
+  it('keeps hangup centered in the voice panel and replaces the existing speaker position with pause/play', () => {
+    const controls = render(<RealtimeCallControls layout="centered" />)
+    expect([...controls.container.querySelectorAll('button')].map(button => button.getAttribute('aria-label')))
+      .toEqual(['Mute microphone', 'Stop Voice Conversation', 'Pause Voice'])
+    controls.rerender(<RealtimeCallControls layout="toolbar" />)
+    expect([...controls.container.querySelectorAll('button')].map(button => button.getAttribute('aria-label')))
+      .toEqual(['Mute microphone', 'Pause Voice', 'Stop Voice Conversation'])
   })
 
   it('closes capture while the voice-shaped cue plays, then reopens it', async () => {

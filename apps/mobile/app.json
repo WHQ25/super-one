@@ -88,6 +88,7 @@
       ],
       "./plugins/with-dev-client-updates.js",
       "./plugins/with-voice-ready-cue.js",
+      "./plugins/with-voice-audio.js",
       "./plugins/with-android-adaptive-icon-inset.js",
       [
         "@config-plugins/react-native-webrtc",

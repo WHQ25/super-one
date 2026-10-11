@@ -8,6 +8,7 @@ export const REALTIME_VOICE_GLYPH_SCALE = REALTIME_VOICE_GLYPH_SIZE / REALTIME_V
 export const VOICE_START_TIMEOUT_MS = 30_000
 export const VOICE_DISCONNECT_GRACE_MS = 8_000
 export const MAX_VOICE_SDP_CHARS = 128_000
+export const VOICE_SESSION_BUSY_REASON = 'A task is running. Start voice when it finishes.'
 export class VoiceCleanupPendingError extends Error {}
 
 export type VoiceSession = { projectPath: string; sessionId: string }
@@ -15,6 +16,8 @@ export type VoiceIdentity = { hostEpoch: string; callId: string; generation: num
 export type VoicePhase = 'starting' | 'active' | 'stopping'
 export type VoiceCapability = { protocol: 1; supported: boolean; reason?: string }
 export type VoiceStatus = VoiceCapability & {
+  /** Transient admission state, separate from agent/account capability. */
+  startBlockedReason?: string
   call: (VoiceIdentity & VoiceSession & { state: VoicePhase; owned: boolean }) | null
 }
 export type VoiceSignal = VoiceIdentity & (

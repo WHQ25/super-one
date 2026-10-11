@@ -13,6 +13,7 @@ import { bindVoiceLifecycle } from './voice-lifecycle'
 export function useMobileVoice(input: {
   clientRef: RefObject<RelayClient | null>; target: VoiceTarget | null
   connected: boolean; routed: boolean; additionalDirs: string[]; providerId?: string | null
+  streaming?: boolean
   selection: RealtimeVoiceStartRequest['selection']; catalogReady: boolean
   sessionCapability?: VoiceCapability
   landing?: { projectPath: string; harnessId: HarnessId; capability?: VoiceCapability; create(signal: AbortSignal): Promise<VoiceTarget> }
@@ -49,14 +50,12 @@ export function useMobileVoice(input: {
     return () => { current = false }
   }, [client, projectPath, sessionId, input.connected, input.routed, input.providerId, harnessId, input.landing?.capability, input.sessionCapability])
   useEffect(() => {
-    // iOS permission prompts temporarily report inactive. Only real background
-    // (also emitted after screen lock) ends capture. Foreground never restarts it.
-    return bindVoiceLifecycle(AppState, () => service.background())
+    return bindVoiceLifecycle(AppState, () => service.background(), () => service.stop())
   }, [service])
   useEffect(() => { service.connection(input.connected) }, [service, input.connected])
   const supportedSelection = input.catalogReady && supportedVoice(capability, harnessId as HarnessId | undefined, input.providerId)
   const start = () => {
-    if (!client || !input.connected || input.routed || !supportedSelection) return
+    if (!client || !input.connected || input.routed || input.streaming || !supportedSelection) return
     const control = (target: VoiceTarget) => relayVoiceControl(client, target, input.additionalDirs, input.selection)
     if (input.target) void service.start(input.target, control(input.target))
     else if (input.landing) void service.startNew(input.landing.create, control)

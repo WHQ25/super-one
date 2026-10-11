@@ -16,6 +16,8 @@ import { RealtimeCallControls } from './RealtimeCallControls'
 export const RealtimeCallComposer = memo(function RealtimeCallComposer({ microphoneShortcutEnabled = true }: { microphoneShortcutEnabled?: boolean }) {
   const { t } = useTranslation()
   const liveState = useRealtimeCallStore((store) => store.state)
+  const paused = useRealtimeCallStore((store) => store.paused)
+  const pauseReason = useRealtimeCallStore((store) => store.pauseReason)
   // After a hang-up the store is idle before this composer has slid out. Keep
   // rendering the last engaged state so the mark leaves the screen intact.
   const lastEngagedRef = useRef<RealtimeCallState>(liveState === 'idle' ? 'stopping' : liveState)
@@ -34,6 +36,7 @@ export const RealtimeCallComposer = memo(function RealtimeCallComposer({ microph
         className="flex flex-1 flex-col items-center justify-between gap-1.5 px-3 pb-3"
       >
         <RealtimeCallIndicator frozenState={state} />
+        {paused && !starting && !stopping ? <span role="status" className="text-xs text-muted-foreground">{t(pauseReason === 'interrupted' ? 'chat.realtimeVoice.interrupted' : 'chat.realtimeVoice.paused')}</span> : null}
         {/* The foot is one fixed-height line whatever it says. Adding a "hanging up"
             line under the controls grew the block by a line at the very moment the
             slot's height was about to be pinned for the exit — the mark nudged up,

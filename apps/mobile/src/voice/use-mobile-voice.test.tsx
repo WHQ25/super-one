@@ -5,7 +5,7 @@ import type { VoiceMedia } from './voice-service'
 import { useMobileVoice } from './use-mobile-voice'
 
 const mockMedia: VoiceMedia = { offer: jest.fn(async () => 'offer'), answer: jest.fn(async () => {}),
-  close: jest.fn(), inputMuted: jest.fn(), outputMuted: jest.fn() }
+  close: jest.fn(), inputMuted: jest.fn(), pause: jest.fn(async () => {}), resume: jest.fn(async () => {}), outputMuted: jest.fn() }
 const mockOpen = jest.fn(async () => mockMedia)
 const mockAvailable = jest.fn(() => true)
 jest.mock('./native-voice-media', () => ({ nativeVoiceMedia: {

@@ -87,6 +87,7 @@ export function RealtimeCallIndicator({ frozenState }: RealtimeCallIndicatorProp
   const sessionId = useRealtimeCallStore((store) => store.sessionId)
   const activity = useRealtimeCallStore((store) => store.activity)
   const inputLevel = useRealtimeCallStore((store) => store.inputLevel)
+  const paused = useRealtimeCallStore((store) => store.paused)
   const liveItems = useCodexRealtimeViewStore((store) => (
     sessionId ? store.sessions[sessionId]?.liveItems ?? NO_LIVE_ITEMS : NO_LIVE_ITEMS
   ))
@@ -103,15 +104,15 @@ export function RealtimeCallIndicator({ frozenState }: RealtimeCallIndicatorProp
   return (
     <div
       data-testid="realtime-call-indicator"
-      aria-label={t(connecting ? 'chat.realtimeVoice.connecting' : 'chat.realtimeVoice.listening')}
+      aria-label={t(connecting ? 'chat.realtimeVoice.connecting' : paused ? 'chat.realtimeVoice.paused' : 'chat.realtimeVoice.listening')}
       className="flex w-full items-center justify-center gap-3 px-2 pt-2"
     >
       <CaptionColumn text={assistantCaption} side="left" testId="realtime-caption-assistant" />
       <span
         data-testid="realtime-voice-mark"
-        data-activity={connecting ? 'connecting' : activity}
+        data-activity={connecting ? 'connecting' : paused ? 'paused' : activity}
         className="realtime-voice-mark shrink-0 text-primary"
-        style={{ '--voice-level': inputLevel } as CSSProperties}
+        style={{ '--voice-level': paused ? 0 : inputLevel } as CSSProperties}
       >
         <span className="realtime-voice-halo" aria-hidden>
           <CodexCloudOutline size={REALTIME_VOICE_MARK_SIZE} className="realtime-voice-halo-outline" />

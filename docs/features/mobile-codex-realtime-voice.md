@@ -1,6 +1,6 @@
 # Mobile Codex realtime voice
 
-A paired iOS or Android phone carries foreground voice for a new or existing Codex
+A paired iOS or Android phone carries voice for a new or existing Codex
 conversation hosted by an online desktop. The conversation's official Codex
 account, model/effort, permissions, tools and backing thread remain on desktop.
 Custom API providers, older desktops without the capability and routed CLI hosts
@@ -33,7 +33,10 @@ show a 32-point circular waveform inside the same 44-point action target. It use
 the call's real input/output levels and returns to its owning voice history;
 the backing Codex view switches directly, and other conversations first reopen
 the owning session/project. This return entry is available even when the viewed
-conversation cannot start voice. Other chat conversations never stack a second
+conversation cannot start voice. When the backing task is running after hangup,
+both desktop and phone retain a disabled voice entry with a task-running reason.
+The host checks the current Session status again before admitting a new call.
+Other chat conversations never stack a second
 voice Composer under their text Composer. Microphone access is requested
 on that explicit action; denial shows a Settings action. Connecting text
 remains until native media connects, a remote audio track is live and desktop
@@ -50,13 +53,15 @@ In the voice view, the call uses the text composer's horizontal inset and rounde
 border around one 52-point bottom row. The text editor stays mounted with its saved draft;
 hangup or switching to the backing Codex view restores it, so typed input can steer
 work during a call. A pending native decision temporarily owns the same slot. Away from
-chat, the voice Composer stays at the bottom with mute and hangup controls.
+chat, the voice Composer stays at the bottom with microphone, pause/play and end controls.
 UI hangup silences both directions immediately, commits the stopping hint before
 native teardown, and awaits remote closure. Background flushes any deferred
 cleanup immediately. An empty transcript distinguishes connecting, connected,
 stopping, stored voice history and the backing Codex history; media readiness
 updates the hint even without a new transcript event. Hints use the document locale.
-Microphone mute sits on the left and end/cancel on the right. During an active call,
+Microphone mute sits on the left and pause/play immediately precedes end/cancel on the right.
+Desktop keeps three controls: the voice panel retains microphone, end, pause/play;
+the text toolbar retains microphone, pause/play, end. During an active call,
 thin overlapping waves in the shared Claude Ultrathink rainbow palette fill all
 space between them, without a visible listening label. The approved motion values
 are speed 1.6, amplitude 1.3 and glow 0.4. Native WebRTC `media-source` capture and
@@ -68,7 +73,7 @@ go directly to Reanimated values and Skia on the UI thread without rerendering c
 Silence returns to a flat line, and microphone mute gates capture alone while agent
 audio continues to drive the wave. Hangup/failure cancels sampling, zeros levels and
 fences late stats. Reduce Motion stops the flowing phase while preserving the level
-readout; background ends the call. Playback volume uses
+readout; pause freezes the waveform and shows its reason. Playback volume uses
 the phone's system controls. Before connection and while stopping, microphone
 mute is disabled; permission denial or an error replaces it with Settings or
 Retry. The end/cancel
@@ -95,11 +100,36 @@ markers even outside the current history page. A voice-only session becomes dura
 when Codex attaches its thread, even without a typed message. The database list
 notification refreshes all desktop windows as well as paired phones.
 
-Locking the phone or actually entering background ends voice and releases capture
-immediately. iOS permission sheets may briefly report `inactive`; that transition
-is allowed. Foreground return never restarts a call. Hangup stops voice while an
-already delegated Codex task and its approvals continue in the conversation.
-The desktop must stay online throughout the call.
+An established call continues in background and with the screen locked. Android
+starts a microphone/media-playback foreground service after permission and before
+capture; iOS declares background audio and uses a voice-processing AudioUnit.
+AppState background and desktop window blur do not pause speech. On mobile, actual
+audio focus loss/system interruption auto-pauses. Desktop does not infer an
+interruption from another application playing audio; it pauses only when its
+playback context is suspended or receives a system media pause command.
+Focus gain or interruption end never auto-resumes. Play explicitly reacquires
+audio resources, remains paused on
+failure and restores the user's independent microphone mute preference. Pausing
+suppresses microphone uplink but keeps the WebRTC/signalling connection and Codex
+tasks alive. Hangup still releases everything, including deferred native cleanup.
+
+Paused decoded PCM stays in a bounded FIFO; the playback cursor advances only
+when samples are consumed. Android also retains unheard hardware-buffer samples.
+Desktop receives PCM independently through `MediaStreamTrackProcessor` and uses an
+AudioWorklet only for playback, so audio-device suspension does not stop reception.
+Android hooks the WebRTC 124 audio device I/O, and
+iOS uses a custom `RTCAudioDevice`. Resume plays the unread tail and later samples
+in order. Newly arriving live silence is skipped while draining the backlog.
+Buffers hold at least five minutes at 48 kHz; overflow ends the call with a visible
+error rather than overwriting unheard speech. End/failure destroys the audio queue.
+
+Android microphone and Bluetooth permission activities may report `background`;
+a pending permission preserves the same start and waits for foreground between
+requests and before acquiring capture. Cancellation and startup timeout fence late
+results. Background before session creation/capture still cancels that startup.
+Foreground return never restarts or resumes a call. An already delegated task and
+its approvals continue after hangup. The desktop must stay online throughout.
+Native changes require a rebuilt mobile binary, not an OTA-only update.
 
 ## Ownership and media
 
@@ -113,6 +143,8 @@ The desktop must stay online throughout the call.
 | Codex start/stop and closure barrier | `apps/desktop/src/main/codex/codex-realtime.ts` |
 | Phone call lifecycle and transport adapter | `apps/mobile/src/voice/voice-service.ts`, `relay-voice-control.ts` |
 | Native microphone, playback, mute and audio focus | `apps/mobile/src/voice/native-voice-media.ts` |
+| Buffered native audio and background lifecycle | `apps/mobile/modules/voice-audio`, `apps/mobile/plugins/with-voice-audio.js` |
+| Buffered desktop playback | `apps/desktop/src/renderer/src/lib/realtime-audio.ts`, `realtime-audio-worklet.js` |
 | Native audio metering and waveform | `voice-audio-levels.ts`, `voice-waveform.tsx` |
 | Native controls and app wiring | `mobile-voice-controls.tsx`, `use-mobile-voice.ts` |
 
@@ -148,8 +180,9 @@ before a new microphone is opened.
 
 ## Native compatibility
 
-Expo 54 uses WebRTC 124.0.6, config plugin 13.0.0 and InCallManager 4.3.0. Both native
-modules are needed; absent modules disable the action. Microphone usage text and
+Expo 54 uses WebRTC 124.0.6, config plugin 13.0.0 and InCallManager 4.3.0. WebRTC,
+InCallManager and the local SuperOneVoiceAudio module are needed; absent modules
+disable the action. Microphone usage text and
 Android Bluetooth connect permission belong to native config. This requires new
 iOS/Android binaries and their fingerprint runtime, followed by matching JS.
 An OTA update cannot add the missing native modules.
@@ -163,7 +196,8 @@ require a clean prebuild; changing the JS bundle cannot repair an installed APK.
 Focused tests cover actual remote command ingress and directed replies, logging
 redaction, Session replay/fanout exclusion, host races, interest retention, late
 permission/capture results, immediate media cleanup, readiness, mutes, reconnect,
-foreground policy, desktop renderer fencing and delegated-task continuation.
+background retention, interruption/resume races, ordered buffered playback,
+desktop renderer fencing and delegated-task continuation.
 
 Native compilation establishes module compatibility; offline preview exercises
 controls without media. End-to-end acceptance requires rebuilt iOS/Android clients

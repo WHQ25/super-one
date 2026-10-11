@@ -13,12 +13,12 @@ function Preview({ layout = 'centered', disabled = false }: {
     return () => resetRealtimeCallForTests()
   }, [])
   const microphoneMuted = useRealtimeCallStore(state => state.microphoneMuted)
-  const outputMuted = useRealtimeCallStore(state => state.outputMuted)
+  const paused = useRealtimeCallStore(state => state.paused)
   return <div className="flex w-80 flex-col gap-4 bg-background p-4 text-foreground">
     <div className="flex items-center justify-center gap-3">
-      {ready && <RealtimeCallControls layout={layout} disabled={disabled} />}
+      {ready && <RealtimeCallControls layout={layout} disabled={disabled} onPlayback={() => useRealtimeCallStore.setState(state => ({ paused: !state.paused, pauseReason: state.paused ? null : 'manual' }))} />}
     </div>
-    <span className="text-xs text-muted-foreground">Microphone: {microphoneMuted ? 'muted' : 'on'} · Output: {outputMuted ? 'muted' : 'on'}</span>
+    <span className="text-xs text-muted-foreground">Microphone: {microphoneMuted ? 'muted' : 'on'} · Voice: {paused ? 'paused' : 'playing'}</span>
   </div>
 }
 

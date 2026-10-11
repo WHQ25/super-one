@@ -7,12 +7,13 @@ import { SILENT_VOICE_LEVELS, VoiceAudioLevelStore, type VoiceAudioLevels } from
 export type VoiceMedia = {
   offer(): Promise<string>; answer(sdp: string): Promise<void>
   inputMuted(muted: boolean): void; outputMuted(muted: boolean): void
+  pause(): Promise<void>; resume(): Promise<void>
   readyCue?(): void
   close(): void
 }
 export type VoiceMediaPort = {
   available(): boolean
-  open(signal: AbortSignal, onState: (state: 'ready' | 'disconnected' | 'failed') => void, onLevels?: (levels: VoiceAudioLevels) => void): Promise<VoiceMedia>
+  open(signal: AbortSignal, onState: (state: 'ready' | 'disconnected' | 'failed') => void, onLevels?: (levels: VoiceAudioLevels) => void, onPermissionRequest?: (pending: boolean) => void, onInterruption?: () => void, onError?: (error: Error) => void): Promise<VoiceMedia>
 }
 export type VoiceControlPort = {
   fork?(): VoiceControlPort
@@ -25,16 +26,19 @@ export type VoiceControlPort = {
 export type VoiceTarget = VoiceSession & { title?: string; harnessId?: string }
 export type MobileVoiceState = {
   phase: 'idle' | 'starting' | 'active' | 'stopping' | 'denied' | 'error'
-  target: VoiceTarget | null; inputMuted: boolean; outputMuted: boolean
+  target: VoiceTarget | null; inputMuted: boolean; paused: boolean
+  pauseReason: 'manual' | 'interrupted' | null; resuming: boolean
   error: string | null
 }
 type Attempt = {
   id: string; control: VoiceControlPort; abort: AbortController; media?: VoiceMedia
   identity?: VoiceIdentity; ready: boolean; reportingReady: boolean
+  requestingPermission?: boolean
+  pauseEpoch?: number
   timer?: ReturnType<typeof setTimeout>; mediaGrace?: ReturnType<typeof setTimeout>; controlGrace?: ReturnType<typeof setTimeout>
 }
 export class MicrophoneDeniedError extends Error {}
-const initialState = (): MobileVoiceState => ({ phase: 'idle', target: null, inputMuted: false, outputMuted: false, error: null })
+const initialState = (): MobileVoiceState => ({ phase: 'idle', target: null, inputMuted: false, paused: false, pauseReason: null, resuming: false, error: null })
 
 /** App-lifetime service. Chat navigation/reduction never owns native media. */
 export class MobileVoiceService {
@@ -53,7 +57,7 @@ export class MobileVoiceService {
   available(): boolean { return this.mediaPort.available() }
   private update(patch: Partial<MobileVoiceState>): void {
     this.state = { ...this.state, ...patch }
-    if (this.state.phase !== 'active') this.audioLevels.publish(SILENT_VOICE_LEVELS)
+    if (this.state.phase !== 'active' || this.state.paused) this.audioLevels.publish(SILENT_VOICE_LEVELS)
     for (const listener of this.listeners) listener()
   }
   private current(attempt: Attempt): boolean { return this.attempt === attempt && !attempt.abort.signal.aborted }
@@ -99,6 +103,7 @@ export class MobileVoiceService {
       const status = await control.status()
       if (!this.current(attempt)) return
       if (!status.supported) throw new Error(status.reason ?? 'Voice is unavailable on this desktop.')
+      if (status.startBlockedReason) throw new Error(status.startBlockedReason)
       if (status.call) {
         // Reconcile an old phone process/uncertain cancellation before acquiring capture.
         if (!status.call.owned) throw new Error('Another voice call is active on this desktop.')
@@ -109,10 +114,14 @@ export class MobileVoiceService {
       if (!this.current(attempt)) return
       const media = await this.mediaPort.open(attempt.abort.signal, state => this.mediaState(attempt, state), levels => {
         if (!this.current(attempt) || this.state.phase !== 'active') return
-        this.audioLevels.publish({ input: this.state.inputMuted ? 0 : levels.input, output: this.state.outputMuted ? 0 : levels.output })
-      })
+        if (this.state.paused) return
+        this.audioLevels.publish({ input: this.state.inputMuted ? 0 : levels.input, output: levels.output })
+      }, pending => {
+        if (this.current(attempt)) attempt.requestingPermission = pending
+      }, () => { if (this.current(attempt)) this.pause('interrupted') }, error => this.fail(attempt, error))
       if (!this.current(attempt)) { media.close(); return }
       attempt.media = media
+      if (this.state.paused) { media.inputMuted(true); await media.pause() }
       const sdp = await media.offer()
       if (!this.current(attempt)) return
       const started = await control.start(attempt.id, sdp)
@@ -153,7 +162,7 @@ export class MobileVoiceService {
       if (!this.current(attempt)) return
       clearTimeout(attempt.timer)
       this.update({ phase: 'active' })
-      try { attempt.media?.readyCue?.() } catch { /* a UI cue cannot end a ready call */ }
+      if (!this.state.paused) try { attempt.media?.readyCue?.() } catch { /* a UI cue cannot end a ready call */ }
     }).catch(error => this.fail(attempt, error))
   }
   connection(connected: boolean): void {
@@ -175,16 +184,39 @@ export class MobileVoiceService {
   muteInput(): void {
     if (!this.attempt) return
     const muted = !this.state.inputMuted
-    this.attempt.media?.inputMuted(muted); this.update({ inputMuted: muted })
+    this.attempt.media?.inputMuted(muted || this.state.paused); this.update({ inputMuted: muted })
     if (muted) this.audioLevels.publish({ ...this.audioLevels.snapshot(), input: 0 })
   }
-  muteOutput(): void {
-    if (!this.attempt) return
-    const muted = !this.state.outputMuted
-    this.attempt.media?.outputMuted(muted); this.update({ outputMuted: muted })
-    if (muted) this.audioLevels.publish({ ...this.audioLevels.snapshot(), output: 0 })
+  pause(reason: 'manual' | 'interrupted' = 'manual'): void {
+    const attempt = this.attempt
+    if (!attempt || this.state.phase === 'stopping') return
+    attempt.pauseEpoch = (attempt.pauseEpoch ?? 0) + 1
+    this.update({ paused: true, pauseReason: reason, error: null })
+    attempt.media?.inputMuted(true)
+    void attempt.media?.pause().catch(error => this.fail(attempt, error))
   }
-  background(): void { this.stop() }
+  async togglePlayback(): Promise<void> {
+    const attempt = this.attempt
+    if (!attempt?.media || this.state.phase !== 'active' || this.state.resuming) return
+    if (!this.state.paused) { this.pause(); return }
+    const epoch = attempt.pauseEpoch
+    this.update({ resuming: true, error: null })
+    try {
+      await attempt.media.resume()
+      if (!this.current(attempt)) return
+      if (attempt.pauseEpoch !== epoch) { await attempt.media.pause(); return }
+      this.update({ paused: false, pauseReason: null })
+      attempt.media.inputMuted(this.state.inputMuted)
+    } catch (error) {
+      if (this.current(attempt)) this.update({ error: error instanceof Error ? redactVoiceText(error.message) : 'Audio is still interrupted. Try again when the other call ends.' })
+    } finally { if (this.current(attempt)) this.update({ resuming: false }) }
+  }
+  background(): void {
+    // Android permission activities can background the app. The media adapter
+    // waits for foreground before clearing this guard or opening capture.
+    if (this.state.phase === 'stopping') this.pendingStopCleanup?.()
+    else if (this.preparing || (this.attempt && !this.attempt.media && !this.attempt.requestingPermission)) this.stop()
+  }
   retry(): void { if (this.lastStart) void this.start(this.lastStart.target, this.lastStart.control) }
   stop(afterPaint?: (cleanup: () => void) => void): void {
     this.preparing?.abort()

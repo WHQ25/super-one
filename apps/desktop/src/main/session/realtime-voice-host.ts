@@ -4,6 +4,7 @@ import { isCodexAccountProvider } from '@superone/shared/codex-accounts'
 import { assertVoiceAccount, validateVoiceAttempt, validateVoiceStart, sameVoice, redactVoiceText, VoiceCleanupPendingError, VOICE_DISCONNECT_GRACE_MS, VOICE_START_TIMEOUT_MS, type VoiceCapability, type VoiceIdentity, type VoiceSignal, type VoiceStatus } from '@superone/shared/realtime-voice'
 import type { AgentEvent, RealtimeVoiceStartRequest } from '@superone/shared/agent-types'
 import type { Session } from './types'
+import { VOICE_SESSION_BUSY_REASON } from '@superone/shared/realtime-voice'
 import { runHostReaction } from './control-context'
 
 export type VoiceEndpoint = { id: string; deviceId?: string; onDisconnect?: (listener: () => void) => () => void; send(signal: VoiceSignal): void }
@@ -36,7 +37,7 @@ export class RealtimeVoiceHost {
   }
   status(session: Session, endpoint: VoiceEndpoint): VoiceStatus {
     const call = this.call
-    return { ...voiceCapability(session), call: call ? {
+    return { ...voiceCapability(session), ...(session.snapshot.status === 'streaming' ? { startBlockedReason: VOICE_SESSION_BUSY_REASON } : {}), call: call ? {
       ...this.identity(call), projectPath: call.session.projectPath, sessionId: call.session.id,
       state: call.state, owned: call.endpoint.id === endpoint.id,
     } : null }
@@ -60,6 +61,7 @@ export class RealtimeVoiceHost {
     }
     const capability = voiceCapability(session)
     if (!capability.supported) throw new Error(capability.reason)
+    if (session.snapshot.status === 'streaming') throw new Error(VOICE_SESSION_BUSY_REASON)
     assertVoiceAccount(session.getApiProviderId(true), request.selection?.apiProviderId)
     const release = session.retainRealtimeVoice(endpoint.deviceId)
     const call: Call = {

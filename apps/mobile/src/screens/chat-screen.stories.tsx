@@ -101,8 +101,8 @@ export const CodexVoiceLanding = {
 }
 
 function voiceComposer(patch: Partial<MobileVoiceState> = {}) {
-  const state: MobileVoiceState = { phase: 'active', target: { projectPath: '/repo', sessionId: 'voice-task', title: 'Voice conversation' }, inputMuted: false, outputMuted: false, error: null, ...patch }
-  return <MobileVoiceControls state={state} onStop={noop} onInputMute={noop} onRetry={noop} onSettings={noop} />
+  const state: MobileVoiceState = { phase: 'active', target: { projectPath: '/repo', sessionId: 'voice-task', title: 'Voice conversation' }, inputMuted: false, paused: false, pauseReason: null, resuming: false, error: null, ...patch }
+  return <MobileVoiceControls state={state} onStop={noop} onInputMute={noop} onPlayback={noop} onRetry={noop} onSettings={noop} />
 }
 
 export const VoiceConnected = { name: 'Voice · bottom composer', args: { provider: 'codex', voiceComposer: voiceComposer() } }

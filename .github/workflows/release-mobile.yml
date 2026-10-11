@@ -298,6 +298,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Tag the published build
+        id: tag
         if: ${{ inputs.dry_run != true }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -319,6 +320,7 @@ jobs:
           # one code does not imply one commit.
           # The two tracks share the build code, so the track is in the tag.
           TAG="mobile/${TAG_PLATFORM}/v${APP_VERSION}-build${BUILD_CODE}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" >/dev/null 2>&1; then
             echo "${TAG} already exists -- re-publishing the same build, nothing to tag"
             exit 0
@@ -329,6 +331,52 @@ jobs:
             -f ref="refs/tags/${TAG}" -f sha="${BUILD_COMMIT}" >/dev/null
           echo "Tagged ${TAG} -> ${BUILD_COMMIT}"
 
+      # An archive beside the desktop releases: the APK, the desktop it needs,
+      # and its checksum. Not a download source -- in-app updates and any
+      # desktop-side link read the R2 pointer, which is the only place that
+      # knows the current build per track. Never marked Latest: that badge
+      # belongs to the stable desktop, which the site and users look for.
+      - name: GitHub Release
+        if: ${{ inputs.dry_run != true && steps.tag.outputs.tag != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          BUILD_COMMIT: ${{ steps.build.outputs.build_commit }}
+          APP_VERSION: ${{ steps.build.outputs.app_version }}
+          BUILD_CODE: ${{ steps.build.outputs.build_code }}
+          ALPHA: ${{ inputs.android_profile == 'alpha' }}
+        run: |
+          set -euo pipefail
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            echo "Release ${TAG} already exists -- re-publishing the same build, nothing to add"
+            exit 0
+          fi
+          if [ "${ALPHA}" = "true" ]; then
+            LABEL="Android Alpha"; ASSET="SuperOne-Android-Alpha-v${APP_VERSION}-build${BUILD_CODE}.apk"; PRE=(--prerelease)
+          else
+            LABEL="Android"; ASSET="SuperOne-Android-v${APP_VERSION}-build${BUILD_CODE}.apk"; PRE=()
+          fi
+          # The floor of the build's own tree: a reused build_id may come from
+          # an older commit than this checkout.
+          MIN_DESKTOP="$(gh api "repos/${GITHUB_REPOSITORY}/contents/packages/relay-client/src/phone-version.ts?ref=${BUILD_COMMIT}" \
+            -H 'Accept: application/vnd.github.raw' \
+            | sed -n "s/^export const MIN_PHONE_DESKTOP_VERSION = '\\(.*\\)'.*/\\1/p")"
+          SHA256="$(sha256sum superone.apk | cut -d' ' -f1)"
+          {
+            echo "SuperOne ${LABEL} ${APP_VERSION} (build ${BUILD_CODE})."
+            echo
+            if [ -n "${MIN_DESKTOP}" ]; then
+              echo "Requires SuperOne desktop ${MIN_DESKTOP} or later."
+              echo
+            fi
+            echo "Installed apps update themselves; this file is for a first install."
+            echo
+            echo "SHA-256: \`${SHA256}\`"
+          } > notes.md
+          cp superone.apk "${ASSET}"
+          gh release create "${TAG}" "${ASSET}" "${PRE[@]}" --verify-tag --latest=false \
+            --title "SuperOne ${LABEL} ${APP_VERSION} (build ${BUILD_CODE})" --notes-file notes.md
+          echo "Released ${TAG} with ${ASSET}"
 
       - name: Upload staged tree (debug artifact)
         if: always()

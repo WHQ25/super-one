@@ -125,6 +125,13 @@ build code counter; the track directory and the `mobile/<platform>-alpha/…` ta
 keep equal numbers apart. Each app's public TestFlight link is a constant in
 `release-mobile.yml` (`TESTFLIGHT_URL_STABLE` / `TESTFLIGHT_URL_ALPHA`).
 
+Each newly tagged Android build also gets a GitHub Release on that tag (alpha
+as prerelease, never marked Latest) carrying the APK, the desktop floor read
+from the build's own `phone-version.ts`, and its SHA-256. It is an archive and
+a first-install source, not an update source: anything that needs "the current
+APK" — in-app updates, a desktop download link or QR code — reads the track's
+R2 pointer, because GitHub has one Latest badge and the desktop holds it.
+
 Key layout, parsing and the verdict rule live in `@superone/shared/mobile-updates` —
 one copy, because `scripts/publish-mobile-update.ts` writes exactly what the app reads.
 `.github/workflows/release-mobile.yml` drives an EAS build per platform (`android_profile`

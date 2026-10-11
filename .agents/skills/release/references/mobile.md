@@ -233,11 +233,12 @@ git tag -l 'mobile/*/v<version>-build<N+1>'      # expect android-alpha and ios-
 ```
 
 `buildCode` must read `<N+1>` on both; the Android `artifact.url` is the
-immutable `alpha/superone-v<version>-build<N+1>.apk`.
+immutable `alpha/superone-v<version>-build<N+1>.apk`. The Android tag also has a
+GitHub Release with the APK: `gh release view mobile/android-alpha/v<version>-build<N+1>`.
 
 ### Step 6: Report
 
-The run URL, the two tags, the manifests' `version (buildCode)`, and that
+The run URL, the two tags, the Android GitHub Release URL, the manifests' `version (buildCode)`, and that
 Android installs prompt from the manifest while iOS users install from
 TestFlight once processing completes. If the reason for the binary was a
 fingerprint move, say that OTA is unblocked again from this build onward.

@@ -278,7 +278,17 @@ vi.mock('./resolve-cli', () => ({
   getNodeRuntime: vi.fn(() => ({})),
 }))
 
+vi.mock('./remote-mention-search', () => ({
+  searchRemoteMentions: vi.fn(async (_projectPath: string, cwd: string) => ({ cwd })),
+}))
+
+vi.mock('../session/session-repo', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../session/session-repo')>(),
+  getSessionRecord: vi.fn(() => null),
+}))
+
 const { AgentService } = await import('./agent-service')
+const sessionRepo = await import('../session/session-repo')
 const { AgentIpcChannels } = await import('@superone/shared/agent-types')
 const { ipcMain } = await import('electron')
 const dbSessions = await import('../db-sessions')
@@ -2070,3 +2080,51 @@ async function nativePhoneProjection(agent: AgentService, method: string, payloa
   if ('error' in response) throw Object.assign(new Error(response.error.message), response.error)
   return response.result
 }
+
+describe('AgentService remote @ mention search', () => {
+  // The project's active session is whichever chat the desktop last focused;
+  // a phone in another checkout must still search its own.
+  let realExistsSync: ((...args: unknown[]) => unknown) | undefined
+  beforeEach(() => { realExistsSync = mockExistsSync.getMockImplementation() })
+  afterEach(() => { if (realExistsSync) mockExistsSync.mockImplementation(realExistsSync) })
+
+  function serviceWith(live: Record<string, unknown> | null) {
+    const focused = { id: 'sid-focused', projectPath: '/repo/main', cwd: '/repo/main/.worktrees/focused', getAdditionalDirectoriesSnapshot: () => ['/extra/focused'] }
+    const service = new AgentService()
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getSession: vi.fn((id: string) => (live?.id === id ? live : null)),
+      getActiveSession: vi.fn(() => focused),
+    }
+    return service
+  }
+
+  it('searches the asking session\'s checkout, not the project\'s active one', async () => {
+    const service = serviceWith({ id: 'sid-phone', projectPath: '/repo/main', cwd: '/repo/main/.worktrees/phone', getAdditionalDirectoriesSnapshot: () => ['/extra/phone'] })
+    const { searchRemoteMentions } = await import('./remote-mention-search')
+
+    await expect(service.remoteSearchMentions('/repo/main', 'new', { sessionId: 'sid-phone' })).resolves.toEqual({ cwd: '/repo/main/.worktrees/phone' })
+    expect(searchRemoteMentions).toHaveBeenLastCalledWith('/repo/main', '/repo/main/.worktrees/phone', 'new', { additionalDirs: ['/extra/phone'] })
+  })
+
+  it('reads an unloaded session\'s checkout from its row', async () => {
+    vi.mocked(sessionRepo.getSessionRecord).mockReturnValueOnce({ projectPath: '/repo/main', worktreePath: '/repo/main/.worktrees/cold' } as never)
+
+    await expect(serviceWith(null).remoteSearchMentions('/repo/main', '', { sessionId: 'sid-cold' })).resolves.toEqual({ cwd: '/repo/main/.worktrees/cold' })
+  })
+
+  it('searches the project, or a live worktree the draft picked, before the chat exists', async () => {
+    const service = serviceWith(null)
+
+    await expect(service.remoteSearchMentions('/repo/main', '', {})).resolves.toEqual({ cwd: '/repo/main' })
+    mockExistsSync.mockImplementationOnce(() => false)
+    await expect(service.remoteSearchMentions('/repo/main', '', { worktreePath: '/worktrees/gone' })).resolves.toEqual({ cwd: '/repo/main' })
+    mockExistsSync.mockImplementation(() => true)
+    await expect(service.remoteSearchMentions('/repo/main', '', { worktreePath: '/worktrees/picked' })).resolves.toEqual({ cwd: '/worktrees/picked' })
+  })
+
+  it('ignores a session that belongs to another project', async () => {
+    const service = serviceWith({ id: 'sid-other', projectPath: '/repo/other', cwd: '/repo/other', getAdditionalDirectoriesSnapshot: () => [] })
+
+    await expect(service.remoteSearchMentions('/repo/main', '', { sessionId: 'sid-other' })).resolves.toEqual({ cwd: '/repo/main' })
+  })
+})

@@ -76,6 +76,7 @@ function getGitRoot(cwd: string): string {
 }
 import { listSessionsForFolder, createSession, createAutomationSession, renameSession as dbRenameSession, loadSessionState, loadSessionMessage, deleteSession as dbDeleteSession, deleteSessionsOlderThan as dbDeleteSessionsOlderThan, pinSession as dbPinSession, hideSession as dbHideSession, listPinnedSessions, readSessionHarnessId } from '../db-sessions';
 import { loadSessionMessages } from '../session-history'
+import { getSessionRecord } from '../session/session-repo'
 import { listMcpConfigs, saveMcpConfig, deleteMcpConfig, toggleMcpConfig } from '../mcp-config-service'
 import {
   deleteDshMcpConfig,
@@ -645,10 +646,21 @@ export class AgentService {
     return sessions
   }
 
-  /** `@` mention candidates in a project, from its active session's checkout and roots. */
-  async remoteSearchMentions(projectPath: string, query: string, opts: { scopeDir?: string; additionalDirs?: string[]; iconsById?: boolean }): Promise<unknown> {
-    const session = this.sessionManager?.getActiveSession(projectPath)
-    const cwd = session?.cwd ?? projectPath
+  /**
+   * `@` mention candidates from the asking client's own checkout and roots.
+   *
+   * Never the project's active session: that is whichever chat the desktop
+   * last focused or sent from, and a phone in another worktree would search a
+   * checkout its agent cannot see.
+   */
+  async remoteSearchMentions(projectPath: string, query: string, opts: { sessionId?: string; worktreePath?: string; scopeDir?: string; additionalDirs?: string[]; iconsById?: boolean }): Promise<unknown> {
+    const live = opts.sessionId ? this.sessionManager?.getSession(opts.sessionId) : undefined
+    const session = live?.projectPath === projectPath ? live : undefined
+    const record = opts.sessionId && !live ? getSessionRecord(opts.sessionId) : null
+    const cwd = session?.cwd
+      ?? (record?.projectPath === projectPath ? record.worktreePath ?? projectPath : undefined)
+      // A chat not created yet searches the worktree its draft picked.
+      ?? (opts.worktreePath && worktreeExists(opts.worktreePath, projectPath) ? opts.worktreePath : projectPath)
     // The session already knows its extra roots; a phone would have to ask
     // for them in a separate round trip and could only ever be stale.
     const additionalDirs = opts.additionalDirs ?? session?.getAdditionalDirectoriesSnapshot()

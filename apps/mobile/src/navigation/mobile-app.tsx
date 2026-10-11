@@ -426,7 +426,8 @@ export function MobileApp() {
   const fatalReloadRef = useRef({ startedAt: 0, count: 0 })
   const mentionArtworkRevisionRef = useRef(-1)
   const mcpIconsRevisionRef = useRef(-1)
-  const suggestions = useComposerSuggestions(runtimeRef, `${activePairingId}:${routedEnvironmentId}:${project?.path}:${sessionId}:${selectedProvider}:${selectedAcpAgentId ?? ''}`, { client: clientRef, connected: connectionState === 'connected', projectPath: project?.path, provider: selectedProvider, acpAgentId: selectedAcpAgentId, projects, sessionId, iconStore: mobileKv })
+  const mentionWorktreePath = !sessionId && worktreeSelection.kind === 'existing' ? worktreeSelection.path : undefined
+  const suggestions = useComposerSuggestions(runtimeRef, `${activePairingId}:${routedEnvironmentId}:${project?.path}:${sessionId}:${mentionWorktreePath ?? ''}:${selectedProvider}:${selectedAcpAgentId ?? ''}`, { client: clientRef, connected: connectionState === 'connected', projectPath: project?.path, provider: selectedProvider, acpAgentId: selectedAcpAgentId, projects, sessionId, worktreePath: mentionWorktreePath, iconStore: mobileKv })
   const { slashHits, mentionRows } = suggestions
   const remoteDrafts = useMobileDraftSession({
     kv, pairingId: activePairingId, clientRef: workspaceClientRef, composer: composerDraft, attachments, sessionId,

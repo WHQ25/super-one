@@ -1,7 +1,7 @@
 import type { RelayClient } from '@superone/relay-client'
 import { MENTION_SEARCH_DEBOUNCE_MS } from '@superone/shared/mention-search-debounce'
 import type { HarnessId } from '@superone/shared/agent-types'
-import { requestMentionIcons, requestMentionSearch, type MentionSearchResult } from '../mention-search'
+import { requestMentionIcons, requestMentionSearch, type MentionSearchOptions, type MentionSearchResult } from '../mention-search'
 import { MentionIconCache, type MentionIconStore } from '../mention-icon-cache'
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import type { ChatRuntime } from '../runtime'
@@ -65,6 +65,8 @@ export interface ComposerSuggestionSource {
   projects?: readonly { path: string; name?: string }[]
   /** The open session, whose MCP servers answer `@` too; none on the new-session landing. */
   sessionId?: string | null
+  /** The worktree a chat not created yet will run in; `@` searches it rather than the project. */
+  worktreePath?: string
   /**
    * The link can answer requests. The client is dialled after the composer is
    * already usable, so what was asked before this turns true is asked again.
@@ -200,13 +202,19 @@ export function useComposerSuggestions(
     setMentionCatalog(cached)
     if (cached || !connected || !client || !projectPath) return
     let current = true
-    void requestMentionSearch(client, projectPath, '').then((result) => {
+    void requestMentionSearch(client, projectPath, '', searchTarget()).then((result) => {
       if (current && !result.error) setMentionCatalog(rememberMentionCatalog(client, projectPath, result))
     }).catch(() => { /* The `@` search asks again and reports its own failure. */ })
     return () => { current = false }
     // `contextKey` covers the device and project; the client is read through it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contextKey, connected])
+
+  /** Whose checkout a runtime-less search covers; a runtime names its own session. */
+  const searchTarget = (): MentionSearchOptions => ({
+    ...(host.sessionId ? { sessionId: host.sessionId } : {}),
+    ...(host.worktreePath ? { worktreePath: host.worktreePath } : {}),
+  })
 
   const absorb = (result: MentionSearchResult): MentionFetch => {
     if (typeof result.cwd === 'string' && result.cwd) cwd.current = result.cwd
@@ -286,7 +294,7 @@ export function useComposerSuggestions(
     const needle = mode.kind === 'search' ? mode.needle : ''
     const scoped = mode.kind === 'search' && mode.scopeDir ? { scopeDir: mode.scopeDir } : {}
     const search = runtime ? () => runtime.searchMentions(needle, scoped)
-      : client && projectPath ? () => requestMentionSearch(client, projectPath, needle, scoped) : null
+      : client && projectPath ? () => requestMentionSearch(client, projectPath, needle, { ...searchTarget(), ...scoped }) : null
     if (mode.kind === 'browse') {
       const root = browseRoot(runtime)
       if (!client || !root || !projectPath) return null

@@ -32,7 +32,7 @@ function memoryIconStore() {
   }
 }
 
-async function mount(client: unknown, runtime: ChatRuntime | null = null, connected = true) {
+async function mount(client: unknown, runtime: ChatRuntime | null = null, connected = true, target: { sessionId?: string; worktreePath?: string } = {}) {
   const runtimeRef = createRef<ChatRuntime>() as { current: ChatRuntime | null }
   runtimeRef.current = runtime
   const clientRef = { current: client as RelayClient | null }
@@ -43,6 +43,7 @@ async function mount(client: unknown, runtime: ChatRuntime | null = null, connec
       connected,
       projectPath: '/work/app',
       provider: 'claude',
+      ...target,
       iconStore: memoryIconStore(),
     }), { initialProps: { connected } },
   )
@@ -276,6 +277,21 @@ test('loads the bare @ catalog through the active runtime and browses its worktr
   expect(runtime.searchMentions).toHaveBeenCalledWith('', {})
   expect(client.rpc).toHaveBeenCalledWith('files.listDir', expect.objectContaining({ path: '/work/review-tree' }), { environmentId: 'desk' })
   expect(result.current.mentionRows.some((row) => row.item.path === 'board')).toBe(true)
+})
+
+test.each([
+  ['an open session', { sessionId: 'sid-phone' }],
+  ['a draft worktree', { worktreePath: '/work/app-feat' }],
+])('searches the checkout of %s, not whichever the host has active', async (_label, target) => {
+  const client = mentionClient()
+  const { result } = await mount(client, null, true, target)
+  await act(async () => { result.current.update('@readme') })
+  await waitFor(() => expect(result.current.mentionSearch.loading).toBe(false))
+  const searches = client.rpc.mock.calls.filter(([method]) => method === 'workspace.searchMentions')
+  expect(searches.map(([, payload]) => payload)).toEqual([
+    expect.objectContaining({ query: '', ...target }),
+    expect.objectContaining({ query: 'readme', ...target }),
+  ])
 })
 
 test('browses a nested directory without loading unrelated mention targets', async () => {

@@ -26,6 +26,10 @@ export type MentionSearchResult = {
 export interface MentionSearchOptions {
   /** Confine the search to this directory, relative to the session's cwd. */
   scopeDir?: string
+  /** The asking chat; the host searches its checkout, not the project's active one. */
+  sessionId?: string
+  /** A chat not created yet: the worktree its draft picked. */
+  worktreePath?: string
 }
 
 /**
@@ -48,6 +52,8 @@ export function requestMentionSearch(
     query,
     iconsById: ICONS_BY_ID,
     ...(options.scopeDir !== undefined ? { scopeDir: options.scopeDir } : {}),
+    ...(options.sessionId ? { sessionId: options.sessionId } : {}),
+    ...(options.worktreePath ? { worktreePath: options.worktreePath } : {}),
   })
 }
 

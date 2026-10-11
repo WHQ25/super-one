@@ -738,7 +738,7 @@ export class ChatRuntime {
   }
 
   searchMentions(query: string, options?: MentionSearchOptions): Promise<MentionSearchResult> {
-    return requestMentionSearch(this.client, this.projectPath, query, options)
+    return requestMentionSearch(this.client, this.projectPath, query, { ...options, ...(this.sessionId ? { sessionId: this.sessionId } : {}) })
   }
 
   /** Root the composer browses: a worktree session is not the project folder. */

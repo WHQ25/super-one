@@ -150,6 +150,8 @@ function createHandlers(host: PhoneMethodHost): Record<string, Handler> {
       host.agent.remoteConsumeRateLimitReset(projectPath(ctx, text(p, 'projectId')), optionalText(p, 'apiProviderId') ?? null, optionalText(p, 'creditId') ?? null),
     'workspace.searchMentions': (p, ctx) =>
       host.agent.remoteSearchMentions(projectPath(ctx, text(p, 'projectId')), typeof p.query === 'string' ? p.query : '', {
+        sessionId: optionalText(p, 'sessionId'),
+        worktreePath: optionalText(p, 'worktreePath'),
         scopeDir: optionalText(p, 'scopeDir'),
         additionalDirs: Array.isArray(p.additionalDirs) ? (p.additionalDirs as string[]) : undefined,
         iconsById: p.iconsById === true,

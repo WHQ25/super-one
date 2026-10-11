@@ -20,6 +20,7 @@ class MentionEditorModule : Module() {
       Prop("pasteChrome") { view: MentionEditorView, value: Map<String, Double> -> view.setPasteChrome(value) }
       Prop("artwork") { view: MentionEditorView, images: List<Map<String, String>> -> view.setArtwork(images) }
       Prop("keywords") { view: MentionEditorView, value: Map<String, Any?> -> view.setKeywords(value) }
+      Prop("links") { view: MentionEditorView, value: Map<String, Any?> -> view.setLinks(value) }
     }
   }
 }

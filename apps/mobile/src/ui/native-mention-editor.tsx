@@ -10,6 +10,8 @@ import type { AnchorRect } from './popover-layout'
 import type { PromptKeyword } from '@superone/shared/prompt-keywords'
 import { keywordHighlight, type KeywordHighlight } from '../prompt-keyword-highlight'
 import { useIconMotion } from './use-icon-motion'
+import { linkHighlight, type LinkHighlight } from '../composer-web-links'
+import { useLinkFavicons, type FaviconResolver } from './use-link-favicons'
 import { pasteChrome } from './mention-artwork.generated.json'
 
 const blendedKinds = [...BUILTIN_CAPABILITIES.map((item) => item.id), ...LEGACY_CAPABILITY_IDS, 'agent-profile', 'desktop-app', 'session', 'git', 'mcp-resource', ...(pasteChrome.blended ? ['paste'] : [])]
@@ -22,6 +24,7 @@ type NativeProps = ViewProps & {
   artwork: MentionArtwork[]; mutedForeground: string; blendedKinds: string[]
   pasteChrome: typeof pasteMetrics
   keywords: KeywordHighlight
+  links: LinkHighlight
   onContentHeightChange: (event: { nativeEvent: { height: number } }) => void
   onDocumentChange: (event: { nativeEvent: unknown }) => void
   onMentionPress: (event: { nativeEvent: Record<string, unknown> }) => void
@@ -43,10 +46,12 @@ export const nativeMentionEditorAvailable = NativeView !== null
 
 const NO_KEYWORDS: readonly PromptKeyword[] = []
 
-export function NativeMentionEditor({ command, onChange, onError, editable = true, placeholder = 'Ask anything…', autoSize, submitBehavior = 'newline', onSubmit, onMentionPress, promptKeywords = NO_KEYWORDS, ...viewProps }: ViewProps & {
+export function NativeMentionEditor({ command, onChange, onError, editable = true, placeholder = 'Ask anything…', autoSize, submitBehavior = 'newline', onSubmit, onMentionPress, promptKeywords = NO_KEYWORDS, resolveFavicon, ...viewProps }: ViewProps & {
   editable?: boolean; placeholder?: string
   /** The keywords the session's harness acts on, painted in the draft as on desktop. */
   promptKeywords?: readonly PromptKeyword[]
+  /** Resolves a link's favicon through the paired desktop; without it every link shows the globe. */
+  resolveFavicon?: FaviconResolver
   /** A chip was tapped; the editor kept its caret and keyboard. Older dev clients never send it. */
   onMentionPress?: (press: MentionPress) => void
   submitBehavior?: 'newline' | 'submit'; onSubmit?: (snapshot: MentionEditorSnapshot) => void
@@ -60,14 +65,18 @@ export function NativeMentionEditor({ command, onChange, onError, editable = tru
     () => keywordHighlight(draft, promptKeywords, { dark: scheme === 'dark', animate: motion }),
     [draft, promptKeywords, scheme, motion],
   )
+  const favicons = useLinkFavicons(draft.text, scheme, colors.foreground, resolveFavicon)
+  const links = useMemo(() => linkHighlight(draft, favicons.iconFor), [draft, favicons.iconFor])
   const latestEvent = useRef(-1)
   const lastTextChangeAt = useRef(0)
   const latestSnapshot = useRef<MentionEditorSnapshot | null>(null)
   const [contentHeight, setContentHeight] = useState(0)
   const [tokens, setTokens] = useState(command.tokens)
-  const artwork = useMentionArtwork(tokens)
+  const mentionArtwork = useMentionArtwork(tokens)
+  // A new array re-sends every image to native, so only rebuild when either half changes.
+  const artwork = useMemo(() => [...mentionArtwork, ...favicons.artwork], [mentionArtwork, favicons.artwork])
   if (!NativeView) return null
-  return <NativeView {...viewProps} editable={editable} placeholder={placeholder} editorLabel={viewProps.accessibilityLabel ?? 'Message'} command={command} foreground={colors.foreground} chipBackground={colors.muted} artwork={artwork} mutedForeground={colors.mutedForeground} blendedKinds={blendedKinds} pasteChrome={pasteMetrics} keywords={keywords}
+  return <NativeView {...viewProps} editable={editable} placeholder={placeholder} editorLabel={viewProps.accessibilityLabel ?? 'Message'} command={command} foreground={colors.foreground} chipBackground={colors.muted} artwork={artwork} mutedForeground={colors.mutedForeground} blendedKinds={blendedKinds} pasteChrome={pasteMetrics} keywords={keywords} links={links}
     submitOnReturn={submitBehavior === 'submit'}
     onSubmit={({ nativeEvent }) => {
       const snapshot = latestSnapshot.current

@@ -10,6 +10,7 @@ import { firstLineRange } from '../composer-first-line'
 import type { PromptKeyword } from '@superone/shared/prompt-keywords'
 import { pasteChipEditCommand } from '../paste-chip-edit'
 import { PasteChipEditorDialog } from './paste-chip-editor'
+import type { FaviconResolver } from './use-link-favicons'
 
 export interface NativeComposerController {
   insertMention(item: MentionItem): boolean
@@ -29,6 +30,8 @@ export interface NativeComposerBinding {
   onError(message: string): void
   /** Bumped to remount after a clear the native editor refused (IME composing). */
   generation?: number
+  /** Favicons for the draft's links, through the paired desktop. */
+  resolveFavicon?: FaviconResolver
 }
 
 /** Commands are explicit transactions; native typing never receives a mirrored
@@ -171,7 +174,7 @@ export function NativeComposerInput({ binding, tablet, editable, placeholder, on
   return <View ref={view} collapsable={false}>
     <PasteChipEditorDialog chip={pasteChip} onApply={applyPaste} onDismiss={() => setPasteChip(null)} />
     <NativeMentionEditor onMentionPress={pressMention} command={command} editable={editable} placeholder={placeholder} accessibilityLabel="Message"
-    promptKeywords={promptKeywords}
+    promptKeywords={promptKeywords} resolveFavicon={binding.resolveFavicon}
     onFocus={onFocus} onBlur={onBlur}
     autoSize={{ minHeight: composerInputMinHeight(tablet), maxHeight: COMPOSER_INPUT_MAX_HEIGHT }} submitBehavior={tablet ? 'submit' : 'newline'}
     onSubmit={() => { if (pending.current === null) onSubmit() }}

@@ -127,7 +127,7 @@ import { sessionTranscriptCache } from '../session-transcript-cache'
 import { loadInlineImage } from '../inline-images'
 import { loadTextFile } from '../text-files'
 import { loadVideoPoster } from '../video-posters'
-import { requestLinkFavicon } from '../link-favicons'
+import { cachedLinkFavicon, requestLinkFavicon } from '../link-favicons'
 import { requestMcpApp } from '../mcp-apps'
 import { NewFolderSheet } from '../prompts/NewFolderSheet'
 import { FileFinderView } from '../screens/file-finder-view'
@@ -801,7 +801,7 @@ export function MobileApp() {
     resolveFavicon: async (url, isDark) => {
       const client = clientRef.current
       if (!client) throw new Error('not connected')
-      return requestLinkFavicon(client, url, isDark)
+      return cachedLinkFavicon(url, isDark, (href, dark) => requestLinkFavicon(client, href, dark))
     },
     mcpApp: async (request) => {
       const client = clientRef.current
@@ -2702,6 +2702,7 @@ export function MobileApp() {
             'sandbox mode failed',
           )}
           nativeDraft={{ controller: composerDraft.editorRef, document: composerDraft.document.current, generation: composerDraft.generation, onError: setStatus,
+            resolveFavicon: nativeActionPorts.resolveFavicon,
             onChange: (snapshot) => { composerDraft.accept(snapshot); suggestions.updateNative(snapshot.text, snapshot, snapshot.composing) } }}
           onSlash={(command) => {
             // `/mcp` and `/workflows` report rather than run: they open a panel

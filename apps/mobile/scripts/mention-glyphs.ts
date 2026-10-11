@@ -75,3 +75,36 @@ export function desktopPastePresentation() {
 }
 
 export function desktopPasteGlyph() { return desktopPastePresentation().glyph }
+
+/**
+ * How a bare URL is drawn in the composer, taken from the desktop's sources: the
+ * `.web-link` colour/underline in `chat-md.css`, and the favicon's size, gap,
+ * baseline and globe fallback in chat-view's `LinkFavicon` presenter.
+ */
+export function desktopWebLinkPresentation() {
+  const css = readFileSync(resolve(import.meta.dirname, '../../../packages/ui/src/styles/chat-md.css'), 'utf8')
+  const rule = [...css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^}]*)\}/g)]
+    .find(([, selectors]) => selectors!.split(',').some(selector => selector.trim() === '.web-link'))?.[2]
+  const oklch = rule?.match(/(?:^|[;\s])color:\s*oklch\(([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+))?\)/)
+  if (!rule || !oklch) throw new Error('Desktop .web-link colour changed shape; adapt the generator')
+  const presenter = readFileSync(resolve(import.meta.dirname, '../../../packages/chat-view/src/presenters/LinkFavicon.tsx'), 'utf8')
+  const classes = presenter.match(/const faviconClass = '([^']+)'/)?.[1]
+  const size = classes?.match(/(?:^|\s)size-\[([\d.]+)em\]/)?.[1]
+  const align = classes?.match(/(?:^|\s)align-\[(-?[\d.]+)em\]/)?.[1]
+  // Tailwind's spacing step is 0.25rem; the composer body is close enough to 1rem to read it as em.
+  const gap = classes?.match(/(?:^|\s)mr-([\d.]+)(?:\s|$)/)?.[1]
+  const globe = presenter.match(/source === 'globe'\) return <(\w+) className=\{`\$\{faviconClass\} text-([\w-]+)`\}/)
+  if (!size || !align || !gap || !globe) throw new Error('Desktop link favicon changed shape; adapt the generator')
+  const tone = globe[2] === 'muted-foreground' ? 'mutedForeground' : globe[2] === 'foreground' ? 'foreground' : undefined
+  if (!tone) throw new Error('Desktop link globe colour changed shape; adapt the generator')
+  return {
+    glyph: { icon: globe[1]!, light: GENERATED_LIGHT_COLORS[tone], dark: GENERATED_DARK_COLORS[tone] },
+    chrome: {
+      // Opaque hex plus a separate alpha: the native colour parsers read #rrggbb only.
+      color: hex({ l: Number(oklch[1]), c: Number(oklch[2]), h: Number(oklch[3]), a: 1 }),
+      alpha: oklch[4] == null ? 1 : Number(oklch[4]),
+      underline: /text-decoration(?:-line)?:\s*underline/.test(rule),
+      iconSizeEm: Number(size), iconGapEm: Number(gap) * 0.25, iconBaselineEm: -Number(align),
+    },
+  }
+}

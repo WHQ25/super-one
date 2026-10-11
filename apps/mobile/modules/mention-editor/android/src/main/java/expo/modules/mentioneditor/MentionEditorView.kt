@@ -18,7 +18,9 @@ import android.text.TextPaint
 import android.text.TextWatcher
 import android.text.StaticLayout
 import android.text.Layout
+import android.text.style.CharacterStyle
 import android.text.style.MetricAffectingSpan
+import android.text.style.UpdateAppearance
 import android.text.style.ReplacementSpan
 import android.view.Gravity
 import android.view.KeyEvent
@@ -32,6 +34,7 @@ import android.util.Base64
 import expo.modules.kotlin.AppContext
 import expo.modules.kotlin.viewevent.EventDispatcher
 import expo.modules.kotlin.views.ExpoView
+import kotlin.math.roundToInt
 
 /** Feasibility view: native edits own the text and spans. JS sends explicit,
  * event-count-checked commands, never a controlled value on every keystroke. */
@@ -61,6 +64,14 @@ class MentionEditorView(context: Context, appContext: AppContext) : ExpoView(con
   private var keywordBand = 3
   private var keywordStep = -1L
   private var shimmerRunning = false
+  private var linkColor = Color.BLUE
+  private var linkUnderline = true
+  private var linkIconSizeEm = 0.9f
+  private var linkIconGapEm = 0.25f
+  private var linkIconBaselineEm = 0.1f
+  /** The last `links` prop, held while the draft it was computed for is still being composed. */
+  private var pendingLinks: Map<String, Any?>? = null
+  private val iconPaint = Paint(Paint.FILTER_BITMAP_FLAG)
   /** The draft's keywords render in pixel capitals (`fonts/`, see scripts/build-font.py). */
   private val keywordTypeface: Typeface? by lazy {
     try { Typeface.createFromAsset(context.assets, "superone-keyword-pixel.ttf") } catch (_: RuntimeException) { null }
@@ -223,6 +234,13 @@ class MentionEditorView(context: Context, appContext: AppContext) : ExpoView(con
         value.removeSpan(span)
         value.setSpan(ChipSpan(span.kind, span.value, span.label), start, end, flags)
       }
+      for (span in value.getSpans(0, value.length, LinkIconSpan::class.java)) {
+        val start = value.getSpanStart(span)
+        val end = value.getSpanEnd(span)
+        val flags = value.getSpanFlags(span)
+        value.removeSpan(span)
+        value.setSpan(LinkIconSpan(span.icon), start, end, flags)
+      }
     } finally { changing = wasChanging }
     editor.requestLayout()
     editor.invalidate()
@@ -249,10 +267,13 @@ class MentionEditorView(context: Context, appContext: AppContext) : ExpoView(con
     }
   }
 
-  /** Mirrors `isComposerPasteChip`: more than three lines, ignoring line breaks at the ends, or at least 500 UTF-16 units. */
+  /**
+   * Mirrors `isComposerPasteChip`: more than three lines, ignoring line breaks at the ends, or at
+   * least 500 UTF-16 units — but never a lone link, however long.
+   */
   private fun isPasteChip(text: String): Boolean {
     val body = text.trim('\r', '\n')
-    return body.isNotBlank() && (text.length >= 500 || body.lines().size > 3)
+    return body.isNotBlank() && !SINGLE_WEB_LINK.matches(text.trim()) && (text.length >= 500 || body.lines().size > 3)
   }
 
   private fun insertPaste(start: Int, end: Int, text: String) {
@@ -342,6 +363,55 @@ class MentionEditorView(context: Context, appContext: AppContext) : ExpoView(con
       }
     } finally { changing = wasChanging }
     updateShimmer()
+  }
+
+  /**
+   * Paints the draft's bare URLs: JS's `LinkHighlight`, for the draft with this `eventCount`
+   * only. One that arrives while the draft is composed waits for the composition to end.
+   * A keyword letter inside a URL keeps its keyword style.
+   */
+  fun setLinks(value: Map<String, Any?>) {
+    pendingLinks = value
+    applyPendingLinks()
+  }
+
+  private fun applyPendingLinks() {
+    val value = pendingLinks ?: return
+    val text = editor.text ?: return
+    if ((value["eventCount"] as? Number)?.toInt() != eventCount) { pendingLinks = null; return }
+    if (BaseInputConnection.getComposingSpanStart(text) >= 0) return
+    pendingLinks = null
+    (value["color"] as? String)?.let {
+      val alpha = ((value["alpha"] as? Number)?.toDouble() ?: 1.0).coerceIn(0.0, 1.0)
+      linkColor = (Color.parseColor(it) and 0x00FFFFFF) or ((alpha * 255).roundToInt() shl 24)
+    }
+    linkUnderline = value["underline"] as? Boolean ?: linkUnderline
+    linkIconSizeEm = (value["iconSizeEm"] as? Number)?.toFloat() ?: linkIconSizeEm
+    linkIconGapEm = (value["iconGapEm"] as? Number)?.toFloat() ?: linkIconGapEm
+    linkIconBaselineEm = (value["iconBaselineEm"] as? Number)?.toFloat() ?: linkIconBaselineEm
+    val wasChanging = changing
+    changing = true
+    try {
+      for (span in text.getSpans(0, text.length, LinkIconSpan::class.java)) text.removeSpan(span)
+      for (span in text.getSpans(0, text.length, LinkColorSpan::class.java)) text.removeSpan(span)
+      for (raw in value["links"] as? List<*> ?: emptyList<Any>()) {
+        val link = raw as? Map<*, *> ?: continue
+        val start = (link["start"] as? Number)?.toInt() ?: continue
+        val end = (link["end"] as? Number)?.toInt() ?: continue
+        val icon = link["icon"] as? String ?: continue
+        if (start < 0 || end <= start || end > text.length || (start until end).any { text[it] == '\uFFFC' }) continue
+        text.setSpan(LinkIconSpan(icon), start, start + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        if (end > start + 1) text.setSpan(LinkColorSpan(), start + 1, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+      }
+      // Spans draw in insertion order: re-adding the keywords keeps their colour over the link's.
+      for (span in text.getSpans(0, text.length, KeywordSpan::class.java)) {
+        val start = text.getSpanStart(span)
+        val end = text.getSpanEnd(span)
+        val flags = text.getSpanFlags(span)
+        text.removeSpan(span)
+        text.setSpan(span, start, end, flags)
+      }
+    } finally { changing = wasChanging }
   }
 
   private fun lit(index: Int, step: Long): Boolean {
@@ -454,6 +524,51 @@ class MentionEditorView(context: Context, appContext: AppContext) : ExpoView(con
       "composing" to (BaseInputConnection.getComposingSpanStart(value) >= 0), "rejection" to rejection, "supportsPrepareSubmit" to true)
     if (submissionId != null) event["submissionId"] = submissionId
     onDocumentChange(event)
+    applyPendingLinks()
+  }
+
+  /** A bare URL after its first letter: link colour and underline. */
+  private inner class LinkColorSpan : CharacterStyle(), UpdateAppearance {
+    override fun updateDrawState(paint: TextPaint) {
+      paint.color = linkColor
+      paint.isUnderlineText = linkUnderline
+    }
+  }
+
+  /**
+   * A bare URL's first letter, drawn after its favicon (or the globe) in the space it measures,
+   * so the icon needs no character of its own and the draft's offsets stay JS's. The icon's
+   * space is not underlined, as on desktop.
+   */
+  private inner class LinkIconSpan(val icon: String) : ReplacementSpan() {
+    private fun reserved(paint: Paint) = paint.textSize * (linkIconSizeEm + linkIconGapEm)
+    override fun getSize(paint: Paint, text: CharSequence, start: Int, end: Int, fm: Paint.FontMetricsInt?): Int {
+      if (fm != null) {
+        val metrics = paint.fontMetricsInt
+        fm.ascent = metrics.ascent; fm.descent = metrics.descent
+        fm.top = metrics.top; fm.bottom = metrics.bottom; fm.leading = metrics.leading
+      }
+      return kotlin.math.ceil(reserved(paint) + paint.measureText(text, start, end)).toInt()
+    }
+    override fun draw(canvas: Canvas, text: CharSequence, start: Int, end: Int, x: Float, top: Int, y: Int, bottom: Int, paint: Paint) {
+      val size = paint.textSize * linkIconSizeEm
+      // CSS `vertical-align: -0.1em`: the icon's bottom sits that far below the baseline.
+      val iconBottom = y + paint.textSize * linkIconBaselineEm
+      (artwork[icon] ?: artwork[WEB_LINK_GLOBE])?.let { canvas.drawBitmap(it, null, RectF(x, iconBottom - size, x + size, iconBottom), iconPaint) }
+      val color = paint.color
+      val underline = paint.isUnderlineText
+      paint.color = linkColor
+      paint.isUnderlineText = linkUnderline
+      canvas.drawText(text, start, end, x + reserved(paint), y.toFloat(), paint)
+      paint.color = color
+      paint.isUnderlineText = underline
+    }
+  }
+
+  private companion object {
+    const val WEB_LINK_GLOBE = "web-link"
+    /** `isSingleWebLink` in `@superone/shared/web-links`, without its closing-parenthesis rule. */
+    val SINGLE_WEB_LINK = Regex("^https?://[^/?#\\s<>\"'`\\u3000-\\u303F\\uFF00-\\uFFEF]+[^\\s<>\"'`\\u3000-\\u303F\\uFF00-\\uFFEF]*(?<![?!.,:;*_~])$", RegexOption.IGNORE_CASE)
   }
 
   private inner class ChipSpan(val kind: String, val value: String, val label: String) : ReplacementSpan() {

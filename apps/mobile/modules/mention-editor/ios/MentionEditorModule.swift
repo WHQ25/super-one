@@ -17,6 +17,7 @@ public class MentionEditorModule: Module {
       Prop("pasteChrome") { (view: MentionEditorView, value: [String: Double]) in view.setPasteChrome(value) }
       Prop("artwork") { (view: MentionEditorView, images: [[String: String]]) in view.setArtwork(images) }
       Prop("keywords") { (view: MentionEditorView, value: [String: Any]) in view.setKeywords(value) }
+      Prop("links") { (view: MentionEditorView, value: [String: Any]) in view.setLinks(value) }
     }
   }
 }

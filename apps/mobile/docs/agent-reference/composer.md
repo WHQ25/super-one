@@ -56,7 +56,9 @@ a stale count or an active composition (the snapshot reports the `rejection`). A
 chip is one UTF-16 object position (U+FFFC) holding kind, value and display name.
 Copy/cut expand chips to plain text. System text paste of more than three lines (line
 breaks at its ends ignored) or at least 500 UTF-16 units creates an inline Paste Chip, matching desktop's
-`isComposerPasteChip`; typing, IME input and shorter paste stay text. Paste tokens carry the full text as `value`, occupy one native
+`isComposerPasteChip`; typing, IME input and shorter paste stay text, and so does a
+paste that is one lone http(s) URL however long (native `PasteChip.accepts` / `isPasteChip`
+mirror `isSingleWebLink`; `native-web-link-paste.test.ts` checks both patterns). Paste tokens carry the full text as `value`, occupy one native
 position, and use the desktop's 40-code-point summary and generated FileText icon.
 Paste chrome (no fill, muted label/icon, em spacing and baseline) is extracted from
 desktop `MentionChipContent` and `mention-chip.css` by `generate-mention-artwork.ts`;
@@ -93,6 +95,25 @@ Shimmer runs natively, stops when detached, and becomes static for Reduce Motion
 or an inactive app. The plain TextInput fallback has no keyword styling.
 Preview light/dark, editable keyword drafts and capability exclusions on the
 `Composer modes` page. Font/module changes require a rebuilt native client.
+
+**Web link styling.** Every bare `http(s)://` URL in the draft (`findWebLinks`, shared
+with the sent bubble) is drawn as desktop draws it: the `.web-link` colour, alpha
+and underline (none at rest; native has no hover) from desktop `chat-md.css`, with the site favicon in front at the size, gap
+and baseline of chat-view's `LinkFavicon` — all extracted into `webLinkChrome` by
+`generate-mention-artwork.ts`, which also renders the muted lucide `Globe` fallback
+(`web-link`). Purely visual: no character is inserted, offsets and serialization are
+unchanged, and a tap places the caret as on text. JS sends `links` (`composer-web-links.ts`)
+tied to `eventCount` like keywords; native holds one that arrives during composition and
+applies it once the composition ends. A keyword inside a URL keeps its keyword style.
+Favicons come from the paired desktop's `environment.favicon` RPC through the RN-side
+origin+scheme cache in `link-favicons.ts` (shared with the chat WebView port; null answers
+are kept, failed requests retried), asked only after the draft rests for 400 ms
+(`ui/use-link-favicons.ts`), and reach native as `favicon:<origin>` artwork rows. SVG or
+missing favicons keep the globe; the desktop's monochrome re-tint is not reproduced.
+iOS builds its own TextKit 1 stack: `WebLinkLayoutManager` lays the URL's first letter
+out as a whitespace control glyph as wide as icon + gap + letter, then draws the icon and
+the letter into it. Android puts a `ReplacementSpan` on that letter and a colour/underline
+span on the rest. Preview: `Chip editor` page, “Load links draft” (offline resolver).
 
 **Explicit Send prepares the editor first** (`navigation/use-composer-send.ts`): it
 awaits native `prepareSubmit` (iOS ends marked text, Android clears composition and

@@ -18,6 +18,95 @@ private final class KeywordLetter {
 
 private extension NSAttributedString.Key {
   static let promptKeyword = NSAttributedString.Key("SuperOnePromptKeyword")
+  /// A bare URL's whole range: link colour (`setLinks`).
+  static let webLink = NSAttributedString.Key("SuperOneWebLink")
+  /// The URL's first character, carrying the artwork key of the icon drawn before it.
+  static let webLinkIcon = NSAttributedString.Key("SuperOneWebLinkIcon")
+}
+
+/// Draws a bare URL's favicon in front of it without giving the icon a character:
+/// the draft's text and offsets stay exactly JS's. The URL's first letter (always
+/// the `h` of `http`) is laid out as a whitespace control glyph as wide as icon,
+/// gap and letter, and this draws the icon and then the letter into that space.
+/// Caret, selection and hit-testing still see one character there.
+private final class WebLinkLayoutManager: NSLayoutManager, NSLayoutManagerDelegate {
+  static let globe = "web-link"
+  var icons: [String: UIImage] = [:]
+  var iconSizeEm: CGFloat = 0.9
+  var iconGapEm: CGFloat = 0.25
+  var iconBaselineEm: CGFloat = 0.1
+  var underline = true
+
+  override init() {
+    super.init()
+    delegate = self
+  }
+  required init?(coder: NSCoder) { return nil }
+
+  /// The marked first letter at `index`, styled as the text view would draw it.
+  private func letter(at index: Int) -> (font: UIFont, text: NSAttributedString)? {
+    guard let storage = textStorage, index < storage.length,
+      storage.attribute(.webLinkIcon, at: index, effectiveRange: nil) != nil else { return nil }
+    let font = storage.attribute(.font, at: index, effectiveRange: nil) as? UIFont ?? .systemFont(ofSize: 15)
+    var attributes: [NSAttributedString.Key: Any] = [.font: font,
+      .foregroundColor: storage.attribute(.foregroundColor, at: index, effectiveRange: nil) ?? UIColor.label]
+    if underline { attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue }
+    return (font, NSAttributedString(string: (storage.string as NSString).substring(with: NSRange(location: index, length: 1)), attributes: attributes))
+  }
+
+  private func reserved(_ font: UIFont) -> CGFloat { font.pointSize * (iconSizeEm + iconGapEm) }
+
+  func layoutManager(_ layoutManager: NSLayoutManager, shouldGenerateGlyphs glyphs: UnsafePointer<CGGlyph>,
+    properties: UnsafePointer<NSLayoutManager.GlyphProperty>, characterIndexes: UnsafePointer<Int>, font: UIFont,
+    forGlyphRange glyphRange: NSRange) -> Int {
+    guard let storage = textStorage else { return 0 }
+    var marked: [NSLayoutManager.GlyphProperty]?
+    for index in 0..<glyphRange.length where characterIndexes[index] < storage.length
+      && storage.attribute(.webLinkIcon, at: characterIndexes[index], effectiveRange: nil) != nil {
+      if marked == nil { marked = Array(UnsafeBufferPointer(start: properties, count: glyphRange.length)) }
+      marked?[index] = .controlCharacter
+    }
+    guard let marked else { return 0 }
+    setGlyphs(glyphs, properties: marked, characterIndexes: characterIndexes, font: font, forGlyphRange: glyphRange)
+    return glyphRange.length
+  }
+
+  func layoutManager(_ layoutManager: NSLayoutManager, shouldUse action: NSLayoutManager.ControlCharacterAction,
+    forControlCharacterAt charIndex: Int) -> NSLayoutManager.ControlCharacterAction {
+    guard let storage = textStorage, charIndex < storage.length,
+      storage.attribute(.webLinkIcon, at: charIndex, effectiveRange: nil) != nil else { return action }
+    return .whitespace
+  }
+
+  func layoutManager(_ layoutManager: NSLayoutManager, boundingBoxForControlGlyphAt glyphIndex: Int, for textContainer: NSTextContainer,
+    proposedLineFragment proposedRect: CGRect, glyphPosition: CGPoint, characterIndex charIndex: Int) -> CGRect {
+    guard let letter = letter(at: charIndex) else { return CGRect(origin: glyphPosition, size: .zero) }
+    return CGRect(x: glyphPosition.x, y: glyphPosition.y - letter.font.ascender,
+      width: reserved(letter.font) + ceil(letter.text.size().width), height: letter.font.lineHeight)
+  }
+
+  override func drawGlyphs(forGlyphRange glyphsToShow: NSRange, at origin: CGPoint) {
+    super.drawGlyphs(forGlyphRange: glyphsToShow, at: origin)
+    guard let storage = textStorage else { return }
+    let characters = characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
+    storage.enumerateAttribute(.webLinkIcon, in: characters) { value, range, _ in
+      guard let key = value as? String else { return }
+      for index in range.location..<NSMaxRange(range) {
+        guard let letter = letter(at: index) else { continue }
+        let glyph = glyphIndexForCharacter(at: index)
+        guard NSLocationInRange(glyph, glyphsToShow) else { continue }
+        let line = lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+        let position = location(forGlyphAt: glyph)
+        let x = origin.x + line.minX + position.x
+        let baseline = origin.y + line.minY + position.y
+        let em = letter.font.pointSize
+        let size = em * iconSizeEm
+        // CSS `vertical-align: -0.1em`: the icon's bottom sits that far below the baseline.
+        (icons[key] ?? icons[Self.globe])?.draw(in: CGRect(x: x, y: baseline + em * iconBaselineEm - size, width: size, height: size))
+        letter.text.draw(at: CGPoint(x: x + reserved(letter.font), y: baseline - letter.font.ascender))
+      }
+    }
+  }
 }
 
 /// Breaks the display link's retain on the view.
@@ -37,11 +126,18 @@ private enum PasteChip {
   }
 
   /// Mirrors `isComposerPasteChip`: more than three lines, ignoring line breaks at
-  /// the ends, or at least 500 UTF-16 units.
+  /// the ends, or at least 500 UTF-16 units — but never a lone link, however long.
   static func accepts(_ text: String) -> Bool {
     let body = text.trimmingCharacters(in: .newlines)
-    return !body.trimmingCharacters(in: .whitespaces).isEmpty
+    return !body.trimmingCharacters(in: .whitespaces).isEmpty && !isSingleWebLink(text)
       && (text.utf16.count >= 500 || body.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline).count > 3)
+  }
+
+  /// `isSingleWebLink` in `@superone/shared/web-links`, without its closing-parenthesis rule:
+  /// the trimmed text is one http(s) URL with a host, not ending in punctuation.
+  static let singleWebLink = "^https?://[^/?#\\s<>\"'`\\u3000-\\u303F\\uFF00-\\uFFEF]+[^\\s<>\"'`\\u3000-\\u303F\\uFF00-\\uFFEF]*(?<![?!.,:;*_~])$"
+  static func isSingleWebLink(_ text: String) -> Bool {
+    text.trimmingCharacters(in: .whitespacesAndNewlines).range(of: singleWebLink, options: [.regularExpression, .caseInsensitive]) != nil
   }
 }
 
@@ -138,7 +234,11 @@ final class MentionEditorView: ExpoView, UITextViewDelegate {
   private var submitOnReturn = false
   private var lastContentHeight: CGFloat = 0
   private var lastEditorWidth: CGFloat = 0
-  private let editor = MentionTextView()
+  /// TextKit 1, built by hand so link icons can be drawn (`WebLinkLayoutManager`).
+  /// The text view does not retain its storage; this does.
+  private let textStorage: NSTextStorage
+  private let linkLayout: WebLinkLayoutManager
+  private let editor: MentionTextView
   private let placeholderLabel = UILabel()
   private var eventCount = 0
   private var lastCommand = -1
@@ -156,6 +256,9 @@ final class MentionEditorView: ExpoView, UITextViewDelegate {
   private var keywordBand = 3
   private var keywordStep = -1
   private var keywordLink: CADisplayLink?
+  private var linkColor = UIColor.systemBlue
+  /// The last `links` prop, held while the draft it was computed for is still being composed.
+  private var pendingLinks: [String: Any]?
 
   /// The draft's keywords render in pixel capitals (`fonts/`, see scripts/build-font.py),
   /// registered once from this module's resource bundle.
@@ -171,7 +274,17 @@ final class MentionEditorView: ExpoView, UITextViewDelegate {
   }
 
   required init(appContext: AppContext? = nil) {
+    let storage = NSTextStorage()
+    let layout = WebLinkLayoutManager()
+    storage.addLayoutManager(layout)
+    let container = NSTextContainer(size: CGSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
+    container.widthTracksTextView = true
+    layout.addTextContainer(container)
+    textStorage = storage
+    linkLayout = layout
+    editor = MentionTextView(frame: .zero, textContainer: container)
     super.init(appContext: appContext)
+    linkLayout.delegate = linkLayout
     editor.delegate = self
     editor.font = editorFont
     editor.backgroundColor = .clear
@@ -311,6 +424,7 @@ final class MentionEditorView: ExpoView, UITextViewDelegate {
     foreground = color
     editor.textColor = color
     redrawAttachments()
+    editKeywordAttributes { paintBaseColors(in: NSRange(location: 0, length: editor.textStorage.length)) }
     restyleKeywords()
   }
   func setChipBackground(_ value: String) {
@@ -368,6 +482,7 @@ final class MentionEditorView: ExpoView, UITextViewDelegate {
       next[key] = image
     }
     artwork = next
+    linkLayout.icons = next
     redrawAttachments()
   }
   /// Paints the draft's prompt keywords: JS's `KeywordHighlight`, for the draft
@@ -390,13 +505,68 @@ final class MentionEditorView: ExpoView, UITextViewDelegate {
       storage.enumerateAttribute(.promptKeyword, in: NSRange(location: 0, length: storage.length)) { value, range, _ in
         guard value != nil else { return }
         storage.removeAttribute(.promptKeyword, range: range)
-        storage.addAttributes([.font: self.editorFont, .foregroundColor: self.foreground], range: range)
+        storage.addAttribute(.font, value: self.editorFont, range: range)
+        self.paintBaseColors(in: range)
       }
       for (offset, letter) in letters {
         storage.addAttribute(.promptKeyword, value: letter, range: NSRange(location: offset, length: 1))
       }
     }
     restyleKeywords()
+  }
+
+  /// Paints the draft's bare URLs: JS's `LinkHighlight`, for the draft with this
+  /// `eventCount` only. One that arrives while the draft is composed waits for
+  /// the composition to end. A keyword letter inside a URL keeps its keyword style.
+  func setLinks(_ value: [String: Any]) {
+    pendingLinks = value
+    applyPendingLinks()
+  }
+
+  private func applyPendingLinks() {
+    guard let value = pendingLinks else { return }
+    guard let expected = value["eventCount"] as? Int, expected == eventCount else { pendingLinks = nil; return }
+    guard editor.markedTextRange == nil else { return }
+    pendingLinks = nil
+    if let color = (value["color"] as? String).flatMap(Self.color) {
+      linkColor = color.withAlphaComponent(CGFloat(value["alpha"] as? Double ?? 1))
+    }
+    let metric = { (name: String, fallback: CGFloat) in (value[name] as? Double).map { CGFloat($0) } ?? fallback }
+    linkLayout.iconSizeEm = metric("iconSizeEm", linkLayout.iconSizeEm)
+    linkLayout.iconGapEm = metric("iconGapEm", linkLayout.iconGapEm)
+    linkLayout.iconBaselineEm = metric("iconBaselineEm", linkLayout.iconBaselineEm)
+    linkLayout.underline = value["underline"] as? Bool ?? linkLayout.underline
+    let storage = editor.textStorage
+    let text = storage.string as NSString
+    let links = (value["links"] as? [[String: Any]] ?? []).compactMap { row -> (NSRange, String)? in
+      guard let start = row["start"] as? Int, let end = row["end"] as? Int, start >= 0, end > start, end <= storage.length,
+        let icon = row["icon"] as? String else { return nil }
+      let range = NSRange(location: start, length: end - start)
+      return text.range(of: "\u{FFFC}", options: [], range: range).location == NSNotFound ? (range, icon) : nil
+    }
+    editKeywordAttributes {
+      let all = NSRange(location: 0, length: storage.length)
+      for key in [NSAttributedString.Key.webLink, .webLinkIcon, .underlineStyle] { storage.removeAttribute(key, range: all) }
+      for (range, icon) in links {
+        storage.addAttribute(.webLink, value: true, range: range)
+        storage.addAttribute(.webLinkIcon, value: icon, range: NSRange(location: range.location, length: 1))
+        // The first letter's underline is drawn with it; the icon's space stays bare, as on desktop.
+        if linkLayout.underline, range.length > 1 {
+          storage.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: NSRange(location: range.location + 1, length: range.length - 1))
+        }
+      }
+      paintBaseColors(in: all)
+    }
+    restyleKeywords()
+  }
+
+  /// Link colour inside a URL, the text colour elsewhere; keyword letters keep their own.
+  private func paintBaseColors(in range: NSRange) {
+    let storage = editor.textStorage
+    storage.enumerateAttributes(in: range) { attributes, run, _ in
+      guard attributes[.promptKeyword] == nil, attributes[.attachment] == nil else { return }
+      storage.addAttribute(.foregroundColor, value: attributes[.webLink] != nil ? linkColor : foreground, range: run)
+    }
   }
 
   private func editKeywordAttributes(_ body: () -> Void) {
@@ -487,6 +657,7 @@ final class MentionEditorView: ExpoView, UITextViewDelegate {
       }
     }
     editor.layoutManager.invalidateLayout(forCharacterRange: NSRange(location: 0, length: storage.length), actualCharacterRange: nil)
+    editor.layoutManager.invalidateDisplay(forCharacterRange: NSRange(location: 0, length: storage.length))
     editor.setNeedsLayout()
     editor.setNeedsDisplay()
   }
@@ -547,5 +718,6 @@ final class MentionEditorView: ExpoView, UITextViewDelegate {
     if let rejection { event["rejection"] = rejection }
     if let submissionId { event["submissionId"] = submissionId }
     onDocumentChange(event)
+    applyPendingLinks()
   }
 }

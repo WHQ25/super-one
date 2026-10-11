@@ -879,13 +879,14 @@ export type Messages = {
         mobileApp: {
           title: string
           titleAlpha: string
-          description: string
           ios: string
           android: string
           version: string
           unavailable: string
           unreachable: string
           copyLink: string
+          testflightLinkCopied: string
+          apkLinkCopied: string
           retry: string
         }
         desktop: {
@@ -5209,15 +5210,16 @@ export const en: Messages = {
           empty: 'No phones paired yet.',
         },
         mobileApp: {
-          title: 'Mobile App',
-          titleAlpha: 'Mobile App · Alpha',
-          description: 'Scan with your phone camera to install the app that matches this SuperOne, then pair it below.',
+          title: 'Get SuperOne Mobile App',
+          titleAlpha: 'Get SuperOne Alpha Mobile App',
           ios: 'iOS · TestFlight',
           android: 'Android · APK',
           version: '{{version}} (build {{build}})',
           unavailable: 'Not available yet',
           unreachable: 'Could not load the download links.',
           copyLink: 'Copy Link',
+          testflightLinkCopied: 'TestFlight link copied',
+          apkLinkCopied: 'APK download link copied',
           retry: 'Retry',
         },
         desktop: {

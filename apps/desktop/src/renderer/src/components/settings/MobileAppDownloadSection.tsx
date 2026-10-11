@@ -15,7 +15,7 @@ export type MobileAppDownloadsState =
   | { status: 'error' }
 
 /**
- * Settings → Remote Control → Mobile App: install QR codes for the phone apps
+ * Settings → Remote Control → Get SuperOne Mobile App: install QR codes for the phone apps
  * that pair with this desktop. Expanded until a phone is paired, since
  * installing is the first step of pairing; collapsed after, until opened.
  */
@@ -70,7 +70,6 @@ export function MobileAppDownloadPanel({ alpha, state, expanded, onToggle, onRet
         onToggle={onToggle}
         icon={<Smartphone className="size-4" />}
         title={alpha ? t('settings.remote.thisDevice.mobileApp.titleAlpha') : t('settings.remote.thisDevice.mobileApp.title')}
-        description={t('settings.remote.thisDevice.mobileApp.description')}
       >
         {state.status === 'error' ? (
           <div className="flex items-center justify-between gap-3 rounded-md bg-background/60 px-3 py-2.5">
@@ -83,10 +82,12 @@ export function MobileAppDownloadPanel({ alpha, state, expanded, onToggle, onRet
           <div className="grid grid-cols-1 gap-2 min-[480px]:grid-cols-2">
             <DownloadCard
               label={t('settings.remote.thisDevice.mobileApp.ios')}
+              copiedMessage={t('settings.remote.thisDevice.mobileApp.testflightLinkCopied')}
               download={state.status === 'ready' ? state.downloads.ios : undefined}
             />
             <DownloadCard
               label={t('settings.remote.thisDevice.mobileApp.android')}
+              copiedMessage={t('settings.remote.thisDevice.mobileApp.apkLinkCopied')}
               download={state.status === 'ready' ? state.downloads.android : undefined}
             />
           </div>
@@ -97,7 +98,12 @@ export function MobileAppDownloadPanel({ alpha, state, expanded, onToggle, onRet
 }
 
 /** `undefined` while loading, `null` when the track has nothing published. */
-function DownloadCard({ label, download }: { label: string; download: MobileAppDownload | null | undefined }) {
+function DownloadCard({ label, copiedMessage, download }: {
+  label: string
+  /** What was copied: a TestFlight invite is not a download. */
+  copiedMessage: string
+  download: MobileAppDownload | null | undefined
+}) {
   const { t } = useTranslation()
   return (
     <div className="flex flex-col items-center gap-2 rounded-md bg-background/60 p-3 text-center">
@@ -123,7 +129,7 @@ function DownloadCard({ label, download }: { label: string; download: MobileAppD
             className="h-6 text-xs"
             onClick={() => {
               void navigator.clipboard.writeText(download.url)
-              toast.success(t('resources.remote.linkCopied'))
+              toast.success(copiedMessage)
             }}
           >
             {t('settings.remote.thisDevice.mobileApp.copyLink')}

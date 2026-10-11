@@ -107,6 +107,13 @@ The request/response side (`permission_request` → `respondToPermission`) needs
 `onPermissionModeApplied` exists because some harnesses can't honour a mode change immediately (or at
 all). Emit it with what actually took effect, not what was requested — the UI trusts it.
 
+Cold settings can arrive before `Backend.start`, including during native session creation after a
+Claude → Codex draft switch. `Session` retains the permission mode for its next start options;
+Codex must accept that cold update and discard a thread prewarmed with the previous permissions.
+Requiring a started backend here rejects creation and subsequent sends with `CodexBackend not started`.
+`M/session/backends/codex-cold-permission.test.ts` checks both cold and prewarmed first turns at the
+app-server boundary; active-turn reviewer updates remain in `codex-backend-permissions.ts`.
+
 ---
 
 <a id="sandbox"></a>

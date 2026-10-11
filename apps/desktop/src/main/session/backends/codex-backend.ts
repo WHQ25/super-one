@@ -7,7 +7,7 @@ import { mcpServerConfigFingerprint } from '@superone/runtime/mcp-apps/identity'
 import { assertMcpAppsBindingIdentity } from '@superone/shared/mcp-app-binding'
 import { listCodexMcpConfigs } from '../../codex-config-service'
 import { codexAccountProviderId, CODEX_CLI_ACCOUNT_ID } from '@superone/shared/codex-accounts'
-import { applyCodexBackendSelection, mapCodexPermissionMode, resolveCodexBackendSelection, type CodexBackendSelectionPatch } from './codex-backend-selection'
+import { applyCodexBackendSelection, resolveCodexBackendSelection, type CodexBackendSelectionPatch } from './codex-backend-selection'
 import type {
   AgentEvent,
   AskUserQuestionRequest,
@@ -43,7 +43,7 @@ import {
   createCodexSession,
   tearDownForkRuntime,
 } from '../../codex/codex-session'
-import { resolvePermissionProfile } from '../../codex/app-server-connection'
+import { updateCodexPermissionMode } from './codex-backend-permissions'
 import type { AppServerConnectionHandle, CodexProjectAuth } from '../../codex/app-server-connection'
 import { notifyCodexSkillsChanged } from '../../codex/codex-skills-watcher'
 import { createCodexSessionDispatcher } from '../../codex/codex-session-dispatcher'
@@ -1206,30 +1206,14 @@ export class CodexBackend implements SessionBackend {
   }
 
   async setPermissionMode(mode: PermissionMode): Promise<void> {
-    this.assertStarted()
-    if (this.startOpts) this.startOpts.permissionMode = mode
-    const session = this.session
-    if (!session) return
-
-    const permissionPreset = mapCodexPermissionMode(mode, this.startOpts?.sandboxInfo)
-    session.permissionPreset = permissionPreset
-    const { connectionHandle, threadId, activeTurnId } = session
-    if (!connectionHandle || !threadId || !activeTurnId) return
-
-    try {
-      const result = await connectionHandle.connection.request('turn/settings/update', {
-        threadId,
-        turnId: activeTurnId,
-        approvalsReviewer: resolvePermissionProfile(permissionPreset).approvalsReviewer,
-      })
-      if (result.status === 'targetUnavailable') {
-        log.debug('[CodexBackend] active turn ended before permission reviewer update')
-      }
-    } catch (err) {
-      // Keep the selected preset for the next step/turn even when this live turn
-      // races completion or an older app-server rejects the experimental method.
-      log.warn('[CodexBackend] live permission reviewer update failed: %s', err instanceof Error ? err.message : String(err))
+    if (this.disposed) throw new Error('CodexBackend already disposed')
+    if (!this.started) {
+      // Session keeps the choice in its next start options. A prewarmed thread
+      // has already fixed its permissions, so it must not be adopted afterward.
+      await this.discardWarmHandle('permission mode changed before start')
+      return
     }
+    if (this.startOpts && this.session) await updateCodexPermissionMode(this.startOpts, this.session, mode)
   }
 
   async setSandbox(): Promise<void> {}

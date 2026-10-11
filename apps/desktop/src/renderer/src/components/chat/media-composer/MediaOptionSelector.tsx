@@ -56,12 +56,14 @@ export function MediaOptionSelector({ title, label, leading, groups, value, onCh
 export const mediaModelKey = (model: Pick<MediaComposerModel, 'providerId' | 'model'>) => JSON.stringify([model.providerId, model.model])
 
 /** The chat model selector, listing media models instead of harness models. */
-export function MediaModelSelector({ models, selected, onSelect, onRefresh, loading, options, onOptionChange }: {
+export function MediaModelSelector({ models, selected, onSelect, onRefresh, loading, modelHeaderActions, emptyModelsContent, options, onOptionChange }: {
   models: MediaComposerModel[]
   selected?: MediaComposerModel
   onSelect: (model: MediaComposerModel) => void
   onRefresh?: () => void
   loading?: boolean
+  modelHeaderActions?: ReactNode
+  emptyModelsContent?: ReactNode
   options?: SelectorCatalogParam[]
   onOptionChange?: (id: string, value: string) => void
 }) {
@@ -76,6 +78,8 @@ export function MediaModelSelector({ models, selected, onSelect, onRefresh, load
       onSelectEffort={() => {}}
       onRefreshModels={onRefresh}
       modelsLoading={loading}
+      modelHeaderActions={modelHeaderActions}
+      emptyModelsContent={emptyModelsContent}
       optionParams={options}
       onOptionParamChange={onOptionChange}
       onCloseAutoFocus={preventFocusReturn}

@@ -173,16 +173,18 @@ export function ComposerSwitch<K extends string>({ kind, transitionKey = kind, r
         // Composers hug the slot's bottom edge, so a shorter newcomer rises to the
         // same baseline the outgoing one dropped from.
         'flex shrink-0 flex-col justify-end',
-        // Clip only while a composer is on its way in or out. At rest the text
-        // composer's popups (@ mentions, / commands, todo) sit above the slot with
-        // `absolute bottom-full`, and a standing overflow clip would hide them.
-        phase !== 'steady' && 'overflow-hidden',
         heightCap !== undefined && 'overflow-hidden',
         phase === 'entering' && 'transition-[height] duration-240 ease-[ease-out]',
         phase === 'settling' && 'transition-[height] duration-200 ease-out',
         className,
       )}
       style={{
+        // Native image mode absorbs the full text composer (including its status
+        // bar). Use its measured height so wrapping and chat density stay aligned.
+        ...(base === undefined || restingHeights.current[base] === undefined ? {} : { '--composer-base-height': `${restingHeights.current[base]}px` }),
+        // Clip the slide at the bottom without cutting off the empty chat's
+        // directory hint (absolute bottom-full) before it can leave with the box.
+        ...(phase === 'steady' ? {} : { clipPath: 'inset(-100vh 0 0)' }),
         ...(height === null ? {} : { height }),
         ...(heightCap === undefined ? {} : { maxHeight: heightCap }),
       }}

@@ -36,6 +36,7 @@ export function openProviderSettings() {
 export function useMediaComposer(kind: MediaComposerKind, { instanceId, session, value, onValueChange, active }: OpenedComposerProps) {
   const [models, setModels] = useState<MediaComposerModel[]>([])
   const [loading, setLoading] = useState(true)
+  const [modelError, setModelError] = useState('')
   const [error, setError] = useState('')
   const [delegating, setDelegating] = useState(false)
   const run = useMediaRuns(state => state.runs[instanceId] ?? EMPTY_RUN)
@@ -54,9 +55,9 @@ export function useMediaComposer(kind: MediaComposerKind, { instanceId, session,
     references: kind === 'video' ? fitVideoSettings({ references }, videoCapabilities, true).references : references }))
 
   const loadModels = useCallback(async () => {
-    setLoading(true); setError('')
+    setLoading(true); setModelError('')
     try { setModels(await window.environment.mediaModels(kind)) }
-    catch (cause) { setError(String(cause)) }
+    catch (cause) { setModelError(String(cause)) }
     finally { setLoading(false) }
   }, [kind])
   useEffect(() => { void loadModels() }, [loadModels])
@@ -86,5 +87,5 @@ export function useMediaComposer(kind: MediaComposerKind, { instanceId, session,
   const selectModel = (model: MediaComposerModel) => change({ providerId: model.providerId, model: model.model,
     ...(kind === 'image' ? fitImageSettings(form, model.image ?? GENERIC_IMAGE) : fitVideoSettings(form, model.video ?? GENERIC_VIDEO, true)) })
   return { form, change, models, selected, selectModel, videoCapabilities, loading, loadModels, run, busy, delegating, canGenerate, generate, addFiles,
-    error: error || run.error || run.result?.error || '', setError }
+    modelError, error: error || run.error || run.result?.error || '', setError }
 }

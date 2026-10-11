@@ -128,8 +128,14 @@ future confirmation can reuse them the same way.
 Models are enabled models from the existing `media:image` and `media:video`
 consumers, filtered independently by capability and usable credentials. The
 selected credential/model pair is validated again before generation; a removed
-model does not silently fall back. With no enabled model, the status row links
-to Settings → Providers and offers Retry.
+model does not silently fall back. Model loading, catalog errors and the empty
+state appear inside the model selector. Its Models heading has a provider-settings
+icon immediately before refresh; refresh also retries failed or empty catalogs.
+The image box absorbs the regular composer's status-bar height
+inside its prompt area, keeping its top edge in place when replacing the
+entire text composer. The slot's measured resting text height accounts for
+wrapped placeholders and chat density. Only generation progress and errors
+add a row below it.
 
 The preload `window.environment` media API owns generation, cancellation, video
 status and unfinished-job recovery. Provider SDKs and secrets stay on the desktop
@@ -186,6 +192,9 @@ permissions, a permission and a question, or successive MCP App consents.
 The outgoing request remains visible but inert until its exit finishes. Reduced
 motion switches immediately. Plan review keeps its existing full-screen flow.
 Switching sessions discards the previous session's outgoing snapshot.
+The handoff clips at the slot's bottom edge, keeping content suspended above
+the default composer (such as the empty chat's directory hint) visible as it
+slides. Height-capped decision content retains its bounded scrolling area.
 
 All ten SuperOne host confirmation families emit the same `permission_request`
 event: terminal commands, configuration, automations, video generation,

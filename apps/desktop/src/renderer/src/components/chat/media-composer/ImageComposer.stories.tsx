@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { expect, waitFor, within } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import i18n from 'i18next'
 import { mockIpc } from '../../../../../../.storybook/mock-ipc'
 import { ChatComposerShell } from '../ChatComposerShell'
@@ -28,7 +28,7 @@ export const TopAlignment: Story = {
   args: { width: 600 },
   render: args => <div className="flex items-end gap-6" style={{ width: (args.width ?? 760) * 2 + 24 }}>
     <div data-testid="default-composer" style={{ width: args.width ?? 760 }}><ChatComposerShell showTodoPopup={false} autoFocusOnMount={false} /></div>
-    <MediaComposerStory kind="image" Component={ImageComposer} value={{}} width={args.width} />
+    <MediaComposerStory kind="image" Component={ImageComposer} value={{}} width={args.width} models={args.models} />
   </div>,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
@@ -37,12 +37,18 @@ export const TopAlignment: Story = {
     await waitFor(() => {
       const textBox = canvasElement.querySelector('[data-chat-input-editor]')?.closest('.rounded-xl')
       const imageBox = canvasElement.querySelector('[data-media-composer="image"] > div')
+      const statusBar = canvasElement.querySelector('[data-testid="default-composer"]')?.lastElementChild
       expect(textBox).not.toBeNull()
       expect(imageBox).not.toBeNull()
+      expect(statusBar).not.toBeNull()
+      expect(imageBox!.getBoundingClientRect().height).toBe(textBox!.getBoundingClientRect().height + statusBar!.getBoundingClientRect().height)
       expect(imageBox!.getBoundingClientRect().top).toBe(textBox!.getBoundingClientRect().top)
     })
   },
 }
+export const TopAlignmentNoModels: Story = { ...TopAlignment, args: { width: 600, models: 'empty' } }
+export const TopAlignmentLoadingModels: Story = { ...TopAlignment, args: { width: 600, models: 'loading' } }
+export const TopAlignmentModelCatalogError: Story = { ...TopAlignment, args: { width: 600, models: 'error' } }
 export const Ready: Story = {
   args: { value: { prompt, aspectRatio: '16:9', size: '2K' } },
   play: async ({ canvasElement }) => {
@@ -60,7 +66,17 @@ export const AskAgent: Story = {
 export const Generating: Story = { args: { value: { prompt }, run: { requestId: 'story-request' } } }
 export const Results: Story = { args: { value: { prompt, aspectRatio: '1:1' }, run: { result: imageResult } } }
 export const Failed: Story = { args: { value: { prompt }, run: { error: 'content_policy_violation: the provider rejected this prompt' } } }
-export const NoModels: Story = { args: { value: { prompt }, models: 'empty' } }
+export const NoModels: Story = {
+  args: { value: { prompt }, models: 'empty' },
+  play: async ({ canvasElement }) => {
+    await userEvent.click(await within(canvasElement).findByRole('button', { name: 'Model' }))
+    const menu = within(within(document.body).getByRole('menu'))
+    const settings = menu.getByRole('button', { name: i18n.t('mediaComposer.settings') })
+    const refresh = menu.getByRole('button', { name: 'Refresh models' })
+    expect(settings.textContent).toBe('')
+    expect(settings.getBoundingClientRect().right).toBeLessThanOrEqual(refresh.getBoundingClientRect().left)
+  },
+}
 export const LoadingModels: Story = { args: { value: { prompt }, models: 'loading' } }
 export const ModelCatalogError: Story = { args: { value: { prompt }, models: 'error' } }
 export const Inactive: Story = { args: { value: { prompt }, active: false } }

@@ -98,7 +98,7 @@ describe('ComposerSwitch', () => {
     expect(screen.getByTestId('composer-slot').style.height).toBe('')
   })
 
-  it('clips the slot only while a composer is changing hands', () => {
+  it('clips only the bottom during a handoff so landing-page content above the composer does not blink', () => {
     stubMotion(false)
     const { rerender } = render(render_('text'))
     // At rest the text composer's popups (@ / todo) hang above the slot, so it must not clip.
@@ -107,7 +107,8 @@ describe('ComposerSwitch', () => {
     expect(screen.getByTestId('composer-slot')).not.toHaveAttribute('data-composer-handoff')
 
     rerender(render_('voice'))
-    expect(screen.getByTestId('composer-slot')).toHaveClass('overflow-hidden')
+    expect(screen.getByTestId('composer-slot')).not.toHaveClass('overflow-hidden')
+    expect(screen.getByTestId('composer-slot').style.clipPath).toBe('inset(-100vh 0 0)')
     // The transcript holds its scroll position while this mark is up.
     expect(screen.getByTestId('composer-slot')).toHaveAttribute('data-composer-handoff')
 
@@ -116,6 +117,7 @@ describe('ComposerSwitch', () => {
     endAnimation(stage)
     expect(stage).toHaveAttribute('data-phase', 'steady')
     expect(screen.getByTestId('composer-slot')).not.toHaveClass('overflow-hidden')
+    expect(screen.getByTestId('composer-slot').style.clipPath).toBe('')
     expect(screen.getByTestId('composer-slot')).not.toHaveAttribute('data-composer-handoff')
   })
 

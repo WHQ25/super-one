@@ -106,6 +106,10 @@ interface GroupedModelEffortSelectorProps {
   onManageProviders?: () => void
   onRefreshModels?: () => void
   modelsLoading?: boolean
+  /** Actions before refresh in the Models heading. */
+  modelHeaderActions?: ReactNode
+  /** Availability/setup content shown instead of an empty model list. */
+  emptyModelsContent?: ReactNode
   /** Extra catalog params under Options (Cursor thinking / context / fast / …). */
   optionParams?: SelectorCatalogParam[]
   onOptionParamChange?: (id: string, value: string) => void
@@ -437,6 +441,8 @@ export function GroupedModelEffortSelector({
   onManageProviders,
   onRefreshModels,
   modelsLoading,
+  modelHeaderActions,
+  emptyModelsContent,
   optionParams = [],
   onOptionParamChange,
   triggerLabel,
@@ -712,6 +718,7 @@ export function GroupedModelEffortSelector({
           <div className="flex items-center justify-between px-2 pb-1 pt-1.5">
             <span className="text-xs text-muted-foreground">Models</span>
             <div className="flex items-center gap-1">
+              {modelHeaderActions}
               <RefreshModelsButton onRefreshModels={onRefreshModels} modelsLoading={modelsLoading} />
               {modelSearchAvailable && (
                 <IconButton
@@ -731,7 +738,7 @@ export function GroupedModelEffortSelector({
           </div>
         )}
 
-        <AnimatePresence initial={false}>
+        {allModels.length === 0 && emptyModelsContent ? emptyModelsContent : <AnimatePresence initial={false}>
           {listOpen ? (
             <motion.div key="model-list" {...MORPH} className="overflow-hidden">
               <ModelList
@@ -768,7 +775,7 @@ export function GroupedModelEffortSelector({
               </button>
             </motion.div>
           )}
-        </AnimatePresence>
+        </AnimatePresence>}
 
         <AnimatePresence initial={false}>
           {!modelsExpanded && !agentsExpanded && canSelectEffort && (

@@ -56,7 +56,8 @@ export function MediaComposerFrame({
   }
   return (
     <div className="@container" data-media-composer={kind}>
-      <div className={cn('relative mx-3 mb-1 rounded-xl border border-border px-3 py-2', dragging && 'ring-2 ring-inset ring-primary/50')} {...dropTarget}>
+      <div className={cn('relative mx-3 mb-1 rounded-xl border border-border px-3 py-2', kind === 'image' && 'flex flex-col', dragging && 'ring-2 ring-inset ring-primary/50')}
+        style={kind === 'image' ? { minHeight: 'calc(var(--composer-base-height, 0px) - var(--spacing))' } : undefined} {...dropTarget}>
         {above}
         <div inert={controlsDisabled} className={cn(controlsDisabled && 'opacity-60')}>{references}</div>
         <AutoResizeTextarea
@@ -69,8 +70,9 @@ export function MediaComposerFrame({
           maxRows={5}
           maxLength={32_000}
           placeholder={t(kind === 'image' ? 'mediaComposer.imagePlaceholder' : 'mediaComposer.videoPlaceholder')}
-          // Absorb the text composer's 26px status bar so the box tops share the slot's bottom anchor.
-          className={cn('rounded-none border-0 bg-transparent px-0 text-sm leading-6 shadow-none focus-visible:ring-0 dark:bg-transparent', kind === 'image' ? 'min-h-[3.875rem] pt-0 pb-[1.625rem]' : 'min-h-9 py-1.5')}
+          // Absorb the text status bar inside the box; grow to the slot's measured
+          // text height when its placeholder wraps or chat density increases it.
+          className={cn('rounded-none border-0 bg-transparent px-0 text-sm leading-6 shadow-none focus-visible:ring-0 dark:bg-transparent', kind === 'image' ? 'grow min-h-[3.875rem] pt-0 pb-[1.625rem]' : 'min-h-9 py-1.5')}
         />
         <div className="mt-1.5 flex items-center gap-1">
           <ComposerModeChip
@@ -85,7 +87,7 @@ export function MediaComposerFrame({
           <div className="flex shrink-0 items-center gap-1.5">{actions}</div>
         </div>
       </div>
-      {/* Collapses when there is nothing to report, leaving the box the same bottom gap as the other composers. */}
+      {/* Availability lives in the model selector; an idle image composer has no extra row. */}
       {status && <div className="flex min-h-5 items-center gap-2 overflow-hidden whitespace-nowrap px-3 pb-0.5 text-xs text-muted-foreground empty:hidden @lg:px-7">{status}</div>}
     </div>
   )

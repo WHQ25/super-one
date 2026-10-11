@@ -1,9 +1,11 @@
 /** @vitest-environment jsdom */
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import { expect, it, vi } from 'vitest'
+import userEvent from '@testing-library/user-event'
 import type { MediaComposerResult } from '@superone/shared/media-composer'
 import { PNG_ATTACHMENT } from '@superone/shared/test-fixtures/attachments'
 import { useChatStore } from '@/stores/chat'
+import { useAppStore } from '@/stores/app'
 import { composerStackFor, topComposer } from '../composer-slot/composer-stack'
 import { useMediaRuns } from './media-composer-runs'
 import { api, imageResult, openComposer, openWithoutWaiting, owner, setDecision, useMediaComposerHarness } from './media-composer-test-harness'
@@ -60,11 +62,52 @@ it('stops an in-flight image from the stop button without leaving the mode', asy
   expect(composerStackFor(owner).base).not.toBeNull()
 })
 
-it('shows actionable provider setup when no media model is enabled', async () => {
+it('keeps provider setup inside the model selector and retries the empty catalog', async () => {
+  const user = userEvent.setup()
   api.mediaModels.mockResolvedValue([])
   await openWithoutWaiting('image')
-  expect(await screen.findByRole('button', { name: 'Open Providers' })).toBeEnabled()
+  await waitFor(() => expect(api.mediaModels).toHaveBeenCalled())
+  expect(screen.queryByText('No image model is enabled.')).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Open Providers' })).not.toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Generate' })).toBeDisabled()
+  await user.click(screen.getByRole('button', { name: 'Model' }))
+  expect(screen.getByText('No image model is enabled.')).toBeInTheDocument()
+  const settings = screen.getByRole('button', { name: 'Open Providers' })
+  const refresh = screen.getByRole('button', { name: 'Refresh models' })
+  expect(settings).toBeEnabled()
+  expect(settings.textContent).toBe('')
+  expect(settings.compareDocumentPosition(refresh) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
+  expect(screen.queryByText('Open Providers')).not.toBeInTheDocument()
+  const setSettingsTab = vi.spyOn(useAppStore.getState(), 'setSettingsTab').mockImplementation(() => {})
+  const navigateTo = vi.spyOn(useAppStore.getState(), 'navigateTo').mockImplementation(() => {})
+  await user.click(settings)
+  expect(setSettingsTab).toHaveBeenCalledWith('providers')
+  expect(navigateTo).toHaveBeenCalledWith('settings')
+  api.mediaModels.mockResolvedValue([{ providerId: 'key', providerLabel: 'Provider', model: 'image-model', label: 'Recovered Model', default: true }])
+  await user.click(refresh)
+  await waitFor(() => expect(screen.queryByText('No image model is enabled.')).not.toBeInTheDocument())
+  await user.keyboard('{Escape}')
+  fireEvent.change(screen.getByRole('textbox', { name: 'Prompt' }), { target: { value: 'A mountain' } })
+  expect(screen.getByRole('button', { name: 'Generate' })).toBeEnabled()
+})
+
+it('shows catalog failures and retry loading inside the model selector', async () => {
+  const user = userEvent.setup()
+  api.mediaModels.mockRejectedValue(new Error('Provider catalog is unavailable'))
+  await openWithoutWaiting('image')
+  await act(async () => {})
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: 'Model' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('Provider catalog is unavailable')
+  let resolve!: (models: []) => void
+  api.mediaModels.mockImplementation(() => new Promise<[]>(done => { resolve = done }))
+  await user.click(screen.getByRole('button', { name: 'Refresh models' }))
+  expect(screen.getByRole('status')).toHaveTextContent('Loading models…')
+  expect(screen.getByRole('button', { name: 'Refresh models' })).toBeDisabled()
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  await act(async () => resolve([]))
+  expect(screen.getByText('No image model is enabled.')).toBeInTheDocument()
 })
 
 it('adds dropped reference images and rejects unsupported files', async () => {

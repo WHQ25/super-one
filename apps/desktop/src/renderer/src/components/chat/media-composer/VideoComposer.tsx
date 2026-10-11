@@ -21,7 +21,7 @@ export function VideoComposer(props: OpenedComposerProps) {
   const pending = run.result?.status === 'running'
   const roles = referenceRoles(media.videoCapabilities)
   const controls = useVideoControls({ models: media.models, selected: media.selected, onSelectModel: media.selectModel,
-    onRefreshModels: () => void media.loadModels(), modelsLoading: media.loading, settings: form, allowAuto: true, onChange: change })
+    onRefreshModels: () => void media.loadModels(), modelsLoading: media.loading, modelError: media.modelError, settings: form, allowAuto: true, onChange: change })
 
   useEffect(() => {
     if (lifetime !== 'sticky' || !active || run.result || run.requestId) return
@@ -67,7 +67,7 @@ export function VideoComposer(props: OpenedComposerProps) {
           ? <MediaStopButton label={t('mediaComposer.cancel')} disabled={!active} onClick={() => void cancelMediaGeneration(instanceId).catch(error => setError(String(error)))} />
           : <MediaGenerateButton mode={form.runMode} busy={media.delegating || pending} disabled={!media.canGenerate} onClick={media.generate} />}
       </>}
-      status={<MediaComposerStatus kind="video" loading={media.loading} hasModels={!!media.models.length} error={media.error} onRetry={() => void media.loadModels()}
+      status={<MediaComposerStatus error={media.error || (media.models.length ? media.modelError : '')}
         busyLabel={run.requestId ? t('mediaComposer.submitting') : pending ? t('mediaComposer.pending') : undefined}>
         {pending && <>
           <span className="min-w-0 truncate text-muted-foreground/70">{t(form.paused ? 'mediaComposer.videoContinues' : 'mediaComposer.polling')}</span>

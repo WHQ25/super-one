@@ -44,7 +44,7 @@ const draft = '这是尚未发送的草稿，审批结束后应完整恢复。'
 const draftDoc: JSONContent = plainTextToTiptapDoc(draft)
 draftDoc.content!.push({ type: 'paragraph', content: [{ type: 'attachment', attrs: { id: PNG_ATTACHMENT.id } }] })
 
-type ComposerFlowScenario = 'text' | 'voice' | 'consent' | 'elicitation' | 'stack' | 'image' | 'video'
+type ComposerFlowScenario = 'text' | 'voice' | 'consent' | 'elicitation' | 'stack' | 'image' | 'image-landing' | 'video'
 
 function enqueueDecisions(scenario: ComposerFlowScenario) {
   const questionOnly = scenario === 'voice'
@@ -111,7 +111,7 @@ function ComposerFlow({ narrow = false, scenario = 'text' }: { narrow?: boolean;
     const previousCatalog = useAppStore.getState().harnessCatalog
     const previousCalls = useRealtimeCallStore.getState()
     const previousRealtime = useCodexRealtimeViewStore.getState()
-    const media = scenario === 'image' || scenario === 'video'
+    const media = scenario === 'image' || scenario === 'image-landing' || scenario === 'video'
     const previousMedia = window.environment
     let videoChecks = 0
     const fixtureMedia: MediaComposerAPI = {
@@ -135,6 +135,9 @@ function ComposerFlow({ narrow = false, scenario = 'text' }: { narrow?: boolean;
         { id: 'flow-user', role: 'user', timestamp: Date.now(), content: [{ type: 'text', text: '请按计划整理聊天输入区。' }] },
         { id: 'flow-assistant', role: 'assistant', timestamp: Date.now(), content: [{ type: 'text', text: '权限和提问依次进入下方输入区，计划审批保持原来的全屏流程。' }] },
       ],
+    })
+    if (scenario === 'image-landing') Object.assign(session, {
+      draftText: '', draftJson: null, attachments: [], messages: [], additionalDirs: ['/workspace/references'],
     })
     useChatStore.setState({ activeProject: projectPath, projectSessions: {
       ...previous.projectSessions, [projectPath]: { ...project, _activeSessionId: sessionId, _sessions: { [sessionId]: session } },
@@ -183,6 +186,7 @@ function ComposerFlow({ narrow = false, scenario = 'text' }: { narrow?: boolean;
             <Button size="sm" variant="outline" onClick={() => composerForSession({ projectPath, sessionId }).returnToChat()}>Return to chat</Button>
             <span data-testid="composer-result">{lastSubmission}</span>
           </>}
+          {scenario === 'image-landing' && <Button size="sm" variant="outline" onClick={() => composerForSession({ projectPath, sessionId }).returnToChat()}>Return to chat</Button>}
           <span>预览数据：审批不会执行命令或发送模型请求。</span>
         </div>
         <div data-testid="composer-flow" className="flex min-h-0 min-w-0 flex-col rounded-lg border border-border bg-background" style={{ height: 690 }}>
@@ -264,6 +268,26 @@ export const NativeImage: Story = {
   },
 }
 export const NativeImageNarrow: Story = { ...NativeImage, args: { scenario: 'image', narrow: true } }
+/** Empty chat includes the directory hint suspended above the default composer. */
+export const NativeImageLanding: Story = {
+  args: { scenario: 'image-landing' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const actions = await canvas.findByRole('button', { name: i18n.t('mediaComposer.mode') })
+    // Let the editor's wrapping and ChatContent's density settle before replacing it.
+    await waitFor(() => expect(canvasElement.querySelector('[data-chat-input-editor]')).not.toBeNull())
+    const slot = canvas.getByTestId('composer-slot')
+    const top = slot.getBoundingClientRect().top
+    const height = slot.getBoundingClientRect().height
+    await userEvent.click(actions)
+    await userEvent.click(within(document.body).getByRole('menuitem', { name: i18n.t('mediaComposer.image') }))
+    await canvas.findByRole('textbox', { name: i18n.t('mediaComposer.prompt') }, { timeout: 4_000 })
+    await waitFor(() => expect(canvas.getByTestId('composer-switch')).toHaveAttribute('data-phase', 'steady'))
+    expect(Math.abs(slot.getBoundingClientRect().top - top)).toBeLessThan(1)
+    expect(Math.abs(slot.getBoundingClientRect().height - height)).toBeLessThan(1)
+  },
+}
+export const NativeImageLandingNarrow: Story = { ...NativeImageLanding, args: { scenario: 'image-landing', narrow: true } }
 export const NativeVideo: Story = {
   args: { scenario: 'video' },
   play: async ({ canvasElement }) => {

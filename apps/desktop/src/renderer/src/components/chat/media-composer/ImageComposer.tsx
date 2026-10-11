@@ -17,7 +17,7 @@ export function ImageComposer(props: OpenedComposerProps) {
   const { form, change, run } = media
   const generating = !!run.requestId
   const controls = useImageControls({ models: media.models, selected: media.selected, onSelectModel: media.selectModel,
-    onRefreshModels: () => void media.loadModels(), modelsLoading: media.loading, aspectRatio: form.aspectRatio, size: form.size, onChange: change })
+    onRefreshModels: () => void media.loadModels(), modelsLoading: media.loading, modelError: media.modelError, aspectRatio: form.aspectRatio, size: form.size, onChange: change })
   return (
     <MediaComposerFrame
       kind="image"
@@ -44,7 +44,7 @@ export function ImageComposer(props: OpenedComposerProps) {
           ? <MediaStopButton label={t('mediaComposer.cancel')} disabled={!active} onClick={() => void cancelMediaGeneration(instanceId).catch(error => media.setError(String(error)))} />
           : <MediaGenerateButton mode={form.runMode} busy={media.delegating} disabled={!media.canGenerate} onClick={media.generate} />}
       </>}
-      status={<MediaComposerStatus kind="image" loading={media.loading} hasModels={!!media.models.length} error={media.error} onRetry={() => void media.loadModels()}
+      status={<MediaComposerStatus error={media.error || (media.models.length ? media.modelError : '')}
         busyLabel={generating ? t('mediaComposer.generating') : undefined} />}
     />
   )

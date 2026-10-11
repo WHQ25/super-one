@@ -1,13 +1,16 @@
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
-import { Lock, Stamp, Volume2, type LucideIcon } from 'lucide-react'
-import type { MediaComposerModel } from '@superone/shared/media-composer'
+import { Lock, Settings2, Stamp, Volume2, type LucideIcon } from 'lucide-react'
+import type { MediaComposerKind, MediaComposerModel } from '@superone/shared/media-composer'
 import { Input } from '@superone/ui/components/ui/input'
+import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
 import { Switch } from '@superone/ui/components/ui/switch'
 import { cn } from '@superone/ui/lib/utils'
 import { EffortSlider, SELECTOR_TRIGGER_CLASS } from '../model-selector/GroupedModelEffortSelector'
 import { MediaModelSelector, MediaOptionSelector, RatioIcon } from './MediaOptionSelector'
+import { MediaModelStatus } from './MediaComposerStatus'
+import { openProviderSettings } from './use-media-composer'
 import type { ToolbarControl } from './OverflowControls'
 import { GENERIC_IMAGE, GENERIC_VIDEO, resolutionOrientation, resolutionShape, resolutionTier, type VideoSettings } from './media-capabilities'
 
@@ -19,12 +22,17 @@ interface ModelProps {
   onSelectModel: (model: MediaComposerModel) => void
   onRefreshModels?: () => void
   modelsLoading?: boolean
+  modelError?: string
 }
 
-function useModelControl({ models, selected, onSelectModel, onRefreshModels, modelsLoading }: ModelProps): ToolbarControl {
+function useModelControl({ models, selected, onSelectModel, onRefreshModels, modelsLoading, modelError }: ModelProps, kind: MediaComposerKind): ToolbarControl {
   const { t } = useTranslation()
   return { id: 'model', label: t('mediaComposer.model'),
-    control: <MediaModelSelector models={models} selected={selected} onSelect={onSelectModel} onRefresh={onRefreshModels} loading={modelsLoading} /> }
+    control: <MediaModelSelector models={models} selected={selected} onSelect={onSelectModel} onRefresh={onRefreshModels} loading={modelsLoading}
+      modelHeaderActions={<IconButton size="xs" variant="nested" tooltip={t('mediaComposer.settings')} onClick={event => {
+        event.preventDefault(); event.stopPropagation(); openProviderSettings()
+      }}><Settings2 /></IconButton>}
+      emptyModelsContent={<MediaModelStatus kind={kind} loading={modelsLoading} error={modelError} />} /> }
 }
 
 function ratioControl(t: TFunction, ratios: string[], value: string, allowAuto: boolean, onChange: (ratio: string) => void): ToolbarControl {
@@ -90,7 +98,7 @@ export function useImageControls({ aspectRatio = '', size = '', onChange, ...mod
 }): ToolbarControl[] {
   const { t } = useTranslation()
   const capabilities = model.selected?.image ?? GENERIC_IMAGE
-  const modelControl = useModelControl(model)
+  const modelControl = useModelControl(model, 'image')
   const sizeLabel = (value: string) => value.replace('x', '×')
   return [
     modelControl,
@@ -120,7 +128,7 @@ export function useVideoControls({ settings, allowAuto, onChange, ...model }: Mo
 }): ToolbarControl[] {
   const { t } = useTranslation()
   const capabilities = model.selected?.video ?? GENERIC_VIDEO
-  const modelControl = useModelControl(model)
+  const modelControl = useModelControl(model, 'video')
   const resolutions = capabilities.resolutions
   const resolutionLabel = (value: string) => {
     const tier = resolutionTier(value)

@@ -4135,7 +4135,6 @@ export const AgentIpcChannels = {
   ACP_GET_RATE_LIMITS: 'acp:get-rate-limits',
 
   // Agent channels
-  START_QUEUED_MESSAGES: 'agent:start-queued-messages',
   PREWARM: 'agent:prewarm',
   WORKTREE_REMOVED: 'agent:worktree-removed',
   START_REALTIME_VOICE: 'agent:start-realtime-voice',
@@ -4143,7 +4142,6 @@ export const AgentIpcChannels = {
   STOP_REALTIME_VOICE: 'agent:stop-realtime-voice',
   LOAD_REALTIME_TIMELINE: 'agent:load-realtime-timeline',
   GET_REALTIME_TIMELINE: 'agent:get-realtime-timeline',
-  STOP_TASK: 'agent:stop-task',
   EVENT: 'agent:event',
   SANDBOX_PROBE: 'sandbox:probe',
   /** A widget opens its `agent`-output form in a local session's composer. */
@@ -4151,7 +4149,6 @@ export const AgentIpcChannels = {
   COMPOSER_OPEN: 'agent:composer-open',
   COMPOSER_AWAIT: 'agent:composer-await',
   COMPOSER_CANCEL: 'agent:composer-cancel',
-  RESET_SESSION: 'agent:reset-session',
   CREATE_SESSION: 'agent:create-session',
   GET_SESSION_ID: 'agent:get-session-id',
   MCP_SERVER_STATUS: 'agent:mcp-server-status',

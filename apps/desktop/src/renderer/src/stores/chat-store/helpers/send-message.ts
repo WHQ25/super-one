@@ -17,7 +17,7 @@ import { isControlledElsewhere } from './remote-control'
 import { isGrokAcpAgent } from '@superone/shared/acp-brand'
 import { CLAUDE_INTERCEPTED_COMMANDS, isRemoteSession } from '../index'
 import type { ChatProvider, ChatStore, InputSegment, Mention, SessionWriteTarget } from '../types'
-import { callSession } from '@/lib/session-client'
+import { callSession, resetHostSession } from '@/lib/session-client'
 import { expandPathRefTagsForAgent } from '@superone/shared/miniapp-prompt-tags'
 import { isBuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
 import { shouldQueueUserSend } from './session-send-request'
@@ -387,9 +387,6 @@ export async function sendMessageImpl(
           },
         }
       })
-      if (previousSid && typeof window.agent?.resetSession === 'function') {
-        void window.agent.resetSession(previousSid).catch(() => {})
-      }
     } else {
       const nextSid = createSessionId()
       set((s) => {
@@ -444,7 +441,7 @@ export async function sendMessageImpl(
           get().setShowReviewPanel(true, resolvedCodexCommand.mode)
           return
         } else if (utilityKind === 'reset') {
-          if (codexSessionId) await window.agent.resetSession(codexSessionId)
+          if (codexSessionId) await resetHostSession(projectPath, codexSessionId)
           popupContent = 'Codex thread has been reset.'
         } else if (utilityKind === 'login' || utilityKind === 'logout') {
           await handleCodexAccountCommand(utilityKind, session.apiProviderId)

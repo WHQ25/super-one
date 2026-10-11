@@ -1,3 +1,4 @@
+import { enqueueSessionQueueOp } from '../session/session-queue'
 import { randomUUID } from 'node:crypto'
 import type { SessionHostPort, DraftsPort } from '@superone/runtime/server'
 import { unsupportedMethodError } from '@superone/runtime/server'
@@ -44,12 +45,26 @@ export class LocalSessionHost extends DesktopSessionReads<DesktopSessionRow> imp
   dispose(): void { this.disposeReads() }
   get unservedMethods(): ReadonlySet<string> { return new Set([...LOCAL_SESSION_UNSERVED].filter(method => method !== 'session.fork' || !this.deps.edits?.fork)) }
 
-  readonly servedOperations: ReadonlySet<string> = new Set(['session.rewind', 'session.previewRewind', 'session.truncateAtCheckpoint'])
+  readonly servedOperations: ReadonlySet<string> = new Set(['session.stopTask', 'session.startQueued', 'session.reset', 'session.rewind', 'session.previewRewind', 'session.truncateAtCheckpoint'])
 
   async callOperation(sessionId: string, method: string, input: Record<string, unknown>): Promise<unknown> {
     const session = method === 'session.previewRewind' ? this.live(sessionId) : this.mutation(sessionId)
     const checkpointId = input.checkpointId as string
     switch (method) {
+      case 'session.stopTask': await session.dispatchBackendCommand({ kind: 'claude.stop_task', taskId: input.taskId as string }); return true
+      case 'session.startQueued': return enqueueSessionQueueOp(sessionId, () => { session.lease.assertMutation(); return session.startQueuedMessages() })
+      case 'session.reset': {
+        const nextId = input.newSessionId as string | undefined
+        if (nextId && this.deps.sessions.getSession(nextId)) throw Object.assign(new Error('Session id already active'), { code: 'conflict' })
+        const { projectPath, providerId, harnessId } = session.snapshot
+        const { readDefaultSessionPrefs } = await import('../session/session-preferences')
+        session.lease.assertMutation()
+        await this.deps.sessions.disposeSession(sessionId)
+        if (!nextId) return null
+        const fresh = this.deps.sessions.createSession({ projectPath, providerId, id: nextId, ...readDefaultSessionPrefs(harnessId) })
+        fresh.lease.grantCreatedSession()
+        return { permissionMode: fresh.getCurrentPermissionMode(), sandboxInfo: fresh.getCurrentSandboxInfo() }
+      }
       case 'session.previewRewind': return session.rewindFiles(checkpointId, { dryRun: true })
       case 'session.rewind':
         return input.mode === 'conversation' ? session.rewindConversation(checkpointId)

@@ -316,6 +316,13 @@ the UI hides them through capabilities.
 
 ## Progress
 
+- 2026-10-12: Step 5 turn-control family. Stop-task, durable-queue start and
+  runtime reset use the environment route and explicit session identity.
+  Reset rejects an already-active destination before disposing its source;
+  the next draft keeps its defaults, and busy Codex turns keep running when
+  the user opens a new draft. Node queue controls use served capabilities.
+  Endpoint/store tests (407) and node/web typechecks pass.
+
 - 2026-10-12: Step 5 rewind family. Optional runtime session-operation ports
   advertise implemented methods; local rewind/preview/truncate name a session
   rather than the project's active pointer. Renderer writes retain that scope

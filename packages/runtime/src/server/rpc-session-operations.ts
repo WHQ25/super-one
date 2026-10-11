@@ -15,7 +15,12 @@ async function callOperation(payload: unknown, ctx: RpcContext, method: string):
   const p = asRecord(payload)
   try {
     const sessionId = requiredText(p, 'sessionId')
-    requiredText(p, 'checkpointId')
+    if (method === 'session.rewind' || method === 'session.previewRewind' || method === 'session.truncateAtCheckpoint') requiredText(p, 'checkpointId')
+    if (method === 'session.stopTask') requiredText(p, 'taskId')
+    if (method === 'session.reset' && p.newSessionId !== undefined) {
+      requiredText(p, 'newSessionId')
+      if (p.newSessionId === sessionId) throw Object.assign(new Error('reset needs a new session id'), { code: 'invalid_argument' })
+    }
     if (method === 'session.rewind' && !['files', 'conversation', 'code+chat'].includes(String(p.mode))) {
       throw Object.assign(new Error('invalid rewind mode'), { code: 'invalid_argument' })
     }

@@ -1,3 +1,5 @@
+import { callSession } from '@/lib/session-client'
+import { useEnvironmentServes } from '@/hooks/use-environment-serves'
 import { StatusBarMailbox } from './chat-status-bar/StatusBarMailbox'
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -425,13 +427,15 @@ export function ChatStatusBar() {
     [activitySignature, taskProgress, sessionStatus, scope],
   )
 
+  const sessionProject = scope?.projectPath ?? useChatStore((s) => s.activeProject)
+  const canStopTask = useEnvironmentServes(sessionProject, 'session.stopTask')
   const handleStopTask = useCallback((taskId: string) => {
-    if (!activeSessionId) return
-    void window.agent.stopTask(activeSessionId, taskId).catch((err) => {
+    if (!activeSessionId || !sessionProject || !canStopTask) return
+    void callSession(sessionProject, activeSessionId, 'session.stopTask', { taskId }).catch((err) => {
       toast.error(`Failed to stop task: ${err instanceof Error ? err.message : String(err)}`)
     })
-  }, [activeSessionId])
-  const renderStopButton = useCallback((taskId: string) => (
+  }, [sessionProject, activeSessionId, canStopTask])
+  const renderStopButton = useCallback((taskId: string) => canStopTask ? (
     <span
       role="button"
       tabIndex={0}
@@ -442,7 +446,7 @@ export function ChatStatusBar() {
     >
       <Square className="size-2.5 fill-current" />
     </span>
-  ), [handleStopTask])
+  ) : null, [handleStopTask, canStopTask])
   const bashLabel = bashActivities.length > 1 ? `${bashActivities.length} Bashes` : 'Bash'
   const agentLabel = agentActivities.length > 1 ? `${agentActivities.length} Agents` : 'Agent'
   const workflowLabel = workflowActivities.length > 1 ? `${workflowActivities.length} Workflows` : 'Workflow'

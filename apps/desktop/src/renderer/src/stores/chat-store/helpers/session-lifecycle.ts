@@ -1,3 +1,4 @@
+import { resetHostSession } from '@/lib/session-client'
 import { isAppInputRequest } from '@superone/shared/input-request-presentation'
 import type { PermissionMode, SandboxInfo } from '@superone/shared/agent-types'
 import { useAppStore } from '../../app'
@@ -661,12 +662,9 @@ export async function resetSessionImpl(set: ChatStoreSet, get: () => ChatStore):
 
   let agentConfig: { permissionMode: PermissionMode; sandboxInfo: SandboxInfo } | undefined
   try {
-    if (isRemoteProject) {
-      // No local SessionManager / no node session.create here.
-      // First send materializes via ensureHostSession.
-    } else if (activeSession.sessionProvider === 'codex') {
+    if (activeSession.sessionProvider === 'codex') {
       if (activeSession.status !== 'streaming' && currentSid) {
-        await window.agent.resetSession(currentSid).catch(() => {})
+        await resetHostSession(activeProject, currentSid).catch(() => {})
       }
     } else if (
       isRemoteSession(get(), activeProject, currentSid) ||
@@ -675,7 +673,7 @@ export async function resetSessionImpl(set: ChatStoreSet, get: () => ChatStore):
     ) {
       agentConfig = await _parkActiveSession(activeProject, project._activeSessionId, newSessionId)
     } else if (currentSid) {
-      agentConfig = (await window.agent.resetSession(currentSid, newSessionId)) ?? undefined
+      agentConfig = (await resetHostSession(activeProject, currentSid, newSessionId)) ?? undefined
     }
 
     await useAppStore.getState().clearWorktree(activeProject)

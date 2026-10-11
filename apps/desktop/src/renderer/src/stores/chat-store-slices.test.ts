@@ -46,8 +46,8 @@ const mockWindowAgent = {
 // The project is a plain path, so every session call addresses `local`.
 const mockWindowEnvironment = {
   patchSessionSettings: vi.fn().mockResolvedValue({}),
-  callSession: vi.fn(async (_connectionId: string, _sessionId: string, method: string) =>
-    method === 'session.dequeue' ? { removed: true } : method === 'session.rewind' || method === 'session.previewRewind' ? { canRewind: true } : { ok: true }),
+  callSession: vi.fn(async (_connectionId: string, _sessionId: string, method: string): Promise<unknown> =>
+    method === 'session.startQueued' ? true : method === 'session.dequeue' ? { removed: true } : method === 'session.rewind' || method === 'session.previewRewind' ? { canRewind: true } : { ok: true }),
 }
 
 const mockWindowApp = {
@@ -624,7 +624,7 @@ describe('session-slice: queued-message edit/delete', () => {
 
     await expect(useChatStore.getState().startQueuedMessages({ projectPath: PATH, sessionId })).resolves.toBe(true)
 
-    expect(mockWindowAgent.startQueuedMessages).toHaveBeenCalledWith(PATH, sessionId)
+    expect(mockWindowEnvironment.callSession).toHaveBeenCalledWith('local', sessionId, 'session.startQueued', {})
   })
 })
 

@@ -114,3 +114,14 @@ export function callSession<M extends SessionCallMethod>(
 ): Promise<SessionCallMethods[M]['result']> {
   return window.environment.callSession(connectionIdForProjectKey(projectKey), sessionId, method, input)
 }
+
+/** A draft may have no runtime, and a host without reset starts its next draft on first send. */
+export async function resetHostSession(projectKey: string, sessionId: string, newSessionId?: string) {
+  try {
+    return await callSession(projectKey, sessionId, 'session.reset', newSessionId ? { newSessionId } : {})
+  } catch (error) {
+    const code = (error as { code?: string }).code
+    if (code === 'not_found' || code === 'unsupported') return null
+    throw error
+  }
+}

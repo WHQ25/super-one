@@ -116,7 +116,7 @@ const mockWindowEnvironment = {
   respondSessionQuestion: vi.fn().mockResolvedValue(undefined),
   respondSessionPlan: vi.fn().mockResolvedValue(undefined),
   interruptSession: vi.fn().mockResolvedValue(undefined),
-  callSession: vi.fn(async (_connectionId: string, _sessionId: string, method: string) =>
+  callSession: vi.fn(async (_connectionId: string, _sessionId: string, method: string): Promise<unknown> =>
     method === 'session.dequeue' ? { removed: true } : { ok: true }),
 }
 
@@ -1160,7 +1160,7 @@ describe('resetSession', () => {
   })
 
   it('is idempotent on a pristine session: no stacked empty draft, no backend call', async () => {
-    mockWindowAgent.resetSession.mockClear()
+    mockWindowEnvironment.callSession.mockClear()
     setupProject('/test')
     const before = useChatStore.getState().projectSessions['/test']
     const oldSid = before._activeSessionId
@@ -1171,7 +1171,7 @@ describe('resetSession', () => {
     const after = useChatStore.getState().projectSessions['/test']
     expect(after._activeSessionId).toBe(oldSid)
     expect(Object.keys(after._sessions)).toHaveLength(1)
-    expect(mockWindowAgent.resetSession).not.toHaveBeenCalled()
+    expect(mockWindowEnvironment.callSession).not.toHaveBeenCalled()
   })
 
   it('applies permissionMode and sandboxInfo from agentConfig on idle reset', async () => {
@@ -1179,8 +1179,8 @@ describe('resetSession', () => {
       permissionMode: 'acceptEdits' as const,
       sandboxInfo: { enabled: false, autoAllowBash: true },
     }
-    mockWindowAgent.resetSession.mockReset()
-    mockWindowAgent.resetSession.mockResolvedValue(agentConfig)
+    mockWindowEnvironment.callSession.mockReset()
+    mockWindowEnvironment.callSession.mockResolvedValue(agentConfig)
 
     setupProject('/test')
     seedUserMessage('/test')
@@ -1193,8 +1193,8 @@ describe('resetSession', () => {
   })
 
   it('does NOT prewarm after reset (new draft has no typed text, prewarm waits for user input)', async () => {
-    mockWindowAgent.resetSession.mockReset()
-    mockWindowAgent.resetSession.mockResolvedValue({
+    mockWindowEnvironment.callSession.mockReset()
+    mockWindowEnvironment.callSession.mockResolvedValue({
       permissionMode: 'default' as const,
       sandboxInfo: { enabled: true, autoAllowBash: false },
     })
@@ -1209,8 +1209,8 @@ describe('resetSession', () => {
   })
 
   it('passes newDraftSessionId to resetSession for idle non-streaming sessions', async () => {
-    mockWindowAgent.resetSession.mockReset()
-    mockWindowAgent.resetSession.mockResolvedValue({
+    mockWindowEnvironment.callSession.mockReset()
+    mockWindowEnvironment.callSession.mockResolvedValue({
       permissionMode: 'default' as const,
       sandboxInfo: { enabled: false, autoAllowBash: false },
     })
@@ -1223,7 +1223,7 @@ describe('resetSession', () => {
     await useChatStore.getState().resetSession()
 
     const after = useChatStore.getState().projectSessions['/test']
-    expect(mockWindowAgent.resetSession).toHaveBeenCalledWith(oldSid, after._activeSessionId)
+    expect(mockWindowEnvironment.callSession).toHaveBeenCalledWith('local', oldSid, 'session.reset', { newSessionId: after._activeSessionId })
   })
 
   // Removed (date 2026-05-27): asserted that resetSession with a streaming DRAFT calls window.agent.parkDraftSession and preserves the old draft entry; parkDraftSession does not exist in production code (resetSessionImpl uses window.agent.parkSession). Tracked as follow-up issue if/when feature is implemented.
@@ -1268,7 +1268,7 @@ describe('resetSession', () => {
 
 describe('Claude /clear command interception', () => {
   it('intercepts /clear and triggers resetSession without sending to SDK', async () => {
-    mockWindowAgent.resetSession.mockClear()
+    mockWindowEnvironment.callSession.mockClear()
     mockWindowEnvironment.sendSessionMessage.mockClear()
 
     setupProject('/test')
@@ -1279,7 +1279,7 @@ describe('Claude /clear command interception', () => {
     await useChatStore.getState().sendMessage('/clear')
 
     expect(mockWindowEnvironment.sendSessionMessage).not.toHaveBeenCalled()
-    expect(mockWindowAgent.resetSession).toHaveBeenCalledTimes(1)
+    expect(mockWindowEnvironment.callSession).toHaveBeenCalledTimes(1)
 
     const after = useChatStore.getState().projectSessions['/test']
     expect(isDraftSession(after._activeSessionId)).toBe(true)
@@ -1288,7 +1288,7 @@ describe('Claude /clear command interception', () => {
   })
 
   it('treats trailing whitespace as part of the bare /clear command (rawContent is trimmed)', async () => {
-    mockWindowAgent.resetSession.mockClear()
+    mockWindowEnvironment.callSession.mockClear()
     mockWindowEnvironment.sendSessionMessage.mockClear()
 
     setupProject('/test')
@@ -1297,24 +1297,24 @@ describe('Claude /clear command interception', () => {
     await useChatStore.getState().sendMessage('/clear   ')
 
     expect(mockWindowEnvironment.sendSessionMessage).not.toHaveBeenCalled()
-    expect(mockWindowAgent.resetSession).toHaveBeenCalledTimes(1)
+    expect(mockWindowEnvironment.callSession).toHaveBeenCalledTimes(1)
   })
 
   it('does not intercept /clear when followed by arguments', async () => {
-    mockWindowAgent.resetSession.mockClear()
+    mockWindowEnvironment.callSession.mockClear()
     mockWindowEnvironment.sendSessionMessage.mockClear()
 
     setupProject('/test')
 
     await useChatStore.getState().sendMessage('/clear something')
 
-    expect(mockWindowAgent.resetSession).not.toHaveBeenCalled()
+    expect(mockWindowEnvironment.callSession).not.toHaveBeenCalled()
     expect(mockWindowEnvironment.sendSessionMessage).toHaveBeenCalledTimes(1)
     expect(mockWindowEnvironment.sendSessionMessage.mock.calls[0][1]).toMatchObject({ text: '/clear something' })
   })
 
   it('does not intercept /clear under codex provider', async () => {
-    mockWindowAgent.resetSession.mockClear()
+    mockWindowEnvironment.callSession.mockClear()
     mockWindowEnvironment.sendSessionMessage.mockClear()
 
     setupProject('/test')
@@ -1339,7 +1339,7 @@ describe('Claude /clear command interception', () => {
 
     await useChatStore.getState().sendMessage('/clear')
 
-    expect(mockWindowAgent.resetSession).not.toHaveBeenCalled()
+    expect(mockWindowEnvironment.callSession).not.toHaveBeenCalled()
     expect(mockWindowEnvironment.sendSessionMessage).toHaveBeenCalledTimes(1)
   })
 })
@@ -4211,7 +4211,7 @@ describe('resetSession codex handling', () => {
 
     await useChatStore.getState().resetSession()
 
-    expect(mockWindowAgent.resetSession).toHaveBeenCalledWith(codexSid)
+    expect(mockWindowEnvironment.callSession).toHaveBeenCalledWith('local', codexSid, 'session.reset', {})
     expect(mockWindowAgent.parkSession).not.toHaveBeenCalled()
 
     const after = useChatStore.getState().projectSessions['/test']
@@ -4244,7 +4244,7 @@ describe('resetSession codex handling', () => {
 
     expect(mockWindowEnvironment.interruptSession).not.toHaveBeenCalled()
     expect(mockWindowAgent.parkSession).not.toHaveBeenCalled()
-    expect(mockWindowAgent.resetSession).not.toHaveBeenCalled()
+    expect(mockWindowEnvironment.callSession).not.toHaveBeenCalled()
 
     const after = useChatStore.getState().projectSessions['/test']
     expect(isDraftSession(after._activeSessionId)).toBe(true)

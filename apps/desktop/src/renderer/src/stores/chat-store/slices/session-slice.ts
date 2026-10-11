@@ -165,9 +165,9 @@ export const createSessionSlice: StateCreator<ChatStore, [], [], SessionSlice> =
   },
 
   startQueuedMessages: async (target) => {
-    const projectPath = target?.projectPath ?? get().activeProject
-    if (!projectPath) return false
-    return window.agent.startQueuedMessages(projectPath, target?.sessionId)
+    const { projectPath, sessionId } = resolveWriteScope(get(), target)
+    if (!projectPath || !sessionId) return false
+    return callSession(projectPath, sessionId, 'session.startQueued', {})
   },
 
   setDraftText: (text, target, opts) => {

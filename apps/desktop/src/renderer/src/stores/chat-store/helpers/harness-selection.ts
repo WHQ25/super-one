@@ -1,3 +1,4 @@
+import { resetHostSession } from '@/lib/session-client'
 import { findCursorEffortParam, normalizeEffortValue } from '@superone/cursor/cursor-model-selection'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { getDefaultEffortForModel } from '../defaults'
@@ -146,8 +147,8 @@ export function setPreferredProviderImpl(
   // Awaited before ACP/OpenCode prewarm so recreate cannot race the dispose.
   // resetSession without newSessionId only disposes.
   const disposePriorMain: Promise<unknown> =
-    draftSid && typeof window.agent?.resetSession === 'function'
-      ? window.agent.resetSession(draftSid).catch(() => null)
+    draftSid
+      ? resetHostSession(activeProject, draftSid).catch(() => null)
       : Promise.resolve(null)
 
   if (provider === 'codex') {

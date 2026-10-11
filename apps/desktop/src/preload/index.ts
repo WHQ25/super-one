@@ -38,9 +38,6 @@ const agentAPI = {
 
 
 
-  startQueuedMessages: (projectPath: string, sessionId?: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.START_QUEUED_MESSAGES, projectPath, sessionId) as Promise<boolean>,
-
   prewarm: (projectPath: string, hint?: AgentPrewarmHint) =>
     ipcRenderer.invoke(AgentIpcChannels.PREWARM, projectPath, hint),
 
@@ -62,9 +59,6 @@ const agentAPI = {
 
   getRealtimeTimeline: (projectPath: string, sessionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.GET_REALTIME_TIMELINE, projectPath, sessionId) as Promise<RealtimeTimelineResult>,
-
-  stopTask: (sessionId: string, taskId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.STOP_TASK, sessionId, taskId) as Promise<boolean>,
 
 
   openWidgetInputRequest: (input: { projectPath: string; sessionId: string; messageId: string; spec: import('@superone/shared/input-request').InputRequestSpec }) =>
@@ -88,9 +82,6 @@ const agentAPI = {
 
   createSession: (projectPath: string): Promise<string> =>
     ipcRenderer.invoke(AgentIpcChannels.CREATE_SESSION, projectPath),
-
-  resetSession: (sessionId: string, newSessionId?: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.RESET_SESSION, sessionId, newSessionId),
 
 
   parkSession: (projectPath: string) =>

@@ -7,6 +7,7 @@ vi.mock('electron', () => ({
   safeStorage: { isEncryptionAvailable: () => false },
   app: { getPath: () => tmpdir(), getVersion: () => '0.0.0-test' },
 }))
+vi.mock('../session/session-preferences', () => ({ readDefaultSessionPrefs: () => ({ permissionMode: 'default', sandboxMode: 'on' }) }))
 vi.mock('../logger', () => ({ default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() } }))
 
 import type { DesktopDomainDeps } from '../node-host/desktop-domain'
@@ -174,5 +175,30 @@ describe('rewind on the local environment endpoint', () => {
     expect(truncate).toHaveBeenCalledWith('cp')
     await expect(runWindowControl(7, () => host.callSession('local', 'own', 'session.rewind', { checkpointId: 'cp', mode: 'bad' as never }))).rejects.toMatchObject({ code: 'invalid_argument' })
     await expect(host.callSession('local', 'own', 'session.rewind', { checkpointId: 'cp', mode: 'files' })).rejects.toThrow('local session control needs a window')
+  })
+})
+
+
+describe('turn control on the local environment endpoint', () => {
+  it('stops a task, starts a queue and resets the named session without changing another runtime', async () => {
+    const { host, own, sessions } = localRoute()
+    sessions.createSession({ id: 'other', projectPath: own.projectPath })
+    vi.spyOn(own, 'snapshot', 'get').mockReturnValue({ ...own.snapshot, projectPath: own.projectPath, providerId: 'claude-base' } as typeof own.snapshot)
+    const startQueued = vi.fn(async () => { own.lease.assertMutation(); return true })
+    Object.assign(own, { startQueuedMessages: startQueued })
+    sessions.setActiveSession(own.projectPath, 'other')
+    await runWindowControl(7, () => host.callSession('local', 'own', 'session.stopTask', { taskId: 'task' }))
+    expect(own.commands.at(-1)).toEqual({ kind: 'claude.stop_task', taskId: 'task' })
+    expect(await runWindowControl(7, () => host.callSession('local', 'own', 'session.startQueued', {}))).toBe(true)
+    const other = sessions.getSession('other')
+    await expect(runWindowControl(7, () => host.callSession('local', 'own', 'session.reset', { newSessionId: 'own' }))).rejects.toMatchObject({ code: 'invalid_argument' })
+    expect(sessions.getSession('own')).toBe(own)
+    const fresh = await runWindowControl(7, () => host.callSession('local', 'own', 'session.reset', { newSessionId: 'fresh' }))
+    expect(fresh?.permissionMode).toBe('default')
+    expect(sessions.getSession('own')).toBeNull()
+    expect(sessions.getSession('fresh')).toBeTruthy()
+    expect(sessions.getSession('other')).toBe(other)
+    await runWindowControl(7, () => host.callSession('local', 'fresh', 'session.reset', {}))
+    expect(sessions.getSession('fresh')).toBeNull()
   })
 })

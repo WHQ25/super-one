@@ -1,3 +1,4 @@
+import { readDefaultSessionPrefs } from '../session/session-preferences'
 import { preferredVoiceRequest, windowVoiceEndpoint, readyWindowVoice } from './realtime-voice-control'
 import { codexAccountStore } from '../codex/codex-account-store'
 import { resolveProjectExtraDirs } from '@superone/shared/project-extra-dirs'
@@ -1077,27 +1078,13 @@ export class AgentService {
   readDefaultSessionPrefs(
     harnessId: HarnessId = 'claude',
   ): { permissionMode: PermissionMode; sandboxMode: SandboxMode | undefined } {
-    const { agentPreference } = readAppSettings()
-    const defaults = sessionDefaultsForHarness(agentPreference, harnessId)
-    return {
-      permissionMode: defaults.permissionMode,
-      sandboxMode: coerceSandboxModeForCapability(defaults.sandboxMode ?? undefined),
-    }
+    return readDefaultSessionPrefs(harnessId)
   }
 
   setup(): void {
     const windowIpc = windowControlIpc(ipcMain)
 
     // --- Session-scoped handlers (projectPath as first arg) ---
-
-    windowIpc.handle(AgentIpcChannels.START_QUEUED_MESSAGES, async (_event, projectPath: string, sessionId?: string) => {
-      const session = sessionId
-        ? this.sessionManager?.getSession(sessionId)
-        : this.sessionManager?.getActiveSession(projectPath)
-      if (!session || session.snapshot.projectPath !== projectPath) return false
-      session.lease.assertMutation()
-      return enqueueSessionQueueOp(session.id, () => { session.lease.assertMutation(); return session.startQueuedMessages() })
-    })
 
     windowIpc.handle(AgentIpcChannels.PREWARM, async (_event, projectPath: string, hint?: AgentPrewarmHint) => {
       if (!this.sessionManager) return
@@ -1156,14 +1143,6 @@ export class AgentService {
       return reconcileRealtimeTimeline(sessionId, timeline)
     })
 
-    windowIpc.handle(AgentIpcChannels.STOP_TASK, async (_event, sessionId: string, taskId: string) => {
-      const session = this.sessionManager?.getSession(sessionId)
-      if (!session) return false
-      session.lease.assertMutation()
-      await session.dispatchBackendCommand({ kind: 'claude.stop_task', taskId })
-      return true
-    })
-
     windowIpc.handle(AgentIpcChannels.OPEN_WIDGET_INPUT_REQUEST, (_event, input: { projectPath: string; sessionId: string; messageId: string; spec: unknown }) => {
       const session = this.sessionManager?.getSession(input.sessionId)
       if (session) session.lease.assertMutation()
@@ -1201,29 +1180,6 @@ export class AgentService {
       const { permissionMode, sandboxMode } = this.readDefaultSessionPrefs()
       const session = mgr.createSession({ projectPath, providerId: 'claude-base', permissionMode, sandboxMode })
       return session.snapshot.id
-    })
-
-    windowIpc.handle(AgentIpcChannels.RESET_SESSION, async (_event, sessionId: string, newSessionId?: string) => {
-      const mgr = this.requireSessionManager()
-      const existing = mgr.getSession(sessionId)
-      if (!existing) {
-        trace('session.lifecycle', 'ipc_resetSession_miss', { sessionId, newSessionId: newSessionId ?? '(none)' })
-        return null
-      }
-      const projectPath = existing.snapshot.projectPath
-      const providerId = existing.snapshot.providerId
-      const harnessId = existing.snapshot.harnessId
-      trace('session.lifecycle', 'ipc_resetSession', {
-        projectPath,
-        oldSessionId: sessionId,
-        newSessionId: newSessionId ?? '(none)',
-        harnessId,
-      })
-      await mgr.disposeSession(sessionId)
-      if (!newSessionId) return null
-      const prefs = this.readDefaultSessionPrefs(harnessId)
-      const fresh = mgr.createSession({ projectPath, providerId, ...prefs, id: newSessionId })
-      return { permissionMode: fresh.getCurrentPermissionMode(), sandboxInfo: fresh.getCurrentSandboxInfo() }
     })
 
     windowIpc.handle(AgentIpcChannels.GET_SESSION_ID, (_event, projectPath: string) => {
@@ -2349,19 +2305,16 @@ export class AgentService {
   async dispose(): Promise<void> {
     this.warmupManager.dispose()
 
-    ipcMain.removeHandler(AgentIpcChannels.START_QUEUED_MESSAGES)
     ipcMain.removeHandler(AgentIpcChannels.PREWARM)
     ipcMain.removeHandler(AgentIpcChannels.WORKTREE_REMOVED)
     ipcMain.removeHandler(AgentIpcChannels.START_REALTIME_VOICE)
     ipcMain.removeHandler(AgentIpcChannels.STOP_REALTIME_VOICE)
     ipcMain.removeHandler(AgentIpcChannels.LOAD_REALTIME_TIMELINE)
     ipcMain.removeHandler(AgentIpcChannels.GET_REALTIME_TIMELINE)
-    ipcMain.removeHandler(AgentIpcChannels.STOP_TASK)
     ipcMain.removeHandler(AgentIpcChannels.OPEN_WIDGET_INPUT_REQUEST)
     ipcMain.removeHandler(AgentIpcChannels.COMPOSER_OPEN)
     ipcMain.removeHandler(AgentIpcChannels.COMPOSER_AWAIT)
     ipcMain.removeHandler(AgentIpcChannels.COMPOSER_CANCEL)
-    ipcMain.removeHandler(AgentIpcChannels.RESET_SESSION)
     ipcMain.removeHandler(AgentIpcChannels.CREATE_SESSION)
     ipcMain.removeHandler(AgentIpcChannels.GET_SESSION_ID)
     ipcMain.removeHandler(AgentIpcChannels.MCP_SERVER_STATUS)

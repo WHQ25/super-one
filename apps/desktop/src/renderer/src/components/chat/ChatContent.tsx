@@ -1,3 +1,4 @@
+import { useEnvironmentServes } from '@/hooks/use-environment-serves'
 import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
 import { useRef, useState, useEffect, useLayoutEffect, useMemo, useCallback, lazy, Suspense, memo } from 'react'
 import { useChatStore, useActiveSession, useSessionScope } from '@/stores/chat'
@@ -162,14 +163,15 @@ function ChatTranscript({
   const awaitingRealtimeTimeline = queueProvider === 'codex'
     && !!providerSessionId
     && (realtimeTimelineLoadStatus === 'idle' || realtimeTimelineLoadStatus === 'loading')
-  const isLocalQueue = !parseRemoteProjectKey(scope?.projectPath ?? activeProject ?? '')
-  const canSteerQueue = isLocalQueue
+  const canHostSteer = useEnvironmentServes(scope?.projectPath ?? activeProject, 'session.steer')
+  const canHostStartQueued = useEnvironmentServes(scope?.projectPath ?? activeProject, 'session.startQueued')
+  const canSteerQueue = canHostSteer
     && HARNESS_CAPABILITIES[queueProvider].supportsQueuedSteer
     && sessionStatus === 'streaming'
   const canSteerQueueSoon = canSteerQueue
     && HARNESS_CAPABILITIES[queueProvider].supportsQueuedSteerSoon
     && (queueProvider !== 'acp' || isGrokAcpAgent(acpAgentId))
-  const isLocalCodexQueue = isLocalQueue && queueProvider === 'codex'
+  const isLocalCodexQueue = canHostStartQueued && queueProvider === 'codex'
   const canStartCodexQueue = isLocalCodexQueue && sessionStatus !== 'streaming'
   // ChatTranscript doubles as the backing-thread view (see `showRealtime`). That view
   // exists to show exactly what Codex was asked to do, so it keeps the delegation

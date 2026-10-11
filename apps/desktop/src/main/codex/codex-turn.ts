@@ -1,5 +1,5 @@
 import { mapCodexCollabItem, withCodexChildTurn } from '@superone/codex/collab-item'
-import { readCodexSubagentActivity, readCodexTurnProvenance } from '@superone/codex/protocol-v162'
+import { isCodexReviewWorkerTurn, readCodexSubagentActivity, readCodexTurnProvenance } from '@superone/codex/protocol-v162'
 import type { CodexSubagentActivity, CodexTurnProvenance, CodexRequestedTurnProvenance } from '@superone/shared/codex-metadata'
 import { mapCodexCommandItem } from '@superone/codex/command-item'
 import { readCodexMcpAppFields } from '@superone/codex/mcp-apps'
@@ -1561,6 +1561,7 @@ export async function streamTurnEvents(
     notificationInbox?: NotificationInbox | null
     connectionId?: string | null
     compactionTrigger?: 'manual' | 'auto'
+    reviewTurnId?: string | null
   },
 ): Promise<{ threadId: string | null; turnId?: string; usage: CodexUsageInfo | null; turnUsage: UsageInfo; items: CodexThreadItem[] }> {
   const streamStartedAt = Date.now()
@@ -1909,6 +1910,8 @@ export async function streamTurnEvents(
       }
       continue
     }
+
+    if (method === 'turn/started' && isCodexReviewWorkerTurn(params.turn, runtime?.reviewTurnId)) continue
 
     const isQueuedTurnStart = method === 'turn/started'
       && callbacks?.hasQueuedMessages?.() === true
@@ -2723,16 +2726,30 @@ export async function reviewCodexTurn(
         markMutationStarted()
         await updateThreadSettings(connection, resolvedThreadId, session, effectiveCwd, permissionProfile, request.additionalDirectories)
         callbacks?.onInputAccepted?.()
-        await connection.request('review/start', compactRecord({
+        const reviewStartResult = await connection.request('review/start', compactRecord({
           threadId: resolvedThreadId,
           delivery: 'inline',
           target: request.target,
         }))
-
-        return streamTurnEvents(connection, session, null, controller, callbacks, {
-          notificationInbox,
-          connectionId,
-        })
+        const turn = asRecord(reviewStartResult.turn)
+        const activeTurnId = readString(turn?.id)
+        const provenance = readCodexTurnProvenance(turn, resolvedThreadId)
+        if (provenance) callbacks?.onTurnMetadata?.(provenance)
+        session.activeTurnId = activeTurnId
+        session.interruptFn = activeTurnId
+          ? async () => { await connection.request('turn/interrupt', { threadId: resolvedThreadId, turnId: activeTurnId }) }
+          : null
+        try {
+          return await streamTurnEvents(connection, session, activeTurnId, controller, callbacks, {
+            notificationInbox,
+            connectionId,
+            reviewTurnId: activeTurnId,
+          })
+        } finally {
+          session.activeTurnId = null
+          session.steerFn = null
+          session.interruptFn = null
+        }
       },
     )
 

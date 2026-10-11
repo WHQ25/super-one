@@ -102,6 +102,27 @@ enabled by `apps/desktop/src/main/codex/app-server-connection.ts`).
   `apps/desktop/src/main/session/session-fork.test.ts`; invalid/missing boundaries
   fail before an unbounded fork is created.
 
+## Inline code review
+
+### Review results belong to the submitted turn, not its worker
+
+- **Behavior:** `review/start { delivery: "inline" }` returns a review turn ID.
+  In 0.162.1, a subsequent `turn/started` can identify an internal worker with
+  a different ID and `rootTurnId` equal to the submitted review ID. Review
+  items and `turn/completed` use the submitted ID. Replacing the active review
+  with the worker drops its output and completion; Stop also addresses the
+  wrong turn.
+- **Observed:** 2026-10-12 real desktop review of an isolated public git fixture
+  with 0.162.1. The pre-migration build dropped the completed review even though
+  its raw notification trace and provider rollout contained the findings.
+- **Depends on it:** Desktop captures `review/start`'s turn for event filtering,
+  metadata and interruption. Desktop and the shared node client ignore that
+  review's worker-start notification while waiting for its completion.
+- **Guard:** Desktop `codex-review-turn.test.ts` covers findings, completion and
+  interruption; shared `review-turn.test.ts` checks one completion and retained
+  identity. Real desktop and isolated CLI node reviews each complete once and return
+  their findings.
+
 ## Realtime voice
 
 ### A realtime session is a voice connection on the existing thread

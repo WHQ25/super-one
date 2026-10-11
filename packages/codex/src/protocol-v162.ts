@@ -16,6 +16,13 @@ export function readCodexTurnProvenance(raw: unknown, threadId: string): CodexTu
   return { threadId, turnId, ...(rootTurnId ? { rootTurnId } : turn?.rootTurnId === null ? { rootTurnId: null } : {}) }
 }
 
+/** Inline review starts a worker turn but publishes results on review/start's turn. */
+export function isCodexReviewWorkerTurn(raw: unknown, reviewTurnId: string | null | undefined): boolean {
+  const turn = record(raw)
+  const turnId = string(turn?.id)
+  return Boolean(reviewTurnId && turnId && turnId !== reviewTurnId && string(turn?.rootTurnId) === reviewTurnId)
+}
+
 export function readCodexSubagentActivity(
   raw: unknown,
   sourceThreadId: string,

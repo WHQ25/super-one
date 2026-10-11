@@ -1,4 +1,4 @@
-import { readCodexTurnProvenance } from './protocol-v162'
+import { isCodexReviewWorkerTurn, readCodexTurnProvenance } from './protocol-v162'
 import { MCP_APPS_EXTENSION } from '@superone/shared/mcp-apps'
 import { CODEX_CLIENT_EXTENSIONS } from './client-extensions'
 import { CodexUserInputBudget } from './user-input-budget'
@@ -657,11 +657,13 @@ export async function runCodexAppServerTurn(opts: {
       sandboxPolicy: buildCodexWorkspaceWriteSandboxPolicy(opts.cwd, opts.additionalDirectories),
     })
     opts.onInputAccepted?.()
-    await opts.client.request('review/start', compactRecord({
+    const reviewStartResult = await opts.client.request('review/start', compactRecord({
       threadId,
       delivery: 'inline',
       target: opts.reviewTarget ?? { type: 'uncommittedChanges' },
     }))
+    initialTurn = asRecord(reviewStartResult.turn)
+    turnId = readString(initialTurn?.id)
   } else {
     const collaborationMode = normalizeCollaborationMode(
       opts.collaborationMode,
@@ -719,6 +721,10 @@ export async function runCodexAppServerTurn(opts: {
     }
     if (!note) {
       if (opts.signal.aborted) break
+      continue
+    }
+
+    if (turnKind === 'review' && note.method === 'turn/started' && isCodexReviewWorkerTurn(note.params.turn, turnId)) {
       continue
     }
 

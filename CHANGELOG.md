@@ -50,7 +50,7 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Phones, controller desktops and the local window share one protocol and
   session/terminal control leases. Taking control prevents the previous
   controller from making further writes.
-- Phones require desktop or node host `0.73.0-alpha.1` or newer. Upgrade hosts
+- Phones require desktop or node host `0.73.0` or newer. Upgrade hosts
   first; phones keep their pairing and show an upgrade prompt for older or
   unreported versions.
 - Each paired phone uses its own encrypted channel with per-connection keys
@@ -58,6 +58,8 @@ Every alpha release keeps its own notes on its GitHub Release.
   encryption migration must be removed and paired again from Pair New Phone.
 - The Grok credits gauge reads the Grok CLI login directly, with no running
   agent.
+- Show image and video model loading, empty catalogs and catalog errors in the
+  model selector, with a provider-settings button in its Models heading.
 
 ### Fixed
 
@@ -77,6 +79,9 @@ Every alpha release keeps its own notes on its GitHub Release.
   the current connection.
 - Preserve draft attachment chips when parking and reopening a composer.
 - Retry usage readings whose connection was reset by a proxy or VPN.
+- Start a new session in its project directory instead of the focused
+  session's worktree; a Codex session whose directory changes resumes the
+  same thread.
 
 ### Performance
 
@@ -106,9 +111,14 @@ Every alpha release keeps its own notes on its GitHub Release.
   models, reasoning effort and turn roots across session persistence.
 - Upgrade Claude Agent SDK to 0.3.296 (Claude Code 2.1.296).
 - Paginate session text reads by content block rather than line count.
+- Show image and video model loading, empty catalogs and catalog errors in the
+  model selector, with a provider-settings button in its Models heading.
 
 ### Fixed
 
+- Start a new session in its project directory instead of the focused
+  session's worktree; a Codex session whose directory changes resumes the
+  same thread.
 - Restore session state at one snapshot boundary, recover missed updates and
   load full tool and voice-message details on demand.
 - Stop voice calls on control takeover or pairing removal; preserve the call

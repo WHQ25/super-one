@@ -1,4 +1,5 @@
 import type { EnvironmentGateway, PatchSessionSettingsInput } from '@superone/shared/environment'
+import type { SessionCreateSelections } from '@superone/shared/environment/session-create'
 
 export interface RemoteSessionCreateInput {
   projectId: string
@@ -7,6 +8,8 @@ export interface RemoteSessionCreateInput {
   harnessId?: string
   cwd?: string | null
   settings?: Omit<PatchSessionSettingsInput, 'session' | 'leaseId' | 'generation'>
+  /** Native creation choices (a draft's session id, worktree, ACP agent) the host resolves before persisting. */
+  selections?: SessionCreateSelections
 }
 
 /** Finish inherited settings before exposing the new session to navigation/send. */
@@ -21,7 +24,7 @@ export async function createRemoteSession(input: RemoteSessionCreateInput, ports
   if (input.settings && !ports.gateway.sessions.patchSettings) throw new Error('The node cannot inherit conversation settings')
   const { sessionId } = await ports.gateway.sessions.create({
     project: { environmentId: ports.environmentId, projectId: input.projectId },
-    providerId, title: input.title, options: { harnessId },
+    providerId, title: input.title, options: { harnessId, ...input.selections },
   })
   if (input.settings) {
     const control = await ports.control(sessionId)

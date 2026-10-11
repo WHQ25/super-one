@@ -70,7 +70,20 @@ export class FakeSession {
   setAgentPreset(value: string | null) { this.lease.assertMutation(); this.agentPreset = value }
   getSelectedModel() { return this.model }
   getSelectedEffort() { return this.effort }
-  setSelectedSettings(patch: { model?: string | null; effort?: string | null; mode?: string | null }) { this.lease.assertMutation(); if (patch.model !== undefined) this.model = patch.model ?? undefined; if (patch.effort !== undefined) this.effort = patch.effort ?? undefined; if (patch.mode !== undefined) this.mode = patch.mode ?? undefined }
+  ultracode = false
+  contextWindow: number | null = null
+  setSelectedSettings(patch: { model?: string | null; effort?: string | null; mode?: string | null; ultracode?: boolean; contextWindow?: number | null }) {
+    this.lease.assertMutation()
+    if (patch.model !== undefined) this.model = patch.model ?? undefined
+    if (patch.effort !== undefined) this.effort = patch.effort ?? undefined
+    if (patch.mode !== undefined) this.mode = patch.mode ?? undefined
+    if (patch.ultracode !== undefined) this.ultracode = patch.ultracode
+    if (patch.contextWindow !== undefined) this.contextWindow = patch.contextWindow
+  }
+  readonly permissionAnswers: unknown[][] = []
+  respondToPermission(...args: unknown[]) { this.lease.assertMutation(); this.permissionAnswers.push(args); return true }
+  /** A side chat: live only, never stored. */
+  ephemeral = false
   async setPermissionMode(mode: string) { this.lease.assertMutation(); this.permissionMode = mode }
   async setSandboxMode(mode: string) { this.lease.assertMutation(); this.sandbox = { enabled: mode !== 'off', autoAllowBash: mode === 'auto' } }
   async interrupt() { return true }

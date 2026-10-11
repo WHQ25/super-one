@@ -1301,16 +1301,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
       },
       patchSettings: async (input) => {
         this.assertEnv(input.session.environmentId)
-        const {
-          session,
-          leaseId,
-          generation,
-          permissionMode,
-          sandboxMode,
-          model,
-          effort,
-          apiProviderId,
-        } = input
+        const { session, leaseId, generation, ...patch } = input
         if (!leaseId) {
           throw new Error('session.patchSettings requires a control lease on remote nodes')
         }
@@ -1318,13 +1309,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
           sessionId: session.sessionId,
           leaseId,
           generation,
-          settings: {
-            ...(permissionMode !== undefined ? { permissionMode } : {}),
-            ...(sandboxMode !== undefined ? { sandboxMode } : {}),
-            ...(model !== undefined ? { model } : {}),
-            ...(effort !== undefined ? { effort } : {}),
-            ...(apiProviderId !== undefined ? { apiProviderId } : {}),
-          },
+          settings: Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined)),
         })
       },
       modUi: async ({ session, op, request, leaseId, generation }) => {
@@ -1427,6 +1412,8 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     sessionId: string
     mode?: 'local' | 'worktree'
     forkFromMessageId?: string
+    leaseId?: string
+    generation?: string
   }): Promise<{ ok: true; sessionId: string; worktreePath?: string } | { ok: false; error: string }> {
     const result = await this.client.rpc<{
       ok?: boolean
@@ -1437,6 +1424,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
       sessionId: input.sessionId,
       mode: input.mode ?? 'worktree',
       ...(input.forkFromMessageId ? { forkFromMessageId: input.forkFromMessageId } : {}),
+      ...(input.leaseId ? { leaseId: input.leaseId, generation: input.generation } : {}),
     })
     if (result && result.ok === true && result.sessionId) {
       return {
@@ -1476,15 +1464,9 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
       },
       respondPermission: async (input: PermissionResponseInput) => {
         this.assertEnv(input.session.environmentId)
-        const formAnswers =
-          input.options && typeof input.options === 'object'
-            ? ((input.options as { formAnswers?: Record<string, unknown> }).formAnswers
-              ?? (input.options as Record<string, unknown>))
-            : undefined
-        const cancel =
-          input.options && typeof input.options === 'object'
-            ? (input.options as { cancel?: boolean }).cancel === true
-            : false
+        const { formAnswers, cancel, reason, selectedSuggestions } = (input.options ?? {}) as {
+          formAnswers?: Record<string, unknown>; cancel?: boolean; reason?: string; selectedSuggestions?: number[]
+        }
         await this.client.rpc('session.respondPermission', {
           sessionId: input.session.sessionId,
           interactionId: input.interactionId,
@@ -1492,7 +1474,9 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
           leaseId: input.leaseId,
           generation: input.generation,
           ...(formAnswers ? { formAnswers } : {}),
-          ...(cancel ? { cancel: true } : {}),
+          ...(cancel === true ? { cancel: true } : {}),
+          ...(reason !== undefined ? { reason } : {}),
+          ...(selectedSuggestions ? { selectedSuggestions } : {}),
         })
       },
       respondQuestion: async (input: QuestionResponseInput) => {
@@ -1501,6 +1485,8 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
           sessionId: input.session.sessionId,
           interactionId: input.interactionId,
           answers: input.answers,
+          ...(input.dismiss ? { dismiss: true } : {}),
+          ...(input.annotations ? { annotations: input.annotations } : {}),
           leaseId: input.leaseId,
           generation: input.generation,
         })

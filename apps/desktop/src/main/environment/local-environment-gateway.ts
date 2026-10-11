@@ -185,6 +185,11 @@ export class LocalEnvironmentGateway implements EnvironmentGateway {
 
   private protocol: RemoteEnvironmentGateway | null = null
   bindProtocol(client: EnvironmentRpcClient): void { this.protocol = new RemoteEnvironmentGateway(client) }
+  /** The domain protocol, for callers that drive local sessions exactly like a node's. */
+  protocolGateway(): RemoteEnvironmentGateway {
+    if (!this.protocol) throw Object.assign(new Error('the desktop domain is not open yet'), { code: 'unavailable' })
+    return this.protocol
+  }
   get sessions(): SessionGateway { return this.protocol?.sessions ?? this.fallbackSessions }
   get interactions(): InteractionGateway { return this.protocol?.interactions ?? this.fallbackInteractions }
   get terminals(): TerminalGateway { return this.protocol?.terminals ?? this.fallbackTerminals }

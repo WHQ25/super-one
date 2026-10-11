@@ -3,6 +3,7 @@ import type { RpcStreamHandlers } from '@superone/shared/environment/rpc-connect
 import type { SessionStreamFrame, TopicSubscribeInput } from '@superone/shared/environment'
 import type { RemoteTopicStream } from './remote-topic-followers'
 import { notifySessionClosed } from '../session-list-watch'
+import { currentControlScope } from '../session/control-context'
 import { MOD_UI_MUTATING_OPS, MOD_UI_UNAVAILABLE, type ModUiOp, type ModUiRequest } from '@superone/shared/mod-ui'
 import { parseMessageDisplay, type MessageDisplayFields } from '@superone/shared/message-display'
 import { remoteSuperoneHome, remoteNodePort } from './remote-data-path'
@@ -100,9 +101,11 @@ import type {
   DraftGateway,
   DraftRecord,
   DraftUpsertRequest,
+  PatchSessionSettingsInput,
   ProjectSnapshot,
 } from '@superone/shared/environment'
 import type { PinnedSessionEntry, SessionHistoryEntry } from '@superone/shared/agent-types'
+import type { SessionSendSelections } from '@superone/shared/environment/session-send'
 import { remoteProjectKey } from '@superone/shared/remote-resource-key'
 import { RoutedControlPresence } from '../node-host/routed-control-presence'
 import { parseTagsJson } from '@superone/shared/session-tags'
@@ -416,6 +419,20 @@ export class EnvironmentHost {
   }
 
   /**
+   * The gateway a session operation runs on: this desktop's own domain for
+   * `local` (the dispatcher its phones use), otherwise the paired node.
+   */
+  private resolveSession(connectionId: string): {
+    gateway: RemoteEnvironmentGateway
+    environmentId: string
+    local: boolean
+  } {
+    if (connectionId !== 'local') return { ...this.resolveRemote(connectionId), local: false }
+    const local = this.registry.getLocal()
+    return { gateway: local.protocolGateway(), environmentId: local.getEnvironmentId(), local: true }
+  }
+
+  /**
    * Map a node session record (or gateway list item) to the sidebar history row shape.
    */
   private mapRemoteSessionEntry(raw: unknown): SessionHistoryEntry {
@@ -711,15 +728,10 @@ export class EnvironmentHost {
     provider?: string
     messageCount: number
   }> {
-    if (connectionId === 'local') {
-      throw Object.assign(new Error('createSession via environment host is remote-only'), {
-        code: 'invalid_argument',
-      })
-    }
     if (!input.projectId) {
       throw Object.assign(new Error('projectId is required'), { code: 'invalid_argument' })
     }
-    const { gateway, environmentId } = this.resolveRemote(connectionId)
+    const { gateway, environmentId } = this.resolveSession(connectionId)
     return this.mapRemoteSessionEntry(await createRemoteSession(input, {
       gateway, environmentId,
       control: sessionId => this.ensureSessionLease(connectionId, sessionId),
@@ -741,8 +753,24 @@ export class EnvironmentHost {
     { leaseId: string; generation: string; expiresAt: number }
   >()
 
+  /**
+   * A local grant belongs to the window asking (each window is its own
+   * delegate and yields to a phone); a node's grant to this desktop.
+   */
   private leaseKey(connectionId: string, sessionId: string): string {
-    return `${connectionId}:${sessionId}`
+    if (connectionId !== 'local') return `${connectionId}:${sessionId}`
+    const actor = currentControlScope()?.clientSessionId
+    if (!actor?.startsWith('ipc:')) {
+      throw Object.assign(new Error('local session control needs a window'), { code: 'failed_precondition' })
+    }
+    return `${connectionId}:${sessionId}:${actor}`
+  }
+
+  private forgetSessionLeases(connectionId: string, sessionId: string): void {
+    const prefix = `${connectionId}:${sessionId}`
+    for (const key of [...this.sessionLeases.keys()]) {
+      if (key === prefix || key.startsWith(`${prefix}:`)) this.sessionLeases.delete(key)
+    }
   }
 
   private terminalLeaseKey(connectionId: string, terminalId: string): string {
@@ -893,7 +921,7 @@ export class EnvironmentHost {
     sessionId: string,
     opts?: { reclaim?: boolean },
   ): Promise<{ leaseId: string; generation: string }> {
-    const { gateway, environmentId } = this.resolveRemote(connectionId)
+    const { gateway, environmentId } = this.resolveSession(connectionId)
     const key = this.leaseKey(connectionId, sessionId)
     const existing = this.sessionLeases.get(key)
     const now = Date.now()
@@ -938,7 +966,7 @@ export class EnvironmentHost {
   }
 
   async getSession(connectionId: string, sessionId: string): Promise<unknown> {
-    const { gateway, environmentId } = this.resolveRemote(connectionId)
+    const { gateway, environmentId } = this.resolveSession(connectionId)
     return gateway.sessions.get({ environmentId, sessionId })
   }
 
@@ -1622,10 +1650,7 @@ export class EnvironmentHost {
     sessionId: string,
     cwdHostPath: string | null,
   ): Promise<unknown> {
-    const { gateway } = this.resolveRemote(connectionId)
-    if (!(gateway instanceof RemoteEnvironmentGateway)) {
-      throw Object.assign(new Error('environment is not connected'), { code: 'failed_precondition' })
-    }
+    const { gateway } = this.resolveSession(connectionId)
     const control = await this.ensureSessionLease(connectionId, sessionId)
     return gateway.sessionSetCwd({
       sessionId,
@@ -1774,9 +1799,12 @@ export class EnvironmentHost {
    * the chat and none below it does. Returns the snapshot.
    */
   async openRemoteSession(connectionId: string, input: RemoteSessionTarget & { limit?: number }): Promise<SessionLoadResult> {
-    const { gateway, environmentId } = this.resolveRemote(connectionId)
+    const { gateway, environmentId, local } = this.resolveSession(connectionId)
     let snapshot: SessionLoadResult | null = null
     const load = () => gateway.sessions.load!({ session: { environmentId, sessionId: input.sessionId }, limit: input.limit })
+    // Local events already reach the window through the desktop hub, in the
+    // snapshot's own sequence space; a mapped follower would deliver each twice.
+    if (local) return load()
     await this.followRemoteSession(connectionId, input, async () => (snapshot = await load()).cursor.version)
     // Already followed: its events flow above an earlier barrier, and the chat
     // reducer skips those a snapshot already holds (message `seq`).
@@ -1874,11 +1902,21 @@ export class EnvironmentHost {
       reviewTarget?: unknown
       /** Claude Ultracode toggle; the node switches its process when it differs. */
       ultracode?: boolean
+      /** Composer selections the host applies to this turn (see `SessionSendSelections`). */
+      priority?: 'now' | 'next' | 'later'
+      steer?: 'now' | 'next'
+      sandboxMode?: string | null
+      permissionPreset?: SessionSendSelections['permissionPreset']
+      serviceTier?: string | null
+      threadId?: string
+      agent?: string
+      modelParams?: Record<string, string>
+      inputRequest?: SessionSendSelections['inputRequest']
       /** Receipt after the node accepts, before waiting for the model turn. */
       onAccepted?: () => void
     },
   ): Promise<unknown> {
-    const { gateway, environmentId } = this.resolveRemote(connectionId)
+    const { gateway, environmentId, local } = this.resolveSession(connectionId)
     const control = await this.ensureSessionLease(connectionId, input.sessionId).catch((err: unknown) => {
       // The composer was opened before the node took the session back; close it now.
       if (isControlReleasedError(err)) {
@@ -1887,7 +1925,7 @@ export class EnvironmentHost {
       throw err
     })
 
-    if (input.cwdHostPath !== undefined && gateway instanceof RemoteEnvironmentGateway) {
+    if (input.cwdHostPath !== undefined) {
       try {
         await gateway.sessionSetCwd({
           sessionId: input.sessionId,
@@ -1901,7 +1939,7 @@ export class EnvironmentHost {
     }
 
     // Follow before sending, so the feed reads from before this turn's first event.
-    await this.followRemoteSession(connectionId, input)
+    if (!local) await this.followRemoteSession(connectionId, input)
 
     const model =
       typeof input.model === 'string' && input.model.trim() ? input.model.trim() : undefined
@@ -1966,6 +2004,10 @@ export class EnvironmentHost {
     if (input.collaborationMode != null) options.collaborationMode = input.collaborationMode
     if (input.reviewTarget !== undefined) options.reviewTarget = input.reviewTarget
     if (typeof input.ultracode === 'boolean') options.ultracode = input.ultracode
+    if (typeof input.sandboxMode === 'string' && input.sandboxMode.trim()) options.sandboxMode = input.sandboxMode.trim()
+    for (const key of ['priority', 'steer', 'permissionPreset', 'serviceTier', 'threadId', 'agent', 'modelParams', 'inputRequest'] as const) {
+      if (input[key] !== undefined) options[key] = input[key]
+    }
     await gateway.sessions.send({
       session: { environmentId, sessionId: input.sessionId },
       text: input.text,
@@ -1983,6 +2025,7 @@ export class EnvironmentHost {
    * its events reach the chat: the running turn, and later turns from any client.
    */
   async resumeRemoteSessionEvents(connectionId: string, input: RemoteSessionTarget): Promise<void> {
+    if (connectionId === 'local') return
     await this.followRemoteSession(connectionId, input)
   }
 
@@ -2006,13 +2049,13 @@ export class EnvironmentHost {
    * session serves it; packets after the snapshot go to `onUpdate`.
    */
   async subscribeSessionDetail(target: DetailTarget, subscriptionId: string, onUpdate: (update: DetailUpdate) => void): Promise<DetailUpdate> {
-    const { gateway, environmentId } = this.resolveRemote(target.environmentId)
+    const { gateway, environmentId } = this.resolveSession(target.environmentId)
     if (!gateway.sessions.subscribeDetail) throw new Error('This machine sends full rows; there is no detail to load')
     return gateway.sessions.subscribeDetail({ session: { environmentId, sessionId: target.sessionId }, detailRef: target.detailRef, subscriptionId, onUpdate })
   }
 
   async unsubscribeSessionDetail(target: DetailTarget, subscriptionId: string): Promise<void> {
-    const { gateway, environmentId } = this.resolveRemote(target.environmentId)
+    const { gateway, environmentId } = this.resolveSession(target.environmentId)
     await gateway.sessions.unsubscribeDetail?.({ session: { environmentId, sessionId: target.sessionId }, subscriptionId })
   }
 
@@ -2032,7 +2075,7 @@ export class EnvironmentHost {
 
   /** One op on a remote session's mod surface; mutating ops take the control lease. */
   async modUi(connectionId: string, sessionId: string, op: ModUiOp, request: ModUiRequest): Promise<unknown> {
-    const { gateway, environmentId } = this.resolveRemote(connectionId)
+    const { gateway, environmentId } = this.resolveSession(connectionId)
     if (!gateway.sessions.modUi) {
       throw Object.assign(new Error('This node draws no mod interfaces'), { name: MOD_UI_UNAVAILABLE })
     }
@@ -2045,8 +2088,19 @@ export class EnvironmentHost {
     })
   }
 
+  /** Change a session's durable settings (permission/sandbox mode, model, effort, …). */
+  async patchSessionSettings(
+    connectionId: string,
+    sessionId: string,
+    patch: Omit<PatchSessionSettingsInput, 'session' | 'leaseId' | 'generation'>,
+  ): Promise<unknown> {
+    const { gateway, environmentId } = this.resolveSession(connectionId)
+    const control = await this.ensureSessionLease(connectionId, sessionId)
+    return gateway.sessions.patchSettings!({ session: { environmentId, sessionId }, ...patch, ...control })
+  }
+
   async interruptSession(connectionId: string, sessionId: string): Promise<void> {
-    const { gateway, environmentId } = this.resolveRemote(connectionId)
+    const { gateway, environmentId } = this.resolveSession(connectionId)
     const control = await this.ensureSessionLease(connectionId, sessionId)
     await gateway.sessions.interrupt(
       { environmentId, sessionId },
@@ -2060,7 +2114,7 @@ export class EnvironmentHost {
     title: string,
     source: 'user' | 'agent' = 'user',
   ): Promise<unknown> {
-    const { gateway } = this.resolveRemote(connectionId)
+    const { gateway } = this.resolveSession(connectionId)
     return gateway.renameSession(sessionId, title, source)
   }
 
@@ -2069,12 +2123,12 @@ export class EnvironmentHost {
     sessionId: string,
     op: { add?: unknown; remove?: unknown; set?: unknown },
   ): Promise<unknown> {
-    const { gateway } = this.resolveRemote(connectionId)
+    const { gateway } = this.resolveSession(connectionId)
     return gateway.setSessionTags(sessionId, op)
   }
 
   async removeSession(connectionId: string, sessionId: string): Promise<unknown> {
-    const { gateway } = this.resolveRemote(connectionId)
+    const { gateway, local } = this.resolveSession(connectionId)
     let control: { leaseId?: string; generation?: string } | undefined
     try {
       control = await this.ensureSessionLease(connectionId, sessionId)
@@ -2086,7 +2140,7 @@ export class EnvironmentHost {
     // session row is gone — afterwards the controller binding artifact.delete needs
     // no longer holds (docs/architecture/session-sync-zone.md §7).
     this.transfers?.dropSession(sessionId)
-    if (control?.leaseId && this.getSyncZone(connectionId)) {
+    if (!local && control?.leaseId && this.getSyncZone(connectionId)) {
       try {
         await this.artifactDelete(connectionId, sessionId)
       } catch {
@@ -2095,9 +2149,9 @@ export class EnvironmentHost {
     }
     const result = await gateway.removeSession(sessionId, control)
     notifySessionClosed({ environmentId: connectionId, sessionId })
-    this.sessionLeases.delete(this.leaseKey(connectionId, sessionId))
+    this.forgetSessionLeases(connectionId, sessionId)
     // The desktop mirror of this session's artifacts is ours to remove.
-    void import('./session-zone-reclaim').then((m) => m.removeSessionZone(sessionId)).catch(() => undefined)
+    if (!local) void import('./session-zone-reclaim').then((m) => m.removeSessionZone(sessionId)).catch(() => undefined)
     return result
   }
 
@@ -2106,7 +2160,7 @@ export class EnvironmentHost {
     sessionId: string,
     flags: { isPinned?: boolean; isHidden?: boolean },
   ): Promise<unknown> {
-    const { gateway } = this.resolveRemote(connectionId)
+    const { gateway } = this.resolveSession(connectionId)
     return gateway.setSessionUiFlags(sessionId, flags)
   }
 
@@ -2117,16 +2171,12 @@ export class EnvironmentHost {
     connectionId: string,
     input: { sessionId: string; mode?: 'local' | 'worktree'; forkFromMessageId?: string },
   ): Promise<{ ok: true; sessionId: string; worktreePath?: string } | { ok: false; error: string }> {
-    if (connectionId === 'local') {
-      throw Object.assign(new Error('forkSession via environment host is remote-only'), {
-        code: 'invalid_argument',
-      })
-    }
     if (!input.sessionId) {
       return { ok: false, error: 'sessionId is required' }
     }
-    const { gateway } = this.resolveRemote(connectionId)
-    return gateway.forkSession(input)
+    const { gateway } = this.resolveSession(connectionId)
+    const control = await this.ensureSessionLease(connectionId, input.sessionId)
+    return gateway.forkSession({ ...input, ...control })
   }
 
   async respondSessionPermission(
@@ -2139,9 +2189,11 @@ export class EnvironmentHost {
       formAnswers?: Record<string, unknown>
       /** True when the multi-launch dialog was cancelled. */
       cancel?: boolean
+      reason?: string
+      selectedSuggestions?: number[]
     },
   ): Promise<void> {
-    const { gateway, environmentId } = this.resolveRemote(connectionId)
+    const { gateway, environmentId } = this.resolveSession(connectionId)
     const control = await this.ensureSessionLease(connectionId, input.sessionId)
     await gateway.interactions.respondPermission({
       session: { environmentId, sessionId: input.sessionId },
@@ -2152,6 +2204,8 @@ export class EnvironmentHost {
       options: {
         ...(input.formAnswers ? { formAnswers: input.formAnswers } : {}),
         ...(input.cancel ? { cancel: true } : {}),
+        ...(input.reason !== undefined ? { reason: input.reason } : {}),
+        ...(input.selectedSuggestions ? { selectedSuggestions: input.selectedSuggestions } : {}),
       },
     })
   }
@@ -2162,14 +2216,19 @@ export class EnvironmentHost {
       sessionId: string
       interactionId: string
       answers: unknown
+      /** Close the question without answering. */
+      dismiss?: boolean
+      annotations?: Record<string, unknown>
     },
   ): Promise<void> {
-    const { gateway, environmentId } = this.resolveRemote(connectionId)
+    const { gateway, environmentId } = this.resolveSession(connectionId)
     const control = await this.ensureSessionLease(connectionId, input.sessionId)
     await gateway.interactions.respondQuestion({
       session: { environmentId, sessionId: input.sessionId },
       interactionId: input.interactionId,
       answers: input.answers,
+      ...(input.dismiss ? { dismiss: true } : {}),
+      ...(input.annotations ? { annotations: input.annotations } : {}),
       leaseId: control.leaseId,
       generation: control.generation,
     })
@@ -2184,7 +2243,7 @@ export class EnvironmentHost {
       options?: Record<string, unknown>
     },
   ): Promise<void> {
-    const { gateway, environmentId } = this.resolveRemote(connectionId)
+    const { gateway, environmentId } = this.resolveSession(connectionId)
     const control = await this.ensureSessionLease(connectionId, input.sessionId)
     await gateway.interactions.respondPlan({
       session: { environmentId, sessionId: input.sessionId },

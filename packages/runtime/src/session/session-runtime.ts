@@ -753,7 +753,8 @@ export class SessionRuntime {
   }
 
   validateSettings(patch: NodeSessionSettings): void {
-    if (patch.mode !== undefined || patch.agentPreset !== undefined || patch.additionalDirectories !== undefined) {
+    if (patch.mode !== undefined || patch.agentPreset !== undefined || patch.additionalDirectories !== undefined
+      || patch.ultracode !== undefined || patch.contextWindow !== undefined) {
       throw Object.assign(new Error('This node does not support desktop harness settings'), { code: 'unsupported' })
     }
   }

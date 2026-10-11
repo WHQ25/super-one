@@ -5,7 +5,7 @@ import type { NodeSessionSettings } from '@superone/runtime/session'
 import type { DesktopSessionRow } from '../db-remote-controlled-sessions'
 import type { Session } from '../session/types'
 import type { SessionForkRequest, SessionForkResult } from '@superone/shared/agent-types'
-import { runFencedSessionControl } from '../session/control-context'
+import { runFencedSessionControl, runHostReaction } from '../session/control-context'
 import { DesktopSessionReads, type DesktopSessionReadsDeps } from './desktop-session-reads'
 import { admitDesktopSessionSend, applyDesktopSessionSettings, desktopSendRequest, respondDesktopPermission, respondDesktopQuestion, respondDesktopPlan } from './desktop-session-mutations'
 import { createDesktopSession } from './desktop-session-create'
@@ -23,6 +23,8 @@ export interface LocalSessionEdits {
 
 export interface LocalSessionHostDeps extends DesktopSessionReadsDeps<DesktopSessionRow> {
   projectPath(projectId: string): string | null
+  /** The project a live session without a row (a side chat) belongs to. */
+  projectId?(projectPath: string): string | null
   edits?: LocalSessionEdits
   drafts?: DraftsPort
 }
@@ -45,6 +47,26 @@ export class LocalSessionHost extends DesktopSessionReads<DesktopSessionRow> imp
   private edits(): LocalSessionEdits {
     if (!this.deps.edits) throw unsupportedMethodError('session persistence edits')
     return this.deps.edits
+  }
+
+  /**
+   * A side chat is a live ephemeral session that never writes a row; it is
+   * served like any session while it runs, and lists never show it.
+   */
+  protected override row(sessionId: string): DesktopSessionRow | null {
+    const stored = super.row(sessionId)
+    if (stored) return stored
+    const live = this.deps.sessions.getSession(sessionId)
+    if (!live?.ephemeral) return null
+    const projectId = this.deps.projectId?.(live.projectPath)
+    if (!projectId) return null
+    const { harnessId, providerId, providerSessionId, cwd } = live.snapshot
+    const now = Date.now()
+    return {
+      sessionId, projectId, projectPath: live.projectPath, title: null, harnessId, providerId,
+      providerSessionId: providerSessionId ?? null, worktreePath: cwd !== live.projectPath ? cwd : null,
+      isPinned: false, isHidden: true, isUserRenamed: false, tags: [], createdAt: now, updatedAt: now, controller: null,
+    }
   }
 
   private live(sessionId: string): Session {
@@ -89,20 +111,24 @@ export class LocalSessionHost extends DesktopSessionReads<DesktopSessionRow> imp
 
   validateSettings(): void { /* Desktop Session applies native harness selections. */ }
 
+  // Title, tags and sidebar flags are the session's catalog entry, not its
+  // runtime: any client may edit them, and a cold session stays cold.
   rename(sessionId: string, title: string, source: 'user' | 'agent' = 'user') {
-    this.mutation(sessionId).setTitle(title, source)
+    this.requireRow(sessionId)
+    const live = this.deps.sessions.getSession(sessionId)
+    runHostReaction(() => live?.setTitle(title, source))
     this.edits().rename(sessionId, title, source)
     return this.record(this.requireRow(sessionId))
   }
 
   setTags(sessionId: string, tags: string[]) {
-    this.mutation(sessionId)
+    this.requireRow(sessionId)
     this.edits().tags(sessionId, tags)
     return this.record(this.requireRow(sessionId))
   }
 
   setUiFlags(sessionId: string, flags: { isPinned?: boolean; isHidden?: boolean }) {
-    this.mutation(sessionId)
+    this.requireRow(sessionId)
     this.edits().flags(sessionId, flags)
     return this.record(this.requireRow(sessionId))
   }

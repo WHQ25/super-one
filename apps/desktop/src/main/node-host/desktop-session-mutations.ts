@@ -12,8 +12,12 @@ export async function applyDesktopSessionSettings(session: Session, patch: NodeS
   if (patch.sandboxMode != null) await session.setSandboxMode(patch.sandboxMode as SandboxMode)
   session.lease.assertMutation()
   if (patch.apiProviderId !== undefined) session.setApiProviderId(patch.apiProviderId ?? null)
-  if (patch.model !== undefined || patch.effort !== undefined || patch.mode !== undefined) {
-    await session.setSelectedSettings({ model: patch.model, effort: patch.effort as SendMessageRequest['effort'] | null | undefined, mode: patch.mode })
+  if (patch.model !== undefined || patch.effort !== undefined || patch.mode !== undefined || patch.ultracode !== undefined || patch.contextWindow !== undefined) {
+    await session.setSelectedSettings({
+      model: patch.model, effort: patch.effort as SendMessageRequest['effort'] | null | undefined, mode: patch.mode,
+      ...(patch.ultracode !== undefined ? { ultracode: patch.ultracode ?? false } : {}),
+      ...(patch.contextWindow !== undefined ? { contextWindow: patch.contextWindow } : {}),
+    })
   }
   session.lease.assertMutation()
   if (patch.agentPreset !== undefined) session.setAgentPreset(patch.agentPreset)

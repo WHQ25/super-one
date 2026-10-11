@@ -317,6 +317,15 @@ the UI hides them through capabilities.
 ## Progress
 
 - 2026-10-12: Step 0. Baseline counts: `window.agent` 76, node branches 184.
+- 2026-10-12: Step 1. `EnvironmentHost.resolveSession` routes `local` to the
+  domain protocol; local open/send install no follower; local grants are keyed
+  per window and a mutation without a window scope fails in `leaseKey`;
+  `LocalSessionHost` serves live ephemeral sessions and edits metadata without
+  a grant; DTOs carry the send selections, `contextWindow`/`ultracode`,
+  create selections and answer details; `patchSessionSettings` added. Contract
+  test: `environment/environment-host-local-session-route.test.ts`. Closing a
+  side chat through `session.close` only disposes it; transcript cleanup moves
+  with `sideChatClose` in step 5.
 - 2026-10-12: Plan drafted from a main/renderer inventory; revised after a
   code review (local delivery, side chats, step dependencies, DTO gaps, cold
   restore, lease scope, operation inventory). Runtime control-scope fix

@@ -18,6 +18,7 @@ import type { DeviceEnvironmentAction, DeviceEnvironmentResult, DeviceEnvironmen
 import { forEachAgentEventPayload } from './agent-event-payload'
 import { createAutomationCallInbox, type BrowserAutomationCall } from './browser-automation-inbox'
 import { isGlassPlatformSupported } from '../main/window-glass'
+import type { EnvironmentHost } from '../main/environment/environment-host'
 
 // Do not try to name this renderer via `process.title` here — it cannot work.
 // Under `sandbox: true` preload's `process` is an Electron shim, so the assignment
@@ -593,7 +594,7 @@ const environmentAPI = {
     ) as Promise<PinnedSessionEntry[]>,
   createSession: (
     connectionId: string,
-    input: { projectId: string; title?: string; providerId?: string; harnessId?: string },
+    input: Parameters<EnvironmentHost['createSession']>[1],
   ) =>
     ipcRenderer.invoke(
       AgentIpcChannels.ENVIRONMENT_CREATE_SESSION,
@@ -653,28 +654,7 @@ const environmentAPI = {
     ),
   sendSessionMessage: (
     connectionId: string,
-    input: {
-      sessionId: string
-      text: string
-      clientMessageId?: string
-      projectPath?: string
-      providerId?: string
-      cwdHostPath?: string | null
-      model?: string | null
-      effort?: string | null
-      permissionMode?: string | null
-      additionalDirectories?: string[]
-      enabledSkills?: string[]
-      disabledSkills?: string[]
-      images?: Array<{ name?: string; mimeType: string; base64: string }>
-      apiProviderId?: string | null
-      /** Codex turn kind for session.send options.turnKind */
-      turnKind?: 'run' | 'steer' | 'review' | 'compact' | null
-      collaborationMode?: string | Record<string, unknown> | null
-      reviewTarget?: unknown
-      /** Claude Ultracode toggle for this turn and after. */
-      ultracode?: boolean
-    },
+    input: Omit<Parameters<EnvironmentHost['sendSessionMessage']>[1], 'onAccepted'>,
   ) =>
     ipcRenderer.invoke(
       AgentIpcChannels.ENVIRONMENT_SEND_SESSION_MESSAGE,
@@ -694,6 +674,8 @@ const environmentAPI = {
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_SUBSCRIBE_DETAIL, target, subscriptionId),
   unsubscribeDetail: (target: { environmentId: string; sessionId: string; detailRef: string }, subscriptionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_UNSUBSCRIBE_DETAIL, target, subscriptionId),
+  patchSessionSettings: (connectionId: string, sessionId: string, patch: Parameters<EnvironmentHost['patchSessionSettings']>[2]) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_PATCH_SESSION_SETTINGS, connectionId, sessionId, patch),
   interruptSession: (connectionId: string, sessionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_INTERRUPT_SESSION, connectionId, sessionId),
   reclaimSessionControl: (connectionId: string, sessionId: string) =>
@@ -731,13 +713,7 @@ const environmentAPI = {
     ) as Promise<{ ok: true; sessionId: string; worktreePath?: string } | { ok: false; error: string }>,
   respondSessionPermission: (
     connectionId: string,
-    input: {
-      sessionId: string
-      interactionId: string
-      decision: 'allow' | 'deny' | 'allow_always'
-      formAnswers?: Record<string, unknown>
-      cancel?: boolean
-    },
+    input: Parameters<EnvironmentHost['respondSessionPermission']>[1],
   ) =>
     ipcRenderer.invoke(
       AgentIpcChannels.ENVIRONMENT_RESPOND_SESSION_PERMISSION,
@@ -746,11 +722,7 @@ const environmentAPI = {
     ),
   respondSessionQuestion: (
     connectionId: string,
-    input: {
-      sessionId: string
-      interactionId: string
-      answers: unknown
-    },
+    input: Parameters<EnvironmentHost['respondSessionQuestion']>[1],
   ) =>
     ipcRenderer.invoke(
       AgentIpcChannels.ENVIRONMENT_RESPOND_SESSION_QUESTION,
@@ -759,12 +731,7 @@ const environmentAPI = {
     ),
   respondSessionPlan: (
     connectionId: string,
-    input: {
-      sessionId: string
-      interactionId: string
-      decision: 'approve' | 'reject'
-      options?: Record<string, unknown>
-    },
+    input: Parameters<EnvironmentHost['respondSessionPlan']>[1],
   ) =>
     ipcRenderer.invoke(
       AgentIpcChannels.ENVIRONMENT_RESPOND_SESSION_PLAN,

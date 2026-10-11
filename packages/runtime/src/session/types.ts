@@ -27,6 +27,9 @@ export interface NodeSessionSettings {
   mode?: string | null
   agentPreset?: string | null
   additionalDirectories?: string[] | null
+  /** Claude Ultracode and the ACP context window; desktop-only like `mode`. */
+  ultracode?: boolean | null
+  contextWindow?: number | null
 }
 
 export interface NodeSessionRecord {

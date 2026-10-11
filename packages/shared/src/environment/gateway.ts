@@ -80,6 +80,12 @@ export interface PatchSessionSettingsInput extends Partial<MutatingControlContex
   model?: string | null
   effort?: string | null
   apiProviderId?: string | null
+  /** Desktop harness selections; a CLI node refuses them. */
+  mode?: string | null
+  agentPreset?: string | null
+  additionalDirectories?: string[] | null
+  ultracode?: boolean | null
+  contextWindow?: number | null
 }
 
 export interface ListSessionsOptions {
@@ -158,6 +164,9 @@ export interface QuestionResponseInput extends MutatingControlContext {
   session: SessionRef
   interactionId: string
   answers: unknown
+  /** Close the question without answering it. */
+  dismiss?: boolean
+  annotations?: Record<string, unknown>
 }
 
 export interface PlanResponseInput extends MutatingControlContext {

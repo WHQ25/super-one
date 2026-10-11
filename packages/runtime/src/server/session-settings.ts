@@ -19,5 +19,14 @@ export function parseSessionSettings(source: Record<string, unknown>): NodeSessi
     }
     patch.additionalDirectories = dirs === null ? null : [...dirs as string[]]
   }
+  if (Object.hasOwn(source, 'ultracode')) {
+    if (source.ultracode !== null && typeof source.ultracode !== 'boolean') throw invalid('ultracode must be a boolean or null')
+    patch.ultracode = source.ultracode as boolean | null
+  }
+  if (Object.hasOwn(source, 'contextWindow')) {
+    const value = source.contextWindow
+    if (value !== null && (typeof value !== 'number' || !Number.isInteger(value) || value <= 0)) throw invalid('contextWindow must be a positive integer or null')
+    patch.contextWindow = value as number | null
+  }
   return patch
 }

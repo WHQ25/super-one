@@ -125,8 +125,13 @@ export abstract class DesktopSessionReads<Row extends DesktopSessionRow> impleme
     this.promptListeners.clear()
   }
 
+  /** The stored row this host serves; a host may also serve live sessions that have none. */
+  protected row(sessionId: string): Row | null {
+    return this.reads.rows.get(sessionId)
+  }
+
   protected requireRow(sessionId: string): Row {
-    const row = this.reads.rows.get(sessionId)
+    const row = this.row(sessionId)
     if (!row) throw notFound()
     return row
   }
@@ -184,7 +189,7 @@ export abstract class DesktopSessionReads<Row extends DesktopSessionRow> impleme
   }
 
   get(sessionId: string): NodeSessionRecord | null {
-    const row = this.reads.rows.get(sessionId)
+    const row = this.row(sessionId)
     return row ? this.record(row) : null
   }
 
@@ -284,7 +289,7 @@ export abstract class DesktopSessionReads<Row extends DesktopSessionRow> impleme
 
   /** Whether this host serves `sessionId`; asked for every event read, so hosts answer it without a query when they can. */
   protected serves(sessionId: string): boolean {
-    return this.reads.rows.get(sessionId) !== null
+    return this.row(sessionId) !== null
   }
 
   private visible(envelope: EnvironmentEventEnvelope): boolean {

@@ -256,7 +256,8 @@ import { reportMainException, reportProcessGone } from './crash-telemetry'
 import { systemDownloadDir } from './agent/browser-download-store'
 import type { DetailTarget } from '@superone/shared/environment/detail'
 import type { AppSettings, AppSettingsPatch, TerminalEvent, GitInfoResult, ScheduledSendPatch, ScheduledSendSessionInit, ThemeMode, WindowFoldStep, WindowMiniMode } from '@superone/shared/agent-types'
-import { MOD_UI_UNAVAILABLE, type ModUiOp, type ModUiRequest } from '@superone/shared/mod-ui'
+import type { ModUiOp, ModUiRequest } from '@superone/shared/mod-ui'
+import { windowControlIpc } from './session/control-context'
 import { MINI_WINDOW_SIZE } from '@superone/shared/agent-types'
 import { foldWindow, unfoldWindow } from './window-fold'
 import { recordBrowserHistory, suggestBrowserHistory, deleteBrowserHistory } from './browser-history-service'
@@ -2162,18 +2163,20 @@ function registerIpcHandlers(): void {
       await getEnvironmentHost().disconnectDraft(connectionId, draftId)
     },
   )
-  ipcMain.handle(
+  // Session operations run as the asking window, which a local grant belongs to.
+  const sessionIpc = windowControlIpc(ipcMain)
+  sessionIpc.handle(
     AgentIpcChannels.ENVIRONMENT_CREATE_SESSION,
     async (
       _e,
       connectionId: string,
-      input: { projectId: string; title?: string; providerId?: string; harnessId?: string },
+      input: Parameters<EnvironmentHost['createSession']>[1],
     ) => {
       const { getEnvironmentHost } = await import('./environment')
       return getEnvironmentHost().createSession(connectionId, input)
     },
   )
-  ipcMain.handle(
+  sessionIpc.handle(
     AgentIpcChannels.ENVIRONMENT_GET_SESSION,
     async (_e, connectionId: string, sessionId: string) => {
       const { getEnvironmentHost } = await import('./environment')
@@ -2181,7 +2184,7 @@ function registerIpcHandlers(): void {
     },
   )
   /** Open a remote session in the chat: follow it and return its snapshot (`session.load`). */
-  ipcMain.handle(
+  sessionIpc.handle(
     AgentIpcChannels.ENVIRONMENT_OPEN_REMOTE_SESSION,
     async (
       _e,
@@ -2196,7 +2199,7 @@ function registerIpcHandlers(): void {
     },
   )
   /** Expand a summarized row: the machine that holds the session answers. */
-  ipcMain.handle(AgentIpcChannels.ENVIRONMENT_SUBSCRIBE_DETAIL, async (e, target: DetailTarget, subscriptionId: string) => {
+  sessionIpc.handle(AgentIpcChannels.ENVIRONMENT_SUBSCRIBE_DETAIL, async (e, target: DetailTarget, subscriptionId: string) => {
     const { getEnvironmentHost } = await import('./environment')
     // Packets answer this window's expansion; no other window asked for them.
     const sender = e.sender
@@ -2204,7 +2207,7 @@ function registerIpcHandlers(): void {
       if (!sender.isDestroyed()) sender.send(AgentIpcChannels.EVENT, { type: 'remote_detail', sessionId: target.sessionId, ...update })
     })
   })
-  ipcMain.handle(AgentIpcChannels.ENVIRONMENT_UNSUBSCRIBE_DETAIL, async (_e, target: DetailTarget, subscriptionId: string) => {
+  sessionIpc.handle(AgentIpcChannels.ENVIRONMENT_UNSUBSCRIBE_DETAIL, async (_e, target: DetailTarget, subscriptionId: string) => {
     const { getEnvironmentHost } = await import('./environment')
     await getEnvironmentHost().unsubscribeSessionDetail(target, subscriptionId)
   })
@@ -2305,24 +2308,12 @@ function registerIpcHandlers(): void {
       return getEnvironmentHost().listRemoteModels(connectionId, harness, apiProviderId)
     },
   )
-  ipcMain.handle(
+  sessionIpc.handle(
     AgentIpcChannels.ENVIRONMENT_SEND_SESSION_MESSAGE,
     async (
       _e,
       connectionId: string,
-      input: {
-        sessionId: string
-        text: string
-        clientMessageId?: string
-        projectPath?: string
-        providerId?: string
-        cwdHostPath?: string | null
-        model?: string | null
-        apiProviderId?: string | null
-        turnKind?: 'run' | 'steer' | 'review' | 'compact' | null
-        collaborationMode?: string | Record<string, unknown> | null
-        reviewTarget?: unknown
-      },
+      input: Parameters<EnvironmentHost['sendSessionMessage']>[1],
     ) => {
       const { getEnvironmentHost } = await import('./environment')
       const host = getEnvironmentHost()
@@ -2330,49 +2321,49 @@ function registerIpcHandlers(): void {
       return host.sendSessionMessage(connectionId, input)
     },
   )
-  ipcMain.handle(
+  sessionIpc.handle(
     AgentIpcChannels.ENVIRONMENT_MOD_UI,
     async (_e, connectionId: string, sessionId: string, op: ModUiOp, request: ModUiRequest) => {
-      if (connectionId === 'local') {
-        const session = sessionManager.getSession(sessionId)
-        if (!session) {
-          throw Object.assign(new Error('No such session'), { name: MOD_UI_UNAVAILABLE })
-        }
-        return session.modUi(op, request)
-      }
       const { getEnvironmentHost } = await import('./environment')
       return getEnvironmentHost().modUi(connectionId, sessionId, op, request)
     },
   )
-  ipcMain.handle(
+  sessionIpc.handle(
+    AgentIpcChannels.ENVIRONMENT_PATCH_SESSION_SETTINGS,
+    async (_e, connectionId: string, sessionId: string, patch: Parameters<EnvironmentHost['patchSessionSettings']>[2]) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().patchSessionSettings(connectionId, sessionId, patch)
+    },
+  )
+  sessionIpc.handle(
     AgentIpcChannels.ENVIRONMENT_INTERRUPT_SESSION,
     async (_e, connectionId: string, sessionId: string) => {
       const { getEnvironmentHost } = await import('./environment')
       return getEnvironmentHost().interruptSession(connectionId, sessionId)
     },
   )
-  ipcMain.handle(
+  sessionIpc.handle(
     AgentIpcChannels.ENVIRONMENT_RECLAIM_SESSION_CONTROL,
     async (_e, connectionId: string, sessionId: string) => {
       const { getEnvironmentHost } = await import('./environment')
       return getEnvironmentHost().reclaimSessionControl(connectionId, sessionId)
     },
   )
-  ipcMain.handle(
+  sessionIpc.handle(
     AgentIpcChannels.ENVIRONMENT_RENAME_SESSION,
     async (_e, connectionId: string, sessionId: string, title: string) => {
       const { getEnvironmentHost } = await import('./environment')
       return getEnvironmentHost().renameSession(connectionId, sessionId, title)
     },
   )
-  ipcMain.handle(
+  sessionIpc.handle(
     AgentIpcChannels.ENVIRONMENT_REMOVE_SESSION,
     async (_e, connectionId: string, sessionId: string) => {
       const { getEnvironmentHost } = await import('./environment')
       return getEnvironmentHost().removeSession(connectionId, sessionId)
     },
   )
-  ipcMain.handle(
+  sessionIpc.handle(
     AgentIpcChannels.ENVIRONMENT_SET_SESSION_UI_FLAGS,
     async (
       _e,
@@ -2384,7 +2375,7 @@ function registerIpcHandlers(): void {
       return getEnvironmentHost().setSessionUiFlags(connectionId, sessionId, flags)
     },
   )
-  ipcMain.handle(
+  sessionIpc.handle(
     AgentIpcChannels.ENVIRONMENT_FORK_SESSION,
     async (
       _e,
@@ -2395,53 +2386,40 @@ function registerIpcHandlers(): void {
       return getEnvironmentHost().forkSession(connectionId, input)
     },
   )
-  ipcMain.handle(
+  sessionIpc.handle(
     AgentIpcChannels.ENVIRONMENT_RESPOND_SESSION_PERMISSION,
     async (
       _e,
       connectionId: string,
-      input: {
-        sessionId: string
-        interactionId: string
-        decision: 'allow' | 'deny' | 'allow_always'
-      },
+      input: Parameters<EnvironmentHost['respondSessionPermission']>[1],
     ) => {
       const { getEnvironmentHost } = await import('./environment')
       return getEnvironmentHost().respondSessionPermission(connectionId, input)
     },
   )
-  ipcMain.handle(
+  sessionIpc.handle(
     AgentIpcChannels.ENVIRONMENT_RESPOND_SESSION_QUESTION,
     async (
       _e,
       connectionId: string,
-      input: {
-        sessionId: string
-        interactionId: string
-        answers: unknown
-      },
+      input: Parameters<EnvironmentHost['respondSessionQuestion']>[1],
     ) => {
       const { getEnvironmentHost } = await import('./environment')
       return getEnvironmentHost().respondSessionQuestion(connectionId, input)
     },
   )
-  ipcMain.handle(
+  sessionIpc.handle(
     AgentIpcChannels.ENVIRONMENT_RESPOND_SESSION_PLAN,
     async (
       _e,
       connectionId: string,
-      input: {
-        sessionId: string
-        interactionId: string
-        decision: 'approve' | 'reject'
-        options?: Record<string, unknown>
-      },
+      input: Parameters<EnvironmentHost['respondSessionPlan']>[1],
     ) => {
       const { getEnvironmentHost } = await import('./environment')
       return getEnvironmentHost().respondSessionPlan(connectionId, input)
     },
   )
-  ipcMain.handle(
+  sessionIpc.handle(
     AgentIpcChannels.ENVIRONMENT_RESUME_REMOTE_SESSION_EVENTS,
     async (
       _e,

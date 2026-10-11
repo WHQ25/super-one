@@ -4757,6 +4757,8 @@ export const AgentIpcChannels = {
   ENVIRONMENT_SUBSCRIBE_DETAIL: 'environment:subscribeDetail',
   ENVIRONMENT_UNSUBSCRIBE_DETAIL: 'environment:unsubscribeDetail',
   ENVIRONMENT_INTERRUPT_SESSION: 'environment:interruptSession',
+  /** Change a session's durable settings (modes, model, effort, provider), local or remote. */
+  ENVIRONMENT_PATCH_SESSION_SETTINGS: 'environment:patchSessionSettings',
   /** Take control of a remote session back after its host released it (Reconnect). */
   ENVIRONMENT_RECLAIM_SESSION_CONTROL: 'environment:reclaimSessionControl',
   /** One op on a session's mod surface (`@superone/shared/mod-ui`), local or remote. */

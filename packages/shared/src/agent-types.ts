@@ -4143,11 +4143,8 @@ export const AgentIpcChannels = {
 
   // Agent channels
   SEND_MESSAGE: 'agent:send-message',
-  DEQUEUE_MESSAGE: 'agent:dequeue-message',
-  STEER_QUEUED_MESSAGE: 'agent:steer-queued-message',
   START_QUEUED_MESSAGES: 'agent:start-queued-messages',
   PREWARM: 'agent:prewarm',
-  INTERRUPT: 'agent:interrupt',
   WORKTREE_REMOVED: 'agent:worktree-removed',
   START_REALTIME_VOICE: 'agent:start-realtime-voice',
   READY_REALTIME_VOICE: 'agent:ready-realtime-voice',
@@ -4156,23 +4153,13 @@ export const AgentIpcChannels = {
   GET_REALTIME_TIMELINE: 'agent:get-realtime-timeline',
   STOP_TASK: 'agent:stop-task',
   EVENT: 'agent:event',
-  PERMISSION_RESPONSE: 'agent:permission-response',
-  SET_PERMISSION_MODE: 'agent:set-permission-mode',
-  SET_SANDBOX_MODE: 'agent:set-sandbox-mode',
   SANDBOX_PROBE: 'sandbox:probe',
-  SET_SESSION_SETTINGS: 'agent:set-session-settings',
-  SET_SESSION_API_PROVIDER: 'agent:set-session-api-provider',
-  ANSWER_QUESTION: 'agent:answer-question',
-  DISMISS_QUESTION: 'agent:dismiss-question',
-  RESPOND_PLAN_APPROVAL: 'agent:respond-plan-approval',
   /** A widget opens its `agent`-output form in a local session's composer. */
   OPEN_WIDGET_INPUT_REQUEST: 'agent:open-widget-input-request',
   COMPOSER_OPEN: 'agent:composer-open',
   COMPOSER_AWAIT: 'agent:composer-await',
   COMPOSER_CANCEL: 'agent:composer-cancel',
   RESET_SESSION: 'agent:reset-session',
-  /** Grok ACP manual `/recap` → `x.ai/recap` (auto=false). */
-  REQUEST_SESSION_RECAP: 'agent:request-session-recap',
   CREATE_SESSION: 'agent:create-session',
   TRUNCATE_AT_CHECKPOINT: 'agent:truncate-at-checkpoint',
   REWIND_FILES: 'agent:rewind-files',
@@ -4243,9 +4230,6 @@ export const AgentIpcChannels = {
   CODEX_SKILLS_CHANGED: 'codex:skills-changed',
 
   // Codex goal
-  CODEX_GOAL_GET: 'codex:goal-get',
-  CODEX_GOAL_SET: 'codex:goal-set',
-  CODEX_GOAL_CLEAR: 'codex:goal-clear',
 
   // Codex marketplace
   CODEX_MARKETPLACE_ADD: 'codex:marketplace-add',
@@ -4752,6 +4736,7 @@ export const AgentIpcChannels = {
   ENVIRONMENT_INTERRUPT_SESSION: 'environment:interruptSession',
   /** Change a session's durable settings (modes, model, effort, provider), local or remote. */
   ENVIRONMENT_PATCH_SESSION_SETTINGS: 'environment:patchSessionSettings',
+  ENVIRONMENT_CALL_SESSION: 'environment:callSession',
   /** Take control of a remote session back after its host released it (Reconnect). */
   ENVIRONMENT_RECLAIM_SESSION_CONTROL: 'environment:reclaimSessionControl',
   /** One op on a session's mod surface (`@superone/shared/mod-ui`), local or remote. */

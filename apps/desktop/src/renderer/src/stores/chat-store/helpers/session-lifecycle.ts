@@ -36,6 +36,7 @@ import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
 import { isRemoteSession, removeRemoteSession } from '../index'
 import type { ChatStore, PerSessionState, SessionWriteTarget } from '../types'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
+import { interruptSession } from '@/lib/session-client'
 import { stopBashOutputLive } from './bash-output-live'
 
 /**
@@ -368,18 +369,16 @@ export async function interruptImpl(
   if (!activeProject) return
   set((s) => commitPerSession(s, target, () => ({ awaitingAssistantReply: false })))
 
-  // A remote node's turnInterrupted arrives on the session's stream like a local backend's.
-  const remote = parseRemoteProjectKey(activeProject)
+  // The host's turnInterrupted arrives on the session's stream; a session the
+  // host never ran (a draft) is reset here.
   let interrupted = false
-  try {
-    if (remote && sid) {
-      await window.environment.interruptSession(remote.connectionId, sid)
+  if (sid) {
+    try {
+      await interruptSession(activeProject, sid)
       interrupted = true
-    } else {
-      interrupted = sid ? await window.agent.interrupt(sid) : false
+    } catch {
+      interrupted = false
     }
-  } catch {
-    interrupted = false
   }
   if (!interrupted) {
     set((s) => commitPerSession(s, target, current => ({

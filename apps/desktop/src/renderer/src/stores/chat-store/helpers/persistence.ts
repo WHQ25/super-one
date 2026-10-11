@@ -87,6 +87,8 @@ export function _mergePersistedSessionState(session: PerSessionState, saved: Per
   const restoredCodexUsage = session.codexUsageSnapshot ?? findLatestCodexUsage(mergedMessages)
   return {
     ...session,
+    // Stored by its host, so settings changes go there rather than waiting for a first send.
+    hostSessionOwned: true,
     _title: session._title ?? saved.title ?? null,
     remoteController: saved.remoteController ?? session.remoteController ?? null,
     messages: mergedMessages,

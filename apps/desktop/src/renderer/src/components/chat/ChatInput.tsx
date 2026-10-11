@@ -105,6 +105,7 @@ import { isUnsentSession } from '@/stores/chat-store/helpers/session-liveness'
 import { prepareRemoteSendTarget, remoteTurnOptions } from '@/stores/chat-store/helpers/send-message-remote'
 import { createSendWriteScope } from '@/stores/chat-store/helpers/send-write-scope'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
+import { callSession } from '@/lib/session-client'
 import { useResolvedProviderId } from './model-selector/useSelectorProviders'
 
 export { chatInputAPI } from './chat-input-api'
@@ -333,21 +334,21 @@ export function ChatInput({
     // before then has nothing to hang off — this tells main how to persist it.
     // A remote-node session instead carries the turn options a send would now,
     // since the desktop makes that send on its behalf later.
-    const scheduleProject = sessionScope?.projectPath ?? activeProject
-    const remoteScheduleKey = useMemo(() => (scheduleProject ? parseRemoteProjectKey(scheduleProject) : null), [scheduleProject])
+    const sessionProject = sessionScope?.projectPath ?? activeProject
+    const remoteScheduleKey = useMemo(() => (sessionProject ? parseRemoteProjectKey(sessionProject) : null), [sessionProject])
     const getScheduledSendInit = useCallback(
       (sessionId: string) => {
-        if (!scheduleProject) return null
+        if (!sessionProject) return null
         const init = {
-          projectPath: scheduleProject,
+          projectPath: sessionProject,
           harnessId: activeProviderForResources,
-          worktreePath: fileRoot && fileRoot !== scheduleProject ? fileRoot : null,
+          worktreePath: fileRoot && fileRoot !== sessionProject ? fileRoot : null,
         }
         if (!remoteScheduleKey) return init
-        const worktreeActivePath = useAppStore.getState().getWorktreeState(scheduleProject).activePath
-        return { ...init, remoteTurn: remoteTurnOptions(useChatStore.getState(), scheduleProject, sessionId, worktreeActivePath) }
+        const worktreeActivePath = useAppStore.getState().getWorktreeState(sessionProject).activePath
+        return { ...init, remoteTurn: remoteTurnOptions(useChatStore.getState(), sessionProject, sessionId, worktreeActivePath) }
       },
-      [scheduleProject, remoteScheduleKey, activeProviderForResources, fileRoot],
+      [sessionProject, remoteScheduleKey, activeProviderForResources, fileRoot],
     )
     // The default message ("Continue") only makes sense against a conversation
     // that exists. In a session nobody has sent in, an empty composer has
@@ -406,9 +407,9 @@ export function ChatInput({
      * fetch, so everything downstream stays on the shared field.
      */
     useEffect(() => {
-      if (activeProviderForResources !== 'codex' || !displayedSessionId || !codexThreadId) return
-      void window.app.codexGetGoal(displayedSessionId, codexThreadId).catch(() => {})
-    }, [activeProviderForResources, displayedSessionId, codexThreadId, status])
+      if (activeProviderForResources !== 'codex' || !sessionProject || !displayedSessionId || !codexThreadId) return
+      void callSession(sessionProject, displayedSessionId, 'session.getGoal', {}).catch(() => {})
+    }, [activeProviderForResources, sessionProject, displayedSessionId, codexThreadId, status])
 
     /**
      * dsh mounts no command surface of its own: `dsh-commands` and every
@@ -707,22 +708,24 @@ export function ChatInput({
           resume: async () => { dispatchGoalSlash('/goal resume') },
         }
       }
-      // Codex needs a session row to address; the thread is resolved in main,
-      // which already holds the prewarmed one before any turn has run.
-      if (!displayedSessionId) return null
+      // Codex needs a session to address; its host resolves the thread, and
+      // already holds the prewarmed one before any turn has run.
+      if (!sessionProject || !displayedSessionId) return null
+      const project = sessionProject
       const sid = displayedSessionId
-      const tid = codexThreadId ?? null
+      const setGoal = (objective: string | null, status?: 'paused' | 'active') =>
+        callSession(project, sid, 'session.setGoal', { objective, ...(status ? { status } : {}) })
       return {
-        save: async (objective: string) => { await window.app.codexSetGoal(sid, tid, objective) },
-        clear: async () => { await window.app.codexClearGoal(sid, tid) },
+        save: async (objective: string) => { await setGoal(objective) },
+        clear: async () => { await setGoal(null) },
         pause: async () => {
-          if (sessionGoal) await window.app.codexSetGoal(sid, tid, sessionGoal.objective, 'paused')
+          if (sessionGoal) await setGoal(sessionGoal.objective, 'paused')
         },
         resume: async () => {
-          if (sessionGoal) await window.app.codexSetGoal(sid, tid, sessionGoal.objective, 'active')
+          if (sessionGoal) await setGoal(sessionGoal.objective, 'active')
         },
       }
-    }, [goalCapability, dispatchGoalSlash, displayedSessionId, codexThreadId, sessionGoal, isStreaming, scopedInterrupt])
+    }, [goalCapability, dispatchGoalSlash, sessionProject, displayedSessionId, sessionGoal, isStreaming, scopedInterrupt])
 
     /**
      * Enter goal mode, optionally seeding the composer (Edit on a live goal).
@@ -1078,15 +1081,15 @@ export function ChatInput({
      */
     const handleArmScheduled = useCallback((sendAt: number) => {
       const draft = scheduledDraft()
-      if (!scheduleProject || !remoteScheduleKey) {
+      if (!sessionProject || !remoteScheduleKey) {
         scheduleSend(draft, sendAt)
         return
       }
-      const scope = createSendWriteScope(useChatStore.setState, useChatStore.getState, scheduleProject, sessionScope ?? undefined)
-      prepareRemoteSendTarget(useChatStore.setState, useChatStore.getState, scheduleProject, remoteScheduleKey, scope)
+      const scope = createSendWriteScope(useChatStore.setState, useChatStore.getState, sessionProject, sessionScope ?? undefined)
+      prepareRemoteSendTarget(useChatStore.setState, useChatStore.getState, sessionProject, remoteScheduleKey, scope)
         .then(({ sid }) => scheduleSend(draft, sendAt, sid))
         .catch((err: unknown) => toast.error(err instanceof Error ? err.message : String(err)))
-    }, [scheduledDraft, scheduleSend, scheduleProject, remoteScheduleKey, sessionScope])
+    }, [scheduledDraft, scheduleSend, sessionProject, remoteScheduleKey, sessionScope])
 
     /**
      * Cancel. Nothing to restore: the draft was never consumed, it stayed in the

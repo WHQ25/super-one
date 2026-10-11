@@ -34,7 +34,8 @@ import {
   updateProjectState,
 } from './store-helpers'
 import type { ChatStore, PerSessionState, SessionWriteTarget } from '../types'
-import { parseRemoteProjectKey } from '@/lib/remote-project-key'
+import { connectionIdForProjectKey } from '@/lib/session-list-ops'
+import { patchSessionSettings, respondPermission, respondPlan, respondQuestion } from '@/lib/session-client'
 
 /** In-flight remote answer/dismiss keys: projectPath\0sessionId\0requestId */
 const remoteQuestionInFlight = new Set<string>()
@@ -98,37 +99,22 @@ export async function respondToPermissionImpl(
   const owner = targetSid ? { projectPath: activeProject, sessionId: targetSid } : target
   let handled = false
   try {
-    const remote = parseRemoteProjectKey(activeProject)
-    if (remote && targetSid) {
-      const decisionValue: 'allow' | 'deny' | 'allow_always' =
-        decision === 'cancel' ? 'deny' : alwaysAllow ? 'allow_always' : allow ? 'allow' : 'deny'
-      // formAnswers carries multi-launch edits (session_agents_confirm).
-      // The rest of the turn reaches the chat on the session's own stream.
-      const response = window.environment.respondSessionPermission(remote.connectionId, {
+    if (targetSid) {
+      // formAnswers carries multi-launch edits (session_agents_confirm). The host
+      // refuses an answer it has no pending request for, and the prompt stays.
+      await respondPermission(activeProject, {
         sessionId: targetSid,
         interactionId: requestId,
-        decision: decisionValue,
+        decision: decision === 'cancel' ? 'deny' : alwaysAllow ? 'allow_always' : allow ? 'allow' : 'deny',
         ...(formAnswers ? { formAnswers } : {}),
         ...(decision === 'cancel' ? { cancel: true } : {}),
+        ...(reason !== undefined ? { reason } : {}),
+        ...(selectedSuggestions ? { selectedSuggestions } : {}),
       })
-      if (respondedRequest.requestKind === 'input_request') await response
-      else void response.catch(error => { console.warn('[chat] remote permission response failed:', error) })
       handled = true
-    } else if (targetSid) {
-      handled = await window.agent.respondToPermission(
-        targetSid,
-        requestId,
-        allow,
-        alwaysAllow,
-        reason,
-        selectedSuggestions,
-        decision,
-        formAnswers,
-      )
     }
   } catch (err) {
     console.warn('[chat] respondToPermission failed:', err)
-    return false
   }
   if (!handled) {
     window.app.trace?.('permission.flow', 'ack_miss', { activeProject, activeSid, provider: session.sessionProvider }, requestId)
@@ -166,17 +152,11 @@ export async function setPermissionModeImpl(
   mode: PermissionMode,
   target?: SessionWriteTarget,
 ): Promise<void> {
-  const { projectPath: activeProject, sessionId } = resolveWriteScope(get(), target)
+  const { projectPath: activeProject, sessionId, session } = resolveWriteScope(get(), target)
   if (!activeProject) return
   if (!sessionId) return
-  // Remote node projects: UI-only until send (node has its own permission handling).
-  // Never getOrCreate a desktop SessionManager entry for a remote: path.
-  if (parseRemoteProjectKey(activeProject)) {
-    set((s) => updatePerSession(s, activeProject, sessionId, () => ({ permissionMode: mode })))
-    return
-  }
   try {
-    await window.agent.setPermissionMode(activeProject, sessionId, mode)
+    await patchSessionSettings(activeProject, sessionId, session, { permissionMode: mode })
   } catch (error) {
     console.warn('[chat] setPermissionMode failed:', error)
     return
@@ -187,27 +167,31 @@ export async function setPermissionModeImpl(
 }
 
 /**
- * Answer a node question. The prompt stays until the node acknowledges
- * (issue #21): a rejected answer leaves it to retry, and a question the node
+ * Answer or dismiss a question. The prompt stays until the host acknowledges
+ * (issue #21): a rejected answer leaves it to retry, and a question the host
  * resolved some other way is cleared by its own `interaction_resolved` event.
  */
-function respondRemoteQuestion(
+function sendQuestionResponse(
   set: ChatStoreSet,
-  connectionId: string,
   owner: SessionWriteTarget,
   requestId: string,
-  answers: unknown,
+  response: { answers: unknown; dismiss?: boolean; annotations?: QuestionAnnotations },
   codexQaItem: ReturnType<typeof _buildQuestionAnswerItem> | null,
 ): void {
   const flightKey = remoteQuestionFlightKey(owner.projectPath, owner.sessionId, requestId)
   if (remoteQuestionInFlight.has(flightKey)) return
   remoteQuestionInFlight.add(flightKey)
-  void window.environment
-    .respondSessionQuestion(connectionId, { sessionId: owner.sessionId, interactionId: requestId, answers })
+  void respondQuestion(owner.projectPath, {
+    sessionId: owner.sessionId,
+    interactionId: requestId,
+    answers: response.answers,
+    ...(response.dismiss ? { dismiss: true } : {}),
+    ...(response.annotations ? { annotations: response.annotations as Record<string, unknown> } : {}),
+  })
     .then(() => {
       clearLocalPendingQuestion(set, owner.projectPath, codexQaItem, owner)
     })
-    .catch((err) => console.warn('[chat] remote question response failed:', err))
+    .catch((err) => console.warn('[chat] question response failed:', err))
     .finally(() => remoteQuestionInFlight.delete(flightKey))
 }
 
@@ -261,12 +245,8 @@ export function answerQuestionImpl(
       : null
 
   if (targetSid) {
-    const remote = parseRemoteProjectKey(activeProject)
-    if (remote) {
-      respondRemoteQuestion(set, remote.connectionId, { projectPath: activeProject, sessionId: targetSid }, requestId, { answers, annotations }, codexQaItem)
-      return
-    }
-    void window.agent.answerQuestion(targetSid, requestId, answers, annotations)
+    sendQuestionResponse(set, { projectPath: activeProject, sessionId: targetSid }, requestId, { answers, annotations }, codexQaItem)
+    return
   }
   clearLocalPendingQuestion(set, activeProject, codexQaItem, target)
 }
@@ -282,13 +262,9 @@ export function dismissQuestionImpl(
   if (session.pendingQuestion && session.pendingQuestion.requestId !== requestId) return
 
   if (targetSid) {
-    const remote = parseRemoteProjectKey(activeProject)
-    if (remote) {
-      // Node has no dedicated dismiss — empty answers unblock the waiter.
-      respondRemoteQuestion(set, remote.connectionId, { projectPath: activeProject, sessionId: targetSid }, requestId, {}, null)
-      return
-    }
-    void window.agent.dismissQuestion(targetSid, requestId)
+    // A host without a dedicated dismiss takes the empty answers as one.
+    sendQuestionResponse(set, { projectPath: activeProject, sessionId: targetSid }, requestId, { answers: {}, dismiss: true }, null)
+    return
   }
   clearLocalPendingQuestion(set, activeProject, null, target)
 }
@@ -305,25 +281,19 @@ export function respondToPlanApprovalImpl(
   const { projectPath: activeProject, sessionId: targetSid, session } = resolveWriteScope(get(), target)
   if (!activeProject) return
   if (targetSid) {
-    const remote = parseRemoteProjectKey(activeProject)
-    if (remote) {
-      void window.environment.respondSessionPlan(remote.connectionId, {
-        sessionId: targetSid,
-        interactionId: requestId,
-        decision: approved ? 'approve' : 'reject',
-        options: feedback ? { feedback } : undefined,
-      })
-    } else {
-      window.agent.respondToPlanApproval(targetSid, requestId, approved, feedback)
-      // ACP plan exit is independent of yolo baseline. Forcing `default` here
-      // would notify Grok `permission_mode: ask` and wipe Auto / Always Approve.
-      // Claude still leaves plan into acceptEdits / default via the post-approve toggle.
-      if (approved && session.sessionProvider !== 'acp') {
-        const nextMode: PermissionMode = postApprovalMode ?? 'default'
-        void window.agent
-          .setPermissionMode(activeProject, targetSid, nextMode)
-          .catch((error) => console.warn('[chat] setPermissionMode after plan approval failed:', error))
-      }
+    void respondPlan(activeProject, {
+      sessionId: targetSid,
+      interactionId: requestId,
+      decision: approved ? 'approve' : 'reject',
+      options: feedback ? { feedback } : undefined,
+    }).catch((error) => console.warn('[chat] plan approval response failed:', error))
+    // ACP plan exit is independent of yolo baseline. Forcing `default` here
+    // would notify Grok `permission_mode: ask` and wipe Auto / Always Approve.
+    // Claude still leaves plan into acceptEdits / default via the post-approve toggle.
+    if (approved && session.sessionProvider !== 'acp') {
+      const nextMode: PermissionMode = postApprovalMode ?? 'default'
+      void patchSessionSettings(activeProject, targetSid, session, { permissionMode: nextMode })
+        .catch((error) => console.warn('[chat] setPermissionMode after plan approval failed:', error))
     }
   }
   set((s) => {
@@ -353,7 +323,7 @@ export async function setSandboxModeImpl(
   mode: SandboxMode,
   target?: SessionWriteTarget,
 ): Promise<void> {
-  const { projectPath: activeProject, ipcSessionId, session } = resolveWriteScope(get(), target)
+  const { projectPath: activeProject, sessionId, session } = resolveWriteScope(get(), target)
   if (!activeProject) return
   // One rule, the same one the event reducers and the resume path follow: a
   // sandbox we have just learned is recorded on the session it belongs to, and
@@ -377,15 +347,10 @@ export async function setSandboxModeImpl(
       }
     })
   })
-  if (parseRemoteProjectKey(activeProject)) {
-    // Node-side sandbox is not driven by desktop SessionManager; keep UI optimistic.
-    const { sandboxModeToInfo } = await import('./prefs-cache')
-    applyInfo(sandboxModeToInfo(mode))
-    return
-  }
   const provider = resolveProvider(session)
   const effectiveMode = coerceSandboxModeForHarness(provider, mode)
-  if (effectiveMode !== 'off') {
+  // This computer's sandbox support decides only for sessions this computer runs.
+  if (effectiveMode !== 'off' && connectionIdForProjectKey(activeProject) === 'local') {
     const capability = useAppStore.getState().sandboxCapability
     const supportLevel = harnessSandboxSupportLevel(provider, capability?.supportLevel)
     if (supportLevel === 'unsupported') return
@@ -395,8 +360,9 @@ export async function setSandboxModeImpl(
     }
   }
   try {
-    const updated = await window.agent.setSandboxMode(activeProject, effectiveMode, ipcSessionId)
-    applyInfo(updated)
+    const record = sessionId ? await patchSessionSettings(activeProject, sessionId, session, { sandboxMode: effectiveMode }) : null
+    const { sandboxModeToInfo } = await import('./prefs-cache')
+    applyInfo(sandboxModeToInfo((record?.sandboxMode as SandboxMode | null | undefined) ?? effectiveMode))
   } catch (err) {
     console.warn('[chat] setSandboxMode failed:', err)
   }
@@ -475,14 +441,14 @@ export async function setSessionApiProviderIdImpl(
   const isCodex = (sess.sessionProvider ?? sess.preferredProvider ?? 'claude') === 'codex'
   try {
     if (isCodex) assertCodexAccountSwitchAllowed(sess.apiProviderId, apiProviderId, sess.messages.length > 0)
-    await window.agent.setSessionApiProvider(sessionId, apiProviderId)
+    await patchSessionSettings(activeProject, sessionId, sess, { apiProviderId })
     set((s) => commitPerSession(s, target, () => ({ apiProviderId, slashCommandOutput: null })))
   } catch (err) {
     toast.error(err instanceof Error ? err.message : String(err))
     return
   }
   // Remote: always re-list from the node provider store. Local Codex also re-lists.
-  const isRemote = !!parseRemoteProjectKey(activeProject)
+  const isRemote = connectionIdForProjectKey(activeProject) !== 'local'
   if (isCodex) {
     void get().refreshCodexModels(false)
   } else if (isRemote) {

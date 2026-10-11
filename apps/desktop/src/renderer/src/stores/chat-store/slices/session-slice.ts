@@ -9,6 +9,7 @@ import {
   cancelPrewarm,
   commitPerSession,
   getScopedPerSession,
+  resolveWriteScope,
   schedulePrewarm,
   updateActivePerSession,
   updatePerSession,
@@ -18,10 +19,23 @@ import { deliverUserSend, dropSendReplay, replayFailedSend } from '../helpers/se
 import { createSendWriteScope } from '../helpers/send-write-scope'
 import { resendRemoteMessageImpl } from '../helpers/send-message-remote'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
+import { callSession } from '@/lib/session-client'
 import { failedMessageResend, withoutSendFailure } from '@superone/chat-core'
 import { isDuplicateSend } from '@superone/shared/send-failure'
 import { restoreSentDraft } from '@/components/chat/chat-input/restore-sent-draft'
 import { messageDraft } from '@/components/chat/chat-input/message-draft'
+
+/** Take a queued message back from its host; false once the host has started it. */
+async function dequeue(state: ChatStore, messageId: string, target?: SessionWriteTarget): Promise<boolean> {
+  const { projectPath, sessionId } = resolveWriteScope(state, target)
+  if (!projectPath || !sessionId) return false
+  try {
+    return (await callSession(projectPath, sessionId, 'session.dequeue', { clientMessageId: messageId })).removed
+  } catch (error) {
+    console.warn('[chat] dequeue failed:', error)
+    return false
+  }
+}
 
 /** Put a user message the host never ran back into the composer, after anything typed since. */
 function composerDraftFrom(current: PerSessionState, msg: ChatMessage): Partial<PerSessionState> {
@@ -103,13 +117,9 @@ export const createSessionSlice: StateCreator<ChatStore, [], [], SessionSlice> =
   },
 
   editQueuedMessage: async (messageId, target) => {
-    const projectPath = target?.projectPath ?? get().activeProject
-    if (!projectPath) return
-    const session = getScopedPerSession(get(), target)
-    const msg = session.queuedMessages.find((m) => m.id === messageId)
+    const msg = getScopedPerSession(get(), target).queuedMessages.find((m) => m.id === messageId)
     if (!msg) return
-    const removed = await window.agent.dequeueMessage(projectPath, messageId)
-    if (!removed) return
+    if (!await dequeue(get(), messageId, target)) return
     set((s) => commitPerSession(s, target, (sess) => ({
       queuedMessages: sess.queuedMessages.filter((m) => m.id !== messageId),
       ...composerDraftFrom(sess, msg),
@@ -152,22 +162,18 @@ export const createSessionSlice: StateCreator<ChatStore, [], [], SessionSlice> =
   },
 
   deleteQueuedMessage: async (messageId, target) => {
-    const projectPath = target?.projectPath ?? get().activeProject
-    if (!projectPath) return
-    const removed = await window.agent.dequeueMessage(projectPath, messageId)
-    if (!removed) return
+    if (!await dequeue(get(), messageId, target)) return
     set((s) => commitPerSession(s, target, (sess) => ({
       queuedMessages: sess.queuedMessages.filter((m) => m.id !== messageId),
     })))
   },
 
   steerQueuedMessage: async (messageId, target, priority) => {
-    const projectPath = target?.projectPath ?? get().activeProject
-    if (!projectPath) return false
-    const session = getScopedPerSession(get(), target)
+    const { projectPath, sessionId, session } = resolveWriteScope(get(), target)
+    if (!projectPath || !sessionId) return false
     if (!session.queuedMessages.some((message) => message.id === messageId)) return false
     try {
-      return await window.agent.steerQueuedMessage(projectPath, messageId, target?.sessionId, priority)
+      return (await callSession(projectPath, sessionId, 'session.steer', { clientMessageId: messageId, priority: priority ?? 'now' })).ok
     } catch (error) {
       toastSendFailure(error)
       return false

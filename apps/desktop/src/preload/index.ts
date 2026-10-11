@@ -3,7 +3,7 @@ import { collaborationMailbox } from './collaboration-mailbox'
 import { mediaComposerAPI } from './media-composer-api'
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { AgentIpcChannels, type AgentEvent, type NativeContextMenuItemSpec, type AgentPrewarmHint, type BashOutputEvent, type CodexCollaborationMode, type CodexGoalStatus, type CodexPermissionPreset, type CodexReasoningEffort, type CodexReviewTarget, type CodexExternalAgentItem, type CodexMcpOauthLoginOptions, type ProviderEndpointTestResponse, type DiscoverModelsResult, type RemoteDeviceConfig, type SandboxMode, type SendMessageRequest, type ContentBlock, type ChatMessageContext, type ClaudeSteerPriority, type WorktreeActivateRequest, type WorktreeHandoffResult, type WorktreeAssignResult, type GitDirtyStatus, type SessionForkRequest, type SessionForkResult, type SideChatStartRequest, type SideChatStartResult, type HookSavePayload, type TerminalEvent, type TerminalListItem, type TerminalSnapshot, type HarnessId, type BrowserAudioState, type BrowserCertError, type BrowserOpenTabRequest, type UpsertMediaProviderRequest, type ThemeMode, type ComputerUseDisplayInfo, type ComputerUseViewfinderClaim, type ComputerUseViewfinderFrame, type RealtimeVoiceStartRequest, type RealtimeTimelineResult, type CodexRealtimeVoiceCatalog } from '@superone/shared/agent-types'
+import { AgentIpcChannels, type AgentEvent, type NativeContextMenuItemSpec, type AgentPrewarmHint, type BashOutputEvent, type CodexCollaborationMode, type CodexPermissionPreset, type CodexReasoningEffort, type CodexReviewTarget, type CodexExternalAgentItem, type CodexMcpOauthLoginOptions, type ProviderEndpointTestResponse, type DiscoverModelsResult, type RemoteDeviceConfig, type SendMessageRequest, type ContentBlock, type ChatMessageContext, type WorktreeActivateRequest, type WorktreeHandoffResult, type WorktreeAssignResult, type GitDirtyStatus, type SessionForkRequest, type SessionForkResult, type SideChatStartRequest, type SideChatStartResult, type HookSavePayload, type TerminalEvent, type TerminalListItem, type TerminalSnapshot, type HarnessId, type BrowserAudioState, type BrowserCertError, type BrowserOpenTabRequest, type UpsertMediaProviderRequest, type ThemeMode, type ComputerUseDisplayInfo, type ComputerUseViewfinderClaim, type ComputerUseViewfinderFrame, type RealtimeVoiceStartRequest, type RealtimeTimelineResult, type CodexRealtimeVoiceCatalog } from '@superone/shared/agent-types'
 import type { McpbInstallRequest } from '@superone/shared/mcpb-types'
 import type { MobileAppDownloads } from '@superone/shared/mobile-updates'
 import type { TerminalCommandRule } from '@superone/shared/terminal-command-rules'
@@ -47,11 +47,7 @@ const agentAPI = {
   sendMessage: (projectPath: string, request: SendMessageRequest) =>
     ipcRenderer.invoke(AgentIpcChannels.SEND_MESSAGE, projectPath, request),
 
-  dequeueMessage: (projectPath: string, clientMessageId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.DEQUEUE_MESSAGE, projectPath, clientMessageId) as Promise<boolean>,
 
-  steerQueuedMessage: (projectPath: string, clientMessageId: string, sessionId?: string, priority?: ClaudeSteerPriority) =>
-    ipcRenderer.invoke(AgentIpcChannels.STEER_QUEUED_MESSAGE, projectPath, clientMessageId, sessionId, priority) as Promise<boolean>,
 
   startQueuedMessages: (projectPath: string, sessionId?: string) =>
     ipcRenderer.invoke(AgentIpcChannels.START_QUEUED_MESSAGES, projectPath, sessionId) as Promise<boolean>,
@@ -59,8 +55,6 @@ const agentAPI = {
   prewarm: (projectPath: string, hint?: AgentPrewarmHint) =>
     ipcRenderer.invoke(AgentIpcChannels.PREWARM, projectPath, hint),
 
-  interrupt: (sessionId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.INTERRUPT, sessionId) as Promise<boolean>,
 
   reportWorktreeRemoved: (sessionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.WORKTREE_REMOVED, sessionId) as Promise<void>,
@@ -83,8 +77,6 @@ const agentAPI = {
   stopTask: (sessionId: string, taskId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.STOP_TASK, sessionId, taskId) as Promise<boolean>,
 
-  respondToPermission: (sessionId: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], decision?: 'cancel', formAnswers?: Record<string, unknown>) =>
-    ipcRenderer.invoke(AgentIpcChannels.PERMISSION_RESPONSE, sessionId, requestId, allow, alwaysAllow, reason, selectedSuggestions, decision, formAnswers) as Promise<boolean>,
 
   openWidgetInputRequest: (input: { projectPath: string; sessionId: string; messageId: string; spec: import('@superone/shared/input-request').InputRequestSpec }) =>
     ipcRenderer.invoke(AgentIpcChannels.OPEN_WIDGET_INPUT_REQUEST, input) as Promise<import('@superone/shared/agent-types').OpenWidgetInputRequestResult>,
@@ -95,29 +87,15 @@ const agentAPI = {
   composerCancel: (viewId: string, localId?: string) =>
     ipcRenderer.invoke(AgentIpcChannels.COMPOSER_CANCEL, viewId, localId) as Promise<void>,
 
-  setPermissionMode: (projectPath: string, sessionId: string, mode: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.SET_PERMISSION_MODE, projectPath, sessionId, mode) as Promise<boolean>,
 
-  setSandboxMode: (projectPath: string, mode: SandboxMode, sessionId?: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.SET_SANDBOX_MODE, projectPath, mode, sessionId),
 
-  setSessionSettings: (projectPath: string, settings: { model?: string | null; effort?: SendMessageRequest['effort'] | null; ultracode?: boolean; mode?: string | null; agentPreset?: string | null; contextWindow?: number | null }, sessionId?: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.SET_SESSION_SETTINGS, projectPath, settings, sessionId),
 
-  setSessionApiProvider: (sessionId: string, apiProviderId: string | null) =>
-    ipcRenderer.invoke(AgentIpcChannels.SET_SESSION_API_PROVIDER, sessionId, apiProviderId) as Promise<void>,
 
   broadcastSessionSetting: (sessionId: string, patch: import('@superone/shared/agent-types').SessionSettingsPatch) =>
     ipcRenderer.invoke(AgentIpcChannels.BROADCAST_SESSION_SETTING, sessionId, patch) as Promise<void>,
 
-  answerQuestion: (sessionId: string, requestId: string, answers: Record<string, string>, annotations?: Record<string, { preview?: string; notes?: string }>) =>
-    ipcRenderer.invoke(AgentIpcChannels.ANSWER_QUESTION, sessionId, requestId, answers, annotations),
 
-  dismissQuestion: (sessionId: string, requestId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.DISMISS_QUESTION, sessionId, requestId),
 
-  respondToPlanApproval: (sessionId: string, requestId: string, approved: boolean, feedback?: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.RESPOND_PLAN_APPROVAL, sessionId, requestId, approved, feedback),
 
   createSession: (projectPath: string): Promise<string> =>
     ipcRenderer.invoke(AgentIpcChannels.CREATE_SESSION, projectPath),
@@ -125,9 +103,6 @@ const agentAPI = {
   resetSession: (sessionId: string, newSessionId?: string) =>
     ipcRenderer.invoke(AgentIpcChannels.RESET_SESSION, sessionId, newSessionId),
 
-  /** Grok ACP manual `/recap` — host RPC, not a prompt turn. */
-  requestSessionRecap: (sessionId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.REQUEST_SESSION_RECAP, sessionId) as Promise<boolean>,
 
   truncateAtCheckpoint: (projectPath: string, checkpointId: string): Promise<boolean> =>
     ipcRenderer.invoke(AgentIpcChannels.TRUNCATE_AT_CHECKPOINT, projectPath, checkpointId),
@@ -676,6 +651,8 @@ const environmentAPI = {
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_UNSUBSCRIBE_DETAIL, target, subscriptionId),
   patchSessionSettings: (connectionId: string, sessionId: string, patch: SessionSettingsPatch) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_PATCH_SESSION_SETTINGS, connectionId, sessionId, patch),
+  callSession: (connectionId: string, sessionId: string, method: string, input: unknown) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_CALL_SESSION, connectionId, sessionId, method, input),
   interruptSession: (connectionId: string, sessionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_INTERRUPT_SESSION, connectionId, sessionId),
   reclaimSessionControl: (connectionId: string, sessionId: string) =>
@@ -1501,13 +1478,6 @@ const appAPI = {
   codexGetMcpStatus: (projectPath: string, serverName?: string) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_MCP_STATUS, projectPath, serverName),
 
-  // Codex Goal
-  codexGetGoal: (sessionId: string, threadId: string | null) =>
-    ipcRenderer.invoke(AgentIpcChannels.CODEX_GOAL_GET, sessionId, threadId),
-  codexSetGoal: (sessionId: string, threadId: string | null, objective: string, status?: CodexGoalStatus) =>
-    ipcRenderer.invoke(AgentIpcChannels.CODEX_GOAL_SET, sessionId, threadId, objective, status),
-  codexClearGoal: (sessionId: string, threadId: string | null) =>
-    ipcRenderer.invoke(AgentIpcChannels.CODEX_GOAL_CLEAR, sessionId, threadId),
 
   // Codex Marketplace
   codexMarketplaceAdd: (projectPath: string, request: { source: string; refName?: string; sparsePaths?: string[] }) =>

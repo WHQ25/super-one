@@ -301,7 +301,7 @@ import {
   togglePlanModeShortcutImpl,
 } from './helpers/interaction'
 import { resetLock } from './helpers/lifecycle'
-import { loadStoredSession } from '@/lib/session-client'
+import { loadStoredSession, pushSettings } from '@/lib/session-client'
 
 // --- Store implementation ---
 
@@ -513,14 +513,14 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
   // setSelectedCodexCollaborationMode / refreshCodexModels / refreshCodexSkills now provided by createCodexSlice
 
   setDshPreset: (preset, target) => {
-    const { projectPath, ipcSessionId } = resolveWriteScope(get(), target)
+    const { projectPath, sessionId, session } = resolveWriteScope(get(), target)
     if (!projectPath) return
     // Held per session and never persisted: once the session has an agent,
     // dsh's own durable log is authoritative and the picker reads that instead.
     set((s) => commitPerSession(s, target, () => ({ dshPreset: preset })))
-    // Folded into the session's provider config on the main side, which is what
-    // the backend reads when it creates the dsh agent.
-    void window.agent.setSessionSettings(projectPath, { agentPreset: preset }, ipcSessionId)
+    // Folded into the session's provider config on its host, which is what the
+    // backend reads when it creates the dsh agent.
+    pushSettings(projectPath, sessionId, session, { agentPreset: preset })
   },
 
   setPreferredProvider: (provider, opts) => setPreferredProviderImpl(set, get, provider, opts),

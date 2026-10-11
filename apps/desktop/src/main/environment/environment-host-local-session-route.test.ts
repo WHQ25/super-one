@@ -9,8 +9,11 @@ vi.mock('electron', () => ({
 }))
 vi.mock('../logger', () => ({ default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() } }))
 
+import type { DesktopDomainDeps } from '../node-host/desktop-domain'
 import { connectPhone, phoneDomain } from '../node-host/phone-endpoint-test-fixtures'
 import type { FakeSession } from '../node-host/node-host-test-fixtures'
+import { createPhoneMethods } from '../remote/phone-methods'
+import type { Session } from '../session/types'
 import { runWindowControl } from '../session/control-context'
 import { EnvironmentHost } from './environment-host'
 import { InProcessRpcClient } from './in-process-rpc-client'
@@ -19,8 +22,8 @@ const cleanup: Array<() => void> = []
 afterEach(() => { while (cleanup.length) cleanup.pop()!() })
 
 /** The window's environment route against a real desktop domain, as `window.environment` reaches it. */
-function localRoute() {
-  const fixture = phoneDomain(cleanup)
+function localRoute(extra: Partial<DesktopDomainDeps> = {}) {
+  const fixture = phoneDomain(cleanup, extra)
   const host = new EnvironmentHost(fixture.userDataDir)
   cleanup.push(() => host.dispose())
   host.registry.getLocal().bindProtocol(new InProcessRpcClient(fixture.domain))
@@ -115,6 +118,27 @@ describe('local sessions on the environment route', () => {
     const loaded = await host.openRemoteSession('local', { sessionId: 'own', full: true })
     expect(loaded.state).toMatchObject({ stored })
     expect(loaded.before).toBeNull()
+  })
+
+  it('reaches the queue and the goal through one session call', async () => {
+    const live: { getSession?: (id: string) => Session | null } = {}
+    const { host, own, sessions } = localRoute({
+      phoneMethods: createPhoneMethods({ sessions: { getSession: (id) => live.getSession!(id) }, agent: {} as never }),
+    })
+    live.getSession = (id) => sessions.getSession(id)
+    own.queued = ['q1']
+    expect(await runWindowControl(7, () => host.callSession('local', 'own', 'session.dequeue', { clientMessageId: 'q1' }))).toEqual({ removed: true })
+    expect(await runWindowControl(7, () => host.callSession('local', 'own', 'session.steer', { clientMessageId: 'q2', priority: 'next' }))).toEqual({ ok: true })
+    expect(own.commands.at(-1)).toEqual({ kind: 'claude.steer_queued', clientMessageId: 'q2', priority: 'next' })
+
+    own.harnessId = 'codex'
+    await runWindowControl(7, () => host.callSession('local', 'own', 'session.setGoal', { objective: 'ship it' }))
+    // A read takes no grant, so it needs no window.
+    expect(await host.callSession('local', 'own', 'session.getGoal', {})).toEqual({ goal: { objective: 'ship it', status: 'active' } })
+    await runWindowControl(7, () => host.callSession('local', 'own', 'session.setGoal', { objective: null }))
+    expect(own.goal).toBeNull()
+    await expect(host.callSession('local', 'own', 'session.dequeue', { clientMessageId: 'q1' })).rejects.toThrow('local session control needs a window')
+    await expect(runWindowControl(7, () => host.callSession('local', 'own', 'session.remove' as never, {} as never))).rejects.toMatchObject({ code: 'invalid_argument' })
   })
 
   it('creates and forks local sessions', async () => {

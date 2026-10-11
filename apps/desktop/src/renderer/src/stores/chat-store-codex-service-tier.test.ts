@@ -35,7 +35,6 @@ const mockWindowAgent = {
   parkDraftSession: vi.fn().mockResolvedValue(undefined),
   activateSession: vi.fn().mockResolvedValue(undefined),
   broadcastSessionSetting: vi.fn().mockResolvedValue(undefined),
-  setSessionSettings: vi.fn().mockResolvedValue(undefined),
   prewarm: vi.fn().mockResolvedValue(undefined),
 }
 

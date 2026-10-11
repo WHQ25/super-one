@@ -29,11 +29,6 @@ const mockWindowAgent = {
   activateSession: vi.fn().mockResolvedValue(undefined),
   getSessionId: vi.fn().mockResolvedValue(''),
   sendMessage: vi.fn().mockResolvedValue(undefined),
-  respondToPermission: vi.fn().mockResolvedValue(undefined),
-  answerQuestion: vi.fn().mockResolvedValue(undefined),
-  dismissQuestion: vi.fn().mockResolvedValue(undefined),
-  respondToPlanApproval: vi.fn().mockResolvedValue(undefined),
-  setPermissionMode: vi.fn().mockResolvedValue(undefined),
   prewarm: vi.fn().mockResolvedValue(undefined),
 }
 
@@ -51,7 +46,14 @@ const mockWindowApp = {
   }),
 }
 
+/** The plan answer and the post-approval mode reach the session's host (`/proj` is `local`). */
+const mockWindowEnvironment = {
+  respondSessionPlan: vi.fn().mockResolvedValue(undefined),
+  patchSessionSettings: vi.fn().mockResolvedValue({}),
+}
+
 Object.defineProperty(window, 'agent', { value: mockWindowAgent, writable: true, configurable: true })
+Object.assign(window.environment, mockWindowEnvironment)
 Object.defineProperty(window, 'app', { value: mockWindowApp, writable: true, configurable: true })
 Object.defineProperty(window, 'localStorage', { value: mockLocalStorage, writable: true, configurable: true })
 vi.stubGlobal('localStorage', mockLocalStorage)
@@ -119,6 +121,7 @@ function seedPlanApprovalState(
           [sid]: {
             ...createDefaultPerSessionState(),
             permissionMode: initialMode,
+            hostSessionOwned: true,
             selectedModel: opts?.selectedModel ?? '',
             sessionProvider: opts?.sessionProvider ?? 'claude',
             pendingPlanApproval: {
@@ -139,6 +142,15 @@ function activeSession() {
   const state = useChatStore.getState()
   const proj = state.projectSessions[state.activeProject!]
   return proj._sessions[proj._activeSessionId!]
+}
+
+function expectPlanAnswer(decision: 'approve' | 'reject', feedback?: unknown) {
+  expect(mockWindowEnvironment.respondSessionPlan).toHaveBeenCalledWith('local', {
+    sessionId: expect.any(String),
+    interactionId: 'plan-req-1',
+    decision,
+    options: feedback ? { feedback } : undefined,
+  })
 }
 
 /** Shortcuts only fire while focus is inside [data-chat-root]. */
@@ -162,10 +174,8 @@ describe('PlanApprovalPrompt — integration', () => {
     fireEvent.keyDown(window, { key: '1' })
     fireEvent.keyDown(window, { key: 'Enter' })
 
-    expect(mockWindowAgent.respondToPlanApproval).toHaveBeenCalledWith(
-      expect.any(String), 'plan-req-1', true, undefined,
-    )
-    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/proj', expect.any(String), 'auto')
+    expectPlanAnswer('approve')
+    expect(mockWindowEnvironment.patchSessionSettings).toHaveBeenCalledWith('local', expect.any(String), { permissionMode: 'auto' })
 
     const session = activeSession()
     expect(session.permissionMode).toBe('auto')
@@ -179,10 +189,8 @@ describe('PlanApprovalPrompt — integration', () => {
 
     fireEvent.keyDown(window, { key: 'Tab', shiftKey: true })
 
-    expect(mockWindowAgent.respondToPlanApproval).toHaveBeenCalledWith(
-      expect.any(String), 'plan-req-1', true, undefined,
-    )
-    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/proj', expect.any(String), 'auto')
+    expectPlanAnswer('approve')
+    expect(mockWindowEnvironment.patchSessionSettings).toHaveBeenCalledWith('local', expect.any(String), { permissionMode: 'auto' })
     expect(activeSession().permissionMode).toBe('auto')
   })
 
@@ -192,10 +200,8 @@ describe('PlanApprovalPrompt — integration', () => {
 
     fireEvent.keyDown(window, { key: 'Enter' })
 
-    expect(mockWindowAgent.respondToPlanApproval).toHaveBeenCalledWith(
-      expect.any(String), 'plan-req-1', true, undefined,
-    )
-    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/proj', expect.any(String), 'default')
+    expectPlanAnswer('approve')
+    expect(mockWindowEnvironment.patchSessionSettings).toHaveBeenCalledWith('local', expect.any(String), { permissionMode: 'default' })
     expect(activeSession().permissionMode).toBe('default')
   })
 
@@ -205,10 +211,8 @@ describe('PlanApprovalPrompt — integration', () => {
 
     fireEvent.keyDown(window, { key: 'Escape' })
 
-    expect(mockWindowAgent.respondToPlanApproval).toHaveBeenCalledWith(
-      expect.any(String), 'plan-req-1', false, undefined,
-    )
-    expect(mockWindowAgent.setPermissionMode).not.toHaveBeenCalled()
+    expectPlanAnswer('reject')
+    expect(mockWindowEnvironment.patchSessionSettings).not.toHaveBeenCalled()
     const session = activeSession()
     expect(session.permissionMode).toBe('plan')
     expect(session.pendingPlanApproval).toBeNull()
@@ -224,7 +228,7 @@ describe('PlanApprovalPrompt — integration', () => {
     ;(container.querySelector('[data-chat-root]') as HTMLElement).focus()
     fireEvent.keyDown(window, { key: 'Enter' })
 
-    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/proj', expect.any(String), 'auto')
+    expect(mockWindowEnvironment.patchSessionSettings).toHaveBeenCalledWith('local', expect.any(String), { permissionMode: 'auto' })
   })
 
   it('scenario: account+model support auto mode → toggle switches post-approval mode to "auto"', () => {
@@ -256,10 +260,8 @@ describe('PlanApprovalPrompt — integration', () => {
     fireEvent.keyDown(window, { key: '1' })
     fireEvent.keyDown(window, { key: 'Enter' })
 
-    expect(mockWindowAgent.respondToPlanApproval).toHaveBeenCalledWith(
-      expect.any(String), 'plan-req-1', true, undefined,
-    )
-    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/proj', expect.any(String), 'auto')
+    expectPlanAnswer('approve')
+    expect(mockWindowEnvironment.patchSessionSettings).toHaveBeenCalledWith('local', expect.any(String), { permissionMode: 'auto' })
     expect(activeSession().permissionMode).toBe('auto')
   })
 
@@ -291,7 +293,7 @@ describe('PlanApprovalPrompt — integration', () => {
 
     fireEvent.keyDown(window, { key: 'Tab', shiftKey: true })
 
-    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/proj', expect.any(String), 'auto')
+    expect(mockWindowEnvironment.patchSessionSettings).toHaveBeenCalledWith('local', expect.any(String), { permissionMode: 'auto' })
     expect(activeSession().permissionMode).toBe('auto')
   })
 
@@ -304,10 +306,8 @@ describe('PlanApprovalPrompt — integration', () => {
     // Click Reject rather than Enter — Enter without feedback-focus approves.
     fireEvent.click(screen.getAllByRole('button', { name: /Reject|拒绝/ })[0])
 
-    expect(mockWindowAgent.respondToPlanApproval).toHaveBeenCalledWith(
-      expect.any(String), 'plan-req-1', false, 'add error handling',
-    )
-    expect(mockWindowAgent.setPermissionMode).not.toHaveBeenCalled()
+    expectPlanAnswer('reject', 'add error handling')
+    expect(mockWindowEnvironment.patchSessionSettings).not.toHaveBeenCalled()
   })
 
   it.each([{ shiftKey: true }, { altKey: true }])('keeps plan feedback newlines without approving or rejecting %j', (modifier) => {
@@ -319,11 +319,9 @@ describe('PlanApprovalPrompt — integration', () => {
     input.setSelectionRange(input.value.length, input.value.length)
     fireEvent.keyDown(input, { key: 'Enter', ...modifier })
     fireEvent.change(input, { target: { value: `${input.value}Preserve the original data` } })
-    expect(mockWindowAgent.respondToPlanApproval).not.toHaveBeenCalled()
+    expect(mockWindowEnvironment.respondSessionPlan).not.toHaveBeenCalled()
     fireEvent.keyDown(input, { key: 'Enter' })
-    expect(mockWindowAgent.respondToPlanApproval).toHaveBeenCalledWith(
-      expect.any(String), 'plan-req-1', false, 'Add error handling\nPreserve the original data',
-    )
+    expectPlanAnswer('reject', 'Add error handling\nPreserve the original data')
   })
 
   it('scenario: sticky line comment is serialized into reject feedback', async () => {
@@ -375,13 +373,8 @@ describe('PlanApprovalPrompt — integration', () => {
     })
     fireEvent.click(screen.getAllByRole('button', { name: /Reject|拒绝/ })[0])
 
-    expect(mockWindowAgent.respondToPlanApproval).toHaveBeenCalledWith(
-      expect.any(String),
-      'plan-req-1',
-      false,
-      expect.stringMatching(/Proposed plan line|Comment:\nmake this async/),
-    )
-    const feedback = mockWindowAgent.respondToPlanApproval.mock.calls[0][3] as string
+    expectPlanAnswer('reject', expect.stringMatching(/Proposed plan line|Comment:\nmake this async/))
+    const feedback = (mockWindowEnvironment.respondSessionPlan.mock.calls[0][1] as { options: { feedback: string } }).options.feedback
     expect(feedback).toContain('make this async')
     expect(feedback).toMatch(/step A/)
   })
@@ -399,9 +392,7 @@ describe('PlanApprovalPrompt — integration', () => {
     ;(document.querySelector('[data-chat-root]') as HTMLElement).focus()
     fireEvent.keyDown(window, { key: 'Enter' })
 
-    expect(mockWindowAgent.respondToPlanApproval).toHaveBeenCalledWith(
-      expect.any(String), 'plan-req-1', true, undefined,
-    )
+    expectPlanAnswer('approve')
     // The follow-up is now addressed to the pane's own session; outside a
     // SessionScopeProvider that resolves to undefined (= the active session).
     expect(sendSpy).toHaveBeenCalledWith(
@@ -426,9 +417,7 @@ describe('PlanApprovalPrompt — integration', () => {
     ;(document.querySelector('[data-chat-root]') as HTMLElement).focus()
     fireEvent.keyDown(window, { key: 'Enter' })
 
-    expect(mockWindowAgent.respondToPlanApproval).toHaveBeenCalledWith(
-      expect.any(String), 'plan-req-1', true, undefined,
-    )
+    expectPlanAnswer('approve')
     expect(sendSpy).not.toHaveBeenCalled()
   })
 })

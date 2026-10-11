@@ -13,7 +13,8 @@ import { AcpModelSelector } from './AcpModelSelector'
 import { useChatStore } from '@/stores/chat'
 
 const PROJECT = '/ctx'
-const setSessionSettings = vi.fn<(...args: unknown[]) => Promise<void>>()
+/** `window.environment.patchSessionSettings`: the session's host takes the window. */
+const patchSessionSettings = vi.fn<(...args: unknown[]) => Promise<unknown>>()
 
 const GROK: ModelOption = {
   id: 'grok-4.7',
@@ -68,6 +69,7 @@ function seed(models: ModelOption[], selected = models[0]?.id ?? ''): void {
             acpModeConfigId: 'reasoning_effort',
             selectedAcpModeId: 'high',
             selectedModel: selected,
+            hostSessionOwned: true,
           },
         },
       },
@@ -96,8 +98,8 @@ function pickedWindow(): number | null {
 
 beforeEach(() => {
   error.mockClear()
-  setSessionSettings.mockReset().mockResolvedValue(undefined)
-  Object.assign(window.agent, { setSessionSettings })
+  patchSessionSettings.mockReset().mockResolvedValue({})
+  Object.assign(window.environment, { patchSessionSettings })
 })
 
 afterEach(() => {
@@ -137,11 +139,11 @@ describe('ACP context window inside the model menu', () => {
     expect(checked('500K')).toBe(false)
 
     await user.click(screen.getByRole('menuitem', { name: '256K' }))
-    expect(setSessionSettings).not.toHaveBeenCalled()
+    expect(patchSessionSettings).not.toHaveBeenCalled()
 
     await user.click(screen.getByRole('menuitem', { name: '500K' }))
 
-    expect(setSessionSettings).toHaveBeenCalledWith(PROJECT, { contextWindow: 500_000 }, undefined)
+    expect(patchSessionSettings).toHaveBeenCalledWith('local', useChatStore.getState().projectSessions[PROJECT]!._activeSessionId, { contextWindow: 500_000 })
     await waitFor(() => expect(pickedWindow()).toBe(500_000))
     expect(trigger()).toHaveTextContent('High')
     expect(trigger()).not.toHaveTextContent('500K')
@@ -157,7 +159,7 @@ describe('ACP context window inside the model menu', () => {
 
   it('puts the check back on the current window when the agent rejects the pick', async () => {
     const user = userEvent.setup()
-    setSessionSettings.mockRejectedValueOnce(new Error('invalid_params'))
+    patchSessionSettings.mockRejectedValueOnce(new Error('invalid_params'))
     seed([GROK])
     render(<AcpModelSelector />)
 

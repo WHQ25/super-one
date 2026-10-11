@@ -77,9 +77,6 @@ const mockWindowAgent = {
   setSessionForeground: vi.fn().mockResolvedValue(undefined),
   parkSession: vi.fn().mockResolvedValue({ permissionMode: 'default', sandboxInfo: { enabled: false, autoAllowBash: false } }),
   disconnectRemoteSession: vi.fn().mockResolvedValue(undefined),
-  setPermissionMode: vi.fn().mockResolvedValue(undefined),
-  interrupt: vi.fn().mockResolvedValue(true),
-  setSessionSettings: vi.fn().mockResolvedValue(undefined),
 }
 
 const mockWindowApp = {

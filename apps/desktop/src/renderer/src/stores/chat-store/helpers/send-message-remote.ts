@@ -9,6 +9,7 @@ import { isGrokAcpAgent } from '@superone/shared/acp-brand'
 import { CLAUDE_INTERCEPTED_COMMANDS } from '../index'
 import type { ChatProvider, ChatStore, InputSegment, Mention, PerSessionState } from '../types'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
+import { callSession } from '@/lib/session-client'
 import type { NodeSessionSnapshot } from '@/lib/remote-session-messages'
 import { providerSessionIdFromResume } from '@superone/shared/environment'
 import { expandPathRefTagsForAgent, stripMiniAppMarkup } from '@superone/shared/miniapp-prompt-tags'
@@ -51,7 +52,7 @@ export async function sendRemoteMessageImpl(
           const sid = resolveWriteSid()
           if (sid) {
             try {
-              const ok = await window.agent.requestSessionRecap(sid)
+              const { ok } = await callSession(projectPath, sid, 'session.recap', { auto: false })
               if (!ok) patchSession(() => ({ isRecapping: false }))
             } catch {
               patchSession(() => ({ isRecapping: false }))

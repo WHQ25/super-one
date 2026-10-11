@@ -31,11 +31,6 @@ const mockWindowAgent = {
   activateSession: vi.fn().mockResolvedValue(undefined),
   getSessionId: vi.fn().mockResolvedValue(''),
   sendMessage: vi.fn().mockResolvedValue(undefined),
-  respondToPermission: vi.fn().mockResolvedValue(true),
-  answerQuestion: vi.fn().mockResolvedValue(undefined),
-  dismissQuestion: vi.fn().mockResolvedValue(undefined),
-  respondToPlanApproval: vi.fn().mockResolvedValue(undefined),
-  setPermissionMode: vi.fn().mockResolvedValue(undefined),
   prewarm: vi.fn().mockResolvedValue(undefined),
 }
 
@@ -61,7 +56,14 @@ const mockWindowApp = {
   }),
 }
 
+/** Answers and mode changes reach the session's host; `/proj` is a plain path, so `local`. */
+const mockWindowEnvironment = {
+  respondSessionPermission: vi.fn().mockResolvedValue(undefined),
+  patchSessionSettings: vi.fn().mockResolvedValue({}),
+}
+
 Object.defineProperty(window, 'agent', { value: mockWindowAgent, configurable: true })
+Object.assign(window.environment, mockWindowEnvironment)
 Object.defineProperty(window, 'app', { value: mockWindowApp, configurable: true })
 Object.defineProperty(window, 'localStorage', { value: mockLocalStorage, configurable: true })
 
@@ -118,7 +120,7 @@ function seedProjectWithActiveSession(projectPath: string, activeSid: string) {
           ...proj,
           _activeSessionId: activeSid,
           _sessions: {
-            [activeSid]: { ...createDefaultPerSessionState(), cwd: projectPath, status: 'streaming' as const },
+            [activeSid]: { ...createDefaultPerSessionState(), cwd: projectPath, status: 'streaming' as const, hostSessionOwned: true },
           },
         },
       },
@@ -209,7 +211,7 @@ describe('PermissionPrompt + real store integration', () => {
     expect(screen.getAllByText(/\/outside\/reference\/\*\s+\/outside\/second\/\*/)[0]).toBeVisible()
     fireEvent.click(screen.getByText('Access External Directory /outside/reference'))
     await act(async () => { fireEvent.click(screen.getByText('Allow Once')) })
-    expect(mockWindowAgent.respondToPermission).toHaveBeenCalledWith('alpha', 'per_external', true, undefined, undefined, undefined, undefined, undefined)
+    expect(mockWindowEnvironment.respondSessionPermission).toHaveBeenCalledWith('local', { sessionId: 'alpha', interactionId: 'per_external', decision: 'allow' })
   })
 
   it('previews proposed project rules before saving, and cancel does not approve or reject', async () => {
@@ -224,13 +226,13 @@ describe('PermissionPrompt + real store integration', () => {
     expect(screen.getByText('Remember Permission in This Project?')).toBeVisible()
     expect(screen.getByText('/outside/*')).toBeVisible()
     expect(screen.getByText(/including new sessions and restarts/)).toBeVisible()
-    expect(mockWindowAgent.respondToPermission).not.toHaveBeenCalled()
+    expect(mockWindowEnvironment.respondSessionPermission).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: /cancel/i }))
-    expect(mockWindowAgent.respondToPermission).not.toHaveBeenCalled()
+    expect(mockWindowEnvironment.respondSessionPermission).not.toHaveBeenCalled()
     expect(screen.getByRole('button', { name: /allow once/i })).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: /remember for this project/i }))
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /confirm & remember/i })) })
-    expect(mockWindowAgent.respondToPermission).toHaveBeenCalledWith('alpha', 'per_remember', true, true, undefined, undefined, undefined, undefined)
+    expect(mockWindowEnvironment.respondSessionPermission).toHaveBeenCalledWith('local', { sessionId: 'alpha', interactionId: 'per_remember', decision: 'allow_always' })
   })
 
   it('shows the permission message even when a generic tool has no display summary', () => {
@@ -267,7 +269,7 @@ describe('PermissionPrompt + real store integration', () => {
       await screen.findByRole('radio', { name: /picked.stl/ })
       expect(pick).toHaveBeenCalledWith('alpha', 'native-form', 'part')
       fireEvent.click(screen.getByRole('button', { name: /^Submit/ }))
-      await waitFor(() => expect(mockWindowAgent.respondToPermission).toHaveBeenCalledWith('alpha', 'native-form', true, false, undefined, undefined, undefined, { part: 'file:///picked.stl' }))
+      await waitFor(() => expect(mockWindowEnvironment.respondSessionPermission).toHaveBeenCalledWith('local', { sessionId: 'alpha', interactionId: 'native-form', decision: 'allow', formAnswers: { part: 'file:///picked.stl' } }))
     } finally { Object.defineProperty(window, 'environment', { configurable: true, value: original }) }
   })
   it('renders a prompt when permission_request matches the active session id', () => {
@@ -347,10 +349,10 @@ describe('PermissionPrompt + real store integration', () => {
       await Promise.resolve()
     })
 
-    expect(mockWindowAgent.respondToPermission).toHaveBeenCalledWith(
-      expect.any(String), 'r1', true, undefined, undefined, undefined, undefined, undefined,
+    expect(mockWindowEnvironment.respondSessionPermission).toHaveBeenCalledWith(
+      'local', { sessionId: expect.any(String), interactionId: 'r1', decision: 'allow' },
     )
-    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/proj', 'alpha', 'auto')
+    expect(mockWindowEnvironment.patchSessionSettings).toHaveBeenCalledWith('local', 'alpha', { permissionMode: 'auto' })
   })
 
   it('upgrades acceptEdits setMode suggestions to auto even without account/model metadata', async () => {
@@ -368,10 +370,10 @@ describe('PermissionPrompt + real store integration', () => {
       await Promise.resolve()
     })
 
-    expect(mockWindowAgent.respondToPermission).toHaveBeenCalledWith(
-      expect.any(String), 'r1', true, undefined, undefined, undefined, undefined, undefined,
+    expect(mockWindowEnvironment.respondSessionPermission).toHaveBeenCalledWith(
+      'local', { sessionId: expect.any(String), interactionId: 'r1', decision: 'allow' },
     )
-    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/proj', 'alpha', 'auto')
+    expect(mockWindowEnvironment.patchSessionSettings).toHaveBeenCalledWith('local', 'alpha', { permissionMode: 'auto' })
   })
 
   it('leaves the active-session prompt intact when message_interrupted targets a different session', () => {

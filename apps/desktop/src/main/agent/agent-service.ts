@@ -6,7 +6,7 @@ import { readPhoneFile, readPhoneVideoPoster, type PhoneFileInput, type PhoneFil
 import type { SessionActivity } from '@superone/shared/session-activity'
 import { liveSessionActivity } from '../remote/live-session-activity'
 import { spawnParentOf } from '../session/collaboration-mailbox'
-import { enqueueSessionQueueOp, queuedSteerCommand } from '../session/session-queue'
+import { enqueueSessionQueueOp } from '../session/session-queue'
 import { sendPhoneMcpAppMessage } from '../session/mcp-app-send'
 import { randomUUID } from 'crypto'
 import { newMessageId } from '@superone/shared/message-id'
@@ -19,7 +19,7 @@ import { ipcMain, type BrowserWindow } from 'electron'
 import { windowControlIpc } from '../session/control-context'
 import { WarmupManager } from './warmup-manager'
 import { fetchModels } from './claude-models'
-import { AgentIpcChannels, type AgentEvent, type AgentPrewarmHint, type CodexPermissionPreset, type CodexReasoningEffort, type ModelOption, type PermissionMode, type QuestionAnnotations, type ResourceScope, type SandboxMode, type SendMessageRequest } from '@superone/shared/agent-types';
+import { AgentIpcChannels, type AgentEvent, type AgentPrewarmHint, type CodexPermissionPreset, type CodexReasoningEffort, type ModelOption, type PermissionMode, type ResourceScope, type SandboxMode, type SendMessageRequest } from '@superone/shared/agent-types';
 import { baseSessionProviderId } from '@superone/shared/session-provider-definitions'
 import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
 import { localSessionEnvironmentId } from '../environment/session-identity'
@@ -99,7 +99,7 @@ import { resolveFavicon, cacheCapturedFavicon } from '../favicon'
 import { resolveSiteIdentity } from '../site-identity'
 import { backupMcpServers, listLibrary, deleteLibraryEntry, getLibraryEntry } from '../mcp-library-service'
 import { uninstallMcpbBundle } from '../mcpb/mcpb-installer'
-import type { PluginModReview, HookSavePayload, SessionForkRequest, SideChatStartRequest, HarnessId, DshPluginInstallSource, ClaudeSteerPriority } from '@superone/shared/agent-types'
+import type { PluginModReview, HookSavePayload, SessionForkRequest, SideChatStartRequest, HarnessId, DshPluginInstallSource } from '@superone/shared/agent-types'
 import { tryResolveHarnessRuntime } from '../harness/resolve-runtime'
 import { forkSession } from '../session/session-fork'
 import { closeSideChat, startSideChat } from '../session/side-chat'
@@ -1118,25 +1118,6 @@ export class AgentService {
       return session.send(request)
     })
 
-    windowIpc.handle(AgentIpcChannels.DEQUEUE_MESSAGE, async (_event, projectPath: string, clientMessageId: string) => {
-      const session = this.sessionManager?.getActiveSession(projectPath)
-      if (!session) return false
-      session.lease.assertMutation()
-      return enqueueSessionQueueOp(session.id, () => { session.lease.assertMutation(); return session.dequeueMessage(clientMessageId) })
-    })
-
-    windowIpc.handle(AgentIpcChannels.STEER_QUEUED_MESSAGE, async (_event, projectPath: string, clientMessageId: string, sessionId?: string, priority?: ClaudeSteerPriority) => {
-      const session = sessionId
-        ? this.sessionManager?.getSession(sessionId)
-        : this.sessionManager?.getActiveSession(projectPath)
-      if (!session || session.snapshot.projectPath !== projectPath) return false
-      const steer = queuedSteerCommand(session.snapshot.harnessId, clientMessageId, priority ?? 'now')
-      if (!steer) return false
-      session.lease.assertMutation()
-      await enqueueSessionQueueOp(session.id, () => { session.lease.assertMutation(); return session.dispatchBackendCommand(steer) })
-      return true
-    })
-
     windowIpc.handle(AgentIpcChannels.START_QUEUED_MESSAGES, async (_event, projectPath: string, sessionId?: string) => {
       const session = sessionId
         ? this.sessionManager?.getSession(sessionId)
@@ -1156,13 +1137,6 @@ export class AgentService {
       if (!session) return
       log.debug('[agent-service] prewarm sid=%s harness=%s', session.id, session.snapshot.harnessId)
       try { session.prewarm(hint) } catch (err) { log.debug('[agent-service] prewarm failed: %s', err instanceof Error ? err.message : String(err)) }
-    })
-
-    windowIpc.handle(AgentIpcChannels.INTERRUPT, async (_event, sessionId: string) => {
-      const session = this.sessionManager?.getSession(sessionId)
-      if (!session) return false
-      session.lease.assertMutation()
-      return session.interrupt()
     })
 
     windowIpc.handle(AgentIpcChannels.WORKTREE_REMOVED, async (_event, sessionId: string) => {
@@ -1250,120 +1224,6 @@ export class AgentService {
       cancelComposerForms({ kind: 'window', id: event.sender.id }, viewId, localId)
     })
 
-    windowIpc.handle(AgentIpcChannels.PERMISSION_RESPONSE, (_event, sessionId: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], decision?: 'cancel', formAnswers?: Record<string, unknown>) => {
-      const session = this.sessionManager?.getSession(sessionId)
-      if (!session) return false
-      session.lease.assertMutation()
-      trace('agent.emit', 'permission_responded', { requestId, allow, reason, sessionId })
-      trace('permission.flow', 'ipc_response', { projectPath: session.snapshot.projectPath, sessionId, allow, alwaysAllow, reason, decision, formAnswers }, requestId)
-      return session.respondToPermission(requestId, allow, alwaysAllow, reason, selectedSuggestions, decision, formAnswers)
-    })
-
-    windowIpc.handle(AgentIpcChannels.SET_PERMISSION_MODE, async (
-      _event,
-      projectPath: string,
-      sessionId: string,
-      mode: PermissionMode,
-    ) => {
-      const session = this.sessionManager?.getSession(sessionId)
-      // Read one snapshot for the guard: `snapshot` is a live getter, so keeping
-      // the post-failure re-check on a separate read is what makes it meaningful.
-      const snapshot = session?.snapshot
-      if (
-        !session
-        || !snapshot
-        || snapshot.projectPath !== projectPath
-        || snapshot.status === 'disposed'
-      ) {
-        trace('permission.flow', 'ipc_setMode_stale', { projectPath, sessionId, mode })
-        return false
-      }
-      this.throwIfRemoteLocked(projectPath)
-      trace('permission.flow', 'ipc_setMode', { projectPath, mode, sid: session.id, status: session.snapshot.status })
-      try {
-        await session.setPermissionMode(mode)
-        return true
-      } catch (error) {
-        // Session disposal can win after getSession() but before setPermissionMode().
-        // A stale renderer effect must not reject or mutate a replacement session.
-        if (session.snapshot.status === 'disposed') {
-          trace('permission.flow', 'ipc_setMode_disposed', { projectPath, sessionId, mode })
-          return false
-        }
-        throw error
-      }
-    })
-
-    windowIpc.handle(AgentIpcChannels.SET_SANDBOX_MODE, async (_event, projectPath: string, mode: SandboxMode, sessionId?: string) => {
-      if (!sessionId) this.throwIfRemoteLocked(projectPath)
-      const capability = getSandboxCapability()
-      if (mode !== 'off' && capability.supportLevel === 'unsupported') {
-        throw new Error(capability.unsupportedReason ?? '当前平台不支持沙盒')
-      }
-      // Same rule as SET_SESSION_SETTINGS: an explicit id is a scoped write from
-      // a pane that is not the project's active chat, and both guards must read
-      // the session being written rather than whichever one is in the foreground.
-      if (sessionId) {
-        const scoped = this.sessionManager?.getSession(sessionId) ?? null
-        if (!scoped) return
-        if (scoped.snapshot.projectPath !== projectPath) return
-        if (this.isSessionRemoteLocked(scoped)) return
-        return scoped.setSandboxMode(mode)
-      }
-      const session = await this.getOrCreateActiveSession(projectPath)
-      return session.setSandboxMode(mode)
-    })
-
-    windowIpc.handle(AgentIpcChannels.SET_SESSION_SETTINGS, (_event, projectPath: string, settings: { model?: string | null; effort?: SendMessageRequest['effort'] | null; ultracode?: boolean; mode?: string | null; agentPreset?: string | null; contextWindow?: number | null }, sessionId?: string) => {
-      // An explicit id is a scoped write from a pane that is not the project's
-      // active chat — a mosaic tile, or a side chat, whose picker would
-      // otherwise re-configure the conversation it was forked from.
-      const session = sessionId
-        ? this.sessionManager?.getSession(sessionId) ?? null
-        : this.sessionManager?.getActiveSession(projectPath)
-      if (!session) return
-      // Both guards read the session being WRITTEN. Checking the project's
-      // active session instead would let a scoped write into a remote-owned
-      // session through, and would let a stale scope address a session that
-      // belongs to an entirely different project.
-      if (session.snapshot.projectPath !== projectPath) return
-      if (this.isSessionRemoteLocked(session)) return
-      const applied = session.setSelectedSettings(settings)
-      if (settings.agentPreset !== undefined) session.setAgentPreset(settings.agentPreset)
-      return applied
-    })
-
-    windowIpc.handle(AgentIpcChannels.SET_SESSION_API_PROVIDER, (_event, sessionId: string, apiProviderId: string | null) => {
-      const session = this.sessionManager?.getSession(sessionId)
-      if (!session) return
-      session.lease.assertMutation()
-      session.setApiProviderId(apiProviderId)
-    })
-
-    windowIpc.handle(AgentIpcChannels.ANSWER_QUESTION, (_event, sessionId: string, requestId: string, answers: Record<string, string>, annotations?: QuestionAnnotations) => {
-      const session = this.sessionManager?.getSession(sessionId)
-      if (!session) return
-      session.lease.assertMutation()
-      trace('agent.emit', 'question_answered', { requestId, answers, sessionId })
-      session.respondToQuestion(requestId, answers, annotations)
-    })
-
-    windowIpc.handle(AgentIpcChannels.DISMISS_QUESTION, (_event, sessionId: string, requestId: string) => {
-      const session = this.sessionManager?.getSession(sessionId)
-      if (!session) return
-      session.lease.assertMutation()
-      trace('agent.emit', 'question_dismissed', { requestId, sessionId })
-      session.dismissQuestion(requestId)
-    })
-
-    windowIpc.handle(AgentIpcChannels.RESPOND_PLAN_APPROVAL, (_event, sessionId: string, requestId: string, approved: boolean, feedback?: string) => {
-      const session = this.sessionManager?.getSession(sessionId)
-      if (!session) return
-      session.lease.assertMutation()
-      trace('agent.emit', 'plan_approval_responded', { requestId, approved, feedback, sessionId })
-      session.respondToPlanApproval(requestId, approved, feedback)
-    })
-
     windowIpc.handle(AgentIpcChannels.CREATE_SESSION, async (_event, projectPath: string) => {
       const mgr = this.requireSessionManager()
       const { permissionMode, sandboxMode } = this.readDefaultSessionPrefs()
@@ -1392,13 +1252,6 @@ export class AgentService {
       const prefs = this.readDefaultSessionPrefs(harnessId)
       const fresh = mgr.createSession({ projectPath, providerId, ...prefs, id: newSessionId })
       return { permissionMode: fresh.getCurrentPermissionMode(), sandboxInfo: fresh.getCurrentSandboxInfo() }
-    })
-
-    // Manual `/recap` (Grok ACP) — fire-and-forget x.ai/recap; result is session_recap event.
-    windowIpc.handle(AgentIpcChannels.REQUEST_SESSION_RECAP, async (_event, sessionId: string) => {
-      const session = this.sessionManager?.getSession(sessionId)
-      if (!session?.requestSessionRecap) return false
-      return session.requestSessionRecap(false)
     })
 
     windowIpc.handle(AgentIpcChannels.TRUNCATE_AT_CHECKPOINT, (_event, projectPath: string, checkpointId: string) => {
@@ -2556,31 +2409,19 @@ export class AgentService {
     this.warmupManager.dispose()
 
     ipcMain.removeHandler(AgentIpcChannels.SEND_MESSAGE)
-    ipcMain.removeHandler(AgentIpcChannels.DEQUEUE_MESSAGE)
-    ipcMain.removeHandler(AgentIpcChannels.STEER_QUEUED_MESSAGE)
     ipcMain.removeHandler(AgentIpcChannels.START_QUEUED_MESSAGES)
     ipcMain.removeHandler(AgentIpcChannels.PREWARM)
-    ipcMain.removeHandler(AgentIpcChannels.INTERRUPT)
     ipcMain.removeHandler(AgentIpcChannels.WORKTREE_REMOVED)
     ipcMain.removeHandler(AgentIpcChannels.START_REALTIME_VOICE)
     ipcMain.removeHandler(AgentIpcChannels.STOP_REALTIME_VOICE)
     ipcMain.removeHandler(AgentIpcChannels.LOAD_REALTIME_TIMELINE)
     ipcMain.removeHandler(AgentIpcChannels.GET_REALTIME_TIMELINE)
     ipcMain.removeHandler(AgentIpcChannels.STOP_TASK)
-    ipcMain.removeHandler(AgentIpcChannels.PERMISSION_RESPONSE)
     ipcMain.removeHandler(AgentIpcChannels.OPEN_WIDGET_INPUT_REQUEST)
     ipcMain.removeHandler(AgentIpcChannels.COMPOSER_OPEN)
     ipcMain.removeHandler(AgentIpcChannels.COMPOSER_AWAIT)
     ipcMain.removeHandler(AgentIpcChannels.COMPOSER_CANCEL)
-    ipcMain.removeHandler(AgentIpcChannels.SET_PERMISSION_MODE)
-    ipcMain.removeHandler(AgentIpcChannels.SET_SESSION_SETTINGS)
-    ipcMain.removeHandler(AgentIpcChannels.SET_SESSION_API_PROVIDER)
-    ipcMain.removeHandler(AgentIpcChannels.SET_SANDBOX_MODE)
-    ipcMain.removeHandler(AgentIpcChannels.ANSWER_QUESTION)
-    ipcMain.removeHandler(AgentIpcChannels.DISMISS_QUESTION)
-    ipcMain.removeHandler(AgentIpcChannels.RESPOND_PLAN_APPROVAL)
     ipcMain.removeHandler(AgentIpcChannels.RESET_SESSION)
-    ipcMain.removeHandler(AgentIpcChannels.REQUEST_SESSION_RECAP)
     ipcMain.removeHandler(AgentIpcChannels.CREATE_SESSION)
     ipcMain.removeHandler(AgentIpcChannels.TRUNCATE_AT_CHECKPOINT)
     ipcMain.removeHandler(AgentIpcChannels.REWIND_FILES)

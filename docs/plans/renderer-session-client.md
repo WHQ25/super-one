@@ -326,6 +326,18 @@ the UI hides them through capabilities.
   folds into the client with the step 3/4 node branches it still serves.
   Counts: `window.agent` 79, node branches 168. CDP: a cold Codex session
   restores provider, model and its whole transcript; rename and pin round-trip.
+- 2026-10-12: Step 3. Permission, question, plan, interrupt and settings go
+  through the session client in every environment; settings reach the host
+  only for `hostSessionOwned` sessions (restored ones included), so a draft's
+  choices wait for its first send (step 4a). Queue, steer, recap and Codex goal
+  share one `environment:callSession` channel over the desktop's session
+  methods (`session.getGoal` added as a read). A node refuses the settings it
+  takes per turn (`unsupported`): pickers log it, the ACP context window
+  reverts with an error. `broadcastSessionSetting` stays: it mirrors Codex and
+  OpenCode picker state to other views rather than writing host settings.
+  Counts: `window.agent` 57, node branches 156. CDP on local Claude: settings
+  round-trip, a Bash permission answered (a second answer refused), a plan
+  rejected with feedback.
 - 2026-10-12: Step 1. `EnvironmentHost.resolveSession` routes `local` to the
   domain protocol; local open/send install no follower; local grants are keyed
   per window and a mutation without a window scope fails in `leaseKey`;

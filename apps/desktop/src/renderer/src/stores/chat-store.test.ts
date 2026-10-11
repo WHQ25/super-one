@@ -57,18 +57,9 @@ const mockWindowAgent = {
   activateSession: vi.fn().mockResolvedValue(undefined),
   getSessionId: vi.fn().mockResolvedValue(''),
   sendMessage: vi.fn().mockResolvedValue(undefined),
-  interrupt: vi.fn().mockResolvedValue(true),
   reportWorktreeRemoved: vi.fn().mockResolvedValue(undefined),
-  respondToPermission: vi.fn().mockResolvedValue(true),
-  answerQuestion: vi.fn().mockResolvedValue(undefined),
-  dismissQuestion: vi.fn().mockResolvedValue(undefined),
-  respondToPlanApproval: vi.fn().mockResolvedValue(undefined),
-  setPermissionMode: vi.fn().mockResolvedValue(undefined),
-  setSessionSettings: vi.fn().mockResolvedValue(undefined),
-  setSessionApiProvider: vi.fn().mockResolvedValue(undefined),
   broadcastSessionSetting: vi.fn().mockResolvedValue(undefined),
   prewarm: vi.fn().mockResolvedValue(undefined),
-  dequeueMessage: vi.fn().mockResolvedValue(true),
 }
 
 const mockWindowApp = {
@@ -115,6 +106,14 @@ const mockWindowEnvironment = {
   createSession: vi.fn().mockResolvedValue({ sessionId: 'new', title: null, lastActiveAt: '', messageCount: 0 }),
   listSessionEvents: vi.fn().mockResolvedValue([]),
   sendSessionMessage: vi.fn().mockResolvedValue(null),
+  // Session control for every environment; `/test` is a plain path, so `local`.
+  patchSessionSettings: vi.fn().mockResolvedValue({}),
+  respondSessionPermission: vi.fn().mockResolvedValue(undefined),
+  respondSessionQuestion: vi.fn().mockResolvedValue(undefined),
+  respondSessionPlan: vi.fn().mockResolvedValue(undefined),
+  interruptSession: vi.fn().mockResolvedValue(undefined),
+  callSession: vi.fn(async (_connectionId: string, _sessionId: string, method: string) =>
+    method === 'session.dequeue' ? { removed: true } : { ok: true }),
 }
 
 type ClaudePrefPatch = {
@@ -346,12 +345,11 @@ describe('ensureSession', () => {
     try {
       useChatStore.getState().ensureSession('/sandbox-unsupported')
       useChatStore.setState({ activeProject: '/sandbox-unsupported' })
-      const setSandboxIpc = vi.fn().mockResolvedValue({ enabled: true, autoAllowBash: false })
-      Object.assign(globalThis.window.agent, { setSandboxMode: setSandboxIpc })
+      patchDraftSession('/sandbox-unsupported', { hostSessionOwned: true })
 
       await useChatStore.getState().setSandboxMode('on')
 
-      expect(setSandboxIpc).not.toHaveBeenCalled()
+      expect(mockWindowEnvironment.patchSessionSettings).not.toHaveBeenCalled()
     } finally {
       mockAppStoreState.sandboxCapability = prevCapability
     }
@@ -365,13 +363,12 @@ describe('ensureSession', () => {
     try {
       useChatStore.getState().ensureSession('/sandbox-conditional')
       useChatStore.setState({ activeProject: '/sandbox-conditional' })
-      const setSandboxIpc = vi.fn().mockResolvedValue({ enabled: true, autoAllowBash: false })
-      Object.assign(globalThis.window.agent, { setSandboxMode: setSandboxIpc })
+      patchDraftSession('/sandbox-conditional', { hostSessionOwned: true })
 
       await useChatStore.getState().setSandboxMode('on')
 
       expect(mockAppStoreState.probeSandbox).toHaveBeenCalled()
-      expect(setSandboxIpc).not.toHaveBeenCalled()
+      expect(mockWindowEnvironment.patchSessionSettings).not.toHaveBeenCalled()
     } finally {
       mockAppStoreState.sandboxCapability = prevCapability
       mockAppStoreState.probeSandbox = prevProbe
@@ -1384,13 +1381,14 @@ describe('/provider slash command + setSessionApiProviderId', () => {
   })
 
   it('setSessionApiProviderId updates the active session and dispatches IPC', async () => {
-    mockWindowAgent.setSessionApiProvider.mockClear()
+    mockWindowEnvironment.patchSessionSettings.mockClear()
     setupProject('/test')
     const sid = useChatStore.getState().projectSessions['/test']._activeSessionId!
+    patchDraftSession('/test', { hostSessionOwned: true })
 
     await useChatStore.getState().setSessionApiProviderId('deepseek-id')
 
-    expect(mockWindowAgent.setSessionApiProvider).toHaveBeenCalledWith(sid, 'deepseek-id')
+    expect(mockWindowEnvironment.patchSessionSettings).toHaveBeenCalledWith('local', sid, { apiProviderId: 'deepseek-id' })
     const session = useChatStore.getState().projectSessions['/test']._sessions[sid]
     expect(session.apiProviderId).toBe('deepseek-id')
     expect(session.slashCommandOutput).toBeNull()
@@ -3546,7 +3544,7 @@ describe('codex usage semantics', () => {
 })
 
 describe('codex question routing', () => {
-  it('routes answerQuestion through codex IPC for codex sessions', () => {
+  it('routes answerQuestion through the session client for codex sessions', async () => {
     setupProject('/test')
     const proj = useChatStore.getState().projectSessions['/test']
     const codexSid = 'codex_local_q_test'
@@ -3573,11 +3571,12 @@ describe('codex question routing', () => {
 
     useChatStore.getState().answerQuestion('q1', { q1: 'Answer' })
 
-    expect(mockWindowAgent.answerQuestion).toHaveBeenCalledWith(codexSid, 'q1', { q1: 'Answer' }, undefined)
-    expect(useChatStore.getState().projectSessions['/test']._sessions[codexSid].pendingQuestion).toBeNull()
+    expect(mockWindowEnvironment.respondSessionQuestion).toHaveBeenCalledWith('local', { sessionId: codexSid, interactionId: 'q1', answers: { q1: 'Answer' } })
+    // The prompt clears once the host acknowledges.
+    await vi.waitFor(() => expect(useChatStore.getState().projectSessions['/test']._sessions[codexSid].pendingQuestion).toBeNull())
   })
 
-  it('routes dismissQuestion through codex IPC for codex sessions', () => {
+  it('routes dismissQuestion through the session client for codex sessions', async () => {
     setupProject('/test')
     const proj = useChatStore.getState().projectSessions['/test']
     const codexSid = 'codex_local_d_test'
@@ -3604,8 +3603,8 @@ describe('codex question routing', () => {
 
     useChatStore.getState().dismissQuestion('q1')
 
-    expect(mockWindowAgent.dismissQuestion).toHaveBeenCalledWith(codexSid, 'q1')
-    expect(useChatStore.getState().projectSessions['/test']._sessions[codexSid].pendingQuestion).toBeNull()
+    expect(mockWindowEnvironment.respondSessionQuestion).toHaveBeenCalledWith('local', { sessionId: codexSid, interactionId: 'q1', answers: {}, dismiss: true })
+    await vi.waitFor(() => expect(useChatStore.getState().projectSessions['/test']._sessions[codexSid].pendingQuestion).toBeNull())
   })
 })
 
@@ -3652,7 +3651,7 @@ describe('message_interrupted clears pending states', () => {
 })
 
 describe('interrupt', () => {
-  it('routes claude sessions through agent interrupt by sessionId', async () => {
+  it('routes claude sessions through the session client interrupt by sessionId', async () => {
     setupProject('/test')
     const proj = useChatStore.getState().projectSessions['/test']
 
@@ -3674,10 +3673,10 @@ describe('interrupt', () => {
 
     await useChatStore.getState().interrupt()
 
-    expect(mockWindowAgent.interrupt).toHaveBeenCalledWith('claude-a')
+    expect(mockWindowEnvironment.interruptSession).toHaveBeenCalledWith('local', 'claude-a')
   })
 
-  it('routes codex sessions through agent interrupt by sessionId', async () => {
+  it('routes codex sessions through the session client interrupt by sessionId', async () => {
     setupProject('/test')
     const proj = useChatStore.getState().projectSessions['/test']
 
@@ -3697,11 +3696,9 @@ describe('interrupt', () => {
       },
     })
 
-    mockWindowAgent.interrupt.mockResolvedValueOnce(true)
-
     await useChatStore.getState().interrupt()
 
-    expect(mockWindowAgent.interrupt).toHaveBeenCalledWith('codex-a')
+    expect(mockWindowEnvironment.interruptSession).toHaveBeenCalledWith('local', 'codex-a')
   })
 
   it('clears pending state when interrupt is not accepted', async () => {
@@ -3728,7 +3725,7 @@ describe('interrupt', () => {
       },
     })
 
-    mockWindowAgent.interrupt.mockResolvedValueOnce(false)
+    mockWindowEnvironment.interruptSession.mockRejectedValueOnce(new Error('not running'))
 
     await useChatStore.getState().interrupt()
 
@@ -4230,7 +4227,7 @@ describe('resetSession codex handling', () => {
 
     await useChatStore.getState().resetSession()
 
-    expect(mockWindowAgent.interrupt).not.toHaveBeenCalled()
+    expect(mockWindowEnvironment.interruptSession).not.toHaveBeenCalled()
     expect(mockWindowAgent.parkSession).not.toHaveBeenCalled()
     expect(mockWindowAgent.resetSession).not.toHaveBeenCalled()
 
@@ -5256,13 +5253,13 @@ describe('setSelectedModel permission mode preservation', () => {
         { id: 'claude-haiku-4-5', name: 'Haiku 4.5', description: '' },
       ] as never[],
     })
-    patchDraftSession('/test', { selectedModel: 'claude-opus-4-8', permissionMode: 'auto' })
+    patchDraftSession('/test', { selectedModel: 'claude-opus-4-8', permissionMode: 'auto', hostSessionOwned: true })
 
     useChatStore.getState().setSelectedModel('claude-haiku-4-5')
 
     expect(getActiveDraftSession('/test')!.permissionMode).toBe('auto')
     expect(getActiveDraftSession('/test')!.selectedModel).toBe('claude-haiku-4-5')
-    expect(mockWindowAgent.setPermissionMode).not.toHaveBeenCalled()
+    expect(mockWindowEnvironment.patchSessionSettings).not.toHaveBeenCalledWith('local', expect.any(String), expect.objectContaining({ permissionMode: expect.anything() }))
   })
 })
 
@@ -5780,16 +5777,16 @@ describe('interaction response routing', () => {
 
     const result = await useChatStore.getState().respondToPermission('r1', true)
 
-    expect(mockWindowAgent.respondToPermission).toHaveBeenCalledWith(
-      'a', 'r1', true, undefined, undefined, undefined, undefined, undefined,
+    expect(mockWindowEnvironment.respondSessionPermission).toHaveBeenCalledWith(
+      'local', { sessionId: 'a', interactionId: 'r1', decision: 'allow' },
     )
     expect(result).toBe(true)
   })
 
-  it('respondToPermission keeps the prompt when ack is false', async () => {
+  it('respondToPermission keeps the prompt when the host refuses the answer', async () => {
     setupProject('/test')
     const proj = useChatStore.getState().projectSessions['/test']
-    mockWindowAgent.respondToPermission.mockResolvedValueOnce(false)
+    mockWindowEnvironment.respondSessionPermission.mockRejectedValueOnce(new Error('no pending request'))
     useChatStore.setState({
       projectSessions: {
         '/test': {
@@ -5812,7 +5809,7 @@ describe('interaction response routing', () => {
     expect(useChatStore.getState().projectSessions['/test']._sessions['a'].pendingPermissions).toHaveLength(1)
   })
 
-  it('respondToPermission routes cancel decisions through codex IPC for codex sessions', async () => {
+  it('respondToPermission routes cancel decisions through the session client for codex sessions', async () => {
     setupProject('/test')
     const proj = useChatStore.getState().projectSessions['/test']
     const codexSid = 'codex_local_perm_test'
@@ -5837,7 +5834,7 @@ describe('interaction response routing', () => {
 
     const result = await useChatStore.getState().respondToPermission('r1', false, undefined, undefined, undefined, 'cancel')
 
-    expect(mockWindowAgent.respondToPermission).toHaveBeenCalledWith(codexSid, 'r1', false, undefined, undefined, undefined, 'cancel', undefined)
+    expect(mockWindowEnvironment.respondSessionPermission).toHaveBeenCalledWith('local', { sessionId: codexSid, interactionId: 'r1', decision: 'deny', cancel: true })
     expect(result).toBe(true)
     expect(useChatStore.getState().projectSessions['/test']._sessions[codexSid].pendingPermissions).toHaveLength(0)
   })
@@ -5863,7 +5860,7 @@ describe('interaction response routing', () => {
 
     useChatStore.getState().answerQuestion('q1', { q: 'a' })
 
-    expect(mockWindowAgent.answerQuestion).toHaveBeenCalledWith('a', 'q1', { q: 'a' }, undefined)
+    expect(mockWindowEnvironment.respondSessionQuestion).toHaveBeenCalledWith('local', { sessionId: 'a', interactionId: 'q1', answers: { q: 'a' } })
   })
 
   it('dismissQuestion calls IPC with active sessionId', () => {
@@ -5887,7 +5884,7 @@ describe('interaction response routing', () => {
 
     useChatStore.getState().dismissQuestion('q1')
 
-    expect(mockWindowAgent.dismissQuestion).toHaveBeenCalledWith('a', 'q1')
+    expect(mockWindowEnvironment.respondSessionQuestion).toHaveBeenCalledWith('local', { sessionId: 'a', interactionId: 'q1', answers: {}, dismiss: true })
   })
 
   it('respondToPlanApproval calls IPC with active sessionId', () => {
@@ -5911,7 +5908,7 @@ describe('interaction response routing', () => {
 
     useChatStore.getState().respondToPlanApproval('p1', true, 'ok')
 
-    expect(mockWindowAgent.respondToPlanApproval).toHaveBeenCalledWith('a', 'p1', true, 'ok')
+    expect(mockWindowEnvironment.respondSessionPlan).toHaveBeenCalledWith('local', { sessionId: 'a', interactionId: 'p1', decision: 'approve', options: { feedback: 'ok' } })
   })
 
   it('respondToPlanApproval(approved=true, postApprovalMode="acceptEdits") also tells main to switch mode', () => {
@@ -5926,6 +5923,7 @@ describe('interaction response routing', () => {
             a: {
               ...createDefaultPerSessionState(),
               status: 'streaming' as const,
+              hostSessionOwned: true,
               permissionMode: 'plan',
               pendingPlanApproval: { requestId: 'p1', planContent: 'plan', planFilePath: '/plan', allowedPrompts: [] } as never,
             },
@@ -5934,10 +5932,9 @@ describe('interaction response routing', () => {
       },
     })
 
-    mockWindowAgent.setPermissionMode.mockClear()
     useChatStore.getState().respondToPlanApproval('p1', true, undefined, 'acceptEdits')
 
-    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/test', 'a', 'acceptEdits')
+    expect(mockWindowEnvironment.patchSessionSettings).toHaveBeenCalledWith('local', 'a', { permissionMode: 'acceptEdits' })
   })
 
   it('respondToPlanApproval(approved=true, no postApprovalMode) defaults to switching main to "default"', () => {
@@ -5952,6 +5949,7 @@ describe('interaction response routing', () => {
             a: {
               ...createDefaultPerSessionState(),
               status: 'streaming' as const,
+              hostSessionOwned: true,
               permissionMode: 'plan',
               pendingPlanApproval: { requestId: 'p1', planContent: 'plan', planFilePath: '/plan', allowedPrompts: [] } as never,
             },
@@ -5960,10 +5958,9 @@ describe('interaction response routing', () => {
       },
     })
 
-    mockWindowAgent.setPermissionMode.mockClear()
     useChatStore.getState().respondToPlanApproval('p1', true)
 
-    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith('/test', 'a', 'default')
+    expect(mockWindowEnvironment.patchSessionSettings).toHaveBeenCalledWith('local', 'a', { permissionMode: 'default' })
   })
 
   it('respondToPlanApproval on ACP does not call setPermissionMode(default)', () => {
@@ -5979,6 +5976,7 @@ describe('interaction response routing', () => {
               ...createDefaultPerSessionState(),
               sessionProvider: 'acp',
               status: 'streaming' as const,
+              hostSessionOwned: true,
               permissionMode: 'plan',
               pendingPlanApproval: { requestId: 'p1', planContent: 'plan', planFilePath: '/plan', allowedPrompts: [] } as never,
             },
@@ -5987,10 +5985,9 @@ describe('interaction response routing', () => {
       },
     })
 
-    mockWindowAgent.setPermissionMode.mockClear()
     useChatStore.getState().respondToPlanApproval('p1', true)
 
-    expect(mockWindowAgent.setPermissionMode).not.toHaveBeenCalled()
+    expect(mockWindowEnvironment.patchSessionSettings).not.toHaveBeenCalled()
     expect(useChatStore.getState().projectSessions['/test']._sessions.a.permissionMode).toBe('plan')
   })
 
@@ -6006,6 +6003,7 @@ describe('interaction response routing', () => {
             a: {
               ...createDefaultPerSessionState(),
               status: 'streaming' as const,
+              hostSessionOwned: true,
               permissionMode: 'plan',
               pendingPlanApproval: { requestId: 'p1', planContent: 'plan', planFilePath: '/plan', allowedPrompts: [] } as never,
             },
@@ -6014,10 +6012,10 @@ describe('interaction response routing', () => {
       },
     })
 
-    mockWindowAgent.setPermissionMode.mockClear()
     useChatStore.getState().respondToPlanApproval('p1', false, 'rejected')
 
-    expect(mockWindowAgent.setPermissionMode).not.toHaveBeenCalled()
+    expect(mockWindowEnvironment.respondSessionPlan).toHaveBeenCalledWith('local', { sessionId: 'a', interactionId: 'p1', decision: 'reject', options: { feedback: 'rejected' } })
+    expect(mockWindowEnvironment.patchSessionSettings).not.toHaveBeenCalled()
   })
 })
 
@@ -6210,7 +6208,7 @@ describe('edit/delete queued message vs consume race (Bug D)', () => {
 
   it('editQueuedMessage does not pull into draft when the CLI already consumed it (dequeue=false)', async () => {
     const draftId = seedQueued('queued text')
-    mockWindowAgent.dequeueMessage.mockResolvedValueOnce(false)
+    mockWindowEnvironment.callSession.mockResolvedValueOnce({ removed: false })
 
     await useChatStore.getState().editQueuedMessage('user-q1')
 
@@ -6224,7 +6222,7 @@ describe('edit/delete queued message vs consume race (Bug D)', () => {
 
   it('editQueuedMessage still pulls into draft when dequeue succeeds (race won)', async () => {
     const draftId = seedQueued('queued text')
-    mockWindowAgent.dequeueMessage.mockResolvedValueOnce(true)
+    mockWindowEnvironment.callSession.mockResolvedValueOnce({ removed: true })
 
     await useChatStore.getState().editQueuedMessage('user-q1')
 
@@ -6235,7 +6233,7 @@ describe('edit/delete queued message vs consume race (Bug D)', () => {
 
   it('deleteQueuedMessage keeps the message when the CLI already consumed it (dequeue=false)', async () => {
     const draftId = seedQueued('queued text')
-    mockWindowAgent.dequeueMessage.mockResolvedValueOnce(false)
+    mockWindowEnvironment.callSession.mockResolvedValueOnce({ removed: false })
 
     await useChatStore.getState().deleteQueuedMessage('user-q1')
 
@@ -6245,7 +6243,7 @@ describe('edit/delete queued message vs consume race (Bug D)', () => {
 
   it('deleteQueuedMessage removes the message when dequeue succeeds (race won)', async () => {
     const draftId = seedQueued('queued text')
-    mockWindowAgent.dequeueMessage.mockResolvedValueOnce(true)
+    mockWindowEnvironment.callSession.mockResolvedValueOnce({ removed: true })
 
     await useChatStore.getState().deleteQueuedMessage('user-q1')
 

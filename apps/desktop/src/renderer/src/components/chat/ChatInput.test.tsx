@@ -137,8 +137,8 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
 
   const goalState = {
     threadId: undefined as string | undefined,
-    getGoal: vi.fn(),
-    setGoal: vi.fn(),
+    /** `window.environment.callSession`, which carries `session.getGoal` / `session.setGoal`. */
+    callSession: vi.fn(),
   }
 
   // The queued send lives in main, so the composer only ever sees it through IPC.
@@ -483,8 +483,8 @@ beforeEach(() => {
   useCodexRealtimeViewStore.setState({ sessions: {} })
   sessionScope.value = null
   goalState.threadId = undefined
-  goalState.getGoal.mockReset()
-  goalState.setGoal.mockReset()
+  goalState.callSession.mockReset()
+  Object.assign(window.environment, { callSession: goalState.callSession })
   toastMock.error.mockReset()
   scheduledSend.row = null
   scheduledSend.listeners.clear()
@@ -492,8 +492,6 @@ beforeEach(() => {
   Object.assign(window, {
     app: {
       ...window.app,
-      codexGetGoal: goalState.getGoal,
-      codexSetGoal: goalState.setGoal,
       getMediaServerPort: vi.fn(async () => 0),
       // Spreading `window.app` drops the shared proxy defaults (a proxy over an
       // empty target enumerates nothing), so these have to be named explicitly.
@@ -594,13 +592,13 @@ describe('ChatInput', () => {
     // as a `session_goal` event, which is what the indicator actually reads.
     activeSessionState.preferredProvider = 'codex'
     goalState.threadId = 'thread-1'
-    goalState.getGoal.mockResolvedValue(null)
+    goalState.callSession.mockResolvedValue({ goal: null })
     activeSessionState.sessionGoal = { objective: 'Ship the goal UX', status: 'active' }
 
     render(<ChatInput />)
 
     await waitFor(() => {
-      expect(goalState.getGoal).toHaveBeenCalledWith('session-1', 'thread-1')
+      expect(goalState.callSession).toHaveBeenCalledWith('local', 'session-1', 'session.getGoal', {})
     })
     const indicator = screen.getByTestId('goal-indicator')
     expect(indicator).toHaveTextContent('Ship the goal UX')
@@ -690,9 +688,9 @@ describe('ChatInput', () => {
     expect(editorState.text).toBe('Ship login')
   })
 
-  it('sets a Codex goal over RPC before any turn has run, leaving the thread to main', async () => {
+  it('sets a Codex goal over RPC before any turn has run, leaving the thread to its host', async () => {
     activeSessionState.preferredProvider = 'codex'
-    goalState.setGoal.mockResolvedValue(null)
+    goalState.callSession.mockResolvedValue({ ok: true })
     activeSessionState.draftText = '/goal'
     editorState.text = '/goal'
 
@@ -706,7 +704,7 @@ describe('ChatInput', () => {
     rerender(<ChatInput />)
     fireEvent.click(send)
 
-    expect(goalState.setGoal).toHaveBeenCalledWith('session-1', null, 'Ship the goal UX')
+    expect(goalState.callSession).toHaveBeenCalledWith('local', 'session-1', 'session.setGoal', { objective: 'Ship the goal UX' })
     expect(chatActions.sendMessage).not.toHaveBeenCalled()
     expect(toastMock.error).not.toHaveBeenCalled()
   })

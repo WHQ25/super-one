@@ -10,7 +10,7 @@ import type { PreviewerFile } from '@superone/shared/generative-ui/native-widget
 import type { ComputerUseDisplayInfo, ComputerUseViewfinderClaim, ComputerUseViewfinderFrame } from '@superone/shared/agent-types'
 import type { AttachmentOriginalStatus, OpenCodeResources, StageAttachmentOriginalRequest } from '@superone/shared/agent-types'
 import type { DshPluginList, DshPluginInstallResult, DshPluginInstallSource } from '@superone/shared/agent-types'
-import type { AgentEvent, AgentInfo, AgentPrewarmHint, ApiProvider, AppSettings, AppSettingsPatch, ControllerPairingEvent, NodeHostController, NodePairingEvent, NodeHostStatus, Automation, AutomationRunStatus, BashOutputEvent, BrowserAudioState, BrowserCertError, BrowserOpenTabRequest, BrowserHistoryEntry, ChatMessage, ChatMessageContext, ClaudePreferences, ClaudeSteerPriority, ClaudeResources, CodexAccountLoginStartResult, CodexAccountStatus, CodexAuthStatus, CodexCollaborationMode, CodexConfigRequirements, CodexGoal, CodexGoalStatus, CodexHookGroup, CodexMarketplaceAddRequest, CodexMarketplaceAddResult, CodexMarketplaceUpgradeResult, CodexPermissionPreset, CodexRateLimits, CodexRateLimitResetOutcome, CodexMcpOauthLoginResult, CodexMcpOauthLoginOptions, CodexExternalAgentItem, CodexExternalAgentImportResult, CodexAccountUsage, CodexServerDiagnostics, CodexRealtimeVoiceCatalog, ClaudeAccount, ClaudeRateLimits, ProviderRateLimits, CodexReasoningEffort, CodexResources, CodexReviewTarget, CodexRunResult, CodexSetAuthRequest, ContentBlock, ContextUsageInfo, CreateAutomationRequest, CreateProviderRequest, DiscoverModelsResult, FileEntryKind, FileOpResult, FileSearchResult, FileTreeEntry, NativeContextMenuItemSpec, GitDirtyStatus, GitFileContent, GitFileDiff, GitInfoResult, GitLogEntry, GitResult, GitStatusFile, HarnessId, HookConfig, HookSavePayload, ImageAttachment, ListDirEntry, LoadSessionMessagesResult, Locale, MarketplacePlugin, MarketplacePluginDetail, MarketplaceScope, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta, MediaProviderStatus, UpsertMediaProviderRequest, MentionSearchItem, ModelOption, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, PluginModReview, PluginUserConfig, ProviderEndpointTestResponse, QuestionAnnotations, ScheduledSend, ScheduledSendPatch, ScheduledSendSessionInit, RecentFolder, RemoteDeviceConfig, ResourceScope, RewindFilesResult, SandboxInfo, SandboxMode, SandboxProbeResult, SendMessageRequest, SessionHistoryEntry, SessionSettingsPatch, SetupEvent, SkillDetail, SkillInfo, SlashCommandInfo, StartupData, TerminalEvent, TerminalListItem, TerminalSnapshot, ThemeMode, UpdateAutomationRequest, UpdateEvent, UpdateProviderRequest, WorktreeActivateRequest, WorktreeInfo, WorktreeHandoffResult, WorktreeAssignResult, SessionForkRequest, SessionForkResult, SideChatStartRequest, SideChatStartResult, WindowFoldStep, WindowMiniMode, RealtimeVoiceStartRequest, RealtimeTimelineResult } from '@superone/shared/agent-types'
+import type { AgentEvent, AgentInfo, AgentPrewarmHint, ApiProvider, AppSettings, AppSettingsPatch, ControllerPairingEvent, NodeHostController, NodePairingEvent, NodeHostStatus, Automation, AutomationRunStatus, BashOutputEvent, BrowserAudioState, BrowserCertError, BrowserOpenTabRequest, BrowserHistoryEntry, ChatMessage, ChatMessageContext, ClaudePreferences, ClaudeResources, CodexAccountLoginStartResult, CodexAccountStatus, CodexAuthStatus, CodexCollaborationMode, CodexConfigRequirements, CodexHookGroup, CodexMarketplaceAddRequest, CodexMarketplaceAddResult, CodexMarketplaceUpgradeResult, CodexPermissionPreset, CodexRateLimits, CodexRateLimitResetOutcome, CodexMcpOauthLoginResult, CodexMcpOauthLoginOptions, CodexExternalAgentItem, CodexExternalAgentImportResult, CodexAccountUsage, CodexServerDiagnostics, CodexRealtimeVoiceCatalog, ClaudeAccount, ClaudeRateLimits, ProviderRateLimits, CodexReasoningEffort, CodexResources, CodexReviewTarget, CodexRunResult, CodexSetAuthRequest, ContentBlock, ContextUsageInfo, CreateAutomationRequest, CreateProviderRequest, DiscoverModelsResult, FileEntryKind, FileOpResult, FileSearchResult, FileTreeEntry, NativeContextMenuItemSpec, GitDirtyStatus, GitFileContent, GitFileDiff, GitInfoResult, GitLogEntry, GitResult, GitStatusFile, HarnessId, HookConfig, HookSavePayload, ImageAttachment, ListDirEntry, LoadSessionMessagesResult, Locale, MarketplacePlugin, MarketplacePluginDetail, MarketplaceScope, McpCheckResult, McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta, MediaProviderStatus, UpsertMediaProviderRequest, MentionSearchItem, ModelOption, PermissionMode, PinnedSessionEntry, PluginDetail, PluginInfo, PluginModReview, PluginUserConfig, ProviderEndpointTestResponse, ScheduledSend, ScheduledSendPatch, ScheduledSendSessionInit, RecentFolder, RemoteDeviceConfig, ResourceScope, RewindFilesResult, SandboxInfo, SandboxProbeResult, SendMessageRequest, SessionHistoryEntry, SessionSettingsPatch, SetupEvent, SkillDetail, SkillInfo, SlashCommandInfo, StartupData, TerminalEvent, TerminalListItem, TerminalSnapshot, ThemeMode, UpdateAutomationRequest, UpdateEvent, UpdateProviderRequest, WorktreeActivateRequest, WorktreeInfo, WorktreeHandoffResult, WorktreeAssignResult, SessionForkRequest, SessionForkResult, SideChatStartRequest, SideChatStartResult, WindowFoldStep, WindowMiniMode, RealtimeVoiceStartRequest, RealtimeTimelineResult } from '@superone/shared/agent-types'
 import type { MiniAppEntry, MiniAppHostLogEvent, MiniAppInstallMeta, MiniAppInstallResult, MiniAppPackResult, MiniAppPreviewResult, MiniAppToolInterceptOpenRequest, DevRegistryEntry, DevRegistryView } from '@superone/shared/miniapp-types'
 import type { McpbInstallRequest, McpbInstalledEntry, McpbPreview } from '@superone/shared/mcpb-types'
 import type { GitMentionCapabilities, GitMentionRefKind, GitMentionRefsResult } from '@superone/shared/git-mention-query'
@@ -38,11 +38,8 @@ export type { EnvironmentInstallProgress } from '@superone/shared/environment'
 interface AgentAPI {
   /** `{ duplicate: true }` when the host already took `request.clientMessageId`; nothing runs again. */
   sendMessage(projectPath: string, request: SendMessageRequest): Promise<import('@superone/shared/send-failure').DuplicateSend | void>
-  dequeueMessage(projectPath: string, clientMessageId: string): Promise<boolean>
-  steerQueuedMessage(projectPath: string, clientMessageId: string, sessionId?: string, priority?: ClaudeSteerPriority): Promise<boolean>
   startQueuedMessages(projectPath: string, sessionId?: string): Promise<boolean>
   prewarm(projectPath: string, hint?: AgentPrewarmHint): Promise<void>
-  interrupt(sessionId: string): Promise<boolean>
   reportWorktreeRemoved(sessionId: string): Promise<void>
   startRealtimeVoice(projectPath: string, sessionId: string, request: RealtimeVoiceStartRequest): Promise<import('@superone/shared/realtime-voice').VoiceStatus>
   stopRealtimeVoice(projectPath: string, sessionId: string, attemptId: string): Promise<void>
@@ -50,7 +47,6 @@ interface AgentAPI {
   loadRealtimeTimeline(sessionId: string): Promise<RealtimeTimelineResult | null>
   getRealtimeTimeline(projectPath: string, sessionId: string): Promise<RealtimeTimelineResult>
   stopTask(sessionId: string, taskId: string): Promise<boolean>
-  respondToPermission(sessionId: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], decision?: 'cancel', formAnswers?: Record<string, unknown>): Promise<boolean>
   /** Local sessions only: a completed widget message opens its `agent`-output form in the composer. */
   openWidgetInputRequest(input: { projectPath: string; sessionId: string; messageId: string; spec: import('@superone/shared/input-request').InputRequestSpec }): Promise<import('@superone/shared/agent-types').OpenWidgetInputRequestResult>
   /** Opens a mini-app or widget form; resolves once it is shown (or refused), not when it is answered. */
@@ -59,20 +55,9 @@ interface AgentAPI {
   composerAwait(requestId: string): Promise<import('@superone/shared/composer-api').SuperOneComposerOutcome>
   /** Cancels one form of the view, or with no `localId` releases the view: its `caller` forms close, `agent` forms stay. */
   composerCancel(viewId: string, localId?: string): Promise<void>
-  setPermissionMode(projectPath: string, sessionId: string, mode: PermissionMode): Promise<boolean>
-  /** `sessionId` targets one session (a mosaic pane, a side chat); omit it for the project's active session. */
-  setSandboxMode(projectPath: string, mode: SandboxMode, sessionId?: string): Promise<SandboxInfo>
-  /** `sessionId` targets one session (a mosaic pane, a side chat); omit it for the project's active session. */
-  setSessionSettings(projectPath: string, settings: { model?: string | null; effort?: SendMessageRequest['effort'] | null; ultracode?: boolean; mode?: string | null; agentPreset?: string | null; contextWindow?: number | null }, sessionId?: string): Promise<void>
-  setSessionApiProvider(sessionId: string, apiProviderId: string | null): Promise<void>
   broadcastSessionSetting(sessionId: string, patch: SessionSettingsPatch): Promise<void>
-  answerQuestion(sessionId: string, requestId: string, answers: Record<string, string>, annotations?: QuestionAnnotations): Promise<void>
-  dismissQuestion(sessionId: string, requestId: string): Promise<void>
-  respondToPlanApproval(sessionId: string, requestId: string, approved: boolean, feedback?: string): Promise<void>
   createSession(projectPath: string): Promise<string>
   resetSession(sessionId: string, newSessionId?: string): Promise<{ permissionMode: PermissionMode; sandboxInfo: SandboxInfo } | null>
-  /** Grok ACP manual `/recap` → `x.ai/recap` (auto=false). Returns false if skipped/unavailable. */
-  requestSessionRecap(sessionId: string): Promise<boolean>
   truncateAtCheckpoint(projectPath: string, checkpointId: string): Promise<boolean>
   parkSession(projectPath: string): Promise<{ permissionMode: PermissionMode; sandboxInfo: SandboxInfo }>
   /**
@@ -393,11 +378,6 @@ interface AppAPI {
   codexListHooks(projectPath: string, opts?: { forceReload?: boolean }): Promise<CodexHookGroup[]>
   codexGetMcpStatus(projectPath: string, serverName?: string): Promise<McpServerInfo[]>
 
-  // Codex Goal
-  /** `threadId` is null before the first turn; main resolves (or starts) the thread itself. */
-  codexGetGoal(sessionId: string, threadId: string | null): Promise<CodexGoal | null>
-  codexSetGoal(sessionId: string, threadId: string | null, objective: string, status?: CodexGoalStatus): Promise<CodexGoal | null>
-  codexClearGoal(sessionId: string, threadId: string | null): Promise<boolean>
 
   // Codex Marketplace
   codexMarketplaceAdd(projectPath: string, request: CodexMarketplaceAddRequest): Promise<CodexMarketplaceAddResult>
@@ -1203,6 +1183,13 @@ export interface EnvironmentAPI extends MediaComposerAPI {
     sessionId: string,
     patch: import('@superone/shared/environment/session-requests').SessionSettingsPatch,
   ): Promise<unknown>
+  /** A session operation outside the shared node family; `connectionId` is `local` for this computer. */
+  callSession<M extends import('@superone/shared/environment/session-requests').SessionCallMethod>(
+    connectionId: string,
+    sessionId: string,
+    method: M,
+    input: import('@superone/shared/environment/session-requests').SessionCallMethods[M]['input'],
+  ): Promise<import('@superone/shared/environment/session-requests').SessionCallMethods[M]['result']>
   interruptSession(connectionId: string, sessionId: string): Promise<void>
   /** Control a session again after the computer it runs on took it back. */
   reclaimSessionControl(connectionId: string, sessionId: string): Promise<void>

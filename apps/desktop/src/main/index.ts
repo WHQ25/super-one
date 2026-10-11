@@ -258,7 +258,7 @@ import type { DetailTarget } from '@superone/shared/environment/detail'
 import type { AppSettings, AppSettingsPatch, TerminalEvent, GitInfoResult, ScheduledSendPatch, ScheduledSendSessionInit, ThemeMode, WindowFoldStep, WindowMiniMode } from '@superone/shared/agent-types'
 import type { ModUiOp, ModUiRequest } from '@superone/shared/mod-ui'
 import { windowControlIpc } from './session/control-context'
-import type { SessionCreateRequest, SessionForkRequestInput, SessionPermissionAnswer, SessionPlanAnswer, SessionQuestionAnswer, SessionSendRequest, SessionSettingsPatch } from '@superone/shared/environment/session-requests'
+import type { SessionCallMethod, SessionCallMethods, SessionCreateRequest, SessionForkRequestInput, SessionPermissionAnswer, SessionPlanAnswer, SessionQuestionAnswer, SessionSendRequest, SessionSettingsPatch } from '@superone/shared/environment/session-requests'
 import { MINI_WINDOW_SIZE } from '@superone/shared/agent-types'
 import { foldWindow, unfoldWindow } from './window-fold'
 import { recordBrowserHistory, suggestBrowserHistory, deleteBrowserHistory } from './browser-history-service'
@@ -2337,6 +2337,13 @@ function registerIpcHandlers(): void {
     },
   )
   sessionIpc.handle(
+    AgentIpcChannels.ENVIRONMENT_CALL_SESSION,
+    async (_e, connectionId: string, sessionId: string, method: SessionCallMethod, input: SessionCallMethods[SessionCallMethod]['input']) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().callSession(connectionId, sessionId, method, input)
+    },
+  )
+  sessionIpc.handle(
     AgentIpcChannels.ENVIRONMENT_INTERRUPT_SESSION,
     async (_e, connectionId: string, sessionId: string) => {
       const { getEnvironmentHost } = await import('./environment')
@@ -2874,24 +2881,6 @@ function registerIpcHandlers(): void {
     const { mapCodexMcpStatusForIpc } = await import('./codex/codex-mcp-status')
     const mapped = statuses.map(mapCodexMcpStatusForIpc).filter((entry): entry is import('@superone/shared/agent-types').McpServerInfo => entry !== null)
     return serverName ? mapped.filter((entry) => entry.name === serverName) : mapped
-  })
-
-  ipcMain.handle(AgentIpcChannels.CODEX_GOAL_GET, (_event, sessionId: string, threadId: string | null) => {
-    const session = getCodexSession(sessionId)
-    if (!session) throw new Error(`CODEX_GOAL_GET: no codex session found for sid=${sessionId}`)
-    return session.getCodexGoal(threadId)
-  })
-
-  ipcMain.handle(AgentIpcChannels.CODEX_GOAL_SET, (_event, sessionId: string, threadId: string | null, objective: string, status?: import('@superone/shared/agent-types').CodexGoalStatus) => {
-    const session = getCodexSession(sessionId)
-    if (!session) throw new Error(`CODEX_GOAL_SET: no codex session found for sid=${sessionId}`)
-    return session.setCodexGoal(threadId, objective, status)
-  })
-
-  ipcMain.handle(AgentIpcChannels.CODEX_GOAL_CLEAR, (_event, sessionId: string, threadId: string | null) => {
-    const session = getCodexSession(sessionId)
-    if (!session) throw new Error(`CODEX_GOAL_CLEAR: no codex session found for sid=${sessionId}`)
-    return session.clearCodexGoal(threadId)
   })
 
   ipcMain.handle(AgentIpcChannels.CODEX_MARKETPLACE_ADD, async (_event, projectPath: string, request: import('@superone/shared/agent-types').CodexMarketplaceAddRequest) => {

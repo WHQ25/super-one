@@ -2,11 +2,9 @@ import { acquirePhoneControl, controlLeaseAuthority } from '../control-lease.tes
 import { createPhoneMethods } from '../remote/phone-methods'
 import { ADMIN_PAIRING_SCOPES } from '@superone/shared/environment'
 import type { RpcContext } from '@superone/runtime/server'
-import { terminalLeaseAuthority } from '../terminal/terminal-lease.test-fixtures'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getSandboxCapability } from '../sandbox-platform'
 import { SessionLease } from '../session/session-lease'
-import { enqueueSessionQueueOp } from '../session/session-queue'
 
 const { createdAgents } = vi.hoisted(() => ({
   createdAgents: [] as Array<{
@@ -953,38 +951,6 @@ describe('AgentService SEND_MESSAGE', () => {
     expect(send).toHaveBeenCalled()
   })
 
-  it('REQUEST_SESSION_RECAP calls session.requestSessionRecap(false)', async () => {
-    const service = new AgentService()
-    const requestSessionRecap = vi.fn().mockResolvedValue(true)
-    const existing = makeMockSession({
-      id: 'sid-grok',
-      cwd: '/repo/main',
-      snapshot: { harnessId: 'acp', messages: [] },
-      requestSessionRecap,
-    })
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getSession: vi.fn(() => existing),
-    }
-    service.setup()
-    const handler = getRegisteredIpcHandler(AgentIpcChannels.REQUEST_SESSION_RECAP)!
-
-    const ok = await handler(null, 'sid-grok')
-
-    expect(ok).toBe(true)
-    expect(requestSessionRecap).toHaveBeenCalledWith(false)
-  })
-
-  it('REQUEST_SESSION_RECAP returns false when session is missing', async () => {
-    const service = new AgentService()
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getSession: vi.fn(() => null),
-    }
-    service.setup()
-    const handler = getRegisteredIpcHandler(AgentIpcChannels.REQUEST_SESSION_RECAP)!
-
-    await expect(handler(null, 'missing')).resolves.toBe(false)
-  })
-
   it('prewarm switches existing session cwd when worktreePath differs', async () => {
     const service = new AgentService()
     const applyWorktreeSelection = vi.fn().mockResolvedValue(undefined)
@@ -1711,43 +1677,7 @@ describe('AgentService phone projections', () => {
   })
 })
 
-describe('IPC queue control', () => {
-  it('refuses dequeue admitted before a phone takes control while the queue is blocked', async () => {
-    const authority = terminalLeaseAuthority()
-    const lease = new SessionLease('sid-queue-control', authority)
-    const dequeueMessage = vi.fn(async () => true)
-    const session = makeMockSession({ id: lease.sessionId, lease, dequeueMessage })
-    const service = new AgentService()
-    ;(service as { sessionManager: unknown }).sessionManager = { getActiveSession: vi.fn(() => session) }
-    service.setup()
-    let release!: () => void
-    const blocked = enqueueSessionQueueOp(session.id, () => new Promise<void>((resolve) => { release = resolve }))
-    await Promise.resolve()
-    const pending = getRegisteredIpcHandler(AgentIpcChannels.DEQUEUE_MESSAGE)!(null, '/p', 'queued-1')
-    const rejected = expect(pending).rejects.toThrow('stale lease')
-    expect(authority.leases.get(lease.resource)?.delegate).toBe('window:99')
-    acquirePhoneControl(authority, lease.sessionId, 'phone-a')
-    release()
-    await blocked
-    await rejected
-    expect(dequeueMessage).not.toHaveBeenCalled()
-    expect(authority.leases.get(lease.resource)?.delegate).toBe('phone:phone-a')
-  })
-})
-
 describe('IPC interaction responses', () => {
-  function setupServiceWithSession(session: ReturnType<typeof makeMockSession>) {
-    const broadcasts: unknown[] = []
-    const service = new AgentService()
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getSession: vi.fn(() => session),
-      getActiveSession: vi.fn(() => session),
-    }
-    ;(service as unknown as { publishEnvironmentEvent: (e: unknown) => void }).publishEnvironmentEvent = (e) => { broadcasts.push(e) }
-    service.setup()
-    return { service, broadcasts }
-  }
-
   it('publishes environment events through the injected publisher only', () => {
     const published: unknown[] = []
     const subscribed: unknown[] = []
@@ -1761,168 +1691,12 @@ describe('IPC interaction responses', () => {
     expect(subscribed).toEqual([])
   })
 
-  // Each handler only delegates: `Session` announces `interaction_resolved`
-  // (session.test.ts), so every caller gets it once.
-  it('PERMISSION_RESPONSE delegates to the session and returns whether it was handled', async () => {
-    const respondToPermission = vi.fn(() => true)
-    const session = makeMockSession({
-      id: 'sid-1',
-      snapshot: { projectPath: '/p', harnessId: 'claude', messages: [] },
-      respondToPermission,
-    })
-    const { broadcasts } = setupServiceWithSession(session)
-    const handler = getRegisteredIpcHandler(AgentIpcChannels.PERMISSION_RESPONSE)!
-
-    expect(await handler(null, 'sid-1', 'req-1', true, false)).toBe(true)
-
-    expect(respondToPermission).toHaveBeenCalledWith('req-1', true, false, undefined, undefined, undefined, undefined)
-    expect(broadcasts).toEqual([])
-  })
-
-  it('PERMISSION_RESPONSE answers false when the session is missing', async () => {
-    const service = new AgentService()
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getSession: vi.fn(() => undefined),
-      getActiveSession: vi.fn(() => undefined),
-    }
-    service.setup()
-    const handler = getRegisteredIpcHandler(AgentIpcChannels.PERMISSION_RESPONSE)!
-
-    expect(await handler(null, 'missing-sid', 'req-1', true, false)).toBe(false)
-  })
-
-  it('SET_PERMISSION_MODE applies only to the explicitly targeted session', async () => {
-    const setPermissionMode = vi.fn().mockResolvedValue(undefined)
-    const session = makeMockSession({
-      id: 'sid-mode',
-      snapshot: { projectPath: '/p-mode', harnessId: 'dsh', status: 'idle', messages: [] },
-      setPermissionMode,
-    })
-    setupServiceWithSession(session)
-    const handler = getRegisteredIpcHandler(AgentIpcChannels.SET_PERMISSION_MODE)!
-
-    await expect(handler(null, '/p-mode', 'sid-mode', 'default')).resolves.toBe(true)
-
-    expect(setPermissionMode).toHaveBeenCalledWith('default')
-  })
-
-  it('SET_PERMISSION_MODE treats a disposal race as a stale no-op', async () => {
-    const snapshot = { projectPath: '/p', harnessId: 'dsh', status: 'idle', messages: [] }
-    const setPermissionMode = vi.fn().mockImplementation(async () => {
-      snapshot.status = 'disposed'
-      throw new Error('disposed')
-    })
-    const session = makeMockSession({
-      id: 'sid-disposed',
-      snapshot,
-      setPermissionMode,
-    })
-    setupServiceWithSession(session)
-    const handler = getRegisteredIpcHandler(AgentIpcChannels.SET_PERMISSION_MODE)!
-
-    await expect(handler(null, '/p', 'sid-disposed', 'default')).resolves.toBe(false)
-  })
-
-  it('ANSWER_QUESTION, DISMISS_QUESTION and RESPOND_PLAN_APPROVAL delegate to the session', async () => {
-    const respondToQuestion = vi.fn()
-    const dismissQuestion = vi.fn()
-    const respondToPlanApproval = vi.fn()
-    const session = makeMockSession({
-      id: 'sid-2',
-      snapshot: { projectPath: '/p2', harnessId: 'claude', messages: [] },
-      respondToQuestion,
-      dismissQuestion,
-      respondToPlanApproval,
-    })
-    const { broadcasts } = setupServiceWithSession(session)
-
-    await getRegisteredIpcHandler(AgentIpcChannels.ANSWER_QUESTION)!(null, 'sid-2', 'q-1', { foo: 'bar' })
-    await getRegisteredIpcHandler(AgentIpcChannels.DISMISS_QUESTION)!(null, 'sid-2', 'q-2')
-    await getRegisteredIpcHandler(AgentIpcChannels.RESPOND_PLAN_APPROVAL)!(null, 'sid-2', 'plan-1', false, 'looks risky')
-
-    expect(respondToQuestion).toHaveBeenCalledWith('q-1', { foo: 'bar' }, undefined)
-    expect(dismissQuestion).toHaveBeenCalledWith('q-2')
-    expect(respondToPlanApproval).toHaveBeenCalledWith('plan-1', false, 'looks risky')
-    expect(broadcasts).toEqual([])
-  })
 })
 
 const fsForAddDirTests = await import('fs')
 const osForAddDirTests = await import('os')
 const pathForAddDirTests = await import('path')
 const childProcessForAddDirTests = await import('child_process')
-
-/**
- * A scoped write carries a renderer-supplied session id. Both the ownership and
- * the remote-lock check therefore have to read that session — reading the
- * project's active one answers a question about a different session and lets
- * the write through on the strength of it.
- */
-describe('SET_SESSION_SETTINGS scoped writes', () => {
-  const PROJECT = '/project-a'
-
-  function makeSession(over: Partial<{ projectPath: string; phone: boolean }> = {}) {
-    const authority = controlLeaseAuthority()
-    const lease = new SessionLease('scoped', authority)
-    if (over.phone) acquirePhoneControl(authority, 'scoped', 'other')
-    return {
-      lease,
-      snapshot: { projectPath: over.projectPath ?? PROJECT },
-      setSelectedSettings: vi.fn(),
-      setAgentPreset: vi.fn(),
-    }
-  }
-
-  function setup(sessions: Record<string, ReturnType<typeof makeSession>>, activeId: string) {
-    const service = new AgentService()
-    service.setup()
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getSession: (id: string) => sessions[id] ?? null,
-      getActiveSession: () => sessions[activeId] ?? null,
-    }
-    return getRegisteredIpcHandler(AgentIpcChannels.SET_SESSION_SETTINGS)!
-  }
-
-  it('applies a scoped write to the addressed session, leaving the active one alone', async () => {
-    const active = makeSession()
-    const pane = makeSession()
-    const handle = setup({ active, pane }, 'active')
-
-    await handle({}, PROJECT, { model: 'opus-4-8' }, 'pane')
-
-    expect(pane.setSelectedSettings).toHaveBeenCalledWith({ model: 'opus-4-8' })
-    expect(active.setSelectedSettings).not.toHaveBeenCalled()
-  })
-
-  it('refuses a scoped write to a session owned by a remote device, even when the active session is free', async () => {
-    const active = makeSession()
-    const pane = makeSession({ phone: true })
-    const handle = setup({ active, pane }, 'active')
-
-    await handle({}, PROJECT, { model: 'opus-4-8' }, 'pane')
-
-    expect(pane.setSelectedSettings).not.toHaveBeenCalled()
-  })
-
-  it('refuses a scoped write whose session belongs to a different project', async () => {
-    const active = makeSession()
-    const foreign = makeSession({ projectPath: '/project-b' })
-    const handle = setup({ active, foreign }, 'active')
-
-    await handle({}, PROJECT, { model: 'opus-4-8' }, 'foreign')
-
-    expect(foreign.setSelectedSettings).not.toHaveBeenCalled()
-  })
-
-  it('still resolves the project active session when no id is supplied', async () => {
-    const active = makeSession()
-    const handle = setup({ active }, 'active')
-
-    await handle({}, PROJECT, { model: 'opus-4-8' })
-
-    expect(active.setSelectedSettings).toHaveBeenCalledWith({ model: 'opus-4-8' })
-  })
-})
 
 describe('add-dir IPC handlers', () => {
   const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = fsForAddDirTests

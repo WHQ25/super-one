@@ -50,7 +50,8 @@ const mockEnvCreateSession = vi.fn()
 const mockEnvSendSessionMessage = vi.fn()
 const mockToastError = vi.fn()
 
-const mockRequestSessionRecap = vi.fn().mockResolvedValue(true)
+/** `window.environment.callSession`, which carries `/recap` for every environment. */
+const mockEnvCallSession = vi.fn().mockResolvedValue({ ok: true })
 
 vi.mock('sonner', () => ({
   toast: { error: (...args: unknown[]) => mockToastError(...args) },
@@ -71,7 +72,6 @@ vi.stubGlobal('window', {
     resetSession: vi.fn().mockResolvedValue(undefined),
     parkSession: vi.fn().mockResolvedValue(undefined),
     prewarm: vi.fn().mockResolvedValue(undefined),
-    requestSessionRecap: mockRequestSessionRecap,
     activateSession: mockActivateSession,
   },
   app: {
@@ -84,6 +84,7 @@ vi.stubGlobal('window', {
     getSession: mockEnvGetSession,
     createSession: mockEnvCreateSession,
     sendSessionMessage: mockEnvSendSessionMessage,
+    callSession: mockEnvCallSession,
   },
   miniapp: { authorize: mockMiniAppAuthorize },
   dispatchEvent: vi.fn(),
@@ -127,7 +128,7 @@ beforeEach(() => {
   mockWorktreeState.pendingCarryLocalChanges = false
   mockActivateWorktree.mockReset().mockResolvedValue({ ok: true, path: '/wt/feature-x' })
   mockSendMessage.mockReset().mockResolvedValue(undefined)
-  mockRequestSessionRecap.mockReset().mockResolvedValue(true)
+  mockEnvCallSession.mockReset().mockResolvedValue({ ok: true })
   mockSetActiveWorktree.mockReset()
   mockMiniAppAuthorize.mockReset().mockResolvedValue(undefined)
   mockActivateSession.mockReset().mockResolvedValue(undefined)
@@ -599,8 +600,8 @@ describe('sendMessageImpl: intercepted commands', () => {
     expect(mockRunCodexCommand).not.toHaveBeenCalled()
   })
 
-  it('intercepts Grok /recap and calls requestSessionRecap without sending a turn', async () => {
-    mockRequestSessionRecap.mockClear()
+  it('intercepts Grok /recap and requests a session recap without sending a turn', async () => {
+    mockEnvCallSession.mockClear()
     seedProject('/proj', 'sid-grok', {
       sessionProvider: 'acp',
       preferredProvider: 'acp',
@@ -609,15 +610,15 @@ describe('sendMessageImpl: intercepted commands', () => {
 
     await useChatStore.getState().sendMessage('/recap')
 
-    expect(mockRequestSessionRecap).toHaveBeenCalledWith('sid-grok')
+    expect(mockEnvCallSession).toHaveBeenCalledWith('local', 'sid-grok', 'session.recap', { auto: false })
     expect(mockSendMessage).not.toHaveBeenCalled()
     expect(getActiveSession('/proj').messages).toEqual([])
     // RPC resolved true — stay in generating state until session_recap arrives.
     expect(getActiveSession('/proj').isRecapping).toBe(true)
   })
 
-  it('clears isRecapping when requestSessionRecap returns false', async () => {
-    mockRequestSessionRecap.mockClear().mockResolvedValue(false)
+  it('clears isRecapping when the recap request returns ok=false', async () => {
+    mockEnvCallSession.mockClear().mockResolvedValue({ ok: false })
     seedProject('/proj', 'sid-grok', {
       sessionProvider: 'acp',
       preferredProvider: 'acp',
@@ -647,7 +648,7 @@ describe('sendMessageImpl: intercepted commands', () => {
   })
 
   it('does not intercept /recap for non-Grok ACP agents', async () => {
-    mockRequestSessionRecap.mockClear()
+    mockEnvCallSession.mockClear()
     seedProject('/proj', 'sid-other', {
       sessionProvider: 'acp',
       preferredProvider: 'acp',
@@ -656,7 +657,7 @@ describe('sendMessageImpl: intercepted commands', () => {
 
     await useChatStore.getState().sendMessage('/recap')
 
-    expect(mockRequestSessionRecap).not.toHaveBeenCalled()
+    expect(mockEnvCallSession).not.toHaveBeenCalled()
     expect(mockSendMessage).toHaveBeenCalled()
   })
 })

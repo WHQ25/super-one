@@ -104,7 +104,7 @@ import type {
   ProjectSnapshot,
 } from '@superone/shared/environment'
 import type { PinnedSessionEntry, SessionHistoryEntry } from '@superone/shared/agent-types'
-import type { SessionForkRequestInput, SessionPermissionAnswer, SessionPlanAnswer, SessionQuestionAnswer, SessionSendRequest, SessionSettingsPatch } from '@superone/shared/environment/session-requests'
+import { SESSION_CALL_METHODS, SESSION_CALL_READS, type SessionCallMethod, type SessionCallMethods, type SessionForkRequestInput, type SessionPermissionAnswer, type SessionPlanAnswer, type SessionQuestionAnswer, type SessionSendRequest, type SessionSettingsPatch } from '@superone/shared/environment/session-requests'
 import { remoteProjectKey } from '@superone/shared/remote-resource-key'
 import { RoutedControlPresence } from '../node-host/routed-control-presence'
 import { parseTagsJson } from '@superone/shared/session-tags'
@@ -2045,6 +2045,19 @@ export class EnvironmentHost {
     const { gateway, environmentId } = this.resolveSession(connectionId)
     const control = await this.ensureSessionLease(connectionId, sessionId)
     return gateway.sessions.patchSettings!({ session: { environmentId, sessionId }, ...patch, ...control })
+  }
+
+  /** A session operation outside the shared node family (`SessionCallMethods`). */
+  async callSession<M extends SessionCallMethod>(
+    connectionId: string,
+    sessionId: string,
+    method: M,
+    input: SessionCallMethods[M]['input'],
+  ): Promise<SessionCallMethods[M]['result']> {
+    if (!SESSION_CALL_METHODS.has(method)) throw Object.assign(new Error(`${method} is not a session call`), { code: 'invalid_argument' })
+    const { gateway } = this.resolveSession(connectionId)
+    const control = SESSION_CALL_READS.has(method) ? {} : await this.ensureSessionLease(connectionId, sessionId)
+    return gateway.callSession(method, { ...input, sessionId, ...control })
   }
 
   async interruptSession(connectionId: string, sessionId: string): Promise<void> {

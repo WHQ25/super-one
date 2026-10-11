@@ -63,10 +63,23 @@ export class FakeSession {
   getAgentPreset() { return this.agentPreset }
   additionalDirectories: string[] = []
   getCallerScopedDirsSnapshot() { return this.additionalDirectories }
+  readonly commands: BackendCommand[] = []
   async dispatchBackendCommand(command: BackendCommand) {
     this.lease.assertMutation()
+    this.commands.push(command)
     if (command.kind === 'session.set_additional_dirs') this.additionalDirectories = [...command.dirs]
   }
+  queued: string[] = []
+  async dequeueMessage(clientMessageId: string) {
+    this.lease.assertMutation()
+    const before = this.queued.length
+    this.queued = this.queued.filter((id) => id !== clientMessageId)
+    return this.queued.length < before
+  }
+  goal: { objective: string; status: string } | null = null
+  async getCodexGoal() { return this.goal }
+  async setCodexGoal(_threadId: string | null, objective: string, status = 'active') { this.lease.assertMutation(); this.goal = { objective, status }; return this.goal }
+  async clearCodexGoal() { this.lease.assertMutation(); this.goal = null; return true }
   setAgentPreset(value: string | null) { this.lease.assertMutation(); this.agentPreset = value }
   getSelectedModel() { return this.model }
   getSelectedEffort() { return this.effort }

@@ -38,17 +38,32 @@ import { useChatStore } from '@/stores/chat'
 const PROJECT = '/ultracode-project'
 const OPUS: ModelOption = { id: 'opus', name: 'Opus', description: '', supportedEffortLevels: ['low', 'medium', 'high', 'xhigh', 'max'] }
 const HAIKU: ModelOption = { id: 'haiku', name: 'Haiku', description: '', supportedEffortLevels: ['low', 'medium', 'high'] }
-const setSessionSettings = vi.fn()
+/** `window.environment.patchSessionSettings`: a host-owned session's settings change. */
+const patchSessionSettings = vi.fn()
 
 function session() {
   const state = useChatStore.getState()
   return state.projectSessions[PROJECT]!._sessions[state.projectSessions[PROJECT]!._activeSessionId!]!
 }
 
+/** Mark the project's active session as one its host has created. */
+function hostOwned(projectPath: string) {
+  useChatStore.setState((s) => {
+    const project = s.projectSessions[projectPath]!
+    const sid = project._activeSessionId!
+    return {
+      projectSessions: {
+        ...s.projectSessions,
+        [projectPath]: { ...project, _sessions: { ...project._sessions, [sid]: { ...project._sessions[sid]!, hostSessionOwned: true } } },
+      },
+    }
+  })
+}
+
 beforeEach(() => {
   selectorProps = {}
-  setSessionSettings.mockReset()
-  ;(window as unknown as { agent: Record<string, unknown> }).agent = { setSessionSettings }
+  patchSessionSettings.mockReset().mockResolvedValue({})
+  Object.assign(window.environment, { patchSessionSettings })
   useChatStore.setState({
     harnessResources: {
       claude: { models: [OPUS, HAIKU], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [] },
@@ -68,13 +83,14 @@ afterEach(() => {
 
 describe('ClaudeModelSelector Ultracode toggle', () => {
   it('offers Ultracode on a model with xhigh effort and sends the switch to the session', () => {
+    hostOwned(PROJECT)
     render(<ClaudeModelSelector />)
     expect(selectorProps.optionParams).toEqual([expect.objectContaining({ id: 'ultracode', selected: 'false' })])
 
     act(() => selectorProps.onOptionParamChange?.('ultracode', 'true'))
 
     expect(session().ultracode).toBe(true)
-    expect(setSessionSettings).toHaveBeenCalledWith(PROJECT, { ultracode: true }, undefined)
+    expect(patchSessionSettings).toHaveBeenCalledWith('local', useChatStore.getState().projectSessions[PROJECT]!._activeSessionId, { ultracode: true })
   })
 
   it('hides Ultracode and turns it off when the model has no xhigh effort', () => {
@@ -87,7 +103,7 @@ describe('ClaudeModelSelector Ultracode toggle', () => {
     expect(session().ultracode).toBe(false)
   })
 
-  it('offers Ultracode on a remote project, where the next turn carries it instead of IPC', () => {
+  it('offers Ultracode on a remote project draft, which keeps it for its first send', () => {
     const remote = 'remote:conn-1:/srv/app'
     useChatStore.getState().ensureSession(remote)
     useChatStore.setState((s) => ({
@@ -96,12 +112,30 @@ describe('ClaudeModelSelector Ultracode toggle', () => {
     }))
     useChatStore.getState().setSelectedModel('opus')
     render(<ClaudeModelSelector />)
-    setSessionSettings.mockClear()
+    patchSessionSettings.mockClear()
 
     act(() => selectorProps.onOptionParamChange?.('ultracode', 'true'))
 
     const state = useChatStore.getState().projectSessions[remote]!
     expect(state._sessions[state._activeSessionId!]!.ultracode).toBe(true)
-    expect(setSessionSettings).not.toHaveBeenCalled()
+    expect(patchSessionSettings).not.toHaveBeenCalled()
+  })
+
+  it("sends the switch to the node running a remote session", () => {
+    const remote = 'remote:conn-1:/srv/app'
+    useChatStore.getState().ensureSession(remote)
+    useChatStore.setState((s) => ({
+      activeProject: remote,
+      projectSessions: { ...s.projectSessions, [remote]: { ...s.projectSessions[remote]!, claudeModels: [OPUS] } },
+    }))
+    hostOwned(remote)
+    useChatStore.getState().setSelectedModel('opus')
+    render(<ClaudeModelSelector />)
+    patchSessionSettings.mockClear()
+
+    act(() => selectorProps.onOptionParamChange?.('ultracode', 'true'))
+
+    const state = useChatStore.getState().projectSessions[remote]!
+    expect(patchSessionSettings).toHaveBeenCalledWith('conn-1', state._activeSessionId, { ultracode: true })
   })
 })

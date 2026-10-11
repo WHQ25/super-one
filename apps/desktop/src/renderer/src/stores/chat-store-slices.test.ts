@@ -32,18 +32,21 @@ vi.mock('./activity-view-state', () => ({
 
 const mockWindowAgent = {
   prewarm: vi.fn().mockResolvedValue(undefined),
-  setPermissionMode: vi.fn().mockResolvedValue(undefined),
-  setSessionSettings: vi.fn().mockResolvedValue(undefined),
   broadcastSessionSetting: vi.fn().mockResolvedValue(undefined),
   rewindFiles: vi.fn().mockResolvedValue({ canRewind: true } as const),
   rewindCodeAndChat: vi.fn().mockResolvedValue({ canRewind: true } as const),
   rewindConversation: vi.fn().mockResolvedValue({ canRewind: true } as const),
   previewRewind: vi.fn().mockResolvedValue({ canRewind: true } as const),
   truncateAtCheckpoint: vi.fn().mockResolvedValue(undefined),
-  dequeueMessage: vi.fn().mockResolvedValue(true),
-  steerQueuedMessage: vi.fn().mockResolvedValue(true),
   startQueuedMessages: vi.fn().mockResolvedValue(true),
   parkSession: vi.fn().mockResolvedValue(undefined),
+}
+
+// The project is a plain path, so every session call addresses `local`.
+const mockWindowEnvironment = {
+  patchSessionSettings: vi.fn().mockResolvedValue({}),
+  callSession: vi.fn(async (_connectionId: string, _sessionId: string, method: string) =>
+    method === 'session.dequeue' ? { removed: true } : { ok: true }),
 }
 
 const mockWindowApp = {
@@ -62,6 +65,7 @@ const eventTarget = new EventTarget()
 vi.stubGlobal('window', {
   agent: mockWindowAgent,
   app: mockWindowApp,
+  environment: mockWindowEnvironment,
   localStorage: mockLocalStorage,
   dispatchEvent: (e: Event) => eventTarget.dispatchEvent(e),
   addEventListener: (t: string, h: EventListenerOrEventListenerObject) => eventTarget.addEventListener(t, h),
@@ -323,6 +327,7 @@ const sonnet: ModelOption = {
 describe('claude-slice: setSelectedModel', () => {
   it('writes model + default effort, broadcasts to backend, and marks model user-chosen', () => {
     setupProject()
+    patchSession({ hostSessionOwned: true })
     setClaudeResources({ models: [opus, sonnet], account: { subscriptionType: 'Claude Max' } as AccountInfo })
 
     useChatStore.getState().setSelectedModel('opus-4-8')
@@ -333,21 +338,21 @@ describe('claude-slice: setSelectedModel', () => {
     expect(sess.modelUserChosen).toBe(true)
     expect(sess.effortUserChosen).toBe(false)
     expect(sess.contextWindow).toBeNull()
-    expect(mockWindowAgent.setSessionSettings).toHaveBeenCalledWith(PATH, { model: 'opus-4-8', effort: 'high' }, undefined)
-    expect(mockWindowAgent.setPermissionMode).not.toHaveBeenCalled()
+    expect(mockWindowEnvironment.patchSessionSettings).toHaveBeenCalledTimes(1)
+    expect(mockWindowEnvironment.patchSessionSettings).toHaveBeenCalledWith('local', activeProjectState()._activeSessionId, { model: 'opus-4-8', effort: 'high' })
     expect(mockWindowAgent.prewarm).not.toHaveBeenCalled()
   })
 
   it("keeps permissionMode='auto' when switching models (no client-side auto-mode gate)", () => {
     setupProject()
     setClaudeResources({ models: [opus, sonnet], account: { subscriptionType: 'Claude Max' } as AccountInfo })
-    patchSession({ permissionMode: 'auto' })
+    patchSession({ permissionMode: 'auto', hostSessionOwned: true })
 
     useChatStore.getState().setSelectedModel('sonnet-4-6')
 
     expect(activeSession().permissionMode).toBe('auto')
     expect(activeSession().selectedModel).toBe('sonnet-4-6')
-    expect(mockWindowAgent.setPermissionMode).not.toHaveBeenCalled()
+    expect(mockWindowEnvironment.patchSessionSettings).not.toHaveBeenCalledWith('local', expect.any(String), expect.objectContaining({ permissionMode: expect.anything() }))
   })
 
   it('prewarms immediately when there is unsent draft text', () => {
@@ -363,23 +368,25 @@ describe('claude-slice: setSelectedModel', () => {
   it('is a no-op when no project is active', () => {
     setClaudeResources({ models: [opus] })
     useChatStore.getState().setSelectedModel('opus-4-8')
-    expect(mockWindowAgent.setSessionSettings).not.toHaveBeenCalled()
+    expect(mockWindowEnvironment.patchSessionSettings).not.toHaveBeenCalled()
   })
 })
 
 describe('claude-slice: setSelectedEffort', () => {
   it('writes effort + effortUserChosen=true and broadcasts to backend', () => {
     setupProject()
+    patchSession({ hostSessionOwned: true })
     useChatStore.getState().setSelectedEffort('high')
     expect(activeSession().selectedEffort).toBe('high')
     expect(activeSession().effortUserChosen).toBe(true)
-    expect(mockWindowAgent.setSessionSettings).toHaveBeenCalledWith(PATH, { effort: 'high' }, undefined)
+    expect(mockWindowEnvironment.patchSessionSettings).toHaveBeenCalledWith('local', activeProjectState()._activeSessionId, { effort: 'high' })
   })
 
   it('forwards undefined as null to backend when effort is cleared', () => {
     setupProject()
+    patchSession({ hostSessionOwned: true })
     useChatStore.getState().setSelectedEffort(undefined)
-    expect(mockWindowAgent.setSessionSettings).toHaveBeenCalledWith(PATH, { effort: null }, undefined)
+    expect(mockWindowEnvironment.patchSessionSettings).toHaveBeenCalledWith('local', activeProjectState()._activeSessionId, { effort: null })
   })
 
   it('prewarms immediately when there is unsent draft text', () => {
@@ -391,7 +398,7 @@ describe('claude-slice: setSelectedEffort', () => {
 
   it('is a no-op when no project is active', () => {
     useChatStore.getState().setSelectedEffort('low')
-    expect(mockWindowAgent.setSessionSettings).not.toHaveBeenCalled()
+    expect(mockWindowEnvironment.patchSessionSettings).not.toHaveBeenCalled()
   })
 })
 
@@ -517,7 +524,7 @@ describe('session-slice: queued-message edit/delete', () => {
 
     await useChatStore.getState().editQueuedMessage('q1')
 
-    expect(mockWindowAgent.dequeueMessage).toHaveBeenCalledWith(PATH, 'q1')
+    expect(mockWindowEnvironment.callSession).toHaveBeenCalledWith('local', activeProjectState()._activeSessionId, 'session.dequeue', { clientMessageId: 'q1' })
     expect(activeSession().queuedMessages.map((m) => m.id)).toEqual(['q2'])
     expect(activeSession().draftText).toBe('first')
     expect(activeSession().codexPlanRejectHintActive).toBe(false)
@@ -541,7 +548,7 @@ describe('session-slice: queued-message edit/delete', () => {
   })
 
   it('editQueuedMessage is a no-op when the backend rejects dequeue', async () => {
-    mockWindowAgent.dequeueMessage.mockResolvedValueOnce(false as never)
+    mockWindowEnvironment.callSession.mockResolvedValueOnce({ removed: false })
     setupProject()
     patchSession({ queuedMessages: [queued('q1', 'first')], draftText: 'kept' })
 
@@ -555,7 +562,7 @@ describe('session-slice: queued-message edit/delete', () => {
     patchSession({ queuedMessages: [queued('q1', 'first')] })
 
     await useChatStore.getState().editQueuedMessage('ghost')
-    expect(mockWindowAgent.dequeueMessage).not.toHaveBeenCalled()
+    expect(mockWindowEnvironment.callSession).not.toHaveBeenCalled()
   })
 
   it('deleteQueuedMessage removes the message but never touches draftText', async () => {
@@ -566,13 +573,13 @@ describe('session-slice: queued-message edit/delete', () => {
     })
 
     await useChatStore.getState().deleteQueuedMessage('q2')
-    expect(mockWindowAgent.dequeueMessage).toHaveBeenCalledWith(PATH, 'q2')
+    expect(mockWindowEnvironment.callSession).toHaveBeenCalledWith('local', activeProjectState()._activeSessionId, 'session.dequeue', { clientMessageId: 'q2' })
     expect(activeSession().queuedMessages.map((m) => m.id)).toEqual(['q1'])
     expect(activeSession().draftText).toBe('keep me')
   })
 
   it('deleteQueuedMessage is a no-op when the backend rejects dequeue', async () => {
-    mockWindowAgent.dequeueMessage.mockResolvedValueOnce(false as never)
+    mockWindowEnvironment.callSession.mockResolvedValueOnce({ removed: false })
     setupProject()
     patchSession({ queuedMessages: [queued('q1', 'first')] })
 
@@ -587,7 +594,7 @@ describe('session-slice: queued-message edit/delete', () => {
 
     await expect(useChatStore.getState().steerQueuedMessage('q1', { projectPath: PATH, sessionId }, 'now')).resolves.toBe(true)
 
-    expect(mockWindowAgent.steerQueuedMessage).toHaveBeenCalledWith(PATH, 'q1', sessionId, 'now')
+    expect(mockWindowEnvironment.callSession).toHaveBeenCalledWith('local', sessionId, 'session.steer', { clientMessageId: 'q1', priority: 'now' })
     expect(activeSession().queuedMessages.map((m) => m.id)).toEqual(['q1'])
   })
 
@@ -598,7 +605,7 @@ describe('session-slice: queued-message edit/delete', () => {
 
     await expect(useChatStore.getState().steerQueuedMessage('q1', { projectPath: PATH, sessionId }, 'next')).resolves.toBe(true)
 
-    expect(mockWindowAgent.steerQueuedMessage).toHaveBeenCalledWith(PATH, 'q1', sessionId, 'next')
+    expect(mockWindowEnvironment.callSession).toHaveBeenCalledWith('local', sessionId, 'session.steer', { clientMessageId: 'q1', priority: 'next' })
   })
 
   it('does not call steer IPC for an unknown queued message', async () => {
@@ -607,7 +614,7 @@ describe('session-slice: queued-message edit/delete', () => {
 
     await expect(useChatStore.getState().steerQueuedMessage('ghost')).resolves.toBe(false)
 
-    expect(mockWindowAgent.steerQueuedMessage).not.toHaveBeenCalled()
+    expect(mockWindowEnvironment.callSession).not.toHaveBeenCalled()
   })
 
   it('starts the durable queue for the scoped session', async () => {
@@ -689,8 +696,9 @@ describe('session-slice: setDraftText', () => {
 // A non-active mosaic pane writing per-session state must hit its own session,
 // never the project's active one. setupTwoSessions returns { active, other }
 // where `other` is the non-active pane mimicked by a mosaic tile.
-function setupTwoSessions() {
+function setupTwoSessions(sessionPatch: Record<string, unknown> = {}) {
   setupProject()
+  patchSession(sessionPatch)
   const proj = useChatStore.getState().projectSessions[PATH]
   const active = proj._activeSessionId!
   const other = 'session-other'
@@ -788,7 +796,7 @@ describe('per-session writers: scoped target isolation', () => {
   // therefore re-configured the conversation it forked from, and left the side
   // chat displaying a model it was not running.
   it('setSelectedModel writes model + backend settings for the scoped pane, never the active session', () => {
-    const { active, other } = setupTwoSessions()
+    const { active, other } = setupTwoSessions({ hostSessionOwned: true })
     setClaudeResources({ models: [opus, sonnet], account: { subscriptionType: 'Claude Max' } as AccountInfo })
     useChatStore.getState().setSelectedModel('sonnet-4-6')
     vi.clearAllMocks()
@@ -797,15 +805,16 @@ describe('per-session writers: scoped target isolation', () => {
 
     expect(sessionOf(other).selectedModel).toBe('opus-4-8')
     expect(sessionOf(active).selectedModel).toBe('sonnet-4-6')
-    expect(mockWindowAgent.setSessionSettings).toHaveBeenCalledWith(
-      PATH,
-      { model: 'opus-4-8', effort: 'high' },
+    expect(mockWindowEnvironment.patchSessionSettings).toHaveBeenCalledTimes(1)
+    expect(mockWindowEnvironment.patchSessionSettings).toHaveBeenCalledWith(
+      'local',
       other,
+      { model: 'opus-4-8', effort: 'high' },
     )
   })
 
   it('setSelectedEffort writes effort for the scoped pane and addresses the backend by that session id', () => {
-    const { active, other } = setupTwoSessions()
+    const { active, other } = setupTwoSessions({ hostSessionOwned: true })
     useChatStore.getState().setSelectedEffort('low')
     vi.clearAllMocks()
 
@@ -813,7 +822,8 @@ describe('per-session writers: scoped target isolation', () => {
 
     expect(sessionOf(other).selectedEffort).toBe('high')
     expect(sessionOf(active).selectedEffort).toBe('low')
-    expect(mockWindowAgent.setSessionSettings).toHaveBeenCalledWith(PATH, { effort: 'high' }, other)
+    expect(mockWindowEnvironment.patchSessionSettings).toHaveBeenCalledTimes(1)
+    expect(mockWindowEnvironment.patchSessionSettings).toHaveBeenCalledWith('local', other, { effort: 'high' })
   })
 
   it('setSelectedCodexModel writes the codex pair for the scoped pane and broadcasts under that session id', () => {

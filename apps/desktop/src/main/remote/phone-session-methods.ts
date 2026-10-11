@@ -52,6 +52,14 @@ export function createPhoneSessionMethods(host: PhoneSessionMethodHost): Record<
       }
       return { ok: true }
     }),
+    'session.getGoal': async (p, ctx) => {
+      const sessionId = text(p, 'sessionId')
+      if (!ctx.sessions?.get(sessionId)) throw Object.assign(new Error('session not found'), { code: 'not_found' })
+      const session = host.getSession(sessionId)
+      // The app server reports a goal only when asked, and only for a running thread.
+      if (!session?.getCodexGoal || session.snapshot.harnessId !== 'codex') return { goal: null }
+      return { goal: await session.getCodexGoal(null) }
+    },
     'session.dequeue': fenced(async (session, p) => {
       const clientMessageId = text(p, 'clientMessageId')
       return enqueueSessionQueueOp(session.id, async () => {

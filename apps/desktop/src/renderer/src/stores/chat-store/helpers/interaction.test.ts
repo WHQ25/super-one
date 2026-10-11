@@ -3,11 +3,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const mockAgent = {
-  respondToPermission: vi.fn().mockResolvedValue(true),
-  answerQuestion: vi.fn().mockResolvedValue(undefined),
-  dismissQuestion: vi.fn().mockResolvedValue(undefined),
-  respondToPlanApproval: vi.fn().mockResolvedValue(undefined),
-  setPermissionMode: vi.fn().mockResolvedValue(true),
   parkSession: vi.fn().mockResolvedValue(undefined),
   activateSession: vi.fn().mockResolvedValue(undefined),
   prewarm: vi.fn().mockResolvedValue(undefined),
@@ -15,6 +10,8 @@ const mockAgent = {
 
 const mockEnvRespondSessionQuestion = vi.fn()
 const mockEnvRespondSessionPermission = vi.fn()
+const mockEnvRespondSessionPlan = vi.fn()
+const mockEnvPatchSessionSettings = vi.fn()
 const mockEnvGetSession = vi.fn()
 
 vi.mock('@/stores/app', () => ({
@@ -33,6 +30,8 @@ vi.stubGlobal('window', {
   environment: {
     respondSessionQuestion: mockEnvRespondSessionQuestion,
     respondSessionPermission: mockEnvRespondSessionPermission,
+    respondSessionPlan: mockEnvRespondSessionPlan,
+    patchSessionSettings: mockEnvPatchSessionSettings,
     getSession: mockEnvGetSession,
   },
 })
@@ -101,10 +100,8 @@ beforeEach(() => {
   })
   vi.clearAllMocks()
   _resetRemoteQuestionInFlightForTests()
-  mockAgent.respondToPermission.mockResolvedValue(true)
-  mockAgent.answerQuestion.mockResolvedValue(undefined)
-  mockAgent.dismissQuestion.mockResolvedValue(undefined)
-  mockAgent.setPermissionMode.mockReset().mockResolvedValue(true)
+  mockEnvRespondSessionPlan.mockReset().mockResolvedValue(undefined)
+  mockEnvPatchSessionSettings.mockReset().mockResolvedValue({})
   mockEnvRespondSessionQuestion.mockReset().mockResolvedValue({
     sessionId: 'sid-1',
     status: 'streaming',
@@ -125,8 +122,8 @@ beforeEach(() => {
 
 describe('respondToPermissionImpl', () => {
   it('finishes an acknowledgement in the original session after the user switches sessions', async () => {
-    let finish!: (handled: boolean) => void
-    mockAgent.respondToPermission.mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+    let finish!: () => void
+    mockEnvRespondSessionPermission.mockReturnValueOnce(new Promise<void>(resolve => { finish = resolve }))
     const request = { requestId: 'form', toolName: 'composer_request', input: {}, allowAlwaysAllow: false } as never
     seedSession('owner', { pendingPermissions: [request] })
     const pending = useChatStore.getState().respondToPermission('form', true)
@@ -134,7 +131,7 @@ describe('respondToPermissionImpl', () => {
     useChatStore.setState({ projectSessions: { '/p1': { ...project, _activeSessionId: 'other', _sessions: {
       ...project._sessions, other: { ...createDefaultPerSessionState(), pendingPermissions: [request] },
     } } } })
-    finish(true)
+    finish()
     expect(await pending).toBe(true)
     const sessions = useChatStore.getState().projectSessions['/p1']._sessions
     expect(sessions.owner.pendingPermissions).toEqual([])
@@ -142,7 +139,7 @@ describe('respondToPermissionImpl', () => {
   })
 
   it('keeps an input form pending when the host rejects its answer', async () => {
-    mockAgent.respondToPermission.mockResolvedValueOnce(false)
+    mockEnvRespondSessionPermission.mockRejectedValueOnce(new Error('no pending request'))
     seedSession('owner', { pendingPermissions: [{ requestId: 'form', toolName: 'composer_request', input: {}, allowAlwaysAllow: false, requestKind: 'input_request' }] })
     expect(await useChatStore.getState().respondToPermission('form', true, undefined, undefined, undefined, undefined, { notes: 'draft' })).toBe(false)
     expect(activeSession().pendingPermissions[0]?.requestId).toBe('form')
@@ -158,8 +155,8 @@ describe('respondToPermissionImpl', () => {
     const result = await useChatStore.getState().respondToPermission('r1', true)
 
     expect(result).toBe(true)
-    expect(mockAgent.respondToPermission).toHaveBeenCalledWith(
-      'sid-1', 'r1', true, undefined, undefined, undefined, undefined, undefined,
+    expect(mockEnvRespondSessionPermission).toHaveBeenCalledWith(
+      'local', { sessionId: 'sid-1', interactionId: 'r1', decision: 'allow' },
     )
     const remaining = activeSession().pendingPermissions
     expect(remaining.map((p) => p.requestId)).toEqual(['r2'])
@@ -173,8 +170,8 @@ describe('respondToPermissionImpl', () => {
     const result = await useChatStore.getState().respondToPermission('r1', false, undefined, 'too risky')
 
     expect(result).toBe(true)
-    expect(mockAgent.respondToPermission).toHaveBeenCalledWith(
-      'sid-1', 'r1', false, undefined, 'too risky', undefined, undefined, undefined,
+    expect(mockEnvRespondSessionPermission).toHaveBeenCalledWith(
+      'local', { sessionId: 'sid-1', interactionId: 'r1', decision: 'deny', reason: 'too risky' },
     )
     expect(activeSession().pendingPermissions).toHaveLength(0)
   })
@@ -187,20 +184,20 @@ describe('respondToPermissionImpl', () => {
     const result = await useChatStore.getState().respondToPermission('does-not-exist', true)
 
     expect(result).toBe(false)
-    expect(mockAgent.respondToPermission).not.toHaveBeenCalled()
+    expect(mockEnvRespondSessionPermission).not.toHaveBeenCalled()
     expect(activeSession().pendingPermissions).toHaveLength(1)
   })
 })
 
 describe('setPermissionModeImpl', () => {
   it('targets the initiating session and never a replacement that becomes active mid-flight', async () => {
-    let resolveIpc!: (value: boolean) => void
-    mockAgent.setPermissionMode.mockReturnValue(new Promise((resolve) => { resolveIpc = resolve }))
+    let resolveIpc!: (value: unknown) => void
+    mockEnvPatchSessionSettings.mockReturnValue(new Promise((resolve) => { resolveIpc = resolve }))
     const project = createDefaultProjectState()
     project._activeSessionId = 'sid-1'
     project._sessions = {
-      'sid-1': { ...createDefaultPerSessionState(), permissionMode: 'default' },
-      'sid-2': { ...createDefaultPerSessionState(), permissionMode: 'plan' },
+      'sid-1': { ...createDefaultPerSessionState(), permissionMode: 'default', hostSessionOwned: true },
+      'sid-2': { ...createDefaultPerSessionState(), permissionMode: 'plan', hostSessionOwned: true },
     }
     useChatStore.setState({ projectSessions: { '/p1': project }, activeProject: '/p1' })
 
@@ -211,18 +208,18 @@ describe('setPermissionModeImpl', () => {
         '/p1': { ...state.projectSessions['/p1'], _activeSessionId: 'sid-2' },
       },
     }))
-    resolveIpc(true)
+    resolveIpc({})
     await pending
 
-    expect(mockAgent.setPermissionMode).toHaveBeenCalledWith('/p1', 'sid-1', 'acceptEdits')
+    expect(mockEnvPatchSessionSettings).toHaveBeenCalledWith('local', 'sid-1', { permissionMode: 'acceptEdits' })
     const sessions = useChatStore.getState().projectSessions['/p1']._sessions
     expect(sessions['sid-1'].permissionMode).toBe('acceptEdits')
     expect(sessions['sid-2'].permissionMode).toBe('plan')
   })
 
   it('contains IPC failures so selector effects cannot create unhandled rejections', async () => {
-    mockAgent.setPermissionMode.mockRejectedValue(new Error('Session sid-1 is disposed'))
-    seedSession('sid-1', { permissionMode: 'plan' })
+    mockEnvPatchSessionSettings.mockRejectedValue(new Error('Session sid-1 is disposed'))
+    seedSession('sid-1', { permissionMode: 'plan', hostSessionOwned: true })
 
     await expect(useChatStore.getState().setPermissionMode('default')).resolves.toBeUndefined()
 
@@ -231,15 +228,15 @@ describe('setPermissionModeImpl', () => {
 })
 
 describe('answerQuestionImpl', () => {
-  it('sends the answer and clears pendingQuestion', () => {
+  it('sends the answer and clears pendingQuestion once the host acknowledges', async () => {
     seedSession('sid-1', {
       pendingQuestion: { requestId: 'q1', questions: [] } as never,
     })
 
     useChatStore.getState().answerQuestion('q1', { q: 'yes' })
 
-    expect(mockAgent.answerQuestion).toHaveBeenCalledWith('sid-1', 'q1', { q: 'yes' }, undefined)
-    expect(activeSession().pendingQuestion).toBeNull()
+    expect(mockEnvRespondSessionQuestion).toHaveBeenCalledWith('local', { sessionId: 'sid-1', interactionId: 'q1', answers: { q: 'yes' } })
+    await vi.waitFor(() => expect(activeSession().pendingQuestion).toBeNull())
   })
 })
 
@@ -249,7 +246,7 @@ describe('answerQuestionImpl', () => {
  * the node does next arrives on the session's stream.
  */
 describe('answerQuestionImpl: remote node (issue #21)', () => {
-  it('routes through environment.respondSessionQuestion, not window.agent', () => {
+  it("addresses the node's connection through environment.respondSessionQuestion", () => {
     seedRemoteSession('sid-1', {
       pendingQuestion: { ...PENDING_QUESTION } as never,
     })
@@ -261,10 +258,9 @@ describe('answerQuestionImpl: remote node (issue #21)', () => {
       expect.objectContaining({
         sessionId: 'sid-1',
         interactionId: 'q1',
-        answers: { answers: { 'Pick one?': 'A' }, annotations: undefined },
+        answers: { 'Pick one?': 'A' },
       }),
     )
-    expect(mockAgent.answerQuestion).not.toHaveBeenCalled()
   })
 
   it('keeps pendingQuestion when respondSessionQuestion rejects', async () => {
@@ -379,16 +375,16 @@ describe('answerQuestionImpl: remote node (issue #21)', () => {
 })
 
 describe('dismissQuestionImpl', () => {
-  it('clears pendingQuestion and only calls dismissQuestion (not answerQuestion)', () => {
+  it('sends a dismiss (not an answer) and clears pendingQuestion once the host acknowledges', async () => {
     seedSession('sid-1', {
       pendingQuestion: { requestId: 'q1', questions: [] } as never,
     })
 
     useChatStore.getState().dismissQuestion('q1')
 
-    expect(mockAgent.dismissQuestion).toHaveBeenCalledWith('sid-1', 'q1')
-    expect(mockAgent.answerQuestion).not.toHaveBeenCalled()
-    expect(activeSession().pendingQuestion).toBeNull()
+    expect(mockEnvRespondSessionQuestion).toHaveBeenCalledTimes(1)
+    expect(mockEnvRespondSessionQuestion).toHaveBeenCalledWith('local', { sessionId: 'sid-1', interactionId: 'q1', answers: {}, dismiss: true })
+    await vi.waitFor(() => expect(activeSession().pendingQuestion).toBeNull())
   })
 })
 
@@ -406,9 +402,9 @@ describe('dismissQuestionImpl: remote node (issue #21)', () => {
         sessionId: 'sid-1',
         interactionId: 'q1',
         answers: {},
+        dismiss: true,
       }),
     )
-    expect(mockAgent.dismissQuestion).not.toHaveBeenCalled()
   })
 
   it('keeps pendingQuestion when remote dismiss RPC rejects', async () => {
@@ -482,13 +478,14 @@ describe('respondToPlanApprovalImpl', () => {
   it('approve=true clears pending, stores outcome, and switches permission mode', () => {
     seedSession('sid-1', {
       permissionMode: 'plan',
+      hostSessionOwned: true,
       pendingPlanApproval: { requestId: 'p1', planContent: 'plan', planFilePath: '/plan', allowedPrompts: [] } as never,
     })
 
     useChatStore.getState().respondToPlanApproval('p1', true, undefined, 'acceptEdits')
 
-    expect(mockAgent.respondToPlanApproval).toHaveBeenCalledWith('sid-1', 'p1', true, undefined)
-    expect(mockAgent.setPermissionMode).toHaveBeenCalledWith('/p1', 'sid-1', 'acceptEdits')
+    expect(mockEnvRespondSessionPlan).toHaveBeenCalledWith('local', { sessionId: 'sid-1', interactionId: 'p1', decision: 'approve', options: undefined })
+    expect(mockEnvPatchSessionSettings).toHaveBeenCalledWith('local', 'sid-1', { permissionMode: 'acceptEdits' })
     const sess = activeSession()
     expect(sess.pendingPlanApproval).toBeNull()
     expect(sess.planApprovalOutcome).toEqual({ approved: true, feedback: undefined })
@@ -498,13 +495,14 @@ describe('respondToPlanApprovalImpl', () => {
   it('approve=false with feedback stores feedback in planApprovalOutcome and skips setPermissionMode', () => {
     seedSession('sid-1', {
       permissionMode: 'plan',
+      hostSessionOwned: true,
       pendingPlanApproval: { requestId: 'p1', planContent: 'plan', planFilePath: '/plan', allowedPrompts: [] } as never,
     })
 
     useChatStore.getState().respondToPlanApproval('p1', false, 'no thanks')
 
-    expect(mockAgent.respondToPlanApproval).toHaveBeenCalledWith('sid-1', 'p1', false, 'no thanks')
-    expect(mockAgent.setPermissionMode).not.toHaveBeenCalled()
+    expect(mockEnvRespondSessionPlan).toHaveBeenCalledWith('local', { sessionId: 'sid-1', interactionId: 'p1', decision: 'reject', options: { feedback: 'no thanks' } })
+    expect(mockEnvPatchSessionSettings).not.toHaveBeenCalled()
     const sess = activeSession()
     expect(sess.pendingPlanApproval).toBeNull()
     expect(sess.planApprovalOutcome).toEqual({ approved: false, feedback: 'no thanks' })
@@ -515,13 +513,14 @@ describe('respondToPlanApprovalImpl', () => {
     seedSession('sid-1', {
       sessionProvider: 'acp',
       permissionMode: 'plan',
+      hostSessionOwned: true,
       pendingPlanApproval: { requestId: 'p1', planContent: 'plan', planFilePath: '/plan', allowedPrompts: [] } as never,
     })
 
     useChatStore.getState().respondToPlanApproval('p1', true)
 
-    expect(mockAgent.respondToPlanApproval).toHaveBeenCalledWith('sid-1', 'p1', true, undefined)
-    expect(mockAgent.setPermissionMode).not.toHaveBeenCalled()
+    expect(mockEnvRespondSessionPlan).toHaveBeenCalledWith('local', { sessionId: 'sid-1', interactionId: 'p1', decision: 'approve', options: undefined })
+    expect(mockEnvPatchSessionSettings).not.toHaveBeenCalled()
     const sess = activeSession()
     expect(sess.pendingPlanApproval).toBeNull()
     expect(sess.permissionMode).toBe('plan')
@@ -532,7 +531,7 @@ describe('respondToPlanApprovalImpl', () => {
 
     useChatStore.getState().respondToPlanApproval('p-unknown', true)
 
-    expect(mockAgent.respondToPlanApproval).not.toHaveBeenCalled()
-    expect(mockAgent.setPermissionMode).not.toHaveBeenCalled()
+    expect(mockEnvRespondSessionPlan).not.toHaveBeenCalled()
+    expect(mockEnvPatchSessionSettings).not.toHaveBeenCalled()
   })
 })

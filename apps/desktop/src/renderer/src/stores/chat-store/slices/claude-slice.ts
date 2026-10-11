@@ -18,6 +18,7 @@ import {
   updateProjectState,
 } from '../index'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
+import { patchSessionSettings, pushSettings } from '@/lib/session-client'
 import { codexModelCacheKey } from '../helpers/codex-model-cache'
 import {
   ensureCursorHarnessModelPrefsLoaded,
@@ -259,17 +260,17 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
   },
 
   setSelectedAcpMode: (modeId, target) => {
-    const { projectPath, ipcSessionId, session } = resolveWriteScope(get(), target)
+    const { projectPath, sessionId, session } = resolveWriteScope(get(), target)
     if (!projectPath) return
     const provider = session.sessionProvider ?? session.preferredProvider
     if (provider !== 'acp') return
     if (session.selectedAcpModeId === modeId) return
     set((s) => commitPerSession(s, target, () => ({ selectedAcpModeId: modeId })))
-    void window.agent.setSessionSettings(projectPath, { mode: modeId }, ipcSessionId)
+    pushSettings(projectPath, sessionId, session, { mode: modeId })
   },
 
   setSelectedAcpContextWindow: async (contextWindow, target) => {
-    const { projectPath, ipcSessionId, session } = resolveWriteScope(get(), target)
+    const { projectPath, sessionId, session } = resolveWriteScope(get(), target)
     if (!projectPath) return false
     const provider = session.sessionProvider ?? session.preferredProvider
     if (provider !== 'acp') return false
@@ -277,7 +278,7 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
     if (previous === contextWindow) return true
     set((s) => commitPerSession(s, target, () => ({ selectedAcpContextWindow: contextWindow })))
     try {
-      await window.agent.setSessionSettings(projectPath, { contextWindow }, ipcSessionId)
+      if (sessionId) await patchSessionSettings(projectPath, sessionId, session, { contextWindow })
       return true
     } catch (err) {
       set((s) => commitPerSession(s, target, () => ({ selectedAcpContextWindow: previous })))
@@ -288,7 +289,7 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
 
   setSelectedModel: (model, target) => {
     const state = get()
-    const { projectPath: activeProject, ipcSessionId, session } = resolveWriteScope(state, target)
+    const { projectPath: activeProject, sessionId, session } = resolveWriteScope(state, target)
     if (!activeProject) return
     const provider = session.sessionProvider ?? session.preferredProvider
 
@@ -333,16 +334,14 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
             selectedEffort: resolved.nextEffort,
             effortUserChosen: true,
           })))
-          if (resolved.nextEffort && !parseRemoteProjectKey(activeProject)) {
-            void window.agent.setSessionSettings(activeProject, { effort: resolved.nextEffort }, ipcSessionId)
-          }
+          if (resolved.nextEffort) pushSettings(activeProject, sessionId, live, { effort: resolved.nextEffort })
         })
       }
       set((s) => commitPerSession(s, target, () => patch))
-      void window.agent.setSessionSettings(activeProject, {
+      pushSettings(activeProject, sessionId, session, {
         model,
         ...(provider === 'cursor' && patch.selectedEffort ? { effort: patch.selectedEffort } : {}),
-      }, ipcSessionId)
+      })
       return
     }
 
@@ -362,18 +361,15 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
       effortUserChosen: false,
       contextWindow: null,
     })))
-    // Desktop SessionManager does not own remote node drafts — skip local IPC.
-    if (!isRemote) {
-      void window.agent.setSessionSettings(activeProject, { model, effort: defaultEffort ?? null }, ipcSessionId)
-      if (getScopedPerSession(get(), target).draftText.length > 0) {
-        triggerPrewarm(get(), activeProject)
-      }
+    pushSettings(activeProject, sessionId, session, { model, effort: defaultEffort ?? null })
+    if (!isRemote && getScopedPerSession(get(), target).draftText.length > 0) {
+      triggerPrewarm(get(), activeProject)
     }
   },
 
   setSelectedEffort: (effort, target) => {
     const state = get()
-    const { projectPath: activeProject, ipcSessionId, session } = resolveWriteScope(state, target)
+    const { projectPath: activeProject, sessionId, session } = resolveWriteScope(state, target)
     if (!activeProject) return
     const provider = session.sessionProvider ?? session.preferredProvider
     const patch: Partial<import('../types').PerSessionState> = {
@@ -397,23 +393,17 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
       }
     }
     set((s) => commitPerSession(s, target, () => patch))
-    // Desktop SessionManager does not own remote node drafts — skip local IPC.
-    if (!parseRemoteProjectKey(activeProject)) {
-      void window.agent.setSessionSettings(activeProject, { effort: effort ?? null }, ipcSessionId)
-      if (getScopedPerSession(get(), target).draftText.length > 0) {
-        triggerPrewarm(get(), activeProject)
-      }
+    pushSettings(activeProject, sessionId, session, { effort: effort ?? null })
+    if (!parseRemoteProjectKey(activeProject) && getScopedPerSession(get(), target).draftText.length > 0) {
+      triggerPrewarm(get(), activeProject)
     }
   },
 
   setUltracode: (enabled, target) => {
-    const { projectPath: activeProject, ipcSessionId } = resolveWriteScope(get(), target)
+    const { projectPath: activeProject, sessionId, session } = resolveWriteScope(get(), target)
     if (!activeProject) return
     set((s) => commitPerSession(s, target, () => ({ ultracode: enabled })))
-    // A remote node takes it with each turn, as model and effort (remoteTurnOptions).
-    if (!parseRemoteProjectKey(activeProject)) {
-      void window.agent.setSessionSettings(activeProject, { ultracode: enabled }, ipcSessionId)
-    }
+    pushSettings(activeProject, sessionId, session, { ultracode: enabled })
   },
 
   setCursorModelParams: (params, target) => {
@@ -433,7 +423,7 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
 
   setCursorModelParam: (id, value, target) => {
     const state = get()
-    const { projectPath: activeProject, ipcSessionId, session } = resolveWriteScope(state, target)
+    const { projectPath: activeProject, sessionId, session } = resolveWriteScope(state, target)
     if (!activeProject) return
     const nextParams = { ...session.cursorModelParams, [id]: value }
     const patch: Partial<import('../types').PerSessionState> = { cursorModelParams: nextParams }
@@ -450,9 +440,7 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
     if (session.selectedModel) {
       persistCursorHarnessModelParams(session.selectedModel, nextParams)
     }
-    if (patch.selectedEffort && !parseRemoteProjectKey(activeProject)) {
-      void window.agent.setSessionSettings(activeProject, { effort: patch.selectedEffort }, ipcSessionId)
-    }
+    if (patch.selectedEffort) pushSettings(activeProject, sessionId, session, { effort: patch.selectedEffort })
   },
 
   setFastMode: (enabled) => {

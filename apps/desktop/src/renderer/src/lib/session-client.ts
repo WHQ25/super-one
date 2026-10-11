@@ -4,8 +4,16 @@
  * for a paired node — and every operation goes through `window.environment`,
  * so callers never branch on where a session runs.
  */
-import type { SessionForkRequestInput } from '@superone/shared/environment/session-requests'
-import type { PersistedSessionState } from '@/stores/chat-store/types'
+import type {
+  SessionCallMethod,
+  SessionCallMethods,
+  SessionForkRequestInput,
+  SessionPermissionAnswer,
+  SessionPlanAnswer,
+  SessionQuestionAnswer,
+  SessionSettingsPatch,
+} from '@superone/shared/environment/session-requests'
+import type { PerSessionState, PersistedSessionState } from '@/stores/chat-store/types'
 import { connectionIdForProjectKey } from './session-list-ops'
 
 export function renameSession(projectKey: string, sessionId: string, title: string) {
@@ -35,4 +43,57 @@ export async function loadStoredSession(projectKey: string, sessionId: string): 
   const loaded = await window.environment.openRemoteSession(connectionId, { sessionId, projectPath: projectKey, full: true })
   const stored = (loaded.state as { stored?: Omit<PersistedSessionState, 'messages'> }).stored
   return stored ? { ...stored, messages: loaded.messages } : null
+}
+
+export function respondPermission(projectKey: string, input: SessionPermissionAnswer) {
+  return window.environment.respondSessionPermission(connectionIdForProjectKey(projectKey), input)
+}
+
+export function respondQuestion(projectKey: string, input: SessionQuestionAnswer) {
+  return window.environment.respondSessionQuestion(connectionIdForProjectKey(projectKey), input)
+}
+
+export function respondPlan(projectKey: string, input: SessionPlanAnswer) {
+  return window.environment.respondSessionPlan(connectionIdForProjectKey(projectKey), input)
+}
+
+export function interruptSession(projectKey: string, sessionId: string) {
+  return window.environment.interruptSession(connectionIdForProjectKey(projectKey), sessionId)
+}
+
+/**
+ * Apply a settings change on the host running the session, answering with its
+ * record. A session the host has not created yet (a renderer draft) keeps the
+ * change in the store, and its first send carries it: the answer is null.
+ */
+export async function patchSessionSettings(
+  projectKey: string,
+  sessionId: string,
+  session: Pick<PerSessionState, 'hostSessionOwned'>,
+  patch: SessionSettingsPatch,
+): Promise<{ sandboxMode?: string | null } | null> {
+  if (!session.hostSessionOwned) return null
+  return await window.environment.patchSessionSettings(connectionIdForProjectKey(projectKey), sessionId, patch) as { sandboxMode?: string | null }
+}
+
+/** `patchSessionSettings` for a picker that already wrote the store; a failure is logged. */
+export function pushSettings(
+  projectKey: string,
+  sessionId: string | null,
+  session: Pick<PerSessionState, 'hostSessionOwned'>,
+  patch: SessionSettingsPatch,
+): void {
+  if (!sessionId) return
+  void patchSessionSettings(projectKey, sessionId, session, patch)
+    .catch((error) => console.warn('[chat] session settings change failed:', error))
+}
+
+/** A session operation outside the shared node family (queue, recap, goal). */
+export function callSession<M extends SessionCallMethod>(
+  projectKey: string,
+  sessionId: string,
+  method: M,
+  input: SessionCallMethods[M]['input'],
+): Promise<SessionCallMethods[M]['result']> {
+  return window.environment.callSession(connectionIdForProjectKey(projectKey), sessionId, method, input)
 }

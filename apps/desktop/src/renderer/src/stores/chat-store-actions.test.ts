@@ -51,18 +51,11 @@ vi.mock('./miniapp', () => ({
 const mockMiniAppAuthorize = vi.fn().mockResolvedValue(undefined)
 const mockWindowAgent = {
   prewarm: vi.fn().mockResolvedValue(undefined),
-  setPermissionMode: vi.fn().mockResolvedValue(undefined),
-  setSessionSettings: vi.fn().mockResolvedValue(undefined),
-  setSessionApiProvider: vi.fn().mockResolvedValue(undefined),
-  setSandboxMode: vi.fn().mockResolvedValue({ enabled: true, autoAllowBash: false }),
   sendMessage: vi.fn().mockResolvedValue(undefined),
-  interrupt: vi.fn().mockResolvedValue(true),
   resetSession: vi.fn().mockResolvedValue({ permissionMode: 'default', sandboxInfo: { enabled: false, autoAllowBash: false } }),
   parkSession: vi.fn().mockResolvedValue({ permissionMode: 'default', sandboxInfo: { enabled: false, autoAllowBash: false } }),
   disconnectRemoteSession: vi.fn().mockResolvedValue(undefined),
   truncateAtCheckpoint: vi.fn().mockResolvedValue(undefined),
-  dequeueMessage: vi.fn().mockResolvedValue(true),
-  respondToPlanApproval: vi.fn().mockResolvedValue(undefined),
   activateSession: vi.fn().mockResolvedValue(undefined),
   broadcastSessionSetting: vi.fn().mockResolvedValue(undefined),
 }
@@ -110,6 +103,8 @@ const mockWindowEnvironment = {
   openProject: vi.fn().mockResolvedValue({ projectId: 'remote-project' }),
   updateProject: vi.fn().mockResolvedValue({ projectId: 'p', path: '/p', name: 'p', extraDirs: [] }),
   renameSession: vi.fn().mockResolvedValue(undefined),
+  interruptSession: vi.fn().mockResolvedValue(undefined),
+  patchSessionSettings: vi.fn().mockResolvedValue({}),
 }
 
 const eventTarget = new EventTarget()
@@ -271,21 +266,20 @@ describe('disconnectRemoteSession', () => {
 })
 
 describe('interrupt', () => {
-  it('forwards to window.agent.interrupt + resets awaitingAssistantReply', async () => {
+  it('interrupts the session on its environment + resets awaitingAssistantReply', async () => {
     setupProject()
     patchSession({ awaitingAssistantReply: true, status: 'streaming' })
-    mockWindowAgent.interrupt.mockResolvedValueOnce(true)
 
     await useChatStore.getState().interrupt()
 
-    expect(mockWindowAgent.interrupt).toHaveBeenCalled()
+    expect(mockWindowEnvironment.interruptSession).toHaveBeenCalledWith('local', activeProjectState()._activeSessionId)
     expect(activeSession().awaitingAssistantReply).toBe(false)
   })
 
-  it('reconciles to idle + clears pendings when the IPC reports it could NOT interrupt', async () => {
+  it('reconciles to idle + clears pendings when the host could NOT interrupt', async () => {
     setupProject()
     patchSession({ status: 'streaming', pendingPermissions: [{} as never], pendingQuestion: {} as never })
-    mockWindowAgent.interrupt.mockResolvedValueOnce(false)
+    mockWindowEnvironment.interruptSession.mockRejectedValueOnce(new Error('no running turn'))
 
     await useChatStore.getState().interrupt()
     expect(activeSession().status).toBe('idle')
@@ -295,7 +289,7 @@ describe('interrupt', () => {
 
   it('is a no-op when no project is active', async () => {
     await useChatStore.getState().interrupt()
-    expect(mockWindowAgent.interrupt).not.toHaveBeenCalled()
+    expect(mockWindowEnvironment.interruptSession).not.toHaveBeenCalled()
   })
 
   // Regression: a successful interrupt used to leave the session streaming
@@ -307,7 +301,6 @@ describe('interrupt', () => {
     try {
       setupProject()
       patchSession({ status: 'streaming', pendingPermissions: [{} as never] })
-      mockWindowAgent.interrupt.mockResolvedValueOnce(true)
 
       await useChatStore.getState().interrupt()
       await vi.advanceTimersByTimeAsync(30_000)
@@ -324,7 +317,6 @@ describe('interrupt', () => {
     try {
       setupProject()
       patchSession({ status: 'streaming', messages: [{ id: 'm1' } as never] })
-      mockWindowAgent.interrupt.mockResolvedValueOnce(true)
 
       await useChatStore.getState().interrupt()
       // Terminal event lands, user immediately sends again.
@@ -500,49 +492,59 @@ describe('focusProject', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('setSessionApiProviderId', () => {
-  it('writes apiProviderId to the session and forwards to window.agent.setSessionApiProvider', async () => {
+  it('writes apiProviderId to the session and patches the host-owned session settings', async () => {
+    setupProject()
+    patchSession({ hostSessionOwned: true })
+    await useChatStore.getState().setSessionApiProviderId('gateway-x')
+    expect(activeSession().apiProviderId).toBe('gateway-x')
+    expect(mockWindowEnvironment.patchSessionSettings).toHaveBeenCalledWith('local', activeProjectState()._activeSessionId, { apiProviderId: 'gateway-x' })
+  })
+
+  it('keeps a renderer draft\'s provider in the store without a host call', async () => {
     setupProject()
     await useChatStore.getState().setSessionApiProviderId('gateway-x')
     expect(activeSession().apiProviderId).toBe('gateway-x')
-    expect(mockWindowAgent.setSessionApiProvider).toHaveBeenCalledWith(activeProjectState()._activeSessionId, 'gateway-x')
+    expect(mockWindowEnvironment.patchSessionSettings).not.toHaveBeenCalled()
   })
 
   it('survives an IPC error without throwing', async () => {
     setupProject()
-    mockWindowAgent.setSessionApiProvider.mockRejectedValueOnce(new Error('boom'))
+    patchSession({ hostSessionOwned: true })
+    mockWindowEnvironment.patchSessionSettings.mockRejectedValueOnce(new Error('boom'))
     await expect(useChatStore.getState().setSessionApiProviderId('gateway-x')).resolves.toBeUndefined()
     expect(activeSession().apiProviderId).toBeNull()
   })
 
   it('is a no-op when no project is active', async () => {
     await useChatStore.getState().setSessionApiProviderId('gateway-x')
-    expect(mockWindowAgent.setSessionApiProvider).not.toHaveBeenCalled()
+    expect(mockWindowEnvironment.patchSessionSettings).not.toHaveBeenCalled()
   })
 })
 
 describe('setSandboxMode', () => {
-  it('forwards the new mode + writes the returned sandboxInfo onto the project', async () => {
+  it('forwards the new mode + writes the sandbox the host recorded onto the project', async () => {
     setupProject()
-    mockWindowAgent.setSandboxMode.mockResolvedValueOnce({ enabled: false, autoAllowBash: false })
+    patchSession({ hostSessionOwned: true })
+    mockWindowEnvironment.patchSessionSettings.mockResolvedValueOnce({ sandboxMode: 'off' })
     await useChatStore.getState().setSandboxMode('off')
-    expect(mockWindowAgent.setSandboxMode).toHaveBeenCalledWith(PATH, 'off', undefined)
+    expect(mockWindowEnvironment.patchSessionSettings).toHaveBeenCalledWith('local', activeProjectState()._activeSessionId, { sandboxMode: 'off' })
     expect(activeProjectState().sandboxInfo).toEqual({ enabled: false, autoAllowBash: false })
   })
 
   it('is a no-op when no project is active', async () => {
     await useChatStore.getState().setSandboxMode('on')
-    expect(mockWindowAgent.setSandboxMode).not.toHaveBeenCalled()
+    expect(mockWindowEnvironment.patchSessionSettings).not.toHaveBeenCalled()
   })
 })
 
 describe('cyclePermissionMode + togglePlanModeShortcut', () => {
   it('cyclePermissionMode rotates to the next mode and forwards IPC', () => {
     setupProject()
-    patchSession({ permissionMode: 'default' })
+    patchSession({ permissionMode: 'default', hostSessionOwned: true })
     useChatStore.getState().cyclePermissionMode()
-    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledTimes(1)
+    expect(mockWindowEnvironment.patchSessionSettings).toHaveBeenCalledTimes(1)
     // next mode is 'acceptEdits'
-    expect(mockWindowAgent.setPermissionMode.mock.calls[0][2]).not.toBe('default')
+    expect(mockWindowEnvironment.patchSessionSettings.mock.calls[0][2].permissionMode).not.toBe('default')
   })
 
   it("togglePlanModeShortcut routes to setSelectedCodexCollaborationMode for Codex sessions", () => {
@@ -554,20 +556,20 @@ describe('cyclePermissionMode + togglePlanModeShortcut', () => {
 
   it('togglePlanModeShortcut falls through to cyclePermissionMode for Claude sessions', () => {
     setupProject()
-    patchSession({ sessionProvider: 'claude', permissionMode: 'default' })
+    patchSession({ sessionProvider: 'claude', permissionMode: 'default', hostSessionOwned: true })
     useChatStore.getState().togglePlanModeShortcut()
-    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledTimes(1)
+    expect(mockWindowEnvironment.patchSessionSettings).toHaveBeenCalledTimes(1)
   })
 
   it('togglePlanModeShortcut toggles plan vs default for ACP sessions', () => {
     setupProject()
-    patchSession({ sessionProvider: 'acp', permissionMode: 'default' })
+    patchSession({ sessionProvider: 'acp', permissionMode: 'default', hostSessionOwned: true })
     useChatStore.getState().togglePlanModeShortcut()
-    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith(expect.any(String), expect.any(String), 'plan')
-    mockWindowAgent.setPermissionMode.mockClear()
+    expect(mockWindowEnvironment.patchSessionSettings).toHaveBeenCalledWith('local', expect.any(String), { permissionMode: 'plan' })
+    mockWindowEnvironment.patchSessionSettings.mockClear()
     patchSession({ sessionProvider: 'acp', permissionMode: 'plan' })
     useChatStore.getState().togglePlanModeShortcut()
-    expect(mockWindowAgent.setPermissionMode).toHaveBeenCalledWith(expect.any(String), expect.any(String), 'default')
+    expect(mockWindowEnvironment.patchSessionSettings).toHaveBeenCalledWith('local', expect.any(String), { permissionMode: 'default' })
   })
 })
 

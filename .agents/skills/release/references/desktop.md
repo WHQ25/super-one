@@ -384,12 +384,19 @@ has been running as alpha, packaged under the stable identity:
      -f platform=both -f android_profile=internal -f ios_profile=production \
      -f ref=<the alpha SHA> -f dry_run=false
    ```
-   It reuses that commit's build code (the stable apps have their own pointers
-   and App Store Connect record). `does not advance the published <M>` or a
-   rejected `CFBundleVersion` means that stable app already has this build
-   code — no native change since; send the JS as an OTA to
-   `android_channel=internal` / `ios_channel=production` from the same SHA
-   instead.
+   It reuses that commit's build code, so **check it in Step 1 of the cut**:
+   `BUILD_CODE` at the alpha SHA must be above the stable apps' published
+   `buildCode`s *and* every build code the stable apps ever shipped (a
+   rolled-back pointer reads lower than what phones run; `git tag -l
+   'mobile/android/v*' 'mobile/ios/v*'` lists them). If it is not, the cut
+   is from a stale alpha: release a new alpha first (its bump commit moves
+   the code past them), then cut that one. Reusing a shipped code fails on
+   iOS (App Store Connect rejects a seen `CFBundleVersion`) and on Android
+   strands the phones already on it (an equal `versionCode` is no update).
+   A matching code is expected only when a stable build already exists
+   from *this* SHA (its `mobile/<platform>/v*-build<N>` tag points at it, e.g.
+   one shipped early and was rolled back): build nothing, re-point each
+   platform at it with `build_id` (`mobile.md` → **Recovery**, rollback row).
 
 The alpha line keeps moving independently; nothing about the stable cut changes
 `package.json`, so the next alpha release continues from where it was.

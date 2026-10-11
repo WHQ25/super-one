@@ -3,6 +3,7 @@ import type { CodexAccount, CodexManagedLoginStart } from '@superone/shared/code
 import type { CollaborationMailboxAPI } from '@superone/shared/collaboration-mailbox'
 import type { MediaComposerAPI } from '@superone/shared/media-composer'
 import type { TerminalCommandRule } from '@superone/shared/terminal-command-rules'
+import type { MobileAppDownloads } from '@superone/shared/mobile-updates'
 import type { ElectronAPI } from '@electron-toolkit/preload'
 import type { AppMetricsSnapshot } from '@superone/shared/agent-types'
 import type { PreviewerFile } from '@superone/shared/generative-ui/native-widgets'
@@ -351,6 +352,7 @@ interface AppAPI {
   }>
   cacheRemoteImage(url: string): Promise<string | null>
   resolveFavicon(url: string, isDark: boolean, force?: boolean): Promise<string | null>
+  resolveLinkPreview(url: string): Promise<import('@superone/shared/web-links').LinkPreview | null>
   resolveSiteIdentity(url: string, isDark: boolean, force?: boolean): Promise<{ name: string | null; icon: string | null }>
   cacheFavicon(pageUrl: string, faviconUrl: string, isDark: boolean): Promise<void>
   addMarketplace(source: string, scope: ResourceScope, projectPath: string): Promise<void>
@@ -505,6 +507,8 @@ interface AppAPI {
   showInFolder(folderPath: string, relPath: string): Promise<void>
   showContextMenu(items: NativeContextMenuItemSpec[]): Promise<string | null>
   openExternalLink(url: string): Promise<void>
+  /** Install links for the phone apps that pair with this desktop's variant. */
+  getMobileAppDownloads(): Promise<MobileAppDownloads>
   clipboardRead(): Promise<string>
   clipboardWrite(text: string): Promise<void>
   clipboardWriteImage(absPath: string): Promise<{ ok: true } | { ok: false; error: string }>

@@ -74,6 +74,29 @@ export type MobileUpdateManifest = {
 
 export type MobileUpdateVerdict = 'none' | 'optional' | 'required'
 
+/** Where a person installs one track's app on one platform. */
+export type MobileAppDownload = {
+  version: string
+  buildCode: number
+  /** The APK on Android, the public TestFlight link on iOS. */
+  url: string
+}
+
+export type MobileAppDownloads = {
+  track: MobileUpdateTrack
+  android: MobileAppDownload | null
+  ios: MobileAppDownload | null
+}
+
+/**
+ * The install link a manifest already carries, so a desktop QR code and the
+ * app's own update prompt can never point at different builds.
+ */
+export function mobileAppDownload(manifest: MobileUpdateManifest | null): MobileAppDownload | null {
+  const url = manifest?.artifact?.url ?? manifest?.testflightUrl
+  return manifest && url ? { version: manifest.version, buildCode: manifest.buildCode, url } : null
+}
+
 /**
  * Pin updates to the release CDN by exact prefix rather than by parsing a URL.
  *

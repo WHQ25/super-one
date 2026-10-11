@@ -13,6 +13,7 @@ import type { PairedDevice } from '@superone/shared/agent-types'
 import { EnvironmentsPage } from './settings/environments/EnvironmentsPage'
 import { DesktopControllersSection } from './settings/node-access/DesktopControllersSection'
 import { DeviceRow } from './settings/DeviceRow'
+import { MobileAppDownloadSection } from './settings/MobileAppDownloadSection'
 import { PairingCodeConfirm } from './PairingCodeConfirm'
 import { PairingDialog } from './PairingDialog'
 import { PairingQrPanel } from './PairingQrPanel'
@@ -81,6 +82,7 @@ function ThisDevicePanel() {
   const setRemoteConfig = useAppStore((s) => s.setRemoteConfig)
   const experimentalRemoteNodesEnabled = useAppStore((s) => s.experimentalRemoteNodesEnabled)
   const [pairedDevices, setPairedDevices] = useState<PairedDevice[]>([])
+  const [devicesLoaded, setDevicesLoaded] = useState(false)
   const [pairingStep, setPairingStep] = useState<PairingStep>('idle')
   const [qrValue, setQrValue] = useState('')
   const [pendingDeviceName, setPendingDeviceName] = useState('')
@@ -91,7 +93,10 @@ function ThisDevicePanel() {
   const remoteStatus = useRemoteStatus()
 
   useEffect(() => {
-    window.app.listPairedDevices().then(setPairedDevices)
+    window.app.listPairedDevices().then((devices) => {
+      setPairedDevices(devices)
+      setDevicesLoaded(true)
+    })
 
     const unsubStatus = window.app.onDeviceStatusChanged(({ id, online, transport }) => {
       setPairedDevices((prev) => {
@@ -265,6 +270,8 @@ function ThisDevicePanel() {
           />
         </SettingsRow>
       </SettingsSection>
+
+      <MobileAppDownloadSection hasPairedPhones={devicesLoaded ? mobileDevices.length > 0 : null} />
 
       {/* Mobile controllers */}
       <SettingsSection

@@ -929,6 +929,18 @@ export const zh: Messages = {
           description: '已配对、可监控和控制本机 SuperOne 的手机。',
           empty: '还没有配对手机。',
         },
+        mobileApp: {
+          title: '手机 App',
+          titleAlpha: '手机 App · Alpha',
+          description: '用手机相机扫码，安装与本机 SuperOne 匹配的 App，再在下方配对。',
+          ios: 'iOS · TestFlight',
+          android: 'Android · APK',
+          version: '{{version}}（build {{build}}）',
+          unavailable: '暂未提供',
+          unreachable: '下载链接加载失败。',
+          copyLink: '复制链接',
+          retry: '重试',
+        },
         desktop: {
           title: 'Desktop',
           empty: '还没有配对桌面端。',

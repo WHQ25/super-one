@@ -6,6 +6,7 @@ import { mockIpc } from '../../../../.storybook/mock-ipc'
 import { useAppStore } from '@/stores/app'
 import { RemotePage } from './RemotePage'
 import { ENVIRONMENT_ITEMS, mockEnvironmentApi } from './settings/environments/story-fixtures'
+import { STABLE_DOWNLOADS } from './settings/mobile-app-download-fixtures'
 
 type Params = {
   devices?: PairedDevice[]
@@ -48,6 +49,7 @@ const meta: Meta<typeof RemotePage> = {
       ? { running: true, url: 'http://hangqi-mbp.local:7791', environmentId: 'env-1', error: null }
       : { running: false, url: null, environmentId: null, error: null }))
     mockIpc('app', 'confirmPairing', async () => undefined)
+    mockIpc('app', 'getMobileAppDownloads', async () => STABLE_DOWNLOADS)
     mockIpc('app', 'onPairingCodeReceived', (cb: unknown) => {
       codeReceived = cb as typeof codeReceived
       return () => { codeReceived = null }
@@ -79,14 +81,27 @@ const meta: Meta<typeof RemotePage> = {
 export default meta
 type Story = StoryObj<typeof RemotePage>
 
-/** Remote control on, nothing paired yet. */
-export const Unpaired: Story = {}
+/** Remote control on, nothing paired yet: the Mobile App install codes start open. */
+export const Unpaired: Story = {
+  play: async ({ canvasElement }) => {
+    const copy = await within(canvasElement).findAllByRole('button', { name: i18n.t('settings.remote.thisDevice.mobileApp.copyLink') })
+    await expect(copy).toHaveLength(2)
+  },
+}
 
 /** Remote control off: pairing is disabled. */
 export const Disabled: Story = { parameters: { enabled: false, relay: false } }
 
-/** Phones: online, last seen, never connected, long name. */
-export const PairedWithDevices: Story = { parameters: { devices: DEVICES, lan: true } }
+/** Phones: online, last seen, never connected, long name. Mobile App starts collapsed. */
+export const PairedWithDevices: Story = {
+  parameters: { devices: DEVICES, lan: true },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await canvas.findByText(DEVICES[0]!.name)
+    const header = canvas.getByRole('button', { name: new RegExp(i18n.t('settings.remote.thisDevice.mobileApp.title')) })
+    await expect(header).toHaveAttribute('aria-expanded', 'false')
+  },
+}
 
 /** Phones paired before per-device channel keys: they show Re-pair Required instead of a last-seen date. */
 export const NeedsRepair: Story = {

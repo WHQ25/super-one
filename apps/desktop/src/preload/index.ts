@@ -5,6 +5,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { AgentIpcChannels, type AgentEvent, type NativeContextMenuItemSpec, type AgentPrewarmHint, type BashOutputEvent, type CodexCollaborationMode, type CodexGoalStatus, type CodexPermissionPreset, type CodexReasoningEffort, type CodexReviewTarget, type CodexExternalAgentItem, type CodexMcpOauthLoginOptions, type ProviderEndpointTestResponse, type DiscoverModelsResult, type RemoteDeviceConfig, type SandboxMode, type SendMessageRequest, type ContentBlock, type ChatMessageContext, type ClaudeSteerPriority, type WorktreeActivateRequest, type WorktreeHandoffResult, type WorktreeAssignResult, type GitDirtyStatus, type SessionForkRequest, type SessionForkResult, type SideChatStartRequest, type SideChatStartResult, type HookSavePayload, type TerminalEvent, type TerminalListItem, type TerminalSnapshot, type HarnessId, type BrowserAudioState, type BrowserCertError, type BrowserOpenTabRequest, type UpsertMediaProviderRequest, type ThemeMode, type ComputerUseDisplayInfo, type ComputerUseViewfinderClaim, type ComputerUseViewfinderFrame, type RealtimeVoiceStartRequest, type RealtimeTimelineResult, type CodexRealtimeVoiceCatalog } from '@superone/shared/agent-types'
 import type { McpbInstallRequest } from '@superone/shared/mcpb-types'
+import type { MobileAppDownloads } from '@superone/shared/mobile-updates'
 import type { TerminalCommandRule } from '@superone/shared/terminal-command-rules'
 import type { AttachmentOriginalStatus, ControllerPairingEvent, NodePairingEvent, DshPluginInstallSource, StageAttachmentOriginalRequest, FileEntryKind, PinnedSessionEntry, ScheduledSend, ScheduledSendPatch, ScheduledSendSessionInit, WindowFoldStep, WindowMiniMode } from '@superone/shared/agent-types'
 import type { GitMentionCapabilities, GitMentionRefKind, GitMentionRefsResult } from '@superone/shared/git-mention-query'
@@ -1472,6 +1473,9 @@ const appAPI = {
   resolveFavicon: (url: string, isDark: boolean, force?: boolean) =>
     ipcRenderer.invoke(AgentIpcChannels.RESOLVE_FAVICON, url, isDark, force),
 
+  resolveLinkPreview: (url: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.RESOLVE_LINK_PREVIEW, url),
+
   resolveSiteIdentity: (url: string, isDark: boolean, force?: boolean) =>
     ipcRenderer.invoke(AgentIpcChannels.RESOLVE_SITE_IDENTITY, url, isDark, force),
 
@@ -1793,6 +1797,8 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.SHOW_CONTEXT_MENU, items) as Promise<string | null>,
   openExternalLink: (url: string) =>
     ipcRenderer.invoke(AgentIpcChannels.OPEN_EXTERNAL_LINK, url),
+  getMobileAppDownloads: () =>
+    ipcRenderer.invoke(AgentIpcChannels.MOBILE_APP_DOWNLOADS) as Promise<MobileAppDownloads>,
   clipboardRead: () =>
     ipcRenderer.invoke(AgentIpcChannels.CLIPBOARD_READ) as Promise<string>,
   clipboardWrite: (text: string) =>

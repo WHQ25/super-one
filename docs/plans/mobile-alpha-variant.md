@@ -53,7 +53,8 @@ rollback. The phone needs the desktop's split.
 - [ ] Stable desktop 0.73.0, then the stable cut publishes both stable apps
       (recovers the phones already on stable build 36).
 - [ ] Tell alpha-desktop users to install "SuperOne Alpha" and re-pair.
-- [ ] Desktop: Android/iOS download links and QR codes, read from the R2
-      pointers (`artifact.url` / `testflightUrl`).
+- [x] Desktop: Settings → Remote Control → Mobile App, install QR codes for the
+      desktop variant's phone track, read from the R2 pointers in main.
+- [x] Stable iOS manifest rolled back to build 34 (`build_id`, manifest only).
 - [ ] When done: delete this plan (the design already lives in
       `native-builds.md` and the release skill).

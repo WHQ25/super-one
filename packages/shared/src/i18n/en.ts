@@ -876,6 +876,18 @@ export type Messages = {
       deviceKind: { mac: string; pc: string; linux: string; phone: string; server: string }
       thisDevice: {
         mobile: { title: string; description: string; empty: string }
+        mobileApp: {
+          title: string
+          titleAlpha: string
+          description: string
+          ios: string
+          android: string
+          version: string
+          unavailable: string
+          unreachable: string
+          copyLink: string
+          retry: string
+        }
         desktop: {
           title: string
           empty: string
@@ -5195,6 +5207,18 @@ export const en: Messages = {
           title: 'Mobile',
           description: 'Phones paired to monitor and control this SuperOne.',
           empty: 'No phones paired yet.',
+        },
+        mobileApp: {
+          title: 'Mobile App',
+          titleAlpha: 'Mobile App · Alpha',
+          description: 'Scan with your phone camera to install the app that matches this SuperOne, then pair it below.',
+          ios: 'iOS · TestFlight',
+          android: 'Android · APK',
+          version: '{{version}} (build {{build}})',
+          unavailable: 'Not available yet',
+          unreachable: 'Could not load the download links.',
+          copyLink: 'Copy Link',
+          retry: 'Retry',
         },
         desktop: {
           title: 'Desktop',

@@ -30,6 +30,7 @@ import type { DraftUpsertRequest, PairRemoteInput, RepairPairingInput } from '@s
 import log from './logger'
 import { packagedUserDataPath, resolveAndMigrateUserData } from './user-data-path'
 import { variant, variantId, variantDownloadUrl } from './variant'
+import { getMobileAppDownloads, mobileTrackForVariant } from './mobile-app-downloads'
 import { startMediaServer, getMediaServerPort } from './media-server'
 import { getMediaProviderStatuses } from './media-gen/settings-service'
 import { reachableDevServer } from './miniapp/miniapp-dev-server'
@@ -4200,6 +4201,9 @@ function registerIpcHandlers(): void {
     }
     return shell.openExternal(url)
   })
+
+  ipcMain.handle(AgentIpcChannels.MOBILE_APP_DOWNLOADS, () =>
+    getMobileAppDownloads(mobileTrackForVariant(variantId())))
 
   ipcMain.handle(AgentIpcChannels.CLIPBOARD_READ, () => {
     return clipboard.readText()

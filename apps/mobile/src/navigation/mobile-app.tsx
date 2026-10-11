@@ -1942,17 +1942,20 @@ export function MobileApp() {
     }
     const clientMessageId = newMessageId('user')
     if (!runtimeRef.current) {
-      // Keep attachment drafts until the host confirms files are readable.
-      // Text-only drafts move into the staged bubble during session creation.
+      // The tap empties the composer, as on desktop: the staged bubble now holds
+      // the message while the session round trips run. A refused create hands
+      // the draft back; a refused send keeps its bubble with Resend / Edit.
       const snapshot = composerDraft.exportSnapshot()
-      const cleared = attachments.length === 0 && composerDraft.clearSent(sentDraft.revision)
+      const cleared = composerDraft.clearSent(sentDraft.revision)
       if (cleared && !composerDraft.editorRef.current) suggestions.update('')
+      setAttachments((current) => current.filter((item) => !attachments.includes(item)))
       await createSession({ clientMessageId, text, images: attachments, title: sentDraft.title, userMessageContent: sentDraft.userMessageContent })
       if (!runtimeRef.current) {
         if (cleared) {
           composerDraft.replaceWith(snapshot)
           suggestions.applyProgrammatic(snapshot.text)
         }
+        setAttachments((current) => [...attachments, ...current])
         return
       }
     }
@@ -1985,10 +1988,10 @@ export function MobileApp() {
       ...(queued && kind === 'soon' ? { steer: 'next' as const } : {}),
     })
     // A send the host refuses keeps its bubble with Resend / Edit, so the draft
-    // can always be cleared here.
-    await remoteDrafts.consume()
+    // can always be cleared here — before the draft cleanup round trip.
     if (composerDraft.clearSent(sentDraft.revision) && !composerDraft.editorRef.current) suggestions.update('')
     setAttachments((current) => current.filter((item) => !attachments.includes(item)))
+    await remoteDrafts.consume()
   }, setStatus)
   const sendFromComposer = (kind: 'send' | 'steer' | 'soon') => {
     pendingSendKind.current = kind

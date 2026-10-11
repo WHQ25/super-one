@@ -526,16 +526,10 @@ export class EnvironmentHost {
     if (connectionId === 'local') {
       const resolved = this.resolveLocalProjectId(projectId)
       if (!resolved) return []
-      const local = this.registry.getLocal()
-      const listed = await local.sessions.list(
-        { environmentId: local.getEnvironmentId(), projectId: resolved },
-        pageOpts,
-      )
-      const rows = Array.isArray(listed) ? listed : []
-      // Local port already returns SessionHistoryEntry[] (metadata only — no messages).
-      return rows.filter((r): r is SessionHistoryEntry => {
-        return Boolean(r && typeof r === 'object' && typeof (r as SessionHistoryEntry).sessionId === 'string')
-      }) as SessionHistoryEntry[]
+      // The window's own rows, not the local protocol's session records: those
+      // are the phone/controller shape and carry no branch, worktree, spawn
+      // parent or remote controller, and name the harness `harnessId`.
+      return listSessionsForProjectId(resolved, pageOpts.limit, pageOpts.offset)
     }
 
     const { gateway, environmentId } = this.resolveRemote(connectionId)

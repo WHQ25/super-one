@@ -96,10 +96,15 @@ Every alpha release keeps its own notes on its GitHub Release.
 ### Changed
 
 - Phones, controller desktops and the local window use one remote protocol
-  and session/terminal control leases. Upgrade hosts before the phone update;
-  phones require desktop or node host 0.73.0-alpha.1 or newer.
+  and session/terminal control leases. Take control to edit a session another
+  device controls; the previous controller's writes are fenced and the source
+  desktop's control badge updates.
+- Phones require a desktop or node host on this release. Older or unreported
+  hosts show an upgrade prompt and keep their pairing; upgrade desktop and
+  node hosts before the phone update.
 - Update the managed Codex runtime to 0.162.1 and preserve subagent creation
   models, reasoning effort and turn roots across session persistence.
+- Upgrade Claude Agent SDK to 0.3.296 (Claude Code 2.1.296).
 - Paginate session text reads by content block rather than line count.
 
 ### Fixed
@@ -118,43 +123,13 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Virtualize long transcripts and activity details.
 - Compress and batch remote streams, share routed session subscriptions and
   keep full tool-result bodies out of summary streams.
-- Coalesce relay draft saves for five seconds while LAN saves remain immediate.
+- Coalesce relay draft saves for five seconds while LAN saves remain
+  immediate; version ranges preserve recovery across compacted saves.
 
 ### Tests
 
 - Verify native phone and routed desktop control through isolated LAN/Alpha
   Relay CDP acceptance, including simulated voice without harness downloads.
-
-## [0.73.0-alpha.1] - 2026-10-11
-
-Desktop publication was cancelled; CLI npm publication and Alpha Relay
-deployment completed.
-
-### Changed
-
-- Phones, controller desktops and the local window use the same remote
-  protocol and session/terminal control leases. Taking control fences the
-  previous controller's writes and updates the source desktop's control badge.
-- Phones require desktop or node host `0.73.0-alpha.1` or newer. Older or
-  unreported desktop versions show an upgrade prompt and keep their pairing.
-  Upgrade desktop and node hosts before installing this phone update.
-- Read tool-result details on demand on desktop and phone, scoped to the
-  source environment and session.
-
-### Fixed
-
-- Restore sessions from one snapshot boundary and recover missed updates
-  without replaying stale control, settings, goals, queues or tool details.
-- Preserve draft attachment chips when parking and reopening a composer.
-- Send each phone its own subscribed topic updates and report revoked routed
-  control before accepting another session or terminal mutation.
-
-### Performance
-
-- Compress and batch remote streams, share routed session subscriptions and
-  keep full tool-result bodies out of summary streams.
-- Retain five-second draft-save coalescing over the relay while LAN saves
-  remain immediate; version ranges preserve recovery across compacted saves.
 
 ## [0.73.0-alpha] - 2026-10-09
 

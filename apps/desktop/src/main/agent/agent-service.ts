@@ -1186,27 +1186,6 @@ export class AgentService {
       return this.sessionManager?.getActiveSession(projectPath)?.snapshot.providerSessionId ?? null
     })
 
-    windowIpc.handle(AgentIpcChannels.MCP_SERVER_STATUS, async (_event, projectPath: string) => {
-      const session = this.sessionManager?.getActiveSession(projectPath)
-      if (!session) return []
-      return session.getMcpServerStatus()
-    })
-
-    windowIpc.handle(AgentIpcChannels.MCP_SERVER_AUTHENTICATE, async (_event, projectPath: string, serverName: string) => {
-      const session = this.sessionManager?.getActiveSession(projectPath)
-      if (!session) throw new Error('No active session')
-      await session.authenticateMcp(serverName)
-    })
-
-    windowIpc.handle(AgentIpcChannels.GET_CONTEXT_USAGE, async (_event, projectPath: string, sessionId?: string) => {
-      const session = sessionId
-        ? this.sessionManager?.getSession(sessionId)
-        : this.sessionManager?.getActiveSession(projectPath)
-      if (!session) return null
-      if (sessionId && session.snapshot.projectPath !== projectPath) return null
-      return session.getContextUsage()
-    })
-
     windowIpc.handle(AgentIpcChannels.ACP_GET_RATE_LIMITS, async (
       _event,
       projectPath: string,
@@ -2317,9 +2296,6 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.COMPOSER_CANCEL)
     ipcMain.removeHandler(AgentIpcChannels.CREATE_SESSION)
     ipcMain.removeHandler(AgentIpcChannels.GET_SESSION_ID)
-    ipcMain.removeHandler(AgentIpcChannels.MCP_SERVER_STATUS)
-    ipcMain.removeHandler(AgentIpcChannels.MCP_SERVER_AUTHENTICATE)
-    ipcMain.removeHandler(AgentIpcChannels.GET_CONTEXT_USAGE)
     ipcMain.removeHandler(AgentIpcChannels.PLUGINS_RELOAD)
     ipcMain.removeHandler(AgentIpcChannels.LIST_DIRECTORY)
     ipcMain.removeHandler(AgentIpcChannels.LIST_DIRECTORY_FOR_ADD_DIR)

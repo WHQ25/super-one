@@ -16,6 +16,7 @@ async function callOperation(payload: unknown, ctx: RpcContext, method: string):
   try {
     const sessionId = requiredText(p, 'sessionId')
     if (method === 'session.rewind' || method === 'session.previewRewind' || method === 'session.truncateAtCheckpoint') requiredText(p, 'checkpointId')
+    if (method === 'session.mcpAuthenticate') requiredText(p, 'serverName')
     if (method === 'session.stopTask') requiredText(p, 'taskId')
     if (method === 'session.reset' && p.newSessionId !== undefined) {
       requiredText(p, 'newSessionId')
@@ -29,7 +30,8 @@ async function callOperation(payload: unknown, ctx: RpcContext, method: string):
       ctx.leases.assertValid({ resource: { environmentId: ctx.identity.environmentId, sessionId },
         leaseId: requiredText(p, 'leaseId'), generation: requiredText(p, 'generation'), holderClientId: ctx.client.clientSessionId })
     }
-    return { result: await ctx.sessions!.callOperation!(sessionId, method, p) }
+    const result = await ctx.sessions!.callOperation!(sessionId, method, p)
+    return { result: result ?? null }
   } catch (error) { return mapThrown(error) }
 }
 

@@ -1,9 +1,11 @@
+import { callSession } from '@/lib/session-client'
+import { useEnvironmentServes } from '@/hooks/use-environment-serves'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronDown, ChevronRight, LogIn, RefreshCw, Settings2, X } from 'lucide-react'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
-import { useActiveSession, useChatStore } from '@/stores/chat'
+import { useActiveSession, useChatStore, useSessionScope } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import type { McpServerInfo, McpServerMeta } from '@superone/shared/agent-types'
 import type { McpbInstalledEntry } from '@superone/shared/mcpb-types'
@@ -64,7 +66,12 @@ function statusLabel(server: McpServerInfo, t: (k: string, p?: Record<string, un
 
 export function McpSlashPopup({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation()
-  const activeProject = useChatStore((s) => s.activeProject)
+  const scope = useSessionScope()
+  const storeProject = useChatStore((s) => s.activeProject)
+  const activeProject = scope?.projectPath ?? storeProject
+  const activeSessionId = useActiveSession((s) => scope?.sessionId ?? s._activeSessionId)
+  const canReadStatus = useEnvironmentServes(activeProject, 'session.mcpStatus')
+  const canAuthenticateHost = useEnvironmentServes(activeProject, 'session.mcpAuthenticate')
   const harness = useActiveSession((s) => s.sessionProvider ?? s.preferredProvider)
   const acpAgentId = useActiveSession((s) => s.acpAgentId)
   const liveFromStore = useActiveSession((s) => s.mcpServers)
@@ -122,7 +129,7 @@ export function McpSlashPopup({ onClose }: { onClose: () => void }) {
     }
     try {
       const [live, installed, metaCache, libraryMeta] = await Promise.all([
-        window.agent.getMcpServerStatus(activeProject),
+        activeSessionId && canReadStatus ? callSession(activeProject, activeSessionId, 'session.mcpStatus', {}) : Promise.resolve([]),
         safeListInstalled(),
         safeMetaCache(),
         safeLibrary(),
@@ -163,7 +170,7 @@ export function McpSlashPopup({ onClose }: { onClose: () => void }) {
       const message = err instanceof Error ? err.message : String(err)
       setState({ mode: 'empty', servers: [], meta: {}, loading: false, error: message })
     }
-  }, [activeProject, harness])
+  }, [activeProject, activeSessionId, canReadStatus, harness])
 
   useEffect(() => { void load() }, [load])
 
@@ -190,11 +197,11 @@ export function McpSlashPopup({ onClose }: { onClose: () => void }) {
   }, [load])
 
   const handleAuthenticate = useCallback(async (serverName: string) => {
-    if (!activeProject) return
+    if (!activeProject || !activeSessionId || !canAuthenticateHost) return
     setAuthenticatingServer(serverName)
     setState((current) => ({ ...current, error: undefined }))
     try {
-      await window.agent.authenticateMcpServer(activeProject, serverName)
+      await callSession(activeProject, activeSessionId, 'session.mcpAuthenticate', { serverName })
       await load()
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
@@ -202,7 +209,7 @@ export function McpSlashPopup({ onClose }: { onClose: () => void }) {
     } finally {
       setAuthenticatingServer(null)
     }
-  }, [activeProject, load])
+  }, [activeProject, activeSessionId, canAuthenticateHost, load])
 
   const toggleExpand = useCallback((name: string) => {
     setExpanded((prev) => {
@@ -313,7 +320,7 @@ export function McpSlashPopup({ onClose }: { onClose: () => void }) {
             const isError = server.status === 'failed' || server.status === 'needs-auth' || !!server.toolsError
             const hasErrorDetail = !!server.toolsError || (isError && !!server.error)
             const canExpand = tools.length > 0 || hasErrorDetail
-            const canAuthenticate = mode === 'live'
+            const canAuthenticate = canAuthenticateHost && mode === 'live'
               && server.status === 'needs-auth'
               && server.name !== 'superone'
               && (harness === 'opencode' || (harness === 'acp' && isGrokAcpAgent(acpAgentId)))

@@ -45,12 +45,15 @@ export class LocalSessionHost extends DesktopSessionReads<DesktopSessionRow> imp
   dispose(): void { this.disposeReads() }
   get unservedMethods(): ReadonlySet<string> { return new Set([...LOCAL_SESSION_UNSERVED].filter(method => method !== 'session.fork' || !this.deps.edits?.fork)) }
 
-  readonly servedOperations: ReadonlySet<string> = new Set(['session.stopTask', 'session.startQueued', 'session.reset', 'session.rewind', 'session.previewRewind', 'session.truncateAtCheckpoint'])
+  readonly servedOperations: ReadonlySet<string> = new Set(['session.contextUsage', 'session.mcpStatus', 'session.mcpAuthenticate', 'session.stopTask', 'session.startQueued', 'session.reset', 'session.rewind', 'session.previewRewind', 'session.truncateAtCheckpoint'])
 
   async callOperation(sessionId: string, method: string, input: Record<string, unknown>): Promise<unknown> {
+    if (method === 'session.contextUsage') return this.deps.sessions.getSession(sessionId)?.getContextUsage() ?? null
+    if (method === 'session.mcpStatus') return this.deps.sessions.getSession(sessionId)?.getMcpServerStatus() ?? []
     const session = method === 'session.previewRewind' ? this.live(sessionId) : this.mutation(sessionId)
     const checkpointId = input.checkpointId as string
     switch (method) {
+      case 'session.mcpAuthenticate': return session.authenticateMcp(input.serverName as string)
       case 'session.stopTask': await session.dispatchBackendCommand({ kind: 'claude.stop_task', taskId: input.taskId as string }); return true
       case 'session.startQueued': return enqueueSessionQueueOp(sessionId, () => { session.lease.assertMutation(); return session.startQueuedMessages() })
       case 'session.reset': {

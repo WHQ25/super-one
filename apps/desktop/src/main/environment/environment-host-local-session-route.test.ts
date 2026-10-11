@@ -202,3 +202,19 @@ describe('turn control on the local environment endpoint', () => {
     expect(sessions.getSession('fresh')).toBeNull()
   })
 })
+
+
+describe('session introspection on the local environment endpoint', () => {
+  it('reads without control and fences MCP authentication on the named session', async () => {
+    const { host, own } = localRoute()
+    const context = { totalTokens: 12, maxTokens: 100, percentage: 12, categories: [] }
+    const authenticate = vi.fn(async () => { own.lease.assertMutation() })
+    Object.assign(own, { getContextUsage: async () => context, getMcpServerStatus: async () => [{ name: 'github', status: 'needs-auth' }], authenticateMcp: authenticate })
+    expect(await host.callSession('local', 'own', 'session.contextUsage', {})).toEqual(context)
+    expect(await host.callSession('local', 'own', 'session.mcpStatus', {})).toEqual([{ name: 'github', status: 'needs-auth' }])
+    await runWindowControl(7, () => host.callSession('local', 'own', 'session.mcpAuthenticate', { serverName: 'github' }))
+    expect(authenticate).toHaveBeenCalledWith('github')
+    await expect(runWindowControl(7, () => host.callSession('local', 'own', 'session.mcpAuthenticate', { serverName: '' }))).rejects.toMatchObject({ code: 'invalid_argument' })
+    await expect(host.callSession('local', 'own', 'session.mcpAuthenticate', { serverName: 'github' })).rejects.toThrow('local session control needs a window')
+  })
+})

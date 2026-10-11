@@ -1,3 +1,4 @@
+import { callSession } from '@/lib/session-client'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
@@ -150,7 +151,7 @@ export function ContextUsage() {
     if (sessionProvider && sessionProvider !== 'claude' && sessionProvider !== 'opencode' && sessionProvider !== 'acp' && sessionProvider !== 'cursor') return
     const sid = activeSessionId
     const project = activeProject
-    window.agent.getContextUsage(project, sid).then((usage) => {
+    callSession(project, sid, 'session.contextUsage', {}).then((usage) => {
       if (!usage) return
       setDetailedUsage(project, sid, usage)
     }).catch(() => {})

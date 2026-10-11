@@ -316,6 +316,11 @@ the UI hides them through capabilities.
 
 ## Progress
 
+- 2026-10-12: Step 5 introspection family. Context usage and MCP status are
+  lease-free reads on the named session; MCP authentication is fenced. No
+  cold runtime is resumed just to read status. Renderer and endpoint tests
+  (47) pass; the old IPC is removed, and MCP states have production stories.
+
 - 2026-10-12: Step 5 turn-control family. Stop-task, durable-queue start and
   runtime reset use the environment route and explicit session identity.
   Reset rejects an already-active destination before disposing its source;

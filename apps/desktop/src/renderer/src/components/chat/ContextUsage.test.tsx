@@ -36,7 +36,7 @@ const activeSessionState = {
   selectedAcpContextWindow: null as number | null,
 }
 
-let getContextUsageMock = vi.fn(async (_projectPath: string, _sessionId?: string) => null as unknown)
+let getContextUsageMock = vi.fn(async (_projectPath: string, _sessionId?: string, _method?: string, _input?: unknown) => null as unknown)
 let modelCatalog: ModelCatalog | null = null
 
 vi.mock('@/stores/chat', () => ({
@@ -100,11 +100,11 @@ beforeEach(() => {
   activeSessionState.acpModels = []
   activeSessionState.selectedAcpContextWindow = null
   modelCatalog = null
-  getContextUsageMock = vi.fn(async (_projectPath: string, _sessionId?: string) => null)
-  Object.defineProperty(window, 'agent', {
+  getContextUsageMock = vi.fn(async (_projectPath: string, _sessionId?: string, _method?: string, _input?: unknown) => null)
+  Object.defineProperty(window, 'environment', {
     configurable: true,
     value: {
-      getContextUsage: (projectPath: string, sessionId?: string) => getContextUsageMock(projectPath, sessionId),
+      callSession: (...args: Parameters<typeof getContextUsageMock>) => getContextUsageMock(...args),
     },
   })
 })
@@ -243,7 +243,7 @@ describe('ContextUsage', () => {
     activeSessionState.sessionProvider = 'opencode'
     activeSessionState.contextTokens = 12_000
     activeSessionState.status = 'streaming'
-    getContextUsageMock = vi.fn(async (_projectPath: string, _sessionId?: string) => ({
+    getContextUsageMock = vi.fn(async (_projectPath: string, _sessionId?: string, _method?: string, _input?: unknown) => ({
       categories: [{ name: 'Input', tokens: 12_000, color: '#22c55e' }],
       totalTokens: 12_000,
       maxTokens: 400_000,
@@ -255,7 +255,7 @@ describe('ContextUsage', () => {
     act(() => { activeSessionState.status = 'idle' })
     rerender(<ContextUsage />)
 
-    await vi.waitFor(() => expect(getContextUsageMock).toHaveBeenCalledWith('/test', 'sid-1'))
+    await vi.waitFor(() => expect(getContextUsageMock).toHaveBeenCalledWith('local', 'sid-1', 'session.contextUsage', {}))
     expect(chatState.setDetailedUsage).toHaveBeenCalledWith('/test', 'sid-1', expect.objectContaining({ maxTokens: 400_000 }))
   })
 
@@ -276,7 +276,7 @@ describe('ContextUsage', () => {
     act(() => { activeSessionState.status = 'idle' })
     rerender(<ContextUsage />)
 
-    await vi.waitFor(() => expect(getContextUsageMock).toHaveBeenCalledWith('/test', 'sid-1'))
+    await vi.waitFor(() => expect(getContextUsageMock).toHaveBeenCalledWith('local', 'sid-1', 'session.contextUsage', {}))
     expect(chatState.setDetailedUsage).toHaveBeenCalledWith('/test', 'sid-1', expect.objectContaining({ maxTokens: 500_000 }))
   })
 
@@ -453,7 +453,7 @@ describe('ContextUsage', () => {
     activeSessionState.sessionProvider = 'cursor'
     activeSessionState.contextTokens = 12_000
     activeSessionState.status = 'streaming'
-    getContextUsageMock = vi.fn(async (_projectPath: string, _sessionId?: string) => ({
+    getContextUsageMock = vi.fn(async (_projectPath: string, _sessionId?: string, _method?: string, _input?: unknown) => ({
       categories: [{ name: 'tokens', tokens: 12_000, color: 'var(--muted-foreground)' }],
       totalTokens: 12_000,
       maxTokens: 300_000,
@@ -465,7 +465,7 @@ describe('ContextUsage', () => {
     act(() => { activeSessionState.status = 'idle' })
     rerender(<ContextUsage />)
 
-    await vi.waitFor(() => expect(getContextUsageMock).toHaveBeenCalledWith('/test', 'sid-1'))
+    await vi.waitFor(() => expect(getContextUsageMock).toHaveBeenCalledWith('local', 'sid-1', 'session.contextUsage', {}))
     expect(chatState.setDetailedUsage).toHaveBeenCalledWith('/test', 'sid-1', expect.objectContaining({ maxTokens: 300_000 }))
   })
 })

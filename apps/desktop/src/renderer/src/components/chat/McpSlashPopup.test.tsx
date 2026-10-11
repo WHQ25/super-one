@@ -7,6 +7,7 @@ import type { McpServerInfo } from '@superone/shared/agent-types'
 vi.mock('@/stores/chat', () => {
   const state = {
     activeProject: '/project',
+    _activeSessionId: 'sid-1',
     sessionProvider: null as 'claude' | 'codex' | 'opencode' | 'acp' | null,
     preferredProvider: 'claude' as 'claude' | 'codex' | 'opencode' | 'acp',
     acpAgentId: null as string | null,
@@ -14,6 +15,7 @@ vi.mock('@/stores/chat', () => {
     mcpInitProgress: null as { connected: number; total: number } | null,
   }
   return {
+    useSessionScope: () => null,
     useChatStore: (selector: (s: typeof state) => unknown) => selector(state),
     useActiveSession: (selector: (s: typeof state) => unknown) => selector(state),
     __setMockChatState: (next: Partial<typeof state>) => Object.assign(state, next),
@@ -44,10 +46,7 @@ const setSettingsProviderMock = (appMock as unknown as { __setSettingsProvider: 
 
 function mockWindow(agentStatus: McpServerInfo[], probeStatus: McpServerInfo[]) {
   const w = window as unknown as Record<string, unknown>
-  w.agent = {
-    getMcpServerStatus: vi.fn().mockResolvedValue(agentStatus),
-    authenticateMcpServer: vi.fn().mockResolvedValue(undefined),
-  }
+  w.environment = { callSession: vi.fn(async (_connection: string, _sid: string, method: string) => method === 'session.mcpStatus' ? agentStatus : undefined) }
   w.app = {
     checkMcpServers: vi.fn().mockResolvedValue({ status: probeStatus, meta: {} }),
   }
@@ -231,32 +230,28 @@ describe('McpSlashPopup', () => {
   it('authenticates a Grok MCP server that needs auth', async () => {
     setChat({ sessionProvider: 'acp', acpAgentId: 'grok-build' })
     mockWindow([{ name: 'github', status: 'needs-auth' }], [])
-    const agent = (window as unknown as { agent: {
-      authenticateMcpServer: ReturnType<typeof vi.fn>
-    } }).agent
+    const agent = (window as unknown as { environment: { callSession: ReturnType<typeof vi.fn> } }).environment
 
     render(<McpSlashPopup onClose={vi.fn()} />)
 
     fireEvent.click(await screen.findByRole('button', { name: /authenticate github/i }))
-    await waitFor(() => expect(agent.authenticateMcpServer).toHaveBeenCalledWith('/project', 'github'))
+    await waitFor(() => expect(agent.callSession).toHaveBeenCalledWith('local', 'sid-1', 'session.mcpAuthenticate', { serverName: 'github' }))
   })
 
   it('authenticates an OpenCode MCP server and refreshes live status', async () => {
     setChat({ sessionProvider: 'opencode' })
     mockWindow([{ name: 'linear', status: 'needs-auth' }], [])
-    const agent = (window as unknown as { agent: {
-      getMcpServerStatus: ReturnType<typeof vi.fn>
-      authenticateMcpServer: ReturnType<typeof vi.fn>
-    } }).agent
-    agent.getMcpServerStatus
+    const agent = (window as unknown as { environment: { callSession: ReturnType<typeof vi.fn> } }).environment
+    agent.callSession
       .mockResolvedValueOnce([{ name: 'linear', status: 'needs-auth' }])
+      .mockResolvedValueOnce(undefined)
       .mockResolvedValueOnce([{ name: 'linear', status: 'connected', toolCount: 2 }])
 
     render(<McpSlashPopup onClose={vi.fn()} />)
 
     fireEvent.click(await screen.findByRole('button', { name: 'Authenticate linear' }))
 
-    await waitFor(() => expect(agent.authenticateMcpServer).toHaveBeenCalledWith('/project', 'linear'))
+    await waitFor(() => expect(agent.callSession).toHaveBeenCalledWith('local', 'sid-1', 'session.mcpAuthenticate', { serverName: 'linear' }))
     await waitFor(() => expect(screen.getByText('2 tools')).toBeInTheDocument())
     expect(screen.queryByText('auth')).not.toBeInTheDocument()
   })

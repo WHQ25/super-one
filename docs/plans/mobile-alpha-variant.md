@@ -47,7 +47,9 @@ rollback. The phone needs the desktop's split.
       submitted; alpha iOS CI runs without a public link, skipping its manifest.
 - [x] iOS: alpha public link set as the `TESTFLIGHT_URL_ALPHA` repository
       variable; the next alpha iOS run publishes `mobile/ios/alpha/latest.json`.
-- [x] Incident: stable Android `latest.json` re-pointed to build 35.
+- [x] Incident: stable Android `latest.json` re-pointed to build 34, built
+      from v0.72.2's own commit. Build 35 already carries the per-phone channel
+      (`d9b3d29dd`, BREAKING), which v0.72.2 cannot serve.
 - [ ] Stable desktop 0.73.0, then the stable cut publishes both stable apps
       (recovers the phones already on stable build 36).
 - [ ] Tell alpha-desktop users to install "SuperOne Alpha" and re-pair.

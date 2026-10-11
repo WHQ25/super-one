@@ -55,6 +55,18 @@ describe('object keys', () => {
     )
   })
 
+  it('gives the alpha track its own pointer and APK keys beside stable', () => {
+    expect(androidApkObjectKey('1.0.0', 42, 'alpha')).toBe(
+      'mobile/android/alpha/superone-v1.0.0-build42.apk',
+    )
+    expect(mobileUpdateManifestUrl('android', undefined, 'alpha')).toBe(
+      'https://dl.super-one.dev/mobile/android/alpha/latest.json',
+    )
+    expect(mobileUpdateManifestUrl('ios', undefined, 'alpha')).toBe(
+      'https://dl.super-one.dev/mobile/ios/alpha/latest.json',
+    )
+  })
+
   it('refuses version strings that would escape the mobile prefix', () => {
     expect(() => androidApkObjectKey('../../alpha', 42)).toThrow(/unsafe version/)
     expect(() => androidApkObjectKey('1.0.0/x', 42)).toThrow(/unsafe version/)

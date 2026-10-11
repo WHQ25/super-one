@@ -14,17 +14,18 @@ argument, then read **one** reference file and follow it end to end:
 | Command | Reads | What it does |
 |---|---|---|
 | `/release alpha` (or bare `/release`) | `references/desktop.md` | Next alpha: version from the stable line, CHANGELOG, `release.yml` (builds + promote + CLI / harness / relay legs), plus every mobile update that is due → publish → set-latest |
-| `/release stable` | `references/desktop.md` → **Cutting a stable release** | Cuts the latest alpha as the stable `X.Y.0`; writes no file |
-| `/release mobile` | `references/mobile.md` | Mobile only, between desktop releases: per platform, OTA or native build, whichever is due |
+| `/release stable` | `references/desktop.md` → **Cutting a stable release** | Cuts the latest alpha as the stable `X.Y.0`, then the stable phone apps from the same commit; writes no file |
+| `/release mobile` | `references/mobile.md` | Mobile only, between desktop releases: per platform, OTA or native build, whichever is due (the alpha phone apps) |
 
-The one crossing point: an alpha release's Step 1 runs `mobile.md` → **Decide**,
-and the mobile updates it finds ride along in the same release.
+The crossing points: an alpha release's Step 1 runs `mobile.md` → **Decide**,
+and the mobile updates it finds ride along in the same release; a stable cut
+ends with the stable phone apps.
 
 ## Arguments
 
 - **`alpha`** (default) / **`stable`** — which of the two side-by-side desktop
   apps is being released, not a channel of one app. **`mobile`** — the mobile
-  app alone; it has no variant.
+  app alone, on its alpha line (SuperOne Alpha on both platforms).
 - **`major`** — the only override, alpha only: open the next major instead of
   what the rule below derives. Use it for a breaking change after 1.0 (Step 1
   proposes it when the range carries `!` / `BREAKING CHANGE:`) or when asked.
@@ -76,7 +77,8 @@ it with the first real case.) `nextAlphaRelease` in
   poll from a sandboxed loop, and do not verify artifacts one `curl` at a time
   when a manifest already lists them.
 - **Tags are created by GitHub / the workflow, never pushed from local.**
-  Desktop tags are `v<version>`; mobile tags are `mobile/<platform>/v<version>-build<N>`.
+  Desktop tags are `v<version>`; mobile tags are `mobile/<platform>/v<version>-build<N>`
+  (`<platform>-alpha` for the alpha apps).
   The namespaces never mix.
 - **Do not push `.github/workflows/**` to `main` while a desktop release is in
   flight** (dispatch → promote green): `gh release create --target <sha>`

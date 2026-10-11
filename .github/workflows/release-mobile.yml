@@ -5,6 +5,11 @@ name: Release Mobile
 # Android is the platform that can actually self-update: the APK goes to an
 # immutable key under `mobile/android/` and `mobile/android/latest.json` points
 # at it, so the installed app can fetch and install a newer build itself.
+# The `alpha` profile is a separate app on both platforms (`.alpha` application
+# id, its own TestFlight app) with its own pointers under `mobile/<platform>/alpha/`;
+# it is what ships phone changes that need an alpha desktop. A stable build is
+# refused before it is queued when its MIN_PHONE_DESKTOP_VERSION is above the
+# released stable desktop.
 #
 # iOS cannot install anything from outside the App Store, so its leg submits to
 # TestFlight and then publishes a manifest carrying only the numbers the app
@@ -28,21 +33,23 @@ on:
           - both
         default: both
       android_profile:
-        description: 'EAS build profile for Android. `internal` is the self-hosted APK; `production` is the Play Store AAB (which no phone can install from R2).'
+        description: 'EAS build profile for Android. `internal` is the stable self-hosted APK, `alpha` the alpha one; `production` is the Play Store AAB (which no phone can install from R2).'
         required: true
         type: choice
         options:
+          - alpha
           - internal
           - production
-        default: internal
+        default: alpha
       ios_profile:
-        description: 'EAS build profile for iOS. `production` is the TestFlight / App Store build; `internal` is an ad-hoc IPA that cannot be submitted.'
+        description: 'EAS build profile for iOS. `alpha` is the SuperOne Alpha TestFlight app, `production` the stable TestFlight / App Store app; `internal` is an ad-hoc IPA that cannot be submitted.'
         required: true
         type: choice
         options:
+          - alpha
           - production
           - internal
-        default: production
+        default: alpha
       build_id:
         description: 'Publish an existing EAS build instead of starting a new one (Android only). Use this to re-point latest.json at an older build — that is the rollback.'
         required: false
@@ -54,10 +61,10 @@ on:
         type: string
         default: ''
       testflight_url:
-        description: 'Public TestFlight join link baked into the iOS manifest. Defaults to the SuperOne-Remote-Beta public link; only override to point testers somewhere else.'
+        description: 'Public TestFlight join link baked into the iOS manifest. Blank uses the track''s link (TESTFLIGHT_URL_* below); only set it to point testers somewhere else.'
         required: false
         type: string
-        default: 'https://testflight.apple.com/join/3VVS4EsT'
+        default: ''
       dry_run:
         description: 'Build and stage only — do not upload to R2'
         required: false
@@ -75,15 +82,15 @@ on:
         type: string
         default: both
       android_profile:
-        description: EAS build profile for Android
+        description: EAS build profile for Android (`alpha`, or `internal` for stable)
         required: false
         type: string
-        default: internal
+        default: alpha
       ios_profile:
-        description: EAS build profile for iOS
+        description: EAS build profile for iOS (`alpha`, or `production` for stable)
         required: false
         type: string
-        default: production
+        default: alpha
       build_id:
         description: Publish an existing EAS build instead of starting a new one (Android only).
         required: false
@@ -95,10 +102,10 @@ on:
         type: string
         default: ''
       testflight_url:
-        description: Public TestFlight join link baked into the iOS manifest.
+        description: Public TestFlight join link baked into the iOS manifest. Blank uses the track's link.
         required: false
         type: string
-        default: 'https://testflight.apple.com/join/3VVS4EsT'
+        default: ''
       dry_run:
         description: Build and stage only — do not upload to R2
         required: false
@@ -122,17 +129,27 @@ env:
   INPUT_MIN_SUPPORTED: ${{ inputs.min_supported_build_code }}
   INPUT_TESTFLIGHT_URL: ${{ inputs.testflight_url }}
   INPUT_DRY_RUN: ${{ inputs.dry_run }}
+  # Public TestFlight links, one per app. A typo still passes the prefix check
+  # and would ship a dead link to every iOS user, so the working links live
+  # here rather than being retyped each release. App Store Connect ->
+  # TestFlight -> the external group -> Public Link.
+  TESTFLIGHT_URL_STABLE: 'https://testflight.apple.com/join/3VVS4EsT'
+  # Empty until the SuperOne Alpha app has a public link; alpha iOS runs fail
+  # at `Check inputs` until then.
+  TESTFLIGHT_URL_ALPHA: ''
 
 jobs:
   android:
     if: ${{ inputs.platform == 'android' || inputs.platform == 'both' }}
     runs-on: ubuntu-latest
-    # Per platform job rather than per dispatch: a `both` run and an
+    # Per platform and track rather than per dispatch: a `both` run and an
     # `android` re-dispatch must still queue behind each other on the same
-    # latest.json, while the two platforms stay free to build in parallel.
+    # latest.json, while platforms and tracks stay free to build in parallel.
     concurrency:
-      group: release-mobile-android
+      group: release-mobile-android-${{ inputs.android_profile == 'alpha' && 'alpha' || 'stable' }}
       cancel-in-progress: false
+    env:
+      TRACK: ${{ inputs.android_profile == 'alpha' && 'alpha' || 'stable' }}
     timeout-minutes: 90
     permissions:
       # Tagging the published build, not pushing to a branch.
@@ -154,6 +171,12 @@ jobs:
 
       - name: Install
         run: bun install --frozen-lockfile --ignore-scripts
+
+      # Before the queue, not at publish. A reused build_id is exempt: it is
+      # how stable is rolled back, which must work while the desktop lags.
+      - name: Check the stable desktop floor
+        if: ${{ env.TRACK == 'stable' && inputs.build_id == '' }}
+        run: bun scripts/publish-mobile-update.ts --check-stable-floor
 
       - name: Resolve the APK on EAS
         id: build
@@ -212,6 +235,16 @@ jobs:
               exit 1
               ;;
           esac
+          # The profile decides the application id, so it decides which
+          # pointer the APK may land on. A reused build from the other track
+          # would install over nothing on the target phones -- or, for an alpha
+          # build on the stable pointer, carry the very floor this split exists
+          # to keep away from stable users.
+          PROFILE="$(jq -r "${NORMALISED} | .buildProfile // empty" build.json)"
+          if [ "${PROFILE}" != "${INPUT_ANDROID_PROFILE}" ]; then
+            echo "::error::build profile ${PROFILE:-unknown} does not match android_profile=${INPUT_ANDROID_PROFILE}"
+            exit 1
+          fi
           # The build's own commit, not this checkout: reusing an existing
           # build publishes an artifact from an older tree, and the tag has to
           # name that tree rather than whatever main happens to be.
@@ -242,17 +275,22 @@ jobs:
           BUILD_CODE: ${{ steps.build.outputs.build_code }}
         run: |
           set -euo pipefail
-          ARGS=(--platform android --version "${APP_VERSION}" --build-code "${BUILD_CODE}"
+          ARGS=(--platform android --track "${TRACK}" --version "${APP_VERSION}" --build-code "${BUILD_CODE}"
                 --apk superone.apk --out staging-mobile)
           if [ -n "${INPUT_MIN_SUPPORTED}" ]; then
             ARGS+=(--min-supported-build-code "${INPUT_MIN_SUPPORTED}")
+          fi
+          # Re-publishing an existing build is the documented rollback, which
+          # the script refuses without the flag when it moves latest.json back.
+          if [ -n "${INPUT_BUILD_ID}" ]; then
+            ARGS+=(--rollback)
           fi
           if [ "${INPUT_DRY_RUN}" != "true" ]; then
             ARGS+=(--upload)
           fi
           bun scripts/publish-mobile-update.ts "${ARGS[@]}" | tee publish.log
           {
-            echo "### Android ${APP_VERSION} (${BUILD_CODE})"
+            echo "### Android ${TRACK} ${APP_VERSION} (${BUILD_CODE})"
             echo
             echo '```'
             cat publish.log
@@ -266,6 +304,7 @@ jobs:
           BUILD_COMMIT: ${{ steps.build.outputs.build_commit }}
           APP_VERSION: ${{ steps.build.outputs.app_version }}
           BUILD_CODE: ${{ steps.build.outputs.build_code }}
+          TAG_PLATFORM: ${{ inputs.android_profile == 'alpha' && 'android-alpha' || 'android' }}
         run: |
           set -euo pipefail
           if [ -z "${BUILD_COMMIT}" ]; then
@@ -278,7 +317,8 @@ jobs:
           # platform segment is required too: the two platforms share one build
           # code but are built from whatever main was at their own dispatch, so
           # one code does not imply one commit.
-          TAG="mobile/android/v${APP_VERSION}-build${BUILD_CODE}"
+          # The two tracks share the build code, so the track is in the tag.
+          TAG="mobile/${TAG_PLATFORM}/v${APP_VERSION}-build${BUILD_CODE}"
           if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" >/dev/null 2>&1; then
             echo "${TAG} already exists -- re-publishing the same build, nothing to tag"
             exit 0
@@ -289,13 +329,14 @@ jobs:
             -f ref="refs/tags/${TAG}" -f sha="${BUILD_COMMIT}" >/dev/null
           echo "Tagged ${TAG} -> ${BUILD_COMMIT}"
 
+
       - name: Upload staged tree (debug artifact)
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: mobile-android-${{ github.run_id }}
           path: |
-            staging-mobile/mobile/android/latest.json
+            staging-mobile/mobile/android/**/latest.json
             apps/mobile/build.json
           if-no-files-found: warn
           retention-days: 14
@@ -304,8 +345,10 @@ jobs:
     if: ${{ inputs.platform == 'ios' || inputs.platform == 'both' }}
     runs-on: ubuntu-latest
     concurrency:
-      group: release-mobile-ios
+      group: release-mobile-ios-${{ inputs.ios_profile == 'alpha' && 'alpha' || 'stable' }}
       cancel-in-progress: false
+    env:
+      TRACK: ${{ inputs.ios_profile == 'alpha' && 'alpha' || 'stable' }}
     timeout-minutes: 120
     permissions:
       # Tagging the published build, not pushing to a branch.
@@ -335,27 +378,46 @@ jobs:
             echo "::error::build_id is Android-only; the iOS leg submits --latest to TestFlight"
             exit 1
           fi
-          if [ -z "${INPUT_TESTFLIGHT_URL}" ]; then
-            echo "::error::testflight_url is required to publish the iOS manifest"
+          if [ "${TRACK}" = alpha ]; then DEFAULT_URL="${TESTFLIGHT_URL_ALPHA}"; else DEFAULT_URL="${TESTFLIGHT_URL_STABLE}"; fi
+          TESTFLIGHT_URL="${INPUT_TESTFLIGHT_URL:-${DEFAULT_URL}}"
+          if [ -z "${TESTFLIGHT_URL}" ]; then
+            echo "::error::no TestFlight link for the ${TRACK} app; set TESTFLIGHT_URL_${TRACK^^} in this workflow"
             exit 1
           fi
           # `eas submit` only accepts an app-store distribution build; an
           # `internal` (ad-hoc) IPA would build for 30 minutes and then fail
           # to submit. Catch it before the queue, not after.
-          if [ "${INPUT_DRY_RUN}" != "true" ] && [ "${INPUT_IOS_PROFILE}" != "production" ]; then
-            echo "::error::ios_profile=${INPUT_IOS_PROFILE} cannot be submitted to TestFlight; use production, or dry_run=true to only build"
-            exit 1
+          if [ "${INPUT_DRY_RUN}" != "true" ]; then
+            case "${INPUT_IOS_PROFILE}" in
+              alpha|production) ;;
+              *)
+                echo "::error::ios_profile=${INPUT_IOS_PROFILE} cannot be submitted to TestFlight; use alpha or production, or dry_run=true to only build"
+                exit 1
+                ;;
+            esac
+            # Each app has its own App Store Connect record; submitting without
+            # one would prompt, which a non-interactive run cannot answer.
+            ASC_APP_ID="$(jq -r --arg p "${INPUT_IOS_PROFILE}" '.submit[$p].ios.ascAppId // empty' apps/mobile/eas.json)"
+            case "${ASC_APP_ID}" in
+              ''|*[!0-9]*)
+                echo "::error::apps/mobile/eas.json has no submit.${INPUT_IOS_PROFILE}.ios.ascAppId for the ${TRACK} app"
+                exit 1
+                ;;
+            esac
           fi
-          # A typo still satisfies the prefix check below and would ship a dead
-          # link to every iOS user, so the working link is the default rather
-          # than something retyped each release. It comes from App Store
-          # Connect -> TestFlight -> SuperOne-Remote-Beta -> Public Link.
-          echo "TestFlight link: ${INPUT_TESTFLIGHT_URL}"
+          echo "TestFlight link: ${TESTFLIGHT_URL}"
+          echo "TESTFLIGHT_URL=${TESTFLIGHT_URL}" >> "$GITHUB_ENV"
 
-          case "${INPUT_TESTFLIGHT_URL}" in
+          case "${TESTFLIGHT_URL}" in
             https://testflight.apple.com/*) ;;
             *) echo "::error::testflight_url must be a https://testflight.apple.com/ link"; exit 1 ;;
           esac
+
+      # Before the queue: TestFlight receives the build before any manifest is
+      # published, so this is the last point a stable build can be stopped.
+      - name: Check the stable desktop floor
+        if: ${{ env.TRACK == 'stable' }}
+        run: bun scripts/publish-mobile-update.ts --check-stable-floor
 
       - name: Build on EAS
         id: build
@@ -405,7 +467,7 @@ jobs:
           set -euo pipefail
           bunx "eas-cli@${EAS_CLI_VERSION}" submit \
             --platform ios \
-            --profile production \
+            --profile "${INPUT_IOS_PROFILE}" \
             --latest \
             --non-interactive
 
@@ -419,8 +481,8 @@ jobs:
           BUILD_CODE: ${{ steps.build.outputs.build_code }}
         run: |
           set -euo pipefail
-          ARGS=(--platform ios --version "${APP_VERSION}" --build-code "${BUILD_CODE}"
-                --testflight-url "${INPUT_TESTFLIGHT_URL}" --out staging-mobile)
+          ARGS=(--platform ios --track "${TRACK}" --version "${APP_VERSION}" --build-code "${BUILD_CODE}"
+                --testflight-url "${TESTFLIGHT_URL}" --out staging-mobile)
           if [ -n "${INPUT_MIN_SUPPORTED}" ]; then
             ARGS+=(--min-supported-build-code "${INPUT_MIN_SUPPORTED}")
           fi
@@ -429,7 +491,7 @@ jobs:
           fi
           bun scripts/publish-mobile-update.ts "${ARGS[@]}" | tee publish.log
           {
-            echo "### iOS ${APP_VERSION} (${BUILD_CODE})"
+            echo "### iOS ${TRACK} ${APP_VERSION} (${BUILD_CODE})"
             echo
             echo '```'
             cat publish.log
@@ -455,7 +517,9 @@ jobs:
           # platform segment is required too: the two platforms share one build
           # code but are built from whatever main was at their own dispatch, so
           # one code does not imply one commit.
-          TAG="mobile/ios/v${APP_VERSION}-build${BUILD_CODE}"
+          # The two apps share the build code, so the track is in the tag.
+          if [ "${TRACK}" = alpha ]; then TAG_PLATFORM=ios-alpha; else TAG_PLATFORM=ios; fi
+          TAG="mobile/${TAG_PLATFORM}/v${APP_VERSION}-build${BUILD_CODE}"
           if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" >/dev/null 2>&1; then
             echo "${TAG} already exists -- re-publishing the same build, nothing to tag"
             exit 0

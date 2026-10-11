@@ -32,7 +32,7 @@ const eas = JSON.parse(readFileSync(join(mobileRoot, 'eas.json'), 'utf8')) as {
     env?: Record<string, string>
     android?: { buildType?: string }
   }>
-  submit?: { production?: { ios?: { ascAppId?: string } } }
+  submit?: Record<string, { ios?: { ascAppId?: string } }>
 }
 const rootPackage = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8')) as {
   packageManager?: string
@@ -105,6 +105,12 @@ if (!existsSync(join(mobileRoot, 'fingerprint.config.js'))) {
 
 if (!/^\d+$/.test(eas.submit?.production?.ios?.ascAppId ?? '')) {
   throw new Error('production submit profile must identify the App Store Connect app')
+}
+// The alpha app is its own App Store Connect record. Reusing the stable id
+// would send alpha builds to the stable app, which rejects the bundle id.
+const alphaAscAppId = eas.submit?.alpha?.ios?.ascAppId ?? ''
+if (!/^\d+$/.test(alphaAscAppId) || alphaAscAppId === eas.submit?.production?.ios?.ascAppId) {
+  throw new Error('alpha submit profile must identify its own App Store Connect app')
 }
 
 // `appVersion` would pin every build to the hand-written `version` field, which
@@ -209,6 +215,30 @@ if (
 // deep link, which the Maestro suite cannot answer.
 if (dev.scheme === release.scheme) {
   throw new Error('the development variant must not share the release URL scheme')
+}
+
+// The alpha APK requires desktops no stable release can serve yet. Sharing the
+// stable id would let it update over a stable install and strand that phone,
+// which is the failure this variant exists to prevent.
+const alphaProfile = eas.build?.alpha
+if (
+  alphaProfile?.env?.APP_VARIANT !== 'alpha'
+  || alphaProfile.channel !== 'alpha'
+  || alphaProfile.android?.buildType !== 'apk'
+  // TestFlight takes only an app-store build; `internal` would be ad hoc.
+  || alphaProfile.distribution !== undefined
+) {
+  throw new Error('alpha profile must build the alpha variant (Android APK, iOS app-store) on the alpha channel')
+}
+const alpha = applyAppVariant(release, { APP_VARIANT: 'alpha' })
+if (
+  [release, dev].some((other) => (
+    alpha.android?.package === other.android?.package
+    || alpha.ios?.bundleIdentifier === other.ios?.bundleIdentifier
+    || alpha.scheme === other.scheme
+  ))
+) {
+  throw new Error('the alpha variant must have its own application ids and URL scheme')
 }
 
 console.log('ok: EAS release profiles and runtime compatibility policy are consistent')

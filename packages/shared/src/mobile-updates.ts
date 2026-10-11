@@ -6,8 +6,8 @@
  * store gives us a push. So we publish a pointer manifest next to the desktop
  * releases and let the app poll it:
  *
- *   https://dl.super-one.dev/mobile/android/latest.json
- *   https://dl.super-one.dev/mobile/ios/latest.json
+ *   https://dl.super-one.dev/mobile/<platform>/latest.json
+ *   https://dl.super-one.dev/mobile/<platform>/alpha/latest.json
  *
  * Android can act on it -- download the APK and hand it to the system
  * installer. iOS cannot install anything itself, so its manifest only carries
@@ -23,6 +23,22 @@
 import { DOWNLOAD_BASE_URL } from './download-links'
 
 export type MobileUpdatePlatform = 'android' | 'ios'
+
+/**
+ * Which release line a binary follows, mirroring the desktop variants.
+ *
+ * The `alpha` track is a separate application id on both platforms
+ * (`app-variant.js`) that may require the alpha desktop, so it gets its own
+ * pointer and can never be offered to a stable install.
+ *
+ * Stable keys stay where they were before tracks existed, because installed
+ * stable builds poll that URL and cannot be taught a new one.
+ */
+export type MobileUpdateTrack = 'stable' | 'alpha'
+
+function trackPrefix(platform: MobileUpdatePlatform, track: MobileUpdateTrack): string {
+  return track === 'stable' ? `mobile/${platform}` : `mobile/${platform}/${track}`
+}
 
 /** The only schema the current app understands. Bumping it is a breaking change. */
 export const MOBILE_UPDATE_SCHEMA_VERSION = 1
@@ -84,40 +100,52 @@ function assertSafeKeySegment(value: string, label: string): string {
   return trimmed
 }
 
-/** `mobile/<platform>/latest.json` -- the single mutable pointer object. */
-export function mobileUpdateManifestObjectKey(platform: MobileUpdatePlatform): string {
-  return `mobile/${platform}/latest.json`
+/** `mobile/<platform>[/<track>]/latest.json` -- the single mutable pointer object per track. */
+export function mobileUpdateManifestObjectKey(
+  platform: MobileUpdatePlatform,
+  track: MobileUpdateTrack = 'stable',
+): string {
+  return `${trackPrefix(platform, track)}/latest.json`
 }
 
 export function mobileUpdateManifestUrl(
   platform: MobileUpdatePlatform,
   base = DOWNLOAD_BASE_URL,
+  track: MobileUpdateTrack = 'stable',
 ): string {
-  return `${base.replace(/\/+$/, '')}/${mobileUpdateManifestObjectKey(platform)}`
+  return `${base.replace(/\/+$/, '')}/${mobileUpdateManifestObjectKey(platform, track)}`
 }
 
 /**
- * `mobile/android/superone-v<version>-build<buildCode>.apk` -- immutable.
+ * `mobile/android[/<track>]/superone-v<version>-build<buildCode>.apk` -- immutable.
+ *
+ * Both tracks share one build code counter, so the track directory is what
+ * keeps a stable and an alpha APK of the same number from colliding.
  *
  * Flat rather than one directory per build: the file name already carries the
  * whole identity, so the directory added nothing and made the prefix awkward to
  * list and to prune. Keys published under the older nested layout stay valid --
  * `latest.json` stores a full URL, so nothing resolves a key twice.
  */
-export function androidApkObjectKey(version: string, buildCode: number): string {
+export function androidApkObjectKey(
+  version: string,
+  buildCode: number,
+  track: MobileUpdateTrack = 'stable',
+): string {
   const ver = assertSafeKeySegment(version, 'version')
   if (!Number.isSafeInteger(buildCode) || buildCode <= 0) {
     throw new Error(`unsafe build code for mobile update key: ${buildCode}`)
   }
-  return `mobile/android/superone-v${ver}-build${buildCode}.apk`
+  return `${trackPrefix('android', track)}/superone-v${ver}-build${buildCode}.apk`
 }
 
 export function androidApkUrl(
   version: string,
   buildCode: number,
   base = DOWNLOAD_BASE_URL,
+  track: MobileUpdateTrack = 'stable',
 ): string {
-  return `${base.replace(/\/+$/, '')}/${androidApkObjectKey(version, buildCode)}`
+  return `${base.replace(/\/+$/, '')}/${androidApkObjectKey(version, buildCode, track)}`
 }
 
 function positiveInt(value: unknown): number | null {
@@ -225,6 +253,7 @@ export function evaluateMobileUpdate(input: EvaluateMobileUpdateInput): MobileUp
 
 export type FetchMobileUpdateManifestOptions = {
   platform: MobileUpdatePlatform
+  track?: MobileUpdateTrack
   baseUrl?: string
   fetchJson?: (url: string) => Promise<unknown>
   timeoutMs?: number
@@ -242,7 +271,7 @@ export async function fetchMobileUpdateManifest(
   opts: FetchMobileUpdateManifestOptions,
 ): Promise<MobileUpdateManifest | null> {
   const base = opts.baseUrl ?? DOWNLOAD_BASE_URL
-  const url = mobileUpdateManifestUrl(opts.platform, base)
+  const url = mobileUpdateManifestUrl(opts.platform, base, opts.track)
   const fetchJson =
     opts.fetchJson ??
     (async (u: string) => {

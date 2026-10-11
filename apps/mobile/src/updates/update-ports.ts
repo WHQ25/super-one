@@ -8,6 +8,7 @@ import {
   fetchMobileUpdateManifest,
   type MobileUpdateManifest,
   type MobileUpdatePlatform,
+  type MobileUpdateTrack,
 } from '@superone/shared/mobile-updates'
 import { downloadFraction, UpdateDownloadError, verifyDownload } from './update-download-state'
 import { OTA_IDLE, type OtaNativeState } from './ota-update-state'
@@ -37,6 +38,16 @@ const APK_MIME_TYPE = 'application/vnd.android.package-archive'
  */
 const ACTION_INSTALL_PACKAGE = 'android.intent.action.INSTALL_PACKAGE'
 
+/**
+ * The channel is baked into the binary by its `eas.json` profile, the same
+ * profile that picks the application id, so it identifies the variant and
+ * with it the pointer to read.
+ */
+const ALPHA_CHANNEL = 'alpha'
+
+/** EAS channels that ship a self-installing APK; `production` is the store build. */
+const SELF_INSTALL_CHANNELS = new Set(['internal', ALPHA_CHANNEL])
+
 export type UpdateBuildInfo = {
   /** `CFBundleShortVersionString` / `versionName`, for display only. */
   version: string | null
@@ -46,14 +57,16 @@ export type UpdateBuildInfo = {
 
 export type UpdateEnvironment = {
   platform: MobileUpdatePlatform
+  /** The pointer this binary reads, from its baked EAS channel. */
+  track: MobileUpdateTrack
   currentBuild: UpdateBuildInfo
   /**
    * Whether this binary may fetch and install its own APK.
    *
    * False for iOS (impossible), for dev clients and Metro-served builds (they
    * are signed with the local debug keystore, so an EAS-signed APK could not
-   * install over them anyway), and for any channel but `internal` (the store
-   * build must never sideload).
+   * install over them anyway), and for any channel but `internal` and `alpha`
+   * (the store build must never sideload).
    */
   canSelfInstall: boolean
 }
@@ -124,6 +137,7 @@ function readCurrentBuild(): UpdateBuildInfo {
 function resolveEnvironment(): UpdateEnvironment {
   const platform: MobileUpdatePlatform = Platform.OS === 'android' ? 'android' : 'ios'
   const currentBuild = readCurrentBuild()
+  const track: MobileUpdateTrack = Updates.channel === ALPHA_CHANNEL ? 'alpha' : 'stable'
   const canSelfInstall =
     Platform.OS === 'android'
     && !__DEV__
@@ -131,9 +145,9 @@ function resolveEnvironment(): UpdateEnvironment {
     // `isEnabled` is false in a dev client, which is exactly the build whose
     // debug-keystore signature would reject an EAS-signed APK.
     && Updates.isEnabled
-    && Updates.channel === 'internal'
+    && SELF_INSTALL_CHANNELS.has(Updates.channel ?? '')
     && currentBuild.buildCode !== null
-  return { platform, currentBuild, canSelfInstall }
+  return { platform, track, currentBuild, canSelfInstall }
 }
 
 function updatesDirectory(): Directory {
@@ -177,7 +191,7 @@ export function createUpdatePorts(): UpdatePorts {
     ota: createOtaPorts(),
 
     async fetchManifest() {
-      return fetchMobileUpdateManifest({ platform: environment.platform })
+      return fetchMobileUpdateManifest({ platform: environment.platform, track: environment.track })
     },
 
     freeDiskBytes() {

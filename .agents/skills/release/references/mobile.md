@@ -12,11 +12,22 @@ Two entry points run the same decision: an alpha desktop release (`desktop.md`
 Step 1, everything rides along in that release) and `/release mobile` for a
 mobile-only update between desktop releases (the flow below).
 
-**There is no alpha/stable here.** One app (`com.superone.superone_remote`),
-version `1.0.0`-style in `apps/mobile/app.json`, one shared build code in
-`apps/mobile/build-code.js`. What differs per platform is fixed, not chosen:
-Android's installable APK is built with the `internal` profile and updated on the
-`internal` channel; iOS is built with `production` and updated on `production`.
+**Two variants on each platform, like the desktop.** Version `1.0.0`-style in
+`apps/mobile/app.json`, one shared build code in `apps/mobile/build-code.js`.
+What differs is fixed, not chosen:
+
+- **Alpha** ("SuperOne Alpha", `<release id>.alpha` on both platforms): profile
+  and channel `alpha` on both, pointers `mobile/<platform>/alpha/latest.json`,
+  tags `mobile/<platform>-alpha/…`. Android is a self-updating APK; iOS is its
+  own App Store Connect app, TestFlight only. Every alpha release and every
+  `/release mobile` ships here — it may need an alpha desktop.
+- **Stable** (the release ids in `app.json`): Android profile and channel
+  `internal`, iOS `production` (the existing TestFlight app, App Store at
+  launch); pointers `mobile/<platform>/latest.json`, tags `mobile/<platform>/…`.
+  Shipped only by a stable cut (`desktop.md` → **Cutting a stable release**).
+  The workflow refuses to queue a stable build whose `MIN_PHONE_DESKTOP_VERSION`
+  is above the released stable desktop.
+
 The two platforms are decided and shipped independently: one can take an OTA
 while the other takes a binary.
 
@@ -45,16 +56,19 @@ it was run; lack of a smoke record is not itself a publication blocker.
 
 ## Decide (per platform)
 
-Run for `android` (channel `internal`) and `ios` (channel `production`):
+Run for `android` and `ios`, each on channel `alpha` with tag prefix
+`mobile/<platform>-alpha/`:
 
 1. **Baseline**: whichever is newer of the last OTA on the platform's channel and
-   the last native build tag `mobile/<platform>/v*` —
+   the last native build tag under its prefix —
    ```bash
    cd apps/mobile
    GROUP=$(bunx eas-cli@24.0.0 update:list --branch <channel> --limit 1 --json --non-interactive | jq -r '.currentPage[0].group')
    bunx eas-cli@24.0.0 update:view "$GROUP" --json | jq -r '.[0].gitCommitHash'
-   git tag -l 'mobile/<platform>/v*' --sort=-creatordate | head -1
+   git tag -l '<tag prefix>v*' --sort=-creatordate | head -1
    ```
+   The fingerprint must be computed with `APP_VARIANT=alpha` — the variant
+   identity is part of it.
    (`update:list` does not carry the commit; `update:view` does.) Compare the two
    with `git merge-base --is-ancestor`; the descendant is the baseline.
 2. **What goes out**: commits since the baseline touching the mobile closure —
@@ -103,7 +117,7 @@ a7729d22)`, `ios: native → build 30 (fingerprint 8171a5f1 not shipped)`, or
 SHA=$(git rev-parse HEAD)   # what was reviewed, not "main" — main may move before the runner checks out
 gh workflow run update-mobile.yml --ref main \
   -f platform=<the OTA platforms: android, ios or both> \
-  -f android_channel=internal -f ios_channel=production \
+  -f android_channel=alpha -f ios_channel=alpha \
   -f message="<message>" -f ref="$SHA" -f dry_run=false
 sleep 8; gh run list --workflow=update-mobile.yml --limit 1 --json databaseId,url -q '.[0]'
 ```
@@ -121,9 +135,9 @@ Then confirm the channel head is the new group and names the reviewed commit:
 
 ```bash
 cd apps/mobile
-GROUP=$(bunx eas-cli@24.0.0 update:list --branch internal --limit 1 --json --non-interactive | jq -r '.currentPage[0].group')
+GROUP=$(bunx eas-cli@24.0.0 update:list --branch alpha --limit 1 --json --non-interactive | jq -r '.currentPage[0].group')
 bunx eas-cli@24.0.0 update:view "$GROUP" --json | jq -r '.[0] | "\(.platform) \(.group) \(.gitCommitHash[0:8]) runtime \(.runtimeVersion[0:8])"'
-# same for --branch production
+# the same group covers both platforms when both took the OTA
 ```
 
 ### Report
@@ -148,18 +162,20 @@ after — there is no in-app "update now".
 For the platforms **Decide** marked native: a build-code commit, then **one
 dispatch** of `release-mobile.yml` with `platform=` those platforms (`both` when
 both moved). The workflow carries a profile per platform (`android_profile`
-defaults to `internal`, `ios_profile` to `production`), builds from one `ref`, and
-tags `mobile/<platform>/…` at that commit.
+and `ios_profile` both default to `alpha`), builds from one `ref`, and tags
+`mobile/<platform>-alpha/…` at that commit.
 
 ### Step 1: Numbers
 
 1. Read `version` from `apps/mobile/app.json` and `BUILD_CODE` from
    `apps/mobile/build-code.js`, and the published state:
    ```bash
-   curl -s https://dl.super-one.dev/mobile/android/latest.json | jq '{version, buildCode, minSupportedBuildCode}'
-   curl -s https://dl.super-one.dev/mobile/ios/latest.json     | jq '{version, buildCode, minSupportedBuildCode}'
+   curl -s https://dl.super-one.dev/mobile/android/alpha/latest.json | jq '{version, buildCode, minSupportedBuildCode}'
+   curl -s https://dl.super-one.dev/mobile/android/latest.json       | jq '{version, buildCode, minSupportedBuildCode}'
+   curl -s https://dl.super-one.dev/mobile/ios/alpha/latest.json     | jq '{version, buildCode, minSupportedBuildCode}'
+   curl -s https://dl.super-one.dev/mobile/ios/latest.json           | jq '{version, buildCode, minSupportedBuildCode}'
    ```
-2. **Build code**: one above the highest of `BUILD_CODE` and both published
+2. **Build code**: one above the highest of `BUILD_CODE` and all published
    `buildCode`s. The platforms' published codes may differ after a
    single-platform build; the next build of the other one simply skips ahead.
 3. **Version**: unchanged. The app is pre-launch and ships `1.0.0` until the
@@ -168,7 +184,7 @@ tags `mobile/<platform>/…` at that commit.
    floor. Raising it locks older builds out with no client-side way back, so it
    is set only when the user asks.
 5. Confirmation line: `ios: 1.0.0 (29) → 1.0.0 (30)`, the floor (`inherit <N>`)
-   and the profile (android/internal, ios/production).
+   and the profile (alpha).
 
 ### Step 2: Bump, commit, push
 
@@ -210,14 +226,14 @@ once — later builds do not wait for it.
 ### Step 5: Verify
 
 ```bash
-curl -s https://dl.super-one.dev/mobile/android/latest.json | jq '{version, buildCode, artifact: .artifact.url}'
-curl -s https://dl.super-one.dev/mobile/ios/latest.json     | jq '{version, buildCode, testflightUrl}'
+curl -s https://dl.super-one.dev/mobile/android/alpha/latest.json | jq '{version, buildCode, artifact: .artifact.url}'
+curl -s https://dl.super-one.dev/mobile/ios/alpha/latest.json     | jq '{version, buildCode, testflightUrl}'
 git fetch origin --tags
-git tag -l 'mobile/*/v<version>-build<N+1>'      # expect both platforms, both → $SHA
+git tag -l 'mobile/*/v<version>-build<N+1>'      # expect android-alpha and ios-alpha, both → $SHA
 ```
 
 `buildCode` must read `<N+1>` on both; the Android `artifact.url` is the
-immutable `superone-v<version>-build<N+1>.apk`.
+immutable `alpha/superone-v<version>-build<N+1>.apk`.
 
 ### Step 6: Report
 
@@ -233,8 +249,10 @@ fingerprint move, say that OTA is unblocked again from this build onward.
 | `build code <N+1> does not advance the published <M>` | Step 2 was skipped or a newer binary shipped in between. Bump `build-code.js` past `M`, commit, re-dispatch with the new `ref` |
 | App Store Connect rejects the build number | Same cause on the iOS side (a `CFBundleVersion` it has seen). Bump again; the Android run is unaffected |
 | One platform job red, the other green | They are independent jobs. `gh run rerun <run-id> --failed` re-runs the red one on the same `ref` (same build code, same commit for both tags). If the fix has to be in the tree, bump the build code again and dispatch fresh — the green platform's build code must not be reused either |
-| Need to re-point Android at an older build (rollback) | `gh workflow run release-mobile.yml -f platform=android -f build_id=<older EAS build id> -f dry_run=false` — `platform=android` only: `build_id` is refused by the iOS job. Skips the EAS queue and rewrites `latest.json` at that build. iOS has no equivalent; TestFlight keeps every build |
-| iOS job fails at `Check inputs` with `cannot be submitted to TestFlight` | `ios_profile` was not `production`. Nothing was queued; re-dispatch with the default |
+| Need to re-point Android at an older build (rollback) | `gh workflow run release-mobile.yml -f platform=android -f android_profile=<alpha or internal: the build's own profile> -f build_id=<older EAS build id> -f dry_run=false` — `platform=android` only: `build_id` is refused by the iOS job. Skips the EAS queue and rewrites that track's `latest.json` at that build; a profile mismatch is refused. Phones already on a newer `versionCode` stay there. iOS has no equivalent; TestFlight keeps every build |
+| Stable Android publish fails with `stable desktop is <X>` | The tree requires a desktop newer than the released stable (`MIN_PHONE_DESKTOP_VERSION`). Ship it on `alpha`, or cut the stable desktop first |
+| iOS job fails at `Check inputs` with `cannot be submitted to TestFlight` | `ios_profile` was `internal`. Nothing was queued; re-dispatch with the default |
+| iOS job fails at `Check inputs` with `no TestFlight link` / `no submit.<profile>.ios.ascAppId` | That app is not wired yet: set `TESTFLIGHT_URL_ALPHA` in `release-mobile.yml` / `submit.alpha.ios.ascAppId` in `apps/mobile/eas.json` |
 | Wrong `min_supported_build_code` published | Re-dispatch with `build_id=<same build>` and the corrected number — lowering is allowed; that is how a floor set too high is undone |
 
 ---
@@ -250,10 +268,12 @@ fingerprint move, say that OTA is unblocked again from this build onward.
   an OTA, so the two published codes may differ.
 - **One dispatch per release builds every platform that needs a binary from one
   `ref`**, so the tags for one build code name one commit.
-- **Android `internal`, iOS `production`** — for builds and for update channels
-  alike. A one-off elsewhere is a typed workflow input, never a default.
+- **`alpha` on both platforms** — for builds and for update channels alike.
+  Stable (Android `internal`, iOS `production`) is typed only by a stable cut,
+  never a default; a stable phone must never require an unreleased stable
+  desktop.
 - **`min_supported_build_code` is inherited unless typed.** Raising it locks
   every older build out with no client-side way back.
-- **Mobile tags live under `mobile/<platform>/`, never `v*`** — that namespace is
+- **Mobile tags live under `mobile/<platform>[-alpha]/`, never `v*`** — that namespace is
   the desktop line. Tags are created by the workflow after publishing, never
   pushed from local.

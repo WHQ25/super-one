@@ -7,12 +7,15 @@ an unrecorded run passed.
 
 EAS files live in this app directory. Run EAS commands from `apps/mobile`, not the
 monorepo root. `eas.json` pins the root Bun version, builds the `internal` profile as
-an installable Android APK, and reserves `production` for TestFlight/store builds.
+the stable Android APK, `alpha` as the alpha variant (Android APK, iOS app-store build
+for the Alpha TestFlight app), and reserves `production` for stable TestFlight/store
+builds.
 Build numbers are local (`appVersionSource: "local"`): `build-code.js` holds one
 build code that `app.config.js` writes into both `ios.buildNumber` and
 `android.versionCode`, bumped by hand in the release commit. Never re-enable
 `autoIncrement` — with a local source EAS rewrites `app.json` on the builder and the
-bump is discarded. `submit.production` pins the numeric `ascAppId`; EAS holds the
+bump is discarded. `submit.production` and `submit.alpha` pin each app's numeric
+`ascAppId`; EAS holds the
 App Store Connect API key — never download, commit or paste it. Keep
 `credentials.json` local and ignored. `assert-release-config.ts` (static, cheap)
 stays in the test command.
@@ -41,7 +44,7 @@ Update — Metro serves JS — so `plugins/with-dev-client-updates.js` sets
 checked before the file open) and makes `create*UpdatesResources` out of date
 when the asset is missing, so a local release build cannot repeat the crash.
 
-## Two app identities
+## App identities
 
 The locally built dev client and the EAS `internal` APK have to sit on one phone
 at once, and they cannot share a package name: one is signed with
@@ -49,11 +52,31 @@ at once, and they cannot share a package name: one is signed with
 refuses to install either over the other (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`).
 So the development variant takes a `.dev` suffix and its own name and scheme.
 
+**Alpha mirrors the desktop variants.** The `alpha` EAS profile builds
+`APP_VARIANT=alpha` on both platforms: `<release id>.alpha`, "SuperOne Alpha",
+`superone-alpha://`, EAS channel `alpha`, pointer `mobile/<platform>/alpha/latest.json`.
+On iOS it is its own App Store Connect app, TestFlight only; the release bundle id
+is the stable app (TestFlight now, App Store at launch). It is where phone changes
+that need an alpha desktop ship. One application id on two channels would not do:
+a stable install that auto-updates into a build requiring an unreleased desktop
+cannot connect, an Android `versionCode` cannot be downgraded, and on iOS a
+TestFlight binary and its App Store submission are the same upload with the same
+baked channel. A separate id also lets one phone pair with an alpha and a stable
+desktop at once (each app keeps its own pairings).
+
+The stable track's guard is `assertStableDesktopServesPhone` in
+`scripts/publish-mobile-update.ts`, run as `--check-stable-floor` before any
+stable binary is queued: it fails when `MIN_PHONE_DESKTOP_VERSION`
+(`packages/relay-client/src/phone-version.ts`) is above the version in
+`stable/desktop-mac.yml`. Before the queue rather than at publish, because iOS
+hands the build to TestFlight before its manifest exists. An Android `build_id`
+re-publish (the rollback) is exempt.
+
 `app-variant.js` is the only copy of that rule. `app.json` stays the base config
 *and the release identity*, so every static assertion in
 `assert-release-config.ts` keeps reading the JSON directly; `app.config.js` is a
 thin overlay Expo hands `app.json` to, and it only rewrites the identity when
-`APP_VARIANT=development`. Everything else — updates URL, permissions, plugins,
+`APP_VARIANT` names a variant (`development`, `alpha`). Everything else — updates URL, permissions, plugins,
 the runtime-version policy — is deliberately shared, so the dev client exercises
 the same native surface the release build ships.
 
@@ -88,21 +111,33 @@ binary, and neither store gives us a push. So the app polls a manifest published
 beside the desktop releases and acts on it (`src/updates/`).
 
 ```
-mobile/android/v<version>-<buildCode>/superone-<buildCode>.apk   immutable
-mobile/android/latest.json    the ONLY mutable object — rollback is one re-point
+mobile/android/superone-v<version>-build<N>.apk         stable APK, immutable
+mobile/android/latest.json                              stable pointer — rollback is one re-point
+mobile/android/alpha/superone-v<version>-build<N>.apk   alpha APK, immutable
+mobile/android/alpha/latest.json                        alpha pointer
 mobile/ios/latest.json        numbers + a TestFlight link; iOS installs nothing itself
+mobile/ios/alpha/latest.json  the same for the Alpha TestFlight app
 ```
+
+The pointer an install reads follows its baked EAS channel (`alpha` → alpha,
+anything else → stable) in `src/updates/update-ports.ts`. Both tracks share the
+build code counter; the track directory and the `mobile/<platform>-alpha/…` tags
+keep equal numbers apart. Each app's public TestFlight link is a constant in
+`release-mobile.yml` (`TESTFLIGHT_URL_STABLE` / `TESTFLIGHT_URL_ALPHA`).
 
 Key layout, parsing and the verdict rule live in `@superone/shared/mobile-updates` —
 one copy, because `scripts/publish-mobile-update.ts` writes exactly what the app reads.
 `.github/workflows/release-mobile.yml` drives an EAS build per platform (`android_profile`
-`internal` → APK, `ios_profile` `production` → TestFlight; `platform=both` is one dispatch),
+`internal` → stable APK, `alpha` → alpha APK; `ios_profile` `alpha` / `production` → that
+app's TestFlight; both default to `alpha`; `platform=both` is one dispatch),
 downloads the artifact and runs that script; it needs an `EXPO_TOKEN` secret and defaults
 `dry_run` to true.
 
 JS-only changes go out through `.github/workflows/update-mobile.yml` instead — `eas
-update`, one publish per platform because the channels differ (Android APK on
-`internal`, iOS on `production`). Its one job beyond the publish is the **runtime
+update`, one publish per platform because the channels differ (`alpha` on both, or
+stable: Android `internal`, iOS `production`). The alpha identity is part of the
+fingerprint, so the workflow resolves the config with `APP_VARIANT=alpha` when
+targeting the `alpha` channel. Its one job beyond the publish is the **runtime
 guard**: `eas update` computes the fingerprint from the checkout and publishes even when
 no shipped build has that runtime, so the workflow first asks
 `eas build:list --fingerprint-hash <hash> --channel <channel> --status finished` per

@@ -1,13 +1,21 @@
 'use strict'
 
 /**
- * The one place that knows how the development variant differs.
+ * The one place that knows how the non-release variants differ.
  *
- * Two builds have to coexist on one phone: the locally built dev client, which
- * Metro serves and which is signed with the debug keystore, and the EAS
- * `internal` APK, which is signed with the project keystore and updates itself.
- * Android refuses to install one over the other -- same package name, different
- * signature -- so they need different application ids.
+ * Several builds have to coexist on one phone, and Android refuses to install
+ * one over another unless they share an application id and a signature:
+ *
+ *   - `development`: the locally built dev client, which Metro serves and which
+ *     is signed with the debug keystore.
+ *   - `alpha`: the build that tracks the alpha desktop (a self-updating APK on
+ *     Android, a TestFlight-only app on iOS). It ships protocol changes before
+ *     any stable desktop can serve them, so it must never reach a stable
+ *     install -- a separate id is what keeps the two update pointers, the two
+ *     OTA channels and the two pairings apart, and lets one phone hold both.
+ *
+ * Everything else -- the stable APK, the stable TestFlight app and the store
+ * builds -- runs the release identity from `app.json` unchanged.
  *
  * CommonJS and not TypeScript because Expo's config loader `require()`s
  * `app.config.js` with Node, and there is no `ts-node` in this repo. Same
@@ -18,18 +26,21 @@
  * drives the wrong app.
  */
 
-/** Appended to the release identifiers. Also the launcher-visible difference. */
-const DEV_SUFFIX = '.dev'
-
 /**
- * The dev variant answers a scheme of its own.
+ * Each variant answers a scheme of its own.
  *
- * With both apps claiming `superone://`, every preview deep link would raise
- * an Android disambiguation chooser. Pairing does not care -- that path is the
+ * With two installed apps claiming `superone://`, every deep link raises an
+ * Android disambiguation chooser. Pairing does not care -- that path is the
  * in-app camera and the paste field -- but `superone://native-preview` is
  * automation, and automation cannot answer a chooser.
  */
-const DEV_SCHEME = 'superone-dev'
+const VARIANTS = {
+  development: { suffix: '.dev', scheme: 'superone-dev', label: 'Dev' },
+  alpha: { suffix: '.alpha', scheme: 'superone-alpha', label: 'Alpha' },
+}
+
+const DEV_SUFFIX = VARIANTS.development.suffix
+const DEV_SCHEME = VARIANTS.development.scheme
 
 function isDevVariant(env = process.env) {
   return env.APP_VARIANT === 'development'
@@ -40,19 +51,20 @@ function devApplicationId(releaseId) {
 }
 
 /**
- * Apply the development identity to a resolved Expo config, or return it
+ * Apply the variant identity to a resolved Expo config, or return it
  * untouched. Everything else -- updates URL, permissions, plugins, runtime
- * version policy -- is deliberately shared, so the dev client exercises the
+ * version policy -- is deliberately shared, so every variant exercises the
  * same native surface the release build ships.
  */
 function applyAppVariant(config, env = process.env) {
-  if (!isDevVariant(env)) return config
+  const variant = Object.hasOwn(VARIANTS, env.APP_VARIANT ?? '') ? VARIANTS[env.APP_VARIANT] : null
+  if (!variant) return config
   return {
     ...config,
-    name: `${config.name} Dev`,
-    scheme: DEV_SCHEME,
-    ios: { ...config.ios, bundleIdentifier: devApplicationId(config.ios.bundleIdentifier) },
-    android: { ...config.android, package: devApplicationId(config.android.package) },
+    name: `${config.name} ${variant.label}`,
+    scheme: variant.scheme,
+    ios: { ...config.ios, bundleIdentifier: `${config.ios.bundleIdentifier}${variant.suffix}` },
+    android: { ...config.android, package: `${config.android.package}${variant.suffix}` },
   }
 }
 

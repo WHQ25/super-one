@@ -105,6 +105,7 @@ export function createFakeUpdatePorts(
     ota: options.ota ?? createFakeOtaPorts({ enabled: false, onCall: options.onCall }),
     environment: {
       platform,
+      track: 'stable',
       currentBuild: {
         version: '1.0.0',
         buildCode: options.currentBuildCode === undefined ? 42 : options.currentBuildCode,

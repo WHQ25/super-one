@@ -24,6 +24,16 @@
         "buildType": "apk"
       }
     },
+    "alpha": {
+      "extends": "base",
+      "channel": "alpha",
+      "env": {
+        "APP_VARIANT": "alpha"
+      },
+      "android": {
+        "buildType": "apk"
+      }
+    },
     "production": {
       "extends": "base",
       "channel": "production"
@@ -33,6 +43,11 @@
     "production": {
       "ios": {
         "ascAppId": "6761263268"
+      }
+    },
+    "alpha": {
+      "ios": {
+        "ascAppId": "6821560971"
       }
     }
   }

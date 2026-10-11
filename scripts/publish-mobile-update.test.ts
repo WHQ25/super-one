@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { parseMobileUpdateManifest, type MobileUpdateManifest } from '../packages/shared/src/mobile-updates'
-import { buildManifest, parseArgs, resolveMobileUpdatePlan } from './publish-mobile-update'
+import {
+  assertStableDesktopServesPhone,
+  buildManifest,
+  parseArgs,
+  resolveMobileUpdatePlan,
+} from './publish-mobile-update'
 
 const REPO_ROOT = '/repo'
 
@@ -32,6 +37,13 @@ describe('parseArgs', () => {
         REPO_ROOT,
       ),
     ).toThrow(/--build-code requires an integer/)
+  })
+
+  it('defaults to the stable track and accepts alpha', () => {
+    const android = ['--platform', 'android', '--version', '1.0.0', '--build-code', '42', '--apk', 'a.apk']
+    expect(parseArgs(android, REPO_ROOT).track).toBe('stable')
+    expect(parseArgs([...android, '--track', 'alpha'], REPO_ROOT).track).toBe('alpha')
+    expect(() => parseArgs([...android, '--track', 'beta'], REPO_ROOT)).toThrow(/--track must be/)
   })
 
   it('defaults the floor to unset so a publish inherits it', () => {
@@ -180,5 +192,16 @@ describe('buildManifest', () => {
     })
     expect(manifest.artifact).toBeUndefined()
     expect(parseMobileUpdateManifest(manifest, 'ios')).toEqual(manifest)
+  })
+})
+
+describe('assertStableDesktopServesPhone', () => {
+  it('refuses a stable phone that requires an unreleased desktop', () => {
+    expect(() => assertStableDesktopServesPhone('0.72.2', '0.73.0-alpha.1')).toThrow(/alpha track/)
+  })
+
+  it('accepts once a stable desktop at or above the floor is out', () => {
+    expect(() => assertStableDesktopServesPhone('0.73.0', '0.73.0-alpha.1')).not.toThrow()
+    expect(() => assertStableDesktopServesPhone('0.72.2', '0.72.0')).not.toThrow()
   })
 })

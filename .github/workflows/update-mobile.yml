@@ -16,9 +16,14 @@ name: Update Mobile (OTA)
 # finished builds on its channel, and a miss fails the run: the change needs a
 # native release first.
 #
-# Channels are per platform because the two ship differently: Android's
-# installable APK lives on `internal`, iOS goes to TestFlight/App Store on
-# `production`. Both can be pointed elsewhere for a one-off.
+# Channels are per platform: each platform has an `alpha` app on channel
+# `alpha` and a stable app on `internal` (Android APK) or `production` (iOS
+# TestFlight / App Store). Both can be pointed elsewhere for a one-off.
+#
+# The alpha apps are a different app variant (apps/mobile/app-variant.js), and
+# their identity is part of the fingerprint. Every step that resolves the Expo
+# config therefore runs with the variant of the channel it targets, or the
+# alpha runtime would never match.
 
 on:
   workflow_dispatch:
@@ -33,21 +38,23 @@ on:
           - both
         default: both
       android_channel:
-        description: 'EAS Update channel for Android. `internal` is the self-hosted APK.'
+        description: 'EAS Update channel for Android. `internal` is the stable self-hosted APK, `alpha` the alpha one.'
         required: true
         type: choice
         options:
+          - alpha
           - internal
           - production
-        default: internal
+        default: alpha
       ios_channel:
-        description: 'EAS Update channel for iOS. `production` is TestFlight / App Store.'
+        description: 'EAS Update channel for iOS. `alpha` is the SuperOne Alpha TestFlight app, `production` the stable TestFlight / App Store app.'
         required: true
         type: choice
         options:
+          - alpha
           - production
           - internal
-        default: production
+        default: alpha
       message:
         description: 'Update message recorded on the EAS update group (what changed, for whoever reads `eas update:list` later)'
         required: true
@@ -140,6 +147,8 @@ jobs:
               android) CHANNEL="${INPUT_ANDROID_CHANNEL}" ;;
               ios)     CHANNEL="${INPUT_IOS_CHANNEL}" ;;
             esac
+            export APP_VARIANT=""
+            if [ "${CHANNEL}" = alpha ]; then export APP_VARIANT=alpha; fi
             # The same computation EAS ran for the build: ios/ and android/ are
             # gitignored, so the tree is `managed` on both sides and hashes
             # neither. This is @expo/fingerprint from the lockfile, not @latest.
@@ -182,6 +191,12 @@ jobs:
           # Per platform: `--platform all` would also try web, which this app
           # does not ship.
           for PLATFORM in ${PLATFORMS}; do
+            case "${PLATFORM}" in
+              android) CHANNEL="${INPUT_ANDROID_CHANNEL}" ;;
+              ios)     CHANNEL="${INPUT_IOS_CHANNEL}" ;;
+            esac
+            export APP_VARIANT=""
+            if [ "${CHANNEL}" = alpha ]; then export APP_VARIANT=alpha; fi
             bunx expo export --platform "${PLATFORM}" --output-dir "export-${PLATFORM}"
             du -sh "export-${PLATFORM}"
           done
@@ -208,6 +223,8 @@ jobs:
               android) CHANNEL="${INPUT_ANDROID_CHANNEL}" ;;
               ios)     CHANNEL="${INPUT_IOS_CHANNEL}" ;;
             esac
+            export APP_VARIANT=""
+            if [ "${CHANNEL}" = alpha ]; then export APP_VARIANT=alpha; fi
             bunx "eas-cli@${EAS_CLI_VERSION}" update \
               --channel "${CHANNEL}" \
               --platform "${PLATFORM}" \

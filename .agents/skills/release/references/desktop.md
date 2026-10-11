@@ -199,7 +199,7 @@ gh run list --workflow=release.yml --limit 5 --json databaseId,headSha,createdAt
 ```bash
 # platforms marked OTA (android, ios, or both)
 gh workflow run update-mobile.yml --ref main \
-  -f platform=<ota platforms> -f android_channel=internal -f ios_channel=production \
+  -f platform=<ota platforms> -f android_channel=alpha -f ios_channel=alpha \
   -f message="v<new-version>" -f ref=<the desktop bump commit SHA> -f dry_run=false
 # platforms marked native
 gh workflow run release-mobile.yml --ref main \
@@ -376,6 +376,20 @@ has been running as alpha, packaged under the stable identity:
 4. Then Step 7 (publish, notes from `[Unreleased]`) and Step 8 (set-latest with
    `-f variant=stable`; add `-f legacy_root=true` if this release must also
    collect pre-variant clients).
+5. **Stable phone apps**, after set-latest (the workflow checks the phone's
+   `MIN_PHONE_DESKTOP_VERSION` against `stable/desktop-mac.yml`, so the new
+   stable desktop must be live first), from the same SHA:
+   ```bash
+   gh workflow run release-mobile.yml --ref main \
+     -f platform=both -f android_profile=internal -f ios_profile=production \
+     -f ref=<the alpha SHA> -f dry_run=false
+   ```
+   It reuses that commit's build code (the stable apps have their own pointers
+   and App Store Connect record). `does not advance the published <M>` or a
+   rejected `CFBundleVersion` means that stable app already has this build
+   code — no native change since; send the JS as an OTA to
+   `android_channel=internal` / `ios_channel=production` from the same SHA
+   instead.
 
 The alpha line keeps moving independently; nothing about the stable cut changes
 `package.json`, so the next alpha release continues from where it was.

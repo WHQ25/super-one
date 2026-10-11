@@ -14,6 +14,8 @@
  *   bun scripts/publish-mobile-update.ts --platform android --version 1.0.0 \
  *     --build-code 42 --apk ./superone.apk
  *   bun scripts/publish-mobile-update.ts --platform android ... --upload
+ *   bun scripts/publish-mobile-update.ts --platform android --track alpha ...
+ *   bun scripts/publish-mobile-update.ts --check-stable-floor
  *   bun scripts/publish-mobile-update.ts --platform ios --version 1.0.0 \
  *     --build-code 42 --testflight-url https://testflight.apple.com/join/abcd
  *
@@ -44,8 +46,11 @@ import {
   parseMobileUpdateManifest,
   type MobileUpdateManifest,
   type MobileUpdatePlatform,
+  type MobileUpdateTrack,
 } from '../packages/shared/src/mobile-updates.ts'
-import { DOWNLOAD_BASE_URL } from '../packages/shared/src/download-links.ts'
+import { DOWNLOAD_BASE_URL, macUpdateManifestUrl } from '../packages/shared/src/download-links.ts'
+import { compareCliVersions } from '../packages/shared/src/environment/cli-version.ts'
+import { MIN_PHONE_DESKTOP_VERSION } from '../packages/relay-client/src/phone-version.ts'
 
 const BUCKET = 'super-one-releases'
 
@@ -58,6 +63,7 @@ const POINTER_CACHE_CONTROL = 'no-cache'
 
 export type PublishArgs = {
   platform: MobileUpdatePlatform
+  track: MobileUpdateTrack
   version: string
   buildCode: number
   apkPath: string | null
@@ -71,6 +77,7 @@ export type PublishArgs = {
 
 export function parseArgs(argv: string[], repoRoot: string): PublishArgs {
   let platform: MobileUpdatePlatform | null = null
+  let track: MobileUpdateTrack = 'stable'
   let version = ''
   let buildCode: number | null = null
   let apkPath: string | null = null
@@ -93,6 +100,10 @@ export function parseArgs(argv: string[], repoRoot: string): PublishArgs {
       const v = argv[++i]
       if (v !== 'android' && v !== 'ios') throw new Error(`--platform must be android|ios (got ${v})`)
       platform = v
+    } else if (a === '--track') {
+      const v = argv[++i]
+      if (v !== 'stable' && v !== 'alpha') throw new Error(`--track must be stable|alpha (got ${v})`)
+      track = v
     } else if (a === '--version') {
       version = (argv[++i] ?? '').trim()
       if (!version) throw new Error('--version requires a value')
@@ -114,7 +125,7 @@ export function parseArgs(argv: string[], repoRoot: string): PublishArgs {
       rollback = true
     } else if (a === '--help' || a === '-h') {
       console.log(
-        'Usage: bun scripts/publish-mobile-update.ts --platform <android|ios> --version X.Y.Z ' +
+        'Usage: bun scripts/publish-mobile-update.ts --platform <android|ios> [--track stable|alpha] --version X.Y.Z ' +
           '--build-code N [--apk file.apk] [--testflight-url URL] ' +
           '[--min-supported-build-code N] [--out dir] [--upload] [--rollback]',
       )
@@ -135,6 +146,7 @@ export function parseArgs(argv: string[], repoRoot: string): PublishArgs {
 
   return {
     platform,
+    track,
     version,
     buildCode,
     apkPath,
@@ -210,6 +222,41 @@ export function resolveMobileUpdatePlan(input: {
   }
 }
 
+/**
+ * Refuse a stable phone that the stable desktop cannot serve.
+ *
+ * The phone refuses any desktop below `MIN_PHONE_DESKTOP_VERSION`, and stable
+ * phones update themselves. Shipping one whose floor is above the released
+ * stable desktop strands every stable user who updates -- an Android
+ * `versionCode` cannot be downgraded, and TestFlight auto-updates. Such a build
+ * belongs on the alpha track until a stable desktop catches up.
+ *
+ * `--check-stable-floor` runs this alone. The release workflow calls it before
+ * building a stable binary: iOS hands the build to TestFlight before any
+ * manifest is published, so a check at publish time would come too late.
+ */
+export function assertStableDesktopServesPhone(
+  stableDesktopVersion: string,
+  minDesktopVersion = MIN_PHONE_DESKTOP_VERSION,
+): void {
+  if (compareCliVersions(stableDesktopVersion, minDesktopVersion) < 0) {
+    throw new Error(
+      `this phone requires desktop ${minDesktopVersion} but stable desktop is ` +
+        `${stableDesktopVersion}; publish it on the alpha track, or release a stable desktop first`,
+    )
+  }
+}
+
+/** `version:` of the stable variant's macOS update feed, the released stable desktop. */
+async function fetchStableDesktopVersion(baseUrl: string): Promise<string> {
+  const url = macUpdateManifestUrl('stable', baseUrl)
+  const res = await fetch(url, { headers: { 'cache-control': 'no-cache' } })
+  if (!res.ok) throw new Error(`reading ${url} failed: ${res.status}`)
+  const version = /^version:\s*['"]?([^'"\s]+)/m.exec(await res.text())?.[1]
+  if (!version) throw new Error(`${url} carries no version`)
+  return version
+}
+
 export function buildManifest(input: {
   platform: MobileUpdatePlatform
   version: string
@@ -253,9 +300,12 @@ function awsEnv(): NodeJS.ProcessEnv {
  * The CDN is allowed to be a moment behind; the monotonicity check is not.
  * Mirrors the reasoning in scripts/set-latest.ts.
  */
-function fetchPublishedManifest(platform: MobileUpdatePlatform): MobileUpdateManifest | null {
+function fetchPublishedManifest(
+  platform: MobileUpdatePlatform,
+  track: MobileUpdateTrack,
+): MobileUpdateManifest | null {
   requireR2Credentials()
-  const key = mobileUpdateManifestObjectKey(platform)
+  const key = mobileUpdateManifestObjectKey(platform, track)
   const scratch = mkdtempSync(join(tmpdir(), 'mobile-update-'))
   const dest = join(scratch, 'latest.json')
   try {
@@ -276,7 +326,7 @@ function fetchPublishedManifest(platform: MobileUpdatePlatform): MobileUpdateMan
     )
     if (res.status !== 0) {
       const err = `${res.stderr ?? ''}`
-      // Nothing published for this platform yet is the expected first run.
+      // Nothing published for this platform and track yet is the expected first run.
       if (/\(404\)|NoSuchKey|Not Found/.test(err)) return null
       throw new Error(`reading s3://${BUCKET}/${key} failed: ${err.trim() || res.status}`)
     }
@@ -315,9 +365,9 @@ function md5File(path: string): string {
   return createHash('md5').update(readFileSync(path)).digest('hex')
 }
 
-function summarize(plan: PublishPlan, platform: MobileUpdatePlatform): string[] {
+function summarize(plan: PublishPlan, platform: MobileUpdatePlatform, track: MobileUpdateTrack): string[] {
   const lines = [
-    `platform: ${platform}`,
+    `platform: ${platform} (${track})`,
     `build code: ${plan.previousBuildCode ?? '(none)'} → ${plan.buildCode}`,
     `min supported: ${plan.previousMinSupportedBuildCode ?? '(none)'} → ${plan.minSupportedBuildCode}`,
   ]
@@ -334,13 +384,21 @@ function summarize(plan: PublishPlan, platform: MobileUpdatePlatform): string[] 
 }
 
 async function main(): Promise<void> {
+  if (process.argv[2] === '--check-stable-floor') {
+    const stable = await fetchStableDesktopVersion(DOWNLOAD_BASE_URL)
+    assertStableDesktopServesPhone(stable)
+    console.log(`ok: stable desktop ${stable} serves phones requiring ${MIN_PHONE_DESKTOP_VERSION}`)
+    return
+  }
+
   const repoRoot = resolve(import.meta.dirname, '..')
   const args = parseArgs(process.argv.slice(2), repoRoot)
+
 
   // Reading the live manifest needs credentials, so a pure staging run without
   // them starts from "nothing published" -- enough to eyeball the output.
   const current =
-    args.upload || process.env.AWS_ACCESS_KEY_ID ? fetchPublishedManifest(args.platform) : null
+    args.upload || process.env.AWS_ACCESS_KEY_ID ? fetchPublishedManifest(args.platform, args.track) : null
 
   const plan = resolveMobileUpdatePlan({
     buildCode: args.buildCode,
@@ -359,10 +417,10 @@ async function main(): Promise<void> {
   if (args.platform === 'android') {
     const apkPath = args.apkPath!
     if (!existsSync(apkPath)) throw new Error(`APK not found: ${apkPath}`)
-    apkKey = androidApkObjectKey(args.version, args.buildCode)
+    apkKey = androidApkObjectKey(args.version, args.buildCode, args.track)
     stagedApk = stage(args.outDir, apkKey, (path) => copyFileSync(apkPath, path))
     artifact = {
-      url: androidApkUrl(args.version, args.buildCode, args.baseUrl),
+      url: androidApkUrl(args.version, args.buildCode, args.baseUrl, args.track),
       md5: md5File(stagedApk),
       sizeBytes: statSync(stagedApk).size,
     }
@@ -383,12 +441,12 @@ async function main(): Promise<void> {
     throw new Error('refusing to publish a manifest the app would reject')
   }
 
-  const manifestKey = mobileUpdateManifestObjectKey(args.platform)
+  const manifestKey = mobileUpdateManifestObjectKey(args.platform, args.track)
   const stagedManifest = stage(args.outDir, manifestKey, (path) =>
     writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`),
   )
 
-  for (const line of summarize(plan, args.platform)) console.log(line)
+  for (const line of summarize(plan, args.platform, args.track)) console.log(line)
   if (artifact) console.log(`apk: ${artifact.sizeBytes} bytes, md5 ${artifact.md5}`)
   console.log(`staged → ${args.outDir}`)
 
@@ -402,7 +460,7 @@ async function main(): Promise<void> {
   // never see a manifest whose APK is not there yet.
   if (stagedApk && apkKey) putObject(stagedApk, apkKey, IMMUTABLE_CACHE_CONTROL)
   putObject(stagedManifest, manifestKey, POINTER_CACHE_CONTROL)
-  console.log(`Published ${mobileUpdateManifestUrl(args.platform, args.baseUrl)}`)
+  console.log(`Published ${mobileUpdateManifestUrl(args.platform, args.baseUrl, args.track)}`)
   if (artifact) console.log(`Published ${artifact.url}`)
 }
 

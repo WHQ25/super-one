@@ -55,9 +55,9 @@ let reconcileTimer: ReturnType<typeof setTimeout> | null = null
 let accessAllowed = true
 
 const desktopSessionStore: NodeHostSessionStore = {
-  createRow: ({ sessionId, projectPath, title, cwd }) => {
+  createRow: ({ sessionId, projectPath, title, cwd, providerId }) => {
     const isWorktree = cwd !== projectPath
-    createSessionRow(projectPath, sessionId, title, isWorktree, undefined, isWorktree ? cwd : undefined)
+    createSessionRow(projectPath, sessionId, title, isWorktree, undefined, isWorktree ? cwd : undefined, providerId)
   },
   setController: setSessionRemoteController,
   get: getRemoteControlledSession,

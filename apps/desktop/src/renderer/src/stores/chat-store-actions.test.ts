@@ -51,12 +51,9 @@ vi.mock('./miniapp', () => ({
 const mockMiniAppAuthorize = vi.fn().mockResolvedValue(undefined)
 const mockWindowAgent = {
   prewarm: vi.fn().mockResolvedValue(undefined),
-  resetSession: vi.fn().mockResolvedValue({ permissionMode: 'default', sandboxInfo: { enabled: false, autoAllowBash: false } }),
   parkSession: vi.fn().mockResolvedValue({ permissionMode: 'default', sandboxInfo: { enabled: false, autoAllowBash: false } }),
-  disconnectRemoteSession: vi.fn().mockResolvedValue(undefined),
   truncateAtCheckpoint: vi.fn().mockResolvedValue(undefined),
   activateSession: vi.fn().mockResolvedValue(undefined),
-  broadcastSessionSetting: vi.fn().mockResolvedValue(undefined),
 }
 
 const mockWindowApp = {
@@ -64,7 +61,6 @@ const mockWindowApp = {
   trace: vi.fn(),
   activateWorktree: mockActivateWorktree,
   unwatchBashOutput: vi.fn(),
-  listSessionsForFolderPage: vi.fn().mockResolvedValue([]),
   codexGetAuthStatus: vi.fn().mockResolvedValue({
     mode: 'apiKey', resolvedMode: 'apiKey', hasEnvApiKey: false, hasSessionApiKey: false, isRunning: false,
   }),
@@ -97,6 +93,8 @@ const mockMiniApp = {
 }
 
 const mockWindowEnvironment = {
+  disconnectSessionController: vi.fn().mockResolvedValue(undefined),
+  callSession: vi.fn().mockResolvedValue(null),
   listSessions: vi.fn().mockResolvedValue([]),
   listProjects: vi.fn().mockResolvedValue([]),
   openProject: vi.fn().mockResolvedValue({ projectId: 'remote-project' }),
@@ -257,14 +255,14 @@ describe('disconnectRemoteSession', () => {
 
     useChatStore.getState().disconnectRemoteSession()
 
-    expect(mockWindowAgent.disconnectRemoteSession).toHaveBeenCalledWith(sid)
+    expect(mockWindowEnvironment.disconnectSessionController).toHaveBeenCalledWith(sid)
     expect(useChatStore.getState().remoteSessions).toEqual({})
   })
 
   it('wipes remoteSessions entirely when no project is active', () => {
     useChatStore.setState({ remoteSessions: { '/p1': ['s1'], '/p2': ['s2'] } })
     useChatStore.getState().disconnectRemoteSession()
-    expect(mockWindowAgent.disconnectRemoteSession).toHaveBeenCalledWith(undefined)
+    expect(mockWindowEnvironment.disconnectSessionController).toHaveBeenCalledWith(undefined)
     expect(useChatStore.getState().remoteSessions).toEqual({})
   })
 })
@@ -373,11 +371,11 @@ describe('resetSession', () => {
     const beforeSid = activeProjectState()._activeSessionId
     await useChatStore.getState().resetSession()
     expect(activeProjectState()._activeSessionId).toBe(beforeSid)
-    expect(mockWindowAgent.resetSession).not.toHaveBeenCalled()
+    expect(mockWindowEnvironment.callSession).not.toHaveBeenCalled()
     expect(mockWindowAgent.parkSession).not.toHaveBeenCalled()
   })
 
-  it('rotates to a new sid + calls window.agent.resetSession for an idle Claude session with messages', async () => {
+  it('rotates to a new sid and resets the idle Claude session through its environment', async () => {
     setupProject()
     patchSession({
       messages: [{ id: 'u1', role: 'user' as const, status: 'complete' as const, content: [], createdAt: '', providerId: 'claude' as const }],
@@ -388,7 +386,7 @@ describe('resetSession', () => {
 
     const newSid = activeProjectState()._activeSessionId
     expect(newSid).not.toBe(oldSid)
-    expect(mockWindowAgent.resetSession).toHaveBeenCalledWith(oldSid, newSid)
+    expect(mockWindowEnvironment.callSession).toHaveBeenCalledWith('local', oldSid, 'session.reset', { newSessionId: newSid })
     expect(mockWindowAgent.parkSession).not.toHaveBeenCalled()
   })
 
@@ -400,18 +398,17 @@ describe('resetSession', () => {
     })
     await useChatStore.getState().resetSession()
     expect(mockWindowAgent.parkSession).toHaveBeenCalled()
-    expect(mockWindowAgent.resetSession).not.toHaveBeenCalled()
+    expect(mockWindowEnvironment.callSession).not.toHaveBeenCalled()
   })
 
-  it('skips agent.resetSession for codex when the session is idle', async () => {
+  it('resets the old Codex runtime when the session is idle', async () => {
     setupProject()
     patchSession({
       sessionProvider: 'codex',
       messages: [{ id: 'u1', role: 'user' as const, status: 'complete' as const, content: [], createdAt: '', providerId: 'codex' as const }],
     })
     await useChatStore.getState().resetSession()
-    // For codex idle path, calls resetSession on old sid (no new sid)
-    expect(mockWindowAgent.resetSession).toHaveBeenCalled()
+    expect(mockWindowEnvironment.callSession).toHaveBeenCalledWith('local', expect.any(String), 'session.reset', {})
     expect(mockClearWorktree).toHaveBeenCalledWith(PATH)
   })
 })
@@ -623,7 +620,7 @@ describe('sendMessage: Codex utility slash commands', () => {
   it('/reset clears the Codex thread when a session id is bound', async () => {
     const sid = activeProjectState()._activeSessionId!
     await useChatStore.getState().sendMessage('/reset')
-    expect(mockWindowAgent.resetSession).toHaveBeenCalledWith(sid)
+    expect(mockWindowEnvironment.callSession).toHaveBeenCalledWith('local', sid, 'session.reset', {})
     expect(activeSession().slashCommandOutput?.command).toBe('reset')
   })
 

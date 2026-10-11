@@ -413,8 +413,6 @@ describe('AgentService new session directory', () => {
   it.each([
     { channel: AgentIpcChannels.PREWARM, worktreePath: undefined },
     { channel: AgentIpcChannels.PREWARM, worktreePath: null },
-    { channel: AgentIpcChannels.SEND_MESSAGE, worktreePath: undefined },
-    { channel: AgentIpcChannels.SEND_MESSAGE, worktreePath: null },
   ])('starts a new main session at its project root via $channel with worktreePath=$worktreePath', async ({ channel, worktreePath }) => {
     const service = new AgentService()
     const previous = makeMockSession({ id: 'previous', cwd: '/repo/main/.worktrees/previous' })
@@ -713,16 +711,7 @@ describe('AgentService routes every worktree pick through the session', () => {
     expect(switchCwd).not.toHaveBeenCalled()
   })
 
-  it('a send hint goes to the session as a selection', async () => {
-    const { service, switchCwd, applyWorktreeSelection } = conversationIn(WT)
-    service.setup()
-    const handler = getRegisteredIpcHandler(AgentIpcChannels.SEND_MESSAGE)!
 
-    await handler(null, '/repo/main', { content: 'hi', sessionId: 'sid-conv', worktreePath: '/repo/main/.worktrees/other' })
-
-    expect(applyWorktreeSelection).toHaveBeenCalledWith('/repo/main/.worktrees/other', undefined)
-    expect(switchCwd).not.toHaveBeenCalled()
-  })
 })
 
 describe('AgentService Realtime Voice', () => {
@@ -818,139 +807,7 @@ describe('AgentService Realtime Voice', () => {
   })
 })
 
-describe('AgentService SEND_MESSAGE', () => {
-  it('refuses a remote project key instead of resuming or creating a local session', async () => {
-    const service = new AgentService()
-    const sessionManager = {
-      getSession: vi.fn(() => null),
-      getActiveSession: vi.fn(() => null),
-      resumeSession: vi.fn(),
-      createSession: vi.fn(),
-    }
-    ;(service as { sessionManager: unknown }).sessionManager = sessionManager
-    service.setup()
-    const handler = getRegisteredIpcHandler(AgentIpcChannels.SEND_MESSAGE)!
-
-    await expect(handler(null, 'remote:env-1:/work/app', { content: 'hi', clientMessageId: 'u1', sessionId: 'node-sid' }))
-      .rejects.toThrow(/remote project/)
-    expect(sessionManager.resumeSession).not.toHaveBeenCalled()
-    expect(sessionManager.createSession).not.toHaveBeenCalled()
-  })
-
-  it('creates a Claude session with the renderer draft id before the first send', async () => {
-    const service = new AgentService()
-    const send = vi.fn().mockResolvedValue(undefined)
-    const created = makeMockSession({
-      id: 'draft-sid',
-      cwd: '/repo/main',
-      snapshot: { harnessId: 'claude', messages: [] },
-      isStreaming: vi.fn(() => false),
-      send,
-    })
-    const createSession = vi.fn(() => created)
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getSession: vi.fn(() => null),
-      getActiveSession: vi.fn(() => null),
-      resumeSession: vi.fn(() => { throw new Error('Session not found: draft-sid') }),
-      createSession,
-    }
-    service.setup()
-    const handler = getRegisteredIpcHandler(AgentIpcChannels.SEND_MESSAGE)!
-    const request = {
-      content: 'first message',
-      sessionId: 'draft-sid',
-      provider: 'claude' as const,
-    }
-
-    await handler(null, '/repo/main', request)
-
-    expect(createSession).toHaveBeenCalledWith(expect.objectContaining({
-      projectPath: '/repo/main',
-      providerId: 'claude-base',
-      id: 'draft-sid',
-    }))
-    expect(send).toHaveBeenCalledWith(request)
-  })
-
-  it('switches a prewarmed ACP session to the worktree cwd before send', async () => {
-    const service = new AgentService()
-    const applyWorktreeSelection = vi.fn().mockResolvedValue(undefined)
-    const send = vi.fn().mockResolvedValue(undefined)
-    const existing = makeMockSession({
-      id: 'sid-acp',
-      cwd: '/repo/main',
-      snapshot: {
-        id: 'sid-acp',
-        harnessId: 'acp',
-        messages: [],
-        providerSessionId: 'acp-sess',
-        status: 'idle',
-      },
-      isStreaming: vi.fn(() => false),
-      applyWorktreeSelection,
-      send,
-    })
-    Object.defineProperty(existing, 'cwd', {
-      get: () => applyWorktreeSelection.mock.calls.length > 0 ? '/repo/main/.worktrees/feat' : '/repo/main',
-      configurable: true,
-    })
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getSession: vi.fn(() => existing),
-      setActiveSession: vi.fn(),
-      getActiveSession: vi.fn(() => existing),
-    }
-    service.setup()
-    const handler = getRegisteredIpcHandler(AgentIpcChannels.SEND_MESSAGE)!
-    mockExistsSync.mockReturnValue(true)
-
-    await handler(null, '/repo/main', {
-      content: 'hello',
-      sessionId: 'sid-acp',
-      provider: 'acp',
-      worktreePath: '/repo/main/.worktrees/feat',
-      gitBranch: 'feat',
-    })
-
-    expect(applyWorktreeSelection).toHaveBeenCalledWith('/repo/main/.worktrees/feat', 'feat')
-    expect(send).toHaveBeenCalled()
-  })
-
-  it('creates an ACP session with acpAgentId so Grok persist keeps the brand', async () => {
-    const service = new AgentService()
-    const send = vi.fn().mockResolvedValue(undefined)
-    const created = makeMockSession({
-      id: 'sid-grok',
-      cwd: '/repo/main',
-      snapshot: { harnessId: 'acp', messages: [] },
-      isStreaming: vi.fn(() => false),
-      send,
-    })
-    const createSession = vi.fn(() => created)
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getSession: vi.fn(() => null),
-      getActiveSession: vi.fn(() => null),
-      resumeSession: vi.fn(() => { throw new Error('Session not found: sid-grok') }),
-      createSession,
-    }
-    service.setup()
-    const handler = getRegisteredIpcHandler(AgentIpcChannels.SEND_MESSAGE)!
-
-    await handler(null, '/repo/main', {
-      content: 'hello grok',
-      sessionId: 'sid-grok',
-      provider: 'acp' as const,
-      acpAgentId: 'grok-build',
-    })
-
-    expect(createSession).toHaveBeenCalledWith(expect.objectContaining({
-      projectPath: '/repo/main',
-      providerId: 'acp-base',
-      id: 'sid-grok',
-      acpAgentId: 'grok-build',
-    }))
-    expect(send).toHaveBeenCalled()
-  })
-
+describe('AgentService prewarm worktree', () => {
   it('prewarm switches existing session cwd when worktreePath differs', async () => {
     const service = new AgentService()
     const applyWorktreeSelection = vi.fn().mockResolvedValue(undefined)

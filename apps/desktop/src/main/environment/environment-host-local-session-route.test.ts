@@ -23,9 +23,9 @@ const cleanup: Array<() => void> = []
 afterEach(() => { while (cleanup.length) cleanup.pop()!() })
 
 /** The window's environment route against a real desktop domain, as `window.environment` reaches it. */
-function localRoute(extra: Partial<DesktopDomainDeps> = {}) {
+function localRoute(extra: Partial<DesktopDomainDeps> = {}, options: import('./environment-host').EnvironmentHostOptions = {}) {
   const fixture = phoneDomain(cleanup, extra)
-  const host = new EnvironmentHost(fixture.userDataDir)
+  const host = new EnvironmentHost(fixture.userDataDir, options)
   cleanup.push(() => host.dispose())
   host.registry.getLocal().bindProtocol(new InProcessRpcClient(fixture.domain))
   const forwarded: AgentEvent[] = []
@@ -66,6 +66,37 @@ describe('local sessions on the environment route', () => {
       sessionId: 'own', text: 'go', clientMessageId: 'c2', threadId: 't1', serviceTier: 'fast', permissionPreset: 'full-access', turnKind: 'review',
     }))
     expect(own.sent.at(-1)?.codex).toMatchObject({ mode: 'review', threadId: 't1', serviceTier: 'fast', permissionPreset: 'full-access' })
+  })
+
+  it.each(['claude', 'codex', 'acp', 'opencode', 'cursor', 'dsh'] as const)('persists %s identity before exposing a new session', async harnessId => {
+    const { host, store } = localRoute()
+    const created = await runWindowControl(7, () => host.createSession('local', { projectId: 'p1', harnessId, settings: { permissionMode: 'default' }, selections: { sessionId: 'new' } }))
+    expect(created).toMatchObject({ sessionId: 'new' })
+    expect(await host.getSession('local', 'new')).toMatchObject({ harnessId, providerId: `${harnessId}-base` })
+    expect(store.rows.get('new')).toMatchObject({ harnessId, providerId: `${harnessId}-base` })
+  })
+
+  it('fences and broadcasts native Codex and OpenCode picker settings', async () => {
+    const { host, own } = localRoute()
+    const broadcast = vi.spyOn(own, 'broadcastSettingsPatch')
+    own.harnessId = 'codex'
+    await runWindowControl(7, () => host.patchSessionSettings('local', 'own', { model: 'gpt-test', effort: 'high', serviceTier: 'fast', permissionPreset: 'auto-review', collaborationMode: 'plan' }))
+    expect(broadcast).toHaveBeenCalledWith({ selectedCodexModel: 'gpt-test', selectedCodexReasoningEffort: 'high', selectedCodexServiceTier: 'fast', selectedCodexPermissionPreset: 'auto-review', selectedCodexCollaborationMode: 'plan' })
+    own.harnessId = 'opencode'
+    await runWindowControl(7, () => host.patchSessionSettings('local', 'own', { agent: 'build' }))
+    expect(broadcast).toHaveBeenLastCalledWith({ openCodeAgentId: 'build' })
+  })
+
+  it('refuses recovery on another harness and calls only the named Cursor runtime', async () => {
+    const { host, own } = localRoute()
+    await expect(runWindowControl(7, () => host.callSession('local', 'own', 'session.forceRecover', {}))).rejects.toMatchObject({ code: 'unsupported' })
+    own.harnessId = 'cursor'
+    const recover = vi.fn(async () => { own.lease.assertMutation() })
+    Object.assign(own, { forceRecoverRun: recover })
+    await expect(runWindowControl(7, () => host.callSession('local', 'own', 'session.forceRecover', { message: 'test' }))).resolves.toEqual({ ok: true })
+    expect(recover).toHaveBeenCalledWith('test')
+    await expect(host.callSession('local', 'own', 'session.reportWorktreeRemoved', {})).rejects.toThrow('local session control needs a window')
+    await expect(runWindowControl(7, () => host.callSession('local', 'own', 'session.reportWorktreeRemoved', {}))).resolves.toBeNull()
   })
 
   it('gives each window its own grant, yields to a phone, and edits metadata without one', async () => {
@@ -322,5 +353,20 @@ describe('composer forms on the local environment endpoint', () => {
       expect(respondToInputRequest('own', result.requestId, { allow: true, formAnswers: { color: 'red' } })).toBe(true)
       await expect(answer).resolves.toEqual({ status: 'submitted', values: { color: 'red' } })
     } finally { vi.useRealTimers() }
+  })
+})
+
+
+describe('legacy desktop-owned node schedules', () => {
+  it('reads and cancels an existing schedule offline without exposing scheduling on its node', async () => {
+    let row: import('@superone/shared/agent-types').ScheduledSend | null = { sessionId: 'remote-own', armed: true, sendAt: Date.now() + 60_000, message: 'later', source: 'manual' }
+    const clear = vi.fn(() => { row = null })
+    const { host } = localRoute({}, { legacyScheduledSends: { get: (connectionId, sessionId) => connectionId === 'offline' && sessionId === 'remote-own' ? row : null, clear } })
+    expect(await host.callSession('offline', 'remote-own', 'session.scheduledSend.get', {})).toMatchObject({ armed: true })
+    await expect(host.callSession('offline', 'remote-own', 'session.scheduledSend.clear', {})).rejects.toMatchObject({ code: 'failed_precondition' })
+    await expect(runWindowControl(7, () => host.callSession('other', 'remote-own', 'session.scheduledSend.clear', {}))).rejects.toMatchObject({ code: 'not_found' })
+    await runWindowControl(7, () => host.callSession('offline', 'remote-own', 'session.scheduledSend.clear', {}))
+    expect(clear).toHaveBeenCalledOnce()
+    expect(row).toBeNull()
   })
 })

@@ -466,7 +466,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
           return
         }
         const browseQuery = query
-        window.agent.listDirectory(fileRoot, browseQuery)
+        window.environment.listDirectory(fileRoot, browseQuery)
           .then((entries) => { finish(browseQuery, () => setDirEntries(entries)) })
           .catch(() => { finish(browseQuery, () => setDirEntries([])) })
         return
@@ -481,7 +481,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
           finish(searchForQuery, () => setSearchResults([]))
           return
         }
-        window.agent.searchMentions(fileRoot, searchNeedle, agentEntries, additionalDirs, searchScope)
+        window.environment.searchMentions(fileRoot, searchNeedle, agentEntries, additionalDirs, searchScope)
           .then((results) => { finish(searchForQuery, () => setSearchResults(results)) })
           .catch(() => { finish(searchForQuery, () => setSearchResults([])) })
       }, MENTION_SEARCH_DEBOUNCE_MS)

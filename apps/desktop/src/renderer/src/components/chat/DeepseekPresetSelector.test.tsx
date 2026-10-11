@@ -77,7 +77,7 @@ describe('DeepseekPresetSelector', () => {
     await userEvent.click(await screen.findByRole('button'))
     await userEvent.click(screen.getByText('Minimal'))
 
-    expect(setPreset).toHaveBeenCalledWith('dsh-1', 'minimal')
+    expect(hoisted.setDshPreset).toHaveBeenCalledWith('minimal')
   })
 
   it('goes read-only once the session has run a turn', async () => {

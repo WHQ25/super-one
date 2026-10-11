@@ -21,6 +21,7 @@ export { assertNodeIdentity } from './node-connection-manager'
 export {
   EnvironmentHost,
   getEnvironmentHost,
+  setLegacyScheduleCancellation,
   resetEnvironmentHostForTests,
   gatewayForProject,
 } from './environment-host'

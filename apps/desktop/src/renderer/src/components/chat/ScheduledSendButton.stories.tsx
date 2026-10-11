@@ -135,3 +135,9 @@ export const ManualSchedule: Story = {
 export const WaitingForUploads: Story = {
   args: { initial: null, waitingFor: 'Waiting for full-size images to upload' },
 }
+
+function LegacyNodePreview() {
+  const [row, setRow] = useState<ScheduledSend | null>(seed({ armed: true, message: 'Existing node schedule' }))
+  return <ScheduledSendButton scheduled={row} canSend={false} canArm={false} canEdit={false} onSendNow={() => {}} onArm={() => {}} onDisarm={() => setRow(null)} onDismiss={() => setRow(null)} onSetSendAt={() => {}} />
+}
+export const LegacyNodeCancellation: Story = { render: () => <LegacyNodePreview /> }

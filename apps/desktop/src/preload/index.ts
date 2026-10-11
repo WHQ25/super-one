@@ -35,15 +35,8 @@ if (process.argv.includes('--superone-liquid-glass')) {
 }
 
 const agentAPI = {
-
-
-
   prewarm: (projectPath: string, hint?: AgentPrewarmHint) =>
     ipcRenderer.invoke(AgentIpcChannels.PREWARM, projectPath, hint),
-
-
-  reportWorktreeRemoved: (sessionId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.WORKTREE_REMOVED, sessionId) as Promise<void>,
 
   startRealtimeVoice: (projectPath: string, sessionId: string, request: RealtimeVoiceStartRequest) =>
     ipcRenderer.invoke(AgentIpcChannels.START_REALTIME_VOICE, projectPath, sessionId, request) as Promise<import('@superone/shared/realtime-voice').VoiceStatus>,
@@ -61,16 +54,6 @@ const agentAPI = {
     ipcRenderer.invoke(AgentIpcChannels.GET_REALTIME_TIMELINE, projectPath, sessionId) as Promise<RealtimeTimelineResult>,
 
 
-  broadcastSessionSetting: (sessionId: string, patch: import('@superone/shared/agent-types').SessionSettingsPatch) =>
-    ipcRenderer.invoke(AgentIpcChannels.BROADCAST_SESSION_SETTING, sessionId, patch) as Promise<void>,
-
-
-
-
-  createSession: (projectPath: string): Promise<string> =>
-    ipcRenderer.invoke(AgentIpcChannels.CREATE_SESSION, projectPath),
-
-
   parkSession: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.PARK_SESSION, projectPath),
 
@@ -82,33 +65,6 @@ const agentAPI = {
 
   getLiveSnapshots: () =>
     ipcRenderer.invoke(AgentIpcChannels.GET_LIVE_SNAPSHOTS),
-
-  getSessionId: (projectPath: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.GET_SESSION_ID, projectPath),
-
-  reloadPlugins: (projectPath: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.PLUGINS_RELOAD, projectPath),
-
-  listDirectory: (projectPath: string, relativePath: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.LIST_DIRECTORY, projectPath, relativePath),
-
-  listDirectoryForAddDir: (projectPath: string, rawInput: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.LIST_DIRECTORY_FOR_ADD_DIR, projectPath, rawInput),
-
-  validateAddDir: (projectPath: string, candidate: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.VALIDATE_ADD_DIR, projectPath, candidate),
-
-  findLineNumber: (projectPath: string, filePath: string, text: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.FIND_LINE_NUMBER, projectPath, filePath, text),
-
-  searchFiles: (projectPath: string, query: string, additionalDirs?: string[]) =>
-    ipcRenderer.invoke(AgentIpcChannels.SEARCH_FILES, projectPath, query, additionalDirs),
-
-  searchMentions: (projectPath: string, query: string, agents: { name: string; model: string }[], additionalDirs?: string[], scopeDir?: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.SEARCH_MENTIONS, projectPath, query, agents, additionalDirs, scopeDir),
-
-  disconnectRemoteSession: (sessionId?: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.DISCONNECT_REMOTE_SESSION, sessionId),
 
   onAgentEvent: (callback: (event: AgentEvent) => void) => {
     const handler = (_ipcEvent: Electron.IpcRendererEvent, payload: AgentEvent | AgentEvent[]): void => {
@@ -145,6 +101,28 @@ ipcRenderer.on(
 )
 
 const environmentAPI = {
+  reloadPlugins: (projectPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.PLUGINS_RELOAD, projectPath),
+
+  listDirectory: (projectPath: string, relativePath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.LIST_DIRECTORY, projectPath, relativePath),
+
+  listDirectoryForAddDir: (projectPath: string, rawInput: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.LIST_DIRECTORY_FOR_ADD_DIR, projectPath, rawInput),
+
+  validateAddDir: (projectPath: string, candidate: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.VALIDATE_ADD_DIR, projectPath, candidate),
+
+  findLineNumber: (projectPath: string, filePath: string, text: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.FIND_LINE_NUMBER, projectPath, filePath, text),
+
+  searchFiles: (projectPath: string, query: string, additionalDirs?: string[]) =>
+    ipcRenderer.invoke(AgentIpcChannels.SEARCH_FILES, projectPath, query, additionalDirs),
+
+  searchMentions: (projectPath: string, query: string, agents: { name: string; model: string }[], additionalDirs?: string[], scopeDir?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.SEARCH_MENTIONS, projectPath, query, agents, additionalDirs, scopeDir),
+
+  disconnectSessionController: (sessionId?: string) => ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_DISCONNECT_SESSION_CONTROLLER, sessionId) as Promise<void>,
   callComposer: <M extends import('@superone/shared/environment/composer-requests').ComposerCallMethod>(connectionId: string, method: M, input: import('@superone/shared/environment/composer-requests').ComposerCallMethods[M]['input']) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_CALL_COMPOSER, connectionId, method, input) as Promise<import('@superone/shared/environment/composer-requests').ComposerCallMethods[M]['result']>,
   onScheduledSendChanged: (
@@ -891,9 +869,6 @@ const appAPI = {
   listDeepseekPresets: (sessionId?: string) =>
     ipcRenderer.invoke(AgentIpcChannels.DEEPSEEK_PRESETS, sessionId),
 
-  setDeepseekPreset: (sessionId: string, presetId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.DEEPSEEK_SET_PRESET, sessionId, presetId),
-
   setCursorApiKey: (apiKey: string) =>
     ipcRenderer.invoke(AgentIpcChannels.SET_CURSOR_API_KEY, apiKey),
 
@@ -941,8 +916,7 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.CURSOR_GET_RUN, runId, opts),
   cursorCancelRun: (runId: string, opts?: { agentId?: string; cwd?: string; runtime?: 'local' | 'cloud' }) =>
     ipcRenderer.invoke(AgentIpcChannels.CURSOR_CANCEL_RUN, runId, opts),
-  cursorForceRecover: (sessionId: string, message?: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.CURSOR_FORCE_RECOVER, sessionId, message),
+
 
   cursorSdkLogin: () =>
     ipcRenderer.invoke(AgentIpcChannels.CURSOR_SDK_LOGIN) as Promise<{
@@ -2132,14 +2106,6 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.GIT_LIST_DIR, folderPath, dirRelPath),
 
   // Session history
-  listSessions: (projectPath: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_LIST, projectPath),
-  listSessionsForFolder: (folderPath: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_LIST_FOR_FOLDER, folderPath),
-  listSessionsForFolderPage: (folderPath: string, limit: number, offset: number) =>
-    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_LIST_FOR_FOLDER_PAGE, folderPath, limit, offset),
-  loadSessionMessages: (projectPath: string, sessionId: string, limit: number, cursor?: number) =>
-    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_LOAD_MESSAGES, projectPath, sessionId, limit, cursor),
   getComposerDrafts: () =>
     ipcRenderer.invoke(AgentIpcChannels.COMPOSER_DRAFTS_GET) as Promise<Record<string, Record<string, unknown>>>,
   publishComposerDraft: (sessionId: string, patch: Record<string, unknown>) =>
@@ -2151,8 +2117,7 @@ const appAPI = {
       ipcRenderer.removeListener(AgentIpcChannels.COMPOSER_DRAFT_CHANGED, handler)
     }
   },
-  listPinnedSessions: () =>
-    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_LIST_PINNED),
+
 
   trace: (source: string, type: string, data: unknown, tag?: string) => {
     ipcRenderer.send(AgentIpcChannels.TRACE, source, type, data, tag)

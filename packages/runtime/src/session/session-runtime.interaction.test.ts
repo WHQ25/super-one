@@ -100,7 +100,9 @@ describe('SessionRuntime question / plan', () => {
     const { store, events, leases } = memoryPorts()
     const runtime = new SessionRuntime(store, events, leases, 'env-q', createSimulatedTurnRunner())
     const session = runtime.create({ projectId: 'p1', harnessId: 'claude', model: 'original' })
-    expect(() => runtime.patchSettings(session.sessionId, { model: 'new', mode: 'build' })).toThrow('does not support desktop harness settings')
+    for (const field of ['mode', 'serviceTier', 'permissionPreset', 'collaborationMode', 'agent']) {
+      expect(() => runtime.patchSettings(session.sessionId, { model: 'new', [field]: 'unsupported' })).toThrow('does not support desktop harness settings')
+    }
     expect(runtime.get(session.sessionId)?.model).toBe('original')
   })
 

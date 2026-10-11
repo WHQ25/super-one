@@ -36,46 +36,16 @@ export type { EnvironmentInstallProgress } from '@superone/shared/environment'
 
 
 interface AgentAPI {
-  /** `{ duplicate: true }` when the host already took `request.clientMessageId`; nothing runs again. */
-  startQueuedMessages(projectPath: string, sessionId?: string): Promise<boolean>
   prewarm(projectPath: string, hint?: AgentPrewarmHint): Promise<void>
-  reportWorktreeRemoved(sessionId: string): Promise<void>
   startRealtimeVoice(projectPath: string, sessionId: string, request: RealtimeVoiceStartRequest): Promise<import('@superone/shared/realtime-voice').VoiceStatus>
   stopRealtimeVoice(projectPath: string, sessionId: string, attemptId: string): Promise<void>
   readyRealtimeVoice(projectPath: string, sessionId: string, identity: import('@superone/shared/realtime-voice').VoiceIdentity): Promise<void>
   loadRealtimeTimeline(sessionId: string): Promise<RealtimeTimelineResult | null>
   getRealtimeTimeline(projectPath: string, sessionId: string): Promise<RealtimeTimelineResult>
-  stopTask(sessionId: string, taskId: string): Promise<boolean>
-  broadcastSessionSetting(sessionId: string, patch: SessionSettingsPatch): Promise<void>
-  createSession(projectPath: string): Promise<string>
-  resetSession(sessionId: string, newSessionId?: string): Promise<{ permissionMode: PermissionMode; sandboxInfo: SandboxInfo } | null>
-  truncateAtCheckpoint(projectPath: string, checkpointId: string): Promise<boolean>
   parkSession(projectPath: string): Promise<{ permissionMode: PermissionMode; sandboxInfo: SandboxInfo }>
-  /**
-   * A window shows this session: its runtime comes up in `worktreeCwd` (when
-   * that still exists) as the project's active session. Undefined for a draft
-   * the host has not seen.
-   */
   activateSession(projectPath: string, sessionId: string, worktreeCwd?: string): Promise<{ permissionMode: PermissionMode; sandboxInfo: SandboxInfo } | undefined>
-  /** `projectPath` names the session's machine (`remote:<id>:…`); local when omitted. */
   setSessionForeground(sessionId: string, foreground: boolean, projectPath?: string): Promise<void>
   getLiveSnapshots(): Promise<LiveSessionSnapshot[]>
-  rewindFiles(projectPath: string, userMessageId: string): Promise<RewindFilesResult>
-  previewRewind(projectPath: string, userMessageId: string): Promise<RewindFilesResult>
-  rewindCodeAndChat(projectPath: string, userMessageId: string): Promise<RewindFilesResult>
-  rewindConversation(projectPath: string, userMessageId: string): Promise<RewindFilesResult>
-  getSessionId(projectPath: string): Promise<string>
-  getMcpServerStatus(projectPath: string): Promise<McpServerInfo[]>
-  authenticateMcpServer(projectPath: string, serverName: string): Promise<void>
-  getContextUsage(projectPath: string, sessionId?: string): Promise<ContextUsageInfo | null>
-  reloadPlugins(projectPath: string): Promise<boolean>
-  listDirectory(projectPath: string, relativePath: string): Promise<ListDirEntry[]>
-  listDirectoryForAddDir(projectPath: string, rawInput: string): Promise<{ absolutePath: string; entries: ListDirEntry[] }>
-  validateAddDir(projectPath: string, candidate: string): Promise<{ ok: true } | { ok: false; reason: 'not-found' | 'not-directory' | 'same-as-project' | 'same-repo' }>
-  findLineNumber(projectPath: string, filePath: string, text: string): Promise<number | null>
-  searchFiles(projectPath: string, query: string, additionalDirs?: string[]): Promise<FileSearchResult[]>
-  searchMentions(projectPath: string, query: string, agents: { name: string; model: string }[], additionalDirs?: string[], scopeDir?: string): Promise<MentionSearchItem[]>
-  disconnectRemoteSession(sessionId?: string): Promise<void>
   onAgentEvent(callback: (event: AgentEvent) => void): () => void
 }
 
@@ -110,7 +80,6 @@ interface AppAPI {
   listDeepseekPresets(
     sessionId?: string,
   ): Promise<import('@superone/shared/agent-types').DeepseekPresetRoster>
-  setDeepseekPreset(sessionId: string, presetId: string): Promise<{ ok: boolean; error?: string }>
   setCursorApiKey(apiKey: string): Promise<{ ok: true; providerId: string }>
   getCursorAuthStatus(): Promise<{ configured: boolean; apiKeyName: string | null; userEmail: string | null }>
   updateCursorBaseConfig(patch: Record<string, unknown>): Promise<{ ok: true; config: Record<string, unknown> }>
@@ -127,7 +96,6 @@ interface AppAPI {
   cursorListMessages(agentId: string, opts?: { cwd?: string; limit?: number; offset?: number }): Promise<unknown>
   cursorGetRun(runId: string, opts?: { agentId?: string; cwd?: string; runtime?: 'local' | 'cloud' }): Promise<unknown>
   cursorCancelRun(runId: string, opts?: { agentId?: string; cwd?: string; runtime?: 'local' | 'cloud' }): Promise<{ ok: true }>
-  cursorForceRecover(sessionId: string, message?: string): Promise<{ ok: true }>
   cursorSdkLogin(): Promise<{ ok: true; email: string | null; apiKeyExpiresAtMs: number }>
   cursorSdkLogout(): Promise<{ ok: true }>
   cursorSdkAuthStatus(): Promise<
@@ -748,16 +716,11 @@ interface AppAPI {
   listDir(folderPath: string, dirRelPath: string): Promise<FileTreeEntry[]>
 
   // Session history
-  listSessions(projectPath: string): Promise<SessionHistoryEntry[]>
-  listSessionsForFolder(folderPath: string): Promise<SessionHistoryEntry[]>
-  listSessionsForFolderPage(folderPath: string, limit: number, offset: number): Promise<SessionHistoryEntry[]>
-  loadSessionMessages(projectPath: string, sessionId: string, limit: number, cursor?: number): Promise<LoadSessionMessagesResult>
 
   /** Composer drafts other windows published this run, keyed by session id. */
   getComposerDrafts(): Promise<Record<string, Record<string, unknown>>>
   publishComposerDraft(sessionId: string, patch: Record<string, unknown>): void
   onComposerDraftChanged(callback: (sessionId: string, patch: Record<string, unknown>) => void): () => void
-  listPinnedSessions(): Promise<PinnedSessionEntry[]>
 
   trace(source: string, type: string, data: unknown, tag?: string): void
 
@@ -860,6 +823,14 @@ interface TerminalAPI {
 
 /** Multi-environment / remote node — Main EnvironmentHost product path. */
 export interface EnvironmentAPI extends MediaComposerAPI {
+  reloadPlugins(projectPath: string): Promise<boolean>
+  listDirectory(projectPath: string, relativePath: string): Promise<ListDirEntry[]>
+  listDirectoryForAddDir(projectPath: string, rawInput: string): Promise<{ absolutePath: string; entries: ListDirEntry[] }>
+  validateAddDir(projectPath: string, candidate: string): Promise<{ ok: true } | { ok: false; reason: 'not-found' | 'not-directory' | 'same-as-project' | 'same-repo' }>
+  findLineNumber(projectPath: string, filePath: string, text: string): Promise<number | null>
+  searchFiles(projectPath: string, query: string, additionalDirs?: string[]): Promise<FileSearchResult[]>
+  searchMentions(projectPath: string, query: string, agents: { name: string; model: string }[], additionalDirs?: string[], scopeDir?: string): Promise<MentionSearchItem[]>
+  disconnectSessionController(sessionId?: string): Promise<void>
   callComposer<M extends import('@superone/shared/environment/composer-requests').ComposerCallMethod>(connectionId: string, method: M, input: import('@superone/shared/environment/composer-requests').ComposerCallMethods[M]['input']): Promise<import('@superone/shared/environment/composer-requests').ComposerCallMethods[M]['result']>
   onScheduledSendChanged(callback: (event: { sessionId: string; scheduled: ScheduledSend | null; delivered: boolean }) => void): () => void
   callSessionList<M extends import('@superone/shared/environment/session-operations').SessionListOperationMethod>(connectionId: string, method: M, input: import('@superone/shared/environment/session-operations').SessionListOperationMethods[M]['input']): Promise<import('@superone/shared/environment/session-operations').SessionListOperationMethods[M]['result']>
@@ -1072,7 +1043,6 @@ export interface EnvironmentAPI extends MediaComposerAPI {
   /**
    * List sessions for a project on any environment (local or remote).
    * Local: connectionId `'local'`, projectId = project UUID or absolute folder path.
-   * Prefer this over window.app.listSessions* (legacy).
    */
   listSessions(
     connectionId: string,
@@ -1104,7 +1074,7 @@ export interface EnvironmentAPI extends MediaComposerAPI {
    * the renderer's project key (`remote:<connectionId>:<path>` for remotes).
    */
   listPinnedSessions(connectionId: string): Promise<PinnedSessionEntry[]>
-  /** Create a session on a remote node project. */
+  /** Create a session on its host environment. */
   createSession(
     connectionId: string,
     input: import('@superone/shared/environment/session-requests').SessionCreateRequest,

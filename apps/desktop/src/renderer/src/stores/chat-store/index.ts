@@ -1,3 +1,4 @@
+import { callSession, patchSessionSettings } from '@/lib/session-client'
 import { create } from 'zustand'
 import { useAppStore } from '../app'
 import { switchToProjectSession } from './helpers/switch-to-session'
@@ -508,7 +509,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
   // setSelectedCodexModel / setSelectedCodexReasoningEffort / setSelectedCodexPermissionPreset /
   // setSelectedCodexCollaborationMode / refreshCodexModels / refreshCodexSkills now provided by createCodexSlice
 
-  setDshPreset: (preset, target) => {
+  setDshPreset: async (preset, target) => {
     const { projectPath, sessionId, session } = resolveWriteScope(get(), target)
     if (!projectPath) return
     // Held per session and never persisted: once the session has an agent,
@@ -516,7 +517,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     set((s) => commitPerSession(s, target, () => ({ dshPreset: preset })))
     // Folded into the session's provider config on its host, which is what the
     // backend reads when it creates the dsh agent.
-    pushSettings(projectPath, sessionId, session, { agentPreset: preset })
+    if (sessionId) await patchSessionSettings(projectPath, sessionId, session, { agentPreset: preset })
   },
 
   setPreferredProvider: (provider, opts) => setPreferredProviderImpl(set, get, provider, opts),
@@ -713,7 +714,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
         !(await window.app.worktreeExists(cachedTarget._worktreePath, activeProject))
       // The read-only composer hides pending prompts; main must stop the turn
       // that is waiting on them, or they stay pending in the sidebar.
-      if (worktreeMissing) void window.agent.reportWorktreeRemoved(sessionId).catch((err) => console.warn('[switchSession] reportWorktreeRemoved failed:', err))
+      if (worktreeMissing) void callSession(activeProject, sessionId, 'session.reportWorktreeRemoved', {}).catch((err) => console.warn('[switchSession] reportWorktreeRemoved failed:', err))
 
       set((s) => {
         const proj = getProject(s, activeProject)

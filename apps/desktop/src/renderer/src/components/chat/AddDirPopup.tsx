@@ -107,7 +107,7 @@ export const AddDirPopup = forwardRef<AddDirPopupHandle, AddDirPopupProps>(
       const parent = phase.parent
       debounceRef.current = setTimeout(() => {
         if (!fileRoot) return
-        window.agent
+        window.environment
           .listDirectoryForAddDir(fileRoot, parent)
           .then((res) => {
             setEntries(res.entries)

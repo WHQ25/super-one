@@ -621,7 +621,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     try {
       const projectPath = getProjectPath()
       if (useAppStore.getState().settingsProvider === 'codex') {
-        await window.agent.reloadPlugins(projectPath).catch(() => false)
+        await window.environment.reloadPlugins(projectPath).catch(() => false)
       }
       await Promise.all([get().fetchPlugins(), get().fetchMarketplacePlugins()])
     } catch {

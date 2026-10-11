@@ -1070,7 +1070,9 @@ async function applyNodeHostSettings(settings: AppSettings): Promise<void> {
     import('./node-host/desktop-topic-notices'),
     import('./node-host/routed-phone-rpc'),
   ])
-  const environmentHost = (await import('./environment')).getEnvironmentHost()
+  const { getEnvironmentHost, setLegacyScheduleCancellation } = await import('./environment')
+  setLegacyScheduleCancellation(sessionId => scheduledSendService.clear(sessionId))
+  const environmentHost = getEnvironmentHost()
   phoneRpcRouter ??= createPhoneRpcRouter(environmentId => environmentHost.phoneRouteTarget(environmentId),
     (resource, lease) => environmentHost.publishPhoneControl(resource, lease))
   agentService.setRoutedSessionRelease(sessionId => phoneRpcRouter!.releaseSessions(sessionId))
@@ -2246,6 +2248,7 @@ function registerIpcHandlers(): void {
       return getEnvironmentHost().patchSessionSettings(connectionId, sessionId, patch)
     },
   )
+  sessionIpc.handle(AgentIpcChannels.ENVIRONMENT_DISCONNECT_SESSION_CONTROLLER, (_event, sessionId?: string) => agentService.disconnectSessionController(sessionId))
   sessionIpc.handle(AgentIpcChannels.ENVIRONMENT_CALL_COMPOSER, async (event, connectionId: string, method: import('@superone/shared/environment/composer-requests').ComposerCallMethod, input: import('@superone/shared/environment/composer-requests').ComposerCallMethods[import('@superone/shared/environment/composer-requests').ComposerCallMethod]['input']) => {
     if (method === 'composer.open') (await import('./session/composer-windows')).retainComposerWindow(event.sender)
     const { getEnvironmentHost } = await import('./environment')
@@ -4589,16 +4592,6 @@ function registerIpcHandlers(): void {
     setThemeMode(mode)
   })
 
-  ipcMain.handle(AgentIpcChannels.BROADCAST_SESSION_SETTING, (_e, sessionId: string, patch: import('@superone/shared/agent-types').SessionSettingsPatch): void => {
-    if (!sessionId || !patch || Object.keys(patch).length === 0) return
-    const session = sessionManager.getSession(sessionId)
-    if (session) {
-      session.broadcastSettingsPatch(patch)
-      return
-    }
-    sessionEvents.publish({ event: { type: 'agent_setting_change', sessionId, patch }, source: 'settings' })
-  })
-
   ipcMain.handle(AgentIpcChannels.SET_MIN_WINDOW_SIZE, (_e, width: number, height: number) => {
     const win = getMainWindow()
     const w = Math.max(1, Math.round(width))
@@ -4888,18 +4881,7 @@ function registerIpcHandlers(): void {
     }
   })
 
-  ipcMain.handle(AgentIpcChannels.DEEPSEEK_SET_PRESET, async (_event, sessionId: string, presetId: string) => {
-    try {
-      const { getDeepseekRuntime } = await import('./deepseek/deepseek-runtime-host')
-      const runtime = await getDeepseekRuntime()
-      await runtime.switchPreset(sessionId, presetId)
-      return { ok: true }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      log.warn('[DEEPSEEK_SET_PRESET] %s → %s failed: %s', sessionId, presetId, message)
-      return { ok: false, error: message }
-    }
-  })
+
 
   ipcMain.handle(
     AgentIpcChannels.DEEPSEEK_TRAJECTORY,
@@ -5180,25 +5162,7 @@ function registerIpcHandlers(): void {
     return { ok: true as const }
   })
 
-  ipcMain.handle(AgentIpcChannels.CURSOR_FORCE_RECOVER, async (_e, sessionId: string, message?: string) => {
-    const session = sessionManager.getSession(sessionId)
-    if (!session) throw new Error('Session not found')
-    if (session.snapshot.harnessId !== 'cursor') {
-      throw new Error('Force recover is only available for Cursor local sessions')
-    }
-    // bc-* provider session ids are cloud agents — local.force is not applied.
-    const providerSessionId = session.snapshot.providerSessionId
-    if (typeof providerSessionId === 'string' && providerSessionId.startsWith('bc-')) {
-      throw new Error(
-        'Force recover is only available for Cursor local agents. Cloud runs use interrupt/cancel instead.',
-      )
-    }
-    if (typeof session.forceRecoverRun !== 'function') {
-      throw new Error('Force recover is not supported on this session')
-    }
-    await session.forceRecoverRun(message)
-    return { ok: true as const }
-  })
+
 
   ipcMain.handle(AgentIpcChannels.CURSOR_SDK_LOGIN, async () => {
     const { cursorSdkLogin } = await import('@superone/cursor')

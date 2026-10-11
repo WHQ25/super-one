@@ -349,7 +349,7 @@ export function disconnectRemoteSessionImpl(set: ChatStoreSet, get: () => ChatSt
   const state = get()
   const projectPath = state.activeProject
   const sid = projectPath ? state.projectSessions[projectPath]?._activeSessionId ?? undefined : undefined
-  void window.agent.disconnectRemoteSession(sid)
+  void window.environment.disconnectSessionController(sid)
   if (sid && projectPath) {
     set((s) => ({ remoteSessions: removeRemoteSession(s.remoteSessions, projectPath, sid) }))
   } else {

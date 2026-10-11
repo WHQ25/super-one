@@ -6,6 +6,7 @@ import { useChatStore } from '@/stores/chat-store/index'
 import { createDefaultPerSessionState, createDefaultProjectState } from '@/stores/chat-store/defaults'
 import { getActiveSessionView } from '@/stores/chat-store/selectors'
 import { Session } from './session'
+import { desktopSendRequest } from '../node-host/desktop-session-mutations'
 import type { BackendStartOptions, SessionBackend, SessionStateChange } from './types'
 import { applyCodexBackendSelection, resolveCodexBackendSelection } from './backends/codex-backend-selection'
 import { defaultPrefsCache } from '@/stores/chat-store/helpers/prefs-cache'
@@ -33,7 +34,7 @@ const originalCodexDefaults = defaultPrefsCache.codexSelection
 /** The host holds this stored session (settings and transcript) for the window to restore. */
 function storeSession(read: () => Promise<unknown>) {
   Object.assign(window.environment, {
-    getSession: vi.fn(async (_connectionId: string, sessionId: string) => ({ sessionId })),
+    getSession: vi.fn(async (_connectionId: string, sessionId: string) => ({ sessionId, harnessId: 'codex' })),
     openRemoteSession: vi.fn(async (_connectionId: string, input: { sessionId: string }) => {
       const { messages = [], ...stored } = await read() as { messages?: unknown[] }
       return { sessionId: input.sessionId, state: { stored }, messages }
@@ -45,7 +46,11 @@ afterEach(() => { defaultPrefsCache.codexSelection = originalCodexDefaults })
 
 beforeEach(() => {
   localStorage.clear()
-  Object.assign(window.agent, { broadcastSessionSetting: vi.fn().mockResolvedValue(undefined) })
+  Object.assign(window.environment, {
+    getSession: vi.fn(async (_connection: string, sessionId: string) => ({ sessionId, harnessId: 'codex' })),
+    sendSessionMessage: vi.fn(async (_connection: string, input: { sessionId: string }) => ({ sessionId: input.sessionId, state: {}, messages: [] })),
+    patchSessionSettings: vi.fn().mockResolvedValue({}),
+  })
   Object.assign(window.agent, { activateSession: vi.fn().mockResolvedValue(undefined) })
   useChatStore.setState({
     activeProject: projectPath,
@@ -58,6 +63,7 @@ beforeEach(() => {
           ...createDefaultPerSessionState(),
           sessionProvider: 'codex' as const,
           preferredProvider: 'codex' as const,
+          hostSessionOwned: true,
           _historyHydrated: true,
         }])),
       },
@@ -97,10 +103,10 @@ describe('Codex session model retention', () => {
       onStateChange: (snapshot) => { saved = snapshot },
     })
     if (hostEffort === 'low') host.broadcastSettingsPatch({ selectedCodexModel: sol.id, selectedCodexReasoningEffort: 'low' })
-    Object.assign(window.app, {
-      codexRun: vi.fn(async (_sid: string, _project: string, prompt: string, model?: string, reasoningEffort?: NonNullable<SendMessageRequest['codex']>['reasoningEffort']) => {
-        await host.send({ content: prompt, model, effort: requestEffort, codex: { mode: 'run', reasoningEffort } })
-        return { finalResponse: 'Done', items: [] }
+    Object.assign(window.environment, {
+      sendSessionMessage: vi.fn(async (_connection: string, input: Parameters<typeof desktopSendRequest>[0]) => {
+        await host.send({ ...desktopSendRequest(input, 'codex'), effort: requestEffort })
+        return { sessionId: input.sessionId, state: {}, messages: [] }
       }),
     })
     Object.assign(window.agent, {
@@ -216,16 +222,8 @@ describe('Codex session model retention', () => {
         ...state.projectSessions[projectPath]._sessions.astra, status: queued ? 'streaming' : 'idle',
       } },
     } } }))
-    Object.assign(window.agent, { sendMessage: vi.fn().mockResolvedValue(undefined) })
-    Object.assign(window.app, { codexRun: vi.fn().mockResolvedValue({ finalResponse: 'Done', items: [] }) })
     await useChatStore.getState().sendMessage('Continue')
-    if (queued) {
-      expect(window.agent.sendMessage).toHaveBeenCalledWith(
-        projectPath, expect.objectContaining({ model: astra.id }),
-      )
-    } else {
-      expect(vi.mocked(window.app.codexRun).mock.calls[0]?.[3]).toBe(astra.id)
-    }
+    expect(window.environment.sendSessionMessage).toHaveBeenCalledWith('local', expect.objectContaining({ model: astra.id, ...(queued ? { priority: 'next' } : {}) }))
   })
 
   it('keeps a model picked while cold history is still loading', async () => {
@@ -259,13 +257,13 @@ describe('Codex session model retention', () => {
       } as unknown as SessionBackend,
       onStateChange: (snapshot) => { saved = snapshot },
     })
-    Object.assign(window.agent, {
-      broadcastSessionSetting: vi.fn(async (_id, patch) => session.broadcastSettingsPatch(patch)),
+    Object.assign(window.environment, {
+      patchSessionSettings: vi.fn(async (_connection, _id, patch) => session.broadcastSettingsPatch({ selectedCodexModel: patch.model })),
     })
 
     useChatStore.getState().setSelectedCodexModel(astra.id)
 
-    expect(saved?.selectedModel).toBe(astra.id)
+    await vi.waitFor(() => expect(saved?.selectedModel).toBe(astra.id))
     const project = useChatStore.getState().projectSessions[projectPath]
     useChatStore.setState({ projectSessions: { [projectPath]: {
       ...project, _activeSessionId: 'other', _sessions: { other: project._sessions.other },

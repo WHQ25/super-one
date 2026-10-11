@@ -87,6 +87,10 @@ export interface PatchSessionSettingsInput extends Partial<MutatingControlContex
   additionalDirectories?: string[] | null
   ultracode?: boolean | null
   contextWindow?: number | null
+  serviceTier?: string | null
+  permissionPreset?: string | null
+  collaborationMode?: string | null
+  agent?: string | null
 }
 
 export interface ListSessionsOptions {

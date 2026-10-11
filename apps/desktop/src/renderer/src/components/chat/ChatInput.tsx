@@ -897,7 +897,7 @@ export function ChatInput({
         toast.error(t('chat.addDir.errors.tooMany', { count: MAX_PROJECT_EXTRA_DIRS }))
         return false
       }
-      const res = await window.agent.validateAddDir(activeProject, absolutePath)
+      const res = await window.environment.validateAddDir(activeProject, absolutePath)
       if (!res.ok) {
         const messageMap: Record<string, string> = {
           'not-found': t('chat.addDir.errors.notFound'),
@@ -2264,14 +2264,15 @@ export function ChatInput({
                 softCancel={harnessUsesSoftCancel(activeProviderForResources)}
               />
             )}
-            {scheduleServed && <ScheduledSendButton
+            {(scheduleServed || scheduled) && <ScheduledSendButton
               scheduled={scheduled}
               canSend={canSend}
               waitingFor={originalsUploading ? t('chat.attachmentOriginal.waiting') : undefined}
-              canArm={canArmSchedule}
+              canArm={scheduleServed && canArmSchedule}
+              canEdit={scheduleServed}
               onSendNow={handleSend}
               onArm={handleArmScheduled}
-              onDisarm={handleDisarmScheduled}
+              onDisarm={scheduleServed ? handleDisarmScheduled : clearScheduled}
               onDismiss={clearScheduled}
               onSetSendAt={setSendAt}
             />}

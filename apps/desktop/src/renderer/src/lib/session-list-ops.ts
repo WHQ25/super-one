@@ -5,7 +5,7 @@
  *   window.environment.listSessions(connectionId, projectId, { limit, offset })
  *
  * Product list is always paginated — limit + offset are required on every call.
- * Prefer this module over window.app.listSessions* (legacy local-only IPC).
+ * Lists use the same paginated environment route as individual session commands.
  */
 import type { SessionHistoryEntry } from '@superone/shared/agent-types'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'

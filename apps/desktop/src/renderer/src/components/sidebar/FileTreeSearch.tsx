@@ -39,7 +39,7 @@ export function FileTreeSearch({
       return
     }
     debounceRef.current = setTimeout(() => {
-      window.agent
+      window.environment
         .searchFiles(projectRoot, q)
         .then((r) => {
           setResults(r)

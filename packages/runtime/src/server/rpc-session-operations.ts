@@ -18,6 +18,7 @@ async function callOperation(payload: unknown, ctx: RpcContext, method: string):
     if (method === 'session.rewind' || method === 'session.previewRewind' || method === 'session.truncateAtCheckpoint') requiredText(p, 'checkpointId')
     if (method === 'session.mcpAuthenticate') requiredText(p, 'serverName')
     if (method === 'session.stopTask') requiredText(p, 'taskId')
+    if (method === 'session.forceRecover' && p.message !== undefined && typeof p.message !== 'string') throw Object.assign(new Error('message must be a string'), { code: 'invalid_argument' })
     if (method === 'session.scheduledSend.set') {
       const patch = asRecord(p.patch)
       if (p.patch === null || typeof p.patch !== 'object' || Array.isArray(p.patch)

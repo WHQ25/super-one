@@ -73,16 +73,13 @@ vi.mock('@/lib/session-client', async (importOriginal) => ({
 const mockWindowAgent = {
   prewarm: vi.fn().mockResolvedValue(undefined),
   activateSession: vi.fn().mockResolvedValue(undefined),
-  resetSession: vi.fn().mockResolvedValue({ permissionMode: 'default', sandboxInfo: { enabled: false, autoAllowBash: false } }),
   setSessionForeground: vi.fn().mockResolvedValue(undefined),
   parkSession: vi.fn().mockResolvedValue({ permissionMode: 'default', sandboxInfo: { enabled: false, autoAllowBash: false } }),
-  disconnectRemoteSession: vi.fn().mockResolvedValue(undefined),
 }
 
 const mockWindowApp = {
   trace: vi.fn(),
   unwatchBashOutput: vi.fn(),
-  listSessionsForFolderPage: vi.fn().mockResolvedValue([]),
   getAppSettings: vi.fn().mockResolvedValue({
     analyticsEnabled: true,
     agentPreference: {
@@ -101,7 +98,9 @@ const mockWindowApp = {
 }
 
 const mockMiniApp = { authorize: vi.fn().mockResolvedValue(undefined) }
-const mockWindowEnvironment = { resumeRemoteSessionEvents: vi.fn().mockResolvedValue(undefined) }
+const mockWindowEnvironment = {
+  disconnectSessionController: vi.fn().mockResolvedValue(undefined),
+  callSession: vi.fn().mockResolvedValue(null), resumeRemoteSessionEvents: vi.fn().mockResolvedValue(undefined) }
 
 const eventTarget = new EventTarget()
 vi.stubGlobal('window', {
@@ -332,7 +331,7 @@ describe('resetSessionImpl', () => {
     await useChatStore.getState().resetSession()
 
     expect(activeProjectState()._activeSessionId).toBe(beforeSid)
-    expect(mockWindowAgent.resetSession).not.toHaveBeenCalled()
+    expect(mockWindowEnvironment.callSession).not.toHaveBeenCalled()
     expect(mockWindowAgent.parkSession).not.toHaveBeenCalled()
     expect(mockClearWorktree).not.toHaveBeenCalled()
   })
@@ -378,7 +377,7 @@ describe('resetSessionImpl', () => {
 
     expect(activeProjectState()._activeSessionId).not.toBe(oldSid)
     expect(activeSession().sessionProvider).toBe('codex')
-    expect(mockWindowAgent.resetSession).toHaveBeenCalledWith(oldSid)
+    expect(mockWindowEnvironment.callSession).toHaveBeenCalledWith('local', oldSid, 'session.reset', {})
   })
 
   it('mints a uuid-style sid for claude provider sessions', async () => {
@@ -395,7 +394,7 @@ describe('resetSessionImpl', () => {
     const newSid = activeProjectState()._activeSessionId!
     expect(newSid).not.toBe(oldSid)
     expect(newSid).toMatch(/^[0-9a-f-]{36}$/)
-    expect(mockWindowAgent.resetSession).toHaveBeenCalledWith(oldSid, newSid)
+    expect(mockWindowEnvironment.callSession).toHaveBeenCalledWith('local', oldSid, 'session.reset', { newSessionId: newSid })
     expect(mockClearWorktree).toHaveBeenCalledWith(PATH)
     // Do not fork activity dock layout (shared terminal/browser panel ids).
     expect(mockSeedFromCurrent).not.toHaveBeenCalled()
@@ -591,7 +590,7 @@ describe('setPreferredProviderImpl', () => {
     patchSession({ sessionProvider: 'claude', preferredProvider: 'claude', hostSessionOwned: true, harnessUserChosen: false })
     useChatStore.getState().setPreferredProvider('codex', { userChosen: false })
     expect(activeProjectState()._sessions[activeProjectState()._activeSessionId!]).toMatchObject({ sessionProvider: 'claude', preferredProvider: 'claude' })
-    expect(mockWindowAgent.resetSession).not.toHaveBeenCalled()
+    expect(mockWindowEnvironment.callSession).not.toHaveBeenCalled()
   })
 
   it('still permits a manual harness selection on a host-owned empty session', () => {
@@ -658,7 +657,7 @@ describe('setPreferredProviderImpl', () => {
     useChatStore.getState().setPreferredProvider('codex')
 
     expect(activeSession()).toMatchObject({ sessionProvider: 'claude', contextTokens: 1359 })
-    expect(mockWindowAgent.resetSession).not.toHaveBeenCalled()
+    expect(mockWindowEnvironment.callSession).not.toHaveBeenCalled()
   })
 
   it('keeps the same session id when switching harness on an empty draft', () => {
@@ -675,11 +674,11 @@ describe('setPreferredProviderImpl', () => {
     expect(activeSession().sessionProvider).toBe('codex')
     expect(activeSession().preferredProvider).toBe('codex')
     expect(mockSeedFromCurrent).not.toHaveBeenCalled()
-    // Eager dispose of any prior main runtime under the shared sid.
-    expect(mockWindowAgent.resetSession).toHaveBeenCalledWith(oldSid)
+    // Dispose any prior runtime under the shared draft id through its host.
+    expect(mockWindowEnvironment.callSession).toHaveBeenCalledWith('local', oldSid, 'session.reset', {})
   })
 
-  it('clears providerSessionId and disposes main when switching empty draft harness', () => {
+  it('clears providerSessionId and resets the runtime when switching empty draft harness', () => {
     setupProject()
     patchSession({
       sessionProvider: 'acp',
@@ -688,14 +687,14 @@ describe('setPreferredProviderImpl', () => {
       status: 'idle',
     })
     const sid = activeProjectState()._activeSessionId
-    mockWindowAgent.resetSession.mockClear()
+    mockWindowEnvironment.callSession.mockClear()
 
     useChatStore.getState().setPreferredProvider('claude')
 
     expect(activeProjectState()._activeSessionId).toBe(sid)
     expect(activeSession()._providerSessionId).toBeNull()
     expect(activeSession().sessionProvider).toBe('claude')
-    expect(mockWindowAgent.resetSession).toHaveBeenCalledWith(sid)
+    expect(mockWindowEnvironment.callSession).toHaveBeenCalledWith('local', sid, 'session.reset', {})
   })
 
   it('clears ACP selectedModel when switching back to claude', () => {
@@ -938,7 +937,7 @@ describe('disconnectRemoteSessionImpl', () => {
 
     useChatStore.getState().disconnectRemoteSession()
 
-    expect(mockWindowAgent.disconnectRemoteSession).toHaveBeenCalledWith(sid)
+    expect(mockWindowEnvironment.disconnectSessionController).toHaveBeenCalledWith(sid)
     expect(useChatStore.getState().remoteSessions).toEqual({})
   })
 })

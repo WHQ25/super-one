@@ -51,7 +51,6 @@ import {
   type UpdateCredentialInput,
 } from '../providers/credential-store'
 import type { CapabilityTask, ConsumerBinding, ConsumerId, Platform, ServiceEndpoint } from '@superone/shared/platform-registry'
-import { worktreeExists } from '../git/worktree-alive'
 import { coerceSandboxModeForCapability, getSandboxCapability } from '../sandbox-platform'
 import { searchFiles, searchMentions, EXCLUDED_DIRS, type AgentEntry } from './fuzzy-file-search'
 import { type Session as SessionContract } from '../session/types';
@@ -75,9 +74,9 @@ function getGitRoot(cwd: string): string {
     return cwd // Fallback: not a git repo, use path itself
   }
 }
-import { listSessionsForFolder, createSession, createAutomationSession, loadSessionMessage, listPinnedSessions, readSessionHarnessId } from '../db-sessions';
-import { loadSessionMessages } from '../session-history'
+import { createSession, createAutomationSession, loadSessionMessage, readSessionHarnessId } from '../db-sessions';
 import { getSessionRecord } from '../session/session-repo'
+import { worktreeExists } from '../git/worktree-alive'
 import { listMcpConfigs, saveMcpConfig, deleteMcpConfig, toggleMcpConfig } from '../mcp-config-service'
 import {
   deleteDshMcpConfig,
@@ -168,6 +167,21 @@ export class AgentService {
 
   private releaseRoutedSessions?: (sessionId?: string) => Promise<void>
   setRoutedSessionRelease(release: (sessionId?: string) => Promise<void>): void { this.releaseRoutedSessions = release }
+  async disconnectSessionController(sessionId?: string): Promise<void> {
+    const targets: import('../session/types').Session[] = []
+    if (sessionId) {
+      const session = this.sessionManager?.getSession(sessionId)
+      if (session) targets.push(session)
+    } else {
+      this.sessionManager?.forEachSession(session => {
+        if (session.lease.isExternal) targets.push(session)
+      })
+    }
+    for (const session of targets) {
+      if (session.lease.isExternal) session.lease.revoke()
+    }
+    await this.releaseRoutedSessions?.(sessionId)
+  }
 
   private publishEnvironmentEvent(event: AgentEvent): void {
     trace('remote.debug', 'publishEnvironmentEvent', { type: event.type, projectPath: event.projectPath, sessionId: event.sessionId })
@@ -744,7 +758,6 @@ export class AgentService {
     this.sessionManager?.markSessionNeedsRebuild(sessionId, harnessId)
   }
 
-
   /** The session MCP mentions are searched and read through; loading it is fine, the user asked. */
   private mcpMentionSession(sessionId: string): import('../session/types').Session | null {
     const mgr = this.sessionManager
@@ -1071,14 +1084,6 @@ export class AgentService {
       try { session.prewarm(hint) } catch (err) { log.debug('[agent-service] prewarm failed: %s', err instanceof Error ? err.message : String(err)) }
     })
 
-    windowIpc.handle(AgentIpcChannels.WORKTREE_REMOVED, async (_event, sessionId: string) => {
-      const session = this.sessionManager?.getSession(sessionId)
-      const { worktreePath, projectPath } = session?.snapshot ?? {}
-      // Re-check here: the renderer only reports what it saw, main decides.
-      if (!session || !worktreePath || !projectPath || worktreeExists(worktreePath, projectPath)) return
-      await session.markWorktreeRemoved()
-    })
-
     windowIpc.handle(AgentIpcChannels.START_REALTIME_VOICE, async (event, projectPath: string, sessionId: string, request: import('@superone/shared/agent-types').RealtimeVoiceStartRequest) => {
       const mgr = this.requireSessionManager()
       if (!request.attemptId) throw new Error('Voice attempt is required.')
@@ -1114,17 +1119,6 @@ export class AgentService {
       const session = await this.getOrCreateActiveSession(projectPath, sessionId, { provider: 'codex' })
       const timeline = await session.getRealtimeTimeline()
       return reconcileRealtimeTimeline(sessionId, timeline)
-    })
-
-    windowIpc.handle(AgentIpcChannels.CREATE_SESSION, async (_event, projectPath: string) => {
-      const mgr = this.requireSessionManager()
-      const { permissionMode, sandboxMode } = this.readDefaultSessionPrefs()
-      const session = mgr.createSession({ projectPath, providerId: 'claude-base', permissionMode, sandboxMode })
-      return session.snapshot.id
-    })
-
-    windowIpc.handle(AgentIpcChannels.GET_SESSION_ID, (_event, projectPath: string) => {
-      return this.sessionManager?.getActiveSession(projectPath)?.snapshot.providerSessionId ?? null
     })
 
     windowIpc.handle(AgentIpcChannels.ACP_GET_RATE_LIMITS, async (
@@ -1236,23 +1230,6 @@ export class AgentService {
       const cwd = this.sessionManager?.getActiveSession(projectPath)?.snapshot.cwd ?? projectPath
       const roots = [cwd, ...(additionalDirs || [])]
       return searchMentions(roots, query, agents, 20, scopeDir)
-    })
-
-    windowIpc.handle(AgentIpcChannels.DISCONNECT_REMOTE_SESSION, async (_event, sessionId?: string) => {
-      const targets: import('../session/types').Session[] = []
-      if (sessionId) {
-        const s = this.sessionManager?.getSession(sessionId)
-        if (s) targets.push(s)
-      } else {
-        this.sessionManager?.forEachSession((s) => {
-          if (s.lease.isExternal) targets.push(s)
-        })
-      }
-      for (const session of targets) {
-        if (session.lease.isExternal) session.lease.revoke()
-      }
-      // A phone this desktop routes to a node session.
-      await this.releaseRoutedSessions?.(sessionId)
     })
 
     // --- Plugins (session-scoped — need cwd) ---
@@ -2107,18 +2084,6 @@ export class AgentService {
 
     // --- Session history (session-scoped) ---
 
-    windowIpc.handle(AgentIpcChannels.SESSIONS_LIST, (_event, projectPath: string) => {
-      return listSessionsForFolder(projectPath)
-    })
-
-    windowIpc.handle(AgentIpcChannels.SESSIONS_LIST_FOR_FOLDER, (_event, folderPath: string) => {
-      return listSessionsForFolder(folderPath)
-    })
-
-    windowIpc.handle(AgentIpcChannels.SESSIONS_LIST_FOR_FOLDER_PAGE, (_event, folderPath: string, limit: number, offset: number) => {
-      return listSessionsForFolder(folderPath, limit, offset)
-    })
-
     windowIpc.handle(AgentIpcChannels.PARK_SESSION, async (_event, projectPath: string) => {
       const mgr = this.requireSessionManager()
       mgr.clearActiveSession(projectPath)
@@ -2167,13 +2132,6 @@ export class AgentService {
       return this.requireSessionManager().listLiveSnapshots()
     })
 
-    windowIpc.handle(AgentIpcChannels.SESSIONS_LOAD_MESSAGES, (_event, projectPath: string, sessionId: string, limit: number, cursor?: number) => {
-      return loadSessionMessages(projectPath, sessionId, limit, cursor)
-    })
-
-    windowIpc.handle(AgentIpcChannels.SESSIONS_LIST_PINNED, () => {
-      return listPinnedSessions()
-    })
   }
 
   private emitSessionsChanged(): void {
@@ -2206,13 +2164,10 @@ export class AgentService {
     this.warmupManager.dispose()
 
     ipcMain.removeHandler(AgentIpcChannels.PREWARM)
-    ipcMain.removeHandler(AgentIpcChannels.WORKTREE_REMOVED)
     ipcMain.removeHandler(AgentIpcChannels.START_REALTIME_VOICE)
     ipcMain.removeHandler(AgentIpcChannels.STOP_REALTIME_VOICE)
     ipcMain.removeHandler(AgentIpcChannels.LOAD_REALTIME_TIMELINE)
     ipcMain.removeHandler(AgentIpcChannels.GET_REALTIME_TIMELINE)
-    ipcMain.removeHandler(AgentIpcChannels.CREATE_SESSION)
-    ipcMain.removeHandler(AgentIpcChannels.GET_SESSION_ID)
     ipcMain.removeHandler(AgentIpcChannels.PLUGINS_RELOAD)
     ipcMain.removeHandler(AgentIpcChannels.LIST_DIRECTORY)
     ipcMain.removeHandler(AgentIpcChannels.LIST_DIRECTORY_FOR_ADD_DIR)
@@ -2220,7 +2175,6 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.FIND_LINE_NUMBER)
     ipcMain.removeHandler(AgentIpcChannels.SEARCH_FILES)
     ipcMain.removeHandler(AgentIpcChannels.SEARCH_MENTIONS)
-    ipcMain.removeHandler(AgentIpcChannels.DISCONNECT_REMOTE_SESSION)
     ipcMain.removeHandler(AgentIpcChannels.PLUGINS_LIST)
     ipcMain.removeHandler(AgentIpcChannels.PLUGINS_READ)
     ipcMain.removeHandler(AgentIpcChannels.PLUGINS_READ_FILE)
@@ -2283,10 +2237,5 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.ACTIVATE_SESSION)
     ipcMain.removeHandler(AgentIpcChannels.SET_SESSION_FOREGROUND)
     ipcMain.removeHandler(AgentIpcChannels.GET_LIVE_SNAPSHOTS)
-    ipcMain.removeHandler(AgentIpcChannels.SESSIONS_LIST)
-    ipcMain.removeHandler(AgentIpcChannels.SESSIONS_LIST_FOR_FOLDER)
-    ipcMain.removeHandler(AgentIpcChannels.SESSIONS_LIST_FOR_FOLDER_PAGE)
-    ipcMain.removeHandler(AgentIpcChannels.SESSIONS_LOAD_MESSAGES)
-    ipcMain.removeHandler(AgentIpcChannels.SESSIONS_LIST_PINNED)
   }
 }

@@ -828,7 +828,7 @@ describe('per-session writers: scoped target isolation', () => {
   })
 
   it('setSelectedCodexModel writes the codex pair for the scoped pane and broadcasts under that session id', () => {
-    const { active, other } = setupTwoSessions()
+    const { active, other } = setupTwoSessions({ hostSessionOwned: true })
     useChatStore.setState((s) => ({
       projectSessions: {
         ...s.projectSessions,
@@ -840,9 +840,9 @@ describe('per-session writers: scoped target isolation', () => {
 
     expect(sessionOf(other).selectedCodexModel).toBe('gpt-5-codex')
     expect(sessionOf(active).selectedCodexModel).toBe('')
-    expect(mockWindowAgent.broadcastSessionSetting).toHaveBeenCalledWith(
-      other,
-      expect.objectContaining({ selectedCodexModel: 'gpt-5-codex' }),
+    expect(mockWindowEnvironment.patchSessionSettings).toHaveBeenCalledWith(
+      'local', other,
+      expect.objectContaining({ model: 'gpt-5-codex' }),
     )
   })
 })

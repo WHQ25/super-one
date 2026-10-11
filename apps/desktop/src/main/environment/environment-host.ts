@@ -107,7 +107,8 @@ import type {
 } from '@superone/shared/environment'
 import type { PinnedSessionEntry, SessionHistoryEntry } from '@superone/shared/agent-types'
 import { SESSION_CALL_METHODS, SESSION_CALL_READS, type SessionCallMethod, type SessionCallMethods, type SessionForkRequestInput, type SessionPermissionAnswer, type SessionPlanAnswer, type SessionQuestionAnswer, type SessionSendRequest, type SessionSettingsPatch } from '@superone/shared/environment/session-requests'
-import { remoteProjectKey } from '@superone/shared/remote-resource-key'
+import { getScheduledSend, getScheduledSendRemoteTarget } from '../db-scheduled-sends'
+import { parseRemoteProjectKey, remoteProjectKey } from '@superone/shared/remote-resource-key'
 import { RoutedControlPresence } from '../node-host/routed-control-presence'
 import { parseTagsJson } from '@superone/shared/session-tags'
 import {
@@ -127,6 +128,12 @@ import {
 } from './remote-host-action-consumer'
 
 export interface EnvironmentHostOptions {
+  /** Desktop-owned schedules created before nodes exposed scheduling RPC. Read/cancel only. */
+  legacyScheduledSends?: {
+    get(connectionId: string, sessionId: string): import('@superone/shared/agent-types').ScheduledSend | null
+    clear(sessionId: string): void
+  }
+
   /** mDNS lookup of desktop nodes on this network (LAN base URLs per environment id). */
   discoverLan?: (environmentId: string) => Promise<string[]>
   /** Injectable for tests; production opens real `ssh -L` forwards. */
@@ -229,6 +236,7 @@ export class EnvironmentHost {
    * tests that never open the desktop database leave it off.
    */
   private transfers: ArtifactTransferService | null = null
+  private readonly legacyScheduledSends: EnvironmentHostOptions['legacyScheduledSends']
   private readonly hostActionExecutor: HostActionExecutor
   private readonly hostActionConcurrency: number
   private readonly hostActionPollWaitMs: number
@@ -242,6 +250,7 @@ export class EnvironmentHost {
   private readonly repairOverSshInFlight = new Map<string, Promise<ExecutionEnvironmentDescriptor>>()
 
   constructor(userDataDir?: string, options: EnvironmentHostOptions = {}) {
+    this.legacyScheduledSends = options.legacyScheduledSends
     const dataDir = userDataDir || app.getPath('userData')
     mkdirSync(dataDir, { recursive: true })
     this.knownPath = join(dataDir, 'known-environments.json')
@@ -2058,6 +2067,16 @@ export class EnvironmentHost {
     input: SessionCallMethods[M]['input'],
   ): Promise<SessionCallMethods[M]['result']> {
     if (!SESSION_CALL_METHODS.has(method)) throw Object.assign(new Error(`${method} is not a session call`), { code: 'invalid_argument' })
+    if (connectionId !== 'local' && (method === 'session.scheduledSend.get' || method === 'session.scheduledSend.clear')) {
+      const legacy = this.legacyScheduledSends
+      const row = legacy?.get(connectionId, sessionId)
+      if (row && legacy) {
+        if (method === 'session.scheduledSend.get') return row as SessionCallMethods[M]['result']
+        if (!currentControlScope()?.clientSessionId.startsWith('ipc:')) throw Object.assign(new Error('Cancelling a desktop schedule needs a window'), { code: 'failed_precondition' })
+        legacy.clear(sessionId)
+        return null as SessionCallMethods[M]['result']
+      }
+    }
     const { gateway } = this.resolveSession(connectionId)
     const control = SESSION_CALL_READS.has(method) ? {} : await this.ensureSessionLease(connectionId, sessionId)
     return gateway.callSession(method, { ...input, sessionId, ...control })
@@ -3436,6 +3455,9 @@ export class EnvironmentHost {
   }
 }
 
+let notifyLegacyScheduleCancelled: ((sessionId: string) => void) | undefined
+export function setLegacyScheduleCancellation(handler: (sessionId: string) => void): void { notifyLegacyScheduleCancelled = handler }
+
 let singleton: EnvironmentHost | null = null
 
 /** Lazy singleton used by IPC handlers in main. */
@@ -3448,7 +3470,15 @@ export function getEnvironmentHost(): EnvironmentHost {
       // Non-Electron unit tests without ipcMain.
     })
   if (!singleton) {
-    singleton = new EnvironmentHost()
+    singleton = new EnvironmentHost(undefined, {
+      legacyScheduledSends: {
+        get: (connectionId, sessionId) => parseRemoteProjectKey(getScheduledSendRemoteTarget(sessionId)?.projectKey ?? '')?.connectionId === connectionId ? getScheduledSend(sessionId) : null,
+        clear: sessionId => {
+          if (!notifyLegacyScheduleCancelled) throw new Error('Schedule cancellation is not initialized')
+          notifyLegacyScheduleCancelled(sessionId)
+        },
+      },
+    })
     singleton.enableArtifactTransfers()
   }
   return singleton

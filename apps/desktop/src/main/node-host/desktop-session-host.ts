@@ -48,7 +48,7 @@ export interface NodeHostSessionManager {
 /** Desktop persistence for remotely controlled sessions (`db-remote-controlled-sessions.ts`). */
 export interface NodeHostSessionStore {
   /** Insert the desktop session row for a new session. */
-  createRow(input: { sessionId: string; projectPath: string; title?: string; cwd: string }): void
+  createRow(input: { sessionId: string; projectPath: string; title?: string; cwd: string; providerId?: string }): void
   setController(sessionId: string, controller: RemoteControllerRecord, providerId?: string): boolean
   get(sessionId: string): RemoteControlledSessionRow | null
   list(projectId?: string): RemoteControlledSessionRow[]

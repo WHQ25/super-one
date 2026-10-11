@@ -1,6 +1,7 @@
 import type { StateCreator } from 'zustand'
 import type { CodexCollaborationMode, CodexPermissionPreset, CodexReasoningEffort, ModelOption } from '@superone/shared/agent-types'
 import { resolveCodexReasoningEffort } from '../helpers/codex-helpers'
+import { pushSettings } from '@/lib/session-client'
 import { codexModelCacheKey } from '../helpers/codex-model-cache'
 import type { ChatStore, SessionWriteTarget } from '../types'
 import {
@@ -50,10 +51,8 @@ export const createCodexSlice: StateCreator<ChatStore, [], [], CodexSlice> = (se
       codexReasoningEffortUserChosen: false,
     })))
     if (sessionId) {
-      void window.agent.broadcastSessionSetting(sessionId, {
-        selectedCodexModel: model,
-        selectedCodexReasoningEffort: selectedEffort ?? null,
-        selectedCodexServiceTier: selectedServiceTier,
+      pushSettings(activeProject, sessionId, activeSession, {
+        model, effort: selectedEffort ?? null, serviceTier: selectedServiceTier,
       })
     }
   },
@@ -70,8 +69,8 @@ export const createCodexSlice: StateCreator<ChatStore, [], [], CodexSlice> = (se
       codexReasoningEffortUserChosen: true,
     })))
     if (sessionId) {
-      void window.agent.broadcastSessionSetting(sessionId, {
-        selectedCodexReasoningEffort: selectedEffort ?? null,
+      pushSettings(activeProject, sessionId, sess, {
+        effort: selectedEffort ?? null,
       })
     }
   },
@@ -83,28 +82,28 @@ export const createCodexSlice: StateCreator<ChatStore, [], [], CodexSlice> = (se
     const model = project.codexModels.find((entry) => entry.id === session.selectedCodexModel)
     const selectedTier = tier && model?.serviceTiers?.some((entry) => entry.id === tier) ? tier : null
     set((state) => commitPerSession(state, target, () => ({ selectedCodexServiceTier: selectedTier })))
-    if (sessionId) void window.agent.broadcastSessionSetting(sessionId, { selectedCodexServiceTier: selectedTier })
+    if (sessionId) pushSettings(activeProject, sessionId, session, { serviceTier: selectedTier })
   },
 
   setSelectedCodexPermissionPreset: (preset, target) => {
-    const { projectPath: activeProject, sessionId } = resolveWriteScope(get(), target)
+    const { projectPath: activeProject, sessionId, session } = resolveWriteScope(get(), target)
     if (!activeProject) return
     set((s) => commitPerSession(s, target, () => ({
       selectedCodexPermissionPreset: preset,
     })))
     if (sessionId) {
-      void window.agent.broadcastSessionSetting(sessionId, { selectedCodexPermissionPreset: preset })
+      pushSettings(activeProject, sessionId, session, { permissionPreset: preset })
     }
   },
 
   setSelectedCodexCollaborationMode: (mode, target) => {
-    const { projectPath: activeProject, sessionId } = resolveWriteScope(get(), target)
+    const { projectPath: activeProject, sessionId, session } = resolveWriteScope(get(), target)
     if (!activeProject) return
     set((s) => commitPerSession(s, target, () => ({
       selectedCodexCollaborationMode: mode,
       codexPlanRejectHintActive: false,
     })))
-    if (sessionId) void window.agent.broadcastSessionSetting(sessionId, { selectedCodexCollaborationMode: mode })
+    if (sessionId) pushSettings(activeProject, sessionId, session, { collaborationMode: mode })
   },
 
   loadCodexModels: async (projectPath, apiProviderId, force = false) => {

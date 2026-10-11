@@ -1,4 +1,4 @@
-import type { PermissionMode, SandboxMode, SendMessageRequest } from '@superone/shared/agent-types'
+import type { PermissionMode, SandboxMode, SendMessageRequest, CodexPermissionPreset, CodexCollaborationMode, CodexReasoningEffort } from '@superone/shared/agent-types'
 import type { SessionHostPort } from '@superone/runtime/server'
 import type { NodeSessionSettings } from '@superone/runtime/session'
 import type { Session } from '../session/types'
@@ -21,6 +21,16 @@ export async function applyDesktopSessionSettings(session: Session, patch: NodeS
   }
   session.lease.assertMutation()
   if (patch.agentPreset !== undefined) session.setAgentPreset(patch.agentPreset)
+  if (session.snapshot.harnessId === 'codex' && [patch.model, patch.effort, patch.serviceTier, patch.permissionPreset, patch.collaborationMode].some(value => value !== undefined)) {
+    session.broadcastSettingsPatch({
+      ...(patch.model !== undefined ? { selectedCodexModel: patch.model } : {}),
+      ...(patch.effort !== undefined ? { selectedCodexReasoningEffort: patch.effort as CodexReasoningEffort | null } : {}),
+      ...(patch.serviceTier !== undefined ? { selectedCodexServiceTier: patch.serviceTier } : {}),
+      ...(patch.permissionPreset !== undefined ? { selectedCodexPermissionPreset: (patch.permissionPreset ?? 'default') as CodexPermissionPreset } : {}),
+      ...(patch.collaborationMode !== undefined ? { selectedCodexCollaborationMode: (patch.collaborationMode ?? 'default') as CodexCollaborationMode } : {}),
+    })
+  }
+  if (patch.agent !== undefined) session.broadcastSettingsPatch({ openCodeAgentId: patch.agent })
   if (patch.additionalDirectories !== undefined) await session.dispatchBackendCommand({ kind: 'session.set_additional_dirs', dirs: patch.additionalDirectories ?? [] })
 }
 

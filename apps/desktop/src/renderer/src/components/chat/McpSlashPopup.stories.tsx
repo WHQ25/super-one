@@ -15,9 +15,11 @@ function Preview({ servers = EMPTY, failure = false, narrow = false }: { servers
         ...createDefaultPerSessionState(), preferredProvider: 'opencode', sessionProvider: 'opencode',
       } },
     } } })
+    let statuses = servers.map(server => ({ ...server }))
     window.environment = { ...environment, callSession: async (_connection: string, _session: string, method: string) => {
       if (failure) throw new Error('MCP status unavailable. Try again.')
-      return method === 'session.mcpStatus' ? servers : null
+      if (method === 'session.mcpAuthenticate') statuses = statuses.map(server => ({ ...server, status: 'connected' as const }))
+      return method === 'session.mcpStatus' ? statuses : null
     } } as typeof environment
     window.app = { ...app, checkMcpServers: async () => ({ status: [], meta: {} }), getMcpMetaCache: async () => ({}), listMcpLibrary: async () => [] } as typeof app
     setReady(true)

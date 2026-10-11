@@ -1,3 +1,5 @@
+import { useEnvironmentServes } from '@/hooks/use-environment-serves'
+import { callSession } from '@/lib/session-client'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -85,6 +87,7 @@ export function CursorAuthSettings({
   const [usage, setUsage] = useState<UsageSnapshot | null>(null)
   const [usageLoading, setUsageLoading] = useState(false)
   const initializeHarness = useChatStore((s) => s.initializeHarness)
+  const activeProject = useChatStore((s) => s.activeProject)
   const setHarnessResources = useChatStore((s) => s.setHarnessResources)
   const activeSessionId = useActiveSession((s) => s._activeSessionId ?? s.session?.sessionId ?? null)
   const sessionProvider = useActiveSession((s) => s.sessionProvider ?? s.preferredProvider)
@@ -104,7 +107,8 @@ export function CursorAuthSettings({
 
   // local.force is agent-scoped (bc-* = cloud), not the settings Cloud toggle.
   const isCloudAgent = Boolean(providerSessionId?.startsWith('bc-'))
-  const canForceRecover = Boolean(activeCursorSessionId) && !isCloudAgent
+  const forceRecoverServed = useEnvironmentServes(activeProject, 'session.forceRecover')
+  const canForceRecover = Boolean(activeCursorSessionId) && !isCloudAgent && forceRecoverServed
 
   const refreshAuthStatus = useCallback(async () => {
     try {
@@ -365,13 +369,13 @@ export function CursorAuthSettings({
       toast.error(t('settings.harnesses.cursor.forceRecoverLocalOnly'))
       return
     }
-    if (!activeCursorSessionId) {
+    if (!activeCursorSessionId || !activeProject) {
       toast.error(t('settings.harnesses.cursor.forceRecoverNeedSession'))
       return
     }
     setForceRecovering(true)
     try {
-      await window.app.cursorForceRecover?.(activeCursorSessionId, 'Continue.')
+      await callSession(activeProject, activeCursorSessionId, 'session.forceRecover', { message: 'Continue.' })
       toast.success(t('settings.harnesses.cursor.forceRecoverDone'))
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error))

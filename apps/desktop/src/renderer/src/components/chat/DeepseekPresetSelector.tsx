@@ -92,12 +92,7 @@ export function useDeepseekPresetSelection() {
 
   const choose = useCallback(async (preset: DeepseekPresetInfo) => {
     if (preset.id === selectedId) return
-    setPreset(preset.id)
-    // With no live agent the pick is a draft the next creation reads; with one,
-    // it is a real recomposition that can still be refused.
-    if (sessionId !== null && current !== null) {
-      await window.app.setDeepseekPreset(sessionId, preset.id)
-    }
+    await setPreset(preset.id)
     await load()
   }, [selectedId, sessionId, current, setPreset, load])
 

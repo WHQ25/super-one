@@ -132,7 +132,7 @@ vi.mock('./ToolRendererFrame', () => ({
   ToolRendererFrame: () => null,
 }))
 
-Object.defineProperty(window, 'agent', {
+Object.defineProperty(window, 'environment', {
   value: {
     findLineNumber: vi.fn().mockResolvedValue(null),
   },

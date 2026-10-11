@@ -1,6 +1,6 @@
 import { getDb } from './database'
 import { getProjectId } from './recent-folders'
-import { serializeMessageContent, rowToChatMessage, deriveHarnessId, storedSelectedModel } from './session/session-repo'
+import { serializeMessageContent, rowToChatMessage, deriveHarnessId, storedSelectedModel, harnessIdFromProviderId } from './session/session-repo'
 import { recordSessionStarted, recordMessageCounts, type HarnessKind } from './usage-stats-service'
 import type { ChatMessage, EffortLevel, HarnessId, SessionHistoryEntry, PinnedSessionEntry, SessionRemoteControllerInfo } from '@superone/shared/agent-types'
 import { parseTagsJson } from '@superone/shared/session-tags'
@@ -122,7 +122,7 @@ export function listSessionsForFolder(folderPath: string, limit?: number, offset
 }
 
 /** Create a new session record in DB. `sessionId` is the stable Session.id used across the app. */
-export function createSession(folderPath: string, sessionId: string, title?: string, isWorktree?: boolean, gitBranch?: string, worktreePath?: string): string {
+export function createSession(folderPath: string, sessionId: string, title?: string, isWorktree?: boolean, gitBranch?: string, worktreePath?: string, providerId?: string): string {
   const projectId = getProjectId(folderPath)
   if (!projectId) throw new Error(`Project not found for path: ${folderPath}`)
 
@@ -130,13 +130,16 @@ export function createSession(folderPath: string, sessionId: string, title?: str
   const now = new Date().toISOString()
 
   db.prepare(`
-    INSERT INTO sessions (id, project_id, title, created_at, last_user_message_at, is_worktree, git_branch, worktree_path)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO sessions (id, project_id, title, created_at, last_user_message_at, is_worktree, git_branch, worktree_path, provider_id, provider)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
+      provider_session_id = CASE WHEN excluded.provider_id IS NOT NULL AND excluded.provider_id IS NOT sessions.provider_id THEN NULL ELSE sessions.provider_session_id END,
+      provider_id = COALESCE(excluded.provider_id, provider_id),
+      provider = COALESCE(excluded.provider, provider),
       title = CASE WHEN title IS NULL OR title = '' THEN COALESCE(excluded.title, title) ELSE title END,
       git_branch = COALESCE(excluded.git_branch, git_branch),
       worktree_path = COALESCE(excluded.worktree_path, worktree_path)
-  `).run(sessionId, projectId, title ?? null, now, now, isWorktree ? 1 : 0, gitBranch ?? null, worktreePath ?? null)
+  `).run(sessionId, projectId, title ?? null, now, now, isWorktree ? 1 : 0, gitBranch ?? null, worktreePath ?? null, providerId ?? null, providerId ? harnessIdFromProviderId(providerId) : null)
 
   notifySessionList(folderPath)
   return sessionId

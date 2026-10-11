@@ -11,10 +11,11 @@ import { DesktopSessionReads, type DesktopSessionReadsDeps } from './desktop-ses
 import { admitDesktopSessionSend, applyDesktopSessionSettings, desktopSendRequest, respondDesktopPermission, respondDesktopQuestion, respondDesktopPlan } from './desktop-session-mutations'
 import { createDesktopSession } from './desktop-session-create'
 import type { SessionListControl } from '@superone/shared/environment/session-operations'
+import { worktreeExists } from '../git/worktree-alive'
 
 /** Desktop persistence edits, injected alongside the rows the phone reads. */
 export interface LocalSessionEdits {
-  create(input: { sessionId: string; projectPath: string; cwd: string; title?: string }): void
+  create(input: { sessionId: string; projectPath: string; cwd: string; title?: string; providerId?: string }): void
   rename(sessionId: string, title: string, source: 'user' | 'agent'): void
   tags(sessionId: string, tags: string[]): void
   flags(sessionId: string, flags: { isPinned?: boolean; isHidden?: boolean }): void
@@ -61,6 +62,8 @@ export class LocalSessionHost extends DesktopSessionReads<DesktopSessionRow> imp
       ...(this.deps.sideChats ? ['session.sideChatStart', 'session.sideChatClose'] : []),
       ...(this.deps.scheduledSends ? ['session.scheduledSend.get', 'session.scheduledSend.set', 'session.scheduledSend.clear', 'sessionList.scheduledSends'] : []),
       ...(this.deps.edits ? ['sessionList.deleteOlderThan'] : []),
+      'session.reportWorktreeRemoved',
+      'session.forceRecover',
     ])
   }
 
@@ -71,6 +74,17 @@ export class LocalSessionHost extends DesktopSessionReads<DesktopSessionRow> imp
     const session = method === 'session.previewRewind' ? this.live(sessionId) : this.mutation(sessionId)
     const checkpointId = input.checkpointId as string
     switch (method) {
+      case 'session.forceRecover': {
+        const { harnessId, providerSessionId } = session.snapshot
+        if (harnessId !== 'cursor' || providerSessionId?.startsWith('bc-') || !session.forceRecoverRun) throw Object.assign(new Error('Force recover is only available for Cursor local agents'), { code: 'unsupported' })
+        await session.forceRecoverRun(input.message as string | undefined)
+        return { ok: true }
+      }
+      case 'session.reportWorktreeRemoved': {
+        const { worktreePath, projectPath } = session.snapshot
+        if (worktreePath && !worktreeExists(worktreePath, projectPath)) await session.markWorktreeRemoved()
+        return null
+      }
       case 'session.scheduledSend.set': return this.deps.scheduledSends!.set(sessionId, input.patch as ScheduledSendPatch)
       case 'session.scheduledSend.clear': this.deps.scheduledSends!.clear(sessionId); return null
       case 'session.sideChatStart': return this.deps.sideChats!.start(sessionId, () => session.lease.assertMutation())

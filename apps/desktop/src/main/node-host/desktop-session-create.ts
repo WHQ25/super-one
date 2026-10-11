@@ -55,11 +55,12 @@ export async function createDesktopSession(deps: LocalSessionHostDeps, input: Pa
     }
     options.assertCreate()
     if (!deps.edits) throw refused('Session persistence is not available')
-    if (!existingRow) deps.edits.create({ sessionId, projectPath, cwd, title: input.title })
+    const providerId = input.providerId ?? `${input.harnessId ?? 'claude'}-base`
+    deps.edits.create({ sessionId, projectPath, cwd, title: input.title, providerId })
     persisted = true
     const settings = options.settings
     const session = deps.sessions.createSession({
-      id: sessionId, projectPath, cwd, providerId: input.providerId ?? `${input.harnessId ?? 'claude'}-base`, title: input.title,
+      id: sessionId, projectPath, cwd, providerId, title: input.title,
       systemPromptAppend: input.systemPromptAppend ?? undefined,
       permissionMode: settings.permissionMode as PermissionMode | undefined,
       sandboxMode: settings.sandboxMode as SandboxMode | undefined,

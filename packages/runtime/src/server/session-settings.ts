@@ -1,7 +1,7 @@
 import type { NodeSessionSettings } from '../session/types'
 
 const invalid = (message: string) => Object.assign(new Error(message), { code: 'invalid_argument' })
-const STRING_KEYS = ['permissionMode', 'sandboxMode', 'model', 'effort', 'apiProviderId', 'mode', 'agentPreset'] as const
+const STRING_KEYS = ['permissionMode', 'sandboxMode', 'model', 'effort', 'apiProviderId', 'mode', 'agentPreset', 'serviceTier', 'permissionPreset', 'collaborationMode', 'agent'] as const
 
 /** A shared parser, so create defaults and subsequent settings edits keep the same fields. */
 export function parseSessionSettings(source: Record<string, unknown>): NodeSessionSettings {
@@ -12,6 +12,8 @@ export function parseSessionSettings(source: Record<string, unknown>): NodeSessi
     if (value !== null && typeof value !== 'string') throw invalid(`${key} must be a string or null`)
     patch[key] = value
   }
+  if (patch.permissionPreset != null && !['read-only', 'default', 'auto-review', 'full-access'].includes(patch.permissionPreset)) throw invalid('invalid permission preset')
+  if (patch.collaborationMode != null && !['default', 'plan'].includes(patch.collaborationMode)) throw invalid('invalid collaboration mode')
   if (Object.hasOwn(source, 'additionalDirectories')) {
     const dirs = source.additionalDirectories
     if (dirs !== null && (!Array.isArray(dirs) || dirs.length > 64 || dirs.some(dir => typeof dir !== 'string' || !dir.trim()))) {

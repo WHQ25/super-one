@@ -547,11 +547,11 @@ export function EditDiff({ params }: { params: Record<string, unknown> }) {
     let cancelled = false
     const tryFind = async (): Promise<void> => {
       if (newStr) {
-        const line = await window.agent.findLineNumber(activeProject, filePath, newStr)
+        const line = await window.environment.findLineNumber(activeProject, filePath, newStr)
         if (!cancelled && line != null) { setStartLine(line); return }
       }
       if (oldStr) {
-        const line = await window.agent.findLineNumber(activeProject, filePath, oldStr)
+        const line = await window.environment.findLineNumber(activeProject, filePath, oldStr)
         if (!cancelled && line != null) { setStartLine(line); return }
       }
     }

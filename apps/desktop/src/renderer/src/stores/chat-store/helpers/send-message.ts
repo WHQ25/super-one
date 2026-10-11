@@ -517,6 +517,9 @@ export async function sendMessageImpl(
     }
   }
 
+  // Activation can replay an older host selection. This turn keeps the choices
+  // the composer displayed when it was sent; later turns use subsequent picks.
+  const turnChoices = getScopedPerSession(get(), writeScope.target)
   try {
     await ensureHostSession(set, get, projectPath, writeScope)
   } catch (error) {
@@ -668,7 +671,7 @@ export async function sendMessageImpl(
         queued: isQueuedSend,
         firstTurn: session.messages.length === 0,
         ...codexTurn,
-      }),
+      }, turnChoices),
       clientMessageId: userMessageId,
     },
     titleText: rawContent || finalContent,

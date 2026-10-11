@@ -474,7 +474,7 @@ export interface ChatStore {
   refreshCodexSkills: (projectPath?: string) => Promise<void>
   refreshCursorSlashItems: (projectPath?: string) => Promise<void>
   setPreferredProvider: (provider: ChatProvider, opts?: { userChosen?: boolean }) => void
-  setDshPreset: (preset: string, target?: SessionWriteTarget) => void
+  setDshPreset: (preset: string, target?: SessionWriteTarget) => Promise<void>
   setAcpAgentId: (agentId: string | null) => void
   setOpenCodeAgentId: (agentId: string | null, target?: SessionWriteTarget) => void
   setSelectedAcpMode: (modeId: string, target?: SessionWriteTarget) => void

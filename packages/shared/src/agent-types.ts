@@ -4064,7 +4064,6 @@ export const AgentIpcChannels = {
   DEEPSEEK_TRAJECTORY_CHANGED: 'app:deepseek-trajectory-changed',
   SAVE_TEXT_AS: 'app:save-text-as',
   DEEPSEEK_PRESETS: 'app:deepseek-presets',
-  DEEPSEEK_SET_PRESET: 'app:deepseek-set-preset',
   SET_CURSOR_API_KEY: 'app:set-cursor-api-key',
   GET_CURSOR_AUTH_STATUS: 'app:get-cursor-auth-status',
   CURSOR_LIST_AGENTS: 'app:cursor-list-agents',
@@ -4081,7 +4080,6 @@ export const AgentIpcChannels = {
   CURSOR_LIST_MESSAGES: 'app:cursor-list-messages',
   CURSOR_GET_RUN: 'app:cursor-get-run',
   CURSOR_CANCEL_RUN: 'app:cursor-cancel-run',
-  CURSOR_FORCE_RECOVER: 'app:cursor-force-recover',
   CURSOR_SDK_LOGIN: 'app:cursor-sdk-login',
   CURSOR_SDK_LOGOUT: 'app:cursor-sdk-logout',
   CURSOR_SDK_AUTH_STATUS: 'app:cursor-sdk-auth-status',
@@ -4136,7 +4134,6 @@ export const AgentIpcChannels = {
 
   // Agent channels
   PREWARM: 'agent:prewarm',
-  WORKTREE_REMOVED: 'agent:worktree-removed',
   START_REALTIME_VOICE: 'agent:start-realtime-voice',
   READY_REALTIME_VOICE: 'agent:ready-realtime-voice',
   STOP_REALTIME_VOICE: 'agent:stop-realtime-voice',
@@ -4144,16 +4141,12 @@ export const AgentIpcChannels = {
   GET_REALTIME_TIMELINE: 'agent:get-realtime-timeline',
   EVENT: 'agent:event',
   SANDBOX_PROBE: 'sandbox:probe',
-  /** A widget opens its `agent`-output form in a local session's composer. */
-  CREATE_SESSION: 'agent:create-session',
-  GET_SESSION_ID: 'agent:get-session-id',
   LIST_DIRECTORY: 'agent:list-directory',
   LIST_DIRECTORY_FOR_ADD_DIR: 'agent:list-directory-for-add-dir',
   VALIDATE_ADD_DIR: 'agent:validate-add-dir',
   FIND_LINE_NUMBER: 'agent:find-line-number',
   SEARCH_FILES: 'agent:search-files',
   SEARCH_MENTIONS: 'agent:search-mentions',
-  DISCONNECT_REMOTE_SESSION: 'agent:disconnect-remote-session',
 
   PLUGINS_RELOAD: 'plugins:reload',
 
@@ -4328,7 +4321,6 @@ export const AgentIpcChannels = {
   GET_THEME: 'app:get-theme',
   SET_THEME: 'app:set-theme',
   THEME_CHANGED: 'app:theme-changed',
-  BROADCAST_SESSION_SETTING: 'agent:broadcast-session-setting',
   COMPOSER_DRAFTS_GET: 'app:composer-drafts-get',
   COMPOSER_DRAFT_PUBLISH: 'app:composer-draft-publish',
   COMPOSER_DRAFT_CHANGED: 'app:composer-draft-changed',
@@ -4367,13 +4359,6 @@ export const AgentIpcChannels = {
   GET_LIVE_SNAPSHOTS: 'agent:get-live-snapshots',
 
   // Session history
-  SESSIONS_LIST: 'sessions:list',
-  SESSIONS_LIST_FOR_FOLDER: 'sessions:list-for-folder',
-  SESSIONS_LIST_FOR_FOLDER_PAGE: 'sessions:list-for-folder-page',
-  SESSIONS_LOAD_MESSAGES: 'sessions:load-messages',
-  SESSIONS_CREATE: 'sessions:create',
-  SESSIONS_SAVE_STATE: 'sessions:save-state',
-  SESSIONS_LIST_PINNED: 'sessions:list-pinned',
   SESSIONS_CHANGED: 'sessions:changed',
   SCHEDULED_SEND_CHANGED: 'sessions:scheduled-send-changed',
 
@@ -4707,6 +4692,7 @@ export const AgentIpcChannels = {
   /** Change a session's durable settings (modes, model, effort, provider), local or remote. */
   ENVIRONMENT_PATCH_SESSION_SETTINGS: 'environment:patchSessionSettings',
   ENVIRONMENT_CALL_SESSION: 'environment:callSession',
+  ENVIRONMENT_DISCONNECT_SESSION_CONTROLLER: 'environment:disconnectSessionController',
   ENVIRONMENT_CALL_COMPOSER: 'environment:callComposer',
   ENVIRONMENT_CALL_SESSION_LIST: 'environment:callSessionList',
   /** Take control of a remote session back after its host released it (Reconnect). */

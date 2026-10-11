@@ -30,6 +30,10 @@ export interface NodeSessionSettings {
   /** Claude Ultracode and the ACP context window; desktop-only like `mode`. */
   ultracode?: boolean | null
   contextWindow?: number | null
+  serviceTier?: string | null
+  permissionPreset?: string | null
+  collaborationMode?: string | null
+  agent?: string | null
 }
 
 export interface NodeSessionRecord {

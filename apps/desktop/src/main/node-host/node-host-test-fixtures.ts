@@ -11,6 +11,7 @@ import type { ProjectSnapshot } from '@superone/shared/environment'
 import type { DesktopSessionRow, RemoteControlledSessionRow } from '../db-remote-controlled-sessions'
 import type { DesktopSessionRows } from './desktop-session-reads'
 import type { Session, BackendCommand } from '../session/types'
+import { harnessIdFromProviderId } from '../session/session-repo'
 import { SessionLease } from '../session/session-lease'
 import { createDesktopProjectsPort } from './desktop-projects-port'
 import type { NodeHostSessionManager, NodeHostSessionStore } from './desktop-session-host'
@@ -115,6 +116,10 @@ export class FakeSession {
   emitHostEvent(event: AgentEvent) {
     this.emit(event)
   }
+  broadcastSettingsPatch(patch: import('@superone/shared/agent-types').SessionSettingsPatch) {
+    this.lease.assertMutation()
+    this.emitHostEvent({ type: 'agent_setting_change', patch, sessionId: this.id } as AgentEvent)
+  }
   /** The transcript the session's events reduce to, as a live desktop Session keeps it. */
   private state: ChatCoreSession = createDefaultChatCoreSession()
   get snapshot() { return { harnessId: this.harnessId, messages: this.state.messages } }
@@ -129,8 +134,9 @@ export class FakeSessionManager implements NodeHostSessionManager {
   readonly live = new Map<string, FakeSession>()
   private readonly listeners = new Set<(s: Session) => void>()
   active: string | null = 'local-session'
-  createSession(opts: { id?: string; cwd?: string; projectPath: string; apiProviderId?: string | null }) {
+  createSession(opts: { id?: string; cwd?: string; projectPath: string; apiProviderId?: string | null; providerId?: string }) {
     const session = new FakeSession(opts.id!, opts.cwd ?? opts.projectPath, opts.projectPath)
+    session.harnessId = harnessIdFromProviderId(opts.providerId ?? 'claude-base')
     session.apiProviderId = opts.apiProviderId ?? null
     this.live.set(session.id, session)
     this.active = session.id
@@ -161,10 +167,10 @@ export function memoryStore(projects: () => ProjectSnapshot[]): NodeHostSessionS
       list: (projectId) => [...rows.values()].filter((r) => !projectId || r.projectId === projectId),
       loadMessages,
     },
-    createRow: ({ sessionId, projectPath, title }) => {
+    createRow: ({ sessionId, projectPath, title, providerId }) => {
       const project = projects().find((p) => p.path === projectPath)!
       rows.set(sessionId, {
-        sessionId, projectId: project.projectId, projectPath, title: title ?? null, harnessId: 'claude', providerId: null,
+        sessionId, projectId: project.projectId, projectPath, title: title ?? null, harnessId: harnessIdFromProviderId(providerId ?? 'claude-base'), providerId: providerId ?? null,
         providerSessionId: null, worktreePath: null, isPinned: false, isHidden: false, isUserRenamed: false, tags: [],
         createdAt: Date.now(), updatedAt: Date.now(), controller: null,
       })

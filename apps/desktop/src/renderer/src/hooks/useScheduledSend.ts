@@ -65,7 +65,7 @@ export function useScheduledSend(
     // Holding it across the switch would block sending in a session that has
     // nothing queued, and could write the old row's time onto the new one.
     setScheduled(null)
-    if (!sessionId || !projectPath || !served) {
+    if (!sessionId || !projectPath) {
       setLoading(false)
       return
     }
@@ -111,9 +111,9 @@ export function useScheduledSend(
   const setSendAt = useCallback((sendAt: number) => patch({ sendAt }), [patch])
 
   const clear = useCallback(() => {
-    if (!sessionId || !projectPath || !served) return
+    if (!sessionId || !projectPath || (!served && !scheduled)) return
     void callSession(projectPath, sessionId, 'session.scheduledSend.clear', {}).catch(reportError)
-  }, [sessionId, projectPath, served])
+  }, [sessionId, projectPath, served, scheduled])
 
   return { scheduled, loading, deliveredNonce, schedule, setDraft, setArmed, setSendAt, clear }
 }

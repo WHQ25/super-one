@@ -117,6 +117,8 @@ function draftSettings(state: ChatStore, projectPath: string, session: PerSessio
     ...(desktop && harness === 'acp' && session.selectedAcpModeId ? { mode: session.selectedAcpModeId } : {}),
     ...(desktop && harness === 'acp' && session.selectedAcpContextWindow ? { contextWindow: session.selectedAcpContextWindow } : {}),
     ...(desktop && harness === 'dsh' && session.dshPreset ? { agentPreset: session.dshPreset } : {}),
+    ...(desktop && harness === 'codex' ? { serviceTier: session.selectedCodexServiceTier, permissionPreset: session.selectedCodexPermissionPreset, collaborationMode: session.selectedCodexCollaborationMode } : {}),
+    ...(desktop && harness === 'opencode' ? { agent: session.openCodeAgentId } : {}),
   }
 }
 
@@ -197,7 +199,7 @@ export async function ensureHostSession(
   adoptSessionId(set, projectPath, candidate, sid)
   writeScope.target = { projectPath, sessionId: sid }
   writeScope.patch(() => ({ hostSessionOwned: true, sessionProvider: harness, preferredProvider: harness, _historyHydrated: true }))
-  // Operations still addressed to the project's active session read this pointer.
+  // Keep window presence in sync; commands always retain their explicit session id.
   await window.agent.activateSession(projectPath, sid, _getSessionCwd(projectPath, getScopedPerSession(get(), writeScope.target))).catch(() => undefined)
   return sid
 }
@@ -222,11 +224,13 @@ export interface SessionTurnOptions {
  * The turn a session sends: its text and the selections it runs with, read
  * from the composer's session. A node remembers only its own defaults, so
  * every turn names them; the desktop's own choices (queue, harness pickers)
- * go only to this desktop's host, which a node refuses.
+ * go only to this desktop's host, which a node refuses. `choices` preserves the
+ * composer's selections across activation replay; thread identity stays live.
  */
-export function sessionTurnRequest(state: ChatStore, projectPath: string, sessionId: string, turn: SessionTurnOptions): SessionSendRequest {
+export function sessionTurnRequest(state: ChatStore, projectPath: string, sessionId: string, turn: SessionTurnOptions, choices?: PerSessionState): SessionSendRequest {
   const project = getProject(state, projectPath)
-  const session = getScopedPerSession(state, { projectPath, sessionId })
+  const currentSession = getScopedPerSession(state, { projectPath, sessionId })
+  const session = choices ?? currentSession
   const harness = resolveProvider(session)
   const desktop = hostTakesDesktopChoices(projectPath)
   const { model, effort } = sessionModel(state, projectPath, session)
@@ -270,7 +274,7 @@ export function sessionTurnRequest(state: ChatStore, projectPath: string, sessio
       ...(harness === 'codex' ? {
         ...(session.selectedCodexPermissionPreset ? { permissionPreset: session.selectedCodexPermissionPreset } : {}),
         serviceTier: session.selectedCodexServiceTier,
-        ...(session._providerSessionId ? { threadId: session._providerSessionId } : {}),
+        ...(currentSession._providerSessionId ? { threadId: currentSession._providerSessionId } : {}),
       } : {}),
     } : {}),
   }

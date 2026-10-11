@@ -4380,7 +4380,7 @@ describe('switchSession Case A worktree existence check', () => {
     expect(after.cwd).toBe('/test')
     expect(mockSetActiveWorktree).toHaveBeenCalledWith('/test', null)
     expect(mockWindowApp.worktreeExists).toHaveBeenCalledWith('/test/.worktrees/vanished', '/test')
-    expect(mockWindowAgent.reportWorktreeRemoved).toHaveBeenCalledWith(sid)
+    expect(mockWindowEnvironment.callSession).toHaveBeenCalledWith('local', sid, 'session.reportWorktreeRemoved', {})
   })
 
   it('keeps worktree active when the directory still exists', async () => {
@@ -5409,7 +5409,7 @@ describe('agent_setting_change patch broadcast', () => {
   })
 })
 
-describe('codex setters broadcast via window.agent.broadcastSessionSetting', () => {
+describe('codex setters patch the host session settings', () => {
   function setupCodexSession(path: string, sid: string) {
     setupProject(path)
     const proj = useChatStore.getState().projectSessions[path]
@@ -5434,7 +5434,7 @@ describe('codex setters broadcast via window.agent.broadcastSessionSetting', () 
           ] as never,
           _sessions: {
             ...proj._sessions,
-            [sid]: { ...createDefaultPerSessionState(), sessionProvider: 'codex' },
+            [sid]: { ...createDefaultPerSessionState(), sessionProvider: 'codex', hostSessionOwned: true },
           },
         },
       },
@@ -5444,40 +5444,40 @@ describe('codex setters broadcast via window.agent.broadcastSessionSetting', () 
   it('setSelectedCodexModel broadcasts model + effort patch', () => {
     setupCodexSession('/test', 'sess-codex')
     useChatStore.getState().setSelectedCodexModel('gpt-5')
-    expect(mockWindowAgent.broadcastSessionSetting).toHaveBeenCalledWith(
-      'sess-codex',
-      expect.objectContaining({ selectedCodexModel: 'gpt-5' }),
+    expect(mockWindowEnvironment.patchSessionSettings).toHaveBeenCalledWith(
+      'local', 'sess-codex',
+      expect.objectContaining({ model: 'gpt-5' }),
     )
   })
 
   it('setSelectedCodexReasoningEffort broadcasts effort patch', () => {
     setupCodexSession('/test', 'sess-codex')
     useChatStore.getState().setSelectedCodexModel('gpt-5')
-    mockWindowAgent.broadcastSessionSetting.mockClear()
+    mockWindowEnvironment.patchSessionSettings.mockClear()
     useChatStore.getState().setSelectedCodexReasoningEffort('high')
-    expect(mockWindowAgent.broadcastSessionSetting).toHaveBeenCalledWith(
-      'sess-codex',
-      expect.objectContaining({ selectedCodexReasoningEffort: 'high' }),
+    expect(mockWindowEnvironment.patchSessionSettings).toHaveBeenCalledWith(
+      'local', 'sess-codex',
+      expect.objectContaining({ effort: 'high' }),
     )
   })
 
   it('setSelectedCodexPermissionPreset broadcasts preset patch', () => {
     setupCodexSession('/test', 'sess-codex')
-    mockWindowAgent.broadcastSessionSetting.mockClear()
+    mockWindowEnvironment.patchSessionSettings.mockClear()
     useChatStore.getState().setSelectedCodexPermissionPreset('full-access')
-    expect(mockWindowAgent.broadcastSessionSetting).toHaveBeenCalledWith(
-      'sess-codex',
-      { selectedCodexPermissionPreset: 'full-access' },
+    expect(mockWindowEnvironment.patchSessionSettings).toHaveBeenCalledWith(
+      'local', 'sess-codex',
+      { permissionPreset: 'full-access' },
     )
   })
 
   it('setSelectedCodexCollaborationMode broadcasts mode patch', () => {
     setupCodexSession('/test', 'sess-codex')
-    mockWindowAgent.broadcastSessionSetting.mockClear()
+    mockWindowEnvironment.patchSessionSettings.mockClear()
     useChatStore.getState().setSelectedCodexCollaborationMode('plan')
-    expect(mockWindowAgent.broadcastSessionSetting).toHaveBeenCalledWith(
-      'sess-codex',
-      { selectedCodexCollaborationMode: 'plan' },
+    expect(mockWindowEnvironment.patchSessionSettings).toHaveBeenCalledWith(
+      'local', 'sess-codex',
+      { collaborationMode: 'plan' },
     )
   })
 })

@@ -1,5 +1,6 @@
 import type { StateCreator } from 'zustand'
 import type { ChatStore, SessionWriteTarget } from '../types'
+import { pushSettings } from '@/lib/session-client'
 import { commitPerSession, resolveWriteScope } from '../index'
 
 export interface OpenCodeSlice {
@@ -19,7 +20,7 @@ export const createOpenCodeSlice: StateCreator<ChatStore, [], [], OpenCodeSlice>
     )))
 
     if (sessionId) {
-      void window.agent.broadcastSessionSetting(sessionId, patch)
+      pushSettings(projectPath, sessionId, session, { agent: agentId, permissionMode: 'default' })
     }
   },
 })

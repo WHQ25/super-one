@@ -61,6 +61,8 @@ interface ScheduledSendButtonProps {
    * a conversation that has not started there is nothing to carry on from.
    */
   canArm: boolean
+  /** Existing desktop-owned node schedules may only be cancelled. */
+  canEdit?: boolean
   onSendNow: () => void
   /** Arm using whatever is in the composer, due at `sendAt`. */
   onArm: (sendAt: number) => void
@@ -86,6 +88,7 @@ export function ScheduledSendButton({
   canSend,
   waitingFor,
   canArm,
+  canEdit = true,
   onSendNow,
   onArm,
   onDisarm,
@@ -288,9 +291,9 @@ export function ScheduledSendButton({
             aria-label={t('chat.scheduledSend.toggle')}
           />
         </div>
-        <div className="mt-3">
+        {canEdit && <div className="mt-3">
           <ScheduledSendWhenFields value={sendAt} onChange={handleWhenChange} />
-        </div>
+        </div>}
         <div className="mt-3 space-y-1.5">
           <p className="line-clamp-3 text-xs text-muted-foreground">
             {armed

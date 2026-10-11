@@ -5,13 +5,11 @@ const PROJECT_A = '/Users/me/proj-a'
 const PROJECT_B = '/Users/me/proj-b'
 const WORKTREE_B = '/Users/me/proj-b-wt-feature'
 
-const resumeSession = vi.fn(async (_project: string, _sessionId: string, _cwd?: string) => null)
+const activateSession = vi.fn(async (_project: string, _sessionId: string, _cwd?: string) => null)
 
 const appOverrides: Record<string, unknown> = {
   openFolder: async () => true,
   getRecentFolders: async () => [],
-  resumeSession,
-  loadSessionState: async () => null,
   listDir: async () => [],
   worktreeExists: async () => true,
   getProjectId: async () => 'pid-b',
@@ -20,7 +18,7 @@ const appOverrides: Record<string, unknown> = {
 ;(window as unknown as { app: unknown }).app = new Proxy(appOverrides, {
   get: (target, prop: string) => (prop in target ? target[prop] : () => Promise.resolve(undefined)),
 })
-;(window as unknown as { agent: unknown }).agent = new Proxy({}, { get: () => () => Promise.resolve(undefined) })
+;(window as unknown as { agent: unknown }).agent = new Proxy({ activateSession }, { get: (target, prop: string) => prop in target ? target[prop as keyof typeof target] : () => Promise.resolve(undefined) })
 
 const { useChatStore } = await import('../../renderer/src/stores/chat')
 const { useAppStore, selectEffectiveProjectRoot } = await import('../../renderer/src/stores/app')
@@ -51,7 +49,7 @@ function seedColdStart(): void {
 
 describe('cross-project switch to a worktree session', () => {
   beforeEach(() => {
-    resumeSession.mockClear()
+    activateSession.mockClear()
     seedColdStart()
   })
 
@@ -59,7 +57,7 @@ describe('cross-project switch to a worktree session', () => {
     await useChatStore.getState().switchToSession(PROJECT_B, 'bw')
 
     // Main-process side is correct: the session resumes in the worktree (cf. b2854ff3).
-    expect(resumeSession).toHaveBeenCalledWith(PROJECT_B, 'bw', WORKTREE_B)
+    expect(activateSession).toHaveBeenCalledWith(PROJECT_B, 'bw', WORKTREE_B)
 
     // The mirror reliably moves currentFolder onto the destination project.
     useAppStore.setState({ currentFolder: PROJECT_B })

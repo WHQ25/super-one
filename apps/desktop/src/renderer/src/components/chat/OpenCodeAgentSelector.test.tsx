@@ -24,14 +24,14 @@ function session() {
 beforeEach(() => {
   vi.clearAllMocks()
   Object.assign(window.app, { connectOpenCode: connect })
-  Object.assign(window.agent, { broadcastSessionSetting: broadcast })
+  Object.assign(window.environment, { patchSessionSettings: broadcast })
   useChatStore.setState({ projectSessions: {}, activeProject: null })
   useChatStore.getState().ensureSession(path)
   const project = useChatStore.getState().projectSessions[path]!
   const sid = project._activeSessionId!
   useChatStore.setState({ activeProject: path, projectSessions: {
     [path]: { ...project, _sessions: { [sid]: { ...project._sessions[sid]!,
-      sessionProvider: 'opencode', preferredProvider: 'opencode', permissionMode: 'default',
+      hostSessionOwned: true, sessionProvider: 'opencode', preferredProvider: 'opencode', permissionMode: 'default',
       selectedModel: 'openai/gpt', selectedEffort: 'high', openCodeAgentId: 'plan',
     } } },
   } })
@@ -49,7 +49,7 @@ describe('OpenCode native agent controls', () => {
     await user.click(screen.getByRole('button', { name: 'Reviewer' }))
     expect(session()).toMatchObject({ openCodeAgentId: 'reviewer', selectedModel: 'openai/gpt', selectedEffort: 'high', permissionMode: 'default' })
     expect(screen.queryByRole('button', { name: 'Reviewer' })).not.toBeInTheDocument()
-    expect(broadcast).toHaveBeenCalledWith(expect.any(String), { openCodeAgentId: 'reviewer', permissionMode: 'default' })
+    expect(broadcast).toHaveBeenCalledWith('local', expect.any(String), { agent: 'reviewer', permissionMode: 'default' })
   })
 
   it('focuses the selected agent on open without displaying the refresh tooltip', async () => {

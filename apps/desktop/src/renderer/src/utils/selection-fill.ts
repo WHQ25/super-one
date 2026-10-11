@@ -97,23 +97,43 @@ function covers(range: Range, el: HTMLElement): boolean {
     && range.compareBoundaryPoints(Range.END_TO_END, inner) >= 0
 }
 
+/** The outermost atomic inline box (a file chip) holding `node` inside `li`. */
+function atomicBox(li: HTMLElement, node: Node): HTMLElement | null {
+  let box: HTMLElement | null = null
+  for (let el = node.parentElement; el && el !== li; el = el.parentElement) {
+    if (getComputedStyle(el).display.startsWith('inline-')) box = el
+  }
+  return box
+}
+
 /**
  * A list marker (`::marker`) is not content, so the browser never highlights
  * it. When the selection spans an item's start, paint the strip from the
  * item's content edge to its first character, where an inside marker sits.
+ * An item opening with a chip ends the strip at the chip, which fills itself,
+ * and takes the line box from the item: the chip's label is its own block.
  */
 function markItem(li: HTMLElement, text: Text): void {
-  const first = document.createRange()
-  first.setStart(text, 0)
-  first.setEnd(text, Math.min(1, text.length))
-  const rect = first.getClientRects()[0]
+  const chip = atomicBox(li, text)
+  let rect: DOMRect | undefined
+  let left = 0
+  if (chip) {
+    rect = chip.getClientRects()[0]
+    left = rect ? rect.left - parseFloat(getComputedStyle(chip).marginLeft) : 0
+  } else {
+    const first = document.createRange()
+    first.setStart(text, 0)
+    first.setEnd(text, Math.min(1, text.length))
+    rect = first.getClientRects()[0]
+    left = rect?.left ?? 0
+  }
   if (!rect) return
   const box = li.getBoundingClientRect()
   const style = getComputedStyle(li)
   const contentLeft = box.left + parseFloat(style.borderLeftWidth) + parseFloat(style.paddingLeft)
-  const line = lineBox(text.parentElement, rect) ?? { top: rect.top, bottom: rect.bottom }
+  const line = lineBox((chip ?? text).parentElement, rect) ?? { top: rect.top, bottom: rect.bottom }
   li.style.setProperty('--marker-left', `${contentLeft - box.left}px`)
-  li.style.setProperty('--marker-width', `${Math.max(0, rect.left - contentLeft)}px`)
+  li.style.setProperty('--marker-width', `${Math.max(0, left - contentLeft)}px`)
   li.style.setProperty('--marker-top', `${line.top - box.top}px`)
   li.style.setProperty('--marker-height', `${line.bottom - line.top}px`)
   li.classList.add(MARKER)

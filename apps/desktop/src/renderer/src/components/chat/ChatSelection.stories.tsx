@@ -93,6 +93,7 @@ const MARKDOWN = [
   '',
   '- [x] done task',
   '- [ ] open task',
+  '- [node-host-server.integration.test.ts](/repo/src/node-host-server.integration.test.ts)',
   '',
   '---',
   '',

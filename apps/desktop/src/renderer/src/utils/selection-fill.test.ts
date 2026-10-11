@@ -47,3 +47,23 @@ describe('atomic chip selection fill', () => {
     expect(link.classList.contains('selection-filled')).toBe(true)
   })
 })
+
+describe('list marker selection fill', () => {
+  it('ends the marker strip at a leading chip and spans the item line', () => {
+    document.body.innerHTML = '<ul class="chat-md"><li style="padding:0;border:0 solid;line-height:24px"><span data-selection-fill data-selection-atomic style="display:inline-flex;margin:0"><svg></svg><span style="display:block;line-height:16px">file.ts</span></span> tail</li></ul>'
+    const li = document.querySelector('li')!
+    const chip = li.firstElementChild as HTMLElement
+    vi.spyOn(li, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 300, 24))
+    vi.spyOn(chip, 'getClientRects').mockReturnValue([new DOMRect(24, 2, 150, 20)] as unknown as DOMRectList)
+    const range = document.createRange()
+    range.setStart(chip.lastElementChild!.firstChild!, 0)
+    range.setEnd(li.lastChild!, 5)
+    document.getSelection()!.removeAllRanges()
+    document.getSelection()!.addRange(range)
+    document.dispatchEvent(new Event('selectionchange'))
+    expect(li.classList.contains('selection-marker')).toBe(true)
+    expect(li.style.getPropertyValue('--marker-width')).toBe('24px')
+    expect(li.style.getPropertyValue('--marker-top')).toBe('0px')
+    expect(li.style.getPropertyValue('--marker-height')).toBe('24px')
+  })
+})

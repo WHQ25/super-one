@@ -90,8 +90,8 @@ class MentionEditorView(context: Context, appContext: AppContext) : ExpoView(con
           val pasted = (0 until clip.itemCount).joinToString("\n") {
             clip.getItemAt(it).coerceToText(context).toString()
           }.replace('\uFFFC', '\uFFFD')
-          if (pasted.isBlank()) { value.replace(start, end, pasted); setSelection(start + pasted.length) }
-          else insertPaste(start, end, pasted)
+          if (isPasteChip(pasted)) insertPaste(start, end, pasted)
+          else { value.replace(start, end, pasted); setSelection(start + pasted.length) }
           return true
         }
       }
@@ -247,6 +247,12 @@ class MentionEditorView(context: Context, appContext: AppContext) : ExpoView(con
         }
       }
     }
+  }
+
+  /** Mirrors `isComposerPasteChip`: more than three lines, ignoring line breaks at the ends, or at least 500 UTF-16 units. */
+  private fun isPasteChip(text: String): Boolean {
+    val body = text.trim('\r', '\n')
+    return body.isNotBlank() && (text.length >= 500 || body.lines().size > 3)
   }
 
   private fun insertPaste(start: Int, end: Int, text: String) {

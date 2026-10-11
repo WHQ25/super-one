@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { attachmentForBlock, isLongPaste, joinComposerTextSegments, mentionLabel, pasteSummary } from './user-message-parts'
+import { attachmentForBlock, isComposerPasteChip, isLongPaste, joinComposerTextSegments, mentionLabel, pasteSummary } from './user-message-parts'
 
 describe('joinComposerTextSegments', () => {
   it('joins one-line pastes inline and multiline pastes on their own lines', () => {
@@ -19,6 +19,17 @@ describe('pasteSummary', () => {
 
   it('never splits a surrogate pair', () => {
     expect(pasteSummary('😀'.repeat(41))).toBe(`${'😀'.repeat(40)}…`)
+  })
+})
+
+describe('isComposerPasteChip', () => {
+  it('chips pastes of more than three lines or 500 characters', () => {
+    expect(isComposerPasteChip('a\nb\nc\nd')).toBe(true)
+    expect(isComposerPasteChip('a\r\nb\r\nc\r\nd')).toBe(true)
+    expect(isComposerPasteChip('a\nb\nc')).toBe(false)
+    expect(isComposerPasteChip('\na\nb\nc\n\n')).toBe(false)
+    expect(isComposerPasteChip('x'.repeat(500))).toBe(true)
+    expect(isComposerPasteChip('x'.repeat(499))).toBe(false)
   })
 })
 

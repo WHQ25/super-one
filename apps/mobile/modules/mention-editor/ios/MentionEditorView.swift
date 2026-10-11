@@ -35,6 +35,14 @@ private enum PasteChip {
     let chars = Array(collapsed.unicodeScalars.prefix(41))
     return String(String.UnicodeScalarView(chars.prefix(40))) + (chars.count > 40 ? "…" : "")
   }
+
+  /// Mirrors `isComposerPasteChip`: more than three lines, ignoring line breaks at
+  /// the ends, or at least 500 UTF-16 units.
+  static func accepts(_ text: String) -> Bool {
+    let body = text.trimmingCharacters(in: .newlines)
+    return !body.trimmingCharacters(in: .whitespaces).isEmpty
+      && (text.utf16.count >= 500 || body.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline).count > 3)
+  }
 }
 
 private final class MentionAttachment: NSTextAttachment {
@@ -118,8 +126,7 @@ private final class MentionTextView: UITextView {
   override func paste(_ sender: Any?) {
     guard let value = UIPasteboard.general.string else { return }
     let text = value.replacingOccurrences(of: "\u{FFFC}", with: "\u{FFFD}")
-    if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { insertLiteral(text) }
-    else { pasteText?(text) }
+    if PasteChip.accepts(text) { pasteText?(text) } else { insertLiteral(text) }
   }
 }
 

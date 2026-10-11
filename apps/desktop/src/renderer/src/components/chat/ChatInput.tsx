@@ -23,6 +23,7 @@ import { MentionNode } from './mention-node'
 import { findMiniAppMentionMarkers } from '@superone/shared/miniapp-mention-marker'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { PasteChipNode } from './paste-chip-node'
+import { isComposerPasteChip } from '@superone/shared/user-message-parts'
 import { DesktopUserBubblePorts } from './user-bubble-ports'
 import { SlashDecoration } from './slash-decoration'
 import { SessionMentionDecoration, syncPortalMentionDismissed } from './session-mention-decoration'
@@ -1686,8 +1687,8 @@ export function ChatInput({
             processSelectedFilesRef.current(attachableFiles)
             return true
           }
-          // Pasted text of any length lands as a chip, kept apart from what is typed.
-          if (plainText?.trim()) {
+          // Multi-line pasted text lands as a chip, kept apart from what is typed.
+          if (plainText?.trim() && isComposerPasteChip(plainText)) {
             event.preventDefault()
             editorRef.current?.chain().focus().insertContent({ type: 'pasteChip', attrs: { text: plainText } }).run()
             return true

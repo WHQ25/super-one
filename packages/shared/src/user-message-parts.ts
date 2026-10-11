@@ -70,10 +70,22 @@ const PASTE_CHIP_LINE_THRESHOLD = 10
 const PASTE_CHIP_CHAR_THRESHOLD = 500
 const PASTE_SUMMARY_CHARS = 40
 const PASTE_EXCERPT_LINES = 10
+/** Mirrored by the mobile native editors (`MentionEditorView` on iOS and Android). */
+const COMPOSER_PASTE_CHIP_MIN_LINES = 4
+
+/**
+ * Whether the composer lands a paste as a chip: more than three lines, not
+ * counting line breaks at its ends, or at least 500 UTF-16 units. Shorter
+ * pastes insert as typed text.
+ */
+export function isComposerPasteChip(text: string): boolean {
+  return text.length >= PASTE_CHIP_CHAR_THRESHOLD
+    || text.replace(/^[\r\n]+|[\r\n]+$/g, '').split(/\r\n|\r|\n/).length >= COMPOSER_PASTE_CHIP_MIN_LINES
+}
 
 /**
  * A message from before pastes were marked (`isPaste`) shows its long text
- * runs as a paste chip; the composer chips every paste.
+ * runs as a paste chip.
  */
 export function isLongPaste(text: string): boolean {
   return text.split('\n').length >= PASTE_CHIP_LINE_THRESHOLD || text.length >= PASTE_CHIP_CHAR_THRESHOLD

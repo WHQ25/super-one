@@ -54,9 +54,9 @@ Native owns typing, IME composition and the caret; JS never mirrors a controlled
 value. JS edits are commands carrying the last seen `eventCount`, and native rejects
 a stale count or an active composition (the snapshot reports the `rejection`). A
 chip is one UTF-16 object position (U+FFFC) holding kind, value and display name.
-Copy/cut expand chips to plain text. System text paste creates an inline Paste Chip
-at any nonblank length, matching desktop; typing, IME input and whitespace-only
-paste stay text. Paste tokens carry the full text as `value`, occupy one native
+Copy/cut expand chips to plain text. System text paste of more than three lines (line
+breaks at its ends ignored) or at least 500 UTF-16 units creates an inline Paste Chip, matching desktop's
+`isComposerPasteChip`; typing, IME input and shorter paste stay text. Paste tokens carry the full text as `value`, occupy one native
 position, and use the desktop's 40-code-point summary and generated FileText icon.
 Paste chrome (no fill, muted label/icon, em spacing and baseline) is extracted from
 desktop `MentionChipContent` and `mention-chip.css` by `generate-mention-artwork.ts`;

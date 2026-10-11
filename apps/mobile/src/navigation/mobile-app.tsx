@@ -1248,7 +1248,7 @@ export function MobileApp() {
           },
         })
         setCode(c)
-        setStatus('Confirm this code on the desktop')
+        setStatus('')
         const paired = await done
         pairingSocketRef.current = null
         setCode(null)

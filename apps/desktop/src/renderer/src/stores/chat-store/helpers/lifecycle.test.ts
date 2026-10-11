@@ -22,7 +22,6 @@ const { createDefaultPerSessionState, createDefaultProjectState } = await import
 const {
   _buildQuestionAnswerItem,
   _computeHasPendingInteraction,
-  _ensureClaudeSessionReadyForSend,
   _isBusyStatus,
   _isLiveSession,
   _needsForegroundActivation,
@@ -276,43 +275,5 @@ describe('_syncAndResumeSession', () => {
     const set = (updater: (s: never) => unknown) => { captured = updater({ projectSessions: {} } as never) }
     await _syncAndResumeSession('/p1', 'sid-1', set as never, '/p1')
     expect(captured).toEqual({})
-  })
-})
-
-describe('_ensureClaudeSessionReadyForSend', () => {
-  it('is a no-op when no project state for projectPath', async () => {
-    await _ensureClaudeSessionReadyForSend(() => ({ projectSessions: {} } as never), '/p1')
-    expect(activateSession).not.toHaveBeenCalled()
-  })
-
-  it('is a no-op when the project has no _activeSessionId', async () => {
-    await _ensureClaudeSessionReadyForSend(
-      () => ({ projectSessions: { '/p1': createDefaultProjectState() } } as never),
-      '/p1',
-    )
-    expect(activateSession).not.toHaveBeenCalled()
-  })
-
-  it('is a no-op for Codex sessions', async () => {
-    const proj = createDefaultProjectState()
-    proj._activeSessionId = 'sid-1'
-    proj._sessions = { 'sid-1': { ...createDefaultPerSessionState(), sessionProvider: 'codex' as const } }
-    await _ensureClaudeSessionReadyForSend(
-      () => ({ projectSessions: { '/p1': proj } } as never),
-      '/p1',
-    )
-    expect(activateSession).not.toHaveBeenCalled()
-  })
-
-  it('forwards to window.agent.activateSession for Claude sessions', async () => {
-    activateSession.mockResolvedValueOnce({})
-    const proj = createDefaultProjectState()
-    proj._activeSessionId = 'sid-1'
-    proj._sessions = { 'sid-1': { ...createDefaultPerSessionState(), sessionProvider: 'claude' as const } }
-    await _ensureClaudeSessionReadyForSend(
-      () => ({ projectSessions: { '/p1': proj } } as never),
-      '/p1',
-    )
-    expect(activateSession).toHaveBeenCalledWith('/p1', 'sid-1', '/p1')
   })
 })

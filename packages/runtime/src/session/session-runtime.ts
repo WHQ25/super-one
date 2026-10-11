@@ -1040,6 +1040,7 @@ export class SessionRuntime {
     /** Inline image/document attachments for this turn. */
     images?: TurnImageAttachment[]
     userMessageContent?: MessageDisplayFields['userMessageContent']
+    userSelections?: MessageDisplayFields['userSelections']
     contexts?: MessageDisplayFields['contexts']
     /** A launch task from the controller's agent; named after the controller here, whatever it claims. */
     collaboration?: MessageDisplayFields['collaboration']

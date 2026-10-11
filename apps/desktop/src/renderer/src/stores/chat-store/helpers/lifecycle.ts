@@ -126,19 +126,3 @@ export function _parkActiveSession(
  * is shared across helper modules.
  */
 export const resetLock: { current: Promise<void> | null } = { current: null }
-
-export async function _ensureClaudeSessionReadyForSend(
-  get: () => ChatStore,
-  projectPath: string,
-  sessionId?: string | null,
-): Promise<void> {
-  const project = get().projectSessions[projectPath]
-  if (!project) return
-  const sid = sessionId ?? resolveActiveSessionId(project)
-  if (!sid) return
-  const session = project._sessions[sid]
-  if (!session || session.sessionProvider === 'codex' || session.sessionProvider === 'acp' || session.sessionProvider === 'opencode') return
-  // A renderer-created draft does not exist on the host yet; the send creates
-  // it with the same stable session id.
-  await window.agent.activateSession(projectPath, sid, _getSessionCwd(projectPath, session)).catch(() => undefined)
-}

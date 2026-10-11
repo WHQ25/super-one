@@ -3,7 +3,7 @@ import { collaborationMailbox } from './collaboration-mailbox'
 import { mediaComposerAPI } from './media-composer-api'
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { AgentIpcChannels, type AgentEvent, type NativeContextMenuItemSpec, type AgentPrewarmHint, type BashOutputEvent, type CodexCollaborationMode, type CodexPermissionPreset, type CodexReasoningEffort, type CodexReviewTarget, type CodexExternalAgentItem, type CodexMcpOauthLoginOptions, type ProviderEndpointTestResponse, type DiscoverModelsResult, type RemoteDeviceConfig, type SendMessageRequest, type ContentBlock, type ChatMessageContext, type WorktreeActivateRequest, type WorktreeHandoffResult, type WorktreeAssignResult, type GitDirtyStatus, type SessionForkRequest, type SessionForkResult, type SideChatStartRequest, type SideChatStartResult, type HookSavePayload, type TerminalEvent, type TerminalListItem, type TerminalSnapshot, type HarnessId, type BrowserAudioState, type BrowserCertError, type BrowserOpenTabRequest, type UpsertMediaProviderRequest, type ThemeMode, type ComputerUseDisplayInfo, type ComputerUseViewfinderClaim, type ComputerUseViewfinderFrame, type RealtimeVoiceStartRequest, type RealtimeTimelineResult, type CodexRealtimeVoiceCatalog } from '@superone/shared/agent-types'
+import { AgentIpcChannels, type AgentEvent, type NativeContextMenuItemSpec, type AgentPrewarmHint, type BashOutputEvent, type CodexExternalAgentItem, type CodexMcpOauthLoginOptions, type ProviderEndpointTestResponse, type DiscoverModelsResult, type RemoteDeviceConfig, type SendMessageRequest, type WorktreeActivateRequest, type WorktreeHandoffResult, type WorktreeAssignResult, type GitDirtyStatus, type SessionForkRequest, type SessionForkResult, type SideChatStartRequest, type SideChatStartResult, type HookSavePayload, type TerminalEvent, type TerminalListItem, type TerminalSnapshot, type HarnessId, type BrowserAudioState, type BrowserCertError, type BrowserOpenTabRequest, type UpsertMediaProviderRequest, type ThemeMode, type ComputerUseDisplayInfo, type ComputerUseViewfinderClaim, type ComputerUseViewfinderFrame, type RealtimeVoiceStartRequest, type RealtimeTimelineResult, type CodexRealtimeVoiceCatalog } from '@superone/shared/agent-types'
 import type { McpbInstallRequest } from '@superone/shared/mcpb-types'
 import type { MobileAppDownloads } from '@superone/shared/mobile-updates'
 import type { TerminalCommandRule } from '@superone/shared/terminal-command-rules'
@@ -34,18 +34,7 @@ if (process.argv.includes('--superone-liquid-glass')) {
   else document.addEventListener('DOMContentLoaded', stamp, { once: true })
 }
 
-type UserMessageExtras = {
-  contexts?: ChatMessageContext[]
-  userSelections?: string[]
-  userMessageContent?: ContentBlock[]
-  apiProviderId?: string | null
-  serviceTier?: string | null
-  additionalDirectories?: string[]
-}
-
 const agentAPI = {
-  sendMessage: (projectPath: string, request: SendMessageRequest) =>
-    ipcRenderer.invoke(AgentIpcChannels.SEND_MESSAGE, projectPath, request),
 
 
 
@@ -1114,119 +1103,8 @@ const appAPI = {
     }
   },
 
-  codexRun: (
-    sessionId: string,
-    projectPath: string,
-    prompt: string,
-    model?: string,
-    reasoningEffort?: CodexReasoningEffort,
-    permissionPreset?: CodexPermissionPreset,
-    collaborationMode?: CodexCollaborationMode,
-    threadId?: string,
-    messageId?: string,
-    images?: { mimeType: string; base64: string; name: string }[],
-    cwd?: string,
-    userMessageId?: string,
-    userMessageText?: string,
-    gitBranch?: string,
-    worktreePath?: string,
-    extras?: UserMessageExtras,
-  ) =>
-    ipcRenderer.invoke(
-      AgentIpcChannels.CODEX_RUN,
-      sessionId,
-      projectPath,
-      prompt,
-      model,
-      reasoningEffort,
-      permissionPreset,
-      collaborationMode,
-      threadId,
-      messageId,
-      images,
-      cwd,
-      userMessageId,
-      userMessageText,
-      gitBranch,
-      worktreePath,
-      extras,
-    ),
-
   codexListModels: (projectPath: string, apiProviderId?: string | null, force?: boolean) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_LIST_MODELS, projectPath, apiProviderId ?? null, force ?? false),
-
-  codexSteer: (sessionId: string, input: string, messageId?: string, userMessageId?: string, userMessageText?: string, gitBranch?: string, worktreePath?: string, extras?: UserMessageExtras) =>
-    ipcRenderer.invoke(AgentIpcChannels.CODEX_STEER, sessionId, input, messageId, userMessageId, userMessageText, gitBranch, worktreePath, extras),
-
-  codexReview: (
-    sessionId: string,
-    projectPath: string,
-    target: CodexReviewTarget,
-    model?: string,
-    reasoningEffort?: CodexReasoningEffort,
-    permissionPreset?: CodexPermissionPreset,
-    threadId?: string,
-    messageId?: string,
-    cwd?: string,
-    userMessageId?: string,
-    userMessageText?: string,
-    gitBranch?: string,
-    worktreePath?: string,
-    extras?: UserMessageExtras,
-  ) =>
-    ipcRenderer.invoke(
-      AgentIpcChannels.CODEX_REVIEW,
-      sessionId,
-      projectPath,
-      target,
-      model,
-      reasoningEffort,
-      permissionPreset,
-      threadId,
-      messageId,
-      cwd,
-      userMessageId,
-      userMessageText,
-      gitBranch,
-      worktreePath,
-      extras,
-    ),
-
-  codexCompact: (
-    sessionId: string,
-    projectPath: string,
-    model?: string,
-    permissionPreset?: CodexPermissionPreset,
-    threadId?: string,
-    messageId?: string,
-    cwd?: string,
-    userMessageId?: string,
-    userMessageText?: string,
-    gitBranch?: string,
-    worktreePath?: string,
-    extras?: UserMessageExtras,
-  ) =>
-    ipcRenderer.invoke(
-      AgentIpcChannels.CODEX_COMPACT,
-      sessionId,
-      projectPath,
-      model,
-      permissionPreset,
-      threadId,
-      messageId,
-      cwd,
-      userMessageId,
-      userMessageText,
-      gitBranch,
-      worktreePath,
-      extras,
-    ),
-
-  codexPlanApproval: (projectPath: string, sessionId: string, messageId: string, status: 'approved' | 'rejected', feedback?: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.CODEX_PLAN_APPROVAL, projectPath, sessionId, messageId, status, feedback),
-
-  codexCollaborationModeChange: (projectPath: string, sessionId: string, mode: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.CODEX_COLLABORATION_MODE_CHANGE, projectPath, sessionId, mode),
 
   codexGetAuthStatus: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_GET_AUTH_STATUS, projectPath),

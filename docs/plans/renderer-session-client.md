@@ -316,6 +316,15 @@ the UI hides them through capabilities.
 
 ## Progress
 
+- 2026-10-12: Step 4. All harnesses send through `session-turn.ts` and
+  `session.send`, including Codex run/review/compact, plan answers and widget
+  input answers. Draft creation, inline attachment order, grants and retries
+  share one pipeline; successful grants alone append their reminders. Deleted
+  the remote pipeline, Codex renderer runner and the old send/runner IPC.
+  Scoped checks cover session isolation, queueing, configured selections and
+  preserving drafts on plan answers. Live CDP verification is still pending
+  for the completed Codex migration and admission timing.
+
 - 2026-10-12: Step 0. Baseline counts: `window.agent` 76, node branches 184.
 - 2026-10-12: Step 2. `lib/session-client.ts` renames, pins, hides, removes
   and forks in every environment, and restores a cold session from

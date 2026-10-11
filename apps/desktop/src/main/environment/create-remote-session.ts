@@ -11,7 +11,8 @@ export async function createRemoteSession(input: RemoteSessionCreateInput, ports
   setCwd(sessionId: string, cwd: string | null): Promise<unknown>
 }): Promise<unknown> {
   const harnessId = input.harnessId ?? 'claude'
-  const providerId = input.providerId ?? harnessId
+  // Unnamed, the host picks its harness's base provider.
+  const providerId = input.providerId
   if (input.settings && !ports.gateway.sessions.patchSettings) throw new Error('The node cannot inherit conversation settings')
   const { sessionId } = await ports.gateway.sessions.create({
     project: { environmentId: ports.environmentId, projectId: input.projectId },
@@ -25,7 +26,7 @@ export async function createRemoteSession(input: RemoteSessionCreateInput, ports
   const session = await ports.gateway.sessions.get({ environmentId: ports.environmentId, sessionId })
   if (input.settings) {
     const identity = session as { harnessId?: string; providerId?: string } | null
-    if (identity?.harnessId !== harnessId || identity.providerId !== providerId) throw new Error('The new node conversation does not match its source harness/provider')
+    if (identity?.harnessId !== harnessId || (providerId && identity.providerId !== providerId)) throw new Error('The new node conversation does not match its source harness/provider')
   }
-  return session ?? { sessionId, title: input.title, harnessId, providerId }
+  return session ?? { sessionId, title: input.title, harnessId, providerId: providerId ?? harnessId }
 }

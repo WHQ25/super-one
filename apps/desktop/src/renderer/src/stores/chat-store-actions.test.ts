@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { AccountInfo, ClaudeResources, CodexResources, ModelOption } from '@superone/shared/agent-types'
 
 const toastMocks = vi.hoisted(() => ({ error: vi.fn(), info: vi.fn(), success: vi.fn() }))
@@ -51,7 +51,6 @@ vi.mock('./miniapp', () => ({
 const mockMiniAppAuthorize = vi.fn().mockResolvedValue(undefined)
 const mockWindowAgent = {
   prewarm: vi.fn().mockResolvedValue(undefined),
-  sendMessage: vi.fn().mockResolvedValue(undefined),
   resetSession: vi.fn().mockResolvedValue({ permissionMode: 'default', sandboxInfo: { enabled: false, autoAllowBash: false } }),
   parkSession: vi.fn().mockResolvedValue({ permissionMode: 'default', sandboxInfo: { enabled: false, autoAllowBash: false } }),
   disconnectRemoteSession: vi.fn().mockResolvedValue(undefined),
@@ -105,6 +104,11 @@ const mockWindowEnvironment = {
   renameSession: vi.fn().mockResolvedValue(undefined),
   interruptSession: vi.fn().mockResolvedValue(undefined),
   patchSessionSettings: vi.fn().mockResolvedValue({}),
+  // A draft is unknown to its host until its first send creates it under the draft's id.
+  getSession: vi.fn().mockResolvedValue(null),
+  createSession: vi.fn(async (_connectionId: string, input: { selections?: { sessionId?: string } }) => ({ sessionId: input.selections?.sessionId ?? 'created-sid' })),
+  removeSession: vi.fn().mockResolvedValue(undefined),
+  sendSessionMessage: vi.fn().mockResolvedValue(null),
 }
 
 const eventTarget = new EventTarget()
@@ -650,7 +654,7 @@ describe('sendMessage: intercepted Claude slash commands', () => {
     setupProject()
     await useChatStore.getState().sendMessage('/provider')
     expect(activeSession().slashCommandOutput?.command).toBe('provider')
-    expect(mockWindowAgent.sendMessage).not.toHaveBeenCalled()
+    expect(mockWindowEnvironment.sendSessionMessage).not.toHaveBeenCalled()
   })
 
   it("/clear routes through CLAUDE_INTERCEPTED_COMMANDS instead of forwarding the message", async () => {
@@ -659,7 +663,7 @@ describe('sendMessage: intercepted Claude slash commands', () => {
       messages: [{ id: 'u1', role: 'user' as const, status: 'complete' as const, content: [], createdAt: '', providerId: 'claude' as const }],
     })
     await useChatStore.getState().sendMessage('/clear')
-    expect(mockWindowAgent.sendMessage).not.toHaveBeenCalled()
+    expect(mockWindowEnvironment.sendSessionMessage).not.toHaveBeenCalled()
     // /clear is wired to resetSession → rotates the active session id
     expect(activeSession().messages).toEqual([])
   })
@@ -668,19 +672,30 @@ describe('sendMessage: intercepted Claude slash commands', () => {
     setupProject()
     await useChatStore.getState().sendMessage('/workflows')
     expect(activeSession().slashCommandOutput?.command).toBe('workflows')
-    expect(mockWindowAgent.sendMessage).not.toHaveBeenCalled()
+    expect(mockWindowEnvironment.sendSessionMessage).not.toHaveBeenCalled()
   })
 })
 
-describe('sendMessage: Claude IPC path', () => {
-  it('appends the user message + dispatches window.agent.sendMessage', async () => {
+describe('sendMessage: Claude session path', () => {
+  beforeEach(() => {
+    mockWindowEnvironment.listProjects.mockResolvedValue([{ projectId: 'p', path: PATH, name: 'p', extraDirs: [] }])
+  })
+  afterEach(() => {
+    mockWindowEnvironment.listProjects.mockResolvedValue([])
+  })
+
+  it('appends the user message + sends it to the session on this desktop', async () => {
     setupProject()
+    const sid = activeProjectState()._activeSessionId
     await useChatStore.getState().sendMessage('hello')
     expect(activeSession().messages.at(-1)?.role).toBe('user')
-    expect(mockWindowAgent.sendMessage).toHaveBeenCalledTimes(1)
-    const args = mockWindowAgent.sendMessage.mock.calls[0]
-    expect(args[0]).toBe(PATH)
-    expect(args[1].content).toBe('hello')
+    expect(mockWindowEnvironment.createSession).toHaveBeenCalledWith('local', expect.objectContaining({
+      projectId: 'p', harnessId: 'claude', selections: { sessionId: sid },
+    }))
+    expect(mockWindowEnvironment.sendSessionMessage).toHaveBeenCalledTimes(1)
+    const [connectionId, request] = mockWindowEnvironment.sendSessionMessage.mock.calls[0]
+    expect(connectionId).toBe('local')
+    expect(request).toMatchObject({ sessionId: sid, projectPath: PATH, providerId: 'claude', text: 'hello' })
   })
 
   it('queues the message instead of appending when the session is currently streaming', async () => {
@@ -690,12 +705,12 @@ describe('sendMessage: Claude IPC path', () => {
     expect(activeSession().queuedMessages.length).toBe(1)
     expect(activeSession().messages.length).toBe(0)
     // priority:'next' is set for the queued path
-    expect(mockWindowAgent.sendMessage.mock.calls[0][1].priority).toBe('next')
+    expect(mockWindowEnvironment.sendSessionMessage.mock.calls[0][1].priority).toBe('next')
   })
 
   it('marks the bubble failed and rolls back awaitingAssistantReply when the IPC throws (non-queued)', async () => {
     setupProject()
-    mockWindowAgent.sendMessage.mockRejectedValueOnce(new Error('disk full'))
+    mockWindowEnvironment.sendSessionMessage.mockRejectedValueOnce(new Error('disk full'))
     await useChatStore.getState().sendMessage('boom')
     expect(activeSession().awaitingAssistantReply).toBe(false)
     expect(activeSession().messages.at(-1)?.metadata?.sendFailure).toEqual({ error: 'disk full' })
@@ -1024,7 +1039,7 @@ describe('startCodexReview', () => {
     patchSession({ sessionProvider: 'codex' })
     useChatStore.getState().startCodexReview({ type: 'uncommittedChanges' })
     await new Promise((r) => setTimeout(r, 0))
-    expect(mockWindowApp.codexReview).toHaveBeenCalled()
+    expect(mockWindowEnvironment.sendSessionMessage.mock.calls.at(-1)?.[1]).toMatchObject({ turnKind: 'review' })
     // showReviewPanel must close
     expect(activeProjectState().showReviewPanel).toBe(false)
   })
@@ -1034,7 +1049,7 @@ describe('startCodexReview', () => {
     patchSession({ sessionProvider: 'codex' })
     useChatStore.getState().startCodexReview({ type: 'baseBranch', branch: 'main' })
     await new Promise((r) => setTimeout(r, 0))
-    expect(mockWindowApp.codexReview.mock.calls[0]?.[2]).toEqual({
+    expect(mockWindowEnvironment.sendSessionMessage.mock.calls[0]?.[1].reviewTarget).toEqual({
       type: 'baseBranch',
       branch: 'main',
     })
@@ -1045,12 +1060,12 @@ describe('startCodexReview', () => {
     patchSession({ sessionProvider: 'codex' })
     useChatStore.getState().startCodexReview({ type: 'commit', sha: 'abcd1234' })
     await new Promise((r) => setTimeout(r, 0))
-    expect(mockWindowApp.codexReview).toHaveBeenCalled()
+    expect(mockWindowEnvironment.sendSessionMessage.mock.calls.at(-1)?.[1]).toMatchObject({ turnKind: 'review' })
   })
 
   it('is a no-op when no project is active', () => {
     useChatStore.getState().startCodexReview({ type: 'uncommittedChanges' })
-    expect(mockWindowApp.codexReview).not.toHaveBeenCalled()
+    expect(mockWindowEnvironment.sendSessionMessage).not.toHaveBeenCalled()
   })
 })
 

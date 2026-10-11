@@ -463,7 +463,7 @@ async function applyProjectSelection(
       // Match local: ensureSession seeds a draft "New session" row. Do not
       // auto-switch to the latest node history entry — sidebar history /
       // explicit New session owns that. First send materializes a real node
-      // session via resolveNodeSessionId.
+      // session via ensureHostSession.
       // focusProject (not bare activeProject set) so an open unsent draft is
       // carried across projects instead of left behind as a blank session.
       useChatStore.getState().ensureSession(projectKey)

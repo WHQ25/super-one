@@ -1,15 +1,16 @@
 import type { SchemaFormValue } from '@superone/shared/schema-form'
 import { isInputRequest } from '@superone/shared/input-request-presentation'
 import { inputRequestMessageText, parseInputRequestError } from '@superone/shared/input-request'
-import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
+import { hostTakesDesktopChoices } from '@/lib/session-client'
 import { newMessageId } from '@superone/shared/message-id'
 import type { ChatStore, SessionWriteTarget } from '../types'
 import type { ChatStoreSet } from './lifecycle'
-import { createLocalTextUserMessage, resolveSessionCodexSelection } from './codex-helpers'
-import { commitPerSession, getProject, mergeCallerScopedDirs, resolveWriteScope } from './store-helpers'
+import { createLocalTextUserMessage } from './codex-helpers'
+import { commitPerSession, resolveWriteScope } from './store-helpers'
 import { resolveProvider } from './provider-routing'
-import { deliverUserSend } from './send-replay'
-import { sessionSendRequest, shouldQueueUserSend } from './session-send-request'
+import { shouldQueueUserSend } from './session-send-request'
+import { deliverSessionTurn, sessionTurnRequest } from './session-turn'
+import { createSendWriteScope } from './send-write-scope'
 import { setInputRequestError } from './input-request-errors'
 import { getInputRequestDraft, setInputRequestDraft } from './input-request-draft-cache'
 
@@ -23,7 +24,8 @@ export async function sendInputRequestImpl(
 ): Promise<boolean> {
   const { projectPath, sessionId, session } = resolveWriteScope(get(), target)
   const pending = session.pendingPermissions.find(request => request.requestId === requestId)
-  if (!projectPath || !sessionId || parseRemoteProjectKey(projectPath)
+  // Only this desktop's host takes a form answer as a turn; a node refuses it.
+  if (!projectPath || !sessionId || !hostTakesDesktopChoices(projectPath)
     || !isInputRequest(pending) || pending.inputRequest.output !== 'agent' || !pending.schemaForm) return false
   const owner = { projectPath, sessionId }
   const draft = getInputRequestDraft(owner, requestId)
@@ -33,18 +35,16 @@ export async function sendInputRequestImpl(
   const provider = resolveProvider(session)
   const queued = shouldQueueUserSend(provider, session.status)
   const awaitsReply = !queued && ['claude', 'acp', 'cursor', 'opencode'].includes(provider)
-  const codex = provider === 'codex'
-    ? resolveSessionCodexSelection(getProject(get(), projectPath).codexModels, session.selectedCodexModel, session.selectedCodexReasoningEffort) : null
-  const request = sessionSendRequest({
-    session, sessionId, provider, content, clientMessageId: messageId,
-    additionalDirs: mergeCallerScopedDirs(getProject(get(), projectPath), session),
-    model: provider === 'codex' ? codex?.modelId || undefined : session.selectedModel || undefined,
-    effort: session.selectedEffort,
-    reasoningEffort: codex?.reasoningEffort,
-    inputRequest: { requestId, values },
-    userMessageContent: [{ type: 'text', text: content }],
-    queued,
-  })
+  const request = {
+    ...sessionTurnRequest(get(), projectPath, sessionId, {
+      text: content,
+      clientMessageId: messageId,
+      inputRequest: { requestId, values },
+      userMessageContent: [{ type: 'text', text: content }],
+      queued,
+    }),
+    clientMessageId: messageId,
+  }
   const patchSession = (updater: Parameters<typeof commitPerSession>[2]) => set(state => state.projectSessions[projectPath]?._sessions[sessionId]
     ? commitPerSession(state, owner, updater) : {})
   patchSession(current => ({
@@ -55,10 +55,12 @@ export async function sendInputRequestImpl(
     ...(awaitsReply ? { awaitingAssistantReply: true } : {}),
     ...(provider === 'cursor' && !queued ? { status: 'streaming' as const } : {}),
   }))
-  await deliverUserSend({
-    messageId,
-    patchSession,
-    deliver: () => window.agent.sendMessage(projectPath, request),
+  const writeScope = createSendWriteScope(set, get, projectPath, owner)
+  writeScope.patch = patchSession
+  await deliverSessionTurn(set, writeScope, {
+    projectPath,
+    request,
+    titleText: content,
     onRejected: error => {
       const rejected = parseInputRequestError(error)
       if (rejected?.code !== 'invalid') return false

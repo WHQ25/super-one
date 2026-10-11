@@ -1090,34 +1090,6 @@ export class AgentService {
 
     // --- Session-scoped handlers (projectPath as first arg) ---
 
-    windowIpc.handle(AgentIpcChannels.SEND_MESSAGE, async (_event, projectPath: string, request: SendMessageRequest) => {
-      // A node session runs on its node, sent through the environment gateway;
-      // the key is not a local project path to resume or create a Session in.
-      if (parseRemoteProjectKey(projectPath)) {
-        throw new Error(`send_message: ${projectPath} is a remote project; send through the environment gateway`)
-      }
-      const session = await this.getOrCreateActiveSession(projectPath, request.sessionId, {
-        worktreePath: request.worktreePath,
-        gitBranch: request.gitBranch,
-        ...(request.apiProviderId !== undefined ? { apiProviderId: request.apiProviderId } : {}),
-        ...(request.provider ? { provider: request.provider } : {}),
-        ...(request.acpAgentId !== undefined ? { acpAgentId: request.acpAgentId } : {}),
-      })
-      trace('session.lifecycle', 'ipc_sendMessage', {
-        projectPath,
-        sessionId: session.snapshot.id,
-        providerSessionId: session.snapshot.providerSessionId ?? '(none)',
-        status: session.snapshot.status,
-        cwd: session.cwd,
-        worktreePath: request.worktreePath ?? null,
-      })
-      if (request.priority === 'next' || request.priority === 'later') {
-        session.lease.assertMutation()
-        return enqueueSessionQueueOp(session.id, () => { session.lease.assertMutation(); return session.send(request) })
-      }
-      return session.send(request)
-    })
-
     windowIpc.handle(AgentIpcChannels.START_QUEUED_MESSAGES, async (_event, projectPath: string, sessionId?: string) => {
       const session = sessionId
         ? this.sessionManager?.getSession(sessionId)
@@ -2408,7 +2380,6 @@ export class AgentService {
   async dispose(): Promise<void> {
     this.warmupManager.dispose()
 
-    ipcMain.removeHandler(AgentIpcChannels.SEND_MESSAGE)
     ipcMain.removeHandler(AgentIpcChannels.START_QUEUED_MESSAGES)
     ipcMain.removeHandler(AgentIpcChannels.PREWARM)
     ipcMain.removeHandler(AgentIpcChannels.WORKTREE_REMOVED)

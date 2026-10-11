@@ -56,7 +56,6 @@ const mockWindowAgent = {
   resetSession: vi.fn().mockResolvedValue(undefined),
   activateSession: vi.fn().mockResolvedValue(undefined),
   getSessionId: vi.fn().mockResolvedValue(''),
-  sendMessage: vi.fn().mockResolvedValue(undefined),
   reportWorktreeRemoved: vi.fn().mockResolvedValue(undefined),
   broadcastSessionSetting: vi.fn().mockResolvedValue(undefined),
   prewarm: vi.fn().mockResolvedValue(undefined),
@@ -101,9 +100,14 @@ const mockWindowEnvironment = {
   getSession: vi.fn().mockResolvedValue(null),
   openRemoteSession: vi.fn().mockResolvedValue({ messages: [] }),
   resumeRemoteSessionEvents: vi.fn().mockResolvedValue(undefined),
-  listProjects: vi.fn().mockResolvedValue([]),
+  // Every project a test opened is registered on its host, as opening one does.
+  listProjects: vi.fn(async () => Object.keys(useChatStore.getState().projectSessions)
+    .map((path) => ({ projectId: `project:${path}`, path }))),
   listSessions: vi.fn().mockResolvedValue([]),
-  createSession: vi.fn().mockResolvedValue({ sessionId: 'new', title: null, lastActiveAt: '', messageCount: 0 }),
+  // This desktop's host keeps a draft's id; a node names its own.
+  createSession: vi.fn(async (_connectionId: string, input?: { selections?: { sessionId?: string } }) =>
+    ({ sessionId: input?.selections?.sessionId ?? 'new', title: null, lastActiveAt: '', messageCount: 0 })),
+  removeSession: vi.fn().mockResolvedValue(undefined),
   listSessionEvents: vi.fn().mockResolvedValue([]),
   sendSessionMessage: vi.fn().mockResolvedValue(null),
   // Session control for every environment; `/test` is a plain path, so `local`.
@@ -1265,7 +1269,7 @@ describe('resetSession', () => {
 describe('Claude /clear command interception', () => {
   it('intercepts /clear and triggers resetSession without sending to SDK', async () => {
     mockWindowAgent.resetSession.mockClear()
-    mockWindowAgent.sendMessage.mockClear()
+    mockWindowEnvironment.sendSessionMessage.mockClear()
 
     setupProject('/test')
     seedUserMessage('/test')
@@ -1274,7 +1278,7 @@ describe('Claude /clear command interception', () => {
 
     await useChatStore.getState().sendMessage('/clear')
 
-    expect(mockWindowAgent.sendMessage).not.toHaveBeenCalled()
+    expect(mockWindowEnvironment.sendSessionMessage).not.toHaveBeenCalled()
     expect(mockWindowAgent.resetSession).toHaveBeenCalledTimes(1)
 
     const after = useChatStore.getState().projectSessions['/test']
@@ -1285,32 +1289,33 @@ describe('Claude /clear command interception', () => {
 
   it('treats trailing whitespace as part of the bare /clear command (rawContent is trimmed)', async () => {
     mockWindowAgent.resetSession.mockClear()
-    mockWindowAgent.sendMessage.mockClear()
+    mockWindowEnvironment.sendSessionMessage.mockClear()
 
     setupProject('/test')
     seedUserMessage('/test')
 
     await useChatStore.getState().sendMessage('/clear   ')
 
-    expect(mockWindowAgent.sendMessage).not.toHaveBeenCalled()
+    expect(mockWindowEnvironment.sendSessionMessage).not.toHaveBeenCalled()
     expect(mockWindowAgent.resetSession).toHaveBeenCalledTimes(1)
   })
 
   it('does not intercept /clear when followed by arguments', async () => {
     mockWindowAgent.resetSession.mockClear()
-    mockWindowAgent.sendMessage.mockClear()
+    mockWindowEnvironment.sendSessionMessage.mockClear()
 
     setupProject('/test')
 
     await useChatStore.getState().sendMessage('/clear something')
 
     expect(mockWindowAgent.resetSession).not.toHaveBeenCalled()
-    expect(mockWindowAgent.sendMessage).toHaveBeenCalledTimes(1)
+    expect(mockWindowEnvironment.sendSessionMessage).toHaveBeenCalledTimes(1)
+    expect(mockWindowEnvironment.sendSessionMessage.mock.calls[0][1]).toMatchObject({ text: '/clear something' })
   })
 
   it('does not intercept /clear under codex provider', async () => {
     mockWindowAgent.resetSession.mockClear()
-    mockWindowApp.codexRun.mockClear()
+    mockWindowEnvironment.sendSessionMessage.mockClear()
 
     setupProject('/test')
     const proj = useChatStore.getState().projectSessions['/test']
@@ -1335,24 +1340,24 @@ describe('Claude /clear command interception', () => {
     await useChatStore.getState().sendMessage('/clear')
 
     expect(mockWindowAgent.resetSession).not.toHaveBeenCalled()
-    expect(mockWindowApp.codexRun).toHaveBeenCalledTimes(1)
+    expect(mockWindowEnvironment.sendSessionMessage).toHaveBeenCalledTimes(1)
   })
 })
 
 describe('/provider slash command + setSessionApiProviderId', () => {
   it('intercepts /provider and opens the popup without sending to SDK', async () => {
-    mockWindowAgent.sendMessage.mockClear()
+    mockWindowEnvironment.sendSessionMessage.mockClear()
     setupProject('/test')
 
     await useChatStore.getState().sendMessage('/provider')
 
-    expect(mockWindowAgent.sendMessage).not.toHaveBeenCalled()
+    expect(mockWindowEnvironment.sendSessionMessage).not.toHaveBeenCalled()
     const popup = getActiveDraftSession('/test')!.slashCommandOutput
     expect(popup).toMatchObject({ command: 'provider' })
   })
 
   it('does not intercept /provider under codex provider (retired outside Claude)', async () => {
-    mockWindowApp.codexRun.mockClear()
+    mockWindowEnvironment.sendSessionMessage.mockClear()
     setupProject('/test')
     const proj = useChatStore.getState().projectSessions['/test']
     const codexSid = 'codex_local_provider_test'
@@ -1375,7 +1380,7 @@ describe('/provider slash command + setSessionApiProviderId', () => {
 
     await useChatStore.getState().sendMessage('/provider')
 
-    expect(mockWindowApp.codexRun).toHaveBeenCalledTimes(1)
+    expect(mockWindowEnvironment.sendSessionMessage).toHaveBeenCalledTimes(1)
     const popup = useChatStore.getState().projectSessions['/test']._sessions[codexSid].slashCommandOutput
     expect(popup).toBeNull()
   })
@@ -2636,14 +2641,17 @@ describe('deferred resume on sendMessage', () => {
     await useChatStore.getState().sendMessage('hello')
 
     expect(mockWindowAgent.activateSession).toHaveBeenCalledWith('/test', 'db-session', '/test')
-    expect(mockWindowAgent.sendMessage).toHaveBeenCalled()
+    // A session with a transcript exists on its host: it is neither looked up nor created.
+    expect(mockWindowEnvironment.getSession).not.toHaveBeenCalled()
+    expect(mockWindowEnvironment.createSession).not.toHaveBeenCalled()
+    expect(mockWindowEnvironment.sendSessionMessage).toHaveBeenCalledWith('local', expect.objectContaining({ sessionId: 'db-session', text: 'hello' }))
   })
 })
 
 describe('message id minting', () => {
   it('gives two sends in the same millisecond distinct client message ids', async () => {
     setupProject('/test')
-    mockWindowAgent.sendMessage.mockClear()
+    mockWindowEnvironment.sendSessionMessage.mockClear()
     // Codex keys its durable queue by clientMessageId, so a collision silently
     // drops one queued message and strands its bubble in the composer queue.
     vi.useFakeTimers({ toFake: ['Date'] })
@@ -2655,7 +2663,7 @@ describe('message id minting', () => {
       vi.useRealTimers()
     }
 
-    const ids = mockWindowAgent.sendMessage.mock.calls.map(
+    const ids = mockWindowEnvironment.sendSessionMessage.mock.calls.map(
       (call) => (call[1] as { clientMessageId?: string }).clientMessageId,
     )
     expect(ids).toHaveLength(2)
@@ -2720,7 +2728,7 @@ describe('codex plan mode', () => {
     expect(session.selectedCodexCollaborationMode).toBe('plan')
     expect(session.messages).toHaveLength(0)
     expect(session.slashCommandOutput).toBeFalsy()
-    expect(mockWindowApp.codexRun).not.toHaveBeenCalled()
+    expect(mockWindowEnvironment.sendSessionMessage).not.toHaveBeenCalled()
   })
 
   it('passes plan collaboration mode to codex runs', async () => {
@@ -2746,11 +2754,11 @@ describe('codex plan mode', () => {
 
     await useChatStore.getState().sendMessage('hello')
 
-    const call = mockWindowApp.codexRun.mock.calls.at(-1)
+    const call = mockWindowEnvironment.sendSessionMessage.mock.calls.at(-1)?.[1]
     expect(call).toBeTruthy()
-    expect(call?.[1]).toBe('/test')
-    expect(call?.[2]).toBe('hello')
-    expect(call?.[6]).toBe('plan')
+    expect(call?.projectPath).toBe('/test')
+    expect(call?.text).toBe('hello')
+    expect(call?.collaborationMode).toBe('plan')
   })
 
   it('passes default collaboration mode to codex runs', async () => {
@@ -2776,11 +2784,11 @@ describe('codex plan mode', () => {
 
     await useChatStore.getState().sendMessage('hello')
 
-    const call = mockWindowApp.codexRun.mock.calls.at(-1)
+    const call = mockWindowEnvironment.sendSessionMessage.mock.calls.at(-1)?.[1]
     expect(call).toBeTruthy()
-    expect(call?.[1]).toBe('/test')
-    expect(call?.[2]).toBe('hello')
-    expect(call?.[6]).toBe('default')
+    expect(call?.projectPath).toBe('/test')
+    expect(call?.text).toBe('hello')
+    expect(call?.collaborationMode).toBe('default')
   })
 
   it('passes only the session scope to codex runs — Session unions the project folders', async () => {
@@ -2807,8 +2815,8 @@ describe('codex plan mode', () => {
 
     await useChatStore.getState().sendMessage('hello')
 
-    const call = mockWindowApp.codexRun.mock.calls.at(-1)
-    expect(call?.[15]).toMatchObject({ additionalDirectories: ['/session-shared'] })
+    const call = mockWindowEnvironment.sendSessionMessage.mock.calls.at(-1)?.[1]
+    expect(call).toMatchObject({ additionalDirectories: ['/session-shared'] })
   })
 
   it('approves codex plan with default collaboration mode without consuming draft attachments or mentions', async () => {
@@ -2857,11 +2865,11 @@ describe('codex plan mode', () => {
 
     await useChatStore.getState().approveCodexPlan()
 
-    const call = mockWindowApp.codexRun.mock.calls.at(-1)
+    const call = mockWindowEnvironment.sendSessionMessage.mock.calls.at(-1)?.[1]
     expect(call).toBeTruthy()
-    expect(call?.[2]).toBe('Plan approved, start implementation.')
-    expect(call?.[6]).toBe('default')
-    expect(call?.[9]).toBeUndefined()
+    expect(call?.text).toBe('Plan approved, start implementation.')
+    expect(call?.collaborationMode).toBe('default')
+    expect(call?.images).toBeUndefined()
 
     const session = useChatStore.getState().projectSessions['/test']._sessions['codex-session']
     expect(session.selectedCodexCollaborationMode).toBe('default')
@@ -2923,10 +2931,10 @@ describe('codex plan mode', () => {
 
     await useChatStore.getState().rejectCodexPlan('Only touch the renderer layer.')
 
-    const call = mockWindowApp.codexRun.mock.calls.at(-1)
-    expect(call?.[2]).toBe('Only touch the renderer layer.')
-    expect(call?.[6]).toBe('plan')
-    expect(call?.[9]).toBeUndefined()
+    const call = mockWindowEnvironment.sendSessionMessage.mock.calls.at(-1)?.[1]
+    expect(call?.text).toBe('Only touch the renderer layer.')
+    expect(call?.collaborationMode).toBe('plan')
+    expect(call?.images).toBeUndefined()
     const session = useChatStore.getState().projectSessions['/test']._sessions['codex-session']
     expect(session.selectedCodexCollaborationMode).toBe('plan')
     expect(session.draftText).toBe('keep this draft')
@@ -2983,7 +2991,7 @@ describe('codex plan mode', () => {
 
     await useChatStore.getState().rejectCodexPlan()
 
-    expect(mockWindowApp.codexRun).not.toHaveBeenCalled()
+    expect(mockWindowEnvironment.sendSessionMessage).not.toHaveBeenCalled()
     const session = useChatStore.getState().projectSessions['/test']._sessions['codex-session']
     expect(session.selectedCodexCollaborationMode).toBe('plan')
     expect(session.codexPlanRejectHintActive).toBe(true)
@@ -2991,10 +2999,10 @@ describe('codex plan mode', () => {
     expect(session.messages.find((message) => message.id === 'assistant-1')?.metadata?.codex?.planApproval).toEqual({
       status: 'rejected',
     })
-    expect(mockWindowApp.codexPlanApproval).toHaveBeenCalledWith('/test', 'codex-session', 'assistant-1', 'rejected')
+    expect(mockWindowEnvironment.respondSessionPlan).toHaveBeenCalledWith('local', { sessionId: 'codex-session', interactionId: 'assistant-1', decision: 'reject', options: { messageId: 'assistant-1' } })
   })
 
-  it('approveCodexPlan emits plan approval and mode change IPCs', async () => {
+  it('approves the plan on its host and sends the next turn in default mode', async () => {
     setupProject('/test')
     const proj = useChatStore.getState().projectSessions['/test']
 
@@ -3031,8 +3039,8 @@ describe('codex plan mode', () => {
 
     await useChatStore.getState().approveCodexPlan()
 
-    expect(mockWindowApp.codexPlanApproval).toHaveBeenCalledWith('/test', 'codex-session', 'assistant-1', 'approved')
-    expect(mockWindowApp.codexCollaborationModeChange).toHaveBeenCalledWith('/test', 'codex-session', 'default')
+    expect(mockWindowEnvironment.respondSessionPlan).toHaveBeenCalledWith('local', { sessionId: 'codex-session', interactionId: 'assistant-1', decision: 'approve', options: { messageId: 'assistant-1' } })
+    expect(mockWindowEnvironment.sendSessionMessage.mock.calls.at(-1)?.[1]).toMatchObject({ collaborationMode: 'default' })
   })
 
   it('rejectCodexPlan with feedback emits plan approval IPC', async () => {
@@ -3072,7 +3080,7 @@ describe('codex plan mode', () => {
 
     await useChatStore.getState().rejectCodexPlan('Use a different approach.')
 
-    expect(mockWindowApp.codexPlanApproval).toHaveBeenCalledWith('/test', 'codex-session', 'assistant-1', 'rejected', 'Use a different approach.')
+    expect(mockWindowEnvironment.respondSessionPlan).toHaveBeenCalledWith('local', { sessionId: 'codex-session', interactionId: 'assistant-1', decision: 'reject', options: { messageId: 'assistant-1', feedback: 'Use a different approach.' } })
   })
 })
 
@@ -3157,7 +3165,7 @@ describe('awaitingAssistantReply state machine', () => {
     useChatStore.setState({
       harnessResources: { claude: { models: [{ id: "claude-sonnet-4-6", name: "Sonnet", supportedEffortLevels: ["low", "medium", "high"] }] as never[], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [] }, codex: null, acp: null },
     })
-    mockWindowAgent.sendMessage.mockRejectedValueOnce(new Error('send failed'))
+    mockWindowEnvironment.sendSessionMessage.mockRejectedValueOnce(new Error('send failed'))
 
     await useChatStore.getState().sendMessage('hello')
 
@@ -3246,11 +3254,12 @@ describe('codex concurrent send routing', () => {
     expect(session.activeCodexMessageId).toBe('codex-prev')
     expect(mockWindowApp.codexSteer).not.toHaveBeenCalled()
 
-    const payload = mockWindowAgent.sendMessage.mock.calls.at(-1)?.[1]
-    expect(payload?.provider).toBe('codex')
+    expect(mockWindowEnvironment.sendSessionMessage.mock.calls.at(-1)?.[0]).toBe('local')
+    const payload = mockWindowEnvironment.sendSessionMessage.mock.calls.at(-1)?.[1]
+    expect(payload?.providerId).toBe('codex')
     expect(payload?.priority).toBe('next')
-    expect(payload?.codex?.mode).toBe('run')
-    expect(payload?.codex?.prompt).toBe('queued follow-up')
+    expect(payload?.turnKind).toBe('run')
+    expect(payload?.text).toBe('queued follow-up')
     expect(payload?.clientMessageId).toBe(queued?.id)
   })
 })
@@ -4091,7 +4100,7 @@ describe('switchSession Case B codex usage restore', () => {
 })
 
 describe('codex run session isolation', () => {
-  it('writes run result to the originating session even after switching away', async () => {
+  it('writes Codex events to the originating session after switching away', async () => {
     setupProject('/test')
     const proj = useChatStore.getState().projectSessions['/test']
     const codexSid = 'codex_local_A'
@@ -4117,14 +4126,14 @@ describe('codex run session isolation', () => {
     })
 
     let resolveCodexRun!: (v: unknown) => void
-    mockWindowApp.codexRun.mockReturnValueOnce(
+    mockWindowEnvironment.sendSessionMessage.mockReturnValueOnce(
       new Promise((r) => { resolveCodexRun = r }),
     )
 
     const sendPromise = useChatStore.getState().sendMessage('test codex')
 
     await vi.waitFor(() => {
-      expect(mockWindowApp.codexRun).toHaveBeenCalled()
+      expect(mockWindowEnvironment.sendSessionMessage).toHaveBeenCalled()
     })
 
     useChatStore.setState((s) => ({
@@ -4137,16 +4146,22 @@ describe('codex run session isolation', () => {
       },
     }))
 
-    resolveCodexRun({
-      threadId: 'thread-iso',
-      finalResponse: 'isolation ok',
-      usage: null,
-      items: [
-        { id: 'reason-1', type: 'reasoning', text: 'summary kept' },
-        { id: 'agent-1', type: 'agent_message', text: 'isolation ok' },
-      ],
-    })
+    resolveCodexRun(null)
     await sendPromise
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'message_start', sessionId: codexSid, message: { id: 'assistant-iso', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'codex' },
+    }))
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'content_delta', sessionId: codexSid, messageId: 'assistant-iso', delta: { type: 'text', text: 'isolation ok' },
+    }))
+    useChatStore.getState().handleAgentEvent(makeEvent({
+      type: 'message_complete', sessionId: codexSid, messageId: 'assistant-iso',
+      metadata: { codex: { threadId: 'thread-iso', usage: null, items: [
+          { id: 'reason-1', type: 'reasoning', text: 'summary kept' },
+          { id: 'agent-1', type: 'agent_message', text: 'isolation ok' },
+        ] } },
+    }))
+    useChatStore.getState().handleAgentEvent(makeEvent({ type: 'status_change', sessionId: codexSid, status: 'idle' }))
 
     const after = useChatStore.getState().projectSessions['/test']
     expect(after._activeSessionId).toBe('ses-B')
@@ -6343,12 +6358,12 @@ describe('mini-app context injection', () => {
       appName: 'App A', summary: 'info', content: 'ctx-data', mode: 'inject',
     })
     await useChatStore.getState().sendMessage('my question')
-    expect(mockWindowAgent.sendMessage).toHaveBeenCalled()
-    const payload = mockWindowAgent.sendMessage.mock.calls[0][1]
-    expect(payload.content).toContain('my question')
-    expect(payload.content).toContain('<app-context app="App A" summary="info">')
-    expect(payload.content).toContain('ctx-data')
-    expect(payload.content.indexOf('my question')).toBeLessThan(payload.content.indexOf('<app-context'))
+    expect(mockWindowEnvironment.sendSessionMessage).toHaveBeenCalled()
+    const payload = mockWindowEnvironment.sendSessionMessage.mock.calls[0][1]
+    expect(payload.text).toContain('my question')
+    expect(payload.text).toContain('<app-context app="App A" summary="info">')
+    expect(payload.text).toContain('ctx-data')
+    expect(payload.text.indexOf('my question')).toBeLessThan(payload.text.indexOf('<app-context'))
   })
 
   it('sendMessage excludes cleared inject contexts', async () => {
@@ -6357,8 +6372,8 @@ describe('mini-app context injection', () => {
     })
     useChatStore.getState().clearMiniAppContext('app-a')
     await useChatStore.getState().sendMessage('hello')
-    const payload = mockWindowAgent.sendMessage.mock.calls[0][1]
-    expect(payload.content).not.toContain('<app-context')
+    const payload = mockWindowEnvironment.sendSessionMessage.mock.calls[0][1]
+    expect(payload.text).not.toContain('<app-context')
   })
 
   it('sendMessage excludes unchecked suggest contexts', async () => {
@@ -6366,8 +6381,8 @@ describe('mini-app context injection', () => {
       appName: 'App A', summary: 'notes', content: 'ctx', mode: 'suggest',
     })
     await useChatStore.getState().sendMessage('hello')
-    const payload = mockWindowAgent.sendMessage.mock.calls[0][1]
-    expect(payload.content).not.toContain('<app-context')
+    const payload = mockWindowEnvironment.sendSessionMessage.mock.calls[0][1]
+    expect(payload.text).not.toContain('<app-context')
   })
 
   it('sendMessage includes checked suggest contexts', async () => {
@@ -6376,8 +6391,8 @@ describe('mini-app context injection', () => {
     })
     useChatStore.getState().toggleMiniAppContext('app-a')
     await useChatStore.getState().sendMessage('hello')
-    const payload = mockWindowAgent.sendMessage.mock.calls[0][1]
-    expect(payload.content).toContain('suggest-ctx')
+    const payload = mockWindowEnvironment.sendSessionMessage.mock.calls[0][1]
+    expect(payload.text).toContain('suggest-ctx')
   })
 
   it('sendMessage dispatches miniapp-context-consumed event', async () => {
@@ -6436,10 +6451,10 @@ describe('user selection (right-click → "添加到聊天" quote chips)', () =>
   it('sendMessage wraps a single selection in <quote>...</quote> at the prompt tail', async () => {
     useChatStore.getState().addUserSelection('only one')
     await useChatStore.getState().sendMessage('hello')
-    const payload = mockWindowAgent.sendMessage.mock.calls[0][1]
-    expect(payload.content).toContain('hello')
-    expect(payload.content).toContain('<quote>\nonly one\n</quote>')
-    expect(payload.content).not.toContain('<quote1>')
+    const payload = mockWindowEnvironment.sendSessionMessage.mock.calls[0][1]
+    expect(payload.text).toContain('hello')
+    expect(payload.text).toContain('<quote>\nonly one\n</quote>')
+    expect(payload.text).not.toContain('<quote1>')
   })
 
   it('sendMessage wraps multiple selections with <quoteN>...</quoteN> grouped under <quote>', async () => {
@@ -6447,8 +6462,8 @@ describe('user selection (right-click → "添加到聊天" quote chips)', () =>
     useChatStore.getState().addUserSelection('second')
     useChatStore.getState().addUserSelection('third')
     await useChatStore.getState().sendMessage('q')
-    const payload = mockWindowAgent.sendMessage.mock.calls[0][1]
-    expect(payload.content).toMatch(/<quote>[\s\S]*<quote1>[\s\S]*first[\s\S]*<\/quote1>[\s\S]*<quote2>[\s\S]*second[\s\S]*<\/quote2>[\s\S]*<quote3>[\s\S]*third[\s\S]*<\/quote3>[\s\S]*<\/quote>/)
+    const payload = mockWindowEnvironment.sendSessionMessage.mock.calls[0][1]
+    expect(payload.text).toMatch(/<quote>[\s\S]*<quote1>[\s\S]*first[\s\S]*<\/quote1>[\s\S]*<quote2>[\s\S]*second[\s\S]*<\/quote2>[\s\S]*<quote3>[\s\S]*third[\s\S]*<\/quote3>[\s\S]*<\/quote>/)
   })
 
   it('sendMessage attaches userSelections to the user message and to the IPC payload', async () => {
@@ -6458,7 +6473,7 @@ describe('user selection (right-click → "添加到聊天" quote chips)', () =>
     const sess = getActiveDraftSession('/test')!
     const userMsg = sess.messages.find((m) => m.role === 'user')
     expect(userMsg?.userSelections).toEqual(['alpha', 'beta'])
-    const payload = mockWindowAgent.sendMessage.mock.calls[0][1]
+    const payload = mockWindowEnvironment.sendSessionMessage.mock.calls[0][1]
     expect(payload.userSelections).toEqual(['alpha', 'beta'])
   })
 
@@ -6470,8 +6485,8 @@ describe('user selection (right-click → "添加到聊天" quote chips)', () =>
 
   it('sendMessage with no selections produces no quote suffix and no userSelections field', async () => {
     await useChatStore.getState().sendMessage('plain hello')
-    const payload = mockWindowAgent.sendMessage.mock.calls[0][1]
-    expect(payload.content).not.toContain('<quote')
+    const payload = mockWindowEnvironment.sendSessionMessage.mock.calls[0][1]
+    expect(payload.text).not.toContain('<quote')
     expect(payload.userSelections).toBeUndefined()
   })
 })

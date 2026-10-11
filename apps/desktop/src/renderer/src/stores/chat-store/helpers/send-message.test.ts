@@ -37,18 +37,21 @@ const mockMiniApps: Array<{ id: string; manifest: Record<string, unknown> }> = [
 vi.mock('@/stores/miniapp', () => ({
   useMiniAppStore: { getState: () => ({ apps: mockMiniApps, openApps: {} }), setState: vi.fn() },
 }))
-const mockRunCodexCommand = vi.fn().mockResolvedValue(undefined)
-vi.mock('../codex/runner', () => ({ runCodexCommand: mockRunCodexCommand }))
 
 const mockActivateWorktree = vi.fn().mockResolvedValue({ ok: true, path: '/wt/feature-x' })
-const mockSendMessage = vi.fn().mockResolvedValue(undefined)
 const mockMiniAppAuthorize = vi.fn().mockResolvedValue(undefined)
 const mockActivateSession = vi.fn().mockResolvedValue(undefined)
 const mockCodexGetAuthStatus = vi.fn().mockResolvedValue({ mode: 'auto', signedIn: false })
 const mockEnvGetSession = vi.fn()
 const mockEnvCreateSession = vi.fn()
 const mockEnvSendSessionMessage = vi.fn()
+const mockEnvListProjects = vi.fn()
+const mockEnvRemoveSession = vi.fn()
 const mockToastError = vi.fn()
+
+/** The request of the `index`th turn handed to a session's host. */
+const sentTurn = (index = 0) => mockEnvSendSessionMessage.mock.calls[index]?.[1]
+const sentText = (index = 0) => sentTurn(index)?.text as string
 
 /** `window.environment.callSession`, which carries `/recap` for every environment. */
 const mockEnvCallSession = vi.fn().mockResolvedValue({ ok: true })
@@ -68,7 +71,6 @@ vi.mock('i18next', () => ({
 
 vi.stubGlobal('window', {
   agent: {
-    sendMessage: mockSendMessage,
     resetSession: vi.fn().mockResolvedValue(undefined),
     parkSession: vi.fn().mockResolvedValue(undefined),
     prewarm: vi.fn().mockResolvedValue(undefined),
@@ -84,6 +86,8 @@ vi.stubGlobal('window', {
     getSession: mockEnvGetSession,
     createSession: mockEnvCreateSession,
     sendSessionMessage: mockEnvSendSessionMessage,
+    listProjects: mockEnvListProjects,
+    removeSession: mockEnvRemoveSession,
     callSession: mockEnvCallSession,
   },
   miniapp: { authorize: mockMiniAppAuthorize },
@@ -127,20 +131,23 @@ beforeEach(() => {
   mockWorktreeState.pendingBranchName = ''
   mockWorktreeState.pendingCarryLocalChanges = false
   mockActivateWorktree.mockReset().mockResolvedValue({ ok: true, path: '/wt/feature-x' })
-  mockSendMessage.mockReset().mockResolvedValue(undefined)
   mockEnvCallSession.mockReset().mockResolvedValue({ ok: true })
   mockSetActiveWorktree.mockReset()
   mockMiniAppAuthorize.mockReset().mockResolvedValue(undefined)
   mockActivateSession.mockReset().mockResolvedValue(undefined)
   mockCodexGetAuthStatus.mockReset().mockResolvedValue({ mode: 'auto', signedIn: false })
-  mockRunCodexCommand.mockReset().mockResolvedValue(undefined)
   mockEnvGetSession.mockReset().mockResolvedValue(null)
-  mockEnvCreateSession.mockReset().mockResolvedValue({
-    sessionId: 'node-sid-1',
+  // This desktop's host keeps the draft's id; a node names its own.
+  mockEnvCreateSession.mockReset().mockImplementation(async (_connectionId: string, input: { selections?: { sessionId?: string } }) => ({
+    sessionId: input.selections?.sessionId ?? 'node-sid-1',
     title: 'New session',
     lastActiveAt: new Date().toISOString(),
     messageCount: 0,
-  })
+  }))
+  mockEnvListProjects.mockReset().mockImplementation(async (connectionId: string) => connectionId === 'local'
+    ? [{ projectId: 'local-project-1', path: '/proj' }]
+    : [{ projectId: 'remote-project-1', path: '/work/app' }])
+  mockEnvRemoveSession.mockReset().mockResolvedValue(undefined)
   mockEnvSendSessionMessage.mockReset().mockResolvedValue({
     sessionId: 'node-sid-1',
     status: 'idle',
@@ -181,6 +188,8 @@ describe('sendMessageImpl: remote node', () => {
       'env-1',
       expect.objectContaining({ projectId: 'remote-project-1', harnessId: 'claude' }),
     )
+    // A node names its own session: it is given no draft id.
+    expect(mockEnvCreateSession.mock.calls[0][1]).not.toHaveProperty('selections')
     expect(mockEnvSendSessionMessage).toHaveBeenCalledWith(
       'env-1',
       expect.objectContaining({
@@ -190,7 +199,7 @@ describe('sendMessageImpl: remote node', () => {
         providerId: 'claude',
       }),
     )
-    expect(mockSendMessage).not.toHaveBeenCalled()
+    expect(mockEnvSendSessionMessage).toHaveBeenCalledTimes(1)
 
     const proj = useChatStore.getState().projectSessions[remotePath]
     expect(proj._activeSessionId).toBe('node-sid-1')
@@ -236,6 +245,7 @@ describe('sendMessageImpl: remote node', () => {
     })
     mockEnvGetSession.mockResolvedValueOnce({
       sessionId: 'node-model-sid',
+      harnessId: 'claude',
       status: 'idle',
       transcript: [],
     })
@@ -265,6 +275,7 @@ describe('sendMessageImpl: remote node', () => {
     })
     mockEnvGetSession.mockResolvedValueOnce({
       sessionId: 'node-clear-sid',
+      harnessId: 'claude',
       status: 'idle',
       transcript: [],
     })
@@ -332,14 +343,16 @@ describe('sendMessageImpl: remote node', () => {
     )
     expect(mockEnvSendSessionMessage).toHaveBeenCalledWith(
       'env-1',
-      expect.objectContaining({ model: 'gpt-5.6', effort: 'xhigh' }),
+      expect.objectContaining({ providerId: 'codex', model: 'gpt-5.6', effort: 'xhigh', turnKind: 'run' }),
     )
+    // A node's Codex turn goes through session.send, not this desktop's Codex runner.
   })
 
   it('reuses an existing node session without creating another', async () => {
     seedProject(remotePath, 'node-sid-live')
     mockEnvGetSession.mockResolvedValueOnce({
       sessionId: 'node-sid-live',
+      harnessId: 'claude',
       status: 'idle',
       transcript: [],
     })
@@ -373,6 +386,7 @@ describe('sendMessageImpl: remote node', () => {
     })
     mockEnvGetSession.mockResolvedValueOnce({
       sessionId: 'node-sid-fail',
+      harnessId: 'claude',
       status: 'idle',
       transcript: [],
     })
@@ -394,6 +408,7 @@ describe('sendMessageImpl: remote node', () => {
     })
     mockEnvGetSession.mockResolvedValueOnce({
       sessionId: 'node-sid-detached',
+      harnessId: 'claude',
       status: 'idle',
       transcript: [],
     })
@@ -403,9 +418,11 @@ describe('sendMessageImpl: remote node', () => {
 
     const sess = getActiveSession(remotePath)
     expect(sess.messages.at(-1)?.metadata?.sendFailure).toBeUndefined()
-    // The turn settles on its events, not on the send.
-    expect(sess.status).toBe('streaming')
     expect(sess.awaitingAssistantReply).toBe(true)
+    // The turn settles on its events, not on the record the send answered with.
+    expect(sess.status).toBe('idle')
+    useChatStore.getState().handleAgentEvent({ projectPath: remotePath, sessionId: 'node-sid-detached', type: 'status_change', status: 'streaming' } as AgentEvent)
+    expect(getActiveSession(remotePath).status).toBe('streaming')
   })
 })
 
@@ -433,7 +450,7 @@ describe('sendMessageImpl: worktree activation', () => {
     expect(sess._worktreePath).toBe('/wt/feature-x')
     expect(sess.totalCostUsd).toBe(0)
     expect(sess.contextTokens).toBe(0)
-    expect(mockSendMessage).toHaveBeenCalled()
+    expect(mockEnvSendSessionMessage).toHaveBeenCalledWith('local', expect.objectContaining({ text: 'hello' }))
   })
 
   it('records baseBranch as _gitBranch when mode is not branch', async () => {
@@ -457,8 +474,8 @@ describe('sendMessageImpl: worktree activation', () => {
     await useChatStore.getState().sendMessage('hello')
 
     expect(mockActivateWorktree).not.toHaveBeenCalled()
-    expect(mockSendMessage).not.toHaveBeenCalled()
-    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('Branch mode requires a branch name'))
+    expect(mockEnvSendSessionMessage).not.toHaveBeenCalled()
+    expect(mockToastError).toHaveBeenCalledWith('Branch mode requires a branch name')
   })
 
   it('aborts when activateWorktree returns ok=false', async () => {
@@ -471,8 +488,8 @@ describe('sendMessageImpl: worktree activation', () => {
     await useChatStore.getState().sendMessage('hello')
 
     expect(mockSetActiveWorktree).not.toHaveBeenCalled()
-    expect(mockSendMessage).not.toHaveBeenCalled()
-    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('Failed to activate worktree'), 'dirty tree')
+    expect(mockEnvSendSessionMessage).not.toHaveBeenCalled()
+    expect(mockToastError).toHaveBeenCalledWith('dirty tree')
   })
 })
 
@@ -480,7 +497,7 @@ describe('sendMessageImpl: early returns', () => {
   it('returns silently when activeProject is null', async () => {
     useChatStore.setState({ activeProject: null })
     await useChatStore.getState().sendMessage('hello')
-    expect(mockSendMessage).not.toHaveBeenCalled()
+    expect(mockEnvSendSessionMessage).not.toHaveBeenCalled()
   })
 
   it('returns silently when active session is a remote session', async () => {
@@ -489,7 +506,7 @@ describe('sendMessageImpl: early returns', () => {
 
     await useChatStore.getState().sendMessage('hello')
 
-    expect(mockSendMessage).not.toHaveBeenCalled()
+    expect(mockEnvSendSessionMessage).not.toHaveBeenCalled()
   })
 })
 
@@ -501,7 +518,7 @@ describe('sendMessageImpl: intercepted commands', () => {
 
     await useChatStore.getState().sendMessage('/clear')
 
-    expect(mockSendMessage).not.toHaveBeenCalled()
+    expect(mockEnvSendSessionMessage).not.toHaveBeenCalled()
     const sess = getActiveSession('/proj')
     expect(sess.messages).toEqual([])
   })
@@ -511,7 +528,7 @@ describe('sendMessageImpl: intercepted commands', () => {
 
     await useChatStore.getState().sendMessage('/provider')
 
-    expect(mockSendMessage).not.toHaveBeenCalled()
+    expect(mockEnvSendSessionMessage).not.toHaveBeenCalled()
   })
 
   it('routes Claude /workflows to openWorkflowsPopup and skips IPC send', async () => {
@@ -519,7 +536,7 @@ describe('sendMessageImpl: intercepted commands', () => {
 
     await useChatStore.getState().sendMessage('/workflows')
 
-    expect(mockSendMessage).not.toHaveBeenCalled()
+    expect(mockEnvSendSessionMessage).not.toHaveBeenCalled()
     expect(getActiveSession('/proj').slashCommandOutput).toEqual({ command: 'workflows', content: '' })
     expect(getActiveSession('/proj').messages).toEqual([])
   })
@@ -533,7 +550,7 @@ describe('sendMessageImpl: intercepted commands', () => {
 
     await useChatStore.getState().sendMessage('/workflows')
 
-    expect(mockSendMessage).not.toHaveBeenCalled()
+    expect(mockEnvSendSessionMessage).not.toHaveBeenCalled()
     expect(getActiveSession('/proj').slashCommandOutput).toEqual({ command: 'workflows', content: '' })
     expect(getActiveSession('/proj').messages).toEqual([])
   })
@@ -547,7 +564,7 @@ describe('sendMessageImpl: intercepted commands', () => {
 
     await useChatStore.getState().sendMessage('/mcp')
 
-    expect(mockSendMessage).not.toHaveBeenCalled()
+    expect(mockEnvSendSessionMessage).not.toHaveBeenCalled()
     expect(getActiveSession('/proj').slashCommandOutput).toEqual({ command: 'mcp', content: '' })
     expect(getActiveSession('/proj').messages).toEqual([])
   })
@@ -560,7 +577,7 @@ describe('sendMessageImpl: intercepted commands', () => {
 
     await useChatStore.getState().sendMessage('/clear')
 
-    expect(mockSendMessage).not.toHaveBeenCalled()
+    expect(mockEnvSendSessionMessage).not.toHaveBeenCalled()
     const sess = getActiveSession('/proj')
     expect(sess.messages).toEqual([])
   })
@@ -573,7 +590,7 @@ describe('sendMessageImpl: intercepted commands', () => {
 
     await useChatStore.getState().sendMessage('/mcp')
 
-    expect(mockSendMessage).not.toHaveBeenCalled()
+    expect(mockEnvSendSessionMessage).not.toHaveBeenCalled()
     expect(getActiveSession('/proj').slashCommandOutput).toEqual({ command: 'mcp', content: '' })
     expect(getActiveSession('/proj').messages).toEqual([])
   })
@@ -586,7 +603,7 @@ describe('sendMessageImpl: intercepted commands', () => {
 
     await useChatStore.getState().sendMessage('/workflows')
 
-    expect(mockSendMessage).toHaveBeenCalled()
+    expect(mockEnvSendSessionMessage).toHaveBeenCalled()
   })
 
   it('opens the branch review picker without sending an invalid review request', async () => {
@@ -597,7 +614,6 @@ describe('sendMessageImpl: intercepted commands', () => {
     const project = useChatStore.getState().projectSessions['/proj']
     expect(project.showReviewPanel).toBe(true)
     expect(project.reviewPanelInitialMode).toBe('branch')
-    expect(mockRunCodexCommand).not.toHaveBeenCalled()
   })
 
   it('intercepts Grok /recap and requests a session recap without sending a turn', async () => {
@@ -611,7 +627,7 @@ describe('sendMessageImpl: intercepted commands', () => {
     await useChatStore.getState().sendMessage('/recap')
 
     expect(mockEnvCallSession).toHaveBeenCalledWith('local', 'sid-grok', 'session.recap', { auto: false })
-    expect(mockSendMessage).not.toHaveBeenCalled()
+    expect(mockEnvSendSessionMessage).not.toHaveBeenCalled()
     expect(getActiveSession('/proj').messages).toEqual([])
     // RPC resolved true — stay in generating state until session_recap arrives.
     expect(getActiveSession('/proj').isRecapping).toBe(true)
@@ -630,7 +646,7 @@ describe('sendMessageImpl: intercepted commands', () => {
     expect(getActiveSession('/proj').isRecapping).toBe(false)
   })
 
-  it('includes acpAgentId on Grok send so the main process can persist the brand', async () => {
+  it('creates a Grok session with its acpAgentId so the main process can persist the brand', async () => {
     seedProject('/proj', 'sid-grok', {
       sessionProvider: 'acp',
       preferredProvider: 'acp',
@@ -639,11 +655,15 @@ describe('sendMessageImpl: intercepted commands', () => {
 
     await useChatStore.getState().sendMessage('hello grok')
 
-    expect(mockSendMessage).toHaveBeenCalledTimes(1)
-    expect(mockSendMessage.mock.calls[0]?.[1]).toMatchObject({
-      provider: 'acp',
-      acpAgentId: 'grok-build',
-      content: 'hello grok',
+    expect(mockEnvCreateSession).toHaveBeenCalledWith('local', expect.objectContaining({
+      harnessId: 'acp',
+      selections: { sessionId: 'sid-grok', acpAgentId: 'grok-build' },
+    }))
+    expect(mockEnvSendSessionMessage).toHaveBeenCalledTimes(1)
+    expect(sentTurn()).toMatchObject({
+      sessionId: 'sid-grok',
+      providerId: 'acp',
+      text: 'hello grok',
     })
   })
 
@@ -658,7 +678,7 @@ describe('sendMessageImpl: intercepted commands', () => {
     await useChatStore.getState().sendMessage('/recap')
 
     expect(mockEnvCallSession).not.toHaveBeenCalled()
-    expect(mockSendMessage).toHaveBeenCalled()
+    expect(mockEnvSendSessionMessage).toHaveBeenCalled()
   })
 })
 
@@ -717,8 +737,8 @@ describe('sendMessageImpl: mosaic session scope', () => {
     expect(proj._sessions['sid-new'].messages[0].content).toEqual(
       expect.arrayContaining([expect.objectContaining({ type: 'text', text: 'hello from new tile' })]),
     )
-    expect(mockSendMessage).toHaveBeenCalledWith('/proj', expect.objectContaining({
-      content: 'hello from new tile',
+    expect(mockEnvSendSessionMessage).toHaveBeenCalledWith('local', expect.objectContaining({
+      text: 'hello from new tile',
       sessionId: 'sid-new',
     }))
     // Active pointer may still be the old session — scoped send must not require it to have flipped first.
@@ -746,7 +766,7 @@ describe('sendMessageImpl: mosaic session scope', () => {
     const proj = useChatStore.getState().projectSessions['/proj']
     expect(proj._sessions['sid-old'].queuedMessages).toHaveLength(0)
     expect(proj._sessions['sid-new'].queuedMessages).toHaveLength(1)
-    expect(mockSendMessage).toHaveBeenCalledWith('/proj', expect.objectContaining({
+    expect(mockEnvSendSessionMessage).toHaveBeenCalledWith('local', expect.objectContaining({
       sessionId: 'sid-new',
       priority: 'next',
     }))
@@ -761,7 +781,7 @@ describe('sendMessageImpl: IPC dispatch + rollback', () => {
       inputRequest: { title: 'Review', output: 'agent' as const, origin: { kind: 'widget' as const, messageId: 'widget' } },
     }
     seedProject('/proj', 'owner', { sessionProvider: 'claude', draftText: 'Keep my chat draft', pendingPermissions: [request] })
-    mockSendMessage.mockRejectedValueOnce(new Error('IPC failed: [input_request:invalid] Choose a valid file'))
+    mockEnvSendSessionMessage.mockRejectedValueOnce(new Error('IPC failed: [input_request:invalid] Choose a valid file'))
     await useChatStore.getState().sendInputRequest('invalid-form', { note: 'draft' })
     const session = getActiveSession('/proj')
     expect(session.pendingPermissions).toEqual([request])
@@ -777,13 +797,13 @@ describe('sendMessageImpl: IPC dispatch + rollback', () => {
       schemaForm: parseSchemaForm({ type: 'object', properties: { note: { type: 'string' } } }),
       inputRequest: { title: 'Review', output: 'agent', origin: { kind: 'widget', messageId: 'widget' } },
     }] })
-    mockSendMessage.mockRejectedValueOnce(new Error('[input_request:already_resolved] Already answered'))
+    mockEnvSendSessionMessage.mockRejectedValueOnce(new Error('[input_request:already_resolved] Already answered'))
     await useChatStore.getState().sendInputRequest('closed', { note: 'draft' })
     const session = getActiveSession('/proj')
     expect(session.pendingPermissions).toEqual([])
     expect(session.messages[0].metadata?.sendFailure?.error).toContain('already_resolved')
     await useChatStore.getState().resendFailedMessage(session.messages[0].id)
-    expect(mockSendMessage).toHaveBeenCalledTimes(1)
+    expect(mockEnvSendSessionMessage).toHaveBeenCalledTimes(1)
   })
 
   it('sends a widget form to its captured pane and replays its metadata without consuming the draft', async () => {
@@ -800,10 +820,11 @@ describe('sendMessageImpl: IPC dispatch + rollback', () => {
         }],
       },
     } } } })
-    mockSendMessage.mockRejectedValueOnce(new Error('network down'))
+    mockEnvSendSessionMessage.mockRejectedValueOnce(new Error('network down'))
     await useChatStore.getState().sendInputRequest('widget-form', { note: 'First\nSecond' }, { projectPath: '/proj', sessionId: 'owner' })
-    const firstRequest = mockSendMessage.mock.calls[0][1]
-    expect(firstRequest).toMatchObject({ sessionId: 'owner', content: 'Review\nNote:\n  First\n  Second', inputRequest: { requestId: 'widget-form', values: { note: 'First\nSecond' } } })
+    expect(mockEnvSendSessionMessage.mock.calls[0][0]).toBe('local')
+    const firstRequest = sentTurn(0)
+    expect(firstRequest).toMatchObject({ sessionId: 'owner', text: 'Review\nNote:\n  First\n  Second', inputRequest: { requestId: 'widget-form', values: { note: 'First\nSecond' } } })
     const owner = useChatStore.getState().projectSessions['/proj']._sessions.owner
     expect(owner.draftText).toBe('Unsent composer draft')
     expect(owner.mentions).toHaveLength(1)
@@ -811,10 +832,10 @@ describe('sendMessageImpl: IPC dispatch + rollback', () => {
     expect(owner.messages[0].metadata?.sendFailure).toEqual({ error: 'network down' })
     expect(getActiveSession('/proj').draftText).toBe('Other pane draft')
     await useChatStore.getState().resendFailedMessage(owner.messages[0].id)
-    expect(mockSendMessage.mock.calls[1][1]).toEqual(firstRequest)
+    expect(sentTurn(1)).toEqual(firstRequest)
     expect(useChatStore.getState().projectSessions['/proj']._sessions.owner.messages).toHaveLength(1)
     expect(await useChatStore.getState().sendInputRequest('widget-form', { note: 'duplicate' }, { projectPath: '/proj', sessionId: 'owner' })).toBe(false)
-    expect(mockSendMessage).toHaveBeenCalledTimes(2)
+    expect(mockEnvSendSessionMessage).toHaveBeenCalledTimes(2)
   })
 
   it('sends the first Claude message when the draft session is not persisted yet', async () => {
@@ -827,12 +848,19 @@ describe('sendMessageImpl: IPC dispatch + rollback', () => {
 
     await useChatStore.getState().sendMessage('first message')
 
-    expect(mockActivateSession).toHaveBeenCalledWith('/proj', 'draft-sid', '/proj')
-    expect(mockSendMessage).toHaveBeenCalledWith('/proj', expect.objectContaining({
-      content: 'first message',
-      sessionId: 'draft-sid',
-      provider: 'claude',
+    expect(mockEnvCreateSession).toHaveBeenCalledWith('local', expect.objectContaining({
+      projectId: 'local-project-1',
+      harnessId: 'claude',
+      selections: { sessionId: 'draft-sid' },
     }))
+    expect(mockActivateSession).toHaveBeenCalledWith('/proj', 'draft-sid', '/proj')
+    expect(mockEnvSendSessionMessage).toHaveBeenCalledWith('local', expect.objectContaining({
+      text: 'first message',
+      sessionId: 'draft-sid',
+      projectPath: '/proj',
+      providerId: 'claude',
+    }))
+    expect(getActiveSession('/proj').hostSessionOwned).toBe(true)
   })
 
   it('sends the per-session OpenCode agent selection', async () => {
@@ -845,15 +873,16 @@ describe('sendMessageImpl: IPC dispatch + rollback', () => {
 
     await useChatStore.getState().sendMessage('hello')
 
-    expect(mockSendMessage).toHaveBeenCalledWith('/proj', expect.objectContaining({
-      provider: 'opencode',
+    expect(mockEnvSendSessionMessage).toHaveBeenCalledWith('local', expect.objectContaining({
+      providerId: 'opencode',
+      model: 'openai/gpt-5',
       agent: 'general',
     }))
   })
 
   it('marks the bubble failed and stops waiting when sendMessage rejects', async () => {
     seedProject('/proj', 'sid-1')
-    mockSendMessage.mockRejectedValueOnce(new Error("Error invoking remote method 'agent:send-message': Error: network down"))
+    mockEnvSendSessionMessage.mockRejectedValueOnce(new Error("Error invoking remote method 'environment:send-session-message': Error: network down"))
 
     await useChatStore.getState().sendMessage('hello')
 
@@ -866,15 +895,16 @@ describe('sendMessageImpl: IPC dispatch + rollback', () => {
 
   it('resends a failed message as it originally went out, under the same id', async () => {
     seedProject('/proj', 'sid-1')
-    mockSendMessage.mockRejectedValueOnce(new Error('network down'))
+    mockEnvSendSessionMessage.mockRejectedValueOnce(new Error('network down'))
     await useChatStore.getState().sendMessage('hello')
     const failedId = getActiveSession('/proj').messages[0].id
-    const firstRequest = mockSendMessage.mock.calls[0][1]
+    const firstRequest = sentTurn(0)
 
     await useChatStore.getState().resendFailedMessage(failedId)
 
-    expect(mockSendMessage).toHaveBeenCalledTimes(2)
-    expect(mockSendMessage.mock.calls[1][1]).toEqual(firstRequest)
+    expect(mockEnvSendSessionMessage).toHaveBeenCalledTimes(2)
+    expect(mockEnvSendSessionMessage.mock.calls[1][0]).toBe('local')
+    expect(sentTurn(1)).toEqual(firstRequest)
     const sess = getActiveSession('/proj')
     expect(sess.messages).toHaveLength(1)
     expect(sess.messages[0].metadata?.sendFailure).toBeUndefined()
@@ -891,9 +921,12 @@ describe('sendMessageImpl: IPC dispatch + rollback', () => {
 
     await useChatStore.getState().resendFailedMessage('u1')
 
-    expect(mockSendMessage).toHaveBeenCalledWith('/proj', {
-      clientMessageId: 'u1', content: 'hello', userMessageContent: content, images: [image], sessionId: 'sid-1',
-    })
+    expect(mockEnvSendSessionMessage).toHaveBeenCalledWith('local', expect.objectContaining({
+      clientMessageId: 'u1', text: 'hello', userMessageContent: content, images: [image], sessionId: 'sid-1', projectPath: '/proj', providerId: 'claude',
+    }))
+    // The row came from the host: the session exists there, and this is not its first turn.
+    expect(mockEnvCreateSession).not.toHaveBeenCalled()
+    expect(sentTurn()).not.toHaveProperty('permissionMode')
     const sess = getActiveSession('/proj')
     expect(sess.messages.map((m) => m.id)).toEqual(['u1'])
     expect(sess.messages[0].metadata?.sendFailure).toBeUndefined()
@@ -905,7 +938,7 @@ describe('sendMessageImpl: IPC dispatch + rollback', () => {
       id: 'u1', role: 'user', status: 'complete', createdAt: '', providerId: 'local',
       content: [{ type: 'text', text: 'hello' }], metadata: { sendFailure: { error: 'spawn claude ENOENT' } },
     }] })
-    mockSendMessage.mockResolvedValueOnce({ duplicate: true })
+    mockEnvSendSessionMessage.mockResolvedValueOnce({ duplicate: true })
 
     await useChatStore.getState().resendFailedMessage('u1')
 
@@ -926,17 +959,17 @@ describe('sendMessageImpl: IPC dispatch + rollback', () => {
 
     await useChatStore.getState().resendFailedMessage('u1', { projectPath: remotePath, sessionId: 'node-sid-1' })
 
-    expect(mockSendMessage).not.toHaveBeenCalled()
+    expect(mockEnvSendSessionMessage).toHaveBeenCalledTimes(1)
     expect(mockEnvSendSessionMessage).toHaveBeenCalledWith('env-1', expect.objectContaining({
       sessionId: 'node-sid-1', clientMessageId: 'u1', text: 'hello', projectPath: remotePath, providerId: 'claude',
-      images: [{ name: 'a.png', mimeType: 'image/png', base64: 'AAAA' }],
+      images: [{ id: 'img', name: 'a.png', mimeType: 'image/png', base64: 'AAAA' }],
     }))
     expect(getActiveSession(remotePath).messages[0].metadata?.sendFailure).toBeUndefined()
   })
 
   it('edit pulls a failed message back into the composer and forgets its replay', async () => {
     seedProject('/proj', 'sid-1', { draftText: 'typed since' })
-    mockSendMessage.mockRejectedValueOnce(new Error('network down'))
+    mockEnvSendSessionMessage.mockRejectedValueOnce(new Error('network down'))
     await useChatStore.getState().sendMessage('hello')
     const failedId = getActiveSession('/proj').messages[0].id
     useChatStore.getState().setDraftText('typed since')
@@ -947,7 +980,7 @@ describe('sendMessageImpl: IPC dispatch + rollback', () => {
     const sess = getActiveSession('/proj')
     expect(sess.messages).toHaveLength(0)
     expect(sess.draftText).toBe('hello\ntyped since')
-    expect(mockSendMessage).toHaveBeenCalledTimes(1)
+    expect(mockEnvSendSessionMessage).toHaveBeenCalledTimes(1)
   })
 
   it('appends user message and sets awaitingAssistantReply on normal send', async () => {
@@ -959,7 +992,7 @@ describe('sendMessageImpl: IPC dispatch + rollback', () => {
     expect(sess.messages).toHaveLength(1)
     expect(sess.messages[0].role).toBe('user')
     expect(sess.awaitingAssistantReply).toBe(true)
-    expect(mockSendMessage).toHaveBeenCalledWith('/proj', expect.objectContaining({ content: 'hello there' }))
+    expect(mockEnvSendSessionMessage).toHaveBeenCalledWith('local', expect.objectContaining({ text: 'hello there' }))
   })
 
   it('marks Cursor sessions streaming before send IPC returns', async () => {
@@ -967,13 +1000,17 @@ describe('sendMessageImpl: IPC dispatch + rollback', () => {
       sessionProvider: 'cursor',
       preferredProvider: 'cursor',
     })
-    mockSendMessage.mockImplementationOnce(async () => {
+    let seenWhileSending: { awaitingAssistantReply: boolean; status: string } | null = null
+    mockEnvSendSessionMessage.mockImplementationOnce(async () => {
       const sess = getActiveSession('/proj')
-      expect(sess.awaitingAssistantReply).toBe(true)
-      expect(sess.status).toBe('streaming')
+      seenWhileSending = { awaitingAssistantReply: sess.awaitingAssistantReply, status: sess.status }
+      return null
     })
 
     await useChatStore.getState().sendMessage('hello cursor')
+
+    expect(seenWhileSending).toEqual({ awaitingAssistantReply: true, status: 'streaming' })
+    expect(sentTurn()).toMatchObject({ providerId: 'cursor', modelParams: {} })
   })
 })
 
@@ -985,11 +1022,11 @@ describe('sendMessageImpl: queued send (streaming)', () => {
       sessionProvider: 'claude',
       preferredProvider: 'claude',
     })
-    mockSendMessage.mockRejectedValueOnce(new Error('boom'))
+    mockEnvSendSessionMessage.mockRejectedValueOnce(new Error('boom'))
 
     await useChatStore.getState().sendMessage('queued one')
 
-    expect(mockSendMessage).toHaveBeenCalledWith('/proj', expect.objectContaining({ priority: 'next' }))
+    expect(mockEnvSendSessionMessage).toHaveBeenCalledWith('local', expect.objectContaining({ priority: 'next' }))
     const sess = getActiveSession('/proj')
     // The running turn still owns the reply indicator.
     expect(sess.awaitingAssistantReply).toBe(true)
@@ -1026,18 +1063,15 @@ describe('sendMessageImpl: queued send (streaming)', () => {
 
     await useChatStore.getState().sendMessage('queued codex')
 
-    expect(mockRunCodexCommand).not.toHaveBeenCalled()
-    expect(mockSendMessage).toHaveBeenCalledWith('/proj', expect.objectContaining({
-      provider: 'codex',
+    expect(mockEnvSendSessionMessage).toHaveBeenCalledWith('local', expect.objectContaining({
+      providerId: 'codex',
+      text: 'queued codex',
       model: 'gpt-5.6',
-      effort: undefined,
+      effort: 'max',
       priority: 'next',
-      codex: expect.objectContaining({
-        mode: 'run',
-        prompt: 'queued codex',
-        threadId: 'thread-1',
-        reasoningEffort: 'max',
-      }),
+      turnKind: 'run',
+      permissionPreset: 'auto-review',
+      threadId: 'thread-1',
     }))
     expect(getActiveSession('/proj').queuedMessages).toHaveLength(1)
   })
@@ -1068,14 +1102,7 @@ describe('sendMessageImpl: queued send (streaming)', () => {
 
     await useChatStore.getState().sendMessage('use configured default')
 
-    expect(mockRunCodexCommand).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.anything(),
-      expect.objectContaining({
-        resolvedCodexModel: 'gpt-5.6',
-        resolvedCodexReasoningEffort: 'xhigh',
-      }),
-    )
+    expect(sentTurn()).toMatchObject({ model: 'gpt-5.6', effort: 'xhigh' })
   })
 
   it('sends an explicit Codex model when the user chose it', async () => {
@@ -1107,9 +1134,10 @@ describe('sendMessageImpl: queued send (streaming)', () => {
 
     await useChatStore.getState().sendMessage('explicit model')
 
-    expect(mockSendMessage).toHaveBeenCalledWith('/proj', expect.objectContaining({
-      provider: 'codex',
+    expect(mockEnvSendSessionMessage).toHaveBeenCalledWith('local', expect.objectContaining({
+      providerId: 'codex',
       model: 'gpt-5.6',
+      effort: 'max',
     }))
   })
 })
@@ -1136,7 +1164,7 @@ describe('sendMessageImpl: miniapp tool reminder', () => {
 
     await useChatStore.getState().sendMessage('@Excalidraw redraw it')
 
-    const { finalContent } = mockRunCodexCommand.mock.calls[0][2]
+    const finalContent = sentText()
     expect(finalContent).toContain('mcp__superone.miniapp_call')
     expect(finalContent).toContain('appId="excalidraw"')
     expect(finalContent).toContain('read_scene')
@@ -1153,7 +1181,7 @@ describe('sendMessageImpl: miniapp tool reminder', () => {
 
     await useChatStore.getState().sendMessage('@Excalidraw redraw it')
 
-    const content = mockSendMessage.mock.calls[0][1].content as string
+    const content = sentText()
     expect(content).toContain('mcp__superone__miniapp_call')
     expect(content).toContain('appId="excalidraw"')
     expect(content).toContain('miniapp_list')
@@ -1171,7 +1199,7 @@ describe('sendMessageImpl: @agent reminder', () => {
       '<superone-agent><name>Codex</name><ref>codex-base</ref></superone-agent> review this',
     )
 
-    const content = mockSendMessage.mock.calls[0][1].content as string
+    const content = sentText()
     expect(content).toContain('<superone-agent-reminder>')
     expect(content).toContain('- "Codex" → agentId "codex-base"')
     expect(content).toContain('do NOT call session_collab_list_agents')
@@ -1187,7 +1215,7 @@ describe('sendMessageImpl: @agent reminder', () => {
       '<superone-agent><name>Grok</name><ref>acp-base:grok-build</ref></superone-agent> help',
     )
 
-    const content = mockSendMessage.mock.calls[0][1].content as string
+    const content = sentText()
     expect(content).toContain('- "Grok" → agentId "acp-base"')
     expect(content).not.toContain('agentId "acp-base:grok-build"')
   })
@@ -1195,7 +1223,7 @@ describe('sendMessageImpl: @agent reminder', () => {
   it('adds no reminder when no agent was mentioned', async () => {
     seedProject('/proj', 'sid-1', { mentions: [] })
     await useChatStore.getState().sendMessage('just a message')
-    const content = mockSendMessage.mock.calls[0][1].content as string
+    const content = sentText()
     expect(content).not.toContain('superone-agent-reminder')
   })
 })
@@ -1214,7 +1242,7 @@ describe('sendMessageImpl: built-in capability reminder', () => {
       '<superone-capability><name>Super浏览器</name><id>browser</id></superone-capability> use these',
     )
 
-    const content = mockSendMessage.mock.calls[0][1].content as string
+    const content = sentText()
     expect(content).toContain('<superone-capability-reminder>')
     expect(content).toContain('tools start with "mcp__superone__browser_"')
     expect(content).toContain('tools start with "mcp__superone__computer_"')
@@ -1239,7 +1267,7 @@ describe('sendMessageImpl: built-in capability reminder', () => {
     await useChatStore.getState().sendMessage(
       '<superone-capability><name>Debug</name><id>debug</id></superone-capability> this crashed',
     )
-    const content = mockSendMessage.mock.calls[0][1].content as string
+    const content = sentText()
     expect(content).not.toContain('superone-capability-reminder')
     expect(content).not.toContain('read_manual')
   })
@@ -1253,7 +1281,7 @@ describe('sendMessageImpl: built-in capability reminder', () => {
 
     await useChatStore.getState().sendMessage('browse it')
 
-    const { finalContent } = mockRunCodexCommand.mock.calls[0][2]
+    const finalContent = sentText()
     expect(finalContent).toContain('tools start with "mcp__superone.browser_"')
     expect(finalContent).not.toContain('mcp__superone__browser_')
   })
@@ -1268,7 +1296,7 @@ describe('sendMessageImpl: built-in capability reminder', () => {
 
     await useChatStore.getState().sendMessage('twice')
 
-    const content = mockSendMessage.mock.calls[0][1].content as string
+    const content = sentText()
     const matches = content.match(/mcp__superone__browser_/g) ?? []
     expect(matches).toHaveLength(1)
   })
@@ -1284,7 +1312,7 @@ describe('sendMessageImpl: miniapp authorize', () => {
     await useChatStore.getState().sendMessage('use miniapp')
 
     expect(mockMiniAppAuthorize).toHaveBeenCalledWith(['app-a'], '/proj', 'sid-1')
-    expect(mockSendMessage).toHaveBeenCalledTimes(1)
+    expect(mockEnvSendSessionMessage).toHaveBeenCalledTimes(1)
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining('miniapp authorize failed'), expect.any(Error))
   })
 

@@ -213,7 +213,7 @@ export function ensureSessionImpl(
 
     // Remote and local both need a per-session UI row so model/provider prefs stick.
     // Remote drafts use a renderer UUID that does not exist on the node yet;
-    // first send goes through resolveNodeSessionId → session.create (not session.send
+    // first send goes through ensureHostSession → session.create (not session.send
     // with a fake id). Without this row, updateActivePerSession no-ops (no sid) and
     // Claude model selection / preferredProvider never persist on remote projects.
     const draftId = createSessionId()
@@ -578,7 +578,7 @@ export async function resetSessionImpl(set: ChatStoreSet, get: () => ChatStore):
     : false
   // Remote projects use the same draft-sid lifecycle as local: New session only
   // mints a renderer UUID. Node `session.create` happens on first send via
-  // resolveNodeSessionId (no early create, no forced codex default).
+  // ensureHostSession (no early create, no forced codex default).
   const isRemoteProject = !!parseRemoteProjectKey(activeProject)
 
   // Idempotent: a pristine current session (no messages, idle, not a live node
@@ -663,7 +663,7 @@ export async function resetSessionImpl(set: ChatStoreSet, get: () => ChatStore):
   try {
     if (isRemoteProject) {
       // No local SessionManager / no node session.create here.
-      // First send materializes via resolveNodeSessionId.
+      // First send materializes via ensureHostSession.
     } else if (activeSession.sessionProvider === 'codex') {
       if (activeSession.status !== 'streaming' && currentSid) {
         await window.agent.resetSession(currentSid).catch(() => {})

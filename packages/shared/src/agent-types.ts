@@ -2049,7 +2049,6 @@ export type AgentEventBase =
   | { type: 'interaction_resolved'; interactionType: 'permission' | 'question' | 'plan_approval'; requestId: string; approved?: boolean; feedback?: string }
   /** Host-recorded read receipt: some client looked at this completion. `messageId` null when nothing has completed yet. */
   | { type: 'session_seen'; messageId: string | null }
-  | { type: 'codex_collaboration_mode_change'; mode: string }
   | { type: 'codex_plan_approval'; messageId: string; status: 'approved' | 'rejected'; feedback?: string }
   | { type: 'api_retry'; attempt: number; maxRetries?: number; delayMs: number; message?: string; phase?: 'retrying' | 'exhausted' | 'failed' }
   | { type: 'mcp_status'; servers: McpServerInfo[]; init?: { connected: number; total: number } | null }
@@ -4106,13 +4105,7 @@ export const AgentIpcChannels = {
   SETUP_CHECK_CLAUDE: 'app:setup-check-claude',
   SETUP_INSTALL_CLAUDE: 'app:setup-install-claude',
   SETUP_EVENT: 'app:setup-event',
-  CODEX_RUN: 'codex:run',
   CODEX_LIST_MODELS: 'codex:list-models',
-  CODEX_STEER: 'codex:steer',
-  CODEX_REVIEW: 'codex:review',
-  CODEX_COMPACT: 'codex:compact',
-  CODEX_PLAN_APPROVAL: 'codex:plan-approval',
-  CODEX_COLLABORATION_MODE_CHANGE: 'codex:collaboration-mode-change',
   CODEX_GET_AUTH_STATUS: 'codex:get-auth-status',
   CODEX_SET_AUTH: 'codex:set-auth',
   CODEX_GET_ACCOUNT_STATUS: 'codex:get-account-status',
@@ -4142,7 +4135,6 @@ export const AgentIpcChannels = {
   ACP_GET_RATE_LIMITS: 'acp:get-rate-limits',
 
   // Agent channels
-  SEND_MESSAGE: 'agent:send-message',
   START_QUEUED_MESSAGES: 'agent:start-queued-messages',
   PREWARM: 'agent:prewarm',
   WORKTREE_REMOVED: 'agent:worktree-removed',

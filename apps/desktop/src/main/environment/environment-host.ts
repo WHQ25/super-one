@@ -1933,7 +1933,8 @@ export class EnvironmentHost {
     if (model) options.model = model
     if (effort) options.effort = effort
     if (permissionMode) options.permissionMode = permissionMode
-    if (additionalDirectories.length > 0) options.additionalDirectories = additionalDirectories
+    // An empty list is a choice too: the folders the caller added last turn are gone.
+    if (Array.isArray(input.additionalDirectories)) options.additionalDirectories = additionalDirectories
     const enabledSkills = Array.isArray(input.enabledSkills)
       ? input.enabledSkills.filter((s): s is string => typeof s === 'string' && s.trim().length > 0)
       : []

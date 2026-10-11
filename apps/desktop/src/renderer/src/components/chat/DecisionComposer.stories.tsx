@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useEffect, useMemo, type ReactNode } from 'react'
+import { mockIpc } from '../../../../../.storybook/mock-ipc'
 import { elicitationFormRequest } from '@superone/shared/schema-form'
 import type { AskUserQuestionRequest, ChatMessage as ChatMessageType, PermissionRequest } from '@superone/shared/agent-types'
 import { isCodexAsyncAnswer, pendingCodexAsyncQuestions } from '@superone/shared/codex-async-question'
@@ -143,14 +144,17 @@ function QueueStory({
 }) {
   const restoreMocks = useMemo(() => {
     if (messages.length === 0) return undefined
-    const previous = window.app.codexSteer
-    const previousMediaPort = window.app.getMediaServerPort
+    const previous = window.environment
     let failed = false
-    window.app.codexSteer = async () => {
-      if (retry && !failed) { failed = true; throw new Error('Connection lost. Try submitting again.') }
-    }
-    window.app.getMediaServerPort = async () => 0
-    return () => { window.app.codexSteer = previous; window.app.getMediaServerPort = previousMediaPort }
+    window.environment = {
+      ...previous,
+      callSession: async (_connectionId: string, _sessionId: string, _method: string, input: { answers: string[] }) => {
+        if (retry && !failed) { failed = true; throw new Error('Connection lost. Try submitting again.') }
+        return { reply: input.answers.join('\n') }
+      },
+    } as unknown as typeof window.environment
+    mockIpc('app', 'getMediaServerPort', async () => 0)
+    return () => { window.environment = previous }
   }, [messages, retry])
   useEffect(() => restoreMocks, [restoreMocks])
   return (

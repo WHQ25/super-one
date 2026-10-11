@@ -1300,7 +1300,6 @@ export class CodexBackend implements SessionBackend {
         return
       }
       case 'codex.plan_approval':
-      case 'codex.collaboration_mode_change':
         return
     }
   }

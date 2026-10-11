@@ -102,7 +102,7 @@ import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
 import { buildSessionProjectOptions, mentionQueryAllowsSpaces } from './session-mention-query'
 import { chatInputAPI } from './chat-input-api'
 import { isUnsentSession } from '@/stores/chat-store/helpers/session-liveness'
-import { prepareRemoteSendTarget, remoteTurnOptions } from '@/stores/chat-store/helpers/send-message-remote'
+import { applyPendingWorktree, ensureHostSession, scheduledTurnOptions } from '@/stores/chat-store/helpers/session-turn'
 import { createSendWriteScope } from '@/stores/chat-store/helpers/send-write-scope'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { callSession } from '@/lib/session-client'
@@ -345,8 +345,7 @@ export function ChatInput({
           worktreePath: fileRoot && fileRoot !== sessionProject ? fileRoot : null,
         }
         if (!remoteScheduleKey) return init
-        const worktreeActivePath = useAppStore.getState().getWorktreeState(sessionProject).activePath
-        return { ...init, remoteTurn: remoteTurnOptions(useChatStore.getState(), sessionProject, sessionId, worktreeActivePath) }
+        return { ...init, remoteTurn: scheduledTurnOptions(useChatStore.getState(), sessionProject, sessionId) }
       },
       [sessionProject, remoteScheduleKey, activeProviderForResources, fileRoot],
     )
@@ -1086,8 +1085,9 @@ export function ChatInput({
         return
       }
       const scope = createSendWriteScope(useChatStore.setState, useChatStore.getState, sessionProject, sessionScope ?? undefined)
-      prepareRemoteSendTarget(useChatStore.setState, useChatStore.getState, sessionProject, remoteScheduleKey, scope)
-        .then(({ sid }) => scheduleSend(draft, sendAt, sid))
+      void applyPendingWorktree(sessionProject, scope)
+        .then((ready) => ready ? ensureHostSession(useChatStore.setState, useChatStore.getState, sessionProject, scope) : null)
+        .then((sid) => { if (sid) scheduleSend(draft, sendAt, sid) })
         .catch((err: unknown) => toast.error(err instanceof Error ? err.message : String(err)))
     }, [scheduledDraft, scheduleSend, sessionProject, remoteScheduleKey, sessionScope])
 

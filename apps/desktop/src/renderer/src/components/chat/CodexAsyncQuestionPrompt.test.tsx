@@ -10,7 +10,7 @@ import { CodexAsyncQuestionPrompt } from './CodexAsyncQuestionPrompt'
 import { ChatMessage as Message } from './ChatMessage'
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key, i18n: { resolvedLanguage: 'en' } }) }))
-const steer = vi.fn<(...args: unknown[]) => Promise<void>>(async () => {})
+const answer = vi.fn<(...args: unknown[]) => Promise<{ reply: string }>>(async () => ({ reply: 'Production' }))
 const turn: ChatMessage = {
   id: 'turn', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'codex',
   metadata: { codex: { threadId: 'thread', usage: null, items: [
@@ -20,9 +20,9 @@ const turn: ChatMessage = {
 }
 const session = () => useChatStore.getState().projectSessions['/project']._sessions['session-1']
 beforeEach(() => {
-  steer.mockReset()
-  steer.mockResolvedValue(undefined)
-  window.app.codexSteer = steer
+  answer.mockReset()
+  answer.mockResolvedValue({ reply: 'Production' })
+  window.environment = { callSession: answer } as unknown as typeof window.environment
   useChatStore.setState({ remoteSessions: {}, activeProject: '/project', projectSessions: { '/project': {
     ...createDefaultProjectState(), _activeSessionId: 'session-1', _sessions: {
       'session-1': { ...createDefaultPerSessionState(), status: 'streaming', sessionProvider: 'codex', messages: [turn] },
@@ -33,18 +33,18 @@ afterEach(cleanup)
 
 describe('Codex async question decisions', () => {
   it('keeps one question interactive until acceptance, then advances and renders a Q&A user bubble', async () => {
-    let accept!: () => void
-    steer.mockImplementationOnce(() => new Promise<void>(resolve => { accept = resolve }))
+    let accept!: (value: { reply: string }) => void
+    answer.mockImplementationOnce(() => new Promise(resolve => { accept = resolve }))
     render(<div data-chat-root=""><DecisionComposer /></div>)
     expect(screen.queryByText('What deadline?')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: /Production/ }))
     const submit = screen.getByRole('button', { name: /chat.askUser.submit/ })
     fireEvent.click(submit)
     fireEvent.click(submit)
-    expect(steer).toHaveBeenCalledTimes(1)
+    expect(answer).toHaveBeenCalledTimes(1)
     expect(submit).toBeDisabled()
     expect(pendingCodexAsyncQuestions(session().messages)).toHaveLength(2)
-    await act(async () => accept())
+    await act(async () => accept({ reply: 'Production' }))
     expect(screen.getByText('What deadline?')).toBeInTheDocument()
     const reply = session().messages.find(message => message.id === 'codex_async_answer:first')!
     expect(reply.content).toEqual([{ type: 'text', text: 'Production', codexAsyncQuestions: turn.metadata!.codex!.items[0]!.type === 'agent_message' ? turn.metadata!.codex!.items[0]!.questions : [] }])
@@ -54,11 +54,11 @@ describe('Codex async question decisions', () => {
     expect(bubble).toHaveTextContent('Production')
     expect(bubble).not.toHaveTextContent('chat.askUser.yourAnswer')
     expect(bubble.querySelector('blockquote')).toHaveTextContent('Which environment?')
-    expect(steer).toHaveBeenCalledWith('session-1', 'Production', '', reply.id, 'Production')
+    expect(answer).toHaveBeenCalledWith('local', 'session-1', 'session.answerAsyncQuestion', { messageId: 'turn', itemId: 'first', answers: ['Production'] })
   })
 
   it('preserves the answer and queue position when delivery fails, and allows retry', async () => {
-    steer.mockRejectedValueOnce(new Error('Connection lost'))
+    answer.mockRejectedValueOnce(new Error('Connection lost'))
     render(<div data-chat-root=""><DecisionComposer /></div>)
     fireEvent.click(screen.getByRole('button', { name: /Production/ }))
     fireEvent.click(screen.getByRole('button', { name: /chat.askUser.submit/ }))
@@ -67,7 +67,7 @@ describe('Codex async question decisions', () => {
     expect(session().messages).toHaveLength(1)
     fireEvent.click(screen.getByRole('button', { name: /chat.askUser.submit/ }))
     await waitFor(() => expect(screen.getByText('What deadline?')).toBeInTheDocument())
-    expect(steer.mock.calls.map(call => call[1])).toEqual(['Production', 'Production'])
+    expect(answer.mock.calls.map(call => (call[3] as { answers: string[] }).answers)).toEqual([['Production'], ['Production']])
   })
 
   it('locks controls when a phone takes control and advances when its answer arrives', () => {
@@ -78,7 +78,7 @@ describe('Codex async question decisions', () => {
       message: { id: 'codex_async_answer:first', role: 'user', status: 'complete', providerId: 'codex', createdAt: '', content: [{ type: 'text', text: 'Production' }] },
     }))
     expect(screen.getByText('What deadline?')).toBeInTheDocument()
-    expect(steer).not.toHaveBeenCalled()
+    expect(answer).not.toHaveBeenCalled()
   })
 
   it('targets the scoped pane even if the foreground session is locked', async () => {
@@ -92,7 +92,7 @@ describe('Codex async question decisions', () => {
     </SessionScopeProvider>)
     fireEvent.click(screen.getByRole('button', { name: /Production/ }))
     fireEvent.click(screen.getByRole('button', { name: /chat.askUser.submit/ }))
-    await waitFor(() => expect(steer).toHaveBeenCalledWith('session-2', 'Production', '', 'codex_async_answer:first', 'Production'))
+    await waitFor(() => expect(answer).toHaveBeenCalledWith('local', 'session-2', 'session.answerAsyncQuestion', { messageId: 'turn', itemId: 'first', answers: ['Production'] }))
     expect(session().messages).toHaveLength(1)
     await waitFor(() => expect(useChatStore.getState().projectSessions['/project']._sessions['session-2'].messages).toHaveLength(2))
   })

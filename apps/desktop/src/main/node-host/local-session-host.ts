@@ -50,14 +50,15 @@ export class LocalSessionHost extends DesktopSessionReads<DesktopSessionRow> imp
   }
 
   /**
-   * A side chat is a live ephemeral session that never writes a row; it is
-   * served like any session while it runs, and lists never show it.
+   * A live session without a row is served while it runs: a side chat, which
+   * never writes one, and a draft's prewarmed runtime, which its first message
+   * stores. Lists show neither.
    */
   protected override row(sessionId: string): DesktopSessionRow | null {
     const stored = super.row(sessionId)
     if (stored) return stored
     const live = this.deps.sessions.getSession(sessionId)
-    if (!live?.ephemeral) return null
+    if (!live) return null
     const projectId = this.deps.projectId?.(live.projectPath)
     if (!projectId) return null
     const { harnessId, providerId, providerSessionId, cwd } = live.snapshot
@@ -65,7 +66,7 @@ export class LocalSessionHost extends DesktopSessionReads<DesktopSessionRow> imp
     return {
       sessionId, projectId, projectPath: live.projectPath, title: null, harnessId, providerId,
       providerSessionId: providerSessionId ?? null, worktreePath: cwd !== live.projectPath ? cwd : null,
-      isPinned: false, isHidden: true, isUserRenamed: false, tags: [], createdAt: now, updatedAt: now, controller: null,
+      isPinned: false, isHidden: live.ephemeral === true, isUserRenamed: false, tags: [], createdAt: now, updatedAt: now, controller: null,
     }
   }
 

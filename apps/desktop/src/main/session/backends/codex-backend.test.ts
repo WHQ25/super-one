@@ -1625,9 +1625,8 @@ describe('CodexBackend interrupt / approval forwarding', () => {
     expect(service.steerMock).toHaveBeenCalledWith(expect.objectContaining({ projectPath: '/tmp/proj' }), 'redirect')
   })
 
-  it('handleCommand(codex.plan_approval / codex.collaboration_mode_change) is a backend no-op', async () => {
+  it('handleCommand(codex.plan_approval) is a backend no-op', async () => {
     await expect(backend.handleCommand({ kind: 'codex.plan_approval', messageId: 'm-1', status: 'approved' })).resolves.toBeUndefined()
-    await expect(backend.handleCommand({ kind: 'codex.collaboration_mode_change', mode: 'parallel' })).resolves.toBeUndefined()
     expect(service.steerMock).not.toHaveBeenCalled()
   })
 

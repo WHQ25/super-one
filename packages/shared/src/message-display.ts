@@ -5,6 +5,8 @@ import { safeImageUri } from './image-uri'
 export interface MessageDisplayFields {
   userMessageContent?: ContentBlock[]
   contexts?: ChatMessageContext[]
+  /** Text the user quoted into the message, shown as quote chips on its bubble. */
+  userSelections?: string[]
   /**
    * The message is a collaboration delivery (a parent's launch task). The host
    * that runs the session names where it came from, since a parent on another
@@ -35,6 +37,10 @@ export function parseMessageDisplay(value: unknown): MessageDisplayFields {
       return { appId: item.appId as string, appName: item.appName as string, summary: item.summary as string, content: item.content as string,
         ...(typeof item.color === 'string' ? { color: item.color } : {}), ...(thumbnail ? { thumbnail } : {}) }
     })
+  }
+  if (input.userSelections !== undefined) {
+    if (!Array.isArray(input.userSelections) || input.userSelections.some(value => typeof value !== 'string')) throw new Error('Invalid quoted selections')
+    if (input.userSelections.length) result.userSelections = input.userSelections as string[]
   }
   if (input.collaboration !== undefined) {
     const collaboration = input.collaboration as Record<string, unknown> | null

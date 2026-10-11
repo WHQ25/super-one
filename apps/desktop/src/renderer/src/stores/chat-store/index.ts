@@ -247,7 +247,6 @@ export function invalidateDefaultCodexPreferencesCache(): Promise<void> {
 export {
   _buildQuestionAnswerItem,
   _computeHasPendingInteraction,
-  _ensureClaudeSessionReadyForSend,
   _isBusyStatus,
   _isLiveSession,
   _needsForegroundActivation,
@@ -260,7 +259,6 @@ export {
 import {
   _buildQuestionAnswerItem,
   _computeHasPendingInteraction,
-  _ensureClaudeSessionReadyForSend,
   _isBusyStatus,
   _isLiveSession,
   _needsForegroundActivation,
@@ -270,8 +268,6 @@ import {
   type ChatStoreSet,
 } from './helpers/lifecycle'
 
-export { runCodexCommand } from './codex/runner'
-import { runCodexCommand } from './codex/runner'
 import { approveCodexPlanImpl, rejectCodexPlanImpl } from './codex/plan-actions'
 import { sendMessageImpl } from './helpers/send-message'
 import { sendInputRequestImpl } from './helpers/input-request-send'

@@ -95,7 +95,6 @@ import { RemoteTerminalController } from './environment/remote-terminal-controll
 import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
 import { isGitMentionRefKind, type GitMentionRefKind } from '@superone/shared/git-mention-query'
 import { AUDIO_EXTENSIONS, BINARY_IMAGE_EXTENSIONS, MODEL_EXTENSIONS, PDF_EXTENSIONS, VIDEO_EXTENSIONS } from '@superone/shared/file-preview'
-import { newMessageId } from '@superone/shared/message-id'
 import { nodePtySpawner } from './terminal/pty'
 import { DeviceRegistry } from './remote/device-registry'
 import { createDesktopTopicHub, publishHubEvent, topicOfTerminalEvent } from './stream/desktop-topics'
@@ -144,23 +143,15 @@ import {
   AgentIpcChannels,
   type ModelOption,
   type SaveWidgetTemplateRequest,
-  type CodexCollaborationMode,
-  type CodexPermissionPreset,
-  type CodexReasoningEffort,
-  type CodexReviewTarget,
-  type CodexRunResult,
   type CodexExternalAgentItem,
   type CodexMcpOauthLoginOptions,
   type AgentEvent,
-  type CodexThreadItem,
-  type CodexUsageInfo,
   type CodexSetAuthRequest,
   type CodexAccountLoginStartResult,
   type CodexAccountStatus,
   type CodexAccountUsage,
   type CodexRateLimitResetOutcome,
   type CodexRateLimits,
-  type ImageAttachment,
   type ClaudeResources,
   type CodexResources,
   type StartupData,
@@ -276,7 +267,7 @@ import {
 import { applyLocale, getSystemLocale, getCurrentLocale, initMainI18n, t } from './i18n'
 import { applyAppIcon, clearStoredCustomIcons, getAppIcon, storeCustomIcon } from './app-icon'
 import { planStartDrag } from './start-drag'
-import type { PairedDevice, CreateAutomationRequest, RemoteDeviceConfig, UpdateAutomationRequest, ChatMessageContext, ContentBlock, WorktreeActivateRequest } from '@superone/shared/agent-types'
+import type { PairedDevice, CreateAutomationRequest, RemoteDeviceConfig, UpdateAutomationRequest, WorktreeActivateRequest } from '@superone/shared/agent-types'
 import type { RemoteControlCallbacks } from './remote-control-service'
 import { markStartup } from '@superone/shared/startup-marks'
 import { loadRendererPage, registerRendererProtocol, RENDERER_SCHEME, RENDERER_SCHEME_PRIVILEGES, usesRendererDevServer } from './renderer-protocol'
@@ -1773,89 +1764,6 @@ function setAppMediaPermissions(appId: string, manifest: { permissions?: { media
 
 
 /**
- * `serviceTier` is the Fast pick the turn was actually sent with. It has to be
- * threaded in here because a pick made on a draft never reached main: the
- * BROADCAST_SESSION_SETTING handler has no Session to merge it into yet, so the
- * first send is the only place main can learn it.
- */
-async function getOrCreateCodexSession(sessionId: string, projectPath: string, cwd?: string, gitBranch?: string | null, apiProviderId?: string | null, serviceTier?: string | null) {
-  let existing = sessionManager.getSession(sessionId)
-  // An empty draft keeps its sid across a harness switch, and the renderer's
-  // fire-and-forget reset of the prior runtime may still be tearing it down.
-  // Finish that disposal (joined if in flight) and create the Codex session.
-  if (
-    existing
-    && existing.snapshot.harnessId !== 'codex'
-    && existing.snapshot.messages.length === 0
-    && !existing.isStreaming()
-  ) {
-    await sessionManager.disposeSession(sessionId)
-    existing = null
-  }
-  if (existing) {
-    if (existing.snapshot.harnessId !== 'codex') {
-      throw new Error(`Session ${sessionId} is not a codex session (harness=${existing.snapshot.harnessId})`)
-    }
-    sessionManager.setActiveSession(projectPath, existing.snapshot.id)
-    if (apiProviderId != null && existing.snapshot.apiProviderId !== apiProviderId) {
-      existing.setApiProviderId(apiProviderId)
-    }
-    if (serviceTier !== undefined && existing.getUiSettings().selectedCodexServiceTier !== serviceTier) {
-      existing.broadcastSettingsPatch({ selectedCodexServiceTier: serviceTier })
-    }
-    return existing
-  }
-  const fresh = sessionManager.createSession({
-    projectPath,
-    id: sessionId,
-    providerId: 'codex-base',
-    cwd,
-    gitBranch: gitBranch ?? null,
-    apiProviderId: apiProviderId ?? null,
-    codexServiceTier: serviceTier,
-  })
-  return fresh
-}
-
-function getCodexSession(sessionId: string): ReturnType<typeof sessionManager.getSession> {
-  const existing = sessionManager.getSession(sessionId)
-  if (!existing || existing.snapshot.harnessId !== 'codex') return null
-  return existing
-}
-
-async function runCodexTurnViaSessionManager(
-  session: ReturnType<typeof sessionManager.getSession> & object,
-  assistantMessageId: string,
-  request: Parameters<typeof session.send>[0],
-): Promise<CodexRunResult> {
-  let captured: CodexRunResult | null = null
-  let turnError: Error | null = null
-  const unsub = session.on((ev) => {
-    if (!('messageId' in ev) || (ev as { messageId?: string }).messageId !== assistantMessageId) return
-    if (ev.type === 'message_complete') {
-      const meta = (ev.metadata as Record<string, unknown> | undefined)?.codex as Record<string, unknown> | undefined
-      captured = {
-        threadId: (meta?.threadId as string | null | undefined) ?? null,
-        finalResponse: (meta?.finalResponse as string | undefined) ?? '',
-        usage: (meta?.usage as CodexUsageInfo | null | undefined) ?? null,
-        items: (meta?.items as CodexThreadItem[] | undefined) ?? [],
-      }
-    } else if (ev.type === 'message_error') {
-      turnError = new Error(ev.error || 'Codex run failed')
-    } else if (ev.type === 'message_interrupted') {
-      turnError = new Error('Codex run interrupted')
-    }
-  })
-  try {
-    await session.send(request)
-    if (turnError) throw turnError
-    return captured ?? { threadId: null, finalResponse: '', usage: null, items: [] }
-  } finally {
-    unsub()
-  }
-}
-
-/**
  * Forward supervisor state changes to the renderer once per host instance.
  * Attached lazily so the environment subsystem stays unloaded until used.
  */
@@ -2626,55 +2534,6 @@ function registerIpcHandlers(): void {
     gitStatusSnapshot.invalidate(folderPath)
   })
 
-  ipcMain.handle(
-    AgentIpcChannels.CODEX_RUN,
-    async (
-      _event,
-      sessionId: string,
-      projectPath: string,
-      prompt: string,
-      model?: string,
-      reasoningEffort?: CodexReasoningEffort,
-      permissionPreset?: CodexPermissionPreset,
-      collaborationMode?: CodexCollaborationMode,
-      threadId?: string,
-      messageId?: string,
-      images?: ImageAttachment[],
-      cwd?: string,
-      userMessageId?: string,
-      userMessageText?: string,
-      gitBranch?: string,
-      worktreePath?: string,
-      extras?: { contexts?: ChatMessageContext[]; userSelections?: string[]; userMessageContent?: ContentBlock[]; apiProviderId?: string | null; serviceTier?: string | null; additionalDirectories?: string[] },
-    ) => {
-      const assistantMessageId = messageId ?? `codex_${Date.now()}`
-      const persistedUserMessageId = userMessageId ?? newMessageId('user')
-      const session = await getOrCreateCodexSession(sessionId, projectPath, cwd, gitBranch, extras?.apiProviderId, extras?.serviceTier)
-      return runCodexTurnViaSessionManager(session, assistantMessageId, {
-        content: userMessageText ?? prompt,
-        model,
-        images,
-        clientMessageId: persistedUserMessageId,
-        assistantMessageId,
-        gitBranch,
-        worktreePath,
-        additionalDirs: extras?.additionalDirectories,
-        ...(extras?.userMessageContent ? { userMessageContent: extras.userMessageContent } : {}),
-        ...(extras?.contexts ? { contexts: extras.contexts } : {}),
-        ...(extras?.userSelections ? { userSelections: extras.userSelections } : {}),
-        codex: {
-          mode: 'run',
-          prompt,
-          reasoningEffort,
-          serviceTier: extras?.serviceTier,
-          permissionPreset,
-          collaborationMode,
-          threadId,
-        },
-      })
-    },
-  )
-
   ipcMain.handle(AgentIpcChannels.CODEX_LIST_MODELS, async (_event, projectPath: string, apiProviderId?: string | null, force?: boolean) => {
     const remoteKey = parseRemoteProjectKey(projectPath)
     // Remote: models come only from the node provider store (never local Codex/credentials).
@@ -2993,118 +2852,6 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.MCPB_REVEAL, (_event, name: string) => {
     return revealMcpbBundle(name)
   })
-
-  ipcMain.handle(AgentIpcChannels.CODEX_PLAN_APPROVAL, (_event, _projectPath: string, sessionId: string, messageId: string, status: 'approved' | 'rejected', feedback?: string) => {
-    return getCodexSession(sessionId)?.dispatchBackendCommand({
-      kind: 'codex.plan_approval',
-      messageId,
-      status,
-      ...(feedback ? { feedback } : {}),
-    })
-  })
-
-  ipcMain.handle(AgentIpcChannels.CODEX_COLLABORATION_MODE_CHANGE, (_event, _projectPath: string, sessionId: string, mode: string) => {
-    return getCodexSession(sessionId)?.dispatchBackendCommand({ kind: 'codex.collaboration_mode_change', mode })
-  })
-
-  ipcMain.handle(
-    AgentIpcChannels.CODEX_STEER,
-    (_event, sessionId: string, input: string, messageId?: string, userMessageId?: string, userMessageText?: string) => {
-      const existing = getCodexSession(sessionId)
-      if (!existing) throw new Error(`CODEX_STEER: no codex session found for sid=${sessionId}`)
-      return existing.dispatchBackendCommand({
-        kind: 'codex.steer',
-        input,
-        newAssistantMessageId: messageId ?? `codex_${Date.now()}`,
-        newUserMessageId: userMessageId ?? newMessageId('user'),
-        newUserText: userMessageText ?? input,
-      })
-    },
-  )
-
-  ipcMain.handle(
-    AgentIpcChannels.CODEX_REVIEW,
-    async (
-      _event,
-      sessionId: string,
-      projectPath: string,
-      target: CodexReviewTarget,
-      model?: string,
-      reasoningEffort?: CodexReasoningEffort,
-      permissionPreset?: CodexPermissionPreset,
-      threadId?: string,
-      messageId?: string,
-      cwd?: string,
-      userMessageId?: string,
-      userMessageText?: string,
-      gitBranch?: string,
-      worktreePath?: string,
-      extras?: { contexts?: ChatMessageContext[]; userSelections?: string[]; userMessageContent?: ContentBlock[]; apiProviderId?: string | null; serviceTier?: string | null; additionalDirectories?: string[] },
-    ) => {
-      const assistantMessageId = messageId ?? `codex_${Date.now()}`
-      const session = await getOrCreateCodexSession(sessionId, projectPath, cwd, gitBranch, extras?.apiProviderId, extras?.serviceTier)
-      return runCodexTurnViaSessionManager(session, assistantMessageId, {
-        content: userMessageText ?? '/review',
-        model,
-        clientMessageId: userMessageId ?? newMessageId('user'),
-        assistantMessageId,
-        gitBranch,
-        worktreePath,
-        additionalDirs: extras?.additionalDirectories,
-        ...(extras?.userMessageContent ? { userMessageContent: extras.userMessageContent } : {}),
-        ...(extras?.contexts ? { contexts: extras.contexts } : {}),
-        ...(extras?.userSelections ? { userSelections: extras.userSelections } : {}),
-        codex: {
-          mode: 'review',
-          reviewTarget: target,
-          reasoningEffort,
-          serviceTier: extras?.serviceTier,
-          permissionPreset,
-          threadId,
-        },
-      })
-    },
-  )
-
-  ipcMain.handle(
-    AgentIpcChannels.CODEX_COMPACT,
-    async (
-      _event,
-      sessionId: string,
-      projectPath: string,
-      model?: string,
-      permissionPreset?: CodexPermissionPreset,
-      threadId?: string,
-      messageId?: string,
-      cwd?: string,
-      userMessageId?: string,
-      userMessageText?: string,
-      gitBranch?: string,
-      worktreePath?: string,
-      extras?: { contexts?: ChatMessageContext[]; userSelections?: string[]; userMessageContent?: ContentBlock[]; apiProviderId?: string | null; serviceTier?: string | null; additionalDirectories?: string[] },
-    ) => {
-      const assistantMessageId = messageId ?? `codex_${Date.now()}`
-      const session = await getOrCreateCodexSession(sessionId, projectPath, cwd, gitBranch, extras?.apiProviderId, extras?.serviceTier)
-      return runCodexTurnViaSessionManager(session, assistantMessageId, {
-        content: userMessageText ?? '/compact',
-        model,
-        clientMessageId: userMessageId ?? newMessageId('user'),
-        assistantMessageId,
-        gitBranch,
-        worktreePath,
-        additionalDirs: extras?.additionalDirectories,
-        ...(extras?.userMessageContent ? { userMessageContent: extras.userMessageContent } : {}),
-        ...(extras?.contexts ? { contexts: extras.contexts } : {}),
-        ...(extras?.userSelections ? { userSelections: extras.userSelections } : {}),
-        codex: {
-          mode: 'compact',
-          serviceTier: extras?.serviceTier,
-          permissionPreset,
-          threadId,
-        },
-      })
-    },
-  )
 
   // Every session pane refreshes on the same signal (its turn going idle), so
   // the requests arrive together and want the same snapshot. No TTL: a refresh

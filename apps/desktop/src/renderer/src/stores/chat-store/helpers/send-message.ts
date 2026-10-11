@@ -1,4 +1,4 @@
-import { sendRemoteMessageImpl } from './send-message-remote'
+import { toast } from 'sonner'
 import { createSendWriteScope } from './send-write-scope'
 import { shouldInterceptHostSlash } from './send-command-policy'
 import { codexAccountId, isCodexAccountProvider } from '@superone/shared/codex-accounts'
@@ -7,23 +7,21 @@ import type { ChatMessage, ContentBlock, ImageAttachment } from '@superone/share
 import { pendingSlashCommandFrom } from '@superone/chat-core'
 import { newMessageId } from '@superone/shared/message-id'
 import { buildBrowserAnnotationText } from './browser-annotation'
-import { runCodexCommand } from '../codex/runner'
-import { createDefaultPerSessionState, createSessionId, freshSubagentColorPool } from '../defaults'
-import { createLocalTextUserMessage, formatCodexLoginStart, isRunnableCodexCommand, parseCodexCommand, resolveSessionCodexSelection, type CodexCommand } from './codex-helpers'
-import { _ensureClaudeSessionReadyForSend, resetLock, type ChatStoreSet } from './lifecycle'
+import { createDefaultPerSessionState, createSessionId } from '../defaults'
+import { createLocalTextUserMessage, formatCodexLoginStart, parseCodexCommand, type CodexCommand } from './codex-helpers'
+import { resetLock, type ChatStoreSet } from './lifecycle'
 import { _getEffectiveSessionId } from './persistence'
 import { applyCachedCodexPermissionPreset } from './prefs-cache'
-import { commitPerSession, getProject, getScopedPerSession, mergeCallerScopedDirs } from './store-helpers'
+import { commitPerSession, getProject, getScopedPerSession } from './store-helpers'
 import { isControlledElsewhere } from './remote-control'
 import { isGrokAcpAgent } from '@superone/shared/acp-brand'
 import { CLAUDE_INTERCEPTED_COMMANDS, isRemoteSession } from '../index'
 import type { ChatProvider, ChatStore, InputSegment, Mention, SessionWriteTarget } from '../types'
-import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { callSession } from '@/lib/session-client'
 import { expandPathRefTagsForAgent } from '@superone/shared/miniapp-prompt-tags'
 import { isBuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
-import { sessionSendRequest, shouldQueueUserSend } from './session-send-request'
-import { deliverUserSend } from './send-replay'
+import { shouldQueueUserSend } from './session-send-request'
+import { applyPendingWorktree, deliverSessionTurn, ensureHostSession, queuesBehindTurn, sessionTurnRequest } from './session-turn'
 import { resolveEffectiveProviderId } from '@/lib/provider-resolve'
 
 async function isOfficialCodexProvider(apiProviderId: string | null): Promise<boolean> {
@@ -51,7 +49,8 @@ async function isOfficialCodexProvider(apiProviderId: string | null): Promise<bo
  * - utility codex commands (reset/login/logout/plan) routed to the popup
  * - intercepted slash commands (/provider, /clear, /mcp, Grok /recap)
  * - user message appended (or queued during a claude streaming turn)
- * - dispatch: codex → runCodexCommand, claude → window.agent.sendMessage
+ * - the session made real on its host, then the turn sent through
+ *   `window.environment` in every environment
  *
  * Optional `target` pins the send to a mosaic-tile (or other scoped) session so a
  * project-active pointer that has not yet flipped cannot steal the turn.
@@ -137,52 +136,7 @@ export async function sendMessageImpl(
     })
   }
 
-  // Remote node project: route through EnvironmentHost → CLI session.send (lease handled in Main).
-  const remoteKey = parseRemoteProjectKey(projectPath)
-  if (remoteKey) {
-    return sendRemoteMessageImpl(set, get, projectPath, remoteKey, content, writeScope, segments, explicitMentions, explicitAttachments)
-  }
-
-  const { useAppStore } = await import('../../app')
-  const wtState = useAppStore.getState().getWorktreeState(projectPath)
-  if (wtState.pendingBaseBranch) {
-    const baseBranch = wtState.pendingBaseBranch
-    const mode = wtState.pendingMode
-    const branchName = wtState.pendingBranchName.trim()
-    if (mode === 'branch' && !branchName) {
-      console.error('[sendMessage] Branch mode requires a branch name')
-      return
-    }
-    const result = await window.app.activateWorktree(projectPath, {
-      baseBranch,
-      mode,
-      branchName: mode === 'branch' ? branchName : undefined,
-      carryLocalChanges: wtState.pendingCarryLocalChanges,
-    })
-    if (!result.ok) {
-      console.error('[sendMessage] Failed to activate worktree:', result.error)
-      return
-    }
-    useAppStore.getState().setActiveWorktree(projectPath, result.path)
-    const recordedBranch = mode === 'branch' ? branchName : baseBranch
-    patchSession(() => ({
-      cwd: result.path,
-      messages: [],
-      totalCostUsd: 0,
-      contextTokens: 0,
-      session: null,
-      sessionProvider: null,
-      _gitBranch: recordedBranch,
-      _worktreePath: result.path,
-      todos: {},
-      _nextTodoId: 1,
-      showTodos: false,
-      _todosUserDismissed: false,
-      subagentTokens: {},
-      subagentColors: {},
-      _subagentColorsFree: freshSubagentColorPool(),
-    }))
-  }
+  if (!await applyPendingWorktree(projectPath, writeScope)) return
 
   const session = getScopedPerSession(get(), writeScope.target)
   const project = getProject(get(), projectPath)
@@ -190,10 +144,6 @@ export async function sendMessageImpl(
     preferredProvider,
     selectedModel,
     selectedEffort,
-    selectedCodexModel,
-    selectedCodexReasoningEffort,
-    selectedCodexPermissionPreset,
-    selectedCodexCollaborationMode,
   } = session
   const annotations = session.browserAnnotations ?? []
   const annotationImages: ImageAttachment[] = annotations
@@ -282,10 +232,20 @@ export async function sendMessageImpl(
   const sessionMentions = mentions.filter((m) => m.kind === 'session' && m.value)
   if (sessionMentions.length > 0) {
     const lines: string[] = [
-      'User @-mentioned SuperOne session archive(s). Use SuperOne MCP session tools with the SuperOne sessionId (NOT provider/harness session ids):',
+      'User @-mentioned SuperOne session(s). Use SuperOne sessionId (NOT provider/harness session ids).',
+      '',
+      'Archive (read-only):',
       '- session_read({ sessionId, view: "meta" | "user" | "assistant" | "text" | "tools" })',
       '- session_search / session_list when you need to locate messages first',
       'Prefer progressive views; do not dump entire transcripts into context.',
+      '',
+      'Live collaboration with an existing session (requires user approval):',
+      '- session_collab_request({ launches: [{ mode: "link", sessionId, summary, task? }] })',
+      '- You MUST pass sessionId from the list below; never invent ids.',
+      '- After approval: session_collab_start → session_collab_send / session_collab_retrieve.',
+      '- Do NOT use mode "spawn" or "handoff" for an already-existing session (both create a new session).',
+      '',
+      'Mentioned sessions:',
     ]
     const seen = new Set<string>()
     for (const m of sessionMentions) {
@@ -373,7 +333,6 @@ export async function sendMessageImpl(
     agentContent +
     contextSuffix +
     quoteSuffix +
-    miniAppReminderSuffix +
     sessionReminderSuffix +
     agentReminderSuffix +
     capabilityReminderSuffix +
@@ -384,20 +343,11 @@ export async function sendMessageImpl(
   let resolvedCodexCommand: CodexCommand | null = effectiveProvider === 'codex'
     ? (codexCommand ?? { kind: 'run', prompt: finalContent })
     : null
-  const resolvedCodexSelection = resolveSessionCodexSelection(
-    project.codexModels,
-    selectedCodexModel,
-    selectedCodexReasoningEffort,
-  )
-  // The selection shown by the picker already includes configured defaults.
-  // User-chosen flags control whether later preference changes may update this
-  // session; they must not decide which model/effort the current turn uses.
-  const resolvedCodexModel = resolvedCodexSelection.modelId || undefined
-  const resolvedCodexReasoningEffort = resolvedCodexSelection.reasoningEffort
   const isCodexDurableQueueSend = effectiveProvider === 'codex'
     && session.status === 'streaming'
     && resolvedCodexCommand?.kind === 'run'
-  const isQueuedSend = shouldQueueUserSend(effectiveProvider, session.status, isCodexDurableQueueSend)
+  const isQueuedSend = queuesBehindTurn(projectPath, shouldQueueUserSend(effectiveProvider, session.status, isCodexDurableQueueSend))
+
 
   if (!session.sessionProvider) {
     patchSession(() => ({
@@ -570,6 +520,14 @@ export async function sendMessageImpl(
     }
   }
 
+  try {
+    await ensureHostSession(set, get, projectPath, writeScope)
+  } catch (error) {
+    patchSession(() => ({ _pendingSlashCommand: '' }))
+    toast.error(error instanceof Error ? error.message : String(error))
+    return
+  }
+
   const attachmentBlock = (att: ImageAttachment): ContentBlock =>
     att.mimeType === 'application/pdf'
       ? { type: 'document' as const, name: att.name, id: att.id }
@@ -613,8 +571,7 @@ export async function sendMessageImpl(
     userSelections: userSelections.length > 0 ? [...userSelections] : undefined,
   }
   const isCompactSlash = isCompactSlashSend(effectiveProvider, finalContent)
-  const awaitsReply = (effectiveProvider === 'claude' || effectiveProvider === 'acp'
-    || effectiveProvider === 'cursor' || effectiveProvider === 'opencode') && !isQueuedSend
+  const awaitsReply = !isQueuedSend && !isCompactSlash
   set((s) => ({
     ...commitPerSession(s, writeScope.target, (sess) => ({
       ...(!isQueuedSend ? { messages: [...sess.messages, userMessage] } : {}),
@@ -662,14 +619,13 @@ export async function sendMessageImpl(
     ?? undefined
 
   // Authorize @-mentioned mini-app tools for this session BEFORE dispatching the turn.
-  // Codex dispatches via runCodexCommand and returns below, so authorizing after that
-  // block would never run for codex (this is why codex never loaded @-mentioned tools).
   const miniAppAuthorizations = mentions
     .filter((m) => m.kind === 'miniapp')
     .map((m) => m.value)
   if (miniAppAuthorizations.length > 0 && resolvedSessionId) {
     try {
       await window.miniapp.authorize(miniAppAuthorizations, projectPath, resolvedSessionId)
+      finalContent += miniAppReminderSuffix
     } catch (err) {
       console.error('[sendMessage] miniapp authorize failed:', err)
     }
@@ -696,54 +652,29 @@ export async function sendMessageImpl(
     }
   }
 
-  if (resolvedCodexCommand && !isCodexDurableQueueSend) {
-    if (!isRunnableCodexCommand(resolvedCodexCommand) || !codexSessionId) return
-    await runCodexCommand(set, get, {
-      activeProject: projectPath,
-      codexSessionId,
-      session,
-      codexCommand: resolvedCodexCommand,
-      finalContent,
-      userMessageId,
-      attachments,
-      selectedCodexPermissionPreset,
-      collaborationMode: selectedCodexCollaborationMode,
-      resolvedCodexModel,
-      resolvedCodexReasoningEffort,
-      userMessageContent: userContent,
-      contexts: messageContexts,
-      userSelections: userSelections.length > 0 ? [...userSelections] : undefined,
-    })
-    return
-  }
 
-  if (effectiveProvider === 'claude') {
-    await _ensureClaudeSessionReadyForSend(get, projectPath, resolvedSessionId)
-  }
-
-  const liveSession = getScopedPerSession(get(), writeScope.target)
-  const mergedDirs = mergeCallerScopedDirs(project, liveSession)
-
-  const request = sessionSendRequest({
-    session: liveSession,
-    sessionId: resolvedSessionId,
-    provider: effectiveProvider,
-    content: finalContent,
-    clientMessageId: userMessageId,
-    additionalDirs: mergedDirs,
-    model: effectiveProvider === 'codex' ? resolvedCodexModel : selectedModel || undefined,
-    effort: selectedEffort,
-    reasoningEffort: resolvedCodexReasoningEffort,
-    images: attachments.length > 0 ? attachments : undefined,
-    userMessageContent: userContent,
-    contexts: messageContexts,
-    userSelections: userSelections.length > 0 ? [...userSelections] : undefined,
-    queued: isQueuedSend,
-  })
-  await deliverUserSend({
-    messageId: userMessageId,
-    patchSession,
-    deliver: async () => { await window.agent.sendMessage(projectPath, request) },
+  if (!resolvedSessionId) return
+  // A Codex review or compact names its turn kind; everything else is a run.
+  const codexTurn = resolvedCodexCommand?.kind === 'review'
+    ? { turnKind: 'review' as const, reviewTarget: resolvedCodexCommand.target }
+    : resolvedCodexCommand?.kind === 'compact' ? { turnKind: 'compact' as const } : {}
+  await deliverSessionTurn(set, writeScope, {
+    projectPath,
+    request: {
+      ...sessionTurnRequest(get(), projectPath, resolvedSessionId, {
+        text: finalContent,
+        clientMessageId: userMessageId,
+        images: attachments,
+        userMessageContent: userContent,
+        contexts: messageContexts,
+        userSelections: userSelections.length > 0 ? [...userSelections] : undefined,
+        queued: isQueuedSend,
+        firstTurn: session.messages.length === 0,
+        ...codexTurn,
+      }),
+      clientMessageId: userMessageId,
+    },
+    titleText: rawContent || finalContent,
     retryState: () => ({
       ...(awaitsReply ? { awaitingAssistantReply: true } : {}),
       ...(effectiveProvider === 'cursor' && !isQueuedSend ? { status: 'streaming' as const } : {}),

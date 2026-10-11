@@ -490,7 +490,7 @@ export const AppSidebar = memo(function AppSidebar() {
     const remote = parseRemoteProjectKey(folderPath)
     if (remote) {
       // Same lifecycle as local: open project → mint renderer draft only.
-      // Node session.create happens on first send (resolveNodeSessionId) with UI harness.
+      // The host creates the session on its first send (ensureHostSession) with the UI harness.
       void (async () => {
         const project = hostProjects.find((p) => p.path === folderPath)
         await selectProject(folderPath, {

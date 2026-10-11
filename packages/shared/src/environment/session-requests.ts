@@ -103,11 +103,13 @@ export interface SessionCallMethods {
   'session.getGoal': { input: Record<string, never>; result: { goal: CodexGoal | null } }
   /** A null objective clears the goal. */
   'session.setGoal': { input: { objective: string | null; status?: CodexGoalStatus }; result: { ok: boolean } }
+  /** One answer per question of a Codex agent message's async question item. */
+  'session.answerAsyncQuestion': { input: { messageId: string; itemId: string; answers: string[] }; result: { reply: string } }
 }
 export type SessionCallMethod = keyof SessionCallMethods
 
 export const SESSION_CALL_METHODS: ReadonlySet<SessionCallMethod> = new Set<SessionCallMethod>([
-  'session.dequeue', 'session.steer', 'session.recap', 'session.getGoal', 'session.setGoal',
+  'session.dequeue', 'session.steer', 'session.recap', 'session.getGoal', 'session.setGoal', 'session.answerAsyncQuestion',
 ])
 /** Calls that only read, so the window takes no control grant for them. */
 export const SESSION_CALL_READS: ReadonlySet<SessionCallMethod> = new Set<SessionCallMethod>(['session.getGoal'])

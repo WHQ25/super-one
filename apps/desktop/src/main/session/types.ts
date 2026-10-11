@@ -246,10 +246,6 @@ export type BackendCommand =
       feedback?: string
     }
   | {
-      kind: 'codex.collaboration_mode_change'
-      mode: string
-    }
-  | {
       kind: 'session.set_additional_dirs'
       dirs: string[]
     }

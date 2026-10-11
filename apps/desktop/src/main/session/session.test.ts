@@ -2669,19 +2669,6 @@ describe('Session message accumulation', () => {
     expect(approvalEvt?.projectPath).toBe('/tmp/proj')
   })
 
-  it('dispatchBackendCommand(codex.collaboration_mode_change) emits codex_collaboration_mode_change', async () => {
-    const { session } = makeSession({ harnessId: 'codex' })
-    const captured: AgentEvent[] = []
-    session.on((e) => captured.push(e))
-
-    await session.dispatchBackendCommand({ kind: 'codex.collaboration_mode_change', mode: 'parallel' })
-
-    const modeEvt = captured.find((e) => e.type === 'codex_collaboration_mode_change') as Extract<AgentEvent, { type: 'codex_collaboration_mode_change' }> | undefined
-    expect(modeEvt?.mode).toBe('parallel')
-    expect(modeEvt?.sessionId).toBe('sess-1')
-    expect(modeEvt?.projectPath).toBe('/tmp/proj')
-  })
-
   it('dispatchBackendCommand(codex.steer) appends user message and forwards to backend.handleCommand', async () => {
     const { session, backend } = makeSession({ harnessId: 'codex' })
     await session.dispatchBackendCommand({

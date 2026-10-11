@@ -3,7 +3,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 /**
- * Isolate resolveNodeSessionId from the chat-store import graph (circular
+ * Isolate remote-session-ops from the chat-store import graph (circular
  * init via remote-session-ops → defaults → types).
  */
 const getSession = vi.fn()
@@ -43,13 +43,17 @@ vi.mock('@/stores/chat-store/defaults', () => ({
 }))
 
 const {
-  resolveNodeSessionId,
-  createRemoteSession,
   keepRendererOwnedState,
   hydrateRemoteSession,
 } = await import('./remote-session-ops')
 
-describe('resolveNodeSessionId', () => {
+describe('hydrateRemoteSession: adopting a node session', () => {
+  beforeEach(() => {
+    getSession.mockReset()
+    createSession.mockReset()
+    openRemoteSession.mockReset()
+    openRemoteSession.mockResolvedValue({ sessionId: 's', state: {}, messages: [], before: null, cursor: { sequence: '0', epoch: 'e', version: 0 } })
+  })
   it('preserves ACP and its agent identity instead of coercing remote sessions to Claude', async () => {
     getSession.mockResolvedValueOnce({ sessionId: 'acp-session', harnessId: 'acp', providerId: 'grok', acpAgentId: 'grok-build', status: 'idle', transcript: [], model: 'grok-model', permissionMode: 'auto' })
     const { hydrated } = await hydrateRemoteSession('remote:env-1:/work/app', 'acp-session', null, { adoptSession: true })
@@ -63,97 +67,6 @@ describe('resolveNodeSessionId', () => {
       harnessUserChosen: true, modelUserChosen: true, effortUserChosen: true, selectedModel: 'sonnet', selectedEffort: 'high',
       permissionMode: 'auto', sandboxInfo: { enabled: true, autoAllowBash: false }, apiProviderId: 'account', cwd: '/work/app/worktree', _worktreePath: '/work/app/worktree' })
     expect(createSession).not.toHaveBeenCalled()
-  })
-  beforeEach(() => {
-    getSession.mockReset()
-    createSession.mockReset()
-    openRemoteSession.mockReset()
-    openRemoteSession.mockResolvedValue({ sessionId: 's', state: {}, messages: [], before: null, cursor: { sequence: '0', epoch: 'e', version: 0 } })
-  })
-
-  it('reuses a candidate session id that exists on the node', async () => {
-    getSession.mockResolvedValueOnce({ sessionId: 'sid-real', status: 'idle', transcript: [] })
-
-    const result = await resolveNodeSessionId('remote:env-1:/work/app', 'proj-1', 'sid-real')
-
-    expect(result).toEqual({ sessionId: 'sid-real', created: false })
-    expect(createSession).not.toHaveBeenCalled()
-    expect(getSession).toHaveBeenCalledWith('env-1', 'sid-real')
-  })
-
-  it('creates a node session when the candidate is missing', async () => {
-    getSession.mockResolvedValueOnce(null)
-    createSession.mockResolvedValueOnce({
-      sessionId: 'sid-new',
-      title: 'New session',
-      lastActiveAt: new Date().toISOString(),
-      messageCount: 0,
-    })
-
-    const result = await resolveNodeSessionId('remote:env-1:/work/app', 'proj-1', 'sid-local-draft')
-
-    expect(result).toEqual({ sessionId: 'sid-new', created: true })
-    expect(createSession).toHaveBeenCalledWith('env-1', {
-      projectId: 'proj-1',
-      harnessId: 'claude',
-      providerId: 'claude',
-    })
-  })
-
-  it('creates a node session when there is no candidate', async () => {
-    createSession.mockResolvedValueOnce({
-      sessionId: 'sid-fresh',
-      title: 'New session',
-      lastActiveAt: new Date().toISOString(),
-      messageCount: 0,
-    })
-
-    const result = await resolveNodeSessionId('remote:env-1:/work/app', 'proj-1', null)
-
-    expect(result).toEqual({ sessionId: 'sid-fresh', created: true })
-    expect(getSession).not.toHaveBeenCalled()
-  })
-
-  it('passes harnessId claude when materializing a Claude remote session', async () => {
-    createSession.mockResolvedValueOnce({
-      sessionId: 'sid-claude',
-      title: 'New session',
-      lastActiveAt: new Date().toISOString(),
-      messageCount: 0,
-    })
-
-    const result = await resolveNodeSessionId('remote:env-1:/work/app', 'proj-1', null, {
-      harnessId: 'claude',
-    })
-
-    expect(result).toEqual({ sessionId: 'sid-claude', created: true })
-    expect(createSession).toHaveBeenCalledWith('env-1', {
-      projectId: 'proj-1',
-      harnessId: 'claude',
-      providerId: 'claude',
-    })
-  })
-})
-
-describe('createRemoteSession', () => {
-  beforeEach(() => {
-    createSession.mockReset()
-  })
-
-  it('maps the created node row into a history entry', async () => {
-    createSession.mockResolvedValueOnce({
-      sessionId: 's1',
-      title: 'T',
-      lastActiveAt: '2020-01-01T00:00:00.000Z',
-      messageCount: 0,
-      provider: 'codex',
-    })
-
-    const result = await createRemoteSession('remote:env-1:/work/app', 'proj-1', 'T')
-
-    expect(result.sessionId).toBe('s1')
-    expect(result.entry.sessionId).toBe('s1')
-    expect(result.entry.title).toBe('T')
   })
 })
 

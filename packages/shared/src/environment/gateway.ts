@@ -48,7 +48,8 @@ export interface EnvironmentGateway {
 
 export interface CreateSessionInput {
   project: ProjectRef
-  providerId: string
+  /** Unnamed, the host picks the harness's base provider. */
+  providerId?: string
   title?: string
   cwd?: string
   model?: string

@@ -5,12 +5,57 @@ import {
 } from '../helpers/codex-helpers'
 import { ChatStoreSet } from '../helpers/lifecycle'
 import { isRemoteSession } from '../index'
-import { updateActivePerSession } from '../helpers/store-helpers'
-import type { ChatStore } from '../types'
-import { runCodexCommand } from './runner'
+import { commitPerSession } from '../helpers/store-helpers'
+import { createSendWriteScope } from '../helpers/send-write-scope'
+import { deliverSessionTurn, sessionTurnRequest } from '../helpers/session-turn'
+import type { ChatStore, PerSessionState } from '../types'
+import { respondPlan } from '@/lib/session-client'
 import { newMessageId } from '@superone/shared/message-id'
 
 const CODEX_APPROVE_PLAN_PROMPT = 'Plan approved, start implementation.'
+
+type PlanContext = NonNullable<ReturnType<typeof getCodexPlanActionContext>>
+
+/** The host records the verdict on the plan message itself. */
+function sendVerdict(projectPath: string, context: PlanContext, decision: 'approve' | 'reject', feedback?: string): Promise<void> {
+  return respondPlan(projectPath, {
+    sessionId: context.codexSessionId,
+    interactionId: context.assistantMessageId,
+    decision,
+    options: { messageId: context.assistantMessageId, ...(feedback ? { feedback } : {}) },
+  }).catch((error) => console.warn('[chat] plan verdict failed:', error))
+}
+
+/** Record the verdict on the plan message, then send `text` as a turn in the session's (updated) collaboration mode. */
+async function answerPlan(
+  set: ChatStoreSet,
+  get: () => ChatStore,
+  projectPath: string,
+  context: PlanContext,
+  decision: 'approve' | 'reject',
+  text: string,
+  patch: (session: PerSessionState) => Partial<PerSessionState>,
+): Promise<void> {
+  const owner = { projectPath, sessionId: context.codexSessionId }
+  const messageId = newMessageId('user')
+  set((s) => ({
+    ...commitPerSession(s, owner, (sess) => {
+      const next = { ...sess, ...patch(sess) }
+      return { ...next, additionalDirsDirty: false, awaitingAssistantReply: true, messages: [...next.messages, createLocalTextUserMessage(messageId, text)] }
+    }),
+    isOpen: true,
+  }))
+  await sendVerdict(projectPath, context, decision, decision === 'reject' ? text : undefined)
+  await deliverSessionTurn(set, createSendWriteScope(set, get, projectPath, owner), {
+    projectPath,
+    request: {
+      ...sessionTurnRequest(get(), projectPath, context.codexSessionId, { text, clientMessageId: messageId, userMessageContent: [{ type: 'text', text }] }),
+      clientMessageId: messageId,
+    },
+    titleText: text,
+    retryState: () => ({ awaitingAssistantReply: true }),
+  })
+}
 
 export async function approveCodexPlanImpl(
   set: ChatStoreSet,
@@ -23,39 +68,11 @@ export async function approveCodexPlanImpl(
   const context = getCodexPlanActionContext(get, activeProject)
   if (!context) return
 
-  const userMessageId = newMessageId('user')
-  const userMessage = createLocalTextUserMessage(userMessageId, CODEX_APPROVE_PLAN_PROMPT)
-
-  set((s) => ({
-    ...updateActivePerSession(s, (sess) => {
-      const approvedSession = updateCodexPlanApproval(sess, context.assistantMessageId, { status: 'approved' })
-      return {
-        ...approvedSession,
-        selectedCodexCollaborationMode: 'default',
-        codexPlanRejectHintActive: false,
-        additionalDirsDirty: false,
-        messages: [...(approvedSession.messages ?? sess.messages), userMessage],
-      }
-    }),
-    isOpen: true,
+  await answerPlan(set, get, activeProject, context, 'approve', CODEX_APPROVE_PLAN_PROMPT, (sess) => ({
+    ...updateCodexPlanApproval(sess, context.assistantMessageId, { status: 'approved' }),
+    selectedCodexCollaborationMode: 'default',
+    codexPlanRejectHintActive: false,
   }))
-
-  window.app.codexPlanApproval(activeProject, context.codexSessionId, context.assistantMessageId, 'approved')
-  window.app.codexCollaborationModeChange(activeProject, context.codexSessionId, 'default')
-
-  await runCodexCommand(set, get, {
-    activeProject,
-    codexSessionId: context.codexSessionId,
-    session: context.session,
-    codexCommand: { kind: 'run', prompt: CODEX_APPROVE_PLAN_PROMPT },
-    finalContent: CODEX_APPROVE_PLAN_PROMPT,
-    userMessageId,
-    attachments: [],
-    selectedCodexPermissionPreset: context.session.selectedCodexPermissionPreset,
-    collaborationMode: 'default',
-    resolvedCodexModel: context.resolvedCodexModel,
-    resolvedCodexReasoningEffort: context.resolvedCodexReasoningEffort,
-  })
 }
 
 export async function rejectCodexPlanImpl(
@@ -73,50 +90,19 @@ export async function rejectCodexPlanImpl(
   const trimmedFeedback = feedback?.trim()
   if (!trimmedFeedback) {
     set((s) => ({
-      ...updateActivePerSession(s, (sess) => ({
+      ...commitPerSession(s, { projectPath: activeProject, sessionId: context.codexSessionId }, (sess) => ({
         ...updateCodexPlanApproval(sess, context.assistantMessageId, { status: 'rejected' }),
         codexPlanRejectHintActive: true,
         chatInputFocusNonce: sess.chatInputFocusNonce + 1,
       })),
       isOpen: true,
     }))
-    window.app.codexPlanApproval(activeProject, context.codexSessionId, context.assistantMessageId, 'rejected')
+    await sendVerdict(activeProject, context, 'reject')
     return
   }
 
-  const userMessageId = newMessageId('user')
-  const userMessage = createLocalTextUserMessage(userMessageId, trimmedFeedback)
-
-  set((s) => ({
-    ...updateActivePerSession(s, (sess) => {
-      const rejectedSession = updateCodexPlanApproval(
-        sess,
-        context.assistantMessageId,
-        { status: 'rejected', feedback: trimmedFeedback },
-      )
-      return {
-        ...rejectedSession,
-        codexPlanRejectHintActive: false,
-        additionalDirsDirty: false,
-        messages: [...(rejectedSession.messages ?? sess.messages), userMessage],
-      }
-    }),
-    isOpen: true,
+  await answerPlan(set, get, activeProject, context, 'reject', trimmedFeedback, (sess) => ({
+    ...updateCodexPlanApproval(sess, context.assistantMessageId, { status: 'rejected', feedback: trimmedFeedback }),
+    codexPlanRejectHintActive: false,
   }))
-
-  window.app.codexPlanApproval(activeProject, context.codexSessionId, context.assistantMessageId, 'rejected', trimmedFeedback)
-
-  await runCodexCommand(set, get, {
-    activeProject,
-    codexSessionId: context.codexSessionId,
-    session: context.session,
-    codexCommand: { kind: 'run', prompt: trimmedFeedback },
-    finalContent: trimmedFeedback,
-    userMessageId,
-    attachments: [],
-    selectedCodexPermissionPreset: context.session.selectedCodexPermissionPreset,
-    collaborationMode: 'plan',
-    resolvedCodexModel: context.resolvedCodexModel,
-    resolvedCodexReasoningEffort: context.resolvedCodexReasoningEffort,
-  })
 }

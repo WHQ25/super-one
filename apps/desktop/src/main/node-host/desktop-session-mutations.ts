@@ -61,6 +61,7 @@ export function desktopSendRequest(input: Parameters<SessionHostPort['send']>[0]
     ...(additionalDirs ? { additionalDirs } : {}),
     ...(input.userMessageContent ? { userMessageContent: input.userMessageContent } : {}),
     ...(input.contexts ? { contexts: input.contexts } : {}),
+    ...(input.userSelections ? { userSelections: input.userSelections } : {}),
     ...(input.ultracode !== undefined ? { ultracode: input.ultracode } : {}),
     ...(input.priority ? { priority: input.priority } : {}),
     ...(input.agent ? { agent: input.agent } : {}),

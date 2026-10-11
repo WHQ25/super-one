@@ -104,10 +104,7 @@ export const createCodexSlice: StateCreator<ChatStore, [], [], CodexSlice> = (se
       selectedCodexCollaborationMode: mode,
       codexPlanRejectHintActive: false,
     })))
-    if (sessionId) {
-      window.app.codexCollaborationModeChange(activeProject, sessionId, mode)
-      void window.agent.broadcastSessionSetting(sessionId, { selectedCodexCollaborationMode: mode })
-    }
+    if (sessionId) void window.agent.broadcastSessionSetting(sessionId, { selectedCodexCollaborationMode: mode })
   },
 
   loadCodexModels: async (projectPath, apiProviderId, force = false) => {

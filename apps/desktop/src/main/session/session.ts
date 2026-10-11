@@ -1697,15 +1697,6 @@ export class Session implements SessionContract {
         } as AgentEvent)
         return
       }
-      case 'codex.collaboration_mode_change': {
-        this.forwardEvent({
-          type: 'codex_collaboration_mode_change',
-          mode: cmd.mode,
-          projectPath: this.projectPath,
-          sessionId: this.id,
-        } as AgentEvent)
-        return
-      }
       case 'session.set_additional_dirs': {
         // `cmd.dirs` is the SESSION scope only — mobile sends it when the user
         // edits session dirs. Writing it raw would drop the project's folders

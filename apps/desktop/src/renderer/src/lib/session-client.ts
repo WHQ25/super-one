@@ -14,7 +14,24 @@ import type {
   SessionSettingsPatch,
 } from '@superone/shared/environment/session-requests'
 import type { PerSessionState, PersistedSessionState } from '@/stores/chat-store/types'
+import { parseRemoteProjectKey } from './remote-project-key'
 import { connectionIdForProjectKey } from './session-list-ops'
+
+/** A project key's folder as its host names it. */
+export function hostPathForProjectKey(projectKey: string): string {
+  return parseRemoteProjectKey(projectKey)?.path ?? projectKey
+}
+
+/**
+ * Whether the session's host takes this desktop's own choices: the session id
+ * a draft keeps, queued turns, the harness pickers (Codex thread and tier,
+ * OpenCode agent, Cursor parameters), widget answers, and the desktop
+ * settings a node takes per turn. This desktop's host does; a node refuses
+ * them (`unsupported`).
+ */
+export function hostTakesDesktopChoices(projectKey: string): boolean {
+  return connectionIdForProjectKey(projectKey) === 'local'
+}
 
 export function renameSession(projectKey: string, sessionId: string, title: string) {
   return window.environment.renameSession(connectionIdForProjectKey(projectKey), sessionId, title)

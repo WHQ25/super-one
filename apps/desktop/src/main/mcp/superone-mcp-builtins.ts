@@ -118,6 +118,12 @@ import {
 } from './automation-tools'
 import type { SessionManager } from '../session/types'
 import {
+  sessionDismissTaskHandler,
+  sessionSuggestTaskHandler,
+  type SessionDismissTaskArgs,
+  type SessionSuggestTaskArgs,
+} from './suggested-task-tools'
+import {
   terminalActHandler,
   terminalSnapshotHandler,
   terminalTabsHandler,
@@ -375,6 +381,10 @@ export async function executeBuiltInSuperoneTool(
     case 'session_collab_retrieve':
       return import('../session/session-collaboration').then(({ retrieveSessionMessages }) =>
         retrieveSessionMessages(deps.sessionId, args as unknown as SessionRetrieveArgs, collaborationHost(deps), deps.signal))
+    case 'session_suggest_task':
+      return sessionSuggestTaskHandler(args as unknown as SessionSuggestTaskArgs, deps)
+    case 'session_dismiss_task':
+      return sessionDismissTaskHandler(args as unknown as SessionDismissTaskArgs, deps)
     case 'config_read':
       return configReadHandler(args as { domain?: string; recordId?: string }, deps)
     case 'config_apply':
@@ -496,15 +506,18 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
     server.registerTool(def.name, { description: def.description, inputSchema: jsonSchemaToZodShape(def.inputSchema) },
       (args, extra) => executeInteractionMemoryTool(def.name, args, new InteractionMemoryStore(superoneHome()), extra.signal))
   }
-  // Terminal tools share the stdio-bridge JSON Schema so the two surfaces cannot drift.
-  const terminalHandlers: Record<(typeof TERMINAL_TOOL_NAMES)[number], (args: never, deps: BuiltInSuperoneToolDeps) => Promise<{ content: Array<{ type: 'text'; text: string }>; isError?: true }>> = {
+  // These tools share the stdio-bridge JSON Schema so the two surfaces cannot drift.
+  type SharedSchemaTool = (typeof TERMINAL_TOOL_NAMES)[number] | 'session_suggest_task' | 'session_dismiss_task'
+  const sharedSchemaHandlers: Record<SharedSchemaTool, (args: never, deps: BuiltInSuperoneToolDeps) => Promise<{ content: Array<{ type: 'text'; text: string }>; isError?: true }>> = {
     terminal_tabs: terminalTabsHandler,
     terminal_snapshot: terminalSnapshotHandler,
     terminal_act: terminalActHandler,
     terminal_wait_for: terminalWaitForHandler,
+    session_suggest_task: sessionSuggestTaskHandler,
+    session_dismiss_task: sessionDismissTaskHandler,
   }
   for (const def of BUILT_IN_SUPERONE_TOOL_DEFS) {
-    const handler = terminalHandlers[def.name as (typeof TERMINAL_TOOL_NAMES)[number]]
+    const handler = sharedSchemaHandlers[def.name as SharedSchemaTool]
     if (!handler) continue
     server.registerTool(def.name, { description: def.description, inputSchema: jsonSchemaToZodShape(def.inputSchema) },
       (args, extra) => handler(args as never, { ...deps, signal: extra.signal ?? deps.signal }))

@@ -12,6 +12,7 @@ import type {
   ContentBlock,
 } from '@superone/shared/agent-types'
 import { applyDescriptionPersonaLabel, isAlwaysHiddenToolName, isSubagentToolName, parseMcpToolName } from '@superone/shared/tool-ui'
+import { SUGGEST_TASK_TOOL_NAME } from '@superone/shared/suggested-task'
 import { resolveMcpServerIconFromMap } from '@superone/shared/mcp-server-icon'
 import { mcpAppToolFailed } from '@superone/shared/mcp-apps'
 import { mergeCodexCollabDetail } from './codex-collab-detail'
@@ -90,6 +91,7 @@ import {
   COLLAB_TOOLS,
   SessionCollabToolBlockPresenter,
 } from './presenters/SessionCollabToolBlock'
+import { SuggestedTaskCard } from './presenters/SuggestedTaskCard'
 import {
   PortableBrowserTool,
   PortableComputerTool,
@@ -313,6 +315,21 @@ function renderDedicatedTool(props: ClaudeToolPresenterProps, brandIconSrc?: str
             {finding.file.split('/').pop() || finding.file}
           </button>
         )}
+      />
+    )
+  }
+  if (collabToolName === SUGGEST_TASK_TOOL_NAME) {
+    // Launching runs in the desktop's main process; the phone shows the card and its outcome.
+    const isDenied = Boolean(props.result?.startsWith('[denied] '))
+    return (
+      <SuggestedTaskCard
+        params={parseRecord(props.input)}
+        toolSummary={props.toolSummary}
+        state={props.suggestedTask}
+        isStreaming={props.status === 'streaming'}
+        isError={props.isError}
+        isDenied={isDenied}
+        onOpenSession={(sessionId) => { requestNative('openSession', { sessionId }) }}
       />
     )
   }
@@ -908,6 +925,7 @@ function claudePropsFromCodexMcp(item: CodexMcpToolCallItem): ClaudeToolPresente
     status: item.status === 'in_progress' ? 'streaming' : 'complete',
     isError: codexMcpItemIsError(item),
     app: item.app,
+    suggestedTask: item.suggestedTask,
   }
 }
 
@@ -929,6 +947,7 @@ function DeferredCodexMcp({ item }: { item: CodexMcpToolCallItem }) {
         {...claudePropsFromCodexMcp(src)}
         // The projected shell keeps the attachment; the loaded detail may predate its update.
         app={item.app ?? src.app}
+        suggestedTask={item.suggestedTask ?? src.suggestedTask}
         status={!ready || src.status === 'in_progress' ? 'streaming' : 'complete'}
       />
       <DeferredDetailStatus status={error ? status : undefined} onRetry={retry} />

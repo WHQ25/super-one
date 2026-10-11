@@ -42,6 +42,10 @@ interface AgentAPI {
   readyRealtimeVoice(projectPath: string, sessionId: string, identity: import('@superone/shared/realtime-voice').VoiceIdentity): Promise<void>
   loadRealtimeTimeline(sessionId: string): Promise<RealtimeTimelineResult | null>
   getRealtimeTimeline(projectPath: string, sessionId: string): Promise<RealtimeTimelineResult>
+  /** Local sessions only: launch a pending `session_suggest_task` card as a new session. */
+  launchSuggestedTask(sessionId: string, taskId: string): Promise<import('@superone/shared/suggested-task').SuggestedTaskActionResult<{ sessionId: string }>>
+  /** Local sessions only: dismiss a pending `session_suggest_task` card. */
+  dismissSuggestedTask(sessionId: string, taskId: string): Promise<import('@superone/shared/suggested-task').SuggestedTaskActionResult>
   parkSession(projectPath: string): Promise<{ permissionMode: PermissionMode; sandboxInfo: SandboxInfo }>
   activateSession(projectPath: string, sessionId: string, worktreeCwd?: string): Promise<{ permissionMode: PermissionMode; sandboxInfo: SandboxInfo } | undefined>
   setSessionForeground(sessionId: string, foreground: boolean, projectPath?: string): Promise<void>

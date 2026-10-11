@@ -341,7 +341,8 @@ function remoteLaunchProposal(
 }
 
 
-function createGrants(parentSessionId: string, launches: SessionAgentLaunchProposal[]): ApprovedLaunch[] {
+/** Persist human-approved launches; also the approval path of a launched suggested task. */
+export function createGrants(parentSessionId: string, launches: SessionAgentLaunchProposal[]): ApprovedLaunch[] {
   assertLaunchCount(launches.length)
   const launchIds = new Set(launches.map((launch) => launch.launchId))
   if (launchIds.size !== launches.length) throw new Error('Every confirmed launch must have a unique launchId')

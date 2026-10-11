@@ -2504,6 +2504,22 @@ export type Messages = {
       miniAppPacked: string
       generatingWidget: string
       generateWidget: string
+      suggestedTask: {
+        suggestingTask: string
+        suggestTask: string
+        suggestedTask: string
+        launch: string
+        dismiss: string
+        launched: string
+        openSession: string
+        dismissed: string
+        withdrawn: string
+        desktopOnly: string
+        unavailable: string
+        withdrawingTask: string
+        withdrawTask: string
+        taskWithdrawn: string
+      }
       collab: {
         requestingCollaboration: string
         collaborationRequested: string
@@ -6897,6 +6913,22 @@ export const en: Messages = {
       miniAppPacked: 'Mini-app Packed',
       generatingWidget: 'Generating widget…',
       generateWidget: 'Widget Generated',
+      suggestedTask: {
+        suggestingTask: 'Suggesting task…',
+        suggestTask: 'Suggest Task',
+        suggestedTask: 'Suggested Task',
+        launch: 'Launch',
+        dismiss: 'Dismiss',
+        launched: 'Launched',
+        openSession: 'Open Session',
+        dismissed: 'Dismissed',
+        withdrawn: 'Withdrawn by the agent',
+        desktopOnly: 'Launch it from SuperOne on your computer.',
+        unavailable: 'This session cannot launch tasks from here.',
+        withdrawingTask: 'Withdrawing task…',
+        withdrawTask: 'Withdraw Task',
+        taskWithdrawn: 'Task Withdrawn',
+      },
       collab: {
         requestingCollaboration: 'Requesting collaboration…',
         collaborationRequested: 'Collaboration Requested',

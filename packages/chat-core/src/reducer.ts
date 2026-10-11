@@ -1,6 +1,7 @@
 import { reduceCodexMetadata } from './codex-metadata'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { updateMcpAppAttachments } from '@superone/shared/mcp-apps-state'
+import { applySuggestedTaskUpdate } from '@superone/shared/suggested-task'
 import type { ChatCorePatch, ChatCoreSession } from './types'
 import { defaultChatCorePorts, type ChatCorePorts } from './ports'
 export type { ChatCorePorts }
@@ -78,6 +79,9 @@ export function applyEventToSession(
 
     case 'mcp_app_updated':
       return { messages: updateMcpAppAttachments(session.messages, event.appInstanceId, event.update) }
+
+    case 'suggested_task_updated':
+      return { messages: applySuggestedTaskUpdate(session.messages, event.taskId, event.state) }
 
     case 'todos_updated':
       return reduceTodosUpdated(session, event)

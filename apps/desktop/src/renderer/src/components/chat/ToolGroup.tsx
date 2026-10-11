@@ -17,6 +17,7 @@ function renderDesktopTool(block: ToolGroupToolUse, index: number): ReactElement
     <ToolBlock
       key={index}
       app={block.app}
+      suggestedTask={block.suggestedTask}
       toolName={block.toolName}
       toolUseId={block.toolUseId}
       input={block.input}

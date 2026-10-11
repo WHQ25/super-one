@@ -18,7 +18,7 @@ import type { ChatMessage, ContentBlock } from '@superone/shared/agent-types'
  * with an empty subject is the *other* half of this bug: the projection has to keep
  * the fields the descriptor reads, and nothing else fails if it does not.
  */
-function projectedRow(toolName: string, input: Record<string, unknown>, result?: string) {
+function projectedRow(toolName: string, input: Record<string, unknown>, result?: string, row: Record<string, unknown> = {}) {
   const full = `mcp__superone__${toolName}`
   const call = {
     type: 'tool_use',
@@ -26,6 +26,7 @@ function projectedRow(toolName: string, input: Record<string, unknown>, result?:
     toolUseId: `${toolName}-1`,
     status: 'streaming',
     input: sanitizeRemoteToolInput(full, JSON.stringify(input)),
+    ...row,
   } as ContentBlock
   const content = applyContentDelta(
     [call],
@@ -120,6 +121,7 @@ describe('SuperOne compact tool rows on the phone', () => {
       session_tag: { add: ['a'] },
       miniapp_dev_register: { name: 'budget' },
       miniapp_dev_update_types: { appDir: '/apps/budget' },
+      session_dismiss_task: { taskId: 't', reason: 'Fixed it' },
     }
     for (const [tool, input] of Object.entries(samples)) {
       const projected = sanitizeRemoteToolInput(`mcp__superone__${tool}`, JSON.stringify(input))
@@ -127,5 +129,28 @@ describe('SuperOne compact tool rows on the phone', () => {
       const summary = SUPERONE_TOOL_DESCRIPTORS[tool].summary?.(params, null) ?? ''
       expect(summary, `${tool} lost its subject in the projection`).not.toBe('')
     }
+  })
+
+  describe('suggested-task card', () => {
+    const SUGGESTION = { title: 'Fix the flaky login test', tldr: 'Times out on CI.', prompt: 'SECRET BRIEF' }
+    const PENDING = JSON.stringify({ taskId: '0b9f3c1e-2a4d-4e5f-8a6b-7c8d9e0f1a2b', status: 'pending' })
+
+    it('shows the card without the brief, and leaves launching to the computer', () => {
+      expect(sanitizeRemoteToolInput('mcp__superone__session_suggest_task', JSON.stringify(SUGGESTION))).not.toContain('SECRET BRIEF')
+      const { container, queryByRole } = projectedRow('session_suggest_task', SUGGESTION, PENDING)
+      expect(container.textContent).toContain('Fix the flaky login test')
+      expect(container.textContent).toContain('Times out on CI.')
+      expect(container.textContent).toContain('Launch it from SuperOne on your computer.')
+      expect(queryByRole('button', { name: 'Launch' })).toBeNull()
+    })
+
+    it('shows the outcome the host patched onto the row', () => {
+      const { container } = projectedRow('session_suggest_task', SUGGESTION, PENDING, {
+        suggestedTask: { status: 'dismissed', by: 'agent', reason: 'Fixed it' },
+      })
+      expect(container.textContent).toContain('Dismissed')
+      expect(container.textContent).toContain('Withdrawn by the agent · Fixed it')
+      expect(container.textContent).not.toContain('Launch it from SuperOne')
+    })
   })
 })

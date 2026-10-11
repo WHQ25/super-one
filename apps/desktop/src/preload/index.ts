@@ -53,6 +53,12 @@ const agentAPI = {
   getRealtimeTimeline: (projectPath: string, sessionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.GET_REALTIME_TIMELINE, projectPath, sessionId) as Promise<RealtimeTimelineResult>,
 
+  launchSuggestedTask: (sessionId: string, taskId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.LAUNCH_SUGGESTED_TASK, sessionId, taskId) as Promise<import('@superone/shared/suggested-task').SuggestedTaskActionResult<{ sessionId: string }>>,
+
+  dismissSuggestedTask: (sessionId: string, taskId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.DISMISS_SUGGESTED_TASK, sessionId, taskId) as Promise<import('@superone/shared/suggested-task').SuggestedTaskActionResult>,
+
 
   parkSession: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.PARK_SESSION, projectPath),

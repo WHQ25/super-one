@@ -3,6 +3,7 @@ import { Fragment, useMemo, type ComponentType, type ReactNode } from 'react'
 import { ImageIcon } from 'lucide-react'
 import type { BashEditDiff, ContentBlock } from '@superone/shared/agent-types'
 import type { ToolAppAttachment } from '@superone/shared/mcp-apps'
+import type { SuggestedTaskState } from '@superone/shared/suggested-task'
 import {
   collapsibleItems,
   countVisibleClaudeProcessSegments,
@@ -54,6 +55,8 @@ export interface ClaudeToolPresenterProps {
   runContinuations?: RunContinuation[]
   /** The MCP App View this call rendered, when its server attached one. */
   app?: ToolAppAttachment
+  /** `session_suggest_task` only: the card's outcome. */
+  suggestedTask?: SuggestedTaskState
 }
 
 export interface ClaudeInsightPresenterProps {
@@ -236,6 +239,7 @@ export function ClaudeBlockPresenter({
           resultOutputPath={outputPathMap?.get(block.toolUseId)}
           bashEditDiff={bashEditDiffMap?.get(block.toolUseId)}
           app={toolAppMap?.get(block.toolUseId) ?? block.app}
+          suggestedTask={block.suggestedTask}
           autoExpand={runtime.isBackgroundTool(block) ? false : undefined}
           toolDiff={block.toolDiff}
           toolDiffTokens={block.toolDiffTokens}

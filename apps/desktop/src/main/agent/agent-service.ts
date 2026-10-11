@@ -1121,6 +1121,22 @@ export class AgentService {
       return reconcileRealtimeTimeline(sessionId, timeline)
     })
 
+    windowIpc.handle(AgentIpcChannels.LAUNCH_SUGGESTED_TASK, async (_event, sessionId: string, taskId: string) => {
+      const manager = this.sessionManager
+      if (!manager) return { ok: false, error: 'Sessions are not ready yet.' }
+      manager.getSession(sessionId)?.lease.assertMutation()
+      const { launchSuggestedTask, suggestedTaskReply } = await import('../session/suggested-task')
+      return suggestedTaskReply(async () => ({ sessionId: await launchSuggestedTask(manager, sessionId, taskId) }))
+    })
+
+    windowIpc.handle(AgentIpcChannels.DISMISS_SUGGESTED_TASK, async (_event, sessionId: string, taskId: string) => {
+      const session = this.sessionManager?.getSession(sessionId)
+      if (!session) return { ok: false, error: 'This session is no longer available.' }
+      session.lease.assertMutation()
+      const { dismissSuggestedTask, suggestedTaskReply } = await import('../session/suggested-task')
+      return suggestedTaskReply(async () => dismissSuggestedTask(session, taskId, 'user'))
+    })
+
     windowIpc.handle(AgentIpcChannels.ACP_GET_RATE_LIMITS, async (
       _event,
       projectPath: string,
@@ -2168,6 +2184,8 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.STOP_REALTIME_VOICE)
     ipcMain.removeHandler(AgentIpcChannels.LOAD_REALTIME_TIMELINE)
     ipcMain.removeHandler(AgentIpcChannels.GET_REALTIME_TIMELINE)
+    ipcMain.removeHandler(AgentIpcChannels.LAUNCH_SUGGESTED_TASK)
+    ipcMain.removeHandler(AgentIpcChannels.DISMISS_SUGGESTED_TASK)
     ipcMain.removeHandler(AgentIpcChannels.PLUGINS_RELOAD)
     ipcMain.removeHandler(AgentIpcChannels.LIST_DIRECTORY)
     ipcMain.removeHandler(AgentIpcChannels.LIST_DIRECTORY_FOR_ADD_DIR)

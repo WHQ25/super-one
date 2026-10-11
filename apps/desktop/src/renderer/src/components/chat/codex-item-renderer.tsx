@@ -237,6 +237,7 @@ export function renderCodexItem(
             <ToolBlock
               toolName={`mcp__${item.server}__${item.tool}`}
               app={item.app}
+              suggestedTask={item.suggestedTask}
               remoteDetail={item.remoteDetail}
               input={codexMcpItemInput(item)}
               status={toToolStatus(item.status)}

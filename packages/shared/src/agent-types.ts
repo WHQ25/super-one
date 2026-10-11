@@ -192,6 +192,8 @@ interface ToolUseBase {
   toolName: string
   toolUseId: string
   app?: ToolAppAttachment
+  /** `session_suggest_task` only: the card's outcome, patched on by `suggested_task_updated`. */
+  suggestedTask?: import('./suggested-task').SuggestedTaskState
   input: string
   status?: 'streaming' | 'complete'
   elapsedSeconds?: number
@@ -417,6 +419,8 @@ export interface CodexMcpToolCallItem {
   tool: string
   arguments: unknown
   app?: ToolAppAttachment
+  /** `session_suggest_task` only: the card's outcome, patched on by `suggested_task_updated`. */
+  suggestedTask?: import('./suggested-task').SuggestedTaskState
   mcpAppUi?: { resourceUri: string; preferredModelDisplayMode?: string }
   appContext?: Record<string, unknown> | null
   result?: { content: unknown[]; structuredContent: unknown; meta?: Record<string, unknown>; isError?: boolean }
@@ -1890,6 +1894,8 @@ export type AgentEventBase =
   | { type: 'user_message_appended'; message: ChatMessage }
   | { type: 'content_delta'; messageId: string; delta: ContentBlock; isSynthetic?: boolean; isReplay?: boolean }
   | { type: 'mcp_app_updated'; messageId: string; appInstanceId: string; update: import('./mcp-apps').McpAppAttachmentUpdate }
+  /** A suggested-task card left `pending`; reducers patch it onto the card's row. */
+  | { type: 'suggested_task_updated'; taskId: string; state: import('./suggested-task').SuggestedTaskState }
   | { type: 'tool_input_delta'; messageId: string; toolUseId: string; partialJson: string; parentToolUseId?: string | null }
   /** `heartbeat` marks a liveness-only tick (no progress happened); it must never retract a `subagentRetry` badge. */
   | { type: 'tool_progress'; messageId: string; toolUseId: string; toolName: string; elapsedSeconds: number; parentToolUseId?: string | null; taskId?: string; subagentType?: string; subagentRetry?: SubagentRetryInfo; heartbeat?: boolean }
@@ -4139,6 +4145,8 @@ export const AgentIpcChannels = {
   STOP_REALTIME_VOICE: 'agent:stop-realtime-voice',
   LOAD_REALTIME_TIMELINE: 'agent:load-realtime-timeline',
   GET_REALTIME_TIMELINE: 'agent:get-realtime-timeline',
+  LAUNCH_SUGGESTED_TASK: 'agent:launch-suggested-task',
+  DISMISS_SUGGESTED_TASK: 'agent:dismiss-suggested-task',
   EVENT: 'agent:event',
   SANDBOX_PROBE: 'sandbox:probe',
   LIST_DIRECTORY: 'agent:list-directory',

@@ -3,6 +3,7 @@ import { assertVoiceAccount } from '@superone/shared/realtime-voice'
 import { McpAppsError, type McpAppsBinding, type McpAppOrigin, type McpAppsProvider } from '@superone/shared/mcp-apps'
 import { MOD_UI_MUTATING_OPS, MOD_UI_UNAVAILABLE, type ModUiOp, type ModUiRequest, type ModUiResult } from '@superone/shared/mod-ui'
 import { updateMcpAppAttachments } from '@superone/shared/mcp-apps-state'
+import { applySuggestedTaskUpdate } from '@superone/shared/suggested-task'
 import { stampCompletedAt } from '@superone/shared/message-completed-at'
 import { withMcpAppContext } from './mcp-app-context'
 import { admitTurnAttachments } from '@superone/shared/attachment-turn'
@@ -2340,6 +2341,11 @@ export class Session implements SessionContract {
       this.notifyStateChange()
       return
     }
+    if (event.type === 'suggested_task_updated') {
+      this.replaceMessages(applySuggestedTaskUpdate(this._messages, event.taskId, event.state))
+      this.notifyStateChange()
+      return
+    }
     // The divider outlives the turn and the process: without it in `_messages`
     // a session opened after compaction (mobile, desktop reload) has no boundary.
     if (event.type === 'compact_boundary') {
@@ -2711,7 +2717,7 @@ export class Session implements SessionContract {
 
   emitHostEvent(event: AgentEvent): void {
     if (this._status === 'disposed') return
-    if (event.type === 'mcp_app_updated') this.applyReducer(event)
+    if (event.type === 'mcp_app_updated' || event.type === 'suggested_task_updated') this.applyReducer(event)
     trackHostInteraction(this, event)
     this.forwardEvent(event)
   }

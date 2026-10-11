@@ -72,7 +72,10 @@ export function mergeMcpAppAttachment(previous: ToolAppAttachment | undefined, n
   return { ...next, resource: previous.resource ?? next.resource, modelContext: previous.modelContext !== undefined ? previous.modelContext : next.modelContext, presentation: previous.presentation ?? next.presentation }
 }
 
-/** Final provider snapshots may replace rows, but never host state on the same App origin. */
+/**
+ * Final provider snapshots may replace rows, but never host state: App
+ * attachments on the same App origin, or a suggested-task card's outcome.
+ */
 export function mergeMcpAppBlocks<B>(previous: readonly B[], next: readonly B[]): B[] {
   const apps = new Map(previous.flatMap(block => {
     const app = record(block).app as ToolAppAttachment | undefined
@@ -82,18 +85,25 @@ export function mergeMcpAppBlocks<B>(previous: readonly B[], next: readonly B[])
   return next.map(block => {
     const value = record(block)
     const previousRow = typeof value.id === 'string' ? rows.get(value.id) ?? {} : {}
-    if (value.type === 'collab_tool_call' && previousRow.type === value.type) {
-      const previousChildren = record(previousRow.childItems)
-      const childItems = value.childItems === undefined ? previousRow.childItems : Object.fromEntries(Object.entries(record(value.childItems)).map(([threadId, children]) =>
-        [threadId, Array.isArray(children) ? mergeMcpAppBlocks(Array.isArray(previousChildren[threadId]) ? previousChildren[threadId] as unknown[] : [], children) : children]))
-      if (childItems) return { ...block, childItems }
-    }
-    const app = value.app as ToolAppAttachment | undefined
-    if (app) return { ...block, app: mergeMcpAppAttachment(apps.get(app.appInstanceId), app) }
-    // Completion snapshots can omit the extension entirely. Exact native item id
-    // and type still identify the same call; never guess by server/tool/arguments.
-    return previousRow.type === value.type && previousRow.app ? { ...block, app: previousRow.app } : block
+    const merged = mergeAppRow(block, previousRow, apps)
+    const suggestedTask = previousRow.type === value.type ? previousRow.suggestedTask : undefined
+    return suggestedTask && !record(merged).suggestedTask ? { ...merged, suggestedTask } : merged
   })
+}
+
+function mergeAppRow<B>(block: B, previousRow: Record<string, unknown>, apps: ReadonlyMap<string, ToolAppAttachment>): B {
+  const value = record(block)
+  if (value.type === 'collab_tool_call' && previousRow.type === value.type) {
+    const previousChildren = record(previousRow.childItems)
+    const childItems = value.childItems === undefined ? previousRow.childItems : Object.fromEntries(Object.entries(record(value.childItems)).map(([threadId, children]) =>
+      [threadId, Array.isArray(children) ? mergeMcpAppBlocks(Array.isArray(previousChildren[threadId]) ? previousChildren[threadId] as unknown[] : [], children) : children]))
+    if (childItems) return { ...block, childItems }
+  }
+  const app = value.app as ToolAppAttachment | undefined
+  if (app) return { ...block, app: mergeMcpAppAttachment(apps.get(app.appInstanceId), app) }
+  // Completion snapshots can omit the extension entirely. Exact native item id
+  // and type still identify the same call; never guess by server/tool/arguments.
+  return previousRow.type === value.type && previousRow.app ? { ...block, app: previousRow.app } : block
 }
 
 export function validateMcpAppAttachmentUpdate(update: McpAppAttachmentUpdate): void {

@@ -157,6 +157,8 @@ export const BUILT_IN_SUPERONE_TOOL_NAMES = [
   'session_collab_start',
   'session_collab_send',
   'session_collab_retrieve',
+  'session_suggest_task',
+  'session_dismiss_task',
   'media_list_providers',
   'media_generate_image',
   'media_generate_video',
@@ -179,12 +181,15 @@ export type BuiltInSuperoneToolName = (typeof BUILT_IN_SUPERONE_TOOL_NAMES)[numb
  * Tools only the top-level (user-facing) agent may call — not Task/subagent
  * workers. The collaboration mailbox is authorized by session, so a subagent
  * sharing the session's MCP connection must not send as it or drain its inbox.
+ * Suggested-task cards belong to the session's own transcript the same way.
  */
 export const MAIN_THREAD_ONLY_SUPERONE_TOOL_NAMES = [
   'session_rename',
   'session_tag',
   'session_collab_send',
   'session_collab_retrieve',
+  'session_suggest_task',
+  'session_dismiss_task',
 ] as const
 
 export function superoneBareToolName(name: string): string {

@@ -3,6 +3,7 @@ import { INTERACTION_MEMORY_TOOL_DEFS } from '@superone/shared/interaction-memor
 import type { SuperoneMcpToolDescriptor } from './superone-mcp-types'
 import { READ_MANUAL_INPUT_SCHEMA } from './manual-tool-defs'
 import { ENVIRONMENT_GET_INFO_INPUT_SCHEMA } from '@superone/shared/environment/host-action-archive-descriptors'
+import { SESSION_DISMISS_TASK_INPUT_SCHEMA, SESSION_SUGGEST_TASK_INPUT_SCHEMA } from '@superone/shared/environment/host-action-collaboration-descriptors'
 export { MEDIA_GUIDE_TOPICS, MINIAPP_GUIDE_TOPICS, MANUAL_DOMAINS, PRODUCT_GUIDE_TOPICS, READ_MANUAL_INPUT_SCHEMA, type ManualDomain } from './manual-tool-defs'
 
 // Browser tool name lists live in @superone/shared so registration and
@@ -104,6 +105,8 @@ import {
   SESSION_SEND_CONTENT_DESCRIPTION,
   SESSION_RETRIEVE_DESCRIPTION,
   SESSION_RETRIEVE_FROM_DESCRIPTION,
+  SESSION_SUGGEST_TASK_DESCRIPTION,
+  SESSION_DISMISS_TASK_DESCRIPTION,
   AUTOMATION_LIST_DESCRIPTION,
   AUTOMATION_APPLY_DESCRIPTION,
   AUTOMATION_DELETE_DESCRIPTION,
@@ -321,6 +324,16 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
       },
       additionalProperties: false,
     },
+  },
+  {
+    name: 'session_suggest_task',
+    description: SESSION_SUGGEST_TASK_DESCRIPTION,
+    inputSchema: SESSION_SUGGEST_TASK_INPUT_SCHEMA,
+  },
+  {
+    name: 'session_dismiss_task',
+    description: SESSION_DISMISS_TASK_DESCRIPTION,
+    inputSchema: SESSION_DISMISS_TASK_INPUT_SCHEMA,
   },
   {
     name: 'read_manual',

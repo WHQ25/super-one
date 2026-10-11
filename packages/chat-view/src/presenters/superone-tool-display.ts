@@ -85,6 +85,13 @@ export const SUPERONE_TOOL_DESCRIPTORS: Record<string, SuperoneToolDescriptor> =
       return [tags, ids > 1 ? String(ids) : ''].filter(Boolean).join(' · ')
     },
   },
+  session_dismiss_task: {
+    icon: 'clipboard-list',
+    streamingKey: 'chat.toolBlock.suggestedTask.withdrawingTask',
+    actionKey: 'chat.toolBlock.suggestedTask.withdrawTask',
+    doneKey: 'chat.toolBlock.suggestedTask.taskWithdrawn',
+    summary: (params) => str(params.reason),
+  },
   media_list_providers: {
     icon: 'image',
     streamingKey: 'chat.toolBlock.listingMediaProviders',

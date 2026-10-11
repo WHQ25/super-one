@@ -1,4 +1,5 @@
 import type { ToolAppAttachment } from '@superone/shared/mcp-apps'
+import { SUGGEST_TASK_TOOL_NAME, type SuggestedTaskState } from '@superone/shared/suggested-task'
 import { memo, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Ban, ChevronRight, TriangleAlert } from 'lucide-react'
@@ -54,6 +55,7 @@ import {
   type GenericToolRowPorts,
 } from '@superone/chat-view/presenters/GenericToolRow'
 import { VideoGenToolBlock } from './VideoGenToolBlock'
+import { SuggestedTaskToolBlock } from './SuggestedTaskToolBlock'
 import { WidgetBlock } from './WidgetBlock'
 import type { ComposerViewPorts } from '@superone/shared/composer-view-bridge'
 import { FilesPreviewer } from './files-previewer/FilesPreviewer'
@@ -121,6 +123,8 @@ export interface ToolBlockProps {
   remoteDetail?: string
   /** Set by the deferred row: the expand signal and the load's status. */
   deferred?: DeferredRowControls
+  /** `session_suggest_task` only: the card's outcome, patched onto its row by the host. */
+  suggestedTask?: SuggestedTaskState
 }
 
 /** How a row whose body loads on open reports opening and shows the load. */
@@ -221,6 +225,7 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
   trailingAction,
   runContinuations,
   deferred,
+  suggestedTask,
   allowExpand,
   defaultAutoExpand,
   autoExpandFileDiffs,
@@ -458,6 +463,21 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
           result={cleanResult}
           isStreaming={isStreaming}
           isError={!!isError || videoFailed}
+        />
+      )
+    }
+    if (mcpInfo.mcpToolName === SUGGEST_TASK_TOOL_NAME) {
+      return (
+        <SuggestedTaskToolBlock
+          params={params}
+          toolSummary={toolSummary}
+          result={cleanResult}
+          state={suggestedTask}
+          isStreaming={isStreaming}
+          isError={isError}
+          isDenied={isDenied}
+          allowExpand={allowExpand}
+          onOpenSession={ports.onOpenSession}
         />
       )
     }

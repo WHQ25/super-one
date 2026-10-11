@@ -18,8 +18,13 @@ it('binds the guest to the trusted app/session and ignores subframe and same-doc
   await waitFor(() => expect(container.querySelector('webview')).not.toBeNull())
   const view = container.querySelector('webview') as unknown as Electron.WebviewTag
   view.send = vi.fn().mockResolvedValue(undefined)
+  // The element commits before the passive effect that attaches its listeners,
+  // so retry until the bridge takes the request: `open` runs synchronously in it.
+  await waitFor(() => {
+    if (!open.mock.calls.length) act(() => view.dispatchEvent(Object.assign(new Event('ipc-message'), { channel: 'composer-open', args: [{ id: 'call', spec: { title: 'Notes' }, sessionId: 'forged', appId: 'forged' }] })))
+    expect(open).toHaveBeenCalled()
+  })
   act(() => view.dispatchEvent(new Event('dom-ready')))
-  act(() => view.dispatchEvent(Object.assign(new Event('ipc-message'), { channel: 'composer-open', args: [{ id: 'call', spec: { title: 'Notes' }, sessionId: 'forged', appId: 'forged' }] })))
   await waitFor(() => expect(awaitResult).toHaveBeenCalledWith('form'))
   expect(open).toHaveBeenCalledExactlyOnceWith({ source: { kind: 'miniapp', appId: 'demo', projectDir: '/project', sessionId: 'owner' }, viewId: expect.any(String), localId: 'call', spec: { title: 'Notes' }, output: 'caller' })
   act(() => view.dispatchEvent(new Event('did-start-loading')))

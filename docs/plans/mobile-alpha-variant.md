@@ -38,20 +38,19 @@ rollback. The phone needs the desktop's split.
       default, per-track concurrency, tags, floor check, build-profile guard,
       rollback flag, Android GitHub Release.
 - [x] Docs: `native-builds.md`, release skill.
-- [ ] Android: create the alpha keystore (`eas credentials -p android`, alpha
-      profile, interactive) before the first CI alpha build.
+- [x] Android: first alpha APK (build 36) built by CI; EAS generated the
+      keystore non-interactively.
 - [x] iOS: "SuperOne Remote Alpha" app in App Store Connect
       (`6821560971`, `submit.alpha.ios.ascAppId`); alpha icon with the desktop's
       ALPHA badge.
 - [x] iOS: first alpha build (36) built locally with credentials and
       submitted; alpha iOS CI runs without a public link, skipping its manifest.
-- [ ] iOS: once Beta App Review passes, enable the external group's public
-      link and set the `TESTFLIGHT_URL_ALPHA` repository variable.
-- [ ] Incident: re-point stable Android `latest.json` to build 35
-      (`release-mobile.yml` `build_id`, `android_profile=internal`) until stable
-      desktop 0.73.0 ships; then the stable cut publishes both stable apps.
-- [ ] First alpha builds; tell alpha-desktop users to install "SuperOne Alpha"
-      and re-pair.
+- [x] iOS: alpha public link set as the `TESTFLIGHT_URL_ALPHA` repository
+      variable; the next alpha iOS run publishes `mobile/ios/alpha/latest.json`.
+- [x] Incident: stable Android `latest.json` re-pointed to build 35.
+- [ ] Stable desktop 0.73.0, then the stable cut publishes both stable apps
+      (recovers the phones already on stable build 36).
+- [ ] Tell alpha-desktop users to install "SuperOne Alpha" and re-pair.
 - [ ] Desktop: Android/iOS download links and QR codes, read from the R2
       pointers (`artifact.url` / `testflightUrl`).
 - [ ] When done: delete this plan (the design already lives in

@@ -24,6 +24,8 @@ reason). Ledger rows: [api-surface.md](api-surface.md).
 | 13 | `get_task_output` control request | 0.3.287 | Live tail of a background shell or Monitor task without reading its output file | No Query wrapper | open |
 | 15 | Subagent ids: `agent_id` on messages, `parent_task_id` and `run_id` on task events, `subagent_type` on `background_tasks_changed` entries (0.3.293) | 0.3.292 | Attribute frames and tasks to a subagent without the inline block tree, and drop late frames of an earlier run | Inline subagent frames already carry the right `parent_tool_use_id`, and resume re-keying needs only `task_id` ([0.3.292](upgrades/0.3.292.md)); worth it for tasks whose launching block never reaches the transcript | open |
 | 16 | `ui_prompt_autocomplete` mod host request | 0.3.292 (native schema observed) | A mod's completions in the SuperOne composer | Schema is `@internal`; a per-keystroke ask merged into the composer's menus, local sessions only (like G6) | open, wait for the protocol to become public |
+| 17 | `SDKRateLimitInfo.overageEnabled` | 0.3.295 | Tell a usage-limit warning apart for accounts with extra usage on, before overage starts | `rate_limit_event` handling reads only `resetsAt` / `isUsingOverage` today | open |
+| 18 | Settings hook `onFailure: 'block'` | 0.3.296 | Fail-closed hooks in the settings.json hook editor | Hook editor schema and shared hook types change | open |
 
 ## Integration gaps
 

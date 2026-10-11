@@ -42,6 +42,7 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Changed
 
+- Upgrade Claude Agent SDK to 0.3.296 (Claude Code 2.1.296).
 - Paginate session text reads by content block, with a cursor for the next
   complete block.
 - Update the managed Codex runtime to 0.162.1 for more reliable thread history

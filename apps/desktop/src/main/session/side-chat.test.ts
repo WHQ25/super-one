@@ -90,6 +90,7 @@ function makeManager(over: { liveParent?: Partial<Session>; onCreate?: (session:
       const session = {
         id: opts.id!,
         ephemeral: opts.ephemeral ?? false,
+        lease: { grantCreatedSession: vi.fn() },
         setAgentPreset: () => {},
         snapshot: {
           harnessId: 'claude',
@@ -119,6 +120,15 @@ beforeEach(() => {
 })
 
 describe('starting a side chat', () => {
+  it('rechecks control after the transcript fork and leaves no live child on takeover', async () => {
+    const { mgr, created } = makeManager()
+    const assertControl = vi.fn().mockImplementationOnce(() => {}).mockImplementation(() => { throw new Error('control taken over') })
+    const result = await startSideChat(mgr, { parentSessionId: PARENT_SID }, assertControl)
+    expect(forkClaudeTranscriptMock).toHaveBeenCalledOnce()
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining('control taken over') })
+    expect(created).toEqual([])
+    expect(assertControl).toHaveBeenCalledTimes(2)
+  })
   it('creates the session as ephemeral so nothing reaches the database', async () => {
     const { mgr, created } = makeManager()
 

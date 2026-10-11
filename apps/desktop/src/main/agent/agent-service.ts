@@ -100,10 +100,9 @@ import { resolveFavicon, cacheCapturedFavicon } from '../favicon'
 import { resolveSiteIdentity } from '../site-identity'
 import { backupMcpServers, listLibrary, deleteLibraryEntry, getLibraryEntry } from '../mcp-library-service'
 import { uninstallMcpbBundle } from '../mcpb/mcpb-installer'
-import type { PluginModReview, HookSavePayload, SessionForkRequest, SideChatStartRequest, HarnessId, DshPluginInstallSource } from '@superone/shared/agent-types'
+import type { PluginModReview, HookSavePayload, SessionForkRequest, HarnessId, DshPluginInstallSource } from '@superone/shared/agent-types'
 import { tryResolveHarnessRuntime } from '../harness/resolve-runtime'
 import { forkSession } from '../session/session-fork'
-import { closeSideChat, startSideChat } from '../session/side-chat'
 import { composerOpenResult, InputRequestOpenError, openWidgetInputRequest, type OpenedInputRequest } from '../session/input-requests';
 import { awaitComposerForm, cancelComposerForms, openComposerForm, releaseComposerClient, type ComposerClient } from '../session/composer-delivery';
 import type { MiniAppInputRequest } from '../miniapp/miniapp-input-requests'
@@ -2238,18 +2237,6 @@ export class AgentService {
       return deleted
     })
 
-    // Side chat deliberately does NOT emitSessionsChanged: an ephemeral session
-    // is absent from the database, so refreshing the sidebar would show nothing
-    // and only cost a re-query.
-    windowIpc.handle(AgentIpcChannels.SESSIONS_SIDE_CHAT_START, async (_event, request: SideChatStartRequest) => {
-      return startSideChat(this.requireSessionManager(), request)
-    })
-
-    windowIpc.handle(AgentIpcChannels.SESSIONS_SIDE_CHAT_CLOSE, async (_event, sessionId: string) => {
-      if (!this.sessionManager) return false
-      return closeSideChat(this.sessionManager, sessionId)
-    })
-
     windowIpc.handle(AgentIpcChannels.SESSIONS_LIST_PINNED, () => {
       return listPinnedSessions()
     })
@@ -2371,8 +2358,6 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_LIST_FOR_FOLDER_PAGE)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_LOAD_MESSAGES)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_DELETE_OLDER)
-    ipcMain.removeHandler(AgentIpcChannels.SESSIONS_SIDE_CHAT_START)
-    ipcMain.removeHandler(AgentIpcChannels.SESSIONS_SIDE_CHAT_CLOSE)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_LIST_PINNED)
   }
 }

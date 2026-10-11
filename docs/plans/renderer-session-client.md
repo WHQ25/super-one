@@ -316,6 +316,13 @@ the UI hides them through capabilities.
 
 ## Progress
 
+- 2026-10-12: Step 5 side-chat family. Start/close are optional fenced RPCs.
+  A fork rechecks the parent's control before creating its ephemeral child;
+  the child's created-resource grant allows inherited settings. Renderer
+  eligibility uses served capabilities and retains its environment project
+  key. Endpoint, backend and renderer suites pass (50 tests), as do node/web
+  typechecks; the legacy side-chat IPC is removed.
+
 - 2026-10-12: Step 5 introspection family. Context usage and MCP status are
   lease-free reads on the named session; MCP authentication is fenced. No
   cold runtime is resumed just to read status. Renderer and endpoint tests

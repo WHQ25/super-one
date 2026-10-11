@@ -12,6 +12,7 @@ import i18n from 'i18next'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { useChatStore, useSessionScope } from '@/stores/chat'
 import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
+import { useEnvironmentServes } from '@/hooks/use-environment-serves'
 
 export interface SideChatTarget {
   projectPath: string
@@ -22,14 +23,13 @@ export interface SideChatTarget {
  * The session a side chat would branch from, or null when none can.
  *
  * Returns null for a harness that cannot fork, for an empty draft (nothing to
- * branch), for a remote project (the fork runs on the node, which has no side
- * chat surface yet), and from inside a side chat (branching a scratch thread off
+ * branch), and from inside a side chat (branching a scratch thread off
  * a scratch thread is a tab the user cannot get back to).
  */
 export function resolveSideChatTarget(): SideChatTarget | null {
   const state = useChatStore.getState()
   const projectPath = state.activeProject
-  if (!projectPath || projectPath.startsWith('remote:')) return null
+  if (!projectPath) return null
   const project = state.projectSessions[projectPath]
   const sessionId = project?._activeSessionId
   const session = sessionId ? project?._sessions[sessionId] : undefined
@@ -52,6 +52,8 @@ export function useCanOpenSideChat(sessionId?: string): boolean {
   // open another one: `resolveSideChatTarget` would branch off the PARENT, so
   // the entry would silently replace the very thread the user is typing in.
   const scope = useSessionScope()
+  const projectPath = useChatStore((s) => s.activeProject)
+  const served = useEnvironmentServes(projectPath, 'session.sideChatStart')
   const scopedSessionId = scope?.sessionId
   const inSideChat = useChatStore((s) => {
     if (!scope || !scopedSessionId) return false
@@ -59,7 +61,7 @@ export function useCanOpenSideChat(sessionId?: string): boolean {
   })
   const eligible = useChatStore((s) => {
     const projectPath = s.activeProject
-    if (!projectPath || projectPath.startsWith('remote:')) return false
+    if (!projectPath) return false
     const project = s.projectSessions[projectPath]
     const activeId = project?._activeSessionId
     if (!activeId || (sessionId && sessionId !== activeId)) return false
@@ -67,7 +69,7 @@ export function useCanOpenSideChat(sessionId?: string): boolean {
     if (!session || session._sideChatParentId || session.messages.length === 0) return false
     return HARNESS_CAPABILITIES[resolveProvider(session)].supportsFork
   })
-  return eligible && !inSideChat
+  return served && eligible && !inSideChat
 }
 
 export interface OpenSideChatOptions {

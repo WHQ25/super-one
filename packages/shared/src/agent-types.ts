@@ -4376,8 +4376,6 @@ export const AgentIpcChannels = {
   SESSIONS_LIST_FOR_FOLDER_PAGE: 'sessions:list-for-folder-page',
   SESSIONS_LOAD_MESSAGES: 'sessions:load-messages',
   SESSIONS_CREATE: 'sessions:create',
-  SESSIONS_SIDE_CHAT_START: 'sessions:side-chat-start',
-  SESSIONS_SIDE_CHAT_CLOSE: 'sessions:side-chat-close',
   SESSIONS_SAVE_STATE: 'sessions:save-state',
   SESSIONS_DELETE_OLDER: 'sessions:delete-older',
   SESSIONS_LIST_PINNED: 'sessions:list-pinned',

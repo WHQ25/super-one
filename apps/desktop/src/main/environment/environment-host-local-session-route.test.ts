@@ -218,3 +218,33 @@ describe('session introspection on the local environment endpoint', () => {
     await expect(host.callSession('local', 'own', 'session.mcpAuthenticate', { serverName: 'github' })).rejects.toThrow('local session control needs a window')
   })
 })
+
+describe('side chats on the local environment endpoint', () => {
+  it('creates and closes a live child without a catalog row or changing the parent', async () => {
+    let manager: ReturnType<typeof localRoute>['sessions']
+    let projectPath: string
+    const { host, sessions, own, projectDir, store } = localRoute({ sideChats: {
+      start: async (parentSessionId, assertControl) => {
+        expect(parentSessionId).toBe('own')
+        assertControl()
+        const child = manager.createSession({ id: 'side', projectPath })
+        Object.assign(child, { ephemeral: true })
+        child.lease.grantCreatedSession()
+        return { ok: true, sessionId: 'side', projectPath, cwd: projectPath, harnessId: 'claude', providerId: 'claude-base', apiProviderId: null, acpAgentId: null, selectedModel: null, selectedEffort: null, agentPreset: null }
+      },
+      close: async (id) => { manager.getSession(id)!.lease.assertMutation(); await manager.disposeSession(id); return true },
+    } })
+    manager = sessions; projectPath = projectDir
+    const opened = await runWindowControl(7, () => host.callSession('local', 'own', 'session.sideChatStart', {}))
+    expect(opened).toMatchObject({ ok: true, sessionId: 'side' })
+    expect(store.rows.has('side')).toBe(false)
+    await runWindowControl(7, () => host.sendSessionMessage('local', { sessionId: 'side', text: 'aside' }))
+    expect(await runWindowControl(7, () => host.callSession('local', 'side', 'session.sideChatClose', {}))).toBe(true)
+    expect(sessions.getSession('side')).toBeNull()
+    expect(sessions.getSession('own')).toBe(own)
+  })
+
+  it('does not advertise side chats when the host has no implementation', () => {
+    expect(localRoute().domain.localSessions.servedOperations.has('session.sideChatStart')).toBe(false)
+  })
+})

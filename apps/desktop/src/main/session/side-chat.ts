@@ -78,7 +78,9 @@ function sandboxInfoToMode(info: { enabled: boolean; autoAllowBash?: boolean }):
  * be newer than anything persisted (a draft's provider id only exists in memory
  * until its first state change).
  */
-function resolveSource(mgr: SessionManager, parentSessionId: string) {
+type SideChatSessions = Pick<SessionManager, 'getSession' | 'createSession' | 'disposeSession'>
+
+function resolveSource(mgr: SideChatSessions, parentSessionId: string) {
   const live = mgr.getSession(parentSessionId)
   const record = getSessionRecord(parentSessionId)
   if (!live && !record) return null
@@ -120,9 +122,11 @@ function resolveSource(mgr: SessionManager, parentSessionId: string) {
  * normal send path finds it by id — no database row is ever created for it.
  */
 export async function startSideChat(
-  mgr: SessionManager,
+  mgr: SideChatSessions,
   input: SideChatStartRequest,
+  assertControl: () => void = () => {},
 ): Promise<SideChatStartResult> {
+  assertControl()
   const source = resolveSource(mgr, input.parentSessionId)
   if (!source) return { ok: false, error: 'Parent session not found' }
   if (!source.providerSessionId) {
@@ -160,6 +164,7 @@ export async function startSideChat(
   const sessionId = randomUUID()
   let session: Session
   try {
+    assertControl()
     session = mgr.createSession({
       projectPath: source.projectPath,
       cwd: source.cwd,
@@ -176,6 +181,7 @@ export async function startSideChat(
       permissionMode: source.permissionMode,
       sandboxMode: source.sandboxMode,
     })
+    session.lease.grantCreatedSession()
   } catch (err) {
     await deleteForkedTranscript(provider.harnessId, forkedProviderSessionId, source.cwd, provider.config)
     return { ok: false, error: `Side chat session failed to start: ${err instanceof Error ? err.message : String(err)}` }
@@ -214,7 +220,7 @@ export async function startSideChat(
  *
  * The SuperOne database needs no cleanup — an ephemeral session never wrote to it.
  */
-export async function closeSideChat(mgr: SessionManager, sessionId: string): Promise<boolean> {
+export async function closeSideChat(mgr: SideChatSessions, sessionId: string): Promise<boolean> {
   const session = mgr.getSession(sessionId)
   if (!session) return false
   if (!session.ephemeral) {

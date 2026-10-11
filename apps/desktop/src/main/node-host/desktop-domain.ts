@@ -32,7 +32,7 @@ import {
 import { SessionEventRecorder } from './session-event-recorder'
 import { runRpcControl } from '../session/control-context'
 import { dispatchRpc } from '@superone/runtime/server'
-import { LocalSessionHost, type LocalSessionEdits } from './local-session-host'
+import { LocalSessionHost, type LocalSessionEdits, type LocalSessionHostDeps } from './local-session-host'
 import type { DesktopSessionRows } from './desktop-session-reads'
 import type { DesktopSessionRow } from '../db-remote-controlled-sessions'
 import { desktopNodeHostPaths } from './paths'
@@ -107,6 +107,7 @@ export interface DesktopDomainDeps {
   /** Desktop methods for phones beyond the shared families (`remote/phone-methods.ts`). */
   phoneMethods?: { dispatch: RpcExtensionDispatch; methods: ReadonlySet<string> }
   sessionEdits?: LocalSessionEdits
+  sideChats?: LocalSessionHostDeps['sideChats']
   /** Bind local terminal reads and IPC mutations to this domain's one lease authority. */
   bindLocalControl?: (authority: TerminalLeaseAuthority) => void
 }
@@ -179,7 +180,7 @@ export class DesktopDomain {
         unservedMethods: DESKTOP_UNSERVED_METHODS,
         subscriptionUsage: { claudeAccounts: claudeUsageAccounts, log: usageLog },
       }
-      const localSessions = new LocalSessionHost({ sessions: deps.sessions, events, rows: deps.rows, edits: deps.sessionEdits, drafts: deps.drafts, projectPath: (id) => deps.projects.get(id)?.path ?? null, projectId: (path) => deps.projects.list().find((project) => project.path === path)?.projectId ?? null, environmentId: identity.environmentId, restore: deps.restore })
+      const localSessions = new LocalSessionHost({ sessions: deps.sessions, events, rows: deps.rows, edits: deps.sessionEdits, drafts: deps.drafts, sideChats: deps.sideChats, projectPath: (id) => deps.projects.get(id)?.path ?? null, projectId: (path) => deps.projects.list().find((project) => project.path === path)?.projectId ?? null, environmentId: identity.environmentId, restore: deps.restore })
       deps.bindLocalControl?.({ environmentId: identity.environmentId, leases })
       return new DesktopDomain(db, identity, auth, leases, sessions, localSessions, recorder, unbindSessions, paths.nodeHome, context, { terminals: deps.terminals, drafts: deps.drafts, beforeDraftOpen: deps.beforeDraftOpen, phoneMethods: deps.phoneMethods, projectEdits: deps.projectEdits, topicNotices: deps.topicNotices, rpcRouter: deps.rpcRouter })
     } catch (err) {

@@ -24,8 +24,6 @@ const startSideChat = vi.fn()
 const closeSideChatIpc = vi.fn().mockResolvedValue(true)
 
 const mockWindowApp = {
-  startSideChat,
-  closeSideChat: closeSideChatIpc,
   saveSessionState: vi.fn().mockResolvedValue(undefined),
   listSessionsForFolder: vi.fn().mockResolvedValue([]),
   trace: vi.fn(),
@@ -34,6 +32,7 @@ const mockWindowApp = {
 const eventTarget = new EventTarget()
 vi.stubGlobal('window', {
   app: mockWindowApp,
+  environment: { callSession: (_connection: string, sessionId: string, method: string) => method === 'session.sideChatStart' ? startSideChat({ parentSessionId: sessionId }) : closeSideChatIpc(sessionId) },
   agent: { parkSession: vi.fn().mockResolvedValue(undefined) },
   localStorage: mockLocalStorage,
   dispatchEvent: (e: Event) => eventTarget.dispatchEvent(e),

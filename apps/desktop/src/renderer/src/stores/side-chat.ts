@@ -15,6 +15,7 @@ import type { CodexReasoningEffort, EffortLevel, HarnessId } from '@superone/sha
 import { useChatStore, lastTouchedPane, markPaneTouched } from './chat'
 import { createDefaultPerSessionState } from './chat-store/defaults'
 import { disposeModUiClient } from '@/lib/mod-ui/registry'
+import { callSession } from '@/lib/session-client'
 
 export interface SideChat {
   /** SuperOne session id of the side chat itself. */
@@ -125,6 +126,7 @@ function registerSession(
     // what stops it from showing the roster's first entry instead.
     if (init.agentPreset) session.dshPreset = init.agentPreset
     session._sideChatParentId = parentSessionId
+    session.hostSessionOwned = true
     // Deliberately leaves `_activeSessionId` alone: the parent stays the session
     // the sidebar, header and keyboard shortcuts act on.
     return {
@@ -201,6 +203,7 @@ export function openSideChat(
   parentSessionId: string,
 ): Promise<OpenSideChatResult> {
   return serialize(() => openSideChatUnserialized(projectPath, parentSessionId))
+    .catch((error: unknown) => ({ ok: false, error: error instanceof Error ? error.message : String(error) }))
 }
 
 async function openSideChatUnserialized(
@@ -211,7 +214,7 @@ async function openSideChatUnserialized(
 
   const parent = useChatStore.getState().projectSessions[projectPath]?._sessions[parentSessionId]
 
-  const result = await window.app.startSideChat({ parentSessionId })
+  const result = await callSession(projectPath, parentSessionId, 'session.sideChatStart', {})
   if (!result.ok) return { ok: false, error: result.error }
 
   // The main process only knows a model once one has been pushed to it, so a
@@ -223,7 +226,7 @@ async function openSideChatUnserialized(
   const parentModel = result.harnessId === 'codex' ? parent?.selectedCodexModel : parent?.selectedModel
   const parentEffort = result.harnessId === 'codex' ? parent?.selectedCodexReasoningEffort : parent?.selectedEffort
 
-  registerSession(result.projectPath, result.sessionId, parentSessionId, {
+  registerSession(projectPath, result.sessionId, parentSessionId, {
     cwd: result.cwd,
     harnessId: result.harnessId,
     apiProviderId: result.apiProviderId,
@@ -235,7 +238,7 @@ async function openSideChatUnserialized(
   const chat: SideChat = {
     sessionId: result.sessionId,
     parentSessionId,
-    projectPath: result.projectPath,
+    projectPath,
     harnessId: result.harnessId,
   }
   useSideChatStore.getState()._set(chat)
@@ -259,7 +262,7 @@ async function closeSideChatUnserialized(): Promise<void> {
   if (!chat) return
   useSideChatStore.getState()._set(null)
   try {
-    await window.app.closeSideChat(chat.sessionId)
+    await callSession(chat.projectPath, chat.sessionId, 'session.sideChatClose', {})
   } finally {
     unregisterSession(chat.projectPath, chat.sessionId)
   }

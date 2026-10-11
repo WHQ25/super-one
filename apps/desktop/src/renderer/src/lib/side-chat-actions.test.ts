@@ -121,9 +121,9 @@ describe('who may open a side chat', () => {
     expect(resolveSideChatTarget()).toBeNull()
   })
 
-  it('refuses a remote project, where the fork would run on the node', () => {
+  it('resolves a node project without inferring capabilities from its key', () => {
     seed({ projectPath: 'remote:conn-1:/srv/repo' })
-    expect(resolveSideChatTarget()).toBeNull()
+    expect(resolveSideChatTarget()).toEqual({ projectPath: 'remote:conn-1:/srv/repo', sessionId: 'sid' })
   })
 
   it('refuses when no project is open', () => {

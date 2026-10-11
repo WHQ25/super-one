@@ -1,7 +1,9 @@
-import type { RewindFilesResult, PermissionMode, SandboxInfo, ContextUsageInfo, McpServerInfo } from '../agent-types'
+import type { RewindFilesResult, PermissionMode, SandboxInfo, ContextUsageInfo, McpServerInfo, SideChatStartResult } from '../agent-types'
 
 /** Optional session families: a host advertises only the operations it implements. */
 export interface SessionOperationMethods {
+  'session.sideChatStart': { input: Record<string, never>; result: SideChatStartResult }
+  'session.sideChatClose': { input: Record<string, never>; result: boolean }
   'session.contextUsage': { input: Record<string, never>; result: ContextUsageInfo | null }
   'session.mcpStatus': { input: Record<string, never>; result: McpServerInfo[] }
   'session.mcpAuthenticate': { input: { serverName: string }; result: null }
@@ -14,6 +16,7 @@ export interface SessionOperationMethods {
 }
 export type SessionOperationMethod = keyof SessionOperationMethods
 export const SESSION_OPERATION_METHODS: ReadonlySet<string> = new Set([
+  'session.sideChatStart', 'session.sideChatClose',
   'session.contextUsage', 'session.mcpStatus', 'session.mcpAuthenticate',
   'session.stopTask', 'session.startQueued', 'session.reset',
   'session.rewind', 'session.previewRewind', 'session.truncateAtCheckpoint',

@@ -155,6 +155,10 @@ export function openDesktopDomain(sessions: NodeHostSessionManager, phonePorts: 
     userDataDir: app.getPath('userData'),
     appVersion: app.getVersion(),
     sessions,
+    sideChats: {
+      start: async (parentSessionId, assertControl) => (await import('../session/side-chat')).startSideChat(sessions, { parentSessionId }, assertControl),
+      close: async (sessionId) => (await import('../session/side-chat')).closeSideChat(sessions, sessionId),
+    },
     store: desktopSessionStore,
     sessionEdits: {
       create: desktopSessionStore.createRow,

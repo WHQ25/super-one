@@ -5,7 +5,7 @@ import { unsupportedMethodError } from '@superone/runtime/server'
 import type { NodeSessionSettings } from '@superone/runtime/session'
 import type { DesktopSessionRow } from '../db-remote-controlled-sessions'
 import type { Session } from '../session/types'
-import type { SessionForkRequest, SessionForkResult } from '@superone/shared/agent-types'
+import type { SessionForkRequest, SessionForkResult, SideChatStartResult } from '@superone/shared/agent-types'
 import { runFencedSessionControl, runHostReaction } from '../session/control-context'
 import { DesktopSessionReads, type DesktopSessionReadsDeps } from './desktop-session-reads'
 import { admitDesktopSessionSend, applyDesktopSessionSettings, desktopSendRequest, respondDesktopPermission, respondDesktopQuestion, respondDesktopPlan } from './desktop-session-mutations'
@@ -28,6 +28,10 @@ export interface LocalSessionHostDeps extends DesktopSessionReadsDeps<DesktopSes
   projectId?(projectPath: string): string | null
   edits?: LocalSessionEdits
   drafts?: DraftsPort
+  sideChats?: {
+    start(parentSessionId: string, assertControl: () => void): Promise<SideChatStartResult>
+    close(sessionId: string): Promise<boolean>
+  }
 }
 
 /** Families with no local meaning; phones use the controller's Host Actions on routed sessions. */
@@ -45,7 +49,11 @@ export class LocalSessionHost extends DesktopSessionReads<DesktopSessionRow> imp
   dispose(): void { this.disposeReads() }
   get unservedMethods(): ReadonlySet<string> { return new Set([...LOCAL_SESSION_UNSERVED].filter(method => method !== 'session.fork' || !this.deps.edits?.fork)) }
 
-  readonly servedOperations: ReadonlySet<string> = new Set(['session.contextUsage', 'session.mcpStatus', 'session.mcpAuthenticate', 'session.stopTask', 'session.startQueued', 'session.reset', 'session.rewind', 'session.previewRewind', 'session.truncateAtCheckpoint'])
+  get servedOperations(): ReadonlySet<string> {
+    return new Set(['session.contextUsage', 'session.mcpStatus', 'session.mcpAuthenticate', 'session.stopTask', 'session.startQueued', 'session.reset', 'session.rewind', 'session.previewRewind', 'session.truncateAtCheckpoint',
+      ...(this.deps.sideChats ? ['session.sideChatStart', 'session.sideChatClose'] : []),
+    ])
+  }
 
   async callOperation(sessionId: string, method: string, input: Record<string, unknown>): Promise<unknown> {
     if (method === 'session.contextUsage') return this.deps.sessions.getSession(sessionId)?.getContextUsage() ?? null
@@ -53,6 +61,8 @@ export class LocalSessionHost extends DesktopSessionReads<DesktopSessionRow> imp
     const session = method === 'session.previewRewind' ? this.live(sessionId) : this.mutation(sessionId)
     const checkpointId = input.checkpointId as string
     switch (method) {
+      case 'session.sideChatStart': return this.deps.sideChats!.start(sessionId, () => session.lease.assertMutation())
+      case 'session.sideChatClose': return this.deps.sideChats!.close(sessionId)
       case 'session.mcpAuthenticate': return session.authenticateMcp(input.serverName as string)
       case 'session.stopTask': await session.dispatchBackendCommand({ kind: 'claude.stop_task', taskId: input.taskId as string }); return true
       case 'session.startQueued': return enqueueSessionQueueOp(sessionId, () => { session.lease.assertMutation(); return session.startQueuedMessages() })

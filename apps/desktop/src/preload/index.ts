@@ -3,7 +3,7 @@ import { collaborationMailbox } from './collaboration-mailbox'
 import { mediaComposerAPI } from './media-composer-api'
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { AgentIpcChannels, type AgentEvent, type NativeContextMenuItemSpec, type AgentPrewarmHint, type BashOutputEvent, type CodexExternalAgentItem, type CodexMcpOauthLoginOptions, type ProviderEndpointTestResponse, type DiscoverModelsResult, type RemoteDeviceConfig, type SendMessageRequest, type WorktreeActivateRequest, type WorktreeHandoffResult, type WorktreeAssignResult, type GitDirtyStatus, type SessionForkRequest, type SessionForkResult, type SideChatStartRequest, type SideChatStartResult, type HookSavePayload, type TerminalEvent, type TerminalListItem, type TerminalSnapshot, type HarnessId, type BrowserAudioState, type BrowserCertError, type BrowserOpenTabRequest, type UpsertMediaProviderRequest, type ThemeMode, type ComputerUseDisplayInfo, type ComputerUseViewfinderClaim, type ComputerUseViewfinderFrame, type RealtimeVoiceStartRequest, type RealtimeTimelineResult, type CodexRealtimeVoiceCatalog } from '@superone/shared/agent-types'
+import { AgentIpcChannels, type AgentEvent, type NativeContextMenuItemSpec, type AgentPrewarmHint, type BashOutputEvent, type CodexExternalAgentItem, type CodexMcpOauthLoginOptions, type ProviderEndpointTestResponse, type DiscoverModelsResult, type RemoteDeviceConfig, type SendMessageRequest, type WorktreeActivateRequest, type WorktreeHandoffResult, type WorktreeAssignResult, type GitDirtyStatus, type SessionForkRequest, type SessionForkResult, type HookSavePayload, type TerminalEvent, type TerminalListItem, type TerminalSnapshot, type HarnessId, type BrowserAudioState, type BrowserCertError, type BrowserOpenTabRequest, type UpsertMediaProviderRequest, type ThemeMode, type ComputerUseDisplayInfo, type ComputerUseViewfinderClaim, type ComputerUseViewfinderFrame, type RealtimeVoiceStartRequest, type RealtimeTimelineResult, type CodexRealtimeVoiceCatalog } from '@superone/shared/agent-types'
 import type { McpbInstallRequest } from '@superone/shared/mcpb-types'
 import type { MobileAppDownloads } from '@superone/shared/mobile-updates'
 import type { TerminalCommandRule } from '@superone/shared/terminal-command-rules'
@@ -2102,10 +2102,7 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.GIT_HANDOFF_PREVIEW, worktreePath, folderPath) as Promise<GitDirtyStatus | null>,
   assignBranch: (folderPath: string, worktreePath: string, name: string) =>
     ipcRenderer.invoke(AgentIpcChannels.GIT_ASSIGN_BRANCH, folderPath, worktreePath, name) as Promise<WorktreeAssignResult>,
-  startSideChat: (request: SideChatStartRequest) =>
-    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_SIDE_CHAT_START, request) as Promise<SideChatStartResult>,
-  closeSideChat: (sessionId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_SIDE_CHAT_CLOSE, sessionId) as Promise<boolean>,
+
   getGitStatusFiles: (folderPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.GIT_STATUS_FILES, folderPath),
   getGitLog: (folderPath: string, query?: string) =>

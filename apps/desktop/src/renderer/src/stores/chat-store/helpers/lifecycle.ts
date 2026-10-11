@@ -15,17 +15,8 @@ export async function _syncAndResumeSession(
   set: ChatStoreSet,
   cwd: string,
 ): Promise<void> {
-  // Remote node projects never use the desktop SessionManager resume path.
-  if (projectPath.startsWith('remote:')) return
-  let result: Awaited<ReturnType<typeof window.app.resumeSession>>
-  try {
-    result = await window.app.resumeSession(projectPath, sessionId, cwd)
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    // Renderer draft UUIDs are not in SessionManager until first send — expected.
-    if (/session not found/i.test(msg)) return
-    throw err
-  }
+  // A renderer draft the host has not seen yet answers nothing.
+  const result = await window.agent.activateSession(projectPath, sessionId, cwd)
   if (!result) return
   set((s) => {
     const proj = s.projectSessions[projectPath]
@@ -147,10 +138,7 @@ export async function _ensureClaudeSessionReadyForSend(
   if (!sid) return
   const session = project._sessions[sid]
   if (!session || session.sessionProvider === 'codex' || session.sessionProvider === 'acp' || session.sessionProvider === 'opencode') return
-  try {
-    await window.app.resumeSession(projectPath, sid, _getSessionCwd(projectPath, session))
-  } catch {
-    // A renderer-created draft does not exist in SessionManager or SQLite yet.
-    // SEND_MESSAGE will resume it or create it with the same stable session id.
-  }
+  // A renderer-created draft does not exist on the host yet; the send creates
+  // it with the same stable session id.
+  await window.agent.activateSession(projectPath, sid, _getSessionCwd(projectPath, session)).catch(() => undefined)
 }

@@ -43,7 +43,7 @@ vi.mock('../codex/runner', () => ({ runCodexCommand: mockRunCodexCommand }))
 const mockActivateWorktree = vi.fn().mockResolvedValue({ ok: true, path: '/wt/feature-x' })
 const mockSendMessage = vi.fn().mockResolvedValue(undefined)
 const mockMiniAppAuthorize = vi.fn().mockResolvedValue(undefined)
-const mockResumeSession = vi.fn().mockResolvedValue(null)
+const mockActivateSession = vi.fn().mockResolvedValue(undefined)
 const mockCodexGetAuthStatus = vi.fn().mockResolvedValue({ mode: 'auto', signedIn: false })
 const mockEnvGetSession = vi.fn()
 const mockEnvCreateSession = vi.fn()
@@ -72,10 +72,10 @@ vi.stubGlobal('window', {
     parkSession: vi.fn().mockResolvedValue(undefined),
     prewarm: vi.fn().mockResolvedValue(undefined),
     requestSessionRecap: mockRequestSessionRecap,
+    activateSession: mockActivateSession,
   },
   app: {
     activateWorktree: mockActivateWorktree,
-    resumeSession: mockResumeSession,
     trace: vi.fn(),
     getAppSettings: vi.fn().mockResolvedValue({ agentPreference: {} }),
     codexGetAuthStatus: mockCodexGetAuthStatus,
@@ -130,7 +130,7 @@ beforeEach(() => {
   mockRequestSessionRecap.mockReset().mockResolvedValue(true)
   mockSetActiveWorktree.mockReset()
   mockMiniAppAuthorize.mockReset().mockResolvedValue(undefined)
-  mockResumeSession.mockReset().mockResolvedValue(null)
+  mockActivateSession.mockReset().mockResolvedValue(undefined)
   mockCodexGetAuthStatus.mockReset().mockResolvedValue({ mode: 'auto', signedIn: false })
   mockRunCodexCommand.mockReset().mockResolvedValue(undefined)
   mockEnvGetSession.mockReset().mockResolvedValue(null)
@@ -821,11 +821,12 @@ describe('sendMessageImpl: IPC dispatch + rollback', () => {
       sessionProvider: 'claude',
       preferredProvider: 'claude',
     })
-    mockResumeSession.mockRejectedValueOnce(new Error('Session not found: draft-sid'))
+    // The host has not seen the draft yet, so activation answers nothing.
+    mockActivateSession.mockResolvedValueOnce(undefined)
 
     await useChatStore.getState().sendMessage('first message')
 
-    expect(mockResumeSession).toHaveBeenCalledWith('/proj', 'draft-sid', '/proj')
+    expect(mockActivateSession).toHaveBeenCalledWith('/proj', 'draft-sid', '/proj')
     expect(mockSendMessage).toHaveBeenCalledWith('/proj', expect.objectContaining({
       content: 'first message',
       sessionId: 'draft-sid',

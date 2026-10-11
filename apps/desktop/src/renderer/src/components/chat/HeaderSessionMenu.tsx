@@ -94,11 +94,8 @@ export function HeaderSessionMenu({ sessionId, folderPath }: { sessionId: string
   const handleFork = useCallback(async (mode: SessionForkMode) => {
     const toastId = toast.loading(t('sidebar.contextMenu.forkingToast'))
     try {
-      const { parseRemoteProjectKey } = await import('@/lib/remote-project-key')
-      const remote = parseRemoteProjectKey(folderPath)
-      const result = remote
-        ? await window.environment.forkSession(remote.connectionId, { sessionId, mode })
-        : await window.app.forkSession({ sessionId, mode })
+      const { forkSession } = await import('@/lib/session-client')
+      const result = await forkSession(folderPath, { sessionId, mode })
       if (result.ok) {
         await useChatStore.getState().switchToSession(folderPath, result.sessionId)
         await afterMutate()
@@ -124,15 +121,8 @@ export function HeaderSessionMenu({ sessionId, folderPath }: { sessionId: string
     {
       onRename: () => setRenameTarget({ sessionId: entry.sessionId, title: entry.title, folderPath }),
       onPin: async () => {
-        const { parseRemoteProjectKey } = await import('@/lib/remote-project-key')
-        const remote = parseRemoteProjectKey(folderPath)
-        if (remote) {
-          await window.environment.setSessionUiFlags(remote.connectionId, entry.sessionId, {
-            isPinned: !entry.isPinned,
-          })
-        } else {
-          await window.app.pinSession(entry.sessionId, !entry.isPinned)
-        }
+        const { setSessionFlags } = await import('@/lib/session-client')
+        await setSessionFlags(folderPath, entry.sessionId, { isPinned: !entry.isPinned })
         await afterMutate()
       },
       onFork: handleFork,

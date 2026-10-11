@@ -20,9 +20,7 @@ export async function openSessionLink(ref: SessionRef): Promise<void> {
   if (generation !== navigationGeneration) return
   if (target.ref.environmentId !== ref.environmentId || target.ref.sessionId !== ref.sessionId) throw new Error('Session target mismatch')
   if (target.projectPath === sourceProject && ref.sessionId === sourceSession) return
-  if (target.connectionId) {
-    if (!await window.environment.getSession(target.connectionId, ref.sessionId)) throw new Error('Session could not be restored')
-  } else if (!await window.app.loadSessionState(ref.sessionId)) throw new Error('Session could not be restored')
+  if (!await window.environment.getSession(target.connectionId ?? 'local', ref.sessionId)) throw new Error('Session could not be restored')
   if (generation !== navigationGeneration || useChatStore.getState().activeProject !== sourceProject) return
   if (sourceProject && useChatStore.getState().projectSessions[sourceProject]?._activeSessionId !== sourceSession) return
   try {

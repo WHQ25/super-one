@@ -163,6 +163,8 @@ export function openDesktopDomain(sessions: NodeHostSessionManager, phonePorts: 
       flags: (id, flags) => {
         if (flags.isPinned !== undefined) pinSession(id, flags.isPinned)
         if (flags.isHidden !== undefined) hideSession(id, flags.isHidden)
+        // An archived session keeps its runtime, so its background tasks stop rather than run unseen.
+        if (flags.isHidden) void sessions.getSession(id)?.stopBackgroundTasks()
       },
       remove: deleteSession,
       close: (id) => sessions.disposeSession(id),

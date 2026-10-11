@@ -1,6 +1,7 @@
 import type { DesktopRestorePorts } from './session-restore-facts'
 import { loadRealtimeTimeline } from './realtime-timeline-repo'
 import { whenHighlighterReady } from '../remote-highlighter'
+import { loadStoredSessionState } from '../db-sessions'
 
 export const desktopRestorePorts: DesktopRestorePorts = {
   prepare: async (session) => {
@@ -10,4 +11,5 @@ export const desktopRestorePorts: DesktopRestorePorts = {
       : undefined
   },
   realtime: loadRealtimeTimeline,
+  stored: loadStoredSessionState,
 }

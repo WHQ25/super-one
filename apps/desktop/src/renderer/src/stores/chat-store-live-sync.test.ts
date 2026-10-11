@@ -22,19 +22,22 @@ vi.mock('./app', () => ({
 
 const mockGetLiveSnapshots = vi.fn()
 
+const mockLoadStoredSession = vi.fn().mockResolvedValue(null)
+vi.mock('@/lib/session-client', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/lib/session-client')>(),
+  loadStoredSession: (...args: Parameters<typeof import('@/lib/session-client').loadStoredSession>) => mockLoadStoredSession(...args),
+}))
+
 const mockWindowAgent = {
   getLiveSnapshots: mockGetLiveSnapshots,
   parkSession: vi.fn().mockResolvedValue(undefined),
-  activateSession: vi.fn().mockResolvedValue(undefined),
+  activateSession: vi.fn().mockResolvedValue({ permissionMode: 'auto', sandboxInfo: { enabled: true, autoAllowBash: false } }),
   sendMessage: vi.fn().mockResolvedValue(undefined),
-  resumeSession: vi.fn().mockResolvedValue({ permissionMode: 'auto', sandboxInfo: { enabled: true, autoAllowBash: false } }),
   prewarm: vi.fn().mockResolvedValue(undefined),
 }
 
 const mockWindowApp = {
-  loadSessionState: vi.fn().mockResolvedValue(null),
   worktreeExists: vi.fn().mockResolvedValue(true),
-  resumeSession: vi.fn().mockResolvedValue({ permissionMode: 'auto', sandboxInfo: { enabled: true, autoAllowBash: false } }),
   saveSessionState: vi.fn().mockResolvedValue(undefined),
   listSessionsForFolder: vi.fn().mockResolvedValue([]),
   getAppSettings: vi.fn().mockResolvedValue({
@@ -342,9 +345,9 @@ describe('syncLiveSnapshots', () => {
     const { navigateMcpAppSession } = await import('../components/mcp-apps/session-navigation')
     useChatStore.setState({ activeProject: '/p' })
     mockGetLiveSnapshots.mockResolvedValue([])
-    mockWindowApp.loadSessionState.mockClear()
+    mockLoadStoredSession.mockClear()
     await expect(navigateMcpAppSession({ projectPath: '/p', sessionId: 'missing' })).rejects.toMatchObject({ code: 'not_connected' })
-    expect(mockWindowApp.loadSessionState).not.toHaveBeenCalled()
+    expect(mockLoadStoredSession).not.toHaveBeenCalled()
   })
 
   it('adopts a host-created empty Claude conversation without falling back to DB/default harness', async () => {
@@ -355,7 +358,7 @@ describe('syncLiveSnapshots', () => {
     entry.snapshot.cwd = '/p/worktree'
     entry.snapshot.worktreePath = '/p/worktree' as never
     mockGetLiveSnapshots.mockResolvedValue([entry])
-    mockWindowApp.loadSessionState.mockClear()
+    mockLoadStoredSession.mockClear()
     await navigateMcpAppSession({ projectPath: '/p', sessionId: 'host-created' })
     const project = useChatStore.getState().projectSessions['/p']
     expect(project._activeSessionId).toBe('host-created')
@@ -363,8 +366,8 @@ describe('syncLiveSnapshots', () => {
     expect(project._sessions['host-created']).toMatchObject({ sessionProvider: 'claude', preferredProvider: 'claude',
       harnessUserChosen: true, modelUserChosen: true, effortUserChosen: true,
       selectedModel: 'sonnet', selectedEffort: 'high', permissionMode: 'auto', apiProviderId: 'account', cwd: '/p/worktree', _worktreePath: '/p/worktree' })
-    expect(mockWindowApp.loadSessionState).not.toHaveBeenCalled()
-    expect(mockWindowApp.resumeSession).toHaveBeenCalledWith('/p', 'host-created', '/p/worktree')
+    expect(mockLoadStoredSession).not.toHaveBeenCalled()
+    expect(mockWindowAgent.activateSession).toHaveBeenCalledWith('/p', 'host-created', '/p/worktree')
   })
 
   it('keeps a model picked while a stale snapshot and its settings replay are in flight', async () => {

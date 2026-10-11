@@ -146,27 +146,19 @@ export async function focusProjectImpl(
   const focusedSid = get().projectSessions[projectPath]?._activeSessionId
   const focusedSession = focusedSid ? get().projectSessions[projectPath]?._sessions[focusedSid] : null
   useAppStore.getState().setActiveWorktree(projectPath, _getSessionWorktreePath(focusedSession))
-  // Local: SessionManager.resume. Remote: follow the node session (a draft
-  // the node has not seen yet has nothing to follow).
+  // The focused session comes up: a node session gets its follower (a draft the
+  // node has not seen yet has nothing to follow), a local one its runtime. Each
+  // call does nothing for the other kind of environment.
   if (targetSid) {
-    const remoteKey = parseRemoteProjectKey(projectPath)
-    if (remoteKey) {
-      const targetSession = targetProject?._sessions[targetSid]
-      if (targetSession?.hostSessionOwned) {
-        const { followRemoteSessionEvents } = await import('@/lib/remote-session-ops')
-        followRemoteSessionEvents(projectPath, targetSid, targetSession)
-      }
-    } else {
-      const targetSession = targetProject?._sessions[targetSid]
-      try {
-        await window.app.resumeSession(projectPath, targetSid, _getSessionCwd(projectPath, targetSession))
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err)
-        // Renderer draft UUIDs are not in SessionManager until first send — expected.
-        if (!/session not found/i.test(msg)) {
-          console.warn('[chat] resumeSession failed:', err)
-        }
-      }
+    const targetSession = targetProject?._sessions[targetSid]
+    if (targetSession?.hostSessionOwned) {
+      const { followRemoteSessionEvents } = await import('@/lib/remote-session-ops')
+      followRemoteSessionEvents(projectPath, targetSid, targetSession)
+    }
+    try {
+      await window.agent.activateSession(projectPath, targetSid, _getSessionCwd(projectPath, targetSession))
+    } catch (err) {
+      console.warn('[chat] activateSession failed:', err)
     }
   }
   const switchedProject = get().projectSessions[projectPath]

@@ -224,7 +224,8 @@ export abstract class DesktopSessionReads<Row extends DesktopSessionRow> impleme
     const activeTurn = live ? activeTurnOutsidePage(all, { start, end }) : []
     const facts = sessionRestoreFacts({ session: live, row, history: all, environmentId: this.reads.environmentId, sandboxInfo, realtime: this.reads.restore?.realtime?.(sessionId) })
     const { restore, ...current } = facts
-    const { messages: _messages, ...rest } = { ...state, ...current, cwd: live?.cwd ?? row.worktreePath ?? row.projectPath, _providerSessionId: row.providerSessionId, sessionProvider: row.harnessId, preferredProvider: row.harnessId, _worktreeRemoved: restore.worktreeMissing }
+    const stored = this.reads.restore?.stored?.(sessionId) ?? null
+    const { messages: _messages, ...rest } = { ...state, ...current, cwd: live?.cwd ?? row.worktreePath ?? row.projectPath, _providerSessionId: row.providerSessionId, sessionProvider: row.harnessId, preferredProvider: row.harnessId, _worktreeRemoved: restore.worktreeMissing, ...(stored ? { stored } : {}) }
     const { events } = this.reads
     return {
       sessionId,

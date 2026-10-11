@@ -33,7 +33,7 @@ vi.stubGlobal('window', {
   agent: {
     prewarm: mockPrewarm,
     parkSession: vi.fn().mockResolvedValue(undefined),
-    resumeSession: vi.fn().mockResolvedValue(undefined),
+    activateSession: vi.fn().mockResolvedValue(undefined),
   },
   app: {
     trace: vi.fn(),

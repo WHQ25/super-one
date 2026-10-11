@@ -64,8 +64,15 @@ vi.mock('@/stores/miniapp', () => ({
   useMiniAppStore: { getState: () => mockMiniAppStore, setState: vi.fn() },
 }))
 
+const mockLoadStoredSession = vi.fn().mockResolvedValue(null)
+vi.mock('@/lib/session-client', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/lib/session-client')>(),
+  loadStoredSession: (...args: Parameters<typeof import('@/lib/session-client').loadStoredSession>) => mockLoadStoredSession(...args),
+}))
+
 const mockWindowAgent = {
   prewarm: vi.fn().mockResolvedValue(undefined),
+  activateSession: vi.fn().mockResolvedValue(undefined),
   resetSession: vi.fn().mockResolvedValue({ permissionMode: 'default', sandboxInfo: { enabled: false, autoAllowBash: false } }),
   setSessionForeground: vi.fn().mockResolvedValue(undefined),
   parkSession: vi.fn().mockResolvedValue({ permissionMode: 'default', sandboxInfo: { enabled: false, autoAllowBash: false } }),
@@ -78,8 +85,6 @@ const mockWindowAgent = {
 const mockWindowApp = {
   trace: vi.fn(),
   unwatchBashOutput: vi.fn(),
-  loadSessionState: vi.fn().mockResolvedValue(null),
-  resumeSession: vi.fn().mockResolvedValue(null),
   listSessionsForFolderPage: vi.fn().mockResolvedValue([]),
   getAppSettings: vi.fn().mockResolvedValue({
     analyticsEnabled: true,
@@ -99,12 +104,14 @@ const mockWindowApp = {
 }
 
 const mockMiniApp = { authorize: vi.fn().mockResolvedValue(undefined) }
+const mockWindowEnvironment = { resumeRemoteSessionEvents: vi.fn().mockResolvedValue(undefined) }
 
 const eventTarget = new EventTarget()
 vi.stubGlobal('window', {
   agent: mockWindowAgent,
   app: mockWindowApp,
   miniapp: mockMiniApp,
+  environment: mockWindowEnvironment,
   localStorage: mockLocalStorage,
   dispatchEvent: (e: Event) => eventTarget.dispatchEvent(e),
   addEventListener: (t: string, h: EventListenerOrEventListenerObject) => eventTarget.addEventListener(t, h),
@@ -229,14 +236,17 @@ beforeEach(() => {
 })
 
 describe('focusProjectImpl', () => {
-  it('does not resume a remote node session through the local SessionManager', async () => {
+  it('hands a remote draft to the host without following node events', async () => {
     const remotePath = 'remote:env-1:/work/project'
     useChatStore.getState().ensureSession(remotePath)
 
     await useChatStore.getState().focusProject(remotePath)
 
     expect(useChatStore.getState().activeProject).toBe(remotePath)
-    expect(mockWindowApp.resumeSession).not.toHaveBeenCalled()
+    const sessionId = activeProjectState(remotePath)._activeSessionId
+    // The host answers nothing for a session it does not run locally.
+    expect(mockWindowAgent.activateSession).toHaveBeenCalledWith(remotePath, sessionId, remotePath)
+    expect(mockWindowEnvironment.resumeRemoteSessionEvents).not.toHaveBeenCalled()
   })
 
   it('mints a UI draft session for remote projects so model/provider prefs stick', () => {
@@ -251,13 +261,13 @@ describe('focusProjectImpl', () => {
     expect(Object.keys(proj._sessions)).toHaveLength(1)
   })
 
-  it('continues resuming local sessions when focusing a local project', async () => {
+  it('activates the focused local session on its host', async () => {
     useChatStore.getState().ensureSession(PATH)
     const sessionId = activeProjectState()._activeSessionId
 
     await useChatStore.getState().focusProject(PATH)
 
-    expect(mockWindowApp.resumeSession).toHaveBeenCalledWith(PATH, sessionId, PATH)
+    expect(mockWindowAgent.activateSession).toHaveBeenCalledWith(PATH, sessionId, PATH)
   })
 
   it('does not carry an unsent composer when focusing another project (sidebar hop)', async () => {

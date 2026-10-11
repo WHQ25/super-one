@@ -18,7 +18,7 @@ import type { DeviceEnvironmentAction, DeviceEnvironmentResult, DeviceEnvironmen
 import { forEachAgentEventPayload } from './agent-event-payload'
 import { createAutomationCallInbox, type BrowserAutomationCall } from './browser-automation-inbox'
 import { isGlassPlatformSupported } from '../main/window-glass'
-import type { EnvironmentHost } from '../main/environment/environment-host'
+import type { SessionCreateRequest, SessionForkRequestInput, SessionPermissionAnswer, SessionPlanAnswer, SessionQuestionAnswer, SessionSendRequest, SessionSettingsPatch } from '@superone/shared/environment/session-requests'
 
 // Do not try to name this renderer via `process.title` here — it cannot work.
 // Under `sandbox: true` preload's `process` is an Electron shim, so the assignment
@@ -135,8 +135,8 @@ const agentAPI = {
   parkSession: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.PARK_SESSION, projectPath),
 
-  activateSession: (projectPath: string, sessionId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.ACTIVATE_SESSION, projectPath, sessionId),
+  activateSession: (projectPath: string, sessionId: string, worktreeCwd?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ACTIVATE_SESSION, projectPath, sessionId, worktreeCwd),
 
   setSessionForeground: (sessionId: string, foreground: boolean, projectPath?: string) =>
     ipcRenderer.invoke(AgentIpcChannels.SET_SESSION_FOREGROUND, sessionId, foreground, projectPath),
@@ -594,7 +594,7 @@ const environmentAPI = {
     ) as Promise<PinnedSessionEntry[]>,
   createSession: (
     connectionId: string,
-    input: Parameters<EnvironmentHost['createSession']>[1],
+    input: SessionCreateRequest,
   ) =>
     ipcRenderer.invoke(
       AgentIpcChannels.ENVIRONMENT_CREATE_SESSION,
@@ -654,7 +654,7 @@ const environmentAPI = {
     ),
   sendSessionMessage: (
     connectionId: string,
-    input: Omit<Parameters<EnvironmentHost['sendSessionMessage']>[1], 'onAccepted'>,
+    input: SessionSendRequest,
   ) =>
     ipcRenderer.invoke(
       AgentIpcChannels.ENVIRONMENT_SEND_SESSION_MESSAGE,
@@ -663,7 +663,7 @@ const environmentAPI = {
     ),
   openRemoteSession: (
     connectionId: string,
-    input: { sessionId: string; projectPath?: string; providerId?: string; limit?: number },
+    input: { sessionId: string; projectPath?: string; providerId?: string; limit?: number; before?: number; full?: boolean },
   ) =>
     ipcRenderer.invoke(
       AgentIpcChannels.ENVIRONMENT_OPEN_REMOTE_SESSION,
@@ -674,7 +674,7 @@ const environmentAPI = {
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_SUBSCRIBE_DETAIL, target, subscriptionId),
   unsubscribeDetail: (target: { environmentId: string; sessionId: string; detailRef: string }, subscriptionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_UNSUBSCRIBE_DETAIL, target, subscriptionId),
-  patchSessionSettings: (connectionId: string, sessionId: string, patch: Parameters<EnvironmentHost['patchSessionSettings']>[2]) =>
+  patchSessionSettings: (connectionId: string, sessionId: string, patch: SessionSettingsPatch) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_PATCH_SESSION_SETTINGS, connectionId, sessionId, patch),
   interruptSession: (connectionId: string, sessionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_INTERRUPT_SESSION, connectionId, sessionId),
@@ -704,7 +704,7 @@ const environmentAPI = {
     ),
   forkSession: (
     connectionId: string,
-    input: { sessionId: string; mode?: 'local' | 'worktree'; forkFromMessageId?: string },
+    input: SessionForkRequestInput,
   ) =>
     ipcRenderer.invoke(
       AgentIpcChannels.ENVIRONMENT_FORK_SESSION,
@@ -713,7 +713,7 @@ const environmentAPI = {
     ) as Promise<{ ok: true; sessionId: string; worktreePath?: string } | { ok: false; error: string }>,
   respondSessionPermission: (
     connectionId: string,
-    input: Parameters<EnvironmentHost['respondSessionPermission']>[1],
+    input: SessionPermissionAnswer,
   ) =>
     ipcRenderer.invoke(
       AgentIpcChannels.ENVIRONMENT_RESPOND_SESSION_PERMISSION,
@@ -722,7 +722,7 @@ const environmentAPI = {
     ),
   respondSessionQuestion: (
     connectionId: string,
-    input: Parameters<EnvironmentHost['respondSessionQuestion']>[1],
+    input: SessionQuestionAnswer,
   ) =>
     ipcRenderer.invoke(
       AgentIpcChannels.ENVIRONMENT_RESPOND_SESSION_QUESTION,
@@ -731,7 +731,7 @@ const environmentAPI = {
     ),
   respondSessionPlan: (
     connectionId: string,
-    input: Parameters<EnvironmentHost['respondSessionPlan']>[1],
+    input: SessionPlanAnswer,
   ) =>
     ipcRenderer.invoke(
       AgentIpcChannels.ENVIRONMENT_RESPOND_SESSION_PLAN,
@@ -2287,8 +2287,6 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.GIT_HANDOFF_PREVIEW, worktreePath, folderPath) as Promise<GitDirtyStatus | null>,
   assignBranch: (folderPath: string, worktreePath: string, name: string) =>
     ipcRenderer.invoke(AgentIpcChannels.GIT_ASSIGN_BRANCH, folderPath, worktreePath, name) as Promise<WorktreeAssignResult>,
-  forkSession: (request: SessionForkRequest) =>
-    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_FORK, request) as Promise<SessionForkResult>,
   startSideChat: (request: SideChatStartRequest) =>
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_SIDE_CHAT_START, request) as Promise<SideChatStartResult>,
   closeSideChat: (sessionId: string) =>
@@ -2325,20 +2323,10 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_LIST_FOR_FOLDER, folderPath),
   listSessionsForFolderPage: (folderPath: string, limit: number, offset: number) =>
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_LIST_FOR_FOLDER_PAGE, folderPath, limit, offset),
-  resumeSession: (projectPath: string, sessionId: string, worktreeCwd?: string, permissionMode?: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_RESUME, projectPath, sessionId, worktreeCwd, permissionMode),
   loadSessionMessages: (projectPath: string, sessionId: string, limit: number, cursor?: number) =>
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_LOAD_MESSAGES, projectPath, sessionId, limit, cursor),
-  renameSession: (sessionId: string, title: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_RENAME, sessionId, title),
-  loadSessionState: (sessionId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_LOAD_STATE, sessionId),
-  deleteSession: (sessionId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_DELETE, sessionId),
   deleteSessionsOlderThan: (folderPath: string, cutoffDate: string): Promise<string[]> =>
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_DELETE_OLDER, folderPath, cutoffDate),
-  pinSession: (sessionId: string, pinned: boolean) =>
-    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_PIN, sessionId, pinned),
   getScheduledSend: (sessionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.SCHEDULED_SEND_GET, sessionId),
   listScheduledSends: () => ipcRenderer.invoke(AgentIpcChannels.SCHEDULED_SEND_LIST),
@@ -2369,8 +2357,6 @@ const appAPI = {
       ipcRenderer.removeListener(AgentIpcChannels.COMPOSER_DRAFT_CHANGED, handler)
     }
   },
-  hideSession: (sessionId: string, hidden: boolean) =>
-    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_HIDE, sessionId, hidden),
   listPinnedSessions: () =>
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_LIST_PINNED),
 

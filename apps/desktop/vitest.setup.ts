@@ -100,6 +100,8 @@ if (typeof globalThis.window !== 'undefined' && !(globalThis.window as unknown a
   // back a synchronous unsubscribe, while every query resolves to an empty list
   // so components can render their list state without a per-test stub.
   w.environment = shaped(() => Promise.resolve([]))
+  // A session no test stubbed is unknown to its host, as a renderer draft is.
+  ;(w.environment as Record<string, unknown>).getSession = () => Promise.resolve(null)
   // No test session draws Claude mods: the gateway answers as for any other harness.
   ;(w.environment as Record<string, unknown>).modUi = () => Promise.reject(Object.assign(new Error(MOD_UI_UNAVAILABLE), { name: MOD_UI_UNAVAILABLE }))
 }

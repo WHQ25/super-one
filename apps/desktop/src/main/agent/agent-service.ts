@@ -74,7 +74,7 @@ function getGitRoot(cwd: string): string {
     return cwd // Fallback: not a git repo, use path itself
   }
 }
-import { listSessionsForFolder, createSession, createAutomationSession, renameSession as dbRenameSession, loadSessionState, loadSessionMessage, deleteSession as dbDeleteSession, deleteSessionsOlderThan as dbDeleteSessionsOlderThan, pinSession as dbPinSession, hideSession as dbHideSession, listPinnedSessions, readSessionHarnessId } from '../db-sessions';
+import { listSessionsForFolder, createSession, createAutomationSession, loadSessionMessage, deleteSessionsOlderThan as dbDeleteSessionsOlderThan, listPinnedSessions, readSessionHarnessId } from '../db-sessions';
 import { loadSessionMessages } from '../session-history'
 import { getSessionRecord } from '../session/session-repo'
 import { listMcpConfigs, saveMcpConfig, deleteMcpConfig, toggleMcpConfig } from '../mcp-config-service'
@@ -777,13 +777,6 @@ export class AgentService {
     const loaded = mgr?.getSession(sessionId)
     if (!mgr || loaded) return loaded ?? null
     try { return mgr.resumeSession(sessionId, { passive: true }) } catch { return null }
-  }
-
-  private async forkSessionControlled(request: SessionForkRequest) {
-    const manager = this.requireSessionManager()
-    const source = manager.getSession(request.sessionId) ?? manager.resumeSession(request.sessionId, { passive: true })
-    source.lease.assertMutation()
-    return forkSession(request, () => source.lease.assertMutation())
   }
 
   private findSessionBySid(projectPath: string, sessionId: string): import('../session/types').Session | undefined {
@@ -2456,38 +2449,6 @@ export class AgentService {
       return listSessionsForFolder(folderPath, limit, offset)
     })
 
-    windowIpc.handle(AgentIpcChannels.SESSIONS_RESUME, async (_event, projectPath: string, sessionId: string, worktreeCwd?: string, permissionMode?: PermissionMode) => {
-      const mgr = this.requireSessionManager()
-      // A stored session resumes on its own harness, so its defaults must come
-      // from there — not from whichever harness happens to be the fallback.
-      const defaults = this.readDefaultSessionPrefs(readSessionHarnessId(sessionId) ?? 'claude')
-      const effectiveMode = permissionMode ?? defaults.permissionMode
-      let session = mgr.getSession(sessionId)
-      if (!session) {
-        try {
-          session = mgr.resumeSession(sessionId, { permissionMode: effectiveMode, sandboxMode: defaults.sandboxMode })
-        } catch (error) {
-          log.warn(
-            '[AgentService] resume session failed sid=%s project=%s: %s',
-            sessionId,
-            projectPath,
-            error instanceof Error ? error.message : String(error),
-          )
-          throw error
-        }
-      } else if (permissionMode) {
-        await session.setPermissionMode(permissionMode)
-      }
-      if (worktreeCwd && session.cwd !== worktreeCwd && existsSync(worktreeCwd)) {
-        await session.applyWorktreeSelection(worktreeCwd)
-      }
-      try { mgr.setActiveSession(projectPath, sessionId) } catch { /* session from another project, skip */ }
-      return {
-        permissionMode: session.getCurrentPermissionMode(),
-        sandboxInfo: session.getCurrentSandboxInfo(),
-      }
-    })
-
     windowIpc.handle(AgentIpcChannels.PARK_SESSION, async (_event, projectPath: string) => {
       const mgr = this.requireSessionManager()
       mgr.clearActiveSession(projectPath)
@@ -2500,13 +2461,30 @@ export class AgentService {
       return { permissionMode, sandboxInfo }
     })
 
-    windowIpc.handle(AgentIpcChannels.ACTIVATE_SESSION, async (_event, projectPath: string, sessionId: string) => {
+    // A window shows this session: bring its runtime up in its stored worktree
+    // and make it the project's active one. A draft the host has not seen yet
+    // answers nothing.
+    windowIpc.handle(AgentIpcChannels.ACTIVATE_SESSION, async (_event, projectPath: string, sessionId: string, worktreeCwd?: string) => {
+      // A node runs its own sessions; this computer has no runtime to bring up for one.
+      if (parseRemoteProjectKey(projectPath)) return undefined
       const mgr = this.requireSessionManager()
       let session = mgr.getSession(sessionId)
       if (!session) {
-        try { session = mgr.resumeSession(sessionId) } catch { return }
+        const harnessId = readSessionHarnessId(sessionId)
+        if (!harnessId) return undefined
+        // A stored session resumes on its own harness, so its defaults come from
+        // there. A failure to resume one reaches the window.
+        const defaults = this.readDefaultSessionPrefs(harnessId)
+        session = mgr.resumeSession(sessionId, { permissionMode: defaults.permissionMode, sandboxMode: defaults.sandboxMode })
+      }
+      if (worktreeCwd && session.cwd !== worktreeCwd && existsSync(worktreeCwd)) {
+        await session.applyWorktreeSelection(worktreeCwd)
       }
       try { mgr.setActiveSession(projectPath, sessionId) } catch { /* belongs to another project */ }
+      return {
+        permissionMode: session.getCurrentPermissionMode(),
+        sandboxInfo: session.getCurrentSandboxInfo(),
+      }
     })
 
     windowIpc.handle(AgentIpcChannels.SET_SESSION_FOREGROUND, (event, sessionId: string, foreground: boolean, projectPath?: string) => {
@@ -2523,52 +2501,12 @@ export class AgentService {
       return loadSessionMessages(projectPath, sessionId, limit, cursor)
     })
 
-    windowIpc.handle(AgentIpcChannels.SESSIONS_RENAME, (_event, sessionId: string, title: string) => {
-      const session = this.requireSessionManager().getSession(sessionId)
-      if (session) {
-        session.setTitle(title, 'user')
-      } else {
-        dbRenameSession(sessionId, title, 'user')
-      }
-      this.emitSessionsChanged()
-    })
-
-    windowIpc.handle(AgentIpcChannels.SESSIONS_LOAD_STATE, (_event, sessionId: string) => {
-      return loadSessionState(sessionId)
-    })
-
-    windowIpc.handle(AgentIpcChannels.SESSIONS_DELETE, async (_event, sessionId: string) => {
-      // Tear the runtime down first: session state is persisted with an upsert, so a
-      // session still alive after the row is gone — a realtime call keeps streaming
-      // transcript and titles — would INSERT itself straight back. Disposing also
-      // stops that call instead of leaving it talking to a deleted session.
-      if (this.sessionManager?.getSession(sessionId)) {
-        try {
-          await this.sessionManager.disposeSession(sessionId)
-        } catch (err) {
-          log.warn('[agent-service] dispose before delete failed sid=%s: %s', sessionId, err instanceof Error ? err.message : String(err))
-        }
-      }
-      // The sync zone and transfer jobs are reclaimed off the db-layer delete
-      // signal (session-list-watch.ts), the same for every delete entry point.
-      dbDeleteSession(sessionId)
-      this.emitSessionsChanged()
-    })
-
     windowIpc.handle(AgentIpcChannels.SESSIONS_DELETE_OLDER, (_event, folderPath: string, cutoffDate: string) => {
       const deleted = dbDeleteSessionsOlderThan(folderPath, cutoffDate)
       if (deleted.length > 0) {
         this.emitSessionsChanged()
       }
       return deleted
-    })
-
-    windowIpc.handle(AgentIpcChannels.SESSIONS_FORK, async (_event, request: SessionForkRequest) => {
-      const result = await this.forkSessionControlled(request)
-      if (result.ok) {
-        this.emitSessionsChanged()
-      }
-      return result
     })
 
     // Side chat deliberately does NOT emitSessionsChanged: an ephemeral session
@@ -2583,27 +2521,9 @@ export class AgentService {
       return closeSideChat(this.sessionManager, sessionId)
     })
 
-    windowIpc.handle(AgentIpcChannels.SESSIONS_PIN, (_event, sessionId: string, pinned: boolean) => {
-      dbPinSession(sessionId, pinned)
-      this.emitSessionsChanged()
-    })
-
-    windowIpc.handle(AgentIpcChannels.SESSIONS_HIDE, (_event, sessionId: string, hidden: boolean) =>
-      this.setSessionHidden(sessionId, hidden))
-
     windowIpc.handle(AgentIpcChannels.SESSIONS_LIST_PINNED, () => {
       return listPinnedSessions()
     })
-  }
-
-  /**
-   * Archive or unarchive a session. Archiving keeps the session's runtime, so
-   * its background tasks are stopped here rather than left running unseen.
-   */
-  private async setSessionHidden(sessionId: string, hidden: boolean): Promise<void> {
-    dbHideSession(sessionId, hidden)
-    this.emitSessionsChanged()
-    if (hidden) await this.sessionManager?.stopBackgroundTasks(sessionId)
   }
 
   private emitSessionsChanged(): void {
@@ -2744,17 +2664,10 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_LIST)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_LIST_FOR_FOLDER)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_LIST_FOR_FOLDER_PAGE)
-    ipcMain.removeHandler(AgentIpcChannels.SESSIONS_RESUME)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_LOAD_MESSAGES)
-    ipcMain.removeHandler(AgentIpcChannels.SESSIONS_RENAME)
-    ipcMain.removeHandler(AgentIpcChannels.SESSIONS_LOAD_STATE)
-    ipcMain.removeHandler(AgentIpcChannels.SESSIONS_DELETE)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_DELETE_OLDER)
-    ipcMain.removeHandler(AgentIpcChannels.SESSIONS_FORK)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_SIDE_CHAT_START)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_SIDE_CHAT_CLOSE)
-    ipcMain.removeHandler(AgentIpcChannels.SESSIONS_PIN)
-    ipcMain.removeHandler(AgentIpcChannels.SESSIONS_HIDE)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_LIST_PINNED)
   }
 }

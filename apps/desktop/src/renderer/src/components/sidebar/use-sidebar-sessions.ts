@@ -5,6 +5,7 @@ import type { PinnedSessionEntry, RecentFolder, SessionHistoryEntry } from '@sup
 import { useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
+import { removeSession, setSessionFlags } from '@/lib/session-client'
 import { traceSidebar } from './sidebar-trace'
 
 const PAGE_SIZE = 13
@@ -195,36 +196,19 @@ export function useSidebarSessions({ currentFolder, selectedHostConnectionId, ho
   }, [sessionListNonce])
 
   const handlePinSession = useCallback(async (sessionId: string, pinned: boolean, folderPath: string) => {
-    const remote = parseRemoteProjectKey(folderPath)
-    if (remote) {
-      await window.environment.setSessionUiFlags(remote.connectionId, sessionId, { isPinned: pinned })
-      refreshPinned()
-      refreshFolderSessions(folderPath)
-      return
-    }
-    await window.app.pinSession(sessionId, pinned)
+    await setSessionFlags(folderPath, sessionId, { isPinned: pinned })
     refreshPinned()
     refreshFolderSessions(folderPath)
   }, [refreshPinned, refreshFolderSessions])
 
   const handleHideSession = useCallback(async (sessionId: string, hidden: boolean, folderPath: string) => {
-    const remote = parseRemoteProjectKey(folderPath)
-    if (remote) {
-      await window.environment.setSessionUiFlags(remote.connectionId, sessionId, { isHidden: hidden })
-      refreshFolderSessions(folderPath)
-      return
-    }
-    await window.app.hideSession(sessionId, hidden)
+    await setSessionFlags(folderPath, sessionId, { isHidden: hidden })
     refreshFolderSessions(folderPath)
   }, [refreshFolderSessions])
 
   const executeDeleteSession = useCallback(async (target: { sessionId: string; folderPath: string }) => {
     const remote = parseRemoteProjectKey(target.folderPath)
-    if (remote) {
-      await window.environment.removeSession(remote.connectionId, target.sessionId)
-    } else {
-      await window.app.deleteSession(target.sessionId)
-    }
+    await removeSession(target.folderPath, target.sessionId)
 
     const current = useChatStore.getState().projectSessions[target.folderPath]
     if (current?._activeSessionId === target.sessionId) {

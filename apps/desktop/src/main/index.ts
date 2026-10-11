@@ -258,6 +258,7 @@ import type { DetailTarget } from '@superone/shared/environment/detail'
 import type { AppSettings, AppSettingsPatch, TerminalEvent, GitInfoResult, ScheduledSendPatch, ScheduledSendSessionInit, ThemeMode, WindowFoldStep, WindowMiniMode } from '@superone/shared/agent-types'
 import type { ModUiOp, ModUiRequest } from '@superone/shared/mod-ui'
 import { windowControlIpc } from './session/control-context'
+import type { SessionCreateRequest, SessionForkRequestInput, SessionPermissionAnswer, SessionPlanAnswer, SessionQuestionAnswer, SessionSendRequest, SessionSettingsPatch } from '@superone/shared/environment/session-requests'
 import { MINI_WINDOW_SIZE } from '@superone/shared/agent-types'
 import { foldWindow, unfoldWindow } from './window-fold'
 import { recordBrowserHistory, suggestBrowserHistory, deleteBrowserHistory } from './browser-history-service'
@@ -2170,7 +2171,7 @@ function registerIpcHandlers(): void {
     async (
       _e,
       connectionId: string,
-      input: Parameters<EnvironmentHost['createSession']>[1],
+      input: SessionCreateRequest,
     ) => {
       const { getEnvironmentHost } = await import('./environment')
       return getEnvironmentHost().createSession(connectionId, input)
@@ -2189,7 +2190,7 @@ function registerIpcHandlers(): void {
     async (
       _e,
       connectionId: string,
-      input: { sessionId: string; projectPath?: string; providerId?: string; limit?: number },
+      input: { sessionId: string; projectPath?: string; providerId?: string; limit?: number; before?: number; full?: boolean },
     ) => {
       const { getEnvironmentHost } = await import('./environment')
       // The renderer replaces this session from the snapshot: Codex items it
@@ -2313,7 +2314,7 @@ function registerIpcHandlers(): void {
     async (
       _e,
       connectionId: string,
-      input: Parameters<EnvironmentHost['sendSessionMessage']>[1],
+      input: SessionSendRequest,
     ) => {
       const { getEnvironmentHost } = await import('./environment')
       const host = getEnvironmentHost()
@@ -2330,7 +2331,7 @@ function registerIpcHandlers(): void {
   )
   sessionIpc.handle(
     AgentIpcChannels.ENVIRONMENT_PATCH_SESSION_SETTINGS,
-    async (_e, connectionId: string, sessionId: string, patch: Parameters<EnvironmentHost['patchSessionSettings']>[2]) => {
+    async (_e, connectionId: string, sessionId: string, patch: SessionSettingsPatch) => {
       const { getEnvironmentHost } = await import('./environment')
       return getEnvironmentHost().patchSessionSettings(connectionId, sessionId, patch)
     },
@@ -2380,7 +2381,7 @@ function registerIpcHandlers(): void {
     async (
       _e,
       connectionId: string,
-      input: { sessionId: string; mode?: 'local' | 'worktree'; forkFromMessageId?: string },
+      input: SessionForkRequestInput,
     ) => {
       const { getEnvironmentHost } = await import('./environment')
       return getEnvironmentHost().forkSession(connectionId, input)
@@ -2391,7 +2392,7 @@ function registerIpcHandlers(): void {
     async (
       _e,
       connectionId: string,
-      input: Parameters<EnvironmentHost['respondSessionPermission']>[1],
+      input: SessionPermissionAnswer,
     ) => {
       const { getEnvironmentHost } = await import('./environment')
       return getEnvironmentHost().respondSessionPermission(connectionId, input)
@@ -2402,7 +2403,7 @@ function registerIpcHandlers(): void {
     async (
       _e,
       connectionId: string,
-      input: Parameters<EnvironmentHost['respondSessionQuestion']>[1],
+      input: SessionQuestionAnswer,
     ) => {
       const { getEnvironmentHost } = await import('./environment')
       return getEnvironmentHost().respondSessionQuestion(connectionId, input)
@@ -2413,7 +2414,7 @@ function registerIpcHandlers(): void {
     async (
       _e,
       connectionId: string,
-      input: Parameters<EnvironmentHost['respondSessionPlan']>[1],
+      input: SessionPlanAnswer,
     ) => {
       const { getEnvironmentHost } = await import('./environment')
       return getEnvironmentHost().respondSessionPlan(connectionId, input)

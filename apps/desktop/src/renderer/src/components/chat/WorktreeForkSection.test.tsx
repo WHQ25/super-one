@@ -9,22 +9,25 @@ const { switchSessionMock } = vi.hoisted(() => ({
 }))
 
 vi.mock('@/stores/chat', () => ({
-  useChatStore: { getState: () => ({ switchSession: switchSessionMock }) },
+  useChatStore: { getState: () => ({ activeProject: '/repo', switchSession: switchSessionMock }) },
 }))
 
 let realApp: unknown
+let realEnvironment: unknown
 const forkSessionMock = vi.fn(async () => ({ ok: true as const, sessionId: 'forked-session' }))
 
 beforeEach(() => {
   realApp = (window as unknown as Record<string, unknown>).app
+  realEnvironment = (window as unknown as Record<string, unknown>).environment
   ;(window as unknown as Record<string, unknown>).app = {
     getGitInfo: vi.fn(async () => ({ dirty: { files: 2, insertions: 5, deletions: 1 } })),
-    forkSession: forkSessionMock,
   }
+  ;(window as unknown as Record<string, unknown>).environment = { forkSession: forkSessionMock }
 })
 
 afterEach(() => {
   ;(window as unknown as Record<string, unknown>).app = realApp
+  ;(window as unknown as Record<string, unknown>).environment = realEnvironment
   vi.clearAllMocks()
 })
 
@@ -40,7 +43,7 @@ describe('WorktreeForkSection local changes', () => {
     fireEvent.click(screen.getByRole('button', { name: /fork session/i }))
 
     await waitFor(() => {
-      expect(forkSessionMock).toHaveBeenCalledWith({
+      expect(forkSessionMock).toHaveBeenCalledWith('local', {
         sessionId: 'source-session',
         mode: 'worktree',
         carryLocalChanges: false,

@@ -93,6 +93,30 @@ describe('local sessions on the environment route', () => {
     expect(store.rows.has('side')).toBe(false)
   })
 
+  it('tears a live session down before deleting its row', async () => {
+    const { host, sessionEdits, sessions, store } = localRoute()
+    const order: string[] = []
+    const close = sessionEdits.close
+    vi.spyOn(sessionEdits, 'close').mockImplementation(async (id) => { order.push('dispose'); await close(id) })
+    const remove = sessionEdits.remove
+    vi.spyOn(sessionEdits, 'remove').mockImplementation((id) => { order.push('delete'); remove(id) })
+    await runWindowControl(7, () => host.removeSession('local', 'own'))
+    expect(order).toEqual(['dispose', 'delete'])
+    expect(sessions.live.has('own')).toBe(false)
+    expect(store.rows.has('own')).toBe(false)
+  })
+
+  it('restores a cold session with its stored settings and whole transcript', async () => {
+    const stored = { provider: 'codex', selectedModel: 'gpt-6', codexServiceTier: 'fast', acpAgentId: null, title: 'Mine', totalCostUsd: 1, contextTokens: 2 }
+    const fixture = phoneDomain(cleanup, { restore: { stored: (id) => id === 'own' ? stored as never : null } })
+    const host = new EnvironmentHost(fixture.userDataDir)
+    cleanup.push(() => host.dispose())
+    host.registry.getLocal().bindProtocol(new InProcessRpcClient(fixture.domain))
+    const loaded = await host.openRemoteSession('local', { sessionId: 'own', full: true })
+    expect(loaded.state).toMatchObject({ stored })
+    expect(loaded.before).toBeNull()
+  })
+
   it('creates and forks local sessions', async () => {
     const { host, store, own } = localRoute()
     const created = await runWindowControl(7, () => host.createSession('local', { projectId: 'p1', title: 'New', harnessId: 'claude', selections: { sessionId: 'chosen' } }))

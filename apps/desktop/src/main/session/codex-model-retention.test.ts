@@ -30,12 +30,23 @@ const sol: ModelOption = {
 }
 const originalCodexDefaults = defaultPrefsCache.codexSelection
 
+/** The host holds this stored session (settings and transcript) for the window to restore. */
+function storeSession(read: () => Promise<unknown>) {
+  Object.assign(window.environment, {
+    getSession: vi.fn(async (_connectionId: string, sessionId: string) => ({ sessionId })),
+    openRemoteSession: vi.fn(async (_connectionId: string, input: { sessionId: string }) => {
+      const { messages = [], ...stored } = await read() as { messages?: unknown[] }
+      return { sessionId: input.sessionId, state: { stored }, messages }
+    }),
+  })
+}
+
 afterEach(() => { defaultPrefsCache.codexSelection = originalCodexDefaults })
 
 beforeEach(() => {
   localStorage.clear()
   Object.assign(window.agent, { broadcastSessionSetting: vi.fn().mockResolvedValue(undefined) })
-  Object.assign(window.app, { resumeSession: vi.fn().mockResolvedValue(null) })
+  Object.assign(window.agent, { activateSession: vi.fn().mockResolvedValue(undefined) })
   useChatStore.setState({
     activeProject: projectPath,
     projectSessions: {
@@ -91,11 +102,13 @@ describe('Codex session model retention', () => {
         await host.send({ content: prompt, model, effort: requestEffort, codex: { mode: 'run', reasoningEffort } })
         return { finalResponse: 'Done', items: [] }
       }),
-      resumeSession: vi.fn(async (_project: string, sid: string) => {
+    })
+    Object.assign(window.agent, {
+      activateSession: vi.fn(async (_project: string, sid: string) => {
         if (sid === host.id) {
           for (const event of host.getReplayEvents()) useChatStore.getState().handleAgentEvent(event)
         }
-        return null
+        return undefined
       }),
     })
 
@@ -116,7 +129,7 @@ describe('Codex session model retention', () => {
 
     await useChatStore.getState().switchSession('other')
     useChatStore.getState().removeSessionFromMemory(projectPath, 'astra')
-    Object.assign(window.app, { loadSessionState: vi.fn().mockResolvedValue({ ...saved, provider: 'codex' }) })
+    storeSession(async () => ({ ...saved, provider: 'codex' }))
     await useChatStore.getState().switchSession('astra')
     expect(getActiveSessionView(null).selectedCodexModel).toBe(sol.id)
     expect(getActiveSessionView(null).selectedCodexReasoningEffort).toBe('xhigh')
@@ -224,7 +237,7 @@ describe('Codex session model retention', () => {
       },
     } } })
     let finish!: (saved: unknown) => void
-    Object.assign(window.app, { loadSessionState: vi.fn(() => new Promise((resolve) => { finish = resolve })) })
+    storeSession(() => new Promise((resolve) => { finish = resolve }))
     const restore = useChatStore.getState().switchSession('astra')
     await vi.waitFor(() => expect(finish).toBeTypeOf('function'))
     useChatStore.getState().setSelectedCodexModel(astra.id, { projectPath, sessionId: 'astra' })
@@ -257,8 +270,8 @@ describe('Codex session model retention', () => {
     useChatStore.setState({ projectSessions: { [projectPath]: {
       ...project, _activeSessionId: 'other', _sessions: { other: project._sessions.other },
     } } })
+    storeSession(async () => ({ ...saved, provider: 'codex' }))
     Object.assign(window.app, {
-      loadSessionState: vi.fn().mockResolvedValue({ ...saved, provider: 'codex' }),
       getAppSettings: vi.fn().mockResolvedValue({ agentPreference: {} }),
     })
     await useChatStore.getState().switchSession('astra')
@@ -290,8 +303,7 @@ describe('Codex session model retention', () => {
         },
       },
     } })
-    Object.assign(window.app, {
-      loadSessionState: vi.fn().mockResolvedValue({
+    storeSession(async () => ({
         messages: [],
         totalCostUsd: 0,
         contextTokens: 0,
@@ -301,9 +313,8 @@ describe('Codex session model retention', () => {
         provider: 'codex',
         selectedModel: astra.id,
         selectedEffort: 'high',
-      }),
-      getAppSettings: vi.fn().mockResolvedValue({ agentPreference: {} }),
-    })
+    }))
+    Object.assign(window.app, { getAppSettings: vi.fn().mockResolvedValue({ agentPreference: {} }) })
 
     await useChatStore.getState().switchSession('astra')
 

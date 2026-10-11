@@ -490,7 +490,7 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
           )
         ) {
           const snapshot = updatedSession
-          setTimeout(() => _ensureSessionHydrated(effectiveSid, snapshot), 0)
+          setTimeout(() => _ensureSessionHydrated(projectPath, effectiveSid, snapshot), 0)
         }
       }
 
@@ -514,7 +514,7 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
               const evictSid = targetSid
               const evictProjectPath = projectPath
               setTimeout(() => {
-                _ensureSessionHydrated(effectiveSid, snapshot).then(() => {
+                _ensureSessionHydrated(evictProjectPath, effectiveSid, snapshot).then(() => {
                   set((s2) => {
                     const proj = s2.projectSessions[evictProjectPath]
                     if (!proj?._sessions[evictSid]) return {}

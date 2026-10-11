@@ -24,6 +24,12 @@ vi.mock('./app', () => ({
   },
 }))
 
+const mockLoadStoredSession = vi.fn().mockResolvedValue(null)
+vi.mock('@/lib/session-client', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/lib/session-client')>(),
+  loadStoredSession: (...args: Parameters<typeof import('@/lib/session-client').loadStoredSession>) => mockLoadStoredSession(...args),
+}))
+
 const mockWindowAgent = {
   parkSession: vi.fn().mockResolvedValue(undefined),
   parkDraftSession: vi.fn().mockResolvedValue(undefined),
@@ -36,9 +42,7 @@ const mockWindowAgent = {
 const mockWindowApp = {
   createSession: vi.fn().mockResolvedValue(undefined),
   saveSessionState: vi.fn().mockResolvedValue(undefined),
-  loadSessionState: vi.fn().mockResolvedValue(null),
   worktreeExists: vi.fn().mockResolvedValue(true),
-  resumeSession: vi.fn().mockResolvedValue(undefined),
   codexListModels: vi.fn().mockResolvedValue([]),
   codexListSkills: vi.fn().mockResolvedValue([]),
   codexCollaborationModeChange: vi.fn().mockResolvedValue(undefined),
@@ -121,7 +125,7 @@ function tierOf(sid: string) {
 beforeEach(() => {
   localStorageState.clear()
   vi.clearAllMocks()
-  mockWindowApp.loadSessionState.mockResolvedValue(null)
+  mockLoadStoredSession.mockResolvedValue(null)
   seed()
 })
 
@@ -149,7 +153,7 @@ describe('codex Fast (service tier) across session switches', () => {
         [PATH]: { ...proj, _activeSessionId: SID_B, _sessions: { [SID_B]: proj._sessions[SID_B]! } },
       },
     })
-    mockWindowApp.loadSessionState.mockResolvedValue({
+    mockLoadStoredSession.mockResolvedValue({
       messages: [msg('m1')],
       totalCostUsd: 0,
       contextTokens: 0,

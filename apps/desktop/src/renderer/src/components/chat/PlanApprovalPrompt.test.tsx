@@ -40,9 +40,7 @@ const mockWindowAgent = {
 const mockWindowApp = {
   createSession: vi.fn().mockResolvedValue(undefined),
   saveSessionState: vi.fn().mockResolvedValue(undefined),
-  loadSessionState: vi.fn().mockResolvedValue(null),
   worktreeExists: vi.fn().mockResolvedValue(true),
-  resumeSession: vi.fn().mockResolvedValue(undefined),
   listSessionsForFolder: vi.fn().mockResolvedValue([]),
   getAppSettings: vi.fn().mockResolvedValue({
     analyticsEnabled: true,

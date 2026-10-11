@@ -24,6 +24,7 @@ export function sessionMessageRange(messages: readonly { id: string }[], page: O
   if (page.direction !== undefined && !['around', 'before', 'after'].includes(page.direction)) throw invalid('direction must be around|before|after')
   if (page.direction !== undefined && !page.anchorId) throw invalid('direction requires anchorId')
   if (page.anchorId !== undefined && (!page.anchorId.trim() || page.before != null)) throw invalid('anchorId must be non-empty and cannot be combined with before')
+  if (page.full) return { start: 0, end: messages.length }
   const size = Math.min(page.limit ?? 50, 200)
   if (page.anchorId !== undefined) {
     const anchor = messages.findIndex(message => message.id === page.anchorId)

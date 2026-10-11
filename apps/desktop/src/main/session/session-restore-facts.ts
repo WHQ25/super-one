@@ -2,6 +2,7 @@ import type { ChatMessage, RealtimeTimelineResult, SandboxInfo } from '@superone
 import type { SessionRestoreFacts } from '@superone/shared/environment'
 import { mcpAppContextSources } from '@superone/shared/mcp-apps-state'
 import type { DesktopSessionRow } from '../db-remote-controlled-sessions'
+import type { StoredSessionState } from '../db-sessions'
 import type { Session } from './types'
 import { existsSync } from 'node:fs'
 import { voiceCapability } from './realtime-voice-host'
@@ -10,6 +11,8 @@ export interface DesktopRestorePorts {
   /** Complete asynchronous preparation before reading state and its cursor. */
   prepare?(session: Session | null): Promise<SandboxInfo | undefined>
   realtime?(sessionId: string): RealtimeTimelineResult | null
+  /** Stored settings and identity a window restores a cold session from. */
+  stored?(sessionId: string): StoredSessionState | null
 }
 
 /** Raw host facts; the connection shapes message bodies only at the delivery boundary. */

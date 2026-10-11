@@ -75,7 +75,12 @@ interface AgentAPI {
   requestSessionRecap(sessionId: string): Promise<boolean>
   truncateAtCheckpoint(projectPath: string, checkpointId: string): Promise<boolean>
   parkSession(projectPath: string): Promise<{ permissionMode: PermissionMode; sandboxInfo: SandboxInfo }>
-  activateSession(projectPath: string, sessionId: string): Promise<void>
+  /**
+   * A window shows this session: its runtime comes up in `worktreeCwd` (when
+   * that still exists) as the project's active session. Undefined for a draft
+   * the host has not seen.
+   */
+  activateSession(projectPath: string, sessionId: string, worktreeCwd?: string): Promise<{ permissionMode: PermissionMode; sandboxInfo: SandboxInfo } | undefined>
   /** `projectPath` names the session's machine (`remote:<id>:…`); local when omitted. */
   setSessionForeground(sessionId: string, foreground: boolean, projectPath?: string): Promise<void>
   getLiveSnapshots(): Promise<LiveSessionSnapshot[]>
@@ -754,7 +759,6 @@ interface AppAPI {
   handoffToLocal(worktreePath: string, folderPath?: string): Promise<WorktreeHandoffResult>
   getHandoffPreview(worktreePath: string, folderPath?: string): Promise<GitDirtyStatus | null>
   assignBranch(folderPath: string, worktreePath: string, name: string): Promise<WorktreeAssignResult>
-  forkSession(request: SessionForkRequest): Promise<SessionForkResult>
   /** Open an ephemeral side chat forked off a live session. Never persisted. */
   startSideChat(request: SideChatStartRequest): Promise<SideChatStartResult>
   /** Dispose a side chat and best-effort delete its provider transcript. */
@@ -785,13 +789,8 @@ interface AppAPI {
   listSessions(projectPath: string): Promise<SessionHistoryEntry[]>
   listSessionsForFolder(folderPath: string): Promise<SessionHistoryEntry[]>
   listSessionsForFolderPage(folderPath: string, limit: number, offset: number): Promise<SessionHistoryEntry[]>
-  resumeSession(projectPath: string, sessionId: string, worktreeCwd?: string, permissionMode?: PermissionMode): Promise<{ permissionMode: PermissionMode; sandboxInfo: SandboxInfo } | undefined>
   loadSessionMessages(projectPath: string, sessionId: string, limit: number, cursor?: number): Promise<LoadSessionMessagesResult>
-  renameSession(sessionId: string, title: string): Promise<void>
-  loadSessionState(sessionId: string): Promise<{ messages: ChatMessage[]; totalCostUsd: number; contextTokens: number; isWorktree: boolean; gitBranch: string | null; worktreePath: string | null; provider: string; apiProviderId?: string | null; acpAgentId?: string | null; title?: string | null } | null>
-  deleteSession(sessionId: string): Promise<void>
   deleteSessionsOlderThan(folderPath: string, cutoffDate: string): Promise<string[]>
-  pinSession(sessionId: string, pinned: boolean): Promise<void>
   /** Pending "resume when the rate-limit window resets" record for a session. */
   getScheduledSend(sessionId: string): Promise<ScheduledSend | null>
   listScheduledSends(): Promise<ScheduledSend[]>
@@ -803,7 +802,6 @@ interface AppAPI {
   getComposerDrafts(): Promise<Record<string, Record<string, unknown>>>
   publishComposerDraft(sessionId: string, patch: Record<string, unknown>): void
   onComposerDraftChanged(callback: (sessionId: string, patch: Record<string, unknown>) => void): () => void
-  hideSession(sessionId: string, hidden: boolean): Promise<void>
   listPinnedSessions(): Promise<PinnedSessionEntry[]>
 
   trace(source: string, type: string, data: unknown, tag?: string): void
@@ -1150,7 +1148,7 @@ export interface EnvironmentAPI extends MediaComposerAPI {
   /** Create a session on a remote node project. */
   createSession(
     connectionId: string,
-    input: { projectId: string; title?: string; providerId?: string; harnessId?: string },
+    input: import('@superone/shared/environment/session-requests').SessionCreateRequest,
   ): Promise<{
     sessionId: string
     title: string
@@ -1185,28 +1183,7 @@ export interface EnvironmentAPI extends MediaComposerAPI {
   ): Promise<Array<{ id: string; name: string; description: string; isDefault?: boolean }>>
   sendSessionMessage(
     connectionId: string,
-    input: {
-      sessionId: string
-      text: string
-      clientMessageId?: string
-      projectPath?: string
-      providerId?: string
-      cwdHostPath?: string | null
-      model?: string | null
-      effort?: string | null
-      permissionMode?: string | null
-      additionalDirectories?: string[]
-      enabledSkills?: string[]
-      disabledSkills?: string[]
-      images?: Array<{ name?: string; mimeType: string; base64: string }>
-      apiProviderId?: string | null
-      /** Codex turn kind for session.send options.turnKind (runtime already forwarded). */
-      turnKind?: 'run' | 'steer' | 'review' | 'compact' | null
-      collaborationMode?: string | Record<string, unknown> | null
-      reviewTarget?: unknown
-      /** Claude Ultracode toggle for this turn and after. */
-      ultracode?: boolean
-    },
+    input: import('@superone/shared/environment/session-requests').SessionSendRequest,
   ): Promise<unknown>
   /**
    * Open a remote session in the chat: main follows it, then returns its
@@ -1215,11 +1192,17 @@ export interface EnvironmentAPI extends MediaComposerAPI {
    */
   openRemoteSession(
     connectionId: string,
-    input: { sessionId: string; projectPath?: string; providerId?: string; limit?: number },
+    input: { sessionId: string; projectPath?: string; providerId?: string; limit?: number; before?: number; full?: boolean },
   ): Promise<SessionLoadResult>
   /** Expand a summarized row of a session: its revision-0 detail; packets follow as `remote_detail` events. */
   subscribeDetail(target: DetailTarget, subscriptionId: string): Promise<DetailUpdate>
   unsubscribeDetail(target: DetailTarget, subscriptionId: string): Promise<void>
+  /** Change a session's durable settings; `connectionId` is `local` for this computer. */
+  patchSessionSettings(
+    connectionId: string,
+    sessionId: string,
+    patch: import('@superone/shared/environment/session-requests').SessionSettingsPatch,
+  ): Promise<unknown>
   interruptSession(connectionId: string, sessionId: string): Promise<void>
   /** Control a session again after the computer it runs on took it back. */
   reclaimSessionControl(connectionId: string, sessionId: string): Promise<void>
@@ -1237,37 +1220,22 @@ export interface EnvironmentAPI extends MediaComposerAPI {
     sessionId: string,
     flags: { isPinned?: boolean; isHidden?: boolean },
   ): Promise<unknown>
-  /** Fork a remote session onto a new node worktree or same-dir local. */
+  /** Fork a session onto a new worktree, or beside it in the same directory. */
   forkSession(
     connectionId: string,
-    input: { sessionId: string; mode?: 'local' | 'worktree'; forkFromMessageId?: string },
+    input: import('@superone/shared/environment/session-requests').SessionForkRequestInput,
   ): Promise<{ ok: true; sessionId: string; worktreePath?: string } | { ok: false; error: string }>
   respondSessionPermission(
     connectionId: string,
-    input: {
-      sessionId: string
-      interactionId: string
-      decision: 'allow' | 'deny' | 'allow_always'
-      formAnswers?: Record<string, unknown>
-      cancel?: boolean
-    },
+    input: import('@superone/shared/environment/session-requests').SessionPermissionAnswer,
   ): Promise<void>
   respondSessionQuestion(
     connectionId: string,
-    input: {
-      sessionId: string
-      interactionId: string
-      answers: unknown
-    },
+    input: import('@superone/shared/environment/session-requests').SessionQuestionAnswer,
   ): Promise<void>
   respondSessionPlan(
     connectionId: string,
-    input: {
-      sessionId: string
-      interactionId: string
-      decision: 'approve' | 'reject'
-      options?: Record<string, unknown>
-    },
+    input: import('@superone/shared/environment/session-requests').SessionPlanAnswer,
   ): Promise<void>
   /** Follow a remote session so its events reach the chat. */
   resumeRemoteSessionEvents(

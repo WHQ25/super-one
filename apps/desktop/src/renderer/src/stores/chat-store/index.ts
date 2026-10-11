@@ -301,6 +301,7 @@ import {
   togglePlanModeShortcutImpl,
 } from './helpers/interaction'
 import { resetLock } from './helpers/lifecycle'
+import { loadStoredSession } from '@/lib/session-client'
 
 // --- Store implementation ---
 
@@ -604,13 +605,8 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
   renameSession: async (sessionId, title) => {
     const { activeProject } = get()
     if (!activeProject) return
-    const { parseRemoteProjectKey } = await import('@/lib/remote-project-key')
-    const remote = parseRemoteProjectKey(activeProject)
-    if (remote) {
-      await window.environment.renameSession(remote.connectionId, sessionId, title)
-    } else {
-      await window.app.renameSession(sessionId, title)
-    }
+    const { renameSession } = await import('@/lib/session-client')
+    await renameSession(activeProject, sessionId, title)
     set((s) => updateProjectState(s, activeProject, (proj) => ({
       sessions: proj.sessions.map((entry) =>
         entry.sessionId === sessionId ? { ...entry, title } : entry
@@ -766,7 +762,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
       let targetSession = get().projectSessions[activeProject]!._sessions[sessionId]
 
       if (!targetSession._historyHydrated) {
-        const hydrated = await _ensureSessionHydrated(sessionId, targetSession)
+        const hydrated = await _ensureSessionHydrated(activeProject, sessionId, targetSession)
         if (hydrated) {
           set((s) => {
             const proj = s.projectSessions[activeProject]
@@ -833,7 +829,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
       try {
         await _syncAndResumeSession(activeProject, sessionId, set, _getSessionCwd(activeProject, runtimeSession))
       } catch (err) {
-        console.warn('[chat] resumeSession failed:', err)
+        console.warn('[chat] activateSession failed:', err)
       }
       return
     }
@@ -851,7 +847,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     let savedTitle: string | null = null
     let savedState: PersistedSessionState | null = null
     try {
-      const saved = await window.app.loadSessionState(sessionId) as PersistedSessionState | null
+      const saved = await loadStoredSession(activeProject, sessionId)
       if (saved) {
         savedState = saved
         savedMessages = saved.messages
@@ -865,7 +861,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
         savedOpenCodeAgentId = saved.messages.findLast((message) => message.role === 'assistant')?.metadata?.agent ?? null
         savedTitle = saved.title ?? null
       }
-    } catch (err) { console.warn('[chat] loadSessionState failed:', err) }
+    } catch (err) { console.warn('[chat] loadStoredSession failed:', err) }
 
     const restoredProvider: ChatProvider = (savedProvider as ChatProvider) ?? DEFAULT_PROVIDER
 
@@ -961,7 +957,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     try {
       await _syncAndResumeSession(activeProject, sessionId, set, _getSessionCwd(activeProject, getProject(get())._sessions[sessionId]))
     } catch (err) {
-      console.warn('[chat] resumeSession failed:', err)
+      console.warn('[chat] activateSession failed:', err)
     }
     if (restoredProvider === 'acp') {
       hydrateAcpCatalogForSession(set, get, activeProject, sessionId)
@@ -994,8 +990,8 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
       // without ever loading the persisted title, so back-fill it from the DB
       // here — otherwise a mosaic tile would fall back to the first message while
       // the sidebar list shows the saved title.
-      void window.app.loadSessionState(sessionId).then((saved) => {
-        const title = (saved as PersistedSessionState | null)?.title ?? null
+      void loadStoredSession(projectPath, sessionId).then((saved) => {
+        const title = saved?.title ?? null
         if (!title) return
         set((s) => {
           const proj = s.projectSessions[projectPath]

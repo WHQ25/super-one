@@ -1,16 +1,7 @@
-import type { EnvironmentGateway, PatchSessionSettingsInput } from '@superone/shared/environment'
-import type { SessionCreateSelections } from '@superone/shared/environment/session-create'
+import type { EnvironmentGateway } from '@superone/shared/environment'
+import type { SessionCreateRequest } from '@superone/shared/environment/session-requests'
 
-export interface RemoteSessionCreateInput {
-  projectId: string
-  title?: string
-  providerId?: string
-  harnessId?: string
-  cwd?: string | null
-  settings?: Omit<PatchSessionSettingsInput, 'session' | 'leaseId' | 'generation'>
-  /** Native creation choices (a draft's session id, worktree, ACP agent) the host resolves before persisting. */
-  selections?: SessionCreateSelections
-}
+export type RemoteSessionCreateInput = SessionCreateRequest
 
 /** Finish inherited settings before exposing the new session to navigation/send. */
 export async function createRemoteSession(input: RemoteSessionCreateInput, ports: {

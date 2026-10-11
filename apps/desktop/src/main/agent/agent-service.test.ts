@@ -592,15 +592,16 @@ describe('AgentService prewarm', () => {
   })
 })
 
-describe('AgentService SESSIONS_RESUME (cwd sync)', () => {
+describe('AgentService ACTIVATE_SESSION (cwd sync)', () => {
   it('surfaces cold resume failures to the renderer', async () => {
     const service = new AgentService()
     ;(service as { sessionManager: unknown }).sessionManager = {
       getSession: vi.fn(() => null),
       resumeSession: vi.fn(() => { throw new Error('Session not found: missing') }),
     }
+    vi.mocked((await import('../db-sessions')).readSessionHarnessId).mockReturnValueOnce('claude')
     service.setup()
-    const handler = getRegisteredIpcHandler(AgentIpcChannels.SESSIONS_RESUME)!
+    const handler = getRegisteredIpcHandler(AgentIpcChannels.ACTIVATE_SESSION)!
 
     await expect(handler(null, '/repo/main', 'missing')).rejects.toThrow('Session not found: missing')
   })
@@ -623,7 +624,7 @@ describe('AgentService SESSIONS_RESUME (cwd sync)', () => {
       setActiveSession: vi.fn(),
     }
     service.setup()
-    const handler = getRegisteredIpcHandler(AgentIpcChannels.SESSIONS_RESUME)!
+    const handler = getRegisteredIpcHandler(AgentIpcChannels.ACTIVATE_SESSION)!
     mockExistsSync.mockReturnValueOnce(true)
 
     await handler(null, '/repo/main', 'sid-existing', '/repo/main/.worktrees/feat-x')
@@ -648,8 +649,9 @@ describe('AgentService SESSIONS_RESUME (cwd sync)', () => {
       resumeSession: vi.fn(() => resumed),
       setActiveSession: vi.fn(),
     }
+    vi.mocked((await import('../db-sessions')).readSessionHarnessId).mockReturnValueOnce('claude')
     service.setup()
-    const handler = getRegisteredIpcHandler(AgentIpcChannels.SESSIONS_RESUME)!
+    const handler = getRegisteredIpcHandler(AgentIpcChannels.ACTIVATE_SESSION)!
     mockExistsSync.mockReturnValueOnce(false)
 
     await handler(null, '/repo/main', 'sid-cold', '/repo/main/.worktrees/vanished')
@@ -696,7 +698,7 @@ describe('AgentService routes every worktree pick through the session', () => {
     // renderer falls back to the project root when it opens the conversation.
     const { service, switchCwd, applyWorktreeSelection } = conversationIn(WT)
     service.setup()
-    const handler = getRegisteredIpcHandler(AgentIpcChannels.SESSIONS_RESUME)!
+    const handler = getRegisteredIpcHandler(AgentIpcChannels.ACTIVATE_SESSION)!
 
     await handler(null, '/repo/main', 'sid-conv', '/repo/main')
 
@@ -768,30 +770,6 @@ describe('AgentService Realtime Voice', () => {
     const handler = getRegisteredIpcHandler(AgentIpcChannels.GET_REALTIME_TIMELINE)!
     await expect(handler(null, '/repo/main', 'sid-voice')).resolves.toEqual(timeline)
     expect(realtimeTimelineRepoMocks.reconcileRealtimeTimeline).toHaveBeenCalledWith('sid-voice', timeline)
-  })
-
-  /**
-   * A live voice session keeps writing (transcript, generated title), and that write
-   * path is an upsert — deleting only the row lets the next write INSERT it straight
-   * back. The runtime has to be torn down first, and in that order.
-   */
-  it('tears down a live session before deleting its row so it cannot be resurrected', async () => {
-    const service = new AgentService()
-    const order: string[] = []
-    const disposeSession = vi.fn(async () => { order.push('dispose') })
-    const dbSessions = await import('../db-sessions')
-    vi.mocked(dbSessions.deleteSession).mockImplementation(() => { order.push('delete') })
-    ;(service as { sessionManager: unknown }).sessionManager = {
-      getSession: vi.fn(() => makeMockSession({ id: 'sid-voice' })),
-      disposeSession,
-    }
-    service.setup()
-
-    const handler = getRegisteredIpcHandler(AgentIpcChannels.SESSIONS_DELETE)!
-    await handler(null, 'sid-voice')
-
-    expect(disposeSession).toHaveBeenCalledWith('sid-voice')
-    expect(order).toEqual(['dispose', 'delete'])
   })
 
   it('creates a Codex session from the renderer draft before starting voice', async () => {

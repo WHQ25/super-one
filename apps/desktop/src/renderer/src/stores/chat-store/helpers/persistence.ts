@@ -5,6 +5,7 @@ import type { ChatStore, PerSessionState, PersistedSessionState, ProjectState } 
 import { latestCodexTodoListFromMessages } from './codex-todo'
 import { findLatestCodexUsage } from './codex-usage'
 import { resolveActiveSessionId } from './store-helpers'
+import { loadStoredSession } from '@/lib/session-client'
 
 function restorePersistedSelection(
   session: PerSessionState,
@@ -183,10 +184,10 @@ export function _mergeHydratedSessionState(
   }
 }
 
-export async function _ensureSessionHydrated(sessionId: string, session: PerSessionState): Promise<PerSessionState | null> {
+export async function _ensureSessionHydrated(projectPath: string, sessionId: string, session: PerSessionState): Promise<PerSessionState | null> {
   if (session._historyHydrated) return session
   try {
-    const saved = await window.app.loadSessionState(sessionId) as PersistedSessionState | null
+    const saved = await loadStoredSession(projectPath, sessionId)
     if (!saved) return { ...session, _historyHydrated: true }
     return _mergePersistedSessionState(session, saved)
   } catch (err) {
@@ -202,14 +203,14 @@ export function _hydrateSessionState(
   projectPath: string,
   sessionId: string,
 ): void {
-  window.app.loadSessionState(sessionId)
+  loadStoredSession(projectPath, sessionId)
     .then((saved) => {
       set((state) => {
         const project = state.projectSessions[projectPath]
         const session = project?._sessions[sessionId]
         if (!project || !session || session._historyHydrated) return {}
         const hydrated = saved
-          ? _mergePersistedSessionState(session, saved as PersistedSessionState)
+          ? _mergePersistedSessionState(session, saved)
           : { ...session, _historyHydrated: true }
         return {
           projectSessions: {

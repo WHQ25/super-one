@@ -4,14 +4,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { ChatMessage } from '@superone/shared/agent-types'
 import { pendingCodexAsyncQuestions } from '@superone/shared/codex-async-question'
 
-const loadSessionState = vi.fn()
+const loadStoredSession = vi.fn()
+
+vi.mock('@/lib/session-client', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/lib/session-client')>(),
+  loadStoredSession: (...args: Parameters<typeof import('@/lib/session-client').loadStoredSession>) => loadStoredSession(...args),
+}))
 
 vi.mock('@/stores/app', () => ({ useAppStore: { getState: () => ({ sandboxCapability: null }) } }))
 vi.mock('@/stores/activity-view-state', () => ({ useActivityViewStateStore: { getState: () => ({}) } }))
 vi.stubGlobal('window', {
   agent: new Proxy({}, { get: () => () => Promise.resolve(undefined) }),
   app: {
-    loadSessionState,
     trace: vi.fn(),
     getAppSettings: vi.fn().mockResolvedValue({ agentPreference: {} }),
   },
@@ -36,7 +40,7 @@ function makeMessage(id: string, role: 'user' | 'assistant'): ChatMessage {
 }
 
 beforeEach(() => {
-  loadSessionState.mockReset()
+  loadStoredSession.mockReset()
 })
 
 it('keeps questions received during hydration and removes answers accepted while it was in flight', () => {
@@ -350,36 +354,37 @@ describe('_mergeHydratedSessionState', () => {
 describe('_ensureSessionHydrated', () => {
   it('returns the session unchanged when already hydrated', async () => {
     const sess = { ...createDefaultPerSessionState(), _historyHydrated: true }
-    expect(await _ensureSessionHydrated('sid', sess)).toBe(sess)
-    expect(loadSessionState).not.toHaveBeenCalled()
+    expect(await _ensureSessionHydrated('/p1', 'sid', sess)).toBe(sess)
+    expect(loadStoredSession).not.toHaveBeenCalled()
   })
 
-  it('returns the session with _historyHydrated:true when loadSessionState resolves to null', async () => {
-    loadSessionState.mockResolvedValueOnce(null)
+  it('returns the session with _historyHydrated:true when loadStoredSession resolves to null', async () => {
+    loadStoredSession.mockResolvedValueOnce(null)
     const sess = { ...createDefaultPerSessionState(), _historyHydrated: false }
-    const result = await _ensureSessionHydrated('sid', sess)
+    const result = await _ensureSessionHydrated('/p1', 'sid', sess)
     expect(result?._historyHydrated).toBe(true)
     expect(result?.messages).toEqual([])
   })
 
-  it('merges saved state into the session when loadSessionState resolves with a record', async () => {
-    loadSessionState.mockResolvedValueOnce({
+  it('merges saved state into the session when loadStoredSession resolves with a record', async () => {
+    loadStoredSession.mockResolvedValueOnce({
       messages: [makeMessage('a1', 'assistant')],
       totalCostUsd: 0.25, contextTokens: 100,
       isWorktree: false, gitBranch: 'main', worktreePath: null,
       provider: 'claude', title: 'recalled',
     })
     const sess = { ...createDefaultPerSessionState(), _historyHydrated: false }
-    const result = await _ensureSessionHydrated('sid', sess)
+    const result = await _ensureSessionHydrated('/p1', 'sid', sess)
     expect(result?._historyHydrated).toBe(true)
     expect(result?._title).toBe('recalled')
+    expect(loadStoredSession).toHaveBeenCalledWith('/p1', 'sid')
     expect(result?.lastAssistantMessageId).toBe('a1')
   })
 
-  it('returns null when loadSessionState rejects', async () => {
-    loadSessionState.mockRejectedValueOnce(new Error('disk error'))
+  it('returns null when loadStoredSession rejects', async () => {
+    loadStoredSession.mockRejectedValueOnce(new Error('disk error'))
     const sess = { ...createDefaultPerSessionState(), _historyHydrated: false }
-    expect(await _ensureSessionHydrated('sid', sess)).toBeNull()
+    expect(await _ensureSessionHydrated('/p1', 'sid', sess)).toBeNull()
   })
 })
 
@@ -390,7 +395,7 @@ describe('_hydrateSessionState', () => {
   }
 
   it('skips set when the project/session is missing or already hydrated', async () => {
-    loadSessionState.mockResolvedValueOnce({
+    loadStoredSession.mockResolvedValueOnce({
       messages: [], totalCostUsd: 0, contextTokens: 0,
       isWorktree: false, gitBranch: null, worktreePath: null, provider: 'claude',
     })
@@ -404,7 +409,7 @@ describe('_hydrateSessionState', () => {
   })
 
   it('produces a state patch merging persisted into the target session when saved exists', async () => {
-    loadSessionState.mockResolvedValueOnce({
+    loadStoredSession.mockResolvedValueOnce({
       messages: [makeMessage('a1', 'assistant')],
       totalCostUsd: 0, contextTokens: 0,
       isWorktree: false, gitBranch: null, worktreePath: null, provider: 'claude', title: 't',

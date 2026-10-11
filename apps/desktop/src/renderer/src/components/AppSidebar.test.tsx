@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { createEvent, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import { appState, chatState, mockWindowApp, mockEnvironment, sessionFixtures, toastWarning, toastSuccess } from './AppSidebar.test-setup'
+import { appState, chatState, mockEnvironment, sessionFixtures, toastWarning, toastSuccess } from './AppSidebar.test-setup'
 
 describe('AppSidebar interactions', () => {
   it('keeps project action anchors measurable while the row is not hovered', async () => {
@@ -210,7 +210,7 @@ describe('AppSidebar interactions', () => {
     fireEvent.click(buttons[0] as HTMLButtonElement)
 
     await waitFor(() => {
-      expect(mockWindowApp.hideSession).toHaveBeenCalledWith('sid-1', true)
+      expect(mockEnvironment.setSessionUiFlags).toHaveBeenCalledWith('local', 'sid-1', { isHidden: true })
     })
     await waitFor(() => {
       expect(screen.queryByText('Old Session')).toBeNull()
@@ -237,7 +237,7 @@ describe('AppSidebar interactions', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Unpin Session' }))
 
     await waitFor(() => {
-      expect(mockWindowApp.pinSession).toHaveBeenCalledWith('sid-pinned', false)
+      expect(mockEnvironment.setSessionUiFlags).toHaveBeenCalledWith('local', 'sid-pinned', { isPinned: false })
     })
     expect(screen.getByRole('button', { name: 'Rename Session' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Hide Session' })).toBeInTheDocument()
@@ -336,6 +336,7 @@ describe('AppSidebar interactions', () => {
     fireEvent.click(confirm[confirm.length - 1] as HTMLButtonElement)
 
     await waitFor(() => {
+      expect(mockEnvironment.removeSession).toHaveBeenCalledWith('local', 'sid-voice')
       expect(chatState.removeSessionFromMemory).toHaveBeenCalledWith('/project-a', 'sid-voice')
     })
   })
@@ -882,12 +883,12 @@ describe('AppSidebar interactions', () => {
     Object.defineProperty(composingEnter, 'isComposing', { value: true })
     fireEvent(input, composingEnter)
 
-    expect(mockWindowApp.renameSession).not.toHaveBeenCalled()
+    expect(mockEnvironment.renameSession).not.toHaveBeenCalled()
 
     fireEvent.keyDown(input, { key: 'Enter' })
 
     await waitFor(() => {
-      expect(mockWindowApp.renameSession).toHaveBeenCalledWith('sid-1', '新标题')
+      expect(mockEnvironment.renameSession).toHaveBeenCalledWith('local', 'sid-1', '新标题')
     })
   })
 

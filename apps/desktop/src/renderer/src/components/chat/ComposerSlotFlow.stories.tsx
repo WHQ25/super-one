@@ -23,7 +23,7 @@ import { composerForSession, registerComposer, type OpenedComposerProps } from '
 
 mockIpc('app', 'getMediaServerPort', async () => 6006)
 mockIpc('app', 'getGitInfo', async () => null)
-mockIpc('app', 'loadSessionState', async () => null)
+mockIpc('environment', 'getSession', async () => null)
 mockIpc('app', 'getScheduledSend', async () => null)
 mockIpc('app', 'connectClaude', async () => ({ models: [], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [] }))
 mockIpc('app', 'connectCodex', async () => ({ models: [], prompts: [] }))

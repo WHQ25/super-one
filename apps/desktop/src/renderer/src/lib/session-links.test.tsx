@@ -17,7 +17,7 @@ beforeEach(() => {
   m.state.projectSessions = { '/source': { _activeSessionId: 'source' } }
   m.target.mockResolvedValue({ ref, projectPath: '/target', connectionId: null })
   m.load.mockResolvedValue({})
-  Object.assign(window, { environment: { sessionLinkTarget: m.target }, app: { loadSessionState: m.load } })
+  Object.assign(window, { environment: { sessionLinkTarget: m.target, getSession: m.load } })
 })
 describe('desktop session link navigation', () => {
   it('shows actionable offline copy while preserving identity and permission failures', () => {
@@ -51,6 +51,7 @@ describe('desktop session link navigation', () => {
   })
   it('commits only the requested target after preflight and avoids reopening the current session', async () => {
     await openSessionLink(ref)
+    expect(m.load).toHaveBeenCalledWith('local', 'target')
     expect(m.switch).toHaveBeenCalledWith('/target', 'target')
     expect(m.focus).toHaveBeenCalledWith('/target', 'target')
     m.target.mockResolvedValue({ ref: { environmentId: 'desktop', sessionId: 'source' }, projectPath: '/source', connectionId: null })

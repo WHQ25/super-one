@@ -1219,6 +1219,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
           sessionId: input.session.sessionId,
           ...(input.before != null ? { before: input.before } : {}),
           ...(input.limit !== undefined ? { limit: input.limit } : {}),
+          ...(input.full ? { full: true } : {}),
           ...(input.anchorId !== undefined ? { anchorId: input.anchorId } : {}),
           ...(input.direction !== undefined ? { direction: input.direction } : {}),
         })
@@ -1412,6 +1413,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     sessionId: string
     mode?: 'local' | 'worktree'
     forkFromMessageId?: string
+    carryLocalChanges?: boolean
     leaseId?: string
     generation?: string
   }): Promise<{ ok: true; sessionId: string; worktreePath?: string } | { ok: false; error: string }> {
@@ -1424,6 +1426,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
       sessionId: input.sessionId,
       mode: input.mode ?? 'worktree',
       ...(input.forkFromMessageId ? { forkFromMessageId: input.forkFromMessageId } : {}),
+      ...(input.carryLocalChanges === false ? { carryLocalChanges: false } : {}),
       ...(input.leaseId ? { leaseId: input.leaseId, generation: input.generation } : {}),
     })
     if (result && result.ok === true && result.sessionId) {

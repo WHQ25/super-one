@@ -26,7 +26,6 @@ const closeSideChatIpc = vi.fn().mockResolvedValue(true)
 const mockWindowApp = {
   startSideChat,
   closeSideChat: closeSideChatIpc,
-  loadSessionState: vi.fn().mockResolvedValue(null),
   saveSessionState: vi.fn().mockResolvedValue(undefined),
   listSessionsForFolder: vi.fn().mockResolvedValue([]),
   trace: vi.fn(),

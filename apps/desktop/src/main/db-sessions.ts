@@ -314,10 +314,39 @@ export function saveSessionState(
   }
 }
 
+/** A session's stored settings and identity, without its transcript. */
+export interface StoredSessionState {
+  totalCostUsd: number
+  contextTokens: number
+  isWorktree: boolean
+  gitBranch: string | null
+  worktreePath: string | null
+  provider: string
+  providerSessionId: string | null
+  parentSessionId: string | null
+  apiProviderId: string | null
+  acpAgentId: string | null
+  selectedModel: string | null
+  selectedEffort: EffortLevel | null
+  codexServiceTier: string | null
+  title: string | null
+  remoteController: SessionRemoteControllerInfo | null
+}
+
 /** Load session state from DB */
-export function loadSessionState(
-  sessionId: string,
-): { messages: ChatMessage[]; totalCostUsd: number; contextTokens: number; isWorktree: boolean; gitBranch: string | null; worktreePath: string | null; provider: string; providerSessionId: string | null; parentSessionId: string | null; apiProviderId: string | null; acpAgentId: string | null; selectedModel: string | null; selectedEffort: EffortLevel | null; codexServiceTier: string | null; title: string | null; remoteController: SessionRemoteControllerInfo | null } | null {
+export function loadSessionState(sessionId: string): (StoredSessionState & { messages: ChatMessage[] }) | null {
+  const stored = loadStoredSessionState(sessionId)
+  if (!stored) return null
+  const rows = getDb().prepare(`
+    SELECT id, role, status, content_json, created_at, provider_id, metadata_json, checkpoint_id, resume_point_id
+    FROM chat_messages
+    WHERE session_id = ?
+    ORDER BY sort_order ASC
+  `).all(sessionId) as DbChatMessage[]
+  return { messages: rows.map(rowToChatMessage), ...stored }
+}
+
+export function loadStoredSessionState(sessionId: string): StoredSessionState | null {
   const db = getDb()
 
   const session = db.prepare(`
@@ -331,18 +360,8 @@ export function loadSessionState(
 
   if (!session) return null
 
-  const rows = db.prepare(`
-    SELECT id, role, status, content_json, created_at, provider_id, metadata_json, checkpoint_id, resume_point_id
-    FROM chat_messages
-    WHERE session_id = ?
-    ORDER BY sort_order ASC
-  `).all(sessionId) as DbChatMessage[]
-
-  const messages: ChatMessage[] = rows.map(rowToChatMessage)
-
   const provider = deriveHarnessId(session)
   return {
-    messages,
     totalCostUsd: session.total_cost_usd ?? 0,
     contextTokens: session.context_tokens ?? 0,
     isWorktree: !!(session.is_worktree),

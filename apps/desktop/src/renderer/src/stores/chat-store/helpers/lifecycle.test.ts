@@ -3,16 +3,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { ChatMessage } from '@superone/shared/agent-types'
 
-const resumeSession = vi.fn()
+const activateSession = vi.fn()
 const parkSession = vi.fn()
 const truncateAtCheckpoint = vi.fn().mockResolvedValue(undefined)
 
 vi.mock('@/stores/app', () => ({ useAppStore: { getState: () => ({ sandboxCapability: null }) } }))
 vi.mock('@/stores/activity-view-state', () => ({ useActivityViewStateStore: { getState: () => ({}) } }))
 vi.stubGlobal('window', {
-  agent: { truncateAtCheckpoint, parkSession },
+  agent: { truncateAtCheckpoint, parkSession, activateSession },
   app: {
-    resumeSession,
     trace: vi.fn(),
     getAppSettings: vi.fn().mockResolvedValue({ agentPreference: {} }),
   },
@@ -33,7 +32,7 @@ const {
 } = await import('./lifecycle')
 
 beforeEach(() => {
-  resumeSession.mockReset()
+  activateSession.mockReset().mockResolvedValue(undefined)
   parkSession.mockReset()
   truncateAtCheckpoint.mockReset().mockResolvedValue(undefined)
 })
@@ -186,15 +185,15 @@ describe('_truncateAtCheckpoint', () => {
 })
 
 describe('_syncAndResumeSession', () => {
-  it('is a no-op when resumeSession returns null', async () => {
-    resumeSession.mockResolvedValueOnce(null)
+  it('is a no-op when the host does not know the session yet', async () => {
+    activateSession.mockResolvedValueOnce(undefined)
     const set = vi.fn()
     await _syncAndResumeSession('/p1', 'sid-1', set as never, '/p1')
     expect(set).not.toHaveBeenCalled()
   })
 
   it('writes the returned permissionMode + sandboxInfo onto the session', async () => {
-    resumeSession.mockResolvedValueOnce({
+    activateSession.mockResolvedValueOnce({
       permissionMode: 'plan',
       sandboxInfo: { enabled: true, autoAllowBash: true },
     })
@@ -224,7 +223,7 @@ describe('_syncAndResumeSession', () => {
   // session record — which wins in `mergedView` — showing a sandbox that is not
   // in force.
   it('overwrites a stale session record even when the project value already matches', async () => {
-    resumeSession.mockResolvedValueOnce({
+    activateSession.mockResolvedValueOnce({
       permissionMode: 'default',
       sandboxInfo: { enabled: false, autoAllowBash: false },
     })
@@ -249,8 +248,8 @@ describe('_syncAndResumeSession', () => {
     expect(proj._sessions['sid-1'].sandboxInfo).toEqual({ enabled: false, autoAllowBash: false })
   })
 
-  it('preserves state when resumeSession returns unchanged settings', async () => {
-    resumeSession.mockResolvedValueOnce({
+  it('preserves state when activateSession answers unchanged settings', async () => {
+    activateSession.mockResolvedValueOnce({
       permissionMode: 'default',
       sandboxInfo: { enabled: false, autoAllowBash: false },
     })
@@ -272,7 +271,7 @@ describe('_syncAndResumeSession', () => {
   })
 
   it('returns empty patch when project/session goes missing between IPC + apply', async () => {
-    resumeSession.mockResolvedValueOnce({ permissionMode: 'default', sandboxInfo: { enabled: false, autoAllowBash: false } })
+    activateSession.mockResolvedValueOnce({ permissionMode: 'default', sandboxInfo: { enabled: false, autoAllowBash: false } })
     let captured: unknown
     const set = (updater: (s: never) => unknown) => { captured = updater({ projectSessions: {} } as never) }
     await _syncAndResumeSession('/p1', 'sid-1', set as never, '/p1')
@@ -283,7 +282,7 @@ describe('_syncAndResumeSession', () => {
 describe('_ensureClaudeSessionReadyForSend', () => {
   it('is a no-op when no project state for projectPath', async () => {
     await _ensureClaudeSessionReadyForSend(() => ({ projectSessions: {} } as never), '/p1')
-    expect(resumeSession).not.toHaveBeenCalled()
+    expect(activateSession).not.toHaveBeenCalled()
   })
 
   it('is a no-op when the project has no _activeSessionId', async () => {
@@ -291,7 +290,7 @@ describe('_ensureClaudeSessionReadyForSend', () => {
       () => ({ projectSessions: { '/p1': createDefaultProjectState() } } as never),
       '/p1',
     )
-    expect(resumeSession).not.toHaveBeenCalled()
+    expect(activateSession).not.toHaveBeenCalled()
   })
 
   it('is a no-op for Codex sessions', async () => {
@@ -302,11 +301,11 @@ describe('_ensureClaudeSessionReadyForSend', () => {
       () => ({ projectSessions: { '/p1': proj } } as never),
       '/p1',
     )
-    expect(resumeSession).not.toHaveBeenCalled()
+    expect(activateSession).not.toHaveBeenCalled()
   })
 
-  it('forwards to window.app.resumeSession for Claude sessions', async () => {
-    resumeSession.mockResolvedValueOnce({})
+  it('forwards to window.agent.activateSession for Claude sessions', async () => {
+    activateSession.mockResolvedValueOnce({})
     const proj = createDefaultProjectState()
     proj._activeSessionId = 'sid-1'
     proj._sessions = { 'sid-1': { ...createDefaultPerSessionState(), sessionProvider: 'claude' as const } }
@@ -314,6 +313,6 @@ describe('_ensureClaudeSessionReadyForSend', () => {
       () => ({ projectSessions: { '/p1': proj } } as never),
       '/p1',
     )
-    expect(resumeSession).toHaveBeenCalledWith('/p1', 'sid-1', '/p1')
+    expect(activateSession).toHaveBeenCalledWith('/p1', 'sid-1', '/p1')
   })
 })

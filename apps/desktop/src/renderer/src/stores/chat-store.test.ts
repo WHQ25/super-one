@@ -44,6 +44,12 @@ vi.mock('./app', () => ({
   },
 }))
 
+const mockLoadStoredSession = vi.fn().mockResolvedValue(null)
+vi.mock('@/lib/session-client', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/lib/session-client')>(),
+  loadStoredSession: (...args: Parameters<typeof import('@/lib/session-client').loadStoredSession>) => mockLoadStoredSession(...args),
+}))
+
 const mockWindowAgent = {
   parkSession: vi.fn().mockResolvedValue(undefined),
   parkDraftSession: vi.fn().mockResolvedValue(undefined),
@@ -68,9 +74,7 @@ const mockWindowAgent = {
 const mockWindowApp = {
   createSession: vi.fn().mockResolvedValue(undefined),
   saveSessionState: vi.fn().mockResolvedValue(undefined),
-  loadSessionState: vi.fn().mockResolvedValue(null),
   worktreeExists: vi.fn().mockResolvedValue(true),
-  resumeSession: vi.fn().mockResolvedValue(undefined),
   listSessionsForFolder: vi.fn().mockResolvedValue([]),
   codexRun: vi.fn().mockResolvedValue({ threadId: 'thread-1', finalResponse: 'done', usage: null, items: [] }),
   codexReview: vi.fn().mockResolvedValue({ threadId: 'thread-1', finalResponse: 'done', usage: null, items: [] }),
@@ -771,7 +775,7 @@ describe('concurrent streaming sessions', () => {
       },
     })
 
-    mockWindowApp.loadSessionState.mockResolvedValue({
+    mockLoadStoredSession.mockResolvedValue({
       messages: [makeMessage('old-msg', 'assistant')],
       totalCostUsd: 1,
       contextTokens: 2,
@@ -823,7 +827,7 @@ describe('concurrent streaming sessions', () => {
       const loadPromise = new Promise((resolve) => {
         resolveLoad = resolve
       })
-      mockWindowApp.loadSessionState.mockImplementation(() => loadPromise as Promise<never>)
+      mockLoadStoredSession.mockImplementation(() => loadPromise as Promise<never>)
 
       useChatStore.getState().handleAgentEvent({
     type: "session_control_changed",
@@ -1507,7 +1511,7 @@ describe('focusProject tracks global previous session', () => {
       }
     })
     useChatStore.getState().ensureSession('/proj-b')
-    mockWindowApp.loadSessionState.mockResolvedValue(null)
+    mockLoadStoredSession.mockResolvedValue(null)
 
     await useChatStore.getState().focusProject('/proj-b')
 
@@ -1988,7 +1992,7 @@ describe('remote switchSession hydrate race (agent reply loss)', () => {
 })
 
 describe('switchSession Case A (in _sessions)', () => {
-  it('switches pointer to target session and calls resumeSession', async () => {
+  it('switches pointer to target session and activates the host session', async () => {
     setupProject('/test')
 
     useChatStore.getState().handleAgentEvent(makeEvent({
@@ -2009,12 +2013,12 @@ describe('switchSession Case A (in _sessions)', () => {
       },
     })
 
-    mockWindowApp.resumeSession.mockResolvedValue(undefined)
+    mockWindowAgent.activateSession.mockResolvedValue(undefined)
     await useChatStore.getState().switchSession('ses-b')
 
     const after = useChatStore.getState().projectSessions['/test']
     expect(after._activeSessionId).toBe('ses-b')
-    expect(mockWindowApp.resumeSession).toHaveBeenCalledWith('/test', 'ses-b', '/test')
+    expect(mockWindowAgent.activateSession).toHaveBeenCalledWith('/test', 'ses-b', '/test')
   })
 
   it('restores the persisted model/effort instead of catalog defaults on an unhydrated stub', async () => {
@@ -2033,7 +2037,7 @@ describe('switchSession Case A (in _sessions)', () => {
         },
       },
     })
-    mockWindowApp.loadSessionState.mockResolvedValue({
+    mockLoadStoredSession.mockResolvedValue({
       messages: [],
       totalCostUsd: 0,
       contextTokens: 0,
@@ -2042,7 +2046,7 @@ describe('switchSession Case A (in _sessions)', () => {
       selectedModel: 'claude-opus-5',
       selectedEffort: 'high',
     })
-    mockWindowApp.resumeSession.mockResolvedValue(undefined)
+    mockWindowAgent.activateSession.mockResolvedValue(undefined)
 
     await useChatStore.getState().switchSession('ses-stub')
 
@@ -2126,12 +2130,12 @@ describe('switchSession Case A (in _sessions)', () => {
       },
     })
 
-    mockWindowApp.resumeSession.mockClear()
+    mockWindowAgent.activateSession.mockClear()
     await useChatStore.getState().switchSession('ses-b')
 
     const after = useChatStore.getState().projectSessions['/test']
     expect(after._activeSessionId).toBe('ses-b')
-    expect(mockWindowApp.resumeSession).toHaveBeenCalledWith('/test', 'ses-b', '/test')
+    expect(mockWindowAgent.activateSession).toHaveBeenCalledWith('/test', 'ses-b', '/test')
     expect(after._sessions['ses-b'].selectedModel).toBe('claude-sonnet-4-6')
     expect(after._sessions['ses-b'].selectedEffort).toBe('high')
   })
@@ -2176,7 +2180,7 @@ describe('switchSession Case A (in _sessions)', () => {
       },
     })
 
-    mockWindowApp.loadSessionState.mockResolvedValue({
+    mockLoadStoredSession.mockResolvedValue({
       messages: [{ id: 'codex-msg', role: 'assistant', content: [], status: 'complete', createdAt: '', providerId: 'codex' }],
       totalCostUsd: 0.02,
       contextTokens: 500,
@@ -2215,7 +2219,7 @@ describe('switchSession Case A (in _sessions)', () => {
         },
       },
     })
-    mockWindowApp.loadSessionState.mockResolvedValue({
+    mockLoadStoredSession.mockResolvedValue({
       messages: [{ id: 'codex-msg', role: 'assistant', content: [], status: 'complete', createdAt: '', providerId: 'codex' }],
       totalCostUsd: 0.02,
       contextTokens: 500,
@@ -2226,7 +2230,7 @@ describe('switchSession Case A (in _sessions)', () => {
     await useChatStore.getState().switchSession('codex_local_stale')
 
     const restored = useChatStore.getState().projectSessions['/test']._sessions['codex_local_stale']
-    expect(mockWindowApp.loadSessionState).toHaveBeenCalledWith('codex_local_stale')
+    expect(mockLoadStoredSession).toHaveBeenCalledWith('/test', 'codex_local_stale')
     expect(restored.messages.map((message) => message.id)).toEqual(['codex-msg'])
     expect(restored.sessionProvider).toBe('codex')
     expect(restored.preferredProvider).toBe('codex')
@@ -2253,12 +2257,12 @@ describe('switchSession Case A (in _sessions)', () => {
       },
     })
     let resolveLoad!: (saved: null) => void
-    mockWindowApp.loadSessionState.mockImplementationOnce(() => new Promise((resolve) => {
+    mockLoadStoredSession.mockImplementationOnce(() => new Promise((resolve) => {
       resolveLoad = resolve
     }))
 
     const switching = useChatStore.getState().switchSession('codex_local_stale')
-    await vi.waitFor(() => expect(mockWindowApp.loadSessionState).toHaveBeenCalledWith('codex_local_stale'))
+    await vi.waitFor(() => expect(mockLoadStoredSession).toHaveBeenCalledWith('/test', 'codex_local_stale'))
     useChatStore.setState((state) => {
       const currentProject = state.projectSessions['/test']
       const currentSession = currentProject._sessions['codex_local_stale']
@@ -2320,7 +2324,7 @@ describe('switchSession does NOT prewarm (regression: prewarm only on typing)', 
     useChatStore.setState({
       harnessResources: { claude: { models: [{ id: 'claude-sonnet-4-6', name: 'Sonnet', supportedEffortLevels: ['low', 'medium', 'high'] }] as never[], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [] }, codex: null, acp: null },
     })
-    mockWindowApp.loadSessionState.mockResolvedValue({
+    mockLoadStoredSession.mockResolvedValue({
       messages: [{ id: 'm', role: 'assistant', content: [], status: 'complete', createdAt: '', providerId: 'claude' }],
       totalCostUsd: 0, contextTokens: 0, gitBranch: null, provider: 'claude',
     })
@@ -2339,7 +2343,7 @@ describe('switchSession Case B (from DB)', () => {
       harnessResources: { claude: { models: [{ id: "claude-sonnet-4-6", name: "Sonnet", supportedEffortLevels: ["low", "medium", "high"] }] as never[], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [] }, codex: null, acp: null },
     })
 
-    mockWindowApp.loadSessionState.mockResolvedValue({
+    mockLoadStoredSession.mockResolvedValue({
       messages: [{ id: 'db-msg', role: 'assistant', content: [], status: 'complete', createdAt: '', providerId: 'claude' }],
       totalCostUsd: 0.05,
       contextTokens: 1000,
@@ -2358,7 +2362,7 @@ describe('switchSession Case B (from DB)', () => {
     expect(after._sessions['db-session'].sessionProvider).toBe('claude')
     expect(after._sessions['db-session'].selectedModel).toBe('claude-sonnet-4-6')
     expect(after._sessions['db-session'].selectedEffort).toBe('high')
-    expect(mockWindowApp.resumeSession).toHaveBeenCalledWith('/test', 'db-session', '/test')
+    expect(mockWindowAgent.activateSession).toHaveBeenCalledWith('/test', 'db-session', '/test')
   })
 
   it('restores a worktree session model and effort instead of applying Claude defaults', async () => {
@@ -2369,7 +2373,7 @@ describe('switchSession Case B (from DB)', () => {
         { id: 'claude-opus-4-8', name: 'Opus', supportedEffortLevels: ['low', 'medium', 'high'] },
       ] as never[], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [] }, codex: null, acp: null },
     })
-    mockWindowApp.loadSessionState.mockResolvedValue({
+    mockLoadStoredSession.mockResolvedValue({
       messages: [{ id: 'db-msg-opus', role: 'assistant', content: [], status: 'complete', createdAt: '', providerId: 'claude' }],
       totalCostUsd: 0,
       contextTokens: 0,
@@ -2388,9 +2392,9 @@ describe('switchSession Case B (from DB)', () => {
     expect(session.modelUserChosen).toBe(true)
   })
 
-  it('handles null loadSessionState gracefully', async () => {
+  it('handles a session with no stored state gracefully', async () => {
     setupProject('/test')
-    mockWindowApp.loadSessionState.mockResolvedValue(null)
+    mockLoadStoredSession.mockResolvedValue(null)
 
     await useChatStore.getState().switchSession('missing-session')
 
@@ -2405,7 +2409,7 @@ describe('switchSession Case B (from DB)', () => {
     mockAppSettingsWithClaude({ defaultPermissionMode: 'acceptEdits' })
     invalidateDefaultPermissionModeCache()
     await new Promise((r) => setTimeout(r, 0))
-    mockWindowApp.loadSessionState.mockResolvedValue({
+    mockLoadStoredSession.mockResolvedValue({
       messages: [],
       totalCostUsd: 0,
       contextTokens: 0,
@@ -2417,13 +2421,13 @@ describe('switchSession Case B (from DB)', () => {
 
     const after = useChatStore.getState().projectSessions['/test']
     expect(after._sessions['pref-session'].permissionMode).toBe('acceptEdits')
-    expect(mockWindowApp.resumeSession).toHaveBeenCalledWith('/test', 'pref-session', '/test')
+    expect(mockWindowAgent.activateSession).toHaveBeenCalledWith('/test', 'pref-session', '/test')
   })
 
   it('restores the default Codex permission preset when loading a session from DB', async () => {
     setupProject('/test')
     defaultPrefsCache.codexPermissionPreset = 'full-access'
-    mockWindowApp.loadSessionState.mockResolvedValue({
+    mockLoadStoredSession.mockResolvedValue({
       messages: [],
       totalCostUsd: 0,
       contextTokens: 0,
@@ -2437,26 +2441,26 @@ describe('switchSession Case B (from DB)', () => {
     expect(session.selectedCodexPermissionPreset).toBe('full-access')
   })
 
-  it('passes permissionMode to resumeSession in Case B', async () => {
+  it('activates the host session in Case B', async () => {
     setupProject('/test')
     mockAppSettingsWithClaude({})
-    mockWindowApp.loadSessionState.mockResolvedValue({
+    mockLoadStoredSession.mockResolvedValue({
       messages: [],
       totalCostUsd: 0,
       contextTokens: 0,
       gitBranch: null,
       provider: 'claude',
     })
-    mockWindowApp.resumeSession.mockResolvedValue(undefined)
+    mockWindowAgent.activateSession.mockResolvedValue(undefined)
 
     await useChatStore.getState().switchSession('order-session')
 
-    expect(mockWindowApp.resumeSession).toHaveBeenCalledWith('/test', 'order-session', '/test')
+    expect(mockWindowAgent.activateSession).toHaveBeenCalledWith('/test', 'order-session', '/test')
   })
 
   it('restores per-session apiProviderId from DB so reopening a session after main-window close keeps the third-party provider', async () => {
     setupProject('/test')
-    mockWindowApp.loadSessionState.mockResolvedValue({
+    mockLoadStoredSession.mockResolvedValue({
       messages: [],
       totalCostUsd: 0,
       contextTokens: 0,
@@ -2473,7 +2477,7 @@ describe('switchSession Case B (from DB)', () => {
 
   it('falls back to null apiProviderId when DB row has none (back-compat with pre-feature sessions)', async () => {
     setupProject('/test')
-    mockWindowApp.loadSessionState.mockResolvedValue({
+    mockLoadStoredSession.mockResolvedValue({
       messages: [],
       totalCostUsd: 0,
       contextTokens: 0,
@@ -2489,7 +2493,7 @@ describe('switchSession Case B (from DB)', () => {
 })
 
 describe('switchSession Case A permissionMode sync', () => {
-  it('passes target permissionMode to resumeSession atomically', async () => {
+  it('activates the target host session atomically', async () => {
     setupProject('/test')
     const proj = useChatStore.getState().projectSessions['/test']
 
@@ -2506,11 +2510,11 @@ describe('switchSession Case A permissionMode sync', () => {
       },
     })
 
-    mockWindowApp.resumeSession.mockResolvedValue(undefined)
+    mockWindowAgent.activateSession.mockResolvedValue(undefined)
 
     await useChatStore.getState().switchSession('ses-b')
 
-    expect(mockWindowApp.resumeSession).toHaveBeenCalledWith('/test', 'ses-b', '/test')
+    expect(mockWindowAgent.activateSession).toHaveBeenCalledWith('/test', 'ses-b', '/test')
   })
 
   it('does not overwrite old session permissionMode when switching', async () => {
@@ -2530,7 +2534,7 @@ describe('switchSession Case A permissionMode sync', () => {
       },
     })
 
-    mockWindowApp.resumeSession.mockResolvedValue(undefined)
+    mockWindowAgent.activateSession.mockResolvedValue(undefined)
 
     await useChatStore.getState().switchSession('ses-b')
 
@@ -2541,14 +2545,14 @@ describe('switchSession Case A permissionMode sync', () => {
 
   it('scenario: resuming a DB session adopts permissionMode and sandboxInfo returned by main (user prefs applied authoritatively)', async () => {
     setupProject('/test')
-    mockWindowApp.loadSessionState.mockResolvedValue({
+    mockLoadStoredSession.mockResolvedValue({
       messages: [],
       totalCostUsd: 0,
       contextTokens: 0,
       gitBranch: null,
       provider: 'claude',
     })
-    mockWindowApp.resumeSession.mockResolvedValue({
+    mockWindowAgent.activateSession.mockResolvedValue({
       permissionMode: 'acceptEdits',
       sandboxInfo: { enabled: false, autoAllowBash: false },
     })
@@ -2562,7 +2566,7 @@ describe('switchSession Case A permissionMode sync', () => {
 
   it('scenario: restoring a renamed DB session populates _title so chat header matches sidebar', async () => {
     setupProject('/test')
-    mockWindowApp.loadSessionState.mockResolvedValue({
+    mockLoadStoredSession.mockResolvedValue({
       messages: [{ id: 'u1', role: 'user' as const, content: [{ type: 'text', text: 'first user message that should not become the title' }], status: 'complete' as const, createdAt: '', providerId: 'claude' }],
       totalCostUsd: 0,
       contextTokens: 0,
@@ -2570,7 +2574,7 @@ describe('switchSession Case A permissionMode sync', () => {
       provider: 'claude',
       title: 'Renamed in DB',
     })
-    mockWindowApp.resumeSession.mockResolvedValue(undefined)
+    mockWindowAgent.activateSession.mockResolvedValue(undefined)
 
     await useChatStore.getState().switchSession('renamed-sid')
 
@@ -2594,7 +2598,7 @@ describe('switchSession Case A permissionMode sync', () => {
         },
       },
     })
-    mockWindowApp.resumeSession.mockResolvedValue(undefined)
+    mockWindowAgent.activateSession.mockResolvedValue(undefined)
 
     await useChatStore.getState().switchSession('ses-b')
 
@@ -2633,7 +2637,7 @@ describe('deferred resume on sendMessage', () => {
 
     await useChatStore.getState().sendMessage('hello')
 
-    expect(mockWindowApp.resumeSession).toHaveBeenCalledWith('/test', 'db-session', '/test')
+    expect(mockWindowAgent.activateSession).toHaveBeenCalledWith('/test', 'db-session', '/test')
     expect(mockWindowAgent.sendMessage).toHaveBeenCalled()
   })
 })
@@ -3988,7 +3992,7 @@ describe('task_started event', () => {
 describe('switchSession Case B codex usage restore', () => {
   it('restores an empty voice-only Codex session with its provider thread', async () => {
     setupProject('/test')
-    mockWindowApp.loadSessionState.mockResolvedValue({
+    mockLoadStoredSession.mockResolvedValue({
       messages: [],
       totalCostUsd: 0,
       contextTokens: 0,
@@ -4011,7 +4015,7 @@ describe('switchSession Case B codex usage restore', () => {
 
   it('restores codex context window from saved message metadata', async () => {
     setupProject('/test')
-    mockWindowApp.loadSessionState.mockResolvedValue({
+    mockLoadStoredSession.mockResolvedValue({
       messages: [{
         id: 'db-codex',
         role: 'assistant',
@@ -4049,12 +4053,12 @@ describe('switchSession Case B codex usage restore', () => {
     expect(session.contextTokens).toBe(139481)
     expect(session.contextWindow).toBe(258400)
     expect(session.codexUsageSnapshot?.lastCachedInputTokens).toBe(69376)
-    expect(mockWindowApp.resumeSession).toHaveBeenCalled()
+    expect(mockWindowAgent.activateSession).toHaveBeenCalled()
   })
 
   it('rebuilds the open codex todo list on cold restore', async () => {
     setupProject('/test')
-    mockWindowApp.loadSessionState.mockResolvedValue({
+    mockLoadStoredSession.mockResolvedValue({
       messages: [{
         id: 'db-codex-todo',
         role: 'assistant',
@@ -4253,7 +4257,7 @@ describe('switchSession Case B opencode restore', () => {
         opencode: resources,
       } as never,
     })
-    mockWindowApp.loadSessionState.mockResolvedValue({
+    mockLoadStoredSession.mockResolvedValue({
       messages: [], totalCostUsd: 0, contextTokens: 0, gitBranch: null,
       provider: 'opencode', ...saved,
     })
@@ -4325,7 +4329,7 @@ describe('switchSession Case A codex worktree', () => {
     const after = useChatStore.getState().projectSessions['/test']
     expect(after._activeSessionId).toBe(codexWtSid)
     expect(mockSetActiveWorktree).toHaveBeenCalledWith('/test', '/test/.worktrees/feat')
-    expect(mockWindowApp.resumeSession).toHaveBeenCalled()
+    expect(mockWindowAgent.activateSession).toHaveBeenCalled()
   })
 })
 
@@ -4535,17 +4539,17 @@ describe('worktree_missing event (main -> renderer signal)', () => {
       },
     })
     mockSetActiveWorktree.mockClear()
-    mockWindowApp.resumeSession.mockClear()
+    mockWindowAgent.activateSession.mockClear()
 
     await useChatStore.getState().switchSession(sid)
 
     expect(mockSetActiveWorktree).toHaveBeenCalledWith('/test', null)
-    expect(mockWindowApp.resumeSession).toHaveBeenCalledWith('/test', sid, '/test')
+    expect(mockWindowAgent.activateSession).toHaveBeenCalledWith('/test', sid, '/test')
   })
 
   it('switchSession Case B no longer probes the worktree (main is the source of truth)', async () => {
     setupProject('/test')
-    mockWindowApp.loadSessionState.mockResolvedValue({
+    mockLoadStoredSession.mockResolvedValue({
       messages: [],
       totalCostUsd: 0,
       contextTokens: 0,

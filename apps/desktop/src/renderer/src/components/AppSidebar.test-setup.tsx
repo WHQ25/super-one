@@ -44,17 +44,6 @@ export const mockWindowApp = {
   listSessionsForFolder: vi.fn(async (folderPath: string) => sessionFixtures.byFolder[folderPath] ?? []),
   listSessionsForFolderPage: vi.fn(async (folderPath: string, limit: number, offset: number) => (sessionFixtures.byFolder[folderPath] ?? []).slice(offset, offset + limit)),
   onSessionChanged: vi.fn((_callback: () => void) => () => {}),
-  hideSession: vi.fn(async (sessionId: string, hidden: boolean) => {
-    sessionFixtures.byFolder = Object.fromEntries(
-      Object.entries(sessionFixtures.byFolder).map(([folderPath, rows]) => [
-        folderPath,
-        rows.map((row) => row.sessionId === sessionId ? { ...row, isHidden: hidden } : row),
-      ]),
-    )
-  }),
-  pinSession: vi.fn(async () => {}),
-  deleteSession: vi.fn(async () => {}),
-  renameSession: vi.fn(async () => {}),
   listAutomations: vi.fn(async () => []),
   onAutomationsChanged: vi.fn(() => () => {}),
   onAutomationEvent: vi.fn(() => () => {}),
@@ -96,6 +85,17 @@ export const mockEnvironment = {
   listPinnedSessions: vi.fn(
     async (_connectionId: string): Promise<PinnedSessionEntry[]> => [],
   ),
+  setSessionUiFlags: vi.fn(async (_connectionId: string, sessionId: string, flags: { isPinned?: boolean; isHidden?: boolean }) => {
+    if (flags.isHidden === undefined) return
+    sessionFixtures.byFolder = Object.fromEntries(
+      Object.entries(sessionFixtures.byFolder).map(([folderPath, rows]) => [
+        folderPath,
+        rows.map((row) => row.sessionId === sessionId ? { ...row, isHidden: flags.isHidden } : row),
+      ]),
+    )
+  }),
+  removeSession: vi.fn(async (_connectionId: string, _sessionId: string) => {}),
+  renameSession: vi.fn(async (_connectionId: string, _sessionId: string, _title: string) => {}),
   listDrafts: vi.fn(async () => []),
   upsertDraft: vi.fn(async (draft: { id: string }) => draft),
   deleteDraft: vi.fn(async () => {}),

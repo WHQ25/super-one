@@ -5,7 +5,7 @@ import type { RemoteTopicStream } from './remote-topic-followers'
 import { notifySessionClosed } from '../session-list-watch'
 import { currentControlScope } from '../session/control-context'
 import { MOD_UI_MUTATING_OPS, MOD_UI_UNAVAILABLE, type ModUiOp, type ModUiRequest } from '@superone/shared/mod-ui'
-import { parseMessageDisplay, type MessageDisplayFields } from '@superone/shared/message-display'
+import { parseMessageDisplay } from '@superone/shared/message-display'
 import { remoteSuperoneHome, remoteNodePort } from './remote-data-path'
 import { app } from 'electron'
 import { join } from 'node:path'
@@ -101,11 +101,10 @@ import type {
   DraftGateway,
   DraftRecord,
   DraftUpsertRequest,
-  PatchSessionSettingsInput,
   ProjectSnapshot,
 } from '@superone/shared/environment'
 import type { PinnedSessionEntry, SessionHistoryEntry } from '@superone/shared/agent-types'
-import type { SessionSendSelections } from '@superone/shared/environment/session-send'
+import type { SessionForkRequestInput, SessionPermissionAnswer, SessionPlanAnswer, SessionQuestionAnswer, SessionSendRequest, SessionSettingsPatch } from '@superone/shared/environment/session-requests'
 import { remoteProjectKey } from '@superone/shared/remote-resource-key'
 import { RoutedControlPresence } from '../node-host/routed-control-presence'
 import { parseTagsJson } from '@superone/shared/session-tags'
@@ -1798,10 +1797,10 @@ export class EnvironmentHost {
    * its events are held, so every event above the snapshot's version reaches
    * the chat and none below it does. Returns the snapshot.
    */
-  async openRemoteSession(connectionId: string, input: RemoteSessionTarget & { limit?: number }): Promise<SessionLoadResult> {
+  async openRemoteSession(connectionId: string, input: RemoteSessionTarget & { limit?: number; before?: number; full?: boolean }): Promise<SessionLoadResult> {
     const { gateway, environmentId, local } = this.resolveSession(connectionId)
     let snapshot: SessionLoadResult | null = null
-    const load = () => gateway.sessions.load!({ session: { environmentId, sessionId: input.sessionId }, limit: input.limit })
+    const load = () => gateway.sessions.load!({ session: { environmentId, sessionId: input.sessionId }, limit: input.limit, ...(input.before != null ? { before: input.before } : {}), ...(input.full ? { full: true } : {}) })
     // Local events already reach the window through the desktop hub, in the
     // snapshot's own sequence space; a mapped follower would deliver each twice.
     if (local) return load()
@@ -1860,59 +1859,8 @@ export class EnvironmentHost {
    */
   async sendSessionMessage(
     connectionId: string,
-    input: {
-      sessionId: string
-      text: string
-      userMessageContent?: MessageDisplayFields['userMessageContent']
-      contexts?: MessageDisplayFields['contexts']
-      /** A collaboration delivery; the node names its sender on the bubble. */
-      collaboration?: MessageDisplayFields['collaboration']
-      /** This caller does not optimistically append a user bubble. */
-      echoUserMessage?: boolean
-      clientMessageId?: string
-      /** Desktop project key for AgentEvent routing (`remote:<id>:<path>`). */
-      projectPath?: string
-      providerId?: string
-      /**
-       * Host-absolute worktree cwd for this turn (node session.cwd).
-       * Null/undefined leaves the session cwd unchanged; empty string clears to project root.
-       */
-      cwdHostPath?: string | null
-      /** UI-selected model id for this turn (Claude slug / Codex model). */
-      model?: string | null
-      /** Reasoning / thinking effort (Claude effort or Codex reasoningEffort). */
-      effort?: string | null
-      /** Claude permission mode for this turn. */
-      permissionMode?: string | null
-      /** Extra readable directories on the node. */
-      additionalDirectories?: string[]
-      /** Claude skills allow-list (when user disabled some skills). */
-      enabledSkills?: string[]
-      /** Skills to exclude; node may discover and filter. */
-      disabledSkills?: string[]
-      /** Image/document attachments (base64) — node persists under turn cwd. */
-      images?: Array<{ id?: string; name?: string; mimeType: string; base64: string; originalPath?: string }>
-      /** Node provider credential id for this turn. */
-      apiProviderId?: string | null
-      /** Codex turn kind: run|steer|review|compact (session.send options.turnKind). */
-      turnKind?: 'run' | 'steer' | 'review' | 'compact' | null
-      /** Codex collaboration mode. */
-      collaborationMode?: string | Record<string, unknown> | null
-      /** Codex review/start target. */
-      reviewTarget?: unknown
-      /** Claude Ultracode toggle; the node switches its process when it differs. */
-      ultracode?: boolean
-      /** Composer selections the host applies to this turn (see `SessionSendSelections`). */
-      priority?: 'now' | 'next' | 'later'
-      steer?: 'now' | 'next'
-      sandboxMode?: string | null
-      permissionPreset?: SessionSendSelections['permissionPreset']
-      serviceTier?: string | null
-      threadId?: string
-      agent?: string
-      modelParams?: Record<string, string>
-      inputRequest?: SessionSendSelections['inputRequest']
-      /** Receipt after the node accepts, before waiting for the model turn. */
+    input: SessionSendRequest & {
+      /** Receipt after the host accepts, before waiting for the model turn. */
       onAccepted?: () => void
     },
   ): Promise<unknown> {
@@ -2092,7 +2040,7 @@ export class EnvironmentHost {
   async patchSessionSettings(
     connectionId: string,
     sessionId: string,
-    patch: Omit<PatchSessionSettingsInput, 'session' | 'leaseId' | 'generation'>,
+    patch: SessionSettingsPatch,
   ): Promise<unknown> {
     const { gateway, environmentId } = this.resolveSession(connectionId)
     const control = await this.ensureSessionLease(connectionId, sessionId)
@@ -2169,7 +2117,7 @@ export class EnvironmentHost {
    */
   async forkSession(
     connectionId: string,
-    input: { sessionId: string; mode?: 'local' | 'worktree'; forkFromMessageId?: string },
+    input: SessionForkRequestInput,
   ): Promise<{ ok: true; sessionId: string; worktreePath?: string } | { ok: false; error: string }> {
     if (!input.sessionId) {
       return { ok: false, error: 'sessionId is required' }
@@ -2181,17 +2129,7 @@ export class EnvironmentHost {
 
   async respondSessionPermission(
     connectionId: string,
-    input: {
-      sessionId: string
-      interactionId: string
-      decision: 'allow' | 'deny' | 'allow_always'
-      /** Multi-launch form edits / feedback (session_agents_confirm). */
-      formAnswers?: Record<string, unknown>
-      /** True when the multi-launch dialog was cancelled. */
-      cancel?: boolean
-      reason?: string
-      selectedSuggestions?: number[]
-    },
+    input: SessionPermissionAnswer,
   ): Promise<void> {
     const { gateway, environmentId } = this.resolveSession(connectionId)
     const control = await this.ensureSessionLease(connectionId, input.sessionId)
@@ -2212,14 +2150,7 @@ export class EnvironmentHost {
 
   async respondSessionQuestion(
     connectionId: string,
-    input: {
-      sessionId: string
-      interactionId: string
-      answers: unknown
-      /** Close the question without answering. */
-      dismiss?: boolean
-      annotations?: Record<string, unknown>
-    },
+    input: SessionQuestionAnswer,
   ): Promise<void> {
     const { gateway, environmentId } = this.resolveSession(connectionId)
     const control = await this.ensureSessionLease(connectionId, input.sessionId)
@@ -2236,12 +2167,7 @@ export class EnvironmentHost {
 
   async respondSessionPlan(
     connectionId: string,
-    input: {
-      sessionId: string
-      interactionId: string
-      decision: 'approve' | 'reject'
-      options?: Record<string, unknown>
-    },
+    input: SessionPlanAnswer,
   ): Promise<void> {
     const { gateway, environmentId } = this.resolveSession(connectionId)
     const control = await this.ensureSessionLease(connectionId, input.sessionId)

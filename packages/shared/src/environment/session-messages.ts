@@ -89,6 +89,8 @@ export interface SessionLoadRequest {
   includeState?: boolean
   before?: number | null
   limit?: number
+  /** Every message, for a window that keeps the whole transcript; `limit` and `before` do not apply. */
+  full?: boolean
   /** Stable message anchor for navigation and catching up a cached transcript. */
   anchorId?: string
   direction?: 'around' | 'before' | 'after'

@@ -34,6 +34,7 @@ export async function handleSessionLoad(payload: unknown, ctx: RpcContext): Prom
   if (p.before != null && typeof p.before !== 'number') return { error: { code: 'invalid_argument', message: 'before must be a non-negative integer' } }
   if (p.limit !== undefined && typeof p.limit !== 'number') return { error: { code: 'invalid_argument', message: 'limit must be a positive integer' } }
   if (p.includeState !== undefined && typeof p.includeState !== 'boolean') return { error: { code: 'invalid_argument', message: 'includeState must be boolean' } }
+  if (p.full !== undefined && typeof p.full !== 'boolean') return { error: { code: 'invalid_argument', message: 'full must be boolean' } }
   if (p.anchorId !== undefined && typeof p.anchorId !== 'string') return { error: { code: 'invalid_argument', message: 'anchorId must be a string' } }
   if (p.direction !== undefined && p.direction !== 'around' && p.direction !== 'before' && p.direction !== 'after') return { error: { code: 'invalid_argument', message: 'direction must be around|before|after' } }
   try {
@@ -42,6 +43,7 @@ export async function handleSessionLoad(payload: unknown, ctx: RpcContext): Prom
       includeState: p.includeState as boolean | undefined,
       before: typeof p.before === 'number' ? p.before : null,
       limit: typeof p.limit === 'number' ? p.limit : undefined,
+      ...(p.full === true ? { full: true } : {}),
       anchorId: typeof p.anchorId === 'string' ? p.anchorId : undefined,
       direction: p.direction as 'around' | 'before' | 'after' | undefined,
     })

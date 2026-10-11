@@ -39,11 +39,10 @@ export function WorktreeForkSection({ sessionId, cwd, onForked }: WorktreeForkSe
     if (busy) return
     setBusy(true)
     setError(null)
-    const result = await window.app.forkSession({
-      sessionId,
-      mode: 'worktree',
-      carryLocalChanges,
-    })
+    const projectPath = useChatStore.getState().activeProject
+    if (!projectPath) { setBusy(false); return }
+    const { forkSession } = await import('@/lib/session-client')
+    const result = await forkSession(projectPath, { sessionId, mode: 'worktree', carryLocalChanges })
     if (result.ok) {
       await useChatStore.getState().switchSession(result.sessionId)
       onForked()

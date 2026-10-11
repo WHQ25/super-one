@@ -63,6 +63,7 @@ const mockWindowAgent = {
   truncateAtCheckpoint: vi.fn().mockResolvedValue(undefined),
   dequeueMessage: vi.fn().mockResolvedValue(true),
   respondToPlanApproval: vi.fn().mockResolvedValue(undefined),
+  activateSession: vi.fn().mockResolvedValue(undefined),
   broadcastSessionSetting: vi.fn().mockResolvedValue(undefined),
 }
 
@@ -71,10 +72,7 @@ const mockWindowApp = {
   trace: vi.fn(),
   activateWorktree: mockActivateWorktree,
   unwatchBashOutput: vi.fn(),
-  loadSessionState: vi.fn().mockResolvedValue(null),
-  resumeSession: vi.fn().mockResolvedValue(null),
   listSessionsForFolderPage: vi.fn().mockResolvedValue([]),
-  renameSession: vi.fn().mockResolvedValue(undefined),
   codexGetAuthStatus: vi.fn().mockResolvedValue({
     mode: 'apiKey', resolvedMode: 'apiKey', hasEnvApiKey: false, hasSessionApiKey: false, isRunning: false,
   }),
@@ -111,6 +109,7 @@ const mockWindowEnvironment = {
   listProjects: vi.fn().mockResolvedValue([]),
   openProject: vi.fn().mockResolvedValue({ projectId: 'remote-project' }),
   updateProject: vi.fn().mockResolvedValue({ projectId: 'p', path: '/p', name: 'p', extraDirs: [] }),
+  renameSession: vi.fn().mockResolvedValue(undefined),
 }
 
 const eventTarget = new EventTarget()
@@ -792,7 +791,7 @@ describe('fetchSessions / fetchSessionsPage', () => {
 })
 
 describe('renameSession', () => {
-  it('forwards to window.app.renameSession + patches the local sessions list', async () => {
+  it('renames on the local environment + patches the local sessions list', async () => {
     setupProject()
     useChatStore.setState((s) => ({
       projectSessions: {
@@ -807,7 +806,7 @@ describe('renameSession', () => {
       },
     }))
     await useChatStore.getState().renameSession('s1', 'new title')
-    expect(mockWindowApp.renameSession).toHaveBeenCalledWith('s1', 'new title')
+    expect(mockWindowEnvironment.renameSession).toHaveBeenCalledWith('local', 's1', 'new title')
     const proj = activeProjectState()
     expect(proj.sessions[0].title).toBe('new title')
     expect(proj.sessions[1].title).toBe('other')
@@ -815,7 +814,7 @@ describe('renameSession', () => {
 
   it('is a no-op when no project is active', async () => {
     await useChatStore.getState().renameSession('s1', 'x')
-    expect(mockWindowApp.renameSession).not.toHaveBeenCalled()
+    expect(mockWindowEnvironment.renameSession).not.toHaveBeenCalled()
   })
 })
 

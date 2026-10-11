@@ -317,6 +317,15 @@ the UI hides them through capabilities.
 ## Progress
 
 - 2026-10-12: Step 0. Baseline counts: `window.agent` 76, node branches 184.
+- 2026-10-12: Step 2. `lib/session-client.ts` renames, pins, hides, removes
+  and forks in every environment, and restores a cold session from
+  `session.load` with `full: true` and the stored settings block
+  (`state.stored`). `window.agent.activateSession` resumes a stored local
+  session and sets the project-active pointer; it replaces `resumeSession`.
+  The matching `window.app` methods and IPC are gone. `remote-session-ops.ts`
+  folds into the client with the step 3/4 node branches it still serves.
+  Counts: `window.agent` 79, node branches 168. CDP: a cold Codex session
+  restores provider, model and its whole transcript; rename and pin round-trip.
 - 2026-10-12: Step 1. `EnvironmentHost.resolveSession` routes `local` to the
   domain protocol; local open/send install no follower; local grants are keyed
   per window and a mutation without a window scope fails in `leaseKey`;

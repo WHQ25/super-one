@@ -26,6 +26,12 @@ vi.mock('../../app', () => ({
 const mockGetLiveSnapshots = vi.fn()
 const mockTrace = vi.fn()
 
+const mockLoadStoredSession = vi.fn().mockResolvedValue(null)
+vi.mock('@/lib/session-client', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/lib/session-client')>(),
+  loadStoredSession: (...args: Parameters<typeof import('@/lib/session-client').loadStoredSession>) => mockLoadStoredSession(...args),
+}))
+
 const mockWindowAgent = {
   getLiveSnapshots: mockGetLiveSnapshots,
   parkSession: vi.fn().mockResolvedValue(undefined),
@@ -38,7 +44,6 @@ const mockWindowAgent = {
 const mockWindowApp = {
   trace: mockTrace,
   saveSessionState: vi.fn().mockResolvedValue(undefined),
-  loadSessionState: vi.fn().mockResolvedValue(null),
   listSessionsForFolder: vi.fn().mockResolvedValue([]),
   codexListModels: vi.fn().mockResolvedValue([]),
   watchBashOutput: vi.fn(),
@@ -154,7 +159,7 @@ describe('session control projection', () => {
 
   it('keeps the worktree a phone-created session runs in even though its row is not persisted yet', async () => {
     // The phone subscribes before its first message; main has no row to read yet.
-    mockWindowApp.loadSessionState.mockResolvedValueOnce(null)
+    mockLoadStoredSession.mockResolvedValueOnce(null)
     useChatStore.getState().handleAgentEvent({
     type: "session_control_changed",
     projectPath: '/p',

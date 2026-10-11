@@ -9,7 +9,7 @@ const mockAgent = {
   respondToPlanApproval: vi.fn().mockResolvedValue(undefined),
   setPermissionMode: vi.fn().mockResolvedValue(true),
   parkSession: vi.fn().mockResolvedValue(undefined),
-  resumeSession: vi.fn().mockResolvedValue(undefined),
+  activateSession: vi.fn().mockResolvedValue(undefined),
   prewarm: vi.fn().mockResolvedValue(undefined),
 }
 

@@ -189,6 +189,24 @@ describe('session control projection', () => {
     expect(session._historyHydrated).toBe(false)
     expect(session.sessionProvider).toBe('claude')
   })
+
+  it('stays locked past the first expiry while main keeps renewing the phone grant', async () => {
+    const { isRemoteSession } = await import('../index')
+    vi.useFakeTimers()
+    try {
+      useChatStore.getState().handleAgentEvent({ type: 'session_control_changed', projectPath: '/p', sessionId: 'sess-R',
+        harnessId: 'claude', lease: sessionControlLeaseFixture('sess-R') } as AgentEvent)
+      // Renewals do not broadcast; only main's `lease: null` unlocks.
+      vi.advanceTimersByTime(120_000)
+      expect(isRemoteSession(useChatStore.getState(), '/p', 'sess-R')).toBe(true)
+
+      useChatStore.getState().handleAgentEvent({ type: 'session_control_changed', projectPath: '/p', sessionId: 'sess-R',
+        harnessId: 'claude', lease: null } as AgentEvent)
+      expect(isRemoteSession(useChatStore.getState(), '/p', 'sess-R')).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
 
 describe('mounted session eviction protection', () => {

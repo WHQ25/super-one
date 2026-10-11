@@ -308,7 +308,9 @@ export function isRemoteSession(state: ChatStore, projectPath: string, sessionId
   if (!sessionId) return false
   if (state.projectSessions[projectPath]?._sessions[sessionId]?.draftRemoteDeviceId) return true
   const lease = state.projectSessions[projectPath]?._sessions[sessionId]?._controlLease
-  if (lease !== undefined) return !!lease && Date.parse(lease.expiresAt) > Date.now() && !lease.delegate?.startsWith('window:')
+  // No local expiry check: renewals extend `expiresAt` without a broadcast, and
+  // main publishes `lease: null` itself when the lease really lapses.
+  if (lease !== undefined) return !!lease && !lease.delegate?.startsWith('window:')
   const ids = state.remoteSessions[projectPath]
   return !!ids && ids.includes(sessionId)
 }

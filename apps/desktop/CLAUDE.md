@@ -21,8 +21,9 @@ test scope, commit rules, and UI story coverage.
 ## Boundaries
 
 - Keep Electron APIs in main/preload; use the existing IPC and environment gateway
-  for renderer operations. `window.environment` is preferred where the capability
-  has migrated; do not add a second permanent local/remote implementation.
+  for renderer operations. Session commands use `lib/session-client.ts` and
+  `window.environment` for every host. Keep presence and realtime voice on
+  `window.agent`; gate optional commands by served methods.
 - Session and terminal control belong to the desktop domain's `ControlLeaseService`.
   `SessionLease` and `TerminalLease` fence authenticated window, phone and controller
   operations by the admitted lease ID and generation, including after awaits.

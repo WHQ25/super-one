@@ -36,6 +36,34 @@ with their tests there. Never patch a desktop shim: `event-reducer/*.ts` files o
 re-export `@superone/chat-core`, and a fix applied there is lost or forks the
 reducer.
 
+## Desktop session commands
+
+The desktop renderer uses `lib/session-client.ts` and the environment gateway
+for local and node sessions. `session-turn.ts` prepares every harness's turn:
+resolve the pending worktree, create the host session with the draft's selections,
+apply successful app grants, build ordered content blocks and prompt suffixes,
+then admit `session.send` with a stable `clientMessageId`. Only confirmed mini-app
+tool registrations and successful desktop-app grants produce authorization
+reminders. Queueing, retry/resend and input-request answers
+use this same pipeline. Codex supplies run/review/compact through `turnKind`;
+assistant text, status, thread identity and token accounting come from events.
+
+An unsent draft keeps picker choices in renderer state. Once the host owns it,
+`session.patchSettings` writes and broadcasts those choices under its control
+lease. Create persists provider identity before a record can be read back, so a
+new Codex or ACP session cannot be mistaken for the database's default harness.
+A send captures its picker choices before activation replay; the turn keeps those
+choices while taking any restored thread identity from the live session.
+Cold restore reads `session.load` with stored settings and the full requested
+transcript; metadata reads do not start a runtime.
+
+Local admission runs through `InProcessRpcClient` and `LocalSessionHost`; local
+events already reach the renderer through its hub and never install a second
+mapped follower. Node open/send use a follower with snapshot/version recovery.
+These delivery adapters feed the same reducer. Session-scoped writes retain
+explicit project/session identity across asynchronous work, independently of the
+currently focused pane.
+
 ## Reducer contract
 
 ```ts

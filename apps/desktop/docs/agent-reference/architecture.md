@@ -38,11 +38,11 @@ Use `useActiveSession<T>(selector)` hook to read the active project's session st
 
 ### IPC API
 
-Two namespaces exposed via preload:
+Four product namespaces exposed via preload:
 
-- **`window.agent`** — AI agent interaction, scoped by `projectPath`: `sendMessage()`, `interrupt()`, `respondToPermission()`, `resetSession()`, `parkSession()`, `activateSession()`, `onAgentEvent()`
-- **`window.app`** — Global operations: folder management, git ops (including worktrees), session DB (CRUD), resource discovery, Claude setup/install, auto-update, Codex integration, plugin/skill/MCP/agent management, window state
-- **`window.environment`** — Multi-environment gateway (local + remote nodes): projects, session list, workspace, terminals, pairing. Prefer this over environment-specific `window.app` paths when both exist.
+- **`window.agent`** — Window presence (`prewarm`, `parkSession`, `activateSession`, `setSessionForeground`, `getLiveSnapshots`), `onAgentEvent`, and realtime voice signaling/timeline. Session commands use the environment client.
+- **`window.app`** — Global operations: folder management, git ops (including worktrees), resource discovery, Claude setup/install, auto-update, Codex integration, plugin/skill/MCP/agent management, window state
+- **`window.environment`** — Local and node session commands, settings, history, optional session operations, composer forms, projects, workspace, terminals, pairing, and resource lookup. `lib/session-client.ts` maps project keys to connection IDs.
 - **`window.miniapp`** — Mini-app lifecycle: `list()`, `open()`, `close()`, `install()`, `uninstall()`, `pack()`, `getInstallMeta()`, tool/fs bridging, dev app detection
 
 All IPC channels are defined as constants in `AgentIpcChannels` (`packages/shared/src/agent-types.ts`), grouped by namespace prefix (`app:`, `agent:`, `codex:`, `plugins:`, `skills:`, `mcp:`, `miniapp:`, `sessions:`, `updater:`, `environment:`).
@@ -62,11 +62,41 @@ details live in [session-links.md](../../../../docs/features/session-links.md).
 | Area | Status |
 |------|--------|
 | Session **list** (always `limit`+`offset`) | ✅ Unified — `environment.listSessions` + renderer `lib/session-list-ops.ts` (no unpaginated dump; search pages until short) |
-| Session create / send / rename / delete / pin / messages | ⏳ Still `app` / `agent` IPC for local; remote partially on environment |
+| Session create / send / settings / interactions / metadata / history | Unified — session client → EnvironmentHost → host RPC |
 | Workspace / git / terminals on remote | ✅ Environment gateway |
-| Workspace / agent turns on local | ⏳ Still desktop SessionManager + raw IPC |
+| Agent turns on local | In-process domain RPC → LocalSessionHost → SessionManager |
+| Optional session operations | Served-method capabilities; desktop serves rewind, turn control, MCP/context, side chats, schedules, housekeeping and composer |
+| Local workspace and resource operations | Existing environment/resource adapters; native implementations stay in main |
 
 When adding or refactoring session (or project/workspace) product surfaces, extend the Environment gateway first and thin-wrap legacy IPC only if needed for back-compat. Do not add new permanent `if (remote) … else app…` branches in the renderer.
+
+### Renderer session client
+
+`lib/session-client.ts` owns session routing; `lib/session-list-ops.ts` owns
+paginated lists. A plain project path targets `local`; a node project key targets
+its connection. Callers retain the session ID captured before an await. Metadata
+edits and reads need no runtime/control grant. Runtime mutations acquire a grant
+for the requesting window and keep that proof through asynchronous admission.
+
+`session-turn.ts` materializes a draft with its selections before sending, applies
+pending worktree choices, grants mentioned apps, and sends one typed request.
+Codex run/review/compact use the same request and event reducer; no renderer
+runner writes assistant state. Local events use the existing desktop hub once;
+node events use a mapped follower. See [chat-core.md](../../../../docs/architecture/chat-core.md#desktop-session-commands).
+
+Optional operations are shared contracts in `session-operations.ts`; hosts
+advertise only implemented methods. Read-only introspection does not resume a
+cold session. Composer admission checks control, while `composer.await` has no
+fixed deadline and survives an expired admission grant. A window releases its
+forms on navigation or destruction.
+
+Schedules belong to their session host. Old desktop-owned node schedules remain
+readable and cancellable offline through the environment boundary; new scheduling
+requires the node's served method. This compatibility path cannot arm or edit a
+schedule and does not mutate a node session. Composer draft mirroring and phone
+controller withdrawal remain window/presence adapters; withdrawal cannot require
+acquiring the phone's own grant. Resource catalogs, files, workspace operations,
+trajectory inspection and realtime voice remain separate from session commands.
 
 ### Remote Control (Mobile) Architecture
 

@@ -165,9 +165,19 @@ Features must not bypass the gateway with environment-specific raw IPC.
 `LocalEnvironmentGateway` delegates to the desktop domain through
 `InProcessRpcClient`, the same dispatcher phones use, so its Session port
 serves the full family against `LocalSessionHost`. A local session lives in
-the desktop's own process, where its `Session` is the read model. The renderer reads both kinds on one path (events into the chat
-reducer); a remote session opens at a node snapshot (§9.2), and its writes
+the desktop's own process, where its `Session` is the read model. The renderer
+commands both hosts through one session client and reads their events through the
+shared reducer; a remote session opens at a node snapshot (§9.2), and its writes
 settle on the session's stream like local ones.
+
+Local commands acquire per-window yielding leases at the IPC boundary; metadata
+and read-only queries remain lease-free. Optional session/list/composer methods
+are declared in shared contracts and advertised by each host's `methods`.
+`LocalSessionHost` supplies the desktop implementations, including ephemeral side
+chats without database rows. The CLI node reports unsupported desktop-only
+operations; UI controls use those capabilities rather than a remote-key gate.
+Local delivery stays on the desktop event hub, while node delivery uses its
+snapshot/event follower, preventing duplicate local deltas.
 
 UI stores use scoped references and never route by a bare project or Session ID:
 

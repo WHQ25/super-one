@@ -67,6 +67,9 @@ export const nativeVoiceMedia: VoiceMediaPort = {
       assertCurrent()
     }
     currentAudioOwner = owner
+    // Android emits its initial device list only during start; bind first so the
+    // route does not stay on the native earpiece default.
+    const audioRoute = bindAutomaticVoiceAudioRoute(InCallManager)
     InCallManager.start({ media: 'audio', auto: true, ringback: '' })
     const subscriptions: VoiceAudioSubscription[] = [
       audio.addListener('onInterruption', event => { if (!signal.aborted && event.owner === owner) onInterruption?.() }),
@@ -78,6 +81,7 @@ export const nativeVoiceMedia: VoiceMediaPort = {
       audioStopped = true
       signal.removeEventListener('abort', stopAudio)
       for (const subscription of subscriptions) subscription.remove()
+      try { audioRoute.close() } catch { /* native audio focus still must be released */ }
       void audio.stop(owner).catch(() => {})
       if (currentAudioOwner === owner) { currentAudioOwner = null; InCallManager.stop() }
     }
@@ -105,7 +109,6 @@ export const nativeVoiceMedia: VoiceMediaPort = {
     try { peer = new RTCPeerConnection() as NativePeer } catch (error) {
       releaseCapture(stream); stopAudio(); throw error
     }
-    const audioRoute = bindAutomaticVoiceAudioRoute(InCallManager)
     const close = () => {
       if (closed) return
       closed = true
@@ -113,7 +116,6 @@ export const nativeVoiceMedia: VoiceMediaPort = {
       stopLevels?.(); stopLevels = undefined
       try { stopCue?.() } catch { /* continue native media teardown */ }
       stopCue = undefined
-      try { audioRoute.close() } catch { /* capture and native audio focus still must be released */ }
       try { peer.close() } catch { /* capture and audio focus still must be released */ }
       releaseCapture(stream)
       remoteTracks.clear()

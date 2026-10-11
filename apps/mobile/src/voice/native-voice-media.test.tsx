@@ -11,6 +11,7 @@ const mockStream = { getTracks: () => mockTracks, getAudioTracks: () => mockTrac
 const mockGetUserMedia = jest.fn(async (_constraints?: unknown) => mockStream)
 const mockPermission = jest.fn(async (_options?: unknown) => true)
 const mockPeerClose = jest.fn()
+const mockInCallStart = jest.fn()
 const mockInCallStop = jest.fn()
 const mockSpeaker = jest.fn()
 const mockCueStart = jest.fn(); const mockCueStop = jest.fn()
@@ -30,7 +31,7 @@ jest.mock('react-native-webrtc', () => ({
     addEventListener() {}; createDataChannel() {}; addTrack() {}
   },
 }))
-jest.mock('react-native-incall-manager', () => ({ __esModule: true, default: { start: jest.fn(), stop: () => mockInCallStop(), startRingback: (source: string) => mockCueStart(source), stopRingback: () => mockCueStop(), setKeepScreenOn: jest.fn(), turnScreenOff: jest.fn(), turnScreenOn: jest.fn(), getIsWiredHeadsetPluggedIn: async () => ({ isWiredHeadsetPluggedIn: false }), setForceSpeakerphoneOn: (enabled: boolean | null) => mockSpeaker(enabled) } }))
+jest.mock('react-native-incall-manager', () => ({ __esModule: true, default: { start: (options: unknown) => mockInCallStart(options), stop: () => mockInCallStop(), startRingback: (source: string) => mockCueStart(source), stopRingback: () => mockCueStop(), setKeepScreenOn: jest.fn(), turnScreenOff: jest.fn(), turnScreenOn: jest.fn(), getIsWiredHeadsetPluggedIn: async () => ({ isWiredHeadsetPluggedIn: false }), setForceSpeakerphoneOn: (enabled: boolean | null) => mockSpeaker(enabled) } }))
 beforeEach(() => { jest.clearAllMocks(); AppState.currentState = 'active'; for (const track of mockTracks) track.enabled = true; mockPermission.mockResolvedValue(true); mockGetUserMedia.mockResolvedValue(mockStream) })
 afterEach(() => { jest.restoreAllMocks() })
 
@@ -159,6 +160,41 @@ it('binds automatic phone routing for the call and removes it on hangup', async 
   const calls = mockSpeaker.mock.calls.length
   DeviceEventEmitter.emit('Proximity', { isNear: true })
   expect(mockSpeaker).toHaveBeenCalledTimes(calls)
+})
+
+const androidDevices = (...available: string[]) => DeviceEventEmitter.emit('onAudioDeviceChanged', { availableAudioDeviceList: JSON.stringify(available) })
+const routeListeners = () => ['onAudioDeviceChanged', 'Proximity'].map(event => DeviceEventEmitter.listenerCount(event))
+
+it.each<{ name: string, devices: string[], speaker: boolean | null }>([
+  { name: 'phone', devices: ['SPEAKER_PHONE', 'EARPIECE'], speaker: true },
+  { name: 'Bluetooth', devices: ['SPEAKER_PHONE', 'EARPIECE', 'BLUETOOTH'], speaker: null },
+])('routes Android $name audio from the device list native start emits before capture resolves', async ({ devices, speaker }) => {
+  androidFixture()
+  jest.spyOn(PermissionsAndroid, 'request').mockResolvedValue(PermissionsAndroid.RESULTS.GRANTED)
+  // Native start emits its only initial device list while JS still awaits capture.
+  mockInCallStart.mockImplementationOnce(() => androidDevices(...devices))
+  const media = await nativeVoiceMedia.open(new AbortController().signal, () => {})
+  try {
+    expect(mockSpeaker).toHaveBeenLastCalledWith(speaker)
+    DeviceEventEmitter.emit('Proximity', { isNear: true })
+    expect(mockSpeaker).toHaveBeenLastCalledWith(speaker === null ? null : false)
+  } finally { media.close() }
+})
+
+it.each(['microphone denial', 'capture failure', 'cancelled capture', 'hangup'] as const)('removes Android route listeners after %s', async outcome => {
+  androidFixture()
+  jest.spyOn(PermissionsAndroid, 'request').mockResolvedValue(PermissionsAndroid.RESULTS.GRANTED)
+  const baseline = routeListeners()
+  const abort = new AbortController()
+  if (outcome === 'microphone denial') mockPermission.mockResolvedValueOnce(false)
+  if (outcome === 'capture failure') mockGetUserMedia.mockRejectedValueOnce(new Error('capture failed'))
+  if (outcome === 'cancelled capture') mockGetUserMedia.mockImplementationOnce(async () => { abort.abort(); return mockStream })
+  const pending = nativeVoiceMedia.open(abort.signal, () => {})
+  if (outcome === 'hangup') (await pending).close()
+  else await expect(pending).rejects.toThrow()
+  expect(routeListeners()).toEqual(baseline)
+  androidDevices('SPEAKER_PHONE', 'EARPIECE'); DeviceEventEmitter.emit('Proximity', { isNear: true })
+  expect(mockSpeaker).not.toHaveBeenCalledWith(false)
 })
 
 it('meters capture and playback on the same native peer and removes the sampling timer on hangup', async () => {

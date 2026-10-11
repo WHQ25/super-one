@@ -13,7 +13,7 @@ import { newMessageId } from '@superone/shared/message-id'
 import { isAgentOutputEvent, withSendFailure, withoutSendFailure, type DuplicateSend } from '@superone/shared/send-failure'
 import { SessionShutdown } from './session-shutdown'
 import { SessionLease, type SessionLeaseAuthority } from './session-lease'
-import { runHostReaction } from './control-context'
+import { hostOwned, runHostReaction } from './control-context'
 import { SessionLiveness } from './session-liveness'
 import { hostPendingInteractions, trackHostInteraction } from './host-pending-interactions'
 import { dispatchBackendSteer } from './dispatch-backend-steer'
@@ -547,7 +547,8 @@ export class Session implements SessionContract {
     this.ephemeral = opts.ephemeral ?? false
     this.firstTurnPreamble = opts.firstTurnPreamble
     this.providerConfig = opts.providerConfig
-    this.backend = opts.backend
+    // Admission checks the caller's grant before each call; the runtime itself is host-owned.
+    this.backend = hostOwned(opts.backend)
     // Idle task-notification flushes must take Session.send / _sendChain — never
     // backend.send alone (races status machine and concurrent user sends).
     this.backend.bindTaskNotificationSend?.(async (content, opts) => {

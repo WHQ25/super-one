@@ -14,6 +14,22 @@ export const currentControlScope = () => scopes.getStore()
 /** Internal host reactions (such as a removed cwd) cannot wait for a frontend's grant. */
 export function runHostReaction<T>(fn: () => T): T { return scopes.exit(fn) }
 
+/**
+ * Every call runs as host work. A runtime spawned inside a frontend request
+ * would otherwise keep that request's scope for its whole life, and its later
+ * callbacks (agent tool calls, hooks) would act with the requester's grant.
+ */
+export function hostOwned<T extends object>(target: T): T {
+  return new Proxy(target, {
+    get(obj, key) {
+      const value = Reflect.get(obj, key, obj)
+      return typeof value === 'function'
+        ? (...args: unknown[]) => runHostReaction(() => Reflect.apply(value, obj, args))
+        : value
+    },
+  })
+}
+
 /** A host boundary supplies the actor; request payloads never choose it. */
 export function runWindowControl<T>(windowId: number, fn: () => T): T {
   return scopes.run({ clientSessionId: `ipc:${windowId}`, proofs: new Map(), acquire: true }, fn)

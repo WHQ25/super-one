@@ -39,7 +39,7 @@ vi.mock('@/stores/miniapp', () => ({
 }))
 
 const mockActivateWorktree = vi.fn().mockResolvedValue({ ok: true, path: '/wt/feature-x' })
-const mockMiniAppAuthorize = vi.fn().mockResolvedValue(undefined)
+const mockMiniAppAuthorize = vi.fn(async (appIds: string[], _projectDir: string, _sessionId: string) => appIds)
 const mockActivateSession = vi.fn().mockResolvedValue(undefined)
 const mockCodexGetAuthStatus = vi.fn().mockResolvedValue({ mode: 'auto', signedIn: false })
 const mockEnvGetSession = vi.fn()
@@ -133,7 +133,7 @@ beforeEach(() => {
   mockActivateWorktree.mockReset().mockResolvedValue({ ok: true, path: '/wt/feature-x' })
   mockEnvCallSession.mockReset().mockResolvedValue({ ok: true })
   mockSetActiveWorktree.mockReset()
-  mockMiniAppAuthorize.mockReset().mockResolvedValue(undefined)
+  mockMiniAppAuthorize.mockReset().mockImplementation(async (appIds: string[]) => appIds)
   mockActivateSession.mockReset().mockResolvedValue(undefined)
   mockCodexGetAuthStatus.mockReset().mockResolvedValue({ mode: 'auto', signedIn: false })
   mockEnvGetSession.mockReset().mockResolvedValue(null)
@@ -1303,6 +1303,29 @@ describe('sendMessageImpl: built-in capability reminder', () => {
 })
 
 describe('sendMessageImpl: miniapp authorize', () => {
+  it.each((['claude', 'codex', 'acp'] as const).flatMap(provider =>
+    ['/proj', 'remote:env-1:/work/app'].map(projectPath => ({ provider, projectPath })),
+  ))('advertises only confirmed mini-app grants for $provider on $projectPath', async ({ provider, projectPath }) => {
+    seedProject(projectPath, 'sid-1', {
+      preferredProvider: provider, sessionProvider: provider,
+      mentions: [
+        { kind: 'miniapp', value: 'granted', displayName: 'Granted App' },
+        { kind: 'miniapp', value: 'missing', displayName: 'Missing App' },
+      ],
+    })
+    mockMiniAppAuthorize.mockResolvedValueOnce(['granted'])
+    await useChatStore.getState().sendMessage('use mentioned apps')
+    expect(sentText()).toContain('appId="granted"')
+    expect(sentText()).not.toContain('appId="missing"')
+  })
+
+  it('adds no authorization reminder when no mini-app was granted', async () => {
+    seedProject('/proj', 'sid-1', { mentions: [{ kind: 'miniapp', value: 'missing', displayName: 'Missing App' }] })
+    mockMiniAppAuthorize.mockResolvedValueOnce([])
+    await useChatStore.getState().sendMessage('use miniapp')
+    expect(sentText()).not.toContain('<superone-miniapp-reminder>')
+  })
+
   it('does not abort the send when miniapp authorize rejects', async () => {
     seedProject('/proj', 'sid-1', {
       mentions: [{ kind: 'miniapp', value: 'app-a', displayName: 'App A' }],

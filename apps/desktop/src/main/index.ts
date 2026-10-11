@@ -45,7 +45,8 @@ import { isPathExposableByApp } from './miniapp/miniapp-path-exposure'
 import { executeMiniAppTool, hasActiveMiniAppHosts, initMiniAppHost, listMiniAppHosts, miniAppHostName, notifyMiniAppContextConsumed, postMiniAppWebviewMessage, releaseMiniAppHost, restartMiniAppHost, setMiniAppHostActionRunner, setMiniAppInputRequestOpener, startMiniAppHost, stopAllMiniAppHosts, stopMiniAppHost, stopMiniAppHostsByAppId } from './miniapp/miniapp-host'
 import { setMiniAppHostReloader } from './mcp/miniapp-dev-debug-tools'
 import { closeAllMiniAppState } from './miniapp/miniapp-state'
-import { prepareMiniAppHostLaunch, type MiniAppHostLaunch } from './miniapp/miniapp-host-launch'
+import { prepareMiniAppHostLaunch } from './miniapp/miniapp-host-launch'
+import { authorizeMiniAppTools } from './miniapp/miniapp-authorization'
 import { previewApp, confirmInstall, cancelInstall, uninstallApp, packApp, getInstallMeta, getPreapproved, getPreapprovedByPath, setPreapproved, setPreapprovedByPath } from './miniapp/miniapp-packager'
 import { previewMcpbBundle, installMcpbBundle, uninstallMcpbBundle, listInstalledMcpb, revealMcpbBundle } from './mcpb/mcpb-installer'
 import { initBrowserAutomation, resolveBrowserAutomation, rejectBrowserAutomation } from './browser/browser-automation-bridge'
@@ -5306,35 +5307,17 @@ function registerIpcHandlers(): void {
     if (manifest.tools?.length) agentService.markSessionNeedsRebuild(sessionId, 'codex')
   })
 
-  ipcMain.handle(AgentIpcChannels.MINIAPP_AUTHORIZE, async (_e, appIds: string[], projectDir: string, sessionId: string) => {
-    log.info('[MINIAPP_AUTHORIZE] called appIds=%j projectDir=%s sessionId=%s', appIds, projectDir, sessionId)
-    if (!Array.isArray(appIds) || appIds.length === 0) {
-      log.warn('[MINIAPP_AUTHORIZE] empty appIds, skip')
-      return
-    }
-    let registeredAny = false
-    for (const appId of appIds) {
-      let launch: MiniAppHostLaunch
-      try {
-        launch = await prepareMiniAppHostLaunch(appId, projectDir)
-      } catch (error) {
-        log.warn('[MINIAPP_AUTHORIZE] cannot start appId=%s: %s', appId, error instanceof Error ? error.message : String(error))
-        continue
-      }
-      const { manifest, basePath, args } = launch
-      startMiniAppHost(args)
-      registerAppTemplates(projectDir, appId, manifest.templates)
-      registerAppTools(sessionId, projectDir, appId, manifest.tools ?? [])
-      loadPreapprovedTools(appId, basePath)
-      if (manifest.tools?.length) {
-        registeredAny = true
-        log.info('[MINIAPP_AUTHORIZE] registered %d tools for appId=%s sessionId=%s', manifest.tools.length, appId, sessionId)
-      } else {
-        log.info('[MINIAPP_AUTHORIZE] manifest has no tools for appId=%s', appId)
-      }
-    }
-    if (registeredAny) agentService.markSessionNeedsRebuild(sessionId, 'codex')
-  })
+  ipcMain.handle(AgentIpcChannels.MINIAPP_AUTHORIZE, (_e, appIds: string[], projectDir: string, sessionId: string) =>
+    authorizeMiniAppTools(appIds, projectDir, sessionId, {
+      prepare: prepareMiniAppHostLaunch,
+      start: startMiniAppHost,
+      register: (appId, { manifest, basePath }) => {
+        registerAppTemplates(projectDir, appId, manifest.templates)
+        registerAppTools(sessionId, projectDir, appId, manifest.tools ?? [])
+        loadPreapprovedTools(appId, basePath)
+      },
+      markNeedsRebuild: () => agentService.markSessionNeedsRebuild(sessionId, 'codex'),
+    }))
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_UNAUTHORIZE, async (_e, appIds: string[], _projectDir: string, sessionId: string) => {
     if (!Array.isArray(appIds) || appIds.length === 0) return

@@ -770,7 +770,7 @@ interface MiniAppAPI {
   list(projectDir?: string): Promise<MiniAppEntry[]>
   open(appId: string, projectDir: string, sessionId: string): Promise<void>
   close(appId: string, projectDir: string, sessionId: string): Promise<void>
-  authorize(appIds: string[], projectDir: string, sessionId: string): Promise<void>
+  authorize(appIds: string[], projectDir: string, sessionId: string): Promise<string[]>
   unauthorize(appIds: string[], projectDir: string, sessionId: string): Promise<void>
   startDrag(projectDir: string, appId: string, paths: string[], iconOpts?: { png: ArrayBuffer; scaleFactor?: number }): void
   showItemInFolder(projectDir: string, appId: string, path: string): void

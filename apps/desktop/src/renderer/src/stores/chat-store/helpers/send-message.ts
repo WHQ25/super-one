@@ -200,34 +200,7 @@ export async function sendMessageImpl(
     )
   }
 
-  let miniAppReminderSuffix = ''
   const miniAppMentions = mentions.filter((m) => m.kind === 'miniapp')
-  if (miniAppMentions.length > 0) {
-    const { useMiniAppStore } = await import('../../miniapp')
-    const apps = useMiniAppStore.getState().apps
-    const lines: string[] = [
-      'User mentioned these mini-app(s); their MCP tools are authorized — prefer them when relevant:',
-    ]
-    for (const m of miniAppMentions) {
-      const app = apps.find((a) => a.id === m.value)
-      const manifest = app?.manifest
-      const name = manifest?.name ?? m.displayName
-      const appId = app?.id ?? m.value
-      const tools = manifest?.tools ?? []
-      // Fixed surface: miniapp_list / miniapp_call. Agents discover tools via miniapp_list.
-      if (effectiveProvider === 'codex' && tools.length > 0) {
-        const toolNames = tools.map((t) => t.name).join(', ')
-        lines.push(
-          `- "${name}" (appId="${appId}"): call mcp__superone.miniapp_call with tool in [${toolNames}] (use miniapp_list first if unsure)`,
-        )
-      } else {
-        lines.push(
-          `- "${name}" (appId="${appId}"): use mcp__superone__miniapp_call with this appId; call miniapp_list for tool names/schemas`,
-        )
-      }
-    }
-    miniAppReminderSuffix = `\n\n<superone-miniapp-reminder>\n${lines.join('\n')}\n</superone-miniapp-reminder>`
-  }
   let sessionReminderSuffix = ''
   const sessionMentions = mentions.filter((m) => m.kind === 'session' && m.value)
   if (sessionMentions.length > 0) {
@@ -619,13 +592,36 @@ export async function sendMessageImpl(
     ?? undefined
 
   // Authorize @-mentioned mini-app tools for this session BEFORE dispatching the turn.
-  const miniAppAuthorizations = mentions
-    .filter((m) => m.kind === 'miniapp')
-    .map((m) => m.value)
+  const miniAppAuthorizations = miniAppMentions.map((m) => m.value)
   if (miniAppAuthorizations.length > 0 && resolvedSessionId) {
     try {
-      await window.miniapp.authorize(miniAppAuthorizations, projectPath, resolvedSessionId)
-      finalContent += miniAppReminderSuffix
+      const granted = new Set(await window.miniapp.authorize(miniAppAuthorizations, projectPath, resolvedSessionId))
+      if (granted.size > 0) {
+        const { useMiniAppStore } = await import('../../miniapp')
+        const apps = useMiniAppStore.getState().apps
+        const lines: string[] = [
+          'User mentioned these mini-app(s); their MCP tools are authorized — prefer them when relevant:',
+        ]
+        for (const m of miniAppMentions.filter((mention) => granted.has(mention.value))) {
+          const app = apps.find((a) => a.id === m.value)
+          const manifest = app?.manifest
+          const name = manifest?.name ?? m.displayName
+          const appId = app?.id ?? m.value
+          const tools = manifest?.tools ?? []
+          // Fixed surface: miniapp_list / miniapp_call. Agents discover tools via miniapp_list.
+          if (getScopedPerSession(get(), writeScope.target).sessionProvider === 'codex' && tools.length > 0) {
+            const toolNames = tools.map((t) => t.name).join(', ')
+            lines.push(
+              `- "${name}" (appId="${appId}"): call mcp__superone.miniapp_call with tool in [${toolNames}] (use miniapp_list first if unsure)`,
+            )
+          } else {
+            lines.push(
+              `- "${name}" (appId="${appId}"): use mcp__superone__miniapp_call with this appId; call miniapp_list for tool names/schemas`,
+            )
+          }
+        }
+        finalContent += `\n\n<superone-miniapp-reminder>\n${lines.join('\n')}\n</superone-miniapp-reminder>`
+      }
     } catch (err) {
       console.error('[sendMessage] miniapp authorize failed:', err)
     }

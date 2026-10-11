@@ -2288,7 +2288,7 @@ const miniappAPI = {
     ipcRenderer.invoke(AgentIpcChannels.MINIAPP_CLOSE, appId, projectDir, sessionId),
 
   authorize: (appIds: string[], projectDir: string, sessionId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_AUTHORIZE, appIds, projectDir, sessionId),
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_AUTHORIZE, appIds, projectDir, sessionId) as Promise<string[]>,
 
   unauthorize: (appIds: string[], projectDir: string, sessionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.MINIAPP_UNAUTHORIZE, appIds, projectDir, sessionId),

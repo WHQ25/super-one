@@ -253,7 +253,8 @@ fingerprint move, say that OTA is unblocked again from this build onward.
 | Need to re-point Android at an older build (rollback) | `gh workflow run release-mobile.yml -f platform=android -f android_profile=<alpha or internal: the build's own profile> -f build_id=<older EAS build id> -f dry_run=false` — `platform=android` only: `build_id` is refused by the iOS job. Skips the EAS queue and rewrites that track's `latest.json` at that build; a profile mismatch is refused. Phones already on a newer `versionCode` stay there. iOS has no equivalent; TestFlight keeps every build |
 | Stable Android publish fails with `stable desktop is <X>` | The tree requires a desktop newer than the released stable (`MIN_PHONE_DESKTOP_VERSION`). Ship it on `alpha`, or cut the stable desktop first |
 | iOS job fails at `Check inputs` with `cannot be submitted to TestFlight` | `ios_profile` was `internal`. Nothing was queued; re-dispatch with the default |
-| iOS job fails at `Check inputs` with `no TestFlight link` / `no submit.<profile>.ios.ascAppId` | That app is not wired yet: set `TESTFLIGHT_URL_ALPHA` in `release-mobile.yml` / `submit.alpha.ios.ascAppId` in `apps/mobile/eas.json` |
+| iOS job fails at `Check inputs` with `no TestFlight link` / `no submit.<profile>.ios.ascAppId` | That app is not wired yet: set `TESTFLIGHT_URL_STABLE` in `release-mobile.yml` / `submit.<profile>.ios.ascAppId` in `apps/mobile/eas.json` |
+| iOS alpha warns `no TestFlight link for the alpha app yet` | Expected until its external group has a public link: the build is submitted, only `mobile/ios/alpha/latest.json` is skipped. Set `TESTFLIGHT_URL_ALPHA` once the link exists |
 | Wrong `min_supported_build_code` published | Re-dispatch with `build_id=<same build>` and the corrected number — lowering is allowed; that is how a floor set too high is undone |
 
 ---

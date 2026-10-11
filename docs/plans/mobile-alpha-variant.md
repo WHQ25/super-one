@@ -43,10 +43,10 @@ rollback. The phone needs the desktop's split.
 - [x] iOS: "SuperOne Remote Alpha" app in App Store Connect
       (`6821560971`, `submit.alpha.ios.ascAppId`); alpha icon with the desktop's
       ALPHA badge.
-- [ ] iOS: first build credentials with `eas credentials -p ios` (alpha
-      profile, interactive); add an external TestFlight group (Beta App Review
-      once) and set `TESTFLIGHT_URL_ALPHA` in `release-mobile.yml` to its
-      public link.
+- [x] iOS: first alpha build (36) built locally with credentials and
+      submitted; alpha iOS CI runs without a public link, skipping its manifest.
+- [ ] iOS: once Beta App Review passes, enable the external group's public
+      link and set `TESTFLIGHT_URL_ALPHA` in `release-mobile.yml`.
 - [ ] Incident: re-point stable Android `latest.json` to build 35
       (`release-mobile.yml` `build_id`, `android_profile=internal`) until stable
       desktop 0.73.0 ships; then the stable cut publishes both stable apps.

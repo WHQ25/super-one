@@ -134,8 +134,10 @@ env:
   # here rather than being retyped each release. App Store Connect ->
   # TestFlight -> the external group -> Public Link.
   TESTFLIGHT_URL_STABLE: 'https://testflight.apple.com/join/3VVS4EsT'
-  # Empty until the SuperOne Alpha app has a public link; alpha iOS runs fail
-  # at `Check inputs` until then.
+  # Empty until the SuperOne Alpha app has a public link (its external group
+  # needs one build through Beta App Review first). Until then alpha iOS runs
+  # still build and submit, but publish no manifest: TestFlight updates its
+  # testers itself, and a manifest without a link is one the app rejects.
   TESTFLIGHT_URL_ALPHA: ''
 
 jobs:
@@ -428,7 +430,10 @@ jobs:
           fi
           if [ "${TRACK}" = alpha ]; then DEFAULT_URL="${TESTFLIGHT_URL_ALPHA}"; else DEFAULT_URL="${TESTFLIGHT_URL_STABLE}"; fi
           TESTFLIGHT_URL="${INPUT_TESTFLIGHT_URL:-${DEFAULT_URL}}"
-          if [ -z "${TESTFLIGHT_URL}" ]; then
+          if [ -z "${TESTFLIGHT_URL}" ] && [ "${TRACK}" = alpha ]; then
+            echo "::warning::no TestFlight link for the alpha app yet; building and submitting without publishing its manifest"
+            echo "PUBLISH_MANIFEST=false" >> "$GITHUB_ENV"
+          elif [ -z "${TESTFLIGHT_URL}" ]; then
             echo "::error::no TestFlight link for the ${TRACK} app; set TESTFLIGHT_URL_${TRACK^^} in this workflow"
             exit 1
           fi
@@ -453,11 +458,11 @@ jobs:
                 ;;
             esac
           fi
-          echo "TestFlight link: ${TESTFLIGHT_URL}"
+          echo "TestFlight link: ${TESTFLIGHT_URL:-(none)}"
           echo "TESTFLIGHT_URL=${TESTFLIGHT_URL}" >> "$GITHUB_ENV"
 
           case "${TESTFLIGHT_URL}" in
-            https://testflight.apple.com/*) ;;
+            ''|https://testflight.apple.com/*) ;;
             *) echo "::error::testflight_url must be a https://testflight.apple.com/ link"; exit 1 ;;
           esac
 
@@ -520,6 +525,7 @@ jobs:
             --non-interactive
 
       - name: Publish manifest to R2
+        if: ${{ env.PUBLISH_MANIFEST != 'false' }}
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}

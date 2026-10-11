@@ -49,11 +49,11 @@ export const mockWindowApp = {
   onAutomationEvent: vi.fn(() => () => {}),
   getAppSettings: vi.fn(async () => ({ miniAppOrder: {} })),
   getMediaServerPort: vi.fn(async () => 0),
-  listScheduledSends: vi.fn(async () => []),
-  onScheduledSendChanged: vi.fn(() => () => {}),
 }
 
 export const mockEnvironment = {
+  callSessionList: vi.fn(async () => []),
+  onScheduledSendChanged: vi.fn(() => () => {}),
   // Partial of the real type rather than a hand-written shape: these fixtures
   // set only the fields a case exercises, but field names and value types are
   // still checked against what the sidebar actually receives.

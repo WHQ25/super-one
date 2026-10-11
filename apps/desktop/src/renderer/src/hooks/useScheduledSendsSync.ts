@@ -15,7 +15,7 @@ export function useScheduledSendsSync(): void {
   useEffect(() => {
     const { load, apply } = useScheduledSendsStore.getState()
     void load()
-    return window.app.onScheduledSendChanged((event) => {
+    return window.environment.onScheduledSendChanged((event) => {
       apply(event.sessionId, event.scheduled)
       // The draft was this session's only representation while it waited. Once
       // the text has actually gone out the session speaks for itself, and the

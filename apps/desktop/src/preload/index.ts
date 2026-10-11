@@ -7,7 +7,7 @@ import { AgentIpcChannels, type AgentEvent, type NativeContextMenuItemSpec, type
 import type { McpbInstallRequest } from '@superone/shared/mcpb-types'
 import type { MobileAppDownloads } from '@superone/shared/mobile-updates'
 import type { TerminalCommandRule } from '@superone/shared/terminal-command-rules'
-import type { AttachmentOriginalStatus, ControllerPairingEvent, NodePairingEvent, DshPluginInstallSource, StageAttachmentOriginalRequest, FileEntryKind, PinnedSessionEntry, ScheduledSend, ScheduledSendPatch, ScheduledSendSessionInit, WindowFoldStep, WindowMiniMode } from '@superone/shared/agent-types'
+import type { AttachmentOriginalStatus, ControllerPairingEvent, NodePairingEvent, DshPluginInstallSource, StageAttachmentOriginalRequest, FileEntryKind, PinnedSessionEntry, ScheduledSend, WindowFoldStep, WindowMiniMode } from '@superone/shared/agent-types'
 import type { GitMentionCapabilities, GitMentionRefKind, GitMentionRefsResult } from '@superone/shared/git-mention-query'
 import type { ConsumerBinding, ConsumerId, Credential, EndpointOverride, Platform, ServiceEndpoint } from '@superone/shared/platform-registry'
 import type { DraftListEntry, DraftUpsertRequest, PairRemoteInput, ProjectSnapshot, RepairPairingInput } from '@superone/shared/environment'
@@ -158,6 +158,20 @@ ipcRenderer.on(
 )
 
 const environmentAPI = {
+  onScheduledSendChanged: (
+    callback: (event: { sessionId: string; scheduled: ScheduledSend | null; delivered: boolean }) => void,
+  ) => {
+    const handler = (
+      _e: Electron.IpcRendererEvent,
+      event: { sessionId: string; scheduled: ScheduledSend | null; delivered: boolean },
+    ) => callback(event)
+    ipcRenderer.on(AgentIpcChannels.SCHEDULED_SEND_CHANGED, handler)
+    return () => {
+      ipcRenderer.removeListener(AgentIpcChannels.SCHEDULED_SEND_CHANGED, handler)
+    }
+  },
+  callSessionList: <M extends import('@superone/shared/environment/session-operations').SessionListOperationMethod>(connectionId: string, method: M, input: import('@superone/shared/environment/session-operations').SessionListOperationMethods[M]['input']) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_CALL_SESSION_LIST, connectionId, method, input) as Promise<import('@superone/shared/environment/session-operations').SessionListOperationMethods[M]['result']>,
   ...mediaComposerAPI,
   onMcpAppEscape: (callback: (event: { url: string }) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, data: { url: string }) => callback(data)
@@ -2139,25 +2153,6 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_LOAD_MESSAGES, projectPath, sessionId, limit, cursor),
   deleteSessionsOlderThan: (folderPath: string, cutoffDate: string): Promise<string[]> =>
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_DELETE_OLDER, folderPath, cutoffDate),
-  getScheduledSend: (sessionId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.SCHEDULED_SEND_GET, sessionId),
-  listScheduledSends: () => ipcRenderer.invoke(AgentIpcChannels.SCHEDULED_SEND_LIST),
-  setScheduledSend: (sessionId: string, patch: ScheduledSendPatch, init?: ScheduledSendSessionInit) =>
-    ipcRenderer.invoke(AgentIpcChannels.SCHEDULED_SEND_SET, sessionId, patch, init),
-  clearScheduledSend: (sessionId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.SCHEDULED_SEND_CLEAR, sessionId),
-  onScheduledSendChanged: (
-    callback: (event: { sessionId: string; scheduled: ScheduledSend | null; delivered: boolean }) => void,
-  ) => {
-    const handler = (
-      _e: Electron.IpcRendererEvent,
-      event: { sessionId: string; scheduled: ScheduledSend | null; delivered: boolean },
-    ) => callback(event)
-    ipcRenderer.on(AgentIpcChannels.SCHEDULED_SEND_CHANGED, handler)
-    return () => {
-      ipcRenderer.removeListener(AgentIpcChannels.SCHEDULED_SEND_CHANGED, handler)
-    }
-  },
   getComposerDrafts: () =>
     ipcRenderer.invoke(AgentIpcChannels.COMPOSER_DRAFTS_GET) as Promise<Record<string, Record<string, unknown>>>,
   publishComposerDraft: (sessionId: string, patch: Record<string, unknown>) =>

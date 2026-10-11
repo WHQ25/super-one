@@ -108,6 +108,7 @@ export interface DesktopDomainDeps {
   phoneMethods?: { dispatch: RpcExtensionDispatch; methods: ReadonlySet<string> }
   sessionEdits?: LocalSessionEdits
   sideChats?: LocalSessionHostDeps['sideChats']
+  scheduledSends?: LocalSessionHostDeps['scheduledSends']
   /** Bind local terminal reads and IPC mutations to this domain's one lease authority. */
   bindLocalControl?: (authority: TerminalLeaseAuthority) => void
 }
@@ -180,7 +181,7 @@ export class DesktopDomain {
         unservedMethods: DESKTOP_UNSERVED_METHODS,
         subscriptionUsage: { claudeAccounts: claudeUsageAccounts, log: usageLog },
       }
-      const localSessions = new LocalSessionHost({ sessions: deps.sessions, events, rows: deps.rows, edits: deps.sessionEdits, drafts: deps.drafts, sideChats: deps.sideChats, projectPath: (id) => deps.projects.get(id)?.path ?? null, projectId: (path) => deps.projects.list().find((project) => project.path === path)?.projectId ?? null, environmentId: identity.environmentId, restore: deps.restore })
+      const localSessions = new LocalSessionHost({ sessions: deps.sessions, events, rows: deps.rows, edits: deps.sessionEdits, drafts: deps.drafts, sideChats: deps.sideChats, scheduledSends: deps.scheduledSends, projectPath: (id) => deps.projects.get(id)?.path ?? null, projectId: (path) => deps.projects.list().find((project) => project.path === path)?.projectId ?? null, environmentId: identity.environmentId, restore: deps.restore })
       deps.bindLocalControl?.({ environmentId: identity.environmentId, leases })
       return new DesktopDomain(db, identity, auth, leases, sessions, localSessions, recorder, unbindSessions, paths.nodeHome, context, { terminals: deps.terminals, drafts: deps.drafts, beforeDraftOpen: deps.beforeDraftOpen, phoneMethods: deps.phoneMethods, projectEdits: deps.projectEdits, topicNotices: deps.topicNotices, rpcRouter: deps.rpcRouter })
     } catch (err) {

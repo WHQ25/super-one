@@ -169,6 +169,10 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     return this.client.rpc(method, payload)
   }
 
+  callSessionList<M extends import('@superone/shared/environment/session-operations').SessionListOperationMethod>(method: M, payload: Record<string, unknown>): Promise<import('@superone/shared/environment/session-operations').SessionListOperationMethods[M]['result']> {
+    return this.client.rpc(method, payload)
+  }
+
   renewHostActionClaim(input: { actionId: string; claimToken: string; ttlMs?: number }): Promise<{ claimExpiresAt: number; version: number }> {
     return this.client.rpc<{ claimExpiresAt: number; version: number }>('session.renewHostActionClaim', input)
   }

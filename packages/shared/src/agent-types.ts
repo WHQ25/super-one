@@ -4380,10 +4380,6 @@ export const AgentIpcChannels = {
   SESSIONS_DELETE_OLDER: 'sessions:delete-older',
   SESSIONS_LIST_PINNED: 'sessions:list-pinned',
   SESSIONS_CHANGED: 'sessions:changed',
-  SCHEDULED_SEND_GET: 'sessions:scheduled-send-get',
-  SCHEDULED_SEND_LIST: 'sessions:scheduled-send-list',
-  SCHEDULED_SEND_SET: 'sessions:scheduled-send-set',
-  SCHEDULED_SEND_CLEAR: 'sessions:scheduled-send-clear',
   SCHEDULED_SEND_CHANGED: 'sessions:scheduled-send-changed',
 
   // Additional directories
@@ -4716,6 +4712,7 @@ export const AgentIpcChannels = {
   /** Change a session's durable settings (modes, model, effort, provider), local or remote. */
   ENVIRONMENT_PATCH_SESSION_SETTINGS: 'environment:patchSessionSettings',
   ENVIRONMENT_CALL_SESSION: 'environment:callSession',
+  ENVIRONMENT_CALL_SESSION_LIST: 'environment:callSessionList',
   /** Take control of a remote session back after its host released it (Reconnect). */
   ENVIRONMENT_RECLAIM_SESSION_CONTROL: 'environment:reclaimSessionControl',
   /** One op on a session's mod surface (`@superone/shared/mod-ui`), local or remote. */

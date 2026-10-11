@@ -248,3 +248,26 @@ describe('side chats on the local environment endpoint', () => {
     expect(localRoute().domain.localSessions.servedOperations.has('session.sideChatStart')).toBe(false)
   })
 })
+
+describe('scheduled sends on the local environment endpoint', () => {
+  it('reads without control and fences changes on the named session', async () => {
+    const bySession = new Map<string, import('@superone/shared/agent-types').ScheduledSend>()
+    const { host, own } = localRoute({ scheduledSends: {
+      get: (id) => bySession.get(id) ?? null,
+      list: () => [...bySession.values()],
+      set: (id, patch) => {
+        own.lease.assertMutation()
+        const row = { sessionId: id, sendAt: Date.now() + 60_000, armed: false, source: 'manual' as const, message: null, ...patch }
+        bySession.set(id, row); return row
+      },
+      clear: (id) => { own.lease.assertMutation(); bySession.delete(id) },
+    } })
+    expect(await host.callSession('local', 'own', 'session.scheduledSend.get', {})).toBeNull()
+    await runWindowControl(7, () => host.callSession('local', 'own', 'session.scheduledSend.set', { patch: { armed: true, message: 'later' } }))
+    expect(await host.callSessionList('local', 'sessionList.scheduledSends', {})).toMatchObject([{ sessionId: 'own', message: 'later' }])
+    await expect(runWindowControl(7, () => host.callSession('local', 'own', 'session.scheduledSend.set', { patch: { sendAt: NaN } }))).rejects.toMatchObject({ code: 'invalid_argument' })
+    await expect(host.callSession('local', 'own', 'session.scheduledSend.clear', {})).rejects.toThrow('local session control needs a window')
+    await runWindowControl(7, () => host.callSession('local', 'own', 'session.scheduledSend.clear', {}))
+    expect(await host.callSessionList('local', 'sessionList.scheduledSends', {})).toEqual([])
+  })
+})

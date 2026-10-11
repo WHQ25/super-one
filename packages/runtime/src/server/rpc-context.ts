@@ -268,6 +268,7 @@ type SessionRuntimeInput<K extends keyof SessionRuntime> = SessionRuntime[K] ext
 export interface SessionHostPort {
   /** Optional session operations, omitted by hosts that cannot implement them. */
   readonly servedOperations?: ReadonlySet<string>
+  callListOperation?(method: string, input: Record<string, unknown>, clientSessionId: string): unknown | Promise<unknown>
   callOperation?(sessionId: string, method: string, input: Record<string, unknown>): unknown | Promise<unknown>
   create(input: SessionRuntimeInput<'create'>): NodeSessionRecord
   /** Desktop-native creation, including worktree and promoted-draft choices. */

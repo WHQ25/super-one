@@ -5,7 +5,7 @@ import { unsupportedMethodError } from '@superone/runtime/server'
 import type { NodeSessionSettings } from '@superone/runtime/session'
 import type { DesktopSessionRow } from '../db-remote-controlled-sessions'
 import type { Session } from '../session/types'
-import type { SessionForkRequest, SessionForkResult, SideChatStartResult } from '@superone/shared/agent-types'
+import type { SessionForkRequest, SessionForkResult, SideChatStartResult, ScheduledSend, ScheduledSendPatch } from '@superone/shared/agent-types'
 import { runFencedSessionControl, runHostReaction } from '../session/control-context'
 import { DesktopSessionReads, type DesktopSessionReadsDeps } from './desktop-session-reads'
 import { admitDesktopSessionSend, applyDesktopSessionSettings, desktopSendRequest, respondDesktopPermission, respondDesktopQuestion, respondDesktopPlan } from './desktop-session-mutations'
@@ -32,6 +32,12 @@ export interface LocalSessionHostDeps extends DesktopSessionReadsDeps<DesktopSes
     start(parentSessionId: string, assertControl: () => void): Promise<SideChatStartResult>
     close(sessionId: string): Promise<boolean>
   }
+  scheduledSends?: {
+    get(sessionId: string): ScheduledSend | null
+    set(sessionId: string, patch: ScheduledSendPatch): ScheduledSend | null
+    clear(sessionId: string): void
+    list(): ScheduledSend[]
+  }
 }
 
 /** Families with no local meaning; phones use the controller's Host Actions on routed sessions. */
@@ -52,15 +58,19 @@ export class LocalSessionHost extends DesktopSessionReads<DesktopSessionRow> imp
   get servedOperations(): ReadonlySet<string> {
     return new Set(['session.contextUsage', 'session.mcpStatus', 'session.mcpAuthenticate', 'session.stopTask', 'session.startQueued', 'session.reset', 'session.rewind', 'session.previewRewind', 'session.truncateAtCheckpoint',
       ...(this.deps.sideChats ? ['session.sideChatStart', 'session.sideChatClose'] : []),
+      ...(this.deps.scheduledSends ? ['session.scheduledSend.get', 'session.scheduledSend.set', 'session.scheduledSend.clear', 'sessionList.scheduledSends'] : []),
     ])
   }
 
   async callOperation(sessionId: string, method: string, input: Record<string, unknown>): Promise<unknown> {
+    if (method === 'session.scheduledSend.get') return this.deps.scheduledSends!.get(sessionId)
     if (method === 'session.contextUsage') return this.deps.sessions.getSession(sessionId)?.getContextUsage() ?? null
     if (method === 'session.mcpStatus') return this.deps.sessions.getSession(sessionId)?.getMcpServerStatus() ?? []
     const session = method === 'session.previewRewind' ? this.live(sessionId) : this.mutation(sessionId)
     const checkpointId = input.checkpointId as string
     switch (method) {
+      case 'session.scheduledSend.set': return this.deps.scheduledSends!.set(sessionId, input.patch as ScheduledSendPatch)
+      case 'session.scheduledSend.clear': this.deps.scheduledSends!.clear(sessionId); return null
       case 'session.sideChatStart': return this.deps.sideChats!.start(sessionId, () => session.lease.assertMutation())
       case 'session.sideChatClose': return this.deps.sideChats!.close(sessionId)
       case 'session.mcpAuthenticate': return session.authenticateMcp(input.serverName as string)
@@ -85,6 +95,11 @@ export class LocalSessionHost extends DesktopSessionReads<DesktopSessionRow> imp
       case 'session.truncateAtCheckpoint': session.truncateMessagesAt(checkpointId); return true
       default: throw unsupportedMethodError(method)
     }
+  }
+
+  callListOperation(method: string): ScheduledSend[] {
+    if (method === 'sessionList.scheduledSends') return this.deps.scheduledSends!.list()
+    throw unsupportedMethodError(method)
   }
 
   private edits(): LocalSessionEdits {

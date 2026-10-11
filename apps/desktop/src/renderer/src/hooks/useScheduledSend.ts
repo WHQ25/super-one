@@ -1,5 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ImageAttachment, ScheduledSend, ScheduledSendPatch, ScheduledSendSessionInit } from '@superone/shared/agent-types'
+import { useCallback, useEffect, useState } from 'react'
+import type { ImageAttachment, ScheduledSend, ScheduledSendPatch } from '@superone/shared/agent-types'
+import { callSession } from '@/lib/session-client'
+import { useEnvironmentServes } from './use-environment-serves'
+import { toast } from 'sonner'
 
 /** What the composer queues: its text and the attachments sent with it. */
 export interface ScheduledDraft {
@@ -44,20 +47,15 @@ export interface ScheduledSendControls {
  * The row deliberately does not live in the chat store: the case it exists for —
  * waiting out a rate-limit window — is routinely hours long, so it has to outlive
  * the pane, the window and the app run. Main owns it; this hook is the
- * read-once-then-subscribe mirror, and every mutation is a fire-and-forget IPC
+ * read-once-then-subscribe mirror, and every mutation is an environment call
  * whose result arrives back through that same subscription rather than through
  * local state.
  */
 export function useScheduledSend(
   sessionId: string | null | undefined,
-  /**
-   * How to persist this session if arming finds it has never been sent in, and
-   * a remote session's turn options. Called at write time through a ref, so a
-   * changing project root does not re-subscribe and every write carries what is
-   * true at that moment.
-   */
-  getSessionInit?: (sessionId: string) => ScheduledSendSessionInit | null,
+  projectPath: string | null | undefined,
 ): ScheduledSendControls {
+  const served = useEnvironmentServes(projectPath, 'session.scheduledSend.get')
   const [scheduled, setScheduled] = useState<ScheduledSend | null>(null)
   const [loading, setLoading] = useState(true)
   const [deliveredNonce, setDeliveredNonce] = useState(0)
@@ -67,13 +65,13 @@ export function useScheduledSend(
     // Holding it across the switch would block sending in a session that has
     // nothing queued, and could write the old row's time onto the new one.
     setScheduled(null)
-    if (!sessionId) {
+    if (!sessionId || !projectPath || !served) {
       setLoading(false)
       return
     }
     setLoading(true)
     let alive = true
-    void window.app.getScheduledSend(sessionId).then(
+    void callSession(projectPath, sessionId, 'session.scheduledSend.get', {}).then(
       (row) => {
         if (!alive) return
         setScheduled(row ?? null)
@@ -81,7 +79,7 @@ export function useScheduledSend(
       },
       () => { if (alive) setLoading(false) },
     )
-    const unsub = window.app.onScheduledSendChanged((event) => {
+    const unsub = window.environment.onScheduledSendChanged((event) => {
       if (event.sessionId !== sessionId) return
       setScheduled(event.scheduled)
       if (event.delivered) setDeliveredNonce((n) => n + 1)
@@ -90,17 +88,14 @@ export function useScheduledSend(
       alive = false
       unsub()
     }
-  }, [sessionId])
-
-  const initRef = useRef(getSessionInit)
-  initRef.current = getSessionInit
+  }, [sessionId, projectPath, served])
 
   const patch = useCallback(
     (next: ScheduledSendPatch, target = sessionId) => {
-      if (!target) return
-      void window.app.setScheduledSend(target, next, initRef.current?.(target) ?? undefined)
+      if (!target || !projectPath || !served) return
+      void callSession(projectPath, target, 'session.scheduledSend.set', { patch: next }).catch(reportError)
     },
-    [sessionId],
+    [sessionId, projectPath, served],
   )
 
   const schedule = useCallback(
@@ -116,9 +111,11 @@ export function useScheduledSend(
   const setSendAt = useCallback((sendAt: number) => patch({ sendAt }), [patch])
 
   const clear = useCallback(() => {
-    if (!sessionId) return
-    void window.app.clearScheduledSend(sessionId)
-  }, [sessionId])
+    if (!sessionId || !projectPath || !served) return
+    void callSession(projectPath, sessionId, 'session.scheduledSend.clear', {}).catch(reportError)
+  }, [sessionId, projectPath, served])
 
   return { scheduled, loading, deliveredNonce, schedule, setDraft, setArmed, setSendAt, clear }
 }
+
+function reportError(error: unknown): void { toast.error(error instanceof Error ? error.message : String(error)) }

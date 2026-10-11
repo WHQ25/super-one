@@ -144,8 +144,9 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
   // The queued send lives in main, so the composer only ever sees it through IPC.
   const scheduledSend = {
     row: null as null | Record<string, unknown>,
-    set: vi.fn(async () => null),
-    clear: vi.fn(async () => undefined),
+    get: vi.fn(async (): Promise<unknown> => scheduledSend.row),
+    set: vi.fn(async (_sessionId: string, _patch: unknown) => null),
+    clear: vi.fn(async (_sessionId: string) => undefined),
     listeners: new Set<(event: unknown) => void>(),
   }
 
@@ -153,6 +154,8 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
 
   return { chatActions, activeSessionState, editorState, useChatStore, mentionPopup, sessionScope, goalState, scheduledSend, providerSelection }
 })
+
+vi.mock('@/lib/session-scheduled-send', () => ({ prepareScheduledSession: vi.fn(async () => 'session-1') }))
 
 vi.mock('@tiptap/react', () => {
   const stripHtml = (value: string) => value.replace(/<[^>]+>/g, '')
@@ -484,7 +487,19 @@ beforeEach(() => {
   sessionScope.value = null
   goalState.threadId = undefined
   goalState.callSession.mockReset()
-  Object.assign(window.environment, { callSession: goalState.callSession })
+  scheduledSend.get.mockReset().mockImplementation(async () => scheduledSend.row)
+  Object.assign(window.environment, {
+    callSession: (connection: string, sessionId: string, method: string, input: { patch?: unknown }) => {
+      if (method === 'session.scheduledSend.get') return scheduledSend.get()
+      if (method === 'session.scheduledSend.set') return scheduledSend.set(sessionId, input.patch)
+      if (method === 'session.scheduledSend.clear') return scheduledSend.clear(sessionId)
+      return goalState.callSession(connection, sessionId, method, input)
+    },
+    onScheduledSendChanged: (cb: (event: unknown) => void) => {
+      scheduledSend.listeners.add(cb)
+      return () => scheduledSend.listeners.delete(cb)
+    },
+  })
   toastMock.error.mockReset()
   scheduledSend.row = null
   scheduledSend.listeners.clear()
@@ -495,13 +510,6 @@ beforeEach(() => {
       getMediaServerPort: vi.fn(async () => 0),
       // Spreading `window.app` drops the shared proxy defaults (a proxy over an
       // empty target enumerates nothing), so these have to be named explicitly.
-      getScheduledSend: vi.fn(async () => scheduledSend.row),
-      setScheduledSend: scheduledSend.set,
-      clearScheduledSend: scheduledSend.clear,
-      onScheduledSendChanged: (cb: (event: unknown) => void) => {
-        scheduledSend.listeners.add(cb)
-        return () => scheduledSend.listeners.delete(cb)
-      },
     },
   })
   mentionPopup.props = null
@@ -615,7 +623,7 @@ describe('ChatInput', () => {
     const { rerender } = render(<ChatInput />)
     // The composer will not send until it knows whether this session has a
     // queued send; in the app that is one IPC round trip.
-    await waitFor(() => expect(window.app.getScheduledSend).toHaveBeenCalled())
+    await waitFor(() => expect(scheduledSend.get).toHaveBeenCalled())
 
     const send = document.querySelector('button .lucide-arrow-up')?.closest('button')
     expect(send).toBeTruthy()
@@ -645,7 +653,7 @@ describe('ChatInput', () => {
     editorState.text = '/goal Ship login'
 
     render(<ChatInput />)
-    await waitFor(() => expect(window.app.getScheduledSend).toHaveBeenCalled())
+    await waitFor(() => expect(scheduledSend.get).toHaveBeenCalled())
 
     const send = document.querySelector('button .lucide-arrow-up')?.closest('button')
     fireEvent.click(send!)
@@ -662,7 +670,7 @@ describe('ChatInput', () => {
     editorState.text = '/goal'
 
     render(<ChatInput />)
-    await waitFor(() => expect(window.app.getScheduledSend).toHaveBeenCalled())
+    await waitFor(() => expect(scheduledSend.get).toHaveBeenCalled())
     fireEvent.click(document.querySelector('button .lucide-arrow-up')!.closest('button')!)
     expect(screen.getByTestId('goal-indicator')).toHaveAttribute('data-composing', 'true')
 
@@ -695,7 +703,7 @@ describe('ChatInput', () => {
     editorState.text = '/goal'
 
     const { rerender } = render(<ChatInput />)
-    await waitFor(() => expect(window.app.getScheduledSend).toHaveBeenCalled())
+    await waitFor(() => expect(scheduledSend.get).toHaveBeenCalled())
     const send = document.querySelector('button .lucide-arrow-up')!.closest('button')!
     fireEvent.click(send)
     expect(screen.getByTestId('goal-indicator')).toHaveAttribute('data-composing', 'true')
@@ -719,7 +727,7 @@ describe('ChatInput', () => {
     render(<ChatInput />)
     // The composer will not send until it knows whether this session has a
     // queued send; in the app that is one IPC round trip.
-    await waitFor(() => expect(window.app.getScheduledSend).toHaveBeenCalled())
+    await waitFor(() => expect(scheduledSend.get).toHaveBeenCalled())
 
     const send = document.querySelector('button .lucide-arrow-up')?.closest('button')
     fireEvent.click(send!)
@@ -785,7 +793,7 @@ describe('ChatInput', () => {
     editorState.text = '/goal all tests pass'
 
     render(<ChatInput />)
-    await waitFor(() => expect(window.app.getScheduledSend).toHaveBeenCalled())
+    await waitFor(() => expect(scheduledSend.get).toHaveBeenCalled())
 
     const send = document.querySelector('button .lucide-arrow-up')?.closest('button')
     fireEvent.click(send!)
@@ -801,7 +809,7 @@ describe('ChatInput', () => {
     editorState.text = '/goal clear'
 
     render(<ChatInput />)
-    await waitFor(() => expect(window.app.getScheduledSend).toHaveBeenCalled())
+    await waitFor(() => expect(scheduledSend.get).toHaveBeenCalled())
 
     const send = document.querySelector('button .lucide-arrow-up')?.closest('button')
     fireEvent.click(send!)
@@ -818,7 +826,7 @@ describe('ChatInput', () => {
     render(<ChatInput />)
     // The composer will not send until it knows whether this session has a
     // queued send; in the app that is one IPC round trip.
-    await waitFor(() => expect(window.app.getScheduledSend).toHaveBeenCalled())
+    await waitFor(() => expect(scheduledSend.get).toHaveBeenCalled())
 
     // Footer send control is the ArrowUp icon button (last icon-button in the composer).
     const send = document.querySelector('button .lucide-arrow-up')?.closest('button')
@@ -1459,7 +1467,7 @@ describe('ChatInput scheduled send', () => {
 
   it('sends immediately while nothing is queued', async () => {
     const { rerender } = render(<ChatInput />)
-    await waitFor(() => expect(window.app.getScheduledSend).toHaveBeenCalledWith('session-1'))
+    await waitFor(() => expect(scheduledSend.get).toHaveBeenCalled())
     typeInEditor('ship it')
     rerender(<ChatInput />)
 
@@ -1478,13 +1486,10 @@ describe('ChatInput scheduled send', () => {
     rerender(<ChatInput />)
     fireEvent.click(screen.getByRole('button', { name: /schedule for/i }))
 
-    // The third argument is how main persists a session nobody has sent in yet
-    // — without it the schedule has no row to hang off and the arm is a no-op.
-    expect(scheduledSend.set).toHaveBeenCalledWith(
+    await waitFor(() => expect(scheduledSend.set).toHaveBeenCalledWith(
       'session-1',
       { armed: true, message: 'finish the migration', attachments: null, sendAt: SEND_AT },
-      { projectPath: '/project', harnessId: 'claude', worktreePath: null },
-    )
+    ))
     expect(chatActions.sendMessage).not.toHaveBeenCalled()
   })
 
@@ -1549,7 +1554,6 @@ describe('ChatInput scheduled send', () => {
       () => expect(scheduledSend.set).toHaveBeenCalledWith(
         'session-1',
         { message: 'second draft' },
-        expect.anything(),
       ),
       { timeout: 2000 },
     )
@@ -1557,9 +1561,7 @@ describe('ChatInput scheduled send', () => {
 
   it('will not send before it knows whether this session has something queued', async () => {
     let resolveRead: (row: unknown) => void = () => {}
-    Object.assign(window.app, {
-      getScheduledSend: vi.fn(() => new Promise((resolve) => { resolveRead = resolve })),
-    })
+    scheduledSend.get.mockImplementation(() => new Promise((resolve) => { resolveRead = resolve }))
     const { rerender } = render(<ChatInput />)
     typeInEditor('send this now')
     rerender(<ChatInput />)
@@ -1657,7 +1659,7 @@ describe('ChatInput scheduled send', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /cancel scheduled send/i }))
 
-    expect(scheduledSend.set).toHaveBeenCalledWith('session-1', { armed: false }, expect.anything())
+    expect(scheduledSend.set).toHaveBeenCalledWith('session-1', { armed: false })
     expect(editorState.text).toBe('finish the migration')
   })
 

@@ -23,7 +23,7 @@ export const useScheduledSendsStore = create<ScheduledSendsState>((set) => ({
 
   load: async () => {
     try {
-      const rows = await window.app.listScheduledSends()
+      const rows = await window.environment.callSessionList('local', 'sessionList.scheduledSends', {})
       set({ bySession: Object.fromEntries(rows.map((row) => [row.sessionId, row])) })
     } catch {
       // Nothing to show is the right fallback: the sidebar simply keeps its

@@ -102,9 +102,8 @@ import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
 import { buildSessionProjectOptions, mentionQueryAllowsSpaces } from './session-mention-query'
 import { chatInputAPI } from './chat-input-api'
 import { isUnsentSession } from '@/stores/chat-store/helpers/session-liveness'
-import { applyPendingWorktree, ensureHostSession, scheduledTurnOptions } from '@/stores/chat-store/helpers/session-turn'
-import { createSendWriteScope } from '@/stores/chat-store/helpers/send-write-scope'
-import { parseRemoteProjectKey } from '@/lib/remote-project-key'
+import { prepareScheduledSession } from '@/lib/session-scheduled-send'
+import { useEnvironmentServes } from '@/hooks/use-environment-serves'
 import { callSession } from '@/lib/session-client'
 import { useResolvedProviderId } from './model-selector/useSelectorProviders'
 
@@ -330,25 +329,8 @@ export function ChatInput({
     const isCodexPlanMode = activeProviderForResources === 'codex' && selectedCodexCollaborationMode === 'plan'
     const hasContent = text.trim().length > 0 || attachments.length > 0 || browserAnnotations.length > 0 || mentions.length > 0 || hasPasteChips
     const codexDirsPendingNextTurn = activeProviderForResources === 'codex' && isStreaming && additionalDirsDirty
-    // A session gets its database row from its first send, so arming a schedule
-    // before then has nothing to hang off — this tells main how to persist it.
-    // A remote-node session instead carries the turn options a send would now,
-    // since the desktop makes that send on its behalf later.
     const sessionProject = sessionScope?.projectPath ?? activeProject
-    const remoteScheduleKey = useMemo(() => (sessionProject ? parseRemoteProjectKey(sessionProject) : null), [sessionProject])
-    const getScheduledSendInit = useCallback(
-      (sessionId: string) => {
-        if (!sessionProject) return null
-        const init = {
-          projectPath: sessionProject,
-          harnessId: activeProviderForResources,
-          worktreePath: fileRoot && fileRoot !== sessionProject ? fileRoot : null,
-        }
-        if (!remoteScheduleKey) return init
-        return { ...init, remoteTurn: scheduledTurnOptions(useChatStore.getState(), sessionProject, sessionId) }
-      },
-      [sessionProject, remoteScheduleKey, activeProviderForResources, fileRoot],
-    )
+    const scheduleServed = useEnvironmentServes(sessionProject, 'session.scheduledSend.set')
     // The default message ("Continue") only makes sense against a conversation
     // that exists. In a session nobody has sent in, an empty composer has
     // nothing to schedule — and arming it would create a session holding a
@@ -358,7 +340,7 @@ export function ChatInput({
     const {
       scheduled, loading: scheduledLoading, deliveredNonce, schedule: scheduleSend,
       setDraft: setScheduledDraft, setArmed: setArmedScheduled, setSendAt, clear: clearScheduled,
-    } = useScheduledSend(displayedSessionId, getScheduledSendInit)
+    } = useScheduledSend(displayedSessionId, sessionProject)
     // Any queued send blocks an immediate one, answered or not. Under a usage
     // limit an immediate send only bounces off the same wall, and under an armed
     // schedule it would empty the composer that schedule mirrors, sending the
@@ -1074,22 +1056,16 @@ export function ChatInput({
     /**
      * Queue what is in the composer — without taking it away.
      *
-     * A remote composer first makes its session real on the node, exactly as a
-     * first send would: the desktop can only send there later to a session the
-     * node knows, and that may replace the draft id the schedule is written to.
+     * The composer first creates its host session with the same selections as a
+     * first send. The resulting id is the one the schedule belongs to.
      */
     const handleArmScheduled = useCallback((sendAt: number) => {
       const draft = scheduledDraft()
-      if (!sessionProject || !remoteScheduleKey) {
-        scheduleSend(draft, sendAt)
-        return
-      }
-      const scope = createSendWriteScope(useChatStore.setState, useChatStore.getState, sessionProject, sessionScope ?? undefined)
-      void applyPendingWorktree(sessionProject, scope)
-        .then((ready) => ready ? ensureHostSession(useChatStore.setState, useChatStore.getState, sessionProject, scope) : null)
+      if (!sessionProject || !scheduleServed) return
+      void prepareScheduledSession(sessionProject, sessionScope ?? undefined)
         .then((sid) => { if (sid) scheduleSend(draft, sendAt, sid) })
         .catch((err: unknown) => toast.error(err instanceof Error ? err.message : String(err)))
-    }, [scheduledDraft, scheduleSend, sessionProject, remoteScheduleKey, sessionScope])
+    }, [scheduledDraft, scheduleSend, sessionProject, scheduleServed, sessionScope])
 
     /**
      * Cancel. Nothing to restore: the draft was never consumed, it stayed in the
@@ -2288,7 +2264,7 @@ export function ChatInput({
                 softCancel={harnessUsesSoftCancel(activeProviderForResources)}
               />
             )}
-            <ScheduledSendButton
+            {scheduleServed && <ScheduledSendButton
               scheduled={scheduled}
               canSend={canSend}
               waitingFor={originalsUploading ? t('chat.attachmentOriginal.waiting') : undefined}
@@ -2298,7 +2274,7 @@ export function ChatInput({
               onDisarm={handleDisarmScheduled}
               onDismiss={clearScheduled}
               onSetSendAt={setSendAt}
-            />
+            />}
             {activeProviderForResources === 'codex' && activeProject && displayedSessionId && (
               <CodexRealtimeVoiceButton
                 projectPath={activeProject}

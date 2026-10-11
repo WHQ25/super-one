@@ -1,7 +1,10 @@
-import type { RewindFilesResult, PermissionMode, SandboxInfo, ContextUsageInfo, McpServerInfo, SideChatStartResult } from '../agent-types'
+import type { RewindFilesResult, PermissionMode, SandboxInfo, ContextUsageInfo, McpServerInfo, SideChatStartResult, ScheduledSend, ScheduledSendPatch } from '../agent-types'
 
 /** Optional session families: a host advertises only the operations it implements. */
 export interface SessionOperationMethods {
+  'session.scheduledSend.get': { input: Record<string, never>; result: ScheduledSend | null }
+  'session.scheduledSend.set': { input: { patch: ScheduledSendPatch }; result: ScheduledSend | null }
+  'session.scheduledSend.clear': { input: Record<string, never>; result: null }
   'session.sideChatStart': { input: Record<string, never>; result: SideChatStartResult }
   'session.sideChatClose': { input: Record<string, never>; result: boolean }
   'session.contextUsage': { input: Record<string, never>; result: ContextUsageInfo | null }
@@ -16,9 +19,16 @@ export interface SessionOperationMethods {
 }
 export type SessionOperationMethod = keyof SessionOperationMethods
 export const SESSION_OPERATION_METHODS: ReadonlySet<string> = new Set([
+  'session.scheduledSend.get', 'session.scheduledSend.set', 'session.scheduledSend.clear',
   'session.sideChatStart', 'session.sideChatClose',
   'session.contextUsage', 'session.mcpStatus', 'session.mcpAuthenticate',
   'session.stopTask', 'session.startQueued', 'session.reset',
   'session.rewind', 'session.previewRewind', 'session.truncateAtCheckpoint',
 ])
-export const SESSION_OPERATION_READS: ReadonlySet<string> = new Set(['session.previewRewind', 'session.contextUsage', 'session.mcpStatus'])
+export const SESSION_OPERATION_READS: ReadonlySet<string> = new Set(['session.scheduledSend.get', 'session.previewRewind', 'session.contextUsage', 'session.mcpStatus'])
+
+export interface SessionListOperationMethods {
+  'sessionList.scheduledSends': { input: Record<string, never>; result: ScheduledSend[] }
+}
+export type SessionListOperationMethod = keyof SessionListOperationMethods
+export const SESSION_LIST_OPERATION_METHODS: ReadonlySet<string> = new Set(['sessionList.scheduledSends'])

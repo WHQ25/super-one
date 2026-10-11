@@ -77,7 +77,7 @@ describe('DraftsSection', () => {
 
   it('cancels the queued send when the draft it mirrors is deleted', async () => {
     const clearScheduledSend = vi.fn()
-    Object.assign(window.app, { clearScheduledSend })
+    Object.assign(window.environment, { callSession: clearScheduledSend })
     useDraftsStore.setState({ byConnection: { local: [draft('d1', 'first draft')] } })
     useScheduledSendsStore.setState({
       bySession: {
@@ -95,7 +95,7 @@ describe('DraftsSection', () => {
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'common.delete' })) })
 
     // Otherwise the schedule keeps mirroring text the user just threw away.
-    expect(clearScheduledSend).toHaveBeenCalledWith('sess-d1')
+    expect(clearScheduledSend).toHaveBeenCalledWith('local', 'sess-d1', 'session.scheduledSend.clear', {})
   })
 
   it('positions every row by slot rather than by flow', () => {

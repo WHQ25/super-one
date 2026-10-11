@@ -1,5 +1,5 @@
 import { OPERATION_SCOPES } from '@superone/shared/environment'
-import { SESSION_OPERATION_METHODS, SESSION_OPERATION_READS } from '@superone/shared/environment/session-operations'
+import { SESSION_OPERATION_METHODS, SESSION_OPERATION_READS, SESSION_LIST_OPERATION_METHODS } from '@superone/shared/environment/session-operations'
 import { asRecord, mapThrown, requireScopes } from './rpc-helpers'
 import type { RpcContext, RpcResult } from './rpc-context'
 
@@ -18,6 +18,17 @@ async function callOperation(payload: unknown, ctx: RpcContext, method: string):
     if (method === 'session.rewind' || method === 'session.previewRewind' || method === 'session.truncateAtCheckpoint') requiredText(p, 'checkpointId')
     if (method === 'session.mcpAuthenticate') requiredText(p, 'serverName')
     if (method === 'session.stopTask') requiredText(p, 'taskId')
+    if (method === 'session.scheduledSend.set') {
+      const patch = asRecord(p.patch)
+      if (p.patch === null || typeof p.patch !== 'object' || Array.isArray(p.patch)
+        || (patch.sendAt !== undefined && (typeof patch.sendAt !== 'number' || !Number.isFinite(patch.sendAt)))
+        || (patch.message !== undefined && patch.message !== null && typeof patch.message !== 'string')
+        || (patch.armed !== undefined && typeof patch.armed !== 'boolean')
+        || (patch.attachments !== undefined && patch.attachments !== null && !Array.isArray(patch.attachments))
+        || (patch.source !== undefined && !['manual', 'rate_limit'].includes(String(patch.source)))) {
+        throw Object.assign(new Error('invalid scheduled send patch'), { code: 'invalid_argument' })
+      }
+    }
     if (method === 'session.reset' && p.newSessionId !== undefined) {
       requiredText(p, 'newSessionId')
       if (p.newSessionId === sessionId) throw Object.assign(new Error('reset needs a new session id'), { code: 'invalid_argument' })
@@ -35,4 +46,16 @@ async function callOperation(payload: unknown, ctx: RpcContext, method: string):
   } catch (error) { return mapThrown(error) }
 }
 
-export const SESSION_OPERATION_HANDLERS = Object.fromEntries([...SESSION_OPERATION_METHODS].map(method => [method, callOperation]))
+async function callListOperation(payload: unknown, ctx: RpcContext, method: string): Promise<RpcResult> {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readSession)
+  if (denied) return denied
+  const p = asRecord(payload)
+  try {
+    return { result: await ctx.sessions!.callListOperation!(method, p, ctx.client.clientSessionId) }
+  } catch (error) { return mapThrown(error) }
+}
+
+export const SESSION_OPERATION_HANDLERS = Object.fromEntries([
+  ...[...SESSION_OPERATION_METHODS].map(method => [method, callOperation]),
+  ...[...SESSION_LIST_OPERATION_METHODS].map(method => [method, callListOperation]),
+])

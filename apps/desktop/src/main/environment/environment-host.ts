@@ -4,6 +4,7 @@ import type { SessionStreamFrame, TopicSubscribeInput } from '@superone/shared/e
 import type { RemoteTopicStream } from './remote-topic-followers'
 import { notifySessionClosed } from '../session-list-watch'
 import { currentControlScope } from '../session/control-context'
+import { SESSION_LIST_OPERATION_METHODS, type SessionListOperationMethod, type SessionListOperationMethods } from '@superone/shared/environment/session-operations'
 import { MOD_UI_MUTATING_OPS, MOD_UI_UNAVAILABLE, type ModUiOp, type ModUiRequest } from '@superone/shared/mod-ui'
 import { parseMessageDisplay } from '@superone/shared/message-display'
 import { remoteSuperoneHome, remoteNodePort } from './remote-data-path'
@@ -2059,6 +2060,11 @@ export class EnvironmentHost {
     const { gateway } = this.resolveSession(connectionId)
     const control = SESSION_CALL_READS.has(method) ? {} : await this.ensureSessionLease(connectionId, sessionId)
     return gateway.callSession(method, { ...input, sessionId, ...control })
+  }
+
+  async callSessionList<M extends SessionListOperationMethod>(connectionId: string, method: M, input: SessionListOperationMethods[M]['input']): Promise<SessionListOperationMethods[M]['result']> {
+    if (!SESSION_LIST_OPERATION_METHODS.has(method)) throw Object.assign(new Error('invalid session list operation'), { code: 'invalid_argument' })
+    return this.resolveSession(connectionId).gateway.callSessionList(method, input)
   }
 
   async interruptSession(connectionId: string, sessionId: string): Promise<void> {

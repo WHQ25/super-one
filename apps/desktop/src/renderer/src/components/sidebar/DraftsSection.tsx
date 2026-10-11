@@ -103,8 +103,8 @@ const DraftRow = memo(function DraftRow({
           // Deleting the draft retires the promise with it — the schedule
           // mirrors this text, so leaving it armed would send a message the
           // user just threw away.
-          void discardDraft(connectionId, draft.id).then(() => {
-            if (scheduled) void window.app.clearScheduledSend(scheduled.sessionId)
+          void discardDraft(connectionId, draft.id).then(async () => {
+            if (scheduled) await window.environment.callSession(connectionId, scheduled.sessionId, 'session.scheduledSend.clear', {})
             discardDeletedDraft(draft.id)
           }).catch((error) => toast.error(error instanceof Error ? error.message : 'Could not delete draft'))
         }}

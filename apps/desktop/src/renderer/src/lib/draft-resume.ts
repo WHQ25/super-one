@@ -228,6 +228,7 @@ export async function resumeDraft(
         draft.originSessionId
           ? useChatStore.getState().projectSessions[projectKey]?._sessions[draft.originSessionId]
           : undefined,
+        projectKey,
       )
       const newSid = draft.originSessionId && reuseOrigin
         ? draft.originSessionId

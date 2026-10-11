@@ -316,6 +316,13 @@ the UI hides them through capabilities.
 
 ## Progress
 
+- 2026-10-12: Step 5 scheduled sends. Reads and fenced writes use the session
+  host; a separate session-list operation loads sidebar schedules. New drafts
+  materialize through the first-turn creation helper before arming, retaining
+  their selections. The window change subscription moved to `environment`,
+  unsupported hosts hide the control, and draft resume/deletion use the same
+  route. Scheduler, endpoint and renderer tests and node/web checks pass.
+
 - 2026-10-12: Step 5 side-chat family. Start/close are optional fenced RPCs.
   A fork rechecks the parent's control before creating its ephemeral child;
   the child's created-resource grant allows inherited settings. Renderer

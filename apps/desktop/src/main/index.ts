@@ -246,7 +246,7 @@ import { getInstallId } from './install-id'
 import { reportMainException, reportProcessGone } from './crash-telemetry'
 import { systemDownloadDir } from './agent/browser-download-store'
 import type { DetailTarget } from '@superone/shared/environment/detail'
-import type { AppSettings, AppSettingsPatch, TerminalEvent, GitInfoResult, ScheduledSendPatch, ScheduledSendSessionInit, ThemeMode, WindowFoldStep, WindowMiniMode } from '@superone/shared/agent-types'
+import type { AppSettings, AppSettingsPatch, TerminalEvent, GitInfoResult, ThemeMode, WindowFoldStep, WindowMiniMode } from '@superone/shared/agent-types'
 import type { ModUiOp, ModUiRequest } from '@superone/shared/mod-ui'
 import { windowControlIpc } from './session/control-context'
 import type { SessionCallMethod, SessionCallMethods, SessionCreateRequest, SessionForkRequestInput, SessionPermissionAnswer, SessionPlanAnswer, SessionQuestionAnswer, SessionSendRequest, SessionSettingsPatch } from '@superone/shared/environment/session-requests'
@@ -1070,6 +1070,7 @@ async function applyNodeHostSettings(settings: AppSettings): Promise<void> {
   agentService.setRoutedSessionRelease(sessionId => phoneRpcRouter!.releaseSessions(sessionId))
   const phonePorts: NonNullable<Parameters<typeof apply>[2]>['phonePorts'] = {
       rpcRouter: phoneRpcRouter,
+      scheduledSends: scheduledSendService,
       topicNotices: createDesktopTopicNotices(topics, topicRecovery, localEnvironmentId, (topic, snapshot) => topic.kind === 'sessionList'
         ? { ...(snapshot as object), activities: agentService.remoteSessionActivity() } : snapshot),
       beforeDraftOpen: (draftId) => agentService.remotePrepareDraftOpen(draftId),
@@ -2244,6 +2245,10 @@ function registerIpcHandlers(): void {
       return getEnvironmentHost().patchSessionSettings(connectionId, sessionId, patch)
     },
   )
+  sessionIpc.handle(AgentIpcChannels.ENVIRONMENT_CALL_SESSION_LIST, async (_e, connectionId: string, method: import('@superone/shared/environment/session-operations').SessionListOperationMethod, input: Record<string, never>) => {
+    const { getEnvironmentHost } = await import('./environment')
+    return getEnvironmentHost().callSessionList(connectionId, method, input)
+  })
   sessionIpc.handle(
     AgentIpcChannels.ENVIRONMENT_CALL_SESSION,
     async (_e, connectionId: string, sessionId: string, method: SessionCallMethod, input: SessionCallMethods[SessionCallMethod]['input']) => {
@@ -5535,21 +5540,6 @@ function registerIpcHandlers(): void {
     const ok = dbDeleteAutomation(id)
     if (ok) notifyAutomationsListChanged(existing?.projectPath)
     return ok
-  })
-
-  ipcMain.handle(AgentIpcChannels.SCHEDULED_SEND_GET, (_e, sessionId: string) =>
-    scheduledSendService.get(sessionId))
-
-  ipcMain.handle(AgentIpcChannels.SCHEDULED_SEND_LIST, () => scheduledSendService.list())
-
-  ipcMain.handle(
-    AgentIpcChannels.SCHEDULED_SEND_SET,
-    (_e, sessionId: string, patch: ScheduledSendPatch, init?: ScheduledSendSessionInit) =>
-      scheduledSendService.set(sessionId, patch, init),
-  )
-
-  ipcMain.handle(AgentIpcChannels.SCHEDULED_SEND_CLEAR, (_e, sessionId: string) => {
-    scheduledSendService.clear(sessionId)
   })
 
   ipcMain.handle(AgentIpcChannels.AUTOMATIONS_RUN_NOW, async (_e, id: string) => {

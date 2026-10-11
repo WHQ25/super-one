@@ -1,16 +1,12 @@
 import { isSessionLink } from '@superone/shared/session-link'
 import { SessionChip, sessionChipLabel } from '@superone/chat-view/presenters/SessionChip'
-import { cn } from '@superone/ui/lib/utils'
-import { useIsDark } from '@/hooks/use-is-dark'
 import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
-import { openBrowserTab } from '@/components/activity/activity-panel-api'
 import { DraggableFileIcon } from '@/components/chat/DraggableFileIcon'
 import { useFileChipActions } from '@/components/chat/file-chip-context-menu'
 import { useAppStore, selectEffectiveProjectRoot } from '@/stores/app'
 import { formatLineRange, hasTextSelection, resolveProjectFileHref } from '@/lib/file-link'
-import { requestOpenExternalLink } from '@/lib/external-link'
 import { fileChipLabel } from '@superone/chat-view/presenters/file-chip-label'
-import { LinkFaviconPresenter, type LinkFaviconPorts } from '@superone/chat-view/presenters/LinkFavicon'
+import { WebLink } from './link-preview/WebLink'
 
 export { fileChipLabel }
 
@@ -37,15 +33,6 @@ export function InlineFileChip({ name, filePath, lineNumber, endLine }: { name: 
   )
 }
 
-const faviconPorts: LinkFaviconPorts = {
-  resolveFavicon: (href, isDark) => window.app.resolveFavicon(href, isDark),
-}
-
-function LinkFavicon({ href }: { href: string }) {
-  const isDark = useIsDark()
-  return <LinkFaviconPresenter href={href} isDark={isDark} ports={faviconPorts} />
-}
-
 export function FileLink(props: React.AnchorHTMLAttributes<HTMLAnchorElement>) {
   const { href: rawHref, children, className, ...rest } = props
   if (rawHref && isSessionLink(rawHref)) return <SessionChip href={rawHref} label={sessionChipLabel(children)} />
@@ -69,26 +56,7 @@ export function FileLink(props: React.AnchorHTMLAttributes<HTMLAnchorElement>) {
       )
     }
   }
-  return (
-    <a
-      href={rawHref}
-      className={cn(className, 'no-underline hover:underline hover:decoration-1 hover:underline-offset-2')}
-      {...rest}
-      onClick={(e) => {
-        if (!rawHref) return
-        e.preventDefault()
-        const openInApp = window.app.platform === 'darwin' ? e.metaKey : e.ctrlKey
-        if (openInApp) {
-          openBrowserTab(rawHref)
-          return
-        }
-        requestOpenExternalLink(rawHref)
-      }}
-    >
-      {rawHref && <LinkFavicon href={rawHref} />}
-      {children}
-    </a>
-  )
+  return <WebLink href={rawHref} className={className} {...rest}>{children}</WebLink>
 }
 
 export const fileLinkComponents = { a: FileLink }

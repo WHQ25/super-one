@@ -22,6 +22,7 @@ import { McpMentionSentHover } from './McpMentionSent'
 import { useFileMentionActions } from './MentionChip'
 import { PdfPreview } from './PdfPreview'
 import { QuoteCodeBody } from './QuoteCodeBody'
+import { WebLink } from './link-preview/WebLink'
 
 function DesktopMentionIcon({ kind, value, label }: { kind: string; value: string; label: string }) {
   if (kind === 'miniapp') return <MiniAppIcon appId={value} />
@@ -104,6 +105,7 @@ const DESKTOP_USER_BUBBLE_PORTS: UserBubblePorts = {
   FileMention: DesktopFileMention,
   McpMention: McpMentionSentHover,
   ChipCard: ChipHoverCard,
+  WebLink,
   copyText: tryCopy,
   copyImage: (attachment) => tryCopyImage(attachment.mimeType, attachment.base64),
   AttachmentViewer: DesktopAttachmentViewer,

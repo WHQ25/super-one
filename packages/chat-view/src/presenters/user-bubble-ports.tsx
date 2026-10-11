@@ -54,6 +54,8 @@ export interface UserBubblePorts {
   McpMention: ComponentType<{ value: string; children: ReactNode }>
   /** A chip's preview card where the host has hover; a touch host passes `children` through. */
   ChipCard: ComponentType<ChipCardProps>
+  /** A web link in the bubble's text, opened (and, with hover, previewed) as the host's chat links are. */
+  WebLink: ComponentType<{ href: string; className?: string; children: ReactNode }>
   copyText: (text: string) => Promise<boolean>
   /** Copies an image attachment; absent where the host cannot. */
   copyImage?: (attachment: ImageAttachment) => Promise<boolean>
@@ -92,6 +94,7 @@ export const DEFAULT_USER_BUBBLE_PORTS: UserBubblePorts = {
   FileMention: ({ chip }) => chip({}),
   McpMention: ({ children }) => children,
   ChipCard: ({ children }) => children,
+  WebLink: ({ href, className, children }) => <a href={href} className={className} target="_blank" rel="noreferrer">{children}</a>,
   copyText: async (text) => {
     try {
       await navigator.clipboard.writeText(text)

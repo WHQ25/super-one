@@ -168,6 +168,8 @@ vi.mock('@tiptap/react', () => {
   const createEditor = () => {
     const editor = {
       setEditable: vi.fn(),
+      on: vi.fn(),
+      off: vi.fn(),
       storage: {
         slashDecoration: { slashCommands: [] as unknown[] },
         promptSuggestion: { suggestion: null as string | null },
@@ -1677,16 +1679,30 @@ describe('ChatInput paste', () => {
     expect(editorState.insertContentCalls).toEqual([])
   })
 
-  it('turns pasted text of any length into a paste chip', () => {
-    render(<ChatInput />)
-    const clipboardData = { getData: (type: string) => (type === 'text/plain' ? 'one word' : ''), items: [] }
+  const paste = (text: string) => {
     const preventDefault = vi.fn()
+    let handled: unknown
     act(() => {
-      editorState.handlePaste!(null, { clipboardData, preventDefault } as unknown as ClipboardEvent)
+      handled = editorState.handlePaste!(null, { clipboardData: { getData: (type: string) => (type === 'text/plain' ? text : ''), items: [] }, preventDefault } as unknown as ClipboardEvent)
     })
+    return { handled, preventDefault }
+  }
 
+  it('turns a paste of more than three lines into a paste chip', () => {
+    render(<ChatInput />)
+    const { preventDefault } = paste('one\ntwo\nthree\nfour')
     expect(preventDefault).toHaveBeenCalled()
-    expect(editorState.insertContentCalls).toEqual([{ type: 'pasteChip', attrs: { text: 'one word' } }])
+    expect(editorState.insertContentCalls).toEqual([{ type: 'pasteChip', attrs: { text: 'one\ntwo\nthree\nfour' } }])
+  })
+
+  it('leaves a short paste, and a lone link of any length, to the editor as text', () => {
+    render(<ChatInput />)
+    for (const text of ['one word', `https://example.com/${'a'.repeat(600)}`]) {
+      const { handled, preventDefault } = paste(text)
+      expect(handled).toBe(false)
+      expect(preventDefault).not.toHaveBeenCalled()
+    }
+    expect(editorState.insertContentCalls).toEqual([])
   })
 
   it('attaches a copied file instead of chipping the name it carries as text', () => {

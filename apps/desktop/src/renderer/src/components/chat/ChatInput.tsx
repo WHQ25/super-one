@@ -31,6 +31,8 @@ import { GitMentionDecoration } from './git-mention-decoration'
 import { useEnabledGitMentionPortals } from './use-git-mention-capabilities'
 import { useMcpAppFileRoute } from '@/components/mcp-apps/file-apps'
 import { PromptKeywordDecoration, syncPromptKeywords } from './prompt-keyword-decoration'
+import { WebLinkDecoration } from './web-link-decoration'
+import { ComposerLinkPreview } from './link-preview/ComposerLinkPreview'
 import { ComposerModeBorder } from './ComposerModeBorder'
 import { composerMode } from '@superone/shared/composer-mode'
 import { currentCodexReasoningEffort } from '@/stores/chat-store/helpers/codex-helpers'
@@ -1610,6 +1612,9 @@ export function ChatInput({
           bold: false,
           italic: false,
           strike: false,
+          // Links are drawn by WebLinkDecoration and open only from their preview card.
+          link: false,
+          underline: false,
           dropcursor: false,
         }),
         Placeholder.configure({ placeholder: () => placeholderTextRef.current }),
@@ -1621,6 +1626,7 @@ export function ChatInput({
         SessionMentionDecoration.configure({ context: sessionProjectOptions }),
         GitMentionDecoration.configure({ context: gitPortals }),
         PromptKeywordDecoration.configure({ keywords: promptKeywords }),
+        WebLinkDecoration,
         PromptSuggestion,
         ModPromptDecoration,
       ],
@@ -2221,6 +2227,7 @@ export function ChatInput({
         />
 
         <EditorContent editor={editor} />
+        <ComposerLinkPreview editor={editor} />
 
         <div className="mt-1.5 flex items-center justify-between">
           <div className="flex items-center gap-2">

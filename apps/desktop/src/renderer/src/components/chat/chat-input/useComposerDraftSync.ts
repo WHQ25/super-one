@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef } from 'react'
 import type { Editor, JSONContent } from '@tiptap/react'
 import type { ImageAttachment } from '@superone/shared/agent-types'
 import { plainTextToTiptapDoc } from './plainTextToTiptapDoc'
-import { liftBlockPasteChips } from '../paste-chip-node'
+import { restorableDraftDoc } from './restorable-draft-doc'
 
 export function useComposerDraftSync({ editor, text, draftJson, attachments, sessionId, readOnly }: {
   editor: Editor | null
@@ -44,7 +44,7 @@ export function useComposerDraftSync({ editor, text, draftJson, attachments, ses
       if (cancelled || editor.isDestroyed) return
       isProgrammaticSetRef.current = true
       if (draftJson) {
-        editor.commands.setContent(liftBlockPasteChips(draftJson))
+        editor.commands.setContent(restorableDraftDoc(draftJson))
       } else {
         const doc: JSONContent = plainTextToTiptapDoc(text)
         if (storeAtts.length) {

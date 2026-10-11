@@ -1,6 +1,7 @@
 import type { ChatMessage, ImageAttachment } from './agent-types'
 import { isStoredCapabilityId } from './capability-prompt-tags'
 import { parseUserMentions } from './user-mention-parser'
+import { isSingleWebLink } from './web-links'
 
 /** A mention as a chip carries it, in the composer, a sent bubble and the clipboard. */
 export type UserMention = { kind: string; value: string; displayName: string }
@@ -76,18 +77,20 @@ const COMPOSER_PASTE_CHIP_MIN_LINES = 4
 /**
  * Whether the composer lands a paste as a chip: more than three lines, not
  * counting line breaks at its ends, or at least 500 UTF-16 units. Shorter
- * pastes insert as typed text.
+ * pastes insert as typed text, and so does a lone link, however long.
  */
 export function isComposerPasteChip(text: string): boolean {
+  if (isSingleWebLink(text)) return false
   return text.length >= PASTE_CHIP_CHAR_THRESHOLD
     || text.replace(/^[\r\n]+|[\r\n]+$/g, '').split(/\r\n|\r|\n/).length >= COMPOSER_PASTE_CHIP_MIN_LINES
 }
 
 /**
  * A message from before pastes were marked (`isPaste`) shows its long text
- * runs as a paste chip.
+ * runs as a paste chip; a lone link stays a link.
  */
 export function isLongPaste(text: string): boolean {
+  if (isSingleWebLink(text)) return false
   return text.split('\n').length >= PASTE_CHIP_LINE_THRESHOLD || text.length >= PASTE_CHIP_CHAR_THRESHOLD
 }
 

@@ -45,6 +45,19 @@
   color: oklch(0.72 0.17 250);
 }
 
+/* A bare URL drawn as a link outside markdown (composer, user bubble): the
+   link hue, paler and bare until hovered. */
+.web-link {
+  color: oklch(0.65 0.15 250 / 0.7);
+  text-decoration: none;
+  text-underline-offset: 2px;
+}
+/* Not in the composer: a click there places the caret, so hover promises nothing. */
+.web-link:hover:not(.ProseMirror *) {
+  color: oklch(0.65 0.15 250);
+  text-decoration: underline;
+}
+
 /* --- Collapsible sections --- */
 .chat-md details > summary {
   cursor: pointer;

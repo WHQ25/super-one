@@ -22,7 +22,21 @@ function writeCache(filePath: string, buf: Buffer): void {
   renameSync(tmp, filePath)
 }
 
-/** Shared HTML fetch used by favicon resolution and page-title parsing. */
+/**
+ * The page's text in its declared charset (header, then `<meta charset>`),
+ * UTF-8 otherwise: many Chinese and Japanese sites still serve GBK or Shift_JIS.
+ */
+export function decodeHtml(bytes: Uint8Array, contentType: string | null): string {
+  const declared = contentType?.match(/charset\s*=\s*["']?([\w-]+)/i)?.[1]
+    ?? new TextDecoder('latin1').decode(bytes.subarray(0, 2048)).match(/<meta\b[^>]*charset\s*=\s*["']?([\w-]+)/i)?.[1]
+  try {
+    return new TextDecoder(declared ?? 'utf-8').decode(bytes)
+  } catch {
+    return new TextDecoder('utf-8').decode(bytes)
+  }
+}
+
+/** Shared HTML fetch used by favicon resolution, page-title parsing and link previews. */
 export async function fetchPageHtml(pageUrl: string): Promise<string | null> {
   try {
     const res = await fetch(pageUrl, {
@@ -31,9 +45,9 @@ export async function fetchPageHtml(pageUrl: string): Promise<string | null> {
       headers: { 'user-agent': UA, accept: 'text/html,application/xhtml+xml' },
     })
     if (!res.ok) return null
-    const text = (await res.text()).slice(0, MAX_HTML_BYTES)
-    const type = (res.headers.get('content-type') || '').toLowerCase()
-    if (type.includes('html') || type.includes('xml') || /^\s*</.test(text)) return text
+    const type = res.headers.get('content-type')
+    const text = decodeHtml(new Uint8Array(await res.arrayBuffer()).subarray(0, MAX_HTML_BYTES), type)
+    if (/html|xml/i.test(type ?? '') || /^\s*</.test(text)) return text
     return null
   } catch {
     return null

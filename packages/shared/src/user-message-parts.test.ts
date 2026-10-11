@@ -30,6 +30,7 @@ describe('isComposerPasteChip', () => {
     expect(isComposerPasteChip('\na\nb\nc\n\n')).toBe(false)
     expect(isComposerPasteChip('x'.repeat(500))).toBe(true)
     expect(isComposerPasteChip('x'.repeat(499))).toBe(false)
+    expect(isComposerPasteChip(`https://example.com/${'a'.repeat(600)}`)).toBe(false)
   })
 })
 

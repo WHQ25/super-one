@@ -6,11 +6,11 @@
  */
 
 import { Extension, type Editor } from '@tiptap/core'
-import type { Node as PMNode } from '@tiptap/pm/model'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { findPromptKeywords, type PromptKeyword } from '@superone/shared/prompt-keywords'
 import { promptKeywordLetterVars } from '@superone/ui/components/ui/prompt-keyword-text'
+import { draftText } from './composer-draft-text'
 
 export interface PromptKeywordDecorationOptions {
   keywords: readonly PromptKeyword[]
@@ -24,30 +24,6 @@ declare module '@tiptap/core' {
   interface Storage {
     promptKeywordDecoration: PromptKeywordDecorationStorage
   }
-}
-
-/**
- * The draft as one string, the way the keyword scan sees the sent prompt:
- * paragraphs and hard breaks are newlines, a chip is one non-word character.
- * `positions[i]` is the document position of `text[i]`, or -1 off the text.
- */
-function draftText(doc: PMNode): { text: string; positions: number[] } {
-  let text = ''
-  const positions: number[] = []
-  doc.forEach((block, blockOffset) => {
-    if (text) { text += '\n'; positions.push(-1) }
-    block.forEach((child, childOffset) => {
-      const pos = blockOffset + 1 + childOffset
-      if (child.isText && child.text) {
-        text += child.text
-        for (let i = 0; i < child.text.length; i++) positions.push(pos + i)
-      } else {
-        text += child.type.name === 'hardBreak' ? '\n' : '￼'
-        positions.push(-1)
-      }
-    })
-  })
-  return { text, positions }
 }
 
 function letterStyle(keyword: PromptKeyword, index: number): string {

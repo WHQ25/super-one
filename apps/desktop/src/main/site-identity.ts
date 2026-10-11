@@ -1,6 +1,7 @@
 import { parseNewApiStatus, parseSub2ApiPublicSettings, relaySiteRoot } from '@superone/shared/platform-registry'
 import { download, toDataUrl } from './image-cache'
 import { fetchPageHtml, resolveFavicon } from './favicon'
+import { readHtmlMeta, readHtmlTitle } from './html-meta'
 import log from './logger'
 
 const HTML_TIMEOUT_MS = 8000
@@ -21,21 +22,8 @@ function cleanTitle(raw: string): string | null {
 
 /** Best-effort site name from a HTML document (`og:site_name`, then `<title>`). */
 export function parseHtmlSiteName(html: string): string | null {
-  const og =
-    html.match(/<meta\b[^>]*\bproperty\s*=\s*["']og:site_name["'][^>]*\bcontent\s*=\s*["']([^"']+)["']/i) ??
-    html.match(/<meta\b[^>]*\bcontent\s*=\s*["']([^"']+)["'][^>]*\bproperty\s*=\s*["']og:site_name["']/i)
-  if (og?.[1]) return cleanTitle(decodeHtmlEntities(og[1]))
-  const title = html.match(/<title[^>]*>([^<]+)/i)?.[1]
-  return title ? cleanTitle(decodeHtmlEntities(title)) : null
-}
-
-function decodeHtmlEntities(value: string): string {
-  return value
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
+  const name = readHtmlMeta(html).get('og:site_name') ?? readHtmlTitle(html)
+  return name ? cleanTitle(name) : null
 }
 
 export function pageUrlForSite(raw: string): string | null {

@@ -5,6 +5,7 @@ import { McpAppIcon } from '@superone/ui/components/ui/mcp-app-icon'
 import { mcpResourceMentionIcon } from '@superone/ui/components/ui/mention-icons'
 import { requestNative, requestNativeAsync } from './bridge'
 import { previewImage } from './image-preview'
+import { NativeWebLink } from './PortableMarkdown'
 import { PortableTurnContext } from './portable-turn-context'
 import { McpMentionSentTap } from './presenters/McpMentionCard'
 import {
@@ -70,6 +71,12 @@ function useSchemeIsDark(): boolean {
   return useContext(PortableTurnContext).scheme === 'dark'
 }
 
+/** A link in the bubble opens natively, as a markdown link does, without opening the bubble's own menu. */
+function PortableWebLink({ href, className, children }: { href: string; className?: string; children: ReactNode }) {
+  const { scheme } = useContext(PortableTurnContext)
+  return <NativeWebLink href={href} className={className} scheme={scheme} onClick={(event) => event.stopPropagation()}>{children}</NativeWebLink>
+}
+
 /**
  * The phone's ports for user-bubble chips: artwork the host sent with the
  * projection, taps routed to the native shell, no hover.
@@ -91,6 +98,7 @@ export function PortableUserBubblePorts({ mentionArtwork, children }: { mentionA
       MentionIcon: PortableMentionIcon,
       FileMention: PortableFileMention,
       McpMention: McpMentionSentTap,
+      WebLink: PortableWebLink,
       copyText: async (text) => {
         requestNative('copyText', { text })
         return true

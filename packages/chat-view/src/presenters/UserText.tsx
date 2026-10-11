@@ -6,6 +6,8 @@ import { cn } from '@superone/ui/lib/utils'
 import type { PromptKeyword, PromptKeywordMatch } from '@superone/shared/prompt-keywords'
 import { parseUserMentions, type UserMentionKind } from '@superone/shared/user-mention-parser'
 import { isLongPaste, mentionCopyText, mentionLabel, type UserMention } from '@superone/shared/user-message-parts'
+import { findWebLinks } from '@superone/shared/web-links'
+import type { ReactNode } from 'react'
 import { PasteChipPresenter } from './PasteChip'
 import { useUserBubblePorts, type ChipActions } from './user-bubble-ports'
 
@@ -43,9 +45,31 @@ function UserMentionChip({ kind, value, displayName }: { kind: UserMentionKind; 
   return chip()
 }
 
+/** Text with its web links drawn as the host's chat links; keywords are painted between them. */
+function LinkedText({ text, keywords }: { text: string; keywords?: PromptKeywordMatch[] }) {
+  const { WebLink } = useUserBubblePorts()
+  const links = findWebLinks(text)
+  if (links.length === 0) return <PromptKeywordText text={text} matches={keywords} />
+  const parts: ReactNode[] = []
+  const plain = (start: number, end: number) => {
+    if (end <= start) return
+    const matches = keywords?.filter((match) => match.start >= start && match.end <= end)
+      .map((match) => ({ ...match, start: match.start - start, end: match.end - start }))
+    parts.push(<PromptKeywordText key={`t${start}`} text={text.slice(start, end)} matches={matches} />)
+  }
+  let cursor = 0
+  for (const link of links) {
+    plain(cursor, link.start)
+    parts.push(<WebLink key={`l${link.start}`} href={link.href} className="web-link">{link.href}</WebLink>)
+    cursor = link.end
+  }
+  plain(cursor, text.length)
+  return parts
+}
+
 function RestText({ text, plain, keywords }: { text: string; plain: boolean; keywords?: PromptKeywordMatch[] }) {
   if (!plain && isLongPaste(text)) return <PasteChipPresenter text={text} selectable />
-  return <span className="user-text-rest"><PromptKeywordText text={text} matches={keywords} /></span>
+  return <span className="user-text-rest"><LinkedText text={text} keywords={keywords} /></span>
 }
 
 /**

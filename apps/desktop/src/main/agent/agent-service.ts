@@ -1758,6 +1758,11 @@ export class AgentService {
       return resolveFavicon(url, isDark, force)
     })
 
+    windowIpc.handle(AgentIpcChannels.RESOLVE_LINK_PREVIEW, async (_event, url: string) => {
+      const { resolveLinkPreview } = await import('../link-preview')
+      return resolveLinkPreview(url)
+    })
+
     windowIpc.handle(AgentIpcChannels.RESOLVE_SITE_IDENTITY, async (_event, url: string, isDark: boolean, force?: boolean) => {
       return resolveSiteIdentity(url, isDark, force)
     })

@@ -245,6 +245,16 @@ attachment note names it instead of the copy.
   is unreachable): the image is not attached and a toast says why.
 - **Drafts** carry only the original's path, never its bytes.
 
+Pasted text becomes a paste chip when it runs past three lines or reaches 500
+characters (`isComposerPasteChip`); a shorter paste, and a paste that is one
+link however long, stays text. Every bare `http(s)://` URL in the draft or a
+sent bubble (`findWebLinks`) is drawn as a chat link, with the site's favicon,
+while the text itself stays plain. On desktop, hovering a link shows the page's
+Open Graph summary with Open in Built-in Browser, Open in External Browser and
+Copy Link; it closes when the pointer leaves. In the composer that card is the
+only way to open a link, so a click still places the caret. The phone styles links in its composer without
+making them tappable, and opens them from a sent bubble like markdown links.
+
 A session open in more than one window (the main window and a spawned mini
 window) shares one draft: text, chips, attachments, browser annotations, and
 selections are relayed through the main process, which also seeds a window that

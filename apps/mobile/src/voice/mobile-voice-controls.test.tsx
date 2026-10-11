@@ -5,7 +5,7 @@ import { MobileVoiceControls } from './mobile-voice-controls'
 import type { MobileVoiceState } from './voice-service'
 jest.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }))
 
-it('keeps microphone, waveform, play and end in that order', async () => {
+it('keeps microphone, play, waveform and end in that order', async () => {
   const state: MobileVoiceState = { phase: 'active', target: { sessionId: 'sid', projectPath: '/p', title: 'Voice task' }, inputMuted: true, paused: true, pauseReason: 'manual', resuming: false, error: null }
   const stop = jest.fn(); const input = jest.fn()
   const result = await renderWithTheme(<MobileVoiceControls state={state} onStop={stop} onInputMute={input} onPlayback={() => {}} onRetry={() => {}} onSettings={() => {}} />)
@@ -15,7 +15,9 @@ it('keeps microphone, waveform, play and end in that order', async () => {
   expect(result.queryByLabelText('Mute voice output')).toBeNull()
   expect(result.getAllByRole('button').map(button => button.props.accessibilityLabel)).toEqual(['Unmute microphone', 'Resume voice', 'End voice'])
   const row = result.getByTestId('mobile-voice-controls')
-  expect(row.children[1]).toBe(result.getByTestId('mobile-voice-status'))
+  expect(row.children[0]).toBe(result.getByLabelText('Unmute microphone'))
+  expect(row.children[1]).toBe(result.getByLabelText('Resume voice'))
+  expect(row.children[2]).toBe(result.getByTestId('mobile-voice-status'))
   await act(async () => { fireEvent.press(result.getByLabelText('Unmute microphone')) })
   await act(async () => { fireEvent.press(result.getByLabelText('End voice')) })
   expect(input).toHaveBeenCalledTimes(1)
@@ -40,7 +42,7 @@ it('enables the left microphone only after connecting and disables controls duri
   const input = jest.fn(); const stop = jest.fn(); const noop = () => {}
   const controls = (phase: MobileVoiceState['phase']) => <MobileVoiceControls state={{ ...state, phase }} onStop={stop} onInputMute={input} onPlayback={() => {}} onRetry={noop} onSettings={noop} />
   const result = await renderWithTheme(controls('starting'))
-  expect(result.getByText('Starting voice…')).toBeTruthy()
+  expect(result.getByText('Starting voice session…')).toBeTruthy()
   expect(result.queryByTestId('mobile-voice-indicator')).toBeNull()
   expect(result.queryByTestId('mobile-voice-waveform')).toBeNull()
   expect(result.getByLabelText('Mute microphone')).toBeDisabled()
@@ -54,6 +56,7 @@ it('enables the left microphone only after connecting and disables controls duri
   await act(async () => { fireEvent.press(result.getByLabelText('Mute microphone')) })
   expect(input).toHaveBeenCalledTimes(1)
   await result.rerender(controls('stopping'))
+  expect(result.getByText('Hanging up')).toBeTruthy()
   expect(result.getByLabelText('Mute microphone')).toBeDisabled()
   expect(result.getByLabelText('Cancel voice')).toBeDisabled()
   await act(async () => { fireEvent.press(result.getByLabelText('Cancel voice')) })

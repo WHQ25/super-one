@@ -40,7 +40,7 @@ export function MobileVoiceControls(props: MobileVoiceControlsProps) {
   if (state.phase === 'idle') return null
   const active = state.phase === 'active'
   const pending = state.phase === 'starting' || state.phase === 'stopping'
-  const label = state.phase === 'starting' ? 'Starting voice…' : state.phase === 'stopping' ? 'Ending voice…'
+  const label = state.phase === 'starting' ? 'Starting voice session…' : state.phase === 'stopping' ? 'Hanging up'
     : active ? (state.paused ? (state.error ?? (state.pauseReason === 'interrupted' ? 'Audio interrupted. Tap Play to continue.' : 'Voice paused')) : state.inputMuted ? 'Microphone muted' : 'Listening') : state.phase === 'denied' ? 'Microphone access denied' : 'Voice could not connect'
   return <View style={{ paddingHorizontal: COMPOSER_HORIZONTAL_INSET, paddingTop: COMPOSER_TOP_GAP,
     paddingBottom: composerBottomGap(keyboardVisible, insets.bottom), backgroundColor: colors.background }}>
@@ -50,6 +50,8 @@ export function MobileVoiceControls(props: MobileVoiceControlsProps) {
       label={state.phase === 'denied' ? 'Open Settings' : 'Retry voice'} onPress={state.phase === 'denied' ? props.onSettings : props.onRetry} />
       : <IconButton icon={state.inputMuted ? MicOff : Mic} label={state.inputMuted ? 'Unmute microphone' : 'Mute microphone'}
         active={state.inputMuted} color={colors.foreground} disabled={!active} onPress={props.onInputMute} />}
+    <IconButton icon={state.paused ? Play : Pause} label={state.paused ? 'Resume voice' : 'Pause voice'}
+      color={colors.foreground} disabled={!active || state.resuming} onPress={props.onPlayback} />
     <View testID="mobile-voice-status" accessible={active} accessibilityRole={active ? 'image' : undefined} accessibilityLabel={active ? t(label) : undefined}
       style={{ flex: 1, minWidth: 0, height: 36, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
       {active ? <View style={{ flex: 1 }}><VoiceWaveform levels={props.audioLevels} paused={state.paused} />
@@ -58,8 +60,6 @@ export function MobileVoiceControls(props: MobileVoiceControlsProps) {
         style={{ flexShrink: 1, minWidth: 0, fontSize: 12, textAlign: 'center', color: state.error ? colors.error : colors.foreground }}>{t(state.error ?? label)}</Text>
       }
     </View>
-    <IconButton icon={state.paused ? Play : Pause} label={state.paused ? 'Resume voice' : 'Pause voice'}
-      color={colors.foreground} disabled={!active || state.resuming} onPress={props.onPlayback} />
     <IconButton icon={Power} label={pending ? 'Cancel voice' : 'End voice'} chrome="plain" color="#fff" iconSize={16}
       style={{ width: 32, height: 32, marginHorizontal: 6, borderRadius: 16, backgroundColor: colors.error }} hitSlop={6}
       disabled={state.phase === 'stopping'} onPress={props.onStop} />

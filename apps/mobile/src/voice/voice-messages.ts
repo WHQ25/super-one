@@ -3,7 +3,7 @@ export const voiceChinese = {
   'Show voice conversation': '查看语音会话',
   'Return to voice conversation': '返回语音会话',
   'Keep the desktop online.': '请让电脑保持在线。',
-  'Start voice': '开始语音', 'Starting voice…': '正在连接语音…', 'Ending voice…': '正在挂断语音…',
+  'Start voice': '开始语音', 'Starting voice session…': '正在启动语音会话…', 'Hanging up': '正在挂断',
   'Listening': '正在聆听', 'Microphone muted': '麦克风已静音', 'Microphone access denied': '麦克风权限被拒绝',
   'Voice could not connect': '语音连接失败', 'Voice conversation': '语音会话',
   'Mute microphone': '静音麦克风', 'Unmute microphone': '取消麦克风静音',

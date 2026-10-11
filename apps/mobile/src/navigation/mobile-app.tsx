@@ -1559,6 +1559,7 @@ export function MobileApp() {
     if (!client || !p) return
     await remoteDrafts.park()
     if (runtimeRef.current?.sessionId === row.sessionId && runtimeRef.current.projectPath === p.path) {
+      transcriptSync.activate()
       setScreen('chat')
       return
     }

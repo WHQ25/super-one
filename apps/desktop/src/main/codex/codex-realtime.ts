@@ -232,6 +232,7 @@ function mapTimelineThreadMessages(entries: unknown[], threadId: string | null):
   const turns = new Map<string, {
     position: number
     completionPosition: number | null
+    delegationPosition: number | null
     order: number
     status: ChatMessage['status']
     users: ChatMessage[]
@@ -250,6 +251,7 @@ function mapTimelineThreadMessages(entries: unknown[], threadId: string | null):
     const created = {
       position,
       completionPosition: null,
+      delegationPosition: null,
       order,
       status: 'streaming' as const,
       users: [],
@@ -319,7 +321,10 @@ function mapTimelineThreadMessages(entries: unknown[], threadId: string | null):
       // it. Kept here and hidden by the renderer's voice view, which already says the
       // same thing in speech; the backing-thread view shows it verbatim.
       const delegation = isRealtimeDelegationText(text)
-      if (delegation) turn.delegated = true
+      if (delegation) {
+        turn.delegated = true
+        turn.delegationPosition = position
+      }
       turn.users.push({
         id,
         role: 'user',
@@ -330,7 +335,7 @@ function mapTimelineThreadMessages(entries: unknown[], threadId: string | null):
         metadata: {
           codexTimeline: {
             provenance: delegation ? 'realtime-delegated' : 'codex',
-            position: turn.position,
+            position: delegation ? position : turn.position,
             turnId,
           },
         },
@@ -343,8 +348,8 @@ function mapTimelineThreadMessages(entries: unknown[], threadId: string | null):
   }
 
   const positionedTurns = [...turns.entries()].map(([turnId, turn]) => {
-    const displayPosition = turn.delegated && turn.completionPosition !== null
-      ? turn.completionPosition
+    const displayPosition = turn.delegated
+      ? turn.completionPosition ?? turn.delegationPosition ?? turn.position
       : turn.position
     const messages = (() => {
       if (turn.items.length === 0) return turn.users

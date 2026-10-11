@@ -71,7 +71,12 @@ export function mergeCodexThreadMessages(
       metadata: {
         ...provider.metadata,
         ...message.metadata,
-        codexTimeline: provider.metadata?.codexTimeline ?? message.metadata?.codexTimeline,
+        // Provider positions and local event sequences are different scales. Keep
+        // both so voice activity can still align with locally stamped speech.
+        codexTimeline: provider.metadata?.codexTimeline ? {
+          ...message.metadata?.codexTimeline,
+          ...provider.metadata.codexTimeline,
+        } : message.metadata?.codexTimeline,
       },
     } : message)
   }

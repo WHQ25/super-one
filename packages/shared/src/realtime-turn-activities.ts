@@ -59,20 +59,21 @@ export function buildRealtimeTranscriptLayout(
   return [...rows, ...trailing]
 }
 
-function orderOfSegment(segment: RealtimeTimelineSegment): number | null {
-  return segment.position ?? segment.localOrder ?? null
+type TimelineOrder = 'provider' | 'local'
+
+function orderOfSegment(segment: RealtimeTimelineSegment, order: TimelineOrder): number | null {
+  return (order === 'provider' ? segment.position : segment.localOrder) ?? null
 }
 
-function orderOfMessage(message: ChatMessage): number | null {
-  return message.metadata?.codexTimeline?.position
-    ?? message.metadata?.codexTimeline?.localOrder
-    ?? message._lastAppliedSeq
-    ?? null
+function orderOfMessage(message: ChatMessage, order: TimelineOrder): number | null {
+  return order === 'provider'
+    ? message.metadata?.codexTimeline?.position ?? null
+    : message.metadata?.codexTimeline?.localOrder ?? message._lastAppliedSeq ?? null
 }
 
-function turnStart(turn: RealtimeConversationTurn): number | null {
+function turnStart(turn: RealtimeConversationTurn, order: TimelineOrder): number | null {
   const segments = [...(turn.user ? [turn.user] : []), ...turn.assistant]
-  const orders = segments.map(orderOfSegment).filter((value): value is number => value !== null)
+  const orders = segments.map(segment => orderOfSegment(segment, order)).filter((value): value is number => value !== null)
   return orders.length > 0 ? Math.min(...orders) : null
 }
 
@@ -121,20 +122,30 @@ export function mapRealtimeTurnActivities(input: {
   const delegated = input.messages.filter((message) => (
     message.metadata?.codexTimeline?.provenance === 'realtime-delegated'
   ))
-  const starts = turns.map(turnStart)
+  const starts = {
+    local: turns.map(turn => turnStart(turn, 'local')),
+    provider: turns.map(turn => turnStart(turn, 'provider')),
+  }
+  const messagesByTurn: ChatMessage[][] = turns.map(() => [])
+  for (const message of delegated) {
+    // Local stamps keep the activity attached after reconciliation. Otherwise use
+    // provider positions, without comparing the two scales or unstamped history.
+    for (const scale of ['local', 'provider'] as const) {
+      const order = orderOfMessage(message, scale)
+      if (order === null) continue
+      const index = starts[scale].findLastIndex(start => start !== null && start <= order)
+      if (index < 0) continue
+      messagesByTurn[index].push(message)
+      break
+    }
+  }
   const result = new Map<string, RealtimeTurnActivity>()
   // Compaction/summary rows are notifications, not a new turn taking ownership
   // of the current session's status or pending decision.
   const latestTurn = input.messages.findLast((message) => transcriptRow(message, input.messages).kind === 'turn')
 
   turns.forEach((turn, index) => {
-    const start = starts[index]
-    const next = starts[index + 1]
-    if (start === null) return
-    const messages = delegated.filter((message) => {
-      const order = orderOfMessage(message)
-      return order !== null && order >= start && (next === null || next === undefined || order < next)
-    })
+    const messages = messagesByTurn[index]
     if (messages.length === 0) return
     // Session status belongs to the current thread turn, not the last voice task
     // forever. A later typed user row already ends this range's ownership, even

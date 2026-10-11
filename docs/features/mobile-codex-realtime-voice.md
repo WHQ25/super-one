@@ -87,7 +87,12 @@ priority; iOS wired-headset events also suspend phone routing. Sensor/device lis
 are removed before native audio focus is released.
 
 The top-right session menu switches between separate voice and backing Codex histories,
-including after hangup. Switching does not stop or resubscribe the call. User and
+including after hangup. Entering or reselecting a session opens its voice history
+while a call is engaged; otherwise it opens the backing Codex history, even if
+the task is still working. Manual view changes remain in place until the next
+session entry. Hanging up does not force a view change or stop the delegated
+work timer, and completed work keeps its Detail entry.
+Switching does not stop or resubscribe the call. User and
 assistant item starts/deltas appear as live speech rows in the voice history.
 Completion replaces the same row rather than duplicating
 it, and only completed speech enters the durable timeline. Unfinished captions are

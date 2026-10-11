@@ -41,9 +41,9 @@ export function useTranscriptSync(web: RefObject<WebView | null>, voice?: Mobile
   const lastFacts = useRef<Facts>({})
   const previousSpeech = useRef<ChatMessage[]>([])
   const threadCache = useRef<{ messages: ChatMessage[]; canonical: ChatMessage[]; merged: ChatMessage[] } | null>(null)
-  const views = useRef(new Map<string, ConversationView>())
-  const viewRef = useRef<ConversationView>('realtime')
-  const [view, updateView] = useState<ConversationView>('realtime')
+  const entryViewSelected = useRef(false)
+  const viewRef = useRef<ConversationView>('thread')
+  const [view, updateView] = useState<ConversationView>('thread')
   const [hasTimeline, updateHasTimeline] = useState(false)
   const pendingJump = useRef<string | null>(null)
   const jumpReceipt = useRef<{ channelId: string; sequence: number } | null>(null)
@@ -57,8 +57,8 @@ export function useTranscriptSync(web: RefObject<WebView | null>, voice?: Mobile
       pendingJump.current = null
       jumpReceipt.current = null
       lastFacts.current = {}
-      viewRef.current = views.current.get(runtime.sessionId) ?? 'realtime'
-      updateView(viewRef.current)
+      entryViewSelected.current = false
+      viewRef.current = 'thread'
     }
     activeRuntime.current = runtime
     lastFacts.current = { ...lastFacts.current, ...facts }
@@ -66,7 +66,15 @@ export function useTranscriptSync(web: RefObject<WebView | null>, voice?: Mobile
     const timeline = session.realtimeHasTimeline || session.realtimeSegments.length > 0 || session.realtimeLiveSegments.length > 0 || session.realtimeSessionId !== null
     updateHasTimeline(timeline)
     const call = voiceRef.current
-    const ownsCall = !!call?.target && call.target.sessionId === runtime.sessionId && call.target.projectPath === runtime.projectPath && call.phase !== 'idle'
+    const ownsCall = !!call?.target && call.target.sessionId === runtime.sessionId && call.target.projectPath === runtime.projectPath
+      && (call.phase === 'starting' || call.phase === 'active' || call.phase === 'stopping')
+    // Cached chat can paint before the authoritative voice snapshot. Wait for
+    // that history or an owned call, then select once and preserve manual jumps.
+    if (!entryViewSelected.current && (timeline || ownsCall)) {
+      entryViewSelected.current = true
+      viewRef.current = ownsCall || session.realtimeSessionId !== null ? 'realtime' : 'thread'
+    }
+    updateView(viewRef.current)
     const showingVoice = (timeline || ownsCall) && viewRef.current === 'realtime'
     const emptyState = showingVoice ? ownsCall && call.phase === 'starting' ? 'voice-starting'
       : ownsCall && call.phase === 'active' ? 'voice-ready'
@@ -95,7 +103,7 @@ export function useTranscriptSync(web: RefObject<WebView | null>, voice?: Mobile
     viewRef.current = next
     updateView(next)
     if (!runtime) return
-    views.current.set(runtime.sessionId, next)
+    entryViewSelected.current = true
     pendingJump.current = jump ?? null
     jumpReceipt.current = null
     paint(runtime, lastFacts.current, true)
@@ -108,6 +116,15 @@ export function useTranscriptSync(web: RefObject<WebView | null>, voice?: Mobile
   }, [voice?.phase, voice?.target?.sessionId, voice?.target?.projectPath])
   return {
     view, hasTimeline, setView,
+    activate() {
+      const runtime = activeRuntime.current
+      if (!runtime) return
+      entryViewSelected.current = false
+      viewRef.current = 'thread'
+      pendingJump.current = null
+      jumpReceipt.current = null
+      paint(runtime, lastFacts.current, true)
+    },
     publish: paint,
     receive(message: HostOutbound): boolean {
       if (message.type === 'requestNative' && message.action === 'openRealtimeThread') {
@@ -139,8 +156,9 @@ export function useTranscriptSync(web: RefObject<WebView | null>, voice?: Mobile
       threadCache.current = null
       pendingJump.current = null
       updateHasTimeline(false)
-      viewRef.current = 'realtime'
-      updateView('realtime')
+      entryViewSelected.current = false
+      viewRef.current = 'thread'
+      updateView('thread')
       delivery.publish({ messages: [], sessionStatus: 'idle', pendingPermission: null, realtimeActivities: [], conversationView: 'thread', emptyState: null }, true)
     },
   }

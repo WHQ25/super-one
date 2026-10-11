@@ -49,6 +49,61 @@ afterEach(() => {
 })
 
 describe('voice timeline isolation', () => {
+  it('keeps the timer and settled Detail after call closure and provider reconciliation', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    vi.setSystemTime(Date.parse('2026-09-17T00:00:10Z'))
+    const local: RealtimeTimelineResult = {
+      ...spokenTimeline,
+      segments: spokenTimeline.segments.map((segment, index) => ({
+        ...segment, position: undefined, localOrder: 100 + index * 50,
+      })),
+      threadMessages: [],
+    }
+    stubTimeline(local)
+    const running: ChatMessage = {
+      ...voiceWork, status: 'streaming',
+      metadata: {
+        ...voiceWork.metadata,
+        codex: { ...voiceWork.metadata!.codex!, durationMs: undefined },
+        codexTimeline: { provenance: 'realtime-delegated', turnId: 'voice-turn', localOrder: 200 },
+      },
+    }
+    const view = (message: ChatMessage) => <CodexRealtimeTranscript
+      sessionId="ended-call" scrollViewportRef={createRef<HTMLDivElement>()}
+      liquidGlass={false}
+      threadMessages={mergeCodexThreadMessages([message], useCodexRealtimeViewStore.getState().sessions['ended-call'] ?? local)}
+      sessionStatus={message.status === 'streaming' ? 'streaming' : 'idle'} needsDecision={false}
+    />
+    const { rerender } = render(view(running))
+    await act(async () => {})
+    expect(screen.getByTestId('realtime-delegation-status')).toHaveTextContent('Working for 8s')
+    act(() => {
+      const store = useCodexRealtimeViewStore.getState()
+      store.setRealtimeSession('ended-call', null)
+      store.setTimeline('ended-call', {
+        ...local, activeRealtimeSessionId: null,
+        segments: local.segments.map((segment, index) => ({ ...segment, position: 3 + index })),
+        threadMessages: [{
+          ...running, id: 'canonical-work',
+          metadata: {
+            ...running.metadata,
+            codexTimeline: { provenance: 'realtime-delegated', turnId: 'voice-turn', position: 2 },
+          },
+        }],
+      })
+    })
+    rerender(view(running))
+    await act(async () => { vi.advanceTimersByTime(2_000) })
+    expect(screen.getByTestId('realtime-delegation-status')).toHaveTextContent('Working for 10s')
+    rerender(view({ ...running, status: 'complete' }))
+    expect(screen.getByTestId('realtime-delegation-row')).toHaveAttribute('data-activity-status', 'completed')
+    expect(screen.getByTestId('realtime-delegation-status')).toHaveTextContent('Detail')
+    fireEvent.click(screen.getByRole('button', { name: 'Open in Codex thread' }))
+    expect(useCodexRealtimeViewStore.getState().sessions['ended-call']?.pendingJump)
+      .toMatchObject({ view: 'thread', turnId: 'voice-turn', messageId: 'canonical-work' })
+    vi.useRealTimers()
+  })
+
   it('renders spoken turns plus one status row per delegated range, and nothing typed', async () => {
     stubTimeline(spokenTimeline)
     const typed: ChatMessage = {

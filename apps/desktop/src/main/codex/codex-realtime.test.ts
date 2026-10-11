@@ -8,6 +8,24 @@ import {
 } from './codex-realtime'
 
 describe('Codex realtime protocol mapping', () => {
+  it('positions a running delegation at its handoff even when its turn opened before speech', () => {
+    const timeline = mapCodexRealtimeTimeline({ data: [
+      { type: 'turnStarted', position: 2, turnId: 'turn-1' },
+      { type: 'realtime', position: 3, item: {
+        type: 'transcriptSegment', id: 'spoken', realtimeSessionId: 'rt-1', role: 'user', text: 'Check it',
+      } },
+      { type: 'item', position: 5, turnId: 'turn-1', item: {
+        type: 'userMessage', id: 'handoff',
+        content: [{ type: 'text', text: '<realtime_delegation><input>Check it</input></realtime_delegation>' }],
+      } },
+      { type: 'item', position: 6, turnId: 'turn-1', item: {
+        type: 'agentMessage', id: 'reply', text: 'Checking', phase: null, delivery: null,
+      } },
+    ] }, 'thread-1')
+    expect(timeline.threadMessages.filter(message => message.metadata?.codexTimeline?.provenance === 'realtime-delegated')
+      .map(message => message.metadata?.codexTimeline?.position)).toEqual([5, 5])
+  })
+
   it('uses frameless v3 so Codex negotiates quicksilver v2', () => {
     const params = buildCodexRealtimeStartParams('t1', { sdp: 'offer', voice: 'cove' })
 
@@ -327,7 +345,7 @@ describe('Codex realtime protocol mapping', () => {
       text: '<realtime_delegation>\n<input>Inspect the project</input>\n</realtime_delegation>',
     }])
     expect(result.threadMessages[1]?.metadata).toMatchObject({
-      codexTimeline: { provenance: 'realtime-delegated', position: 2, turnId: 'turn-1' },
+      codexTimeline: { provenance: 'realtime-delegated', position: 3, turnId: 'turn-1' },
     })
     expect(result.threadMessages[2]?.content).toEqual([{ type: 'text', text: 'Found the issue' }])
     expect(result.threadMessages[2]?.metadata).toMatchObject({

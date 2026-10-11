@@ -30,6 +30,7 @@ import { ChatScrollIndicator } from './ChatScrollIndicator'
 import { VirtualTranscriptList, type VirtualTranscriptHandle } from './VirtualTranscriptList'
 import { mergeCodexThreadMessages } from './codex-realtime-messages'
 import { CodexRealtimeTranscript } from './CodexRealtimeTranscript'
+import { useCodexConversationActivation } from './use-codex-conversation-activation'
 import { ComposerSwitch } from './ComposerSwitch'
 import { resolveComposer } from './composer-slot/resolve-composer'
 import { COMPOSER_CONTENT_MAX_HEIGHT, renderComposer } from './composer-slot/composer-registry'
@@ -443,6 +444,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     ? { client: desktopDetailClient, environmentId: remoteConnectionId, sessionId: displayedSessionId }
     : null, [remoteConnectionId, displayedSessionId])
   const isCodexSession = resolveProvider({ sessionProvider, preferredProvider }) === 'codex'
+  useCodexConversationActivation({ sessionId: displayedSessionId, projectPath, enabled: isCodexSession, foreground })
   const drawsMods = HARNESS_CAPABILITIES[resolveProvider({ sessionProvider, preferredProvider })].modUi
   const realtime = useCodexRealtimeViewStore(
     (state) => displayedSessionId

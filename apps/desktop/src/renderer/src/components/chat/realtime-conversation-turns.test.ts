@@ -37,6 +37,18 @@ function normal(id: string, role: ChatMessage['role'], order: number): ChatMessa
 }
 
 describe('realtime conversation turns', () => {
+  it('maps live work alongside older speech that has only provider positions', () => {
+    const turns = buildRealtimeConversationTurns([
+      { ...segment('legacy', 'user', 1), localOrder: undefined, position: 3, realtimeSessionId: 'old-call' },
+      segment('current', 'user', 100),
+    ])
+    const activities = mapRealtimeTurnActivities({
+      turns, messages: [work('running', 'turn-current', 150)], sessionStatus: 'streaming', needsDecision: false,
+    })
+    expect([...activities.keys()]).toEqual(['current'])
+    expect(activities.get('current')?.status).toBe('working')
+  })
+
   it('keeps consecutive assistant segments in one user turn and starts anew on interruption', () => {
     const turns = buildRealtimeConversationTurns([
       segment('user-1', 'user', 10),

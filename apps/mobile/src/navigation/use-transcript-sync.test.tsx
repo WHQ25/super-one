@@ -8,6 +8,118 @@ import { createDefaultChatCoreSession, applyEventToSession } from '@superone/cha
 import type { AgentEvent } from '@superone/shared/agent-types'
 import type { MobileVoiceState } from '../voice/voice-service'
 
+test('reenters the backing thread after voice ends while preserving manual history and Details', async () => {
+  const envelopes: HostInbound[] = []
+  const web = { current: { injectJavaScript: (script: string) => {
+    new Function('globalThis', script)({ __applyHost: (message: HostInbound) => envelopes.push(message) })
+  } } } as unknown as { current: WebView | null }
+  const session = createDefaultChatCoreSession()
+  session.status = 'streaming'
+  session.realtimeSessionId = 'rt'
+  session.realtimeSegments = [{ id: 'speech', realtimeSessionId: 'rt', role: 'user', text: 'Check it', localOrder: 10 }]
+  session.realtimeThreadMessages = [{ id: 'work', role: 'assistant', status: 'streaming', providerId: 'codex',
+    content: [], createdAt: '2026-10-11T00:00:00Z',
+    metadata: { codexTimeline: { provenance: 'realtime-delegated', turnId: 'turn-1', localOrder: 20 } } }]
+  const runtime = { session, sessionId: 'voice-task', projectPath: '/repo' } as unknown as ChatRuntime
+  const { result, unmount } = await renderHook(() => useTranscriptSync(web))
+  const ack = async () => {
+    const latest = envelopes.at(-1)!
+    if ('delivery' in latest && latest.delivery) await act(async () => {
+      result.current.receive({ type: 'transcriptApplied', ...latest.delivery! })
+    })
+  }
+  try {
+    await act(async () => { result.current.publish(runtime, { sessionStatus: 'streaming' }) }); await ack()
+    expect(result.current.view).toBe('realtime')
+    session.realtimeSessionId = null
+    await act(async () => { result.current.publish(runtime, { sessionStatus: 'streaming' }) }); await ack()
+    expect(result.current.view).toBe('realtime')
+    await act(async () => { result.current.reset() }); await ack()
+    await act(async () => { result.current.publish(runtime, { sessionStatus: 'streaming' }) }); await ack()
+    expect(result.current.view).toBe('thread')
+    expect(envelopes.at(-1)).toMatchObject({ conversationView: 'thread', messages: [{ id: 'work' }] })
+    await act(async () => { result.current.setView('realtime') }); await ack()
+    expect(envelopes.at(-1)).toMatchObject({ conversationView: 'realtime', realtimeActivities: [{ activity: {
+      status: 'working', workingSince: '2026-10-11T00:00:00Z', messageIds: ['work'],
+    } }] })
+    session.status = 'idle'
+    session.realtimeThreadMessages = [{ ...session.realtimeThreadMessages[0], status: 'complete' }]
+    await act(async () => { result.current.publish(runtime, { sessionStatus: 'idle' }) }); await ack()
+    expect(result.current.view).toBe('realtime')
+    expect(envelopes.at(-1)).toMatchObject({ realtimeActivities: [{ activity: { status: 'completed' } }] })
+    await act(async () => { result.current.receive({ type: 'requestNative', requestId: 'detail', action: 'openRealtimeThread', payload: { messageId: 'work' } }) })
+    expect(result.current.view).toBe('thread')
+  } finally { await unmount() }
+})
+
+test.each(['starting', 'active', 'stopping', 'idle', 'error', 'denied'] as const)(
+  'selects the entry view from the matching phone call in phase %s', async (phase) => {
+    const web = { current: { injectJavaScript: jest.fn() } } as unknown as { current: WebView | null }
+    const runtime = { session: createDefaultChatCoreSession(), sessionId: 'voice-task', projectPath: '/repo' } as unknown as ChatRuntime
+    runtime.session.realtimeHasTimeline = true
+    const voice: MobileVoiceState = { phase, target: { sessionId: 'voice-task', projectPath: '/repo' },
+      inputMuted: false, paused: false, pauseReason: null, resuming: false, error: null }
+    const { result, unmount } = await renderHook(() => useTranscriptSync(web, voice))
+    try {
+      await act(async () => { result.current.publish(runtime, {}) })
+      expect(result.current.view).toBe(['starting', 'active', 'stopping'].includes(phase) ? 'realtime' : 'thread')
+    } finally { await unmount() }
+  },
+)
+
+test('chooses once when voice history arrives after cached chat and reselects on the same-session entry', async () => {
+  const envelopes: HostInbound[] = []
+  const web = { current: { injectJavaScript: (script: string) => {
+    new Function('globalThis', script)({ __applyHost: (message: HostInbound) => envelopes.push(message) })
+  } } } as unknown as { current: WebView | null }
+  const runtime = { session: createDefaultChatCoreSession(), sessionId: 'restored', projectPath: '/repo' } as unknown as ChatRuntime
+  const { result, unmount } = await renderHook(() => useTranscriptSync(web))
+  const paint = async (action: () => void) => {
+    await act(async () => { action() })
+    const latest = envelopes.at(-1)!
+    if ('delivery' in latest && latest.delivery) await act(async () => {
+      result.current.receive({ type: 'transcriptApplied', ...latest.delivery! })
+    })
+  }
+  try {
+    await paint(() => result.current.publish(runtime, {}))
+    expect(result.current.view).toBe('thread')
+    runtime.session.realtimeSessionId = 'rt'
+    runtime.session.realtimeHasTimeline = true
+    await paint(() => result.current.publish(runtime, {}))
+    expect(result.current.view).toBe('realtime')
+    await paint(() => result.current.setView('thread'))
+    await paint(() => result.current.publish(runtime, {}))
+    expect(result.current.view).toBe('thread')
+    await paint(() => result.current.activate())
+    expect(result.current.view).toBe('realtime')
+    runtime.session.realtimeSessionId = null
+    await paint(() => result.current.publish(runtime, {}))
+    expect(result.current.view).toBe('realtime')
+    await paint(() => result.current.activate())
+    expect(result.current.view).toBe('thread')
+    // Leaving and coming back cannot restore a manually selected, ended voice view.
+    await paint(() => result.current.setView('realtime'))
+    const other = { session: createDefaultChatCoreSession(), sessionId: 'other', projectPath: '/repo' } as unknown as ChatRuntime
+    await paint(() => result.current.publish(other, {}))
+    await paint(() => result.current.publish(runtime, {}))
+    expect(result.current.view).toBe('thread')
+  } finally { await unmount() }
+})
+
+test('does not prioritize a phone call with the same session id on another project', async () => {
+  const web = { current: { injectJavaScript: jest.fn() } } as unknown as { current: WebView | null }
+  const runtime = { session: createDefaultChatCoreSession(), sessionId: 'voice-task', projectPath: '/repo' } as unknown as ChatRuntime
+  runtime.session.realtimeHasTimeline = true
+  const voice: MobileVoiceState = { phase: 'active', target: { sessionId: 'voice-task', projectPath: '/other' },
+    inputMuted: false, paused: false, pauseReason: null, resuming: false, error: null }
+  const { result, unmount } = await renderHook(() => useTranscriptSync(web, voice))
+  try {
+    await act(async () => { result.current.publish(runtime, {}) })
+    expect(result.current.view).toBe('thread')
+  } finally { await unmount() }
+})
+
 test('updates empty voice hints on media state alone and separates the empty backing thread', async () => {
   const envelopes: HostInbound[] = []
   const web = { current: { injectJavaScript: (script: string) => {
@@ -132,6 +244,9 @@ test('separates histories, carries restored work at the live edge and opens its 
   }
   try {
     await act(async () => { result.current.publish(runtime, { sessionStatus: 'streaming', hasMoreHistory: true, historyNavigation: true }) })
+    expect(result.current.view).toBe('thread')
+    await receiveLast()
+    await act(async () => { result.current.setView('realtime') })
     expect(envelopes.at(-1)).toMatchObject({ conversationView: 'realtime', hasMoreHistory: false, historyNavigation: false,
       messages: [{ id: 'codex-realtime-speech' }, { id: 'codex-realtime-reply' }, { id: 'codex-realtime-interrupt' }],
       realtimeActivities: [{ turnId: 'speech', afterMessageId: null, activity: { status: 'working', messageIds: ['work'] } }] })

@@ -488,6 +488,46 @@ describe('ChatContent worktree-removed banner', () => {
 })
 
 describe('ChatContent empty-state gate is harness-agnostic', () => {
+  it('defaults to the backing thread on reentry after voice ends and keeps manual history navigation', async () => {
+    hoisted.sessionState._worktreeRemoved = false
+    hoisted.sessionState.sessionProvider = 'codex'
+    hoisted.sessionState.preferredProvider = 'codex'
+    hoisted.sessionState._activeSessionId = 'sid-1'
+    hoisted.sessionState.status = 'streaming'
+    hoisted.sessionState.messages = [{
+      id: 'running', role: 'assistant', status: 'streaming', createdAt: '', providerId: 'codex',
+      content: [{ type: 'text', text: 'Still working after voice ended' }],
+    }]
+    const store = useCodexRealtimeViewStore.getState()
+    store.setTimeline('sid-1', {
+      segments: [{ id: 'spoken', realtimeSessionId: 'rt-1', role: 'user', text: 'Voice history', localOrder: 1 }],
+      threadMessages: [], activeRealtimeSessionId: 'rt-1', hasTimeline: true,
+    })
+    useRealtimeCallStore.setState({ sessionId: 'sid-1', state: 'active' })
+    const ref = createRef<HTMLDivElement>()
+    const { rerender } = render(<ChatContent scrollViewportRef={ref} />)
+    expect(await screen.findByText('Voice history')).toBeInTheDocument()
+    // Ending a call does not override a view the user is already reading.
+    act(() => {
+      store.setRealtimeSession('sid-1', null)
+      useRealtimeCallStore.setState({ sessionId: null, state: 'idle' })
+    })
+    expect(screen.getByText('Voice history')).toBeInTheDocument()
+    rerender(<ChatContent scrollViewportRef={ref} foreground={false} />)
+    rerender(<ChatContent scrollViewportRef={ref} />)
+    expect(screen.getByText('Still working after voice ended')).toBeInTheDocument()
+    expect(screen.queryByText('Voice history')).toBeNull()
+    act(() => store.setView('sid-1', 'realtime'))
+    expect(screen.getByText('Voice history')).toBeInTheDocument()
+    hoisted.sessionState.status = 'idle'
+    rerender(<ChatContent scrollViewportRef={ref} />)
+    expect(screen.getByText('Voice history')).toBeInTheDocument()
+    // Even settled calls open the thread on the next activation.
+    rerender(<ChatContent scrollViewportRef={ref} foreground={false} />)
+    rerender(<ChatContent scrollViewportRef={ref} />)
+    expect(screen.queryByText('Voice history')).toBeNull()
+  })
+
   function reset() {
     hoisted.sessionState._worktreeRemoved = false
     hoisted.sessionState.pendingPlanApproval = null
@@ -594,8 +634,8 @@ describe('ChatContent empty-state gate is harness-agnostic', () => {
 
     renderContent()
 
-    expect(screen.queryByTestId('chat-suggestions')).toBeNull()
-    expect(screen.getByText('No voice transcript in this thread yet.')).toBeInTheDocument()
+    expect(screen.getByTestId('chat-suggestions')).toHaveAttribute('data-draft', 'true')
+    expect(screen.queryByText('No voice transcript in this thread yet.')).toBeNull()
   })
 
   it('renders delegated Codex work as a status row in the voice view and as turns in the thread view', async () => {
@@ -641,6 +681,7 @@ describe('ChatContent empty-state gate is harness-agnostic', () => {
 
     const { rerender } = renderContent()
 
+    act(() => useCodexRealtimeViewStore.getState().setView('sid-1', 'realtime'))
     // Speech renders through the ordinary ChatMessage, read-only; the delegated
     // turn is a status row rather than the turn body itself.
     const speech = await screen.findByText('Voice request')
@@ -698,6 +739,7 @@ describe('ChatContent empty-state gate is harness-agnostic', () => {
 
     const { rerender } = renderContent()
 
+    act(() => useCodexRealtimeViewStore.getState().setView('sid-1', 'realtime'))
     await screen.findByText('Spoken request')
     const visibleIds = () => [...document.querySelectorAll('[data-message-id]')]
       .map((element) => element.getAttribute('data-message-id'))
@@ -776,6 +818,7 @@ describe('ChatContent empty-state gate is harness-agnostic', () => {
     Object.assign(window.agent, { getRealtimeTimeline: vi.fn(async () => timeline) })
 
     const { rerender } = renderContent()
+    act(() => useCodexRealtimeViewStore.getState().setView('sid-1', 'realtime'))
     expect(await screen.findByText('Voice request')).toBeInTheDocument()
     expect(screen.queryByText(prompt)).toBeNull()
 
@@ -853,6 +896,9 @@ describe('ChatContent empty-state gate is harness-agnostic', () => {
 
     renderContent()
 
+    expect(await screen.findByText('Restored response')).toBeInTheDocument()
+    expect(screen.queryByText('Restored voice request')).toBeNull()
+    act(() => useCodexRealtimeViewStore.getState().setView('sid-1', 'realtime'))
     expect(await screen.findByText('Restored voice request')).toBeInTheDocument()
     // An ordinary (non-delegated) Codex turn is thread-view material only.
     expect(screen.queryByText('Restored response')).toBeNull()
@@ -881,6 +927,9 @@ describe('ChatContent empty-state gate is harness-agnostic', () => {
 
     renderContent()
 
+    await waitFor(() => expect(useCodexRealtimeViewStore.getState().sessions['sid-1']?.hasTimeline).toBe(true))
+    expect(useCodexRealtimeViewStore.getState().sessions['sid-1']?.view).toBe('thread')
+    act(() => useCodexRealtimeViewStore.getState().setView('sid-1', 'realtime'))
     expect(await screen.findByText('Stored voice request')).toBeInTheDocument()
     expect(useCodexRealtimeViewStore.getState().sessions['sid-1']?.hasTimeline).toBe(true)
     // No thread id: the provider is never asked, so no backend is spun up for history.

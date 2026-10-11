@@ -28,6 +28,13 @@ export type FilesOrigin = 'settings' | 'session'
  */
 export type AddProjectOrigin = 'workspace' | 'picker'
 
+/**
+ * Where Settings was opened from. App settings are device-local, so the device
+ * list offers them before any connection; back must return there, not to a
+ * chat that does not exist yet.
+ */
+export type SettingsOrigin = 'pair' | 'chat'
+
 /** Preserve mounted scenes in the shared stack prefix when changing pages. */
 export function reconcileRoutes(
   names: MobileRoute[],
@@ -50,9 +57,11 @@ export function routeHierarchy(
   route: MobileRoute,
   filesOrigin: FilesOrigin = 'settings',
   addProjectOrigin: AddProjectOrigin = 'workspace',
+  settingsOrigin: SettingsOrigin = 'chat',
 ): MobileRoute[] {
   const root: MobileRoute[] = ['pair']
   if (route === 'pair') return root
+  if (route === 'settings' && settingsOrigin === 'pair') return [...root, 'settings']
   root.push('chat')
   if (route === 'chat') return root
   if (route === 'session-search') return [...root, 'session-search']

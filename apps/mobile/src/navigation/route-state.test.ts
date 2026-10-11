@@ -70,6 +70,10 @@ describe('routeHierarchy', () => {
     expect(routeHierarchy('files')).toEqual(['pair', 'chat', 'settings', 'files'])
   })
 
+  it('puts settings straight on the device list when opened before connecting', () => {
+    expect(routeHierarchy('settings', 'settings', 'workspace', 'pair')).toEqual(['pair', 'settings'])
+  })
+
   it('drops settings from the files stack when the session menu opened it', () => {
     expect(routeHierarchy('files', 'session')).toEqual(['pair', 'chat', 'files'])
   })

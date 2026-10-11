@@ -575,7 +575,7 @@ todos={page === 'Chat' ? previewTodos : {}} draft={chatDraft.draft} streaming={p
             activePairingId="desk-retry" connectingPairingId={null}
             refreshing={devicesRefreshing} onRefresh={() => setDevicesRefreshing((value) => !value)}
             onBarcodeScanned={() => {}} onCancelScanner={() => {}} onPasteChange={() => {}} onLanChange={() => {}}
-            onPair={() => {}} onCancelPairing={() => setPage('Devices')} onOpenScanner={() => setPage('Pairing')} onConnect={() => {}} onRename={() => {}} onForget={() => {}} /> : null}
+            onPair={() => {}} onCancelPairing={() => setPage('Devices')} onOpenSettings={() => setPage('Settings')} onOpenScanner={() => setPage('Pairing')} onConnect={() => {}} onRename={() => {}} onForget={() => {}} /> : null}
           {page === 'Session search' ? <SessionSearchScreen client={previewClient} onOpenSession={() => setPage('Chat')} onCancel={() => setPage('Chat')} /> : null}
           {page === 'Network ledger' ? <ScrollView><TrafficAndReset /><NarrowLedger /><EmptyLedger /></ScrollView> : null}
           {page === 'Settings' ? <AppSettingsScreen update={{ version: '1.0.0', buildCode: 42 }} ledger={networkLedger} /> : null}

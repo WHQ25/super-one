@@ -50,6 +50,7 @@ const base: Props = {
   onPair: noop,
   onOpenScanner: noop,
   onCancelPairing: noop,
+  onOpenSettings: noop,
   onConnect: noop,
   onRename: noop,
   onForget: noop,
@@ -88,6 +89,16 @@ export const Empty = {
 export const ManyDevices = {
   name: 'Many devices · list scrolls, wordmark and button stay',
   args: withDevices(manyDevices),
+}
+
+/** Settings sit in the top-right corner, reachable before any device is paired. */
+export const LightMode = {
+  name: 'Light mode · settings in the corner',
+  render: (props: Props) => (
+    <MobileThemeProvider colorScheme="light">
+      <Frame width={390} height={760}><PairingsScreen {...props} /></Frame>
+    </MobileThemeProvider>
+  ),
 }
 
 export const LandscapePhone = {

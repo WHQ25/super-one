@@ -143,7 +143,7 @@ import { FilesScreen } from '../screens/files-screen'
 import { ChatScreen } from '../screens/chat-screen'
 import { PairingsScreen } from '../screens/pairings-screen'
 import { ConnectedTerminal } from './connected-terminal'
-import { MobileNavigator, type AddProjectOrigin, type FilesOrigin, type MobileRoute as Screen } from './mobile-navigator'
+import { MobileNavigator, type AddProjectOrigin, type FilesOrigin, type MobileRoute as Screen, type SettingsOrigin } from './mobile-navigator'
 import { MobileHeader, mobileHeaderTitle } from './mobile-header'
 import { useAddProject } from './use-add-project'
 import { MobileOverlays } from './mobile-overlays'
@@ -475,6 +475,7 @@ export function MobileApp() {
   // Files hangs off Project settings or off the session menu; back has to unwind
   // to whichever one actually opened it.
   const [filesOrigin, setFilesOrigin] = useState<FilesOrigin>('settings')
+  const [settingsOrigin, setSettingsOrigin] = useState<SettingsOrigin>('chat')
   const [addProjectOrigin, setAddProjectOrigin] = useState<AddProjectOrigin>('workspace')
   const suppressReconnectRef = useRef(false)
   const scanningRef = useRef(false)
@@ -1389,7 +1390,10 @@ export function MobileApp() {
     })
   }, [connectionState, project?.path, selectedProvider, applySystemInfo])
 
-  const openSettings = () => setScreen('settings')
+  const openSettings = (origin: SettingsOrigin) => {
+    setSettingsOrigin(origin)
+    setScreen('settings')
+  }
 
   const openFiles = (origin: FilesOrigin = 'settings') => {
     const p = project
@@ -2145,7 +2149,7 @@ export function MobileApp() {
       return
     }
     if (screen === 'settings') {
-      setScreen('chat')
+      setScreen(settingsOrigin)
       return
     }
     if (screen === 'add-project') {
@@ -2451,7 +2455,7 @@ export function MobileApp() {
             deviceStatus={deviceStatus}
             reconnect={reconnect}
             onDisconnect={disconnectDevice}
-            onOpenSettings={openSettings}
+            onOpenSettings={() => openSettings('chat')}
           />
         ) : null}
           <View style={styles.mainPane}>
@@ -2460,6 +2464,7 @@ export function MobileApp() {
             <MobileNavigator
             route={screen}
             filesOrigin={filesOrigin}
+            settingsOrigin={settingsOrigin}
             addProjectOrigin={addProjectOrigin}
             onRouteChange={(route) => {
               // A swipe out of Add Project pops to chat without going through
@@ -2516,6 +2521,7 @@ export function MobileApp() {
           onLanChange={setLan}
           onPair={() => void onPair()}
           onCancelPairing={cancelPairing}
+          onOpenSettings={() => openSettings('pair')}
           onOpenScanner={() => runUiAction(openScanner, setStatus, 'camera failed')}
           onConnect={(item) => void connectToPairing(item)}
           onRename={(item, name) => runUiAction(
@@ -2882,7 +2888,7 @@ export function MobileApp() {
           deviceStatus,
           reconnect,
           onDisconnect: disconnectDevice,
-          onOpenAppSettings: openSettings,
+          onOpenAppSettings: () => openSettings('chat'),
         }}
         filePreview={filePreview}
         mediaPorts={mediaPorts}

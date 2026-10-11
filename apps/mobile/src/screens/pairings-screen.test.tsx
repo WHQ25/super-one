@@ -1,4 +1,5 @@
 import { expect, it, jest } from '@jest/globals'
+import { fireEvent } from '@testing-library/react-native'
 import type { SavedPairing } from '@superone/relay-client'
 import { renderWithTheme } from '../test-render'
 import { PairingsScreen } from './pairings-screen'
@@ -13,7 +14,7 @@ function pairing(id: string): SavedPairing {
   return { id, hostName: id, relayUrl: 'wss://relay.example', secret: 'a'.repeat(64) }
 }
 
-function screen(pairings: SavedPairing[]) {
+function screen(pairings: SavedPairing[], onOpenSettings = jest.fn()) {
   return <PairingsScreen
     scannerOpen={false}
     paste=""
@@ -33,6 +34,7 @@ function screen(pairings: SavedPairing[]) {
     onPair={jest.fn()}
     onOpenScanner={jest.fn()}
     onCancelPairing={jest.fn()}
+    onOpenSettings={onOpenSettings}
     onConnect={jest.fn()}
     onRename={jest.fn()}
     onForget={jest.fn()}
@@ -54,4 +56,11 @@ it('lists the devices under the wordmark with the pair button right after them',
   // Only the list may shrink: the wordmark and the button keep their size when
   // the devices outgrow the screen, and the group stays centred when they do not.
   expect(view.getByTestId('device-list')).toHaveStyle({ flexGrow: 0, flexShrink: 1 })
+})
+
+it('opens settings from the device list before any device is connected', async () => {
+  const onOpenSettings = jest.fn()
+  const view = await renderWithTheme(screen([], onOpenSettings))
+  await fireEvent.press(view.getByLabelText('Settings'))
+  expect(onOpenSettings).toHaveBeenCalledTimes(1)
 })

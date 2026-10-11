@@ -1,6 +1,6 @@
 import { CameraView, type BarcodeScanningResult } from 'expo-camera'
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronDown, QrCode, RefreshCw } from 'lucide-react-native'
+import { ChevronDown, QrCode, RefreshCw, Settings } from 'lucide-react-native'
 import { FlatList, Pressable, StyleSheet, TextInput, View } from 'react-native'
 import { Text } from '../ui/text'
 import type { SavedPairing } from '@superone/relay-client'
@@ -39,6 +39,8 @@ export function PairingsScreen(props: {
   onPair: () => void
   onOpenScanner: () => void
   onCancelPairing: () => void
+  /** App settings are device-local, so they are reachable before any connection. */
+  onOpenSettings: () => void
   onConnect: (pairing: SavedPairing) => void
   onRename: (pairing: SavedPairing, name: string) => void
   onForget: (pairing: SavedPairing) => void
@@ -132,6 +134,9 @@ export function PairingsScreen(props: {
           <Text style={styles.emptyBody}>{t('Scan the QR code from your desktop app to pair a device.')}</Text>
         )}
       </View>
+      {/* Pinned to the corner rather than the device header, which is absent
+          until something is paired — exactly when settings matter most. */}
+      <IconButton icon={Settings} label="Settings" onPress={props.onOpenSettings} style={layout.settings} />
       {__DEV__ ? (
         <View style={styles.devPairing}>
           <Pressable accessibilityRole="button" accessibilityState={{ expanded: developerOpen }} onPress={() => setDeveloperOpen(!developerOpen)} style={{ minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -193,5 +198,6 @@ function useLayoutStyles() {
     devices: { flexShrink: 1, gap: tokens.spacing.md },
     /** No grow: the list is as tall as its rows until the group runs out of room. */
     list: { flexGrow: 0, flexShrink: 1 },
+    settings: { position: 'absolute', top: 0, right: 0 },
   }), [tokens])
 }

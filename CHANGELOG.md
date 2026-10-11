@@ -16,7 +16,7 @@ Every alpha release keeps its own notes on its GitHub Release.
 ### Added
 
 - Start Codex realtime voice from a phone with native audio and call control
-  retained while browsing other chats.
+  retained while browsing other chats, pauses and app backgrounding.
 - Expand Markdown tables and Mermaid previews, and scale Markdown preview
   text with the pane width.
 - Preserve native Codex subagent creation models, reasoning effort and turn roots
@@ -39,6 +39,12 @@ Every alpha release keeps its own notes on its GitHub Release.
   GPUs, total and free memory) and subscription usage (Claude, Codex, Grok,
   OpenCode Go, Cursor) for each environment.
 - Show message times on hover and day separators in the transcript.
+- Get the phone app that matches this desktop from Settings → Remote Control:
+  iOS (TestFlight) and Android (APK) QR codes for this desktop's edition.
+- Draw bare web links with the site's favicon in the composer and sent
+  messages, with an Open Graph preview on hover; the phone composer draws
+  them the same way.
+- Phone: open app settings from the device list, before any pairing.
 
 ### Changed
 
@@ -60,9 +66,13 @@ Every alpha release keeps its own notes on its GitHub Release.
   agent.
 - Show image and video model loading, empty catalogs and catalog errors in the
   model selector, with a provider-settings button in its Models heading.
+- Only pastes over three lines or 500 characters become chips, on desktop
+  and phone.
 
 ### Fixed
 
+- Show the right harness icon and Git branch for sessions created from a
+  phone or remote node.
 - Stop voice calls when control is taken over or pairing is removed, and
   recover the same call across short link interruptions.
 - Keep phone goal state and project names current after session changes.
@@ -88,6 +98,42 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Virtualize long transcripts and activity details to keep scrolling responsive.
 - Compress and batch remote streams, share routed session subscriptions and
   load full tool-result bodies on demand on desktop and phone.
+
+## [0.73.0-alpha.3] - 2026-10-11
+
+### Added
+
+- Get the phone app that matches this desktop from Settings → Remote Control:
+  iOS (TestFlight) and Android (APK) QR codes, open until a phone is paired.
+- Draw bare web links with the site's favicon in the composer and sent
+  messages, with an Open Graph preview on hover; the phone composer draws
+  them the same way.
+- Phone: open app settings from the device list, before any pairing.
+
+### Changed
+
+- Alpha phone builds ship as a separate "SuperOne Alpha" app on iOS and
+  Android, with its own updates and an Alpha icon, so they never replace the
+  stable app. Install SuperOne Alpha and pair it again to use an alpha
+  desktop.
+- Only pastes over three lines or 500 characters become chips, on desktop and
+  phone; shorter pastes insert as text.
+- Keep Codex voice playback buffered across pauses, permission dialogs and
+  app backgrounding; the voice button stays visible but disabled while a turn
+  runs.
+
+### Fixed
+
+- Show the right harness icon and Git branch for sessions created from a
+  phone or remote node.
+- Align list markers with an item that opens with a file chip, and keep wide
+  Markdown blocks clear of the turn scroll indicator.
+
+### CI
+
+- Release phone apps per track with a check that a stable phone never needs
+  an unreleased desktop; Android builds are attached to GitHub releases and
+  either platform can roll back to an existing build.
 
 ## [0.73.0-alpha.2] - 2026-10-11
 

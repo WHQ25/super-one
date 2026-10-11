@@ -143,6 +143,8 @@ const checkWidth: NonNullable<Story['play']> = async ({ canvasElement }) => {
       const wide = block.getBoundingClientRect()
       expect(wide.left).toBeGreaterThanOrEqual(bounds.left - 1)
       expect(wide.right).toBeLessThanOrEqual(bounds.right + 1)
+      // A block grown past the column clears the turn scroll indicator (w-7).
+      if (wide.width > column.width + 1) expect(wide.right).toBeLessThanOrEqual(bounds.right - 28)
       const expanded = block === table || block.dataset.chatMermaid === 'preview'
       expect(wide.width).toBeGreaterThanOrEqual(column.width - 1)
       expect(wide.width).toBeLessThanOrEqual(column.width + (expanded ? Math.max(0, bounds.width - cap) : 0) + 1)

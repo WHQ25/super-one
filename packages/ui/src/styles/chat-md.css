@@ -99,12 +99,14 @@
 }
 
 /* Keep blocks in the reading column until their intrinsic width needs the
-   unused margins of this chat pane. Their flex frame keeps them centered. */
+   unused margins of this chat pane. Their flex frame keeps them centered.
+   Each margin gives up a strip so the right edge clears the turn scroll
+   indicator (w-7) that overlays the pane. */
 .chat-transcript-layout {
   container-type: inline-size;
 }
 .chat-transcript-layout .assistant-reply .chat-md :is([data-streamdown="table-wrapper"], [data-chat-mermaid="preview"]) {
-  --chat-wide-gutter: max(0px, calc((100cqw - var(--container-3xl, 48rem)) / 2));
+  --chat-wide-gutter: max(0px, calc((100cqw - var(--container-3xl, 48rem)) / 2 - 1.5rem));
   width: max-content;
   min-width: 100%;
   max-width: calc(100% + 2 * var(--chat-wide-gutter));

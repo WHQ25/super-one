@@ -47,6 +47,15 @@ describe('ChatRuntime', () => {
     expect(runtime.realtimeVoice).toEqual({ protocol: 1, supported: true })
     runtime.dispose()
   })
+  it('adopts the host permission mode of a session it creates', async () => {
+    const client = fakeClient()
+    const answer = client.dispatch.getMockImplementation()!
+    client.dispatch.mockImplementation(async cmd => cmd.method === 'session.load' ? sessionLoadFixture({ state: { permissionMode: 'auto' } }) : answer(cmd))
+    const runtime = new ChatRuntime(client as never, () => {})
+    await runtime.create('/p', { sessionId: 's1', provider: 'claude', permissionMode: 'auto' })
+    expect(runtime.permissionMode).toBe('auto')
+    runtime.dispose()
+  })
   it('merges the routed node echo with its optimistic bubble and keeps same-text messages from peers', async () => {
     const runtime = new ChatRuntime(fakeClient() as never, () => {})
     await runtime.open('/app', 'same')

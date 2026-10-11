@@ -329,6 +329,11 @@ export class ChatRuntime {
     this.worktree = { isWorktree: restored.snapshot.isWorktree ?? false, worktreePath: restored.snapshot.worktreePath ?? null, gitBranch: restored.snapshot.gitBranch ?? null }
     this.sandboxInfo = restored.snapshot.sandboxInfo ?? null
     this.realtimeVoice = restored.snapshot.realtimeVoice
+    // The host reports a mode only when it changes, so the snapshot is the one place
+    // a fresh runtime (still on the reducer's 'default') learns the mode it created with.
+    if (restored.snapshot.permissionMode) {
+      this.session = { ...this.session, permissionMode: restored.snapshot.permissionMode as SessionState['permissionMode'] }
+    }
     this.eventEpoch = restored.epoch
     for (const batch of restored.liveBatches) this.ingest(batch as AgentEvent[], restored.epoch)
     return id

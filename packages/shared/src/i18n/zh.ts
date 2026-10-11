@@ -2598,12 +2598,8 @@ export const zh: Messages = {
         launched: '已启动',
         openSession: '打开会话',
         dismissed: '已忽略',
-        withdrawn: '智能体已撤回',
         desktopOnly: '请在电脑上的 SuperOne 中启动。',
         unavailable: '此会话无法在这里启动任务。',
-        withdrawingTask: '正在撤回任务…',
-        withdrawTask: '撤回任务',
-        taskWithdrawn: '任务已撤回',
       },
       collab: {
         requestingCollaboration: '正在请求协作…',

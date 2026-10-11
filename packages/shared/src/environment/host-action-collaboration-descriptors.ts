@@ -22,10 +22,7 @@ import {
   SUGGEST_TASK_TITLE_DESCRIPTION,
   SUGGEST_TASK_TLDR_DESCRIPTION,
   SUGGEST_TASK_PROMPT_DESCRIPTION,
-  SUGGEST_TASK_CWD_DESCRIPTION,
-  SESSION_DISMISS_TASK_DESCRIPTION,
-  DISMISS_TASK_ID_DESCRIPTION,
-  DISMISS_TASK_REASON_DESCRIPTION
+  SUGGEST_TASK_CWD_DESCRIPTION
 } from '../superone-tool-descriptions'
 
 /** Shared with the desktop descriptor, which must match it exactly. */
@@ -38,16 +35,6 @@ export const SESSION_SUGGEST_TASK_INPUT_SCHEMA: HostActionSuperoneToolDescriptor
     cwd: { type: 'string', description: SUGGEST_TASK_CWD_DESCRIPTION },
   },
   required: ['title', 'tldr', 'prompt'],
-  additionalProperties: false,
-}
-
-export const SESSION_DISMISS_TASK_INPUT_SCHEMA: HostActionSuperoneToolDescriptor['inputSchema'] = {
-  type: 'object',
-  properties: {
-    taskId: { type: 'string', minLength: 1, description: DISMISS_TASK_ID_DESCRIPTION },
-    reason: { type: 'string', description: DISMISS_TASK_REASON_DESCRIPTION },
-  },
-  required: ['taskId'],
   additionalProperties: false,
 }
 
@@ -285,10 +272,5 @@ export const HOST_ACTION_COLLABORATION_DESCRIPTORS: HostActionSuperoneToolDescri
     "name": "session_suggest_task",
     "description": SESSION_SUGGEST_TASK_DESCRIPTION,
     "inputSchema": SESSION_SUGGEST_TASK_INPUT_SCHEMA
-  },
-  {
-    "name": "session_dismiss_task",
-    "description": SESSION_DISMISS_TASK_DESCRIPTION,
-    "inputSchema": SESSION_DISMISS_TASK_INPUT_SCHEMA
   }
 ]

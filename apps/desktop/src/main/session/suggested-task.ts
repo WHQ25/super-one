@@ -1,6 +1,6 @@
 /**
  * Host side of suggested-task cards (`session_suggest_task`): the user's launch
- * or dismiss, and the agent's withdrawal. The click is the approval, so a launch
+ * or dismiss. The click is the approval, so a launch
  * records a handoff grant and starts it through the same path as an approved
  * `session_collab_request` handoff — a new top-level sibling whose opening turn
  * is the brief plus a provenance line.
@@ -17,7 +17,7 @@ import type { Session, SessionManager } from './types'
 
 type CardSession = Pick<Session, 'snapshot' | 'emitHostEvent'>
 
-/** An expected refusal; its message is shown to the user or returned to the agent as is. */
+/** An expected refusal; its message is shown on the card as is. */
 export class SuggestedTaskError extends Error {}
 
 /** The IPC reply: an expected refusal becomes a message for the card instead of a rejected invoke. */
@@ -37,19 +37,9 @@ function pendingTask(session: CardSession, taskId: string): SuggestedTaskInput {
   return found.input
 }
 
-export function dismissSuggestedTask(
-  session: CardSession,
-  taskId: string,
-  by: 'user' | 'agent',
-  reason?: string,
-): void {
+export function dismissSuggestedTask(session: CardSession, taskId: string): void {
   pendingTask(session, taskId)
-  const trimmed = reason?.trim()
-  session.emitHostEvent({
-    type: 'suggested_task_updated',
-    taskId,
-    state: { status: 'dismissed', by, ...(trimmed ? { reason: trimmed } : {}) },
-  })
+  session.emitHostEvent({ type: 'suggested_task_updated', taskId, state: { status: 'dismissed' } })
 }
 
 /** A branch name git accepts for any title; non-Latin titles fall back to the id alone. */

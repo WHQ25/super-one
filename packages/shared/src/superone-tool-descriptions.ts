@@ -235,8 +235,8 @@ export const SESSION_RETRIEVE_FROM_DESCRIPTION =
 export const SESSION_SUGGEST_TASK_DESCRIPTION =
   'Suggest a side task the user can launch later as its own session. Use when you notice a real issue outside the current task ' +
   '(a bug, cleanup, or follow-up) that should not derail it. Returns a taskId at once, without an approval prompt; keep working. ' +
-  'The user sees a card and may launch it as a new top-level session or dismiss it. ' +
-  'Withdraw a suggestion that became moot with session_dismiss_task. To hand work over now, use session_collab_request instead.'
+  'The user sees a card and may launch it as a new top-level session or dismiss it; if it goes stale, say so in your reply. ' +
+  'To hand work over now, use session_collab_request instead.'
 
 export const SUGGEST_TASK_TITLE_DESCRIPTION = 'Card title, starting with a verb.'
 
@@ -248,14 +248,6 @@ export const SUGGEST_TASK_PROMPT_DESCRIPTION =
 
 export const SUGGEST_TASK_CWD_DESCRIPTION =
   'Absolute root of a genuinely different project; omit for the current project.'
-
-export const SESSION_DISMISS_TASK_DESCRIPTION =
-  'Withdraw a card from session_suggest_task, e.g. after fixing the issue yourself or finding it was not real. ' +
-  'Only a card the user has not launched or dismissed can be withdrawn.'
-
-export const DISMISS_TASK_ID_DESCRIPTION = 'The taskId session_suggest_task returned.'
-
-export const DISMISS_TASK_REASON_DESCRIPTION = 'Short reason shown on the card.'
 
 export const AUTOMATION_LIST_DESCRIPTION =
   "List project automations with schedule and last/next run. Pass id for full prompt, agentConfig, and schedule; filter by query or enabled. Find unknown ids here before automation_apply or automation_delete; check for duplicates before creation when needed."

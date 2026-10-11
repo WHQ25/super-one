@@ -158,7 +158,6 @@ export const BUILT_IN_SUPERONE_TOOL_NAMES = [
   'session_collab_send',
   'session_collab_retrieve',
   'session_suggest_task',
-  'session_dismiss_task',
   'media_list_providers',
   'media_generate_image',
   'media_generate_video',
@@ -189,7 +188,6 @@ export const MAIN_THREAD_ONLY_SUPERONE_TOOL_NAMES = [
   'session_collab_send',
   'session_collab_retrieve',
   'session_suggest_task',
-  'session_dismiss_task',
 ] as const
 
 export function superoneBareToolName(name: string): string {

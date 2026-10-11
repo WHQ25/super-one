@@ -302,7 +302,6 @@ const SUPERONE_TOOL_SUMMARY_FIELDS: Record<string, readonly string[]> = {
   read_manual: ['domain', 'topic'],
   // The card, never the brief: the phone cannot launch it.
   session_suggest_task: ['title', 'tldr'],
-  session_dismiss_task: ['reason'],
   miniapp_dev_register: ['name', 'directory', 'appDir'],
   miniapp_dev_update_types: ['appDir'],
   miniapp_dev_setup: ['name', 'directory', 'description'],

@@ -6,7 +6,7 @@ import { SuggestedTaskCard } from '@superone/chat-view/presenters/SuggestedTaskC
 import { ToolBlock } from './ToolBlock'
 
 /**
- * `session_suggest_task` card and the `session_dismiss_task` row. Interactive
+ * `session_suggest_task` card. Interactive
  * stories drive the production card with stub actions in place of the desktop
  * IPC, so launching and dismissing need no live session.
  */
@@ -47,7 +47,7 @@ function InteractiveCard({ failLaunch = false, params = PARAMS }: { failLaunch?:
         },
         dismiss: async () => {
           await delay(200)
-          setState({ status: 'dismissed', by: 'user' })
+          setState({ status: 'dismissed' })
         },
       }}
     />
@@ -110,8 +110,7 @@ export const Settled: Story = {
   render: () => (
     <Shell>
       <SuggestedTaskCard params={PARAMS} state={{ status: 'launched', sessionId: 'session-2' }} onOpenSession={() => {}} />
-      <SuggestedTaskCard params={PARAMS} state={{ status: 'dismissed', by: 'user' }} />
-      <SuggestedTaskCard params={PARAMS} state={{ status: 'dismissed', by: 'agent', reason: 'Fixed it in this session after all.' }} />
+      <SuggestedTaskCard params={PARAMS} state={{ status: 'dismissed' }} />
     </Shell>
   ),
 }
@@ -136,7 +135,7 @@ export const Narrow: Story = {
   render: () => (
     <Shell width={300}>
       <InteractiveCard params={LONG_PARAMS} />
-      <SuggestedTaskCard params={LONG_PARAMS} state={{ status: 'dismissed', by: 'agent', reason: 'Superseded by the shared retry work in #482.' }} />
+      <SuggestedTaskCard params={LONG_PARAMS} state={{ status: 'dismissed' }} />
     </Shell>
   ),
 }
@@ -162,19 +161,6 @@ export const InTranscript: Story = {
       {suggestRow({ status: 'streaming' })}
       {suggestRow({ result: JSON.stringify({ taskId: TASK_ID, status: 'pending' }) })}
       {suggestRow({ result: '[Error] title must be at most 60 characters.', isError: true })}
-      <ToolBlock
-        toolName="mcp__superone__session_dismiss_task"
-        input={JSON.stringify({ taskId: TASK_ID, reason: 'Fixed it in this session' })}
-        status="complete"
-        result={JSON.stringify({ taskId: TASK_ID, status: 'dismissed' })}
-      />
-      <ToolBlock
-        toolName="mcp__superone__session_dismiss_task"
-        input={JSON.stringify({ taskId: TASK_ID })}
-        status="complete"
-        result="[Error] Suggested task was already launched."
-        isError
-      />
     </Shell>
   ),
 }

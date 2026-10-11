@@ -160,14 +160,7 @@ function Footer({
       </Button>
     )
   }
-  if (state?.status === 'dismissed') {
-    if (state.by !== 'agent') return null
-    return (
-      <p className="mt-1 break-words text-xs text-muted-foreground">
-        {t('chat.toolBlock.suggestedTask.withdrawn')}{state.reason ? ` · ${state.reason}` : ''}
-      </p>
-    )
-  }
+  if (state?.status === 'dismissed') return null
   if (!actions) {
     return (
       <p className="mt-1.5 text-xs text-muted-foreground">

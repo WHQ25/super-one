@@ -1134,7 +1134,7 @@ export class AgentService {
       if (!session) return { ok: false, error: 'This session is no longer available.' }
       session.lease.assertMutation()
       const { dismissSuggestedTask, suggestedTaskReply } = await import('../session/suggested-task')
-      return suggestedTaskReply(async () => dismissSuggestedTask(session, taskId, 'user'))
+      return suggestedTaskReply(async () => dismissSuggestedTask(session, taskId))
     })
 
     windowIpc.handle(AgentIpcChannels.ACP_GET_RATE_LIMITS, async (

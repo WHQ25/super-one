@@ -2513,12 +2513,8 @@ export type Messages = {
         launched: string
         openSession: string
         dismissed: string
-        withdrawn: string
         desktopOnly: string
         unavailable: string
-        withdrawingTask: string
-        withdrawTask: string
-        taskWithdrawn: string
       }
       collab: {
         requestingCollaboration: string
@@ -6922,12 +6918,8 @@ export const en: Messages = {
         launched: 'Launched',
         openSession: 'Open Session',
         dismissed: 'Dismissed',
-        withdrawn: 'Withdrawn by the agent',
         desktopOnly: 'Launch it from SuperOne on your computer.',
         unavailable: 'This session cannot launch tasks from here.',
-        withdrawingTask: 'Withdrawing task…',
-        withdrawTask: 'Withdraw Task',
-        taskWithdrawn: 'Task Withdrawn',
       },
       collab: {
         requestingCollaboration: 'Requesting collaboration…',

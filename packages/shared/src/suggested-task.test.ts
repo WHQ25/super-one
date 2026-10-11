@@ -64,31 +64,28 @@ describe('suggested tasks', () => {
   })
 
   it('records the outcome on a Codex mcp_tool_call item', () => {
-    const next = applySuggestedTaskUpdate(codexTranscript(), TASK_ID, { status: 'dismissed', by: 'agent', reason: 'Fixed it' })
-    expect(findSuggestedTask(next, TASK_ID)).toEqual({
-      input: INPUT,
-      state: { status: 'dismissed', by: 'agent', reason: 'Fixed it' },
-    })
+    const next = applySuggestedTaskUpdate(codexTranscript(), TASK_ID, { status: 'dismissed' })
+    expect(findSuggestedTask(next, TASK_ID)).toEqual({ input: INPUT, state: { status: 'dismissed' } })
   })
 
   it('leaves a card that already has an outcome as it is', () => {
     const launched = applySuggestedTaskUpdate(claudeTranscript(), TASK_ID, { status: 'launched', sessionId: 's-2' })
-    expect(applySuggestedTaskUpdate(launched, TASK_ID, { status: 'dismissed', by: 'user' })).toBe(launched)
+    expect(applySuggestedTaskUpdate(launched, TASK_ID, { status: 'dismissed' })).toBe(launched)
   })
 
   it('ignores unknown ids and other tools whose rows mention the id', () => {
     const messages = claudeTranscript()
     expect(findSuggestedTask(messages, 'missing')).toBeNull()
-    expect(applySuggestedTaskUpdate(messages, 'missing', { status: 'dismissed', by: 'user' })).toBe(messages)
-    const dismissCall = [{
+    expect(applySuggestedTaskUpdate(messages, 'missing', { status: 'dismissed' })).toBe(messages)
+    const otherCall = [{
       id: 'a3',
       role: 'assistant',
       content: [
-        { type: 'tool_use', toolName: 'mcp__superone__session_dismiss_task', toolUseId: 'call-2', input: JSON.stringify({ taskId: TASK_ID }) },
-        { type: 'tool_result', toolUseId: 'call-2', summary: JSON.stringify({ taskId: TASK_ID, status: 'dismissed' }) },
+        { type: 'tool_use', toolName: 'mcp__superone__session_collab_send', toolUseId: 'call-2', input: JSON.stringify({ content: `See task ${TASK_ID}` }) },
+        { type: 'tool_result', toolUseId: 'call-2', summary: JSON.stringify({ status: 'sent', echo: TASK_ID }) },
       ],
     }] as ChatMessage[]
-    expect(findSuggestedTask(dismissCall, TASK_ID)).toBeNull()
-    expect(findSuggestedTask([...messages, ...dismissCall], TASK_ID)).toEqual({ input: INPUT })
+    expect(findSuggestedTask(otherCall, TASK_ID)).toBeNull()
+    expect(findSuggestedTask([...messages, ...otherCall], TASK_ID)).toEqual({ input: INPUT })
   })
 })

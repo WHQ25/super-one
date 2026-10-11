@@ -1,6 +1,7 @@
 /**
  * Suggested tasks (`session_suggest_task`): a side issue the agent noticed,
  * shown as a card the user may later launch as its own session or dismiss.
+ * Only the user decides a card; the agent cannot withdraw one.
  *
  * The tool result only names the card (`taskId`) and is never rewritten. What
  * happened to the card afterwards is a host fact patched onto the call's own
@@ -10,12 +11,11 @@
 import { parseMcpToolName } from './tool-ui'
 
 export const SUGGEST_TASK_TOOL_NAME = 'session_suggest_task' as const
-export const DISMISS_TASK_TOOL_NAME = 'session_dismiss_task' as const
 
 /** Outcome of a card. Absent while the card is pending. */
 export type SuggestedTaskState =
   | { status: 'launched'; sessionId: string }
-  | { status: 'dismissed'; by: 'user' | 'agent'; reason?: string }
+  | { status: 'dismissed' }
 
 /** What the agent proposed, read back from the call's own input. */
 export interface SuggestedTaskInput {

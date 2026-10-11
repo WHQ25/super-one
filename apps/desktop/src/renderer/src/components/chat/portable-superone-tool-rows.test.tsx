@@ -121,7 +121,6 @@ describe('SuperOne compact tool rows on the phone', () => {
       session_tag: { add: ['a'] },
       miniapp_dev_register: { name: 'budget' },
       miniapp_dev_update_types: { appDir: '/apps/budget' },
-      session_dismiss_task: { taskId: 't', reason: 'Fixed it' },
     }
     for (const [tool, input] of Object.entries(samples)) {
       const projected = sanitizeRemoteToolInput(`mcp__superone__${tool}`, JSON.stringify(input))
@@ -146,10 +145,9 @@ describe('SuperOne compact tool rows on the phone', () => {
 
     it('shows the outcome the host patched onto the row', () => {
       const { container } = projectedRow('session_suggest_task', SUGGESTION, PENDING, {
-        suggestedTask: { status: 'dismissed', by: 'agent', reason: 'Fixed it' },
+        suggestedTask: { status: 'dismissed' },
       })
       expect(container.textContent).toContain('Dismissed')
-      expect(container.textContent).toContain('Withdrawn by the agent · Fixed it')
       expect(container.textContent).not.toContain('Launch it from SuperOne')
     })
   })

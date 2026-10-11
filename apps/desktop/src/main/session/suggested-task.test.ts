@@ -158,15 +158,15 @@ describe('launchSuggestedTask', () => {
 })
 
 describe('dismissSuggestedTask', () => {
-  it('records who dismissed a pending card, then refuses to dismiss it again', () => {
+  it('dismisses a pending card once, and refuses one the user already launched', async () => {
     const session = fakeSession()
-    dismissSuggestedTask(session, TASK_ID, 'agent', '  Fixed it myself ')
-    expect(session.emitHostEvent).toHaveBeenCalledWith({
-      type: 'suggested_task_updated',
-      taskId: TASK_ID,
-      state: { status: 'dismissed', by: 'agent', reason: 'Fixed it myself' },
-    })
-    expect(() => dismissSuggestedTask(session, TASK_ID, 'user')).toThrow(/already dismissed/)
+    dismissSuggestedTask(session as never, TASK_ID)
+    expect(session.emitHostEvent).toHaveBeenCalledWith({ type: 'suggested_task_updated', taskId: TASK_ID, state: { status: 'dismissed' } })
+    expect(() => dismissSuggestedTask(session as never, TASK_ID)).toThrow(/already dismissed/)
+
+    const launched = fakeSession()
+    await launchSuggestedTask(fakeHost(launched).host, 'parent', TASK_ID)
+    expect(() => dismissSuggestedTask(launched as never, TASK_ID)).toThrow(/already launched/)
   })
 })
 

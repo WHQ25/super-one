@@ -51,7 +51,7 @@ on:
           - internal
         default: alpha
       build_id:
-        description: 'Publish an existing EAS build instead of starting a new one (Android only). Use this to re-point latest.json at an older build — that is the rollback.'
+        description: 'Publish an existing EAS build instead of starting a new one. Use this to re-point latest.json at an older build — that is the rollback. iOS only rewrites its manifest: the build is already on TestFlight.'
         required: false
         type: string
         default: ''
@@ -92,7 +92,7 @@ on:
         type: string
         default: alpha
       build_id:
-        description: Publish an existing EAS build instead of starting a new one (Android only).
+        description: Publish an existing EAS build instead of starting a new one; iOS only rewrites its manifest.
         required: false
         type: string
         default: ''
@@ -428,10 +428,6 @@ jobs:
       - name: Check inputs
         run: |
           set -euo pipefail
-          if [ -n "${INPUT_BUILD_ID}" ]; then
-            echo "::error::build_id is Android-only; the iOS leg submits --latest to TestFlight"
-            exit 1
-          fi
           if [ "${TRACK}" = alpha ]; then DEFAULT_URL="${TESTFLIGHT_URL_ALPHA}"; else DEFAULT_URL="${TESTFLIGHT_URL_STABLE}"; fi
           TESTFLIGHT_URL="${INPUT_TESTFLIGHT_URL:-${DEFAULT_URL}}"
           if [ -z "${TESTFLIGHT_URL}" ] && [ "${TRACK}" = alpha ]; then
@@ -443,8 +439,9 @@ jobs:
           fi
           # `eas submit` only accepts an app-store distribution build; an
           # `internal` (ad-hoc) IPA would build for 30 minutes and then fail
-          # to submit. Catch it before the queue, not after.
-          if [ "${INPUT_DRY_RUN}" != "true" ]; then
+          # to submit. Catch it before the queue, not after. A build_id run
+          # submits nothing.
+          if [ "${INPUT_DRY_RUN}" != "true" ] && [ -z "${INPUT_BUILD_ID}" ]; then
             case "${INPUT_IOS_PROFILE}" in
               alpha|production) ;;
               *)
@@ -471,9 +468,10 @@ jobs:
           esac
 
       # Before the queue: TestFlight receives the build before any manifest is
-      # published, so this is the last point a stable build can be stopped.
+      # published, so this is the last point a stable build can be stopped. A
+      # reused build_id is exempt, as on Android: it is the rollback.
       - name: Check the stable desktop floor
-        if: ${{ env.TRACK == 'stable' }}
+        if: ${{ env.TRACK == 'stable' && inputs.build_id == '' }}
         run: bun scripts/publish-mobile-update.ts --check-stable-floor
 
       - name: Build on EAS
@@ -487,15 +485,29 @@ jobs:
             echo "::error::EXPO_TOKEN secret is not set — an EAS build cannot authenticate"
             exit 1
           fi
-          bunx "eas-cli@${EAS_CLI_VERSION}" build \
-            --platform ios \
-            --profile "${INPUT_IOS_PROFILE}" \
-            --non-interactive \
-            --wait \
-            --json > build.json
+          if [ -n "${INPUT_BUILD_ID}" ]; then
+            # The rollback: the build is already on TestFlight, so only the
+            # manifest moves -- back to a build that testers can still
+            # install, which stops the nag toward a newer one.
+            echo "Reusing EAS build ${INPUT_BUILD_ID}"
+            bunx "eas-cli@${EAS_CLI_VERSION}" build:view "${INPUT_BUILD_ID}" --json > build.json
+          else
+            bunx "eas-cli@${EAS_CLI_VERSION}" build \
+              --platform ios \
+              --profile "${INPUT_IOS_PROFILE}" \
+              --non-interactive \
+              --wait \
+              --json > build.json
+          fi
           NORMALISED='(if type=="array" then . else [.] end)
             | map(select(.platform == "IOS" and .status == "FINISHED"))
             | .[0]'
+          # Same guard as Android: the profile is the app, and so the pointer.
+          PROFILE="$(jq -r "${NORMALISED} | .buildProfile // empty" build.json)"
+          if [ "${PROFILE}" != "${INPUT_IOS_PROFILE}" ]; then
+            echo "::error::build profile ${PROFILE:-unknown} does not match ios_profile=${INPUT_IOS_PROFILE}"
+            exit 1
+          fi
           BUILD_CODE="$(jq -r "${NORMALISED} | .appBuildVersion // empty" build.json)"
           APP_VERSION="$(jq -r "${NORMALISED} | .appVersion // empty" build.json)"
           if [ -z "${BUILD_CODE}" ] || [ -z "${APP_VERSION}" ]; then
@@ -516,7 +528,7 @@ jobs:
           echo "Built ${APP_VERSION} (${BUILD_CODE}) from ${BUILD_COMMIT:-unknown}"
 
       - name: Submit to TestFlight
-        if: ${{ inputs.dry_run != true }}
+        if: ${{ inputs.dry_run != true && inputs.build_id == '' }}
         working-directory: apps/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
@@ -543,6 +555,9 @@ jobs:
                 --testflight-url "${TESTFLIGHT_URL}" --out staging-mobile)
           if [ -n "${INPUT_MIN_SUPPORTED}" ]; then
             ARGS+=(--min-supported-build-code "${INPUT_MIN_SUPPORTED}")
+          fi
+          if [ -n "${INPUT_BUILD_ID}" ]; then
+            ARGS+=(--rollback)
           fi
           if [ "${INPUT_DRY_RUN}" != "true" ]; then
             ARGS+=(--upload)

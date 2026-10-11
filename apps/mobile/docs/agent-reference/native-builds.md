@@ -158,6 +158,11 @@ default `dry_run: true` runs the guard and `expo export` without publishing. Ins
 apps pick an update up on the next launch and apply it on the launch after that; there
 is no in-app `checkForUpdateAsync`.
 
+- **Rollback is `build_id` on either platform.** It republishes that EAS build's
+  numbers with `--rollback` and skips the floor check. Android uploads nothing new
+  (the APK key is immutable); iOS skips build and submit, so it only stops the
+  update prompt — TestFlight itself still offers its newest build until that build
+  is expired in App Store Connect.
 - **The floor (`minSupportedBuildCode`) is the one move with no client-side way back.**
   It is inherited unless a number is typed into the workflow, `<= buildCode` is enforced
   on both sides, and the *hard gate is checked before the dismissal* so saying "Later"

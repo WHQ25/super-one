@@ -54,7 +54,9 @@ So the development variant takes a `.dev` suffix and its own name and scheme.
 
 **Alpha mirrors the desktop variants.** The `alpha` EAS profile builds
 `APP_VARIANT=alpha` on both platforms: `<release id>.alpha`, "SuperOne Alpha",
-`superone-alpha://`, EAS channel `alpha`, pointer `mobile/<platform>/alpha/latest.json`.
+`superone-alpha://`, the desktop alpha's badged icon (`assets/icon-alpha.png`, from
+`docs/logo/make-alpha-icon.py`), EAS channel `alpha`, pointer
+`mobile/<platform>/alpha/latest.json`.
 On iOS it is its own App Store Connect app, TestFlight only; the release bundle id
 is the stable app (TestFlight now, App Store at launch). It is where phone changes
 that need an alpha desktop ship. One application id on two channels would not do:

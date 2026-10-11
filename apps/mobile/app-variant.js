@@ -36,7 +36,10 @@
  */
 const VARIANTS = {
   development: { suffix: '.dev', scheme: 'superone-dev', label: 'Dev' },
-  alpha: { suffix: '.alpha', scheme: 'superone-alpha', label: 'Alpha' },
+  // The desktop alpha's badged icon, so the two installs differ at a glance.
+  // A 1024 LANCZOS downscale of docs/logo/app-icon-alpha.png, the same way
+  // assets/icon.png comes from docs/logo/app-icon.png.
+  alpha: { suffix: '.alpha', scheme: 'superone-alpha', label: 'Alpha', icon: './assets/icon-alpha.png' },
 }
 
 const DEV_SUFFIX = VARIANTS.development.suffix
@@ -63,8 +66,15 @@ function applyAppVariant(config, env = process.env) {
     ...config,
     name: `${config.name} ${variant.label}`,
     scheme: variant.scheme,
+    ...(variant.icon && { icon: variant.icon }),
     ios: { ...config.ios, bundleIdentifier: `${config.ios.bundleIdentifier}${variant.suffix}` },
-    android: { ...config.android, package: `${config.android.package}${variant.suffix}` },
+    android: {
+      ...config.android,
+      package: `${config.android.package}${variant.suffix}`,
+      ...(variant.icon && {
+        adaptiveIcon: { ...config.android.adaptiveIcon, foregroundImage: variant.icon },
+      }),
+    },
   }
 }
 

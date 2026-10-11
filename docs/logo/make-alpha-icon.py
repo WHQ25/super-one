@@ -10,8 +10,15 @@ Full pipeline, mirroring the stable icon:
     python3 make-alpha-icon.py                       # -> app-icon-alpha.png (1254)
     python3 make-app-icon.py app-icon-alpha.png \
         ../../apps/desktop/build/icon-alpha.png      # -> 1024 canvas, 824 body
+    python3 -c "from PIL import Image; Image.open('app-icon-alpha.png').convert('RGBA') \
+        .resize((1024, 1024), Image.LANCZOS) \
+        .save('../../apps/mobile/assets/icon-alpha.png', optimize=True)"
+                                                     # -> mobile alpha, full bleed
 
-The second step is not optional: build/icon.png is an 824px body centred on a
+The mobile icon is full bleed (iOS and the Android adaptive mask crop it), so
+it skips make-app-icon.py, exactly as assets/icon.png does for app-icon.png.
+
+For the desktop, the make-app-icon.py step is not optional: build/icon.png is an 824px body centred on a
 1024 canvas, and skipping it would give the two variants different body sizes.
 """
 import argparse

@@ -13,9 +13,15 @@ const repoRoot = join(mobileRoot, '../..')
 const app = JSON.parse(readFileSync(join(mobileRoot, 'app.json'), 'utf8')) as {
   expo?: {
     scheme?: string
+    icon?: string
     runtimeVersion?: { policy?: string }
     ios?: { bundleIdentifier?: string }
-    android?: { package?: string; permissions?: string[]; blockedPermissions?: string[] }
+    android?: {
+      package?: string
+      permissions?: string[]
+      blockedPermissions?: string[]
+      adaptiveIcon?: { foregroundImage?: string }
+    }
     owner?: string
     updates?: { url?: string }
     extra?: { eas?: { projectId?: string } }
@@ -239,6 +245,11 @@ if (
   ))
 ) {
   throw new Error('the alpha variant must have its own application ids and URL scheme')
+}
+// Two installs with one icon are told apart only by a truncated label.
+const alphaIcons = [alpha.icon, alpha.android?.adaptiveIcon?.foregroundImage]
+if (alphaIcons.some((icon) => !icon || icon === release.icon || !existsSync(join(mobileRoot, icon)))) {
+  throw new Error('the alpha variant must ship its own icon on both platforms')
 }
 
 console.log('ok: EAS release profiles and runtime compatibility policy are consistent')

@@ -83,6 +83,6 @@ it with the first real case.) `nextAlphaRelease` in
 - **Do not push `.github/workflows/**` to `main` while a desktop release is in
   flight** (dispatch → promote green): `gh release create --target <sha>`
   compares `<sha>..HEAD`, and a workflow change in that range demands a scope
-  `GITHUB_TOKEN` cannot hold. Mobile runs are not affected — they create no
-  GitHub Release.
+  `GITHUB_TOKEN` cannot hold. Mobile runs are not affected — their Android
+  GitHub Release attaches to a tag that already exists.
 - **`bun.lock` is never modified by a release.**

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { buildDecisionQueue } from './decision-queue'
-import type { PermissionRequest } from '@superone/shared/agent-types'
+import type { ChatMessage, PermissionRequest } from '@superone/shared/agent-types'
 
 describe('buildDecisionQueue', () => {
   it('keeps permissions in arrival order, followed by the question', () => {
@@ -21,6 +21,21 @@ describe('buildDecisionQueue', () => {
 
   it('returns an empty queue when no decision is pending', () => {
     expect(buildDecisionQueue([], null)).toEqual([])
+  })
+
+  it('queues async questions in transcript order and advances only after a saved answer', () => {
+    const turn: ChatMessage = {
+      id: 'turn', role: 'assistant', status: 'complete', content: [], createdAt: '', providerId: 'codex',
+      metadata: { codex: { threadId: 'thread', usage: null, items: ['first', 'second'].map(id => ({
+        id, type: 'agent_message', delivery: 'async', text: '', questions: [{ title: id, options: null }],
+      })) } },
+    }
+    expect(buildDecisionQueue([], null, [turn]).map(item => item.request.requestId))
+      .toEqual(['codex_async_answer:first', 'codex_async_answer:second'])
+    const reply: ChatMessage = { id: 'codex_async_answer:first', role: 'user', status: 'complete',
+      content: [{ type: 'text', text: 'Answer' }], createdAt: '', providerId: 'codex' }
+    expect(buildDecisionQueue([], null, [turn, reply]).map(item => item.request.requestId))
+      .toEqual(['codex_async_answer:second'])
   })
 
   it('leaves app forms outside the decision tier and keeps questions ahead of agent input', () => {

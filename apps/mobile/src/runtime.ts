@@ -9,7 +9,7 @@ import { requestHarnessResource } from './harness-resource-cache'
 import { McpAppContextAttachments } from './mcp-app-context-attachments'
 import { extendHistoryIndex, mergeIndexedHistory, type SessionHistoryIndex } from '@superone/shared/session-history-index'
 import { isCompactSlashSend } from '@superone/shared/compact-boundary'
-import { codexAsyncAnswerId } from '@superone/shared/codex-async-question'
+import { codexAsyncAnswerContent, codexAsyncAnswerId, codexAsyncQuestionQueue } from '@superone/shared/codex-async-question'
 import { requestMentionSearch, type MentionSearchOptions, type MentionSearchResult } from './mention-search'
 import type {
   AgentEvent,
@@ -665,13 +665,14 @@ export class ChatRuntime {
   async answerCodexAsyncQuestion(messageId: string, itemId: string, answers: string[]): Promise<void> {
     const { projectPath, sessionId } = this
     if (!projectPath || !sessionId) throw new Error('No active session')
-    if (!this.session.messages.some(message => message.id === messageId)) throw new Error('Question session is no longer active')
+    const question = codexAsyncQuestionQueue(this.session).find(q => q.messageId === messageId && q.item.id === itemId)
+    if (!question && !this.session.messages.some(message => message.id === messageId)) throw new Error('Question session is no longer active')
     const result = await this.control<{ reply: string }>('session.answerAsyncQuestion', { messageId, itemId, answers })
     if (typeof result.reply !== 'string') throw new Error('Answer was not accepted')
     if (this.sessionId !== sessionId || this.projectPath !== projectPath) return
     this.ingest([{ type: 'user_message_appended', message: {
       id: codexAsyncAnswerId(itemId), role: 'user', status: 'complete', providerId: 'codex',
-      createdAt: new Date().toISOString(), content: [{ type: 'text', text: result.reply }],
+      createdAt: new Date().toISOString(), content: question ? [{ type: 'text', text: result.reply, codexAsyncQuestions: question.item.questions }] : codexAsyncAnswerContent(codexAsyncAnswerId(itemId), result.reply, this.session.messages),
     } }])
     this.flush()
   }

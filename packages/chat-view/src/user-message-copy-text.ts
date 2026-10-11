@@ -1,6 +1,7 @@
 import type { ChatMessage } from '@superone/shared/agent-types'
 import { parseUserMentions } from '@superone/shared/user-mention-parser'
 import { mentionLabel } from '@superone/shared/user-message-parts'
+import { codexAsyncAnswerCopyText, codexAsyncAnswerQuestions, codexAsyncReplyText } from '@superone/shared/codex-async-question'
 
 /**
  * The text a user bubble puts on the clipboard: what the bubble *shows*, not
@@ -9,6 +10,8 @@ import { mentionLabel } from '@superone/shared/user-message-parts'
  * as the message the user remembers typing.
  */
 export function userMessageCopyText(message: ChatMessage): string {
+  const questions = codexAsyncAnswerQuestions(message, [])
+  if (questions?.length) return codexAsyncAnswerCopyText(questions, codexAsyncReplyText(message) ?? '')
   const parts: string[] = []
   for (const block of message.content) {
     if (block.type !== 'text') continue

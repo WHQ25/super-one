@@ -27,6 +27,18 @@ const answer = { kind: 'codex.steer' as const, input: 'Production', newAssistant
   newUserMessageId: 'codex_async_answer:question', newUserText: 'Production' }
 
 describe('Codex async answers across turn completion', () => {
+  it('persists the question with the answer so the user bubble survives standalone history loading', async () => {
+    const questions = [{ title: 'Environment?', options: ['Production'] }]
+    const { session } = fixture([{
+      id: 'turn', role: 'assistant', status: 'complete', content: [], createdAt: '', providerId: 'codex',
+      metadata: { codex: { threadId: 'thread', usage: null, items: [{
+        id: 'question', type: 'agent_message', text: '', delivery: 'async', questions,
+      }] } },
+    }])
+    await session.dispatchBackendCommand(answer)
+    expect(session.snapshot.messages.find(message => message.id === answer.newUserMessageId)?.content)
+      .toEqual([{ type: 'text', text: 'Production', codexAsyncQuestions: questions }])
+  })
   it('delivers a mobile answer after completion and restores its submitted state', async () => {
     const { session, backend, authority } = fixture([{
       id: 'turn', role: 'assistant', status: 'complete', content: [], createdAt: '', providerId: 'codex',

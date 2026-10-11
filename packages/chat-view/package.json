@@ -48,8 +48,6 @@
     "./presenters/SendFailureResendButton": "./src/presenters/SendFailureResendButton.tsx",
     "./presenters/ClaudeTurnBody": "./src/presenters/ClaudeTurnBody.tsx",
     "./presenters/CodeBlock": "./src/presenters/CodeBlock.tsx",
-    "./presenters/CodexAsyncQuestionForm": "./src/presenters/CodexAsyncQuestionForm.tsx",
-    "./presenters/CodexAsyncQuestionView": "./src/presenters/CodexAsyncQuestionView.tsx",
     "./presenters/CodexCollabBlock": "./src/presenters/CodexCollabBlock.tsx",
     "./presenters/CodexPlanBlock": "./src/presenters/CodexPlanBlock.tsx",
     "./presenters/CodexCommandBlock": "./src/presenters/CodexCommandBlock.tsx",

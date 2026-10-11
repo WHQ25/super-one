@@ -13,6 +13,7 @@ import type { Session } from '../session/types'
 import type { NodeHostSessionManager } from './desktop-session-host'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { activeTurnOutsidePage, sessionMessageRange } from '@superone/shared/environment/session-message-range'
+import { pendingCodexAsyncQuestions } from '@superone/shared/codex-async-question'
 import { sessionRestoreFacts, type DesktopRestorePorts } from '../session/session-restore-facts'
 
 /**
@@ -208,6 +209,7 @@ export abstract class DesktopSessionReads<Row extends DesktopSessionRow> impleme
     let state: ChatCoreSession = createDefaultChatCoreSession()
     for (const event of [...(live?.getReplayEvents() ?? []), ...(live?.getPendingInteractions() ?? [])]) state = { ...state, ...applyEventToSession(state, event) }
     const all = this.messages(sessionId)
+    state.pendingAsyncQuestions = pendingCodexAsyncQuestions(all)
     const { start, end } = sessionMessageRange(all, input)
     const messages = all.slice(start, end)
     if (input.includeState === false) return {

@@ -18,7 +18,6 @@ import { memo, useState, useEffect, useRef } from 'react'
 import { ChevronRight } from 'lucide-react'
 import type { CodexCollabToolCallItem } from '@superone/shared/agent-types'
 import { CompactLabeledToolRow, ToolName, ToolRow, ToolSummary, toolOutcomeLabel, withStreamingEllipsis } from './tool-row'
-import { CodexAsyncQuestionBlock } from './CodexAsyncQuestionBlock'
 import { CodexMcpAuthAction, hasCodexMcpAuthChallenge } from './CodexMcpAuthAction'
 import { CodexCommandBlock } from './CodexCommandBlock'
 export { CodexCommandBlock } from './CodexCommandBlock'
@@ -166,11 +165,10 @@ export function renderCodexItem(
 ) {
   switch (item.type) {
     case 'agent_message':
+      if (item.questions?.length) return null
       return (
         <div key={`${item.id}-${index}`} className="my-0.5">
-          {item.questions?.length
-            ? <CodexAsyncQuestionBlock item={item} />
-            : <StreamingAgentMessage text={item.text} isStreaming={isStreaming} />}
+          <StreamingAgentMessage text={item.text} isStreaming={isStreaming} />
         </div>
       )
 

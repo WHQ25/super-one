@@ -15,6 +15,17 @@ function bubble(content: ChatMessage['content']): string {
 const painted = (html: string) => (html.match(/class="prompt-keyword-ultracode"/g) ?? []).length / 'ultracode'.length
 
 describe('prompt keywords across a user message', () => {
+  it('renders an async answer as a standalone Q&A bubble without the source turn', () => {
+    const message: ChatMessage = {
+      id: 'codex_async_answer:q', role: 'user', status: 'complete', createdAt: '', providerId: 'codex',
+      content: [{ type: 'text', text: 'Production', codexAsyncQuestions: [{ title: 'Which environment?', options: ['Production'] }] }],
+    }
+    const html = renderToStaticMarkup(createElement(UserMessageContentPresenter, { message, promptKeywords: [], Block }))
+    expect(html).toContain('data-codex-async-answer')
+    expect(html).toContain('<dt')
+    expect(html).toContain('Which environment?')
+    expect(html).toContain('Production')
+  })
   it('rules a quote that spans an attachment as the composer did', () => {
     const html = bubble([
       { type: 'text', text: 'ultracode discuss "ultracode' },

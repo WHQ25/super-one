@@ -245,6 +245,7 @@ export interface PerSessionState extends ChatCoreSession {
   pendingPermissions: PermissionRequest[]
   permissionMode: PermissionMode
   pendingQuestion: AskUserQuestionRequest | null
+  pendingAsyncQuestions?: import('@superone/shared/codex-async-question').PendingCodexAsyncQuestion[]
   pendingPlanApproval: PlanApprovalRequest | null
   planApprovalOutcome: { approved: boolean; feedback?: string } | null
   slashCommandOutput: { command: string; content: string } | null

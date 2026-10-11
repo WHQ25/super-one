@@ -2,6 +2,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { ChatMessage } from '@superone/shared/agent-types'
+import { pendingCodexAsyncQuestions } from '@superone/shared/codex-async-question'
 
 const loadSessionState = vi.fn()
 
@@ -36,6 +37,20 @@ function makeMessage(id: string, role: 'user' | 'assistant'): ChatMessage {
 
 beforeEach(() => {
   loadSessionState.mockReset()
+})
+
+it('keeps questions received during hydration and removes answers accepted while it was in flight', () => {
+  const turn = (id: string): ChatMessage => ({
+    ...makeMessage(id, 'assistant'), providerId: 'codex',
+    metadata: { codex: { threadId: 'thread', usage: null, items: [{
+      id, type: 'agent_message', text: '', delivery: 'async', questions: [{ title: 'Which environment?', options: ['Staging'] }],
+    }] } },
+  })
+  const restored = turn('old')
+  const live = turn('new')
+  const hydrated = { ...createDefaultPerSessionState(), messages: [], pendingAsyncQuestions: pendingCodexAsyncQuestions([restored]) }
+  const session = { ...createDefaultPerSessionState(), messages: [live, makeMessage('codex_async_answer:old', 'user')], pendingAsyncQuestions: pendingCodexAsyncQuestions([live]) }
+  expect(_mergeHydratedSessionState(session, hydrated).pendingAsyncQuestions?.map(q => q.item.id)).toEqual(['new'])
 })
 
 describe('small pure helpers', () => {

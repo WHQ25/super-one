@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import { X } from 'lucide-react'
 import type { AskUserQuestionRequest } from '@superone/shared/agent-types'
+import { CODEX_ASYNC_QUESTION_DISMISSED, type PendingCodexAsyncQuestion } from '@superone/shared/codex-async-question'
 import { AskUserQuestionForm } from './presenters/AskUserQuestionForm'
 import { ModCommandOutputSite, ModQuestionSite } from './mod-ui'
 import { PortableQuestionPreview } from './PortableToolRow'
@@ -10,16 +11,25 @@ import { requestNativeAsync } from './bridge'
  * The phone's pending question, drawn where the desktop draws it: above the
  * composer. The answer goes to the native runtime, which clears the question.
  */
-export function PortableQuestion({ request, scheme }: { request: AskUserQuestionRequest; scheme: 'light' | 'dark' }) {
+export function PortableQuestion({ request, scheme, asyncQuestion }: { request: AskUserQuestionRequest; scheme: 'light' | 'dark'; asyncQuestion?: PendingCodexAsyncQuestion }) {
   const { requestId } = request
+  const answerAsync = async (answers: string[]) => {
+    await requestNativeAsync('codexAsyncQuestionAnswer', { messageId: asyncQuestion!.messageId, itemId: asyncQuestion!.item.id, answers })
+  }
   return (
     <div className="px-3 pt-2">
       <ModQuestionSite request={request}>
         <AskUserQuestionForm
           key={requestId}
           request={request}
-          onSubmit={(answers, annotations) => void requestNativeAsync('answerQuestion', { requestId, answers, annotations }).catch(() => {})}
-          onDismiss={() => void requestNativeAsync('dismissQuestion', { requestId }).catch(() => {})}
+          onSubmit={async (answers, annotations) => {
+            if (asyncQuestion) await answerAsync(request.questions.map(q => answers[q.id!] ?? ''))
+            else await requestNativeAsync('answerQuestion', { requestId, answers, annotations })
+          }}
+          onDismiss={async () => {
+            if (asyncQuestion) await answerAsync(request.questions.map(() => CODEX_ASYNC_QUESTION_DISMISSED))
+            else await requestNativeAsync('dismissQuestion', { requestId })
+          }}
           renderPreview={(props) => <PortableQuestionPreview {...props} scheme={scheme} />}
         />
       </ModQuestionSite>

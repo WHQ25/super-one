@@ -15,6 +15,17 @@ function message(id: string, role: ChatMessage['role'], content: ChatMessage['co
 }
 
 describe('phone endpoint: restore and history', () => {
+  it('restores async decisions outside the newest history page', async () => {
+    const { domain, own } = phoneDomain(cleanup)
+    const questions = [{ title: 'Environment?', options: ['Production'] }]
+    const messages: ChatMessage[] = [{ ...message('old-question', 'assistant'), providerId: 'codex', metadata: { codex: { threadId: 'thread', usage: null, items: [{ id: 'q', type: 'agent_message', delivery: 'async', text: '', questions }] } } }, message('new-user', 'user')]
+    Object.defineProperty(own, 'snapshot', { get: () => ({ harnessId: 'codex', messages }) })
+    const phone = await connectPhone(domain)
+    cleanup.push(phone.close)
+    const loaded = await phone.rpc<SessionLoadResult>('session.load', { sessionId: 'own', limit: 1 })
+    expect(loaded.messages.map(message => message.id)).toEqual(['new-user'])
+    expect(loaded.state.pendingAsyncQuestions).toMatchObject([{ messageId: 'old-question', item: { id: 'q', questions } }])
+  })
   it('refuses a session loaded through a different project', async () => {
     const { domain } = phoneDomain(cleanup)
     const phone = await connectPhone(domain)

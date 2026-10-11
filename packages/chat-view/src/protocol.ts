@@ -51,6 +51,7 @@ export interface SessionProjection {
   projectPath?: string | null
   /** The question the session waits on; the document draws its form above the composer. */
   pendingQuestion?: AskUserQuestionRequest | null
+  pendingAsyncQuestions?: import('@superone/shared/codex-async-question').PendingCodexAsyncQuestion[] | null
   /** Output of a command that is not a chat message, shown above the composer until dismissed. */
   slashCommandOutput?: { command: string; content: string } | null
   /**

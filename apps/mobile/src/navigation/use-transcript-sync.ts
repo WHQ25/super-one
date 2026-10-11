@@ -5,6 +5,7 @@ import type { ChatMessage } from '@superone/shared/agent-types'
 import { isRealtimeVoiceMessage } from '@superone/shared/realtime-transcript'
 import { projectRealtimeTranscript } from '@superone/shared/realtime-transcript-projection'
 import { mergeCodexThreadMessages } from '@superone/shared/realtime-thread-messages'
+import { codexAsyncQuestionQueue } from '@superone/shared/codex-async-question'
 import type { ChatRuntime } from '../runtime'
 import { injectHostMessage } from '../native-actions'
 import { TranscriptDelivery, type TranscriptSnapshot } from '../transcript-delivery'
@@ -88,11 +89,12 @@ export function useTranscriptSync(web: RefObject<WebView | null>, voice?: Mobile
     const projected = showingVoice ? projectRealtimeTranscript({
       messages: threadMessages, segments: session.realtimeSegments, liveSegments: session.realtimeLiveSegments,
       sessionStatus: session.status,
-      needsDecision: !!(session.pendingPermissions.length || session.pendingQuestion || session.pendingPlanApproval),
+      needsDecision: !!(session.pendingPermissions.length || session.pendingQuestion || session.pendingPlanApproval || codexAsyncQuestionQueue(session).length),
     }) : null
     const messages = projected ? keepUnchangedSpeech(previousSpeech.current, projected.messages) : threadMessages
     if (projected) previousSpeech.current = messages
     delivery.publish({ ...lastFacts.current, messages,
+      pendingAsyncQuestions: session.pendingAsyncQuestions ?? null,
       emptyState, conversationView: showingVoice ? 'realtime' : 'thread', realtimeActivities: projected?.activities ?? [],
       ...(showingVoice ? { hasMoreHistory: false, historyNavigation: false, queuedMessages: [], pendingTurn: null,
         isCompacting: false, compactError: null, isRecapping: false, apiRetry: null } : {}),

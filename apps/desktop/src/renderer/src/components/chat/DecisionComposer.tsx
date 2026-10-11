@@ -3,6 +3,7 @@ import { useActiveSession } from '@/stores/chat'
 import { ModQuestionSite } from '@superone/chat-view/mod-ui'
 import { useChatRootRef } from './is-focus-in-chat'
 import { AskUserQuestionPrompt } from './AskUserQuestionPrompt'
+import { CodexAsyncQuestionPrompt } from './CodexAsyncQuestionPrompt'
 import { PermissionPrompt } from './PermissionPrompt'
 import { claimDecisionFocus, isHighRiskPermission, setDecisionKeyboardPolicy } from './composer-slot/decision-composer-policy'
 import { buildDecisionQueue, type DecisionQueueItem } from './composer-slot/decision-queue'
@@ -10,11 +11,13 @@ import { buildDecisionQueue, type DecisionQueueItem } from './composer-slot/deci
 export function DecisionComposer({ item }: { item?: DecisionQueueItem | null }) {
   const pendingPermissions = useActiveSession((s) => s.pendingPermissions)
   const pendingQuestion = useActiveSession((s) => s.pendingQuestion)
+  const messages = useActiveSession((s) => s.messages)
+  const pendingAsyncQuestions = useActiveSession((s) => s.pendingAsyncQuestions)
   const chatRootRef = useChatRootRef()
   const containerRef = useRef<HTMLDivElement>(null)
   const queue = useMemo(
-    () => buildDecisionQueue(pendingPermissions ?? [], pendingQuestion ?? null),
-    [pendingPermissions, pendingQuestion],
+    () => buildDecisionQueue(pendingPermissions ?? [], pendingQuestion ?? null, messages, pendingAsyncQuestions),
+    [pendingPermissions, pendingQuestion, messages, pendingAsyncQuestions],
   )
   const current = item === undefined ? queue[0] : item
   const requestKey = current ? `${current.kind}:${current.request.requestId}` : null
@@ -42,7 +45,9 @@ export function DecisionComposer({ item }: { item?: DecisionQueueItem | null }) 
           <PermissionPrompt request={current.request} />
         ) : (
           <ModQuestionSite request={current.request}>
-            <AskUserQuestionPrompt request={current.request} />
+            {current.kind === 'async-question'
+              ? <CodexAsyncQuestionPrompt question={current.question} />
+              : <AskUserQuestionPrompt request={current.request} />}
           </ModQuestionSite>
         )}
       </div>

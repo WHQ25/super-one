@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { AskUserQuestionRequest, PermissionRequest } from '@superone/shared/agent-types'
 
 const { session } = vi.hoisted(() => ({ session: {
+  messages: [],
   pendingPermissions: [{ requestId: 'p1' }, { requestId: 'p2' }] as PermissionRequest[],
   pendingQuestion: { requestId: 'q1', questions: [] } as AskUserQuestionRequest | null,
 } }))

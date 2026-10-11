@@ -1,19 +1,6 @@
-import { createContext, useContext } from 'react'
-import type { ChatMessage, CodexAgentMessageItem } from '@superone/shared/agent-types'
-import { codexAsyncAnswerId, codexAsyncReplyText } from '@superone/shared/codex-async-question'
-import { CodexAsyncQuestionForm } from './presenters/CodexAsyncQuestionForm'
-import { requestNativeAsync } from './bridge'
-import { TurnMessageIdContext } from './portable-turn-context'
+import type { CodexAgentMessageItem } from '@superone/shared/agent-types'
 
-export const AsyncQuestionMessagesContext = createContext<readonly ChatMessage[]>([])
-
-export function PortableAsyncQuestion({ item }: { item: CodexAgentMessageItem }) {
-  const messages = useContext(AsyncQuestionMessagesContext)
-  const messageId = useContext(TurnMessageIdContext)
-  const savedReply = messages.find(message => message.id === codexAsyncAnswerId(item.id))
-  return <CodexAsyncQuestionForm key={`${messageId}:${item.id}`} questions={item.questions ?? []}
-    submittedReply={codexAsyncReplyText(savedReply)} disabled={!messageId}
-    onSubmit={async (answers) => {
-      await requestNativeAsync('codexAsyncQuestionAnswer', { messageId, itemId: item.id, answers })
-    }} />
+/** The decision dock owns pending questions; accepted answers own their user bubble. */
+export function PortableAsyncQuestion(_props: { item: CodexAgentMessageItem }) {
+  return null
 }

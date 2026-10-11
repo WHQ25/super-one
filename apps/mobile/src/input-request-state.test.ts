@@ -13,6 +13,11 @@ const request: PermissionRequest = {
 }
 
 describe('native input ownership', () => {
+  it('lets a restored async question preempt input forms and plan review without its source turn', () => {
+    const pendingAsyncQuestions = [{ messageId: 'old-turn', item: { id: 'q', type: 'agent_message' as const, text: '', questions: [{ title: 'Environment?', options: null }] }, request: { requestId: 'codex_async_answer:q', questions: [] } }]
+    expect(mobileInputSurfaces({ messages: [], pendingAsyncQuestions, pendingPermissions: [request], pendingQuestion: null, pendingPlanApproval: {} }))
+      .toMatchObject({ input: null, permission: null, showPlan: false })
+  })
   it('keeps forms in the composer and lets permission, question and plan preempt them', () => {
     const base = { pendingPermissions: [request], pendingQuestion: null, pendingPlanApproval: null }
     expect(mobileInputSurfaces(base)).toMatchObject({ permission: null, input: request, showPlan: false })

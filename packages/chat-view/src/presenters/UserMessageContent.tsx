@@ -1,5 +1,7 @@
 import { useMemo, type ComponentType } from 'react'
-import type { ChatMessage, ContentBlock } from '@superone/shared/agent-types'
+import type { ChatMessage, CodexAsyncUserInputQuestion, ContentBlock } from '@superone/shared/agent-types'
+import { codexAsyncAnswerQuestions, codexAsyncReplyText } from '@superone/shared/codex-async-question'
+import { CodexAsyncQuestionAnswer } from './CodexAsyncQuestionAnswer'
 import type { PromptKeyword, PromptKeywordMatch } from '@superone/shared/prompt-keywords'
 import { parseUserMentions, type UserTextSegment } from '@superone/shared/user-mention-parser'
 import { keywordMatchesBySegment } from '@superone/ui/components/ui/prompt-keyword-text'
@@ -44,13 +46,17 @@ function messageKeywordMatches(message: ChatMessage, text: string | null | undef
  * `UserMessage` mod site, anything else (a tool call) as the host's `Block`.
  * `text` replaces every text block's text: a goal shows its objective.
  */
-export function UserMessageContentPresenter({ message, text, promptKeywords, Block }: {
+export function UserMessageContentPresenter({ message, text, promptKeywords, Block, asyncQuestions }: {
   message: ChatMessage
   text?: string | null
   promptKeywords: readonly PromptKeyword[]
   Block: ComponentType<{ block: ContentBlock; index: number; message: ChatMessage }>
+  asyncQuestions?: CodexAsyncUserInputQuestion[]
 }) {
   const keywordMatches = useMemo(() => messageKeywordMatches(message, text, promptKeywords), [message, text, promptKeywords])
+  const questions = asyncQuestions ?? codexAsyncAnswerQuestions(message, [])
+  const reply = codexAsyncReplyText(message)
+  if (questions?.length && reply !== null) return <CodexAsyncQuestionAnswer questions={questions} reply={reply} />
   return (
     <McpMentionSentProvider content={message.content}>
       <TooltipProvider delayDuration={200}>

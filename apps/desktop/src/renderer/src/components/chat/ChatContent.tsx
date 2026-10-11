@@ -1,5 +1,4 @@
 import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
-import { isCodexAsyncAnswer } from '@superone/shared/codex-async-question'
 import { useRef, useState, useEffect, useLayoutEffect, useMemo, useCallback, lazy, Suspense, memo } from 'react'
 import { useChatStore, useActiveSession, useSessionScope } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
@@ -179,7 +178,7 @@ function ChatTranscript({
   const displayMessages = useMemo(
     () => (queueProvider === 'codex' && hasRealtimeTimeline
       ? mergeCodexThreadMessages(messages, realtime, { keepDelegationPrompts: showsBackingThread })
-      : messages).filter((message) => !isCodexAsyncAnswer(message)),
+      : messages),
     [hasRealtimeTimeline, messages, queueProvider, realtime, showsBackingThread],
   )
   const displayLastAssistantMessageId = findLastAssistantMessageId(displayMessages)
@@ -424,13 +423,14 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
   const scope = useSessionScope()
   const activeProject = useChatStore((s) => s.activeProject)
   const {
-    messages, sessionStatus, pendingPermissions, pendingQuestion, pendingPlanApproval,
+    messages, sessionStatus, pendingPermissions, pendingQuestion, pendingAsyncQuestions, pendingPlanApproval,
     displayedSessionId, providerSessionId, sessionProvider, preferredProvider,
   } = useActiveSession(useShallow((s) => ({
     messages: s.messages,
     sessionStatus: s.status,
     pendingPermissions: s.pendingPermissions,
     pendingQuestion: s.pendingQuestion,
+    pendingAsyncQuestions: s.pendingAsyncQuestions,
     pendingPlanApproval: s.pendingPlanApproval,
     displayedSessionId: scope?.sessionId ?? s._activeSessionId,
     providerSessionId: s._providerSessionId,
@@ -472,7 +472,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     store.sessionId !== null && store.sessionId === displayedSessionId && store.state !== 'idle'
   ))
   const showRealtimeComposer = showRealtime && callEngaged
-  const decision = buildDecisionQueue(pendingPermissions ?? [], pendingQuestion ?? null)[0] ?? null
+  const decision = buildDecisionQueue(pendingPermissions ?? [], pendingQuestion ?? null, messages, pendingAsyncQuestions)[0] ?? null
   const appInput = groupPendingPermissions(pendingPermissions ?? []).appInputs[0] ?? null
   const needsDecision = decision != null || pendingPlanApproval != null
   const decisionAvailable = useDecisionComposerAvailability()

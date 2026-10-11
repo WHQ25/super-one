@@ -1,6 +1,7 @@
 import { memo, useMemo } from 'react'
+import { isCodexAsyncAnswer } from '@superone/shared/codex-async-question'
 import { useTranslation } from 'react-i18next'
-import type { ChatMessage, ContentBlock } from '@superone/shared/agent-types'
+import type { ChatMessage, CodexAsyncUserInputQuestion, ContentBlock } from '@superone/shared/agent-types'
 import { CircleStop, Puzzle, RefreshCw, TriangleAlert } from 'lucide-react'
 import { ChatMessagePresenter } from './presenters/ChatMessage'
 import { TurnSummaryAboveFooter } from './presenters/ChatMessageIndicators'
@@ -109,6 +110,7 @@ export const PortableMessage = memo(function PortableMessage({
   mcpIcons = {},
   hideCopyActions = false,
   promptKeywords = NO_KEYWORDS,
+  asyncQuestions,
 }: {
   message: ChatMessage
   scheme: 'light' | 'dark'
@@ -125,6 +127,7 @@ export const PortableMessage = memo(function PortableMessage({
   hideCopyActions?: boolean
   /** The prompt keywords the session's harness acts on. */
   promptKeywords?: readonly PromptKeyword[]
+  asyncQuestions?: CodexAsyncUserInputQuestion[]
 }) {
   const { t } = useTranslation()
   const isUser = message.role === 'user'
@@ -152,10 +155,10 @@ export const PortableMessage = memo(function PortableMessage({
     () => (isUser ? message.content.flatMap((block) => (block.type === 'text' ? [block.text] : [])).join('\n') : ''),
     [isUser, message.content],
   )
-  const goalObjective = isUser ? goalMessageObjective(userText) : null
+  const goalObjective = isUser && !isCodexAsyncAnswer(message) ? goalMessageObjective(userText) : null
   // Scanned over the whole sent text: a goal shows its objective without the `/goal` the harness saw.
   const sentKeywords = useMemo(() => promptKeywordsIn(userText, promptKeywords), [userText, promptKeywords])
-  const delegation = isUser ? parseRealtimeDelegation(userText) : null
+  const delegation = isUser && !isCodexAsyncAnswer(message) ? parseRealtimeDelegation(userText) : null
   const fallback = message.metadata?.modelFallback
   const pluginNotice = message.metadata?.pluginNotice
   const body = fallback
@@ -185,7 +188,7 @@ export const PortableMessage = memo(function PortableMessage({
     : delegation
       ? <RealtimeDelegationBody delegation={delegation} />
       : isUser
-      ? <UserMessageContentPresenter message={message} text={goalObjective} promptKeywords={sentKeywords} Block={UserToolBlock} />
+      ? <UserMessageContentPresenter message={message} text={goalObjective} promptKeywords={sentKeywords} Block={UserToolBlock} asyncQuestions={asyncQuestions} />
       : isCodex
         ? <PortableCodexTurn message={message} isStreaming={isStreaming} isLastAssistant={isLastAssistant} />
         : <PortableClaudeTurn message={message} isStreaming={isStreaming} />

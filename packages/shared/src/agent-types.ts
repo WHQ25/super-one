@@ -1,6 +1,8 @@
 // Unified message format used across IPC. Zero SDK imports.
 
 import type { UsageForecast } from './subscription-usage'
+import type { AskUserQuestionRequest, QuestionAnnotations, QuestionPreviewFormat } from './user-question-types'
+export type { AskUserQuestionRequest, QuestionAnnotation, QuestionAnnotations, QuestionPreviewFormat, UserQuestion, UserQuestionOption } from './user-question-types'
 import type { TokenOverrides } from './harness-brand'
 import type { SessionGoal } from './session-goal'
 import type { NotificationSettings } from './notifications'
@@ -212,7 +214,7 @@ export type RetractedBlockRef =
   | { type: 'thinking'; thinking: string; fromEnd?: boolean }
 
 type ContentBlockData =
-  | { type: 'text'; text: string; parentToolUseId?: string | null; codeBlockTokens?: Array<{ language: string; tokens: DiffTokenLine[] | null }>; isPaste?: boolean }
+  | { type: 'text'; text: string; parentToolUseId?: string | null; codeBlockTokens?: Array<{ language: string; tokens: DiffTokenLine[] | null }>; isPaste?: boolean; /** Persisted question snapshot for a standalone async-answer user bubble. */ codexAsyncQuestions?: CodexAsyncUserInputQuestion[] }
   | { type: 'thinking'; thinking: string; parentToolUseId?: string | null; startedAt?: number; endedAt?: number }
   /**
    * Callout the desktop splits out of assistant text before it leaves for a remote
@@ -1490,34 +1492,6 @@ export type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions' | '
 export type AccountApiProvider = 'firstParty' | 'bedrock' | 'vertex' | 'foundry' | 'anthropicAws' | 'anthropicGoogleCloud' | 'mantle' | 'gateway'
 
 // --- AskUserQuestion ---
-
-export interface UserQuestionOption {
-  label: string
-  description: string
-  preview?: string
-}
-
-export interface UserQuestion {
-  question: string
-  header: string
-  options: UserQuestionOption[]
-  multiSelect: boolean
-}
-
-export type QuestionPreviewFormat = 'markdown' | 'html'
-
-export interface QuestionAnnotation {
-  preview?: string
-  notes?: string
-}
-
-export type QuestionAnnotations = Record<string, QuestionAnnotation>
-
-export interface AskUserQuestionRequest {
-  requestId: string
-  questions: UserQuestion[]
-  previewFormat?: QuestionPreviewFormat
-}
 
 // --- Plan approval ---
 

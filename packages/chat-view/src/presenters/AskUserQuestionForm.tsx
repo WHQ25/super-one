@@ -10,8 +10,8 @@ type RenderPreview = (props: { content: string; format: QuestionPreviewFormat })
 
 export interface AskUserQuestionFormProps {
   request: AskUserQuestionRequest
-  onSubmit: (answers: Record<string, string>, annotations?: QuestionAnnotations) => void
-  onDismiss: () => void
+  onSubmit: (answers: Record<string, string>, annotations?: QuestionAnnotations) => void | Promise<void>
+  onDismiss: () => void | Promise<void>
   /** Host-provided preview body: sanitized HTML on the desktop, a sandboxed frame in the WebView. */
   renderPreview: RenderPreview
   /**
@@ -23,11 +23,11 @@ export interface AskUserQuestionFormProps {
 }
 
 function questionKey(q: UserQuestion): string {
-  return q.question
+  return q.id ?? q.question
 }
 
 function notesKey(q: UserQuestion, optionLabel: string): string {
-  return `${q.question}\0${optionLabel}`
+  return `${questionKey(q)}\0${optionLabel}`
 }
 
 function hasPreviewOptions(q: UserQuestion): boolean {
@@ -348,12 +348,22 @@ export function AskUserQuestionForm({ request, onSubmit, onDismiss, renderPrevie
   const allAnswered = questions.every((q) => isAnswered(q, selections, otherTexts))
   // The card outlives its answer until the host's resolution arrives: one response per request.
   const [settled, setSettled] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const settledRef = useRef(false)
-  const settle = useCallback((respond: () => void) => {
+  const settle = useCallback((respond: () => void | Promise<void>) => {
     if (settledRef.current) return
     settledRef.current = true
     setSettled(true)
-    respond()
+    setError(null)
+    const failed = (cause: unknown) => {
+      settledRef.current = false
+      setSettled(false)
+      setError(cause instanceof Error ? cause.message : String(cause))
+    }
+    try {
+      const result = respond()
+      if (result) void result.catch(failed)
+    } catch (cause) { failed(cause) }
   }, [])
   const submit = useCallback(() => {
     settle(() => onSubmit(buildAnswers(questions, selections, otherTexts), buildAnnotations(questions, selections, notesTexts)))
@@ -362,7 +372,7 @@ export function AskUserQuestionForm({ request, onSubmit, onDismiss, renderPrevie
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     // A key something else already took (a mod's hotkey band) is not ours.
-    if (e.defaultPrevented || !keyboard?.inScope(e)) return
+    if (e.defaultPrevented || settledRef.current || !keyboard?.inScope(e)) return
     const typing = document.activeElement === otherInputRef.current || document.activeElement === notesInputRef.current
 
     if (e.key === 'Escape') {
@@ -450,6 +460,7 @@ export function AskUserQuestionForm({ request, onSubmit, onDismiss, renderPrevie
     // Focusable with a keyboard: leaving a text field (Escape, Tab, ctrl+digit) lands here
     // instead of on <body>, where the host's `inScope` would stop taking the form's keys.
     <div ref={rootRef} tabIndex={keys ? -1 : undefined} className="@container rounded-lg border border-primary/40 bg-card p-3 outline-none" data-ask-user-question={request.requestId}>
+      <fieldset disabled={settled} className="min-w-0">
       {!singleQuestion && (
         <div className="mb-3 flex gap-1 overflow-x-auto border-b border-border/50 pb-2">
           {questions.map((q, i) => (
@@ -537,6 +548,8 @@ export function AskUserQuestionForm({ request, onSubmit, onDismiss, renderPrevie
           </Button>
         )}
       </div>
+      </fieldset>
+      {error && <p role="alert" className="mt-2 text-xs text-destructive">{error}</p>}
     </div>
   )
 }

@@ -79,8 +79,10 @@ export function reduceLifecycle(
     }
 
     case 'user_message_appended': {
-      if (session.messages.some((m) => m.id === event.message.id)) return {}
+      const pendingAsyncQuestions = session.pendingAsyncQuestions?.filter(q => q.request.requestId !== event.message.id)
+      if (session.messages.some((m) => m.id === event.message.id)) return pendingAsyncQuestions ? { pendingAsyncQuestions } : {}
       return {
+        ...(pendingAsyncQuestions ? { pendingAsyncQuestions } : {}),
         // A backend-originated Codex row (the voice agent's delegation prompt)
         // takes its timeline order from the event like an assistant start does,
         // and lands ahead of the assistant row of the turn it opened.

@@ -1,4 +1,5 @@
-import type { PermissionRequest } from '@superone/shared/agent-types'
+import type { ChatMessage, PermissionRequest } from '@superone/shared/agent-types'
+import { codexAsyncQuestionQueue, type PendingCodexAsyncQuestion } from '@superone/shared/codex-async-question'
 import { isInputRequest, selectPendingPermission } from '@superone/shared/input-request-presentation'
 import type { SchemaFormResource } from '@superone/shared/schema-form'
 import type { SchemaFormDraft } from './prompts/use-schema-form-state'
@@ -12,14 +13,17 @@ export function mobileInputSurfaces(session: {
   pendingPermissions: PermissionRequest[]
   pendingQuestion: unknown
   pendingPlanApproval: unknown
+  messages?: readonly ChatMessage[]
+  pendingAsyncQuestions?: PendingCodexAsyncQuestion[]
 }) {
+  const hasQuestion = !!session.pendingQuestion || codexAsyncQuestionQueue({ ...session, messages: session.messages ?? [] }).length > 0
   const pending = selectPendingPermission(session.pendingPermissions, {
-    question: !!session.pendingQuestion, plan: !!session.pendingPlanApproval,
+    question: hasQuestion, plan: !!session.pendingPlanApproval,
   })
   return {
     permission: isInputRequest(pending) ? null : pending,
     input: isInputRequest(pending) ? pending : null,
-    showPlan: !pending && !session.pendingQuestion,
+    showPlan: !pending && !hasQuestion,
   }
 }
 

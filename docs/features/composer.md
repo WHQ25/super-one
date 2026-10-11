@@ -161,8 +161,9 @@ and the declarative external composer API remain proposal open questions.
 ## Decision queue
 
 Each session owns its pending decisions. Desktop displays them in this stable
-order: permissions in arrival order, then AskUserQuestion, then full-screen plan
-approval. Agent input forms follow AskUserQuestion and precede plan approval.
+order: permissions in arrival order, then AskUserQuestion and Codex async
+questions, then full-screen plan approval. Async requests retain transcript
+arrival order. Agent input forms follow questions and precede plan approval.
 Only the first item is interactive. Answering an item advances the
 queue without displaying a position or remaining-count indicator.
 
@@ -171,6 +172,15 @@ forms. Questions continue to use the shared question form. Tall permission and
 question content is capped and scrolls inside the slot. Plan approval replaces
 the chat body with its existing review surface and approval controls once
 permissions and questions have cleared.
+
+Codex async questions use the same decision form, while the agent continues
+working. The queue advances after the answer is accepted; failed delivery keeps
+the input available for retry. Each accepted answer appears as a user message
+with the full question in a muted quote and the answer as normal user text,
+without an answer label. The message stores the question
+snapshot, so paged history can render it without loading the original turn.
+Pending async decisions are restored independently of the transcript page.
+The phone uses the same form in its bottom dock and the same user bubble.
 
 Worktree-removed, disabled-harness, and remote-locked states retain their
 existing read-only behavior and suppress session decision prompts.

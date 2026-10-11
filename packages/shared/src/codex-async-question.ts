@@ -1,14 +1,78 @@
-import type { ChatMessage, CodexAsyncUserInputQuestion } from './agent-types'
+import type { AskUserQuestionRequest, ChatMessage, CodexAgentMessageItem, CodexAsyncUserInputQuestion, ContentBlock } from './agent-types'
 
 export const codexAsyncAnswerId = (itemId: string): string => `codex_async_answer:${itemId}`
 
-/** Persist replies for restore and cross-device sync, but render them in the question card. */
+/** Durable reply identity, shared by steering, the decision queue and user bubbles. */
 export function isCodexAsyncAnswer(message: Pick<ChatMessage, 'id' | 'role'>): boolean {
   return message.role === 'user' && message.id.startsWith('codex_async_answer:')
 }
 
 export function codexAsyncReplyText(message: ChatMessage | undefined): string | null {
   return message?.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n') ?? null
+}
+
+export const CODEX_ASYNC_QUESTION_DISMISSED = '[The user dismissed this question.]'
+
+export interface PendingCodexAsyncQuestion {
+  messageId: string
+  item: CodexAgentMessageItem
+  request: AskUserQuestionRequest
+}
+
+export function codexAsyncQuestionRequest(item: CodexAgentMessageItem): AskUserQuestionRequest {
+  return {
+    requestId: codexAsyncAnswerId(item.id),
+    questions: (item.questions ?? []).map((question, index) => ({
+      id: String(index), question: question.title, header: question.title, multiSelect: false,
+      options: (question.options ?? []).map(label => ({ label, description: '' })),
+    })),
+  }
+}
+
+/** Transcript order survives restore; accepted replies alone remove requests from the queue. */
+export function pendingCodexAsyncQuestions(messages: readonly ChatMessage[]): PendingCodexAsyncQuestion[] {
+  const answered = new Set(messages.filter(isCodexAsyncAnswer).map(message => message.id))
+  const seen = new Set<string>()
+  const pending: PendingCodexAsyncQuestion[] = []
+  for (const message of messages) {
+    if (message.role !== 'assistant') continue
+    for (const item of message.metadata?.codex?.items ?? []) {
+      if (item.type !== 'agent_message' || !item.questions?.length || seen.has(item.id)) continue
+      seen.add(item.id)
+      if (!answered.has(codexAsyncAnswerId(item.id))) pending.push({ messageId: message.id, item, request: codexAsyncQuestionRequest(item) })
+    }
+  }
+  return pending
+}
+
+/** A host snapshot's queue remains authoritative while the transcript pages around it. */
+export function codexAsyncQuestionQueue(session: { messages: readonly ChatMessage[]; pendingAsyncQuestions?: PendingCodexAsyncQuestion[] | null }): PendingCodexAsyncQuestion[] {
+  const pending = session.pendingAsyncQuestions ?? pendingCodexAsyncQuestions(session.messages)
+  const answered = new Set(session.messages.filter(isCodexAsyncAnswer).map(message => message.id))
+  return pending.some(q => answered.has(q.request.requestId)) ? pending.filter(q => !answered.has(q.request.requestId)) : pending
+}
+
+/** Legacy replies can still recover the question from a loaded source turn. */
+export function codexAsyncAnswerQuestions(message: ChatMessage, messages: readonly ChatMessage[]): CodexAsyncUserInputQuestion[] | undefined {
+  if (!isCodexAsyncAnswer(message)) return undefined
+  const stored = message.content.find(block => block.type === 'text' && block.codexAsyncQuestions?.length)
+  if (stored?.type === 'text') return stored.codexAsyncQuestions
+  const itemId = message.id.slice('codex_async_answer:'.length)
+  for (const source of messages) {
+    const item = source.metadata?.codex?.items.find(item => item.id === itemId)
+    if (item?.type === 'agent_message') return item.questions
+  }
+  return undefined
+}
+
+export function codexAsyncAnswerContent(replyId: string, reply: string, messages: readonly ChatMessage[]): ContentBlock[] {
+  const questions = codexAsyncAnswerQuestions({ id: replyId, role: 'user', status: 'complete', providerId: 'codex', content: [], createdAt: '' }, messages)
+  return [{ type: 'text', text: reply, ...(questions?.length ? { codexAsyncQuestions: questions } : {}) }]
+}
+
+export function codexAsyncAnswerCopyText(questions: CodexAsyncUserInputQuestion[], reply: string): string {
+  const answers = parseCodexAsyncQuestionReply(questions, reply)
+  return answers ? questions.map((q, index) => `${q.title}\n${answers[index]}`).join('\n\n') : `${questions.map(q => q.title).join('\n\n')}\n\n${reply}`
 }
 
 export function formatCodexAsyncQuestionReply(questions: CodexAsyncUserInputQuestion[], answers: string[]): string {

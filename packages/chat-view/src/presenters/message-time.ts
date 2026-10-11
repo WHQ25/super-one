@@ -1,5 +1,4 @@
 import type { ChatMessage } from '@superone/shared/agent-types'
-import { isCodexAsyncAnswer } from '@superone/shared/codex-async-question'
 
 /** A fresh session needs no start time; it appears once the session is this old. */
 export const SESSION_START_STAMP_AFTER_MS = 60 * 60 * 1000
@@ -15,14 +14,13 @@ function startOfDay(ms: number): number {
 /**
  * Messages that open a date separator, with the time it shows: the first message
  * once the session is old enough, then the first message of each later calendar day.
- * System rows (compaction, model fallback, plugin notices) and hidden Codex
- * async answers never open one.
+ * System rows (compaction, model fallback, plugin notices) never open one.
  */
 export function dateSeparators(messages: readonly ChatMessage[], now: number): Map<string, number> {
   const out = new Map<string, number>()
   let prevDay: number | null = null
   for (const message of messages) {
-    if (message.providerId === 'system' || isCodexAsyncAnswer(message)) continue
+    if (message.providerId === 'system') continue
     const at = Date.parse(message.createdAt)
     if (!Number.isFinite(at)) continue
     const day = startOfDay(at)

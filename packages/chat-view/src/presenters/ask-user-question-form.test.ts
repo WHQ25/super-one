@@ -99,6 +99,31 @@ it('answers once: after Submit neither Submit nor Dismiss responds again', async
   expect(onDismiss).not.toHaveBeenCalled()
 })
 
+it('retains the input and permits retry when an asynchronous response fails', async () => {
+  const onSubmit = vi.fn().mockRejectedValueOnce(new Error('Connection lost')).mockResolvedValueOnce(undefined)
+  const { button } = await mount({ onSubmit })
+  await type(fields().at(-1)!, 'Keep this answer')
+  await act(async () => button('chat.askUser.submit').click())
+  expect(container!.querySelector('[role="alert"]')?.textContent).toBe('Connection lost')
+  expect(fields()[0]!.value).toBe('Keep this answer')
+  expect(button('chat.askUser.submit').disabled).toBe(false)
+  await act(async () => button('chat.askUser.submit').click())
+  expect(onSubmit).toHaveBeenCalledTimes(2)
+  expect(button('chat.askUser.submit').disabled).toBe(true)
+})
+
+it('keeps repeated question text independent when requests provide stable answer keys', async () => {
+  const { onSubmit, button } = await mount({ request: { requestId: 'repeated', questions: ['0', '1'].map(id => ({
+    id, question: 'Environment?', header: 'Environment', multiSelect: false,
+    options: [{ label: 'Staging', description: '' }, { label: 'Production', description: '' }],
+  })) } })
+  await act(async () => button('Staging').click())
+  await act(async () => container!.querySelectorAll('button')[1]!.click())
+  await act(async () => button('Production').click())
+  await act(async () => button('chat.askUser.submit').click())
+  expect(onSubmit).toHaveBeenCalledWith({ '0': 'Staging', '1': 'Production' }, undefined)
+})
+
 it('keyboard: leaves a key something else already took', async () => {
   const { onSubmit } = await mount({ keyboard: { inScope: () => true, mac: false } })
   const take = (e: KeyboardEvent) => { if (e.key === '2') e.preventDefault() }

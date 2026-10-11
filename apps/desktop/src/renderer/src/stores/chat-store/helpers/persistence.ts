@@ -1,4 +1,5 @@
 import type { ChatMessage } from '@superone/shared/agent-types'
+import { codexAsyncQuestionQueue, pendingCodexAsyncQuestions } from '@superone/shared/codex-async-question'
 import { videoGenStatusesFromMessages } from '@/components/chat/media-generation'
 import type { ChatStore, PerSessionState, PersistedSessionState, ProjectState } from '../types'
 import { latestCodexTodoListFromMessages } from './codex-todo'
@@ -88,6 +89,7 @@ export function _mergePersistedSessionState(session: PerSessionState, saved: Per
     _title: session._title ?? saved.title ?? null,
     remoteController: saved.remoteController ?? session.remoteController ?? null,
     messages: mergedMessages,
+    pendingAsyncQuestions: pendingCodexAsyncQuestions(mergedMessages),
     totalCostUsd: Math.max(session.totalCostUsd, saved.totalCostUsd),
     contextTokens: Math.max(session.contextTokens, saved.contextTokens),
     sessionProvider: session.sessionProvider ?? persistedProvider,
@@ -133,6 +135,9 @@ export function _mergeHydratedSessionState(
   hydrated: PerSessionState,
 ): PerSessionState {
   const mergedMessages = _mergePersistedMessages(hydrated.messages, session.messages)
+  const pendingAsyncQuestions = [...new Map([
+    ...codexAsyncQuestionQueue(hydrated), ...codexAsyncQuestionQueue(session),
+  ].map(q => [q.item.id, q])).values()]
   const restoredProvider = session.sessionProvider ?? hydrated.sessionProvider
   const restoredIsCodex = restoredProvider === 'codex'
   return {
@@ -140,6 +145,7 @@ export function _mergeHydratedSessionState(
     _title: session._title ?? hydrated._title,
     remoteController: session.remoteController ?? hydrated.remoteController ?? null,
     messages: mergedMessages,
+    pendingAsyncQuestions: codexAsyncQuestionQueue({ messages: mergedMessages, pendingAsyncQuestions }),
     totalCostUsd: Math.max(session.totalCostUsd, hydrated.totalCostUsd),
     contextTokens: Math.max(session.contextTokens, hydrated.contextTokens),
     contextWindow: session.contextWindow ?? hydrated.contextWindow,

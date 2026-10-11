@@ -47,7 +47,7 @@ describe('mobile async question answers', () => {
     expect(events.filter(event => event.type === 'user_message_appended')).toEqual([
       expect.objectContaining({
         type: 'user_message_appended', projectPath: '/project', sessionId: 'session',
-        message: expect.objectContaining({ id: 'codex_async_answer:question', content: [{ type: 'text', text: 'Production' }] }),
+        message: expect.objectContaining({ id: 'codex_async_answer:question', content: [{ type: 'text', text: 'Production', codexAsyncQuestions: [{ title: 'Which environment?', options: ['Staging', 'Production'] }] }] }),
       }),
     ])
   })

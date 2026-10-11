@@ -1,6 +1,6 @@
 import type { BackendCommand, Session, SessionBackend } from './types'
 import type { ChatMessage } from '@superone/shared/agent-types'
-import { isCodexAsyncAnswer } from '@superone/shared/codex-async-question'
+import { codexAsyncAnswerContent, isCodexAsyncAnswer } from '@superone/shared/codex-async-question'
 import log from '../logger'
 
 type SteerCommand = Extract<BackendCommand, {
@@ -53,7 +53,7 @@ export async function dispatchBackendSteer(cmd: SteerCommand, host: {
       id: cmd.newUserMessageId,
       role: 'user',
       status: 'complete',
-      content: [{ type: 'text', text: cmd.newUserText }],
+      content: asyncAnswer ? codexAsyncAnswerContent(cmd.newUserMessageId, cmd.newUserText, host.session.snapshot.messages) : [{ type: 'text', text: cmd.newUserText }],
       createdAt: new Date().toISOString(),
       providerId: host.harnessId,
     })
@@ -78,7 +78,7 @@ function sendAsyncAnswer(
       clientMessageId: cmd.newUserMessageId,
       model: session.getSelectedModel(),
       effort: session.getSelectedEffort(),
-      ...(cmd.newUserText ? { userMessageContent: [{ type: 'text', text: cmd.newUserText }] } : {}),
+      ...(cmd.newUserText ? { userMessageContent: codexAsyncAnswerContent(cmd.newUserMessageId!, cmd.newUserText, session.snapshot.messages) } : {}),
     }, { providerOrigin: cmd.providerOrigin ?? 'local' }).then(() => {
       unsubscribe()
       resolve()

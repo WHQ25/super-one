@@ -11,6 +11,7 @@ import { useHasMcpAppConsent } from '@/components/mcp-apps/consent-store'
 import type { PendingMcpConsent } from '@/components/mcp-apps/consent-store'
 import { useActiveSession, type SessionWriteTarget } from '@/stores/chat'
 import { useDecisionComposerAvailability } from './useDecisionComposerAvailability'
+import { buildDecisionQueue } from './decision-queue'
 import {
   cancelComposer, clearSessionComposers, composerStackFor, pushComposer,
   removeRegisteredComposer, submitComposer, updateComposerValue, useComposerStacks,
@@ -64,7 +65,7 @@ function OpenedComposer({ entry, Component }: { entry: ComposerHandle; Component
   const lastValue = useRef(current?.value ?? {})
   if (current) lastValue.current = current.value
   const top = stack.stack.at(-1) ?? stack.base
-  const needsDecision = useActiveSession(session => session.pendingPermissions.length > 0 || !!session.pendingQuestion || !!session.pendingPlanApproval)
+  const needsDecision = useActiveSession(session => buildDecisionQueue(session.pendingPermissions, session.pendingQuestion, session.messages, session.pendingAsyncQuestions).length > 0 || !!session.pendingPlanApproval)
   const available = useDecisionComposerAvailability()
   const appConsent = useHasMcpAppConsent(entry.target.sessionId)
   const active = top?.key === entry.key && available && !needsDecision && !appConsent

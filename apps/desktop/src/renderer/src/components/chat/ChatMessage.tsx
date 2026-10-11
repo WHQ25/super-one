@@ -21,7 +21,8 @@ import { CodexTurnView } from './CodexTurnView'
 import { ImageGalleryBlock } from './ImageGalleryBlock'
 import { VideoGalleryBlock } from './VideoGalleryBlock'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
-import { getActiveSessionView, useChatStore, useSessionScope } from '@/stores/chat'
+import { getActiveSessionView, useActiveSession, useChatStore, useSessionScope } from '@/stores/chat'
+import { codexAsyncAnswerCopyText, codexAsyncAnswerQuestions, codexAsyncReplyText, isCodexAsyncAnswer } from '@superone/shared/codex-async-question'
 import { useAppStore } from '@/stores/app'
 import { getAssistantCopyText } from './chat-message/getAssistantCopyText'
 import { resolveMarkdownFileLinks } from './chat-shared'
@@ -134,6 +135,7 @@ export const ChatMessage = memo(function ChatMessage({
   const projectPath = useChatStore((s) => s.activeProject)
   const detailChatMode = useAppStore((s) => s.detailChatMode)
   const isUser = message.role === 'user'
+  const asyncQuestions = useActiveSession(session => codexAsyncAnswerQuestions(message, session.messages))
   const isStreaming = message.status === 'streaming' && sessionStatus === 'streaming' && isLastAssistant
   const isWorking = message.status === 'streaming'
     && (sessionStatus === 'streaming' || sessionStatus === 'background')
@@ -176,7 +178,7 @@ export const ChatMessage = memo(function ChatMessage({
     [isUser, message.content],
   )
   // A sent `/goal …` reads as the objective under a Goal label, not as a slash line.
-  const goalObjective = isUser ? goalMessageObjective(userText) : null
+  const goalObjective = isUser && !isCodexAsyncAnswer(message) ? goalMessageObjective(userText) : null
   // The keywords this session's harness acted on; a goal shows its objective
   // without the `/goal` the harness saw, so scan the whole sent text.
   const harness = useActiveHarness()
@@ -186,7 +188,7 @@ export const ChatMessage = memo(function ChatMessage({
   )
   // A `<realtime_delegation>` envelope is what the voice agent asked Codex to do:
   // an ordinary user bubble under a Voice label, linking back to the spoken turn.
-  const delegation = isUser ? parseRealtimeDelegation(userText) : null
+  const delegation = isUser && !isCodexAsyncAnswer(message) ? parseRealtimeDelegation(userText) : null
   // Resolved on click, not subscribed: every bubble mounts this component and
   // only the rare delegation row needs to know which session it belongs to.
   const scope = useSessionScope()
@@ -205,7 +207,8 @@ export const ChatMessage = memo(function ChatMessage({
   const hasUserImages = userCopyParts.some((part) => 'attachment' in part && part.attachment.mimeType.startsWith('image/'))
   const hasUserChips = hasUserImages || userCopyParts.some((part) => 'mention' in part || 'paste' in part)
   const { copied: userCopied, run: runUserCopy } = useCopyFeedback()
-  const copyUserMessage = () => runUserCopy(() => (hasUserChips
+  const asyncCopyText = asyncQuestions ? codexAsyncAnswerCopyText(asyncQuestions, codexAsyncReplyText(message) ?? '') : null
+  const copyUserMessage = () => runUserCopy(() => (asyncCopyText ? tryCopy(asyncCopyText) : hasUserChips
     ? tryCopyRich(userText, userCopyHtml(userCopyParts))
     : tryCopy(userText)))
   const assistantFooter = !isUser ? (
@@ -219,7 +222,7 @@ export const ChatMessage = memo(function ChatMessage({
   const body = delegation ? (
     <RealtimeDelegationBody delegation={delegation} />
   ) : isUser ? (
-    <UserMessageContentPresenter message={message} text={goalObjective} promptKeywords={promptKeywords} Block={UserContentBlock} />
+    <UserMessageContentPresenter message={message} text={goalObjective} promptKeywords={promptKeywords} Block={UserContentBlock} asyncQuestions={asyncQuestions} />
   ) : isCodexMessage ? (
     <CodexTurnView
       message={message}
@@ -247,7 +250,7 @@ export const ChatMessage = memo(function ChatMessage({
   ) ? (
     <div className="relative mt-1 flex items-center gap-1 opacity-0 group-hover/copy:opacity-100">
       <MessageTimestamp iso={message.createdAt} className="mr-1 text-xs" />
-      {!isCollab && message.checkpointId && (
+      {!isCollab && !isCodexAsyncAnswer(message) && message.checkpointId && (
         <RewindButton
           checkpointId={message.checkpointId}
           rewound={message.rewound}

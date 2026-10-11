@@ -84,7 +84,7 @@ function applyRemoteSessionRow(
 /** The fields of a node snapshot's state its event reducer derives; the rest stay the renderer's. */
 const SNAPSHOT_STATE_KEYS = [
   'status', 'awaitingAssistantReply', 'lastAssistantMessageId',
-  'pendingPermissions', 'pendingQuestion', 'pendingPlanApproval',
+  'pendingPermissions', 'pendingQuestion', 'pendingAsyncQuestions', 'pendingPlanApproval',
   'todos', 'showTodos', 'taskProgress', 'totalCostUsd', 'contextTokens', 'contextWindow',
 ] as const satisfies readonly (keyof PerSessionState)[]
 

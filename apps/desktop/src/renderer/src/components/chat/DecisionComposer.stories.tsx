@@ -1,16 +1,20 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useMemo, type ReactNode } from 'react'
 import { elicitationFormRequest } from '@superone/shared/schema-form'
-import type { AskUserQuestionRequest, PermissionRequest } from '@superone/shared/agent-types'
-import { useChatStore } from '@/stores/chat'
+import type { AskUserQuestionRequest, ChatMessage as ChatMessageType, PermissionRequest } from '@superone/shared/agent-types'
+import { isCodexAsyncAnswer, pendingCodexAsyncQuestions } from '@superone/shared/codex-async-question'
+import { useActiveSession, useChatStore } from '@/stores/chat'
+import { ChatMessage } from './ChatMessage'
 import { DecisionComposer } from './DecisionComposer'
 
 function SeedDecisionQueue({
   permissions,
   question,
+  messages,
 }: {
   permissions: PermissionRequest[]
   question: AskUserQuestionRequest | null
+  messages: ChatMessageType[]
 }) {
   useEffect(() => {
     const previous = useChatStore.getState()
@@ -32,6 +36,8 @@ function SeedDecisionQueue({
                   ...session,
                   pendingPermissions: permissions,
                   pendingQuestion: question,
+                  messages,
+                  pendingAsyncQuestions: pendingCodexAsyncQuestions(messages),
                 },
               },
             },
@@ -45,7 +51,7 @@ function SeedDecisionQueue({
       window.clearTimeout(timer)
       useChatStore.setState(previous)
     }
-  }, [permissions, question])
+  }, [permissions, question, messages])
   return null
 }
 
@@ -106,19 +112,51 @@ const LONG_COMMAND: PermissionRequest = {
   },
 }
 
+const EMPTY_MESSAGES: ChatMessageType[] = []
+const ASYNC_QUESTIONS: ChatMessageType[] = [{
+  id: 'async-turn', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'codex',
+  metadata: { codex: { threadId: 'thread', usage: null, items: [
+    { id: 'environment', type: 'agent_message', delivery: 'async', text: '', questions: [{ title: 'Which environment should receive the update?', options: ['Staging', 'Production'] }] },
+    { id: 'deadline', type: 'agent_message', delivery: 'async', text: '', questions: [{ title: 'When should it ship?', options: null }] },
+  ] } },
+}]
+
+function AsyncAnswerHistory() {
+  const messages = useActiveSession(session => session.messages)
+  return <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3">
+    {messages.filter(isCodexAsyncAnswer).map(message => <ChatMessage key={message.id} message={message} sessionStatus="streaming" isLastAssistant={false} />)}
+  </div>
+}
+
 function QueueStory({
   permissions = [MIXED_PERMISSION],
   question = QUESTION,
   width,
+  messages = EMPTY_MESSAGES,
+  retry = false,
 }: {
   permissions?: PermissionRequest[]
   question?: AskUserQuestionRequest | null
   width?: number
+  messages?: ChatMessageType[]
+  retry?: boolean
 }) {
+  const restoreMocks = useMemo(() => {
+    if (messages.length === 0) return undefined
+    const previous = window.app.codexSteer
+    const previousMediaPort = window.app.getMediaServerPort
+    let failed = false
+    window.app.codexSteer = async () => {
+      if (retry && !failed) { failed = true; throw new Error('Connection lost. Try submitting again.') }
+    }
+    window.app.getMediaServerPort = async () => 0
+    return () => { window.app.codexSteer = previous; window.app.getMediaServerPort = previousMediaPort }
+  }, [messages, retry])
+  useEffect(() => restoreMocks, [restoreMocks])
   return (
     <StoryShell width={width}>
-      <div className="min-h-0 flex-1" />
-      <SeedDecisionQueue permissions={permissions} question={question} />
+      <AsyncAnswerHistory />
+      <SeedDecisionQueue permissions={permissions} question={question} messages={messages} />
       <DecisionComposer />
     </StoryShell>
   )
@@ -137,3 +175,6 @@ export const MixedQueue: Story = {}
 export const NarrowQueue: Story = { args: { width: 320 } }
 export const ElicitationForm: Story = { args: { permissions: [ELICITATION], question: null } }
 export const LongCommand: Story = { args: { permissions: [LONG_COMMAND], question: null } }
+export const AsyncQuestionQueue: Story = { args: { permissions: [], question: null, messages: ASYNC_QUESTIONS } }
+export const AsyncQuestionNarrow: Story = { args: { permissions: [], question: null, messages: ASYNC_QUESTIONS, width: 320 } }
+export const AsyncQuestionRetry: Story = { args: { permissions: [], question: null, messages: ASYNC_QUESTIONS, retry: true } }

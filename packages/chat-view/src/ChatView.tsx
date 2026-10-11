@@ -5,7 +5,7 @@ import { EdgeLoader } from './EdgeLoader'
 import { deliverDetail, documentDetailClient } from './document-detail'
 import { DetailScopeProvider, type DetailScope } from './detail-scope'
 import { applyDocumentTheme, initialDocumentScheme } from './document-theme'
-import { AsyncQuestionMessagesContext } from './PortableAsyncQuestion'
+import { codexAsyncAnswerQuestions, codexAsyncQuestionQueue } from '@superone/shared/codex-async-question'
 import {
   Fragment,
   Component,
@@ -93,6 +93,7 @@ const EMPTY_SESSION: SessionFacts = {
   sourceEnvironmentId: null,
   sessionId: null,
   pendingQuestion: null,
+  pendingAsyncQuestions: null,
   slashCommandOutput: null,
   queuedMessages: [],
   queuedSteer: { now: false, soon: false },
@@ -658,6 +659,7 @@ export function ChatView() {
   const lastCompact = timeline.ids.at(-1)
   const compactSplit = lastCompact === undefined ? 0 : outline.filter((entry) => entry.index < timeline.position(lastCompact)).length
   const visible = state.messages.slice(Math.max(visibleStart, state.range.start), state.range.end)
+  const asyncQuestion = useMemo(() => codexAsyncQuestionQueue({ messages: state.messages, pendingAsyncQuestions: state.session.pendingAsyncQuestions })[0], [state.messages, state.session.pendingAsyncQuestions])
   // Compact / turn-meta markers persist as assistant rows but render as
   // indicators, so the live turn is the last assistant message that is neither.
   const lastAssistantId = findLastAssistantMessageId(state.messages)
@@ -703,7 +705,6 @@ export function ChatView() {
             error={historyError || (!!navigationRetry && navigationEdge === 'top')} onLoad={topRetry ?? loadPrevious} />
         )}
       </div>
-      <AsyncQuestionMessagesContext.Provider value={state.messages}>
       {visible.length === 0
         ? (historyLoading || navigationLoading || indexLoading
           ? <div className="flex justify-center py-12 text-muted-foreground" role="status" data-testid="initial-loading"><Loader2 className="size-5 animate-spin" aria-hidden /></div>
@@ -731,6 +732,7 @@ export function ChatView() {
             <PortableMessage
               key={message.id}
               message={message}
+              asyncQuestions={codexAsyncAnswerQuestions(message, state.messages)}
               scheme={state.scheme}
               pendingPermission={state.pendingPermission ?? null}
               mentionArtwork={state.mentionArtwork}
@@ -750,7 +752,6 @@ export function ChatView() {
               .map(row => <PortableRealtimeActivity key={row.turnId} row={row} />)}
           </Fragment>
         })}
-      </AsyncQuestionMessagesContext.Provider>
       {!moreAfter && state.realtimeActivities.filter(row => row.afterMessageId === null)
         .map(row => <PortableRealtimeActivity key={row.turnId} row={row} />)}
       {visible.length > 0 && moreAfter && (
@@ -770,7 +771,9 @@ export function ChatView() {
       <BottomDock>
         <MobileModPanes />
         {state.session.slashCommandOutput && <PortableCommandOutput output={state.session.slashCommandOutput} />}
-        {state.session.pendingQuestion && <PortableQuestion request={state.session.pendingQuestion} scheme={state.scheme} />}
+        {state.session.pendingQuestion
+          ? <PortableQuestion key={state.session.pendingQuestion.requestId} request={state.session.pendingQuestion} scheme={state.scheme} />
+          : asyncQuestion && !state.pendingPermission && <PortableQuestion key={asyncQuestion.request.requestId} request={asyncQuestion.request} asyncQuestion={asyncQuestion} scheme={state.scheme} />}
       </BottomDock>
     </main>
     </MobileModUiProvider>

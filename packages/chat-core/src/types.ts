@@ -79,6 +79,8 @@ export interface ChatCoreSession {
   } | null
   pendingPermissions: PermissionRequest[]
   pendingQuestion: AskUserQuestionRequest | null
+  /** Host-restored async decisions, retained independently of paged history. */
+  pendingAsyncQuestions?: import('@superone/shared/codex-async-question').PendingCodexAsyncQuestion[]
   pendingPlanApproval: PlanApprovalRequest | null
   planApprovalOutcome: { approved: boolean; feedback?: string } | null
   permissionMode: PermissionMode

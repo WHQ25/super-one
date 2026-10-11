@@ -1,3 +1,4 @@
+import { SESSION_OPERATION_HANDLERS } from './rpc-session-operations'
 import { dirname as configDirname, join as pathJoin, resolve as pathResolve, sep } from 'node:path'
 import { handleSessionCreate } from './rpc-session-create'
 import { isAllowedSessionCwd } from './session-cwd'
@@ -109,6 +110,7 @@ function requiredPorts(method: string): readonly FamilyPort[] {
 
 function serves(ctx: HostRpcContext, method: string): boolean {
   if (ctx.unservedMethods?.has(method)) return false
+  if (Object.hasOwn(SESSION_OPERATION_HANDLERS, method) && !ctx.sessions?.servedOperations?.has(method)) return false
   // A partial port (`servedMethods`) serves only the methods it names.
   return requiredPorts(method).every((port) => {
     const served = ctx[port] as { readonly servedMethods?: ReadonlySet<string> } | undefined
@@ -228,6 +230,7 @@ export async function dispatchRpc(method: string, payload: unknown, ctx: HostRpc
 }
 
 const HANDLERS: Readonly<Record<string, (payload: unknown, ctx: RpcContext, method: string) => RpcResult | Promise<RpcResult>>> = {
+  ...SESSION_OPERATION_HANDLERS,
   'environment.descriptor': (_payload, ctx) => handleDescriptor(ctx),
   'environment.health': (_payload, ctx) => handleHealth(ctx),
   'environment.systemInfo': (_payload, ctx) => handleSystemInfo(ctx),

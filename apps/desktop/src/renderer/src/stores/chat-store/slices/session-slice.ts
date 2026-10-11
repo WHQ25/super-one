@@ -52,10 +52,10 @@ function composerDraftFrom(current: PerSessionState, msg: ChatMessage): Partial<
  * pool, detailed usage cache, in-memory session eviction.
  */
 export interface SessionSlice {
-  rewindFiles: (userMessageId: string) => Promise<RewindFilesResult>
-  rewindCodeAndChat: (userMessageId: string) => Promise<RewindFilesResult>
-  rewindConversation: (userMessageId: string) => Promise<RewindFilesResult>
-  previewRewind: (checkpointId: string) => Promise<RewindFilesResult>
+  rewindFiles: (userMessageId: string, target?: SessionWriteTarget) => Promise<RewindFilesResult>
+  rewindCodeAndChat: (userMessageId: string, target?: SessionWriteTarget) => Promise<RewindFilesResult>
+  rewindConversation: (userMessageId: string, target?: SessionWriteTarget) => Promise<RewindFilesResult>
+  previewRewind: (checkpointId: string, target?: SessionWriteTarget) => Promise<RewindFilesResult>
   editQueuedMessage: (messageId: string, target?: SessionWriteTarget) => void
   /**
    * Resend a failed user message exactly as it originally went out, or — when
@@ -76,12 +76,12 @@ export interface SessionSlice {
 }
 
 export const createSessionSlice: StateCreator<ChatStore, [], [], SessionSlice> = (set, get) => ({
-  rewindFiles: async (userMessageId: string) => {
-    const { activeProject } = get()
-    if (!activeProject) throw new Error('No active project')
-    const result = await window.agent.rewindFiles(activeProject, userMessageId)
+  rewindFiles: async (userMessageId: string, target?: SessionWriteTarget) => {
+    const { projectPath: activeProject, sessionId } = resolveWriteScope(get(), target)
+    if (!activeProject || !sessionId) throw new Error('No active project')
+    const result = await callSession(activeProject, sessionId, 'session.rewind', { checkpointId: userMessageId, mode: 'files' })
     if (result.canRewind !== false) {
-      set((s) => updateActivePerSession(s, (sess) => ({
+      set((s) => commitPerSession(s, { projectPath: activeProject, sessionId }, (sess) => ({
         messages: sess.messages.map((m) =>
           m.checkpointId === userMessageId ? { ...m, rewound: 'code' as const } : m
         ),
@@ -90,30 +90,30 @@ export const createSessionSlice: StateCreator<ChatStore, [], [], SessionSlice> =
     return result
   },
 
-  rewindCodeAndChat: async (userMessageId: string) => {
-    const { activeProject } = get()
-    if (!activeProject) throw new Error('No active project')
-    const result = await window.agent.rewindCodeAndChat(activeProject, userMessageId)
+  rewindCodeAndChat: async (userMessageId: string, target?: SessionWriteTarget) => {
+    const { projectPath: activeProject, sessionId } = resolveWriteScope(get(), target)
+    if (!activeProject || !sessionId) throw new Error('No active project')
+    const result = await callSession(activeProject, sessionId, 'session.rewind', { checkpointId: userMessageId, mode: 'code+chat' })
     if (result.canRewind !== false) {
-      _truncateAtCheckpoint(set, get, activeProject, userMessageId)
+      _truncateAtCheckpoint(set, get, activeProject, userMessageId, sessionId)
     }
     return result
   },
 
-  rewindConversation: async (userMessageId: string) => {
-    const { activeProject } = get()
-    if (!activeProject) throw new Error('No active project')
-    const result = await window.agent.rewindConversation(activeProject, userMessageId)
+  rewindConversation: async (userMessageId: string, target?: SessionWriteTarget) => {
+    const { projectPath: activeProject, sessionId } = resolveWriteScope(get(), target)
+    if (!activeProject || !sessionId) throw new Error('No active project')
+    const result = await callSession(activeProject, sessionId, 'session.rewind', { checkpointId: userMessageId, mode: 'conversation' })
     if (result.canRewind !== false) {
-      _truncateAtCheckpoint(set, get, activeProject, userMessageId)
+      _truncateAtCheckpoint(set, get, activeProject, userMessageId, sessionId)
     }
     return result
   },
 
-  previewRewind: async (checkpointId: string) => {
-    const { activeProject } = get()
-    if (!activeProject) throw new Error('No active project')
-    return window.agent.previewRewind(activeProject, checkpointId)
+  previewRewind: async (checkpointId: string, target?: SessionWriteTarget) => {
+    const { projectPath: activeProject, sessionId } = resolveWriteScope(get(), target)
+    if (!activeProject || !sessionId) throw new Error('No active project')
+    return callSession(activeProject, sessionId, 'session.previewRewind', { checkpointId })
   },
 
   editQueuedMessage: async (messageId, target) => {

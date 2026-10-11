@@ -266,6 +266,9 @@ type SessionRuntimeInput<K extends keyof SessionRuntime> = SessionRuntime[K] ext
  * the dispatcher maps to RPC errors.
  */
 export interface SessionHostPort {
+  /** Optional session operations, omitted by hosts that cannot implement them. */
+  readonly servedOperations?: ReadonlySet<string>
+  callOperation?(sessionId: string, method: string, input: Record<string, unknown>): unknown | Promise<unknown>
   create(input: SessionRuntimeInput<'create'>): NodeSessionRecord
   /** Desktop-native creation, including worktree and promoted-draft choices. */
   createOnHost?(input: SessionRuntimeInput<'create'> & SessionCreateSelections, options: { settings: NodeSessionSettings; assertCreate(): void }): Promise<NodeSessionRecord>

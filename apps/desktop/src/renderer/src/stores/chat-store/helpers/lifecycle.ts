@@ -1,7 +1,8 @@
+import { callSession } from '@/lib/session-client'
 import type { CodexAgentMessageItem, PermissionMode, SandboxInfo, UserQuestion } from '@superone/shared/agent-types'
 import type { ChatStore, PerSessionState, ProjectState } from '../types'
 import { _getSessionCwd } from './persistence'
-import { resolveActiveSessionId, updateActivePerSession } from './store-helpers'
+import { commitPerSession, getProject, resolveActiveSessionId, updateActivePerSession } from './store-helpers'
 import { _isBusyStatus, _isLiveSession } from './session-liveness'
 
 export type ChatStoreSet = (
@@ -62,17 +63,20 @@ export async function _syncAndResumeSession(
 }
 
 export function _truncateAtCheckpoint(
-  set: (fn: (s: ChatStore) => Partial<ChatStore>) => void,
-  _get: () => ChatStore,
+  set: ChatStoreSet,
+  get: () => ChatStore,
   projectPath: string,
   checkpointId: string,
+  targetSessionId?: string,
 ): void {
-  set((s) => updateActivePerSession(s, (sess) => {
+  const sessionId = targetSessionId ?? getProject(get(), projectPath)._activeSessionId
+  if (!sessionId) return
+  set((s) => commitPerSession(s, { projectPath, sessionId }, (sess) => {
     const idx = sess.messages.findIndex((m) => m.checkpointId === checkpointId)
     const truncated = idx >= 0 ? sess.messages.slice(0, idx) : sess.messages
     return { messages: truncated, session: null, totalCostUsd: 0, contextTokens: 0 }
   }))
-  window.agent.truncateAtCheckpoint(projectPath, checkpointId).catch((err) => {
+  callSession(projectPath, sessionId, 'session.truncateAtCheckpoint', { checkpointId }).catch((err) => {
     console.warn('[chat] truncateAtCheckpoint failed:', err)
   })
 }

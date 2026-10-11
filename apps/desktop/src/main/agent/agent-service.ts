@@ -1226,37 +1226,6 @@ export class AgentService {
       return { permissionMode: fresh.getCurrentPermissionMode(), sandboxInfo: fresh.getCurrentSandboxInfo() }
     })
 
-    windowIpc.handle(AgentIpcChannels.TRUNCATE_AT_CHECKPOINT, (_event, projectPath: string, checkpointId: string) => {
-      const session = this.sessionManager?.getActiveSession(projectPath)
-      if (!session) return false
-      session.truncateMessagesAt(checkpointId)
-      return true
-    })
-
-    windowIpc.handle(AgentIpcChannels.REWIND_FILES, async (_event, projectPath: string, userMessageId: string) => {
-      const session = this.sessionManager?.getActiveSession(projectPath)
-      if (!session) return { canRewind: false, error: 'No active session' }
-      return session.rewindFiles(userMessageId)
-    })
-
-    windowIpc.handle(AgentIpcChannels.REWIND_FILES_PREVIEW, async (_event, projectPath: string, userMessageId: string) => {
-      const session = this.sessionManager?.getActiveSession(projectPath)
-      if (!session) return { canRewind: false, error: 'No active session' }
-      return session.rewindFiles(userMessageId, { dryRun: true })
-    })
-
-    windowIpc.handle(AgentIpcChannels.REWIND_CODE_AND_CHAT, async (_event, projectPath: string, userMessageId: string) => {
-      const session = this.sessionManager?.getActiveSession(projectPath)
-      if (!session) return { canRewind: false, error: 'No active session' }
-      return session.rewindFiles(userMessageId, { includeConversation: true })
-    })
-
-    windowIpc.handle(AgentIpcChannels.REWIND_CONVERSATION, async (_event, projectPath: string, userMessageId: string) => {
-      const session = this.sessionManager?.getActiveSession(projectPath)
-      if (!session) return { canRewind: false, error: 'No active session' }
-      return session.rewindConversation(userMessageId)
-    })
-
     windowIpc.handle(AgentIpcChannels.GET_SESSION_ID, (_event, projectPath: string) => {
       return this.sessionManager?.getActiveSession(projectPath)?.snapshot.providerSessionId ?? null
     })
@@ -2394,11 +2363,6 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.COMPOSER_CANCEL)
     ipcMain.removeHandler(AgentIpcChannels.RESET_SESSION)
     ipcMain.removeHandler(AgentIpcChannels.CREATE_SESSION)
-    ipcMain.removeHandler(AgentIpcChannels.TRUNCATE_AT_CHECKPOINT)
-    ipcMain.removeHandler(AgentIpcChannels.REWIND_FILES)
-    ipcMain.removeHandler(AgentIpcChannels.REWIND_FILES_PREVIEW)
-    ipcMain.removeHandler(AgentIpcChannels.REWIND_CODE_AND_CHAT)
-    ipcMain.removeHandler(AgentIpcChannels.REWIND_CONVERSATION)
     ipcMain.removeHandler(AgentIpcChannels.GET_SESSION_ID)
     ipcMain.removeHandler(AgentIpcChannels.MCP_SERVER_STATUS)
     ipcMain.removeHandler(AgentIpcChannels.MCP_SERVER_AUTHENTICATE)

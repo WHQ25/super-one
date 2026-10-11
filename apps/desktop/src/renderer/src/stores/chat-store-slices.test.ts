@@ -1,3 +1,4 @@
+import { createDefaultPerSessionState } from './chat-store/defaults'
 /** @vitest-environment jsdom */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -46,7 +47,7 @@ const mockWindowAgent = {
 const mockWindowEnvironment = {
   patchSessionSettings: vi.fn().mockResolvedValue({}),
   callSession: vi.fn(async (_connectionId: string, _sessionId: string, method: string) =>
-    method === 'session.dequeue' ? { removed: true } : { ok: true }),
+    method === 'session.dequeue' ? { removed: true } : method === 'session.rewind' || method === 'session.previewRewind' ? { canRewind: true } : { ok: true }),
 }
 
 const mockWindowApp = {
@@ -434,12 +435,12 @@ describe('session-slice: rewindFiles', () => {
 
     await useChatStore.getState().rewindFiles('cp-1')
 
-    expect(mockWindowAgent.rewindFiles).toHaveBeenCalledWith(PATH, 'cp-1')
+    expect(mockWindowEnvironment.callSession).toHaveBeenCalledWith('local', activeProjectState()._activeSessionId, 'session.rewind', { checkpointId: 'cp-1', mode: 'files' })
     expect(activeSession().messages[0].rewound).toBe('code')
   })
 
   it('leaves messages untouched when the IPC reports canRewind=false', async () => {
-    mockWindowAgent.rewindFiles.mockResolvedValueOnce({ canRewind: false } as never)
+    mockWindowEnvironment.callSession.mockResolvedValueOnce({ canRewind: false } as never)
     setupProject()
     patchSession({ messages: [makeUserMessage('m1', { checkpointId: 'cp-1' })] })
 
@@ -464,7 +465,7 @@ describe('session-slice: rewindCodeAndChat / rewindConversation', () => {
     })
 
     await useChatStore.getState().rewindCodeAndChat('cp-2')
-    expect(mockWindowAgent.rewindCodeAndChat).toHaveBeenCalledWith(PATH, 'cp-2')
+    expect(mockWindowEnvironment.callSession).toHaveBeenCalledWith('local', activeProjectState()._activeSessionId, 'session.rewind', { checkpointId: 'cp-2', mode: 'code+chat' })
     // _truncateAtCheckpoint keeps messages strictly before the checkpoint
     expect(activeSession().messages.map((m) => m.id)).toEqual(['m1'])
   })
@@ -479,12 +480,12 @@ describe('session-slice: rewindCodeAndChat / rewindConversation', () => {
     })
 
     await useChatStore.getState().rewindConversation('cp-2')
-    expect(mockWindowAgent.rewindConversation).toHaveBeenCalledWith(PATH, 'cp-2')
+    expect(mockWindowEnvironment.callSession).toHaveBeenCalledWith('local', activeProjectState()._activeSessionId, 'session.rewind', { checkpointId: 'cp-2', mode: 'conversation' })
     expect(activeSession().messages.map((m) => m.id)).toEqual(['m1'])
   })
 
   it('rewindCodeAndChat leaves messages intact when IPC reports canRewind=false', async () => {
-    mockWindowAgent.rewindCodeAndChat.mockResolvedValueOnce({ canRewind: false } as never)
+    mockWindowEnvironment.callSession.mockResolvedValueOnce({ canRewind: false } as never)
     setupProject()
     const messages = [
       makeUserMessage('m1', { checkpointId: 'cp-1' }),
@@ -500,9 +501,9 @@ describe('session-slice: rewindCodeAndChat / rewindConversation', () => {
 describe('session-slice: previewRewind', () => {
   it('passes through to window.agent.previewRewind without touching store state', async () => {
     setupProject()
-    mockWindowAgent.previewRewind.mockResolvedValueOnce({ canRewind: true, files: ['a.ts'] } as never)
+    mockWindowEnvironment.callSession.mockResolvedValueOnce({ canRewind: true, files: ['a.ts'] } as never)
     const result = await useChatStore.getState().previewRewind('cp-1')
-    expect(mockWindowAgent.previewRewind).toHaveBeenCalledWith(PATH, 'cp-1')
+    expect(mockWindowEnvironment.callSession).toHaveBeenCalledWith('local', activeProjectState()._activeSessionId, 'session.previewRewind', { checkpointId: 'cp-1' })
     expect(result).toEqual({ canRewind: true, files: ['a.ts'] })
   })
 })
@@ -911,5 +912,26 @@ describe('session-slice: removeSessionFromMemory', () => {
     useChatStore.getState().removeSessionFromMemory('/no-such-project', 'sid')
     expect(useChatStore.getState().projectSessions).toEqual({})
     expect(mockClearForSession).not.toHaveBeenCalled()
+  })
+})
+
+
+describe('rewind scope during a session switch', () => {
+  it('updates only the session that requested rewind after another session becomes active', async () => {
+    setupProject()
+    patchSession({ messages: [makeUserMessage('m1', { checkpointId: 'cp' })] })
+    const origin = activeProjectState()._activeSessionId!
+    let complete!: (result: { canRewind: boolean }) => void
+    mockWindowEnvironment.callSession.mockReturnValueOnce(new Promise(resolve => { complete = resolve }))
+    const pending = useChatStore.getState().rewindFiles('cp')
+    useChatStore.setState(state => ({ projectSessions: { ...state.projectSessions, [PATH]: {
+      ...state.projectSessions[PATH], _activeSessionId: 'other', _sessions: { ...state.projectSessions[PATH]._sessions, other: { ...createDefaultPerSessionState(), messages: [makeUserMessage('other-msg', { checkpointId: 'cp' })] } },
+    } } }))
+    complete({ canRewind: true })
+    await pending
+    const project = activeProjectState()
+    expect(project._activeSessionId).toBe('other')
+    expect(project._sessions[origin].messages[0].rewound).toBe('code')
+    expect(project._sessions.other.messages[0].rewound).toBeUndefined()
   })
 })

@@ -3,7 +3,8 @@ import { toast } from 'sonner'
 import { Trans, useTranslation } from 'react-i18next'
 import { History, TriangleAlert } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
-import { useChatStore } from '@/stores/chat'
+import { useChatStore, useSessionScope } from '@/stores/chat'
+import { useEnvironmentServes } from '@/hooks/use-environment-serves'
 import {
   Dialog,
   DialogContent,
@@ -54,6 +55,9 @@ const codeAndChatOptions: RewindOption[] = [
 
 export function RewindButton({ checkpointId, rewound, className }: RewindButtonProps) {
   const { t } = useTranslation()
+  const scope = useSessionScope()
+  const activeProject = useChatStore((s) => s.activeProject)
+  const served = useEnvironmentServes(scope?.projectPath ?? activeProject, 'session.rewind')
   const [preview, setPreview] = useState<RewindFilesResult | null>(null)
   const [loading, setLoading] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -70,13 +74,13 @@ export function RewindButton({ checkpointId, rewound, className }: RewindButtonP
     setPreview(null)
     setLoading(true)
     try {
-      const result = await previewRewind(checkpointId)
+      const result = await previewRewind(checkpointId, scope ?? undefined)
       setPreview(result)
     } catch {
       setPreview({ canRewind: false, error: t('chat.rewind.previewFailed') })
     }
     setLoading(false)
-  }, [loading, previewRewind, checkpointId])
+  }, [loading, previewRewind, checkpointId, scope])
 
   const codeAlreadyRestored = rewound === 'code'
 
@@ -89,13 +93,13 @@ export function RewindButton({ checkpointId, rewound, className }: RewindButtonP
     setRewindingMode(mode)
     try {
       if (mode === 'code_and_chat') {
-        await rewindCodeAndChat(checkpointId)
+        await rewindCodeAndChat(checkpointId, scope ?? undefined)
         toast.success(t('chat.rewind.toast.codeAndChat'))
       } else if (mode === 'conversation') {
-        await rewindConversation(checkpointId)
+        await rewindConversation(checkpointId, scope ?? undefined)
         toast.success(t('chat.rewind.toast.conversation'))
       } else {
-        await rewindFiles(checkpointId)
+        await rewindFiles(checkpointId, scope ?? undefined)
         toast.success(t('chat.rewind.toast.code'))
       }
       setRewindingMode(null)
@@ -139,6 +143,8 @@ export function RewindButton({ checkpointId, rewound, className }: RewindButtonP
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [dialogOpen, preview?.canRewind, options, handleSelect, chatRootRef])
+
+  if (!served) return null
 
   return (
     <>

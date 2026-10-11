@@ -435,10 +435,10 @@ export interface ChatStore {
   resetSession: () => Promise<void>
   resetSessionForWorktreeSwitch: (projectPath: string, opts?: { wtPath?: string; gitBranch?: string | null }) => void
   removeSessionFromMemory: (projectPath: string, sessionId: string) => void
-  rewindFiles: (userMessageId: string) => Promise<RewindFilesResult>
-  rewindCodeAndChat: (userMessageId: string) => Promise<RewindFilesResult>
-  rewindConversation: (userMessageId: string) => Promise<RewindFilesResult>
-  previewRewind: (checkpointId: string) => Promise<RewindFilesResult>
+  rewindFiles: (userMessageId: string, target?: SessionWriteTarget) => Promise<RewindFilesResult>
+  rewindCodeAndChat: (userMessageId: string, target?: SessionWriteTarget) => Promise<RewindFilesResult>
+  rewindConversation: (userMessageId: string, target?: SessionWriteTarget) => Promise<RewindFilesResult>
+  previewRewind: (checkpointId: string, target?: SessionWriteTarget) => Promise<RewindFilesResult>
 
   editQueuedMessage: (messageId: string, target?: SessionWriteTarget) => void
   /** Resend a failed user message exactly as it originally went out. */

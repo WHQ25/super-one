@@ -44,6 +44,21 @@ export class LocalSessionHost extends DesktopSessionReads<DesktopSessionRow> imp
   dispose(): void { this.disposeReads() }
   get unservedMethods(): ReadonlySet<string> { return new Set([...LOCAL_SESSION_UNSERVED].filter(method => method !== 'session.fork' || !this.deps.edits?.fork)) }
 
+  readonly servedOperations: ReadonlySet<string> = new Set(['session.rewind', 'session.previewRewind', 'session.truncateAtCheckpoint'])
+
+  async callOperation(sessionId: string, method: string, input: Record<string, unknown>): Promise<unknown> {
+    const session = method === 'session.previewRewind' ? this.live(sessionId) : this.mutation(sessionId)
+    const checkpointId = input.checkpointId as string
+    switch (method) {
+      case 'session.previewRewind': return session.rewindFiles(checkpointId, { dryRun: true })
+      case 'session.rewind':
+        return input.mode === 'conversation' ? session.rewindConversation(checkpointId)
+          : session.rewindFiles(checkpointId, { includeConversation: input.mode === 'code+chat' })
+      case 'session.truncateAtCheckpoint': session.truncateMessagesAt(checkpointId); return true
+      default: throw unsupportedMethodError(method)
+    }
+  }
+
   private edits(): LocalSessionEdits {
     if (!this.deps.edits) throw unsupportedMethodError('session persistence edits')
     return this.deps.edits

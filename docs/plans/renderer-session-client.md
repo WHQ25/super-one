@@ -316,6 +316,12 @@ the UI hides them through capabilities.
 
 ## Progress
 
+- 2026-10-12: Step 5 rewind family. Optional runtime session-operation ports
+  advertise implemented methods; local rewind/preview/truncate name a session
+  rather than the project's active pointer. Renderer writes retain that scope
+  across awaits; unsupported environments hide rewind by served methods.
+  The old rewind IPC is removed. Endpoint and renderer scope tests pass.
+
 - 2026-10-12: Step 4. All harnesses send through `session-turn.ts` and
   `session.send`, including Codex run/review/compact, plan answers and widget
   input answers. Draft creation, inline attachment order, grants and retries

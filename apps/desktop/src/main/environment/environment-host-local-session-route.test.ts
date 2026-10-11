@@ -149,3 +149,30 @@ describe('local sessions on the environment route', () => {
     expect(own.sent).toEqual([])
   })
 })
+
+
+describe('rewind on the local environment endpoint', () => {
+  it('addresses the named session, validates the mode and makes preview a read', async () => {
+    const { host, own, sessions, domain } = localRoute()
+    const rewind = vi.fn(async () => { own.lease.assertMutation(); return { canRewind: true } })
+    const preview = vi.fn(async (_checkpoint: string, options?: { dryRun?: boolean }) => {
+      if (!options?.dryRun) own.lease.assertMutation()
+      return { canRewind: true }
+    })
+    const truncate = vi.fn(() => own.lease.assertMutation())
+    Object.assign(own, { rewindFiles: preview, rewindConversation: rewind, truncateMessagesAt: truncate })
+    sessions.setActiveSession(own.projectPath, 'other')
+    const descriptor = await new InProcessRpcClient(domain).getDescriptor()
+    expect(descriptor.capabilities.methods).toContain('session.rewind')
+    await host.callSession('local', 'own', 'session.previewRewind', { checkpointId: 'cp' })
+    expect(preview).toHaveBeenCalledWith('cp', { dryRun: true })
+    await runWindowControl(7, () => host.callSession('local', 'own', 'session.rewind', { checkpointId: 'cp', mode: 'code+chat' }))
+    expect(preview).toHaveBeenCalledWith('cp', { includeConversation: true })
+    await runWindowControl(7, () => host.callSession('local', 'own', 'session.rewind', { checkpointId: 'cp', mode: 'conversation' }))
+    expect(rewind).toHaveBeenCalledWith('cp')
+    await runWindowControl(7, () => host.callSession('local', 'own', 'session.truncateAtCheckpoint', { checkpointId: 'cp' }))
+    expect(truncate).toHaveBeenCalledWith('cp')
+    await expect(runWindowControl(7, () => host.callSession('local', 'own', 'session.rewind', { checkpointId: 'cp', mode: 'bad' as never }))).rejects.toMatchObject({ code: 'invalid_argument' })
+    await expect(host.callSession('local', 'own', 'session.rewind', { checkpointId: 'cp', mode: 'files' })).rejects.toThrow('local session control needs a window')
+  })
+})

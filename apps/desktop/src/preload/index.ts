@@ -93,9 +93,6 @@ const agentAPI = {
     ipcRenderer.invoke(AgentIpcChannels.RESET_SESSION, sessionId, newSessionId),
 
 
-  truncateAtCheckpoint: (projectPath: string, checkpointId: string): Promise<boolean> =>
-    ipcRenderer.invoke(AgentIpcChannels.TRUNCATE_AT_CHECKPOINT, projectPath, checkpointId),
-
   parkSession: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.PARK_SESSION, projectPath),
 
@@ -107,18 +104,6 @@ const agentAPI = {
 
   getLiveSnapshots: () =>
     ipcRenderer.invoke(AgentIpcChannels.GET_LIVE_SNAPSHOTS),
-
-  rewindFiles: (projectPath: string, userMessageId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.REWIND_FILES, projectPath, userMessageId),
-
-  previewRewind: (projectPath: string, userMessageId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.REWIND_FILES_PREVIEW, projectPath, userMessageId),
-
-  rewindCodeAndChat: (projectPath: string, userMessageId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.REWIND_CODE_AND_CHAT, projectPath, userMessageId),
-
-  rewindConversation: (projectPath: string, userMessageId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.REWIND_CONVERSATION, projectPath, userMessageId),
 
   getSessionId: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.GET_SESSION_ID, projectPath),

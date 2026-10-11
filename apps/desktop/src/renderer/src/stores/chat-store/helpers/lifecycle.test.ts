@@ -10,7 +10,8 @@ const truncateAtCheckpoint = vi.fn().mockResolvedValue(undefined)
 vi.mock('@/stores/app', () => ({ useAppStore: { getState: () => ({ sandboxCapability: null }) } }))
 vi.mock('@/stores/activity-view-state', () => ({ useActivityViewStateStore: { getState: () => ({}) } }))
 vi.stubGlobal('window', {
-  agent: { truncateAtCheckpoint, parkSession, activateSession },
+  agent: { parkSession, activateSession },
+  environment: { callSession: truncateAtCheckpoint },
   app: {
     trace: vi.fn(),
     getAppSettings: vi.fn().mockResolvedValue({ agentPreference: {} }),
@@ -155,7 +156,7 @@ describe('_truncateAtCheckpoint', () => {
 
     _truncateAtCheckpoint(set as never, () => baseState, '/p1', 'cp-2')
     expect(captured[0]?.messages?.map((m) => m.id)).toEqual(['u1'])
-    expect(truncateAtCheckpoint).toHaveBeenCalledWith('/p1', 'cp-2')
+    expect(truncateAtCheckpoint).toHaveBeenCalledWith('local', 'sid-1', 'session.truncateAtCheckpoint', { checkpointId: 'cp-2' })
   })
 
   it('leaves messages unchanged when no checkpoint matches', () => {

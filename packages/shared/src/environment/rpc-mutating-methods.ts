@@ -30,6 +30,8 @@ const NODE_MUTATING_METHODS: ReadonlySet<string> = new Set([
   'git.worktreeActivate',
   'git.worktreeAssignBranch',
   'git.worktreeHandoff',
+  'session.rewind',
+  'session.truncateAtCheckpoint',
   'session.create',
   'session.setCwd',
   'session.patchSettings',

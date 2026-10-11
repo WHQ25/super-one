@@ -700,7 +700,8 @@ export class CodexBackend implements SessionBackend {
         ? this.session.serviceTier
         : (startOpts.serviceTier ?? null)
     const resolvedThreadId = request.codex?.threadId ?? this.providerSessionId ?? undefined
-    const resolvedCwd = request.codex?.cwd ?? startOpts.cwd
+    // The session owns its directory; renderer hints can lag behind a focus change.
+    const resolvedCwd = startOpts.cwd
 
     const session = this.ensureSessionForRequest(
       resolvedModel,

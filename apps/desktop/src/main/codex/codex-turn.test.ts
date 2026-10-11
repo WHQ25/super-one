@@ -56,6 +56,7 @@ vi.mock('../mcp/terminal-tabs-harness-gate', () => ({
 const appServerConnection = await import('./app-server-connection')
 const {
   resolveThread,
+  resolveCwd,
   withSessionConnection,
   withThreadConnection,
   closeSessionConnection,
@@ -146,6 +147,22 @@ describe('resolveThread fallback', () => {
     sandboxMode: 'permissive' as const,
     networkAccessEnabled: true,
   }
+
+  it('resumes the original conversation when reopening with a different directory', async () => {
+    const session = makeSession({ threadId: 'original-main-thread' })
+    session.threadReady = true
+    session.effectiveCwd = '/project'
+    const connection = {
+      request: vi.fn(async (method: string) => ({ thread: { id: method === 'thread/resume' ? 'original-main-thread' : 'new-thread' } })),
+    }
+    const cwd = resolveCwd(session, '/project', '/project/.worktrees/other')
+
+    const threadId = await resolveThread(connection as never, session, '/project', cwd, permissionProfile as never)
+
+    expect(threadId).toBe('original-main-thread')
+    expect(connection.request).toHaveBeenCalledWith('thread/resume', expect.objectContaining({ threadId: 'original-main-thread', cwd }))
+    expect(connection.request).not.toHaveBeenCalledWith('thread/start', expect.anything())
+  })
 
   it('shares one app-server connection across concurrent cold-resume callers', async () => {
     const session = makeSession({ model: 'gpt-5', threadId: 'existing-thread' })

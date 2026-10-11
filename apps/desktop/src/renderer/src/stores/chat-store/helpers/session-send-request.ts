@@ -1,5 +1,6 @@
 import type { SendMessageRequest } from '@superone/shared/agent-types'
 import type { ChatProvider, PerSessionState } from '../types'
+import { sessionDirectoryHint } from './session-liveness'
 
 interface SessionSendOptions {
   session: PerSessionState
@@ -41,7 +42,7 @@ export function sessionSendRequest(options: SessionSendOptions): SendMessageRequ
     contexts: options.contexts,
     userSelections: options.userSelections,
     gitBranch: session._gitBranch ?? undefined,
-    worktreePath: session._worktreePath ?? undefined,
+    worktreePath: sessionDirectoryHint(session),
     ...(provider === 'opencode' && session.openCodeAgentId ? { agent: session.openCodeAgentId } : {}),
     ...(provider === 'codex' ? { codex: {
       mode: 'run',
@@ -50,7 +51,6 @@ export function sessionSendRequest(options: SessionSendOptions): SendMessageRequ
       permissionPreset: session.selectedCodexPermissionPreset,
       collaborationMode: session.selectedCodexCollaborationMode,
       ...(session._providerSessionId ? { threadId: session._providerSessionId } : {}),
-      ...(session.cwd ? { cwd: session.cwd } : {}),
     } } : {}),
     ...(session.apiProviderId ? { apiProviderId: session.apiProviderId } : {}),
     ...(provider === 'acp' && session.acpAgentId ? { acpAgentId: session.acpAgentId } : {}),

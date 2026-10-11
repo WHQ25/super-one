@@ -25,6 +25,17 @@ export function isUnsentSession(session: PerSessionState | undefined): boolean {
   return !!session && !session._sideChatParentId && session.messages.length === 0 && !_isLiveSession(session)
 }
 
+/**
+ * The directory hint sent with a prewarm or send. A chosen worktree always goes;
+ * an unsent, hydrated session also sends its own cwd so a cleared selection moves
+ * a prewarmed runtime back. A started or still-loading session sends none: its
+ * host owns the directory, and a stub's placeholder cwd must not move it.
+ */
+export function sessionDirectoryHint(session: PerSessionState, fallback?: string): string | undefined {
+  if (session._worktreePath) return session._worktreePath
+  return isUnsentSession(session) && session._historyHydrated ? (session.cwd || fallback) : undefined
+}
+
 /** A session with a backend turn, or anything waiting on the user, in flight. */
 export function _isLiveSession(session: PerSessionState | undefined): boolean {
   return !!session && (

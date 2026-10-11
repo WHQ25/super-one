@@ -2432,7 +2432,6 @@ export interface CodexSendExtras {
   serviceTier?: string | null
   collaborationMode?: CodexCollaborationMode
   threadId?: string
-  cwd?: string
   prompt?: string
 }
 

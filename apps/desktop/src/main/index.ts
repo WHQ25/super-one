@@ -2682,7 +2682,6 @@ function registerIpcHandlers(): void {
           permissionPreset,
           collaborationMode,
           threadId,
-          cwd,
         },
       })
     },
@@ -3092,7 +3091,6 @@ function registerIpcHandlers(): void {
           serviceTier: extras?.serviceTier,
           permissionPreset,
           threadId,
-          cwd,
         },
       })
     },
@@ -3133,7 +3131,6 @@ function registerIpcHandlers(): void {
           serviceTier: extras?.serviceTier,
           permissionPreset,
           threadId,
-          cwd,
         },
       })
     },

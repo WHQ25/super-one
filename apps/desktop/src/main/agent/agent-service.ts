@@ -25,6 +25,7 @@ import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
 import { localSessionEnvironmentId } from '../environment/session-identity'
 import type { RemoteControlService } from '../remote-control-service'
 import { trace } from './event-trace'
+import { applySessionDirectoryHint, sessionCreationCwd } from './session-directory'
 import { getProjectExtraDirs, updateProject } from '../recent-folders';
 import { readdir, mkdir } from 'fs/promises'
 import { existsSync, readdirSync, readFileSync } from 'fs';
@@ -859,30 +860,6 @@ export class AgentService {
     return baseSessionProviderId(harnessId ?? 'claude')
   }
 
-  /**
-   * Align a live session's cwd with the renderer's worktree selection.
-   * Without this, a prewarmed ACP/Claude process stays bound to the project
-   * root after the user switches into a worktree (session/new cwd is sticky).
-   */
-  private async applyWorktreeCwdHint(
-    session: import('../session/types').Session,
-    hint?: {
-      worktreePath?: string | null
-      gitBranch?: string | null
-    },
-  ): Promise<void> {
-    const wt = hint?.worktreePath?.trim()
-    if (!wt || !existsSync(wt)) return
-    const branch = hint?.gitBranch
-    if (session.cwd === wt) {
-      if (branch !== undefined && branch !== session.snapshot.gitBranch) {
-        await session.applyWorktreeSelection(wt, branch)
-      }
-      return
-    }
-    await session.applyWorktreeSelection(wt, branch ?? undefined)
-  }
-
   private async getOrCreateActiveSession(
     projectPath: string,
     requestedSid?: string,
@@ -895,8 +872,7 @@ export class AgentService {
     },
   ): Promise<import('../session/types').Session> {
     const mgr = this.requireSessionManager()
-    const activeCwd = mgr.getActiveSession(projectPath)?.cwd
-    const cwd = hint?.worktreePath ?? activeCwd
+    const cwd = sessionCreationCwd(projectPath, { ...hint, sessionId: requestedSid }, mgr.getActiveSession(projectPath))
     const gitBranch = hint?.gitBranch ?? null
     const apiProviderHint = hint?.apiProviderId ?? null
     const acpAgentHint = hint?.acpAgentId ?? null
@@ -939,7 +915,7 @@ export class AgentService {
         mgr.setActiveSession(projectPath, requestedSid)
         if (shouldApplyHint(existing)) existing.setApiProviderId(apiProviderHint)
         if (acpAgentHint) existing.setAcpAgentId(acpAgentHint)
-        await this.applyWorktreeCwdHint(existing, hint)
+        await applySessionDirectoryHint(existing, hint)
         return existing
       }
       try {
@@ -967,7 +943,7 @@ export class AgentService {
         }
         if (shouldApplyHint(resumed)) resumed.setApiProviderId(apiProviderHint)
         if (acpAgentHint) resumed.setAcpAgentId(acpAgentHint)
-        await this.applyWorktreeCwdHint(resumed, hint)
+        await applySessionDirectoryHint(resumed, hint)
         return resumed
       } catch {
         const prefs = prefsFor(hint?.provider)
@@ -988,7 +964,7 @@ export class AgentService {
     if (active) {
       if (shouldApplyHint(active)) active.setApiProviderId(apiProviderHint)
       if (acpAgentHint) active.setAcpAgentId(acpAgentHint)
-      await this.applyWorktreeCwdHint(active, hint)
+      await applySessionDirectoryHint(active, hint)
       return active
     }
     const prefs = prefsFor(hint?.provider)
@@ -1011,8 +987,7 @@ export class AgentService {
     const mgr = this.requireSessionManager()
     const providerId = this.baseProviderIdForHarness(hint?.provider)
     const harnessId = hint?.provider ?? 'claude'
-    const activeCwd = mgr.getActiveSession(projectPath)?.cwd
-    const cwd = hint?.worktreePath ?? activeCwd
+    const cwd = sessionCreationCwd(projectPath, hint, mgr.getActiveSession(projectPath))
     const { permissionMode, sandboxMode } = this.readDefaultSessionPrefs(harnessId)
     const createOpts = {
       projectPath,
@@ -1030,7 +1005,7 @@ export class AgentService {
       if (existing) {
         if (existing.snapshot.harnessId === harnessId) {
           mgr.setActiveSession(projectPath, hint.sessionId)
-          await this.applyWorktreeCwdHint(existing, {
+          await applySessionDirectoryHint(existing, {
             worktreePath: hint.worktreePath,
           })
           return existing
@@ -1050,7 +1025,7 @@ export class AgentService {
         const resumed = mgr.resumeSession(hint.sessionId, { passive: true })
         if (resumed.snapshot.harnessId === harnessId) {
           mgr.setActiveSession(projectPath, hint.sessionId)
-          await this.applyWorktreeCwdHint(resumed, {
+          await applySessionDirectoryHint(resumed, {
             worktreePath: hint.worktreePath,
           })
           log.debug(
@@ -1078,7 +1053,7 @@ export class AgentService {
     }
     const active = mgr.getActiveSession(projectPath)
     if (active?.snapshot.harnessId === harnessId) {
-      await this.applyWorktreeCwdHint(active, {
+      await applySessionDirectoryHint(active, {
         worktreePath: hint?.worktreePath,
       })
       return active

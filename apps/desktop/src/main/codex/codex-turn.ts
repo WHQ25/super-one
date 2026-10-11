@@ -34,7 +34,8 @@ import type {
   CodexSteerInput,
   PendingCodexApprovalResponse,
 } from './codex-session'
-import { tearDownForkRuntime } from './codex-session'
+import { resolveCodexSessionCwd as resolveCwd, tearDownForkRuntime } from './codex-session'
+export { resolveCodexSessionCwd as resolveCwd } from './codex-session'
 import type {
   AgentEvent,
   AskUserQuestionRequest,
@@ -1200,16 +1201,6 @@ export async function withThreadConnection<T>(
     }
   }
   throw new Error('Failed to establish Codex thread connection')
-}
-
-export function resolveCwd(session: CodexSession, projectPath: string, requestedCwd?: string): string {
-  const cwd = requestedCwd || session.effectiveCwd || projectPath
-  if (session.effectiveCwd && session.effectiveCwd !== cwd) {
-    session.threadId = null
-    session.threadReady = false
-  }
-  session.effectiveCwd = cwd
-  return cwd
 }
 
 function buildThreadConfig(

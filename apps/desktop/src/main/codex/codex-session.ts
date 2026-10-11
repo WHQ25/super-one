@@ -134,6 +134,14 @@ export function createCodexSession(
   }
 }
 
+/** Reconcile directory settings through thread/resume, preserving conversation history. */
+export function resolveCodexSessionCwd(session: CodexSession, projectPath: string, requestedCwd?: string): string {
+  const cwd = requestedCwd || session.effectiveCwd || projectPath
+  if (session.effectiveCwd && session.effectiveCwd !== cwd) session.threadReady = false
+  session.effectiveCwd = cwd
+  return cwd
+}
+
 export function tearDownForkRuntime(session: CodexSession, reason: string): void {
   const dispatcher = session.notificationDispatcher
   const forkListeners = Array.from(session.forkListeners.values())

@@ -177,6 +177,7 @@ describe('triggerPrewarm', () => {
     const [path, hint] = mockPrewarm.mock.calls[0]
     expect(path).toBe('/p1')
     expect(hint).toMatchObject({ provider: 'claude', model: 'opus-4-8', effort: 'high' })
+    expect(hint.worktreePath).toBe('/p1')
   })
 
   it('includes acpAgentId in prewarm hint for ACP sessions', () => {

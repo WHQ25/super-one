@@ -714,6 +714,14 @@ describe('CodexBackend send()', () => {
     await backend.start(makeStartOpts())
   })
 
+  it('keeps the session directory when a renderer sends another session directory', async () => {
+    const pending = backend.send({ content: 'hello', codex: { mode: 'run', prompt: 'hello', cwd: '/tmp/proj/.worktrees/other' } })
+    service.resolveRun(makeResult())
+    await pending
+
+    expect(service.runMock.mock.calls.at(-1)?.[3].cwd).toBe('/tmp/proj')
+  })
+
   it('forwards prompt / images / model / effort / permissionPreset / threadId / cwd to codex turn', async () => {
     const pending = backend.send({
       content: 'hello',

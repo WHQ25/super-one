@@ -3,6 +3,7 @@ import { createDefaultPerSessionState, createDefaultProjectState } from '../defa
 import type { ChatStore, PerSessionState, ProjectState, SessionWriteTarget } from '../types'
 import { applyCachedCodexPermissionPreset } from './prefs-cache'
 import { resolveProvider } from './provider-routing'
+import { sessionDirectoryHint } from './session-liveness'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 
 export function getProject(state: ChatStore, projectPath?: string | null): ProjectState {
@@ -48,7 +49,7 @@ export function triggerPrewarm(state: ChatStore, projectPath?: string | null): v
     effort: provider === 'claude' ? session.selectedEffort : undefined,
     additionalDirs: dirs.length > 0 ? dirs : undefined,
     sessionId: project._activeSessionId ?? undefined,
-    worktreePath: session._worktreePath ?? undefined,
+    worktreePath: sessionDirectoryHint(session, key),
     acpAgentId: provider === 'acp' ? (session.acpAgentId ?? undefined) : undefined,
   }
   void window.agent.prewarm(key, hint).catch(() => {})

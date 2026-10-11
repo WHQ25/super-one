@@ -384,6 +384,53 @@ describe('dsh MCP config IPC', () => {
   })
 })
 
+describe('AgentService new session directory', () => {
+  it('returns an unsent prewarmed session to main when the worktree selection is cleared', async () => {
+    const service = new AgentService()
+    const session = makeMockSession({
+      id: 'draft', projectPath: '/repo/main', cwd: '/repo/main/.worktrees/previous',
+      snapshot: { harnessId: 'codex', messages: [] },
+      prewarm: vi.fn(), applyWorktreeSelection: vi.fn().mockResolvedValue(undefined),
+    })
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getActiveSession: () => session, getSession: () => session, setActiveSession: vi.fn(),
+    }
+    service.setup()
+    const handler = getRegisteredIpcHandler(AgentIpcChannels.PREWARM)!
+    mockExistsSync.mockReturnValueOnce(true)
+    await handler(null, '/repo/main', { sessionId: 'draft', provider: 'codex', worktreePath: null })
+    expect(session.applyWorktreeSelection).toHaveBeenCalledWith('/repo/main', undefined)
+  })
+
+  it.each([
+    { channel: AgentIpcChannels.PREWARM, worktreePath: undefined },
+    { channel: AgentIpcChannels.PREWARM, worktreePath: null },
+    { channel: AgentIpcChannels.SEND_MESSAGE, worktreePath: undefined },
+    { channel: AgentIpcChannels.SEND_MESSAGE, worktreePath: null },
+  ])('starts a new main session at its project root via $channel with worktreePath=$worktreePath', async ({ channel, worktreePath }) => {
+    const service = new AgentService()
+    const previous = makeMockSession({ id: 'previous', cwd: '/repo/main/.worktrees/previous' })
+    const createSession = vi.fn((opts: { id: string; cwd?: string; projectPath: string }) => makeMockSession({
+      id: opts.id, cwd: opts.cwd ?? opts.projectPath,
+      snapshot: { harnessId: 'codex', messages: [] },
+      prewarm: vi.fn(), send: vi.fn().mockResolvedValue(undefined),
+    }))
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getActiveSession: () => previous,
+      getSession: () => undefined,
+      resumeSession: () => { throw new Error('Session not found: new-main') },
+      createSession,
+    }
+    service.setup()
+    const handler = getRegisteredIpcHandler(channel)!
+
+    await handler(null, '/repo/main', { sessionId: 'new-main', provider: 'codex', worktreePath, content: 'hello' })
+
+    expect(createSession).toHaveBeenCalledWith(expect.objectContaining({ id: 'new-main', cwd: '/repo/main' }))
+    expect(previous.cwd).toBe('/repo/main/.worktrees/previous')
+  })
+})
+
 describe('AgentService prewarm', () => {
   it('skips local prewarm for a project hosted by a remote node', async () => {
     const service = new AgentService()

@@ -2064,7 +2064,22 @@ export class EnvironmentHost {
 
   async callSessionList<M extends SessionListOperationMethod>(connectionId: string, method: M, input: SessionListOperationMethods[M]['input']): Promise<SessionListOperationMethods[M]['result']> {
     if (!SESSION_LIST_OPERATION_METHODS.has(method)) throw Object.assign(new Error('invalid session list operation'), { code: 'invalid_argument' })
-    return this.resolveSession(connectionId).gateway.callSessionList(method, input)
+    const { gateway, environmentId } = this.resolveSession(connectionId)
+    if (method === 'sessionList.deleteOlderThan') {
+      const { projectId, cutoffDate } = input as SessionListOperationMethods['sessionList.deleteOlderThan']['input']
+      const cutoff = Date.parse(cutoffDate)
+      if (!projectId || !Number.isFinite(cutoff)) throw Object.assign(new Error('project id and valid cutoff date required'), { code: 'invalid_argument' })
+      const controls: import('@superone/shared/environment/session-operations').SessionListControl[] = []
+      for (let offset = 0; ; offset += 500) {
+        const rows = await gateway.sessions.list({ environmentId, projectId }, { limit: 500, offset }) as Array<{ sessionId: string; updatedAt: number; isPinned?: boolean }>
+        for (const row of rows) {
+          if (!row.isPinned && row.updatedAt < cutoff) controls.push({ sessionId: row.sessionId, ...await this.ensureSessionLease(connectionId, row.sessionId) })
+        }
+        if (rows.length < 500) break
+      }
+      return gateway.callSessionList(method, { ...input, controls })
+    }
+    return gateway.callSessionList(method, input)
   }
 
   async interruptSession(connectionId: string, sessionId: string): Promise<void> {

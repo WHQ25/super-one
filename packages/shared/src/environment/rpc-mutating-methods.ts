@@ -33,6 +33,7 @@ const NODE_MUTATING_METHODS: ReadonlySet<string> = new Set([
   'session.mcpAuthenticate',
   'session.scheduledSend.set',
   'session.scheduledSend.clear',
+  'sessionList.deleteOlderThan',
   'session.sideChatStart',
   'session.sideChatClose',
   'session.stopTask',

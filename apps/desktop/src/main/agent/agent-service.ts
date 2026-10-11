@@ -75,7 +75,7 @@ function getGitRoot(cwd: string): string {
     return cwd // Fallback: not a git repo, use path itself
   }
 }
-import { listSessionsForFolder, createSession, createAutomationSession, loadSessionMessage, deleteSessionsOlderThan as dbDeleteSessionsOlderThan, listPinnedSessions, readSessionHarnessId } from '../db-sessions';
+import { listSessionsForFolder, createSession, createAutomationSession, loadSessionMessage, listPinnedSessions, readSessionHarnessId } from '../db-sessions';
 import { loadSessionMessages } from '../session-history'
 import { getSessionRecord } from '../session/session-repo'
 import { listMcpConfigs, saveMcpConfig, deleteMcpConfig, toggleMcpConfig } from '../mcp-config-service'
@@ -2229,14 +2229,6 @@ export class AgentService {
       return loadSessionMessages(projectPath, sessionId, limit, cursor)
     })
 
-    windowIpc.handle(AgentIpcChannels.SESSIONS_DELETE_OLDER, (_event, folderPath: string, cutoffDate: string) => {
-      const deleted = dbDeleteSessionsOlderThan(folderPath, cutoffDate)
-      if (deleted.length > 0) {
-        this.emitSessionsChanged()
-      }
-      return deleted
-    })
-
     windowIpc.handle(AgentIpcChannels.SESSIONS_LIST_PINNED, () => {
       return listPinnedSessions()
     })
@@ -2357,7 +2349,6 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_LIST_FOR_FOLDER)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_LIST_FOR_FOLDER_PAGE)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_LOAD_MESSAGES)
-    ipcMain.removeHandler(AgentIpcChannels.SESSIONS_DELETE_OLDER)
     ipcMain.removeHandler(AgentIpcChannels.SESSIONS_LIST_PINNED)
   }
 }

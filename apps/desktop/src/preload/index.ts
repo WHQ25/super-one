@@ -2151,8 +2151,6 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_LIST_FOR_FOLDER_PAGE, folderPath, limit, offset),
   loadSessionMessages: (projectPath: string, sessionId: string, limit: number, cursor?: number) =>
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_LOAD_MESSAGES, projectPath, sessionId, limit, cursor),
-  deleteSessionsOlderThan: (folderPath: string, cutoffDate: string): Promise<string[]> =>
-    ipcRenderer.invoke(AgentIpcChannels.SESSIONS_DELETE_OLDER, folderPath, cutoffDate),
   getComposerDrafts: () =>
     ipcRenderer.invoke(AgentIpcChannels.COMPOSER_DRAFTS_GET) as Promise<Record<string, Record<string, unknown>>>,
   publishComposerDraft: (sessionId: string, patch: Record<string, unknown>) =>

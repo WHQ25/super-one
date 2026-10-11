@@ -47,10 +47,20 @@ async function callOperation(payload: unknown, ctx: RpcContext, method: string):
 }
 
 async function callListOperation(payload: unknown, ctx: RpcContext, method: string): Promise<RpcResult> {
-  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readSession)
+  const denied = requireScopes(ctx.client, method === 'sessionList.deleteOlderThan' ? OPERATION_SCOPES.operateSession : OPERATION_SCOPES.readSession)
   if (denied) return denied
   const p = asRecord(payload)
   try {
+    if (method === 'sessionList.deleteOlderThan') {
+      requiredText(p, 'projectId')
+      if (!Number.isFinite(Date.parse(requiredText(p, 'cutoffDate')))) throw Object.assign(new Error('invalid cutoff date'), { code: 'invalid_argument' })
+      if (!Array.isArray(p.controls)) throw Object.assign(new Error('session controls required'), { code: 'invalid_argument' })
+      for (const input of p.controls) {
+        const control = asRecord(input)
+        ctx.leases.assertValid({ resource: { environmentId: ctx.identity.environmentId, sessionId: requiredText(control, 'sessionId') },
+          leaseId: requiredText(control, 'leaseId'), generation: requiredText(control, 'generation'), holderClientId: ctx.client.clientSessionId })
+      }
+    }
     return { result: await ctx.sessions!.callListOperation!(method, p, ctx.client.clientSessionId) }
   } catch (error) { return mapThrown(error) }
 }

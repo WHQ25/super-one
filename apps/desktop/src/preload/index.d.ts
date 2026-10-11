@@ -760,7 +760,6 @@ interface AppAPI {
   listSessionsForFolder(folderPath: string): Promise<SessionHistoryEntry[]>
   listSessionsForFolderPage(folderPath: string, limit: number, offset: number): Promise<SessionHistoryEntry[]>
   loadSessionMessages(projectPath: string, sessionId: string, limit: number, cursor?: number): Promise<LoadSessionMessagesResult>
-  deleteSessionsOlderThan(folderPath: string, cutoffDate: string): Promise<string[]>
 
   /** Composer drafts other windows published this run, keyed by session id. */
   getComposerDrafts(): Promise<Record<string, Record<string, unknown>>>

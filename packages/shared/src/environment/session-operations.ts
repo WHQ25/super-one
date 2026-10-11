@@ -29,6 +29,8 @@ export const SESSION_OPERATION_READS: ReadonlySet<string> = new Set(['session.sc
 
 export interface SessionListOperationMethods {
   'sessionList.scheduledSends': { input: Record<string, never>; result: ScheduledSend[] }
+  'sessionList.deleteOlderThan': { input: { projectId: string; cutoffDate: string }; result: string[] }
 }
 export type SessionListOperationMethod = keyof SessionListOperationMethods
-export const SESSION_LIST_OPERATION_METHODS: ReadonlySet<string> = new Set(['sessionList.scheduledSends'])
+export const SESSION_LIST_OPERATION_METHODS: ReadonlySet<string> = new Set(['sessionList.scheduledSends', 'sessionList.deleteOlderThan'])
+export interface SessionListControl { sessionId: string; leaseId: string; generation: string }

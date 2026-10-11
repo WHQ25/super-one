@@ -271,3 +271,28 @@ describe('scheduled sends on the local environment endpoint', () => {
     expect(await host.callSessionList('local', 'sessionList.scheduledSends', {})).toEqual([])
   })
 })
+
+describe('session housekeeping on the local environment endpoint', () => {
+  it('deletes only old unpinned sessions after disposing them', async () => {
+    const { host, store, sessions, projectDir } = localRoute()
+    store.rows.set('own', { ...store.rows.get('own')!, updatedAt: 0 })
+    store.createRow({ sessionId: 'pinned', projectPath: projectDir, cwd: projectDir })
+    store.rows.set('pinned', { ...store.rows.get('pinned')!, updatedAt: 0, isPinned: true })
+    store.createRow({ sessionId: 'recent', projectPath: projectDir, cwd: projectDir })
+    const deleted = await runWindowControl(7, () => host.callSessionList('local', 'sessionList.deleteOlderThan', { projectId: 'p1', cutoffDate: '2000-01-01' }))
+    expect(deleted).toEqual(['own'])
+    expect(sessions.getSession('own')).toBeNull()
+    expect([...store.rows.keys()].sort()).toEqual(['pinned', 'recent'])
+  })
+
+  it('refuses the batch before deleting anything if a phone owns a candidate', async () => {
+    const { host, domain, store, projectDir } = localRoute()
+    store.rows.set('own', { ...store.rows.get('own')!, updatedAt: 0 })
+    store.createRow({ sessionId: 'other', projectPath: projectDir, cwd: projectDir })
+    store.rows.set('other', { ...store.rows.get('other')!, updatedAt: 0 })
+    const phone = await connectPhone(domain, { deviceId: 'a' }); cleanup.push(phone.close)
+    await phone.rpc('session.acquireControl', { sessionId: 'own' })
+    await expect(runWindowControl(7, () => host.callSessionList('local', 'sessionList.deleteOlderThan', { projectId: 'p1', cutoffDate: '2000-01-01' }))).rejects.toMatchObject({ code: 'failed_precondition' })
+    expect(store.rows.size).toBe(2)
+  })
+})

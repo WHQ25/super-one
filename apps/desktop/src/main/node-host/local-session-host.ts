@@ -10,6 +10,7 @@ import { runFencedSessionControl, runHostReaction } from '../session/control-con
 import { DesktopSessionReads, type DesktopSessionReadsDeps } from './desktop-session-reads'
 import { admitDesktopSessionSend, applyDesktopSessionSettings, desktopSendRequest, respondDesktopPermission, respondDesktopQuestion, respondDesktopPlan } from './desktop-session-mutations'
 import { createDesktopSession } from './desktop-session-create'
+import type { SessionListControl } from '@superone/shared/environment/session-operations'
 
 /** Desktop persistence edits, injected alongside the rows the phone reads. */
 export interface LocalSessionEdits {
@@ -59,6 +60,7 @@ export class LocalSessionHost extends DesktopSessionReads<DesktopSessionRow> imp
     return new Set(['session.contextUsage', 'session.mcpStatus', 'session.mcpAuthenticate', 'session.stopTask', 'session.startQueued', 'session.reset', 'session.rewind', 'session.previewRewind', 'session.truncateAtCheckpoint',
       ...(this.deps.sideChats ? ['session.sideChatStart', 'session.sideChatClose'] : []),
       ...(this.deps.scheduledSends ? ['session.scheduledSend.get', 'session.scheduledSend.set', 'session.scheduledSend.clear', 'sessionList.scheduledSends'] : []),
+      ...(this.deps.edits ? ['sessionList.deleteOlderThan'] : []),
     ])
   }
 
@@ -97,8 +99,22 @@ export class LocalSessionHost extends DesktopSessionReads<DesktopSessionRow> imp
     }
   }
 
-  callListOperation(method: string): ScheduledSend[] {
+  async callListOperation(method: string, input: Record<string, unknown>, clientSessionId: string): Promise<ScheduledSend[] | string[]> {
     if (method === 'sessionList.scheduledSends') return this.deps.scheduledSends!.list()
+    if (method === 'sessionList.deleteOlderThan') {
+      const cutoff = Date.parse(input.cutoffDate as string)
+      const candidates = this.deps.rows.list(input.projectId as string).filter(row => !row.isPinned && row.updatedAt < cutoff)
+      const controls = new Map((input.controls as SessionListControl[]).map(control => [control.sessionId, control]))
+      if (candidates.some(row => !controls.has(row.sessionId))) throw Object.assign(new Error('Session list changed; read it again before deleting'), { code: 'failed_precondition' })
+      const deleted: string[] = []
+      for (const row of candidates) {
+        const latest = this.deps.rows.get(row.sessionId)
+        if (!latest || latest.isPinned || latest.updatedAt >= cutoff) continue
+        await runFencedSessionControl(row.sessionId, clientSessionId, controls.get(row.sessionId)!, () => this.remove(row.sessionId))
+        deleted.push(row.sessionId)
+      }
+      return deleted
+    }
     throw unsupportedMethodError(method)
   }
 

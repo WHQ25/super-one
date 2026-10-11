@@ -316,6 +316,12 @@ the UI hides them through capabilities.
 
 ## Progress
 
+- 2026-10-12: Step 5 housekeeping. `sessionList.deleteOlderThan` obtains and
+  checks proofs for the whole candidate set before deletion, preserves pinned
+  and recent rows, and rechecks the current row before each removal. A phone
+  owning any candidate rejects the batch before a delete. Endpoint tests and
+  node/web checks pass; the unused legacy preload method and IPC are removed.
+
 - 2026-10-12: Step 5 scheduled sends. Reads and fenced writes use the session
   host; a separate session-list operation loads sidebar schedules. New drafts
   materialize through the first-turn creation helper before arming, retaining

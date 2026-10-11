@@ -2245,7 +2245,7 @@ function registerIpcHandlers(): void {
       return getEnvironmentHost().patchSessionSettings(connectionId, sessionId, patch)
     },
   )
-  sessionIpc.handle(AgentIpcChannels.ENVIRONMENT_CALL_SESSION_LIST, async (_e, connectionId: string, method: import('@superone/shared/environment/session-operations').SessionListOperationMethod, input: Record<string, never>) => {
+  sessionIpc.handle(AgentIpcChannels.ENVIRONMENT_CALL_SESSION_LIST, async (_e, connectionId: string, method: import('@superone/shared/environment/session-operations').SessionListOperationMethod, input: import('@superone/shared/environment/session-operations').SessionListOperationMethods[import('@superone/shared/environment/session-operations').SessionListOperationMethod]['input']) => {
     const { getEnvironmentHost } = await import('./environment')
     return getEnvironmentHost().callSessionList(connectionId, method, input)
   })

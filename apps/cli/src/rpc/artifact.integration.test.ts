@@ -276,7 +276,6 @@ describe('artifact RPC on a node', () => {
     expect(existsSync(join(nodeHome, 'sync', sessionId, 'agent', 'report.md'))).toBe(true)
     await client.rpc('session.close', { sessionId, ...lease })
     await client.rpc('session.remove', { sessionId })
-    await new Promise((resolve) => setTimeout(resolve, 50))
     expect(existsSync(join(nodeHome, 'sync', sessionId))).toBe(false)
     client.close()
   })

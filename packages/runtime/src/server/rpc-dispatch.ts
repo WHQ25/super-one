@@ -1817,7 +1817,9 @@ async function handleSessionRemove(payload: unknown, ctx: RpcContext): Promise<R
     const removed = await ctx.sessions.remove(sessionId)
     // The zone directory goes with the session (session-sync-zone.md §7); the
     // controller cannot call artifact.delete afterwards because the binding is gone.
-    void ctx.artifacts?.delete(sessionId).catch(() => undefined)
+    // Awaited so a successful remove means the zone is gone; a failure does not
+    // undo the removal.
+    await ctx.artifacts?.delete(sessionId).catch(() => undefined)
     return { result: removed }
   } catch (err) {
     return mapThrown(err)

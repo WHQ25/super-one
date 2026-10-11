@@ -61,7 +61,7 @@ on:
         type: string
         default: ''
       testflight_url:
-        description: 'Public TestFlight join link baked into the iOS manifest. Blank uses the track''s link (TESTFLIGHT_URL_* below); only set it to point testers somewhere else.'
+        description: 'Public TestFlight join link baked into the iOS manifest. Blank uses the track''s repository variable (TESTFLIGHT_URL_STABLE / TESTFLIGHT_URL_ALPHA); only set it for a one-off.'
         required: false
         type: string
         default: ''
@@ -129,16 +129,19 @@ env:
   INPUT_MIN_SUPPORTED: ${{ inputs.min_supported_build_code }}
   INPUT_TESTFLIGHT_URL: ${{ inputs.testflight_url }}
   INPUT_DRY_RUN: ${{ inputs.dry_run }}
-  # Public TestFlight links, one per app. A typo still passes the prefix check
-  # and would ship a dead link to every iOS user, so the working links live
-  # here rather than being retyped each release. App Store Connect ->
-  # TestFlight -> the external group -> Public Link.
-  TESTFLIGHT_URL_STABLE: 'https://testflight.apple.com/join/3VVS4EsT'
-  # Empty until the SuperOne Alpha app has a public link (its external group
-  # needs one build through Beta App Review first). Until then alpha iOS runs
-  # still build and submit, but publish no manifest: TestFlight updates its
-  # testers itself, and a manifest without a link is one the app rejects.
-  TESTFLIGHT_URL_ALPHA: ''
+  # Public TestFlight links, one per app, from repository variables (Settings
+  # -> Secrets and variables -> Actions -> Variables), so a link can change
+  # without a commit; the next run writes it into that app's manifest. Set
+  # once rather than retyped each release, where a typo would still pass the
+  # prefix check and ship a dead link. App Store Connect -> TestFlight -> the
+  # external group -> Public Link.
+  #
+  # The alpha link stays unset until its external group has one (that needs a
+  # build through Beta App Review first). Until then alpha iOS runs still build
+  # and submit but publish no manifest: TestFlight updates its testers itself,
+  # and a manifest without a link is one the app rejects.
+  TESTFLIGHT_URL_STABLE: ${{ vars.TESTFLIGHT_URL_STABLE }}
+  TESTFLIGHT_URL_ALPHA: ${{ vars.TESTFLIGHT_URL_ALPHA }}
 
 jobs:
   android:
@@ -434,7 +437,7 @@ jobs:
             echo "::warning::no TestFlight link for the alpha app yet; building and submitting without publishing its manifest"
             echo "PUBLISH_MANIFEST=false" >> "$GITHUB_ENV"
           elif [ -z "${TESTFLIGHT_URL}" ]; then
-            echo "::error::no TestFlight link for the ${TRACK} app; set TESTFLIGHT_URL_${TRACK^^} in this workflow"
+            echo "::error::no TestFlight link for the ${TRACK} app; set the TESTFLIGHT_URL_${TRACK^^} repository variable"
             exit 1
           fi
           # `eas submit` only accepts an app-store distribution build; an

@@ -124,9 +124,11 @@ mobile/ios/alpha/latest.json  the same for the Alpha TestFlight app
 The pointer an install reads follows its baked EAS channel (`alpha` → alpha,
 anything else → stable) in `src/updates/update-ports.ts`. Both tracks share the
 build code counter; the track directory and the `mobile/<platform>-alpha/…` tags
-keep equal numbers apart. Each app's public TestFlight link is a constant in
-`release-mobile.yml` (`TESTFLIGHT_URL_STABLE` / `TESTFLIGHT_URL_ALPHA`). While the
-alpha link is empty, alpha iOS builds still submit but publish no manifest.
+keep equal numbers apart. Each app's public TestFlight link is a repository variable
+(`TESTFLIGHT_URL_STABLE` / `TESTFLIGHT_URL_ALPHA`) that `release-mobile.yml` writes
+into that app's manifest; the app reads it from there at runtime, so changing a
+link needs no binary, only the next run. While the alpha link is unset, alpha iOS
+builds still submit but publish no manifest.
 
 Each newly tagged Android build also gets a GitHub Release on that tag (alpha
 as prerelease, never marked Latest) carrying the APK, the desktop floor read

@@ -277,11 +277,17 @@ function makeFakeDb() {
       if (/DELETE FROM sessions WHERE id/.test(sql)) {
         return { run: (id: string) => { sessionsRows.delete(id) } }
       }
-      if (/^SELECT created_at, usage_counted_at FROM sessions WHERE id/.test(sql)) {
+      if (/^SELECT created_at, usage_counted_at, provider_id, git_branch, worktree_path, acp_agent_id\s+FROM sessions WHERE id/.test(sql)) {
         return {
           get: (id: string) => {
             const row = sessionsRows.get(id)
-            return row ? { created_at: row.created_at, usage_counted_at: null } : undefined
+            return row
+              ? {
+                  created_at: row.created_at, usage_counted_at: null,
+                  provider_id: row.provider_id ?? null, git_branch: row.git_branch ?? null,
+                  worktree_path: row.worktree_path ?? null, acp_agent_id: row.acp_agent_id ?? null,
+                }
+              : undefined
           },
         }
       }

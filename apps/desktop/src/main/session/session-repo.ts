@@ -457,14 +457,28 @@ export function saveSessionStateBySid(input: SaveSessionStateInput): void {
   let countSessionStarted = false
   let sessionCreatedAt = now
   // A draft holds no `sessions` row: the upsert below is what makes the session
-  // exist for everything that reads the list.
-  let sessionRowCreated = false
+  // exist for everything that reads the list. A row inserted ahead of the
+  // runtime (phone/node create) carries no harness or branch yet, so this
+  // persist is also what corrects the list's icon and branch.
+  let listRowChanged = false
 
   const tx = db.transaction(() => {
     const sessionRow = db.prepare(`
-      SELECT created_at, usage_counted_at FROM sessions WHERE id = ?
-    `).get(input.sid) as { created_at: string; usage_counted_at: string | null } | undefined
-    sessionRowCreated = !sessionRow
+      SELECT created_at, usage_counted_at, provider_id, git_branch, worktree_path, acp_agent_id
+      FROM sessions WHERE id = ?
+    `).get(input.sid) as {
+      created_at: string
+      usage_counted_at: string | null
+      provider_id: string | null
+      git_branch: string | null
+      worktree_path: string | null
+      acp_agent_id: string | null
+    } | undefined
+    listRowChanged = !sessionRow
+      || sessionRow.provider_id !== input.providerId
+      || sessionRow.git_branch !== (input.gitBranch ?? null)
+      || sessionRow.worktree_path !== (input.worktreePath ?? null)
+      || (input.acpAgentId != null && sessionRow.acp_agent_id !== input.acpAgentId)
 
     upsertSession.run(
       input.sid,
@@ -550,11 +564,12 @@ export function saveSessionStateBySid(input: SaveSessionStateInput): void {
 
   tx()
 
-  // Only the first persist, not every one: this runs on each state change of a
-  // streaming turn, and clients answer the signal by re-reading the whole list.
-  // The row's other list-visible fields have their own notifications
-  // (`renameSession`, `pinSession`, `hideSession`).
-  if (sessionRowCreated) notifySessionList(input.projectPath)
+  // Only when the row appears or its harness/branch changes, not on every
+  // persist: this runs on each state change of a streaming turn, and clients
+  // answer the signal by re-reading the whole list. The row's other
+  // list-visible fields have their own notifications (`renameSession`,
+  // `pinSession`, `hideSession`).
+  if (listRowChanged) notifySessionList(input.projectPath)
 
   // Activity stats are best-effort and must not fail the message persist
   // acknowledgement: usage_counted_at is already committed above, so a throw

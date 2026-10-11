@@ -362,9 +362,10 @@ jobs:
             LABEL="Android"; ASSET="SuperOne-Android-v${APP_VERSION}-build${BUILD_CODE}.apk"; PRE=()
           fi
           # The floor of the build's own tree: a reused build_id may come from
-          # an older commit than this checkout.
-          MIN_DESKTOP="$(gh api "repos/${GITHUB_REPOSITORY}/contents/packages/relay-client/src/phone-version.ts?ref=${BUILD_COMMIT}" \
-            -H 'Accept: application/vnd.github.raw' \
+          # an older commit than this checkout -- one that predates the floor,
+          # in which case the notes simply carry none.
+          MIN_DESKTOP="$( { gh api "repos/${GITHUB_REPOSITORY}/contents/packages/relay-client/src/phone-version.ts?ref=${BUILD_COMMIT}" \
+            -H 'Accept: application/vnd.github.raw' 2>/dev/null || true; } \
             | sed -n "s/^export const MIN_PHONE_DESKTOP_VERSION = '\\(.*\\)'.*/\\1/p")"
           SHA256="$(sha256sum superone.apk | cut -d' ' -f1)"
           {

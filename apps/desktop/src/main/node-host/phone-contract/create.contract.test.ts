@@ -42,6 +42,18 @@ describe('phone endpoint: native creation', () => {
     expect(domain.leases.get({ environmentId: domain.identity.environmentId, sessionId: 'chosen' })?.delegate).toBe('phone:phone-1')
   })
 
+  // The desktop reads a recorded branch as "in a worktree" and hides the
+  // checkout's branch chip, so a main-checkout pick is only a checkout.
+  it('checks out a main-checkout branch pick without recording it on the session', async () => {
+    const { domain, projectDir, sessions } = createDomain()
+    const created = vi.spyOn(sessions, 'createSession')
+    const phone = await connectPhone(domain)
+    cleanup.push(phone.close)
+    await phone.rpc('session.create', { projectId: 'p1', harnessId: 'codex', sessionId: 'phone-codex', gitBranch: 'feature' })
+    expect(gitRun).toHaveBeenCalledWith(projectDir, ['checkout', 'feature'])
+    expect(created.mock.calls[0]![0]).not.toHaveProperty('gitBranch')
+  })
+
   it('promotes only an empty session authorized by the current draft holder', async () => {
     const { domain, drafts, projectDir, sessions, own } = createDomain()
     drafts.upsert({ id: 'draft', text: 'input', projectPath: projectDir, originSessionId: 'own' })

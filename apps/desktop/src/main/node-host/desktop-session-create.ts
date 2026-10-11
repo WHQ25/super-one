@@ -28,7 +28,10 @@ export async function createDesktopSession(deps: LocalSessionHostDeps, input: Pa
   }
   options.assertCreate()
   let cwd = input.cwd ?? projectPath
-  let gitBranch: string | null | undefined = input.gitBranch
+  // A session's branch names the worktree it lives in. Picking a branch for the
+  // main checkout is a checkout below, not a session property: the desktop reads
+  // a recorded branch as "in a worktree" and hides the checkout's branch chip.
+  let gitBranch: string | null | undefined = cwd !== projectPath ? input.gitBranch : undefined
   let createdWorktree: string | null = null
   let persisted = false
   try {

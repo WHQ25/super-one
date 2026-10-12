@@ -1,6 +1,6 @@
 # Harness UI adapter registry
 
-Status: planned · Updated: 2026-10-12
+Status: in-progress (step 0 done; branch `refactor/harness-ui-adapter`) · Updated: 2026-10-12
 Goal: Desktop renderer chat surfaces resolve per-harness behavior through one shared static descriptor plus per-harness renderer controls and store strategies, so adding or changing a harness edits its own modules instead of `=== '<harnessId>'` branches across the composer, status bar and chat store.
 Long-term docs affected: `.claude/skills/superone-harness/references/integration.md` and `experiences.md` (model, permission and slash checklists become "fill the harness modules"), `.claude/skills/superone-harness/references/new-harness.md` (P0 catalog table), `apps/desktop/docs/agent-reference/architecture.md` (new "Harness UI modules" section)
 
@@ -207,6 +207,10 @@ must lower its entry. Exempt: `harness-ui/<harnessId>/**`,
 `claude-slice.ts` is not exempt (it holds ACP and Cursor branches). The
 desktop app has no ESLint; this test is the guard. The scan is intentionally
 literal-only (no type information), which is enough to stop new branches.
+Its baseline is 475 comparisons in 74 files (it also sees multi-line and
+double-quoted comparisons the grep above misses). Test:
+`harness-ui/harness-branch-ratchet.test.ts`; payload pins:
+`stores/chat-store/helpers/session-turn-harness-payload.test.ts`.
 
 Target: in `components/chat` + `stores/chat-store`, outside exempt paths, only
 owning-feature residue remains, each entry with a reason. Out-of-scope

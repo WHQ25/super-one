@@ -1,0 +1,298 @@
+{
+  "App.tsx": {
+    "count": 1,
+    "reason": "pre-registry baseline"
+  },
+  "components/AddServerPanel.tsx": {
+    "count": 8,
+    "reason": "pre-registry baseline"
+  },
+  "components/AutomationDialog.tsx": {
+    "count": 15,
+    "reason": "pre-registry baseline"
+  },
+  "components/CursorAuthSettings.tsx": {
+    "count": 1,
+    "reason": "pre-registry baseline"
+  },
+  "components/HarnessesSettingsPage.tsx": {
+    "count": 13,
+    "reason": "pre-registry baseline"
+  },
+  "components/HooksPage.tsx": {
+    "count": 1,
+    "reason": "pre-registry baseline"
+  },
+  "components/McpDetailPage.tsx": {
+    "count": 2,
+    "reason": "pre-registry baseline"
+  },
+  "components/McpPage.tsx": {
+    "count": 3,
+    "reason": "pre-registry baseline"
+  },
+  "components/OfficialProviderPanel.tsx": {
+    "count": 1,
+    "reason": "pre-registry baseline"
+  },
+  "components/PluginsPage.tsx": {
+    "count": 2,
+    "reason": "pre-registry baseline"
+  },
+  "components/PreferencesPage.tsx": {
+    "count": 4,
+    "reason": "pre-registry baseline"
+  },
+  "components/ProvidersPage.tsx": {
+    "count": 1,
+    "reason": "pre-registry baseline"
+  },
+  "components/SkillsPage.tsx": {
+    "count": 4,
+    "reason": "pre-registry baseline"
+  },
+  "components/UsagePage.tsx": {
+    "count": 4,
+    "reason": "pre-registry baseline"
+  },
+  "components/UsageStatusIcon.tsx": {
+    "count": 5,
+    "reason": "pre-registry baseline"
+  },
+  "components/activity/activity-launch-types.ts": {
+    "count": 1,
+    "reason": "pre-registry baseline"
+  },
+  "components/chat/AutomationConfirmPrompt.tsx": {
+    "count": 14,
+    "reason": "pre-registry baseline"
+  },
+  "components/chat/ChatContent.tsx": {
+    "count": 6,
+    "reason": "pre-registry baseline"
+  },
+  "components/chat/ChatInput.tsx": {
+    "count": 22,
+    "reason": "pre-registry baseline"
+  },
+  "components/chat/ChatInputDirsHint.tsx": {
+    "count": 1,
+    "reason": "pre-registry baseline"
+  },
+  "components/chat/ChatMessage.tsx": {
+    "count": 1,
+    "reason": "pre-registry baseline"
+  },
+  "components/chat/ChatSuggestions.tsx": {
+    "count": 37,
+    "reason": "pre-registry baseline"
+  },
+  "components/chat/ContextUsage.tsx": {
+    "count": 7,
+    "reason": "pre-registry baseline"
+  },
+  "components/chat/HarnessPermissionPopover.tsx": {
+    "count": 4,
+    "reason": "pre-registry baseline"
+  },
+  "components/chat/McpSlashPopup.tsx": {
+    "count": 5,
+    "reason": "pre-registry baseline"
+  },
+  "components/chat/MentionPopup.tsx": {
+    "count": 3,
+    "reason": "pre-registry baseline"
+  },
+  "components/chat/ModelSelector.tsx": {
+    "count": 5,
+    "reason": "pre-registry baseline"
+  },
+  "components/chat/PermissionPrompt.tsx": {
+    "count": 1,
+    "reason": "pre-registry baseline"
+  },
+  "components/chat/PlanApprovalPrompt.tsx": {
+    "count": 2,
+    "reason": "pre-registry baseline"
+  },
+  "components/chat/ProviderSlashPopup.tsx": {
+    "count": 2,
+    "reason": "pre-registry baseline"
+  },
+  "components/chat/SessionAgentsConfirmPrompt.tsx": {
+    "count": 3,
+    "reason": "pre-registry baseline"
+  },
+  "components/chat/StopButton.tsx": {
+    "count": 2,
+    "reason": "pre-registry baseline"
+  },
+  "components/chat/chat-input/computeMatchingSlashCommands.ts": {
+    "count": 2,
+    "reason": "pre-registry baseline"
+  },
+  "components/chat/chat-input/resolveChatInputPlaceholder.ts": {
+    "count": 3,
+    "reason": "pre-registry baseline"
+  },
+  "components/chat/chat-status-bar/StatusBarDerivedSandbox.tsx": {
+    "count": 3,
+    "reason": "pre-registry baseline"
+  },
+  "components/chat/chat-status-bar/StatusBarPermission.tsx": {
+    "count": 5,
+    "reason": "pre-registry baseline"
+  },
+  "components/chat/model-selector/AcpModelSelector.tsx": {
+    "count": 1,
+    "reason": "pre-registry baseline"
+  },
+  "components/chat/model-selector/ClaudeModelSelector.tsx": {
+    "count": 1,
+    "reason": "pre-registry baseline"
+  },
+  "components/chat/model-selector/useCollabLaunchModelSelector.tsx": {
+    "count": 39,
+    "reason": "pre-registry baseline"
+  },
+  "components/chat/model-selector/useSelectorProviders.ts": {
+    "count": 9,
+    "reason": "pre-registry baseline"
+  },
+  "components/chat/permission-prompt/permission-prompt-config.ts": {
+    "count": 2,
+    "reason": "pre-registry baseline"
+  },
+  "components/dev/HarnessAnimBench.tsx": {
+    "count": 4,
+    "reason": "pre-registry baseline"
+  },
+  "components/harness-config-tabs.ts": {
+    "count": 6,
+    "reason": "pre-registry baseline"
+  },
+  "components/onboarding/OnboardingDiscover.tsx": {
+    "count": 4,
+    "reason": "pre-registry baseline"
+  },
+  "components/preferences/SessionDefaultsSection.tsx": {
+    "count": 2,
+    "reason": "pre-registry baseline"
+  },
+  "components/session-delete-helpers.ts": {
+    "count": 3,
+    "reason": "pre-registry baseline"
+  },
+  "components/settings/HarnessPreferencePicker.tsx": {
+    "count": 19,
+    "reason": "pre-registry baseline"
+  },
+  "components/sidebar/SessionRow.tsx": {
+    "count": 1,
+    "reason": "pre-registry baseline"
+  },
+  "hooks/useChatScroll.ts": {
+    "count": 1,
+    "reason": "pre-registry baseline"
+  },
+  "lib/harness-visibility.ts": {
+    "count": 6,
+    "reason": "pre-registry baseline"
+  },
+  "lib/provider-resolve.ts": {
+    "count": 1,
+    "reason": "pre-registry baseline"
+  },
+  "lib/remote-resource-ops.ts": {
+    "count": 13,
+    "reason": "pre-registry baseline"
+  },
+  "lib/remote-session-ops.ts": {
+    "count": 2,
+    "reason": "pre-registry baseline"
+  },
+  "lib/session-menu-items.ts": {
+    "count": 5,
+    "reason": "pre-registry baseline"
+  },
+  "stores/app.ts": {
+    "count": 5,
+    "reason": "pre-registry baseline"
+  },
+  "stores/chat-store/helpers/agent-defaults.ts": {
+    "count": 8,
+    "reason": "pre-registry baseline"
+  },
+  "stores/chat-store/helpers/codex-helpers.ts": {
+    "count": 2,
+    "reason": "pre-registry baseline"
+  },
+  "stores/chat-store/helpers/draft-promote.ts": {
+    "count": 1,
+    "reason": "pre-registry baseline"
+  },
+  "stores/chat-store/helpers/harness-selection.ts": {
+    "count": 21,
+    "reason": "pre-registry baseline"
+  },
+  "stores/chat-store/helpers/input-request-send.ts": {
+    "count": 2,
+    "reason": "pre-registry baseline"
+  },
+  "stores/chat-store/helpers/interaction.ts": {
+    "count": 11,
+    "reason": "pre-registry baseline"
+  },
+  "stores/chat-store/helpers/persistence.ts": {
+    "count": 2,
+    "reason": "pre-registry baseline"
+  },
+  "stores/chat-store/helpers/provider-routing.ts": {
+    "count": 7,
+    "reason": "pre-registry baseline"
+  },
+  "stores/chat-store/helpers/send-command-policy.ts": {
+    "count": 1,
+    "reason": "pre-registry baseline"
+  },
+  "stores/chat-store/helpers/send-message.ts": {
+    "count": 18,
+    "reason": "pre-registry baseline"
+  },
+  "stores/chat-store/helpers/session-lifecycle.ts": {
+    "count": 8,
+    "reason": "pre-registry baseline"
+  },
+  "stores/chat-store/helpers/session-send-request.ts": {
+    "count": 5,
+    "reason": "pre-registry baseline"
+  },
+  "stores/chat-store/helpers/session-turn.ts": {
+    "count": 15,
+    "reason": "pre-registry baseline"
+  },
+  "stores/chat-store/helpers/store-helpers.ts": {
+    "count": 3,
+    "reason": "pre-registry baseline"
+  },
+  "stores/chat-store/index.ts": {
+    "count": 7,
+    "reason": "pre-registry baseline"
+  },
+  "stores/chat-store/slices/claude-slice.ts": {
+    "count": 10,
+    "reason": "pre-registry baseline"
+  },
+  "stores/chat-store/slices/event-slice.ts": {
+    "count": 7,
+    "reason": "pre-registry baseline"
+  },
+  "stores/settings.ts": {
+    "count": 26,
+    "reason": "pre-registry baseline"
+  },
+  "stores/side-chat.ts": {
+    "count": 3,
+    "reason": "pre-registry baseline"
+  }
+}

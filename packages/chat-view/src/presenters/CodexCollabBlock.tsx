@@ -14,7 +14,7 @@ import {
 import { isCodexCommandToolError } from '@superone/shared/codex-command-status'
 import { CompactLabeledToolRow, ToolName, ToolRow, ToolSummary } from './ToolRow'
 import { WidgetToolRow, widgetTitleFromInput } from './WidgetToolRow'
-import { codexMcpItemInput, codexMcpItemIsError } from './CodexTurnView'
+import { codexMcpItemInput, codexMcpItemIsError } from '@superone/shared/codex-content'
 
 export const CODEX_COLLAB_ACTIVITY_TYPES = new Set<CodexThreadItem['type']>([
   'command_execution',

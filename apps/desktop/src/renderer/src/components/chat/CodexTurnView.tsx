@@ -24,9 +24,9 @@ import { isCodexPinnedSegment } from './compact-chat-mode'
 import { useActiveSession, useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { useMiniAppStore } from '@/stores/miniapp'
+import { codexMcpItemResultText } from '@superone/shared/codex-content'
 import {
   CodexTurnViewPresenter,
-  codexMcpItemResultText,
   isHiddenCodexMcpItem,
   type CodexItemPresenterProps,
   type CodexTurnDetailPresenterProps,
@@ -141,6 +141,6 @@ export function CodexTurnView(props: CodexTurnViewProps) {
 
 export {
   CodexTurnViewPresenter,
-  codexMcpItemResultText,
   type CodexTurnViewPresenterProps,
 } from './presenters/CodexTurnView'
+export { codexMcpItemResultText } from '@superone/shared/codex-content'

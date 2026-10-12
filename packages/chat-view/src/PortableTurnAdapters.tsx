@@ -50,11 +50,9 @@ import {
   type TurnBodyPresenterRuntime,
   type TurnWorkflowPresenterProps,
 } from './presenters/TurnBody'
+import { codexMcpItemInput, codexMcpItemIsError, codexMcpItemResultText } from '@superone/shared/codex-content'
 import {
   CodexTurnViewPresenter,
-  codexMcpItemInput,
-  codexMcpItemIsError,
-  codexMcpItemResultText,
   isHiddenCodexMcpItem,
   type CodexItemPresenterProps,
   type CodexSubagentPresenterProps,

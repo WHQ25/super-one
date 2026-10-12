@@ -13,7 +13,7 @@ import { useForkNavigation } from './fork-navigation-context'
 import { useActiveSession, useChatStore } from '@/stores/chat'
 import { getSubagentColorClasses } from './subagent-colors'
 import { ToolBlock } from './ToolBlock'
-import { codexMcpItemInput, codexMcpItemIsError, codexMcpItemResultText } from './presenters/CodexTurnView'
+import { codexMcpItemInput, codexMcpItemIsError, codexMcpItemResultText } from '@superone/shared/codex-content'
 import {
   CodexCollabBlockPresenter,
   CodexCollabMiniTool,

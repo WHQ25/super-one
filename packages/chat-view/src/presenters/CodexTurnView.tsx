@@ -1,4 +1,5 @@
 import { TranscriptStateScope, useTranscriptState } from '@superone/ui/lib/transcript-state'
+import { codexMcpItemInput, codexMcpItemIsError, codexMcpItemResultText } from '@superone/shared/codex-content'
 import { codexCommandPresentation, summarizeCodexCommandActions } from '@superone/shared/codex-command-actions'
 import {
   Fragment,
@@ -119,34 +120,8 @@ const runRange = (run: { start: number; items: unknown[] }) => ({
   end: run.start + run.items.length,
 })
 
-function safeStringify(value: unknown): string {
-  try { return JSON.stringify(value) } catch { return String(value) }
-}
-
 function codexMcpToolStatus(status: CodexMcpToolCallItem['status']): 'streaming' | 'complete' {
   return status === 'in_progress' ? 'streaming' : 'complete'
-}
-
-export function codexMcpItemResultText(item: CodexMcpToolCallItem): string | undefined {
-  const chunks: string[] = []
-  if (item.result) {
-    const contentArr = item.result.content as Array<{ type: string; text: string }> | undefined
-    const textParts = contentArr?.filter((c) => c.type === 'text').map((c) => c.text)
-    chunks.push(textParts?.length ? textParts.join('\n') : safeStringify(item.result))
-  }
-  if (item.error) chunks.push(`Error: ${item.error.message}`)
-  const text = chunks.join('\n\n').trim()
-  return text.length > 0 ? text : undefined
-}
-
-/** The call's input as a tool row reads it. String arguments are the serialized input already. */
-export function codexMcpItemInput(item: CodexMcpToolCallItem): string {
-  return typeof item.arguments === 'string' ? item.arguments : safeStringify(item.arguments ?? {})
-}
-
-/** A tool's own error reply completes the call with a flagged result, so the status alone misses it. */
-export function codexMcpItemIsError(item: CodexMcpToolCallItem): boolean {
-  return item.status === 'failed' || Boolean(item.error) || item.result?.isError === true
 }
 
 /**

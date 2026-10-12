@@ -2528,12 +2528,13 @@ describe('Session message accumulation', () => {
     expect(session.snapshot.currentMessageId).toBe('codex_msg_1')
   })
 
-  it('codex message_complete finalizes the assistant message content from metadata.codex', () => {
+  it('codex message_complete keeps the streamed content and stores metadata.codex', () => {
     const { session, backend } = makeSession({ harnessId: 'codex' })
     backend.emit({
       type: 'message_start',
       message: { id: 'codex_m2', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'codex' },
     })
+    backend.emit({ type: 'content_delta', messageId: 'codex_m2', delta: { type: 'text', id: 'reply', text: 'all done', parentToolUseId: null } })
     backend.emit({
       type: 'message_complete',
       messageId: 'codex_m2',
@@ -2550,7 +2551,7 @@ describe('Session message accumulation', () => {
     })
     const finished = session.snapshot.messages.find((m) => m.id === 'codex_m2')
     expect(finished?.status).toBe('complete')
-    expect(finished?.content).toEqual([{ type: 'text', text: 'all done' }])
+    expect(finished?.content).toEqual([{ type: 'text', id: 'reply', text: 'all done', parentToolUseId: null }])
     // Persisted turn ids let fork/rewind and the realtime thread view match this row.
     expect(finished?.metadata?.codex?.turnId).toBe('turn-42')
   })
@@ -2628,10 +2629,12 @@ describe('Session message accumulation', () => {
       type: 'message_start',
       message: { id: 'codex_m3', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'codex' },
     })
+    backend.emit({ type: 'content_delta', messageId: 'codex_m3', delta: { type: 'text', id: 'reply', text: 'Partial', parentToolUseId: null } })
     backend.emit({ type: 'message_interrupted', messageId: 'codex_m3' })
     const finished = session.snapshot.messages.find((m) => m.id === 'codex_m3')
     expect(finished?.status).toBe('interrupted')
-    expect(finished?.content[0]).toMatchObject({ type: 'text', text: 'Codex run interrupted.' })
+    // The interrupted badge reports the stop; the content keeps what streamed.
+    expect(finished?.content).toEqual([{ type: 'text', id: 'reply', text: 'Partial', parentToolUseId: null }])
   })
 
   it('dispatchBackendCommand(codex.plan_approval) writes metadata.codex.planApproval and emits codex_plan_approval', async () => {

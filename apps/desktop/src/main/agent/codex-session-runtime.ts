@@ -1,8 +1,8 @@
 import { mergeMcpAppBlocks } from '@superone/shared/mcp-apps-state'
 import type { AgentEvent, ChatMessage, CodexRunResult, CodexThreadItem, CodexUsageInfo } from '@superone/shared/agent-types'
-import { sealCodexItems, sealCodexMetadata } from '@superone/shared/content-delta'
+import { sealCodexItems, sealCodexMetadata, sealStreamingTools } from '@superone/shared/content-delta'
 import { applySeqToMessage, isReplayedEventForMessage } from '@superone/shared/event-seq-utils'
-import { buildClaudeUserMessage, extractClaudeTitle, type PersistedClaudeSessionState } from './claude-session-runtime'
+import { applyContentDeltaEvent, buildClaudeUserMessage, extractClaudeTitle, type PersistedClaudeSessionState } from './claude-session-runtime'
 
 export type PersistedCodexSessionState = PersistedClaudeSessionState
 
@@ -317,6 +317,10 @@ export function applyCodexEventToRuntime(runtime: CodexSessionRuntime, event: Ag
           }
         }),
       }
+    case 'content_delta': {
+      const messages = applyContentDeltaEvent(runtime.messages, event)
+      return messages ? { ...runtime, messages } : runtime
+    }
     case 'checkpoint_captured': {
       const messages = [...runtime.messages]
       const targetIndex = findCheckpointTarget(messages, event.messageId)
@@ -352,6 +356,10 @@ export function finalizeCodexAssistantMessage(
   const completedAt = args.completedAt ? { completedAt: args.completedAt } : {}
   const nextMessages = runtime.messages.map((message) => {
     if (message.id !== args.messageId) return message
+    // Only a legacy turn stores its reply as text; its rows are its items. A turn
+    // written as content keeps it, with any tool still running sealed.
+    const legacy = (message.metadata?.codex?.items.length ?? 0) > 0 || (args.result?.items.length ?? 0) > 0
+    const content = legacy ? [{ type: 'text' as const, text: args.text }] : sealStreamingTools(message.content)
     if (args.status !== 'complete' || !args.result) {
       // No CodexRunResult means no authoritative final item list, so the items
       // accumulated while streaming are what gets persisted — including whatever
@@ -360,14 +368,14 @@ export function finalizeCodexAssistantMessage(
       return {
         ...message,
         status: args.status,
-        content: [{ type: 'text' as const, text: args.text }],
+        content,
         metadata: sealCodexMetadata({ ...message.metadata, ...completedAt }),
       }
     }
     return {
       ...message,
       status: 'complete' as const,
-      content: [{ type: 'text' as const, text: args.text }],
+      content,
       metadata: args.result.usage ? {
         ...message.metadata,
         ...completedAt,

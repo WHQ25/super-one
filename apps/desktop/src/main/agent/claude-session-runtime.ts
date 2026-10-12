@@ -291,6 +291,32 @@ export function patchAgentBlock(messages: ChatMessage[], tid: string, patch: Rec
   return anyChanged ? next : messages
 }
 
+/** Apply a content delta to the message that owns it; null when it replays one already applied. */
+export function applyContentDeltaEvent(
+  messages: ChatMessage[],
+  event: Extract<AgentEvent, { type: 'content_delta' }>,
+): ChatMessage[] | null {
+  const sourceMsg = messages.find((m) => m.id === event.messageId)
+  if (sourceMsg && isReplayedEventForMessage(event, sourceMsg)) return null
+  // Re-home a resumed sub-agent's delta under its original Agent block's
+  // message so the persisted/mobile message tree stays correctly nested.
+  // Seq tracking stays on the source message that owns the stream.
+  const homeId = resolveDeltaHomeMessageId(messages, event.messageId, event.delta)
+  return messages.map((message) => {
+    if (message.id === homeId) {
+      return {
+        ...message,
+        content: applyContentDelta(message.content, event.delta, undefined, { replace: event.replace }),
+        ...(homeId === event.messageId ? applySeqToMessage(event) : {}),
+      }
+    }
+    if (homeId !== event.messageId && message.id === event.messageId) {
+      return { ...message, ...applySeqToMessage(event) }
+    }
+    return message
+  })
+}
+
 export function applyClaudeEventToRuntime(
   runtime: ClaudeSessionRuntime,
   event: AgentEvent,
@@ -320,28 +346,8 @@ export function applyClaudeEventToRuntime(
         ),
       }
     case 'content_delta': {
-      const sourceMsg = runtime.messages.find((m) => m.id === event.messageId)
-      if (sourceMsg && isReplayedEventForMessage(event, sourceMsg)) return runtime
-      // Re-home a resumed sub-agent's delta under its original Agent block's
-      // message so the persisted/mobile message tree stays correctly nested.
-      // Seq tracking stays on the source message that owns the stream.
-      const homeId = resolveDeltaHomeMessageId(runtime.messages, event.messageId, event.delta)
-      return {
-        ...runtime,
-        messages: runtime.messages.map((message) => {
-          if (message.id === homeId) {
-            return {
-              ...message,
-              content: applyContentDelta(message.content, event.delta, undefined, { replace: event.replace }),
-              ...(homeId === event.messageId ? applySeqToMessage(event) : {}),
-            }
-          }
-          if (homeId !== event.messageId && message.id === event.messageId) {
-            return { ...message, ...applySeqToMessage(event) }
-          }
-          return message
-        }),
-      }
+      const messages = applyContentDeltaEvent(runtime.messages, event)
+      return messages ? { ...runtime, messages } : runtime
     }
     case 'message_complete': {
       const usage = event.metadata?.usage

@@ -130,14 +130,14 @@ export const Default: Story = {
 }
 
 export const ScheduledClocksAlignAtRest: Story = {
-  name: 'Scheduled clocks align at rest',
+  name: 'Scheduled clocks replace the leading glyph',
   render: () => (
     <Preview
       activeId="live"
       scheduledIds={['long', 'live', 'nested']}
       rows={[
         { session: entry('long', '补齐 session sync zone 全部 §9 未完成项') },
-        { session: entry('live', '实现移动端 Live Activity 与推送通知') },
+        { session: entry('live', '实现移动端 Live Activity 与推送通知', { provider: 'codex' }), status: 'streaming' },
         { session: entry('nested', '调研移动端 Live Notification'), hasChildren: true, childrenCollapsed: true },
       ]}
     />

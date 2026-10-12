@@ -1,4 +1,4 @@
-import type { AgentEvent, AgentStatus, AskUserQuestionRequest, ChatMessage, Locale } from '@superone/shared/agent-types'
+import type { AgentEvent, AgentStatus, AskUserQuestionRequest, ChatMessage, Locale, ScheduledSend } from '@superone/shared/agent-types'
 import type { PromptKeyword } from '@superone/shared/prompt-keywords'
 import type { ChatWindowRange } from './chat-window'
 
@@ -93,7 +93,15 @@ export interface ReductionProjection extends SessionProjection {
   } | null
 }
 
+export interface ScheduledSendView {
+  scheduled: ScheduledSend | null
+  available: boolean
+  busy: boolean
+  error: string
+}
+
 export type HostInbound =
+  | { type: 'setScheduledSend'; state: ScheduledSendView }
   | ({ type: 'detailUpdate' } & import('@superone/chat-core').DetailUpdate)
   | ({ type: 'initialize' | 'hydrate' } & ReductionProjection)
   | ({ type: 'applyReductionPatch' } & ReductionProjection)
@@ -130,6 +138,7 @@ export type HostInbound =
   | { type: 'composerSettled'; viewId: string; localId: string; outcome?: import('@superone/shared/composer-api').SuperOneComposerOutcome; error?: string }
 
 export type HostOutbound =
+  | { type: 'scheduledSendAction'; action: 'accept' | 'dismiss' | 'cancel'; sessionId: string; sendAt: number }
   | { type: 'ready' }
   | { type: 'transcriptApplied'; channelId: string; sequence: number }
   | { type: 'error'; fatal: true; message: string }

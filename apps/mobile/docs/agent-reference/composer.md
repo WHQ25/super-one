@@ -42,6 +42,13 @@ the phone's system controls; history navigation lives in the session menu. See [
 (`shouldUseTabletComposer`): the desktop editor card with its toolbar inside, Return
 submits (`submitBehavior` in `screens/chat-composer.tsx`).
 
+Long-press Send to open the scheduled-send panel. An armed schedule keeps the
+draft editable and replaces the leading session-list glyph with a clock. The
+desktop owns delivery, so it must stay online. Quota-recovery offers appear as
+small cards after the latest turn inside the scrolling chat, with accept,
+dismiss and cancel actions. `scheduled_send_changed` arrives through the phone's
+workspace notices; session/reconnect reads use `session.scheduledSend.get`.
+
 **Deliberately not built.** Hardware-keyboard navigation of the suggestion lists:
 the native editor emits only `onDocumentChange` / `onContentHeightChange` /
 `onSubmit`, so it would need a Swift/Kotlin key bridge first. A `/workflow`

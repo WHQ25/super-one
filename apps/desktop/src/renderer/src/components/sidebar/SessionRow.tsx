@@ -24,9 +24,7 @@ import { useSessionMenuItems, type SessionMenuCallbacks } from './useSessionMenu
 
 const EMPTY_REMOTE_SESSION_IDS: string[] = []
 
-/** Pin / expand: a true 0-width box at rest. `p-0.5` on `box-content w-0`
- *  still occupies 4px per control, which shoved scheduled clocks out of
- *  alignment across rows that do or don't have children. Padding lands on hover. */
+/** Pin / expand occupy no width at rest. Padding lands on hover. */
 const SESSION_ROW_HOVER_ACTION =
   'box-content w-0 shrink-0 overflow-hidden rounded p-0 text-sidebar-foreground/70 opacity-0 transition-[width,padding,opacity] hover:text-sidebar-foreground group-hover/session:w-3 group-hover/session:p-0.5 group-hover/session:opacity-100'
 
@@ -192,7 +190,12 @@ export const SessionRow = memo(function SessionRow({
                 {session.isHidden ? <Eye className="size-3" /> : <EyeOff className="size-3" />}
               </button>
               <span className="pointer-events-none transition-opacity group-hover/session:opacity-0">
-                {isRealtimeVoiceSession && HarnessIcon
+                {scheduled
+                  ? <Clock
+                      className="size-3 text-warning"
+                      aria-label={t('sidebar.scheduledFor', { time: formatSendWhen(scheduled.sendAt, Date.now()) })}
+                    />
+                  : isRealtimeVoiceSession && HarnessIcon
                   ? <HarnessIcon
                       status="running"
                       active={isSessionActive}
@@ -226,12 +229,6 @@ export const SessionRow = memo(function SessionRow({
                   <Laptop className="size-2.5 shrink-0" />
                   {session.remoteController.label && <span className="truncate">{session.remoteController.label}</span>}
                 </span>
-              )}
-              {scheduled && (
-                <Clock
-                  className="size-3 shrink-0 text-warning group-hover/session:mr-1"
-                  aria-label={t('sidebar.scheduledFor', { time: formatSendWhen(scheduled.sendAt, Date.now()) })}
-                />
               )}
               {hasChildren && onToggleChildren && (
                 <button

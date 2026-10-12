@@ -26,6 +26,7 @@ import { validateTurnAttachments } from '@superone/shared/attachment-validation'
 import { refreshSessionCatalog } from '../session-catalog-refresh'
 import { useNativeInputRequests } from './use-native-input-requests'
 import { useComposerSend } from './use-composer-send'
+import { useScheduledSend } from './use-scheduled-send'
 import { useMcpAppFullscreen } from './use-mcp-app-fullscreen'
 import { useTranscriptSync } from './use-transcript-sync'
 import { useSessionIndicators } from './use-session-indicators'
@@ -968,6 +969,7 @@ export function MobileApp() {
         if (connectGeneration !== connectGenerationRef.current) return
         mobileVoiceRef.current.ingest(events)
         remoteDraftsRef.current.ingest(events)
+        scheduledSendRef.current.ingest(events)
         workspaceActivity.ingest(events, client)
         additionalDirsRef.current.ingest(events)
         const invalidated = sessionListInvalidations(events)
@@ -1849,7 +1851,7 @@ export function MobileApp() {
    * host round trips, so the tap lands like a desktop send — bubble, title, and
    * a "Creating session…" line under it — instead of a blank wait.
    */
-  const createSession = async (turn?: { clientMessageId: string; text: string; images: ImageAttachment[]; title: string; userMessageContent: import('@superone/shared/agent-types').ContentBlock[] }, signal?: AbortSignal) => {
+  const createSession = async (turn?: { clientMessageId: string; text: string; images: ImageAttachment[]; title: string; userMessageContent: import('@superone/shared/agent-types').ContentBlock[] }, signal?: AbortSignal, forSchedule = false) => {
     const client = clientRef.current
     const p = project
     if (!client || !p) return
@@ -1861,20 +1863,20 @@ export function MobileApp() {
     return sessionTransitionRef.current.run(async () => {
       if (signal?.aborted) return
       // Voice leaves any typed text saved as a draft; it never submits a fake first turn.
-      if (!turn) {
+      if (!turn && !forSchedule) {
         await remoteDrafts.park()
         if (signal?.aborted) { remoteDrafts.begin(); return }
       }
       await client.stopSession()
       const runtime = bindRuntime(client)
-      const id = (turn ? remoteDrafts.originSessionId : null) ?? randomId()
+      const id = (turn || forSchedule ? remoteDrafts.originSessionId : null) ?? randomId()
       // Leave the landing immediately — the first send should look like desktop,
       // not a "Starting session…" wait. Host errors still land on the status line.
       setSessionId(id)
       setActiveSessionTitle(turn?.title.slice(0, 72) || 'New session')
       setScreen('chat')
       if (turn) runtime.stageTurn(turn.clientMessageId, turn.text, turn.images, turn.userMessageContent)
-      const draftControl = turn ? await remoteDrafts.prepareSend() : {}
+      const draftControl = turn || forSchedule ? await remoteDrafts.prepareSend() : {}
       await runtime.create(p.path, {
         ...draftControl,
         sessionId: id,
@@ -1888,12 +1890,48 @@ export function MobileApp() {
       })
       setWorktreeSelection(LOCAL_WORKTREE_SELECTION)
       if (runtime.sessionId !== id) setSessionId(runtime.sessionId)
+      if (forSchedule) {
+        // Keep this editable draft under its new session when navigating away.
+        composerLocationRef.current = { key: composerDraftKey(activePairingIdRef.current, p.path, runtime.sessionId, routedEnvironmentIdRef.current), sessionId: runtime.sessionId }
+      }
       // The picks made on the landing screen are already claimed in the hook —
       // the session was just created from them.
       refreshRuntimeCatalog(runtime, selectedProvider)
       return { projectPath: p.path, sessionId: runtime.sessionId, title: turn?.title || 'New session', harnessId: selectedProvider }
     }).catch(failSessionTransition)
   }
+
+  const scheduledSend = useScheduledSend({
+    client: clientRef.current, connected: connectionState === 'connected', projectPath: project?.path ?? null,
+    sessionId, sourceEnvironmentId: runtimeRef.current?.sourceEnvironmentId ?? null, runtimeRef, composer: composerDraft, attachments,
+    clearAttachments: (sent) => setAttachments(current => current.filter(item => !sent.includes(item))),
+    consumeDraft: remoteDrafts.consume, onError: setStatus,
+    prepareSession: async () => {
+      const client = clientRef.current
+      let runtime = runtimeRef.current
+      if (sessionTransitionRef.current.isActive) throw new Error('The conversation is still loading. Please try again when it is ready.')
+      if (!runtime?.sessionId) {
+        if (!harnessSelection.catalogReady) throw new Error(t('Agent settings are unavailable. Refresh the model list and try again.'))
+        const created = await createSession(undefined, undefined, true)
+        if (!created) throw new Error('Could not create the scheduled conversation')
+        runtime = runtimeRef.current
+        if (runtime?.sessionId !== created.sessionId) return null
+      }
+      if (!runtime || !client || clientRef.current !== client) return null
+      // Arming is an explicit send decision: retain the selections for the host's later send.
+      await client.controlledRpc(runtimeSessionRef(client, runtime.sessionId, runtime.sourceEnvironmentId), 'session.patchSettings', {
+        settings: {
+          ...(selectedModel ? { model: selectedModel } : {}), ...(selectedEffort ? { effort: selectedEffort } : {}),
+          ...(selectedProvider === 'codex' ? { serviceTier: harnessSelection.serviceTier, collaborationMode: remoteDrafts.settings?.codexCollaborationMode ?? undefined } : {}),
+          ...(selectedProvider === 'opencode' ? { agent: harnessSelection.selectedAgentId } : {}),
+          ...(harnessSelection.ultracodePick !== null ? { ultracode: harnessSelection.ultracodePick } : {}),
+        },
+      })
+      return runtime
+    },
+  })
+  const scheduledSendRef = useRef(scheduledSend)
+  scheduledSendRef.current = scheduledSend
 
   // Stable per session: the preview card reads again whenever this changes.
   const projectPath = project?.path
@@ -1902,6 +1940,7 @@ export function MobileApp() {
     : undefined, [projectPath, sessionId])
   const pendingSendKind = useRef<'send' | 'steer' | 'soon'>('send')
   const send = useComposerSend(composerDraft.editorRef, `${activePairingId}:${project?.path}:${sessionId}`, async () => {
+    if (scheduledSend.controls.loading || scheduledSend.controls.busy || scheduledSend.controls.scheduled?.armed) return
     const kind = pendingSendKind.current
     pendingSendKind.current = 'send'
     const sentDraft = composerDraft.capture()
@@ -2592,6 +2631,8 @@ export function MobileApp() {
 
       {route === 'chat' ? (
         <ChatScreen provider={selectedProvider}
+          scheduledSend={scheduledSend.controls}
+          hasConversation={hasTranscript}
           composerMode={nextTurnMode}
           contextAttachments={contextAttachments}
           removingContexts={contextAttachments.filter(item => removingContextViews.includes(item.appInstanceId)).map(item => item.id)}

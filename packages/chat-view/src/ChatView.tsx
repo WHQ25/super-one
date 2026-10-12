@@ -40,6 +40,8 @@ import { installHostBridge, postHost, requestNativeAsync } from './bridge'
 import { MobileModPanes, MobileModUiProvider, useMobileModClient } from './mod-ui/MobileModUi'
 import { BottomDock } from './BottomDock'
 import { PortableQueuedMessages } from './PortableQueuedMessages'
+import { PortableScheduledResumeCard } from './PortableScheduledResumeCard'
+import type { ScheduledSendView } from './protocol'
 import { PortableCommandOutput, PortableQuestion } from './PortableDecisionCards'
 import { applyDocumentViewport } from './document-viewport'
 import { PortableMessage } from './PortableMessage'
@@ -217,6 +219,7 @@ function needsEarlierPage(view: ViewState): boolean {
 }
 
 export function ChatView() {
+  const [scheduledSend, setScheduledSend] = useState<ScheduledSendView | null>(null)
   const [state, setState] = useState<ViewState>(() => ({ ...EMPTY_STATE, scheme: initialDocumentScheme(document.documentElement) }))
   useEffect(invalidateSessionLinkMetadata, [state.session.sourceEnvironmentId])
   const stateRef = useRef(state)
@@ -437,6 +440,9 @@ export function ChatView() {
   modsRef.current = mods
   const handleInbound = useCallback((message: HostInbound) => {
     switch (message.type) {
+      case 'setScheduledSend':
+        setScheduledSend(message.state)
+        return
       case 'detailUpdate':
         deliverDetail(message)
         return
@@ -488,6 +494,7 @@ export function ChatView() {
         exitMcpAppFullscreen()
         return
       case 'reset':
+        setScheduledSend(null)
         invalidateSessionLinkMetadata()
         forgetMcpAppArrivals()
         navigationRequest.current++
@@ -582,7 +589,7 @@ export function ChatView() {
       page.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'auto' })
       scrollToBottomRef.current = false
     }
-  }, [state.messages, state.range, scheduleViewState])
+  }, [state.messages, state.range, scheduleViewState, scheduledSend])
 
   useLayoutEffect(() => {
     if (!state.scrollTarget) return
@@ -744,6 +751,7 @@ export function ChatView() {
       {state.session.compactError && <CompactErrorIndicator error={state.session.compactError} />}
       {state.session.isRecapping && <RecappingIndicator />}
       {state.session.apiRetry && <ApiRetryIndicator info={state.session.apiRetry} />}
+      {!moreAfter && <PortableScheduledResumeCard state={scheduledSend} locale={state.locale} />}
       <BottomDock>
         <MobileModPanes />
         {state.session.slashCommandOutput && <PortableCommandOutput output={state.session.slashCommandOutput} />}

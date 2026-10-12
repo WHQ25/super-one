@@ -2120,6 +2120,8 @@ export type AgentEventBase =
    * every paired device rather than to one session's subscribers.
    */
   | { type: 'session_list_changed'; projectPath: string }
+  /** Host-owned schedule state; attachment bytes stay on the host. */
+  | { type: 'scheduled_send_changed'; sessionId: string; scheduled: ScheduledSend | null; delivered: boolean }
   /** The host's project list gained, lost or renamed a project. Same invalidation shape as above. */
   | { type: 'project_list_changed' }
   | { type: 'session_activity'; activity: import('./session-activity').SessionActivity; completed?: boolean }

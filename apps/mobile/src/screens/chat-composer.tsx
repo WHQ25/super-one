@@ -42,6 +42,8 @@ import type { UsageMeterProps } from '../ui/usage-panel'
 import { CHIP_HEIGHT } from '../ui/chip-metrics'
 import { ComposerModeBorder } from '../ui/composer-mode-border'
 import type { ComposerMode } from '@superone/shared/composer-mode'
+import type { ScheduledSendControls } from '../navigation/use-scheduled-send'
+import { ScheduledSendControl } from '../ui/scheduled-send-control'
 
 export type ComposerSelection = {
   model: string; models: ModelOption[]; effort: string; efforts: RemoteEffortOption[]
@@ -57,6 +59,8 @@ export type ComposerSelection = {
 }
 
 export type ChatComposerProps = {
+  scheduledSend?: ScheduledSendControls
+  hasConversation?: boolean
   voiceEntry?: ReactNode
   nativeDraft?: NativeComposerBinding
   provider: HarnessId
@@ -222,18 +226,21 @@ export function ChatComposer(props: ChatComposerProps) {
   </View>
   const attach = <IconButton icon={Paperclip} label="Add attachment" onPress={props.onAttachmentMenu} />
   const empty = !props.draft.trim() && !props.attachments.length
+  const deliveryHeld = !!props.scheduledSend?.scheduled?.armed || !!props.scheduledSend?.loading || !!props.scheduledSend?.busy
   // Hide send/steer when there is nothing to deliver; Stop still belongs mid-turn.
-  const send = empty ? null : <IconButton icon={ArrowUp} label="Send"
+  const send = props.scheduledSend && (!empty || props.scheduledSend.scheduled || (props.hasConversation && props.scheduledSend.available))
+    ? <ScheduledSendControl controls={props.scheduledSend} tablet={tablet} empty={empty} loading={props.loadingConversation} onSend={props.onSend} />
+    : empty ? null : <IconButton icon={ArrowUp} label="Send"
     tone={tablet ? 'muted' : 'primary'} chrome={tablet ? 'circle' : 'plain'}
     iconSize={tablet ? 13 : 20}
     disabled={props.loadingConversation}
     onPress={props.onSend} />
   const stop = props.streaming ? <IconButton icon={Square} label="Stop" tone="danger"
     chrome={tablet ? 'circle' : 'plain'} iconSize={tablet ? 13 : 22} onPress={props.onStop} /> : null
-  const steer = !empty && props.streaming && props.canSteer
+  const steer = !empty && !deliveryHeld && props.streaming && props.canSteer
     ? <IconButton icon={ShipWheel} label="Steer now" chrome={tablet ? 'circle' : 'plain'}
       iconSize={tablet ? 13 : 18} onPress={() => props.onSteer?.()} /> : null
-  const steerSoon = !empty && props.streaming && props.canSteerSoon
+  const steerSoon = !empty && !deliveryHeld && props.streaming && props.canSteerSoon
     ? <IconButton icon={ChevronsUp} label="Steer soon" chrome={tablet ? 'circle' : 'plain'}
       iconSize={tablet ? 13 : 18} onPress={() => props.onSteerSoon?.()} /> : null
   const voiceEntry = props.voiceEntry ? <View testID="composer-voice-entry">{props.voiceEntry}</View> : null

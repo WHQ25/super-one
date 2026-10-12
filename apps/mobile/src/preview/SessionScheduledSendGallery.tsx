@@ -19,7 +19,7 @@ export function SessionScheduledSendGallery({ width = 280 }: { width?: number })
     <Text accessibilityRole="header" style={{ color: colors.foreground }}>Scheduled sends</Text>
     <SessionRowContent item={item('Review changes at 18:30')} />
     <SessionRowContent branded subtitle="super-one" item={item('Pinned scheduled session')} />
-    <SessionRowContent selected item={item('定时发送 · 很长的会话标题也应保留右侧时钟图标')} />
+    <SessionRowContent selected item={item('定时发送 · 很长的会话标题也应保留开头的时钟图标')} />
     <SessionRowContent item={item('Running with a scheduled follow-up', 'running')} />
     <SessionRowContent item={{ ...item('Collaboration parent'), hasChildren: true, collapsed }} onToggleChildren={() => setCollapsed(value => !value)} />
     {!collapsed ? <SessionRowContent item={{ ...item('Scheduled child session'), child: true }} /> : null}

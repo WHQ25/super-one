@@ -236,6 +236,7 @@ import { deleteCodexMcpConfig, saveCodexMcpConfig, toggleCodexMcpConfig } from '
 import { setCodexServiceFactory } from './session/backends/codex-backend'
 import { AutomationService, bindAutomationService, notifyAutomationsListChanged } from './automation-service'
 import { ScheduledSendService } from './session/scheduled-send-service'
+import { publishScheduledSendNotice } from './session/scheduled-send-notice'
 import { createPowerManagementService, resolveLegacyRemotePowerMode } from './power-management-service'
 import { listAutomationsForProject, createAutomation as dbCreateAutomation, updateAutomation as dbUpdateAutomation, deleteAutomation as dbDeleteAutomation, getAutomation as dbGetAutomation } from './db-automations'
 import { trace, closeTraceDb } from './agent/event-trace'
@@ -540,8 +541,10 @@ const sessionManager = new SessionManagerImpl({
 })
 const scheduledSendService = new ScheduledSendService({
   sessionManager,
-  broadcast: (sessionId, scheduled, delivered) =>
-    safeSend(AgentIpcChannels.SCHEDULED_SEND_CHANGED, { sessionId, scheduled, delivered }),
+  broadcast: (sessionId, scheduled, delivered) => {
+    safeSend(AgentIpcChannels.SCHEDULED_SEND_CHANGED, { sessionId, scheduled, delivered })
+    publishScheduledSendNotice(sessionEvents, sessionId, scheduled, delivered)
+  },
   resumeDefaults: () => agentService.readDefaultSessionPrefs(),
   sendRemote: async ({ target, sessionId, text, images, clientMessageId, onAccepted }) => {
     const remote = parseRemoteProjectKey(target.projectKey)

@@ -31,8 +31,8 @@ beforeEach(() => {
   useScheduledSendsStore.setState({ bySession: {} })
 })
 
-describe('SessionRow scheduled clock alignment', () => {
-  it('collapses hover actions to zero padding at rest so scheduled clocks align', () => {
+describe('SessionRow scheduled icon', () => {
+  it('replaces the leading message glyph and leaves hover actions collapsed at rest', () => {
     const sendAt = Date.now() + 3_600_000
     useScheduledSendsStore.setState({
       bySession: {
@@ -76,9 +76,10 @@ describe('SessionRow scheduled clock alignment', () => {
     }
 
     for (const clock of screen.getAllByLabelText(/Scheduled for/i)) {
-      const tokens = (clock.getAttribute('class') ?? '').split(/\s+/)
-      expect(tokens).not.toContain('mr-1')
-      expect(tokens).toContain('group-hover/session:mr-1')
+      const row = clock.closest('.group\\/session')!
+      const title = row.querySelector('.session-row-title')!
+      expect(clock.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(row.querySelector('.lucide-message-square')).toBeNull()
     }
   })
 })

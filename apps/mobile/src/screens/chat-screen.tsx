@@ -28,6 +28,8 @@ import { PendingPromptBar } from '../ui/pending-prompt-bar'
 import type { PendingPrompt } from '../pending-prompt-state'
 import { useMobileLocale } from '../i18n/context'
 import type { ComposerMode } from '@superone/shared/composer-mode'
+import type { ScheduledSendControls } from '../navigation/use-scheduled-send'
+import { handleScheduledSendAction } from '../scheduled-send-webview'
 
 const CHAT_SOURCE = { html: CHAT_VIEW_HTML }
 
@@ -40,6 +42,8 @@ const CHAT_SOURCE = { html: CHAT_VIEW_HTML }
 const coverStyle = { zIndex: 1, elevation: 4, shadowColor: 'transparent' } as const
 
 export function ChatScreen(props: {
+  scheduledSend?: ScheduledSendControls
+  hasConversation?: boolean
   voiceEntry?: ReactNode
   voiceComposer?: ReactNode
   contextAttachments?: ContextAttachment[]
@@ -182,6 +186,14 @@ export function ChatScreen(props: {
   // remounts WKWebView and would flash the white default we are covering.
   const prePaint = useRef(chatViewPrePaintScript(tokens.colors.background, tokens.scheme)).current
   const [channel] = useState(() => createChatWebViewChannel((message) => injectHostMessage(props.webRef, message)))
+  const schedule = props.scheduledSend
+  useEffect(() => {
+    if (!rendererReady) return
+    injectHostMessage(props.webRef, { type: 'setScheduledSend', state: {
+      scheduled: props.loadingConversation || showLanding || props.voiceComposer ? null : schedule?.scheduled ?? null,
+      available: schedule?.available ?? false, busy: schedule?.busy ?? false, error: schedule?.error ?? '',
+    } })
+  }, [rendererReady, props.loadingConversation, showLanding, !!props.voiceComposer, schedule?.scheduled, schedule?.available, schedule?.busy, schedule?.error, props.webRef])
   return (
     <View style={styles.flex}>
       {/* The edge strip is scoped to the scrolling half of the screen: over the
@@ -201,6 +213,7 @@ export function ChatScreen(props: {
         onMessage={(event) => {
           const raw = channel.receive(event.nativeEvent.data)
           if (raw === null) return
+          if (handleScheduledSendAction(raw, props.scheduledSend)) return
           props.onWebMessage(raw)
           if (hostMessageIsReady(raw)) setRendererReady(true)
         }}

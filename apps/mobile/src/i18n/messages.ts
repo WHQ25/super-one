@@ -1,6 +1,7 @@
 import { voiceChinese } from '../voice/voice-messages'
 import type { Locale } from '@superone/shared/agent-types'
 import { pasteChipChinese, pasteChipEnglish } from './paste-chip-messages'
+import { scheduledSendChinese, scheduledSendEnglish } from './scheduled-send-messages'
 
 type Copy = Record<string, string>
 
@@ -1154,7 +1155,7 @@ const zh: Copy = {
   'Enter a date and time with a time zone': '请输入带时区的日期时间',
 }
 
-const copy: Record<Locale, Copy> = { en: { ...en, ...pasteChipEnglish }, zh: { ...zh, ...pasteChipChinese, ...voiceChinese } }
+const copy: Record<Locale, Copy> = { en: { ...en, ...pasteChipEnglish, ...scheduledSendEnglish }, zh: { ...zh, ...pasteChipChinese, ...voiceChinese, ...scheduledSendChinese } }
 
 export function translateMobileText(locale: Locale, source: string): string {
   const retry = /^Retrying in (\d+)s$/.exec(source)

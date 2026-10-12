@@ -6,13 +6,15 @@ import { Text } from './text'
 import { useMobileTheme } from '../theme/context'
 import { useMobileLocale } from '../i18n/context'
 
-export function IconButton({ icon: Icon, glyph, label, onPress, disabled, active, destructive, tone, color, chrome = 'default', iconSize = 20, strokeWidth = 1.8, spinning, style, hitSlop, buttonRef }: {
+export function IconButton({ icon: Icon, glyph, label, onPress, onLongPress, accessibilityHint, disabled, active, destructive, tone, color, chrome = 'default', iconSize = 20, strokeWidth = 1.8, spinning, style, hitSlop, buttonRef }: {
   buttonRef?: RefObject<View | null>
   icon?: LucideIcon
   /** A typed character (e.g. `/`) when a Lucide mark would read as the wrong symbol. */
   glyph?: string
   label: string
   onPress: () => void
+  onLongPress?: () => void
+  accessibilityHint?: string
   disabled?: boolean
   active?: boolean
   destructive?: boolean
@@ -53,12 +55,14 @@ export function IconButton({ icon: Icon, glyph, label, onPress, disabled, active
     <Pressable ref={buttonRef}
       accessibilityRole="button"
       accessibilityLabel={t(label)}
+      accessibilityHint={accessibilityHint ? t(accessibilityHint) : undefined}
       // `active` is a toggle's on-state, not just a tint — say so, or the only cue
       // a screen reader gets for "search is open" is a colour it cannot see.
       accessibilityState={{ disabled: !!disabled, ...(active === undefined ? {} : { selected: active }) }}
       disabled={disabled}
       hitSlop={hitSlop}
       onPress={onPress}
+      onLongPress={onLongPress}
       style={({ pressed }) => [{
         width: 44, height: 44, alignItems: 'center', justifyContent: 'center',
         borderRadius: radius.md,

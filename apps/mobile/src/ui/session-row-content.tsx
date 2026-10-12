@@ -8,6 +8,7 @@ import type { SessionListItem } from '../session-list-state'
 import { useMobileTheme } from '../theme/context'
 import { AnimatedSessionTitle } from './animated-session-title'
 import { HarnessIcon, sessionIconState } from './harness-icon'
+import { formatScheduledSendTime } from '../scheduled-send-time'
 
 /**
  * One session row: icon, title, and — on a collaboration parent — the expand
@@ -15,10 +16,10 @@ import { HarnessIcon, sessionIconState } from './harness-icon'
  * the desktop sidebar.
  *
  * Icon chrome matches desktop too: the cross-project Pinned section (`branded`)
- * always shows the larger harness mark (`PinnedSessionRow`). The project list
+ * shows the larger harness mark (`PinnedSessionRow`). The project list
  * uses a message glyph when idle — even if the same session is pinned above —
  * and only swaps to the harness mark for running / background / unseen /
- * automation.
+ * automation. An armed scheduled send replaces the leading glyph with a clock.
  *
  * A child carries no extra padding either: like the desktop sidebar, the corner
  * arrow is the whole nesting cue, and it already shifts the row by its own width.
@@ -39,7 +40,7 @@ export function SessionRowContent({ item, selected, revealed, subtitle, surface 
   /** Second line for cross-project lists (pinned, search): which project it is in. */
   subtitle?: string
   /**
-   * Cross-project Pinned section: always the harness brand, like desktop
+   * Cross-project Pinned section: larger harness brand, like desktop
    * `PinnedSessionRow`. Project lists omit this and follow session-list rules.
    */
   branded?: boolean
@@ -50,6 +51,7 @@ export function SessionRowContent({ item, selected, revealed, subtitle, surface 
   const { locale, t } = useMobileLocale()
   const session = { ...item.session, ...activity }
   const iconStatus = sessionActivityIconStatus(session)
+  const iconSize = branded ? 22 : 18
   const pendingReason = activity?.pendingReason?.[locale]
   const Chevron = item.collapsed ? ChevronRight : ChevronDown
   const onPanel = surface === 'panel'
@@ -68,8 +70,15 @@ export function SessionRowContent({ item, selected, revealed, subtitle, surface 
     borderRadius: radius.md, paddingVertical: 6, paddingHorizontal: 12,
   }}>
     {item.child ? <CornerDownRight size={13} color={dim} /> : null}
-    {branded || sessionIconState(iconStatus) !== 'default'
-      ? <HarnessIcon provider={session.provider ?? 'claude'} acpAgentId={session.acpAgentId} status={iconStatus} size={branded ? 22 : 18} />
+    {session.scheduledSendAt != null ? <View
+      accessible accessibilityRole="image"
+      accessibilityLabel={`${t('Scheduled send')}: ${formatScheduledSendTime(session.scheduledSendAt, locale)}`}
+      testID="session-scheduled-send"
+      style={{ width: iconSize, height: iconSize, flexShrink: 0 }}
+    >
+      <Clock size={iconSize} color={colors.warning} />
+    </View> : branded || sessionIconState(iconStatus) !== 'default'
+      ? <HarnessIcon provider={session.provider ?? 'claude'} acpAgentId={session.acpAgentId} status={iconStatus} size={iconSize} />
       : <View testID="session-list-icon" accessible={false} style={{ width: 18, height: 18 }}>
           <MessageSquare size={18} color={dim} />
         </View>}
@@ -79,14 +88,6 @@ export function SessionRowContent({ item, selected, revealed, subtitle, surface 
     </View>
     {/* No pin glyph: the drawer carries a Pinned section of its own, so a badge
         on the row would state twice what the section above already says. */}
-    {session.scheduledSendAt != null ? <View
-      accessible accessibilityRole="image"
-      accessibilityLabel={`${t('Scheduled send')}: ${new Date(session.scheduledSendAt).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`}
-      testID="session-scheduled-send"
-      style={{ width: 14, height: 14, flexShrink: 0 }}
-    >
-      <Clock size={14} color={colors.warning} />
-    </View> : null}
     {item.hasChildren && onToggleChildren ? <Pressable
       accessibilityRole="button"
       accessibilityLabel={`${item.collapsed ? 'Show' : 'Hide'} sessions started by ${session.title || 'Untitled'}`}

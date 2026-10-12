@@ -296,9 +296,12 @@ notifications, machine paths and user name replaced):
   item; a host returns a command's output beside its item; a command group
   counts each file once. A patch now counts one call per file row. The chat
   document and its e2e fixtures receive derived content, as from the runtime.
-- Left for later steps: `stripMessagesForRemote` and usage-stats
-  `harnessOf` key on bare `metadata.codex` and must use `isLegacyCodexMessage`
-  before step 6; Codex trace diagnostics are retargeted in step 7.
+- Before step 6: `stripMessagesForRemote` exempts only legacy item-format
+  messages (`isLegacyCodexMessage`), so content-shaped Codex turns are
+  stripped like any other. Usage-stats `harnessOf` keeps reading bare
+  `metadata.codex`: it attributes a message to its harness, and content-shaped
+  turns still carry that metadata. Codex trace diagnostics are retargeted in
+  step 7.
 - Shared readers read `readableContent(message)`, the same view without the
   message wrapper, so main and CLI callers need no adapter of their own.
 - Todos have one carrier, the session `todos`: a legacy `todo_list` item sets

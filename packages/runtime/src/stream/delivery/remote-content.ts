@@ -5,6 +5,7 @@ import { isSubagentToolName, normalizeTranscriptTool } from '@superone/shared/to
 import { coordinationToolSummary } from '@superone/shared/coordination-tool-summary'
 import { isPatchToolCall, patchToolLineDelta } from '@superone/shared/patch-tool'
 import { remoteToolBlockType, sanitizeRemoteToolInput } from '@superone/shared/remote-tool-input'
+import { isLegacyCodexMessage } from '@superone/shared/codex-content'
 import type { WorkflowAgentRow } from '@superone/shared/agent-types'
 import { compactRunResult } from './compact-run-result'
 import { activeTurnMessages } from '@superone/shared/environment/session-message-range'
@@ -672,10 +673,9 @@ export function stripMessagesForRemote(messages: ChatMessage[], projectPath?: st
   // is opened (`get_attachment`). Before the Codex early return: user messages
   // are what carry attachments, whichever harness answers them.
   return messages.map(appendRemoteErrorText).map((msg) => withAttachmentPreviews(msg)).map((msg) => {
-    // The WebView uses the same Codex item reducer as desktop. Flattening the
-    // snapshot loses the baseline needed by subsequent item patches and makes
-    // the next item replace the visible turn with only its newest content.
-    if (msg.metadata?.codex) return msg
+    // A legacy Codex turn's client derives its content from the items, and
+    // later item patches need the whole snapshot as their baseline.
+    if (isLegacyCodexMessage(msg)) return msg
     const bashCmds = new Map<string, string>()
     const todoInputs = new Map<string, { toolName: string; input: string }>()
     const widgetIds = new Set<string>()

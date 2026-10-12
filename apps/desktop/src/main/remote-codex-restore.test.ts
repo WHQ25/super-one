@@ -98,4 +98,20 @@ describe('Codex restore through the mobile transport and chat runtime', () => {
     } }
     expect(stripEventForRemote(event)).toEqual(event)
   })
+
+  it('keeps a legacy turn whole and strips a content-shaped Codex turn like any other', () => {
+    const legacy = message('legacy', { metadata: { codex: { threadId: 'thread', usage, items: [
+      { id: 'shell', type: 'command_execution', command: 'bun test', aggregatedOutput: 'passed', status: 'completed' },
+    ] } } })
+    const content = message('content', {
+      content: [
+        { type: 'tool_use', toolName: 'Bash', toolUseId: 'b', input: '{"command":"bun test"}', status: 'complete' },
+        { type: 'tool_result', toolUseId: 'b', summary: 'passed' },
+      ],
+      metadata: { codex: { threadId: 'thread', usage, items: [] } },
+    })
+    const [keptLegacy, stripped] = stripMessagesForRemote([legacy, content])
+    expect(keptLegacy).toEqual(legacy)
+    expect(stripped.content.map(block => block.type)).toEqual(['bash', 'bash_result'])
+  })
 })

@@ -1,6 +1,6 @@
 # Unified turn view
 
-Status: in-progress (steps 0-4, 5a-5b done; 4 landed before 3) · Updated: 2026-10-12
+Status: in-progress (steps 0-4, 5a-5c done; 4 landed before 3) · Updated: 2026-10-12
 Goal: Every harness's assistant turn reaches the UI as `message.content` ContentBlocks and renders through one `TurnBody`, on desktop and in the phone chat-view; Codex thread items are translated at the integration layer and no longer reach a renderer.
 Long-term docs affected: [chat-core.md](../architecture/chat-core.md), [mobile-remote-control.md](../architecture/mobile-remote-control.md) (hidden-detail refs), [mcp-apps.md](../features/mcp-apps.md) (Codex rows), [codex contracts](../harness/codex/contracts.md) and [api-surface](../harness/codex/api-surface.md), `apps/desktop/docs/agent-reference/architecture.md`, `.agents/skills/superone-harness/references/event-contract.md`
 
@@ -281,6 +281,10 @@ notifications, machine paths and user name replaced):
 - Items stay the stored truth, so writers that patch a derived block also patch
   its item (`applySuggestedTaskUpdate`; `updateMcpAppAttachments` already did).
 - Main never derives into its runtime or rows (see Persisted history, 2).
+- Left for later steps: the Codex gallery, pinning and process-stats branches
+  go with the render paths (5d/5e); `stripMessagesForRemote` and usage-stats
+  `harnessOf` key on bare `metadata.codex` and must use `isLegacyCodexMessage`
+  before step 6; Codex trace diagnostics are retargeted in step 7.
 - Shared readers read `readableContent(message)`, the same view without the
   message wrapper, so main and CLI callers need no adapter of their own.
 - Todos have one carrier, the session `todos`: a legacy `todo_list` item sets

@@ -386,6 +386,20 @@ export const ToolBlock = memo(function ToolBlock(props: ToolBlockProps) {
 })
 
 /**
+ * A summarized file-change row's input keeps only its path; the detail sends
+ * the body as `toolDiff`, which the desktop diff reads as `diff`.
+ */
+function withDetailDiff(input: string | undefined, toolDiff: string | undefined): string | undefined {
+  if (!input || !toolDiff) return input
+  try {
+    const params = JSON.parse(input) as Record<string, unknown>
+    return params.diff ? input : JSON.stringify({ ...params, diff: toolDiff })
+  } catch {
+    return input
+  }
+}
+
+/**
  * A summarized row (`remoteDetail`) in a desktop chat: the same desktop block,
  * hydrated from the session's detail. Generic and Bash rows load their body
  * when opened; a block with its own chrome loads when shown, because its
@@ -395,8 +409,9 @@ function DeferredToolBlock({ remoteDetail, ...props }: ToolBlockProps & { remote
   const onOpen = !hasDedicatedToolRow(props.toolName)
   const [expanded, setExpanded] = useState(false)
   const { detail, text, error, status, retry } = useDeferredToolDetail(remoteDetail, onOpen ? expanded : true, props.status !== 'streaming', props.toolUseId)
+  const input = withDetailDiff(detail.input, detail.toolDiff)
   const loaded = {
-    ...(detail.input ? { input: detail.input } : {}),
+    ...(input ? { input } : {}),
     ...(detail.result !== undefined ? { result: detail.result } : {}),
     ...(detail.isError ? { isError: true } : {}),
     ...(detail.bashEditDiff ? { bashEditDiff: detail.bashEditDiff } : {}),

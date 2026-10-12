@@ -189,7 +189,7 @@ export function MermaidBlockPresenter({ code, isComplete, scheme, theme, ports }
             className="opacity-50 transition-opacity hover:opacity-100"
             tooltip={showSource ? t('tooltips.mermaidPreview') : t('tooltips.mermaidSource')}
           >
-            {showSource ? <Eye className="size-3.5" /> : <Code className="size-3.5" />}
+            {showSource ? <Eye className="size-3" /> : <Code className="size-3" />}
           </IconButton>
         )}
         {svg && !showSource && (
@@ -200,7 +200,7 @@ export function MermaidBlockPresenter({ code, isComplete, scheme, theme, ports }
             className="opacity-50 transition-opacity hover:opacity-100"
             tooltip={t('tooltips.expand')}
           >
-            <Expand className="size-3.5" />
+            <Expand className="size-3" />
           </IconButton>
         )}
         <IconButton
@@ -210,7 +210,7 @@ export function MermaidBlockPresenter({ code, isComplete, scheme, theme, ports }
           className="opacity-50 transition-opacity hover:opacity-100"
           tooltip={t('tooltips.copyCode')}
         >
-          {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+          {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
         </IconButton>
         {svg && ports.copyImage && (
           <IconButton
@@ -220,7 +220,7 @@ export function MermaidBlockPresenter({ code, isComplete, scheme, theme, ports }
             className="opacity-50 transition-opacity hover:opacity-100"
             tooltip={t('tooltips.copyImage')}
           >
-            {imageCopied ? <Check className="size-3.5" /> : <Image className="size-3.5" />}
+            {imageCopied ? <Check className="size-3" /> : <Image className="size-3" />}
           </IconButton>
         )}
       </div>

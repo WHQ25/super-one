@@ -91,6 +91,18 @@ describe('ChatRuntime transcript windows', () => {
     runtime.dispose()
   })
 
+  it('keeps unchanged window rows identical across a state-only batch, so nothing repaints', async () => {
+    const { client } = windowHost({ current: [textMessage('u', 'user', 'Hi'), textMessage('a', 'assistant', 'Hello')] })
+    const runtime = new ChatRuntime(client as never, () => {}, cache().hooks)
+    await runtime.open('/p', 's')
+    const [user, reply] = runtime.messages
+    runtime.ingest([event({ type: 'status_change', status: 'streaming' })])
+    runtime.ingest([event({ type: 'message_usage', messageId: 'a', inputTokens: 1, outputTokens: 2 })])
+    expect(runtime.messages[0]).toBe(user)
+    expect(runtime.messages[1]).toBe(reply)
+    runtime.dispose()
+  })
+
   it('drops transcript content the reducer derived from a host event', async () => {
     const { client } = windowHost({ current: [textMessage('u', 'user', 'Hi')] })
     const runtime = new ChatRuntime(client as never, () => {}, cache().hooks)

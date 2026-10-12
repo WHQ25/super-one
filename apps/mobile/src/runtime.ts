@@ -93,6 +93,8 @@ export class ChatRuntime {
   private readonly windowUnsupported = new Set<string>()
   private windowRequest: Promise<WindowPage> | null = null
   private resyncing = false
+  /** Window rows after `hydrated`, per materialized window: a live batch must not re-create unchanged rows. */
+  private windowRows: { source: ChatMessage[]; rows: ChatMessage[] } | null = null
   /**
    * Sends the host never took, kept to replay exactly as they went out. In
    * memory like the desktop's: a failed bubble is not cached, so it and its
@@ -239,7 +241,7 @@ export class ChatRuntime {
         if (!this.shouldApplyEvent(event)) continue
         session = this.reduce(session, event)
       }
-      if (this.window) session.messages = this.hydrated(this.window.reconcile(session.messages))
+      if (this.window) session.messages = this.reconcileWindow(session.messages)
       this.session = session
       this.eventEpoch = restored.epoch
       if (restored.provider) this.provider = restored.provider
@@ -293,7 +295,7 @@ export class ChatRuntime {
       if (result.schema !== TRANSCRIPT_WINDOW_SCHEMA) throw new Error('Transcript window format changed')
       const before = new Map(this.session.messages.map((message) => [message.id, message]))
       if (sync.applyResult(result, edge ? placement as 'older' | 'newer' : 'replace').length) throw new Error('History is unavailable')
-      this.session = { ...this.session, messages: this.hydrated(sync.reconcile(this.session.messages)) }
+      this.session = { ...this.session, messages: this.reconcileWindow(this.session.messages) }
       this.hasMoreHistory = sync.hasOlder
       this.persistTranscript()
       const replace = !edge
@@ -302,6 +304,14 @@ export class ChatRuntime {
     this.windowRequest = request
     void request.finally(() => { if (this.windowRequest === request) this.windowRequest = null }).catch(() => {})
     return request
+  }
+
+  /** The window's rows, then the phone's own unsent rows; the reducer's edits to window rows are dropped. */
+  private reconcileWindow(current: ChatMessage[]): ChatMessage[] {
+    const sync = this.window!
+    const source = sync.messages()
+    if (this.windowRows?.source !== source) this.windowRows = { source, rows: this.hydrated(source) }
+    return sync.reconcile(current, this.windowRows.rows)
   }
 
   private windowPage(messages: ChatMessage[], replace: boolean): WindowPage {
@@ -504,7 +514,7 @@ export class ChatRuntime {
   ingest(events: unknown[], epoch: number = this.eventEpoch): void {
     if (epoch !== this.eventEpoch) return
     for (const ev of events) this.apply(ev as AgentEvent)
-    if (this.window && this.dirty) this.session = { ...this.session, messages: this.hydrated(this.window.reconcile(this.session.messages)) }
+    if (this.window && this.dirty) this.session = { ...this.session, messages: this.reconcileWindow(this.session.messages) }
     this.schedule()
   }
 

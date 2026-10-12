@@ -41,9 +41,8 @@ export class TranscriptWindowSync {
     return this.materialized.messages
   }
 
-  /** Window rows in order, then the phone's own rows the window does not hold yet. */
-  reconcile(current: readonly ChatMessage[]): ChatMessage[] {
-    const windowed = this.messages()
+  /** Window rows in order (as given, or as materialized), then the phone's own rows the window does not hold yet. */
+  reconcile(current: readonly ChatMessage[], windowed: ChatMessage[] = this.messages()): ChatMessage[] {
     const ids = new Set(windowed.map((message) => message.id))
     for (const id of this.local) if (ids.has(id)) this.local.delete(id)
     const own = current.filter((message) => this.local.has(message.id))

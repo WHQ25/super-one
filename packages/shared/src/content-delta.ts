@@ -141,6 +141,37 @@ function lastMergeTargetIndex(content: ContentBlock[], delta: ContentBlock): num
   return -1
 }
 
+type IdentifiedBlock = Extract<ContentBlock, { type: 'text' | 'thinking' | 'plan' | 'review' | 'notice' }>
+
+function blockId(block: ContentBlock): string | undefined {
+  return block.type === 'text' || block.type === 'thinking' || block.type === 'plan'
+    || block.type === 'review' || block.type === 'notice' ? block.id : undefined
+}
+
+/** A provider item streamed under a stable id: continue that block, wherever it sits. */
+function applyIdentifiedDelta(content: ContentBlock[], delta: IdentifiedBlock, replace: boolean): ContentBlock[] {
+  const idx = content.findIndex((b) => b.type === delta.type && blockId(b) === delta.id && sameParent(b, delta))
+  if (idx === -1) return [...content, delta]
+  const target = content[idx] as IdentifiedBlock
+  let next: ContentBlock
+  if (target.type === 'text' && delta.type === 'text') {
+    next = { ...target, ...delta, text: replace ? delta.text : target.text + delta.text }
+  } else if (target.type === 'thinking' && delta.type === 'thinking') {
+    next = { ...target, ...delta, thinking: replace ? delta.thinking : target.thinking + delta.thinking, startedAt: target.startedAt ?? delta.startedAt, endedAt: delta.endedAt ?? target.endedAt }
+  } else if (target.type === 'plan' && delta.type === 'plan') {
+    next = { ...target, text: replace ? delta.text : target.text + delta.text }
+  } else {
+    next = delta
+  }
+  return content.map((b, i) => (i === idx ? next : b))
+}
+
+function withoutOutputDelta<T extends ToolUseLikeBlock>(block: T): T {
+  if (!('outputDelta' in block)) return block
+  const { outputDelta: _drop, ...rest } = block
+  return rest as T
+}
+
 /**
  * Append a streamed ContentBlock delta to a message's flat content array.
  *
@@ -157,18 +188,20 @@ export function applyContentDelta(
   content: ContentBlock[],
   delta: ContentBlock,
   now: () => number = Date.now,
+  options: { replace?: boolean } = {},
 ): ContentBlock[] {
+  if (blockId(delta) !== undefined) return applyIdentifiedDelta(content, delta as IdentifiedBlock, options.replace === true)
   if (delta.type === 'text') {
     const idx = lastMergeTargetIndex(content, delta)
     const target = idx === -1 ? undefined : content[idx]
-    if (target?.type === 'text') {
+    if (target?.type === 'text' && target.id === undefined) {
       return content.map((b, i) => (i === idx ? { ...target, text: target.text + delta.text } : b))
     }
   }
   if (delta.type === 'thinking') {
     const idx = lastMergeTargetIndex(content, delta)
     const target = idx === -1 ? undefined : content[idx]
-    if (target?.type === 'thinking') {
+    if (target?.type === 'thinking' && target.id === undefined) {
       // startedAt/endedAt are stamped upstream in the main process (claude-query);
       // carry them through — keep the run's original start, advance to the latest end.
       return content.map((b, i) => (i === idx ? { ...target, thinking: target.thinking + delta.thinking, endedAt: delta.endedAt ?? target.endedAt } : b))
@@ -183,7 +216,7 @@ export function applyContentDelta(
     if (idx !== -1) {
       const existing = content[idx]
       if (!isToolUseBlock(existing)) {
-        return content.map((b, i) => (i === idx ? { ...delta, startedAt: now() } : b))
+        return content.map((b, i) => (i === idx ? { ...withoutOutputDelta(delta), startedAt: now() } : b))
       }
       // Sparse ACP updates (status/content only, or backend web_search without query)
       // must not wipe a richer prior input / toolSummary.
@@ -193,10 +226,14 @@ export function applyContentDelta(
         delta.toolSummary,
         mergedInput,
       )
+      const liveOutput = delta.outputDelta === undefined
+        ? existing.liveOutput
+        : options.replace ? delta.outputDelta : (existing.liveOutput ?? '') + delta.outputDelta
       return content.map((b, i) => (i === idx
         ? {
             ...existing,
-            ...delta,
+            ...withoutOutputDelta(delta),
+            ...(liveOutput !== undefined ? { liveOutput } : {}),
             ...(existing.app || delta.app ? { app: mergeMcpAppAttachment(existing.app, delta.app) } : {}),
             startedAt: existing.startedAt,
             elapsedSeconds: delta.elapsedSeconds ?? existing.elapsedSeconds,
@@ -208,16 +245,20 @@ export function applyContentDelta(
           }
         : b))
     }
-    return [...content, { ...delta, startedAt: now() }]
+    const opened = withoutOutputDelta(delta)
+    return [...content, { ...opened, ...(delta.outputDelta ? { liveOutput: delta.outputDelta } : {}), startedAt: now() }]
   }
   if (isToolResultBlock(delta)) {
     const app = 'app' in delta ? delta.app : undefined
     const previous = app ? content.find(b => 'app' in b && b.app?.appInstanceId === app.appInstanceId) : undefined
     const result = delta.type === 'tool_result' && app && previous && 'app' in previous
       ? { ...delta, app: mergeMcpAppAttachment(previous.app, app) } : delta
-    const updated = content.map((b) =>
-      isToolUseBlock(b) && b.toolUseId === delta.toolUseId ? { ...b, status: 'complete' as const } : b,
-    )
+    // The result carries the final output, so the streamed preview goes.
+    const updated = content.map((b) => {
+      if (!isToolUseBlock(b) || b.toolUseId !== delta.toolUseId) return b
+      const { liveOutput: _final, ...call } = b
+      return { ...call, status: 'complete' as const }
+    })
     return [...updated, result]
   }
   return [...content, delta]

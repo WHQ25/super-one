@@ -156,7 +156,8 @@ export function projectTool(block: ContentBlock, ref: string): ContentBlock {
     ...(toolLineDelta ? { toolLineDelta } : {}),
     ...(block.toolName === 'Workflow' ? workflowShell(block) : {}),
     // The card's collapsed badge (calls · tokens) and its run state; the children behind it are not sent.
-    ...(isSubagentToolName(block.toolName) ? { taskUsage: block.taskUsage, taskStatus: block.taskStatus, runInBackground: block.runInBackground } : {}),
+    ...(isSubagentToolName(block.toolName) ? { taskUsage: block.taskUsage, taskStatus: block.taskStatus, runInBackground: block.runInBackground, taskThreadId: block.taskThreadId } : {}),
+    ...(block.authRequired ? { authRequired: true } : {}),
     remoteDetail: ref } as ContentBlock
 }
 export function toolDetail(message: ChatMessage, id: string): string {
@@ -167,7 +168,8 @@ export function toolDetail(message: ChatMessage, id: string): string {
   const children = message.content.filter(block => block.type !== 'thinking' && 'parentToolUseId' in block && block.parentToolUseId === id).map(block =>
     'toolName' in block ? projectTool(block, JSON.stringify([message.id, 'tool', block.toolUseId]))
       : block.type === 'tool_result' ? { type: 'tool_result', toolUseId: block.toolUseId, summary: '', isError: block.isError } : block)
-  const output = result && 'summary' in result ? result.summary : undefined
+  // A running command has no result yet; its streamed output stands in.
+  const output = result && 'summary' in result ? result.summary : tool.liveOutput
   const projectedTool = projected && 'toolName' in projected ? projected : undefined
   const input = parseInput(tool.input) ?? {}
   return JSON.stringify({
@@ -175,6 +177,7 @@ export function toolDetail(message: ChatMessage, id: string): string {
     // details. Never send the raw patch wrapper in the collapsed transcript.
     input: isPatchToolCall(tool.toolName, input) ? JSON.stringify({ patch: true, files: patchToolFiles(input) }) : projectedTool?.input ?? tool.input,
     result: output,
+    exitCode: result?.type === 'tool_result' ? result.exitCode : undefined,
     // A background task's `result` is only its launch receipt; the run's own
     // output is patched onto the block when the task_notification lands.
     taskResultText: tool.taskResultText,

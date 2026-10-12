@@ -106,6 +106,25 @@ describe('coalesceAgentEventBatch', () => {
     ])
     expect(out).toHaveLength(2)
   })
+
+  it('folds identified text per id and never across ids', () => {
+    const said = (id: string, text: string, extra: Partial<AgentEvent> = {}) => delta(text, { delta: { type: 'text', id, text }, ...extra } as Partial<AgentEvent>)
+    const out = coalesceAgentEventBatch([said('a', 'He'), said('a', 'llo'), said('b', 'Hi')])
+    expect(out.map(e => e.type === 'content_delta' && e.delta.type === 'text' ? [e.delta.id, e.delta.text] : null)).toEqual([['a', 'Hello'], ['b', 'Hi']])
+  })
+
+  it('lets a replacement supersede earlier appends and keeps later appends a replacement', () => {
+    const said = (text: string, replace?: boolean) => delta(text, { delta: { type: 'text', id: 'a', text }, ...(replace ? { replace } : {}) } as Partial<AgentEvent>)
+    const [folded] = coalesceAgentEventBatch([said('draft'), said('Final', true), said(' answer')])
+    expect(folded).toMatchObject({ replace: true, delta: { text: 'Final answer' } })
+  })
+
+  it('folds streamed output of one tool call', () => {
+    const out = (outputDelta: string) => ({ type: 'content_delta', messageId: 'm1', delta: { type: 'tool_use', toolUseId: 't1', toolName: 'Bash', input: '{"command":"ls"}', status: 'streaming', outputDelta } }) as AgentEvent
+    const folded = coalesceAgentEventBatch([out('a'), out('b')])
+    expect(folded).toHaveLength(1)
+    expect(folded[0]).toMatchObject({ delta: { outputDelta: 'ab', input: '{"command":"ls"}' } })
+  })
 })
 
 describe('agentEventCoalesceKey', () => {

@@ -38,7 +38,7 @@ export function reduceContentDelta(
     if (msg.id === homeId) {
       return {
         ...msg,
-        content: applyDelta(msg.content, delta, ports.now),
+        content: applyDelta(msg.content, delta, ports.now, { replace: event.replace }),
         ...(homeId === event.messageId ? applySeqToMessage(event) : {}),
       }
     }

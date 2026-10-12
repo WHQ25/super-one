@@ -50,6 +50,7 @@ export function projectProgressiveMessage(message: ChatMessage): ChatMessage {
         // tools: keep the path in the summary so expand can load the image.
         summary: compactMediaToolResult(block.summary) ?? '',
         isError: block.isError,
+        ...(block.exitCode !== undefined ? { exitCode: block.exitCode } : {}),
         parentToolUseId: block.parentToolUseId,
         ...(bashIds.has(block.toolUseId) && block.bashEditDiff ? { bashEditDiff: projectBashEditDiff(block.bashEditDiff) } : {}),
       } : block).filter(block => !('parentToolUseId' in block) || !block.parentToolUseId || !containerIds.has(block.parentToolUseId))
@@ -166,6 +167,9 @@ function shellContainerOf(message: ChatMessage, parentId: string): Extract<Conte
 
 /** Strip all entry points, including completion metadata and reconnect snapshots. */
 export function projectProgressiveEvent(event: AgentEvent, messages: readonly ChatMessage[]): AgentEvent | null {
+  // Streamed output only changes an expanded row's detail (sent by `DetailViews`);
+  // the collapsed shell is identical, so the delta itself is not worth a frame.
+  if (event.type === 'content_delta' && 'toolName' in event.delta && event.delta.outputDelta !== undefined && deferTool(event.delta.toolName)) return null
   if (event.type === 'content_delta' && 'parentToolUseId' in event.delta && event.delta.parentToolUseId) {
     const parentId = event.delta.parentToolUseId
     const message = messages.find(message => message.id === event.messageId)
@@ -205,7 +209,8 @@ function projectEvent(event: AgentEvent, messages: readonly ChatMessage[]): Agen
   const message = messages.find(message => message.id === messageId)
   if (event.type === 'content_delta' && event.delta.type === 'thinking') {
     const delta = event.delta
-    const index = message?.content.findLastIndex(block => block.type === 'thinking' && (block.parentToolUseId ?? null) === (delta.parentToolUseId ?? null)) ?? -1
+    const index = message?.content.findLastIndex(block => block.type === 'thinking' && (block.parentToolUseId ?? null) === (delta.parentToolUseId ?? null)
+      && (delta.id === undefined || block.id === delta.id)) ?? -1
     return { ...event, delta: { ...delta, thinking: '', ...(index >= 0 ? { remoteDetail: reference(event.messageId, 'thinking', index) } : {}) } }
   }
   if (event.type === 'content_delta' && 'toolName' in event.delta) {

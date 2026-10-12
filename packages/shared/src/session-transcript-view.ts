@@ -58,9 +58,11 @@ export function countTools(message: ChatMessage): number {
 }
 
 function extractBlockText(block: ContentBlock, includeThinking = false): string {
-  if (block.type === 'text' && typeof block.text === 'string') return stripInternalTags(block.text)
+  // An assistant async question is drawn by the answer bubble, which keeps its own snapshot.
+  if (block.type === 'text' && typeof block.text === 'string') return block.codexAsyncQuestions?.length && block.id ? '' : stripInternalTags(block.text)
   if (includeThinking && block.type === 'thinking' && typeof block.thinking === 'string') return block.thinking.trim()
-  if (block.type === 'codex_plan' && typeof block.text === 'string') return block.text.trim()
+  if (block.type === 'plan' && typeof block.text === 'string') return block.text.trim()
+  if (block.type === 'review' && block.phase === 'exited' && typeof block.text === 'string') return block.text.trim()
   return ''
 }
 

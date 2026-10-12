@@ -306,3 +306,31 @@ it('chunks large detail changes into bounded, reconstructable packets', () => {
   }
   expect(text).toBe(expected)
 })
+
+describe('progressive projection of streamed output and identified blocks', () => {
+  const running = (liveOutput: string): ChatMessage => ({ id: 'm', role: 'assistant', status: 'streaming', createdAt: '', providerId: 'codex', content: [
+    { type: 'thinking', id: 'r1', thinking: 'first', parentToolUseId: null },
+    { type: 'tool_use', toolName: 'Bash', toolUseId: 'cmd', input: '{"command":"make"}', status: 'streaming', liveOutput },
+    { type: 'thinking', id: 'r2', thinking: 'second', parentToolUseId: null },
+  ] })
+
+  it('drops output-only deltas and keeps output out of the collapsed row', () => {
+    const source = running('building')
+    const outputDelta = { type: 'content_delta' as const, messageId: 'm', delta: { type: 'tool_use' as const, toolName: 'Bash', toolUseId: 'cmd', input: '{"command":"make"}', status: 'streaming' as const, outputDelta: 'building' } }
+    expect(projectProgressiveEvent(outputDelta, [source])).toBeNull()
+    expect(JSON.stringify(projectProgressiveMessage(source))).not.toContain('building')
+  })
+
+  it('streams a running command into its expanded detail', () => {
+    setProgressiveSession('a', 's')
+    const ref = JSON.stringify(['m', 'tool', 'cmd'])
+    expect(JSON.parse(subscribeDetail('a', 's', 'sub', ref, running('step 1')).text)).toMatchObject({ result: 'step 1' })
+    const [update] = detailUpdates('a', 's', [running('step 1\nstep 2')])
+    expect(update).toMatchObject({ type: 'remote_detail', subscriptionId: 'sub' })
+  })
+
+  it('points an identified thinking delta at its own block, not the latest one', () => {
+    const projected = projectProgressiveEvent({ type: 'content_delta', messageId: 'm', delta: { type: 'thinking', id: 'r1', thinking: ' more', parentToolUseId: null } }, [running('')])
+    expect(projected).toMatchObject({ delta: { thinking: '', remoteDetail: JSON.stringify(['m', 'thinking', 0]) } })
+  })
+})

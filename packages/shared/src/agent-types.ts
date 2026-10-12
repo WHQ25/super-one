@@ -161,6 +161,8 @@ interface AgentTaskData {
    * Survives history reload when live taskProgress is empty.
    */
   taskOutputFile?: string
+  /** Provider thread the subagent runs in (a Codex child thread), for "open thread" navigation. */
+  taskThreadId?: string
 }
 
 /** Live or persisted agent row on a Workflow tool_use (Grok snapshot or Claude). */
@@ -199,6 +201,16 @@ interface ToolUseBase {
   elapsedSeconds?: number
   startedAt?: number
   parentToolUseId?: string | null
+  /**
+   * Output streamed before the call finished (a running command). Durable, so
+   * Stop, reconnects and snapshots keep the partial output; the matching
+   * `tool_result` carries the final output and drops it.
+   */
+  liveOutput?: string
+  /** Delta only: appended to `liveOutput` by `applyContentDelta`, never stored. */
+  outputDelta?: string
+  /** An MCP call that failed because its server needs the user to sign in. */
+  authRequired?: boolean
 }
 
 export type ContentBlock = ContentBlockData & { remoteDetail?: string }
@@ -215,9 +227,15 @@ export type RetractedBlockRef =
   | { type: 'text'; text: string; fromEnd?: boolean }
   | { type: 'thinking'; thinking: string; fromEnd?: boolean }
 
+/**
+ * `id` on `text` / `thinking` / `plan` names one provider item. A delta with an
+ * `id` continues the block with the same type, parent and id wherever it sits in
+ * the turn; without one, text and thinking merge positionally (see
+ * `applyContentDelta`). `review` and `notice` are replaced whole by id.
+ */
 type ContentBlockData =
-  | { type: 'text'; text: string; parentToolUseId?: string | null; codeBlockTokens?: Array<{ language: string; tokens: DiffTokenLine[] | null }>; isPaste?: boolean; /** Persisted question snapshot for a standalone async-answer user bubble. */ codexAsyncQuestions?: CodexAsyncUserInputQuestion[] }
-  | { type: 'thinking'; thinking: string; parentToolUseId?: string | null; startedAt?: number; endedAt?: number }
+  | { type: 'text'; id?: string; text: string; parentToolUseId?: string | null; codeBlockTokens?: Array<{ language: string; tokens: DiffTokenLine[] | null }>; isPaste?: boolean; /** Persisted question snapshot for a standalone async-answer user bubble. */ codexAsyncQuestions?: CodexAsyncUserInputQuestion[] }
+  | { type: 'thinking'; id?: string; thinking: string; parentToolUseId?: string | null; startedAt?: number; endedAt?: number }
   /**
    * Callout the desktop splits out of assistant text before it leaves for a remote
    * surface (`splitTextIntoBlocks`), so the phone renders a card instead of the raw
@@ -227,12 +245,15 @@ type ContentBlockData =
   | { type: 'insight'; title: string; content: string; parentToolUseId?: string | null; codeBlockTokens?: Array<{ language: string; tokens: DiffTokenLine[] | null }> }
   | { type: 'tool_use' } & ToolUseBase & ToolMeta & AgentTaskData & WorkflowData
   | { type: RemoteToolType } & ToolUseBase & ToolMeta & AgentTaskData & WorkflowData
-  | { type: 'tool_result'; toolUseId: string; app?: ToolAppAttachment; summary: string; outputPath?: string; isTimedOut?: boolean; isError?: boolean; parentToolUseId?: string | null; outputTokens?: DiffTokenLine[]; todoToolName?: string; toolTodos?: TodoToolItem[]; bashEditDiff?: BashEditDiff }
+  | { type: 'tool_result'; toolUseId: string; app?: ToolAppAttachment; summary: string; outputPath?: string; isTimedOut?: boolean; isError?: boolean; /** Process exit code of a command; non-zero is an outcome, not a tool error. */ exitCode?: number; parentToolUseId?: string | null; outputTokens?: DiffTokenLine[]; todoToolName?: string; toolTodos?: TodoToolItem[]; bashEditDiff?: BashEditDiff }
   | { type: 'bash_result'; toolUseId: string; summary: string; parentToolUseId?: string | null; outputTokens?: DiffTokenLine[]; bashEditDiff?: BashEditDiff }
   | { type: 'todo_result'; toolUseId: string; summary: string; parentToolUseId?: string | null; todoToolName?: string; toolTodos?: TodoToolItem[] }
-  | { type: 'codex_plan'; text: string; itemId: string }
-  | { type: 'codex_image_generation'; itemId: string; status: string; savedPath?: string; revisedPrompt?: string; startedAt?: number; completedAt?: number }
-  | { type: 'codex_collab'; items: CodexCollabToolCallItem[]; parentToolUseId?: string | null }
+  /** A proposed plan the agent wrote in plan mode; approval is the harness's own decision flow. */
+  | { type: 'plan'; id: string; text: string; parentToolUseId?: string | null }
+  /** Review mode entered or exited; `text` is the review target or the findings. */
+  | { type: 'review'; id: string; phase: 'entered' | 'exited'; text: string; parentToolUseId?: string | null }
+  /** A non-terminal turn notice: an error the turn continued past, or a compaction marker. */
+  | { type: 'notice'; id: string; level: 'error' | 'info'; kind?: 'compaction'; text: string; parentToolUseId?: string | null }
   | { type: 'image'; name: string; id?: string }
   | { type: 'document'; name: string; id?: string }
 
@@ -1894,7 +1915,8 @@ export type AgentEventBase =
   | { type: 'remote_detail'; subscriptionId: string; revision: number; offset: number; text: string }
   | { type: 'message_start'; message: ChatMessage }
   | { type: 'user_message_appended'; message: ChatMessage }
-  | { type: 'content_delta'; messageId: string; delta: ContentBlock; isSynthetic?: boolean; isReplay?: boolean }
+  /** `replace`: the delta's text (or `outputDelta`) replaces the id'd block's instead of appending. */
+  | { type: 'content_delta'; messageId: string; delta: ContentBlock; replace?: boolean; isSynthetic?: boolean; isReplay?: boolean }
   | { type: 'mcp_app_updated'; messageId: string; appInstanceId: string; update: import('./mcp-apps').McpAppAttachmentUpdate }
   /** A suggested-task card left `pending`; reducers patch it onto the card's row. */
   | { type: 'suggested_task_updated'; taskId: string; state: import('./suggested-task').SuggestedTaskState }

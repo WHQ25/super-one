@@ -332,7 +332,7 @@ export function applyClaudeEventToRuntime(
           if (message.id === homeId) {
             return {
               ...message,
-              content: applyContentDelta(message.content, event.delta),
+              content: applyContentDelta(message.content, event.delta, undefined, { replace: event.replace }),
               ...(homeId === event.messageId ? applySeqToMessage(event) : {}),
             }
           }

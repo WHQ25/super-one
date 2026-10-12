@@ -320,3 +320,89 @@ describe('retractContentBlocks', () => {
     expect(retractContentBlocks(content, [{ type: 'tool_use', toolUseId: 'gone' }, { type: 'text', text: 'never' }])).toBe(content)
   })
 })
+
+describe('applyContentDelta: blocks with a provider id', () => {
+  const said = (id: string, t: string): ContentBlock => ({ type: 'text', id, text: t })
+
+  it('continues the block with the same id even when another item streamed after it', () => {
+    let content: ContentBlock[] = []
+    content = applyContentDelta(content, said('a', 'Hello'))
+    content = applyContentDelta(content, said('b', 'Other'))
+    content = applyContentDelta(content, said('a', ' world'))
+    expect(content).toEqual([said('a', 'Hello world'), said('b', 'Other')])
+  })
+
+  it('keeps adjacent items with different ids apart', () => {
+    let content: ContentBlock[] = []
+    content = applyContentDelta(content, said('a', 'One.'))
+    content = applyContentDelta(content, said('b', 'Two.'))
+    expect(content).toHaveLength(2)
+  })
+
+  it('replaces the text for a non-prefix rewrite', () => {
+    let content: ContentBlock[] = [said('a', 'Draft')]
+    content = applyContentDelta(content, said('a', 'Final'), undefined, { replace: true })
+    expect(content).toEqual([said('a', 'Final')])
+  })
+
+  it('never merges positional text into an identified block, or the reverse', () => {
+    let content: ContentBlock[] = [said('a', 'item')]
+    content = applyContentDelta(content, { type: 'text', text: ' loose' })
+    content = applyContentDelta(content, said('b', 'next'))
+    expect(content).toEqual([said('a', 'item'), { type: 'text', text: ' loose' }, said('b', 'next')])
+  })
+
+  it('keeps the first start and advances the end of identified thinking, even for a timestamp-only update', () => {
+    let content: ContentBlock[] = [{ type: 'thinking', id: 'r', thinking: 'Think', startedAt: 1, endedAt: 2 }]
+    content = applyContentDelta(content, { type: 'thinking', id: 'r', thinking: '', startedAt: 5, endedAt: 9 })
+    expect(content).toEqual([{ type: 'thinking', id: 'r', thinking: 'Think', startedAt: 1, endedAt: 9 }])
+  })
+
+  it('appends plan text and replaces review and notice blocks whole', () => {
+    let content: ContentBlock[] = []
+    content = applyContentDelta(content, { type: 'plan', id: 'p', text: '1. Read' })
+    content = applyContentDelta(content, { type: 'plan', id: 'p', text: '\n2. Edit' })
+    content = applyContentDelta(content, { type: 'notice', id: 'e', level: 'error', text: 'first' })
+    content = applyContentDelta(content, { type: 'notice', id: 'e', level: 'error', text: 'second' })
+    expect(content).toEqual([
+      { type: 'plan', id: 'p', text: '1. Read\n2. Edit' },
+      { type: 'notice', id: 'e', level: 'error', text: 'second' },
+    ])
+  })
+
+  it('scopes an id to its parent', () => {
+    let content: ContentBlock[] = [{ type: 'text', id: 'm', text: 'main', parentToolUseId: null }]
+    content = applyContentDelta(content, { type: 'text', id: 'm', text: 'child', parentToolUseId: 'agent-1' })
+    expect(content).toHaveLength(2)
+  })
+})
+
+describe('applyContentDelta: streamed tool output', () => {
+  const call = (outputDelta?: string): ContentBlock => ({
+    type: 'tool_use', toolName: 'Bash', toolUseId: 'c', input: '{"command":"ls"}', status: 'streaming',
+    ...(outputDelta !== undefined ? { outputDelta } : {}),
+  })
+
+  it('accumulates output deltas into liveOutput without storing the delta field', () => {
+    let content: ContentBlock[] = []
+    content = applyContentDelta(content, call('a\n'), () => 1)
+    content = applyContentDelta(content, call('b\n'), () => 2)
+    expect(content).toHaveLength(1)
+    expect(content[0]).toMatchObject({ toolUseId: 'c', status: 'streaming', liveOutput: 'a\nb\n', startedAt: 1 })
+    expect(content[0]).not.toHaveProperty('outputDelta')
+  })
+
+  it('replaces liveOutput when asked', () => {
+    let content = applyContentDelta([], call('old'), () => 1)
+    content = applyContentDelta(content, call('new'), () => 2, { replace: true })
+    expect(content[0]).toMatchObject({ liveOutput: 'new' })
+  })
+
+  it('keeps partial output through a seal and drops it once the result lands', () => {
+    const streamed = applyContentDelta([], call('partial'), () => 1)
+    expect(sealStreamingTools(streamed)[0]).toMatchObject({ status: 'complete', liveOutput: 'partial' })
+    const finished = applyContentDelta(streamed, { type: 'tool_result', toolUseId: 'c', summary: 'partial\nrest', exitCode: 0 })
+    expect(finished[0]).not.toHaveProperty('liveOutput')
+    expect(finished[0]).toMatchObject({ status: 'complete' })
+  })
+})

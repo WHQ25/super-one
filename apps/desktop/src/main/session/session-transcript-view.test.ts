@@ -131,15 +131,19 @@ describe('session-transcript-view', () => {
       { type: 'text', text: '<task-notification>internal</task-notification>' },
       { type: 'tool_use', toolName: 'Read', toolUseId: 't1', input: '{}' },
       { type: 'thinking', thinking: 'thought' },
-      { type: 'codex_plan', text: 'plan', itemId: 'plan-1' },
+      { type: 'plan', text: 'plan', id: 'plan-1' },
+      { type: 'review', phase: 'entered', text: 'uncommitted changes', id: 'review-1' },
+      { type: 'notice', level: 'error', text: 'transient failure', id: 'error-1' },
+      { type: 'text', id: 'question-1', text: 'Which branch?', codexAsyncQuestions: [{ title: 'Which branch?', options: null }] },
       { type: 'text', text: 'reply\n\nwith two paragraphs' },
+      { type: 'review', phase: 'exited', text: 'No findings.', id: 'review-1_exit' },
     ])]
     const page = pageTextBlocks(messages, { view: 'text', limit: 20 })
-    expect(page.items.map(block => block.text)).toEqual(['plan', 'reply\n\nwith two paragraphs'])
-    expect(page.total).toBe(2)
+    expect(page.items.map(block => block.text)).toEqual(['plan', 'reply\n\nwith two paragraphs', 'No findings.'])
+    expect(page.total).toBe(3)
     const thinking = pageTextBlocks(messages, { view: 'text', limit: 1, cursor: 1, includeThinking: true })
     expect(thinking.items.map(block => block.text)).toEqual(['thought'])
-    expect(thinking.total).toBe(3)
+    expect(thinking.total).toBe(4)
   })
 
   it('anchors at the last block and keeps cursors in the selected view', () => {

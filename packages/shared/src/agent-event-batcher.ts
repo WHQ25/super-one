@@ -1,4 +1,5 @@
 import type { AgentEvent, ContentBlock } from './agent-types'
+import { mergeToolUseInputJson } from './content-delta'
 
 export const AGENT_EVENT_BATCH_MS = 33
 
@@ -12,12 +13,16 @@ type ContentDeltaEvent = Extract<AgentEvent, { type: 'content_delta' }>
 
 export function agentEventCoalesceKey(event: AgentEvent): string | null {
   if (event.type === 'content_delta') {
-    const kind = event.delta.type
-    if (kind !== 'text' && kind !== 'thinking') return null
+    const delta = event.delta
+    const kind = delta.type
+    // A running command streams output through repeated deltas of its call.
+    const outputCall = kind === 'tool_use' && delta.outputDelta !== undefined ? delta.toolUseId : null
+    if (kind !== 'text' && kind !== 'thinking' && kind !== 'plan' && !outputCall) return null
     const parent =
-      'parentToolUseId' in event.delta && event.delta.parentToolUseId != null
-        ? String(event.delta.parentToolUseId)
+      'parentToolUseId' in delta && delta.parentToolUseId != null
+        ? String(delta.parentToolUseId)
         : ''
+    const id = outputCall ?? ('id' in delta && delta.id ? delta.id : '')
     return [
       'content_delta',
       event.projectPath ?? '',
@@ -25,6 +30,7 @@ export function agentEventCoalesceKey(event: AgentEvent): string | null {
       event.messageId,
       parent,
       kind,
+      id,
       event.epoch ?? '',
       event.isSynthetic ? '1' : '0',
       event.isReplay ? '1' : '0',
@@ -48,15 +54,30 @@ function foldContentDelta(prev: ContentDeltaEvent, next: ContentDeltaEvent): Con
   // one sequence number at a time.
   if (prev.seq !== undefined || next.seq !== undefined) return null
 
+  // A replacement supersedes everything before it; appends after one stay a replacement.
+  if (next.replace) return next
+  const replace = prev.replace ? { replace: true } : {}
   const a = prev.delta
   const b = next.delta
+  if (a.type === 'tool_use' && b.type === 'tool_use') {
+    const merged: ContentBlock = {
+      ...a,
+      ...b,
+      input: mergeToolUseInputJson(a.input, b.input) as string,
+      outputDelta: (a.outputDelta ?? '') + (b.outputDelta ?? ''),
+    }
+    return { ...next, ...replace, delta: merged }
+  }
+  if (a.type === 'plan' && b.type === 'plan') {
+    return { ...next, ...replace, delta: { ...b, text: a.text + b.text } }
+  }
   if (a.type === 'text' && b.type === 'text') {
     const merged: ContentBlock = {
       ...b,
       type: 'text',
       text: (a.text ?? '') + (b.text ?? ''),
     }
-    return { ...next, delta: merged }
+    return { ...next, ...replace, delta: merged }
   }
   if (a.type === 'thinking' && b.type === 'thinking') {
     const merged: ContentBlock = {
@@ -66,7 +87,7 @@ function foldContentDelta(prev: ContentDeltaEvent, next: ContentDeltaEvent): Con
       startedAt: a.startedAt ?? b.startedAt,
       endedAt: b.endedAt ?? a.endedAt,
     }
-    return { ...next, delta: merged }
+    return { ...next, ...replace, delta: merged }
   }
   return null
 }

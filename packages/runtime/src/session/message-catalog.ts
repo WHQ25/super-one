@@ -329,7 +329,7 @@ export function collectContentByAssistantId(
     for (const ev of mapped) {
       if (ev.type === 'content_delta' && ev.messageId) {
         const prev = contentById.get(ev.messageId) ?? []
-        contentById.set(ev.messageId, applyContentDelta(prev, ev.delta))
+        contentById.set(ev.messageId, applyContentDelta(prev, ev.delta, undefined, { replace: ev.replace }))
         continue
       }
       // Append streamed tool input so catalog summaries match live tool_use.input

@@ -14,6 +14,7 @@ import {
 import type { GroupContentResult, RenderSegment } from './groupContent'
 import type { RunContinuation } from './run-display'
 import { ModSite, useModMessageId } from '../mod-ui/react'
+import { renderTurnSegments, type TurnSegmentProps } from './turn-segments'
 import { assistantMessageProps, stringProp, toolGroupProps, toolUseProps, type ToolCallFacts } from '../mod-ui/site-props'
 import type {
   CodexTurnDetailPresenterProps,
@@ -98,6 +99,8 @@ export interface ClaudeAppToolGroupPresenterProps extends ClaudeToolGroupPresent
 }
 
 export interface ClaudeTurnBodyPresenterParts {
+  /** Hosts with a transcript viewport can evict offscreen activity chunks. */
+  Segment?: ComponentType<TurnSegmentProps>
   Text: ComponentType<ClaudeTextPresenterProps>
   /**
    * Callout card for a pre-split `insight` block. Only remote surfaces receive one:
@@ -288,7 +291,8 @@ function renderSegments(
 ): ReactNode[] {
   const from = range?.start ?? 0
   const to = range?.end ?? segments.length
-  const rendered = segments.slice(from, to).map((segment, index) => {
+  const sliced = segments.slice(from, to)
+  const rendered = sliced.map((segment, index) => {
     const segmentIndex = from + index
     const sealed = options.forceSealed
       || !options.isStreaming
@@ -401,10 +405,15 @@ function renderSegments(
     }
     return renderBlocks(segment.blocks, segment.startIndex, options)
   })
-  return rendered.map((content, index) => {
+  const contents = rendered.map((content, index) => {
     const segment = segments[from + index]
     const id = segment.kind === 'block' ? segment.index : segment.startIndex
     return <TranscriptStateScope key={id} id={`claude-${id}`}>{content}</TranscriptStateScope>
+  })
+  return renderTurnSegments(sliced, contents, options.parts.Segment, segment => {
+    const index = segment.kind === 'block' ? segment.index : segment.startIndex
+    const text = segment.kind === 'block' && segment.block.type === 'text' ? segment.block.text : ''
+    return { id: `claude-${index}`, estimate: text ? Math.max(32, Math.ceil(text.length / 60) * 24 + 12) : 48 }
   })
 }
 

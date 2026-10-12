@@ -1,0 +1,174 @@
+{
+  "sourceSessionId": "1298b0d2-38d4-4dc1-895b-b72f2f1e1945",
+  "capturedAt": "2026-10-12",
+  "sample": {
+    "messages": 24,
+    "tailBlocks": 1661,
+    "tailTools": 612
+  },
+  "method": "Median of three warmed file-chip opens; first frame includes click-to-render stall",
+  "environment": "Isolated Chromium, production ChatContent/FileChip/ActivityPanel, local file IPC stubs",
+  "notes": [
+    "The archived completed turn is replayed as streaming without contacting its harness.",
+    "All 24 messages are loaded; the original compaction marker remains in place.",
+    "The same visible tail is used before and after; the final reply fills the viewport after virtualization.",
+    "File preview modules are warmed and file IPC uses local stubs. Packaged Alpha has not been profiled.",
+    "The raw transcript stays outside the repository."
+  ],
+  "before": {
+    "environment": "Isolated Chromium, production ChatContent/FileChip/ActivityPanel, local file IPC stubs",
+    "sampleInfo": {
+      "messages": 24,
+      "tailBlocks": 1661,
+      "tailTools": 612
+    },
+    "replayStatus": "streaming",
+    "repetitions": 3,
+    "method": "Median of three warmed file-chip opens; first frame includes click-to-render stall",
+    "summary": {
+      "firstFrameMs": 27.600000023841858,
+      "maxFrameMs": 283.2999999999993,
+      "frameSamples": 36,
+      "framesOver32ms": 9,
+      "chatDomNodes": 19303,
+      "mountedTools": 606,
+      "virtualSegments": 0,
+      "bottomDistance": 44,
+      "panelWidth": 400,
+      "layoutMs": 78.27799999999996,
+      "styleMs": 352.72899999999987,
+      "scriptMs": 37.006999999999984,
+      "taskMs": 676.2320000000002
+    },
+    "runs": [
+      {
+        "firstFrameMs": 19.699999928474426,
+        "maxFrameMs": 266.09999999999945,
+        "frameSamples": 38,
+        "framesOver32ms": 9,
+        "chatDomNodes": 19303,
+        "mountedTools": 606,
+        "virtualSegments": 0,
+        "bottomDistance": 44,
+        "panelWidth": 400,
+        "layoutMs": 73.406,
+        "styleMs": 341.51,
+        "scriptMs": 24.819000000000006,
+        "taskMs": 656.4079999999999
+      },
+      {
+        "firstFrameMs": 35.39999997615814,
+        "maxFrameMs": 283.2999999999993,
+        "frameSamples": 35,
+        "framesOver32ms": 9,
+        "chatDomNodes": 19303,
+        "mountedTools": 606,
+        "virtualSegments": 0,
+        "bottomDistance": 44,
+        "panelWidth": 400,
+        "layoutMs": 81.382,
+        "styleMs": 353.6920000000001,
+        "scriptMs": 37.006999999999984,
+        "taskMs": 676.2320000000002
+      },
+      {
+        "firstFrameMs": 27.600000023841858,
+        "maxFrameMs": 283.3000000000011,
+        "frameSamples": 36,
+        "framesOver32ms": 9,
+        "chatDomNodes": 19299,
+        "mountedTools": 606,
+        "virtualSegments": 0,
+        "bottomDistance": 0,
+        "panelWidth": 400,
+        "layoutMs": 78.27799999999996,
+        "styleMs": 352.72899999999987,
+        "scriptMs": 49.48499999999997,
+        "taskMs": 695.3360000000001
+      }
+    ]
+  },
+  "after": {
+    "environment": "Isolated Chromium, production ChatContent/FileChip/ActivityPanel, local file IPC stubs",
+    "sampleInfo": {
+      "messages": 24,
+      "tailBlocks": 1661,
+      "tailTools": 612
+    },
+    "replayStatus": "streaming",
+    "repetitions": 3,
+    "method": "Median of three warmed file-chip opens; first frame includes click-to-render stall",
+    "summary": {
+      "firstFrameMs": 6.200000047683716,
+      "maxFrameMs": 9.400000000000546,
+      "frameSamples": 97,
+      "framesOver32ms": 0,
+      "chatDomNodes": 430,
+      "mountedTools": 0,
+      "renderedTextCharacters": 1559,
+      "virtualSegments": 206,
+      "bottomDistance": 0,
+      "panelWidth": 400,
+      "layoutMs": 23.97200000000001,
+      "styleMs": 20.053,
+      "scriptMs": 29.34399999999998,
+      "taskMs": 149.90000000000003
+    },
+    "runs": [
+      {
+        "firstFrameMs": 4.899999976158142,
+        "maxFrameMs": 9.400000000000546,
+        "frameSamples": 97,
+        "framesOver32ms": 0,
+        "chatDomNodes": 430,
+        "mountedTools": 0,
+        "renderedTextCharacters": 1559,
+        "virtualSegments": 206,
+        "bottomDistance": 0,
+        "panelWidth": 400,
+        "layoutMs": 24.76899999999999,
+        "styleMs": 21.086000000000002,
+        "scriptMs": 31.586000000000002,
+        "taskMs": 160.078
+      },
+      {
+        "firstFrameMs": 6.200000047683716,
+        "maxFrameMs": 9.400000000000546,
+        "frameSamples": 97,
+        "framesOver32ms": 0,
+        "chatDomNodes": 430,
+        "mountedTools": 0,
+        "renderedTextCharacters": 1559,
+        "virtualSegments": 206,
+        "bottomDistance": 0,
+        "panelWidth": 400,
+        "layoutMs": 23.97200000000001,
+        "styleMs": 20.053,
+        "scriptMs": 29.34399999999998,
+        "taskMs": 149.90000000000003
+      },
+      {
+        "firstFrameMs": 8.299999952316284,
+        "maxFrameMs": 9.300000000001091,
+        "frameSamples": 97,
+        "framesOver32ms": 0,
+        "chatDomNodes": 430,
+        "mountedTools": 0,
+        "renderedTextCharacters": 1559,
+        "virtualSegments": 206,
+        "bottomDistance": 0,
+        "panelWidth": 400,
+        "layoutMs": 22.176000000000002,
+        "styleMs": 18.35400000000001,
+        "scriptMs": 26.866,
+        "taskMs": 139.21499999999997
+      }
+    ]
+  },
+  "checks": {
+    "focusedTests": 116,
+    "browserRegressions": 10,
+    "rendererTypecheck": "passed",
+    "sharedChatViewBuild": "passed"
+  }
+}

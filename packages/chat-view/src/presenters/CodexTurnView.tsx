@@ -19,6 +19,7 @@ import {
 } from './compact-chat-mode'
 import { isMediaGenerateImageTool, isMediaVideoStatusTool } from './media-generation'
 import { isAlwaysHiddenToolBlock, isHiddenToolBlock } from './tool-display'
+import { renderTurnSegments, type TurnSegmentProps } from './turn-segments'
 
 export interface CodexItemPresenterProps {
   item: CodexThreadItem
@@ -86,7 +87,7 @@ export interface CodexTurnDetailPresenterProps {
 
 export interface CodexTurnViewPresenterParts {
   /** Desktop can evict off-screen segments within exceptionally long turns. */
-  Segment?: ComponentType<{ children: ReactNode; estimate?: number; id: string }>
+  Segment?: ComponentType<TurnSegmentProps>
   Markdown: ComponentType<CodexMarkdownPresenterProps>
   CodexItem: ComponentType<CodexItemPresenterProps>
   Command: ComponentType<CodexCommandPresenterProps>
@@ -717,25 +718,13 @@ export function CodexTurnViewPresenter({
         {content}
       </TranscriptStateScope>
     })
-    if (!Segment) return contents
-    // A small chunk keeps the visible work bounded without allocating an
-    // observer, DOM placeholder and React state for every activity in the turn.
-    const chunks: ReactNode[] = []
-    for (let start = 0; start < sliced.length; start += 8) {
-      const chunk = sliced.slice(start, start + 8)
-      const first = chunk[0]
-      const firstIndex = 'index' in first ? first.index : first.indices[0]
-      const id = codexItems[firstIndex]?.id ?? String(firstIndex)
-      const estimate = chunk.reduce((height, segment) => {
-        const index = 'index' in segment ? segment.index : segment.indices[0]
-        const item = codexItems[index]
-        return height + (item?.type === 'agent_message'
-          ? Math.max(32, Math.ceil(item.text.length / 60) * 24 + 12)
-          : 48)
-      }, 0)
-      chunks.push(<Segment key={id} id={id} estimate={estimate}>{contents.slice(start, start + 8)}</Segment>)
-    }
-    return chunks
+    return renderTurnSegments(sliced, contents, Segment, segment => {
+      const index = 'index' in segment ? segment.index : segment.indices[0]
+      const item = codexItems[index]
+      return { id: item?.id ?? String(index), estimate: item?.type === 'agent_message'
+        ? Math.max(32, Math.ceil(item.text.length / 60) * 24 + 12)
+        : 48 }
+    })
   }
 
   if (collapseEntireTurn) {

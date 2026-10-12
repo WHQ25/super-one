@@ -51,6 +51,7 @@ const proxyFor = (ns: string): Record<string, AnyFn> => {
 export function installIpcMocks(): void {
   const w = window as unknown as Record<string, unknown>
   if (!w.agent) w.agent = proxyFor('agent')
+  if (!w.environment) w.environment = proxyFor('environment')
   if (!w.app) w.app = proxyFor('app')
   if (!w.miniapp) w.miniapp = proxyFor('miniapp')
   if (!w.terminal) w.terminal = proxyFor('terminal')

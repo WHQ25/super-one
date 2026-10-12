@@ -46,6 +46,7 @@ import { useActiveHarness } from '@/hooks/useHarnessTheme'
 import { replaceMiniAppTagsWithMention } from '@superone/shared/miniapp-prompt-tags'
 import { TurnSummaryAboveFooter } from './presenters/ChatMessageIndicators'
 import { DurationFooter } from './ChatMessageFooter'
+import { VirtualTurnSegment } from './VirtualTranscriptBlock'
 import { collaborationLabelKey, isModelOnlyWakeMessage } from '@superone/chat-view/presenters/collaboration-label'
 import { goalMessageObjective } from '@superone/shared/session-goal'
 import { parseRealtimeDelegation } from '@superone/shared/realtime-timeline'
@@ -59,6 +60,7 @@ import {
   type ClaudeTurnBodyPresenterParts,
   type ClaudeTurnBodyPresenterRuntime,
 } from './presenters/ClaudeTurnBody'
+import type { CodexTurnDetailPresenterProps } from './presenters/CodexTurnView'
 import {
   groupContent,
 } from './chat-message/groupContent'
@@ -105,6 +107,14 @@ const CLAUDE_TURN_PARTS: ClaudeTurnBodyPresenterParts = {
   ToolGroup,
   AppToolGroup,
   TurnDetail: TurnDetailSection,
+}
+
+function LongTurnDetail(props: CodexTurnDetailPresenterProps) {
+  return <TurnDetailSection {...props} animate={false} />
+}
+
+const LONG_CONTENT_BLOCK_TURN_PARTS: ClaudeTurnBodyPresenterParts = {
+  ...CLAUDE_TURN_PARTS, Segment: VirtualTurnSegment, TurnDetail: LongTurnDetail,
 }
 
 const CLAUDE_TURN_RUNTIME: ClaudeTurnBodyPresenterRuntime = {
@@ -239,7 +249,7 @@ export const ChatMessage = memo(function ChatMessage({
         isStreaming={isStreaming}
         detailChatMode={detailChatMode}
         projectPath={projectPath}
-        parts={CLAUDE_TURN_PARTS}
+        parts={grouped!.segments.length >= 80 ? LONG_CONTENT_BLOCK_TURN_PARTS : CLAUDE_TURN_PARTS}
         runtime={CLAUDE_TURN_RUNTIME}
       />
     </ModMessageScope>

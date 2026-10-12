@@ -7,6 +7,7 @@ import { ChatMessage, findLastAssistantMessageId, isRedundantTurnSummaryMarker }
 import { createDefaultPerSessionState, createDefaultProjectState, useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
+import { VirtualTranscriptContext } from './virtual-transcript-context'
 
 vi.mock('./CodexTurnView', () => ({
   CodexTurnView: ({ isWorking }: { isWorking?: boolean }) => (
@@ -92,6 +93,24 @@ describe('ChatMessage delegated Codex state', () => {
     )
 
     expect(screen.getByTestId('codex-turn')).toHaveAttribute('data-working', 'true')
+  })
+})
+
+describe('shared ContentBlock harness virtualization', () => {
+  it.each(['claude', 'acp', 'opencode', 'cursor', 'dsh'] as const)('virtualizes a long %s turn through the common adapter', providerId => {
+    const content: ChatMessageType['content'] = Array.from({ length: 96 }, (_, index) => ({
+      type: 'tool_use', toolName: 'Bash', toolUseId: `command-${index}`,
+      input: JSON.stringify({ command: `echo ${index}` }), status: 'complete',
+    }))
+    const observeBlock = vi.fn(() => () => {})
+    const { container } = render(
+      <VirtualTranscriptContext.Provider value={{ viewportRef: { current: null }, observeBlock }}>
+        <ChatMessage message={{ ...createClaudeMessage(content), providerId, status: 'streaming' }} sessionStatus="streaming" isLastAssistant />
+      </VirtualTranscriptContext.Provider>,
+    )
+    expect(container.querySelectorAll('[data-virtual-segment]')).toHaveLength(12)
+    expect(observeBlock).toHaveBeenCalledTimes(12)
+    expect(container.querySelector('[data-tool-use-id]')).toBeNull()
   })
 })
 

@@ -2,6 +2,7 @@ import { mockIpc } from '../../../../../.storybook/mock-ipc'
 
 /** External boundaries shared by transcript stories; production stores stay real. */
 export function mockTranscriptIpc(): void {
+  mockIpc('environment', 'callSession', async () => null)
   mockIpc('agent', 'activateSession', async () => undefined)
   mockIpc('app', 'getMediaServerPort', async () => 6007)
   mockIpc('app', 'getModelCatalog', async () => ({ providers: [] }))

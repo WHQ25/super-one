@@ -1,0 +1,992 @@
+{
+ "scenario": "web-search",
+ "codexVersion": "codex-cli 0.162.1",
+ "model": "gpt-6.1-sol",
+ "turns": [
+  {
+   "turn": {
+    "prompt": "Search the web for the current stable Bun release version and answer in one sentence. Use web search."
+   },
+   "notifications": [
+    {
+     "method": "thread/started",
+     "params": {
+      "thread": {
+       "id": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+       "environments": [
+        {
+         "environmentId": "local",
+         "cwd": "/workspace",
+         "runtimeWorkspaceRoots": [
+          "/workspace"
+         ]
+        }
+       ],
+       "extra": null,
+       "sessionId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+       "forkedFromId": null,
+       "parentThreadId": null,
+       "preview": "",
+       "ephemeral": false,
+       "section": null,
+       "sectionEnteredAt": null,
+       "projectId": null,
+       "historyMode": "paginated",
+       "modelProvider": "openai",
+       "model": "gpt-6.1-sol",
+       "reasoningEffort": null,
+       "createdAt": 1791803573,
+       "updatedAt": 1791803573,
+       "recencyAt": 1791803573,
+       "status": {
+        "type": "idle"
+       },
+       "path": "/private/codex-home/sessions/2026/10/12/rollout-2026-10-12T19-12-53-01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b.jsonl",
+       "cwd": "/workspace",
+       "cliVersion": "0.162.1",
+       "originator": "superone-node",
+       "source": "vscode",
+       "canAcceptDirectInput": true,
+       "threadSource": null,
+       "agentNickname": null,
+       "agentRole": null,
+       "gitInfo": null,
+       "name": null,
+       "daybreakEnabled": null,
+       "turns": []
+      }
+     }
+    },
+    {
+     "method": "thread/settings/updated",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "threadSettings": {
+       "disabledPluginIds": [],
+       "cwd": "/workspace",
+       "approvalPolicy": "never",
+       "approvalsReviewer": "user",
+       "sandboxPolicy": {
+        "type": "workspaceWrite",
+        "writableRoots": [],
+        "networkAccess": false,
+        "excludeTmpdirEnvVar": false,
+        "excludeSlashTmp": false
+       },
+       "activePermissionProfile": null,
+       "model": "gpt-6.1-sol",
+       "modelProvider": "openai",
+       "serviceTier": null,
+       "effort": "medium",
+       "summary": "concise",
+       "collaborationMode": {
+        "mode": "default",
+        "settings": {
+         "model": "gpt-6.1-sol",
+         "reasoning_effort": "medium",
+         "developer_instructions": null
+        }
+       },
+       "multiAgentMode": "explicitRequestOnly",
+       "personality": null
+      }
+     }
+    },
+    {
+     "method": "thread/status/changed",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "status": {
+       "type": "active",
+       "activeFlags": []
+      }
+     }
+    },
+    {
+     "method": "turn/started",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turn": {
+       "id": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+       "rootTurnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+       "items": [],
+       "itemsView": "notLoaded",
+       "status": "inProgress",
+       "error": null,
+       "startedAt": 1791803573,
+       "completedAt": null,
+       "durationMs": null
+      }
+     }
+    },
+    {
+     "method": "item/started",
+     "params": {
+      "item": {
+       "type": "userMessage",
+       "id": "01a12fd0-e05b-7d91-a4ae-764cf73a1fe7",
+       "clientId": null,
+       "content": [
+        {
+         "type": "text",
+         "text": "Search the web for the current stable Bun release version and answer in one sentence. Use web search.",
+         "text_elements": []
+        }
+       ]
+      },
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "startedAtMs": 1791803580507
+     }
+    },
+    {
+     "method": "item/completed",
+     "params": {
+      "item": {
+       "type": "userMessage",
+       "id": "01a12fd0-e05b-7d91-a4ae-764cf73a1fe7",
+       "clientId": null,
+       "content": [
+        {
+         "type": "text",
+         "text": "Search the web for the current stable Bun release version and answer in one sentence. Use web search.",
+         "text_elements": []
+        }
+       ]
+      },
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "completedAtMs": 1791803580507
+     }
+    },
+    {
+     "method": "thread/tokenUsage/updated",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "tokenUsage": {
+       "total": {
+        "totalTokens": 16112,
+        "inputTokens": 16046,
+        "cachedInputTokens": 12160,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 66,
+        "reasoningOutputTokens": 0
+       },
+       "last": {
+        "totalTokens": 16112,
+        "inputTokens": 16046,
+        "cachedInputTokens": 12160,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 66,
+        "reasoningOutputTokens": 0
+       },
+       "modelContextWindow": 475000
+      }
+     }
+    },
+    {
+     "method": "item/started",
+     "params": {
+      "item": {
+       "type": "agentMessage",
+       "id": "msg_0868f6aee3519572016accc0c47a0487d0a7bff796930af064",
+       "text": "",
+       "phase": "commentary",
+       "memoryCitation": null,
+       "delivery": null,
+       "questions": null
+      },
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "startedAtMs": 1791803588617
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0c47a0487d0a7bff796930af064",
+      "delta": "I"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0c47a0487d0a7bff796930af064",
+      "delta": "’ll"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0c47a0487d0a7bff796930af064",
+      "delta": " search"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0c47a0487d0a7bff796930af064",
+      "delta": " for"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0c47a0487d0a7bff796930af064",
+      "delta": " the"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0c47a0487d0a7bff796930af064",
+      "delta": " latest"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0c47a0487d0a7bff796930af064",
+      "delta": " stable"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0c47a0487d0a7bff796930af064",
+      "delta": " Bun"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0c47a0487d0a7bff796930af064",
+      "delta": " release"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0c47a0487d0a7bff796930af064",
+      "delta": ".\n"
+     }
+    },
+    {
+     "method": "item/completed",
+     "params": {
+      "item": {
+       "type": "agentMessage",
+       "id": "msg_0868f6aee3519572016accc0c47a0487d0a7bff796930af064",
+       "text": "I’ll search for the latest stable Bun release.\n",
+       "phase": "commentary",
+       "memoryCitation": null,
+       "delivery": null,
+       "questions": null
+      },
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "completedAtMs": 1791803589114
+     }
+    },
+    {
+     "method": "item/started",
+     "params": {
+      "item": {
+       "type": "webSearch",
+       "id": "exec-b7459d35-4d1c-4e33-a6c1-afdb28e851f4",
+       "query": "",
+       "action": null,
+       "results": null
+      },
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "startedAtMs": 1791803589937
+     }
+    },
+    {
+     "method": "item/completed",
+     "params": {
+      "item": {
+       "type": "webSearch",
+       "id": "exec-b7459d35-4d1c-4e33-a6c1-afdb28e851f4",
+       "query": "Bun latest stable release version site:bun.sh",
+       "action": {
+        "type": "search",
+        "query": "Bun latest stable release version site:bun.sh",
+        "queries": null
+       },
+       "results": [
+        {
+         "type": "text_result",
+         "domain": "bun.sh",
+         "ref_id": "turn0search0",
+         "snippet": "`bun build --compile --bytecode --bytecode-depth=1 ./app.ts --outfile app` ... * Improved: the release `bun` binary is about 1 MB smaller.",
+         "title": "Bun v1.4.1 | Bun Blog",
+         "url": "https://bun.sh/blog/release-notes/bun-v1.4.1"
+        },
+        {
+         "type": "text_result",
+         "domain": "bun.sh",
+         "ref_id": "turn0search1",
+         "snippet": "If you're new to Bun, you can learn more from the Bun 1.0 blog post. ... ▶ play↻ replay▶ play ... ### Node.js 26: `NODE_MODULE_VERSION`",
+         "title": "Bun 1.4 | Bun Blog",
+         "url": "https://bun.sh/blog/bun-v1.4"
+        },
+        {
+         "type": "text_result",
+         "domain": "bun.sh",
+         "ref_id": "turn0search2",
+         "snippet": "runtime | version | install time | peak RAM ... v1.4.2 Latest release · September 2026 ... Read the release notes`$ bun upgrade`",
+         "title": "Bun — A fast all-in-one JavaScript runtime",
+         "url": "https://bun.sh/?trk=public_post_reshare-text"
+        },
+        {
+         "type": "text_result",
+         "domain": "bun.sh",
+         "ref_id": "turn0search3",
+         "snippet": "ReadableStream text(), json(), bytes(), blob(), WebSocket client compression with `permessage-deflate`, `bun pm version`, reduced memory usage for large `fetch()` and `S3` uploads, faster `napi_create",
+         "title": "Blog | Bun",
+         "url": "https://bun.sh/blog"
+        },
+        {
+         "type": "text_result",
+         "domain": "bun.sh",
+         "ref_id": "turn0search4",
+         "snippet": "runtime | version | install time | peak RAM ... v1.4.3 Latest release · October 2026 ... This release also adds Bun.FetchSession, experimental Bun.ModuleGraph and",
+         "title": "Bun — A fast all-in-one JavaScript runtime",
+         "url": "https://bun.sh/"
+        },
+        {
+         "type": "text_result",
+         "domain": "bun.sh",
+         "ref_id": "turn0search5",
+         "snippet": "## `bun check`: a TypeScript type checker built into Bun#",
+         "title": "Bun v1.4.3 | Bun Blog",
+         "url": "https://bun.sh/blog/bun-v1.4.3"
+        },
+        {
+         "type": "text_result",
+         "domain": "bun.sh",
+         "ref_id": "turn0search6",
+         "snippet": "Bun 1.3 is our biggest release yet. ... * Node.js version: Bun now reports as Node.js v24.3.0 instead of v22.6.0 (affects `process.version`, `process.versions.node`, and N-API",
+         "title": "Bun 1.3 | Bun Blog",
+         "url": "https://bun.sh/blog/release-notes/bun-v1.3.0"
+        },
+        {
+         "type": "text_result",
+         "domain": "bun.sh",
+         "ref_id": "turn0search7",
+         "snippet": "> In the next version of Bun & Safari",
+         "title": "Bun v1.2.22 | Bun Blog",
+         "url": "https://bun.sh/blog/release-notes/bun-v1.2.22"
+        },
+        {
+         "type": "text_result",
+         "domain": "bun.sh",
+         "ref_id": "turn0search8",
+         "snippet": "This release fixes 141 issues (addressing 429 👍) and includes many reliability improvements throughout the runtime, the bundler, and the dev server. ... > In",
+         "title": "Bun v1.2.20 | Bun Blog",
+         "url": "https://bun.sh/blog/release-notes/bun-v1.2.20"
+        },
+        {
+         "type": "text_result",
+         "domain": "bun.sh",
+         "ref_id": "turn0search9",
+         "snippet": "* `v1.0.0` - Bun's first stable release!",
+         "title": "Bun v1.0.3 | Bun Blog",
+         "url": "https://bun.sh/blog/release-notes/bun-v1.0.3"
+        },
+        {
+         "type": "text_result",
+         "domain": "bun.sh",
+         "ref_id": "turn0search10",
+         "snippet": "# Get the current Bun version",
+         "title": "Get the current Bun version | Bun Guides",
+         "url": "https://bun.sh/guides/util/version"
+        },
+        {
+         "type": "text_result",
+         "domain": "bun.sh",
+         "ref_id": "turn0search11",
+         "snippet": "v1.4.3 Latest release · October 2026 ... This release also adds Bun.FetchSession, experimental Bun.ModuleGraph and --disallow-code-generation-from-strings, cuts idle server CPU by 67–89%, and upgrades",
+         "title": "Bun — A fast all-in-one JavaScript runtime",
+         "url": "https://bun.sh/?trk=public_post_comment-text"
+        }
+       ]
+      },
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "completedAtMs": 1791803592680
+     }
+    },
+    {
+     "method": "thread/tokenUsage/updated",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "tokenUsage": {
+       "total": {
+        "totalTokens": 32305,
+        "inputTokens": 32181,
+        "cachedInputTokens": 28032,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 124,
+        "reasoningOutputTokens": 0
+       },
+       "last": {
+        "totalTokens": 16193,
+        "inputTokens": 16135,
+        "cachedInputTokens": 15872,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 58,
+        "reasoningOutputTokens": 0
+       },
+       "modelContextWindow": 475000
+      }
+     }
+    },
+    {
+     "method": "item/started",
+     "params": {
+      "item": {
+       "type": "agentMessage",
+       "id": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+       "text": "",
+       "phase": "final_answer",
+       "memoryCitation": null,
+       "delivery": null,
+       "questions": null
+      },
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "startedAtMs": 1791803595288
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": "The"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": " current"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": " stable"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": " Bun"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": " release"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": " is"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": " **"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": "v"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": "1"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": "."
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": "4"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": "."
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": "3"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": "**,"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": " released"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": " October"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": " "
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": "10"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": ","
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": " "
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": "202"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": "6"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": ","
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": " according"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": " to"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": " ["
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": "B"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": "un"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": "’s"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": " official"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": " release"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": " notes"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": "]("
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": "https"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": "://"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": "bun"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": ".sh"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": "/blog"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": "/b"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": "un"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": "-v"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": "1"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": "."
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": "4"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": "."
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": "3"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "itemId": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+      "delta": ")."
+     }
+    },
+    {
+     "method": "item/completed",
+     "params": {
+      "item": {
+       "type": "agentMessage",
+       "id": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+       "text": "The current stable Bun release is **v1.4.3**, released October 10, 2026, according to [Bun’s official release notes](https://bun.sh/blog/bun-v1.4.3).",
+       "phase": "final_answer",
+       "memoryCitation": null,
+       "delivery": null,
+       "questions": null
+      },
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "completedAtMs": 1791803596247
+     }
+    },
+    {
+     "method": "thread/tokenUsage/updated",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+      "tokenUsage": {
+       "total": {
+        "totalTokens": 52489,
+        "inputTokens": 52314,
+        "cachedInputTokens": 44032,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 175,
+        "reasoningOutputTokens": 0
+       },
+       "last": {
+        "totalTokens": 20184,
+        "inputTokens": 20133,
+        "cachedInputTokens": 16000,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 51,
+        "reasoningOutputTokens": 0
+       },
+       "modelContextWindow": 475000
+      }
+     }
+    },
+    {
+     "method": "thread/status/changed",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "status": {
+       "type": "idle"
+      }
+     }
+    },
+    {
+     "method": "turn/completed",
+     "params": {
+      "threadId": "01a12fd0-b6a6-7eb1-97ea-f22dc08ec21b",
+      "turn": {
+       "id": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+       "rootTurnId": "01a12fd0-c40f-7c81-b8f7-75c5b686b858",
+       "items": [
+        {
+         "type": "agentMessage",
+         "id": "msg_0868f6aee3519572016accc0cb2cb487d0a185d321e00cbfdf",
+         "text": "The current stable Bun release is **v1.4.3**, released October 10, 2026, according to [Bun’s official release notes](https://bun.sh/blog/bun-v1.4.3).",
+         "phase": "final_answer",
+         "memoryCitation": null,
+         "delivery": null,
+         "questions": null
+        }
+       ],
+       "itemsView": "summary",
+       "status": "completed",
+       "error": null,
+       "startedAt": 1791803573,
+       "completedAt": 1791803596,
+       "durationMs": 23025
+      }
+     }
+    }
+   ],
+   "outcome": "completed"
+  }
+ ]
+}

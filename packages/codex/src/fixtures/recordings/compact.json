@@ -1,0 +1,981 @@
+{
+ "scenario": "compact",
+ "codexVersion": "codex-cli 0.162.1",
+ "model": "gpt-6.1-sol",
+ "turns": [
+  {
+   "turn": {
+    "prompt": "Read README.md with a shell command and summarize it in one sentence."
+   },
+   "notifications": [
+    {
+     "method": "thread/started",
+     "params": {
+      "thread": {
+       "id": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+       "environments": [
+        {
+         "environmentId": "local",
+         "cwd": "/workspace",
+         "runtimeWorkspaceRoots": [
+          "/workspace"
+         ]
+        }
+       ],
+       "extra": null,
+       "sessionId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+       "forkedFromId": null,
+       "parentThreadId": null,
+       "preview": "",
+       "ephemeral": false,
+       "section": null,
+       "sectionEnteredAt": null,
+       "projectId": null,
+       "historyMode": "paginated",
+       "modelProvider": "openai",
+       "model": "gpt-6.1-sol",
+       "reasoningEffort": null,
+       "createdAt": 1791803862,
+       "updatedAt": 1791803862,
+       "recencyAt": 1791803862,
+       "status": {
+        "type": "idle"
+       },
+       "path": "/private/codex-home/sessions/2026/10/12/rollout-2026-10-12T19-17-42-01a12fd5-23f9-7531-9233-f49f652e29cd.jsonl",
+       "cwd": "/workspace",
+       "cliVersion": "0.162.1",
+       "originator": "superone-node",
+       "source": "vscode",
+       "canAcceptDirectInput": true,
+       "threadSource": null,
+       "agentNickname": null,
+       "agentRole": null,
+       "gitInfo": null,
+       "name": null,
+       "daybreakEnabled": null,
+       "turns": []
+      }
+     }
+    },
+    {
+     "method": "thread/settings/updated",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "threadSettings": {
+       "disabledPluginIds": [],
+       "cwd": "/workspace",
+       "approvalPolicy": "never",
+       "approvalsReviewer": "user",
+       "sandboxPolicy": {
+        "type": "workspaceWrite",
+        "writableRoots": [],
+        "networkAccess": false,
+        "excludeTmpdirEnvVar": false,
+        "excludeSlashTmp": false
+       },
+       "activePermissionProfile": null,
+       "model": "gpt-6.1-sol",
+       "modelProvider": "openai",
+       "serviceTier": null,
+       "effort": "medium",
+       "summary": "concise",
+       "collaborationMode": {
+        "mode": "default",
+        "settings": {
+         "model": "gpt-6.1-sol",
+         "reasoning_effort": "medium",
+         "developer_instructions": null
+        }
+       },
+       "multiAgentMode": "explicitRequestOnly",
+       "personality": null
+      }
+     }
+    },
+    {
+     "method": "thread/status/changed",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "status": {
+       "type": "active",
+       "activeFlags": []
+      }
+     }
+    },
+    {
+     "method": "turn/started",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turn": {
+       "id": "01a12fd5-2fc8-7e72-9ac7-83cef6f42e45",
+       "rootTurnId": "01a12fd5-2fc8-7e72-9ac7-83cef6f42e45",
+       "items": [],
+       "itemsView": "notLoaded",
+       "status": "inProgress",
+       "error": null,
+       "startedAt": 1791803862,
+       "completedAt": null,
+       "durationMs": null
+      }
+     }
+    },
+    {
+     "method": "item/started",
+     "params": {
+      "item": {
+       "type": "userMessage",
+       "id": "01a12fd5-47ef-7d80-b7e3-bf066ae636b8",
+       "clientId": null,
+       "content": [
+        {
+         "type": "text",
+         "text": "Read README.md with a shell command and summarize it in one sentence.",
+         "text_elements": []
+        }
+       ]
+      },
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-2fc8-7e72-9ac7-83cef6f42e45",
+      "startedAtMs": 1791803869168
+     }
+    },
+    {
+     "method": "item/completed",
+     "params": {
+      "item": {
+       "type": "userMessage",
+       "id": "01a12fd5-47ef-7d80-b7e3-bf066ae636b8",
+       "clientId": null,
+       "content": [
+        {
+         "type": "text",
+         "text": "Read README.md with a shell command and summarize it in one sentence.",
+         "text_elements": []
+        }
+       ]
+      },
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-2fc8-7e72-9ac7-83cef6f42e45",
+      "completedAtMs": 1791803869168
+     }
+    },
+    {
+     "method": "item/started",
+     "params": {
+      "item": {
+       "type": "commandExecution",
+       "id": "exec-7961e023-86d0-4559-a8f8-c99921f15725",
+       "pluginId": null,
+       "scriptPath": null,
+       "command": "/bin/zsh -lc 'cat README.md'",
+       "cwd": "/workspace",
+       "processId": "93469",
+       "source": "unifiedExecStartup",
+       "status": "inProgress",
+       "commandActions": [
+        {
+         "type": "read",
+         "command": "cat README.md",
+         "name": "README.md",
+         "path": "/workspace/README.md"
+        }
+       ],
+       "aggregatedOutput": null,
+       "exitCode": null,
+       "durationMs": null
+      },
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-2fc8-7e72-9ac7-83cef6f42e45",
+      "startedAtMs": 1791803874583
+     }
+    },
+    {
+     "method": "item/completed",
+     "params": {
+      "item": {
+       "type": "commandExecution",
+       "id": "exec-7961e023-86d0-4559-a8f8-c99921f15725",
+       "pluginId": null,
+       "scriptPath": null,
+       "command": "/bin/zsh -lc 'cat README.md'",
+       "cwd": "/workspace",
+       "processId": "93469",
+       "source": "unifiedExecStartup",
+       "status": "completed",
+       "commandActions": [
+        {
+         "type": "read",
+         "command": "cat README.md",
+         "name": "README.md",
+         "path": "/workspace/README.md"
+        }
+       ],
+       "aggregatedOutput": "# Recording fixture\n\nA tiny project used to record Codex turns.\nTODO: nothing important.\n",
+       "exitCode": 0,
+       "durationMs": 0
+      },
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-2fc8-7e72-9ac7-83cef6f42e45",
+      "completedAtMs": 1791803874583
+     }
+    },
+    {
+     "method": "thread/tokenUsage/updated",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-2fc8-7e72-9ac7-83cef6f42e45",
+      "tokenUsage": {
+       "total": {
+        "totalTokens": 16105,
+        "inputTokens": 16033,
+        "cachedInputTokens": 12160,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 72,
+        "reasoningOutputTokens": 0
+       },
+       "last": {
+        "totalTokens": 16105,
+        "inputTokens": 16033,
+        "cachedInputTokens": 12160,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 72,
+        "reasoningOutputTokens": 0
+       },
+       "modelContextWindow": 475000
+      }
+     }
+    },
+    {
+     "method": "item/started",
+     "params": {
+      "item": {
+       "type": "agentMessage",
+       "id": "msg_0872dcbe49255516016accc1e49c78819aa70cbec1e02e3e5b",
+       "text": "",
+       "phase": "final_answer",
+       "memoryCitation": null,
+       "delivery": null,
+       "questions": null
+      },
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-2fc8-7e72-9ac7-83cef6f42e45",
+      "startedAtMs": 1791803876764
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-2fc8-7e72-9ac7-83cef6f42e45",
+      "itemId": "msg_0872dcbe49255516016accc1e49c78819aa70cbec1e02e3e5b",
+      "delta": "This"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-2fc8-7e72-9ac7-83cef6f42e45",
+      "itemId": "msg_0872dcbe49255516016accc1e49c78819aa70cbec1e02e3e5b",
+      "delta": " is"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-2fc8-7e72-9ac7-83cef6f42e45",
+      "itemId": "msg_0872dcbe49255516016accc1e49c78819aa70cbec1e02e3e5b",
+      "delta": " a"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-2fc8-7e72-9ac7-83cef6f42e45",
+      "itemId": "msg_0872dcbe49255516016accc1e49c78819aa70cbec1e02e3e5b",
+      "delta": " tiny"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-2fc8-7e72-9ac7-83cef6f42e45",
+      "itemId": "msg_0872dcbe49255516016accc1e49c78819aa70cbec1e02e3e5b",
+      "delta": " fixture"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-2fc8-7e72-9ac7-83cef6f42e45",
+      "itemId": "msg_0872dcbe49255516016accc1e49c78819aa70cbec1e02e3e5b",
+      "delta": " project"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-2fc8-7e72-9ac7-83cef6f42e45",
+      "itemId": "msg_0872dcbe49255516016accc1e49c78819aa70cbec1e02e3e5b",
+      "delta": " used"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-2fc8-7e72-9ac7-83cef6f42e45",
+      "itemId": "msg_0872dcbe49255516016accc1e49c78819aa70cbec1e02e3e5b",
+      "delta": " to"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-2fc8-7e72-9ac7-83cef6f42e45",
+      "itemId": "msg_0872dcbe49255516016accc1e49c78819aa70cbec1e02e3e5b",
+      "delta": " record"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-2fc8-7e72-9ac7-83cef6f42e45",
+      "itemId": "msg_0872dcbe49255516016accc1e49c78819aa70cbec1e02e3e5b",
+      "delta": " Cod"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-2fc8-7e72-9ac7-83cef6f42e45",
+      "itemId": "msg_0872dcbe49255516016accc1e49c78819aa70cbec1e02e3e5b",
+      "delta": "ex"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-2fc8-7e72-9ac7-83cef6f42e45",
+      "itemId": "msg_0872dcbe49255516016accc1e49c78819aa70cbec1e02e3e5b",
+      "delta": " turns"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-2fc8-7e72-9ac7-83cef6f42e45",
+      "itemId": "msg_0872dcbe49255516016accc1e49c78819aa70cbec1e02e3e5b",
+      "delta": ","
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-2fc8-7e72-9ac7-83cef6f42e45",
+      "itemId": "msg_0872dcbe49255516016accc1e49c78819aa70cbec1e02e3e5b",
+      "delta": " with"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-2fc8-7e72-9ac7-83cef6f42e45",
+      "itemId": "msg_0872dcbe49255516016accc1e49c78819aa70cbec1e02e3e5b",
+      "delta": " no"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-2fc8-7e72-9ac7-83cef6f42e45",
+      "itemId": "msg_0872dcbe49255516016accc1e49c78819aa70cbec1e02e3e5b",
+      "delta": " important"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-2fc8-7e72-9ac7-83cef6f42e45",
+      "itemId": "msg_0872dcbe49255516016accc1e49c78819aa70cbec1e02e3e5b",
+      "delta": " tasks"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-2fc8-7e72-9ac7-83cef6f42e45",
+      "itemId": "msg_0872dcbe49255516016accc1e49c78819aa70cbec1e02e3e5b",
+      "delta": " pending"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-2fc8-7e72-9ac7-83cef6f42e45",
+      "itemId": "msg_0872dcbe49255516016accc1e49c78819aa70cbec1e02e3e5b",
+      "delta": "."
+     }
+    },
+    {
+     "method": "item/completed",
+     "params": {
+      "item": {
+       "type": "agentMessage",
+       "id": "msg_0872dcbe49255516016accc1e49c78819aa70cbec1e02e3e5b",
+       "text": "This is a tiny fixture project used to record Codex turns, with no important tasks pending.",
+       "phase": "final_answer",
+       "memoryCitation": null,
+       "delivery": null,
+       "questions": null
+      },
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-2fc8-7e72-9ac7-83cef6f42e45",
+      "completedAtMs": 1791803877542
+     }
+    },
+    {
+     "method": "thread/tokenUsage/updated",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-2fc8-7e72-9ac7-83cef6f42e45",
+      "tokenUsage": {
+       "total": {
+        "totalTokens": 32310,
+        "inputTokens": 32215,
+        "cachedInputTokens": 24320,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 95,
+        "reasoningOutputTokens": 0
+       },
+       "last": {
+        "totalTokens": 16205,
+        "inputTokens": 16182,
+        "cachedInputTokens": 12160,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 23,
+        "reasoningOutputTokens": 0
+       },
+       "modelContextWindow": 475000
+      }
+     }
+    },
+    {
+     "method": "thread/status/changed",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "status": {
+       "type": "idle"
+      }
+     }
+    },
+    {
+     "method": "turn/completed",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turn": {
+       "id": "01a12fd5-2fc8-7e72-9ac7-83cef6f42e45",
+       "rootTurnId": "01a12fd5-2fc8-7e72-9ac7-83cef6f42e45",
+       "items": [
+        {
+         "type": "agentMessage",
+         "id": "msg_0872dcbe49255516016accc1e49c78819aa70cbec1e02e3e5b",
+         "text": "This is a tiny fixture project used to record Codex turns, with no important tasks pending.",
+         "phase": "final_answer",
+         "memoryCitation": null,
+         "delivery": null,
+         "questions": null
+        }
+       ],
+       "itemsView": "summary",
+       "status": "completed",
+       "error": null,
+       "startedAt": 1791803862,
+       "completedAt": 1791803877,
+       "durationMs": 14650
+      }
+     }
+    }
+   ],
+   "outcome": "completed"
+  },
+  {
+   "turn": {
+    "turnKind": "compact"
+   },
+   "notifications": [
+    {
+     "method": "thread/status/changed",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "status": {
+       "type": "active",
+       "activeFlags": []
+      }
+     }
+    },
+    {
+     "method": "turn/started",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turn": {
+       "id": "01a12fd5-6907-7a41-9054-e28be87dec88",
+       "rootTurnId": "01a12fd5-6907-7a41-9054-e28be87dec88",
+       "items": [],
+       "itemsView": "notLoaded",
+       "status": "inProgress",
+       "error": null,
+       "startedAt": 1791803877,
+       "completedAt": null,
+       "durationMs": null
+      }
+     }
+    },
+    {
+     "method": "item/started",
+     "params": {
+      "item": {
+       "type": "contextCompaction",
+       "id": "01a12fd5-6910-7361-ab4e-8ea966890ecb"
+      },
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-6907-7a41-9054-e28be87dec88",
+      "startedAtMs": 1791803877648
+     }
+    },
+    {
+     "method": "thread/tokenUsage/updated",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-6907-7a41-9054-e28be87dec88",
+      "tokenUsage": {
+       "total": {
+        "totalTokens": 32310,
+        "inputTokens": 32215,
+        "cachedInputTokens": 24320,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 95,
+        "reasoningOutputTokens": 0
+       },
+       "last": {
+        "totalTokens": 10159,
+        "inputTokens": 0,
+        "cachedInputTokens": 0,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 0,
+        "reasoningOutputTokens": 0
+       },
+       "modelContextWindow": 475000
+      }
+     }
+    },
+    {
+     "method": "item/completed",
+     "params": {
+      "item": {
+       "type": "contextCompaction",
+       "id": "01a12fd5-6910-7361-ab4e-8ea966890ecb"
+      },
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-6907-7a41-9054-e28be87dec88",
+      "completedAtMs": 1791803886926
+     }
+    },
+    {
+     "method": "thread/status/changed",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "status": {
+       "type": "idle"
+      }
+     }
+    },
+    {
+     "method": "turn/completed",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turn": {
+       "id": "01a12fd5-6907-7a41-9054-e28be87dec88",
+       "rootTurnId": "01a12fd5-6907-7a41-9054-e28be87dec88",
+       "items": [],
+       "itemsView": "notLoaded",
+       "status": "completed",
+       "error": null,
+       "startedAt": 1791803877,
+       "completedAt": 1791803886,
+       "durationMs": 9289
+      }
+     }
+    }
+   ],
+   "outcome": "completed"
+  },
+  {
+   "turn": {
+    "prompt": "In one sentence, what did README.md say?"
+   },
+   "notifications": [
+    {
+     "method": "thread/status/changed",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "status": {
+       "type": "active",
+       "activeFlags": []
+      }
+     }
+    },
+    {
+     "method": "turn/started",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turn": {
+       "id": "01a12fd5-8d54-7a53-ac00-3d7ed425d1f0",
+       "rootTurnId": "01a12fd5-8d54-7a53-ac00-3d7ed425d1f0",
+       "items": [],
+       "itemsView": "notLoaded",
+       "status": "inProgress",
+       "error": null,
+       "startedAt": 1791803886,
+       "completedAt": null,
+       "durationMs": null
+      }
+     }
+    },
+    {
+     "method": "item/started",
+     "params": {
+      "item": {
+       "type": "userMessage",
+       "id": "01a12fd5-8d70-7950-8805-5ef20a48d33a",
+       "clientId": null,
+       "content": [
+        {
+         "type": "text",
+         "text": "In one sentence, what did README.md say?",
+         "text_elements": []
+        }
+       ]
+      },
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-8d54-7a53-ac00-3d7ed425d1f0",
+      "startedAtMs": 1791803886960
+     }
+    },
+    {
+     "method": "item/completed",
+     "params": {
+      "item": {
+       "type": "userMessage",
+       "id": "01a12fd5-8d70-7950-8805-5ef20a48d33a",
+       "clientId": null,
+       "content": [
+        {
+         "type": "text",
+         "text": "In one sentence, what did README.md say?",
+         "text_elements": []
+        }
+       ]
+      },
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-8d54-7a53-ac00-3d7ed425d1f0",
+      "completedAtMs": 1791803886960
+     }
+    },
+    {
+     "method": "item/started",
+     "params": {
+      "item": {
+       "type": "agentMessage",
+       "id": "msg_0872dcbe49255516016accc1f300f4819aaeed0bc4c9f13298",
+       "text": "",
+       "phase": "final_answer",
+       "memoryCitation": null,
+       "delivery": null,
+       "questions": null
+      },
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-8d54-7a53-ac00-3d7ed425d1f0",
+      "startedAtMs": 1791803891146
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-8d54-7a53-ac00-3d7ed425d1f0",
+      "itemId": "msg_0872dcbe49255516016accc1f300f4819aaeed0bc4c9f13298",
+      "delta": "README"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-8d54-7a53-ac00-3d7ed425d1f0",
+      "itemId": "msg_0872dcbe49255516016accc1f300f4819aaeed0bc4c9f13298",
+      "delta": ".md"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-8d54-7a53-ac00-3d7ed425d1f0",
+      "itemId": "msg_0872dcbe49255516016accc1f300f4819aaeed0bc4c9f13298",
+      "delta": " describes"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-8d54-7a53-ac00-3d7ed425d1f0",
+      "itemId": "msg_0872dcbe49255516016accc1f300f4819aaeed0bc4c9f13298",
+      "delta": " a"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-8d54-7a53-ac00-3d7ed425d1f0",
+      "itemId": "msg_0872dcbe49255516016accc1f300f4819aaeed0bc4c9f13298",
+      "delta": " tiny"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-8d54-7a53-ac00-3d7ed425d1f0",
+      "itemId": "msg_0872dcbe49255516016accc1f300f4819aaeed0bc4c9f13298",
+      "delta": " project"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-8d54-7a53-ac00-3d7ed425d1f0",
+      "itemId": "msg_0872dcbe49255516016accc1f300f4819aaeed0bc4c9f13298",
+      "delta": " used"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-8d54-7a53-ac00-3d7ed425d1f0",
+      "itemId": "msg_0872dcbe49255516016accc1f300f4819aaeed0bc4c9f13298",
+      "delta": " to"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-8d54-7a53-ac00-3d7ed425d1f0",
+      "itemId": "msg_0872dcbe49255516016accc1f300f4819aaeed0bc4c9f13298",
+      "delta": " record"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-8d54-7a53-ac00-3d7ed425d1f0",
+      "itemId": "msg_0872dcbe49255516016accc1f300f4819aaeed0bc4c9f13298",
+      "delta": " Cod"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-8d54-7a53-ac00-3d7ed425d1f0",
+      "itemId": "msg_0872dcbe49255516016accc1f300f4819aaeed0bc4c9f13298",
+      "delta": "ex"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-8d54-7a53-ac00-3d7ed425d1f0",
+      "itemId": "msg_0872dcbe49255516016accc1f300f4819aaeed0bc4c9f13298",
+      "delta": " turns"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-8d54-7a53-ac00-3d7ed425d1f0",
+      "itemId": "msg_0872dcbe49255516016accc1f300f4819aaeed0bc4c9f13298",
+      "delta": ","
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-8d54-7a53-ac00-3d7ed425d1f0",
+      "itemId": "msg_0872dcbe49255516016accc1f300f4819aaeed0bc4c9f13298",
+      "delta": " with"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-8d54-7a53-ac00-3d7ed425d1f0",
+      "itemId": "msg_0872dcbe49255516016accc1f300f4819aaeed0bc4c9f13298",
+      "delta": " nothing"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-8d54-7a53-ac00-3d7ed425d1f0",
+      "itemId": "msg_0872dcbe49255516016accc1f300f4819aaeed0bc4c9f13298",
+      "delta": " important"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-8d54-7a53-ac00-3d7ed425d1f0",
+      "itemId": "msg_0872dcbe49255516016accc1f300f4819aaeed0bc4c9f13298",
+      "delta": " left"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-8d54-7a53-ac00-3d7ed425d1f0",
+      "itemId": "msg_0872dcbe49255516016accc1f300f4819aaeed0bc4c9f13298",
+      "delta": " to"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-8d54-7a53-ac00-3d7ed425d1f0",
+      "itemId": "msg_0872dcbe49255516016accc1f300f4819aaeed0bc4c9f13298",
+      "delta": " do"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-8d54-7a53-ac00-3d7ed425d1f0",
+      "itemId": "msg_0872dcbe49255516016accc1f300f4819aaeed0bc4c9f13298",
+      "delta": "."
+     }
+    },
+    {
+     "method": "item/completed",
+     "params": {
+      "item": {
+       "type": "agentMessage",
+       "id": "msg_0872dcbe49255516016accc1f300f4819aaeed0bc4c9f13298",
+       "text": "README.md describes a tiny project used to record Codex turns, with nothing important left to do.",
+       "phase": "final_answer",
+       "memoryCitation": null,
+       "delivery": null,
+       "questions": null
+      },
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-8d54-7a53-ac00-3d7ed425d1f0",
+      "completedAtMs": 1791803891609
+     }
+    },
+    {
+     "method": "thread/tokenUsage/updated",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turnId": "01a12fd5-8d54-7a53-ac00-3d7ed425d1f0",
+      "tokenUsage": {
+       "total": {
+        "totalTokens": 50379,
+        "inputTokens": 50260,
+        "cachedInputTokens": 39168,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 119,
+        "reasoningOutputTokens": 0
+       },
+       "last": {
+        "totalTokens": 18069,
+        "inputTokens": 18045,
+        "cachedInputTokens": 14848,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 24,
+        "reasoningOutputTokens": 0
+       },
+       "modelContextWindow": 475000
+      }
+     }
+    },
+    {
+     "method": "thread/status/changed",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "status": {
+       "type": "idle"
+      }
+     }
+    },
+    {
+     "method": "turn/completed",
+     "params": {
+      "threadId": "01a12fd5-23f9-7531-9233-f49f652e29cd",
+      "turn": {
+       "id": "01a12fd5-8d54-7a53-ac00-3d7ed425d1f0",
+       "rootTurnId": "01a12fd5-8d54-7a53-ac00-3d7ed425d1f0",
+       "items": [
+        {
+         "type": "agentMessage",
+         "id": "msg_0872dcbe49255516016accc1f300f4819aaeed0bc4c9f13298",
+         "text": "README.md describes a tiny project used to record Codex turns, with nothing important left to do.",
+         "phase": "final_answer",
+         "memoryCitation": null,
+         "delivery": null,
+         "questions": null
+        }
+       ],
+       "itemsView": "summary",
+       "status": "completed",
+       "error": null,
+       "startedAt": 1791803886,
+       "completedAt": 1791803891,
+       "durationMs": 4748
+      }
+     }
+    }
+   ],
+   "outcome": "completed"
+  }
+ ]
+}

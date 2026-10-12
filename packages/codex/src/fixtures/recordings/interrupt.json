@@ -1,0 +1,424 @@
+{
+ "scenario": "interrupt",
+ "codexVersion": "codex-cli 0.162.1",
+ "model": "gpt-6.1-sol",
+ "turns": [
+  {
+   "turn": {
+    "prompt": "Run the shell command `sleep 20 && echo done` and then report its output.",
+    "interruptAfterCommandMs": 1500
+   },
+   "notifications": [
+    {
+     "method": "thread/started",
+     "params": {
+      "thread": {
+       "id": "01a12fd6-b2a7-70e1-8ad4-00d172df49c0",
+       "environments": [
+        {
+         "environmentId": "local",
+         "cwd": "/workspace",
+         "runtimeWorkspaceRoots": [
+          "/workspace"
+         ]
+        }
+       ],
+       "extra": null,
+       "sessionId": "01a12fd6-b2a7-70e1-8ad4-00d172df49c0",
+       "forkedFromId": null,
+       "parentThreadId": null,
+       "preview": "",
+       "ephemeral": false,
+       "section": null,
+       "sectionEnteredAt": null,
+       "projectId": null,
+       "historyMode": "paginated",
+       "modelProvider": "openai",
+       "model": "gpt-6.1-sol",
+       "reasoningEffort": null,
+       "createdAt": 1791803967,
+       "updatedAt": 1791803967,
+       "recencyAt": 1791803967,
+       "status": {
+        "type": "idle"
+       },
+       "path": "/private/codex-home/sessions/2026/10/12/rollout-2026-10-12T19-19-27-01a12fd6-b2a7-70e1-8ad4-00d172df49c0.jsonl",
+       "cwd": "/workspace",
+       "cliVersion": "0.162.1",
+       "originator": "superone-node",
+       "source": "vscode",
+       "canAcceptDirectInput": true,
+       "threadSource": null,
+       "agentNickname": null,
+       "agentRole": null,
+       "gitInfo": null,
+       "name": null,
+       "daybreakEnabled": null,
+       "turns": []
+      }
+     }
+    },
+    {
+     "method": "thread/settings/updated",
+     "params": {
+      "threadId": "01a12fd6-b2a7-70e1-8ad4-00d172df49c0",
+      "threadSettings": {
+       "disabledPluginIds": [],
+       "cwd": "/workspace",
+       "approvalPolicy": "never",
+       "approvalsReviewer": "user",
+       "sandboxPolicy": {
+        "type": "workspaceWrite",
+        "writableRoots": [],
+        "networkAccess": false,
+        "excludeTmpdirEnvVar": false,
+        "excludeSlashTmp": false
+       },
+       "activePermissionProfile": null,
+       "model": "gpt-6.1-sol",
+       "modelProvider": "openai",
+       "serviceTier": null,
+       "effort": "medium",
+       "summary": "concise",
+       "collaborationMode": {
+        "mode": "default",
+        "settings": {
+         "model": "gpt-6.1-sol",
+         "reasoning_effort": "medium",
+         "developer_instructions": null
+        }
+       },
+       "multiAgentMode": "explicitRequestOnly",
+       "personality": null
+      }
+     }
+    },
+    {
+     "method": "thread/status/changed",
+     "params": {
+      "threadId": "01a12fd6-b2a7-70e1-8ad4-00d172df49c0",
+      "status": {
+       "type": "active",
+       "activeFlags": []
+      }
+     }
+    },
+    {
+     "method": "turn/started",
+     "params": {
+      "threadId": "01a12fd6-b2a7-70e1-8ad4-00d172df49c0",
+      "turn": {
+       "id": "01a12fd6-c659-71e0-b503-545289563669",
+       "rootTurnId": "01a12fd6-c659-71e0-b503-545289563669",
+       "items": [],
+       "itemsView": "notLoaded",
+       "status": "inProgress",
+       "error": null,
+       "startedAt": 1791803967,
+       "completedAt": null,
+       "durationMs": null
+      }
+     }
+    },
+    {
+     "method": "item/started",
+     "params": {
+      "item": {
+       "type": "userMessage",
+       "id": "01a12fd6-dbd6-72f0-9920-4973d1cbd692",
+       "clientId": null,
+       "content": [
+        {
+         "type": "text",
+         "text": "Run the shell command `sleep 20 && echo done` and then report its output.",
+         "text_elements": []
+        }
+       ]
+      },
+      "threadId": "01a12fd6-b2a7-70e1-8ad4-00d172df49c0",
+      "turnId": "01a12fd6-c659-71e0-b503-545289563669",
+      "startedAtMs": 1791803972567
+     }
+    },
+    {
+     "method": "item/completed",
+     "params": {
+      "item": {
+       "type": "userMessage",
+       "id": "01a12fd6-dbd6-72f0-9920-4973d1cbd692",
+       "clientId": null,
+       "content": [
+        {
+         "type": "text",
+         "text": "Run the shell command `sleep 20 && echo done` and then report its output.",
+         "text_elements": []
+        }
+       ]
+      },
+      "threadId": "01a12fd6-b2a7-70e1-8ad4-00d172df49c0",
+      "turnId": "01a12fd6-c659-71e0-b503-545289563669",
+      "completedAtMs": 1791803972567
+     }
+    },
+    {
+     "method": "thread/tokenUsage/updated",
+     "params": {
+      "threadId": "01a12fd6-b2a7-70e1-8ad4-00d172df49c0",
+      "turnId": "01a12fd6-c659-71e0-b503-545289563669",
+      "tokenUsage": {
+       "total": {
+        "totalTokens": 16110,
+        "inputTokens": 16059,
+        "cachedInputTokens": 12160,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 51,
+        "reasoningOutputTokens": 0
+       },
+       "last": {
+        "totalTokens": 16110,
+        "inputTokens": 16059,
+        "cachedInputTokens": 12160,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 51,
+        "reasoningOutputTokens": 0
+       },
+       "modelContextWindow": 475000
+      }
+     }
+    },
+    {
+     "method": "item/started",
+     "params": {
+      "item": {
+       "type": "agentMessage",
+       "id": "msg_0fe4473355b7a518016accc24d6f9087d0a2802bb9693b3a9d",
+       "text": "",
+       "phase": "commentary",
+       "memoryCitation": null,
+       "delivery": null,
+       "questions": null
+      },
+      "threadId": "01a12fd6-b2a7-70e1-8ad4-00d172df49c0",
+      "turnId": "01a12fd6-c659-71e0-b503-545289563669",
+      "startedAtMs": 1791803981622
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd6-b2a7-70e1-8ad4-00d172df49c0",
+      "turnId": "01a12fd6-c659-71e0-b503-545289563669",
+      "itemId": "msg_0fe4473355b7a518016accc24d6f9087d0a2802bb9693b3a9d",
+      "delta": "I"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd6-b2a7-70e1-8ad4-00d172df49c0",
+      "turnId": "01a12fd6-c659-71e0-b503-545289563669",
+      "itemId": "msg_0fe4473355b7a518016accc24d6f9087d0a2802bb9693b3a9d",
+      "delta": "’ll"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd6-b2a7-70e1-8ad4-00d172df49c0",
+      "turnId": "01a12fd6-c659-71e0-b503-545289563669",
+      "itemId": "msg_0fe4473355b7a518016accc24d6f9087d0a2802bb9693b3a9d",
+      "delta": " run"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd6-b2a7-70e1-8ad4-00d172df49c0",
+      "turnId": "01a12fd6-c659-71e0-b503-545289563669",
+      "itemId": "msg_0fe4473355b7a518016accc24d6f9087d0a2802bb9693b3a9d",
+      "delta": " the"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd6-b2a7-70e1-8ad4-00d172df49c0",
+      "turnId": "01a12fd6-c659-71e0-b503-545289563669",
+      "itemId": "msg_0fe4473355b7a518016accc24d6f9087d0a2802bb9693b3a9d",
+      "delta": " command"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd6-b2a7-70e1-8ad4-00d172df49c0",
+      "turnId": "01a12fd6-c659-71e0-b503-545289563669",
+      "itemId": "msg_0fe4473355b7a518016accc24d6f9087d0a2802bb9693b3a9d",
+      "delta": " and"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd6-b2a7-70e1-8ad4-00d172df49c0",
+      "turnId": "01a12fd6-c659-71e0-b503-545289563669",
+      "itemId": "msg_0fe4473355b7a518016accc24d6f9087d0a2802bb9693b3a9d",
+      "delta": " report"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd6-b2a7-70e1-8ad4-00d172df49c0",
+      "turnId": "01a12fd6-c659-71e0-b503-545289563669",
+      "itemId": "msg_0fe4473355b7a518016accc24d6f9087d0a2802bb9693b3a9d",
+      "delta": " its"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd6-b2a7-70e1-8ad4-00d172df49c0",
+      "turnId": "01a12fd6-c659-71e0-b503-545289563669",
+      "itemId": "msg_0fe4473355b7a518016accc24d6f9087d0a2802bb9693b3a9d",
+      "delta": " output"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd6-b2a7-70e1-8ad4-00d172df49c0",
+      "turnId": "01a12fd6-c659-71e0-b503-545289563669",
+      "itemId": "msg_0fe4473355b7a518016accc24d6f9087d0a2802bb9693b3a9d",
+      "delta": " when"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd6-b2a7-70e1-8ad4-00d172df49c0",
+      "turnId": "01a12fd6-c659-71e0-b503-545289563669",
+      "itemId": "msg_0fe4473355b7a518016accc24d6f9087d0a2802bb9693b3a9d",
+      "delta": " it"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd6-b2a7-70e1-8ad4-00d172df49c0",
+      "turnId": "01a12fd6-c659-71e0-b503-545289563669",
+      "itemId": "msg_0fe4473355b7a518016accc24d6f9087d0a2802bb9693b3a9d",
+      "delta": " finishes"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd6-b2a7-70e1-8ad4-00d172df49c0",
+      "turnId": "01a12fd6-c659-71e0-b503-545289563669",
+      "itemId": "msg_0fe4473355b7a518016accc24d6f9087d0a2802bb9693b3a9d",
+      "delta": ".\n"
+     }
+    },
+    {
+     "method": "item/completed",
+     "params": {
+      "item": {
+       "type": "agentMessage",
+       "id": "msg_0fe4473355b7a518016accc24d6f9087d0a2802bb9693b3a9d",
+       "text": "I’ll run the command and report its output when it finishes.\n",
+       "phase": "commentary",
+       "memoryCitation": null,
+       "delivery": null,
+       "questions": null
+      },
+      "threadId": "01a12fd6-b2a7-70e1-8ad4-00d172df49c0",
+      "turnId": "01a12fd6-c659-71e0-b503-545289563669",
+      "completedAtMs": 1791803982667
+     }
+    },
+    {
+     "method": "item/started",
+     "params": {
+      "item": {
+       "type": "commandExecution",
+       "id": "exec-5406315e-53c2-4783-a365-1df8abd3c06d",
+       "pluginId": null,
+       "scriptPath": null,
+       "command": "/bin/zsh -lc 'sleep 20 && echo done'",
+       "cwd": "/workspace",
+       "processId": "8852",
+       "source": "unifiedExecStartup",
+       "status": "inProgress",
+       "commandActions": [
+        {
+         "type": "unknown",
+         "command": "sleep 20 && echo done"
+        }
+       ],
+       "aggregatedOutput": null,
+       "exitCode": null,
+       "durationMs": null
+      },
+      "threadId": "01a12fd6-b2a7-70e1-8ad4-00d172df49c0",
+      "turnId": "01a12fd6-c659-71e0-b503-545289563669",
+      "startedAtMs": 1791803983786
+     }
+    },
+    {
+     "method": "thread/tokenUsage/updated",
+     "params": {
+      "threadId": "01a12fd6-b2a7-70e1-8ad4-00d172df49c0",
+      "turnId": "01a12fd6-c659-71e0-b503-545289563669",
+      "tokenUsage": {
+       "total": {
+        "totalTokens": 32301,
+        "inputTokens": 32192,
+        "cachedInputTokens": 28032,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 109,
+        "reasoningOutputTokens": 0
+       },
+       "last": {
+        "totalTokens": 16191,
+        "inputTokens": 16133,
+        "cachedInputTokens": 15872,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 58,
+        "reasoningOutputTokens": 0
+       },
+       "modelContextWindow": 475000
+      }
+     }
+    },
+    {
+     "method": "thread/status/changed",
+     "params": {
+      "threadId": "01a12fd6-b2a7-70e1-8ad4-00d172df49c0",
+      "status": {
+       "type": "idle"
+      }
+     }
+    },
+    {
+     "method": "turn/completed",
+     "params": {
+      "threadId": "01a12fd6-b2a7-70e1-8ad4-00d172df49c0",
+      "turn": {
+       "id": "01a12fd6-c659-71e0-b503-545289563669",
+       "rootTurnId": "01a12fd6-c659-71e0-b503-545289563669",
+       "items": [],
+       "itemsView": "notLoaded",
+       "status": "interrupted",
+       "error": null,
+       "startedAt": 1791803967,
+       "completedAt": 1791803985,
+       "durationMs": 18227
+      }
+     }
+    }
+   ],
+   "outcome": "Codex turn interrupted"
+  }
+ ]
+}

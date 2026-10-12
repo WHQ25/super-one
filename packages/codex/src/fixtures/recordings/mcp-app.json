@@ -1,0 +1,391 @@
+{
+ "scenario": "mcp-app",
+ "codexVersion": "codex-cli 0.162.1",
+ "model": "gpt-6.1-sol",
+ "turns": [
+  {
+   "turn": {
+    "prompt": "Call fixture_list_items with page 1 exactly once. Do not call any other tool. Then reply with the number of items returned."
+   },
+   "notifications": [
+    {
+     "method": "thread/started",
+     "params": {
+      "thread": {
+       "id": "01a12fd0-6cf8-7183-949e-21674286a3a3",
+       "environments": [
+        {
+         "environmentId": "local",
+         "cwd": "/workspace",
+         "runtimeWorkspaceRoots": [
+          "/workspace"
+         ]
+        }
+       ],
+       "extra": null,
+       "sessionId": "01a12fd0-6cf8-7183-949e-21674286a3a3",
+       "forkedFromId": null,
+       "parentThreadId": null,
+       "preview": "",
+       "ephemeral": false,
+       "section": null,
+       "sectionEnteredAt": null,
+       "projectId": null,
+       "historyMode": "paginated",
+       "modelProvider": "openai",
+       "model": "gpt-6.1-sol",
+       "reasoningEffort": null,
+       "createdAt": 1791803553,
+       "updatedAt": 1791803553,
+       "recencyAt": 1791803553,
+       "status": {
+        "type": "idle"
+       },
+       "path": "/private/codex-home/sessions/2026/10/12/rollout-2026-10-12T19-12-33-01a12fd0-6cf8-7183-949e-21674286a3a3.jsonl",
+       "cwd": "/workspace",
+       "cliVersion": "0.162.1",
+       "originator": "superone-node",
+       "source": "vscode",
+       "canAcceptDirectInput": true,
+       "threadSource": null,
+       "agentNickname": null,
+       "agentRole": null,
+       "gitInfo": null,
+       "name": null,
+       "daybreakEnabled": null,
+       "turns": []
+      }
+     }
+    },
+    {
+     "method": "mcpServer/startupStatus/updated",
+     "params": {
+      "threadId": "01a12fd0-6cf8-7183-949e-21674286a3a3",
+      "name": "fixture",
+      "status": "starting",
+      "error": null,
+      "failureReason": null
+     }
+    },
+    {
+     "method": "thread/settings/updated",
+     "params": {
+      "threadId": "01a12fd0-6cf8-7183-949e-21674286a3a3",
+      "threadSettings": {
+       "disabledPluginIds": [],
+       "cwd": "/workspace",
+       "approvalPolicy": "never",
+       "approvalsReviewer": "user",
+       "sandboxPolicy": {
+        "type": "workspaceWrite",
+        "writableRoots": [],
+        "networkAccess": false,
+        "excludeTmpdirEnvVar": false,
+        "excludeSlashTmp": false
+       },
+       "activePermissionProfile": null,
+       "model": "gpt-6.1-sol",
+       "modelProvider": "openai",
+       "serviceTier": null,
+       "effort": "medium",
+       "summary": "concise",
+       "collaborationMode": {
+        "mode": "default",
+        "settings": {
+         "model": "gpt-6.1-sol",
+         "reasoning_effort": "medium",
+         "developer_instructions": null
+        }
+       },
+       "multiAgentMode": "explicitRequestOnly",
+       "personality": null
+      }
+     }
+    },
+    {
+     "method": "thread/status/changed",
+     "params": {
+      "threadId": "01a12fd0-6cf8-7183-949e-21674286a3a3",
+      "status": {
+       "type": "active",
+       "activeFlags": []
+      }
+     }
+    },
+    {
+     "method": "turn/started",
+     "params": {
+      "threadId": "01a12fd0-6cf8-7183-949e-21674286a3a3",
+      "turn": {
+       "id": "01a12fd0-7621-7050-98e1-bd8ef25aa267",
+       "rootTurnId": "01a12fd0-7621-7050-98e1-bd8ef25aa267",
+       "items": [],
+       "itemsView": "notLoaded",
+       "status": "inProgress",
+       "error": null,
+       "startedAt": 1791803553,
+       "completedAt": null,
+       "durationMs": null
+      }
+     }
+    },
+    {
+     "method": "mcpServer/startupStatus/updated",
+     "params": {
+      "threadId": "01a12fd0-6cf8-7183-949e-21674286a3a3",
+      "name": "fixture",
+      "status": "ready",
+      "error": null,
+      "failureReason": null
+     }
+    },
+    {
+     "method": "item/started",
+     "params": {
+      "item": {
+       "type": "userMessage",
+       "id": "01a12fd0-7eb4-79e0-8830-ae7925b112a3",
+       "clientId": null,
+       "content": [
+        {
+         "type": "text",
+         "text": "Call fixture_list_items with page 1 exactly once. Do not call any other tool. Then reply with the number of items returned.",
+         "text_elements": []
+        }
+       ]
+      },
+      "threadId": "01a12fd0-6cf8-7183-949e-21674286a3a3",
+      "turnId": "01a12fd0-7621-7050-98e1-bd8ef25aa267",
+      "startedAtMs": 1791803555508
+     }
+    },
+    {
+     "method": "item/completed",
+     "params": {
+      "item": {
+       "type": "userMessage",
+       "id": "01a12fd0-7eb4-79e0-8830-ae7925b112a3",
+       "clientId": null,
+       "content": [
+        {
+         "type": "text",
+         "text": "Call fixture_list_items with page 1 exactly once. Do not call any other tool. Then reply with the number of items returned.",
+         "text_elements": []
+        }
+       ]
+      },
+      "threadId": "01a12fd0-6cf8-7183-949e-21674286a3a3",
+      "turnId": "01a12fd0-7621-7050-98e1-bd8ef25aa267",
+      "completedAtMs": 1791803555508
+     }
+    },
+    {
+     "method": "item/started",
+     "params": {
+      "item": {
+       "type": "mcpToolCall",
+       "id": "exec-7bb50887-f960-46ef-a880-75f14b83e837",
+       "server": "fixture",
+       "tool": "fixture_list_items",
+       "status": "inProgress",
+       "arguments": {
+        "page": 1
+       },
+       "appContext": null,
+       "mcpAppResourceUri": "ui://fixture/items.html",
+       "mcpAppUi": null,
+       "pluginId": null,
+       "readOnlyHint": true,
+       "result": null,
+       "error": null,
+       "durationMs": null
+      },
+      "threadId": "01a12fd0-6cf8-7183-949e-21674286a3a3",
+      "turnId": "01a12fd0-7621-7050-98e1-bd8ef25aa267",
+      "startedAtMs": 1791803565401
+     }
+    },
+    {
+     "method": "item/completed",
+     "params": {
+      "item": {
+       "type": "mcpToolCall",
+       "id": "exec-7bb50887-f960-46ef-a880-75f14b83e837",
+       "server": "fixture",
+       "tool": "fixture_list_items",
+       "status": "completed",
+       "arguments": {
+        "page": 1
+       },
+       "appContext": null,
+       "mcpAppResourceUri": "ui://fixture/items.html",
+       "mcpAppUi": null,
+       "pluginId": null,
+       "readOnlyHint": true,
+       "result": {
+        "content": [
+         {
+          "type": "text",
+          "text": "Page 1/4: item-1, item-2, item-3"
+         }
+        ],
+        "structuredContent": {
+         "items": [
+          "item-1",
+          "item-2",
+          "item-3"
+         ],
+         "page": 1,
+         "pageCount": 4
+        },
+        "_meta": {
+         "fixture/private": {
+          "visibility": "model+app",
+          "token": "private-1"
+         }
+        }
+       },
+       "error": null,
+       "durationMs": 4
+      },
+      "threadId": "01a12fd0-6cf8-7183-949e-21674286a3a3",
+      "turnId": "01a12fd0-7621-7050-98e1-bd8ef25aa267",
+      "completedAtMs": 1791803565406
+     }
+    },
+    {
+     "method": "thread/tokenUsage/updated",
+     "params": {
+      "threadId": "01a12fd0-6cf8-7183-949e-21674286a3a3",
+      "turnId": "01a12fd0-7621-7050-98e1-bd8ef25aa267",
+      "tokenUsage": {
+       "total": {
+        "totalTokens": 16127,
+        "inputTokens": 16061,
+        "cachedInputTokens": 12160,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 66,
+        "reasoningOutputTokens": 0
+       },
+       "last": {
+        "totalTokens": 16127,
+        "inputTokens": 16061,
+        "cachedInputTokens": 12160,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 66,
+        "reasoningOutputTokens": 0
+       },
+       "modelContextWindow": 475000
+      }
+     }
+    },
+    {
+     "method": "item/started",
+     "params": {
+      "item": {
+       "type": "agentMessage",
+       "id": "msg_030cf7ab092697c4016accc0b0492c819b9f4ada51f8bc7c56",
+       "text": "",
+       "phase": "final_answer",
+       "memoryCitation": null,
+       "delivery": null,
+       "questions": null
+      },
+      "threadId": "01a12fd0-6cf8-7183-949e-21674286a3a3",
+      "turnId": "01a12fd0-7621-7050-98e1-bd8ef25aa267",
+      "startedAtMs": 1791803568491
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fd0-6cf8-7183-949e-21674286a3a3",
+      "turnId": "01a12fd0-7621-7050-98e1-bd8ef25aa267",
+      "itemId": "msg_030cf7ab092697c4016accc0b0492c819b9f4ada51f8bc7c56",
+      "delta": "3"
+     }
+    },
+    {
+     "method": "item/completed",
+     "params": {
+      "item": {
+       "type": "agentMessage",
+       "id": "msg_030cf7ab092697c4016accc0b0492c819b9f4ada51f8bc7c56",
+       "text": "3",
+       "phase": "final_answer",
+       "memoryCitation": null,
+       "delivery": null,
+       "questions": null
+      },
+      "threadId": "01a12fd0-6cf8-7183-949e-21674286a3a3",
+      "turnId": "01a12fd0-7621-7050-98e1-bd8ef25aa267",
+      "completedAtMs": 1791803568491
+     }
+    },
+    {
+     "method": "thread/tokenUsage/updated",
+     "params": {
+      "threadId": "01a12fd0-6cf8-7183-949e-21674286a3a3",
+      "turnId": "01a12fd0-7621-7050-98e1-bd8ef25aa267",
+      "tokenUsage": {
+       "total": {
+        "totalTokens": 32338,
+        "inputTokens": 32267,
+        "cachedInputTokens": 24320,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 71,
+        "reasoningOutputTokens": 0
+       },
+       "last": {
+        "totalTokens": 16211,
+        "inputTokens": 16206,
+        "cachedInputTokens": 12160,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 5,
+        "reasoningOutputTokens": 0
+       },
+       "modelContextWindow": 475000
+      }
+     }
+    },
+    {
+     "method": "thread/status/changed",
+     "params": {
+      "threadId": "01a12fd0-6cf8-7183-949e-21674286a3a3",
+      "status": {
+       "type": "idle"
+      }
+     }
+    },
+    {
+     "method": "turn/completed",
+     "params": {
+      "threadId": "01a12fd0-6cf8-7183-949e-21674286a3a3",
+      "turn": {
+       "id": "01a12fd0-7621-7050-98e1-bd8ef25aa267",
+       "rootTurnId": "01a12fd0-7621-7050-98e1-bd8ef25aa267",
+       "items": [
+        {
+         "type": "agentMessage",
+         "id": "msg_030cf7ab092697c4016accc0b0492c819b9f4ada51f8bc7c56",
+         "text": "3",
+         "phase": "final_answer",
+         "memoryCitation": null,
+         "delivery": null,
+         "questions": null
+        }
+       ],
+       "itemsView": "summary",
+       "status": "completed",
+       "error": null,
+       "startedAt": 1791803553,
+       "completedAt": 1791803569,
+       "durationMs": 15798
+      }
+     }
+    }
+   ],
+   "outcome": "completed"
+  }
+ ]
+}

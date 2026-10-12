@@ -1,6 +1,6 @@
 # Unified turn view
 
-Status: planned · Updated: 2026-10-12
+Status: in-progress (steps 0-1 done) · Updated: 2026-10-12
 Goal: Every harness's assistant turn reaches the UI as `message.content` ContentBlocks and renders through one `TurnBody`, on desktop and in the phone chat-view; Codex thread items are translated at the integration layer and no longer reach a renderer.
 Long-term docs affected: [chat-core.md](../architecture/chat-core.md), [mobile-remote-control.md](../architecture/mobile-remote-control.md) (hidden-detail refs), [mcp-apps.md](../features/mcp-apps.md) (Codex rows), [codex contracts](../harness/codex/contracts.md) and [api-surface](../harness/codex/api-surface.md), `apps/desktop/docs/agent-reference/architecture.md`, `.agents/skills/superone-harness/references/event-contract.md`
 
@@ -243,6 +243,28 @@ rendering. Steps 1-5 do not change what producers emit.
    rendering path, translator and content ops, format discriminator, wire shim and
    history adapters with their removal conditions, downgrade limitation, unsupported turn diffs);
    delete this plan.
+
+## Step 0 findings (2026-10-12, Codex 0.162.1, `gpt-6.1-sol`)
+
+Recorded by `packages/codex/scripts/record-turns.ts` into
+`packages/codex/src/fixtures/recordings/` (11 scenarios, raw app-server
+notifications, machine paths and user name replaced):
+
+- Agent message, plan and reasoning text is **append-only**: every completed
+  item's text extends the accumulated deltas; no non-prefix rewrite was seen.
+  `replace` stays as the safety valve, not the common path.
+- **No interleaved text items.** Each item's deltas arrive between its own
+  `item/started` and `item/completed`. A command's output can arrive after a
+  later item starts (a steered user message), which id-located tool upserts
+  already handle.
+- Review mode yields `enteredReviewMode` / `exitedReviewMode` plus ordinary
+  reasoning and commands; manual compaction yields `contextCompaction` items;
+  collab yields `collabAgentToolCall` and `subAgentActivity` items with child
+  thread notifications on the same connection.
+- Not reproducible live with this model/config: `todo_list` (the model never
+  called `update_plan`), image generation, async questions, MCP auth and
+  strict-review errors. Their translator tests use hand-built items from the
+  existing mapper tests.
 
 ## Risks
 

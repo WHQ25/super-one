@@ -1,0 +1,984 @@
+{
+ "scenario": "file-change",
+ "codexVersion": "codex-cli 0.162.1",
+ "model": "gpt-6.1-sol",
+ "turns": [
+  {
+   "turn": {
+    "prompt": "Using apply_patch: create notes.md containing three short bullet lines, then change the greeting string in src/app.ts to \"Hello, recordings\". Reply with one sentence when done."
+   },
+   "notifications": [
+    {
+     "method": "thread/started",
+     "params": {
+      "thread": {
+       "id": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+       "environments": [
+        {
+         "environmentId": "local",
+         "cwd": "/workspace",
+         "runtimeWorkspaceRoots": [
+          "/workspace"
+         ]
+        }
+       ],
+       "extra": null,
+       "sessionId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+       "forkedFromId": null,
+       "parentThreadId": null,
+       "preview": "",
+       "ephemeral": false,
+       "section": null,
+       "sectionEnteredAt": null,
+       "projectId": null,
+       "historyMode": "paginated",
+       "modelProvider": "openai",
+       "model": "gpt-6.1-sol",
+       "reasoningEffort": null,
+       "createdAt": 1791803525,
+       "updatedAt": 1791803525,
+       "recencyAt": 1791803525,
+       "status": {
+        "type": "idle"
+       },
+       "path": "/private/codex-home/sessions/2026/10/12/rollout-2026-10-12T19-12-05-01a12fcf-ffad-7581-96f6-26ff1bfdc68b.jsonl",
+       "cwd": "/workspace",
+       "cliVersion": "0.162.1",
+       "originator": "superone-node",
+       "source": "vscode",
+       "canAcceptDirectInput": true,
+       "threadSource": null,
+       "agentNickname": null,
+       "agentRole": null,
+       "gitInfo": null,
+       "name": null,
+       "daybreakEnabled": null,
+       "turns": []
+      }
+     }
+    },
+    {
+     "method": "thread/settings/updated",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "threadSettings": {
+       "disabledPluginIds": [],
+       "cwd": "/workspace",
+       "approvalPolicy": "never",
+       "approvalsReviewer": "user",
+       "sandboxPolicy": {
+        "type": "workspaceWrite",
+        "writableRoots": [],
+        "networkAccess": false,
+        "excludeTmpdirEnvVar": false,
+        "excludeSlashTmp": false
+       },
+       "activePermissionProfile": null,
+       "model": "gpt-6.1-sol",
+       "modelProvider": "openai",
+       "serviceTier": null,
+       "effort": "medium",
+       "summary": "concise",
+       "collaborationMode": {
+        "mode": "default",
+        "settings": {
+         "model": "gpt-6.1-sol",
+         "reasoning_effort": "medium",
+         "developer_instructions": null
+        }
+       },
+       "multiAgentMode": "explicitRequestOnly",
+       "personality": null
+      }
+     }
+    },
+    {
+     "method": "thread/status/changed",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "status": {
+       "type": "active",
+       "activeFlags": []
+      }
+     }
+    },
+    {
+     "method": "turn/started",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turn": {
+       "id": "01a12fd0-0adf-71b0-a584-84687d83332f",
+       "rootTurnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+       "items": [],
+       "itemsView": "notLoaded",
+       "status": "inProgress",
+       "error": null,
+       "startedAt": 1791803525,
+       "completedAt": null,
+       "durationMs": null
+      }
+     }
+    },
+    {
+     "method": "item/started",
+     "params": {
+      "item": {
+       "type": "userMessage",
+       "id": "01a12fd0-2314-70a0-a31e-20db666e2f8b",
+       "clientId": null,
+       "content": [
+        {
+         "type": "text",
+         "text": "Using apply_patch: create notes.md containing three short bullet lines, then change the greeting string in src/app.ts to \"Hello, recordings\". Reply with one sentence when done.",
+         "text_elements": []
+        }
+       ]
+      },
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "startedAtMs": 1791803532053
+     }
+    },
+    {
+     "method": "item/completed",
+     "params": {
+      "item": {
+       "type": "userMessage",
+       "id": "01a12fd0-2314-70a0-a31e-20db666e2f8b",
+       "clientId": null,
+       "content": [
+        {
+         "type": "text",
+         "text": "Using apply_patch: create notes.md containing three short bullet lines, then change the greeting string in src/app.ts to \"Hello, recordings\". Reply with one sentence when done.",
+         "text_elements": []
+        }
+       ]
+      },
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "completedAtMs": 1791803532053
+     }
+    },
+    {
+     "method": "thread/tokenUsage/updated",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "tokenUsage": {
+       "total": {
+        "totalTokens": 16114,
+        "inputTokens": 16061,
+        "cachedInputTokens": 12160,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 53,
+        "reasoningOutputTokens": 0
+       },
+       "last": {
+        "totalTokens": 16114,
+        "inputTokens": 16061,
+        "cachedInputTokens": 12160,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 53,
+        "reasoningOutputTokens": 0
+       },
+       "modelContextWindow": 475000
+      }
+     }
+    },
+    {
+     "method": "item/started",
+     "params": {
+      "item": {
+       "type": "agentMessage",
+       "id": "msg_07bd0cb6021a498c016accc0931290819aa2155c2cdbb3a6e5",
+       "text": "",
+       "phase": "commentary",
+       "memoryCitation": null,
+       "delivery": null,
+       "questions": null
+      },
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "startedAtMs": 1791803539194
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "itemId": "msg_07bd0cb6021a498c016accc0931290819aa2155c2cdbb3a6e5",
+      "delta": "I"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "itemId": "msg_07bd0cb6021a498c016accc0931290819aa2155c2cdbb3a6e5",
+      "delta": "’ll"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "itemId": "msg_07bd0cb6021a498c016accc0931290819aa2155c2cdbb3a6e5",
+      "delta": " create"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "itemId": "msg_07bd0cb6021a498c016accc0931290819aa2155c2cdbb3a6e5",
+      "delta": " the"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "itemId": "msg_07bd0cb6021a498c016accc0931290819aa2155c2cdbb3a6e5",
+      "delta": " notes"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "itemId": "msg_07bd0cb6021a498c016accc0931290819aa2155c2cdbb3a6e5",
+      "delta": " file"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "itemId": "msg_07bd0cb6021a498c016accc0931290819aa2155c2cdbb3a6e5",
+      "delta": " and"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "itemId": "msg_07bd0cb6021a498c016accc0931290819aa2155c2cdbb3a6e5",
+      "delta": " update"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "itemId": "msg_07bd0cb6021a498c016accc0931290819aa2155c2cdbb3a6e5",
+      "delta": " the"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "itemId": "msg_07bd0cb6021a498c016accc0931290819aa2155c2cdbb3a6e5",
+      "delta": " greeting"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "itemId": "msg_07bd0cb6021a498c016accc0931290819aa2155c2cdbb3a6e5",
+      "delta": " using"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "itemId": "msg_07bd0cb6021a498c016accc0931290819aa2155c2cdbb3a6e5",
+      "delta": " `"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "itemId": "msg_07bd0cb6021a498c016accc0931290819aa2155c2cdbb3a6e5",
+      "delta": "apply"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "itemId": "msg_07bd0cb6021a498c016accc0931290819aa2155c2cdbb3a6e5",
+      "delta": "_patch"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "itemId": "msg_07bd0cb6021a498c016accc0931290819aa2155c2cdbb3a6e5",
+      "delta": "`.\n"
+     }
+    },
+    {
+     "method": "item/completed",
+     "params": {
+      "item": {
+       "type": "agentMessage",
+       "id": "msg_07bd0cb6021a498c016accc0931290819aa2155c2cdbb3a6e5",
+       "text": "I’ll create the notes file and update the greeting using `apply_patch`.\n",
+       "phase": "commentary",
+       "memoryCitation": null,
+       "delivery": null,
+       "questions": null
+      },
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "completedAtMs": 1791803539622
+     }
+    },
+    {
+     "method": "item/started",
+     "params": {
+      "item": {
+       "type": "commandExecution",
+       "id": "exec-7aabd79d-3bf2-41cf-b611-9281a13c57b7",
+       "pluginId": null,
+       "scriptPath": null,
+       "command": "/bin/zsh -lc \"pwd; rg --files -g 'AGENTS.md' -g 'app.ts' -g 'notes.md'; cat src/app.ts\"",
+       "cwd": "/workspace",
+       "processId": "49396",
+       "source": "unifiedExecStartup",
+       "status": "inProgress",
+       "commandActions": [
+        {
+         "type": "unknown",
+         "command": "pwd; rg --files -g 'AGENTS.md' -g 'app.ts' -g 'notes.md'; cat src/app.ts"
+        }
+       ],
+       "aggregatedOutput": null,
+       "exitCode": null,
+       "durationMs": null
+      },
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "startedAtMs": 1791803540810
+     }
+    },
+    {
+     "method": "item/completed",
+     "params": {
+      "item": {
+       "type": "commandExecution",
+       "id": "exec-7aabd79d-3bf2-41cf-b611-9281a13c57b7",
+       "pluginId": null,
+       "scriptPath": null,
+       "command": "/bin/zsh -lc \"pwd; rg --files -g 'AGENTS.md' -g 'app.ts' -g 'notes.md'; cat src/app.ts\"",
+       "cwd": "/workspace",
+       "processId": "49396",
+       "source": "unifiedExecStartup",
+       "status": "completed",
+       "commandActions": [
+        {
+         "type": "unknown",
+         "command": "pwd; rg --files -g 'AGENTS.md' -g 'app.ts' -g 'notes.md'; cat src/app.ts"
+        }
+       ],
+       "aggregatedOutput": "/private/workspace\nsrc/app.ts\nexport function greet(name: string): string {\n  // TODO: localize\n  return `Hello, ${name}`\n}\n",
+       "exitCode": 0,
+       "durationMs": 0
+      },
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "completedAtMs": 1791803540810
+     }
+    },
+    {
+     "method": "thread/tokenUsage/updated",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "tokenUsage": {
+       "total": {
+        "totalTokens": 32327,
+        "inputTokens": 32198,
+        "cachedInputTokens": 24320,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 129,
+        "reasoningOutputTokens": 0
+       },
+       "last": {
+        "totalTokens": 16213,
+        "inputTokens": 16137,
+        "cachedInputTokens": 12160,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 76,
+        "reasoningOutputTokens": 0
+       },
+       "modelContextWindow": 475000
+      }
+     }
+    },
+    {
+     "method": "item/started",
+     "params": {
+      "item": {
+       "type": "fileChange",
+       "id": "exec-f3f2ff30-e8ef-45ee-84cd-7e98d46c5e6b",
+       "changes": [
+        {
+         "path": "/workspace/notes.md",
+         "kind": {
+          "type": "add"
+         },
+         "diff": "- Create notes.\n- Update greeting.\n- Review changes.\n"
+        },
+        {
+         "path": "/workspace/src/app.ts",
+         "kind": {
+          "type": "update",
+          "move_path": null
+         },
+         "diff": "@@ -2,3 +2,3 @@\n   // TODO: localize\n-  return `Hello, ${name}`\n+  return \"Hello, recordings\"\n }\n"
+        }
+       ],
+       "status": "inProgress"
+      },
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "startedAtMs": 1791803546535
+     }
+    },
+    {
+     "method": "item/completed",
+     "params": {
+      "item": {
+       "type": "fileChange",
+       "id": "exec-f3f2ff30-e8ef-45ee-84cd-7e98d46c5e6b",
+       "changes": [
+        {
+         "path": "/workspace/notes.md",
+         "kind": {
+          "type": "add"
+         },
+         "diff": "- Create notes.\n- Update greeting.\n- Review changes.\n"
+        },
+        {
+         "path": "/workspace/src/app.ts",
+         "kind": {
+          "type": "update",
+          "move_path": null
+         },
+         "diff": "@@ -2,3 +2,3 @@\n   // TODO: localize\n-  return `Hello, ${name}`\n+  return \"Hello, recordings\"\n }\n"
+        }
+       ],
+       "status": "completed"
+      },
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "completedAtMs": 1791803546599
+     }
+    },
+    {
+     "method": "turn/diff/updated",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "diff": "diff --git a/notes.md b/notes.md\nnew file mode 100644\nindex 0000000000000000000000000000000000000000..b10191d3447a4b9197843b30435fc9c1c6761f4f\n--- /dev/null\n+++ b/notes.md\n@@ -0,0 +1,3 @@\n+- Create notes.\n+- Update greeting.\n+- Review changes.\ndiff --git a/src/app.ts b/src/app.ts\nindex 6b248375113b2c67e766527ac3b82a970f4f88f4..4af762f19ac05aec2cc6c543fd71d68b519a5c29\n--- a/src/app.ts\n+++ b/src/app.ts\n@@ -1,4 +1,4 @@\n export function greet(name: string): string {\n   // TODO: localize\n-  return `Hello, ${name}`\n+  return \"Hello, recordings\"\n }\n"
+     }
+    },
+    {
+     "method": "item/started",
+     "params": {
+      "item": {
+       "type": "commandExecution",
+       "id": "exec-4f2b5257-6fd1-4831-8aed-6bcc7ff53b83",
+       "pluginId": null,
+       "scriptPath": null,
+       "command": "/bin/zsh -lc 'git diff -- src/app.ts; cat notes.md'",
+       "cwd": "/workspace",
+       "processId": "42667",
+       "source": "unifiedExecStartup",
+       "status": "inProgress",
+       "commandActions": [
+        {
+         "type": "unknown",
+         "command": "git diff -- src/app.ts; cat notes.md"
+        }
+       ],
+       "aggregatedOutput": null,
+       "exitCode": null,
+       "durationMs": null
+      },
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "startedAtMs": 1791803546681
+     }
+    },
+    {
+     "method": "item/completed",
+     "params": {
+      "item": {
+       "type": "commandExecution",
+       "id": "exec-4f2b5257-6fd1-4831-8aed-6bcc7ff53b83",
+       "pluginId": null,
+       "scriptPath": null,
+       "command": "/bin/zsh -lc 'git diff -- src/app.ts; cat notes.md'",
+       "cwd": "/workspace",
+       "processId": "42667",
+       "source": "unifiedExecStartup",
+       "status": "completed",
+       "commandActions": [
+        {
+         "type": "unknown",
+         "command": "git diff -- src/app.ts; cat notes.md"
+        }
+       ],
+       "aggregatedOutput": "diff --git a/src/app.ts b/src/app.ts\nindex 6b24837..4af762f 100644\n--- a/src/app.ts\n+++ b/src/app.ts\n@@ -1,4 +1,4 @@\n export function greet(name: string): string {\n   // TODO: localize\n-  return `Hello, ${name}`\n+  return \"Hello, recordings\"\n }\n- Create notes.\n- Update greeting.\n- Review changes.\n",
+       "exitCode": 0,
+       "durationMs": 0
+      },
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "completedAtMs": 1791803546681
+     }
+    },
+    {
+     "method": "thread/tokenUsage/updated",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "tokenUsage": {
+       "total": {
+        "totalTokens": 48838,
+        "inputTokens": 48536,
+        "cachedInputTokens": 36480,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 302,
+        "reasoningOutputTokens": 0
+       },
+       "last": {
+        "totalTokens": 16511,
+        "inputTokens": 16338,
+        "cachedInputTokens": 12160,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 173,
+        "reasoningOutputTokens": 0
+       },
+       "modelContextWindow": 475000
+      }
+     }
+    },
+    {
+     "method": "turn/diff/updated",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "diff": "diff --git a/notes.md b/notes.md\nnew file mode 100644\nindex 0000000000000000000000000000000000000000..b10191d3447a4b9197843b30435fc9c1c6761f4f\n--- /dev/null\n+++ b/notes.md\n@@ -0,0 +1,3 @@\n+- Create notes.\n+- Update greeting.\n+- Review changes.\ndiff --git a/src/app.ts b/src/app.ts\nindex 6b248375113b2c67e766527ac3b82a970f4f88f4..4af762f19ac05aec2cc6c543fd71d68b519a5c29\n--- a/src/app.ts\n+++ b/src/app.ts\n@@ -1,4 +1,4 @@\n export function greet(name: string): string {\n   // TODO: localize\n-  return `Hello, ${name}`\n+  return \"Hello, recordings\"\n }\n"
+     }
+    },
+    {
+     "method": "item/started",
+     "params": {
+      "item": {
+       "type": "agentMessage",
+       "id": "msg_07bd0cb6021a498c016accc09d5d0c819a91e4ab88b024e7c0",
+       "text": "",
+       "phase": "final_answer",
+       "memoryCitation": null,
+       "delivery": null,
+       "questions": null
+      },
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "startedAtMs": 1791803549481
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "itemId": "msg_07bd0cb6021a498c016accc09d5d0c819a91e4ab88b024e7c0",
+      "delta": "Created"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "itemId": "msg_07bd0cb6021a498c016accc09d5d0c819a91e4ab88b024e7c0",
+      "delta": " `"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "itemId": "msg_07bd0cb6021a498c016accc09d5d0c819a91e4ab88b024e7c0",
+      "delta": "notes"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "itemId": "msg_07bd0cb6021a498c016accc09d5d0c819a91e4ab88b024e7c0",
+      "delta": ".md"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "itemId": "msg_07bd0cb6021a498c016accc09d5d0c819a91e4ab88b024e7c0",
+      "delta": "`"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "itemId": "msg_07bd0cb6021a498c016accc09d5d0c819a91e4ab88b024e7c0",
+      "delta": " with"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "itemId": "msg_07bd0cb6021a498c016accc09d5d0c819a91e4ab88b024e7c0",
+      "delta": " three"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "itemId": "msg_07bd0cb6021a498c016accc09d5d0c819a91e4ab88b024e7c0",
+      "delta": " short"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "itemId": "msg_07bd0cb6021a498c016accc09d5d0c819a91e4ab88b024e7c0",
+      "delta": " bullet"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "itemId": "msg_07bd0cb6021a498c016accc09d5d0c819a91e4ab88b024e7c0",
+      "delta": " lines"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "itemId": "msg_07bd0cb6021a498c016accc09d5d0c819a91e4ab88b024e7c0",
+      "delta": " and"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "itemId": "msg_07bd0cb6021a498c016accc09d5d0c819a91e4ab88b024e7c0",
+      "delta": " changed"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "itemId": "msg_07bd0cb6021a498c016accc09d5d0c819a91e4ab88b024e7c0",
+      "delta": " the"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "itemId": "msg_07bd0cb6021a498c016accc09d5d0c819a91e4ab88b024e7c0",
+      "delta": " greeting"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "itemId": "msg_07bd0cb6021a498c016accc09d5d0c819a91e4ab88b024e7c0",
+      "delta": " in"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "itemId": "msg_07bd0cb6021a498c016accc09d5d0c819a91e4ab88b024e7c0",
+      "delta": " `"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "itemId": "msg_07bd0cb6021a498c016accc09d5d0c819a91e4ab88b024e7c0",
+      "delta": "src"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "itemId": "msg_07bd0cb6021a498c016accc09d5d0c819a91e4ab88b024e7c0",
+      "delta": "/app"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "itemId": "msg_07bd0cb6021a498c016accc09d5d0c819a91e4ab88b024e7c0",
+      "delta": ".ts"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "itemId": "msg_07bd0cb6021a498c016accc09d5d0c819a91e4ab88b024e7c0",
+      "delta": "`"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "itemId": "msg_07bd0cb6021a498c016accc09d5d0c819a91e4ab88b024e7c0",
+      "delta": " to"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "itemId": "msg_07bd0cb6021a498c016accc09d5d0c819a91e4ab88b024e7c0",
+      "delta": " `\""
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "itemId": "msg_07bd0cb6021a498c016accc09d5d0c819a91e4ab88b024e7c0",
+      "delta": "Hello"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "itemId": "msg_07bd0cb6021a498c016accc09d5d0c819a91e4ab88b024e7c0",
+      "delta": ","
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "itemId": "msg_07bd0cb6021a498c016accc09d5d0c819a91e4ab88b024e7c0",
+      "delta": " recordings"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "itemId": "msg_07bd0cb6021a498c016accc09d5d0c819a91e4ab88b024e7c0",
+      "delta": "\"`"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "itemId": "msg_07bd0cb6021a498c016accc09d5d0c819a91e4ab88b024e7c0",
+      "delta": " using"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "itemId": "msg_07bd0cb6021a498c016accc09d5d0c819a91e4ab88b024e7c0",
+      "delta": " `"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "itemId": "msg_07bd0cb6021a498c016accc09d5d0c819a91e4ab88b024e7c0",
+      "delta": "apply"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "itemId": "msg_07bd0cb6021a498c016accc09d5d0c819a91e4ab88b024e7c0",
+      "delta": "_patch"
+     }
+    },
+    {
+     "method": "item/agentMessage/delta",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "itemId": "msg_07bd0cb6021a498c016accc09d5d0c819a91e4ab88b024e7c0",
+      "delta": "`."
+     }
+    },
+    {
+     "method": "item/completed",
+     "params": {
+      "item": {
+       "type": "agentMessage",
+       "id": "msg_07bd0cb6021a498c016accc09d5d0c819a91e4ab88b024e7c0",
+       "text": "Created `notes.md` with three short bullet lines and changed the greeting in `src/app.ts` to `\"Hello, recordings\"` using `apply_patch`.",
+       "phase": "final_answer",
+       "memoryCitation": null,
+       "delivery": null,
+       "questions": null
+      },
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "completedAtMs": 1791803550099
+     }
+    },
+    {
+     "method": "thread/tokenUsage/updated",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "tokenUsage": {
+       "total": {
+        "totalTokens": 65546,
+        "inputTokens": 65209,
+        "cachedInputTokens": 48640,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 337,
+        "reasoningOutputTokens": 0
+       },
+       "last": {
+        "totalTokens": 16708,
+        "inputTokens": 16673,
+        "cachedInputTokens": 12160,
+        "cacheWriteInputTokens": 0,
+        "outputTokens": 35,
+        "reasoningOutputTokens": 0
+       },
+       "modelContextWindow": 475000
+      }
+     }
+    },
+    {
+     "method": "turn/diff/updated",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+      "diff": "diff --git a/notes.md b/notes.md\nnew file mode 100644\nindex 0000000000000000000000000000000000000000..b10191d3447a4b9197843b30435fc9c1c6761f4f\n--- /dev/null\n+++ b/notes.md\n@@ -0,0 +1,3 @@\n+- Create notes.\n+- Update greeting.\n+- Review changes.\ndiff --git a/src/app.ts b/src/app.ts\nindex 6b248375113b2c67e766527ac3b82a970f4f88f4..4af762f19ac05aec2cc6c543fd71d68b519a5c29\n--- a/src/app.ts\n+++ b/src/app.ts\n@@ -1,4 +1,4 @@\n export function greet(name: string): string {\n   // TODO: localize\n-  return `Hello, ${name}`\n+  return \"Hello, recordings\"\n }\n"
+     }
+    },
+    {
+     "method": "thread/status/changed",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "status": {
+       "type": "idle"
+      }
+     }
+    },
+    {
+     "method": "turn/completed",
+     "params": {
+      "threadId": "01a12fcf-ffad-7581-96f6-26ff1bfdc68b",
+      "turn": {
+       "id": "01a12fd0-0adf-71b0-a584-84687d83332f",
+       "rootTurnId": "01a12fd0-0adf-71b0-a584-84687d83332f",
+       "items": [
+        {
+         "type": "agentMessage",
+         "id": "msg_07bd0cb6021a498c016accc09d5d0c819a91e4ab88b024e7c0",
+         "text": "Created `notes.md` with three short bullet lines and changed the greeting in `src/app.ts` to `\"Hello, recordings\"` using `apply_patch`.",
+         "phase": "final_answer",
+         "memoryCitation": null,
+         "delivery": null,
+         "questions": null
+        }
+       ],
+       "itemsView": "summary",
+       "status": "completed",
+       "error": null,
+       "startedAt": 1791803525,
+       "completedAt": 1791803550,
+       "durationMs": 24334
+      }
+     }
+    }
+   ],
+   "outcome": "completed"
+  }
+ ]
+}

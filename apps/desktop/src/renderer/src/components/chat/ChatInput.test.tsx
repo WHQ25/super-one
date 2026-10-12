@@ -856,14 +856,19 @@ describe('ChatInput', () => {
     expect(send!.compareDocumentPosition(realtime!) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
   })
 
-  it('disables the realtime voice control while a Codex turn is streaming', () => {
+  it('hides the realtime voice entry while a Codex turn streams and restores it when idle', () => {
     activeSessionState.preferredProvider = 'codex'
     activeSessionState.sessionProvider = 'codex'
     activeSessionState.status = 'streaming'
 
-    render(<ChatInput />)
+    const { rerender } = render(<ChatInput />)
 
-    expect(document.querySelector('button .lucide-audio-lines')?.closest('button')).toBeDisabled()
+    expect(document.querySelector('button .lucide-audio-lines')).not.toBeInTheDocument()
+
+    activeSessionState.status = 'idle'
+    rerender(<ChatInput />)
+
+    expect(document.querySelector('button .lucide-audio-lines')?.closest('button')).toBeEnabled()
   })
 
   it('keeps the realtime voice control mounted while a delegated Codex turn is streaming', () => {

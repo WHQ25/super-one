@@ -399,7 +399,7 @@ export function ShellPreview({ initialPage = 'New session', initialHarness = 'cl
   const chooseAgent = (option: RemoteHarnessOption) => {
     const value = option.provider
     setAcpAgentId(option.acpAgentId)
-    setProvider(value); setHarness(value); setMode(HARNESS_LAUNCH_OPTIONS[value].permissionModes.includes('default') ? 'default' : HARNESS_LAUNCH_OPTIONS[value].permissionModes[0] ?? 'default') }
+    setProvider(value); setHarness(value); setMode(HARNESS_LAUNCH_OPTIONS[value].defaultPermissionMode) }
   const paintChat = () => {
     injectHostMessage(web, mobileWebViewTheme(tokens))
     injectHostMessage(web, { type: 'setViewport', fontScale, locale: 'en' })

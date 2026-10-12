@@ -97,7 +97,7 @@ export function SessionDefaultsSection({ harnessId, autoEligibility }: {
   const fallbackSandboxMode: SandboxMode = sandboxCapability?.defaultMode ?? 'on'
   // An unset preference shows what the harness would actually start in, so the
   // row never claims a mode the session would not use.
-  const activePermMode = permissionMode || offeredModes[0] || 'default'
+  const activePermMode = permissionMode || HARNESS_LAUNCH_OPTIONS[harnessId].defaultPermissionMode
   const activeSandboxMode = sandboxMode || fallbackSandboxMode
   /**
    * Cursor's ladder is a different vocabulary, not a subset of the shared one:

@@ -49,12 +49,15 @@ export function HarnessPermissionPopover({
   onChange,
 }: {
   harnessId: HarnessId
-  value: PermissionMode
+  /** Unset shows the harness's own default, which is what the launch would start in. */
+  value?: PermissionMode
   onChange: (mode: PermissionMode) => void
 }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
-  if (HARNESS_LAUNCH_OPTIONS[harnessId].permissionModes.length === 0) return null
+  const options = HARNESS_LAUNCH_OPTIONS[harnessId]
+  if (options.permissionModes.length === 0) return null
+  value ??= options.defaultPermissionMode
 
   const select = (mode: PermissionMode): void => {
     onChange(mode)

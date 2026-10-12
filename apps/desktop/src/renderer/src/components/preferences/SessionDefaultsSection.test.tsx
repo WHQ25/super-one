@@ -62,8 +62,8 @@ describe('SessionDefaultsSection', () => {
    * blank, or Claude's mode, is how the phone and the desktop drifted apart.
    */
   it.each<[HarnessId, string]>([
-    ['dsh', 'plan'],
-  ])('shows the first mode %s declares when nothing is configured', async (harnessId, mode) => {
+    ['dsh', 'default'],
+  ])('shows the default mode %s declares when nothing is configured', async (harnessId, mode) => {
     render(<SessionDefaultsSection harnessId={harnessId} />)
 
     await waitFor(() => {

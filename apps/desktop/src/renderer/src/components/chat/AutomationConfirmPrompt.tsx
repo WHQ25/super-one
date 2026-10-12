@@ -248,7 +248,7 @@ function AgentConfigStrip({
       <span aria-hidden="true" className="h-3.5 w-px shrink-0 bg-border" />
       <HarnessPermissionPopover
         harnessId={harnessId}
-        value={value.permissionMode ?? (harnessId === 'cursor' ? 'agent' : 'default')}
+        value={value.permissionMode}
         onChange={(permissionMode: PermissionMode) => onChange({ permissionMode })}
       />
       {harnessSupportsSandbox(harnessId) && (

@@ -52,7 +52,7 @@ export function sessionDefaultsForHarness(
   preferences: AppSettings['agentPreference'],
   harnessId: HarnessId,
 ): HarnessSessionDefaults {
-  const offered = HARNESS_LAUNCH_OPTIONS[harnessId].permissionModes
+  const { permissionModes: offered, defaultPermissionMode } = HARNESS_LAUNCH_OPTIONS[harnessId]
   // A harness without modes runs its own permission configuration, whatever an
   // older client left in its storage slot.
   const configuredPermissionMode = offered.length > 0 ? configuredPermissionModeFor(preferences, harnessId) : ''
@@ -60,7 +60,7 @@ export function sessionDefaultsForHarness(
     // A stored mode this harness no longer offers is not asserted at it.
     permissionMode: configuredPermissionMode && offered.includes(configuredPermissionMode)
       ? configuredPermissionMode
-      : offered[0] ?? 'default',
+      : defaultPermissionMode,
     configuredPermissionMode,
     sandboxMode: sandboxDefaultForHarness(preferences, harnessId),
   }

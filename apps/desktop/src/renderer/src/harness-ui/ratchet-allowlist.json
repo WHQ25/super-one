@@ -64,7 +64,7 @@
     "reason": "pre-registry baseline"
   },
   "components/chat/AutomationConfirmPrompt.tsx": {
-    "count": 14,
+    "count": 13,
     "reason": "pre-registry baseline"
   },
   "components/chat/ChatContent.tsx": {
@@ -120,7 +120,7 @@
     "reason": "pre-registry baseline"
   },
   "components/chat/SessionAgentsConfirmPrompt.tsx": {
-    "count": 3,
+    "count": 2,
     "reason": "pre-registry baseline"
   },
   "components/chat/StopButton.tsx": {

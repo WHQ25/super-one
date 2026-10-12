@@ -171,7 +171,7 @@ describe('remote harness system info', () => {
       { claude: 'auto' },
     ))
 
-    expect(info.defaults?.permissionMode).toBe(HARNESS_LAUNCH_OPTIONS.dsh.permissionModes[0])
+    expect(info.defaults?.permissionMode).toBe(HARNESS_LAUNCH_OPTIONS.dsh.defaultPermissionMode)
   })
 
   /** A stored mode the harness has no spelling for degrades to its first one. */
@@ -181,7 +181,7 @@ describe('remote harness system info', () => {
       { dsh: 'acceptEdits' },
     ))
 
-    expect(info.defaults?.permissionMode).toBe('plan')
+    expect(info.defaults?.permissionMode).toBe('default')
   })
 
   it('normalizes Codex defaults while retaining legacy aliases', async () => {

@@ -43,11 +43,21 @@ function preferences(overrides: Partial<Preferences> = {}): Preferences {
 const HARNESSES = Object.keys(HARNESS_LAUNCH_OPTIONS) as HarnessId[]
 
 describe('sessionDefaultsForHarness', () => {
-  it.each(HARNESSES)('falls back to the first mode %s declares when unconfigured', (harnessId) => {
+  it.each(HARNESSES)('falls back to the default mode %s declares when unconfigured', (harnessId) => {
     const defaults = sessionDefaultsForHarness(preferences(), harnessId)
 
-    expect(defaults.permissionMode).toBe(HARNESS_LAUNCH_OPTIONS[harnessId].permissionModes[0] ?? 'default')
+    expect(defaults.permissionMode).toBe(HARNESS_LAUNCH_OPTIONS[harnessId].defaultPermissionMode)
     expect(defaults.configuredPermissionMode).toBe('')
+  })
+
+  it.each(HARNESSES)('declares a default %s offers', (harnessId) => {
+    const { permissionModes, defaultPermissionMode } = HARNESS_LAUNCH_OPTIONS[harnessId]
+    if (permissionModes.length > 0) expect(permissionModes).toContain(defaultPermissionMode)
+  })
+
+  /** dsh lists read-only first for display; its own default preset is workspace-write. */
+  it('starts dsh in workspace-write, not the first listed mode', () => {
+    expect(sessionDefaultsForHarness(preferences(), 'dsh').permissionMode).toBe('default')
   })
 
   /**
@@ -61,7 +71,7 @@ describe('sessionDefaultsForHarness', () => {
 
     expect(sessionDefaultsForHarness(prefs, 'claude').permissionMode).toBe('auto')
     expect(sessionDefaultsForHarness(prefs, 'acp').permissionMode).toBe('default')
-    expect(sessionDefaultsForHarness(prefs, 'dsh').permissionMode).toBe('plan')
+    expect(sessionDefaultsForHarness(prefs, 'dsh').permissionMode).toBe('default')
   })
 
   it('reads each harness from its own slot', () => {
@@ -91,7 +101,7 @@ describe('sessionDefaultsForHarness', () => {
       dsh: { ...preferences().dsh, defaultPermissionMode: 'acceptEdits' },
     })
 
-    expect(sessionDefaultsForHarness(prefs, 'dsh').permissionMode).toBe('plan')
+    expect(sessionDefaultsForHarness(prefs, 'dsh').permissionMode).toBe('default')
   })
 
   /** Codex executes presets, so its shared mode is a projection of one. */

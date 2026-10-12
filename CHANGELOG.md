@@ -16,14 +16,16 @@ Every alpha release keeps its own notes on its GitHub Release.
 ### Added
 
 - Queue Codex async questions in the composer and keep answers as quoted
-  bubbles on desktop and phone, including after history restore.
+  bubbles on desktop and phone, including after history restore; hide dismissed
+  questions and deduplicate answer echoes.
 - Suggest separate tasks for issues outside the current scope, with cards
   that remain until the user starts or dismisses them.
 - Add audio and video playback controls to Markdown media, including audio
   cover art, lyrics and a progress bar.
 - Start Codex realtime voice from a phone with native audio and call control
   retained while browsing other chats, pauses and app backgrounding. Preserve
-  delegated work and return to the backing Codex thread when the call ends.
+  delegated work and return to the backing Codex thread when the call ends;
+  keep remote playback decoding across pauses and hide unavailable call entries.
 - Expand Markdown tables and Mermaid previews, and scale Markdown preview
   text with the pane width.
 - Preserve native Codex subagent creation models, reasoning effort and turn roots
@@ -52,14 +54,24 @@ Every alpha release keeps its own notes on its GitHub Release.
   messages, with an Open Graph preview on hover; the phone composer draws
   them the same way.
 - Phone: open app settings from the device list, before any pairing.
+- Copy Markdown tables from their toolbar or open them in an expanded preview.
+- Schedule phone messages and see prompts when provider quota recovers.
+- Open collaboration peers through session chips with their host and harness icon.
 
 ### Changed
 
+- Render Codex replies, reasoning, plans, commands, file changes and agent work
+  through the shared desktop and phone turn view, with live command output and
+  one session todo list; keep older stored turns readable.
+- Use each harness's own launch defaults, model catalog and permission controls
+  for sessions, collaboration tasks and automations.
 - Upgrade Claude Agent SDK to 0.3.296 (Claude Code 2.1.296).
 - Paginate session text reads by content block, with a cursor for the next
   complete block.
 - Update the managed Codex runtime to 0.162.1 for more reliable thread history
   recovery, response retries and cross-platform sandbox behavior.
+- Navigate text within turns, with transcript boundaries at compaction and
+  accepted async answers.
 - Phones, controller desktops and the local window share one protocol and
   session/terminal control leases. Taking control prevents the previous
   controller from making further writes.
@@ -78,6 +90,16 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Fixed
 
+- Retire disconnected phone connections so old reconnect attempts cannot
+  replace a new connection.
+- Follow Claude worktree directory changes when resuming a session.
+- Restore the sidebar title animation when a first-message title arrives
+  before its row mounts.
+- Remove duplicate slash commands with the same name and description.
+- Show coordination tool summaries and messages, and full legacy Codex turns
+  in session archive reads.
+- Center link previews on the cursor and reuse media players in file previews.
+- Emit a portable Computer Use zoom schema for MCP clients.
 - Send attachments with scheduled messages and clear the delivered draft.
 - Search phone @ mentions in the asking chat's checkout and worktree.
 - Apply Codex permission selection before starting its runtime.
@@ -108,9 +130,58 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Performance
 
-- Virtualize long transcripts and activity details to keep scrolling responsive.
+- Virtualize long transcripts and shared turn activity details to keep
+  scrolling and pane resizing responsive across harnesses.
 - Compress and batch remote streams, share routed session subscriptions and
   load full tool-result bodies on demand on desktop and phone.
+
+## [0.73.0-alpha.5] - 2026-10-13
+
+### Added
+
+- Copy Markdown tables from their toolbar or open them in an expanded preview.
+- Schedule phone messages and see prompts when provider quota recovers.
+- Open collaboration peers through session chips with their host and harness icon.
+
+### Changed
+
+- Render Codex replies, reasoning, plans, commands, file changes and agent work
+  through the shared desktop and phone turn view, with live command output and
+  one session todo list; keep older stored turns readable.
+- Use each harness's own launch defaults, model catalog and permission controls
+  for sessions, collaboration tasks and automations.
+- Hide unavailable voice-call entries while a task runs or a call connects,
+  and keep controls available for active calls.
+
+### Fixed
+
+- Deduplicate Codex async-answer echoes, hide dismissed question bubbles and
+  preserve turn content when a question is answered.
+- Keep text navigation anchors within a turn without adding paragraph gaps;
+  split the transcript at compaction and accepted async answers.
+- Keep remote voice playback decoding across pauses and time delegated work
+  from the latest Codex turn.
+- Retire disconnected phone connections so old reconnect attempts cannot
+  replace a new connection; expire desktop phone-connection notifications.
+- Follow Claude worktree directory changes when resuming a session.
+- Show coordination tool summaries and messages, and full legacy Codex turns
+  in session archive reads.
+- Show file diffs when remote summarized changes are opened, and completed
+  Codex-generated images on remote clients.
+- Center link previews on the cursor and reuse media players in file previews.
+- Restore the sidebar title animation when a first-message title arrives
+  before its row mounts, and remove duplicate slash commands.
+- Emit a portable Computer Use zoom schema for MCP clients.
+
+### Performance
+
+- Virtualize shared turn activity details to keep long-running sessions
+  responsive when scrolling or resizing panes.
+
+### Tests
+
+- Add recorded Codex turn replay coverage and align navigation, restore and
+  voice-entry integration tests with the current session contracts.
 
 ## [0.73.0-alpha.4] - 2026-10-12
 

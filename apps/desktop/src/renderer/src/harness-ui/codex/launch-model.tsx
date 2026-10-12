@@ -78,8 +78,6 @@ export function CodexLaunchModel({
   const profileOnly = catalog === 'profile'
   const { selector } = useLaunchProviders({
     harnessId: 'codex',
-    defaultBrand: 'openai',
-    defaultLabel: t('resources.providers.defaultLabelCodex'),
     profile,
     profileOnly,
     apiProviderId,

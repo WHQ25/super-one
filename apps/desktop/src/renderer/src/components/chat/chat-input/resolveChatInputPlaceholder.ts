@@ -1,5 +1,4 @@
 import type { TFunction } from 'i18next'
-import type { PermissionMode } from '@superone/shared/agent-types'
 import type { ChatProvider } from '@/stores/chat'
 
 const PLACEHOLDER_KEYS = {
@@ -29,26 +28,10 @@ const PLACEHOLDER_KEYS = {
   },
 } as const satisfies Record<ChatProvider, { ask: string; plan: string }>
 
+/** `planMode` is the harness's own plan mode (`inPlanMode`); ACP copy names its agent. */
 export function resolveChatInputPlaceholder(
   t: TFunction,
-  options: {
-    provider: ChatProvider
-    permissionMode: PermissionMode
-    codexPlanMode: boolean
-    acpAgentName: string
-    openCodeAgentId?: string | null
-  },
+  options: { provider: ChatProvider; planMode: boolean; acpAgentName: string },
 ): string {
-  const mode = options.provider === 'codex'
-    ? (options.codexPlanMode ? 'plan' : 'ask')
-    : options.provider === 'opencode'
-      ? (options.openCodeAgentId === 'plan' ? 'plan' : 'ask')
-      : (options.permissionMode === 'plan' ? 'plan' : 'ask')
-  const key = PLACEHOLDER_KEYS[options.provider][mode]
-
-  if (options.provider === 'acp') {
-    return t(key, { agent: options.acpAgentName })
-  }
-
-  return t(key)
+  return t(PLACEHOLDER_KEYS[options.provider][options.planMode ? 'plan' : 'ask'], { agent: options.acpAgentName })
 }

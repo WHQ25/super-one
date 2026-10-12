@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { EffortLevel, HarnessId, ModelOption, SessionAgentProfile } from '@superone/shared/agent-types'
 import { formatEffortOptionLabel } from '@superone/shared/effort-labels'
 import { useAppStore } from '@/stores/app'
@@ -15,6 +16,7 @@ import {
   type SelectorProviderOption,
 } from '@/components/chat/model-selector/GroupedModelEffortSelector'
 import { effortForLevels } from './effort'
+import { apiKeyDefaultFor } from './api-key-defaults'
 import { toSelectorModels } from './selector-models'
 
 /**
@@ -117,14 +119,16 @@ export function mergeCollabProviders(args: {
  */
 export function useLaunchProviders(args: {
   harnessId: HarnessId
-  defaultBrand: string
-  defaultLabel: string
   profile: SessionAgentProfile | undefined
   profileOnly: boolean
   apiProviderId: string | null | undefined
   onChange: (patch: LaunchModelPatch) => void
 }) {
-  const { harnessId, profile, profileOnly, defaultBrand, defaultLabel } = args
+  const { harnessId, profile, profileOnly } = args
+  const { t } = useTranslation()
+  const builtIn = apiKeyDefaultFor(harnessId)
+  const defaultBrand = builtIn.brand
+  const defaultLabel = t(builtIn.labelKey)
   const platforms = useSettingsStore((s) => s.platforms) ?? EMPTY_PLATFORMS
   const credentials = useSettingsStore((s) => s.credentials) ?? EMPTY_CREDENTIALS
   const bindings = useSettingsStore((s) => s.bindings) ?? EMPTY_BINDINGS

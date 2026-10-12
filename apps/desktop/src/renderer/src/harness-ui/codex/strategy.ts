@@ -24,6 +24,14 @@ const codexSelection: SelectionAccess = {
 export const codexStrategy: HarnessStrategy = {
   selection: codexSelection,
   queuePolicy: 'runs',
+  slash: {
+    hostCommands: [],
+    // Codex commands take arguments (`auth auto`) and include hidden ones.
+    spacedCommands: true,
+    enterPlan: (store, target) => store.setSelectedCodexCollaborationMode('plan', target),
+    reviewCommand: true,
+  },
+  inPlanMode: (session) => session.selectedCodexCollaborationMode === 'plan',
   seed: (session, { project }) => {
     const selection = resolveDefaultCodexSelection(project.codexModels)
     session.selectedCodexModel = selection.modelId

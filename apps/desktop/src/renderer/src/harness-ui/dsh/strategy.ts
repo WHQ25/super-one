@@ -6,6 +6,7 @@ import type { HarnessStrategy } from '../strategy'
 export const dshStrategy: HarnessStrategy = {
   selection: neutralSelection,
   queuePolicy: 'always',
+  slash: { hostCommands: [] },
   seed: () => {},
   missingDefaults: () => ({}),
   prewarmHint: (session) => ({ model: session.selectedModel || undefined }),

@@ -6,7 +6,7 @@ import { codexStrategy } from './codex/strategy'
 import { cursorStrategy } from './cursor/strategy'
 import { dshStrategy } from './dsh/strategy'
 import { opencodeStrategy } from './opencode/strategy'
-import type { HarnessStrategy, SeedContext } from './strategy'
+import type { HarnessStrategy, PlanModeFields, SeedContext } from './strategy'
 
 export const HARNESS_STRATEGIES: { [H in HarnessId]: HarnessStrategy } = {
   claude: claudeStrategy,
@@ -25,4 +25,11 @@ export const HARNESS_STRATEGIES: { [H in HarnessId]: HarnessStrategy } = {
 export function seedNewSession(session: PerSessionState, harness: HarnessId, context: SeedContext): void {
   HARNESS_STRATEGIES[harness].seed(session, context)
   if (HARNESS_STRATEGIES[harness] !== codexStrategy) codexStrategy.seed(session, context)
+}
+
+export type { PlanModeFields }
+
+/** Whether a session is in its harness's plan mode. */
+export function inPlanMode(harness: HarnessId, session: PlanModeFields): boolean {
+  return HARNESS_STRATEGIES[harness].inPlanMode?.(session) ?? session.permissionMode === 'plan'
 }

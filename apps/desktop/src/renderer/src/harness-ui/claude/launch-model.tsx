@@ -1,5 +1,4 @@
 import { useMemo } from 'react'
-import { useTranslation } from 'react-i18next'
 import type { ModelOption, ProviderModelEnv } from '@superone/shared/agent-types'
 import { resolveClaudeDisplayName, resolveClaudeEntries } from '@superone/shared/claude-model-mapping'
 import { useChatStore } from '@/stores/chat'
@@ -36,14 +35,11 @@ export function claudeModelsForProvider(
 }
 
 export function ClaudeLaunchModel({ profile, catalog, apiProviderId, model, effort, onChange }: LaunchModelProps) {
-  const { t } = useTranslation()
   const profileOnly = catalog === 'profile'
   const live = useChatStore((s) => (profileOnly ? EMPTY_MODELS : s.harnessResources.claude?.models ?? EMPTY_MODELS))
   const profileCatalog = useProfileCatalog(profile)
   const { effective, selector } = useLaunchProviders({
     harnessId: 'claude',
-    defaultBrand: 'claude',
-    defaultLabel: t('resources.providers.defaultLabelClaude'),
     profile,
     profileOnly,
     apiProviderId,

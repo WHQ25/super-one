@@ -72,11 +72,7 @@
     "reason": "pre-registry baseline"
   },
   "components/chat/ChatInput.tsx": {
-    "count": 22,
-    "reason": "pre-registry baseline"
-  },
-  "components/chat/ChatInputDirsHint.tsx": {
-    "count": 1,
+    "count": 11,
     "reason": "pre-registry baseline"
   },
   "components/chat/ChatMessage.tsx": {
@@ -105,18 +101,6 @@
   },
   "components/chat/PlanApprovalPrompt.tsx": {
     "count": 2,
-    "reason": "pre-registry baseline"
-  },
-  "components/chat/ProviderSlashPopup.tsx": {
-    "count": 2,
-    "reason": "pre-registry baseline"
-  },
-  "components/chat/chat-input/computeMatchingSlashCommands.ts": {
-    "count": 2,
-    "reason": "pre-registry baseline"
-  },
-  "components/chat/chat-input/resolveChatInputPlaceholder.ts": {
-    "count": 3,
     "reason": "pre-registry baseline"
   },
   "components/chat/chat-status-bar/StatusBarDerivedSandbox.tsx": {
@@ -215,12 +199,8 @@
     "count": 7,
     "reason": "pre-registry baseline"
   },
-  "stores/chat-store/helpers/send-command-policy.ts": {
-    "count": 1,
-    "reason": "pre-registry baseline"
-  },
   "stores/chat-store/helpers/send-message.ts": {
-    "count": 11,
+    "count": 7,
     "reason": "pre-registry baseline"
   },
   "stores/chat-store/helpers/session-lifecycle.ts": {

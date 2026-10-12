@@ -8,6 +8,7 @@ import type { HarnessStrategy } from '../strategy'
 export const claudeStrategy: HarnessStrategy = {
   selection: neutralSelection,
   queuePolicy: 'always',
+  slash: { hostCommands: ['clear', 'provider', 'mcp', 'workflows', 'side'] },
   seed: (session, { claudeModels }) => applyDefaultModel(session, claudeModels),
   missingDefaults: (session, _project, claudeModels) => {
     if (session.selectedModel) return {}

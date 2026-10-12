@@ -33,7 +33,7 @@ export function ChatInputDirsHint() {
 
   // A harness that reads only its cwd would show folders it silently ignores.
   if (!HARNESS_CAPABILITIES[provider]?.supportsAdditionalDirs) return null
-  if (provider === 'codex' && hasRealtimeTimeline) return null
+  if (hasRealtimeTimeline) return null
   if (messagesLen > 0 && !dirty) return null
 
   const entries: Array<{ dir: string; scope: DirScope }> = []

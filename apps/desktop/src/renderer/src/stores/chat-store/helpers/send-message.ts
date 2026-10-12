@@ -1,6 +1,6 @@
 import { toast } from 'sonner'
 import { createSendWriteScope } from './send-write-scope'
-import { shouldInterceptHostSlash } from './send-command-policy'
+import { HARNESS_STRATEGIES } from '@/harness-ui/strategies'
 import { codexAccountId, isCodexAccountProvider } from '@superone/shared/codex-accounts'
 import { isCompactSlashSend } from '@superone/shared/compact-boundary'
 import type { ChatMessage, ContentBlock, ImageAttachment } from '@superone/shared/agent-types'
@@ -14,10 +14,9 @@ import { _getEffectiveSessionId } from './persistence'
 import { applyCachedCodexPermissionPreset } from './prefs-cache'
 import { commitPerSession, getProject, getScopedPerSession } from './store-helpers'
 import { isControlledElsewhere } from './remote-control'
-import { isGrokAcpAgent } from '@superone/shared/acp-brand'
 import { CLAUDE_INTERCEPTED_COMMANDS, isRemoteSession } from '../index'
 import type { ChatProvider, ChatStore, InputSegment, Mention, SessionWriteTarget } from '../types'
-import { callSession, resetHostSession } from '@/lib/session-client'
+import { resetHostSession } from '@/lib/session-client'
 import { expandPathRefTagsForAgent } from '@superone/shared/miniapp-prompt-tags'
 import { isBuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
 import { sendStartsStreaming, shouldQueueUserSend } from './session-send-request'
@@ -446,40 +445,23 @@ export async function sendMessageImpl(
   //   }
   // }
 
-  if (effectiveProvider === 'claude' || effectiveProvider === 'cursor') {
-    const m = rawContent.match(/^\/(\S+)$/)
-    if (m && shouldInterceptHostSlash(effectiveProvider, m[1]!)) {
+  // A bare `/name` the harness's slash policy keeps off the wire.
+  const slashName = rawContent.match(/^\/(\S+)$/)?.[1]
+  if (slashName) {
+    const slash = HARNESS_STRATEGIES[effectiveProvider].slash
+    const hostCommand = slash.hostCommands.includes(slashName) ? CLAUDE_INTERCEPTED_COMMANDS[slashName] : undefined
+    if (hostCommand) {
       patchSession(() => ({ _pendingSlashCommand: '' }))
-      await CLAUDE_INTERCEPTED_COMMANDS[m[1]!]!()
+      await hostCommand()
       return
     }
-  }
-
-  // Host-only `/workflows` and `/mcp` for Grok/ACP (same popups as Claude; never a prompt turn).
-  if (effectiveProvider === 'acp' && /^\/(workflows|mcp)$/.test(rawContent)) {
-    const name = rawContent.slice(1) as 'workflows' | 'mcp'
-    patchSession(() => ({ _pendingSlashCommand: '' }))
-    await CLAUDE_INTERCEPTED_COMMANDS[name]!()
-    return
-  }
-
-  // Grok ACP: intercept `/recap` → x.ai/recap (auto=false), not a prompt turn.
-  if (effectiveProvider === 'acp' && isGrokAcpAgent(session.acpAgentId)) {
-    if (/^\/recap$/.test(rawContent)) {
-      patchSession(() => ({ _pendingSlashCommand: '', isRecapping: true }))
-      const sid = resolveWriteSid()
-      if (sid) {
-        try {
-          const { ok } = await callSession(projectPath, sid, 'session.recap', { auto: false })
-          if (!ok) patchSession(() => ({ isRecapping: false }))
-        } catch {
-          patchSession(() => ({ isRecapping: false }))
-        }
-      } else {
-        patchSession(() => ({ isRecapping: false }))
-      }
-      return
-    }
+    const ran = await slash.run?.(slashName, {
+      session,
+      projectPath,
+      sessionId: resolveWriteSid(),
+      patch: (update) => patchSession(() => update),
+    })
+    if (ran) return
   }
 
   // Activation can replay an older host selection. This turn keeps the choices

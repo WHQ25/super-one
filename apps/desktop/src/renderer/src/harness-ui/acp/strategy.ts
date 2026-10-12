@@ -1,3 +1,5 @@
+import { isGrokAcpAgent } from '@superone/shared/acp-brand'
+import { callSession } from '@/lib/session-client'
 import { ACP_PERMISSION_MODES } from '@/components/chat/acpPermissionModes'
 import { getCachedAcpCatalog, sessionPatchFromAcpCatalog } from '@/stores/chat-store/harness/acp-handler'
 import { neutralSelection } from '../neutral-selection'
@@ -6,6 +8,19 @@ import type { HarnessStrategy } from '../strategy'
 export const acpStrategy: HarnessStrategy = {
   selection: neutralSelection,
   queuePolicy: 'always',
+  slash: {
+    hostCommands: ['workflows', 'mcp'],
+    /** Grok `/recap` is `x.ai/recap` (auto=false), not a prompt turn. */
+    run: async (name, { session, projectPath, sessionId, patch }) => {
+      if (name !== 'recap' || !isGrokAcpAgent(session.acpAgentId)) return false
+      patch({ _pendingSlashCommand: '', isRecapping: true })
+      const ok = sessionId
+        ? await callSession(projectPath, sessionId, 'session.recap', { auto: false }).then((r) => r.ok, () => false)
+        : false
+      if (!ok) patch({ isRecapping: false })
+      return true
+    },
+  },
   /** Seed from the agent catalog cache, keeping the replaced session's agent, model and mode while still offered. */
   seed: (session, { state, previousSession }) => {
     const agentId = previousSession?.acpAgentId ?? state.harnessResources.acp?.selectedAgentId ?? 'grok-build'

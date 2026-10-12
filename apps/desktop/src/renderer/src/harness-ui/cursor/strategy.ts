@@ -11,6 +11,7 @@ export const cursorStrategy: HarnessStrategy = {
   selection: neutralSelection,
   queuePolicy: 'never',
   sendStartsStreaming: true,
+  slash: { hostCommands: ['clear', 'mcp'], expandsPromptBody: true },
   seed: (session, { state }) => {
     const selection = resolveDefaultCursorSelection(enabledCursorModels(state.harnessResources.cursor))
     session.selectedModel = selection.modelId

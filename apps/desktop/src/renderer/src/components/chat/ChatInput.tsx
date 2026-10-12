@@ -4,7 +4,7 @@ import { useRef, useState, useCallback, useMemo, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { cn } from '@superone/ui/lib/utils'
-import { CLAUDE_INTERCEPTED_COMMAND_NAMES, CODEX_REJECT_PLAN_PLACEHOLDER, getLatestCodexThreadId, runClaudeInterceptedCommand, selectActiveCodexSkills, selectActiveCursorSlashItems, selectCodexPrompts, selectOpenCodeCommands, useChatStore, useActiveSession, useIsRemoteLocked, useSessionScope } from '@/stores/chat'
+import { CODEX_REJECT_PLAN_PLACEHOLDER, getLatestCodexThreadId, runClaudeInterceptedCommand, selectActiveCodexSkills, selectActiveCursorSlashItems, selectCodexPrompts, selectOpenCodeCommands, useChatStore, useActiveSession, useIsRemoteLocked, useSessionScope } from '@/stores/chat'
 import { useAppStore, useEffectiveProjectRoot } from '@/stores/app'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Loader2, X } from 'lucide-react'
@@ -67,6 +67,7 @@ import { McpAppContextAttachments } from './McpAppContextAttachments'
 import { ModelSelector } from './ModelSelector'
 import { AddDirPopup, type AddDirPopupHandle } from './AddDirPopup'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
+import { HARNESS_STRATEGIES, inPlanMode } from '@/harness-ui/strategies'
 import { MAX_PROJECT_EXTRA_DIRS } from '@superone/shared/project-extra-dirs'
 import { markStartup } from '@superone/shared/startup-marks'
 import { WorkflowSlashPopup, type WorkflowSlashPopupHandle, type WorkflowApplyPayload } from './WorkflowSlashPopup'
@@ -318,6 +319,7 @@ export function ChatInput({
     const activeProviderForResources = resolveProvider({ sessionProvider, preferredProvider })
     const resolvedCodexProviderId = useResolvedProviderId('codex')
     // One folder set for every harness now — nothing swaps with the provider.
+    const slashPolicy = HARNESS_STRATEGIES[activeProviderForResources].slash
     const supportsAdditionalDirs = HARNESS_CAPABILITIES[activeProviderForResources]?.supportsAdditionalDirs ?? false
     const promptKeywords = HARNESS_CAPABILITIES[activeProviderForResources].promptKeywords
     // The border says what the next turn will do differently.
@@ -327,6 +329,7 @@ export function ChatInput({
     )
     const canOpenSideChat = useCanOpenSideChat()
     const isCodexPlanMode = activeProviderForResources === 'codex' && selectedCodexCollaborationMode === 'plan'
+    const planMode = inPlanMode(activeProviderForResources, { permissionMode, selectedCodexCollaborationMode, openCodeAgentId })
     const hasContent = text.trim().length > 0 || attachments.length > 0 || browserAnnotations.length > 0 || mentions.length > 0 || hasPasteChips
     const codexDirsPendingNextTurn = activeProviderForResources === 'codex' && isStreaming && additionalDirsDirty
     const sessionProject = sessionScope?.projectPath ?? activeProject
@@ -743,23 +746,23 @@ export function ChatInput({
           return
         }
         // Host command on every forkable harness, so it is handled before the
-        // `activeProviderForResources === 'claude'` gate below.
+        // harness's own host commands below.
         if (name === 'side') {
           clearFirstLine()
           setSlashIndex(-1)
           void requestSideChat()
           return
         }
-        if (name === 'clear' && activeProviderForResources === 'cursor') {
+        if (slashPolicy.hostCommands.includes(name)) {
           clearFirstLine()
           setSlashIndex(-1)
-          void runClaudeInterceptedCommand('clear')
+          void runClaudeInterceptedCommand(name)
           return
         }
-        if (activeProviderForResources === 'cursor') {
+        if (slashPolicy.expandsPromptBody) {
           const entry = typeof cmd === 'string'
-            ? cursorSlashCommands.find((item) => item.name === name && Boolean(item.promptBody))
-              ?? cursorSlashCommands.find((item) => item.name === name)
+            ? activeSlashCommands.find((item) => item.name === name && Boolean(item.promptBody))
+              ?? activeSlashCommands.find((item) => item.name === name)
             : cmd
           if (entry?.promptBody) {
             replaceEditorTextPreservingTrailingSpace(entry.promptBody)
@@ -768,30 +771,15 @@ export function ChatInput({
             return
           }
         }
-        if (
-          name === 'workflows'
-          && (activeProviderForResources === 'claude' || activeProviderForResources === 'acp')
-        ) {
-          clearFirstLine()
-          setSlashIndex(-1)
-          useChatStore.getState().openWorkflowsPopup()
-          return
-        }
-        if (activeProviderForResources === 'claude' && CLAUDE_INTERCEPTED_COMMAND_NAMES.has(name)) {
-          clearFirstLine()
-          setSlashIndex(-1)
-          void runClaudeInterceptedCommand(name)
-          return
-        }
         if (name === 'add-dir') {
           replaceFirstLineWith('/add-dir ')
           setSlashIndex(-1)
           return
         }
-        if (name === 'plan' && activeProviderForResources === 'codex') {
+        if (name === 'plan' && slashPolicy.enterPlan) {
           clearFirstLine()
           setSlashIndex(-1)
-          useChatStore.getState().setSelectedCodexCollaborationMode('plan', sessionScope ?? undefined)
+          slashPolicy.enterPlan(useChatStore.getState(), sessionScope ?? undefined)
           return
         }
         // Same shape as Codex `/plan`: the row is a mode switch, not a prefix.
@@ -801,7 +789,7 @@ export function ChatInput({
           enterGoalCompose()
           return
         }
-        if (name === 'review' && activeProviderForResources === 'codex') {
+        if (name === 'review' && slashPolicy.reviewCommand) {
           clearFirstLine()
           clearAttachments()
           for (const mention of mentions) {
@@ -814,7 +802,7 @@ export function ChatInput({
         replaceFirstLineWith(`/${name} `)
         setSlashIndex(-1)
       },
-      [activeProviderForResources, clearAttachments, mentions, removeMention, setShowReviewPanel, clearFirstLine, replaceFirstLineWith, replaceEditorTextPreservingTrailingSpace, setText, cursorSlashCommands, sessionScope, goalCapability, enterGoalCompose]
+      [slashPolicy, activeSlashCommands, clearAttachments, mentions, removeMention, setShowReviewPanel, clearFirstLine, replaceFirstLineWith, replaceEditorTextPreservingTrailingSpace, setText, sessionScope, goalCapability, enterGoalCompose]
     )
 
     const addDirParse = useMemo(() => {
@@ -830,11 +818,11 @@ export function ChatInput({
     // Grok/ACP (and Claude if typed): dedicated `/workflow` picker after commit
     // (`/workflow ` via space or Tab/Enter selection) — not bare `/workflow`.
     const workflowSlashParse = useMemo(() => {
-      if (activeProviderForResources !== 'acp' && activeProviderForResources !== 'claude') {
+      if (!slashPolicy.hostCommands.includes('workflows')) {
         return { active: false, argsText: '' }
       }
       return parseWorkflowSlashLine(text)
-    }, [text, activeProviderForResources])
+    }, [text, slashPolicy])
     const workflowSlashActive = workflowSlashParse.active
     const workflowSlashArgsText = workflowSlashParse.argsText
 
@@ -1574,9 +1562,7 @@ export function ChatInput({
     const shouldShowCodexRejectHint = isCodexPlanMode && codexPlanRejectHintActive && text.trim().length === 0
     const providerPlaceholder = resolveChatInputPlaceholder(t, {
       provider: activeProviderForResources,
-      permissionMode,
-      openCodeAgentId,
-      codexPlanMode: isCodexPlanMode,
+      planMode,
       acpAgentName: acpAgentName || t('chat.suggestions.acpLabel'),
     })
     const placeholderText = goalComposing && goalCapability
@@ -2039,7 +2025,7 @@ export function ChatInput({
       // The composer's chips (mentions, attachments, pastes, quotes) act as the sent bubble's do.
       <DesktopUserBubblePorts>
       <div inert={isRemoteLocked} aria-disabled={isRemoteLocked} className={cn('relative', isRemoteLocked && 'opacity-60')}>
-        {(activeProviderForResources === 'claude' || activeProviderForResources === 'codex') && <ChatInputDirsHint />}
+        <ChatInputDirsHint />
         {status !== 'streaming' && (
           <PromptSuggestionChips suggestions={alternateSuggestions} onSelect={applySuggestion} />
         )}

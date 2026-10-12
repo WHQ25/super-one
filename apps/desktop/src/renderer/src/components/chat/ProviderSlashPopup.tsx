@@ -5,6 +5,7 @@ import { useActiveSession, useScopedSessionActions } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
 import { ProviderLabel } from '@/components/ProviderLabel'
+import { apiKeyDefaultFor } from '@/harness-ui/api-key-defaults'
 import { consumerForHarness, credentialsForConsumer, providerDisplayForCredential } from '@/lib/provider-resolve'
 import { type Credential } from '@superone/shared/platform-registry'
 
@@ -40,10 +41,8 @@ export function ProviderSlashPopup({ onClose }: { onClose: () => void }) {
   )
 
   const items = useMemo<ProviderItem[]>(() => {
-    const defaultLabel = harness === 'codex'
-      ? t('resources.providers.defaultLabelCodex')
-      : t('resources.providers.defaultLabelClaude')
-    const list: ProviderItem[] = [{ id: null, brand: harness === 'codex' ? 'openai' : 'claude', label: defaultLabel }]
+    const builtIn = apiKeyDefaultFor(harness)
+    const list: ProviderItem[] = [{ id: null, brand: builtIn.brand, label: t(builtIn.labelKey) }]
     for (const c of filtered) {
       // Main label = platform name (shown beside the site favicon when the brand has no icon,
       // e.g. custom providers); the key name is the secondary badge on the right.

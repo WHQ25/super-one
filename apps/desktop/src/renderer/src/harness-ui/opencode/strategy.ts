@@ -7,6 +7,8 @@ import type { HarnessStrategy } from '../strategy'
 export const opencodeStrategy: HarnessStrategy = {
   selection: neutralSelection,
   queuePolicy: 'always',
+  slash: { hostCommands: [] },
+  inPlanMode: (session) => session.openCodeAgentId === 'plan',
   seed: (session, { state }) => {
     const selection = resolveDefaultOpenCodeSelection(state.harnessResources.opencode?.models ?? [])
     session.selectedModel = selection.modelId

@@ -80,6 +80,16 @@ describe('missingDefaults and restore', () => {
   })
 })
 
+describe('slash policy', () => {
+  it('names only commands the desktop has a handler for, and every one for Claude', async () => {
+    const { CLAUDE_INTERCEPTED_COMMAND_NAMES } = await import('@/stores/chat-store')
+    for (const strategy of Object.values(HARNESS_STRATEGIES)) {
+      for (const name of strategy.slash.hostCommands) expect(CLAUDE_INTERCEPTED_COMMAND_NAMES.has(name)).toBe(true)
+    }
+    expect(new Set(HARNESS_STRATEGIES.claude.slash.hostCommands)).toEqual(CLAUDE_INTERCEPTED_COMMAND_NAMES)
+  })
+})
+
 describe('Codex live restore', () => {
   const snapshot = { selectedModel: 'gpt-running', selectedEffort: 'high' }
 

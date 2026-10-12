@@ -107,12 +107,13 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
     codexSkills: [] as Array<{ name: string; description: string; argumentHint?: string }>,
   }
 
+  const codexCollaborationModeSpy = vi.fn()
   const useChatStore = Object.assign(
     (selector: (state: typeof chatActions) => unknown) => selector(chatActions),
     {
       getState: () => ({
         ...chatActions,
-        setSelectedCodexCollaborationMode: vi.fn(),
+        setSelectedCodexCollaborationMode: codexCollaborationModeSpy,
       }),
     },
   )
@@ -427,6 +428,7 @@ vi.mock('@/components/ui/HighlightedText', () => ({
 }))
 
 import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
+import { runClaudeInterceptedCommand } from '@/stores/chat'
 import { ChatInput } from './ChatInput'
 
 it('keeps a remote draft observable without echoing mobile edits into the store', async () => {
@@ -1391,6 +1393,46 @@ describe('ChatInput slash command grouping', () => {
     expect(labels.some((label) => label.startsWith('/workflows'))).toBe(false)
     expect(labels.some((label) => label.startsWith('/compact'))).toBe(false)
     expect(labels.some((label) => label.startsWith('/tdd'))).toBe(false)
+  })
+
+  // The popup and a typed send share one slash policy; send-message.test.ts covers the typed side.
+  it.each([
+    ['claude', 'clear'],
+    ['claude', 'workflows'],
+    ['acp', 'workflows'],
+    ['cursor', 'clear'],
+  ] as const)('runs the %s host command /%s from the popup instead of writing it', (harness, name) => {
+    activeSessionState.preferredProvider = harness
+    activeSessionState.sessionProvider = harness
+    activeSessionState.acpAgentId = 'grok-build'
+    activeSessionState.acpSlashCommands = []
+    activeSessionState.slashCommands = [{ name, description: `${name} command`, argumentHint: '', isSkill: false }]
+
+    const { rerender } = render(<ChatInput />)
+    typeInEditor(`/${name}`)
+    rerender(<ChatInput />)
+
+    chatActions.setDraftText.mockClear()
+    const button = screen.getAllByText(`/${name}`).map((node) => node.closest('button')).find(Boolean)
+    fireEvent.mouseDown(button!)
+
+    expect(runClaudeInterceptedCommand).toHaveBeenCalledWith(name)
+    expect(chatActions.setDraftText.mock.calls.at(-1)?.[0] ?? '').not.toContain(`/${name} `)
+  })
+
+  it('enters Codex plan mode from the /plan row instead of writing it', () => {
+    activeSessionState.preferredProvider = 'codex'
+    activeSessionState.sessionProvider = 'codex'
+
+    const { rerender } = render(<ChatInput />)
+    typeInEditor('/plan')
+    rerender(<ChatInput />)
+
+    const button = screen.getAllByText('/plan').map((node) => node.closest('button')).find(Boolean)
+    fireEvent.mouseDown(button!)
+
+    expect(useChatStore.getState().setSelectedCodexCollaborationMode).toHaveBeenCalledWith('plan', undefined)
+    expect(runClaudeInterceptedCommand).not.toHaveBeenCalled()
   })
 
   it('expands a Cursor command body including newlines into the editor', () => {

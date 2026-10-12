@@ -100,6 +100,9 @@ export interface HarnessStrategy {
   cyclePermission?(context: InteractionContext): void
   /** The plan shortcut. Absent: the cycle shortcut. */
   togglePlan?(context: InteractionContext): void
+  /** Whether the session is in this harness's plan mode. Absent: permission mode `plan`. */
+  inPlanMode?(session: PlanModeFields): boolean
+  slash: SlashPolicy
   /**
    * The model pick an empty draft takes when the user switches to this harness,
    * laid over the shared reset (ACP catalog, usage, goal).
@@ -121,6 +124,37 @@ export interface SwitchContext {
   isCurrent(): boolean
   /** Prewarm once the prior harness's runtime for this draft is disposed. */
   prewarmAfterDispose(): Promise<void>
+}
+
+export type PlanModeFields = Pick<PerSessionState, 'permissionMode' | 'selectedCodexCollaborationMode' | 'openCodeAgentId'>
+
+/**
+ * How `/name` behaves, the same whether picked from the popup or typed and
+ * sent. Every other command reaches the harness as turn text.
+ */
+export interface SlashPolicy {
+  /**
+   * Commands this desktop runs itself and never sends (keys of
+   * `CLAUDE_INTERCEPTED_COMMANDS`). `workflows` also enables the `/workflow` picker.
+   */
+  hostCommands: readonly string[]
+  /** Command names may contain spaces, and hidden commands are offered. */
+  spacedCommands?: boolean
+  /** `/plan` enters plan mode instead of being sent. */
+  enterPlan?(store: ChatStore, target?: SessionWriteTarget): void
+  /** `/review` opens the review panel. */
+  reviewCommand?: boolean
+  /** Picking a command with a prompt body writes the body into the composer. */
+  expandsPromptBody?: boolean
+  /** A typed command the harness runs over RPC instead of a turn; true when handled. */
+  run?(name: string, context: SlashRunContext): Promise<boolean>
+}
+
+export interface SlashRunContext {
+  session: PerSessionState
+  projectPath: string
+  sessionId: string | null
+  patch(update: Partial<PerSessionState>): void
 }
 
 export interface InteractionContext {

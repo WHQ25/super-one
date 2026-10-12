@@ -1,7 +1,7 @@
 # Harness UI adapter registry
 
-Status: in-progress (step 0 done; branch `refactor/harness-ui-adapter`) · Updated: 2026-10-12
-Goal: Desktop renderer chat surfaces resolve per-harness behavior through one shared static descriptor plus per-harness renderer controls and store strategies, so adding or changing a harness edits its own modules instead of `=== '<harnessId>'` branches across the composer, status bar and chat store.
+Status: in-progress (steps 0-1 done; branch `refactor/harness-ui-adapter`) · Updated: 2026-10-12
+Goal: Desktop renderer chat surfaces resolve per-harness behavior through the shared static harness tables plus per-harness renderer controls and store strategies, so adding or changing a harness edits its own modules instead of `=== '<harnessId>'` branches across the composer, status bar and chat store.
 Long-term docs affected: `.claude/skills/superone-harness/references/integration.md` and `experiences.md` (model, permission and slash checklists become "fill the harness modules"), `.claude/skills/superone-harness/references/new-harness.md` (P0 catalog table), `apps/desktop/docs/agent-reference/architecture.md` (new "Harness UI modules" section)
 
 ## Why
@@ -47,11 +47,10 @@ harness multiplication remains:
 ## Design
 
 ```
-packages/shared/src/harness/harness-descriptor.ts       static, serializable; desktop, mobile, main
-  HARNESS_DESCRIPTORS: Record<HarnessId, HarnessDescriptor>
-    capabilities   today's HARNESS_CAPABILITIES fields (displayName stays here, once)
-    launch         { permissionModes, sandboxModes }   today's HARNESS_LAUNCH_OPTIONS
-    composer       { softCancel, busySlashAllowlist?, slashArgsInFilter, includeHiddenSlash }
+packages/shared (static, serializable; desktop, mobile, main)
+  HARNESS_CAPABILITIES   flags + displayName; later composer flags
+                         (softCancel, busySlashAllowlist?, slashArgsInFilter, includeHiddenSlash)
+  HARNESS_LAUNCH_OPTIONS { permissionModes, sandboxModes, defaultPermissionMode }
 
 apps/desktop/src/renderer/src/harness-ui/<harnessId>/
   controls.tsx     React components, each calling its own hooks in a fixed order
@@ -64,12 +63,14 @@ apps/desktop/src/renderer/src/harness-ui/
   strategies.ts    HARNESS_STRATEGIES: { [H in HarnessId]: HarnessStrategy }
 ```
 
-- **Static vs behavioral.** Data that mobile or main need lives in the shared
-  descriptor. `HARNESS_CAPABILITIES` and `HARNESS_LAUNCH_OPTIONS` become views
-  over it with unchanged values and array order; their exports stay, so main
-  and mobile do not move in the same step. `harness-sandbox.ts` and
-  `sessionDefaultsForHarness` keep their current semantics; the descriptor
-  does not own a single default permission mode.
+- **Static vs behavioral.** Data that mobile or main need lives in the two
+  existing shared tables, both already exhaustive over `HarnessId`; no wrapper
+  table is added on top of them. `harness-sandbox.ts` keeps its semantics.
+- **One default permission mode per harness.** `defaultPermissionMode` is the
+  harness's own recommended default, separate from `permissionModes` (display
+  order). Session defaults, launch rows, settings and mobile all fall back to
+  it. dsh uses upstream's default preset `workspace-write` (`default`), not
+  the first-listed read-only `plan`.
 - **Components dispatch, hooks do not.** Registries return components. A
   dispatcher renders `<Controls.ModelControl />` for the active harness; hooks
   run inside that component, so switching harness remounts instead of changing
@@ -117,9 +118,6 @@ apps/desktop/src/renderer/src/harness-ui/
 - Moving the `RemoteSystemInfo` projection out of desktop main; deleting the
   mobile permission generator.
 - Store shape changes (direction 2) and DB/wire field renames.
-- Unifying the session vs launch default permission for dsh. The plan keeps
-  both behaviors and records the divergence in tests; changing it is a product
-  decision.
 
 ## Steps
 
@@ -135,12 +133,11 @@ affected tests (paths below), `bun run typecheck:web` and, when shared changes,
      `turnKind`), including a queued form. Include Codex activation
      replay (old choices + new `threadId`) and assert absent fields.
    - Ratchet test (see Verification) with today's per-file counts.
-1. **Shared descriptor.** Add `harness-descriptor.ts`; derive
-   `HARNESS_CAPABILITIES` and `HARNESS_LAUNCH_OPTIONS` from it. Existing tests
-   `packages/shared/src/harness/{harness-capabilities,harness-sandbox,session-defaults}.test.ts`
-   and `apps/desktop/src/main/agent/remote-harness-system-info.test.ts` stay
-   green, plus one equality test per harness on the derived exports. Replace
-   only identical base-name lookups (`BrandColorPopover` `HARNESS_LABEL`) with
+1. **Shared defaults (done).** `HARNESS_LAUNCH_OPTIONS.defaultPermissionMode`
+   replaces every "first offered mode" fallback (`sessionDefaultsForHarness`,
+   `SessionDefaultsSection`, `HarnessPermissionPopover` for both launch rows,
+   mobile collab request, agent config fields and preview). dsh now starts in
+   `default`. `BrandColorPopover` `HARNESS_LABEL` reads
    `capabilities.displayName`; ACP agent names and localized copy stay.
 2. **Dispatch wrappers.** Create `harness-ui/` with `controls.tsx` per harness
    wrapping the existing selectors unchanged. Replace the `ModelSelector` and

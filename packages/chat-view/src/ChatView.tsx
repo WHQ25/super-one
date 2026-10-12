@@ -55,7 +55,8 @@ import { TurnDetailStateProvider } from './TurnDetailSection'
 import { ChatScrollIndicator } from './ChatScrollIndicator'
 import { ChatScrollbar, type ChatScrollbarHandle } from './ChatScrollbar'
 import { captureScrollAnchor, jumpChatWindow, visibleChatWindow, type ScrollAnchor } from './chat-navigation'
-import type { HostInbound, ReductionProjection, SessionProjection } from './protocol'
+import type { HostInbound, ReductionProjection, SessionProjection, TranscriptWindowPage } from './protocol'
+import { WindowEarlierPart } from './WindowEarlierPart'
 
 type PendingPermission = ReductionProjection['pendingPermission']
 
@@ -102,6 +103,8 @@ const EMPTY_SESSION: SessionFacts = {
   queuedMessages: [],
   queuedSteer: { now: false, soon: false },
   promptKeywords: [],
+  transcriptWindow: false,
+  hasNewerHistory: false,
 }
 
 /** Take only the session keys the host actually sent; a patch omits what did not change. */
@@ -158,6 +161,15 @@ function normalizeMcpIcons(value: ReductionProjection['mcpIcons'], fallback: Rec
     && typeof src === 'string'
     && src.length <= 512_000
     && (/^https:\/\//.test(src) || /^data:image\//.test(src))))
+}
+
+/** A window page over the rows shown: changed rows replace theirs, the page's order wins. */
+function mergeWindowPage(current: ChatMessage[], page: TranscriptWindowPage): { messages: ChatMessage[]; added: number } {
+  if (page.replace) return { messages: page.messages, added: 0 }
+  const rows = new Map(current.map((message) => [message.id, message]))
+  for (const message of page.messages) rows.set(message.id, message)
+  const messages = page.messageOrder.flatMap((id) => rows.has(id) ? [rows.get(id)!] : [])
+  return { messages, added: Math.max(0, messages.findIndex((message) => message.id === current[0]?.id)) }
 }
 
 function mergeHistory(older: ChatMessage[], current: ChatMessage[]): { messages: ChatMessage[]; added: number } {
@@ -297,13 +309,15 @@ export function ChatView() {
     setNavigationRetry(null)
     setNavigationEdge(direction === 'after' ? 'bottom' : direction === 'before' ? 'top' : jumpEdge(stateRef.current, anchorId))
     try {
-      const result = await requestNativeAsync('loadHistoryWindow', { anchorId, direction }) as { messages: ChatMessage[] }
+      const result = await requestNativeAsync('loadHistoryWindow', { anchorId, direction }) as { messages: ChatMessage[] } | TranscriptWindowPage
       if (epoch !== stateRef.current.transcriptEpoch || request !== navigationRequest.current) return
-      if (direction !== 'around') prependSnapshotRef.current = captureScrollAnchor()
+      if (direction !== 'around') prependSnapshotRef.current = captureScrollAnchor(direction === 'before' ? 'bottom' : 'top')
       else { prependSnapshotRef.current = null; navigatingUntilRef.current = performance.now() + 700 }
+      const windowPage = 'messageOrder' in result ? result : null
       setState(previous => {
         if (!previous.navigation) return previous
-        const messages = mergeIndexedHistory(previous.navigation, result.messages, previous.messages)
+        const messages = windowPage ? mergeWindowPage(previous.messages, windowPage).messages
+          : mergeIndexedHistory(previous.navigation, result.messages, previous.messages)
         const anchor = messages.findIndex(message => message.id === anchorId)
         if (anchor < 0) return previous
         const oldStart = messages.findIndex(message => message.id === previous.messages[previous.range.start]?.id)
@@ -315,6 +329,7 @@ export function ChatView() {
                 end: Math.min(oldEnd, Math.max(0, anchor - CHAT_WINDOW.loadMoreTurns) + CHAT_WINDOW.maxMountedTurns) }
             : { start: Math.max(0, oldStart), end: Math.min(messages.length, anchor + 1 + CHAT_WINDOW.loadMoreTurns) }, messages.length), messages.length, minimum)
         return { ...previous, messages,
+          ...(windowPage ? { hasMoreHistory: windowPage.hasMoreHistory, session: { ...previous.session, hasNewerHistory: windowPage.hasNewerHistory } } : {}),
           range: contiguousHistoryRange(messages, previous.navigation, range, anchor),
           scrollTarget: direction === 'around' ? {
             id: transcriptSegments(messages).find(segment => segment.id === targetId)?.id
@@ -347,9 +362,49 @@ export function ChatView() {
       ), direction === 'previous' ? previous.range.start : previous.range.end - 1),
     }))
   }, [])
+  /** A transcript window pages through native: earlier fragments, possibly of the top row itself. */
+  const loadWindowPage = useCallback(async (placement: 'older' | 'newer') => {
+    const current = stateRef.current
+    if (fetchingHistoryRef.current) return
+    fetchingHistoryRef.current = true
+    setHistoryLoading(true)
+    setHistoryError(false)
+    const epoch = current.transcriptEpoch
+    const navigationGeneration = navigationRequest.current
+    try {
+      const page = await requestNativeAsync(placement === 'older' ? 'loadEarlier' : 'loadWindowPage', { placement }) as TranscriptWindowPage
+      if (stateRef.current.transcriptEpoch !== epoch || navigationRequest.current !== navigationGeneration) return
+      atBottomRef.current = false
+      scrollToBottomRef.current = false
+      prependSnapshotRef.current = captureScrollAnchor(placement === 'older' ? 'bottom' : 'top')
+      setState(previous => {
+        if (previous.transcriptEpoch !== epoch) return previous
+        const merged = mergeWindowPage(previous.messages, page)
+        return {
+          ...previous, messages: merged.messages, hasMoreHistory: page.hasMoreHistory,
+          session: { ...previous.session, hasNewerHistory: page.hasNewerHistory },
+          range: normalizeChatWindow(placement === 'older'
+            ? { start: Math.max(0, previous.range.start + merged.added - CHAT_WINDOW.loadMoreTurns), end: previous.range.end + merged.added }
+            : { start: previous.range.start, end: previous.range.end + CHAT_WINDOW.loadMoreTurns }, merged.messages.length),
+        }
+      })
+    } catch {
+      if (stateRef.current.transcriptEpoch === epoch) setHistoryError(true)
+    } finally {
+      if (stateRef.current.transcriptEpoch === epoch) {
+        fetchingHistoryRef.current = false
+        setHistoryLoading(false)
+      }
+    }
+  }, [])
   const loadPrevious = useCallback(async () => {
     retryIndex()
     const current = stateRef.current
+    if (current.session.transcriptWindow) {
+      if (current.range.start > 0 || !current.hasMoreHistory) changeWindow('previous')
+      else await loadWindowPage('older')
+      return
+    }
     if (needsEarlierPage(current)) {
       if (!navigationLoading) await requestHistoryWindow(current.messages[current.range.start]!.id, 'before')
       return
@@ -389,14 +444,19 @@ export function ChatView() {
         setHistoryLoading(false)
       }
     }
-  }, [changeWindow, navigationLoading, requestHistoryWindow, retryIndex])
+  }, [changeWindow, loadWindowPage, navigationLoading, requestHistoryWindow, retryIndex])
   const loadNext = useCallback(() => {
     retryIndex()
     const current = stateRef.current
+    if (current.session.transcriptWindow) {
+      if (current.range.end < current.messages.length || !current.session.hasNewerHistory) changeWindow('next')
+      else void loadWindowPage('newer')
+      return
+    }
     if (current.navigation && needsHistoryPage(current.messages, current.navigation, current.range, 'after')) {
       if (!navigationLoading) void requestHistoryWindow(current.messages[current.range.end - 1]!.id, 'after')
     } else changeWindow('next')
-  }, [changeWindow, navigationLoading, requestHistoryWindow, retryIndex])
+  }, [changeWindow, loadWindowPage, navigationLoading, requestHistoryWindow, retryIndex])
 
   const prepareNavigation = useCallback(() => {
     navigationRequest.current++
@@ -578,7 +638,7 @@ export function ChatView() {
     const snapshot = prependSnapshotRef.current
     if (snapshot) {
       const anchor = document.querySelector<HTMLElement>(`[data-turn-id="${CSS.escape(snapshot.id)}"]`)
-      if (anchor) page.scrollBy({ top: anchor.getBoundingClientRect().top - snapshot.top, behavior: 'auto' })
+      if (anchor) page.scrollBy({ top: anchor.getBoundingClientRect()[snapshot.edge] - snapshot.offset, behavior: 'auto' })
       prependSnapshotRef.current = null
       setTimeout(() => { loadingPreviousRef.current = false }, 60)
       scheduleViewState()
@@ -665,7 +725,8 @@ export function ChatView() {
   const topBusy = (navigationLoading || !!navigationRetry) && navigationEdge === 'top'
   const bottomBusy = (navigationLoading || !!navigationRetry) && navigationEdge === 'bottom'
   const moreAfter = bottomBusy || state.range.end < state.messages.length
-    || (!!state.navigation && needsHistoryPage(state.messages, state.navigation, state.range, 'after'))
+    || (state.session.transcriptWindow ? state.session.hasNewerHistory
+      : !!state.navigation && needsHistoryPage(state.messages, state.navigation, state.range, 'after'))
   const topRetry = navigationRetry && navigationEdge === 'top' ? navigationRetry : null
   const bottomRetry = navigationRetry && navigationEdge === 'bottom' ? navigationRetry : null
   return (
@@ -686,7 +747,8 @@ export function ChatView() {
       <ChatScrollIndicator entries={outline} range={navigation ? globalHistoryRange(state.messages, navigation, state.range) : state.range}
         onJump={jumpToMessage} />
       <div className="chat-view-top-sentinel" data-testid="top-sentinel">
-        {visible.length > 0 && (topBusy || state.range.start > 0 || (state.navigation ? needsEarlierPage(state) : state.hasMoreHistory)) && (
+        {visible.length > 0 && (topBusy || state.range.start > 0
+          || (state.navigation && !state.session.transcriptWindow ? needsEarlierPage(state) : state.hasMoreHistory)) && (
           <EdgeLoader edge="top" loading={historyLoading || (navigationLoading && navigationEdge === 'top')}
             error={historyError || (!!navigationRetry && navigationEdge === 'top')} onLoad={topRetry ?? loadPrevious} />
         )}
@@ -732,6 +794,9 @@ export function ChatView() {
           )
           return <Fragment key={row.id}>
             {separatorAt !== undefined && <MessageDateSeparator at={separatorAt} />}
+            {row.id === row.source.id && (row.source.metadata?.window?.omittedBefore ?? 0) > 0 && (
+              <WindowEarlierPart />
+            )}
             {turn}
             {state.realtimeActivities.filter(activity => row.final && activity.afterMessageId === message.id)
               .map(activity => <PortableRealtimeActivity key={activity.turnId} row={activity} />)}

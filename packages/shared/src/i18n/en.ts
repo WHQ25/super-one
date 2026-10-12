@@ -1893,6 +1893,11 @@ export type Messages = {
     messageMenu: {
       copy: string
       copied: string
+      copyFailed: string
+    }
+    transcriptWindow: {
+      earlierPart: string
+      omitted: string
     }
     error: {
       detailsToggle: string
@@ -6276,6 +6281,11 @@ export const en: Messages = {
     messageMenu: {
       copy: 'Copy',
       copied: 'Copied',
+      copyFailed: 'Copy failed',
+    },
+    transcriptWindow: {
+      earlierPart: 'Earlier part of this message',
+      omitted: 'Too large to show here',
     },
     error: {
       detailsToggle: 'Error Details',

@@ -6,6 +6,7 @@ import { requestNative } from './bridge'
 import { useLongPress } from './long-press'
 import { PortableMessageMenu } from './PortableMessageMenu'
 import { userMessageCopyText } from './user-message-copy-text'
+import { isPartialMessage, wholeMessage } from './partial-message'
 
 /** How long the "Copied" confirmation stays before the menu folds away. */
 const COPIED_LINGER_MS = 700
@@ -22,7 +23,7 @@ export function useUserMessageMenu(
 ): { bubbleProps?: HTMLAttributes<HTMLDivElement>; menu?: ReactNode } {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
-  const [copied, setCopied] = useState(false)
+  const [copied, setCopied] = useState<boolean | 'failed'>(false)
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const copyText = useMemo(() => (enabled ? userMessageCopyText(message) : ''), [enabled, message])
   const active = enabled && copyText.length > 0
@@ -45,9 +46,10 @@ export function useUserMessageMenu(
   if (!active) return {}
 
   const copy = () => {
-    requestNative('copyText', { text: copyText })
-    setCopied(true)
-    closeTimer.current = setTimeout(close, COPIED_LINGER_MS)
+    const done = (state: true | 'failed') => { setCopied(state); closeTimer.current = setTimeout(close, COPIED_LINGER_MS) }
+    if (!isPartialMessage(message)) { requestNative('copyText', { text: copyText }); done(true); return }
+    // A long paste the transcript window holds in part: copy the whole message.
+    wholeMessage(message).then((whole) => { requestNative('copyText', { text: userMessageCopyText(whole) }); done(true) }, () => done('failed'))
   }
 
   return {
@@ -59,8 +61,8 @@ export function useUserMessageMenu(
           onClose={close}
           items={[{
             id: 'copy',
-            icon: copied ? <Check className="text-success" /> : <Copy />,
-            label: copied ? t('chat.messageMenu.copied') : t('chat.messageMenu.copy'),
+            icon: copied === true ? <Check className="text-success" /> : <Copy />,
+            label: copied === 'failed' ? t('chat.messageMenu.copyFailed') : copied ? t('chat.messageMenu.copied') : t('chat.messageMenu.copy'),
             onSelect: copied ? close : copy,
           },
           // The phone has no hover row; editing a send the host never took lives here.

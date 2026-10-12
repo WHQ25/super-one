@@ -102,7 +102,8 @@ export interface PortableTurnFooterProps {
   isStreaming: boolean
   streamingTokens: TurnTokenCounts
   /** Plain-text transcript of the turn; omitted while streaming, which hides copy. */
-  copyText?: string
+  /** The text, or a loader for a reply the transcript window holds in part. */
+  copyText?: string | (() => Promise<string>)
 }
 
 /**
@@ -131,7 +132,7 @@ export function PortableTurnFooter({
     frozenTokens: frozenRef.current,
     elapsedMs,
   })
-  const [copied, setCopied] = useState(false)
+  const [copied, setCopied] = useState<'copied' | 'copying' | 'failed' | false>(false)
   const showCopy = !isStreaming && Boolean(copyText)
   // A turn under a second has no clock yet, and on the phone the footer is the
   // only place a live turn announces itself — so the sending label stands in
@@ -147,14 +148,20 @@ export function PortableTurnFooter({
       {showCopy && (
         <button
           type="button"
+          disabled={copied === 'copying'}
           onClick={() => {
-            requestNative('copyText', { text: copyText })
-            setCopied(true)
-            setTimeout(() => setCopied(false), 1500)
+            const settle = (state: 'copied' | 'failed') => { setCopied(state); setTimeout(() => setCopied(false), 1500) }
+            if (typeof copyText !== 'function') { requestNative('copyText', { text: copyText }); settle('copied'); return }
+            setCopied('copying')
+            copyText().then((text) => { requestNative('copyText', { text }); settle('copied') }, () => settle('failed'))
           }}
+          aria-label={copied === 'failed' ? t('chat.messageMenu.copyFailed') : t('chat.messageMenu.copy')}
           className="flex h-4 shrink-0 items-center"
         >
-          {copied ? <Check className="size-3 text-success" /> : <Copy className="size-3" />}
+          {copied === 'copied' ? <Check className="size-3 text-success" />
+            : copied === 'copying' ? <Loader2 className="size-3 animate-spin" />
+              : copied === 'failed' ? <AlertTriangle className="size-3 text-error" />
+                : <Copy className="size-3" />}
         </button>
       )}
       {footer.showDuration && (

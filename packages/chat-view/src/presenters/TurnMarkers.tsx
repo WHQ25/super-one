@@ -21,6 +21,9 @@ export function ReviewMarkerPresenter({ block }: { block: Extract<ContentBlock, 
 /** A notice the turn continued past: an error, or the context being compacted. */
 export function TurnNoticePresenter({ block }: { block: Extract<ContentBlock, { type: 'notice' }> }) {
   const { t } = useTranslation()
+  if (block.kind === 'omitted') {
+    return <div className="my-0.5 text-xs text-muted-foreground" data-testid="window-omitted">{t('chat.transcriptWindow.omitted')}</div>
+  }
   if (block.kind === 'compaction') {
     return (
       <div className="my-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">

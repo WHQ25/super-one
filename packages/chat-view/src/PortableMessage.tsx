@@ -11,6 +11,7 @@ import { promptKeywordsIn, type PromptKeyword } from '@superone/shared/prompt-ke
 import { parseRealtimeDelegation } from '@superone/shared/realtime-timeline'
 import { RealtimeDelegationBody } from './presenters/RealtimeDelegationBody'
 import { getAssistantCopyText } from './presenters/getAssistantCopyText'
+import { isPartialMessage, wholeMessage } from './partial-message'
 import { ZERO_TURN_TOKENS, type TurnTokenCounts } from './presenters/turn-footer-model'
 import { PortableCollabTaskBubble } from './PortableCollabTaskBubble'
 import { UserMessageContentPresenter } from './presenters/UserMessageContent'
@@ -195,7 +196,9 @@ export const PortableMessage = memo(function PortableMessage({
   // Copy text is only needed once the turn settles (the button hides while
   // streaming), so skip concatenating the whole turn on every delta.
   const copyText = useMemo(
-    () => (isUser || isStreaming || hideCopyActions ? undefined : getAssistantCopyText(sourceMessage)),
+    () => (isUser || isStreaming || hideCopyActions ? undefined
+      : isPartialMessage(sourceMessage) ? () => wholeMessage(sourceMessage).then((whole) => getAssistantCopyText(whole) ?? '')
+        : getAssistantCopyText(sourceMessage)),
     [isUser, isStreaming, hideCopyActions, sourceMessage],
   )
   // A collaboration bubble sits on the left, so its menu hugs that edge too;

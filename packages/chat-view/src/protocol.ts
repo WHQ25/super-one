@@ -64,6 +64,23 @@ export interface SessionProjection {
   queuedSteer?: { now: boolean; soon: boolean }
   /** The prompt keywords the session's harness acts on; sent bubbles paint them. */
   promptKeywords?: PromptKeyword[]
+  /**
+   * The transcript arrives as a fragment window: native owns paging, a row may
+   * hold only part of its message, and pages come back as `TranscriptWindowPage`.
+   */
+  transcriptWindow?: boolean
+  /** A history jump left the window short of the live tail; newer content loads from below. */
+  hasNewerHistory?: boolean
+}
+
+/** A transcript-window page from native: changed rows and the window's order. */
+export interface TranscriptWindowPage {
+  messages: ChatMessage[]
+  messageOrder: string[]
+  /** The rows are the whole window (a jump or a return to the tail). */
+  replace: boolean
+  hasMoreHistory: boolean
+  hasNewerHistory: boolean
 }
 
 /** What a tap on a queued message's action asks native to do. */

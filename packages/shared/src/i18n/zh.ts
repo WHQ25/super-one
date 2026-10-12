@@ -2003,6 +2003,11 @@ export const zh: Messages = {
     messageMenu: {
       copy: '复制',
       copied: '已复制',
+      copyFailed: '复制失败',
+    },
+    transcriptWindow: {
+      earlierPart: '这条消息的前面部分',
+      omitted: '内容过大，无法在此显示',
     },
     error: {
       detailsToggle: '错误细节',

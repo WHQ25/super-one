@@ -1,4 +1,4 @@
-import type { AgentPrewarmHint } from '@superone/shared/agent-types'
+import type { AgentPrewarmHint, ModelOption } from '@superone/shared/agent-types'
 import { HARNESS_STRATEGIES } from '@/harness-ui/strategies'
 import { createDefaultPerSessionState, createDefaultProjectState } from '../defaults'
 import type { ChatStore, PerSessionState, ProjectState, SessionWriteTarget } from '../types'
@@ -11,6 +11,13 @@ export function getProject(state: ChatStore, projectPath?: string | null): Proje
   const key = projectPath ?? state.activeProject
   if (!key) return createDefaultProjectState()
   return state.projectSessions[key] ?? createDefaultProjectState()
+}
+
+/** Claude catalog for a project: the node's for a remote project, else this desktop's cache. */
+export function projectClaudeModels(state: ChatStore, projectPath: string): ModelOption[] {
+  return parseRemoteProjectKey(projectPath)
+    ? (getProject(state, projectPath).claudeModels ?? [])
+    : (state.harnessResources.claude?.models ?? [])
 }
 
 export function getActivePerSession(state: ChatStore, projectPath?: string | null): PerSessionState {

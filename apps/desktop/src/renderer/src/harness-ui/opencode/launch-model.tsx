@@ -4,13 +4,13 @@ import { useChatStore } from '@/stores/chat'
 import { resolveSlashModelLabel } from '@/components/chat/ModelSelectorLists'
 import { GroupedModelEffortSelector } from '@/components/chat/model-selector/GroupedModelEffortSelector'
 import {
-  effortForLevels,
   effortLabel,
   levelEffortOptions,
   liveOrProfile,
   useProfileCatalog,
   type LaunchModelProps,
 } from '../launch-model'
+import { effortForLevels } from '../effort'
 import { toSelectorGroups, toSelectorModels } from '../selector-models'
 
 const EMPTY_MODELS: ModelOption[] = []

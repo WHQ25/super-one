@@ -14,6 +14,7 @@ import {
   type SelectorEffortOption,
   type SelectorProviderOption,
 } from '@/components/chat/model-selector/GroupedModelEffortSelector'
+import { effortForLevels } from './effort'
 import { toSelectorModels } from './selector-models'
 
 /**
@@ -70,13 +71,6 @@ export function levelEffortOptions(levels: readonly string[]): SelectorEffortOpt
 export function profileEffortLevels(profile: SessionAgentProfile | undefined): EffortLevel[] {
   return (profile?.efforts ?? []).filter((effort): effort is EffortLevel =>
     effort === 'low' || effort === 'medium' || effort === 'high' || effort === 'xhigh' || effort === 'max')
-}
-
-/** Keep the current effort when the newly picked model offers it, else medium, else the first. */
-export function effortForLevels(levels: readonly string[] | undefined, current: string | null | undefined): string | undefined {
-  if (!levels?.length) return undefined
-  if (current && levels.includes(current)) return current
-  return levels.includes('medium') ? 'medium' : levels[0]
 }
 
 export function effortLabel(

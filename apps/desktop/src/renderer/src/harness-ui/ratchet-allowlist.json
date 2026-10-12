@@ -204,7 +204,7 @@
     "reason": "pre-registry baseline"
   },
   "stores/chat-store/helpers/harness-selection.ts": {
-    "count": 21,
+    "count": 5,
     "reason": "pre-registry baseline"
   },
   "stores/chat-store/helpers/interaction.ts": {

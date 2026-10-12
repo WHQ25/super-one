@@ -1,4 +1,7 @@
-import { applyDefaultModel } from '@/stores/chat-store/helpers/agent-defaults'
+import { parseRemoteProjectKey } from '@/lib/remote-project-key'
+import { applyDefaultModel, resolveDefaultClaudeEffort, resolveDefaultClaudeModel } from '@/stores/chat-store/helpers/agent-defaults'
+import { buildSlashCommands } from '@/stores/chat-store/helpers/chat-helpers'
+import { getProject, projectClaudeModels, updateProjectState } from '@/stores/chat-store/helpers/store-helpers'
 import { neutralSelection } from '../neutral-selection'
 import type { HarnessStrategy } from '../strategy'
 
@@ -27,4 +30,50 @@ export const claudeStrategy: HarnessStrategy = {
     }
   },
   draftSettings: (session) => ({ ultracode: session.ultracode }),
+  resetFields: (state, projectPath) => {
+    const defaultModel = resolveDefaultClaudeModel(projectClaudeModels(state, projectPath))
+    return {
+      selectedModel: defaultModel?.id ?? '',
+      selectedEffort: resolveDefaultClaudeEffort(defaultModel),
+      modelUserChosen: false,
+      effortUserChosen: false,
+    }
+  },
+  onSelect: ({ set, get, projectPath, session, patch, isCurrent }) => {
+    const isRemote = !!parseRemoteProjectKey(projectPath)
+    if (!isRemote) {
+      set((s) => {
+        const claude = s.harnessResources.claude
+        if (!claude) return {}
+        const project = getProject(s, projectPath)
+        return updateProjectState(s, projectPath, () => ({
+          slashCommands: buildSlashCommands(
+            claude.slashCommands,
+            claude.skills,
+            claude.commands,
+            project._projectSkills,
+            project._projectCommands,
+            new Set(s.disabledSkills),
+          ),
+        }))
+      })
+    }
+    const afterModels = () => {
+      if (!isCurrent()) return
+      const current = session()
+      const claudeModels = projectClaudeModels(get(), projectPath)
+      if (claudeModels.length === 0) return
+      if (current.selectedModel && claudeModels.some((m) => m.id === current.selectedModel)) return
+      const defaultModel = resolveDefaultClaudeModel(claudeModels)
+      if (!defaultModel) return
+      patch({
+        selectedModel: defaultModel.id,
+        selectedEffort: resolveDefaultClaudeEffort(defaultModel),
+        modelUserChosen: false,
+        effortUserChosen: false,
+      })
+    }
+    if (isRemote) void get().refreshClaudeResources(false).then(afterModels)
+    else void get().initializeHarness('claude').then(afterModels)
+  },
 }

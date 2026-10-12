@@ -1,6 +1,7 @@
 import type { AgentPrewarmHint, ModelOption, PermissionMode } from '@superone/shared/agent-types'
 import type { SessionSendRequest, SessionSettingsPatch } from '@superone/shared/environment/session-requests'
 import type { ChatStore, PerSessionState, ProjectState, SessionWriteTarget } from '@/stores/chat-store/types'
+import type { ChatStoreSet } from '@/stores/chat-store/helpers/lifecycle'
 
 /** A session's model/effort pick, in harness-neutral terms. */
 export interface SelectionState {
@@ -99,6 +100,27 @@ export interface HarnessStrategy {
   cyclePermission?(context: InteractionContext): void
   /** The plan shortcut. Absent: the cycle shortcut. */
   togglePlan?(context: InteractionContext): void
+  /**
+   * The model pick an empty draft takes when the user switches to this harness,
+   * laid over the shared reset (ACP catalog, usage, goal).
+   */
+  resetFields(state: ChatStore, projectPath: string): Partial<PerSessionState>
+  /** Loads and reconciles the harness's resources after a switch, then prewarms. */
+  onSelect(context: SwitchContext): void
+}
+
+/** The active draft just switched to a harness. */
+export interface SwitchContext {
+  set: ChatStoreSet
+  get: () => ChatStore
+  projectPath: string
+  /** The active session now. */
+  session(): PerSessionState
+  patch(update: Partial<PerSessionState>): void
+  /** Whether the active session still runs this harness; the user may have switched on. */
+  isCurrent(): boolean
+  /** Prewarm once the prior harness's runtime for this draft is disposed. */
+  prewarmAfterDispose(): Promise<void>
 }
 
 export interface InteractionContext {

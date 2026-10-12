@@ -36,6 +36,29 @@ export const acpStrategy: HarnessStrategy = {
     ...(session.selectedAcpContextWindow ? { contextWindow: session.selectedAcpContextWindow } : {}),
   }),
   createSelections: (session) => (session.acpAgentId ? { acpAgentId: session.acpAgentId } : {}),
+  /** The agent's catalog loads after the switch. */
+  resetFields: () => ({ selectedModel: '', modelUserChosen: false, acpModelsStatus: 'loading' }),
+  onSelect: ({ get, session, patch, prewarmAfterDispose }) => {
+    void get().initializeHarness('acp')
+    const applyCachedCatalog = () => {
+      const catalog = getCachedAcpCatalog(get().harnessResources.acp, session().acpAgentId)
+      if (catalog) patch(sessionPatchFromAcpCatalog(catalog))
+    }
+    // The UI may have picked the agent before the harness.
+    if (session().acpAgentId) {
+      applyCachedCatalog()
+      void prewarmAfterDispose()
+      return
+    }
+    void (async () => {
+      const agentId = await window.app.getAppSettings()
+        .then((settings) => settings.agentPreference.acp?.selectedAgentId ?? get().harnessResources.acp?.selectedAgentId)
+        .catch(() => null)
+      if (!session().acpAgentId) patch({ acpAgentId: agentId ?? 'grok-build' })
+      applyCachedCatalog()
+      await prewarmAfterDispose()
+    })()
+  },
   /** Only modes SuperOne can drive over the wire (see acpPermissionModes). */
   permissionCycle: ACP_PERMISSION_MODES,
   /** Plan is `session/set_mode`: toggle plan vs default rather than cycling. */

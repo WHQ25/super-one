@@ -1,6 +1,6 @@
 # Harness UI adapter registry
 
-Status: in-progress (steps 0-6 done; branch `refactor/harness-ui-adapter`) · Updated: 2026-10-12
+Status: in-progress (steps 0-7 done; branch `refactor/harness-ui-adapter`) · Updated: 2026-10-12
 Goal: Desktop renderer chat surfaces resolve per-harness behavior through the shared static harness tables plus per-harness renderer controls and store strategies, so adding or changing a harness edits its own modules instead of `=== '<harnessId>'` branches across the composer, status bar and chat store.
 Long-term docs affected: `.claude/skills/superone-harness/references/integration.md` and `experiences.md` (model, permission and slash checklists become "fill the harness modules"), `.claude/skills/superone-harness/references/new-harness.md` (P0 catalog table), `apps/desktop/docs/agent-reference/architecture.md` (new "Harness UI modules" section)
 
@@ -176,12 +176,16 @@ affected tests (paths below), `bun run typecheck:web` and, when shared changes,
    filtering; harness fields come from `runModel` (Codex resolves against its
    catalog), `turnSettings` (`portable` vs this desktop's host only),
    `draftSettings` and `createSelections`. Step 0 snapshots pass unchanged.
-7. **Switch, interaction and send policy.** `harness-selection.ts`
-   seed/reset → `onSelect`/`resetFields`; `interaction.ts` cycle/plan toggle →
-   `nextPermission`/`planToggle`; `session-send-request.ts` →
-   `queuePolicy` (queue and steer stay separate decisions); Cursor optimistic
-   streaming in `input-request-send.ts`; `send-command-policy.ts` and
-   `StopButton` → descriptor `composer` flags.
+7. **Switch, interaction and send policy (done).** Strategies gained
+   `resetFields`/`onSelect` (harness switch on an empty draft, through a
+   `SwitchContext` with `isCurrent`/`prewarmAfterDispose`),
+   `permissionCycle`/`cyclePermission`/`togglePlan`, `queuePolicy`
+   (`always`/`runs`/`never`; steer stays the `supportsQueuedSteer` capability)
+   and `sendStartsStreaming` (Cursor). Soft cancel is the shared `softCancel`
+   capability. Form answers now await a reply on every harness, as composer
+   sends do; a draft without `sessionProvider` sends on its preferred harness
+   (dsh no longer falls back to Claude). `send-command-policy.ts` moves with
+   the slash strategy in step 8.
 8. **Slash and placeholder.** One `slash` strategy serves both the
    `ChatInput` popup selection and the raw-send intercepts in
    `send-message.ts:457-489`. Keep host-only commands that send no turn, Grok

@@ -2,6 +2,7 @@ import type { CodexReasoningEffort } from '@superone/shared/agent-types'
 import type { PerSessionState } from '@/stores/chat-store/types'
 import { resolveDefaultCodexSelection, resolveSessionCodexSelection } from '@/stores/chat-store/helpers/codex-helpers'
 import { changedCodexSelection } from '@/stores/chat-store/helpers/codex-selection-replay'
+import { getProject } from '@/stores/chat-store/helpers/store-helpers'
 import type { HarnessStrategy, SelectionAccess } from '../strategy'
 
 /** Codex keeps its pick apart from the neutral fields; the wire and persistence carry these names. */
@@ -69,6 +70,18 @@ export const codexStrategy: HarnessStrategy = {
       ...(current._providerSessionId ? { threadId: current._providerSessionId } : {}),
     },
   }),
+  /** Codex keeps its own pick fields; the neutral ones are cleared. */
+  resetFields: () => ({ selectedModel: '', modelUserChosen: false, effortUserChosen: false }),
+  onSelect: ({ get, projectPath, session, patch }) => {
+    const project = getProject(get(), projectPath)
+    const current = session()
+    const selected = resolveSessionCodexSelection(project.codexModels, current.selectedCodexModel, current.selectedCodexReasoningEffort)
+    if (selected.modelId !== current.selectedCodexModel || selected.reasoningEffort !== current.selectedCodexReasoningEffort) {
+      patch({ selectedCodexModel: selected.modelId, selectedCodexReasoningEffort: selected.reasoningEffort })
+    }
+    if (project._codexSkills.length === 0 && !project._codexSkillsLoading) void get().refreshCodexSkills(projectPath)
+    void get().initializeHarness('codex')
+  },
   /** Plan is Codex's collaboration mode, not a permission mode. */
   togglePlan: ({ store, session, target }) => {
     store.setSelectedCodexCollaborationMode(session.selectedCodexCollaborationMode === 'plan' ? 'default' : 'plan', target)

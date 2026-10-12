@@ -1,6 +1,6 @@
 import { resetHostSession } from '@/lib/session-client'
 import { isAppInputRequest } from '@superone/shared/input-request-presentation'
-import type { ModelOption, PermissionMode, SandboxInfo } from '@superone/shared/agent-types'
+import type { PermissionMode, SandboxInfo } from '@superone/shared/agent-types'
 import { seedNewSession } from '@/harness-ui/strategies'
 import { useAppStore } from '../../app'
 import { buildSlashCommands } from './chat-helpers'
@@ -24,6 +24,7 @@ import {
   getActivePerSession,
   getProject,
   inheritMiniAppToolsForNewSession,
+  projectClaudeModels,
   resolveActiveSessionId,
   resolveWriteScope,
   updateActivePerSession,
@@ -456,13 +457,6 @@ export function clearMessagesImpl(set: ChatStoreSet, get: () => ChatStore): void
     })),
     _bashOutputs: remainingOutputs,
   }))
-}
-
-/** Claude's catalog for a project: the node's for a remote project, else this desktop's cache. */
-function projectClaudeModels(s: ChatStore, projectPath: string): ModelOption[] {
-  return parseRemoteProjectKey(projectPath)
-    ? (getProject(s, projectPath).claudeModels ?? [])
-    : (s.harnessResources.claude?.models ?? [])
 }
 
 export function resetSessionForWorktreeSwitchImpl(

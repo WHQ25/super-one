@@ -10,7 +10,6 @@ import {
   type SelectorModelOption,
 } from '@/components/chat/model-selector/GroupedModelEffortSelector'
 import {
-  effortForLevels,
   effortLabel,
   levelEffortOptions,
   liveOrProfile,
@@ -19,6 +18,7 @@ import {
   useProfileCatalog,
   type LaunchModelProps,
 } from '../launch-model'
+import { effortForLevels } from '../effort'
 
 const EMPTY_MODELS: ModelOption[] = []
 const NO_EFFORT: SelectorEffortOption[] = []

@@ -253,7 +253,7 @@ type ContentBlockData =
   /** Review mode entered or exited; `text` is the review target or the findings. */
   | { type: 'review'; id: string; phase: 'entered' | 'exited'; text: string; parentToolUseId?: string | null }
   /** A non-terminal turn notice: an error the turn continued past, or a compaction marker. */
-  | { type: 'notice'; id: string; level: 'error' | 'info'; kind?: 'compaction'; text: string; parentToolUseId?: string | null }
+  | { type: 'notice'; id: string; level: 'error' | 'info'; /** `omitted`: a transcript window left out a block too large for it. */ kind?: 'compaction' | 'omitted'; text: string; parentToolUseId?: string | null }
   | { type: 'image'; name: string; id?: string }
   | { type: 'document'; name: string; id?: string }
 
@@ -766,6 +766,12 @@ export const SCHEDULED_SEND_DEFAULT_MESSAGE = 'Continue'
 export interface MessageMetadata {
   /** Exact content position of a compaction or accepted async answer. */
   transcriptBoundary?: import('./transcript-boundary').TranscriptBoundary
+  /**
+   * Set only on a message a transcript window holds in part: how many of its
+   * fragments lie outside. Such a message is not the stored one; copy and export
+   * fetch the whole message.
+   */
+  window?: { omittedBefore: number; omittedAfter: number }
   model?: string
   /** Harness-native agent used for the turn (for example an OpenCode primary agent). */
   agent?: string

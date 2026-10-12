@@ -1,10 +1,7 @@
 import type { EffortLevel, ModelOption } from '@superone/shared/agent-types'
 import { getDefaultEffortForModel } from '../defaults'
-import {
-  resolveDefaultCodexSelection,
-  resolveSessionCodexSelection,
-  useChatStore,
-} from '../index'
+import { HARNESS_STRATEGIES } from '@/harness-ui/strategies'
+import { resolveDefaultCodexSelection, useChatStore } from '../index'
 import type { PerSessionState, ProjectState } from '../types'
 import { defaultPrefsCache } from './prefs-cache'
 import { resolveProvider } from './provider-routing'
@@ -37,37 +34,17 @@ export function applyDefaultModel(session: PerSessionState, models: ModelOption[
 }
 
 /**
- * The ONLY place switchSession dispatches on harness identity. Resolves the
- * model/effort defaults for a session based on the session's own declared
- * provider (data it already carries), never on an out-of-band identity check.
- * Returns a patch so it composes with both updatePerSession and a freshly
- * built restored session.
+ * The model/effort defaults a switched-to or restored session still lacks,
+ * resolved by the harness the session declares (data it already carries),
+ * never by an out-of-band identity check. Returns a patch so it composes with
+ * both updatePerSession and a freshly built restored session.
  */
 export function applySessionAgentDefaults(
   session: PerSessionState,
   project: ProjectState,
   claudeModels: ModelOption[],
 ): Partial<PerSessionState> {
-  const provider = resolveProvider(session)
-  if (provider === 'codex') {
-    const sel = resolveSessionCodexSelection(
-      project.codexModels,
-      session.selectedCodexModel,
-      session.selectedCodexReasoningEffort,
-    )
-    const patch: Partial<PerSessionState> = {}
-    if (sel.modelId !== session.selectedCodexModel) patch.selectedCodexModel = sel.modelId
-    if (sel.reasoningEffort !== session.selectedCodexReasoningEffort) patch.selectedCodexReasoningEffort = sel.reasoningEffort
-    if (sel.serviceTier !== undefined && sel.serviceTier !== session.selectedCodexServiceTier) patch.selectedCodexServiceTier = sel.serviceTier
-    return patch
-  }
-  if (provider === 'acp' || provider === 'opencode' || provider === 'cursor' || provider === 'dsh') return {}
-  if (!session.selectedModel) {
-    const draft = { ...session }
-    applyDefaultModel(draft, claudeModels)
-    return { selectedModel: draft.selectedModel, selectedEffort: draft.selectedEffort }
-  }
-  return {}
+  return HARNESS_STRATEGIES[resolveProvider(session)].missingDefaults(session, project, claudeModels)
 }
 
 export function _computeClaudeDefaultPatch(sess: PerSessionState, models: ModelOption[]): Partial<PerSessionState> | null {

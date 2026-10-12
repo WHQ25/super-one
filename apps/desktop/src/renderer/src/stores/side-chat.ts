@@ -11,7 +11,8 @@
  */
 
 import { create } from 'zustand'
-import type { CodexReasoningEffort, EffortLevel, HarnessId } from '@superone/shared/agent-types'
+import type { HarnessId } from '@superone/shared/agent-types'
+import { HARNESS_STRATEGIES } from '@/harness-ui/strategies'
 import { useChatStore, lastTouchedPane, markPaneTouched } from './chat'
 import { createDefaultPerSessionState } from './chat-store/defaults'
 import { disposeModUiClient } from '@/lib/mod-ui/registry'
@@ -109,18 +110,13 @@ function registerSession(
     session.preferredProvider = init.harnessId
     session.apiProviderId = init.apiProviderId
     session.acpAgentId = init.acpAgentId
-    // Codex keeps its pick in its own pair of fields; writing only
-    // `selectedModel` would leave the picker showing the catalog default while
-    // the forked session actually runs the parent's model.
-    if (init.harnessId === 'codex') {
-      session.selectedCodexModel = init.selectedModel ?? ''
-      session.selectedCodexReasoningEffort = (init.selectedEffort ?? undefined) as CodexReasoningEffort | undefined
-      session.codexModelUserChosen = !!init.selectedModel
-    } else {
-      session.selectedModel = init.selectedModel ?? ''
-      session.selectedEffort = (init.selectedEffort ?? undefined) as EffortLevel | undefined
-      session.modelUserChosen = !!init.selectedModel
-    }
+    // Write the pick where the harness keeps it (Codex has its own fields);
+    // otherwise the picker shows the catalog default while the forked session
+    // actually runs the parent's model.
+    Object.assign(session, HARNESS_STRATEGIES[init.harnessId].selection.patch(
+      { model: init.selectedModel, effort: init.selectedEffort },
+      { modelUserChosen: !!init.selectedModel },
+    ))
     // dsh resumes the forked durable log, which is authoritative for the preset.
     // Seeding the picker's draft with the preset the fork actually inherited is
     // what stops it from showing the roster's first entry instead.
@@ -223,8 +219,9 @@ async function openSideChatUnserialized(
   // otherwise the side chat opens showing a different model from the chat it
   // forked from, and the composer's "fill in the default" effect then writes
   // that difference back as a real selection.
-  const parentModel = result.harnessId === 'codex' ? parent?.selectedCodexModel : parent?.selectedModel
-  const parentEffort = result.harnessId === 'codex' ? parent?.selectedCodexReasoningEffort : parent?.selectedEffort
+  const parentPick = parent ? HARNESS_STRATEGIES[result.harnessId].selection.read(parent) : undefined
+  const parentModel = parentPick?.model
+  const parentEffort = parentPick?.effort
 
   registerSession(projectPath, result.sessionId, parentSessionId, {
     cwd: result.cwd,

@@ -88,7 +88,7 @@
     "reason": "pre-registry baseline"
   },
   "components/chat/ContextUsage.tsx": {
-    "count": 7,
+    "count": 3,
     "reason": "pre-registry baseline"
   },
   "components/chat/McpSlashPopup.tsx": {
@@ -208,7 +208,7 @@
     "reason": "pre-registry baseline"
   },
   "stores/chat-store/helpers/agent-defaults.ts": {
-    "count": 8,
+    "count": 3,
     "reason": "pre-registry baseline"
   },
   "stores/chat-store/helpers/codex-helpers.ts": {
@@ -231,10 +231,6 @@
     "count": 11,
     "reason": "pre-registry baseline"
   },
-  "stores/chat-store/helpers/persistence.ts": {
-    "count": 2,
-    "reason": "pre-registry baseline"
-  },
   "stores/chat-store/helpers/provider-routing.ts": {
     "count": 7,
     "reason": "pre-registry baseline"
@@ -248,7 +244,7 @@
     "reason": "pre-registry baseline"
   },
   "stores/chat-store/helpers/session-lifecycle.ts": {
-    "count": 8,
+    "count": 3,
     "reason": "pre-registry baseline"
   },
   "stores/chat-store/helpers/session-send-request.ts": {
@@ -259,12 +255,8 @@
     "count": 15,
     "reason": "pre-registry baseline"
   },
-  "stores/chat-store/helpers/store-helpers.ts": {
-    "count": 3,
-    "reason": "pre-registry baseline"
-  },
   "stores/chat-store/index.ts": {
-    "count": 7,
+    "count": 5,
     "reason": "pre-registry baseline"
   },
   "stores/chat-store/slices/claude-slice.ts": {
@@ -272,15 +264,11 @@
     "reason": "pre-registry baseline"
   },
   "stores/chat-store/slices/event-slice.ts": {
-    "count": 7,
+    "count": 4,
     "reason": "pre-registry baseline"
   },
   "stores/settings.ts": {
     "count": 26,
-    "reason": "pre-registry baseline"
-  },
-  "stores/side-chat.ts": {
-    "count": 3,
     "reason": "pre-registry baseline"
   }
 }

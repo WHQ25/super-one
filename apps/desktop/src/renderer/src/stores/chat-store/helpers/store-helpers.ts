@@ -1,4 +1,5 @@
 import type { AgentPrewarmHint } from '@superone/shared/agent-types'
+import { HARNESS_STRATEGIES } from '@/harness-ui/strategies'
 import { createDefaultPerSessionState, createDefaultProjectState } from '../defaults'
 import type { ChatStore, PerSessionState, ProjectState, SessionWriteTarget } from '../types'
 import { applyCachedCodexPermissionPreset } from './prefs-cache'
@@ -45,12 +46,10 @@ export function triggerPrewarm(state: ChatStore, projectPath?: string | null): v
   const project = getProject(state, key)
   const hint: AgentPrewarmHint = {
     provider,
-    model: provider === 'codex' ? session.selectedCodexModel || undefined : session.selectedModel || undefined,
-    effort: provider === 'claude' ? session.selectedEffort : undefined,
+    ...HARNESS_STRATEGIES[provider].prewarmHint(session),
     additionalDirs: dirs.length > 0 ? dirs : undefined,
     sessionId: project._activeSessionId ?? undefined,
     worktreePath: sessionDirectoryHint(session, key),
-    acpAgentId: provider === 'acp' ? (session.acpAgentId ?? undefined) : undefined,
   }
   void window.agent.prewarm(key, hint).catch(() => {})
 }

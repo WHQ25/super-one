@@ -1,12 +1,10 @@
 import { resetHostSession } from '@/lib/session-client'
 import { isAppInputRequest } from '@superone/shared/input-request-presentation'
-import type { PermissionMode, SandboxInfo } from '@superone/shared/agent-types'
+import type { ModelOption, PermissionMode, SandboxInfo } from '@superone/shared/agent-types'
+import { seedNewSession } from '@/harness-ui/strategies'
 import { useAppStore } from '../../app'
-import { applyDefaultModel } from './agent-defaults'
 import { buildSlashCommands } from './chat-helpers'
 import { applyCarriedDraft, captureOpenDraft, hasDraftContent, promoteDraftIfUnsent } from './draft-promote'
-import { getCachedAcpCatalog, sessionPatchFromAcpCatalog } from '../harness/acp-handler'
-import { resolveDefaultCodexSelection } from './codex-helpers'
 import {
   ChatStoreSet,
   _isBusyStatus,
@@ -223,11 +221,9 @@ export function ensureSessionImpl(
     newSession.cwd = projectPath
     if (draftDefaults.permissionMode) newSession.permissionMode = draftDefaults.permissionMode
     if (!isRemote) {
-      applyDefaultModel(newSession, s.harnessResources.claude?.models ?? [])
-      const codexSelection = resolveDefaultCodexSelection(project.codexModels)
-      newSession.selectedCodexModel = codexSelection.modelId
-      newSession.selectedCodexReasoningEffort = codexSelection.reasoningEffort
-      newSession.selectedCodexServiceTier = codexSelection.serviceTier
+      seedNewSession(newSession, newSession.preferredProvider, {
+        state: s, project, claudeModels: s.harnessResources.claude?.models ?? [],
+      })
     }
     project._sessions = { [draftId]: newSession }
     return {
@@ -462,43 +458,11 @@ export function clearMessagesImpl(set: ChatStoreSet, get: () => ChatStore): void
   }))
 }
 
-/**
- * Seed a fresh ACP session from harness_resource_cache so model/effort selectors
- * paint immediately (same path as setPreferredProvider / setAcpAgentId / restore).
- * Without this, resetSession leaves acpAgentId=null and acpModels=[] until the
- * runtime emits acp_models — Grok "new session" looks broken.
- */
-function seedAcpSessionFromCache(
-  s: ChatStore,
-  newSession: PerSessionState,
-  previousSession?: PerSessionState | null,
-): void {
-  const agentId =
-    previousSession?.acpAgentId
-    ?? s.harnessResources.acp?.selectedAgentId
-    ?? 'grok-build'
-  newSession.acpAgentId = agentId
-  const catalog = getCachedAcpCatalog(s.harnessResources.acp, agentId)
-  if (catalog) {
-    Object.assign(
-      newSession,
-      sessionPatchFromAcpCatalog(catalog, {
-        preferSelected: previousSession?.selectedModel ?? null,
-      }),
-    )
-    // Prefer previous effort when still in the catalog (Grok modeConfigId is null).
-    const prevMode = previousSession?.selectedAcpModeId
-    if (prevMode && catalog.modes.some((m) => m.id === prevMode)) {
-      newSession.selectedAcpModeId = prevMode
-    }
-  } else {
-    newSession.acpModels = []
-    newSession.acpModelConfigId = null
-    newSession.acpModelsStatus = 'loading'
-    newSession.acpModelsError = null
-    newSession.selectedModel = ''
-    newSession.modelUserChosen = false
-  }
+/** Claude's catalog for a project: the node's for a remote project, else this desktop's cache. */
+function projectClaudeModels(s: ChatStore, projectPath: string): ModelOption[] {
+  return parseRemoteProjectKey(projectPath)
+    ? (getProject(s, projectPath).claudeModels ?? [])
+    : (s.harnessResources.claude?.models ?? [])
 }
 
 export function resetSessionForWorktreeSwitchImpl(
@@ -532,24 +496,13 @@ export function resetSessionForWorktreeSwitchImpl(
     newSession.sessionProvider = nextProvider
     newSession._worktreePath = opts?.wtPath ?? null
     newSession._gitBranch = opts?.gitBranch ?? null
-    if (nextProvider === 'acp') {
-      seedAcpSessionFromCache(s, newSession, previousSession)
-    } else if (nextProvider !== 'codex') {
-      // Claude (and default) only — must not clobber ACP selectedModel with a Claude id.
-      // Remote: node catalog on project; local: desktop harness cache.
-      const claudeModels = parseRemoteProjectKey(projectPath)
-        ? (proj.claudeModels ?? [])
-        : (s.harnessResources.claude?.models ?? [])
-      applyDefaultModel(newSession, claudeModels)
-    }
+    seedNewSession(newSession, nextProvider, {
+      state: s, project: proj, claudeModels: projectClaudeModels(s, projectPath), previousSession,
+    })
     // Every harness resolves its own mode now, Cursor's `agent` ladder included
     // — the carve-out this line used to need is gone.
     const switchedDefaults = sessionDefaultsFor(nextProvider)
     if (switchedDefaults.permissionMode) newSession.permissionMode = switchedDefaults.permissionMode
-    const codexSelection = resolveDefaultCodexSelection(proj.codexModels)
-    newSession.selectedCodexModel = codexSelection.modelId
-    newSession.selectedCodexReasoningEffort = codexSelection.reasoningEffort
-    newSession.selectedCodexServiceTier = codexSelection.serviceTier
     return {
       projectSessions: {
         ...s.projectSessions,
@@ -615,28 +568,16 @@ export async function resetSessionImpl(set: ChatStoreSet, get: () => ChatStore):
     isRemoteProject,
   })
 
-  // Capture before set() — activeSession is the old Grok/ACP session we seed from.
-  const previousAcpSession = nextProvider === 'acp' ? activeSession : null
-
   set((s) => {
     const proj = getProject(s, activeProject)
     const newSession = applyCachedCodexPermissionPreset(createDefaultPerSessionState())
     newSession.cwd = activeProject
     newSession.preferredProvider = nextProvider
     newSession.sessionProvider = nextProvider
-    if (nextProvider === 'acp') {
-      seedAcpSessionFromCache(s, newSession, previousAcpSession)
-    } else if (nextProvider !== 'codex') {
-      // Claude (and default) only — must not clobber ACP selectedModel with a Claude id.
-      const claudeModels = isRemoteProject
-        ? (proj.claudeModels ?? [])
-        : (s.harnessResources.claude?.models ?? [])
-      applyDefaultModel(newSession, claudeModels)
-    }
-    const codexSelection = resolveDefaultCodexSelection(proj.codexModels)
-    newSession.selectedCodexModel = codexSelection.modelId
-    newSession.selectedCodexReasoningEffort = codexSelection.reasoningEffort
-    newSession.selectedCodexServiceTier = codexSelection.serviceTier
+    // The outgoing session (captured before set()) is what a harness carries picks over from.
+    seedNewSession(newSession, nextProvider, {
+      state: s, project: proj, claudeModels: projectClaudeModels(s, activeProject), previousSession: activeSession,
+    })
     const harnessDefaults = sessionDefaultsFor(nextProvider)
     if (harnessDefaults.permissionMode) newSession.permissionMode = harnessDefaults.permissionMode
     return {

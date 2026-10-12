@@ -342,10 +342,11 @@ export const addMountedSession = addSessionToRegistry
 export const removeMountedSession = removeSessionFromRegistry
 
 import type { HarnessHandler, HarnessHandlerMap } from './harness/harness-handler'
-import { applyAcpResources, connectAcpResources, getCachedAcpCatalog, refreshAcpModels, sessionPatchFromAcpCatalog } from './harness/acp-handler'
+import { HARNESS_STRATEGIES } from '@/harness-ui/strategies'
+import { applyAcpResources, connectAcpResources, refreshAcpModels } from './harness/acp-handler'
 import { applyClaudeResources } from './harness/claude-handler'
 import { applyCodexResources } from './harness/codex-handler'
-import { applyOpenCodeResources, reconcileOpenCodeSelection } from './harness/opencode-handler'
+import { applyOpenCodeResources } from './harness/opencode-handler'
 import { applyCursorResources } from './harness/cursor-handler'
 import { applyDeepseekResources } from './harness/deepseek-handler'
 
@@ -896,35 +897,11 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
           sessionProvider: restoredProvider,
           _historyHydrated: true,
         }
-    if (restoredProvider === 'acp' && savedAcpAgentId) {
-      const catalog = getCachedAcpCatalog(get().harnessResources.acp, savedAcpAgentId)
-      if (catalog) Object.assign(restoredSession, sessionPatchFromAcpCatalog(catalog))
-    } else if (restoredProvider === 'opencode') {
-      // A restored pick outranks the catalog default (assigning unconditionally
-      // here reopened every OpenCode session at default), but only while the
-      // catalog still offers it — applyOpenCodeResources does not re-run for an
-      // already-loaded catalog, so a removed model would otherwise stick.
-      //
-      // Gate on the resources object, NOT on models.length: null/undefined means
-      // "not probed yet" (keep the pick; that reducer reconciles on arrival),
-      // while a LOADED-but-empty catalog (no providers configured) is a real
-      // state that must clear the pick — exactly what the reducer does with it.
-      const openCodeResources = get().harnessResources.opencode
-      if (openCodeResources) {
-        const selection = reconcileOpenCodeSelection(
-          openCodeResources.models,
-          restoredSession.selectedModel,
-          restoredSession.selectedEffort,
-        )
-        restoredSession.selectedModel = selection.modelId
-        restoredSession.selectedEffort = selection.effort
-      }
-    } else {
-      Object.assign(
-        restoredSession,
-        applySessionAgentDefaults(restoredSession, freshProject, get().harnessResources.claude?.models ?? []),
-      )
-    }
+    const restoreStrategy = HARNESS_STRATEGIES[restoredProvider]
+    const claudeModels = get().harnessResources.claude?.models ?? []
+    Object.assign(restoredSession, restoreStrategy.restore
+      ? restoreStrategy.restore(restoredSession, { state: get(), project: freshProject, claudeModels })
+      : restoreStrategy.missingDefaults(restoredSession, freshProject, claudeModels))
 
     set((s) => {
       const proj = getProject(s, activeProject)

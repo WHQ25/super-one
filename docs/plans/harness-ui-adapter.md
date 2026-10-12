@@ -1,6 +1,6 @@
 # Harness UI adapter registry
 
-Status: in-progress (steps 0-3 done; branch `refactor/harness-ui-adapter`) · Updated: 2026-10-12
+Status: in-progress (steps 0-4 done; branch `refactor/harness-ui-adapter`) · Updated: 2026-10-12
 Goal: Desktop renderer chat surfaces resolve per-harness behavior through the shared static harness tables plus per-harness renderer controls and store strategies, so adding or changing a harness edits its own modules instead of `=== '<harnessId>'` branches across the composer, status bar and chat store.
 Long-term docs affected: `.claude/skills/superone-harness/references/integration.md` and `experiences.md` (model, permission and slash checklists become "fill the harness modules"), `.claude/skills/superone-harness/references/new-harness.md` (P0 catalog table), `apps/desktop/docs/agent-reference/architecture.md` (new "Harness UI modules" section)
 
@@ -152,13 +152,16 @@ affected tests (paths below), `bun run typecheck:web` and, when shared changes,
    mobile generator, whose JSON stays byte-identical. Launch rows now show dsh
    presets instead of Claude's mode names. The per-harness option lists stay
    separate files; a merged table would only re-export them.
-4. **Selection, defaults and restore.** Add `selection` and route the generic
-   paths: `store-helpers` (prewarm hint), `side-chat`, `agent-defaults`,
-   `persistence.restorePersistedSelection`, `session-lifecycle.ts:222-230,475-552,619-639`
-   (new/reset/ACP seeding), `event-slice.ts:64-77,825-860` (UI vs host snapshot
-   merge), `index.ts:888-902` (restore), `ContextUsage`. Tests: default refresh
-   does not override a manual pick, late hydration keeps the newer choice,
-   remote catalogs stay isolated, side chats write scoped.
+4. **Selection, defaults and restore (done).** `harness-ui/<id>/strategy.ts`
+   with `selection` (read/patch with explicit user-chosen flags), `seed`,
+   `missingDefaults`, optional `restore` (ACP catalog, OpenCode reconcile),
+   optional `liveRestore` (Codex host-snapshot mapping) and `prewarmHint`.
+   Routed: prewarm hint, side-chat fork seeding, agent defaults, persisted and
+   hydrated selection, new/reset/worktree seeding (`seedNewSession`, which
+   also seeds Codex's catalog default on every session as before), startup
+   restore, live hydration. OpenCode and Cursor sessions created by a reset
+   now seed their own catalog default instead of Claude's. `ContextUsage`
+   gates its RPC on the new `supportsContextUsage` capability.
 5. **Launch rows.** Each harness gets `LaunchModelControl` built from the same
    prop helpers as its composer control; `useCollabLaunchModelSelector`'s
    per-harness branches move into them. ACP unifies the profile path with the

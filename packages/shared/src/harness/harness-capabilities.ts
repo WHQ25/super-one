@@ -94,6 +94,11 @@ export interface HarnessCapabilities {
    */
   supportsFork: boolean
   /**
+   * Answers `session.contextUsage` with a live context breakdown after a turn.
+   * False: the context ring reads only what the session's events reported.
+   */
+  supportsContextUsage: boolean
+  /**
    * Session-goal behaviour, or `null` when the harness has no goal concept.
    *
    * ACP is a container, not one agent: the entry here describes Grok, the only
@@ -147,6 +152,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsAdditionalDirs: true,
     // SDK `forkSession()` copies + remaps the transcript jsonl.
     supportsFork: true,
+    supportsContextUsage: true,
     // Built-in `/goal <condition>`: a Stop hook re-checks the condition after
     // each turn and keeps going until it is met, so there is no paused state —
     // the goal is either live or cleared.
@@ -175,6 +181,8 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsAdditionalDirs: true,
     // app-server thread fork, truncatable at a turn id.
     supportsFork: true,
+    // Token usage arrives on the session snapshot only.
+    supportsContextUsage: false,
     // `thread/goal/{get,set,clear}` over the app server; SuperOne drives the
     // follow-up turns itself, so every transition is an explicit RPC.
     goal: { lifecycleArgs: [], canPause: true, transport: 'rpc', semantics: 'objective' },
@@ -206,6 +214,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsAdditionalDirs: true,
     // Cold `x.ai/session/fork` copies Grok session files; SuperOne then resumes the child.
     supportsFork: true,
+    supportsContextUsage: true,
     // Grok only — see `resolveGoalCapability`. The agent owns the loop and
     // reports back over `goal_updated`; the host just posts `/goal …` lines.
     goal: {
@@ -233,6 +242,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsAdditionalDirs: false,
     // Server-side `forkSession(id, anchor)` + `moveSession`.
     supportsFork: true,
+    supportsContextUsage: true,
     goal: null,
     terminalCommandApproval: 'harness',
     modUi: false,
@@ -254,6 +264,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsAdditionalDirs: false,
     // SDK has no transcript-fork API; the adapter creates a blank agent.
     supportsFork: false,
+    supportsContextUsage: true,
     goal: null,
     // The @cursor/sdk local executor auto-approves custom tools with no host hook.
     terminalCommandApproval: 'executor',
@@ -290,6 +301,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsAdditionalDirs: false,
     // `runtime.forkSession` copies the log prefix up to an event seq.
     supportsFork: true,
+    supportsContextUsage: false,
     goal: null,
     terminalCommandApproval: 'harness',
     modUi: false,

@@ -28,7 +28,8 @@ import { clearStreamingToolInputsForSession } from '../event-reducer/shared'
 import { shouldReviveStreaming } from '../event-reducer/stream-revive'
 import { applyCachedCodexPermissionPreset } from '../helpers/prefs-cache'
 import { startBashOutputLive } from '../helpers/bash-output-live'
-import { changedCodexSelection, omitCodexSelectionReplay } from '../helpers/codex-selection-replay'
+import { HARNESS_STRATEGIES } from '@/harness-ui/strategies'
+import { omitCodexSelectionReplay } from '../helpers/codex-selection-replay'
 import {
   _computeHasPendingInteraction,
   _ensureSessionHydrated,
@@ -836,22 +837,16 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
         const mergedMessages = mergeMessagesByMaxSeq(entry.snapshot.messages as ChatMessage[], prevSession.messages)
         const provider: ChatProvider = inferProviderFromHarnessId(entry.snapshot.harnessId) ?? 'claude'
         const inferredStatus: AgentStatus = entry.isStreaming ? 'streaming' : prevSession.status === 'error' ? 'error' : 'idle'
-        const fromUi = sessionPatchFromUiSettings(entry.uiSettings, prevSession)
-        const newerSelection = provider === 'codex'
-          ? changedCodexSelection(projectsAtRequest[entry.projectPath]?._sessions[entry.sid], prevProject._sessions[entry.sid])
-          : undefined
-        if (provider === 'codex') {
-          // Main persists the running model in harness-neutral fields. A live
-          // restore needs the same Codex mapping as DB hydration. Keep a picker
-          // choice made since the last turn ahead of that running-model fallback.
-          fromUi.selectedCodexModel ||= (prevSession.codexModelUserChosen ? prevSession.selectedCodexModel : '')
-            || entry.snapshot.selectedModel || fromUi.selectedModel || prevSession.selectedCodexModel || ''
-          fromUi.selectedCodexReasoningEffort ??= (prevSession.codexReasoningEffortUserChosen ? prevSession.selectedCodexReasoningEffort : undefined)
-            ?? (entry.snapshot.selectedEffort as CodexReasoningEffort | null | undefined)
-            ?? fromUi.selectedEffort ?? prevSession.selectedCodexReasoningEffort
-          if (fromUi.selectedCodexModel) fromUi.codexModelUserChosen = true
-          if (fromUi.selectedCodexReasoningEffort) fromUi.codexReasoningEffortUserChosen = true
-        }
+        const uiPatch = sessionPatchFromUiSettings(entry.uiSettings, prevSession)
+        const live = HARNESS_STRATEGIES[provider].liveRestore?.({
+          previous: prevSession,
+          stored: prevProject._sessions[entry.sid],
+          atRequest: projectsAtRequest[entry.projectPath]?._sessions[entry.sid],
+          fromUi: uiPatch,
+          snapshot: entry.snapshot,
+        })
+        const fromUi = live?.fromUi ?? uiPatch
+        const newerSelection = live?.newer
         const mergedSession: PerSessionState = {
           ...prevSession,
           // Live hydration skips the DB load, so restore its title here too.
@@ -903,7 +898,7 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
           ...newerSelection,
         }
         // Replay predates this snapshot; it must not undo its model selection.
-        if (provider === 'codex' && mergedSession.selectedCodexModel) protectedCodexSessions.add(entry.sid)
+        if (live && HARNESS_STRATEGIES[provider].selection.read(mergedSession).model) protectedCodexSessions.add(entry.sid)
         const nextSessions = { ...prevProject._sessions, [entry.sid]: mergedSession }
         const nextActiveSid = activeByProject.get(entry.projectPath) ?? prevProject._activeSessionId ?? entry.sid
         nextProjects[entry.projectPath] = {

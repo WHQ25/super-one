@@ -5,6 +5,7 @@ import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
 import { useChatStore, useActiveSession, useSessionScope, selectClaudeModels, selectCursorModels } from '@/stores/chat'
 import { resolveRingContextWindow, type ContextUsageCategory } from '@superone/shared/agent-types'
+import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { resolveCursorSelectedContextWindow } from '@superone/cursor/cursor-model-selection'
 import { buildCatalogModelIndex, lookupCatalogContextWindow } from '@superone/shared/platform-registry'
 import { useModelCatalog } from '@/hooks/useModelCatalog'
@@ -147,8 +148,7 @@ export function ContextUsage() {
     const wasStreaming = prevStatusRef.current === 'streaming'
     prevStatusRef.current = status
     if (!wasStreaming || status !== 'idle' || !activeProject || !activeSessionId) return
-    // Claude / OpenCode / ACP(Grok) / Cursor expose getContextUsage; Codex uses session snapshot only.
-    if (sessionProvider && sessionProvider !== 'claude' && sessionProvider !== 'opencode' && sessionProvider !== 'acp' && sessionProvider !== 'cursor') return
+    if (sessionProvider && !HARNESS_CAPABILITIES[sessionProvider].supportsContextUsage) return
     const sid = activeSessionId
     const project = activeProject
     callSession(project, sid, 'session.contextUsage', {}).then((usage) => {

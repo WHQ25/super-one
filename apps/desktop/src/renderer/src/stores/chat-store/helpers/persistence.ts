@@ -1,5 +1,8 @@
 import type { ChatMessage } from '@superone/shared/agent-types'
 import { codexAsyncQuestionQueue, pendingCodexAsyncQuestions } from '@superone/shared/codex-async-question'
+import { neutralSelection } from '@/harness-ui/neutral-selection'
+import { HARNESS_STRATEGIES } from '@/harness-ui/strategies'
+import type { SelectionAccess } from '@/harness-ui/strategy'
 import { videoGenStatusesFromMessages } from '@/components/chat/media-generation'
 import type { ChatStore, PerSessionState, PersistedSessionState, ProjectState } from '../types'
 import { latestCodexTodoListFromMessages } from './codex-todo'
@@ -7,34 +10,28 @@ import { findLatestCodexUsage } from './codex-usage'
 import { resolveActiveSessionId } from './store-helpers'
 import { loadStoredSession } from '@/lib/session-client'
 
+/** Where a restored provider keeps its pick; an unknown provider uses the neutral fields. */
+function selectionFor(provider: PerSessionState['sessionProvider']): SelectionAccess {
+  return provider ? HARNESS_STRATEGIES[provider].selection : neutralSelection
+}
+
+/**
+ * The DB stores harness-neutral model columns; route them back to the fields the
+ * restored harness reads. A live pick the user made during async hydration wins.
+ */
 function restorePersistedSelection(
   session: PerSessionState,
   provider: PerSessionState['sessionProvider'],
   model: string | null | undefined,
-  effort: PerSessionState['selectedEffort'] | PerSessionState['selectedCodexReasoningEffort'] | null,
+  effort: string | null | undefined,
   modelUserChosen = true,
   effortUserChosen = true,
 ): Partial<PerSessionState> {
-  if (provider === 'codex') {
-    return {
-      ...(!session.codexModelUserChosen && model
-        ? { selectedCodexModel: model, codexModelUserChosen: modelUserChosen }
-        : {}),
-      ...(!session.codexReasoningEffortUserChosen && effort
-        ? {
-            selectedCodexReasoningEffort: effort as NonNullable<PerSessionState['selectedCodexReasoningEffort']>,
-            codexReasoningEffortUserChosen: effortUserChosen,
-          }
-        : {}),
-    }
-  }
+  const selection = selectionFor(provider)
+  const current = selection.read(session)
   return {
-    ...(!session.modelUserChosen && model
-      ? { selectedModel: model, modelUserChosen }
-      : {}),
-    ...(!session.effortUserChosen && effort
-      ? { selectedEffort: effort as NonNullable<PerSessionState['selectedEffort']>, effortUserChosen }
-      : {}),
+    ...(!current.modelUserChosen && model ? selection.patch({ model }, { modelUserChosen }) : {}),
+    ...(!current.effortUserChosen && effort ? selection.patch({ effort }, { effortUserChosen }) : {}),
   }
 }
 
@@ -142,7 +139,7 @@ export function _mergeHydratedSessionState(
     ...codexAsyncQuestionQueue(hydrated), ...codexAsyncQuestionQueue(session),
   ].map(q => [q.item.id, q])).values()]
   const restoredProvider = session.sessionProvider ?? hydrated.sessionProvider
-  const restoredIsCodex = restoredProvider === 'codex'
+  const hydratedPick = selectionFor(restoredProvider).read(hydrated)
   return {
     ...session,
     _title: session._title ?? hydrated._title,
@@ -170,10 +167,10 @@ export function _mergeHydratedSessionState(
     ...restorePersistedSelection(
       session,
       restoredProvider,
-      restoredIsCodex ? hydrated.selectedCodexModel : hydrated.selectedModel,
-      restoredIsCodex ? hydrated.selectedCodexReasoningEffort : hydrated.selectedEffort,
-      restoredIsCodex ? hydrated.codexModelUserChosen : hydrated.modelUserChosen,
-      restoredIsCodex ? hydrated.codexReasoningEffortUserChosen : hydrated.effortUserChosen,
+      hydratedPick.model,
+      hydratedPick.effort,
+      hydratedPick.modelUserChosen,
+      hydratedPick.effortUserChosen,
     ),
     // Always re-derive: null means "cleared / all completed", not "unset".
     // `?? hydrated` would resurrect a finished list after a live clear.

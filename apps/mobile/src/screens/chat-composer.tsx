@@ -228,7 +228,7 @@ export function ChatComposer(props: ChatComposerProps) {
   const empty = !props.draft.trim() && !props.attachments.length
   const deliveryHeld = !!props.scheduledSend?.scheduled?.armed || !!props.scheduledSend?.loading || !!props.scheduledSend?.busy
   // Hide send/steer when there is nothing to deliver; Stop still belongs mid-turn.
-  const send = props.scheduledSend && (!empty || props.scheduledSend.scheduled || (props.hasConversation && props.scheduledSend.available))
+  const send = props.scheduledSend && (!empty || props.scheduledSend.scheduled?.armed)
     ? <ScheduledSendControl controls={props.scheduledSend} tablet={tablet} empty={empty} loading={props.loadingConversation} onSend={props.onSend} />
     : empty ? null : <IconButton icon={ArrowUp} label="Send"
     tone={tablet ? 'muted' : 'primary'} chrome={tablet ? 'circle' : 'plain'}

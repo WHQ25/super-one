@@ -246,9 +246,11 @@ describe('ChatRuntime', () => {
 
     const created = runtime.create('/p', { sessionId: 's1', provider: 'claude' })
     await Promise.resolve()
+    expect(runtime.isCreatingSession).toBe(true)
     expect(runtime.pendingTurn).toBe('creating')
     releaseCreate()
     await created
+    expect(runtime.isCreatingSession).toBe(false)
     expect(paints.at(-1)).toEqual({ messages: ['user_first'], pendingTurn: 'sending' })
 
     runtime.send('hello', { images: [image], clientMessageId: 'user_first' })

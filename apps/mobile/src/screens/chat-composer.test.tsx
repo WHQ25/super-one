@@ -1,12 +1,36 @@
-import { expect, test } from '@jest/globals'
-import { act, fireEvent, screen, within } from '@testing-library/react-native'
-import { DeviceEventEmitter, Text } from 'react-native'
+import { beforeAll, expect, jest, test } from '@jest/globals'
+import { act, fireEvent, render, screen, within } from '@testing-library/react-native'
+import { DeviceEventEmitter, Text, View } from 'react-native'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { renderWithTheme } from '../test-render'
 import type { MatchedSlashCommand } from '../slash'
 import { ChatComposer, type ChatComposerProps } from './chat-composer'
 import { ultracodeOptionParam } from '../model-picker-state'
 import { MobileVoiceEntry } from '../voice/mobile-voice-controls'
+import type { ScheduledSendControls } from '../navigation/use-scheduled-send'
+import { MobileThemeProvider } from '../theme/context'
+
+beforeAll(() => {
+  const measure = View.prototype.measureInWindow as jest.Mock<typeof View.prototype.measureInWindow>
+  measure.mockImplementation(callback => callback(10, 500, 44, 44))
+})
+
+const scheduledSendControls = (overrides: Partial<ScheduledSendControls> = {}): ScheduledSendControls => ({
+  scheduled: null, available: true, loading: false, busy: false, error: '',
+  schedule: async () => {}, accept: async () => {}, cancel: async () => {}, dismiss: async () => {},
+  ...overrides,
+})
+
+async function renderScheduledComposer(props: Partial<ChatComposerProps>, colorScheme: 'light' | 'dark' = 'dark', locale: 'en' | 'zh' = 'en') {
+  // The menu portal belongs to the theme provider, so its safe area must wrap
+  // that provider as it does in the app, rather than only wrapping the editor.
+  const wrap = (next: Partial<ChatComposerProps>) => <SafeAreaProvider initialMetrics={{
+    frame: { x: 0, y: 0, width: 390, height: 844 },
+    insets: { top: 47, left: 0, right: 0, bottom: 34 },
+  }}><MobileThemeProvider colorScheme={colorScheme} locale={locale}>{composer(next)}</MobileThemeProvider></SafeAreaProvider>
+  const result = await render(wrap(props))
+  return { ...result, rerender: (next: Partial<ChatComposerProps>) => result.rerender(wrap(next)) }
+}
 
 test('an empty Codex composer exposes voice at the right of its input before the first message', async () => {
   await renderWithTheme(composer({ provider: 'codex', voiceEntry: <MobileVoiceEntry enabled busy={false} onStart={() => {}} /> }))
@@ -314,6 +338,75 @@ test('a focused streaming phone keeps Send as queue and shows Stop beside it', a
   expect(screen.getByTestId('phone-composer-actions')).toBeTruthy()
   expect(screen.getByLabelText('Send')).toBeTruthy()
   expect(screen.getByLabelText('Stop')).toBeTruthy()
+})
+
+test.each([
+  { tablet: false, focused: false, colorScheme: 'dark', locale: 'en' },
+  { tablet: false, focused: true, colorScheme: 'dark', locale: 'en' },
+  { tablet: true, focused: true, colorScheme: 'dark', locale: 'en' },
+  { tablet: false, focused: true, colorScheme: 'light', locale: 'zh' },
+] as const)('streaming keeps scheduling behind long press with layout %p', async ({ tablet, focused, colorScheme, locale }) => {
+  const onSend = jest.fn()
+  const props = { tablet, focused, hasConversation: true, scheduledSend: scheduledSendControls(), onSend }
+  const labels = locale === 'zh'
+    ? { send: '发送', schedule: '定时发送', stop: '停止', date: '发送日期', close: '关闭 定时发送' }
+    : { send: 'Send', schedule: 'Schedule Send', stop: 'Stop', date: 'Scheduled Date', close: 'Close Scheduled Send' }
+  const view = await renderScheduledComposer({ ...props, draft: 'First message' }, colorScheme, locale)
+  expect(screen.getByLabelText(labels.send)).toBeTruthy()
+
+  await view.rerender(props)
+  expect(screen.queryByLabelText(labels.send)).toBeNull()
+  expect(screen.queryByLabelText(labels.schedule)).toBeNull()
+
+  await view.rerender({ ...props, streaming: true })
+  expect(screen.queryByLabelText(labels.send)).toBeNull()
+  expect(screen.queryByLabelText(labels.schedule)).toBeNull()
+  expect(screen.getByLabelText(labels.stop)).toBeTruthy()
+
+  await view.rerender({ ...props, streaming: true, draft: 'Next message' })
+  await act(async () => { fireEvent.press(screen.getByLabelText(labels.send)) })
+  expect(onSend).toHaveBeenCalledTimes(1)
+  expect(screen.queryByLabelText(labels.date)).toBeNull()
+
+  await act(async () => { fireEvent(screen.getByLabelText(labels.send), 'longPress') })
+  expect(screen.getByLabelText(labels.date)).toBeTruthy()
+  expect(onSend).toHaveBeenCalledTimes(1)
+  await act(async () => { fireEvent.press(screen.getByLabelText(labels.close)) })
+  expect(screen.queryByLabelText(labels.date)).toBeNull()
+})
+
+test('an unarmed quota offer does not replace empty Send with a scheduling button', async () => {
+  await renderScheduledComposer({ hasConversation: true, streaming: true,
+    scheduledSend: scheduledSendControls({ scheduled: {
+      sessionId: 's', sendAt: Date.now() + 3_600_000, armed: false, source: 'rate_limit', message: null,
+    } }),
+  })
+  expect(screen.queryByLabelText('Send')).toBeNull()
+  expect(screen.queryByLabelText('Schedule Send')).toBeNull()
+  expect(screen.getByLabelText('Stop')).toBeTruthy()
+})
+
+test('an armed schedule remains accessible with an empty draft', async () => {
+  await renderScheduledComposer({ hasConversation: true, streaming: true,
+    scheduledSend: scheduledSendControls({ scheduled: {
+      sessionId: 's', sendAt: Date.now() + 3_600_000, armed: true, source: 'manual', message: null,
+    } }),
+  })
+  await act(async () => { fireEvent.press(screen.getByLabelText('Scheduled Send')) })
+  expect(screen.getByLabelText('Cancel Scheduled Send')).toBeTruthy()
+})
+
+test('a scheduling error keeps a short tap as Send and exposes retry on long press', async () => {
+  const onSend = jest.fn()
+  await renderScheduledComposer({ hasConversation: true, streaming: true, draft: 'Next message', onSend,
+    scheduledSend: scheduledSendControls({ available: false, error: 'Schedule lookup failed', retry: async () => {} }),
+  })
+  await act(async () => { fireEvent.press(screen.getByLabelText('Send')) })
+  expect(onSend).toHaveBeenCalledTimes(1)
+  expect(screen.queryByLabelText('Retry')).toBeNull()
+  await act(async () => { fireEvent(screen.getByLabelText('Send'), 'longPress') })
+  expect(screen.getByLabelText('Retry')).toBeTruthy()
+  expect(onSend).toHaveBeenCalledTimes(1)
 })
 
 test('a streaming Claude action bar offers steer now and steer soon', async () => {

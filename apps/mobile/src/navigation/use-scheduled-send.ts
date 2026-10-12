@@ -57,12 +57,16 @@ export function useScheduledSend(options: Options) {
   const scope = JSON.stringify([options.client?.environmentId, options.projectPath, options.sessionId, options.sourceEnvironmentId])
   const currentScope = useRef(scope)
   currentScope.current = scope
+  // The shell publishes an optimistic id before draft preparation and host creation.
+  // Session reads must wait until that id belongs to a created runtime.
+  const sessionReady = !options.sessionId || (options.runtimeRef.current?.sessionId === options.sessionId
+    && !options.runtimeRef.current.isCreatingSession)
   useEffect(() => setActionError(''), [scope])
 
   useEffect(() => {
     const { client, connected, projectPath, sessionId, sourceEnvironmentId } = options
     let alive = true
-    if (client && connected && projectPath) {
+    if (client && connected && projectPath && sessionReady) {
       void (async () => {
         const environmentId = sourceEnvironmentId ?? (await client.resolveProject(projectPath)).environmentId
         if (alive) {
@@ -72,7 +76,7 @@ export function useScheduledSend(options: Options) {
       })().catch(error => { if (alive) options.onError(error instanceof Error ? error.message : String(error)) })
     } else controller.disconnect()
     return () => { alive = false }
-  }, [controller, options.client, options.connected, options.projectPath, options.sessionId, options.sourceEnvironmentId])
+  }, [controller, options.client, options.connected, options.projectPath, options.sessionId, options.sourceEnvironmentId, sessionReady])
   useEffect(() => () => controller.disconnect(), [controller])
 
   const capture = () => {
@@ -144,7 +148,7 @@ export function useScheduledSend(options: Options) {
     return () => clearInterval(timer)
   }, [controller, state.key, state.scheduled?.armed, options.connected])
 
-  const current = state.key === scheduledSessionKey(options.sourceEnvironmentId ?? options.client?.environmentId ?? '', options.sessionId)
+  const current = sessionReady && state.key === scheduledSessionKey(options.sourceEnvironmentId ?? options.client?.environmentId ?? '', options.sessionId)
   const controls: ScheduledSendControls = {
     scheduled: current ? state.scheduled : null, loading: !current || state.loading, busy: state.busy || preparing, error: current ? actionError || state.error : '',
     available: current && options.connected && state.supported && !state.loading,

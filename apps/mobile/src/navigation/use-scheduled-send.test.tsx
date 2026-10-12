@@ -7,9 +7,52 @@ import { useComposerDraft } from './use-composer-draft'
 import { useScheduledSend } from './use-scheduled-send'
 
 const methods = ['get', 'set', 'clear'].map(action => `session.scheduledSend.${action}`)
-async function setup() {
+
+test('waits for host creation before reading the optimistic new session schedule', async () => {
+  let created = false
+  const rpc = jest.fn(async (method: string) => {
+    if (method === 'environment.descriptor') return { capabilities: { methods } }
+    if (!created) throw Object.assign(new Error('session not found'), { code: 'not_found' })
+    return null
+  })
+  const client = { environmentId: 'desktop', resolveProject: async () => ({ environmentId: 'desktop' }), rpc } as unknown as RelayClient
+  const runtime = { sessionId: '', isCreatingSession: false, projectPath: '/repo', sourceEnvironmentId: null }
+  const onError = jest.fn()
+  const result = await renderHook(({ sessionId }: { sessionId: string | null }) => {
+    const composer = useComposerDraft()
+    return useScheduledSend({ client, connected: true, projectPath: '/repo', sessionId, sourceEnvironmentId: null,
+      runtimeRef: { current: runtime as ChatRuntime }, composer, attachments: [], clearAttachments: () => {}, prepareSession: async () => runtime as ChatRuntime,
+      consumeDraft: async () => {}, onError })
+  }, { initialProps: { sessionId: null as string | null } })
+  await waitFor(() => expect(result.result.current.controls.available).toBe(true))
+
+  // The UI leaves the landing while draft preparation still precedes create().
+  await result.rerender({ sessionId: 'new' })
+  expect(rpc.mock.calls.filter(call => call[0] === 'session.scheduledSend.get')).toHaveLength(0)
+  expect(result.result.current.controls.loading).toBe(true)
+
+  runtime.sessionId = 'new'
+  runtime.isCreatingSession = true
+  await result.rerender({ sessionId: 'new' })
+  expect(rpc.mock.calls.filter(call => call[0] === 'session.scheduledSend.get')).toHaveLength(0)
+
+  created = true
+  runtime.isCreatingSession = false
+  await result.rerender({ sessionId: 'new' })
+  await waitFor(() => expect(result.result.current.controls.available).toBe(true))
+  expect(rpc.mock.calls.filter(call => call[0] === 'session.scheduledSend.get')).toHaveLength(1)
+  expect(result.result.current.controls.loading).toBe(false)
+  expect(onError).not.toHaveBeenCalled()
+  await result.unmount()
+})
+
+async function setup(readError?: string) {
   let row: ScheduledSend | null = null
-  const rpc = jest.fn(async (method: string) => method === 'environment.descriptor' ? { capabilities: { methods } } : row)
+  const rpc = jest.fn(async (method: string) => {
+    if (method === 'environment.descriptor') return { capabilities: { methods } }
+    if (readError) throw new Error(readError)
+    return row
+  })
   const controlledRpc = jest.fn(async (_target: unknown, method: string, input: { patch?: ScheduledSendPatch }) => {
     row = method === 'session.scheduledSend.clear' ? null : { sessionId: 's', sendAt: Date.now() + 3600000, armed: true, source: 'manual', message: null, ...row, ...input.patch }
     return row
@@ -26,9 +69,18 @@ async function setup() {
       consumeDraft, onError })
     return { composer, ...schedule }
   })
-  await waitFor(() => expect(result.result.current.controls.available).toBe(true))
+  await waitFor(() => readError
+    ? expect(onError).toHaveBeenCalledWith(readError)
+    : expect(result.result.current.controls.available).toBe(true))
   return { ...result, controlledRpc, consumeDraft, onError, runtimeRef }
 }
+
+test('still reports schedule read failures for an existing session and holds sends', async () => {
+  const f = await setup('session not found')
+  expect(f.result.current.controls).toMatchObject({ loading: true, available: false, error: 'session not found' })
+  expect(f.onError).toHaveBeenCalledWith('session not found')
+  await f.unmount()
+})
 
 test('arms the captured draft without consuming the editor, then clears it only on confirmed delivery', async () => {
   const f = await setup()

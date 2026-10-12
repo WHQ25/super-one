@@ -91,6 +91,7 @@ export class ChatRuntime {
   private readonly failedSends = new Map<string, SendMessageCommand>()
   /** `create_session` is in flight: a staged turn reads "creating" rather than "sending". */
   private creating = false
+  get isCreatingSession() { return this.creating }
   private restoreQueue: Promise<void> = Promise.resolve()
   /** Request ids the phone already answered, so a replayed `ask_user_question` cannot reopen the sheet. */
   private resolvedQuestionIds = new Set<string>()

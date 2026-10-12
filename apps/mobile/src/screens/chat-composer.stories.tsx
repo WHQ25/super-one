@@ -5,7 +5,8 @@ import { Text } from '../ui/text'
 import { Pressable, View } from 'react-native'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { MobileThemeProvider } from '../theme/context'
-import type { SessionGoal } from '@superone/shared/agent-types'
+import type { ScheduledSend, SessionGoal } from '@superone/shared/agent-types'
+import type { ScheduledSendControls } from '../navigation/use-scheduled-send'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { ChatComposer, type ChatComposerProps } from './chat-composer'
 import { useSessionIndicators } from '../navigation/use-session-indicators'
@@ -237,6 +238,47 @@ export const PhoneFocusedActionBar = {
 export const PhoneFocusedStop = {
   args: { tablet: false, focused: true, streaming: true, draft: 'queue this' },
   name: 'Phone · focused send and stop',
+}
+
+function StreamingScheduledSendPreview({ focused = true, tablet = false, light = false }: {
+  focused?: boolean; tablet?: boolean; light?: boolean
+}) {
+  const [draft, setDraft] = useState('Queue this message')
+  const [streaming, setStreaming] = useState(true)
+  const [scheduled, setScheduled] = useState<ScheduledSend | null>(null)
+  const [feedback, setFeedback] = useState('Tap Send to queue; long press to schedule.')
+  const controls: ScheduledSendControls = {
+    scheduled, available: true, loading: false, busy: false, error: '',
+    schedule: async sendAt => setScheduled({ sessionId: 'preview', sendAt, armed: true, source: 'manual', message: draft }),
+    cancel: async () => setScheduled(null), dismiss: async () => setScheduled(null), accept: async () => {},
+  }
+  return <SafeAreaProvider initialMetrics={{
+    frame: { x: 0, y: 0, width: 390, height: 844 },
+    insets: { top: 47, left: 0, right: 0, bottom: 34 },
+  }}><MobileThemeProvider colorScheme={light ? 'light' : 'dark'} locale={light ? 'zh' : 'en'}>
+    <View style={{ width: tablet ? 640 : light ? 320 : 390, gap: 8 }}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Toggle streaming" onPress={() => setStreaming(!streaming)}>
+        <Text>{streaming ? 'Streaming' : 'Idle'} · toggle</Text>
+      </Pressable>
+      <Text>{feedback}</Text>
+      <ChatComposer {...base} tablet={tablet} focused={focused} hasConversation streaming={streaming}
+        draft={draft} onDraft={setDraft} scheduledSend={controls}
+        onSend={() => { setFeedback(`Queued: ${draft}`); setDraft('') }} onStop={() => setStreaming(false)} />
+    </View>
+  </MobileThemeProvider></SafeAreaProvider>
+}
+
+export const PhoneStreamingScheduledSend = {
+  name: 'Phone · streaming send and long-press scheduling', render: () => <StreamingScheduledSendPreview />,
+}
+export const PhoneCollapsedStreamingScheduledSend = {
+  name: 'Phone · collapsed streaming send and scheduling', render: () => <StreamingScheduledSendPreview focused={false} />,
+}
+export const PhoneStreamingScheduledSendLight = {
+  name: 'Phone · narrow light Chinese streaming scheduling', render: () => <StreamingScheduledSendPreview light />,
+}
+export const TabletStreamingScheduledSend = {
+  name: 'Tablet · streaming send and scheduling', render: () => <StreamingScheduledSendPreview tablet />,
 }
 
 export const PhoneFocusedStreamingEmpty = {

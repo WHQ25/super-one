@@ -69,7 +69,7 @@ export function MarkdownTable({ node: _node, children, ...rest }: ComponentProps
             <Expand className="size-3" />
           </IconButton>
         </div>
-        <div className="overflow-x-auto pt-7">
+        <div className="overflow-x-auto pt-5">
           <table data-streamdown="table" {...rest} ref={tableRef}>{children}</table>
         </div>
         <TableFullscreen open={open} onOpenChange={setOpen}>{children}</TableFullscreen>

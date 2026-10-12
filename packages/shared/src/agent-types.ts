@@ -2110,6 +2110,13 @@ export type AgentEventBase =
   /** The host's queued user messages, in order — every client's queue follows it, whichever client queued them. */
   | { type: 'queued_messages_changed'; messages: ChatMessage[] }
   | { type: 'worktree_missing'; worktreePath: string; fallbackCwd: string }
+  /**
+   * The agent moved its own working directory mid-session (Claude `EnterWorktree` /
+   * `ExitWorktree`). From a backend it carries what the harness reported; Session
+   * republishes it with `worktreePath` resolved against the project root (null when
+   * back at the root), and every cwd-bound surface follows.
+   */
+  | { type: 'working_directory_changed'; cwd: string; gitBranch?: string | null; worktreePath?: string | null }
   | { type: 'session_title_changed'; sessionId: string; title: string; source: 'user' | 'agent' }
   /**
    * A project's session list gained, lost, or reordered a row — created, renamed,

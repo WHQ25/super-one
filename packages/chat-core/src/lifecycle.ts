@@ -22,6 +22,7 @@ type LifecycleEvent = Extract<AgentEvent, {
     | 'provider_session_id'
     | 'init_ready'
     | 'worktree_missing'
+    | 'working_directory_changed'
 }>
 
 export function reduceLifecycle(
@@ -194,5 +195,8 @@ export function reduceLifecycle(
 
     case 'worktree_missing':
       return { _worktreeRemoved: true, cwd: event.fallbackCwd }
+
+    case 'working_directory_changed':
+      return { cwd: event.cwd }
   }
 }

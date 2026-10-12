@@ -13,11 +13,12 @@ const mockLocalStorage = {
   clear: vi.fn(),
 }
 
+const { mockSetActiveWorktree } = vi.hoisted(() => ({ mockSetActiveWorktree: vi.fn() }))
 vi.mock('../../app', () => ({
   useAppStore: {
     getState: () => ({
       getWorktreeState: () => ({}),
-      setActiveWorktree: vi.fn(),
+      setActiveWorktree: mockSetActiveWorktree,
       clearWorktree: vi.fn().mockResolvedValue(undefined),
     }),
   },
@@ -409,6 +410,44 @@ describe('additional_dirs_changed', () => {
     } as AgentEvent)
 
     expect(useChatStore.getState().projectSessions['/p'].projectExtraDirs).toEqual([])
+  })
+})
+
+describe('working_directory_changed', () => {
+  function seedTwoSessions() {
+    const project = createDefaultProjectState()
+    project._activeSessionId = 'sid-1'
+    project._sessions = {
+      'sid-1': { ...createDefaultPerSessionState(), cwd: '/p' },
+      'sid-2': { ...createDefaultPerSessionState(), cwd: '/p' },
+    }
+    useChatStore.setState({ projectSessions: { '/p': project }, activeProject: '/p' })
+  }
+  const moved = (sessionId: string, worktreePath: string | null, gitBranch: string | null) => ({
+    type: 'working_directory_changed', projectPath: '/p', sessionId,
+    cwd: worktreePath ?? '/p', worktreePath, gitBranch,
+  }) as AgentEvent
+
+  it('moves the session and the project surfaces into the worktree the agent entered', () => {
+    seedTwoSessions()
+    useChatStore.getState().handleAgentEvent(moved('sid-1', '/p/.claude/worktrees/x', 'worktree-x'))
+
+    expect(useChatStore.getState().projectSessions['/p']._sessions['sid-1']).toMatchObject({
+      cwd: '/p/.claude/worktrees/x', _worktreePath: '/p/.claude/worktrees/x', _gitBranch: 'worktree-x',
+    })
+    expect(mockSetActiveWorktree).toHaveBeenCalledWith('/p', '/p/.claude/worktrees/x')
+
+    useChatStore.getState().handleAgentEvent(moved('sid-1', null, null))
+    expect(useChatStore.getState().projectSessions['/p']._sessions['sid-1']).toMatchObject({ cwd: '/p', _worktreePath: null, _gitBranch: null })
+    expect(mockSetActiveWorktree).toHaveBeenLastCalledWith('/p', null)
+  })
+
+  it('leaves the project surfaces alone when a background session moves', () => {
+    seedTwoSessions()
+    useChatStore.getState().handleAgentEvent(moved('sid-2', '/p/.claude/worktrees/y', 'worktree-y'))
+
+    expect(useChatStore.getState().projectSessions['/p']._sessions['sid-2']._worktreePath).toBe('/p/.claude/worktrees/y')
+    expect(mockSetActiveWorktree).not.toHaveBeenCalled()
   })
 })
 

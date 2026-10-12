@@ -72,6 +72,7 @@ export function applyEventToSession(
     case 'provider_session_id':
     case 'init_ready':
     case 'worktree_missing':
+    case 'working_directory_changed':
       return reduceLifecycle(session, event, ports)
 
     case 'content_delta':

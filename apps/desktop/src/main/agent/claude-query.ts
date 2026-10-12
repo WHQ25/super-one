@@ -16,6 +16,7 @@ import {
 } from '@superone/claude'
 import { withMcpAppsHostEnv, type ClaudeToolApps } from '@superone/claude/mcp-apps'
 import { mapPluginErrors, mapPluginUiMessage } from '@superone/claude/plugin-notice-wire'
+import { worktreeCwdChange } from '@superone/claude/worktree-cwd'
 import { ModSurface, withModDevFoldersEnv, type ModSurfaceQuery } from '@superone/claude/mod-surface'
 import type { MessageBridge } from './message-bridge'
 import { withSubagentResumeSignal } from './subagent-resume-signal'
@@ -552,6 +553,11 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
                 isSynthetic,
                 isReplay,
               })
+              // A subagent's worktree is its own; a replayed result is history.
+              const cwdChange = !parentToolUseId && !isReplay && !isError
+                ? worktreeCwdChange(toolName, userMsg.tool_use_result)
+                : null
+              if (cwdChange) emit({ type: 'working_directory_changed', ...cwdChange })
             }
           }
           if (hasToolResult && !parentToolUseId) onStepBoundary?.()

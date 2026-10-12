@@ -1131,6 +1131,10 @@ export class ClaudeBackend implements SessionBackend {
   private emitOne(event: AgentEvent): void {
     // Only init names the terminal-bound commands; a plugin reload's list is tagged with them.
     if (event.type === 'session_init') this.terminalSlashCommands = event.session.terminalSlashCommands
+    // A revival must not start back in the directory the agent just left.
+    if (event.type === 'working_directory_changed' && this._lastStartOpts) {
+      this._lastStartOpts = { ...this._lastStartOpts, cwd: event.cwd }
+    }
     if (
       this.stagedProviderSessionId
       && (event.type === 'content_delta' || event.type === 'message_complete' || event.type === 'message_interrupted')

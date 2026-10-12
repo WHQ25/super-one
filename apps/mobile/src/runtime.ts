@@ -907,6 +907,9 @@ export class ChatRuntime {
   private captureRuntimeFacts(event: AgentEvent, messages = this.session.messages): void {
     this.appContexts.capture(event, messages)
     if (event.type === 'init_ready') this.sandboxInfo = event.sandboxInfo
+    if (event.type === 'working_directory_changed' && event.worktreePath !== undefined) {
+      this.worktree = { isWorktree: event.worktreePath !== null, worktreePath: event.worktreePath, gitBranch: event.gitBranch ?? null }
+    }
     if (event.type === 'agent_setting_change' && event.patch?.sandboxInfo) {
       this.sandboxInfo = event.patch.sandboxInfo
     }

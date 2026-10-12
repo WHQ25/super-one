@@ -77,6 +77,22 @@ re-check an entry when an upgrade touches its area.
   `packages/claude/src/transcript-store.ts#claudeProjectSlug`.
 - **Guard:** `packages/claude/src/fork-session.test.ts`.
 
+### Worktree tools report the directory the CLI moved to
+
+- **Behavior:** `EnterWorktree` returns `worktreePath` and `worktreeBranch` in
+  the structured `tool_use_result`; `ExitWorktree` returns `restoredCwd`, with
+  `originalCwd` as a fallback. The host follows these results without restarting
+  the CLI. Subagent worktrees and replayed or failed results do not move the
+  main session. The host also reconciles `session_init.session.cwd` so a
+  restored directory does not depend on replaying an earlier tool result.
+- **Observed:** 0.3.296, captured tool-result shapes in
+  `packages/claude/src/worktree-cwd.test.ts`.
+- **Depends on it:** `packages/claude/src/worktree-cwd.ts`, desktop
+  `claude-query.ts#iterateMessages`, and `session.ts#adoptAgentCwd`.
+- **Guard:** `packages/claude/src/worktree-cwd.test.ts`;
+  `apps/desktop/src/main/session/session-agent-cwd.test.ts`;
+  `apps/desktop/src/renderer/src/stores/chat-store/slices/event-slice.test.ts`.
+
 ### Truncating resume is refused, not retried
 
 - **Behavior:** `resumeSessionAt` with `resumeDropsTurn` fails with a

@@ -443,6 +443,11 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
       const updatedSessions = { ...project._sessions, [targetSid]: updatedSession }
       const updatedProject = { ...project, _sessions: updatedSessions }
 
+      if (event.type === 'working_directory_changed' && event.worktreePath !== undefined) {
+        updatedSession._worktreePath = event.worktreePath
+        updatedSession._gitBranch = event.gitBranch ?? null
+      }
+
       if (event.type === 'init_ready') {
         if (event.sessionId) updatedSession.hostSessionOwned = true
         updatedSession.cwd = event.cwd
@@ -774,6 +779,16 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
     }
     if (event.type === 'worktree_missing' && projectPath === get().activeProject) {
       useAppStore.getState().setActiveWorktree(projectPath, null)
+    }
+    // The file tree, git panel, mentions and terminal all root at the active
+    // worktree; the session on screen moving its own cwd moves them with it.
+    if (
+      event.type === 'working_directory_changed' && event.worktreePath !== undefined
+      && !parseRemoteProjectKey(projectPath)
+      && projectPath === get().activeProject
+      && eventSessionId === get().projectSessions[projectPath]?._activeSessionId
+    ) {
+      useAppStore.getState().setActiveWorktree(projectPath, event.worktreePath)
     }
     // Like the CLI's notification bar, a plugin's toast belongs to the session on
     // screen; one raised by a background session would read as this one's.

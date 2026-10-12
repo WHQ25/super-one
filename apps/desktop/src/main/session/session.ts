@@ -89,6 +89,7 @@ import {
   isModelOnlyTaskNotification,
 } from './task-notification-queue'
 import { ensureShellPath, isShellPathReady } from '../shell-path'
+import { isSameDirectory } from '../project-path'
 import { buildModelFallbackMessage, modelFallbackSignature } from './model-fallback-notification'
 import { buildPluginNoticeMessage, isPluginLogEvent } from './plugin-notice-message'
 import {
@@ -2050,6 +2051,25 @@ export class Session implements SessionContract {
     await this.rebuildBackend()
   }
 
+  /**
+   * Follow a working directory the agent moved to by itself (Claude
+   * `EnterWorktree` / `ExitWorktree`, or a resume the CLI restored into its
+   * worktree). Unlike `switchCwd` the runtime is already there, so nothing is
+   * rebuilt; the next start passes the new cwd. Returns the event clients apply,
+   * or null when the directory did not change.
+   */
+  private adoptAgentCwd(reportedCwd: string, gitBranch?: string | null): AgentEvent | null {
+    if (this._missingWorktreePath || isSameDirectory(reportedCwd, this._cwd)) return null
+    const atRoot = isSameDirectory(reportedCwd, this.projectPath)
+    const cwd = atRoot ? this.projectPath : reportedCwd
+    log.info('[Session] sid=%s agent moved cwd %s -> %s', this.id, this._cwd, cwd)
+    this._cwd = cwd
+    this._gitBranch = atRoot ? null : gitBranch ?? null
+    this.emitInitReady()
+    this.notifyStateChange()
+    return { type: 'working_directory_changed', cwd, gitBranch: this._gitBranch, worktreePath: atRoot ? null : cwd }
+  }
+
   private buildBackendStartOpts(): BackendStartOptions {
     this.abortController = new AbortController()
     this.applyAcpAgentToConfig()
@@ -2099,6 +2119,11 @@ export class Session implements SessionContract {
   }
 
   private forwardEvent(event: AgentEvent): AgentEvent {
+    // A backend reports only the directory; clients get it resolved against the project.
+    if (event.type === 'working_directory_changed' && event.worktreePath === undefined) {
+      const adopted = this.adoptAgentCwd(event.cwd, event.gitBranch)
+      return adopted ? this.forwardEvent(adopted) : event
+    }
     if (event.type.startsWith('realtime_')) {
       for (const listener of this.realtimeSignalListeners) {
         try { listener(event) } catch { log.warn('[Session] realtime signal listener failed') }
@@ -2277,6 +2302,12 @@ export class Session implements SessionContract {
       const generation = this._computerUseTurnGenerations.get(event.messageId)
       this._computerUseTurnGenerations.delete(event.messageId)
       void this.clearComputerUseVisuals(event.type, generation)
+    }
+    // Every turn's init names the CLI's real cwd: the safety net for a move the
+    // tool result did not report (a resume the CLI restored into its worktree).
+    if (event.type === 'session_init' && event.session.cwd) {
+      const adopted = this.adoptAgentCwd(event.session.cwd)
+      if (adopted) this.forwardEvent(adopted)
     }
     return tagged
   }

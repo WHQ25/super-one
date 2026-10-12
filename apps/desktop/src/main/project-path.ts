@@ -11,6 +11,11 @@ function normalizePath(inputPath: string): string {
   }
 }
 
+/** Whether two paths name the same directory once symlinks (macOS `/var` → `/private/var`) resolve. */
+export function isSameDirectory(a: string, b: string): boolean {
+  return a === b || normalizePath(a) === normalizePath(b)
+}
+
 /**
  * Resolve a project path for session scoping.
  * Git repositories are normalized to their worktree root (`--show-toplevel`).

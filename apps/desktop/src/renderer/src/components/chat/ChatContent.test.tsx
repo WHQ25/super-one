@@ -136,23 +136,19 @@ vi.mock('./ChatStatusBar', () => ({ ChatStatusBar: () => <div data-testid="chat-
 vi.mock('./ChatMessage', async () => {
   const { useWorkflowNavigation } = await import('./workflow-navigation-context')
   const { useSubagentNavigation } = await import('./subagent-navigation-context')
-  const { useForkNavigation } = await import('./fork-navigation-context')
   return {
-    ChatMessage: ({ message, hideUserActions, hideCopyActions, collapseEntireCodexTurn }: {
+    ChatMessage: ({ message, hideUserActions, hideCopyActions }: {
       message?: { content?: Array<{ type: string; text?: string }> }
       hideUserActions?: boolean
       hideCopyActions?: boolean
-      collapseEntireCodexTurn?: boolean
     }) => {
       const workflowNav = useWorkflowNavigation()
       const subagentNav = useSubagentNavigation()
-      const forkNav = useForkNavigation()
       return (
         <div
           data-testid="chat-message"
           data-hide-user-actions={String(!!hideUserActions)}
           data-hide-copy-actions={String(!!hideCopyActions)}
-          data-collapse-entire-codex-turn={String(!!collapseEntireCodexTurn)}
         >
           {message?.content
             ?.filter((block) => block.type === 'text')
@@ -170,13 +166,6 @@ vi.mock('./ChatMessage', async () => {
             onClick={() => subagentNav.open({ toolUseId: 'sa-1' })}
           >
             open subagent
-          </button>
-          <button
-            type="button"
-            data-testid="open-fork"
-            onClick={() => forkNav.open({ collabId: 'c1', threadId: 't1' })}
-          >
-            open fork
           </button>
         </div>
       )
@@ -200,9 +189,6 @@ vi.mock('./WorkflowFullView', () => ({
 vi.mock('./SubagentFullView', () => ({
   SubagentFullView: () => <div data-testid="subagent-full-view" />,
 }))
-vi.mock('./ForkedThreadView', () => ({
-  ForkedThreadView: () => <div data-testid="forked-thread-view" />,
-}))
 vi.mock('./ChatSuggestions', async () => {
   const { useEffect } = await import('react')
   return {
@@ -219,10 +205,6 @@ vi.mock('./CursorApiKeyDialog', () => ({ CursorApiKeyDialog: () => <div data-tes
 vi.mock('./TodoPopup', () => ({ TodoPopup: () => <div data-testid="todo-popup" /> }))
 vi.mock('./PlanApprovalPrompt', () => ({ PlanApprovalPrompt: () => <div data-testid="plan-approval" /> }))
 vi.mock('./CodexPlanFullscreenView', () => ({ CodexPlanFullscreenView: () => <div data-testid="codex-plan-fullscreen" /> }))
-vi.mock('./codex-item-renderer', () => ({
-  PlanFullscreenContext: { Provider: ({ children }: { children: React.ReactNode }) => <>{children}</> },
-  usePlanFullscreen: () => ({ open: () => {} }),
-}))
 
 class MockResizeObserver {
   observe(): void {}
@@ -1229,7 +1211,7 @@ describe('ChatContent closes full-screen overlays on session switch', () => {
     expect(screen.getByTestId('chat-message')).toBeInTheDocument()
   })
 
-  it('dismisses subagent and fork full views when the displayed session changes', async () => {
+  it('dismisses the subagent full view when the displayed session changes', async () => {
     prepareSession('sid-1')
     const ref = createRef<HTMLDivElement>()
     const { rerender } = render(<ChatContent scrollViewportRef={ref} />)
@@ -1243,17 +1225,6 @@ describe('ChatContent closes full-screen overlays on session switch', () => {
     hoisted.sessionState.session = { sessionId: 'sid-2' }
     rerender(<ChatContent scrollViewportRef={ref} />)
     expect(screen.queryByTestId('subagent-full-view')).toBeNull()
-    expect(screen.getByTestId('chat-message')).toBeInTheDocument()
-
-    await act(async () => {
-      screen.getByTestId('open-fork').click()
-    })
-    expect(screen.getByTestId('forked-thread-view')).toBeInTheDocument()
-
-    hoisted.sessionState._activeSessionId = 'sid-3'
-    hoisted.sessionState.session = { sessionId: 'sid-3' }
-    rerender(<ChatContent scrollViewportRef={ref} />)
-    expect(screen.queryByTestId('forked-thread-view')).toBeNull()
     expect(screen.getByTestId('chat-message')).toBeInTheDocument()
   })
 

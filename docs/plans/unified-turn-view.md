@@ -1,6 +1,6 @@
 # Unified turn view
 
-Status: in-progress (steps 0-4, 5a-5c done; 4 landed before 3) · Updated: 2026-10-12
+Status: in-progress (steps 0-4, 5a-5d done; 4 landed before 3) · Updated: 2026-10-12
 Goal: Every harness's assistant turn reaches the UI as `message.content` ContentBlocks and renders through one `TurnBody`, on desktop and in the phone chat-view; Codex thread items are translated at the integration layer and no longer reach a renderer.
 Long-term docs affected: [chat-core.md](../architecture/chat-core.md), [mobile-remote-control.md](../architecture/mobile-remote-control.md) (hidden-detail refs), [mcp-apps.md](../features/mcp-apps.md) (Codex rows), [codex contracts](../harness/codex/contracts.md) and [api-surface](../harness/codex/api-surface.md), `apps/desktop/docs/agent-reference/architecture.md`, `.agents/skills/superone-harness/references/event-contract.md`
 
@@ -281,6 +281,13 @@ notifications, machine paths and user name replaced):
 - Items stay the stored truth, so writers that patch a derived block also patch
   its item (`applySuggestedTaskUpdate`; `updateMcpAppAttachments` already did).
 - Main never derives into its runtime or rows (see Persisted history, 2).
+- 5d: desktop renders every turn through `TurnBody`. Summarized remote rows
+  read an old-host `{ item }` detail through `codexItemDetail` (so the detail
+  adapter landed in 5d, not 5e). Codex fork navigation (`ForkedThreadView`)
+  is gone; an agent card's own full view replaces it, without the per-thread
+  aggregation across follow-ups or the "forked" badge. A follow-up that
+  could not be delivered shows the shared failed card, not the Codex-only
+  failure copy.
 - Left for later steps: the Codex gallery, pinning and process-stats branches
   go with the render paths (5d/5e); `stripMessagesForRemote` and usage-stats
   `harnessOf` key on bare `metadata.codex` and must use `isLegacyCodexMessage`

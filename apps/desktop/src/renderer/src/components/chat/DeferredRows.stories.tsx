@@ -1,13 +1,16 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useState } from 'react'
+import type { ChatMessage as ChatMessageType } from '@superone/shared/agent-types'
+import { withCodexContent } from '@superone/shared/codex-content'
+import { useAppStore } from '@/stores/app'
+import { createDefaultPerSessionState, createDefaultProjectState, useChatStore } from '@/stores/chat'
 import { createDetailClient, type DetailUpdate } from '@superone/chat-core'
 import type { CodexCollabToolCallItem, CodexCommandExecutionItem, CodexFileChangeItem } from '@superone/shared/agent-types'
 import { DetailScopeProvider } from '@superone/chat-view/detail-scope'
 import { ToolBlock } from './ToolBlock'
 import { CodexCommandBlock } from './CodexCommandBlock'
-import { CodexSubagentMarker } from './CodexCollabBlock'
+import { ChatMessage } from './ChatMessage'
 import { DesktopReasoning } from './ReasoningBlock'
-import { renderCodexItem } from './codex-item-renderer'
 
 type LoadState = 'loaded' | 'loading' | 'error'
 
@@ -20,7 +23,11 @@ const fileChange: CodexFileChangeItem = { id: 'patch', type: 'file_change', stat
 const collab: CodexCollabToolCallItem = { id: 'spawn', type: 'collab_tool_call', tool: 'spawnAgent', status: 'completed', remoteDetail: 'spawn',
   receiverThreadIds: ['child'], agentsStates: { child: { status: 'completed', nickname: 'Test runner', role: 'worker' } } }
 
-/** What the remote machine returns for each summarized row. */
+/** A legacy Codex turn whose patch and agent card are summarized: drawn from derived content. */
+const legacyTurn: ChatMessageType = { id: 'turn', role: 'assistant', status: 'complete', content: [], createdAt: '', providerId: 'codex',
+  metadata: { codex: { threadId: 'thread', usage: null, items: [fileChange, collab] } } }
+
+/** What the remote machine returns for each summarized row; a Codex row's detail is its whole item. */
 const DETAILS: Record<string, string> = {
   bash: JSON.stringify({ input: JSON.stringify({ command: 'bun run test', description: 'Run the tests' }), result: LONG_OUTPUT }),
   grep: JSON.stringify({ input: JSON.stringify({ pattern: 'greet', path: '/repo/src' }), result: '/repo/src/greet.ts\n/repo/src/index.ts' }),
@@ -46,7 +53,12 @@ function storyClient(state: LoadState) {
 }
 
 function Scenario({ state = 'loaded', narrow = false }: { state?: LoadState; narrow?: boolean }) {
-  const [scope] = useState(() => ({ client: storyClient(state), environmentId: 'node', sessionId: 'session' }))
+  const [scope] = useState(() => {
+    useAppStore.setState({ detailChatMode: true })
+    useChatStore.setState({ activeProject: '/storybook/deferred', projectSessions: { '/storybook/deferred': {
+      ...createDefaultProjectState(), _activeSessionId: 'session', _sessions: { session: createDefaultPerSessionState() } } } })
+    return { client: storyClient(state), environmentId: 'node', sessionId: 'session' }
+  })
   return (
     <DetailScopeProvider scope={scope}>
       <div data-chat-root className="@container mx-auto w-full space-y-1 p-4" style={{ maxWidth: narrow ? 340 : 720 }}>
@@ -54,8 +66,7 @@ function Scenario({ state = 'loaded', narrow = false }: { state?: LoadState; nar
         <ToolBlock toolName="Bash" toolUseId="bash" input={JSON.stringify({ command: 'bun run test' })} status="complete" remoteDetail="bash" />
         <ToolBlock toolName="Grep" toolUseId="grep" input={JSON.stringify({ pattern: 'greet' })} status="complete" remoteDetail="grep" />
         <CodexCommandBlock item={command} isStreaming={false} />
-        {renderCodexItem(fileChange, 0, false)}
-        <CodexSubagentMarker item={collab} />
+        <ChatMessage message={withCodexContent(legacyTurn)} sessionStatus="idle" isLastAssistant />
       </div>
     </DetailScopeProvider>
   )

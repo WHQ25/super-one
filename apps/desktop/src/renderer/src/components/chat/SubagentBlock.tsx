@@ -91,6 +91,10 @@ function renderChildBlock(
           status={!isStreaming && block.status === 'streaming' ? undefined : block.status}
           elapsedSeconds={block.elapsedSeconds}
           remoteDetail={block.remoteDetail}
+          // An App call keeps its View, as at the root (docs/features/mcp-apps.md).
+          app={block.app}
+          liveOutput={block.liveOutput}
+          authRequired={block.authRequired}
           result={toolResultMap.get(block.toolUseId)}
           isError={errorMaps.errorIds.has(block.toolUseId)}
           isTimedOut={errorMaps.timedOutIds.has(block.toolUseId)}

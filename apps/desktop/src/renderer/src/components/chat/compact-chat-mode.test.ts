@@ -3,7 +3,6 @@ import {
   collapsibleItems,
   countVisibleClaudeProcessSegments,
   isClaudePinnedSegment,
-  isCodexPinnedSegment,
   isVisibleClaudeProcessSegment,
   partitionTurnForCompactMode,
 } from './compact-chat-mode'
@@ -113,83 +112,6 @@ describe('partitionTurnForCompactMode', () => {
 
   it('returns no runs for an empty turn', () => {
     expect(partitionTurnForCompactMode([], isClaudePinnedSegment)).toEqual([])
-  })
-})
-
-describe('isCodexPinnedSegment', () => {
-  const itemAt = (items: ReadonlyArray<{ type: string; server?: string; tool?: string }>) =>
-    (index: number) => items[index]
-
-  it('pins agent_message and plan items', () => {
-    const items = [
-      { type: 'reasoning' },
-      { type: 'command_execution' },
-      { type: 'agent_message' },
-      { type: 'plan' },
-    ]
-    const segs = [
-      { kind: 'reasoning' as const, id: 'reasoning' },
-      { kind: 'item' as const, index: 1, id: 'cmd' },
-      { kind: 'item' as const, index: 2, id: 'msg' },
-      { kind: 'item' as const, index: 3, id: 'plan' },
-    ]
-    const runs = partitionTurnForCompactMode(segs, (s) => isCodexPinnedSegment(s, itemAt(items)))
-    expect(shape(runs)).toEqual(['c:reasoning,cmd', 'p:msg,plan'])
-  })
-
-  it('pins a mid-turn widget_show mcp call', () => {
-    const items = [
-      { type: 'command_execution' },
-      { type: 'mcp_tool_call', server: 'superone', tool: 'widget_show' },
-      { type: 'command_execution' },
-      { type: 'agent_message' },
-    ]
-    const segs = [
-      { kind: 'item' as const, index: 0, id: 'cmd-1' },
-      { kind: 'item' as const, index: 1, id: 'widget' },
-      { kind: 'item' as const, index: 2, id: 'cmd-2' },
-      { kind: 'item' as const, index: 3, id: 'msg' },
-    ]
-    const runs = partitionTurnForCompactMode(segs, (s) => isCodexPinnedSegment(s, itemAt(items)))
-    expect(shape(runs)).toEqual(['c:cmd-1', 'p:widget', 'c:cmd-2', 'p:msg'])
-  })
-
-  it('pins subagent cards', () => {
-    const items = [{ type: 'command_execution' }, { type: 'collab_tool_call' }, { type: 'agent_message' }]
-    const segs = [
-      { kind: 'item' as const, index: 0, id: 'cmd' },
-      { kind: 'subagent' as const, index: 1, id: 'agent' },
-      { kind: 'item' as const, index: 2, id: 'msg' },
-    ]
-    expect(shape(partitionTurnForCompactMode(segs, (s) => isCodexPinnedSegment(s, itemAt(items)))))
-      .toEqual(['c:cmd', 'p:agent,msg'])
-  })
-
-  it('does not pin other mcp calls', () => {
-    const items = [{ type: 'mcp_tool_call', server: 'superone', tool: 'browser_click' }, { type: 'agent_message' }]
-    const segs = [
-      { kind: 'item' as const, index: 0, id: 'click' },
-      { kind: 'item' as const, index: 1, id: 'msg' },
-    ]
-    expect(shape(partitionTurnForCompactMode(segs, (s) => isCodexPinnedSegment(s, itemAt(items)))))
-      .toEqual(['c:click', 'p:msg'])
-  })
-
-  it('on interrupt ending in a command, pins the last agent_message and the command after it', () => {
-    const items = [
-      { type: 'reasoning' },
-      { type: 'command_execution' },
-      { type: 'agent_message' },
-      { type: 'command_execution' },
-    ]
-    const segs = [
-      { kind: 'reasoning' as const, id: 'reasoning' },
-      { kind: 'item' as const, index: 1, id: 'cmd-1' },
-      { kind: 'item' as const, index: 2, id: 'msg' },
-      { kind: 'item' as const, index: 3, id: 'cmd-2' },
-    ]
-    const runs = partitionTurnForCompactMode(segs, (s) => isCodexPinnedSegment(s, itemAt(items)))
-    expect(shape(runs)).toEqual(['c:reasoning,cmd-1', 'p:msg,cmd-2'])
   })
 })
 

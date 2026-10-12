@@ -1,7 +1,6 @@
 import { isWidgetShowTool } from './media-generation'
 import {
   isClaudePinnedSegment as isClaudePinnedSegmentPresenter,
-  isCodexPinnedSegment as isCodexPinnedSegmentPresenter,
   isPinnedToolName as isPinnedToolNamePresenter,
 } from './presenters/compact-chat-mode'
 
@@ -29,11 +28,4 @@ export function isClaudePinnedSegment(seg: {
   block?: { type: string; toolName?: string }
 }): boolean {
   return isClaudePinnedSegmentPresenter(seg, desktopCompactChatModePorts)
-}
-
-export function isCodexPinnedSegment(
-  seg: { kind: string; index?: number },
-  itemAt: (index: number) => { type: string; server?: string; tool?: string } | undefined,
-): boolean {
-  return isCodexPinnedSegmentPresenter(seg, itemAt, desktopCompactChatModePorts)
 }

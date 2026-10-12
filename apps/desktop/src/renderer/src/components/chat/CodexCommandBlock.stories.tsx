@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { ReactNode } from 'react'
-import { CodexCommandBlock } from './codex-item-renderer'
+import { CodexCommandBlock } from './CodexCommandBlock'
 
 function StoryShell({ children, width = 720 }: { children: ReactNode; width?: number }) {
   return (

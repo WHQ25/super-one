@@ -4,7 +4,7 @@ import { render } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import type { CodexMcpToolCallItem } from '@superone/shared/agent-types'
 import { ToolBlock } from './ToolBlock'
-import { renderCodexItem } from './codex-item-renderer'
+import { codexItemToBlocks } from '@superone/shared/codex-content'
 import { NestedToolContext } from './nested-tool-context'
 
 /**
@@ -33,6 +33,14 @@ function codexWidget(overrides: Partial<CodexMcpToolCallItem> = {}): CodexMcpToo
     result: { content: [{ type: 'text', text: ACK }], structuredContent: null },
     ...overrides,
   }
+}
+
+/** A Codex call as the turn body draws it: its translated call and result through the shared row. */
+function CodexWidget({ item }: { item: CodexMcpToolCallItem }) {
+  const [call, outcome] = codexItemToBlocks(item)
+  if (call?.type !== 'tool_use') return null
+  return <ToolBlock toolName={call.toolName} toolUseId={call.toolUseId} input={call.input} status={call.status}
+    {...(outcome?.type === 'tool_result' ? { result: outcome.summary, isError: outcome.isError } : {})} />
 }
 
 describe('a desktop widget drawn from its call input', () => {
@@ -98,14 +106,14 @@ describe('a desktop widget drawn from its call input', () => {
     ['object', ARGS],
     ['string', INPUT],
   ])('draws a Codex item whose arguments are a serialized %s', (_, args) => {
-    const { container } = render(<>{renderCodexItem(codexWidget({ arguments: args }), 0, false)}</>)
+    const { container } = render(<CodexWidget item={codexWidget({ arguments: args })} />)
     expect(widgetDocument(container)).toContain('Release chart')
   })
 
   it('shows a Codex tool error reply as an error row, not a widget', () => {
-    const { container } = render(<>{renderCodexItem(codexWidget({
+    const { container } = render(<CodexWidget item={codexWidget({
       result: { content: [{ type: 'text', text: 'widget_show failed.' }], structuredContent: null, isError: true },
-    }), 0, false)}</>)
+    })} />)
     expect(widgetDocument(container)).toBeNull()
     expect(container.querySelector('.errored')).not.toBeNull()
   })

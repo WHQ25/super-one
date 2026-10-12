@@ -10,10 +10,8 @@ import type { MiniAppEntry } from '@superone/shared/miniapp-types'
 import { useAppStore } from '@/stores/app'
 import { createDefaultPerSessionState, createDefaultProjectState, useChatStore } from '@/stores/chat'
 import { useMiniAppStore } from '@/stores/miniapp'
-import { CodexCollabBlock } from './CodexCollabBlock'
-import { CodexImageGenerationBlock } from './CodexImageGenerationBlock'
-import { CodexTurnView } from './CodexTurnView'
-import { renderCodexItem } from './codex-item-renderer'
+import { withCodexContent } from '@superone/shared/codex-content'
+import { ChatMessage as ChatMessageView } from './ChatMessage'
 
 const STORY_APP: MiniAppEntry = {
   id: 'project-tools',
@@ -80,8 +78,13 @@ function StoryLabel({ children }: { children: ReactNode }) {
   return <div className="pt-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{children}</div>
 }
 
+/** A legacy Codex turn as the desktop draws it: content derived from items, through the shared turn body. */
+function Turn({ message, isStreaming = false }: { message: ChatMessage; isStreaming?: boolean }) {
+  return <ChatMessageView message={withCodexContent(message)} sessionStatus={isStreaming ? 'streaming' : 'idle'} isLastAssistant />
+}
+
 function ItemPreview({ item, isStreaming = false }: { item: CodexThreadItem; isStreaming?: boolean }) {
-  return <>{renderCodexItem(item, 0, isStreaming)}</>
+  return <Turn message={turnMessage(item.id, [item], isStreaming)} isStreaming={isStreaming} />
 }
 
 function turnMessage(id: string, items: CodexThreadItem[], streaming = false): ChatMessage {
@@ -128,7 +131,7 @@ type Story = StoryObj
 
 export const NativeImageFailure: Story = {
   render: () => (
-    <CodexImageGenerationBlock
+    <ItemPreview
       item={
         {
           id: 'image-failed',
@@ -166,7 +169,7 @@ export const CommandGroupRunning: Story = {
       ],
       true,
     )
-    return <CodexTurnView message={message} isStreaming isLastAssistant />
+    return <Turn message={message} isStreaming />
   },
 }
 
@@ -206,7 +209,7 @@ export const MiniAppToolGroupRunning: Story = {
       ],
       true,
     )
-    return <CodexTurnView message={message} isStreaming isLastAssistant />
+    return <Turn message={message} isStreaming />
   },
 }
 
@@ -318,7 +321,7 @@ const SUBAGENT_ITEMS: CodexCollabToolCallItem[] = [
 ]
 
 export const SubagentMiniTools: Story = {
-  render: () => <CodexCollabBlock items={SUBAGENT_ITEMS} isStreaming={false} defaultExpanded />,
+  render: () => <Turn message={turnMessage('subagent', SUBAGENT_ITEMS)} />,
 }
 
 export const FailedAdapterRows: Story = {
@@ -489,6 +492,6 @@ const CONSECUTIVE_ITEMS: CodexThreadItem[] = [
 /** Every Codex item kind back to back: consecutive rows must keep one uniform gap. */
 export const ConsecutiveToolSpacing: Story = {
   render: () => (
-    <CodexTurnView message={turnMessage('consecutive', CONSECUTIVE_ITEMS)} isStreaming={false} isLastAssistant />
+    <Turn message={turnMessage('consecutive', CONSECUTIVE_ITEMS)} />
   ),
 }

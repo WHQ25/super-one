@@ -19,8 +19,6 @@ import { SideChatEmptyState } from './SideChatEmptyState'
 import { PlanApprovalPrompt } from './PlanApprovalPrompt'
 import { PlanFullscreenContext } from './plan-fullscreen-context'
 import { CodexPlanFullscreenView } from './CodexPlanFullscreenView'
-import { ForkNavigationContext, type ForkViewState } from './fork-navigation-context'
-import { ForkedThreadView } from './ForkedThreadView'
 import { SubagentNavigationContext, type SubagentViewState } from './subagent-navigation-context'
 import { SubagentFullView } from './SubagentFullView'
 const WorkflowFullView = lazy(() => import('./WorkflowFullView').then((m) => ({ default: m.WorkflowFullView })))
@@ -535,13 +533,6 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     })
   }, [])
 
-  const [fork, setFork] = useState<ForkViewState | null>(null)
-  const forkNav = useMemo(() => ({
-    current: fork,
-    open: (state: ForkViewState) => setFork(state),
-    close: () => setFork(null),
-  }), [fork])
-
   const [subagentView, setSubagentView] = useState<SubagentViewState | null>(null)
   const subagentNav = useMemo(() => ({
     current: subagentView,
@@ -564,14 +555,12 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     setOverlaySessionId(displayedSessionId)
     setWorkflowView(null)
     setSubagentView(null)
-    setFork(null)
     setFullscreenPlan(null)
   }
 
   return (
     <WorkflowNavigationContext.Provider value={workflowNav}>
     <SubagentNavigationContext.Provider value={subagentNav}>
-    <ForkNavigationContext.Provider value={forkNav}>
     <PlanFullscreenContext.Provider value={planFullscreenCtx}>
     <div
       ref={containerRef}
@@ -589,8 +578,6 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
         </Suspense>
       ) : subagentView ? (
         <SubagentFullView view={subagentView} />
-      ) : fork ? (
-        <ForkedThreadView fork={fork} />
       ) : fullscreenPlan ? (
         <CodexPlanFullscreenView
           text={fullscreenPlan.text}
@@ -663,7 +650,6 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
       </ChatRootContext.Provider>
     </div>
     </PlanFullscreenContext.Provider>
-    </ForkNavigationContext.Provider>
     </SubagentNavigationContext.Provider>
     </WorkflowNavigationContext.Provider>
   )

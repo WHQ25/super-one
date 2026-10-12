@@ -40,7 +40,7 @@ function safeStringify(value: unknown): string {
   try { return JSON.stringify(value) } catch { return String(value) }
 }
 
-export function codexMcpItemResultText(item: CodexMcpToolCallItem): string | undefined {
+function codexMcpItemResultText(item: CodexMcpToolCallItem): string | undefined {
   const chunks: string[] = []
   if (item.result) {
     const contentArr = item.result.content as Array<{ type: string; text: string }> | undefined
@@ -53,7 +53,7 @@ export function codexMcpItemResultText(item: CodexMcpToolCallItem): string | und
 }
 
 /** The call's input as a tool row reads it. String arguments are the serialized input already. */
-export function codexMcpItemInput(item: CodexMcpToolCallItem): string {
+function codexMcpItemInput(item: CodexMcpToolCallItem): string {
   return typeof item.arguments === 'string' ? item.arguments : safeStringify(item.arguments ?? {})
 }
 
@@ -65,7 +65,7 @@ export function hasCodexMcpAuthChallenge(item: CodexMcpToolCallItem): boolean {
 }
 
 /** A tool's own error reply completes the call with a flagged result, so the status alone misses it. */
-export function codexMcpItemIsError(item: CodexMcpToolCallItem): boolean {
+function codexMcpItemIsError(item: CodexMcpToolCallItem): boolean {
   return item.status === 'failed' || Boolean(item.error) || item.result?.isError === true
 }
 

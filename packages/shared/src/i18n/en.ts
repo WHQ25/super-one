@@ -1984,27 +1984,7 @@ export type Messages = {
       mcpReauthSuccess: string
       mcpReauthFailed: string
       runningInline: string
-      waitingFor: string
       waitingForWithElapsed: string
-      fallbackAgentName: string
-      codexError: string
-      startReview: string
-      reviewComplete: string
-      conversationCompacted: string
-      sendingFollowUp: string
-      sendFollowUp: string
-      followUpSent: string
-      loadImage: string
-      imageGenerationFailed: string
-      imageLoadFailed: string
-      generatedImageAlt: string
-      appToolCalls_one: string
-      appToolCalls_other: string
-      commandGroupRead_one: string
-      commandGroupRead_other: string
-      commandGroupSearch_one: string
-      commandGroupSearch_other: string
-      commandGroupCombined: string
       exploringCode: string
       exploreCode: string
       codeExplored: string
@@ -3152,40 +3132,8 @@ export type Messages = {
       retrying: string
     }
     codexCollab: {
-      defaultName: string
-      errored: string
-      failed: string
       openFullView: string
       backToMain: string
-      forked: string
-      failureSummary: string
-      failureNotFound: string
-      failureNoDetails: string
-      turnCount_one: string
-      turnCount_other: string
-      noItems: string
-      noOutput: string
-      toolLabels: {
-        spawnAgent: string
-        sendInput: string
-        resumeAgent: string
-        wait: string
-        closeAgent: string
-      }
-      turnLabels: {
-        spawnAgent: string
-        sendInput: string
-        resumeAgent: string
-        wait: string
-        closeAgent: string
-      }
-      miniTool: {
-        bash: string
-        edit: string
-        webSearch: string
-        filesFallback_one: string
-        filesFallback_other: string
-      }
     }
     codexCommands: {
       resetDesc: string
@@ -6419,27 +6367,7 @@ export const en: Messages = {
       mcpReauthSuccess: 'Re-authenticated {{name}}',
       mcpReauthFailed: 'Re-authentication failed for {{name}}',
       runningInline: 'Running…',
-      waitingFor: 'Waiting for {{name}}',
       waitingForWithElapsed: 'Waiting for {{name}} for {{elapsed}}s...',
-      fallbackAgentName: 'subagent',
-      codexError: 'Codex Error',
-      startReview: 'Start review',
-      reviewComplete: 'Review complete',
-      conversationCompacted: 'Conversation Compacted',
-      sendingFollowUp: 'Sending follow-up',
-      sendFollowUp: 'Send Follow-up',
-      followUpSent: 'Follow-up Sent',
-      loadImage: 'Load Image',
-      imageGenerationFailed: 'The image could not be generated',
-      imageLoadFailed: 'The generated image could not be loaded',
-      generatedImageAlt: 'Generated image',
-      appToolCalls_one: '{{count}} tool call',
-      appToolCalls_other: '{{count}} tool calls',
-      commandGroupRead_one: 'Read {{count}} file',
-      commandGroupRead_other: 'Read {{count}} files',
-      commandGroupSearch_one: 'searched {{count}} code',
-      commandGroupSearch_other: 'searched {{count}} code',
-      commandGroupCombined: '{{read}}, {{search}}',
       exploringCode: 'Exploring code',
       exploreCode: 'Explore Code',
       codeExplored: 'Explored',
@@ -7561,40 +7489,8 @@ export const en: Messages = {
       retrying: 'Rate limited — retrying ({{attempt}}/{{max}})',
     },
     codexCollab: {
-      defaultName: 'Subagent',
-      errored: 'Errored',
-      failed: 'Failed',
       openFullView: 'Open full view',
       backToMain: 'Back to main',
-      forked: 'forked',
-      failureSummary: '{{tool}} failed: {{message}}',
-      failureNotFound: 'Subagent is not available. Resume it, then retry this follow-up.',
-      failureNoDetails: 'No error details were returned.',
-      turnCount_one: '{{count}} turn',
-      turnCount_other: '{{count}} turns',
-      noItems: 'No items yet in this branch.',
-      noOutput: 'No agent output yet for this turn.',
-      toolLabels: {
-        spawnAgent: 'Task',
-        sendInput: 'Follow-up',
-        resumeAgent: 'Resume',
-        wait: 'Wait',
-        closeAgent: 'Close',
-      },
-      turnLabels: {
-        spawnAgent: 'Initial prompt',
-        sendInput: 'Follow-up',
-        resumeAgent: 'Resume',
-        wait: 'Wait',
-        closeAgent: 'Close',
-      },
-      miniTool: {
-        bash: 'Bash',
-        edit: 'Edit',
-        webSearch: 'Web search',
-        filesFallback_one: '{{count}} file',
-        filesFallback_other: '{{count}} files',
-      },
     },
     codexCommands: {
       resetDesc: 'Reset Codex thread',

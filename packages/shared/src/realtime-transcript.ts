@@ -80,8 +80,8 @@ export function buildRealtimeConversationTurns(
 
 /**
  * Project spoken segments onto the ordinary ChatMessage shape so a voice line renders
- * through the same component as a typed turn. No `metadata.codex` on purpose:
- * `CodexTurnView` then falls back to plain markdown, which is all speech is.
+ * through the same component as a typed turn: plain markdown text, which is all
+ * speech is.
  *
  * Consecutive segments from one speaker are a single utterance split by the realtime
  * item boundary, not separate turns — they join into one markdown block, and identity

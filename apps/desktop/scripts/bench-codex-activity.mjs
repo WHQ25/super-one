@@ -2,7 +2,7 @@ import WebSocket from 'ws'
 import { writeFileSync } from 'node:fs'
 
 // Open the same long Codex turn in an isolated dev profile before each run.
-// Compare with/without LONG_TURN_PARTS in the desktop CodexTurnView adapter.
+// Compare with/without LONG_CONTENT_BLOCK_TURN_PARTS in the desktop ChatMessage.
 const args = process.argv.slice(2)
 const option = (name, fallback) => args.includes(name) ? args[args.indexOf(name) + 1] ?? fallback : fallback
 const port = option('--port', '9337')

@@ -42,18 +42,6 @@ export function codexCommandPresentation(item: CodexCommandExecutionItem, cwdFal
   return { kind, actions, files }
 }
 
-export function summarizeCodexCommandActions(items: CodexCommandExecutionItem[]) {
-  const files = new Set<string>()
-  let searches = 0, lists = 0
-  for (const item of items) {
-    const view = codexCommandPresentation(item)
-    for (const file of view.files) files.add(file)
-    searches += view.actions.filter(action => action.type === 'search').length
-    lists += view.actions.filter(action => action.type === 'listFiles').length
-  }
-  return { files: files.size, searches, lists }
-}
-
 /**
  * A `Bash` call that carries parsed `commandActions` (Codex commands do), read
  * back as the command shape the presentation above works on; `null` for a

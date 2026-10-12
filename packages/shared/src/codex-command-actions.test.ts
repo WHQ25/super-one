@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { CodexCommandExecutionItem } from './agent-types'
-import { codexCommandPresentation, resolveCodexCommandActions, summarizeCodexCommandActions } from './codex-command-actions'
+import { codexCommandPresentation, resolveCodexCommandActions } from './codex-command-actions'
 
 function item(command: string, commandActions?: CodexCommandExecutionItem['commandActions']): CodexCommandExecutionItem {
   return { id: 'command', type: 'command_execution', command, commandActions, cwd: '/repo', aggregatedOutput: '', status: 'completed' }
@@ -31,14 +31,6 @@ describe('Codex command actions', () => {
     const actions = [{ type: 'read', path: '/repo/a.ts' }, { type: 'search', query: 'TODO', path: '/repo/src' }, { type: 'listFiles', path: '/repo/tests' }]
     const result = codexCommandPresentation(item('compound shell command', actions))
     expect(result).toMatchObject({ kind: 'explore', actions, files: ['/repo/a.ts'] })
-    expect(summarizeCodexCommandActions([item('compound shell command', actions)])).toEqual({ files: 1, searches: 1, lists: 1 })
-  })
-
-  it('counts unique full paths across calls, rather than calls or basenames', () => {
-    expect(summarizeCodexCommandActions([
-      item('opaque', [{ type: 'read', path: '/repo/a/index.ts' }, { type: 'read', path: '/repo/b/index.ts' }]),
-      item('opaque', [{ type: 'read', path: '/repo/a/index.ts' }]),
-    ])).toEqual({ files: 2, searches: 0, lists: 0 })
   })
 
   it('supplements a multi-file read action inside mixed exploration without changing its search', () => {

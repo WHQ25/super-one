@@ -3,6 +3,7 @@
  * All host-scoped project keys use `remote:<connectionId>:<hostPath>`.
  */
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness-capabilities'
+import { withCodexContents } from '@superone/shared/codex-content'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import {
   nodeHarnessToProviderId,
@@ -118,8 +119,9 @@ export async function hydrateRemoteSession(
   const state = loaded.state as Partial<PerSessionState>
   const derived = Object.fromEntries(SNAPSHOT_STATE_KEYS.filter((key) => key in state).map((key) => [key, state[key]]))
   // Older pages are committed and never change: keep those already held.
-  const first = loaded.before == null ? -1 : hydrated.messages.findIndex((message) => message.id === loaded.messages[0]?.id)
-  const messages = first > 0 ? [...hydrated.messages.slice(0, first), ...loaded.messages] : loaded.messages
+  const page = withCodexContents(loaded.messages)
+  const first = loaded.before == null ? -1 : hydrated.messages.findIndex((message) => message.id === page[0]?.id)
+  const messages = first > 0 ? [...hydrated.messages.slice(0, first), ...page] : page
   return { hydrated: { ...hydrated, ...derived, messages, _historyHydrated: true }, snap }
 }
 

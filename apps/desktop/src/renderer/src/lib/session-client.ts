@@ -14,6 +14,7 @@ import type {
   SessionSettingsPatch,
 } from '@superone/shared/environment/session-requests'
 import type { PerSessionState, PersistedSessionState } from '@/stores/chat-store/types'
+import { withCodexContents } from '@superone/shared/codex-content'
 import { parseRemoteProjectKey } from './remote-project-key'
 import { connectionIdForProjectKey } from './session-list-ops'
 
@@ -59,7 +60,7 @@ export async function loadStoredSession(projectKey: string, sessionId: string): 
   if (!await window.environment.getSession(connectionId, sessionId)) return null
   const loaded = await window.environment.openRemoteSession(connectionId, { sessionId, projectPath: projectKey, full: true })
   const stored = (loaded.state as { stored?: Omit<PersistedSessionState, 'messages'> }).stored
-  return stored ? { ...stored, messages: loaded.messages } : null
+  return stored ? { ...stored, messages: withCodexContents(loaded.messages) } : null
 }
 
 export function respondPermission(projectKey: string, input: SessionPermissionAnswer) {

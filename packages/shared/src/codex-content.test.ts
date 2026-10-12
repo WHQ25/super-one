@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { CodexCollabToolCallItem, CodexThreadItem, ContentBlock } from './agent-types'
+import type { ChatMessage, CodexCollabToolCallItem, CodexThreadItem, ContentBlock } from './agent-types'
 import { applyContentDelta } from './content-delta'
 import {
   CODEX_AGENT_WAIT_TOOL,
@@ -9,6 +9,7 @@ import {
   codexItemToBlocks,
   codexItemsToContent,
   createCodexContentStream,
+  withCodexContent,
 } from './codex-content'
 
 function streamAll(snapshots: CodexThreadItem[]): ContentBlock[] {
@@ -73,6 +74,10 @@ describe('codexItemToBlocks', () => {
     const [image] = codexItemToBlocks({ id: 'img', type: 'image_generation', status: 'in_progress', revisedPrompt: 'a fox', warnings: ['slow'] })
     expect(image).toMatchObject({ toolName: CODEX_IMAGE_GENERATION_TOOL, status: 'complete' })
     expect(JSON.parse((image as { input: string }).input)).toEqual({ status: 'in_progress', revisedPrompt: 'a fox', warnings: ['slow'] })
+  })
+
+  it('draws nothing for an item kind this build does not know', () => {
+    expect(codexItemToBlocks({ id: 'x', type: 'future_item' } as unknown as CodexThreadItem)).toEqual([])
   })
 
   it('turns errors, review markers and compaction into identified notices', () => {
@@ -158,5 +163,36 @@ describe('createCodexContentStream', () => {
     const streamed = streamAll([base, { ...base, childItems: { child: [{ id: 'm', type: 'agent_message', text: 'o' }] } }, done])
     expect(streamed.map(block => JSON.parse(JSON.stringify({ ...block, toolSummary: undefined, startedAt: undefined }))))
       .toEqual(codexItemsToContent([done]).map(block => JSON.parse(JSON.stringify(block))))
+  })
+})
+
+describe('withCodexContent', () => {
+  const message = (items: CodexThreadItem[], content: ContentBlock[] = [], status: ChatMessage['status'] = 'complete'): ChatMessage => ({
+    id: 'm', role: 'assistant', status, content, createdAt: '', providerId: 'codex',
+    metadata: { codex: { threadId: 't', usage: null, items } },
+  })
+  const running: CodexThreadItem = { id: 'c', type: 'command_execution', command: 'make', aggregatedOutput: '', status: 'in_progress' }
+
+  it('reads a legacy message as its items, replacing the final-response text', () => {
+    const items: CodexThreadItem[] = [{ id: 'a', type: 'agent_message', text: 'Done' }]
+    expect(withCodexContent(message(items, [{ type: 'text', text: 'Done' }])).content).toEqual(codexItemsToContent(items))
+  })
+
+  it('keeps the final-response text of a turn whose items carry no reply', () => {
+    const fallback: ContentBlock = { type: 'text', text: 'Recovered reply' }
+    const items: CodexThreadItem[] = [{ id: 'w', type: 'web_search', query: 'q', status: 'completed' }]
+    expect(withCodexContent(message(items, [fallback])).content).toEqual([...codexItemsToContent(items), fallback])
+  })
+
+  it('seals a settled turn but leaves a live one streaming', () => {
+    expect(withCodexContent(message([running], [], 'streaming')).content[0]).toMatchObject({ status: 'streaming' })
+    expect(withCodexContent(message([running], [], 'interrupted')).content[0]).toMatchObject({ status: 'complete' })
+  })
+
+  it('returns the same message when nothing changed and leaves content-format messages alone', () => {
+    const derived = withCodexContent(message([{ id: 'a', type: 'agent_message', text: 'Done' }]))
+    expect(withCodexContent(derived)).toBe(derived)
+    const current = message([], [{ type: 'text', id: 'a', text: 'Done' }])
+    expect(withCodexContent(current)).toBe(current)
   })
 })

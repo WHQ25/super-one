@@ -6,6 +6,7 @@ import type {
   RealtimeTranscriptRole,
 } from '@superone/shared/agent-types'
 import { mergePendingRealtimeTimelineSegments } from '@superone/shared/realtime-timeline'
+import { withCodexContents } from '@superone/shared/codex-content'
 
 export type CodexConversationView = 'thread' | 'realtime'
 
@@ -179,7 +180,7 @@ export const useCodexRealtimeViewStore = create<CodexRealtimeViewStore>((set) =>
           loadStatus: 'loaded',
           segments,
           liveItems: current.liveItems.filter((item) => !published.has(item.itemId)),
-          threadMessages: timeline.threadMessages,
+          threadMessages: withCodexContents(timeline.threadMessages),
           // Once this renderer observes a realtime lifecycle event, that event is
           // authoritative. A timeline request may have started before the call
           // started or closed, so its active id can be stale in either direction.

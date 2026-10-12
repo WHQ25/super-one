@@ -1,5 +1,6 @@
 import { reduceCodexMetadata } from './codex-metadata'
-import type { AgentEvent } from '@superone/shared/agent-types'
+import type { AgentEvent, ChatMessage } from '@superone/shared/agent-types'
+import { withCodexContent } from '@superone/shared/codex-content'
 import { updateMcpAppAttachments } from '@superone/shared/mcp-apps-state'
 import { applySuggestedTaskUpdate } from '@superone/shared/suggested-task'
 import type { ChatCorePatch, ChatCoreSession } from './types'
@@ -57,6 +58,32 @@ export function applyEventToSession(
   session: ChatCoreSession,
   event: AgentEvent,
   ports: ChatCorePorts = defaultChatCorePorts,
+): ChatCorePatch {
+  const patch = reduceEvent(session, event, ports)
+  return patch.messages ? { ...patch, messages: withLegacyCodexContent(patch.messages, session.messages) } : patch
+}
+
+/**
+ * Re-derive the content of every legacy Codex message the event wrote, after
+ * that reducer's own writes (a completion's final-response overwrite included).
+ * Untouched messages keep their identity and are skipped by reference.
+ */
+function withLegacyCodexContent(next: ChatMessage[], previous: readonly ChatMessage[]): ChatMessage[] {
+  let messages = next
+  next.forEach((message, index) => {
+    if (message === previous[index]) return
+    const derived = withCodexContent(message)
+    if (derived === message) return
+    if (messages === next) messages = [...next]
+    messages[index] = derived
+  })
+  return messages
+}
+
+function reduceEvent(
+  session: ChatCoreSession,
+  event: AgentEvent,
+  ports: ChatCorePorts,
 ): ChatCorePatch {
   switch (event.type) {
     case 'queued_message_consumed':

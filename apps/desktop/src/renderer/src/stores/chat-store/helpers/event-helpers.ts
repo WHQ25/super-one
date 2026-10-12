@@ -2,12 +2,14 @@ import type { ChatMessage } from '@superone/shared/agent-types'
 import { compareMessageSeq } from '@superone/shared/event-seq-utils'
 import { getSessionTitle } from '@/lib/session-title'
 import { applyContentDelta } from '@superone/shared/content-delta'
+import { withCodexContents } from '@superone/shared/codex-content'
 
 export const applyDelta = applyContentDelta
 
 export const extractSessionTitle = getSessionTitle
 
-export function mergeMessagesByMaxSeq(snap: ChatMessage[], existing: ChatMessage[]): ChatMessage[] {
+export function mergeMessagesByMaxSeq(snapshot: ChatMessage[], existing: ChatMessage[]): ChatMessage[] {
+  const snap = withCodexContents(snapshot)
   const existingById = new Map(existing.map((m) => [m.id, m]))
   const snapIds = new Set(snap.map((m) => m.id))
   // Rows main never saw — the `__turn_meta__` markers a reducer splices in, or a

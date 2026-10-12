@@ -138,20 +138,22 @@ export function findSuggestedTask(messages: readonly unknown[], taskId: string):
 export function applySuggestedTaskUpdate<T>(messages: readonly T[], taskId: string, state: SuggestedTaskState): T[] {
   const found = locate(messages, taskId)
   if (!found || found.row.suggestedTask) return messages as T[]
+  // A legacy Codex row is drawn from a block derived from its item under the
+  // same id; the item is the stored truth, so both carry the outcome.
   const patch = (row: unknown): unknown => {
     const value = record(row)
-    const id = found.kind === 'block' ? value.toolUseId : value.id
-    const matches = found.kind === 'block' ? value.type === 'tool_use' : value.type === 'mcp_tool_call'
-    return matches && id === found.rowId ? { ...value, suggestedTask: state } : row
+    const matches = (value.type === 'tool_use' && value.toolUseId === found.rowId) || (value.type === 'mcp_tool_call' && value.id === found.rowId)
+    return matches ? { ...value, suggestedTask: state } : row
   }
   return messages.map((message, index) => {
     if (index !== found.messageIndex) return message
     const value = record(message)
-    if (found.kind === 'block') {
-      return { ...value, content: (value.content as unknown[]).map(patch) } as T
-    }
     const metadata = record(value.metadata)
     const codex = record(metadata.codex)
-    return { ...value, metadata: { ...metadata, codex: { ...codex, items: (codex.items as unknown[]).map(patch) } } } as T
+    return {
+      ...value,
+      ...(Array.isArray(value.content) ? { content: value.content.map(patch) } : {}),
+      ...(Array.isArray(codex.items) ? { metadata: { ...metadata, codex: { ...codex, items: codex.items.map(patch) } } } : {}),
+    } as T
   })
 }

@@ -3534,7 +3534,11 @@ describe('codex usage semantics', () => {
     const message = session.messages.find((entry) => entry.id === 'codex-complete-1')!
 
     expect(message.status).toBe('complete')
-    expect(message.content).toEqual([{ type: 'text', text: 'all done' }])
+    // The completion's final response gives way to the content read from its items.
+    expect(message.content).toEqual([
+      { type: 'thinking', id: 'reason-1', thinking: 'thinking', parentToolUseId: null },
+      { type: 'text', id: 'agent-1', text: 'all done', parentToolUseId: null },
+    ])
     expect(message.metadata?.durationMs).toBe(23000)
     expect(message.metadata?.consumedTokens).toEqual({ input: 1, output: 15 })
     expect(message.metadata?.codex).toEqual({
@@ -4169,7 +4173,7 @@ describe('codex run session isolation', () => {
     const codexSession = after._sessions[codexSid]
     const assistantMsg = codexSession.messages.find((m) => m.role === 'assistant')
     expect(assistantMsg?.status).toBe('complete')
-    expect(assistantMsg?.content[0]).toEqual({ type: 'text', text: 'isolation ok' })
+    expect(assistantMsg?.content.at(-1)).toEqual({ type: 'text', id: 'agent-1', text: 'isolation ok', parentToolUseId: null })
     expect(assistantMsg?.metadata?.codex?.items).toEqual([
       { id: 'reason-1', type: 'reasoning', text: 'summary kept' },
       { id: 'agent-1', type: 'agent_message', text: 'isolation ok' },

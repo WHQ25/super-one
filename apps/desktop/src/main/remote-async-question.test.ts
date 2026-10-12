@@ -5,6 +5,7 @@ import type { SessionBackend } from './session/types'
 import { controlLeaseAuthority } from './control-lease.test-fixtures'
 import { nativeAsyncAnswerClient } from './session/native-async-answer-client.test-fixtures'
 import { CODEX_ASYNC_QUESTION_DISMISSED, isCodexAsyncAnswer, pendingCodexAsyncQuestions } from '@superone/shared/codex-async-question'
+import { withCodexContent } from '@superone/shared/codex-content'
 import { transcriptSegments } from '@superone/shared/transcript-segments'
 import { extractTurnOutline } from '@superone/shared/turn-outline'
 import { answerRemoteAsyncQuestion } from './agent/remote-async-question'
@@ -94,7 +95,7 @@ describe('mobile async question answers', () => {
     expect(runtime.messages.filter(isCodexAsyncAnswer)).toHaveLength(1)
     await runtime.reopen()
     expect(runtime.messages.filter(isCodexAsyncAnswer)).toHaveLength(1)
-    expect(runtime.messages.filter(message => !isCodexAsyncAnswer(message))).toEqual([question])
+    expect(runtime.messages.filter(message => !isCodexAsyncAnswer(message))).toEqual([withCodexContent(question)])
     unsubscribe()
     runtime.dispose()
   })

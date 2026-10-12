@@ -7,6 +7,7 @@ import { parseInputRequestError } from '@superone/shared/input-request'
 import { networkLedger } from './network-ledger'
 import { requestHarnessResource } from './harness-resource-cache'
 import { McpAppContextAttachments } from './mcp-app-context-attachments'
+import { withCodexContents } from '@superone/shared/codex-content'
 import { extendHistoryIndex, mergeIndexedHistory, type SessionHistoryIndex } from '@superone/shared/session-history-index'
 import { isCompactSlashSend } from '@superone/shared/compact-boundary'
 import { codexAsyncAnswerContent, codexAsyncAnswerId, codexAsyncQuestionQueue } from '@superone/shared/codex-async-question'
@@ -136,7 +137,7 @@ export class ChatRuntime {
       networkLedger.mark('open-session')
       if (cached?.messages.length) {
         this.appContexts.restore(cached.mcpAppContexts)
-        this.session = { ...createDefaultChatCoreSession(), messages: this.appContexts.reconcile(cached.messages) }
+        this.session = { ...createDefaultChatCoreSession(), messages: this.hydrated(cached.messages) }
         this.hasMoreHistory = cached.hasMore
         this.historyCursor = cached.cursor
         if (cached.provider) this.provider = cached.provider
@@ -180,7 +181,7 @@ export class ChatRuntime {
       const liveMessages = restored.snapshot.inProgressMessages ?? []
       const liveIds = new Set(liveMessages.map((message) => message.id))
       session.messages = [...session.messages.filter((message) => !liveIds.has(message.id)), ...liveMessages]
-      session.messages = this.appContexts.reconcile(session.messages)
+      session.messages = this.hydrated(session.messages)
       // Usage events predating the snapshot are intentionally deduplicated.
       // Restore the denominator from persisted usage before releasing live data.
       for (let i = session.messages.length - 1; i >= 0; i--) {
@@ -193,7 +194,7 @@ export class ChatRuntime {
       // broadcasts it, so a buffered event is a duplicate of something already here
       // and the reducer needs the baseline present to recognise it as one.
       session.realtimeSegments = restored.snapshot.realtimeSegments ?? []
-      session.realtimeThreadMessages = restored.snapshot.realtimeThreadMessages ?? []
+      session.realtimeThreadMessages = withCodexContents(restored.snapshot.realtimeThreadMessages ?? [])
       session.realtimeHasTimeline = restored.snapshot.realtimeHasTimeline ?? session.realtimeSegments.length > 0
       session.realtimeSessionId = restored.snapshot.activeRealtimeSessionId ?? null
       const restoreEvents = [
@@ -221,6 +222,11 @@ export class ChatRuntime {
     await restore
   }
 
+  /** Messages entering from the host or the cache: legacy Codex rows read as content, App context restored. */
+  private hydrated(messages: ChatMessage[]): ChatMessage[] {
+    return this.appContexts.reconcile(withCodexContents(messages))
+  }
+
   /** Fetch one page without replacing live messages received during the request. */
   loadEarlier(): Promise<ChatMessage[]> {
     if (this.historyRequest) return this.historyRequest
@@ -235,11 +241,11 @@ export class ChatRuntime {
       const older = (page.messages ?? []).filter(message => !ids.has(message.id))
       this.session = { ...this.session, messages: this.navigationIndex
         ? mergeIndexedHistory(this.navigationIndex, older, this.session.messages) : [...older, ...this.session.messages] }
-      this.session = { ...this.session, messages: this.appContexts.reconcile(this.session.messages) }
+      this.session = { ...this.session, messages: this.hydrated(this.session.messages) }
       this.historyCursor = page.cursor ?? null
       this.hasMoreHistory = Boolean(page.hasMore && this.historyCursor != null && this.historyCursor !== cursor)
       this.persistTranscript()
-      return this.appContexts.reconcile(older)
+      return this.hydrated(older)
     })()
     this.historyRequest = request
     void request.finally(() => { if (this.historyRequest === request) this.historyRequest = null }).catch(() => {})
@@ -270,8 +276,8 @@ export class ChatRuntime {
     if (generation !== this.restoreGeneration) throw new Error('Session changed')
     if (!Array.isArray(result.messages)) throw new Error('History is unavailable')
     this.session = { ...this.session, messages: mergeIndexedHistory(index, result.messages, this.session.messages) }
-    this.session = { ...this.session, messages: this.appContexts.reconcile(this.session.messages) }
-    return { messages: this.appContexts.reconcile(result.messages) }
+    this.session = { ...this.session, messages: this.hydrated(this.session.messages) }
+    return { messages: this.hydrated(result.messages) }
   }
 
   async subscribeDetail(detailRef: string, subscriptionId: string): Promise<Record<string, unknown>> {

@@ -10,6 +10,7 @@
  * `applyContentDelta` yields the projection of the final items.
  */
 import type {
+  ChatMessage,
   CodexCollabAgentState,
   CodexCollabToolCallItem,
   CodexMcpToolCallItem,
@@ -17,6 +18,7 @@ import type {
   ContentBlock,
 } from './agent-types'
 import { isCodexCommandToolError } from './codex-command-status'
+import { sealCodexItems } from './content-delta'
 
 type Parent = string | null
 type ToolCall = Extract<ContentBlock, { type: 'tool_use' }>
@@ -217,6 +219,9 @@ export function codexItemToBlocks(item: CodexThreadItem, parentToolUseId: Parent
     // A widget payload, never a Codex turn item.
     case 'video_generation':
       return []
+    // An item kind a newer host stored that this build does not know draws nothing, as before.
+    default:
+      return []
   }
 }
 
@@ -235,6 +240,46 @@ export function codexItemsToContent(
     cache?.set(item, blocks)
     return blocks
   })
+}
+
+/**
+ * Legacy format: a Codex message whose rows live in `metadata.codex.items`.
+ * Messages written as content carry `items: []`.
+ */
+export function isLegacyCodexMessage(message: Pick<ChatMessage, 'metadata'>): boolean {
+  return (message.metadata?.codex?.items.length ?? 0) > 0
+}
+
+const legacyContentCache = new WeakMap<CodexThreadItem, ContentBlock[]>()
+
+/**
+ * Read view of a legacy Codex message: content derived from its items, so it
+ * renders and reads like every other turn. Items stay the stored truth; writers
+ * keep updating them and call this again. A settled message seals its items
+ * first, as the Codex view did. A turn whose items carry no reply keeps the
+ * completion's final-response text, which has no block id.
+ */
+export function withCodexContent<M extends ChatMessage>(message: M): M {
+  const items = message.metadata?.codex?.items
+  if (!items?.length) return message
+  const derived = codexItemsToContent(message.status === 'streaming' ? items : sealCodexItems(items), legacyContentCache)
+  const answered = derived.some(block => (block.type === 'text' || block.type === 'plan') && !block.parentToolUseId)
+  const fallback = answered ? [] : message.content.filter(block => block.type === 'text' && block.id === undefined)
+  const content = fallback.length ? [...derived, ...fallback] : derived
+  const unchanged = content.length === message.content.length && content.every((block, index) => block === message.content[index])
+  return unchanged ? message : { ...message, content }
+}
+
+/** {@link withCodexContent} over a transcript entering a client; the same array when nothing changed. */
+export function withCodexContents<M extends ChatMessage>(messages: M[]): M[] {
+  let next = messages
+  messages.forEach((message, index) => {
+    const derived = withCodexContent(message)
+    if (derived === message) return
+    if (next === messages) next = [...messages]
+    next[index] = derived
+  })
+  return next
 }
 
 /** One `content_delta` payload. */

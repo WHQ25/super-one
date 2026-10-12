@@ -1,6 +1,6 @@
 # Unified turn view
 
-Status: in-progress (steps 0-1 done) · Updated: 2026-10-12
+Status: in-progress (steps 0-4 and 5a done; 4 landed before 3) · Updated: 2026-10-12
 Goal: Every harness's assistant turn reaches the UI as `message.content` ContentBlocks and renders through one `TurnBody`, on desktop and in the phone chat-view; Codex thread items are translated at the integration layer and no longer reach a renderer.
 Long-term docs affected: [chat-core.md](../architecture/chat-core.md), [mobile-remote-control.md](../architecture/mobile-remote-control.md) (hidden-detail refs), [mcp-apps.md](../features/mcp-apps.md) (Codex rows), [codex contracts](../harness/codex/contracts.md) and [api-surface](../harness/codex/api-surface.md), `apps/desktop/docs/agent-reference/architecture.md`, `.agents/skills/superone-harness/references/event-contract.md`
 
@@ -265,6 +265,23 @@ notifications, machine paths and user name replaced):
   called `update_plan`), image generation, async questions, MCP auth and
   strict-review errors. Their translator tests use hand-built items from the
   existing mapper tests.
+
+## Step 3-5a notes
+
+- Codex 0.162 reports spawned and follow-up subagents only as
+  `subAgentActivity` (metadata); `collabAgentToolCall` remains for `wait`.
+  Legacy `spawnAgent` items still map to Agent cards, and the shared
+  `SubagentBlock` full view replaces `ForkedThreadView` in 5d.
+- The read view is `withCodexContent` / `withCodexContents`
+  (`codex-content.ts`). chat-core re-derives every message an event wrote in
+  `applyEventToSession`; hydration applies it at the desktop live-snapshot
+  merge, `loadStoredSession`, `hydrateRemoteSession`, the realtime timeline,
+  and the mobile runtime's `hydrated()` (cache, restore, pages, realtime thread).
+- Items stay the stored truth, so writers that patch a derived block also patch
+  its item (`applySuggestedTaskUpdate`; `updateMcpAppAttachments` already did).
+- Todos are still read from items until 5c teaches chat-core and cold restore
+  the hidden `TodoWrite` call. Error notices on a failed message are filtered
+  at the 5d/5e dispatch sites.
 
 ## Risks
 

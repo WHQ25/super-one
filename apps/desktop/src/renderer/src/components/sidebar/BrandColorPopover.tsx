@@ -17,6 +17,7 @@ import {
 import { useAppStore } from '@/stores/app'
 import { useActiveHarness } from '@/hooks/useHarnessTheme'
 import type { HarnessId } from '@superone/shared/session-types'
+import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import {
   brandHueToOklch,
   clampBrandHue,
@@ -33,15 +34,6 @@ import {
   type TokenGroup,
 } from '@superone/shared/harness-brand'
 import { LCHEditor } from './LCHEditor'
-
-const HARNESS_LABEL: Record<HarnessId, string> = {
-  claude: 'Claude',
-  codex: 'Codex',
-  acp: 'Others',
-  opencode: 'OpenCode',
-  cursor: 'Cursor',
-  dsh: 'DeepSeek',
-}
 
 const GROUP_LABEL: Record<TokenGroup, string> = {
   surface: 'Surface',
@@ -95,7 +87,7 @@ export function BrandColorPopover(): React.JSX.Element | null {
   const defaultHue = HARNESS_DEFAULT_BRAND_HUE[harness]
   const effective = userHue ?? defaultHue
   const isCustom = userHue !== null && userHue !== defaultHue
-  const label = HARNESS_LABEL[harness]
+  const label = HARNESS_CAPABILITIES[harness].displayName
   const overriddenHueCount = countOverriddenHues(overrides)
   const overriddenHueTokens = listOverriddenHueTokens(overrides)
 

@@ -302,6 +302,11 @@ notifications, machine paths and user name replaced):
   `metadata.codex`: it attributes a message to its harness, and content-shaped
   turns still carry that metadata. Codex trace diagnostics are retargeted in
   step 7.
+- Transcript segments (from `main`): a legacy Codex turn's boundaries index
+  its items, so it is still cut by item and each segment derives its content
+  from its own items; every other turn, content-shaped Codex included, is cut
+  by content. Step 6 must also let `anchorAsyncAnswer` find a question's
+  source by its content block, since content-shaped turns have no items.
 - Shared readers read `readableContent(message)`, the same view without the
   message wrapper, so main and CLI callers need no adapter of their own.
 - Todos have one carrier, the session `todos`: a legacy `todo_list` item sets

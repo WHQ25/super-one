@@ -10,7 +10,7 @@ const searchFiles = vi.fn<(projectPath: string, query: string) => Promise<FileSe
 
 beforeEach(() => {
   vi.clearAllMocks()
-  ;(window as unknown as { agent: unknown }).agent = { searchFiles }
+  Object.assign(window.environment, { searchFiles })
   useFileTreeStore.getState().reset()
 })
 

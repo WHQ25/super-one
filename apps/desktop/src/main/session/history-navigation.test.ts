@@ -38,12 +38,15 @@ describe('history navigation database projection', () => {
     expect(loadSessionHistoryIndex('other').entries).toEqual([])
     expect(() => loadSessionMessageWindow('other', 'm20', 'around')).toThrow('no longer exists')
   })
-  it('includes compact markers but excludes hidden async-answer rows from ticks', () => {
+  it('includes compact markers and visible async-answer rows in navigation', () => {
     db.prepare('UPDATE chat_messages SET provider_id = ?, content_json = ? WHERE id = ?')
       .run('system', JSON.stringify([{ type: 'text', text: '__compact__:auto:100' }]), 'm5')
     db.prepare('UPDATE chat_messages SET id = ? WHERE id = ?').run('codex_async_answer:q', 'm6')
     const index = loadSessionHistoryIndex('s')
     expect(index.compacts).toEqual([{ id: 'm5', index: 5 }])
-    expect(index.entries).toHaveLength(49)
+    expect(index.entries).toHaveLength(50)
+    expect(index.entries.find(entry => entry.id === 'codex_async_answer:q')).toMatchObject({
+      index: 6, text: 'Question 6', reply: 'Reply 7',
+    })
   })
 })

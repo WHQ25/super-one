@@ -54,6 +54,7 @@ export function MarkdownTable({ node: _node, children, ...rest }: ComponentProps
             size="xs"
             variant="ghost"
             onClick={handleCopy}
+            className="opacity-50 transition-opacity hover:opacity-100"
             tooltip={t('tooltips.copyTable')}
           >
             {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
@@ -62,6 +63,7 @@ export function MarkdownTable({ node: _node, children, ...rest }: ComponentProps
             size="xs"
             variant="ghost"
             onClick={() => setOpen(true)}
+            className="opacity-50 transition-opacity hover:opacity-100"
             tooltip={t('tooltips.expand')}
           >
             <Expand className="size-3.5" />

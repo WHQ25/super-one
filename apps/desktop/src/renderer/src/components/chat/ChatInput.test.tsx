@@ -1139,6 +1139,39 @@ describe('ChatInput @-mention no-match suppression', () => {
 })
 
 describe('ChatInput slash command grouping', () => {
+  it.each([
+    { descriptions: ['Create new skills', 'Create new skills'], count: 1 },
+    { descriptions: ['Create new skills', 'Create a Codex skill'], count: 2 },
+  ])('keeps $count skill rows and current highlights while filtering same-named skills', ({ descriptions, count }) => {
+    activeSessionState.preferredProvider = 'codex'
+    activeSessionState.sessionProvider = 'codex'
+    chatActions.codexSkills = [
+      ...descriptions.map((description) => ({ name: 'skill-creator', description })),
+      { name: 'release', description: 'Release app' },
+      { name: 'shadcn', description: 'UI components' },
+    ]
+
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const { rerender } = render(<ChatInput />)
+      for (const query of ['/', '/s', '/sk', '/ski', '/skil', '/skill', '/skill-', '/skill-c']) {
+        typeInEditor(query)
+        rerender(<ChatInput />)
+        const rows = screen.getAllByRole('button').filter((button) =>
+          button.querySelector('.font-medium')?.textContent === '/skill-creator',
+        )
+        expect(rows).toHaveLength(count)
+        for (const row of rows) {
+          expect(Array.from(row.querySelectorAll('.text-highlighted')).map((span) => span.textContent).join('')).toBe(query)
+        }
+      }
+      expect(screen.getByText('Skills').parentElement).toHaveTextContent(`Skills· ${count}`)
+      expect(errors.mock.calls.filter((args) => args.join(' ').includes('same key'))).toHaveLength(0)
+    } finally {
+      errors.mockRestore()
+    }
+  })
+
   it('shows account commands only for Codex with the official OpenAI provider', () => {
     activeSessionState.preferredProvider = 'codex'
 

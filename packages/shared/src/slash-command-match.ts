@@ -13,6 +13,11 @@ export interface MatchedSlashCommand extends SlashCommandInfo {
   matched: boolean
 }
 
+/** Shared identity for catalog deduplication and popup reconciliation. */
+export function slashCommandKey(command: Pick<SlashCommandInfo, 'isSkill' | 'name' | 'description'>): string {
+  return JSON.stringify([command.isSkill, command.name, command.description])
+}
+
 /**
  * Order matched items into two contiguous groups (commands, skills) and put the
  * group that holds the best-scoring match first. Within a group items are
@@ -52,7 +57,14 @@ export function matchAndRankSlashCommands(
     ? commands
     : commands.filter((cmd) => !HIDDEN_SLASH_COMMANDS.has(cmd.name))
 
+  const seen = new Set<string>()
   const matched = pool
+    .filter((cmd) => {
+      const key = slashCommandKey(cmd)
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
     .map((cmd) => {
       const r = fuzzyMatch(query, cmd.name)
       return { ...cmd, matchIndices: r.indices, score: r.score, matched: r.match }

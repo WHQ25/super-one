@@ -54,7 +54,6 @@ import { resolveGoalCapability } from '@superone/shared/harness/harness-capabili
 import { acpAgentDisplayName, isGrokAcpAgent } from '@superone/shared/acp-brand'
 import type { InputSegment } from '@/stores/chat-store/types'
 import { fuzzyMatch } from '@/lib/fuzzy-match'
-import { HighlightedText } from '@superone/ui/components/ui/HighlightedText'
 import { toMentionPath } from './chat-input-utils'
 import { internalDragSource } from '@/components/sidebar/drag-drop-utils'
 import { AttachmentNode } from './attachment-node'
@@ -87,7 +86,7 @@ import { ScheduledSendButton } from './ScheduledSendButton'
  */
 const SCHEDULED_SEND_SYNC_MS = 400
 import { useScheduledSend, type ScheduledDraft } from '@/hooks/useScheduledSend'
-import { groupItems, PopupSectionHeader } from './popup-groups'
+import { SlashCommandSuggestions } from './SlashCommandSuggestions'
 import { computeMatchingSlashCommands } from './chat-input/computeMatchingSlashCommands'
 import { plainTextToTiptapDoc, plainTextToTiptapParagraphContent } from './chat-input/plainTextToTiptapDoc'
 import { draftInlineContent, type DraftPart } from './chat-input/message-draft'
@@ -574,15 +573,6 @@ export function ChatInput({
       !slashDismissed
       && text.startsWith('/')
       && (matchingCommands.length > 0 || acpSlashInitialLoading)
-
-    const slashGroups = useMemo(() => {
-      const order: string[] = []
-      for (const c of matchingCommands) {
-        const key = c.isSkill ? 'skill' : 'command'
-        if (!order.includes(key)) order.push(key)
-      }
-      return groupItems(matchingCommands, (c) => (c.isSkill ? 'skill' : 'command'), order)
-    }, [matchingCommands])
 
     const editorRef = useRef<ReturnType<typeof useEditor>>(null)
 
@@ -2055,53 +2045,12 @@ export function ChatInput({
               </div>
             )}
             <div className="min-h-0 flex-1 overflow-y-auto">
-              {slashGroups.map((group) => (
-                <div key={group.key}>
-                  <PopupSectionHeader
-                    label={t(group.key === 'skill' ? 'chat.slashCommand.groupSkills' : 'chat.slashCommand.groupCommands')}
-                    count={group.items.length}
-                  />
-                  {group.items.map((cmd, j) => {
-                    const i = group.startIndex + j
-                    return (
-                      <button
-                        key={`${cmd.isSkill ? 'skill' : 'command'}:${cmd.name}`}
-                        ref={(el) => {
-                          if (el) slashItemRefs.current.set(i, el)
-                          else slashItemRefs.current.delete(i)
-                        }}
-                        onMouseDown={(e) => {
-                          e.preventDefault()
-                          selectSlashCommand(cmd)
-                        }}
-                        className={`flex w-full flex-col gap-0.5 rounded px-2 py-1.5 text-left text-xs transition-colors ${
-                          i === slashIndex
-                            ? 'bg-primary/15 text-foreground'
-                            : 'text-foreground hover:bg-muted/40'
-                        }`}
-                      >
-                        <span className="flex min-w-0 items-center gap-1.5 font-medium">
-                          {/* Keep the command name single-line; argument hints absorb overflow. */}
-                          <HighlightedText
-                            text={`/${cmd.name}`}
-                            indices={[0, ...cmd.matchIndices.map((idx) => idx + 1)]}
-                            highlightClassName="text-highlighted font-semibold"
-                            className="shrink-0 whitespace-nowrap"
-                          />
-                          {cmd.argumentHint && (
-                            <span className="min-w-0 flex-1 truncate text-muted-foreground font-normal">{cmd.argumentHint}</span>
-                          )}
-                        </span>
-                        {cmd.description && (
-                          <span className="line-clamp-2 text-muted-foreground leading-snug">
-                            {cmd.description}
-                          </span>
-                        )}
-                      </button>
-                    )
-                  })}
-                </div>
-              ))}
+              <SlashCommandSuggestions
+                commands={matchingCommands}
+                selectedIndex={slashIndex}
+                onSelect={selectSlashCommand}
+                itemRefs={slashItemRefs.current}
+              />
               {acpSlashInitialLoading && matchingCommands.length === 0 && (
                 <div className="px-2 py-3 text-center text-xs text-muted-foreground">
                   {t('chat.acpCommands.loadingHint')}

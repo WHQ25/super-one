@@ -1,6 +1,6 @@
 # Unified turn view
 
-Status: in-progress (steps 0-4, 5a-5d done; 4 landed before 3) · Updated: 2026-10-12
+Status: in-progress (steps 0-4, 5a-5e done; 4 landed before 3) · Updated: 2026-10-12
 Goal: Every harness's assistant turn reaches the UI as `message.content` ContentBlocks and renders through one `TurnBody`, on desktop and in the phone chat-view; Codex thread items are translated at the integration layer and no longer reach a renderer.
 Long-term docs affected: [chat-core.md](../architecture/chat-core.md), [mobile-remote-control.md](../architecture/mobile-remote-control.md) (hidden-detail refs), [mcp-apps.md](../features/mcp-apps.md) (Codex rows), [codex contracts](../harness/codex/contracts.md) and [api-surface](../harness/codex/api-surface.md), `apps/desktop/docs/agent-reference/architecture.md`, `.agents/skills/superone-harness/references/event-contract.md`
 
@@ -288,8 +288,15 @@ notifications, machine paths and user name replaced):
   aggregation across follow-ups or the "forked" badge. A follow-up that
   could not be delivered shows the shared failed card, not the Codex-only
   failure copy.
-- Left for later steps: the Codex gallery, pinning and process-stats branches
-  go with the render paths (5d/5e); `stripMessagesForRemote` and usage-stats
+- 5e: the phone renders every turn through `TurnBody`; the latest plan answers
+  through `codexPlanApproval`. The Codex gallery, pinning and process-stats
+  branches went with the render paths. Derivation parity found here: a
+  summarized collab shell has no agent state, so its card reads role `agent`
+  and completes with its call; a lone file's line counts may sit on the patch
+  item; a host returns a command's output beside its item; a command group
+  counts each file once. A patch now counts one call per file row. The chat
+  document and its e2e fixtures receive derived content, as from the runtime.
+- Left for later steps: `stripMessagesForRemote` and usage-stats
   `harnessOf` key on bare `metadata.codex` and must use `isLegacyCodexMessage`
   before step 6; Codex trace diagnostics are retargeted in step 7.
 - Shared readers read `readableContent(message)`, the same view without the

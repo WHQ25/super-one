@@ -9,6 +9,8 @@ import { transcriptInteractionSnapshot } from './transcript-interaction'
 export interface VirtualTranscriptItem {
   id: string
   sourceId?: string
+  /** Targets drawn inside this row, each by an element carrying its id as `data-message-id`. */
+  anchors?: ReadonlyMap<unknown, string>
   content: ReactNode
   estimate?: number
 }
@@ -32,7 +34,10 @@ export function VirtualTranscriptList({ items, viewportRef, apiRef }: {
   useLayoutEffect(() => retainMcpAppTranscript(retention), [retention])
   const indexById = useMemo(() => {
     const indices = new Map(items.map((item, index) => [item.id, index]))
-    items.forEach((item, index) => { if (item.sourceId && !indices.has(item.sourceId)) indices.set(item.sourceId, index) })
+    items.forEach((item, index) => {
+      for (const anchor of item.anchors?.values() ?? []) indices.set(anchor, index)
+      if (item.sourceId && !indices.has(item.sourceId)) indices.set(item.sourceId, index)
+    })
     return indices
   }, [items])
   const [pinnedIds, setPinnedIds] = useState<string[]>([])
@@ -131,14 +136,19 @@ export function VirtualTranscriptList({ items, viewportRef, apiRef }: {
     jumpTo(id) {
       const index = indexById.get(id)
       if (index === undefined) return
-      if (small) listRef.current?.querySelector(`[data-message-id="${CSS.escape(items[index].id)}"]`)?.scrollIntoView({ block: 'start' })
-      else virtualizerRef.current.scrollToIndex(index, { align: 'start' })
+      const target = () => listRef.current?.querySelector(`[data-message-id="${CSS.escape(id)}"]`)
+        ?? listRef.current?.querySelector(`[data-message-id="${CSS.escape(items[index].id)}"]`)
+      if (small) { target()?.scrollIntoView({ block: 'start' }); return }
+      virtualizerRef.current.scrollToIndex(index, { align: 'start' })
+      // An anchor inside the row is reachable once the row has mounted at its place.
+      if (id !== items[index].id) requestAnimationFrame(() => requestAnimationFrame(() => target()?.scrollIntoView({ block: 'start' })))
     },
     topOf(id) {
       const viewport = viewportRef.current
       if (!viewport) return null
       const index = indexById.get(id)
-      const element = listRef.current?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(index === undefined ? id : items[index].id)}"]`)
+      const element = listRef.current?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(id)}"]`)
+        ?? (index === undefined ? null : listRef.current?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(items[index].id)}"]`))
       if (element) return element.getBoundingClientRect().top
       if (index === undefined) return null
       // Unmounted suffix rows still have real logical positions. The scroll-to

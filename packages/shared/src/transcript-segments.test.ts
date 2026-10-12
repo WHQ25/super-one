@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { ChatMessage } from './agent-types'
 import { buildCompactBoundaryMessage } from './compact-boundary'
 import { anchorAsyncAnswer } from './transcript-boundary'
-import { transcriptSegments } from './transcript-segments'
+import { transcriptSegments, transcriptView } from './transcript-segments'
 import { extractTurnOutline } from './turn-outline'
 import { extendHistoryIndex } from './session-history-index'
 import { withCodexContent } from './codex-content'
@@ -71,6 +71,33 @@ describe('transcript segmentation at live boundaries', () => {
     expect(transcriptSegments([source]).map(segment => segment.id)).toEqual(ids)
     expect(source.content).toHaveLength(4)
   })
+  it('draws natural text segments inside one row, each opened by its text block', () => {
+    const source = message('turn', 'First')
+    source.content.push({ type: 'thinking', thinking: 'Plan' }, { type: 'text', text: 'Second' },
+      { type: 'tool_use', toolUseId: 't', toolName: 'Read', input: '{}', status: 'complete' },
+      { type: 'text', text: 'Third' }, { type: 'tool_result', toolUseId: 't', summary: 'Result' })
+    const { segments, rows } = transcriptView([source])
+    expect(segments).toHaveLength(3)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ id: 'turn', source, final: true })
+    expect(rows[0].message.content).toEqual(source.content)
+    expect([...rows[0].anchors!]).toEqual([[source.content[2], segments[1].id], [source.content[4], segments[2].id]])
+  })
+
+  it('cuts rows only where another row sits inside the turn', () => {
+    const source = message('turn', 'Before')
+    const first = compact('c1', source)
+    source.content = [{ type: 'text', text: 'BeforeMiddle' }, { type: 'text', text: 'Next' }]
+    source.status = 'complete'
+    const { rows } = transcriptView([first, source])
+    expect(rows.map(row => row.id)).toEqual(['turn', 'c1', 'turn:after:c1'])
+    expect(rows.map(row => row.final)).toEqual([false, true, true])
+    const tail = rows[2]
+    expect(tail.message.content).toEqual([{ type: 'text', text: 'Middle' }, source.content[1]])
+    expect([...tail.anchors!.values()]).toEqual(['turn:segment:text::1'])
+    expect(tail.anchors!.has(tail.message.content[1])).toBe(true)
+  })
+
   it('keeps late nested subagent content under the original tool across a later text segment', () => {
     const source = message('turn', 'First')
     source.content.push({ type: 'tool_use', toolUseId: 'root', toolName: 'Agent', input: '{}', status: 'complete' },

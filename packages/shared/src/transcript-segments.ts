@@ -14,7 +14,7 @@ export interface TranscriptSegment {
   offset: number
 }
 
-const cachedSegments = new WeakMap<ChatMessage, { cuts: ChatMessage[]; segments: TranscriptSegment[] }>()
+const cachedSegments = new WeakMap<ChatMessage, { cuts: ChatMessage[]; segments: TranscriptSegment[]; rows: TranscriptRow[] }>()
 
 function sliceBlock(block: ContentBlock, from: number, to: number): ContentBlock | null {
   if (from === 0 && to === blockText(block)?.length) return block
@@ -99,8 +99,33 @@ function interval(source: ChatMessage, previous?: TranscriptBoundary, next?: Tra
   return { content, items }
 }
 
+/**
+ * One drawn transcript row: a whole provider message, or the part of one
+ * between two cuts (a compaction or an accepted async answer). The natural
+ * text segments inside it are outline targets, not rows, so the turn keeps
+ * one body: its spacing, process grouping and footer stay those of one turn.
+ */
+export interface TranscriptRow {
+  id: string
+  message: ChatMessage
+  source: ChatMessage
+  final: boolean
+  /** The other segments this row draws, by the block that opens each. */
+  anchors?: ReadonlyMap<ContentBlock, string>
+}
+
+export interface TranscriptView {
+  /** Navigation targets: the outline and jumps address these. */
+  segments: TranscriptSegment[]
+  rows: TranscriptRow[]
+}
+
 /** Pure display projection: provider messages stay intact for events and persistence. */
 export function transcriptSegments(messages: readonly ChatMessage[]): TranscriptSegment[] {
+  return transcriptView(messages).segments
+}
+
+export function transcriptView(messages: readonly ChatMessage[]): TranscriptView {
   // A dismissed question closes the decision queue without creating a visible
   // bubble or cutting the assistant's continuing output at its saved cursor.
   const displayed = messages.filter(message => !isDismissedCodexAsyncAnswer(message, messages))
@@ -110,41 +135,49 @@ export function transcriptSegments(messages: readonly ChatMessage[]): Transcript
   for (const message of displayed) {
     const cursor = message.metadata?.transcriptBoundary
     if (!cursor || !sources.has(cursor.messageId) || cursor.messageId === message.id) continue
-    const rows = boundaries.get(cursor.messageId) ?? []
-    rows.push(message)
-    boundaries.set(cursor.messageId, rows)
+    const cutRows = boundaries.get(cursor.messageId) ?? []
+    cutRows.push(message)
+    boundaries.set(cursor.messageId, cutRows)
     consumed.add(message.id)
   }
   const result: TranscriptSegment[] = []
+  const rows: TranscriptRow[] = []
   for (const source of displayed) {
     if (consumed.has(source.id)) continue
     if (source.role !== 'assistant' || source.providerId === 'system') {
       const cursor = source.metadata?.transcriptBoundary
       result.push({ id: source.id, message: source, source, final: true,
         anchorId: cursor?.messageId ?? source.id, offset: cursor?.order ?? 0 })
+      rows.push({ id: source.id, message: source, source, final: true })
       continue
     }
     const cuts = (boundaries.get(source.id) ?? []).sort((a, b) => a.metadata!.transcriptBoundary!.order - b.metadata!.transcriptBoundary!.order)
     const cached = cachedSegments.get(source)
     if (cached && cached.cuts.length === cuts.length && cached.cuts.every((cut, index) => cut === cuts[index])) {
       result.push(...cached.segments)
+      rows.push(...cached.rows)
       continue
     }
     // A legacy Codex turn's boundaries index its items, and each segment
     // draws the content its own items derive.
     const legacy = isLegacyCodexMessage(source)
     const segmentOf = (message: ChatMessage): ChatMessage => legacy ? withCodexContent(message) : message
+    // Only the stored final response (a text block without an id) is not derived from items.
+    const finalResponse = (content: ContentBlock[]) => content.filter(block => block.type === 'text' && block.id === undefined)
+    const sliceOf = (content: ContentBlock[], items: CodexThreadItem[]): ChatMessage => segmentOf({ ...source, status: 'complete', content,
+      metadata: { ...source.metadata, ...(legacy ? { codex: { ...source.metadata!.codex!, items, finalResponse: undefined } } : {}) } })
     const keys = contentKeys(source.content)
     const keyByBlock = new Map(source.content.map((block, index) => [block, keys[index]]))
     const firstResult = result.length
+    const firstRow = rows.length
     let previous: ChatMessage | undefined
     for (let part = 0; part <= cuts.length; part++) {
       const next = cuts[part]
       const slice = interval(source, previous?.metadata?.transcriptBoundary, next?.metadata?.transcriptBoundary)
-      // Only the stored final response (a text block without an id) is not derived from items.
       const groups = legacy ? itemGroups(slice.items).map((items, index, all) => ({ items,
-        content: index === all.length - 1 ? slice.content.filter(block => block.type === 'text' && block.id === undefined) : [] }))
+        content: index === all.length - 1 ? finalResponse(slice.content) : [] }))
         : contentGroups(slice.content).map(content => ({ content, items: [] as CodexThreadItem[] }))
+      const partSegments: { segment: TranscriptSegment; opens: { block?: ContentBlock; itemId?: string } }[] = []
       for (let group = 0; group < groups.length; group++) {
         const value = groups[group]
         // Empty continuations retain the footer immediately after a boundary.
@@ -154,19 +187,41 @@ export function transcriptSegments(messages: readonly ChatMessage[]): Transcript
           : previous && group === 0 ? `${source.id}:after:${previous.id}` : `${source.id}:segment:${key}`
         const anchorId = source.id
         const offset = (previous ? previous.metadata!.transcriptBoundary!.order + 0.1 : 0) + group / (groups.length + 1) * 0.5
-        result.push({ id, source, final: false, anchorId, offset, message: segmentOf({ ...source, status: 'complete', content: value.content,
-          metadata: { ...source.metadata, ...(legacy ? { codex: { ...source.metadata!.codex!, items: value.items, finalResponse: undefined } } : {}) } }) })
+        const segment: TranscriptSegment = { id, source, final: false, anchorId, offset, message: sliceOf(value.content, value.items) }
+        result.push(segment)
+        partSegments.push({ segment, opens: { block: value.content[0], itemId: value.items[0]?.id } })
       }
-      if (next) result.push({ id: next.id, message: next, source: next, final: true,
-        anchorId: source.id, offset: next.metadata!.transcriptBoundary!.order })
+      if (partSegments.length) {
+        const [first, ...rest] = partSegments
+        const message = rest.length ? sliceOf(legacy ? finalResponse(slice.content) : slice.content, slice.items) : first.segment.message
+        const anchors = new Map<ContentBlock, string>()
+        for (const { segment, opens } of rest) {
+          // A legacy segment opens at its first item, which the row derives as a block with that id.
+          const block = legacy ? message.content.find(candidate => 'id' in candidate && candidate.id === opens.itemId) : opens.block
+          if (block) anchors.set(block, segment.id)
+        }
+        rows.push({ id: first.segment.id, message, source, final: false, ...(anchors.size ? { anchors } : {}) })
+      }
+      if (next) {
+        result.push({ id: next.id, message: next, source: next, final: true,
+          anchorId: source.id, offset: next.metadata!.transcriptBoundary!.order })
+        rows.push({ id: next.id, message: next, source: next, final: true })
+      }
       previous = next
     }
     const last = result.findLast(segment => segment.source === source)
+    const lastRow = rows.findLast(row => row.source === source)
     if (last) {
+      const shared = lastRow?.message === last.message
       last.final = true
       last.message = segmentOf({ ...last.message, status: source.status })
+      if (shared) lastRow!.message = last.message
     }
-    cachedSegments.set(source, { cuts, segments: result.slice(firstResult) })
+    if (lastRow) {
+      lastRow.final = true
+      if (lastRow.message.status !== source.status) lastRow.message = segmentOf({ ...lastRow.message, status: source.status })
+    }
+    cachedSegments.set(source, { cuts, segments: result.slice(firstResult), rows: rows.slice(firstRow) })
   }
-  return result
+  return { segments: result, rows }
 }

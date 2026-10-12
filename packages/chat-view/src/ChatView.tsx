@@ -50,7 +50,7 @@ import { TranscriptEmptyState } from './TranscriptEmptyState'
 import { isRealtimeVoiceMessage } from '@superone/shared/realtime-transcript'
 import { extractTurnOutline } from '@superone/shared/turn-outline'
 import { useTurnOutline } from './use-turn-outline'
-import { transcriptSegments } from '@superone/shared/transcript-segments'
+import { transcriptSegments, transcriptView } from '@superone/shared/transcript-segments'
 import { ChatScrollIndicator } from './ChatScrollIndicator'
 import { ChatScrollbar, type ChatScrollbarHandle } from './ChatScrollbar'
 import { captureScrollAnchor, jumpChatWindow, visibleChatWindow, type ScrollAnchor } from './chat-navigation'
@@ -637,11 +637,11 @@ export function ChatView() {
   const dateSeparatorAt = useMemo(() => dateSeparators(state.messages, Date.now()),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [state.messages.length, tailId, tailCreatedAt, state.transcriptEpoch])
-  const segments = useMemo(() => transcriptSegments(state.messages), [state.messages])
+  const { segments, rows } = useMemo(() => transcriptView(state.messages), [state.messages])
   const outline = useTurnOutline(state.messages, segments, navigation?.entries)
   const sourcePositions = new Map(state.messages.map((message, index) => [message.id, index]))
-  const visible = segments.filter(segment => {
-    const index = sourcePositions.get(segment.source.id)!
+  const visible = rows.filter(row => {
+    const index = sourcePositions.get(row.source.id)!
     return index >= state.range.start && index < state.range.end
   })
   const asyncQuestion = useMemo(() => codexAsyncQuestionQueue({ messages: state.messages, pendingAsyncQuestions: state.session.pendingAsyncQuestions })[0], [state.messages, state.session.pendingAsyncQuestions])
@@ -693,34 +693,34 @@ export function ChatView() {
         ? (historyLoading || navigationLoading || indexLoading
           ? <div className="flex justify-center py-12 text-muted-foreground" role="status" data-testid="initial-loading"><Loader2 className="size-5 animate-spin" aria-hidden /></div>
           : <TranscriptEmptyState state={state.emptyState} locale={state.locale} />)
-        : visible.map((segment) => {
-          const message = segment.message
-          const row = transcriptRow(message, state.messages)
-          if (row.kind === 'hidden') return null
-          if (row.kind === 'compact') {
+        : visible.map((row) => {
+          const message = row.message
+          const display = transcriptRow(message, state.messages)
+          if (display.kind === 'hidden') return null
+          if (display.kind === 'compact') {
             return <div key={message.id} data-turn-id={message.id}>
-              <CompactIndicator {...row.marker} />
+              <CompactIndicator {...display.marker} />
             </div>
           }
-          if (row.kind === 'turn-meta') {
+          if (display.kind === 'turn-meta') {
             return (
               <div key={message.id} data-turn-id={message.id}>
-                <TurnMetaIndicator meta={row.meta} />
+                <TurnMetaIndicator meta={display.meta} />
               </div>
             )
           }
-          const separatorAt = segment.id === message.id ? dateSeparatorAt.get(message.id) : undefined
+          const separatorAt = row.id === message.id ? dateSeparatorAt.get(message.id) : undefined
           const turn = (
             <PortableMessage
               key={message.id}
               message={message}
-              segmentId={segment.id} showFooter={segment.final} sourceMessage={segment.source}
+              segmentId={row.id} anchors={row.anchors} showFooter={row.final} sourceMessage={row.source}
               asyncQuestions={codexAsyncAnswerQuestions(message, state.messages)}
               scheme={state.scheme}
               pendingPermission={state.pendingPermission ?? null}
               mentionArtwork={state.mentionArtwork}
               mcpIcons={state.mcpIcons}
-              isLastAssistant={segment.final && message.id === lastAssistantId}
+              isLastAssistant={row.final && message.id === lastAssistantId}
               sessionStreaming={sessionStreaming}
               streamingTokens={state.session.streamingTokens}
               projectPath={state.session.projectPath} sourceEnvironmentId={state.session.sourceEnvironmentId}
@@ -728,11 +728,11 @@ export function ChatView() {
               promptKeywords={promptKeywords}
             />
           )
-          return <Fragment key={segment.id}>
+          return <Fragment key={row.id}>
             {separatorAt !== undefined && <MessageDateSeparator at={separatorAt} />}
             {turn}
-            {state.realtimeActivities.filter(row => segment.final && row.afterMessageId === message.id)
-              .map(row => <PortableRealtimeActivity key={row.turnId} row={row} />)}
+            {state.realtimeActivities.filter(activity => row.final && activity.afterMessageId === message.id)
+              .map(activity => <PortableRealtimeActivity key={activity.turnId} row={activity} />)}
           </Fragment>
         })}
       {!moreAfter && state.realtimeActivities.filter(row => row.afterMessageId === null)

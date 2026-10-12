@@ -60,6 +60,7 @@ import {
   type TurnBodyPresenterParts,
   type TurnBodyPresenterRuntime,
   type TurnDetailPresenterProps,
+  type TurnTextPresenterProps,
 } from './presenters/TurnBody'
 import { PlanBlock } from './PlanBlock'
 import {
@@ -77,18 +78,16 @@ interface ChatMessageProps {
   isLastAssistant: boolean
   hideUserActions?: boolean
   hideCopyActions?: boolean
+  /** Transcript segments opening inside this row (see `transcriptView`). */
+  anchors?: ReadonlyMap<ContentBlock, string>
 }
 
 // Keep file-link resolution and parsed media rendering scoped to this text block.
-function TextBlock({ text, isStreaming, projectPath, afterThinking }: {
-  text: string
-  isStreaming: boolean
-  projectPath?: string | null
-  afterThinking?: boolean
-}) {
+function TextBlock({ text, isStreaming, projectPath, afterThinking, anchorId }: TurnTextPresenterProps) {
   const resolved = projectPath ? resolveMarkdownFileLinks(text, projectPath) : text
+  // An opened segment is a navigation target, addressed like the transcript rows.
   return (
-    <div className={afterThinking ? 'mt-1 after-thinking' : undefined}>
+    <div data-message-id={anchorId} className={afterThinking ? 'mt-1 after-thinking' : undefined}>
       <CopyableMarkdown projectPath={projectPath} text={resolved} isStreaming={isStreaming} components={fileLinkComponents} />
     </div>
   )
@@ -144,6 +143,7 @@ export const ChatMessage = memo(function ChatMessage({
   isLastAssistant,
   hideUserActions,
   hideCopyActions,
+  anchors,
 }: ChatMessageProps) {
   const { t } = useTranslation()
   const projectPath = useChatStore((s) => s.activeProject)
@@ -235,6 +235,7 @@ export const ChatMessage = memo(function ChatMessage({
         parts={(grouped!.segments.length >= 80 || sourceMessage.content.length >= 80) ? LONG_CONTENT_BLOCK_TURN_PARTS : TURN_PARTS}
         runtime={TURN_RUNTIME}
         planApproval={planApproval}
+        anchors={anchors}
       />
     </ModMessageScope>
   )

@@ -38,6 +38,8 @@ export interface TurnTextPresenterProps {
   isStreaming: boolean
   projectPath?: string | null
   afterThinking?: boolean
+  /** The transcript segment this text opens, as the host's navigation target. */
+  anchorId?: string
 }
 
 export interface TurnDocumentPresenterProps {
@@ -175,6 +177,8 @@ export interface TurnBodyPresenterProps {
   runtime: TurnBodyPresenterRuntime
   /** Approval for the turn's latest plan block. */
   planApproval?: TurnPlanApproval
+  /** Transcript segments opening inside this turn, by their first block (see `transcriptView`). */
+  anchors?: ReadonlyMap<ContentBlock, string>
 }
 
 interface RenderOptions {
@@ -189,6 +193,7 @@ interface RenderOptions {
   toolAppMap?: Map<string, ToolAppAttachment>
   runContinuations?: GroupContentResult['runContinuations']
   latestPlan?: LatestPlan
+  anchors?: ReadonlyMap<ContentBlock, string>
   projectPath: string | null
   parts: TurnBodyPresenterParts
   runtime: TurnBodyPresenterRuntime
@@ -219,6 +224,7 @@ export function TurnBlockPresenter({
   latestPlan,
   nextBlockType,
   prevBlockType,
+  anchorId,
   projectPath,
   parts,
   runtime,
@@ -237,6 +243,7 @@ export function TurnBlockPresenter({
   runContinuations?: GroupContentResult['runContinuations']
   nextBlockType?: string
   prevBlockType?: string
+  anchorId?: string
   projectPath?: string | null
   parts: TurnBodyPresenterParts
   runtime: TurnBodyPresenterRuntime
@@ -252,6 +259,7 @@ export function TurnBlockPresenter({
               isStreaming={isStreaming}
               projectPath={projectPath}
               afterThinking={prevBlockType === 'thinking'}
+              anchorId={anchorId}
             />
           )}
         </AssistantTextSite>
@@ -452,6 +460,7 @@ function renderSegments(
           latestPlan={options.latestPlan}
           nextBlockType={nextType}
           prevBlockType={previousType}
+          anchorId={options.anchors?.get(segment.block)}
           projectPath={options.projectPath}
           parts={parts}
           runtime={options.runtime}
@@ -518,6 +527,7 @@ export function TurnBodyPresenter({
   parts,
   runtime,
   planApproval,
+  anchors,
 }: TurnBodyPresenterProps) {
   const segments = grouped.segments
   const latestPlanId = useMemo(() => {
@@ -539,6 +549,7 @@ export function TurnBodyPresenter({
     toolAppMap: grouped.toolAppMap,
     runContinuations: grouped.runContinuations,
     ...(latestPlanId ? { latestPlan: { id: latestPlanId, approval: planApproval } } : {}),
+    anchors,
     projectPath,
     parts,
     runtime,

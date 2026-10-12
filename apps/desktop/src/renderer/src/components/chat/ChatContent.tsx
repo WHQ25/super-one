@@ -38,7 +38,7 @@ import { buildDecisionQueue } from './composer-slot/decision-queue'
 import { useDecisionComposerAvailability } from './composer-slot/useDecisionComposerAvailability'
 import { useRestoreChatInputFocus } from '@/hooks/useRestoreChatInputFocus'
 import { useTurnOutline } from '@superone/chat-view/use-turn-outline'
-import { transcriptSegments } from '@superone/shared/transcript-segments'
+import { transcriptView } from '@superone/shared/transcript-segments'
 import { ChatRootContext } from './is-focus-in-chat'
 import { DesktopModUi } from '@/lib/mod-ui/DesktopModUi'
 import { ModPaneDockSync } from './mod/ModSurfaces'
@@ -189,7 +189,7 @@ function ChatTranscript({
   const messageTop = useCallback((id: string) => transcriptRef.current?.topOf(id) ?? null, [])
   const messagesLen = displayMessages.length
   const messagesTailId = displayMessages[messagesLen - 1]?.id
-  const segments = useMemo(() => transcriptSegments(displayMessages), [displayMessages])
+  const { segments, rows } = useMemo(() => transcriptView(displayMessages), [displayMessages])
   const messagesTailCreatedAt = displayMessages[messagesLen - 1]?.createdAt
   const dateSeparatorAt = useMemo(
     () => dateSeparators(displayMessages, Date.now()),
@@ -255,12 +255,12 @@ function ChatTranscript({
       ) : (
         <ScrollArea key={displayedSessionId ?? 'default'} className="chat-scroll-area chat-transcript-layout h-full min-w-0" viewportRef={scrollViewportRef}>
           <SelectionContextMenuZone className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-1 p-3 @lg:gap-1.5 @lg:p-3.5 @2xl:gap-1.5 @2xl:p-4">
-            <VirtualTranscriptList key={displayedSessionId ?? 'default'} viewportRef={scrollViewportRef} apiRef={transcriptRef} items={segments.map((segment) => {
-              const msg = segment.message
+            <VirtualTranscriptList key={displayedSessionId ?? 'default'} viewportRef={scrollViewportRef} apiRef={transcriptRef} items={rows.map((row) => {
+              const msg = row.message
               const fallbackMeta = msg.metadata?.modelFallback
               if (fallbackMeta) {
                 return (
-                  <div key={msg.id} data-message-id={segment.id} className="chat-message-wrapper">
+                  <div key={msg.id} data-message-id={row.id} className="chat-message-wrapper">
                     <ModelFallbackRow meta={fallbackMeta} models={modelCatalog} />
                   </div>
                 )
@@ -269,7 +269,7 @@ function ChatTranscript({
               if (pluginNotice) {
                 const text = msg.content[0]?.type === 'text' ? msg.content[0].text : ''
                 return (
-                  <div key={msg.id} data-message-id={segment.id} className="chat-message-wrapper">
+                  <div key={msg.id} data-message-id={row.id} className="chat-message-wrapper">
                     <PluginNoticeRow meta={pluginNotice} text={text} />
                   </div>
                 )
@@ -277,7 +277,7 @@ function ChatTranscript({
               const compactInfo = parseCompactMarker(msg)
               if (compactInfo) {
                 return (
-                  <div key={segment.id} data-message-id={segment.id}>
+                  <div key={row.id} data-message-id={row.id}>
                     <CompactIndicator trigger={compactInfo.trigger} preTokens={compactInfo.preTokens}
                       postTokens={compactInfo.postTokens} durationMs={compactInfo.durationMs} />
                   </div>
@@ -288,20 +288,20 @@ function ChatTranscript({
                 // Metadata path already shows this summary above the footer.
                 if (isRedundantTurnSummaryMarker(turnMeta, displayMessages)) return null
                 return (
-                  <div key={msg.id} data-message-id={segment.id} className="chat-message-wrapper">
+                  <div key={msg.id} data-message-id={row.id} className="chat-message-wrapper">
                     <TurnMetaIndicator meta={turnMeta} />
                   </div>
                 )
               }
               // Only plain turns open a day: every row above is a system row.
-              const separatorAt = (segment.id === msg.id ? dateSeparatorAt.get(msg.id) : undefined)
+              const separatorAt = (row.id === msg.id ? dateSeparatorAt.get(msg.id) : undefined)
               return (
-                <div key={msg.id} data-message-id={segment.id} className="chat-message-wrapper">
+                <div key={msg.id} data-message-id={row.id} className="chat-message-wrapper">
                   {separatorAt !== undefined && <MessageDateSeparator at={separatorAt} />}
-                  <ChatMessage message={msg} sessionStatus={sessionStatus} isLastAssistant={segment.final && msg.id === displayLastAssistantMessageId} showFooter={segment.final} sourceMessage={segment.source} />
+                  <ChatMessage message={msg} sessionStatus={sessionStatus} isLastAssistant={row.final && msg.id === displayLastAssistantMessageId} showFooter={row.final} sourceMessage={row.source} anchors={row.anchors} />
                 </div>
               )
-            }).map((content, index) => ({ id: segments[index].id, sourceId: segments[index].source.id, content })).filter(item => item.content !== null)} />
+            }).map((content, index) => ({ id: rows[index].id, sourceId: rows[index].source.id, anchors: rows[index].anchors, content })).filter(item => item.content !== null)} />
             {queuedMessages.map((msg, index) => (
               <div key={msg.id} className="group/queued chat-message-wrapper opacity-50">
                 <ChatMessage message={msg} sessionStatus={sessionStatus} isLastAssistant={false} hideUserActions />

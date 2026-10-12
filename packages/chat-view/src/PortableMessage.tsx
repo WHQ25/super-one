@@ -88,6 +88,7 @@ function useGeneratedMedia(message: ChatMessage, isUser: boolean) {
 export const PortableMessage = memo(function PortableMessage({
   message,
   segmentId = message.id,
+  anchors,
   sourceMessage = message,
   showFooter = true,
   scheme,
@@ -105,6 +106,8 @@ export const PortableMessage = memo(function PortableMessage({
 }: {
   message: ChatMessage
   segmentId?: string
+  /** Transcript segments opening inside this row (see `transcriptView`). */
+  anchors?: ReadonlyMap<ContentBlock, string>
   sourceMessage?: ChatMessage
   showFooter?: boolean
   scheme: 'light' | 'dark'
@@ -182,7 +185,7 @@ export const PortableMessage = memo(function PortableMessage({
       ? <RealtimeDelegationBody delegation={delegation} />
       : isUser
       ? <UserMessageContentPresenter message={message} text={goalObjective} promptKeywords={sentKeywords} Block={UserToolBlock} asyncQuestions={asyncQuestions} />
-      : <PortableTurn message={message} isStreaming={isStreaming} isLastAssistant={isLastAssistant} />
+      : <PortableTurn message={message} isStreaming={isStreaming} isLastAssistant={isLastAssistant} anchors={anchors} />
 
   // Copy text is only needed once the turn settles (the button hides while
   // streaming), so skip concatenating the whole turn on every delta.

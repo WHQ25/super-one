@@ -36,6 +36,7 @@ import {
   type TurnPlanPresenterProps,
   type TurnBodyPresenterParts,
   type TurnBodyPresenterRuntime,
+  type TurnTextPresenterProps,
   type TurnWorkflowPresenterProps,
 } from './presenters/TurnBody'
 import { turnDisplayContent } from './presenters/turn-content'
@@ -139,11 +140,7 @@ function isPermissionPending(permission: PendingPermission, toolUseId?: string, 
   return permission.toolUseId ? permission.toolUseId === toolUseId : permission.toolName === toolName
 }
 
-function PortableText({ text, isStreaming, afterThinking }: {
-  text: string
-  isStreaming: boolean
-  afterThinking?: boolean
-}) {
+function PortableText({ text, isStreaming, afterThinking, anchorId }: TurnTextPresenterProps) {
   const { scheme, projectPath } = useContext(PortableTurnContext)
   // Same pre-parse rewrite the desktop does. Without it a project-relative
   // citation never survives `rehype-harden` to reach the file chip.
@@ -151,8 +148,9 @@ function PortableText({ text, isStreaming, afterThinking }: {
     () => (projectPath ? resolveMarkdownFileLinks(text, projectPath) : text),
     [text, projectPath],
   )
+  // An opened segment is a navigation target, addressed like the turn rows.
   return (
-    <div className={afterThinking ? 'mt-1 after-thinking' : undefined}>
+    <div data-turn-id={anchorId} className={afterThinking ? 'mt-1 after-thinking' : undefined}>
       <PortableMarkdown text={resolved} isStreaming={isStreaming} scheme={scheme} />
     </div>
   )
@@ -845,10 +843,12 @@ export function PortableTurn({
   message,
   isStreaming,
   isLastAssistant,
+  anchors,
 }: {
   message: ChatMessage
   isStreaming: boolean
   isLastAssistant: boolean
+  anchors?: ReadonlyMap<ContentBlock, string>
 }) {
   const portableContent = useMemo(() => portableToolBlocks(turnDisplayContent(message)), [message.content, message.status])
   const grouped = useMemo(() => groupContentPresenter(portableContent, GROUP_PORTS), [portableContent])
@@ -873,6 +873,7 @@ export function PortableTurn({
       parts={TURN_PARTS}
       runtime={TURN_RUNTIME}
       planApproval={planApproval}
+      anchors={anchors}
     /></ModMessageScope></TurnMessageIdContext.Provider>
   )
 }

@@ -419,9 +419,9 @@ describe('realtime voice surfaces', () => {
   })
 
   it('closes capture while the voice-shaped cue plays, then reopens it', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true })
     render(<VoiceSurfaces />)
     await reachAnsweredCall()
+    vi.useFakeTimers()
 
     await act(async () => driveConnectionState('connected'))
     expect(microphoneTrack.enabled).toBe(false)

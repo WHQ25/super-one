@@ -8,6 +8,7 @@ import { mergeCodexThreadMessages } from '@superone/shared/realtime-thread-messa
 import { codexAsyncQuestionQueue } from '@superone/shared/codex-async-question'
 import type { ChatRuntime } from '../runtime'
 import { injectHostMessage } from '../native-actions'
+import { networkLedger } from '../network-ledger'
 import { TranscriptDelivery, type TranscriptSnapshot } from '../transcript-delivery'
 import type { MobileVoiceState } from '../voice/voice-service'
 
@@ -142,7 +143,8 @@ export function useTranscriptSync(web: RefObject<WebView | null>, voice?: Mobile
       }
       if (message.type !== 'transcriptApplied') return false
       // Receipts arrive after React paints. Jump only after the selected history is mounted.
-      delivery.acknowledge(message.channelId, message.sequence)
+      // The document painted a whole transcript: the first visible paint of an open, cached or restored.
+      if (delivery.acknowledge(message.channelId, message.sequence) === 'hydrate') networkLedger.checkpoint('hydrate-painted')
       if (pendingJump.current && jumpReceipt.current?.channelId === message.channelId
         && jumpReceipt.current.sequence === message.sequence) {
         injectHostMessage(web, { type: 'scrollToTurn', turnId: pendingJump.current, behavior: 'auto' })

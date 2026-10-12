@@ -32,13 +32,16 @@ export class TranscriptDelivery {
     }
   }
 
-  acknowledge(channelId: string, sequence: number): void {
-    if (channelId !== this.channelId || sequence !== this.sequence || !this.inFlight) return
+  /** @returns the kind of paint the document just applied, or null for a stale receipt. */
+  acknowledge(channelId: string, sequence: number): HostInbound['type'] | null {
+    if (channelId !== this.channelId || sequence !== this.sequence || !this.inFlight) return null
+    const applied = this.inFlight.type
     this.clearTimer()
     this.inFlight = null
     const pending = this.pending
     this.pending = null
     if (pending) this.dispatch(pending, false)
+    return applied
   }
 
   dispose(): void {

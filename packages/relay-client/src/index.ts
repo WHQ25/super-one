@@ -15,6 +15,8 @@ export { DesktopUpgradeRequiredError, MIN_PHONE_DESKTOP_VERSION } from './phone-
 export type { PhoneRpcOptions, PhoneTopicStream } from './phone-protocol'
 export { RestoreRejectedError, restoreSession, mergeCachedHistory, appendHistory, dropIncompleteTail } from './restore'
 export type { CachedTranscript, HistoryPage, RestoredSession, SessionSnapshot } from './restore'
+export { restoreWindowSession, TranscriptWindowUnsupportedError } from './restore-window'
+export type { CachedWindow, RestoredWindowSession, WindowRestoreOptions } from './restore-window'
 export {
   INLINE_UPLOAD_MAX_BYTES,
   MAX_UPLOAD_BYTES,

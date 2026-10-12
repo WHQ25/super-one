@@ -67,3 +67,14 @@ it('retains the next use before retiring the previous use of the same grant', as
   await feed.stop()
   expect(lost).toHaveBeenCalledOnce()
 })
+it('takes a transcript window patch at the version of the event before it, but not a stale one', async () => {
+  const deliver = vi.fn()
+  const patch = (version: number) => ({ ...frame(version).events[0]!, eventId: `w${version}`, payload: { event: { type: 'transcript_window', patch: { messages: [], total: 1 } } } })
+  const feed = new PhoneSessionFeed(async (_input, handlers) => {
+    handlers.onFrame({ ...frame(11), events: [...frame(11).events, patch(11)] })
+    handlers.onFrame({ ...frame(12), events: [patch(10)] })
+    return { close: vi.fn(), update: vi.fn() }
+  }, deliver, vi.fn())
+  await feed.follow(input)
+  expect(deliver.mock.calls.flatMap(([events]) => events.map((event: { type: string }) => event.type))).toEqual(['status_change', 'transcript_window'])
+})

@@ -43,7 +43,8 @@ export class PhoneSessionFeed {
           for (const envelope of frame.events) {
             if (envelope.environmentId !== input.session.environmentId || envelope.aggregateType !== 'session' || envelope.aggregateId !== input.session.sessionId) continue
             const next = envelope.sessionVersion ?? Number(envelope.sequence)
-            if (next <= version) continue
+            // A transcript window patch takes the position of the frame's last event for its session.
+            if (next < version || next === version && !isWindowPatch(envelope)) continue
             version = next
             events.push(...mapper.map(envelope).map(event => ({ ...event, environmentId: input.session.environmentId })))
           }
@@ -72,4 +73,8 @@ export class PhoneSessionFeed {
   }
 
   reset(): void { this.current = null }
+}
+
+function isWindowPatch(envelope: { payload: unknown }): boolean {
+  return (envelope.payload as { event?: { type?: unknown } } | null)?.event?.type === 'transcript_window'
 }

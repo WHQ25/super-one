@@ -2,6 +2,10 @@ import { afterAll, describe, it, expect, beforeEach, vi } from 'vitest'
 import { existsSync, mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import { HOST_ACTION_COMPUTER_DESCRIPTORS } from '@superone/shared/environment/host-action-computer-descriptors'
 
 // Captures land in the session sync zone under userData; point it at a scratch dir.
 const userData = mkdtempSync(join(tmpdir(), 'superone-cu-contract-'))
@@ -32,6 +36,7 @@ import {
   setComputerUseEnabledForTests,
 } from '../tools'
 import { setJevFastLoopEnabledForTests } from '../../jev/run-tool-common'
+import { jsonSchemaToZodShape } from '../../mcp/json-schema-zod'
 
 function enableAll(service: ComputerUseService): void {
   service.policy.setEnabled(true)
@@ -76,6 +81,55 @@ describe('Computer Use P0 contract', () => {
     const act = getComputerUseToolDescriptors().find((d) => d.name === 'computer_act')!
     expect((act.inputSchema as any).properties.recording.type).toBe('boolean')
   })
+
+  it.each(['in-process', 'stdio', 'remote'] as const)(
+    'advertises a fixed numeric zoom region through %s tools/list',
+    async (source) => {
+      setComputerUseEnabledForTests(true)
+      const server = new McpServer({ name: 'computer-schema-test', version: '1.0.0' })
+      if (source === 'in-process') {
+        registerComputerUseTools(server, 'sess-schema')
+      } else {
+        const descriptors = source === 'stdio'
+          ? getComputerUseToolDescriptors()
+          : HOST_ACTION_COMPUTER_DESCRIPTORS
+        for (const descriptor of descriptors) {
+          server.registerTool(
+            descriptor.name,
+            { inputSchema: jsonSchemaToZodShape(descriptor.inputSchema) },
+            async () => ({ content: [] }),
+          )
+        }
+      }
+      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+      const client = new Client({ name: 'computer-schema-client', version: '1.0.0' })
+      try {
+        await server.connect(serverTransport)
+        await client.connect(clientTransport)
+        const { tools } = await client.listTools()
+        const zoom = tools.find((tool) => tool.name === 'computer_zoom')!
+        const properties = zoom.inputSchema.properties as Record<string, unknown>
+        // Check the wire schema, not just the descriptor: the MCP SDK emits
+        // draft-07, and xAI rejects the array form of items (issue #76).
+        expect(properties.region).toMatchObject({
+          type: 'array',
+          items: { type: 'number' },
+          minItems: 4,
+          maxItems: 4,
+        })
+        for (const region of [[10, 10, 100], [10, 10, 100, 100, 100], [10, 10, '100', 100]]) {
+          const result = await client.callTool({
+            name: 'computer_zoom',
+            arguments: { description: 'Inspect the document', stateId: 'unused', region },
+          })
+          expect(result.isError).toBe(true)
+        }
+      } finally {
+        await client.close()
+        await server.close()
+      }
+    },
+  )
 
   it('is disabled by default and not listed until enabled', async () => {
     expect(isComputerUseEnabled()).toBe(false)

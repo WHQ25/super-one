@@ -114,21 +114,12 @@ export const HOST_ACTION_COMPUTER_DESCRIPTORS = [
           "description": "Parent observation stateId"
         },
         "region": {
+          "minItems": 4,
+          "maxItems": 4,
           "type": "array",
-          "prefixItems": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "number"
-            },
-            {
-              "type": "number"
-            },
-            {
-              "type": "number"
-            }
-          ],
+          "items": {
+            "type": "number"
+          },
           "description": "[x0, y0, x1, y1] in parent coordinate space"
         }
       },

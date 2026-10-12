@@ -256,7 +256,8 @@ const toolDefs: Array<{
       ...descriptionField,
       stateId: z.string().describe('Parent observation stateId'),
       region: z
-        .tuple([z.number(), z.number(), z.number(), z.number()])
+        .array(z.number())
+        .length(4)
         .describe('[x0, y0, x1, y1] in parent coordinate space'),
     },
   },

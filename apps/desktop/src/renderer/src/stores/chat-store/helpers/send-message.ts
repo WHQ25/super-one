@@ -522,6 +522,8 @@ export async function sendMessageImpl(
   set((s) => ({
     ...commitPerSession(s, writeScope.target, (sess) => ({
       ...(!isQueuedSend ? { messages: [...sess.messages, userMessage] } : {}),
+      ...(!isQueuedSend && rawContent && !sess.messages.some((message) => message.role === 'user')
+        ? { _animateInitialTitle: true } : {}),
       ...(isQueuedSend ? { queuedMessages: [...sess.queuedMessages, userMessage] } : {}),
       attachments: [],
       browserAnnotations: [],

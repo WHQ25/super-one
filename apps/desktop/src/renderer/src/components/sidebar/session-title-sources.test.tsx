@@ -1,8 +1,10 @@
 /** @vitest-environment jsdom */
 
 import { act, render, screen } from '@testing-library/react'
+import { StrictMode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatMessage } from '@superone/shared/agent-types'
+import { SESSION_TITLE_MAX_CHARS } from '@superone/shared/session-title'
 import { createDefaultPerSessionState, createDefaultProjectState, useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { DEFAULT_SESSION_TITLE, selectSessionTitle } from '@/lib/session-title'
@@ -19,18 +21,18 @@ const callbacks = {
   onRenameSession: vi.fn(), onDeleteSession: vi.fn(),
 }
 
-function message(text: string): ChatMessage {
-  return { id: text, role: 'user', providerId: 'codex', status: 'complete', createdAt: '',
+function message(text: string, provider: 'claude' | 'codex' = 'codex'): ChatMessage {
+  return { id: text, role: 'user', providerId: provider, status: 'complete', createdAt: '',
     content: [{ type: 'text', text }] }
 }
 
-function seed({ liveTitle = null, savedTitle, agentTitle, messages = [message(BACKING_PROMPT)] }: {
-  liveTitle?: string | null; savedTitle?: string; agentTitle?: string; messages?: ChatMessage[]
+function seed({ liveTitle = null, savedTitle, agentTitle, messages = [message(BACKING_PROMPT)], provider = 'codex', animateInitialTitle = false }: {
+  liveTitle?: string | null; savedTitle?: string; agentTitle?: string; messages?: ChatMessage[]; provider?: 'claude' | 'codex'; animateInitialTitle?: boolean
 }) {
   const project = createDefaultProjectState()
   project._activeSessionId = SID
-  project._sessions[SID] = { ...createDefaultPerSessionState(), sessionProvider: 'codex',
-    _title: liveTitle, _historyHydrated: true, messages }
+  project._sessions[SID] = { ...createDefaultPerSessionState(), sessionProvider: provider,
+    _title: liveTitle, _animateInitialTitle: animateInitialTitle, _historyHydrated: true, messages }
   project.sessions = savedTitle ? [{ sessionId: SID, title: savedTitle, lastActiveAt: '', messageCount: 1 }] : []
   useChatStore.setState({ activeProject: PROJECT, projectSessions: { [PROJECT]: project },
     agentTitles: agentTitle ? { [SID]: agentTitle } : {} })
@@ -57,11 +59,85 @@ function expectTitles(title: string) {
 
 beforeEach(() => {
   useAppStore.setState({ currentFolder: PROJECT, tmpFolder: null })
+  Object.assign(window.environment, { sendSessionMessage: vi.fn().mockResolvedValue(null) })
 })
 
-afterEach(() => vi.useRealTimers())
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
 
 describe('session title sources across surfaces', () => {
+  it.each(['claude', 'codex'] as const)('plays the sidebar entrance after the first %s send', async (provider) => {
+    vi.useFakeTimers()
+    seed({ messages: [], provider })
+    vi.spyOn(window.environment, 'getSession').mockResolvedValue({ harnessId: provider })
+    const send = vi.spyOn(window.environment, 'sendSessionMessage').mockResolvedValue({ sessionId: SID, title: '/release alpha' })
+    await act(async () => { await useChatStore.getState().sendMessage('/release alpha') })
+    expect(send).toHaveBeenCalledWith('local', expect.objectContaining({ sessionId: SID, text: '/release alpha' }))
+    const { container } = render(<SessionRow folderPath={PROJECT}
+      session={{ sessionId: SID, title: '/release alpha', lastActiveAt: '', messageCount: 1, provider }} {...callbacks} />)
+    expect(container.querySelector('.animated-title-wrap')).toHaveAttribute('data-phase', 'in')
+    expect(container.querySelector('.is-flip')).not.toBeNull()
+    act(() => { vi.advanceTimersByTime(3000) })
+    expect(container.querySelector('.animated-title-wrap')).toHaveAttribute('data-phase', 'idle')
+  })
+
+  it.each(['claude', 'codex'] as const)('animates a new %s first title once and shows it immediately on later mounts', (provider) => {
+    vi.useFakeTimers()
+    const text = 'First message with a long title '.repeat(15)
+    const title = text.slice(0, SESSION_TITLE_MAX_CHARS)
+    seed({ messages: [message(text, provider)], provider, animateInitialTitle: true })
+    const row = <SessionRow folderPath={PROJECT}
+      session={{ sessionId: SID, title, lastActiveAt: '', messageCount: 1, provider }} {...callbacks} />
+    const { container, unmount } = render(<StrictMode>{row}</StrictMode>)
+    expect(container.querySelector('.animated-title-inner')).toHaveTextContent(title)
+    expect(container.querySelector('.animated-title-wrap')).toHaveAttribute('data-phase', 'in')
+    expect(container.querySelector('.is-flip')).not.toBeNull()
+    expect(useChatStore.getState().projectSessions[PROJECT]._sessions[SID]._animateInitialTitle).toBe(false)
+    act(() => { seed({ messages: [message(text, provider)], savedTitle: 'Untitled', provider }) })
+    act(() => { vi.advanceTimersByTime(100) })
+    act(() => { seed({ messages: [message(text, provider)], liveTitle: title, savedTitle: title, provider }) })
+    expect(container.querySelector('.animated-title-wrap')).toHaveAttribute('data-phase', 'in')
+    act(() => { vi.advanceTimersByTime(13000) })
+    expect(container.querySelector('.animated-title-wrap')).toHaveAttribute('data-phase', 'idle')
+    unmount()
+    const reopened = render(row)
+    expect(reopened.container.querySelector('.animated-title-wrap')).toHaveAttribute('data-phase', 'idle')
+  })
+
+  it.each(['claude', 'codex'] as const)('keeps the first %s message visible when list metadata briefly replaces its title', (provider) => {
+    vi.useFakeTimers()
+    const title = '/release alpha'
+    const messages = [message(title, provider)]
+    seed({ messages: [], provider })
+    const header = <div data-testid="header"><SessionTitleAnimated projectPath={PROJECT} sessionId={SID} /></div>
+    const { rerender } = render(<div>{header}</div>)
+
+    act(() => { seed({ messages, provider }) })
+    // A sidebar row first mounts with the user message, while the existing header
+    // is still animating away from New session.
+    rerender(<div>{header}<div data-testid="sidebar"><SessionRow folderPath={PROJECT}
+      session={{ sessionId: SID, title, lastActiveAt: '', messageCount: 1, provider }} {...callbacks} /></div></div>)
+    expect(screen.getByTestId('sidebar').querySelector('.animated-title-wrap')).toHaveAttribute('data-phase', 'idle')
+
+    act(() => { seed({ messages, savedTitle: 'Untitled', provider }) })
+    act(() => { vi.advanceTimersByTime(100) })
+    act(() => { seed({ messages, liveTitle: title, savedTitle: title, provider }) })
+    act(() => { vi.advanceTimersByTime(3000) })
+
+    for (const surface of ['header', 'sidebar']) {
+      expect(screen.getByTestId(surface).querySelector('.animated-title-inner')).toHaveTextContent(title)
+      expect(screen.getByTestId(surface).querySelector('.animated-title-wrap'), surface).toHaveAttribute('data-phase', 'idle')
+    }
+
+    act(() => { useChatStore.getState().handleAgentEvent({ type: 'session_title_changed', projectPath: PROJECT,
+      sessionId: SID, title: 'Publish SuperOne Alpha', source: 'agent' }) })
+    expect(screen.getByTestId('sidebar').querySelector('.animated-title-wrap')).toHaveAttribute('data-phase', 'out')
+    act(() => { vi.advanceTimersByTime(3000) })
+    for (const surface of ['header', 'sidebar']) {
+      expect(screen.getByTestId(surface).querySelector('.animated-title-inner')).toHaveTextContent('Publish SuperOne Alpha')
+      expect(screen.getByTestId(surface).querySelector('.animated-title-wrap')).toHaveAttribute('data-phase', 'idle')
+    }
+  })
+
   it('uses the saved voice title everywhere while the per-session title is missing', () => {
     seed({ savedTitle: 'Plan the release' })
     renderTitles('Plan the release')

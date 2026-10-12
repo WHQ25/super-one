@@ -22,6 +22,7 @@ export function createDefaultPerSessionState(): PerSessionState {
   return {
     ...createDefaultChatCoreSession(),
     _title: null,
+    _animateInitialTitle: false,
     dshPreset: null,
     detailedUsage: null,
     subagentColors: {},

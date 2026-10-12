@@ -14,14 +14,19 @@ import {
 
 type Phase = 'idle' | 'out' | 'in'
 
+function titleInDuration(title: string): number {
+  return Math.max(0, title.length - 1) * CHAR_STAGGER_MS + FLIP_DURATION_MS + IN_TAIL_MS
+}
+
 interface SessionTitleAnimatedProps {
   projectPath: string | null | undefined
   sessionId: string | null | undefined
   fallback?: string | null
   className?: string
+  animateOnMount?: boolean
 }
 
-export function SessionTitleAnimated({ projectPath, sessionId, fallback, className }: SessionTitleAnimatedProps) {
+export function SessionTitleAnimated({ projectPath, sessionId, fallback, className, animateOnMount = false }: SessionTitleAnimatedProps) {
   useInsertionEffect(() => {
     if (document.getElementById('session-title-animation-style')) return
     const style = document.createElement('style')
@@ -31,11 +36,12 @@ export function SessionTitleAnimated({ projectPath, sessionId, fallback, classNa
   }, [])
   const targetTitle = useSessionTitle(projectPath, sessionId, fallback)
   const [displayTitle, setDisplayTitle] = useState(targetTitle)
-  const [phase, setPhase] = useState<Phase>('idle')
+  const [phase, setPhase] = useState<Phase>(animateOnMount ? 'in' : 'idle')
   const [writeKey, setWriteKey] = useState(0)
   const prevTitleRef = useRef(targetTitle)
   const prevSessionIdRef = useRef(sessionId)
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([])
+  const initialAnimationPendingRef = useRef(animateOnMount)
 
   useEffect(() => {
     if (sessionId !== prevSessionIdRef.current) {
@@ -43,19 +49,36 @@ export function SessionTitleAnimated({ projectPath, sessionId, fallback, classNa
       timersRef.current.forEach(clearTimeout)
       timersRef.current = []
       prevTitleRef.current = targetTitle
+      initialAnimationPendingRef.current = false
       setDisplayTitle(targetTitle)
       setPhase('idle')
       return
     }
 
-    if (targetTitle === prevTitleRef.current) return
+    if (targetTitle === prevTitleRef.current) {
+      if (initialAnimationPendingRef.current) {
+        // Resume the first entrance if metadata briefly changes its target.
+        setPhase('in')
+        setWriteKey((key) => key + 1)
+        const end = setTimeout(() => {
+          initialAnimationPendingRef.current = false
+          setPhase('idle')
+        }, titleInDuration(targetTitle))
+        timersRef.current = [end]
+        return () => clearTimeout(end)
+      }
+      // Cleanup cancels the pending transition when its target returns to the
+      // displayed title. Restore visibility instead of leaving it faded out.
+      setPhase('idle')
+      return
+    }
 
     timersRef.current.forEach(clearTimeout)
 
     const nextTitle = targetTitle
     setPhase('out')
 
-    const inMs = Math.max(0, nextTitle.length - 1) * CHAR_STAGGER_MS + FLIP_DURATION_MS + IN_TAIL_MS
+    const inMs = titleInDuration(nextTitle)
 
     const t1 = setTimeout(() => {
       prevTitleRef.current = nextTitle
@@ -65,6 +88,7 @@ export function SessionTitleAnimated({ projectPath, sessionId, fallback, classNa
     }, OUT_MS)
 
     const t2 = setTimeout(() => {
+      initialAnimationPendingRef.current = false
       setPhase('idle')
     }, OUT_MS + inMs)
 

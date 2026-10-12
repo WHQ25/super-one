@@ -103,6 +103,8 @@ export interface PerSessionState extends ChatCoreSession {
   _controlLease?: import('@superone/shared/environment').ControlLease | null
   cwd: string
   _title: string | null
+  /** One-shot sidebar entrance requested by a new first send; never persisted. */
+  _animateInitialTitle: boolean
   messages: ChatMessage[]
   status: AgentStatus
   awaitingAssistantReply: boolean

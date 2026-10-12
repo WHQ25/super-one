@@ -1,4 +1,4 @@
-import { memo, useCallback } from 'react'
+import { memo, useCallback, useEffect } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useTranslation } from 'react-i18next'
 import { Bot, ChevronDown, ChevronRight, Clock, CornerDownRight, Eye, EyeOff, Laptop, Loader2, MessageSquare, Mic, Pin, Smartphone } from 'lucide-react'
@@ -21,6 +21,7 @@ import { useSessionDragOut } from './useSessionDragOut'
 import { SessionTitleAnimated } from './AnimatedSessionTitle'
 import { useSessionTitle } from '@/hooks/useSessionTitle'
 import { useSessionMenuItems, type SessionMenuCallbacks } from './useSessionMenuItems'
+import { commitPerSession } from '@/stores/chat-store/helpers/store-helpers'
 
 const EMPTY_REMOTE_SESSION_IDS: string[] = []
 
@@ -99,7 +100,7 @@ export const SessionRow = memo(function SessionRow({
   const remoteSessionIds = useChatStore((s) => s.remoteSessions[folderPath] ?? EMPTY_REMOTE_SESSION_IDS)
   // Deliberately does NOT select `lastEventAt` — it changes on every content
   // delta; stall level reads it lazily via getState() once per second.
-  const { activeSid, status, isUnseen, pendingPermissions, pendingQuestion, pendingPlanApproval } = useChatStore(useShallow((s) => {
+  const { activeSid, status, isUnseen, pendingPermissions, pendingQuestion, pendingPlanApproval, animateInitialTitle } = useChatStore(useShallow((s) => {
     const proj = s.projectSessions[folderPath]
     const entry = proj?._sessions?.[session.sessionId]
     return {
@@ -109,8 +110,17 @@ export const SessionRow = memo(function SessionRow({
       pendingPermissions: entry?.pendingPermissions,
       pendingQuestion: entry?.pendingQuestion,
       pendingPlanApproval: entry?.pendingPlanApproval,
+      animateInitialTitle: entry?._animateInitialTitle ?? false,
     }
   }))
+  useEffect(() => {
+    if (!animateTitle || !animateInitialTitle) return
+    useChatStore.setState((state) => {
+      if (!state.projectSessions[folderPath]?._sessions[session.sessionId]?._animateInitialTitle) return state
+      return commitPerSession(state,
+        { projectPath: folderPath, sessionId: session.sessionId }, () => ({ _animateInitialTitle: false }))
+    })
+  }, [animateTitle, animateInitialTitle, folderPath, session.sessionId])
   const pendingReason = getPendingReason(pendingPermissions, pendingQuestion, pendingPlanApproval, t)
 
   const isProjectActive = hasRealProject && folderPath === currentFolder
@@ -213,7 +223,7 @@ export const SessionRow = memo(function SessionRow({
               </span>
             </div>
             {animateTitle
-              ? <SessionTitleAnimated projectPath={folderPath} sessionId={session.sessionId} fallback={session.title} className={titleClassName} />
+              ? <SessionTitleAnimated projectPath={folderPath} sessionId={session.sessionId} fallback={session.title} className={titleClassName} animateOnMount={animateInitialTitle} />
               : <PlainSessionTitle projectPath={folderPath} sessionId={session.sessionId} fallback={session.title} className={titleClassName} />
             }
             <div className="ml-auto flex shrink-0 items-center">

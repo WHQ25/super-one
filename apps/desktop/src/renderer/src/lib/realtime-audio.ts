@@ -14,6 +14,7 @@ export class BufferedVoicePlayback {
   private node?: AudioWorkletNode
   private closed = false
   private paused = false
+  private readonly receiverAudio = new Audio()
   private readonly context = new AudioContext({ latencyHint: 'interactive', sampleRate: 48_000 })
   constructor(private readonly interrupted: () => void, private readonly failed: (error: Error) => void) {
     this.context.onstatechange = () => {
@@ -29,6 +30,13 @@ export class BufferedVoicePlayback {
     if (!Processor || !track) throw new Error('Update the desktop app to enable buffered voice playback.')
     this.reader = new Processor({ track }).readable.getReader()
     void this.receive().catch(error => { if (!this.closed) this.failed(error instanceof Error ? error : new Error(String(error))) })
+    // Chromium only pulls/decodes remote WebRTC audio while a media sink plays.
+    // TrackProcessor alone receives no PCM. Keep this sink muted and running
+    // through output suspension; the worklet owns audible playback and pause.
+    this.receiverAudio.muted = true
+    this.receiverAudio.srcObject = stream
+    await this.receiverAudio.play()
+    if (this.closed) return
     await this.context.audioWorklet.addModule(workletUrl)
     if (this.closed) return
     const node = new AudioWorkletNode(this.context, 'superone-voice-playback', { numberOfInputs: 0, outputChannelCount: [1] })
@@ -72,6 +80,8 @@ export class BufferedVoicePlayback {
   close(): void {
     this.closed = true
     this.context.onstatechange = null
+    this.receiverAudio.pause()
+    this.receiverAudio.srcObject = null
     void this.reader?.cancel().catch(() => {})
     this.reader = undefined; this.pending = []; this.bufferedFrames = 0
     this.node?.disconnect()

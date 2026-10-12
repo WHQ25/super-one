@@ -6,6 +6,14 @@ type Frame = { numberOfFrames: number; sampleRate: number; copyTo(output: Float3
 let receiver: ReadableStreamDefaultController<Frame>
 const nodes: Node[] = []
 const contexts: Context[] = []
+const receivers: ReceiverAudio[] = []
+class ReceiverAudio {
+  muted = false
+  srcObject: MediaStream | null = null
+  play = vi.fn(async () => {})
+  pause = vi.fn()
+  constructor() { receivers.push(this) }
+}
 class Context {
   sampleRate = 48_000; state = 'running'; destination = {}
   onstatechange: (() => void) | null = null
@@ -23,8 +31,9 @@ function frame(samples: number[]): Frame {
   return { numberOfFrames: samples.length, sampleRate: 48_000, copyTo: output => output.set(samples), close: vi.fn() }
 }
 beforeEach(() => {
-  nodes.length = 0; contexts.length = 0
+  nodes.length = 0; contexts.length = 0; receivers.length = 0
   vi.stubGlobal('AudioContext', Context); vi.stubGlobal('AudioWorkletNode', Node)
+  vi.stubGlobal('Audio', ReceiverAudio)
   vi.stubGlobal('MediaStreamTrackProcessor', class { readable = new ReadableStream<Frame>({ start(controller) { receiver = controller } }) })
 })
 afterEach(() => vi.unstubAllGlobals())
@@ -42,6 +51,8 @@ it('keeps receiving in order while the output audio graph is suspended and requi
     const sent = nodes[0]!.port.postMessage.mock.calls.map(args => args[0]).filter(message => message.type === 'samples')
     expect(sent.map(message => [...message.samples])).toEqual([[1, 2], [3, 4]])
     expect(contexts[0]!.resume).toHaveBeenCalledTimes(1) // initial connection only
+    expect(receivers[0]!.muted).toBe(true)
+    expect(receivers[0]!.pause).not.toHaveBeenCalled()
     contexts[0]!.state = 'running'; contexts[0]!.onstatechange?.()
     expect(nodes[0]!.port.postMessage).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'samples' }), expect.any(Array))
     await playback.resume()
@@ -55,4 +66,6 @@ it('releases a native audio frame arriving at the same time as teardown without 
   await vi.waitFor(() => expect(late.close).toHaveBeenCalledTimes(1))
   expect(nodes[0]!.port.postMessage.mock.calls.some(args => args[0].type === 'samples')).toBe(false)
   expect(contexts[0]!.close).toHaveBeenCalledTimes(1)
+  expect(receivers[0]!.pause).toHaveBeenCalledTimes(1)
+  expect(receivers[0]!.srcObject).toBeNull()
 })

@@ -57,7 +57,7 @@ export function MarkdownTable({ node: _node, children, ...rest }: ComponentProps
             className="opacity-50 transition-opacity hover:opacity-100"
             tooltip={t('tooltips.copyTable')}
           >
-            {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+            {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
           </IconButton>
           <IconButton
             size="xs"
@@ -66,10 +66,10 @@ export function MarkdownTable({ node: _node, children, ...rest }: ComponentProps
             className="opacity-50 transition-opacity hover:opacity-100"
             tooltip={t('tooltips.expand')}
           >
-            <Expand className="size-3.5" />
+            <Expand className="size-3" />
           </IconButton>
         </div>
-        <div className="overflow-x-auto pt-5">
+        <div className="overflow-x-auto pt-7">
           <table data-streamdown="table" {...rest} ref={tableRef}>{children}</table>
         </div>
         <TableFullscreen open={open} onOpenChange={setOpen}>{children}</TableFullscreen>

@@ -35,7 +35,7 @@ catalog and main's persistence dialect.
 | Todos | Codex cold restore scans history items (`stores/chat-store/helpers/codex-todo.ts:20`); `todos_updated` is memory-only (`chat-core/src/todos.ts:6`, main `session.ts:2257`). Claude todos come from `TodoWrite`/`TaskCreate`/`TaskUpdate` results in content (`chat-core/src/content.ts:83`). |
 | Thread restore | `main/codex/codex-realtime.ts` `mapTimelineThreadMessages` :231-388 maps provider history to items (incl. `compaction`, drawn by `codex-item-renderer.tsx:276`); `shared/realtime-thread-messages.ts` `mergeCodexThreadMessages` overlays by `turnId` and aligns async answers by `agent_message.questions`. Fixture `codex-thread-restore-fixture.ts`. |
 | Seal | `sealStreamingTools` (content) and `sealCodexItems`/`sealCodexMetadata` (items; image/video exempt; status only, output kept) in `shared/content-delta.ts`. |
-| Mobile | Phone reduces with chat-core. `stripMessagesForRemote` passes Codex messages unchanged (`remote-content.ts:675`). The progressive projection maps `codex.items` unconditionally (`projection.ts:59`) and serves Codex detail refs `item`/`nested-item`/`reasoning` (`progressive-tools.ts:203-256`); `DeferredTool.tsx:8` spreads the returned detail. The handshake enforces only a desktop floor (0.73.0-alpha.1, `mobile-remote-control.md:21`), so new phones talk to hosts that still emit items, and a new desktop can meet a phone whose chat-view OTA is older. |
+| Mobile | Phone reduces with chat-core. `stripMessagesForRemote` passes Codex messages unchanged (`remote-content.ts:675`). The progressive projection maps `codex.items` unconditionally (`projection.ts:59`) and serves Codex detail refs `item`/`nested-item`/`reasoning` (`progressive-tools.ts:203-256`); `DeferredTool.tsx:8` spreads the returned detail. The handshake enforces only a desktop floor (0.73.0-alpha.1, `mobile-remote-control.md:21`), so new phones talk to hosts that still emit items; a new desktop meeting an older phone is not designed for (see Risks). |
 | Remote node | Stores every event verbatim (`session-runtime.ts:1559`); `message-catalog.ts` rebuilds content from `content_delta`, and `mcp-apps-catalog.ts:17,31` re-attaches every logged `codex_item_delta` item to history (`message-catalog.ts:479`). Old node logs keep items forever. |
 | Non-render readers of `codex.items` | copy (`getAssistantCopyText`), compact pinning (`isCodexPinnedSegment`), stats (`summarizeCodexProcess`), footer MCP startup gating (`ChatMessageFooter.tsx:174`), media (`media-generation.ts`), widgets (`use-widget-input-request`), MCP apps (`mcp-apps-state.ts`, node `mcp-apps-catalog.ts`), `suggested-task.ts`, async questions (`codex-async-question.ts`, main `remote-async-question.ts`, `input-requests.ts`), todos (`codex-todo.ts`), realtime (`realtime-turn-activities.ts`, `realtime-thread-messages.ts`, `codex-timeline-rows.ts`), usage (`usage-stats-service.ts`), archive text (`session-transcript-view.ts`), store helpers (`codex-helpers.ts`), `ForkedThreadView.tsx`. |
 | Dead shared shapes | ContentBlock `codex_plan` / `codex_image_generation` / `codex_collab` (`agent-types.ts:233-235`): no producer since `13f51706e`; readers are `session-transcript-view.ts:63` and the abandoned Flutter client. |
@@ -229,11 +229,8 @@ rendering. Steps 1-5 do not change what producers emit.
 6. **Producers** (series): 6a desktop `codex-turn.ts`/`codex-backend.ts` emit
    through `createCodexContentStream` with `items: []`; main Codex dialect
    persists content; one completion field list. 6b `packages/codex` mapper for
-   the CLI node. **Release gate:** the mobile OTA with 5e is published first,
-   and an old-chat-view check (previous release's chat-view + chat-core fed
-   new-format streaming, snapshot and completion fixtures) shows text-only
-   rendering without exceptions and without child-thread text mixed in. If the
-   handshake can report the phone's chat-view build, gate on it instead.
+   the CLI node. No release gate: clients and hosts update together through
+   the alpha and stable channels, so version skew is not designed for.
 7. **Cleanup.** Remove `makeCodexPatch`, `projectCodexTool` for new-format
    messages, Codex per-item coalescing and unused exports. Legacy `items`
    stay on legacy messages everywhere: they are the baseline for late fork /
@@ -324,7 +321,7 @@ notifications, machine paths and user name replaced):
 | Parity gaps (action lists, exit codes, failed-empty file change, collab follow-ups, plan footer, MCP auth/JSON fallback/App updates, image fields, hidden error/wait/todo) | Mapping table above; step-4 parity stories over real recordings; e2e specs `codex-command-*`, `file-change`, `async-question`, `realtime-*`, `turn-error-layout` migrated, not deleted. |
 | Legacy turn loses rows at completion | 5a (chat-core) and 5b (main live runtime) derive after every legacy terminal write; tests assert tools survive complete/interrupt/error and a late fork delta after completion. |
 | Metadata field drift across the three completion rebuilds | One field list in 6a with a survival test across main and chat-core. |
-| Old phone ↔ new desktop | `items: []` keeps old clients crash-free; release gate in step 6. |
+| Old phone ↔ new desktop | Not designed for: clients and hosts update together per channel. |
 | New phone ↔ old desktop / desktop ↔ old node | Legacy ingress (5a), old detail adapter and node-log translation (5b), all fed by recordings. |
 | Row doubling on re-save | Stored-shape serializer (5b) with a test that a `full` persist leaves legacy rows byte-identical in shape. |
 | Hot-path cost on long legacy turns | Per-item identity cache: a delta re-projects only its item; benchmark with `bench-content-block-turn.ts` on a long recording. |

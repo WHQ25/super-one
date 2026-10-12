@@ -5,13 +5,12 @@ import { deliverLoad } from '@superone/runtime/server/session-delivery'
 import { DesktopSessionReads } from '../node-host/desktop-session-reads'
 import type { DesktopSessionRow } from '../db-remote-controlled-sessions'
 import type { Session } from './types'
-import { desktopRestorePorts } from './session-restore-ports'
 
 /** Run the production desktop atomic read and delivery boundary, with an in-memory catalog. */
 export async function nativeSessionLoad(session: Session | null, delivery = new ConnectionDelivery(deliveryPolicy('relay', 'phone')), history: ChatMessage[] = []): Promise<SessionLoadResult> {
   const row = { sessionId: 'session', projectId: 'p', projectPath: '/project', harnessId: session?.snapshot.harnessId ?? 'claude' } as DesktopSessionRow
   class Reads extends DesktopSessionReads<DesktopSessionRow> {}
-  const reads = new Reads({ environmentId: 'desktop', restore: desktopRestorePorts,
+  const reads = new Reads({ environmentId: 'desktop', restore: { realtime: () => null, stored: () => null },
     sessions: { getSession: () => session, onSession: () => () => {} } as never,
     rows: { get: () => row, list: () => [row], loadMessages: () => ({ messages: history, cursor: null, hasMore: false }) },
     events: { headSequence: () => '0', epoch: 'epoch', sessionVersion: () => 0 } as never })

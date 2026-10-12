@@ -15,8 +15,15 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
+- Queue Codex async questions in the composer and keep answers as quoted
+  bubbles on desktop and phone, including after history restore.
+- Suggest separate tasks for issues outside the current scope, with cards
+  that remain until the user starts or dismisses them.
+- Add audio and video playback controls to Markdown media, including audio
+  cover art, lyrics and a progress bar.
 - Start Codex realtime voice from a phone with native audio and call control
-  retained while browsing other chats, pauses and app backgrounding.
+  retained while browsing other chats, pauses and app backgrounding. Preserve
+  delegated work and return to the backing Codex thread when the call ends.
 - Expand Markdown tables and Mermaid previews, and scale Markdown preview
   text with the pane width.
 - Preserve native Codex subagent creation models, reasoning effort and turn roots
@@ -71,6 +78,10 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Fixed
 
+- Send attachments with scheduled messages and clear the delivered draft.
+- Search phone @ mentions in the asking chat's checkout and worktree.
+- Apply Codex permission selection before starting its runtime.
+- Advertise only Mini App tools whose authorization succeeded.
 - Show the right harness icon and Git branch for sessions created from a
   phone or remote node.
 - Stop voice calls when control is taken over or pairing is removed, and
@@ -80,6 +91,8 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Preserve session-link icons while opening a session.
 - Keep a send that never started, or a refused queued send, as a failed row
   that can be retried; hold duplicate sends instead of running them twice.
+  Clear the phone composer as soon as Send is tapped; Edit restores a failed
+  message's text and attachments.
 - Restore session state from one snapshot boundary after reconnect or reload,
   including goals, todo lists, settings, queued sends and tool details.
 - Keep newly spawned sessions under their parent in the sidebar.
@@ -98,6 +111,47 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Virtualize long transcripts and activity details to keep scrolling responsive.
 - Compress and batch remote streams, share routed session subscriptions and
   load full tool-result bodies on demand on desktop and phone.
+
+## [0.73.0-alpha.4] - 2026-10-12
+
+### Added
+
+- Queue Codex async questions in the composer and keep answers as quoted
+  bubbles on desktop and phone, including after history restore.
+- Suggest a separate task for an issue outside the current scope; its card
+  stays available until the user starts or dismisses it.
+- Add audio and video playback controls to Markdown media, including audio
+  cover art, lyrics and a progress bar.
+
+### Changed
+
+- Use the same session commands for local and remote sends, answers, steering,
+  rewinds, forks, scheduled messages and composer forms.
+- Clarify phone voice status and reorder call controls.
+
+### Fixed
+
+- Send attachments with scheduled messages and clear the delivered draft.
+- Search phone @ mentions in the asking chat's checkout and worktree.
+- Clear the phone composer as soon as Send is tapped; failed sends retain
+  Resend and Edit, and rejected session creation restores the draft.
+- Keep the chosen phone permission mode after creating a session, and apply
+  Codex permission selection before starting its runtime.
+- Preserve Codex delegated work and the backing thread when voice calls end;
+  bind Android audio routing before the call starts.
+- Keep the desktop composer locked while a phone renews its control lease.
+- Preserve local session icons and branch details, and record a phone's branch
+  selection as a worktree branch only for worktree sessions.
+- Keep frontend control grants out of agent runtime work so collaboration
+  commands use the host's own authority.
+- Retain the submitted Codex inline review turn and advertise only Mini App
+  tools whose authorization succeeded.
+- Clear the phone pairing status once its pairing code is displayed.
+
+### Tests
+
+- Align file-search mocks, history navigation and async-question events with
+  the current session contracts; control the voice cue test clock explicitly.
 
 ## [0.73.0-alpha.3] - 2026-10-11
 

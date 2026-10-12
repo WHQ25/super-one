@@ -3,6 +3,7 @@ import type { RpcContext, RpcResult, SessionHostPort } from './rpc-context'
 import { asRecord, mapThrown, requireScopes } from './rpc-helpers'
 import { deliverLoad, subscribeDetail } from './session-delivery'
 import { unsupportedMethodError } from './unsupported'
+import { extendHistoryIndex } from '@superone/shared/session-history-index'
 
 /** Session metadata; presence reads can omit the transcript body. */
 export function handleSessionGet(payload: unknown, ctx: RpcContext): RpcResult {
@@ -45,6 +46,23 @@ export async function handleSessionLoad(payload: unknown, ctx: RpcContext): Prom
       direction: p.direction as 'around' | 'before' | 'after' | undefined,
     })
     return { result: deliverLoad(loaded, ctx.streams?.delivery) }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+/** Navigation metadata for the whole session: message ids, outline previews and compactions. */
+export async function handleSessionHistoryIndex(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readSession)
+  if (denied) return denied
+  const sessions = ctx.sessions
+  if (!sessions) return mapThrown(unsupportedMethodError('session.historyIndex'))
+  const target = readSessionTarget(asRecord(payload), sessions)
+  if ('error' in target) return target
+  try {
+    return { result: sessions.historyIndex
+      ? await sessions.historyIndex(target.sessionId)
+      : extendHistoryIndex({ messageIds: [], entries: [], compacts: [] }, [...sessions.messages(target.sessionId)]) }
   } catch (err) {
     return mapThrown(err)
   }

@@ -87,10 +87,6 @@ function createHandlers(host: PhoneMethodHost): Record<string, Handler> {
       })
     },
     // Session reads beyond the shared session family.
-    'session.historyIndex': async (p) => {
-      const { loadSessionHistoryIndex } = await import('../session/history-navigation')
-      return loadSessionHistoryIndex(text(p, 'sessionId'))
-    },
     'session.attachment': (p, ctx) => {
       const sessionId = text(p, 'sessionId')
       sessionProjectPath(ctx, sessionId)

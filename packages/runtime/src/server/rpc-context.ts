@@ -30,6 +30,7 @@ import type {
 } from '../session/index'
 import type { HarnessInstallationStatus, SessionDetailMessage, SessionStreamMessage, TerminalStreamMessage, DraftStreamMessage, ClientStreamMessage, TopicNoticeMessage, TopicNoticeFrame } from '@superone/shared/environment'
 import type { TopicRef, TopicVersionCursor } from '@superone/shared/environment/topics'
+import type { SessionHistoryIndex } from '@superone/shared/session-history-index'
 import type { ChatMessage, TerminalEvent, TerminalListItem, QuestionAnnotations, SessionForkRequest, SessionForkResult } from '@superone/shared/agent-types'
 import type { ConnectionDelivery } from '../stream/delivery/connection-delivery'
 import type { DeliveryPolicy } from '../stream/delivery-policy'
@@ -324,6 +325,8 @@ export interface SessionHostPort {
   messages(sessionId: string): readonly ChatMessage[]
   /** Canonical voice backing rows may lie outside the persisted chat spine. */
   detailMessages?(sessionId: string): readonly ChatMessage[]
+  /** A cheaper navigation index than the shared one built from `messages` (the desktop reads SQLite outlines). */
+  historyIndex?(sessionId: string): SessionHistoryIndex | Promise<SessionHistoryIndex>
 
   /**
    * Gate a lease just acquired on a session: refuse it while the host has taken

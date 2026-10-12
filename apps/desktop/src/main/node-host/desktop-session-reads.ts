@@ -3,6 +3,7 @@ import {
   HOST_ACTION_TOOL_GROUPS,
   type EnvironmentEventEnvelope,
 } from '@superone/shared/environment'
+import type { SessionHistoryIndex } from '@superone/shared/session-history-index'
 import type { ChatMessage } from '@superone/shared/agent-types'
 import type { SessionHostPort } from '@superone/runtime/server'
 import type { EventLog, NodeSessionRecord, PendingInteraction } from '@superone/runtime/session'
@@ -243,6 +244,13 @@ export abstract class DesktopSessionReads<Row extends DesktopSessionRow> impleme
     this.requireRow(sessionId)
     const live = this.reads.sessions.getSession(sessionId)
     return live ? [...live.snapshot.messages] : this.reads.rows.loadMessages(sessionId, Number.MAX_SAFE_INTEGER).messages
+  }
+
+  /** Built from SQLite outlines with bounded previews instead of whole messages. */
+  async historyIndex(sessionId: string): Promise<SessionHistoryIndex> {
+    this.requireRow(sessionId)
+    const { loadSessionHistoryIndex } = await import('../session/history-navigation')
+    return loadSessionHistoryIndex(sessionId)
   }
 
   detailMessages(sessionId: string): ChatMessage[] {

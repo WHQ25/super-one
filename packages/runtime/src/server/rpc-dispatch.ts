@@ -35,7 +35,7 @@ import { isNodeMutatingCall } from './rpc-mutating-methods'
 import { unsupportedMethodError } from './unsupported'
 import { streamFilterMatcher, type EventStreamFilter } from './event-stream'
 import { readTopicRef, type TopicRef } from '@superone/shared/environment/topics'
-import { handleSessionGet, handleSessionLoad, handleSessionSubscribeDetail, handleSessionUnsubscribeDetail } from './rpc-session-reads'
+import { handleSessionGet, handleSessionHistoryIndex, handleSessionLoad, handleSessionSubscribeDetail, handleSessionUnsubscribeDetail } from './rpc-session-reads'
 import { handleSessionTranscriptWindow } from './rpc-session-window'
 import { handleTopicCatchUp, handleTopicSubscribe, handleTopicUpdate, handleTopicUnsubscribe } from './rpc-topic-subscriptions'
 import { asRecord, mapThrown, requireScopes } from './rpc-helpers'
@@ -311,6 +311,7 @@ const HANDLERS: Readonly<Record<string, (payload: unknown, ctx: RpcContext, meth
   'session.messages.list': (payload, ctx) => handleSessionMessagesList(payload, ctx),
   'session.load': (payload, ctx) => handleSessionLoad(payload, ctx),
   'session.transcriptWindow': (payload, ctx) => handleSessionTranscriptWindow(payload, ctx),
+  'session.historyIndex': (payload, ctx) => handleSessionHistoryIndex(payload, ctx),
   'session.subscribeDetail': (payload, ctx) => handleSessionSubscribeDetail(payload, ctx),
   'session.unsubscribeDetail': (payload, ctx) => handleSessionUnsubscribeDetail(payload, ctx),
   'session.snapshot': (_payload, ctx) => handleSessionSnapshot(ctx),

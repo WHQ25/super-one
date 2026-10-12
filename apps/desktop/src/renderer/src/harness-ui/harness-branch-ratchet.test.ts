@@ -97,8 +97,10 @@ describe('harness branch ratchet', () => {
       const previous = readAllowlist()
       const next = Object.fromEntries(Object.keys(counts).sort().map((file) => {
         const allowed = previous[file]
-        if (allowed && counts[file] > allowed.count) throw new Error(`${file}: ${counts[file]} > ${allowed.count}; remove the new branch instead`)
-        return [file, { count: counts[file], reason: allowed?.reason ?? 'pre-registry baseline' }]
+        // A new owning-feature file is admitted by hand, with the reason it owns the branch.
+        if (!allowed) throw new Error(`${file}: new harness branches; move them into the harness modules`)
+        if (counts[file] > allowed.count) throw new Error(`${file}: ${counts[file]} > ${allowed.count}; remove the new branch instead`)
+        return [file, { count: counts[file], reason: allowed.reason }]
       }))
       writeFileSync(ALLOWLIST_PATH, `${JSON.stringify(next, null, 2)}\n`)
       return

@@ -9,6 +9,7 @@ import { useActiveSession, useScopedSessionActions } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
 import { consumerForHarness, credentialsForConsumer, providerDisplayForCredential, resolveEffectiveProviderId } from '@/lib/provider-resolve'
+import { apiKeyDefaultFor } from '@/harness-ui/api-key-defaults'
 import type { SelectorProviderOption } from './GroupedModelEffortSelector'
 
 /**
@@ -96,9 +97,8 @@ export function useSelectorProviders(harness: HarnessId) {
   )
 
   const providers = useMemo<SelectorProviderOption[]>(() => {
-    const defaultLabel = harness === 'codex'
-      ? t('resources.providers.defaultLabelCodex')
-      : t('resources.providers.defaultLabelClaude')
+    const builtIn = apiKeyDefaultFor(harness)
+    const defaultLabel = t(builtIn.labelKey)
     const list: SelectorProviderOption[] =
       harness === 'codex' && codexAccounts.length > 0
         ? codexAccounts.filter((account) => account.signedIn || codexAccountProviderId(account.id) === resolvedProviderId).map((account) => ({
@@ -112,7 +112,7 @@ export function useSelectorProviders(harness: HarnessId) {
             name: defaultLabel,
             keyName: claudeAccountKeyName(account, claudeAccounts),
           }))
-        : [{ id: null, brand: harness === 'codex' ? 'openai' : 'claude', name: defaultLabel }]
+        : [{ id: null, brand: builtIn.brand, name: defaultLabel }]
     for (const c of filtered) {
       const { brand, name, icon } = providerDisplayForCredential(platforms, c)
       list.push({ id: c.id, brand, name, icon, keyName: c.name })

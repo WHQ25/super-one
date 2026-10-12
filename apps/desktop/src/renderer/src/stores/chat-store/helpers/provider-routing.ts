@@ -1,5 +1,6 @@
 import type { HarnessId } from '@superone/shared/agent-types'
 import { isGrokAcpAgent } from '@superone/shared/acp-brand'
+import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 
 export type ProviderResolvableSession = {
   sessionProvider: HarnessId | null
@@ -15,11 +16,7 @@ export function isExperimentalAgentProvider(provider: HarnessId, acpAgentId?: st
   return provider === 'opencode'
 }
 
+/** A host's harness id as a renderer provider; null for an id this build does not know. */
 export function inferProviderFromHarnessId(harnessId: string | null | undefined): HarnessId | null {
-  if (harnessId === 'codex') return 'codex'
-  if (harnessId === 'claude') return 'claude'
-  if (harnessId === 'acp') return 'acp'
-  if (harnessId === 'opencode') return 'opencode'
-  if (harnessId === 'cursor') return 'cursor'
-  return null
+  return harnessId && Object.hasOwn(HARNESS_CAPABILITIES, harnessId) ? harnessId as HarnessId : null
 }

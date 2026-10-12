@@ -23,4 +23,8 @@ export const opencodeStrategy: HarnessStrategy = {
     return { selectedModel: selection.modelId, selectedEffort: selection.effort }
   },
   prewarmHint: (session) => ({ model: session.selectedModel || undefined }),
+  turnSettings: ({ session }) => ({
+    desktop: session.openCodeAgentId ? { agent: session.openCodeAgentId } : {},
+  }),
+  draftSettings: (session) => ({ agent: session.openCodeAgentId }),
 }

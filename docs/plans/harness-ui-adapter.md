@@ -1,6 +1,6 @@
 # Harness UI adapter registry
 
-Status: in-progress (steps 0-5 done; branch `refactor/harness-ui-adapter`) · Updated: 2026-10-12
+Status: in-progress (steps 0-6 done; branch `refactor/harness-ui-adapter`) · Updated: 2026-10-12
 Goal: Desktop renderer chat surfaces resolve per-harness behavior through the shared static harness tables plus per-harness renderer controls and store strategies, so adding or changing a harness edits its own modules instead of `=== '<harnessId>'` branches across the composer, status bar and chat store.
 Long-term docs affected: `.claude/skills/superone-harness/references/integration.md` and `experiences.md` (model, permission and slash checklists become "fill the harness modules"), `.claude/skills/superone-harness/references/new-harness.md` (P0 catalog table), `apps/desktop/docs/agent-reference/architecture.md` (new "Harness UI modules" section)
 
@@ -172,8 +172,10 @@ affected tests (paths below), `bun run typecheck:web` and, when shared changes,
    `acpModeCatalog`, now used by the composer, launch rows, Remote Control and
    agent profiles, so profiles no longer list real session modes as efforts.
    Cursor/dsh show no effort chips for a model outside the catalog.
-6. **Turn payload.** Move per-harness blocks of `session-turn.ts` into
-   `strategy.turnSettings`. Step 0 tests pass unchanged.
+6. **Turn payload (done).** `session-turn.ts` keeps the envelope and host
+   filtering; harness fields come from `runModel` (Codex resolves against its
+   catalog), `turnSettings` (`portable` vs this desktop's host only),
+   `draftSettings` and `createSelections`. Step 0 snapshots pass unchanged.
 7. **Switch, interaction and send policy.** `harness-selection.ts`
    seed/reset → `onSelect`/`resetFields`; `interaction.ts` cycle/plan toggle →
    `nextPermission`/`planToggle`; `session-send-request.ts` →

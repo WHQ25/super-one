@@ -1,4 +1,5 @@
 import type { AgentPrewarmHint, ModelOption } from '@superone/shared/agent-types'
+import type { SessionSendRequest, SessionSettingsPatch } from '@superone/shared/environment/session-requests'
 import type { ChatStore, PerSessionState, ProjectState } from '@/stores/chat-store/types'
 
 /** A session's model/effort pick, in harness-neutral terms. */
@@ -73,4 +74,34 @@ export interface HarnessStrategy {
   liveRestore?(input: LiveRestoreInput): { fromUi: Partial<PerSessionState>; newer?: Partial<PerSessionState> }
   /** What a prewarmed runtime should start with. */
   prewarmHint(session: PerSessionState): Pick<AgentPrewarmHint, 'model' | 'effort' | 'acpAgentId'>
+  /** The model and effort a turn runs with. Absent: the selection as stored. */
+  runModel?(session: PerSessionState, project: ProjectState): { model?: string; effort?: string }
+  /** The harness's own fields of a turn. */
+  turnSettings?(context: TurnContext): HostFields<SessionSendRequest>
+  /**
+   * Harness pickers a draft hands this desktop's host when its session is
+   * created there. A node takes them with each turn instead.
+   */
+  draftSettings?(session: PerSessionState): Partial<SessionSettingsPatch>
+  /** Selections this desktop's host takes when it creates the session. */
+  createSelections?(session: PerSessionState): { acpAgentId?: string }
+}
+
+export interface TurnContext {
+  state: ChatStore
+  project: ProjectState
+  /** The selections the turn runs with: the composer's choices across replay, else the session. */
+  session: PerSessionState
+  /** The session as the store holds it now; thread identity stays live. */
+  current: PerSessionState
+  turn: { turnKind?: SessionSendRequest['turnKind'] }
+}
+
+/**
+ * Request fields split by host: `portable` reaches every host; `desktop` only
+ * this desktop's host, which takes the harness pickers a node refuses.
+ */
+export interface HostFields<T> {
+  portable?: Partial<T>
+  desktop?: Partial<T>
 }

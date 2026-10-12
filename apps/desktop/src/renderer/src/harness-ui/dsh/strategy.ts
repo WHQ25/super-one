@@ -7,4 +7,5 @@ export const dshStrategy: HarnessStrategy = {
   seed: () => {},
   missingDefaults: () => ({}),
   prewarmHint: (session) => ({ model: session.selectedModel || undefined }),
+  draftSettings: (session) => (session.dshPreset ? { agentPreset: session.dshPreset } : {}),
 }

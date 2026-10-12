@@ -11,12 +11,12 @@ import { providerSessionIdFromResume } from '@superone/shared/environment'
 import { stripMiniAppMarkup } from '@superone/shared/miniapp-prompt-tags'
 import { isDuplicateSend, withoutSendFailure, type FailedMessageResend } from '@superone/shared/send-failure'
 import { SESSION_TITLE_MAX_CHARS } from '@superone/shared/session-title'
+import { HARNESS_STRATEGIES } from '@/harness-ui/strategies'
 import { hostPathForProjectKey, hostTakesDesktopChoices, removeSession } from '@/lib/session-client'
 import { connectionIdForProjectKey } from '@/lib/session-list-ops'
 import type { NodeSessionSnapshot } from '@/lib/remote-session-messages'
 import type { ChatStore, PerSessionState } from '../types'
 import { freshSubagentColorPool } from '../defaults'
-import { resolveSessionCodexSelection } from './codex-helpers'
 import type { ChatStoreSet } from './lifecycle'
 import { _getSessionCwd } from './persistence'
 import { resolveProvider } from './provider-routing'
@@ -92,9 +92,9 @@ function sessionSandboxMode(state: ChatStore, projectPath: string, session: PerS
 }
 
 function sessionModel(state: ChatStore, projectPath: string, session: PerSessionState): { model?: string; effort?: string } {
-  if (resolveProvider(session) !== 'codex') return { model: session.selectedModel || undefined, effort: session.selectedEffort || undefined }
-  const codex = resolveSessionCodexSelection(getProject(state, projectPath).codexModels, session.selectedCodexModel, session.selectedCodexReasoningEffort)
-  return { model: codex.modelId || undefined, effort: codex.reasoningEffort ?? undefined }
+  const runModel = HARNESS_STRATEGIES[resolveProvider(session)].runModel
+  if (runModel) return runModel(session, getProject(state, projectPath))
+  return { model: session.selectedModel || undefined, effort: session.selectedEffort || undefined }
 }
 
 /**
@@ -104,7 +104,6 @@ function sessionModel(state: ChatStore, projectPath: string, session: PerSession
  */
 function draftSettings(state: ChatStore, projectPath: string, session: PerSessionState): SessionSettingsPatch {
   const { model, effort } = sessionModel(state, projectPath, session)
-  const harness = resolveProvider(session)
   const desktop = hostTakesDesktopChoices(projectPath)
   const sandboxMode = sessionSandboxMode(state, projectPath, session)
   return {
@@ -113,12 +112,7 @@ function draftSettings(state: ChatStore, projectPath: string, session: PerSessio
     ...(model ? { model } : {}),
     ...(effort ? { effort } : {}),
     ...(session.apiProviderId ? { apiProviderId: session.apiProviderId } : {}),
-    ...(desktop && harness === 'claude' ? { ultracode: session.ultracode } : {}),
-    ...(desktop && harness === 'acp' && session.selectedAcpModeId ? { mode: session.selectedAcpModeId } : {}),
-    ...(desktop && harness === 'acp' && session.selectedAcpContextWindow ? { contextWindow: session.selectedAcpContextWindow } : {}),
-    ...(desktop && harness === 'dsh' && session.dshPreset ? { agentPreset: session.dshPreset } : {}),
-    ...(desktop && harness === 'codex' ? { serviceTier: session.selectedCodexServiceTier, permissionPreset: session.selectedCodexPermissionPreset, collaborationMode: session.selectedCodexCollaborationMode } : {}),
-    ...(desktop && harness === 'opencode' ? { agent: session.openCodeAgentId } : {}),
+    ...(desktop ? HARNESS_STRATEGIES[resolveProvider(session)].draftSettings?.(session) : {}),
   }
 }
 
@@ -184,7 +178,7 @@ export async function ensureHostSession(
         ...(cwd ? { cwd } : {}),
         ...(desktop ? { selections: {
           ...(candidate ? { sessionId: candidate } : {}),
-          ...(harness === 'acp' && session.acpAgentId ? { acpAgentId: session.acpAgentId } : {}),
+          ...HARNESS_STRATEGIES[harness].createSelections?.(session),
         } } : {}),
       }).catch((error: unknown) => {
         const message = error instanceof Error ? error.message : String(error)
@@ -236,10 +230,7 @@ export function sessionTurnRequest(state: ChatStore, projectPath: string, sessio
   const { model, effort } = sessionModel(state, projectPath, session)
   const sandboxMode = sessionSandboxMode(state, projectPath, session)
   const cwd = sessionHostCwd(session)
-  // Desktop disabled-skills filter → Claude SDK skills allow-list (a node discovers the rest).
-  const disabledSkills = harness === 'claude' && state.disabledSkills?.length ? state.disabledSkills : undefined
-  const known = disabledSkills ? [...project.slashCommands, ...project._projectSkills].filter((c) => c.isSkill).map((c) => c.name) : []
-  const enabledSkills = disabledSkills && known.length ? known.filter((name) => !disabledSkills.includes(name)) : undefined
+  const fields = HARNESS_STRATEGIES[harness].turnSettings?.({ state, project, session, current: currentSession, turn }) ?? {}
   return {
     sessionId,
     projectPath,
@@ -252,12 +243,8 @@ export function sessionTurnRequest(state: ChatStore, projectPath: string, sessio
     ...(turn.firstTurn ? { permissionMode: session.permissionMode } : {}),
     ...(turn.firstTurn && sandboxMode ? { sandboxMode } : {}),
     additionalDirectories: mergeCallerScopedDirs(project, session),
-    ...(enabledSkills?.length ? { enabledSkills } : {}),
-    ...(disabledSkills ? { disabledSkills } : {}),
     ...(session.apiProviderId ? { apiProviderId: session.apiProviderId } : {}),
-    ...(harness === 'claude' ? { ultracode: session.ultracode } : {}),
-    ...(harness === 'codex' ? { turnKind: turn.turnKind ?? 'run' } : {}),
-    ...(harness === 'codex' && session.selectedCodexCollaborationMode ? { collaborationMode: session.selectedCodexCollaborationMode } : {}),
+    ...fields.portable,
     ...(turn.reviewTarget !== undefined ? { reviewTarget: turn.reviewTarget } : {}),
     ...(turn.images?.length ? { images: turn.images.map((image) => ({
       ...(image.id ? { id: image.id } : {}), name: image.name, mimeType: image.mimeType, base64: image.base64,
@@ -269,13 +256,7 @@ export function sessionTurnRequest(state: ChatStore, projectPath: string, sessio
     ...(desktop ? {
       ...(turn.queued ? { priority: 'next' as const } : {}),
       ...(turn.inputRequest ? { inputRequest: turn.inputRequest } : {}),
-      ...(harness === 'opencode' && session.openCodeAgentId ? { agent: session.openCodeAgentId } : {}),
-      ...(harness === 'cursor' ? { modelParams: session.cursorModelParams ?? {} } : {}),
-      ...(harness === 'codex' ? {
-        ...(session.selectedCodexPermissionPreset ? { permissionPreset: session.selectedCodexPermissionPreset } : {}),
-        serviceTier: session.selectedCodexServiceTier,
-        ...(currentSession._providerSessionId ? { threadId: currentSession._providerSessionId } : {}),
-      } : {}),
+      ...fields.desktop,
     } : {}),
   }
 }

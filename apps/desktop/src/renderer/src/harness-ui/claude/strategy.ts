@@ -12,4 +12,18 @@ export const claudeStrategy: HarnessStrategy = {
     return { selectedModel: draft.selectedModel, selectedEffort: draft.selectedEffort }
   },
   prewarmHint: (session) => ({ model: session.selectedModel || undefined, effort: session.selectedEffort }),
+  turnSettings: ({ state, project, session }) => {
+    // Desktop disabled-skills filter → Claude SDK skills allow-list (a node discovers the rest).
+    const disabledSkills = state.disabledSkills?.length ? state.disabledSkills : undefined
+    const known = disabledSkills ? [...project.slashCommands, ...project._projectSkills].filter((c) => c.isSkill).map((c) => c.name) : []
+    const enabledSkills = disabledSkills && known.length ? known.filter((name) => !disabledSkills.includes(name)) : undefined
+    return {
+      portable: {
+        ultracode: session.ultracode,
+        ...(enabledSkills?.length ? { enabledSkills } : {}),
+        ...(disabledSkills ? { disabledSkills } : {}),
+      },
+    }
+  },
+  draftSettings: (session) => ({ ultracode: session.ultracode }),
 }

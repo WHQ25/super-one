@@ -239,10 +239,6 @@
     "count": 5,
     "reason": "pre-registry baseline"
   },
-  "stores/chat-store/helpers/session-turn.ts": {
-    "count": 15,
-    "reason": "pre-registry baseline"
-  },
   "stores/chat-store/index.ts": {
     "count": 5,
     "reason": "pre-registry baseline"

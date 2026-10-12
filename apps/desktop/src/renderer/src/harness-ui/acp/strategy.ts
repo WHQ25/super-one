@@ -29,4 +29,9 @@ export const acpStrategy: HarnessStrategy = {
     return catalog ? sessionPatchFromAcpCatalog(catalog) : {}
   },
   prewarmHint: (session) => ({ model: session.selectedModel || undefined, acpAgentId: session.acpAgentId ?? undefined }),
+  draftSettings: (session) => ({
+    ...(session.selectedAcpModeId ? { mode: session.selectedAcpModeId } : {}),
+    ...(session.selectedAcpContextWindow ? { contextWindow: session.selectedAcpContextWindow } : {}),
+  }),
+  createSelections: (session) => (session.acpAgentId ? { acpAgentId: session.acpAgentId } : {}),
 }

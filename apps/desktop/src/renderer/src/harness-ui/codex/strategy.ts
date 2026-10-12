@@ -53,4 +53,24 @@ export const codexStrategy: HarnessStrategy = {
     return { fromUi: next, newer: changedCodexSelection(atRequest, stored) }
   },
   prewarmHint: (session) => ({ model: session.selectedCodexModel || undefined }),
+  runModel: (session, project) => {
+    const codex = resolveSessionCodexSelection(project.codexModels, session.selectedCodexModel, session.selectedCodexReasoningEffort)
+    return { model: codex.modelId || undefined, effort: codex.reasoningEffort ?? undefined }
+  },
+  turnSettings: ({ session, current, turn }) => ({
+    portable: {
+      turnKind: turn.turnKind ?? 'run',
+      ...(session.selectedCodexCollaborationMode ? { collaborationMode: session.selectedCodexCollaborationMode } : {}),
+    },
+    desktop: {
+      ...(session.selectedCodexPermissionPreset ? { permissionPreset: session.selectedCodexPermissionPreset } : {}),
+      serviceTier: session.selectedCodexServiceTier,
+      ...(current._providerSessionId ? { threadId: current._providerSessionId } : {}),
+    },
+  }),
+  draftSettings: (session) => ({
+    serviceTier: session.selectedCodexServiceTier,
+    permissionPreset: session.selectedCodexPermissionPreset,
+    collaborationMode: session.selectedCodexCollaborationMode,
+  }),
 }

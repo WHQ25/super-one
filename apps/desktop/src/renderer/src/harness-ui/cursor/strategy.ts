@@ -11,4 +11,5 @@ export const cursorStrategy: HarnessStrategy = {
   },
   missingDefaults: () => ({}),
   prewarmHint: (session) => ({ model: session.selectedModel || undefined }),
+  turnSettings: ({ session }) => ({ desktop: { modelParams: session.cursorModelParams ?? {} } }),
 }

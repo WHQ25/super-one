@@ -1,3 +1,4 @@
+import { ACP_PERMISSION_MODES } from '@/components/chat/acpPermissionModes'
 import { getCachedAcpCatalog, sessionPatchFromAcpCatalog } from '@/stores/chat-store/harness/acp-handler'
 import { neutralSelection } from '../neutral-selection'
 import type { HarnessStrategy } from '../strategy'
@@ -35,4 +36,10 @@ export const acpStrategy: HarnessStrategy = {
     ...(session.selectedAcpContextWindow ? { contextWindow: session.selectedAcpContextWindow } : {}),
   }),
   createSelections: (session) => (session.acpAgentId ? { acpAgentId: session.acpAgentId } : {}),
+  /** Only modes SuperOne can drive over the wire (see acpPermissionModes). */
+  permissionCycle: ACP_PERMISSION_MODES,
+  /** Plan is `session/set_mode`: toggle plan vs default rather than cycling. */
+  togglePlan: ({ store, session, target }) => {
+    store.setPermissionMode(session.permissionMode === 'plan' ? 'default' : 'plan', target)
+  },
 }

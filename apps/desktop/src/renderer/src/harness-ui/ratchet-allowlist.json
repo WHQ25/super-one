@@ -208,7 +208,7 @@
     "reason": "pre-registry baseline"
   },
   "stores/chat-store/helpers/interaction.ts": {
-    "count": 11,
+    "count": 4,
     "reason": "pre-registry baseline"
   },
   "stores/chat-store/helpers/provider-routing.ts": {

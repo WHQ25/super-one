@@ -1,6 +1,6 @@
-import type { AgentPrewarmHint, ModelOption } from '@superone/shared/agent-types'
+import type { AgentPrewarmHint, ModelOption, PermissionMode } from '@superone/shared/agent-types'
 import type { SessionSendRequest, SessionSettingsPatch } from '@superone/shared/environment/session-requests'
-import type { ChatStore, PerSessionState, ProjectState } from '@/stores/chat-store/types'
+import type { ChatStore, PerSessionState, ProjectState, SessionWriteTarget } from '@/stores/chat-store/types'
 
 /** A session's model/effort pick, in harness-neutral terms. */
 export interface SelectionState {
@@ -93,6 +93,18 @@ export interface HarnessStrategy {
   queuePolicy: 'always' | 'runs' | 'never'
   /** The send itself marks the turn streaming, before the host reports it. */
   sendStartsStreaming?: boolean
+  /** The permission modes the cycle shortcut steps through. Absent: Claude's cycle. */
+  permissionCycle?: readonly PermissionMode[]
+  /** The cycle shortcut for a harness whose cycle is not permission modes. */
+  cyclePermission?(context: InteractionContext): void
+  /** The plan shortcut. Absent: the cycle shortcut. */
+  togglePlan?(context: InteractionContext): void
+}
+
+export interface InteractionContext {
+  store: ChatStore
+  session: PerSessionState
+  target?: SessionWriteTarget
 }
 
 export interface TurnContext {

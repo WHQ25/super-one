@@ -1,4 +1,5 @@
 import { reconcileOpenCodeSelection, resolveDefaultOpenCodeSelection } from '@/stores/chat-store/harness/opencode-handler'
+import { openCodeAgentsFor } from '@/stores/chat-store/opencode-selectors'
 import { neutralSelection } from '../neutral-selection'
 import type { HarnessStrategy } from '../strategy'
 
@@ -28,4 +29,24 @@ export const opencodeStrategy: HarnessStrategy = {
     desktop: session.openCodeAgentId ? { agent: session.openCodeAgentId } : {},
   }),
   draftSettings: (session) => ({ agent: session.openCodeAgentId }),
+  /** OpenCode has no permission modes; the shortcut steps through its primary agents. */
+  cyclePermission: ({ store, session, target }) => {
+    const agents = openCodeAgentsFor(store, session)
+    if (agents.length === 0) return
+    const index = agents.findIndex((agent) => agent.id === session.openCodeAgentId)
+    store.setOpenCodeAgentId(agents[(index + 1) % agents.length]!.id, target)
+  },
+  togglePlan: ({ store, session, target }) => {
+    const agents = openCodeAgentsFor(store, session)
+    if (session.openCodeAgentId !== 'plan') {
+      if (agents.some((agent) => agent.id === 'plan')) store.setOpenCodeAgentId('plan', target)
+      return
+    }
+    // The runtime keeps its last agent, so leaving Plan must name one: the agent
+    // used before Plan, else OpenCode's built-in default.
+    const next = [session.openCodeAgentBeforePlan, 'build']
+      .find((id) => agents.some((agent) => agent.id === id))
+      ?? agents.find((agent) => agent.id !== 'plan')?.id
+    if (next) store.setOpenCodeAgentId(next, target)
+  },
 }

@@ -69,6 +69,10 @@ export const codexStrategy: HarnessStrategy = {
       ...(current._providerSessionId ? { threadId: current._providerSessionId } : {}),
     },
   }),
+  /** Plan is Codex's collaboration mode, not a permission mode. */
+  togglePlan: ({ store, session, target }) => {
+    store.setSelectedCodexCollaborationMode(session.selectedCodexCollaborationMode === 'plan' ? 'default' : 'plan', target)
+  },
   draftSettings: (session) => ({
     serviceTier: session.selectedCodexServiceTier,
     permissionPreset: session.selectedCodexPermissionPreset,

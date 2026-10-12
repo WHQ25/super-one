@@ -1,24 +1,18 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef, memo } from 'react'
-import { useTranslation } from 'react-i18next'
 import { AnimatePresence, motion } from 'motion/react'
 import { cn } from '@superone/ui/lib/utils'
 import type { TurnOutlineEntry } from './turn-outline'
 
-import { findActiveTurnId, tickWidth, TICK_MIN, TICK_MAX } from '@superone/shared/chat-scroll-indicator'
+import { findActiveTurnId, tickWidth, TICK_MAX } from '@superone/shared/chat-scroll-indicator'
 export { findActiveTurnId } from '@superone/shared/chat-scroll-indicator'
 
 interface ChatScrollIndicatorProps {
   entries: TurnOutlineEntry[]
-  hasCompact: boolean
-  compactExpanded: boolean
-  compactSplit: number
   viewportRef: React.RefObject<HTMLDivElement | null>
   getMessageTop?: (id: string) => number | null
   onJump: (id: string) => void
-  onToggleCompact: () => void
 }
 
-const COMPACT_TICK = 12
 
 function splitTitle(text: string): { title: string; summary: string } {
   const nl = text.indexOf('\n')
@@ -26,23 +20,19 @@ function splitTitle(text: string): { title: string; summary: string } {
   return { title: text.slice(0, nl), summary: text.slice(nl + 1).trim() }
 }
 
-function ChatScrollIndicatorImpl({ entries, hasCompact, compactExpanded, compactSplit, viewportRef, getMessageTop, onJump, onToggleCompact }: ChatScrollIndicatorProps) {
+function ChatScrollIndicatorImpl({ entries, viewportRef, getMessageTop, onJump }: ChatScrollIndicatorProps) {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [hovered, setHovered] = useState<{ index: number; top: number } | null>(null)
-  const [compactHovered, setCompactHovered] = useState<{ top: number } | null>(null)
   const [overflow, setOverflow] = useState({ above: false, below: false })
   const rafRef = useRef(0)
   const outerRef = useRef<HTMLDivElement>(null)
   const stripRef = useRef<HTMLDivElement>(null)
   const previewRef = useRef<HTMLDivElement>(null)
-  const compactRef = useRef<HTMLDivElement>(null)
   const followSuppressedUntil = useRef(0)
   const entriesRef = useRef(entries)
   entriesRef.current = entries
   const elCacheRef = useRef(new Map<string, HTMLElement>())
   const [previewTop, setPreviewTop] = useState<number | null>(null)
-  const [compactTop, setCompactTop] = useState<number | null>(null)
-  const { t } = useTranslation()
 
   const clampCenter = useCallback((rawTop: number, el: HTMLElement | null): number => {
     const outer = outerRef.current
@@ -118,7 +108,7 @@ function ChatScrollIndicatorImpl({ entries, hasCompact, compactExpanded, compact
 
   useLayoutEffect(() => {
     measure()
-  }, [measure, entries.length, hasCompact, compactExpanded])
+  }, [measure, entries.length])
 
   useEffect(() => {
     const el = stripRef.current
@@ -138,16 +128,10 @@ function ChatScrollIndicatorImpl({ entries, hasCompact, compactExpanded, compact
     setPreviewTop(hovered ? clampCenter(hovered.top, previewRef.current) : null)
   }, [hovered, clampCenter])
 
-  useLayoutEffect(() => {
-    setCompactTop(compactHovered ? clampCenter(compactHovered.top, compactRef.current) : null)
-  }, [compactHovered, clampCenter])
-
-  if (entries.length <= 1 && !hasCompact) return null
+  if (entries.length <= 1) return null
 
   const preview = hovered ? entries[hovered.index] : null
-  const compactBase = compactExpanded ? COMPACT_TICK : TICK_MIN
   const overflowing = overflow.above || overflow.below
-  const splitAt = Math.min(compactSplit, entries.length)
 
   const centerTop = (el: HTMLElement): number => {
     const outer = outerRef.current
@@ -158,24 +142,6 @@ function ChatScrollIndicatorImpl({ entries, hasCompact, compactExpanded, compact
     return (r.top - outerRect.top + r.height / 2) / scale
   }
 
-  const renderCompactTick = (): React.ReactNode =>
-    hasCompact && (
-      <button
-        type="button"
-        title={compactExpanded ? t('chat.scrollIndicator.collapseTooltip') : t('chat.scrollIndicator.expandTooltip')}
-        onClick={onToggleCompact}
-        onMouseEnter={(ev) => setCompactHovered({ top: centerTop(ev.currentTarget) })}
-        onMouseLeave={() => setCompactHovered(null)}
-        style={{ width: TICK_MAX }}
-        className="flex shrink-0 cursor-pointer items-center justify-end py-0.5 outline-none"
-      >
-        <span
-          style={{ width: compactHovered ? compactBase + 4 : compactBase }}
-          className="h-0.5 rounded-full bg-amber-500/80 transition-all duration-150"
-        />
-      </button>
-    )
-
   const renderTick = (entry: TurnOutlineEntry, i: number): React.ReactNode => {
     const isActive = entry.id === activeId
     const dist = hovered ? Math.abs(i - hovered.index) : null
@@ -185,6 +151,8 @@ function ChatScrollIndicatorImpl({ entries, hasCompact, compactExpanded, compact
         key={entry.id}
         type="button"
         data-tick={entry.id}
+        aria-label={entry.text}
+        aria-current={isActive ? 'step' : undefined}
         onMouseEnter={(ev) => setHovered({ index: i, top: centerTop(ev.currentTarget) })}
         onMouseLeave={() => setHovered((h) => (h?.index === i ? null : h))}
         onClick={() => {
@@ -215,9 +183,7 @@ function ChatScrollIndicatorImpl({ entries, hasCompact, compactExpanded, compact
           overflowing ? 'justify-start' : 'justify-center',
         )}
       >
-        {entries.slice(0, splitAt).map((entry, i) => renderTick(entry, i))}
-        {renderCompactTick()}
-        {entries.slice(splitAt).map((entry, i) => renderTick(entry, splitAt + i))}
+        {entries.map(renderTick)}
       </div>
       <div
         className={cn(
@@ -235,6 +201,7 @@ function ChatScrollIndicatorImpl({ entries, hasCompact, compactExpanded, compact
         {preview && hovered && (
           <motion.div
             ref={previewRef}
+            role="tooltip"
             initial={{ opacity: 0, x: 4 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 4 }}
@@ -254,27 +221,6 @@ function ChatScrollIndicatorImpl({ entries, hasCompact, compactExpanded, compact
                 </>
               )
             })()}
-          </motion.div>
-        )}
-      </AnimatePresence>
-      <AnimatePresence>
-        {compactHovered && (
-          <motion.div
-            ref={compactRef}
-            initial={{ opacity: 0, x: 4 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 4 }}
-            transition={{ duration: 0.12 }}
-            style={{ top: compactTop ?? compactHovered.top }}
-            className="pointer-events-none absolute right-9 w-64 -translate-y-1/2 rounded-lg border border-border bg-popover p-2.5 text-popover-foreground shadow-lg"
-          >
-            <p className="flex items-center gap-1.5 text-xs font-medium">
-              <span className="h-0.5 w-3 shrink-0 rounded-full bg-amber-500/80" />
-              {t('chat.scrollIndicator.compactTitle')}
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {compactExpanded ? t('chat.scrollIndicator.compactExpandedDesc') : t('chat.scrollIndicator.compactCollapsedDesc')}
-            </p>
           </motion.div>
         )}
       </AnimatePresence>

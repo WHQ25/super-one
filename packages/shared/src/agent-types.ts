@@ -748,6 +748,8 @@ export interface ScheduledSendRemoteTurn {
 export const SCHEDULED_SEND_DEFAULT_MESSAGE = 'Continue'
 
 export interface MessageMetadata {
+  /** Exact content position of a compaction or accepted async answer. */
+  transcriptBoundary?: import('./transcript-boundary').TranscriptBoundary
   model?: string
   /** Harness-native agent used for the turn (for example an OpenCode primary agent). */
   agent?: string
@@ -1930,6 +1932,7 @@ export type AgentEventBase =
   | { type: 'hook_complete'; hook: HookEvent }
   | {
     type: 'compact_boundary'
+    boundary?: import('./transcript-boundary').TranscriptBoundary
     trigger: 'manual' | 'auto'
     preTokens: number
     postTokens?: number

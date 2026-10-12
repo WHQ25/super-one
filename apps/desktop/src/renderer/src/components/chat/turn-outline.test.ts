@@ -17,15 +17,16 @@ function msg(over: Partial<ChatMessage>): ChatMessage {
 const text = (t: string): ContentBlock => ({ type: 'text', text: t })
 
 describe('extractTurnOutline', () => {
-  it('extracts user turns with id, text, createdAt and reply in order', () => {
+  it('extracts user and assistant segments with their own content in order', () => {
     const out = extractTurnOutline([
       msg({ id: 'u1', content: [text('first question')], createdAt: 'a' }),
       msg({ id: 'a1', role: 'assistant', content: [text('answer')] }),
       msg({ id: 'u2', content: [text('second question')], createdAt: 'b' }),
     ])
-    expect(out).toEqual([
+    expect(out).toMatchObject([
       { id: 'u1', index: 0, text: 'first question', createdAt: 'a', reply: 'answer' },
-      { id: 'u2', index: 2, text: 'second question', createdAt: 'b', reply: undefined },
+      { id: 'a1', messageId: 'a1', text: 'answer' },
+      { id: 'u2', index: 2, text: 'second question', createdAt: 'b' },
     ])
   })
 
@@ -43,9 +44,9 @@ describe('extractTurnOutline', () => {
     expect(out[0].reply).toBeUndefined()
   })
 
-  it('excludes assistant messages', () => {
+  it('navigates an assistant segment without a preceding user message', () => {
     const out = extractTurnOutline([msg({ role: 'assistant', content: [text('hi')] })])
-    expect(out).toEqual([])
+    expect(out).toMatchObject([{ id: 'm', text: 'hi' }])
   })
 
   it('excludes compact markers (providerId system)', () => {
@@ -88,11 +89,11 @@ describe('extractTurnOutline', () => {
       msg({ id: 'c', providerId: 'system', content: [text('__compact__:auto:1200')] }),
       msg({ id: 'a', role: 'assistant', content: [text('answer')] }),
     ])
-    expect(out).toHaveLength(1)
+    expect(out).toHaveLength(2)
     expect(out[0].reply).toBe('answer')
   })
 
-  it('reports the source array index so callers can locate the compact split', () => {
+  it('keeps source positions while excluding compaction from the outline', () => {
     const messages = [
       msg({ id: 'u1', content: [text('q1')] }),
       msg({ id: 'a1', role: 'assistant', content: [text('a1')] }),
@@ -103,6 +104,6 @@ describe('extractTurnOutline', () => {
     const compactIdx = 2
     const recent = out.filter((e) => e.index >= compactIdx).length
     expect(recent).toBe(1)
-    expect(out.length - recent).toBe(1)
+    expect(out.length - recent).toBe(2)
   })
 })

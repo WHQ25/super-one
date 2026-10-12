@@ -1,26 +1,11 @@
-import type { ChatMessage } from '@superone/shared/agent-types'
-import { extendHistoryIndex, HISTORY_PREVIEW_LENGTH, type SessionHistoryIndex } from '@superone/shared/session-history-index'
+import { extendHistoryIndex, type SessionHistoryIndex } from '@superone/shared/session-history-index'
+import { loadHistoryOutlineMessages } from './history-outline-projection'
 import { getDb } from '../database'
 import { loadSessionMessagesPaginated } from '../db-sessions'
 
-/** SQLite projects text previews; tool payloads/metadata never enter this result. */
+/** Navigation includes every content segment while SQLite bounds its text previews. */
 export function loadSessionHistoryIndex(sessionId: string): SessionHistoryIndex {
-  const rows = getDb().prepare(`
-    SELECT id, role, provider_id, created_at,
-      substr((SELECT group_concat(preview, char(10)) FROM (
-        SELECT substr(json_extract(block.value, '$.text'), 1, ?) AS preview
-        FROM json_each(CASE WHEN json_type(content_json) = 'array'
-          THEN content_json ELSE json_extract(content_json, '$.content') END) AS block
-        WHERE json_extract(block.value, '$.type') = 'text' LIMIT 2
-      )), 1, ?) AS preview
-    FROM chat_messages WHERE session_id = ? ORDER BY sort_order ASC
-  `).all(HISTORY_PREVIEW_LENGTH, HISTORY_PREVIEW_LENGTH, sessionId) as {
-    id: string; role: ChatMessage['role']; provider_id: string; created_at: string; preview: string | null
-  }[]
-  return extendHistoryIndex({ messageIds: [], entries: [], compacts: [] }, rows.map(row => ({
-    id: row.id, role: row.role, providerId: row.provider_id, createdAt: row.created_at,
-    status: 'complete', content: row.preview ? [{ type: 'text', text: row.preview }] : [],
-  })))
+  return extendHistoryIndex({ messageIds: [], entries: [], compacts: [] }, loadHistoryOutlineMessages(sessionId))
 }
 
 export function loadSessionMessageWindow(sessionId: string, anchorId: string, direction: 'around' | 'before' | 'after', limit = 8) {

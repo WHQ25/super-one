@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { AlertTriangle, ChevronRight, Loader2, Minimize2, X } from 'lucide-react'
+import { AlertTriangle, Loader2, Minimize2, X } from 'lucide-react'
 import { isRealtimeVoiceMessage } from '@superone/shared/realtime-transcript'
 import type { ChatMessage } from '@superone/shared/agent-types'
 import { formatCompactDuration } from './duration-format'
@@ -138,15 +138,11 @@ export function CompactIndicator({
   preTokens,
   postTokens,
   durationMs,
-  expanded,
-  onToggle,
 }: {
   trigger: string
   preTokens: number
   postTokens?: number
   durationMs?: number
-  expanded?: boolean
-  onToggle?: () => void
 }) {
   const { t } = useTranslation()
   const pillClass = 'inline-flex items-center whitespace-nowrap rounded bg-primary/15 px-1.5 py-px text-xs text-primary/80'
@@ -154,7 +150,7 @@ export function CompactIndicator({
     <div className="my-0.5 flex items-center gap-1.5 rounded bg-primary/10 px-2 py-1.5 text-xs">
       <Minimize2 className="size-3 shrink-0 text-primary" />
       <span className="shrink-0 font-medium text-primary">{t('chat.compaction.compacted')}</span>
-      {/* The leftover slot between the title and the toggle owns the pills.
+      {/* The leftover slot after the title owns the pills.
           When it cannot hold them, drop the whole group rather than wrapping. */}
       <div className="@container min-w-0 flex-1 overflow-hidden">
         <div className="compact-indicator-meta">
@@ -170,12 +166,6 @@ export function CompactIndicator({
           )}
         </div>
       </div>
-      {onToggle && (
-        <button type="button" aria-expanded={expanded ?? false} onClick={onToggle} className="flex shrink-0 items-center gap-1 text-primary/60 transition-colors hover:text-primary">
-          <span>{t(expanded ? 'chat.compaction.hideHistory' : 'chat.compaction.showHistory')}</span>
-          <ChevronRight aria-hidden className={expanded ? 'size-3 -rotate-90' : 'size-3 rotate-90'} />
-        </button>
-      )}
     </div>
   )
 }

@@ -1,14 +1,15 @@
 import type { AgentEvent, ChatMessage, HarnessId } from './agent-types'
+import { captureTranscriptBoundary } from './transcript-boundary'
 
 export type CompactBoundaryEvent = Extract<AgentEvent, { type: 'compact_boundary' }>
 
 /**
  * System row that marks where the context was compacted. The renderer parses
- * the `__compact__:` text back into a divider; the history index reads it for
- * navigation. Shared so main (persisted snapshot) and the live reducers
+ * the `__compact__:` text back into a divider; the history index keeps it
+ * separate from content entries. Shared so main (persisted snapshot) and the live reducers
  * (renderer, mobile) all mint an identical row for one event.
  */
-export function buildCompactBoundaryMessage(event: CompactBoundaryEvent, id: string, createdAt: string): ChatMessage {
+export function buildCompactBoundaryMessage(event: CompactBoundaryEvent, id: string, createdAt: string, source?: ChatMessage, messages: readonly ChatMessage[] = []): ChatMessage {
   return {
     id,
     role: 'assistant',
@@ -16,14 +17,14 @@ export function buildCompactBoundaryMessage(event: CompactBoundaryEvent, id: str
     content: [{ type: 'text', text: `__compact__:${event.trigger}:${event.preTokens}:${event.postTokens ?? ''}:${event.durationMs ?? ''}` }],
     createdAt,
     providerId: 'system',
+    ...(event.boundary || source ? { metadata: { transcriptBoundary: event.boundary ?? captureTranscriptBoundary(source!, messages) } } : {}),
   }
 }
 
 /**
- * A boundary marks the exact point where the old context was compacted. Keep
- * only the live continuation below it; everything already completed belongs to
- * the compacted history. This also handles goal mode, where several assistant
- * turns can run after the most recent user message.
+ * Retain the existing persistence order around the provider-owned live message.
+ * The boundary cursor projects its completed prefix above the divider and its
+ * continuation below it, without changing the event-routing message ID.
  */
 export function compactBoundaryInsertIndex(messages: readonly ChatMessage[]): number {
   const liveIdx = messages.findLastIndex((m) => m.role === 'assistant' && m.status === 'streaming')

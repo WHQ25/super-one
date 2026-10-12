@@ -70,6 +70,8 @@ export * from './presenters/ChatMessageIndicators'
 
 interface ChatMessageProps {
   message: ChatMessageType
+  sourceMessage?: ChatMessageType
+  showFooter?: boolean
   sessionStatus: AgentStatus
   isLastAssistant: boolean
   hideUserActions?: boolean
@@ -135,6 +137,8 @@ function UserContentBlock({ block, index }: { block: ContentBlock; index: number
 
 export const ChatMessage = memo(function ChatMessage({
   message,
+  sourceMessage = message,
+  showFooter = true,
   sessionStatus,
   isLastAssistant,
   hideUserActions,
@@ -158,7 +162,7 @@ export const ChatMessage = memo(function ChatMessage({
   const isInitialTask = isCollab && message.metadata?.collaboration?.kind === 'initial_task'
   // Copy text is only needed once the turn settles (the copy button is hidden while streaming),
   // so skip deriving the full concatenated text on every delta of the live message.
-  const assistantCopyText = isStreaming || hideCopyActions ? undefined : getAssistantCopyText(message)
+  const assistantCopyText = isStreaming || hideCopyActions ? undefined : getAssistantCopyText(sourceMessage)
 
   const apps = useMiniAppStore((s) => s.apps)
   const grouped = useMemo(
@@ -221,7 +225,7 @@ export const ChatMessage = memo(function ChatMessage({
   const copyUserMessage = () => runUserCopy(() => (asyncCopyText ? tryCopy(asyncCopyText) : hasUserChips
     ? tryCopyRich(userText, userCopyHtml(userCopyParts))
     : tryCopy(userText)))
-  const assistantFooter = !isUser ? (
+  const assistantFooter = !isUser && showFooter ? (
     <DurationFooter
       message={message}
       copyText={assistantCopyText}
@@ -239,6 +243,7 @@ export const ChatMessage = memo(function ChatMessage({
       isStreaming={isStreaming}
       isWorking={isWorking}
       isLastAssistant={isLastAssistant}
+      virtualize={(sourceMessage.metadata?.codex?.items.length ?? 0) >= 80}
       collapseEntireTurn={collapseEntireCodexTurn}
       footer={collapseEntireCodexTurn ? assistantFooter : undefined}
     />
@@ -249,7 +254,7 @@ export const ChatMessage = memo(function ChatMessage({
         isStreaming={isStreaming}
         detailChatMode={detailChatMode}
         projectPath={projectPath}
-        parts={grouped!.segments.length >= 80 ? LONG_CONTENT_BLOCK_TURN_PARTS : CLAUDE_TURN_PARTS}
+        parts={(grouped!.segments.length >= 80 || sourceMessage.content.length >= 80) ? LONG_CONTENT_BLOCK_TURN_PARTS : CLAUDE_TURN_PARTS}
         runtime={CLAUDE_TURN_RUNTIME}
       />
     </ModMessageScope>
@@ -311,7 +316,7 @@ export const ChatMessage = memo(function ChatMessage({
           : undefined}
         interrupted={message.status === 'interrupted'}
         interruptedLabel={t('chat.interrupted')}
-        turnSummary={message.metadata?.turnSummary
+        turnSummary={showFooter && message.metadata?.turnSummary
           ? <TurnSummaryAboveFooter summary={message.metadata.turnSummary} />
           : undefined}
         assistantFooter={assistantFooter}

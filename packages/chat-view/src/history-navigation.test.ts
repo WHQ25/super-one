@@ -5,8 +5,8 @@ import { contiguousHistoryRange, globalHistoryRange, needsHistoryPage } from './
 const row = (i: number): ChatMessage => ({ id: `m${i}`, role: i % 2 ? 'assistant' : 'user', providerId: 'claude', status: 'complete', createdAt: '', content: [{ type: 'text', text: `Text ${i}` }] })
 const all = Array.from({ length: 100 }, (_, i) => row(i))
 const index = extendHistoryIndex({ messageIds: [], entries: [], compacts: [] }, all)
-it('keeps all fifty ticks while only eight messages are cached', () => {
-  expect(extendHistoryIndex(index, all.slice(-8)).entries).toHaveLength(50)
+it('keeps all message ticks while only eight messages are cached', () => {
+  expect(extendHistoryIndex(index, all.slice(-8)).entries).toHaveLength(100)
 })
 it('does not mount across a gap and asks for the missing neighboring page', () => {
   const sparse = [...all.slice(18,26), ...all.slice(-8)]

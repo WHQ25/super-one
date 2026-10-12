@@ -52,8 +52,11 @@ export function extendHistoryIndex(base: SessionHistoryIndex, messages: ChatMess
     if (!run || positions.get(message.id)! !== positions.get(run.at(-1)!.id)! + 1) runs.push([message])
     else run.push(message)
   }
-  for (const entry of runs.flatMap(extractTurnOutline)) {
-    entries.set(entry.id, { ...entries.get(entry.id), ...entry, index: positions.get(entry.id)!,
+  const loaded = new Set(messages.map(message => message.id))
+  for (const [id, entry] of entries) if (loaded.has(entry.messageId ?? id)) entries.delete(id)
+  for (const entry of runs.flatMap(run => extractTurnOutline(run))) {
+    entries.set(entry.id, { ...entries.get(entry.id), ...entry, index: positions.get(entry.anchorId ?? entry.id)!,
+      messageIndex: positions.get(entry.messageId ?? entry.id)!,
       text: entry.text.slice(0, HISTORY_PREVIEW_LENGTH),
       reply: entry.reply?.slice(0, HISTORY_PREVIEW_LENGTH) ?? entries.get(entry.id)?.reply })
   }
@@ -64,7 +67,7 @@ export function extendHistoryIndex(base: SessionHistoryIndex, messages: ChatMess
       compacts.set(message.id, { id: message.id, index: positions.get(message.id)! })
     }
   }
-  return { messageIds, entries: [...entries.values()].sort((a, b) => a.index - b.index),
+  return { messageIds, entries: [...entries.values()].sort((a, b) => a.index - b.index || (a.offset ?? 0) - (b.offset ?? 0)),
     compacts: [...compacts.values()].sort((a, b) => a.index - b.index) }
 }
 

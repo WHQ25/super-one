@@ -408,8 +408,9 @@ export function createCodexAgentEventMapper(
   let lastItemCompletedAt = startedAt
   let started = false
   let terminal = false
-  let activeCompaction: { turnId: string | null; startedAt: number; preTokens: number } | null = null
+  let activeCompaction: { turnId: string | null; itemId: string | null; startedAt: number; preTokens: number } | null = null
   const completedCompactionTurns = new Set<string>()
+  const completedCompactionItems = new Set<string>()
   const compactionTrigger: 'manual' | 'auto' = options.turnKind === 'compact' ? 'manual' : 'auto'
 
   const upsert = (item: CodexThreadItem) => {
@@ -425,10 +426,13 @@ export function createCodexAgentEventMapper(
   const finishStatus = () => options.emit({ type: 'status_change', status: 'idle' })
   const startCompaction = (params: Record<string, unknown>) => {
     const turnId = readString(params.turnId) ?? readString(params.turn_id) ?? currentTurnId
-    if (turnId && completedCompactionTurns.has(turnId)) return
+    const itemId = readCodexItemId(params)
+    if (itemId && completedCompactionItems.has(itemId)) return
     if (activeCompaction && (!activeCompaction.turnId || !turnId || activeCompaction.turnId === turnId)) {
+      if (itemId) activeCompaction.itemId = itemId
       if (!activeCompaction.turnId && turnId) {
         activeCompaction = {
+          ...activeCompaction,
           turnId,
           startedAt: readNumber(params.startedAtMs ?? params.started_at_ms) ?? activeCompaction.startedAt,
           preTokens: currentUsage?.lastInputTokens ?? activeCompaction.preTokens,
@@ -438,6 +442,7 @@ export function createCodexAgentEventMapper(
     }
     activeCompaction = {
       turnId,
+      itemId,
       startedAt: readNumber(params.startedAtMs ?? params.started_at_ms) ?? now(),
       preTokens: currentUsage?.lastInputTokens ?? 0,
     }
@@ -445,7 +450,8 @@ export function createCodexAgentEventMapper(
   }
   const completeCompaction = (params: Record<string, unknown>) => {
     const turnId = readString(params.turnId) ?? readString(params.turn_id) ?? currentTurnId
-    if (turnId && completedCompactionTurns.has(turnId)) return
+    const itemId = readCodexItemId(params)
+    if (itemId ? completedCompactionItems.has(itemId) : !activeCompaction && turnId && completedCompactionTurns.has(turnId)) return
     if (!activeCompaction) startCompaction(params)
     const current = activeCompaction
     if (!current) return
@@ -462,6 +468,7 @@ export function createCodexAgentEventMapper(
     options.emit({ type: 'status_indicator', indicator: null, compactResult: 'success' })
     const completedTurnId = turnId ?? current.turnId
     if (completedTurnId) completedCompactionTurns.add(completedTurnId)
+    if (itemId ?? current.itemId) completedCompactionItems.add((itemId ?? current.itemId)!)
     activeCompaction = null
   }
   const fail = (

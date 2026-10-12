@@ -8,6 +8,7 @@ import { transcriptInteractionSnapshot } from './transcript-interaction'
 
 export interface VirtualTranscriptItem {
   id: string
+  sourceId?: string
   content: ReactNode
   estimate?: number
 }
@@ -29,7 +30,11 @@ export function VirtualTranscriptList({ items, viewportRef, apiRef }: {
   const states = useRef(new Map<string, unknown>()).current
   const retention = useRef(Symbol('virtual-transcript')).current
   useLayoutEffect(() => retainMcpAppTranscript(retention), [retention])
-  const indexById = useMemo(() => new Map(items.map((item, index) => [item.id, index])), [items])
+  const indexById = useMemo(() => {
+    const indices = new Map(items.map((item, index) => [item.id, index]))
+    items.forEach((item, index) => { if (item.sourceId && !indices.has(item.sourceId)) indices.set(item.sourceId, index) })
+    return indices
+  }, [items])
   const [pinnedIds, setPinnedIds] = useState<string[]>([])
   const [scrollMargin, setScrollMargin] = useState(0)
   const small = items.length <= SMALL_LIST
@@ -115,8 +120,7 @@ export function VirtualTranscriptList({ items, viewportRef, apiRef }: {
     return () => resize.disconnect()
   }, [viewportRef])
 
-  // State belongs to the session, including history temporarily hidden by
-  // compaction. The keyed transcript releases this cache on session switch.
+  // The keyed transcript releases session-owned state on session switch.
 
   // A new session initially opens at the end, even when no useChatScroll host is mounted (stories).
   useLayoutEffect(() => {
@@ -127,15 +131,15 @@ export function VirtualTranscriptList({ items, viewportRef, apiRef }: {
     jumpTo(id) {
       const index = indexById.get(id)
       if (index === undefined) return
-      if (small) listRef.current?.querySelector(`[data-message-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: 'start' })
+      if (small) listRef.current?.querySelector(`[data-message-id="${CSS.escape(items[index].id)}"]`)?.scrollIntoView({ block: 'start' })
       else virtualizerRef.current.scrollToIndex(index, { align: 'start' })
     },
     topOf(id) {
       const viewport = viewportRef.current
       if (!viewport) return null
-      const element = listRef.current?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(id)}"]`)
-      if (element) return element.getBoundingClientRect().top
       const index = indexById.get(id)
+      const element = listRef.current?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(index === undefined ? id : items[index].id)}"]`)
+      if (element) return element.getBoundingClientRect().top
       if (index === undefined) return null
       // Unmounted suffix rows still have real logical positions. The scroll-to
       // API clamps to the maximum offset and cannot be used for the outline.

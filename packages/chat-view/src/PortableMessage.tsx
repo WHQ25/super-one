@@ -99,6 +99,9 @@ function useGeneratedMedia(message: ChatMessage, isCodex: boolean) {
 
 export const PortableMessage = memo(function PortableMessage({
   message,
+  segmentId = message.id,
+  sourceMessage = message,
+  showFooter = true,
   scheme,
   pendingPermission,
   mentionArtwork = {},
@@ -113,6 +116,9 @@ export const PortableMessage = memo(function PortableMessage({
   asyncQuestions,
 }: {
   message: ChatMessage
+  segmentId?: string
+  sourceMessage?: ChatMessage
+  showFooter?: boolean
   scheme: 'light' | 'dark'
   pendingPermission: PendingPermission | null
   mentionArtwork?: Record<string, string>
@@ -196,8 +202,8 @@ export const PortableMessage = memo(function PortableMessage({
   // Copy text is only needed once the turn settles (the button hides while
   // streaming), so skip concatenating the whole turn on every delta.
   const copyText = useMemo(
-    () => (isUser || isStreaming || hideCopyActions ? undefined : getAssistantCopyText(message)),
-    [isUser, isStreaming, hideCopyActions, message],
+    () => (isUser || isStreaming || hideCopyActions ? undefined : getAssistantCopyText(sourceMessage)),
+    [isUser, isStreaming, hideCopyActions, sourceMessage],
   )
   // A collaboration bubble sits on the left, so its menu hugs that edge too;
   // the launch task is the exception and keeps the right edge like user input.
@@ -211,7 +217,7 @@ export const PortableMessage = memo(function PortableMessage({
   return (
     <PortableTurnProvider scheme={scheme} pendingPermission={pendingPermission} projectPath={projectPath} sourceEnvironmentId={sourceEnvironmentId} mcpIcons={mcpIcons}>
       <PortableUserBubblePorts mentionArtwork={mentionArtwork}>
-      <article data-turn-id={message.id} data-message-role={message.role} data-message-status={message.status}>
+      <article data-turn-id={segmentId} data-message-role={message.role} data-message-status={message.status}>
         <ChatMessagePresenter
           isUser={isUser}
           isCollaboration={isCollaboration}
@@ -241,10 +247,10 @@ export const PortableMessage = memo(function PortableMessage({
             : undefined}
           interrupted={message.status === 'interrupted'}
           interruptedLabel={t('chat.interrupted')}
-          turnSummary={message.metadata?.turnSummary
+          turnSummary={showFooter && message.metadata?.turnSummary
             ? <TurnSummaryAboveFooter summary={message.metadata.turnSummary} />
             : undefined}
-          assistantFooter={isUser
+          assistantFooter={isUser || !showFooter
             ? undefined
             : (
               <PortableTurnFooter

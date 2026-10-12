@@ -248,6 +248,19 @@ describe('Codex AgentEvent mapper', () => {
     expect(mapper.items()).toEqual([])
   })
 
+  it('emits multiple distinct compactions within one turn while deduplicating completed items', () => {
+    const events: AgentEvent[] = []
+    const mapper = createCodexAgentEventMapper({ messageId: 'message', emit: event => events.push(event) })
+    mapper.start('thread')
+    for (const id of ['first', 'second']) {
+      mapper.apply({ method: 'item/started', params: { turnId: 'turn', item: { id, type: 'contextCompaction' } } })
+      mapper.apply({ method: 'item/completed', params: { turnId: 'turn', item: { id, type: 'contextCompaction' } } })
+      mapper.apply({ method: 'item/completed', params: { turnId: 'turn', item: { id, type: 'contextCompaction' } } })
+      mapper.apply({ method: 'thread/compacted', params: { turnId: 'turn', threadId: 'thread' } })
+    }
+    expect(events.filter(event => event.type === 'compact_boundary')).toHaveLength(2)
+  })
+
   it('keeps async agent delivery out of the inline final response', () => {
     const events: AgentEvent[] = []
     const mapper = createCodexAgentEventMapper({ messageId: 'm', emit: (event) => events.push(event) })

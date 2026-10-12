@@ -68,7 +68,6 @@
 }
 .chat-scroll-tick > span[data-hovered="true"] { background: color-mix(in srgb, var(--foreground) 80%, transparent); }
 .chat-scroll-tick > span[data-active="true"] { background: var(--primary); }
-.chat-scroll-tick > span[data-compact="true"] { background: color-mix(in srgb, var(--warning) 80%, transparent); }
 .chat-scroll-fade { position: absolute; inset-inline: 0; height: 20px; opacity: 0; pointer-events: none; }
 .chat-scroll-fade[data-visible="true"] { opacity: 1; }
 .chat-scroll-fade.top { top: 0; border-radius: 999px 999px 0 0; background: linear-gradient(var(--rail-fade), transparent); }

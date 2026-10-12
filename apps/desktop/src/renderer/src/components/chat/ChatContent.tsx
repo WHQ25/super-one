@@ -39,7 +39,8 @@ import { groupPendingPermissions } from '@superone/shared/input-request-presenta
 import { buildDecisionQueue } from './composer-slot/decision-queue'
 import { useDecisionComposerAvailability } from './composer-slot/useDecisionComposerAvailability'
 import { useRestoreChatInputFocus } from '@/hooks/useRestoreChatInputFocus'
-import { extractTurnOutline } from './turn-outline'
+import { useTurnOutline } from '@superone/chat-view/use-turn-outline'
+import { transcriptSegments } from '@superone/shared/transcript-segments'
 import { ChatRootContext } from './is-focus-in-chat'
 import { DesktopModUi } from '@/lib/mod-ui/DesktopModUi'
 import { ModPaneDockSync } from './mod/ModSurfaces'
@@ -188,26 +189,13 @@ function ChatTranscript({
 
   const transcriptRef = useRef<VirtualTranscriptHandle>(null)
   const messageTop = useCallback((id: string) => transcriptRef.current?.topOf(id) ?? null, [])
-  const [expandLevel, setExpandLevel] = useState(0)
   const messagesLen = displayMessages.length
   const messagesTailId = displayMessages[messagesLen - 1]?.id
-  const compactIndices = useMemo(
-    () => displayMessages.flatMap((msg, i) => (parseCompactMarker(msg) ? [i] : [])),
-    // messages identity churns on every streaming delta; compact markers only change
-    // when messages are added/removed, captured by length + tail id.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [messagesLen, messagesTailId]
-  )
-  const visibleStart =
-    compactIndices.length > 0 && expandLevel < compactIndices.length
-      ? compactIndices[compactIndices.length - 1 - expandLevel]
-      : 0
-  const visibleMessages = visibleStart > 0 ? displayMessages.slice(visibleStart) : displayMessages
-
+  const segments = useMemo(() => transcriptSegments(displayMessages), [displayMessages])
   const messagesTailCreatedAt = displayMessages[messagesLen - 1]?.createdAt
   const dateSeparatorAt = useMemo(
     () => dateSeparators(displayMessages, Date.now()),
-    // Same churn guard as compactIndices; the tail's createdAt can still be corrected mid-turn.
+    // The tail's timestamp can still be corrected mid-turn.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [messagesLen, messagesTailId, messagesTailCreatedAt]
   )
@@ -215,37 +203,11 @@ function ChatTranscript({
   // by the Claude SDK and by the ACP backends.
   const modelCatalog = useMemo(() => [...claudeModels, ...acpModels], [claudeModels, acpModels])
 
-  const outline = useMemo(
-    () => extractTurnOutline(visibleMessages),
-    // Recompute only when the visible set changes (add/remove/compact expand) or the turn
-    // finishes — not on every streaming text delta (visibleMessages identity churns each delta).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [visibleMessages.length, messagesTailId, sessionStatus]
-  )
-  const hasCompact = compactIndices.length > 0
-  const recentTurnCount = useMemo(() => {
-    if (!hasCompact) return outline.length
-    const lastCompactIdx = compactIndices[compactIndices.length - 1]
-    return outline.filter((e) => e.index >= lastCompactIdx - visibleStart).length
-  }, [hasCompact, outline, compactIndices, visibleStart])
-  const compactSplit = Math.max(0, outline.length - recentTurnCount)
-  const compactExpanded = expandLevel >= compactIndices.length
-  const toggleCompact = useCallback(() => {
-    setExpandLevel((lvl) => (lvl >= compactIndices.length ? 0 : compactIndices.length))
-  }, [compactIndices.length, scrollViewportRef])
+  const outline = useTurnOutline(displayMessages, segments)
   const [jumpNonce, setJumpNonce] = useState(0)
   const pendingScrollIdRef = useRef<string | null>(null)
-  const messagesRef = useRef(displayMessages)
-  messagesRef.current = displayMessages
-  const compactIndicesRef = useRef(compactIndices)
-  compactIndicesRef.current = compactIndices
   const jumpToMessage = useCallback((id: string) => {
-    const msgs = messagesRef.current
-    const targetIdx = msgs.findIndex((m) => m.id === id)
-    if (targetIdx < 0) return
     stopAutoScroll?.()
-    const needed = compactIndicesRef.current.filter((ci) => ci > targetIdx).length
-    setExpandLevel((prev) => Math.max(prev, needed))
     pendingScrollIdRef.current = id
     setJumpNonce((n) => n + 1)
   }, [stopAutoScroll])
@@ -271,7 +233,7 @@ function ChatTranscript({
     if (!id) return
     transcriptRef.current?.jumpTo(id)
     pendingScrollIdRef.current = null
-  }, [jumpNonce, expandLevel])
+  }, [jumpNonce])
 
   return (
     <div className="relative min-w-0 flex-1 overflow-hidden">
@@ -295,11 +257,12 @@ function ChatTranscript({
       ) : (
         <ScrollArea key={displayedSessionId ?? 'default'} className="chat-scroll-area chat-transcript-layout h-full min-w-0" viewportRef={scrollViewportRef}>
           <SelectionContextMenuZone className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-1 p-3 @lg:gap-1.5 @lg:p-3.5 @2xl:gap-1.5 @2xl:p-4">
-            <VirtualTranscriptList key={displayedSessionId ?? 'default'} viewportRef={scrollViewportRef} apiRef={transcriptRef} items={visibleMessages.map((msg) => {
+            <VirtualTranscriptList key={displayedSessionId ?? 'default'} viewportRef={scrollViewportRef} apiRef={transcriptRef} items={segments.map((segment) => {
+              const msg = segment.message
               const fallbackMeta = msg.metadata?.modelFallback
               if (fallbackMeta) {
                 return (
-                  <div key={msg.id} data-message-id={msg.id} className="chat-message-wrapper">
+                  <div key={msg.id} data-message-id={segment.id} className="chat-message-wrapper">
                     <ModelFallbackRow meta={fallbackMeta} models={modelCatalog} />
                   </div>
                 )
@@ -308,28 +271,18 @@ function ChatTranscript({
               if (pluginNotice) {
                 const text = msg.content[0]?.type === 'text' ? msg.content[0].text : ''
                 return (
-                  <div key={msg.id} data-message-id={msg.id} className="chat-message-wrapper">
+                  <div key={msg.id} data-message-id={segment.id} className="chat-message-wrapper">
                     <PluginNoticeRow meta={pluginNotice} text={text} />
                   </div>
                 )
               }
               const compactInfo = parseCompactMarker(msg)
               if (compactInfo) {
-                const origIdx = displayMessages.indexOf(msg)
-                const rank = compactIndices.length - 1 - compactIndices.indexOf(origIdx)
-                const isExpanded = rank < expandLevel
                 return (
-                  <CompactIndicator
-                    key={msg.id}
-                    trigger={compactInfo.trigger}
-                    preTokens={compactInfo.preTokens}
-                    postTokens={compactInfo.postTokens}
-                    durationMs={compactInfo.durationMs}
-                    expanded={isExpanded}
-                    onToggle={() => {
-                      setExpandLevel(isExpanded ? rank : rank + 1)
-                    }}
-                  />
+                  <div key={segment.id} data-message-id={segment.id}>
+                    <CompactIndicator trigger={compactInfo.trigger} preTokens={compactInfo.preTokens}
+                      postTokens={compactInfo.postTokens} durationMs={compactInfo.durationMs} />
+                  </div>
                 )
               }
               const turnMeta = parseTurnMetaMarker(msg)
@@ -337,20 +290,20 @@ function ChatTranscript({
                 // Metadata path already shows this summary above the footer.
                 if (isRedundantTurnSummaryMarker(turnMeta, displayMessages)) return null
                 return (
-                  <div key={msg.id} data-message-id={msg.id} className="chat-message-wrapper">
+                  <div key={msg.id} data-message-id={segment.id} className="chat-message-wrapper">
                     <TurnMetaIndicator meta={turnMeta} />
                   </div>
                 )
               }
               // Only plain turns open a day: every row above is a system row.
-              const separatorAt = dateSeparatorAt.get(msg.id)
+              const separatorAt = (segment.id === msg.id ? dateSeparatorAt.get(msg.id) : undefined)
               return (
-                <div key={msg.id} data-message-id={msg.id} className="chat-message-wrapper">
+                <div key={msg.id} data-message-id={segment.id} className="chat-message-wrapper">
                   {separatorAt !== undefined && <MessageDateSeparator at={separatorAt} />}
-                  <ChatMessage message={msg} sessionStatus={sessionStatus} isLastAssistant={msg.id === displayLastAssistantMessageId} />
+                  <ChatMessage message={msg} sessionStatus={sessionStatus} isLastAssistant={segment.final && msg.id === displayLastAssistantMessageId} showFooter={segment.final} sourceMessage={segment.source} />
                 </div>
               )
-            }).map((content, index) => ({ id: visibleMessages[index].id, content })).filter(item => item.content !== null)} />
+            }).map((content, index) => ({ id: segments[index].id, sourceId: segments[index].source.id, content })).filter(item => item.content !== null)} />
             {queuedMessages.map((msg, index) => (
               <div key={msg.id} className="group/queued chat-message-wrapper opacity-50">
                 <ChatMessage message={msg} sessionStatus={sessionStatus} isLastAssistant={false} hideUserActions />
@@ -400,7 +353,7 @@ function ChatTranscript({
         </ScrollArea>
       )}
       {displayMessages.length > 0 && (
-        <ChatScrollIndicator entries={outline} hasCompact={hasCompact} compactExpanded={compactExpanded} compactSplit={compactSplit} viewportRef={scrollViewportRef} getMessageTop={messageTop} onJump={jumpToMessage} onToggleCompact={toggleCompact} />
+        <ChatScrollIndicator entries={outline} viewportRef={scrollViewportRef} getMessageTop={messageTop} onJump={jumpToMessage} />
       )}
       {!liquidGlass && <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-6 bg-linear-to-t from-card to-transparent" />}
       <AnimatePresence>

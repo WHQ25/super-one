@@ -5,6 +5,7 @@ import { nativeAsyncAnswerClient } from './native-async-answer-client.test-fixtu
 import { ChatRuntime } from '../../../../mobile/src/runtime'
 import { answerRemoteAsyncQuestion } from '../agent/remote-async-question'
 import { Session } from './session'
+import { transcriptSegments } from '@superone/shared/transcript-segments'
 import type { SessionBackend } from './types'
 
 vi.mock('../logger', () => ({ default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() } }))
@@ -27,6 +28,41 @@ const answer = { kind: 'codex.steer' as const, input: 'Production', newAssistant
   newUserMessageId: 'codex_async_answer:question', newUserText: 'Production' }
 
 describe('Codex async answers across turn completion', () => {
+  it('persists and broadcasts both exact compaction cursors in a continuing provider message', () => {
+    const { session, emit } = fixture()
+    const outbound: AgentEvent[] = []
+    session.on(event => outbound.push(event))
+    emit({ type: 'message_start', message: { id: 'turn', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'codex' } })
+    for (const [item, boundary] of [['before', 'first'], ['middle', 'second']] as const) {
+      emit({ type: 'codex_item_delta', messageId: 'turn', phase: 'completed', item: { id: item, type: 'agent_message', text: item } })
+      emit({ type: 'compact_boundary', id: boundary, trigger: 'auto', preTokens: 100 })
+    }
+    emit({ type: 'codex_item_delta', messageId: 'turn', phase: 'completed', item: { id: 'after', type: 'agent_message', text: 'after' } })
+    const rows = session.snapshot.messages
+    const boundaries = outbound.filter(event => event.type === 'compact_boundary')
+    expect(boundaries).toHaveLength(2)
+    expect(boundaries.map(event => event.boundary)).toEqual(['first', 'second'].map(id => rows.find(row => row.id === id)?.metadata?.transcriptBoundary))
+    expect(transcriptSegments(JSON.parse(JSON.stringify(rows))).map(segment => segment.id))
+      .toEqual(['turn', 'first', 'turn:after:first', 'second', 'turn:after:second'])
+  })
+
+  it('persists the accepted-answer cursor before continuation items arrive', async () => {
+    const { session, backend, emit } = fixture()
+    emit({ type: 'status_change', status: 'streaming' })
+    emit({ type: 'message_start', message: { id: 'turn', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'codex' } })
+    emit({ type: 'codex_item_delta', messageId: 'turn', phase: 'completed', item: { id: 'before', type: 'agent_message', text: 'Before the answer' } })
+    backend.handleCommand.mockImplementationOnce(async () => {
+      emit({ type: 'codex_item_delta', messageId: 'turn', phase: 'completed', item: { id: 'after', type: 'agent_message', text: 'After the answer' } })
+    })
+    await session.dispatchBackendCommand(answer)
+    const accepted = session.snapshot.messages.find(message => message.id === answer.newUserMessageId)!
+    expect(accepted.metadata?.transcriptBoundary).toMatchObject({ messageId: 'turn', items: { before: 17 } })
+    expect(transcriptSegments(session.snapshot.messages).at(-1)?.id).toBe(`turn:after:${answer.newUserMessageId}`)
+    const restored = JSON.parse(JSON.stringify(session.snapshot.messages))
+    const segments = transcriptSegments(restored)
+    expect(segments.map(segment => segment.id)).toEqual(['turn', answer.newUserMessageId, `turn:after:${answer.newUserMessageId}`])
+    expect(segments.at(-1)?.message.metadata?.codex?.items.map(item => item.id)).toEqual(['after'])
+  })
   it('persists the question with the answer so the user bubble survives standalone history loading', async () => {
     const questions = [{ title: 'Environment?', options: ['Production'] }]
     const { session } = fixture([{

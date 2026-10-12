@@ -233,7 +233,8 @@ export function reduceSlash(
       const msgs = compactUserId
         ? session.messages.filter((m) => m.id !== compactUserId && m.id !== sourceMessageId)
         : [...session.messages]
-      const row = buildCompactBoundaryMessage(event, event.id ?? ports.id('compact_'), new Date(ports.now()).toISOString())
+      const source = compactUserId ? undefined : msgs[compactBoundaryInsertIndex(msgs)]
+      const row = buildCompactBoundaryMessage(event, event.id ?? ports.id('compact_'), new Date(ports.now()).toISOString(), source, msgs)
       // Main materialises the same row (same id) into its snapshot; a replay
       // that already delivered it must not add a second divider.
       if (!msgs.some((m) => m.id === row.id)) {

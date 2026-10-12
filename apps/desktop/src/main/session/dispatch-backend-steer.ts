@@ -1,6 +1,7 @@
 import type { BackendCommand, Session, SessionBackend } from './types'
 import type { ChatMessage } from '@superone/shared/agent-types'
 import { codexAsyncAnswerContent, isCodexAsyncAnswer } from '@superone/shared/codex-async-question'
+import { anchorAsyncAnswer } from '@superone/shared/transcript-boundary'
 import log from '../logger'
 
 type SteerCommand = Extract<BackendCommand, {
@@ -38,6 +39,17 @@ export async function dispatchBackendSteer(cmd: SteerCommand, host: {
   if (!host.backend.handleCommand) {
     throw new Error(`Session ${host.id} harness=${host.harnessId} does not support backend commands`)
   }
+  // Provider output can resume before the steering RPC resolves. Freeze the
+  // cursor now, but only append the answer once the provider accepts it.
+  const userMessage = cmd.kind === 'codex.steer' && cmd.newUserMessageId && cmd.newUserText
+    ? anchorAsyncAnswer({
+      id: cmd.newUserMessageId,
+      role: 'user',
+      status: 'complete',
+      content: asyncAnswer ? codexAsyncAnswerContent(cmd.newUserMessageId, cmd.newUserText, host.session.snapshot.messages) : [{ type: 'text', text: cmd.newUserText }],
+      createdAt: new Date().toISOString(),
+      providerId: host.harnessId,
+    }, host.session.snapshot.messages) : null
   try {
     await host.backend.handleCommand(cmd)
   } catch (error) {
@@ -48,16 +60,7 @@ export async function dispatchBackendSteer(cmd: SteerCommand, host: {
     }
     throw error
   }
-  if (cmd.kind === 'codex.steer' && cmd.newUserMessageId && cmd.newUserText) {
-    host.appendUserMessage({
-      id: cmd.newUserMessageId,
-      role: 'user',
-      status: 'complete',
-      content: asyncAnswer ? codexAsyncAnswerContent(cmd.newUserMessageId, cmd.newUserText, host.session.snapshot.messages) : [{ type: 'text', text: cmd.newUserText }],
-      createdAt: new Date().toISOString(),
-      providerId: host.harnessId,
-    })
-  }
+  if (userMessage) host.appendUserMessage(userMessage)
 }
 
 /** A normal send lasts the whole turn; the answer RPC acknowledges durable input. */

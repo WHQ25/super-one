@@ -99,12 +99,35 @@ test('follows streaming at the bottom and holds history when following is paused
   expect(await bottomDistance(page)).toBeGreaterThan(1000)
 })
 
-test('expands compacted history for a cross-view jump without mounting the full suffix', async ({ page }) => {
+test('keeps compacted history navigable without mounting the full suffix', async ({ page }) => {
   await open(page, 'compacted-history')
   expect(await page.locator('[data-message-id="perf-0"]').count()).toBe(0)
   await page.locator('[data-perf-jump-first]').click()
   await expect(page.locator('[data-message-id="perf-0"]')).toBeVisible()
   expect(await page.locator('[data-message-id]').count()).toBeLessThan(24)
+})
+
+test('places two compactions inside one reply without folding history or adding compact ticks', async ({ page }) => {
+  await page.goto(`${base}/iframe.html?id=chat-transcript-segmentation--multiple-compactions&viewMode=story`)
+  await expect(page.locator('[data-tick]')).toHaveCount(3)
+  await expect.poll(() => page.locator('[data-message-id]').evaluateAll(elements => elements.map(element => (element as HTMLElement).dataset.messageId)))
+    .toEqual(['segmented-turn', 'first-compact', 'segmented-turn:after:first-compact', 'second-compact', 'segmented-turn:after:second-compact'])
+  await expect(page.getByRole('button', { name: /Show history|Hide history/ })).toHaveCount(0)
+  await page.locator('[data-tick="segmented-turn:after:first-compact"]').hover()
+  await expect(page.getByRole('tooltip')).toContainText('Between both compactions.')
+  await page.locator('[data-tick="segmented-turn:after:second-compact"]').click()
+  await expect(page.locator('[data-message-id="segmented-turn:after:second-compact"]')).toContainText('After the second compaction.')
+})
+
+test('keeps async answers between the preceding and resumed assistant segments in narrow chat', async ({ page }) => {
+  await page.goto(`${base}/iframe.html?id=chat-transcript-segmentation--narrow-async-answer&viewMode=story&globals=theme:dark`)
+  await expect(page.locator('[data-tick="segmented-turn:after:codex_async_answer:question"]')).toBeVisible()
+  const ids = await page.locator('[data-message-id]').evaluateAll(elements => elements.map(element => (element as HTMLElement).dataset.messageId))
+  expect(ids.indexOf('codex_async_answer:question')).toBeGreaterThan(ids.indexOf('segmented-turn'))
+  expect(ids.indexOf('segmented-turn:after:codex_async_answer:question')).toBeGreaterThan(ids.indexOf('codex_async_answer:question'))
+  await expect(page.locator('[data-message-id="segmented-turn"]')).not.toContainText('After the answer')
+  await expect(page.locator('[data-message-id="segmented-turn:after:codex_async_answer:question"]')).toContainText('After the answer')
+  await expect(page.locator(viewport)).toBeVisible()
 })
 
 test('preserves reference definitions and semantic markdown around virtual block boundaries', async ({ page }) => {
@@ -118,10 +141,8 @@ test('preserves reference definitions and semantic markdown around virtual block
   await expect(page.locator('.katex')).toBeVisible()
 })
 
-test('bounds a thousand Codex activities while Detail expands and the panel opens', async ({ page }) => {
+test('bounds a thousand Codex activities across content segments and preserves tool state', async ({ page }) => {
   await open(page, 'codex-long-turn')
-  const detail = page.locator('.turn-detail-section button')
-  await detail.evaluate((button: HTMLButtonElement) => button.click())
   await expect(page.getByText('echo activity-799', { exact: true })).toBeVisible()
   expect(await page.locator('.tool-node').count()).toBeLessThan(40)
   expect(await page.locator('[data-chat-root] *').count()).toBeLessThan(4500)
@@ -131,8 +152,8 @@ test('bounds a thousand Codex activities while Detail expands and the panel open
   expect(await page.locator('.tool-node').count()).toBeLessThan(40)
 
   // A nested tool's open state survives leaving the segment range.
-  const last = page.locator('[data-virtual-block]').filter({ hasText: 'echo activity-799' })
-  await last.locator('.tool-node').filter({ hasText: 'echo activity-799' }).locator(':scope > div').first().click()
+  const last = page.locator('.tool-node').filter({ hasText: 'echo activity-799' })
+  await last.locator(':scope > div').first().click()
   await expect(last.locator('.text-terminal-muted')).toBeVisible()
   await expect(last.locator('.text-terminal-muted')).toContainText('output-activity-799')
   await page.locator(viewport).evaluate(el => { el.scrollTop = 0 })

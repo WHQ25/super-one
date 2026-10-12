@@ -5,6 +5,19 @@ Upstream behavior SuperOne depends on that the app-server schema does not state.
 its area. Realtime is experimental upstream (`features.realtime_conversation`,
 enabled by `apps/desktop/src/main/codex/app-server-connection.ts`).
 
+## Compaction boundaries inside a turn
+
+`contextCompaction` items have their own IDs. SuperOne deduplicates their
+completion by item ID, allowing multiple compactions within one turn. The
+legacy `thread/compacted` notification is a fallback when no item lifecycle is
+active; it must not duplicate a completed item. Covered by mapper fixtures,
+without a live provider acceptance run.
+
+Boundary rows persist a cursor into the original provider message. Desktop and
+mobile split its display at that cursor while later item updates retain the
+original message ID. Accepted async answers capture the same cursor before
+steering, so subsequent output appears below the answer bubble immediately.
+
 ## Shell command presentation
 
 ### One execution can contain multiple read/search/list actions

@@ -10,6 +10,7 @@ import { admitTurnAttachments } from '@superone/shared/attachment-turn'
 import { assertCodexAccountSwitchAllowed } from '@superone/shared/codex-accounts'
 import { insertCodexTimelineRow, stampCodexTimelineOrder } from '@superone/shared/codex-timeline-rows'
 import { buildCompactBoundaryMessage, compactBoundaryInsertIndex, isCompactSlashSend } from '@superone/shared/compact-boundary'
+import { anchorAsyncAnswer, captureTranscriptBoundary } from '@superone/shared/transcript-boundary'
 import { newMessageId } from '@superone/shared/message-id'
 import { isAgentOutputEvent, withSendFailure, withoutSendFailure, type DuplicateSend } from '@superone/shared/send-failure'
 import { SessionShutdown } from './session-shutdown'
@@ -1680,6 +1681,7 @@ export class Session implements SessionContract {
           backend: this.backend,
           appendUserMessage: (message) => {
             if (this._messages.some((m) => m.id === message.id)) return
+            message = anchorAsyncAnswer(message, this._messages)
             this.replaceMessages([...this._messages, message])
             this._lastUserMessageAt = Date.now()
             this.notifyStateChange()
@@ -2191,6 +2193,10 @@ export class Session implements SessionContract {
     }
     // The divider row's id travels on the event so every reducer mints the same row,
     // and so does a turn's completion time.
+    if (event.type === 'compact_boundary' && !event.boundary && !this._pendingCompactUserId) {
+      const source = this._messages[compactBoundaryInsertIndex(this._messages)]
+      if (source) event = { ...event, boundary: captureTranscriptBoundary(source, this._messages) }
+    }
     const stamped = event.type === 'compact_boundary' && !event.id
       ? ({ ...event, id: newMessageId('compact') } as AgentEvent)
       : stampCompletedAt(event)
@@ -2359,7 +2365,7 @@ export class Session implements SessionContract {
           ? this._messages.filter((m) => m.id !== compactUserId && m.id !== sourceId)
           : [...this._messages]
         const insertIdx = compactUserId ? next.length : compactBoundaryInsertIndex(next)
-        next.splice(insertIdx, 0, buildCompactBoundaryMessage(event, event.id, new Date().toISOString()))
+        next.splice(insertIdx, 0, buildCompactBoundaryMessage(event, event.id, new Date().toISOString(), compactUserId ? undefined : next[insertIdx], next))
         // Incremental persistence only rewrites dirty rows; removing rows or
         // inserting mid-transcript shifts every sort_order after the change.
         this.replaceMessages(next, { fullPersist: next.length !== this._messages.length + 1 || insertIdx < this._messages.length })

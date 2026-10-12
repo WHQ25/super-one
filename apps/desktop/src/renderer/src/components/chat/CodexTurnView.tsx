@@ -95,6 +95,7 @@ interface CodexTurnViewProps {
   isStreaming: boolean
   isWorking?: boolean
   isLastAssistant: boolean
+  virtualize?: boolean
   collapseEntireTurn?: boolean
   footer?: ReactNode
 }
@@ -132,7 +133,7 @@ export function CodexTurnView(props: CodexTurnViewProps) {
       onRejectPlan={rejectCodexPlan}
       groupableAppByTool={groupableAppByTool}
       appNameById={appNameById}
-      parts={(props.message.metadata?.codex?.items.length ?? 0) >= 80 ? LONG_TURN_PARTS : DESKTOP_PARTS}
+      parts={props.virtualize || (props.message.metadata?.codex?.items.length ?? 0) >= 80 ? LONG_TURN_PARTS : DESKTOP_PARTS}
       runtime={DESKTOP_RUNTIME}
     />
   )

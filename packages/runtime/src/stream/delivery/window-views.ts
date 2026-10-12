@@ -6,14 +6,21 @@ import type {
   TranscriptWindowPatch,
   TranscriptWindowRequest,
 } from '@superone/shared/environment/transcript-window'
+import { utf8Length } from '@superone/shared/transcript-window/content-digest'
 import { fragmentDigest, MessageFragmenter, textBody, type MessageFragments } from '@superone/shared/transcript-window/fragment-message'
 import { selectTranscriptWindow, type SelectedWindow, type WindowSource } from '@superone/shared/transcript-window/select-window'
 import { projectWindowMessage } from './window-projection'
 
-/** What one new message may add to a live patch before older fragments are left to scrolling. */
+/**
+ * What one message may add to a live patch: a new message enters with its
+ * newest fragments, and a held message whose changes exceed this (a rewritten
+ * reply) re-enters the same way instead of resending what the client held.
+ */
 export const LIVE_MESSAGE_BUDGET: TranscriptWindowBudget = { maxBytes: 64 * 1024, maxFragments: 24, targetChars: Number.MAX_SAFE_INTEGER }
-/** Held windows per connection; the least recently served goes first. */
-const MAX_HELD = 16
+/** What one patch may carry; messages past it enter with their newest fragment only. */
+export const LIVE_PATCH_BYTES = 256 * 1024
+/** Held windows per connection; the least recently served or patched goes first. */
+const MAX_HELD = 64
 
 interface HeldFragment { digest: string; textLength?: number }
 
@@ -91,8 +98,9 @@ export class WindowViews {
     const held = extend && previous ? previous : { messages: new Map(), order: [], atTail: false, total: 0, seen: new Map() }
     for (const message of selected.messages) {
       const fragments = session.fragments.of(input.messages[message.index])
+      // A joined message keeps the source the client last caught up with, so the next diff still sends what changed since.
+      if (!held.messages.has(message.id)) held.seen.set(message.id, input.messages[message.index])
       recordMessage(held, message, fragments, extend === 'before' ? 'before' : extend === 'after' ? 'after' : null)
-      held.seen.set(message.id, input.messages[message.index])
     }
     const ids = selected.messages.map((message) => message.id)
     held.order = extend === 'before' ? [...ids, ...held.order.filter((id) => !ids.includes(id))]
@@ -101,6 +109,13 @@ export class WindowViews {
     held.total = input.messages.length
     session.holders.delete(input.holder)
     session.holders.set(input.holder, held)
+    // A client follows one session: its window elsewhere is gone.
+    for (const [id, other] of this.sessions) {
+      if (id === input.sessionId) continue
+      other.holders.delete(input.holder)
+      if (!other.holders.size) this.sessions.delete(id)
+    }
+    this.touch(input.sessionId)
     this.evict()
     session.fragments.retain(this.heldIds(input.sessionId))
     return { ...selected, total: input.messages.length }
@@ -115,7 +130,10 @@ export class WindowViews {
       const patch = diffHeld(held, messages, session.fragments)
       if (patch) out.push({ holder, patch })
     }
-    if (out.length) session.fragments.retain(this.heldIds(sessionId))
+    if (out.length) {
+      session.fragments.retain(this.heldIds(sessionId))
+      this.touch(sessionId)
+    }
     return out
   }
 
@@ -134,6 +152,14 @@ export class WindowViews {
     let session = this.sessions.get(sessionId)
     if (!session) this.sessions.set(sessionId, session = { fragments: new SessionFragments(), holders: new Map() })
     return session
+  }
+
+  /** Most recently used sessions last, so eviction takes the stalest first. */
+  private touch(sessionId: string): void {
+    const session = this.sessions.get(sessionId)
+    if (!session) return
+    this.sessions.delete(sessionId)
+    this.sessions.set(sessionId, session)
   }
 
   private heldIds(sessionId: string): Set<string> {
@@ -165,14 +191,16 @@ function recordMessage(held: HeldWindow, message: TranscriptWindowMessage, fragm
     const entry = entries.get(key)
     return entry ? [[key, heldFragment(entry.digest, entry.body)]] : []
   }))
+  // A join adds the page's new keys; keys the client already held keep the digest and meta it holds.
+  const joined = (keys: string[]) => new Map([...record(keys.filter((key) => !previous!.fragments.has(key))), ...previous!.fragments])
   if (previous && join === 'before') {
     const keys = [...sent, ...previous.keys.filter((key) => !sent.includes(key))]
-    held.messages.set(message.id, { ...previous, metaDigest: message.metaDigest, keys, fragments: record(keys), omittedBefore: message.omittedBefore })
+    held.messages.set(message.id, { ...previous, keys, fragments: joined(keys), omittedBefore: message.omittedBefore })
     return
   }
   if (previous && join === 'after') {
     const keys = [...previous.keys.filter((key) => !sent.includes(key)), ...sent]
-    held.messages.set(message.id, { ...previous, metaDigest: message.metaDigest, keys, fragments: record(keys), omittedAfter: message.omittedAfter })
+    held.messages.set(message.id, { ...previous, keys, fragments: joined(keys), omittedAfter: message.omittedAfter })
     return
   }
   held.messages.set(message.id, {
@@ -197,16 +225,19 @@ function diffHeld(held: HeldWindow, messages: readonly ChatMessage[], fragments:
   const removed = held.order.filter((id) => !index.has(id))
   let range: number[]
   if (held.atTail) {
-    const start = present.length ? Math.min(...present.map((id) => index.get(id)!)) : Math.max(0, messages.length - 1)
+    // An empty window takes every message that arrived since it was last brought up to date.
+    const start = present.length ? Math.min(...present.map((id) => index.get(id)!)) : Math.min(held.total, messages.length)
     range = messages.length ? Array.from({ length: messages.length - start }, (_, i) => start + i) : []
   } else {
     range = present.map((id) => index.get(id)!).sort((a, b) => a - b)
   }
   const changed: TranscriptWindowMessage[] = []
+  let remaining = LIVE_PATCH_BYTES
   for (const i of range) {
     const source = messages[i]
     if (held.seen.get(source.id) === source && held.messages.has(source.id)) continue
-    const { message, record } = diffMessage(held.messages.get(source.id), fragments.of(source), i)
+    const { message, record } = diffMessage(held.messages.get(source.id), fragments.of(source), i, Math.min(LIVE_MESSAGE_BUDGET.maxBytes, remaining))
+    if (message) remaining = Math.max(0, remaining - patchBytes(message))
     held.messages.set(source.id, record)
     held.seen.set(source.id, source)
     if (message) changed.push(message)
@@ -226,30 +257,27 @@ function diffHeld(held: HeldWindow, messages: readonly ChatMessage[], fragments:
   }
 }
 
-function diffMessage(previous: HeldMessage | undefined, current: MessageFragments, index: number): { message: TranscriptWindowMessage | null; record: HeldMessage } {
+function diffMessage(previous: HeldMessage | undefined, current: MessageFragments, index: number, maxBytes: number): { message: TranscriptWindowMessage | null; record: HeldMessage } {
   const all = current.fragments
   let start: number
   let end = all.length
   if (!previous) {
-    start = tailStart(current)
+    start = tailStart(current, maxBytes)
   } else {
     const first = previous.omittedBefore > 0 ? all.findIndex((fragment) => fragment.key === previous.keys[0]) : 0
-    start = first < 0 ? tailStart(current) : first
+    start = first < 0 ? tailStart(current, maxBytes) : first
     if (previous.omittedAfter > 0) {
       const last = all.findIndex((fragment) => fragment.key === previous.keys[previous.keys.length - 1])
       if (last >= start) end = last + 1
     }
   }
-  const sent: TranscriptWindowFragment[] = all.slice(start, end).map((fragment) => {
-    const heldFragment = previous?.fragments.get(fragment.key)
-    if (heldFragment?.digest === fragment.digest) return { key: fragment.key, digest: fragment.digest }
-    const body = fragment.body
-    if (heldFragment?.textLength !== undefined && body.kind === 'text' && body.text.length > heldFragment.textLength
-      && fragmentDigest(textBody(body.head, body.offset, body.text.slice(0, heldFragment.textLength), body.context)) === heldFragment.digest) {
-      return { key: fragment.key, digest: fragment.digest, append: body.text.slice(heldFragment.textLength) }
-    }
-    return { key: fragment.key, digest: fragment.digest, body }
-  })
+  let sent = diffFragments(previous, all.slice(start, end))
+  // A rewrite larger than the budget re-enters as the newest fragments rather than resending the whole held range.
+  if (sent.reduce((bytes, fragment) => bytes + fragmentPatchBytes(fragment), 0) > maxBytes) {
+    start = Math.max(start, tailStart(current, maxBytes))
+    end = all.length
+    sent = diffFragments(previous, all.slice(start, end))
+  }
   const omittedBefore = all.length ? start : 0
   const omittedAfter = all.length ? all.length - end : 0
   const metaHeld = previous?.metaDigest === current.metaDigest
@@ -278,13 +306,35 @@ function diffMessage(previous: HeldMessage | undefined, current: MessageFragment
   }
 }
 
-/** First fragment a new message enters with: as many newest ones as the live budget allows. */
-function tailStart(current: MessageFragments): number {
+/** Each fragment as a reference, an appended tail, or a new body, against what the client holds. */
+function diffFragments(previous: HeldMessage | undefined, fragments: MessageFragments['fragments']): TranscriptWindowFragment[] {
+  return fragments.map((fragment) => {
+    const heldFragment = previous?.fragments.get(fragment.key)
+    if (heldFragment?.digest === fragment.digest) return { key: fragment.key, digest: fragment.digest }
+    const body = fragment.body
+    if (heldFragment?.textLength !== undefined && body.kind === 'text' && body.text.length > heldFragment.textLength
+      && fragmentDigest(textBody(body.head, body.offset, body.text.slice(0, heldFragment.textLength), body.context)) === heldFragment.digest) {
+      return { key: fragment.key, digest: fragment.digest, append: body.text.slice(heldFragment.textLength) }
+    }
+    return { key: fragment.key, digest: fragment.digest, body }
+  })
+}
+
+function fragmentPatchBytes(fragment: TranscriptWindowFragment): number {
+  return fragment.body ? utf8Length(JSON.stringify(fragment.body)) : fragment.append !== undefined ? utf8Length(fragment.append) : 0
+}
+
+function patchBytes(message: TranscriptWindowMessage): number {
+  return message.fragments.reduce((bytes, fragment) => bytes + fragmentPatchBytes(fragment), message.meta ? utf8Length(JSON.stringify(message.meta)) : 0)
+}
+
+/** First fragment a message enters with: as many newest ones as `maxBytes` allows, and at least one. */
+function tailStart(current: MessageFragments, maxBytes: number): number {
   let bytes = current.metaBytes
   let start = current.fragments.length
   while (start > 0) {
     const next = current.fragments[start - 1]
-    if (current.fragments.length - start >= LIVE_MESSAGE_BUDGET.maxFragments || bytes + next.bytes > LIVE_MESSAGE_BUDGET.maxBytes) break
+    if (current.fragments.length - start >= LIVE_MESSAGE_BUDGET.maxFragments || bytes + next.bytes > maxBytes) break
     bytes += next.bytes
     start--
   }

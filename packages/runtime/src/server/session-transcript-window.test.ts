@@ -6,6 +6,7 @@ import { utf8Length } from '@superone/shared/transcript-window/content-digest'
 import { applyWindowPatch, applyWindowResult, EMPTY_WINDOW_LOOKUP, materializeWindowMessage, windowCoverage, windowLookup } from '@superone/shared/transcript-window/window-store'
 import { longReplyText, textMessage } from '@superone/shared/transcript-window/window-fixtures'
 import { ConnectionDelivery } from '../stream/delivery/connection-delivery'
+import { LIVE_MESSAGE_BUDGET, LIVE_PATCH_BYTES, WindowViews } from '../stream/delivery/window-views'
 import { deliveryPolicy } from '../stream/delivery-policy'
 import type { RpcContext, SessionHostPort } from './rpc-context'
 import { handleSessionTranscriptWindow } from './rpc-session-window'
@@ -153,6 +154,69 @@ describe('transcript window live delivery', () => {
     const events = delivered.events.map((e) => (e.payload as { event: AgentEvent }).event)
     expect(events.map((e) => e.type)).toEqual(['content_delta', 'transcript_window'])
     expect(events[1]).toMatchObject({ holder: 'phone-1' })
+  })
+
+  it('adds every message that arrived at a window that held none', async () => {
+    const h = host([])
+    const ctx = context(h.sessions)
+    const held = applyWindowResult(null, await window(ctx), EMPTY_WINDOW_LOOKUP).state
+    h.set([textMessage('u', 'user', 'Hi'), textMessage('a', 'assistant', 'Hello', 'streaming')])
+    const [patch] = patchesOf(deliverFrame(frame(envelope(delta('Hello'), 2)), ctx.delivery, h.sessions).frame)
+    const applied = applyWindowPatch(held, patch)
+    expect(applied.stale).toBe(false)
+    expect(applied.state.messages.map((m) => m.id)).toEqual(['u', 'a'])
+  })
+
+  it('bounds a patch of several large new messages', async () => {
+    const h = host([textMessage('u', 'user', 'Hi')])
+    const ctx = context(h.sessions)
+    const held = applyWindowResult(null, await window(ctx), EMPTY_WINDOW_LOOKUP).state
+    const replies = Array.from({ length: 8 }, (_, i) => textMessage(`a${i}`, 'assistant', longReplyText(256 * 1024)))
+    h.set([textMessage('u', 'user', 'Hi'), ...replies])
+    const [patch] = patchesOf(deliverFrame(frame(envelope(delta('x'), 2)), ctx.delivery, h.sessions).frame)
+    expect(utf8Length(JSON.stringify(patch))).toBeLessThan(LIVE_PATCH_BYTES + 32 * 1024)
+    const applied = applyWindowPatch(held, patch)
+    expect(applied.stale).toBe(false)
+    expect(applied.state.messages).toHaveLength(9)
+  })
+
+  it('re-enters a rewritten reply as its newest fragments instead of resending the held range', async () => {
+    const h = host([textMessage('a', 'assistant', longReplyText(512 * 1024), 'streaming')])
+    const ctx = context(h.sessions)
+    let held = applyWindowResult(null, await window(ctx), EMPTY_WINDOW_LOOKUP).state
+    held = applyWindowResult(held, await window(ctx, { anchor: held.older!, direction: 'before' }), EMPTY_WINDOW_LOOKUP, 'older').state
+    h.set([textMessage('a', 'assistant', `Rewritten. ${longReplyText(512 * 1024)}`, 'complete')])
+    const [patch] = patchesOf(deliverFrame(frame(envelope({ type: 'content_retracted', sessionId: 's', messageId: 'a', blocks: [] }, 2, false)), ctx.delivery, h.sessions).frame)
+    expect(utf8Length(JSON.stringify(patch))).toBeLessThan(LIVE_MESSAGE_BUDGET.maxBytes + 16 * 1024)
+    const applied = applyWindowPatch(held, patch, windowLookup(held))
+    expect(applied.stale).toBe(false)
+    expect(applied.state.messages[0].omittedBefore).toBeGreaterThan(0)
+  })
+
+  it('sends what changed since the client caught up after it pages a streaming reply', async () => {
+    const reply = longReplyText(300 * 1024)
+    const h = host([textMessage('a', 'assistant', reply, 'streaming')])
+    const ctx = context(h.sessions)
+    let held = applyWindowResult(null, await window(ctx), EMPTY_WINDOW_LOOKUP).state
+    h.set([textMessage('a', 'assistant', `${reply} and more`, 'streaming')])
+    held = applyWindowResult(held, await window(ctx, { anchor: held.older!, direction: 'before' }), EMPTY_WINDOW_LOOKUP, 'older').state
+    const [patch] = patchesOf(deliverFrame(frame(envelope(delta(' and more'), 2)), ctx.delivery, h.sessions).frame)
+    const applied = applyWindowPatch(held, patch, windowLookup(held))
+    expect(applied.stale).toBe(false)
+    const text = materializeWindowMessage(applied.state.messages[0]).content.map((b) => ('text' in b ? b.text : '')).join('')
+    expect(text.endsWith(' and more')).toBe(true)
+  })
+
+  it('keeps a bounded number of held windows, dropping the least recently used', () => {
+    const views = new WindowViews()
+    const messages = [textMessage('a', 'assistant', 'Hello', 'streaming')]
+    const budget = { maxBytes: 64 * 1024, maxFragments: 8, targetChars: 1000 }
+    for (let i = 0; i <= 64; i++) views.serve({ sessionId: 's', holder: `h${i}`, messages, request: {}, budget })
+    const holders = views.patches('s', [textMessage('a', 'assistant', 'Hello!', 'streaming')]).map((p) => p.holder)
+    expect(holders).toHaveLength(64)
+    expect(holders).not.toContain('h0')
+    views.serve({ sessionId: 'other', holder: 'h1', messages, request: {}, budget })
+    expect(views.patches('s', [textMessage('a', 'assistant', 'Hello!!', 'streaming')]).map((p) => p.holder)).not.toContain('h1')
   })
 
   it('leaves a connection without a window untouched', () => {

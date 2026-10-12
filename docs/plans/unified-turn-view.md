@@ -1,6 +1,6 @@
 # Unified turn view
 
-Status: in-progress (steps 0-4 and 5a done; 4 landed before 3) · Updated: 2026-10-12
+Status: in-progress (steps 0-4, 5a-5b done; 4 landed before 3) · Updated: 2026-10-12
 Goal: Every harness's assistant turn reaches the UI as `message.content` ContentBlocks and renders through one `TurnBody`, on desktop and in the phone chat-view; Codex thread items are translated at the integration layer and no longer reach a renderer.
 Long-term docs affected: [chat-core.md](../architecture/chat-core.md), [mobile-remote-control.md](../architecture/mobile-remote-control.md) (hidden-detail refs), [mcp-apps.md](../features/mcp-apps.md) (Codex rows), [codex contracts](../harness/codex/contracts.md) and [api-surface](../harness/codex/api-surface.md), `apps/desktop/docs/agent-reference/architecture.md`, `.agents/skills/superone-harness/references/event-contract.md`
 
@@ -121,15 +121,15 @@ get archive-text semantics in `session-transcript-view.ts`.
 1. chat-core ingress: hydrate and the legacy `codex_item_delta` /
    `codex_item_patch` / complete / interrupt / error reducers re-derive content
    **after** their own writes (so the `finalResponse` overwrite cannot erase it);
-2. main: the live Codex runtime (`codex-session-runtime.ts` item upserts and
-   every terminal write) and `rowToChatMessage` both derive content, so
-   `Session.snapshot`, remote async answers and other main readers see it;
-   `serializeMessageContent` writes legacy rows back in their stored shape
-   (items + text blocks only), so a `full` persist neither doubles a row nor
-   changes what older builds read;
-3. thread restore (`mapTimelineThreadMessages`), the node message catalog for
-   old event logs, and old-host hidden-detail responses (`{item}` JSON →
-   shared detail) on the phone.
+2. main keeps legacy messages in their stored shape (runtime, rows,
+   `Session.snapshot`): the stored text (`finalResponse`, or the interrupt
+   notice) cannot be rebuilt from items, so a derived runtime would lose it on
+   write-back. Main readers that need content apply the read view at use (5c);
+   old clients keep receiving exactly what they read today;
+3. thread restore (`mapTimelineThreadMessages`) and the node message catalog
+   over old event logs produce legacy messages that clients derive at ingress
+   like any other transcript; old-host hidden-detail responses (`{item}` JSON →
+   shared detail) get a phone adapter in 5e.
 
 Why not a migration:
 
@@ -212,18 +212,19 @@ rendering. Steps 1-5 do not change what producers emit.
    - 5a chat-core ingress derivation (hydrate, legacy delta/patch, complete,
      interrupt, error), no sealing of live projections; a test feeds recorded
      legacy streams end to end.
-   - 5b main live runtime derivation (item upserts and terminal writes) +
-     read view + stored-shape serializer; thread restore incl. compaction;
-     node catalog over old logs; phone adapter for old-host `{item}` detail
-     responses. Before 5c, verify live async answers, MCP App state and
-     `Session.snapshot` read derived content.
+   - 5b (re-scoped, see Step 3-5a notes) thread restore needs no adapter of
+     its own: restored `contextCompaction` items translate to compaction notices
+     and the realtime timeline is derived at client ingress. Main keeps the
+     stored shape; the old-host `{item}` detail adapter moves to 5e, where the
+     phone first draws Codex rows from content.
    - 5c non-render readers read content (copy, compact, stats, footer MCP
      startup, media, widgets, MCP apps state, suggested task, async question
      queue + main readers, todos, realtime activities/thread merge, usage,
      `ForkedThreadView`).
    - 5d desktop `ChatMessage` dispatch → `TurnBody`; delete the desktop Codex
      turn path; lower the ratchet.
-   - 5e `PortableMessage` → `TurnBody`; delete `PortableCodexTurn`,
+   - 5e `PortableMessage` → `TurnBody` with the old-host `{item}` detail
+     adapter; delete `PortableCodexTurn`,
      `CODEX_PARTS`, chat-view `CodexTurnView`; `build:chat-view`; boundary test.
 6. **Producers** (series): 6a desktop `codex-turn.ts`/`codex-backend.ts` emit
    through `createCodexContentStream` with `items: []`; main Codex dialect
@@ -279,6 +280,7 @@ notifications, machine paths and user name replaced):
   and the mobile runtime's `hydrated()` (cache, restore, pages, realtime thread).
 - Items stay the stored truth, so writers that patch a derived block also patch
   its item (`applySuggestedTaskUpdate`; `updateMcpAppAttachments` already did).
+- Main never derives into its runtime or rows (see Persisted history, 2).
 - Todos are still read from items until 5c teaches chat-core and cold restore
   the hidden `TodoWrite` call. Error notices on a failed message are filtered
   at the 5d/5e dispatch sites.

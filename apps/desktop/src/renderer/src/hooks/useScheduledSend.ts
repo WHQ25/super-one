@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ScheduledSend, ScheduledSendPatch, ScheduledSendSessionInit } from '@superone/shared/agent-types'
+import type { ImageAttachment, ScheduledSend, ScheduledSendPatch, ScheduledSendSessionInit } from '@superone/shared/agent-types'
+
+/** What the composer queues: its text and the attachments sent with it. */
+export interface ScheduledDraft {
+  message: string | null
+  attachments: ImageAttachment[]
+}
 
 export interface ScheduledSendControls {
   /** The queued send main owns for this session, or null when nothing is queued. */
@@ -17,13 +23,13 @@ export interface ScheduledSendControls {
    */
   deliveredNonce: number
   /**
-   * Queue `message` for `sendAt` and arm it in one write. `sessionId` overrides
+   * Queue `draft` for `sendAt` and arm it in one write. `sessionId` overrides
    * the hook's own when arming just replaced a draft id (a remote composer's
    * first node session); the subscription follows once the view does.
    */
-  schedule: (message: string | null, sendAt: number, sessionId?: string) => void
-  /** Keep the queued text in step with the composer it mirrors. */
-  setMessage: (message: string | null) => void
+  schedule: (draft: ScheduledDraft, sendAt: number, sessionId?: string) => void
+  /** Keep the queued text and attachments in step with the composer it mirrors. */
+  setDraft: (patch: Pick<ScheduledSendPatch, 'message' | 'attachments'>) => void
   /** Flip the arm without restating the time or the text. */
   setArmed: (armed: boolean) => void
   /** Re-time an existing queued send. */
@@ -98,14 +104,15 @@ export function useScheduledSend(
   )
 
   const schedule = useCallback(
-    (message: string | null, sendAt: number, target?: string) => {
-      patch({ armed: true, message: message?.trim() || null, sendAt }, target)
+    (draft: ScheduledDraft, sendAt: number, target?: string) => {
+      const attachments = draft.attachments.length > 0 ? draft.attachments : null
+      patch({ armed: true, message: draft.message?.trim() || null, attachments, sendAt }, target)
     },
     [patch],
   )
 
   const setArmed = useCallback((armed: boolean) => patch({ armed }), [patch])
-  const setMessage = useCallback((message: string | null) => patch({ message }), [patch])
+  const setDraft = useCallback((next: Pick<ScheduledSendPatch, 'message' | 'attachments'>) => patch(next), [patch])
   const setSendAt = useCallback((sendAt: number) => patch({ sendAt }), [patch])
 
   const clear = useCallback(() => {
@@ -113,5 +120,5 @@ export function useScheduledSend(
     void window.app.clearScheduledSend(sessionId)
   }, [sessionId])
 
-  return { scheduled, loading, deliveredNonce, schedule, setMessage, setArmed, setSendAt, clear }
+  return { scheduled, loading, deliveredNonce, schedule, setDraft, setArmed, setSendAt, clear }
 }

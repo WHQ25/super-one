@@ -549,7 +549,7 @@ const scheduledSendService = new ScheduledSendService({
   broadcast: (sessionId, scheduled, delivered) =>
     safeSend(AgentIpcChannels.SCHEDULED_SEND_CHANGED, { sessionId, scheduled, delivered }),
   resumeDefaults: () => agentService.readDefaultSessionPrefs(),
-  sendRemote: async ({ target, sessionId, text, clientMessageId, onAccepted }) => {
+  sendRemote: async ({ target, sessionId, text, images, clientMessageId, onAccepted }) => {
     const remote = parseRemoteProjectKey(target.projectKey)
     if (!remote) throw new Error(`not a remote project key: ${target.projectKey}`)
     const { getEnvironmentHost } = await import('./environment')
@@ -558,6 +558,7 @@ const scheduledSendService = new ScheduledSendService({
       ...target.turn,
       sessionId,
       text,
+      ...(images.length > 0 ? { images } : {}),
       clientMessageId,
       projectPath: target.projectKey,
       echoUserMessage: true,

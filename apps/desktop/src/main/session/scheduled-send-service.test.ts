@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AgentEvent, ScheduledSend, ScheduledSendPatch } from '@superone/shared/agent-types'
+import type { AgentEvent, ImageAttachment, ScheduledSend, ScheduledSendPatch } from '@superone/shared/agent-types'
 import { createClaudeAgentEventMapper } from '@superone/claude'
 
 /**
@@ -7,8 +7,10 @@ import { createClaudeAgentEventMapper } from '@superone/claude'
  * the real table (same patch-merge rule, same due predicate, same source-scoped
  * delete), so the service's real logic runs end to end.
  */
-const { store, remoteTargets, sessions, hidden, transcripts } = vi.hoisted(() => ({
+const { store, attachments, remoteTargets, sessions, hidden, transcripts } = vi.hoisted(() => ({
   store: new Map<string, ScheduledSend>(),
+  /** The row's `attachments_json`, kept apart as the table keeps it out of `ScheduledSend`. */
+  attachments: new Map<string, ImageAttachment[]>(),
   /** Rows marked as remote-node sessions, with the turn options they carry. */
   remoteTargets: new Map<string, { projectKey: string; turn: unknown }>(),
   /** Sessions that have a `sessions` row — the schedule's foreign key. */
@@ -21,6 +23,7 @@ const { store, remoteTargets, sessions, hidden, transcripts } = vi.hoisted(() =>
 
 vi.mock('../db-scheduled-sends', () => ({
   getScheduledSend: (sessionId: string) => store.get(sessionId) ?? null,
+  getScheduledSendAttachments: (sessionId: string) => attachments.get(sessionId) ?? [],
   getScheduledSendRemoteTarget: (sessionId: string) => (store.has(sessionId) ? remoteTargets.get(sessionId) ?? null : null),
   listDueScheduledSends: (nowMs: number) =>
     [...store.values()].filter((r) => r.armed && r.sendAt <= nowMs),
@@ -41,11 +44,21 @@ vi.mock('../db-scheduled-sends', () => ({
       source: patch.source ?? prev?.source ?? 'manual',
     }
     store.set(sessionId, next)
+    if (patch.attachments !== undefined) {
+      if (patch.attachments?.length) attachments.set(sessionId, patch.attachments)
+      else attachments.delete(sessionId)
+    }
     return next
   },
-  deleteScheduledSend: (sessionId: string) => { store.delete(sessionId); remoteTargets.delete(sessionId) },
+  deleteScheduledSend: (sessionId: string) => {
+    store.delete(sessionId)
+    attachments.delete(sessionId)
+    remoteTargets.delete(sessionId)
+  },
   deleteScheduledSendBySource: (sessionId: string, source: string) => {
-    if (store.get(sessionId)?.source === source) store.delete(sessionId)
+    if (store.get(sessionId)?.source !== source) return
+    store.delete(sessionId)
+    attachments.delete(sessionId)
   },
 }))
 
@@ -108,8 +121,11 @@ function setup() {
   return { service, send, sendRemote, broadcast, sessionManager }
 }
 
+const SCREENSHOT: ImageAttachment = { id: 'att-1', name: 'screenshot.png', mimeType: 'image/png', base64: 'iVBORw0KGgo=' }
+
 beforeEach(() => {
   store.clear()
+  attachments.clear()
   remoteTargets.clear()
   sessions.clear()
   hidden.clear()
@@ -453,6 +469,29 @@ describe('scheduled send — delivery', () => {
     service.stop()
   })
 
+  it('sends the queued attachments with the message', async () => {
+    const { service, send } = setup()
+    service.set(SID, { armed: true, sendAt: IN_ONE_HOUR, message: 'what is wrong here?', attachments: [SCREENSHOT] })
+
+    vi.setSystemTime(IN_ONE_HOUR)
+    service.start()
+    await vi.waitFor(() => expect(send).toHaveBeenCalledWith(expect.objectContaining({
+      content: 'what is wrong here?',
+      images: [SCREENSHOT],
+    })))
+    service.stop()
+  })
+
+  it('sends attachments on their own without the default prompt', async () => {
+    const { service, send } = setup()
+    service.set(SID, { armed: true, sendAt: IN_ONE_HOUR, attachments: [SCREENSHOT] })
+
+    vi.setSystemTime(IN_ONE_HOUR)
+    service.start()
+    await vi.waitFor(() => expect(send).toHaveBeenCalledWith(expect.objectContaining({ content: '', images: [SCREENSHOT] })))
+    service.stop()
+  })
+
   it('places a rate-limit offer past the reset rather than on it', () => {
     const { service } = setup()
     service.observe(SID, rateLimitFailure(IN_ONE_HOUR / 1000))
@@ -678,6 +717,26 @@ describe('scheduled send — delivery', () => {
     service.stop()
   })
 
+  it('re-arms with the attachments of a send that was already delivered', async () => {
+    const { service, send } = setup()
+    service.observe(SID, rateLimitFailure(IN_ONE_HOUR / 1000))
+    service.set(SID, { armed: true, message: 'finish the migration', attachments: [SCREENSHOT] })
+
+    const later = IN_ONE_HOUR + 3_600_000
+    send.mockImplementation(async () => {
+      // Provider output retires the row before the turn hits the limit again.
+      service.observe(SID, { type: 'content_delta', messageId: 'a1', delta: 'x' } as unknown as AgentEvent)
+      service.observe(SID, rateLimitFailure(later / 1000))
+    })
+
+    vi.setSystemTime(IN_ONE_HOUR + 2 * RESET_BUFFER_MS)
+    service.start()
+    await vi.waitFor(() => expect(send).toHaveBeenCalled())
+    await vi.waitFor(() => expect(store.get(SID)).toMatchObject({ armed: true, sendAt: later + RESET_BUFFER_MS }))
+    expect(attachments.get(SID)).toEqual([SCREENSHOT])
+    service.stop()
+  })
+
   it('keeps the re-armed row when the resumed turn rate-limits inside the send', async () => {
     const { service, send } = setup()
     service.observe(SID, rateLimitFailure(IN_ONE_HOUR / 1000))
@@ -791,7 +850,7 @@ describe('scheduled send — remote-node session', () => {
 
   it('arms without a local session row and sends through the node', async () => {
     const { service, send, sendRemote, broadcast, sessionManager } = setup()
-    service.set(NODE_SID, { armed: true, sendAt: IN_ONE_HOUR, message: 'ship it' }, remoteInit)
+    service.set(NODE_SID, { armed: true, sendAt: IN_ONE_HOUR, message: 'ship it', attachments: [SCREENSHOT] }, remoteInit)
     expect(sessions.has(NODE_SID)).toBe(false)
 
     vi.setSystemTime(IN_ONE_HOUR)
@@ -802,6 +861,7 @@ describe('scheduled send — remote-node session', () => {
       target: { projectKey: REMOTE_KEY, turn: TURN },
       sessionId: NODE_SID,
       text: 'ship it',
+      images: [SCREENSHOT],
       clientMessageId: `scheduled-send:${NODE_SID}:${IN_ONE_HOUR}`,
     }))
     expect(send).not.toHaveBeenCalled()

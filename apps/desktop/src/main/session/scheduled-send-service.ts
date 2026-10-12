@@ -2,6 +2,7 @@ import { isRateLimitErrorInfo } from '@superone/shared/agent-error'
 import {
   SCHEDULED_SEND_DEFAULT_MESSAGE,
   type AgentEvent,
+  type ImageAttachment,
   type PermissionMode,
   type SandboxMode,
   type ScheduledSend,
@@ -15,6 +16,7 @@ import {
   deleteScheduledSend,
   deleteScheduledSendBySource,
   getScheduledSend,
+  getScheduledSendAttachments,
   getScheduledSendRemoteTarget,
   listDueScheduledSends,
   listScheduledSends,
@@ -62,9 +64,18 @@ export interface ScheduledSendDeps {
     target: ScheduledSendRemoteTarget
     sessionId: string
     text: string
+    images: ImageAttachment[]
     clientMessageId: string
     onAccepted: () => void
   }) => Promise<unknown>
+}
+
+/**
+ * The text a due row sends. The default stands in only for a send with nothing
+ * else in it; attachments are a message of their own, exactly as when sent by hand.
+ */
+function queuedContent(row: ScheduledSend, images: ImageAttachment[]): string {
+  return row.message?.trim() || (images.length > 0 ? '' : SCHEDULED_SEND_DEFAULT_MESSAGE)
 }
 
 /**
@@ -90,7 +101,11 @@ export class ScheduledSendService {
    * silently reverting to "ask the user again" — which would defeat the point
    * for anyone who armed it and walked away.
    */
-  private readonly autoRearm = new Map<string, { message: string | null; remote?: ScheduledSendRemoteTarget }>()
+  private readonly autoRearm = new Map<string, {
+    message: string | null
+    attachments: ImageAttachment[]
+    remote?: ScheduledSendRemoteTarget
+  }>()
   /** Latest `resetsAt` (epoch ms) seen per session, as a fallback when the failure carries none. */
   private readonly lastResetsAt = new Map<string, number>()
   /** Due time of each send awaiting evidence that the provider received it. */
@@ -388,7 +403,9 @@ export class ScheduledSendService {
       sendAt: candidate + RESET_BUFFER_MS,
       source: 'rate_limit',
       armed: rearming,
-      ...(rearming ? { message: rearmMessage ?? null } : {}),
+      // A continuation's row was retired on delivery, so its attachments come
+      // from the chain; one still in flight keeps its own row's.
+      ...(rearming ? { message: rearmMessage ?? null, ...(continuation ? { attachments: continuation.attachments } : {}) } : {}),
     }, remote ? { projectKey: remote.projectKey, turn: remote.turn ?? undefined } : undefined)
     if (next) this.emit(sessionId, next)
   }
@@ -440,8 +457,9 @@ export class ScheduledSendService {
       if (session.isStreaming()) {
         return
       }
-      const content = fresh.message?.trim() || SCHEDULED_SEND_DEFAULT_MESSAGE
-      if (fresh.source === 'rate_limit') this.autoRearm.set(sessionId, { message: fresh.message })
+      const images = getScheduledSendAttachments(sessionId)
+      const content = queuedContent(fresh, images)
+      if (fresh.source === 'rate_limit') this.autoRearm.set(sessionId, { message: fresh.message, attachments: images })
       this.reveal(sessionId)
       log.info('[scheduled-send] delivering queued send for session %s', sessionId)
       this.delivering.set(sessionId, fresh.sendAt)
@@ -450,7 +468,11 @@ export class ScheduledSendService {
         // retry of a send that fails *after* the bubble is appended (backend
         // start, rebuild) would leave another copy in the transcript, once per
         // poll, forever.
-        await session.send({ content, clientMessageId: `scheduled-send:${sessionId}:${fresh.sendAt}` })
+        await session.send({
+          content,
+          ...(images.length > 0 ? { images } : {}),
+          clientMessageId: `scheduled-send:${sessionId}:${fresh.sendAt}`,
+        })
       } finally {
         // A no-op once provider output or message_complete consumed it.
         this.delivering.delete(sessionId)
@@ -483,14 +505,16 @@ export class ScheduledSendService {
    */
   private async deliverRemote(row: ScheduledSend, target: ScheduledSendRemoteTarget): Promise<void> {
     const { sessionId } = row
-    if (row.source === 'rate_limit') this.autoRearm.set(sessionId, { message: row.message, remote: target })
+    const images = getScheduledSendAttachments(sessionId)
+    if (row.source === 'rate_limit') this.autoRearm.set(sessionId, { message: row.message, attachments: images, remote: target })
     log.info('[scheduled-send] delivering queued send for remote session %s', sessionId)
     let accepted = false
     try {
       await this.deps.sendRemote({
         target,
         sessionId,
-        text: row.message?.trim() || SCHEDULED_SEND_DEFAULT_MESSAGE,
+        text: queuedContent(row, images),
+        images,
         clientMessageId: `scheduled-send:${sessionId}:${row.sendAt}`,
         onAccepted: () => {
           accepted = true

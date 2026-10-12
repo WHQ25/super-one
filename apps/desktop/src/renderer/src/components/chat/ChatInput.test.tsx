@@ -12,7 +12,7 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
     draftRemoteDeviceId: null as string | null,
     draftJson: null as object | null,
     status: 'idle' as 'idle' | 'streaming',
-    attachments: [] as Array<{ mimeType: string; base64: string; name: string }>,
+    attachments: [] as Array<{ id?: string; mimeType: string; base64: string; name: string }>,
     browserAnnotations: [] as Array<{ id: string }>,
     mentions: [] as Array<{ kind: 'file' | 'directory' | 'agent'; value: string; displayName: string }>,
     permissionMode: 'default' as const,
@@ -75,6 +75,7 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
     toggleOpen: vi.fn(),
     addAttachment: vi.fn(),
     removeAttachment: vi.fn(),
+    removeAttachmentById: vi.fn(),
     clearAttachments: vi.fn(),
     addMention: vi.fn(),
     removeMention: vi.fn(),
@@ -180,7 +181,11 @@ vi.mock('@tiptap/react', () => {
         if (editorState.destroyed) throw new Error('Destroyed editor accessed')
         return editorState.text
       },
-      getJSON: () => ({ type: 'doc', content: [{ type: 'paragraph', content: editorState.text ? [{ type: 'text', text: editorState.text }] : [] }] }),
+      // Each attachment with an id has its chip in the document, as the real editor does.
+      getJSON: () => ({ type: 'doc', content: [{ type: 'paragraph', content: [
+        ...activeSessionState.attachments.flatMap((a) => (a.id ? [{ type: 'attachment', attrs: { id: a.id } }] : [])),
+        ...(editorState.text ? [{ type: 'text', text: editorState.text }] : []),
+      ] }] }),
       chain: () => {
         const chain = {
           focus: () => chain,
@@ -316,6 +321,7 @@ vi.mock('./image-compress', () => ({
 
 vi.mock('./paste-chip-node', () => ({
   PasteChipNode: {},
+  liftBlockPasteChips: (doc: unknown) => doc,
 }))
 
 vi.mock('./slash-decoration', () => ({
@@ -1440,6 +1446,7 @@ describe('ChatInput slash command grouping', () => {
 
 describe('ChatInput scheduled send', () => {
   const SEND_AT = Date.UTC(2026, 0, 1, 14, 30, 0)
+  const SCREENSHOT = { id: 'att-1', name: 'screenshot.png', mimeType: 'image/png', base64: 'iVBORw0KGgo=' }
 
   function queued(overrides: Record<string, unknown> = {}) {
     return {
@@ -1477,10 +1484,44 @@ describe('ChatInput scheduled send', () => {
     // — without it the schedule has no row to hang off and the arm is a no-op.
     expect(scheduledSend.set).toHaveBeenCalledWith(
       'session-1',
-      { armed: true, message: 'finish the migration', sendAt: SEND_AT },
+      { armed: true, message: 'finish the migration', attachments: null, sendAt: SEND_AT },
       { projectPath: '/project', harnessId: 'claude', worktreePath: null },
     )
     expect(chatActions.sendMessage).not.toHaveBeenCalled()
+  })
+
+  it('queues the composer attachments with the text', async () => {
+    scheduledSend.row = queued()
+    activeSessionState.attachments = [SCREENSHOT]
+    const { rerender } = render(<ChatInput />)
+    await screen.findByRole('button', { name: /schedule for/i })
+
+    typeInEditor('what is wrong here?')
+    rerender(<ChatInput />)
+    fireEvent.click(screen.getByRole('button', { name: /schedule for/i }))
+
+    expect(scheduledSend.set).toHaveBeenCalledWith(
+      'session-1',
+      { armed: true, message: 'what is wrong here?', attachments: [SCREENSHOT], sendAt: SEND_AT },
+      expect.anything(),
+    )
+  })
+
+  it('follows an attachment added after arming without restating the text', async () => {
+    scheduledSend.row = queued({ armed: true, message: 'look at this' })
+    const { rerender } = render(<ChatInput />)
+    await screen.findByRole('button', { name: /cancel scheduled send/i })
+    typeInEditor('look at this')
+    rerender(<ChatInput />)
+    scheduledSend.set.mockClear()
+
+    activeSessionState.attachments = [SCREENSHOT]
+    rerender(<ChatInput />)
+
+    await waitFor(
+      () => expect(scheduledSend.set).toHaveBeenCalledWith('session-1', { attachments: [SCREENSHOT] }, expect.anything()),
+      { timeout: 2000 },
+    )
   })
 
   it('leaves the draft in the composer, because the schedule mirrors it', async () => {
@@ -1597,12 +1638,16 @@ describe('ChatInput scheduled send', () => {
     })
     expect(editorState.text).toBe('finish the migration')
 
+    expect(chatActions.clearAttachments).not.toHaveBeenCalled()
+
     act(() => {
       scheduledSend.listeners.forEach((cb) =>
         cb({ sessionId: 'session-1', scheduled: null, delivered: true }),
       )
     })
     expect(editorState.text).toBe('')
+    // The attachments went out with it.
+    expect(chatActions.clearAttachments).toHaveBeenCalled()
   })
 
   it('cancels without disturbing the composer it was mirroring', async () => {

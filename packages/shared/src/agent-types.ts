@@ -681,6 +681,11 @@ export interface ScheduledSend {
 export interface ScheduledSendPatch {
   sendAt?: number
   message?: string | null
+  /**
+   * The composer's attachments, sent with `message`. Write-only: delivery reads
+   * them in main, and the row broadcast to every renderer stays free of image bytes.
+   */
+  attachments?: ImageAttachment[] | null
   armed?: boolean
   source?: ScheduledSendSource
 }

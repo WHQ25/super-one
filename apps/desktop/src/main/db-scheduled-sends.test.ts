@@ -8,6 +8,7 @@ vi.mock('./logger', () => ({ default: { debug: vi.fn(), info: vi.fn(), warn: vi.
 import {
   ensureScheduledSendsSchema,
   getScheduledSend,
+  getScheduledSendAttachments,
   getScheduledSendRemoteTarget,
   upsertScheduledSend,
 } from './db-scheduled-sends'
@@ -57,6 +58,7 @@ describe('scheduled sends schema', () => {
 
     expect(db.prepare('PRAGMA foreign_key_list(scheduled_sends)').all()).toEqual([])
     expect(getScheduledSend('local-1')).toMatchObject({ sendAt: SEND_AT, message: 'hi', armed: true })
+    expect(getScheduledSendAttachments('local-1')).toEqual([])
     const indexes = db.prepare(`SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'scheduled_sends'`).all()
     expect(indexes).toContainEqual({ name: 'idx_scheduled_sends_due' })
   })
@@ -100,5 +102,16 @@ describe('scheduled sends store', () => {
       projectKey: REMOTE_KEY,
       turn: { providerId: 'codex', model: 'gpt-5' },
     })
+  })
+  it('keeps attachments until a write restates them, and out of the broadcast row', () => {
+    const screenshot = { id: 'att-1', name: 'shot.png', mimeType: 'image/png', base64: 'iVBORw0KGgo=', originalPath: '/tmp/shot.png' }
+    upsertScheduledSend('local-1', { sendAt: SEND_AT, armed: true, message: 'look', attachments: [screenshot] })
+    upsertScheduledSend('local-1', { message: 'look again' })
+
+    expect(getScheduledSendAttachments('local-1')).toEqual([screenshot])
+    expect(getScheduledSend('local-1')).not.toHaveProperty('attachments')
+
+    upsertScheduledSend('local-1', { attachments: null })
+    expect(getScheduledSendAttachments('local-1')).toEqual([])
   })
 })

@@ -3,7 +3,7 @@ import { getDb } from './database'
 import { projectPathOfSession, sessionExists } from './db-sessions'
 import { notifySessionList } from './session-list-watch'
 import log from './logger'
-import type { ScheduledSend, ScheduledSendPatch, ScheduledSendRemoteTurn, ScheduledSendSource } from '@superone/shared/agent-types'
+import type { ImageAttachment, ScheduledSend, ScheduledSendPatch, ScheduledSendRemoteTurn, ScheduledSendSource } from '@superone/shared/agent-types'
 
 /**
  * Persistence for the composer's scheduled send — at most one per session.
@@ -46,7 +46,10 @@ export function ensureScheduledSendsSchema(
       source TEXT NOT NULL DEFAULT 'manual',
       created_at TEXT NOT NULL,
       remote_project_key TEXT,
-      remote_turn_json TEXT
+      remote_turn_json TEXT,
+      -- The composer's attachments as sent: the agent's (downscaled) copy, with
+      -- any full-size original referenced by path, as chat_messages keeps them.
+      attachments_json TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_scheduled_sends_due
       ON scheduled_sends(armed, send_at);
@@ -57,6 +60,9 @@ export function ensureScheduledSendsSchema(
   }
   if (!cols.some((c) => c.name === 'remote_turn_json')) {
     db.exec('ALTER TABLE scheduled_sends ADD COLUMN remote_turn_json TEXT')
+  }
+  if (!cols.some((c) => c.name === 'attachments_json')) {
+    db.exec('ALTER TABLE scheduled_sends ADD COLUMN attachments_json TEXT')
   }
   loosenSessionForeignKey(db, warn)
   // Stands in for the cascade on local rows. Created after the rebuild: a
@@ -106,6 +112,7 @@ interface DbScheduledSend {
   created_at: string
   remote_project_key: string | null
   remote_turn_json: string | null
+  attachments_json: string | null
 }
 
 /** Where a remote-node session's queued send goes, and what it carries. */
@@ -146,6 +153,18 @@ export function getScheduledSendRemoteTarget(sessionId: string): ScheduledSendRe
     log.warn('[scheduled-send] unreadable remote turn sid=%s', sessionId)
   }
   return { projectKey: row.remote_project_key, turn }
+}
+
+/** What goes out with the queued message; empty when it is text only. */
+export function getScheduledSendAttachments(sessionId: string): ImageAttachment[] {
+  const row = getRow(sessionId)
+  if (!row?.attachments_json) return []
+  try {
+    return JSON.parse(row.attachments_json) as ImageAttachment[]
+  } catch {
+    log.warn('[scheduled-send] unreadable attachments sid=%s', sessionId)
+    return []
+  }
 }
 
 /**
@@ -198,20 +217,24 @@ export function upsertScheduledSend(
   const remoteTurnJson = remote?.turn ? JSON.stringify(remote.turn) : (prevRow?.remote_turn_json ?? null)
 
   const message = patch.message === undefined ? (prev?.message ?? null) : (patch.message?.trim() || null)
+  const attachmentsJson = patch.attachments === undefined
+    ? (prevRow?.attachments_json ?? null)
+    : (patch.attachments?.length ? JSON.stringify(patch.attachments) : null)
   const armed = patch.armed ?? prev?.armed ?? false
   const source: ScheduledSendSource = patch.source ?? prev?.source ?? 'manual'
 
   try {
     getDb()
       .prepare(`
-        INSERT INTO scheduled_sends (session_id, send_at, message, armed, source, created_at, remote_project_key, remote_turn_json)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO scheduled_sends (session_id, send_at, message, armed, source, created_at, remote_project_key, remote_turn_json, attachments_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(session_id) DO UPDATE SET
           send_at = excluded.send_at,
           message = excluded.message,
           armed = excluded.armed,
           source = excluded.source,
-          remote_turn_json = excluded.remote_turn_json
+          remote_turn_json = excluded.remote_turn_json,
+          attachments_json = excluded.attachments_json
       `)
       .run(
         sessionId,
@@ -223,6 +246,7 @@ export function upsertScheduledSend(
         new Date().toISOString(),
         remoteProjectKey,
         remoteTurnJson,
+        attachmentsJson,
       )
   } catch (err) {
     log.warn('[scheduled-send] upsert failed sid=%s: %s', sessionId, String(err))

@@ -85,7 +85,7 @@ import { ScheduledSendButton } from './ScheduledSendButton'
  * meaningfully behind what is on screen.
  */
 const SCHEDULED_SEND_SYNC_MS = 400
-import { useScheduledSend } from '@/hooks/useScheduledSend'
+import { useScheduledSend, type ScheduledDraft } from '@/hooks/useScheduledSend'
 import { groupItems, PopupSectionHeader } from './popup-groups'
 import { computeMatchingSlashCommands } from './chat-input/computeMatchingSlashCommands'
 import { plainTextToTiptapDoc, plainTextToTiptapParagraphContent } from './chat-input/plainTextToTiptapDoc'
@@ -116,6 +116,11 @@ export { chatInputAPI } from './chat-input-api'
  * HTML, instead of wrapping it all in one paste chip.
  */
 let lastComposerCopy: string | null = null
+
+/** Cheap identity for a mirrored attachment list; an attachment's bytes never change under its id. */
+function attachmentsKey(attachments: readonly ImageAttachment[]): string {
+  return attachments.map((a) => `${a.id ?? a.name}:${a.base64.length}:${a.originalPath ?? ''}`).join('|')
+}
 
 export function ChatInput({
   autoFocusOnMount = true,
@@ -352,7 +357,7 @@ export function ChatInput({
     const canArmSchedule = hasContent || !sessionIsUnsent
     const {
       scheduled, loading: scheduledLoading, deliveredNonce, schedule: scheduleSend,
-      setMessage: setScheduledMessage, setArmed: setArmedScheduled, setSendAt, clear: clearScheduled,
+      setDraft: setScheduledDraft, setArmed: setArmedScheduled, setSendAt, clear: clearScheduled,
     } = useScheduledSend(displayedSessionId, getScheduledSendInit)
     // Any queued send blocks an immediate one, answered or not. Under a usage
     // limit an immediate send only bounces off the same wall, and under an armed
@@ -1056,13 +1061,12 @@ export function ChatInput({
     }, [clearDraft, serializeDraft])
 
     /**
-     * Plain text of the composer as the scheduler would send it — mentions in
-     * their structured form, attachments dropped. The persisted row is a single
-     * string, so nothing richer could survive the wait anyway.
+     * The composer as the scheduler would send it: plain text with mentions in
+     * their structured form, and the attachments in document order.
      */
-    const draftMessage = useCallback(() => {
-      const { segments } = serializeDraft()
-      return segmentsText(segments).trim() || null
+    const scheduledDraft = useCallback((): ScheduledDraft => {
+      const { segments, attachments: draftAttachments } = serializeDraft()
+      return { message: segmentsText(segments).trim() || null, attachments: draftAttachments }
     }, [serializeDraft])
 
     /**
@@ -1073,16 +1077,16 @@ export function ChatInput({
      * node knows, and that may replace the draft id the schedule is written to.
      */
     const handleArmScheduled = useCallback((sendAt: number) => {
-      const message = draftMessage()
+      const draft = scheduledDraft()
       if (!scheduleProject || !remoteScheduleKey) {
-        scheduleSend(message, sendAt)
+        scheduleSend(draft, sendAt)
         return
       }
       const scope = createSendWriteScope(useChatStore.setState, useChatStore.getState, scheduleProject, sessionScope ?? undefined)
       prepareRemoteSendTarget(useChatStore.setState, useChatStore.getState, scheduleProject, remoteScheduleKey, scope)
-        .then(({ sid }) => scheduleSend(message, sendAt, sid))
+        .then(({ sid }) => scheduleSend(draft, sendAt, sid))
         .catch((err: unknown) => toast.error(err instanceof Error ? err.message : String(err)))
-    }, [draftMessage, scheduleSend, scheduleProject, remoteScheduleKey, sessionScope])
+    }, [scheduledDraft, scheduleSend, scheduleProject, remoteScheduleKey, sessionScope])
 
     /**
      * Cancel. Nothing to restore: the draft was never consumed, it stayed in the
@@ -1096,7 +1100,7 @@ export function ChatInput({
     }, [clearScheduled, scheduled, setArmedScheduled])
 
     /**
-     * Keep the queued text in step with the composer.
+     * Keep the queued text and attachments in step with the composer.
      *
      * The schedule mirrors the draft rather than snapshotting it: what goes out
      * at the due time is whatever the composer says then, so editing after
@@ -1111,25 +1115,37 @@ export function ChatInput({
      * it only runs while a schedule is actually armed, and only writes on a
      * real change.
      */
-    const draftMessageRef = useRef(draftMessage)
-    draftMessageRef.current = draftMessage
+    const scheduledDraftRef = useRef(scheduledDraft)
+    scheduledDraftRef.current = scheduledDraft
     const queuedMessageRef = useRef(scheduled?.message ?? null)
     queuedMessageRef.current = scheduled?.message ?? null
 
     useEffect(() => {
       if (isRemoteLocked || !scheduled?.armed) return
+      // The row never echoes its attachments back, so the composer arming or
+      // remounting under a schedule is the last state known to be queued.
+      let queuedAttachments = attachmentsKey(scheduledDraftRef.current().attachments)
       const id = setInterval(() => {
-        const next = draftMessageRef.current()
+        const next = scheduledDraftRef.current()
         // An empty composer is not an instruction to blank the queue. The draft
         // is shared with ordinary sends, so clearing it — or just mounting a
-        // pane with nothing typed — must not quietly reduce a queued prompt to
-        // the default. Only real text mirrors.
-        if (next === null || next === queuedMessageRef.current) return
-        queuedMessageRef.current = next
-        setScheduledMessage(next)
+        // pane with nothing in it — must not quietly reduce a queued prompt to
+        // the default.
+        if (next.message === null && next.attachments.length === 0) return
+        const patch: Parameters<typeof setScheduledDraft>[0] = {}
+        if (next.message !== queuedMessageRef.current) {
+          queuedMessageRef.current = next.message
+          patch.message = next.message
+        }
+        const key = attachmentsKey(next.attachments)
+        if (key !== queuedAttachments) {
+          queuedAttachments = key
+          patch.attachments = next.attachments.length > 0 ? next.attachments : null
+        }
+        if (Object.keys(patch).length > 0) setScheduledDraft(patch)
       }, SCHEDULED_SEND_SYNC_MS)
       return () => clearInterval(id)
-    }, [scheduled?.armed, setScheduledMessage, isRemoteLocked])
+    }, [scheduled?.armed, setScheduledDraft, isRemoteLocked])
 
     /**
      * Empty the composer once — and only once — the mirrored text has actually
@@ -1140,7 +1156,8 @@ export function ChatInput({
       if (deliveredNonce === deliveredSeen.current) return
       deliveredSeen.current = deliveredNonce
       clearDraft()
-    }, [clearDraft, deliveredNonce])
+      clearAttachments()
+    }, [clearAttachments, clearDraft, deliveredNonce])
 
     const handleSend = useCallback(() => {
       if (!canSend) return

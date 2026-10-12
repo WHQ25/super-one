@@ -1,6 +1,6 @@
 # Harness UI adapter registry
 
-Status: in-progress (steps 0-7 done; branch `refactor/harness-ui-adapter`) · Updated: 2026-10-12
+Status: in-progress (steps 0-8 done; branch `refactor/harness-ui-adapter`) · Updated: 2026-10-12
 Goal: Desktop renderer chat surfaces resolve per-harness behavior through the shared static harness tables plus per-harness renderer controls and store strategies, so adding or changing a harness edits its own modules instead of `=== '<harnessId>'` branches across the composer, status bar and chat store.
 Long-term docs affected: `.claude/skills/superone-harness/references/integration.md` and `experiences.md` (model, permission and slash checklists become "fill the harness modules"), `.claude/skills/superone-harness/references/new-harness.md` (P0 catalog table), `apps/desktop/docs/agent-reference/architecture.md` (new "Harness UI modules" section)
 
@@ -186,15 +186,15 @@ affected tests (paths below), `bun run typecheck:web` and, when shared changes,
    sends do; a draft without `sessionProvider` sends on its preferred harness
    (dsh no longer falls back to Claude). `send-command-policy.ts` moves with
    the slash strategy in step 8.
-8. **Slash and placeholder.** One `slash` strategy serves both the
-   `ChatInput` popup selection and the raw-send intercepts in
-   `send-message.ts:457-489`. Keep host-only commands that send no turn, Grok
-   `/recap`, Cursor `promptBody` expansion and Codex `/plan`/`/review`. Move
-   `resolveChatInputPlaceholder`, `computeMatchingSlashCommands`,
-   `ProviderSlashPopup` and the dirs hint (`supportsAdditionalDirs`). Scenario
-   tests: select from the popup and type-and-send for each intercepted command.
-   `ChatSuggestions` picker icons, enabled checks and provider hint move to the
-   descriptor and controls.
+8. **Slash and placeholder (done).** `strategy.slash` (`hostCommands`,
+   `spacedCommands`, `enterPlan`, `reviewCommand`, `expandsPromptBody`, `run`
+   for Grok `/recap`) serves both the popup and typed sends;
+   `send-command-policy.ts` is gone. The placeholder reads `inPlanMode`; the
+   API-key picker's built-in entry and the "powered by" hint read
+   `api-key-defaults.ts`; the dirs hint relies on `supportsAdditionalDirs`
+   (ACP now shows it). `ChatSuggestions` draws `HarnessControls.PickerIcon` and
+   gates every option through `isPickerHarnessEnabled`. Its ACP-agent option
+   handling stays (ACP agents are picker options of their own).
 9. **Close out.** Lower the ratchet allowlist to the owning-feature residue,
    fold the stable rules into the long-term docs and harness skill, delete
    this plan.

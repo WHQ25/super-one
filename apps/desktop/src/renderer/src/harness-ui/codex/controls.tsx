@@ -2,6 +2,7 @@ import type { CodexPermissionPreset, PermissionMode } from '@superone/shared/age
 import { CodexPermissionPresetList, codexPermissionPresetOption } from '@/components/chat/CodexPermissionPresetList'
 import { CodexPermissionSelector } from '@/components/chat/CodexPermissionSelector'
 import { CodexModelSelector } from '@/components/chat/model-selector/CodexModelSelector'
+import { CodexSessionIcon } from '@superone/ui/components/harness/CodexSessionIcon'
 import type { HarnessControls } from '../controls'
 import { CodexLaunchModel } from './launch-model'
 
@@ -25,6 +26,7 @@ function modeOf(preset: CodexPermissionPreset): PermissionMode {
 export const codexControls: HarnessControls = {
   ModelControl: CodexModelSelector,
   LaunchModelControl: CodexLaunchModel,
+  PickerIcon: ({ size }) => <CodexSessionIcon status="default" size={size} />,
   PermissionControl: CodexPermissionSelector,
   launchPermission: (value, select) => {
     const preset = presetOf(value)

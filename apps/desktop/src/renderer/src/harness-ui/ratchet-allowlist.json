@@ -80,7 +80,7 @@
     "reason": "pre-registry baseline"
   },
   "components/chat/ChatSuggestions.tsx": {
-    "count": 37,
+    "count": 14,
     "reason": "pre-registry baseline"
   },
   "components/chat/ContextUsage.tsx": {

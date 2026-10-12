@@ -2,12 +2,14 @@ import { CursorPermissionModeList, cursorPermissionModeOption } from '@/componen
 import { CursorPermissionSelector } from '@/components/chat/CursorPermissionSelector'
 import { CURSOR_PERMISSION_MODES, resolveCursorPermissionMode } from '@/components/chat/cursorPermissionModes'
 import { CursorModelSelector } from '@/components/chat/model-selector/CursorModelSelector'
+import { Cursor } from '@lobehub/icons'
 import type { HarnessControls } from '../controls'
 import { CursorLaunchModel } from './launch-model'
 
 export const cursorControls: HarnessControls = {
   ModelControl: CursorModelSelector,
   LaunchModelControl: CursorLaunchModel,
+  PickerIcon: ({ size }) => <Cursor size={size} />,
   PermissionControl: CursorPermissionSelector,
   launchPermission: (value, select) => {
     const mode = resolveCursorPermissionMode(value)

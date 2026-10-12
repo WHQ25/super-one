@@ -5,6 +5,8 @@ import { useAppStore, useHasRealProject } from '@/stores/app'
 import { useActiveSession, useChatStore, useIsRemoteLocked, useSessionScope, type ChatProvider } from '@/stores/chat'
 import { useSettingsStore } from '@/stores/settings'
 import { ProviderLabel } from '@/components/ProviderLabel'
+import { HARNESS_CONTROLS } from '@/harness-ui/controls'
+import { apiKeyDefault } from '@/harness-ui/api-key-defaults'
 import { consumerForHarness, resolveEffective } from '@/lib/provider-resolve'
 import {
   orderSuggestionHarnesses,
@@ -24,28 +26,22 @@ import {
 } from '@superone/ui/components/ui/dropdown-menu'
 import { Check, ChevronDown, Loader2, Plus } from 'lucide-react'
 import { Tabs, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
-import { AcpSessionIcon } from '@superone/ui/components/harness/AcpSessionIcon'
-import { ClaudeSessionIcon } from '@superone/ui/components/harness/ClaudeSessionIcon'
-import { CodexSessionIcon } from '@superone/ui/components/harness/CodexSessionIcon'
-import { DeepseekSessionIcon } from '@superone/ui/components/harness/DeepseekSessionIcon'
-import { Grok, OpenCode, Cursor } from '@lobehub/icons'
 import { cn } from '@superone/ui/lib/utils'
 import { homePath } from '@/lib/path-utils'
 import { withDraftCarry } from '@/lib/draft-surface-select'
 import { displayHostPath, remoteProjectKey } from '@/lib/remote-project-key'
 import { useHostProjects } from '@/hooks/use-host-projects'
 import { useMosaicStore } from '@/components/mosaic/mosaic-store'
-import { isExperimentalAgentProvider } from '@/stores/chat-store/helpers/provider-routing'
 import type {
   AcpAgentDescriptor,
   HarnessSessionRank,
   RecentFolder,
   SuggestionHarnessPreference,
 } from '@superone/shared/agent-types'
-import { acpAgentDisplayName, isGrokAcpAgent } from '@superone/shared/acp-brand'
+import { acpAgentDisplayName, isGrokAcpAgent, isOpenCodeAcpAgent } from '@superone/shared/acp-brand'
 import {
   isCatalogHarnessEnabled,
-  isExperimentalAcpAgentEnabled,
+  isPickerHarnessEnabled,
   type HarnessCatalogStatus,
 } from '@/lib/harness-visibility'
 
@@ -77,29 +73,6 @@ let deepseekHarnessBootstrapped = false
 /** Shared trigger chrome — flex-none so short labels (e.g. Codex) don't stretch. */
 const tabTriggerLayoutClass =
   'relative z-10 inline-flex flex-none items-center justify-center gap-1 whitespace-nowrap rounded px-3 py-1.5 text-xs font-medium max-w-[9.5rem] transition-colors'
-
-function ProviderIcon({
-  provider,
-  acpAgentId,
-  size = 72,
-}: {
-  provider: ChatProvider
-  acpAgentId?: string | null
-  size?: number
-}) {
-  if (provider === 'codex') return <CodexSessionIcon status="default" size={size} />
-  if (provider === 'acp') {
-    // Default / Grok Build → official Grok mark; other ACP agents keep the generic ACP glyph.
-    if (!acpAgentId || isGrokAcpAgent(acpAgentId)) {
-      return <Grok size={size} className="text-foreground" />
-    }
-    return <AcpSessionIcon status="default" size={size} />
-  }
-  if (provider === 'opencode') return <OpenCode size={size} />
-  if (provider === 'cursor') return <Cursor size={size} />
-  if (provider === 'dsh') return <DeepseekSessionIcon status="default" size={size} />
-  return <ClaudeSessionIcon status="default" size={size} />
-}
 
 function optionLabel(option: SuggestionHarnessOption): string {
   if (option.provider === 'acp') {
@@ -322,50 +295,18 @@ export function ProviderSelector({
     setAcpAgentId,
   ])
 
-  const visibleAcpAgents = useMemo(
-    () =>
-      agents.filter((agent) => {
-        if (agent.id === 'opencode') return false
-        if (isGrokAcpAgent(agent.id)) {
-          return isCatalogHarnessEnabled(harnessCatalog, 'acp-grok')
-        }
-        return isExperimentalAcpAgentEnabled(agent.id, {
-          enabledExperimentalAgents,
-          legacyExperimentalAgentsEnabled: experimentalAgentsEnabled,
-        })
-      }),
-    [agents, enabledExperimentalAgents, experimentalAgentsEnabled, harnessCatalog],
+  const isAgentAllowed = useCallback(
+    (provider: ChatProvider, agentId?: string | null) => isPickerHarnessEnabled(harnessCatalog, provider, agentId, {
+      enabledExperimentalAgents,
+      legacyExperimentalAgentsEnabled: experimentalAgentsEnabled,
+    }),
+    [enabledExperimentalAgents, experimentalAgentsEnabled, harnessCatalog],
   )
 
-  const isAgentAllowed = useCallback(
-    (provider: string, agentId?: string | null) => {
-      if (provider === 'claude') return isCatalogHarnessEnabled(harnessCatalog, 'claude')
-      if (provider === 'codex') return isCatalogHarnessEnabled(harnessCatalog, 'codex')
-      if (provider === 'opencode') {
-        return (
-          isCatalogHarnessEnabled(harnessCatalog, 'opencode') || experimentalAgentsEnabled
-        )
-      }
-      if (provider === 'cursor') {
-        return isCatalogHarnessEnabled(harnessCatalog, 'cursor')
-      }
-      if (provider === 'dsh') {
-        return isCatalogHarnessEnabled(harnessCatalog, 'dsh')
-      }
-      if (provider === 'acp' && agentId) {
-        if (isGrokAcpAgent(agentId)) {
-          return isCatalogHarnessEnabled(harnessCatalog, 'acp-grok')
-        }
-        return isExperimentalAcpAgentEnabled(agentId, {
-          enabledExperimentalAgents,
-          legacyExperimentalAgentsEnabled: experimentalAgentsEnabled,
-        })
-      }
-      // Non-experimental providers not listed above stay allowed.
-      if (!isExperimentalAgentProvider(provider as 'opencode' | 'acp', agentId)) return true
-      return false
-    },
-    [enabledExperimentalAgents, experimentalAgentsEnabled, harnessCatalog],
+  // OpenCode over ACP is offered as the OpenCode harness, not as an ACP agent.
+  const visibleAcpAgents = useMemo(
+    () => agents.filter((agent) => !isOpenCodeAcpAgent(agent.id) && isAgentAllowed('acp', agent.id)),
+    [agents, isAgentAllowed],
   )
 
   useEffect(() => {
@@ -415,12 +356,11 @@ export function ProviderSelector({
     () => orderSuggestionHarnesses({
       ranks,
       acpAgents: visibleAcpAgents.map((a) => ({ id: a.id, name: a.name })),
-      includeClaude: isCatalogHarnessEnabled(harnessCatalog, 'claude'),
-      includeCodex: isCatalogHarnessEnabled(harnessCatalog, 'codex'),
-      includeOpenCode:
-        isCatalogHarnessEnabled(harnessCatalog, 'opencode') || experimentalAgentsEnabled,
-      includeCursor: isCatalogHarnessEnabled(harnessCatalog, 'cursor'),
-      includeDeepseek: isCatalogHarnessEnabled(harnessCatalog, 'dsh'),
+      includeClaude: isAgentAllowed('claude'),
+      includeCodex: isAgentAllowed('codex'),
+      includeOpenCode: isAgentAllowed('opencode'),
+      includeCursor: isAgentAllowed('cursor'),
+      includeDeepseek: isAgentAllowed('dsh'),
       harnessOrder,
       defaultHarness: suggestionHarness === undefined ? null : suggestionHarness,
       secondaryHarness,
@@ -428,8 +368,7 @@ export function ProviderSelector({
     [
       ranks,
       visibleAcpAgents,
-      harnessCatalog,
-      experimentalAgentsEnabled,
+      isAgentAllowed,
       harnessOrder,
       suggestionHarness,
       secondaryHarness,
@@ -441,6 +380,7 @@ export function ProviderSelector({
   const hasEnabledHarness = orderedHarnesses.length > 0
 
   const effectiveAcpAgentId = selectedAcpAgent?.id ?? acpAgentId ?? DEFAULT_ACP_AGENT_ID
+  const { PickerIcon } = HARNESS_CONTROLS[preferredProvider]
   const activeKey = preferredProvider === 'acp'
     ? suggestionHarnessKey('acp', effectiveAcpAgentId)
     : preferredProvider
@@ -527,16 +467,10 @@ export function ProviderSelector({
               exit={{ opacity: 0, y: -12, scale: 0.85 }}
               transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
             >
-              <ProviderIcon
-                provider={preferredProvider}
-                acpAgentId={preferredProvider === 'acp' ? effectiveAcpAgentId : null}
-              />
+              <PickerIcon size={72} acpAgentId={effectiveAcpAgentId} />
             </motion.div>
           </AnimatePresence>
-          {preferredProvider !== 'acp' &&
-            preferredProvider !== 'opencode' &&
-            preferredProvider !== 'cursor' &&
-            preferredProvider !== 'dsh' && <ActiveProviderHint />}
+          {apiKeyDefault(preferredProvider) && <ActiveProviderHint />}
           {fixedHarness && orderedHarnesses.length > 1 ? (
             <Tabs
               value={tabsValue}
@@ -687,12 +621,9 @@ function ActiveProviderHint() {
     void fetchProviderData()
   }, [fetchProviderData, providerScope])
 
-  if (
-    preferredProvider === 'acp' ||
-    preferredProvider === 'opencode' ||
-    preferredProvider === 'cursor' ||
-    preferredProvider === 'dsh'
-  ) return null
+  // Only a harness that runs on API keys says which one powers it.
+  const builtIn = apiKeyDefault(preferredProvider)
+  if (!builtIn) return null
 
   const effective = resolveEffective(
     platforms,
@@ -702,17 +633,13 @@ function ActiveProviderHint() {
     sessionApiProviderId,
     { experimentalClaudeOpenAiChatEnabled },
   )
-  const defaultBrand = preferredProvider === 'codex' ? 'openai' : 'claude'
-  const defaultLabel = preferredProvider === 'codex'
-    ? t('resources.providers.defaultLabelCodex')
-    : t('resources.providers.defaultLabelClaude')
 
   return (
     <span className="inline-flex items-center gap-1.5">
       <span className="text-xs text-muted-foreground">{t('chat.suggestions.poweredBy')}</span>
       <ProviderLabel
-        brandKey={effective?.brand ?? defaultBrand}
-        fallback={effective?.platform.name ?? defaultLabel}
+        brandKey={effective?.brand ?? builtIn.brand}
+        fallback={effective?.platform.name ?? t(builtIn.labelKey)}
         icon={effective?.platform.icon}
         size={12}
         compactFallback

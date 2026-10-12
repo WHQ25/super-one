@@ -8,6 +8,8 @@
  */
 
 import { isGrokAcpAgent } from '@superone/shared/acp-brand'
+import type { HarnessId } from '@superone/shared/agent-types'
+import { isExperimentalAgentProvider } from '@/stores/chat-store/helpers/provider-routing'
 
 export interface HarnessCatalogStatus {
   id: string
@@ -124,4 +126,24 @@ export function isDeepseekHarnessEnabled(
   catalog: HarnessCatalogStatus[] | null | undefined,
 ): boolean {
   return isCatalogHarnessEnabled(catalog, 'dsh')
+}
+
+/**
+ * Whether a harness (and, for ACP, an agent) may be picked: its catalog row,
+ * else the experimental-agent switches. One rule for every harness picker.
+ * ACP without an agent yet stays pickable while its agent resolves.
+ */
+export function isPickerHarnessEnabled(
+  catalog: HarnessCatalogStatus[] | null | undefined,
+  provider: HarnessId,
+  agentId: string | null | undefined,
+  opts: { enabledExperimentalAgents: string[]; legacyExperimentalAgentsEnabled?: boolean },
+): boolean {
+  const catalogId = catalogIdForSessionProvider(provider, agentId)
+  // A non-Grok ACP agent is opted into one by one.
+  if (!catalogId) return !!agentId && isExperimentalAcpAgentEnabled(agentId, opts)
+  if (!agentId && catalogId === 'acp-grok') return true
+  if (catalog != null && catalogEntryOn(catalog, catalogId)) return true
+  // The legacy experimental switch still enables OpenCode.
+  return !!opts.legacyExperimentalAgentsEnabled && isExperimentalAgentProvider(provider, agentId)
 }

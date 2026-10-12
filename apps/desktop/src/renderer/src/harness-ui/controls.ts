@@ -16,6 +16,8 @@ import { opencodeControls } from './opencode/controls'
 export interface HarnessControls {
   /** Composer model / effort picker. */
   ModelControl: ComponentType<{ onCloseAutoFocus?: (e: Event) => void }>
+  /** The large brand mark of the empty-chat harness picker; ACP draws its agent's. */
+  PickerIcon: ComponentType<{ size: number; acpAgentId?: string | null }>
   /** Model / effort / API-key picker for a session that does not exist yet (launch rows). */
   LaunchModelControl: ComponentType<LaunchModelProps>
   /** Status-bar permission control: modes, presets or agents, in the harness's own vocabulary. */

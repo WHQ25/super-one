@@ -9,6 +9,7 @@ import {
   isDeepseekHarnessEnabled,
   isGrokHarnessEnabled,
   isOpenCodeEnabled,
+  isPickerHarnessEnabled,
 } from './harness-visibility'
 
 const allOff = [
@@ -72,5 +73,32 @@ describe('harness-visibility', () => {
     expect(catalogIdForSessionProvider('codex')).toBe('codex')
     expect(catalogIdForSessionProvider('acp', null)).toBe('acp-grok')
     expect(catalogIdForSessionProvider('acp', 'some-custom-agent')).toBe(null)
+  })
+})
+
+describe('isPickerHarnessEnabled', () => {
+  const catalog = [
+    { id: 'claude', enabled: true, state: 'ready' },
+    { id: 'codex', enabled: false, state: 'ready' },
+    { id: 'acp-grok', enabled: true, state: 'ready' },
+  ]
+  const off = { enabledExperimentalAgents: [] as string[] }
+
+  it('reads the catalog row for SDK harnesses', () => {
+    expect(isPickerHarnessEnabled(catalog, 'claude', null, off)).toBe(true)
+    expect(isPickerHarnessEnabled(catalog, 'codex', null, off)).toBe(false)
+    expect(isPickerHarnessEnabled(null, 'claude', null, off)).toBe(false)
+  })
+
+  it('lets the legacy experimental switch enable OpenCode', () => {
+    expect(isPickerHarnessEnabled(catalog, 'opencode', null, off)).toBe(false)
+    expect(isPickerHarnessEnabled(catalog, 'opencode', null, { ...off, legacyExperimentalAgentsEnabled: true })).toBe(true)
+  })
+
+  it('gates ACP agents by the Grok row or experimental opt-in, and keeps an unresolved agent pickable', () => {
+    expect(isPickerHarnessEnabled(catalog, 'acp', 'grok-build', off)).toBe(true)
+    expect(isPickerHarnessEnabled(catalog, 'acp', 'gemini', off)).toBe(false)
+    expect(isPickerHarnessEnabled(catalog, 'acp', 'gemini', { enabledExperimentalAgents: ['gemini'] })).toBe(true)
+    expect(isPickerHarnessEnabled([], 'acp', null, off)).toBe(true)
   })
 })

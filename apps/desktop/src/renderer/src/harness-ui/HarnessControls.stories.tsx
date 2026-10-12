@@ -163,3 +163,20 @@ export const LaunchRows: Story = { args: { harness: 'claude' }, render: () => <L
 export const LaunchRowsRemote: Story = { args: { harness: 'claude' }, render: () => <LaunchPreview remote /> }
 /** Catalogs not loaded yet. */
 export const LaunchRowsEmpty: Story = { args: { harness: 'claude' }, render: () => <LaunchPreview empty /> }
+
+/** Empty-chat harness picker marks: Grok for the default ACP agent, the ACP glyph for others. */
+export const PickerIcons: Story = {
+  args: { harness: 'claude' },
+  render: () => (
+    <div className="flex items-end gap-6">
+      {LAUNCH_HARNESSES.map((harness) => {
+        const { PickerIcon } = HARNESS_CONTROLS[harness]
+        return <PickerIcon key={harness} size={48} acpAgentId={harness === 'acp' ? 'grok-build' : null} />
+      })}
+      {(() => {
+        const { PickerIcon } = HARNESS_CONTROLS.acp
+        return <PickerIcon size={48} acpAgentId="gemini" />
+      })()}
+    </div>
+  ),
+}

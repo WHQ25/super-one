@@ -5,20 +5,26 @@ import { mockIpc } from '../../../../../.storybook/mock-ipc'
 import { createDefaultPerSessionState, createDefaultProjectState, useChatStore } from '@/stores/chat'
 import { EMPTY_CODEX_REALTIME_SESSION_VIEW, useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
 import { ChatContent } from './ChatContent'
-import { codexThreadRestoreFixture } from './codex-thread-restore-fixture'
+import { codexAsyncAnswerRestoreFixture, codexThreadRestoreFixture } from './codex-thread-restore-fixture'
 
 const projectPath = '__codex_thread_restore__'
 const sessionId = 'codex-thread-restore'
 
 mockIpc('app', 'getMediaServerPort', async () => 6006)
 
-function RestoredThread({ width = 760 }: { width?: number }) {
+function RestoredThread({ width = 760, scenario = 'compaction' }: { width?: number; scenario?: 'compaction' | 'async-answer' }) {
   const [ready, setReady] = useState(false)
   const viewportRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const previousChat = useChatStore.getState()
     const previousRealtime = useCodexRealtimeViewStore.getState()
-    const { messages, timeline } = codexThreadRestoreFixture()
+    const previousEnvironment = window.environment
+    window.environment = {
+      ...previousEnvironment,
+      callSession: async () => null,
+      onScheduledSendChanged: () => () => {},
+    } as typeof window.environment
+    const { messages, timeline } = scenario === 'async-answer' ? codexAsyncAnswerRestoreFixture() : codexThreadRestoreFixture()
     mockIpc('agent', 'loadRealtimeTimeline', async () => timeline)
     mockIpc('agent', 'getRealtimeTimeline', async () => timeline)
     mockIpc('agent', 'prewarm', async () => undefined)
@@ -53,10 +59,11 @@ function RestoredThread({ width = 760 }: { width?: number }) {
     })
     setReady(true)
     return () => {
+      window.environment = previousEnvironment
       useChatStore.setState(previousChat)
       useCodexRealtimeViewStore.setState(previousRealtime)
     }
-  }, [])
+  }, [scenario])
   return (
     <TooltipProvider>
       <div className="@container flex h-[640px] min-w-0 max-w-full flex-col rounded-lg border bg-card" style={{ width }}>
@@ -79,4 +86,8 @@ type Story = StoryObj<typeof meta>
 export const CompactionAndSteer: Story = {}
 export const NarrowDarkChinese: Story = {
   args: { width: 320 }, globals: { theme: 'dark', locale: 'zh' },
+}
+export const AsyncAnswer: Story = { args: { scenario: 'async-answer' } }
+export const AsyncAnswerNarrowDarkChinese: Story = {
+  args: { scenario: 'async-answer', width: 320 }, globals: { theme: 'dark', locale: 'zh' },
 }

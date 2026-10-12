@@ -1,8 +1,13 @@
 import type { ChatMessage } from './agent-types'
+import { codexAsyncAnswerId, isCodexAsyncAnswer } from './codex-async-question'
 import { isRealtimeDelegationMessage, isRealtimeVoiceMessage } from './realtime-transcript'
 
+function threadTurnId(message: ChatMessage): string | undefined {
+  return message.metadata?.codexTimeline?.turnId ?? message.metadata?.codex?.turnId
+}
+
 function threadMessageKey(message: ChatMessage): string {
-  const turnId = message.metadata?.codexTimeline?.turnId ?? message.metadata?.codex?.turnId
+  const turnId = threadTurnId(message)
   return message.role === 'assistant' && turnId ? `turn:${turnId}` : `message:${message.id}`
 }
 
@@ -37,10 +42,11 @@ export function mergeCodexThreadMessages(
   const localIndexes = new Map(local.map((message, index) => [threadMessageKey(message), index]))
   const aligned = canonical.map((message) => localIndexes.get(threadMessageKey(message)))
   alignSteeredUsers(local, canonical, aligned)
+  const asyncOverlays = alignAsyncAnswers(local, canonical, aligned)
 
   const overlays = new Map<number, ChatMessage>()
   const before = new Map<number, ChatMessage[]>()
-  const lastAnchor = aligned.findLast((index) => index !== undefined)
+  const lastAnchor = aligned.findLast((index, providerIndex) => index !== undefined && !asyncOverlays.has(providerIndex))
   // A snapshot may predate the currently streaming local turn. Its unmatched
   // suffix belongs before that later user row, rather than becoming the tail.
   let nextAnchor = lastAnchor === undefined ? 0 : lastAnchor + 1
@@ -54,7 +60,7 @@ export function mergeCodexThreadMessages(
       bucket.push(provider)
       before.set(nextAnchor, bucket)
     } else {
-      nextAnchor = localIndex
+      if (!asyncOverlays.has(index)) nextAnchor = localIndex
       overlays.set(localIndex, provider)
     }
   }
@@ -89,6 +95,65 @@ function userText(message: ChatMessage): string | null {
   if (!message.content.every((block) => block.type === 'text')) return null
   const text = message.content.map((block) => block.type === 'text' ? block.text : '').join('\n')
   return text || null
+}
+
+/** Async replies can be saved after their streaming turn, outside the steer anchors. */
+function alignAsyncAnswers(
+  local: readonly ChatMessage[],
+  canonical: readonly ChatMessage[],
+  aligned: Array<number | undefined>,
+): Set<number> {
+  if (!local.some(isCodexAsyncAnswer)) return new Set()
+  const answerTurns = new Map<string, string>()
+  const sourceIndexes = new Map<string, number>()
+  for (const messages of [local, canonical]) {
+    for (const [index, message] of messages.entries()) {
+      const turnId = threadTurnId(message)
+      if (message.role !== 'assistant' || !turnId) continue
+      for (const item of message.metadata?.codex?.items ?? []) {
+        if (item.type === 'agent_message' && item.questions?.length) {
+          const answerId = codexAsyncAnswerId(item.id)
+          answerTurns.set(answerId, turnId)
+          if (messages === local) sourceIndexes.set(answerId, index)
+        }
+      }
+    }
+  }
+  const claimed = new Set(aligned.filter((index): index is number => index !== undefined))
+  const candidates = new Map<string, number[]>()
+  local.forEach((message, index) => {
+    if (!isCodexAsyncAnswer(message) || claimed.has(index)) return
+    const turnId = answerTurns.get(message.id)
+    const text = userText(message)
+    if (!turnId || text === null) return
+    const key = JSON.stringify([turnId, text])
+    const indexes = candidates.get(key) ?? []
+    indexes.push(index)
+    candidates.set(key, indexes)
+  })
+  for (const indexes of candidates.values()) indexes.reverse()
+  const overlays = new Set<number>()
+  canonical.forEach((message, index) => {
+    const turnId = threadTurnId(message)
+    if (!turnId) return
+    let candidate = aligned[index]
+    if (candidate === undefined) {
+      const text = userText(message)
+      if (text === null) return
+      // The question identifies the answer's turn; equal text elsewhere is not identity.
+      candidate = candidates.get(JSON.stringify([turnId, text]))?.pop()
+      if (candidate === undefined) return
+      aligned[index] = candidate
+    }
+    const answer = local[candidate]
+    if (!isCodexAsyncAnswer(answer) || answerTurns.get(answer.id) !== turnId) return
+    const sourceIndex = sourceIndexes.get(answer.id)
+    // A mid-turn echo precedes its source assistant in provider history, but the
+    // saved quote follows it. Overlay the identity without moving history across
+    // that quote, including when the source turn is outside the loaded page.
+    if (sourceIndex === undefined || sourceIndex < candidate) overlays.add(index)
+  })
+  return overlays
 }
 
 /** Codex may assign a steer its own id instead of echoing our client message id. */

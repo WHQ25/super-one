@@ -11,14 +11,19 @@ const speech: RealtimeTimelineSegment[] = [
   { id: 'agent', realtimeSessionId: 'rt', role: 'assistant', text: 'I am checking it now.', localOrder: 2 },
   { id: 'followup', realtimeSessionId: 'rt', role: 'user', text: 'How is it going?', localOrder: 10 },
 ]
-function Preview({ status = 'streaming', width = 390, scheme = 'light' }: {
-  status?: ChatMessage['status']; width?: number; scheme?: 'light' | 'dark'
+function Preview({ status = 'streaming', width = 390, scheme = 'light', earlierTurn = false }: {
+  status?: ChatMessage['status']; width?: number; scheme?: 'light' | 'dark'; earlierTurn?: boolean
 }) {
   const [view, setView] = useState<'realtime' | 'thread'>('realtime')
   useEffect(() => installFakeNativeHost((request, reply) => {
     if (request.action === 'openRealtimeThread') { setView('thread'); reply({ result: true }) }
   }), [])
-  const messages: ChatMessage[] = [{ id: 'work', role: 'assistant', providerId: 'codex', status,
+  const messages: ChatMessage[] = [
+    ...(earlierTurn ? [{ id: 'earlier', role: 'assistant' as const, providerId: 'codex' as const, status: 'complete' as const,
+      content: [], createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
+      metadata: { codexTimeline: { provenance: 'realtime-delegated' as const, localOrder: 2, turnId: 'earlier-task' } },
+    }] : []),
+    { id: 'work', role: 'assistant', providerId: 'codex', status,
     content: [{ type: 'text', text: 'The backing Codex task checks the authentication handlers.' }], createdAt: new Date(Date.now() - 12_000).toISOString(),
     metadata: { codexTimeline: { provenance: 'realtime-delegated', localOrder: 3, turnId: 'task' } } }]
   const voice = projectRealtimeTranscript({ messages, segments: speech, liveSegments: [],
@@ -46,3 +51,5 @@ export const Working: Story = {}
 export const Completed: Story = { args: { status: 'complete' } }
 export const Failed: Story = { args: { status: 'error' } }
 export const Narrow: Story = { args: { width: 320 } }
+/** The current task started seconds ago, despite hours of earlier delegated work. */
+export const LatestTurnAfterLongSession: Story = { args: { earlierTurn: true, width: 320 }, globals: { theme: 'dark' } }

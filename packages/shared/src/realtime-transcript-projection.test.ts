@@ -14,6 +14,23 @@ function work(status: ChatMessage['status']): ChatMessage {
 }
 
 describe('separate realtime transcript projection', () => {
+  it('times the latest delegated assistant turn when mobile retains delegation prompts', () => {
+    const earlier = { ...work('complete'), createdAt: '2026-10-10T00:00:00Z' }
+    const prompt: ChatMessage = {
+      id: 'prompt', providerId: 'codex', role: 'user', status: 'complete', createdAt: '',
+      content: [{ type: 'text', text: '<realtime_delegation>Review the plan</realtime_delegation>' }],
+      metadata: { codexTimeline: { provenance: 'realtime-delegated', localOrder: 4, turnId: 't2' } },
+    }
+    const latest: ChatMessage = {
+      ...work('streaming'), id: 'latest', createdAt: '2026-10-10T03:13:51Z',
+      metadata: { codexTimeline: { provenance: 'realtime-delegated', localOrder: 5, turnId: 't2' } },
+    }
+    const result = projectRealtimeTranscript({ messages: [earlier, prompt, latest], segments: segments.slice(0, 2),
+      liveSegments: [], sessionStatus: 'streaming', needsDecision: false })
+
+    expect(result.activities).toMatchObject([{ activity: { status: 'working', workingSince: latest.createdAt } }])
+  })
+
   it('pins unfinished work after newer speech and attaches settled detail to the originating turn', () => {
     const project = (status: ChatMessage['status']) => projectRealtimeTranscript({ messages: [work(status)], segments,
       liveSegments: [], sessionStatus: status === 'streaming' ? 'streaming' : 'idle', needsDecision: false })

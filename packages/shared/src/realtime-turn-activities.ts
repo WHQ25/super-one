@@ -20,7 +20,7 @@ export interface RealtimeTurnActivity {
   kind: RealtimeTurnActivityKind
   status: RealtimeTurnActivityStatus
   durationMs: number | null
-  /** ISO timestamp the running range opened at; null once it settles. */
+  /** ISO timestamp the latest backing turn started at; null once it settles. */
   workingSince: string | null
   messageIds: string[]
   turnIds: string[]
@@ -69,6 +69,10 @@ function orderOfMessage(message: ChatMessage, order: TimelineOrder): number | nu
   return order === 'provider'
     ? message.metadata?.codexTimeline?.position ?? null
     : message.metadata?.codexTimeline?.localOrder ?? message._lastAppliedSeq ?? null
+}
+
+function backingTurnId(message: ChatMessage): string | undefined {
+  return message.metadata?.codexTimeline?.turnId ?? message.metadata?.codex?.turnId
 }
 
 function turnStart(turn: RealtimeConversationTurn, order: TimelineOrder): number | null {
@@ -162,7 +166,13 @@ export function mapRealtimeTurnActivities(input: {
           ? 'working'
           : 'completed'
     const durationMs = messages.reduce((total, message) => total + (message.metadata?.codex?.durationMs ?? 0), 0)
-    const openedAt = messages[0]?.createdAt
+    const latestMessage = messages.at(-1)!
+    const latestTurnId = backingTurnId(latestMessage)
+    // A range can contain older completed turns and gaps between them. Time only
+    // its latest turn, retaining the first assistant row across steered segments.
+    const openedAt = latestTurnId
+      ? messages.find(message => message.role === 'assistant' && backingTurnId(message) === latestTurnId)?.createdAt ?? latestMessage.createdAt
+      : latestMessage.createdAt
     result.set(turn.id, {
       kind: activityKind(messages),
       status,
@@ -170,7 +180,7 @@ export function mapRealtimeTurnActivities(input: {
       workingSince: status === 'working' && openedAt && !Number.isNaN(Date.parse(openedAt)) ? openedAt : null,
       messageIds: messages.map((message) => message.id),
       turnIds: [...new Set(messages.flatMap((message) => {
-        const turnId = message.metadata?.codexTimeline?.turnId ?? message.metadata?.codex?.turnId
+        const turnId = backingTurnId(message)
         return turnId ? [turnId] : []
       }))],
       summary: messageSummary(messages),

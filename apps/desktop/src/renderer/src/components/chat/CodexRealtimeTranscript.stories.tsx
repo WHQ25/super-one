@@ -7,7 +7,7 @@ import { EMPTY_CODEX_REALTIME_SESSION_VIEW, useCodexRealtimeViewStore } from '@/
 import { useChatScroll } from '@/hooks/useChatScroll'
 import { CodexRealtimeTranscript } from './CodexRealtimeTranscript'
 
-type Scenario = 'restored' | 'repeated' | 'empty' | 'loading' | 'error' | 'delegation' | 'plan' | 'scroll'
+type Scenario = 'restored' | 'repeated' | 'empty' | 'loading' | 'error' | 'delegation' | 'latest-turn' | 'plan' | 'scroll'
 type WorkStatus = 'working' | 'completed' | 'failed' | 'needs-decision'
 
 const projectPath = '/storybook/voice'
@@ -43,13 +43,19 @@ function delegatedWork(status: WorkStatus, options: { plan?: boolean; long?: boo
 
 function Preview({ scenario, width = 760 }: { scenario: Scenario; width?: number }) {
   const [ready, setReady] = useState(false)
-  const [workStatus, setWorkStatus] = useState<WorkStatus>(scenario === 'delegation' ? 'working' : 'completed')
+  const [workStatus, setWorkStatus] = useState<WorkStatus>(scenario === 'delegation' || scenario === 'latest-turn' ? 'working' : 'completed')
   const sessionId = `storybook-voice-${scenario}`
-  const withWork = scenario === 'delegation' || scenario === 'plan'
+  const withWork = scenario === 'delegation' || scenario === 'latest-turn' || scenario === 'plan'
   const hasSpeech = scenario === 'restored' || scenario === 'repeated' || scenario === 'scroll' || withWork
   const sessionStatus: AgentStatus = workStatus === 'working' ? 'streaming' : workStatus === 'failed' ? 'error' : 'idle'
   const threadMessages: ChatMessage[] = withWork
-    ? [delegatedWork(workStatus, { plan: scenario === 'plan', long: width < 480 })]
+    ? [
+      ...(scenario === 'latest-turn' ? [{
+        ...delegatedWork('completed'), id: 'earlier-work', createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
+        metadata: { codexTimeline: { provenance: 'realtime-delegated' as const, position: 3, turnId: 'earlier-turn' } },
+      }] : []),
+      delegatedWork(workStatus, { plan: scenario === 'plan', long: width < 480 }),
+    ]
     : hasSpeech ? [typed] : []
   useEffect(() => {
     const timeline: RealtimeTimelineResult = {
@@ -148,6 +154,11 @@ export const DelegatedWork: Story = { render: () => <Preview scenario="delegatio
 export const DelegatedWorkNarrowDark: Story = {
   globals: { theme: 'dark', locale: 'zh', harness: 'codex' },
   render: () => <Preview scenario="delegation" width={320} />,
+}
+/** Completed work from three hours ago must not inflate the latest turn's timer. */
+export const LatestDelegatedTurn: Story = {
+  globals: { theme: 'dark', harness: 'codex' },
+  render: () => <Preview scenario="latest-turn" width={320} />,
 }
 /** A plan the delegated turn ended on is answered under the status line, without leaving the voice view. */
 export const PlanAwaitingApproval: Story = { render: () => <Preview scenario="plan" /> }

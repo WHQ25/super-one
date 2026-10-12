@@ -149,7 +149,7 @@ describe('voice timeline isolation', () => {
     }
   })
 
-  it('times a running range from its first row and jumps to the thread on click', async () => {
+  it('resets the timer for the latest backing turn while retaining the range detail', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     vi.setSystemTime(Date.parse('2026-09-17T00:00:10Z'))
     const running: ChatMessage = {
@@ -157,13 +157,18 @@ describe('voice timeline isolation', () => {
       status: 'streaming',
       metadata: { ...voiceWork.metadata, codex: { ...voiceWork.metadata!.codex!, durationMs: undefined } },
     }
-    const timeline: RealtimeTimelineResult = { ...spokenTimeline, threadMessages: [running] }
+    const earlier: ChatMessage = {
+      ...voiceWork, id: 'earlier-work', createdAt: '2026-09-16T20:46:11Z',
+      metadata: { ...voiceWork.metadata, codexTimeline: { provenance: 'realtime-delegated', turnId: 'earlier-turn', position: 16 } },
+    }
+    const timeline: RealtimeTimelineResult = { ...spokenTimeline, threadMessages: [earlier, running] }
     stubTimeline(timeline)
-    render(<CodexRealtimeTranscript
+    const view = (messages: ChatMessage[], sessionStatus: AgentStatus = 'streaming') => <CodexRealtimeTranscript
       sessionId="running-test" scrollViewportRef={createRef<HTMLDivElement>()}
-      liquidGlass={false} threadMessages={mergeCodexThreadMessages([], timeline)}
-      sessionStatus="streaming" needsDecision={false}
-    />)
+      liquidGlass={false} threadMessages={messages}
+      sessionStatus={sessionStatus} needsDecision={false}
+    />
+    const { rerender } = render(view(mergeCodexThreadMessages([], timeline)))
     await act(async () => {})
     const card = screen.getByTestId('realtime-delegation-row')
     expect(card).toHaveAttribute('data-activity-status', 'working')
@@ -171,10 +176,20 @@ describe('voice timeline isolation', () => {
     await act(async () => { vi.advanceTimersByTime(2_000) })
     expect(screen.getByTestId('realtime-delegation-status')).toHaveTextContent('Working for 10s')
 
+    const latest: ChatMessage = {
+      ...running, id: 'latest-work', createdAt: '2026-09-17T00:00:09Z',
+      metadata: { ...running.metadata, codexTimeline: { provenance: 'realtime-delegated', turnId: 'latest-turn', position: 21 } },
+    }
+    rerender(view([earlier, { ...running, status: 'complete' }, latest]))
+    expect(screen.getByTestId('realtime-delegation-row')).toBe(card)
+    expect(screen.getByTestId('realtime-delegation-status')).toHaveTextContent('Working for 3s')
+    rerender(view([earlier, { ...running, status: 'complete' }, { ...latest, status: 'complete' }], 'idle'))
+    expect(screen.getByTestId('realtime-delegation-status')).toHaveTextContent('Detail')
+
     fireEvent.click(screen.getByRole('button', { name: 'Open in Codex thread' }))
     expect(useCodexRealtimeViewStore.getState().sessions['running-test']).toMatchObject({
       view: 'thread',
-      pendingJump: { view: 'thread', turnId: 'voice-turn', messageId: 'voice-work' },
+      pendingJump: { view: 'thread', turnId: 'earlier-turn', messageId: 'earlier-work' },
     })
     vi.useRealTimers()
   })

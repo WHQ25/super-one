@@ -4,6 +4,7 @@ import type { EventBatcherOptions } from '../event-batcher'
 import { EventProfile, type ProfilePorts } from './profile'
 import { DetailViews, projectProgressiveEvent, projectProgressiveMessage } from './projection'
 import { stripMessagesForRemote } from './remote-content'
+import { WindowViews } from './window-views'
 
 /**
  * Everything one frontend connection receives from a session, under its
@@ -14,6 +15,8 @@ import { stripMessagesForRemote } from './remote-content'
 export class ConnectionDelivery {
   /** Sessions this connection opened summarized, and the rows it expanded. */
   readonly views = new DetailViews()
+  /** Transcript windows this connection holds, kept current by live patches. */
+  readonly windows = new WindowViews()
   private readonly profile: EventProfile
 
   constructor(private current: DeliveryPolicy, ports?: ProfilePorts) {

@@ -668,7 +668,12 @@ function appendRemoteErrorText(msg: ChatMessage): ChatMessage {
   return { ...msg, content: [...msg.content, { type: 'text', text: `Error: ${raw}` }] }
 }
 
-export function stripMessagesForRemote(messages: ChatMessage[], projectPath?: string): ChatMessage[] {
+/**
+ * `splitText: false` keeps text blocks whole and unhighlighted, as live text
+ * deltas arrive: transcript windows cut the text themselves.
+ */
+export function stripMessagesForRemote(messages: ChatMessage[], projectPath?: string, options: { splitText?: boolean } = {}): ChatMessage[] {
+  const splitText = options.splitText ?? true
   // A picture rides along as a thumbnail; the phone asks for the bytes when it
   // is opened (`get_attachment`). Before the Codex early return: user messages
   // are what carry attachments, whichever harness answers them.
@@ -721,6 +726,7 @@ export function stripMessagesForRemote(messages: ChatMessage[], projectPath?: st
           }
           if (b.type === 'tool_result' && widgetIds.has(b.toolUseId)) return b
           if (b.type === 'text') {
+            if (!splitText) return b
             const { segments } = splitTextIntoBlocks(b.text)
             if (segments.length <= 1) return stripContentBlock(b, bashCmds, agentIds, projectPath)
             return segments.map((seg) =>

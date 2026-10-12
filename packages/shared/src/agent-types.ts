@@ -2125,6 +2125,11 @@ export type AgentEventBase =
    * Idempotent — blocks already gone are a no-op.
    */
   | { type: 'content_retracted'; messageId: string; blocks: RetractedBlockRef[] }
+  /**
+   * Host → transcript-window client: the changes to the window `holder` holds,
+   * in place of the content events it summarizes. Reducers ignore it.
+   */
+  | { type: 'transcript_window'; holder?: string; patch: import('./environment/transcript-window').TranscriptWindowPatch }
   | { type: 'queued_message_consumed'; clientMessageId: string }
   /** Backend → Session only: a harness-owned durable queue reloaded. Session republishes it as `queued_messages_changed`. */
   | { type: 'queued_messages_restored'; messages: Array<{ clientMessageId: string; content: string }> }

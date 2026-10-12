@@ -6,6 +6,7 @@ import type { DetailUpdate } from '@superone/shared/environment/detail'
 import type { EnvironmentEventEnvelope, SessionLoadResult, SessionStreamFrame } from '@superone/shared/environment'
 import type { ConnectionDelivery } from '../stream/delivery/connection-delivery'
 import { detailMessageId } from '../stream/delivery/projection'
+import { windowLiveEvent } from '../stream/delivery/window-projection'
 import { summarizesTranscripts } from '../stream/delivery-policy'
 import type { SessionHostPort } from './rpc-context'
 
@@ -54,16 +55,29 @@ export function deliverFrame(
   sessions: Messages,
 ): { frame: SessionStreamFrame; details: Array<{ sessionId: string; update: DetailUpdate }> } {
   const changed = new Set<string>()
+  /** The last envelope of each session holding a window: its patch takes that position. */
+  const windowed = new Map<string, EnvironmentEventEnvelope>()
+  // A phone holding a window gets content as patches; a relaying desktop keeps every event for its own window.
+  const withholds = delivery.policy.surface === 'phone'
   const events = frame.events.flatMap((envelope): EnvironmentEventEnvelope[] => {
     const event = agentEventOf(envelope, sessions)
     if (!event) return [envelope]
     const sessionId = envelope.aggregateId
     const summarized = delivery.views.has(sessionId)
     if (summarized) changed.add(sessionId)
+    const holdsWindow = delivery.windows.has(sessionId)
+    if (holdsWindow) windowed.set(sessionId, envelope)
     const shaped = delivery.event(event, sessionId, summarized ? sessions.messages(sessionId) : [])
-    return shaped.map((next) => ({ ...envelope, eventType: SESSION_DURABLE_EVENT.agentEvent,
+    const live = holdsWindow && withholds ? shaped.flatMap((next) => windowLiveEvent(next) ?? []) : shaped
+    return live.map((next) => ({ ...envelope, eventType: SESSION_DURABLE_EVENT.agentEvent,
       payload: envelope.eventType === SESSION_DURABLE_EVENT.userMessage ? { event: next } : { ...(envelope.payload as object), event: next } }))
   })
+  for (const [sessionId, last] of windowed) {
+    for (const { holder, patch } of delivery.windows.patches(sessionId, sessions.messages(sessionId))) {
+      const event: AgentEvent = { type: 'transcript_window', ...(holder ? { holder } : {}), patch }
+      events.push({ ...last, eventId: `${last.eventId}:window${holder ? `:${holder}` : ''}`, eventType: SESSION_DURABLE_EVENT.agentEvent, payload: { event } })
+    }
+  }
   const details = [...changed].flatMap((sessionId) =>
     delivery.views.hasDetails(sessionId) ? delivery.details(sessionId, detailMessages(sessions, sessionId)).flatMap((event) =>
       event.type === 'remote_detail'

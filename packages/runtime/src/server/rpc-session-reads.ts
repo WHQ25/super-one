@@ -1,5 +1,5 @@
 import { OPERATION_SCOPES } from '@superone/shared/environment'
-import type { RpcContext, RpcResult } from './rpc-context'
+import type { RpcContext, RpcResult, SessionHostPort } from './rpc-context'
 import { asRecord, mapThrown, requireScopes } from './rpc-helpers'
 import { deliverLoad, subscribeDetail } from './session-delivery'
 import { unsupportedMethodError } from './unsupported'
@@ -25,12 +25,9 @@ export async function handleSessionLoad(payload: unknown, ctx: RpcContext): Prom
   const sessions = ctx.sessions
   if (!sessions) return mapThrown(unsupportedMethodError('session.load'))
   const p = asRecord(payload)
-  const sessionId = String(p.sessionId ?? '').trim()
-  if (!sessionId) return { error: { code: 'invalid_argument', message: 'sessionId required' } }
-  if (p.projectId !== undefined) {
-    if (typeof p.projectId !== 'string' || !p.projectId) return { error: { code: 'invalid_argument', message: 'projectId must be a non-empty string' } }
-    if (sessions.get(sessionId)?.projectId !== p.projectId) return { error: { code: 'not_found', message: 'session not found in project' } }
-  }
+  const target = readSessionTarget(p, sessions)
+  if ('error' in target) return target
+  const { sessionId } = target
   if (p.before != null && typeof p.before !== 'number') return { error: { code: 'invalid_argument', message: 'before must be a non-negative integer' } }
   if (p.limit !== undefined && typeof p.limit !== 'number') return { error: { code: 'invalid_argument', message: 'limit must be a positive integer' } }
   if (p.includeState !== undefined && typeof p.includeState !== 'boolean') return { error: { code: 'invalid_argument', message: 'includeState must be boolean' } }
@@ -51,6 +48,17 @@ export async function handleSessionLoad(payload: unknown, ctx: RpcContext): Prom
   } catch (err) {
     return mapThrown(err)
   }
+}
+
+/** The session a read names, checked against its optional project. */
+export function readSessionTarget(p: Record<string, unknown>, sessions: Pick<SessionHostPort, 'get'>): { sessionId: string } | Required<Pick<RpcResult, 'error'>> {
+  const sessionId = String(p.sessionId ?? '').trim()
+  if (!sessionId) return { error: { code: 'invalid_argument', message: 'sessionId required' } }
+  if (p.projectId !== undefined) {
+    if (typeof p.projectId !== 'string' || !p.projectId) return { error: { code: 'invalid_argument', message: 'projectId must be a non-empty string' } }
+    if (sessions.get(sessionId)?.projectId !== p.projectId) return { error: { code: 'not_found', message: 'session not found in project' } }
+  }
+  return { sessionId }
 }
 
 /** Expand a row of a session this connection loaded summarized; packets follow as `detail` messages. */

@@ -2,7 +2,7 @@ import { parsedCommandFromBashInput, resolveCodexCommandActions } from '@superon
 import type { ChatMessage, ContentBlock, CodexFileUpdateChange, CodexMcpToolCallItem, CodexThreadItem, TaskFileChange } from '@superone/shared/agent-types'
 import { bashEditFileChanges } from '@superone/shared/bash-edit-diff'
 import { fileMutationPath, isFileMutationTool } from '@superone/shared/file-mutation'
-import { sanitizeRemoteToolInput } from '@superone/shared/remote-tool-input'
+import { sanitizeRemoteToolInput, shouldKeepRemoteToolInput } from '@superone/shared/remote-tool-input'
 import { isSubagentToolName, normalizeTranscriptTool } from '@superone/shared/tool-ui'
 import { isPatchToolCall, isPatchToolName, patchToolFiles } from '@superone/shared/patch-tool'
 import { mcpAppMessageAttachments } from '@superone/shared/mcp-apps-state'
@@ -106,11 +106,13 @@ export function isFileMutationChild(message: ChatMessage, toolUseId: string): bo
 
 /**
  * Inline UI and decision prompts are visible content, not hidden tool detail.
- * `ReportFindings` belongs here too: its findings live in the input, which the
- * 1 KB shell cap would otherwise blank into `{}` and render as an empty review.
+ * So is every tool whose full input a remote presenter reads
+ * (`shouldKeepRemoteToolInput`), such as `ReportFindings`, whose findings the
+ * 1 KB shell cap would otherwise blank into `{}`.
  */
 export function deferTool(name: string): boolean {
-  return !/widget_show|media_|imagegen|image_gen|video_gen|AskUserQuestion|Todo|TaskCreate|TaskUpdate|EnterPlanMode|ExitPlanMode|ReportFindings/.test(name)
+  return !shouldKeepRemoteToolInput(name)
+    && !/widget_show|media_|imagegen|image_gen|video_gen|AskUserQuestion|Todo|TaskCreate|TaskUpdate|EnterPlanMode|ExitPlanMode/.test(name)
 }
 
 function projectedToolSummary(block: Extract<ContentBlock, { toolName: string }>): string | undefined {

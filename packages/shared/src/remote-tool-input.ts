@@ -1,5 +1,6 @@
 import { normalizeTranscriptTool, parseMcpToolName } from './tool-ui'
 import { isPatchToolName, patchToolFiles } from './patch-tool'
+import { CODEX_IMAGE_GENERATION_TOOL } from './codex-content'
 
 /**
  * Block type a tool call is remapped to before it leaves for a remote surface, so the
@@ -23,7 +24,8 @@ const REMOTE_TOOL_INPUT_SUFFIXES = [
   '__media_generate_video',
 ] as const
 
-const REMOTE_TOOL_INPUT_NAMES = new Set(['ReportFindings'])
+// A Codex image generation's status and paths live in its (hidden) input, which the gallery reads.
+const REMOTE_TOOL_INPUT_NAMES = new Set(['ReportFindings', CODEX_IMAGE_GENERATION_TOOL])
 
 /** Full tool inputs required by a mobile presenter or native host action. */
 export function shouldKeepRemoteToolInput(toolName: string): boolean {

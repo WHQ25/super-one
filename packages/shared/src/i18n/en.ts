@@ -4175,6 +4175,22 @@ export type Messages = {
     openWithApp: string
     openFileFailed: string
   }
+  mediaPlayer: {
+    play: string
+    pause: string
+    seek: string
+    mute: string
+    unmute: string
+    volume: string
+    moreOptions: string
+    playbackSpeed: string
+    normalSpeed: string
+    enterFullscreen: string
+    exitFullscreen: string
+    showLyrics: string
+    hideLyrics: string
+    untitledAudio: string
+  }
   filePreview: {
     loadFailed: string
     loadFailedHint: string
@@ -8549,6 +8565,22 @@ export const en: Messages = {
     superOnePreview: 'SuperOne Preview',
     openWithApp: 'Open with {{app}}',
     openFileFailed: 'Could not open {{name}}: {{error}}',
+  },
+  mediaPlayer: {
+    play: 'Play',
+    pause: 'Pause',
+    seek: 'Seek',
+    mute: 'Mute',
+    unmute: 'Unmute',
+    volume: 'Volume',
+    moreOptions: 'More Options',
+    playbackSpeed: 'Playback Speed',
+    normalSpeed: 'Normal',
+    enterFullscreen: 'Full Screen',
+    exitFullscreen: 'Exit Full Screen',
+    showLyrics: 'Show Lyrics',
+    hideLyrics: 'Hide Lyrics',
+    untitledAudio: 'Audio',
   },
   filePreview: {
     loadFailed: 'Could not read this file',

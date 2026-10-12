@@ -1,15 +1,14 @@
-import type { CSSProperties } from 'react'
 import { Loader2 } from 'lucide-react'
 import { useResolvedMediaSrc } from '@/hooks/use-resolved-media-src'
+import { MarkdownAudioPlayer, MarkdownVideoPlayer } from './markdown-media-player'
 
 interface MarkdownRemoteMediaProps {
   kind: 'video' | 'audio'
   src: string | undefined
-  style?: CSSProperties
 }
 
 /** Async video/audio for remote-media:// refs from chat markdown. */
-export function MarkdownRemoteMedia({ kind, src, style }: MarkdownRemoteMediaProps) {
+export function MarkdownRemoteMedia({ kind, src }: MarkdownRemoteMediaProps) {
   const { displaySrc, loading, failed } = useResolvedMediaSrc(src)
 
   if (loading) {
@@ -23,8 +22,6 @@ export function MarkdownRemoteMedia({ kind, src, style }: MarkdownRemoteMediaPro
   if (failed || !displaySrc) {
     return <span className="text-xs text-muted-foreground">Media unavailable</span>
   }
-  if (kind === 'video') {
-    return <video src={displaySrc} controls preload="metadata" style={style} />
-  }
-  return <audio src={displaySrc} controls />
+  if (kind === 'video') return <MarkdownVideoPlayer src={displaySrc} />
+  return <MarkdownAudioPlayer src={displaySrc} source={src} />
 }

@@ -58,7 +58,7 @@ describe('chat Markdown media destinations', () => {
     }))
     expect(html).toContain(`<${tag}`)
     expect(html).toContain(`screen%20one.${ext}`)
-    if (tag !== 'img') expect(html).toContain('controls')
+    if (tag !== 'img') expect(html).toContain(`data-slot="markdown-${tag}"`)
   })
 
 })

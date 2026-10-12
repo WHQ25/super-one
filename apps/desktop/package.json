@@ -230,6 +230,7 @@
     "mermaid": "^11.17.2",
     "morphdom": "^2.7.8",
     "multicast-dns": "^7.2.5",
+    "music-metadata": "^12.1.1",
     "node-pty": "^1.0.0",
     "occt-import-js": "0.0.23",
     "pdfjs-dist": "^6.3.289",

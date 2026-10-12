@@ -11,9 +11,9 @@ import {
 } from '@/lib/remote-media-url'
 import { LinkSafetyModal } from './LinkSafetyModal'
 import { MarkdownImage } from './markdown-image'
-import { mediaStyleFor } from './markdown-media-style'
 import { MarkdownTable } from './MarkdownTable'
 import { MarkdownRemoteMedia } from './markdown-remote-media'
+import { MarkdownAudioPlayer, MarkdownVideoPlayer } from './markdown-media-player'
 import { openBrowserTab } from '@/components/activity/activity-panel-api'
 import { resolveMarkdownFileLinks } from '@superone/chat-view/presenters/markdown-file-links'
 import { createMarkdownRehypePlugins } from '@superone/chat-view/presenters/markdown-media'
@@ -72,24 +72,17 @@ function localFileToMediaUrl(src: string | undefined): string | undefined {
 const AUDIO_EXTS = new Set(['.mp3', '.wav', '.flac', '.aac', '.m4a', '.opus', '.weba'])
 
 function MediaVideo(props: ComponentProps<'video'>) {
-  const style = mediaStyleFor(props.width, props.height)
   if (isRemoteMediaUrl(props.src)) {
-    return createElement(MarkdownRemoteMedia, { kind: 'video', src: props.src, style })
+    return createElement(MarkdownRemoteMedia, { kind: 'video', src: props.src })
   }
-  return createElement('video', {
-    ...props,
-    src: localFileToMediaUrl(props.src),
-    controls: true,
-    preload: 'metadata',
-    style,
-  })
+  return createElement(MarkdownVideoPlayer, { ...props, src: localFileToMediaUrl(props.src) })
 }
 
 function MediaAudio(props: ComponentProps<'audio'>) {
   if (isRemoteMediaUrl(props.src)) {
     return createElement(MarkdownRemoteMedia, { kind: 'audio', src: props.src })
   }
-  return createElement('audio', { ...props, src: localFileToMediaUrl(props.src), controls: true })
+  return createElement(MarkdownAudioPlayer, { ...props, src: localFileToMediaUrl(props.src), source: props.src })
 }
 
 function getMediaExt(src: string | undefined): string | null {

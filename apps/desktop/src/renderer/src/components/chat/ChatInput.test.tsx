@@ -1503,11 +1503,10 @@ describe('ChatInput scheduled send', () => {
     rerender(<ChatInput />)
     fireEvent.click(screen.getByRole('button', { name: /schedule for/i }))
 
-    expect(scheduledSend.set).toHaveBeenCalledWith(
+    await waitFor(() => expect(scheduledSend.set).toHaveBeenCalledWith(
       'session-1',
       { armed: true, message: 'what is wrong here?', attachments: [SCREENSHOT], sendAt: SEND_AT },
-      expect.anything(),
-    )
+    ))
   })
 
   it('follows an attachment added after arming without restating the text', async () => {
@@ -1522,7 +1521,7 @@ describe('ChatInput scheduled send', () => {
     rerender(<ChatInput />)
 
     await waitFor(
-      () => expect(scheduledSend.set).toHaveBeenCalledWith('session-1', { attachments: [SCREENSHOT] }, expect.anything()),
+      () => expect(scheduledSend.set).toHaveBeenCalledWith('session-1', { attachments: [SCREENSHOT] }),
       { timeout: 2000 },
     )
   })

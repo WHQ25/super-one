@@ -5,13 +5,13 @@ import { useChatStore } from '@/stores/chat-store'
 import { createDefaultPerSessionState, createDefaultProjectState } from '@/stores/chat-store/defaults'
 import { useScheduledSendsSync } from './useScheduledSendsSync'
 
-type ChangedEvent = Parameters<Parameters<typeof window.app.onScheduledSendChanged>[0]>[0]
+type ChangedEvent = Parameters<Parameters<typeof window.environment.onScheduledSendChanged>[0]>[0]
 let emit: ((event: ChangedEvent) => void) | null = null
 const session = (id: string) => useChatStore.getState().projectSessions['/repo']._sessions[id]
 
 beforeEach(() => {
-  Object.assign(window.app, {
-    listScheduledSends: () => Promise.resolve([]),
+  Object.assign(window.environment, {
+    callSessionList: () => Promise.resolve([]),
     onScheduledSendChanged: (callback: typeof emit) => { emit = callback; return () => { emit = null } },
   })
   const screenshot = { id: 'att-1', name: 'shot.png', mimeType: 'image/png', base64: 'iVBORw0KGgo=' }

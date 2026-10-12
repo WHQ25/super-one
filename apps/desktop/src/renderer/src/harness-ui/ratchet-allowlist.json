@@ -212,7 +212,7 @@
     "reason": "model setter side effects: ACP context window, Cursor model params"
   },
   "stores/chat-store/slices/event-slice.ts": {
-    "count": 4,
+    "count": 3,
     "reason": "Codex event stream (deltas, thread, usage)"
   },
   "stores/settings.ts": {

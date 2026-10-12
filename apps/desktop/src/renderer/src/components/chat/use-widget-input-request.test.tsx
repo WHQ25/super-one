@@ -3,6 +3,7 @@ import { renderHook } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { beforeEach, expect, it, vi } from 'vitest'
 import type { ChatMessage } from '@superone/shared/agent-types'
+import { withCodexContent } from '@superone/shared/codex-content'
 import { SessionScopeProvider } from '@/stores/chat-store/session-scope'
 import { useWidgetInputRequest, useWidgetInputs } from './use-widget-input-request'
 
@@ -41,7 +42,8 @@ it.each(['content', 'codex'])('opens a %s widget using its captured pane and mes
   const message: ChatMessage = { id: 'message', role: 'assistant', status: 'complete', content: [], createdAt: '', providerId: representation === 'codex' ? 'codex' : 'claude' }
   if (representation === 'content') message.content = [{ type: 'tool_use', toolUseId: 'widget', toolName: 'mcp__superone__widget_show', input: '{}', status: 'complete' }]
   else message.metadata = { codex: { threadId: 'thread', usage: null, items: [{ type: 'mcp_tool_call', id: 'widget', server: 'superone', tool: 'widget_show', arguments: {}, status: 'completed' }] } }
-  fixture.messages = [message]
+  // The renderer holds a legacy Codex message as it took it in: content derived from items.
+  fixture.messages = [withCodexContent(message)]
   const { result } = renderHook(() => useWidgetInputRequest('widget'), { wrapper })
   await result.current(spec)
   expect(fixture.open).toHaveBeenCalledExactlyOnceWith({ projectPath: '/p', sessionId: 'owner', messageId: 'message', spec })

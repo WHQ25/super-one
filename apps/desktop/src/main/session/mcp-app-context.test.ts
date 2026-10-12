@@ -6,7 +6,7 @@ import { Session } from './session'
 import type { McpAppMessage } from '@superone/shared/mcp-apps-state'
 import { withMcpAppContext } from './mcp-app-context'
 
-const messages: McpAppMessage[] = [{ id: 'message', metadata: { codex: { items: [{ app: {
+const messages: McpAppMessage[] = [{ id: 'message', metadata: { codex: { items: [{ id: 'call', type: 'mcp_tool_call', server: 'fixture', tool: 'view', arguments: {}, status: 'completed', app: {
   appInstanceId: 'view', binding: { server: 'fixture' }, resourceUri: 'ui://fixture',
   toolResult: { _meta: { privateValue: 'private-result' } },
   modelContext: { content: [{ type: 'text', text: 'Selected item-4' }], source: { server: 'forged' } },

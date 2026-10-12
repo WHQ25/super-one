@@ -33,7 +33,7 @@ export class McpAppContextAttachments {
     }
     if (next) {
       // Reuse the source projector to keep HTML and private tool results out of the phone cache.
-      const compact = mcpAppContextSources([{ id: next.messageId, metadata: { codex: { items: [{ app: next.app }] } } }])
+      const compact = mcpAppContextSources([{ id: next.messageId, content: [{ type: 'tool_use', toolUseId: next.app.appInstanceId, toolName: '', input: '', app: next.app }] }])
       this.sources = [...sources.filter(value => value.app.appInstanceId !== next!.app.appInstanceId), ...compact]
     }
   }

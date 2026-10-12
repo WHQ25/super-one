@@ -323,7 +323,7 @@ export interface VideoGenStatusSnapshot {
  * shows every submit as "Submitted" even after the completing poll landed.
  */
 export function videoGenStatusesFromMessages(
-  messages: Array<Pick<ChatMessage, 'content'> & { metadata?: ChatMessage['metadata'] }>,
+  messages: Array<Pick<ChatMessage, 'content'>>,
 ): Record<string, VideoGenStatusSnapshot> {
   const statuses: Record<string, VideoGenStatusSnapshot> = {}
 
@@ -378,15 +378,6 @@ export function videoGenStatusesFromMessages(
     for (const tool of tools) {
       if (isMediaGenerateVideoTool(tool.name)) applySubmit(tool.input, resultById.get(tool.id))
       if (isMediaVideoStatusTool(tool.name)) applyStatus(tool.input, resultById.get(tool.id))
-    }
-
-    for (const item of msg.metadata?.codex?.items ?? []) {
-      if (item.type !== 'mcp_tool_call') continue
-      const toolName = `mcp__${item.server}__${item.tool}`
-      const input = JSON.stringify(item.arguments ?? {})
-      const result = item.error ? undefined : codexMcpResultText(item)
-      if (isMediaGenerateVideoTool(toolName)) applySubmit(input, result)
-      if (isMediaVideoStatusTool(toolName)) applyStatus(input, result)
     }
   }
 

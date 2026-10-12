@@ -8,6 +8,8 @@
  * row — a `tool_use` block, or a Codex `mcp_tool_call` item — so it persists
  * with the transcript and reaches every surface that renders the row.
  */
+import type { ChatMessage } from './agent-types'
+import { readableContent } from './codex-content'
 import { parseMcpToolName } from './tool-ui'
 
 export const SUGGEST_TASK_TOOL_NAME = 'session_suggest_task' as const
@@ -54,12 +56,6 @@ function isSuggestTool(toolName: unknown): boolean {
   return mcp?.serverName === 'superone' && mcp.mcpToolName === SUGGEST_TASK_TOOL_NAME
 }
 
-function codexItemResultText(item: Row): string {
-  const content = record(item.result).content
-  if (!Array.isArray(content)) return ''
-  return content.map((part) => record(part).text).filter((text) => typeof text === 'string').join('\n')
-}
-
 function parseInput(raw: unknown): SuggestedTaskInput | null {
   let value: unknown = raw
   if (typeof raw === 'string') {
@@ -81,22 +77,22 @@ function parseInput(raw: unknown): SuggestedTaskInput | null {
  */
 interface Located {
   messageIndex: number
-  /** `tool_use` block id, or the Codex item id. */
+  /** `tool_use` block id; a legacy Codex call's item shares it. */
   rowId: string
-  kind: 'block' | 'codex'
   row: Row
 }
 
+/** Read through the Codex read view, so a stored legacy row matches like a derived one. */
 function contentOf(message: unknown): Row[] {
-  const content = record(message).content
-  return Array.isArray(content) ? content.map(record) : []
+  const value = record(message)
+  return readableContent({ content: Array.isArray(value.content) ? value.content : [], metadata: value.metadata as ChatMessage['metadata'] }).map(record)
 }
 
 /** The `tool_use` with this id; its result may sit in a later message than the call. */
 function locateToolUse(messages: readonly unknown[], toolUseId: unknown): Located | null {
   for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex--) {
     const use = contentOf(messages[messageIndex]).find((row) => row.type === 'tool_use' && row.toolUseId === toolUseId)
-    if (use) return isSuggestTool(use.toolName) ? { messageIndex, rowId: String(use.toolUseId), kind: 'block', row: use } : null
+    if (use) return isSuggestTool(use.toolName) ? { messageIndex, rowId: String(use.toolUseId), row: use } : null
   }
   return null
 }
@@ -110,14 +106,6 @@ function locate(messages: readonly unknown[], taskId: string): Located | null {
       const use = locateToolUse(messages, block.toolUseId)
       if (use) return use
     }
-    const items = record(record(message.metadata).codex).items
-    if (!Array.isArray(items)) continue
-    for (const item of items.map(record)) {
-      if (item.type !== 'mcp_tool_call' || !isSuggestTool(`mcp__${String(item.server)}__${String(item.tool)}`)) continue
-      if (codexItemResultText(item).includes(taskId)) {
-        return { messageIndex, rowId: String(item.id), kind: 'codex', row: item }
-      }
-    }
   }
   return null
 }
@@ -125,7 +113,7 @@ function locate(messages: readonly unknown[], taskId: string): Located | null {
 export function findSuggestedTask(messages: readonly unknown[], taskId: string): SuggestedTaskRecord | null {
   const found = locate(messages, taskId)
   if (!found) return null
-  const input = parseInput(found.kind === 'block' ? found.row.input : found.row.arguments)
+  const input = parseInput(found.row.input)
   if (!input) return null
   const state = found.row.suggestedTask as SuggestedTaskState | undefined
   return { input, ...(state ? { state } : {}) }

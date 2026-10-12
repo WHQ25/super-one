@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { McpAppContextAttachments } from './McpAppContextAttachments'
 
 const state = vi.hoisted(() => ({ scope: { projectPath: '/side-project', sessionId: 'side-session' },
-  messages: [{ id: 'message', metadata: { codex: { items: [{ app: { appInstanceId: 'view', binding: { server: 'CAD' }, resourceUri: 'ui://view', modelContext: { updateId: 'revision', content: [{ type: 'text', text: 'Part details', _meta: { 'openai/title': 'Dial' } }], source: { appInstanceId: 'view', server: 'CAD' } } } }] } } }] }))
+  messages: [{ id: 'message', metadata: { codex: { items: [{ id: 'call', type: 'mcp_tool_call', server: 'fixture', tool: 'view', arguments: {}, status: 'completed', app: { appInstanceId: 'view', binding: { server: 'CAD' }, resourceUri: 'ui://view', modelContext: { updateId: 'revision', content: [{ type: 'text', text: 'Part details', _meta: { 'openai/title': 'Dial' } }], source: { appInstanceId: 'view', server: 'CAD' } } } }] } } }] }))
 vi.mock('@/stores/chat', () => ({ useActiveSession: (select: (value: unknown) => unknown) => select({ messages: state.messages }), useSessionScope: () => state.scope,
   useChatStore: (select: (value: unknown) => unknown) => select({ activeProject: '/main-project', projectSessions: { '/main-project': { _activeSessionId: 'main-session' } } }) }))
 vi.mock('@/hooks/use-is-dark', () => ({ useIsDark: () => false }))

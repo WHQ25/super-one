@@ -34,6 +34,7 @@ import { McpAppsError } from '@superone/shared/mcp-apps'
 import { matchesResourceAccept } from '@superone/shared/mcp-form-resources'
 import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
 import { superoneBareToolName } from '@superone/shared/superone-host-owned-tools'
+import { readableContent } from '@superone/shared/codex-content'
 import { acceptedElicitationContent, type SchemaForm, type SchemaFormResource } from '@superone/shared/schema-form'
 import { inferMimeType } from '../file-bridge'
 import log from '../logger'
@@ -346,12 +347,12 @@ export interface WidgetInputSession extends InputRequestSession {
 
 const WIDGET_TOOL_NAMES = new Set(['widget_show', 'mcp__superone.widget_show'])
 
-/** Claude/ACP keep tool blocks in `content`; Codex keeps MCP calls as thread items. */
+/** A widget whose call finished without failing; a failed one never drew a form. */
 function hasCompletedWidget(message: WidgetMessage): boolean {
-  if (message.content?.some(block => block.type === 'tool_use'
-    && WIDGET_TOOL_NAMES.has(superoneBareToolName(block.toolName)) && block.status !== 'streaming')) return true
-  return message.metadata?.codex?.items?.some(item => item.type === 'mcp_tool_call'
-    && item.server === 'superone' && item.tool === 'widget_show' && item.status === 'completed' && !item.result?.isError) ?? false
+  const content = readableContent(message)
+  const failed = new Set(content.flatMap(block => block.type === 'tool_result' && block.isError ? [block.toolUseId] : []))
+  return content.some(block => block.type === 'tool_use' && WIDGET_TOOL_NAMES.has(superoneBareToolName(block.toolName))
+    && block.status !== 'streaming' && !failed.has(block.toolUseId))
 }
 
 /**

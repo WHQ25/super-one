@@ -14,9 +14,7 @@ export function useWidgetInputs(toolUseId: string | undefined) {
   const source = useCallback((): ComposerSource => {
     if (!projectPath || !sessionId || !toolUseId) throw new Error('This widget has no active session.')
     const message = useChatStore.getState().projectSessions[projectPath]?._sessions[sessionId]?.messages.find(message => message.role === 'assistant'
-      && (message.content.some(block => block.type === 'tool_use' && block.toolUseId === toolUseId)
-        || message.metadata?.codex?.items?.some(item => item.type === 'mcp_tool_call' && item.id === toolUseId
-          && item.server === 'superone' && item.tool === 'widget_show')))
+      && message.content.some(block => block.type === 'tool_use' && block.toolUseId === toolUseId))
     if (!message) throw new Error('This widget is no longer in the session.')
     return { kind: 'widget', projectPath, sessionId, messageId: message.id }
   }, [projectPath, sessionId, toolUseId])

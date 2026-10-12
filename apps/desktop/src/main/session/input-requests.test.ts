@@ -230,7 +230,7 @@ describe('openWidgetInputRequest', () => {
 
   it('accepts a completed Codex widget call kept as a thread item', () => {
     const codexMessage = (status: string, isError = false) => ({
-      id: 'm1', role: 'assistant', content: [],
+      id: 'm1', role: 'assistant', status: status === 'in_progress' ? 'streaming' : 'complete', content: [],
       metadata: { codex: { threadId: 't', usage: null, items: [{ id: 'i1', type: 'mcp_tool_call', server: 'superone', tool: 'widget_show', arguments: {}, status, ...(isError ? { result: { content: [], structuredContent: null, isError } } : {}) }] } },
     })
     const open = (message: ReturnType<typeof codexMessage>) => openWidget(widgetSession([message] as never), { projectPath: '/p', sessionId: 's1', messageId: 'm1', spec })

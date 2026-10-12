@@ -27,7 +27,7 @@ describe('phone context independent of transcript pagination', () => {
     await expect(state.remove(state.items([])[0].id, client, { projectPath: '/p', sessionId: 's' }, [])).rejects.toThrow('Disconnected')
     expect(state.items([])).toHaveLength(1)
     state.restore([])
-    const old = [{ id: 'old-message', metadata: { codex: { threadId: 't', usage: null, items: [{ app: source.app }] } } }]
+    const old = [{ id: 'old-message', metadata: { codex: { threadId: 't', usage: null, items: [{ id: 'call', type: 'mcp_tool_call', server: 'fixture', tool: 'view', arguments: {}, status: 'completed', app: source.app }] } } }]
     expect(state.items(old)).toEqual([])
     expect(state.reconcile(old)[0].metadata.codex.items[0].app.modelContext).toBeNull()
   })
@@ -67,7 +67,7 @@ describe('phone context independent of transcript pagination', () => {
 
 
   it('captures buffered context updates against fresh restore messages rather than stale local cache', async () => {
-    const message = { id: 'old-message', role: 'assistant', content: [], timestamp: 0, metadata: { codex: { items: [{ app: { ...source.app, modelContext: null } }] } } }
+    const message = { id: 'old-message', role: 'assistant', content: [], timestamp: 0, metadata: { codex: { items: [{ id: 'call', type: 'mcp_tool_call', server: 'fixture', tool: 'view', arguments: {}, status: 'completed', app: { ...source.app, modelContext: null } }] } } }
     const client = runtimeTestClient(), answer = client.dispatch.getMockImplementation()!
     client.releaseBuffer.mockReturnValue({ epoch: 1, batches: [[{ type: 'mcp_app_updated', messageId: 'old-message', appInstanceId: 'view', update: { modelContext: source.app.modelContext } }]] })
     client.dispatch.mockImplementation(async call => call.method === 'session.load'

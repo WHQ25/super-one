@@ -66,6 +66,8 @@ describe('suggested tasks', () => {
   it('records the outcome on a Codex mcp_tool_call item', () => {
     const next = applySuggestedTaskUpdate(codexTranscript(), TASK_ID, { status: 'dismissed' })
     expect(findSuggestedTask(next, TASK_ID)).toEqual({ input: INPUT, state: { status: 'dismissed' } })
+    // The item is the stored truth a later read view derives from.
+    expect(next[0].metadata?.codex?.items[0]).toMatchObject({ id: 'item-1', suggestedTask: { status: 'dismissed' } })
   })
 
   it('leaves a card that already has an outcome as it is', () => {

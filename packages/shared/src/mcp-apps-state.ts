@@ -1,6 +1,7 @@
 import { validateMcpAppResource } from './mcp-app-resource'
 import { compactMcpAppPresentation, MCP_APP_PRESENTATION_MAX_BYTES } from './mcp-apps-metadata'
-import type { AgentEvent, ContentBlock, ImageAttachment } from './agent-types'
+import type { AgentEvent, ChatMessage, ContentBlock, ImageAttachment } from './agent-types'
+import { readableContent } from './codex-content'
 import { mcpAppContextInput, mcpAppContextItems, type McpAppContextAttachment } from './mcp-app-model-context'
 import { validateTurnAttachments } from './attachment-validation'
 import { assertMcpAppSize } from './mcp-apps'
@@ -28,25 +29,11 @@ function mapAppRows<B>(blocks: readonly B[], visit: (block: B) => B): B[] {
   })
 }
 
-function appRows(blocks: readonly unknown[]): Record<string, unknown>[] {
-  const rows: Record<string, unknown>[] = []
-  const visit = (blocks: readonly unknown[]) => {
-    for (const block of blocks) {
-      const value = record(block)
-      rows.push(value)
-      if (value.type === 'collab_tool_call') for (const items of Object.values(record(value.childItems))) if (Array.isArray(items)) visit(items)
-    }
-  }
-  visit(blocks)
-  return rows
-}
-
+/** Every App a message carries, read from its content (a legacy Codex message's is derived from its items, children included). */
 export function mcpAppMessageAttachments(message: McpAppMessage): ToolAppAttachment[] {
-  const items = record(record(message.metadata).codex).items
-  const candidates: unknown[] = [...(message.content ?? []), ...(Array.isArray(items) ? items : [])]
   const apps = new Map<string, ToolAppAttachment>()
-  for (const candidate of appRows(candidates)) {
-    const app = candidate.app as ToolAppAttachment | undefined
+  for (const block of readableContent({ content: message.content, metadata: message.metadata as ChatMessage['metadata'] })) {
+    const app = 'app' in block ? block.app : undefined
     if (app?.appInstanceId && app.binding && app.resourceUri) apps.set(app.appInstanceId, app)
   }
   return [...apps.values()]

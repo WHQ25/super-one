@@ -252,7 +252,7 @@ export function isLegacyCodexMessage(message: Pick<ChatMessage, 'metadata'>): bo
 
 const legacyContentCache = new WeakMap<CodexThreadItem, ContentBlock[]>()
 
-type ReadableMessage = Pick<ChatMessage, 'metadata'> & { content?: ContentBlock[]; status?: ChatMessage['status'] }
+type ReadableMessage = Pick<ChatMessage, 'metadata'> & { content?: readonly ContentBlock[]; status?: ChatMessage['status'] }
 
 /**
  * The content a reader sees. A legacy Codex message derives it from its items,
@@ -262,13 +262,15 @@ type ReadableMessage = Pick<ChatMessage, 'metadata'> & { content?: ContentBlock[
  * has no block id. Main and CLI nodes keep the stored shape, so shared readers
  * read through this rather than `message.content`.
  */
-export function readableContent(message: ReadableMessage): ContentBlock[] {
-  const stored = message.content ?? []
-  const items = message.metadata?.codex?.items
-  if (!items?.length) return stored
+export function readableContent(message: ReadableMessage): readonly ContentBlock[] {
+  return isLegacyCodexMessage(message) ? legacyContent(message) : message.content ?? []
+}
+
+function legacyContent(message: ReadableMessage): ContentBlock[] {
+  const items = message.metadata!.codex!.items
   const derived = codexItemsToContent(message.status === 'streaming' ? items : sealCodexItems(items), legacyContentCache)
   const answered = derived.some(block => (block.type === 'text' || block.type === 'plan') && !block.parentToolUseId)
-  const fallback = answered ? [] : stored.filter(block => block.type === 'text' && block.id === undefined)
+  const fallback = answered ? [] : (message.content ?? []).filter(block => block.type === 'text' && block.id === undefined)
   return fallback.length ? [...derived, ...fallback] : derived
 }
 
@@ -278,7 +280,7 @@ export function readableContent(message: ReadableMessage): ContentBlock[] {
  */
 export function withCodexContent<M extends ChatMessage>(message: M): M {
   if (!isLegacyCodexMessage(message)) return message
-  const content = readableContent(message)
+  const content = legacyContent(message)
   const unchanged = content.length === message.content.length && content.every((block, index) => block === message.content[index])
   return unchanged ? message : { ...message, content }
 }

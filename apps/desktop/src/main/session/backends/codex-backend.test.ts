@@ -5,9 +5,8 @@ import type {
   CodexGoal,
   CodexRunRequest,
   CodexRunResult,
-  CodexCollabToolCallItem,
-  CodexMcpToolCallItem,
   CodexThreadItem,
+  ContentBlock,
   CodexUsageInfo,
   PermissionRequest,
 } from '@superone/shared/agent-types'
@@ -389,10 +388,9 @@ describe('CodexBackend lifecycle', () => {
       }),
     }))
     expect(events).toContainEqual({
-      type: 'codex_item_delta',
+      type: 'content_delta',
       messageId: 'codex_realtime_turn-live',
-      phase: 'completed',
-      item,
+      delta: { type: 'text', id: 'agent-1', text: 'Working live', parentToolUseId: null },
     })
     expect(events).toContainEqual(expect.objectContaining({
       type: 'message_complete',
@@ -914,13 +912,15 @@ describe('CodexBackend send()', () => {
     await pending
 
     const types = events.map((e) => e.type)
-    expect(types).toEqual(['message_start', 'status_change', 'message_complete', 'status_change'])
+    // No item carried the reply, so the run's final response becomes the bubble's text.
+    expect(types).toEqual(['message_start', 'status_change', 'content_delta', 'message_complete', 'status_change'])
     expect((events[1] as { status: string }).status).toBe('streaming')
-    expect((events[3] as { status: string }).status).toBe('idle')
+    expect(events[2]).toMatchObject({ delta: { type: 'text', text: 'bye' } })
+    expect((events[4] as { status: string }).status).toBe('idle')
     const start = events[0] as { message: { id: string; role: string; providerId: string } }
     expect(start.message.role).toBe('assistant')
     expect(start.message.providerId).toBe('codex')
-    const complete = events[2] as Record<string, unknown>
+    const complete = events[3] as Record<string, unknown>
     expect(complete.type).toBe('message_complete')
     expect((complete.metadata as Record<string, unknown>).codex).toMatchObject({ finalResponse: 'bye', threadId: 'th-1' })
   })
@@ -1003,7 +1003,7 @@ describe('CodexBackend send()', () => {
     expect(bodyTypes).toContain('codex_turn_metadata')
     expect(bodyTypes).toContain('codex_subagent_activity')
     expect(events.find(event => event.type === 'message_complete')).toMatchObject({ metadata: { codex: { rootTurnId: 'origin', requestedProvenance: { parentTurnId: 'parent' }, subagents: { child: { creationConfiguration: { model: 'actual-model', reasoningEffort: 'high' } } } } } })
-    expect(bodyTypes).toContain('codex_item_delta')
+    expect(bodyTypes).toContain('content_delta')
     expect(bodyTypes).toContain('message_usage')
     expect(bodyTypes).toContain('permission_request')
     expect(bodyTypes).toContain('ask_user_question')
@@ -1025,7 +1025,7 @@ describe('CodexBackend send()', () => {
     expect(request).not.toHaveBeenCalled()
     cb.onItemDelta!('completed', { ...item, mcpAppUi: { resourceUri: 'ui://fixture/view' } })
     expect(request).toHaveBeenCalledWith('mcpServerStatus/list', expect.objectContaining({ detail: 'toolsAndAuthOnly', threadId: 'thread-app' }))
-    expect(events).toContainEqual(expect.objectContaining({ type: 'codex_item_delta', item: expect.objectContaining({ app: expect.objectContaining({ resourceUri: 'ui://fixture/view' }) }) }))
+    expect(events).toContainEqual(expect.objectContaining({ type: 'content_delta', delta: expect.objectContaining({ type: 'tool_use', app: expect.objectContaining({ resourceUri: 'ui://fixture/view' }) }) }))
     finish({ data: [{ name: 'fixture', tools: {} }] })
     service.resolveRun(makeResult())
     await pending
@@ -1042,11 +1042,11 @@ describe('CodexBackend send()', () => {
     session.connectionHandle = { connection: { request }, close: vi.fn(), getStderr: () => '', onClosed: vi.fn(() => () => {}) }
     cb.onThreadStarted!('root')
     cb.onItemDelta!('updated', { id: 'spawn', type: 'collab_tool_call', tool: 'spawnAgent', status: 'completed', receiverThreadIds: ['child'], agentsStates: {}, childItems: { child: [{ id: 'call', type: 'mcp_tool_call', server: 'fixture', tool: 'next', arguments: {}, status: 'completed', mcpAppUi: { resourceUri: 'ui://fixture/view' } }] } })
-    expect(events).toContainEqual(expect.objectContaining({ type: 'codex_item_delta', item: expect.objectContaining({ childItems: { child: [expect.objectContaining({ app: expect.objectContaining({ origin: { providerSessionId: 'child' } }) })] } }) }))
+    expect(events).toContainEqual(expect.objectContaining({ type: 'content_delta', delta: expect.objectContaining({ type: 'tool_use', toolUseId: 'call', parentToolUseId: 'spawn', app: expect.objectContaining({ origin: { providerSessionId: 'child' } }) }) }))
     expect(request).toHaveBeenCalledWith('mcpServerStatus/list', expect.objectContaining({ threadId: 'child', detail: 'toolsAndAuthOnly' }))
     expect(backend.getCurrentProviderSessionId()).toBe('root')
-    const event = events.find(event => event.type === 'codex_item_delta' && event.item.type === 'collab_tool_call') as Extract<AgentEvent, { type: 'codex_item_delta' }>
-    const app = ((event.item as CodexCollabToolCallItem).childItems!.child![0] as CodexMcpToolCallItem).app!
+    const event = events.find(event => event.type === 'content_delta' && event.delta.type === 'tool_use' && event.delta.toolUseId === 'call') as Extract<AgentEvent, { type: 'content_delta' }>
+    const app = (event.delta as Extract<ContentBlock, { type: 'tool_use' }>).app!
     const provider = await backend.getMcpAppsProvider(app.binding, app.origin!)
     expect(request).toHaveBeenCalledWith('thread/read', { threadId: 'child', includeTurns: false })
     expect(request).toHaveBeenCalledWith('thread/resume', { threadId: 'child' })
@@ -1610,7 +1610,7 @@ describe('CodexBackend interrupt / approval forwarding', () => {
       id: 'item-x', type: 'agent_message', text: 'after steer',
     } as unknown as CodexThreadItem)
 
-    const deltaEvt = events.find((e) => e.type === 'codex_item_delta') as Extract<AgentEvent, { type: 'codex_item_delta' }> | undefined
+    const deltaEvt = events.find((e) => e.type === 'content_delta') as Extract<AgentEvent, { type: 'content_delta' }> | undefined
     expect(deltaEvt?.messageId).toBe('asst-2')
 
     service.resolveRun(makeResult({ finalResponse: 'done' }))
@@ -1648,11 +1648,12 @@ describe('CodexBackend steer message attribution', () => {
     await backend.start(makeStartOpts())
   })
 
-  function itemDeltas(messageId: string): Array<{ phase: string; id: string }> {
+  /** The block ids a bubble's content deltas wrote. */
+  function contentIds(messageId: string): string[] {
     return events
-      .filter((e): e is Extract<AgentEvent, { type: 'codex_item_delta' }> => e.type === 'codex_item_delta')
+      .filter((e): e is Extract<AgentEvent, { type: 'content_delta' }> => e.type === 'content_delta')
       .filter((e) => e.messageId === messageId)
-      .map((e) => ({ phase: e.phase, id: (e.item as { id: string }).id }))
+      .map((e) => (e.delta as { id?: string }).id ?? '')
   }
 
   function completeFor(messageId: string): Extract<AgentEvent, { type: 'message_complete' }> | undefined {
@@ -1661,9 +1662,8 @@ describe('CodexBackend steer message attribution', () => {
       .find((e) => e.messageId === messageId)
   }
 
-  function completeItemIds(messageId: string): string[] {
-    const meta = completeFor(messageId)?.metadata as { codex?: { items?: Array<{ id: string }> } } | undefined
-    return (meta?.codex?.items ?? []).map((i) => i.id)
+  function completeReply(messageId: string): string | undefined {
+    return (completeFor(messageId)?.metadata as { codex?: { finalResponse?: string } } | undefined)?.codex?.finalResponse
   }
 
   it('keeps each bubble’s items isolated across a steer: pre-steer item completes into the pre-steer bubble, not the steered one', async () => {
@@ -1699,17 +1699,56 @@ describe('CodexBackend steer message attribution', () => {
     }))
     await pending
 
-    // item-A deltas (incl. the post-steer completion) must stay attributed to A.
-    expect(itemDeltas('A').map((d) => d.id)).toEqual(['item-A', 'item-A'])
-    expect(itemDeltas('B').map((d) => d.id)).toEqual(['item-B', 'item-B'])
+    // item-A's content (incl. the post-steer rewrite) must stay attributed to A.
+    expect(contentIds('A')).toEqual(['item-A', 'item-A'])
+    expect(contentIds('B')).toEqual(['item-B'])
 
-    // Bubble A must be finalized on steer with only its own items.
-    expect(completeFor('A')).toBeDefined()
-    expect(completeItemIds('A')).toEqual(['item-A'])
+    // Each bubble is finalized with only its own reply (no merged turn dump):
+    // A at the steer, before its rewrite reached it as content.
+    expect(completeReply('A')).toBe('partial A')
+    expect(completeReply('B')).toBe('answer B')
+  })
+})
 
-    // Bubble B's completion must contain only B's items (no merged turn dump).
-    expect(completeFor('B')).toBeDefined()
-    expect(completeItemIds('B')).toEqual(['item-B'])
+describe('CodexBackend content stream', () => {
+  let service: ReturnType<typeof makeFakeService>
+  let backend: CodexBackend
+  let events: AgentEvent[]
+
+  beforeEach(async () => {
+    service = makeFakeService()
+    backend = new CodexBackend(service)
+    events = []
+    backend.onEvent((e) => events.push(e))
+    await backend.start(makeStartOpts())
+  })
+
+  it("sends only what changed when a fork's late item reaches a turn that already ended", async () => {
+    const first = backend.send({ content: 'spawn', assistantMessageId: 'A' })
+    const cb = service.capturedCallbacks!
+    cb.onItemDelta!('completed', { id: 'spawn', type: 'collab_tool_call', tool: 'spawnAgent', status: 'completed', receiverThreadIds: ['child'], agentsStates: {} })
+    cb.emitForkItem!('child', 'updated', { id: 'late', type: 'agent_message', text: 'Hel' })
+    service.resolveRun(makeResult({ finalResponse: '' }))
+    await first
+
+    const second = backend.send({ content: 'next', assistantMessageId: 'B' })
+    service.capturedCallbacks!.emitForkItem!('child', 'updated', { id: 'late', type: 'agent_message', text: 'Hello' })
+    service.resolveRun(makeResult({ finalResponse: '' }))
+    await second
+
+    const late = events.filter((e): e is Extract<AgentEvent, { type: 'content_delta' }> => e.type === 'content_delta' && e.delta.type === 'text' && e.delta.id === 'late')
+    expect(late.map(e => [e.messageId, (e.delta as { text: string }).text, e.replace ?? false])).toEqual([['A', 'Hel', false], ['A', 'lo', false]])
+  })
+
+  it('sets the session todo list from a Codex todo list', async () => {
+    const pending = backend.send({ content: 'plan' })
+    service.capturedCallbacks!.onItemDelta!('updated', { id: 'todo', type: 'todo_list', items: [{ text: 'Read', completed: true }, { text: 'Write', completed: false }] })
+    service.resolveRun(makeResult())
+    await pending
+    expect(events).toContainEqual({ type: 'todos_updated', todos: [
+      { id: '1', subject: 'Read', description: '', status: 'completed', activeForm: 'Read' },
+      { id: '2', subject: 'Write', description: '', status: 'pending', activeForm: 'Write' },
+    ] })
   })
 })
 

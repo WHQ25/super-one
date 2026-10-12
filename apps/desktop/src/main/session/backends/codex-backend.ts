@@ -67,6 +67,7 @@ import {
   type CodexRunStreamCallbacks,
 } from '../../codex/codex-turn'
 import { CodexTurnUsageAccumulator } from '../../codex/codex-usage-accumulator'
+import { codexTodoListTodos, createCodexContentStream, type CodexContentStream } from '@superone/shared/codex-content'
 import { CodexGoalController } from '../../codex/codex-goal-controller'
 import { codexGoalEventCallbacks } from '../../codex/codex-goal-events'
 import {
@@ -250,6 +251,9 @@ export class CodexBackend implements SessionBackend {
   private forkOwners = new Map<string, string>()
   private segments = new Map<string, CodexMessageSegment>()
   private finalizedSegments = new Set<string>()
+  // A bubble's content stream outlives the turn: a fork's late item updates
+  // blocks it already sent, and a fresh stream would resend them whole.
+  private contentStreams = new Map<string, CodexContentStream>()
   private lastUsageSnapshot: CodexUsageInfo | null = null
   private turnUsage = new CodexTurnUsageAccumulator()
   private turnUsageRecorded = false
@@ -1927,8 +1931,7 @@ export class CodexBackend implements SessionBackend {
             if (!this.forkOwners.has(tid)) this.forkOwners.set(tid, owner)
           }
         }
-        this.recordSegmentItem(owner, item)
-        this.emit({ type: 'codex_item_delta', messageId: owner, phase, item })
+        this.emitSegmentItem(owner, item)
       },
       emitForkItem: (forkThreadId, phase, item) => {
         if ((item.type === 'mcp_tool_call' || item.type === 'collab_tool_call') && this.startOpts) {
@@ -1942,8 +1945,7 @@ export class CodexBackend implements SessionBackend {
           ?? this.currentMessageId
         if (!owner) return
         this.itemOwner.set(item.id, owner)
-        this.recordSegmentItem(owner, item)
-        this.emit({ type: 'codex_item_delta', messageId: owner, phase, item })
+        this.emitSegmentItem(owner, item)
       },
       onMcpServerStatus: (servers) => {
         const messageId = this.currentMessageId
@@ -2047,7 +2049,12 @@ export class CodexBackend implements SessionBackend {
     const items = seg
       ? seg.order.map((id) => seg.map.get(id)).filter((item): item is CodexThreadItem => Boolean(item))
       : []
-    const finalText = deriveFinalResponse(items).trim() || opts.finalResponseFallback?.trim() || ''
+    const reply = deriveFinalResponse(items).trim()
+    const finalText = reply || opts.finalResponseFallback?.trim() || ''
+    // A bubble whose own items carry no reply shows the run's final response.
+    if (!reply && finalText) {
+      this.emit({ type: 'content_delta', messageId, delta: { type: 'text', id: `${messageId}:final-response`, text: finalText, parentToolUseId: null } })
+    }
     this.emit({
       type: 'message_complete',
       messageId,
@@ -2056,7 +2063,8 @@ export class CodexBackend implements SessionBackend {
           ...codexSegmentCompletionData(seg, items),
           finalResponse: finalText,
           durationMs: Date.now() - opts.startedAt,
-          items,
+          // The turn is written as content; its items stay internal.
+          items: [],
           threadId: opts.threadId,
           ...(opts.turnId ? { turnId: opts.turnId } : {}),
           usage: opts.usage,
@@ -2092,6 +2100,20 @@ export class CodexBackend implements SessionBackend {
     const seg = this.ensureSegment(messageId)
     if (!seg.map.has(item.id)) seg.order.push(item.id)
     seg.map.set(item.id, item)
+  }
+
+  /** Record an item snapshot for its bubble and send what changed as content. */
+  private emitSegmentItem(messageId: string, item: CodexThreadItem): void {
+    this.recordSegmentItem(messageId, item)
+    let stream = this.contentStreams.get(messageId)
+    if (!stream) {
+      stream = createCodexContentStream()
+      this.contentStreams.set(messageId, stream)
+    }
+    for (const { delta, replace } of stream.update(item)) {
+      this.emit({ type: 'content_delta', messageId, delta, ...(replace ? { replace } : {}) })
+    }
+    if (item.type === 'todo_list') this.emit({ type: 'todos_updated', todos: codexTodoListTodos(item) })
   }
 
   private assertStarted(): void {

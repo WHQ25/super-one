@@ -15,7 +15,9 @@ import type {
   CodexCollabToolCallItem,
   CodexMcpToolCallItem,
   CodexThreadItem,
+  CodexTodoListItem,
   ContentBlock,
+  TodoItem,
 } from './agent-types'
 import { isCodexCommandToolError } from './codex-command-status'
 import { resolveCodexCommandActions } from './codex-command-actions'
@@ -134,6 +136,16 @@ function collabAgentBlocks(item: CodexCollabToolCallItem, parentToolUseId: Paren
   return [container, ...children, ...outcome]
 }
 
+/** A Codex todo list's entries in the `TodoWrite` input shape. */
+function codexTodoEntries(item: CodexTodoListItem) {
+  return item.items.map(entry => ({ content: entry.text, status: entry.completed ? 'completed' as const : 'pending' as const, activeForm: entry.text }))
+}
+
+/** The session todo list a Codex todo list sets, as a `TodoWrite` call of the same entries would. */
+export function codexTodoListTodos(item: CodexTodoListItem): TodoItem[] {
+  return codexTodoEntries(item).map((entry, index) => ({ id: String(index + 1), subject: entry.content, description: '', status: entry.status, activeForm: entry.activeForm }))
+}
+
 /**
  * The content blocks one Codex item draws, with deterministic ids.
  * `parentToolUseId` scopes a collab child's blocks under its agent card.
@@ -192,9 +204,7 @@ export function codexItemToBlocks(item: CodexThreadItem, parentToolUseId: Parent
       return item.status === 'failed' ? [tool, result(item.id, '', parentToolUseId, { isError: true })] : [tool]
     }
     case 'todo_list':
-      return [call(item, CODEX_TODO_TOOL, {
-        todos: item.items.map(entry => ({ content: entry.text, status: entry.completed ? 'completed' : 'pending', activeForm: entry.text })),
-      }, false, parentToolUseId)]
+      return [call(item, CODEX_TODO_TOOL, { todos: codexTodoEntries(item) }, false, parentToolUseId)]
     case 'error':
       return [{ type: 'notice', id: item.id, level: 'error', text: item.message, parentToolUseId }]
     case 'review':

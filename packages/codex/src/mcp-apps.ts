@@ -73,8 +73,12 @@ export function prewarmCodexMcpAppCatalog(item: CodexThreadItem, request: McpApp
     for (const items of Object.values(item.childItems ?? {})) for (const child of items) prewarmCodexMcpAppCatalog(child, request, connectionKey)
     return
   }
-  if (item.type !== 'mcp_tool_call') return
-  const app = item.app, threadId = app?.origin?.providerSessionId
+  if (item.type === 'mcp_tool_call') prewarmCodexMcpAppView(item.app, request, connectionKey)
+}
+
+/** Prewarm the catalog of the thread an App call ran in, from its attachment. */
+export function prewarmCodexMcpAppView(app: ToolAppAttachment | undefined, request: McpAppsRequest, connectionKey: object = request): void {
+  const threadId = app?.origin?.providerSessionId
   if (!app || !threadId) return
   const provider = createCodexMcpAppsProvider(app.binding, threadId, request, connectionKey)
   // The actual View request still awaits catalog admission and reports failures.

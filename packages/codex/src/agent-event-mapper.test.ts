@@ -86,10 +86,10 @@ describe('Codex AgentEvent mapper', () => {
       'message_start',
       'status_change',
       'codex_thread_started',
-      'codex_item_delta',
-      'codex_item_delta',
-      'codex_item_delta',
-      'codex_item_delta',
+      // An empty reply draws nothing until its text arrives.
+      'content_delta',
+      'content_delta',
+      'content_delta',
       'message_usage',
       'codex_mcp_startup',
       'codex_turn_metadata',
@@ -104,6 +104,12 @@ describe('Codex AgentEvent mapper', () => {
       usage: { lastInputTokens: 12, lastOutputTokens: 4, contextWindow: 128_000 },
     })
     expect((complete?.metadata?.codex as unknown as { finalResponse: string }).finalResponse).toBe('done')
+    expect(complete?.metadata?.codex?.items).toEqual([])
+    expect(events.flatMap(event => event.type === 'content_delta' ? [event.delta] : [])).toMatchObject([
+      { type: 'thinking', id: 'reason-1', thinking: 'Inspect' },
+      { type: 'thinking', id: 'reason-1', thinking: ' details' },
+      { type: 'text', id: 'answer-1', text: 'done' },
+    ])
   })
 
   it('does not treat async attention-only messages as the turn final response', () => {

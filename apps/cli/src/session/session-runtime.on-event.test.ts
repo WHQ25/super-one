@@ -155,7 +155,7 @@ describe('SessionRuntime onEvent durable projection (Stage 5-A)', () => {
   it.each([
     {
       harnessId: 'codex',
-      expectedType: 'codex_item_delta',
+      expectedType: 'content_delta',
       runner: (messageId: string, emit: NonNullable<Parameters<TurnRunner>[0]['onAgentEvent']>) => {
         const mapper = createCodexAgentEventMapper({ messageId, emit })
         mapper.start('thread-1')

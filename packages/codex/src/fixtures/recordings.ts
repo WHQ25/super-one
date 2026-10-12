@@ -5,7 +5,7 @@
  */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { AgentEvent } from '@superone/shared/agent-types'
+import type { AgentEvent, CodexThreadItem } from '@superone/shared/agent-types'
 import { createCodexAgentEventMapper, type CodexAppServerNotification } from '../agent-event-mapper'
 
 export const CODEX_RECORDINGS = [
@@ -44,6 +44,11 @@ export function recordedThreadId(recording: CodexRecording): string | null {
 
 /** Replay one recorded turn through the package mapper, as the CLI node does. */
 export function replayCodexRecordedTurn(recording: CodexRecording, index: number, messageId = `${recording.scenario}-${index}`): AgentEvent[] {
+  return replayCodexRecordedTurnWithItems(recording, index, messageId).events
+}
+
+/** The replayed events and the mapper's final items, which the events carry only as content. */
+export function replayCodexRecordedTurnWithItems(recording: CodexRecording, index: number, messageId = `${recording.scenario}-${index}`): { events: AgentEvent[]; items: CodexThreadItem[] } {
   const events: AgentEvent[] = []
   const turn = recording.turns[index]!
   let clock = 1_000
@@ -57,5 +62,5 @@ export function replayCodexRecordedTurn(recording: CodexRecording, index: number
   mapper.start(recordedThreadId(recording))
   for (const note of turn.notifications) mapper.apply(note)
   if (turn.outcome !== 'completed') mapper.fail(turn.outcome, /interrupt/i.test(turn.outcome))
-  return events
+  return { events, items: mapper.items() }
 }

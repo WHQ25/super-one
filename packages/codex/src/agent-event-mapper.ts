@@ -4,6 +4,7 @@ import { applyCodexSubagentActivity, collectCodexCollabMetadata, mergeCodexTurnP
 import { mapCodexCommandItem } from './command-item'
 import type { McpAppsBinding } from '@superone/shared/mcp-apps'
 import { attachCodexMcpApp, readCodexMcpAppFields } from './mcp-apps'
+import { codexTodoListTodos, createCodexContentStream } from '@superone/shared/codex-content'
 /**
  * Electron-free Codex App Server notification -> SuperOne AgentEvent mapping.
  *
@@ -418,10 +419,15 @@ export function createCodexAgentEventMapper(
     itemMap.set(item.id, item)
   }
   const items = () => order.map((id) => itemMap.get(id)).filter((item): item is CodexThreadItem => Boolean(item))
-  const emitItem = (phase: 'started' | 'updated' | 'completed', item: CodexThreadItem) => {
+  // The turn is written as content; the item map stays to derive the final response and subagents.
+  const contentStream = createCodexContentStream()
+  const emitItem = (_phase: 'started' | 'updated' | 'completed', item: CodexThreadItem) => {
     if (item.type === 'mcp_tool_call' && currentThreadId && options.mcpAppBinding) item = attachCodexMcpApp(item, options.mcpAppBinding(item.server), currentThreadId)
     upsert(item)
-    options.emit({ type: 'codex_item_delta', messageId: options.messageId, phase, item })
+    for (const { delta, replace } of contentStream.update(item)) {
+      options.emit({ type: 'content_delta', messageId: options.messageId, delta, ...(replace ? { replace } : {}) })
+    }
+    if (item.type === 'todo_list') options.emit({ type: 'todos_updated', todos: codexTodoListTodos(item) })
   }
   const finishStatus = () => options.emit({ type: 'status_change', status: 'idle' })
   const startCompaction = (params: Record<string, unknown>) => {
@@ -749,7 +755,7 @@ export function createCodexAgentEventMapper(
               codex: {
                 finalResponse: deriveCodexFinalResponse(finalItems),
                 durationMs: now() - startedAt,
-                items: finalItems,
+                items: [],
                 threadId: currentThreadId,
                 ...(currentTurnId ? { turnId: currentTurnId } : {}),
                 ...(provenance?.rootTurnId !== undefined ? { rootTurnId: provenance.rootTurnId } : {}),

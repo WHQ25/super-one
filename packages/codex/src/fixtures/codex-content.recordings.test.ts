@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import type { CodexThreadItem, ContentBlock } from '@superone/shared/agent-types'
+import type { AgentEvent, ContentBlock } from '@superone/shared/agent-types'
 import { applyContentDelta } from '@superone/shared/content-delta'
-import { codexItemsToContent, createCodexContentStream } from '@superone/shared/codex-content'
-import { CODEX_RECORDINGS, readCodexRecording, replayCodexRecordedTurn } from './recordings'
+import { codexItemsToContent } from '@superone/shared/codex-content'
+import { CODEX_RECORDINGS, readCodexRecording, replayCodexRecordedTurn, replayCodexRecordedTurnWithItems } from './recordings'
 
 /**
  * What a turn renders, independent of where results sit in the flat array:
@@ -22,38 +22,32 @@ function rendered(content: ContentBlock[]) {
   return { order, results }
 }
 
+/** The content a turn's own content deltas build. */
+function streamedContent(events: AgentEvent[]): ContentBlock[] {
+  let content: ContentBlock[] = []
+  for (const event of events) {
+    if (event.type === 'content_delta') content = applyContentDelta(content, event.delta, () => 0, { replace: event.replace })
+  }
+  return content
+}
+
 describe('Codex content stream over recorded turns', () => {
-  it.each(CODEX_RECORDINGS)('%s: streamed deltas reduce to the projection of the final items', (name) => {
+  it.each(CODEX_RECORDINGS)('%s: the mapper\'s content deltas reduce to the projection of its final items', (name) => {
     const recording = readCodexRecording(name)
     recording.turns.forEach((_, index) => {
-      const stream = createCodexContentStream()
-      let streamed: ContentBlock[] = []
-      const finalItems = new Map<string, CodexThreadItem>()
-      let deltas = 0
-      for (const event of replayCodexRecordedTurn(recording, index)) {
-        if (event.type !== 'codex_item_delta') continue
-        finalItems.set(event.item.id, event.item)
-        for (const { delta, replace } of stream.update(event.item)) {
-          deltas++
-          streamed = applyContentDelta(streamed, delta, () => 0, { replace })
-        }
-      }
-      const projected = codexItemsToContent([...finalItems.values()]).map(block => 'toolName' in block ? { ...block, startedAt: 0 } : block)
-      expect(rendered(streamed)).toEqual(rendered(projected))
-      if (finalItems.size) expect(deltas).toBeGreaterThan(0)
+      const { events, items } = replayCodexRecordedTurnWithItems(recording, index)
+      const projected = codexItemsToContent(items).map(block => 'toolName' in block ? { ...block, startedAt: 0 } : block)
+      expect(rendered(streamedContent(events))).toEqual(rendered(projected))
+      if (items.length) expect(events.some(event => event.type === 'content_delta')).toBe(true)
     })
   })
 
   it('streams agent text as suffixes, not full snapshots', () => {
-    const recording = readCodexRecording('commands')
-    const stream = createCodexContentStream()
     const texts: string[] = []
-    for (const event of replayCodexRecordedTurn(recording, 0)) {
-      if (event.type !== 'codex_item_delta') continue
-      for (const { delta, replace } of stream.update(event.item)) {
-        expect(replace).toBeUndefined()
-        if (delta.type === 'text') texts.push(delta.text)
-      }
+    for (const event of replayCodexRecordedTurn(readCodexRecording('commands'), 0)) {
+      if (event.type !== 'content_delta' || event.delta.type !== 'text') continue
+      expect(event.replace).toBeUndefined()
+      texts.push(event.delta.text)
     }
     const longest = Math.max(...texts.map(text => text.length))
     const total = texts.join('').length

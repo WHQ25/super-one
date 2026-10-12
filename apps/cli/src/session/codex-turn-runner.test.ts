@@ -216,7 +216,7 @@ describe('createNodeCodexTurnRunner', () => {
     await pump()
     const discovery = JSON.parse(lines.find(line => line.includes('mcpServerStatus/list'))!)
     expect(discovery.params).toMatchObject({ threadId: 't-abc', detail: 'toolsAndAuthOnly' })
-    expect(agentEvents).toContainEqual(expect.objectContaining({ type: 'codex_item_delta', item: expect.objectContaining({ app: expect.objectContaining({ binding }) }) }))
+    expect(agentEvents).toContainEqual(expect.objectContaining({ type: 'content_delta', delta: expect.objectContaining({ type: 'tool_use', app: expect.objectContaining({ binding }) }) }))
     child.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: discovery.id, result: { data: [{ name: 'fixture', tools: {} }] } })}\n`)
     child.stdout.write(
       `${JSON.stringify({
@@ -235,8 +235,10 @@ describe('createNodeCodexTurnRunner', () => {
       'status_change',
       'codex_thread_started',
       'codex_turn_metadata',
-      'codex_item_delta',
-      'codex_item_delta',
+      // The reply, then the App call and its result.
+      'content_delta',
+      'content_delta',
+      'content_delta',
       'message_complete',
       'status_change',
     ])

@@ -5,8 +5,20 @@ import type {
   SessionAgentProfile,
   SessionAgentRequestPayload,
 } from "@superone/shared/agent-types";
+import type { SessionRef } from "@superone/shared/environment/refs";
+import { mockIpc } from "../../../../../.storybook/mock-ipc";
+import { SessionScopeProvider } from "@/stores/chat";
 import { SessionAgentsConfirmPrompt } from "./SessionAgentsConfirmPrompt";
 import { ToolBlock } from "./ToolBlock";
+
+// Peer titles render as session chips; brand them as a local desktop would.
+mockIpc("environment", "sessionSource", async () => "local-desktop");
+mockIpc("environment", "sessionLinkMetadata", async (refs) =>
+  (refs as SessionRef[]).map((ref) => ({
+    status: "ok",
+    metadata: { ref, harness: ref.sessionId.startsWith("f0e1") ? "claude" : "codex", acpAgentId: null },
+  })),
+);
 
 /**
  * SuperOne session_collab_* MCP tool UI
@@ -15,6 +27,8 @@ import { ToolBlock } from "./ToolBlock";
 
 const PREFIX = "mcp__superone__";
 const PARENT_CWD = "/Users/me/projects/super-one";
+/** The pane the blocks render in; session chips resolve their host from it. */
+const STORY_SCOPE = { projectPath: PARENT_CWD, sessionId: "story-parent" };
 
 const profiles: SessionAgentProfile[] = [
   {
@@ -168,18 +182,20 @@ function SessionCollabRequestPermissionPrompt({
 }: PermissionPromptProps) {
   const [result, setResult] = useState("");
   return (
-    <div className="@container" style={{ width, maxWidth: "100%" }}>
-      <SessionAgentsConfirmPrompt
-        payload={value}
-        onConfirm={(launches) => setResult(JSON.stringify(launches, null, 2))}
-        onReject={() => setResult("rejected")}
-      />
-      {result && (
-        <pre className="mx-3 whitespace-pre-wrap break-all rounded-md bg-muted p-2 text-[10px]">
-          {result}
-        </pre>
-      )}
-    </div>
+    <SessionScopeProvider value={STORY_SCOPE}>
+      <div className="@container" style={{ width, maxWidth: "100%" }}>
+        <SessionAgentsConfirmPrompt
+          payload={value}
+          onConfirm={(launches) => setResult(JSON.stringify(launches, null, 2))}
+          onReject={() => setResult("rejected")}
+        />
+        {result && (
+          <pre className="mx-3 whitespace-pre-wrap break-all rounded-md bg-muted p-2 text-[10px]">
+            {result}
+          </pre>
+        )}
+      </div>
+    </SessionScopeProvider>
   );
 }
 
@@ -191,9 +207,11 @@ function StoryShell({
   width?: number;
 }) {
   return (
-    <div className="@container space-y-3" style={{ maxWidth: width }}>
-      {children}
-    </div>
+    <SessionScopeProvider value={STORY_SCOPE}>
+      <div className="@container space-y-3" style={{ maxWidth: width }}>
+        {children}
+      </div>
+    </SessionScopeProvider>
   );
 }
 

@@ -1,6 +1,6 @@
 import type { CollaborationMessageMeta } from '@superone/shared/agent-types'
 import { CollabTaskBubblePresenter } from '@superone/chat-view/presenters/CollabTaskBubble'
-import { openPeerSession } from '@/lib/open-peer-session'
+import { DesktopSessionLinkScope } from '@/lib/session-links'
 import { CopyableMarkdown } from './CopyableMarkdown'
 import { fileLinkComponents } from './chat-markdown-components'
 import { CopyButton, useCopyText } from './chat-message/copy-button'
@@ -11,14 +11,13 @@ import { CopyButton, useCopyText } from './chat-message/copy-button'
  */
 export function CollabTaskBubble({ text, from }: { text: string; from?: CollaborationMessageMeta }) {
   const { copied, copy } = useCopyText()
-  const fromSessionId = from?.fromSessionId
   return (
-    <CollabTaskBubblePresenter
+    <DesktopSessionLinkScope><CollabTaskBubblePresenter
       fromTitle={from?.fromSessionTitle}
-      onOpenFrom={fromSessionId ? () => openPeerSession(fromSessionId, from?.fromProjectPath) : undefined}
+      fromSessionId={from?.fromSessionId}
       labelTrailing={<CopyButton copied={copied} onClick={() => copy(text)} className="relative" />}
     >
       <CopyableMarkdown text={text} isStreaming={false} components={fileLinkComponents} />
-    </CollabTaskBubblePresenter>
+    </CollabTaskBubblePresenter></DesktopSessionLinkScope>
   )
 }

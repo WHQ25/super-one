@@ -2344,8 +2344,6 @@ export type Messages = {
       handOffTo: string
       /** One-line explanation shown on handoff launches (one-way, sibling session). */
       handOffHint: string
-      /** Tooltip / a11y for opening the peer session from the confirm card. */
-      openPeerSession: string
       /** Tooltip of the target machine chip on a launch to another machine. */
       remoteMachine: string
       /** Chip when the target machine lacks the repository and will clone it. */
@@ -6758,7 +6756,6 @@ export const en: Messages = {
       workWith: 'Work with:',
       handOffTo: 'Hand off to:',
       handOffHint: 'Takes the task over in its own top-level session — no replies back to this one.',
-      openPeerSession: 'Open session',
       remoteMachine: 'Runs on {{machine}}',
       remoteClone: 'Clone {{repository}}',
       remoteCloneInto: 'Clones {{url}} into {{directory}}',

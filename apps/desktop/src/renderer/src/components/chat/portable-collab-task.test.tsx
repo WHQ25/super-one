@@ -28,7 +28,7 @@ function collabTaskMessage(text: string, fromSessionTitle?: string): ChatMessage
 }
 
 function renderTask(message: ChatMessage) {
-  return render(<PortableMessage message={message} scheme="dark" pendingPermission={null} />)
+  return render(<PortableMessage message={message} scheme="dark" pendingPermission={null} sourceEnvironmentId="desktop-1" />)
 }
 
 const originalOffsetHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight')
@@ -49,7 +49,7 @@ describe('PortableMessage collaboration initial task', () => {
     const task = `## Review request\n\n${Array.from({ length: 40 }, (_, i) => `- step ${i}`).join('\n')}`
     const { container } = renderTask(collabTaskMessage(task, 'Mobile file preview'))
 
-    expect(screen.getByRole('button', { name: 'Mobile file preview' }).parentElement).toHaveTextContent('Task from Mobile file preview')
+    expect(screen.getByRole('link', { name: 'Mobile file preview' }).parentElement).toHaveTextContent('Task from Mobile file preview')
     expect(screen.getByText('Review request').tagName).toBe('H2')
     expect(container.querySelector('.justify-end')).not.toBeNull()
     expect(container.querySelector('.justify-start')).toBeNull()
@@ -57,17 +57,20 @@ describe('PortableMessage collaboration initial task', () => {
     expect(container.querySelector('.border-primary\\/25')).toBeNull()
   })
 
-  it('asks the shell to open the launching session when its title is tapped', () => {
+  it('opens the launching session through its session chip, bound to the message host', () => {
     const posted: Array<{ action: string; payload?: unknown }> = []
-    const dispose = installFakeNativeHost((request) => { posted.push(request) })
+    const dispose = installFakeNativeHost((request, reply) => { posted.push(request); reply({ result: { metadata: [] } }) })
     try {
       renderTask(collabTaskMessage('Do the thing', 'Mobile file preview'))
-      fireEvent.click(screen.getByRole('button', { name: 'Mobile file preview' }))
+      fireEvent.click(screen.getByRole('link', { name: 'Mobile file preview' }))
     } finally {
       dispose()
     }
 
-    expect(posted).toEqual([expect.objectContaining({ action: 'openSession', payload: { sessionId: 'parent-1' } })])
+    expect(posted).toContainEqual(expect.objectContaining({
+      action: 'openSessionLink',
+      payload: { ref: { environmentId: 'desktop-1', sessionId: 'parent-1' } },
+    }))
   })
 
   it('falls back to the generic label when the launching session had no title', () => {

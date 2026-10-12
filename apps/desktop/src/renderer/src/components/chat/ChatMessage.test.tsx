@@ -19,9 +19,6 @@ vi.mock('./ForkButton', () => ({
   ForkButton: () => <button type="button" aria-label="fork" />,
 }))
 
-const { openPeerSession } = vi.hoisted(() => ({ openPeerSession: vi.fn() }))
-vi.mock('@/lib/open-peer-session', () => ({ openPeerSession }))
-
 function createCodexMessage(overrides: Partial<ChatMessageType> = {}): ChatMessageType {
   return {
     id: 'msg-1',
@@ -640,11 +637,10 @@ describe('ChatMessage collaboration initial task', () => {
       <ChatMessage message={createCollabTaskMessage(task, 'Mobile file preview')} sessionStatus="idle" isLastAssistant={false} />,
     )
 
-    const title = screen.getByRole('button', { name: 'Mobile file preview' })
+    const title = screen.getByRole('link', { name: 'Mobile file preview' })
     expect(title.parentElement).toHaveTextContent('Task from Mobile file preview')
-    // The title opens the parent in its own project, not the child's.
-    fireEvent.click(title)
-    expect(openPeerSession).toHaveBeenCalledWith('parent-1', '/parent-repo')
+    // A session chip on the message's own host; the chip resolves the parent's project.
+    expect(title).toHaveAttribute('href', 'session://localhost/parent-1')
     // Markdown, not the `35 lines` LongTextChip the plain-text path would produce.
     expect(container.querySelector('.chat-md')).not.toBeNull()
     expect(screen.getByText('Review request').tagName).toBe('H2')

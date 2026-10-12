@@ -4,8 +4,6 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ReactElement } from 'react'
 import type { RemoteAgentProfiles, SessionAgentProfile, SessionAgentRequestPayload } from '@superone/shared/agent-types'
-import { useMosaicStore } from '@/components/mosaic/mosaic-store'
-import { useChatStore } from '@/stores/chat'
 import { SessionAgentsConfirmPrompt } from './SessionAgentsConfirmPrompt'
 
 /** Shortcuts only fire while focus is inside [data-chat-root]. */
@@ -393,19 +391,7 @@ describe('session agents confirm prompt', () => {
     expect(document.activeElement).toBe(input)
   })
 
-  it('shows Work with + clickable peer title for link launches (no model editors)', () => {
-    const switchToSession = vi.fn().mockResolvedValue(undefined)
-    const focusOrReplaceFocused = vi.fn().mockReturnValue(false)
-    const chatSpy = vi.spyOn(useChatStore, 'getState').mockReturnValue({
-      ...useChatStore.getState(),
-      activeProject: '/Users/me/projects/super-one',
-      switchToSession,
-    } as ReturnType<typeof useChatStore.getState>)
-    const mosaicSpy = vi.spyOn(useMosaicStore, 'getState').mockReturnValue({
-      ...useMosaicStore.getState(),
-      focusOrReplaceFocused,
-    } as ReturnType<typeof useMosaicStore.getState>)
-
+  it('shows Work with + the peer as a session chip for link launches (no model editors)', () => {
     const linkPayload: SessionAgentRequestPayload = {
       profiles: payload().profiles,
       launches: [{
@@ -428,16 +414,9 @@ describe('session agents confirm prompt', () => {
     renderInChat(<SessionAgentsConfirmPrompt payload={linkPayload} onConfirm={vi.fn()} onReject={vi.fn()} />)
 
     expect(screen.getByText('Work with:')).toBeInTheDocument()
-    const titleBtn = screen.getByRole('button', { name: 'API review session' })
-    expect(titleBtn).toBeInTheDocument()
+    // The chip resolves the peer's host and project itself when opened.
+    expect(screen.getByRole('link', { name: 'API review session' })).toHaveAttribute('href', 'session://localhost/peer-session-id')
     // No model / permission editors for link.
     expect(screen.queryByRole('button', { name: /Claude Sonnet/ })).toBeNull()
-
-    fireEvent.click(titleBtn)
-    expect(focusOrReplaceFocused).toHaveBeenCalledWith('/Users/me/projects/super-one', 'peer-session-id')
-    expect(switchToSession).toHaveBeenCalledWith('/Users/me/projects/super-one', 'peer-session-id')
-
-    chatSpy.mockRestore()
-    mosaicSpy.mockRestore()
   })
 })

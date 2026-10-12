@@ -5,6 +5,8 @@ import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Kbd } from '@superone/ui/components/ui/kbd'
 import { cn } from '@superone/ui/lib/utils'
 import { findCodexFastServiceTier } from '@superone/shared/codex-fast-mode'
+import { localSessionLink } from '@superone/shared/session-link'
+import { SessionChip } from '@superone/chat-view/presenters/SessionChip'
 import {
   buildLaunchTabLabels,
   isHandoffLaunch,
@@ -25,7 +27,7 @@ import type {
   SessionAgentRequestPayload,
 } from '@superone/shared/agent-types'
 import { resolveSessionIcon, resolveSessionIconFromBrandKey } from '@/components/harness/resolve-session-icon'
-import { openPeerSession } from '@/lib/open-peer-session'
+import { DesktopSessionLinkScope } from '@/lib/session-links'
 import { hasOpenRadixOverlay } from '@/lib/radix-overlay'
 import { useAppStore } from '@/stores/app'
 import { HarnessPermissionPopover } from './HarnessPermissionPopover'
@@ -257,18 +259,9 @@ function LaunchPanel({
           <>
             <span className="shrink-0 text-muted-foreground">{t('chat.sessionAgentsConfirm.workWith')}</span>
             {launch.sessionId ? (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  openPeerSession(launch.sessionId!, launch.peerProjectPath)
-                }}
-                className="min-w-0 truncate text-left text-primary hover:underline"
-                title={t('chat.sessionAgentsConfirm.openPeerSession')}
-              >
-                {peerTitle}
-              </button>
+              <DesktopSessionLinkScope>
+                <SessionChip href={localSessionLink(launch.sessionId)} label={peerTitle} className="min-w-0 translate-y-0" />
+              </DesktopSessionLinkScope>
             ) : (
               <span className="min-w-0 truncate">{peerTitle}</span>
             )}

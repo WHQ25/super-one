@@ -1,4 +1,5 @@
 import { PortableSessionArchive } from './PortableSessionArchive'
+import { PortableSessionLinkScope } from './portable-session-links'
 import { PortableCodexCommand } from './PortableCodexCommand'
 import { ModMessageScope } from './mod-ui/react'
 import { DeferredInteractiveTool, isPortableInteractiveTool } from './DeferredInteractiveTool'
@@ -344,7 +345,6 @@ function renderDedicatedTool(props: ClaudeToolPresenterProps, brandIconSrc?: str
         isError={props.isError}
         isDenied={isDenied}
         renderMarkdown={(content) => <PortableText text={content} isStreaming={false} />}
-        onOpenSession={(sessionId) => { requestNative('openSession', { sessionId }) }}
       />
     )
   }
@@ -1138,5 +1138,9 @@ export function PortableTurnProvider({
     () => ({ scheme, pendingPermission, projectPath, sourceEnvironmentId, mcpIcons }),
     [scheme, pendingPermission, projectPath, sourceEnvironmentId, mcpIcons],
   )
-  return <PortableTurnContext.Provider value={value}>{children}</PortableTurnContext.Provider>
+  return (
+    <PortableTurnContext.Provider value={value}>
+      <PortableSessionLinkScope sourceEnvironmentId={sourceEnvironmentId}>{children}</PortableSessionLinkScope>
+    </PortableTurnContext.Provider>
+  )
 }

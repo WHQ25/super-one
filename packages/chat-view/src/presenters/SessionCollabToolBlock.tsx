@@ -2,6 +2,8 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronRight, Inbox, Send, Users } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
+import { localSessionLink } from '@superone/shared/session-link'
+import { SessionChip } from './SessionChip'
 import {
   ToolName,
   ToolStatusBadge,
@@ -90,38 +92,19 @@ function peerSessionIdFromRecord(rec: Record<string, unknown> | null | undefined
     : undefined
 }
 
-/** Clickable session title — navigation is supplied by the host adapter. */
-function SessionTitleLink({
+/** Peer title, as a session chip when the payload names the session. */
+function PeerTitle({
   sessionId,
-  children,
+  title,
   className,
-  onOpenSession,
 }: {
   sessionId?: string
-  children: ReactNode
+  title: string
   className?: string
-  onOpenSession?: (sessionId: string) => void | Promise<void>
 }) {
-  if (!sessionId || !onOpenSession) {
-    return <span className={className}>{children}</span>
-  }
-  return (
-    <button
-      type="button"
-      className={cn(
-        'min-w-0 truncate text-left hover:text-primary hover:underline',
-        className,
-      )}
-      title={typeof children === 'string' ? children : undefined}
-      onClick={(e) => {
-        e.stopPropagation()
-        e.preventDefault()
-        void onOpenSession(sessionId)
-      }}
-    >
-      {children}
-    </button>
-  )
+  return sessionId
+    ? <SessionChip href={localSessionLink(sessionId)} label={title} className={cn('min-w-0 translate-y-0', className)} />
+    : <span className={cn('min-w-0 truncate', className)}>{title}</span>
 }
 
 /** Prefer agent-chosen `name` (never harness brand). */
@@ -225,7 +208,7 @@ function CollabMessageBody({
   )
 }
 
-type CollabDetailRow = { label: string; value: string; sessionId?: string }
+type CollabDetailRow = { label: string; value: string }
 type CollabInboxMessage = {
   from?: string
   fromSessionId?: string
@@ -242,7 +225,6 @@ export interface SessionCollabToolBlockPresenterProps {
   isError?: boolean
   isDenied?: boolean
   allowExpand?: boolean
-  onOpenSession?: (sessionId: string) => void | Promise<void>
   renderMarkdown: (content: string) => ReactNode
 }
 
@@ -254,7 +236,6 @@ export function SessionCollabToolBlockPresenter({
   isError,
   isDenied,
   allowExpand = true,
-  onOpenSession,
   renderMarkdown,
 }: SessionCollabToolBlockPresenterProps) {
   const { t } = useTranslation()
@@ -355,11 +336,7 @@ export function SessionCollabToolBlockPresenter({
         detailRows.push({ label: t('chat.toolBlock.collab.fields.cwd'), value: config.cwd })
       }
       if (sid) {
-        detailRows.push({
-          label: t('chat.toolBlock.collab.fields.sessionId'),
-          value: sid,
-          sessionId: sid,
-        })
+        detailRows.push({ label: t('chat.toolBlock.collab.fields.sessionId'), value: sid })
       }
     }
   } else if (isSend) {
@@ -441,13 +418,12 @@ export function SessionCollabToolBlockPresenter({
         {label}{streamingDots}
       </ToolName>
       {summaryPeer && (
-        <SessionTitleLink
+        <PeerTitle
           sessionId={summaryPeer.sessionId ?? headerSessionId}
-          className="min-w-0 shrink truncate text-muted-foreground"
-          onOpenSession={onOpenSession}
-        >
-          {summaryPeer.title}
-        </SessionTitleLink>
+          title={summaryPeer.title}
+          // A plain title stays a muted summary; a chip reads like every other session chip.
+          className={cn('shrink', !(summaryPeer.sessionId ?? headerSessionId) && 'text-muted-foreground')}
+        />
       )}
       {summary && !summaryPeer && (
         <span className="min-w-0 truncate text-muted-foreground">{summary}</span>
@@ -493,31 +469,19 @@ export function SessionCollabToolBlockPresenter({
                   )}
                 >
                   {msg.to && (
-                    <div className="flex items-baseline gap-2">
+                    <div className="flex items-center gap-2">
                       <span className="w-12 shrink-0 text-muted-foreground">
                         {t('chat.toolBlock.collab.fields.to')}
                       </span>
-                      <SessionTitleLink
-                        sessionId={msg.toSessionId}
-                        className="min-w-0 flex-1 break-words font-medium text-foreground"
-                        onOpenSession={onOpenSession}
-                      >
-                        {msg.to}
-                      </SessionTitleLink>
+                      <PeerTitle sessionId={msg.toSessionId} title={msg.to} className="font-medium text-foreground" />
                     </div>
                   )}
                   {msg.from && (
-                    <div className="flex items-baseline gap-2">
+                    <div className="flex items-center gap-2">
                       <span className="w-12 shrink-0 text-muted-foreground">
                         {t('chat.toolBlock.collab.fields.from')}
                       </span>
-                      <SessionTitleLink
-                        sessionId={msg.fromSessionId}
-                        className="min-w-0 flex-1 break-words font-medium text-foreground"
-                        onOpenSession={onOpenSession}
-                      >
-                        {msg.from}
-                      </SessionTitleLink>
+                      <PeerTitle sessionId={msg.fromSessionId} title={msg.from} className="font-medium text-foreground" />
                     </div>
                   )}
                   {msg.content ? (
@@ -532,17 +496,7 @@ export function SessionCollabToolBlockPresenter({
               {detailRows.map((row) => (
                 <div key={`${row.label}:${row.value.slice(0, 24)}`} className="flex items-baseline gap-2">
                   <span className="w-24 shrink-0 text-muted-foreground">{row.label}</span>
-                  {row.sessionId ? (
-                    <SessionTitleLink
-                      sessionId={row.sessionId}
-                      className="min-w-0 flex-1 break-words text-foreground"
-                      onOpenSession={onOpenSession}
-                    >
-                      {row.value}
-                    </SessionTitleLink>
-                  ) : (
-                    <span className="min-w-0 flex-1 whitespace-pre-wrap break-words text-foreground">{row.value}</span>
-                  )}
+                  <span className="min-w-0 flex-1 whitespace-pre-wrap break-words text-foreground">{row.value}</span>
                 </div>
               ))}
             </div>

@@ -21,10 +21,16 @@ export function isSessionLink(href: string): boolean {
   return /^session:/i.test(href)
 }
 
+const encodeId = (id: string) => encodeURIComponent(id).replace(/[!'()*]/g, char => `%${char.charCodeAt(0).toString(16).toUpperCase()}`)
+
 export function buildSessionLink(ref: SessionRef): string {
   if (![ref.environmentId, ref.sessionId].every(validId)) throw new Error('Invalid session reference')
-  const encode = (id: string) => encodeURIComponent(id).replace(/[!'()*]/g, char => `%${char.charCodeAt(0).toString(16).toUpperCase()}`)
-  return `session://${encode(ref.environmentId)}/${encode(ref.sessionId)}`
+  return `session://${encodeId(ref.environmentId)}/${encodeId(ref.sessionId)}`
+}
+
+/** A session on the same host as the message that names it; never throws, the chip validates on parse. */
+export function localSessionLink(sessionId: string): string {
+  return `session://${LOCAL_SESSION_ENVIRONMENT}/${encodeId(sessionId)}`
 }
 
 export function resolveSessionLink(ref: SessionRef, sourceEnvironmentId?: string | null): SessionRef | null {

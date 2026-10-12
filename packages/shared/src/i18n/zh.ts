@@ -2438,7 +2438,6 @@ export const zh: Messages = {
       workWith: '协作对象：',
       handOffTo: '交接给：',
       handOffHint: '在独立的顶层会话中接手任务，不会再回复当前会话。',
-      openPeerSession: '打开会话',
       remoteMachine: '在 {{machine}} 上运行',
       remoteClone: '克隆 {{repository}}',
       remoteCloneInto: '将 {{url}} 克隆到 {{directory}}',

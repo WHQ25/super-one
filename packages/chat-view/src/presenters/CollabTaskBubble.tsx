@@ -2,6 +2,8 @@ import { useLayoutEffect, useRef, useState, type HTMLAttributes, type MouseEvent
 import { Trans, useTranslation } from 'react-i18next'
 import { Bot, ChevronDown } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
+import { localSessionLink } from '@superone/shared/session-link'
+import { SessionChip } from './SessionChip'
 
 /** Collapsed preview height, matching the `max-h-[50vh]` clamp below. */
 const PREVIEW_RATIO = 0.5
@@ -11,8 +13,8 @@ export interface CollabTaskBubblePresenterProps {
   children: ReactNode
   /** Title of the launching session; omitted for tasks recorded before it was captured. */
   fromTitle?: string
-  /** Opens the launching session; the title reads as a link only when the host supplies this. */
-  onOpenFrom?: () => void
+  /** Launching session; the title becomes a session chip when present. */
+  fromSessionId?: string
   /** Trailing node in the label row — the desktop's hover copy button. */
   labelTrailing?: ReactNode
   /** Gesture handlers spread onto the bubble itself (phone long-press menu). */
@@ -30,7 +32,7 @@ export interface CollabTaskBubblePresenterProps {
 export function CollabTaskBubblePresenter({
   children,
   fromTitle,
-  onOpenFrom,
+  fromSessionId,
   labelTrailing,
   bubbleProps,
   menu,
@@ -72,18 +74,19 @@ export function CollabTaskBubblePresenter({
       <div className="group/copy relative flex min-w-0 max-w-[90%] flex-col items-end">
         <div className="mb-1 flex max-w-full items-center gap-1.5 px-0.5 text-xs text-muted-foreground">
           <Bot className="size-3 shrink-0 opacity-80" />
-          <span className="min-w-0 truncate">
+          {/* A flex row, not inline truncation: the chip shrinks and ellipsizes its own
+              title instead of being clipped whole. `whitespace-pre` keeps the spaces
+              around it that flex would otherwise collapse. */}
+          <span className="flex min-w-0 items-center overflow-hidden whitespace-pre">
             {fromTitle
               ? (
                 <Trans
                   i18nKey="chat.collaboration.taskFrom"
                   values={{ title: fromTitle }}
                   components={{
-                    // `inline` (not the button default inline-block) so the row's
-                    // ellipsis can cut inside the title instead of dropping it whole.
-                    title: onOpenFrom
-                      ? <button type="button" className="inline cursor-pointer text-foreground hover:underline" onClick={onOpenFrom} />
-                      : <span className="text-foreground" />,
+                    title: fromSessionId
+                      ? <SessionChip href={localSessionLink(fromSessionId)} label={fromTitle} className="min-w-0 translate-y-0" />
+                      : <span className="min-w-0 truncate text-foreground" />,
                   }}
                 />
               )

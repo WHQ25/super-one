@@ -1,4 +1,4 @@
-import { invalidateSessionLinkMetadata } from './PortableMarkdown'
+import { invalidateSessionLinkMetadata } from './portable-session-links'
 import { contiguousHistoryRange, needsHistoryPage, globalHistoryRange } from './history-navigation'
 import { extendHistoryIndex, mergeIndexedHistory, type SessionHistoryIndex } from '@superone/shared/session-history-index'
 import { EdgeLoader } from './EdgeLoader'

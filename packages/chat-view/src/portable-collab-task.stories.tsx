@@ -1,5 +1,8 @@
+import { useEffect, useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { ChatMessage } from '@superone/shared/agent-types'
+import type { SessionRef } from '@superone/shared/environment/refs'
+import { installFakeNativeHost } from './fixtures/native-host'
 import { PortableMessage } from './PortableMessage'
 import { LONG_PRESS_DELAY_MS } from './long-press'
 
@@ -42,12 +45,31 @@ const LONG_TASK = [
   'Reply through the collaboration mailbox when done.',
 ].join('\n')
 
+/** Stands in for the shell's session-link actions so the parent chip brands and opens. */
+function useFakeSessionLinkHost(): boolean {
+  const [ready, setReady] = useState(false)
+  useEffect(() => {
+    const uninstall = installFakeNativeHost((message, reply) => {
+      if (message.action === 'sessionLinkMetadata') {
+        const refs = (message.payload?.refs ?? []) as SessionRef[]
+        reply({ result: { metadata: refs.map(ref => ({ status: 'ok', metadata: { ref, harness: 'claude', acpAgentId: null } })) } })
+      } else if (message.action === 'openSessionLink') {
+        setTimeout(() => reply({ result: { ok: true } }), 600)
+      }
+    })
+    setReady(true)
+    return uninstall
+  }, [])
+  return ready
+}
+
 function TaskBubble({ message, width = 390 }: { message: ChatMessage; width?: number }) {
-  return (
+  const ready = useFakeSessionLinkHost()
+  return ready ? (
     <div className="p-4" style={{ width }}>
-      <PortableMessage message={message} scheme="dark" pendingPermission={null} projectPath="/repo" />
+      <PortableMessage message={message} scheme="dark" pendingPermission={null} projectPath="/repo" sourceEnvironmentId="desktop-1" />
     </div>
-  )
+  ) : null
 }
 
 const meta = {

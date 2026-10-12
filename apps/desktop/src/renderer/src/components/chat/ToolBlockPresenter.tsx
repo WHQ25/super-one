@@ -491,7 +491,6 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
           isError={isError}
           isDenied={isDenied}
           allowExpand={allowExpand}
-          onOpenSession={ports.onOpenSession}
         />
       )
     }

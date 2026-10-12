@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { MessageSquare } from 'lucide-react'
+import { cn } from '@superone/ui/lib/utils'
 import { resolveSessionIcon } from '@superone/ui/components/harness/resolve-session-icon'
 import type { SessionRef } from '@superone/shared/environment/refs'
 import { buildSessionLink, parseSessionLink, resolveSessionLink, sessionLinkMarkdown, type SessionLinkMetadata } from '@superone/shared/session-link'
@@ -15,7 +16,7 @@ export const SessionLinkContext = createContext<{ sourceEnvironmentId?: string |
 const noSubscribe = () => () => {}
 const noVersion = () => 0
 
-export function SessionChip({ href, label }: { href: string; label: string }) {
+export function SessionChip({ href, label, className }: { href: string; label: string; className?: string }) {
   const { sourceEnvironmentId, ports } = useContext(SessionLinkContext)
   const version = useSyncExternalStore(ports?.cache.subscribe ?? noSubscribe, ports?.cache.getSnapshot ?? noVersion, noVersion)
   const parsed = parseSessionLink(href)
@@ -41,7 +42,7 @@ export function SessionChip({ href, label }: { href: string; label: string }) {
     else load()
     return () => { retired = true; observer?.disconnect() }
   }, [targetKey, ports, version])
-  if (!parsed) return <span>{label}</span>
+  if (!parsed) return <span className={className}>{label}</span>
   const currentMetadata = metadata && targetKey === buildSessionLink(metadata.ref) ? metadata : null
   const Icon = currentMetadata ? resolveSessionIcon(currentMetadata.harness, currentMetadata.acpAgentId) : null
   const title = currentMetadata?.environmentLabel ? `${label} · ${currentMetadata.environmentLabel}` : label
@@ -49,7 +50,7 @@ export function SessionChip({ href, label }: { href: string; label: string }) {
     <a ref={element} href={targetKey ?? href} title={title} aria-label={label} aria-busy={opening || undefined}
       aria-disabled={!target || !ports || opening || undefined}
       data-selection-fill="" data-selection-atomic="" data-copy-text={sessionLinkMarkdown(label, target ?? parsed)}
-      className="inline-flex max-w-full cursor-pointer items-center gap-1 rounded bg-muted px-1 text-[0.9em] text-foreground whitespace-nowrap align-baseline translate-y-[1px] hover:bg-muted/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring transition-colors"
+      className={cn('inline-flex max-w-full cursor-pointer items-center gap-1 rounded bg-muted px-1 text-[0.9em] text-foreground whitespace-nowrap align-baseline translate-y-[1px] hover:bg-muted/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring transition-colors', className)}
       onClick={async event => {
         event.preventDefault(); event.stopPropagation()
         // Keyboard activation is independent of an existing text selection.

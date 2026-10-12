@@ -4237,6 +4237,7 @@ export type Messages = {
     mermaidSource: string
     copyCode: string
     copyImage: string
+    copyTable: string
     expand: string
     fastMode: string
     ultracode: string
@@ -8639,6 +8640,7 @@ export const en: Messages = {
     mermaidSource: 'Source',
     copyCode: 'Copy Code',
     copyImage: 'Copy Image',
+    copyTable: 'Copy Table',
     expand: 'Expand',
     fastMode: 'Fast mode: {{state}}',
     ultracode: 'Ultracode: dynamic workflows on every task',

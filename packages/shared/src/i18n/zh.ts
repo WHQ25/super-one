@@ -4318,6 +4318,7 @@ export const zh: Messages = {
     mermaidSource: '源码',
     copyCode: '复制代码',
     copyImage: '复制图片',
+    copyTable: '复制表格',
     expand: '展开',
     fastMode: '快速模式：{{state}}',
     ultracode: 'Ultracode：每个任务都使用动态 workflow',

@@ -89,7 +89,7 @@ node all need it):
 | `mcp_tool_call` | `tool_use` `mcp__<server>__<tool>` with `app`, `suggestedTask`; `tool_result` with the text result, else JSON/structured fallback, `isError` | MCP App attachment rides the shared `ToolAppAttachment` path (`mcp-apps.md`); authoritative App updates/clears must survive re-projection. `authRequired` becomes a typed field drawn by the ToolBlock's auth action. |
 | `web_search` | `WebSearch {query}` + `tool_result` | |
 | `collab_tool_call` | spawn **and** sendInput/resume with child output → `Agent` `tool_use` container: `taskThreadId`, `taskDescription` from nickname/role, `taskStatus` only when terminal (completed→`completed`, errored→`failed`, shutdown/notFound→`stopped`; running/pendingInit omit it, per the shared lifecycle `agent-types.ts:151`), the original Codex state as a diagnostic field, `taskUsage` from tokens, `taskResultText` from message, follow-up flag in input; the call's own `childItems` → child blocks with `parentToolUseId` = that container. wait → generic row, hidden once completed; close/resume without output dropped, as today | Attribution comes from each call's own `childItems`, not "latest call". `ForkedThreadView` and fork navigation read `taskThreadId` and the container's child blocks. |
-| `todo_list` | hidden `TodoWrite` `tool_use` + `tool_result` | Reuses Claude's durable todo carrier, so live, cold restore and "all done clears" go through `chat-core/content.ts`. The row is hidden for parity. |
+| `todo_list` | hidden `TodoWrite` `tool_use` (no result: the item updates in place) | Live updates set the session `todos` (legacy: the wire shim; new format: `todos_updated`); cold restore reads the latest open `TodoWrite`. The row is hidden for parity. |
 | `error` (non-terminal) | `notice {id, level:'error', text}` (new, generic) | Hidden when the message itself failed (footer owns it). |
 | `review` | `review {id, phase, text}` (new, generic) | |
 | `compaction` | `notice {id, level:'info', kind:'compaction'}` drawn like the compact marker | Covers persisted/restored compaction items; live compaction keeps `compact_boundary`. |
@@ -276,13 +276,18 @@ notifications, machine paths and user name replaced):
 - The read view is `withCodexContent` / `withCodexContents`
   (`codex-content.ts`). chat-core re-derives every message an event wrote in
   `applyEventToSession`; hydration applies it at the desktop live-snapshot
-  merge, `loadStoredSession`, `hydrateRemoteSession`, the realtime timeline,
+  merge, `_mergePersistedMessages` (stored rows), `hydrateRemoteSession`, the realtime timeline,
   and the mobile runtime's `hydrated()` (cache, restore, pages, realtime thread).
 - Items stay the stored truth, so writers that patch a derived block also patch
   its item (`applySuggestedTaskUpdate`; `updateMcpAppAttachments` already did).
 - Main never derives into its runtime or rows (see Persisted history, 2).
-- Todos are still read from items until 5c teaches chat-core and cold restore
-  the hidden `TodoWrite` call. Error notices on a failed message are filtered
+- Shared readers read `readableContent(message)`, the same view without the
+  message wrapper, so main and CLI callers need no adapter of their own.
+- Todos have one carrier, the session `todos`: a legacy `todo_list` item sets
+  it like a `TodoWrite` result, and cold restore rebuilds it for every harness
+  from the latest whole-list `TodoWrite` that is still open
+  (`restoredTodos`). The hidden call has no result, because Codex updates one
+  item in place; step 6 producers emit `todos_updated` for live updates. Error notices on a failed message are filtered
   at the 5d/5e dispatch sites.
 
 ## Risks

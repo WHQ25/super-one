@@ -6,11 +6,9 @@ import { TodoListPanel } from './TodoListPanel'
 
 export function TodoPopup() {
   // Narrow selectors only — never subscribe to full messages (stream hot path).
-  const { todos, showTodos, todosUserDismissed, codexTodoList } = useActiveSession(useShallow((s) => ({
+  const { todos, showTodos } = useActiveSession(useShallow((s) => ({
     todos: s.todos,
     showTodos: s.showTodos,
-    todosUserDismissed: s._todosUserDismissed,
-    codexTodoList: s._latestCodexTodoList,
   })))
   const toggleTodos = useChatStore((s) => s.toggleTodos)
 
@@ -31,15 +29,7 @@ export function TodoPopup() {
   }, [showTodos, handleKeyDown])
 
   const sessionTodoList = Object.values(todos)
-  const usingSessionTodos = sessionTodoList.length > 0
-  const usingCodexTodos = !usingSessionTodos && codexTodoList !== null
-
-  useEffect(() => {
-    if (!usingCodexTodos || showTodos || todosUserDismissed) return
-    toggleTodos()
-  }, [showTodos, todosUserDismissed, toggleTodos, usingCodexTodos])
-
-  const allDone = usingSessionTodos && sessionTodoList.length > 0 && sessionTodoList.every((t) => t.status === 'completed')
+  const allDone = sessionTodoList.length > 0 && sessionTodoList.every((t) => t.status === 'completed')
   useEffect(() => {
     if (!allDone) return
     const timer = setTimeout(() => {
@@ -70,7 +60,7 @@ export function TodoPopup() {
     return () => clearTimeout(timer)
   }, [allDone])
 
-  if (!usingSessionTodos && !usingCodexTodos) return null
+  if (sessionTodoList.length === 0) return null
 
   const inverseBlockers: Record<string, string[]> = {}
   for (const t of sessionTodoList) {
@@ -80,27 +70,20 @@ export function TodoPopup() {
     }
   }
 
-  const panelItems = usingSessionTodos
-    ? sessionTodoList.map((todo) => ({
-        id: todo.id,
-        text: todo.status === 'in_progress' && todo.activeForm ? todo.activeForm : todo.subject,
-        status: todo.status,
-        description: todo.description || undefined,
-        owner: todo.owner,
-        blockedBy: Array.from(new Set([...(todo.blockedBy ?? []), ...(inverseBlockers[todo.id] ?? [])]))
-          .filter((blockerId) => todos[blockerId] && todos[blockerId].status !== 'completed')
-          .map((blockerId) => todos[blockerId].id),
-      }))
-    : (codexTodoList?.items ?? []).map((todo, index) => ({
-        id: `${codexTodoList?.id ?? 'todo'}-${index}`,
-        text: todo.text,
-        status: todo.completed ? 'completed' as const : 'pending' as const,
-      }))
+  const panelItems = sessionTodoList.map((todo) => ({
+    id: todo.id,
+    text: todo.status === 'in_progress' && todo.activeForm ? todo.activeForm : todo.subject,
+    status: todo.status,
+    description: todo.description || undefined,
+    owner: todo.owner,
+    blockedBy: Array.from(new Set([...(todo.blockedBy ?? []), ...(inverseBlockers[todo.id] ?? [])]))
+      .filter((blockerId) => todos[blockerId] && todos[blockerId].status !== 'completed')
+      .map((blockerId) => todos[blockerId].id),
+  }))
 
   return (
     <TodoListPanel
       items={panelItems}
-      showItemIds={usingSessionTodos}
       expanded={showTodos}
       onToggle={toggleTodos}
       trailing={<Kbd className="ml-auto">{showTodos ? 'esc' : '⌃T'}</Kbd>}

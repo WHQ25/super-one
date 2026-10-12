@@ -19,7 +19,6 @@ interface TodoListPanelProps {
   trailing?: ReactNode
   className?: string
   listClassName?: string
-  showItemIds?: boolean
 }
 
 export function TodoListPanel({
@@ -29,7 +28,6 @@ export function TodoListPanel({
   trailing,
   className,
   listClassName,
-  showItemIds = true,
 }: TodoListPanelProps) {
   const activeRef = useRef<HTMLDivElement>(null)
   const [openRows, setOpenRows] = useState<Set<string>>(new Set())
@@ -99,7 +97,7 @@ export function TodoListPanel({
                       item.status === 'completed' && 'text-muted-foreground line-through',
                     )}
                   >
-                    {showItemIds && <span className="mr-1 text-muted-foreground">#{item.id}</span>}
+                    <span className="mr-1 text-muted-foreground">#{item.id}</span>
                     {item.text}
                     {item.owner && (
                       <span className="ml-2 inline-flex items-center gap-1 align-middle text-xs text-muted-foreground">

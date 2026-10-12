@@ -93,8 +93,8 @@ describe('reduceCodex: codex_thread_started', () => {
   })
 })
 
-describe('reduceCodex: _latestCodexTodoList', () => {
-  it('stores the latest open todo_list item for TodoPopup without message scans', async () => {
+describe('reduceCodex: todo lists', () => {
+  it('sets the session todo list a TodoWrite result would, so TodoPopup reads one list', async () => {
     const session = createDefaultPerSessionState()
     session.messages = [makeMessage('m1')]
     const patch = reduceCodex(session, {
@@ -106,8 +106,8 @@ describe('reduceCodex: _latestCodexTodoList', () => {
         items: [{ text: 'A', completed: false }, { text: 'B', completed: false }],
       },
     } as never)
-    expect(patch._latestCodexTodoList?.id).toBe('todo-1')
-    expect(patch._latestCodexTodoList?.items).toHaveLength(2)
+    expect(Object.values(patch.todos ?? {}).map(todo => [todo.subject, todo.status])).toEqual([['A', 'pending'], ['B', 'pending']])
+    expect(patch.showTodos).toBe(true)
 
     const next = { ...session, ...patch, messages: patch.messages ?? session.messages }
     const done = reduceCodex(next as typeof session, {
@@ -119,7 +119,8 @@ describe('reduceCodex: _latestCodexTodoList', () => {
         items: [{ text: 'A', completed: true }, { text: 'B', completed: true }],
       },
     } as never)
-    expect(done._latestCodexTodoList).toBeNull()
+    // A finished list stays until the popup's all-done timer clears it, as for TodoWrite.
+    expect(Object.values(done.todos ?? {}).every(todo => todo.status === 'completed')).toBe(true)
   })
 })
 

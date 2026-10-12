@@ -1,4 +1,4 @@
-import type { AgentEvent, TodoItem } from '@superone/shared/agent-types'
+import type { AgentEvent } from '@superone/shared/agent-types'
 import { applySeqToMessage, isReplayedEventForMessage } from '@superone/shared/event-seq-utils'
 import { resolveDeltaHomeMessageId } from '@superone/shared/subagent-routing'
 import { applyContentDelta as applyDelta } from '@superone/shared/content-delta'
@@ -8,6 +8,7 @@ import { isMediaGenerateVideoTool, isMediaVideoStatusTool } from './media-predic
 import { defaultChatCorePorts, type ChatCorePorts } from './ports'
 import { dropHostWorkflowShadow } from './host-workflow-card'
 import { dropStreamingToolInputPreview, isTerminalMessageStatus } from './shared'
+import { todoListUpdate, todoWriteTodos } from './todos'
 
 type ContentDeltaEvent = Extract<AgentEvent, { type: 'content_delta' }>
 
@@ -83,20 +84,9 @@ export function reduceContentDelta(
       if (!resultDelta.isError && (tn === 'TodoWrite' || tn === 'TaskCreate' || tn === 'TaskUpdate')) {
         try {
           const input = JSON.parse(toolBlock.input)
-          if (tn === 'TodoWrite' && Array.isArray(input.todos)) {
-            const newTodos: Record<string, TodoItem> = {}
-            for (let i = 0; i < input.todos.length; i++) {
-              const t = input.todos[i]
-              const id = String(i + 1)
-              newTodos[id] = {
-                id,
-                subject: t.content ?? t.subject ?? '',
-                description: t.description ?? '',
-                status: t.status ?? 'pending',
-                activeForm: t.activeForm,
-              }
-            }
-            extraUpdates = { todos: newTodos, _nextTodoId: input.todos.length + 1, ...(!session._todosUserDismissed && { showTodos: true }) }
+          const listed = tn === 'TodoWrite' ? todoWriteTodos(input) : null
+          if (listed) {
+            extraUpdates = todoListUpdate(session, listed)
           } else if (tn === 'TaskCreate') {
             const resolvedId = resultDelta.toolTodos?.[0]?.taskId
             const id = resolvedId ?? String(session._nextTodoId)

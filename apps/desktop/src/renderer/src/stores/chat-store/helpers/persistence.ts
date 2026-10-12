@@ -5,9 +5,10 @@ import { HARNESS_STRATEGIES } from '@/harness-ui/strategies'
 import type { SelectionAccess } from '@/harness-ui/strategy'
 import { videoGenStatusesFromMessages } from '@/components/chat/media-generation'
 import type { ChatStore, PerSessionState, PersistedSessionState, ProjectState } from '../types'
-import { latestCodexTodoListFromMessages } from './codex-todo'
+import { restoredTodos, todoListUpdate } from '@superone/chat-core'
 import { findLatestCodexUsage } from './codex-usage'
 import { resolveActiveSessionId } from './store-helpers'
+import { withCodexContents } from '@superone/shared/codex-content'
 import { loadStoredSession } from '@/lib/session-client'
 
 /** Where a restored provider keeps its pick; an unknown provider uses the neutral fields. */
@@ -64,9 +65,10 @@ export function _getSessionCwd(
   return _getSessionWorktreePath(session) ?? projectPath
 }
 
+/** Stored rows enter the renderer here: legacy Codex rows take the read view, live rows win. */
 export function _mergePersistedMessages(savedMessages: ChatMessage[], runtimeMessages: ChatMessage[]): ChatMessage[] {
   const runtimeById = new Map(runtimeMessages.map((message) => [message.id, message]))
-  const merged = savedMessages.map((message) => runtimeById.get(message.id) ?? message)
+  const merged = withCodexContents(savedMessages).map((message) => runtimeById.get(message.id) ?? message)
   const seen = new Set(merged.map((message) => message.id))
   for (const message of runtimeMessages) {
     if (seen.has(message.id)) continue
@@ -116,7 +118,7 @@ export function _mergePersistedSessionState(session: PerSessionState, saved: Per
     ...restorePersistedSelection(session, persistedProvider, saved.selectedModel, saved.selectedEffort),
     // Rebuild derived UI fields — not persisted; cold restore must not leave the
     // todo popup blank or the Codex footer without a context window.
-    _latestCodexTodoList: latestCodexTodoListFromMessages(mergedMessages),
+    ...restoreTodoList(session, mergedMessages),
     codexUsageSnapshot: restoredCodexUsage,
     contextWindow: session.contextWindow
       ?? (restoredCodexUsage?.contextWindow && restoredCodexUsage.contextWindow > 0
@@ -128,6 +130,16 @@ export function _mergePersistedSessionState(session: PerSessionState, saved: Per
     },
     _historyHydrated: true,
   }
+}
+
+/**
+ * A live list wins; otherwise the transcript's open list comes back. A list
+ * cleared after finishing stays cleared: its last call has every todo done.
+ */
+function restoreTodoList(session: PerSessionState, messages: readonly ChatMessage[]): Partial<PerSessionState> {
+  if (Object.keys(session.todos).length) return {}
+  const todos = restoredTodos(messages)
+  return todos ? todoListUpdate(session, todos) : {}
 }
 
 export function _mergeHydratedSessionState(
@@ -172,9 +184,7 @@ export function _mergeHydratedSessionState(
       hydratedPick.modelUserChosen,
       hydratedPick.effortUserChosen,
     ),
-    // Always re-derive: null means "cleared / all completed", not "unset".
-    // `?? hydrated` would resurrect a finished list after a live clear.
-    _latestCodexTodoList: latestCodexTodoListFromMessages(mergedMessages),
+    ...restoreTodoList(session, mergedMessages),
     videoGenStatuses: {
       ...videoGenStatusesFromMessages(mergedMessages),
       ...session.videoGenStatuses,

@@ -4081,6 +4081,7 @@ describe('switchSession Case B codex usage restore', () => {
             threadId: 'thread-todo',
             usage: null,
             items: [{
+              id: 'todo-1',
               type: 'todo_list',
               items: [
                 { text: 'step one', completed: true },
@@ -4099,7 +4100,8 @@ describe('switchSession Case B codex usage restore', () => {
     await useChatStore.getState().switchSession('db-codex-todo-session')
 
     const session = useChatStore.getState().projectSessions['/test']._sessions['db-codex-todo-session']
-    expect(session._latestCodexTodoList?.items).toHaveLength(2)
+    expect(Object.values(session.todos).map(todo => todo.status)).toEqual(['completed', 'pending'])
+    expect(session.showTodos).toBe(true)
   })
 })
 

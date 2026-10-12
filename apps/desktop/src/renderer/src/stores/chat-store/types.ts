@@ -12,7 +12,6 @@ import type {
   CodexPermissionPreset,
   CodexReasoningEffort,
   CodexResources,
-  CodexTodoListItem,
   CursorResources,
   DeepseekResources,
   OpenCodeResources,
@@ -252,11 +251,6 @@ export interface PerSessionState extends ChatCoreSession {
   /** Set while a local slash command runs, so the UI can show it instead of nothing. */
   runningSlashCommand: { command: string; startedAt: number } | null
   _streamingToolInputPreviews: Record<string, Record<string, unknown>>
-  /**
-   * Latest open Codex todo_list item for the session (null when none / all done).
-   * Updated on codex_item_delta so TodoPopup need not select full messages.
-   */
-  _latestCodexTodoList: CodexTodoListItem | null
   _pendingSlashCommand: string
   _pendingCompactUserId: string
   todos: Record<string, TodoItem>

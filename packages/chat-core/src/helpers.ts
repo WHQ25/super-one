@@ -1,11 +1,4 @@
-import type { ChatMessage, CodexTodoListItem, CodexThreadItem } from '@superone/shared/agent-types'
-
-export function codexTodoListFromItem(item: CodexThreadItem): CodexTodoListItem | null | undefined {
-  if (item.type !== 'todo_list') return undefined
-  const todo = item as CodexTodoListItem
-  if (todo.items.length > 0 && todo.items.every((entry) => entry.completed)) return null
-  return todo
-}
+import type { ChatMessage } from '@superone/shared/agent-types'
 
 export function findCheckpointTarget(messages: ChatMessage[], assistantMessageId: string): number {
   for (let i = messages.length - 1; i >= 0; i--) {

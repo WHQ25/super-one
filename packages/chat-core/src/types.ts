@@ -5,7 +5,6 @@ import type {
   CodexCollaborationMode,
   CodexPermissionPreset,
   CodexReasoningEffort,
-  CodexTodoListItem,
   CodexUsageInfo,
   EffortLevel,
   HarnessId,
@@ -208,7 +207,6 @@ export interface ChatCoreSession {
   /** Item-scoped speech still being transcribed; never persisted in snapshots. */
   realtimeLiveSegments: RealtimeTimelineSegment[]
   realtimeSessionId: string | null
-  _latestCodexTodoList: CodexTodoListItem | null
 }
 
 /** Exhaustive reducer write surface. */

@@ -3,6 +3,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { ChatMessage } from '@superone/shared/agent-types'
 import { pendingCodexAsyncQuestions } from '@superone/shared/codex-async-question'
+import { withCodexContent } from '@superone/shared/codex-content'
 
 const loadStoredSession = vi.fn()
 
@@ -302,30 +303,24 @@ describe('_mergeHydratedSessionState', () => {
       type: 'todo_list' as const,
       items: [{ text: 'done', completed: true }],
     }
-    // Live stream already cleared the open list (all completed → null).
-    const liveMsg = {
+    // The newest list finished, so restore must not bring back the older open one.
+    const liveMsg = withCodexContent({
       ...makeMessage('a-live', 'assistant'),
       metadata: { codex: { threadId: null, usage: null, items: [completedOnly] } },
-    }
-    const hydratedMsg = {
+    })
+    const hydratedMsg = withCodexContent({
       ...makeMessage('a-hydrated', 'assistant'),
       metadata: { codex: { threadId: null, usage: null, items: [openTodo] } },
-    }
-    const session = {
-      ...createDefaultPerSessionState(),
-      messages: [liveMsg],
-      _latestCodexTodoList: null,
-    }
+    })
+    const session = { ...createDefaultPerSessionState(), messages: [liveMsg] }
     const hydrated = {
       ...createDefaultPerSessionState(),
       messages: [hydratedMsg],
-      _latestCodexTodoList: openTodo,
       _historyHydrated: true,
       _parentSessionId: 'parent',
     }
     const merged = _mergeHydratedSessionState(session, hydrated)
-    // Newest message is live completed-only → derived null, not the hydrated open list.
-    expect(merged._latestCodexTodoList).toBeNull()
+    expect(merged.todos).toEqual({})
     expect(merged._parentSessionId).toBe('parent')
   })
   it('preserves an authoritative root during a concurrent hydration merge', () => {

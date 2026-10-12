@@ -85,6 +85,5 @@ export function createDefaultChatCoreSession(): ChatCoreSession {
     realtimeHasTimeline: false,
     realtimeLiveSegments: [],
     realtimeSessionId: null,
-    _latestCodexTodoList: null,
   }
 }

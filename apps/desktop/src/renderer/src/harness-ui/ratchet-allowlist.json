@@ -111,10 +111,6 @@
     "count": 2,
     "reason": "pre-registry baseline"
   },
-  "components/chat/StopButton.tsx": {
-    "count": 2,
-    "reason": "pre-registry baseline"
-  },
   "components/chat/chat-input/computeMatchingSlashCommands.ts": {
     "count": 2,
     "reason": "pre-registry baseline"
@@ -211,10 +207,6 @@
     "count": 21,
     "reason": "pre-registry baseline"
   },
-  "stores/chat-store/helpers/input-request-send.ts": {
-    "count": 2,
-    "reason": "pre-registry baseline"
-  },
   "stores/chat-store/helpers/interaction.ts": {
     "count": 11,
     "reason": "pre-registry baseline"
@@ -228,15 +220,11 @@
     "reason": "pre-registry baseline"
   },
   "stores/chat-store/helpers/send-message.ts": {
-    "count": 18,
+    "count": 11,
     "reason": "pre-registry baseline"
   },
   "stores/chat-store/helpers/session-lifecycle.ts": {
     "count": 3,
-    "reason": "pre-registry baseline"
-  },
-  "stores/chat-store/helpers/session-send-request.ts": {
-    "count": 5,
     "reason": "pre-registry baseline"
   },
   "stores/chat-store/index.ts": {

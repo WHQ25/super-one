@@ -22,6 +22,7 @@ const codexSelection: SelectionAccess = {
 
 export const codexStrategy: HarnessStrategy = {
   selection: codexSelection,
+  queuePolicy: 'runs',
   seed: (session, { project }) => {
     const selection = resolveDefaultCodexSelection(project.codexModels)
     session.selectedCodexModel = selection.modelId

@@ -420,7 +420,6 @@ vi.mock('./ReviewPanel', () => ({
 
 vi.mock('./StopButton', () => ({
   StopButton: () => null,
-  harnessUsesSoftCancel: () => false,
 }))
 
 vi.mock('@/components/ui/HighlightedText', () => ({

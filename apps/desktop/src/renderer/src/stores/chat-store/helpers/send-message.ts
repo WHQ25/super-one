@@ -20,7 +20,8 @@ import type { ChatProvider, ChatStore, InputSegment, Mention, SessionWriteTarget
 import { callSession, resetHostSession } from '@/lib/session-client'
 import { expandPathRefTagsForAgent } from '@superone/shared/miniapp-prompt-tags'
 import { isBuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
-import { shouldQueueUserSend } from './session-send-request'
+import { sendStartsStreaming, shouldQueueUserSend } from './session-send-request'
+import { resolveProvider } from './provider-routing'
 import { applyPendingWorktree, deliverSessionTurn, ensureHostSession, queuesBehindTurn, sessionTurnRequest } from './session-turn'
 import { resolveEffectiveProviderId } from '@/lib/provider-resolve'
 
@@ -114,7 +115,7 @@ export async function sendMessageImpl(
   if (isControlledElsewhere(getScopedPerSession(get(), writeScope.target))) return
 
   const initialSession = getScopedPerSession(get(), writeScope.target)
-  const initialProvider = initialSession.sessionProvider ?? initialSession.preferredProvider
+  const initialProvider = resolveProvider(initialSession)
   const initialCodexCommand = initialProvider === 'codex'
     ? parseCodexCommand(content.trim())
     : null
@@ -141,7 +142,6 @@ export async function sendMessageImpl(
   const session = getScopedPerSession(get(), writeScope.target)
   const project = getProject(get(), projectPath)
   const {
-    preferredProvider,
     selectedModel,
     selectedEffort,
   } = session
@@ -175,14 +175,7 @@ export async function sendMessageImpl(
       .join('\n')
     quoteSuffix = `\n\n<quote>\n${inner}\n</quote>`
   }
-  const requestedProvider: ChatProvider =
-    preferredProvider === 'codex'
-    || preferredProvider === 'acp'
-    || preferredProvider === 'opencode'
-    || preferredProvider === 'cursor'
-      ? preferredProvider
-      : 'claude'
-  const effectiveProvider: ChatProvider = session.sessionProvider ?? requestedProvider
+  const effectiveProvider: ChatProvider = resolveProvider(session)
   // @codex / @grok — the agent id is already decided, so the reminder pins it
   // and tells the model to skip session_collab_list_agents entirely.
   let agentReminderSuffix = ''
@@ -316,10 +309,9 @@ export async function sendMessageImpl(
   let resolvedCodexCommand: CodexCommand | null = effectiveProvider === 'codex'
     ? (codexCommand ?? { kind: 'run', prompt: finalContent })
     : null
-  const isCodexDurableQueueSend = effectiveProvider === 'codex'
-    && session.status === 'streaming'
-    && resolvedCodexCommand?.kind === 'run'
-  const isQueuedSend = queuesBehindTurn(projectPath, shouldQueueUserSend(effectiveProvider, session.status, isCodexDurableQueueSend))
+  const isRunSend = !resolvedCodexCommand || resolvedCodexCommand.kind === 'run'
+  const isQueuedSend = queuesBehindTurn(projectPath, shouldQueueUserSend(effectiveProvider, session.status, isRunSend))
+  const startsStreaming = sendStartsStreaming(effectiveProvider, isQueuedSend)
 
 
   if (!session.sessionProvider) {
@@ -559,9 +551,7 @@ export async function sendMessageImpl(
       draftId: null,
       ...(isCompactSlash ? { _pendingCompactUserId: userMessageId } : {}),
       ...(awaitsReply ? { awaitingAssistantReply: true } : {}),
-      ...(effectiveProvider === 'cursor' && !isQueuedSend
-        ? { status: 'streaming' as const }
-        : {}),
+      ...(startsStreaming ? { status: 'streaming' as const } : {}),
     })),
     isOpen: true,
   }))
@@ -673,7 +663,7 @@ export async function sendMessageImpl(
     titleText: rawContent || finalContent,
     retryState: () => ({
       ...(awaitsReply ? { awaitingAssistantReply: true } : {}),
-      ...(effectiveProvider === 'cursor' && !isQueuedSend ? { status: 'streaming' as const } : {}),
+      ...(startsStreaming ? { status: 'streaming' as const } : {}),
     }),
   })
 }

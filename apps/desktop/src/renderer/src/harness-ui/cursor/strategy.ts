@@ -4,6 +4,8 @@ import type { HarnessStrategy } from '../strategy'
 
 export const cursorStrategy: HarnessStrategy = {
   selection: neutralSelection,
+  queuePolicy: 'never',
+  sendStartsStreaming: true,
   seed: (session, { state }) => {
     const selection = resolveDefaultCursorSelection(enabledCursorModels(state.harnessResources.cursor))
     session.selectedModel = selection.modelId

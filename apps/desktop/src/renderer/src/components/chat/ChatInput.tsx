@@ -76,7 +76,7 @@ import { McpSlashPopup } from './McpSlashPopup'
 import { WorkflowsSlashPopup } from './WorkflowsSlashPopup'
 import { ReviewPanel } from './ReviewPanel'
 import { SlashCommandContent } from './SlashCommandContent'
-import { StopButton, harnessUsesSoftCancel } from './StopButton'
+import { StopButton } from './StopButton'
 import { ScheduledSendButton } from './ScheduledSendButton'
 
 /**
@@ -2261,7 +2261,7 @@ export function ChatInput({
             {isStreaming && (
               <StopButton
                 onInterrupt={scopedInterrupt}
-                softCancel={harnessUsesSoftCancel(activeProviderForResources)}
+                softCancel={HARNESS_CAPABILITIES[activeProviderForResources].softCancel}
               />
             )}
             {(scheduleServed || scheduled) && <ScheduledSendButton

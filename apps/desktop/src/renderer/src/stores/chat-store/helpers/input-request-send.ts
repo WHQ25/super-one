@@ -8,7 +8,7 @@ import type { ChatStoreSet } from './lifecycle'
 import { createLocalTextUserMessage } from './codex-helpers'
 import { commitPerSession, resolveWriteScope } from './store-helpers'
 import { resolveProvider } from './provider-routing'
-import { shouldQueueUserSend } from './session-send-request'
+import { sendStartsStreaming, shouldQueueUserSend } from './session-send-request'
 import { deliverSessionTurn, sessionTurnRequest } from './session-turn'
 import { createSendWriteScope } from './send-write-scope'
 import { setInputRequestError } from './input-request-errors'
@@ -34,7 +34,8 @@ export async function sendInputRequestImpl(
   const messageId = newMessageId('user')
   const provider = resolveProvider(session)
   const queued = shouldQueueUserSend(provider, session.status)
-  const awaitsReply = !queued && ['claude', 'acp', 'cursor', 'opencode'].includes(provider)
+  const awaitsReply = !queued
+  const startsStreaming = sendStartsStreaming(provider, queued)
   const request = {
     ...sessionTurnRequest(get(), projectPath, sessionId, {
       text: content,
@@ -53,7 +54,7 @@ export async function sendInputRequestImpl(
     // The failed-send bubble owns retries; it must not create a second submission.
     pendingPermissions: current.pendingPermissions.filter(item => item.requestId !== requestId),
     ...(awaitsReply ? { awaitingAssistantReply: true } : {}),
-    ...(provider === 'cursor' && !queued ? { status: 'streaming' as const } : {}),
+    ...(startsStreaming ? { status: 'streaming' as const } : {}),
   }))
   const writeScope = createSendWriteScope(set, get, projectPath, owner)
   writeScope.patch = patchSession
@@ -79,7 +80,7 @@ export async function sendInputRequestImpl(
     retryable: error => parseInputRequestError(error) === null,
     retryState: () => ({
       ...(awaitsReply ? { awaitingAssistantReply: true } : {}),
-      ...(provider === 'cursor' && !queued ? { status: 'streaming' as const } : {}),
+      ...(startsStreaming ? { status: 'streaming' as const } : {}),
     }),
   })
   return true

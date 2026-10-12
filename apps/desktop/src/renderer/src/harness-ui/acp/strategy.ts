@@ -4,6 +4,7 @@ import type { HarnessStrategy } from '../strategy'
 
 export const acpStrategy: HarnessStrategy = {
   selection: neutralSelection,
+  queuePolicy: 'always',
   /** Seed from the agent catalog cache, keeping the replaced session's agent, model and mode while still offered. */
   seed: (session, { state, previousSession }) => {
     const agentId = previousSession?.acpAgentId ?? state.harnessResources.acp?.selectedAgentId ?? 'grok-build'

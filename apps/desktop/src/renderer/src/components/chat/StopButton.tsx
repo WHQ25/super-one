@@ -6,15 +6,10 @@ const STOP_COLOR = '#E24B4A'
 const HOLD_DURATION = 600
 const DEAD_ZONE = 100
 
-/** Soft-cancel harnesses only get the post-trigger segmented spinner ring. */
-export function harnessUsesSoftCancel(provider: string | null | undefined): boolean {
-  return provider === 'acp' || provider === 'opencode'
-}
-
 interface StopButtonProps {
   onInterrupt: () => void
   /**
-   * When true (ACP / OpenCode), after the hold ring fills (or a click fires),
+   * When true (the harness's `softCancel` capability), after the hold ring fills (or a click fires),
    * keep a segmented rotating red ring until the parent unmounts the button
    * (turn settled). Hard-interrupt harnesses still clear the ring shortly after trigger.
    */

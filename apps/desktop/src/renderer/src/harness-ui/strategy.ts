@@ -85,6 +85,14 @@ export interface HarnessStrategy {
   draftSettings?(session: PerSessionState): Partial<SessionSettingsPatch>
   /** Selections this desktop's host takes when it creates the session. */
   createSelections?(session: PerSessionState): { acpAgentId?: string }
+  /**
+   * Whether a send made while a turn runs waits behind it: `always`, only a
+   * plain run (`runs`: Codex commands such as review go out at once), or never.
+   * Steering a held message is a separate capability (`supportsQueuedSteer`).
+   */
+  queuePolicy: 'always' | 'runs' | 'never'
+  /** The send itself marks the turn streaming, before the host reports it. */
+  sendStartsStreaming?: boolean
 }
 
 export interface TurnContext {

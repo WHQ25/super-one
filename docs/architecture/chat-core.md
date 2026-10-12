@@ -115,7 +115,7 @@ Enforced by source-scanning tests; a violation fails the suite.
 | Test | Bans |
 |---|---|
 | `packages/chat-core/src/boundary.test.ts` | Imports of `zustand`, `electron`, the desktop `@/` alias, any `apps/desktop` path, parent (`../`) imports; `window.` access; a module-scope `new Map` (no hidden module state; state shared across sessions comes through ports) |
-| `packages/chat-view/src/boundary.test.ts` | Across the package: `@/` alias, `zustand`, `electron`, desktop preload bridges (`window.agent`, `window.app`, `window.browserHost`, `window.electron`, `window.environment`, `window.miniapp`, `window.terminal`), and any composer (`ChatInput`, `<textarea>`). Also asserts phone assistant turns render through the shared `ClaudeTurnBodyPresenter`, `CodexTurnViewPresenter` and `ToolGroupPresenter` rather than local copies |
+| `packages/chat-view/src/boundary.test.ts` | Across the package: `@/` alias, `zustand`, `electron`, desktop preload bridges (`window.agent`, `window.app`, `window.browserHost`, `window.electron`, `window.environment`, `window.miniapp`, `window.terminal`), and any composer (`ChatInput`, `<textarea>`). Also asserts phone assistant turns render through the shared `TurnBodyPresenter`, `CodexTurnViewPresenter` and `ToolGroupPresenter` rather than local copies |
 | `packages/chat-view/src/presenters/boundary.test.ts` | In presenters: `@/` alias, `zustand`, `electron`, parent imports, desktop `ToolBlock` imports, desktop preload bridges |
 | `apps/desktop/src/renderer/src/stores/chat-store/event-reducer/boundary.spike.test.ts` | In the desktop shims: `../index`, `zustand`, `../slices/`, `@/stores/`, `@/components/`; `window.` anywhere but `index.ts`; any family file that does not re-export from `@superone/chat-core` |
 

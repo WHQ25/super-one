@@ -21,18 +21,18 @@ import type {
   CodexTurnProcessStats,
 } from './CodexTurnView'
 
-export interface ClaudeTextPresenterProps {
+export interface TurnTextPresenterProps {
   text: string
   isStreaming: boolean
   projectPath?: string | null
   afterThinking?: boolean
 }
 
-export interface ClaudeDocumentPresenterProps {
+export interface TurnDocumentPresenterProps {
   name: string
 }
 
-export interface ClaudeToolPresenterProps {
+export interface TurnToolPresenterProps {
   remoteDetail?: string
   toolName: string
   toolUseId?: string
@@ -60,13 +60,13 @@ export interface ClaudeToolPresenterProps {
   suggestedTask?: SuggestedTaskState
 }
 
-export interface ClaudeInsightPresenterProps {
+export interface TurnInsightPresenterProps {
   title: string
   content: string
   isStreaming: boolean
 }
 
-export interface ClaudeReasoningPresenterProps {
+export interface TurnReasoningPresenterProps {
   remoteDetails?: string[]
   text: string
   startedAt?: number
@@ -76,48 +76,48 @@ export interface ClaudeReasoningPresenterProps {
   isFirst?: boolean
 }
 
-export interface ClaudeSubagentPresenterProps {
+export interface TurnSubagentPresenterProps {
   taskBlock: ContentBlock & { type: 'tool_use' }
   childBlocks: ContentBlock[]
   resultBlock?: ContentBlock
   isStreaming: boolean
 }
 
-export interface ClaudeWorkflowPresenterProps {
+export interface TurnWorkflowPresenterProps {
   toolBlock: ContentBlock & { type: 'tool_use' }
   resultBlock?: ContentBlock
   isStreaming: boolean
 }
 
-export interface ClaudeToolGroupPresenterProps {
+export interface TurnToolGroupPresenterProps {
   blocks: ContentBlock[]
   sealed: boolean
 }
 
-export interface ClaudeAppToolGroupPresenterProps extends ClaudeToolGroupPresenterProps {
+export interface TurnAppToolGroupPresenterProps extends TurnToolGroupPresenterProps {
   appId: string
 }
 
-export interface ClaudeTurnBodyPresenterParts {
+export interface TurnBodyPresenterParts {
   /** Hosts with a transcript viewport can evict offscreen activity chunks. */
   Segment?: ComponentType<TurnSegmentProps>
-  Text: ComponentType<ClaudeTextPresenterProps>
+  Text: ComponentType<TurnTextPresenterProps>
   /**
    * Callout card for a pre-split `insight` block. Only remote surfaces receive one:
    * desktop keeps the `★ … ───` markers inside `text` and splits at render time.
    */
-  Insight: ComponentType<ClaudeInsightPresenterProps>
-  Document: ComponentType<ClaudeDocumentPresenterProps>
-  Tool: ComponentType<ClaudeToolPresenterProps>
-  Reasoning: ComponentType<ClaudeReasoningPresenterProps>
-  Subagent: ComponentType<ClaudeSubagentPresenterProps>
-  Workflow: ComponentType<ClaudeWorkflowPresenterProps>
-  ToolGroup: ComponentType<ClaudeToolGroupPresenterProps>
-  AppToolGroup: ComponentType<ClaudeAppToolGroupPresenterProps>
+  Insight: ComponentType<TurnInsightPresenterProps>
+  Document: ComponentType<TurnDocumentPresenterProps>
+  Tool: ComponentType<TurnToolPresenterProps>
+  Reasoning: ComponentType<TurnReasoningPresenterProps>
+  Subagent: ComponentType<TurnSubagentPresenterProps>
+  Workflow: ComponentType<TurnWorkflowPresenterProps>
+  ToolGroup: ComponentType<TurnToolGroupPresenterProps>
+  AppToolGroup: ComponentType<TurnAppToolGroupPresenterProps>
   TurnDetail: ComponentType<CodexTurnDetailPresenterProps>
 }
 
-export interface ClaudeTurnBodyPresenterRuntime {
+export interface TurnBodyPresenterRuntime {
   isBackgroundTool: (block: ContentBlock & { type: 'tool_use' }) => boolean
   isPinnedSegment: (segment: RenderSegment) => boolean
   isHiddenTool: (toolName: string, result?: string) => boolean
@@ -130,13 +130,13 @@ export interface ClaudeTurnBodyPresenterRuntime {
   ) => CodexTurnProcessStats
 }
 
-export interface ClaudeTurnBodyPresenterProps {
+export interface TurnBodyPresenterProps {
   grouped: GroupContentResult
   isStreaming: boolean
   detailChatMode: boolean
   projectPath: string | null
-  parts: ClaudeTurnBodyPresenterParts
-  runtime: ClaudeTurnBodyPresenterRuntime
+  parts: TurnBodyPresenterParts
+  runtime: TurnBodyPresenterRuntime
 }
 
 interface RenderOptions {
@@ -150,8 +150,8 @@ interface RenderOptions {
   toolAppMap?: Map<string, ToolAppAttachment>
   runContinuations?: GroupContentResult['runContinuations']
   projectPath: string | null
-  parts: ClaudeTurnBodyPresenterParts
-  runtime: ClaudeTurnBodyPresenterRuntime
+  parts: TurnBodyPresenterParts
+  runtime: TurnBodyPresenterRuntime
 }
 
 const runRange = (run: { start: number; items: unknown[] }) => ({
@@ -159,7 +159,7 @@ const runRange = (run: { start: number; items: unknown[] }) => ({
   end: run.start + run.items.length,
 })
 
-export function ClaudeBlockPresenter({
+export function TurnBlockPresenter({
   block,
   index,
   isStreaming,
@@ -189,8 +189,8 @@ export function ClaudeBlockPresenter({
   nextBlockType?: string
   prevBlockType?: string
   projectPath?: string | null
-  parts: ClaudeTurnBodyPresenterParts
-  runtime: ClaudeTurnBodyPresenterRuntime
+  parts: TurnBodyPresenterParts
+  runtime: TurnBodyPresenterRuntime
 }) {
   const { Text, Insight, Document, Tool, Reasoning } = parts
   switch (block.type) {
@@ -370,7 +370,7 @@ function renderSegments(
           ? 'thinking'
           : undefined
       return (
-        <ClaudeBlockPresenter
+        <TurnBlockPresenter
           key={segment.index}
           block={segment.block}
           index={segment.index}
@@ -419,7 +419,7 @@ function renderSegments(
 
 function renderBlocks(blocks: ContentBlock[], startIndex: number, options: RenderOptions): ReactNode[] {
   return blocks.map((block, blockIndex) => (
-    <ClaudeBlockPresenter
+    <TurnBlockPresenter
       key={startIndex + blockIndex}
       block={block}
       index={startIndex + blockIndex}
@@ -440,14 +440,14 @@ function renderBlocks(blocks: ContentBlock[], startIndex: number, options: Rende
   ))
 }
 
-export function ClaudeTurnBodyPresenter({
+export function TurnBodyPresenter({
   grouped,
   isStreaming,
   detailChatMode,
   projectPath,
   parts,
   runtime,
-}: ClaudeTurnBodyPresenterProps) {
+}: TurnBodyPresenterProps) {
   const segments = grouped.segments
   const options: RenderOptions = {
     isStreaming,

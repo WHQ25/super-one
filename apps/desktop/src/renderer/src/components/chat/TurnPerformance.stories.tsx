@@ -34,7 +34,7 @@ function turn(activities: number, streaming: boolean): ChatMessage {
   return { id: 'claude-long-turn', role: 'assistant', providerId: 'claude', status: streaming ? 'streaming' : 'complete', createdAt: '2026-10-12T06:12:00.000Z', content }
 }
 
-function ClaudeTurnPerformance({ activities = 612, streaming = true, detail = false, width = 1000 }: {
+function TurnPerformance({ activities = 612, streaming = true, detail = false, width = 1000 }: {
   activities?: number; streaming?: boolean; detail?: boolean; width?: number
 }) {
   const [ready, setReady] = useState(false)
@@ -94,7 +94,7 @@ function ClaudeTurnPerformance({ activities = 612, streaming = true, detail = fa
   </TooltipProvider>
 }
 
-const meta = { title: 'Chat/ContentBlock Turn Performance', component: ClaudeTurnPerformance, parameters: { layout: 'padded' } } satisfies Meta<typeof ClaudeTurnPerformance>
+const meta = { title: 'Chat/ContentBlock Turn Performance', component: TurnPerformance, parameters: { layout: 'padded' } } satisfies Meta<typeof TurnPerformance>
 export default meta
 type Story = StoryObj<typeof meta>
 export const Streaming: Story = {}

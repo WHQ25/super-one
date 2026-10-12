@@ -29,9 +29,9 @@ describe('chat-view package boundary', () => {
     const messageSource = readFileSync(`${ROOT}/PortableMessage.tsx`, 'utf8')
     const adapterSource = readFileSync(`${ROOT}/PortableTurnAdapters.tsx`, 'utf8')
 
-    expect(messageSource).toContain('<PortableClaudeTurn')
+    expect(messageSource).toContain('<PortableTurn')
     expect(messageSource).toContain('<PortableCodexTurn')
-    expect(adapterSource).toContain('<ClaudeTurnBodyPresenter')
+    expect(adapterSource).toContain('<TurnBodyPresenter')
     expect(adapterSource).toContain('<CodexTurnViewPresenter')
     expect(adapterSource).toContain('TurnDetail: TurnDetailSection')
     expect(adapterSource).toContain('<ToolGroupPresenter')

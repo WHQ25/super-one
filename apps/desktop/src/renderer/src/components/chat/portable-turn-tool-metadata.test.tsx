@@ -8,7 +8,7 @@ import { sanitizeRemoteToolInput } from '@superone/shared/remote-tool-input'
 
 /**
  * A tool call that stands alone in a turn — one Edit between two paragraphs — goes through
- * `ClaudeTurnBody`'s single-tool branch rather than the tool-group branch. Only the group
+ * `TurnBody`'s single-tool branch rather than the tool-group branch. Only the group
  * branch used to forward the precomputed edit metadata, so on the phone a lone Edit row
  * opened onto nothing: `toolDiff` never reached the presenter that draws it.
  */

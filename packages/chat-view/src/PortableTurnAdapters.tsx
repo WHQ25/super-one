@@ -41,15 +41,15 @@ import { PortableImageGallery, PortableVideoGallery } from './PortableMediaGalle
 export { PortableImageGallery, PortableVideoGallery } from './PortableMediaGalleries'
 import { PortableToolRow } from './PortableToolRow'
 import {
-  ClaudeTurnBodyPresenter,
-  type ClaudeAppToolGroupPresenterProps,
-  type ClaudeSubagentPresenterProps,
-  type ClaudeToolGroupPresenterProps,
-  type ClaudeToolPresenterProps,
-  type ClaudeTurnBodyPresenterParts,
-  type ClaudeTurnBodyPresenterRuntime,
-  type ClaudeWorkflowPresenterProps,
-} from './presenters/ClaudeTurnBody'
+  TurnBodyPresenter,
+  type TurnAppToolGroupPresenterProps,
+  type TurnSubagentPresenterProps,
+  type TurnToolGroupPresenterProps,
+  type TurnToolPresenterProps,
+  type TurnBodyPresenterParts,
+  type TurnBodyPresenterRuntime,
+  type TurnWorkflowPresenterProps,
+} from './presenters/TurnBody'
 import {
   CodexTurnViewPresenter,
   codexMcpItemInput,
@@ -207,7 +207,7 @@ function PortableDocument({ name }: { name: string }) {
 }
 
 /** A call whose server attached an MCP App shows its View in place of the row; a failed call keeps the row. */
-function PortableClaudeTool(props: ClaudeToolPresenterProps) {
+function PortableClaudeTool(props: TurnToolPresenterProps) {
   const messageId = useContext(TurnMessageIdContext)
   if (!props.app || !messageId || mcpAppToolFailed(props.app)) return <PortableClaudeToolRow {...props} />
   return (
@@ -220,7 +220,7 @@ function PortableClaudeTool(props: ClaudeToolPresenterProps) {
   )
 }
 
-function PortableClaudeToolRow(props: ClaudeToolPresenterProps & { trailing?: ReactNode; defaultExpanded?: boolean }) {
+function PortableClaudeToolRow(props: TurnToolPresenterProps & { trailing?: ReactNode; defaultExpanded?: boolean }) {
   const { pendingPermission, mcpIcons } = useContext(PortableTurnContext)
   const brandIconSrc = resolveMcpServerIconFromMap('superone', mcpIcons)
   if (isPortableInteractiveTool(props.toolName, props.input)) return <DeferredInteractiveTool {...props} />
@@ -251,11 +251,11 @@ function PortableClaudeToolRow(props: ClaudeToolPresenterProps & { trailing?: Re
 function DeferredDedicatedClaudeTool({
   brandIconSrc,
   ...props
-}: ClaudeToolPresenterProps & { brandIconSrc?: string }) {
+}: TurnToolPresenterProps & { brandIconSrc?: string }) {
   const complete = props.status !== 'streaming'
   const { detail, text, error, status, retry } = useDeferredToolDetail(props.remoteDetail, true, complete)
   const ready = Boolean(text) || Boolean(error)
-  const merged: ClaudeToolPresenterProps = {
+  const merged: TurnToolPresenterProps = {
     ...props,
     ...detail,
     remoteDetail: undefined,
@@ -276,7 +276,7 @@ function DeferredDedicatedClaudeTool({
  * none and must render as `PortableToolRow`. The deferred path uses that answer to choose
  * `DeferredDedicatedClaudeTool` (own chrome) vs `DeferredTool` (generic row, result in-place).
  */
-function renderDedicatedTool(props: ClaudeToolPresenterProps, brandIconSrc?: string): ReactNode | null {
+function renderDedicatedTool(props: TurnToolPresenterProps, brandIconSrc?: string): ReactNode | null {
   const browserOp = portableBrowserOp(props.toolName, props.input)
   const computerOp = portableComputerOp(props.toolName)
   const deviceOp = portableDeviceOp(props.toolName)
@@ -591,7 +591,7 @@ function toolVerb(toolName: string): string {
   return 'Running'
 }
 
-function PortableToolGroup({ blocks, sealed }: ClaudeToolGroupPresenterProps) {
+function PortableToolGroup({ blocks, sealed }: TurnToolGroupPresenterProps) {
   const results = useMemo(() => toolResultMap(blocks), [blocks])
   return (
     <ToolGroupPresenter
@@ -622,7 +622,7 @@ function PortableToolGroup({ blocks, sealed }: ClaudeToolGroupPresenterProps) {
   )
 }
 
-function PortableAppToolGroup({ blocks, sealed }: ClaudeAppToolGroupPresenterProps) {
+function PortableAppToolGroup({ blocks, sealed }: TurnAppToolGroupPresenterProps) {
   return <PortableToolGroup blocks={blocks} sealed={sealed} />
 }
 
@@ -656,7 +656,7 @@ function PortableSubagent({
   childBlocks: shellChildBlocks,
   resultBlock: shellResultBlock,
   isStreaming,
-}: ClaudeSubagentPresenterProps) {
+}: TurnSubagentPresenterProps) {
   const [expanded, setExpanded] = useState(false)
   const colors = usePortableSubagentColors(taskBlock.toolUseId)
   const isAsync = taskBlock.runInBackground === true || parseRecord(taskBlock.input).run_in_background === true
@@ -758,7 +758,7 @@ function PortableSubagent({
  * started, never that it finished. Completion is `taskStatus`; the receipt is
  * only shown when the launch itself failed.
  */
-function PortableWorkflow({ toolBlock, resultBlock: shellResultBlock, isStreaming }: ClaudeWorkflowPresenterProps) {
+function PortableWorkflow({ toolBlock, resultBlock: shellResultBlock, isStreaming }: TurnWorkflowPresenterProps) {
   const [expanded, setExpanded] = useState(false)
   const colors = usePortableSubagentColors(toolBlock.toolUseId)
   const finished = !!toolBlock.taskStatus
@@ -819,7 +819,7 @@ const GROUP_PORTS: GroupContentPorts = {
   resolveAppTool: () => null,
 }
 
-const CLAUDE_PARTS: ClaudeTurnBodyPresenterParts = {
+const TURN_PARTS: TurnBodyPresenterParts = {
   Text: PortableText,
   Insight: PortableInsightBlock,
   Document: PortableDocument,
@@ -832,7 +832,7 @@ const CLAUDE_PARTS: ClaudeTurnBodyPresenterParts = {
   TurnDetail: TurnDetailSection,
 }
 
-const CLAUDE_RUNTIME: ClaudeTurnBodyPresenterRuntime = {
+const TURN_RUNTIME: TurnBodyPresenterRuntime = {
   isBackgroundTool(block) {
     const params = parseRecord(block.input)
     return block.toolName === 'Bash' && (params.run_in_background === true || params.background === true)
@@ -865,7 +865,7 @@ export function portableToolResultText(content: ContentBlock[]): Map<string, str
   return map
 }
 
-export function PortableClaudeTurn({
+export function PortableTurn({
   message,
   isStreaming,
 }: {
@@ -875,7 +875,7 @@ export function PortableClaudeTurn({
   const portableContent = useMemo(() => portableToolBlocks(message.content), [message.content])
   const grouped = useMemo(() => groupContentPresenter(portableContent, GROUP_PORTS), [portableContent])
   return (
-    <TurnMessageIdContext.Provider value={message.id}><ModMessageScope messageId={message.id}><ClaudeTurnBodyPresenter
+    <TurnMessageIdContext.Provider value={message.id}><ModMessageScope messageId={message.id}><TurnBodyPresenter
       grouped={grouped}
       isStreaming={isStreaming}
       detailChatMode={false}
@@ -883,8 +883,8 @@ export function PortableClaudeTurn({
       // transport for host files, so markdown srcs stay as written. File LINKS
       // still resolve — through `projectPath` on PortableTurnContext.
       projectPath={null}
-      parts={CLAUDE_PARTS}
-      runtime={CLAUDE_RUNTIME}
+      parts={TURN_PARTS}
+      runtime={TURN_RUNTIME}
     /></ModMessageScope></TurnMessageIdContext.Provider>
   )
 }
@@ -916,7 +916,7 @@ function PortablePlan({
   )
 }
 
-function claudePropsFromCodexMcp(item: CodexMcpToolCallItem): ClaudeToolPresenterProps {
+function claudePropsFromCodexMcp(item: CodexMcpToolCallItem): TurnToolPresenterProps {
   return {
     toolName: `mcp__${item.server}__${item.tool}`,
     toolUseId: item.id,

@@ -19,7 +19,7 @@ import { PortableUserBubblePorts } from './portable-user-bubble-ports'
 import { PortableToolRow } from './PortableToolRow'
 import { PortableTurnFooter } from './PortableTurnFooter'
 import {
-  PortableClaudeTurn,
+  PortableTurn,
   PortableCodexTurn,
   PortableImageGallery,
   PortableTurnProvider,
@@ -197,7 +197,7 @@ export const PortableMessage = memo(function PortableMessage({
       ? <UserMessageContentPresenter message={message} text={goalObjective} promptKeywords={sentKeywords} Block={UserToolBlock} asyncQuestions={asyncQuestions} />
       : isCodex
         ? <PortableCodexTurn message={message} isStreaming={isStreaming} isLastAssistant={isLastAssistant} />
-        : <PortableClaudeTurn message={message} isStreaming={isStreaming} />
+        : <PortableTurn message={message} isStreaming={isStreaming} />
 
   // Copy text is only needed once the turn settles (the button hides while
   // streaming), so skip concatenating the whole turn on every delta.

@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ContentBlock } from '@superone/shared/agent-types'
 import { TranscriptStateProvider, useTranscriptState } from '@superone/ui/lib/transcript-state'
 import { groupContentPresenter } from '@superone/chat-view/presenters/groupContent'
-import { ClaudeTurnBodyPresenter, type ClaudeTurnBodyPresenterParts, type ClaudeTurnBodyPresenterRuntime } from './presenters/ClaudeTurnBody'
+import { TurnBodyPresenter, type TurnBodyPresenterParts, type TurnBodyPresenterRuntime } from './presenters/TurnBody'
 import { VirtualTurnSegment } from './VirtualTranscriptBlock'
 import { VirtualTranscriptContext } from './virtual-transcript-context'
 
@@ -14,7 +14,7 @@ function Tool({ toolUseId }: { toolUseId?: string }) {
   const [open, setOpen] = useTranscriptState('open', false)
   return <button onClick={() => setOpen(value => !value)}>{toolUseId}{open ? ' output' : ''}</button>
 }
-const parts: ClaudeTurnBodyPresenterParts & { Segment: typeof VirtualTurnSegment } = {
+const parts: TurnBodyPresenterParts & { Segment: typeof VirtualTurnSegment } = {
   Segment: VirtualTurnSegment,
   Tool,
   Text: ({ text }) => <p>{text}</p>,
@@ -27,7 +27,7 @@ const parts: ClaudeTurnBodyPresenterParts & { Segment: typeof VirtualTurnSegment
   AppToolGroup: () => null,
   TurnDetail: ({ runs }) => <>{runs.map(run => <div key={run.key}>{run.content}</div>)}</>,
 }
-const runtime: ClaudeTurnBodyPresenterRuntime = {
+const runtime: TurnBodyPresenterRuntime = {
   isBackgroundTool: () => false,
   isPinnedSegment: segment => segment.kind === 'block' && segment.block.type === 'text',
   isHiddenTool: () => false,
@@ -61,7 +61,7 @@ describe('shared ContentBlock turn virtualization', () => {
           observed.set(node.dataset.virtualSegment!, callback)
           return () => { observed.delete(node.dataset.virtualSegment!) }
         } }}>
-          <ClaudeTurnBodyPresenter {...props} grouped={group(blocks)} parts={parts} runtime={runtime} projectPath={null} />
+          <TurnBodyPresenter {...props} grouped={group(blocks)} parts={parts} runtime={runtime} projectPath={null} />
         </VirtualTranscriptContext.Provider>
       </TranscriptStateProvider>
     )
@@ -84,7 +84,7 @@ describe('shared ContentBlock turn virtualization', () => {
   })
 
   it('renders the full turn when the host has no virtual transcript viewport', () => {
-    render(<ClaudeTurnBodyPresenter grouped={group(content)} isStreaming detailChatMode={false} parts={parts} runtime={runtime} projectPath={null} />)
+    render(<TurnBodyPresenter grouped={group(content)} isStreaming detailChatMode={false} parts={parts} runtime={runtime} projectPath={null} />)
     expect(screen.getAllByRole('button')).toHaveLength(96)
   })
 })

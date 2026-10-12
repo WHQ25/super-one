@@ -54,12 +54,12 @@ import { RealtimeDelegationBody } from '@superone/chat-view/presenters/RealtimeD
 import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
 import { ChatMessagePresenter } from './presenters/ChatMessage'
 import {
-  ClaudeBlockPresenter,
-  ClaudeTurnBodyPresenter,
-  type ClaudeDocumentPresenterProps,
-  type ClaudeTurnBodyPresenterParts,
-  type ClaudeTurnBodyPresenterRuntime,
-} from './presenters/ClaudeTurnBody'
+  TurnBlockPresenter,
+  TurnBodyPresenter,
+  type TurnDocumentPresenterProps,
+  type TurnBodyPresenterParts,
+  type TurnBodyPresenterRuntime,
+} from './presenters/TurnBody'
 import type { CodexTurnDetailPresenterProps } from './presenters/CodexTurnView'
 import {
   groupContent,
@@ -94,11 +94,11 @@ function TextBlock({ text, isStreaming, projectPath, afterThinking }: {
   )
 }
 
-function DesktopDocumentIcon({ name }: ClaudeDocumentPresenterProps) {
+function DesktopDocumentIcon({ name }: TurnDocumentPresenterProps) {
   return <FileIcon name={name} size={14} />
 }
 
-const CLAUDE_TURN_PARTS: ClaudeTurnBodyPresenterParts = {
+const TURN_PARTS: TurnBodyPresenterParts = {
   Text: TextBlock,
   Insight: InsightBlock,
   Document: DesktopDocumentIcon,
@@ -115,11 +115,11 @@ function LongTurnDetail(props: CodexTurnDetailPresenterProps) {
   return <TurnDetailSection {...props} animate={false} />
 }
 
-const LONG_CONTENT_BLOCK_TURN_PARTS: ClaudeTurnBodyPresenterParts = {
-  ...CLAUDE_TURN_PARTS, Segment: VirtualTurnSegment, TurnDetail: LongTurnDetail,
+const LONG_CONTENT_BLOCK_TURN_PARTS: TurnBodyPresenterParts = {
+  ...TURN_PARTS, Segment: VirtualTurnSegment, TurnDetail: LongTurnDetail,
 }
 
-const CLAUDE_TURN_RUNTIME: ClaudeTurnBodyPresenterRuntime = {
+const TURN_RUNTIME: TurnBodyPresenterRuntime = {
   isBackgroundTool(block) {
     if (block.toolName !== 'Bash') return false
     const params = parseToolInput(block.input, block.toolName)
@@ -132,7 +132,7 @@ const CLAUDE_TURN_RUNTIME: ClaudeTurnBodyPresenterRuntime = {
 
 /** A tool call a user message carries, drawn like one in an assistant turn. */
 function UserContentBlock({ block, index }: { block: ContentBlock; index: number }) {
-  return <ClaudeBlockPresenter block={block} index={index} isStreaming={false} parts={CLAUDE_TURN_PARTS} runtime={CLAUDE_TURN_RUNTIME} />
+  return <TurnBlockPresenter block={block} index={index} isStreaming={false} parts={TURN_PARTS} runtime={TURN_RUNTIME} />
 }
 
 export const ChatMessage = memo(function ChatMessage({
@@ -249,13 +249,13 @@ export const ChatMessage = memo(function ChatMessage({
     />
   ) : (
     <ModMessageScope messageId={message.id}>
-      <ClaudeTurnBodyPresenter
+      <TurnBodyPresenter
         grouped={grouped!}
         isStreaming={isStreaming}
         detailChatMode={detailChatMode}
         projectPath={projectPath}
-        parts={(grouped!.segments.length >= 80 || sourceMessage.content.length >= 80) ? LONG_CONTENT_BLOCK_TURN_PARTS : CLAUDE_TURN_PARTS}
-        runtime={CLAUDE_TURN_RUNTIME}
+        parts={(grouped!.segments.length >= 80 || sourceMessage.content.length >= 80) ? LONG_CONTENT_BLOCK_TURN_PARTS : TURN_PARTS}
+        runtime={TURN_RUNTIME}
       />
     </ModMessageScope>
   )

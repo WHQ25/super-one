@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { isReadBrowserOp } from './presenters/browser-tool-display'
-import type { ClaudeToolPresenterProps } from './presenters/ClaudeTurnBody'
+import type { TurnToolPresenterProps } from './presenters/TurnBody'
 import {
   PortableBrowserTool,
   PortableComputerTool,
@@ -14,8 +14,8 @@ import {
 } from './PortableInteractiveTools'
 import { useDeferredText } from './use-deferred-text'
 
-function parseDetail(text: string): Partial<ClaudeToolPresenterProps> {
-  try { return JSON.parse(text) as Partial<ClaudeToolPresenterProps> } catch { return {} }
+function parseDetail(text: string): Partial<TurnToolPresenterProps> {
+  try { return JSON.parse(text) as Partial<TurnToolPresenterProps> } catch { return {} }
 }
 
 export function isPortableInteractiveTool(toolName: string, input: unknown): boolean {
@@ -28,7 +28,7 @@ export function isPortableInteractiveTool(toolName: string, input: unknown): boo
  * browser snapshot` instead. Expansion fetches the deferred result so a
  * screenshot can load its image.
  */
-export function DeferredInteractiveTool(props: ClaudeToolPresenterProps): ReactNode {
+export function DeferredInteractiveTool(props: TurnToolPresenterProps): ReactNode {
   const { t } = useTranslation()
   const [expanded, setExpanded] = useState(false)
   const { text, error, loading, retry } = useDeferredText(

@@ -91,8 +91,10 @@ export class ChatRuntime {
   private window: TranscriptWindowSync | null = null
   /** Projects whose host answered that it serves no transcript windows. */
   private readonly windowUnsupported = new Set<string>()
-  private windowRequest: Promise<WindowPage> | null = null
-  private resyncing = false
+  /** The page request in flight; a request for another placement runs after it. */
+  private windowRequest: { key: string; promise: Promise<WindowPage> } | null = null
+  /** false: idle; true: a resync runs; 'again': a patch went stale while it ran. */
+  private resyncing: boolean | 'again' = false
   /** Window rows after `hydrated`, per materialized window: a live batch must not re-create unchanged rows. */
   private windowRows: { source: ChatMessage[]; rows: ChatMessage[] } | null = null
   /**
@@ -278,13 +280,18 @@ export class ChatRuntime {
   loadWindowPage(placement: 'older' | 'newer' | 'latest' | { around: string }): Promise<WindowPage> {
     const sync = this.window
     if (!sync) return Promise.reject(new Error('Transcript window unavailable'))
-    if (this.windowRequest) return this.windowRequest
+    const key = typeof placement === 'object' ? `around:${placement.around}` : placement
+    const inFlight = this.windowRequest
+    if (inFlight?.key === key) return inFlight.promise
     const generation = this.restoreGeneration
-    const edge = placement === 'older' ? sync.current.older : placement === 'newer' ? sync.current.newer : null
-    if ((placement === 'older' || placement === 'newer') && !edge) return Promise.resolve(this.windowPage([], false))
-    const viewport = this.hooks.transcriptWindow?.viewport()
     const around = typeof placement === 'object' ? placement.around : null
     const request = (async (): Promise<WindowPage> => {
+      await inFlight?.promise.catch(() => {})
+      if (generation !== this.restoreGeneration || this.window !== sync) throw new Error('Session changed')
+      // The edge is read once the earlier request joined its page.
+      const edge = placement === 'older' ? sync.current.older : placement === 'newer' ? sync.current.newer : null
+      if ((placement === 'older' || placement === 'newer') && !edge) return this.windowPage([], false)
+      const viewport = this.hooks.transcriptWindow?.viewport()
       const result = await this.read<TranscriptWindowResult>(TRANSCRIPT_WINDOW_METHOD, {
         ...(edge ? { anchor: edge, direction: placement === 'older' ? 'before' : 'after' } : {}),
         ...(around ? { anchor: { messageId: around }, direction: 'around' } : {}),
@@ -301,8 +308,9 @@ export class ChatRuntime {
       const replace = !edge
       return this.windowPage(replace ? this.session.messages : this.session.messages.filter((message) => before.get(message.id) !== message), replace)
     })()
-    this.windowRequest = request
-    void request.finally(() => { if (this.windowRequest === request) this.windowRequest = null }).catch(() => {})
+    const entry = { key, promise: request }
+    this.windowRequest = entry
+    void request.finally(() => { if (this.windowRequest === entry) this.windowRequest = null }).catch(() => {})
     return request
   }
 
@@ -340,9 +348,15 @@ export class ChatRuntime {
 
   /** The window lost track of a patch's base: read it again, reusing the bodies it holds, once this batch is done. */
   private resync(): void {
-    if (this.resyncing) return
+    if (this.resyncing) { this.resyncing = 'again'; return }
     this.resyncing = true
-    queueMicrotask(() => { void this.reopen().catch(() => {}).finally(() => { this.resyncing = false }) })
+    const run = () => {
+      void this.reopen().catch(() => {}).finally(() => {
+        // A patch that went stale during this read needs one more: bounded, since a read brings the window current.
+        if (this.resyncing === 'again') { this.resyncing = true; run() } else this.resyncing = false
+      })
+    }
+    queueMicrotask(run)
   }
 
   /** Fetch one page without replacing live messages received during the request. */

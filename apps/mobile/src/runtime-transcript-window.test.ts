@@ -161,6 +161,39 @@ describe('ChatRuntime transcript windows', () => {
     runtime.dispose()
   })
 
+  it('shares a repeated page request and runs one for another placement after it', async () => {
+    const transcript = { current: [textMessage('u', 'user', 'Explain'), textMessage('a', 'assistant', longReplyText(600 * 1024))] }
+    const { client, windows } = windowHost(transcript)
+    const runtime = new ChatRuntime(client as never, () => {}, cache().hooks)
+    await runtime.open('/p', 's')
+    const first = runtime.loadWindowPage('older')
+    expect(runtime.loadWindowPage('older')).toBe(first)
+    const around = runtime.loadWindowPage({ around: 'u' })
+    const [older, jumped] = await Promise.all([first, around])
+    expect(windows.slice(1).map((w) => w.direction)).toEqual(['before', 'around'])
+    expect(older.messageOrder).toEqual(['a'])
+    expect(jumped.messageOrder[0]).toBe('u')
+    runtime.dispose()
+  })
+
+  it('reads the window once more when a patch buffered during a resync is stale too', async () => {
+    const { client, windows } = windowHost({ current: [textMessage('a', 'assistant', 'Hello', 'streaming')] })
+    const stale = () => {
+      const patch = appendPatch('a', 'Hello', 'Hello!', 1)
+      patch.messages[0].fragments[0].digest = 'not-the-digest'
+      return event({ type: 'transcript_window', patch })
+    }
+    // The resync's own read buffers one more stale patch; the read after it buffers nothing.
+    client.releaseBuffer.mockReturnValueOnce({ epoch: 1, batches: [] }).mockReturnValueOnce({ epoch: 1, batches: [[stale()]] })
+    const runtime = new ChatRuntime(client as never, () => {}, cache().hooks)
+    await runtime.open('/p', 's')
+    runtime.ingest([stale()])
+    await vi.waitFor(() => expect(windows).toHaveLength(3))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(windows).toHaveLength(3)
+    runtime.dispose()
+  })
+
   it('reads the window again when a patch cannot be applied', async () => {
     const { client, windows } = windowHost({ current: [textMessage('a', 'assistant', 'Hello', 'streaming')] })
     const runtime = new ChatRuntime(client as never, () => {}, cache().hooks)

@@ -65,14 +65,32 @@ it('uses full controls only in the owning voice view and restores start after ha
   await act(async () => { fireEvent.press(result.getByLabelText('Start voice')) })
   expect(f.onStart).toHaveBeenCalledTimes(1)
 })
-it('disables a new start while the backing task runs but keeps an existing paused call reachable', async () => {
+it.each(['streaming', 'offline', 'native-unavailable', 'unsupported', 'starting'] as const)('hides an unavailable %s start and restores it when available', async kind => {
+  const f = fixture()
+  f.voice.state = { ...state, phase: 'idle', target: null }
+  const input = { ...f, streaming: kind === 'streaming', connected: kind !== 'offline' }
+  if (kind === 'native-unavailable') f.voice.supported = false
+  if (kind === 'unsupported') f.voice.capability = undefined
+  if (kind === 'starting') f.voice.state = { ...f.voice.state, phase: 'starting' }
+  const blocked = voicePresentation(input)
+  expect(blocked.entry).toBeUndefined()
+  const result = await renderWithTheme(<>{blocked.entry}</>)
+  expect(result.queryAllByRole('button')).toHaveLength(0)
+  expect(f.onStart).not.toHaveBeenCalled()
+  const ready = fixture()
+  ready.voice.state = { ...state, phase: 'idle', target: null }
+  await result.rerender(<>{voicePresentation(ready).entry}</>)
+  await act(async () => { fireEvent.press(result.getByLabelText('Start voice')) })
+  expect(ready.onStart).toHaveBeenCalledTimes(1)
+})
+it('hides a new start while the backing task runs but keeps an existing paused call reachable', async () => {
   const f = fixture()
   f.voice.state = { ...state, phase: 'idle', target: null }
   const blocked = voicePresentation({ ...f, streaming: true })
   const result = await renderWithTheme(<>{blocked.entry}</>, 'light', 'zh')
-  const entry = result.getByLabelText('任务执行中，完成后可发起语音')
-  expect(entry).toBeDisabled()
-  await act(async () => fireEvent.press(entry)); expect(f.onStart).not.toHaveBeenCalled()
+  expect(blocked.entry).toBeUndefined()
+  expect(result.queryAllByRole('button')).toHaveLength(0)
+  expect(f.onStart).not.toHaveBeenCalled()
   f.voice.state = { ...state, paused: true, pauseReason: 'interrupted' }
   const live = voicePresentation({ ...f, streaming: true })
   await result.rerender(<>{live.entry}</>)

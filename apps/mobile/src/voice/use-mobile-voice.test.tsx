@@ -93,7 +93,7 @@ it('hides voice for custom accounts, routed hosts, offline hosts and older deskt
   expect(mockOpen).not.toHaveBeenCalled()
 })
 
-it('keeps the entry visible but disabled when the native binary lacks voice modules', async () => {
+it('reports voice unavailable and prevents starting when the native binary lacks voice modules', async () => {
   mockAvailable.mockReturnValue(false)
   const f = fixture()
   const { result } = await renderHook(() => useMobileVoice(f.input))

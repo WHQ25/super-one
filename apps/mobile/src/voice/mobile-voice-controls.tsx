@@ -11,9 +11,9 @@ import type { MobileVoiceState } from './voice-service'
 import type { VoiceAudioLevelSource } from './voice-audio-levels'
 import { VoiceWaveform } from './voice-waveform'
 
-export function MobileVoiceEntry(props: { enabled: boolean; busy: boolean; onStart: () => void; disabledReason?: string }) {
-  return <IconButton icon={AudioLines} label={props.enabled ? 'Start voice' : props.disabledReason ?? 'Rebuild the mobile app to enable voice.'}
-    disabled={!props.enabled || props.busy} onPress={props.onStart} />
+export function MobileVoiceEntry(props: { enabled: boolean; busy: boolean; onStart: () => void }) {
+  if (!props.enabled || props.busy) return null
+  return <IconButton icon={AudioLines} label="Start voice" onPress={props.onStart} />
 }
 
 /** A live call stays reachable in the text composer, including other conversations. */

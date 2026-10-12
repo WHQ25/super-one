@@ -42,7 +42,7 @@ export function MobileVoiceGallery() {
   const levels = usePreviewVoiceAudio(0.11, 0.14)
   return <ScrollView contentContainerStyle={{ padding: 12, gap: 16 }}>
     <View style={{ flexDirection: 'row', gap: 12 }}><MobileVoiceEntry enabled busy={false} onStart={noop} /><MobileVoiceEntry enabled={false} busy={false} onStart={noop} /><MobileVoiceReturnEntry audioLevels={levels} onReturn={noop} /></View>
-    <MobileVoiceEntry enabled={false} busy={false} onStart={noop} disabledReason="A task is running. Start voice when it finishes." />
+    <MobileVoiceEntry enabled busy onStart={noop} />
     {cases.map(([label, patch, sample]) => <VoiceCase key={label} label={label} state={{ ...base, ...patch }} sample={sample} />)}
   </ScrollView>
 }

@@ -1,4 +1,4 @@
-import { AudioLines, Loader2 } from 'lucide-react'
+import { AudioLines } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { startRealtimeCall, useRealtimeCallStore } from '@/stores/realtime-call'
@@ -40,14 +40,14 @@ export function CodexRealtimeVoiceButton({
     return <RealtimeCallControls disabled={callState === 'stopping'} />
   }
 
-  const busy = callState === 'starting'
+  if (disabled || callState === 'starting') return null
+
   return (
     <IconButton
       size="sm"
       variant="ghost"
-      disabled={disabled || busy}
-      tooltip={t(disabled ? 'chat.realtimeVoice.taskRunning' : 'chat.realtimeVoice.start')}
-      aria-label={t(disabled ? 'chat.realtimeVoice.taskRunning' : 'chat.realtimeVoice.start')}
+      tooltip={t('chat.realtimeVoice.start')}
+      aria-label={t('chat.realtimeVoice.start')}
       className="rounded-full border border-foreground bg-foreground text-background hover:bg-foreground/90 hover:text-background"
       onClick={() => {
         void startRealtimeCall({
@@ -61,7 +61,7 @@ export function CodexRealtimeVoiceButton({
         })
       }}
     >
-      {busy ? <Loader2 className="animate-spin" /> : <AudioLines />}
+      <AudioLines />
     </IconButton>
   )
 }

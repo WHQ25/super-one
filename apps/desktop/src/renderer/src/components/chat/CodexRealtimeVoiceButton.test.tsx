@@ -166,6 +166,25 @@ describe('realtime voice surfaces', () => {
     }
   })
 
+  it('hides the unavailable voice entry and restores it when the task finishes', () => {
+    const { container, rerender } = render(<CodexRealtimeVoiceButton projectPath="/repo" sessionId="session-1" disabled />)
+    expect(container).toBeEmptyDOMElement()
+    rerender(<CodexRealtimeVoiceButton projectPath="/repo" sessionId="session-1" />)
+    expect(screen.getByRole('button', { name: 'Start Voice Conversation' })).toBeEnabled()
+  })
+
+  it('hides the start entry while connecting and keeps the active call controls reachable', () => {
+    useRealtimeCallStore.setState({ sessionId: 'session-1', state: 'starting' })
+    const { container, rerender } = render(<CodexRealtimeVoiceButton projectPath="/repo" sessionId="session-1" />)
+    expect(container).toBeEmptyDOMElement()
+    rerender(<CodexRealtimeVoiceButton projectPath="/repo" sessionId="session-1" disabled />)
+    act(() => useRealtimeCallStore.setState({ state: 'active' }))
+    expect(screen.getByRole('button', { name: 'Mute microphone' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Stop Voice Conversation' })).toBeEnabled()
+    act(() => useRealtimeCallStore.setState({ state: 'stopping' }))
+    expect(screen.getByRole('button', { name: 'Stop Voice Conversation' })).toBeDisabled()
+  })
+
   it('uses M only in the voice view and ignores typing and modified or repeated keys', async () => {
     render(<VoiceSurfaces />)
     await reachConnectedCall()

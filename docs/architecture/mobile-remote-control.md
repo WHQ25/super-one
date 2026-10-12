@@ -90,7 +90,7 @@ its topic. Terminal-list readers receive metadata, not terminal output.
 Each connection has one `ConnectionDelivery`: tier, surface, projection,
 expanded detail and throttle state. IPC is `local`; LAN, Tailscale, direct and
 SSH are `lan`; relay is `relay`, taken from the chosen route rather than its
-URL. A local renderer keeps its batching and Codex patch baselines. A phone uses
+URL. A local renderer keeps its delta batching. A phone uses
 the `phone` surface on either link tier. Open, history, live events and detail
 all use this same connection policy.
 
@@ -187,6 +187,11 @@ session and detail ref.
 uses `document-detail.ts` through RN's native bridge; the desktop uses its IPC
 detail client and existing presenters. Dedicated tools load when shown,
 expandable rows and subagent/workflow/collaboration cards load when opened.
+
+A legacy Codex turn (stored `metadata.codex.items`) is projected item by item
+and its rows refer to `item`, `nested-item` or `reasoning` detail; the client
+reads an `{ item }` detail as the shared tool detail through `codexItemDetail`.
+Content-shaped Codex turns use the ordinary content refs.
 
 ## Attachments (phone → host)
 

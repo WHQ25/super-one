@@ -85,6 +85,10 @@ prefixed event costs a branch in the reducer, the mobile stripper, and the persi
 
 - **Batch, don't flood.** Use `packages/shared/src/agent-event-batcher.ts` and the shared
   `applyContentDelta` from `@superone/shared/content-delta` — one implementation, no per-harness copy.
+- **Translate provider items at the integration layer.** A provider that reports whole items sends
+  their latest state as id-located `content_delta`s (text appends, `plan`/`review`/`notice` upsert,
+  tool output streams as `tool_use.outputDelta`). Codex does this through `createCodexContentStream`
+  (`packages/shared/src/codex-content.ts`); a provider's item shape never reaches a renderer.
 - **Only merge deltas with the same `parentToolUseId`.** Merging across parents corrupts subagent
   nesting. This has been a real bug.
 - **Never throttle with `requestAnimationFrame`.** Under render pressure rAF starves and the stream

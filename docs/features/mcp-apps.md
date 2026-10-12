@@ -99,8 +99,9 @@ unsupported there. These surfaces do not open the desktop's picker or preview.
   only `result` reaches the View. Errors are structured `McpAppsError` codes:
   `auth_required`, `denied`, `invalid`, `not_connected`, `timeout`,
   `cancelled`, `unknown_outcome`, `inactive`.
-- **`ToolAppAttachment`** rides on the Claude `tool_use` / `tool_result`
-  content blocks and on native Codex items, so the existing `AgentEvent`,
+- **`ToolAppAttachment`** rides on the `tool_use` / `tool_result` content
+  blocks of Claude and translated Codex calls (and on the items of legacy
+  stored Codex turns), so the existing `AgentEvent`,
   reducer, JSON/SQLite persistence and mobile projection carry it. It holds the
   binding, the harness call id, the resource URI, the resource reference
   (`{ hash, meta }`; legacy `{ html, meta, hash }` snapshots remain readable),
@@ -118,9 +119,10 @@ unsupported there. These surfaces do not open the desktop's picker or preview.
   budget. A large icon never makes otherwise valid tool data fail.
 - **`mcp_app_updated`** is the harness-neutral host event that patches an
   attachment by `appInstanceId` (snapshot, model context), wherever it lives:
-  Claude blocks, Codex items or rows reconstructed from a remote node.
-- **Host state survives provider completion**: streaming and final item snapshots
-  merge the resource, presentation and model context from the same App origin.
+  content blocks, legacy Codex items or rows reconstructed from a remote node.
+- **Host state survives provider completion**: later native deltas, completion
+  and legacy item snapshots merge the resource, presentation and model context
+  from the same App origin.
   Native lifecycle fields still advance normally.
 - **Correlation** uses native harness item ids, or a host-authored random record
   id carried in the compatibility result's first text block and claimed once
@@ -301,11 +303,12 @@ Nothing is sent before `ui/notifications/initialized`. A subagent's Claude
 result has no `structuredContent` (the SDK keeps only `_meta`), so the View
 gets the `tool_result` block text as `content`.
 
-Codex child calls inside `collab_tool_call.childItems` keep their own thread
-binding and full private result. Attachment indexing, host updates, completion
-merges, resource GC and phone projection traverse those child trees. Desktop
-and phone collaboration cards render App calls with the same View host as a
-root call. A restored child View requires Activate; before native resource or
+Codex child calls keep their own thread binding and full private result. They
+arrive as blocks under their `Agent` container (`parentToolUseId`); in legacy
+stored turns they sit in `collab_tool_call.childItems`, and attachment
+indexing, host updates, completion merges, resource GC and phone projection
+traverse those child trees. Desktop and phone subagent cards render App calls
+with the same View host as a root call. A restored child View requires Activate; before native resource or
 tool requests the backend reads provider ancestry and resumes that child on the
 current connection. An unrelated thread cannot reuse the parent's session
 binding. Child `thread/started` notifications never select a new root thread.

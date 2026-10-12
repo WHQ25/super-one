@@ -270,10 +270,10 @@ Startup flow lives in `db-open.ts` (verify → snapshot → migrate → recover)
 
 `packages/shared/src/agent-types.ts` — IPC-safe types (no SDK imports):
 
-- `ChatMessage`, `ContentBlock` (text | thinking | tool_use | tool_result | image)
+- `ChatMessage`, `ContentBlock` (text | thinking | tool_use | tool_result | image | plan | review | notice, …)
 - `AgentEvent` (20+ event union: message_start, content_delta, permission_request, etc.)
 - `PermissionRequest`, `AskUserQuestionRequest`, `PlanApprovalRequest`
 - `TodoItem`, `ModelOption`, `SlashCommandInfo`, `AgentInfo`
 - `UpdateEvent` (checking | available | not-available | download-progress | downloaded | error)
 - `PermissionMode`: `default` → `acceptEdits` → `plan` → `bypassPermissions` (cycles)
-- Codex types: `CodexThreadItem`, `CodexTurnInfo`, `CodexRunResult`, `CodexAuthStatus`
+- Codex types: `CodexThreadItem` (app-server items; legacy stored turns), `CodexTurnInfo`, `CodexRunResult`, `CodexAuthStatus`

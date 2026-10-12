@@ -11,15 +11,14 @@ The data layer is implemented; UI consumption and activity-card lifecycle projec
 
 ## Current surfaces
 
-- `packages/chat-view/src/presenters/CodexCollabBlock.tsx` delegates native Codex
-  cards to the shared `SubagentBlockPresenter`. Desktop `CodexSubagentMarker` and
-  phone `PortableCodexSubagent` use it. The title row contains identity, task text,
-  state and statistics; adding a model there would compete with those fields.
-- Desktop `ForkedThreadView` opens the native child transcript with a return
-  control and identity header. Phone currently expands the shared card in place;
-  it does not expose that desktop full-view action.
-- The desktop also retains a grouped `CodexCollabBlock` card. It must use the same
-  configuration summary rather than creating another display convention.
+- Native Codex subagents arrive as `Agent` content blocks
+  (`packages/shared/src/codex-content.ts`) and render through the shared
+  `SubagentBlockPresenter`, like every harness's subagent. The title row contains
+  identity, task text, state and statistics; adding a model there would compete
+  with those fields.
+- The desktop card's full view opens the child transcript with a return control
+  and identity header. Phone expands the shared card in place; it does not
+  expose that desktop full-view action.
 - `CodexCollabAgentState.requestedConfiguration` retains legacy requested spawn
   values. `CodexTurnInfo.subagents` retains native activity records and resolved
   creation values. Shared metadata events persist and project these fields without
@@ -143,8 +142,7 @@ turns with distinct parents, and return to the immediate parent.
 
 - Pinned `rust-v0.162.1` protocol: `ThreadItem.subAgentActivity`,
   `SubAgentActivityKind`, `TurnStartParams.parentTurnId/rootTurnId`, `Turn.rootTurnId`.
-- [Shared card](../../packages/chat-view/src/presenters/CodexCollabBlock.tsx),
+- [Codex item translation](../../packages/shared/src/codex-content.ts),
   [shared subagent presenter](../../packages/chat-view/src/presenters/SubagentBlock.tsx),
   [portable adapter](../../packages/chat-view/src/PortableTurnAdapters.tsx),
-  [desktop native cards](../../apps/desktop/src/renderer/src/components/chat/CodexCollabBlock.tsx),
-  [desktop child view](../../apps/desktop/src/renderer/src/components/chat/ForkedThreadView.tsx).
+  [desktop subagent card](../../apps/desktop/src/renderer/src/components/chat/SubagentBlock.tsx).

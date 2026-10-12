@@ -62,9 +62,9 @@ Desktop (`ToolBlockPresenter.tsx`) and phone (`PortableToolRow.tsx`) resolve a
    phone shows its generating row.
 
 Errors and denials keep the ordinary tool row, and so does a call interrupted
-while its input streamed. Codex items reach the same branch with their
-`arguments` (a string is kept as it is) and their `result.isError`, through
-`codexMcpItemInput` and `codexMcpItemIsError`.
+while its input streamed. Codex MCP items reach the same branch as `tool_use`
+/ `tool_result` blocks translated by `codex-content.ts`: their `arguments`
+become the input (a string is kept as it is) and `result.isError` the error.
 
 A drawn widget is framed like an MCP App View (`EmbeddedToolView`): a pinned
 header with the widget glyph before the title, the save actions, and a trailing

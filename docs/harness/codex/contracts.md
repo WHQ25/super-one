@@ -14,9 +14,56 @@ active; it must not duplicate a completed item. Covered by mapper fixtures,
 without a live provider acceptance run.
 
 Boundary rows persist a cursor into the original provider message. Desktop and
-mobile split its display at that cursor while later item updates retain the
-original message ID. Accepted async answers capture the same cursor before
+mobile split its display at that cursor while later output keeps the original
+message ID. Accepted async answers capture the same cursor before
 steering, so subsequent output appears below the answer bubble immediately.
+
+## Turn content
+
+Codex turns reach clients as shared content blocks; see
+[chat-core](../../architecture/chat-core.md#codex-turns) for the stored format
+and legacy item history.
+
+### Item text only grows, and text items do not interleave
+
+- **Behavior:** Agent message, plan and reasoning text is append-only: a
+  completed item's text extends its accumulated deltas. A text item's deltas
+  arrive between its own `item/started` and `item/completed`. A command's output
+  can still arrive after a later item starts (a steered user message).
+- **Observed:** 0.162.1 with `gpt-6.1-sol`, recorded by
+  `packages/codex/scripts/record-turns.ts` into `packages/codex/src/fixtures/recordings/`
+  (raw notifications, machine paths and user name replaced). `todo_list`, image
+  generation, async questions, MCP auth and strict-review errors were not
+  reproducible live; their tests use hand-built items.
+- **Depends on it:** `createCodexContentStream` (`packages/shared/src/codex-content.ts`)
+  sends each item's latest state as id-located deltas: text as appended
+  suffixes (`replace` only for a non-prefix rewrite), tools as upserts by call id.
+- **Guard:** `packages/codex/src/fixtures/codex-content.recordings.test.ts`
+  (the stream reduces to `codexItemsToContent` of the final items), desktop
+  `event-reducer/codex-content.recordings.test.ts` (chat-core renders the same
+  turn) and shared `codex-content.test.ts`.
+
+### Item mapping
+
+| Item | Content |
+|---|---|
+| `agent_message` | `text {id}`; an async question keeps `codexAsyncQuestions` on the block and draws nothing |
+| `reasoning` | `thinking {id, startedAt, endedAt}` |
+| `plan` | `plan {id}`; approval stays `codex_plan_approval` and `metadata.codex.planApproval`, drawn on the latest plan |
+| `command_execution` | `Bash` `tool_use {command, cwd, commandActions}`, output as `outputDelta`; `tool_result {summary, exitCode}`, `isError` only when failed without an exit code |
+| `file_change` | one `FileChange` `tool_use` per change (`<item id>:<index>`) with its `tool_result`; a failed item without changes is one error row |
+| `mcp_tool_call` | `mcp__<server>__<tool>` with `app`, `suggestedTask` and `authRequired`; the result is its text, else JSON |
+| `web_search` | `WebSearch` |
+| `collab_tool_call` | an `Agent` container (`taskThreadId`, `taskStatus` once terminal, usage, result text) whose own `childItems` become child blocks; a completed `wait` is hidden; close or resume without output is dropped |
+| `todo_list` | a hidden `TodoWrite` call without a result; producers send `todos_updated` for the live list |
+| `error` | `notice {level: 'error'}`, hidden when the message itself failed |
+| `review` | `review {phase}` |
+| `compaction` | `notice {kind: 'compaction'}`, drawn like the compact marker |
+| `image_generation` | a hidden `ImageGeneration` call with its status in the input, collected into the turn-end gallery |
+
+Codex 0.162 reports spawned and follow-up subagents only as `subAgentActivity`
+metadata; `collabAgentToolCall` remains for `wait`, and stored `spawnAgent`
+items still map to Agent cards.
 
 ## Shell command presentation
 

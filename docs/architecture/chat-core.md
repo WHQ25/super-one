@@ -115,7 +115,7 @@ Enforced by source-scanning tests; a violation fails the suite.
 | Test | Bans |
 |---|---|
 | `packages/chat-core/src/boundary.test.ts` | Imports of `zustand`, `electron`, the desktop `@/` alias, any `apps/desktop` path, parent (`../`) imports; `window.` access; a module-scope `new Map` (no hidden module state; state shared across sessions comes through ports) |
-| `packages/chat-view/src/boundary.test.ts` | Across the package: `@/` alias, `zustand`, `electron`, desktop preload bridges (`window.agent`, `window.app`, `window.browserHost`, `window.electron`, `window.environment`, `window.miniapp`, `window.terminal`), and any composer (`ChatInput`, `<textarea>`). Also asserts phone assistant turns render through the shared `TurnBodyPresenter`, `CodexTurnViewPresenter` and `ToolGroupPresenter` rather than local copies |
+| `packages/chat-view/src/boundary.test.ts` | Across the package: `@/` alias, `zustand`, `electron`, desktop preload bridges (`window.agent`, `window.app`, `window.browserHost`, `window.electron`, `window.environment`, `window.miniapp`, `window.terminal`), and any composer (`ChatInput`, `<textarea>`). Also asserts phone assistant turns render through the shared `TurnBodyPresenter` and `ToolGroupPresenter` rather than local copies |
 | `packages/chat-view/src/presenters/boundary.test.ts` | In presenters: `@/` alias, `zustand`, `electron`, parent imports, desktop `ToolBlock` imports, desktop preload bridges |
 | `apps/desktop/src/renderer/src/stores/chat-store/event-reducer/boundary.spike.test.ts` | In the desktop shims: `../index`, `zustand`, `../slices/`, `@/stores/`, `@/components/`; `window.` anywhere but `index.ts`; any family file that does not re-export from `@superone/chat-core` |
 
@@ -142,6 +142,46 @@ object (`presenters/user-bubble-ports.tsx`) provided by context:
 
 Only artwork and interaction are host-bound; labels, chip chrome, copy
 attributes and which keywords are painted stay in the presenters.
+
+## Assistant turn
+
+Every harness's assistant turn is `message.content`, and both hosts draw it
+with `TurnBodyPresenter` (`presenters/TurnBody.tsx`): the desktop with its parts
+in `components/chat/ChatMessage.tsx`, the phone with the portable parts in
+`PortableTurnAdapters.tsx`. A harness feature needs a content block or an
+event, not a renderer branch.
+
+Content blocks may carry an `id`. `applyContentDelta`
+(`packages/shared/src/content-delta.ts`) finds a delta's block by type,
+`parentToolUseId` and `id`: `text` and `thinking` append (`replace: true`
+rewrites), `plan`, `review` and `notice` upsert; without an id the positional
+merge applies. A running command streams `tool_use.outputDelta` into
+`liveOutput`, which is durable content, so Stop, reconnect and snapshots keep
+partial output; its `tool_result` carries the final output and drops
+`liveOutput`. Turn diffs are not supported; per-file `FileChange` rows are the
+file-change surface.
+
+### Codex turns
+
+Codex app-server items are translated at the integration layer by
+`createCodexContentStream` (`packages/shared/src/codex-content.ts`). Desktop
+`codex-backend.ts` and the CLI node's `packages/codex` mapper send
+`content_delta` (and `todos_updated` for a todo list) and complete with
+`metadata.codex` whose `items` is empty; `codex_*` events carry only thread and
+turn identity, usage, provenance, MCP startup and plan approval. The item
+mapping is in [Codex contracts](../harness/codex/contracts.md#turn-content).
+
+Turns stored before that carry their rows in `metadata.codex.items`
+(`isLegacyCodexMessage`). They are history, not a wire format.
+`withCodexContent` / `withCodexContents` derive their content at client
+ingress: chat-core `applyEventToSession` after every write, desktop hydration
+and snapshot merges, and the mobile runtime's `hydrated()`. Shared readers use
+`readableContent`. Main keeps them in their stored shape, because their stored
+text (final response or interrupt notice) cannot be rebuilt from items, and
+`transcriptSegments` still cuts them by item. These adapters stay until stored
+legacy history is migrated or retired. Older builds show only the text of a
+content-shaped Codex turn. Clients and hosts update together, so no version
+skew is handled: a host that still streams items is not read live.
 
 ## State split on the phone
 

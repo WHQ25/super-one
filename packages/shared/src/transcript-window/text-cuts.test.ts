@@ -63,4 +63,12 @@ describe('textCuts', () => {
     const slices = textSlices(text, textCuts(text, undefined, SIZE))
     expect(slices[1].context?.table).toBe('| Name | Value |\n| --- | --- |')
   })
+
+  it('leaves out a context line too long to repeat in every slice', () => {
+    const code = Array.from({ length: 30 }, (_, i) => `const value${i} = ${i}`).join('\n')
+    const text = `\`\`\`ts ${'x'.repeat(2000)}\n${code}\n\`\`\``
+    const slices = textSlices(text, textCuts(text, undefined, SIZE))
+    expect(slices.length).toBeGreaterThan(1)
+    expect(slices.every((s) => !s.context?.fence)).toBe(true)
+  })
 })

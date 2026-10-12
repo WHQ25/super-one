@@ -41,6 +41,19 @@ describe('window store', () => {
     expect(reply.fragments.map((f) => f.key)).toEqual(all.slice(reply.omittedBefore).map((f) => f.key))
   })
 
+  it('keeps the held meta and fragments of the shared message when the page saw a newer one', () => {
+    const reply = longReplyText(300 * 1024)
+    const tail = selectTranscriptWindow(windowSource([textMessage('a', 'assistant', reply, 'streaming')]), {}, budget)
+    let { state } = applyWindowResult(null, { ...tail, total: 1 }, EMPTY_WINDOW_LOOKUP)
+    const held = state.messages[0]
+    const newer = windowSource([textMessage('a', 'assistant', `${reply} more`, 'complete')])
+    const older = selectTranscriptWindow(newer, { anchor: state.older!, direction: 'before' }, budget)
+    state = applyWindowResult(state, { ...older, total: 1 }, EMPTY_WINDOW_LOOKUP, 'older').state
+    const joined = state.messages[0]
+    expect(joined.metaDigest).toBe(held.metaDigest)
+    expect(joined.fragments.slice(-held.fragments.length)).toEqual(held.fragments)
+  })
+
   it('reports bodies it cannot resolve instead of inventing them', () => {
     const window = selectTranscriptWindow(windowSource(conversation(2)), { have: [{ id: 'm1', meta: 'x', f: [] }] }, budget)
     const claimed = { ...window, total: 2, messages: window.messages.map((m) => ({ ...m, fragments: m.fragments.map(({ body: _body, ...ref }) => ref) })) }

@@ -86,19 +86,26 @@ export function applyWindowResult(
     return { state: { messages: resolved, older: result.older, newer: result.newer, total: result.total }, missing }
   }
   if (placement === 'older') {
-    return { state: { messages: joinMessages(resolved, state.messages), older: result.older, newer: state.newer, total: result.total }, missing }
+    return { state: { messages: joinMessages(resolved, state.messages, 'after'), older: result.older, newer: state.newer, total: result.total }, missing }
   }
-  return { state: { messages: joinMessages(state.messages, resolved), older: state.older, newer: result.newer, total: result.total }, missing }
+  return { state: { messages: joinMessages(state.messages, resolved, 'before'), older: state.older, newer: result.newer, total: result.total }, missing }
 }
 
-function joinMessages(before: WindowStoreMessage[], after: WindowStoreMessage[]): WindowStoreMessage[] {
+/**
+ * Two adjacent runs; a message they share keeps the held run's meta, as the
+ * host records it, and gains the page's fragments.
+ */
+function joinMessages(before: WindowStoreMessage[], after: WindowStoreMessage[], held: 'before' | 'after'): WindowStoreMessage[] {
   const last = before[before.length - 1]
   const first = after[0]
   if (!last || !first || last.id !== first.id) return [...before, ...after.filter((message) => !before.some((b) => b.id === message.id))]
-  const seen = new Set(last.fragments.map((fragment) => fragment.key))
+  const lastKeys = new Set(last.fragments.map((fragment) => fragment.key))
+  const firstKeys = new Set(first.fragments.map((fragment) => fragment.key))
   const shared: WindowStoreMessage = {
-    ...first,
-    fragments: [...last.fragments, ...first.fragments.filter((fragment) => !seen.has(fragment.key))],
+    ...(held === 'before' ? last : first),
+    fragments: held === 'before'
+      ? [...last.fragments, ...first.fragments.filter((fragment) => !lastKeys.has(fragment.key))]
+      : [...last.fragments.filter((fragment) => !firstKeys.has(fragment.key)), ...first.fragments],
     omittedBefore: last.omittedBefore,
     omittedAfter: first.omittedAfter,
   }

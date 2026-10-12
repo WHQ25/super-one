@@ -74,6 +74,15 @@ describe('selectTranscriptWindow', () => {
     expect(window.older).not.toBeNull()
   })
 
+  it('pages from the far edge of a message whose anchor fragment is gone', () => {
+    const messages = [textMessage('u', 'user', 'Explain'), textMessage('a', 'assistant', 'Short answer'), textMessage('n', 'user', 'Next')]
+    const source = windowSource(messages)
+    const before = selectTranscriptWindow(source, { anchor: { messageId: 'a', key: 'gone' }, direction: 'before' }, budget)
+    expect(before.messages.map((m) => m.id)).toEqual(['u', 'a'])
+    const after = selectTranscriptWindow(source, { anchor: { messageId: 'a', key: 'gone' }, direction: 'after' }, budget)
+    expect(after.messages.map((m) => m.id)).toEqual(['a', 'n'])
+  })
+
   it('rejects an anchor that no longer exists', () => {
     expect(() => selectTranscriptWindow(windowSource(conversation(3)), { anchor: { messageId: 'gone' } }, budget))
       .toThrow(expect.objectContaining({ code: 'not_found' }))

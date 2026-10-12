@@ -31,6 +31,8 @@ interface ScanState {
 }
 
 const FENCE_OPEN = /^\s{0,3}(`{3,}|~{3,})/
+/** Context lines longer than this are left out: every slice inside the block would repeat them. */
+const MAX_CONTEXT_CHARS = 1024
 
 export function textCuts(text: string, previous?: TextCuts, size = FRAGMENT_TEXT_CHARS): TextCuts {
   const reuse = previous && previous.length <= text.length
@@ -124,8 +126,9 @@ function scanLine(state: ScanState, line: string): void {
 
 function contextOf(state: ScanState): TextFragmentContext | undefined {
   const context: TextFragmentContext = {}
-  if (state.insight) context.insight = state.insight
-  if (state.fence) context.fence = state.fence
-  if (state.table && state.table.length === 2) context.table = state.table.join('\n')
+  const fits = (value: string) => value.length <= MAX_CONTEXT_CHARS
+  if (state.insight && fits(state.insight)) context.insight = state.insight
+  if (state.fence && fits(state.fence)) context.fence = state.fence
+  if (state.table && state.table.length === 2 && fits(state.table.join('\n'))) context.table = state.table.join('\n')
   return Object.keys(context).length ? context : undefined
 }

@@ -106,9 +106,13 @@ export function selectTranscriptWindow(
   } else {
     const index = source.indexOf(request.anchor.messageId)
     if (index < 0) throw Object.assign(new Error('History message no longer exists'), { code: 'not_found' })
-    const keyed = request.anchor.key === undefined ? -1 : source.at(index).fragments.findIndex((f) => f.key === request.anchor!.key)
-    if (direction === 'before') walk(previous({ message: index, fragment: keyed >= 0 ? keyed : 0 }), previous)
-    else if (direction === 'after') walk(next({ message: index, fragment: keyed >= 0 ? keyed : units(index) - 1 }), next)
+    const key = request.anchor.key
+    const keyed = key === undefined ? -1 : source.at(index).fragments.findIndex((f) => f.key === key)
+    // Without a key the anchor is the message's edge; a key that no longer exists (the message
+    // was rewritten) pages from the message's far edge, so none of it is skipped.
+    const lost = key !== undefined && keyed < 0
+    if (direction === 'before') walk(previous({ message: index, fragment: keyed >= 0 ? keyed : lost ? units(index) : 0 }), previous)
+    else if (direction === 'after') walk(next({ message: index, fragment: keyed >= 0 ? keyed : lost ? -1 : units(index) - 1 }), next)
     else if (walk({ message: index, fragment: 0 }, next)) walk(previous({ message: index, fragment: 0 }), previous)
   }
 

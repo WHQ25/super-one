@@ -1,5 +1,6 @@
-import { useState, type AnchorHTMLAttributes, type ReactElement } from 'react'
-import { HoverCard, HoverCardContent, HoverCardTrigger } from '@superone/ui/components/ui/hover-card'
+import type { AnchorHTMLAttributes, PointerEvent, ReactElement } from 'react'
+import { Slot } from 'radix-ui'
+import { Popover, PopoverAnchor, PopoverContent } from '@superone/ui/components/ui/popover'
 import { cn } from '@superone/ui/lib/utils'
 import { LinkFaviconPresenter, isHttpHref, type LinkFaviconPorts } from '@superone/chat-view/presenters/LinkFavicon'
 import { openBrowserTab } from '@/components/activity/activity-panel-api'
@@ -8,6 +9,7 @@ import { tryCopy } from '@/lib/clipboard'
 import { requestOpenExternalLink } from '@/lib/external-link'
 import { LinkPreviewCard } from './LinkPreviewCard'
 import { useLinkPreview } from './link-preview-loader'
+import { useLinkPreviewHover } from './use-link-preview-hover'
 
 const faviconPorts: LinkFaviconPorts = {
   resolveFavicon: (href, isDark) => window.app.resolveFavicon(href, isDark),
@@ -18,7 +20,7 @@ export function LinkFavicon({ href }: { href: string }) {
   return <LinkFaviconPresenter href={href} isDark={isDark} ports={faviconPorts} />
 }
 
-/** The preview card's surface, shared by the hover card and the composer's anchored card. */
+/** The preview card's surface, shared by chat links and the composer. */
 export const LINK_PREVIEW_SURFACE = 'w-[min(22rem,80vw)] overflow-hidden rounded-xl p-0'
 
 /** A link's preview card, loading its summary while `open`; it closes once the link is opened. */
@@ -39,14 +41,38 @@ export function LinkPreviewContent({ href, open, onClose }: { href: string; open
 
 /** Hovering `children` (an anchor) shows the link's preview card. */
 export function WebLinkHoverCard({ href, children }: { href: string; children: ReactElement }) {
-  const [open, setOpen] = useState(false)
+  const { open, anchor, hover, keepOpen, close, scheduleClose } = useLinkPreviewHover()
+  const onPointer = (event: PointerEvent<HTMLElement>) => {
+    if (event.pointerType !== 'touch') hover(href, event.currentTarget, event)
+  }
   return (
-    <HoverCard open={open} onOpenChange={setOpen} openDelay={300} closeDelay={100}>
-      <HoverCardTrigger asChild>{children}</HoverCardTrigger>
-      <HoverCardContent align="start" className={LINK_PREVIEW_SURFACE}>
-        <LinkPreviewContent href={href} open={open} onClose={() => setOpen(false)} />
-      </HoverCardContent>
-    </HoverCard>
+    <Popover open={open} onOpenChange={(next) => { if (!next) close() }}>
+      <PopoverAnchor virtualRef={anchor} />
+      <Slot.Root
+        data-state={open ? 'open' : 'closed'}
+        onPointerEnter={onPointer}
+        onPointerMove={onPointer}
+        onPointerLeave={scheduleClose}
+        onFocus={(event) => {
+          if (event.currentTarget.matches(':focus-visible')) hover(href, event.currentTarget)
+        }}
+        onBlur={scheduleClose}
+      >
+        {children}
+      </Slot.Root>
+      <PopoverContent
+        align="center"
+        sideOffset={12}
+        className={cn(LINK_PREVIEW_SURFACE, 'bg-popover dark:bg-popover backdrop-blur-none')}
+        onOpenAutoFocus={(event) => event.preventDefault()}
+        onCloseAutoFocus={(event) => event.preventDefault()}
+        onPointerEnter={keepOpen}
+        onPointerLeave={scheduleClose}
+        onFocusCapture={keepOpen}
+      >
+        <LinkPreviewContent href={href} open={open} onClose={close} />
+      </PopoverContent>
+    </Popover>
   )
 }
 

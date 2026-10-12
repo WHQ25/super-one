@@ -2,12 +2,13 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatMessage } from '@superone/shared/agent-types'
-import { pendingCodexAsyncQuestions } from '@superone/shared/codex-async-question'
+import { CODEX_ASYNC_QUESTION_DISMISSED, pendingCodexAsyncQuestions } from '@superone/shared/codex-async-question'
 import { SessionScopeProvider, useChatStore } from '@/stores/chat'
 import { createDefaultPerSessionState, createDefaultProjectState } from '@/stores/chat-store/defaults'
 import { DecisionComposer } from './DecisionComposer'
 import { CodexAsyncQuestionPrompt } from './CodexAsyncQuestionPrompt'
 import { ChatMessage as Message } from './ChatMessage'
+import { PortableMessage } from '@superone/chat-view/PortableMessage'
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key, i18n: { resolvedLanguage: 'en' } }) }))
 const answer = vi.fn<(...args: unknown[]) => Promise<{ reply: string }>>(async () => ({ reply: 'Production' }))
@@ -32,6 +33,21 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('Codex async question decisions', () => {
+  it('advances after dismissal and keeps the cancellation out of the user bubble', async () => {
+    answer.mockResolvedValue({ reply: CODEX_ASYNC_QUESTION_DISMISSED })
+    render(<div data-chat-root=""><DecisionComposer /></div>)
+    screen.getByText('Which environment?').closest<HTMLElement>('[data-ask-user-question]')!.focus()
+    fireEvent.keyDown(window, { key: 'Escape' })
+    await waitFor(() => expect(screen.getByText('What deadline?')).toBeInTheDocument())
+    expect(answer).toHaveBeenCalledWith('local', 'session-1', 'session.answerAsyncQuestion', {
+      messageId: 'turn', itemId: 'first', answers: [CODEX_ASYNC_QUESTION_DISMISSED],
+    })
+    const dismissal = session().messages.find(message => message.id === 'codex_async_answer:first')!
+    const { container } = render(<Message message={dismissal} sessionStatus="streaming" isLastAssistant={false} />)
+    expect(container).toBeEmptyDOMElement()
+    const phone = render(<PortableMessage message={dismissal} scheme="dark" pendingPermission={null} />)
+    expect(phone.container).toBeEmptyDOMElement()
+  })
   it('keeps one question interactive until acceptance, then advances and renders a Q&A user bubble', async () => {
     let accept!: (value: { reply: string }) => void
     answer.mockImplementationOnce(() => new Promise(resolve => { accept = resolve }))

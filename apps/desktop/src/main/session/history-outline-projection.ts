@@ -1,6 +1,7 @@
 import type { ChatMessage, ContentBlock, CodexThreadItem } from '@superone/shared/agent-types'
 import { contentKeys, type TranscriptBoundary } from '@superone/shared/transcript-boundary'
 import { HISTORY_PREVIEW_LENGTH } from '@superone/shared/session-history-index'
+import { CODEX_ASYNC_QUESTION_DISMISSED, isDismissedCodexAsyncAnswer } from '@superone/shared/codex-async-question'
 import { getDb } from '../database'
 
 type Preview = { length: number; text: string }
@@ -10,6 +11,14 @@ const registered = new WeakSet<ReturnType<typeof getDb>>()
 /** Match JavaScript's UTF-16 cursors, including emoji, inside the bounded SQL projection. */
 function registerPreviewFunction(db: ReturnType<typeof getDb>): void {
   if (registered.has(db)) return
+  // Classify the complete reply before its bounded preview loses question
+  // boundaries or the cancellation marker. Only async-answer rows call this.
+  db.function('superone_history_async_dismissed', { deterministic: true }, (value: unknown) => {
+    if (typeof value !== 'string') return 0
+    const saved = JSON.parse(value) as ContentBlock[] | { content?: ContentBlock[] }
+    return Number(isDismissedCodexAsyncAnswer({ id: 'codex_async_answer:history', role: 'user', providerId: 'codex',
+      status: 'complete', createdAt: '', content: Array.isArray(saved) ? saved : saved.content ?? [] }))
+  })
   db.function('superone_history_text', { deterministic: true }, (value: unknown, cuts: unknown) => {
     const text = typeof value === 'string' ? value : ''
     if (typeof cuts !== 'string') return JSON.stringify({ length: text.length, text: text.slice(0, HISTORY_PREVIEW_LENGTH) })
@@ -26,6 +35,8 @@ export function loadHistoryOutlineMessages(sessionId: string): ChatMessage[] {
   registerPreviewFunction(db)
   const rows = db.prepare(`
     SELECT id, role, provider_id, created_at,
+      CASE WHEN role = 'user' AND id GLOB 'codex_async_answer:*'
+        THEN superone_history_async_dismissed(content_json) ELSE 0 END AS async_dismissed,
       json_extract(metadata_json, '$.transcriptBoundary') AS boundary,
       json_type(metadata_json, '$.codex') = 'object' AS codex,
       (SELECT json_group_array(json_object(
@@ -44,7 +55,7 @@ export function loadHistoryOutlineMessages(sessionId: string): ChatMessage[] {
         'command', substr(json_extract(item.value, '$.command'), 1, ${HISTORY_PREVIEW_LENGTH}), 'tool', json_extract(item.value, '$.tool')))
        FROM json_each(json_extract(metadata_json, '$.codex.items')) AS item) AS items
     FROM chat_messages WHERE session_id = ? ORDER BY sort_order ASC
-  `).all(sessionId) as { id: string; role: ChatMessage['role']; provider_id: string; created_at: string; boundary: string | null; codex: number; blocks: string; items: string }[]
+  `).all(sessionId) as { id: string; role: ChatMessage['role']; provider_id: string; created_at: string; async_dismissed: number; boundary: string | null; codex: number; blocks: string; items: string }[]
   const leaves = new Map<string, { blocks: Leaf[]; items: Leaf[] }>()
   const messages: ChatMessage[] = rows.map(row => {
     const blocks = JSON.parse(row.blocks) as Leaf[]
@@ -52,7 +63,7 @@ export function loadHistoryOutlineMessages(sessionId: string): ChatMessage[] {
     leaves.set(row.id, { blocks, items })
     return {
       id: row.id, role: row.role, providerId: row.provider_id, createdAt: row.created_at, status: 'complete',
-      content: blocks.map(block => ({ type: block.type,
+      content: row.async_dismissed ? [{ type: 'text', text: CODEX_ASYNC_QUESTION_DISMISSED }] : blocks.map(block => ({ type: block.type,
         ...(block.type === 'text' ? { text: block.preview.text } : block.type === 'thinking' ? { thinking: '' } : {}),
         ...(block.toolName ? { toolName: block.toolName, input: '', status: 'complete' } : {}),
         ...(block.toolUseId ? { toolUseId: block.toolUseId } : {}),

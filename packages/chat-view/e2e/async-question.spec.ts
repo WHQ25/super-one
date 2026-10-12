@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { pathToFileURL } from 'node:url'
 import { resolve } from 'node:path'
 import type { ChatMessage } from '@superone/shared/agent-types'
-import { pendingCodexAsyncQuestions } from '@superone/shared/codex-async-question'
+import { CODEX_ASYNC_QUESTION_DISMISSED, pendingCodexAsyncQuestions } from '@superone/shared/codex-async-question'
 
 const questionText = 'Which environment?\nPlease confirm whether this update should cover the desktop app, the mobile app, or both, and whether the complete existing deployment schedule and validation steps should remain in place.'
 const question: ChatMessage = {
@@ -56,9 +56,21 @@ for (const width of [390, 1024]) test(`async question answers, retries, and rest
   await expect(bubble.locator('blockquote')).toHaveText(questionText)
   await expect(bubble).toContainText('Preview branch')
   await expect(page.locator('[data-bottom-dock]')).toContainText('What deadline?')
+  // Dismissal still notifies the host and closes the form, without another user bubble.
+  await page.getByRole('button', { name: /Dismiss/ }).click()
+  const dismissalRequest = (await requests()).at(-1)!
+  expect(dismissalRequest.payload).toEqual({ messageId: 'turn', itemId: 'second', answers: [CODEX_ASYNC_QUESTION_DISMISSED] })
+  const dismissal: ChatMessage = { id: 'codex_async_answer:second', role: 'user', status: 'complete', createdAt: '', providerId: 'codex',
+    content: [{ type: 'text', text: CODEX_ASYNC_QUESTION_DISMISSED, codexAsyncQuestions: pending[1]!.item.questions }] }
+  await send({ type: 'nativeActionResult', requestId: dismissalRequest.requestId, result: { ok: true } })
+  await send({ type: 'applyReductionPatch', messagePatches: [dismissal], messageOrder: [question.id, reply.id, dismissal.id], pendingAsyncQuestions: [] })
+  await expect(page.getByRole('button', { name: /Submit/ })).toHaveCount(0)
+  await expect(page.locator('[data-message-role="user"]')).toHaveCount(1)
+  await expect(page.locator('[data-turn-id="codex_async_answer:second"]')).toHaveCount(0)
+  await expect(page.locator('[data-tick="codex_async_answer:second"]')).toHaveCount(0)
   // The saved Q&A restores without loading its source turn.
   await send({ type: 'reset' })
-  await send({ type: 'hydrate', messages: [reply], pendingAsyncQuestions: [] })
+  await send({ type: 'hydrate', messages: [reply, dismissal], pendingAsyncQuestions: [] })
   await expect(page.getByText('Preview branch', { exact: true })).toHaveCount(1)
   await expect(bubble).toContainText('Which environment?')
   await expect(bubble.locator('blockquote')).toHaveText(questionText)

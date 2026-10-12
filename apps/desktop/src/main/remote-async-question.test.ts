@@ -4,7 +4,9 @@ import { Session } from './session/session'
 import type { SessionBackend } from './session/types'
 import { controlLeaseAuthority } from './control-lease.test-fixtures'
 import { nativeAsyncAnswerClient } from './session/native-async-answer-client.test-fixtures'
-import { isCodexAsyncAnswer } from '@superone/shared/codex-async-question'
+import { CODEX_ASYNC_QUESTION_DISMISSED, isCodexAsyncAnswer, pendingCodexAsyncQuestions } from '@superone/shared/codex-async-question'
+import { transcriptSegments } from '@superone/shared/transcript-segments'
+import { extractTurnOutline } from '@superone/shared/turn-outline'
 import { answerRemoteAsyncQuestion } from './agent/remote-async-question'
 import { ChatRuntime } from '../../../mobile/src/runtime'
 
@@ -38,6 +40,29 @@ function host(handleCommand = vi.fn(async () => {})) {
 afterEach(() => vi.useRealTimers())
 
 describe('mobile async question answers', () => {
+  it('notifies Codex once when dismissed and restores the handled question without a user bubble', async () => {
+    const handleCommand = vi.fn(async () => {})
+    const { session, authority } = host(handleCommand)
+    const runtime = new ChatRuntime(nativeAsyncAnswerClient(session, authority) as never, vi.fn())
+    await runtime.open('/project', 'session')
+    const unsubscribe = session.on(event => runtime.ingest([event], 1))
+    try {
+      await runtime.answerCodexAsyncQuestion('turn', 'question', [CODEX_ASYNC_QUESTION_DISMISSED])
+      await runtime.answerCodexAsyncQuestion('turn', 'question', [CODEX_ASYNC_QUESTION_DISMISSED])
+      expect(handleCommand).toHaveBeenCalledTimes(1)
+      expect(handleCommand).toHaveBeenCalledWith(expect.objectContaining({ input: CODEX_ASYNC_QUESTION_DISMISSED }))
+      expect(pendingCodexAsyncQuestions(runtime.messages)).toEqual([])
+      expect(transcriptSegments(runtime.messages).filter(segment => segment.message.role === 'user')).toEqual([])
+      await runtime.reopen()
+      expect(runtime.messages.filter(isCodexAsyncAnswer)).toHaveLength(1)
+      expect(pendingCodexAsyncQuestions(runtime.messages)).toEqual([])
+      expect(transcriptSegments(runtime.messages).filter(segment => segment.message.role === 'user')).toEqual([])
+      expect(extractTurnOutline(runtime.messages).some(entry => entry.id.startsWith('codex_async_answer:'))).toBe(false)
+    } finally {
+      unsubscribe()
+      runtime.dispose()
+    }
+  })
   it('broadcasts the accepted reply once to live desktop and mobile subscribers', async () => {
     const { session, authority } = host()
     const events: AgentEvent[] = []

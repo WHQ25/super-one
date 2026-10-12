@@ -31,4 +31,11 @@ export const ChineseNarrow: Story = { args: {
   width: 320, questions: [{ title: '这次应该覆盖哪些端？', options: ['桌面和手机', '仅桌面'] }, { title: '还有什么需要注意？', options: null }],
   answers: ['桌面和手机', '回答后保留完整问题与答案。\n测试长链接：https://example.com/very/long/path/that/should/wrap/inside/the/user/bubble'],
 }, globals: { locale: 'zh', theme: 'dark' } }
-export const Dismissed: Story = { args: { answers: [CODEX_ASYNC_QUESTION_DISMISSED] } }
+const dismissalHidden: Story['play'] = async ({ canvasElement }) => {
+  if (canvasElement.querySelector('.portable-user-message')) throw new Error('Dismissed questions must not render a user bubble')
+}
+export const Dismissed: Story = { args: { answers: [CODEX_ASYNC_QUESTION_DISMISSED] }, play: dismissalHidden }
+export const MultipleDismissed: Story = { args: {
+  questions: [{ title: 'Which environment?', options: null }, { title: 'When should it ship?', options: null }],
+  answers: [CODEX_ASYNC_QUESTION_DISMISSED, CODEX_ASYNC_QUESTION_DISMISSED],
+}, play: dismissalHidden }

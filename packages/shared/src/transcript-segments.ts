@@ -1,6 +1,7 @@
 import type { ChatMessage, ContentBlock, CodexThreadItem } from './agent-types'
 import { blockText, contentKeys, itemText, type TranscriptBoundary } from './transcript-boundary'
 import { isToolResultBlock, isToolUseBlock } from './content-delta'
+import { isDismissedCodexAsyncAnswer } from './codex-async-question'
 
 export interface TranscriptSegment {
   id: string
@@ -99,10 +100,13 @@ function interval(source: ChatMessage, previous?: TranscriptBoundary, next?: Tra
 
 /** Pure display projection: provider messages stay intact for events and persistence. */
 export function transcriptSegments(messages: readonly ChatMessage[]): TranscriptSegment[] {
-  const sources = new Set(messages.map(message => message.id))
+  // A dismissed question closes the decision queue without creating a visible
+  // bubble or cutting the assistant's continuing output at its saved cursor.
+  const displayed = messages.filter(message => !isDismissedCodexAsyncAnswer(message, messages))
+  const sources = new Set(displayed.map(message => message.id))
   const boundaries = new Map<string, ChatMessage[]>()
   const consumed = new Set<string>()
-  for (const message of messages) {
+  for (const message of displayed) {
     const cursor = message.metadata?.transcriptBoundary
     if (!cursor || !sources.has(cursor.messageId) || cursor.messageId === message.id) continue
     const rows = boundaries.get(cursor.messageId) ?? []
@@ -111,7 +115,7 @@ export function transcriptSegments(messages: readonly ChatMessage[]): Transcript
     consumed.add(message.id)
   }
   const result: TranscriptSegment[] = []
-  for (const source of messages) {
+  for (const source of displayed) {
     if (consumed.has(source.id)) continue
     if (source.role !== 'assistant' || source.providerId === 'system') {
       const cursor = source.metadata?.transcriptBoundary

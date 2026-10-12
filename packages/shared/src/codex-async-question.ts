@@ -13,6 +13,17 @@ export function codexAsyncReplyText(message: ChatMessage | undefined): string | 
 
 export const CODEX_ASYNC_QUESTION_DISMISSED = '[The user dismissed this question.]'
 
+/** Keep accepted cancellation notices durable, but out of the visible user transcript. */
+export function isDismissedCodexAsyncAnswer(message: ChatMessage, messages: readonly ChatMessage[] = []): boolean {
+  if (!isCodexAsyncAnswer(message)) return false
+  const reply = codexAsyncReplyText(message)?.trim()
+  if (reply === CODEX_ASYNC_QUESTION_DISMISSED) return true
+  if (!reply) return false
+  const questions = codexAsyncAnswerQuestions(message, messages)
+  return !!questions?.length
+    && reply === formatCodexAsyncQuestionReply(questions, questions.map(() => CODEX_ASYNC_QUESTION_DISMISSED)).trim()
+}
+
 export interface PendingCodexAsyncQuestion {
   messageId: string
   item: CodexAgentMessageItem

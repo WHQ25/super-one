@@ -1,5 +1,5 @@
 import { memo, useMemo } from 'react'
-import { isCodexAsyncAnswer } from '@superone/shared/codex-async-question'
+import { isCodexAsyncAnswer, isDismissedCodexAsyncAnswer } from '@superone/shared/codex-async-question'
 import { useTranslation } from 'react-i18next'
 import type { ChatMessage, CodexAsyncUserInputQuestion, ContentBlock } from '@superone/shared/agent-types'
 import { CircleStop, Puzzle, RefreshCw, TriangleAlert } from 'lucide-react'
@@ -212,7 +212,7 @@ export const PortableMessage = memo(function PortableMessage({
     align: isCollaboration && !isInitialTask ? 'start' : 'end',
   })
 
-  if (isModelOnlyWakeMessage(message)) return null
+  if (isModelOnlyWakeMessage(message) || isDismissedCodexAsyncAnswer(message)) return null
 
   return (
     <PortableTurnProvider scheme={scheme} pendingPermission={pendingPermission} projectPath={projectPath} sourceEnvironmentId={sourceEnvironmentId} mcpIcons={mcpIcons}>

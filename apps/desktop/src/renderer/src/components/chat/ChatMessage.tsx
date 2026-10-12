@@ -22,7 +22,7 @@ import { ImageGalleryBlock } from './ImageGalleryBlock'
 import { VideoGalleryBlock } from './VideoGalleryBlock'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { getActiveSessionView, useActiveSession, useChatStore, useSessionScope } from '@/stores/chat'
-import { codexAsyncAnswerCopyText, codexAsyncAnswerQuestions, codexAsyncReplyText, isCodexAsyncAnswer } from '@superone/shared/codex-async-question'
+import { codexAsyncAnswerCopyText, codexAsyncAnswerQuestions, codexAsyncReplyText, isCodexAsyncAnswer, isDismissedCodexAsyncAnswer } from '@superone/shared/codex-async-question'
 import { useAppStore } from '@/stores/app'
 import { getAssistantCopyText } from './chat-message/getAssistantCopyText'
 import { resolveMarkdownFileLinks } from './chat-shared'
@@ -293,7 +293,7 @@ export const ChatMessage = memo(function ChatMessage({
     </div>
   ) : undefined
 
-  if (isModelOnlyWakeMessage(message)) return null
+  if (isModelOnlyWakeMessage(message) || isDismissedCodexAsyncAnswer(message)) return null
 
   return (
     <DesktopUserBubblePorts>

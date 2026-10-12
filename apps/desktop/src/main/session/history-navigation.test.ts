@@ -6,6 +6,7 @@ import { loadSessionHistoryIndex, loadSessionMessageWindow } from './history-nav
 import { segmentationHistory } from '@superone/chat-view/fixtures/transcript-segmentation'
 import { buildCompactBoundaryMessage } from '@superone/shared/compact-boundary'
 import type { ChatMessage } from '@superone/shared/agent-types'
+import { CODEX_ASYNC_QUESTION_DISMISSED, formatCodexAsyncQuestionReply } from '@superone/shared/codex-async-question'
 let db: DatabaseSync
 beforeEach(() => {
   db = new DatabaseSync(':memory:')
@@ -21,6 +22,19 @@ beforeEach(() => {
 afterEach(() => db.close())
 
 describe('history navigation database projection', () => {
+  it('excludes long multi-question dismissals from the bounded outline while retaining real answers', () => {
+    const questions = [{ title: 'Environment? '.repeat(200), options: null }, { title: 'Deadline?', options: null }]
+    const insert = db.prepare('INSERT INTO chat_messages VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL)')
+    for (const [index, answers] of [questions.map(() => CODEX_ASYNC_QUESTION_DISMISSED), ['Production', CODEX_ASYNC_QUESTION_DISMISSED]].entries()) {
+      const content = [{ type: 'text', text: formatCodexAsyncQuestionReply(questions, answers), codexAsyncQuestions: questions }]
+      insert.run('dismissed', `codex_async_answer:q${index}`, index, 'user', 'complete',
+        JSON.stringify(index ? { content } : content), '', 'codex')
+    }
+    const index = loadSessionHistoryIndex('dismissed')
+    expect(index.messageIds).toEqual(['codex_async_answer:q0', 'codex_async_answer:q1'])
+    expect(index.entries.map(entry => entry.id)).toEqual(['codex_async_answer:q1'])
+    expect(index.entries[0].text.length).toBeLessThanOrEqual(160)
+  })
   it('returns a full outline without reasoning/tool bodies or full long answers', () => {
     db.prepare('UPDATE chat_messages SET content_json = ? WHERE id = ?').run(JSON.stringify([{ type: 'text', text: 'x'.repeat(10000) }]), 'm1')
     const index = loadSessionHistoryIndex('s')

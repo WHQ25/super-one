@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { ControlLease, RpcError, SessionLoadResult, TopicSubscribeInput } from '@superone/shared/environment'
 import { isNodeMutatingCall } from '@superone/shared/environment/rpc-mutating-methods'
+import { TRANSCRIPT_WINDOW_METHOD, type TranscriptWindowResult } from '@superone/shared/environment/transcript-window'
 import { readTopicRef, type TopicRef } from '@superone/shared/environment/topics'
 import { ConnectionDelivery, detailMessageId } from '@superone/runtime/stream'
 import type { AuthenticatedClient, RpcContext, RpcResult } from '@superone/runtime/server'
@@ -161,6 +162,12 @@ export function createPhoneRpcRouter(resolve: (environmentId: string) => Promise
             }
             if (release && grant) {
               return { result: await grants.release(grant) }
+            }
+            if (method === TRANSCRIPT_WINDOW_METHOD) {
+              // The source keeps this phone's window current under its own holder id on the shared feed.
+              const loaded = await target.client.rpc<TranscriptWindowResult>(method, { ...p, holder: actor }, environmentId)
+              if (closed) throw error('unavailable', 'Phone connection closed')
+              return { result: views.window(environmentId, loaded, deliveryFor(environmentId, ctx), actor) }
             }
             if (method === 'session.load') {
               const loaded = await target.client.rpc<SessionLoadResult>(method, p, environmentId)

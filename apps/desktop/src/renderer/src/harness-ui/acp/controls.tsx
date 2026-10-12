@@ -3,6 +3,7 @@ import { AcpPermissionModeList, acpPermissionModeOption } from '@/components/cha
 import { AcpPermissionSelector } from '@/components/chat/AcpPermissionSelector'
 import { AcpModelSelector } from '@/components/chat/model-selector/AcpModelSelector'
 import type { HarnessControls } from '../controls'
+import { AcpLaunchModel } from './launch-model'
 
 /**
  * Permission baseline (ask / plan / auto / always) plus the agent's own session
@@ -19,6 +20,7 @@ function AcpPermissionControl({ compact }: { compact: boolean }) {
 
 export const acpControls: HarnessControls = {
   ModelControl: AcpModelSelector,
+  LaunchModelControl: AcpLaunchModel,
   PermissionControl: AcpPermissionControl,
   launchPermission: (value, select) => {
     const option = acpPermissionModeOption(value)

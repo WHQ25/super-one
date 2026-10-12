@@ -1,6 +1,6 @@
 # Harness UI adapter registry
 
-Status: in-progress (steps 0-4 done; branch `refactor/harness-ui-adapter`) · Updated: 2026-10-12
+Status: in-progress (steps 0-5 done; branch `refactor/harness-ui-adapter`) · Updated: 2026-10-12
 Goal: Desktop renderer chat surfaces resolve per-harness behavior through the shared static harness tables plus per-harness renderer controls and store strategies, so adding or changing a harness edits its own modules instead of `=== '<harnessId>'` branches across the composer, status bar and chat store.
 Long-term docs affected: `.claude/skills/superone-harness/references/integration.md` and `experiences.md` (model, permission and slash checklists become "fill the harness modules"), `.claude/skills/superone-harness/references/new-harness.md` (P0 catalog table), `apps/desktop/docs/agent-reference/architecture.md` (new "Harness UI modules" section)
 
@@ -38,7 +38,7 @@ harness multiplication remains:
 | Permission presentation | Per-harness TSX lists in desktop (`PermissionModeList`, `CodexPermissionPresetList`, `AcpPermissionModeList`, `CursorPermissionModeList`, `deepseekPermissionModes.ts`). Codex session offers four presets (read-only, default, auto-review, full access; `CodexPermissionPresetList.tsx:18-63`); launch rows express three permission modes. Mobile generates `permission-modes.generated.json` from the desktop lists; its dsh entries are hand-written preset copy (`apps/mobile/scripts/generate-permission-modes.ts:31-36`). |
 | Resource registry | `HarnessHandlerMap` (`stores/chat-store/harness/harness-handler.ts`, instances `stores/chat-store/index.ts:352-378`) — mapped type over `HarnessId`, covers `connect`/`apply` of resource bundles only. |
 | Model selector view | `GroupedModelEffortSelector.tsx` has a harness-neutral prop surface (`models`/`modelGroups`, `effortOptions`, `modes`, `agents`, `providers`, `optionParams`). All six composer selectors and the launch hook render it. ACP effort comes from `selectedAcpModeId` when the mode config is an effort (`AcpModelSelector.tsx:84-95`). |
-| Launch rows | `useCollabLaunchModelSelector` takes `{ harnessId, profile, catalog: 'local' \| 'profile', … }` (`SessionAgentsConfirmPrompt.tsx:229-241`). ACP is served from profile models/efforts (`:379-385`, `:488-492`), not from the live ACP agent catalog. Remote launches read only the target profile. |
+| Launch rows | (before step 5) `useCollabLaunchModelSelector` took `{ harnessId, profile, catalog: 'local' \| 'profile', … }` (`SessionAgentsConfirmPrompt.tsx:229-241`). ACP is served from profile models/efforts (`:379-385`, `:488-492`), not from the live ACP agent catalog. Remote launches read only the target profile. |
 | Session fields | One DB column `selected_model`/`selected_effort`; the renderer splits Codex into `selectedCodexModel`/`selectedCodexReasoningEffort` with `*UserChosen` flags, and main's settings broadcast and golden fixtures carry those names. Manual pick sets the flag; default recomputation and late hydration must not overwrite a manual pick (`codex-slice.ts:50-51`, `persistence.ts:10-36`). |
 | Send policy | `shouldQueueUserSend` (`session-send-request.ts:3-5`): OpenCode queues but has no steer; Codex queues only for runs, not control commands. Raw-send slash intercepts (`send-message.ts:457-489`) are a separate entry from the `ChatInput` popup selection. Cursor flips to streaming optimistically (`input-request-send.ts:36-56`). |
 | Display labels | `BrandColorPopover` `HARNESS_LABEL` repeats base harness names. `MentionPopup.tsx:226-231` shows the ACP agent (Grok/ACP) and `HarnessPreferencePicker.tsx:303-307` uses localized copy ("Claude Code"). `ProviderLabel.tsx` is an API-provider brand registry, `OnboardingDiscover.tsx:81-85` uses SDK labels and `session-menu-items.ts:45-53` uses "Claude Code"/"Grok (ACP)"; those are different vocabularies. |
@@ -162,13 +162,16 @@ affected tests (paths below), `bun run typecheck:web` and, when shared changes,
    restore, live hydration. OpenCode and Cursor sessions created by a reset
    now seed their own catalog default instead of Claude's. `ContextUsage`
    gates its RPC on the new `supportsContextUsage` capability.
-5. **Launch rows.** Each harness gets `LaunchModelControl` built from the same
-   prop helpers as its composer control; `useCollabLaunchModelSelector`'s
-   per-harness branches move into them. ACP unifies the profile path with the
-   live agent catalog for local launches; remote launches still read only the
-   target profile and never write the parent session. Tests remount one tree
-   while switching harness and while a profile loads, and cover Grok legacy
-   effort, `reasoning_effort` config, a true ACP mode and ACP OpenCode grouping.
+5. **Launch rows (done).** `HarnessControls.LaunchModelControl` per harness
+   (`harness-ui/<id>/launch-model.tsx`) replaces `useCollabLaunchModelSelector`;
+   shared pieces live in `harness-ui/launch-model.tsx` (props, effort rules,
+   API-key providers for Claude/Codex, the flat Cursor/dsh control) and
+   `selector-models.ts`. Codex owns its catalog fetch and the Fast toggle. ACP
+   local launches read the live agent catalog; remote launches read only the
+   target profile. The effort/session-mode split moved to shared
+   `acpModeCatalog`, now used by the composer, launch rows, Remote Control and
+   agent profiles, so profiles no longer list real session modes as efforts.
+   Cursor/dsh show no effort chips for a model outside the catalog.
 6. **Turn payload.** Move per-harness blocks of `session-turn.ts` into
    `strategy.turnSettings`. Step 0 tests pass unchanged.
 7. **Switch, interaction and send policy.** `harness-selection.ts`

@@ -3,9 +3,11 @@ import { CursorPermissionSelector } from '@/components/chat/CursorPermissionSele
 import { CURSOR_PERMISSION_MODES, resolveCursorPermissionMode } from '@/components/chat/cursorPermissionModes'
 import { CursorModelSelector } from '@/components/chat/model-selector/CursorModelSelector'
 import type { HarnessControls } from '../controls'
+import { CursorLaunchModel } from './launch-model'
 
 export const cursorControls: HarnessControls = {
   ModelControl: CursorModelSelector,
+  LaunchModelControl: CursorLaunchModel,
   PermissionControl: CursorPermissionSelector,
   launchPermission: (value, select) => {
     const mode = resolveCursorPermissionMode(value)

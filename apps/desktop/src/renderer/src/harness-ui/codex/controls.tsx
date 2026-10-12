@@ -3,6 +3,7 @@ import { CodexPermissionPresetList, codexPermissionPresetOption } from '@/compon
 import { CodexPermissionSelector } from '@/components/chat/CodexPermissionSelector'
 import { CodexModelSelector } from '@/components/chat/model-selector/CodexModelSelector'
 import type { HarnessControls } from '../controls'
+import { CodexLaunchModel } from './launch-model'
 
 /**
  * A launch config carries a plain `PermissionMode`, so the Codex presets it can express are
@@ -23,6 +24,7 @@ function modeOf(preset: CodexPermissionPreset): PermissionMode {
 
 export const codexControls: HarnessControls = {
   ModelControl: CodexModelSelector,
+  LaunchModelControl: CodexLaunchModel,
   PermissionControl: CodexPermissionSelector,
   launchPermission: (value, select) => {
     const preset = presetOf(value)

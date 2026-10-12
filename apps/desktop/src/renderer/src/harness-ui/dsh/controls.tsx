@@ -2,9 +2,11 @@ import { DeepseekPermissionModeList, deepseekPermissionModeOption } from '@/comp
 import { DeepseekPermissionSelector } from '@/components/chat/DeepseekPermissionSelector'
 import { DeepseekModelSelector } from '@/components/chat/model-selector/DeepseekModelSelector'
 import type { HarnessControls } from '../controls'
+import { DshLaunchModel } from './launch-model'
 
 export const dshControls: HarnessControls = {
   ModelControl: DeepseekModelSelector,
+  LaunchModelControl: DshLaunchModel,
   PermissionControl: DeepseekPermissionSelector,
   launchPermission: (value, select) => {
     const option = deepseekPermissionModeOption(value)

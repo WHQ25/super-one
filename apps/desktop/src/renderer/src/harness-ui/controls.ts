@@ -5,6 +5,7 @@ import { claudeControls } from './claude/controls'
 import { codexControls } from './codex/controls'
 import { cursorControls } from './cursor/controls'
 import { dshControls } from './dsh/controls'
+import type { LaunchModelProps } from './launch-model'
 import { opencodeControls } from './opencode/controls'
 
 /**
@@ -15,6 +16,8 @@ import { opencodeControls } from './opencode/controls'
 export interface HarnessControls {
   /** Composer model / effort picker. */
   ModelControl: ComponentType<{ onCloseAutoFocus?: (e: Event) => void }>
+  /** Model / effort / API-key picker for a session that does not exist yet (launch rows). */
+  LaunchModelControl: ComponentType<LaunchModelProps>
   /** Status-bar permission control: modes, presets or agents, in the harness's own vocabulary. */
   PermissionControl: ComponentType<{ compact: boolean }>
   /**

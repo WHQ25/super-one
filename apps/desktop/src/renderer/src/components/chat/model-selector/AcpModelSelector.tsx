@@ -4,27 +4,13 @@ import { Loader2 } from 'lucide-react'
 import { useActiveSession, useChatStore, useScopedSessionActions } from '@/stores/chat'
 import type { AcpAgentDescriptor } from '@superone/shared/agent-types'
 import { acpAgentDisplayName } from '@superone/shared/acp-brand'
-import { formatEffortOptionLabel, isAcpEffortConfigId, sortEffortsAscending } from '@superone/shared/effort-labels'
-import {
-  groupModelsBySlashPrefix,
-  resolveSlashModelLabel,
-} from '../ModelSelectorLists'
-import {
-  GroupedModelEffortSelector,
-  type SelectorEffortOption,
-  type SelectorModelGroup,
-  type SelectorModelOption,
-} from './GroupedModelEffortSelector'
+import { formatEffortOptionLabel } from '@superone/shared/effort-labels'
+import { acpModeCatalog } from '@superone/shared/harness/acp-mode-catalog'
+import { acpSelectorModels } from '@/harness-ui/acp/model-options'
+import { GroupedModelEffortSelector, type SelectorEffortOption } from './GroupedModelEffortSelector'
 import { acpContextWindowParam } from './AcpContextWindowSelect'
 
 const EMPTY_ACP_AGENTS: AcpAgentDescriptor[] = []
-const NO_EFFORT: SelectorEffortOption[] = []
-
-function useGroupedSlashList(agentId: string | null): boolean {
-  // OpenCode catalogs use `provider/model` ids; group by provider.
-  if (agentId === 'opencode') return true
-  return false
-}
 
 export function AcpModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: Event) => void } = {}) {
   const { t } = useTranslation()
@@ -46,7 +32,7 @@ export function AcpModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: 
   const agent = agents.find((a) => a.id === acpAgentId)
   // Prefer catalog name; if agents aren't loaded yet (mini-window cold start), derive from id.
   const agentLabel = agent?.name ?? (acpAgentId ? acpAgentDisplayName(acpAgentId) : null)
-  const grouped = useGroupedSlashList(acpAgentId)
+  const view = useMemo(() => acpSelectorModels(acpModels, acpAgentId), [acpModels, acpAgentId])
   const currentModel = acpModels.find((m) => m.id === selectedModel)
   const contextParam = useMemo(
     () => acpContextWindowParam(
@@ -59,37 +45,15 @@ export function AcpModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: 
   )
   // Prefer catalog display name; fall back to raw selectedModel id (live sync may
   // have the id before acp_models replay fills names).
-  const modelLabel = currentModel
-    ? (grouped ? resolveSlashModelLabel(currentModel) : (currentModel.name || currentModel.id))
-    : (selectedModel || null)
+  const modelLabel = currentModel ? view.label(currentModel) : (selectedModel || null)
   const currentLabel = modelLabel ?? agentLabel ?? t('chat.suggestions.acpLabel')
 
-  const models = useMemo<SelectorModelOption[] | undefined>(
-    () => grouped ? undefined : acpModels.map((m) => ({ id: m.id, name: m.name || m.id, description: m.description })),
-    [grouped, acpModels],
-  )
-  const modelGroups = useMemo<SelectorModelGroup[] | undefined>(
-    () => grouped
-      ? groupModelsBySlashPrefix(acpModels).map(({ group, items }) => ({
-          id: group || 'other',
-          name: group || 'other',
-          models: items.map(({ model, label }) => ({ id: model.id, name: label, description: model.description })),
-        }))
-      : undefined,
-    [grouped, acpModels],
-  )
-
   // Grok effort lives next to the model (GroupedModelEffortSelector), same as Claude/Codex.
-  // Agent may emit high→low; slider is left→right ascending (low … high).
-  const effortIsAcpModeCatalog = isAcpEffortConfigId(acpModeConfigId) && acpModes.length > 0
-  const effortOptions = useMemo<SelectorEffortOption[]>(() => {
-    if (!effortIsAcpModeCatalog) return NO_EFFORT
-    return sortEffortsAscending(acpModes.map((m) => ({
-      value: m.id,
-      label: formatEffortOptionLabel(m.name || m.id),
-      description: m.description || undefined,
-    })))
-  }, [effortIsAcpModeCatalog, acpModes])
+  const effortOptions = useMemo<SelectorEffortOption[]>(
+    () => acpModeCatalog({ modes: acpModes, modeConfigId: acpModeConfigId, selectedModeId: selectedAcpModeId }).efforts,
+    [acpModes, acpModeConfigId, selectedAcpModeId],
+  )
+  const effortIsAcpModeCatalog = effortOptions.length > 0
   const selectedEffort = effortIsAcpModeCatalog
     ? (selectedAcpModeId ?? acpModes[0]?.id ?? null)
     : null
@@ -142,8 +106,8 @@ export function AcpModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: 
 
   return (
     <GroupedModelEffortSelector
-      models={models}
-      modelGroups={modelGroups}
+      models={view.models}
+      modelGroups={view.modelGroups}
       selectedModelId={selectedModel}
       selectedModelLabel={currentLabel}
       onSelectModel={setSelectedModel}

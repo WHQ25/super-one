@@ -1,9 +1,10 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useEffect, useState } from 'react'
-import type { HarnessId, ModelOption } from '@superone/shared/agent-types'
+import type { HarnessId, ModelOption, SessionAgentProfile } from '@superone/shared/agent-types'
 import { useChatStore } from '@/stores/chat'
 import type { ChatStore } from '@/stores/chat-store/types'
 import { HARNESS_CONTROLS } from './controls'
+import type { LaunchModelPatch } from './launch-model'
 import { mockIpc } from '../../../../.storybook/mock-ipc'
 
 const PROJECT = '/storybook/harness-controls'
@@ -91,3 +92,74 @@ export const DeepSeek: Story = { args: { harness: 'dsh' } }
 export const EmptyCatalogs: Story = { args: { harness: 'acp', empty: true } }
 /** Narrow composer: permission controls collapse to their compact trigger. */
 export const Compact: Story = { args: { harness: 'cursor', compact: true } }
+
+const LAUNCH_HARNESSES: HarnessId[] = ['claude', 'codex', 'acp', 'opencode', 'cursor', 'dsh']
+const ACP_RESOURCES = {
+  agents: [],
+  selectedAgentId: 'grok-build',
+  configByAgentId: {
+    // Grok legacy effort: modes outside configOptions with no config id.
+    'grok-build': { configOptions: [], extraModels: [model('grok-4.7', 'Grok 4.7')], extraModes: [model('high', 'High Effort'), model('low', 'Low Effort')] },
+  },
+}
+const remoteProfile = (harnessId: HarnessId): SessionAgentProfile => ({
+  id: harnessId,
+  name: harnessId,
+  harnessId,
+  brandKey: harnessId,
+  defaultConfig: {},
+  models: [{ id: 'remote-model', name: 'Remote Model' }],
+  efforts: ['low', 'high'],
+  apiProviders: [],
+})
+
+mockIpc('app', 'codexListModels', async () => CATALOGS.codex.models)
+
+function LaunchRow({ harness, remote }: { harness: HarnessId; remote: boolean }) {
+  const [config, setConfig] = useState<LaunchModelPatch>({})
+  const { LaunchModelControl } = HARNESS_CONTROLS[harness]
+  return (
+    <div className="flex min-w-0 flex-wrap items-center gap-1 rounded-md border border-border bg-muted/20 px-1 py-0.5">
+      <span className="w-16 shrink-0 px-1 text-xs text-muted-foreground">{harness}</span>
+      <LaunchModelControl
+        profile={remote ? remoteProfile(harness) : undefined}
+        catalog={remote ? 'profile' : 'local'}
+        apiProviderId={config.apiProviderId}
+        model={config.model}
+        effort={config.effort}
+        offerFastMode
+        fastMode={config.fastMode}
+        onChange={(patch) => setConfig((prev) => ({ ...prev, ...patch }))}
+      />
+    </div>
+  )
+}
+
+/** Launch rows (collab / automation confirm) for every harness, before a session exists. */
+function LaunchPreview({ remote = false, empty = false }: { remote?: boolean; empty?: boolean }) {
+  const [ready, setReady] = useState(false)
+  useEffect(() => {
+    const previous = useChatStore.getState()
+    useChatStore.setState({
+      activeProject: PROJECT,
+      harnessResources: (empty
+        ? { claude: null, codex: null, acp: null }
+        : { ...CATALOGS, acp: ACP_RESOURCES }) as unknown as ChatStore['harnessResources'],
+    })
+    setReady(true)
+    return () => useChatStore.setState(previous)
+  }, [empty])
+  if (!ready) return null
+  return (
+    <div className="flex flex-col gap-2" style={{ width: 560 }}>
+      {LAUNCH_HARNESSES.map((harness) => <LaunchRow key={harness} harness={harness} remote={remote} />)}
+    </div>
+  )
+}
+
+/** Local launch rows read this machine's live catalogs; ACP shows Grok effort, not session modes. */
+export const LaunchRows: Story = { args: { harness: 'claude' }, render: () => <LaunchPreview /> }
+/** A launch on another machine reads only the target's profile. */
+export const LaunchRowsRemote: Story = { args: { harness: 'claude' }, render: () => <LaunchPreview remote /> }
+/** Catalogs not loaded yet. */
+export const LaunchRowsEmpty: Story = { args: { harness: 'claude' }, render: () => <LaunchPreview empty /> }

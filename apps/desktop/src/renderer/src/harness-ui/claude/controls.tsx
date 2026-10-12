@@ -3,11 +3,13 @@ import { ClaudeModelSelector } from '@/components/chat/model-selector/ClaudeMode
 import { modes, PermissionModeList } from '@/components/chat/PermissionModeList'
 import { PermissionModeSelector } from '@/components/chat/PermissionModeSelector'
 import type { HarnessControls } from '../controls'
+import { ClaudeLaunchModel } from './launch-model'
 
 const LAUNCH_MODES = HARNESS_LAUNCH_OPTIONS.claude.permissionModes
 
 export const claudeControls: HarnessControls = {
   ModelControl: ClaudeModelSelector,
+  LaunchModelControl: ClaudeLaunchModel,
   PermissionControl: PermissionModeSelector,
   launchPermission: (value, select) => {
     const active = modes.find((mode) => mode.id === value && LAUNCH_MODES.includes(mode.id)) ?? modes[0]

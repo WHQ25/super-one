@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
-import { AlertTriangle, Bot, FolderClosed, GitBranch, Loader2, MessageSquare, RefreshCw, Server, Users, Zap } from 'lucide-react'
+import { AlertTriangle, Bot, FolderClosed, GitBranch, Loader2, MessageSquare, RefreshCw, Server, Users } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Kbd } from '@superone/ui/components/ui/kbd'
 import { cn } from '@superone/ui/lib/utils'
-import { findCodexFastServiceTier } from '@superone/shared/codex-fast-mode'
 import { localSessionLink } from '@superone/shared/session-link'
 import { SessionChip } from '@superone/chat-view/presenters/SessionChip'
 import {
@@ -28,14 +27,13 @@ import type {
 } from '@superone/shared/agent-types'
 import { resolveSessionIcon, resolveSessionIconFromBrandKey } from '@/components/harness/resolve-session-icon'
 import { DesktopSessionLinkScope } from '@/lib/session-links'
+import { HARNESS_CONTROLS } from '@/harness-ui/controls'
 import { hasOpenRadixOverlay } from '@/lib/radix-overlay'
 import { useAppStore } from '@/stores/app'
 import { HarnessPermissionPopover } from './HarnessPermissionPopover'
 import { harnessSupportsSandbox, harnessSandboxModes, harnessSandboxSupportLevel, coerceSandboxModeForHarness, SandboxModePopover } from './SandboxModeSelector'
 import { ApproveRejectBar } from './PermissionActionBar'
 import { WorkDirLabel, workDirTitle, type WorkDirState } from './work-dir-label'
-import { GroupedModelEffortSelector } from './model-selector/GroupedModelEffortSelector'
-import { useCollabLaunchModelSelector } from './model-selector/useCollabLaunchModelSelector'
 import { useRemoteAgentCatalogs, type RemoteAgentCatalog } from './model-selector/useRemoteAgentCatalogs'
 import { isFocusInChat, useChatRootRef } from './is-focus-in-chat'
 import { leaveDecisionField, shouldSuppressDecisionShortcut } from './composer-slot/decision-composer-policy'
@@ -232,18 +230,8 @@ function LaunchPanel({
   // A remote launch picks from the target's own catalog, never this machine's.
   const remoteProfile = config.remote ? remoteProfileOf(launch, remoteCatalog) : undefined
   const catalogProfile = config.remote ? remoteProfile : profile
-  const modelSelector = useCollabLaunchModelSelector({
-    harnessId,
-    profile: catalogProfile,
-    catalog: config.remote ? 'profile' : 'local',
-    apiProviderId: config.apiProviderId,
-    selectedModelId: config.model ?? catalogProfile?.defaultConfig.model,
-    selectedEffort: config.effort ?? catalogProfile?.defaultConfig.effort,
-    onChange,
-  })
+  const { LaunchModelControl } = HARNESS_CONTROLS[harnessId]
   const workDirState: WorkDirState = launchWorkDir(config.worktree)
-  const selectedProfileModel = profile?.models.find((model) => model.id === modelSelector.selectedModelId)
-  const supportsFastMode = !config.remote && harnessId === 'codex' && !!findCodexFastServiceTier(selectedProfileModel)
   const remotePicker = !!remoteProfile && remoteProfile.models.length > 0
   const requestedModelMissing = !!remoteProfile && !isLaunchModelOffered(remoteProfile, requested.config)
   const nameRole = launchNameRoleLine(launch)
@@ -359,47 +347,18 @@ function LaunchPanel({
                 model={config.model}
                 onRetry={onRetryRemoteCatalog}
               />
-            ) : (<>
-            {/* Fast mode rides in front of the model label as a toggleable glyph, mirroring the
-                lightning bolt the chat-input model trigger shows when the Fast tier is on. */}
-            {supportsFastMode && (
-              <IconButton
-                size="sm"
-                tooltip={t('settings.preferences.fastMode.label')}
-                aria-pressed={config.fastMode === true}
-                onClick={() => onChange({ fastMode: config.fastMode !== true })}
-              >
-                {/* On/off reads as filled-vs-outline in the model label's own color — the same
-                    contrast the chat-input trigger uses for its Fast bolt. */}
-                <Zap className={cn(config.fastMode === true && 'fill-current')} />
-              </IconButton>
+            ) : (
+              <LaunchModelControl
+                profile={catalogProfile}
+                catalog={config.remote ? 'profile' : 'local'}
+                apiProviderId={config.apiProviderId}
+                model={config.model ?? catalogProfile?.defaultConfig.model}
+                effort={config.effort ?? catalogProfile?.defaultConfig.effort}
+                offerFastMode
+                fastMode={config.fastMode}
+                onChange={onChange}
+              />
             )}
-            <GroupedModelEffortSelector
-              models={modelSelector.models}
-              modelGroups={modelSelector.modelGroups}
-              selectedModelId={modelSelector.selectedModelId}
-              selectedModelLabel={modelSelector.selectedModelLabel}
-              onSelectModel={(modelId) => {
-                modelSelector.onSelectModel(modelId)
-                const nextModel = profile?.models.find((model) => model.id === modelId)
-                if (harnessId === 'codex' && !findCodexFastServiceTier(nextModel)) {
-                  onChange({ fastMode: false })
-                }
-              }}
-              shouldCloseAfterModelSelect={modelSelector.shouldCloseAfterModelSelect}
-              effortOptions={modelSelector.effortOptions}
-              selectedEffort={modelSelector.selectedEffort}
-              selectedEffortLabel={modelSelector.selectedEffortLabel}
-              onSelectEffort={modelSelector.onSelectEffort}
-              providers={modelSelector.providers}
-              selectedProviderId={modelSelector.selectedProviderId}
-              onSelectProvider={modelSelector.onSelectProvider}
-              onManageProviders={modelSelector.onManageProviders}
-              onRefreshModels={modelSelector.onRefreshModels}
-              modelsLoading={modelSelector.modelsLoading}
-              triggerLabel={modelSelector.triggerLabel}
-            />
-            </>)}
             <span aria-hidden="true" className="h-3.5 w-px shrink-0 bg-border" />
             <HarnessPermissionPopover
               harnessId={harnessId}

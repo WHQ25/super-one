@@ -64,7 +64,7 @@
     "reason": "pre-registry baseline"
   },
   "components/chat/AutomationConfirmPrompt.tsx": {
-    "count": 13,
+    "count": 12,
     "reason": "pre-registry baseline"
   },
   "components/chat/ChatContent.tsx": {
@@ -111,10 +111,6 @@
     "count": 2,
     "reason": "pre-registry baseline"
   },
-  "components/chat/SessionAgentsConfirmPrompt.tsx": {
-    "count": 2,
-    "reason": "pre-registry baseline"
-  },
   "components/chat/StopButton.tsx": {
     "count": 2,
     "reason": "pre-registry baseline"
@@ -131,16 +127,8 @@
     "count": 3,
     "reason": "pre-registry baseline"
   },
-  "components/chat/model-selector/AcpModelSelector.tsx": {
-    "count": 1,
-    "reason": "pre-registry baseline"
-  },
   "components/chat/model-selector/ClaudeModelSelector.tsx": {
     "count": 1,
-    "reason": "pre-registry baseline"
-  },
-  "components/chat/model-selector/useCollabLaunchModelSelector.tsx": {
-    "count": 39,
     "reason": "pre-registry baseline"
   },
   "components/chat/model-selector/useSelectorProviders.ts": {

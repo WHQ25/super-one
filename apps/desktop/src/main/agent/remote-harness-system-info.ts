@@ -22,8 +22,9 @@ import {
 } from '@superone/shared/harness/harness-sandbox'
 import { lookupCatalogContextWindow } from '@superone/shared/platform-registry'
 import { BASE_SESSION_PROVIDERS } from '@superone/shared/session-provider-definitions'
+import { acpModeCatalog } from '@superone/shared/harness/acp-mode-catalog'
 import { deriveSessionCatalog } from '../acp/acp-config'
-import { acpModeCatalog, deepseekModeCatalog, openCodeAgentCatalog } from './remote-selector-catalog'
+import { deepseekModeCatalog, openCodeAgentCatalog } from './remote-selector-catalog'
 
 type ResourceReader = <H extends HarnessId>(harnessId: H) => HarnessResourcesMap[H] | null
 

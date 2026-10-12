@@ -22,6 +22,7 @@ import type {
 } from '@superone/shared/agent-types'
 import { filterEnabledCursorModels } from '@superone/cursor/cursor-config'
 import { acpAgentDisplayName, resolveHarnessBrandKey } from '@superone/shared/acp-brand'
+import { acpModeCatalog } from '@superone/shared/harness/acp-mode-catalog'
 import { buildAgentMentionTargets } from '@superone/shared/agent-mention-tags'
 import {
   isHarnessRunnable,
@@ -88,13 +89,16 @@ function profileResources(
     const catalog = agentId ? cached.configByAgentId?.[agentId] : undefined
     const sessionCatalog = catalog ? deriveSessionCatalog(catalog) : null
     models = sessionCatalog?.models ?? []
-    for (const mode of sessionCatalog?.modes ?? []) efforts.add(mode.id)
+    // Only Grok reasoning effort is an effort; a real session mode is not.
+    const acpEfforts = acpModeCatalog(sessionCatalog).efforts.map((option) => option.value)
+    for (const effort of acpEfforts) efforts.add(effort)
     defaultModel = models.find((model) => model.id === sessionCatalog?.selectedModelId)
       ?? models.find((model) => model.isDefault)
       ?? models[0]
-    defaultEffort = sessionCatalog?.selectedModeId
-      ?? sessionCatalog?.modes.find((mode) => mode.isDefault)?.id
-      ?? sessionCatalog?.modes[0]?.id
+    const selectedMode = sessionCatalog?.selectedModeId
+    defaultEffort = selectedMode && acpEfforts.includes(selectedMode)
+      ? selectedMode
+      : acpEfforts.includes('medium') ? 'medium' : acpEfforts[0]
   } else {
     models = cachedHarnessModels(provider.harnessId)
     if (models.length === 0) return { models: [], efforts: [], defaultConfig: {} }

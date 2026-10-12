@@ -2,7 +2,7 @@
  * HITL prompt for automation create / update / delete.
  *
  * Create / update reuse the collab confirm config strip
- * (GroupedModelEffortSelector + HarnessPermissionPopover + SandboxModePopover)
+ * (harness LaunchModelControl + HarnessPermissionPopover + SandboxModePopover)
  * so users retune model / effort / permission / sandbox with the same controls
  * as multi-agent launch. Accept sends the edited agentConfig via formAnswers.
  */
@@ -20,21 +20,18 @@ import type {
   PermissionMode,
   PermissionRequest,
   SandboxMode,
-  SessionAgentProfile,
 } from '@superone/shared/agent-types'
 import { Switch } from '@superone/ui/components/ui/switch'
 import { cn } from '@superone/ui/lib/utils'
+import { HARNESS_CONTROLS } from '@/harness-ui/controls'
 import { useAppStore } from '@/stores/app'
 import { useChatStore, useScopedSessionActions } from '@/stores/chat'
-import { getCachedAcpCatalog } from '@/stores/chat-store/harness/acp-handler'
 import { hasOpenRadixOverlay } from '@/lib/radix-overlay'
 import { modes } from './PermissionModeList'
 import { harnessSupportsSandbox, harnessSandboxModes, harnessSandboxSupportLevel, coerceSandboxModeForHarness, sandboxModes, SandboxModePopover } from './SandboxModeSelector'
 import { formatCodexModelName, formatReasoningEffortLabel } from './chat-input-utils'
 import { ApproveRejectBar } from './PermissionActionBar'
 import { HarnessPermissionPopover } from './HarnessPermissionPopover'
-import { GroupedModelEffortSelector } from './model-selector/GroupedModelEffortSelector'
-import { useCollabLaunchModelSelector } from './model-selector/useCollabLaunchModelSelector'
 import {
   streamdownComponents,
   streamdownControls,
@@ -185,65 +182,19 @@ function AgentConfigStrip({
   onChange: (patch: EditableAgent) => void
 }) {
   const sandboxCapability = useAppStore((s) => s.sandboxCapability)
-  const acpResources = useChatStore((s) => s.harnessResources.acp)
   const harnessId = agentType as HarnessId
-
-  const profile = useMemo((): SessionAgentProfile | undefined => {
-    if (agentType !== 'acp') return undefined
-    const agentId = acpAgentId ?? value.acpAgentId ?? acpResources?.selectedAgentId ?? null
-    if (!agentId) return undefined
-    const catalog = getCachedAcpCatalog(acpResources, agentId)
-    const models = catalog?.models?.map((m) => ({
-      id: m.id,
-      name: m.name || m.id,
-      ...(m.description ? { description: m.description } : {}),
-    })) ?? []
-    // Grok-style modes with null configId act as effort chips in the collab selector.
-    const efforts = (catalog?.modes ?? [])
-      .filter((m) => !('configId' in m) || (m as { configId?: string | null }).configId == null)
-      .map((m) => m.id)
-    return {
-      id: agentId,
-      name: agentId,
-      harnessId: 'acp',
-      acpAgentId: agentId,
-      brandKey: agentId.startsWith('grok') ? 'acp-grok' : 'acp',
-      defaultConfig: {},
-      models,
-      efforts,
-      apiProviders: [],
-    }
-  }, [agentType, acpAgentId, value.acpAgentId, acpResources])
-
-  const modelSelector = useCollabLaunchModelSelector({
-    harnessId,
-    profile,
-    apiProviderId: value.apiProviderId,
-    selectedModelId: value.model,
-    selectedEffort: value.effort,
-    onChange: (patch) => onChange(patch),
-  })
+  const { LaunchModelControl } = HARNESS_CONTROLS[harnessId]
 
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-1 rounded-md border border-border bg-muted/20 px-1 py-0.5">
-      <GroupedModelEffortSelector
-        models={modelSelector.models}
-        modelGroups={modelSelector.modelGroups}
-        selectedModelId={modelSelector.selectedModelId}
-        selectedModelLabel={modelSelector.selectedModelLabel}
-        onSelectModel={modelSelector.onSelectModel}
-        shouldCloseAfterModelSelect={modelSelector.shouldCloseAfterModelSelect}
-        effortOptions={modelSelector.effortOptions}
-        selectedEffort={modelSelector.selectedEffort}
-        selectedEffortLabel={modelSelector.selectedEffortLabel}
-        onSelectEffort={modelSelector.onSelectEffort}
-        providers={modelSelector.providers}
-        selectedProviderId={modelSelector.selectedProviderId}
-        onSelectProvider={modelSelector.onSelectProvider}
-        onManageProviders={modelSelector.onManageProviders}
-        onRefreshModels={modelSelector.onRefreshModels}
-        modelsLoading={modelSelector.modelsLoading}
-        triggerLabel={modelSelector.triggerLabel}
+      <LaunchModelControl
+        profile={undefined}
+        catalog="local"
+        acpAgentId={acpAgentId ?? value.acpAgentId}
+        apiProviderId={value.apiProviderId}
+        model={value.model}
+        effort={value.effort}
+        onChange={onChange}
       />
       <span aria-hidden="true" className="h-3.5 w-px shrink-0 bg-border" />
       <HarnessPermissionPopover

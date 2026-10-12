@@ -3,65 +3,18 @@ import type {
   ClaudeAccount,
   DeepseekPresetRoster,
   HarnessId,
-  ModelOption,
   OpenCodeResources,
   RemoteAgentOption,
-  RemoteEffortOption,
   RemoteModeOption,
   RemoteProviderOption,
 } from '@superone/shared/agent-types'
 import { claudeAccountProviderId } from '@superone/shared/agent-types'
-import { formatEffortOptionLabel, isAcpEffortConfigId, sortEffortsAscending } from '@superone/shared/effort-labels'
 
 /**
  * The catalogs the desktop model selector renders next to model + effort, projected
  * for Remote Control clients. Each harness wrapper on the desktop owns one of these;
  * mobile has a single picker, so the host does the per-harness thinking here.
  */
-
-export interface AcpModeSource {
-  modes: ModelOption[]
-  /** `null` or `reasoning_effort` means Grok reasoning effort. Other ids are session modes. */
-  modeConfigId: string | null
-  selectedModeId: string | null
-}
-
-export interface AcpModeProjection {
-  efforts: RemoteEffortOption[]
-  modes: RemoteModeOption[]
-  selectedModeId: string | null
-}
-
-/**
- * Split an ACP mode catalog into effort and session modes the same way
- * `AcpModelSelector` does. Sending real session modes as `efforts` used to make
- * mobile draw a slider for `ask`/`code`, which the backend then dropped, because
- * only `low…max` survive `asGrokReasoningEffort`.
- * Grok's live catalog uses config id `reasoning_effort` (category `thought_level`).
- */
-export function acpModeCatalog(source: AcpModeSource | null): AcpModeProjection {
-  const modes = source?.modes ?? []
-  if (modes.length === 0) return { efforts: [], modes: [], selectedModeId: null }
-
-  if (isAcpEffortConfigId(source!.modeConfigId)) {
-    const efforts = sortEffortsAscending(modes.map((mode) => ({
-      value: mode.id,
-      label: formatEffortOptionLabel(mode.name || mode.id),
-      ...(mode.description ? { description: mode.description } : {}),
-    })))
-    return { efforts, modes: [], selectedModeId: null }
-  }
-
-  return {
-    efforts: [],
-    modes: modes.map((mode) => ({
-      id: mode.id,
-      name: mode.name || mode.id,
-      ...(mode.description ? { description: mode.description } : {}),
-    })),
-    selectedModeId: source!.selectedModeId ?? modes[0]?.id ?? null,
-  }
-}
 
 /** Unselected means OpenCode's configured default, not a forced Build agent. */
 export function openCodeAgentCatalog(resources: OpenCodeResources | null | undefined): {

@@ -171,19 +171,12 @@ export function DurationFooter({
   const { errorInfo, showError, terminalReason, showTerminalReason } = footer
   const mcpStartup = message.metadata?.codex?.mcpStartup
   const mcpServers = mcpStartup ?? []
-  const hasCodexItems = (message.metadata?.codex?.items?.length ?? 0) > 0
-  const hasStartingMcp = mcpServers.some((server) => server.status === 'starting')
-  const showMcpStartup = isStreaming && hasStartingMcp && !hasCodexItems
-  const mcpReadyCount = showMcpStartup ? mcpServers.filter((s) => s.status === 'ready').length : 0
-  const failedMcp = mcpServers.filter((s) => s.status === 'failed')
-  const showMcpFailure = !isStreaming && failedMcp.length > 0
   // A local slash command (/code-review) can run for minutes emitting nothing at
   // all — no text, no tools — so without this the turn is indistinguishable from
   // a hang. The footer already owns this "nothing to show yet, but work is
   // happening" slot for MCP startup. Once the turn produces anything the output
-  // is itself the progress signal, so the notice retires — same rule as
-  // showMcpStartup deferring to hasCodexItems. Blank text does not count: a
-  // streaming turn opens with an empty block before the first token lands.
+  // is itself the progress signal, so both notices retire. Blank text does not
+  // count: a streaming turn opens with an empty block before the first token lands.
   const hasTurnOutput = message.content.some((block) =>
     block.type === 'text'
       ? block.text.trim().length > 0
@@ -191,6 +184,11 @@ export function DurationFooter({
         ? block.thinking.trim().length > 0
         : true,
   )
+  const hasStartingMcp = mcpServers.some((server) => server.status === 'starting')
+  const showMcpStartup = isStreaming && hasStartingMcp && !hasTurnOutput
+  const mcpReadyCount = showMcpStartup ? mcpServers.filter((s) => s.status === 'ready').length : 0
+  const failedMcp = mcpServers.filter((s) => s.status === 'failed')
+  const showMcpFailure = !isStreaming && failedMcp.length > 0
   const showSlashCommand = isStreaming && !!runningSlashCommand && !hasTurnOutput
   if (!showDuration && !hasTokens && !showCopy && !showTerminalReason && !showError && !showMcpStartup && !showMcpFailure && !showSlashCommand) return null
 

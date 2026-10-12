@@ -5,6 +5,7 @@ import type {
   RealtimeTimelineSegment,
 } from './agent-types'
 import { transcriptRow } from './transcript-rows'
+import { CODEX_AGENT_WAIT_TOOL, readableContent } from './codex-content'
 import type { RealtimeConversationTurn } from './realtime-transcript'
 
 export type RealtimeTurnActivityStatus = 'working' | 'completed' | 'needs-decision' | 'failed'
@@ -81,20 +82,21 @@ function turnStart(turn: RealtimeConversationTurn, order: TimelineOrder): number
   return orders.length > 0 ? Math.min(...orders) : null
 }
 
+const WORKFLOW_TOOLS = new Set(['Agent', CODEX_AGENT_WAIT_TOOL, 'SendMessage'])
+
 function activityKind(messages: readonly ChatMessage[]): RealtimeTurnActivityKind {
-  const items = messages.flatMap((message) => message.metadata?.codex?.items ?? [])
-  if (items.some((item) => item.type === 'collab_tool_call')) return 'workflow'
-  if (items.some((item) => item.type === 'command_execution')) return 'command'
-  if (items.some((item) => item.type === 'file_change')) return 'files'
-  if (items.some((item) => item.type === 'web_search')) return 'search'
+  const tools = new Set(messages.flatMap((message) => readableContent(message).flatMap(block => block.type === 'tool_use' ? [block.toolName] : [])))
+  if ([...tools].some(tool => WORKFLOW_TOOLS.has(tool))) return 'workflow'
+  if (tools.has('Bash')) return 'command'
+  if (tools.has('FileChange')) return 'files'
+  if (tools.has('WebSearch')) return 'search'
   return 'codex'
 }
 
 function latestPlan(messages: readonly ChatMessage[]): RealtimeTurnActivityPlan | null {
   const last = messages.at(-1)
-  const items = last?.metadata?.codex?.items ?? []
-  const plan = items.findLast((item) => item.type === 'plan')
-  if (!plan) return null
+  const plan = last && readableContent(last).findLast((block) => block.type === 'plan' && !block.parentToolUseId)
+  if (plan?.type !== 'plan') return null
   return { text: plan.text, approval: last?.metadata?.codex?.planApproval ?? null }
 }
 
@@ -102,8 +104,8 @@ function messageSummary(messages: readonly ChatMessage[]): string | null {
   const finalResponse = [...messages].reverse().map((message) => {
     const metadataText = message.metadata?.codex?.finalResponse?.trim()
     if (metadataText) return metadataText
-    return message.content
-      .filter((block): block is Extract<ChatMessage['content'][number], { type: 'text' }> => block.type === 'text')
+    return readableContent(message)
+      .filter((block): block is Extract<ChatMessage['content'][number], { type: 'text' }> => block.type === 'text' && !block.parentToolUseId)
       .map((block) => block.text.trim())
       .filter(Boolean)
       .join(' ')

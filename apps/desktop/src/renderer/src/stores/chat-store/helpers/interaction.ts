@@ -29,6 +29,7 @@ import {
 } from './store-helpers'
 import type { ChatStore, PerSessionState, SessionWriteTarget } from '../types'
 import { connectionIdForProjectKey } from '@/lib/session-list-ops'
+import { withCodexContent } from '@superone/shared/codex-content'
 import { patchSessionSettings, respondPermission, respondPlan, respondQuestion } from '@/lib/session-client'
 
 /** In-flight remote answer/dismiss keys: projectPath\0sessionId\0requestId */
@@ -205,16 +206,17 @@ function clearLocalPendingQuestion(
       const prevCodex = lastMsg.metadata.codex
       return {
         pendingQuestion: null,
+        // Written outside chat-core, so the read view is applied here like at ingress.
         messages: prev.messages.map((msg, i) =>
           i !== prev.messages.length - 1
             ? msg
-            : {
+            : withCodexContent({
                 ...msg,
                 metadata: {
                   ...msg.metadata,
                   codex: { ...prevCodex, items: [...prevCodex.items, codexQaItem] },
                 },
-              },
+              }),
         ),
       }
     })

@@ -275,7 +275,7 @@ export function getCodexPlanActionContext(
   const lastAssistantMessage = lastAssistantId
     ? session.messages.find((message) => message.id === lastAssistantId)
     : null
-  const hasPlan = !!lastAssistantMessage?.metadata?.codex?.items.some((item) => item.type === 'plan')
+  const hasPlan = !!lastAssistantMessage?.content.some((block) => block.type === 'plan' && !block.parentToolUseId)
   if (!hasPlan) return null
 
   const resolvedCodexSelection = resolveSessionCodexSelection(

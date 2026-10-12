@@ -2846,7 +2846,7 @@ describe('codex plan mode', () => {
                 id: 'assistant-1',
                 role: 'assistant',
                 status: 'complete',
-                content: [{ type: 'text', text: 'plan' }],
+                content: [{ type: 'plan', id: 'plan-1', text: '## Plan', parentToolUseId: null }],
                 createdAt: '',
                 providerId: 'codex',
                 metadata: {
@@ -2912,7 +2912,7 @@ describe('codex plan mode', () => {
                 id: 'assistant-1',
                 role: 'assistant',
                 status: 'complete',
-                content: [{ type: 'text', text: 'plan' }],
+                content: [{ type: 'plan', id: 'plan-1', text: '## Plan', parentToolUseId: null }],
                 createdAt: '',
                 providerId: 'codex',
                 metadata: {
@@ -2972,7 +2972,7 @@ describe('codex plan mode', () => {
                 id: 'assistant-1',
                 role: 'assistant',
                 status: 'complete',
-                content: [{ type: 'text', text: 'plan' }],
+                content: [{ type: 'plan', id: 'plan-1', text: '## Plan', parentToolUseId: null }],
                 createdAt: '',
                 providerId: 'codex',
                 metadata: {
@@ -3024,7 +3024,7 @@ describe('codex plan mode', () => {
                 id: 'assistant-1',
                 role: 'assistant',
                 status: 'complete',
-                content: [{ type: 'text', text: 'plan' }],
+                content: [{ type: 'plan', id: 'plan-1', text: '## Plan', parentToolUseId: null }],
                 createdAt: '',
                 providerId: 'codex',
                 metadata: {
@@ -3065,7 +3065,7 @@ describe('codex plan mode', () => {
                 id: 'assistant-1',
                 role: 'assistant',
                 status: 'complete',
-                content: [{ type: 'text', text: 'plan' }],
+                content: [{ type: 'plan', id: 'plan-1', text: '## Plan', parentToolUseId: null }],
                 createdAt: '',
                 providerId: 'codex',
                 metadata: {

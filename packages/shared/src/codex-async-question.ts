@@ -1,4 +1,5 @@
 import type { AskUserQuestionRequest, ChatMessage, CodexAgentMessageItem, CodexAsyncUserInputQuestion, ContentBlock } from './agent-types'
+import { readableContent } from './codex-content'
 
 export const codexAsyncAnswerId = (itemId: string): string => `codex_async_answer:${itemId}`
 
@@ -40,6 +41,16 @@ export function codexAsyncQuestionRequest(item: CodexAgentMessageItem): AskUserQ
   }
 }
 
+/**
+ * The async questions a turn asked: its own (not a subagent's) text blocks that
+ * carry them, in the item shape the decision queue and its wire protocol use.
+ */
+export function codexAsyncQuestionItems(message: Parameters<typeof readableContent>[0]): CodexAgentMessageItem[] {
+  return readableContent(message).flatMap(block => block.type === 'text' && block.id && !block.parentToolUseId && block.codexAsyncQuestions?.length
+    ? [{ id: block.id, type: 'agent_message' as const, text: block.text, delivery: 'async' as const, questions: block.codexAsyncQuestions }]
+    : [])
+}
+
 /** Transcript order survives restore; accepted replies alone remove requests from the queue. */
 export function pendingCodexAsyncQuestions(messages: readonly ChatMessage[]): PendingCodexAsyncQuestion[] {
   const answered = new Set(messages.filter(isCodexAsyncAnswer).map(message => message.id))
@@ -47,8 +58,8 @@ export function pendingCodexAsyncQuestions(messages: readonly ChatMessage[]): Pe
   const pending: PendingCodexAsyncQuestion[] = []
   for (const message of messages) {
     if (message.role !== 'assistant') continue
-    for (const item of message.metadata?.codex?.items ?? []) {
-      if (item.type !== 'agent_message' || !item.questions?.length || seen.has(item.id)) continue
+    for (const item of codexAsyncQuestionItems(message)) {
+      if (seen.has(item.id)) continue
       seen.add(item.id)
       if (!answered.has(codexAsyncAnswerId(item.id))) pending.push({ messageId: message.id, item, request: codexAsyncQuestionRequest(item) })
     }
@@ -70,8 +81,8 @@ export function codexAsyncAnswerQuestions(message: ChatMessage, messages: readon
   if (stored?.type === 'text') return stored.codexAsyncQuestions
   const itemId = message.id.slice('codex_async_answer:'.length)
   for (const source of messages) {
-    const item = source.metadata?.codex?.items.find(item => item.id === itemId)
-    if (item?.type === 'agent_message') return item.questions
+    const item = source.role === 'assistant' ? codexAsyncQuestionItems(source).find(item => item.id === itemId) : undefined
+    if (item) return item.questions
   }
   return undefined
 }

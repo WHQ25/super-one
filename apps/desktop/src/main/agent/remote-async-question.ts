@@ -1,5 +1,5 @@
 import type { Session } from '../session/types'
-import { codexAsyncAnswerId, codexAsyncReplyText, formatCodexAsyncQuestionReply } from '@superone/shared/codex-async-question'
+import { codexAsyncAnswerId, codexAsyncQuestionItems, codexAsyncReplyText, formatCodexAsyncQuestionReply } from '@superone/shared/codex-async-question'
 
 const pending = new WeakMap<Session, Map<string, Promise<string>>>()
 
@@ -7,8 +7,8 @@ const pending = new WeakMap<Session, Map<string, Promise<string>>>()
 export async function answerRemoteAsyncQuestion(session: Session | null | undefined, command: { messageId: string; itemId: string; answers: string[] }): Promise<string> {
   if (!session || session.snapshot.harnessId !== 'codex') throw new Error('No active Codex session')
   const message = session.snapshot.messages.find(message => message.id === command.messageId)
-  const item = message?.metadata?.codex?.items.find(item => item.id === command.itemId)
-  if (item?.type !== 'agent_message' || !item.questions?.length) throw new Error('Async question not found')
+  const item = message ? codexAsyncQuestionItems(message).find(item => item.id === command.itemId) : undefined
+  if (!item?.questions?.length) throw new Error('Async question not found')
   if (!Array.isArray(command.answers) || command.answers.length !== item.questions.length
     || command.answers.some(answer => typeof answer !== 'string' || !answer.trim())) throw new Error('Every question requires an answer')
   const replyId = codexAsyncAnswerId(item.id)

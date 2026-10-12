@@ -1,5 +1,5 @@
 import type { ChatMessage } from './agent-types'
-import { codexAsyncAnswerId, isCodexAsyncAnswer } from './codex-async-question'
+import { codexAsyncAnswerId, codexAsyncQuestionItems, isCodexAsyncAnswer } from './codex-async-question'
 import { isRealtimeDelegationMessage, isRealtimeVoiceMessage } from './realtime-transcript'
 
 function threadTurnId(message: ChatMessage): string | undefined {
@@ -110,12 +110,10 @@ function alignAsyncAnswers(
     for (const [index, message] of messages.entries()) {
       const turnId = threadTurnId(message)
       if (message.role !== 'assistant' || !turnId) continue
-      for (const item of message.metadata?.codex?.items ?? []) {
-        if (item.type === 'agent_message' && item.questions?.length) {
-          const answerId = codexAsyncAnswerId(item.id)
-          answerTurns.set(answerId, turnId)
-          if (messages === local) sourceIndexes.set(answerId, index)
-        }
+      for (const item of codexAsyncQuestionItems(message)) {
+        const answerId = codexAsyncAnswerId(item.id)
+        answerTurns.set(answerId, turnId)
+        if (messages === local) sourceIndexes.set(answerId, index)
       }
     }
   }

@@ -252,20 +252,33 @@ export function isLegacyCodexMessage(message: Pick<ChatMessage, 'metadata'>): bo
 
 const legacyContentCache = new WeakMap<CodexThreadItem, ContentBlock[]>()
 
+type ReadableMessage = Pick<ChatMessage, 'metadata'> & { content?: ContentBlock[]; status?: ChatMessage['status'] }
+
 /**
- * Read view of a legacy Codex message: content derived from its items, so it
- * renders and reads like every other turn. Items stay the stored truth; writers
- * keep updating them and call this again. A settled message seals its items
- * first, as the Codex view did. A turn whose items carry no reply keeps the
- * completion's final-response text, which has no block id.
+ * The content a reader sees. A legacy Codex message derives it from its items,
+ * which stay the stored truth; any other message reads what it stores. A
+ * settled message seals its items first, as the Codex view did, and a turn
+ * whose items carry no reply keeps the completion's final-response text, which
+ * has no block id. Main and CLI nodes keep the stored shape, so shared readers
+ * read through this rather than `message.content`.
  */
-export function withCodexContent<M extends ChatMessage>(message: M): M {
+export function readableContent(message: ReadableMessage): ContentBlock[] {
+  const stored = message.content ?? []
   const items = message.metadata?.codex?.items
-  if (!items?.length) return message
+  if (!items?.length) return stored
   const derived = codexItemsToContent(message.status === 'streaming' ? items : sealCodexItems(items), legacyContentCache)
   const answered = derived.some(block => (block.type === 'text' || block.type === 'plan') && !block.parentToolUseId)
-  const fallback = answered ? [] : message.content.filter(block => block.type === 'text' && block.id === undefined)
-  const content = fallback.length ? [...derived, ...fallback] : derived
+  const fallback = answered ? [] : stored.filter(block => block.type === 'text' && block.id === undefined)
+  return fallback.length ? [...derived, ...fallback] : derived
+}
+
+/**
+ * Read view of a legacy Codex message as a whole, applied where clients take
+ * messages in. Writers keep updating the items and call this again.
+ */
+export function withCodexContent<M extends ChatMessage>(message: M): M {
+  if (!isLegacyCodexMessage(message)) return message
+  const content = readableContent(message)
   const unchanged = content.length === message.content.length && content.every((block, index) => block === message.content[index])
   return unchanged ? message : { ...message, content }
 }

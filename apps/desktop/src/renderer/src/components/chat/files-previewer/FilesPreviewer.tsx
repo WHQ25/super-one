@@ -25,11 +25,11 @@ export interface FilesPreviewerProps {
  */
 const PREVIEWER_CARD_HEIGHT_CLASS = { fill: 'h-[480px] @lg:h-[640px]', fit: 'max-h-[480px] @lg:max-h-[640px]' }
 
-/** True when the click landed on a media element's native control bar or on a button the stage owns. */
+/** True when the click landed on a media player or on a button the stage owns. */
 export function isStageControlTarget(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null
   if (!el || typeof el.closest !== 'function') return false
-  return !!el.closest('[data-previewer-media], [data-previewer-control]')
+  return !!el.closest('[data-previewer-media], [data-previewer-control], [data-media-player-control]')
 }
 
 /**
@@ -151,6 +151,7 @@ export function FilesPreviewer({ payload, projectPath }: FilesPreviewerProps) {
           file={file}
           state={state}
           mode="card"
+          root={root}
           projectPath={projectPath}
           initialModelViewState={modelViewStates[file.absolutePath] ?? null}
           onUndecodable={markUndecodable}

@@ -176,7 +176,7 @@ function MediaControls({ media, state, root, fullscreen = false, extra, classNam
           </IconButton>
         </DropdownMenuTrigger>
         {/* Portaled into the player in fullscreen: only the fullscreen element's subtree paints. */}
-        <DropdownMenuContent align="end" side="top" container={fullscreen ? root?.current : undefined}>
+        <DropdownMenuContent align="end" side="top" container={fullscreen ? root?.current : undefined} data-media-player-control>
           <DropdownMenuLabel className="text-xs text-muted-foreground">{t('mediaPlayer.playbackSpeed')}</DropdownMenuLabel>
           <DropdownMenuRadioGroup
             value={String(state.rate)}
@@ -206,14 +206,21 @@ function MediaControls({ media, state, root, fullscreen = false, extra, classNam
 }
 
 /**
- * Chat video: centered in the column with the controls on a bar beneath it.
+ * Shared video player: centered with the controls on a bar beneath it.
  * Rendered with spans because `![…](clip.mp4)` lands inside a `<p>`.
  */
-export function MarkdownVideoPlayer({ className, style, controls: _controls, ...props }: ComponentProps<'video'>) {
+interface MarkdownVideoPlayerProps extends ComponentProps<'video'> {
+  /** Fit the video and control bar inside a file preview's bounded stage. */
+  fitToContainer?: boolean
+  allowFullscreen?: boolean
+}
+
+export function MarkdownVideoPlayer({ className, style, controls: _controls, fitToContainer = false, allowFullscreen = true, ...props }: MarkdownVideoPlayerProps) {
   const rootRef = useRef<HTMLSpanElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const playback = usePlayback(videoRef)
   const [fullscreen, setFullscreen] = useState(false)
+  const bounded = fitToContainer || fullscreen
 
   useEffect(() => {
     const sync = () => setFullscreen(document.fullscreenElement === rootRef.current)
@@ -225,9 +232,9 @@ export function MarkdownVideoPlayer({ className, style, controls: _controls, ...
     <span
       ref={rootRef}
       data-slot="markdown-video"
-      className={cn('my-3 flex w-full flex-col', fullscreen && 'my-0 h-full bg-background', className)}
+      className={cn('my-3 flex w-full flex-col', bounded && 'my-0 h-full min-h-0', fullscreen && 'bg-background', className)}
     >
-      <span className={cn('flex justify-center', fullscreen && 'min-h-0 flex-1 items-center bg-black')}>
+      <span className={cn('flex justify-center', bounded && 'min-h-0 flex-1 items-center', fullscreen && 'bg-black')}>
         <video
           ref={videoRef}
           preload="metadata"
@@ -235,21 +242,23 @@ export function MarkdownVideoPlayer({ className, style, controls: _controls, ...
           style={style}
           onClick={() => togglePlay(videoRef.current)}
           onDoubleClick={() => {
+            if (!allowFullscreen) return
             if (document.fullscreenElement) void document.exitFullscreen()
             else void rootRef.current?.requestFullscreen()
           }}
           className={cn(
             'block max-w-full cursor-pointer bg-black',
-            fullscreen ? 'size-full object-contain' : 'max-h-[32rem] rounded-lg',
+            bounded ? 'size-full object-contain' : 'max-h-[32rem]',
+            !fullscreen && 'rounded-lg',
           )}
         />
       </span>
       <MediaControls
         media={videoRef}
         state={playback}
-        root={rootRef}
+        root={allowFullscreen ? rootRef : undefined}
         fullscreen={fullscreen}
-        className={cn('mt-1.5 border-t border-border/60 pt-1.5', fullscreen && 'mt-0 px-3 py-2')}
+        className={cn('mt-1.5 shrink-0 border-t border-border/60 pt-1.5', fullscreen && 'mt-0 px-3 py-2')}
       />
     </span>
   )
@@ -322,12 +331,12 @@ function LyricsPanel({ lyrics, media, currentTime }: { lyrics: Lyrics; media: Re
 }
 
 interface MarkdownAudioPlayerProps extends ComponentProps<'audio'> {
-  /** The src as written in the markdown, for the file name and a sibling `.lrc`; defaults to `src`. */
+  /** The original source, for the file name and a sibling `.lrc`; defaults to `src`. */
   source?: string
 }
 
 /**
- * Chat audio: cover and title over the shared controls, with the file's lyrics
+ * Shared audio player: cover and title over the controls, with the file's lyrics
  * a toggle away. The file name stands in for a missing title.
  */
 export function MarkdownAudioPlayer({ className, style: _style, controls: _controls, source, ...props }: MarkdownAudioPlayerProps) {

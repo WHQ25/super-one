@@ -1,8 +1,9 @@
 /** @vitest-environment jsdom */
 
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { flushSync } from 'react-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { NativeWidgetPayload, PreviewerFile } from '@superone/shared/generative-ui/native-widgets'
 import { FilesPreviewer } from './FilesPreviewer'
 
@@ -34,6 +35,7 @@ const image: PreviewerFile = { path: 'docs/diagram.png', absolutePath: '/repo/do
 const text: PreviewerFile = { path: 'src/a.ts', absolutePath: '/repo/src/a.ts', name: 'a.ts', kind: 'text', size: 20, note: 'Entry point' }
 const missing: PreviewerFile = { path: 'gone.md', absolutePath: '/repo/gone.md', name: 'gone.md', kind: 'missing', note: 'Not yet written' }
 const clip: PreviewerFile = { path: 'demo.mp4', absolutePath: '/repo/demo.mp4', name: 'demo.mp4', kind: 'video', size: 30 }
+const audio: PreviewerFile = { path: 'memo.mp3', absolutePath: '/repo/memo.mp3', name: 'memo.mp3', kind: 'audio', size: 30 }
 const model: PreviewerFile = { path: 'asset.glb', absolutePath: '/repo/asset.glb', name: 'asset.glb', kind: 'model', size: 40 }
 
 function payload(files: PreviewerFile[]): NativeWidgetPayload {
@@ -44,11 +46,16 @@ const readProjectFile = vi.fn()
 const statPreviewFile = vi.fn()
 
 beforeEach(() => {
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 404 }))
+  vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue()
+  vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
   readProjectFile.mockReset().mockImplementation((_root: string, path: string) =>
     Promise.resolve({ path, content: `// contents of ${path}\n`, language: 'typescript' }))
   statPreviewFile.mockReset()
   Object.assign(window.app, { readProjectFile, statPreviewFile })
 })
+
+afterEach(() => vi.restoreAllMocks())
 
 const card = () => screen.getByTestId('files-previewer')
 const stage = () => screen.getByTestId('previewer-stage')
@@ -125,12 +132,46 @@ describe('files previewer card', () => {
 
   it('opens the fullscreen on a stage click but not on a media control bar', () => {
     render(<FilesPreviewer payload={payload([clip, image])} />)
-    // The video's native controls are the one interactive thing a card keeps.
+    // Playback stays interactive without opening the preview dialog.
     fireEvent.click(stage().querySelector('video')!)
     expect(screen.queryByTestId('previewer-fullscreen')).toBeNull()
 
     fireEvent.click(stage())
     expect(screen.getByTestId('previewer-fullscreen')).toBeInTheDocument()
+  })
+
+  it.each([clip, audio])('keeps $kind playback and seeking interactive in the card and fullscreen', (file) => {
+    render(<FilesPreviewer payload={payload([clip, audio])} />)
+    if (file.kind === 'audio') fireEvent.click(screen.getByLabelText('Next file'))
+
+    const inline = stage().querySelector<HTMLMediaElement>(file.kind)!
+    const controls = within(stage())
+    fireEvent.click(controls.getByRole('button', { name: 'Play' }))
+    expect(HTMLMediaElement.prototype.play).toHaveBeenCalledOnce()
+    expect(screen.queryByTestId('previewer-fullscreen')).toBeNull()
+    expect(inline).not.toHaveAttribute('controls')
+    Object.defineProperty(inline, 'duration', { value: 120, configurable: true })
+    fireEvent.loadedMetadata(inline)
+    const seek = controls.getByRole('slider', { name: 'Seek' })
+    fireEvent.change(seek, { target: { value: '45' } })
+    fireEvent.keyDown(seek, { key: 'ArrowRight' })
+    expect(inline.currentTime).toBe(45)
+    expect(card().dataset.index).toBe(file.kind === 'audio' ? '1' : '0')
+    expect(controls.queryByRole('button', { name: 'Full Screen' })).toBeNull()
+
+    fireEvent.click(screen.getByLabelText('Open fullscreen'))
+    const fullscreen = within(screen.getByTestId('previewer-fullscreen'))
+    expect(fullscreen.getByRole('button', { name: 'Play' })).toBeInTheDocument()
+    expect(HTMLMediaElement.prototype.pause).toHaveBeenCalled()
+  })
+
+  it('changes playback speed through the menu without opening the preview dialog', async () => {
+    const user = userEvent.setup()
+    render(<FilesPreviewer payload={payload([clip])} />)
+    await user.click(within(stage()).getByRole('button', { name: 'More Options' }))
+    await user.click(await screen.findByRole('menuitemradio', { name: '1.5×' }))
+    expect(stage().querySelector('video')!.playbackRate).toBe(1.5)
+    expect(screen.queryByTestId('previewer-fullscreen')).toBeNull()
   })
 
   it('shows the missing state and swaps the row in when a retry finds the file', async () => {

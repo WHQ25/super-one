@@ -11,6 +11,8 @@ import { absoluteFilePath } from '@/components/chat/file-chip-context-menu'
 import { McpAppOpenWithActions, McpAppOpenWithButton } from '@/components/mcp-apps/McpAppOpenWith'
 import { lastTouchedPane } from '@/stores/chat-store/session-scope'
 import { localFileUrlToPath, toLocalFileUrl, toMediaUrl } from '@/lib/path-utils'
+import { resolveMediaSrcForProject } from '@/lib/remote-media-url'
+import { MarkdownAudioPlayer, MarkdownVideoPlayer } from '@/components/chat/markdown-media-player'
 import type { ModelPreviewViewState } from './ModelPreview'
 
 /**
@@ -355,18 +357,17 @@ export function FilePreview({ filePath }: FilePreviewProps) {
               />
             ) : effectiveTab === 'preview' && isVideoFile ? (
               <div className="flex h-full items-center justify-center p-4">
-                <video
+                <MarkdownVideoPlayer
                   src={previewSrc(fileContent?.content, () => toMediaUrl(fullFilePath), toMediaUrl)}
-                  controls
                   preload="auto"
-                  className="max-h-full max-w-full"
+                  fitToContainer
                 />
               </div>
             ) : effectiveTab === 'preview' && isAudioFile ? (
               <div className="flex h-full items-center justify-center p-4">
-                <audio
+                <MarkdownAudioPlayer
                   src={previewSrc(fileContent?.content, () => toMediaUrl(fullFilePath), toMediaUrl)}
-                  controls
+                  source={resolveMediaSrcForProject(fullFilePath, fileRoot ?? '')}
                   preload="auto"
                 />
               </div>

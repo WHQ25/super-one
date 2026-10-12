@@ -4,6 +4,9 @@ import type { NativeWidgetPayload, PreviewerFile } from '@superone/shared/genera
 import { mockIpc } from '../../../../../../.storybook/mock-ipc'
 import { FilesPreviewer } from './FilesPreviewer'
 import boxUrl from '../../coding/__fixtures__/Box.glb?url'
+import sampleVideo from '../../../../../../../mobile/assets/preview/sample-clip.mp4?url'
+import songWithCover from '../__fixtures__/song-with-cover.mp3?url'
+import { mediaDataUrl } from '../__fixtures__/media-data-url'
 
 /**
  * Every state the card can show, with `window.app` answered from fixtures.
@@ -11,6 +14,7 @@ import boxUrl from '../../coding/__fixtures__/Box.glb?url'
  * are served by the `readProjectFile` mock keyed on the absolute path.
  */
 const ROOT = '/Users/dev/projects/super-one'
+mockIpc('app', 'getMediaServerPort', async () => 0)
 
 const diagramSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" width="640" height="400">
   <rect width="640" height="400" fill="#f4f1ea"/>
@@ -142,6 +146,29 @@ export const Notebook: Story = { args: { payload: payload([files.notebook]) } }
 /** The fixture is not a real clip, so this is also the decode-error state for media. */
 export const VideoUndecodable: Story = { args: { payload: payload([files.video]) } }
 export const Audio: Story = { args: { payload: payload([files.audio]) } }
+function MediaStory() {
+  const [media, setMedia] = useState<PreviewerFile[]>([])
+  useEffect(() => {
+    let cancelled = false
+    void Promise.all([
+      mediaDataUrl(sampleVideo, 'video/mp4'),
+      mediaDataUrl(songWithCover, 'audio/mpeg'),
+    ]).then(([video, audio]) => {
+      if (!cancelled) setMedia([
+        { ...files.video, absolutePath: video, note: 'Three-second sample clip with custom playback controls.' },
+        { ...files.audio, path: 'assets/song-with-cover.mp3', name: 'song-with-cover.mp3', absolutePath: audio, note: 'Embedded cover, title, artist and synced lyrics.' },
+      ])
+    })
+    return () => { cancelled = true }
+  }, [])
+  return media.length ? <FilesPreviewer payload={payload(media)} /> : null
+}
+
+/** Real video and tagged audio; controls stay interactive in the card and dialog. */
+export const MediaPlayers: Story = { render: () => <MediaStory /> }
+export const MediaPlayersNarrow: Story = {
+  render: () => <div style={{ width: 320, maxWidth: '100%', containerType: 'inline-size' }}><MediaStory /></div>,
+}
 function ModelStory() {
   const [dataUrl, setDataUrl] = useState('')
   useEffect(() => {

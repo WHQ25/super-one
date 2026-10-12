@@ -169,3 +169,33 @@ describe('FilePreview read failures', () => {
     expect(screen.getByRole('tab', { name: 'Preview' })).toHaveAttribute('data-state', 'active')
   })
 })
+
+describe('FilePreview media controls', () => {
+  beforeEach(() => {
+    useAppStore.setState({ currentFolder: '/proj' })
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 404 }))
+  })
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it.each(['video', 'audio'] as const)('plays and seeks %s with the shared controls', async (kind) => {
+    const filePath = kind === 'video' ? 'media/demo.mp4' : 'media/demo.mp3'
+    const src = `data:${kind}/${kind === 'video' ? 'mp4' : 'mpeg'};base64,AAAA`
+    stubFile({ language: kind, content: src, diff: '' })
+    const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue()
+    const { container } = render(<FilePreview filePath={filePath} />)
+    const button = await screen.findByRole('button', { name: 'Play' })
+    const media = container.querySelector(kind)!
+    expect(media).toHaveAttribute('src', src)
+    expect(media).not.toHaveAttribute('controls')
+    if (kind === 'audio') expect(screen.getByTitle('demo.mp3')).toHaveTextContent('demo.mp3')
+
+    fireEvent.click(button)
+    expect(play).toHaveBeenCalledOnce()
+    Object.defineProperty(media, 'duration', { value: 120, configurable: true })
+    fireEvent.loadedMetadata(media)
+    fireEvent.change(screen.getByRole('slider', { name: 'Seek' }), { target: { value: '45' } })
+    expect(media.currentTime).toBe(45)
+  })
+})

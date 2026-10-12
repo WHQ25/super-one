@@ -8,6 +8,8 @@ import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import type { PreviewerFile } from '@superone/shared/generative-ui/native-widgets'
 import { PdfPreview } from '@/components/chat/PdfPreview'
 import { CopyableMarkdown } from '@/components/chat/CopyableMarkdown'
+import { MarkdownAudioPlayer, MarkdownVideoPlayer } from '@/components/chat/markdown-media-player'
+import { resolveMediaSrcForProject } from '@/lib/remote-media-url'
 import { ImagePreview } from '@/components/coding/ImagePreview'
 import { NotebookPreview } from '@/components/coding/NotebookPreview'
 import { FileWithDiffView } from '@/components/coding/source-control/FileWithDiffView'
@@ -22,6 +24,7 @@ interface PreviewerStageProps {
   file: PreviewerFile
   state: PreviewerLoadState
   mode: PreviewerStageMode
+  root: string
   projectPath?: string | null
   initialModelViewState?: ModelPreviewViewState | null
   onModelViewStateChange?: (state: ModelPreviewViewState) => void
@@ -81,12 +84,11 @@ function StageError({ file, error, onRetry }: { file: PreviewerFile; error: Prev
 /**
  * One slide. In `card` mode the content is passive: text selection is off here
  * and the card intercepts clicks in the capture phase, so Markdown links and
- * copy buttons never fire and every click means "open". Media keep their
- * native control bar — play/seek works, and the card treats a click there as
- * not-a-click. `fullscreen` mode mounts the panel's full renderers with
- * everything on.
+ * copy buttons never fire and every click means "open". Media controls remain
+ * interactive and bypass the card's click capture. `fullscreen` mode mounts
+ * the panel's full renderers with everything on.
  */
-export function PreviewerStage({ file, state, mode, projectPath, initialModelViewState, onModelViewStateChange, onUndecodable, onRetry }: PreviewerStageProps) {
+export function PreviewerStage({ file, state, mode, root, projectPath, initialModelViewState, onModelViewStateChange, onUndecodable, onRetry }: PreviewerStageProps) {
   const { t } = useTranslation()
   const card = mode === 'card'
 
@@ -123,27 +125,25 @@ export function PreviewerStage({ file, state, mode, projectPath, initialModelVie
       )
     case 'video':
       return (
-        <video
-          src={state.url}
-          controls
-          preload="metadata"
-          onError={onUndecodable}
-          data-previewer-media
-          {...(card ? { controlsList: 'nodownload nofullscreen noremoteplayback', disablePictureInPicture: true } : {})}
-          className="max-h-full max-w-full"
-        />
+        <div data-previewer-media className="h-full w-full cursor-default p-2">
+          <MarkdownVideoPlayer
+            src={state.url}
+            onError={onUndecodable}
+            fitToContainer
+            allowFullscreen={!card}
+          />
+        </div>
       )
     case 'audio':
       return (
-        <audio
-          src={state.url}
-          controls
-          preload="metadata"
-          onError={onUndecodable}
-          data-previewer-media
-          {...(card ? { controlsList: 'nodownload' } : {})}
-          className="w-full max-w-md"
-        />
+        <div data-previewer-media className="flex h-full w-full cursor-default items-center justify-center p-2">
+          <MarkdownAudioPlayer
+            src={state.url}
+            source={file.absolutePath.startsWith('data:') ? file.name : resolveMediaSrcForProject(file.absolutePath, root)}
+            onError={onUndecodable}
+            className="my-0 max-h-full max-w-md"
+          />
+        </div>
       )
     case 'model':
       return (

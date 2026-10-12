@@ -26,7 +26,7 @@ interface PreviewerFullscreenProps {
 
 /**
  * Where every real interaction lives: the panel's full renderers (zoomable
- * image, every PDF page, selectable text, media with download), dots to jump
+ * image, every PDF page, selectable text, shared media players), dots to jump
  * between files, and the same header chip into the activity panel.
  */
 export function PreviewerFullscreen({ open, onClose, files, index, onIndexChange, root, projectPath, modelViewState, onModelViewStateChange, onFilesChange }: PreviewerFullscreenProps) {
@@ -49,7 +49,7 @@ export function PreviewerFullscreen({ open, onClose, files, index, onIndexChange
     if (!open || count < 2) return
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null
-      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable || target.closest?.('[data-media-player-control]'))) return
       if (e.key === 'ArrowLeft' && hasPrev) { e.preventDefault(); onIndexChange(index - 1) }
       else if (e.key === 'ArrowRight' && hasNext) { e.preventDefault(); onIndexChange(index + 1) }
     }
@@ -94,6 +94,7 @@ export function PreviewerFullscreen({ open, onClose, files, index, onIndexChange
               file={file}
               state={state}
               mode="fullscreen"
+              root={root}
               projectPath={projectPath}
               initialModelViewState={modelViewState}
               onModelViewStateChange={(state) => onModelViewStateChange?.(file, state)}

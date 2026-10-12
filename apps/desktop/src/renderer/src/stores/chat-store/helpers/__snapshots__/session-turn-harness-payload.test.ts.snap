@@ -1,0 +1,2534 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`createSession settings per harness > acp · local · chosen 1`] = `
+[
+  "local",
+  {
+    "harnessId": "acp",
+    "projectId": "local-project",
+    "selections": {
+      "acpAgentId": "grok-build",
+      "sessionId": "sid-1",
+    },
+    "settings": {
+      "apiProviderId": "acct-1",
+      "contextWindow": 200000,
+      "effort": "high",
+      "mode": "acp-mode",
+      "model": "picked-model",
+      "permissionMode": "acceptEdits",
+      "sandboxMode": "on",
+    },
+  },
+]
+`;
+
+exports[`createSession settings per harness > acp · local · defaults 1`] = `
+[
+  "local",
+  {
+    "harnessId": "acp",
+    "projectId": "local-project",
+    "selections": {
+      "sessionId": "sid-1",
+    },
+    "settings": {
+      "permissionMode": "default",
+      "sandboxMode": "auto",
+    },
+  },
+]
+`;
+
+exports[`createSession settings per harness > acp · node · chosen 1`] = `
+[
+  "env-1",
+  {
+    "harnessId": "acp",
+    "projectId": "node-project",
+    "settings": {
+      "apiProviderId": "acct-1",
+      "effort": "high",
+      "model": "picked-model",
+      "permissionMode": "acceptEdits",
+      "sandboxMode": "on",
+    },
+  },
+]
+`;
+
+exports[`createSession settings per harness > acp · node · defaults 1`] = `
+[
+  "env-1",
+  {
+    "harnessId": "acp",
+    "projectId": "node-project",
+    "settings": {
+      "permissionMode": "default",
+      "sandboxMode": "auto",
+    },
+  },
+]
+`;
+
+exports[`createSession settings per harness > claude · local · chosen 1`] = `
+[
+  "local",
+  {
+    "harnessId": "claude",
+    "projectId": "local-project",
+    "selections": {
+      "sessionId": "sid-1",
+    },
+    "settings": {
+      "apiProviderId": "acct-1",
+      "effort": "high",
+      "model": "picked-model",
+      "permissionMode": "acceptEdits",
+      "sandboxMode": "on",
+      "ultracode": true,
+    },
+  },
+]
+`;
+
+exports[`createSession settings per harness > claude · local · defaults 1`] = `
+[
+  "local",
+  {
+    "harnessId": "claude",
+    "projectId": "local-project",
+    "selections": {
+      "sessionId": "sid-1",
+    },
+    "settings": {
+      "permissionMode": "default",
+      "sandboxMode": "auto",
+      "ultracode": false,
+    },
+  },
+]
+`;
+
+exports[`createSession settings per harness > claude · node · chosen 1`] = `
+[
+  "env-1",
+  {
+    "harnessId": "claude",
+    "projectId": "node-project",
+    "settings": {
+      "apiProviderId": "acct-1",
+      "effort": "high",
+      "model": "picked-model",
+      "permissionMode": "acceptEdits",
+      "sandboxMode": "on",
+    },
+  },
+]
+`;
+
+exports[`createSession settings per harness > claude · node · defaults 1`] = `
+[
+  "env-1",
+  {
+    "harnessId": "claude",
+    "projectId": "node-project",
+    "settings": {
+      "permissionMode": "default",
+      "sandboxMode": "auto",
+    },
+  },
+]
+`;
+
+exports[`createSession settings per harness > codex · local · chosen 1`] = `
+[
+  "local",
+  {
+    "harnessId": "codex",
+    "projectId": "local-project",
+    "selections": {
+      "sessionId": "sid-1",
+    },
+    "settings": {
+      "apiProviderId": "acct-1",
+      "collaborationMode": "plan",
+      "effort": "xhigh",
+      "model": "gpt-picked",
+      "permissionMode": "acceptEdits",
+      "permissionPreset": "auto-review",
+      "sandboxMode": "on",
+      "serviceTier": "priority",
+    },
+  },
+]
+`;
+
+exports[`createSession settings per harness > codex · local · defaults 1`] = `
+[
+  "local",
+  {
+    "harnessId": "codex",
+    "projectId": "local-project",
+    "selections": {
+      "sessionId": "sid-1",
+    },
+    "settings": {
+      "collaborationMode": "default",
+      "effort": "medium",
+      "model": "gpt-catalog-default",
+      "permissionMode": "default",
+      "permissionPreset": "auto-review",
+      "sandboxMode": "auto",
+      "serviceTier": null,
+    },
+  },
+]
+`;
+
+exports[`createSession settings per harness > codex · node · chosen 1`] = `
+[
+  "env-1",
+  {
+    "harnessId": "codex",
+    "projectId": "node-project",
+    "settings": {
+      "apiProviderId": "acct-1",
+      "effort": "xhigh",
+      "model": "gpt-picked",
+      "permissionMode": "acceptEdits",
+      "sandboxMode": "on",
+    },
+  },
+]
+`;
+
+exports[`createSession settings per harness > codex · node · defaults 1`] = `
+[
+  "env-1",
+  {
+    "harnessId": "codex",
+    "projectId": "node-project",
+    "settings": {
+      "effort": "medium",
+      "model": "gpt-catalog-default",
+      "permissionMode": "default",
+      "sandboxMode": "auto",
+    },
+  },
+]
+`;
+
+exports[`createSession settings per harness > cursor · local · chosen 1`] = `
+[
+  "local",
+  {
+    "harnessId": "cursor",
+    "projectId": "local-project",
+    "selections": {
+      "sessionId": "sid-1",
+    },
+    "settings": {
+      "apiProviderId": "acct-1",
+      "effort": "high",
+      "model": "picked-model",
+      "permissionMode": "acceptEdits",
+      "sandboxMode": "on",
+    },
+  },
+]
+`;
+
+exports[`createSession settings per harness > cursor · local · defaults 1`] = `
+[
+  "local",
+  {
+    "harnessId": "cursor",
+    "projectId": "local-project",
+    "selections": {
+      "sessionId": "sid-1",
+    },
+    "settings": {
+      "permissionMode": "default",
+      "sandboxMode": "auto",
+    },
+  },
+]
+`;
+
+exports[`createSession settings per harness > cursor · node · chosen 1`] = `
+[
+  "env-1",
+  {
+    "harnessId": "cursor",
+    "projectId": "node-project",
+    "settings": {
+      "apiProviderId": "acct-1",
+      "effort": "high",
+      "model": "picked-model",
+      "permissionMode": "acceptEdits",
+      "sandboxMode": "on",
+    },
+  },
+]
+`;
+
+exports[`createSession settings per harness > cursor · node · defaults 1`] = `
+[
+  "env-1",
+  {
+    "harnessId": "cursor",
+    "projectId": "node-project",
+    "settings": {
+      "permissionMode": "default",
+      "sandboxMode": "auto",
+    },
+  },
+]
+`;
+
+exports[`createSession settings per harness > dsh · local · chosen 1`] = `
+[
+  "local",
+  {
+    "harnessId": "dsh",
+    "projectId": "local-project",
+    "selections": {
+      "sessionId": "sid-1",
+    },
+    "settings": {
+      "agentPreset": "workspace-write",
+      "apiProviderId": "acct-1",
+      "effort": "high",
+      "model": "picked-model",
+      "permissionMode": "acceptEdits",
+      "sandboxMode": "on",
+    },
+  },
+]
+`;
+
+exports[`createSession settings per harness > dsh · local · defaults 1`] = `
+[
+  "local",
+  {
+    "harnessId": "dsh",
+    "projectId": "local-project",
+    "selections": {
+      "sessionId": "sid-1",
+    },
+    "settings": {
+      "permissionMode": "default",
+      "sandboxMode": "auto",
+    },
+  },
+]
+`;
+
+exports[`createSession settings per harness > dsh · node · chosen 1`] = `
+[
+  "env-1",
+  {
+    "harnessId": "dsh",
+    "projectId": "node-project",
+    "settings": {
+      "apiProviderId": "acct-1",
+      "effort": "high",
+      "model": "picked-model",
+      "permissionMode": "acceptEdits",
+      "sandboxMode": "on",
+    },
+  },
+]
+`;
+
+exports[`createSession settings per harness > dsh · node · defaults 1`] = `
+[
+  "env-1",
+  {
+    "harnessId": "dsh",
+    "projectId": "node-project",
+    "settings": {
+      "permissionMode": "default",
+      "sandboxMode": "auto",
+    },
+  },
+]
+`;
+
+exports[`createSession settings per harness > opencode · local · chosen 1`] = `
+[
+  "local",
+  {
+    "harnessId": "opencode",
+    "projectId": "local-project",
+    "selections": {
+      "sessionId": "sid-1",
+    },
+    "settings": {
+      "agent": "build",
+      "apiProviderId": "acct-1",
+      "effort": "high",
+      "model": "picked-model",
+      "permissionMode": "acceptEdits",
+      "sandboxMode": "on",
+    },
+  },
+]
+`;
+
+exports[`createSession settings per harness > opencode · local · defaults 1`] = `
+[
+  "local",
+  {
+    "harnessId": "opencode",
+    "projectId": "local-project",
+    "selections": {
+      "sessionId": "sid-1",
+    },
+    "settings": {
+      "agent": null,
+      "permissionMode": "default",
+      "sandboxMode": "auto",
+    },
+  },
+]
+`;
+
+exports[`createSession settings per harness > opencode · node · chosen 1`] = `
+[
+  "env-1",
+  {
+    "harnessId": "opencode",
+    "projectId": "node-project",
+    "settings": {
+      "apiProviderId": "acct-1",
+      "effort": "high",
+      "model": "picked-model",
+      "permissionMode": "acceptEdits",
+      "sandboxMode": "on",
+    },
+  },
+]
+`;
+
+exports[`createSession settings per harness > opencode · node · defaults 1`] = `
+[
+  "env-1",
+  {
+    "harnessId": "opencode",
+    "projectId": "node-project",
+    "settings": {
+      "permissionMode": "default",
+      "sandboxMode": "auto",
+    },
+  },
+]
+`;
+
+exports[`sessionTurnRequest payload per harness > acp · local · chosen · first 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "effort": "high",
+  "model": "picked-model",
+  "permissionMode": "acceptEdits",
+  "projectPath": "/proj",
+  "providerId": "acp",
+  "sandboxMode": "on",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > acp · local · chosen · next 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "effort": "high",
+  "model": "picked-model",
+  "projectPath": "/proj",
+  "providerId": "acp",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > acp · local · chosen · queued 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "effort": "high",
+  "model": "picked-model",
+  "priority": "next",
+  "projectPath": "/proj",
+  "providerId": "acp",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > acp · local · chosen · queued form 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "effort": "high",
+  "inputRequest": {
+    "requestId": "form-1",
+    "values": {
+      "note": "x",
+    },
+  },
+  "model": "picked-model",
+  "priority": "next",
+  "projectPath": "/proj",
+  "providerId": "acp",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > acp · local · chosen · review 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "effort": "high",
+  "model": "picked-model",
+  "projectPath": "/proj",
+  "providerId": "acp",
+  "reviewTarget": {
+    "type": "uncommittedChanges",
+  },
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > acp · local · defaults · first 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "permissionMode": "default",
+  "projectPath": "/proj",
+  "providerId": "acp",
+  "sandboxMode": "auto",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > acp · local · defaults · next 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "projectPath": "/proj",
+  "providerId": "acp",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > acp · local · defaults · queued 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "priority": "next",
+  "projectPath": "/proj",
+  "providerId": "acp",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > acp · local · defaults · queued form 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "inputRequest": {
+    "requestId": "form-1",
+    "values": {
+      "note": "x",
+    },
+  },
+  "priority": "next",
+  "projectPath": "/proj",
+  "providerId": "acp",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > acp · local · defaults · review 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "projectPath": "/proj",
+  "providerId": "acp",
+  "reviewTarget": {
+    "type": "uncommittedChanges",
+  },
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > acp · node · chosen · first 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "effort": "high",
+  "model": "picked-model",
+  "permissionMode": "acceptEdits",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "acp",
+  "sandboxMode": "on",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > acp · node · chosen · next 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "effort": "high",
+  "model": "picked-model",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "acp",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > acp · node · chosen · queued 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "effort": "high",
+  "model": "picked-model",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "acp",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > acp · node · chosen · queued form 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "effort": "high",
+  "model": "picked-model",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "acp",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > acp · node · chosen · review 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "effort": "high",
+  "model": "picked-model",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "acp",
+  "reviewTarget": {
+    "type": "uncommittedChanges",
+  },
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > acp · node · defaults · first 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "permissionMode": "default",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "acp",
+  "sandboxMode": "auto",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > acp · node · defaults · next 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "acp",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > acp · node · defaults · queued 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "acp",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > acp · node · defaults · queued form 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "acp",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > acp · node · defaults · review 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "acp",
+  "reviewTarget": {
+    "type": "uncommittedChanges",
+  },
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > claude · local · chosen · first 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "disabledSkills": [
+    "skill-b",
+  ],
+  "effort": "high",
+  "enabledSkills": [
+    "skill-a",
+  ],
+  "model": "picked-model",
+  "permissionMode": "acceptEdits",
+  "projectPath": "/proj",
+  "providerId": "claude",
+  "sandboxMode": "on",
+  "sessionId": "sid-1",
+  "text": "hi",
+  "ultracode": true,
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > claude · local · chosen · next 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "disabledSkills": [
+    "skill-b",
+  ],
+  "effort": "high",
+  "enabledSkills": [
+    "skill-a",
+  ],
+  "model": "picked-model",
+  "projectPath": "/proj",
+  "providerId": "claude",
+  "sessionId": "sid-1",
+  "text": "hi",
+  "ultracode": true,
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > claude · local · chosen · queued 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "disabledSkills": [
+    "skill-b",
+  ],
+  "effort": "high",
+  "enabledSkills": [
+    "skill-a",
+  ],
+  "model": "picked-model",
+  "priority": "next",
+  "projectPath": "/proj",
+  "providerId": "claude",
+  "sessionId": "sid-1",
+  "text": "hi",
+  "ultracode": true,
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > claude · local · chosen · queued form 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "disabledSkills": [
+    "skill-b",
+  ],
+  "effort": "high",
+  "enabledSkills": [
+    "skill-a",
+  ],
+  "inputRequest": {
+    "requestId": "form-1",
+    "values": {
+      "note": "x",
+    },
+  },
+  "model": "picked-model",
+  "priority": "next",
+  "projectPath": "/proj",
+  "providerId": "claude",
+  "sessionId": "sid-1",
+  "text": "hi",
+  "ultracode": true,
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > claude · local · chosen · review 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "disabledSkills": [
+    "skill-b",
+  ],
+  "effort": "high",
+  "enabledSkills": [
+    "skill-a",
+  ],
+  "model": "picked-model",
+  "projectPath": "/proj",
+  "providerId": "claude",
+  "reviewTarget": {
+    "type": "uncommittedChanges",
+  },
+  "sessionId": "sid-1",
+  "text": "hi",
+  "ultracode": true,
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > claude · local · defaults · first 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "disabledSkills": [
+    "skill-b",
+  ],
+  "enabledSkills": [
+    "skill-a",
+  ],
+  "permissionMode": "default",
+  "projectPath": "/proj",
+  "providerId": "claude",
+  "sandboxMode": "auto",
+  "sessionId": "sid-1",
+  "text": "hi",
+  "ultracode": false,
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > claude · local · defaults · next 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "disabledSkills": [
+    "skill-b",
+  ],
+  "enabledSkills": [
+    "skill-a",
+  ],
+  "projectPath": "/proj",
+  "providerId": "claude",
+  "sessionId": "sid-1",
+  "text": "hi",
+  "ultracode": false,
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > claude · local · defaults · queued 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "disabledSkills": [
+    "skill-b",
+  ],
+  "enabledSkills": [
+    "skill-a",
+  ],
+  "priority": "next",
+  "projectPath": "/proj",
+  "providerId": "claude",
+  "sessionId": "sid-1",
+  "text": "hi",
+  "ultracode": false,
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > claude · local · defaults · queued form 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "disabledSkills": [
+    "skill-b",
+  ],
+  "enabledSkills": [
+    "skill-a",
+  ],
+  "inputRequest": {
+    "requestId": "form-1",
+    "values": {
+      "note": "x",
+    },
+  },
+  "priority": "next",
+  "projectPath": "/proj",
+  "providerId": "claude",
+  "sessionId": "sid-1",
+  "text": "hi",
+  "ultracode": false,
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > claude · local · defaults · review 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "disabledSkills": [
+    "skill-b",
+  ],
+  "enabledSkills": [
+    "skill-a",
+  ],
+  "projectPath": "/proj",
+  "providerId": "claude",
+  "reviewTarget": {
+    "type": "uncommittedChanges",
+  },
+  "sessionId": "sid-1",
+  "text": "hi",
+  "ultracode": false,
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > claude · node · chosen · first 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "disabledSkills": [
+    "skill-b",
+  ],
+  "effort": "high",
+  "enabledSkills": [
+    "skill-a",
+  ],
+  "model": "picked-model",
+  "permissionMode": "acceptEdits",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "claude",
+  "sandboxMode": "on",
+  "sessionId": "sid-1",
+  "text": "hi",
+  "ultracode": true,
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > claude · node · chosen · next 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "disabledSkills": [
+    "skill-b",
+  ],
+  "effort": "high",
+  "enabledSkills": [
+    "skill-a",
+  ],
+  "model": "picked-model",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "claude",
+  "sessionId": "sid-1",
+  "text": "hi",
+  "ultracode": true,
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > claude · node · chosen · queued 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "disabledSkills": [
+    "skill-b",
+  ],
+  "effort": "high",
+  "enabledSkills": [
+    "skill-a",
+  ],
+  "model": "picked-model",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "claude",
+  "sessionId": "sid-1",
+  "text": "hi",
+  "ultracode": true,
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > claude · node · chosen · queued form 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "disabledSkills": [
+    "skill-b",
+  ],
+  "effort": "high",
+  "enabledSkills": [
+    "skill-a",
+  ],
+  "model": "picked-model",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "claude",
+  "sessionId": "sid-1",
+  "text": "hi",
+  "ultracode": true,
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > claude · node · chosen · review 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "disabledSkills": [
+    "skill-b",
+  ],
+  "effort": "high",
+  "enabledSkills": [
+    "skill-a",
+  ],
+  "model": "picked-model",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "claude",
+  "reviewTarget": {
+    "type": "uncommittedChanges",
+  },
+  "sessionId": "sid-1",
+  "text": "hi",
+  "ultracode": true,
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > claude · node · defaults · first 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "disabledSkills": [
+    "skill-b",
+  ],
+  "enabledSkills": [
+    "skill-a",
+  ],
+  "permissionMode": "default",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "claude",
+  "sandboxMode": "auto",
+  "sessionId": "sid-1",
+  "text": "hi",
+  "ultracode": false,
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > claude · node · defaults · next 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "disabledSkills": [
+    "skill-b",
+  ],
+  "enabledSkills": [
+    "skill-a",
+  ],
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "claude",
+  "sessionId": "sid-1",
+  "text": "hi",
+  "ultracode": false,
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > claude · node · defaults · queued 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "disabledSkills": [
+    "skill-b",
+  ],
+  "enabledSkills": [
+    "skill-a",
+  ],
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "claude",
+  "sessionId": "sid-1",
+  "text": "hi",
+  "ultracode": false,
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > claude · node · defaults · queued form 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "disabledSkills": [
+    "skill-b",
+  ],
+  "enabledSkills": [
+    "skill-a",
+  ],
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "claude",
+  "sessionId": "sid-1",
+  "text": "hi",
+  "ultracode": false,
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > claude · node · defaults · review 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "disabledSkills": [
+    "skill-b",
+  ],
+  "enabledSkills": [
+    "skill-a",
+  ],
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "claude",
+  "reviewTarget": {
+    "type": "uncommittedChanges",
+  },
+  "sessionId": "sid-1",
+  "text": "hi",
+  "ultracode": false,
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > codex activation replay keeps the earlier choices and sends the live thread id 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "collaborationMode": "plan",
+  "effort": "xhigh",
+  "model": "gpt-picked",
+  "permissionPreset": "auto-review",
+  "projectPath": "/proj",
+  "providerId": "codex",
+  "serviceTier": "priority",
+  "sessionId": "sid-1",
+  "text": "hi",
+  "threadId": "thread-2",
+  "turnKind": "run",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > codex · local · chosen · first 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "collaborationMode": "plan",
+  "effort": "xhigh",
+  "model": "gpt-picked",
+  "permissionMode": "acceptEdits",
+  "permissionPreset": "auto-review",
+  "projectPath": "/proj",
+  "providerId": "codex",
+  "sandboxMode": "on",
+  "serviceTier": "priority",
+  "sessionId": "sid-1",
+  "text": "hi",
+  "threadId": "thread-1",
+  "turnKind": "run",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > codex · local · chosen · next 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "collaborationMode": "plan",
+  "effort": "xhigh",
+  "model": "gpt-picked",
+  "permissionPreset": "auto-review",
+  "projectPath": "/proj",
+  "providerId": "codex",
+  "serviceTier": "priority",
+  "sessionId": "sid-1",
+  "text": "hi",
+  "threadId": "thread-1",
+  "turnKind": "run",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > codex · local · chosen · queued 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "collaborationMode": "plan",
+  "effort": "xhigh",
+  "model": "gpt-picked",
+  "permissionPreset": "auto-review",
+  "priority": "next",
+  "projectPath": "/proj",
+  "providerId": "codex",
+  "serviceTier": "priority",
+  "sessionId": "sid-1",
+  "text": "hi",
+  "threadId": "thread-1",
+  "turnKind": "run",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > codex · local · chosen · queued form 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "collaborationMode": "plan",
+  "effort": "xhigh",
+  "inputRequest": {
+    "requestId": "form-1",
+    "values": {
+      "note": "x",
+    },
+  },
+  "model": "gpt-picked",
+  "permissionPreset": "auto-review",
+  "priority": "next",
+  "projectPath": "/proj",
+  "providerId": "codex",
+  "serviceTier": "priority",
+  "sessionId": "sid-1",
+  "text": "hi",
+  "threadId": "thread-1",
+  "turnKind": "run",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > codex · local · chosen · review 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "collaborationMode": "plan",
+  "effort": "xhigh",
+  "model": "gpt-picked",
+  "permissionPreset": "auto-review",
+  "projectPath": "/proj",
+  "providerId": "codex",
+  "reviewTarget": {
+    "type": "uncommittedChanges",
+  },
+  "serviceTier": "priority",
+  "sessionId": "sid-1",
+  "text": "hi",
+  "threadId": "thread-1",
+  "turnKind": "review",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > codex · local · defaults · first 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "collaborationMode": "default",
+  "effort": "medium",
+  "model": "gpt-catalog-default",
+  "permissionMode": "default",
+  "permissionPreset": "auto-review",
+  "projectPath": "/proj",
+  "providerId": "codex",
+  "sandboxMode": "auto",
+  "serviceTier": null,
+  "sessionId": "sid-1",
+  "text": "hi",
+  "turnKind": "run",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > codex · local · defaults · next 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "collaborationMode": "default",
+  "effort": "medium",
+  "model": "gpt-catalog-default",
+  "permissionPreset": "auto-review",
+  "projectPath": "/proj",
+  "providerId": "codex",
+  "serviceTier": null,
+  "sessionId": "sid-1",
+  "text": "hi",
+  "turnKind": "run",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > codex · local · defaults · queued 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "collaborationMode": "default",
+  "effort": "medium",
+  "model": "gpt-catalog-default",
+  "permissionPreset": "auto-review",
+  "priority": "next",
+  "projectPath": "/proj",
+  "providerId": "codex",
+  "serviceTier": null,
+  "sessionId": "sid-1",
+  "text": "hi",
+  "turnKind": "run",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > codex · local · defaults · queued form 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "collaborationMode": "default",
+  "effort": "medium",
+  "inputRequest": {
+    "requestId": "form-1",
+    "values": {
+      "note": "x",
+    },
+  },
+  "model": "gpt-catalog-default",
+  "permissionPreset": "auto-review",
+  "priority": "next",
+  "projectPath": "/proj",
+  "providerId": "codex",
+  "serviceTier": null,
+  "sessionId": "sid-1",
+  "text": "hi",
+  "turnKind": "run",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > codex · local · defaults · review 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "collaborationMode": "default",
+  "effort": "medium",
+  "model": "gpt-catalog-default",
+  "permissionPreset": "auto-review",
+  "projectPath": "/proj",
+  "providerId": "codex",
+  "reviewTarget": {
+    "type": "uncommittedChanges",
+  },
+  "serviceTier": null,
+  "sessionId": "sid-1",
+  "text": "hi",
+  "turnKind": "review",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > codex · node · chosen · first 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "collaborationMode": "plan",
+  "effort": "xhigh",
+  "model": "gpt-picked",
+  "permissionMode": "acceptEdits",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "codex",
+  "sandboxMode": "on",
+  "sessionId": "sid-1",
+  "text": "hi",
+  "turnKind": "run",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > codex · node · chosen · next 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "collaborationMode": "plan",
+  "effort": "xhigh",
+  "model": "gpt-picked",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "codex",
+  "sessionId": "sid-1",
+  "text": "hi",
+  "turnKind": "run",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > codex · node · chosen · queued 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "collaborationMode": "plan",
+  "effort": "xhigh",
+  "model": "gpt-picked",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "codex",
+  "sessionId": "sid-1",
+  "text": "hi",
+  "turnKind": "run",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > codex · node · chosen · queued form 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "collaborationMode": "plan",
+  "effort": "xhigh",
+  "model": "gpt-picked",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "codex",
+  "sessionId": "sid-1",
+  "text": "hi",
+  "turnKind": "run",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > codex · node · chosen · review 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "collaborationMode": "plan",
+  "effort": "xhigh",
+  "model": "gpt-picked",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "codex",
+  "reviewTarget": {
+    "type": "uncommittedChanges",
+  },
+  "sessionId": "sid-1",
+  "text": "hi",
+  "turnKind": "review",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > codex · node · defaults · first 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "collaborationMode": "default",
+  "effort": "medium",
+  "model": "gpt-catalog-default",
+  "permissionMode": "default",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "codex",
+  "sandboxMode": "auto",
+  "sessionId": "sid-1",
+  "text": "hi",
+  "turnKind": "run",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > codex · node · defaults · next 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "collaborationMode": "default",
+  "effort": "medium",
+  "model": "gpt-catalog-default",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "codex",
+  "sessionId": "sid-1",
+  "text": "hi",
+  "turnKind": "run",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > codex · node · defaults · queued 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "collaborationMode": "default",
+  "effort": "medium",
+  "model": "gpt-catalog-default",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "codex",
+  "sessionId": "sid-1",
+  "text": "hi",
+  "turnKind": "run",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > codex · node · defaults · queued form 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "collaborationMode": "default",
+  "effort": "medium",
+  "model": "gpt-catalog-default",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "codex",
+  "sessionId": "sid-1",
+  "text": "hi",
+  "turnKind": "run",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > codex · node · defaults · review 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "collaborationMode": "default",
+  "effort": "medium",
+  "model": "gpt-catalog-default",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "codex",
+  "reviewTarget": {
+    "type": "uncommittedChanges",
+  },
+  "sessionId": "sid-1",
+  "text": "hi",
+  "turnKind": "review",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > cursor · local · chosen · first 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "effort": "high",
+  "model": "picked-model",
+  "modelParams": {
+    "thinking": "on",
+  },
+  "permissionMode": "acceptEdits",
+  "projectPath": "/proj",
+  "providerId": "cursor",
+  "sandboxMode": "on",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > cursor · local · chosen · next 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "effort": "high",
+  "model": "picked-model",
+  "modelParams": {
+    "thinking": "on",
+  },
+  "projectPath": "/proj",
+  "providerId": "cursor",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > cursor · local · chosen · queued 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "effort": "high",
+  "model": "picked-model",
+  "modelParams": {
+    "thinking": "on",
+  },
+  "priority": "next",
+  "projectPath": "/proj",
+  "providerId": "cursor",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > cursor · local · chosen · queued form 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "effort": "high",
+  "inputRequest": {
+    "requestId": "form-1",
+    "values": {
+      "note": "x",
+    },
+  },
+  "model": "picked-model",
+  "modelParams": {
+    "thinking": "on",
+  },
+  "priority": "next",
+  "projectPath": "/proj",
+  "providerId": "cursor",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > cursor · local · chosen · review 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "effort": "high",
+  "model": "picked-model",
+  "modelParams": {
+    "thinking": "on",
+  },
+  "projectPath": "/proj",
+  "providerId": "cursor",
+  "reviewTarget": {
+    "type": "uncommittedChanges",
+  },
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > cursor · local · defaults · first 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "modelParams": {},
+  "permissionMode": "default",
+  "projectPath": "/proj",
+  "providerId": "cursor",
+  "sandboxMode": "auto",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > cursor · local · defaults · next 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "modelParams": {},
+  "projectPath": "/proj",
+  "providerId": "cursor",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > cursor · local · defaults · queued 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "modelParams": {},
+  "priority": "next",
+  "projectPath": "/proj",
+  "providerId": "cursor",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > cursor · local · defaults · queued form 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "inputRequest": {
+    "requestId": "form-1",
+    "values": {
+      "note": "x",
+    },
+  },
+  "modelParams": {},
+  "priority": "next",
+  "projectPath": "/proj",
+  "providerId": "cursor",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > cursor · local · defaults · review 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "modelParams": {},
+  "projectPath": "/proj",
+  "providerId": "cursor",
+  "reviewTarget": {
+    "type": "uncommittedChanges",
+  },
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > cursor · node · chosen · first 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "effort": "high",
+  "model": "picked-model",
+  "permissionMode": "acceptEdits",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "cursor",
+  "sandboxMode": "on",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > cursor · node · chosen · next 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "effort": "high",
+  "model": "picked-model",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "cursor",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > cursor · node · chosen · queued 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "effort": "high",
+  "model": "picked-model",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "cursor",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > cursor · node · chosen · queued form 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "effort": "high",
+  "model": "picked-model",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "cursor",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > cursor · node · chosen · review 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "effort": "high",
+  "model": "picked-model",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "cursor",
+  "reviewTarget": {
+    "type": "uncommittedChanges",
+  },
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > cursor · node · defaults · first 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "permissionMode": "default",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "cursor",
+  "sandboxMode": "auto",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > cursor · node · defaults · next 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "cursor",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > cursor · node · defaults · queued 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "cursor",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > cursor · node · defaults · queued form 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "cursor",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > cursor · node · defaults · review 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "cursor",
+  "reviewTarget": {
+    "type": "uncommittedChanges",
+  },
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > dsh · local · chosen · first 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "effort": "high",
+  "model": "picked-model",
+  "permissionMode": "acceptEdits",
+  "projectPath": "/proj",
+  "providerId": "dsh",
+  "sandboxMode": "on",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > dsh · local · chosen · next 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "effort": "high",
+  "model": "picked-model",
+  "projectPath": "/proj",
+  "providerId": "dsh",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > dsh · local · chosen · queued 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "effort": "high",
+  "model": "picked-model",
+  "priority": "next",
+  "projectPath": "/proj",
+  "providerId": "dsh",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > dsh · local · chosen · queued form 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "effort": "high",
+  "inputRequest": {
+    "requestId": "form-1",
+    "values": {
+      "note": "x",
+    },
+  },
+  "model": "picked-model",
+  "priority": "next",
+  "projectPath": "/proj",
+  "providerId": "dsh",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > dsh · local · chosen · review 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "effort": "high",
+  "model": "picked-model",
+  "projectPath": "/proj",
+  "providerId": "dsh",
+  "reviewTarget": {
+    "type": "uncommittedChanges",
+  },
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > dsh · local · defaults · first 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "permissionMode": "default",
+  "projectPath": "/proj",
+  "providerId": "dsh",
+  "sandboxMode": "auto",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > dsh · local · defaults · next 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "projectPath": "/proj",
+  "providerId": "dsh",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > dsh · local · defaults · queued 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "priority": "next",
+  "projectPath": "/proj",
+  "providerId": "dsh",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > dsh · local · defaults · queued form 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "inputRequest": {
+    "requestId": "form-1",
+    "values": {
+      "note": "x",
+    },
+  },
+  "priority": "next",
+  "projectPath": "/proj",
+  "providerId": "dsh",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > dsh · local · defaults · review 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "projectPath": "/proj",
+  "providerId": "dsh",
+  "reviewTarget": {
+    "type": "uncommittedChanges",
+  },
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > dsh · node · chosen · first 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "effort": "high",
+  "model": "picked-model",
+  "permissionMode": "acceptEdits",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "dsh",
+  "sandboxMode": "on",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > dsh · node · chosen · next 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "effort": "high",
+  "model": "picked-model",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "dsh",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > dsh · node · chosen · queued 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "effort": "high",
+  "model": "picked-model",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "dsh",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > dsh · node · chosen · queued form 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "effort": "high",
+  "model": "picked-model",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "dsh",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > dsh · node · chosen · review 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "effort": "high",
+  "model": "picked-model",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "dsh",
+  "reviewTarget": {
+    "type": "uncommittedChanges",
+  },
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > dsh · node · defaults · first 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "permissionMode": "default",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "dsh",
+  "sandboxMode": "auto",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > dsh · node · defaults · next 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "dsh",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > dsh · node · defaults · queued 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "dsh",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > dsh · node · defaults · queued form 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "dsh",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > dsh · node · defaults · review 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "dsh",
+  "reviewTarget": {
+    "type": "uncommittedChanges",
+  },
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > opencode · local · chosen · first 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "agent": "build",
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "effort": "high",
+  "model": "picked-model",
+  "permissionMode": "acceptEdits",
+  "projectPath": "/proj",
+  "providerId": "opencode",
+  "sandboxMode": "on",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > opencode · local · chosen · next 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "agent": "build",
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "effort": "high",
+  "model": "picked-model",
+  "projectPath": "/proj",
+  "providerId": "opencode",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > opencode · local · chosen · queued 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "agent": "build",
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "effort": "high",
+  "model": "picked-model",
+  "priority": "next",
+  "projectPath": "/proj",
+  "providerId": "opencode",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > opencode · local · chosen · queued form 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "agent": "build",
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "effort": "high",
+  "inputRequest": {
+    "requestId": "form-1",
+    "values": {
+      "note": "x",
+    },
+  },
+  "model": "picked-model",
+  "priority": "next",
+  "projectPath": "/proj",
+  "providerId": "opencode",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > opencode · local · chosen · review 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "agent": "build",
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "effort": "high",
+  "model": "picked-model",
+  "projectPath": "/proj",
+  "providerId": "opencode",
+  "reviewTarget": {
+    "type": "uncommittedChanges",
+  },
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > opencode · local · defaults · first 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "permissionMode": "default",
+  "projectPath": "/proj",
+  "providerId": "opencode",
+  "sandboxMode": "auto",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > opencode · local · defaults · next 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "projectPath": "/proj",
+  "providerId": "opencode",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > opencode · local · defaults · queued 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "priority": "next",
+  "projectPath": "/proj",
+  "providerId": "opencode",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > opencode · local · defaults · queued form 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "inputRequest": {
+    "requestId": "form-1",
+    "values": {
+      "note": "x",
+    },
+  },
+  "priority": "next",
+  "projectPath": "/proj",
+  "providerId": "opencode",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > opencode · local · defaults · review 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "projectPath": "/proj",
+  "providerId": "opencode",
+  "reviewTarget": {
+    "type": "uncommittedChanges",
+  },
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > opencode · node · chosen · first 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "effort": "high",
+  "model": "picked-model",
+  "permissionMode": "acceptEdits",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "opencode",
+  "sandboxMode": "on",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > opencode · node · chosen · next 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "effort": "high",
+  "model": "picked-model",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "opencode",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > opencode · node · chosen · queued 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "effort": "high",
+  "model": "picked-model",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "opencode",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > opencode · node · chosen · queued form 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "effort": "high",
+  "model": "picked-model",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "opencode",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > opencode · node · chosen · review 1`] = `
+{
+  "additionalDirectories": [
+    "/extra",
+  ],
+  "apiProviderId": "acct-1",
+  "clientMessageId": "u1",
+  "effort": "high",
+  "model": "picked-model",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "opencode",
+  "reviewTarget": {
+    "type": "uncommittedChanges",
+  },
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > opencode · node · defaults · first 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "permissionMode": "default",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "opencode",
+  "sandboxMode": "auto",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > opencode · node · defaults · next 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "opencode",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > opencode · node · defaults · queued 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "opencode",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > opencode · node · defaults · queued form 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "opencode",
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;
+
+exports[`sessionTurnRequest payload per harness > opencode · node · defaults · review 1`] = `
+{
+  "additionalDirectories": [],
+  "clientMessageId": "u1",
+  "projectPath": "remote:env-1:/work/app",
+  "providerId": "opencode",
+  "reviewTarget": {
+    "type": "uncommittedChanges",
+  },
+  "sessionId": "sid-1",
+  "text": "hi",
+}
+`;

@@ -98,6 +98,41 @@ controller withdrawal remain window/presence adapters; withdrawal cannot require
 acquiring the phone's own grant. Resource catalogs, files, workspace operations,
 trajectory inspection and realtime voice remain separate from session commands.
 
+### Harness UI modules
+
+Per-harness renderer behavior lives in `src/renderer/src/harness-ui/`, not in
+`=== '<harnessId>'` branches on generic surfaces.
+
+- Data that mobile or main also read stays in `@superone/shared`:
+  `HARNESS_CAPABILITIES` (flags such as `supportsAdditionalDirs`,
+  `supportsContextUsage`, `softCancel`) and `HARNESS_LAUNCH_OPTIONS` (launch
+  permission/sandbox modes, `defaultPermissionMode`). ACP's split of effort
+  from real session modes is `acpModeCatalog`.
+- `harness-ui/<id>/controls.tsx` feeds `HARNESS_CONTROLS`: the components a
+  generic surface renders (`ModelControl`, `PermissionControl`,
+  `LaunchModelControl`, `PickerIcon`, optional `launchPermission`). Surfaces
+  render the component, so a harness switch remounts it and each control's
+  hooks keep a fixed order.
+- `harness-ui/<id>/strategy.ts` feeds `HARNESS_STRATEGIES`: pure store behavior
+  with no component imports. It covers the model/effort `selection` (Codex keeps
+  its own wire fields), seeding, defaults and restore, turn fields (`runModel`,
+  `turnSettings` split into portable and this-desktop-only fields,
+  `draftSettings`, `createSelections`), harness switch (`resetFields`,
+  `onSelect`), shortcuts (`permissionCycle`, `cyclePermission`, `togglePlan`,
+  `inPlanMode`), send (`queuePolicy`, `sendStartsStreaming`) and `slash` (host
+  commands, Codex `/plan` and `/review`, Cursor prompt bodies, Grok `/recap`),
+  shared by the slash popup and typed sends.
+- Every registry is a mapped type over `HarnessId`, so a new harness fails
+  typecheck until its modules exist. An absent optional slot means unsupported,
+  never a Claude fallback.
+- Owning features (Codex realtime voice, threads, review and async questions;
+  ACP agents; Claude accounts; Cursor model params) keep direct access to their
+  fields. `harness-ui/harness-branch-ratchet.test.ts` counts harness-id
+  comparisons per file against `ratchet-allowlist.json`, where each entry names
+  its owning feature; a new file with branches fails.
+  `session-turn-harness-payload.test.ts` pins each harness's turn and create
+  payloads.
+
 ### Remote Control (Mobile) Architecture
 
 Session and terminal control comes from the one `DesktopDomain` lease service.

@@ -79,19 +79,27 @@ OpenCode, Cursor, and DeepSeek are later / incomplete against this bar — see
 | Chat UI blank / wrong | `event-contract.md` |
 | Auditing a harness | The required list above, then the support matrix in `experiences.md` |
 
-## The two type-enforced seams
+## The three type-enforced seams
 
 Land these **first**. The compiler's worklist is a floor, not a ceiling.
 
 1. **`HarnessResourcesMap`** in `packages/shared/src/agent-types.ts` — `HarnessId` is
    `keyof HarnessResourcesMap`. Adding a key turns every `Record<HarnessId, …>` red:
-   `HARNESS_CAPABILITIES`, brand maps, `HarnessHandlerMap`, `createHarnessRunner`, …
-   `StartupData.cached` and every `if (provider === …)` do **not** go red.
+   `HARNESS_CAPABILITIES`, `HARNESS_LAUNCH_OPTIONS`, brand maps, `HarnessHandlerMap`,
+   `createHarnessRunner`, … `StartupData.cached` and every `if (provider === …)` do **not**
+   go red.
 2. **`SessionBackend`** in `apps/desktop/src/main/session/types.ts`. Optional members
    (`setTitle?`, `getRateLimits?`, `requestSessionRecap?`, …) are the honest "this harness
    cannot" hatch — leave them off rather than stubbing a lie.
+3. **Harness UI modules** in `apps/desktop/src/renderer/src/harness-ui/` — `HARNESS_CONTROLS`
+   (composer, status-bar, launch-row and picker components) and `HARNESS_STRATEGIES` (store
+   selection, defaults, turn fields, switch, shortcuts, send and slash policy). Add
+   `harness-ui/<id>/controls.tsx` and `strategy.ts`; generic surfaces read only these. See
+   `apps/desktop/docs/agent-reference/architecture.md` → Harness UI modules.
 
-Everything outside those two seams is a silent enumeration. That is `experiences.md`.
+Everything outside those seams is a silent enumeration. That is `experiences.md`. The renderer
+ratchet (`harness-ui/harness-branch-ratchet.test.ts`) fails on a new `=== '<id>'` branch
+outside the harness modules.
 
 Silent catalogs that have each shipped a "works except it doesn't" bug: `<id>-base` in
 `session-provider-definitions.ts`, `NODE_HARNESS_DEFINITIONS`, `harnessOrder` allowlists,
@@ -105,7 +113,9 @@ Work top-down. `new-harness.md` is ordered so something is always runnable.
 ① contract   packages/shared/            id · resources · capabilities · brand · i18n · install
 ② runtime    apps/desktop/src/main/      SessionBackend · event mapper · auth · fork
 ③ store      renderer/stores/chat-store/ HarnessHandler · PerSessionState
-④ chrome     renderer/components/        selectors · icon · slash · settings
+             renderer/harness-ui/<id>/   strategy.ts (pure store behavior)
+④ chrome     renderer/harness-ui/<id>/   controls.tsx (selectors · launch row · picker icon)
+             renderer/components/        settings · usage
 ⑤ periphery  cli · runtime · mobile · packaging · usage
 ```
 
@@ -185,8 +195,9 @@ Typecheck only covers seam #1.
 1. Required list under [Completeness standard](#completeness-standard) — all ten, or an
    explicit "won't have X, like Codex/Grok".
 2. `bun run typecheck`.
-3. Grep audit: `rg "'claude'" --type ts apps/desktop/src/renderer apps/desktop/src/main | rg -v test`
-   — does this harness belong at each hit? `experiences.md` groups by feature.
+3. Grep audit: `rg "'claude'" --type ts apps/desktop/src/main | rg -v test` — does this harness
+   belong at each hit? In the renderer, read the ratchet allowlist's owning-feature entries
+   instead. `experiences.md` groups by feature.
 4. Manual: start a session, walk the chat bar, call one SuperOne tool, switch worktree, restart
    and resume.
 5. Tests (see `apps/desktop/CLAUDE.md`): table-driven event-mapper tests over recorded
@@ -199,12 +210,14 @@ Ordered by how often they recur.
 
 - **Capability flag lies.** `supportsTodos = true` renders the TODO panel whether or not
   `todos_updated` is emitted. Flip flags on only when the event is wired (see the `acp` entry).
-- **Permission vocabulary is per-harness, `PermissionMode` is shared.** Wire popover, status
-  bar, and mode list or they disagree.
+- **Permission vocabulary is per-harness, `PermissionMode` is shared.** The harness's
+  `PermissionControl` (status bar) and `launchPermission` (launch rows) render the same option
+  list, and `HARNESS_LAUNCH_OPTIONS.defaultPermissionMode` is the one fallback; split them and
+  they disagree.
 - **Sandbox ≠ permission.** Codex folds sandbox into presets and must return `false` from
   `sandboxHarness.ts`.
-- **Renderer defaults vs backend defaults.** `session-lifecycle.ts` and the backend must agree
-  or the first turn uses one value while the UI shows the other.
+- **Renderer defaults vs backend defaults.** The strategy's `seed`/`resetFields` and the
+  backend must agree or the first turn uses one value while the UI shows the other.
 - **ACP / spawned cwd.** Grok binds cwd at `session/new`. Switching worktree after start does
   nothing unless you rebuild with the new cwd.
 - **Icons are three registries.** `resolveSessionIcon`, `resolveSessionIconFromBrandKey`, and
@@ -214,7 +227,7 @@ Ordered by how often they recur.
 - **Ordering has a main-process allowlist.** Renderer DnD that `readHarnessOrder` rejects
   looks like the row randomly reverted.
 - **Chat input impersonates Claude.** Exhaustive `Record<ChatProvider, …>` for placeholder and
-  slash; explicit empty catalog when unsupported.
+  slash catalog; explicit empty catalog and `slash.hostCommands: []` when unsupported.
 - **Harness ≠ SessionProvider.** Missing `<id>-base` → `SessionProvider not found` with a
   working picker. Seed desktop and runtime catalogs; migrate aliases on rename.
 - **`NodeHarnessId` (`acp-grok`) ≠ `HarnessId` (`acp`).** Convert with

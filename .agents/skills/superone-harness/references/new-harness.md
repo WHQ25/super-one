@@ -47,6 +47,7 @@ Do this in one commit and let type errors drive you. Start with `HarnessResource
 | `packages/shared/src/agent-types.ts` | `XxxResources` interface + key in `HarnessResourcesMap` + key in `StartupData.cached` |
 | `packages/shared/src/session-provider-definitions.ts` | base `SessionProvider` entry; its exhaustive `Record<HarnessId, …>` must stay compiler-complete |
 | `packages/shared/src/harness/harness-capabilities.ts` | entry in `HARNESS_CAPABILITIES` — **all false** except `displayName` until each is actually wired |
+| `packages/shared/src/launch-options.ts` | `HARNESS_LAUNCH_OPTIONS` entry: offered `permissionModes`, `sandboxModes`, and the harness's own recommended `defaultPermissionMode` |
 | `packages/shared/src/harness/harness-brand.ts` | `HARNESS_DEFAULT_BRAND_HUE` + `HARNESS_DEFAULT_TOKENS` entries |
 | `packages/shared/src/agent-types.ts` | **`AppSettings['agentPreference'].<harness>` slot** — `BrandOnlyAgentPreference` when the harness stores nothing else — plus the matching optional key on `SaveAppSettings`. Every harness needs one; see the trap in [integration.md](integration.md) |
 | `apps/desktop/src/main/session/harness-registry.ts` | config zod schema + `Harness` object + registry map entry |
@@ -54,9 +55,9 @@ Do this in one commit and let type errors drive you. Start with `HarnessResource
 | `apps/desktop/src/main/session/backends/xxx-fork.ts` | `forkTranscript` stub (can throw "not supported" initially) |
 | `apps/desktop/src/main/session/session-repo.ts`, `db-sessions.ts`, `database-migrations.ts` | seed/read the base provider, persist its id, and derive the Harness id; migrate aliases when renaming an id |
 | `apps/desktop/src/renderer/src/stores/app.ts` | `brandHues` / `tokenOverrides` records — in the initial state, in `loadBrandHues`, **and in the `onAppSettingsChange` handler**. The last one is the trap: it rebuilds both records wholesale, so a harness left at a hard-coded `null` there is reset on every settings broadcast |
-| `apps/desktop/src/renderer/src/stores/chat-store/helpers/agent-defaults.ts` | default model/effort branch |
+| `apps/desktop/src/renderer/src/harness-ui/xxx/strategy.ts` + `strategies.ts` | `HarnessStrategy`: neutral `selection`, `seed`/`missingDefaults`, `queuePolicy`, `slash: { hostCommands: [] }`, `resetFields`/`onSelect` — required slots are what typecheck lists; optional ones stay absent until wired |
+| `apps/desktop/src/renderer/src/harness-ui/xxx/controls.tsx` + `controls.ts` | `HarnessControls`: `ModelControl`, `PermissionControl`, `LaunchModelControl`, `PickerIcon` (wrap existing components; `launchPermission` only when it has modes) |
 | `apps/desktop/src/renderer/src/stores/chat-store/harness/xxx-handler.ts` + `harness/index.ts` + `chat-store/index.ts` | `HarnessHandler` — `connect()` may return an empty bundle |
-| `apps/desktop/src/renderer/src/components/sidebar/BrandColorPopover.tsx` | `HARNESS_LABEL` entry |
 | `apps/desktop/src/renderer/src/lib/session-menu-items.ts` | menu entry so a session can be created at all |
 | `apps/desktop/src/main/app-settings-service.ts` | `defaults.agentPreference.<harness>`, a `readBrandOnlyPreference(data, '<harness>')` call in **both** assembly sites, and a spread in the save-merge branch; plus accept the id in suggestion/default/secondary parsing and `harnessOrder` validation — those are hard-coded allowlists and do not fail typecheck |
 | `apps/cli/src/session/harness-runners.ts` | `createHarnessRunner` case — a simulated runner is fine and satisfies the `never` guard |
@@ -129,7 +130,10 @@ its real ToolBlock, not a generic `use tool` row.
 
 **Goal:** every control in the chat bar is either correct or deliberately absent.
 
-This is where the silent enumerations live. Work through `experiences.md` row by row —
+The composer, status bar, launch rows, send and switch paths read the harness's
+`harness-ui/<id>/` modules from P0; fill their slots rather than adding `=== '<id>'` branches
+(the renderer ratchet rejects new ones). What remains outside them are silent enumerations.
+Work through `experiences.md` row by row —
 model/effort, permission modes, sandbox, context usage, slash commands, mentions, placeholder,
 session icon, suggestion ordering, and order persistence. Do not skip the "deliberately absent"
 half: `sandboxHarness.ts` returning `false` is a real deliverable, not a gap.

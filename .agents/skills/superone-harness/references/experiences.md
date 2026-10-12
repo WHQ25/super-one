@@ -57,13 +57,14 @@ its own notion of "effort", and its own persistence.
 
 | Cell | File |
 |---|---|
-| Selector dispatch | `R/components/chat/ModelSelector.tsx` |
+| Register the controls | `R/harness-ui/<id>/controls.tsx` — `ModelControl` (composer), `LaunchModelControl` (collab/automation launch rows) |
 | Your selector | `R/components/chat/model-selector/<Harness>ModelSelector.tsx` |
 | Grouped model+effort UI (reusable) | `R/components/chat/model-selector/GroupedModelEffortSelector.tsx` |
-| Provider list for the picker | `R/components/chat/model-selector/useSelectorProviders.ts` |
+| Launch-row helpers | `R/harness-ui/launch-model.tsx` (effort rules, API-key providers, flat catalog control) |
+| Provider list for the picker | `R/components/chat/model-selector/useSelectorProviders.ts`; built-in entry in `R/harness-ui/api-key-defaults.ts` |
 | Resource fetch + apply | `R/stores/chat-store/harness/<harness>-handler.ts` |
 | Per-session model state | `R/stores/chat-store/types.ts` (`PerSessionState`), `defaults.ts` |
-| Default on session create | `R/stores/chat-store/helpers/session-lifecycle.ts` (per-provider branch), `helpers/agent-defaults.ts` |
+| Where the pick is stored, seeded, restored | `R/harness-ui/<id>/strategy.ts` — `selection`, `seed`, `missingDefaults`, `restore`, `liveRestore`, `resetFields`/`onSelect` on a harness switch, `runModel` for the turn |
 | Apply to a live session | `SessionBackend.setModel()` / `setSessionMode()` |
 | Disk cache of the catalog | `M/harness/resource-cache.ts` |
 | Enable/disable subset + prefs | `R/stores/chat-store/helpers/<harness>-model-prefs.ts` (Cursor pattern) |
@@ -77,6 +78,8 @@ Notes that bite:
   Grok reasoning effort is config id `reasoning_effort` (category `thought_level`) and stays on the
   model slider via `session/set_config_option`. OpenCode `mode` stays a status-bar session mode.
   A null config id is the legacy x.ai effort catalog (`session/set_model` + `_meta.reasoningEffort`).
+  `acpModeCatalog` (`packages/shared/src/harness/acp-mode-catalog.ts`) is the one split of effort
+  from session modes; the composer, launch rows, agent profiles and Remote Control all read it.
 - A model id ending in `[1m]` means the 1M-context variant (a Claude Code convention), surfaced as an
   optional toggle only when the catalog says the model supports it.
 
@@ -86,18 +89,17 @@ Notes that bite:
 ## 2. Permission modes & HITL
 
 The shared `PermissionMode` enum (`default` / `acceptEdits` / `plan` / `bypassPermissions`) is a
-lowest-common-denominator wire type. Each harness maps it onto its own vocabulary, and the mapping
-must be declared in **three** places or the status bar and the popover will disagree.
+lowest-common-denominator wire type. Each harness maps it onto its own vocabulary in one option
+list, which the status bar and launch rows both render.
 
 | Cell | File |
 |---|---|
-| Mode vocabulary | `R/components/chat/<harness>PermissionModes.ts` |
-| Mode list UI | `R/components/chat/<Harness>PermissionModeList.tsx` |
+| Mode vocabulary + list UI | `R/components/chat/<Harness>PermissionModeList.tsx` (option list, icons, tones) |
 | Selector | `R/components/chat/<Harness>PermissionSelector.tsx` |
-| **Popover dispatch** | `R/components/chat/HarnessPermissionPopover.tsx` |
-| **Status bar label** | `R/components/chat/chat-status-bar/StatusBarPermission.tsx` |
-| Available modes per provider | `R/stores/chat-store/helpers/interaction.ts` (~line 635) |
-| Default mode on create | `R/stores/chat-store/helpers/session-lifecycle.ts` |
+| **Register it** | `R/harness-ui/<id>/controls.tsx` — `PermissionControl` (status bar) and `launchPermission` (launch-row popover; absent = no modes) |
+| Offered modes + default | `HARNESS_LAUNCH_OPTIONS` (`permissionModes`, `defaultPermissionMode`) in `packages/shared/src/launch-options.ts` |
+| Shortcut cycle + plan toggle | `R/harness-ui/<id>/strategy.ts` — `permissionCycle` / `cyclePermission`, `togglePlan`, `inPlanMode` |
+| Mobile copy | `apps/mobile/scripts/generate-permission-modes.ts` reads the desktop option lists |
 | Backend round-trip | `SessionBackend.setPermissionMode()` + `onPermissionModeApplied()` |
 
 The request/response side (`permission_request` → `respondToPermission`) needs **no** new UI —
@@ -167,8 +169,9 @@ Set `supportsPlanMode` only when approve **and** reject both change what the age
 | Cell | File |
 |---|---|
 | Catalog dispatch | `R/components/chat/chat-input/resolveSlashCommandsForProvider.ts` |
+| What `/name` does | `R/harness-ui/<id>/strategy.ts` `slash` — `hostCommands` the desktop runs instead of sending, `spacedCommands`, `enterPlan`, `reviewCommand`, `expandsPromptBody`, `run` (RPC commands like Grok `/recap`). One policy for the popup and typed sends |
 | Popups | `R/components/chat/{ProviderSlashPopup,McpSlashPopup,WorkflowsSlashPopup}.tsx` |
-| Placeholder text | `R/components/chat/chat-input/resolveChatInputPlaceholder.ts` |
+| Placeholder text | `R/components/chat/chat-input/resolveChatInputPlaceholder.ts` (plan copy follows `inPlanMode`) |
 | Localized placeholder keys | `packages/shared/src/i18n/{en,zh}.ts` — ask and plan copy for every harness |
 | Mentions + capability gating | `R/components/chat/mention-capability-match.ts`, `MentionPopup.tsx` |
 | Source of the catalog | `init_ready` event (`skills`, `projectCommands`, `projectAgents`) or the harness's own list (ACP `available_commands_update` cached in `AcpAgentConfigCatalog.slashCommands`) |
@@ -226,7 +229,7 @@ renders as generic `use tool` is not done.
 
 | Cell | File |
 |---|---|
-| Context gauge | `R/components/chat/ContextUsage.tsx` + `SessionBackend.getContextUsage()` |
+| Context gauge | `R/components/chat/ContextUsage.tsx` + `SessionBackend.getContextUsage()`, gated by `HARNESS_CAPABILITIES.supportsContextUsage` |
 | Account limits gauge | `SessionBackend.getRateLimits?()` — optional, omit when the provider has none |
 | Per-turn accounting | `message_usage` event (tokens, cost, contextWindow) |
 | Usage page | `M/usage-stats-service.ts` (`HarnessKind`, provider→kind mapping), `R/components/UsagePage.tsx`, `R/components/usage-model-presentation.ts` |
@@ -319,7 +322,7 @@ Cheap individually, and *always* the last thing anyone remembers.
 | Icon resolution (2 paths!) | `R/components/harness/resolve-session-icon.tsx` — both `resolveSessionIcon()` **and** `resolveSessionIconFromBrandKey()` |
 | Brand hue + tokens | `packages/shared/src/harness/harness-brand.ts` |
 | Hue picker label | `R/components/sidebar/BrandColorPopover.tsx` |
-| Suggestion ordering | `R/lib/suggestion-harness-order.ts`, `R/components/chat/ChatSuggestions.tsx` |
+| Suggestion ordering | `R/lib/suggestion-harness-order.ts`, `R/components/chat/ChatSuggestions.tsx` (icon = `HarnessControls.PickerIcon`; visibility = `isPickerHarnessEnabled` in `R/lib/harness-visibility.ts`) |
 | Order validation + persistence | `M/app-settings-service.ts` — `HARNESS_IDS`, `parseSuggestionHarnessKey`, `isHarnessOrderKey`, `readHarnessOrder`, default/secondary derivation |
 | Harness settings catalog | `R/components/HarnessesSettingsPage.tsx` — exhaustive `CATALOG_HARNESS_META` over `NODE_HARNESS_IDS` |
 | Session create menu | `R/lib/session-menu-items.ts` |
@@ -381,7 +384,7 @@ session rows, and installation rows together while keeping an explicit read alia
 | Run config type | `packages/shared/src/agent-types.ts` (`ClaudeRunConfig` / `CodexRunConfig` / …) |
 | Tool-side parse + defaults | `M/mcp/automation-tools.ts` |
 | Dialog | `R/components/AutomationDialog.tsx`, `R/components/chat/AutomationConfirmPrompt.tsx` |
-| Session collaboration | `M/session/session-collaboration.ts`, `R/components/chat/model-selector/useCollabLaunchModelSelector.tsx`, `SessionAgentsConfirmPrompt.tsx` |
+| Session collaboration | `M/session/session-collaboration.ts`, `SessionAgentsConfirmPrompt.tsx` (renders `HarnessControls.LaunchModelControl`) |
 
 HITL confirmation for host-owned tools must resolve at the **Session** layer to work across all
 harnesses — an executor-level confirm only covers Claude and Codex.

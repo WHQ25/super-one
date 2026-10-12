@@ -240,6 +240,35 @@ describe('answerQuestionImpl', () => {
   })
 })
 
+describe('answerQuestionImpl: the Codex answer row', () => {
+  const turn = (content: unknown[], items: unknown[]) => ({ id: 'turn', role: 'assistant', status: 'streaming', createdAt: '', providerId: 'codex', content,
+    metadata: { codex: { threadId: 't', usage: null, items } } })
+
+  it('appends the answer to a content-shaped turn without turning it legacy', async () => {
+    const before = [{ type: 'thinking', id: 'r', thinking: 'Planning' }, { type: 'text', id: 'a', text: 'Before the question' }]
+    seedSession('sid-1', { sessionProvider: 'codex', pendingQuestion: PENDING_QUESTION as never, messages: [turn(before, [])] as never })
+
+    useChatStore.getState().answerQuestion('q1', { 'Pick one?': 'A' })
+
+    await vi.waitFor(() => expect(activeSession().pendingQuestion).toBeNull())
+    const message = activeSession().messages[0]!
+    expect(message.metadata?.codex?.items).toEqual([])
+    expect(message.content).toMatchObject([...before, { type: 'text', text: '**Pick one?**\nA' }])
+  })
+
+  it('adds the answer item to a legacy turn and derives its content', async () => {
+    seedSession('sid-1', { sessionProvider: 'codex', pendingQuestion: PENDING_QUESTION as never,
+      messages: [turn([], [{ id: 'a', type: 'agent_message', text: 'Before the question' }])] as never })
+
+    useChatStore.getState().answerQuestion('q1', { 'Pick one?': 'A' })
+
+    await vi.waitFor(() => expect(activeSession().pendingQuestion).toBeNull())
+    const message = activeSession().messages[0]!
+    expect(message.metadata?.codex?.items).toHaveLength(2)
+    expect(message.content).toMatchObject([{ text: 'Before the question' }, { text: '**Pick one?**\nA' }])
+  })
+})
+
 /**
  * Issue #21: remote answerQuestion must ACK before clearing pendingQuestion,
  * clear the answering session (not active focus) and guard double-submit. What

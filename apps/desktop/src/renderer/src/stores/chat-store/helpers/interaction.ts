@@ -29,7 +29,7 @@ import {
 } from './store-helpers'
 import type { ChatStore, PerSessionState, SessionWriteTarget } from '../types'
 import { connectionIdForProjectKey } from '@/lib/session-list-ops'
-import { withCodexContent } from '@superone/shared/codex-content'
+import { codexItemToBlocks, isLegacyCodexMessage, withCodexContent } from '@superone/shared/codex-content'
 import { patchSessionSettings, respondPermission, respondPlan, respondQuestion } from '@/lib/session-client'
 
 /** In-flight remote answer/dismiss keys: projectPath\0sessionId\0requestId */
@@ -204,20 +204,14 @@ function clearLocalPendingQuestion(
       const lastMsg = prev.messages[prev.messages.length - 1]
       if (!lastMsg?.metadata?.codex) return { pendingQuestion: null }
       const prevCodex = lastMsg.metadata.codex
+      // A content-shaped turn takes the answer as content; a legacy turn keeps
+      // its rows in items, and the read view is applied here like at ingress.
+      const answered = isLegacyCodexMessage(lastMsg)
+        ? withCodexContent({ ...lastMsg, metadata: { ...lastMsg.metadata, codex: { ...prevCodex, items: [...prevCodex.items, codexQaItem] } } })
+        : { ...lastMsg, content: [...lastMsg.content, ...codexItemToBlocks(codexQaItem)] }
       return {
         pendingQuestion: null,
-        // Written outside chat-core, so the read view is applied here like at ingress.
-        messages: prev.messages.map((msg, i) =>
-          i !== prev.messages.length - 1
-            ? msg
-            : withCodexContent({
-                ...msg,
-                metadata: {
-                  ...msg.metadata,
-                  codex: { ...prevCodex, items: [...prevCodex.items, codexQaItem] },
-                },
-              }),
-        ),
+        messages: [...prev.messages.slice(0, -1), answered],
       }
     })
     return withProjectPendingFlag(s, activeProject, partial)

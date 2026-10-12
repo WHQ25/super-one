@@ -11,7 +11,7 @@ import { ChatMessage } from './ChatMessage'
  * shared turn body, the path every harness's turn takes. Items are synthetic so each row
  * shape is reproducible without a live session.
  */
-function Seed({ children, detail = true }: { children: ReactNode; detail?: boolean }) {
+function Seed({ children, detail = true, planMode = false }: { children: ReactNode; detail?: boolean; planMode?: boolean }) {
   useEffect(() => {
     useAppStore.setState({ detailChatMode: detail })
     useChatStore.setState({
@@ -20,11 +20,11 @@ function Seed({ children, detail = true }: { children: ReactNode; detail?: boole
         '/storybook/codex-shapes': {
           ...createDefaultProjectState(),
           _activeSessionId: 'story-session',
-          _sessions: { 'story-session': { ...createDefaultPerSessionState(), status: 'idle', cwd: '/workspace' } },
+          _sessions: { 'story-session': { ...createDefaultPerSessionState(), status: 'idle', cwd: '/workspace', ...(planMode ? { selectedCodexCollaborationMode: 'plan' as const } : {}) } },
         },
       },
     })
-  }, [detail])
+  }, [detail, planMode])
   return <>{children}</>
 }
 
@@ -126,6 +126,20 @@ export const Narrow: Story = {
     <Seed>
       <div className="@container w-80">
         <ChatMessage message={turn(FINISHED)} sessionStatus="idle" isLastAssistant />
+      </div>
+    </Seed>
+  ),
+}
+
+/** The latest plan of a settled turn in plan mode offers Implement / Reject once expanded. */
+export const PlanAwaitingApproval: Story = {
+  render: () => (
+    <Seed planMode>
+      <div className="@container mx-auto max-w-180">
+        <ChatMessage message={turn([
+          { id: 'r1', type: 'reasoning', text: 'Scope the change first.', startedAt: 1, endedAt: 2_000 },
+          { id: 'plan1', type: 'plan', text: '1. Add `farewell()` to `src/app.ts`\n2. Cover it with a unit test' },
+        ])} sessionStatus="idle" isLastAssistant />
       </div>
     </Seed>
   ),

@@ -3,22 +3,28 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatMessage } from '@superone/shared/agent-types'
-import { CodexTurnView } from './CodexTurnView'
+import { ChatMessage as ChatMessageView } from './ChatMessage'
+import { withCodexContent } from '@superone/shared/codex-content'
 import { createDefaultPerSessionState, createDefaultProjectState, useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { useMiniAppStore } from '@/stores/miniapp'
-import { PlanFullscreenContext } from './codex-item-renderer'
+import { PlanFullscreenContext } from './plan-fullscreen-context'
 
-vi.mock('./CopyableMarkdown', () => ({
+vi.mock('./CopyableMarkdown', async (importOriginal) => ({
+  ...await importOriginal<typeof import('./CopyableMarkdown')>(),
   CopyableMarkdown: ({ text }: { text: string }) => <div>{text}</div>,
 }))
 
-vi.mock('./ToolBlock', () => ({
-  ToolBlock: ({ toolName, isError }: { toolName: string; isError?: boolean }) => (
-    <div data-testid={`tool-${toolName}`} data-error={isError ? 'true' : 'false'}>{toolName}</div>
-  ),
-  FileChip: ({ name }: { name: string }) => <div>{name}</div>,
-}))
+// Commands keep their real row (the parsed command block); other tools are stubs.
+vi.mock('./ToolBlock', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./ToolBlock')>()
+  return {
+    ...actual,
+    ToolBlock: (props: Parameters<typeof actual.ToolBlock>[0]) => props.toolName === 'Bash' ? <actual.ToolBlock {...props} /> : (
+      <div data-testid={`tool-${props.toolName}`} data-error={props.isError ? 'true' : 'false'}>{props.toolName}</div>
+    ),
+  }
+})
 
 vi.mock('./ImageGalleryBlock', () => ({
   ImageGalleryBlock: ({ items }: { items: Array<{ id: string }> }) => (
@@ -42,6 +48,11 @@ function createMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
     providerId: 'codex',
     ...overrides,
   }
+}
+
+/** A legacy Codex message as a client holds it (content derived at ingress), drawn by the shared turn body. */
+function CodexTurn({ message, isStreaming, isLastAssistant }: { message: ChatMessage; isStreaming: boolean; isLastAssistant: boolean }) {
+  return <ChatMessageView message={withCodexContent(message)} sessionStatus={isStreaming ? 'streaming' : 'idle'} isLastAssistant={isLastAssistant} />
 }
 
 const mockApproveCodexPlan = vi.fn()
@@ -85,16 +96,16 @@ beforeEach(() => {
   })
 })
 
-describe('CodexTurnView', () => {
+describe('Codex turns in the shared turn body', () => {
   it('does not show thinking placeholder before the first codex item arrives', () => {
-    render(<CodexTurnView message={createMessage()} isStreaming isLastAssistant />)
+    render(<CodexTurn message={createMessage()} isStreaming isLastAssistant />)
 
     expect(screen.queryByText('Thinking')).toBeNull()
   })
 
   it('does not show thinking placeholder when codex metadata exists but items are still empty', () => {
     render(
-      <CodexTurnView
+      <CodexTurn
         message={createMessage({
           metadata: {
             codex: {
@@ -112,51 +123,9 @@ describe('CodexTurnView', () => {
     expect(screen.queryByText('Thinking')).toBeNull()
   })
 
-  it('collapses the entire delegated turn including the agent response by default', () => {
-    render(
-      <CodexTurnView
-        message={createMessage({
-          status: 'complete',
-          metadata: {
-            codex: {
-              threadId: 'thread-1',
-              usage: null,
-              items: [
-                {
-                  id: 'lookup-1',
-                  type: 'mcp_tool_call',
-                  server: 'example',
-                  tool: 'lookup',
-                  arguments: { query: 'auth' },
-                  status: 'completed',
-                },
-                { id: 'agent-1', type: 'agent_message', text: 'Full agent response' },
-              ],
-            },
-          },
-        })}
-        isStreaming={false}
-        isLastAssistant
-        collapseEntireTurn
-        footer={<div>Turn footer</div>}
-      />,
-    )
-
-    expect(screen.getByRole('button', { name: /Detail/ })).toBeTruthy()
-    expect(screen.queryByTestId('tool-mcp__example__lookup')).toBeNull()
-    expect(screen.queryByText('Full agent response')).toBeNull()
-    expect(screen.queryByText('Turn footer')).toBeNull()
-
-    fireEvent.click(screen.getByRole('button', { name: /Detail/ }))
-
-    expect(screen.getByTestId('tool-mcp__example__lookup')).toBeTruthy()
-    expect(screen.getByText('Full agent response')).toBeTruthy()
-    expect(screen.getByText('Turn footer')).toBeTruthy()
-  })
-
   it('keeps terminal Codex error logs out of the turn body', () => {
     render(
-      <CodexTurnView
+      <CodexTurn
         message={createMessage({
           status: 'error',
           metadata: {
@@ -178,9 +147,28 @@ describe('CodexTurnView', () => {
     expect(screen.queryByText('accumulated stderr log')).toBeNull()
   })
 
+  it('leaves an async question to the decision queue, not the turn body', () => {
+    render(
+      <CodexTurn
+        message={createMessage({
+          status: 'complete',
+          metadata: { codex: { threadId: 'thread-1', usage: null, items: [
+            { id: 'q', type: 'agent_message', text: 'Which environment?', delivery: 'async', questions: [{ title: 'Which environment?', options: ['Staging'] }] },
+            { id: 'a', type: 'agent_message', text: 'Waiting for your pick.' },
+          ] } },
+        })}
+        isStreaming={false}
+        isLastAssistant
+      />,
+    )
+
+    expect(screen.queryByText('Which environment?')).toBeNull()
+    expect(screen.getByText('Waiting for your pick.')).toBeTruthy()
+  })
+
   it('keeps non-terminal Codex error items visible', () => {
     render(
-      <CodexTurnView
+      <CodexTurn
         message={createMessage({
           status: 'complete',
           metadata: {
@@ -203,7 +191,7 @@ describe('CodexTurnView', () => {
 
   it('collapses codex reasoning summary content after completion by default', () => {
     render(
-      <CodexTurnView
+      <CodexTurn
         message={createMessage({
           status: 'complete',
           metadata: {
@@ -235,7 +223,7 @@ describe('CodexTurnView', () => {
 
   it('merges consecutive codex reasoning items into one block', () => {
     render(
-      <CodexTurnView
+      <CodexTurn
         message={createMessage({
           status: 'complete',
           metadata: {
@@ -263,7 +251,7 @@ describe('CodexTurnView', () => {
 
   it('merges reasoning items separated only by invisible codex items', () => {
     render(
-      <CodexTurnView
+      <CodexTurn
         message={createMessage({
           status: 'complete',
           metadata: {
@@ -300,7 +288,7 @@ describe('CodexTurnView', () => {
 
   it('merges reasoning items separated by a hidden MCP tool', () => {
     render(
-      <CodexTurnView
+      <CodexTurn
         message={createMessage({
           status: 'complete',
           metadata: {
@@ -332,7 +320,7 @@ describe('CodexTurnView', () => {
 
   it('keeps codex reasoning items separate across visible content', () => {
     render(
-      <CodexTurnView
+      <CodexTurn
         message={createMessage({
           status: 'complete',
           metadata: {
@@ -358,7 +346,7 @@ describe('CodexTurnView', () => {
 
   it('renders empty codex reasoning as a non-expandable status block', () => {
     render(
-      <CodexTurnView
+      <CodexTurn
         message={createMessage({
           status: 'complete',
           metadata: {
@@ -388,7 +376,7 @@ describe('CodexTurnView', () => {
 
   it('renders recent codex text immediately when not streaming', () => {
     render(
-      <CodexTurnView
+      <CodexTurn
         message={createMessage({
           status: 'complete',
           createdAt: new Date().toISOString(),
@@ -416,7 +404,7 @@ describe('CodexTurnView', () => {
 
   it('does not auto expand a streaming read block', () => {
     render(
-      <CodexTurnView
+      <CodexTurn
         message={createMessage({
           metadata: {
             codex: {
@@ -452,7 +440,7 @@ describe('CodexTurnView', () => {
 
   it('uses the shared terminal spacing for expanded Bash commands', () => {
     render(
-      <CodexTurnView
+      <CodexTurn
         message={createMessage({
           metadata: {
             codex: {
@@ -483,7 +471,7 @@ describe('CodexTurnView', () => {
 
   it('renders a non-zero command exit as a normal tool call outcome', () => {
     render(
-      <CodexTurnView
+      <CodexTurn
         message={createMessage({
           status: 'complete',
           metadata: {
@@ -517,7 +505,7 @@ describe('CodexTurnView', () => {
 
   it('keeps warning chrome for a command tool failure without an exit code', () => {
     render(
-      <CodexTurnView
+      <CodexTurn
         message={createMessage({
           status: 'complete',
           metadata: {
@@ -546,7 +534,7 @@ describe('CodexTurnView', () => {
 
   it('keeps a grep no-match result neutral in a collapsed command group', () => {
     render(
-      <CodexTurnView
+      <CodexTurn
         message={createMessage({
           status: 'complete',
           metadata: {
@@ -605,7 +593,7 @@ describe('CodexTurnView', () => {
     })
 
     render(
-      <CodexTurnView
+      <CodexTurn
         message={createMessage({
           status: 'complete',
           metadata: {
@@ -679,7 +667,7 @@ describe('CodexTurnView', () => {
     },
   ])('forwards a failed Codex $label to ToolBlock', ({ item, toolName }) => {
     render(
-      <CodexTurnView
+      <CodexTurn
         message={createMessage({
           status: 'complete',
           metadata: {
@@ -726,7 +714,7 @@ describe('CodexTurnView', () => {
       },
     })
     const { rerender } = render(
-      <CodexTurnView
+      <CodexTurn
         message={message}
         isStreaming
         isLastAssistant
@@ -737,7 +725,7 @@ describe('CodexTurnView', () => {
     expect(screen.getByText('file.ts')).toBeTruthy()
 
     rerender(
-      <CodexTurnView
+      <CodexTurn
         message={createMessage({
           ...message,
           status: 'complete',
@@ -784,7 +772,7 @@ describe('CodexTurnView', () => {
   it('renders plan item as Plan block, not as reasoning', () => {
     setupActiveSession({ selectedCodexCollaborationMode: 'plan' })
     render(
-      <CodexTurnView
+      <CodexTurn
         message={createMessage({
           metadata: {
             codex: {
@@ -812,7 +800,7 @@ describe('CodexTurnView', () => {
   it('does not show fallback text when plan items exist', () => {
     setupActiveSession({ selectedCodexCollaborationMode: 'plan' })
     render(
-      <CodexTurnView
+      <CodexTurn
         message={createMessage({
           status: 'complete',
           content: [{ type: 'text', text: 'Codex completed without returning text.' }],
@@ -842,7 +830,7 @@ describe('CodexTurnView', () => {
   it('does not render codex todo lists inline', () => {
     setupActiveSession()
     render(
-      <CodexTurnView
+      <CodexTurn
         message={createMessage({
           status: 'complete',
           metadata: {
@@ -875,7 +863,7 @@ describe('CodexTurnView', () => {
   it('shows Approve and Reject only after expanding the latest completed plan in plan mode', () => {
     setupActiveSession({ selectedCodexCollaborationMode: 'plan' })
     render(
-      <CodexTurnView
+      <CodexTurn
         message={createMessage({
           status: 'complete',
           metadata: {
@@ -913,7 +901,7 @@ describe('CodexTurnView', () => {
     const open = vi.fn()
     render(
       <PlanFullscreenContext.Provider value={{ open }}>
-        <CodexTurnView
+        <CodexTurn
           message={createMessage({
             status: 'complete',
             metadata: {
@@ -951,7 +939,7 @@ describe('CodexTurnView', () => {
   it('hides Approve and Reject outside plan mode', () => {
     setupActiveSession({ selectedCodexCollaborationMode: 'default' })
     render(
-      <CodexTurnView
+      <CodexTurn
         message={createMessage({
           status: 'complete',
           metadata: {
@@ -982,7 +970,7 @@ describe('CodexTurnView', () => {
   it('passes footer feedback into reject action', () => {
     setupActiveSession({ selectedCodexCollaborationMode: 'plan' })
     render(
-      <CodexTurnView
+      <CodexTurn
         message={createMessage({
           status: 'complete',
           metadata: {
@@ -1016,7 +1004,7 @@ describe('CodexTurnView', () => {
   it('rejects without feedback when the footer input is empty', () => {
     setupActiveSession({ selectedCodexCollaborationMode: 'plan' })
     render(
-      <CodexTurnView
+      <CodexTurn
         message={createMessage({
           status: 'complete',
           metadata: {
@@ -1047,7 +1035,7 @@ describe('CodexTurnView', () => {
   it('renders a worker spawnAgent as a subagent card', () => {
     setupActiveSession()
     render(
-      <CodexTurnView
+      <CodexTurn
         message={createMessage({
           status: 'complete',
           metadata: {
@@ -1088,7 +1076,7 @@ describe('CodexTurnView', () => {
   it('renders a worker sendInput as a subagent card', () => {
     setupActiveSession()
     render(
-      <CodexTurnView
+      <CodexTurn
         message={createMessage({
           status: 'complete',
           metadata: {
@@ -1139,7 +1127,7 @@ describe('CodexTurnView', () => {
   it('renders a forked sendInput with only the agent name', () => {
     setupActiveSession()
     render(
-      <CodexTurnView
+      <CodexTurn
         message={createMessage({
           status: 'complete',
           metadata: {
@@ -1179,10 +1167,10 @@ describe('CodexTurnView', () => {
     expect(screen.queryByText('Follow-up → Euler')).toBeNull()
   })
 
-  it('renders a failed subagent as a non-expandable error row', () => {
+  it('renders a follow-up that could not be delivered as a failed agent card', () => {
     setupActiveSession()
     const { container } = render(
-      <CodexTurnView
+      <CodexTurn
         message={createMessage({
           status: 'complete',
           metadata: {
@@ -1216,15 +1204,13 @@ describe('CodexTurnView', () => {
     )
 
     expect(screen.getByText('Euler')).toBeTruthy()
-    expect(screen.getByText('worker')).toBeTruthy()
-    expect(screen.getByText('Follow-up failed: Subagent is not available. Resume it, then retry this follow-up.')).toBeTruthy()
-    expect(screen.getByText('Error')).toBeTruthy()
-    expect(container.querySelector('button')).toBeNull()
+    expect(screen.getByText('Failed')).toBeTruthy()
+    expect(container.textContent).not.toContain('worker')
   })
 
   it('collects every image of a turn into one gallery rendered after the turn content', () => {
     render(
-      <CodexTurnView
+      <CodexTurn
         message={createMessage({
           status: 'complete',
           metadata: {
@@ -1254,7 +1240,7 @@ describe('CodexTurnView', () => {
 
   it('renders even a lone image through the gallery, never the standalone single block', () => {
     render(
-      <CodexTurnView
+      <CodexTurn
         message={createMessage({
           status: 'complete',
           metadata: {
@@ -1278,7 +1264,7 @@ describe('CodexTurnView', () => {
 
   it('merges images interleaved with other items into a single end gallery', () => {
     render(
-      <CodexTurnView
+      <CodexTurn
         message={createMessage({
           status: 'complete',
           metadata: {
@@ -1310,7 +1296,7 @@ describe('CodexTurnView', () => {
   it('renders persisted rejected state for a reviewed plan', () => {
     setupActiveSession({ selectedCodexCollaborationMode: 'default' })
     render(
-      <CodexTurnView
+      <CodexTurn
         message={createMessage({
           status: 'complete',
           metadata: {

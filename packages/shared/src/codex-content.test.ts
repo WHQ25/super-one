@@ -8,6 +8,7 @@ import {
   CODEX_TODO_TOOL,
   codexItemToBlocks,
   codexItemsToContent,
+  codexItemDetail,
   createCodexContentStream,
   withCodexContent,
 } from './codex-content'
@@ -101,7 +102,8 @@ describe('codexItemToBlocks', () => {
 
     it('makes an agent card for a spawn and its follow-up, each owning its own children', () => {
       const [card, ...rest] = codexItemToBlocks(spawn('completed'))
-      expect(card).toMatchObject({ toolName: 'Agent', toolUseId: 's', status: 'complete', taskThreadId: 'child', taskStatus: 'completed', taskDescription: 'Ada', taskResultText: 'Done: 4 lines' })
+      expect(card).toMatchObject({ toolName: 'Agent', toolUseId: 's', status: 'complete', taskThreadId: 'child', taskStatus: 'completed', taskResultText: 'Done: 4 lines' })
+      expect(JSON.parse((card as { input: string }).input)).toMatchObject({ name: 'Ada', subagent_type: 'explorer' })
       const outcome = rest.pop()
       expect(rest.every(block => 'parentToolUseId' in block && block.parentToolUseId === 's')).toBe(true)
       expect(outcome).toEqual({ type: 'tool_result', toolUseId: 's', summary: 'Done: 4 lines', parentToolUseId: null })
@@ -116,6 +118,8 @@ describe('codexItemToBlocks', () => {
       expect(codexItemToBlocks(spawn('errored'))[0]).toMatchObject({ taskStatus: 'failed', taskSummary: 'errored' })
       expect(codexItemToBlocks(spawn('errored')).at(-1)).toMatchObject({ type: 'tool_result', isError: true })
       expect(codexItemToBlocks(spawn('notFound'))[0]).toMatchObject({ taskStatus: 'stopped' })
+      // A follow-up that could not be delivered fails its card.
+      expect(codexItemToBlocks({ ...spawn('notFound', 'sendInput'), status: 'failed' })[0]).toMatchObject({ taskStatus: 'failed' })
       expect(codexItemToBlocks(spawn('pendingInit'))[0]).toMatchObject({ status: 'streaming' })
     })
 
@@ -194,5 +198,21 @@ describe('withCodexContent', () => {
     expect(withCodexContent(derived)).toBe(derived)
     const current = message([], [{ type: 'text', id: 'a', text: 'Done' }])
     expect(withCodexContent(current)).toBe(current)
+  })
+})
+
+describe('codexItemDetail', () => {
+  it('reads a loaded collab item as its agent card: input, outcome and children', () => {
+    const detail = codexItemDetail({ id: 's', type: 'collab_tool_call', tool: 'spawnAgent', status: 'completed', receiverThreadIds: ['child'], prompt: 'count',
+      agentsStates: { child: { status: 'completed', nickname: 'Ada', message: 'Done' } },
+      childItems: { child: [{ id: 'cmd', type: 'command_execution', command: 'wc -l', aggregatedOutput: '4', exitCode: 0, status: 'completed' }] } })
+    expect(JSON.parse(detail.input!)).toMatchObject({ prompt: 'count', name: 'Ada' })
+    expect(detail).toMatchObject({ result: 'Done', taskResultText: 'Done' })
+    expect(detail.childBlocks?.map(block => block.type)).toEqual(['tool_use', 'tool_result'])
+  })
+
+  it('reads one file of a loaded patch by its row id', () => {
+    const item: CodexThreadItem = { id: 'p', type: 'file_change', status: 'completed', changes: [{ path: 'a.ts', kind: 'update', diff: '-a' }, { path: 'b.ts', kind: 'add', diff: '+b' }] }
+    expect(JSON.parse(codexItemDetail(item, 'p:1').input!)).toMatchObject({ file_path: 'b.ts', diff: '+b' })
   })
 })

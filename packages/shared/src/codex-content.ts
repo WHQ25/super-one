@@ -18,6 +18,7 @@ import type {
   ContentBlock,
 } from './agent-types'
 import { isCodexCommandToolError } from './codex-command-status'
+import { resolveCodexCommandActions } from './codex-command-actions'
 import { sealCodexItems } from './content-delta'
 
 type Parent = string | null
@@ -90,8 +91,13 @@ function result(toolUseId: string, summary: string, parentToolUseId: Parent, ext
   return { type: 'tool_result', toolUseId, summary, parentToolUseId, ...extra }
 }
 
-/** Terminal lifecycle of a collab agent, in the shared subagent vocabulary (no value while it runs). */
-function agentTaskStatus(state: CodexCollabAgentState | undefined): 'completed' | 'failed' | 'stopped' | undefined {
+/**
+ * Terminal lifecycle of a collab card, in the shared subagent vocabulary (no
+ * value while it runs). A call that failed (a follow-up that could not be
+ * delivered) fails the card whatever the agent's own state.
+ */
+function agentTaskStatus(item: CodexCollabToolCallItem, state: CodexCollabAgentState | undefined): 'completed' | 'failed' | 'stopped' | undefined {
+  if (item.status === 'failed') return 'failed'
   switch (state?.status) {
     case 'completed': return 'completed'
     case 'errored': return 'failed'
@@ -104,18 +110,16 @@ function agentTaskStatus(state: CodexCollabAgentState | undefined): 'completed' 
 function collabAgentBlocks(item: CodexCollabToolCallItem, parentToolUseId: Parent): ContentBlock[] {
   const threadId = item.receiverThreadIds[0]!
   const state = item.agentsStates[threadId]
-  const taskStatus = agentTaskStatus(state)
+  const taskStatus = agentTaskStatus(item, state)
   const running = item.status === 'in_progress' || state?.status === 'running' || state?.status === 'pendingInit'
-  // The role is the card's badge (`subagent_type`); the nickname names the agent.
-  const description = state?.nickname
+  // The nickname is the agent's name, shown in place of its role, as Claude's teammates.
   const container = call(item, 'Agent', {
     ...(item.prompt ? { prompt: item.prompt } : {}),
-    ...(description ? { description } : {}),
+    ...(state?.nickname ? { name: state.nickname } : {}),
     ...(state?.role ? { subagent_type: state.role } : {}),
     ...(item.tool !== 'spawnAgent' ? { followUp: true } : {}),
   }, running, parentToolUseId, {
     taskThreadId: threadId,
-    ...(description ? { taskDescription: description } : {}),
     ...(taskStatus ? { taskStatus } : {}),
     ...(state?.message ? { taskResultText: state.message } : {}),
     ...(state?.tokens ? { taskUsage: { totalTokens: state.tokens.input + state.tokens.output, toolUses: 0, durationMs: 0 } } : {}),
@@ -146,7 +150,8 @@ export function codexItemToBlocks(item: CodexThreadItem, parentToolUseId: Parent
       return [{ type: 'plan', id: item.id, text: item.text, parentToolUseId }]
     case 'command_execution': {
       const running = item.status === 'in_progress'
-      const input = { command: item.command, ...(item.cwd ? { cwd: item.cwd } : {}), ...(item.commandActions?.length ? { commandActions: item.commandActions } : {}) }
+      // Always resolved, as the Codex view did: every Codex command draws as a parsed command.
+      const input = { command: item.command, ...(item.cwd ? { cwd: item.cwd } : {}), commandActions: resolveCodexCommandActions(item) }
       if (running) return [call(item, 'Bash', input, true, parentToolUseId, item.aggregatedOutput ? { liveOutput: item.aggregatedOutput } : {})]
       return [
         call(item, 'Bash', input, false, parentToolUseId),
@@ -240,6 +245,33 @@ export function codexItemsToContent(
     cache?.set(item, blocks)
     return blocks
   })
+}
+
+/** The parts of a summarized row its loaded detail fills in. */
+export interface CodexItemDetail {
+  input?: string
+  result?: string
+  isError?: boolean
+  taskResultText?: string
+  childBlocks?: ContentBlock[]
+}
+
+/**
+ * Detail of a summarized legacy Codex row. Hosts answer the row's detail ref
+ * with its whole item (`{ item, ... }`); the row reads it as its own blocks —
+ * input, result and, for an agent card, its children. `toolUseId` picks one
+ * file of a multi-file patch.
+ */
+export function codexItemDetail(item: CodexThreadItem, toolUseId: string = item.id): CodexItemDetail {
+  const blocks = codexItemToBlocks(item)
+  const call = blocks.find((block): block is ToolCall => block.type === 'tool_use' && block.toolUseId === toolUseId)
+  const outcome = blocks.find((block): block is ToolResult => block.type === 'tool_result' && block.toolUseId === toolUseId)
+  const children = blocks.filter(block => 'parentToolUseId' in block && block.parentToolUseId === toolUseId)
+  return {
+    ...(call ? { input: call.input, ...(call.taskResultText ? { taskResultText: call.taskResultText } : {}) } : {}),
+    ...(outcome ? { result: outcome.summary, ...(outcome.isError ? { isError: true } : {}) } : {}),
+    ...(children.length ? { childBlocks: children } : {}),
+  }
 }
 
 /**

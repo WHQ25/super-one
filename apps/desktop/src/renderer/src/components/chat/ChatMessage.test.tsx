@@ -9,12 +9,6 @@ import { useAppStore } from '@/stores/app'
 import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
 import { VirtualTranscriptContext } from './virtual-transcript-context'
 
-vi.mock('./CodexTurnView', () => ({
-  CodexTurnView: ({ isWorking }: { isWorking?: boolean }) => (
-    <div data-testid="codex-turn" data-working={String(!!isWorking)} />
-  ),
-}))
-
 vi.mock('./ForkButton', () => ({
   ForkButton: () => <button type="button" aria-label="fork" />,
 }))
@@ -78,23 +72,8 @@ afterEach(() => {
   })
 })
 
-describe('ChatMessage delegated Codex state', () => {
-  it('keeps a streaming delegated turn working while its session is backgrounded', () => {
-    render(
-      <ChatMessage
-        message={createCodexMessage()}
-        sessionStatus="background"
-        isLastAssistant
-        collapseEntireCodexTurn
-      />,
-    )
-
-    expect(screen.getByTestId('codex-turn')).toHaveAttribute('data-working', 'true')
-  })
-})
-
 describe('shared ContentBlock harness virtualization', () => {
-  it.each(['claude', 'acp', 'opencode', 'cursor', 'dsh'] as const)('virtualizes a long %s turn through the common adapter', providerId => {
+  it.each(['claude', 'codex', 'acp', 'opencode', 'cursor', 'dsh'] as const)('virtualizes a long %s turn through the common adapter', providerId => {
     const content: ChatMessageType['content'] = Array.from({ length: 96 }, (_, index) => ({
       type: 'tool_use', toolName: 'Bash', toolUseId: `command-${index}`,
       input: JSON.stringify({ command: `echo ${index}` }), status: 'complete',

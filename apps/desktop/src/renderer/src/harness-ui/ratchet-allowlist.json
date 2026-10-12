@@ -75,10 +75,6 @@
     "count": 11,
     "reason": "owning features: Codex thread, realtime voice, plan reject hint, dirs-next-turn and review; Claude agent mentions; ACP agent name and lazy slash load"
   },
-  "components/chat/ChatMessage.tsx": {
-    "count": 1,
-    "reason": "Codex message rendering"
-  },
   "components/chat/ChatSuggestions.tsx": {
     "count": 14,
     "reason": "ACP agents are picker options of their own (agent pick, separators, install hint)"

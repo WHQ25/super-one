@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import { useMemo } from 'react'
 import type { CodexThreadItem, ContentBlock } from '@superone/shared/agent-types'
+import { codexItemDetail } from '@superone/shared/codex-content'
 import type { PortableToolRowProps } from './PortableToolRow'
 import { useDeferredText } from './use-deferred-text'
 
@@ -13,19 +14,22 @@ export type DeferredToolDetail = Partial<PortableToolRowProps> & {
 
 /**
  * Loads the projected tool detail (`toolDetail` / `codexToolDetail` JSON) once the row
- * is expanded. `detail` is `{}` until the text lands; `status` carries the loading or
+ * is expanded. A legacy Codex row's detail is its whole item, read as the row
+ * named by `toolUseId` (see `codexItemDetail`). `detail` is `{}` until the text lands; `status` carries the loading or
  * error copy the host row should show, and `retry` re-subscribes after a failure.
  *
  * Presenters that own their own card chrome (subagent, workflow, Codex collab,
  * dedicated SuperOne tools) call this directly so they are not wrapped in a
  * second generic tool row.
  */
-export function useDeferredToolDetail(remoteDetail: string | undefined, expanded: boolean, complete: boolean) {
+export function useDeferredToolDetail(remoteDetail: string | undefined, expanded: boolean, complete: boolean, toolUseId?: string) {
   const { t } = useTranslation()
   const { text, error, loading, retry } = useDeferredText(remoteDetail ? [remoteDetail] : undefined, expanded, complete)
   const detail = useMemo((): DeferredToolDetail => {
-    try { return JSON.parse(text) as DeferredToolDetail } catch { return {} }
-  }, [text])
+    let parsed: DeferredToolDetail
+    try { parsed = JSON.parse(text) as DeferredToolDetail } catch { return {} }
+    return parsed.item ? { ...parsed, ...codexItemDetail(parsed.item, toolUseId) } : parsed
+  }, [text, toolUseId])
   return {
     detail,
     text,

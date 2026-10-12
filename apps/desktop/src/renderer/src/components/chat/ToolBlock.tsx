@@ -394,10 +394,11 @@ export const ToolBlock = memo(function ToolBlock(props: ToolBlockProps) {
 function DeferredToolBlock({ remoteDetail, ...props }: ToolBlockProps & { remoteDetail: string }) {
   const onOpen = !hasDedicatedToolRow(props.toolName)
   const [expanded, setExpanded] = useState(false)
-  const { detail, text, error, status, retry } = useDeferredToolDetail(remoteDetail, onOpen ? expanded : true, props.status !== 'streaming')
+  const { detail, text, error, status, retry } = useDeferredToolDetail(remoteDetail, onOpen ? expanded : true, props.status !== 'streaming', props.toolUseId)
   const loaded = {
     ...(detail.input ? { input: detail.input } : {}),
     ...(detail.result !== undefined ? { result: detail.result } : {}),
+    ...(detail.isError ? { isError: true } : {}),
     ...(detail.bashEditDiff ? { bashEditDiff: detail.bashEditDiff } : {}),
   }
   if (onOpen) {

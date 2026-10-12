@@ -13,11 +13,11 @@ import {
 } from './compact-chat-mode'
 import { summarizeClaudeProcess } from './turn-process-stats'
 import { TurnDetailSection } from './TurnDetailSection'
-import { collectCodexGeneratedImages, collectCodexGeneratedVideos } from './media-generation'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { SubagentBlock } from './SubagentBlock'
 import { WorkflowBlock } from './WorkflowBlock'
-import { CodexTurnView } from './CodexTurnView'
+import { turnDisplayContent } from '@superone/chat-view/presenters/turn-content'
+import { useTurnPlanApproval } from './use-turn-plan-approval'
 import { ImageGalleryBlock } from './ImageGalleryBlock'
 import { VideoGalleryBlock } from './VideoGalleryBlock'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
@@ -77,7 +77,6 @@ interface ChatMessageProps {
   isLastAssistant: boolean
   hideUserActions?: boolean
   hideCopyActions?: boolean
-  collapseEntireCodexTurn?: boolean
 }
 
 // Keep file-link resolution and parsed media rendering scoped to this text block.
@@ -145,7 +144,6 @@ export const ChatMessage = memo(function ChatMessage({
   isLastAssistant,
   hideUserActions,
   hideCopyActions,
-  collapseEntireCodexTurn,
 }: ChatMessageProps) {
   const { t } = useTranslation()
   const projectPath = useChatStore((s) => s.activeProject)
@@ -153,10 +151,6 @@ export const ChatMessage = memo(function ChatMessage({
   const isUser = message.role === 'user'
   const asyncQuestions = useActiveSession(session => codexAsyncAnswerQuestions(message, session.messages))
   const isStreaming = message.status === 'streaming' && sessionStatus === 'streaming' && isLastAssistant
-  const isWorking = message.status === 'streaming'
-    && (sessionStatus === 'streaming' || sessionStatus === 'background')
-    && isLastAssistant
-  const isCodexMessage = !isUser && message.providerId === 'codex'
   const collabLabelKey = isUser ? collaborationLabelKey(message) : null
   const isCollab = collabLabelKey != null
   // Parent-handed launch task: right-aligned markdown bubble (see CollabTaskBubble).
@@ -167,25 +161,17 @@ export const ChatMessage = memo(function ChatMessage({
   const assistantCopyText = isStreaming || hideCopyActions ? undefined : getAssistantCopyText(sourceMessage)
 
   const apps = useMiniAppStore((s) => s.apps)
-  const grouped = useMemo(
-    () => (isUser || isCodexMessage) ? null : groupContent(message.content, apps),
-    [isUser, isCodexMessage, message.content, apps],
-  )
-
-  const codexItems = message.metadata?.codex?.items
+  const turnContent = useMemo(() => isUser ? null : turnDisplayContent(message), [isUser, message.content, message.status])
+  const grouped = useMemo(() => turnContent ? groupContent(turnContent, apps) : null, [turnContent, apps])
   const generatedImages = useMemo(
-    () => isCodexMessage
-      ? collectCodexGeneratedImages(codexItems)
-      : grouped ? collectGeneratedImages(message.content, grouped.toolResultMap) : [],
-    [isCodexMessage, codexItems, grouped, message.content],
+    () => grouped && turnContent ? collectGeneratedImages(turnContent, grouped.toolResultMap) : [],
+    [grouped, turnContent],
   )
-
   const generatedVideos = useMemo(
-    () => isCodexMessage
-      ? collectCodexGeneratedVideos(codexItems)
-      : grouped ? collectGeneratedVideos(message.content, grouped.toolResultMap) : [],
-    [isCodexMessage, codexItems, grouped, message.content],
+    () => grouped && turnContent ? collectGeneratedVideos(turnContent, grouped.toolResultMap) : [],
+    [grouped, turnContent],
   )
+  const planApproval = useTurnPlanApproval(message, isStreaming, isLastAssistant)
 
   const userText = useMemo(
     () => (isUser
@@ -239,16 +225,6 @@ export const ChatMessage = memo(function ChatMessage({
     <RealtimeDelegationBody delegation={delegation} />
   ) : isUser ? (
     <UserMessageContentPresenter message={message} text={goalObjective} promptKeywords={promptKeywords} Block={UserContentBlock} asyncQuestions={asyncQuestions} />
-  ) : isCodexMessage ? (
-    <CodexTurnView
-      message={message}
-      isStreaming={isStreaming}
-      isWorking={isWorking}
-      isLastAssistant={isLastAssistant}
-      virtualize={(sourceMessage.metadata?.codex?.items.length ?? 0) >= 80}
-      collapseEntireTurn={collapseEntireCodexTurn}
-      footer={collapseEntireCodexTurn ? assistantFooter : undefined}
-    />
   ) : (
     <ModMessageScope messageId={message.id}>
       <TurnBodyPresenter
@@ -258,6 +234,7 @@ export const ChatMessage = memo(function ChatMessage({
         projectPath={projectPath}
         parts={(grouped!.segments.length >= 80 || sourceMessage.content.length >= 80) ? LONG_CONTENT_BLOCK_TURN_PARTS : TURN_PARTS}
         runtime={TURN_RUNTIME}
+        planApproval={planApproval}
       />
     </ModMessageScope>
   )
@@ -322,7 +299,6 @@ export const ChatMessage = memo(function ChatMessage({
           ? <TurnSummaryAboveFooter summary={message.metadata.turnSummary} />
           : undefined}
         assistantFooter={assistantFooter}
-        footerInsideBody={!!collapseEntireCodexTurn}
         contexts={message.contexts && message.contexts.length > 0
           ? <MessageContextChips contexts={message.contexts} />
           : undefined}

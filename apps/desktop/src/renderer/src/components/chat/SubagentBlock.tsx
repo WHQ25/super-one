@@ -126,7 +126,7 @@ export function SubagentBlock({
   const [expanded, setExpanded] = useState(defaultExpanded ?? false)
   // A summarized card (`remoteDetail`) carries no children: they load when it opens.
   const remoteDetail = shellTaskBlock.remoteDetail
-  const deferred = useDeferredToolDetail(remoteDetail, expanded, !isStreaming && !!shellResultBlock)
+  const deferred = useDeferredToolDetail(remoteDetail, expanded, !isStreaming && !!shellResultBlock, shellTaskBlock.toolUseId)
   const taskBlock = useMemo(() => remoteDetail
     ? { ...shellTaskBlock, ...(deferred.detail.input ? { input: deferred.detail.input } : {}), taskResultText: deferred.detail.taskResultText ?? shellTaskBlock.taskResultText }
     : shellTaskBlock, [remoteDetail, shellTaskBlock, deferred.detail])

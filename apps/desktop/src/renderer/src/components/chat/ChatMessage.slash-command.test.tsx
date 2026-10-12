@@ -7,9 +7,6 @@ import { ChatMessage } from './ChatMessage'
 import { createDefaultPerSessionState, createDefaultProjectState, useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 
-vi.mock('./CodexTurnView', () => ({
-  CodexTurnView: () => <div data-testid="codex-turn" />,
-}))
 
 vi.mock('./ForkButton', () => ({
   ForkButton: () => <button type="button" aria-label="fork" />,

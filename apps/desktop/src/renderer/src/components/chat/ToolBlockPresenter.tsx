@@ -196,6 +196,7 @@ export interface ToolBlockPresenterPorts extends GenericToolRowPorts {
   widgetComposerPorts?: ComposerViewPorts
   renderBash: (props: BashToolPresenterProps) => ReactNode
   renderExitPlanMode: (result?: string) => ReactNode
+  renderSessionLinkScope: (children: ReactNode) => ReactNode
   renderMiniAppTool: (props: MiniAppToolPresenterProps) => ToolFamilyRenderResult
 }
 
@@ -489,7 +490,7 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
       )
     }
     if (COLLAB_TOOLS.has(mcpInfo.mcpToolName)) {
-      return (
+      return ports.renderSessionLinkScope(
         <SessionCollabToolBlock
           toolName={mcpInfo.mcpToolName}
           params={params}
@@ -498,7 +499,7 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
           isError={isError}
           isDenied={isDenied}
           allowExpand={allowExpand}
-        />
+        />,
       )
     }
     if (isSessionArchiveToolName(mcpInfo.mcpToolName)) {

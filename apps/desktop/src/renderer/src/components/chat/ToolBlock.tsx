@@ -14,6 +14,7 @@ import {
   type DiffLine,
 } from '@/lib/diff-utils'
 import { getHighlightCache } from '@/lib/highlight-cache'
+import { DesktopSessionLinkScope } from '@/lib/session-links'
 import { AnsiText } from '@/lib/ansi'
 import { useStallLevel } from '@/lib/stall-utils'
 import { resolveMiniAppToolIdentity } from '@/lib/miniapp-tool-identity'
@@ -345,6 +346,7 @@ const ToolBlockBody = memo(function ToolBlockBody(props: ToolBlockProps) {
     renderJson: (text) => <PrettyJSONCodeBlock text={text} />,
     renderQuestionPreview: (preview) => <QuestionPreviewContent {...preview} />,
     renderExitPlanMode: (planResult) => <ExitPlanModeBlock result={planResult} />,
+    renderSessionLinkScope: (children) => <DesktopSessionLinkScope>{children}</DesktopSessionLinkScope>,
     renderMiniAppTool: (miniAppProps) => renderDesktopMiniAppTool(miniAppProps, {
       apps: miniApps,
       interceptState: toolInterceptState,

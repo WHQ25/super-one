@@ -101,15 +101,20 @@ const ACTION_TOOL: Record<string, string> = { read: 'Read', search: 'Grep', list
 export function generateToolGroupSummary(toolUses: ContentBlock[]): string {
   const counts: Record<string, number> = {}
   const add = (name: string, count = 1) => { counts[name] = (counts[name] || 0) + count }
+  // Parsed commands count each file once, however many of them read it.
+  const commandFiles = new Set<string>()
   for (const t of toolUses) {
     if (t.type !== 'tool_use') continue
     // A parsed command counts what it did: each file read, search and listing.
     const command = t.toolName === 'Bash' ? parsedCommandFromBashInput(t.toolUseId, t.input) : null
     if (!command) { add(t.toolName); continue }
     const view = codexCommandPresentation(command)
-    if (view.files.length) add('Read', view.files.length)
+    // Holds the label's place where the first file was read.
+    if (view.files.length) counts.Read ??= 0
+    for (const file of view.files) commandFiles.add(file)
     for (const action of view.actions) if (action.type !== 'read') add(ACTION_TOOL[action.type] ?? 'Bash')
   }
+  if (commandFiles.size) add('Read', commandFiles.size)
 
   const globCount = counts['Glob'] ?? 0
   const grepCount = counts['Grep'] ?? 0

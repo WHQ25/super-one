@@ -2,6 +2,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeAll, describe, expect, it } from 'vitest'
 import type { CodexCommandExecutionItem } from '@superone/shared/agent-types'
+import { withCodexContent } from '@superone/shared/codex-content'
 import { initializeChatViewI18n } from './i18n'
 import { PortableMessage } from './PortableMessage'
 
@@ -11,14 +12,15 @@ describe.each([false, true])('Codex command outcomes (deferred: %s)', (deferred)
   function render(item: Partial<CodexCommandExecutionItem>) {
     return renderToStaticMarkup(createElement(PortableMessage, {
       scheme: 'dark', pendingPermission: null, isLastAssistant: true, sessionStreaming: false,
-      message: {
+      // The phone derives a legacy turn's content at ingress.
+      message: withCodexContent({
         id: 'turn', role: 'assistant', status: 'complete', content: [], createdAt: '', providerId: 'codex',
         metadata: { codex: { threadId: 'thread', usage: null, items: [{
           id: 'command', type: 'command_execution', command: 'rg missing README.md',
           aggregatedOutput: '', status: 'failed', ...item,
           ...(deferred ? { remoteDetail: '["turn","item","command"]' } : {}),
         }] } },
-      },
+      }),
     }))
   }
 

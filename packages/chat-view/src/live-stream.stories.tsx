@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { ChatMessage } from '@superone/shared/agent-types'
 import { PortableMessage } from './PortableMessage'
+import { withCodexContent } from '@superone/shared/codex-content'
 
 function LiveStream({ provider = 'claude', initialStage = 0, status = 'streaming', scheme = 'light' }: {
   provider?: 'claude' | 'codex'; initialStage?: number; status?: ChatMessage['status']; scheme?: 'light' | 'dark'
@@ -28,7 +29,8 @@ function LiveStream({ provider = 'claude', initialStage = 0, status = 'streaming
       <input aria-label="Incoming state" type="range" min={0} max={3} step={1} value={stage}
         onChange={(event) => setStage(Number(event.target.value))} />
     </label>
-    <PortableMessage message={source} scheme={scheme} pendingPermission={null}
+    {/* The phone derives a legacy Codex turn's content at ingress. */}
+    <PortableMessage message={withCodexContent(source)} scheme={scheme} pendingPermission={null}
       isLastAssistant sessionStreaming={!complete && status === 'streaming'} />
   </div>
 }

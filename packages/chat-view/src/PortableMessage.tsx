@@ -20,17 +20,12 @@ import { PortableToolRow } from './PortableToolRow'
 import { PortableTurnFooter } from './PortableTurnFooter'
 import {
   PortableTurn,
-  PortableCodexTurn,
   PortableImageGallery,
   PortableTurnProvider,
   PortableVideoGallery,
   portableToolBlocks,
   portableToolResultText,
 } from './PortableTurnAdapters'
-import {
-  collectCodexGeneratedImages,
-  collectCodexGeneratedVideos,
-} from './presenters/media-generation'
 import { collectGeneratedImages, collectGeneratedVideos } from './presenters/tool-display'
 import type { ReductionProjection } from './protocol'
 import { useUserMessageMenu } from './use-user-message-menu'
@@ -76,25 +71,18 @@ function UserToolBlock({ block, index, message }: { block: ContentBlock; index: 
 
 /**
  * The turn-end media galleries, the counterpart to hiding a successful
- * generation's tool row (see `isHiddenToolBlock`). Codex keeps its own cards
- * inside `CodexTurnViewPresenter`, so only the Claude path collects here.
+ * generation's tool row (see `isHiddenToolBlock`).
  */
-function useGeneratedMedia(message: ChatMessage, isCodex: boolean) {
+function useGeneratedMedia(message: ChatMessage, isUser: boolean) {
   return useMemo(() => {
-    if (isCodex) {
-      const items = message.metadata?.codex?.items
-      return {
-        images: collectCodexGeneratedImages(items),
-        videos: collectCodexGeneratedVideos(items),
-      }
-    }
+    if (isUser) return { images: [], videos: [] }
     const blocks = portableToolBlocks(message.content)
     const results = portableToolResultText(message.content)
     return {
       images: collectGeneratedImages(blocks, results),
       videos: collectGeneratedVideos(blocks, results),
     }
-  }, [isCodex, message.content, message.metadata?.codex?.items])
+  }, [isUser, message.content])
 }
 
 export const PortableMessage = memo(function PortableMessage({
@@ -137,8 +125,7 @@ export const PortableMessage = memo(function PortableMessage({
 }) {
   const { t } = useTranslation()
   const isUser = message.role === 'user'
-  const isCodex = !isUser && Boolean(message.metadata?.codex)
-  const generated = useGeneratedMedia(message, isCodex)
+  const generated = useGeneratedMedia(message, isUser)
   // A turn's own `status` is not enough: an interrupt or a dropped connection
   // leaves an older turn marked `streaming` forever, and without the session
   // gate the phone spins on it for the rest of the session. Same three-way test
@@ -195,9 +182,7 @@ export const PortableMessage = memo(function PortableMessage({
       ? <RealtimeDelegationBody delegation={delegation} />
       : isUser
       ? <UserMessageContentPresenter message={message} text={goalObjective} promptKeywords={sentKeywords} Block={UserToolBlock} asyncQuestions={asyncQuestions} />
-      : isCodex
-        ? <PortableCodexTurn message={message} isStreaming={isStreaming} isLastAssistant={isLastAssistant} />
-        : <PortableTurn message={message} isStreaming={isStreaming} />
+      : <PortableTurn message={message} isStreaming={isStreaming} isLastAssistant={isLastAssistant} />
 
   // Copy text is only needed once the turn settles (the button hides while
   // streaming), so skip concatenating the whole turn on every delta.

@@ -5,9 +5,9 @@ import { mergeCodexCommandDetail } from './codex-command-detail'
 import { PortableTurnContext } from './portable-turn-context'
 import { AnsiText } from './presenters/ansi'
 import { CodexCommandBlockPresenter } from './presenters/CodexCommandBlock'
-import type { CodexCommandPresenterProps } from './presenters/CodexTurnView'
+import type { CodexCommandExecutionItem } from '@superone/shared/agent-types'
 
-export function PortableCodexCommand({ item, isStreaming }: CodexCommandPresenterProps) {
+export function PortableCodexCommand({ item, isStreaming }: { item: CodexCommandExecutionItem; isStreaming: boolean }) {
   const { projectPath } = useContext(PortableTurnContext)
   const [expanded, setExpanded] = useState(false)
   const { detail, status, retry } = useDeferredToolDetail(item.remoteDetail, expanded, item.status !== 'in_progress')

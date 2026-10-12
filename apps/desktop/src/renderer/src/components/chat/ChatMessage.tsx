@@ -59,9 +59,9 @@ import {
   type TurnDocumentPresenterProps,
   type TurnBodyPresenterParts,
   type TurnBodyPresenterRuntime,
+  type TurnDetailPresenterProps,
 } from './presenters/TurnBody'
 import { PlanBlock } from './PlanBlock'
-import type { CodexTurnDetailPresenterProps } from './presenters/CodexTurnView'
 import {
   groupContent,
 } from './chat-message/groupContent'
@@ -112,7 +112,7 @@ const TURN_PARTS: TurnBodyPresenterParts = {
   TurnDetail: TurnDetailSection,
 }
 
-function LongTurnDetail(props: CodexTurnDetailPresenterProps) {
+function LongTurnDetail(props: TurnDetailPresenterProps) {
   return <TurnDetailSection {...props} animate={false} />
 }
 

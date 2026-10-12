@@ -1,9 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { CodexThreadItem } from '@superone/shared/agent-types'
-import {
-  summarizeClaudeProcess,
-  summarizeCodexProcess,
-} from './turn-process-stats'
+import { codexItemsToContent } from '@superone/shared/codex-content'
+import { summarizeClaudeProcess } from './turn-process-stats'
 
 const hidden = new Set(['TodoWrite', 'mcp__superone__session_rename'])
 
@@ -272,7 +270,14 @@ describe('summarizeClaudeProcess', () => {
   })
 })
 
-describe('summarizeCodexProcess', () => {
+/** A legacy Codex turn's stats, read from its derived content as the turn's Detail does. */
+function codexTurnStats(items: CodexThreadItem[]) {
+  const blocks = codexItemsToContent(items)
+  const errors = new Set(blocks.flatMap(block => block.type === 'tool_result' && block.isError ? [block.toolUseId] : []))
+  return summarizeClaudeProcess([{ kind: 'tools', blocks }], { ...opts, isErrorTool: id => errors.has(id) })
+}
+
+describe('legacy Codex turn stats', () => {
   const items: CodexThreadItem[] = [
     { id: 'r1', type: 'reasoning', text: 'thinking' },
     { id: 'c1', type: 'command_execution', command: 'ls', aggregatedOutput: '', status: 'completed' },
@@ -288,19 +293,13 @@ describe('summarizeCodexProcess', () => {
     { id: 'm1', type: 'agent_message', text: 'done' },
   ]
 
+  // A patch draws one row per changed file, and each row counts as a call.
   it('counts tool-like items and file_change diffs', () => {
-    const stats = summarizeCodexProcess(
-      [
-        { kind: 'reasoning', indices: [0] },
-        { kind: 'item', index: 1 },
-        { kind: 'item', index: 2 },
-      ],
-      items,
-    )
-    expect(stats).toEqual({ toolCalls: 2, filesChanged: 2, added: 4, removed: 1 })
+    const stats = codexTurnStats(items)
+    expect(stats).toEqual({ toolCalls: 3, filesChanged: 2, added: 4, removed: 1 })
   })
 
-  it('uses item.toolLineDelta when file_change diffs are stripped', () => {
+  it('uses the summarized line counts when file_change diffs are stripped', () => {
     const projected: CodexThreadItem[] = [
       {
         id: 'f1',
@@ -308,15 +307,16 @@ describe('summarizeCodexProcess', () => {
         status: 'completed',
         toolLineDelta: { added: 4, removed: 1 },
         changes: [
-          { path: 'a.ts', kind: 'update' },
-          { path: 'b.ts', kind: 'add' },
+          { path: 'a.ts', kind: 'update', toolLineDelta: { added: 2, removed: 1 } },
+          { path: 'b.ts', kind: 'add', toolLineDelta: { added: 2, removed: 0 } },
         ],
       },
+      { id: 'f2', type: 'file_change', status: 'completed', toolLineDelta: { added: 3, removed: 0 }, changes: [{ path: 'c.ts', kind: 'add' }] },
     ]
-    expect(summarizeCodexProcess([{ kind: 'item', index: 0 }], projected)).toEqual({
-      toolCalls: 1,
-      filesChanged: 2,
-      added: 4,
+    expect(codexTurnStats(projected)).toEqual({
+      toolCalls: 3,
+      filesChanged: 3,
+      added: 7,
       removed: 1,
     })
   })
@@ -330,7 +330,7 @@ describe('summarizeCodexProcess', () => {
         changes: [{ path: 'a.ts', kind: 'update', diff: '@@\n-old\n+new\n' }],
       },
     ]
-    expect(summarizeCodexProcess([{ kind: 'item', index: 0 }], failed)).toEqual({
+    expect(codexTurnStats(failed)).toEqual({
       toolCalls: 1,
       filesChanged: 0,
       added: 0,

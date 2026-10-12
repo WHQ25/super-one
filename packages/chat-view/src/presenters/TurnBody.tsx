@@ -17,10 +17,21 @@ import { ModSite, useModMessageId } from '../mod-ui/react'
 import { renderTurnSegments, type TurnSegmentProps } from './turn-segments'
 import { ReviewMarkerPresenter, TurnNoticePresenter } from './TurnMarkers'
 import { assistantMessageProps, stringProp, toolGroupProps, toolUseProps, type ToolCallFacts } from '../mod-ui/site-props'
-import type {
-  CodexTurnDetailPresenterProps,
-  CodexTurnProcessStats,
-} from './CodexTurnView'
+import type { TurnProcessStats } from './turn-process-stats'
+
+/** One rendered run of a turn — see `partitionTurnForCompactMode`. */
+export interface TurnDetailRun {
+  key: string
+  /** Collapsible runs hide behind the shared Detail toggle; pinned runs always render. */
+  collapsible: boolean
+  content: ReactNode
+}
+
+export interface TurnDetailPresenterProps {
+  runs: TurnDetailRun[]
+  stats?: TurnProcessStats
+  workingSince?: string | number
+}
 
 export interface TurnTextPresenterProps {
   text: string
@@ -139,7 +150,7 @@ export interface TurnBodyPresenterParts {
   Plan: ComponentType<TurnPlanPresenterProps>
   ToolGroup: ComponentType<TurnToolGroupPresenterProps>
   AppToolGroup: ComponentType<TurnAppToolGroupPresenterProps>
-  TurnDetail: ComponentType<CodexTurnDetailPresenterProps>
+  TurnDetail: ComponentType<TurnDetailPresenterProps>
 }
 
 export interface TurnBodyPresenterRuntime {
@@ -152,7 +163,7 @@ export interface TurnBodyPresenterRuntime {
       isErrorTool?: (toolUseId: string) => boolean
       bashEditDiffAt?: (toolUseId: string) => BashEditDiff | undefined
     },
-  ) => CodexTurnProcessStats
+  ) => TurnProcessStats
 }
 
 export interface TurnBodyPresenterProps {

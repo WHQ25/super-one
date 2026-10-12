@@ -28,7 +28,12 @@ export function useDeferredToolDetail(remoteDetail: string | undefined, expanded
   const detail = useMemo((): DeferredToolDetail => {
     let parsed: DeferredToolDetail
     try { parsed = JSON.parse(text) as DeferredToolDetail } catch { return {} }
-    return parsed.item ? { ...parsed, ...codexItemDetail(parsed.item, toolUseId) } : parsed
+    if (!parsed.item) return parsed
+    // A host sends a command's output beside its item, not in it.
+    const item = parsed.item.type === 'command_execution' && !parsed.item.aggregatedOutput && parsed.result
+      ? { ...parsed.item, aggregatedOutput: parsed.result }
+      : parsed.item
+    return { ...parsed, ...codexItemDetail(item, toolUseId) }
   }, [text, toolUseId])
   return {
     detail,

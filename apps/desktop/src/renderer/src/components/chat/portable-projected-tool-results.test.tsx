@@ -3,6 +3,7 @@
 import { render, fireEvent, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { PortableMessage } from '@superone/chat-view/PortableMessage'
+import { withCodexContent } from '@superone/shared/codex-content'
 import { applyContentDelta } from '@superone/shared/content-delta'
 import type { ChatMessage, ContentBlock } from '@superone/shared/agent-types'
 
@@ -101,12 +102,13 @@ describe('projected tool results on the phone', () => {
 })
 
 it('renders a Codex shell command before output arrives and updates it in place', async () => {
-  const message: ChatMessage = {
+  // The phone derives a legacy turn's content at ingress.
+  const message: ChatMessage = withCodexContent({
     id: 'codex-turn', role: 'assistant', status: 'streaming', createdAt: '', providerId: 'codex', content: [],
     metadata: { codex: { threadId: 'thread', usage: null, items: [
       { id: 'shell', type: 'command_execution', command: 'bun run build', aggregatedOutput: '', status: 'in_progress' },
     ] } },
-  }
+  })
   const props = { scheme: 'dark' as const, pendingPermission: null, isLastAssistant: true, sessionStreaming: true }
   const { container, rerender } = render(<PortableMessage message={message} {...props} />)
   const row = container.querySelector('[data-tool-use-id="shell"]')
@@ -114,7 +116,7 @@ it('renders a Codex shell command before output arrives and updates it in place'
   fireEvent.click(row!.querySelector('.tool-node > div')!)
   expect(container.textContent).toContain('bun run build')
   expect(row!.querySelector('.animate-shimmer')).not.toBeNull()
-  const update = (output: string, complete: boolean): ChatMessage => ({
+  const update = (output: string, complete: boolean): ChatMessage => withCodexContent({
     ...message, metadata: { codex: { ...message.metadata!.codex!, items: [
       { id: 'shell', type: 'command_execution', command: 'bun run build', aggregatedOutput: output,
         status: complete ? 'completed' : 'in_progress', ...(complete ? { exitCode: 0 } : {}) },
@@ -132,7 +134,7 @@ it('renders a Codex shell command before output arrives and updates it in place'
 it.each(['projected', 'codex'])('renders a historical %s command echo only once', (format) => {
   const command = '/bin/zsh -lc "git status --short"'
   const output = `\x1b[32m$\x1b[0m ${command}\n M README.md`
-  const message: ChatMessage = {
+  const message: ChatMessage = withCodexContent({
     id: 'history', role: 'assistant', status: 'complete', createdAt: '', providerId: 'codex',
     content: format === 'projected' ? [
       { type: 'bash', toolName: 'Bash', toolUseId: 'history-shell', input: JSON.stringify({ command }), status: 'complete' } as ContentBlock,
@@ -141,7 +143,7 @@ it.each(['projected', 'codex'])('renders a historical %s command echo only once'
     ...(format === 'codex' ? { metadata: { codex: { threadId: 'thread', usage: null, items: [
       { id: 'history-shell', type: 'command_execution' as const, command, aggregatedOutput: output, status: 'completed' as const, exitCode: 0 },
     ] } } } : {}),
-  }
+  })
   const { container } = render(<PortableMessage message={message} scheme="dark" pendingPermission={null} />)
   const row = container.querySelector('[data-tool-use-id="history-shell"]')!
   expect(row).not.toBeNull()

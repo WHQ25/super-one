@@ -94,25 +94,6 @@ export function isClaudePinnedSegment(seg: {
   return seg.block.type === 'tool_use' && (Boolean(seg.block.app) || isPinnedToolName(seg.block.toolName ?? '', ports))
 }
 
-/**
- * Codex topology segments: agent_message / plan / user-facing tool items and
- * subagent cards are pinned. `itemAt` resolves a segment index into the full
- * codex item list.
- */
-export function isCodexPinnedSegment(
-  seg: { kind: string; index?: number },
-  itemAt: (index: number) => { type: string; server?: string; tool?: string; app?: unknown } | undefined,
-  ports: CompactChatModePorts,
-): boolean {
-  if (seg.kind === 'subagent') return true
-  if (seg.kind !== 'item' || seg.index == null) return false
-  const item = itemAt(seg.index)
-  if (!item) return false
-  if (item.type === 'agent_message' || item.type === 'plan') return true
-  return item.type === 'mcp_tool_call'
-    && (Boolean(item.app) || isPinnedToolName(`mcp__${item.server}__${item.tool}`, ports))
-}
-
 type ClaudeVisibilitySeg = {
   kind: string
   blocks?: ReadonlyArray<{ type: string; toolName?: string; toolUseId?: string }>

@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { ChatMessage } from '@superone/shared/agent-types'
 import { PortableMessage } from './PortableMessage'
+import { withCodexContent } from '@superone/shared/codex-content'
 
 function FailedTurn({ provider = 'codex', width = 390, withUsage = true, scheme = 'light' }: {
   provider?: 'codex' | 'claude'
@@ -31,7 +32,7 @@ function FailedTurn({ provider = 'codex', width = 390, withUsage = true, scheme 
   }
   return (
     <div className="max-w-full p-3" style={{ width }}>
-      <PortableMessage message={message} scheme={scheme} pendingPermission={null}
+      <PortableMessage message={withCodexContent(message)} scheme={scheme} pendingPermission={null}
         isLastAssistant sessionStreaming={false} />
     </div>
   )

@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { ChatMessage } from '@superone/shared/agent-types'
+import { withCodexContent } from '@superone/shared/codex-content'
 import type { HostInbound } from '../src/protocol'
 
 const documentUrl = pathToFileURL(resolve(import.meta.dirname, '../dist/index.html')).href
@@ -39,7 +40,8 @@ for (const providerId of ['claude', 'codex'] as const) {
       } } } : {}),
     })
     await send(page, { type: 'hydrate', messages: [] })
-    await send(page, { type: 'applyReductionPatch', sessionStatus: 'streaming', messages: [response] })
+    // The phone derives a legacy turn's content at ingress.
+    await send(page, { type: 'applyReductionPatch', sessionStatus: 'streaming', messages: [withCodexContent(response)] })
     const article = page.locator('article[data-turn-id="live"]')
     await expect(article.locator('.thinking-content')).toHaveCount(0)
     await article.locator('.thinking-node > div').first().click()
@@ -49,7 +51,7 @@ for (const providerId of ['claude', 'codex'] as const) {
     } else {
       response.metadata!.codex!.items.push({ id: 'tool', type: 'command_execution', command: 'cat README.md', commandActions: [{ type: 'read', path: 'README.md', name: 'README.md' }], aggregatedOutput: '', status: 'in_progress' })
     }
-    await send(page, { type: 'applyReductionPatch', messages: [response] })
+    await send(page, { type: 'applyReductionPatch', messages: [withCodexContent(response)] })
     // The clock remains paused: no simulated playback budget is needed.
     await expect(article.getByText(providerId === 'claude' ? 'pwd' : 'README.md', { exact: true }).first()).toBeVisible()
     await expect(article.locator('.thinking-content')).toHaveText(thinking)
@@ -58,11 +60,12 @@ for (const providerId of ['claude', 'codex'] as const) {
     if (providerId === 'claude') {
       response.content.push({ type: 'tool_result', toolUseId: 'tool', summary: '/project' }, { type: 'text', text: answer })
     } else {
-      Object.assign(response.metadata!.codex!.items[1], { status: 'completed', aggregatedOutput: '/project', exitCode: 0 })
+      const items = response.metadata!.codex!.items
+      items[1] = { ...items[1], status: 'completed', aggregatedOutput: '/project', exitCode: 0 } as typeof items[1]
       response.metadata!.codex!.items.push({ id: 'answer', type: 'agent_message', text: answer })
     }
     response.status = 'complete'
-    await send(page, { type: 'applyReductionPatch', sessionStatus: 'idle', messages: [response] })
+    await send(page, { type: 'applyReductionPatch', sessionStatus: 'idle', messages: [withCodexContent(response)] })
     await expect(article.locator('.chat-md')).toHaveText(answer)
   })
 }

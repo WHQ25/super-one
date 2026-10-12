@@ -3,6 +3,7 @@ import { pathToFileURL } from 'node:url'
 import { resolve } from 'node:path'
 import type { ChatMessage, ContentBlock } from '@superone/shared/agent-types'
 import { wrapAgentMention } from '@superone/shared/agent-mention-tags'
+import { withCodexContent } from '@superone/shared/codex-content'
 import {
   AGENT_TOOL_RECORDINGS,
   BROWSER_TOOL_RECORDING,
@@ -518,7 +519,7 @@ test('30 uses the shared Claude tool-group presenter', async ({ page }) => {
 test('31 uses the shared Codex command-group presenter', async ({ page }) => {
   await send(page, {
     type: 'hydrate',
-    messages: [message('codex-group', [], {
+    messages: [withCodexContent(message('codex-group', [], {
       providerId: 'codex',
       metadata: {
         codex: {
@@ -545,7 +546,7 @@ test('31 uses the shared Codex command-group presenter', async ({ page }) => {
           ],
         },
       },
-    })],
+    }))],
   })
 
   await expect(page.locator('.tool-group')).toContainText(/2/)
@@ -556,8 +557,8 @@ test('32 renders a Codex collaboration recording with the shared presenter', asy
   await send(page, { type: 'hydrate', messages: [CODEX_COLLAB_RECORDING] })
 
   const card = page.locator('.subagent-container')
+  // The agent's name stands in for its role, as on a Claude teammate's card.
   await expect(card).toContainText('Reviewer')
-  await expect(card).toContainText('UI review')
   await card.locator('> button').click()
   await expect(card.locator('[data-tool-use-id="child-read"]')).toContainText('ToolRow.tsx')
   await expect(card.locator('[data-tool-use-id="child-search"]')).toContainText('mobile tool row accessibility')

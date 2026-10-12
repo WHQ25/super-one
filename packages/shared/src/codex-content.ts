@@ -103,6 +103,8 @@ function agentTaskStatus(item: CodexCollabToolCallItem, state: CodexCollabAgentS
     case 'errored': return 'failed'
     case 'shutdown':
     case 'notFound': return 'stopped'
+    // A summarized shell carries no agent state; its call's outcome stands in.
+    case undefined: return item.status === 'completed' ? 'completed' : undefined
     default: return undefined
   }
 }
@@ -116,7 +118,7 @@ function collabAgentBlocks(item: CodexCollabToolCallItem, parentToolUseId: Paren
   const container = call(item, 'Agent', {
     ...(item.prompt ? { prompt: item.prompt } : {}),
     ...(state?.nickname ? { name: state.nickname } : {}),
-    ...(state?.role ? { subagent_type: state.role } : {}),
+    subagent_type: state?.role ?? 'agent',
     ...(item.tool !== 'spawnAgent' ? { followUp: true } : {}),
   }, running, parentToolUseId, {
     taskThreadId: threadId,
@@ -167,9 +169,11 @@ export function codexItemToBlocks(item: CodexThreadItem, parentToolUseId: Parent
       const changes = item.changes.length ? item.changes : [null]
       return changes.flatMap((change, index): ContentBlock[] => {
         const toolUseId = `${item.id}:${index}`
+        // A summarized patch keeps its line counts; a lone file's may sit on the item alone.
+        const toolLineDelta = change?.toolLineDelta ?? (changes.length === 1 ? item.toolLineDelta : undefined)
         const tool = call({ id: toolUseId, ...remote }, 'FileChange',
           change ? { file_path: change.path, kind: change.kind, diff: change.diff ?? '' } : {}, false, parentToolUseId,
-          change?.toolLineDelta ? { toolLineDelta: change.toolLineDelta } : {})
+          toolLineDelta ? { toolLineDelta } : {})
         return failed ? [tool, result(toolUseId, index === 0 ? CODEX_FILE_CHANGE_FAILED : '', parentToolUseId, { isError: true })] : [tool]
       })
     }

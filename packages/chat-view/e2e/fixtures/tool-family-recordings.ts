@@ -1,7 +1,11 @@
 import type { ChatMessage } from '@superone/shared/agent-types'
+import { withCodexContent } from '@superone/shared/codex-content'
+
+// Codex recordings keep the stored item shape; the phone derives their content
+// at ingress, so each goes through `withCodexContent` as the runtime does.
 
 /** Sanitized recording of a completed Codex collaboration turn. */
-export const CODEX_COLLAB_RECORDING: ChatMessage = {
+export const CODEX_COLLAB_RECORDING: ChatMessage = withCodexContent({
   id: 'recording-codex-collab',
   role: 'assistant',
   status: 'complete',
@@ -54,7 +58,7 @@ export const CODEX_COLLAB_RECORDING: ChatMessage = {
       }],
     },
   },
-}
+})
 
 /** Sanitized recordings covering the Claude and Codex plan families. */
 export const PLAN_RECORDINGS: ChatMessage[] = [
@@ -71,7 +75,7 @@ export const PLAN_RECORDINGS: ChatMessage[] = [
     createdAt: '2026-09-04T00:00:01.000Z',
     providerId: 'claude',
   },
-  {
+  withCodexContent({
     id: 'recording-codex-plan',
     role: 'assistant',
     status: 'complete',
@@ -89,7 +93,7 @@ export const PLAN_RECORDINGS: ChatMessage[] = [
         }],
       },
     },
-  },
+  }),
 ]
 
 /** Sanitized failed generation recording, including a host-backed reference image. */
@@ -123,7 +127,7 @@ export const IMAGE_GENERATION_RECORDING: ChatMessage = {
 }
 
 /** Sanitized Codex recording whose completed images are collected into one turn gallery. */
-export const CODEX_IMAGE_GALLERY_RECORDING: ChatMessage = {
+export const CODEX_IMAGE_GALLERY_RECORDING: ChatMessage = withCodexContent({
   id: 'recording-codex-image-gallery',
   role: 'assistant',
   status: 'complete',
@@ -154,7 +158,7 @@ export const CODEX_IMAGE_GALLERY_RECORDING: ChatMessage = {
       ],
     },
   },
-}
+})
 
 /** Sanitized assistant recording containing the shared insight marker grammar. */
 export const INSIGHT_RECORDING: ChatMessage = {

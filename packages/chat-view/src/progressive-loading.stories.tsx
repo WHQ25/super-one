@@ -3,7 +3,9 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { installHostBridge } from './bridge'
 import { deliverDetail } from './document-detail'
 import { DeferredReasoning } from './DeferredReasoning'
-import { DeferredCodexTool, DeferredTool } from './DeferredTool'
+import { DeferredTool } from './DeferredTool'
+import { withCodexContent } from '@superone/shared/codex-content'
+import type { CodexFileChangeItem } from '@superone/shared/agent-types'
 import { PortableMessage } from './PortableMessage'
 
 function ProgressiveLoading({ state = 'ready' }: { state?: 'ready' | 'loading' | 'error' | 'long' | 'edit' }) {
@@ -373,14 +375,30 @@ function ProgressiveCodexFileChange({ files, state = 'ready' }: { files: 1 | 2; 
     } }
     return () => { remove(); host.ReactNativeWebView = previous }
   }, [changes, state])
+  const patch: CodexFileChangeItem = {
+    ...CODEX_PATCH,
+    remoteDetail: `story-codex-patch-${files}`,
+    toolLineDelta: files === 1 ? { added: 1, removed: 1 } : { added: 2, removed: 1 },
+    changes: changes.map(({ path, kind }, index) => ({ path, kind, toolLineDelta: index === 0 ? { added: 1, removed: 1 } : { added: 1, removed: 0 } })),
+  }
   return (
     <div className="mx-auto max-w-[390px] p-4">
-      <DeferredCodexTool isStreaming={false} item={{
-        ...CODEX_PATCH,
-        remoteDetail: `story-codex-patch-${files}`,
-        toolLineDelta: files === 1 ? { added: 1, removed: 1 } : { added: 2, removed: 1 },
-        changes: changes.map(({ path, kind }, index) => ({ path, kind, toolLineDelta: index === 0 ? { added: 1, removed: 1 } : { added: 1, removed: 0 } })),
-      }} />
+      <PortableMessage
+        // A legacy Codex turn whose patch is summarized, drawn from its derived content.
+        message={withCodexContent({
+          id: `progressive-codex-patch-${files}`,
+          role: 'assistant',
+          status: 'complete',
+          providerId: 'codex',
+          createdAt: '2026-09-09T00:00:00Z',
+          content: [],
+          metadata: { codex: { threadId: 'thread', usage: null, items: [patch] } },
+        })}
+        scheme="dark"
+        pendingPermission={null}
+        isLastAssistant
+        sessionStreaming={false}
+      />
     </div>
   )
 }

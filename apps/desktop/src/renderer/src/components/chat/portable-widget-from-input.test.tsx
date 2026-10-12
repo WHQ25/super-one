@@ -3,6 +3,7 @@
 import { act, fireEvent, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { PortableMessage } from '@superone/chat-view/PortableMessage'
+import { withCodexContent } from '@superone/shared/codex-content'
 import { installFakeNativeHost } from '@superone/chat-view/fixtures/native-host'
 import type { ChatMessage, CodexCollabToolCallItem, CodexMcpToolCallItem, CodexThreadItem, ContentBlock } from '@superone/shared/agent-types'
 import { renderWithNativeDetails as render } from './portable-detail.test-fixtures'
@@ -50,7 +51,8 @@ function codexWidget(overrides: Partial<CodexMcpToolCallItem> = {}): CodexMcpToo
 }
 
 function codexTurn(items: CodexThreadItem[]): ChatMessage {
-  return turn({ providerId: 'codex', content: [], metadata: { codex: { threadId: 'thread', usage: null, items } } } as never)
+  // The phone derives a legacy turn's content at ingress.
+  return withCodexContent(turn({ providerId: 'codex', content: [], metadata: { codex: { threadId: 'thread', usage: null, items } } } as never))
 }
 
 function renderTurn(message: ChatMessage) {

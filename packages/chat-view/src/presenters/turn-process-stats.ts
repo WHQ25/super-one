@@ -1,4 +1,4 @@
-import type { BashEditDiff, CodexThreadItem, TaskFileChange } from '@superone/shared/agent-types'
+import type { BashEditDiff, TaskFileChange } from '@superone/shared/agent-types'
 import { bashEditFileChanges } from '@superone/shared/bash-edit-diff'
 import { fileMutationPath, isFileMutationTool } from '@superone/shared/file-mutation'
 import { normalizeTranscriptTool } from '@superone/shared/tool-ui'
@@ -44,12 +44,6 @@ export interface ClaudeProcessStatsOpts {
   isErrorTool?: (toolUseId: string) => boolean
   /** A Bash call's working-tree diff; its files count like Edit / Write rows. */
   bashEditDiffAt?: (toolUseId: string) => BashEditDiff | undefined
-}
-
-export type CodexProcessStatsSeg = {
-  kind: string
-  index?: number
-  indices?: number[]
 }
 
 function parseToolInput(input: string): Record<string, unknown> {
@@ -185,65 +179,6 @@ export function summarizeClaudeProcess(
       }
       const toolUseId = edit.block.toolUseId ?? ''
       if (!failed(toolUseId, opts.toolResultAt(toolUseId))) accumulateBlock(edit.block)
-    }
-  }
-  return finishStats(stats, files)
-}
-
-function itemsInCodexProcess(
-  segs: ReadonlyArray<CodexProcessStatsSeg>,
-  items: ReadonlyArray<CodexThreadItem>,
-): CodexThreadItem[] {
-  const output: CodexThreadItem[] = []
-  for (const seg of segs) {
-    const indices = seg.indices ?? (seg.index != null ? [seg.index] : [])
-    for (const index of indices) {
-      const item = items[index]
-      if (item) output.push(item)
-    }
-  }
-  return output
-}
-
-export function summarizeCodexProcess(
-  segs: ReadonlyArray<CodexProcessStatsSeg>,
-  items: ReadonlyArray<CodexThreadItem>,
-): TurnProcessStats {
-  const stats: TurnProcessStats = { ...EMPTY_TURN_PROCESS_STATS }
-  const files = new Set<string>()
-  for (const item of itemsInCodexProcess(segs, items)) {
-    switch (item.type) {
-      case 'command_execution':
-      case 'mcp_tool_call':
-      case 'web_search':
-      case 'collab_tool_call':
-        stats.toolCalls += 1
-        break
-      case 'file_change': {
-        stats.toolCalls += 1
-        if (item.status === 'failed') break
-        const addedBefore = stats.added
-        const removedBefore = stats.removed
-        for (const change of item.changes) {
-          if (change.path) files.add(change.path)
-          accumulateMutation(stats, files, 'FileChange', {
-            file_path: change.path,
-            kind: change.kind,
-            diff: change.diff ?? '',
-          })
-        }
-        if (
-          stats.added === addedBefore
-          && stats.removed === removedBefore
-          && item.toolLineDelta
-        ) {
-          stats.added += item.toolLineDelta.added
-          stats.removed += item.toolLineDelta.removed
-        }
-        break
-      }
-      default:
-        break
     }
   }
   return finishStats(stats, files)

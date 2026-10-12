@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { CodexMcpToolCallItem } from '@superone/shared/agent-types'
+import { codexItemsToContent } from '@superone/shared/codex-content'
 import {
   toImageGenerationItems,
   toVideoStatusItems,
@@ -9,13 +10,20 @@ import {
   isGrokVideoGenTool,
   mediaToolErrorMessage,
   isMediaToolErrorResult,
-  collectCodexGeneratedImages,
-  collectCodexGeneratedVideos,
   videoGenStatusesFromMessages,
   nativeWidgetImages,
   nativeWidgetVideos,
 } from './media-generation'
-import { isHiddenToolBlock } from './tool-display'
+import { collectGeneratedImages, collectGeneratedVideos, isHiddenToolBlock } from './tool-display'
+
+/** A legacy Codex turn's gallery media, collected from its derived content as the turn does. */
+function codexTurnMedia(items: CodexMcpToolCallItem[]) {
+  const content = codexItemsToContent(items)
+  const results = new Map(content.flatMap(block => block.type === 'tool_result' ? [[block.toolUseId, block.summary] as const] : []))
+  return { images: collectGeneratedImages(content, results), videos: collectGeneratedVideos(content, results) }
+}
+const collectCodexGeneratedImages = (items: CodexMcpToolCallItem[]) => codexTurnMedia(items).images
+const collectCodexGeneratedVideos = (items: CodexMcpToolCallItem[]) => codexTurnMedia(items).videos
 
 const TOOL = 'mcp__superone__media_generate_image'
 

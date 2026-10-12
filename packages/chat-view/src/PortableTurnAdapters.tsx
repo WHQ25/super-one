@@ -3,30 +3,16 @@ import { PortableSessionLinkScope } from './portable-session-links'
 import { PortableCodexCommand } from './PortableCodexCommand'
 import { ModMessageScope } from './mod-ui/react'
 import { DeferredInteractiveTool, isPortableInteractiveTool } from './DeferredInteractiveTool'
-import { DeferredTool, DeferredCodexTool, DeferredDetailStatus, useDeferredToolDetail } from './DeferredTool'
-import { PortableAsyncQuestion } from './PortableAsyncQuestion'
+import { DeferredTool, DeferredDetailStatus, useDeferredToolDetail } from './DeferredTool'
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react'
-import type {
-  ChatMessage,
-  CodexCollabToolCallItem,
-  CodexMcpToolCallItem,
-  ContentBlock,
-} from '@superone/shared/agent-types'
+import type { ChatMessage, ContentBlock } from '@superone/shared/agent-types'
 import { applyDescriptionPersonaLabel, isAlwaysHiddenToolName, isSubagentToolName, parseMcpToolName } from '@superone/shared/tool-ui'
 import { SUGGEST_TASK_TOOL_NAME } from '@superone/shared/suggested-task'
 import { resolveMcpServerIconFromMap } from '@superone/shared/mcp-server-icon'
 import { mcpAppToolFailed } from '@superone/shared/mcp-apps'
-import { mergeCodexCollabDetail } from './codex-collab-detail'
 import { isHiddenToolBlock } from './presenters/tool-display'
 import { resolveMarkdownFileLinks } from './presenters/markdown-file-links'
-import {
-  Check,
-  FileText,
-  ImageIcon,
-  Puzzle,
-  ScanSearch,
-  TriangleAlert,
-} from 'lucide-react'
+import { FileText, ImageIcon } from 'lucide-react'
 import { requestNative } from './bridge'
 import {
   PortableTurnContext,
@@ -46,33 +32,18 @@ import {
   type TurnSubagentPresenterProps,
   type TurnToolGroupPresenterProps,
   type TurnToolPresenterProps,
+  type TurnPlanApproval,
   type TurnPlanPresenterProps,
   type TurnBodyPresenterParts,
   type TurnBodyPresenterRuntime,
   type TurnWorkflowPresenterProps,
 } from './presenters/TurnBody'
-import { codexMcpItemInput, codexMcpItemIsError, codexMcpItemResultText } from '@superone/shared/codex-content'
+import { turnDisplayContent } from './presenters/turn-content'
 import { parsedCommandFromBashInput } from '@superone/shared/codex-command-actions'
-import {
-  CodexTurnViewPresenter,
-  isHiddenCodexMcpItem,
-  type CodexItemPresenterProps,
-  type CodexSubagentPresenterProps,
-  type CodexTurnViewPresenterParts,
-  type CodexTurnViewPresenterRuntime,
-} from './presenters/CodexTurnView'
-import {
-  isClaudePinnedSegment,
-  isCodexPinnedSegment,
-} from './presenters/compact-chat-mode'
+import { isClaudePinnedSegment } from './presenters/compact-chat-mode'
 import { groupContentPresenter, type GroupContentPorts } from './presenters/groupContent'
 import { DeferredReasoning } from './DeferredReasoning'
 import { CodexPlanBlockPresenter } from './presenters/CodexPlanBlock'
-import {
-  CodexCollabBlockPresenter,
-  CodexCollabMiniTool,
-  codexCollabViewModel,
-} from './presenters/CodexCollabBlock'
 import { EnterPlanModeBlock, ExitPlanModeBlockPresenter } from './presenters/PlanModeBlocks'
 import { ImageGenToolBlockPresenter } from './presenters/ImageGenToolBlock'
 import { VideoGenToolBlockPresenter } from './presenters/VideoGenToolBlock'
@@ -109,7 +80,7 @@ import {
 } from './presenters/SubagentBlock'
 import { getSubagentColorClasses, portableSubagentColorIndex } from './presenters/subagent-colors'
 import { subagentRunState } from './presenters/subagent-run-state'
-import { summarizeClaudeProcess, summarizeCodexProcess } from './presenters/turn-process-stats'
+import { summarizeClaudeProcess } from './presenters/turn-process-stats'
 import { SetupMiniAppDevBlockPresenter } from './presenters/SetupMiniAppDevBlock'
 import { SuperoneCompactToolRowPresenter } from './presenters/SuperoneCompactToolRow'
 import { superoneToolDescriptor } from './presenters/superone-tool-display'
@@ -123,8 +94,6 @@ function usePortableSubagentColors(key: string) {
   return useMemo(() => getSubagentColorClasses(key ? portableSubagentColorIndex(key) : undefined), [key])
 }
 
-const EMPTY_MAP = new Map<string, string>()
-
 function parseRecord(value: string): Record<string, unknown> {
   try {
     const parsed = JSON.parse(value)
@@ -134,10 +103,6 @@ function parseRecord(value: string): Record<string, unknown> {
   } catch {
     return {}
   }
-}
-
-function stringify(value: unknown): string {
-  try { return JSON.stringify(value, null, 2) } catch { return String(value) }
 }
 
 function formatTokens(tokens: number): string {
@@ -259,7 +224,7 @@ function DeferredDedicatedClaudeTool({
   ...props
 }: TurnToolPresenterProps & { brandIconSrc?: string }) {
   const complete = props.status !== 'streaming'
-  const { detail, text, error, status, retry } = useDeferredToolDetail(props.remoteDetail, true, complete)
+  const { detail, text, error, status, retry } = useDeferredToolDetail(props.remoteDetail, true, complete, props.toolUseId)
   const ready = Boolean(text) || Boolean(error)
   const merged: TurnToolPresenterProps = {
     ...props,
@@ -674,7 +639,7 @@ function PortableSubagent({
     isStreaming,
   }
   const shellRun = subagentRunState({ ...runFacts, hasResult: !!shellResultBlock })
-  const { detail, status: detailStatus, retry } = useDeferredToolDetail(taskBlock.remoteDetail, expanded, !shellRun.isRunning)
+  const { detail, status: detailStatus, retry } = useDeferredToolDetail(taskBlock.remoteDetail, expanded, !shellRun.isRunning, taskBlock.toolUseId)
   const input = detail.input ?? taskBlock.input
   const childBlocks = detail.childBlocks ?? shellChildBlocks
   const resultBlock: ContentBlock | undefined = detail.result
@@ -689,6 +654,10 @@ function PortableSubagent({
     return childBlocks.flatMap((block, index): ReactNode[] => {
       if (block.type !== 'tool_use') return []
       const childResult = results.get(block.toolUseId)
+      // An agent's App call shows its View, as the desktop card does.
+      if (block.app) return [<PortableClaudeTool key={`${block.toolUseId}-${index}`} toolName={block.toolName}
+        toolUseId={block.toolUseId} input={block.input} status={block.status} app={block.app} remoteDetail={block.remoteDetail}
+        result={childResult?.result} isError={childResult?.isError} />]
       if (block.remoteDetail) return [<DeferredTool key={`${block.toolUseId}-${index}`} remoteDetail={block.remoteDetail}
         toolName={block.toolName} toolUseId={block.toolUseId} input={block.input} status={block.status}
         toolSummary={block.toolSummary} filePath={block.toolFilePath} toolLineDelta={block.toolLineDelta} inSubagent />]
@@ -875,12 +844,23 @@ export function portableToolResultText(content: ContentBlock[]): Map<string, str
 export function PortableTurn({
   message,
   isStreaming,
+  isLastAssistant,
 }: {
   message: ChatMessage
   isStreaming: boolean
+  isLastAssistant: boolean
 }) {
-  const portableContent = useMemo(() => portableToolBlocks(message.content), [message.content])
+  const portableContent = useMemo(() => portableToolBlocks(turnDisplayContent(message)), [message.content, message.status])
   const grouped = useMemo(() => groupContentPresenter(portableContent, GROUP_PORTS), [portableContent])
+  const state = message.metadata?.codex?.planApproval
+  const canRespond = !isStreaming && isLastAssistant
+  // The latest plan answers through the native approval sheet.
+  const planApproval = useMemo((): TurnPlanApproval => {
+    const respond = (status: 'approved' | 'rejected', feedback?: string): void => {
+      requestNative('codexPlanApproval', { messageId: message.id, status, ...(feedback ? { feedback } : {}) })
+    }
+    return { state, canRespond, onApprove: () => respond('approved'), onReject: feedback => respond('rejected', feedback) }
+  }, [message.id, state, canRespond])
   return (
     <TurnMessageIdContext.Provider value={message.id}><ModMessageScope messageId={message.id}><TurnBodyPresenter
       grouped={grouped}
@@ -892,34 +872,8 @@ export function PortableTurn({
       projectPath={null}
       parts={TURN_PARTS}
       runtime={TURN_RUNTIME}
-    /></ModMessageScope></TurnMessageIdContext.Provider>
-  )
-}
-
-function PortableCodexMarkdown({ text, isStreaming }: { text: string; isStreaming: boolean }) {
-  return <PortableText text={text} isStreaming={isStreaming} />
-}
-
-function PortablePlan({
-  item,
-  isStreaming,
-  nextItem,
-  onApprovePlan,
-  onRejectPlan,
-  planApproval,
-}: CodexItemPresenterProps) {
-  if (item.type !== 'plan') return null
-  return (
-    <CodexPlanBlockPresenter
-      item={item}
-      isStreaming={isStreaming}
-      hasFollowingItem={Boolean(nextItem)}
       planApproval={planApproval}
-      onApprovePlan={onApprovePlan}
-      onRejectPlan={onRejectPlan}
-      renderApprovalActions={(actions) => <PortablePlanActions {...actions} />}
-      Markdown={PortableCodexMarkdown}
-    />
+    /></ModMessageScope></TurnMessageIdContext.Provider>
   )
 }
 
@@ -935,218 +889,8 @@ function PortablePlanBlock({ id, text, isStreaming, hasFollowingBlock, approval 
       onApprovePlan={respond ? approval.onApprove : undefined}
       onRejectPlan={respond ? approval.onReject : undefined}
       renderApprovalActions={(actions) => <PortablePlanActions {...actions} />}
-      Markdown={PortableCodexMarkdown}
+      Markdown={PortableText}
     />
-  )
-}
-
-function claudePropsFromCodexMcp(item: CodexMcpToolCallItem): TurnToolPresenterProps {
-  return {
-    toolName: `mcp__${item.server}__${item.tool}`,
-    toolUseId: item.id,
-    input: codexMcpItemInput(item),
-    result: codexMcpItemResultText(item),
-    status: item.status === 'in_progress' ? 'streaming' : 'complete',
-    isError: codexMcpItemIsError(item),
-    app: item.app,
-    suggestedTask: item.suggestedTask,
-  }
-}
-
-/**
- * Codex MCP detail is item-shaped (`{ item, input, result }`), not the Claude
- * `{ input, result }` payload `DeferredDedicatedClaudeTool` reads. Fetch here,
- * then hand the loaded call to `PortableClaudeTool` with no `remoteDetail` so
- * the dedicated presenter is the chrome — never a generic row wrapping it.
- */
-function DeferredCodexMcp({ item }: { item: CodexMcpToolCallItem }) {
-  const complete = item.status !== 'in_progress'
-  const { detail, text, error, status, retry } = useDeferredToolDetail(item.remoteDetail, true, complete)
-  const loaded = detail.item?.type === 'mcp_tool_call' ? detail.item : null
-  const ready = Boolean(text) || Boolean(error)
-  const src = loaded ?? item
-  return (
-    <>
-      <PortableClaudeTool
-        {...claudePropsFromCodexMcp(src)}
-        // The projected shell keeps the attachment; the loaded detail may predate its update.
-        app={item.app ?? src.app}
-        suggestedTask={item.suggestedTask ?? src.suggestedTask}
-        status={!ready || src.status === 'in_progress' ? 'streaming' : 'complete'}
-      />
-      <DeferredDetailStatus status={error ? status : undefined} onRetry={retry} />
-    </>
-  )
-}
-
-function PortableCodexItem(props: CodexItemPresenterProps) {
-  const { item, index, isStreaming } = props
-  if (item.type === 'mcp_tool_call') {
-    if (item.remoteDetail) return <DeferredCodexMcp item={item} />
-    return <PortableClaudeTool {...claudePropsFromCodexMcp(item)} />
-  }
-  if (item.type === 'command_execution') return <PortableCodexCommand item={item} isStreaming={isStreaming} />
-  if ('remoteDetail' in item && item.remoteDetail) return <DeferredCodexTool item={item} isStreaming={isStreaming} />
-  switch (item.type) {
-    case 'agent_message':
-      return item.questions?.length ? <PortableAsyncQuestion item={item} /> : <div className="my-0.5"><PortableCodexMarkdown text={item.text} isStreaming={isStreaming} /></div>
-    case 'plan':
-      return <PortablePlan {...props} />
-    case 'review':
-      return (
-        <div className="my-1 flex items-center gap-2 rounded bg-primary/10 px-2.5 py-1.5 text-xs text-primary">
-          {item.phase === 'entered' ? <ScanSearch className="size-3.5" /> : <Check className="size-3.5" />}
-          <span>{item.text || (item.phase === 'entered' ? 'Review started' : 'Review complete')}</span>
-        </div>
-      )
-    case 'file_change':
-      return (
-        <div className="my-0.5 space-y-0.5">
-          {(item.changes.length ? item.changes : [{ path: '', kind: 'update' as const }]).map((change, changeIndex) => (
-            <PortableToolRow
-              key={`${item.id}-${changeIndex}`}
-              toolName="FileChange"
-              toolUseId={`${item.id}-${changeIndex}`}
-              input={stringify({ file_path: change.path, kind: change.kind, diff: change.diff ?? '' })}
-              status="complete"
-              result={item.status === 'failed' && changeIndex === 0 ? 'Failed to apply file changes.' : undefined}
-              isError={item.status === 'failed'}
-            />
-          ))}
-        </div>
-      )
-    case 'web_search':
-      return (
-        <PortableToolRow
-          toolName="WebSearch"
-          toolUseId={item.id}
-          input={stringify({ query: item.query })}
-          toolSummary={item.query}
-          status={item.status === 'in_progress' ? 'streaming' : 'complete'}
-          isError={item.status === 'failed'}
-        />
-      )
-    case 'error':
-      return (
-        <div className="my-0.5 rounded bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
-          <TriangleAlert className="mr-1 inline size-3.5" />{item.message}
-        </div>
-      )
-    case 'compaction':
-      return <div className="my-0.5 text-xs text-muted-foreground"><Check className="mr-1 inline size-3.5" />Context compacted</div>
-    case 'collab_tool_call':
-      return (
-        <PortableToolRow
-          toolName={`Collaboration · ${item.tool}`}
-          toolUseId={item.id}
-          input={stringify({ receivers: item.receiverThreadIds, prompt: item.prompt })}
-          result={stringify(item.agentsStates)}
-          status={item.status === 'in_progress' ? 'streaming' : 'complete'}
-          isError={item.status === 'failed'}
-        />
-      )
-    default:
-      return <div key={`${item.id}-${index}`} />
-  }
-}
-
-/**
- * Codex collab card for the phone. A projected `collab_tool_call` keeps only the shell
- * (prompt / child items stripped); the full item is fetched on expand and swapped in,
- * so the card is never nested inside a generic tool row.
- */
-function PortableCodexSubagent({ item: shellItem }: CodexSubagentPresenterProps) {
-  const [expanded, setExpanded] = useState(false)
-  const { detail, status: detailStatus, retry } = useDeferredToolDetail(shellItem.remoteDetail, expanded, shellItem.status !== 'in_progress')
-  const item = detail.item?.type === 'collab_tool_call' ? mergeCodexCollabDetail(shellItem, detail.item) : shellItem
-  const view = codexCollabViewModel(item)
-  const colors = usePortableSubagentColors(view.colorKey)
-  const activityContent = view.activityItems.length > 0 ? (
-    <SubagentScrollArea maxHeightClass="max-h-60" className="space-y-0.5 border-t border-border/30 px-2 py-1">
-      {view.activityItems.map((child, index) => child.type === 'collab_tool_call'
-        ? <PortableCodexSubagent key={`${child.id}-${index}`} item={child} />
-        : child.type === 'mcp_tool_call' && child.app
-        ? <PortableClaudeTool key={`${child.id}-${index}`} {...claudePropsFromCodexMcp(child)} />
-        : <CodexCollabMiniTool key={`${child.id}-${index}`} item={child} />)}
-    </SubagentScrollArea>
-  ) : undefined
-  // The collab presenter has a single body slot, so the deferred-load status shares it.
-  const childContent = detailStatus || activityContent ? (
-    <>
-      <DeferredDetailStatus status={detailStatus} onRetry={retry} />
-      {activityContent}
-    </>
-  ) : undefined
-  return (
-    <CodexCollabBlockPresenter
-      item={item}
-      colors={colors}
-      expanded={expanded}
-      onExpandedChange={setExpanded}
-      canOpenFullView={false}
-      onOpenFullView={() => undefined}
-      childContent={childContent}
-      formatTokens={formatTokens}
-      Markdown={({ text }) => <PortableText text={text} isStreaming={false} />}
-    />
-  )
-}
-
-function PortableAppIcon({ appId, className }: { appId: string; className?: string }) {
-  return <Puzzle className={className} aria-label={appId} />
-}
-
-const CODEX_PARTS: CodexTurnViewPresenterParts = {
-  Markdown: PortableCodexMarkdown,
-  CodexItem: PortableCodexItem,
-  Command: PortableCodexCommand,
-  Subagent: PortableCodexSubagent,
-  Reasoning: DeferredReasoning,
-  Tool: (props) => props.remoteDetail ? <DeferredTool {...props} remoteDetail={props.remoteDetail} /> : <PortableToolRow {...props} />,
-  ImageGallery: PortableImageGallery,
-  TurnDetail: TurnDetailSection,
-  AppIcon: PortableAppIcon,
-}
-
-const CODEX_RUNTIME: CodexTurnViewPresenterRuntime = {
-  isHiddenMcpItem: isHiddenCodexMcpItem,
-  isSpawnReady: (item: CodexCollabToolCallItem) => item.receiverThreadIds.length > 0,
-  isSubagentFollowUp: (item: CodexCollabToolCallItem) => item.tool === 'sendInput' && item.receiverThreadIds.length > 0,
-  isPinnedSegment: (segment, itemAt) => isCodexPinnedSegment(segment, itemAt, { isWidgetShowTool }),
-  summarizeProcess: summarizeCodexProcess,
-}
-
-export function PortableCodexTurn({
-  message,
-  isStreaming,
-  isLastAssistant,
-}: {
-  message: ChatMessage
-  isStreaming: boolean
-  isLastAssistant: boolean
-}) {
-  const respondToPlan = (status: 'approved' | 'rejected', feedback?: string): void => {
-    requestNative('codexPlanApproval', {
-      messageId: message.id,
-      status,
-      ...(feedback ? { feedback } : {}),
-    })
-  }
-  return (
-    <TurnMessageIdContext.Provider value={message.id}><CodexTurnViewPresenter
-      message={message}
-      isStreaming={isStreaming}
-      isWorking={isStreaming}
-      isLastAssistant={isLastAssistant}
-      detailChatMode={false}
-      canRespondToPlan
-      onApprovePlan={() => respondToPlan('approved')}
-      onRejectPlan={(feedback) => respondToPlan('rejected', feedback)}
-      groupableAppByTool={EMPTY_MAP}
-      appNameById={EMPTY_MAP}
-      parts={CODEX_PARTS}
-      runtime={CODEX_RUNTIME}
-    /></TurnMessageIdContext.Provider>
   )
 }
 

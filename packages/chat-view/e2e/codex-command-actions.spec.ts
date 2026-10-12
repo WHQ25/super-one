@@ -1,6 +1,14 @@
 import { expect, test, type Page } from '@playwright/test'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import type { ChatMessage, CodexThreadItem } from '@superone/shared/agent-types'
+import { withCodexContent } from '@superone/shared/codex-content'
+
+/** A legacy Codex turn, derived at ingress as the phone does. */
+function codexTurn(id: string, items: CodexThreadItem[]): ChatMessage {
+  return withCodexContent({ id, role: 'assistant', status: 'complete', content: [], createdAt: '', providerId: 'codex',
+    metadata: { codex: { threadId: 'thread', usage: null, items } } })
+}
 
 async function open(page: Page, deferred: boolean, mixed = false, options: { retry?: boolean; locale?: string; light?: boolean; metadata?: boolean } = {}) {
   const command = mixed ? 'cat a.ts && rg TODO src' : 'head -n 20 a.ts b.ts'
@@ -28,20 +36,18 @@ async function open(page: Page, deferred: boolean, mixed = false, options: { ret
   }, { command, retry: options.retry, metadata: options.metadata })
   await page.goto(pathToFileURL(resolve(import.meta.dirname, '../dist/index.html')).href)
   await expect(page.locator('html')).toHaveAttribute('data-chat-view-ready', 'true')
-  await page.evaluate(({ command, commandActions, deferred, options }) => {
+  const turn = codexTurn('turn', [{
+    id: 'command', type: 'command_execution', command, cwd: '/repo', commandActions,
+    status: 'completed', exitCode: 0, aggregatedOutput: deferred ? '' : 'combined command output',
+    ...(deferred ? { remoteDetail: '["turn","item","command"]' } : {}),
+  } as CodexThreadItem])
+  await page.evaluate(({ turn, options }) => {
     const host = window as unknown as { __applyHost(value: unknown): void }
     host.__applyHost({ type: 'channelToken', token: 'command-test' })
     host.__applyHost({ type: 'setTheme', scheme: options.light ? 'light' : 'dark' })
     if (options.locale) host.__applyHost({ type: 'setViewport', locale: options.locale })
-    host.__applyHost({ type: 'hydrate', sessionStatus: 'idle', messages: [{
-      id: 'turn', role: 'assistant', status: 'complete', content: [], createdAt: '', providerId: 'codex',
-      metadata: { codex: { threadId: 'thread', usage: null, items: [{
-        id: 'command', type: 'command_execution', command, cwd: '/repo', commandActions,
-        status: 'completed', exitCode: 0, aggregatedOutput: deferred ? '' : 'combined command output',
-        ...(deferred ? { remoteDetail: '["turn","item","command"]' } : {}),
-      }] } },
-    }] })
-  }, { command, commandActions, deferred, options })
+    host.__applyHost({ type: 'hydrate', sessionStatus: 'idle', messages: [turn] })
+  }, { turn, options })
   return page.locator('[data-tool-use-id="command"]')
 }
 
@@ -97,17 +103,15 @@ test('Chinese light layout retains the count and both file rows at 320px', async
 
 test('exploration group counts unique file paths across all actions and calls', async ({ page }) => {
   await open(page, false)
-  await page.evaluate(() => {
+  const base = { type: 'command_execution', command: 'opaque', status: 'completed', exitCode: 0, aggregatedOutput: '' } as const
+  const turn = codexTurn('group-turn', [
+    { ...base, id: 'read-1', commandActions: [{ type: 'read', path: '/repo/a/index.ts' }, { type: 'read', path: '/repo/b/index.ts' }] },
+    { ...base, id: 'read-2', commandActions: [{ type: 'read', path: '/repo/a/index.ts' }] },
+  ] as CodexThreadItem[])
+  await page.evaluate((turn) => {
     const host = window as unknown as { __applyHost(value: unknown): void }
-    const base = { type: 'command_execution', command: 'opaque', status: 'completed', exitCode: 0, aggregatedOutput: '' }
-    host.__applyHost({ type: 'hydrate', sessionStatus: 'idle', messages: [{
-      id: 'group-turn', role: 'assistant', status: 'complete', content: [], createdAt: '', providerId: 'codex',
-      metadata: { codex: { threadId: 'thread', usage: null, items: [
-        { ...base, id: 'read-1', commandActions: [{ type: 'read', path: '/repo/a/index.ts' }, { type: 'read', path: '/repo/b/index.ts' }] },
-        { ...base, id: 'read-2', commandActions: [{ type: 'read', path: '/repo/a/index.ts' }] },
-      ] } },
-    }] })
-  })
+    host.__applyHost({ type: 'hydrate', sessionStatus: 'idle', messages: [turn] })
+  }, turn)
   const group = page.getByRole('button', { name: 'Read 2 files', exact: true })
   await expect(group).toBeVisible()
   await group.click()

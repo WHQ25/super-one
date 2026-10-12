@@ -10,17 +10,10 @@ import {
 import { useTranslation } from 'react-i18next'
 import { ChevronDown, ChevronRight, FileDiff, List, Wrench } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
-import type { CodexTurnProcessStats as TurnProcessStats } from './presenters/CodexTurnView'
+import type { TurnProcessStats } from './presenters/turn-process-stats'
+import type { TurnDetailRun } from './presenters/TurnBody'
 import { formatCompactDuration } from './presenters/duration-format'
 import { useWorkingDuration } from './use-working-duration'
-
-/** One rendered run of a turn — see `partitionTurnForCompactMode`. */
-export interface TurnDetailRun {
-  key: string
-  /** Collapsible runs hide behind the shared Detail toggle; pinned runs always render. */
-  collapsible: boolean
-  content: ReactNode
-}
 
 interface TurnDetailSectionProps {
   /** Huge virtual turns should not animate and measure every process run. */

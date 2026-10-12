@@ -3,6 +3,7 @@
 import { act, fireEvent, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { PortableMessage } from '@superone/chat-view/PortableMessage'
+import { withCodexContent } from '@superone/shared/codex-content'
 import { installFakeNativeHost } from '@superone/chat-view/fixtures/native-host'
 import type { ChatMessage, ContentBlock } from '@superone/shared/agent-types'
 import { renderWithNativeDetails as render } from './portable-detail.test-fixtures'
@@ -153,7 +154,7 @@ describe('deferred tool rows on the phone', () => {
     })
     const { container } = render(
       <PortableMessage
-        message={{
+        message={withCodexContent({
           id: 'turn-1',
           role: 'assistant',
           status: 'complete',
@@ -175,7 +176,7 @@ describe('deferred tool rows on the phone', () => {
               }],
             },
           },
-        } as ChatMessage}
+        } as ChatMessage)}
         scheme="dark"
         pendingPermission={null}
       />,

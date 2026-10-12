@@ -1,11 +1,11 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { ChatMessage, CodexThreadItem } from '@superone/shared/agent-types'
 import { PortableMessage } from './PortableMessage'
+import { withCodexContent } from '@superone/shared/codex-content'
 
 /**
- * A Codex subagent card on the phone. Its activity list matches the desktop card:
- * one compact, non-expandable row per call (Bash / Edit / `server` + tool / Web search),
- * and a widget call keeps its widget row instead of drawing the widget.
+ * A Codex subagent card on the phone, drawn by the shared subagent card: one tool
+ * row per call, and a widget call keeps its widget row instead of drawing the widget.
  */
 const RECEIVER = 'thread-reviewer'
 
@@ -18,11 +18,12 @@ const ACTIVITY: CodexThreadItem[] = [
   { id: 'fail', type: 'command_execution', command: 'bun run typecheck:web', aggregatedOutput: '', status: 'failed', exitCode: 2 },
 ]
 
+/** A legacy Codex turn, derived at ingress as the phone does. */
 function turn(running: boolean): ChatMessage {
   const childItems: CodexThreadItem[] = running
     ? ACTIVITY.slice(0, 3).map((item, index) => index === 2 && item.type === 'mcp_tool_call' ? { ...item, status: 'in_progress' } : item)
     : [...ACTIVITY, { id: 'reply', type: 'agent_message', text: 'The deferred row no longer renders the loaded item inside itself.' }]
-  return {
+  return withCodexContent({
     id: 'turn',
     role: 'assistant',
     providerId: 'codex',
@@ -39,7 +40,7 @@ function turn(running: boolean): ChatMessage {
       agentsStates: { [RECEIVER]: { status: running ? 'running' : 'completed', nickname: 'reviewer', role: 'explorer', tokens: { input: 48_200, output: 3_100 } } },
       childItems: { [RECEIVER]: childItems },
     }] } },
-  } as ChatMessage
+  } as ChatMessage)
 }
 
 function CodexSubagentTurn({ running = false, width = 390 }: { running?: boolean; width?: number }) {

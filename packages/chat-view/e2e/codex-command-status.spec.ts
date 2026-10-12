@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { pathToFileURL } from 'node:url'
 import { resolve } from 'node:path'
+import { withCodexContent } from '@superone/shared/codex-content'
 
 for (const deferred of [false, true]) test(`non-zero command exit stays normal before and after expansion (deferred: ${deferred})`, async ({ page }) => {
   await page.addInitScript(() => {
@@ -19,19 +20,19 @@ for (const deferred of [false, true]) test(`non-zero command exit stays normal b
   })
   await page.goto(pathToFileURL(resolve(import.meta.dirname, '../dist/index.html')).href)
   await expect(page.locator('html')).toHaveAttribute('data-chat-view-ready', 'true')
-  await page.evaluate((deferred) => {
+  // The phone derives a legacy turn's content at ingress.
+  const turn = withCodexContent({
+    id: 'turn', role: 'assistant', status: 'complete', content: [], createdAt: '', providerId: 'codex',
+    metadata: { codex: { threadId: 'thread', usage: null, items: [{
+      id: 'command', type: 'command_execution', command: 'bun run test', status: 'failed', exitCode: 1,
+      aggregatedOutput: deferred ? '' : 'One assertion failed',
+      ...(deferred ? { remoteDetail: '["turn","item","command"]' } : {}),
+    }] } },
+  })
+  await page.evaluate((turn) => {
     (window as unknown as { __applyHost(value: unknown): void }).__applyHost({ type: 'channelToken', token: 'command-status-test' });
-    (window as unknown as { __applyHost(value: unknown): void }).__applyHost({
-      type: 'hydrate', messages: [{
-        id: 'turn', role: 'assistant', status: 'complete', content: [], createdAt: '', providerId: 'codex',
-        metadata: { codex: { threadId: 'thread', usage: null, items: [{
-          id: 'command', type: 'command_execution', command: 'bun run test', status: 'failed', exitCode: 1,
-          aggregatedOutput: deferred ? '' : 'One assertion failed',
-          ...(deferred ? { remoteDetail: '["turn","item","command"]' } : {}),
-        }] } },
-      }],
-    })
-  }, deferred)
+    (window as unknown as { __applyHost(value: unknown): void }).__applyHost({ type: 'hydrate', messages: [turn] })
+  }, turn)
   const row = page.locator('[data-tool-use-id="command"]')
   await expect(row).toContainText('bun run test')
   await expect(row).not.toHaveClass(/errored/)

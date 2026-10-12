@@ -23,7 +23,8 @@ function textOf(message: ChatMessage): string {
   if (items?.length) {
     const text = items.flatMap(item => item.type === 'agent_message' && item.delivery !== 'async' ? [item.text.slice(0, 160)] : []).join('\n').trim()
     if (text) return text
-    const fallback = message.content.flatMap(block => block.type === 'text' ? [block.text.slice(0, 160)] : []).join('\n').trim()
+    // The stored final response: a client also holds the content derived from the items.
+    const fallback = message.content.flatMap(block => block.type === 'text' && block.id === undefined ? [block.text.slice(0, 160)] : []).join('\n').trim()
     if (fallback) return fallback
     return items.flatMap(item => item.type === 'command_execution' ? [item.command.slice(0, 160)]
       : item.type === 'mcp_tool_call' ? [item.tool] : item.type === 'reasoning' ? [item.text.slice(0, 160)] : []).join('\n').trim()

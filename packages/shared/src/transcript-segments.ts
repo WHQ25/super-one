@@ -2,6 +2,7 @@ import type { ChatMessage, ContentBlock, CodexThreadItem } from './agent-types'
 import { blockText, contentKeys, itemText, type TranscriptBoundary } from './transcript-boundary'
 import { isToolResultBlock, isToolUseBlock } from './content-delta'
 import { isDismissedCodexAsyncAnswer } from './codex-async-question'
+import { isLegacyCodexMessage, withCodexContent } from './codex-content'
 
 export interface TranscriptSegment {
   id: string
@@ -129,6 +130,10 @@ export function transcriptSegments(messages: readonly ChatMessage[]): Transcript
       result.push(...cached.segments)
       continue
     }
+    // A legacy Codex turn's boundaries index its items, and each segment
+    // draws the content its own items derive.
+    const legacy = isLegacyCodexMessage(source)
+    const segmentOf = (message: ChatMessage): ChatMessage => legacy ? withCodexContent(message) : message
     const keys = contentKeys(source.content)
     const keyByBlock = new Map(source.content.map((block, index) => [block, keys[index]]))
     const firstResult = result.length
@@ -136,7 +141,9 @@ export function transcriptSegments(messages: readonly ChatMessage[]): Transcript
     for (let part = 0; part <= cuts.length; part++) {
       const next = cuts[part]
       const slice = interval(source, previous?.metadata?.transcriptBoundary, next?.metadata?.transcriptBoundary)
-      const groups = source.metadata?.codex ? itemGroups(slice.items).map((items, index, all) => ({ items, content: index === all.length - 1 ? slice.content : [] }))
+      // Only the stored final response (a text block without an id) is not derived from items.
+      const groups = legacy ? itemGroups(slice.items).map((items, index, all) => ({ items,
+        content: index === all.length - 1 ? slice.content.filter(block => block.type === 'text' && block.id === undefined) : [] }))
         : contentGroups(slice.content).map(content => ({ content, items: [] as CodexThreadItem[] }))
       for (let group = 0; group < groups.length; group++) {
         const value = groups[group]
@@ -147,8 +154,8 @@ export function transcriptSegments(messages: readonly ChatMessage[]): Transcript
           : previous && group === 0 ? `${source.id}:after:${previous.id}` : `${source.id}:segment:${key}`
         const anchorId = source.id
         const offset = (previous ? previous.metadata!.transcriptBoundary!.order + 0.1 : 0) + group / (groups.length + 1) * 0.5
-        result.push({ id, source, final: false, anchorId, offset, message: { ...source, status: 'complete', content: value.content,
-          metadata: { ...source.metadata, ...(source.metadata?.codex ? { codex: { ...source.metadata.codex, items: value.items, finalResponse: undefined } } : {}) } } })
+        result.push({ id, source, final: false, anchorId, offset, message: segmentOf({ ...source, status: 'complete', content: value.content,
+          metadata: { ...source.metadata, ...(legacy ? { codex: { ...source.metadata!.codex!, items: value.items, finalResponse: undefined } } : {}) } }) })
       }
       if (next) result.push({ id: next.id, message: next, source: next, final: true,
         anchorId: source.id, offset: next.metadata!.transcriptBoundary!.order })
@@ -157,7 +164,7 @@ export function transcriptSegments(messages: readonly ChatMessage[]): Transcript
     const last = result.findLast(segment => segment.source === source)
     if (last) {
       last.final = true
-      last.message = { ...last.message, status: source.status }
+      last.message = segmentOf({ ...last.message, status: source.status })
     }
     cachedSegments.set(source, { cuts, segments: result.slice(firstResult) })
   }

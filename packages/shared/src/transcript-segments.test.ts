@@ -5,6 +5,7 @@ import { anchorAsyncAnswer } from './transcript-boundary'
 import { transcriptSegments } from './transcript-segments'
 import { extractTurnOutline } from './turn-outline'
 import { extendHistoryIndex } from './session-history-index'
+import { withCodexContent } from './codex-content'
 
 const message = (id: string, text: string): ChatMessage => ({ id, role: 'assistant', providerId: 'claude',
   status: 'streaming', createdAt: '', content: [{ type: 'text', text }] })
@@ -37,6 +38,25 @@ describe('transcript segmentation at live boundaries', () => {
     expect(rows.at(-1)?.message.metadata?.codex?.items.map(item => item.id)).toEqual(['after'])
     expect(rows.at(-1)?.message.status).toBe('streaming')
     expect(rows[0].final).toBe(false)
+  })
+
+  it('draws each segment of a derived legacy Codex turn from its own items', () => {
+    const source = withCodexContent({ ...message('turn', ''), content: [], providerId: 'codex', metadata: { codex: { threadId: 'thread', usage: null,
+      items: [{ id: 'before', type: 'agent_message', text: 'Before' }] } } })
+    const answer = anchorAsyncAnswer({ ...message('codex_async_answer:q', 'Choice'), role: 'user' }, [source])
+    const updated = withCodexContent({ ...source, metadata: { codex: { ...source.metadata!.codex!, items: [...source.metadata!.codex!.items,
+      { id: 'read', type: 'command_execution', command: 'cat a.ts', aggregatedOutput: 'a', status: 'completed', exitCode: 0 },
+      { id: 'after', type: 'agent_message', text: 'After' }] } } })
+    const rows = transcriptSegments([updated, answer])
+    expect(texts([updated, answer])).toEqual(['Before', 'Choice', '', 'After'])
+    expect(rows[2].message.content.map(block => block.type)).toEqual(['tool_use', 'tool_result'])
+  })
+
+  it('cuts a content-shaped Codex turn by its content', () => {
+    const source: ChatMessage = { ...message('turn', 'Before'), providerId: 'codex', metadata: { codex: { threadId: 'thread', usage: null, items: [] } } }
+    const first = compact('c1', source)
+    const rows = [first, { ...source, status: 'complete' as const, content: [{ type: 'text' as const, text: 'BeforeAfter' }] }]
+    expect(texts(rows)).toEqual(['Before', '__compact__:auto:100::', 'After'])
   })
 
   it('gives separate stable targets to each natural assistant text segment', () => {
@@ -115,9 +135,13 @@ describe('transcript segmentation at live boundaries', () => {
   it('keeps a Codex fallback response in the final segment and preserves empty error footers', () => {
     const source: ChatMessage = { ...message('turn', 'Final response'), status: 'complete', providerId: 'codex', metadata: { codex: { threadId: 't', usage: null,
       items: [{ id: 'r', type: 'reasoning', text: 'Before' }, { id: 'a', type: 'agent_message', text: 'Final response' }] } } }
+    // Each segment draws what its items derive; the reply shows once, not again as the stored response.
     const segments = transcriptSegments([source])
-    expect(segments[0].message.content).toEqual([])
-    expect(segments.at(-1)?.message.content).toEqual(source.content)
+    expect(segments[0].message.content.map(block => block.type)).toEqual(['thinking'])
+    expect(texts([source])).toEqual(['', 'Final response'])
+    // Without a reply item, the stored response is the reply.
+    const unanswered: ChatMessage = { ...source, metadata: { codex: { ...source.metadata!.codex!, items: [source.metadata!.codex!.items[0]] } } }
+    expect(transcriptSegments([unanswered]).at(-1)?.message.content.at(-1)).toEqual(source.content[0])
     const empty = { ...message('failed', ''), content: [], status: 'error' as const }
     expect(transcriptSegments([empty])).toMatchObject([{ id: 'failed', final: true, message: { status: 'error' } }])
   })

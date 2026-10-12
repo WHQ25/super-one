@@ -1,7 +1,6 @@
 import { useEffect, useLayoutEffect, useCallback, useRef, useState, lazy, Suspense } from 'react'
 import { flushSync } from 'react-dom'
-import { Smartphone, SquareTerminal, LayoutGrid, PanelLeft, PanelRight, PanelLeftDashed, PanelRightDashed } from 'lucide-react'
-import { toast } from 'sonner'
+import { SquareTerminal, LayoutGrid, PanelLeft, PanelRight, PanelLeftDashed, PanelRightDashed } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { LayoutToggle } from '@/components/coding/LayoutToggle'
 import { ChatPanel } from '@/components/chat/ChatPanel'
@@ -44,6 +43,7 @@ import { useHarnessTheme } from '@/hooks/useHarnessTheme'
 import { useMiniAppHostActions } from '@/hooks/useMiniAppHostActions'
 import { useMiniAppContextConsumedRelay } from '@/hooks/useContextConsumedEvent'
 import { useMobileUploadToasts } from '@/hooks/useMobileUploadToasts'
+import { useMobileConnectionToasts } from '@/hooks/useMobileConnectionToasts'
 import { useAppStore, startProjectMirror } from '@/stores/app'
 import { FOLD_PANEL_MS, selectMiniDriven, selectPanelsFolded, useWindowMiniModeStore } from '@/stores/window-mini-mode'
 import { useDevToolsStore } from '@/stores/dev-tools'
@@ -75,6 +75,7 @@ function App(): React.JSX.Element {
   useAgentEvents()
   useHarnessTheme()
   useMobileUploadToasts()
+  useMobileConnectionToasts()
   useMiniAppHostActions()
   useMiniAppContextConsumedRelay()
   // Native Computer Use frames enter the same renderer-owned viewfinder used by the
@@ -212,16 +213,6 @@ function App(): React.JSX.Element {
       void useChatStore.getState().switchToSession(projectPath, sessionId)
     })
   }, [])
-
-  useEffect(() => {
-    return window.app.onDeviceStatusChanged(({ online, firstConnect, name }) => {
-      if (!online || !firstConnect) return
-      toast.success(t('sidebar.remote.deviceConnectedToast', { name: name ?? '' }), {
-        position: 'top-center',
-        icon: <Smartphone className="size-4" />,
-      })
-    })
-  }, [t])
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {

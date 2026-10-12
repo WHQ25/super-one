@@ -90,7 +90,7 @@ vi.mock('./tool-display', async (importOriginal) => ({
   },
 }))
 vi.mock('./ToolBlock', () => ({ EditDiff: () => <span>edit-diff</span>, WriteDiff: () => <span>write-diff</span> }))
-vi.mock('./PermissionModeSelector', () => ({ modes: [] }))
+vi.mock('./PermissionModeSelector', () => ({ modes: [], PermissionModeSelector: () => null }))
 vi.mock('@/stores/miniapp', () => ({
   useMiniAppStore: (selector: (s: { apps: Array<{ id: string; manifest: Record<string, unknown> }> }) => unknown) =>
     selector({ apps: [] }),

@@ -1,11 +1,5 @@
 import type { ChatProvider } from '@/stores/chat'
-import { AcpModeSelector } from '../AcpModeSelector'
-import { AcpPermissionSelector } from '../AcpPermissionSelector'
-import { CodexPermissionSelector } from '../CodexPermissionSelector'
-import { CursorPermissionSelector } from '../CursorPermissionSelector'
-import { DeepseekPermissionSelector } from '../DeepseekPermissionSelector'
-import { OpenCodeAgentSelector } from '../OpenCodeAgentSelector'
-import { PermissionModeSelector } from '../PermissionModeSelector'
+import { HARNESS_CONTROLS } from '@/harness-ui/controls'
 
 export function StatusBarPermission({
   activeProvider,
@@ -14,27 +8,6 @@ export function StatusBarPermission({
   activeProvider: ChatProvider
   compactIndicators: boolean
 }) {
-  if (activeProvider === 'codex') {
-    return <CodexPermissionSelector compact={compactIndicators} />
-  }
-  if (activeProvider === 'acp') {
-    // Permission baseline (ask / plan / auto / always).
-    // True ACP session modes (configId set) live here; Grok effort is on the model selector.
-    return (
-      <>
-        <AcpPermissionSelector compact={compactIndicators} />
-        <AcpModeSelector compact={compactIndicators} />
-      </>
-    )
-  }
-  if (activeProvider === 'opencode') {
-    return <OpenCodeAgentSelector compact={compactIndicators} />
-  }
-  if (activeProvider === 'cursor') {
-    return <CursorPermissionSelector compact={compactIndicators} />
-  }
-  if (activeProvider === 'dsh') {
-    return <DeepseekPermissionSelector compact={compactIndicators} />
-  }
-  return <PermissionModeSelector compact={compactIndicators} />
+  const { PermissionControl } = HARNESS_CONTROLS[activeProvider]
+  return <PermissionControl compact={compactIndicators} />
 }

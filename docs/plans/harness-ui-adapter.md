@@ -1,6 +1,6 @@
 # Harness UI adapter registry
 
-Status: in-progress (steps 0-1 done; branch `refactor/harness-ui-adapter`) · Updated: 2026-10-12
+Status: in-progress (steps 0-2 done; branch `refactor/harness-ui-adapter`) · Updated: 2026-10-12
 Goal: Desktop renderer chat surfaces resolve per-harness behavior through the shared static harness tables plus per-harness renderer controls and store strategies, so adding or changing a harness edits its own modules instead of `=== '<harnessId>'` branches across the composer, status bar and chat store.
 Long-term docs affected: `.claude/skills/superone-harness/references/integration.md` and `experiences.md` (model, permission and slash checklists become "fill the harness modules"), `.claude/skills/superone-harness/references/new-harness.md` (P0 catalog table), `apps/desktop/docs/agent-reference/architecture.md` (new "Harness UI modules" section)
 

@@ -70,6 +70,7 @@ vi.mock('@/components/miniapp/MiniAppIcon', () => ({
 
 vi.mock('./PermissionModeSelector', () => ({
   modes: [],
+  PermissionModeSelector: () => null,
 }))
 
 import { PermissionPrompt } from './PermissionPrompt'

@@ -103,10 +103,6 @@
     "count": 3,
     "reason": "pre-registry baseline"
   },
-  "components/chat/ModelSelector.tsx": {
-    "count": 5,
-    "reason": "pre-registry baseline"
-  },
   "components/chat/PermissionPrompt.tsx": {
     "count": 1,
     "reason": "pre-registry baseline"
@@ -137,10 +133,6 @@
   },
   "components/chat/chat-status-bar/StatusBarDerivedSandbox.tsx": {
     "count": 3,
-    "reason": "pre-registry baseline"
-  },
-  "components/chat/chat-status-bar/StatusBarPermission.tsx": {
-    "count": 5,
     "reason": "pre-registry baseline"
   },
   "components/chat/model-selector/AcpModelSelector.tsx": {

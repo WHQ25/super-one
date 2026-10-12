@@ -28,7 +28,10 @@ it('restores eight rows, reads one index on demand, and merges a remote jump bef
   expect(rpc).toHaveBeenCalledTimes(2)
   const first = runtime.loadNavigationIndex()
   expect(runtime.loadNavigationIndex()).toBe(first)
-  expect((await first).entries).toHaveLength(50)
+  const entries = (await first).entries
+  expect(entries.map(entry => entry.id)).toEqual(rows.map(row => row.id))
+  expect(entries[0]).toMatchObject({ text: 'Message 0', reply: 'Message 1' })
+  expect(entries[1]).toMatchObject({ text: 'Message 1', messageId: 'm1', anchorId: 'm1' })
   const page = await runtime.loadHistoryWindow('m20', 'around')
   expect(page.messages.map(m => m.id)).toEqual(rows.slice(18,26).map(m => m.id))
   expect(runtime.messages.map(m => m.id)).toEqual([...rows.slice(18,26), ...rows.slice(-8)].map(m => m.id))

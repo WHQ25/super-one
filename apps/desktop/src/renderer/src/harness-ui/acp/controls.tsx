@@ -1,4 +1,5 @@
 import { AcpModeSelector } from '@/components/chat/AcpModeSelector'
+import { AcpPermissionModeList, acpPermissionModeOption } from '@/components/chat/AcpPermissionModeList'
 import { AcpPermissionSelector } from '@/components/chat/AcpPermissionSelector'
 import { AcpModelSelector } from '@/components/chat/model-selector/AcpModelSelector'
 import type { HarnessControls } from '../controls'
@@ -19,4 +20,13 @@ function AcpPermissionControl({ compact }: { compact: boolean }) {
 export const acpControls: HarnessControls = {
   ModelControl: AcpModelSelector,
   PermissionControl: AcpPermissionControl,
+  launchPermission: (value, select) => {
+    const option = acpPermissionModeOption(value)
+    return {
+      labelKey: `chat.acpPermissionModes.${option.labelKey}.label`,
+      icon: option.icon,
+      toneClass: `${option.color} ${option.hoverBg}`,
+      content: <AcpPermissionModeList activeMode={option.id} onSelect={select} />,
+    }
+  },
 }

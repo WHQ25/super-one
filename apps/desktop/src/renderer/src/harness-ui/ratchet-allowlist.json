@@ -91,10 +91,6 @@
     "count": 7,
     "reason": "pre-registry baseline"
   },
-  "components/chat/HarnessPermissionPopover.tsx": {
-    "count": 4,
-    "reason": "pre-registry baseline"
-  },
   "components/chat/McpSlashPopup.tsx": {
     "count": 5,
     "reason": "pre-registry baseline"

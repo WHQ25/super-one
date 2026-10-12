@@ -1,5 +1,5 @@
-import type { ComponentType } from 'react'
-import type { HarnessId } from '@superone/shared/agent-types'
+import type { ComponentType, ReactNode } from 'react'
+import type { HarnessId, PermissionMode } from '@superone/shared/agent-types'
 import { acpControls } from './acp/controls'
 import { claudeControls } from './claude/controls'
 import { codexControls } from './codex/controls'
@@ -17,6 +17,20 @@ export interface HarnessControls {
   ModelControl: ComponentType<{ onCloseAutoFocus?: (e: Event) => void }>
   /** Status-bar permission control: modes, presets or agents, in the harness's own vocabulary. */
   PermissionControl: ComponentType<{ compact: boolean }>
+  /**
+   * Permission picker for a session that does not exist yet (launch rows), in
+   * the same vocabulary as `PermissionControl` but expressed as the plain
+   * `PermissionMode` a launch config carries. Absent: the harness has no modes.
+   */
+  launchPermission?: (value: PermissionMode, select: (mode: PermissionMode) => void) => LaunchPermissionView
+}
+
+export interface LaunchPermissionView {
+  labelKey: string
+  icon: ReactNode
+  toneClass: string
+  /** Popover body listing the choices. */
+  content: ReactNode
 }
 
 export const HARNESS_CONTROLS: { [H in HarnessId]: HarnessControls } = {

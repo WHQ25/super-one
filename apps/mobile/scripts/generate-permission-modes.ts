@@ -7,6 +7,7 @@ const { modes } = await import(permissionListPath) as { modes: { id: keyof typeo
 import { cursorPermissionModeOptions } from '../../../apps/desktop/src/renderer/src/components/chat/CursorPermissionModeList'
 import { acpPermissionModeOptions } from '../../../apps/desktop/src/renderer/src/components/chat/AcpPermissionModeList'
 import { codexPermissionPresetOptions } from '../../../apps/desktop/src/renderer/src/components/chat/CodexPermissionPresetList'
+import { deepseekPermissionModeOptions } from '../../../apps/desktop/src/renderer/src/components/chat/DeepseekPermissionModeList'
 import { hex, parseOklch } from './color-tokens'
 
 const theme = readFileSync(resolve(import.meta.dirname, '../../../node_modules/tailwindcss/theme.css'), 'utf8')
@@ -28,12 +29,11 @@ const codex = codexPermissionPresetOptions.map((mode) => entry(mode.id, {
   label: en.resources.automation[mode.labelKey.split('.').at(-1)! as keyof typeof en.resources.automation] as string,
   description: en.resources.automation[mode.descriptionKey.split('.').at(-1)! as keyof typeof en.resources.automation] as string,
 }, iconName(mode.icon), mode.triggerToneClass, iconName(mode.triggerIcon)))
-// DeepSeek's renderer attaches these three marks in DeepseekPermissionSelector.
-const dsh = [
-  entry('plan', en.chat.deepseekPermissionPresets.readOnly, 'Eye', 'text-blue-600 dark:text-blue-400'),
-  entry('default', en.chat.deepseekPermissionPresets.workspaceWrite, 'ShieldCheck', 'text-muted-foreground'),
-  entry('bypassPermissions', en.chat.deepseekPermissionPresets.fullAccess, 'ShieldOff', 'text-destructive'),
-]
+const copyAt = (key: string) => key.split('.').reduce<unknown>((node, part) => (node as Record<string, unknown>)[part], en) as string
+const dsh = deepseekPermissionModeOptions.map((mode) => entry(mode.mode, {
+  label: copyAt(mode.labelKey),
+  description: copyAt(mode.descriptionKey),
+}, iconName(mode.icon), mode.color))
 const output = `${JSON.stringify({ claude, opencode: [], acp, cursor, codex, dsh }, null, 2)}\n`
 const target = resolve(import.meta.dirname, '../src/ui/permission-modes.generated.json')
 if (process.argv.includes('--check')) {

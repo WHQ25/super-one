@@ -41,14 +41,3 @@ export const DEEPSEEK_PERMISSION_MODE_META: DeepseekPermissionModeMeta[] = [
     descriptionKey: 'chat.deepseekPermissionPresets.fullAccess.description',
   },
 ]
-
-/** Cycle order for Shift+Tab, and the set the selector accepts. */
-export const DEEPSEEK_PERMISSION_MODES: PermissionMode[] =
-  DEEPSEEK_PERMISSION_MODE_META.map((meta) => meta.mode)
-
-export const DEEPSEEK_DEFAULT_PERMISSION_MODE: PermissionMode = 'default'
-
-export function deepseekPermissionModeMeta(mode: PermissionMode): DeepseekPermissionModeMeta {
-  return DEEPSEEK_PERMISSION_MODE_META.find((meta) => meta.mode === mode)
-    ?? DEEPSEEK_PERMISSION_MODE_META[1]
-}

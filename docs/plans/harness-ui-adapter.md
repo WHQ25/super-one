@@ -1,6 +1,6 @@
 # Harness UI adapter registry
 
-Status: in-progress (steps 0-2 done; branch `refactor/harness-ui-adapter`) · Updated: 2026-10-12
+Status: in-progress (steps 0-3 done; branch `refactor/harness-ui-adapter`) · Updated: 2026-10-12
 Goal: Desktop renderer chat surfaces resolve per-harness behavior through the shared static harness tables plus per-harness renderer controls and store strategies, so adding or changing a harness edits its own modules instead of `=== '<harnessId>'` branches across the composer, status bar and chat store.
 Long-term docs affected: `.claude/skills/superone-harness/references/integration.md` and `experiences.md` (model, permission and slash checklists become "fill the harness modules"), `.claude/skills/superone-harness/references/new-harness.md` (P0 catalog table), `apps/desktop/docs/agent-reference/architecture.md` (new "Harness UI modules" section)
 
@@ -143,12 +143,15 @@ affected tests (paths below), `bun run typecheck:web` and, when shared changes,
    wrapping the existing selectors unchanged. Replace the `ModelSelector` and
    `StatusBarPermission` if-chains; the ACP `PermissionControl` keeps both
    `AcpPermissionSelector` and `AcpModeSelector`.
-3. **Permission presentation.** Merge the five vocabulary files into one table
-   per harness that keeps distinct session and launch vocabularies (the four
-   Codex session presets; the three Codex launch modes; dsh native preset copy
-   for session and mobile; current launch copy). `HarnessPermissionPopover`
-   reads it. The mobile generator reads the table; the regenerated JSON is
-   byte-identical.
+3. **Permission presentation (done).** Each harness's controls gain
+   `launchPermission` (trigger label, icon, tone and list), so
+   `HarnessPermissionPopover` is a generic shell; the Codex preset ↔ mode
+   mapping lives in the Codex module (four session presets, three launch
+   presets). dsh's copy, icons and tones become one option list
+   (`DeepseekPermissionModeList`) used by the status bar, launch rows and the
+   mobile generator, whose JSON stays byte-identical. Launch rows now show dsh
+   presets instead of Claude's mode names. The per-harness option lists stay
+   separate files; a merged table would only re-export them.
 4. **Selection, defaults and restore.** Add `selection` and route the generic
    paths: `store-helpers` (prewarm hint), `side-chat`, `agent-defaults`,
    `persistence.restorePersistedSelection`, `session-lifecycle.ts:222-230,475-552,619-639`

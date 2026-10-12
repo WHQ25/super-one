@@ -1,9 +1,12 @@
 /**
  * Pure helpers for rendering SuperOne chat transcripts for session archive MCP tools.
  * Views keep tool calls out of conversational text; tools are indexed separately.
+ * Stored transcripts are read through the Codex read view, so a legacy Codex
+ * turn shows its replies and tools like any other turn.
  */
 
 import type { ChatMessage, ContentBlock } from './agent-types'
+import { readableContent } from './codex-content'
 
 const INTERNAL_TAG_RE =
   /<(?:command-name|task-notification|local-command-caveat|local-command-stdout)[\s\S]*?(?:<\/(?:command-name|task-notification|local-command-caveat|local-command-stdout)>|$)/gi
@@ -54,7 +57,7 @@ export function isToolUseBlock(block: ContentBlock): block is ContentBlock & {
 }
 
 export function countTools(message: ChatMessage): number {
-  return message.content.filter(isToolUseBlock).length
+  return readableContent(message).filter(isToolUseBlock).length
 }
 
 function extractBlockText(block: ContentBlock, includeThinking = false): string {
@@ -67,7 +70,7 @@ function extractBlockText(block: ContentBlock, includeThinking = false): string 
 }
 
 export function extractMessageText(message: ChatMessage, opts?: { includeThinking?: boolean }): string {
-  return message.content.map((block) => extractBlockText(block, opts?.includeThinking)).filter(Boolean).join('\n\n')
+  return readableContent(message).map((block) => extractBlockText(block, opts?.includeThinking)).filter(Boolean).join('\n\n')
 }
 
 function toolTarget(block: ContentBlock & { toolName: string; input: string; toolFilePath?: string; toolSummary?: string }): string | undefined {
@@ -90,7 +93,7 @@ function toolTarget(block: ContentBlock & { toolName: string; input: string; too
 
 export function extractToolIndex(message: ChatMessage): ToolIndexEntry[] {
   const entries: ToolIndexEntry[] = []
-  for (const block of message.content) {
+  for (const block of readableContent(message)) {
     if (!isToolUseBlock(block)) continue
     const target = toolTarget(block)
     entries.push({
@@ -102,7 +105,7 @@ export function extractToolIndex(message: ChatMessage): ToolIndexEntry[] {
     })
   }
   // Attach error flags from matching results when present.
-  for (const block of message.content) {
+  for (const block of readableContent(message)) {
     if (block.type !== 'tool_result' && block.type !== 'bash_result' && block.type !== 'todo_result') continue
     const hit = entries.find((e) => e.toolUseId === block.toolUseId)
     if (hit && 'isError' in block && block.isError) hit.isError = true
@@ -112,12 +115,12 @@ export function extractToolIndex(message: ChatMessage): ToolIndexEntry[] {
 
 export function findToolDetail(messages: ChatMessage[], toolUseId: string): ToolDetail | null {
   for (const message of messages) {
-    for (const block of message.content) {
+    for (const block of readableContent(message)) {
       if (!isToolUseBlock(block) || block.toolUseId !== toolUseId) continue
       let resultSummary: string | undefined
       let resultIsError: boolean | undefined
       let resultOutputPath: string | undefined
-      for (const other of message.content) {
+      for (const other of readableContent(message)) {
         if (
           (other.type === 'tool_result' || other.type === 'bash_result' || other.type === 'todo_result')
           && other.toolUseId === toolUseId
@@ -130,7 +133,7 @@ export function findToolDetail(messages: ChatMessage[], toolUseId: string): Tool
       // Result may be on a later/sibling message — scan whole transcript.
       if (resultSummary === undefined) {
         for (const m of messages) {
-          for (const other of m.content) {
+          for (const other of readableContent(m)) {
             if (
               (other.type === 'tool_result' || other.type === 'bash_result' || other.type === 'todo_result')
               && other.toolUseId === toolUseId
@@ -256,7 +259,7 @@ export function pageTextBlocks(
   for (const message of messages) {
     const start = items.length
     if (opts.view === 'text' || message.role === opts.view) {
-      const texts = message.content.map((block) => extractBlockText(block, opts.includeThinking)).filter(Boolean)
+      const texts = readableContent(message).map((block) => extractBlockText(block, opts.includeThinking)).filter(Boolean)
       texts.forEach((text, index) => items.push({ message, text, index, total: texts.length }))
     }
     if (message.id === opts.messageId) anchor = { start, end: items.length }

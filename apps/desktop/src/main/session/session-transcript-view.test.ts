@@ -28,6 +28,18 @@ function msg(
 }
 
 describe('session-transcript-view', () => {
+  it('reads a stored legacy Codex turn as its replies and tools, not just the final text', () => {
+    const stored: ChatMessage = { ...msg('c1', 'assistant', [{ type: 'text', text: 'Done' }]), providerId: 'codex',
+      metadata: { codex: { threadId: 't', usage: null, items: [
+        { id: 'a1', type: 'agent_message', text: 'Checking the tests.' },
+        { id: 'cmd', type: 'command_execution', command: 'bun test', aggregatedOutput: 'ok', exitCode: 0, status: 'completed' },
+        { id: 'a2', type: 'agent_message', text: 'Done' },
+      ] } } }
+    expect(extractMessageText(stored)).toBe('Checking the tests.\n\nDone')
+    expect(extractToolIndex(stored)).toEqual([expect.objectContaining({ toolUseId: 'cmd', toolName: 'Bash', messageId: 'c1' })])
+    expect(findToolDetail([stored], 'cmd')).toMatchObject({ input: expect.stringContaining('bun test'), resultSummary: 'ok' })
+  })
+
   it('extracts pure text without tool lines', () => {
     const m = msg('a1', 'assistant', [
       { type: 'text', text: 'Done.' },

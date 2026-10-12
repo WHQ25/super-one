@@ -3,7 +3,7 @@ import type { ReductionProjection } from './protocol'
 
 const hints = {
   'voice-starting': ['Connecting…', '正在连接…'],
-  'voice-ready': ['Voice session connected. Listening…', '语音会话已连接。正在聆听…'],
+  'voice-ready': ['Listening…', '正在聆听…'],
   'voice-empty': ['Your voice conversation will appear here.', '语音对话记录会显示在这里。'],
   codex: ['Codex messages and work will appear here.', 'Codex 的消息和执行过程会显示在这里。'],
 } as const

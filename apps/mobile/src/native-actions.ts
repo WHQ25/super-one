@@ -30,6 +30,10 @@ export interface NativeActionPorts {
   loadNavigationIndex?(): Promise<import('@superone/shared/session-history-index').SessionHistoryIndex>
   loadHistoryWindow?(anchorId: string, direction: 'around' | 'before' | 'after'): Promise<Record<string, unknown>>
   loadEarlier?(): Promise<Record<string, unknown>>
+  /** Transcript windows: extend toward older or newer content, or return to the live tail. */
+  loadWindowPage?(placement: 'older' | 'newer' | 'latest'): Promise<Record<string, unknown>>
+  /** The whole message behind a partial row, for copy. */
+  loadFullMessage?(messageId: string): Promise<Record<string, unknown>>
   openLink(url: string): Promise<void>
   /** Reveal the file's folder in the native browser — the chip's secondary action. */
   openFile(path: string): Promise<void>
@@ -243,6 +247,14 @@ export async function resolveNativeRequest(
     } else if (message.action === 'loadEarlier') {
       if (!ports.loadEarlier) throw new Error('History is unavailable')
       result = await ports.loadEarlier()
+    } else if (message.action === 'loadWindowPage') {
+      if (!ports.loadWindowPage) throw new Error('History is unavailable')
+      const placement = payloadString(message, 'placement')
+      if (placement !== 'older' && placement !== 'newer' && placement !== 'latest') throw new Error('Invalid window placement')
+      result = await ports.loadWindowPage(placement)
+    } else if (message.action === 'loadFullMessage') {
+      if (!ports.loadFullMessage) throw new Error('Message unavailable')
+      result = await ports.loadFullMessage(payloadString(message, 'messageId'))
     } else if (message.action === 'openLink') {
       const url = payloadString(message, 'url')
       if (!/^https?:\/\//i.test(url)) throw new Error('unsupported link')

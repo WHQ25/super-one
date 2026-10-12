@@ -174,6 +174,9 @@ export function MobileApp() {
   const { locale, t } = useMobileLocale()
   const webViewTheme = useMemo(() => mobileWebViewTheme(tokens), [tokens])
   const { width, height, fontScale } = useWindowDimensions()
+  // Read when a transcript window is requested, outside render.
+  const viewportRef = useRef({ width, height })
+  viewportRef.current = { width, height }
   const [screen, setScreen] = useState<Screen>('pair')
   const [paste, setPaste] = useState('')
   const [lan, setLan] = useState('')
@@ -583,6 +586,8 @@ export function MobileApp() {
     transcriptSync.publish(runtime, {
       hasMoreHistory: runtime.hasMoreHistory,
       historyNavigation: runtime.navigationAvailable,
+      transcriptWindow: runtime.windowMode,
+      hasNewerHistory: runtime.hasNewerHistory,
       ...(mentionArtwork ? { mentionArtwork } : {}),
       ...(mcpIcons ? { mcpIcons } : {}),
       pendingPermission: pending
@@ -677,9 +682,26 @@ export function MobileApp() {
     loadEarlier: async () => {
       const runtime = runtimeRef.current
       if (!runtime) throw new Error('no active session')
+      if (runtime.windowMode) {
+        const page = await runtime.loadWindowPage('older')
+        if (runtimeRef.current !== runtime) throw new Error('Session changed')
+        return page
+      }
       const messages = await runtime.loadEarlier()
       if (runtimeRef.current !== runtime) throw new Error('Session changed')
       return { messages, hasMoreHistory: runtime.hasMoreHistory }
+    },
+    loadWindowPage: async (placement) => {
+      const runtime = runtimeRef.current
+      if (!runtime) throw new Error('no active session')
+      const page = await runtime.loadWindowPage(placement)
+      if (runtimeRef.current !== runtime) throw new Error('Session changed')
+      return page
+    },
+    loadFullMessage: async (messageId) => {
+      const runtime = runtimeRef.current
+      if (!runtime) throw new Error('no active session')
+      return { message: await runtime.loadFullMessage(messageId) }
     },
     openLink: async (url) => { await Linking.openURL(url) },
     copyText: async (text) => { await Clipboard.setStringAsync(text) },
@@ -1447,8 +1469,11 @@ export function MobileApp() {
       transcripts: environmentId ? {
         get: (pairingId, path, sid) => sessionTranscriptCache.get(pairingId, JSON.stringify([environmentId, path]), sid),
         put: (pairingId, path, sid, transcript) => sessionTranscriptCache.put(pairingId, JSON.stringify([environmentId, path]), sid, transcript),
+        getWindow: (pairingId, path, sid) => sessionTranscriptCache.getWindow!(pairingId, JSON.stringify([environmentId, path]), sid),
+        putWindow: (pairingId, path, sid, window) => sessionTranscriptCache.putWindow!(pairingId, JSON.stringify([environmentId, path]), sid, window),
       } : sessionTranscriptCache,
       pairingId: () => pairingId,
+      transcriptWindow: { viewport: () => viewportRef.current },
     })
     return runtime
   }

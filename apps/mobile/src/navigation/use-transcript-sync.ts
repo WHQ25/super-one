@@ -96,7 +96,7 @@ export function useTranscriptSync(web: RefObject<WebView | null>, voice?: Mobile
     delivery.publish({ ...lastFacts.current, messages,
       pendingAsyncQuestions: session.pendingAsyncQuestions ?? null,
       emptyState, conversationView: showingVoice ? 'realtime' : 'thread', realtimeActivities: projected?.activities ?? [],
-      ...(showingVoice ? { hasMoreHistory: false, historyNavigation: false, queuedMessages: [], pendingTurn: null,
+      ...(showingVoice ? { hasMoreHistory: false, historyNavigation: false, transcriptWindow: false, hasNewerHistory: false, queuedMessages: [], pendingTurn: null,
         isCompacting: false, compactError: null, isRecapping: false, apiRetry: null } : {}),
     }, hydrate || changed)
   }

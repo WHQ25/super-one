@@ -1,9 +1,22 @@
 import type { AgentEvent, ContentBlock, HarnessId, ImageAttachment, RemoteSystemInfo } from '@superone/shared/agent-types'
-import type { CachedTranscript } from '@superone/relay-client'
+import type { CachedTranscript, CachedWindow } from '@superone/relay-client'
+import type { ChatMessage } from '@superone/shared/agent-types'
 
 export type SessionTranscriptCache = {
   get(pairingId: string, projectPath: string, sessionId: string): CachedTranscript | null
   put(pairingId: string, projectPath: string, sessionId: string, transcript: CachedTranscript): void
+  getWindow?(pairingId: string, projectPath: string, sessionId: string): CachedWindow | null
+  putWindow?(pairingId: string, projectPath: string, sessionId: string, window: CachedWindow): void
+}
+
+/** A transcript-window page for the chat view: rows that changed, in the window's order. */
+export type WindowPage = {
+  messages: ChatMessage[]
+  messageOrder: string[]
+  /** The rows are the whole window (a jump or a return to the tail), not a change to it. */
+  replace: boolean
+  hasMoreHistory: boolean
+  hasNewerHistory: boolean
 }
 
 export type ChatRuntimeHooks = {
@@ -14,6 +27,8 @@ export type ChatRuntimeHooks = {
   onSessionRecap?: (sessionId: string) => void
   transcripts?: SessionTranscriptCache
   pairingId?: () => string | null
+  /** Open sessions as transcript windows on hosts that serve them, sized to this viewport. */
+  transcriptWindow?: { viewport(): { width: number; height: number } | undefined }
 }
 
 export type SystemInfo = RemoteSystemInfo

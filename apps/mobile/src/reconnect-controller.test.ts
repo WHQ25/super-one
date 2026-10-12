@@ -49,6 +49,37 @@ describe('ReconnectController', () => {
     expect(controller.isActive).toBe(false)
   })
 
+  it('does not probe or restore a cancelled dial that finishes late', async () => {
+    let finishDial!: () => void
+    const reconnect = vi.fn(() => new Promise<void>(resolve => { finishDial = resolve }))
+    const probe = vi.fn(async () => true)
+    const restore = vi.fn(async () => 9)
+    const onState = vi.fn()
+    const controller = new ReconnectController(reconnect, restore, { onState, probe })
+    controller.force(3)
+    controller.cancel()
+    finishDial()
+    await vi.waitFor(() => expect(reconnect.mock.results[0].value).resolves.toBeUndefined())
+    expect(probe).not.toHaveBeenCalled()
+    expect(restore).not.toHaveBeenCalled()
+    expect(onState).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not restore when a peer probe finishes after cancellation', async () => {
+    let finishProbe!: (online: boolean) => void
+    const probe = vi.fn(() => new Promise<boolean>(resolve => { finishProbe = resolve }))
+    const restore = vi.fn(async () => 9)
+    const onState = vi.fn()
+    const controller = new ReconnectController(async () => {}, restore, { onState, probe })
+    controller.force(3)
+    await vi.waitFor(() => expect(probe).toHaveBeenCalledOnce())
+    controller.cancel()
+    finishProbe(true)
+    await probe.mock.results[0].value
+    expect(restore).not.toHaveBeenCalled()
+    expect(onState).toHaveBeenCalledTimes(1)
+  })
+
   it('caps retries at 30 seconds and force reconnects immediately', async () => {
     vi.useFakeTimers()
     const reconnect = vi.fn().mockRejectedValue(new Error('offline'))

@@ -29,9 +29,11 @@ export class ReconnectController {
   private timer: ReturnType<typeof setTimeout> | null = null
   private active = false
   private epoch = 0
+  private disposed = false
+  private abort: AbortController | null = null
 
   constructor(
-    private readonly reconnect: () => Promise<void>,
+    private readonly reconnect: (signal: AbortSignal) => Promise<void>,
     private readonly restore: () => Promise<number>,
     private readonly hooks: ReconnectControllerHooks,
   ) {}
@@ -41,12 +43,13 @@ export class ReconnectController {
   }
 
   start(epoch: number): void {
-    if (this.active) return
+    if (this.disposed || this.active) return
     this.begin(epoch, false)
   }
 
   /** App foreground recovery skips the pending delay. */
   force(epoch: number): void {
+    if (this.disposed) return
     this.cancel()
     this.begin(epoch, true)
   }
@@ -56,6 +59,14 @@ export class ReconnectController {
     this.generation += 1
     if (this.timer != null) clearTimeout(this.timer)
     this.timer = null
+    this.abort?.abort()
+    this.abort = null
+  }
+
+  /** Retiring a device connection must also fence callbacks that retained this controller. */
+  dispose(): void {
+    this.disposed = true
+    this.cancel()
   }
 
   private schedule(generation: number): void {
@@ -71,6 +82,7 @@ export class ReconnectController {
     this.active = true
     this.attempt = 0
     this.epoch = epoch
+    this.abort = new AbortController()
     const generation = ++this.generation
     this.hooks.onState('reconnecting', epoch)
     if (immediate) void this.run(generation)
@@ -78,11 +90,15 @@ export class ReconnectController {
   }
 
   private async run(generation: number): Promise<void> {
+    if (!this.active || generation !== this.generation) return
+    const signal = this.abort!.signal
     this.hooks.onAttempt?.()
     try {
-      await this.reconnect()
-      if (this.hooks.probe && !(await this.hooks.probe())) {
-        if (!this.active || generation !== this.generation) return
+      await this.reconnect(signal)
+      if (!this.active || generation !== this.generation) return
+      const online = !this.hooks.probe || await this.hooks.probe()
+      if (!this.active || generation !== this.generation) return
+      if (!online) {
         this.active = false
         this.hooks.onState('offline', this.epoch)
         return

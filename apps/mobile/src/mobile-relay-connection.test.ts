@@ -51,6 +51,95 @@ class MockSocket implements SocketLike {
 afterEach(() => vi.useRealTimers())
 
 describe('mobile relay connection lifecycle', () => {
+  it('keeps a manually disconnected connection retired when foreground recovery retains its controller', async () => {
+    vi.useFakeTimers()
+    let suppressDisconnect = false
+    const sockets: MockSocket[] = []
+    const restore = vi.fn(async (client: RelayClient) => client.releaseBuffer().epoch)
+    const createConnection = () => createMobileRelayConnection({
+      onEvents: vi.fn(), onTerminal: vi.fn(), onShutdown: vi.fn(), onStatus: vi.fn(), onConnection: vi.fn(),
+      restore, currentEpoch: client => client.buffer.epoch, endpoint: ENDPOINT,
+      suppressDisconnect: () => suppressDisconnect,
+      resolveLan: async () => ({ host: '192.168.1.2', port: 7788 }),
+      openSocket: () => {
+        const socket = new MockSocket()
+        sockets.push(socket)
+        queueMicrotask(() => socket.onopen?.())
+        return socket
+      },
+    })
+    const old = createConnection()
+    let next: ReturnType<typeof createConnection> | undefined
+    try {
+      await old.dial({ host: '192.168.1.2', port: 7788 })
+      await old.client.verifyHost()
+      // Device disconnect cancels retries and closes the socket with recovery suppressed.
+      old.reconnectController.cancel()
+      suppressDisconnect = true
+      old.client.disconnect()
+      suppressDisconnect = false
+
+      // A stale foreground callback must not resurrect the retired connection.
+      old.reconnectController.force(old.client.buffer.epoch)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(old.client.connected).toBe(false)
+      expect(sockets).toHaveLength(1)
+
+      next = createConnection()
+      await next.dial({ host: '192.168.1.2', port: 7788 })
+      await next.client.verifyHost()
+      old.reconnectController.start(old.client.buffer.epoch)
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(sockets).toHaveLength(2)
+      expect(next.client.connected).toBe(true)
+      expect(restore).not.toHaveBeenCalled()
+    } finally {
+      suppressDisconnect = true
+      for (const connection of [old, next]) {
+        connection?.reconnectController.cancel()
+        connection?.client.disconnect()
+      }
+    }
+  })
+
+  it('does not dial an old connection when LAN discovery finishes after device disconnect', async () => {
+    vi.useFakeTimers()
+    let suppressDisconnect = false
+    let resolveRoute!: (lan: { host: string; port: number }) => void
+    const resolveLan = vi.fn(() => new Promise<{ host: string; port: number }>(resolve => { resolveRoute = resolve }))
+    const openSocket = vi.fn(() => {
+      const socket = new MockSocket()
+      queueMicrotask(() => socket.onopen?.())
+      return socket
+    })
+    const restore = vi.fn(async () => 2)
+    const connection = createMobileRelayConnection({
+      onEvents: vi.fn(), onTerminal: vi.fn(), onShutdown: vi.fn(), onStatus: vi.fn(), onConnection: vi.fn(),
+      restore, currentEpoch: () => 1, endpoint: ENDPOINT, resolveLan, openSocket,
+      suppressDisconnect: () => suppressDisconnect,
+    })
+    try {
+      await connection.dial({ host: '192.168.1.2', port: 7788 })
+      await connection.client.verifyHost()
+      connection.reconnectController.force(1)
+      expect(resolveLan).toHaveBeenCalledOnce()
+      connection.reconnectController.cancel()
+      suppressDisconnect = true
+      connection.client.disconnect()
+      suppressDisconnect = false
+
+      resolveRoute({ host: '192.168.1.2', port: 9001 })
+      await vi.advanceTimersByTimeAsync(0)
+      expect(openSocket).toHaveBeenCalledOnce()
+      expect(connection.client.connected).toBe(false)
+      expect(restore).not.toHaveBeenCalled()
+    } finally {
+      suppressDisconnect = true
+      connection.reconnectController.cancel()
+      connection.client.disconnect()
+    }
+  })
+
   it('keeps an old desktop offline, reports the concrete upgrade and does not retry it', async () => {
     vi.useFakeTimers()
     const socket = new MockSocket(false)

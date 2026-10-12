@@ -41,7 +41,12 @@ and reports input and bounded resize messages to RN.
   atomic `session.load` → control acquisition → topic subscription from the
   snapshot cursor → release. A native recovery signal triggers that same path.
 - Transport loss retries with bounded backoff until it succeeds or a manual connection
-  cancels the loop. Every redial asks discovery for the route first
+  retires the previous connection. Manual disconnect, device replacement and unmount
+  clear the client/controller references and connection snapshot before closing the
+  transport. A retired controller cannot be restarted by a stale foreground callback;
+  foreground recovery requires an owned client. Cancellation also fences pending route
+  discovery, peer probes and restore entry so late results cannot revive an old connection.
+  Every redial asks discovery for the route first
   (`DeviceDiscovery.resolveLan` re-probes the LAN candidates, ignoring earlier
   verdicts) and dials the relay when none answers — never the address of the first
   dial, which goes stale while the phone is backgrounded and would retry forever.

@@ -109,6 +109,7 @@ import { createMediaPorts } from '../media-ports'
 import { cacheDownload, cacheMcpAppDownload, type CachedDownload } from '../mcp-app-downloads'
 import type { ReconnectController } from '../reconnect-controller'
 import { createMobileRelayConnection } from '../mobile-relay-connection'
+import { retireMobileConnection } from '../mobile-connection-lifecycle'
 import { SessionTransition, SessionTransitionBusyError } from '../session-transition'
 import { findSession, readProjectSessions } from './workspace-data'
 import { useRemoteDirectory } from './use-remote-directory'
@@ -483,11 +484,15 @@ export function MobileApp() {
   const scanningRef = useRef(false)
   const pairingSocketRef = useRef<WebSocket | null>(null)
   const pairingCancelledRef = useRef(false)
+  const disconnectTransport = () => retireMobileConnection({
+    client: clientRef, controller: reconnectControllerRef, connection: connectionRef, suppressReconnect: suppressReconnectRef,
+  })
   useReconnectOnForeground(() => {
     networkLedger.mark('foreground')
     const client = clientRef.current
     logConnection('foreground', { state: connectionRef.current.state, transport: client?.transport ?? null })
-    if (!client || connectionRef.current.state !== 'connected') {
+    if (!client) return
+    if (connectionRef.current.state !== 'connected') {
       reconnectControllerRef.current?.force(connectionRef.current.epoch)
       return
     }
@@ -525,9 +530,7 @@ export function MobileApp() {
       ++connectGenerationRef.current
       workspaceCacheRef.current.persistence?.dispose()
       if (viewStateWriteTimerRef.current != null) clearTimeout(viewStateWriteTimerRef.current)
-      suppressReconnectRef.current = true
-      reconnectControllerRef.current?.cancel()
-      clientRef.current?.disconnect()
+      disconnectTransport()
       runtimeRef.current?.dispose()
     }
   }, [])
@@ -918,15 +921,11 @@ export function MobileApp() {
     suggestions.applyProgrammatic('')
     setAttachments([])
     setWorktreeSelection(LOCAL_WORKTREE_SELECTION)
-    reconnectControllerRef.current?.cancel()
     runtimeRef.current?.dispose()
     runtimeRef.current = null
     termRuntimeRef.current?.dispose()
     termRuntimeRef.current = null
-    suppressReconnectRef.current = true
-    clientRef.current?.disconnect()
-    suppressReconnectRef.current = false
-    clientRef.current = null
+    disconnectTransport()
     clearActiveSession()
     setProjects([]); setSessions([]); setHarnessOptions([]); setProject(null)
     workspaceCacheRef.current.persistence?.dispose()
@@ -2132,11 +2131,7 @@ export function MobileApp() {
     termRuntimeRef.current?.dispose()
     termRuntimeRef.current = null
     switchComposerDraft(null)
-    reconnectControllerRef.current?.cancel()
-    suppressReconnectRef.current = true
-    clientRef.current?.disconnect()
-    suppressReconnectRef.current = false
-    clientRef.current = null
+    disconnectTransport()
     clearActiveSession()
     setActivePairingId(null)
     setActiveTransport(null)

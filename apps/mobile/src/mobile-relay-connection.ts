@@ -74,9 +74,11 @@ export function createMobileRelayConnection(hooks: MobileRelayConnectionHooks): 
   const dial = (lan: LanAddress | null) => lan
     ? client.connectLan(lan.host, lan.port, link)
     : client.connectRelay({ relayUrl, link, deviceId: identity.deviceId })
-  const redial = async () => {
+  const redial = async (signal: AbortSignal) => {
+    if (stopped || signal.aborted) return
     client.startBuffering()
     const lan = await hooks.resolveLan()
+    if (stopped || signal.aborted) return
     logConnection('dial', { attempt, transport: lan ? 'lan' : 'relay', lan: lan ? `${lan.host}:${lan.port}` : null })
     await dial(lan)
   }
@@ -194,11 +196,13 @@ export function createMobileRelayConnection(hooks: MobileRelayConnectionHooks): 
     },
     onShutdown: () => {
       stopped = true
-      reconnectController.cancel()
+      reconnectController.dispose()
+      wakeRestore?.()
       client.disconnect()
       hooks.onShutdown()
     },
     onControl: (frame) => {
+      if (stopped) return
       if (frame.type === 'peer_disconnected') {
         peerLost = true
         peerPresent = false
@@ -224,7 +228,8 @@ export function createMobileRelayConnection(hooks: MobileRelayConnectionHooks): 
       }
       if (frame.type === 'kicked') {
         stopped = true
-        reconnectController.cancel()
+        reconnectController.dispose()
+        wakeRestore?.()
         client.disconnect()
         hooks.onKicked?.()
         return
@@ -241,7 +246,7 @@ export function createMobileRelayConnection(hooks: MobileRelayConnectionHooks): 
       if (!permanent(error)) return
       stopped = true
       peerLost = false
-      reconnectController.cancel()
+      reconnectController.dispose()
       wakeRestore?.()
       report('offline', hooks.currentEpoch(client))
       hooks.onStatus(error.message)
@@ -249,7 +254,12 @@ export function createMobileRelayConnection(hooks: MobileRelayConnectionHooks): 
     },
     onStatus: (connected) => {
       if (stopped) return
-      if (!connected && hooks.suppressDisconnect()) return
+      if (!connected && hooks.suppressDisconnect()) {
+        stopped = true
+        reconnectController.dispose()
+        wakeRestore?.()
+        return
+      }
       if (connected) {
         handshakeSeen = false
         if (reconnectController.isActive) {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { CodexCollabToolCallItem, CodexMcpToolCallItem } from './agent-types'
 import type { ToolAppAttachment } from './mcp-apps'
+import { codexContentEvents } from './test-fixtures/codex-content'
 import { findMcpAppAttachment, mcpAppEventAttachments, mcpAppModelContextInput, mcpAppResourceHashes, mergeMcpAppBlocks, updateMcpAppAttachments } from './mcp-apps-state'
 
 const app: ToolAppAttachment = { appInstanceId: 'child-view', binding: { node: 'local', session: 's', server: 'fixture', configGeneration: 0, configFingerprint: 'cfg' }, origin: { providerSessionId: 'child' }, resourceUri: 'ui://fixture/view', status: 'result' }
@@ -35,6 +36,7 @@ describe('nested native MCP App state', () => {
   })
 
   it('returns every child attachment from a collaboration update', () => {
-    expect(mcpAppEventAttachments({ type: 'codex_item_delta', messageId: 'm', phase: 'updated', item: collab({ child: [call(app)], sibling: [call({ ...app, appInstanceId: 'other' })] }) }).map(app => app.appInstanceId)).toEqual(['child-view', 'other'])
+    const events = codexContentEvents('m', collab({ child: [{ ...call(app), id: 'first' }], sibling: [{ ...call({ ...app, appInstanceId: 'other' }), id: 'second' }] }))
+    expect(events.flatMap(mcpAppEventAttachments).map(app => app.appInstanceId)).toEqual(['child-view', 'other'])
   })
 })

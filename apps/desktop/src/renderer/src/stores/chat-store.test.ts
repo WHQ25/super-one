@@ -3264,75 +3264,6 @@ describe('codex concurrent send routing', () => {
   })
 })
 
-describe('codex item streaming behavior', () => {
-  it('keeps reasoning visible after non-reasoning codex items arrive', () => {
-    setupProject('/test')
-    const proj = useChatStore.getState().projectSessions['/test']
-
-    useChatStore.setState({
-      projectSessions: {
-        '/test': {
-          ...proj,
-          _sessions: {
-            ...proj._sessions,
-            [draftOf(proj)]: {
-              ...proj._sessions[draftOf(proj)],
-              status: 'streaming',
-              messages: [
-                {
-                  id: 'codex-msg',
-                  role: 'assistant',
-                  status: 'streaming',
-                  content: [],
-                  createdAt: '',
-                  providerId: 'codex',
-                  metadata: {
-                    codex: {
-                      threadId: 'thread-1',
-                      usage: null,
-                      items: [],
-                    },
-                  },
-                },
-              ] as never[],
-            },
-          },
-        },
-      },
-    })
-
-    useChatStore.getState().handleAgentEvent(makeEvent({
-      type: 'codex_item_delta',
-      messageId: 'codex-msg',
-      phase: 'updated',
-      item: { id: 'reason-1', type: 'reasoning', text: 'Thinking' },
-    }))
-
-    useChatStore.getState().handleAgentEvent(makeEvent({
-      type: 'codex_item_delta',
-      messageId: 'codex-msg',
-      phase: 'completed',
-      item: { id: 'reason-1', type: 'reasoning', text: 'Thinking' },
-    }))
-
-    let items = getActiveDraftSession('/test')!.messages[0].metadata?.codex?.items ?? []
-    expect(items).toEqual([{ id: 'reason-1', type: 'reasoning', text: 'Thinking' }])
-
-    useChatStore.getState().handleAgentEvent(makeEvent({
-      type: 'codex_item_delta',
-      messageId: 'codex-msg',
-      phase: 'started',
-      item: { id: 'cmd-1', type: 'command_execution', command: 'ls', aggregatedOutput: '', status: 'in_progress' },
-    }))
-
-    items = getActiveDraftSession('/test')!.messages[0].metadata?.codex?.items ?? []
-    expect(items).toEqual([
-      { id: 'reason-1', type: 'reasoning', text: 'Thinking' },
-      { id: 'cmd-1', type: 'command_execution', command: 'ls', aggregatedOutput: '', status: 'in_progress' },
-    ])
-  })
-})
-
 describe('codex usage semantics', () => {
   it('accumulates fresh last-usage deltas while keeping context tokens separate', () => {
     setupProject('/test')
@@ -3473,10 +3404,9 @@ describe('codex usage semantics', () => {
 
       vi.setSystemTime(new Date('2026-01-01T00:00:20.000Z'))
       useChatStore.getState().handleAgentEvent(makeEvent({
-        type: 'codex_item_delta',
+        type: 'content_delta',
         messageId: 'codex-progress-1',
-        phase: 'updated',
-        item: { id: 'agent-msg-1', type: 'agent_message', text: 'working' } as never,
+        delta: { type: 'text', id: 'agent-msg-1', text: 'working' },
       }))
 
       expect(getActiveDraftSession('/test')!.lastEventAt).toBe(new Date('2026-01-01T00:00:20.000Z').getTime())

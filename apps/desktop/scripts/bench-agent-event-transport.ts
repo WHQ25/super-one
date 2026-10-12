@@ -14,6 +14,7 @@
 import { performance } from 'node:perf_hooks'
 import { serialize } from 'node:v8'
 import type { AgentEvent, CodexThreadItem } from '@superone/shared/agent-types'
+import { createCodexContentStream } from '@superone/shared/codex-content'
 import { createLocalDelivery as createRendererAgentEventTransport } from '@superone/runtime/stream'
 
 const DEFAULT_SAMPLES = 15
@@ -57,61 +58,27 @@ function parseSampleCount(args: string[]): number {
   return value
 }
 
-function commandScenario(): Scenario {
-  const updates = 128
-  const finalBytes = 336 * 1024
+/** The content deltas the Codex producer sends for one item growing over `updates` snapshots. */
+function codexScenario(name: string, updates: number, finalBytes: number, item: (text: string) => CodexThreadItem): Scenario {
   const chunk = 'x'.repeat(finalBytes / updates)
+  const stream = createCodexContentStream()
   const events: AgentEvent[] = []
   for (let i = 1; i <= updates; i++) {
-    events.push({
-      type: 'codex_item_delta',
-      projectPath: '/bench',
-      sessionId: 'session-command',
-      messageId: 'message-command',
-      seq: i,
-      phase: i === 1 ? 'started' : 'updated',
-      item: {
-        id: 'command-1',
-        type: 'command_execution',
-        command: 'bun run build',
-        aggregatedOutput: chunk.repeat(i),
-        status: 'in_progress',
-      },
-    })
+    for (const { delta } of stream.update(item(chunk.repeat(i)))) {
+      events.push({ type: 'content_delta', projectPath: '/bench', sessionId: name, messageId: name, seq: events.length + 1, delta })
+    }
   }
-  return {
-    name: 'Codex command (336 KiB)',
-    events,
-    expectedText: chunk.repeat(updates),
-  }
+  return { name, events, expectedText: chunk.repeat(updates) }
+}
+
+function commandScenario(): Scenario {
+  return codexScenario('Codex command (336 KiB)', 128, 336 * 1024,
+    aggregatedOutput => ({ id: 'command-1', type: 'command_execution', command: 'bun run build', aggregatedOutput, status: 'in_progress' }))
 }
 
 function reasoningScenario(): Scenario {
-  const updates = 192
-  const finalBytes = 96 * 1024
-  const chunk = 'r'.repeat(finalBytes / updates)
-  const events: AgentEvent[] = []
-  for (let i = 1; i <= updates; i++) {
-    events.push({
-      type: 'codex_item_delta',
-      projectPath: '/bench',
-      sessionId: 'session-reasoning',
-      messageId: 'message-reasoning',
-      seq: i,
-      phase: i === 1 ? 'started' : 'updated',
-      item: {
-        id: 'reasoning-1',
-        type: 'reasoning',
-        text: chunk.repeat(i),
-        startedAt: 1,
-      },
-    })
-  }
-  return {
-    name: 'Codex reasoning (96 KiB)',
-    events,
-    expectedText: chunk.repeat(updates),
-  }
+  return codexScenario('Codex reasoning (96 KiB)', 192, 96 * 1024,
+    text => ({ id: 'reasoning-1', type: 'reasoning', text, startedAt: 1 }))
 }
 
 function sequencedTextScenario(): Scenario {
@@ -149,50 +116,15 @@ function optimizedPayloads(events: AgentEvent[]): AgentEvent[][] {
   return payloads
 }
 
-function appendCodexPatch(item: CodexThreadItem, event: Extract<AgentEvent, { type: 'codex_item_patch' }>): CodexThreadItem {
-  const patch = event.patch
-  if (item.type !== patch.type) throw new Error(`Patch type mismatch: ${item.type} vs ${patch.type}`)
-  if (item.type === 'command_execution' && patch.type === 'command_execution') {
-    return { ...item, aggregatedOutput: item.aggregatedOutput + patch.aggregatedOutputDelta }
-  }
-  if (item.type === 'reasoning' && patch.type === 'reasoning') {
-    return {
-      ...item,
-      text: item.text + patch.textDelta,
-      startedAt: patch.startedAt,
-      endedAt: patch.endedAt,
-    }
-  }
-  if (item.type === 'agent_message' && patch.type === 'agent_message') {
-    return { ...item, text: item.text + patch.textDelta }
-  }
-  if (item.type === 'plan' && patch.type === 'plan') {
-    return { ...item, text: item.text + patch.textDelta }
-  }
-  if (item.type === 'review' && patch.type === 'review') {
-    return { ...item, text: item.text + patch.textDelta }
-  }
-  throw new Error(`Unsupported patch type: ${patch.type}`)
-}
-
 function assertEquivalent(scenario: Scenario, payloads: AgentEvent[][]): void {
-  let codexItem: CodexThreadItem | null = null
-  let contentText = ''
+  let actual = ''
   for (const event of payloads.flat()) {
-    if (event.type === 'codex_item_delta') codexItem = event.item
-    else if (event.type === 'codex_item_patch') {
-      if (!codexItem) throw new Error(`${scenario.name}: patch arrived before a full item`)
-      codexItem = appendCodexPatch(codexItem, event)
-    } else if (event.type === 'content_delta' && event.delta.type === 'text') {
-      contentText += event.delta.text
-    }
+    if (event.type !== 'content_delta') continue
+    const delta = event.delta
+    if (delta.type === 'text') actual += delta.text
+    else if (delta.type === 'thinking') actual += delta.thinking
+    else if (delta.type === 'tool_use') actual += delta.outputDelta ?? ''
   }
-
-  const actual = codexItem?.type === 'command_execution'
-    ? codexItem.aggregatedOutput
-    : codexItem?.type === 'reasoning'
-      ? codexItem.text
-      : contentText
   if (actual !== scenario.expectedText) {
     throw new Error(`${scenario.name}: optimized payload did not reconstruct the source stream`)
   }
@@ -280,7 +212,7 @@ function printTable(results: BenchResult[], samples: number): void {
   console.log('# Agent event transport benchmark')
   console.log('')
   console.log(`samples=${samples}, warmup=${WARMUP_SAMPLES}, timing-loops=${TIMING_LOOPS}, events/window=${BATCH_SIZE}`)
-  console.log('scope=main-to-renderer event batching, patch encoding, and structured-clone proxy')
+  console.log('scope=main-to-renderer event batching and structured-clone proxy')
   console.log('')
   console.log('| Scenario | IPC old -> new | Wire MiB old -> new | Saved | Clone ms old -> new | Speedup |')
   console.log('|---|---:|---:|---:|---:|---:|')

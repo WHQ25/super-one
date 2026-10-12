@@ -36,16 +36,6 @@ export function agentEventCoalesceKey(event: AgentEvent): string | null {
       event.isReplay ? '1' : '0',
     ].join('\0')
   }
-  if (event.type === 'codex_item_delta') {
-    return [
-      'codex_item_delta',
-      event.projectPath ?? '',
-      event.sessionId ?? '',
-      event.messageId,
-      event.item.id,
-      event.epoch ?? '',
-    ].join('\0')
-  }
   return null
 }
 
@@ -118,19 +108,10 @@ export function coalesceAgentEventBatch(events: AgentEvent[]): AgentEvent[] {
       groupAcc = event
       continue
     }
-    if (event.type === 'content_delta' && groupAcc.type === 'content_delta') {
-      const folded = foldContentDelta(groupAcc, event)
-      if (folded) {
-        groupAcc = folded
-        continue
-      }
-      flushGroup()
-      groupKey = key
-      groupAcc = event
-      continue
-    }
-    if (event.type === 'codex_item_delta' && groupAcc.type === 'codex_item_delta') {
-      groupAcc = { ...event, seq: event.seq ?? groupAcc.seq }
+    const folded: AgentEvent | null = event.type === 'content_delta' && groupAcc.type === 'content_delta'
+      ? foldContentDelta(groupAcc, event) : null
+    if (folded) {
+      groupAcc = folded
       continue
     }
     flushGroup()
@@ -168,7 +149,7 @@ export function createAgentEventBatcher(
 
   return {
     push(event) {
-      if (event.type === 'content_delta' || event.type === 'codex_item_delta') {
+      if (event.type === 'content_delta') {
         queue.push(event)
         if (timer == null) timer = setTimeout(flush, batchMs)
         return

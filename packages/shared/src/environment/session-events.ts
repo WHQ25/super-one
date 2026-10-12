@@ -140,12 +140,10 @@ export const SESSION_DURABLE_EVENT = {
   hostActionRequested: 'session.host_action_requested',
 } as const
 
-/** How a streaming-tier event is retired: with its message's commit, or replaced by a newer one. */
+/** How a streaming-tier event is retired: with its message's commit. */
 export interface StreamingEventKey {
   /** Retired when this message commits; null retires at the end of the turn. */
   messageId: string | null
-  /** A newer event with the same key carries everything this one did. */
-  supersedes?: string
 }
 
 /**
@@ -171,10 +169,6 @@ export function streamingEventKey(eventType: string, payload: unknown): Streamin
     case 'tool_input_delta':
     case 'tool_progress':
       return { messageId: event.messageId }
-    case 'codex_item_delta':
-      return event.phase === 'updated'
-        ? { messageId: event.messageId, supersedes: `${event.messageId}\u0000${event.item.id}` }
-        : null
     default:
       return null
   }

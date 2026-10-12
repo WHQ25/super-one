@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ChatMessage, CodexAgentMessageItem } from '@superone/shared/agent-types'
 import { codexAsyncQuestionQueue, pendingCodexAsyncQuestions } from '@superone/shared/codex-async-question'
+import { codexContentEvents } from '@superone/shared/test-fixtures/codex-content'
 import { createDefaultChatCoreSession } from './defaults'
 import { applyEventToSession } from './reducer'
 
@@ -11,7 +12,7 @@ describe('async question queue across paged history', () => {
     let session = { ...createDefaultChatCoreSession(), pendingAsyncQuestions: pendingCodexAsyncQuestions([turn]) }
     expect(codexAsyncQuestionQueue(session).map(q => q.item.id)).toEqual(['first'])
     session = { ...session, ...applyEventToSession(session, { type: 'message_start', message: { ...turn, id: 'next', metadata: undefined } }) }
-    session = { ...session, ...applyEventToSession(session, { type: 'codex_item_delta', messageId: 'next', phase: 'completed', item: { ...question, id: 'second' } }) }
+    for (const event of codexContentEvents('next', { ...question, id: 'second' })) session = { ...session, ...applyEventToSession(session, event) }
     expect(codexAsyncQuestionQueue(session).map(q => q.item.id)).toEqual(['first', 'second'])
     session = { ...session, ...applyEventToSession(session, { type: 'user_message_appended', message: { id: 'codex_async_answer:first', role: 'user', status: 'complete', createdAt: '', providerId: 'codex', content: [{ type: 'text', text: 'Production' }] } }) }
     expect(codexAsyncQuestionQueue(session).map(q => q.item.id)).toEqual(['second'])

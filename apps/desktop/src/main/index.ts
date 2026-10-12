@@ -1462,10 +1462,8 @@ function createWindow(): void {
   // window recreated via macOS `activate` would otherwise never see events.
   setUpdaterWindow(mainWindow)
   attachRendererDiagnostics(mainWindow, 'main')
-  rendererAgentEventTransport.resetCodexBaselines()
   mainWindow.on('closed', () => {
     if (mainWindow) allWindows.delete(mainWindow)
-    rendererAgentEventTransport.resetCodexBaselines()
     mainWindow = null
     destroyDragPreviewWindow()
     destroyComputerUsePermissionFloat()
@@ -1629,11 +1627,9 @@ function createSessionWindow(projectPath: string, sessionId: string, title?: str
 
   allWindows.add(win)
   attachRendererDiagnostics(win, 'mini')
-  rendererAgentEventTransport.resetCodexBaselines()
   sessionWindows.set(key, win)
   win.on('closed', () => {
     allWindows.delete(win)
-    rendererAgentEventTransport.resetCodexBaselines()
     if (sessionWindows.get(key) === win) sessionWindows.delete(key)
   })
 
@@ -1755,10 +1751,8 @@ function createBenchWindow(): void {
     return { action: 'deny' }
   })
   allWindows.add(benchWindow)
-  rendererAgentEventTransport.resetCodexBaselines()
   benchWindow.on('closed', () => {
     if (benchWindow) allWindows.delete(benchWindow)
-    rendererAgentEventTransport.resetCodexBaselines()
     benchWindow = null
   })
   void loadRendererPage(benchWindow, 'bench.html')
@@ -2109,9 +2103,6 @@ function registerIpcHandlers(): void {
       input: { sessionId: string; projectPath?: string; providerId?: string; limit?: number; before?: number; full?: boolean },
     ) => {
       const { getEnvironmentHost } = await import('./environment')
-      // The renderer replaces this session from the snapshot: Codex items it
-      // holds are the node's, not the ones sent before, so the next update goes whole.
-      rendererAgentEventTransport.resetCodexBaselines({ projectPath: input.projectPath, sessionId: input.sessionId })
       return getEnvironmentHost().openRemoteSession(connectionId, input)
     },
   )

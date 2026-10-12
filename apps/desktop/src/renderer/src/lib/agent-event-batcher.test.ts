@@ -28,17 +28,6 @@ function thinking(text: string, times?: { startedAt?: number; endedAt?: number }
   } as unknown as AgentEvent
 }
 
-function codexDelta(text: string, itemId = 'reasoning-1'): AgentEvent {
-  return {
-    type: 'codex_item_delta',
-    messageId: 'm1',
-    projectPath: '/p',
-    sessionId: 's1',
-    phase: 'updated',
-    item: { id: itemId, type: 'reasoning', text },
-  } as AgentEvent
-}
-
 function lifecycle(type: string): AgentEvent {
   return { type, messageId: 'm1' } as unknown as AgentEvent
 }
@@ -48,15 +37,6 @@ describe('coalesceAgentEventBatch', () => {
     const out = coalesceAgentEventBatch([delta('a'), delta('b'), delta('c')])
     expect(out).toHaveLength(1)
     expect((out[0] as { delta: { text: string } }).delta.text).toBe('abc')
-  })
-
-  it('keeps last codex item snapshot and never concatenates text', () => {
-    const out = coalesceAgentEventBatch([
-      codexDelta('first'),
-      codexDelta('first second'),
-    ])
-    expect(out).toHaveLength(1)
-    expect((out[0] as { item: { text: string } }).item.text).toBe('first second')
   })
 
   it('does not fold across messageId boundaries', () => {
@@ -156,19 +136,6 @@ describe('agent event batching', () => {
     vi.advanceTimersByTime(AGENT_EVENT_BATCH_MS)
     expect(seen).toHaveLength(1)
     expect((seen[0] as { delta: { text: string } }).delta.text).toBe('abc')
-  })
-
-  it('coalesces codex item updates to the last snapshot only', () => {
-    const seen: AgentEvent[] = []
-    const batcher = createAgentEventBatcher((e) => seen.push(e))
-
-    batcher.push(codexDelta('first'))
-    batcher.push(codexDelta('first second'))
-    expect(seen).toHaveLength(0)
-
-    vi.advanceTimersByTime(AGENT_EVENT_BATCH_MS)
-    expect(seen).toHaveLength(1)
-    expect((seen[0] as { item: { text: string } }).item.text).toBe('first second')
   })
 
   it('dispatches an interactive event immediately without waiting for the window', () => {

@@ -9,7 +9,6 @@ import {
   removeCodexItem,
   resolveCodexModelSelection,
   resolveCodexReasoningEffort,
-  upsertCodexItem,
 } from './chat'
 
 function makeUsage(overrides: Partial<CodexUsageInfo> = {}): CodexUsageInfo {
@@ -327,32 +326,6 @@ describe('applyDelta', () => {
   it('should apply to empty content array', () => {
     const result = applyDelta([], { type: 'text', text: 'start' })
     expect(result).toEqual([{ type: 'text', text: 'start' }])
-  })
-})
-
-describe('upsertCodexItem', () => {
-  it('should append a new item', () => {
-    const items: CodexThreadItem[] = []
-    const next = makeCodexItem({ id: 'a' })
-    const result = upsertCodexItem(items, next)
-    expect(result).toHaveLength(1)
-    expect(result[0].id).toBe('a')
-  })
-
-  it('should update an existing item by id', () => {
-    const items: CodexThreadItem[] = [makeCodexItem({ id: 'a', text: 'old' } as Partial<CodexThreadItem>)]
-    const next = makeCodexItem({ id: 'a', text: 'new' } as Partial<CodexThreadItem>)
-    const result = upsertCodexItem(items, next)
-    expect(result).toHaveLength(1)
-    expect((result[0] as { text: string }).text).toBe('new')
-  })
-
-  it('should not mutate the original array', () => {
-    const items: CodexThreadItem[] = [makeCodexItem({ id: 'a' })]
-    const next = makeCodexItem({ id: 'b' })
-    const result = upsertCodexItem(items, next)
-    expect(result).toHaveLength(2)
-    expect(items).toHaveLength(1)
   })
 })
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { AgentEvent, ChatMessage, CodexThreadItem } from '@superone/shared/agent-types'
-import { createCodexContentStream } from '@superone/shared/codex-content'
+import type { ChatMessage, CodexThreadItem } from '@superone/shared/agent-types'
+import { codexContentEvents } from '@superone/shared/test-fixtures/codex-content'
 import { applyCodexEventToRuntime, finalizeCodexAssistantMessage, type CodexSessionRuntime } from './codex-session-runtime'
 
 function runtimeWith(items: CodexThreadItem[] = []): CodexSessionRuntime {
@@ -12,9 +12,7 @@ function runtimeWith(items: CodexThreadItem[] = []): CodexSessionRuntime {
 
 /** Persist the content deltas a producer sends for these item snapshots. */
 function persist(runtime: CodexSessionRuntime, ...items: CodexThreadItem[]): CodexSessionRuntime {
-  const stream = createCodexContentStream()
-  return items.flatMap(item => stream.update(item)).reduce((current, { delta, replace }) => applyCodexEventToRuntime(current,
-    { type: 'content_delta', messageId: 'm', delta, ...(replace ? { replace } : {}) } satisfies AgentEvent), runtime)
+  return codexContentEvents('m', ...items).reduce(applyCodexEventToRuntime, runtime)
 }
 
 const running: CodexThreadItem = { id: 'cmd', type: 'command_execution', command: 'bun test', aggregatedOutput: 'ok', status: 'in_progress' }

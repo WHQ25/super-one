@@ -37,13 +37,10 @@ import {
   _isLiveSession,
   addRemoteSession,
   applyEventToSession,
-  getCodexCompletionEventMeta,
   getCodexContextTokens,
-  getCodexTraceItems,
   isMountedSession,
   isRemoteSession,
   removeRemoteSession,
-  summarizeCodexTraceItem,
   updateProjectState,
 } from '../index'
 
@@ -349,29 +346,6 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
       }
 
       if (import.meta.env.DEV) {
-        const codexItemTrace = event.type === 'codex_item_delta'
-          ? {
-              codexPhase: event.phase,
-              codexItemId: event.item.id,
-              codexItemType: event.item.type,
-              codexTextLength: event.item.type === 'reasoning' || event.item.type === 'plan' || event.item.type === 'agent_message' || event.item.type === 'review'
-                ? event.item.text.length
-                : undefined,
-              codexTextPreview: event.item.type === 'reasoning' || event.item.type === 'plan' || event.item.type === 'agent_message' || event.item.type === 'review'
-                ? event.item.text.slice(0, 160)
-                : undefined,
-              ...(event.item.type === 'collab_tool_call' ? {
-                collabTool: event.item.tool,
-                collabStatus: event.item.status,
-                agentIds: Object.keys(event.item.agentsStates),
-                agentStatuses: Object.fromEntries(Object.entries(event.item.agentsStates).map(([k, v]) => [k, v.status])),
-                childThreadCount: event.item.childItems ? Object.keys(event.item.childItems).length : 0,
-                childItemCounts: event.item.childItems
-                  ? Object.fromEntries(Object.entries(event.item.childItems).map(([k, v]) => [k, v.length]))
-                  : undefined,
-              } : {}),
-            }
-          : {}
         window.app.trace?.('agent.store', event.type, {
           targetSid,
           eventSessionId,
@@ -379,7 +353,6 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
           ...('status' in delta ? { status: delta.status } : {}),
           ...(event.type === 'message_start' ? { role: event.message.role, messageId: event.message.id } : {}),
           ...('taskProgress' in delta ? { taskProgressKeys: Object.keys(delta.taskProgress ?? {}) } : {}),
-          ...codexItemTrace,
         }, (event as any).messageId)
         if (event.type === 'message_usage' && event.codexUsage) {
           const stepTokens = getCodexUsageStepTokens(event.codexUsage)
@@ -404,39 +377,6 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
             computedTurnDeltaTokens: footerTokens,
             displayFooterInput: footerTokens.input,
             displayFooterOutput: footerTokens.output,
-          }, event.messageId)
-        }
-        if (updatedSession.sessionProvider === 'codex' && (event.type === 'codex_item_delta' || event.type === 'message_complete')) {
-          const beforeMessage = targetSession.messages.find((msg) => msg.id === event.messageId)
-          const afterMessage = updatedSession.messages.find((msg) => msg.id === event.messageId)
-          const prevItems = getCodexTraceItems(beforeMessage)
-          const nextItems = getCodexTraceItems(afterMessage)
-          const completionItems = event.type === 'message_complete'
-            ? getCodexCompletionEventMeta(event.metadata)?.items ?? []
-            : []
-          window.app.trace?.('codex.live', event.type, {
-            targetSid,
-            eventSessionId,
-            activeSid: project._activeSessionId,
-            messageId: event.messageId,
-            lastAssistantMessageIdBefore: targetSession.lastAssistantMessageId,
-            lastAssistantMessageIdAfter: updatedSession.lastAssistantMessageId,
-            activeCodexMessageIdBefore: targetSession.activeCodexMessageId,
-            activeCodexMessageIdAfter: updatedSession.activeCodexMessageId,
-            prevItemsLength: prevItems.length,
-            nextItemsLength: nextItems.length,
-            prevItemsTail: prevItems.tail,
-            nextItemsTail: nextItems.tail,
-            ...(event.type === 'codex_item_delta'
-              ? {
-                  phase: event.phase,
-                  incomingItem: summarizeCodexTraceItem(event.item),
-                }
-              : {
-                  completionItemsLength: completionItems.length,
-                  completionItemsTail: completionItems.slice(-3).map(summarizeCodexTraceItem),
-                  finalResponseLength: getCodexCompletionEventMeta(event.metadata)?.finalResponse?.length ?? 0,
-                }),
           }, event.messageId)
         }
       }

@@ -26,7 +26,7 @@ export interface EventBatcherOptions {
 }
 
 function isDeferrable(event: AgentEvent): boolean {
-  return event.type === 'content_delta' || event.type === 'codex_item_delta'
+  return event.type === 'content_delta'
 }
 
 export function createEventBatcher<G = undefined>(

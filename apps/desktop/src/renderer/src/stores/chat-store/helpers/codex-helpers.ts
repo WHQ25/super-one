@@ -31,7 +31,6 @@ export {
   getCodexCompletionEventMeta,
   getCodexContextTokens,
   getCodexUsageStepTokens,
-  upsertCodexItem,
 } from '../event-reducer/codex-pure'
 
 export function removeCodexItem(items: CodexThreadItem[], itemId: string): CodexThreadItem[] {
@@ -137,36 +136,6 @@ export function resolveCodexModelSelection(
 
 export function pruneTransientCodexItems(items: CodexThreadItem[]): CodexThreadItem[] {
   return items
-}
-
-function getCodexTraceTextLength(item: CodexThreadItem): number | undefined {
-  switch (item.type) {
-    case 'agent_message':
-    case 'reasoning':
-    case 'plan':
-    case 'review':
-      return item.text.length
-    default:
-      return undefined
-  }
-}
-
-export function summarizeCodexTraceItem(item: CodexThreadItem): { id: string; type: CodexThreadItem['type']; textLen?: number } {
-  const textLen = getCodexTraceTextLength(item)
-  return textLen === undefined
-    ? { id: item.id, type: item.type }
-    : { id: item.id, type: item.type, textLen }
-}
-
-export function getCodexTraceItems(message: ChatMessage | undefined | null): {
-  length: number
-  tail: Array<{ id: string; type: CodexThreadItem['type']; textLen?: number }>
-} {
-  const items = message?.metadata?.codex?.items ?? []
-  return {
-    length: items.length,
-    tail: items.slice(-3).map(summarizeCodexTraceItem),
-  }
 }
 
 // --- Codex command helpers ---

@@ -1,17 +1,6 @@
 import type { ChatMessage, CodexThreadItem, CodexTurnInfo, CodexUsageInfo } from '@superone/shared/agent-types'
-import { mergeMcpAppBlocks } from '@superone/shared/mcp-apps-state'
 
 // Pure Codex transforms shared by Desktop and mobile reducers.
-
-export function upsertCodexItem(items: CodexThreadItem[], next: CodexThreadItem): CodexThreadItem[] {
-  const idx = items.findIndex((item) => item.id === next.id)
-  if (idx === -1) return [...items, next]
-  const cloned = [...items]
-  const previous = items[idx]
-  next = mergeMcpAppBlocks([previous], [next])[0]!
-  cloned[idx] = next
-  return cloned
-}
 
 export function getCodexUsageStepTokens(usage: CodexUsageInfo): { input: number; output: number } {
   return {

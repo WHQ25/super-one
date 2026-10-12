@@ -367,7 +367,7 @@ Durability rules:
   user message, turn start/completion/interruption/error, assistant blocks,
   tool start/input/result, permission/question/plan requests and responses,
   and status changes. Durability is decided by payload (`streamingEventKey`):
-  text and thinking deltas, tool input deltas, Codex item updates and tool
+  text and thinking deltas, tool input deltas, running command output and tool
   progress go to an in-memory streaming ring (`streaming-ring.ts`, 16 MiB cap)
   and are retired when their message commits (`committedStreamingMessage`);
   everything else is a durable `environment_events` row. Rows written before

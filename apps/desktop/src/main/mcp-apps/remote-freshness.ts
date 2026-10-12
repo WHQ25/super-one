@@ -1,4 +1,4 @@
-import type { AgentEvent, CodexThreadItem } from '@superone/shared/agent-types'
+import type { AgentEvent } from '@superone/shared/agent-types'
 import type { SessionRef } from '@superone/shared/environment/refs'
 import type { ToolAppAttachment } from '@superone/shared/mcp-apps'
 
@@ -28,7 +28,7 @@ export class RemoteMcpAppFreshness {
     const messageId = 'messageId' in event ? event.messageId ?? undefined : undefined
     const observeCall = (callId: string, app: ToolAppAttachment | undefined, starting: boolean, completed: boolean) => {
       const key = JSON.stringify([refKey, callId])
-      // A collab snapshot can repeat the same pending child; it is still one live call.
+      // Repeated deltas of a pending call are still one live call.
       if (starting && !this.started.has(key)) {
         if (this.started.size >= 1024) this.started.delete(this.started.keys().next().value!)
         this.started.set(key, { ref: refKey, messageId, at: now })
@@ -37,16 +37,10 @@ export class RemoteMcpAppFreshness {
       if (app && entry && !entry.activated) { fresh.push(app); entry.activated = true }
       if (completed) this.started.delete(key)
     }
-    if (event.type === 'codex_item_delta') {
-      const visit = (item: CodexThreadItem, childThreadId?: string) => {
-        if (item.type === 'mcp_tool_call') observeCall(JSON.stringify([childThreadId ?? '', item.id]), item.app,
-          childThreadId ? item.status === 'in_progress' : event.phase === 'started',
-          childThreadId ? item.status !== 'in_progress' : event.phase === 'completed')
-        else if (item.type === 'collab_tool_call') for (const [threadId, items] of Object.entries(item.childItems ?? {})) for (const child of items) visit(child, threadId)
-      }
-      visit(event.item)
-    } else if (event.type === 'content_delta' && (event.delta.type === 'tool_use' || event.delta.type === 'tool_result')) {
-      observeCall(event.delta.toolUseId, event.delta.app, event.delta.type === 'tool_use', event.delta.type === 'tool_result')
+    if (event.type === 'content_delta' && (event.delta.type === 'tool_use' || event.delta.type === 'tool_result')) {
+      // A call first seen already complete is history, not a live start.
+      const starting = event.delta.type === 'tool_use' && event.delta.status !== 'complete'
+      observeCall(event.delta.toolUseId, event.delta.app, starting, event.delta.type === 'tool_result')
     }
     return fresh
   }

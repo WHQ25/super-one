@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentEvent, ChatMessage, CodexThreadItem } from '@superone/shared/agent-types'
-import { createCodexContentStream } from '@superone/shared/codex-content'
+import { codexContentEvents } from '@superone/shared/test-fixtures/codex-content'
 import { anchorAsyncAnswer } from '@superone/shared/transcript-boundary'
 import { applyEventToSession } from './reducer'
 import { createDefaultChatCoreSession } from './defaults'
@@ -20,12 +20,7 @@ function apply(session: ChatCoreSession, ...events: AgentEvent[]): ChatCoreSessi
   return events.reduce((current, event) => ({ ...current, ...applyEventToSession(current, event) }), session)
 }
 
-/** The content deltas a producer sends for these item snapshots. */
-function streamed(...items: CodexThreadItem[]): AgentEvent[] {
-  const stream = createCodexContentStream()
-  return items.flatMap(item => stream.update(item).map(({ delta, replace }): AgentEvent =>
-    ({ type: 'content_delta', messageId: 'm', delta, ...(replace ? { replace } : {}) })))
-}
+const streamed = (...items: CodexThreadItem[]) => codexContentEvents('m', ...items)
 
 describe('a content-shaped Codex turn in chat-core', () => {
   it('keeps its content at completion and seals a tool still running', () => {

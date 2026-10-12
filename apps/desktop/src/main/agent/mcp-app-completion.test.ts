@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest'
 import type { ChatMessage, CodexMcpToolCallItem } from '@superone/shared/agent-types'
 import type { ToolAppAttachment } from '@superone/shared/mcp-apps'
+import { createCodexContentStream } from '@superone/shared/codex-content'
 import { findMcpAppAttachment, updateMcpAppAttachments } from '@superone/shared/mcp-apps-state'
 import { applyCodexEventToRuntime, finalizeCodexAssistantMessage, type CodexSessionRuntime } from './codex-session-runtime'
 import { applyClaudeEventToRuntime, type ClaudeSessionRuntime } from './claude-session-runtime'
@@ -10,13 +11,15 @@ const hostState = { resource: { hash: 'a'.repeat(64), meta: { prefersBorder: tru
 const message: ChatMessage = { id: 'm', role: 'assistant', providerId: 'codex', status: 'streaming', content: [], createdAt: '' }
 const item: CodexMcpToolCallItem = { id: 'call', type: 'mcp_tool_call', server: 'cad', tool: 'library', arguments: {}, status: 'in_progress', app }
 
-it('keeps host resource/context/presentation through Codex streaming and final completion snapshots', () => {
-  let runtime: CodexSessionRuntime = { projectPath: '/project', sessionId: 's', messages: [{ ...message, metadata: { codex: { threadId: 'thread', usage: null, items: [item] } } }], totalCostUsd: 0, contextTokens: 0, gitBranch: null, worktreePath: null, streamingTokensByMessageId: {}, lastUsageByMessageId: {} }
+it('keeps host resource/context/presentation through Codex streaming and final completion', () => {
+  const stream = createCodexContentStream()
+  const apply = (runtime: CodexSessionRuntime, next: CodexMcpToolCallItem) => stream.update(next).reduce((current, { delta, replace }) =>
+    applyCodexEventToRuntime(current, { type: 'content_delta', messageId: 'm', delta, ...(replace ? { replace } : {}) }), runtime)
+  let runtime = apply({ projectPath: '/project', sessionId: 's', messages: [{ ...message, metadata: { codex: { threadId: 'thread', usage: null, items: [] } } }], totalCostUsd: 0, contextTokens: 0, gitBranch: null, worktreePath: null, streamingTokensByMessageId: {}, lastUsageByMessageId: {} }, item)
   runtime.messages = updateMcpAppAttachments(runtime.messages, 'view', hostState)
-  const completed: CodexMcpToolCallItem = { ...item, status: 'completed', app: { ...app, status: 'result', toolResultOmitted: { bytes: 1050849, reason: 'size_limit' } } }
-  runtime = applyCodexEventToRuntime(runtime, { type: 'codex_item_delta', messageId: 'm', phase: 'completed', item: completed })
+  runtime = apply(runtime, { ...item, status: 'completed', app: { ...app, status: 'result', toolResultOmitted: { bytes: 1050849, reason: 'size_limit' } } })
   expect(findMcpAppAttachment(runtime.messages, 'view')?.app).toMatchObject(hostState)
-  runtime = finalizeCodexAssistantMessage(runtime, { messageId: 'm', status: 'complete', text: 'done', result: { threadId: 'thread', finalResponse: 'done', items: [{ ...completed, app: undefined }], usage: null } })
+  runtime = finalizeCodexAssistantMessage(runtime, { messageId: 'm', status: 'complete', text: 'done', result: { threadId: 'thread', finalResponse: 'done', items: [], usage: null } })
   expect(findMcpAppAttachment(runtime.messages, 'view')?.app).toMatchObject({ ...hostState, status: 'result', toolResultOmitted: { reason: 'size_limit' } })
 })
 

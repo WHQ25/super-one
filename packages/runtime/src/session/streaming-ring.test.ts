@@ -21,13 +21,6 @@ describe('StreamingRing', () => {
     expect(ring.after('s', 1)).toBeNull()
   })
 
-  it('keeps only the latest update of an item without opening a gap', () => {
-    const ring = new StreamingRing()
-    ring.add(event('s', 1), { messageId: 'm', supersedes: 'm:item' })
-    ring.add(event('s', 2), { messageId: 'm', supersedes: 'm:item' })
-    expect(versions(ring.after('s', 0))).toEqual([2])
-  })
-
   it('evicts the oldest events past the byte cap and reports the gap', () => {
     const ring = new StreamingRing(50)
     ring.add(event('a', 1, 'aaaaaaaaaa'), { messageId: 'm' })

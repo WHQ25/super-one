@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentEvent, ChatMessage, ContentBlock, CodexMcpToolCallItem } from '@superone/shared/agent-types'
 import { applyContentDelta } from '@superone/shared/content-delta'
+import { codexContentEvents } from '@superone/shared/test-fixtures/codex-content'
 import { createNodeSessionEventMapper } from '@superone/shared/node-session-event-map'
 import { SESSION_DURABLE_EVENT, type EnvironmentEventEnvelope } from '@superone/shared/environment'
 import { mcpAppModelContextText, findMcpAppAttachment } from '@superone/shared/mcp-apps-state'
 import type { McpAppAttachmentUpdate, ToolAppAttachment } from '@superone/shared/mcp-apps'
-import { applyEventToSession, upsertCodexItem } from '@superone/chat-core'
+import { applyEventToSession } from '@superone/chat-core'
 import type { ChatCoreSession } from '@superone/chat-core'
 import { buildSessionMessageCatalog } from '@superone/runtime/session/message-catalog'
 import { stripEventForRemote } from '../remote-content'
@@ -37,7 +38,7 @@ describe('harness-neutral MCP App host state', () => {
 
   it.each(['claude', 'codex'] as const)('reconstructs and patches remote %s catalog rows', harness => {
     const native: AgentEvent[] = harness === 'claude' ? [{ type: 'content_delta', messageId: 'm', delta: use }, { type: 'content_delta', messageId: 'm', delta: result }]
-      : [{ type: 'codex_item_delta', messageId: 'm', phase: 'completed', item }]
+      : codexContentEvents('m', item)
     const rows = buildSessionMessageCatalog({ sessionId: 's', providerResume: 'thread', transcript: [{ id: 'm', role: 'assistant', text: 'done', createdAt: 1 }] },
       [...native, event].map((value, index) => envelope(value, index + 1)))
     expect(findMcpAppAttachment(JSON.parse(JSON.stringify(rows)), 'view')?.app).toMatchObject(update)
@@ -60,17 +61,14 @@ describe('harness-neutral MCP App host state', () => {
   })
 
   it.each(['claude', 'codex'] as const)('resolves an in-flight %s View before its assistant transcript row is committed', harness => {
-    const native: AgentEvent = harness === 'claude' ? { type: 'content_delta', messageId: 'm', delta: result }
-      : { type: 'codex_item_delta', messageId: 'm', phase: 'completed', item }
-    const rows = buildSessionMessageCatalog({ sessionId: 's', transcript: [], providerResume: 'thread' }, [envelope(native, 1), envelope(event, 2)])
+    const native: AgentEvent[] = harness === 'claude' ? [{ type: 'content_delta', messageId: 'm', delta: result }] : codexContentEvents('m', item)
+    const rows = buildSessionMessageCatalog({ sessionId: 's', transcript: [], providerResume: 'thread' }, [...native, event].map((value, index) => envelope(value, index + 1)))
     expect(findMcpAppAttachment(rows, 'view')).toMatchObject({ messageId: 'm', app: update })
   })
 
-  it('preserves host state when later native result/item deltas arrive', () => {
+  it('preserves host state when later native result deltas arrive', () => {
     const enriched = { ...app, ...update }
     const content = applyContentDelta([{ ...use, app: enriched }], result)
     expect(findMcpAppAttachment([{ id: 'm', content }], 'view')?.app).toMatchObject(update)
-    const items = upsertCodexItem([{ ...item, app: enriched }], item)
-    expect(items[0]?.type === 'mcp_tool_call' && items[0].app).toMatchObject(update)
   })
 })

@@ -33,7 +33,6 @@ describe('progressive session projection', () => {
     expect(JSON.stringify(projectProgressiveMessage(source))).not.toContain('large output')
     expect(projectProgressiveEvent({ type: 'codex_subagent_activity', messageId: 'm', activity }, [source])).toMatchObject({ type: 'codex_subagent_activity', activity, remoteView: 'summary' })
     expect(projectProgressiveEvent({ type: 'codex_turn_metadata', messageId: 'm', provenance: { threadId: 'root', turnId: 'turn', rootTurnId: 'origin' } }, [source])).toMatchObject({ provenance: { rootTurnId: 'origin' } })
-    expect(projectProgressiveEvent({ type: 'codex_item_delta', messageId: 'm', phase: 'updated', item: source.metadata!.codex!.items[0] }, [source])).toMatchObject({ item: { agentsStates: {} }, subagents: { child: { requestedConfiguration: { model: 'requested' }, turns: { 'child-turn': { rootTurnId: 'origin' } } } } })
   })
   it('sends Bash file names and line totals, then loads full hunks on expand', () => {
     const bashEditDiff: BashEditDiff = {
@@ -102,7 +101,6 @@ describe('progressive session projection', () => {
     ] } } }
     expect(JSON.stringify(projectProgressiveMessage(source))).not.toMatch(/private reasoning|large output/)
     expect(projectProgressiveMessage(source).metadata?.codex?.items[0]).toMatchObject({ id: 'r', remoteDetail: '["m","reasoning","r"]' })
-    expect(projectProgressiveEvent({ type: 'codex_item_patch', messageId: 'm', phase: 'updated', itemId: 'r', patch: { type: 'reasoning', textDelta: 'private reasoning' } }, [source])).toMatchObject({ patch: { textDelta: '' } })
     expect(JSON.stringify(projectProgressiveEvent({ type: 'message_complete', messageId: 'm', metadata: source.metadata }, [source]))).not.toMatch(/private reasoning|large output/)
   })
   it('keeps workflow agent rows on progressive task events while dropping transcript text', () => {

@@ -2484,7 +2484,7 @@ describe('Session message accumulation', () => {
     expect(msg?.metadata?.codex?.threadId).toBe('thread-abc')
   })
 
-  it('ignores replayed codex_item_delta with stale (epoch, seq)', () => {
+  it('ignores a replayed codex content_delta with stale (epoch, seq)', () => {
     const { session, backend } = makeSession({
       harnessId: 'codex',
       initialMessages: [
@@ -2493,28 +2493,21 @@ describe('Session message accumulation', () => {
     })
     const captured: Array<{ epoch?: number; seq?: number }> = []
     session.on((ev) => {
-      if (ev.type === 'codex_item_delta') captured.push({ epoch: ev.epoch, seq: ev.seq })
+      if (ev.type === 'content_delta') captured.push({ epoch: ev.epoch, seq: ev.seq })
     })
-    backend.emit({
-      type: 'codex_item_delta',
-      messageId: 'a1',
-      phase: 'started',
-      item: { id: 'item-1', type: 'reasoning', text: 'thinking...' } as never,
-    })
+    backend.emit({ type: 'content_delta', messageId: 'a1', delta: { type: 'thinking', id: 'item-1', thinking: 'thinking...' } })
     const first = captured[0]
 
     backend.emit(({
-      type: 'codex_item_delta',
+      type: 'content_delta',
       messageId: 'a1',
-      phase: 'updated',
-      item: { id: 'item-1', type: 'reasoning', text: 'DIFFERENT' } as never,
+      delta: { type: 'thinking', id: 'item-1', thinking: 'DIFFERENT' },
       epoch: first.epoch,
       seq: first.seq,
     } as unknown as Parameters<typeof backend.emit>[0]))
 
     const msg = session.snapshot.messages.find((m) => m.id === 'a1')
-    const item = msg?.metadata?.codex?.items?.[0] as { text?: string } | undefined
-    expect(item?.text).toBe('thinking...')
+    expect(msg?.content).toMatchObject([{ type: 'thinking', thinking: 'thinking...' }])
   })
 
   it('codex message_start appends the assistant placeholder to _messages', () => {

@@ -10,6 +10,7 @@ import { ControlLeaseService } from './control-lease'
 import { SessionRuntime, type TurnRunner } from './session-runtime'
 import { dispatchMcpAppsRpc } from '../rpc/mcp-apps-handlers'
 import type { RpcContext } from '../rpc/handlers'
+import { codexContentEvents } from '@superone/shared/test-fixtures/codex-content'
 
 describe('durable node MCP App host updates', () => {
   it.each(['claude', 'codex'] as const)('persists %s snapshots/context through authenticated RPC and a runtime restart', async harness => {
@@ -27,7 +28,7 @@ describe('durable node MCP App host updates', () => {
         origin: { providerSessionId: 'thread' }, resourceUri: 'ui://fixture/view', status: 'result', toolResult: { content: [], _meta: { secret: 'view-only' } } }
       if (modelInputs.length === 1) {
         if (harness === 'claude') onAgentEvent?.({ type: 'content_delta', messageId, delta: { type: 'tool_result', toolUseId: 'call', summary: 'done', app } })
-        else onAgentEvent?.({ type: 'codex_item_delta', messageId, phase: 'completed', item: { type: 'mcp_tool_call', id: 'call', server: 'fixture', tool: 'items', arguments: {}, status: 'completed', app } })
+        else for (const event of codexContentEvents(messageId, { type: 'mcp_tool_call', id: 'call', server: 'fixture', tool: 'items', arguments: {}, status: 'completed', app })) onAgentEvent?.(event)
       }
       return { finalText: 'done', providerResume: 'thread' }
     }

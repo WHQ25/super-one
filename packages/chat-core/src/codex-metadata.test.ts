@@ -71,13 +71,4 @@ describe('Codex metadata reduction', () => {
     expect(f.get().messages[0].metadata?.codex?.rootTurnId).toBeUndefined()
     expect(f.get().messages[0].metadata?.codex?.requestedProvenance).toBeUndefined()
   })
-
-  it('keeps requested settings and child turn roots through compact live deltas', () => {
-    const f = fixture()
-    f.apply({ type: 'codex_subagent_activity', messageId: 'm', activity: started })
-    const item = { id: 'spawn', type: 'collab_tool_call' as const, tool: 'spawnAgent' as const, status: 'completed' as const, receiverThreadIds: ['child'], agentsStates: { child: { status: 'running' as const, requestedConfiguration: { model: 'requested', reasoningEffort: 'low' }, turns: { c: { threadId: 'child', turnId: 'c', rootTurnId: 'origin' } } } } }
-    f.apply({ type: 'codex_item_delta', messageId: 'm', phase: 'completed', item })
-    f.apply({ type: 'codex_item_delta', messageId: 'm', phase: 'updated', item: { ...item, agentsStates: {} }, subagents: { child: { activities: [], requestedConfiguration: { model: 'requested', reasoningEffort: 'low' }, turns: { c: { threadId: 'child', turnId: 'c', rootTurnId: 'origin' } } } } })
-    expect(f.get().messages[0].metadata?.codex?.subagents?.child).toMatchObject({ creationConfiguration: { model: 'actual', reasoningEffort: 'high' }, requestedConfiguration: { model: 'requested', reasoningEffort: 'low' }, turns: { c: { rootTurnId: 'origin' } }, activities: [started] })
-  })
 })

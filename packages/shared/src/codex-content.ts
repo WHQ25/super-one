@@ -400,7 +400,7 @@ function diffBlock(prev: ContentBlock | undefined, next: ContentBlock): CodexCon
 }
 
 export interface CodexContentStream {
-  /** Deltas for one item's latest full state, as `codex_item_delta` used to carry it. */
+  /** Deltas for one item's latest full state, as the Codex app server reports it. */
   update(item: CodexThreadItem): CodexContentDelta[]
 }
 

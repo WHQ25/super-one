@@ -38,8 +38,6 @@ const MESSAGE_SCOPED_EVENTS = new Set<AgentEvent['type']>([
   'content_delta',
   'tool_input_delta',
   'tool_progress',
-  'codex_item_delta',
-  'codex_item_patch',
   'stream_message_start',
 ])
 

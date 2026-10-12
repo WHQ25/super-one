@@ -757,32 +757,6 @@ describe('stripMessagesForRemote', () => {
   })
 })
 
-describe('stripEventForRemote codex todo_list streaming', () => {
-  it('keeps Codex todo events and their sequence envelope intact', () => {
-    const event: AgentEvent = {
-      type: 'codex_item_delta',
-      messageId: 'msg-1',
-      phase: 'updated',
-      item: {
-        id: 'todo_abc',
-        type: 'todo_list',
-        items: [{ text: 'do the thing', completed: false }],
-      },
-    } as AgentEvent
-    expect(stripEventForRemote(event)).toBe(event)
-  })
-
-  it('leaves non-todo codex_item_delta events untouched', () => {
-    const event: AgentEvent = {
-      type: 'codex_item_delta',
-      messageId: 'msg-1',
-      phase: 'updated',
-      item: { id: 'plan_1', type: 'plan', text: 'the plan' },
-    } as AgentEvent
-    expect(stripEventForRemote(event)).toBe(event)
-  })
-})
-
 const TEST_KEY_ID = 'phone-key-0001'
 const testPhones = (deviceId: string) => {
   const phone = { deviceId, deviceName: 'tester', keyId: TEST_KEY_ID, enabled: true }

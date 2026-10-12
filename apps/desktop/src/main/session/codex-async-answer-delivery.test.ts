@@ -24,6 +24,9 @@ function fixture(initialMessages: ChatMessage[] = []) {
   return { session, backend, authority, emit: (event: AgentEvent) => emit(event) }
 }
 
+/** A completed Codex reply, as its content stream sends it. */
+const reply = (id: string, text: string): AgentEvent => ({ type: 'content_delta', messageId: 'turn', delta: { type: 'text', id, text } })
+
 const answer = { kind: 'codex.steer' as const, input: 'Production', newAssistantMessageId: '',
   newUserMessageId: 'codex_async_answer:question', newUserText: 'Production' }
 
@@ -34,10 +37,10 @@ describe('Codex async answers across turn completion', () => {
     session.on(event => outbound.push(event))
     emit({ type: 'message_start', message: { id: 'turn', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'codex' } })
     for (const [item, boundary] of [['before', 'first'], ['middle', 'second']] as const) {
-      emit({ type: 'codex_item_delta', messageId: 'turn', phase: 'completed', item: { id: item, type: 'agent_message', text: item } })
+      emit(reply(item, item))
       emit({ type: 'compact_boundary', id: boundary, trigger: 'auto', preTokens: 100 })
     }
-    emit({ type: 'codex_item_delta', messageId: 'turn', phase: 'completed', item: { id: 'after', type: 'agent_message', text: 'after' } })
+    emit(reply('after', 'after'))
     const rows = session.snapshot.messages
     const boundaries = outbound.filter(event => event.type === 'compact_boundary')
     expect(boundaries).toHaveLength(2)
@@ -50,18 +53,18 @@ describe('Codex async answers across turn completion', () => {
     const { session, backend, emit } = fixture()
     emit({ type: 'status_change', status: 'streaming' })
     emit({ type: 'message_start', message: { id: 'turn', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'codex' } })
-    emit({ type: 'codex_item_delta', messageId: 'turn', phase: 'completed', item: { id: 'before', type: 'agent_message', text: 'Before the answer' } })
+    emit(reply('before', 'Before the answer'))
     backend.handleCommand.mockImplementationOnce(async () => {
-      emit({ type: 'codex_item_delta', messageId: 'turn', phase: 'completed', item: { id: 'after', type: 'agent_message', text: 'After the answer' } })
+      emit(reply('after', 'After the answer'))
     })
     await session.dispatchBackendCommand(answer)
     const accepted = session.snapshot.messages.find(message => message.id === answer.newUserMessageId)!
-    expect(accepted.metadata?.transcriptBoundary).toMatchObject({ messageId: 'turn', items: { before: 17 } })
+    expect(accepted.metadata?.transcriptBoundary).toMatchObject({ messageId: 'turn', content: { 'text::0': 17 } })
     expect(transcriptSegments(session.snapshot.messages).at(-1)?.id).toBe(`turn:after:${answer.newUserMessageId}`)
     const restored = JSON.parse(JSON.stringify(session.snapshot.messages))
     const segments = transcriptSegments(restored)
     expect(segments.map(segment => segment.id)).toEqual(['turn', answer.newUserMessageId, `turn:after:${answer.newUserMessageId}`])
-    expect(segments.at(-1)?.message.metadata?.codex?.items.map(item => item.id)).toEqual(['after'])
+    expect(segments.at(-1)?.message.content).toMatchObject([{ type: 'text', text: 'After the answer' }])
   })
   it('persists the question with the answer so the user bubble survives standalone history loading', async () => {
     const questions = [{ title: 'Environment?', options: ['Production'] }]

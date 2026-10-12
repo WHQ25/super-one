@@ -3,20 +3,19 @@ import { serializeTraceData } from './event-trace'
 
 describe('serializeTraceData', () => {
   it('leaves an ordinary payload byte-identical to JSON.stringify', () => {
-    const event = { type: 'codex_item_delta', item: { id: 'exec-1', aggregatedOutput: 'done\n' } }
+    const event = { type: 'content_delta', delta: { toolUseId: 'exec-1', outputDelta: 'done\n' } }
     expect(serializeTraceData(event)).toBe(JSON.stringify(event))
   })
 
-  // Codex re-emits the whole command item on every output delta, so a grep over a
-  // large tree used to write one multi-megabyte row per delta.
+  // A grep over a large tree can stream megabytes of command output in one event.
   it('caps an oversized string and stays parseable', () => {
     const output = 'x'.repeat(2_000_000)
-    const json = serializeTraceData({ type: 'codex_item_delta', item: { aggregatedOutput: output } })
+    const json = serializeTraceData({ type: 'content_delta', delta: { outputDelta: output } })
 
     expect(json.length).toBeLessThan(20_000)
-    const parsed = JSON.parse(json) as { item: { aggregatedOutput: string } }
-    expect(parsed.item.aggregatedOutput.startsWith('xxxx')).toBe(true)
-    expect(parsed.item.aggregatedOutput).toContain('chars truncated')
+    const parsed = JSON.parse(json) as { delta: { outputDelta: string } }
+    expect(parsed.delta.outputDelta.startsWith('xxxx')).toBe(true)
+    expect(parsed.delta.outputDelta).toContain('chars truncated')
   })
 
   it('caps a payload that is large by breadth rather than by one field', () => {

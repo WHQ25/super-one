@@ -191,6 +191,5 @@ export function mcpAppEventAttachment(event: AgentEvent): ToolAppAttachment | un
 
 export function mcpAppEventAttachments(event: AgentEvent): ToolAppAttachment[] {
   if (event.type === 'content_delta' && 'app' in event.delta) return event.delta.app ? [event.delta.app] : []
-  if (event.type === 'codex_item_delta') return mcpAppMessageAttachments({ id: event.messageId, metadata: { codex: { items: [event.item] } } })
   return []
 }

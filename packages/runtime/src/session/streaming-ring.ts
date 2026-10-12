@@ -13,7 +13,7 @@ interface Entry {
 
 interface SessionRing {
   entries: Entry[]
-  /** Highest version dropped without a newer event carrying it; a reader below it has a gap. */
+  /** Highest version dropped; a reader below it has a gap. */
   floor: number
 }
 
@@ -21,8 +21,7 @@ interface SessionRing {
  * The streaming tier: events of messages still streaming, per session, in
  * version order. A message's events go when it commits, and the oldest ones
  * when the byte cap is reached; either way the session's floor rises, so a
- * reader that had not seen them knows to read the snapshot instead. A Codex
- * item update replaces the previous one of the same item without raising it.
+ * reader that had not seen them knows to read the snapshot instead.
  */
 export class StreamingRing {
   private readonly sessions = new Map<string, SessionRing>()
@@ -34,10 +33,6 @@ export class StreamingRing {
 
   add(envelope: EnvironmentEventEnvelope, key: StreamingEventKey): void {
     const ring = this.ring(envelope.aggregateId)
-    if (key.supersedes) {
-      const previous = ring.entries.findIndex((entry) => entry.key.supersedes === key.supersedes)
-      if (previous >= 0) this.drop(ring, previous, false)
-    }
     const entry: Entry = {
       sessionId: envelope.aggregateId,
       envelope,
@@ -56,7 +51,7 @@ export class StreamingRing {
     const ring = this.sessions.get(sessionId)
     if (!ring) return
     for (let i = ring.entries.length - 1; i >= 0; i--) {
-      if (messageId === null || ring.entries[i].key.messageId === messageId) this.drop(ring, i, true)
+      if (messageId === null || ring.entries[i].key.messageId === messageId) this.drop(ring, i)
     }
   }
 
@@ -83,11 +78,11 @@ export class StreamingRing {
     return ring
   }
 
-  private drop(ring: SessionRing, index: number, raisesFloor: boolean): void {
+  private drop(ring: SessionRing, index: number): void {
     const [entry] = ring.entries.splice(index, 1)
     entry.removed = true
     this.bytes -= entry.bytes
-    if (raisesFloor) ring.floor = Math.max(ring.floor, entry.envelope.sessionVersion!)
+    ring.floor = Math.max(ring.floor, entry.envelope.sessionVersion!)
     if (this.order.length > 64 && this.order.length > 2 * this.liveCount()) this.order = this.order.filter((e) => !e.removed)
   }
 
@@ -101,6 +96,6 @@ export class StreamingRing {
     const oldest = this.order.find((entry) => !entry.removed)
     if (!oldest) return
     const ring = this.sessions.get(oldest.sessionId)!
-    this.drop(ring, ring.entries.indexOf(oldest), true)
+    this.drop(ring, ring.entries.indexOf(oldest))
   }
 }

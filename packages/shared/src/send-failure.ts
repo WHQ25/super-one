@@ -35,8 +35,6 @@ const AGENT_OUTPUT_EVENT_TYPES: ReadonlySet<AgentEvent['type']> = new Set<AgentE
   'content_delta',
   'tool_input_delta',
   'tool_progress',
-  'codex_item_delta',
-  'codex_item_patch',
   'permission_request',
   'ask_user_question',
   'plan_approval',

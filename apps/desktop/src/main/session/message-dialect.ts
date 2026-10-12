@@ -7,8 +7,7 @@ import type { HarnessId } from './types'
  * so a mismatch here is invisible until the session is reopened cold.
  *
  * - `claude`: `message_start` → `content_delta`* → `message_complete`.
- * - `codex`: `content_delta`* (legacy turns: `codex_item_delta`) + a terminal
- *   `metadata.codex` payload.
+ * - `codex`: `content_delta`* + a terminal `metadata.codex` payload.
  */
 export type MessageDialect = 'claude' | 'codex'
 

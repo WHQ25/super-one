@@ -39,6 +39,7 @@ vi.mock('electron', () => ({
 import { startNodeRuntime, type NodeRuntime } from '../../../../../apps/cli/src/runtime'
 import { NodeConnectionManager } from './node-connection-manager'
 import { NodeCredentialStore } from './node-credential-store'
+import { codexContentEvents } from '@superone/shared/test-fixtures/codex-content'
 
 const dirs: string[] = []
 const runtimes: NodeRuntime[] = []
@@ -71,10 +72,10 @@ describe('RemoteEnvironmentGateway sessions + watch', () => {
     })
     let nodeId = ''
     const runner: TurnRunner = async ({ session, messageId, onAgentEvent }) => {
-      onAgentEvent?.({ type: 'codex_item_delta', messageId: messageId!, phase: 'completed', item: { type: 'mcp_tool_call', id: 'call', server: 'fixture', tool: 'items', arguments: {}, status: 'completed', app: {
+      for (const event of codexContentEvents(messageId!, { type: 'mcp_tool_call', id: 'call', server: 'fixture', tool: 'items', arguments: {}, status: 'completed', app: {
         appInstanceId: 'view', binding: { node: nodeId, session: session.sessionId, server: 'fixture', configGeneration: 0, configFingerprint: 'fixture' },
         origin: { providerSessionId: 'remote-thread' }, resourceUri: 'ui://fixture/items.html', status: 'result',
-      } } })
+      } })) onAgentEvent?.(event)
       return { finalText: '', providerResume: 'thread:remote-thread' }
     }
     // A slow call stands in for one waiting on an MCP form: it runs until the node aborts it.

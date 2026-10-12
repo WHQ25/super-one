@@ -102,7 +102,7 @@ function byPosition(a: EnvironmentEventEnvelope, b: EnvironmentEventEnvelope): n
  * nobody watches arrive. Status, interactions and completions go out at once.
  */
 const DEFERRABLE_EVENTS: ReadonlySet<string> = new Set([
-  'content_delta', 'codex_item_delta', 'tool_input_delta',
+  'content_delta', 'tool_input_delta',
   'message_usage', 'subagent_usage', 'task_progress', 'tool_progress',
   'stream_message_start', 'stream_message_stop', 'checkpoint_captured',
 ])

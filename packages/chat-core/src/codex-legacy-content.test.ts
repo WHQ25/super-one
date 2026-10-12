@@ -22,17 +22,10 @@ function apply(session: ChatCoreSession, ...events: AgentEvent[]): ChatCoreSessi
 }
 
 describe('legacy Codex content at chat-core ingress', () => {
-  it('re-derives content from an item patch on the desktop wire', () => {
-    const session = apply(legacySession([]),
-      { type: 'codex_item_delta', messageId: 'm', phase: 'updated', item: { id: 'a', type: 'agent_message', text: 'Hel' } },
-      { type: 'codex_item_patch', messageId: 'm', phase: 'updated', itemId: 'a', patch: { type: 'agent_message', textDelta: 'lo' } })
-    expect(session.messages[0]!.content).toEqual([{ type: 'text', id: 'a', text: 'Hello', parentToolUseId: null }])
-  })
-
   it('keeps a suggested task outcome through the next re-derivation', () => {
     let session = apply(legacySession([suggest], 'complete'), { type: 'codex_thread_started', messageId: 'm', threadId: 't' })
     session = apply(session, { type: 'suggested_task_updated', taskId: 'task-1', state: { status: 'dismissed' } })
-    session = apply(session, { type: 'codex_item_delta', messageId: 'm', phase: 'updated', item: { id: 'b', type: 'agent_message', text: 'More' } })
+    session = apply(session, { type: 'codex_thread_started', messageId: 'm', threadId: 't2' })
     const card = session.messages[0]!.content.find(block => block.type === 'tool_use')
     expect(card).toMatchObject({ toolUseId: 'mcp', suggestedTask: { status: 'dismissed' } })
   })

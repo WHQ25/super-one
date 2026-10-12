@@ -1,35 +1,41 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentEvent, CodexCollabToolCallItem, CodexMcpToolCallItem } from '@superone/shared/agent-types'
 import type { ToolAppAttachment } from '@superone/shared/mcp-apps'
+import { codexContentEvents } from '@superone/shared/test-fixtures/codex-content'
 import { RemoteMcpAppFreshness } from './remote-freshness'
 
 const ref = { environmentId: 'connection', sessionId: 's' }
 const app: ToolAppAttachment = { appInstanceId: 'view', binding: { node: 'node', session: 's', server: 'fixture', configGeneration: 0, configFingerprint: 'config' }, origin: { providerSessionId: 'thread' }, resourceUri: 'ui://fixture/view' }
 const item: CodexMcpToolCallItem = { type: 'mcp_tool_call', id: 'call', server: 'fixture', tool: 'items', arguments: {}, status: 'in_progress' }
-const delta = (phase: 'started' | 'completed', app?: ToolAppAttachment, id = 'call'): AgentEvent => ({ type: 'codex_item_delta', messageId: 'm', phase, item: { ...item, id, ...(app ? { app } : {}) } })
+const delta = (phase: 'started' | 'completed', app?: ToolAppAttachment, id = 'call'): AgentEvent => ({ type: 'content_delta', messageId: 'm',
+  delta: phase === 'started' ? { type: 'tool_use', toolUseId: id, toolName: 'mcp__fixture__items', input: '{}', status: 'streaming', ...(app ? { app } : {}) }
+    : { type: 'tool_result', toolUseId: id, summary: '', ...(app ? { app } : {}) } })
 
 describe('remote MCP App live freshness', () => {
-  const collab = (children: CodexCollabToolCallItem['childItems']): AgentEvent => ({ type: 'codex_item_delta', messageId: 'm', phase: 'updated', item: { id: 'spawn', type: 'collab_tool_call', tool: 'spawnAgent', status: 'completed', receiverThreadIds: ['child'], agentsStates: {}, childItems: children } })
+  const spawn = (children: CodexCollabToolCallItem['childItems']): CodexCollabToolCallItem => ({ id: 'spawn', type: 'collab_tool_call', tool: 'spawnAgent', status: 'completed', receiverThreadIds: ['child'], agentsStates: {}, childItems: children })
+  const observe = (tracker: RemoteMcpAppFreshness, events: AgentEvent[]) => events.flatMap(event => tracker.observeAll(ref, event))
 
-  it('activates all nested live Apps once, independently of the parent phase and repeated child ids', () => {
+  it('activates all nested live Apps once', () => {
     const tracker = new RemoteMcpAppFreshness()
     const other = { ...app, appInstanceId: 'sibling-view' }
-    const event = collab({ child: [{ ...item, app }], sibling: [{ ...item, app: other }] })
-    expect(tracker.observeAll(ref, event)).toEqual([app, other])
-    expect(tracker.observeAll(ref, event)).toEqual([])
-    expect(tracker.observeAll(ref, collab({ child: [{ ...item, status: 'completed', app }] }))).toEqual([])
+    const events = codexContentEvents('m', spawn({ child: [{ ...item, id: 'first', app }], sibling: [{ ...item, id: 'second', app: other }] }))
+    expect(observe(tracker, events)).toEqual([app, other])
+    expect(observe(tracker, events)).toEqual([])
   })
 
-  it('pairs child start with late completion metadata and rejects historical completion or a released scope', () => {
+  it('pairs a child start with late completion metadata and rejects historical completion or a released scope', () => {
+    const pending = spawn({ child: [item] })
+    const complete = spawn({ child: [{ ...item, status: 'completed', app }] })
+    const started = codexContentEvents('m', pending).length
+    const [start, finish] = [codexContentEvents('m', pending, complete).slice(0, started), codexContentEvents('m', pending, complete).slice(started)]
     const tracker = new RemoteMcpAppFreshness()
-    const complete = collab({ child: [{ ...item, status: 'completed', app }] })
-    expect(tracker.observeAll(ref, complete)).toEqual([])
-    expect(tracker.observeAll(ref, collab({ child: [item] }))).toEqual([])
-    expect(tracker.observeAll(ref, complete)).toEqual([app])
-    expect(tracker.observeAll(ref, complete)).toEqual([])
-    tracker.observeAll(ref, collab({ child: [item] }))
+    expect(observe(tracker, codexContentEvents('m', complete))).toEqual([])
+    expect(observe(tracker, start)).toEqual([])
+    expect(observe(tracker, finish)).toEqual([app])
+    expect(observe(tracker, finish)).toEqual([])
+    observe(tracker, start)
     tracker.releaseSession(ref)
-    expect(tracker.observeAll(ref, complete)).toEqual([])
+    expect(observe(tracker, finish)).toEqual([])
   })
 
   it('does not use an abandoned start after its session closed', () => {

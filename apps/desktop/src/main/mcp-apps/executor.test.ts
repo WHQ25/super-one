@@ -1,4 +1,6 @@
-import type { AgentEvent } from '@superone/shared/agent-types'
+import type { AgentEvent, ContentBlock } from '@superone/shared/agent-types'
+import { applyContentDelta } from '@superone/shared/content-delta'
+import { codexContentEvents } from '@superone/shared/test-fixtures/codex-content'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ToolAppAttachment } from '@superone/shared/mcp-apps'
 import type { SessionManagerImpl } from '../session/session-manager'
@@ -36,14 +38,14 @@ describe('main MCP App executor adapters', () => {
   it('auto-activates every child View on a live collab event, but never on replay', async () => {
     const children = ['first-child', 'second-child'].map(id => ({ id, type: 'mcp_tool_call' as const, server: 'fixture', tool: 'next', arguments: {}, status: 'completed' as const, app: { ...app, appInstanceId: id, origin: { providerSessionId: id } } }))
     const item = { id: 'spawn', type: 'collab_tool_call' as const, tool: 'spawnAgent' as const, status: 'completed' as const, receiverThreadIds: ['child'], agentsStates: {}, childItems: { child: children } }
-    const row = { id: 'parent', content: [], metadata: { codex: { items: [item] } } }
+    const events = codexContentEvents('parent', item)
+    const row = { id: 'parent', content: events.reduce<ContentBlock[]>((content, event) => applyContentDelta(content, event.delta, undefined, { replace: event.replace }), []) }
     session.snapshot.messages.push(row as unknown as typeof session.snapshot.messages[number])
     try {
-      const notify = (sessionId: string, event: unknown, replay: boolean) => hub.publish({ event: event as AgentEvent, source: 'session', sessionId, replay })
-      const event = { type: 'codex_item_delta', messageId: 'parent', phase: 'updated', item }
-      notify('s', event, true)
+      const notify = (sessionId: string, replay: boolean) => { for (const event of events) hub.publish({ event, source: 'session', sessionId, replay }) }
+      notify('s', true)
       for (const child of children) expect(isMcpAppHostActive(await resolveMcpAppHostAttachment({ sessionKey: 'local:s', appInstanceId: child.id }))).toBe(false)
-      notify('s', event, false)
+      notify('s', false)
       for (const child of children) expect(isMcpAppHostActive(await resolveMcpAppHostAttachment({ sessionKey: 'local:s', appInstanceId: child.id }))).toBe(true)
     } finally {
       session.snapshot.messages.pop()

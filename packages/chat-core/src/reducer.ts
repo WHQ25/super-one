@@ -158,8 +158,6 @@ function reduceEvent(
       return reduceCodexMetadata(session, event)
 
     case 'codex_thread_started':
-    case 'codex_item_delta':
-    case 'codex_item_patch':
     case 'codex_mcp_startup':
     case 'codex_plan_approval':
       return reduceCodex(session, event, ports)

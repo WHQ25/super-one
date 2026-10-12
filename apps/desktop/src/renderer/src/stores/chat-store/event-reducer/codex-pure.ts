@@ -4,5 +4,4 @@ export {
   getCodexContextTokens,
   getCodexUsageStepTokens,
   hasValidCodexUsageSnapshot,
-  upsertCodexItem,
 } from '@superone/chat-core'

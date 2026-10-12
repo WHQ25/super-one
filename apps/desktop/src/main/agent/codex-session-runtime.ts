@@ -18,14 +18,6 @@ export interface CodexSessionRuntime {
   lastUsageByMessageId: Record<string, CodexUsageInfo | null>
 }
 
-function upsertCodexItem(items: CodexThreadItem[], next: CodexThreadItem): CodexThreadItem[] {
-  const idx = items.findIndex((item) => item.id === next.id)
-  if (idx === -1) return [...items, next]
-  const cloned = [...items]
-  cloned[idx] = mergeMcpAppBlocks([items[idx]], [next])[0]
-  return cloned
-}
-
 function hasValidCodexUsageSnapshot(usage: CodexUsageInfo | null): usage is CodexUsageInfo {
   return Boolean(
     usage
@@ -291,26 +283,6 @@ export function applyCodexEventToRuntime(runtime: CodexSessionRuntime, event: Ag
               codex: {
                 ...prevCodex,
                 threadId: event.threadId,
-              },
-            },
-            ...applySeqToMessage(event),
-          }
-        }),
-      }
-    case 'codex_item_delta':
-      return {
-        ...runtime,
-        messages: runtime.messages.map((message) => {
-          if (message.id !== event.messageId) return message
-          if (isReplayedEventForMessage(event, message)) return message
-          const prevCodex = message.metadata?.codex ?? { threadId: null, usage: null, items: [] }
-          return {
-            ...message,
-            metadata: {
-              ...message.metadata,
-              codex: {
-                ...prevCodex,
-                items: upsertCodexItem(prevCodex.items, event.item),
               },
             },
             ...applySeqToMessage(event),

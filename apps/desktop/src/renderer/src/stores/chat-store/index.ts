@@ -17,7 +17,6 @@ import {
   removeCodexItem,
   resolveCodexModelSelection,
   resolveCodexReasoningEffort,
-  upsertCodexItem,
 } from './helpers/codex-helpers'
 import {
   applyDelta,
@@ -164,14 +163,12 @@ export {
   getCodexCompletionEventMeta,
   getCodexContextTokens,
   getCodexPlanActionContext,
-  getCodexTraceItems,
   isRunnableCodexCommand,
   pruneTransientCodexItems,
   readLastCodexSelection,
   resolveDefaultCodexSelection,
   resolveSessionCodexSelection,
   saveLastCodexSelection,
-  summarizeCodexTraceItem,
   updateCodexPlanApproval,
   type CodexRunnableCommand,
 } from './helpers/codex-helpers'
@@ -1089,7 +1086,6 @@ export {
   removeCodexItem,
   resolveCodexModelSelection,
   resolveCodexReasoningEffort,
-  upsertCodexItem,
 } from './helpers/codex-helpers'
 
 export {

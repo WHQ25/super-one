@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AgentEvent, CodexThreadItem } from '@superone/shared/agent-types'
+import type { AgentEvent } from '@superone/shared/agent-types'
 import { AGENT_EVENT_BATCH_MS } from '@superone/shared/agent-event-batcher'
 import { createLocalDelivery } from './local-delivery'
 
@@ -11,17 +11,6 @@ function textDelta(text: string, seq?: number): AgentEvent {
     messageId: 'm1',
     delta: { type: 'text', text },
     seq,
-  }
-}
-
-function codexDelta(item: CodexThreadItem, phase: 'started' | 'updated' | 'completed' = 'updated'): AgentEvent {
-  return {
-    type: 'codex_item_delta',
-    projectPath: '/p',
-    sessionId: 's1',
-    messageId: 'm1',
-    phase,
-    item,
   }
 }
 
@@ -62,83 +51,6 @@ describe('renderer agent event transport', () => {
 
     expect(sent).toHaveLength(1)
     expect(sent[0].map((event) => event.type)).toEqual(['content_delta', 'message_complete'])
-  })
-
-  it('encodes additive Codex text updates as suffix patches', () => {
-    const sent: AgentEvent[][] = []
-    const transport = createLocalDelivery((events) => sent.push(events))
-    transport.push(codexDelta({ id: 'i1', type: 'reasoning', text: 'first', startedAt: 10 }, 'started'))
-    transport.flush()
-    transport.push(codexDelta({ id: 'i1', type: 'reasoning', text: 'first second', startedAt: 10, endedAt: 20 }))
-    transport.flush()
-
-    expect(sent[0][0].type).toBe('codex_item_delta')
-    expect(sent[1][0]).toMatchObject({
-      type: 'codex_item_patch',
-      itemId: 'i1',
-      patch: { type: 'reasoning', textDelta: ' second', startedAt: 10, endedAt: 20 },
-    })
-  })
-
-  it('encodes additive command output only while command metadata is stable', () => {
-    const sent: AgentEvent[][] = []
-    const transport = createLocalDelivery((events) => sent.push(events))
-    transport.push(codexDelta({
-      id: 'c1', type: 'command_execution', command: 'pwd', aggregatedOutput: '/a', status: 'in_progress',
-    }, 'started'))
-    transport.flush()
-    transport.push(codexDelta({
-      id: 'c1', type: 'command_execution', command: 'pwd', aggregatedOutput: '/a/b', status: 'in_progress',
-    }))
-    transport.flush()
-    transport.push(codexDelta({
-      id: 'c1', type: 'command_execution', command: 'pwd', aggregatedOutput: '/a/b', status: 'completed', exitCode: 0,
-    }))
-    transport.flush()
-
-    expect(sent[1][0]).toMatchObject({
-      type: 'codex_item_patch',
-      patch: { type: 'command_execution', aggregatedOutputDelta: '/b' },
-    })
-    expect(sent[2][0].type).toBe('codex_item_delta')
-  })
-
-  it('falls back to a full snapshot for non-additive text', () => {
-    const sent: AgentEvent[][] = []
-    const transport = createLocalDelivery((events) => sent.push(events))
-    transport.push(codexDelta({ id: 'i1', type: 'agent_message', text: 'first' }, 'started'))
-    transport.flush()
-    transport.push(codexDelta({ id: 'i1', type: 'agent_message', text: 'replacement' }))
-    transport.flush()
-
-    expect(sent[1][0].type).toBe('codex_item_delta')
-  })
-
-  it('sends a full snapshot after a message baseline is cleared', () => {
-    const sent: AgentEvent[][] = []
-    const transport = createLocalDelivery((events) => sent.push(events))
-    transport.push(codexDelta({ id: 'i1', type: 'agent_message', text: 'a' }, 'started'))
-    transport.flush()
-    transport.push({ type: 'message_complete', projectPath: '/p', sessionId: 's1', messageId: 'm1' })
-    transport.push(codexDelta({ id: 'i1', type: 'agent_message', text: 'ab' }))
-    transport.flush()
-
-    expect(sent.at(-1)?.[0].type).toBe('codex_item_delta')
-  })
-
-  it('sends a full snapshot for one session after its baselines are reset', () => {
-    const sent: AgentEvent[][] = []
-    const transport = createLocalDelivery((events) => sent.push(events))
-    const other = (text: string): AgentEvent => ({ ...codexDelta({ id: 'i1', type: 'agent_message', text }), sessionId: 's2' })
-    transport.push(codexDelta({ id: 'i1', type: 'agent_message', text: 'a' }, 'started'))
-    transport.push({ ...other('a'), phase: 'started' } as AgentEvent)
-    transport.flush()
-    transport.resetCodexBaselines({ projectPath: '/p', sessionId: 's1' })
-    transport.push(codexDelta({ id: 'i1', type: 'agent_message', text: 'ab' }))
-    transport.push(other('ab'))
-    transport.flush()
-
-    expect(sent.at(-1)?.map((e) => e.type)).toEqual(['codex_item_delta', 'codex_item_patch'])
   })
 
   it('flushes pending output on dispose', () => {

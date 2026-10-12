@@ -66,6 +66,7 @@ async function openChat(page: Page): Promise<void> {
   })
   await page.goto(documentUrl)
   await expect(page.locator('html')).toHaveAttribute('data-chat-view-ready', 'true')
+  await page.evaluate(() => (globalThis as typeof globalThis & { __applyHost?: (message: unknown) => void }).__applyHost?.({ type: 'channelToken', token: 'chat-view-test' }))
 }
 
 async function send(page: Page, envelope: unknown): Promise<void> {

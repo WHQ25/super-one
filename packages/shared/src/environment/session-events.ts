@@ -150,9 +150,9 @@ export interface StreamingEventKey {
 
 /**
  * Whether a session event belongs to the streaming tier, decided by payload
- * and phase: text and thinking deltas, partial tool input, Codex item updates
- * and tool progress are superseded by what their message commits. Null means
- * the event is durable.
+ * and phase: text, thinking and command output deltas, partial tool input,
+ * Codex item updates and tool progress are superseded by what their message
+ * commits. Null means the event is durable.
  */
 export function streamingEventKey(eventType: string, payload: unknown): StreamingEventKey | null {
   const record = (payload ?? {}) as Record<string, unknown>
@@ -164,7 +164,10 @@ export function streamingEventKey(eventType: string, payload: unknown): Streamin
   const event = record.event as AgentEvent | undefined
   switch (event?.type) {
     case 'content_delta':
-      return event.delta.type === 'text' || event.delta.type === 'thinking' ? { messageId: event.messageId } : null
+      // A running command's output streams like text; its result commits it.
+      return event.delta.type === 'text' || event.delta.type === 'thinking'
+        || (event.delta.type === 'tool_use' && event.delta.outputDelta !== undefined)
+        ? { messageId: event.messageId } : null
     case 'tool_input_delta':
     case 'tool_progress':
       return { messageId: event.messageId }

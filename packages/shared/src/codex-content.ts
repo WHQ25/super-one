@@ -52,6 +52,13 @@ export function codexMcpItemInput(item: CodexMcpToolCallItem): string {
   return typeof item.arguments === 'string' ? item.arguments : safeStringify(item.arguments ?? {})
 }
 
+/** The server rejected the call for missing sign-in (not a user deny). */
+export function hasCodexMcpAuthChallenge(item: CodexMcpToolCallItem): boolean {
+  if (item.authRequired) return true
+  const meta = item.result?.meta
+  return Boolean(meta && (meta['mcp/www_authenticate'] ?? meta.mcpWwwAuthenticate))
+}
+
 /** A tool's own error reply completes the call with a flagged result, so the status alone misses it. */
 export function codexMcpItemIsError(item: CodexMcpToolCallItem): boolean {
   return item.status === 'failed' || Boolean(item.error) || item.result?.isError === true
@@ -97,7 +104,8 @@ function collabAgentBlocks(item: CodexCollabToolCallItem, parentToolUseId: Paren
   const state = item.agentsStates[threadId]
   const taskStatus = agentTaskStatus(state)
   const running = item.status === 'in_progress' || state?.status === 'running' || state?.status === 'pendingInit'
-  const description = [state?.nickname, state?.role].filter(Boolean).join(' · ')
+  // The role is the card's badge (`subagent_type`); the nickname names the agent.
+  const description = state?.nickname
   const container = call(item, 'Agent', {
     ...(item.prompt ? { prompt: item.prompt } : {}),
     ...(description ? { description } : {}),
@@ -113,7 +121,9 @@ function collabAgentBlocks(item: CodexCollabToolCallItem, parentToolUseId: Paren
     ...(state ? { taskSummary: state.status } : {}),
   })
   const children = Object.values(item.childItems ?? {}).flatMap(items => items.flatMap(child => codexItemToBlocks(child, item.id)))
-  return [container, ...children]
+  // A finished agent answers its card, which is what completes a card without live task events.
+  const outcome = taskStatus ? [result(item.id, state?.message ?? '', parentToolUseId, taskStatus === 'failed' ? { isError: true } : {})] : []
+  return [container, ...children, ...outcome]
 }
 
 /**
@@ -161,7 +171,7 @@ export function codexItemToBlocks(item: CodexThreadItem, parentToolUseId: Parent
       const tool = call(item, `mcp__${item.server}__${item.tool}`, codexMcpItemInput(item), running, parentToolUseId, {
         ...(item.app ? { app: item.app } : {}),
         ...(item.suggestedTask ? { suggestedTask: item.suggestedTask } : {}),
-        ...(item.authRequired ? { authRequired: true } : {}),
+        ...(hasCodexMcpAuthChallenge(item) ? { authRequired: true } : {}),
       })
       if (running) return [tool]
       return [tool, result(item.id, codexMcpItemResultText(item) ?? '', parentToolUseId, codexMcpItemIsError(item) ? { isError: true } : {})]

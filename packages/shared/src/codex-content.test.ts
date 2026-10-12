@@ -95,9 +95,11 @@ describe('codexItemToBlocks', () => {
     })
 
     it('makes an agent card for a spawn and its follow-up, each owning its own children', () => {
-      const [card, ...children] = codexItemToBlocks(spawn('completed'))
-      expect(card).toMatchObject({ toolName: 'Agent', toolUseId: 's', status: 'complete', taskThreadId: 'child', taskStatus: 'completed', taskDescription: 'Ada · explorer', taskResultText: 'Done: 4 lines' })
-      expect(children.every(block => 'parentToolUseId' in block && block.parentToolUseId === 's')).toBe(true)
+      const [card, ...rest] = codexItemToBlocks(spawn('completed'))
+      expect(card).toMatchObject({ toolName: 'Agent', toolUseId: 's', status: 'complete', taskThreadId: 'child', taskStatus: 'completed', taskDescription: 'Ada', taskResultText: 'Done: 4 lines' })
+      const outcome = rest.pop()
+      expect(rest.every(block => 'parentToolUseId' in block && block.parentToolUseId === 's')).toBe(true)
+      expect(outcome).toEqual({ type: 'tool_result', toolUseId: 's', summary: 'Done: 4 lines', parentToolUseId: null })
       const [followUp, child] = codexItemToBlocks(spawn('running', 'sendInput'))
       expect(followUp).toMatchObject({ toolName: 'Agent', toolUseId: 'f', status: 'streaming' })
       expect(followUp).not.toHaveProperty('taskStatus')
@@ -107,6 +109,7 @@ describe('codexItemToBlocks', () => {
 
     it('maps agent outcomes onto the shared terminal lifecycle', () => {
       expect(codexItemToBlocks(spawn('errored'))[0]).toMatchObject({ taskStatus: 'failed', taskSummary: 'errored' })
+      expect(codexItemToBlocks(spawn('errored')).at(-1)).toMatchObject({ type: 'tool_result', isError: true })
       expect(codexItemToBlocks(spawn('notFound'))[0]).toMatchObject({ taskStatus: 'stopped' })
       expect(codexItemToBlocks(spawn('pendingInit'))[0]).toMatchObject({ status: 'streaming' })
     })

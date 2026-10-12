@@ -189,6 +189,8 @@ export function parseMcpToolName(toolName: string): { serverName: string; mcpToo
 /** Tools whose chat row is never useful (meta / discovery / MCP envelope). */
 const HIDDEN_UI_TOOL_NAMES = new Set([
   'TodoWrite',
+  // Drawn by the turn-end gallery, not as a row.
+  'ImageGeneration',
   'TaskCreate',
   'TaskUpdate',
   'UseTool',

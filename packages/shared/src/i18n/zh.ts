@@ -2074,6 +2074,12 @@ export const zh: Messages = {
       modelsRefreshed: 'OpenCode 返回了 {{count}} 个模型。',
       modelsRefreshFailed: '无法刷新 OpenCode 模型列表。',
     },
+    turnMarker: {
+      error: '错误',
+      reviewStarted: '开始审查',
+      reviewComplete: '审查完成',
+      compacted: '对话已压缩',
+    },
     codex: {
       modelsRefreshed: 'Codex 返回了 {{count}} 个模型。',
       modelsRefreshFailed: '无法刷新 Codex 模型列表。',

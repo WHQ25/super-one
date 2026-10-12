@@ -2,6 +2,7 @@ import type { BashEditDiff, ContentBlock } from '@superone/shared/agent-types'
 import type { ToolAppAttachment } from '@superone/shared/mcp-apps'
 import { isToolResultBlock } from '@superone/shared/content-delta'
 import { isJevRunToolName } from '@superone/shared/jev-run-result-shape'
+import { isReadOnlyParsedCommand } from '@superone/shared/codex-command-actions'
 
 /** Host-specific classification needed by the otherwise pure grouping pass. */
 export interface GroupContentPorts {
@@ -46,6 +47,8 @@ export interface GroupContentResult {
   outputPathMap: Map<string, string>
   /** Bash calls whose result carried a working-tree diff, keyed by toolUseId. */
   bashEditDiffMap: Map<string, BashEditDiff>
+  /** Process exit codes from command results, keyed by toolUseId. */
+  exitCodeMap: Map<string, number>
   /** MCP App attachments from tool results, keyed by toolUseId; newer than the call's own copy. */
   toolAppMap: Map<string, ToolAppAttachment>
   /**
@@ -73,8 +76,11 @@ export function groupContentPresenter(
   const errorToolIds = new Set<string>()
   const outputPathMap = new Map<string, string>()
   const bashEditDiffMap = new Map<string, BashEditDiff>()
+  const exitCodeMap = new Map<string, number>()
   const toolAppMap = new Map<string, ToolAppAttachment>()
   const taskToolUseIds = new Set<string>()
+  // Read-only calls whose consecutive runs fold into one summary group.
+  const collapsibleIds = new Set<string>()
 
   for (const block of content) {
     // `isToolResultBlock`, not `type === 'tool_result'`: the projection sent to
@@ -84,12 +90,16 @@ export function groupContentPresenter(
     if (block.type === 'tool_use') {
       toolNameMap.set(block.toolUseId, block.toolName)
       if (ports.isSubagentToolName(block.toolName)) taskToolUseIds.add(block.toolUseId)
+      if (COLLAPSIBLE_TOOLS.has(block.toolName) || (block.toolName === 'Bash' && isReadOnlyParsedCommand(block.toolUseId, block.input))) {
+        collapsibleIds.add(block.toolUseId)
+      }
     } else if (isToolResultBlock(block)) {
       if (block.summary) toolResultMap.set(block.toolUseId, block.summary)
       if ('isTimedOut' in block && block.isTimedOut) timedOutToolIds.add(block.toolUseId)
       if ('isError' in block && block.isError) errorToolIds.add(block.toolUseId)
       if ('outputPath' in block && block.outputPath) outputPathMap.set(block.toolUseId, block.outputPath)
       if ('bashEditDiff' in block && block.bashEditDiff) bashEditDiffMap.set(block.toolUseId, block.bashEditDiff)
+      if ('exitCode' in block && block.exitCode !== undefined) exitCodeMap.set(block.toolUseId, block.exitCode)
       if ('app' in block && block.app) toolAppMap.set(block.toolUseId, block.app)
     }
   }
@@ -247,13 +257,10 @@ export function groupContentPresenter(
     }
 
     flushAppGroup()
-    if (block.type === 'tool_use' && COLLAPSIBLE_TOOLS.has(block.toolName)) {
+    if (block.type === 'tool_use' && collapsibleIds.has(block.toolUseId)) {
       if (group.length === 0) groupStart = index
       group.push(block)
-    } else if (
-      isToolResultBlock(block)
-      && COLLAPSIBLE_TOOLS.has(toolNameMap.get(block.toolUseId) ?? '')
-    ) {
+    } else if (isToolResultBlock(block) && collapsibleIds.has(block.toolUseId)) {
       group.push(block)
     } else if (
       (block.type === 'tool_use'
@@ -286,6 +293,7 @@ export function groupContentPresenter(
     errorToolIds,
     outputPathMap,
     bashEditDiffMap,
+    exitCodeMap,
     toolAppMap,
     runContinuations,
   }

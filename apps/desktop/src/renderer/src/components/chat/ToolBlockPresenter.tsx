@@ -125,6 +125,12 @@ export interface ToolBlockProps {
   deferred?: DeferredRowControls
   /** `session_suggest_task` only: the card's outcome, patched onto its row by the host. */
   suggestedTask?: SuggestedTaskState
+  /** A running command's output so far; the result replaces it. */
+  liveOutput?: string
+  /** A command's process exit code. */
+  exitCode?: number
+  /** An MCP call rejected until the user signs in to its server. */
+  authRequired?: boolean
 }
 
 /** How a row whose body loads on open reports opening and shows the load. */
@@ -226,6 +232,7 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
   runContinuations,
   deferred,
   suggestedTask,
+  liveOutput,
   allowExpand,
   defaultAutoExpand,
   autoExpandFileDiffs,
@@ -270,7 +277,7 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
       toolUseId: toolUseId ?? '',
       command: display.summary,
       description,
-      fallbackResult: isDenied ? undefined : (result ?? undefined),
+      fallbackResult: isDenied ? undefined : (result ?? liveOutput ?? undefined),
       isStreaming,
       isDenied,
       isError,

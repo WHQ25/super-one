@@ -40,6 +40,9 @@ import {
 import { BashTerminalPresenter } from './tool-block-presenters/BashTerminalPresenter'
 import type { BashEditToolUse } from '@superone/shared/bash-edit-diff'
 import { mcpAppToolFailed } from '@superone/shared/mcp-apps'
+import { parsedCommandFromBashInput } from '@superone/shared/codex-command-actions'
+import { CodexCommandBlock } from './CodexCommandBlock'
+import { CodexMcpAuthAction } from './CodexMcpAuthAction'
 import { PrettyJSONCodeBlock, QuestionPreviewContent } from './tool-result-views'
 import { AppToolBlockPresenter, AppToolHeader, type AppToolBlockPresenterProps } from '@superone/chat-view/presenters/AppToolBlock'
 import { ArtifactLinkChip } from './ArtifactLinkChip'
@@ -365,6 +368,7 @@ const ToolBlockBody = memo(function ToolBlockBody(props: ToolBlockProps) {
     </div>
     return <Suspense fallback={renderRow()}><McpAppView app={props.app} toolName={props.toolName} title={getToolLabel(props.toolName)} details={details} /></Suspense>
   }
+  if (props.authRequired && mcpInfo) return <>{renderRow()}<CodexMcpAuthAction server={mcpInfo.serverName} /></>
   return renderRow()
 })
 
@@ -372,7 +376,13 @@ export { FileChip }
 export { DebugToolBlock, ToolBlockPresenter } from './ToolBlockPresenter'
 
 export const ToolBlock = memo(function ToolBlock(props: ToolBlockProps) {
-  return props.remoteDetail ? <DeferredToolBlock {...props} remoteDetail={props.remoteDetail} /> : <ToolBlockBody {...props} />
+  const { toolName, toolUseId, input, result, liveOutput, exitCode, isError, status, remoteDetail } = props
+  // A command with parsed actions (Codex) draws its read/search/list operations.
+  const command = useMemo(() => toolName === 'Bash'
+    ? parsedCommandFromBashInput(toolUseId ?? '', input, { output: result ?? liveOutput, exitCode, isError, running: status === 'streaming' })
+    : null, [toolName, toolUseId, input, result, liveOutput, exitCode, isError, status])
+  if (command) return <CodexCommandBlock item={remoteDetail ? { ...command, remoteDetail } : command} isStreaming={status === 'streaming'} />
+  return remoteDetail ? <DeferredToolBlock {...props} remoteDetail={remoteDetail} /> : <ToolBlockBody {...props} />
 })
 
 /**

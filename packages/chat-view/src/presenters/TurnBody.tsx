@@ -1,7 +1,7 @@
 import { TranscriptStateScope } from '@superone/ui/lib/transcript-state'
 import { Fragment, useMemo, type ComponentType, type ReactNode } from 'react'
 import { ImageIcon } from 'lucide-react'
-import type { BashEditDiff, ContentBlock } from '@superone/shared/agent-types'
+import type { BashEditDiff, CodexPlanApprovalState, ContentBlock } from '@superone/shared/agent-types'
 import type { ToolAppAttachment } from '@superone/shared/mcp-apps'
 import type { SuggestedTaskState } from '@superone/shared/suggested-task'
 import {
@@ -15,6 +15,7 @@ import type { GroupContentResult, RenderSegment } from './groupContent'
 import type { RunContinuation } from './run-display'
 import { ModSite, useModMessageId } from '../mod-ui/react'
 import { renderTurnSegments, type TurnSegmentProps } from './turn-segments'
+import { ReviewMarkerPresenter, TurnNoticePresenter } from './TurnMarkers'
 import { assistantMessageProps, stringProp, toolGroupProps, toolUseProps, type ToolCallFacts } from '../mod-ui/site-props'
 import type {
   CodexTurnDetailPresenterProps,
@@ -58,6 +59,29 @@ export interface TurnToolPresenterProps {
   app?: ToolAppAttachment
   /** `session_suggest_task` only: the card's outcome. */
   suggestedTask?: SuggestedTaskState
+  /** A running command's output so far; the result replaces it. */
+  liveOutput?: string
+  /** A command's process exit code (non-zero is an outcome, not a tool error). */
+  exitCode?: number
+  /** An MCP call that needs the user to sign in to its server. */
+  authRequired?: boolean
+}
+
+/** How the user answers the turn's latest plan, when the host offers it. */
+export interface TurnPlanApproval {
+  state?: CodexPlanApprovalState
+  canRespond: boolean
+  onApprove?: () => void
+  onReject?: (feedback?: string) => void
+}
+
+export interface TurnPlanPresenterProps {
+  id: string
+  text: string
+  isStreaming: boolean
+  hasFollowingBlock: boolean
+  /** Set on the turn's latest plan only. */
+  approval?: TurnPlanApproval
 }
 
 export interface TurnInsightPresenterProps {
@@ -112,6 +136,7 @@ export interface TurnBodyPresenterParts {
   Reasoning: ComponentType<TurnReasoningPresenterProps>
   Subagent: ComponentType<TurnSubagentPresenterProps>
   Workflow: ComponentType<TurnWorkflowPresenterProps>
+  Plan: ComponentType<TurnPlanPresenterProps>
   ToolGroup: ComponentType<TurnToolGroupPresenterProps>
   AppToolGroup: ComponentType<TurnAppToolGroupPresenterProps>
   TurnDetail: ComponentType<CodexTurnDetailPresenterProps>
@@ -137,6 +162,8 @@ export interface TurnBodyPresenterProps {
   projectPath: string | null
   parts: TurnBodyPresenterParts
   runtime: TurnBodyPresenterRuntime
+  /** Approval for the turn's latest plan block. */
+  planApproval?: TurnPlanApproval
 }
 
 interface RenderOptions {
@@ -147,11 +174,18 @@ interface RenderOptions {
   errorToolIds: Set<string>
   outputPathMap: Map<string, string>
   bashEditDiffMap?: Map<string, BashEditDiff>
+  exitCodeMap?: Map<string, number>
   toolAppMap?: Map<string, ToolAppAttachment>
   runContinuations?: GroupContentResult['runContinuations']
+  latestPlan?: LatestPlan
   projectPath: string | null
   parts: TurnBodyPresenterParts
   runtime: TurnBodyPresenterRuntime
+}
+
+interface LatestPlan {
+  id: string
+  approval?: TurnPlanApproval
 }
 
 const runRange = (run: { start: number; items: unknown[] }) => ({
@@ -168,8 +202,10 @@ export function TurnBlockPresenter({
   errorToolIds,
   outputPathMap,
   bashEditDiffMap,
+  exitCodeMap,
   toolAppMap,
   runContinuations,
+  latestPlan,
   nextBlockType,
   prevBlockType,
   projectPath,
@@ -184,7 +220,9 @@ export function TurnBlockPresenter({
   errorToolIds?: Set<string>
   outputPathMap?: Map<string, string>
   bashEditDiffMap?: Map<string, BashEditDiff>
+  exitCodeMap?: Map<string, number>
   toolAppMap?: Map<string, ToolAppAttachment>
+  latestPlan?: LatestPlan
   runContinuations?: GroupContentResult['runContinuations']
   nextBlockType?: string
   prevBlockType?: string
@@ -192,7 +230,7 @@ export function TurnBlockPresenter({
   parts: TurnBodyPresenterParts
   runtime: TurnBodyPresenterRuntime
 }) {
-  const { Text, Insight, Document, Tool, Reasoning } = parts
+  const { Text, Insight, Document, Tool, Reasoning, Plan } = parts
   switch (block.type) {
     case 'text':
       return (
@@ -243,6 +281,9 @@ export function TurnBlockPresenter({
           bashEditDiff={bashEditDiffMap?.get(block.toolUseId)}
           app={toolAppMap?.get(block.toolUseId) ?? block.app}
           suggestedTask={block.suggestedTask}
+          liveOutput={block.liveOutput}
+          exitCode={exitCodeMap?.get(block.toolUseId)}
+          authRequired={block.authRequired}
           autoExpand={runtime.isBackgroundTool(block) ? false : undefined}
           toolDiff={block.toolDiff}
           toolDiffTokens={block.toolDiffTokens}
@@ -270,6 +311,20 @@ export function TurnBlockPresenter({
           isFirst={prevBlockType === undefined}
         />
       )
+    case 'plan':
+      return (
+        <Plan
+          id={block.id}
+          text={block.text}
+          isStreaming={isStreaming}
+          hasFollowingBlock={nextBlockType !== undefined}
+          approval={latestPlan?.id === block.id ? latestPlan.approval : undefined}
+        />
+      )
+    case 'review':
+      return <ReviewMarkerPresenter block={block} />
+    case 'notice':
+      return <TurnNoticePresenter block={block} />
     // The phone's projection splits Bash and Todo results out of `tool_result`;
     // all three fold into the row above rather than printing a block of their own.
     case 'tool_result':
@@ -380,8 +435,10 @@ function renderSegments(
           errorToolIds={options.errorToolIds}
           outputPathMap={options.outputPathMap}
           bashEditDiffMap={options.bashEditDiffMap}
+          exitCodeMap={options.exitCodeMap}
           toolAppMap={options.toolAppMap}
           runContinuations={options.runContinuations}
+          latestPlan={options.latestPlan}
           nextBlockType={nextType}
           prevBlockType={previousType}
           projectPath={options.projectPath}
@@ -429,8 +486,10 @@ function renderBlocks(blocks: ContentBlock[], startIndex: number, options: Rende
       errorToolIds={options.errorToolIds}
       outputPathMap={options.outputPathMap}
       bashEditDiffMap={options.bashEditDiffMap}
+      exitCodeMap={options.exitCodeMap}
       toolAppMap={options.toolAppMap}
       runContinuations={options.runContinuations}
+      latestPlan={options.latestPlan}
       nextBlockType={blocks[blockIndex + 1]?.type}
       prevBlockType={blocks[blockIndex - 1]?.type}
       projectPath={options.projectPath}
@@ -447,8 +506,16 @@ export function TurnBodyPresenter({
   projectPath,
   parts,
   runtime,
+  planApproval,
 }: TurnBodyPresenterProps) {
   const segments = grouped.segments
+  const latestPlanId = useMemo(() => {
+    for (let i = segments.length - 1; i >= 0; i--) {
+      const segment = segments[i]
+      if (segment.kind === 'block' && segment.block.type === 'plan') return segment.block.id
+    }
+    return undefined
+  }, [segments])
   const options: RenderOptions = {
     isStreaming,
     forceSealed: false,
@@ -457,8 +524,10 @@ export function TurnBodyPresenter({
     errorToolIds: grouped.errorToolIds,
     outputPathMap: grouped.outputPathMap,
     bashEditDiffMap: grouped.bashEditDiffMap,
+    exitCodeMap: grouped.exitCodeMap,
     toolAppMap: grouped.toolAppMap,
     runContinuations: grouped.runContinuations,
+    ...(latestPlanId ? { latestPlan: { id: latestPlanId, approval: planApproval } } : {}),
     projectPath,
     parts,
     runtime,

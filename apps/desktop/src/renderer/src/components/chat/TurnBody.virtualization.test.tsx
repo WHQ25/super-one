@@ -23,6 +23,7 @@ const parts: TurnBodyPresenterParts & { Segment: typeof VirtualTurnSegment } = {
   Reasoning: () => null,
   Subagent: () => null,
   Workflow: () => null,
+  Plan: () => null,
   ToolGroup: () => null,
   AppToolGroup: () => null,
   TurnDetail: ({ runs }) => <>{runs.map(run => <div key={run.key}>{run.content}</div>)}</>,

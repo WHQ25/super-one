@@ -60,6 +60,7 @@ import {
   type TurnBodyPresenterParts,
   type TurnBodyPresenterRuntime,
 } from './presenters/TurnBody'
+import { PlanBlock } from './PlanBlock'
 import type { CodexTurnDetailPresenterProps } from './presenters/CodexTurnView'
 import {
   groupContent,
@@ -106,6 +107,7 @@ const TURN_PARTS: TurnBodyPresenterParts = {
   Reasoning: DesktopReasoning,
   Subagent: SubagentBlock,
   Workflow: WorkflowBlock,
+  Plan: PlanBlock,
   ToolGroup,
   AppToolGroup,
   TurnDetail: TurnDetailSection,

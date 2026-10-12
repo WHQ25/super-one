@@ -2,6 +2,7 @@ import type { ContentBlock, ImageGenerationItem, VideoGenerationItem } from '@su
 import { shortenPath } from '@superone/shared/path-display'
 import { coordinationToolSummary } from '@superone/shared/coordination-tool-summary'
 import { isAlwaysHiddenToolName, normalizeTranscriptTool, parseMcpToolName } from '@superone/shared/tool-ui'
+import { CODEX_AGENT_WAIT_TOOL, CODEX_IMAGE_GENERATION_TOOL } from '@superone/shared/codex-content'
 import { DEVICE_AGENT_TOOL_NAMES } from '@superone/shared/superone-host-owned-tools'
 import { extractPartialToolInput } from '@superone/chat-core'
 import {
@@ -38,6 +39,7 @@ const TOOL_VERBS: Record<string, string> = {
   Skill: 'Running',
   Task: 'Spawning',
   TaskOutput: 'Waiting',
+  AgentWait: 'Waiting',
   TaskCreate: 'Adding task',
   TaskUpdate: 'Updating task',
   TaskGet: 'Reading task',
@@ -99,6 +101,8 @@ export function isAlwaysHiddenToolBlock(toolName: string): boolean {
 
 export function isHiddenToolBlock(toolName: string, result?: string): boolean {
   if (isAlwaysHiddenToolBlock(toolName)) return true
+  // Waiting on agents is only news while it lasts; their cards carry the outcome.
+  if (toolName === CODEX_AGENT_WAIT_TOOL) return result !== undefined
   // A native-template widget_show *is* the gallery, so its row would only narrate what the user can
   // already see. A code widget, a still-streaming call, and a failed build all keep their row —
   // this reads the same parse the gallery collects from, so the two cannot disagree.
@@ -133,6 +137,7 @@ const TOOL_LABELS: Record<string, string> = {
   WebSearch: 'Web Search',
   WebFetch: 'Web Fetch',
   LS: 'List Dir',
+  AgentWait: 'Wait for Agents',
   ToolSearch: 'ToolSearch',
   SearchTools: 'Search Tools',
   UseTool: 'Use Tool',
@@ -316,6 +321,10 @@ export function getToolDisplay(toolName: string, input: Record<string, unknown>,
     }
     case 'KillTask':
       return { icon: 'clipboard-list', summary: String(input.task_id ?? input.taskId ?? '') }
+    case 'AgentWait': {
+      const agents = Array.isArray(input.agents) ? input.agents.length : 0
+      return { icon: 'bot', summary: agents > 1 ? `${agents} agents` : '' }
+    }
     case 'ImageGen':
     case 'ImageEdit':
       return { icon: 'image', summary: String(input.prompt ?? '') }
@@ -427,6 +436,12 @@ export function collectGeneratedImages(
   const items: ImageGenerationItem[] = []
   for (const block of content) {
     if (block.type !== 'tool_use') continue
+    // A harness-native generation (Codex ImageGen) carries the card itself, status included.
+    if (block.toolName === CODEX_IMAGE_GENERATION_TOOL) {
+      const generation = parseToolInput(block.input, block.toolName) as Omit<ImageGenerationItem, 'id' | 'type'>
+      items.push({ ...generation, id: block.toolUseId, type: 'image_generation' })
+      continue
+    }
     // A native-template widget_show hands the gallery items the host already prepared, so an
     // agent-written provider adapter lands in the same surface as a built-in generation.
     if (isWidgetShowTool(block.toolName)) {

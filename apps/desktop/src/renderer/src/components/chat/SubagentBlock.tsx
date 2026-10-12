@@ -158,6 +158,7 @@ export function SubagentBlock({
   })
   const taskStatus = progress?.status
     ?? (resultBlock?.type === 'tool_result' && resultBlock.isError ? 'failed' : undefined)
+    ?? taskBlock.taskStatus
   const isFailed = isComplete && taskStatus === 'failed'
   const isStopped = isComplete && !!taskStatus && taskStatus !== 'completed' && !isFailed
   const nav = useSubagentNavigation()

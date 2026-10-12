@@ -3,6 +3,7 @@ import { useEffect, useRef, type ReactNode } from 'react'
 import { ChevronRight, BookOpenText } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import type { ContentBlock } from '@superone/shared/agent-types'
+import { codexCommandPresentation, parsedCommandFromBashInput } from '@superone/shared/codex-command-actions'
 
 export type ToolGroupToolUse = Extract<ContentBlock, { type: 'tool_use' }>
 
@@ -13,7 +14,7 @@ export interface ToolGroupPresenterProps {
   renderTool(block: ToolGroupToolUse, index: number): ReactNode
 }
 
-/** Collapsible group for consecutive read-only tool calls (Read, Glob, Grep). */
+/** Collapsible group for consecutive read-only tool calls (Read, Glob, Grep, read-only parsed commands). */
 export function ToolGroupPresenter({
   blocks,
   sealed = false,
@@ -95,10 +96,19 @@ export function ToolGroupPresenter({
   )
 }
 
+const ACTION_TOOL: Record<string, string> = { read: 'Read', search: 'Grep', listFiles: 'LS' }
+
 export function generateToolGroupSummary(toolUses: ContentBlock[]): string {
   const counts: Record<string, number> = {}
+  const add = (name: string, count = 1) => { counts[name] = (counts[name] || 0) + count }
   for (const t of toolUses) {
-    if (t.type === 'tool_use') counts[t.toolName] = (counts[t.toolName] || 0) + 1
+    if (t.type !== 'tool_use') continue
+    // A parsed command counts what it did: each file read, search and listing.
+    const command = t.toolName === 'Bash' ? parsedCommandFromBashInput(t.toolUseId, t.input) : null
+    if (!command) { add(t.toolName); continue }
+    const view = codexCommandPresentation(command)
+    if (view.files.length) add('Read', view.files.length)
+    for (const action of view.actions) if (action.type !== 'read') add(ACTION_TOOL[action.type] ?? 'Bash')
   }
 
   const globCount = counts['Glob'] ?? 0
@@ -111,6 +121,7 @@ export function generateToolGroupSummary(toolUses: ContentBlock[]): string {
       case 'Read': parts.push(`read ${count} file${p ? 's' : ''}`); break
       case 'WebSearch': parts.push(`${count} web search${p ? 'es' : ''}`); break
       case 'WebFetch': parts.push(`fetched ${count} page${p ? 's' : ''}`); break
+      case 'LS': parts.push(`listed ${count} folder${p ? 's' : ''}`); break
       default: parts.push(`${name} \u00d7${count}`)
     }
   }

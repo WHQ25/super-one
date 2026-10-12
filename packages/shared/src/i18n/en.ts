@@ -1964,6 +1964,12 @@ export type Messages = {
       agentsRefreshFailed: string
       nativePermissions: string
     }
+    turnMarker: {
+      error: string
+      reviewStarted: string
+      reviewComplete: string
+      compacted: string
+    }
     codex: {
       modelsRefreshed: string
       modelsRefreshFailed: string
@@ -6392,6 +6398,12 @@ export const en: Messages = {
       nativePermissions: 'Permissions follow your OpenCode configuration and the selected agent.',
       modelsRefreshed: 'OpenCode returned {{count}} models.',
       modelsRefreshFailed: 'Could not refresh OpenCode models.',
+    },
+    turnMarker: {
+      error: 'Error',
+      reviewStarted: 'Review started',
+      reviewComplete: 'Review complete',
+      compacted: 'Conversation compacted',
     },
     codex: {
       modelsRefreshed: 'Codex returned {{count}} models.',

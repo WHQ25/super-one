@@ -1,4 +1,4 @@
-import { resolveCodexCommandActions } from '@superone/shared/codex-command-actions'
+import { parsedCommandFromBashInput, resolveCodexCommandActions } from '@superone/shared/codex-command-actions'
 import type { ChatMessage, ContentBlock, CodexFileUpdateChange, CodexMcpToolCallItem, CodexThreadItem, TaskFileChange } from '@superone/shared/agent-types'
 import { bashEditFileChanges } from '@superone/shared/bash-edit-diff'
 import { fileMutationPath, isFileMutationTool } from '@superone/shared/file-mutation'
@@ -20,6 +20,12 @@ function shellInput(toolName: string, input: string): string {
   // A patch's sanitized paths/counts are the collapsed multi-file header, not
   // source code. Keep them even when several paths exceed the generic 1 KB cap.
   if (isPatchToolName(toolName) || (toolName === 'Edit' && isPatchToolCall(toolName, parseInput(input) ?? {}))) return input
+  // A parsed command's actions are its collapsed row (read/search/list and their targets).
+  const command = toolName === 'Bash' ? parsedCommandFromBashInput('', input) : null
+  if (command) {
+    return JSON.stringify({ command: command.command.slice(0, 160), ...(command.cwd ? { cwd: command.cwd } : {}),
+      commandActions: resolveCodexCommandActions(command).map(action => ({ ...action, command: action.command?.slice(0, 160) })) })
+  }
   if (input.length <= SHELL_INPUT_MAX) return input
   if (!isSubagentToolName(toolName)) return '{}'
   try {

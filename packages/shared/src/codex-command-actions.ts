@@ -53,3 +53,35 @@ export function summarizeCodexCommandActions(items: CodexCommandExecutionItem[])
   }
   return { files: files.size, searches, lists }
 }
+
+/**
+ * A `Bash` call that carries parsed `commandActions` (Codex commands do), read
+ * back as the command shape the presentation above works on; `null` for a
+ * plain Bash call. Output and status come from the caller's result facts.
+ */
+export function parsedCommandFromBashInput(
+  toolUseId: string,
+  input: string,
+  facts: { output?: string; exitCode?: number; isError?: boolean; running?: boolean } = {},
+): CodexCommandExecutionItem | null {
+  if (!input.includes('"commandActions"')) return null
+  let params: { command?: unknown; cwd?: unknown; commandActions?: unknown }
+  try { params = JSON.parse(input) } catch { return null }
+  if (!Array.isArray(params.commandActions) || typeof params.command !== 'string') return null
+  return {
+    id: toolUseId,
+    type: 'command_execution',
+    command: params.command,
+    ...(typeof params.cwd === 'string' ? { cwd: params.cwd } : {}),
+    commandActions: params.commandActions as CodexCommandAction[],
+    aggregatedOutput: facts.output ?? '',
+    ...(facts.exitCode !== undefined ? { exitCode: facts.exitCode } : {}),
+    status: facts.running ? 'in_progress' : facts.isError || (facts.exitCode ?? 0) !== 0 ? 'failed' : 'completed',
+  }
+}
+
+/** A parsed command that only reads, searches or lists: it folds into a read-only tool group. */
+export function isReadOnlyParsedCommand(toolUseId: string, input: string): boolean {
+  const item = parsedCommandFromBashInput(toolUseId, input)
+  return item !== null && codexCommandPresentation(item).kind !== 'bash'
+}

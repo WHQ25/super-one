@@ -5,7 +5,7 @@ import { mergeCodexCommandDetail } from '@superone/chat-view/codex-command-detai
 import { DeferredDetailStatus, useDeferredToolDetail } from '@superone/chat-view/use-deferred-tool-detail'
 import { useActiveSession } from '@/stores/chat'
 import { AnsiText } from '@/lib/ansi'
-import { FileChip } from './ToolBlock'
+import { FileChip } from './FileChip'
 import { shortenPath } from './tool-display'
 
 type CodexCommandBlockProps = { item: CodexCommandExecutionItem; isStreaming: boolean }

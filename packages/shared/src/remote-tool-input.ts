@@ -44,7 +44,7 @@ export function shouldKeepRemoteToolInput(toolName: string): boolean {
  * from `toolDiff`), `script`, question and option text, and every tool absent from this map.
  */
 const BUILTIN_TOOL_INPUT_FIELDS: Record<string, readonly string[]> = {
-  Bash: ['command', 'description', 'timeout', 'run_in_background', 'background'],
+  Bash: ['command', 'description', 'timeout', 'run_in_background', 'background', 'cwd', 'commandActions'],
   Monitor: ['description', 'command'],
   Read: ['file_path', 'offset', 'limit', 'pages'],
   Edit: ['file_path'],

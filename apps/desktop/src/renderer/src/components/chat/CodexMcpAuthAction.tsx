@@ -1,18 +1,14 @@
 import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import type { CodexMcpToolCallItem } from '@superone/shared/agent-types'
 import { Button } from '@superone/ui/components/ui/button'
 import { useActiveSession, useChatStore } from '@/stores/chat'
 
-export function hasCodexMcpAuthChallenge(item: CodexMcpToolCallItem): boolean {
-  if (item.authRequired) return true
-  const meta = item.result?.meta
-  return Boolean(meta && (meta['mcp/www_authenticate'] ?? meta.mcpWwwAuthenticate))
-}
-
-/** Clickable OAuth login for an auth-rejected Codex MCP tool result. Does not replay the tool. */
-export function CodexMcpAuthAction({ item }: { item: CodexMcpToolCallItem }) {
+/**
+ * Clickable OAuth login for an auth-rejected MCP call (`tool_use.authRequired`,
+ * set by the Codex translator). Does not replay the tool.
+ */
+export function CodexMcpAuthAction({ server }: { server: string }) {
   const { t } = useTranslation()
   const activeProject = useChatStore((s) => s.activeProject)
   const apiProviderId = useActiveSession((s) => s.apiProviderId)
@@ -24,17 +20,15 @@ export function CodexMcpAuthAction({ item }: { item: CodexMcpToolCallItem }) {
     try {
       const res = await window.app.codexMcpServerOauthLogin(
         activeProject,
-        item.server,
+        server,
         apiProviderId ?? null,
       )
-      if (res.success) toast.success(t('chat.codex.mcpReauthSuccess', { name: item.server }))
-      else toast.error(t('chat.codex.mcpReauthFailed', { name: item.server, error: res.error ?? '' }))
+      if (res.success) toast.success(t('chat.codex.mcpReauthSuccess', { name: server }))
+      else toast.error(t('chat.codex.mcpReauthFailed', { name: server, error: res.error ?? '' }))
     } finally {
       setBusy(false)
     }
-  }, [activeProject, apiProviderId, item.server, t])
-
-  if (!hasCodexMcpAuthChallenge(item)) return null
+  }, [activeProject, apiProviderId, server, t])
 
   return (
     <Button
@@ -45,7 +39,7 @@ export function CodexMcpAuthAction({ item }: { item: CodexMcpToolCallItem }) {
       disabled={busy}
       onClick={() => void onSignIn()}
     >
-      {busy ? t('chat.codex.mcpReauthenticating') : t('chat.codex.mcpSignIn', { name: item.server })}
+      {busy ? t('chat.codex.mcpReauthenticating') : t('chat.codex.mcpSignIn', { name: server })}
     </Button>
   )
 }

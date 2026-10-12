@@ -46,11 +46,13 @@ import {
   type TurnSubagentPresenterProps,
   type TurnToolGroupPresenterProps,
   type TurnToolPresenterProps,
+  type TurnPlanPresenterProps,
   type TurnBodyPresenterParts,
   type TurnBodyPresenterRuntime,
   type TurnWorkflowPresenterProps,
 } from './presenters/TurnBody'
 import { codexMcpItemInput, codexMcpItemIsError, codexMcpItemResultText } from '@superone/shared/codex-content'
+import { parsedCommandFromBashInput } from '@superone/shared/codex-command-actions'
 import {
   CodexTurnViewPresenter,
   isHiddenCodexMcpItem,
@@ -207,6 +209,12 @@ function PortableDocument({ name }: { name: string }) {
 /** A call whose server attached an MCP App shows its View in place of the row; a failed call keeps the row. */
 function PortableClaudeTool(props: TurnToolPresenterProps) {
   const messageId = useContext(TurnMessageIdContext)
+  const { toolName, toolUseId, input, result, liveOutput, exitCode, isError, status, remoteDetail } = props
+  // A command with parsed actions (Codex) draws its read/search/list operations.
+  const command = useMemo(() => toolName === 'Bash'
+    ? parsedCommandFromBashInput(toolUseId ?? '', input, { output: result ?? liveOutput, exitCode, isError, running: status === 'streaming' })
+    : null, [toolName, toolUseId, input, result, liveOutput, exitCode, isError, status])
+  if (command) return <PortableCodexCommand item={remoteDetail ? { ...command, remoteDetail } : command} isStreaming={status === 'streaming'} />
   if (!props.app || !messageId || mcpAppToolFailed(props.app)) return <PortableClaudeToolRow {...props} />
   return (
     <PortableMcpAppView
@@ -234,7 +242,7 @@ function PortableClaudeToolRow(props: TurnToolPresenterProps & { trailing?: Reac
   const dedicated = renderDedicatedTool(props, brandIconSrc)
   if (dedicated) return dedicated
   const awaitingPermission = isPermissionPending(pendingPermission, props.toolUseId, props.toolName)
-  const row = <PortableToolRow {...props} presentation={props.app?.presentation} />
+  const row = <PortableToolRow {...props} result={props.result ?? props.liveOutput} presentation={props.app?.presentation} />
   // The desktop surfaces a pending approval as its own prompt block; the phone marks the row.
   return awaitingPermission
     ? <div data-permission-pending="true" className="rounded ring-1 ring-inset ring-primary/30">{row}</div>
@@ -825,6 +833,7 @@ const TURN_PARTS: TurnBodyPresenterParts = {
   Reasoning: DeferredReasoning,
   Subagent: PortableSubagent,
   Workflow: PortableWorkflow,
+  Plan: PortablePlanBlock,
   ToolGroup: PortableToolGroup,
   AppToolGroup: PortableAppToolGroup,
   TurnDetail: TurnDetailSection,
@@ -908,6 +917,23 @@ function PortablePlan({
       planApproval={planApproval}
       onApprovePlan={onApprovePlan}
       onRejectPlan={onRejectPlan}
+      renderApprovalActions={(actions) => <PortablePlanActions {...actions} />}
+      Markdown={PortableCodexMarkdown}
+    />
+  )
+}
+
+/** A proposed plan on the phone; the latest one answers through the native sheet. */
+function PortablePlanBlock({ id, text, isStreaming, hasFollowingBlock, approval }: TurnPlanPresenterProps) {
+  const respond = approval?.canRespond && !approval.state
+  return (
+    <CodexPlanBlockPresenter
+      item={{ id, type: 'plan', text }}
+      isStreaming={isStreaming}
+      hasFollowingItem={hasFollowingBlock}
+      planApproval={approval?.state}
+      onApprovePlan={respond ? approval.onApprove : undefined}
+      onRejectPlan={respond ? approval.onReject : undefined}
       renderApprovalActions={(actions) => <PortablePlanActions {...actions} />}
       Markdown={PortableCodexMarkdown}
     />

@@ -3,7 +3,8 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CodexMcpToolCallItem } from '@superone/shared/agent-types'
-import { CodexMcpAuthAction, hasCodexMcpAuthChallenge } from './CodexMcpAuthAction'
+import { hasCodexMcpAuthChallenge } from '@superone/shared/codex-content'
+import { CodexMcpAuthAction } from './CodexMcpAuthAction'
 
 vi.mock('@/stores/chat', () => {
   const state = { activeProject: '/project', apiProviderId: null as string | null }
@@ -43,10 +44,7 @@ describe('CodexMcpAuthAction', () => {
   })
 
   it('starts Codex MCP OAuth login without replaying the tool', async () => {
-    render(<CodexMcpAuthAction item={item({
-      authRequired: true,
-      result: { content: [], structuredContent: null, meta: { 'mcp/www_authenticate': {} } },
-    })} />)
+    render(<CodexMcpAuthAction server={item().server} />)
 
     fireEvent.click(screen.getByRole('button', { name: /Sign in to linear/i }))
     await waitFor(() => {

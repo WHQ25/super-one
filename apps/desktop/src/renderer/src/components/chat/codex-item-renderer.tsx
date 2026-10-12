@@ -9,8 +9,6 @@ import { useChatStore } from '@/stores/chat'
 import { resolveMarkdownFileLinks } from './chat-shared'
 import { ToolIcon } from './ToolIcon'
 import { cn } from '@superone/ui/lib/utils'
-import { CodexPlanImplementFooter } from './CodexPlanImplementFooter'
-import { CodexPlanBlockPresenter } from './presenters/CodexPlanBlock'
 import { codexMcpItemInput, codexMcpItemIsError, codexMcpItemResultText } from '@superone/shared/codex-content'
 import { CodexImageGenerationBlock } from './CodexImageGenerationBlock'
 import { fileLinkComponents } from './chat-markdown-components'
@@ -18,10 +16,11 @@ import { memo, useState, useEffect, useRef } from 'react'
 import { ChevronRight } from 'lucide-react'
 import type { CodexCollabToolCallItem } from '@superone/shared/agent-types'
 import { CompactLabeledToolRow, ToolName, ToolRow, ToolSummary, toolOutcomeLabel, withStreamingEllipsis } from './tool-row'
-import { CodexMcpAuthAction, hasCodexMcpAuthChallenge } from './CodexMcpAuthAction'
+import { CodexMcpAuthAction } from './CodexMcpAuthAction'
+import { hasCodexMcpAuthChallenge } from '@superone/shared/codex-content'
 import { CodexCommandBlock } from './CodexCommandBlock'
+import { PlanBlock } from './PlanBlock'
 export { CodexCommandBlock } from './CodexCommandBlock'
-import { usePlanFullscreen } from './plan-fullscreen-context'
 export { PlanFullscreenContext, usePlanFullscreen } from './plan-fullscreen-context'
 
 type ItemStatus = 'in_progress' | 'completed' | 'failed'
@@ -111,22 +110,13 @@ function DesktopCodexPlanBlock({
   onRejectPlan?: (feedback?: string) => void
   planApproval?: CodexPlanApprovalState
 }) {
-  const planFullscreen = usePlanFullscreen()
   return (
-    <CodexPlanBlockPresenter
-      item={item}
+    <PlanBlock
+      id={item.id}
+      text={item.text}
       isStreaming={isStreaming}
-      hasFollowingItem={Boolean(nextItem)}
-      planApproval={planApproval}
-      onApprovePlan={onApprovePlan}
-      onRejectPlan={onRejectPlan}
-      onOpenFullscreen={(text, actions) => planFullscreen.open(text, actions)}
-      renderApprovalActions={({ onApprove, onReject }) => (
-        <CodexPlanImplementFooter onApprove={onApprove} onReject={onReject} />
-      )}
-      Markdown={({ text, isStreaming: streaming }) => (
-        <CopyableMarkdown text={text} isStreaming={streaming} components={fileLinkComponents} />
-      )}
+      hasFollowingBlock={Boolean(nextItem)}
+      approval={{ state: planApproval, canRespond: Boolean(onApprovePlan && onRejectPlan), onApprove: onApprovePlan, onReject: onRejectPlan }}
     />
   )
 }
@@ -244,7 +234,7 @@ export function renderCodexItem(
               result={codexMcpItemResultText(item)}
               isError={codexMcpItemIsError(item)}
             />
-            {authChallenge ? <CodexMcpAuthAction item={item} /> : null}
+            {authChallenge ? <CodexMcpAuthAction server={item.server} /> : null}
           </div>
         )
       }

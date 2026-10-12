@@ -89,7 +89,7 @@ export function isClaudePinnedSegment(seg: {
 }, ports: CompactChatModePorts): boolean {
   if (seg.kind === 'subagent' || seg.kind === 'workflow') return true
   if (seg.kind !== 'block' || !seg.block) return false
-  if (seg.block.type === 'text' || seg.block.type === 'insight') return true
+  if (seg.block.type === 'text' || seg.block.type === 'insight' || seg.block.type === 'plan') return true
   // An MCP App View is addressed to the user, like a widget.
   return seg.block.type === 'tool_use' && (Boolean(seg.block.app) || isPinnedToolName(seg.block.toolName ?? '', ports))
 }

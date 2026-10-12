@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { collectGeneratedImages, getToolVerb, isHiddenToolBlock } from './tool-display'
+import { collectGeneratedImages, coordinationToolBody, getToolDisplay, getToolVerb, isHiddenToolBlock } from './tool-display'
 import type { ContentBlock } from '@superone/shared/agent-types'
 
 describe('getToolVerb', () => {
@@ -34,5 +34,21 @@ describe('native widget_show results — hide/collect contract', () => {
     const results = new Map([['g', gallery], ['p', previewer]])
     const items = collectGeneratedImages([call('g'), call('p')], results)
     expect(items.map((i) => i.savedPath)).toEqual(['/tmp/a.png'])
+  })
+})
+
+describe('coordination tool rows', () => {
+  const receipt = '{"success":true,"message":"Message queued for delivery to worker at its next tool round."}'
+
+  it('opens a sent message on the words that were sent, not the delivery receipt', () => {
+    expect(coordinationToolBody('SendMessage', { to: 'worker', message: 'Run the suite.' }, receipt)).toBe('Run the suite.')
+    expect(coordinationToolBody('SendMessage', {}, receipt)).toBe('Message queued for delivery to worker at its next tool round.')
+    expect(coordinationToolBody('SendMessage', {}, 'not json')).toBeNull()
+    expect(coordinationToolBody('Bash', { message: 'x' }, receipt)).toBeNull()
+  })
+
+  it('draws worktree moves with the branch glyph and a path relative to the session', () => {
+    expect(getToolDisplay('EnterWorktree', { path: '/repo/.claude/worktrees/probe' }, '/repo')).toEqual({ icon: 'git-branch', summary: '.claude/worktrees/probe' })
+    expect(getToolDisplay('ExitWorktree', { action: 'keep' })).toEqual({ icon: 'git-branch', summary: 'keep' })
   })
 })

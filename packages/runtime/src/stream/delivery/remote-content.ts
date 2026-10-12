@@ -2,6 +2,7 @@ import { diffLines } from 'diff'
 import { humanizePageToolName } from '@superone/shared/page-tool-name'
 import type { AgentEvent, ContentBlock, ChatMessage, TodoToolItem } from '@superone/shared/agent-types'
 import { isSubagentToolName, normalizeTranscriptTool } from '@superone/shared/tool-ui'
+import { coordinationToolSummary } from '@superone/shared/coordination-tool-summary'
 import { isPatchToolCall, patchToolLineDelta } from '@superone/shared/patch-tool'
 import { remoteToolBlockType, sanitizeRemoteToolInput } from '@superone/shared/remote-tool-input'
 import type { WorkflowAgentRow } from '@superone/shared/agent-types'
@@ -405,6 +406,8 @@ export function computeToolMeta(block: ContentBlock & { type: 'tool_use' }, proj
       case 'SearchTools':
         summary = String(p.query ?? '')
         break
+      default:
+        summary = coordinationToolSummary(block.toolName, p, (path) => stripProjectPath(path, projectPath)) || undefined
     }
     if (!summary && block.toolName.endsWith('__browser_tools_call')) {
       // The agent's own `description` reads like a sentence; the page-tool name is the fallback,

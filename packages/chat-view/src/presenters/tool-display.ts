@@ -1,5 +1,6 @@
 import type { ContentBlock, ImageGenerationItem, VideoGenerationItem } from '@superone/shared/agent-types'
 import { shortenPath } from '@superone/shared/path-display'
+import { coordinationToolSummary } from '@superone/shared/coordination-tool-summary'
 import { isAlwaysHiddenToolName, normalizeTranscriptTool, parseMcpToolName } from '@superone/shared/tool-ui'
 import { DEVICE_AGENT_TOOL_NAMES } from '@superone/shared/superone-host-owned-tools'
 import { extractPartialToolInput } from '@superone/chat-core'
@@ -46,6 +47,10 @@ const TOOL_VERBS: Record<string, string> = {
   ExitPlanMode: 'Reviewing',
   ReportFindings: 'Reporting findings',
   ListAgents: 'Listing agents',
+  SendMessage: 'Sending message',
+  SubagentHandback: 'Handing back',
+  EnterWorktree: 'Entering worktree',
+  ExitWorktree: 'Leaving worktree',
   KillTask: 'Stopping task',
   ImageGen: 'Generating image',
   ImageEdit: 'Editing image',
@@ -78,7 +83,7 @@ export function superoneToolGlyph(mcpToolName: string): ToolIcon | null {
   return WIDGET_TOOLS.has(mcpToolName) ? 'widget' : null
 }
 
-export type ToolIcon = 'terminal' | 'code' | 'file-text' | 'file-edit' | 'file-plus' | 'search' | 'folder-search' | 'globe' | 'download' | 'message-circle' | 'wrench' | 'mcp' | 'plug' | 'clipboard-list' | 'bot' | 'book-open' | 'canvas' | 'toolbox' | 'package' | 'pencil' | 'image' | 'smartphone' | 'widget'
+export type ToolIcon = 'terminal' | 'code' | 'file-text' | 'file-edit' | 'file-plus' | 'search' | 'folder-search' | 'globe' | 'download' | 'message-circle' | 'wrench' | 'mcp' | 'plug' | 'clipboard-list' | 'bot' | 'book-open' | 'canvas' | 'toolbox' | 'package' | 'pencil' | 'image' | 'smartphone' | 'widget' | 'git-branch' | 'send' | 'reply'
 
 export interface ToolDisplay {
   icon: ToolIcon
@@ -163,6 +168,27 @@ const TOOL_LABELS: Record<string, string> = {
   SchedulerList: 'Scheduler List',
   Agent: 'Agent',
   Workflow: 'Workflow',
+  SendMessage: 'Send Message',
+  SubagentHandback: 'Hand Back',
+  EnterWorktree: 'Enter Worktree',
+  ExitWorktree: 'Exit Worktree',
+}
+
+/**
+ * What a messaging tool's expanded row shows: the words that were sent, not the JSON
+ * delivery receipt. Without the input (a phone's is stripped) the receipt's own sentence
+ * stands in. Null leaves every other tool on its raw result.
+ */
+export function coordinationToolBody(toolName: string, params: Record<string, unknown>, result: string | null | undefined): string | null {
+  if (toolName !== 'SendMessage' && toolName !== 'SubagentHandback') return null
+  if (typeof params.message === 'string' && params.message.trim()) return params.message
+  if (!result) return null
+  try {
+    const receipt = JSON.parse(result) as { message?: unknown }
+    return typeof receipt.message === 'string' ? receipt.message : null
+  } catch {
+    return null
+  }
 }
 
 /** Split camel/PascalCase and underscores into Title Case words for unknown tools. */
@@ -229,6 +255,13 @@ export function getToolDisplay(toolName: string, input: Record<string, unknown>,
     // stays empty here and `ListAgentsToolBlock` derives its summary from the output.
     case 'ListAgents':
       return { icon: 'bot', summary: '' }
+    case 'SendMessage':
+      return { icon: 'send', summary: coordinationToolSummary(toolName, input, sp) ?? '' }
+    case 'SubagentHandback':
+      return { icon: 'reply', summary: coordinationToolSummary(toolName, input, sp) ?? '' }
+    case 'EnterWorktree':
+    case 'ExitWorktree':
+      return { icon: 'git-branch', summary: coordinationToolSummary(toolName, input, sp) ?? '' }
     case 'Read': {
       const readPath = sp(String(input.file_path ?? ''))
       const readMeta = formatReadMeta(input)

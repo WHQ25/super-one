@@ -11,6 +11,7 @@ import { getStallColor, type StallLevel } from './stall-color'
 import { ToolBrandIcon } from './ToolIcon'
 import { ToolErrorText, ToolName } from './ToolRow'
 import {
+  coordinationToolBody,
   formatReadMeta,
   getToolDisplay,
   getToolLabel,
@@ -323,7 +324,8 @@ function GenericToolRow({
   const showDeniedFeedback = showDenied && !!deniedFeedback
   // These rows never draw their result, so a deferred detail has nothing to open either.
   const drawsResult = toolName !== 'Read' && toolName !== 'Skill' && toolName !== 'AskUserQuestion'
-  const hasResult = !!cleanResult && drawsResult && (hasDeferredDetails || (!isStreaming && !isDenied))
+  const resultText = useMemo(() => coordinationToolBody(toolName, params, cleanResult) ?? cleanResult, [toolName, params, cleanResult])
+  const hasResult = !!resultText && drawsResult && (hasDeferredDetails || (!isStreaming && !isDenied))
   const hasQA = toolName === 'AskUserQuestion' && !!cleanResult && !isStreaming && !isQuestionDismissed
   const expandable = allowExpand && ((hasDeferredDetails && drawsResult) || hasDiff || hasResult || hasQA || showDeniedFeedback || (showError && !!cleanResult))
 
@@ -483,7 +485,7 @@ function GenericToolRow({
                       ) : toolName === 'LS' || toolName === 'ToolSearch' || toolName === 'SearchTools' ? (
                         <ScrollableToolResult text={cleanResult!} />
                       ) : (
-                        <ToolResult text={cleanResult!} cacheKey={toolUseId ?? toolName} />
+                        <ToolResult text={resultText!} cacheKey={toolUseId ?? toolName} />
                       )}
                     </div>
                   )}

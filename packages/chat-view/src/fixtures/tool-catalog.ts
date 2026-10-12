@@ -236,6 +236,18 @@ export const toolCatalogExamples: ToolCatalogExample[] = [
     {},
     'Subagents (2):\n  Explore · read-only search · idle · 2m\n  Plan · architecture · idle · 5m',
   )),
+  example('agent/send-message', 'Agent', 'SendMessage', call(
+    'SendMessage',
+    { to: 'step4-remote-collab', summary: 'Fix four open items before review', message: 'Good work; the A-side monitor deviation is accepted. Please fix these open items.' },
+    '{"success":true,"message":"Resuming agent step4-remote-collab","resumedAgentId":"ab797b6dcb4952b5e"}',
+    { toolSummary: 'step4-remote-collab · Fix four open items before review' },
+  )),
+  example('agent/enter-worktree', 'Agent', 'EnterWorktree', call(
+    'EnterWorktree',
+    { name: 'probe' },
+    'Created worktree at /workspace/super-one/.claude/worktrees/probe on branch worktree-probe. The session is now working in the worktree.',
+    { toolSummary: 'probe' },
+  )),
 
   // Browser
   example('browser/snapshot', 'Browser', 'browser_snapshot', call(

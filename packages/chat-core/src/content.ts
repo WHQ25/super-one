@@ -9,6 +9,8 @@ import { defaultChatCorePorts, type ChatCorePorts } from './ports'
 import { dropHostWorkflowShadow } from './host-workflow-card'
 import { dropStreamingToolInputPreview, isTerminalMessageStatus } from './shared'
 import { todoListUpdate, todoWriteTodos } from './todos'
+import { queuedAsyncQuestion } from './codex'
+import { codexAsyncQuestionItems } from '@superone/shared/codex-async-question'
 
 type ContentDeltaEvent = Extract<AgentEvent, { type: 'content_delta' }>
 
@@ -51,6 +53,15 @@ export function reduceContentDelta(
 
   let extraUpdates: Partial<ChatCoreSession> = {}
   if (session.apiRetry) extraUpdates.apiRetry = null
+
+  // A Codex async question arrives as a text block that carries it.
+  if (event.delta.type === 'text' && event.delta.codexAsyncQuestions?.length) {
+    const textId = event.delta.id
+    const home = updatedMessages.find((m) => m.id === homeId)
+    const item = home ? codexAsyncQuestionItems(home).find((entry) => entry.id === textId) : undefined
+    const pendingAsyncQuestions = item ? queuedAsyncQuestion(session, homeId, item) : null
+    if (pendingAsyncQuestions) extraUpdates.pendingAsyncQuestions = pendingAsyncQuestions
+  }
 
   // New content arriving for a sub-agent we already marked complete means it was
   // resumed — re-open its running state so the activity panel surfaces it again.

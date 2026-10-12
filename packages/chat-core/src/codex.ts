@@ -1,9 +1,9 @@
-import type { AgentEvent, CodexItemPatch, CodexThreadItem } from '@superone/shared/agent-types'
+import type { AgentEvent, CodexAgentMessageItem, CodexItemPatch, CodexThreadItem } from '@superone/shared/agent-types'
 import { applySeqToMessage, isReplayedEventForMessage } from '@superone/shared/event-seq-utils'
 import { codexItemToBlocks } from '@superone/shared/codex-content'
 import { todoListUpdate, todoWriteTodos } from './todos'
 import { upsertCodexItem } from './codex-pure'
-import { codexAsyncAnswerId, codexAsyncQuestionQueue, codexAsyncQuestionRequest } from '@superone/shared/codex-async-question'
+import { codexAsyncAnswerId, codexAsyncQuestionQueue, codexAsyncQuestionRequest, type PendingCodexAsyncQuestion } from '@superone/shared/codex-async-question'
 import { collectCodexCollabMetadata, mergeCodexSubagentMetadata } from '@superone/shared/codex-metadata'
 import type { ChatCoreSession } from './types'
 import { defaultChatCorePorts, type ChatCorePorts } from './ports'
@@ -121,14 +121,10 @@ export function reduceCodex(
       // A legacy todo list sets the same list a TodoWrite result does.
       const [todoCall] = event.item.type === 'todo_list' ? codexItemToBlocks(event.item) : []
       const todos = todoCall?.type === 'tool_use' ? todoWriteTodos(JSON.parse(todoCall.input)) : null
-      const question = event.item.type === 'agent_message' && event.item.questions?.length
-        && !session.messages.some(message => message.id === codexAsyncAnswerId(event.item.id))
-        ? { messageId: event.messageId, item: event.item, request: codexAsyncQuestionRequest(event.item) } : null
-      const pendingAsyncQuestions = question ? codexAsyncQuestionQueue(session) : []
-      const index = question ? pendingAsyncQuestions.findIndex(q => q.item.id === question.item.id) : -1
+      const pendingAsyncQuestions = event.item.type === 'agent_message' ? queuedAsyncQuestion(session, event.messageId, event.item) : null
       return {
         lastEventAt: ports.now(),
-        ...(question ? { pendingAsyncQuestions: index < 0 ? [...pendingAsyncQuestions, question] : pendingAsyncQuestions.map((q, i) => i === index ? question : q) } : {}),
+        ...(pendingAsyncQuestions ? { pendingAsyncQuestions } : {}),
         ...(todos ? todoListUpdate(session, todos) : {}),
         messages: session.messages.map((msg) => {
           if (msg.id !== event.messageId) return msg
@@ -179,4 +175,13 @@ export function reduceCodex(
       }
     }
   }
+}
+
+/** The decision queue with a turn's async question added or refreshed, or null when it asks none still open. */
+export function queuedAsyncQuestion(session: ChatCoreSession, messageId: string, item: CodexAgentMessageItem): PendingCodexAsyncQuestion[] | null {
+  if (!item.questions?.length || session.messages.some(message => message.id === codexAsyncAnswerId(item.id))) return null
+  const question = { messageId, item, request: codexAsyncQuestionRequest(item) }
+  const queue = codexAsyncQuestionQueue(session)
+  const index = queue.findIndex(q => q.item.id === item.id)
+  return index < 0 ? [...queue, question] : queue.map((q, i) => i === index ? question : q)
 }

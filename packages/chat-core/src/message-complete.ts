@@ -65,6 +65,8 @@ export function reduceMessageComplete(
       const rootTurnId = codexCompletionMeta?.rootTurnId ?? (sameProviderTurn ? previousRoot : undefined)
       const requestedProvenance = codexCompletionMeta?.requestedProvenance ?? (sameProviderTurn ? previousRequest : undefined)
       const subagents = collectCodexCollabMetadata(codexCompletionMeta?.items ?? [], mergeCodexSubagentMetadata(prevCodex?.subagents, codexCompletionMeta?.subagents))
+      // Only a legacy turn stores its reply as text; its content is derived from the items.
+      const legacy = (codexCompletionMeta?.items.length ?? 0) > 0 || (prevCodex?.items.length ?? 0) > 0
       const nextMetadata = codexCompletionMeta
         ? {
             ...msg.metadata,
@@ -99,7 +101,7 @@ export function reduceMessageComplete(
         // split, a harness that drops the result — would otherwise leave the row
         // shimmering ("Taking snapshot…") for as long as the message is live,
         // and persist that way. Interrupt/error already seal; completion must too.
-        ...(codexCompletionMeta?.finalResponse
+        ...(legacy && codexCompletionMeta?.finalResponse
           ? { content: [{ type: 'text', text: codexCompletionMeta.finalResponse }] }
           : { content: sealStreamingTools(msg.content) }),
         // Codex keeps its tool rows in metadata, out of reach of the content

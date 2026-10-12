@@ -1,5 +1,5 @@
 import type { ChatMessage, ContentBlock, CodexThreadItem } from './agent-types'
-import { isCodexAsyncAnswer } from './codex-async-question'
+import { codexAsyncQuestionItems, isCodexAsyncAnswer } from './codex-async-question'
 import { isToolResultBlock, isToolUseBlock } from './content-delta'
 
 /** A durable cursor into a provider message, whose identity never changes. */
@@ -59,7 +59,7 @@ export function anchorAsyncAnswer(message: ChatMessage, messages: readonly ChatM
   if (!isCodexAsyncAnswer(message) || message.metadata?.transcriptBoundary) return message
   const itemId = message.id.slice('codex_async_answer:'.length)
   const source = messages.findLast(row => row.status === 'streaming' && row.role === 'assistant'
-    && row.metadata?.codex?.items.some(item => item.id === itemId))
+    && codexAsyncQuestionItems(row).some(item => item.id === itemId))
     ?? messages.findLast(row => row.status === 'streaming' && row.role === 'assistant' && row.providerId === 'codex')
   return source ? { ...message, metadata: { ...message.metadata, transcriptBoundary: captureTranscriptBoundary(source, messages) } } : message
 }

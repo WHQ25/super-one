@@ -1,9 +1,26 @@
 # Mobile transcript windows and incremental cache synchronization
 
-Status: in progress — Phase 0 decisions recorded in the proposal; Phase 1 contract landed · Updated: 2026-10-13
+Status: in progress — Phases 1–5 implemented; device validation (0.1 baseline, Phase 6) pending · Updated: 2026-10-13
 Proposal: [mobile-transcript-window-sync.md](../proposals/mobile-transcript-window-sync.md)
 Goal: Opening or reopening a mobile session transfers, parses and paints a bounded fragment window, never resends unchanged cached bodies, and continues a running reply without gaps or duplicates.
 Long-term docs affected: `docs/architecture/mobile-remote-control.md` (atomic open, progressive loading), `docs/architecture/chat-core.md` (content/state split, if it changes), `apps/mobile/docs/agent-reference/transcript.md`, `apps/mobile/docs/agent-reference/transport.md`.
+
+## Progress (2026-10-13)
+
+Phases 1–5 are implemented on `worktree-mobile-transcript-window`; Phase 0 decisions are in the proposal.
+
+- Contract and pure functions: `packages/shared/src/environment/transcript-window.ts`, `packages/shared/src/transcript-window/`.
+- Hosts: `session.transcriptWindow` (`packages/runtime/src/server/rpc-session-window.ts`), per-connection held windows and live `transcript_window` patches (`packages/runtime/src/stream/delivery/window-views.ts`), shared `session.historyIndex`. Routed phones get windows from the source node under their own holder id.
+- Phone: `restoreWindowSession` (relay-client), window mode in `ChatRuntime`, window cache `session-window-v1`, chat-view window paging, partial-message copy, stories (`Chat/Mobile transcript window`) and `e2e/transcript-window.spec.ts`.
+- Baseline (`bun apps/desktop/scripts/benchmark-mobile-payload.ts`, synthetic fixtures, 390×844 viewport): cold open of a 1 MB reply 1.1 MB → 6.3 KB; 6 cached + 2 new messages resend 2.4 KB of cached bodies → 0; a 500-tool turn 143 KB → 9 KB. Host projection of the 1 MB reply ≈ 13 ms. The phone ledger records `hydrate-painted`.
+
+Remaining:
+
+- 0.1 / Phase 6: real-device LAN and relay measurements, proposal scenarios 1–8 on a device, the node lab with a routed phone; then long-term docs and deleting this plan and the proposal.
+- Code-block copy inside a slice that starts mid-fence copies the visible part (reply and user-message copy fetch the whole message).
+- The phone keeps every fragment it paged in for the open session; only the cache is trimmed (2 MiB). The DOM stays bounded by the 40-row window.
+- Legacy Codex turns (stored items) are converted to content in the window projection; their `item` detail refs are untested on a device.
+- Known unrelated failures: 8 chat-view e2e tests (`chat-view.spec.ts` 17/29/36/36b/37, `mobile-stream-recovery.spec.ts`) fail on the base commit too.
 
 ## Current state (verified 2026-10-13)
 

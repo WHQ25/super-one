@@ -16,6 +16,7 @@ import {
   type EnvironmentAggregateType,
   type EnvironmentUsageReport,
   type ExecutionEnvironmentDescriptor,
+  type NodeAgentSettings,
   type NodeAgentSettingsPatch,
   type RpcErrorCode,
 } from '@superone/shared/environment'
@@ -490,7 +491,7 @@ function handleProviderListModels(payload: unknown, ctx: RpcContext): RpcResult 
   return {
     result: ctx.hooks.listHarnessModels(ctx.providers, harness, apiProviderId, {
       experimentalClaudeOpenAiChatEnabled:
-        loadNodeAgentSettings(ctx.settingsConfigPath).experimentalClaudeOpenAiChatEnabled,
+        hostAgentSettings(ctx).experimentalClaudeOpenAiChatEnabled,
     }),
   }
 }
@@ -699,11 +700,16 @@ async function handleSystemInfo(ctx: RpcContext): Promise<RpcResult> {
   }
 }
 
+/** The host's agent settings: its own when it keeps them elsewhere, its config file otherwise. */
+function hostAgentSettings(ctx: RpcContext): NodeAgentSettings {
+  return ctx.agentSettings ? ctx.agentSettings() : loadNodeAgentSettings(ctx.settingsConfigPath)
+}
+
 function handleSettingsGet(ctx: RpcContext): RpcResult {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readEnvironment)
   if (denied) return denied
   try {
-    const settings = loadNodeAgentSettings(ctx.settingsConfigPath)
+    const settings = hostAgentSettings(ctx)
     return { result: { settings } }
   } catch (err) {
     return mapThrown(err)
@@ -1599,7 +1605,7 @@ async function handleGitClone(payload: unknown, ctx: RpcContext): Promise<RpcRes
     // Without a parent the clone goes to this node's projects directory.
     const parentPath = typeof p.parentPath === 'string' && p.parentPath.trim()
       ? p.parentPath
-      : nodeProjectsDir(loadNodeAgentSettings(ctx.settingsConfigPath))
+      : nodeProjectsDir(hostAgentSettings(ctx))
     const input = {
       remoteUrl: String(p.remoteUrl ?? ''),
       parentPath: expandHostPath(parentPath),

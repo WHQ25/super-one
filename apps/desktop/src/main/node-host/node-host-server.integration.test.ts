@@ -5,8 +5,11 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentEvent, RecentFolder } from '@superone/shared/agent-types'
 import type { EnvironmentEventEnvelope, ExecutionEnvironmentDescriptor, ProjectSnapshot } from '@superone/shared/environment'
+import Database from 'better-sqlite3'
 import { HarnessManager } from '@superone/runtime/harness'
 import { openNodeDatabase } from '@superone/runtime/db'
+import { createAutomationStore, ensureAutomationsTable } from '@superone/runtime/automations'
+import { createSessionProviderStore } from '@superone/runtime/session'
 
 const electron = vi.hoisted(() => ({ store: new Map<string, string>() }))
 
@@ -32,7 +35,9 @@ import { RemoteHostActionConsumer } from '../environment/remote-host-action-cons
 import { NodeCredentialStore } from '../environment/node-credential-store'
 import { createDesktopProjectsPort } from './desktop-projects-port'
 import { createDesktopProvidersPort } from './desktop-providers-port'
-import { AGENT_PROFILES, FakeSessionManager, memoryStore, startDesktopNode, stopDesktopNode, type FakeSession } from './node-host-test-fixtures'
+import { AGENT_PROFILES, FakeSessionManager, memoryStore, startDesktopNode, stopDesktopNode, testHarnessHooks, type FakeSession } from './node-host-test-fixtures'
+import type { DesktopDomainDeps } from './desktop-domain'
+import { desktopAgentSettings } from './desktop-agent-settings'
 import { DesktopNodeHost } from './node-host-server'
 import { mapNodeSessionEvents } from '@superone/shared/node-session-event-map'
 
@@ -67,7 +72,7 @@ function tempDir(prefix: string): string {
 }
 
 /** B with one git project (origin + a commit), paired with a fresh A. */
-async function pairedDesktops(catalog = fakeCatalog()) {
+async function pairedDesktops(catalog = fakeCatalog(), extra: Partial<DesktopDomainDeps> = {}) {
   const userData = tempDir('superone-node-host-')
   const projectDir = tempDir('superone-node-host-project-')
   execFileSync('git', ['init', '-q', projectDir])
@@ -88,10 +93,8 @@ async function pairedDesktops(catalog = fakeCatalog()) {
         listBindings: () => [{ consumer: 'chat:claude', credentialId: 'cred-b' }] as never,
       }),
       listAgentProfiles: () => AGENT_PROFILES,
-      hooks: {
-        probeHarnessReadiness: () => ({ ok: true }) as never,
-        assertSessionHarnessRuntimeReady: () => ({ ok: true, reason: 'test' }),
-      },
+      hooks: testHarnessHooks(),
+      ...extra,
     },
     { bindPort: 23000 + Math.floor(Math.random() * 10000) },
   )
@@ -128,10 +131,7 @@ describe('DesktopNodeHost', () => {
         harnesses,
         catalog: fakeCatalog(),
         listAgentProfiles: () => AGENT_PROFILES,
-        hooks: {
-          probeHarnessReadiness: () => ({ ok: true }) as never,
-          assertSessionHarnessRuntimeReady: () => ({ ok: true, reason: 'test' }),
-        },
+        hooks: testHarnessHooks(),
       },
       { bindPort },
     )
@@ -183,7 +183,8 @@ describe('DesktopNodeHost', () => {
 
     await expect(client.rpc('session.fork', { sessionId: created.sessionId })).rejects.toMatchObject({ code: 'not_found' })
     await expect(client.rpc('terminal.create', { cwd: projectDir })).rejects.toMatchObject({ code: 'not_found' })
-    await expect(client.rpc('harness.enable', { harnessId: 'codex' })).rejects.toMatchObject({ code: 'not_found' })
+    // Harness installs run as the window's Settings → Harnesses runs them.
+    expect(await client.rpc('harness.enable', { harnessId: 'codex' })).toMatchObject({ id: 'codex' })
 
     // Restart B (on a fresh port: fetch would reuse the closed keep-alive socket): the cursor continues from the durable log.
     manager.disconnectAll()
@@ -226,6 +227,74 @@ describe('DesktopNodeHost composer', () => {
     expect(await client.rpc('provider.listBindings')).toEqual([{ consumer: 'chat:claude', credentialId: 'cred-b' }])
     for (const method of ['provider.getCredentialDecrypted', 'provider.exportBundle']) {
       await expect(client.rpc(method, { id: 'cred-b' })).rejects.toMatchObject({ code: 'not_found' })
+    }
+  })
+})
+
+/** B's app settings as its window saved them. */
+const B_APP_SETTINGS = {
+  agentPreference: {
+    claude: { defaultModel: 'claude-opus', defaultEffort: 'high', defaultPermissionMode: 'acceptEdits', defaultSandboxMode: 'auto', disabledSkills: ['lint'], askUserQuestionPreviewFormat: 'markdown' },
+    codex: { defaultModel: 'gpt-5', defaultReasoningEffort: 'medium', defaultPermissionPreset: '' },
+  },
+  experimentalClaudeOpenAiChatEnabled: true,
+  defaultClonePaths: { local: '~/Code' },
+} as unknown as Parameters<typeof desktopAgentSettings>[0]
+
+describe('DesktopNodeHost configuration', () => {
+  it("lets a controller edit B's session providers and automations, read its agent settings and manage its harnesses", async () => {
+    const db = new Database(':memory:')
+    ensureAutomationsTable(db)
+    const runNow = vi.fn(async () => ({ status: 'completed', sessionId: 's-auto' }))
+    const enableHarness = vi.fn<DesktopDomainDeps['hooks']['enableHarness']>(async (harnesses, input) => harnesses.get(input.harnessId))
+    const { client } = await pairedDesktops(fakeCatalog(), {
+      hooks: { ...testHarnessHooks(), enableHarness },
+      agentSettings: () => desktopAgentSettings(B_APP_SETTINGS),
+      config: {
+        sessionProviders: createSessionProviderStore(db),
+        automations: { automations: createAutomationStore(db, () => null), automationService: { runNow } },
+      },
+    })
+    try {
+      const described = await client.rpc<ExecutionEnvironmentDescriptor>('environment.descriptor')
+      for (const method of ['sessionProviders.create', 'automation.runNow', 'settings.get', 'sandbox.probe', 'harness.enable', 'harness.disable']) {
+        expect(described.capabilities.methods).toContain(method)
+      }
+      expect(described.capabilities.methods).not.toContain('settings.patch')
+
+      // Session provider profiles: the store B's window edits.
+      const { provider } = await client.rpc<{ provider: { id: string } }>('sessionProviders.create', { harnessId: 'claude', name: 'Team', config: { model: 'claude-opus' } })
+      await client.rpc('sessionProviders.update', { id: provider.id, name: 'Team Opus' })
+      expect(await client.rpc('sessionProviders.get', { id: provider.id })).toMatchObject({ provider: { name: 'Team Opus', config: { model: 'claude-opus' } } })
+      const listed = await client.rpc<{ providers: Array<{ id: string }> }>('sessionProviders.list', { harnessId: 'claude' })
+      expect(listed.providers.map((p) => p.id)).toEqual(['claude-base', provider.id])
+      await expect(client.rpc('sessionProviders.delete', { id: 'claude-base' })).rejects.toMatchObject({ code: 'failed_precondition' })
+      expect(await client.rpc('sessionProviders.delete', { id: provider.id })).toEqual({ ok: true })
+
+      // B's own agent defaults, not a node config file.
+      expect(await client.rpc('settings.get')).toEqual({
+        settings: {
+          claude: { defaultModel: 'claude-opus', defaultEffort: 'high', permissionMode: 'acceptEdits', sandboxMode: 'auto', disabledSkills: ['lint'], askUserQuestionPreviewFormat: 'markdown' },
+          codex: { defaultModel: 'gpt-5', defaultEffort: 'medium', permissionPreset: '' },
+          experimentalClaudeOpenAiChatEnabled: true,
+          projectsDir: '~/Code',
+        },
+      })
+
+      const { automation } = await client.rpc<{ automation: { id: string; projectId: string } }>('automation.create', {
+        projectId: 'p1', name: 'Nightly', prompt: 'Run the tests', agentConfig: { type: 'claude', model: 'claude-opus' }, schedule: { type: 'recurring', cron: '0 3 * * *' },
+      })
+      expect(automation.projectId).toBe('p1')
+      expect(await client.rpc('automation.list', { projectId: 'p1' })).toMatchObject({ automations: [{ id: automation.id, name: 'Nightly' }] })
+      expect(await client.rpc('automation.runNow', { automationId: automation.id })).toEqual({ automationId: automation.id, status: 'completed', sessionId: 's-auto' })
+      expect(runNow).toHaveBeenCalledWith(automation.id)
+
+      expect(await client.rpc('harness.enable', { harnessId: 'claude' })).toMatchObject({ id: 'claude' })
+      expect(enableHarness.mock.calls[0][1]).toMatchObject({ harnessId: 'claude' })
+      expect(await client.rpc('harness.disable', { harnessId: 'claude' })).toMatchObject({ id: 'claude' })
+      expect(await client.rpc('sandbox.probe')).toMatchObject({ ok: expect.any(Boolean), platform: process.platform })
+    } finally {
+      db.close()
     }
   })
 })

@@ -23,6 +23,12 @@ export interface AutomationRunEvent {
   projectPath?: string
 }
 
+/** How one run ended. */
+export interface AutomationRunResult {
+  status: Extract<AutomationRunStatus, 'completed' | 'error'>
+  sessionId?: string
+}
+
 /** Payload for AUTOMATIONS_CHANGED — list create/update/delete. */
 export interface AutomationsListChangedEvent {
   /** When set, only sidebars for this project need to re-list. Omit = refresh all. */
@@ -39,6 +45,12 @@ export function bindAutomationService(service: AutomationService): void {
 /** Broadcast list mutation so open sidebars re-fetch (MCP + IPC + one-time disable). */
 export function notifyAutomationsListChanged(projectPath?: string): void {
   boundService?.notifyListChanged(projectPath)
+}
+
+/** Run an automation now on the bound scheduler, for a node client's `automation.runNow`. */
+export function runAutomationNow(automationId: string): Promise<AutomationRunResult> {
+  if (!boundService) throw new Error('automation service is not bound')
+  return boundService.runNow(automationId)
 }
 
 export class AutomationService {
@@ -83,13 +95,14 @@ export class AutomationService {
     this.runningAutomations.clear()
   }
 
-  async runNow(automationId: string): Promise<void> {
+  /** Run now and settle with how the run ended. */
+  async runNow(automationId: string): Promise<AutomationRunResult> {
     const automation = getAutomation(automationId)
-    if (!automation) throw new Error(`Automation not found: ${automationId}`)
+    if (!automation) throw Object.assign(new Error(`Automation not found: ${automationId}`), { code: 'not_found' })
     if (this.runningAutomations.has(automationId)) {
-      throw new Error(`Automation already running: ${automationId}`)
+      throw Object.assign(new Error(`Automation already running: ${automationId}`), { code: 'failed_precondition' })
     }
-    await this.executeAutomation(automation)
+    return this.executeAutomation(automation)
   }
 
   private checkDueAutomations(): void {
@@ -107,13 +120,13 @@ export class AutomationService {
     }
   }
 
-  private async executeAutomation(automation: Automation): Promise<void> {
+  private async executeAutomation(automation: Automation): Promise<AutomationRunResult> {
     if (!this.agentService) {
       log.error('[AutomationService] agentService not set')
-      return
+      return { status: 'error' }
     }
 
-    await this.withLifecycle(automation, async () => {
+    return this.withLifecycle(automation, async () => {
       // Unified SessionManager path for all harnesses (claude / codex / acp / opencode).
       // Codex historically returns after send starts (no turn-complete wait);
       // other harnesses wait for message_complete / error on the session.
@@ -161,7 +174,7 @@ export class AutomationService {
   private async withLifecycle(
     automation: Automation,
     runner: () => Promise<string | undefined>,
-  ): Promise<void> {
+  ): Promise<AutomationRunResult> {
     this.runningAutomations.add(automation.id)
     updateAutomationRunStatus(automation.id, 'running')
     this.broadcastEvent({
@@ -188,6 +201,7 @@ export class AutomationService {
       })
       this.notifySessionsChanged()
       log.info(`[AutomationService] completed automation: ${automation.name} (session: ${sessionId})`)
+      return { status: 'completed', sessionId }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err)
       log.error(`[AutomationService] error in automation ${automation.id}:`, errorMsg)
@@ -199,6 +213,7 @@ export class AutomationService {
         error: errorMsg,
         projectPath: automation.projectPath,
       })
+      return { status: 'error', sessionId }
     } finally {
       this.runningAutomations.delete(automation.id)
     }

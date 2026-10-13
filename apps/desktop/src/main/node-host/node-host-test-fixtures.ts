@@ -31,6 +31,16 @@ export const AGENT_PROFILES: SessionAgentProfile[] = [{
   apiProviders: [{ id: 'cred-b', name: 'Anthropic', keyName: 'Team key' }],
 }]
 
+/** B's harness hooks, without probing, installing or switching a real harness. */
+export function testHarnessHooks(): DesktopDomainDeps['hooks'] {
+  return {
+    probeHarnessReadiness: () => ({ ok: true }) as never,
+    assertSessionHarnessRuntimeReady: () => ({ ok: true, reason: 'test' }),
+    enableHarness: async (harnesses, input) => harnesses.get(input.harnessId),
+    disableHarness: (harnesses, id) => harnesses.get(id),
+  }
+}
+
 /** A desktop Session stand-in: records the owner and answers a turn with canned events. */
 export class FakeSession {
   readonly lease: SessionLease
@@ -207,10 +217,7 @@ export async function startTestDesktopNode(input: { userDataDir: string; project
       userDataDir: input.userDataDir, label: 'Desktop B', appVersion: '0.0.0-test', sessions,
       store, rows: store.all, projects, harnesses,
       listAgentProfiles: () => AGENT_PROFILES,
-      hooks: {
-        probeHarnessReadiness: () => ({ ok: true }) as never,
-        assertSessionHarnessRuntimeReady: () => ({ ok: true, reason: 'test' }),
-      },
+      hooks: testHarnessHooks(),
     },
     input.listen,
   )

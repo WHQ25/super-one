@@ -187,8 +187,11 @@ export function TurnDetailSection({ runs, stats, workingSince, className, animat
       {runs.map((run) =>
         run.collapsible && animate ? (
           <TurnDetailRegion key={run.key} expanded={expanded}>{run.content}</TurnDetailRegion>
+        ) : run.collapsible && !expanded ? (
+          // A collapsed region's box, so pinned content after it spaces the same (`chat-md.css`).
+          <div key={run.key} data-expanded="false" className="turn-detail-region grid" />
         ) : (
-          <Fragment key={run.key}>{!run.collapsible || expanded ? run.content : null}</Fragment>
+          <Fragment key={run.key}>{run.content}</Fragment>
         ),
       )}
     </>

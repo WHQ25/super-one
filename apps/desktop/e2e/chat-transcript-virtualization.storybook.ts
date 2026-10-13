@@ -83,6 +83,35 @@ test('spaces narration under reasoning the same across virtual turn chunks', asy
   expect(new Set(gaps.map(item => item.gap)).size).toBe(1)
 })
 
+test('spaces a long turn as if its virtual chunks were absent', async ({ page }) => {
+  for (const story of ['codex-reasoning-narration', 'codex-long-turn']) {
+    await open(page, story)
+    await page.locator(viewport).evaluate(el => { el.scrollTop = 0 })
+    await page.waitForTimeout(600)
+    const margins = await page.evaluate(() => {
+      const reply = [...document.querySelectorAll('.assistant-reply')].find(el => el.querySelector('[data-virtual-segment]'))!
+      const texts = [...reply.querySelectorAll<HTMLElement>('.chat-md')]
+      texts.forEach((text, index) => { text.dataset.probe = String(index) })
+      // The same segments as direct children of the reply, as shorter turns draw them.
+      const flat = reply.cloneNode(true) as HTMLElement
+      for (const chunk of [...flat.querySelectorAll('[data-virtual-segment]')]) chunk.replaceWith(...(chunk.firstElementChild?.children ?? []))
+      reply.after(flat)
+      return texts.map(text => [getComputedStyle(text).marginTop, getComputedStyle(flat.querySelector(`[data-probe="${text.dataset.probe}"]`)!).marginTop])
+    })
+    expect(margins.length).toBeGreaterThan(2)
+    for (const [chunked, flat] of margins) expect(chunked).toBe(flat)
+  }
+})
+
+test('caps every pinned narration under collapsed process in a long compact turn', async ({ page }) => {
+  await open(page, 'codex-long-turn')
+  await page.locator(viewport).evaluate(el => { el.scrollTop = 0 })
+  await page.waitForTimeout(600)
+  const margins = await page.locator('.assistant-reply .chat-md').evaluateAll(texts => texts.map(text => getComputedStyle(text).marginTop))
+  expect(margins.length).toBeGreaterThan(2)
+  expect(new Set(margins).size).toBe(1)
+})
+
 test('spaces virtual markdown blocks exactly like the unwrapped reply', async ({ page }) => {
   await open(page, 'long-history')
   const { virtual, plain } = await page.evaluate(() => {

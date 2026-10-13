@@ -30,8 +30,8 @@ describe('dismissed async questions in the transcript', () => {
     const segments = transcriptSegments(messages)
     expect(segments.map(segment => segment.id)).toEqual(['turn'])
     expect(segments[0].message.metadata?.codex?.items.map(item => item.id)).toEqual(['before', 'question', 'after'])
-    expect(extractTurnOutline(messages).map(entry => entry.id)).toEqual(['turn'])
-    expect(extendHistoryIndex({ messageIds: [], entries: [], compacts: [] }, messages).entries.map(entry => entry.id)).toEqual(['turn'])
+    expect(extractTurnOutline(messages)).toEqual([])
+    expect(extendHistoryIndex({ messageIds: [], entries: [], compacts: [] }, messages).entries).toEqual([])
     expect(messages).toHaveLength(2)
   })
 

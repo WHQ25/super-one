@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { findActiveTurnId, tickWidth } from '@superone/shared/chat-scroll-indicator'
 import type { TurnOutlineEntry } from '@superone/shared/turn-outline'
 import type { ChatWindowRange } from './chat-window'
@@ -28,6 +29,8 @@ export const ChatScrollIndicator = memo(function ChatScrollIndicator({
   const drag = useRef<{ pointerId: number; y: number; index: number } | null>(null)
   const dragFrame = useRef(0)
   const ticks = useMemo<Tick[]>(() => entries.map(entry => ({ entry })), [entries])
+  const { t } = useTranslation()
+  const labelOf = (entry: TurnOutlineEntry): string => entry.kind === 'compact' ? t('chat.compaction.compacted') : entry.text
 
   useEffect(() => {
     let frame = 0
@@ -136,9 +139,10 @@ export const ChatScrollIndicator = memo(function ChatScrollIndicator({
   if (entries.length <= 1) return null
   const selected = preview ? ticks[preview.index] : null
   const previewEntry = selected && 'entry' in selected ? selected.entry : null
-  const newline = previewEntry?.text.indexOf('\n') ?? -1
-  const title = previewEntry ? (newline < 0 ? previewEntry.text : previewEntry.text.slice(0, newline)) : ''
-  const summary = previewEntry && newline >= 0 ? previewEntry.text.slice(newline + 1).trim() : ''
+  const previewText = previewEntry ? labelOf(previewEntry) : ''
+  const newline = previewText.indexOf('\n')
+  const title = newline < 0 ? previewText : previewText.slice(0, newline)
+  const summary = newline >= 0 ? previewText.slice(newline + 1).trim() : ''
 
   // `preview` is set by touch scrubbing, mouse hover and keyboard focus alike, so
   // it doubles as the "user is on the rail" signal that widens the overlay.
@@ -206,8 +210,8 @@ export const ChatScrollIndicator = memo(function ChatScrollIndicator({
         const distance = previewEntry && preview ? Math.abs(index - preview.index) : null
         return <button type="button" key={entry.id} data-outline-index={index}
           data-tick={entry.id}
-          aria-label={entry.text} aria-current={active ? 'step' : undefined}
-          className="chat-scroll-tick"
+          aria-label={labelOf(entry)} aria-current={active ? 'step' : undefined}
+          className="chat-scroll-tick" data-kind={entry.kind}
           onPointerEnter={(event) => { if (event.pointerType === 'mouse') showPreview(index, event.currentTarget) }}
           onPointerLeave={(event) => { if (event.pointerType === 'mouse') setPreview(null) }}
           onFocus={(event) => showPreview(index, event.currentTarget)} onBlur={() => setPreview(null)}

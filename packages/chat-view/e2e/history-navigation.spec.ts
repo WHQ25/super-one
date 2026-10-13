@@ -17,8 +17,9 @@ async function open(page: Page, opts: { failWindow?: boolean; holdWindow?: boole
     host.holdWindow = opts.holdWindow
     host.holdIndex = opts.holdIndex
     host.failIndex = opts.failIndex
-    host.index = { messageIds: messages.map(m => m.id), entries: messages.filter(m => m.providerId !== 'system').map(m => ({
-      id: m.id, index: Number(m.id.slice(1)), text: `Question ${m.id.slice(1)}`, createdAt: '', reply: 'Short reply preview' })),
+    host.index = { messageIds: messages.map(m => m.id), entries: messages.filter(m => m.role === 'user' || m.providerId === 'system').map(m => m.providerId === 'system'
+      ? { id: m.id, kind: 'compact', index: Number(m.id.slice(1)), text: '', createdAt: '' }
+      : { id: m.id, index: Number(m.id.slice(1)), text: `Question ${m.id.slice(1)}`, createdAt: '', reply: 'Short reply preview' }),
       compacts: opts.compacts ? [{ id: 'm15', index: 15 }, { id: 'm55', index: 55 }] : [] }
     host.ReactNativeWebView = { postMessage(raw: string) {
       const request = JSON.parse(raw)
@@ -51,7 +52,7 @@ const calls = (page: Page) => page.evaluate(() => (window as any).calls.filter((
 
 test('shows the complete outline with only the latest eight messages mounted', async ({ page }) => {
   await open(page)
-  await expect(page.locator('[data-tick]')).toHaveCount(100)
+  await expect(page.locator('[data-tick]')).toHaveCount(50)
   await expect(page.locator('main')).toHaveAttribute('data-mounted-turns', '8')
   await expect(page.locator('[data-turn-id="m99"]')).toBeInViewport()
   expect(await calls(page)).toEqual([])
@@ -68,7 +69,7 @@ test('jumps directly to an unloaded turn and then loads its preceding page', asy
   await page.getByRole('button', { name: 'Load earlier' }).evaluate((element: HTMLElement) => element.click())
   await expect.poll(() => calls(page)).toContainEqual({ anchorId: 'm18', direction: 'before' })
   await expect(page.locator('[data-turn-id="m10"]')).toHaveCount(1)
-  await expect(page.locator('[data-tick]')).toHaveCount(100)
+  await expect(page.locator('[data-tick]')).toHaveCount(50)
 })
 
 test('scrolling down from an old page loads adjacent history instead of skipping to the latest page', async ({ page }) => {
@@ -96,7 +97,7 @@ test('live updates preserve the historical reading position and extend the full 
       { ...host.rows[0], id: 'm100', content: [{ type: 'text', text: 'Newest question' }] },
     ], messageOrder: [...host.rows.slice(18,26).map((m: any) => m.id), ...host.rows.slice(92).map((m: any) => m.id), 'm100'] })
   })
-  await expect(page.locator('[data-tick]')).toHaveCount(101)
+  await expect(page.locator('[data-tick]')).toHaveCount(51)
   await expect(page.locator('[data-turn-id="m20"]')).toBeInViewport()
   expect(Math.abs(await page.locator('[data-turn-id="m20"]').evaluate(el => el.getBoundingClientRect().top) - before)).toBeLessThan(2)
 })
@@ -131,14 +132,14 @@ test('the first paint does not wait for the navigation index', async ({ page }) 
   await open(page, { holdIndex: true })
   await expect(page.locator('[data-turn-id="m99"]')).toBeInViewport()
   await page.evaluate(() => { const host = window as any; for (const response of host.responses) host.__applyHost(response) })
-  await expect(page.locator('[data-tick]')).toHaveCount(100)
+  await expect(page.locator('[data-tick]')).toHaveCount(50)
   expect(await calls(page)).toEqual([])
 })
 
 test('pages and jumps across unloaded compactions without an expansion control', async ({ page }) => {
   await open(page, { compacts: true })
-  await expect(page.locator('[data-compact-tick]')).toHaveCount(0)
-  await expect(page.locator('[data-tick]')).toHaveCount(98)
+  await expect(page.locator('[data-kind="compact"]')).toHaveCount(2)
+  await expect(page.locator('[data-tick]')).toHaveCount(52)
   await jump(page, 'm54')
   await expect(page.locator('[data-turn-id="m55"]')).toHaveCount(1)
   await expect(page.getByRole('button', { name: /Show history|Hide history/ })).toHaveCount(0)
@@ -167,7 +168,7 @@ test('a slower previous jump cannot override the most recent selected tick', asy
 
 test('paging upward still reveals older rows after reaching the forty-row ceiling', async ({ page }) => {
   await open(page)
-  await expect(page.locator('[data-tick]')).toHaveCount(100)
+  await expect(page.locator('[data-tick]')).toHaveCount(50)
   for (let i = 0; i < 6; i++) {
     await page.getByRole('button', { name: 'Load earlier' }).evaluate((element: HTMLElement) => element.click())
     await expect.poll(async () => (await calls(page)).filter((call: any) => call.direction === 'before').length).toBe(i + 1)
@@ -215,9 +216,9 @@ test('a failed index shows nothing and is asked for again on the next reach for 
   await open(page, { failIndex: true })
   await expect(page.locator('[data-turn-id="m99"]')).toBeInViewport()
   // Only the mounted page's own outline, and no banner anywhere.
-  await expect(page.locator('[data-tick]')).toHaveCount(8)
+  await expect(page.locator('[data-tick]')).toHaveCount(4)
   await expect(page.getByRole('status')).toHaveCount(0)
   await page.evaluate(() => { (window as any).failIndex = false })
   await page.getByRole('button', { name: 'Load earlier' }).evaluate((element: HTMLElement) => element.click())
-  await expect(page.locator('[data-tick]')).toHaveCount(100)
+  await expect(page.locator('[data-tick]')).toHaveCount(50)
 })

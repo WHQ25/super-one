@@ -141,7 +141,7 @@ describe('transcript segmentation at live boundaries', () => {
     expect(transcriptSegments(messages).map(segment => segment.id))
       .toEqual(['race-turn', answer.id, boundary.id, 'race-turn:after:race-compact'])
     expect(extendHistoryIndex({ messageIds: [], entries: [], compacts: [] }, messages).entries.map(entry => entry.id))
-      .toEqual(['race-turn', answer.id, 'race-turn:after:race-compact'])
+      .toEqual([answer.id, boundary.id])
   })
 
   it('keeps late tool results with their pre-compaction call and never duplicates projected reasoning', () => {

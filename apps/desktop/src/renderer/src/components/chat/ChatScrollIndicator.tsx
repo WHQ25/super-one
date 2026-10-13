@@ -1,4 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef, memo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { AnimatePresence, motion } from 'motion/react'
 import { cn } from '@superone/ui/lib/utils'
 import type { TurnOutlineEntry } from './turn-outline'
@@ -33,6 +34,8 @@ function ChatScrollIndicatorImpl({ entries, viewportRef, getMessageTop, onJump }
   entriesRef.current = entries
   const elCacheRef = useRef(new Map<string, HTMLElement>())
   const [previewTop, setPreviewTop] = useState<number | null>(null)
+  const { t } = useTranslation()
+  const labelOf = (entry: TurnOutlineEntry): string => entry.kind === 'compact' ? t('chat.compaction.compacted') : entry.text
 
   const clampCenter = useCallback((rawTop: number, el: HTMLElement | null): number => {
     const outer = outerRef.current
@@ -151,7 +154,7 @@ function ChatScrollIndicatorImpl({ entries, viewportRef, getMessageTop, onJump }
         key={entry.id}
         type="button"
         data-tick={entry.id}
-        aria-label={entry.text}
+        aria-label={labelOf(entry)}
         aria-current={isActive ? 'step' : undefined}
         onMouseEnter={(ev) => setHovered({ index: i, top: centerTop(ev.currentTarget) })}
         onMouseLeave={() => setHovered((h) => (h?.index === i ? null : h))}
@@ -210,7 +213,7 @@ function ChatScrollIndicatorImpl({ entries, viewportRef, getMessageTop, onJump }
             className="pointer-events-none absolute right-9 w-64 -translate-y-1/2 rounded-lg border border-border bg-popover p-2.5 text-popover-foreground shadow-lg"
           >
             {(() => {
-              const { title, summary } = splitTitle(preview.text)
+              const { title, summary } = splitTitle(labelOf(preview))
               return (
                 <>
                   <p className="line-clamp-1 text-xs font-medium">{title}</p>

@@ -39,7 +39,7 @@ test.beforeEach(async ({ page, browserName }) => {
 
 test('previews the desktop outline in both themes and jumps outside the mounted window', async ({ page }, info) => {
   await send(page, { type: 'hydrate', messages: conversation(100) })
-  await expect(page.locator('[data-tick]')).toHaveCount(200)
+  await expect(page.locator('[data-tick]')).toHaveCount(100)
   await expect(page.locator('[data-turn-id="u4"]')).toHaveCount(0)
   const scrollY = await page.evaluate(() => window.scrollY)
   await tick(page, 'u4').hover()
@@ -54,7 +54,7 @@ test('previews the desktop outline in both themes and jumps outside the mounted 
   }
   await tick(page, 'u4').click()
   await expect.poll(async () => Math.abs(await targetTop(page, 'u4'))).toBeLessThan(16)
-  await expect(tick(page, 'a4')).toHaveAttribute('aria-current', 'step')
+  await expect(tick(page, 'u4')).toHaveAttribute('aria-current', 'step')
   expect(await page.locator('[data-turn-id]').count()).toBeLessThanOrEqual(40)
 })
 
@@ -69,7 +69,7 @@ test('holds the reading position when a historical turn is open during streaming
     content: [{ type: 'text', text: 'New streaming answer '.repeat(200) }] }], sessionStatus: 'streaming' })
   await page.waitForTimeout(300)
   expect(Math.abs(await targetTop(page, 'u2') - before)).toBeLessThan(2)
-  await expect(tick(page, 'a2')).toHaveAttribute('aria-current', 'step')
+  await expect(tick(page, 'u2')).toHaveAttribute('aria-current', 'step')
 })
 
 test('automatic streaming follows the answer without ever revealing the scrollbar', async ({ page }, info) => {
@@ -161,12 +161,19 @@ test('a touch swipe reveals the scrollbar but a tap and session replacement do n
   await expect(scrollbar).toHaveAttribute('data-visible', 'false')
 })
 
-test('keeps compacted history navigable without a compact tick or disclosure', async ({ page }) => {
+test('ticks user messages and the compaction point, without a disclosure', async ({ page }) => {
   const turns = conversation(12)
   turns.splice(12, 0, message('compact', 'assistant', '__compact__:auto:12000', 'system'))
   await send(page, { type: 'hydrate', messages: turns })
-  await expect(page.locator('[data-tick]')).toHaveCount(24)
-  await expect(page.locator('[data-compact-tick]')).toHaveCount(0)
+  await expect(page.locator('[data-tick]')).toHaveCount(13)
+  await expect(page.locator('[data-tick]').nth(6)).toHaveAttribute('data-tick', 'compact')
+  await expect(tick(page, 'compact')).toHaveAttribute('data-kind', 'compact')
+  await tick(page, 'compact').focus()
+  await expect(page.getByRole('tooltip').locator('.chat-scroll-preview-title')).toHaveText('Conversation Compacted')
+  // A user message follows this compaction directly, so it previews no reply.
+  await expect(page.getByRole('tooltip').locator('.chat-scroll-preview-reply')).toHaveCount(0)
+  await tick(page, 'compact').click()
+  await expect.poll(async () => Math.abs(await targetTop(page, 'compact'))).toBeLessThan(16)
   await tick(page, 'u0').click()
   await expect.poll(async () => Math.abs(await targetTop(page, 'u0'))).toBeLessThan(16)
   await expect(page.getByRole('button', { name: /Show history|Hide history/ })).toHaveCount(0)
@@ -190,7 +197,7 @@ test('hides a single-turn rail and resets the outline on session replacement', a
 for (const providerId of ['claude', 'codex', 'opencode', 'acp', 'cursor', 'dsh'] as const) {
   test(`renders the same rail for a ${providerId} session`, async ({ page }) => {
     await send(page, { type: 'hydrate', messages: conversation(6, providerId) })
-    await expect(page.locator('.chat-scroll-tick')).toHaveCount(12)
+    await expect(page.locator('.chat-scroll-tick')).toHaveCount(6)
     await tick(page, 'u2').focus()
     await expect(page.getByRole('tooltip')).toContainText('Question 2')
     await tick(page, 'u2').click()
@@ -203,11 +210,11 @@ test('supports keyboard preview and navigation without moving the transcript on 
   const before = await page.evaluate(() => window.scrollY)
   await tick(page, 'u3').focus()
   await page.keyboard.press('ArrowDown')
-  await expect(tick(page, 'a3')).toBeFocused()
-  await expect(page.getByRole('tooltip')).toContainText('Answer 3')
+  await expect(tick(page, 'u4')).toBeFocused()
+  await expect(page.getByRole('tooltip')).toContainText('Question 4')
   expect(await page.evaluate(() => window.scrollY)).toBe(before)
   await page.keyboard.press('Enter')
-  await expect.poll(async () => Math.abs(await targetTop(page, 'a3'))).toBeLessThan(16)
+  await expect.poll(async () => Math.abs(await targetTop(page, 'u4'))).toBeLessThan(16)
 })
 
 test('touch drag previews under the finger and jumps on release; cancellation does not jump', async ({ page }) => {
@@ -228,7 +235,7 @@ test('touch drag previews under the finger and jumps on release; cancellation do
   await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] })
   await client.send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] })
   await expect(page.getByRole('tooltip')).toHaveCount(0)
-  await expect(tick(page, 'a6')).toHaveAttribute('aria-current', 'step')
+  await expect(tick(page, 'u6')).toHaveAttribute('aria-current', 'step')
 })
 
 test('pages beyond forty messages in both directions after a jump', async ({ page }) => {
@@ -268,12 +275,12 @@ test('touch scrubbing scrolls an overflowing tick strip without moving the trans
   expect(await page.locator('[data-turn-id]').count()).toBeLessThanOrEqual(40)
 })
 
-test('places both compactions within one reply and leaves them out of the rail', async ({ page }) => {
+test('places both compactions within one reply and ticks each of them', async ({ page }) => {
   await send(page, { type: 'hydrate', messages: segmentationHistory(false) })
   const ids = ['segmented-turn', 'first-compact', 'segmented-turn:after:first-compact', 'second-compact', 'segmented-turn:after:second-compact']
   await expect.poll(() => page.locator('[data-turn-id]').evaluateAll(elements => elements.map(element => (element as HTMLElement).dataset.turnId))).toEqual(ids)
-  await expect(page.locator('[data-tick]')).toHaveCount(3)
-  await expect(page.locator('[data-compact-tick]')).toHaveCount(0)
+  await expect.poll(() => page.locator('[data-tick]').evaluateAll(elements => elements.map(element => (element as HTMLElement).dataset.tick)))
+    .toEqual(['first-compact', 'second-compact'])
   await expect(page.getByRole('button', { name: /Show history|Hide history/ })).toHaveCount(0)
   await expect(page.locator('[data-turn-id="segmented-turn"]')).toContainText('Before the first compaction.')
   await expect(page.locator('[data-turn-id="segmented-turn:after:first-compact"]')).toContainText('Between both compactions.')
@@ -291,6 +298,7 @@ test('opens a continuation immediately after an async answer and keeps resumed o
   await send(page, { type: 'applyReductionPatch', messages: [completed, answer], sessionStatus: 'idle' })
   await expect(page.locator(`[data-turn-id="${continuation}"]`)).toContainText('After the answer: inspecting production.')
   await expect(page.locator('[data-turn-id="segmented-turn"]')).not.toContainText('After the answer')
-  await expect(page.locator(`[data-tick="${continuation}"]`)).toHaveCount(1)
+  // The answer is the only user message, so the rail stays hidden; the continuation never gets a tick.
+  await expect(page.locator('[data-tick]')).toHaveCount(0)
   await expect(page.locator(`[data-turn-id="${answer!.id}"]`)).toContainText('Production')
 })

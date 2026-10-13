@@ -3,7 +3,7 @@ import { loadHistoryOutlineMessages } from './history-outline-projection'
 import { getDb } from '../database'
 import { loadSessionMessagesPaginated } from '../db-sessions'
 
-/** Navigation includes every content segment while SQLite bounds its text previews. */
+/** Navigation lists user messages and compaction points while SQLite bounds its text previews. */
 export function loadSessionHistoryIndex(sessionId: string): SessionHistoryIndex {
   return extendHistoryIndex({ messageIds: [], entries: [], compacts: [] }, loadHistoryOutlineMessages(sessionId))
 }

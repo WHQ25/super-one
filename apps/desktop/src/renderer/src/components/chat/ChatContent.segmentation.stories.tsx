@@ -4,10 +4,15 @@ import { compactProcessHistory, segmentationHistory } from '@superone/chat-view/
 import { TooltipProvider } from '@superone/ui/components/ui/tooltip'
 import { ChatContent } from './ChatContent'
 import { mockTranscriptIpc } from './chat-transcript-story-mocks'
+import type { ChatMessage } from '@superone/shared/agent-types'
 import { createDefaultPerSessionState, createDefaultProjectState, useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 
 mockTranscriptIpc()
+
+// The rail ticks user messages and compaction points; this question gives it a user tick above both compactions.
+const question: ChatMessage = { id: 'segmented-question', role: 'user', status: 'complete', providerId: 'claude', createdAt: '',
+  content: [{ type: 'text', text: 'Finish the migration and keep going through compaction.' }] }
 
 
 function SegmentationPreview({ codex = false, narrow = false, process = false }: { codex?: boolean; narrow?: boolean; process?: boolean }) {
@@ -18,7 +23,7 @@ function SegmentationPreview({ codex = false, narrow = false, process = false }:
     const app = useAppStore.getState()
     const project = createDefaultProjectState()
     project._activeSessionId = 'segmentation'
-    project._sessions = { segmentation: { ...createDefaultPerSessionState(), sessionProvider: codex || process ? 'codex' : 'claude', messages: process ? compactProcessHistory() : segmentationHistory(codex) } }
+    project._sessions = { segmentation: { ...createDefaultPerSessionState(), sessionProvider: codex || process ? 'codex' : 'claude', messages: process ? compactProcessHistory() : codex ? segmentationHistory(codex) : [question, ...segmentationHistory(codex)] } }
     useChatStore.setState({ activeProject: '__segmentation__', projectSessions: { ...previous.projectSessions, __segmentation__: project } })
     useAppStore.setState({ detailChatMode: !process })
     setReady(true)

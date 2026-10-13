@@ -1,9 +1,12 @@
 import { codexAsyncAnswerQuestions, isCodexAsyncAnswer } from './codex-async-question'
 import type { ChatMessage } from './agent-types'
+import { parseCompactMarker } from './transcript-markers'
 import { transcriptSegments, type TranscriptSegment } from './transcript-segments'
 
 export interface TurnOutlineEntry {
   id: string
+  /** A compaction point; its label comes from the client's translations. */
+  kind?: 'compact'
   index: number
   text: string
   createdAt: string
@@ -36,23 +39,40 @@ function textOf(message: ChatMessage): string {
     .trim().slice(0, 160)
 }
 
+/**
+ * One tick per user message and compaction point. Assistant text is never a
+ * tick: the first text after an entry previews as that entry's reply.
+ */
 export function extractTurnOutline(messages: readonly ChatMessage[], segments: readonly TranscriptSegment[] = transcriptSegments(messages)): TurnOutlineEntry[] {
   const positions = new Map(messages.map((message, index) => [message.id, index]))
   const entries: TurnOutlineEntry[] = []
-  let open: TurnOutlineEntry | null = null
+  // Entries since the last user message still waiting for their reply.
+  let awaiting: TurnOutlineEntry[] = []
   for (const segment of segments) {
     const message = segment.message
-    if (message.providerId === 'system' || (message.role !== 'user' && message.role !== 'assistant')) continue
-    const text = textOf(message) || message.content.flatMap(block => 'toolName' in block ? [block.toolName] : []).join('\n')
-    if (!text) continue
+    const compact = parseCompactMarker(message) !== null
+    if (message.role === 'assistant' && message.providerId !== 'system') {
+      const reply = awaiting.length ? textOf(message) : ''
+      if (reply) {
+        for (const entry of awaiting) entry.reply = reply
+        awaiting = []
+      }
+      continue
+    }
+    if (!compact && (message.role !== 'user' || message.providerId === 'system')) continue
+    const text = compact ? '' : textOf(message)
+    if (!compact && !text) {
+      awaiting = []
+      continue
+    }
     const entry: TurnOutlineEntry = {
-      id: segment.id, messageId: segment.source.id, messageIndex: positions.get(segment.source.id)!,
+      id: segment.id, ...(compact ? { kind: 'compact' as const } : {}),
+      messageId: segment.source.id, messageIndex: positions.get(segment.source.id)!,
       anchorId: segment.anchorId, offset: segment.offset,
       index: positions.get(segment.anchorId) ?? positions.get(segment.source.id)!,
       text, createdAt: message.createdAt,
     }
-    if (message.role === 'user') open = entry
-    else if (open && open.reply === undefined) open.reply = text
+    awaiting = compact ? [...awaiting, entry] : [entry]
     entries.push(entry)
   }
   return entries

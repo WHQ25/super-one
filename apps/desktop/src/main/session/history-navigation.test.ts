@@ -39,7 +39,7 @@ describe('history navigation database projection', () => {
     db.prepare('UPDATE chat_messages SET content_json = ? WHERE id = ?').run(JSON.stringify([{ type: 'text', text: 'x'.repeat(10000) }]), 'm1')
     const index = loadSessionHistoryIndex('s')
     expect(index.messageIds).toHaveLength(100)
-    expect(index.entries).toHaveLength(100)
+    expect(index.entries).toHaveLength(50)
     expect(index.entries[0]).toMatchObject({ id: 'm0', index: 0, text: 'Question 0', reply: 'x'.repeat(160) })
     expect(JSON.stringify(index)).not.toMatch(/SECRET_REASONING|SECRET_TOOL/)
     expect(JSON.stringify(index).length).toBeLessThan(30000)
@@ -61,23 +61,23 @@ describe('history navigation database projection', () => {
     db.prepare('UPDATE chat_messages SET id = ? WHERE id = ?').run('codex_async_answer:q', 'm6')
     const index = loadSessionHistoryIndex('s')
     expect(index.compacts).toEqual([{ id: 'm5', index: 5 }])
-    expect(index.entries).toHaveLength(99)
+    expect(index.entries).toHaveLength(51)
+    expect(index.entries.find(entry => entry.id === 'm5')).toMatchObject({ kind: 'compact', index: 5 })
     expect(index.entries.find(entry => entry.id === 'codex_async_answer:q')).toMatchObject({
       index: 6, text: 'Question 6', reply: 'Reply 7',
     })
   })
-  it('indexes every Codex segment around an async answer using bounded metadata previews', () => {
+  it('indexes an async answer with its continuation as the reply from bounded metadata previews', () => {
     const insert = db.prepare('INSERT INTO chat_messages VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)')
     const messages = segmentationHistory(true)
     messages.forEach((message, index) => insert.run('segmented', message.id, index, message.role, message.status,
       JSON.stringify({ content: message.content }), message.createdAt, message.providerId, JSON.stringify(message.metadata ?? {})))
     const index = loadSessionHistoryIndex('segmented')
-    expect(index.entries.map(entry => entry.id)).toEqual(['segmented-turn', 'codex_async_answer:question',
-      'segmented-turn:after:codex_async_answer:question', 'segmented-turn:segment:final'])
-    expect(index.entries.at(-1)?.text).toBe('The production configuration is ready.')
+    expect(index.entries).toMatchObject([{ id: 'codex_async_answer:question', reply: 'After the answer: inspecting production.' }])
+    expect(index.entries).toHaveLength(1)
     expect(JSON.stringify(index)).not.toContain('Configuration verified.')
   })
-  it('previews each interval after compaction even when a single text block is long and contains emoji', () => {
+  it('indexes compaction points and previews the reply before them when a single text block is long and contains emoji', () => {
     const source: ChatMessage = { id: 'source', role: 'assistant', status: 'streaming', providerId: 'claude', createdAt: '',
       content: [{ type: 'text', text: 'Before🙂'.repeat(250) }] }
     const event = { type: 'compact_boundary' as const, trigger: 'auto' as const, preTokens: 100 }
@@ -86,12 +86,13 @@ describe('history navigation database projection', () => {
     const second = buildCompactBoundaryMessage(event, 'second', '', source, [first, source])
     source.content = [{ type: 'text', text: 'Before🙂'.repeat(250) + 'Middle🧠'.repeat(300) + 'After🦊'.repeat(400) }]
     const insert = db.prepare('INSERT INTO chat_messages VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)')
-    ;[first, second, source].forEach((message, index) => insert.run('long', message.id, index, message.role, message.status,
+    const question: ChatMessage = { id: 'question', role: 'user', status: 'complete', providerId: 'claude', createdAt: '', content: [{ type: 'text', text: 'Go' }] }
+    ;[question, first, second, source].forEach((message, index) => insert.run('long', message.id, index, message.role, message.status,
       JSON.stringify({ content: message.content }), '', message.providerId, JSON.stringify(message.metadata ?? {})))
     const index = loadSessionHistoryIndex('long')
-    expect(index.entries.map(entry => entry.id)).toEqual(['source', 'source:after:first', 'source:after:second'])
-    expect(index.entries.map(entry => entry.text.slice(0, 8))).toEqual(['Before🙂', 'Middle🧠', 'After🦊A'])
-    expect(index.entries.every(entry => entry.text.length <= 160)).toBe(true)
+    expect(index.entries).toMatchObject([{ id: 'question', index: 0 }, { id: 'first', kind: 'compact', index: 3 }, { id: 'second', kind: 'compact', index: 3 }])
+    expect(index.entries.map(entry => entry.reply?.slice(0, 8))).toEqual(['Before🙂', 'Middle🧠', 'After🦊A'])
+    expect(index.entries.every(entry => entry.reply!.length <= 160)).toBe(true)
     expect(JSON.stringify(index).length).toBeLessThan(2000)
   })
 })

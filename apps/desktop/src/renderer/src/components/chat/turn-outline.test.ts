@@ -17,7 +17,7 @@ function msg(over: Partial<ChatMessage>): ChatMessage {
 const text = (t: string): ContentBlock => ({ type: 'text', text: t })
 
 describe('extractTurnOutline', () => {
-  it('extracts user and assistant segments with their own content in order', () => {
+  it('extracts one entry per user message, with the first assistant text as its reply', () => {
     const out = extractTurnOutline([
       msg({ id: 'u1', content: [text('first question')], createdAt: 'a' }),
       msg({ id: 'a1', role: 'assistant', content: [text('answer')] }),
@@ -25,9 +25,9 @@ describe('extractTurnOutline', () => {
     ])
     expect(out).toMatchObject([
       { id: 'u1', index: 0, text: 'first question', createdAt: 'a', reply: 'answer' },
-      { id: 'a1', messageId: 'a1', text: 'answer' },
       { id: 'u2', index: 2, text: 'second question', createdAt: 'b' },
     ])
+    expect(out).toHaveLength(2)
   })
 
   it('attaches the first assistant text reply, skipping intermediate tool messages', () => {
@@ -44,14 +44,23 @@ describe('extractTurnOutline', () => {
     expect(out[0].reply).toBeUndefined()
   })
 
-  it('navigates an assistant segment without a preceding user message', () => {
-    const out = extractTurnOutline([msg({ role: 'assistant', content: [text('hi')] })])
-    expect(out).toMatchObject([{ id: 'm', text: 'hi' }])
+  it('does not add assistant text segments as entries', () => {
+    const out = extractTurnOutline([
+      msg({ id: 'a', role: 'assistant', content: [text('hi'), { type: 'tool_use', toolUseId: 't', toolName: 'Bash', input: '', status: 'complete' } as ContentBlock, text('again')] }),
+    ])
+    expect(out).toEqual([])
   })
 
-  it('excludes compact markers (providerId system)', () => {
+  it('includes compaction points as compact entries', () => {
     const out = extractTurnOutline([
-      msg({ id: 'c', providerId: 'system', content: [text('__compact__:auto:1200')] }),
+      msg({ id: 'c', providerId: 'system', role: 'assistant', content: [text('__compact__:auto:1200')] }),
+    ])
+    expect(out).toMatchObject([{ id: 'c', kind: 'compact', index: 0 }])
+  })
+
+  it('excludes other system markers', () => {
+    const out = extractTurnOutline([
+      msg({ id: 's', providerId: 'system', role: 'assistant', content: [text('__turn_meta__:summary:x')] }),
     ])
     expect(out).toEqual([])
   })
@@ -86,24 +95,35 @@ describe('extractTurnOutline', () => {
   it('keeps the reply search open across a system (compact) message', () => {
     const out = extractTurnOutline([
       msg({ id: 'u', content: [text('q')] }),
-      msg({ id: 'c', providerId: 'system', content: [text('__compact__:auto:1200')] }),
+      msg({ id: 'c', providerId: 'system', role: 'assistant', content: [text('__compact__:auto:1200')] }),
       msg({ id: 'a', role: 'assistant', content: [text('answer')] }),
     ])
-    expect(out).toHaveLength(2)
-    expect(out[0].reply).toBe('answer')
+    expect(out).toMatchObject([{ id: 'u', reply: 'answer' }, { id: 'c', kind: 'compact', reply: 'answer' }])
   })
 
-  it('keeps source positions while excluding compaction from the outline', () => {
+  it('places the compaction point between the turns it separates', () => {
     const messages = [
       msg({ id: 'u1', content: [text('q1')] }),
       msg({ id: 'a1', role: 'assistant', content: [text('a1')] }),
-      msg({ id: 'c', providerId: 'system', content: [text('__compact__:auto:1')] }),
+      msg({ id: 'c', providerId: 'system', role: 'assistant', content: [text('__compact__:auto:1')] }),
       msg({ id: 'u2', content: [text('q2')] }),
     ]
     const out = extractTurnOutline(messages)
-    const compactIdx = 2
-    const recent = out.filter((e) => e.index >= compactIdx).length
-    expect(recent).toBe(1)
-    expect(out.length - recent).toBe(2)
+    expect(out).toMatchObject([
+      { id: 'u1', index: 0, reply: 'a1' },
+      { id: 'c', kind: 'compact', index: 2 },
+      { id: 'u2', index: 3 },
+    ])
+    expect(out[1].reply).toBeUndefined()
+  })
+
+  it('previews the first assistant text after a compaction as its reply', () => {
+    const out = extractTurnOutline([
+      msg({ id: 'u', content: [text('q')] }),
+      msg({ id: 'a1', role: 'assistant', content: [text('before')] }),
+      msg({ id: 'c', providerId: 'system', role: 'assistant', content: [text('__compact__:auto:1')] }),
+      msg({ id: 'a2', role: 'assistant', content: [text('after')] }),
+    ])
+    expect(out).toMatchObject([{ id: 'u', reply: 'before' }, { id: 'c', kind: 'compact', reply: 'after' }])
   })
 })

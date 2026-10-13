@@ -89,7 +89,7 @@ import {
   isModelOnlyTaskNotification,
 } from './task-notification-queue'
 import { ensureShellPath, isShellPathReady } from '../shell-path'
-import { isSameDirectory } from '../project-path'
+import { checkoutRoot, isSameDirectory } from '../project-path'
 import { buildModelFallbackMessage, modelFallbackSignature } from './model-fallback-notification'
 import { buildPluginNoticeMessage, isPluginLogEvent } from './plugin-notice-message'
 import {
@@ -2119,9 +2119,12 @@ export class Session implements SessionContract {
    * or null when the directory did not change.
    */
   private adoptAgentCwd(reportedCwd: string, gitBranch?: string | null): AgentEvent | null {
-    if (this._missingWorktreePath || isSameDirectory(reportedCwd, this._cwd)) return null
-    const atRoot = isSameDirectory(reportedCwd, this.projectPath)
-    const cwd = atRoot ? this.projectPath : reportedCwd
+    if (this._missingWorktreePath) return null
+    // The CLI's cwd also follows a plain Bash `cd`; only moving to another checkout moves the session.
+    const checkout = checkoutRoot(reportedCwd, this.projectPath)
+    if (!checkout || isSameDirectory(checkout, this._cwd)) return null
+    const atRoot = checkout === this.projectPath
+    const cwd = checkout
     log.info('[Session] sid=%s agent moved cwd %s -> %s', this.id, this._cwd, cwd)
     this._cwd = cwd
     this._gitBranch = atRoot ? null : gitBranch ?? null

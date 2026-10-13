@@ -84,7 +84,10 @@ re-check an entry when an upgrade touches its area.
   `originalCwd` as a fallback. The host follows these results without restarting
   the CLI. Subagent worktrees and replayed or failed results do not move the
   main session. The host also reconciles `session_init.session.cwd` so a
-  restored directory does not depend on replaying an earlier tool result.
+  restored directory does not depend on replaying an earlier tool result. That
+  cwd also follows a plain Bash `cd`, so the host resolves it to the checkout it
+  lies in (the project, or a linked worktree root with a `.git` file) and a
+  subdirectory leaves the session where it is.
 - **Observed:** 0.3.296, captured tool-result shapes in
   `packages/claude/src/worktree-cwd.test.ts`.
 - **Depends on it:** `packages/claude/src/worktree-cwd.ts`, desktop

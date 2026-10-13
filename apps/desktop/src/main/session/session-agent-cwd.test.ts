@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -16,7 +16,10 @@ function fixture() {
   dirs.push(root)
   const project = join(root, 'repo')
   const worktree = join(project, '.claude/worktrees/probe')
-  mkdirSync(worktree, { recursive: true })
+  mkdirSync(join(worktree, 'src'), { recursive: true })
+  mkdirSync(join(project, 'apps/desktop'), { recursive: true })
+  // A linked worktree's root holds a `.git` file pointing into the main repository.
+  writeFileSync(join(worktree, '.git'), `gitdir: ${join(project, '.git/worktrees/probe')}\n`)
   let emit!: (event: AgentEvent) => void
   const backend = {
     kind: 'claude', start: vi.fn(async () => {}), send: vi.fn(async (_request: SendMessageRequest) => {}),
@@ -66,5 +69,18 @@ describe('Session follows a working directory the agent moved', () => {
     emit(init(worktree))
     expect(changes()).toEqual([expect.objectContaining({ cwd: worktree, worktreePath: worktree, gitBranch: null })])
     expect(session.snapshot.cwd).toBe(worktree)
+  })
+
+  it('stays in its checkout when the CLI only changed into a subdirectory', () => {
+    const { project, worktree, session, changes, emit } = fixture()
+    // Bash `cd` moves the CLI's cwd, which the next turn's init reports.
+    emit(init(join(project, 'apps/desktop')))
+    expect(changes()).toEqual([])
+    expect(session.snapshot).toMatchObject({ cwd: project, isWorktree: false })
+
+    emit({ type: 'working_directory_changed', cwd: worktree, gitBranch: 'worktree-probe' })
+    emit(init(join(worktree, 'src')))
+    expect(changes()).toHaveLength(1)
+    expect(session.snapshot).toMatchObject({ cwd: worktree, worktreePath: worktree, gitBranch: 'worktree-probe' })
   })
 })

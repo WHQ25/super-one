@@ -1,6 +1,6 @@
 import { execFileSync } from 'child_process'
-import { realpathSync } from 'fs'
-import { resolve } from 'path'
+import { realpathSync, statSync } from 'fs'
+import { dirname, join, resolve } from 'path'
 
 function normalizePath(inputPath: string): string {
   const absPath = resolve(inputPath)
@@ -14,6 +14,21 @@ function normalizePath(inputPath: string): string {
 /** Whether two paths name the same directory once symlinks (macOS `/var` → `/private/var`) resolve. */
 export function isSameDirectory(a: string, b: string): boolean {
   return a === b || normalizePath(a) === normalizePath(b)
+}
+
+/**
+ * The checkout a directory lies in: the project itself, or the linked worktree whose
+ * root holds a `.git` file. Null when it is in neither, such as a directory outside
+ * the project that a shell `cd` reached.
+ */
+export function checkoutRoot(dir: string, projectPath: string): string | null {
+  for (let current = resolve(dir); ; current = dirname(current)) {
+    if (isSameDirectory(current, projectPath)) return projectPath
+    try {
+      if (statSync(join(current, '.git')).isFile()) return current
+    } catch { /* no `.git` here */ }
+    if (dirname(current) === current) return null
+  }
 }
 
 /**

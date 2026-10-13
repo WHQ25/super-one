@@ -293,46 +293,29 @@
   }
 }
 
-/* Codex turn text should align tighter (no large top offset). */
-.codex-turn .chat-md {
-  margin-top: 0;
-}
-
-@container (min-width: 512px) {
-  .codex-turn .chat-md {
-    margin-top: 0;
-  }
-}
-
-@container (min-width: 672px) {
-  .codex-turn .chat-md {
-    margin-top: 0;
-  }
-}
-
 /* Compact mode: pinned content sitting under collapsed process (Detail disclosure,
    collapsed run, or single item). Cap the usual .chat-md first-block margin so it
    isn't a full 1–1.5rem gap. Scoped to `[data-expanded="false"]`: an OPEN run must
    measure exactly like Detail mode, and any cap here would outrank the rules that
-   define that spacing (`.after-thinking .chat-md`, `.codex-turn .chat-md`).
+   define that spacing (`.after-thinking .chat-md`).
    These rules, and the first-block rule above, address one segment. A long desktop turn
    wraps up to eight segments in a chunk (`VirtualTurnSegment`); there they reach through
    the chunk to its first segment instead of every text inside it. */
-:is(.assistant-reply, .assistant-reply .codex-turn) > :is(.turn-detail-section, .turn-detail-region[data-expanded="false"], .turn-process) + :not([data-virtual-segment]) .chat-md,
-:is(.assistant-reply, .assistant-reply .codex-turn) > :is(.turn-detail-section, .turn-detail-region[data-expanded="false"], .turn-process) + [data-virtual-segment] > * > :first-child .chat-md {
+.assistant-reply > :is(.turn-detail-section, .turn-detail-region[data-expanded="false"], .turn-process) + :not([data-virtual-segment]) .chat-md,
+.assistant-reply > :is(.turn-detail-section, .turn-detail-region[data-expanded="false"], .turn-process) + [data-virtual-segment] > * > :first-child .chat-md {
   margin-top: 0.5rem;
 }
 
 @container (min-width: 512px) {
-  :is(.assistant-reply, .assistant-reply .codex-turn) > :is(.turn-detail-section, .turn-detail-region[data-expanded="false"], .turn-process) + :not([data-virtual-segment]) .chat-md,
-  :is(.assistant-reply, .assistant-reply .codex-turn) > :is(.turn-detail-section, .turn-detail-region[data-expanded="false"], .turn-process) + [data-virtual-segment] > * > :first-child .chat-md {
+  .assistant-reply > :is(.turn-detail-section, .turn-detail-region[data-expanded="false"], .turn-process) + :not([data-virtual-segment]) .chat-md,
+  .assistant-reply > :is(.turn-detail-section, .turn-detail-region[data-expanded="false"], .turn-process) + [data-virtual-segment] > * > :first-child .chat-md {
     margin-top: 0.5rem;
   }
 }
 
 @container (min-width: 672px) {
-  :is(.assistant-reply, .assistant-reply .codex-turn) > :is(.turn-detail-section, .turn-detail-region[data-expanded="false"], .turn-process) + :not([data-virtual-segment]) .chat-md,
-  :is(.assistant-reply, .assistant-reply .codex-turn) > :is(.turn-detail-section, .turn-detail-region[data-expanded="false"], .turn-process) + [data-virtual-segment] > * > :first-child .chat-md {
+  .assistant-reply > :is(.turn-detail-section, .turn-detail-region[data-expanded="false"], .turn-process) + :not([data-virtual-segment]) .chat-md,
+  .assistant-reply > :is(.turn-detail-section, .turn-detail-region[data-expanded="false"], .turn-process) + [data-virtual-segment] > * > :first-child .chat-md {
     margin-top: 0.5rem;
   }
 }
@@ -355,11 +338,6 @@
 /* Single process item (e.g. Thought) before conclusion — keep a small gap only. */
 .assistant-reply .turn-process > .thinking-node,
 .assistant-reply .turn-process > [data-virtual-segment] > * > .thinking-node {
-  margin-bottom: 0.25rem;
-}
-
-.codex-turn > .turn-detail-section,
-.codex-turn > .turn-process {
   margin-bottom: 0.25rem;
 }
 

@@ -15,17 +15,12 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
-- Complete remote OpenCode V2 steering, inbox controls, MCP OAuth, live catalogs,
-  native rewind/fork and node provider credentials. Reuse owned authenticated
-  services with isolated session databases and MCP credentials.
-- Run native OpenCode V2 on remote nodes with native agent/model/skill catalogs,
-  leased approvals, streaming tool events and durable session resume/history.
-- Add native OpenCode V2 queued steering, skill slash commands, and streaming
-  tool argument/progress previews on desktop and its paired mobile controller.
-- Recover the current OpenCode V2 turn after an event-source disconnect without
-  resending input, and manage native pending inputs from desktop or paired phone.
-- Sign in to OpenCode V2 MCP servers with native OAuth and refresh the current
-  session's agent, skill and command catalogs from desktop or a paired phone.
+- Run native OpenCode V2 on desktop and remote nodes with native model, agent,
+  skill and command catalogs, streaming tool previews and leased approvals.
+- Steer queued OpenCode inputs, manage pending native inputs, sign in to MCP
+  servers with OAuth, and rewind or fork native history from desktop or phone.
+- Recover OpenCode turns after event-stream interruptions without resending
+  input, and isolate native session data and provider credentials by service.
 - Queue Codex async questions in the composer and keep answers as quoted
   bubbles on desktop and phone, including after history restore; hide dismissed
   questions and deduplicate answer echoes.
@@ -78,14 +73,13 @@ Every alpha release keeps its own notes on its GitHub Release.
   for sessions, collaboration tasks and automations.
 - Use the official OpenCode 2 client for desktop sessions and mobile-controlled
   sessions, preserving native permissions and waiting for event connection readiness.
-
 - Upgrade Claude Agent SDK to 0.3.296 (Claude Code 2.1.296).
 - Paginate session text reads by content block, with a cursor for the next
   complete block.
 - Update the managed Codex runtime to 0.162.1 for more reliable thread history
   recovery, response retries and cross-platform sandbox behavior.
-- Navigate text within turns, with transcript boundaries at compaction and
-  accepted async answers.
+- Navigate text within turns through user-message and compaction ticks with
+  reply previews; retain transcript boundaries at accepted async answers.
 - Phones, controller desktops and the local window share one protocol and
   session/terminal control leases. Taking control prevents the previous
   controller from making further writes.
@@ -104,6 +98,10 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Fixed
 
+- Keep session and application settings synchronized across desktop and phone,
+  preserving newer selections when queued messages run.
+- Ignore transient shell directory changes when reconciling Claude session paths.
+- Hide automatic host wake messages while retaining user-authored messages.
 - Retire disconnected phone connections so old reconnect attempts cannot
   replace a new connection.
 - Follow Claude worktree directory changes when resuming a session.
@@ -112,14 +110,15 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Remove duplicate slash commands with the same name and description.
 - Show coordination tool summaries and messages, and full legacy Codex turns
   in session archive reads.
-- Center link previews on the cursor and reuse media players in file previews.
+- Anchor link previews to the first hovered text line and reuse media players
+  in file previews.
 - Emit a portable Computer Use zoom schema for MCP clients.
 - Send attachments with scheduled messages and clear the delivered draft.
 - Search phone @ mentions in the asking chat's checkout and worktree.
 - Apply Codex permission selection before starting its runtime.
 - Advertise only Mini App tools whose authorization succeeded.
-- Show the right harness icon and Git branch for sessions created from a
-  phone or remote node.
+- Show the current harness icon, worktree branch and commit for sessions
+  created from a phone or remote node, refreshing them after changes.
 - Stop voice calls when control is taken over or pairing is removed, and
   recover the same call across short link interruptions.
 - Keep phone goal state and project names current after session changes.
@@ -148,6 +147,49 @@ Every alpha release keeps its own notes on its GitHub Release.
   scrolling and pane resizing responsive across harnesses.
 - Compress and batch remote streams, share routed session subscriptions and
   load full tool-result bodies on demand on desktop and phone.
+- Load phone history in bounded transcript windows, reuse unchanged content
+  after reconnect, and keep visible rows stable while streaming or paging.
+- Preserve the reading position on upward scroll and keep transcript spacing,
+  reasoning groups and detail disclosures consistent across compaction cuts.
+
+## [0.73.0-alpha.6] - 2026-10-13
+
+### Added
+
+- Run native OpenCode V2 on desktop and remote nodes with native catalogs,
+  queued steering, pending-input controls, MCP OAuth, rewind/fork and streaming
+  tool previews; recover interrupted turns without resending input.
+
+### Changed
+
+- Show scroll-rail ticks only for user messages and compaction points, with the
+  first assistant text as the reply preview.
+
+### Fixed
+
+- Synchronize session and application settings across desktop and phone, and
+  preserve newer selections when queued messages run.
+- Correct phone scheduled-send controls and startup timing, and refresh the
+  session worktree branch and commit after changes.
+- Preserve the reading position on the first upward scroll and keep virtual
+  transcript spacing, reasoning groups and detail disclosures consistent.
+- Keep messages sent during manual compaction below the compaction divider.
+- Anchor link previews to the first hovered text line and keep favicons with
+  their link when a URL wraps.
+- Ignore transient shell directory changes when reconciling Claude session paths.
+- Hide automatic host wake messages while retaining user-authored messages.
+
+### Performance
+
+- Open and restore phone chats as bounded transcript windows, load older
+  content on demand, and reuse unchanged fragments across pages and reconnects.
+- Keep phone-local rows and visible transcript rows stable during live updates,
+  including sessions routed through another host; retain older-host fallback.
+
+### Tests
+
+- Cover transcript-window payloads and align history navigation, native service
+  and leased steering fixtures with the current contracts.
 
 ## [0.73.0-alpha.5] - 2026-10-13
 

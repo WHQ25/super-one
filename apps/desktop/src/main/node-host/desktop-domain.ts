@@ -28,6 +28,7 @@ import { createDesktopCatalogMethods, type DesktopCatalog } from './desktop-cata
 import { createDesktopConfigMethods, type DesktopConfig } from './desktop-config-methods'
 import { createDesktopResourceMethods } from './desktop-resource-methods'
 import type { ResourceHost } from '@superone/runtime/server/rpc-resources'
+import { createDesktopCodexMethods, type DesktopCodexServices } from './desktop-codex-methods'
 import { reconcileRunsAfterRestart } from './reconcile-runs'
 import {
   WorkspaceFsService,
@@ -110,6 +111,8 @@ export interface DesktopDomainDeps {
   catalog?: DesktopCatalog
   /** What the window adds to the resource families' files: its shell PATH, Codex and live sessions. */
   resources?: ResourceHost
+  /** The window's Codex services, served as the node `codex.*` contract. */
+  codex?: DesktopCodexServices
   /** The credential reads a composer's API provider picker needs (`desktop-providers-port.ts`). */
   providers?: ProvidersPort
   sessionEdits: DesktopSessionEdits
@@ -146,7 +149,7 @@ export class DesktopDomain {
     /** The node home (identity, channel root, config). */
     readonly nodeHome: string,
     private readonly context: DesktopRpcContext,
-    private readonly phonePorts: Pick<DesktopDomainDeps, 'terminals' | 'drafts' | 'beforeDraftOpen' | 'phoneMethods' | 'catalog' | 'config' | 'resources' | 'projectEdits' | 'topicNotices' | 'rpcRouter'>,
+    private readonly phonePorts: Pick<DesktopDomainDeps, 'terminals' | 'drafts' | 'beforeDraftOpen' | 'phoneMethods' | 'catalog' | 'config' | 'resources' | 'codex' | 'projectEdits' | 'topicNotices' | 'rpcRouter'>,
   ) {}
 
   static open(deps: DesktopDomainDeps): DesktopDomain {
@@ -197,7 +200,7 @@ export class DesktopDomain {
         subscriptionUsage: { claudeAccounts: claudeUsageAccounts, log: usageLog },
       }
       deps.bindLocalControl?.({ environmentId: identity.environmentId, leases })
-      return new DesktopDomain(db, identity, auth, leases, sessions, recorder, unbindSessions, paths.nodeHome, context, { terminals: deps.terminals, drafts: deps.drafts, beforeDraftOpen: deps.beforeDraftOpen, phoneMethods: deps.phoneMethods, catalog: deps.catalog, config: deps.config, resources: deps.resources, projectEdits: deps.projectEdits, topicNotices: deps.topicNotices, rpcRouter: deps.rpcRouter })
+      return new DesktopDomain(db, identity, auth, leases, sessions, recorder, unbindSessions, paths.nodeHome, context, { terminals: deps.terminals, drafts: deps.drafts, beforeDraftOpen: deps.beforeDraftOpen, phoneMethods: deps.phoneMethods, catalog: deps.catalog, config: deps.config, resources: deps.resources, codex: deps.codex, projectEdits: deps.projectEdits, topicNotices: deps.topicNotices, rpcRouter: deps.rpcRouter })
     } catch (err) {
       db.close()
       throw err
@@ -253,6 +256,7 @@ export class DesktopDomain {
       this.phonePorts.catalog && createDesktopCatalogMethods(this.phonePorts.catalog),
       this.phonePorts.config && createDesktopConfigMethods(this.phonePorts.config, this.context.projects!),
       this.phonePorts.resources && createDesktopResourceMethods(this.phonePorts.resources),
+      this.phonePorts.codex && createDesktopCodexMethods(this.phonePorts.codex),
     ])
     return {
       ...this.context,

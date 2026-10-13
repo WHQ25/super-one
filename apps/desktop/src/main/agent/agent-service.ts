@@ -118,7 +118,6 @@ export class AgentService {
   private codexListModels?: (projectPath: string) => Promise<ModelOption[]>
   private codexGetAuthStatus?: (projectPath: string) => unknown
   private readHarnessUsage?: (request: import('./harness-usage').HarnessUsageRequest) => Promise<import('@superone/shared/agent-types').RemoteUsage | null>
-  private codexConsumeRateLimitReset?: (projectPath: string, apiProviderId: string | null, creditId: string | null) => Promise<import('@superone/shared/agent-types').CodexRateLimitResetOutcome | null>
   private codexProviderChanged?: (invalidateModelCache?: boolean) => void
   private remoteControlService?: RemoteControlService
   private mobileReceiveService?: import('../remote/mobile-receive-service').MobileReceiveService
@@ -140,9 +139,6 @@ export class AgentService {
     this.readHarnessUsage = fn
   }
 
-  setCodexConsumeRateLimitReset(fn: NonNullable<typeof this.codexConsumeRateLimitReset>): void {
-    this.codexConsumeRateLimitReset = fn
-  }
 
   setRemoteControlService(svc: RemoteControlService): void {
     this.remoteControlService = svc
@@ -741,10 +737,6 @@ export class AgentService {
   /** A harness's usage meter for a phone composer (`get_usage`, `harness.usage`). */
   async remoteUsage(request: import('./harness-usage').HarnessUsageRequest): Promise<{ usage: import('@superone/shared/agent-types').RemoteUsage | null }> {
     return { usage: this.readHarnessUsage ? await this.readHarnessUsage(request) : null }
-  }
-
-  async remoteConsumeRateLimitReset(projectPath: string, apiProviderId: string | null, creditId: string | null): Promise<{ outcome: import('@superone/shared/agent-types').CodexRateLimitResetOutcome | null }> {
-    return { outcome: this.codexConsumeRateLimitReset ? await this.codexConsumeRateLimitReset(projectPath, apiProviderId, creditId) : null }
   }
 
   markAllNeedsRebuild(harnessId?: 'claude' | 'codex'): void {

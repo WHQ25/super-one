@@ -1,53 +1,25 @@
 /**
- * Automation CRUD + runNow RPC handlers (desktop automation parity on node).
- * Methods: automation.list|create|update|delete|runNow
+ * `automation.*`: the host's project-scoped scheduled prompts — CRUD over its
+ * automation store and an immediate run through its scheduler.
  */
 
-import {
-  OPERATION_SCOPES,
-  hasAllScopes,
-  type AuthScope,
-  type NodeAutomation,
-  type RpcErrorCode,
-} from '@superone/shared/environment'
+import { OPERATION_SCOPES, type NodeAutomation } from '@superone/shared/environment'
 import type {
   AgentRunConfig,
   AutomationSchedule,
   CreateAutomationRequest,
   UpdateAutomationRequest,
 } from '@superone/shared/agent-types'
-import type { AutomationService } from '@superone/runtime/automations'
-import type { AutomationStore } from '@superone/runtime/automations'
-import type { AuthenticatedClient } from '../auth/auth-service'
-import type { ProjectRegistry } from '../workspace/project-registry'
-
-export interface AutomationRpcResult {
-  result?: unknown
-  error?: { code: RpcErrorCode; message: string; details?: Record<string, unknown> }
-}
+import type { AutomationService, AutomationStore } from '../automations/index'
+import type { AuthenticatedClient } from './auth-service'
+import type { ProjectsPort, RpcResult } from './rpc-context'
+import { asRecord, mapThrown, requireScopes } from './rpc-helpers'
 
 export interface AutomationRpcContext {
   client: AuthenticatedClient
-  projects: ProjectRegistry
-  automations: AutomationStore
-  automationService: AutomationService
-}
-
-function requireScopes(client: AuthenticatedClient, scopes: readonly AuthScope[]): AutomationRpcResult | null {
-  if (!hasAllScopes(client.scopes, scopes)) {
-    return { error: { code: 'forbidden', message: `missing scopes: ${scopes.join(', ')}` } }
-  }
-  return null
-}
-
-function asRecord(payload: unknown): Record<string, unknown> {
-  return payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {}
-}
-
-function mapThrown(err: unknown): AutomationRpcResult {
-  const e = err as { code?: string; message?: string }
-  const code = (e.code as RpcErrorCode | undefined) ?? 'internal'
-  return { error: { code, message: e.message || 'internal error' } }
+  projects: Pick<ProjectsPort, 'get'> & { touch?(projectId: string): void }
+  automations: Pick<AutomationStore, 'listForProject' | 'get' | 'create' | 'update' | 'delete'>
+  automationService: Pick<AutomationService, 'runNow'>
 }
 
 function toNodeAutomation(row: {
@@ -167,7 +139,7 @@ function parseSchedule(raw: unknown): AutomationSchedule | null {
   }
 }
 
-export function handleAutomationList(payload: unknown, ctx: AutomationRpcContext): AutomationRpcResult {
+export function handleAutomationList(payload: unknown, ctx: AutomationRpcContext): RpcResult {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readSession)
   if (denied) return denied
   const p = asRecord(payload)
@@ -187,7 +159,7 @@ export function handleAutomationList(payload: unknown, ctx: AutomationRpcContext
   }
 }
 
-export function handleAutomationCreate(payload: unknown, ctx: AutomationRpcContext): AutomationRpcResult {
+export function handleAutomationCreate(payload: unknown, ctx: AutomationRpcContext): RpcResult {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
   if (denied) return denied
   const p = asRecord(payload)
@@ -218,14 +190,14 @@ export function handleAutomationCreate(payload: unknown, ctx: AutomationRpcConte
   try {
     const data: CreateAutomationRequest = { name, prompt, agentConfig, schedule }
     const row = ctx.automations.create(projectId, project.path, data)
-    ctx.projects.touch(projectId)
+    ctx.projects.touch?.(projectId)
     return { result: { automation: toNodeAutomation(row) } }
   } catch (err) {
     return mapThrown(err)
   }
 }
 
-export function handleAutomationUpdate(payload: unknown, ctx: AutomationRpcContext): AutomationRpcResult {
+export function handleAutomationUpdate(payload: unknown, ctx: AutomationRpcContext): RpcResult {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
   if (denied) return denied
   const p = asRecord(payload)
@@ -272,7 +244,7 @@ export function handleAutomationUpdate(payload: unknown, ctx: AutomationRpcConte
   }
 }
 
-export function handleAutomationDelete(payload: unknown, ctx: AutomationRpcContext): AutomationRpcResult {
+export function handleAutomationDelete(payload: unknown, ctx: AutomationRpcContext): RpcResult {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
   if (denied) return denied
   const p = asRecord(payload)
@@ -302,7 +274,7 @@ export function handleAutomationDelete(payload: unknown, ctx: AutomationRpcConte
 export async function handleAutomationRunNow(
   payload: unknown,
   ctx: AutomationRpcContext,
-): Promise<AutomationRpcResult> {
+): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
   if (denied) return denied
   const p = asRecord(payload)
@@ -332,7 +304,7 @@ export async function handleAutomationRunNow(
   }
 }
 
-const AUTOMATION_HANDLERS: Readonly<Record<string, (payload: unknown, ctx: AutomationRpcContext, method: string) => AutomationRpcResult | Promise<AutomationRpcResult>>> = {
+const AUTOMATION_HANDLERS: Readonly<Record<string, (payload: unknown, ctx: AutomationRpcContext, method: string) => RpcResult | Promise<RpcResult>>> = {
   'automation.list': (payload, ctx) => handleAutomationList(payload, ctx),
   'automation.create': (payload, ctx) => handleAutomationCreate(payload, ctx),
   'automation.update': (payload, ctx) => handleAutomationUpdate(payload, ctx),
@@ -348,7 +320,7 @@ export function dispatchAutomationRpc(
   method: string,
   payload: unknown,
   ctx: AutomationRpcContext,
-): AutomationRpcResult | Promise<AutomationRpcResult> | null {
+): RpcResult | Promise<RpcResult> | null {
   const handler = Object.hasOwn(AUTOMATION_HANDLERS, method) ? AUTOMATION_HANDLERS[method] : undefined
   return handler ? handler(payload, ctx, method) : null
 }

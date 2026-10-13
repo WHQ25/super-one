@@ -14,7 +14,12 @@ import { addRecentFolder, getRecentFolders } from '../recent-folders'
 import { localDraftStore } from '../db-drafts'
 import { createSession as createSessionRow, loadSessionMessagesPaginated, renameSession, setSessionTags, pinSession, hideSession, deleteSession } from '../db-sessions'
 import { getDesktopSessionRow, listDesktopSessionRows, setSessionRemoteController } from '../db-remote-controlled-sessions'
-import { getHarnessManager, probeDesktopHarness } from '../harness/service'
+import { disableDesktopHarness, enableDesktopHarness, getHarnessManager, probeDesktopHarness } from '../harness/service'
+import { ensureShellPath } from '../shell-path'
+import { readAppSettings } from '../app-settings-service'
+import { sessionProviderStore } from '../session/session-provider-repo'
+import { desktopAgentSettings } from './desktop-agent-settings'
+import { createDesktopAutomationsPort } from './desktop-automations-port'
 import { desktopHarnessResolver } from '../harness/host'
 import { listSessionAgentProfiles } from '../session/agent-profiles'
 import { createDesktopProjectsPort } from './desktop-projects-port'
@@ -171,7 +176,15 @@ export function openDesktopDomain(sessions: NodeHostSessionManager, phonePorts: 
       probeHarnessReadiness: (_harnesses, id) => probeDesktopHarness(id),
       assertSessionHarnessRuntimeReady: (id, harnesses) =>
         assertSessionHarnessRuntimeReady(id, harnesses, desktopHarnessResolver),
+      // As Settings → Harnesses: install progress reaches the window either way.
+      enableHarness: async (_harnesses, input) => {
+        await ensureShellPath()
+        return enableDesktopHarness(input)
+      },
+      disableHarness: (_harnesses, id) => disableDesktopHarness(id),
     },
+    agentSettings: () => desktopAgentSettings(readAppSettings()),
+    config: { sessionProviders: sessionProviderStore(), automations: createDesktopAutomationsPort() },
   })
   getEnvironmentHost().registry.getLocal().bindProtocol(new InProcessRpcClient(domain))
   return domain

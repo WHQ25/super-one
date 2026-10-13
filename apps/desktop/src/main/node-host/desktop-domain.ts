@@ -20,10 +20,12 @@ import type { DraftControl } from '@superone/runtime/drafts'
 import { EventLog, createSqliteHostActionStore } from '@superone/runtime/session'
 import type { HarnessManager } from '@superone/runtime/harness'
 import type { SessionAgentProfile } from '@superone/shared/agent-types'
+import type { NodeAgentSettings } from '@superone/shared/environment'
 import { loadDesktopEnvironmentIdentity } from '../environment/local-identity'
 import { DesktopSessionHost, type DesktopSessionEdits, type DesktopSessionHostDeps, type NodeHostSessionManager } from './desktop-session-host'
 import { createDesktopGitPort } from './desktop-git-port'
 import { createDesktopCatalogMethods, type DesktopCatalog } from './desktop-catalog-methods'
+import { createDesktopConfigMethods, type DesktopConfig } from './desktop-config-methods'
 import { reconcileRunsAfterRestart } from './reconcile-runs'
 import {
   WorkspaceFsService,
@@ -50,11 +52,11 @@ const DESKTOP_NODE_CAPABILITIES: HostCapabilityFlags = {
 }
 
 /**
- * Shared methods with no desktop meaning yet: node settings belong to this
- * desktop's own settings, and harness installs stay with this desktop's user.
+ * Shared methods with no desktop meaning yet: node settings are this desktop's
+ * app settings, which only its window edits.
  */
 const DESKTOP_UNSERVED_METHODS: ReadonlySet<string> = new Set([
-  'settings.patch', 'sandbox.probe', 'harness.enable', 'harness.disable',
+  'settings.patch',
 ])
 
 /**
@@ -89,8 +91,8 @@ export interface DesktopDomainDeps {
   harnesses: HarnessManager
   /** The agent profiles this desktop can launch, as its own collaboration lists them. */
   listAgentProfiles: () => SessionAgentProfile[]
-  /** Harness readiness probes and runtime checks (desktop resolver). */
-  hooks: Pick<RpcHostHooks, 'probeHarnessReadiness' | 'assertSessionHarnessRuntimeReady'>
+  /** Harness readiness probes, runtime checks and installs, as the window's Settings → Harnesses runs them. */
+  hooks: Pick<RpcHostHooks, 'probeHarnessReadiness' | 'assertSessionHarnessRuntimeReady' | 'enableHarness' | 'disableHarness'>
   /** This desktop's PTYs. */
   terminals?: TerminalsPort
   /** This desktop's composer drafts and their leases, shared with its window. */
@@ -111,6 +113,10 @@ export interface DesktopDomainDeps {
   scheduledSends?: DesktopSessionHostDeps['scheduledSends']
   /** Bind local terminal reads and IPC mutations to this domain's one lease authority. */
   bindLocalControl?: (authority: TerminalLeaseAuthority) => void
+  /** This desktop's agent defaults (`desktop-agent-settings.ts`), what `settings.get` reports. */
+  agentSettings?: () => NodeAgentSettings
+  /** The session provider and automation stores the window edits (`desktop-config-methods.ts`). */
+  config?: DesktopConfig
 }
 
 /** What one RPC needs besides who asks and how it is delivered. */
@@ -136,7 +142,7 @@ export class DesktopDomain {
     /** The node home (identity, channel root, config). */
     readonly nodeHome: string,
     private readonly context: DesktopRpcContext,
-    private readonly phonePorts: Pick<DesktopDomainDeps, 'terminals' | 'drafts' | 'beforeDraftOpen' | 'phoneMethods' | 'catalog' | 'projectEdits' | 'topicNotices' | 'rpcRouter'>,
+    private readonly phonePorts: Pick<DesktopDomainDeps, 'terminals' | 'drafts' | 'beforeDraftOpen' | 'phoneMethods' | 'catalog' | 'config' | 'projectEdits' | 'topicNotices' | 'rpcRouter'>,
   ) {}
 
   static open(deps: DesktopDomainDeps): DesktopDomain {
@@ -175,6 +181,7 @@ export class DesktopDomain {
         idempotency: new IdempotencyService(db),
         leases,
         settingsConfigPath: paths.configJson,
+        ...(deps.agentSettings ? { agentSettings: deps.agentSettings } : {}),
         hooks: desktopRpcHooks(deps),
         capabilities: DESKTOP_NODE_CAPABILITIES,
         startedAt: Date.now(),
@@ -186,7 +193,7 @@ export class DesktopDomain {
         subscriptionUsage: { claudeAccounts: claudeUsageAccounts, log: usageLog },
       }
       deps.bindLocalControl?.({ environmentId: identity.environmentId, leases })
-      return new DesktopDomain(db, identity, auth, leases, sessions, recorder, unbindSessions, paths.nodeHome, context, { terminals: deps.terminals, drafts: deps.drafts, beforeDraftOpen: deps.beforeDraftOpen, phoneMethods: deps.phoneMethods, catalog: deps.catalog, projectEdits: deps.projectEdits, topicNotices: deps.topicNotices, rpcRouter: deps.rpcRouter })
+      return new DesktopDomain(db, identity, auth, leases, sessions, recorder, unbindSessions, paths.nodeHome, context, { terminals: deps.terminals, drafts: deps.drafts, beforeDraftOpen: deps.beforeDraftOpen, phoneMethods: deps.phoneMethods, catalog: deps.catalog, config: deps.config, projectEdits: deps.projectEdits, topicNotices: deps.topicNotices, rpcRouter: deps.rpcRouter })
     } catch (err) {
       db.close()
       throw err
@@ -237,7 +244,11 @@ export class DesktopDomain {
     const workspaceTailWatch = new WorkspaceTailWatchService(projects, workspaceFs)
     this.watches.push(workspaceWatch, workspaceTailWatch)
     const edits = this.phonePorts.projectEdits
-    const extension = composeExtensions([this.phonePorts.phoneMethods, this.phonePorts.catalog && createDesktopCatalogMethods(this.phonePorts.catalog)])
+    const extension = composeExtensions([
+      this.phonePorts.phoneMethods,
+      this.phonePorts.catalog && createDesktopCatalogMethods(this.phonePorts.catalog),
+      this.phonePorts.config && createDesktopConfigMethods(this.phonePorts.config, this.context.projects!),
+    ])
     return {
       ...this.context,
       ...(edits ? { projects: withProjectEdits(this.context.projects!, edits) } : {}),
@@ -329,11 +340,8 @@ function desktopRpcHooks(deps: DesktopDomainDeps): RpcHostHooks {
     resolveReleaseVersion: () => deps.appVersion,
     probeHarnessReadiness: deps.hooks.probeHarnessReadiness,
     assertSessionHarnessRuntimeReady: deps.hooks.assertSessionHarnessRuntimeReady,
-    // Installing or switching harnesses stays with this desktop's user.
-    enableHarness: async () => {
-      throw unsupportedMethodError('harness.enable')
-    },
-    disableHarness: unsupported('harness.disable'),
+    enableHarness: deps.hooks.enableHarness,
+    disableHarness: deps.hooks.disableHarness,
     listHarnessModels: unsupported('provider.listModels'),
     forkHarnessResume: async () => {
       throw unsupportedMethodError('session.fork')

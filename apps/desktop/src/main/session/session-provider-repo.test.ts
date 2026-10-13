@@ -1,4 +1,6 @@
+import Database from 'better-sqlite3'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { BASE_SESSION_PROVIDER_DEFINITIONS } from '@superone/shared/session-provider-definitions'
 
 const { getDbMock } = vi.hoisted(() => ({
   getDbMock: vi.fn(),
@@ -53,78 +55,16 @@ import {
   listByHarness,
 } from './session-provider-repo'
 
-interface Row {
-  id: string
-  harness_id: string
-  name: string
-  is_base: number
-  config_json: string
-  created_at: string
-  updated_at: string
-}
-
-function makeFakeDb() {
-  const rows = new Map<string, Row>()
-
-  const sortForList = (a: Row, b: Row) => {
-    if (a.is_base !== b.is_base) return b.is_base - a.is_base
-    return a.created_at.localeCompare(b.created_at)
-  }
-
-  const db = {
-    prepare: (sql: string) => {
-      if (/^\s*SELECT \* FROM session_providers ORDER BY/.test(sql)) {
-        return { all: () => Array.from(rows.values()).sort(sortForList) }
-      }
-      if (/^\s*SELECT \* FROM session_providers WHERE harness_id/.test(sql)) {
-        return { all: (harness: string) => Array.from(rows.values()).filter((r) => r.harness_id === harness).sort(sortForList) }
-      }
-      if (/^\s*SELECT \* FROM session_providers WHERE id/.test(sql)) {
-        return { get: (id: string) => rows.get(id) }
-      }
-      if (/^\s*INSERT INTO session_providers/.test(sql)) {
-        return {
-          run: (id: string, harness_id: string, name: string, config_json: string, created_at: string, updated_at: string) => {
-            rows.set(id, { id, harness_id, name, is_base: 0, config_json, created_at, updated_at })
-          },
-        }
-      }
-      if (/^\s*UPDATE session_providers SET name/.test(sql)) {
-        return {
-          run: (name: string, config_json: string, updated_at: string, id: string) => {
-            const existing = rows.get(id)
-            if (existing) rows.set(id, { ...existing, name, config_json, updated_at })
-          },
-        }
-      }
-      if (/^\s*DELETE FROM session_providers WHERE id/.test(sql)) {
-        return { run: (id: string) => { rows.delete(id) } }
-      }
-      throw new Error(`Unmocked SQL: ${sql}`)
-    },
-  }
-
-  const seed = () => {
-    const now = new Date().toISOString()
-    rows.set('claude-base', { id: 'claude-base', harness_id: 'claude', name: 'Claude (Base)', is_base: 1, config_json: '{}', created_at: now, updated_at: now })
-    rows.set('codex-base', { id: 'codex-base', harness_id: 'codex', name: 'Codex (Base)', is_base: 1, config_json: '{}', created_at: now, updated_at: now })
-    rows.set('acp-base', { id: 'acp-base', harness_id: 'acp', name: 'Others (ACP)', is_base: 1, config_json: '{}', created_at: now, updated_at: now })
-  }
-
-  return { db, seed }
-}
-
 describe('session-provider-repo', () => {
   beforeEach(() => {
-    const { db, seed } = makeFakeDb()
-    seed()
-    getDbMock.mockReturnValue(db)
+    // The store creates and seeds the table like the desktop migration does.
+    getDbMock.mockReturnValue(new Database(':memory:'))
   })
 
   describe('list / get', () => {
     it('lists base providers', () => {
       const ids = listSessionProviders().map((p) => p.id).sort()
-      expect(ids).toEqual(['acp-base', 'claude-base', 'codex-base'])
+      expect(ids).toEqual(BASE_SESSION_PROVIDER_DEFINITIONS.map((p) => p.id).sort())
     })
 
     it('listByHarness filters by harness', () => {

@@ -10,7 +10,7 @@ import { openNodeDatabase } from '@superone/runtime/db'
 import { nodeWireCompression } from '@superone/runtime/server/wire-compression'
 import { createDesktopProjectsPort } from './desktop-projects-port'
 import { DesktopDomain, type DesktopDomainDeps } from './desktop-domain'
-import { AGENT_PROFILES, FakeSessionManager, memorySessionEdits, memoryStore, type FakeSession } from './node-host-test-fixtures'
+import { AGENT_PROFILES, FakeSessionManager, memorySessionEdits, memoryStore, testHarnessHooks, type FakeSession } from './node-host-test-fixtures'
 import { openPhoneConnection } from './phone-endpoint'
 
 /**
@@ -38,7 +38,7 @@ export function phoneDomain(cleanup: Array<() => void>, extra: Partial<DesktopDo
   const domain = DesktopDomain.open({
     userDataDir, appVersion: '0.0.0-test', sessions, rows: store.all, projects, harnesses,
     listAgentProfiles: () => AGENT_PROFILES,
-    hooks: { probeHarnessReadiness: () => ({ ok: true }) as never, assertSessionHarnessRuntimeReady: () => ({ ok: true, reason: 'test' }) },
+    hooks: testHarnessHooks(),
     sessionEdits,
     ...extra,
   })

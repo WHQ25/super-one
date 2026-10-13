@@ -3,6 +3,7 @@ import type {
   EnvironmentCapabilities,
   EnvironmentEventEnvelope,
   HostActionsPollResult,
+  NodeAgentSettings,
   NodeHarnessId,
   ProjectSnapshot,
   RespondHostActionResult,
@@ -436,6 +437,12 @@ export interface RpcContext {
    * Required for settings.get/patch and session default fallbacks.
    */
   settingsConfigPath: string
+  /**
+   * The agent settings of a host that keeps them outside `settingsConfigPath`
+   * (the desktop's own app settings), as `settings.get` and `git.clone` read
+   * them. Such a host applies its defaults to sessions itself.
+   */
+  agentSettings?: () => NodeAgentSettings
   hooks: RpcHostHooks
   capabilities: HostCapabilityFlags
   startedAt: number

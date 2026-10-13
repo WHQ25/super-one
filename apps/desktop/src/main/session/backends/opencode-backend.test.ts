@@ -137,13 +137,45 @@ describe('OpenCodeBackend', () => {
     expect(backend.hasActiveRuntime()).toBe(false)
   })
 
+  it('finishes a native turn and cancels its scoped HTTP transport after a lost receipt', async () => {
+    let signal: AbortSignal | undefined
+    runtime.prepareTurn = async (_id, delivery) => { signal = delivery?.signal }
+    prompt.mockImplementation(() => new Promise<void>(() => {}))
+    const backend = new OpenCodeBackend()
+    try {
+      await backend.start(startOptions())
+      const send = backend.send({ content: 'hi', clientMessageId: 'user', assistantMessageId: 'assistant' })
+      await vi.waitFor(() => expect(prompt).toHaveBeenCalledOnce())
+      const native = (type: string, data: Record<string, unknown>) => route({ type: 'v2', event: { id: type, type, data: { sessionID: 'oc-session', ...data } } } as OpenCodeRuntimeEvent)
+      native('session.inbox.enqueued', { inboxID: 'native-user', item: { type: 'user', payload: { metadata: { superoneClientMessageId: 'user' } } } })
+      native('session.execution.started', {})
+      native('session.inbox.delivered', { inboxID: 'native-user' })
+      native('session.execution.succeeded', {})
+      expect(await Promise.race([send.then(() => 'settled'), new Promise(resolve => setTimeout(() => resolve('still waiting for HTTP'), 200))])).toBe('settled')
+      expect(signal?.aborted).toBe(true)
+    } finally { await backend.close() }
+  })
+
+  it('forwards a captured OAuth proof and refuses a revoked one before calling the runtime', async () => {
+    const backend = new OpenCodeBackend()
+    try {
+      await backend.start(startOptions())
+      const guard = vi.fn()
+      await backend.authenticateMcp('github', guard)
+      expect(authenticateMcp).toHaveBeenCalledWith('github', guard)
+      authenticateMcp.mockClear()
+      await expect(backend.authenticateMcp('github', () => { throw new Error('stale lease') })).rejects.toThrow('stale lease')
+      expect(authenticateMcp).not.toHaveBeenCalled()
+    } finally { await backend.close() }
+  })
+
   it('reports the runtime project agents once the runtime is ready', async () => {
     runtime = { ...runtime, agents: [{ id: 'build', name: 'Build' }, { id: 'local-docs', name: 'Local Docs' }] }
     const backend = new OpenCodeBackend()
     const events: AgentEvent[] = []
     backend.onEvent((event) => events.push(event))
     await backend.start(startOptions())
-    expect(events).toContainEqual({ type: 'session_agents', agents: runtime.agents })
+    expect(events).toContainEqual(expect.objectContaining({ type: 'session_agents', agents: runtime.agents }))
     await backend.close()
   })
 
@@ -639,7 +671,7 @@ describe('OpenCodeBackend', () => {
     await backend.reconnectMcp('github')
     await backend.toggleMcpServer('github', false)
     await backend.reloadMcpServers()
-    expect(authenticateMcp).toHaveBeenCalledWith('github')
+    expect(authenticateMcp).toHaveBeenCalledWith('github', undefined)
     expect(reconnectMcp).toHaveBeenCalledWith('github')
     expect(toggleMcpServer).toHaveBeenCalledWith('github', false)
     expect(reloadMcpServers).toHaveBeenCalledOnce()

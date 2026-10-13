@@ -40,6 +40,7 @@ import { installHostBridge, postHost, requestNativeAsync } from './bridge'
 import { MobileModPanes, MobileModUiProvider, useMobileModClient } from './mod-ui/MobileModUi'
 import { BottomDock } from './BottomDock'
 import { PortableQueuedMessages } from './PortableQueuedMessages'
+import { SessionProviderState } from './SessionProviderState'
 import { PortableScheduledResumeCard } from './PortableScheduledResumeCard'
 import type { ScheduledSendView } from './protocol'
 import { PortableCommandOutput, PortableQuestion } from './PortableDecisionCards'
@@ -101,6 +102,8 @@ const EMPTY_SESSION: SessionFacts = {
   pendingAsyncQuestions: null,
   slashCommandOutput: null,
   queuedMessages: [],
+  sessionInbox: [],
+  harnessConnection: null,
   queuedSteer: { now: false, soon: false },
   promptKeywords: [],
   transcriptWindow: false,
@@ -809,6 +812,9 @@ export function ChatView() {
           error={!!navigationRetry && navigationEdge === 'bottom'} onLoad={bottomRetry ?? loadNext} />
       )}
       {/* The queue follows the latest turn, so it waits until the window reaches it. */}
+      {!moreAfter && <SessionProviderState items={state.session.sessionInbox} connection={state.session.harnessConnection}
+        onReconnect={() => requestNativeAsync('reconnectAgent', {})}
+        onAction={(inboxId, action) => requestNativeAsync('sessionInboxAction', { inboxId, action })} />}
       {!moreAfter && state.session.queuedMessages.length > 0 && (
         <PortableQueuedMessages messages={state.session.queuedMessages} steer={state.session.queuedSteer}
           scheme={state.scheme} mentionArtwork={state.mentionArtwork} projectPath={state.session.projectPath} />

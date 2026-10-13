@@ -567,6 +567,9 @@ export function createProductionTurnRunner(opts: NodeProductionRunnerOptions): T
     acpBinaryPath: opts.acpBinaryPath,
     harnesses: opts.harnesses,
     openCodeBinaryPath: opts.openCodeBinaryPath,
+    nodeHome: opts.nodeHome,
+    providers: opts.providers,
+    env: Object.fromEntries(Object.entries(opts.env ?? {}).filter((entry): entry is [string, string] => typeof entry[1] === 'string')),
     getAcpMcpServers: opts.getAcpHostActionMcpServers,
     getOpenCodeSuperoneMcp: opts.getOpenCodeHostActionMcp,
   })
@@ -603,18 +606,28 @@ export function createProductionTurnRunner(opts: NodeProductionRunnerOptions): T
     return claude.modUi(session, op, request)
   }
   runner.isModHostRequestPending = (sessionId, requestId) => claude.isModHostRequestPending?.(sessionId, requestId) ?? false
+  runner.callOperation = (session, method, input, host) => {
+    if (session.harnessId !== 'opencode' || !acpOpenCode.callOperation)
+      return Promise.reject(Object.assign(new Error(`Unsupported session operation: ${method}`), { code: 'unsupported' }))
+    return acpOpenCode.callOperation(session, method, input, host)
+  }
+  runner.servedOperations = acpOpenCode.servedOperations
+  runner.steer = acpOpenCode.steer
+  runner.interruptSession = acpOpenCode.interruptSession
   runner.disposeSession = async (sessionId) => {
     await Promise.all([
       claude.disposeSession?.(sessionId),
       codex.disposeSession?.(sessionId),
+      acpOpenCode.disposeSession?.(sessionId),
     ])
   }
   runner.disposeAll = async () => {
-    await Promise.all([claude.disposeAll?.(), codex.disposeAll?.()])
+    await Promise.all([claude.disposeAll?.(), codex.disposeAll?.(), acpOpenCode.disposeAll?.()])
   }
   runner.listActiveRuntimes = () => [
     ...(claude.listActiveRuntimes?.() ?? []),
     ...(codex.listActiveRuntimes?.() ?? []),
+    ...(acpOpenCode.listActiveRuntimes?.() ?? []),
   ]
 
   return runner

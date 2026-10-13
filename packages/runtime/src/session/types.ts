@@ -60,6 +60,7 @@ export interface NodeSessionRecord {
   sandboxMode?: string | null
   model?: string | null
   effort?: string | null
+  agent?: string | null
   apiProviderId?: string | null
   mode?: string | null
   agentPreset?: string | null
@@ -134,9 +135,11 @@ export interface TranscriptBlock extends MessageDisplayFields {
   metadata?: { sendFailure?: SendFailure }
   /** Waiting in the runtime's in-memory FIFO, so a restart can tell it never ran. */
   queued?: boolean
+  /** A composer queue item, hidden from the transcript until consumed. */
+  queuedInComposer?: boolean
 }
 
-export interface PendingInteraction extends Pick<PermissionRequest, 'schemaForm' | 'elicitationForm' | 'subtitle' | 'riskLevel' | 'supportsAlwaysPersist' | 'inputRequest'> {
+export interface PendingInteraction extends Pick<PermissionRequest, 'schemaForm' | 'elicitationForm' | 'subtitle' | 'riskLevel' | 'supportsAlwaysPersist' | 'inputRequest' | 'permissionDetails'> {
   interactionId: string
   kind: 'permission' | 'question' | 'plan' | 'session_agents_confirm'
   toolName?: string
@@ -199,10 +202,15 @@ export type TurnRunner = ((input: {
   session: NodeSessionRecord
   /** Stable assistant message id allocated by SessionRuntime for this turn. */
   messageId?: string
+  clientMessageId?: string
+  /** Persist a native session before input delivery, even if the turn later fails. */
+  onProviderResume?: (resume: string) => void
   text: string
   model?: string | null
   /** Reasoning / thinking effort (Claude effort or Codex reasoningEffort). */
   effort?: string | null
+  /** OpenCode agent captured when this turn was accepted, including queued turns. */
+  agent?: string | null
   /** Inline images/docs for this turn (host already validated size). */
   images?: TurnImageAttachment[]
   /**
@@ -289,6 +297,11 @@ export type TurnRunner = ((input: {
   /** Steer / mid-turn inject: do not append an assistant transcript block. */
   skipAssistantTranscript?: boolean
 }>) & {
+  /** Native controls on an existing runtime; reads never cold-start a harness. */
+  callOperation?: (session: NodeSessionRecord, method: string, input: Record<string, unknown>, host: HarnessOperationHost) => Promise<unknown>
+  servedOperations?: ReadonlySet<string>
+  steer?: (session: NodeSessionRecord, input: HarnessSteerInput, delivery: HarnessSteerDelivery) => Promise<void>
+  interruptSession?: (sessionId: string) => void | Promise<void>
   /** Tear down long-lived harness state for one SuperOne session id. */
   getMcpAppsProvider?: (session: NodeSessionRecord, binding: McpAppsBinding, origin: McpAppOrigin,
     host?: { onElicitation: (interaction: PendingInteraction, signal: AbortSignal) => Promise<ElicitationDecision> }) => Promise<McpAppsProvider>
@@ -306,6 +319,27 @@ export type TurnRunner = ((input: {
   disposeAll?: () => void | Promise<void>
   /** Snapshot long-lived harness state for the host's idle runtime reaper. */
   listActiveRuntimes?: () => ActiveHarnessRuntime[]
+}
+
+export interface HarnessOperationHost {
+  messages?: import('@superone/shared/agent-types').ChatMessage[]
+  assertControl(): void
+  onEvent(event: AgentEvent): void
+  onQuestion(interaction: PendingInteraction, signal: AbortSignal): Promise<QuestionAnswers>
+  onPermission(interaction: PendingInteraction, signal: AbortSignal): Promise<PermissionDecision>
+}
+export interface HarnessSteerInput {
+  text: string
+  clientMessageId: string
+  model?: string | null
+  effort?: string | null
+  agent?: string | null
+  images?: TurnImageAttachment[]
+}
+export interface HarnessSteerDelivery {
+  assertControl(): void
+  onInputAccepted(): void
+  onConsumed(): void
 }
 
 export type { SessionTurnEvent }

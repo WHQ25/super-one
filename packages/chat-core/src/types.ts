@@ -1,3 +1,4 @@
+import type { HarnessRuntimeCapabilities } from '@superone/shared/harness/session-catalog'
 import type {
   AgentStatus,
   AskUserQuestionRequest,
@@ -61,6 +62,8 @@ export interface ChatCoreTaskProgressEntry {
 export interface ChatCoreSession {
   messages: ChatMessage[]
   queuedMessages: ChatMessage[]
+  sessionInbox?: import('@superone/shared/session-inbox').SessionInboxItem[]
+  harnessConnection?: import('@superone/shared/session-inbox').HarnessConnectionState
   status: AgentStatus
   awaitingAssistantReply: boolean
   lastEventAt: number
@@ -181,6 +184,9 @@ export interface ChatCoreSession {
   openCodeAgentId: string | null
   /** From the running runtime (`session_agents`); null until it reports. */
   sessionAgents: OpenCodeAgentOption[] | null
+  runtimeCapabilities?: HarnessRuntimeCapabilities
+  sessionSlashCommands?: SlashCommandInfo[]
+  sessionModels?: ModelOption[]
   apiProviderId: string | null
   acpAgentId: string | null
   acpModels: ModelOption[]

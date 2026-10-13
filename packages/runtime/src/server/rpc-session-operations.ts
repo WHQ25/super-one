@@ -15,8 +15,13 @@ async function callOperation(payload: unknown, ctx: RpcContext, method: string):
   const p = asRecord(payload)
   try {
     const sessionId = requiredText(p, 'sessionId')
+    if (method === 'session.dequeue' || method === 'session.steer') requiredText(p, 'clientMessageId')
     if (method === 'session.rewind' || method === 'session.previewRewind' || method === 'session.truncateAtCheckpoint') requiredText(p, 'checkpointId')
     if (method === 'session.mcpAuthenticate') requiredText(p, 'serverName')
+    if (method === 'session.inbox.cancel' || method === 'session.inbox.update') requiredText(p, 'inboxId')
+    if (method === 'session.inbox.update' && p.delivery !== 'steer' && p.delivery !== 'queue') {
+      throw Object.assign(new Error('invalid inbox delivery'), { code: 'invalid_argument' })
+    }
     if (method === 'session.stopTask') requiredText(p, 'taskId')
     if (method === 'session.forceRecover' && p.message !== undefined && typeof p.message !== 'string') throw Object.assign(new Error('message must be a string'), { code: 'invalid_argument' })
     if (method === 'session.scheduledSend.set') {
@@ -38,11 +43,16 @@ async function callOperation(payload: unknown, ctx: RpcContext, method: string):
       throw Object.assign(new Error('invalid rewind mode'), { code: 'invalid_argument' })
     }
     if (!ctx.sessions?.get(sessionId)) throw Object.assign(new Error('session not found'), { code: 'not_found' })
-    if (!SESSION_OPERATION_READS.has(method)) {
-      ctx.leases.assertValid({ resource: { environmentId: ctx.identity.environmentId, sessionId },
-        leaseId: requiredText(p, 'leaseId'), generation: requiredText(p, 'generation'), holderClientId: ctx.client.clientSessionId })
+    // Capture the exact proof before async native work; never read a newer UI lease.
+    const leaseId = SESSION_OPERATION_READS.has(method) ? undefined : requiredText(p, 'leaseId')
+    const generation = SESSION_OPERATION_READS.has(method) ? undefined : requiredText(p, 'generation')
+    const assertControl = () => {
+      if (leaseId && generation) ctx.leases.assertValid({ resource: { environmentId: ctx.identity.environmentId, sessionId },
+        leaseId, generation, holderClientId: ctx.client.clientSessionId })
     }
-    const result = await ctx.sessions!.callOperation!(sessionId, method, p)
+    assertControl()
+    if (!ctx.sessions?.callOperation) throw Object.assign(new Error(`Unsupported session operation: ${method}`), { code: 'unsupported' })
+    const result = await ctx.sessions.callOperation(sessionId, method, p, assertControl)
     return { result: result ?? null }
   } catch (error) { return mapThrown(error) }
 }

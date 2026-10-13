@@ -19,6 +19,7 @@ describe('resolveOpenCodeCommandInvocation', () => {
   })
 
   it('does not treat unknown or partial names as SDK commands', () => {
+    expect(resolveOpenCodeCommandInvocation('/foobar value', commands)).toBeNull()
     expect(resolveOpenCodeCommandInvocation('/unknown value', commands)).toBeNull()
     expect(resolveOpenCodeCommandInvocation('/reviewer value', commands)).toBeNull()
   })
@@ -33,6 +34,15 @@ describe('resolveOpenCodeShellCommand', () => {
 })
 
 describe('dispatchOpenCodeRequest', () => {
+  it('attaches a native skill ID and preserves its arguments instead of invoking a command', async () => {
+    const runtime = {
+      commands: [{ name: 'review-skill', description: '', argumentHint: '', isSkill: true, skillId: 'skill_native' }],
+      prompt: vi.fn(async () => undefined), command: vi.fn(),
+    }
+    await dispatchOpenCodeRequest(runtime as never, { content: '/review-skill src\nwith context', agent: 'build' })
+    expect(runtime.prompt).toHaveBeenCalledWith('src\nwith context', undefined, undefined, undefined, 'build', ['skill_native'])
+    expect(runtime.command).not.toHaveBeenCalled()
+  })
   it('forwards the selected agent to prompts and SDK commands', async () => {
     const runtime = {
       commands,

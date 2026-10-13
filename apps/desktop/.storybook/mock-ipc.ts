@@ -28,7 +28,9 @@ const offNoop = () => {}
  * story that leaves `liquidGlass` at its default `false`.
  */
 const values: Record<string, Record<string, unknown>> = {
-  app: { platform: 'darwin', supportsLiquidGlass: true },
+  app: { platform: 'darwin', supportsLiquidGlass: true,
+    collaborationMailbox: { list: async () => [], onChanged: () => offNoop },
+  },
 }
 
 const proxyFor = (ns: string): Record<string, AnyFn> => {

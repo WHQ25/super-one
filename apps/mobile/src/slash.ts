@@ -15,6 +15,7 @@ export function parseSlashCommand(item: unknown, skillNames: Set<string> = new S
     description: String(map.description ?? ''),
     argumentHint: String(map.argumentHint ?? ''),
     isSkill: typeof map.isSkill === 'boolean' ? map.isSkill : skillNames.has(name),
+    ...(typeof map.skillId === 'string' ? { skillId: map.skillId } : {}),
   }
 }
 

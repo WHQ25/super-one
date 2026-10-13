@@ -89,6 +89,20 @@ export class SessionLease {
     this.assertMutation()
   }
 
+  /** A backend is host-owned; capture the caller's proof before crossing it. */
+  captureMutation(): () => void {
+    this.assertMutation()
+    const scope = currentControlScope()
+    if (!scope) return () => { if (this.closed) throw new Error('session control closed') }
+    const authority = this.authority!, actor = this.actor(scope.clientSessionId)
+    const proof = { ...scope.proofs.get(this.sessionId)! }
+    const resource = this.resource
+    return () => {
+      if (this.closed || this.authority !== authority) throw new Error('session control closed or rebound')
+      actor.assertValid({ resource, holderClientId: scope.clientSessionId, leaseId: proof.leaseId, generation: proof.generation })
+    }
+  }
+
   /** Keep the admitted call's exact grant alive, never reacquire after takeover. */
   retainVoice(deviceId?: string): () => void {
     this.assertMutation()

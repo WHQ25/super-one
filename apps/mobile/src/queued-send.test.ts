@@ -57,4 +57,12 @@ describe('queued composer send', () => {
     } as ChatMessage
     expect(queuedMessageText(message)).toBe('fix the queue')
   })
+
+  it('enables only the steering action advertised by an OpenCode V2 session', () => {
+    const runtime = { harnessId: 'opencode' as const, supportsQueuedSteer: true, supportsQueuedSteerSoon: false }
+    expect(canSteerQueued('opencode', runtime)).toBe(true)
+    expect(canSteerQueuedSoon('opencode', undefined, runtime)).toBe(false)
+    expect(canSteerQueued('opencode', { ...runtime, harnessId: 'codex' })).toBe(false)
+    expect(canSteerQueued('opencode')).toBe(false)
+  })
 })

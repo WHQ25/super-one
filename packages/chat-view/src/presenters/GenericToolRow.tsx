@@ -177,6 +177,9 @@ function ToolResult({ text, cacheKey }: { text: string; cacheKey: string }) {
  * same row the desktop does — the differences live entirely in `ports`.
  */
 export function GenericToolRowPresenter(props: GenericToolRowProps) {
+  if (props.status === 'streaming' && props.ports.streamingInputPreview) {
+    props = { ...props, input: JSON.stringify(props.ports.streamingInputPreview) }
+  }
   if (isPatchToolName(props.toolName)) return renderPatchRow(props)
   if (props.toolName === 'CodeExecution') return <CodeExecutionToolRow {...props} />
   // Old turns retain wire names. Require their input shape so a Grok `execute`

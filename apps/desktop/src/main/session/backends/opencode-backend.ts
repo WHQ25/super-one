@@ -1,4 +1,6 @@
 import type { Part } from '@opencode-ai/sdk/v2'
+import { app } from 'electron'
+import { join } from 'node:path'
 import type {
   AgentEvent,
   AskUserQuestionRequest,
@@ -18,6 +20,7 @@ import { DEADLINE_EXCEEDED, INTERRUPT_CANCEL_TIMEOUT_MS, withDeadline } from '..
 import { resolveComputerUseGrant, rejectComputerUseGrant } from '../../computer-use/grant-request'
 import { gateTerminalTabsCall } from '../../mcp/terminal-tabs-harness-gate'
 import { dispatchOpenCodeRequest } from '../../opencode/opencode-command'
+import { openCodeSteerWasRejected } from '../../opencode/opencode-steer'
 import {
   commonPrefixLength,
   mapOpenCodePermissionRequest,
@@ -45,7 +48,9 @@ import {
   taskNotificationRequest,
 } from '../task-notification-queue'
 import { QueuedUserMessageQueue } from '../queued-user-message-queue'
-import type { BackendStartOptions, HarnessId, SendDelivery, SessionBackend, TaskNotificationInjectResult } from '../types'
+import { OpenCodeSessionState } from './opencode-session-state'
+import { rememberOpenCodeTurnSelection, settleOpenCodeDispatch } from './opencode-turn-dispatch'
+import type { BackendCommand, BackendStartOptions, HarnessId, SendDelivery, SessionBackend, TaskNotificationInjectResult } from '../types'
 
 type OpenCodeRuntimeFactory = (opts: OpenCodeRuntimeOptions) => Promise<OpenCodeRuntime>
 
@@ -70,7 +75,39 @@ export class OpenCodeBackend implements SessionBackend {
   private interrupted = false
   private currentMessageId: string | null = null
   private activeTurn: { messageId: string; resolve: () => void } | null = null
-  /** OpenCode has no steer — mid-turn user messages run as their own turn afterwards. */
+  private steeringAdmissions = 0
+  private readonly pendingSteerInputs = new Set<string>()
+  private readonly deliveredInputs = new Set<string>()
+  private deferredCompletion: { messageId: string } | null = null
+  private inputAdmission: ReturnType<typeof dispatchOpenCodeRequest> | null = null
+  private preparingInput = false
+  private readonly steerCheckpoints: AgentEvent[] = []
+  private catalogRefresh: Promise<{ opencode: import('@superone/shared/agent-types').OpenCodeResources } | null> | null = null
+  private readonly nativeState = new OpenCodeSessionState(() => this.runtime, (event) => this.emit(event))
+  listInbox = () => this.nativeState.listInbox()
+  async reconnect() { if (!this.runtime?.reconnect) return false; await this.runtime.reconnect(); return true }
+  cancelInbox = (id: string, assertControl: () => void) => this.nativeState.cancelInbox(id, assertControl)
+  async updateInbox(id: string, delivery: 'steer' | 'queue', assertControl: () => void) {
+    await this.runtime?.waitForConnection?.()
+    const item = (await this.nativeState.listInbox()).find((item) => item.id === id)
+    if (!item) throw new Error('This input is no longer pending')
+    assertControl()
+    let adopted: string | null = null
+    if (delivery === 'steer' && !this.isTurnBusy()) {
+      this.preparingInput = true
+      try { await this.runtime?.prepareTurn?.(); assertControl(); this.nativeState.appendInput(item); adopted = this.adoptInboxTurn(id) }
+      finally { this.preparingInput = false }
+    }
+    let submitted = false
+    try { await this.nativeState.updateInbox(id, delivery, () => { assertControl(); submitted = true }) }
+    catch (error) {
+      if (adopted && (!submitted || openCodeSteerWasRejected(error))) this.fail(adopted, openCodeErrorMessage(error))
+      else if (adopted && this.currentMessageId === adopted) this.emit({ type: 'content_delta', messageId: adopted,
+        delta: { type: 'notice', id: 'inbox-delivery', level: 'error', text: 'Pending input delivery could not be confirmed. Stop the turn to cancel execution; the input was not resent.' } })
+      throw error
+    }
+  }
+  /** Host-held follow-ups; V2 can explicitly admit one as a native steer. */
   private readonly pendingQueued = new QueuedUserMessageQueue({
     isBusy: () => this.isTurnBusy(),
     isAlive: () => this.started && !this.disposed,
@@ -85,7 +122,7 @@ export class OpenCodeBackend implements SessionBackend {
   private readonly taskNotificationFlush = new TaskNotificationFlush(
     this.pendingTaskNotifications,
     {
-      isBusy: () => Boolean(this.activeTurn),
+      isBusy: () => this.isTurnBusy(),
       isAlive: () => this.started && !this.disposed,
       send: (content) => this.taskNotificationSender(content),
     },
@@ -117,7 +154,7 @@ export class OpenCodeBackend implements SessionBackend {
   }
 
   async releaseRuntime(_reason: 'idle'): Promise<void> {
-    if (this.activeTurn || this.pendingQueued.size > 0) return
+    if (this.isTurnBusy() || this.pendingQueued.size > 0) return
     if (this.getPendingInteractions().length > 0) return
     await this.closeRuntime()
   }
@@ -165,9 +202,9 @@ export class OpenCodeBackend implements SessionBackend {
       cwd: opts.cwd,
       providerSessionId: opts.providerSessionId,
       permissionMode: this.permissionMode,
-      config: this.config,
+      config: typeof app?.getPath === 'function' ? { ...this.config, serviceHome: join(app.getPath('userData'), 'opencode-services') } : this.config,
       systemPromptAppend: opts.systemPromptAppend,
-      onEvent: (event) => this.routeEvent(event),
+      onEvent: (event) => { if (epoch === this.runtimeEpoch && !this.disposed) this.routeEvent(event) },
     }).then(async (runtime) => {
       if (this.disposed || epoch !== this.runtimeEpoch) {
         await runtime.close().catch(() => undefined)
@@ -177,7 +214,7 @@ export class OpenCodeBackend implements SessionBackend {
       opts.providerSessionId = runtime.sessionId
       for (const callback of this.providerSessionListeners) callback(runtime.sessionId)
       this.emit({ type: 'provider_session_id', providerSessionId: runtime.sessionId })
-      this.emit({ type: 'session_agents', agents: runtime.agents })
+      this.publishRuntimeCatalog(runtime)
       for (const event of runtime.snapshotEvents) this.routeEvent(event)
       return runtime
     }).finally(() => {
@@ -216,54 +253,63 @@ export class OpenCodeBackend implements SessionBackend {
    * slip into the window before `await ensureRuntime()` assigns `activeTurn`.
    */
   private isTurnBusy(): boolean {
-    return this.currentMessageId !== null || this.activeTurn !== null
+    return this.preparingInput || this.currentMessageId !== null || this.activeTurn !== null || this.steeringAdmissions > 0
   }
 
-  async send(request: SendMessageRequest, delivery?: SendDelivery): Promise<void> {
-    if (!this.started || this.disposed) throw new Error('OpenCodeBackend not started')
-    if (this.pendingQueued.intercept(request, delivery)) return
-    if (this.activeTurn) throw new Error('OpenCodeBackend already has an active turn')
-    const messageId = request.assistantMessageId ?? `opencode_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+  private beginTurn(messageId: string) {
     this.resetTurnState()
     this.terminalPermissionAbort.abort()
     this.terminalPermissionAbort = new AbortController()
     this.currentMessageId = messageId
     this.interrupted = false
-    this.emit({
-      type: 'message_start',
-      message: {
-        id: messageId,
-        role: 'assistant',
-        status: 'streaming',
-        content: [],
-        createdAt: new Date().toISOString(),
-        providerId: 'opencode',
-      },
-    })
+    this.emit({ type: 'message_start', message: { id: messageId, role: 'assistant', status: 'streaming', content: [], createdAt: new Date().toISOString(), providerId: 'opencode' } })
     this.emit({ type: 'status_change', status: 'streaming' })
+  }
+
+  private adoptInboxTurn(id: string) {
+    const messageId = `opencode_${crypto.randomUUID()}`
+    this.beginTurn(messageId)
+    this.v2Turn.adoptInbox(id)
+    void new Promise<void>((resolve) => { this.activeTurn = { messageId, resolve } }).then(() => {
+      if (this.currentMessageId !== messageId) return
+      this.currentMessageId = null
+      this.activeTurn = null
+      this.runtime?.finishTurn?.()
+      this.resetTurnState()
+      this.pendingQueued.flush()
+      this.flushPendingTaskNotifications()
+    })
+    return messageId
+  }
+
+  async send(request: SendMessageRequest, delivery?: SendDelivery): Promise<void> {
+    if (!this.started || this.disposed) throw new Error('OpenCodeBackend not started')
+    if (this.pendingQueued.intercept(request, delivery)) return
+    if (this.isTurnBusy()) throw new Error('OpenCodeBackend already has an active turn')
+    this.preparingInput = true
+    try { if (this.catalogRefresh) await this.catalogRefresh; if (this.runtime?.waitForConnection) await this.runtime.waitForConnection() }
+    finally { this.preparingInput = false }
+    if (this.disposed) throw new Error('OpenCodeBackend closed during runtime recovery')
+    const messageId = request.assistantMessageId ?? `opencode_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    this.beginTurn(messageId)
+    const transport = new AbortController()
     try {
       const runtime = await this.ensureRuntime()
       const turnComplete = new Promise<void>((resolve) => { this.activeTurn = { messageId, resolve } })
+      await runtime.prepareTurn?.(request.clientMessageId, { ...delivery, signal: transport.signal })
       if (request.content.trim() === '/compact') {
         const usage = await runtime.getContextUsage().catch(() => null)
         this.activeCompaction = { preTokens: usage?.totalTokens ?? this.lastContextTokens, startedAt: Date.now() }
         this.emit({ type: 'status_indicator', indicator: 'compacting' })
       }
-      // The runtime keeps no model or effort between turns (its setModel is a
-      // no-op), so this backend keeps the selection: a turn's explicit values
-      // become it, and a turn that omits them runs on it.
-      const turn = { ...request, model: request.model ?? this.opts?.model, effort: request.effort ?? this.opts?.effort }
-      if (this.opts) {
-        this.opts.model = turn.model
-        this.opts.effort = turn.effort
-      }
-      const dispatch = await dispatchOpenCodeRequest(runtime, turn, delivery?.onInputAccepted)
-      this.syncNativeSettings(runtime, request.agent)
-      if (dispatch.kind === 'local') {
-        this.emit({ type: 'slash_command_output', messageId, content: dispatch.content })
-        this.complete(messageId)
-      }
-      await turnComplete
+      const turn = rememberOpenCodeTurnSelection(request, this.opts)
+      this.inputAdmission = dispatchOpenCodeRequest(runtime, turn, runtime.prepareTurn ? undefined : delivery?.onInputAccepted)
+      await settleOpenCodeDispatch(this.inputAdmission, turnComplete, {
+        native: !!runtime.prepareTurn,
+        isCurrent: () => this.currentMessageId === messageId && this.runtime === runtime && !this.disposed,
+        syncSettings: () => this.syncNativeSettings(runtime, request.agent),
+        onLocal: content => { this.emit({ type: 'slash_command_output', messageId, content }); this.complete(messageId) },
+      })
     } catch (error) {
       if (this.activeCompaction) {
         this.activeCompaction = null
@@ -277,13 +323,16 @@ export class OpenCodeBackend implements SessionBackend {
       if (this.interrupted) this.complete(messageId, true)
       else this.fail(messageId, error instanceof Error ? error.message : String(error))
     } finally {
+      transport.abort()
       const activeTurn = this.activeTurn as { messageId: string; resolve: () => void } | null
       if (activeTurn?.messageId === messageId) this.activeTurn = null
       this.terminalPermissionAbort.abort()
       this.currentMessageId = null
+      this.inputAdmission = null
+      this.runtime?.finishTurn?.()
       this.resetTurnState()
       // User-typed messages outrank host task notifications.
-      this.pendingQueued.flush()
+      if (this.steeringAdmissions === 0) this.pendingQueued.flush()
       this.flushPendingTaskNotifications()
     }
   }
@@ -317,6 +366,7 @@ export class OpenCodeBackend implements SessionBackend {
     this.runtimePromise = null
     this.runtimeAbortController = null
     this.runtime = null
+    this.nativeState.reset()
     this.pendingPermissions.clear()
     this.pendingQuestions.clear()
     abortController?.abort()
@@ -328,6 +378,7 @@ export class OpenCodeBackend implements SessionBackend {
     this.terminalPermissionAbort.abort()
     const runtime = this.runtime
     this.runtime = null
+    this.nativeState.reset()
     this.runtimeEpoch += 1
     if (runtime) void runtime.close().catch((error) => log.debug('[OpenCodeBackend] invalid runtime close failed:', error))
   }
@@ -416,7 +467,30 @@ export class OpenCodeBackend implements SessionBackend {
     }
   }
   async getMcpServerStatus(): Promise<McpServerInfo[]> { return (await this.ensureRuntime()).getMcpServerStatus() }
-  async authenticateMcp(serverName: string): Promise<void> { await (await this.ensureRuntime()).authenticateMcp(serverName) }
+  async authenticateMcp(serverName: string, assertControl?: () => void): Promise<void> {
+    const runtime = await this.ensureRuntime()
+    assertControl?.()
+    await runtime.authenticateMcp(serverName, assertControl)
+    const servers = await runtime.getMcpServerStatus()
+    if (this.runtime === runtime && !this.disposed) this.emit({ type: 'mcp_status', servers })
+  }
+  refreshResources(assertControl?: () => void) {
+    if (this.catalogRefresh) return this.catalogRefresh
+    if (this.isTurnBusy() || this.pendingPermissions.size || this.pendingQuestions.size) return Promise.reject(new Error('Finish the active OpenCode turn and pending interactions before refreshing catalogs'))
+    const refresh = this.ensureRuntime().then(async (runtime) => {
+      assertControl?.()
+      if (this.disposed || this.isTurnBusy() || this.pendingPermissions.size || this.pendingQuestions.size || runtime.hasPendingAuthentication) throw new Error('Finish the active OpenCode turn and pending interactions before refreshing catalogs')
+      if (!runtime.refreshResources) return null
+      const priorAgent = runtime.agent
+      const resources = await runtime.refreshResources(assertControl)
+      if (this.disposed || this.runtime !== runtime) throw new Error('OpenCode runtime closed during catalog refresh')
+      this.publishRuntimeCatalog(runtime)
+      if (priorAgent !== runtime.agent) this.syncNativeSettings(runtime, priorAgent)
+      return { opencode: resources }
+    }).finally(() => { this.catalogRefresh = null })
+    this.catalogRefresh = refresh
+    return refresh
+  }
   async rewindFiles(userMessageId: string, opts?: { dryRun?: boolean }): Promise<RewindFilesResult> {
     try {
       const runtime = await this.ensureRuntime()
@@ -441,8 +515,66 @@ export class OpenCodeBackend implements SessionBackend {
   dequeueMessage(clientMessageId: string): boolean {
     return this.pendingQueued.dequeue(clientMessageId)
   }
+
+  async handleCommand(cmd: BackendCommand, assertControl?: () => void): Promise<void> {
+    if (cmd.kind !== 'opencode.steer_queued') return
+    // Initial prompt admission must precede a steer, even when the composer
+    // already shows streaming during model/agent setup.
+    if (this.inputAdmission) await this.inputAdmission
+    await this.runtime?.waitForConnection?.()
+    const runtime = this.runtime
+    if (!runtime?.steer) throw new Error('This OpenCode runtime does not support native steering')
+    if (this.steeringAdmissions > 0) throw new Error('Another OpenCode steering input is being submitted')
+    const messageId = this.currentMessageId
+    if (!messageId || !this.activeTurn || this.interrupted || this.disposed) throw new Error('Queued message can only steer an active OpenCode turn')
+    const taken = this.pendingQueued.take(cmd.clientMessageId)
+    if (!taken) throw new Error(`Queued OpenCode message not found: ${cmd.clientMessageId}`)
+    this.steeringAdmissions += 1
+    let submitted = false
+    const consumed = () => {
+      if (this.disposed) return
+      this.emit({ type: 'queued_message_consumed', clientMessageId: cmd.clientMessageId })
+      // Native enqueue can beat the HTTP acknowledgement. Attach its fork
+      // anchor only after Session has appended the consumed user bubble.
+      for (const event of this.steerCheckpoints.splice(0)) this.emit(event)
+    }
+    try {
+      const inputId = await runtime.steer(taken.request, () => {
+        if (this.currentMessageId !== messageId || this.interrupted || this.disposed) throw new Error('OpenCode turn ended before steering submission')
+        submitted = true
+        taken.delivery?.onInputAccepted()
+      }, assertControl)
+      this.syncNativeSettings(runtime, taken.request.agent)
+      if (this.currentMessageId === messageId && this.terminalMessageId !== messageId && !this.deliveredInputs.has(inputId)) {
+        this.pendingSteerInputs.add(inputId)
+      }
+      consumed()
+    } catch (error) {
+      if (!submitted || openCodeSteerWasRejected(error)) {
+        if (!this.disposed && !this.interrupted) this.pendingQueued.restore(taken)
+      } else {
+        // A lost response may follow durable admission. Keep the accepted user
+        // transcript and remove the retryable queue entry; never auto-resend it.
+        consumed()
+        throw new Error('OpenCode steering delivery could not be confirmed; the input may have been accepted', { cause: error })
+      }
+      throw error
+    } finally {
+      this.steeringAdmissions -= 1
+      this.flushDeferredCompletion()
+      if (!this.isTurnBusy()) this.pendingQueued.flush()
+    }
+  }
+
+  private flushDeferredCompletion(): void {
+    const deferred = this.deferredCompletion
+    if (!deferred || this.steeringAdmissions || this.pendingSteerInputs.size) return
+    this.deferredCompletion = null
+    this.steerCheckpoints.length = 0
+    if (this.currentMessageId === deferred.messageId) this.complete(deferred.messageId)
+  }
   getPendingInteractions(): AgentEvent[] {
-    return [...this.pendingPermissions.values(), ...this.pendingQuestions.values()].map((entry) => entry.event)
+    return [...this.pendingPermissions.values(), ...this.pendingQuestions.values()].map((entry) => entry.event).concat(this.nativeState.snapshot())
   }
   onEvent(handler: (event: AgentEvent) => void): () => void { this.listeners.add(handler); return () => this.listeners.delete(handler) }
   onProviderSessionId(handler: (id: string) => void): () => void { this.providerSessionListeners.add(handler); return () => this.providerSessionListeners.delete(handler) }
@@ -450,6 +582,12 @@ export class OpenCodeBackend implements SessionBackend {
 
   private emit(event: AgentEvent): void {
     for (const listener of this.listeners) listener(event)
+  }
+
+  private publishRuntimeCatalog(runtime: OpenCodeRuntime): void {
+    this.emit({ type: 'session_agents', agents: runtime.agents, commands: runtime.commands, models: runtime.models,
+      runtimeCapabilities: { harnessId: 'opencode', supportsQueuedSteer: !!runtime.steer,
+        supportsQueuedSteerSoon: false, supportsStreamingToolInput: !!runtime.supportsStreamingToolInput } })
   }
 
   /**
@@ -478,10 +616,21 @@ export class OpenCodeBackend implements SessionBackend {
     this.capturedUserMessageIds.clear()
     this.latestMetadata = undefined
     this.v2Turn.reset()
+    this.pendingSteerInputs.clear()
+    this.deliveredInputs.clear()
+    this.deferredCompletion = null
+    this.steerCheckpoints.length = 0
   }
 
   private complete(messageId: string, interrupted = false): void {
     if (this.terminalMessageId === messageId) return
+    if (!interrupted && !this.interrupted && (this.steeringAdmissions > 0 || this.pendingSteerInputs.size > 0)) {
+      this.deferredCompletion = { messageId }
+      return
+    }
+    this.deferredCompletion = null
+    this.pendingSteerInputs.clear()
+    if (interrupted || this.interrupted) this.steerCheckpoints.length = 0
     this.terminalPermissionAbort.abort()
     this.terminalMessageId = messageId
     this.emit({
@@ -495,6 +644,9 @@ export class OpenCodeBackend implements SessionBackend {
 
   private fail(messageId: string, error: string): void {
     if (this.terminalMessageId === messageId) return
+    this.deferredCompletion = null
+    this.pendingSteerInputs.clear()
+    this.steerCheckpoints.length = 0
     this.terminalPermissionAbort.abort()
     this.terminalMessageId = messageId
     this.emit({ type: 'message_error', messageId, error, errorInfo: buildAgentErrorInfo(error) })
@@ -600,6 +752,10 @@ export class OpenCodeBackend implements SessionBackend {
   private applyV2Action(action: OpenCodeV2TurnAction, messageId: string | null): void {
     switch (action.type) {
       case 'agent':
+        if (action.event.type === 'checkpoint_captured' && this.steeringAdmissions > 0) {
+          this.steerCheckpoints.push(action.event)
+          return
+        }
         this.emit(action.event)
         return
       case 'step_ended':
@@ -670,6 +826,20 @@ export class OpenCodeBackend implements SessionBackend {
   }
 
   private routeEvent(event: OpenCodeRuntimeEvent): void {
+    if (event.type === 'runtime.interrupted') {
+      if (this.currentMessageId) void this.interrupt()
+      return
+    }
+    if (event.type === 'runtime.connection' || event.type === 'runtime.inbox') { this.nativeState.route(event); return }
+    if (event.type === 'runtime.interactions') {
+      for (const id of event.properties.resolvedPermissions) if (this.pendingPermissions.delete(id)) this.emit({ type: 'interaction_resolved', interactionType: 'permission', requestId: id })
+      for (const id of event.properties.resolvedForms) this.resolveQuestion(id)
+      return
+    }
+    if (event.type === 'runtime.resources') {
+      if (this.runtime) this.publishRuntimeCatalog(this.runtime)
+      return
+    }
     const messageId = this.currentMessageId
     if (event.type === 'runtime.error') {
       if (messageId) this.fail(messageId, event.properties.message)
@@ -678,7 +848,17 @@ export class OpenCodeBackend implements SessionBackend {
       return
     }
     if (event.type === 'v2') {
-      for (const action of this.v2Turn.apply(event.event, messageId)) this.applyV2Action(action, messageId)
+      const native = event.event
+      if (native.type === 'session.execution.started') this.deferredCompletion = null
+      if (native.type === 'session.inbox.enqueued' && this.steeringAdmissions > 0 && native.data.item.type === 'user') {
+        this.pendingSteerInputs.add(native.data.inboxID)
+      }
+      if (native.type === 'session.inbox.delivered') {
+        this.deliveredInputs.add(native.data.inboxID)
+        this.pendingSteerInputs.delete(native.data.inboxID)
+      }
+      if (native.type === 'session.inbox.cancelled') { this.pendingSteerInputs.delete(native.data.inboxID); this.flushDeferredCompletion() }
+      for (const action of this.v2Turn.apply(event.event, messageId, event.replay)) this.applyV2Action(action, messageId)
       return
     }
     if (routeOpenCodeTodoEvent(event, (item) => this.emit(item))) return

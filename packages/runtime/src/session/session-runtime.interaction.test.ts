@@ -9,6 +9,7 @@ import {
   type NodeSessionRecord,
   type SessionEventLog,
   type SessionStore,
+  type TurnRunner,
 } from './session-runtime'
 
 function memoryPorts(leases?: LeaseGuard) {
@@ -47,7 +48,7 @@ function memoryPorts(leases?: LeaseGuard) {
 async function waitForPending(
   runtime: SessionRuntime,
   sessionId: string,
-  kind: 'question' | 'plan',
+  kind: 'question' | 'plan' | 'permission',
   attempts = 80,
 ): Promise<string> {
   for (let i = 0; i < attempts; i++) {
@@ -73,6 +74,70 @@ const client = { clientSessionId: 'client-1' }
 const lease = { leaseId: 'lease-1', generation: 'gen-1' }
 
 describe('SessionRuntime question / plan', () => {
+  it('interrupts an ambient native execution even when no ordinary turn owns an abort', async () => {
+    const { store, events, leases } = memoryPorts()
+    const runner: TurnRunner = async () => ({ finalText: '' })
+    let interrupted = false
+    runner.callOperation = async (_session, _method, _input, host) => {
+      host.onEvent({ type: 'message_start', message: { id: 'ambient', role: 'assistant', providerId: 'opencode', status: 'streaming', content: [], createdAt: new Date().toISOString() } })
+      runner.interruptSession = async () => {
+        interrupted = true
+        host.onEvent({ type: 'message_interrupted', messageId: 'ambient' })
+      }
+      return { ok: true }
+    }
+    const runtime = new SessionRuntime(store, events, leases, 'env', runner)
+    const session = runtime.create({ projectId: 'p', harnessId: 'opencode' })
+    try {
+      await runtime.callOperation(session.sessionId, 'session.inbox.update', { inboxId: 'native', delivery: 'steer' })
+      expect(runtime.get(session.sessionId)?.status).toBe('streaming')
+      runtime.interrupt(session.sessionId, { clientSessionId: 'client' }, 'lease', 'generation')
+      expect(interrupted).toBe(true)
+      expect(runtime.get(session.sessionId)?.status).toBe('interrupted')
+    } finally { await runtime.dispose() }
+  })
+  it('captures each queued OpenCode agent choice independently of later selections', async () => {
+    const { store, events, leases } = memoryPorts()
+    const agents: Array<string | null | undefined> = []
+    let release!: () => void
+    const hold = new Promise<void>(resolve => { release = resolve })
+    const runtime = new SessionRuntime(store, events, leases, 'env-q', async input => {
+      agents.push(input.agent)
+      if (input.text === 'first') await hold
+      return { finalText: 'done', providerResume: null }
+    })
+    const session = runtime.create({ projectId: 'p', harnessId: 'opencode' })
+    try {
+      for (const [text, agent] of [['first', 'build'], ['second', 'plan'], ['third', 'review']])
+        await runtime.send({ sessionId: session.sessionId, text, agent, client, ...lease })
+      release()
+      await waitIdle(runtime, session.sessionId)
+      expect(agents).toEqual(['build', 'plan', 'review'])
+      expect(store.loadAll()[0]?.agent).toBe('review')
+    } finally { release(); await runtime.dispose() }
+  })
+
+  it('keeps native OpenCode permission requests interactive despite legacy bypass presets', async () => {
+    const { store, events, leases } = memoryPorts()
+    let decision: string | undefined
+    const runtime = new SessionRuntime(store, events, leases, 'env-q', async input => {
+      decision = await input.onPermission?.({ interactionId: 'native-permission', kind: 'permission',
+        toolName: 'Edit', input: { file: '/protected' }, createdAt: Date.now(),
+        permissionDetails: { action: 'edit', resources: ['/protected'] }, allowAlwaysAllow: false })
+      return { finalText: '', providerResume: null }
+    })
+    const session = runtime.create({ projectId: 'p', harnessId: 'opencode', permissionMode: 'bypassPermissions' })
+    try {
+      await runtime.send({ sessionId: session.sessionId, text: 'edit', client, ...lease })
+      const interactionId = await waitForPending(runtime, session.sessionId, 'permission')
+      expect(decision).toBeUndefined()
+      expect(() => runtime.respondPermission({ sessionId: session.sessionId, interactionId, decision: 'allow_always', client, ...lease })).toThrow('allow once or deny')
+      runtime.respondPermission({ sessionId: session.sessionId, interactionId, decision: 'deny', client, ...lease })
+      await waitIdle(runtime, session.sessionId)
+      expect(decision).toBe('deny')
+    } finally { await runtime.dispose() }
+  })
+
   it('refuses unsupported native composer options before appending a user turn', async () => {
     const { store, events, leases, eventTypes } = memoryPorts()
     const runtime = new SessionRuntime(store, events, leases, 'env-q', createSimulatedTurnRunner())
@@ -104,6 +169,22 @@ describe('SessionRuntime question / plan', () => {
       expect(() => runtime.patchSettings(session.sessionId, { model: 'new', [field]: 'unsupported' })).toThrow('does not support desktop harness settings')
     }
     expect(runtime.get(session.sessionId)?.model).toBe('original')
+  })
+
+  it('persists OpenCode agent selection and an early native resume id even when preparation later fails', async () => {
+    const { store, events, leases } = memoryPorts()
+    const runtime = new SessionRuntime(store, events, leases, 'env-q', async (input) => {
+      expect(input.session.agent).toBe('plan')
+      input.onProviderResume?.('opencode:native')
+      throw new Error('preparation failed')
+    })
+    const session = runtime.create({ projectId: 'p1', harnessId: 'opencode' })
+    runtime.patchSettings(session.sessionId, { agent: 'plan' })
+    await runtime.send({ sessionId: session.sessionId, text: 'go', clientMessageId: 'user', client: { clientSessionId: 'client' }, leaseId: 'lease', generation: '1' })
+    await waitIdle(runtime, session.sessionId)
+    expect(runtime.get(session.sessionId)?.providerResume).toBe('opencode:native')
+    expect(store.loadAll()[0]).toMatchObject({ agent: 'plan', providerResume: 'opencode:native' })
+    await runtime.dispose()
   })
 
   it('respondQuestion continues the turn', async () => {

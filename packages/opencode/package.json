@@ -13,11 +13,14 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "better-sqlite3": "^13.0.1",
     "@opencode-ai/sdk": "^1.18.26",
     "@superone/runtime": "workspace:*",
-    "@superone/shared": "workspace:*"
+    "@superone/shared": "workspace:*",
+    "@opencode/client": "2.0.27"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
     "typescript": "^7.0.2",
     "vitest": "^4.1.11"
   },

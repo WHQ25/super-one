@@ -145,6 +145,31 @@ describe('transcript window live delivery', () => {
     ])
   })
 
+  it('delivers native history replacement through a bounded window and keeps the last reply pointer', async () => {
+    const h = host([textMessage('u', 'user', 'Hi'), textMessage('a', 'assistant', 'Draft'), textMessage('removed', 'assistant', 'Later turn')])
+    const ctx = context(h.sessions)
+    const held = applyWindowResult(null, await window(ctx), EMPTY_WINDOW_LOOKUP).state
+    const restored = [textMessage('u', 'user', 'Hi'), textMessage('a', 'assistant', longReplyText(512 * 1024))]
+    h.set(restored)
+    const replacement: AgentEvent = { type: 'transcript_replaced', sessionId: 's', messages: restored }
+    const delivered = deliverFrame(frame(envelope(replacement, 2, false)), ctx.delivery, h.sessions).frame
+    expect(utf8Length(JSON.stringify(delivered))).toBeLessThan(100 * 1024)
+    const events = delivered.events.map(e => (e.payload as { event: AgentEvent }).event)
+    expect(events[0]).toMatchObject({ type: 'transcript_replaced', messages: [{ id: 'a', content: [] }] })
+    const [patch] = patchesOf(delivered)
+    expect(patch.removed).toContain('removed')
+    const applied = applyWindowPatch(held, patch, windowLookup(held))
+    expect(applied.stale).toBe(false)
+    expect(applied.state.messages.map(m => m.id)).toEqual(['u', 'a'])
+    expect(materializeWindowMessage(applied.state.messages[1]).content.length).toBeGreaterThan(0)
+    expect(replacement.messages).toBe(restored)
+    expect(replacement.messages[1].content[0]).toMatchObject({ text: longReplyText(512 * 1024) })
+    h.set([])
+    const cleared = deliverFrame(frame(envelope({ type: 'transcript_replaced', sessionId: 's', messages: [] }, 3, false)), ctx.delivery, h.sessions).frame
+    expect((cleared.events[0].payload as { event: AgentEvent }).event).toMatchObject({ type: 'transcript_replaced', messages: [] })
+    expect(applyWindowPatch(applied.state, patchesOf(cleared)[0], windowLookup(applied.state)).state.messages).toEqual([])
+  })
+
   it('keeps every event for a relaying desktop and tags patches with the holder', async () => {
     const h = host([textMessage('a', 'assistant', 'Hello', 'streaming')])
     const ctx = context(h.sessions, new ConnectionDelivery(deliveryPolicy('relay', 'desktop')))

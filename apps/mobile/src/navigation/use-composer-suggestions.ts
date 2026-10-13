@@ -5,6 +5,7 @@ import { requestMentionIcons, requestMentionSearch, type MentionSearchOptions, t
 import { MentionIconCache, type MentionIconStore } from '../mention-icon-cache'
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import type { ChatRuntime } from '../runtime'
+import type { ChatCoreSession } from '@superone/chat-core'
 import { cursorAfterEdit, insertAtCursor, triggerSnippet, type ComposerCursor } from '../composer-cursor'
 import { extractMentionQuery, insertMention, parseMentionItems, type MentionItem } from '../mentions'
 import { buildMentionRows, type MentionRow } from '../mention-rows'
@@ -88,6 +89,17 @@ export function useComposerSuggestions(
   const [slashDismissed, setSlashDismissed] = useState(false)
   const [catalog, setCatalog] = useState<SlashCommandInfo[]>([])
   const [catalogStatus, setCatalogStatus] = useState<SlashCatalogStatus>('loading')
+  const [sessionCatalog, setSessionCatalog] = useState<{ sessionId: string; harness: HarnessId; commands: SlashCommandInfo[] }>()
+  const syncSessionCatalog = (runtime: Pick<ChatRuntime, 'sessionId' | 'session'>) => {
+    const session: ChatCoreSession = runtime.session
+    const harness = session.runtimeCapabilities?.harnessId
+    const commands = session.sessionSlashCommands
+    const id = runtime.sessionId
+    setSessionCatalog((previous) => harness && commands && id
+      ? previous?.sessionId === id && previous.harness === harness && previous.commands === commands
+        ? previous : { sessionId: id, harness, commands }
+      : undefined)
+  }
   const [mentionQuery, setMentionQuery] = useState<string | null>(null)
   const [mentionResults, setMentionResults] = useState<MentionFetch>({ remote: [] })
   const [mentionSearch, setMentionSearch] = useState<MentionSearchState>(CLOSED)
@@ -185,14 +197,15 @@ export function useComposerSuggestions(
    * `/` still opens the overlay. The old code only recomputed on keystrokes and
    * silently showed nothing until the next one.
    */
+  const nativeCatalog = sessionCatalog && sessionCatalog.sessionId === host.sessionId && sessionCatalog.harness === provider ? sessionCatalog.commands : undefined
   const slashHits = useMemo(
-    () => (slashDismissed ? [] : filterSlashCommands(draft, catalog, provider)),
-    [draft, catalog, provider, slashDismissed],
+    () => (slashDismissed ? [] : filterSlashCommands(draft, nativeCatalog ?? catalog, provider)),
+    [draft, catalog, nativeCatalog, provider, slashDismissed],
   )
   // The overlay reports the catalog only while a `/` query is open. The load
   // itself starts with every new session and harness switch, and reporting it
   // unconditionally popped a "Loading commands…" strip above an empty input.
-  const slashCatalogStatus: SlashCatalogStatus = !slashDismissed && draft.startsWith('/') ? catalogStatus : 'ready'
+  const slashCatalogStatus: SlashCatalogStatus = !slashDismissed && draft.startsWith('/') && !nativeCatalog ? catalogStatus : 'ready'
 
   // The project's catalog, ahead of any `@`: the slash catalog above is
   // preloaded for the same reason. A context it already knows shows at once.
@@ -542,7 +555,7 @@ export function useComposerSuggestions(
     mentionQuery, mentionGroupLabels,
     /** Servers still searching, empty or failed; their items are already in `mentionRows`. */
     mcpMentions: mcpQuery !== null ? mcpMentions : undefined,
-    update, updateNative, select, insert, insertSnippet, snippetAtCursor, clear, applyProgrammatic,
+    update, updateNative, select, insert, insertSnippet, snippetAtCursor, clear, applyProgrammatic, syncSessionCatalog,
     dismissSlash: () => setSlashDismissed(true),
     retry: searchMentions,
     /** Fetch the next page of an already-open list, keeping what is on screen. */

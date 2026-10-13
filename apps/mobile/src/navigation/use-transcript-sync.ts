@@ -11,6 +11,7 @@ import { injectHostMessage } from '../native-actions'
 import { networkLedger } from '../network-ledger'
 import { TranscriptDelivery, type TranscriptSnapshot } from '../transcript-delivery'
 import type { MobileVoiceState } from '../voice/voice-service'
+import { StreamingInputProjection } from '../streaming-input-projection'
 
 type ConversationView = 'realtime' | 'thread'
 type Facts = Omit<TranscriptSnapshot, 'messages'>
@@ -42,6 +43,7 @@ export function useTranscriptSync(web: RefObject<WebView | null>, voice?: Mobile
   const activeRuntime = useRef<ChatRuntime | null>(null)
   const lastFacts = useRef<Facts>({})
   const previousSpeech = useRef<ChatMessage[]>([])
+  const streamingInputs = useMemo(() => new StreamingInputProjection(), [])
   const threadCache = useRef<{ messages: ChatMessage[]; canonical: ChatMessage[]; merged: ChatMessage[] } | null>(null)
   const entryViewSelected = useRef(false)
   const viewRef = useRef<ConversationView>('thread')
@@ -94,7 +96,7 @@ export function useTranscriptSync(web: RefObject<WebView | null>, voice?: Mobile
     }) : null
     const messages = projected ? keepUnchangedSpeech(previousSpeech.current, projected.messages) : threadMessages
     if (projected) previousSpeech.current = messages
-    delivery.publish({ ...lastFacts.current, messages,
+    delivery.publish({ ...lastFacts.current, messages: streamingInputs.project(messages, session._streamingToolInputPreviews),
       pendingAsyncQuestions: session.pendingAsyncQuestions ?? null,
       emptyState, conversationView: showingVoice ? 'realtime' : 'thread', realtimeActivities: projected?.activities ?? [],
       ...(showingVoice ? { hasMoreHistory: false, historyNavigation: false, transcriptWindow: false, hasNewerHistory: false, queuedMessages: [], pendingTurn: null,

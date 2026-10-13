@@ -6,6 +6,7 @@ import { SESSION_TITLE_MAX_CHARS } from '@superone/shared/session-title'
 import { applyContentDelta, retractContentBlocks, sealStreamingTools } from '@superone/shared/content-delta'
 import { newMessageId } from '@superone/shared/message-id'
 import { applySubagentTaskStarted, resolveDeltaHomeMessageId, resolveTaskToolUseId } from '@superone/shared/subagent-routing'
+import { findCheckpointTarget } from '@superone/shared/checkpoint-target'
 
 export interface PersistedClaudeSessionState {
   messages: ChatMessage[]
@@ -38,21 +39,6 @@ export interface ClaudeSessionRuntime {
   gitBranch: string | null
   worktreePath: string | null
   taskProgress: Record<string, TaskProgressEntry>
-}
-
-function findCheckpointTarget(messages: ChatMessage[], assistantMessageId: string): number {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i].id === assistantMessageId) {
-      for (let j = i - 1; j >= 0; j--) {
-        if (messages[j].role === 'user') return j
-      }
-      break
-    }
-  }
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i].role === 'user') return i
-  }
-  return -1
 }
 
 function mergeMessages(savedMessages: ChatMessage[], runtimeMessages: ChatMessage[]): ChatMessage[] {
@@ -494,7 +480,7 @@ export function applyClaudeEventToRuntime(
       }
     case 'checkpoint_captured': {
       const messages = [...runtime.messages]
-      const targetIndex = findCheckpointTarget(messages, event.messageId)
+      const targetIndex = findCheckpointTarget(messages, event.messageId, event.userMessageId)
       if (targetIndex === -1) return runtime
       messages[targetIndex] = {
         ...messages[targetIndex],

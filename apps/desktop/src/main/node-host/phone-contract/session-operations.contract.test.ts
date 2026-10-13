@@ -23,6 +23,11 @@ function operationsDomain() {
     clearCodexGoal: vi.fn(async () => { own.lease.assertMutation(); return true }),
     dequeueMessage: vi.fn(async () => { own.lease.assertMutation(); return true }),
     dispatchBackendCommand: vi.fn(async () => { own.lease.assertMutation() }),
+    refreshResources: vi.fn(async () => { own.lease.assertMutation(); return { opencode: { models: [], agents: [{ id: 'new', name: 'New' }], commands: [] } } }),
+    listInbox: vi.fn(async () => [{ id: 'native-input', text: 'next', delivery: 'queue', attachmentCount: 0, createdAt: 1 }]),
+    cancelInbox: vi.fn(async () => { own.lease.assertMutation() }),
+    updateInbox: vi.fn(async () => { own.lease.assertMutation() }),
+    reconnect: vi.fn(async () => true),
     respondToPermission: vi.fn(() => { own.lease.assertMutation(); return true }),
     respondToQuestion: vi.fn(() => { own.lease.assertMutation() }),
     dismissQuestion: vi.fn(() => { own.lease.assertMutation() }),
@@ -32,6 +37,50 @@ function operationsDomain() {
 }
 
 describe('phone endpoint: fenced session operations', () => {
+  it.each(['lan', 'relay'] as const)('reads native pending input without control and fences deduplicated mutations over %s', async (transport) => {
+    const { domain, operations } = operationsDomain()
+    const phone = await connectPhone(domain, { transport }); cleanup.push(phone.close)
+    expect(await phone.rpc('session.inbox.list', { sessionId: 'own' })).toMatchObject([{ id: 'native-input' }])
+    expect(await phone.rpc('session.connection.reconnect', { sessionId: 'own' })).toEqual({ ok: true })
+    await expect(phone.rpc('session.inbox.cancel', { sessionId: 'own', inboxId: 'native-input' })).rejects.toThrow()
+    const lease = await phone.rpc<ControlLease>('session.acquireControl', { sessionId: 'own' })
+    const proof = { sessionId: 'own', leaseId: lease.leaseId, generation: lease.generation, inboxId: 'native-input' }
+    await phone.rpc('session.inbox.update', { ...proof, delivery: 'steer' }, 'inbox-update')
+    await phone.rpc('session.inbox.update', { ...proof, delivery: 'steer' }, 'inbox-update')
+    expect(operations.updateInbox).toHaveBeenCalledExactlyOnceWith('native-input', 'steer')
+    await phone.rpc('session.inbox.cancel', proof, 'inbox-cancel')
+    await phone.rpc('session.inbox.cancel', proof, 'inbox-cancel')
+    expect(operations.cancelInbox).toHaveBeenCalledExactlyOnceWith('native-input')
+    await expect(phone.rpc('session.inbox.update', { ...proof, delivery: 'other' })).rejects.toThrow()
+    domain.leases.revoke({ environmentId: domain.identity.environmentId, sessionId: 'own' })
+    await expect(phone.rpc('session.inbox.cancel', proof)).rejects.toMatchObject({ code: 'lease_stale' })
+    expect(operations.cancelInbox).toHaveBeenCalledOnce()
+  })
+  it.each(['lan', 'relay'] as const)('refreshes native catalogs once through a leased endpoint over %s', async (transport) => {
+    const { domain, own, operations } = operationsDomain()
+    own.harnessId = 'opencode'
+    const phone = await connectPhone(domain, { transport })
+    cleanup.push(phone.close)
+    const lease = await phone.rpc<ControlLease>('session.acquireControl', { sessionId: 'own' })
+    const proof = { sessionId: 'own', leaseId: lease.leaseId, generation: lease.generation }
+    expect(await phone.rpc('session.refreshResources', proof, 'refresh-catalog')).toMatchObject({ opencode: { agents: [{ id: 'new' }] } })
+    await phone.rpc('session.refreshResources', proof, 'refresh-catalog')
+    expect(operations.refreshResources).toHaveBeenCalledOnce()
+    await expect(phone.rpc('session.refreshResources', { sessionId: 'own' })).rejects.toThrow()
+    expect(operations.refreshResources).toHaveBeenCalledOnce()
+  })
+  it.each(['lan', 'relay'] as const)('routes native OpenCode steering once through the leased phone endpoint over %s', async (transport) => {
+    const { domain, own, operations } = operationsDomain()
+    own.harnessId = 'opencode'
+    const phone = await connectPhone(domain, { transport })
+    cleanup.push(phone.close)
+    const lease = await phone.rpc<ControlLease>('session.acquireControl', { sessionId: 'own' })
+    const request = { sessionId: 'own', leaseId: lease.leaseId, generation: lease.generation, clientMessageId: 'q-v2', priority: 'now' }
+    await phone.rpc('session.steer', request, 'opencode-steer')
+    await phone.rpc('session.steer', request, 'opencode-steer')
+    expect(operations.dispatchBackendCommand).toHaveBeenCalledTimes(1)
+    expect(operations.dispatchBackendCommand).toHaveBeenCalledWith({ kind: 'opencode.steer_queued', clientMessageId: 'q-v2' })
+  })
   it.each(['lan', 'relay'] as const)('serves existing session operations and dedupes lost-response retries over %s', async (transport) => {
     const { domain, operations } = operationsDomain()
     const phone = await connectPhone(domain, { transport })

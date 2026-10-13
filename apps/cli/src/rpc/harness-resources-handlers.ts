@@ -1,8 +1,8 @@
 /**
  * harness.resources / harness.connect RPC — aggregate discovery for remote projects.
  *
- * Models come from the node provider store; skills/commands/agents/prompts from
- * node-local FS. Does not use desktop CONNECT_* caches.
+ * OpenCode V2 comes from the node's native location catalog. Other resources
+ * use node providers and local files. Does not use desktop CONNECT_* caches.
  */
 
 import {
@@ -20,6 +20,8 @@ import type { HarnessManager } from '../session/harness-manager'
 import { listHarnessModels, listHarnessProviderModels } from '../provider/resolve-service'
 import { resolveClaudeBinaryPath } from '../session/claude-turn-runner'
 import { getNodeClaudeModelCatalog } from '../session/claude-model-catalog'
+import { discoverOpenCodeV2Resources } from '@superone/opencode/launch'
+import { resolveNodeOpenCodeProvider } from '../provider/opencode-provider'
 
 export interface HarnessResourcesRpcResult {
   result?: unknown
@@ -127,8 +129,13 @@ async function handleHarnessResources(
       experimentalClaudeOpenAiChatEnabled:
         ctx.experimentalClaudeOpenAiChatEnabled ?? false,
     }
+    const openCodeProvider = !harnessId || harnessId === 'opencode' ? resolveNodeOpenCodeProvider(ctx.providers, apiProviderId) : null
+    const nativeOpenCode = !ctx.probeModels && (!harnessId || harnessId === 'opencode')
+      ? await discoverOpenCodeV2Resources(project.path, { harnesses: ctx.harnesses, env: openCodeProvider?.env })
+      : null
 
     const listModels = (hid: string, apiId?: string | null): ModelOption[] => {
+      if (hid === 'opencode' && openCodeProvider) return openCodeProvider.models
       return listHarnessProviderModels(
         ctx.providers,
         hid,
@@ -140,6 +147,7 @@ async function handleHarnessResources(
     // No bound credential: ask the harness on this node what it serves. The
     // built-in slug table only stands in when that probe comes back empty.
     const probeModels = async (hid: string): Promise<ModelOption[]> => {
+      if (hid === 'opencode' && nativeOpenCode) return nativeOpenCode.models
       const probe = ctx.probeModels ?? defaultProbeModels(ctx)
       const probed = await probe(hid, project.path)
       if (probed.length > 0) return probed
@@ -165,6 +173,8 @@ async function handleHarnessResources(
       apiProviderId: apiProviderId ?? null,
       harnessId,
     })
+
+    if (nativeOpenCode) bundle.opencode = { ...nativeOpenCode, ...(openCodeProvider ? { models: openCodeProvider.models } : {}), permissionModes: [] }
 
     return { result: bundle }
   } catch (err) {

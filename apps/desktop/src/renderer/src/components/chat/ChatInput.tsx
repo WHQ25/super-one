@@ -1,3 +1,4 @@
+import { useRuntimeSlashCommands } from '@/harness-ui/use-runtime-slash-commands'
 import { commitPerSession } from '@/stores/chat-store/helpers/store-helpers'
 import { validateTurnAttachments } from '@superone/shared/attachment-validation'
 import { useRef, useState, useCallback, useMemo, useEffect } from 'react'
@@ -369,7 +370,7 @@ export function ChatInput({
 
     const codexPrompts = useChatStore(selectCodexPrompts)
     const codexSkills = useChatStore(selectActiveCodexSkills)
-    const openCodeSlashCommands = useChatStore(selectOpenCodeCommands)
+    const openCodeSlashCommands = useRuntimeSlashCommands('opencode', selectOpenCodeCommands)
     const cursorFsSlashItems = useChatStore(selectActiveCursorSlashItems)
     const codexThreadId = useActiveSession((s) => getLatestCodexThreadId(s.messages))
     /**

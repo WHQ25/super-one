@@ -3,6 +3,9 @@ import { useEffect, type ReactNode } from 'react'
 import { AskUserQuestionPrompt } from './AskUserQuestionPrompt'
 import { useChatStore } from '@/stores/chat'
 import type { AskUserQuestionRequest } from '@superone/shared/agent-types'
+import { mockIpc } from '../../../../../.storybook/mock-ipc'
+
+mockIpc('app', 'getMediaServerPort', async () => 6006)
 
 function StoryShell({ children, width = 720 }: { children: ReactNode; width?: number }) {
   return (
@@ -54,6 +57,21 @@ const meta: Meta<typeof AskUserQuestionPrompt> = {
 
 export default meta
 type Story = StoryObj<typeof AskUserQuestionPrompt>
+
+export const OpenCodeOAuthCode: Story = {
+  globals: { harness: 'opencode' },
+  decorators: [(Story) => <><SeedQuestion request={{ requestId: 'superone-oauth-code', questions: [{
+    header: 'Authorization code', question: 'Finish GitHub authorization in your browser and paste the authorization code here. Cancel to stop this sign-in attempt.',
+    options: [], multiSelect: false,
+  }] }} /><Story /></>],
+}
+export const OpenCodeOAuthWaiting: Story = {
+  globals: { harness: 'opencode' },
+  decorators: [(Story) => <><SeedQuestion request={{ requestId: 'superone-oauth-wait', questions: [{
+    header: 'Finish sign-in in your browser', question: 'Complete GitHub sign-in in your browser. This request closes automatically when authorization finishes. Cancel to stop waiting.',
+    options: [{ label: 'Continue waiting', description: 'Keep this attempt active.' }], multiSelect: false,
+  }] }} /><Story /></>],
+}
 
 export const SingleSelect: Story = {
   name: 'Prompt · single select',

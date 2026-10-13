@@ -1503,10 +1503,16 @@ async function handleSessionFork(payload: unknown, ctx: RpcContext): Promise<Rpc
 
     let providerResume: string | null = null
     try {
+      if (source.harnessId === 'opencode' && source.status === 'streaming') throw new Error('Wait for OpenCode to become idle before forking')
+      const anchor = source.harnessId === 'opencode' && forkFromMessageId ? ctx.sessions.messages?.(sessionId).find(message => message.id === forkFromMessageId) : undefined
+      const nativeForkAnchor = anchor?.role === 'user' ? anchor.checkpointId : anchor?.metadata?.forkAnchorId
+      if (source.harnessId === 'opencode' && forkFromMessageId && !nativeForkAnchor) throw new Error('Native fork anchor is unavailable; reload the session')
       providerResume = await ctx.hooks.forkHarnessResume({
         source,
         targetCwd: effectiveCwd,
         forkFromMessageId,
+        ...(nativeForkAnchor ? { nativeForkAnchor } : {}),
+        ...(source.harnessId === 'opencode' ? { assertControl } : {}),
         resolveProjectPath: (projectId) => ctx.projects.get(projectId)?.path ?? null,
         harnesses: ctx.harnesses,
         providers: ctx.providers,

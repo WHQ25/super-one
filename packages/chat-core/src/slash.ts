@@ -323,9 +323,9 @@ export function reduceSlash(
 
     case 'checkpoint_captured': {
       const msgs = [...session.messages]
-      let targetIdx = findCheckpointTarget(msgs, event.messageId)
+      let targetIdx = findCheckpointTarget(msgs, event.messageId, event.userMessageId)
       if (targetIdx === -1) return {}
-      if (msgs[targetIdx].checkpointId) {
+      if (!event.userMessageId && msgs[targetIdx].checkpointId) {
         const laterIdx = msgs.findLastIndex((m, i) => i > targetIdx && m.role === 'user' && !m.checkpointId)
         if (laterIdx !== -1) targetIdx = laterIdx
       }

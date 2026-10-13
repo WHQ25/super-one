@@ -21,28 +21,30 @@ function resolveEffortForModel(
 export function OpenCodeModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: Event) => void } = {}) {
   const { refresh: refreshModels, loading: modelsLoading } = useOpenCodeResourceRefresh('models')
   const resources = useChatStore((state) => state.harnessResources.opencode)
+  const nativeModels = useActiveSession(state => state.runtimeCapabilities?.harnessId === 'opencode' ? state.sessionModels : undefined)
+  const catalog = nativeModels ?? resources?.models
   const selectedModel = useActiveSession((state) => state.selectedModel)
   const selectedEffort = useActiveSession((state) => state.selectedEffort)
   const { setSelectedModel, setSelectedEffort } = useScopedSessionActions()
 
-  const current = resources?.models.find((model) => model.id === selectedModel)
+  const current = catalog?.find((model) => model.id === selectedModel)
   // Prefer catalog display name; if selection is not in OpenCode catalog (stale race),
   // show a neutral label instead of another harness's model id.
   const modelLabel = current
     ? resolveSlashModelLabel(current)
-    : (resources?.models.length ? 'OpenCode' : (splitSlashModelId(selectedModel).label || 'OpenCode'))
+    : (catalog?.length ? 'OpenCode' : (splitSlashModelId(selectedModel).label || 'OpenCode'))
 
   const groups = useMemo<SelectorModelGroup[]>(
-    () => groupModelsBySlashPrefix(resources?.models ?? []).map(({ group, items }) => ({
+    () => groupModelsBySlashPrefix(catalog ?? []).map(({ group, items }) => ({
       id: group || 'other',
-      name: group || 'other',
+      name: items[0]?.model.providerName || group || 'other',
       models: items.map(({ model, label }) => ({
         id: model.id,
         name: label,
         description: model.description,
       })),
     })),
-    [resources?.models],
+    [catalog],
   )
 
   const effortOptions = (current?.supportedEffortLevels ?? []).map((value) => ({
@@ -51,7 +53,7 @@ export function OpenCodeModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?:
   }))
 
   const selectModel = (modelId: string) => {
-    const model = resources?.models.find((item) => item.id === modelId)
+    const model = catalog?.find((item) => item.id === modelId)
     const effort = resolveEffortForModel(model?.supportedEffortLevels ?? [], selectedEffort)
     setSelectedModel(modelId)
     setSelectedEffort(effort)

@@ -32,6 +32,16 @@ function ports(): NativeActionPorts {
 }
 
 describe('native chat actions', () => {
+  it('validates native pending-input actions and reconnects through shell-owned ports', async () => {
+    const target = { ...ports(), sessionInboxAction: vi.fn(async () => {}), reconnectAgent: vi.fn(async () => {}) }
+    const request = { type: 'requestNative' as const, requestId: 'inbox', action: 'sessionInboxAction', payload: { inboxId: 'pending', action: 'steer', sessionId: 'forged' } }
+    await expect(resolveNativeRequest(request, target)).resolves.toMatchObject({ result: { ok: true } })
+    expect(target.sessionInboxAction).toHaveBeenCalledExactlyOnceWith('pending', 'steer')
+    await expect(resolveNativeRequest({ ...request, payload: { inboxId: 'pending', action: 'delete' } }, target)).resolves.toHaveProperty('error')
+    expect(target.sessionInboxAction).toHaveBeenCalledOnce()
+    await expect(resolveNativeRequest({ type: 'requestNative', requestId: 'retry', action: 'reconnectAgent' }, target)).resolves.toMatchObject({ result: { ok: true } })
+    expect(target.reconnectAgent).toHaveBeenCalledOnce()
+  })
   it('validates the unified composer output and forwards only trusted bridge fields', async () => {
     const target = { ...ports(), composerOpen: vi.fn(async () => ({ ok: true as const, requestId: 'form' })) }
     const spec = { title: 'Notes', requestedSchema: { type: 'object', properties: { notes: { type: 'string' } } } }

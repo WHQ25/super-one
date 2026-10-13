@@ -1,4 +1,5 @@
 import { useEnvironmentServes } from '@/hooks/use-environment-serves'
+import { SessionProviderState } from './SessionProviderState'
 import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
 import { useRef, useState, useEffect, useLayoutEffect, useMemo, useCallback, lazy, Suspense, memo } from 'react'
 import { useChatStore, useActiveSession, useSessionScope } from '@/stores/chat'
@@ -45,7 +46,7 @@ import { ModPaneDockSync } from './mod/ModSurfaces'
 import type { CodexPlanApprovalState } from '@superone/shared/agent-types'
 import { dateSeparators } from '@superone/chat-view/presenters/message-time'
 import { MessageDateSeparator } from '@superone/chat-view/presenters/MessageTime'
-import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
+import { HARNESS_CAPABILITIES, resolveHarnessCapabilities } from '@superone/shared/harness/harness-capabilities'
 import { isGrokAcpAgent } from '@superone/shared/acp-brand'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { DetailScopeProvider } from '@superone/chat-view/detail-scope'
@@ -116,7 +117,7 @@ function ChatTranscript({
     messages, isCompacting, compactingStartedAt, isRecapping, compactError, apiRetry,
     displayedSessionId, historyHydrated,
     sessionStatus, lastAssistantMessageId, queuedMessages, awaitingAssistantReply, acpModels,
-    sessionProvider, preferredProvider, acpAgentId,
+    sessionProvider, preferredProvider, acpAgentId, runtimeCapabilities,
     draftId, sideChatParentId, providerSessionId,
   } = useActiveSession(useShallow((s) => ({
     messages: s.messages,
@@ -130,6 +131,7 @@ function ChatTranscript({
     sessionStatus: s.status,
     lastAssistantMessageId: s.lastAssistantMessageId,
     queuedMessages: s.queuedMessages,
+    runtimeCapabilities: s.runtimeCapabilities,
     awaitingAssistantReply: s.awaitingAssistantReply,
     acpModels: s.acpModels,
     draftId: s.draftId,
@@ -165,11 +167,12 @@ function ChatTranscript({
     && (realtimeTimelineLoadStatus === 'idle' || realtimeTimelineLoadStatus === 'loading')
   const canHostSteer = useEnvironmentServes(scope?.projectPath ?? activeProject, 'session.steer')
   const canHostStartQueued = useEnvironmentServes(scope?.projectPath ?? activeProject, 'session.startQueued')
+  const queueCapabilities = resolveHarnessCapabilities(queueProvider, runtimeCapabilities)
   const canSteerQueue = canHostSteer
-    && HARNESS_CAPABILITIES[queueProvider].supportsQueuedSteer
+    && queueCapabilities.supportsQueuedSteer
     && sessionStatus === 'streaming'
   const canSteerQueueSoon = canSteerQueue
-    && HARNESS_CAPABILITIES[queueProvider].supportsQueuedSteerSoon
+    && queueCapabilities.supportsQueuedSteerSoon
     && (queueProvider !== 'acp' || isGrokAcpAgent(acpAgentId))
   const isLocalCodexQueue = canHostStartQueued && queueProvider === 'codex'
   const canStartCodexQueue = isLocalCodexQueue && sessionStatus !== 'streaming'
@@ -304,6 +307,7 @@ function ChatTranscript({
                 </div>
               )
             }).map((content, index) => ({ id: rows[index].id, sourceId: rows[index].source.id, anchors: rows[index].anchors, content })).filter(item => item.content !== null)} />
+            <SessionProviderState />
             {queuedMessages.map((msg, index) => (
               <div key={msg.id} className="group/queued chat-message-wrapper opacity-50">
                 <ChatMessage message={msg} sessionStatus={sessionStatus} isLastAssistant={false} hideUserActions />

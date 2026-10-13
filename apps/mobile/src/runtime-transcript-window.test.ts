@@ -133,6 +133,27 @@ describe('ChatRuntime transcript windows', () => {
     runtime.dispose()
   })
 
+  it('applies native history replacement from its window while updating the last reply and inbox', async () => {
+    const transcript = { current: [textMessage('u', 'user', 'Hi'), textMessage('a', 'assistant', 'Draft'), textMessage('removed', 'assistant', 'Later turn')] }
+    const { client } = windowHost(transcript)
+    const runtime = new ChatRuntime(client as never, () => {}, cache().hooks)
+    await runtime.open('/p', 's')
+    const restored = fragmentMessage(textMessage('a', 'assistant', 'Restored answer'))
+    runtime.ingest([
+      event({ type: 'transcript_replaced', messages: [textMessage('a', 'assistant', '')] }),
+      event({ type: 'session_inbox_changed', items: [] }),
+      event({ type: 'transcript_window', patch: { total: 2, removed: ['removed'], messages: [{
+        id: 'a', index: 1, metaDigest: restored.metaDigest, meta: restored.meta,
+        fragments: restored.fragments.map(({ key, digest, body }) => ({ key, digest, body })), omittedBefore: 0, omittedAfter: 0,
+      }] } }),
+    ])
+    expect(runtime.messages.map(message => message.id)).toEqual(['u', 'a'])
+    expect(runtime.messages[1].content[0]).toMatchObject({ text: 'Restored answer' })
+    expect(runtime.session.lastAssistantMessageId).toBe('a')
+    expect(runtime.session.sessionInbox).toEqual([])
+    runtime.dispose()
+  })
+
   it('loads the earlier part of a partial reply and returns it in the window order', async () => {
     const transcript = { current: [textMessage('u', 'user', 'Explain'), textMessage('a', 'assistant', longReplyText(300 * 1024))] }
     const { client, windows } = windowHost(transcript)

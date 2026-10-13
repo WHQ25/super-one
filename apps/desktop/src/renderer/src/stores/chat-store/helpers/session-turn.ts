@@ -112,7 +112,7 @@ function draftSettings(state: ChatStore, projectPath: string, session: PerSessio
     ...(model ? { model } : {}),
     ...(effort ? { effort } : {}),
     ...(session.apiProviderId ? { apiProviderId: session.apiProviderId } : {}),
-    ...(desktop ? HARNESS_STRATEGIES[resolveProvider(session)].draftSettings?.(session) : {}),
+    ...(desktop || (resolveProvider(session) === 'opencode' && session.openCodeAgentId) ? HARNESS_STRATEGIES[resolveProvider(session)].draftSettings?.(session) : {}),
   }
 }
 
@@ -253,8 +253,8 @@ export function sessionTurnRequest(state: ChatStore, projectPath: string, sessio
     ...(turn.userMessageContent ? { userMessageContent: turn.userMessageContent } : {}),
     ...(turn.contexts ? { contexts: turn.contexts } : {}),
     ...(turn.userSelections?.length ? { userSelections: turn.userSelections } : {}),
+    ...(turn.queued && (desktop || nativeQueue(currentSession)) ? { priority: 'next' as const } : {}),
     ...(desktop ? {
-      ...(turn.queued ? { priority: 'next' as const } : {}),
       ...(turn.inputRequest ? { inputRequest: turn.inputRequest } : {}),
       ...fields.desktop,
     } : {}),
@@ -268,9 +268,12 @@ export function scheduledTurnOptions(state: ChatStore, projectPath: string, sess
 }
 
 /** Whether a send to this session waits behind the turn it is running. */
-export function queuesBehindTurn(projectPath: string, queued: boolean): boolean {
-  // A node queues a concurrent send itself, in order, without being asked to.
-  return queued && hostTakesDesktopChoices(projectPath)
+function nativeQueue(session?: Pick<PerSessionState, 'runtimeCapabilities'>): boolean {
+  return session?.runtimeCapabilities?.harnessId === 'opencode' && session.runtimeCapabilities.supportsQueuedSteer === true
+}
+
+export function queuesBehindTurn(projectPath: string, queued: boolean, session?: Pick<PerSessionState, 'runtimeCapabilities'>): boolean {
+  return queued && (hostTakesDesktopChoices(projectPath) || nativeQueue(session))
 }
 
 /**

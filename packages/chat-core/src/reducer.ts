@@ -86,6 +86,9 @@ function reduceEvent(
   ports: ChatCorePorts,
 ): ChatCorePatch {
   switch (event.type) {
+    case 'transcript_replaced': return { messages: event.messages, lastAssistantMessageId: event.messages.findLast(message => message.role === 'assistant')?.id ?? null }
+    case 'session_inbox_changed': return { sessionInbox: event.items }
+    case 'harness_connection_changed': return { harnessConnection: event.connection }
     case 'queued_message_consumed':
     case 'queued_messages_changed':
     case 'message_start':
@@ -268,7 +271,16 @@ function reduceEvent(
     case 'session_agents': {
       // The project's own list is authoritative: a selection it lacks no longer exists.
       const known = session.openCodeAgentId === null || event.agents.some((agent) => agent.id === session.openCodeAgentId)
-      return { sessionAgents: event.agents, ...(known ? {} : { openCodeAgentId: null }) }
+      return {
+        sessionAgents: event.agents,
+        ...(event.runtimeCapabilities ? { runtimeCapabilities: event.runtimeCapabilities }
+          : session.runtimeCapabilities ? { runtimeCapabilities: undefined } : {}),
+        ...(event.commands ? { sessionSlashCommands: event.commands }
+          : session.sessionSlashCommands ? { sessionSlashCommands: undefined } : {}),
+        ...(event.models ? { sessionModels: event.models }
+          : session.sessionModels ? { sessionModels: undefined } : {}),
+        ...(known ? {} : { openCodeAgentId: null }),
+      }
     }
 
     case 'acp_commands': {

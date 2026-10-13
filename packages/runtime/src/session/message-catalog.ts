@@ -146,6 +146,7 @@ export function collectToolsByAssistantId(
         break
       }
       case SESSION_DURABLE_EVENT.userMessage: {
+        if (payload.queued === true) break
         // New user message starts a fresh turn association window.
         turnKey += 1
         provisionalKey = `turn-${turnKey}`
@@ -427,7 +428,7 @@ export function buildSessionMessageCatalog(
 ): SessionMessageBlock[] {
   const toolsByAssistant = collectToolsByAssistantId(events, session.sessionId)
   const contentByAssistant = collectContentByAssistantId(events, session.sessionId)
-  const transcript = Array.isArray(session.transcript) ? session.transcript : []
+  const transcript = Array.isArray(session.transcript) ? session.transcript.filter(row => !row.queuedInComposer) : []
   const out: SessionMessageBlock[] = []
 
   for (let i = 0; i < transcript.length; i++) {

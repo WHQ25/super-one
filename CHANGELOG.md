@@ -15,6 +15,17 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
+- Complete remote OpenCode V2 steering, inbox controls, MCP OAuth, live catalogs,
+  native rewind/fork and node provider credentials. Reuse owned authenticated
+  services with isolated session databases and MCP credentials.
+- Run native OpenCode V2 on remote nodes with native agent/model/skill catalogs,
+  leased approvals, streaming tool events and durable session resume/history.
+- Add native OpenCode V2 queued steering, skill slash commands, and streaming
+  tool argument/progress previews on desktop and its paired mobile controller.
+- Recover the current OpenCode V2 turn after an event-source disconnect without
+  resending input, and manage native pending inputs from desktop or paired phone.
+- Sign in to OpenCode V2 MCP servers with native OAuth and refresh the current
+  session's agent, skill and command catalogs from desktop or a paired phone.
 - Queue Codex async questions in the composer and keep answers as quoted
   bubbles on desktop and phone, including after history restore; hide dismissed
   questions and deduplicate answer echoes.
@@ -65,6 +76,9 @@ Every alpha release keeps its own notes on its GitHub Release.
   one session todo list; keep older stored turns readable.
 - Use each harness's own launch defaults, model catalog and permission controls
   for sessions, collaboration tasks and automations.
+- Use the official OpenCode 2 client for desktop sessions and mobile-controlled
+  sessions, preserving native permissions and waiting for event connection readiness.
+
 - Upgrade Claude Agent SDK to 0.3.296 (Claude Code 2.1.296).
 - Paginate session text reads by content block, with a cursor for the next
   complete block.

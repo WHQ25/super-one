@@ -47,7 +47,7 @@ export function AgentSelector({ agents, value, onChange, onRefresh }: {
   const refresh = async () => {
     if (!onRefresh || loading) return
     setLoading(true); setError('')
-    try { await onRefresh() } catch { setError(t('Could not refresh agents')) }
+    try { await onRefresh() } catch (err) { setError(err instanceof Error && err.message ? err.message : t('Could not refresh agents')) }
     finally { setLoading(false) }
   }
   return <>

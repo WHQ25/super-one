@@ -27,6 +27,12 @@ const WINDOW_CONTENT_EVENTS = new Set<AgentEvent['type']>([
 export function windowLiveEvent(event: AgentEvent): AgentEvent | null {
   if (WINDOW_CONTENT_EVENTS.has(event.type)) return null
   switch (event.type) {
+    case 'transcript_replaced': {
+      // The patch owns the replacement rows; the reducer only needs the last reply pointer.
+      const reply = event.messages.findLast(message => message.role === 'assistant')
+      return { ...event, messages: reply ? [{ id: reply.id, role: reply.role, status: reply.status,
+        createdAt: reply.createdAt, providerId: reply.providerId, content: [] }] : [] }
+    }
     case 'content_delta': {
       if (!WINDOW_TEXT_DELTAS.has(event.delta.type)) return event
       // An async question rides on its text; its pending state does not live in the transcript.

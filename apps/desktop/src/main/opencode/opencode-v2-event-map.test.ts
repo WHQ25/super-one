@@ -7,6 +7,7 @@ import {
   type OpenCodeV2TurnAction,
 } from './opencode-v2-event-map'
 import type { OpenCodeV2Event, OpenCodeV2Form } from './opencode-v2-types'
+import { applyEventToSession, createDefaultChatCoreSession, createStreamingToolInputStore, type ChatCoreSession, type ChatCorePorts } from '@superone/chat-core'
 
 const S = 'ses_1'
 const A = 'msg_assistant'
@@ -43,6 +44,44 @@ const questionForm: OpenCodeV2Form = {
 }
 
 describe('OpenCodeV2TurnTranslator', () => {
+  it('paints native partial arguments in chat-core and reconciles the authoritative final input', () => {
+    const translator = new OpenCodeV2TurnTranslator({ contextWindow: () => undefined })
+    let clock = 0
+    const ports: ChatCorePorts = { now: () => clock += 200, id: (prefix) => prefix, streaming: createStreamingToolInputStore() }
+    let session: ChatCoreSession = { ...createDefaultChatCoreSession(), messages: [{ id: 'local', role: 'assistant', status: 'streaming', content: [], providerId: 'opencode', createdAt: '' }] }
+    const apply = (event: OpenCodeV2Event) => {
+      for (const action of translator.apply(event, 'local')) {
+        if (action.type === 'agent') session = { ...session, ...applyEventToSession(session, action.event, ports) }
+      }
+    }
+    apply(ev('session.step.started', { assistantMessageID: A, agent: 'build', model: { id: 'm1', providerID: 'opencode' } }))
+    apply(ev('session.tool.input.started', { assistantMessageID: A, id: 'write', name: 'write' }))
+    apply(ev('session.tool.input.delta', { assistantMessageID: A, id: 'write', delta: '{"filePa' }))
+    apply(ev('session.tool.input.delta', { assistantMessageID: A, id: 'write', delta: 'th":"/repo/a.ts","content":"hi' }))
+    expect(session._streamingToolInputPreviews[`${A}:write`]).toEqual({ file_path: '/repo/a.ts', content: 'hi' })
+    apply(ev('session.tool.called', { assistantMessageID: A, id: 'write', input: { path: '/repo/a.ts', content: 'hi there' } }))
+    apply(ev('session.tool.success', { assistantMessageID: A, id: 'write', content: [{ type: 'text', text: 'done' }] }))
+    expect(session._streamingToolInputPreviews[`${A}:write`]).toBeUndefined()
+    const block = session.messages[0].content.find((b) => b.type === 'tool_use')
+    expect(block?.type === 'tool_use' && JSON.parse(block.input)).toMatchObject({ file_path: '/repo/a.ts', content: 'hi there' })
+    apply(ev('session.tool.input.delta', { assistantMessageID: A, id: 'write', delta: 'stale' }))
+    expect(session._streamingToolInputPreviews[`${A}:write`]).toBeUndefined()
+  })
+  it('streams native argument fragments and progress into the existing tool shell', () => {
+    const actions = run([
+      ev('session.step.started', { assistantMessageID: A, agent: 'build', model: { id: 'm1', providerID: 'opencode' } }),
+      ev('session.tool.input.started', { assistantMessageID: A, id: 'write', name: 'write' }, 1000),
+      ev('session.tool.input.delta', { assistantMessageID: A, id: 'write', delta: '{"path":"/repo/a.ts","content":"hi' }),
+      ev('session.tool.input.delta', { assistantMessageID: A, id: 'write', delta: ' there"}' }),
+      ev('session.tool.progress', { assistantMessageID: A, id: 'write', metadata: {} }, 3500),
+      ev('session.tool.called', { assistantMessageID: A, id: 'write', input: { path: '/repo/a.ts', content: 'hi there' } }),
+    ])
+    const events = agentEvents(actions)
+    expect(events).toContainEqual({ type: 'tool_input_delta', messageId: 'local', toolUseId: `${A}:write`, partialJson: '{"path":"/repo/a.ts","content":"hi' })
+    expect(events).toContainEqual(expect.objectContaining({ type: 'tool_progress', toolUseId: `${A}:write`, toolName: 'Write', elapsedSeconds: 2.5 }))
+    const tools = events.flatMap((event) => event.type === 'content_delta' && event.delta.type === 'tool_use' ? [event.delta] : [])
+    expect(JSON.parse(tools.at(-1)!.input!)).toMatchObject({ file_path: '/repo/a.ts', content: 'hi there' })
+  })
   it.each([
     ['read', { path: '/repo/a.ts', offset: 5, limit: 10 }, 'Read', { file_path: '/repo/a.ts' }],
     ['read', { filePath: '/repo/a.ts' }, 'Read', { file_path: '/repo/a.ts' }],
@@ -93,26 +132,26 @@ describe('OpenCodeV2TurnTranslator', () => {
 
     expect(agentEvents(actions)).toEqual([
       { type: 'checkpoint_captured', messageId: 'local', checkpointId: 'msg_user', resumePointId: 'msg_user' },
-      { type: 'content_delta', messageId: 'local', delta: { type: 'thinking', thinking: 'Think', startedAt: 100 } },
-      { type: 'content_delta', messageId: 'local', delta: { type: 'thinking', thinking: ' more', startedAt: 100, endedAt: 200 } },
+      { type: 'content_delta', messageId: 'local', delta: { type: 'thinking', id: `r:${A}:0`, thinking: 'Think', startedAt: 100 } },
+      { type: 'content_delta', messageId: 'local', replace: true, delta: { type: 'thinking', id: `r:${A}:0`, thinking: 'Think more', startedAt: 100, endedAt: 200 } },
       {
         type: 'content_delta',
         messageId: 'local',
-        delta: { type: 'tool_use', toolName: 'Bash', toolUseId: 'call_1', input: '{}', status: 'streaming', startedAt: 300 },
+        delta: { type: 'tool_use', toolName: 'Bash', toolUseId: `${A}:call_1`, input: '{}', status: 'streaming', startedAt: 300 },
       },
       {
         type: 'content_delta',
         messageId: 'local',
-        delta: { type: 'tool_use', toolName: 'Bash', toolUseId: 'call_1', input: '{"command":"echo hi"}', status: 'streaming' },
+        delta: { type: 'tool_use', toolName: 'Bash', toolUseId: `${A}:call_1`, input: '{"command":"echo hi"}', status: 'streaming' },
       },
       {
         type: 'content_delta',
         messageId: 'local',
-        delta: { type: 'tool_use', toolName: 'Bash', toolUseId: 'call_1', input: '{"command":"echo hi"}', status: 'complete' },
+        delta: { type: 'tool_use', toolName: 'Bash', toolUseId: `${A}:call_1`, input: '{"command":"echo hi"}', status: 'complete' },
       },
-      { type: 'content_delta', messageId: 'local', delta: { type: 'tool_result', toolUseId: 'call_1', summary: 'hi\n', isError: false } },
-      { type: 'content_delta', messageId: 'local', delta: { type: 'text', text: 'Do' } },
-      { type: 'content_delta', messageId: 'local', delta: { type: 'text', text: 'ne' } },
+      { type: 'content_delta', messageId: 'local', delta: { type: 'tool_result', toolUseId: `${A}:call_1`, summary: 'hi\n', isError: false } },
+      { type: 'content_delta', messageId: 'local', delta: { type: 'text', id: `t:${A}:0`, text: 'Do' } },
+      { type: 'content_delta', messageId: 'local', replace: true, delta: { type: 'text', id: `t:${A}:0`, text: 'Done' } },
       {
         type: 'message_usage',
         messageId: 'local',
@@ -131,7 +170,7 @@ describe('OpenCodeV2TurnTranslator', () => {
     expect(actions.at(-1)).toEqual({ type: 'complete', interrupted: false })
   })
 
-  it('ends a fully streamed thinking block, but never opens one after later content', () => {
+  it('ends a thinking block by stable identity even after later content', () => {
     const step = ev('session.step.started', { assistantMessageID: A, agent: 'build', model: { id: 'm1', providerID: 'opencode' } })
     const streamed = run([
       step,
@@ -142,7 +181,8 @@ describe('OpenCodeV2TurnTranslator', () => {
     expect(agentEvents(streamed).at(-1)).toEqual({
       type: 'content_delta',
       messageId: 'local',
-      delta: { type: 'thinking', thinking: '', startedAt: 100, endedAt: 200 },
+      replace: true,
+      delta: { type: 'thinking', id: `r:${A}:0`, thinking: 'Think', startedAt: 100, endedAt: 200 },
     })
 
     const afterText = run([
@@ -151,7 +191,7 @@ describe('OpenCodeV2TurnTranslator', () => {
       ev('session.text.delta', { assistantMessageID: A, ordinal: 0, delta: 'Answer' }),
       ev('session.reasoning.ended', { assistantMessageID: A, ordinal: 0, text: 'Think' }, 200),
     ])
-    expect(agentEvents(afterText).at(-1)).toEqual({ type: 'content_delta', messageId: 'local', delta: { type: 'text', text: 'Answer' } })
+    expect(agentEvents(afterText).at(-1)).toEqual({ type: 'content_delta', messageId: 'local', replace: true, delta: { type: 'thinking', id: `r:${A}:0`, thinking: 'Think', endedAt: 200 } })
   })
 
   it('settles only on the execution that delivered this turn’s inbox item', () => {
@@ -193,7 +233,7 @@ describe('OpenCodeV2TurnTranslator', () => {
     expect(agentEvents(actions)).toContainEqual({
       type: 'content_delta',
       messageId: 'local',
-      delta: { type: 'tool_result', toolUseId: 'call_2', summary: 'missing file', isError: true },
+      delta: { type: 'tool_result', toolUseId: `${A}:call_2`, summary: 'missing file', isError: true },
     })
     expect(actions.at(-1)).toEqual({ type: 'fail', error: 'Upstream unavailable' })
   })
@@ -242,7 +282,7 @@ describe('OpenCodeV2TurnTranslator', () => {
       type: 'permission',
       permission: 'superone_terminal_tabs',
       toolInput: { command: 'ls' },
-      request: expect.objectContaining({ requestId: 'per_1', toolName: 'superone_terminal_tabs', toolUseId: 'call_t' }),
+      request: expect.objectContaining({ requestId: 'per_1', toolName: 'superone_terminal_tabs', toolUseId: `${A}:call_t` }),
     })
     expect(actions.at(-1)).toEqual({ type: 'permission_resolved', requestId: 'per_1', approved: false })
   })
@@ -257,7 +297,7 @@ describe('OpenCodeV2TurnTranslator', () => {
     expect(action).toMatchObject({ type: 'permission', request: {
       message: 'Read a reference outside this project', permissionDetails: {
         action: 'external_directory', resources: ['/external/*'], save: ['/external/*'], metadata: { path: '/external/spec.md' },
-        source: { toolUseId: 'call_old', messageId: A },
+        source: { toolUseId: `${A}:call_old`, messageId: A },
       },
     } })
     if (action.type !== 'permission') throw new Error('Expected permission')
@@ -274,9 +314,9 @@ describe('OpenCodeV2TurnTranslator', () => {
         save: ['/outside/*'], metadata: { reason: 'Inspect the reference implementation' }, source: { type: 'tool', messageID: A, id: 'call_read' } }),
     ])
     expect(actions.find((action) => action.type === 'permission')).toMatchObject({ type: 'permission', toolInput: input, request: {
-      toolName: 'external_directory', toolUseId: 'call_read', permissionDetails: {
+      toolName: 'external_directory', toolUseId: `${A}:call_read`, permissionDetails: {
         action: 'external_directory', resources: ['/outside/reference/*', '/outside/second/*'], save: ['/outside/*'],
-        metadata: { reason: 'Inspect the reference implementation' }, source: { toolName: 'read', toolUseId: 'call_read', messageId: A, input },
+        metadata: { reason: 'Inspect the reference implementation' }, source: { toolName: 'read', toolUseId: `${A}:call_read`, messageId: A, input },
       },
     } })
   })

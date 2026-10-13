@@ -1,3 +1,5 @@
+import { OpenCodeApiError, openCodeAuthorization, openCodeEffortLevels, detectOpenCodeProtocol } from '@superone/opencode/client-common'
+export { OpenCodeApiError, openCodeAuthorization, openCodeEffortLevels } from '@superone/opencode/client-common'
 import { ensureShellPath } from '../shell-path'
 import { attachmentPrompt, buildAttachmentTurn } from '@superone/shared/attachment-turn'
 import { validateTurnAttachments } from '@superone/shared/attachment-validation'
@@ -49,60 +51,8 @@ export interface OpenCodeClientOptions {
   password?: string
 }
 
-const effortLevels = new Set<EffortLevel>(['low', 'medium', 'high', 'xhigh', 'max'])
-
-/** OpenCode model variants that SuperOne exposes as effort levels. */
-export function openCodeEffortLevels(variantIds: string[]): EffortLevel[] {
-  return variantIds.filter((value): value is EffortLevel => effortLevels.has(value as EffortLevel))
-}
-
-/** Basic auth OpenCode expects for `OPENCODE_SERVER_PASSWORD` (user `opencode`). */
-export function openCodeAuthorization(password: string): string {
-  return `Basic ${Buffer.from(`opencode:${password}`, 'utf8').toString('base64')}`
-}
-
-interface OpenCodeTokenUsage {
-  input: number
-  output: number
-  reasoning: number
-  cache: { read: number; write: number }
-  total?: number
-}
-
-export function buildOpenCodeContextUsage(
-  tokens: OpenCodeTokenUsage,
-  model: string,
-  models: ModelOption[],
-): ContextUsageInfo | null {
-  const maxTokens = models.find((candidate) => candidate.id === model)?.contextWindow
-  if (!maxTokens) return null
-  const categories = [
-    { name: 'Input', tokens: tokens.input, color: '#22c55e' },
-    { name: 'Output', tokens: tokens.output, color: '#06b6d4' },
-    { name: 'Reasoning', tokens: tokens.reasoning, color: '#8b5cf6' },
-    { name: 'Cache read', tokens: tokens.cache.read, color: '#6366f1' },
-    { name: 'Cache write', tokens: tokens.cache.write, color: '#f59e0b' },
-  ]
-  const totalTokens = tokens.total
-    ?? categories.reduce((total, category) => total + category.tokens, 0)
-  return {
-    categories,
-    totalTokens,
-    maxTokens,
-    percentage: Math.min(100, (totalTokens / maxTokens) * 100),
-    model,
-  }
-}
-
-/** Validated prompt text plus the images OpenCode receives inline. */
-export function openCodeAttachmentTurn(
-  images: ImageAttachment[] | undefined,
-  text: string,
-): { text: string; images: Array<{ mimeType: string; name: string; base64: string }> } {
-  validateTurnAttachments(images, text)
-  const turn = buildAttachmentTurn(images, { inlineImages: true, requirePaths: true })
-  return { text: attachmentPrompt(text, turn.note), images: turn.attachments.filter(a => a.inline) }
-}
+export { buildOpenCodeContextUsage, openCodeAttachmentTurn } from '@superone/opencode/runtime-helpers'
+import { buildOpenCodeContextUsage, openCodeAttachmentTurn } from '@superone/opencode/runtime-helpers'
 
 export function parseOpenCodeModelSlug(model: string | null | undefined): { providerID: string; modelID: string } | null {
   const value = model?.trim()
@@ -171,10 +121,7 @@ export function toOpenCodeMcpConfig(config: McpServerConfig): McpLocalConfig | M
   }
 }
 
-export function withOpenCodeLocalCommands(commands: SlashCommandInfo[]): SlashCommandInfo[] {
-  const seen = new Set(commands.map((command) => command.name.replace(/^\//, '')))
-  return [...commands, ...OPEN_CODE_LOCAL_COMMANDS.filter((command) => !seen.has(command.name))]
-}
+export { withOpenCodeLocalCommands } from '@superone/opencode/runtime-helpers'
 
 export function parseOpenCodeMcpStatus(statuses: Record<string, McpStatus>): McpServerInfo[] {
   return Object.entries(statuses).map(([name, value]) => {
@@ -197,13 +144,6 @@ function imageParts(images: Array<{ mimeType: string; name: string; base64: stri
     filename: image.name,
     url: `data:${image.mimeType};base64,${image.base64}`,
   }))
-}
-
-export class OpenCodeApiError extends Error {
-  constructor(message: string, cause?: unknown) {
-    super(message, cause ? { cause } : undefined)
-    this.name = 'OpenCodeApiError'
-  }
 }
 
 export class OpenCodeClient {
@@ -611,31 +551,6 @@ export async function reapOrphanOpenCodeServers(): Promise<number> {
  * proxies the web app), so anything but a 2.x version JSON means 1.x. Both
  * versions answer a wrong or missing password with 401, which no protocol fixes.
  */
-async function detectOpenCodeProtocol(url: string, password: string | undefined, signal?: AbortSignal): Promise<OpenCodeProtocol> {
-  let response: Response
-  try {
-    response = await fetch(`${url}/api/info`, {
-      headers: password ? { Authorization: openCodeAuthorization(password) } : {},
-      signal: AbortSignal.any([AbortSignal.timeout(5000), ...(signal ? [signal] : [])]),
-    })
-  } catch (error) {
-    if (signal?.aborted) throw error
-    return 'v1'
-  }
-  if (response.status === 401) {
-    throw new OpenCodeApiError(`OpenCode server at ${url} rejected the server password`)
-  }
-  try {
-    if (!response.ok || !response.headers.get('content-type')?.includes('application/json')) return 'v1'
-    const info = await response.json() as { version?: unknown }
-    const major = typeof info.version === 'string' ? Number.parseInt(info.version, 10) : NaN
-    return major >= 2 ? 'v2' : 'v1'
-  } catch (error) {
-    if (signal?.aborted) throw error
-    return 'v1'
-  }
-}
-
 export async function startOpenCodeServer(opts: {
   binaryPath?: string
   cwd: string

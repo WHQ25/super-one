@@ -32,7 +32,7 @@ export {
   getRuntimeIdleTimeoutMs,
   SESSION_RUNTIME_REAPER_INTERVAL_MS,
 } from './runtime-policy'
-export type { TurnImageAttachment } from './types'
+export type { TurnImageAttachment, HarnessOperationHost, HarnessSteerInput, HarnessSteerDelivery } from './types'
 export { EventLog } from './event-log'
 export { SessionReadModel, sessionReadModel } from './read-model'
 export { StreamingRing, STREAMING_RING_MAX_BYTES } from './streaming-ring'

@@ -16,6 +16,12 @@ import {
   parseClaudeSessionResume,
 } from './claude-turn-runner'
 import { resolveCodexBinaryPath } from './codex-turn-runner'
+import { startOpenCodeSessionServer } from '@superone/opencode/owned-service'
+import { join } from 'node:path'
+import { resolveOpenCodeLaunch } from '@superone/opencode/launch'
+import { OpenCodeV2Client } from '@superone/opencode/opencode-v2-client'
+import { nativeForkBoundary } from '@superone/opencode/native-history'
+import { resolveNodeOpenCodeProvider } from '../provider/opencode-provider'
 
 export interface NodeHarnessForkOptions {
   nodeHome?: string
@@ -29,6 +35,8 @@ export interface NodeHarnessForkOptions {
   openCodexFn?: typeof openCodexAppServer
   /** Injectable Codex binary path (tests). */
   codexBinaryPath?: string | null
+  nativeForkAnchor?: string
+  assertControl?: () => void
 }
 
 /**
@@ -113,6 +121,32 @@ export async function forkNodeHarnessResume(
     }
   }
 
-  // ACP / OpenCode / unknown: UI transcript only until harness packages expose fork.
+  if (harnessId === 'opencode') {
+    const sessionID = resume.startsWith('opencode:') ? resume.slice(9) : ''
+    if (!sessionID) throw new Error('Unrecognized OpenCode provider resume')
+    if (forkFromMessageId && !opts.nativeForkAnchor) throw new Error('Native OpenCode fork anchor is required')
+    const cwd = source.cwd || opts.resolveProjectPath(source.projectId) || process.cwd()
+    const env = Object.fromEntries(Object.entries(opts.env ?? {}).filter((item): item is [string, string] => typeof item[1] === 'string'))
+    const provider = resolveNodeOpenCodeProvider(opts.providers, source.apiProviderId, env)
+    const launch = resolveOpenCodeLaunch({ harnesses: opts.harnesses })
+    if (!launch.binaryPath && !launch.serverUrl) throw new Error('OpenCode runtime is unavailable for fork')
+    opts.assertControl?.()
+    const server = await startOpenCodeSessionServer({ ...launch, cwd, env: { ...env, ...provider?.env }, sessionId: source.sessionId, nativeSessionId: sessionID, admin: true,
+      ...(opts.nodeHome ? { serviceHome: join(opts.nodeHome, 'opencode-services') } : {}) })
+    try {
+      if (server.protocol !== 'v2') throw new Error('Native OpenCode fork requires V2')
+      const client = new OpenCodeV2Client({ baseUrl: server.url, password: server.password, directory: cwd })
+      const messages = await client.messages(sessionID, { order: 'asc' })
+      const boundary = nativeForkBoundary(messages, opts.nativeForkAnchor)
+      const fork = await client.forkSession(sessionID, boundary, opts.assertControl)
+      try {
+        if (fork.directory !== targetCwd) await client.moveSession(fork.id, targetCwd, opts.assertControl)
+        opts.assertControl?.()
+        return `opencode:${fork.id}`
+      } catch (error) { await client.deleteSession(fork.id).catch(() => {}); throw error }
+    } finally { await server.close() }
+  }
+
+  // ACP / unknown: UI transcript only until harness packages expose fork.
   return null
 }

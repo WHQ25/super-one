@@ -5,6 +5,7 @@ import { useEffect } from 'react'
 import { ChatMessage } from './ChatMessage'
 import { useAppStore } from '@/stores/app'
 import type { ChatMessage as ChatMessageType } from '@superone/shared/agent-types'
+import { useChatStore } from '@/stores/chat'
 
 const meta: Meta<typeof ToolBlock> = {
   title: 'Tool UI/General/OpenCode Integration',
@@ -48,6 +49,32 @@ export const Error: Story = {
     <ToolBlock toolName="skill" input={skillInput} result="Skill not found" isError status="complete" />
   </>,
 }
+
+function NativeArgumentPreview() {
+  useEffect(() => {
+    const state = useChatStore.getState()
+    const projectPath = state.activeProject
+    const project = projectPath ? state.projectSessions[projectPath] : undefined
+    const id = project?._activeSessionId
+    if (!projectPath || !project || !id || !project._sessions[id]) return
+    const previous = project._sessions[id]._streamingToolInputPreviews
+    const previews = { ...previous, native_write: { file_path: '/project/a.ts', content: 'export const answer = 4' },
+      native_patch: { patchText: '*** Begin Patch\n*** Add File: src/new.ts\n+export const answer = 4' }, native_code: { code: 'const results = await tools.example(' } }
+    const update = (next: typeof previous) => useChatStore.setState((current) => {
+      const active = current.projectSessions[projectPath]
+      const session = active?._sessions[id]
+      return session ? { projectSessions: { ...current.projectSessions, [projectPath]: { ...active, _sessions: { ...active._sessions, [id]: { ...session, _streamingToolInputPreviews: next } } } } } : current
+    })
+    update(previews)
+    return () => { update(previous) }
+  }, [])
+  return <>
+    <ToolBlock toolName="Write" toolUseId="native_write" input="{}" status="streaming" autoExpand elapsedSeconds={3} />
+    <ToolBlock toolName="Patch" toolUseId="native_patch" input="{}" status="streaming" autoExpand elapsedSeconds={3} />
+    <ToolBlock toolName="CodeExecution" toolUseId="native_code" input="{}" status="streaming" autoExpand elapsedSeconds={3} />
+  </>
+}
+export const NativeArguments: Story = { render: () => <NativeArgumentPreview /> }
 
 export const Denied: Story = {
   render: () => <>

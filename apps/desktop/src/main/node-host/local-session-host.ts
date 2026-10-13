@@ -58,7 +58,7 @@ export class LocalSessionHost extends DesktopSessionReads<DesktopSessionRow> imp
   get unservedMethods(): ReadonlySet<string> { return new Set([...LOCAL_SESSION_UNSERVED].filter(method => method !== 'session.fork' || !this.deps.edits?.fork)) }
 
   get servedOperations(): ReadonlySet<string> {
-    return new Set(['session.contextUsage', 'session.mcpStatus', 'session.mcpAuthenticate', 'session.stopTask', 'session.startQueued', 'session.reset', 'session.rewind', 'session.previewRewind', 'session.truncateAtCheckpoint',
+    return new Set(['session.connection.reconnect', 'session.inbox.list', 'session.inbox.cancel', 'session.inbox.update', 'session.contextUsage', 'session.mcpStatus', 'session.mcpAuthenticate', 'session.refreshResources', 'session.stopTask', 'session.startQueued', 'session.reset', 'session.rewind', 'session.previewRewind', 'session.truncateAtCheckpoint',
       ...(this.deps.sideChats ? ['session.sideChatStart', 'session.sideChatClose'] : []),
       ...(this.deps.scheduledSends ? ['session.scheduledSend.get', 'session.scheduledSend.set', 'session.scheduledSend.clear', 'sessionList.scheduledSends'] : []),
       ...(this.deps.edits ? ['sessionList.deleteOlderThan'] : []),
@@ -71,6 +71,8 @@ export class LocalSessionHost extends DesktopSessionReads<DesktopSessionRow> imp
     if (method === 'session.scheduledSend.get') return this.deps.scheduledSends!.get(sessionId)
     if (method === 'session.contextUsage') return this.deps.sessions.getSession(sessionId)?.getContextUsage() ?? null
     if (method === 'session.mcpStatus') return this.deps.sessions.getSession(sessionId)?.getMcpServerStatus() ?? []
+    if (method === 'session.connection.reconnect') return { ok: await (this.deps.sessions.getSession(sessionId)?.reconnect?.() ?? false) }
+    if (method === 'session.inbox.list') return this.deps.sessions.getSession(sessionId)?.listInbox?.() ?? []
     const session = method === 'session.previewRewind' ? this.live(sessionId) : this.mutation(sessionId)
     const checkpointId = input.checkpointId as string
     switch (method) {
@@ -90,6 +92,15 @@ export class LocalSessionHost extends DesktopSessionReads<DesktopSessionRow> imp
       case 'session.sideChatStart': return this.deps.sideChats!.start(sessionId, () => session.lease.assertMutation())
       case 'session.sideChatClose': return this.deps.sideChats!.close(sessionId)
       case 'session.mcpAuthenticate': return session.authenticateMcp(input.serverName as string)
+      case 'session.refreshResources': return session.refreshResources?.() ?? null
+      case 'session.inbox.cancel':
+        if (!session.cancelInbox) throw new Error('Native pending input is unavailable')
+        await enqueueSessionQueueOp(sessionId, () => session.cancelInbox!(input.inboxId as string))
+        return { ok: true }
+      case 'session.inbox.update':
+        if (!session.updateInbox) throw new Error('Native pending input is unavailable')
+        await enqueueSessionQueueOp(sessionId, () => session.updateInbox!(input.inboxId as string, input.delivery as 'steer' | 'queue'))
+        return { ok: true }
       case 'session.stopTask': await session.dispatchBackendCommand({ kind: 'claude.stop_task', taskId: input.taskId as string }); return true
       case 'session.startQueued': return enqueueSessionQueueOp(sessionId, () => { session.lease.assertMutation(); return session.startQueuedMessages() })
       case 'session.reset': {

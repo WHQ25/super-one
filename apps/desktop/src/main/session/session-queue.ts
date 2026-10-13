@@ -17,11 +17,12 @@ export function queuedSteerCommand(
   harnessId: string,
   clientMessageId: string,
   priority: ClaudeSteerPriority,
-): Extract<BackendCommand, { kind: 'claude.steer_queued' | 'acp.steer_queued' | 'codex.steer_queued' | 'dsh.steer_queued' }> | null {
+): Extract<BackendCommand, { kind: 'claude.steer_queued' | 'acp.steer_queued' | 'codex.steer_queued' | 'dsh.steer_queued' | 'opencode.steer_queued' }> | null {
   if (harnessId === 'claude') return { kind: 'claude.steer_queued', clientMessageId, priority }
   if (harnessId === 'acp') return { kind: 'acp.steer_queued', clientMessageId, priority }
   // Codex's queue cannot steer at the next boundary without interrupting.
   if (harnessId === 'codex' && priority !== 'next') return { kind: 'codex.steer_queued', clientMessageId }
+  if (harnessId === 'opencode') return { kind: 'opencode.steer_queued', clientMessageId }
   if (harnessId === 'dsh') return { kind: 'dsh.steer_queued', clientMessageId }
   return null
 }

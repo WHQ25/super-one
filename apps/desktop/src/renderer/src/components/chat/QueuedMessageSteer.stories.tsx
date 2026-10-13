@@ -36,9 +36,9 @@ const queuedMessages: ChatMessage[] = [
   },
 ]
 
-type SteerProvider = 'claude' | 'codex'
+type SteerProvider = 'claude' | 'codex' | 'opencode'
 
-function seedQueuedMessages(provider: SteerProvider): void {
+function seedQueuedMessages(provider: SteerProvider, nativeV2 = false): void {
   const project = createDefaultProjectState()
   const session = {
     ...createDefaultPerSessionState(),
@@ -46,6 +46,7 @@ function seedQueuedMessages(provider: SteerProvider): void {
     sessionProvider: provider,
     preferredProvider: provider,
     queuedMessages,
+    ...(provider === 'opencode' ? { runtimeCapabilities: { harnessId: 'opencode' as const, supportsQueuedSteer: nativeV2, supportsQueuedSteerSoon: false } } : {}),
   }
 
   useChatStore.setState({
@@ -96,32 +97,33 @@ mockIpc('agent', 'steerQueuedMessage', async (_projectPath, messageId) => {
   return true
 })
 
-function SeedQueuedMessages({ children, provider }: { children: ReactNode; provider: SteerProvider }) {
+function SeedQueuedMessages({ children, provider, nativeV2 }: { children: ReactNode; provider: SteerProvider; nativeV2?: boolean }) {
   useState(() => {
-    seedQueuedMessages(provider)
+    seedQueuedMessages(provider, nativeV2)
     return null
   })
 
   useEffect(() => {
     // The global harness decorator seeds its own session after the first render.
     // Re-apply this scenario once that effect has completed.
-    const timer = window.setTimeout(() => seedQueuedMessages(provider), 0)
+    const timer = window.setTimeout(() => seedQueuedMessages(provider, nativeV2), 0)
     return () => window.clearTimeout(timer)
-  }, [provider])
+  }, [provider, nativeV2])
 
   return <>{children}</>
 }
 
-function QueueSteerDemo({ provider }: { provider: SteerProvider }) {
+function QueueSteerDemo({ provider, nativeV2 }: { provider: SteerProvider; nativeV2?: boolean }) {
   const scrollViewportRef = useRef<HTMLDivElement>(null)
 
   return (
     <div className="flex w-[720px] flex-col gap-2">
       <p className="text-xs text-muted-foreground">
-        Hover a queued message to steer the active {provider === 'claude' ? 'Claude' : 'Codex'} turn.
+        Hover a queued message to steer the active {provider === 'claude' ? 'Claude' : provider === 'codex' ? 'Codex' : 'OpenCode'} turn.
         {provider === 'claude'
           ? ' Claude offers both: the chevrons-up icon delivers at the next step boundary, the ship wheel interrupts the tool in flight.'
-          : ' Codex offers only the interrupting steer (ship wheel) — its Core queue has no non-aborting variant.'}
+          : provider === 'codex' ? ' Codex offers only the interrupting steer (ship wheel) — its Core queue has no non-aborting variant.'
+          : nativeV2 ? ' OpenCode V2 admits the input at its next safe point without cancelling the running tool.' : ' OpenCode V1 keeps messages queued for the next turn.'}
       </p>
       <div className="@container flex h-[460px] overflow-hidden rounded-xl border border-border bg-card shadow-sm">
         <ChatContent scrollViewportRef={scrollViewportRef} foreground={false} />
@@ -143,7 +145,7 @@ const meta: Meta<typeof QueueSteerDemo> = {
     },
   },
   decorators: [(Story, context) => (
-    <SeedQueuedMessages provider={context.args.provider}>
+    <SeedQueuedMessages provider={context.args.provider} nativeV2={context.args.nativeV2}>
       <Story />
     </SeedQueuedMessages>
   )],
@@ -161,3 +163,5 @@ export const StreamingClaude: Story = {
   args: { provider: 'claude' },
   globals: { harness: 'claude' },
 }
+export const OpenCodeV2: Story = { args: { provider: 'opencode', nativeV2: true }, globals: { harness: 'opencode' } }
+export const OpenCodeV1: Story = { args: { provider: 'opencode', nativeV2: false }, globals: { harness: 'opencode' } }

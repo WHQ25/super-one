@@ -140,7 +140,7 @@ export async function handleSessionCreate(payload: unknown, ctx: CreateRpcContex
     const extras = Object.fromEntries(['mode', 'agentPreset', 'additionalDirectories', 'ultracode', 'contextWindow', 'serviceTier', 'permissionPreset', 'collaborationMode', 'agent'].filter(key => Object.hasOwn(selectedSettings, key)).map(key => [key, selectedSettings[key as keyof typeof selectedSettings]]))
     if (Object.keys(extras).length) {
       if (!ctx.sessions.validateSettings) throw Object.assign(new Error('This host does not support desktop harness settings'), { code: 'unsupported' })
-      ctx.sessions.validateSettings(extras)
+      ctx.sessions.validateSettings(extras, harnessId)
     }
     const createInput = {
       projectId,

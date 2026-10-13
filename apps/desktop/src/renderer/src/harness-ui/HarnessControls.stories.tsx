@@ -24,7 +24,7 @@ const CATALOGS = {
 } as const
 
 /** A session on `harness` with its catalog loaded, or every catalog empty. */
-function seed(harness: HarnessId, empty: boolean): void {
+function seed(harness: HarnessId, empty: boolean, scopedCatalog: boolean): void {
   useChatStore.getState().ensureSession(PROJECT)
   const project = useChatStore.getState().projectSessions[PROJECT]
   const sid = project._activeSessionId!
@@ -45,21 +45,25 @@ function seed(harness: HarnessId, empty: boolean): void {
         ...project,
         _sessions: {
           ...project._sessions,
-          [sid]: { ...project._sessions[sid], preferredProvider: harness, sessionProvider: null, ...acp },
+          [sid]: { ...project._sessions[sid], preferredProvider: harness, sessionProvider: null, ...acp,
+            ...(scopedCatalog ? { runtimeCapabilities: { harnessId: 'opencode', supportsQueuedSteer: true },
+              sessionModels: [model('superone_node_fixture/fixture', 'Private coding model', { providerName: 'Team gateway', isDefault: true })],
+              selectedModel: 'superone_node_fixture/fixture' } : {}),
+          },
         },
       },
     },
   })
 }
 
-function Preview({ harness, empty = false, compact = false }: { harness: HarnessId; empty?: boolean; compact?: boolean }) {
+function Preview({ harness, empty = false, compact = false, scopedCatalog = false }: { harness: HarnessId; empty?: boolean; compact?: boolean; scopedCatalog?: boolean }) {
   const [ready, setReady] = useState(false)
   useEffect(() => {
     const previous = useChatStore.getState()
-    seed(harness, empty)
+    seed(harness, empty, scopedCatalog)
     setReady(true)
     return () => useChatStore.setState(previous)
-  }, [harness, empty])
+  }, [harness, empty, scopedCatalog])
   if (!ready) return null
   const { ModelControl, PermissionControl } = HARNESS_CONTROLS[harness]
   return (
@@ -86,6 +90,8 @@ export const Codex: Story = { args: { harness: 'codex' } }
 export const Acp: Story = { args: { harness: 'acp' } }
 /** OpenCode has no permission modes; its agent picker takes the slot. */
 export const OpenCode: Story = { args: { harness: 'opencode' } }
+export const OpenCodeNodeCredential: Story = { args: { harness: 'opencode', scopedCatalog: true } }
+export const OpenCodeNodeCredentialNarrow: Story = { args: { harness: 'opencode', scopedCatalog: true, compact: true } }
 export const Cursor: Story = { args: { harness: 'cursor' } }
 export const DeepSeek: Story = { args: { harness: 'dsh' } }
 /** Catalogs not loaded yet: each control shows its own empty state. */

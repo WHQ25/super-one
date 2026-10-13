@@ -1661,6 +1661,20 @@ export type Messages = {
       }
     }
     dropToAttach: string
+    nativeInbox: {
+      disconnected: string
+      controlsUnavailable: string
+      title: string
+      steer: string
+      queue: string
+      toSteer: string
+      toQueue: string
+      cancel: string
+      attachments: string
+      attachedInput: string
+      recovering: string
+      failed: string
+    }
     queuedActions: {
       start: string
       steer: string
@@ -6025,6 +6039,20 @@ export const en: Messages = {
       },
     },
     dropToAttach: 'Drop images or PDFs to attach',
+    nativeInbox: {
+      disconnected: 'Agent connection could not be restored. Retry or stop the turn.',
+      controlsUnavailable: 'Pending input controls are currently unavailable.',
+      title: 'Waiting for OpenCode',
+      steer: 'At the next safe point',
+      queue: 'After the current turn',
+      toSteer: 'Steer at Next Safe Point',
+      toQueue: 'Queue After Current Turn',
+      cancel: 'Withdraw Pending Input',
+      attachments: '{{count}} attachments',
+      attachedInput: 'Input with attachments',
+      recovering: 'Restoring agent connection (attempt {{attempt}})…',
+      failed: 'Could not update pending input. Try again.',
+    },
     queuedActions: {
       start: 'Start Queued Messages',
       steer: 'Steer Now',

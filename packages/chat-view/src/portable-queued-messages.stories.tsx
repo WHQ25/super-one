@@ -70,6 +70,14 @@ export const Claude: Story = {
   },
 }
 export const Codex: Story = { name: 'Codex · steer now only', args: { steer: { now: true, soon: false } } }
+export const OpenCodeV2: Story = {
+  name: 'OpenCode V2 · native steer', args: { steer: { now: true, soon: false } },
+  play: async ({ canvas }) => {
+    await expect(canvas.getAllByRole('button', { name: 'Steer Now' })).toHaveLength(2)
+    await expect(canvas.queryByRole('button', { name: 'Steer Soon (no interrupt)' })).toBeNull()
+  },
+}
+export const OpenCodeV1: Story = { name: 'OpenCode V1 · edit only', args: { steer: { now: false, soon: false } } }
 export const Idle: Story = { name: 'Turn ended · no steer, edit only', args: { steer: { now: false, soon: false } } }
 export const Attachments: Story = { name: 'Attachments · own, from desktop, uncut, PDF, mention', args: { queue: 'attachments' } }
 export const LongNarrow: Story = { name: 'Long text and many pictures · narrow', args: { queue: 'long', width: 320 } }

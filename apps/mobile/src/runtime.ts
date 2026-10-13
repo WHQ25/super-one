@@ -769,6 +769,22 @@ export class ChatRuntime {
     return result.ok
   }
 
+  async refreshResources(): Promise<void> {
+    const ref = this.sessionRef()
+    const descriptor = await this.client.rpc<import('@superone/shared/environment').ExecutionEnvironmentDescriptor>('environment.descriptor', {}, { environmentId: ref.environmentId })
+    if (descriptor.capabilities.methods.includes('session.refreshResources')) await this.client.controlledRpc(ref, 'session.refreshResources', {})
+  }
+
+  async sessionInboxAction(inboxId: string, action: 'cancel' | 'steer' | 'queue') {
+    const ref = this.sessionRef()
+    if (action === 'cancel') await this.client.controlledRpc(ref, 'session.inbox.cancel', { inboxId })
+    else await this.client.controlledRpc(ref, 'session.inbox.update', { inboxId, delivery: action })
+  }
+  async reconnectAgent() {
+    const result = await readRuntimeSession<{ ok: boolean }>(this.client, this.sessionRef(), 'session.connection.reconnect')
+    if (!result.ok) throw new Error('This session is not connected to an agent')
+  }
+
   /**
    * Grok manual `/recap` — host RPC, never a user message. Optimistic
    * `isRecapping` paints the generating line until `session_recap` arrives

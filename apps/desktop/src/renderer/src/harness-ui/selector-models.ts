@@ -17,7 +17,7 @@ export function toSelectorModels(
 export function toSelectorGroups(models: ModelOption[]): SelectorModelGroup[] {
   return groupModelsBySlashPrefix(models).map(({ group, items }) => ({
     id: group || 'other',
-    name: group || 'other',
+    name: items[0]?.model.providerName || group || 'other',
     models: items.map(({ model, label }) => ({
       id: model.id,
       name: label,

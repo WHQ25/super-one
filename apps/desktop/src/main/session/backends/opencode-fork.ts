@@ -28,5 +28,5 @@ export async function forkOpenCodeSession(
       }
     }
     return forked.id
-  })
+  }, source.sessionId, source.providerSessionId)
 }

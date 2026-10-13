@@ -67,6 +67,14 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
+export const OpenCodeNativeSkills: Story = {
+  args: { commands: matchAndRankSlashCommands('', [
+    { name: 'compact', description: 'Compact native context', argumentHint: '', isSkill: false },
+    { name: 'review', description: 'Review this worktree', argumentHint: '', isSkill: true, skillId: 'skill_project_review' },
+  ]) },
+  decorators: [(Story) => <div className="w-[300px] rounded-xl border bg-popover p-1.5"><Story /></div>],
+}
+
 export const DuplicateSkills: Story = {
   render: () => <Preview />,
   play: async ({ canvasElement }) => {

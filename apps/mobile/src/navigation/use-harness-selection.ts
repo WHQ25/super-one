@@ -10,6 +10,7 @@ import type {
   SandboxSupportLevel,
 } from '@superone/shared/agent-types'
 import { findCodexFastServiceTier, resolveCodexFastServiceTier } from '@superone/shared/codex-fast-mode'
+import type { ChatRuntime } from '../runtime'
 import {
   effortOptionsForModel,
   resolveSelectedEffort,
@@ -94,6 +95,7 @@ export function useHarnessSelection() {
    * stale render's copy.
    */
   const claimed = useRef<ClaimedSelection>(emptyClaimed())
+  const nativeCatalog = useRef<{ sessionId: string | null; models: NonNullable<ChatRuntime['session']['sessionModels']> } | null>(null)
 
   /**
    * `current` is the opened session's own stored settings — authoritative over
@@ -105,6 +107,7 @@ export function useHarnessSelection() {
     info: RemoteSystemInfo,
     current?: OpenedSessionSelection,
   ) => {
+    if (provider === 'opencode' && nativeCatalog.current) info = { ...info, models: nativeCatalog.current.models }
     // `||` throughout, not `??`: every one of these arrives as `''` when unset.
     const claimedModel = current?.model || claimed.current.model || ''
     const claimedEffort = current?.effort || claimed.current.effort || ''
@@ -185,6 +188,7 @@ export function useHarnessSelection() {
 
   /** `acpAgentId` names which ACP agent the switcher row stood for. */
   const resetForProvider = (provider: HarnessId, acpAgentId: string | null = null) => {
+    nativeCatalog.current = null
     draftIdentity.current = false
     // A pick belonged to the harness it was made on; the next one starts on its
     // own host defaults.
@@ -325,6 +329,13 @@ export function useHarnessSelection() {
     activeProvider: systemInfo.activeProvider ?? null,
     activeProviderName: systemInfo.activeProvider?.name,
     models,
+    syncSessionCatalog(runtime: ChatRuntime) {
+      const models = runtime.session.runtimeCapabilities?.harnessId === 'opencode' ? runtime.session.sessionModels : undefined
+      if (runtime.provider !== 'opencode' || models === undefined) { nativeCatalog.current = null; return }
+      if (nativeCatalog.current?.sessionId === runtime.sessionId && nativeCatalog.current.models === models) return
+      nativeCatalog.current = { sessionId: runtime.sessionId, models }
+      applySystemInfo('opencode', { ...systemInfo, models })
+    },
     efforts,
     agents: (systemInfo.agents ?? []) as RemoteAgentOption[],
     selectedAgentId,

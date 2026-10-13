@@ -402,6 +402,7 @@ exports[`createSession settings per harness > opencode · node · chosen 1`] = `
     "harnessId": "opencode",
     "projectId": "node-project",
     "settings": {
+      "agent": "build",
       "apiProviderId": "acct-1",
       "effort": "high",
       "model": "picked-model",
@@ -2393,6 +2394,7 @@ exports[`sessionTurnRequest payload per harness > opencode · node · chosen · 
   "additionalDirectories": [
     "/extra",
   ],
+  "agent": "build",
   "apiProviderId": "acct-1",
   "clientMessageId": "u1",
   "effort": "high",
@@ -2411,6 +2413,7 @@ exports[`sessionTurnRequest payload per harness > opencode · node · chosen · 
   "additionalDirectories": [
     "/extra",
   ],
+  "agent": "build",
   "apiProviderId": "acct-1",
   "clientMessageId": "u1",
   "effort": "high",
@@ -2427,6 +2430,7 @@ exports[`sessionTurnRequest payload per harness > opencode · node · chosen · 
   "additionalDirectories": [
     "/extra",
   ],
+  "agent": "build",
   "apiProviderId": "acct-1",
   "clientMessageId": "u1",
   "effort": "high",
@@ -2443,6 +2447,7 @@ exports[`sessionTurnRequest payload per harness > opencode · node · chosen · 
   "additionalDirectories": [
     "/extra",
   ],
+  "agent": "build",
   "apiProviderId": "acct-1",
   "clientMessageId": "u1",
   "effort": "high",
@@ -2459,6 +2464,7 @@ exports[`sessionTurnRequest payload per harness > opencode · node · chosen · 
   "additionalDirectories": [
     "/extra",
   ],
+  "agent": "build",
   "apiProviderId": "acct-1",
   "clientMessageId": "u1",
   "effort": "high",

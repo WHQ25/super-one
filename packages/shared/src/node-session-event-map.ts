@@ -172,7 +172,7 @@ function mapPlanRequest(
   }
 }
 
-function userMessage(ctx: NodeSessionEventMapContext, blockId: string, text: string, nowIso: string, payload: Record<string, unknown>): ChatMessage {
+export function nodeUserMessage(ctx: NodeSessionEventMapContext, blockId: string, text: string, nowIso: string, payload: Record<string, unknown>): ChatMessage {
   let display: ReturnType<typeof parseMessageDisplay> = {}
   try { display = parseMessageDisplay(payload) } catch { /* Older/malformed optional display fields do not break the event stream. */ }
   const attachments = Array.isArray(payload.attachments) ? payload.attachments.flatMap(value => {
@@ -269,6 +269,7 @@ export function createNodeSessionEventMapper(ctx: NodeSessionEventMapContext): N
 
     switch (eventType) {
       case SESSION_DURABLE_EVENT.userMessage: {
+        if (payload.queued === true) break
         if (ctx.skipUserMessage && payload.echoUserMessage !== true) break
         const blockId = asString(payload.blockId) ?? `user-${envelope.eventId}`
         const text = asString(payload.text) ?? ''
@@ -276,7 +277,7 @@ export function createNodeSessionEventMapper(ctx: NodeSessionEventMapContext): N
           type: 'user_message_appended',
           message: (payload.message as ChatMessage | undefined)?.role === 'user'
             && typeof (payload.message as ChatMessage).id === 'string' && Array.isArray((payload.message as ChatMessage).content)
-            ? payload.message as ChatMessage : userMessage(ctx, blockId, text, nowIso(), payload),
+            ? payload.message as ChatMessage : nodeUserMessage(ctx, blockId, text, nowIso(), payload),
         })
         break
       }
@@ -307,7 +308,7 @@ export function createNodeSessionEventMapper(ctx: NodeSessionEventMapContext): N
         delete eventRecord.epoch
         const event = eventRecord as AgentEvent
         // A host patch targets an existing historical row; it must not open a new assistant turn.
-        if (event.type === 'mcp_app_updated') { push(event); break }
+        if (event.type === 'mcp_app_updated' || event.type === 'transcript_replaced') { push(event); break }
         const rawMessageId = type === 'message_start'
           ? asString(asRecord(eventRecord.message).id)
           : asString(eventRecord.messageId)

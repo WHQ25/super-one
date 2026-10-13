@@ -3,13 +3,21 @@ import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { buildSafeEnv } from '@superone/runtime/spawn-env'
+import { randomBytes } from 'node:crypto'
+import { detectOpenCodeProtocol } from './client-common'
 
 /** Exact argv SuperOne uses for serve. */
 export const OPENCODE_SERVE_ARGS = ['serve', '--hostname=127.0.0.1', '--port=0'] as const
 
 export interface OpenCodeServerHandle {
   url: string
+  protocol?: 'v1' | 'v2'
+  password?: string
   exited: Promise<{ code: number | null; signal: NodeJS.Signals | null }> | null
+  refreshConfig?(): Promise<void>
+  reused?: boolean
+  reconnect?(): Promise<{ url: string; password: string; replaced: boolean }>
+  hostMcpConfigured?: boolean
   close(): Promise<void>
 }
 
@@ -95,7 +103,7 @@ async function waitForServer(
     }
     const onData = (chunk: Buffer) => {
       output = appendOutput(output, chunk)
-      const match = output.match(/^opencode server listening.*?\s+(https?:\/\/[^\s]+)/im)
+      const match = output.match(/^(?:opencode )?server listening.*?\s+(https?:\/\/[^\s]+)/im)
       if (match?.[1]) finish(undefined, match[1])
     }
     const onAbort = () => finish(new Error('OpenCode server startup aborted'))
@@ -123,12 +131,15 @@ export async function startOpenCodeServer(opts: {
   cwd: string
   env?: Record<string, string>
   serverUrl?: string | null
+  serverPassword?: string | null
   timeoutMs?: number
   signal?: AbortSignal
 }): Promise<OpenCodeServerHandle> {
   if (opts.serverUrl?.trim()) {
+    const url = opts.serverUrl.trim().replace(/\/$/, '')
+    const password = opts.serverPassword ?? opts.env?.OPENCODE_SERVER_PASSWORD ?? process.env.OPENCODE_SERVER_PASSWORD
     return {
-      url: opts.serverUrl.trim().replace(/\/$/, ''),
+      url, password, protocol: await detectOpenCodeProtocol(url, password, opts.signal),
       exited: null,
       close: async () => undefined,
     }
@@ -139,9 +150,10 @@ export async function startOpenCodeServer(opts: {
     process.env.SUPERONE_OPENCODE_BINARY?.trim() ||
     defaultOpenCodeBinaryPath()
 
+  const password = opts.serverPassword ?? randomBytes(24).toString('base64url')
   const child = spawn(binary, [...OPENCODE_SERVE_ARGS], {
     cwd: opts.cwd,
-    env: buildOpenCodeServeEnv(opts.env),
+    env: buildOpenCodeServeEnv({ ...opts.env, OPENCODE_SERVER_PASSWORD: password }),
     stdio: 'pipe',
   }) as ChildProcessWithoutNullStreams
 
@@ -161,6 +173,8 @@ export async function startOpenCodeServer(opts: {
     let closePromise: Promise<void> | null = null
     return {
       url: url.replace(/\/$/, ''),
+      password,
+      protocol: await detectOpenCodeProtocol(url, password, opts.signal),
       exited,
       close: () => {
         closePromise ??= stopChild(child, exited)

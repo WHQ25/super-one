@@ -149,6 +149,7 @@ export async function startSideChat(
     forkedProviderSessionId = await harness.forkTranscript(
       {
         providerSessionId: source.providerSessionId,
+        ...(harness.id === 'opencode' ? { sessionId: input.parentSessionId } : {}),
         projectPath: source.projectPath,
         cwd: source.cwd,
         providerConfig: provider.config,
@@ -288,5 +289,5 @@ async function deleteOpenCodeForkedSession(
     import('../opencode/opencode-event-map'),
   ])
   await withOpenCodeSessionAdmin(readOpenCodeConfig(providerConfig), cwd, (client) =>
-    client.deleteSession(providerSessionId))
+    client.deleteSession(providerSessionId), undefined, providerSessionId)
 }

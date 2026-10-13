@@ -5,6 +5,7 @@ import type { RelayClient } from '@superone/relay-client'
 import type { ChatRuntime } from '../runtime'
 import { useComposerSuggestions } from './use-composer-suggestions'
 import { preloadHarnessResources } from '../harness-resource-cache'
+import { createDefaultChatCoreSession } from '@superone/chat-core'
 
 const resolveProject = async () => ({ environmentId: 'desk', projectId: 'p' })
 function catalogClient() { return { resolveProject, rpc: jest.fn(async (_method: string) => ({ userSlashCommands: [{ name: 'clear' }] })) } }
@@ -31,6 +32,23 @@ function memoryIconStore() {
     set: async (key: string, value: string) => { values.set(key, value) },
   }
 }
+
+test('prefers the current OpenCode session skill catalog and ignores another session', async () => {
+  const hook = await renderHook(({ sessionId }: { sessionId: string }) => useComposerSuggestions({ current: null }, `opencode:${sessionId}`, {
+    client: { current: null }, connected: false, projectPath: '/project', provider: 'opencode', sessionId, iconStore: memoryIconStore(),
+  }), { initialProps: { sessionId: 'session-v2' } })
+  await act(() => {
+    hook.result.current.update('/review')
+    hook.result.current.syncSessionCatalog({ sessionId: 'session-v2', session: { ...createDefaultChatCoreSession(),
+      runtimeCapabilities: { harnessId: 'opencode', supportsQueuedSteer: true },
+      sessionSlashCommands: [{ name: 'review', description: 'Native worktree skill', argumentHint: '', isSkill: true, skillId: 'skill_native' }],
+    } })
+  })
+  expect(hook.result.current.slashHits[0]).toMatchObject({ name: 'review', isSkill: true, skillId: 'skill_native' })
+  expect(hook.result.current.slashCatalogStatus).toBe('ready')
+  await hook.rerender({ sessionId: 'other-session' })
+  expect(hook.result.current.slashHits).toEqual([])
+})
 
 async function mount(client: unknown, runtime: ChatRuntime | null = null, connected = true, target: { sessionId?: string; worktreePath?: string } = {}) {
   const runtimeRef = createRef<ChatRuntime>() as { current: ChatRuntime | null }

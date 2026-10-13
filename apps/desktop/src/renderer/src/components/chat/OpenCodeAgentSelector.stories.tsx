@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { OpenCodeAgentOption } from '@superone/shared/agent-types'
-import { OpenCodeAgentPicker } from './OpenCodeAgentSelector'
+import { OpenCodeAgentPicker, OpenCodeAgentSelector } from './OpenCodeAgentSelector'
+import { useChatStore, createDefaultProjectState, createDefaultPerSessionState } from '@/stores/chat'
 import { PermissionModePopover } from './PermissionModePopover'
 
 const agents: OpenCodeAgentOption[] = [
@@ -47,6 +48,35 @@ const meta: Meta<typeof OpenCodeAgentPicker> = {
 }
 export default meta
 type Story = StoryObj<typeof OpenCodeAgentPicker>
+
+function LiveSessionCatalog({ busy = false }: { busy?: boolean }) {
+  const [ready, setReady] = useState(false)
+  useEffect(() => {
+    const prior = useChatStore.getState(), environment = window.environment
+    const path = '/storybook-opencode-catalog', sid = 'catalog-session'
+    const catalog = { models: [], agents: [agents[0]], commands: [] }
+    const init = () => useChatStore.setState({ activeProject: path, harnessResources: { ...prior.harnessResources, opencode: catalog }, projectSessions: {
+      [path]: { ...createDefaultProjectState(), _activeSessionId: sid, _sessions: { [sid]: { ...createDefaultPerSessionState(),
+        sessionProvider: 'opencode', preferredProvider: 'opencode', hostSessionOwned: true, status: busy ? 'streaming' : 'idle', sessionAgents: catalog.agents,
+      } } },
+    } })
+    init()
+    const timer = setTimeout(init, 0)
+    window.environment = { ...environment, callSession: async (_host, _sid, method) => {
+      if (method !== 'session.refreshResources') return null
+      if (busy) throw new Error('Finish the active OpenCode turn and pending interactions before refreshing catalogs')
+      await new Promise((resolve) => setTimeout(resolve, 300))
+      const commands = [{ name: 'review-project', description: 'New native skill', argumentHint: '', isSkill: true, skillId: 'skill_project' }]
+      useChatStore.getState().handleAgentEvent({ type: 'session_agents', projectPath: path, sessionId: sid, agents, commands } as never)
+      return { opencode: { ...catalog, agents, commands } }
+    } } as typeof environment
+    setReady(true)
+    return () => { clearTimeout(timer); window.environment = environment; useChatStore.setState(prior) }
+  }, [busy])
+  return ready ? <div className="flex min-h-96 w-72 items-end rounded-lg border bg-background p-4"><OpenCodeAgentSelector /></div> : null
+}
+export const LiveCatalogRefresh: Story = { render: () => <LiveSessionCatalog />, globals: { harness: 'opencode' } }
+export const BusyCatalogRefresh: Story = { render: () => <LiveSessionCatalog busy />, globals: { harness: 'opencode' } }
 export const NativeAgents: Story = { render: () => <Preview /> }
 export const EmptyAndRefresh: Story = { render: () => <Preview empty /> }
 export const FailedRefreshAndRetry: Story = { render: () => <Preview empty fail /> }

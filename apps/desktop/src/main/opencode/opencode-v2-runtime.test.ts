@@ -25,6 +25,9 @@ vi.mock('../mcp/superone-mcp-stdio-state', () => ({
 vi.mock('./opencode-v2-client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./opencode-v2-client')>()),
   OpenCodeV2Client: class {
+    readonly directory = '/project'
+    sessionLog = async () => ({ events: [], cursor: 0 })
+    inbox = async () => []
     resources = async () => ({ models: [], agents: [{ id: 'build', name: 'Build' }, { id: 'plan', name: 'Plan' }], commands: [] })
     createSession = mocks.createSession
     getSession = async () => mocks.session
@@ -75,12 +78,12 @@ describe('createOpenCodeV2Runtime', () => {
     expect(mocks.switchAgent).not.toHaveBeenCalled()
 
     await runtime.prompt('plan it', undefined, undefined, undefined, 'plan')
-    expect(mocks.switchAgent).toHaveBeenLastCalledWith('ses_1', 'plan')
+    expect(mocks.switchAgent).toHaveBeenLastCalledWith('ses_1', 'plan', undefined)
 
     await runtime.prompt('do it')
     expect(mocks.switchAgent).toHaveBeenCalledTimes(1)
     await runtime.prompt('again', undefined, undefined, undefined, 'build')
-    expect(mocks.switchAgent).toHaveBeenLastCalledWith('ses_1', 'build')
+    expect(mocks.switchAgent).toHaveBeenLastCalledWith('ses_1', 'build', undefined)
     expect(mocks.switchAgent).toHaveBeenCalledTimes(2)
     expect(mocks.updateSession).toHaveBeenCalledTimes(1)
     await runtime.close()
@@ -98,10 +101,10 @@ describe('createOpenCodeV2Runtime', () => {
   it('migrates a legacy Plan launch once and lets an explicit agent override it', async () => {
     const runtime = await createOpenCodeV2Runtime(server, options({ permissionMode: 'plan' }))
     await runtime.prompt('legacy plan')
-    expect(mocks.switchAgent).toHaveBeenLastCalledWith('ses_1', 'plan')
+    expect(mocks.switchAgent).toHaveBeenLastCalledWith('ses_1', 'plan', undefined)
     await runtime.prompt('implement', undefined, undefined, undefined, 'reviewer')
     await runtime.prompt('continue')
-    expect(mocks.switchAgent).toHaveBeenLastCalledWith('ses_1', 'reviewer')
+    expect(mocks.switchAgent).toHaveBeenLastCalledWith('ses_1', 'reviewer', undefined)
     expect(mocks.switchAgent).toHaveBeenCalledTimes(2)
     await runtime.close()
   })

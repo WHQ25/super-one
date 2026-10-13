@@ -22,6 +22,8 @@ export type HapticStyle = 'light' | 'medium' | 'heavy'
 const HAPTIC_STYLES: ReadonlySet<string> = new Set<HapticStyle>(['light', 'medium', 'heavy'])
 
 export interface NativeActionPorts {
+  sessionInboxAction?(inboxId: string, action: 'cancel' | 'steer' | 'queue'): Promise<void>
+  reconnectAgent?(): Promise<void>
   composerOpen?(request: ComposerViewRequest & { messageId: string }): Promise<ComposerOpenResult>
   composerRelease?(viewId: string): Promise<void> | void
   requestInput?(messageId: string, spec: InputRequestSpec): Promise<void>
@@ -322,6 +324,14 @@ export async function resolveNativeRequest(
       await ports.resendFailedMessage(payloadString(message, 'messageId'))
     } else if (message.action === 'editFailedMessage') {
       await ports.editFailedMessage(payloadString(message, 'messageId'))
+    } else if (message.action === 'reconnectAgent') {
+      if (!ports.reconnectAgent) throw new Error('Agent reconnection is unavailable')
+      await ports.reconnectAgent()
+    } else if (message.action === 'sessionInboxAction') {
+      const action = payloadString(message, 'action')
+      if (action !== 'cancel' && action !== 'steer' && action !== 'queue') throw new Error('invalid pending input action')
+      if (!ports.sessionInboxAction) throw new Error('Pending input controls are unavailable')
+      await ports.sessionInboxAction(payloadString(message, 'inboxId'), action)
     } else if (message.action === 'queuedMessageAction') {
       const action = payloadString(message, 'action')
       if (action !== 'edit' && action !== 'steer' && action !== 'steerSoon') throw new Error('invalid queued message action')

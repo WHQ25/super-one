@@ -192,6 +192,7 @@ export function committedStreamingMessage(eventType: string, payload: unknown): 
       return null
     case SESSION_DURABLE_EVENT.agentEvent: {
       const event = record.event as AgentEvent | undefined
+      if (event?.type === 'transcript_replaced') return null
       if (event?.type === 'message_complete' || event?.type === 'message_interrupted' || event?.type === 'message_error') return event.messageId
       if (event?.type === 'status_change' && event.status !== 'streaming') return null
       return undefined

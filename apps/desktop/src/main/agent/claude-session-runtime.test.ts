@@ -608,6 +608,14 @@ function assistantMsg(id: string): ChatMessage {
 }
 
 describe('checkpoint_captured', () => {
+  it('anchors a steered input to its explicit user id within the original assistant turn', () => {
+    const rt = makeRuntime([userMsg('u1', { checkpointId: 'original' }), assistantMsg('a1'), userMsg('u2')])
+    const updated = applyClaudeEventToRuntime(rt, {
+      type: 'checkpoint_captured', messageId: 'a1', userMessageId: 'u2', checkpointId: 'steered', resumePointId: 'steered',
+    })
+    expect(updated.messages[0].checkpointId).toBe('original')
+    expect(updated.messages[2].checkpointId).toBe('steered')
+  })
   it('assigns checkpointId to the user message before the assistant message', () => {
     const rt = makeRuntime([userMsg('u1'), assistantMsg('a1')])
     const updated = applyClaudeEventToRuntime(rt, {

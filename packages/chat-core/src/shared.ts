@@ -10,7 +10,7 @@ export { retractContentBlocks, sealCodexMetadata, sealStreamingTools } from '@su
  * Tool names that we accumulate partial JSON for across `tool_input_delta`
  * events so we can extract a live preview before the tool actually runs.
  */
-export const STREAMING_INPUT_TOOLS = new Set(['Edit', 'Write', 'FileChange', 'NotebookEdit'])
+export const STREAMING_INPUT_TOOLS = new Set(['Edit', 'Write', 'Read', 'Bash', 'Patch', 'CodeExecution', 'FileChange', 'NotebookEdit'])
 
 /** Minimum gap (ms) between live-preview extractions for one tool call. */
 export const STREAMING_PREVIEW_THROTTLE_MS = 100

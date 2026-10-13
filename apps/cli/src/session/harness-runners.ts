@@ -7,8 +7,13 @@ import { createAcpTurnRunner, createSimulatedAcpTurnRunner } from '@superone/acp
 import { resolveCliReleaseVersion } from '../cli-release-version'
 import {
   createOpenCodeTurnRunner,
+  createManagedOpenCodeTurnRunner,
   createSimulatedOpenCodeTurnRunner,
 } from '@superone/opencode'
+import { resolveOpenCodeLaunch } from '@superone/opencode/launch'
+import type { ProviderStore } from '../provider/provider-store'
+import { resolveNodeOpenCodeProvider } from '../provider/opencode-provider'
+import { join } from 'node:path'
 import {
   createCursorTurnRunner,
   createSimulatedCursorTurnRunner,
@@ -95,6 +100,9 @@ export function createAcpOpenCodeProductionRouter(opts?: {
   /** ACP clientInfo.version. Defaults to the CLI release version. */
   clientVersion?: string
   openCodeBinaryPath?: string | null
+  providers?: ProviderStore
+  nodeHome?: string
+  env?: Record<string, string>
   /** SuperOne Host Action MCP for ACP session/new. */
   getAcpMcpServers?: (sessionId: string) => unknown[] | null
   /** SuperOne Host Action HTTP MCP for OpenCode. */
@@ -104,13 +112,17 @@ export function createAcpOpenCodeProductionRouter(opts?: {
 }): TurnRunner {
   // Opt-in only. `undefined` and `false` both fail closed without a real binary.
   const allowSim = opts?.allowSimulatedFallback === true
-  const opencode = createOpenCodeTurnRunner({
-    allowSimulatedFallback: allowSim,
-    resolveProjectPath: opts?.resolveProjectPath,
-    binaryPath: opts?.openCodeBinaryPath,
-    getSuperoneMcp: opts?.getOpenCodeSuperoneMcp ?? undefined,
+  const managed = createManagedOpenCodeTurnRunner(opts?.resolveProjectPath ?? (() => null), {
+    resolveLaunch: input => {
+      const launch = resolveOpenCodeLaunch({ binaryPath: opts?.openCodeBinaryPath, harnesses: opts?.harnesses })
+      const provider = resolveNodeOpenCodeProvider(opts?.providers, input.apiProviderId ?? input.session.apiProviderId, opts?.env)
+      if (provider && launch.serverUrl) throw new Error('Node provider credentials require a node-owned OpenCode service')
+      return { ...launch, env: { ...opts?.env, ...provider?.env }, ...(provider ? { mapModel: provider.mapModel, providerModels: provider.models } : {}) }
+    },
+    getSuperoneMcp: opts?.getOpenCodeSuperoneMcp,
+    ...(opts?.nodeHome ? { serviceHome: join(opts.nodeHome, 'opencode-services') } : {}),
   })
-  return async (input) => {
+  const runner: TurnRunner = async (input) => {
     const harnessId = input.session.harnessId || 'codex'
     if (harnessId === 'acp') {
       // Catalog enable and command changes happen after the node process starts.
@@ -132,9 +144,22 @@ export function createAcpOpenCodeProductionRouter(opts?: {
       })
       return acp(input)
     }
-    if (harnessId === 'opencode') return opencode(input)
+    if (harnessId === 'opencode' && !allowSim) return managed(input)
+    if (harnessId === 'opencode') return createOpenCodeTurnRunner({
+      allowSimulatedFallback: allowSim, resolveProjectPath: opts?.resolveProjectPath,
+      ...resolveOpenCodeLaunch({ binaryPath: opts?.openCodeBinaryPath, harnesses: opts?.harnesses }),
+      getSuperoneMcp: opts?.getOpenCodeSuperoneMcp,
+    })(input)
     throw new Error(`createAcpOpenCodeProductionRouter: unexpected harness ${harnessId}`)
   }
+  runner.callOperation = (session, method, input, host) => managed.callOperation!(session, method, input, host)
+  runner.servedOperations = managed.servedOperations
+  runner.steer = managed.steer
+  runner.interruptSession = managed.interruptSession
+  runner.disposeSession = managed.disposeSession
+  runner.disposeAll = managed.disposeAll
+  runner.listActiveRuntimes = managed.listActiveRuntimes
+  return runner
 }
 
 /**

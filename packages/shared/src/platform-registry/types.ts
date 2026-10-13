@@ -4,18 +4,19 @@ import type { WireProtocol } from './protocols'
 export type PlanAuth = 'api-key' | 'oauth' | 'aws' | 'gcp'
 
 /** A single consumer-facing capability slot. Maps 1:1 to a resolvable task. */
-export type ConsumerId = 'chat:claude' | 'chat:codex' | 'media:image' | 'media:video' | 'tts' | 'asr'
+export type ConsumerId = 'chat:claude' | 'chat:codex' | 'chat:opencode' | 'media:image' | 'media:video' | 'tts' | 'asr'
 
 export const CONSUMER_TASK: Record<ConsumerId, CapabilityTask> = {
   'chat:claude': 'chat',
   'chat:codex': 'chat',
+  'chat:opencode': 'chat',
   'media:image': 'image',
   'media:video': 'video',
   tts: 'tts',
   asr: 'asr',
 }
 
-export const CONSUMER_IDS: ConsumerId[] = ['chat:claude', 'chat:codex', 'media:image', 'media:video', 'tts', 'asr']
+export const CONSUMER_IDS: ConsumerId[] = ['chat:claude', 'chat:codex', 'chat:opencode', 'media:image', 'media:video', 'tts', 'asr']
 
 export interface EndpointModel {
   id: string

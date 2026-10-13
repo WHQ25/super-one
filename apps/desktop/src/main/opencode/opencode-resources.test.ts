@@ -67,7 +67,7 @@ describe('OpenCode discovery before any desktop session', () => {
     probe.mockResolvedValueOnce(other)
     await expect(connectOpenCodeResources('/other')).resolves.toEqual(other)
     expect(probe).toHaveBeenCalledTimes(2)
-    expect(db.meta?.cacheKey).toBe('/other')
+    expect(db.meta?.cacheKey).toBe('native-skills-v1:/other')
   })
 
   it.each(['models', 'agents'] as const)('retries discovery when the cached %s catalog has not settled', async (catalog) => {
@@ -99,5 +99,14 @@ describe('OpenCode discovery before any desktop session', () => {
     await expect(connectOpenCodeResources('/project')).rejects.toThrow('unavailable')
     await expect(connectOpenCodeResources('/project')).resolves.toEqual(resources)
     expect(probe).toHaveBeenCalledTimes(3)
+  })
+
+  it('refreshes a fresh legacy catalog once so native skills can appear', async () => {
+    db.resources = resources
+    db.meta = { ageMs: 0, cacheKey: '/project' }
+    const withSkills = { ...resources, commands: [...resources.commands, { name: 'native', description: '', argumentHint: '', isSkill: true, skillId: 'skill_native' }] }
+    probe.mockResolvedValueOnce(withSkills)
+    await expect(connectOpenCodeResources('/project')).resolves.toEqual(withSkills)
+    expect(probe).toHaveBeenCalledOnce()
   })
 })

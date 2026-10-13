@@ -29,7 +29,7 @@ export const opencodeStrategy: HarnessStrategy = {
   },
   prewarmHint: (session) => ({ model: session.selectedModel || undefined }),
   turnSettings: ({ session }) => ({
-    desktop: session.openCodeAgentId ? { agent: session.openCodeAgentId } : {},
+    portable: session.openCodeAgentId ? { agent: session.openCodeAgentId } : {},
   }),
   draftSettings: (session) => ({ agent: session.openCodeAgentId }),
   resetFields: (state) => {

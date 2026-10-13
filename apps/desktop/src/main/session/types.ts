@@ -21,12 +21,14 @@ import type {
   SandboxMode,
   SendMessageRequest,
   SlashCommandInfo,
+  HarnessResourcesMap,
 } from '@superone/shared/agent-types'
 import type { HarnessId, LiveSessionSnapshot, SessionSnapshot, SessionStatus } from '@superone/shared/session-types'
 
 export type { HarnessId, LiveSessionSnapshot, SessionSnapshot, SessionStatus }
 
 export interface ForkSource {
+  sessionId?: string
   apiProviderId?: string | null
   providerSessionId: string
   projectPath: string
@@ -240,6 +242,11 @@ export type BackendCommand =
       clientMessageId: string
     }
   | {
+      /** OpenCode V2 admits a steer at its next execution boundary. */
+      kind: 'opencode.steer_queued'
+      clientMessageId: string
+    }
+  | {
       kind: 'codex.plan_approval'
       messageId: string
       status: 'approved' | 'rejected'
@@ -325,6 +332,7 @@ export type SessionLifecycleEvent =
  * same (`TurnRunner` `onInputAccepted` in `@superone/runtime/session`).
  */
 export interface SendDelivery {
+  assertControl?: () => void
   onInputAccepted: () => void
   /**
    * For a send the backend parks in its own queue: the backend runs the
@@ -432,7 +440,12 @@ export interface SessionBackend {
   /** Bindings for host-initiated App calls (file entrypoints); empty until the harness has a live provider session. */
   getMcpAppsHostBindings?(): Promise<Array<{ binding: McpAppsBinding; origin: McpAppOrigin }>>
   getMcpServerStatus(): Promise<McpServerInfo[]>
-  authenticateMcp?(serverName: string): Promise<void>
+  authenticateMcp?(serverName: string, assertControl?: () => void): Promise<void>
+  refreshResources?(assertControl?: () => void): Promise<Partial<HarnessResourcesMap> | null>
+  listInbox?(): Promise<import('@superone/shared/session-inbox').SessionInboxItem[]>
+  reconnect?(): Promise<boolean>
+  cancelInbox?(id: string, assertControl: () => void): Promise<void>
+  updateInbox?(id: string, delivery: 'steer' | 'queue', assertControl: () => void): Promise<void>
   rewindFiles(userMessageId: string, opts?: { dryRun?: boolean; includeConversation?: boolean }): Promise<RewindFilesResult>
   rewindConversation?(beforeTurnId: string): Promise<RewindFilesResult>
   reconnectMcp(serverName: string): Promise<void>
@@ -447,7 +460,7 @@ export interface SessionBackend {
   startQueuedMessages?(): Promise<boolean>
   dequeueMessage(clientMessageId: string): boolean | Promise<boolean>
   getPendingInteractions(): AgentEvent[]
-  handleCommand?(cmd: BackendCommand): Promise<void>
+  handleCommand?(cmd: BackendCommand, assertControl?: () => void): Promise<void>
   onEvent(handler: (event: BackendEvent) => void): () => void
   onProviderSessionId(handler: (id: string) => void): () => void
   onPermissionModeApplied(handler: (mode: PermissionMode) => void): () => void
@@ -535,6 +548,11 @@ export interface Session {
   getMcpAppsHostBindings?(options?: { start?: boolean }): Promise<Array<{ binding: McpAppsBinding; origin: McpAppOrigin }>>
   getMcpServerStatus(): Promise<McpServerInfo[]>
   authenticateMcp(serverName: string): Promise<void>
+  refreshResources?(): Promise<Partial<HarnessResourcesMap> | null>
+  listInbox?(): Promise<import('@superone/shared/session-inbox').SessionInboxItem[]>
+  reconnect?(): Promise<boolean>
+  cancelInbox?(id: string): Promise<void>
+  updateInbox?(id: string, delivery: 'steer' | 'queue'): Promise<void>
   rewindFiles(userMessageId: string, opts?: { dryRun?: boolean; includeConversation?: boolean }): Promise<RewindFilesResult>
   rewindConversation(userMessageId: string): Promise<RewindFilesResult>
   reconnectMcp(serverName: string): Promise<void>

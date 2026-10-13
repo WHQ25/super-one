@@ -142,36 +142,9 @@ interface AgentsConfirmWaiter {
 }
 
 /** Options for one harness turn (active or queued). */
-interface TurnOpts extends MessageDisplayFields {
-  clientMessageId?: string
-  echoUserMessage?: boolean
-  text: string
-  requestId?: string
-  model?: string | null
-  effort?: string | null
-  images?: TurnImageAttachment[]
-  permissionMode?: string | null
-  sandboxMode?: string | null
-  additionalDirectories?: string[]
-  enabledSkills?: string[]
-  disabledSkills?: string[]
-  apiProviderId?: string | null
-  /** Codex turn kind (run|steer|review|compact). */
-  turnKind?: 'run' | 'steer' | 'review' | 'compact' | null
-  parentTurnId?: string
-  rootTurnId?: string
-  collaborationMode?: string | Record<string, unknown> | null
-  reviewTarget?: unknown
-  /**
-   * Who wrote the text (see TurnRunner `source`). Transcript/events store a
-   * redacted copy so collaboration credentials never leak into the UI snapshot.
-   */
-  source?: ChatMessageSource
-  /** Claude Ultracode from this turn on; omitted keeps the live process's. */
-  ultracode?: boolean
-  /** The transcript user row this turn runs; absent for a model-only host wake. */
-  userBlockId?: string
-}
+import type { TurnOpts } from './accepted-turn'
+import { operateNodeQueue } from './queued-controls'
+import { nodeUserMessage } from '@superone/shared/node-session-event-map'
 
 /** A queued message whose turn never started because the node restarted. */
 const QUEUED_SEND_LOST_ON_RESTART = 'The node restarted before this queued message ran'
@@ -271,6 +244,7 @@ export class SessionRuntime {
    * beginTurn + long-lived SDK session instead.
    */
   private readonly turnQueues = new Map<string, TurnQueueItem[]>()
+  private readonly queueAdmissions = new Set<string>()
   /**
    * `session + notificationId` already delivered, so a retried
    * artifact-completion RPC injects once. In memory: a node restart may let
@@ -553,6 +527,7 @@ export class SessionRuntime {
     sandboxMode?: string | null
     model?: string | null
     effort?: string | null
+    agent?: string | null
     apiProviderId?: string | null
     /**
      * Collaboration / host system-prompt append (credential instructions).
@@ -590,6 +565,7 @@ export class SessionRuntime {
       sandboxMode: input.sandboxMode ?? null,
       model: input.model ?? null,
       effort: input.effort ?? null,
+      ...(input.harnessId === 'opencode' ? { agent: input.agent ?? null } : {}),
       apiProviderId: input.apiProviderId ?? this.defaultApiProviderId?.(input.harnessId ?? 'claude') ?? null,
       createdAt: now,
       updatedAt: now,
@@ -719,12 +695,12 @@ export class SessionRuntime {
       throw Object.assign(new Error('session is closed'), { code: 'failed_precondition' })
     }
 
-    this.validateSettings(patch)
+    this.validateSettings(patch, session.harnessId)
 
     if (session.harnessId === 'codex' && 'apiProviderId' in patch) {
       assertCodexAccountSwitchAllowed(session.apiProviderId, patch.apiProviderId, session.transcript.length > 0 || session.status === 'streaming')
     }
-    const apply = (key: 'permissionMode' | 'sandboxMode' | 'model' | 'effort' | 'apiProviderId'): void => {
+    const apply = (key: 'permissionMode' | 'sandboxMode' | 'model' | 'effort' | 'apiProviderId' | 'agent'): void => {
       if (!(key in patch)) return
       const next = normalizeSettingValue(patch[key])
       if (next === undefined) return
@@ -734,6 +710,7 @@ export class SessionRuntime {
     apply('sandboxMode')
     apply('model')
     apply('effort')
+    if (session.harnessId === 'opencode') apply('agent')
     apply('apiProviderId')
 
     session.updatedAt = Date.now()
@@ -746,16 +723,17 @@ export class SessionRuntime {
         sandboxMode: session.sandboxMode ?? null,
         model: session.model ?? null,
         effort: session.effort ?? null,
+        ...(session.harnessId === 'opencode' ? { agent: session.agent ?? null } : {}),
         apiProviderId: session.apiProviderId ?? null,
       },
     })
     return this.clone(session)
   }
 
-  validateSettings(patch: NodeSessionSettings): void {
+  validateSettings(patch: NodeSessionSettings, harnessId?: string): void {
     if (patch.mode !== undefined || patch.agentPreset !== undefined || patch.additionalDirectories !== undefined
       || patch.ultracode !== undefined || patch.contextWindow !== undefined || patch.serviceTier !== undefined
-      || patch.permissionPreset !== undefined || patch.collaborationMode !== undefined || patch.agent !== undefined) {
+      || patch.permissionPreset !== undefined || patch.collaborationMode !== undefined || (patch.agent !== undefined && harnessId !== 'opencode')) {
       throw Object.assign(new Error('This node does not support desktop harness settings'), { code: 'unsupported' })
     }
   }
@@ -831,6 +809,7 @@ export class SessionRuntime {
       sandboxMode: source.sandboxMode ?? null,
       model: source.model ?? null,
       effort: source.effort ?? null,
+      agent: source.agent ?? null,
       apiProviderId: source.apiProviderId ?? null,
       createdAt: now,
       updatedAt: now,
@@ -861,6 +840,11 @@ export class SessionRuntime {
         cwd: session.cwd,
       },
     })
+    const sourceMessages = this.readModel?.messages(source.sessionId)
+    if (sourceMessages) {
+      const index = input.forkFromMessageId ? sourceMessages.findIndex(message => message.id === input.forkFromMessageId) : -1
+      this.appendAgentEvent(session.sessionId, { type: 'transcript_replaced', messages: index >= 0 ? sourceMessages.slice(0, index + 1) : sourceMessages })
+    }
     return this.clone(session)
   }
 
@@ -1089,14 +1073,17 @@ export class SessionRuntime {
     if (session.closed || session.status === 'ended') {
       throw Object.assign(new Error('session is closed'), { code: 'failed_precondition' })
     }
-    if (SESSION_SEND_SELECTION_KEYS.some(key => input[key] !== undefined)) {
+    if (SESSION_SEND_SELECTION_KEYS.some(key => input[key] !== undefined && !(session.harnessId === 'opencode' && (key === 'agent' || key === 'priority' || key === 'steer')))) {
       throw Object.assign(new Error('This node does not support desktop composer send selections'), { code: 'unsupported' })
     }
+    if (session.harnessId === 'opencode' && input.steer !== undefined && input.steer !== 'now')
+      throw Object.assign(new Error('OpenCode only supports immediate steering'), { code: 'unsupported' })
     // Each delivery attempt carries its own RPC idempotency key, so a Resend of
     // a message this node already took (queued, running or answered) is held
     // here. Only a message that never reached the agent runs again.
     const taken = this.userRow(session, input.clientMessageId)
     if (taken && !taken.metadata?.sendFailure) return this.clone(session)
+    if (session.harnessId === 'opencode' && input.agent?.trim()) session.agent = input.agent.trim()
 
     // Turn payload wins; omitted/empty keys fall back to durable session settings
     // so remote clients need not re-send model/effort/etc. every turn.
@@ -1114,6 +1101,7 @@ export class SessionRuntime {
 
     const controller = input.collaboration ? this.controllerLabel?.(input.client.clientSessionId) : null
     const turnOpts: TurnOpts = {
+      parkInComposer: session.harnessId === 'opencode' && session.status === 'streaming' && input.priority !== undefined,
       text: input.text,
       clientMessageId: input.clientMessageId,
       ...parseMessageDisplay(input),
@@ -1124,6 +1112,7 @@ export class SessionRuntime {
       requestId: input.requestId,
       model: pick(input.model, session.model),
       effort: pick(input.effort, session.effort),
+      ...(session.harnessId === 'opencode' ? { agent: session.agent } : {}),
       images: input.images,
       permissionMode: pick(input.permissionMode, session.permissionMode),
       sandboxMode: pick(input.sandboxMode, session.sandboxMode),
@@ -1158,6 +1147,13 @@ export class SessionRuntime {
         return this.clone(session)
       }
       this.enqueueTurn(session, turnOpts)
+      if (harnessId === 'opencode' && input.steer === 'now' && turnOpts.parkInComposer) {
+        const assertControl = () => this.leases.assertValid({ resource: ref, leaseId: input.leaseId,
+          generation: input.generation, holderClientId: input.client.clientSessionId })
+        // The send is already durable. A refused steer keeps that accepted input
+        // in the queue; do not turn it into a failed send or submit it twice.
+        await this.callOperation(session.sessionId, 'session.steer', { clientMessageId: turnOpts.clientMessageId }, assertControl).catch(() => {})
+      }
       return this.clone(session)
     }
 
@@ -1327,6 +1323,7 @@ export class SessionRuntime {
       ...(opts.collaboration ? { collaboration: opts.collaboration } : {}),
       ...(opts.images?.length ? { attachments: opts.images } : {}),
       createdAt: Date.now(),
+      ...(opts.parkInComposer ? { queued: true, queuedInComposer: true } : {}),
     }
     session.transcript.push(userBlock)
     opts.userBlockId = userBlock.id
@@ -1345,6 +1342,7 @@ export class SessionRuntime {
       payload: {
         blockId: userBlock.id,
         text: opts.text,
+        ...(opts.parkInComposer ? { queued: true } : {}),
         ...(userBlock.userMessageContent ? { userMessageContent: userBlock.userMessageContent } : {}),
         ...(userBlock.contexts ? { contexts: userBlock.contexts } : {}),
         ...(userBlock.collaboration ? { collaboration: userBlock.collaboration } : {}),
@@ -1372,6 +1370,51 @@ export class SessionRuntime {
     this.events.appendSession({ sessionId, eventType: SESSION_DURABLE_EVENT.agentEvent, payload: { event }, causationRequestId })
   }
 
+  async callOperation(sessionId: string, method: string, input: Record<string, unknown>, assertControl: () => void = () => {}) {
+    const session = this.live.get(sessionId)
+    if (!session || session.closed) throw Object.assign(new Error('session not found'), { code: 'not_found' })
+    if (method === 'session.steer' || method === 'session.dequeue') return operateNodeQueue(method, input, {
+      session, queue: this.turnQueues.get(sessionId) ?? [], admitting: this.queueAdmissions,
+      runner: this.turnRunner, assertControl,
+      consumed: turn => this.consumeComposerQueued(session, turn),
+      dequeued: turn => {
+        session.transcript = session.transcript.filter(row => row.id !== turn.userBlockId)
+        this.persist(session); this.publishComposerQueue(session)
+      },
+      abandoned: turn => {
+        this.markSendFailed(session, turn.userBlockId, QUEUED_SEND_DROPPED)
+        this.persist(session); this.publishComposerQueue(session)
+      },
+    })
+    if (!this.turnRunner.callOperation) throw Object.assign(new Error(`Unsupported session operation: ${method}`), { code: 'unsupported' })
+    return this.turnRunner.callOperation(this.clone(session), method, input, {
+      messages: this.messages(sessionId),
+      assertControl,
+      onEvent: event => this.handleAmbientEvent(sessionId, event),
+      onQuestion: (interaction, signal) => this.waitForQuestionDecision(session, interaction, signal),
+      onPermission: (interaction, signal) => this.waitForPermissionDecision(session, interaction, signal),
+    })
+  }
+  get servedOperations(): ReadonlySet<string> { return this.turnRunner.servedOperations ?? new Set() }
+
+  private publishComposerQueue(session: NodeSessionRecord) {
+    const messages = session.transcript.filter(row => row.queuedInComposer).map(row => nodeUserMessage(
+      { sessionId: session.sessionId, providerId: session.harnessId }, row.id, row.text, new Date(row.createdAt).toISOString(), { ...row }))
+    this.appendAgentEvent(session.sessionId, { type: 'queued_messages_changed', messages })
+  }
+
+  private consumeComposerQueued(session: NodeSessionRecord, turn: TurnOpts) {
+    const row = this.userRow(session, turn.userBlockId)
+    if (!row?.queuedInComposer) return
+    delete row.queuedInComposer; delete row.queued
+    this.persist(session)
+    this.events.appendSession({ sessionId: session.sessionId, eventType: SESSION_DURABLE_EVENT.userMessage,
+      payload: { blockId: row.id, text: row.text, ...parseMessageDisplay(row), attachments: row.attachments },
+      causationRequestId: turn.requestId })
+    this.appendAgentEvent(session.sessionId, { type: 'queued_message_consumed', clientMessageId: row.id })
+    this.publishComposerQueue(session)
+  }
+
   /**
    * Record that user row `id` never reached the agent, with the shared
    * `metadata.sendFailure` marker every client renders as a failed row with
@@ -1382,6 +1425,7 @@ export class SessionRuntime {
     const row = this.userRow(session, id)
     if (!row) return false
     delete row.queued
+    delete row.queuedInComposer
     row.metadata = { ...row.metadata, sendFailure: { error } }
     session.updatedAt = Date.now()
     this.appendAgentEvent(session.sessionId, { type: 'user_message_send_failed', clientMessageId: row.id, error })
@@ -1398,6 +1442,7 @@ export class SessionRuntime {
     const q = this.turnQueues.get(session.sessionId) ?? []
     q.push(opts)
     this.turnQueues.set(session.sessionId, q)
+    if (opts.parkInComposer) this.publishComposerQueue(session)
     this.events.appendSession({
       sessionId: session.sessionId,
       eventType: SESSION_DURABLE_EVENT.statusChanged,
@@ -1412,6 +1457,7 @@ export class SessionRuntime {
     this.activeTurnCounts.set(sid, prev + 1)
 
     const row = this.userRow(session, opts.userBlockId)
+    this.consumeComposerQueued(session, opts)
     if (row?.queued) delete row.queued
     session.status = 'streaming'
     session.updatedAt = Date.now()
@@ -1443,6 +1489,20 @@ export class SessionRuntime {
   private handleAmbientEvent(sessionId: string, event: AgentEvent): void {
     const session = this.live.get(sessionId)
     if (!session || session.closed || this.disposing) return
+    if (session.harnessId === 'opencode' && event.type === 'agent_setting_change' && event.patch?.openCodeAgentId !== undefined)
+      session.agent = event.patch.openCodeAgentId
+    if (event.type === 'transcript_replaced') {
+      session.transcript = event.messages.map(message => ({ id: message.id, role: message.role,
+        text: message.content.filter(block => block.type === 'text').map(block => block.text).join(''),
+        createdAt: Date.parse(message.createdAt) || Date.now(), ...parseMessageDisplay(message) }))
+    }
+    if (event.type === 'user_message_appended' && !this.userRow(session, event.message.id)) {
+      session.transcript.push({ id: event.message.id, role: 'user',
+        text: event.message.content.filter(block => block.type === 'text').map(block => block.text).join(''),
+        createdAt: Date.parse(event.message.createdAt) || Date.now(), ...parseMessageDisplay(event.message) })
+    }
+    if (session.harnessId === 'opencode' && event.type === 'interaction_resolved'
+      && session.pendingInteraction?.interactionId === event.requestId) this.rejectPendingPermission(session)
     // A mod redrawing is not session activity: deliver it without touching the
     // session's turn state or `updatedAt` (which orders the session list).
     if (event.type.startsWith('mod_')) {
@@ -1519,6 +1579,8 @@ export class SessionRuntime {
       const result = await this.turnRunner({
         session: this.clone(session),
         messageId: assistantId,
+        clientMessageId: opts.userBlockId,
+        agent: opts.agent ?? undefined,
         text: modelInput.text,
         model: opts.model && opts.model.trim() ? opts.model.trim() : undefined,
         effort: opts.effort && opts.effort.trim() ? opts.effort.trim() : undefined,
@@ -1539,6 +1601,7 @@ export class SessionRuntime {
         ultracode: opts.ultracode,
         signal: abort.signal,
         onInputAccepted: markStarted,
+        onProviderResume: (resume) => { session.providerResume = resume; this.persist(session) },
         onDelta: (delta) => {
           if (delta) started = true
           if (abort.signal.aborted) return
@@ -1560,20 +1623,21 @@ export class SessionRuntime {
           if (isAgentOutputEvent(event)) started = true
           if (abort.signal.aborted) return
           this.appendAgentEvent(session.sessionId, event, requestId)
+          if (session.harnessId === 'opencode' && event.type === 'message_interrupted' && event.messageId === assistantId) abort.abort()
         },
         onAmbientEvent: (event) => this.handleAmbientEvent(session.sessionId, event),
         onPermission: (interaction) => {
           markStarted()
           // Modes that skip interactive permission prompts (desktop parity).
           if (
-            permissionMode === 'bypassPermissions' ||
+            session.harnessId !== 'opencode' && (permissionMode === 'bypassPermissions' ||
             permissionMode === 'dontAsk' ||
-            permissionMode === 'acceptEdits'
+            permissionMode === 'acceptEdits')
           ) {
             return Promise.resolve('allow' as PermissionDecision)
           }
           const tool = interaction.toolName?.trim()
-          if (tool && session.alwaysAllowedTools?.includes(tool)) {
+          if (!interaction.permissionDetails && tool && session.alwaysAllowedTools?.includes(tool)) {
             return Promise.resolve('allow' as PermissionDecision)
           }
           return this.waitForPermissionDecision(session, interaction, abort.signal, requestId)
@@ -1672,6 +1736,10 @@ export class SessionRuntime {
       if (remainingAfter <= 0) this.activeTurnCounts.delete(sid)
       else this.activeTurnCounts.set(sid, remainingAfter)
 
+      // Native completion or observation failure can settle while a controller
+      // waiter is still open. No waiter may outlive the node's OpenCode turn.
+      if (session.harnessId === 'opencode' && remainingAfter <= 0) this.rejectPendingPermission(session)
+
       // Claude may have multiple injected turns in flight. Cancelling all
       // session actions when the first one settles would abort tools owned by
       // the remaining turn. Keep the historical eager cancellation for a
@@ -1735,6 +1803,7 @@ export class SessionRuntime {
     this.ambientTurns.delete(sessionId)
     const aborts = this.aborts.get(sessionId)
     for (const abort of aborts ?? []) abort.abort()
+    if (!aborts?.size) void Promise.resolve(this.turnRunner.interruptSession?.(sessionId)).catch(() => {})
     this.aborts.delete(sessionId)
     session.closed = true
     session.status = 'ended'
@@ -1851,6 +1920,7 @@ export class SessionRuntime {
     })
     const aborts = this.aborts.get(sessionId)
     for (const abort of aborts ?? []) abort.abort()
+    if (!aborts?.size) void Promise.resolve(this.turnRunner.interruptSession?.(sessionId)).catch(() => {})
     // Standalone View forms can be pending while no model turn owns an abort.
     this.rejectPendingPermission(session)
     // Cancel outstanding host actions so the desktop can abort local work (AbortSignal).
@@ -1974,6 +2044,9 @@ export class SessionRuntime {
     // allow_always: allow this turn and remember the tool for the session
     // (desktop "always allow" parity — session-scoped, not global).
     const decision: PermissionDecision = input.decision === 'deny' || input.cancel ? 'deny' : 'allow'
+    if (input.decision === 'allow_always' && pending.permissionDetails && pending.allowAlwaysAllow === false && !input.cancel) {
+      throw Object.assign(new Error('This native permission request supports allow once or deny'), { code: 'failed_precondition' })
+    }
     if (pending.requestKind === 'mcp_elicitation' && decision === 'allow') {
       const accepted = acceptedElicitationContent(pending.schemaForm, input.formAnswers)
       if (!accepted.ok) throw Object.assign(new Error(accepted.reason), { code: 'failed_precondition' })

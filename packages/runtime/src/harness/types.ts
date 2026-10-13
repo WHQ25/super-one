@@ -39,6 +39,7 @@ export interface ResolvedAutoRuntime {
 
 /** Allowlisted external launch configuration; contains no credentials. */
 export interface ExternalLaunchConfig {
+  serverUrl?: string
   command?: string
   commandSource?: 'path' | 'explicit'
   args?: string[]

@@ -11,6 +11,7 @@ export {
   createOpenCodeAppServerTurnRunner,
   type RunOpenCodeTurnOptions,
 } from './run-turn'
+export { createManagedOpenCodeTurnRunner } from './managed-runner'
 export {
   startOpenCodeServer,
   buildOpenCodeServeEnv,

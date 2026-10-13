@@ -66,7 +66,7 @@ export interface SelectedEndpoint {
 export function selectProtocol(
   endpoint: ServiceEndpoint,
   task: CapabilityTask,
-  harness?: 'claude' | 'codex',
+  harness?: 'claude' | 'codex' | 'opencode',
   options?: HarnessProtocolOptions,
 ): WireProtocol | undefined {
   const serving = endpoint.protocols.filter((p) => protocolServes(p, task))
@@ -106,7 +106,7 @@ export function selectEndpoint(
   options?: SelectEndpointOptions,
 ): SelectedEndpoint | undefined {
   const task = CONSUMER_TASK[consumer]
-  const harness = consumer === 'chat:claude' ? 'claude' : consumer === 'chat:codex' ? 'codex' : undefined
+  const harness = consumer === 'chat:claude' ? 'claude' : consumer === 'chat:codex' ? 'codex' : consumer === 'chat:opencode' ? 'opencode' : undefined
   // An archived endpoint keeps its protocols so it still reports a family, so it would otherwise
   // still look resolvable. Switching a protocol off has to actually stop routing to it.
   endpoints = endpoints.filter((e) => !e.disabled)

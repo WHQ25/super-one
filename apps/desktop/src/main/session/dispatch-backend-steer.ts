@@ -4,9 +4,12 @@ import { codexAsyncAnswerContent, isCodexAsyncAnswer } from '@superone/shared/co
 import { anchorAsyncAnswer } from '@superone/shared/transcript-boundary'
 import log from '../logger'
 
-type SteerCommand = Extract<BackendCommand, {
-  kind: 'codex.steer' | 'codex.steer_queued' | 'claude.steer_queued' | 'acp.steer_queued' | 'dsh.steer_queued'
-}>
+const steerKinds = ['codex.steer', 'codex.steer_queued', 'claude.steer_queued', 'acp.steer_queued', 'dsh.steer_queued', 'opencode.steer_queued'] as const
+type SteerCommand = Extract<BackendCommand, { kind: typeof steerKinds[number] }>
+
+export function isBackendSteerCommand(cmd: BackendCommand): cmd is SteerCommand {
+  return (steerKinds as readonly string[]).includes(cmd.kind)
+}
 
 type AnswerSession = Pick<Session, 'send' | 'on' | 'snapshot' | 'getSelectedModel' | 'getSelectedEffort'>
 
@@ -15,6 +18,7 @@ export async function dispatchBackendSteer(cmd: SteerCommand, host: {
   id: string
   harnessId: string
   streaming: boolean
+  assertControl?: () => void
   backend: SessionBackend
   session: AnswerSession
   appendUserMessage: (message: ChatMessage) => void
@@ -31,6 +35,7 @@ export async function dispatchBackendSteer(cmd: SteerCommand, host: {
       'claude.steer_queued': ['claude', 'Claude'],
       'acp.steer_queued': ['acp', 'ACP'],
       'dsh.steer_queued': ['dsh', 'DeepSeek'],
+      'opencode.steer_queued': ['opencode', 'OpenCode'],
     }[cmd.kind]
     if (host.harnessId !== harness || !host.streaming) {
       throw new Error(`Queued message can only steer an active ${label} turn`)
@@ -51,7 +56,7 @@ export async function dispatchBackendSteer(cmd: SteerCommand, host: {
       providerId: host.harnessId,
     }, host.session.snapshot.messages) : null
   try {
-    await host.backend.handleCommand(cmd)
+    await host.backend.handleCommand(cmd, host.assertControl)
   } catch (error) {
     // Only this explicit rejection proves the input was not accepted. A timeout
     // or connection failure might have delivered it, so those remain retryable.

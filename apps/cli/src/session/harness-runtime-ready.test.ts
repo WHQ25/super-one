@@ -39,6 +39,15 @@ function fakeBinary(dir: string, name: string): string {
 }
 
 describe('assertSessionHarnessRuntimeReady', () => {
+  it('accepts an enabled OpenCode endpoint without a local executable', () => {
+    const { harnesses, db } = boot()
+    try {
+      harnesses.update('opencode', { enabled: true, state: 'ready', command: null,
+        configJson: JSON.stringify({ serverUrl: 'http://127.0.0.1:9000' }) })
+      expect(assertSessionHarnessRuntimeReady('opencode', harnesses).ok).toBe(true)
+    } finally { db.close() }
+  })
+
   it('fails closed for codex without binary', () => {
     const { harnesses } = boot()
     const r = assertSessionHarnessRuntimeReady('codex', harnesses)

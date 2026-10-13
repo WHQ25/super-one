@@ -1,6 +1,7 @@
 import type { HarnessId } from './harness-id'
 import { isGrokAcpAgent } from './acp-brand'
 import type { PromptKeyword } from '../prompt-keywords'
+import type { HarnessRuntimeCapabilities } from './session-catalog'
 
 /**
  * How a harness's session goal behaves. `null` on a harness means it has no goal
@@ -320,6 +321,13 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     promptKeywords: [],
     displayName: 'DeepSeek',
   },
+}
+
+/** Runtime overrides belong only to the harness that advertised them. */
+export function resolveHarnessCapabilities(harnessId: HarnessId, runtime?: HarnessRuntimeCapabilities): HarnessCapabilities {
+  if (!runtime || runtime.harnessId !== harnessId) return HARNESS_CAPABILITIES[harnessId]
+  const { harnessId: _owner, ...capabilities } = runtime
+  return { ...HARNESS_CAPABILITIES[harnessId], ...capabilities }
 }
 
 /**

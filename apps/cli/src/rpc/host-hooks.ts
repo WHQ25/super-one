@@ -7,6 +7,7 @@ import { resolveCliReleaseVersion } from '../cli-release-version'
 import { disableHarness, enableHarness } from '../session/harness-enable'
 import { assertSessionHarnessRuntimeReady, probeHarnessReadiness } from '../session/harness-runtime-ready'
 import { listHarnessModels } from '../provider/resolve-service'
+import { resolveNodeOpenCodeProvider } from '../provider/opencode-provider'
 
 /** CLI implementations of the host-specific RPC hooks. */
 export function createCliRpcHostHooks(): RpcHostHooks {
@@ -14,8 +15,9 @@ export function createCliRpcHostHooks(): RpcHostHooks {
     isCodexBinaryOverrideRunnable,
     isClaudeBinaryOverrideRunnable,
     resolveReleaseVersion: resolveCliReleaseVersion,
-    listHarnessModels: (store, harness, apiProviderId, options) =>
-      listHarnessModels(store as ProviderStore, harness, apiProviderId, options),
+    listHarnessModels: (store, harness, apiProviderId, options) => harness === 'opencode'
+      ? resolveNodeOpenCodeProvider(store as ProviderStore, apiProviderId)?.models ?? []
+      : listHarnessModels(store as ProviderStore, harness, apiProviderId, options),
     probeHarnessReadiness: (harnesses, id, providers) =>
       probeHarnessReadiness(harnesses, id, (providers as ProviderStore | null | undefined) ?? null),
     assertSessionHarnessRuntimeReady,

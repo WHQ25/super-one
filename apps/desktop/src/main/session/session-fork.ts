@@ -38,6 +38,7 @@ async function persistFork(
     newProviderSessionId = await harness.forkTranscript(
       {
         apiProviderId: record.apiProviderId,
+        ...(harness.id === 'opencode' ? { sessionId: record.id } : {}),
         providerSessionId: record.providerSessionId!,
         projectPath: record.projectPath,
         cwd: sourceCwd,

@@ -309,7 +309,7 @@ export async function sendMessageImpl(
     ? (codexCommand ?? { kind: 'run', prompt: finalContent })
     : null
   const isRunSend = !resolvedCodexCommand || resolvedCodexCommand.kind === 'run'
-  const isQueuedSend = queuesBehindTurn(projectPath, shouldQueueUserSend(effectiveProvider, session.status, isRunSend))
+  const isQueuedSend = queuesBehindTurn(projectPath, shouldQueueUserSend(effectiveProvider, session.status, isRunSend), session)
   const startsStreaming = sendStartsStreaming(effectiveProvider, isQueuedSend)
 
 

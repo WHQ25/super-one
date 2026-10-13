@@ -39,9 +39,8 @@ const RUNTIME_SPECS: Record<
   opencode: {
     catalogId: 'opencode',
     okReason: 'opencode binary available',
-    // server-url only configs still need a client binary for the node runner today
     failReason:
-      'opencode runtime unavailable: enable with --command or set SUPERONE_OPENCODE_BINARY',
+      'opencode runtime unavailable: enable with --command or --server-url, or set SUPERONE_OPENCODE_BINARY',
   },
   cursor: {
     catalogId: 'cursor',
@@ -67,6 +66,12 @@ export function assertSessionHarnessRuntimeReady(
 ): RuntimeReadyResult {
   const spec = RUNTIME_SPECS[sessionHarnessId]
   if (!spec) return { ok: false, reason: `unknown harness: ${sessionHarnessId}` }
+
+  // The node's client can attach directly; it only needs a binary for private serve.
+  if (sessionHarnessId === 'opencode' && harnesses.get('opencode').enabled &&
+    harnesses.getExternalLaunchConfig('opencode').serverUrl?.trim()) {
+    return { ok: true, reason: 'configured opencode server endpoint available' }
+  }
 
   if (
     resolver.resolveBinary(spec.catalogId, harnesses) ||

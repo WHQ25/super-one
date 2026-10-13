@@ -40,6 +40,8 @@ export interface HarnessResourcesOpenCode {
   models: ModelOption[]
   agents: Array<{ id: string; name: string; description?: string; modelId?: string | null }>
   commands: SlashCommandInfo[]
+  /** Native OpenCode has no selectable SuperOne permission presets. */
+  permissionModes?: string[]
 }
 
 export interface HarnessResourcesBundle {

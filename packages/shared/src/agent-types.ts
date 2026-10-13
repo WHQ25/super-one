@@ -1,3 +1,5 @@
+import type { SlashCommandInfo } from './slash-command-types'
+import type { SessionAgentsEvent } from './harness/session-catalog'
 // Unified message format used across IPC. Zero SDK imports.
 
 import type { UsageForecast } from './subscription-usage'
@@ -1584,29 +1586,7 @@ export interface AccountInfo {
 
 // --- Slash commands ---
 
-export interface SlashCommandInfo {
-  name: string
-  description: string
-  argumentHint: string
-  isSkill: boolean
-  /**
-   * Claude SDK `terminal_slash_commands`: the command's UX is bound to a
-   * local terminal. SuperOne (desktop + remote) hides these from `/` menus.
-   */
-  terminalBound?: boolean
-  /**
-   * Grok advertises registered workflows as available_commands with
-   * `_meta.workflowSource` (builtin | project | user). Used by `/workflow` name
-   * autocomplete in the host. `project` is cwd-scoped and must not be stored on
-   * the agent-global ACP cache — see `withoutProjectScopedWorkflows`.
-   */
-  isWorkflow?: boolean
-  workflowSource?: string
-  /** Absolute or project-relative path to the `.rhai` source when known. */
-  workflowPath?: string
-  /** Host-expanded prompt template (Cursor `.cursor/commands`). */
-  promptBody?: string
-}
+export type { SlashCommandInfo } from './slash-command-types'
 
 // --- @ mention: agents & directory listing ---
 
@@ -1911,11 +1891,15 @@ export interface SubagentRetryInfo {
 }
 
 export type AgentEventBase =
+  | { type: 'session_inbox_changed'; items: import('./session-inbox').SessionInboxItem[] }
+  | { type: 'harness_connection_changed'; connection: import('./session-inbox').HarnessConnectionState }
   | import('./environment/draft-rpc').DraftChangedEvent
   | { type: 'remote_command_error'; command: string; message: string }
   | { type: 'remote_detail'; subscriptionId: string; revision: number; offset: number; text: string }
   | { type: 'message_start'; message: ChatMessage }
   | { type: 'user_message_appended'; message: ChatMessage }
+  /** A host rebuilt authoritative history after a native rewind or fork. */
+  | { type: 'transcript_replaced'; messages: ChatMessage[] }
   /** `replace`: the delta's text (or `outputDelta`) replaces the id'd block's instead of appending. */
   | { type: 'content_delta'; messageId: string; delta: ContentBlock; replace?: boolean; isSynthetic?: boolean; isReplay?: boolean }
   | { type: 'mcp_app_updated'; messageId: string; appInstanceId: string; update: import('./mcp-apps').McpAppAttachmentUpdate }
@@ -2058,7 +2042,7 @@ export type AgentEventBase =
   | { type: 'codex_turn_metadata'; messageId: string; provenance: CodexTurnProvenance; requestedProvenance?: CodexRequestedTurnProvenance }
   | { type: 'codex_subagent_activity'; messageId: string; activity: CodexSubagentActivity }
   | { type: 'codex_mcp_startup'; messageId: string; servers: CodexMcpServerStartup[] }
-  | { type: 'checkpoint_captured'; messageId: string; checkpointId: string; resumePointId: string }
+  | { type: 'checkpoint_captured'; messageId: string; userMessageId?: string; checkpointId: string; resumePointId: string }
   | { type: 'init_ready'; skills: SlashCommandInfo[]; projectCommands: SlashCommandInfo[]; projectAgents: AgentInfo[]; additionalDirectories: string[]; cwd: string; homedir: string; sandboxInfo: SandboxInfo; permissionMode: PermissionMode; selectedModel?: string | null; selectedEffort?: EffortLevel | null; activeProvider?: RemoteActiveProvider | null }
   | { type: 'additional_dirs_changed'; additionalDirectories: string[]; /** SuperOne-owned project workspace folders — the same set for every harness. */ workspaceDirs: string[]; sessionAdditionalDirs: string[] }
   | { type: 'prompt_suggestion'; suggestion: string; suggestions?: string[] }
@@ -2196,7 +2180,7 @@ export type AgentEventBase =
    * project-defined ones included. Supersedes the harness-level catalog, which
    * is probed outside any project, for this session.
    */
-  | { type: 'session_agents'; agents: OpenCodeAgentOption[] }
+  | SessionAgentsEvent
   /**
    * The session runtime's own slash commands after a change (a plugin reload, a
    * mod registering one). Replaces the harness-level list, probed outside any
@@ -2471,6 +2455,7 @@ export interface AgentPrewarmHint {
 // --- Model selection ---
 
 export interface ModelOption {
+  providerName?: string
   id: string
   name: string
   description: string

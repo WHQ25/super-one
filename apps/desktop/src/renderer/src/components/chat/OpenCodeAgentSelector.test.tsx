@@ -15,6 +15,7 @@ const catalog: OpenCodeResources = {
 const path = '/opencode-native-agent-test'
 const connect = vi.fn<(force?: boolean) => Promise<OpenCodeResources>>()
 const broadcast = vi.fn(async () => undefined)
+const callSession = vi.fn(async () => null as { opencode: OpenCodeResources } | null)
 
 function session() {
   const project = useChatStore.getState().projectSessions[path]!
@@ -24,7 +25,8 @@ function session() {
 beforeEach(() => {
   vi.clearAllMocks()
   Object.assign(window.app, { connectOpenCode: connect })
-  Object.assign(window.environment, { patchSessionSettings: broadcast })
+  callSession.mockResolvedValue(null)
+  Object.assign(window.environment, { patchSessionSettings: broadcast, callSession })
   useChatStore.setState({ projectSessions: {}, activeProject: null })
   useChatStore.getState().ensureSession(path)
   const project = useChatStore.getState().projectSessions[path]!
@@ -40,6 +42,20 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('OpenCode native agent controls', () => {
+  it('uses the node session model catalog and readable provider name instead of the desktop fallback', async () => {
+    const project = useChatStore.getState().projectSessions[path]!, sid = project._activeSessionId!
+    useChatStore.setState({ projectSessions: { [path]: { ...project, _sessions: { [sid]: { ...session(),
+      runtimeCapabilities: { harnessId: 'opencode', supportsQueuedSteer: true },
+      sessionModels: [{ id: 'superone_node_fixture/model', name: 'Node Model', providerName: 'Node credential', description: '' }],
+      selectedModel: 'superone_node_fixture/model',
+    } } } } })
+    const user = userEvent.setup()
+    render(<OpenCodeModelSelector />)
+    await user.click(screen.getByRole('button', { name: /Node Model/ }))
+    expect(screen.getByText('Node credential')).toBeInTheDocument()
+    expect(screen.queryByText('superone_node_fixture')).not.toBeInTheDocument()
+    expect(screen.queryByText('GPT')).not.toBeInTheDocument()
+  })
   it('uses the former permission slot to switch agents without changing model or effort', async () => {
     const user = userEvent.setup()
     render(<StatusBarPermission activeProvider="opencode" compactIndicators={false} />)
@@ -70,10 +86,10 @@ describe('OpenCode native agent controls', () => {
     render(<StatusBarPermission activeProvider="opencode" compactIndicators={false} />)
     await user.click(screen.getByRole('button', { name: 'Agent: Plan' }))
     await user.click(screen.getByRole('button', { name: 'Refresh Agents' }))
-    expect(connect).toHaveBeenCalledWith(true)
+    await vi.waitFor(() => expect(connect).toHaveBeenCalledWith(true))
     expect(screen.getByRole('button', { name: 'Refresh Agents' })).toBeDisabled()
     await act(async () => reject(new Error('offline')))
-    expect(await screen.findByRole('alert')).toHaveTextContent('Could not refresh OpenCode agents.')
+    expect(await screen.findByRole('alert')).toHaveTextContent('offline')
     expect(screen.getByRole('button', { name: 'Plan' })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Refresh Agents' }))
     expect(await screen.findByRole('button', { name: 'Writer' })).toBeInTheDocument()
@@ -90,6 +106,18 @@ describe('OpenCode native agent controls', () => {
     expect(screen.getByText('No agents available. Refresh to try again.')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Refresh Agents' }))
     expect(await screen.findByRole('button', { name: 'Build' })).toBeInTheDocument()
+  })
+
+  it('refreshes the owned native session instead of probing an unrelated directory', async () => {
+    const user = userEvent.setup()
+    const fresh = { ...catalog, agents: [...catalog.agents, { id: 'native-new', name: 'Native New' }] }
+    callSession.mockResolvedValueOnce({ opencode: fresh })
+    render(<StatusBarPermission activeProvider="opencode" compactIndicators={false} />)
+    await user.click(screen.getByRole('button', { name: 'Agent: Plan' }))
+    await user.click(screen.getByRole('button', { name: 'Refresh Agents' }))
+    expect(await screen.findByRole('button', { name: 'Native New' })).toBeInTheDocument()
+    expect(callSession).toHaveBeenCalledWith('local', expect.any(String), 'session.refreshResources', {})
+    expect(connect).not.toHaveBeenCalled()
   })
 
   it('lists the session project agents over the global catalog', async () => {

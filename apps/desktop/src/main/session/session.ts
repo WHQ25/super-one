@@ -18,7 +18,7 @@ import { SessionLease, type SessionLeaseAuthority } from './session-lease'
 import { hostOwned, runHostReaction } from './control-context'
 import { SessionLiveness } from './session-liveness'
 import { hostPendingInteractions, trackHostInteraction } from './host-pending-interactions'
-import { dispatchBackendSteer } from './dispatch-backend-steer'
+import { dispatchBackendSteer, isBackendSteerCommand } from './dispatch-backend-steer'
 import { broadcastSessionSettings } from './session-settings-broadcast'
 import { requestSettingsPatch, selectionFieldsOf, sessionRequestSelection, voiceThreadSettings, withoutSupersededRequestSelections, withoutSupersededSelections, withSessionSelections, type PendingSessionRequest, type SelectionField } from './session-request-selection'
 import type {
@@ -922,6 +922,7 @@ export class Session implements SessionContract {
       openedMessageIds: [],
       error: null,
       onInputAccepted: () => { state.delivered = true },
+      ...(request.priority === 'next' || request.priority === 'later' ? {} : { assertControl: this.lease.captureMutation() }),
       runDeferred: async (run) => {
         this._delivery = state
         let failed = false
@@ -1418,7 +1419,38 @@ export class Session implements SessionContract {
     this.assertStarted()
     this.touchRuntimeActivity()
     if (!this.backend.authenticateMcp) throw new Error(`MCP authentication is not supported by ${this.harnessId}`)
-    return this.backend.authenticateMcp(serverName)
+    return this.backend.authenticateMcp(serverName, this.lease.captureMutation())
+  }
+
+  async refreshResources() {
+    this.lease.assertMutation()
+    this.assertNotDisposed()
+    await this.ensureStarted()
+    this.lease.assertMutation()
+    this.touchRuntimeActivity()
+    return this.backend.refreshResources?.(this.lease.captureMutation()) ?? null
+  }
+
+  listInbox() { return this.backendStarted ? this.backend.listInbox?.() ?? Promise.resolve([]) : Promise.resolve([]) }
+  reconnect() { return this.backendStarted ? this.backend.reconnect?.() ?? Promise.resolve(false) : Promise.resolve(false) }
+
+  async cancelInbox(id: string) {
+    this.lease.assertMutation()
+    this.assertNotDisposed()
+    await this.ensureStarted()
+    this.lease.assertMutation()
+    if (!this.backend.cancelInbox) throw new Error('This session does not support native pending input')
+    await this.backend.cancelInbox(id, this.lease.captureMutation())
+  }
+
+  async updateInbox(id: string, delivery: 'steer' | 'queue') {
+    this.lease.assertMutation()
+    this.assertNotDisposed()
+    if (!['steer', 'queue'].includes(delivery)) throw new Error('Invalid pending input delivery')
+    await this.ensureStarted()
+    this.lease.assertMutation()
+    if (!this.backend.updateInbox) throw new Error('This session does not support native pending input')
+    await this.backend.updateInbox(id, delivery, this.lease.captureMutation())
   }
 
   async rewindFiles(userMessageId: string, opts?: { dryRun?: boolean; includeConversation?: boolean }): Promise<RewindFilesResult> {
@@ -1728,27 +1760,25 @@ export class Session implements SessionContract {
     this.lease.assertMutation()
     this.assertNotDisposed()
     this.touchRuntimeActivity()
+    if (isBackendSteerCommand(cmd)) {
+      return dispatchBackendSteer(cmd, {
+        assertControl: this.lease.captureMutation(),
+        session: this,
+        id: this.id,
+        harnessId: this.harnessId,
+        streaming: this.isStreaming(),
+        backend: this.backend,
+        appendUserMessage: (message) => {
+          if (this._messages.some((m) => m.id === message.id)) return
+          message = anchorAsyncAnswer(message, this._messages)
+          this.replaceMessages([...this._messages, message])
+          this._lastUserMessageAt = Date.now()
+          this.notifyStateChange()
+          this.forwardEvent({ type: 'user_message_appended', message })
+        },
+      })
+    }
     switch (cmd.kind) {
-      case 'codex.steer':
-      case 'codex.steer_queued':
-      case 'claude.steer_queued':
-      case 'acp.steer_queued':
-      case 'dsh.steer_queued':
-        return dispatchBackendSteer(cmd, {
-          session: this,
-          id: this.id,
-          harnessId: this.harnessId,
-          streaming: this.isStreaming(),
-          backend: this.backend,
-          appendUserMessage: (message) => {
-            if (this._messages.some((m) => m.id === message.id)) return
-            message = anchorAsyncAnswer(message, this._messages)
-            this.replaceMessages([...this._messages, message])
-            this._lastUserMessageAt = Date.now()
-            this.notifyStateChange()
-            this.forwardEvent({ type: 'user_message_appended', message })
-          },
-        })
       case 'codex.plan_approval': {
         this.applyCodexPlanApprovalToMessage(cmd.messageId, { status: cmd.status, ...(cmd.feedback ? { feedback: cmd.feedback } : {}) })
         this.forwardEvent({

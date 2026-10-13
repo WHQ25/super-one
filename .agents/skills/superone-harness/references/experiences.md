@@ -35,16 +35,16 @@ same claim, and the two drift.
 
 | Experience | claude | codex | acp (grok) | opencode | cursor | dsh (DeepSeek) |
 |---|:--:|:--:|:--:|:--:|:--:|:--:|
-| MCP | ✅ | ✅ host-injected | ✅ host-injected | ✅ | ✅ | ❌ |
+| MCP | ✅ | ✅ host-injected | ✅ host-injected | ✅ V1 + V2 native OAuth | ✅ | ❌ |
 | Plan mode | ✅ host | ✅ | ✅ agent-driven | ✅ | ✅ | ❌ |
 | Todos | ✅ | ❌ | ✅ via plan entries | ✅ | ✅ | ✅ |
 | Subagents | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ |
 | Compact | ✅ | ✅ | ✅ `/compact` → `x.ai/compact_conversation` | ✅ | ❌ | ❌ |
-| Streaming tool input | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ |
+| Streaming tool input | ✅ | ❌ | ❌ | ✅ desktop V2 + paired phone | ✅ | ❌ |
 | Sandbox toggle | ✅ off/on/auto | folded into presets | ❌ | ❌ | ✅ off/on | ❌ |
 | Slash commands | ✅ | ✅ | ✅ | ✅ | host + `.cursor` FS | ❌ |
 | Session recap | ❌ | ❌ | ✅ grok only | ❌ | ❌ | ❌ |
-| Steer mid-turn | ✅ `priority: now` | ✅ | ✅ `x.ai/interject` | — | — | — |
+| Steer mid-turn | ✅ `priority: now` | ✅ | ✅ `x.ai/interject` | ✅ desktop V2 `delivery: steer` | — | — | — |
 | Typed failure code | ✅ SDK enum | ⚠️ text + retry count | ⚠️ JSON-RPC code + status | ⚠️ SDK error name | ⚠️ text only | ⚠️ text only |
 
 ---
@@ -68,6 +68,11 @@ its own notion of "effort", and its own persistence.
 | Apply to a live session | `SessionBackend.setModel()` / `setSessionMode()` |
 | Disk cache of the catalog | `M/harness/resource-cache.ts` |
 | Enable/disable subset + prefs | `R/stores/chat-store/helpers/<harness>-model-prefs.ts` (Cursor pattern) |
+
+OpenCode desktop V2 uses leased `session.refreshResources` for the current
+session, plus location-scoped native catalog notifications. Its global reload
+requires a managed private idle server with no pending interactions; V1 keeps
+cold discovery. Desktop and phone consume the same `session_agents` catalog.
 
 Notes that bite:
 - **"Effort" is not universal.** Claude/Codex have reasoning effort; ACP models it as a session config
@@ -175,6 +180,7 @@ Set `supportsPlanMode` only when approve **and** reject both change what the age
 | Localized placeholder keys | `packages/shared/src/i18n/{en,zh}.ts` — ask and plan copy for every harness |
 | Mentions + capability gating | `R/components/chat/mention-capability-match.ts`, `MentionPopup.tsx` |
 | Source of the catalog | `init_ready` event (`skills`, `projectCommands`, `projectAgents`) or the harness's own list (ACP `available_commands_update` cached in `AcpAgentConfigCatalog.slashCommands`) |
+| OpenCode V2 skills and runtime gates | [`skill.list` and `session.prompt`](../../../../docs/harness/opencode/api-surface.md): sanitized native catalog + runtime capabilities cached/replayed in `session_agents`; native skill dispatch attaches stable IDs |
 | Regression tests | `R/components/chat/chat-input/{resolveChatInputPlaceholder,resolveSlashCommandsForProvider}.test.ts` |
 
 Both dispatches must be exhaustive over `ChatProvider`; do not add a `default` branch. A harness must
@@ -216,6 +222,10 @@ fork a fourth shape without a reason.
 | Host MCP injection | `M/mcp/superone-mcp-server.ts`; Claude: `M/agent/claude-query.ts`; Codex: thread `mcp_servers`; Grok: `M/acp/acp-mcp.ts` `session/new` |
 | Tool kind → existing ToolBlock | event mapper + `packages/shared/src/tool-ui.ts` (ACP: `M/acp/acp-event-map.ts`) |
 | Settings registry | `M/mcp/settings-registry.ts` |
+
+OpenCode V2 OAuth uses `M/opencode/opencode-oauth.ts`: exact MCP integration IDs,
+native attempt/status/code/cancel, local browser launch, shared controller forms
+and exact-server reconnection. See [OAuth and catalog contracts](../../../../docs/harness/opencode/upgrades/oauth-catalog-2.0.27.md).
 
 Two things that have burned time: Codex snapshots `tools/list` **once** and ignores
 `list_changed`, so everything must be registered before its handshake; and Codex elicitation carries
@@ -407,3 +417,42 @@ and `undefined`/`false` both fail closed. Never relax that.
 
 Mobile strips tool input and truncates results to ~200 chars; a harness emitting rich tool payloads
 needs an explicit exemption or the mobile view degrades silently.
+
+
+### OpenCode V2 observation and native pending input
+
+`M/opencode/opencode-recovery.ts` restores facts from an exclusive durable cursor,
+with a bounded current-turn projection fallback for native 2.0.24 replay gaps.
+It never retries prompts or tool effects. Pending inputs use native inbox controls
+and shared desktop/WebView state. Capture frontend mutation proofs before entering
+host-owned backends and check them inside the lazy SDK mutation callback. Native
+tool IDs need assistant-step scope; projected text requires stable block IDs.
+See [recovery and inbox contracts](../../../../docs/harness/opencode/upgrades/recovery-inbox-2.0.27.md).
+
+### OpenCode V2 on headless nodes
+
+The desktop V2 client, translator and recovery are shared under
+`packages/opencode/src`; desktop files re-export them. The node runner uses
+native cold catalogs and persists its resume ID and agent in SQLite. Resolve
+catalog launch settings on every turn, including endpoint-only configurations.
+Keep native permission scopes in durable waiters; node once/reject approval must
+not reuse generic remembered tool names or bypass presets. Native success events
+are authoritative when an HTTP acknowledgement is lost, and unknown delivery
+must never trigger automatic resubmission. Persistent managed V2 nodes now expose
+leased Steer/inbox/OAuth/reload/manual Retry and native rewind/fork through the
+shared runtime. Node API-key provider bindings keep model catalogs scoped to the
+selected credential. See [completion](../../../../docs/harness/opencode/upgrades/completion-2.0.27.md).
+
+### OpenCode V2 owned executor isolation
+
+Native 2.0.24 startup resumes suspended sessions from its database. Separate
+ports and MCP config alone do not isolate executors: each logical SuperOne
+session needs a stable private `OPENCODE_DB`, and cold catalog probes need a
+disposable credentials-only copy. Import with a read-only WAL snapshot, retain
+the requested native conversation/children, drop unrelated actors and clear old
+executor claims before startup. Never submit synthetic recovery input. Service
+mode owns its password in native service config, so also isolate configuration
+and registration files; never ensure/stop the user default. Seed authenticated
+host MCP before location boot and allow the observed 100ms tool-catalog debounce
+to settle before input. Real concurrent same-directory MCP calls and cold native
+conversation import tests guard these contracts.

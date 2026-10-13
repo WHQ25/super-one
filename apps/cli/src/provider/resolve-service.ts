@@ -101,6 +101,7 @@ export function resolveServiceFromCredential(
 export function consumerForHarness(harness: string): ConsumerId | null {
   if (harness === 'claude') return 'chat:claude'
   if (harness === 'codex') return 'chat:codex'
+  if (harness === 'opencode') return 'chat:opencode'
   return null
 }
 
@@ -121,6 +122,7 @@ export function listHarnessApiProviders(
     const platform = findPlatform(platforms, cred.platformId)
     const plan = findPlan(platform, cred.planId)
     if (!platform || !plan) continue
+    if (harness === 'opencode' && plan.auth !== 'api-key') continue
     const endpoints = effectiveEndpoints(platform, plan, cred)
     if (!selectEndpoint(plan, consumer, undefined, cred, endpoints, options)) continue
     out.push({

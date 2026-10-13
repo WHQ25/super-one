@@ -31,6 +31,13 @@ function makeMessage(id: string, overrides: Partial<ChatMessage> = {}): ChatMess
 }
 
 describe('reduceSlash: prompt_suggestion', () => {
+  it('keeps explicitly correlated replay checkpoints on their named user input', () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [makeMessage('u1', { checkpointId: 'original' }), makeMessage('a1', { role: 'assistant' }), makeMessage('u2')]
+    const patch = reduceSlash(session, { type: 'checkpoint_captured', messageId: 'a1', userMessageId: 'u2', checkpointId: 'steered', resumePointId: 'steered' })
+    expect(patch.messages![0].checkpointId).toBe('original')
+    expect(patch.messages![2].checkpointId).toBe('steered')
+  })
   it('writes the suggestion onto promptSuggestion', () => {
     const session = createDefaultPerSessionState()
     const patch = reduceSlash(session, {

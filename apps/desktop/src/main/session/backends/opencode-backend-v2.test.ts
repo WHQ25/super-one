@@ -85,7 +85,7 @@ describe('OpenCodeBackend with OpenCode 2', () => {
     route(v2('session.execution.succeeded', {}))
     await send
 
-    expect(events).toContainEqual({ type: 'content_delta', messageId: 'assistant-local', delta: { type: 'text', text: 'Hello' } })
+    expect(events).toContainEqual({ type: 'content_delta', messageId: 'assistant-local', delta: { type: 'text', id: 't:msg_a:0', text: 'Hello' } })
     expect(events).toContainEqual({
       type: 'message_complete',
       messageId: 'assistant-local',

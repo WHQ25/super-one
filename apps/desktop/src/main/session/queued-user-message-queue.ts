@@ -8,8 +8,8 @@ export interface QueuedUserMessage {
 }
 
 /**
- * Host-owned mid-turn queue for user-typed messages. OpenCode always runs a
- * queued message as its own turn once the live one settles. ACP/Grok does the
+ * Host-owned mid-turn queue for user-typed messages. OpenCode runs a
+ * queued message as its own turn by default; V2 can admit it as a native steer. ACP/Grok does the
  * same by default; `acp.steer_queued` can pull one item and `x.ai/interject`
  * it into the live prompt. Claude queues too, then injects as SDK
  * `priority: 'now'` / `'next'`. Codex owns a separate durable Core queue.

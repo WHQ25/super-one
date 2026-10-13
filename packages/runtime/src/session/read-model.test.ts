@@ -63,6 +63,52 @@ const textOf = (message: { content: Array<{ type: string; text?: string }> }) =>
   message.content.filter((b) => b.type === 'text').map((b) => b.text).join('')
 
 describe('SessionReadModel', () => {
+  it('keeps native composer queue rows out of history, consumes a steer once and removes a cancelled row', async () => {
+    let release!: () => void
+    const hold = new Promise<void>(resolve => { release = resolve })
+    const runner: TurnRunner = async input => {
+      input.onInputAccepted?.()
+      await hold
+      return { finalText: 'done', providerResume: 'opencode:native' }
+    }
+    runner.steer = async (_session, input, delivery) => {
+      expect(input.clientMessageId).toBe('steer')
+      delivery.assertControl(); delivery.onInputAccepted(); delivery.onConsumed()
+    }
+    const node = boot(dbPath(), runner)
+    const session = node.runtime.create({ projectId: 'p', harnessId: 'opencode' })
+    try {
+      await node.runtime.send({ sessionId: session.sessionId, text: 'first', clientMessageId: 'first', client, ...lease })
+      await node.runtime.send({ sessionId: session.sessionId, text: 'steered', clientMessageId: 'steer', priority: 'next', client, ...lease })
+      await node.runtime.send({ sessionId: session.sessionId, text: 'cancelled', clientMessageId: 'cancel', priority: 'next', client, ...lease })
+      const queued = node.runtime.load({ sessionId: session.sessionId })
+      expect(queued.messages.map(row => row.id)).toEqual(['first'])
+      expect((queued.state.queuedMessages as Array<{ id: string }>).map(row => row.id)).toEqual(['steer', 'cancel'])
+      await node.runtime.callOperation(session.sessionId, 'session.steer', { clientMessageId: 'steer' })
+      await node.runtime.callOperation(session.sessionId, 'session.dequeue', { clientMessageId: 'cancel' })
+      const consumed = node.runtime.load({ sessionId: session.sessionId })
+      expect(consumed.messages.map(row => row.id)).toEqual(['first', 'steer'])
+      expect(consumed.state.queuedMessages).toEqual([])
+      release()
+      await until(() => node.runtime.get(session.sessionId)?.status === 'idle')
+      expect(node.runtime.get(session.sessionId)?.transcript.filter(row => row.role === 'user').map(row => row.id)).toEqual(['first', 'steer'])
+    } finally { release(); await node.runtime.dispose() }
+  })
+
+  it('restores the OpenCode agent from SQLite and persists clearing it', async () => {
+    const path = dbPath()
+    const first = boot(path)
+    const session = first.runtime.create({ projectId: 'p', harnessId: 'opencode', agent: 'build' })
+    first.runtime.patchSettings(session.sessionId, { agent: 'plan' })
+    await first.runtime.dispose()
+    first.db.close()
+    const second = boot(path)
+    expect(second.runtime.get(session.sessionId)?.agent).toBe('plan')
+    second.runtime.patchSettings(session.sessionId, { agent: null })
+    expect(createSqliteSessionStore(second.db).loadAll()[0]?.agent).toBeNull()
+    await second.runtime.dispose()
+  })
+
   it('loads before and after stable anchors without losing the current turn outside a history window', async () => {
     const node = boot(dbPath(), scriptedTurn())
     const session = node.runtime.create({ projectId: 'p', harnessId: 'claude' })

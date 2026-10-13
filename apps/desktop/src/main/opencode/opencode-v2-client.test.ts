@@ -2,6 +2,9 @@ import { mkdtempSync, realpathSync, symlinkSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { SessionLease } from '../session/session-lease'
+import { controlLeaseAuthority, acquirePhoneControl } from '../control-lease.test-fixtures'
+import { runWindowControl } from '../session/control-context'
 
 vi.mock('../logger', () => ({ default: { debug: vi.fn(), warn: vi.fn(), info: vi.fn() } }))
 
@@ -9,6 +12,7 @@ import {
   OpenCodeV2Client,
   parseOpenCodeV2McpStatus,
   parseOpenCodeV2Models,
+  parseOpenCodeV2Commands,
   toOpenCodeV2McpConfig,
   toOpenCodeV2Ruleset,
 } from './opencode-v2-client'
@@ -23,9 +27,57 @@ function client() {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  vi.useRealTimers()
 })
 
 describe('OpenCodeV2Client', () => {
+  it('pages newest-first recovery messages without combining a cursor with order', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(json({ data: [{ id: 'new' }, { id: 'middle' }], cursor: { next: 'older' } }))
+      .mockResolvedValueOnce(json({ data: [{ id: 'boundary' }, { id: 'old' }], cursor: { next: 'unused' } }))
+    vi.stubGlobal('fetch', fetch)
+    expect(await client().messagesSince('s', 'boundary', new AbortController().signal)).toEqual([{ id: 'middle' }, { id: 'new' }])
+    const queries = fetch.mock.calls.map(([url]) => new URL(url).searchParams)
+    expect(queries[0].get('order')).toBe('desc')
+    expect(queries[1].get('cursor')).toBe('older')
+    expect(queries[1].has('order')).toBe(false)
+  })
+  it('rejects an unavailable recovery boundary instead of exposing unrelated old history', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => json({ data: [], cursor: {} })))
+    await expect(client().messagesSince('s', 'gone', new AbortController().signal)).rejects.toThrow('boundary is no longer available')
+  })
+  it('requires a valid same-session synchronization marker before releasing a replay', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('data: {"type":"log.synced","aggregateID":"other","seq":2}\n\n', { headers: { 'content-type': 'text/event-stream' } })))
+    await expect(client().sessionLog('s', 1, new AbortController().signal)).rejects.toThrow('Invalid OpenCode log watermark')
+  })
+  it('aborts a hung projection read and never returns partial recovery content', async () => {
+    let signal!: AbortSignal
+    vi.stubGlobal('fetch', vi.fn((_url, init: RequestInit) => {
+      signal = init.signal!
+      return new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true }))
+    }))
+    const abort = new AbortController()
+    const replay = client().messagesSince('s', 'boundary', abort.signal)
+    const rejected = expect(replay).rejects.toThrow()
+    await vi.waitFor(() => expect(signal).toBeDefined())
+    abort.abort(); await rejected
+    expect(signal.aborted).toBe(true)
+  })
+  it('checks control after lazy SDK loading and before an inbox HTTP mutation', async () => {
+    const fetch = vi.fn(async () => new Response(null, { status: 204 }))
+    vi.stubGlobal('fetch', fetch)
+    await expect(client().updateInbox('s', 'input', 'steer', () => { throw new Error('stale lease') })).rejects.toThrow('stale lease')
+    expect(fetch).not.toHaveBeenCalled()
+  })
+  it('retains the exact frontend lease across host-owned work and lazy native dispatch', async () => {
+    const authority = controlLeaseAuthority(), lease = new SessionLease('s', authority)
+    const guard = runWindowControl(1, () => lease.captureMutation())
+    const fetch = vi.fn(async () => new Response(null, { status: 204 }))
+    vi.stubGlobal('fetch', fetch)
+    const cancel = client().cancelInbox('s', 'input', guard)
+    acquirePhoneControl(authority, 's', 'phone')
+    await expect(cancel).rejects.toThrow('stale lease')
+    expect(fetch).not.toHaveBeenCalled()
+  })
   it('sends basic auth and the deep-object location for catalog routes', async () => {
     const fetch = vi.fn(async () => json({ location: { directory: '/project dir' }, data: [{ name: 'init' }] }))
     vi.stubGlobal('fetch', fetch)
@@ -33,13 +85,13 @@ describe('OpenCodeV2Client', () => {
     await expect(client().commands()).resolves.toEqual([{ name: 'init' }])
 
     const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit]
-    expect(url).toBe('http://127.0.0.1:4000/api/command?location%5Bdirectory%5D=%2Fproject+dir')
-    expect(init.headers).toEqual({ Authorization: `Basic ${Buffer.from('opencode:pw').toString('base64')}` })
+    expect(String(url)).toBe('http://127.0.0.1:4000/api/command?location%5Bdirectory%5D=%2Fproject+dir')
+    expect(new Headers(init.headers).get('Authorization')).toBe(`Basic ${Buffer.from('opencode:pw').toString('base64')}`)
   })
 
   it('surfaces the server error message', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => json({ _tag: 'SessionNotFoundError', message: 'Session not found' }, 404)))
-    await expect(client().getSession('ses_x')).rejects.toThrow('OpenCode GET /api/session/ses_x failed (404): Session not found')
+    await expect(client().getSession('ses_x')).rejects.toThrow('Session not found')
   })
 
   it('waits for a location’s catalog to settle on first use', async () => {
@@ -69,6 +121,7 @@ describe('OpenCodeV2Client', () => {
       if (path === '/api/model/default') return json({ data: model })
       if (path === '/api/provider') return json({ data: [{ id: 'openai', name: 'OpenAI' }] })
       if (path === '/api/command') return json({ data: [{ name: 'review', description: 'Review changes' }] })
+      if (path === '/api/skill') return json({ data: [] })
       throw new Error(`Unexpected catalog route: ${path}`)
     })
     vi.stubGlobal('fetch', fetch)
@@ -112,9 +165,80 @@ describe('OpenCodeV2Client', () => {
     for await (const event of await client().eventStream(new AbortController().signal)) events.push(event)
     expect(events.map((event) => event.type)).toEqual(['server.connected', 'session.text.delta'])
   })
+
+  it('waits for the connection marker and preserves events received before the runtime consumes them', async () => {
+    let controller!: ReadableStreamDefaultController<Uint8Array>
+    const fetch = vi.fn(async (_url: unknown, init: RequestInit) => new Response(new ReadableStream({
+      start(value) {
+        controller = value
+        init.signal?.addEventListener('abort', () => controller.close(), { once: true })
+      },
+    }), { headers: { 'content-type': 'text/event-stream' } }))
+    vi.stubGlobal('fetch', fetch)
+    const abort = new AbortController()
+    let ready = false
+    const opened = client().eventStream(abort.signal).then((stream) => {
+      ready = true
+      return stream
+    })
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce())
+    await new Promise((resolve) => setImmediate(resolve))
+    expect(ready).toBe(false)
+
+    const connected = { id: 'connected', type: 'server.connected', data: {} }
+    const delta = { id: 'delta', type: 'session.text.delta', data: { sessionID: 'ses_1', delta: 'first token' } }
+    controller.enqueue(new TextEncoder().encode([connected, delta].map((event) => `data: ${JSON.stringify(event)}\n\n`).join('')))
+    const iterator = (await opened)[Symbol.asyncIterator]()
+    expect((await iterator.next()).value).toEqual(connected)
+    expect((await iterator.next()).value).toEqual(delta)
+    await iterator.return?.()
+    expect((fetch.mock.calls[0][1].signal as AbortSignal).aborted).toBe(true)
+  })
+
+  it('cancels startup while waiting for the first event', async () => {
+    const fetch = vi.fn(async (_url: unknown, init: RequestInit) => new Response(new ReadableStream({
+      start(controller) {
+        init.signal?.addEventListener('abort', () => controller.close(), { once: true })
+      },
+    }), { headers: { 'content-type': 'text/event-stream' } }))
+    vi.stubGlobal('fetch', fetch)
+    const abort = new AbortController()
+    const opened = client().eventStream(abort.signal)
+    const rejected = expect(opened).rejects.toThrow(/aborted/i)
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce())
+    abort.abort()
+    await rejected
+    expect((fetch.mock.calls[0][1].signal as AbortSignal).aborted).toBe(true)
+  })
+
+  it('bounds startup when the server never confirms the subscription', async () => {
+    vi.useFakeTimers()
+    const fetch = vi.fn(async (_url: unknown, init: RequestInit) => new Response(new ReadableStream({
+      start(controller) {
+        init.signal?.addEventListener('abort', () => controller.close(), { once: true })
+      },
+    }), { headers: { 'content-type': 'text/event-stream' } }))
+    vi.stubGlobal('fetch', fetch)
+    const opened = client().eventStream(new AbortController().signal)
+    const rejected = expect(opened).rejects.toThrow(/timed out/i)
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce())
+    await vi.advanceTimersByTimeAsync(5000)
+    await rejected
+    expect((fetch.mock.calls[0][1].signal as AbortSignal).aborted).toBe(true)
+  })
 })
 
 describe('OpenCode 2 parsers', () => {
+  it('adds native skills to the slash catalog without exposing source or overriding command names', () => {
+    const skills = [
+      { id: 'skill_review', name: 'review', description: 'Review code', content: 'private instructions', path: '/private/skill.md' },
+      { id: 'skill_collision', name: 'init', content: 'other', path: '/private/other.md' },
+    ]
+    expect(parseOpenCodeV2Commands([{ name: 'init' }], skills)).toEqual([
+      { name: 'init', description: '', argumentHint: '', isSkill: false },
+      { name: 'review', description: 'Review code', argumentHint: '', isSkill: true, skillId: 'skill_review' },
+    ])
+  })
   it('lists enabled models with their effort variants and default', () => {
     const models = [
       { id: 'gpt', providerID: 'openai', name: 'GPT', enabled: true, variants: [{ id: 'low' }, { id: 'ultra' }], limit: { context: 400 } },

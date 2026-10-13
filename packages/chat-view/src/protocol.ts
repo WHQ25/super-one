@@ -60,6 +60,8 @@ export interface SessionProjection {
    * queued itself carries its full bytes.
    */
   queuedMessages?: ChatMessage[]
+  sessionInbox?: import('@superone/shared/session-inbox').SessionInboxItem[]
+  harnessConnection?: import('@superone/shared/session-inbox').HarnessConnectionState | null
   /** Which steer actions the harness takes for a queued message. */
   queuedSteer?: { now: boolean; soon: boolean }
   /** The prompt keywords the session's harness acts on; sent bubbles paint them. */

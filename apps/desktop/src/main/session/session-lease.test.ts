@@ -1,9 +1,34 @@
 import { describe, expect, it, vi } from 'vitest'
 import { controlLeaseAuthority, acquirePhoneControl } from '../control-lease.test-fixtures'
 import { SessionLease } from './session-lease'
+import { Session } from './session'
 import { runFencedSessionControl, runRpcControl, runWindowControl } from './control-context'
 
 describe('desktop session leases', () => {
+  it('passes the original OAuth proof into async backend work and refuses it after takeover', async () => {
+    const authority = controlLeaseAuthority(), lease = new SessionLease('s', authority)
+    let resume!: () => void
+    const wait = new Promise<void>(resolve => { resume = resolve })
+    const nativeMutation = vi.fn()
+    const session = { lease, assertStarted: () => {}, touchRuntimeActivity: () => {}, backend: {
+      authenticateMcp: async (_name: string, assertControl?: () => void) => { await wait; assertControl?.(); nativeMutation() },
+    } } as unknown as Session
+    const flow = runWindowControl(1, () => Session.prototype.authenticateMcp.call(session, 'fixture'))
+    const refused = expect(flow).rejects.toThrow('stale lease')
+    acquirePhoneControl(authority, 's', 'a')
+    resume()
+    await refused
+    expect(nativeMutation).not.toHaveBeenCalled()
+    lease.dispose()
+  })
+  it('fences a captured mutation proof even after entering host-owned backend work', () => {
+    const authority = controlLeaseAuthority(), session = new SessionLease('s', authority)
+    const captured = runWindowControl(1, () => session.captureMutation())
+    expect(() => captured()).not.toThrow()
+    acquirePhoneControl(authority, 's', 'a')
+    expect(() => captured()).toThrow('stale lease')
+    expect(() => session.assertMutation()).not.toThrow()
+  })
   it('yields a window grant to a phone and refuses another phone, window and stolen proof', () => {
     const authority = controlLeaseAuthority()
     const session = new SessionLease('s', authority)

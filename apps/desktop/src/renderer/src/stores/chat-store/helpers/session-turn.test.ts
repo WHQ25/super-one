@@ -44,7 +44,7 @@ vi.stubGlobal('window', {
 
 const { useChatStore } = await import('../index')
 const { createDefaultPerSessionState, createDefaultProjectState } = await import('../defaults')
-const { ensureHostSession, sessionTurnRequest } = await import('./session-turn')
+const { ensureHostSession, sessionTurnRequest, queuesBehindTurn } = await import('./session-turn')
 const { createSendWriteScope } = await import('./send-write-scope')
 
 type SessionPatch = Partial<ReturnType<typeof createDefaultPerSessionState>>
@@ -91,6 +91,14 @@ beforeEach(() => {
 })
 
 describe('ensureHostSession', () => {
+  it('keeps the selected native agent when creating an OpenCode draft on a node', async () => {
+    seed(NODE, 'draft-1', { preferredProvider: 'opencode', openCodeAgentId: 'plan' })
+    await ensure(NODE).done
+    expect(createSession).toHaveBeenCalledWith('env-1', expect.objectContaining({
+      harnessId: 'opencode', settings: expect.objectContaining({ agent: 'plan' }),
+    }))
+  })
+
   it("creates a local draft on this desktop's host under the draft's id, with the draft's settings", async () => {
     seed(LOCAL, 'draft-1', {
       preferredProvider: 'claude',
@@ -230,6 +238,15 @@ describe('ensureHostSession', () => {
 
 describe('sessionTurnRequest', () => {
   const turn = { text: 'hello', clientMessageId: 'u1' }
+  it('parks node OpenCode input only after native queue capability negotiation', () => {
+    seed(NODE, 'oc', { sessionProvider: 'opencode' })
+    expect(sessionTurnRequest(useChatStore.getState(), NODE, 'oc', { ...turn, queued: true })).not.toHaveProperty('priority')
+    expect(queuesBehindTurn(NODE, true)).toBe(false)
+    const runtimeCapabilities = { harnessId: 'opencode' as const, supportsQueuedSteer: true }
+    seed(NODE, 'oc', { sessionProvider: 'opencode', runtimeCapabilities })
+    expect(sessionTurnRequest(useChatStore.getState(), NODE, 'oc', { ...turn, queued: true })).toMatchObject({ priority: 'next' })
+    expect(queuesBehindTurn(NODE, true, { runtimeCapabilities })).toBe(true)
+  })
 
   function codexSession(path: string) {
     seed(path, 'codex-sid', {
@@ -280,11 +297,11 @@ describe('sessionTurnRequest', () => {
     }
   })
 
-  it('names the OpenCode agent and Cursor parameters only to this desktop', () => {
+  it('names the OpenCode agent on desktop and node turns while keeping Cursor parameters local', () => {
     seed(LOCAL, 'oc', { sessionProvider: 'opencode', openCodeAgentId: 'general' })
     expect(sessionTurnRequest(useChatStore.getState(), LOCAL, 'oc', turn)).toMatchObject({ agent: 'general' })
     seed(NODE, 'oc', { sessionProvider: 'opencode', openCodeAgentId: 'general' })
-    expect(sessionTurnRequest(useChatStore.getState(), NODE, 'oc', turn)).not.toHaveProperty('agent')
+    expect(sessionTurnRequest(useChatStore.getState(), NODE, 'oc', turn)).toMatchObject({ agent: 'general' })
 
     seed(LOCAL, 'cur', { sessionProvider: 'cursor', cursorModelParams: { thinking: 'on' } })
     expect(sessionTurnRequest(useChatStore.getState(), LOCAL, 'cur', turn)).toMatchObject({ modelParams: { thinking: 'on' } })

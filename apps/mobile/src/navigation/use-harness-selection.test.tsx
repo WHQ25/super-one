@@ -4,9 +4,44 @@ import type { ReactNode } from 'react'
 import type { HarnessId, RemoteSystemInfo } from '@superone/shared/agent-types'
 import { MobileThemeProvider } from '../theme/context'
 import { useHarnessSelection } from './use-harness-selection'
+import type { ChatRuntime } from '../runtime'
 
 const wrapper = ({ children }: { children: ReactNode }) =>
   <MobileThemeProvider>{children}</MobileThemeProvider>
+
+test('keeps scoped OpenCode models across cold catalog updates and releases them when switching harness', async () => {
+  const { result } = await renderHook(() => useHarnessSelection(), { wrapper })
+  await act(async () => result.current.resetForProvider('opencode'))
+  const runtime = { sessionId: 'session', provider: 'opencode', session: {
+    runtimeCapabilities: { harnessId: 'opencode' }, sessionModels: [{ id: 'credential-b/model', name: 'Model B', description: '', isDefault: true }],
+  } } as unknown as ChatRuntime
+  await act(async () => result.current.syncSessionCatalog(runtime))
+  await act(async () => result.current.applySystemInfo('opencode', { models: [{ id: 'credential-a/model', name: 'Model A', description: '', isDefault: true }] }))
+  await act(async () => result.current.syncSessionCatalog(runtime))
+  expect(result.current.models.map(model => model.id)).toEqual(['credential-b/model'])
+  expect(result.current.selectedModel).toBe('credential-b/model')
+  await act(async () => result.current.syncSessionCatalog({ sessionId: 'another', provider: 'opencode', session: {} } as unknown as ChatRuntime))
+  await act(async () => result.current.applySystemInfo('opencode', { models: [{ id: 'native-default/model', name: 'Native default', description: '' }] }))
+  expect(result.current.models.map(model => model.id)).toEqual(['native-default/model'])
+  await act(async () => result.current.resetForProvider('claude'))
+  await act(async () => result.current.applySystemInfo('claude', { models: [{ id: 'claude-model', name: 'Claude', description: '' }] }))
+  expect(result.current.models.map(model => model.id)).toEqual(['claude-model'])
+})
+
+test('uses the OpenCode session catalog and replaces it when switching credential scopes', async () => {
+  const { result } = await renderHook(() => useHarnessSelection(), { wrapper })
+  await act(async () => result.current.resetForProvider('opencode'))
+  const native = (sessionId: string, id: string) => ({ sessionId, provider: 'opencode', session: {
+    runtimeCapabilities: { harnessId: 'opencode' }, sessionModels: [{ id, name: id, description: '', isDefault: true }],
+  } }) as unknown as ChatRuntime
+  const first = native('first', 'team-a/model')
+  await act(async () => result.current.syncSessionCatalog(first))
+  expect(result.current.models.map(model => model.id)).toEqual(['team-a/model'])
+  expect(result.current.selectedModel).toBe('team-a/model')
+  await act(async () => result.current.syncSessionCatalog(native('second', 'team-b/model')))
+  expect(result.current.models.map(model => model.id)).toEqual(['team-b/model'])
+  expect(result.current.selectedModel).toBe('team-b/model')
+})
 
 test('a default provider pick resolves the discovered account without changing a bound account pick', async () => {
   const { result } = await renderHook(() => useHarnessSelection(), { wrapper })

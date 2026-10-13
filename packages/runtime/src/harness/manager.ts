@@ -137,6 +137,7 @@ export class HarnessManager {
     try {
       const config = JSON.parse(row?.config_json || '{}')
       return {
+        ...(id === 'opencode' && typeof config.serverUrl === 'string' ? { serverUrl: config.serverUrl } : {}),
         ...(typeof config.usesDefaultArgs === 'boolean' ? { usesDefaultArgs: config.usesDefaultArgs } : {}),
         ...(typeof config.command === 'string' ? { command: config.command } : {}),
         ...(['path', 'explicit'].includes(config.commandSource) ? { commandSource: config.commandSource } : {}),

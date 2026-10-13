@@ -58,7 +58,8 @@ import { openedSessionSelection } from '../session-restore-selection'
 import { TerminalRuntime, type TerminalUi } from '../terminal-runtime'
 import { randomId } from '../ids'
 import { newMessageId } from '@superone/shared/message-id'
-import { canSteerQueued, canSteerQueuedSoon, composerQueuedSendFields } from '../queued-send'
+import { composerQueuedSendFields } from '../queued-send'
+import { useQueuedSteerCapabilities } from '../use-queued-steer-capabilities'
 import { mentionInsertText } from '../mentions'
 import { McpPanel } from '../ui/mcp-panel'
 import { AddDirScreen } from '../screens/add-dir-screen'
@@ -558,12 +559,16 @@ export function MobileApp() {
   }, [modSession])
   const transcriptSync = useTranscriptSync(webRef, mobileVoice.state)
   const queuedSentRef = useRef<ChatMessage[] | null>(null)
+  const inboxSentRef = useRef<ChatRuntime['session']['sessionInbox']>(undefined)
   // Read at publish time, which runs from runtime callbacks rather than renders.
-  const queuedSteerRef = useRef({ now: false, soon: false })
-  queuedSteerRef.current = { now: canSteerQueued(selectedProvider), soon: canSteerQueuedSoon(selectedProvider, selectedAcpAgentId) }
+  const queuedSteerCapabilities = useQueuedSteerCapabilities(selectedProvider, selectedAcpAgentId, `${activePairingId}:${routedEnvironmentId}:${sessionId}`)
+  const queuedSteerRef = queuedSteerCapabilities.ref
   const promptKeywordsRef = useRef(HARNESS_CAPABILITIES[selectedProvider].promptKeywords)
   promptKeywordsRef.current = HARNESS_CAPABILITIES[selectedProvider].promptKeywords
   const syncSheets = (runtime: ChatRuntime, hydrate = false) => {
+    queuedSteerCapabilities.sync(runtime.session.runtimeCapabilities)
+    suggestions.syncSessionCatalog(runtime)
+    harnessSelection.syncSessionCatalog(runtime)
     setSessionVoiceCapability(runtime.realtimeVoice)
     if (connectionRef.current.epoch !== runtime.epoch) {
       connectionRef.current = { state: 'connected', epoch: runtime.epoch }
@@ -583,6 +588,7 @@ export function MobileApp() {
     // By identity: the reducer replaces the array only when the queue changes, and
     // a picture this phone queued would otherwise cross the bridge on every patch.
     const includeQueued = hydrate || runtime.session.queuedMessages !== queuedSentRef.current
+    const includeInbox = hydrate || runtime.session.sessionInbox !== inboxSentRef.current
     transcriptSync.publish(runtime, {
       hasMoreHistory: runtime.hasMoreHistory,
       historyNavigation: runtime.navigationAvailable,
@@ -612,10 +618,13 @@ export function MobileApp() {
       pendingQuestion: runtime.session.pendingQuestion,
       slashCommandOutput: runtime.session.slashCommandOutput,
       ...(includeQueued ? { queuedMessages: runtime.session.queuedMessages } : {}),
+      ...(includeInbox ? { sessionInbox: runtime.session.sessionInbox ?? [] } : {}),
+      harnessConnection: runtime.session.harnessConnection ?? null,
       queuedSteer: runtime.streaming ? queuedSteerRef.current : { now: false, soon: false },
       promptKeywords: [...promptKeywordsRef.current],
     }, hydrate)
     if (includeQueued) queuedSentRef.current = runtime.session.queuedMessages
+    if (includeInbox) inboxSentRef.current = runtime.session.sessionInbox
     if (includeMentionArtwork) mentionArtworkRevisionRef.current = mentionArtworkRevision
     if (includeMcpIcons) mcpIconsRevisionRef.current = iconsRevision
     setHasTranscript(runtime.session.messages.length > 0)
@@ -737,6 +746,8 @@ export function MobileApp() {
         setAttachments((current) => [...restored.filter((a) => !current.some((c) => c.id === a.id)), ...current])
       }
     },
+    sessionInboxAction: async (inboxId, action) => { await runtimeRef.current?.sessionInboxAction(inboxId, action) },
+    reconnectAgent: async () => { await runtimeRef.current?.reconnectAgent() },
     queuedMessageAction: async (messageId, action) => runUiAction(async () => {
       const runtime = runtimeRef.current
       if (!runtime) return
@@ -1376,6 +1387,7 @@ export function MobileApp() {
     const client = clientRef.current
     if (!client || !project) throw new Error('Connect to a desktop to refresh models')
     const request = ++systemInfoRequestRef.current
+    if (selectedProvider === 'opencode' && runtimeRef.current?.sessionId === sessionId) await runtimeRef.current.refreshResources()
     const info = await requestHarnessResource(client, 'get_system_info', project.path, selectedProvider, { force: true })
     if (request !== systemInfoRequestRef.current || clientRef.current !== client) return
     if (info.error) throw new Error(info.error)
@@ -2749,8 +2761,8 @@ export function MobileApp() {
           projectDirs={sessionId ? [] : workspaceDirs}
           sessionDirs={sessionId ? [] : additionalDirs.sessionDirs}
           onManageDirectories={openAdditionalDirs}
-          canSteer={canSteerQueued(selectedProvider)}
-          canSteerSoon={canSteerQueuedSoon(selectedProvider, selectedAcpAgentId)}
+          canSteer={queuedSteerCapabilities.now}
+          canSteerSoon={queuedSteerCapabilities.soon}
           todos={todos}
           collapsedPrompts={collapsedPendingPrompts({ permission: collabRequestOf(perm) ? null : perm, plan }, promptCollapse.collapsed)}
           onExpandPrompt={promptCollapse.expand}

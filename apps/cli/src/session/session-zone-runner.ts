@@ -34,6 +34,10 @@ export function withSessionZone(runner: TurnRunner, syncRoot: string): TurnRunne
     return runner({ ...input, sessionDir, additionalDirectories })
   }
   wrapped.getMcpAppsProvider = runner.getMcpAppsProvider
+  wrapped.callOperation = runner.callOperation
+  wrapped.servedOperations = runner.servedOperations
+  wrapped.steer = runner.steer
+  wrapped.interruptSession = runner.interruptSession
   wrapped.disposeSession = runner.disposeSession
   wrapped.disposeAll = runner.disposeAll
   wrapped.listActiveRuntimes = runner.listActiveRuntimes

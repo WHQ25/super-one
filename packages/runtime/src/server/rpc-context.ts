@@ -270,7 +270,7 @@ export interface SessionHostPort {
   /** Optional session operations, omitted by hosts that cannot implement them. */
   readonly servedOperations?: ReadonlySet<string>
   callListOperation?(method: string, input: Record<string, unknown>, clientSessionId: string): unknown | Promise<unknown>
-  callOperation?(sessionId: string, method: string, input: Record<string, unknown>): unknown | Promise<unknown>
+  callOperation?(sessionId: string, method: string, input: Record<string, unknown>, assertControl?: () => void): unknown | Promise<unknown>
   create(input: SessionRuntimeInput<'create'>): NodeSessionRecord
   /** Desktop-native creation, including worktree and promoted-draft choices. */
   createOnHost?(input: SessionRuntimeInput<'create'> & SessionCreateSelections, options: { settings: NodeSessionSettings; assertCreate(): void }): Promise<NodeSessionRecord>
@@ -280,7 +280,7 @@ export interface SessionHostPort {
   setCwd(sessionId: string, cwd: string | null): NodeSessionRecord | Promise<NodeSessionRecord>
   patchSettings(sessionId: string, patch: NodeSessionSettings): NodeSessionRecord | Promise<NodeSessionRecord>
   /** Reject unsupported selections before create writes a session or starts a harness. */
-  validateSettings?(patch: NodeSessionSettings): void
+  validateSettings?(patch: NodeSessionSettings, harnessId?: string): void
   fork(input: SessionRuntimeInput<'fork'>): NodeSessionRecord
   /** A host's native transcript/worktree fork, when its own harness owns that operation. */
   forkOnHost?(input: SessionForkRequest & { client: { clientSessionId: string }; leaseId: string; generation: string }): Promise<SessionForkResult & { session?: NodeSessionRecord }>
@@ -380,6 +380,8 @@ export interface RpcHostHooks {
     source: NodeSessionRecord
     targetCwd: string
     forkFromMessageId?: string
+    nativeForkAnchor?: string
+    assertControl?: () => void
     resolveProjectPath: (projectId: string) => string | null
     harnesses?: HarnessManager
     providers?: ProvidersPort

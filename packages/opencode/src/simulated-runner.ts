@@ -37,7 +37,7 @@ export interface CreateOpenCodeTurnRunnerOptions extends RunOpenCodeTurnOptions 
  */
 export function createOpenCodeTurnRunner(opts: CreateOpenCodeTurnRunnerOptions = {}): TurnRunner {
   const canRunReal = isOpenCodeBinaryRunnable(opts.binaryPath)
-  if (canRunReal && opts.resolveProjectPath) {
+  if ((canRunReal || opts.serverUrl?.trim()) && opts.resolveProjectPath) {
     return createOpenCodeAppServerTurnRunner(opts.resolveProjectPath, {
       binaryPath: opts.binaryPath,
       serverUrl: opts.serverUrl,

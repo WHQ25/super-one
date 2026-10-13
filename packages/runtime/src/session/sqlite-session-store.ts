@@ -8,6 +8,7 @@ function parseSettingsJson(raw: string | null | undefined): {
   sandboxMode: string | null
   model: string | null
   effort: string | null
+  agent: string | null
   apiProviderId: string | null
   externalParent: { sessionId: string } | null
 } {
@@ -16,6 +17,7 @@ function parseSettingsJson(raw: string | null | undefined): {
     sandboxMode: null as string | null,
     model: null as string | null,
     effort: null as string | null,
+    agent: null as string | null,
     apiProviderId: null as string | null,
     externalParent: null as { sessionId: string } | null,
   }
@@ -33,6 +35,7 @@ function parseSettingsJson(raw: string | null | undefined): {
       sandboxMode: str('sandboxMode'),
       model: str('model'),
       effort: str('effort'),
+      agent: str('agent'),
       apiProviderId: str('apiProviderId'),
       externalParent: externalParentOf(obj.externalParent),
     }
@@ -52,6 +55,7 @@ function serializeSettingsJson(session: NodeSessionRecord): string {
     sandboxMode: session.sandboxMode ?? null,
     model: session.model ?? null,
     effort: session.effort ?? null,
+    ...(session.harnessId === 'opencode' ? { agent: session.agent ?? null } : {}),
     apiProviderId: session.apiProviderId ?? null,
     ...(session.externalParent ? { externalParent: session.externalParent } : {}),
   })
@@ -128,6 +132,7 @@ export function createSqliteSessionStore(db: SqliteDatabase): SessionStore {
           sandboxMode: settings.sandboxMode,
           model: settings.model,
           effort: settings.effort,
+          ...(r.harness_id === 'opencode' ? { agent: settings.agent } : {}),
           apiProviderId: settings.apiProviderId,
           ...(settings.externalParent ? { externalParent: settings.externalParent } : {}),
           createdAt: r.created_at,

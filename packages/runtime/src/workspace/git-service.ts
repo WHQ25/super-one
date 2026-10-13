@@ -1,7 +1,5 @@
-import { existsSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
-import { basename, join, resolve } from 'node:path'
-import { tmpdir } from 'node:os'
-import { randomUUID } from 'node:crypto'
+import { existsSync, realpathSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 import {
   sanitizeGitRef as sanitizeGitRefCore,
   gitErrorMessage,
@@ -13,27 +11,27 @@ import {
   listGitMentionRefs,
   probeGitMentionCapabilities,
   type GitMentionRunners,
-  resolveMainDirFromCommonDir,
-  planNewWorktreePaths,
-  allocateWorktreePath,
-  withRepoLock,
-  worktreeAddArgs,
-  recordedBranchForMode,
-  parseNumstat,
+  activateWorktree as activateWorktreeAt,
+  assignBranch as assignBranchAt,
+  handoffPreview as handoffPreviewAt,
+  handoffToMain as handoffToMainAt,
+  samePath,
+  worktreeGit,
+  type ActivateWorktreeInput,
+  type ActivateWorktreeResult,
+  type AssignBranchResult,
+  type HandoffPreview,
+  type HandoffResult,
+  type WorktreeGit,
 } from '@superone/runtime/git'
 import type { WorkspaceProjects } from './workspace-projects'
 import type { GitMentionCapabilities, GitMentionRefKind, GitMentionRefsResult } from '@superone/shared/git-mention-query'
 
 /** GitHub round-trips for `@gh`; a popup must never wait longer than this. */
 const GH_TIMEOUT_MS = 15_000
-/**
- * Reads feed status bars, pickers and path checks: a git stuck on a lock or a
- * slow filesystem fails them instead of leaving the request pending forever.
- * Mutations stay untimed so they are never half-killed.
- */
-const GIT_READ_OPTS = { timeoutMs: 20_000 }
 
 export { parseShortstat } from '@superone/runtime/git'
+export type { ActivateWorktreeInput, ActivateWorktreeResult, AssignBranchResult, HandoffPreview, HandoffResult }
 
 export interface GitStatusResult {
   isRepo: boolean
@@ -60,42 +58,6 @@ export interface WorktreeListEntry {
   head?: string
 }
 
-export type WorktreeMode = 'branch' | 'attach' | 'detach'
-
-export interface ActivateWorktreeInput {
-  baseBranch: string
-  mode: WorktreeMode
-  branchName?: string
-  carryLocalChanges?: boolean
-}
-
-export interface ActivateWorktreeResult {
-  path: string
-  recordedBranch: string | null
-}
-
-export type AssignBranchResult =
-  | { ok: true; branch: string }
-  | {
-      ok: false
-      reason: 'name-required' | 'not-detached' | 'exists' | 'checked-out' | 'error'
-      error?: string
-    }
-
-export type HandoffResult =
-  | { ok: true }
-  | {
-      ok: false
-      reason: 'not-worktree' | 'no-changes' | 'main-dirty' | 'conflict' | 'error'
-      error?: string
-    }
-
-export interface HandoffPreview {
-  files: number
-  insertions: number
-  deletions: number
-}
-
 export interface WorkspaceGitServiceOptions {
   /** Process runners; a host may wrap them (e.g. to spawn on its login-shell PATH). */
   gitRun?: typeof gitRun
@@ -113,36 +75,24 @@ export function sanitizeGitRef(ref: string): string {
   }
 }
 
-function samePath(a: string, b: string): boolean {
-  try {
-    const ra = existsSync(a) ? realpathSync(a) : resolve(a)
-    const rb = existsSync(b) ? realpathSync(b) : resolve(b)
-    return ra === rb
-  } catch {
-    return resolve(a) === resolve(b)
-  }
-}
-
 export class WorkspaceGitService {
-  private readonly runGit: typeof gitRun
+  private readonly git: WorktreeGit
   private readonly runGh: typeof ghRun
 
   constructor(
     private readonly projects: WorkspaceProjects,
     opts: WorkspaceGitServiceOptions = {},
   ) {
-    this.runGit = opts.gitRun ?? gitRun
+    this.git = worktreeGit(opts.gitRun ?? gitRun)
     this.runGh = opts.ghRun ?? ghRun
   }
 
-  /** Read-only git, killed after {@link GIT_READ_OPTS}. */
   private read(cwd: string, args: string[]): Promise<string> {
-    return this.runGit(cwd, args, undefined, GIT_READ_OPTS)
+    return this.git.read(cwd, args)
   }
 
-  /** Mutating git; never timed out. */
-  private write(cwd: string, args: string[], env?: NodeJS.ProcessEnv): Promise<string> {
-    return this.runGit(cwd, args, env)
+  private write(cwd: string, args: string[]): Promise<string> {
+    return this.git.write(cwd, args)
   }
 
   private async isGitWorktree(cwd: string): Promise<boolean> {
@@ -152,11 +102,6 @@ export class WorkspaceGitService {
     } catch {
       return false
     }
-  }
-
-  private async resolveMainWorktreeDir(folderPath: string): Promise<string> {
-    const common = await this.read(folderPath, ['rev-parse', '--git-common-dir'])
-    return resolveMainDirFromCommonDir(folderPath, common)
   }
 
   private root(projectId: string): string {
@@ -406,38 +351,20 @@ export class WorkspaceGitService {
     const baseBranch = sanitizeGitRef(input.baseBranch)
     const safeBranchName =
       mode === 'branch' ? sanitizeGitRef(branchName!.trim()) : undefined
-    const mainDir = await this.resolveMainWorktreeDir(folderPath)
-
-    // `worktree add` and the carry stash take repo-wide locks, and two carries
-    // interleaving pop each other's (or the user's) stash. Shared with the
-    // desktop window's activations in the same process.
-    return withRepoLock(mainDir, async () => {
-      const commitHash = (await this.read(folderPath, ['rev-parse', baseBranch])).trim()
-      const planned = planNewWorktreePaths({
-        mainDir,
-        shortHash: commitHash.slice(0, 7),
+    try {
+      const result = await activateWorktreeAt(this.git, folderPath, {
+        baseBranch,
+        mode,
+        branchName: safeBranchName,
+        carryLocalChanges,
       })
-
-      if (!existsSync(planned.wtDir)) mkdirSync(planned.wtDir, { recursive: true })
-      const wtPath = allocateWorktreePath(planned.wtDir, basename(planned.wtPath))
-
-      try {
-        const addArgs = worktreeAddArgs(mode, wtPath, baseBranch, safeBranchName)
-        await this.write(folderPath, ['worktree', ...addArgs])
-      } catch (err) {
-        throw Object.assign(new Error(gitErrorMessage(err) || 'git worktree add failed'), {
-          code: 'internal',
-        })
-      }
-
-      if (carryLocalChanges) {
-        await this.carryUncommittedChanges(folderPath, wtPath)
-      }
-
-      const recordedBranch = recordedBranchForMode(mode, baseBranch, safeBranchName ?? branchName)
       this.projects.touch(projectId)
-      return { path: wtPath, recordedBranch }
-    })
+      return result
+    } catch (err) {
+      throw Object.assign(new Error(gitErrorMessage(err) || 'git worktree add failed'), {
+        code: 'internal',
+      })
+    }
   }
 
   async fetch(projectId: string, remote: string): Promise<void> {
@@ -465,72 +392,14 @@ export class WorkspaceGitService {
     }
   }
 
-  private async carryUncommittedChanges(sourceDir: string, worktreePath: string): Promise<void> {
-    const stashTop = async (): Promise<string> => {
-      try {
-        return (await this.read(sourceDir, ['rev-parse', '-q', '--verify', 'refs/stash'])).trim()
-      } catch {
-        return ''
-      }
-    }
-    const before = await stashTop()
-    try {
-      await this.write(sourceDir, ['stash', 'push', '-u', '-m', 'superone-carry'])
-    } catch {
-      /* nothing to stash */
-    }
-    const after = await stashTop()
-    if (!after || after === before) return
-    try {
-      await this.write(worktreePath, ['stash', 'apply', after])
-    } catch {
-      /* ignore rare apply miss */
-    }
-    try {
-      await this.write(sourceDir, ['stash', 'pop'])
-    } catch {
-      /* changes stay in stash */
-    }
-  }
-
-  private async isOnBranch(cwd: string): Promise<boolean> {
-    try {
-      await this.read(cwd, ['symbolic-ref', '-q', 'HEAD'])
-      return true
-    } catch {
-      return false
-    }
-  }
-
   async assignBranch(projectId: string, worktreePath: string, rawName: string): Promise<AssignBranchResult> {
     const wt = await this.assertRepoWorktreePath(projectId, worktreePath)
-    const name = rawName.trim()
-    if (!name) return { ok: false, reason: 'name-required' }
-
-    if (await this.isOnBranch(wt)) return { ok: false, reason: 'not-detached' }
-
-    try {
-      const safe = sanitizeGitRef(name)
-      if ((await this.checkedOutBranches(projectId)).includes(safe)) {
-        return { ok: false, reason: 'checked-out' }
-      }
-      const exists = await this.read(wt, ['show-ref', '--verify', '--quiet', `refs/heads/${safe}`]).then(
-        () => true,
-        () => false,
-      )
-      if (exists) return { ok: false, reason: 'exists' }
-      await this.write(wt, ['switch', '-c', safe])
-      return { ok: true, branch: safe }
-    } catch (err) {
-      return { ok: false, reason: 'error', error: gitErrorMessage(err) }
-    }
+    return assignBranchAt(this.git, wt, rawName)
   }
 
   async handoffPreview(projectId: string, worktreePath: string): Promise<HandoffPreview | null> {
     try {
-      const diff = await this.buildHandoffDiff(projectId, worktreePath)
-      if (diff.ok) return diff.stat
-      return diff.reason === 'not-worktree' ? null : { files: 0, insertions: 0, deletions: 0 }
+      return await handoffPreviewAt(this.git, await this.assertRepoWorktreePath(projectId, worktreePath))
     } catch {
       return null
     }
@@ -538,103 +407,9 @@ export class WorkspaceGitService {
 
   async handoffToMain(projectId: string, worktreePath: string): Promise<HandoffResult> {
     try {
-      const diff = await this.buildHandoffDiff(projectId, worktreePath)
-      if (!diff.ok) return { ok: false, reason: diff.reason }
-
-      // Clean-check → apply → rollback must not interleave with another
-      // mutation of main: a failed apply's reset --hard / clean -fd would wipe
-      // a concurrent handoff (or a carry stash) that just landed.
-      return await withRepoLock(diff.mainDir, async (): Promise<HandoffResult> => {
-        const mainStatus = (await this.read(diff.mainDir, ['status', '--porcelain'])).trim()
-        if (mainStatus) return { ok: false, reason: 'main-dirty' }
-
-        const patch = await this.read(diff.worktreePath, ['diff', '--binary', diff.base, diff.tree])
-        const patchFile = join(tmpdir(), `s1-handoff-${randomUUID()}.patch`)
-        writeFileSync(patchFile, `${patch}\n`)
-        // Narrow the TOCTOU window before mutating main; reset --hard on failure is only
-        // safe if main was clean immediately before apply (not just at the first check).
-        if ((await this.read(diff.mainDir, ['status', '--porcelain'])).trim()) {
-          rmSync(patchFile, { force: true })
-          return { ok: false, reason: 'main-dirty' }
-        }
-        try {
-          await this.write(diff.mainDir, ['apply', '--3way', '--whitespace=nowarn', patchFile])
-        } catch (err) {
-          try {
-            await this.write(diff.mainDir, ['reset', '--hard'])
-            await this.write(diff.mainDir, ['clean', '-fd'])
-          } catch {
-            /* best-effort */
-          }
-          return { ok: false, reason: 'conflict', error: gitErrorMessage(err) }
-        } finally {
-          rmSync(patchFile, { force: true })
-        }
-        try {
-          await this.write(diff.mainDir, ['reset', '--quiet'])
-        } catch {
-          /* ignore */
-        }
-        return { ok: true }
-      })
+      return await handoffToMainAt(this.git, await this.assertRepoWorktreePath(projectId, worktreePath))
     } catch (err) {
       return { ok: false, reason: 'error', error: gitErrorMessage(err) }
-    }
-  }
-
-  private async buildHandoffDiff(
-    projectId: string,
-    worktreePath: string,
-  ): Promise<
-    | {
-        ok: true
-        mainDir: string
-        worktreePath: string
-        base: string
-        tree: string
-        stat: HandoffPreview
-      }
-    | { ok: false; reason: 'not-worktree' | 'no-changes' }
-  > {
-    const wt = await this.assertRepoWorktreePath(projectId, worktreePath)
-    const mainDir = await this.resolveMainWorktreeDir(this.root(projectId))
-    if (samePath(mainDir, wt)) return { ok: false, reason: 'not-worktree' }
-
-    const onBranch = await this.isOnBranch(wt)
-    const worktreeHead = (await this.read(wt, ['rev-parse', 'HEAD'])).trim()
-    const tree = await this.writeWorkingTree(wt)
-
-    let base = worktreeHead
-    if (!onBranch) {
-      const mainHead = (await this.read(mainDir, ['rev-parse', 'HEAD'])).trim()
-      try {
-        base = (await this.read(wt, ['merge-base', mainHead, worktreeHead])).trim() || worktreeHead
-      } catch {
-        base = worktreeHead
-      }
-    }
-
-    const numstat = await this.read(wt, ['diff', '--numstat', base, tree])
-    if (!numstat.trim()) return { ok: false, reason: 'no-changes' }
-    return {
-      ok: true,
-      mainDir,
-      worktreePath: wt,
-      base,
-      tree,
-      stat: parseNumstat(numstat),
-    }
-  }
-
-  private async writeWorkingTree(worktreePath: string): Promise<string> {
-    const tmpIndex = join(tmpdir(), `s1-handoff-${randomUUID()}.index`)
-    const env = { GIT_INDEX_FILE: tmpIndex }
-    try {
-      await this.write(worktreePath, ['read-tree', 'HEAD'], env)
-      await this.write(worktreePath, ['add', '-A'], env)
-      return (await this.write(worktreePath, ['write-tree'], env)).trim()
-    } finally {
-      rmSync(tmpIndex, { force: true })
     }
   }
 

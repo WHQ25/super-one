@@ -1,3 +1,6 @@
+import { realpathSync } from 'node:fs'
+import { resolve } from 'node:path'
+
 /**
  * Serialize repo-mutating git operations per repository.
  *
@@ -13,7 +16,20 @@
  */
 const queues = new Map<string, Promise<void>>()
 
-export function withRepoLock<T>(repoKey: string, task: () => Promise<T>): Promise<T> {
+/**
+ * One key per repository however the caller reached its path: git reports a
+ * linked worktree's common dir by real path, the project root may be a symlink.
+ */
+function lockKey(repoPath: string): string {
+  try {
+    return realpathSync(repoPath)
+  } catch {
+    return resolve(repoPath)
+  }
+}
+
+export function withRepoLock<T>(repoPath: string, task: () => Promise<T>): Promise<T> {
+  const repoKey = lockKey(repoPath)
   const previous = queues.get(repoKey) ?? Promise.resolve()
   const result = previous.then(task, task)
   const tail = result.then(() => {}, () => {})

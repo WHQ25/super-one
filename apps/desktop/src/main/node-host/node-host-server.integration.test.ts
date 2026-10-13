@@ -40,6 +40,7 @@ import { NodeCredentialStore } from '../environment/node-credential-store'
 import { createDesktopProjectsPort } from './desktop-projects-port'
 import { createDesktopProvidersPort } from './desktop-providers-port'
 import * as credentialStore from '../providers/credential-store'
+import { RemoteEnvironmentGateway } from '../environment/remote-environment-gateway'
 import { AGENT_PROFILES, FakeSessionManager, memoryStore, startDesktopNode, stopDesktopNode, type FakeSession } from './node-host-test-fixtures'
 import { DesktopNodeHost } from './node-host-server'
 import { mapNodeSessionEvents } from '@superone/shared/node-session-event-map'
@@ -317,6 +318,11 @@ describe('DesktopNodeHost providers', () => {
     const described = await client.rpc<ExecutionEnvironmentDescriptor>('environment.descriptor')
     expect(described.capabilities.methods).toEqual(expect.arrayContaining(['provider.createCredential', 'provider.setBinding', 'provider.importBundle']))
     for (const method of ['provider.getCredentialDecrypted', 'provider.exportBundle']) expect(described.capabilities.methods).not.toContain(method)
+
+    // A's pull stops at its own side, before asking B for keys B withholds.
+    const gateway = new RemoteEnvironmentGateway(client)
+    await gateway.getDescriptor()
+    await expect(gateway.providerExportBundle()).rejects.toMatchObject({ code: 'failed_precondition' })
   })
 })
 

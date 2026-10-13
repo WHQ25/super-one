@@ -2196,7 +2196,9 @@ function registerIpcHandlers(): void {
     AgentIpcChannels.ENVIRONMENT_PROVIDER_PULL_REMOTE,
     async (_e, connectionId: string, opts?: { replaceAll?: boolean }) => {
       const { getEnvironmentHost } = await import('./environment')
-      return getEnvironmentHost().pullRemoteProvidersToLocal(connectionId, opts)
+      const result = await getEnvironmentHost().pullRemoteProvidersToLocal(connectionId, opts)
+      agentService.providerConfigChanged()
+      return result
     },
   )
   ipcMain.handle(

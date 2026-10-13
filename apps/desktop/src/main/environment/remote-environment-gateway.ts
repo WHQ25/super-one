@@ -889,7 +889,12 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     return this.client.rpc('provider.deleteCustomPlatform', { id })
   }
 
+  /** A desktop node keeps its keys: its descriptor leaves `provider.exportBundle` out. */
   async providerExportBundle(): Promise<unknown> {
+    const capabilities = this.descriptorCache?.capabilities
+    if (capabilities && !servesMethod(capabilities, 'provider.exportBundle')) {
+      throw Object.assign(new Error('This host does not share its provider keys; pull is unavailable'), { code: 'failed_precondition' })
+    }
     return this.client.rpc('provider.exportBundle', {})
   }
 

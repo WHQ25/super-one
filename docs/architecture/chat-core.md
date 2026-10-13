@@ -88,7 +88,7 @@ applier, and a patch whose side effects fail, still reach renderer subscribers.
 Cold restore reads `session.load` with stored settings and the full requested
 transcript; metadata reads do not start a runtime.
 
-Local admission runs through `InProcessRpcClient` and `LocalSessionHost`; local
+Local admission runs through `InProcessRpcClient` and `DesktopSessionHost`; local
 events already reach the renderer through its hub and never install a second
 mapped follower. Node open/send use a follower with snapshot/version recovery.
 These delivery adapters feed the same reducer. Session-scoped writes retain

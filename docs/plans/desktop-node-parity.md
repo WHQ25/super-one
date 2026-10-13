@@ -41,7 +41,6 @@ B answers `provider.listModels` and `git.status` with
 - The node listener serves controllers from the client context (renamed from
   `phoneContext()`), with the same workspace, Git and extensions;
   `rpcContext()` is deleted. Until their steps, `controllerContext()` still
-  differs in `sessions` (controllers keep `DesktopSessionHost`, step 2) and
   leaves out terminals and drafts, whose leases map every non-phone requester
   to the window (steps 3–4).
 - One desktop Git port for every client: runtime `WorkspaceGitService`, with
@@ -63,15 +62,18 @@ B answers `provider.listModels` and `git.status` with
   blocks B's main thread. Make the port's reads async with a timeout (runtime,
   CLI and dispatcher handlers together).
 
-### 2. One session host
+### 2. One session host (done)
 
-- `LocalSessionHost` serves controllers too. The controller-only pieces of
-  `DesktopSessionHost` move into it, keyed by the session's controller record
-  or a per-context flag (never by payload): controller record on create, B's
-  active session kept, Host Actions, release/admit, `restoreControl`, launch
-  settings on resume, collaboration task label. `DesktopSessionHost` is deleted.
-- Fork, setCwd, tags, UI flags, close, remove, modUi become served for
-  controllers. `forkHarnessResume` stub removed if unused.
+- `DesktopSessionHost` serves every session to every client; the
+  `LocalSessionHost` features (fork, setCwd, tags, UI flags, close, remove,
+  modUi, side chats, scheduled sends, inbox, rewind) moved into it and
+  `local-session-host.ts` is deleted. Controller-only pieces are keyed by the
+  session's controller record or the authenticated client (never by payload):
+  controller record on create, B's active session kept, Host Actions,
+  release/admit, `restoreControl`, launch settings on resume, collaboration
+  task label.
+- `forkHarnessResume` stays: `RpcHostHooks` requires it, and the desktop's
+  fork is served by the session host's `edits.fork`.
 
 ### 3. Leases and takeover
 
@@ -136,3 +138,8 @@ B answers `provider.listModels` and `git.status` with
   `harness` tests 128 files / 1014 passed, including a paired-controller test
   for models, catalog, Git and the credential boundary. Not yet run: the
   two-instance lab.
+- 2026-10-14: Step 2 done. One `DesktopSessionHost` serves the window, phones
+  and controllers; `controllerContext()` still leaves out terminals and drafts
+  (steps 3–4). `node-host-server.integration.test.ts` asserts a controller sees
+  every session and is served fork, setCwd, close and the other edits;
+  long-term docs name the one host.

@@ -1,17 +1,14 @@
-/**
- * Host wake prompts that exist only to resume the model: download / artifact
- * receipts and collaboration mailbox wakes. The tool row or status-bar inbox
- * already shows the human side, so the transcript keeps no bubble for them.
- * A scheduled prompt (Grok cron) also arrives as a wake but is user-authored
- * and stays visible.
- */
-const MODEL_ONLY_WAKE = new RegExp(
-  '^(?:<task_notification source="(?:browser_download|artifact_sync)"'
-  + '|A collaboration mailbox message is ready\\.'
-  + '|A user-approved collaboration link is active with SuperOne session )',
-)
+import type { ChatMessageSource } from './agent-types'
 
-/** Callers must also require `source === 'task-notification'`; user text is never hidden. */
-export function isModelOnlyHostWake(text: string): boolean {
-  return MODEL_ONLY_WAKE.test(text.trimStart())
+/**
+ * A host wake (`source: 'task-notification'`) resumes the model with a prompt
+ * written for it: download / artifact receipts, collaboration wakes, plan
+ * follow-ups. The tool row, inbox or decision card already shows the human
+ * side, so the transcript keeps no bubble for one. The exception is a wake
+ * whose text the user wrote (a Grok scheduled prompt): its producer marks it
+ * `userAuthored` and it stays visible. Hidden is the default so a new wake
+ * never leaks its model-facing prompt into the chat.
+ */
+export function isModelOnlyHostWake(input: { source?: ChatMessageSource; userAuthored?: boolean }): boolean {
+  return input.source === 'task-notification' && !input.userAuthored
 }

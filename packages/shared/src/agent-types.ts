@@ -820,6 +820,8 @@ export interface MessageMetadata {
    * `'task-notification'` = synthetic host wake (not human).
    */
   source?: ChatMessageSource
+  /** A host wake carrying text the user wrote; any other host wake is hidden (see `isModelOnlyHostWake`). */
+  userAuthored?: boolean
   collaboration?: CollaborationMessageMeta
   /**
    * Grok `last_turn_summary` — one-line dashboard fragment for this assistant turn.
@@ -2407,6 +2409,8 @@ export interface SendMessageRequest {
   acpAgentId?: string | null
   /** Transcript provenance for non-human or collab-originated user bubbles. */
   source?: ChatMessageSource
+  /** A host wake carrying text the user wrote; the transcript shows it (see `isModelOnlyHostWake`). */
+  userAuthored?: boolean
   collaboration?: CollaborationMessageMeta
   /** Cursor local: expire wedged run before this send (LocalSendOptions.force). */
   force?: boolean

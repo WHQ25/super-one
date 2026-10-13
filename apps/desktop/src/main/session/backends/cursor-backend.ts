@@ -32,7 +32,7 @@ import {
   setCursorRuntimeFactory,
 } from '../../cursor/cursor-runtime'
 import { getCachedHarnessResources } from '../../database'
-import type { BackendStartOptions, HarnessId, SendDelivery, SessionBackend } from '../types'
+import type { BackendStartOptions, HarnessId, SendDelivery, SessionBackend, TaskNotificationSendOptions } from '../types'
 
 export { setCursorRuntimeFactory }
 
@@ -84,7 +84,7 @@ export class CursorBackend implements SessionBackend {
    */
   private readonly interactions = new CursorInteractionRegistry((event) => this.emit(event))
   /** Session.send bound by `bindTaskNotificationSend`; carries plan decisions back as a host turn. */
-  private taskSend: ((content: string, opts?: { clientMessageId?: string }) => Promise<void>) | null = null
+  private taskSend: ((content: string, opts?: TaskNotificationSendOptions) => Promise<void>) | null = null
   /** Identity of the send in flight; `interrupt()` flips it so async preparation cannot dispatch. */
   private activeSendOp: { cancelled: boolean } | null = null
   /**
@@ -503,7 +503,7 @@ export class CursorBackend implements SessionBackend {
     this.interactions.respondToPlanApproval(requestId, approved, feedback)
   }
 
-  bindTaskNotificationSend(send: (content: string, opts?: { clientMessageId?: string }) => Promise<void>): void {
+  bindTaskNotificationSend(send: (content: string, opts?: TaskNotificationSendOptions) => Promise<void>): void {
     this.taskSend = send
   }
 

@@ -1299,7 +1299,7 @@ export class SessionRuntime {
 
   private appendUserMessage(session: NodeSessionRecord, opts: TurnOpts): void {
     // The turn still runs; the transcript just keeps no bubble for a model-only wake.
-    if (opts.source === 'task-notification' && isModelOnlyHostWake(opts.text)) return
+    if (isModelOnlyHostWake(opts)) return
     const failed = this.userRow(session, opts.clientMessageId)
     if (failed?.metadata?.sendFailure) {
       // Sent again under the same id: the row runs now and is no longer failed.

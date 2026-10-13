@@ -22,7 +22,7 @@ describe('TaskNotificationQueue', () => {
     q.enqueue('wake B')
     q.enqueue('wake B')
     q.enqueue('wake A')
-    expect(TaskNotificationQueue.join(q.takeAll())).toBe('wake A\n\nwake B\n\nwake A')
+    expect(TaskNotificationQueue.join(q.takeBatch())).toBe('wake A\n\nwake B\n\nwake A')
     expect(q.size).toBe(0)
   })
 
@@ -32,34 +32,45 @@ describe('TaskNotificationQueue', () => {
     q.enqueue('b')
     q.enqueue('c')
     q.enqueue('d')
-    expect([...q.peekAll()]).toEqual(['b', 'c', 'd'])
+    expect(contents(q)).toEqual(['b', 'c', 'd'])
   })
 
   it('requeueFront restores a failed batch ahead of mid-flight enqueues', () => {
     const q = new TaskNotificationQueue()
     q.enqueue('a')
     q.enqueue('b')
-    const batch = q.takeAll()
+    const batch = q.takeBatch()
     q.enqueue('c') // arrived while send was in flight
     q.requeueFront(batch)
-    expect([...q.peekAll()]).toEqual(['a', 'b', 'c'])
+    expect(contents(q)).toEqual(['a', 'b', 'c'])
   })
 
   it('requeueFront coalesces across the failure boundary', () => {
     const q = new TaskNotificationQueue()
     q.enqueue('wake')
-    const batch = q.takeAll()
+    const batch = q.takeBatch()
     q.enqueue('wake') // same payload enqueued again during failed send
     q.requeueFront(batch)
-    expect([...q.peekAll()]).toEqual(['wake'])
+    expect(contents(q)).toEqual(['wake'])
+  })
+
+  it('takeBatch never joins a user-authored wake with a model-only one', () => {
+    const q = new TaskNotificationQueue()
+    q.enqueue('mailbox')
+    q.enqueue('download')
+    q.enqueue('/pr-babysit check', { userAuthored: true })
+    q.enqueue('/pr-babysit check')
+    expect(q.takeBatch()).toEqual([{ content: 'mailbox' }, { content: 'download' }])
+    expect(q.takeBatch()).toEqual([{ content: '/pr-babysit check', userAuthored: true }])
+    expect(q.takeBatch()).toEqual([{ content: '/pr-babysit check' }])
   })
 
   it('requeueFront respects capacity after merge', () => {
     const q = new TaskNotificationQueue(3)
-    const batch = ['a', 'b', 'c']
+    const batch = ['a', 'b', 'c'].map((content) => ({ content }))
     q.enqueue('d')
     q.requeueFront(batch)
-    expect([...q.peekAll()]).toEqual(['b', 'c', 'd'])
+    expect(contents(q)).toEqual(['b', 'c', 'd'])
     expect(q.size).toBeLessThanOrEqual(TASK_NOTIFICATION_MAX_ITEMS)
   })
 
@@ -68,6 +79,8 @@ describe('TaskNotificationQueue', () => {
     expect(req.source).toBe('task-notification')
     expect(req.content).toBe('mailbox ready')
     expect(req.clientMessageId).toMatch(/^task-notify-/)
+    expect(req.userAuthored).toBeUndefined()
+    expect(taskNotificationRequest('/pr-babysit check', { userAuthored: true }).userAuthored).toBe(true)
   })
 
   it('taskNotificationDisplayText strips Grok cron system-reminder framing', () => {
@@ -83,6 +96,10 @@ describe('TaskNotificationQueue', () => {
   })
 })
 
+function contents(q: TaskNotificationQueue): string[] {
+  return q.peekAll().map((item) => item.content)
+}
+
 async function settleMicrotasks(): Promise<void> {
   await Promise.resolve()
   await Promise.resolve()
@@ -91,6 +108,20 @@ async function settleMicrotasks(): Promise<void> {
 describe('TaskNotificationFlush', () => {
   afterEach(() => {
     vi.useRealTimers()
+  })
+
+  it('sends each visibility run as its own turn', async () => {
+    const q = new TaskNotificationQueue()
+    q.enqueue('mailbox')
+    q.enqueue('/pr-babysit check', { userAuthored: true })
+    const send = vi.fn().mockResolvedValue(undefined)
+    const flush = new TaskNotificationFlush(q, { isBusy: () => false, isAlive: () => true, send }, { logLabel: 'Test', warn: vi.fn() })
+
+    flush.flush()
+    await settleMicrotasks()
+    await settleMicrotasks()
+    expect(send.mock.calls).toEqual([['mailbox', {}], ['/pr-babysit check', { userAuthored: true }]])
+    flush.dispose()
   })
 
   it('requeues on send failure and retries with backoff', async () => {

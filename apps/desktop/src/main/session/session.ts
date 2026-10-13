@@ -86,8 +86,8 @@ import { messageDialectFor } from './message-dialect'
 import {
   taskNotificationDisplayText,
   taskNotificationRequest,
-  isModelOnlyTaskNotification,
 } from './task-notification-queue'
+import { isModelOnlyHostWake } from '@superone/shared/host-wake'
 import { ensureShellPath, isShellPathReady } from '../shell-path'
 import { checkoutRoot, isSameDirectory } from '../project-path'
 import { buildModelFallbackMessage, modelFallbackSignature } from './model-fallback-notification'
@@ -559,7 +559,7 @@ export class Session implements SessionContract {
     // backend.send alone (races status machine and concurrent user sends).
     this.backend.bindTaskNotificationSend?.(async (content, opts) => {
       await this.send(
-        { ...taskNotificationRequest(content), ...(opts?.clientMessageId ? { clientMessageId: opts.clientMessageId } : {}) },
+        { ...taskNotificationRequest(content, opts), ...(opts?.clientMessageId ? { clientMessageId: opts.clientMessageId } : {}) },
         { providerOrigin: 'host' },
       )
     })
@@ -2755,7 +2755,7 @@ export class Session implements SessionContract {
   }
 
   private appendUserMessage(request: SendMessageRequest, providerOrigin: SendProviderOrigin): void {
-    if (isModelOnlyTaskNotification(request)) return
+    if (isModelOnlyHostWake(request)) return
     const userMsg = this.userMessageFor(request, providerOrigin)
     if (isCompactSlashSend(this.harnessId, request.content)) {
       this._pendingCompactUserId = userMsg.id
@@ -2906,10 +2906,8 @@ export class Session implements SessionContract {
    * Wake the agent after a host background task settles.
    * Mid-turn: backend hook (Claude SDK push, Codex steer, or queue).
    * Idle: always Session.send so synthetic turns take `_sendChain` / status machine.
-   *
-   * A backend that delivers the wake itself (`sent-inline`) bypasses Session.send,
-   * so its transcript entry is appended here on its behalf. Model-only wakes
-   * (receipts, mailbox) are omitted: the tool row or status-bar inbox shows them.
+   * These wakes are model-only (`isModelOnlyHostWake`), so a backend that
+   * delivers one itself (`sent-inline`) leaves no transcript entry to mirror.
    */
   async injectTaskNotification(content: string): Promise<void> {
     if (this._status === 'disposed') return
@@ -2926,11 +2924,7 @@ export class Session implements SessionContract {
     if (this.backend.injectTaskNotification) {
       try {
         const outcome = await this.backend.injectTaskNotification(text)
-        if (outcome === 'sent-inline') {
-          this.appendUserMessage(taskNotificationRequest(text), 'host')
-          return
-        }
-        if (outcome === 'deferred') return
+        if (outcome === 'sent-inline' || outcome === 'deferred') return
       } catch (err) {
         log.warn('[Session] injectTaskNotification harness path failed, falling back sid=%s: %s', this.id, err instanceof Error ? err.message : String(err))
       }

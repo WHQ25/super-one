@@ -65,6 +65,7 @@ import {
   TaskNotificationFlush,
   TaskNotificationQueue,
   taskNotificationRequest,
+  type TaskNotificationOptions,
 } from '../task-notification-queue'
 import { QueuedUserMessageQueue, type TakenQueuedUserMessage } from '../queued-user-message-queue'
 import type { BackendCommand, BackendStartOptions, HarnessId, SendDelivery, SessionBackend, TaskNotificationInjectResult } from '../types'
@@ -184,14 +185,14 @@ export class AcpBackend implements SessionBackend {
   })
   private readonly pendingTaskNotifications = new TaskNotificationQueue()
   /** Overridden by Session → Session.send / _sendChain for idle flushes. */
-  private taskNotificationSender: (content: string) => Promise<void> = (content) =>
-    this.send(taskNotificationRequest(content))
+  private taskNotificationSender: (content: string, opts?: TaskNotificationOptions) => Promise<void> = (content, opts) =>
+    this.send(taskNotificationRequest(content, opts))
   private readonly taskNotificationFlush = new TaskNotificationFlush(
     this.pendingTaskNotifications,
     {
       isBusy: () => Boolean(this.activePrompt),
       isAlive: () => this.started && !this.disposed,
-      send: (content) => this.taskNotificationSender(content),
+      send: (content, opts) => this.taskNotificationSender(content, opts),
     },
     {
       logLabel: 'AcpBackend',
@@ -1071,9 +1072,10 @@ export class AcpBackend implements SessionBackend {
    */
   private async deliverCronPrompt(framed: string, taskId: string): Promise<void> {
     try {
-      const outcome = await this.injectTaskNotification(framed)
+      // The scheduled prompt is the user's own text, so its bubble stays visible.
+      const outcome = await this.injectTaskNotification(framed, { userAuthored: true })
       if (outcome === 'deferred') return
-      await this.taskNotificationSender(framed)
+      await this.taskNotificationSender(framed, { userAuthored: true })
     } catch (err) {
       log.warn('[AcpBackend] cron inject send failed task=%s:', taskId, err)
     } finally {
@@ -1107,7 +1109,7 @@ export class AcpBackend implements SessionBackend {
     this.pendingPlanApprovals.clear()
   }
 
-  bindTaskNotificationSend(send: (content: string) => Promise<void>): void {
+  bindTaskNotificationSend(send: (content: string, opts?: TaskNotificationOptions) => Promise<void>): void {
     this.taskNotificationSender = send
   }
 
@@ -1115,12 +1117,12 @@ export class AcpBackend implements SessionBackend {
    * Mid-turn queue only. Idle synthetic turns are owned by Session.send.
    * User-typed follow-ups park until steer (`x.ai/interject`); host wakes stay queued.
    */
-  async injectTaskNotification(content: string): Promise<TaskNotificationInjectResult> {
+  async injectTaskNotification(content: string, opts?: TaskNotificationOptions): Promise<TaskNotificationInjectResult> {
     if (!this.started || this.disposed) return 'deferred'
     const text = content.trim()
     if (!text) return 'deferred'
     if (this.isTurnBusy()) {
-      this.pendingTaskNotifications.enqueue(text)
+      this.pendingTaskNotifications.enqueue(text, opts)
       return 'deferred'
     }
     return 'unhandled'

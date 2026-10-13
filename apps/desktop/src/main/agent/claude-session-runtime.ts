@@ -633,6 +633,7 @@ export function buildUserMessage(
   const metadata = (request.source && request.source !== 'user') || request.collaboration
     ? {
         ...(request.source && request.source !== 'user' ? { source: request.source } : {}),
+        ...(request.userAuthored ? { userAuthored: true } : {}),
         ...(request.collaboration ? { collaboration: request.collaboration } : {}),
       }
     : undefined

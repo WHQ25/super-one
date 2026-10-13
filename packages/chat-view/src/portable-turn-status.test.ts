@@ -122,7 +122,7 @@ describe('collaboration bubbles', () => {
       role: 'user',
       status: 'complete',
       content: [{ type: 'text', text: '/pr-babysit check' }],
-      metadata: { source: 'task-notification' },
+      metadata: { source: 'task-notification', userAuthored: true },
     }))
     expect(html).toContain('System wake')
   })
@@ -130,6 +130,8 @@ describe('collaboration bubbles', () => {
   it.each([
     'A collaboration mailbox message is ready. It is from SuperOne session p.',
     '<task_notification source="browser_download" task_id="bdl_1" status="completed">\npath: /tmp/a.usdz\n</task_notification>',
+    'Your collaboration child SuperOne session c ("C") stopped (idle) without sending you a message.',
+    '/pr-babysit check',
   ])('renders nothing for a model-only wake left in history: %s', (text) => {
     const wake = turn({ role: 'user', status: 'complete', content: [{ type: 'text', text }] })
     expect(render({ ...wake, metadata: { source: 'task-notification' } })).toBe('')

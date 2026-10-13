@@ -1246,13 +1246,14 @@ describe('AcpBackend', () => {
 
   it('injects a scheduled-task prompt through the Session send binding', async () => {
     const sent: string[] = []
+    const sentOpts: unknown[] = []
     let captured: AcpRuntimeOptions | undefined
     setAcpRuntimeFactory(async (opts) => {
       captured = opts
       return mockRuntime()
     })
     const backend = new AcpBackend()
-    backend.bindTaskNotificationSend(async (content) => { sent.push(content) })
+    backend.bindTaskNotificationSend(async (content, opts) => { sent.push(content); sentOpts.push(opts) })
     await backend.start(startOpts({ agentId: 'grok-build' }))
     captured!.scheduledTaskInject!.request({
       sessionId: 'acp-sess-1',
@@ -1269,6 +1270,42 @@ describe('AcpBackend', () => {
     expect(sent[0]).toContain('<system-reminder>')
     expect(sent[0]).toContain('task task-42')
     expect(sent[0]).toContain('/pr-babysit check')
+    // The user wrote the prompt, so its transcript bubble stays visible.
+    expect(sentOpts).toEqual([{ userAuthored: true }])
+    await backend.close()
+  })
+
+  it('keeps a scheduled-task prompt queued mid-turn apart from host wakes', async () => {
+    let resolvePrompt!: () => void
+    let captured: AcpRuntimeOptions | undefined
+    setAcpRuntimeFactory(async (opts) => {
+      captured = opts
+      return mockRuntime({
+        prompt: async (_text, messageId, onEvent) => {
+          await new Promise<void>((resolve) => { resolvePrompt = resolve })
+          onEvent({ type: 'message_complete', messageId })
+          onEvent({ type: 'status_change', status: 'idle' })
+        },
+      })
+    })
+    const sent: Array<[string, unknown]> = []
+    const backend = new AcpBackend()
+    backend.bindTaskNotificationSend(async (content, opts) => { sent.push([content, opts]) })
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    const first = backend.send({ content: 'first', assistantMessageId: 'asst-1' })
+    await vi.waitFor(() => expect(resolvePrompt).toBeDefined())
+
+    await backend.injectTaskNotification('mailbox ready')
+    captured!.scheduledTaskInject!.request({ taskId: 'task-7', prompt: '/pr-babysit check', humanSchedule: 'every 5m' })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(sent).toEqual([])
+
+    resolvePrompt()
+    await first
+    await vi.waitFor(() => expect(sent).toHaveLength(2))
+    expect(sent[0]).toEqual(['mailbox ready', {}])
+    expect(sent[1][0]).toContain('/pr-babysit check')
+    expect(sent[1][1]).toEqual({ userAuthored: true })
     await backend.close()
   })
 

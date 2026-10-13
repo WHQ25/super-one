@@ -3833,7 +3833,9 @@ describe('Session frontend control', () => {
     'A user-approved collaboration link is active with SuperOne session peer.',
     '<task_notification source="browser_download" task_id="bdl_1" status="completed">\npath: /tmp/a.usdz\n</task_notification>',
     '<task_notification source="artifact_sync" status="completed">\n- "/tmp/run.mp4"\n</task_notification>',
-  ])('backend-inlined model-only wake stays out of the transcript: %s', async (prompt) => {
+    'Your collaboration child SuperOne session c ("C") stopped (idle) without sending you a message.',
+    'The background download has completed.',
+  ])('backend-inlined host wake stays out of the transcript: %s', async (prompt) => {
     const { session, backend } = makeSession()
     backend.injectTaskNotification = vi.fn(async () => 'sent-inline' as const)
     const events: import('@superone/shared/agent-types').AgentEvent[] = []
@@ -3844,14 +3846,20 @@ describe('Session frontend control', () => {
     expect(session.snapshot.messages).toEqual([])
   })
 
-  it('keeps unrelated background notifications in the transcript', async () => {
+  it('keeps a user-authored wake in the transcript', async () => {
     const { session, backend } = makeSession()
-    backend.injectTaskNotification = async () => 'sent-inline'
-    await session.injectTaskNotification('The background download has completed.')
+    const sendPromise = session.send(
+      { content: '/pr-babysit check', source: 'task-notification', userAuthored: true, clientMessageId: 'tn-cron' },
+      { providerOrigin: 'host' },
+    )
+    await new Promise((r) => setTimeout(r, 0))
+    backend.resolveSend?.()
+    await sendPromise
     expect(session.snapshot.messages).toEqual([
       expect.objectContaining({
         role: 'user',
-        content: [{ type: 'text', text: 'The background download has completed.' }],
+        content: [{ type: 'text', text: '/pr-babysit check' }],
+        metadata: { source: 'task-notification', userAuthored: true },
       }),
     ])
   })

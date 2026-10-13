@@ -1,5 +1,17 @@
 import type { SendMessageRequest } from '@superone/shared/agent-types'
-import { isModelOnlyHostWake } from '@superone/shared/host-wake'
+
+/** `userAuthored` marks a wake whose text the user wrote; the transcript shows it. */
+export interface TaskNotificationOptions {
+  userAuthored?: boolean
+}
+
+export interface QueuedTaskNotification extends TaskNotificationOptions {
+  content: string
+}
+
+function sameNotification(a: QueuedTaskNotification | undefined, b: QueuedTaskNotification): boolean {
+  return a !== undefined && a.content === b.content && Boolean(a.userAuthored) === Boolean(b.userAuthored)
+}
 
 /** Drop oldest when the queue grows past this (mailbox wakes + download settles). */
 export const TASK_NOTIFICATION_MAX_ITEMS = 32
@@ -13,19 +25,20 @@ const DEFAULT_MAX_DELAY_MS = 8_000
  * wake, browser download settle, etc.). Consecutive identical payloads collapse
  * so repeated "mailbox ready" wakes during one turn only fire once.
  *
- * Use {@link takeAll} + {@link requeueFront} (not a fire-and-forget drain) so a
+ * Use {@link takeBatch} + {@link requeueFront} (not a fire-and-forget drain) so a
  * failed send can restore the batch instead of permanently losing it.
  */
 export class TaskNotificationQueue {
-  private items: string[] = []
+  private items: QueuedTaskNotification[] = []
 
   constructor(private readonly maxItems: number = TASK_NOTIFICATION_MAX_ITEMS) {}
 
-  enqueue(content: string): void {
+  enqueue(content: string, opts?: TaskNotificationOptions): void {
     const text = content.trim()
     if (!text) return
-    if (this.items[this.items.length - 1] === text) return
-    this.items.push(text)
+    const item: QueuedTaskNotification = { content: text, ...(opts?.userAuthored ? { userAuthored: true } : {}) }
+    if (sameNotification(this.items[this.items.length - 1], item)) return
+    this.items.push(item)
     while (this.items.length > this.maxItems) this.items.shift()
   }
 
@@ -34,18 +47,21 @@ export class TaskNotificationQueue {
   }
 
   /** Snapshot of queued items (tests / debugging). */
-  peekAll(): readonly string[] {
+  peekAll(): readonly QueuedTaskNotification[] {
     return this.items
   }
 
   /**
-   * Remove and return the full batch for sending.
+   * Remove and return the leading run that shares one visibility, so a
+   * user-authored wake never joins a model-only one in a single turn.
    * On failure the caller must {@link requeueFront} to preserve delivery.
    */
-  takeAll(): string[] {
-    if (this.items.length === 0) return []
-    const batch = this.items
-    this.items = []
+  takeBatch(): QueuedTaskNotification[] {
+    const first = this.items[0]
+    if (!first) return []
+    const end = this.items.findIndex((item) => Boolean(item.userAuthored) !== Boolean(first.userAuthored))
+    const batch = end === -1 ? this.items : this.items.slice(0, end)
+    this.items = end === -1 ? [] : this.items.slice(end)
     return batch
   }
 
@@ -54,31 +70,20 @@ export class TaskNotificationQueue {
    * flight. Consecutive duplicates across the boundary are coalesced; excess
    * over capacity drops the oldest entries.
    */
-  requeueFront(batch: string[]): void {
+  requeueFront(batch: QueuedTaskNotification[]): void {
     if (batch.length === 0) return
-    const merged: string[] = []
-    for (const raw of [...batch, ...this.items]) {
-      const text = raw.trim()
-      if (!text) continue
-      if (merged[merged.length - 1] === text) continue
-      merged.push(text)
+    const merged: QueuedTaskNotification[] = []
+    for (const item of [...batch, ...this.items]) {
+      if (sameNotification(merged[merged.length - 1], item)) continue
+      merged.push(item)
     }
     this.items = merged.length > this.maxItems
       ? merged.slice(merged.length - this.maxItems)
       : merged
   }
 
-  static join(batch: string[]): string {
-    return batch.join('\n\n')
-  }
-
-  /**
-   * @deprecated Prefer {@link takeAll} + {@link requeueFront} so failures can retry.
-   * Kept for call sites that only need a one-shot snapshot in tests.
-   */
-  drainJoined(): string | null {
-    const batch = this.takeAll()
-    return batch.length === 0 ? null : TaskNotificationQueue.join(batch)
+  static join(batch: readonly QueuedTaskNotification[]): string {
+    return batch.map((item) => item.content).join('\n\n')
   }
 
   clear(): void {
@@ -91,7 +96,7 @@ export interface TaskNotificationFlushHost {
   isBusy(): boolean
   /** False when the backend is closed/disposed — stop retrying and drop work. */
   isAlive(): boolean
-  send(content: string): Promise<void>
+  send(content: string, opts: TaskNotificationOptions): Promise<void>
 }
 
 /**
@@ -126,14 +131,14 @@ export class TaskNotificationFlush {
     if (this.host.isBusy()) return
     if (this.queue.size === 0) return
 
-    const batch = this.queue.takeAll()
+    const batch = this.queue.takeBatch()
     if (batch.length === 0) return
     const content = TaskNotificationQueue.join(batch)
     this.flushing = true
     this.clearRetryTimer()
 
     let failed = false
-    void this.host.send(content)
+    void this.host.send(content, batch[0].userAuthored ? { userAuthored: true } : {})
       .then(() => {
         this.attempt = 0
       })
@@ -199,11 +204,12 @@ export class TaskNotificationFlush {
   }
 }
 
-export function taskNotificationRequest(content: string): SendMessageRequest {
+export function taskNotificationRequest(content: string, opts?: TaskNotificationOptions): SendMessageRequest {
   return {
     content,
     clientMessageId: `task-notify-${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     source: 'task-notification',
+    ...(opts?.userAuthored ? { userAuthored: true } : {}),
   }
 }
 
@@ -218,9 +224,4 @@ export function taskNotificationDisplayText(content: string): string {
     .replace(/<system-reminder>[\s\S]*?<\/system-reminder>/gi, '')
     .replace(/\s{2,}/g, ' ')
     .trim()
-}
-
-/** Receipts and mailbox wakes reach the model only; the tool row or inbox owns their human UI. */
-export function isModelOnlyTaskNotification(request: SendMessageRequest): boolean {
-  return request.source === 'task-notification' && isModelOnlyHostWake(request.content)
 }

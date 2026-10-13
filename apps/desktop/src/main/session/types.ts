@@ -24,6 +24,7 @@ import type {
   HarnessResourcesMap,
 } from '@superone/shared/agent-types'
 import type { HarnessId, LiveSessionSnapshot, SessionSnapshot, SessionStatus } from '@superone/shared/session-types'
+import type { TaskNotificationOptions } from './task-notification-queue'
 
 export type { HarnessId, LiveSessionSnapshot, SessionSnapshot, SessionStatus }
 
@@ -276,19 +277,21 @@ export type SendProviderOrigin = 'local' | 'remote' | 'host'
 /**
  * How a backend disposed of a host wake (collab mailbox, download settle, …).
  *
- * The distinction matters because `Session.send` owns transcript entries for
- * host wakes. Inline delivery needs Session to mirror that entry. Collaboration
- * mailbox wakes are excluded; their UI lives in the status-bar inbox.
- *
  * - `sent-inline`  — pushed straight into the live provider stream (Claude SDK
- *   push, Codex `turn/steer`). Session never sees a send, so Session appends the
- *   transcript bubble on the backend's behalf.
+ *   push, Codex `turn/steer`). Session never sees a send.
  * - `deferred`     — queued (or dropped because the backend is gone). Any later
- *   flush goes through `bindTaskNotificationSend` → `Session.send`, which
- *   appends the bubble itself; Session must not append now or it would double.
+ *   flush goes through `bindTaskNotificationSend` → `Session.send`.
  * - `unhandled`    — backend is idle. Session.send owns the synthetic turn.
  */
 export type TaskNotificationInjectResult = 'sent-inline' | 'deferred' | 'unhandled'
+
+/**
+ * `clientMessageId` lets a backend correlate the request it later receives from
+ * the chain with the host action that queued it.
+ */
+export interface TaskNotificationSendOptions extends TaskNotificationOptions {
+  clientMessageId?: string
+}
 
 export class SessionLockedError extends Error {
   readonly sessionId: string
@@ -415,10 +418,8 @@ export interface SessionBackend {
   /**
    * Redirect idle flushes of queued task notifications through Session.send
    * (so they take `_sendChain` / status machine) instead of backend.send.
-   * `opts.clientMessageId` lets a backend correlate the request it later
-   * receives from the chain with the host action that queued it.
    */
-  bindTaskNotificationSend?(send: (content: string, opts?: { clientMessageId?: string }) => Promise<void>): void
+  bindTaskNotificationSend?(send: (content: string, opts?: TaskNotificationSendOptions) => Promise<void>): void
   respondToPermission(
     requestId: string,
     allow: boolean,

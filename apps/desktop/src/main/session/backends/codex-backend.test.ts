@@ -1552,7 +1552,7 @@ describe('CodexBackend interrupt / approval forwarding', () => {
     const session = (backend as unknown as { session: { steerFn: ((text: string) => Promise<void>) | null } }).session
     session.steerFn = async () => {}
 
-    // 'sent-inline': steer bypasses Session.send, so Session owes the transcript bubble.
+    // 'sent-inline': steer bypasses Session.send; the wake reaches the live turn.
     expect(await backend.injectTaskNotification('mailbox ready')).toBe('sent-inline')
 
     expect(service.steerMock).toHaveBeenCalledWith(expect.any(Object), 'mailbox ready')

@@ -6,7 +6,6 @@ vi.mock('./browser-downloads', () => ({
   downloadUrl: vi.fn(),
 }))
 
-import { isModelOnlyHostWake } from '@superone/shared/host-wake'
 import { downloadUrl } from './browser-downloads'
 import {
   _resetDownloadTasksForTests,
@@ -74,8 +73,6 @@ describe('browser-download-tasks (URL only)', () => {
     expect(content).toContain('task_id="' + snap.taskId + '"')
     expect(content).toContain('status="completed"')
     expect(content).toContain('/tmp/slow.bin')
-    // The tool row shows the result; the wake itself keeps no chat bubble.
-    expect(isModelOnlyHostWake(content)).toBe(true)
     expect(hasRunningDownloadTasks('sess-1')).toBe(false)
   })
 

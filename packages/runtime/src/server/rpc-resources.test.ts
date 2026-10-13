@@ -1,10 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import type { AuthenticatedClient } from '../auth/auth-service'
-import type { ProjectRegistry } from '../workspace/project-registry'
-import { dispatchResourceRpc } from './resource-handlers'
+import type { AuthenticatedClient } from './auth-service'
+import { dispatchResourceRpc, type ResourceProjects } from './rpc-resources'
 
 function client(scopes: AuthenticatedClient['scopes']): AuthenticatedClient {
   return {
@@ -18,16 +17,12 @@ function client(scopes: AuthenticatedClient['scopes']): AuthenticatedClient {
 describe('resource RPC handlers', () => {
   let projectDir: string
   let homeDir: string
-  let projects: ProjectRegistry
+  let projects: ResourceProjects
 
   beforeEach(() => {
     projectDir = mkdtempSync(join(tmpdir(), 'res-rpc-'))
     homeDir = mkdtempSync(join(tmpdir(), 'res-home-'))
-    projects = {
-      get: (id: string) =>
-        id === 'p1' ? { projectId: 'p1', path: projectDir, name: 't', repoIdentity: null } : null,
-      touch: () => {},
-    } as unknown as ProjectRegistry
+    projects = { get: (id: string) => (id === 'p1' ? { path: projectDir } : null) }
   })
 
   afterEach(() => {
@@ -145,35 +140,48 @@ describe('resource RPC handlers', () => {
     expect(res?.error?.code).toBe('invalid_argument')
   })
 
-  it('does not expose MCP env or headers without node:admin', async () => {
-    const ctx = ctxFor(['workspace:read', 'workspace:write'])
-    const saved = await dispatchResourceRpc(
-      'mcp.save',
-      {
-        projectId: 'p1',
-        provider: 'claude',
-        name: 'secret-tools',
-        scope: 'project',
-        config: {
-          type: 'http',
-          url: 'https://example.test/mcp',
-          headers: { Authorization: 'Bearer top-secret' },
-        },
-      },
-      ctx,
-    )
-    expect(saved?.error).toBeUndefined()
+  it('masks MCP env and header values for every client and keeps a secret sent back masked', async () => {
+    const ctx = ctxFor(['workspace:read', 'workspace:write', 'node:admin'])
+    const save = (config: Record<string, unknown>) =>
+      dispatchResourceRpc('mcp.save', { projectId: 'p1', provider: 'claude', name: 'secret-tools', scope: 'project', config }, ctx)
+    const listed = async () => {
+      const res = await dispatchResourceRpc('mcp.list', { projectId: 'p1', provider: 'claude' }, ctx)
+      return (res?.result as { servers: Array<Record<string, unknown>> }).servers.find((s) => s.name === 'secret-tools')!
+    }
+    const stored = () => (JSON.parse(readFileSync(join(projectDir, '.mcp.json'), 'utf8')) as {
+      mcpServers: Record<string, { headers?: Record<string, string> }>
+    }).mcpServers['secret-tools']!
 
-    const listed = await dispatchResourceRpc(
-      'mcp.list',
-      { projectId: 'p1', provider: 'claude' },
-      ctx,
-    )
-    const server = (listed?.result as { servers: Array<Record<string, unknown>> }).servers.find(
-      (entry) => entry.name === 'secret-tools',
-    )
-    expect(server).toBeDefined()
-    expect(server).not.toHaveProperty('headers')
+    expect((await save({ type: 'http', url: 'https://example.test/mcp', headers: { Authorization: 'Bearer top-secret-value', 'X-Team': 'abc' } }))?.error).toBeUndefined()
+    const shown = await listed()
+    expect(shown.headers).toEqual({ Authorization: '***-value', 'X-Team': '***' })
+
+    // An edit that changes the URL sends the headers back as it got them.
+    expect((await save({ type: 'http', url: 'https://example.test/v2', headers: shown.headers }))?.error).toBeUndefined()
+    expect(stored()).toMatchObject({ url: 'https://example.test/v2', headers: { Authorization: 'Bearer top-secret-value', 'X-Team': 'abc' } })
+
+    // A value typed anew replaces the secret.
+    await save({ type: 'http', url: 'https://example.test/v2', headers: { Authorization: 'Bearer rotated', 'X-Team': '***' } })
+    expect(stored().headers).toEqual({ Authorization: 'Bearer rotated', 'X-Team': 'abc' })
+  })
+
+  it('tells the host what changed after an MCP or plugin write', async () => {
+    const mcpChanged = vi.fn()
+    const pluginsChanged = vi.fn()
+    const ctx = { ...ctxFor(['workspace:read', 'workspace:write']), mcpChanged, pluginsChanged }
+    const base = { projectId: 'p1', provider: 'claude', name: 'tools', scope: 'project' }
+
+    await dispatchResourceRpc('mcp.save', { ...base, config: { type: 'stdio', command: 'node' } }, ctx)
+    await dispatchResourceRpc('mcp.toggle', { ...base, disabled: true }, ctx)
+    await dispatchResourceRpc('mcp.delete', base, ctx)
+    expect(mcpChanged.mock.calls.map(([change]) => change)).toEqual([
+      { provider: 'claude', projectPath: projectDir, name: 'tools', enabled: true, saved: true },
+      { provider: 'claude', projectPath: projectDir, name: 'tools', enabled: false, saved: false },
+      { provider: 'claude', projectPath: projectDir, name: 'tools', enabled: false, saved: false },
+    ])
+
+    await dispatchResourceRpc('plugins.setEnabled', { projectId: 'p1', key: 'demo@mp', scope: 'project', enabled: false }, ctx)
+    expect(pluginsChanged).toHaveBeenCalledWith(projectDir)
   })
 
   it('requires node:admin for user-scope writes', async () => {

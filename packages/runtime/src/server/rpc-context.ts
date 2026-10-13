@@ -350,7 +350,7 @@ export interface SessionHostPort {
 
 /**
  * Host-specific harness / catalog hooks: binary-override probes,
- * enable/disable, provider-side fork and the host's PATH readiness.
+ * enable/disable, provider-side fork (CLI) and the host's PATH readiness.
  */
 export interface RpcHostHooks {
   isCodexBinaryOverrideRunnable(): boolean
@@ -381,9 +381,10 @@ export interface RpcHostHooks {
   pathReady?: SandboxPathReady
   /**
    * Fork the provider-side conversation (Claude transcript / Codex thread) for
-   * `session.fork`. Returns the new resume token, or null when there is none.
+   * the dispatcher's `session.fork`. Returns the new resume token, or null when
+   * there is none. A host whose session port serves `edits.fork` omits it.
    */
-  forkHarnessResume(input: {
+  forkHarnessResume?(input: {
     source: NodeSessionRecord
     targetCwd: string
     forkFromMessageId?: string

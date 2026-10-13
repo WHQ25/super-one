@@ -344,6 +344,23 @@ describe('a partial collaboration port', () => {
   })
 })
 
+describe('session.fork without a provider-side fork', () => {
+  const methods = async (sessions: Partial<SessionHostPort>) => {
+    const res = await dispatchRpc('environment.descriptor', {}, projectsOnlyHost({ sessions: sessions as SessionHostPort }))
+    return (res.result as ExecutionEnvironmentDescriptor).capabilities.methods
+  }
+
+  it('is unserved on a host with neither forkOnHost nor forkHarnessResume', async () => {
+    expect(await methods({ get: () => null })).not.toContain('session.fork')
+    const res = await dispatchRpc('session.fork', { sessionId: 's1' }, projectsOnlyHost({ sessions: { get: () => null } as unknown as SessionHostPort }))
+    expect(res.error).toMatchObject({ code: 'not_found', details: { method: 'session.fork', unsupported: true } })
+  })
+
+  it('is served by a session host that forks on its own', async () => {
+    expect(await methods({ get: () => null, forkOnHost: vi.fn() })).toContain('session.fork')
+  })
+})
+
 describe('sandbox probes on a GUI-launched host', () => {
   it('waits for the host PATH before looking up bwrap / socat on Linux', async () => {
     const platform = Object.getOwnPropertyDescriptor(process, 'platform')!

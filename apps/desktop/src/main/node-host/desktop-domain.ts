@@ -359,8 +359,5 @@ function desktopRpcHooks(deps: DesktopDomainDeps): RpcHostHooks {
     disableHarness: deps.hooks.disableHarness,
     ...(deps.hooks.pathReady ? { pathReady: deps.hooks.pathReady } : {}),
     listHarnessModels: unsupported('provider.listModels'),
-    forkHarnessResume: async () => {
-      throw unsupportedMethodError('session.fork')
-    },
   }
 }

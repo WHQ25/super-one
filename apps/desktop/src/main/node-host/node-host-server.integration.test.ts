@@ -3,10 +3,13 @@ import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { AgentEvent, RecentFolder } from '@superone/shared/agent-types'
-import type { EnvironmentEventEnvelope, ExecutionEnvironmentDescriptor, ProjectSnapshot } from '@superone/shared/environment'
+import type { AgentEvent, RecentFolder, TerminalSnapshot } from '@superone/shared/agent-types'
+import type { ControlLease, EnvironmentEventEnvelope, ExecutionEnvironmentDescriptor, ProjectSnapshot } from '@superone/shared/environment'
 import { HarnessManager } from '@superone/runtime/harness'
 import { openNodeDatabase } from '@superone/runtime/db'
+import { bindControlActor } from '@superone/runtime/lease'
+import { createDraftStore, DraftControl } from '@superone/runtime/drafts'
+import Database from 'better-sqlite3'
 
 const electron = vi.hoisted(() => ({ store: new Map<string, string>() }))
 
@@ -34,6 +37,10 @@ import { createDesktopProjectsPort } from './desktop-projects-port'
 import { createDesktopProvidersPort } from './desktop-providers-port'
 import { AGENT_PROFILES, FakeSessionManager, memorySessionEdits, memoryStore, startDesktopNode, stopDesktopNode, type FakeSession } from './node-host-test-fixtures'
 import { DesktopNodeHost } from './node-host-server'
+import type { DesktopDomainDeps } from './desktop-domain'
+import { createDesktopTerminalsPort } from './desktop-terminals-port'
+import { TerminalManager } from '../terminal/terminal-manager'
+import { runWindowControl } from '../session/control-context'
 import { mapNodeSessionEvents } from '@superone/shared/node-session-event-map'
 
 const dirs: string[] = []
@@ -66,8 +73,25 @@ function tempDir(prefix: string): string {
   return dir
 }
 
+/** B's terminal tabs over scripted PTYs; `writes` collects what reaches them. */
+function scriptedTerminals() {
+  const writes: string[] = []
+  const listeners = new Set<(event: import('@superone/shared/agent-types').TerminalEvent) => void>()
+  const manager = new TerminalManager({
+    spawner: { spawn: () => ({ write: (data) => writes.push(data), resize: () => {}, kill: () => {}, onExit: () => {}, onData: () => {}, foregroundProcess: () => 'zsh' }) },
+    onEvent: (event) => { for (const listener of listeners) listener(event) },
+    exists: () => true,
+    coalesceMs: 0,
+  })
+  const deps: Partial<DesktopDomainDeps> = {
+    terminals: createDesktopTerminalsPort(manager, (listener) => { listeners.add(listener); return () => listeners.delete(listener) }),
+    bindLocalControl: (authority) => manager.bindLeases(authority),
+  }
+  return { manager, writes, deps }
+}
+
 /** B with one git project (origin + a commit), paired with a fresh A. */
-async function pairedDesktops(catalog = fakeCatalog()) {
+async function pairedDesktops(catalog = fakeCatalog(), extra: Partial<DesktopDomainDeps> = {}) {
   const userData = tempDir('superone-node-host-')
   const projectDir = tempDir('superone-node-host-project-')
   execFileSync('git', ['init', '-q', projectDir])
@@ -92,6 +116,7 @@ async function pairedDesktops(catalog = fakeCatalog()) {
         probeHarnessReadiness: () => ({ ok: true }) as never,
         assertSessionHarnessRuntimeReady: () => ({ ok: true, reason: 'test' }),
       },
+      ...extra,
     },
     { bindPort: 23000 + Math.floor(Math.random() * 10000) },
   )
@@ -100,7 +125,7 @@ async function pairedDesktops(catalog = fakeCatalog()) {
   const manager = new NodeConnectionManager({ credentialStore: new NodeCredentialStore(tempDir('superone-desktop-a-')) })
   managers.push(manager)
   const { connectionId } = await manager.pairAndConnect({ baseUrl: pairing.url, pairingToken: pairing.pairingToken, label: 'Desktop A', channel: pairing.channel })
-  return { host, sessions, store, projectDir, connectionId, client: manager.getClient(connectionId)! }
+  return { host, sessions, store, projectDir, manager, connectionId, client: manager.getClient(connectionId)! }
 }
 
 describe('DesktopNodeHost', () => {
@@ -115,9 +140,11 @@ describe('DesktopNodeHost', () => {
     const store = memoryStore(() => projects.list())
     const harnesses = new HarnessManager(openNodeDatabase(':memory:'))
     harnesses.enableSimulatedOverlay()
+    const terminals = scriptedTerminals()
     const port = 23000 + Math.floor(Math.random() * 10000)
     const start = (bindPort: number) => startDesktopNode(
       {
+        ...terminals.deps,
         userDataDir: userData,
         label: 'Desktop B',
         appVersion: '0.0.0-test',
@@ -159,9 +186,9 @@ describe('DesktopNodeHost', () => {
 
     const described = await client.rpc<ExecutionEnvironmentDescriptor>('environment.descriptor')
     expect(described.capabilities.methods).toContain('session.get')
-    // The workspace, Git and catalog its window and phones get; terminals wait for controller leases.
-    for (const method of ['workspace.readFile', 'git.status', 'git.branches', 'harness.resources', 'provider.listModels']) expect(described.capabilities.methods).toContain(method)
-    for (const method of ['terminal.create', 'collaboration.send']) expect(described.capabilities.methods).not.toContain(method)
+    // The workspace, Git, catalog and terminals its window and phones get.
+    for (const method of ['workspace.readFile', 'git.status', 'git.branches', 'harness.resources', 'provider.listModels', 'terminal.create']) expect(described.capabilities.methods).toContain(method)
+    expect(described.capabilities.methods).not.toContain('collaboration.send')
     expect(described.capabilities.harnessIds).toContain('claude')
 
     const listed = await client.rpc<ProjectSnapshot[]>('project.list')
@@ -188,10 +215,10 @@ describe('DesktopNodeHost', () => {
     expect(events[1].payload).toMatchObject({ blockId: 'm1', text: 'do the task' })
     expect((events[2].payload as { event: Record<string, unknown> }).event).not.toHaveProperty('projectPath')
 
-    // The session edits B's window has.
+    // The session edits and terminals B's window has.
     const forked = await client.rpc<{ ok: boolean; session: { sessionId: string } }>('session.fork', { sessionId: created.sessionId, mode: 'local', leaseId: lease.leaseId, generation: lease.generation })
     expect(forked).toMatchObject({ ok: true, session: { sessionId: `${created.sessionId}-fork` } })
-    await expect(client.rpc('terminal.create', { cwd: projectDir })).rejects.toMatchObject({ code: 'not_found' })
+    expect(await client.rpc('terminal.create', { cwd: projectDir })).toMatchObject({ terminalId: expect.any(String), cwd: projectDir })
     await expect(client.rpc('harness.enable', { harnessId: 'codex' })).rejects.toMatchObject({ code: 'not_found' })
 
     // Restart B (on a fresh port: fetch would reuse the closed keep-alive socket): the cursor continues from the durable log.
@@ -474,5 +501,124 @@ describe('DesktopNodeHost launch tasks', () => {
       source: 'collaboration',
       collaboration: { kind: 'initial_task', direction: 'inbound', fromSessionTitle: 'Desktop A' },
     })
+  })
+})
+
+describe('DesktopNodeHost control takeover', () => {
+  /** B's window driving one of B's sessions, as its composer does. */
+  const windowControl = (session: FakeSession) => runWindowControl(1, () => session.lease.assertMutation())
+
+  it("takes over what B's window holds, but never a lease of B's phones", async () => {
+    const { host, sessions, projectDir, client } = await pairedDesktops()
+    const own = sessions.createSession({ id: 'own-session', projectPath: projectDir }) as unknown as FakeSession
+    windowControl(own)
+    expect(own.lease.current?.delegate).toBe('window:1')
+
+    const lease = await client.rpc<ControlLease>('session.acquireControl', { sessionId: own.id, yields: true })
+    const controller = host.controllers()[0].id
+    expect(lease).toMatchObject({ holderClientId: controller })
+    expect(own.lease.current).toMatchObject({ leaseId: lease.leaseId, holderClientId: controller })
+    expect(own.lease.isExternal).toBe(true)
+    // The controller's own yield reaches only the phones it relays, not B's window.
+    expect(() => windowControl(own)).toThrow()
+    const relayed = await client.rpc<ControlLease>('session.acquireControl', { sessionId: own.id, delegate: 'phone:a-device' })
+    expect(relayed).toMatchObject({ holderClientId: controller, delegate: 'phone:a-device' })
+    expect(own.lease.phoneDeviceId).toBeNull()
+    // A controller's grant never reads as B's window.
+    await expect(client.rpc('session.acquireControl', { sessionId: own.id, delegate: 'window:1' })).rejects.toMatchObject({ code: 'invalid_argument' })
+
+    // B's phone holds another session: the controller does not take it.
+    const phoneHeld = sessions.createSession({ id: 'phone-session', projectPath: projectDir }) as unknown as FakeSession
+    bindControlActor(host.domain.leases, { clientSessionId: 'phone:p', holderClientId: `desktop:${host.identity.environmentId}`, delegate: 'phone:p', yields: 'none' })
+      .acquire({ resource: phoneHeld.lease.resource, holderClientId: 'phone:p', ttlMs: 60_000 })
+    await expect(client.rpc('session.acquireControl', { sessionId: phoneHeld.id, yields: true })).rejects.toMatchObject({ code: 'failed_precondition' })
+    expect(phoneHeld.lease.phoneDeviceId).toBe('p')
+  })
+
+  it("leaves B's window its lease when B took the session back and the controller does not reclaim", async () => {
+    const { host, sessions, client } = await pairedDesktops()
+    const created = await client.rpc<{ sessionId: string }>('session.create', { projectId: 'p1', harnessId: 'claude' })
+    const live = sessions.live.get(created.sessionId)!
+    host.sessions.releaseControl(created.sessionId)
+    windowControl(live)
+    const held = live.lease.current!
+    expect(held.delegate).toBe('window:1')
+
+    await expect(client.rpc('session.acquireControl', { sessionId: created.sessionId, yields: true }))
+      .rejects.toMatchObject({ details: { reason: 'control_released' } })
+    expect(live.lease.current).toEqual(held)
+    windowControl(live)
+
+    // An explicit reconnect takes it over.
+    const reclaimed = await client.rpc<ControlLease>('session.acquireControl', { sessionId: created.sessionId, reclaim: true })
+    expect(live.lease.current).toMatchObject({ leaseId: reclaimed.leaseId, generation: reclaimed.generation })
+    expect(await client.rpc('session.get', { sessionId: created.sessionId })).not.toHaveProperty('controlReleased')
+  })
+
+  it("serves B's terminals to a controller under its own writer identity", async () => {
+    const terminals = scriptedTerminals()
+    const { host, projectDir, client } = await pairedDesktops(fakeCatalog(), terminals.deps)
+    const controller = host.controllers()[0].id
+
+    const created = await client.rpc<{ terminalId: string }>('terminal.create', { cwd: projectDir })
+    const tab = terminals.manager.get(created.terminalId)!
+    expect(await client.rpc('terminal.list')).toMatchObject({ terminals: [{ terminalId: created.terminalId }] })
+    // B's window types in it first.
+    tab.lease.assertWindow(1)
+    const before = await client.rpc<{ terminal: TerminalSnapshot }>('terminal.attach', { terminalId: created.terminalId })
+    expect(before.terminal).toMatchObject({ ownerDeviceId: null, writableByMe: false })
+
+    const lease = await client.rpc<ControlLease>('terminal.acquireControl', { terminalId: created.terminalId, ttlMs: 60_000 })
+    await client.rpc('terminal.write', { terminalId: created.terminalId, data: 'ls\r', leaseId: lease.leaseId, generation: lease.generation })
+    expect(terminals.writes).toEqual(['ls\r'])
+    const after = await client.rpc<{ terminal: TerminalSnapshot }>('terminal.attach', { terminalId: created.terminalId })
+    expect(after.terminal).toMatchObject({ ownerDeviceId: `node:${controller}`, writableByMe: true })
+    expect(tab.lease.isWritableBy('local')).toBe(false)
+    expect(() => tab.lease.assertWindow(1)).toThrow()
+  })
+
+  it("ends a controller's draft grants when it disconnects and when B stops listening", async () => {
+    const db = new Database(':memory:')
+    const drafts = new DraftControl(createDraftStore(db))
+    const { host, projectDir, manager, connectionId, client } = await pairedDesktops(fakeCatalog(), { drafts })
+    const controller = host.controllers()[0].id
+    drafts.upsert({ id: 'd1', text: 'from B', projectPath: projectDir })
+
+    await client.rpc('draft.open', { draftId: 'd1' })
+    expect(drafts.get('d1')?.controllerDeviceId).toBe(controller)
+    manager.disconnect(connectionId)
+    await vi.waitFor(() => expect(drafts.get('d1')?.controllerDeviceId).toBeNull())
+
+    await manager.connectExisting(connectionId)
+    await manager.getClient(connectionId)!.rpc('draft.open', { draftId: 'd1' })
+    expect(drafts.get('d1')?.controllerDeviceId).toBe(controller)
+    hosts.splice(hosts.indexOf(host), 1)
+    await stopDesktopNode(host)
+    expect(drafts.get('d1')?.controllerDeviceId).toBeNull()
+    // B's window edits it again.
+    expect(drafts.upsert({ id: 'd1', text: 'B again' }).text).toBe('B again')
+    db.close()
+  })
+
+  it.each([
+    ['removed', (host: DesktopNodeHost, id: string) => host.removeController(id)],
+    ['turned off', (host: DesktopNodeHost, id: string) => host.setControllerEnabled(id, false)],
+  ])("ends a controller's session and terminal leases when it is %s", async (_case, cut) => {
+    const terminals = scriptedTerminals()
+    const { host, sessions, projectDir, client } = await pairedDesktops(fakeCatalog(), terminals.deps)
+    const controller = host.controllers()[0].id
+    const own = sessions.createSession({ id: 'own-session', projectPath: projectDir }) as unknown as FakeSession
+    await client.rpc('session.acquireControl', { sessionId: own.id, yields: true })
+    const { terminalId } = await client.rpc<{ terminalId: string }>('terminal.create', { cwd: projectDir })
+    await client.rpc('terminal.acquireControl', { terminalId })
+    const tab = terminals.manager.get(terminalId)!
+    expect(tab.lease.ownerDeviceId).toBe(`node:${controller}`)
+
+    cut(host, controller)
+    expect(own.lease.current).toBeNull()
+    expect(tab.lease.ownerDeviceId).toBeNull()
+    // B's window drives both again.
+    windowControl(own)
+    tab.lease.assertWindow(1)
   })
 })

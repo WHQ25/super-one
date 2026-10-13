@@ -33,10 +33,10 @@ describe('ControlLeaseService delegates', () => {
   })
   it('ends a race of two phones and the desktop window relaying them with one holder', () => {
     const service = leases()
-    const window = service.acquire({ resource, holderClientId: 'desktop', yields: true })
+    const window = service.acquire({ resource, holderClientId: 'desktop', yields: 'holder' })
     const phoneA = service.acquire({ resource, holderClientId: 'desktop', delegate: 'phone-a' })
     expect(refusal(() => service.acquire({ resource, holderClientId: 'desktop', delegate: 'phone-b' }))).toBe('failed_precondition')
-    expect(refusal(() => service.acquire({ resource, holderClientId: 'desktop', yields: true }))).toBe('failed_precondition')
+    expect(refusal(() => service.acquire({ resource, holderClientId: 'desktop', yields: 'holder' }))).toBe('failed_precondition')
 
     // The window's lease was taken over: it is fenced off.
     expect(phoneA.generation).not.toBe(window.generation)
@@ -48,7 +48,7 @@ describe('ControlLeaseService delegates', () => {
     const service = leases()
     const phone = service.acquire({ resource, holderClientId: 'desktop', delegate: 'phone-a' })
     service.release(phone.leaseId, phone.generation, 'desktop')
-    const window = service.acquire({ resource, holderClientId: 'desktop', yields: true })
+    const window = service.acquire({ resource, holderClientId: 'desktop', yields: 'holder' })
     expect(window.leaseId).not.toBe(phone.leaseId)
   })
 
@@ -56,7 +56,7 @@ describe('ControlLeaseService delegates', () => {
     const service = leases()
     const first = service.acquire({ resource, holderClientId: 'desktop', delegate: 'phone-a' })
     expect(service.acquire({ resource, holderClientId: 'desktop', delegate: 'phone-a' }).leaseId).toBe(first.leaseId)
-    expect(refusal(() => service.acquire({ resource, holderClientId: 'other-desktop', yields: true }))).toBe('failed_precondition')
+    expect(refusal(() => service.acquire({ resource, holderClientId: 'other-desktop', yields: 'holder' }))).toBe('failed_precondition')
   })
 
   it('retains the delegate when renewing and fences another delegate', () => {
@@ -67,6 +67,44 @@ describe('ControlLeaseService delegates', () => {
     expect(refusal(() => service.renew({ ...phone, delegate: 'phone-b' }))).toBe('lease_stale')
     expect(refusal(() => service.release(phone.leaseId, phone.generation, 'desktop', 'phone-b'))).toBe('lease_stale')
     expect(service.get(resource)).toMatchObject({ leaseId: phone.leaseId, delegate: 'phone-a' })
+  })
+
+  it('lets any holder take over a lease that yields to every client, and no other', () => {
+    const service = leases()
+    const window = service.acquire({ resource, holderClientId: 'desktop', delegate: 'window:1', yields: 'any' })
+    // A controller desktop takes over what the host's window last touched.
+    const controller = service.acquire({ resource, holderClientId: 'controller-a', yields: 'holder' })
+    expect(Number(controller.generation)).toBeGreaterThan(Number(window.generation))
+    expect(refusal(() => service.assertValid({ resource, holderClientId: 'desktop', leaseId: window.leaseId, generation: window.generation }))).toBe('lease_stale')
+    // Its own yield reaches only its delegates: neither the window, a host phone nor another controller takes it.
+    expect(refusal(() => service.acquire({ resource, holderClientId: 'desktop', delegate: 'window:1', yields: 'any' }))).toBe('failed_precondition')
+    expect(refusal(() => service.acquire({ resource, holderClientId: 'desktop', delegate: 'phone:p' }))).toBe('failed_precondition')
+    expect(refusal(() => service.acquire({ resource, holderClientId: 'controller-b', yields: 'holder' }))).toBe('failed_precondition')
+    const relayed = service.acquire({ resource, holderClientId: 'controller-a', delegate: 'phone:a' })
+    expect(relayed).toMatchObject({ holderClientId: 'controller-a', delegate: 'phone:a' })
+
+    // A host phone does not yield to a controller either.
+    service.revoke(resource)
+    service.acquire({ resource, holderClientId: 'desktop', delegate: 'phone:p' })
+    expect(refusal(() => service.acquire({ resource, holderClientId: 'controller-a', yields: 'holder' }))).toBe('failed_precondition')
+  })
+
+  it('ends every live lease of a holder at once', () => {
+    const service = leases()
+    const terminal = { environmentId: 'env', terminalId: 't' }
+    const changed = vi.fn()
+    service.onChange(changed)
+    service.acquire({ resource, holderClientId: 'controller-a' })
+    const held = service.acquire({ resource: terminal, holderClientId: 'controller-a', delegate: 'phone:a' })
+    const other = service.acquire({ resource: { environmentId: 'env', sessionId: 'other' }, holderClientId: 'desktop', delegate: 'window:1' })
+    service.revokeHolder('controller-a')
+    expect(service.get(resource)).toBeNull()
+    expect(service.get(terminal)).toBeNull()
+    expect(service.get(other.resource)).toEqual(other)
+    expect(changed).toHaveBeenCalledWith(terminal, null)
+    // The revoked holder's proof is stale; the next grant bumps the generation.
+    expect(refusal(() => service.renew({ ...held }))).toBe('lease_stale')
+    expect(Number(service.acquire({ resource: terminal, holderClientId: 'desktop', delegate: 'window:1' }).generation)).toBeGreaterThan(Number(held.generation))
   })
 
   it('publishes authoritative control changes and hides revoked, expired and prior-epoch leases', () => {

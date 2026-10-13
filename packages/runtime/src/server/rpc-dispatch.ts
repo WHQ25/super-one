@@ -1717,15 +1717,17 @@ function handleSessionAcquireControl(payload: unknown, ctx: RpcContext): RpcResu
   }
   try {
     const resource = { environmentId: ctx.identity.environmentId, sessionId }
+    // Before the grant: a refused client must not take over a lease that yields to it.
+    const admitted = ctx.sessions.admitControl?.(sessionId, ctx.client.clientSessionId, { reclaim: p.reclaim === true })
     const lease = ctx.leases.acquire({
       resource,
       holderClientId: ctx.client.clientSessionId,
       ...(typeof p.delegate === 'string' && p.delegate ? { delegate: p.delegate } : {}),
-      ...(p.yields === true ? { yields: true } : {}),
+      ...(p.yields === true ? { yields: 'holder' as const } : {}),
       ttlMs: typeof p.ttlMs === 'number' ? p.ttlMs : undefined,
     })
     try {
-      ctx.sessions.admitControl?.(sessionId, ctx.client.clientSessionId, { reclaim: p.reclaim === true })
+      admitted?.()
     } catch (err) {
       // Expire rather than delete, so the next grant still bumps the generation.
       ctx.leases.revoke(resource)

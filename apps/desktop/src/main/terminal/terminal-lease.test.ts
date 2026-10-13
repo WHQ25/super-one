@@ -10,10 +10,10 @@ function fixture() {
   const acquire = (deviceId: string) => {
     const actor = `phone:${deviceId}`
     return bindControlActor(authority.leases, { clientSessionId: actor,
-      holderClientId: `desktop:${authority.environmentId}`, delegate: actor, yields: false })
+      holderClientId: `desktop:${authority.environmentId}`, delegate: actor, yields: 'none' })
       .acquire({ resource: lease.ref, holderClientId: actor, ttlMs: 60_000 })
   }
-  return { lease, acquire }
+  return { lease, acquire, leases: authority.leases }
 }
 
 describe('TerminalLease native writer projection', () => {
@@ -41,6 +41,19 @@ describe('TerminalLease native writer projection', () => {
     expect(lease.ownerDeviceId).toBe('a')
     lease.handleDeviceDisconnected('a')
     expect(lease.ownerDeviceId).toBeNull()
+  })
+  it('names a controller desktop by its client session, whatever device it relays', () => {
+    const { lease, leases } = fixture()
+    lease.assertWindow(1)
+    // The window steps aside for a controller desktop.
+    leases.acquire({ resource: lease.ref, holderClientId: 'controller-a', delegate: 'phone:a', ttlMs: 60_000 })
+    expect(lease.ownerDeviceId).toBe('node:controller-a')
+    expect(lease.isWritableBy('node:controller-a')).toBe(true)
+    expect(lease.isWritableBy('a')).toBe(false)
+    expect(lease.isWritableBy('local')).toBe(false)
+    // A phone of this desktop with the same device id leaving does not end the controller's grant.
+    lease.handleDeviceDisconnected('a')
+    expect(lease.ownerDeviceId).toBe('node:controller-a')
   })
   it('notifies a reader when the native grant expires', () => {
     vi.useFakeTimers()

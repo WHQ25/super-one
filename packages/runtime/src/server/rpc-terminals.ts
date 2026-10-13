@@ -176,7 +176,7 @@ function handleTerminalAcquireControl(payload: unknown, ctx: RpcContext): RpcRes
         resource: { environmentId: ctx.identity.environmentId, terminalId },
         holderClientId: ctx.client.clientSessionId,
         ...(typeof p.delegate === 'string' && p.delegate ? { delegate: p.delegate } : {}),
-        ...(p.yields === true ? { yields: true } : {}),
+        ...(p.yields === true ? { yields: 'holder' as const } : {}),
         ttlMs: typeof p.ttlMs === 'number' ? p.ttlMs : undefined,
       }),
     }

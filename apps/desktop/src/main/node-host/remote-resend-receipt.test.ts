@@ -52,7 +52,7 @@ async function setup() {
   const sessions = new DesktopSessionHost({
     environmentId: ENV, sessions: manager, rows: store.all, edits: memorySessionEdits(store, new FakeSessionManager()), leases,
     events: new EventLog(db, ENV), hostActions: createSqliteHostActionStore(db),
-    projectPath: () => '/b/project', controllerLabel: () => null,
+    projectPath: () => '/b/project', controllerLabel: () => null, controllerActive: () => true,
   })
   const ctx = {
     idempotency: new IdempotencyService(db),

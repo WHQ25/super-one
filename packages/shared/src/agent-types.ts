@@ -2054,7 +2054,8 @@ export type AgentEventBase =
   | { type: 'elicitation_complete'; mcpServerName: string; elicitationId: string }
   | { type: 'stream_message_start'; messageId: string; apiMessageId: string; model: string; parentToolUseId?: string | null }
   | { type: 'stream_message_stop'; messageId: string; parentToolUseId?: string | null }
-  | { type: 'session_control_changed'; sessionId: string; projectPath: string; lease: import('./environment').ControlLease | null; harnessId: HarnessId; acpAgentId?: string | null; worktreePath?: string | null; gitBranch?: string | null }
+  /** `controllerLabel`: the name of the controller desktop holding `lease`, when one does. */
+  | { type: 'session_control_changed'; sessionId: string; projectPath: string; lease: import('./environment').ControlLease | null; harnessId: HarnessId; acpAgentId?: string | null; worktreePath?: string | null; gitBranch?: string | null; controllerLabel?: string }
   /**
    * A session another desktop started here changed hands: `released` means this
    * host took it back, so the controller watches until it reconnects. The host

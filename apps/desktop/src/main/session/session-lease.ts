@@ -5,6 +5,15 @@ import { SessionLockedError, type SendProviderOrigin, type SessionLifecycleEvent
 
 export interface SessionLeaseAuthority { environmentId: string; leases: ControlLeaseService }
 
+/**
+ * The delegate of a lease this desktop's own principal holds (`window:<id>`,
+ * `phone:<device>`); null for a controller desktop's lease, whose delegates
+ * are devices it relays, not this desktop's.
+ */
+export function hostDelegate(lease: ControlLease | null, environmentId: string): string | null {
+  return lease?.holderClientId === `desktop:${environmentId}` ? lease.delegate ?? null : null
+}
+
 /** Every frontend mutation uses the domain's lease; observing a session grants no authority. */
 export class SessionLease {
   private authority: SessionLeaseAuthority | undefined
@@ -31,6 +40,11 @@ export class SessionLease {
   }
   get current(): ControlLease | null { return this.authority ? this.authority.leases.get(this.resource) : null }
   get isExternal(): boolean { const lease = this.current; return !!lease && !lease.delegate?.startsWith('window:') }
+  /** The phone of this desktop driving the session, if one is. */
+  get phoneDeviceId(): string | null {
+    const delegate = this.authority ? hostDelegate(this.current, this.authority.environmentId) : null
+    return delegate?.startsWith('phone:') ? delegate.slice(6) : null
+  }
 
   onLifecycle(listener: (event: SessionLifecycleEvent) => void): () => void {
     this.listeners.add(listener)
@@ -55,7 +69,8 @@ export class SessionLease {
     return bindControlActor(this.authority.leases, {
       clientSessionId, holderClientId: `desktop:${this.authority.environmentId}`,
       delegate: clientSessionId.startsWith('ipc:') ? clientSessionId.replace(/^ipc:/, 'window:') : clientSessionId,
-      yields: clientSessionId.startsWith('ipc:'),
+      // The window steps aside for its phones and for controller desktops.
+      yields: clientSessionId.startsWith('ipc:') ? 'any' : 'none',
     })
   }
 
@@ -122,7 +137,7 @@ export class SessionLease {
   /** Trusted host reactions release only the currently authenticated delegate. */
   releaseDelegate(delegate: string): boolean {
     const lease = this.current
-    if (!lease || lease.delegate !== delegate) return false
+    if (!lease || hostDelegate(lease, this.authority!.environmentId) !== delegate) return false
     this.authority!.leases.release(lease.leaseId, lease.generation, lease.holderClientId, delegate)
     return true
   }

@@ -922,7 +922,7 @@ const remoteChildWatcher = new RemoteChildWatcher(collaborationChildMonitor)
 remoteChildWatcher.start()
 
 
-new PresenceCoordinator(sessionManager, {
+const presence = new PresenceCoordinator(sessionManager, {
   broadcastToRenderer: (event) => sessionEvents.publish({ event, source: 'presence' }),
 })
 
@@ -932,8 +932,7 @@ const mobileReceiveService = new MobileReceiveService({
     if (!sessionId) return null
     const session = sessionManager.getSession(sessionId)
     if (!session) return null
-    const delegate = session.lease.current?.delegate
-    const deviceId = delegate?.startsWith('phone:') ? delegate.slice(6) : null
+    const deviceId = session.lease.phoneDeviceId
     if (!deviceId) return null
     return {
       deviceId,
@@ -1097,6 +1096,7 @@ async function applyNodeHostSettings(settings: AppSettings): Promise<void> {
       }),
   }
   const domain = openDesktopDomain(sessionManager, phonePorts)
+  presence.labelControllers((holderClientId) => domain.controllerLabel(holderClientId))
   const { openPhoneConnection } = await import('./node-host/phone-endpoint')
   nativePhoneOpen = link => openPhoneConnection(domain, link)
   await apply(settings, sessionManager, { relayUrl: readRemoteConfig()?.relayUrl || __CF_RELAY_URL__, phonePorts })

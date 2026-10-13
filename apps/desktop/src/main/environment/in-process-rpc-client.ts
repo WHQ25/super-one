@@ -25,7 +25,7 @@ export class InProcessRpcClient extends EnvironmentRpcClient {
       const actor = clientSessionId.startsWith('phone:') || clientSessionId.startsWith('ipc:')
         ? bindControlActor(domain.leases, {
           clientSessionId, holderClientId: `desktop:${domain.identity.environmentId}`,
-          delegate: clientSessionId.replace(/^ipc:/, 'window:'), yields: clientSessionId.startsWith('ipc:'),
+          delegate: clientSessionId.replace(/^ipc:/, 'window:'), yields: clientSessionId.startsWith('ipc:') ? 'any' : 'none',
         }) : domain.leases
       void domain.dispatchRpc(request.method, request.payload, {
         ...domain.clientContext(), leases: actor, streams: this.streams,

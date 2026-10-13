@@ -1,5 +1,6 @@
 import type { ControlLease, TerminalRef } from '@superone/shared/environment'
-import { bindControlActor, type ControlLeaseService } from '@superone/runtime/lease'
+import { bindControlActor, type ControlLeaseService, type LeaseYield } from '@superone/runtime/lease'
+import { hostDelegate } from '../session/session-lease'
 
 export interface TerminalLeaseAuthority {
   environmentId: string
@@ -30,9 +31,12 @@ export class TerminalLease {
     })
   }
 
+  /** A phone of this desktop is its device id; a controller desktop is `node:<clientSessionId>`, whatever it relays. */
   private writer(lease: ControlLease | null): Writer {
-    if (!lease || lease.delegate?.startsWith('window:')) return { kind: 'local' }
-    return { kind: 'remote', deviceId: lease.delegate?.replace(/^phone:/, '') ?? `node:${lease.holderClientId}` }
+    if (!lease) return { kind: 'local' }
+    const delegate = hostDelegate(lease, this.ref.environmentId)
+    if (delegate === null) return { kind: 'remote', deviceId: `node:${lease.holderClientId}` }
+    return delegate.startsWith('window:') ? { kind: 'local' } : { kind: 'remote', deviceId: delegate.replace(/^phone:/, '') }
   }
 
   get owner(): Writer { return this.writer(this.authority.leases.get(this.ref)) }
@@ -44,7 +48,7 @@ export class TerminalLease {
     return who === 'local' ? owner.kind === 'local' : owner.kind === 'remote' && owner.deviceId === who
   }
 
-  private actor(clientSessionId: string, delegate: string, yields: boolean) {
+  private actor(clientSessionId: string, delegate: string, yields: LeaseYield) {
     return bindControlActor(this.authority.leases, {
       clientSessionId, delegate, yields, holderClientId: `desktop:${this.ref.environmentId}`,
     })
@@ -53,7 +57,7 @@ export class TerminalLease {
   /** Local IPC uses the sender's webContents id, never a renderer-supplied identity. */
   assertWindow(windowId: number): ControlLease {
     const clientSessionId = `ipc:${windowId}`
-    const actor = this.actor(clientSessionId, `window:${windowId}`, true)
+    const actor = this.actor(clientSessionId, `window:${windowId}`, 'any')
     const lease = actor.acquire({ resource: this.ref, holderClientId: clientSessionId, ttlMs: 60_000 })
     actor.assertValid({ ...lease, holderClientId: clientSessionId })
     return lease
@@ -67,8 +71,8 @@ export class TerminalLease {
   /** Aggregate pairing disconnect retires only this device's current native grant. */
   handleDeviceDisconnected(deviceId: string): void {
     const lease = this.authority.leases.get(this.ref)
-    if (lease?.delegate !== `phone:${deviceId}`) return
-    this.actor(`phone:${deviceId}`, `phone:${deviceId}`, false).release(lease.leaseId, lease.generation, `phone:${deviceId}`)
+    if (!lease || hostDelegate(lease, this.ref.environmentId) !== `phone:${deviceId}`) return
+    this.actor(`phone:${deviceId}`, `phone:${deviceId}`, 'none').release(lease.leaseId, lease.generation, `phone:${deviceId}`)
   }
 
   onChange(listener: ChangeListener): () => void { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }

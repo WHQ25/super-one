@@ -58,7 +58,7 @@ export function openPhoneConnection(domain: DesktopDomain, link: PhoneLink): Pho
         clientSessionId: client.clientSessionId,
         holderClientId: `desktop:${domain.identity.environmentId}`,
         delegate: client.clientSessionId,
-        yields: false,
+        yields: 'none',
       }),
     },
     dispatch: domain.dispatchRpc,

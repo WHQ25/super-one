@@ -7,6 +7,16 @@ const DEFAULT_TTL_MS = 30_000
 const MAX_TTL_MS = 15 * 60 * 1000
 
 type ResourceRef = SessionRef | TerminalRef
+
+/**
+ * Who takes a live lease over instead of being refused: nobody else; another
+ * delegate of the same holder (a client's own interface stepping aside for a
+ * device it relays); or any holder (a host's own window, which steps aside for
+ * its phones and for controller desktops alike). Wire `yields` is only ever
+ * `'holder'`: no client can make its lease yield to other clients.
+ */
+export type LeaseYield = 'none' | 'holder' | 'any'
+const YIELD_LEVEL: Record<LeaseYield, number> = { none: 0, holder: 1, any: 2 }
 type LeaseListener = (resource: ResourceRef, lease: ControlLease | null) => void
 
 interface LeaseRow {
@@ -94,15 +104,15 @@ export class ControlLeaseService {
   }
 
   /**
-   * Grant `resource` to a holder. A live lease of another client refuses it;
-   * one of another delegate of the same client refuses it too, unless that
-   * delegate `yields` (the client's own interface), whose lease is taken over.
+   * Grant `resource` to a holder. A live lease of another holder or delegate
+   * refuses it unless that lease yields to the asker (`LeaseYield`), in which
+   * case it is taken over.
    */
   acquire(input: {
     resource: ResourceRef
     holderClientId: string
     delegate?: string
-    yields?: boolean
+    yields?: LeaseYield
     ttlMs?: number
   }): ControlLease {
     const now = Date.now()
@@ -127,17 +137,19 @@ export class ControlLeaseService {
         }
       | undefined
 
+    const yields = YIELD_LEVEL[input.yields ?? 'none']
     const live = existing && existing.epoch === this.leaseEpoch && existing.expires_at > now
-    if (live && existing.holder_client_id !== input.holderClientId) {
+    const sameHolder = existing?.holder_client_id === input.holderClientId
+    if (live && !sameHolder && existing.yields < YIELD_LEVEL.any) {
       throw Object.assign(new Error('control lease held by another client'), {
         code: 'failed_precondition',
       })
     }
-    if (live && existing.delegate === delegate) {
+    if (live && sameHolder && existing.delegate === delegate) {
       const expiresAt = now + ttl
       this.db
         .prepare(`UPDATE control_leases SET expires_at = ?, yields = ? WHERE lease_id = ?`)
-        .run(expiresAt, input.yields ? 1 : 0, existing.lease_id)
+        .run(expiresAt, yields, existing.lease_id)
       this.watchExpiry(input.resource, expiresAt)
       return {
         leaseId: existing.lease_id,
@@ -148,7 +160,7 @@ export class ControlLeaseService {
         expiresAt: new Date(expiresAt).toISOString(),
       }
     }
-    if (live && !existing.yields) {
+    if (live && existing.yields < YIELD_LEVEL.holder) {
       throw Object.assign(new Error('control lease held by another device'), {
         code: 'failed_precondition',
       })
@@ -182,7 +194,7 @@ export class ControlLeaseService {
         expiresAt,
         this.leaseEpoch,
         delegate,
-        input.yields ? 1 : 0,
+        yields,
       )
 
     const lease: ControlLease = {
@@ -252,6 +264,14 @@ export class ControlLeaseService {
     this.db.prepare(`UPDATE control_leases SET expires_at = 0 WHERE resource_key = ?`).run(resourceKey(resource))
     this.watchExpiry(resource)
     this.changed(resource, null)
+  }
+
+  /** End every live lease of one holder, as when its client session loses access. */
+  revokeHolder(holderClientId: string): void {
+    const rows = this.db
+      .prepare(`SELECT resource_json FROM control_leases WHERE holder_client_id = ? AND epoch = ? AND expires_at > ?`)
+      .all(holderClientId, this.leaseEpoch, Date.now()) as Array<{ resource_json: string }>
+    for (const row of rows) this.revoke(JSON.parse(row.resource_json) as ResourceRef)
   }
 
   release(leaseId: string, generation: string, holderClientId: string, delegate?: string): void {

@@ -42,7 +42,7 @@ describe('phone endpoint: workspace files and Git', () => {
     const listed = await phone.rpc<Array<{ name: string }>>('workspace.listDir', { projectId: 'p1', relativePath: '.' })
     expect(listed.map((e) => e.name)).toContain('readme.md')
     expect(await phone.rpc('git.status', { projectId: 'p1' })).toMatchObject({ isRepo: true })
-    const controller = { ...domain.controllerContext(), client: { clientSessionId: 'c', scopes: [...ALL_AUTH_SCOPES] } } as RpcContext
+    const controller = { ...domain.clientContext(), client: { clientSessionId: 'c', scopes: [...ALL_AUTH_SCOPES] } } as RpcContext
     const methods = ((await dispatchRpc('environment.descriptor', {}, controller)).result as ExecutionEnvironmentDescriptor).capabilities.methods
     for (const method of ['workspace.listDir', 'git.status', 'git.branches', 'git.mentionRefs']) expect(methods).toContain(method)
     expect((await dispatchRpc('git.status', { projectId: 'p1' }, controller)).result).toMatchObject({ isRepo: true })

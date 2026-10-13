@@ -72,6 +72,8 @@ export interface DesktopSessionHostDeps extends DesktopSessionReadsDeps<DesktopS
   projectId?(projectPath: string): string | null
   /** Pairing label of a controller, for the "started from" badge. */
   controllerLabel(clientSessionId: string): string | null
+  /** Whether a controller's pairing still admits it (not revoked or suspended). */
+  controllerActive(clientSessionId: string): boolean
   edits: DesktopSessionEdits
   drafts?: DraftsPort
   sideChats?: {
@@ -260,6 +262,8 @@ export class DesktopSessionHost extends DesktopSessionReads<DesktopSessionRow> i
   }
 
   private restoreControl(session: Session, clientSessionId: string): void {
+    // A controller removed or suspended while this desktop was down gets nothing back.
+    if (!this.deps.controllerActive(clientSessionId)) return
     try {
       this.deps.leases.acquire({ resource: { environmentId: this.deps.environmentId, sessionId: session.id }, holderClientId: clientSessionId, ttlMs: 60_000 })
     } catch (err) {
@@ -559,13 +563,18 @@ export class DesktopSessionHost extends DesktopSessionReads<DesktopSessionRow> i
     this.live(sessionId).emitHostEvent({ type: 'remote_control_changed', released: true })
   }
 
-  /** A controller acquiring a session taken back from it drives it again only when it reclaims it on purpose. */
-  admitControl(sessionId: string, controllerClientSessionId: string, opts: { reclaim: boolean }): void {
-    const row = this.requireRow(sessionId)
-    if (!row.controller?.released || !isControllerClient(controllerClientSessionId)) return
+  /**
+   * A controller acquiring a session taken back from it drives it again only
+   * when it reclaims it on purpose; the reclaim lands once its lease is granted.
+   */
+  admitControl(sessionId: string, controllerClientSessionId: string, opts: { reclaim: boolean }): (() => void) | void {
+    const controller = this.requireRow(sessionId).controller
+    if (!controller?.released || !isControllerClient(controllerClientSessionId)) return
     if (!opts.reclaim) throw controlReleasedError()
-    this.deps.edits.setController(sessionId, { ...row.controller, released: false })
-    this.live(sessionId).emitHostEvent({ type: 'remote_control_changed', released: false })
+    return () => {
+      this.deps.edits.setController(sessionId, { ...controller, released: false })
+      this.live(sessionId).emitHostEvent({ type: 'remote_control_changed', released: false })
+    }
   }
 
   async forkOnHost(input: Parameters<NonNullable<SessionHostPort['forkOnHost']>>[0]) {

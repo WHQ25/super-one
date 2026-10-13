@@ -256,20 +256,17 @@ export function groupContentPresenter(
       continue
     }
 
+    // A paired result draws in its call's row (through the maps above). Parallel calls
+    // finish after later reasoning or reads, so the bare result must not split them.
+    if (isToolResultBlock(block) && toolNameMap.has(block.toolUseId)) continue
+
     flushAppGroup()
     if (block.type === 'tool_use' && collapsibleIds.has(block.toolUseId)) {
       if (group.length === 0) groupStart = index
       group.push(block)
-    } else if (isToolResultBlock(block) && collapsibleIds.has(block.toolUseId)) {
-      group.push(block)
     } else if (
-      (block.type === 'tool_use'
-        && ports.isHiddenToolBlock(block.toolName, toolResultMap.get(block.toolUseId)))
-      || (isToolResultBlock(block)
-        && ports.isHiddenToolBlock(
-          toolNameMap.get(block.toolUseId) ?? '',
-          toolResultMap.get(block.toolUseId),
-        ))
+      block.type === 'tool_use'
+      && ports.isHiddenToolBlock(block.toolName, toolResultMap.get(block.toolUseId))
     ) {
       flush()
     } else if (block.type === 'thinking') {

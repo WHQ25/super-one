@@ -63,6 +63,27 @@ describe('groupContentPresenter', () => {
     expect(result.toolResultMap.get('app')).toBe('ok')
   })
 
+  it('keeps reasoning and read groups whole when parallel results arrive between them', () => {
+    const thinking = (text: string): ContentBlock => ({ type: 'thinking', thinking: text })
+    const result = groupContentPresenter([
+      toolUse('build', 'Bash'),
+      toolUse('test', 'Bash'),
+      thinking('first'),
+      toolResult('build'),
+      thinking('second'),
+      toolResult('test'),
+      toolUse('read-1', 'Read'),
+      toolResult('build'),
+      toolUse('read-2', 'Read'),
+      toolResult('read-1'),
+      toolResult('read-2'),
+    ], ports)
+
+    expect(result.segments.map((segment) => segment.kind)).toEqual(['block', 'block', 'thinking', 'tools'])
+    expect(result.segments[2]).toMatchObject({ kind: 'thinking', blocks: [{ thinking: 'first' }, { thinking: 'second' }] })
+    expect(result.segments[3]).toMatchObject({ kind: 'tools', blocks: [{ toolUseId: 'read-1' }, { toolUseId: 'read-2' }] })
+  })
+
   it('keeps nested subagent output attached after the parent result arrives', () => {
     const result = groupContentPresenter([
       toolUse('parent', 'Task'),
@@ -92,7 +113,7 @@ describe('groupContentPresenter', () => {
     ], ports)
 
     expect(result.segments.map((segment) => segment.kind === 'block' ? `${segment.block.type}:${'toolUseId' in segment.block ? segment.block.toolUseId : ''}` : segment.kind))
-      .toEqual(['tool_use:start', 'tool_result:start', 'text:', 'tool_use:foreign', 'tool_result:foreign'])
+      .toEqual(['tool_use:start', 'text:', 'tool_use:foreign'])
     expect(result.runContinuations.get('start')?.map((block) => block.toolUseId)).toEqual(['resume'])
     // The folded call's result is still there for the block to read.
     expect(result.toolResultMap.get('resume')).toContain('"done"')
@@ -109,6 +130,6 @@ describe('groupContentPresenter', () => {
     ], ports)
 
     expect(live.segments.map((segment) => segment.kind)).toEqual(['workflow'])
-    expect(smoke.segments.map((segment) => segment.kind)).toEqual(['block', 'block'])
+    expect(smoke.segments.map((segment) => segment.kind)).toEqual(['block'])
   })
 })

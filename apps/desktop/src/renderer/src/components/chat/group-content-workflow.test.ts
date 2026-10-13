@@ -36,7 +36,7 @@ describe('groupContent — Workflow smoke-check vs live run', () => {
       toolResult('smoke-1', 'ok: smoke-check passed'),
     ]
     const { segments } = groupContent(content, [])
-    expect(segments.map((s) => s.kind)).toEqual(['block', 'block'])
+    expect(segments.map((s) => s.kind)).toEqual(['block'])
     expect(segments.some((s) => s.kind === 'workflow')).toBe(false)
   })
 

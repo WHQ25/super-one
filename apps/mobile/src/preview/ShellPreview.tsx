@@ -98,6 +98,7 @@ import { IconGallery } from './IconGallery'
 import { LoadingStateGallery } from './LoadingStateGallery'
 import { UsageGallery } from './UsageGallery'
 import { ComposerModeGallery } from './ComposerModeGallery'
+import { ScheduledSendPreview } from '../ui/scheduled-send-panel.stories'
 import { answerTranscriptRequest, transcriptProjection, transcriptStates, type TranscriptState } from './transcript-fixtures'
 import { sandboxInfoFromMode } from '@superone/shared/harness/harness-sandbox'
 import { AddDirScreen } from '../screens/add-dir-screen'
@@ -441,7 +442,7 @@ export function ShellPreview({ initialPage = 'New session', initialHarness = 'cl
   }, (message) => Alert.alert('Could not send', message))
   const chat = page === 'New session' || page === 'Chat' || page === 'Workspace'
   // Standalone galleries share the catch-all 'files' route but draw themselves.
-  const gallery = page === 'Network ledger' || page === 'Drafts' || page === 'Icons' || page === 'Git indicators' || page === 'Session status' || page === 'Composer suggestions' || page === 'Composer modes' || page === 'Chip editor' || page === 'LAN browser' || page === 'Loading states' || page === 'Usage' || page === 'Voice'
+  const gallery = page === 'Network ledger' || page === 'Drafts' || page === 'Icons' || page === 'Git indicators' || page === 'Session status' || page === 'Composer suggestions' || page === 'Composer modes' || page === 'Scheduled send' || page === 'Chip editor' || page === 'LAN browser' || page === 'Loading states' || page === 'Usage' || page === 'Voice'
   const route = chat ? 'chat' : page === 'Project' ? 'project-picker' : page === 'Add project' ? 'add-project' : page === 'Worktree' ? 'worktree' : page === 'Branch' ? 'branch' : page === 'Additional folders' || page === 'Browse folders' ? 'add-dir' : page === 'Collaboration request' ? 'collab-request' : page === 'Devices' || page === 'Pairing' ? 'pair' : page === 'Terminal' ? 'terminal' : page === 'Session search' ? 'session-search' : page === 'Settings' ? 'settings' : 'files'
   /** One workspace, two mounts: the drawer below and the sidebar in the row. */
   const previewWorkspace = {
@@ -615,6 +616,7 @@ todos={page === 'Chat' ? previewTodos : {}} draft={chatDraft.draft} streaming={p
           {page === 'LAN browser' ? <LanBrowserPreview /> : null}
           {page === 'Composer suggestions' ? <ComposerSuggestionsGallery /> : null}
           {page === 'Composer modes' ? <ComposerModeGallery /> : null}
+          {page === 'Scheduled send' ? <ScheduledSendPreview armed source="rate_limit" /> : null}
           {page === 'Loading states' ? <LoadingStateGallery /> : null}
           {page === 'Usage' ? <UsageGallery /> : null}
           {page === 'Voice' ? <MobileVoiceGallery /> : null}

@@ -107,6 +107,34 @@ test('delivery never clears a new draft typed after arming', async () => {
   await f.unmount()
 })
 
+test.each(['manual', 'rate_limit'] as const)('editing a %s send time preserves its stored message and source', async (source) => {
+  const f = await setup()
+  const sendAt = Date.now() + 3_600_000
+  await act(async () => {
+    f.result.current.composer.changeText('A local draft')
+    f.result.current.ingest([{ type: 'scheduled_send_changed', environmentId: 'desktop', sessionId: 's',
+      scheduled: { sessionId: 's', sendAt, armed: true, source, message: 'Stored on the host' }, delivered: false }])
+  })
+  await act(async () => { await f.result.current.controls.schedule(sendAt + 3_600_000) })
+  expect(f.controlledRpc).toHaveBeenCalledWith({ environmentId: 'desktop', sessionId: 's' }, 'session.scheduledSend.set', {
+    patch: { sendAt: sendAt + 3_600_000 },
+  })
+  expect(f.consumeDraft).not.toHaveBeenCalled()
+  expect(f.result.current.composer.draft).toBe('A local draft')
+  await f.unmount()
+})
+
+test('confirmed delivery still clears the unchanged draft after editing its scheduled time', async () => {
+  const f = await setup()
+  await act(async () => { f.result.current.composer.changeText('Queued message') })
+  const sendAt = Date.now() + 3_600_000
+  await act(async () => { await f.result.current.controls.schedule(sendAt) })
+  await act(async () => { await f.result.current.controls.schedule(sendAt + 3_600_000) })
+  await act(async () => { f.result.current.ingest([{ type: 'scheduled_send_changed', environmentId: 'desktop', sessionId: 's', scheduled: null, delivered: true }]) })
+  expect(f.result.current.composer.draft).toBe('')
+  await f.unmount()
+})
+
 test('accepts the host offer at quota reset plus one minute without sending immediately or adding another delay', async () => {
   const f = await setup()
   const resetsAt = Date.now() + 3600000

@@ -103,6 +103,14 @@ export function useScheduledSend(options: Options) {
     const opts = latest.current
     if (!opts.connected || !opts.client || !controller.state.supported) throw new Error('Scheduled sending is unavailable on this host')
     if (!offer && (!Number.isFinite(sendAt) || sendAt <= Date.now())) throw new Error('Choose a future date and time')
+    const existing = controller.state.scheduled
+    if (!offer && existing?.armed) {
+      const key = controller.state.key
+      await controller.write({ sendAt })
+      const saved = queued.current
+      if (controller.state.key === key && saved?.key === key && saved.sendAt === existing.sendAt) queued.current = { ...saved, sendAt }
+      return
+    }
     await opts.composer.editorRef.current?.prepareSubmit()
     if (before !== currentScope.current) return
     const draft = capture()

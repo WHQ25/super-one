@@ -396,6 +396,22 @@ test('an armed schedule remains accessible with an empty draft', async () => {
   expect(screen.getByLabelText('Cancel Scheduled Send')).toBeTruthy()
 })
 
+test('cancelling an empty scheduled prompt keeps setup open until the user dismisses it', async () => {
+  const scheduledSend = scheduledSendControls({ scheduled: {
+    sessionId: 's', sendAt: Date.now() + 3_600_000, armed: true, source: 'rate_limit', message: null,
+  } })
+  const props = { hasConversation: true, scheduledSend }
+  const view = await renderScheduledComposer(props)
+  await act(async () => { fireEvent.press(screen.getByLabelText('Scheduled Send')) })
+  expect(screen.queryByLabelText('Scheduled Date')).toBeNull()
+  await act(async () => { fireEvent.press(screen.getByLabelText('Cancel Scheduled Send')) })
+  await view.rerender({ ...props, scheduledSend: { ...scheduledSend, scheduled: { ...scheduledSend.scheduled!, armed: false } } })
+  expect(screen.getByLabelText('Scheduled Date')).toBeTruthy()
+  await act(async () => { fireEvent.press(screen.getByLabelText('Close Scheduled Send')) })
+  expect(screen.queryByLabelText('Scheduled Date')).toBeNull()
+  expect(screen.queryByLabelText('Send')).toBeNull()
+})
+
 test('a scheduling error keeps a short tap as Send and exposes retry on long press', async () => {
   const onSend = jest.fn()
   await renderScheduledComposer({ hasConversation: true, streaming: true, draft: 'Next message', onSend,

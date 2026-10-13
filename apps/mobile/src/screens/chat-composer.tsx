@@ -174,6 +174,7 @@ export function ChatComposer(props: ChatComposerProps) {
   const { width, height } = useWindowDimensions()
   const tablet = props.tablet ?? shouldUseTabletComposer(width, height)
   const [inputFocused, setInputFocused] = useState(false)
+  const [schedulePanelOpen, setSchedulePanelOpen] = useState(false)
   const [mcpPreview, setMcpPreview] = useState<{ value: string; anchor: AnchorRect } | null>(null)
   const menuHost = useMenuHost()
   // The app's root SafeAreaView already clears the home indicator, so a gap of
@@ -228,8 +229,9 @@ export function ChatComposer(props: ChatComposerProps) {
   const empty = !props.draft.trim() && !props.attachments.length
   const deliveryHeld = !!props.scheduledSend?.scheduled?.armed || !!props.scheduledSend?.loading || !!props.scheduledSend?.busy
   // Hide send/steer when there is nothing to deliver; Stop still belongs mid-turn.
-  const send = props.scheduledSend && (!empty || props.scheduledSend.scheduled?.armed)
-    ? <ScheduledSendControl controls={props.scheduledSend} tablet={tablet} empty={empty} loading={props.loadingConversation} onSend={props.onSend} />
+  // Cancelling an empty continuation must keep its open setup panel mounted.
+  const send = props.scheduledSend && (!empty || props.scheduledSend.scheduled?.armed || schedulePanelOpen)
+    ? <ScheduledSendControl controls={props.scheduledSend} tablet={tablet} empty={empty} loading={props.loadingConversation} onSend={props.onSend} onOpenChange={setSchedulePanelOpen} />
     : empty ? null : <IconButton icon={ArrowUp} label="Send"
     tone={tablet ? 'muted' : 'primary'} chrome={tablet ? 'circle' : 'plain'}
     iconSize={tablet ? 13 : 20}

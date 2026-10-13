@@ -45,8 +45,12 @@ submits (`submitBehavior` in `screens/chat-composer.tsx`).
 Long-press Send to open the scheduled-send panel. An armed schedule keeps the
 draft editable and replaces the leading session-list glyph with a clock. The
 desktop owns delivery, so it must stay online. Quota-recovery offers appear as
-small cards after the latest turn inside the scrolling chat, with accept,
-dismiss and cancel actions. `scheduled_send_changed` arrives through the phone's
+small cards after the latest turn inside the scrolling chat, with accept and
+dismiss actions. Accepting hides the offer and exposes the schedule through the
+yellow composer clock. Its panel shows the send time and a labelled message preview,
+with Edit and Cancel actions while armed. Edit changes only the time; message edits
+stay in the composer. Cancelling returns the open panel to the date/time setup.
+`scheduled_send_changed` arrives through the phone's
 workspace notices; session/reconnect reads use `session.scheduledSend.get`.
 
 **Deliberately not built.** Hardware-keyboard navigation of the suggestion lists:

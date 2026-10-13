@@ -113,7 +113,7 @@ export interface DesktopDomainDeps {
   resources?: ResourceHost
   /** The window's Codex services, served as the node `codex.*` contract. */
   codex?: DesktopCodexServices
-  /** The credential reads a composer's API provider picker needs (`desktop-providers-port.ts`). */
+  /** This desktop's credential store, keys withheld (`desktop-providers-port.ts`). */
   providers?: ProvidersPort
   sessionEdits: DesktopSessionEdits
   sideChats?: DesktopSessionHostDeps['sideChats']

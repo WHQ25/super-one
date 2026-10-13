@@ -13,6 +13,7 @@ import type {
   Platform,
   ServiceEndpoint,
 } from '@superone/shared/platform-registry'
+import { importProviderBundle, type ProviderBundle } from '@superone/shared/platform-registry'
 import type { NodeDatabase } from '../db/database'
 import { createNodeSecretCrypto } from './secret-crypto'
 import { maskSecret } from '@superone/shared/secret-mask'
@@ -50,12 +51,6 @@ export interface UpdateCredentialInput {
   sortOrder?: number
 }
 
-/** Full secret bundle for push/pull over authenticated RPC. */
-export interface ProviderBundle {
-  credentials: Array<Credential & { secret: string }>
-  bindings: ConsumerBinding[]
-  customPlatforms: Platform[]
-}
 
 interface CredentialRow {
   id: string
@@ -247,52 +242,22 @@ export class ProviderStore {
    * local-only credentials unless `replaceAll` is true.
    */
   importBundle(bundle: ProviderBundle, opts?: { replaceAll?: boolean }): { credentials: number; bindings: number } {
-    if (opts?.replaceAll) {
-      this.db.exec('DELETE FROM provider_bindings')
-      this.db.exec('DELETE FROM provider_credentials')
-      this.db.exec('DELETE FROM provider_custom_platforms')
-    }
-    for (const plat of bundle.customPlatforms ?? []) {
-      if (plat?.id) this.upsertCustomPlatform(plat)
-    }
-    let creds = 0
-    for (const c of bundle.credentials ?? []) {
-      if (!c?.id || !c.platformId || !c.planId || !c.name) continue
-      const existing = this.getRow(c.id)
-      if (existing) {
-        this.updateCredential(c.id, {
-          name: c.name,
-          secret: c.secret,
-          secretEnv: c.secretEnv,
-          baseUrl: c.baseUrl,
-          overrides: c.overrides,
-          endpoints: c.endpoints ?? null,
-          notes: c.notes,
-          sortOrder: c.sortOrder,
-        })
-      } else {
-        this.createCredential({
-          id: c.id,
-          platformId: c.platformId,
-          planId: c.planId,
-          name: c.name,
-          secret: c.secret,
-          secretEnv: c.secretEnv,
-          baseUrl: c.baseUrl,
-          overrides: c.overrides,
-          endpoints: c.endpoints,
-          notes: c.notes,
-        })
-      }
-      creds += 1
-    }
-    let binds = 0
-    for (const b of bundle.bindings ?? []) {
-      if (!b?.consumer || !b.credentialId) continue
-      this.setBinding(b)
-      binds += 1
-    }
-    return { credentials: creds, bindings: binds }
+    return importProviderBundle(
+      {
+        hasCredential: (id) => !!this.getRow(id),
+        createCredential: (input) => this.createCredential(input),
+        updateCredential: (id, patch) => this.updateCredential(id, patch),
+        setBinding: (binding) => this.setBinding(binding),
+        upsertCustomPlatform: (def) => this.upsertCustomPlatform(def),
+        clear: () => {
+          this.db.exec('DELETE FROM provider_bindings')
+          this.db.exec('DELETE FROM provider_credentials')
+          this.db.exec('DELETE FROM provider_custom_platforms')
+        },
+      },
+      bundle,
+      opts,
+    )
   }
 
   private getRow(id: string): CredentialRow | undefined {

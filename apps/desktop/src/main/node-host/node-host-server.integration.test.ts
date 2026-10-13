@@ -2,9 +2,10 @@ import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentEvent, RecentFolder, TerminalSnapshot } from '@superone/shared/agent-types'
 import type { ControlLease, EnvironmentEventEnvelope, ExecutionEnvironmentDescriptor, ProjectSnapshot } from '@superone/shared/environment'
+import type { Credential, Platform } from '@superone/shared/platform-registry'
 import Database from 'better-sqlite3'
 import { HarnessManager } from '@superone/runtime/harness'
 import { openNodeDatabase } from '@superone/runtime/db'
@@ -14,6 +15,8 @@ import { createAutomationStore, ensureAutomationsTable } from '@superone/runtime
 import { createSessionProviderStore } from '@superone/runtime/session'
 
 const electron = vi.hoisted(() => ({ store: new Map<string, string>() }))
+/** B's own SQLite, holding its credential store. */
+const desktopDb = vi.hoisted(() => ({ current: null as unknown as ReturnType<typeof openNodeDatabase> }))
 
 vi.mock('electron', () => ({
   safeStorage: {
@@ -31,12 +34,18 @@ vi.mock('electron', () => ({
   },
 }))
 vi.mock('../logger', () => ({ default: { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} } }))
+vi.mock('../database', () => ({
+  getDb: () => desktopDb.current,
+  maskApiKey: (key: string) => (key.length <= 6 ? '***' : '***' + key.slice(-6)),
+}))
 
 import { NodeConnectionManager } from '../environment/node-connection-manager'
 import { RemoteHostActionConsumer } from '../environment/remote-host-action-consumer'
 import { NodeCredentialStore } from '../environment/node-credential-store'
 import { createDesktopProjectsPort } from './desktop-projects-port'
 import { createDesktopProvidersPort } from './desktop-providers-port'
+import * as credentialStore from '../providers/credential-store'
+import { RemoteEnvironmentGateway } from '../environment/remote-environment-gateway'
 import { AGENT_PROFILES, FakeSessionManager, memorySessionEdits, memoryStore, startDesktopNode, stopDesktopNode, testHarnessHooks, type FakeSession } from './node-host-test-fixtures'
 import type { DesktopDomainDeps } from './desktop-domain'
 import { desktopAgentSettings } from './desktop-agent-settings'
@@ -51,6 +60,20 @@ import { mapNodeSessionEvents } from '@superone/shared/node-session-event-map'
 const dirs: string[] = []
 const hosts: DesktopNodeHost[] = []
 const managers: NodeConnectionManager[] = []
+
+beforeEach(() => {
+  desktopDb.current = openNodeDatabase(':memory:')
+  desktopDb.current.exec(`
+    CREATE TABLE credentials (
+      id TEXT PRIMARY KEY, platform_id TEXT NOT NULL, plan_id TEXT NOT NULL, name TEXT NOT NULL,
+      secret TEXT NOT NULL DEFAULT '', secret_env TEXT NOT NULL DEFAULT '', base_url TEXT NOT NULL DEFAULT '',
+      overrides_json TEXT NOT NULL DEFAULT '{}', endpoints_json TEXT, notes TEXT NOT NULL DEFAULT '',
+      sort_order INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT ''
+    );
+    CREATE TABLE custom_platforms (id TEXT PRIMARY KEY, definition_json TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '');
+    CREATE TABLE consumer_bindings (consumer TEXT PRIMARY KEY, credential_id TEXT NOT NULL, endpoint_id TEXT, config_json TEXT NOT NULL DEFAULT '{}');
+  `)
+})
 
 afterEach(async () => {
   for (const m of managers.splice(0)) m.disconnectAll()
@@ -108,14 +131,11 @@ async function pairedDesktops(catalog = fakeCatalog(), extra: Partial<DesktopDom
   const store = memoryStore(() => projects.list())
   const harnesses = new HarnessManager(openNodeDatabase(':memory:'))
   harnesses.enableSimulatedOverlay()
+  const providerChanges = { providerConfigChanged: vi.fn(), providerBindingChanged: vi.fn() }
   const host = await startDesktopNode(
     {
       userDataDir: userData, label: 'Desktop B', appVersion: '0.0.0-test', sessions, rows: store.all, sessionEdits: memorySessionEdits(store, sessions), projects, harnesses, catalog,
-      providers: createDesktopProvidersPort({
-        listCredentials: () => [{ id: 'cred-b', name: 'Team key', apiKey: 'sk-…1234' }],
-        listCustomPlatforms: () => [],
-        listBindings: () => [{ consumer: 'chat:claude', credentialId: 'cred-b' }] as never,
-      }),
+      providers: createDesktopProvidersPort(credentialStore, providerChanges),
       listAgentProfiles: () => AGENT_PROFILES,
       hooks: testHarnessHooks(),
       ...extra,
@@ -127,7 +147,7 @@ async function pairedDesktops(catalog = fakeCatalog(), extra: Partial<DesktopDom
   const manager = new NodeConnectionManager({ credentialStore: new NodeCredentialStore(tempDir('superone-desktop-a-')) })
   managers.push(manager)
   const { connectionId } = await manager.pairAndConnect({ baseUrl: pairing.url, pairingToken: pairing.pairingToken, label: 'Desktop A', channel: pairing.channel })
-  return { host, sessions, store, projectDir, manager, connectionId, client: manager.getClient(connectionId)! }
+  return { host, sessions, store, projectDir, manager, connectionId, client: manager.getClient(connectionId)!, providerChanges }
 }
 
 describe('DesktopNodeHost', () => {
@@ -241,6 +261,8 @@ describe('DesktopNodeHost composer', () => {
   it('offers a controller the models, catalog and Git its window has', async () => {
     const catalog = fakeCatalog()
     const { client } = await pairedDesktops(catalog)
+    credentialStore.createCredential({ id: 'cred-b', platformId: 'anthropic', planId: 'api', name: 'Team key', secret: 'sk-team-secret-1234' })
+    credentialStore.setBinding({ consumer: 'chat:claude', credentialId: 'cred-b' })
 
     expect(await client.rpc('provider.listModels', { harness: 'codex', apiProviderId: 'cred-b' })).toEqual([{ id: 'gpt-5', name: 'GPT-5', description: '' }])
     expect(catalog.listModels).toHaveBeenCalledWith('codex', 'cred-b')
@@ -260,11 +282,85 @@ describe('DesktopNodeHost composer', () => {
     expect(await client.rpc('git.worktreeCheckedOutBranches', { projectId: 'p1' })).toEqual({ branches: [expect.any(String)] })
 
     // The API provider picker reads masked credentials; key material stays on B.
-    expect(await client.rpc('provider.listCredentials')).toEqual([{ id: 'cred-b', name: 'Team key', apiKey: 'sk-…1234' }])
-    expect(await client.rpc('provider.listBindings')).toEqual([{ consumer: 'chat:claude', credentialId: 'cred-b' }])
+    expect(await client.rpc('provider.listCredentials')).toEqual([expect.objectContaining({ id: 'cred-b', name: 'Team key', secret: '***t-1234' })])
+    expect(await client.rpc('provider.listBindings')).toEqual([{ consumer: 'chat:claude', credentialId: 'cred-b', config: {} }])
+  })
+})
+
+describe('DesktopNodeHost providers', () => {
+  it('lets a controller edit credentials, bindings and custom platforms as B\'s window does', async () => {
+    const { client, providerChanges } = await pairedDesktops()
+    const secret = 'sk-controller-key-abcdef'
+
+    const created = await client.rpc<Credential>('provider.createCredential', { platformId: 'anthropic', planId: 'api', name: 'Team', secret })
+    expect(created.secret).toBe('***abcdef')
+    expect(credentialStore.getCredentialDecrypted(created.id)?.secret).toBe(secret)
+
+    // The masked secret the controller read back means "unchanged".
+    await expect(client.rpc('provider.updateCredential', { id: created.id, name: 'Team 2', secret: created.secret })).resolves.toMatchObject({ name: 'Team 2' })
+    expect(credentialStore.getCredentialDecrypted(created.id)).toMatchObject({ name: 'Team 2', secret })
+    expect(providerChanges.providerConfigChanged).toHaveBeenCalledTimes(1)
+    await expect(client.rpc('provider.updateCredential', { id: 'missing', name: 'x' })).rejects.toMatchObject({ code: 'not_found' })
+
+    await client.rpc('provider.setBinding', { consumer: 'chat:codex', credentialId: created.id })
+    expect(providerChanges.providerBindingChanged).toHaveBeenLastCalledWith('chat:codex')
+    expect(await client.rpc('provider.listBindings')).toEqual([{ consumer: 'chat:codex', credentialId: created.id, config: {} }])
+    await client.rpc('provider.clearBinding', { consumer: 'chat:codex' })
+    expect(providerChanges.providerBindingChanged).toHaveBeenCalledTimes(2)
+    expect(await client.rpc('provider.listBindings')).toEqual([])
+
+    const platform = { id: 'custom:acme', brand: 'acme', name: 'Acme', plans: [] } satisfies Platform
+    expect(await client.rpc('provider.upsertCustomPlatform', platform)).toEqual(platform)
+    expect(await client.rpc('provider.listCustomPlatforms')).toEqual([platform])
+    const onPlatform = await client.rpc<Credential>('provider.createCredential', { platformId: platform.id, planId: 'default', name: 'Acme key', secret: 'sk-acme-key-123456' })
+    // Removing a platform takes its keys with it.
+    await client.rpc('provider.deleteCustomPlatform', { id: platform.id })
+    expect(credentialStore.getCredentialDecrypted(onPlatform.id)).toBeUndefined()
+    expect(await client.rpc('provider.listCustomPlatforms')).toEqual([])
+
+    await client.rpc('provider.deleteCredential', { id: created.id })
+    expect(await client.rpc('provider.listCredentials')).toEqual([])
+    await expect(client.rpc('provider.deleteCredential', { id: created.id })).rejects.toMatchObject({ code: 'not_found' })
+    expect(providerChanges.providerConfigChanged).toHaveBeenCalledTimes(4)
+  })
+
+  it('takes a pushed bundle but never hands key material back', async () => {
+    const { client, providerChanges } = await pairedDesktops()
+    const pushed = ['sk-pushed-from-a-998877', 'sk-second-key-445566']
+    credentialStore.createCredential({ id: 'cred-a', platformId: 'openai', planId: 'api', name: 'Old', secret: 'sk-old-value-000000' })
+
+    const imported = await client.rpc('provider.importBundle', {
+      bundle: {
+        credentials: [
+          { id: 'cred-a', platformId: 'openai', planId: 'api', name: 'A key', secret: pushed[0], notes: '', sortOrder: 0 },
+          { id: 'cred-new', platformId: 'anthropic', planId: 'api', name: 'New', secret: pushed[1], notes: '', sortOrder: 1 },
+          { id: 'broken' },
+        ],
+        bindings: [{ consumer: 'chat:claude', credentialId: 'cred-new' }],
+        customPlatforms: [],
+      },
+    })
+    expect(imported).toEqual({ credentials: 2, bindings: 1 })
+    expect(credentialStore.getCredentialDecrypted('cred-a')).toMatchObject({ name: 'A key', secret: pushed[0] })
+    expect(credentialStore.getCredentialDecrypted('cred-new')?.secret).toBe(pushed[1])
+    expect(providerChanges.providerConfigChanged).toHaveBeenCalledTimes(1)
+
+    const reads = JSON.stringify([
+      await client.rpc('provider.listCredentials'), await client.rpc('provider.listBindings'), await client.rpc('provider.listCustomPlatforms'),
+    ])
+    for (const plaintext of pushed) expect(reads).not.toContain(plaintext)
     for (const method of ['provider.getCredentialDecrypted', 'provider.exportBundle']) {
-      await expect(client.rpc(method, { id: 'cred-b' })).rejects.toMatchObject({ code: 'not_found' })
+      await expect(client.rpc(method, { id: 'cred-a' })).rejects.toMatchObject({ code: 'not_found' })
     }
+
+    const described = await client.rpc<ExecutionEnvironmentDescriptor>('environment.descriptor')
+    expect(described.capabilities.methods).toEqual(expect.arrayContaining(['provider.createCredential', 'provider.setBinding', 'provider.importBundle']))
+    for (const method of ['provider.getCredentialDecrypted', 'provider.exportBundle']) expect(described.capabilities.methods).not.toContain(method)
+
+    // A's pull stops at its own side, before asking B for keys B withholds.
+    const gateway = new RemoteEnvironmentGateway(client)
+    await gateway.getDescriptor()
+    await expect(gateway.providerExportBundle()).rejects.toMatchObject({ code: 'failed_precondition' })
   })
 })
 

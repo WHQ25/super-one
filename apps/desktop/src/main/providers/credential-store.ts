@@ -8,6 +8,7 @@ import type {
   Platform,
   ServiceEndpoint,
 } from '@superone/shared/platform-registry'
+import { importProviderBundle, type ProviderBundle } from '@superone/shared/platform-registry'
 import { getDb, maskApiKey } from '../database'
 import { decryptSecret, encryptSecret, isEncryptedSecret } from '../crypto/secret-store'
 
@@ -262,4 +263,28 @@ export function setBinding(binding: ConsumerBinding): void {
 
 export function deleteBinding(consumer: ConsumerId): void {
   getDb().prepare('DELETE FROM consumer_bindings WHERE consumer = ?').run(consumer)
+}
+
+// --- bundles -----------------------------------------------------------------
+
+/** Import another store's bundle (plaintext secrets) in one transaction. */
+export function importBundle(
+  bundle: Partial<ProviderBundle>,
+  opts?: { replaceAll?: boolean },
+): { credentials: number; bindings: number } {
+  const db = getDb()
+  return db.transaction(() =>
+    importProviderBundle(
+      {
+        hasCredential: (id) => !!getCredentialRow(id),
+        createCredential,
+        updateCredential,
+        setBinding,
+        upsertCustomPlatform,
+        clear: () => db.exec('DELETE FROM consumer_bindings; DELETE FROM credentials; DELETE FROM custom_platforms'),
+      },
+      bundle,
+      opts,
+    ),
+  )()
 }

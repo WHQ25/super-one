@@ -16,6 +16,11 @@ authenticated client (lease actor, client-scoped methods), never from a
 second context. The secret boundary is the phone's: no decrypted credentials
 or bundle export leave B.
 
+Decided 2026-10-14: pairing is the trust boundary. A paired device already
+runs terminals and agents on B, so provider writes (including `baseUrl` and
+`secretEnv`) are not fenced beyond it; withholding decrypted credentials only
+keeps keys from being copied off B in normal flows.
+
 ## Starting point (verified 2026-10-14)
 
 Symptom: starting a session on B from A shows no models and "Git Unavailable".

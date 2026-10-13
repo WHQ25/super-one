@@ -2,6 +2,7 @@ import type { DetailTarget, DetailUpdate } from '@superone/shared/environment/de
 import type { RpcStreamHandlers } from '@superone/shared/environment/rpc-connection'
 import type { SessionStreamFrame, TopicSubscribeInput } from '@superone/shared/environment'
 import type { RemoteTopicStream } from './remote-topic-followers'
+import type { ProviderBundle } from '@superone/shared/platform-registry'
 import { notifySessionClosed } from '../session-list-watch'
 import { currentControlScope } from '../session/control-context'
 import { SESSION_LIST_OPERATION_METHODS, type SessionListOperationMethod, type SessionListOperationMethods } from '@superone/shared/environment/session-operations'
@@ -1562,93 +1563,9 @@ export class EnvironmentHost {
     connectionId: string,
     opts?: { replaceAll?: boolean },
   ): Promise<{ credentials: number; bindings: number }> {
-    const bundle = (await this.asRemoteProviderGw(connectionId).providerExportBundle()) as {
-      credentials?: Array<{
-        id: string
-        platformId: string
-        planId: string
-        name: string
-        secret: string
-        secretEnv?: string
-        baseUrl?: string
-        overrides?: Record<string, unknown>
-        endpoints?: unknown[]
-        notes?: string
-        sortOrder?: number
-      }>
-      bindings?: Array<{
-        consumer: string
-        credentialId: string
-        endpointId?: string
-        config?: unknown
-      }>
-      customPlatforms?: Array<{ id: string }>
-    }
-    const {
-      createCredential,
-      updateCredential,
-      deleteCredential,
-      listCredentials,
-      setBinding,
-      deleteBinding,
-      listBindings,
-      upsertCustomPlatform,
-      deleteCustomPlatform,
-      listCustomPlatforms,
-    } = await import('../providers/credential-store')
-    if (opts?.replaceAll) {
-      for (const b of listBindings()) deleteBinding(b.consumer)
-      for (const c of listCredentials()) deleteCredential(c.id)
-      for (const p of listCustomPlatforms()) deleteCustomPlatform(p.id)
-    }
-    for (const plat of bundle.customPlatforms ?? []) {
-      if (plat && typeof plat === 'object' && 'id' in plat) {
-        upsertCustomPlatform(plat as never)
-      }
-    }
-    let creds = 0
-    for (const c of bundle.credentials ?? []) {
-      if (!c?.id || !c.platformId || !c.planId || !c.name) continue
-      const existing = listCredentials().find((x) => x.id === c.id)
-      if (existing) {
-        updateCredential(c.id, {
-          name: c.name,
-          secret: c.secret,
-          secretEnv: c.secretEnv,
-          baseUrl: c.baseUrl,
-          overrides: c.overrides as never,
-          endpoints: (c.endpoints as never) ?? null,
-          notes: c.notes,
-          sortOrder: c.sortOrder,
-        })
-      } else {
-        createCredential({
-          id: c.id,
-          platformId: c.platformId,
-          planId: c.planId,
-          name: c.name,
-          secret: c.secret,
-          secretEnv: c.secretEnv,
-          baseUrl: c.baseUrl,
-          overrides: c.overrides as never,
-          endpoints: c.endpoints as never,
-          notes: c.notes,
-        })
-      }
-      creds += 1
-    }
-    let binds = 0
-    for (const b of bundle.bindings ?? []) {
-      if (!b?.consumer || !b.credentialId) continue
-      setBinding({
-        consumer: b.consumer as never,
-        credentialId: b.credentialId,
-        endpointId: b.endpointId,
-        config: b.config as never,
-      })
-      binds += 1
-    }
-    return { credentials: creds, bindings: binds }
+    const bundle = (await this.asRemoteProviderGw(connectionId).providerExportBundle()) as Partial<ProviderBundle>
+    const { importBundle } = await import('../providers/credential-store')
+    return importBundle(bundle, opts)
   }
 
   /**

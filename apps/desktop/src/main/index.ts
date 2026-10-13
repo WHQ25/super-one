@@ -1066,6 +1066,7 @@ async function applyNodeHostSettings(settings: AppSettings): Promise<void> {
     import('./node-host/routed-phone-rpc'),
   ])
   const { getEnvironmentHost, setLegacyScheduleCancellation } = await import('./environment')
+  const { createDesktopProvidersPort } = await import('./node-host/desktop-providers-port')
   setLegacyScheduleCancellation(sessionId => scheduledSendService.clear(sessionId))
   const environmentHost = getEnvironmentHost()
   phoneRpcRouter ??= createPhoneRpcRouter(environmentId => environmentHost.phoneRouteTarget(environmentId),
@@ -1094,6 +1095,7 @@ async function applyNodeHostSettings(settings: AppSettings): Promise<void> {
         mcpChanged: (change) => agentService.mcpConfigChanged(change),
       },
       codex: { service: codexService, plugins: codexPluginsService, marketplace: codexMarketplaceService },
+      providers: createDesktopProvidersPort(await import('./providers/credential-store'), agentService),
       phoneMethods: createPhoneMethods({
         agent: agentService,
         sessions: { getSession: (id) => sessionManager.getSession(id), openMiniAppForm },
@@ -2200,7 +2202,9 @@ function registerIpcHandlers(): void {
     AgentIpcChannels.ENVIRONMENT_PROVIDER_PULL_REMOTE,
     async (_e, connectionId: string, opts?: { replaceAll?: boolean }) => {
       const { getEnvironmentHost } = await import('./environment')
-      return getEnvironmentHost().pullRemoteProvidersToLocal(connectionId, opts)
+      const result = await getEnvironmentHost().pullRemoteProvidersToLocal(connectionId, opts)
+      agentService.providerConfigChanged()
+      return result
     },
   )
   ipcMain.handle(

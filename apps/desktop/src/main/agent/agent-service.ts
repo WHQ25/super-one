@@ -374,11 +374,19 @@ export class AgentService {
   }
 
   /** A credential/platform change can affect either harness — rebuild and re-broadcast both. */
-  private broadcastProviderConfigChanged(): void {
+  providerConfigChanged(): void {
     this.markAllNeedsRebuild()
     this.codexProviderChanged?.()
     this.broadcastProviderChanged('claude')
     this.broadcastProviderChanged('codex')
+  }
+
+  /** One consumer's binding changed: rebuild sessions and re-broadcast its harness. */
+  providerBindingChanged(consumer: ConsumerId): void {
+    const harness = consumer === 'chat:codex' ? 'codex' : 'claude'
+    this.markAllNeedsRebuild()
+    if (harness === 'codex') this.codexProviderChanged?.(false)
+    this.broadcastProviderChanged(harness)
   }
 
   private validateAddDirCandidate(
@@ -1969,7 +1977,7 @@ export class AgentService {
     windowIpc.handle(AgentIpcChannels.PLATFORMS_UPDATE_CUSTOM, (_event, def: Platform) => upsertCustomPlatform(def))
     windowIpc.handle(AgentIpcChannels.PLATFORMS_DELETE_CUSTOM, (_event, id: string) => {
       const ok = deleteCustomPlatform(id)
-      this.broadcastProviderConfigChanged()
+      this.providerConfigChanged()
       return ok
     })
 
@@ -1977,12 +1985,12 @@ export class AgentService {
     windowIpc.handle(AgentIpcChannels.CREDENTIALS_CREATE, (_event, input: CreateCredentialInput) => createCredential(input))
     windowIpc.handle(AgentIpcChannels.CREDENTIALS_UPDATE, (_event, id: string, patch: UpdateCredentialInput) => {
       const result = updateCredential(id, patch)
-      this.broadcastProviderConfigChanged()
+      this.providerConfigChanged()
       return result
     })
     windowIpc.handle(AgentIpcChannels.CREDENTIALS_DELETE, (_event, id: string) => {
       const ok = deleteCredential(id)
-      this.broadcastProviderConfigChanged()
+      this.providerConfigChanged()
       return ok
     })
 
@@ -1990,18 +1998,12 @@ export class AgentService {
     windowIpc.handle(AgentIpcChannels.BINDINGS_SET, (_event, binding: ConsumerBinding) => {
       log.info('[bindings] set consumer=%s credential=%s', binding.consumer, binding.credentialId)
       setBinding(binding)
-      const harness = binding.consumer === 'chat:codex' ? 'codex' : 'claude'
-      this.markAllNeedsRebuild()
-      if (harness === 'codex') this.codexProviderChanged?.(false)
-      this.broadcastProviderChanged(harness)
+      this.providerBindingChanged(binding.consumer)
     })
     windowIpc.handle(AgentIpcChannels.BINDINGS_CLEAR, (_event, consumer: ConsumerId) => {
       log.info('[bindings] clear consumer=%s', consumer)
       deleteBinding(consumer)
-      const harness = consumer === 'chat:codex' ? 'codex' : 'claude'
-      this.markAllNeedsRebuild()
-      if (harness === 'codex') this.codexProviderChanged?.(false)
-      this.broadcastProviderChanged(harness)
+      this.providerBindingChanged(consumer)
     })
 
     windowIpc.handle(AgentIpcChannels.PROVIDERS_TEST_ENDPOINT, async (_event, data: { apiKey: string; credentialId?: string; baseUrl: string; endpoints: ServiceEndpoint[] }) => {

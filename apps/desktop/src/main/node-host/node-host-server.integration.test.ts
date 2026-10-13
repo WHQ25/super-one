@@ -220,6 +220,9 @@ describe('DesktopNodeHost composer', () => {
 
     expect(await client.rpc('git.status', { projectId: 'p1' })).toMatchObject({ isRepo: true, dirty: false })
     expect(await client.rpc('git.branches', { projectId: 'p1' })).toMatchObject({ current: expect.any(String) })
+    expect(await client.rpc('git.diff', { projectId: 'p1' })).toEqual({ diff: '' })
+    expect(await client.rpc('git.worktrees', { projectId: 'p1' })).toEqual([expect.objectContaining({ bare: false })])
+    expect(await client.rpc('git.worktreeCheckedOutBranches', { projectId: 'p1' })).toEqual({ branches: [expect.any(String)] })
 
     // The API provider picker reads masked credentials; key material stays on B.
     expect(await client.rpc('provider.listCredentials')).toEqual([{ id: 'cred-b', name: 'Team key', apiKey: 'sk-…1234' }])

@@ -115,17 +115,17 @@ export interface WorkspaceGitPort {
    * Absent: the whole family.
    */
   readonly servedMethods?: ReadonlySet<string>
-  status(projectId: string): unknown
-  statusAt(projectId: string, absolutePath?: string | null): unknown
-  diff(projectId: string, opts?: { staged?: boolean; path?: string }): unknown
-  branches(projectId: string, absolutePath?: string | null): unknown
+  status(projectId: string): Promise<unknown>
+  statusAt(projectId: string, absolutePath?: string | null): Promise<unknown>
+  diff(projectId: string, opts?: { staged?: boolean; path?: string }): Promise<unknown>
+  branches(projectId: string, absolutePath?: string | null): Promise<unknown>
   switchBranch(
     projectId: string,
     branch: string,
     opts?: { create?: boolean; absolutePath?: string | null },
-  ): unknown
-  worktrees(projectId: string): unknown
-  checkedOutBranches(projectId: string): string[]
+  ): Promise<unknown>
+  worktrees(projectId: string): Promise<unknown>
+  checkedOutBranches(projectId: string): Promise<string[]>
   activateWorktree(
     projectId: string,
     input: {
@@ -134,13 +134,13 @@ export interface WorkspaceGitPort {
       branchName?: string
       carryLocalChanges?: boolean
     },
-  ): { path: string } | Promise<{ path: string }>
-  removeWorktree(projectId: string, worktreePath: string): void
+  ): Promise<{ path: string }>
+  removeWorktree(projectId: string, worktreePath: string): Promise<void>
   /** Update the project's remote-tracking refs of `remote` (and its `HEAD`). */
-  fetch(projectId: string, remote: string): void | Promise<void>
-  assignBranch(projectId: string, worktreePath: string, rawName: string): unknown
-  handoffToMain(projectId: string, worktreePath: string): unknown
-  handoffPreview(projectId: string, worktreePath: string): unknown
+  fetch(projectId: string, remote: string): Promise<void>
+  assignBranch(projectId: string, worktreePath: string, rawName: string): Promise<unknown>
+  handoffToMain(projectId: string, worktreePath: string): Promise<unknown>
+  handoffPreview(projectId: string, worktreePath: string): Promise<unknown>
   mentionRefs(
     projectId: string,
     kind: GitMentionRefKind,
@@ -148,7 +148,7 @@ export interface WorkspaceGitPort {
     absolutePath?: string | null,
   ): Promise<unknown>
   mentionCapabilities(projectId: string, absolutePath?: string | null): Promise<unknown>
-  isAllowedSessionCwd(projectId: string, cwd: string | null | undefined): boolean
+  isAllowedSessionCwd(projectId: string, cwd: string | null | undefined): Promise<boolean>
 }
 
 /** Recursive directory watch (CLI: WorkspaceWatchService). */

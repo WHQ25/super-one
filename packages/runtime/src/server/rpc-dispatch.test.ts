@@ -263,6 +263,18 @@ describe('a partial git port', () => {
     expect(fetch).toHaveBeenCalledTimes(1)
   })
 
+  it('awaits async reads and maps their failures', async () => {
+    const { ctx } = worktreeOnlyHost()
+    const failed = Object.assign(new Error('git status timed out after 20000ms'), { code: 'internal' })
+    ctx.workspaceGit = {
+      status: vi.fn(async () => ({ isRepo: true, branch: 'main' })),
+      statusAt: vi.fn(async () => { throw failed }),
+    } as unknown as RpcContext['workspaceGit']
+    expect(await dispatchRpc('git.status', { projectId: 'p1' }, ctx)).toEqual({ result: { isRepo: true, branch: 'main' } })
+    const res = await dispatchRpc('git.status', { projectId: 'p1', cwd: '/tmp/p1-wt' }, ctx)
+    expect(res.error).toMatchObject({ code: 'internal', message: failed.message })
+  })
+
   it('advertises only the git methods it serves', async () => {
     const { ctx } = worktreeOnlyHost()
     const res = await dispatchRpc('environment.descriptor', {}, ctx)

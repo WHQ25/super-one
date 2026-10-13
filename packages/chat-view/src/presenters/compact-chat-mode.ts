@@ -48,10 +48,14 @@ export interface TurnRun<T> {
  * - Pinned items (and everything after the last pinned one) render always.
  * - Every other item joins the adjacent collapsible run.
  * - A turn with no pinned item at all is one collapsible run.
+ * The optional neighbours describe pinned content in other rows of this turn,
+ * so a compaction cut neither pins a process tail nor hides an unfinished tail.
  */
 export function partitionTurnForCompactMode<T>(
   items: readonly T[],
   isPinned: (item: T) => boolean,
+  hasFollowingPinned = false,
+  hasPrecedingPinned = false,
 ): TurnRun<T>[] {
   if (items.length === 0) return []
   let lastPinned = -1
@@ -61,11 +65,11 @@ export function partitionTurnForCompactMode<T>(
       break
     }
   }
-  if (lastPinned < 0) return [{ collapsible: true, start: 0, items: items.slice() as T[] }]
+  if (lastPinned < 0) return [{ collapsible: hasFollowingPinned || !hasPrecedingPinned, start: 0, items: items.slice() as T[] }]
 
   const runs: TurnRun<T>[] = []
   for (let i = 0; i < items.length; i++) {
-    const collapsible = i < lastPinned && !isPinned(items[i])
+    const collapsible = (hasFollowingPinned || i < lastPinned) && !isPinned(items[i])
     const last = runs[runs.length - 1]
     if (last && last.collapsible === collapsible) last.items.push(items[i])
     else runs.push({ collapsible, start: i, items: [items[i]] })

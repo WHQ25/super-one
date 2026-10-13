@@ -51,6 +51,7 @@ import { isRealtimeVoiceMessage } from '@superone/shared/realtime-transcript'
 import { extractTurnOutline } from '@superone/shared/turn-outline'
 import { useTurnOutline } from './use-turn-outline'
 import { transcriptSegments, transcriptView } from '@superone/shared/transcript-segments'
+import { TurnDetailStateProvider } from './TurnDetailSection'
 import { ChatScrollIndicator } from './ChatScrollIndicator'
 import { ChatScrollbar, type ChatScrollbarHandle } from './ChatScrollbar'
 import { captureScrollAnchor, jumpChatWindow, visibleChatWindow, type ScrollAnchor } from './chat-navigation'
@@ -668,6 +669,7 @@ export function ChatView() {
   const topRetry = navigationRetry && navigationEdge === 'top' ? navigationRetry : null
   const bottomRetry = navigationRetry && navigationEdge === 'bottom' ? navigationRetry : null
   return (
+    <TurnDetailStateProvider scope={state.transcriptEpoch}>
     <DetailScopeProvider scope={detailScope}>
     <MobileModUiProvider client={mods.client} scheme={state.scheme}>
     <main
@@ -714,7 +716,7 @@ export function ChatView() {
             <PortableMessage
               key={message.id}
               message={message}
-              segmentId={row.id} anchors={row.anchors} showFooter={row.final} sourceMessage={row.source}
+              segmentId={row.id} anchors={row.anchors} showFooter={row.final} sourceMessage={row.source} followingMessage={row.following} firstSlice={row.first}
               asyncQuestions={codexAsyncAnswerQuestions(message, state.messages)}
               scheme={state.scheme}
               pendingPermission={state.pendingPermission ?? null}
@@ -762,6 +764,7 @@ export function ChatView() {
     </main>
     </MobileModUiProvider>
     </DetailScopeProvider>
+    </TurnDetailStateProvider>
   )
 }
 

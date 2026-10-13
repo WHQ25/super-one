@@ -1,6 +1,24 @@
-import type { ChatMessage } from '@superone/shared/agent-types'
+import type { ChatMessage, ContentBlock } from '@superone/shared/agent-types'
 import { buildCompactBoundaryMessage } from '@superone/shared/compact-boundary'
 import { anchorAsyncAnswer } from '@superone/shared/transcript-boundary'
+
+/** A completed turn with a small process continuation after automatic compaction. */
+export function compactProcessHistory(): ChatMessage[] {
+  const tool = (id: string): ContentBlock => ({ type: 'tool_use', toolUseId: id, toolName: 'Bash',
+    input: JSON.stringify({ command: `echo ${id}` }), status: 'complete' })
+  const source: ChatMessage = { id: 'compact-process', role: 'assistant', providerId: 'codex',
+    status: 'streaming', createdAt: '2026-10-13T00:00:00Z', content: [
+      ...Array.from({ length: 4 }, (_, i) => tool(`before-${i}`)),
+      { type: 'text', text: 'Continuing the implementation.' },
+      tool('before-compact'),
+    ] }
+  const compact = buildCompactBoundaryMessage({ type: 'compact_boundary', trigger: 'auto', preTokens: 120_000, postTokens: 20_000 },
+    'process-compact', source.createdAt, source, [source])
+  return [{ ...source, status: 'complete', content: [...source.content,
+    tool('after-compact'), { type: 'thinking', thinking: 'Verify the completed change.', startedAt: 1, endedAt: 1001 },
+    { type: 'text', text: 'The implementation is ready.' },
+  ] }, compact]
+}
 
 export function segmentationHistory(codex: boolean): ChatMessage[] {
   const source: ChatMessage = { id: 'segmented-turn', role: 'assistant', status: 'streaming', createdAt: '',

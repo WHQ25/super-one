@@ -90,6 +90,8 @@ export const PortableMessage = memo(function PortableMessage({
   segmentId = message.id,
   anchors,
   sourceMessage = message,
+  followingMessage,
+  firstSlice,
   showFooter = true,
   scheme,
   pendingPermission,
@@ -109,6 +111,8 @@ export const PortableMessage = memo(function PortableMessage({
   /** Transcript segments opening inside this row (see `transcriptView`). */
   anchors?: ReadonlyMap<ContentBlock, string>
   sourceMessage?: ChatMessage
+  followingMessage?: ChatMessage
+  firstSlice?: boolean
   showFooter?: boolean
   scheme: 'light' | 'dark'
   pendingPermission: PendingPermission | null
@@ -185,7 +189,8 @@ export const PortableMessage = memo(function PortableMessage({
       ? <RealtimeDelegationBody delegation={delegation} />
       : isUser
       ? <UserMessageContentPresenter message={message} text={goalObjective} promptKeywords={sentKeywords} Block={UserToolBlock} asyncQuestions={asyncQuestions} />
-      : <PortableTurn message={message} isStreaming={isStreaming} isLastAssistant={isLastAssistant} anchors={anchors} />
+      : <PortableTurn message={message} isStreaming={isStreaming} isLastAssistant={isLastAssistant} anchors={anchors}
+          sourceMessage={sourceMessage} followingMessage={followingMessage} segmentId={segmentId} firstSlice={firstSlice} />
 
   // Copy text is only needed once the turn settles (the button hides while
   // streaming), so skip concatenating the whole turn on every delta.

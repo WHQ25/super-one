@@ -112,6 +112,10 @@ export interface TranscriptRow {
   final: boolean
   /** The other segments this row draws, by the block that opens each. */
   anchors?: ReadonlyMap<ContentBlock, string>
+  /** Remaining turn after this cut; compact mode must not treat this row's tail as the turn's tail. */
+  following?: ChatMessage
+  /** First drawn row belonging to this provider turn, even if its opening cut was empty. */
+  first?: boolean
 }
 
 export interface TranscriptView {
@@ -171,6 +175,7 @@ export function transcriptView(messages: readonly ChatMessage[]): TranscriptView
     const firstResult = result.length
     const firstRow = rows.length
     let previous: ChatMessage | undefined
+    let firstTurnRow = true
     for (let part = 0; part <= cuts.length; part++) {
       const next = cuts[part]
       const slice = interval(source, previous?.metadata?.transcriptBoundary, next?.metadata?.transcriptBoundary)
@@ -200,7 +205,10 @@ export function transcriptView(messages: readonly ChatMessage[]): TranscriptView
           const block = legacy ? message.content.find(candidate => 'id' in candidate && candidate.id === opens.itemId) : opens.block
           if (block) anchors.set(block, segment.id)
         }
-        rows.push({ id: first.segment.id, message, source, final: false, ...(anchors.size ? { anchors } : {}) })
+        const following = next ? interval(source, next.metadata!.transcriptBoundary) : undefined
+        rows.push({ id: first.segment.id, message, source, final: false, first: firstTurnRow, ...(anchors.size ? { anchors } : {}),
+          ...(following ? { following: sliceOf(following.content, following.items) } : {}) })
+        firstTurnRow = false
       }
       if (next) {
         result.push({ id: next.id, message: next, source: next, final: true,

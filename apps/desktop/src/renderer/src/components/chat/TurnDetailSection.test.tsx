@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { TurnDetailSection } from './TurnDetailSection'
+import { TurnDetailSection, TurnDetailStateProvider } from './TurnDetailSection'
 
 const runs = [
   { key: 'a', collapsible: true, content: <p>tools-1</p> },
@@ -12,6 +12,32 @@ const runs = [
 ]
 
 describe('turn detail disclosure', () => {
+  it('shares one toggle across cut rows and restores a remounted continuation', () => {
+    const view = (showContinuation: boolean, scope = 'session') => (
+      <TurnDetailStateProvider scope={scope}>
+        <TurnDetailSection turnId="turn" runs={[runs[0]]} animate={false} />
+        <p>Compacted</p>
+        {showContinuation && <TurnDetailSection turnId="turn" showIndicator={false} runs={[runs[2], runs[3]]} animate={false} />}
+      </TurnDetailStateProvider>
+    )
+    const { rerender } = render(view(true))
+    expect(screen.getAllByRole('button')).toHaveLength(1)
+    expect(screen.queryByText('tools-2')).toBeNull()
+    fireEvent.click(screen.getByRole('button'))
+    expect(screen.getByText('tools-1')).toBeVisible()
+    expect(screen.getByText('tools-2')).toBeVisible()
+    rerender(view(false))
+    rerender(view(true))
+    expect(screen.getByText('tools-2')).toBeVisible()
+    fireEvent.click(screen.getByRole('button'))
+    expect(screen.queryByText('tools-1')).toBeNull()
+    expect(screen.queryByText('tools-2')).toBeNull()
+    expect(screen.getByText('answer')).toBeVisible()
+    fireEvent.click(screen.getByRole('button'))
+    rerender(view(true, 'other-session'))
+    expect(screen.queryByText('tools-1')).toBeNull()
+    expect(screen.queryByText('tools-2')).toBeNull()
+  })
   it('opens virtual runs immediately and removes them on collapse', () => {
     render(<TurnDetailSection runs={runs} animate={false} />)
     const button = screen.getByRole('button')

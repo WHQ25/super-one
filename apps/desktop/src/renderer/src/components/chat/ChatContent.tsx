@@ -49,6 +49,7 @@ import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilit
 import { isGrokAcpAgent } from '@superone/shared/acp-brand'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { DetailScopeProvider } from '@superone/chat-view/detail-scope'
+import { TurnDetailStateProvider } from './TurnDetailSection'
 import { desktopDetailClient } from '@/lib/desktop-detail-client'
 import {
   EMPTY_CODEX_REALTIME_SESSION_VIEW,
@@ -234,6 +235,7 @@ function ChatTranscript({
   }, [jumpNonce])
 
   return (
+    <TurnDetailStateProvider scope={displayedSessionId ?? 'default'}>
     <div className="relative min-w-0 flex-1 overflow-hidden">
       {displayMessages.length === 0 && historyHydrated && sessionStatus !== 'streaming' && sessionStatus !== 'background' && !awaitingAssistantReply ? (
         sideChatParentId
@@ -298,7 +300,7 @@ function ChatTranscript({
               return (
                 <div key={msg.id} data-message-id={row.id} className="chat-message-wrapper">
                   {separatorAt !== undefined && <MessageDateSeparator at={separatorAt} />}
-                  <ChatMessage message={msg} sessionStatus={sessionStatus} isLastAssistant={row.final && msg.id === displayLastAssistantMessageId} showFooter={row.final} sourceMessage={row.source} anchors={row.anchors} />
+                  <ChatMessage message={msg} sessionStatus={sessionStatus} isLastAssistant={row.final && msg.id === displayLastAssistantMessageId} showFooter={row.final} sourceMessage={row.source} followingMessage={row.following} segmentId={row.id} firstSlice={row.first} anchors={row.anchors} />
                 </div>
               )
             }).map((content, index) => ({ id: rows[index].id, sourceId: rows[index].source.id, anchors: rows[index].anchors, content })).filter(item => item.content !== null)} />
@@ -369,6 +371,7 @@ function ChatTranscript({
         )}
       </AnimatePresence>
     </div>
+    </TurnDetailStateProvider>
   )
 }
 

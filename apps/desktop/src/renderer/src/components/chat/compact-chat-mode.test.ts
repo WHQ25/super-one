@@ -17,6 +17,16 @@ const shape = <T extends { id?: string; kind: string }>(
 const text = (id: string) => ({ kind: 'block', block: { type: 'text' }, id })
 
 describe('partitionTurnForCompactMode', () => {
+  it('collapses tools before a cut when pinned content follows in the same turn', () => {
+    const items = [text('progress'), { kind: 'tools', id: 'before-compact' }]
+    expect(shape(partitionTurnForCompactMode(items, isClaudePinnedSegment, true)))
+      .toEqual(['p:progress', 'c:before-compact'])
+    // Without a later answer, this is still an incomplete turn's visible tail.
+    expect(shape(partitionTurnForCompactMode(items, isClaudePinnedSegment)))
+      .toEqual(['p:progress,before-compact'])
+    expect(shape(partitionTurnForCompactMode([{ kind: 'tools', id: 'after-compact' }], isClaudePinnedSegment, false, true)))
+      .toEqual(['p:after-compact'])
+  })
   it('pins the whole turn when it is all text', () => {
     const items = [text('a'), text('b')]
     const runs = partitionTurnForCompactMode(items, isClaudePinnedSegment)

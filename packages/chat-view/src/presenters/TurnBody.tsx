@@ -31,6 +31,8 @@ export interface TurnDetailPresenterProps {
   runs: TurnDetailRun[]
   stats?: TurnProcessStats
   workingSince?: string | number
+  turnId?: string
+  showIndicator?: boolean
 }
 
 export interface TurnTextPresenterProps {
@@ -179,6 +181,8 @@ export interface TurnBodyPresenterProps {
   planApproval?: TurnPlanApproval
   /** Transcript segments opening inside this turn, by their first block (see `transcriptView`). */
   anchors?: ReadonlyMap<ContentBlock, string>
+  /** Whole-turn process statistics and disclosure identity for a sliced transcript row. */
+  compactTurn?: { grouped: GroupContentResult; following?: GroupContentResult; id: string; showIndicator: boolean }
 }
 
 interface RenderOptions {
@@ -528,6 +532,7 @@ export function TurnBodyPresenter({
   runtime,
   planApproval,
   anchors,
+  compactTurn,
 }: TurnBodyPresenterProps) {
   const segments = grouped.segments
   const latestPlanId = useMemo(() => {
@@ -555,14 +560,18 @@ export function TurnBodyPresenter({
     runtime,
   }
   if (!detailChatMode && !isStreaming) {
-    const runs = partitionTurnForCompactMode(segments, runtime.isPinnedSegment)
+    const runs = partitionTurnForCompactMode(segments, runtime.isPinnedSegment,
+      compactTurn?.following?.segments.some(runtime.isPinnedSegment),
+      compactTurn?.grouped.segments.some(runtime.isPinnedSegment))
+    const processGrouped = compactTurn?.grouped ?? grouped
     const processOptions = {
-      toolResultAt: (id: string) => grouped.toolResultMap.get(id),
+      toolResultAt: (id: string) => processGrouped.toolResultMap.get(id),
       isHiddenTool: runtime.isHiddenTool,
-      isErrorTool: (id: string) => grouped.errorToolIds.has(id),
-      bashEditDiffAt: (id: string) => grouped.bashEditDiffMap?.get(id),
+      isErrorTool: (id: string) => processGrouped.errorToolIds.has(id),
+      bashEditDiffAt: (id: string) => processGrouped.bashEditDiffMap?.get(id),
     }
-    const process = collapsibleItems(runs)
+    const process = collapsibleItems(compactTurn
+      ? partitionTurnForCompactMode(processGrouped.segments, runtime.isPinnedSegment) : runs)
     const visibleCount = countVisibleClaudeProcessSegments(process, processOptions)
     const sealedOptions = { ...options, forceSealed: true }
     if (visibleCount === 0) return <>{renderSegments(segments, sealedOptions)}</>
@@ -583,6 +592,8 @@ export function TurnBodyPresenter({
     }
     return (
       <parts.TurnDetail
+        turnId={compactTurn?.id}
+        showIndicator={compactTurn?.showIndicator}
         stats={runtime.summarizeProcess(process, processOptions)}
         runs={runs.map((run, index) => ({
           key: `run-${index}`,

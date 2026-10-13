@@ -1,4 +1,5 @@
-import { useTranscriptState } from '@superone/ui/lib/transcript-state'
+import { useTurnDetailState } from './turn-detail-state'
+export { TurnDetailStateProvider } from './turn-detail-state'
 import {
   Fragment,
   useLayoutEffect,
@@ -25,6 +26,8 @@ interface TurnDetailSectionProps {
   /** While collapsed, replace Detail with a live working duration. */
   workingSince?: string | number
   className?: string
+  turnId?: string
+  showIndicator?: boolean
 }
 
 const fmt = (n: number) => n.toLocaleString()
@@ -111,9 +114,9 @@ function TurnDetailRegion({ expanded, children }: { expanded: boolean; children:
   )
 }
 
-export function TurnDetailSection({ runs, stats, workingSince, className, animate = true }: TurnDetailSectionProps) {
+export function TurnDetailSection({ runs, stats, workingSince, className, animate = true, turnId, showIndicator = true }: TurnDetailSectionProps) {
   const { t, i18n } = useTranslation()
-  const [expanded, setExpanded] = useTranscriptState('turn-detail', false)
+  const [expanded, setExpanded] = useTurnDetailState(turnId)
   const workingDuration = useWorkingDuration(workingSince, expanded)
   const label = !expanded && workingSince !== undefined
     ? t('chat.compactMode.workingFor', {
@@ -180,7 +183,7 @@ export function TurnDetailSection({ runs, stats, workingSince, className, animat
   // header for everything below rather than as a divider between two pinned runs.
   return (
     <>
-      {indicator}
+      {showIndicator && indicator}
       {runs.map((run) =>
         run.collapsible && animate ? (
           <TurnDetailRegion key={run.key} expanded={expanded}>{run.content}</TurnDetailRegion>

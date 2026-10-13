@@ -39,7 +39,7 @@ import {
   type TurnTextPresenterProps,
   type TurnWorkflowPresenterProps,
 } from './presenters/TurnBody'
-import { turnDisplayContent } from './presenters/turn-content'
+import { buildCompactTurn, turnDisplayContent } from './presenters/turn-content'
 import { parsedCommandFromBashInput } from '@superone/shared/codex-command-actions'
 import { isClaudePinnedSegment } from './presenters/compact-chat-mode'
 import { groupContentPresenter, type GroupContentPorts } from './presenters/groupContent'
@@ -844,14 +844,26 @@ export function PortableTurn({
   isStreaming,
   isLastAssistant,
   anchors,
+  sourceMessage = message,
+  followingMessage,
+  segmentId = message.id,
+  firstSlice,
 }: {
   message: ChatMessage
   isStreaming: boolean
   isLastAssistant: boolean
   anchors?: ReadonlyMap<ContentBlock, string>
+  sourceMessage?: ChatMessage
+  followingMessage?: ChatMessage
+  segmentId?: string
+  firstSlice?: boolean
 }) {
   const portableContent = useMemo(() => portableToolBlocks(turnDisplayContent(message)), [message.content, message.status])
   const grouped = useMemo(() => groupContentPresenter(portableContent, GROUP_PORTS), [portableContent])
+  const compactTurn = useMemo(() => buildCompactTurn(
+    { source: sourceMessage, following: followingMessage, id: segmentId, first: firstSlice },
+    content => groupContentPresenter(portableToolBlocks(content), GROUP_PORTS),
+  ), [sourceMessage, followingMessage, segmentId, firstSlice])
   const state = message.metadata?.codex?.planApproval
   const canRespond = !isStreaming && isLastAssistant
   // The latest plan answers through the native approval sheet.
@@ -874,6 +886,7 @@ export function PortableTurn({
       runtime={TURN_RUNTIME}
       planApproval={planApproval}
       anchors={anchors}
+      compactTurn={compactTurn}
     /></ModMessageScope></TurnMessageIdContext.Provider>
   )
 }

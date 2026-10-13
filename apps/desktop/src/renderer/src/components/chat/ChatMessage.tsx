@@ -16,7 +16,7 @@ import { TurnDetailSection } from './TurnDetailSection'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { SubagentBlock } from './SubagentBlock'
 import { WorkflowBlock } from './WorkflowBlock'
-import { turnDisplayContent } from '@superone/chat-view/presenters/turn-content'
+import { buildCompactTurn, turnDisplayContent } from '@superone/chat-view/presenters/turn-content'
 import { useTurnPlanApproval } from './use-turn-plan-approval'
 import { ImageGalleryBlock } from './ImageGalleryBlock'
 import { VideoGalleryBlock } from './VideoGalleryBlock'
@@ -73,6 +73,9 @@ export * from './presenters/ChatMessageIndicators'
 interface ChatMessageProps {
   message: ChatMessageType
   sourceMessage?: ChatMessageType
+  followingMessage?: ChatMessageType
+  segmentId?: string
+  firstSlice?: boolean
   showFooter?: boolean
   sessionStatus: AgentStatus
   isLastAssistant: boolean
@@ -138,6 +141,9 @@ function UserContentBlock({ block, index }: { block: ContentBlock; index: number
 export const ChatMessage = memo(function ChatMessage({
   message,
   sourceMessage = message,
+  followingMessage,
+  segmentId = message.id,
+  firstSlice,
   showFooter = true,
   sessionStatus,
   isLastAssistant,
@@ -163,6 +169,10 @@ export const ChatMessage = memo(function ChatMessage({
   const apps = useMiniAppStore((s) => s.apps)
   const turnContent = useMemo(() => isUser ? null : turnDisplayContent(message), [isUser, message.content, message.status])
   const grouped = useMemo(() => turnContent ? groupContent(turnContent, apps) : null, [turnContent, apps])
+  const compactTurn = useMemo(() => isUser ? undefined : buildCompactTurn(
+    { source: sourceMessage, following: followingMessage, id: segmentId, first: firstSlice },
+    content => groupContent(content, apps),
+  ), [isUser, sourceMessage, followingMessage, segmentId, firstSlice, apps])
   const generatedImages = useMemo(
     () => grouped && turnContent ? collectGeneratedImages(turnContent, grouped.toolResultMap) : [],
     [grouped, turnContent],
@@ -236,6 +246,7 @@ export const ChatMessage = memo(function ChatMessage({
         runtime={TURN_RUNTIME}
         planApproval={planApproval}
         anchors={anchors}
+        compactTurn={compactTurn}
       />
     </ModMessageScope>
   )

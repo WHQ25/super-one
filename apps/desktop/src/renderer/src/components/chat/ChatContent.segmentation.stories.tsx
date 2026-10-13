@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { segmentationHistory } from '@superone/chat-view/fixtures/transcript-segmentation'
+import { compactProcessHistory, segmentationHistory } from '@superone/chat-view/fixtures/transcript-segmentation'
 import { TooltipProvider } from '@superone/ui/components/ui/tooltip'
 import { ChatContent } from './ChatContent'
 import { mockTranscriptIpc } from './chat-transcript-story-mocks'
@@ -10,7 +10,7 @@ import { useAppStore } from '@/stores/app'
 mockTranscriptIpc()
 
 
-function SegmentationPreview({ codex = false, narrow = false }: { codex?: boolean; narrow?: boolean }) {
+function SegmentationPreview({ codex = false, narrow = false, process = false }: { codex?: boolean; narrow?: boolean; process?: boolean }) {
   const viewport = useRef<HTMLDivElement>(null)
   const [ready, setReady] = useState(false)
   useEffect(() => {
@@ -18,12 +18,12 @@ function SegmentationPreview({ codex = false, narrow = false }: { codex?: boolea
     const app = useAppStore.getState()
     const project = createDefaultProjectState()
     project._activeSessionId = 'segmentation'
-    project._sessions = { segmentation: { ...createDefaultPerSessionState(), sessionProvider: codex ? 'codex' : 'claude', messages: segmentationHistory(codex) } }
+    project._sessions = { segmentation: { ...createDefaultPerSessionState(), sessionProvider: codex || process ? 'codex' : 'claude', messages: process ? compactProcessHistory() : segmentationHistory(codex) } }
     useChatStore.setState({ activeProject: '__segmentation__', projectSessions: { ...previous.projectSessions, __segmentation__: project } })
-    useAppStore.setState({ detailChatMode: true })
+    useAppStore.setState({ detailChatMode: !process })
     setReady(true)
     return () => { useChatStore.setState(previous); useAppStore.setState(app) }
-  }, [codex])
+  }, [codex, process])
   return <TooltipProvider><div style={{ width: narrow ? 360 : 760, height: 620 }} className="flex flex-col bg-background">
     {ready && <ChatContent scrollViewportRef={viewport} />}
   </div></TooltipProvider>
@@ -36,3 +36,4 @@ export const MultipleCompactions: Story = {}
 export const AsyncAnswer: Story = { args: { codex: true } }
 export const NarrowCompactions: Story = { args: { narrow: true } }
 export const NarrowAsyncAnswer: Story = { args: { codex: true, narrow: true } }
+export const ProcessAcrossCompaction: Story = { args: { process: true, narrow: true } }

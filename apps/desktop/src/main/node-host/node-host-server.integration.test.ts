@@ -38,6 +38,7 @@ import { createDesktopProvidersPort } from './desktop-providers-port'
 import { AGENT_PROFILES, FakeSessionManager, memoryStore, startDesktopNode, stopDesktopNode, testHarnessHooks, type FakeSession } from './node-host-test-fixtures'
 import type { DesktopDomainDeps } from './desktop-domain'
 import { desktopAgentSettings } from './desktop-agent-settings'
+import { REDACTED_PROFILE_SECRET } from './desktop-session-providers'
 import { DesktopNodeHost } from './node-host-server'
 import { mapNodeSessionEvents } from '@superone/shared/node-session-event-map'
 
@@ -263,9 +264,9 @@ describe('DesktopNodeHost configuration', () => {
       expect(described.capabilities.methods).not.toContain('settings.patch')
 
       // Session provider profiles: the store B's window edits.
-      const { provider } = await client.rpc<{ provider: { id: string } }>('sessionProviders.create', { harnessId: 'claude', name: 'Team', config: { model: 'claude-opus' } })
+      const { provider } = await client.rpc<{ provider: { id: string } }>('sessionProviders.create', { harnessId: 'claude', name: 'Team', config: { model: 'claude-opus', apiKey: 'sk-b' } })
       await client.rpc('sessionProviders.update', { id: provider.id, name: 'Team Opus' })
-      expect(await client.rpc('sessionProviders.get', { id: provider.id })).toMatchObject({ provider: { name: 'Team Opus', config: { model: 'claude-opus' } } })
+      expect(await client.rpc('sessionProviders.get', { id: provider.id })).toMatchObject({ provider: { name: 'Team Opus', config: { model: 'claude-opus', apiKey: REDACTED_PROFILE_SECRET } } })
       const listed = await client.rpc<{ providers: Array<{ id: string }> }>('sessionProviders.list', { harnessId: 'claude' })
       expect(listed.providers.map((p) => p.id)).toEqual(['claude-base', provider.id])
       await expect(client.rpc('sessionProviders.delete', { id: 'claude-base' })).rejects.toMatchObject({ code: 'failed_precondition' })

@@ -2,6 +2,7 @@ import type { ProjectsPort, RpcExtensionDispatch } from '@superone/runtime/serve
 import { AUTOMATION_RPC_METHODS, dispatchAutomationRpc, type AutomationRpcContext } from '@superone/runtime/server/rpc-automations'
 import { dispatchSessionProviderRpc, SESSION_PROVIDER_RPC_METHODS } from '@superone/runtime/server/rpc-session-providers'
 import type { SessionProviderStore } from '@superone/runtime/session'
+import { redactedSessionProviderStore } from './desktop-session-providers'
 
 /** This desktop's configuration stores, as its window keeps them. */
 export interface DesktopConfig {
@@ -13,12 +14,14 @@ export interface DesktopConfig {
 
 /**
  * The CLI node's `sessionProviders.*` and `automation.*` families over this
- * desktop's own stores, so every client edits what the window edits.
+ * desktop's own stores, so every client edits what the window edits. Profile
+ * secrets stay on this desktop (`desktop-session-providers.ts`).
  */
 export function createDesktopConfigMethods(config: DesktopConfig, projects: ProjectsPort): { dispatch: RpcExtensionDispatch; methods: ReadonlySet<string> } {
+  const sessionProviders = redactedSessionProviderStore(config.sessionProviders)
   return {
     dispatch: async (method, payload, ctx) =>
-      dispatchSessionProviderRpc(method, payload, { client: ctx.client, sessionProviders: config.sessionProviders })
+      dispatchSessionProviderRpc(method, payload, { client: ctx.client, sessionProviders })
       ?? await dispatchAutomationRpc(method, payload, { client: ctx.client, projects, ...config.automations }),
     methods: new Set([...SESSION_PROVIDER_RPC_METHODS, ...AUTOMATION_RPC_METHODS]),
   }

@@ -165,7 +165,8 @@ function createHandlers(host: PhoneMethodHost): Record<string, Handler> {
       const targets = Array.isArray(p.targets) ? (p.targets as Array<{ server: string; uri: string }>) : []
       return host.agent.remoteReadMcpMentions(sessionProjectPath(ctx, sessionId), sessionId, targets)
     },
-    'mcp.list': (p, ctx) => host.agent.remoteMcpServers(projectPath(ctx, text(p, 'projectId'))),
+    // Live status of the project's running servers; `mcp.list` is their config.
+    'mcp.status': (p, ctx) => host.agent.remoteMcpServers(projectPath(ctx, text(p, 'projectId'))),
     'mcp.icons': async (p, ctx) => {
       const { collectMcpServerIconMap, probeMcpIconsForAllHarnesses } = await import('../mcp-server-icons')
       const projectId = optionalText(p, 'projectId')

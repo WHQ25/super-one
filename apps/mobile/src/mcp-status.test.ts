@@ -36,8 +36,12 @@ describe('requestMcpServers', () => {
   const client = (reply: unknown) => ({ resolveProject: resolveTestProject, rpc: async () => reply })
 
   it('reads the servers the session is running', async () => {
-    const { rows } = await requestMcpServers(client({ servers: [server({ toolCount: 2 })] }), '/work/app')
+    const methods: string[] = []
+    const reading = { resolveProject: resolveTestProject, rpc: async (method: string) => { methods.push(method); return { servers: [server({ toolCount: 2 })] } } }
+    const { rows } = await requestMcpServers(reading, '/work/app')
     expect(rows).toEqual([{ name: 'files', status: 'connected', detail: '2 tools', tone: 'ok' }])
+    // Live status, not the `mcp.list` config the host also serves.
+    expect(methods).toEqual(['mcp.status'])
   })
 
   it('reports a host that could not answer', async () => {

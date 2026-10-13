@@ -54,6 +54,7 @@ interface RawMcpEntry {
   env?: Record<string, string>
   url?: string
   headers?: Record<string, string>
+  bearerTokenFile?: string
 }
 
 function extractServers(
@@ -77,6 +78,7 @@ function extractServers(
       env: raw?.env,
       url: raw?.url,
       headers: raw?.headers,
+      bearerTokenFile: typeof raw?.bearerTokenFile === 'string' ? raw.bearerTokenFile : undefined,
     }
   })
 }
@@ -139,7 +141,7 @@ function authorizeProjectMcpServer(name: string, cwd: string, opts?: ClaudeMcpOp
 
 export function saveClaudeMcpConfig(
   name: string,
-  config: Partial<Pick<McpServerConfig, 'type' | 'command' | 'args' | 'env' | 'url' | 'headers'>>,
+  config: Partial<Pick<McpServerConfig, 'type' | 'command' | 'args' | 'env' | 'url' | 'headers' | 'bearerTokenFile'>>,
   scope: Extract<ResourceScope, 'user' | 'project'>,
   cwd: string,
   opts?: ClaudeMcpOptions,
@@ -162,6 +164,7 @@ export function saveClaudeMcpConfig(
     if (config.headers && Object.keys(config.headers).length > 0) {
       entry.headers = config.headers
     }
+    if (config.bearerTokenFile) entry.bearerTokenFile = config.bearerTokenFile
   } else {
     if (!config.command || typeof config.command !== 'string') {
       throw Object.assign(new Error('stdio MCP requires command'), { code: 'invalid_argument' })

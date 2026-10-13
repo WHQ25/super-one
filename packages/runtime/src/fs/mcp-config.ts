@@ -34,7 +34,7 @@ import {
 export type McpManageOptions = ClaudeMcpOptions & CodexMcpOptions & DshMcpOptions
 
 export type McpWriteFields = Partial<
-  Pick<McpServerConfig, 'type' | 'command' | 'args' | 'env' | 'url' | 'headers'>
+  Pick<McpServerConfig, 'type' | 'command' | 'args' | 'env' | 'url' | 'headers' | 'bearerTokenFile'>
 >
 
 export function listMcpConfigs(

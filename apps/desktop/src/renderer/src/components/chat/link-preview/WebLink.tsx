@@ -22,6 +22,7 @@ export function LinkFavicon({ href }: { href: string }) {
 
 /** The preview card's surface, shared by chat links and the composer. */
 export const LINK_PREVIEW_SURFACE = 'w-[min(22rem,80vw)] overflow-hidden rounded-xl p-0'
+export const LINK_PREVIEW_GAP = 8
 
 /** A link's preview card, loading its summary while `open`; it closes once the link is opened. */
 export function LinkPreviewContent({ href, open, onClose }: { href: string; open: boolean; onClose: () => void }) {
@@ -62,7 +63,7 @@ export function WebLinkHoverCard({ href, children }: { href: string; children: R
       </Slot.Root>
       <PopoverContent
         align="center"
-        sideOffset={12}
+        sideOffset={LINK_PREVIEW_GAP}
         className={cn(LINK_PREVIEW_SURFACE, 'bg-popover dark:bg-popover backdrop-blur-none')}
         onOpenAutoFocus={(event) => event.preventDefault()}
         onCloseAutoFocus={(event) => event.preventDefault()}

@@ -50,7 +50,6 @@ export const MarkdownLink: Story = {
 
 async function hoverLink(link: Element) {
   const rect = link.getClientRects()[0]!
-  await userEvent.hover(link)
   await userEvent.pointer({ target: link, coords: { clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2 } })
 }
 
@@ -83,7 +82,6 @@ async function checkPointerPlacement(link: Element) {
   const first = lines[0]!
   const x = first.right - Math.min(16, first.width / 2)
   const y = first.top + first.height / 2
-  await userEvent.hover(link)
   await userEvent.pointer({ target: link, coords: { clientX: x, clientY: y } })
   await waitFor(() => {
     const card = document.querySelector('[data-slot="hover-card-content"], [data-slot="popover-content"]')
@@ -97,8 +95,25 @@ async function checkPointerPlacement(link: Element) {
     }
     expect(rect.left).toBeGreaterThanOrEqual(6)
     expect(rect.right).toBeLessThanOrEqual(innerWidth - 6)
-    expect(rect.top - y).toBeGreaterThanOrEqual(8)
-    expect(rect.top - y).toBeLessThanOrEqual(16)
+    expect(rect.top - first.bottom).toBeGreaterThanOrEqual(6)
+    expect(rect.top - first.bottom).toBeLessThanOrEqual(10)
+  })
+  const card = document.querySelector('[data-slot="popover-content"]')!
+  await Promise.all(card.getAnimations().map((animation) => animation.finished))
+  const initial = card.getBoundingClientRect()
+  const second = lines[1]!
+  await userEvent.pointer({ target: link, coords: { clientX: second.left + Math.min(4, second.width / 4), clientY: second.top + second.height / 2 } })
+  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+  const afterMove = card.getBoundingClientRect()
+  expect(Math.abs(afterMove.left - initial.left)).toBeLessThan(1)
+  expect(Math.abs(afterMove.top - initial.top)).toBeLessThan(1)
+  await userEvent.unhover(link)
+  await waitFor(() => expect(document.querySelector('[data-slot="popover-content"]')).toBeNull())
+  await userEvent.pointer({ target: link, coords: { clientX: x, clientY: first.bottom - 1 } })
+  await waitFor(() => {
+    const reopened = document.querySelector('[data-slot="popover-content"]')
+    expect(reopened).toBeVisible()
+    expect(Math.abs(reopened!.getBoundingClientRect().top - initial.top)).toBeLessThan(1)
   })
 }
 

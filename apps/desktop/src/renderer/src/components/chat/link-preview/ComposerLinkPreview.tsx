@@ -3,7 +3,7 @@ import type { Editor } from '@tiptap/core'
 import { Popover, PopoverAnchor, PopoverContent } from '@superone/ui/components/ui/popover'
 import { cn } from '@superone/ui/lib/utils'
 import { WEB_LINK_ATTR } from '../web-link-decoration'
-import { LINK_PREVIEW_SURFACE, LinkPreviewContent } from './WebLink'
+import { LINK_PREVIEW_GAP, LINK_PREVIEW_SURFACE, LinkPreviewContent } from './WebLink'
 import { useLinkPreviewHover } from './use-link-preview-hover'
 
 /**
@@ -50,7 +50,7 @@ export function ComposerLinkPreview({ editor }: { editor: Editor | null }) {
       <PopoverAnchor virtualRef={anchor} />
       <PopoverContent
         align="center"
-        sideOffset={12}
+        sideOffset={LINK_PREVIEW_GAP}
         className={cn(LINK_PREVIEW_SURFACE, 'bg-popover dark:bg-popover backdrop-blur-none')}
         // The caret stays in the draft.
         onOpenAutoFocus={(e) => e.preventDefault()}

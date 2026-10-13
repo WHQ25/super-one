@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranscriptState } from '@superone/ui/lib/transcript-state'
 import { useVirtualTranscript } from './virtual-transcript-context'
+import { useVirtualBlockAnchor } from './virtual-block-anchor'
 
 /** A long turn can contain thousands of rows inside a single message. */
 export function VirtualTranscriptBlock({ children, cacheKey, estimate = 48, id }: {
@@ -14,6 +15,7 @@ export function VirtualTranscriptBlock({ children, cacheKey, estimate = 48, id }
   const [visible, setVisible] = useState(!transcript)
   const [height, setHeight] = useTranscriptState(cacheKey, estimate)
   const measured = useRef(height)
+  useVirtualBlockAnchor(element, visible, height)
 
   useLayoutEffect(() => {
     const node = element.current

@@ -5,6 +5,7 @@ import { retainMcpAppTranscript } from '../mcp-apps/layout-store'
 import { McpAppTranscriptRetention } from '../mcp-apps/transcript-retention'
 import { VirtualTranscriptContext } from './virtual-transcript-context'
 import { transcriptInteractionSnapshot } from './transcript-interaction'
+import { createVirtualBlockAnchor } from './virtual-block-anchor'
 
 export interface VirtualTranscriptItem {
   id: string
@@ -60,6 +61,8 @@ export function VirtualTranscriptList({ items, viewportRef, apiRef }: {
   })
   const virtualizerRef = useRef(virtualizer)
   virtualizerRef.current = virtualizer
+  const blockAnchor = useMemo(() => createVirtualBlockAnchor(viewportRef, virtualizerRef), [viewportRef])
+  useLayoutEffect(() => () => blockAnchor.cancel(), [blockAnchor])
   // Measuring overscan rows above the fold must preserve the reading anchor,
   // including after a backward jump. Growth inside the visible row stays put.
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) =>
@@ -83,14 +86,16 @@ export function VirtualTranscriptList({ items, viewportRef, apiRef }: {
       const hasInteraction = transcriptInteractionSnapshot(root.ownerDocument)
       for (const entry of entries) {
         intersections.set(entry.target, entry.isIntersecting)
-        blockCallbacks.get(entry.target)?.(entry.isIntersecting || hasInteraction(entry.target))
+        const visible = entry.isIntersecting || hasInteraction(entry.target)
+        if (visible) blockAnchor.prepare(entry.target as HTMLElement)
+        blockCallbacks.get(entry.target)?.(visible)
       }
     }, { root, rootMargin: '300px 0px' })
     observer.current = io
     for (const element of blockCallbacks.keys()) io.observe(element)
     return () => { io.disconnect(); observer.current = null }
-  }, [viewportRef, blockCallbacks, intersections])
-  const context = useMemo(() => ({ viewportRef, observeBlock }), [viewportRef, observeBlock])
+  }, [viewportRef, blockCallbacks, intersections, blockAnchor])
+  const context = useMemo(() => ({ viewportRef, observeBlock, preserveBlockAnchor: blockAnchor.preserve }), [viewportRef, observeBlock, blockAnchor])
 
   useEffect(() => {
     const doc = listRef.current?.ownerDocument

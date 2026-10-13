@@ -29,7 +29,7 @@ describe('virtual turn blocks', () => {
     }
     const { container } = render(
       <TranscriptStateProvider values={new Map()} scope="turn">
-        <VirtualTranscriptContext.Provider value={{ viewportRef: { current: null }, observeBlock: (_node, callback) => { visible = callback; return () => {} } }}>
+        <VirtualTranscriptContext.Provider value={{ viewportRef: { current: null }, preserveBlockAnchor: vi.fn(), observeBlock: (_node, callback) => { visible = callback; return () => {} } }}>
           <VirtualTranscriptBlock cacheKey="height" estimate={48}><Tool /></VirtualTranscriptBlock>
         </VirtualTranscriptContext.Provider>
       </TranscriptStateProvider>,

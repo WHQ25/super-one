@@ -13,7 +13,7 @@ import { mockTranscriptIpc } from './chat-transcript-story-mocks'
 
 mockTranscriptIpc()
 
-export function performanceHistory(count: number, paragraphs: number): ChatMessage[] {
+export function performanceHistory(count: number, paragraphs: number, chinese = false): ChatMessage[] {
   return Array.from({ length: count }, (_, index) => ({
     id: `perf-${index}`,
     role: index % 2 === 0 ? 'user' : 'assistant',
@@ -22,7 +22,9 @@ export function performanceHistory(count: number, paragraphs: number): ChatMessa
     createdAt: '2026-10-05T00:00:00.000Z',
     content: [{ type: 'text', text: index % 2 === 0
       ? `Please inspect the behavior for request ${index}.`
-      : Array.from({ length: paragraphs }, (_, paragraph) => `Paragraph ${paragraph}: This explanation describes how a long conversation processes layout, scroll position, and visible content. **Measured content** includes \`message.id\`, a [documentation link](https://example.com), and sufficient prose to wrap across several lines when the activity panel opens.`).join('\n\n') }],
+      : Array.from({ length: paragraphs }, (_, paragraph) => chinese
+        ? `段落 ${paragraph}：${'这是首次向上滚动时需要准确保持阅读位置的中文长段落。'.repeat(9)}`
+        : `Paragraph ${paragraph}: This explanation describes how a long conversation processes layout, scroll position, and visible content. **Measured content** includes \`message.id\`, a [documentation link](https://example.com), and sufficient prose to wrap across several lines when the activity panel opens.`).join('\n\n') }],
   }))
 }
 
@@ -38,7 +40,7 @@ export function performanceCodexTurn(): ChatMessage {
   return { id: 'codex-long-turn', role: 'assistant', providerId: 'codex', status: 'complete', createdAt: '2026-10-05T00:00:00.000Z', content: [], metadata: { codex: { threadId: 'codex_local_performance', usage: null, items } } }
 }
 
-function PerformancePreview({ count = 120, paragraphs = 60, tools = false, compact = false, syntax = false, codex = false }: { count?: number; paragraphs?: number; tools?: boolean; compact?: boolean; syntax?: boolean; codex?: boolean }) {
+function PerformancePreview({ count = 120, paragraphs = 60, tools = false, compact = false, syntax = false, codex = false, chinese = false, sparseCode = false }: { count?: number; paragraphs?: number; tools?: boolean; compact?: boolean; syntax?: boolean; codex?: boolean; chinese?: boolean; sparseCode?: boolean }) {
   const [ready, setReady] = useState(false)
   const [panelOpen, setPanelOpen] = useState(false)
   const viewportRef = useRef<HTMLDivElement>(null)
@@ -46,7 +48,7 @@ function PerformancePreview({ count = 120, paragraphs = 60, tools = false, compa
   useEffect(() => {
     const previous = useChatStore.getState()
     const app = useAppStore.getState()
-    const messages = performanceHistory(count, paragraphs)
+    const messages = performanceHistory(count, paragraphs, chinese)
     if (codex) messages.splice(1, messages.length - 1, performanceCodexTurn())
     if (tools) for (const message of messages) {
       if (message.role !== 'assistant') continue
@@ -66,6 +68,10 @@ function PerformancePreview({ count = 120, paragraphs = 60, tools = false, compa
       ...Array.from({ length: 80 }, (_, index) => `Syntax filler ${index}. ${'A wrapping sentence. '.repeat(8)}`),
       '[docs]: https://example.com/docs',
     ].join('\n\n') }]
+    if (sparseCode) messages[messages.length - 1].content = [{ type: 'text', text: Array.from({ length: paragraphs }, (_, index) => [
+      `Paragraph ${index}: A reading anchor beside a tall code block.`,
+      '```text\n' + Array.from({ length: 30 }, (_, line) => `line ${line}`).join('\n') + '\n```',
+    ].join('\n\n')).join('\n\n') + '\n\nFinal reading anchor.' }]
     const project = createDefaultProjectState()
     project._activeSessionId = 'performance'
     project._sessions = { performance: {
@@ -81,7 +87,7 @@ function PerformancePreview({ count = 120, paragraphs = 60, tools = false, compa
       useAppStore.setState(app)
       useCodexRealtimeViewStore.getState().clearJump('performance')
     }
-  }, [count, paragraphs, tools, compact, syntax, codex])
+  }, [count, paragraphs, tools, compact, syntax, codex, chinese, sparseCode])
 
   const appendChunk = () => useChatStore.setState(state => {
     const project = state.projectSessions.__performance__
@@ -119,6 +125,8 @@ export const ShortHistory: Story = { args: { paragraphs: 1 } }
 export const HugeReply: Story = { args: { count: 2, paragraphs: 360 } }
 export const ManyTurns: Story = { args: { count: 2000, paragraphs: 1 } }
 export const DarkChinese: Story = { globals: { theme: 'dark', locale: 'zh' } }
+export const ChineseHistory: Story = { args: { chinese: true }, globals: { theme: 'dark', locale: 'zh' } }
+export const SparseCodeHistory: Story = { args: { sparseCode: true } }
 export const StatefulTools: Story = { args: { paragraphs: 1, tools: true } }
 export const CompactedHistory: Story = { args: { paragraphs: 1, compact: true } }
 export const SemanticMarkdown: Story = { args: { count: 2, syntax: true } }

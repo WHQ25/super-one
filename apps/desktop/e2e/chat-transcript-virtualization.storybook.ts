@@ -9,6 +9,63 @@ async function open(page: Page, story: string) {
   await page.waitForTimeout(600)
 }
 const bottomDistance = (page: Page) => page.locator(viewport).evaluate(el => el.scrollHeight - el.clientHeight - el.scrollTop)
+
+// Sample the reading anchor throughout each cold reveal, rather than accepting
+// a jump that is corrected only after a later ResizeObserver/frame.
+async function backwardScrollErrors(page: Page, distance = 120) {
+  return page.locator(viewport).evaluate(async (el, distance) => {
+    const errors: number[] = []
+    for (let step = 0; step < 12; step++) {
+      const bounds = el.getBoundingClientRect()
+      const anchor = Array.from(el.querySelectorAll<HTMLElement>('.chat-md p, .chat-md pre, [data-tool-use-id]')).find(node => {
+        const box = node.getBoundingClientRect()
+        return box.bottom > bounds.top + 30 && box.top < bounds.bottom - 50
+      })
+      if (!anchor) throw new Error('No mounted reading anchor')
+      const before = anchor.getBoundingClientRect().top
+      const scrollTop = el.scrollTop
+      el.dispatchEvent(new WheelEvent('wheel', { deltaY: -distance, bubbles: true }))
+      el.scrollTop = Math.max(0, scrollTop - distance)
+      const expected = before + scrollTop - el.scrollTop
+      await new Promise<void>((resolve, reject) => {
+        let started: number | undefined
+        const sample = (time: number) => {
+          started ??= time
+          if (!anchor.isConnected) { reject(new Error('Reading anchor evicted during one scroll step')); return }
+          errors.push(Math.abs(anchor.getBoundingClientRect().top - expected))
+          if (time - started < 180) requestAnimationFrame(sample)
+          else resolve()
+        }
+        requestAnimationFrame(sample)
+      })
+    }
+    return errors
+  }, distance)
+}
+
+for (const scenario of [
+  { story: 'long-history', narrow: true, tail: /^Paragraph 59:/, distance: 120 },
+  { story: 'chinese-history', narrow: false, tail: /^段落 59：/, distance: 120 },
+  { story: 'sparse-code-history', narrow: false, tail: /^Final reading anchor\./, distance: 480 },
+]) {
+  test(`holds the reading anchor on first upward scroll in ${scenario.story}${scenario.narrow ? ' after narrowing' : ''}`, async ({ page }) => {
+    await open(page, scenario.story)
+    if (scenario.narrow) {
+      await page.locator('[data-perf-toggle]').click()
+      await expect.poll(() => page.locator('[data-perf-chat]').evaluate(el => el.clientWidth)).toBeLessThan(410)
+      await expect.poll(() => page.locator('[data-perf-panel]').evaluate(el => el.getBoundingClientRect().width)).toBe(360)
+    }
+    await expect.poll(() => bottomDistance(page)).toBeLessThan(2)
+    await page.getByText(scenario.tail).waitFor({ state: 'visible' })
+    expect(Math.max(...await backwardScrollErrors(page, scenario.distance))).toBeLessThan(1)
+    expect(await page.locator('[data-virtual-markdown-block] p').count()).toBeLessThan(30)
+
+    await page.locator(viewport).evaluate(el => { el.scrollTop = el.scrollHeight })
+    await expect.poll(() => bottomDistance(page)).toBeLessThan(2)
+    expect(Math.max(...await backwardScrollErrors(page, scenario.distance))).toBeLessThan(1)
+  })
+}
+
 async function jump(page: Page, id: string, atEnd = false) {
   await page.locator(`[data-tick="${id}"]`).evaluate((button: HTMLButtonElement) => button.click())
   await expect(page.locator(`[data-message-id="${id}"]`)).toBeVisible()

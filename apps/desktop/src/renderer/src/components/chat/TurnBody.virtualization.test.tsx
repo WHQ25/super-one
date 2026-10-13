@@ -58,7 +58,7 @@ describe('shared ContentBlock turn virtualization', () => {
     const values = new Map<string, unknown>()
     const view = (blocks: ContentBlock[]) => (
       <TranscriptStateProvider values={values} scope="turn">
-        <VirtualTranscriptContext.Provider value={{ viewportRef: { current: null }, observeBlock: (node, callback) => {
+        <VirtualTranscriptContext.Provider value={{ viewportRef: { current: null }, preserveBlockAnchor: vi.fn(), observeBlock: (node, callback) => {
           observed.set(node.dataset.virtualSegment!, callback)
           return () => { observed.delete(node.dataset.virtualSegment!) }
         } }}>

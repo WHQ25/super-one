@@ -2,6 +2,7 @@ import { Block, type BlockProps } from 'streamdown'
 import { memo, useLayoutEffect, useRef, useState } from 'react'
 import { TranscriptStateScope, useTranscriptState } from '@superone/ui/lib/transcript-state'
 import { useVirtualTranscript } from './virtual-transcript-context'
+import { useVirtualBlockAnchor } from './virtual-block-anchor'
 
 /** Streamdown supplies semantic blocks, including its reference-link context and streaming repair. */
 export const VirtualMarkdownBlock = memo(function VirtualMarkdownBlock(props: BlockProps) {
@@ -11,6 +12,7 @@ export const VirtualMarkdownBlock = memo(function VirtualMarkdownBlock(props: Bl
   const [measured, setMeasured] = useTranscriptState(`markdown-size-${props.index}`, { height: 0, width: 0 })
   const height = useRef(measured.height)
   const [placeholder, setPlaceholder] = useState(measured.width ? measured.height : 96)
+  useVirtualBlockAnchor(element, visible, placeholder)
   useLayoutEffect(() => {
     const node = element.current
     if (!node || !transcript) return

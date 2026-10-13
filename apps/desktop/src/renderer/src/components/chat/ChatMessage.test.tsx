@@ -80,7 +80,7 @@ describe('shared ContentBlock harness virtualization', () => {
     }))
     const observeBlock = vi.fn(() => () => {})
     const { container } = render(
-      <VirtualTranscriptContext.Provider value={{ viewportRef: { current: null }, observeBlock }}>
+      <VirtualTranscriptContext.Provider value={{ viewportRef: { current: null }, observeBlock, preserveBlockAnchor: vi.fn() }}>
         <ChatMessage message={{ ...createClaudeMessage(content), providerId, status: 'streaming' }} sessionStatus="streaming" isLastAssistant />
       </VirtualTranscriptContext.Provider>,
     )

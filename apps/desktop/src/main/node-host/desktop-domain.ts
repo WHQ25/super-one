@@ -300,15 +300,18 @@ function controllerLabel(auth: AuthService, clientSessionId: string): string | n
 /** Methods this desktop serves beyond the shared families. */
 export interface DesktopExtension { dispatch: RpcExtensionDispatch; methods: ReadonlySet<string> }
 
-/** One extension over several, each asked in turn for the methods it owns. */
+/** One extension over several; each method has exactly one owner. */
 function composeExtensions(parts: Array<DesktopExtension | null | undefined | false>): DesktopExtension {
   const present = parts.filter((part): part is DesktopExtension => !!part)
+  const methods = present.flatMap((part) => [...part.methods])
+  const twice = methods.find((method, index) => methods.indexOf(method) !== index)
+  if (twice) throw new Error(`desktop extensions both serve ${twice}`)
   return {
     dispatch: async (method, payload, ctx) => {
       const owner = present.find((part) => part.methods.has(method))
       return owner ? owner.dispatch(method, payload, ctx) : null
     },
-    methods: new Set(present.flatMap((part) => [...part.methods])),
+    methods: new Set(methods),
   }
 }
 

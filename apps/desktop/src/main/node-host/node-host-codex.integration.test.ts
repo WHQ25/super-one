@@ -30,7 +30,7 @@ import { NodeConnectionManager } from '../environment/node-connection-manager'
 import { NodeCredentialStore } from '../environment/node-credential-store'
 import { createDesktopProjectsPort } from './desktop-projects-port'
 import { fakeCodexServices } from './codex-test-fixtures'
-import { AGENT_PROFILES, FakeSessionManager, memoryStore, startDesktopNode, stopDesktopNode } from './node-host-test-fixtures'
+import { AGENT_PROFILES, FakeSessionManager, memorySessionEdits, memoryStore, startDesktopNode, stopDesktopNode, testHarnessHooks } from './node-host-test-fixtures'
 import type { DesktopNodeHost } from './node-host-server'
 
 const dirs: string[] = []
@@ -63,10 +63,10 @@ async function pairedWithCodex() {
   const codex = fakeCodexServices()
   const host = await startDesktopNode(
     {
-      userDataDir: tempDir('superone-node-codex-'), label: 'Desktop B', appVersion: '0.0.0-test', sessions, store, rows: store.all, projects, harnesses,
+      userDataDir: tempDir('superone-node-codex-'), label: 'Desktop B', appVersion: '0.0.0-test', sessions, rows: store.all, sessionEdits: memorySessionEdits(store, sessions), projects, harnesses,
       codex: codex.services,
       listAgentProfiles: () => AGENT_PROFILES,
-      hooks: { probeHarnessReadiness: () => ({ ok: true }) as never, assertSessionHarnessRuntimeReady: () => ({ ok: true, reason: 'test' }) },
+      hooks: testHarnessHooks(),
     },
     { bindPort: 23000 + Math.floor(Math.random() * 10000) },
   )

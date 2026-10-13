@@ -140,6 +140,42 @@ export const WrappedComposerLink: Story = {
   },
 }
 
+const LONG_URL = 'https://github.com/wheresryan22/anatomy-of-a-very-long-repository.git'
+
+/** A URL too long to fit beside its favicon still starts on the icon's line. */
+async function expectFaviconBesideUrl(canvasElement: HTMLElement) {
+  await waitFor(() => {
+    // The mocked favicon lookup answers null, so every link draws the globe.
+    const iconBox = canvasElement.querySelector('.lucide-globe')!.getBoundingClientRect()
+    const range = document.createRange()
+    range.setStart(document.createTreeWalker(canvasElement.querySelector('.web-link')!, NodeFilter.SHOW_TEXT).nextNode()!, 0)
+    range.setEnd(range.startContainer, 1)
+    const char = range.getBoundingClientRect()
+    const middle = iconBox.top + iconBox.height / 2
+    expect(middle).toBeGreaterThan(char.top)
+    expect(middle).toBeLessThan(char.bottom)
+    expect(iconBox.right).toBeLessThanOrEqual(char.left)
+  })
+}
+
+export const LongUrlInBubble: Story = {
+  render: () => (
+    <DesktopUserBubblePorts>
+      <div className="w-64 rounded-2xl bg-muted px-3 py-2 wrap-break-word"><UserTextPresenter text={`${LONG_URL} 看看这个项目`} /></div>
+    </DesktopUserBubblePorts>
+  ),
+  play: async ({ canvasElement }) => expectFaviconBesideUrl(canvasElement),
+}
+
+export const LongUrlInComposer: Story = {
+  render: () => (
+    <div className="w-64 wrap-break-word">
+      <Composer content={`<p>看看 ${LONG_URL} 这个项目</p>`} />
+    </div>
+  ),
+  play: async ({ canvasElement }) => expectFaviconBesideUrl(canvasElement),
+}
+
 /** The growing preview must flip above the cursor and stay inside a narrow viewport. */
 export const ViewportEdge: Story = {
   render: () => (

@@ -32,7 +32,7 @@ import { PortableHostVideo } from './PortableHostVideo'
 import { decodeHostImageSrc, HOST_IMAGE_PROTOCOL, remarkHostImages } from './host-image-src'
 import { hasNativeHost, previewMermaid } from './mermaid-preview'
 import { hostFaviconPorts } from './host-favicon'
-import { LinkFaviconPresenter } from './presenters/LinkFavicon'
+import { FaviconLinkBody, LinkFaviconPresenter } from './presenters/LinkFavicon'
 
 const darkCodePlugin = createPortableCodePlugin('github-dark')
 const lightCodePlugin = createPortableCodePlugin('github-light')
@@ -128,8 +128,9 @@ export function NativeWebLink({ href, onClick, scheme, children, ...props }: Com
         requestNative('openLink', { url: href })
       }}
     >
-      {href && <LinkFaviconPresenter href={href} isDark={scheme === 'dark'} ports={hostFaviconPorts} />}
-      {children}
+      <FaviconLinkBody favicon={href && <LinkFaviconPresenter href={href} isDark={scheme === 'dark'} ports={hostFaviconPorts} />}>
+        {children}
+      </FaviconLinkBody>
     </a>
   )
 }

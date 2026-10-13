@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Globe } from 'lucide-react'
 import { useIsCodeFenceIncomplete } from 'streamdown'
 
@@ -69,6 +69,16 @@ export function isHttpHref(href: string): boolean {
   } catch {
     return false
   }
+}
+
+/**
+ * A link's favicon and text. The icon is an atomic inline, which is a wrap
+ * opportunity of its own, so a URL too long to fit beside it would leave the
+ * icon alone on its line. Wrapping is banned on the pair's common parent and
+ * restored for the text: the URL still breaks, but never right after the icon.
+ */
+export function FaviconLinkBody({ favicon, children }: { favicon: ReactNode; children: ReactNode }) {
+  return <span className="text-nowrap">{favicon}<span className="text-wrap">{children}</span></span>
 }
 
 /**

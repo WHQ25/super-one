@@ -2,7 +2,7 @@ import type { AnchorHTMLAttributes, PointerEvent, ReactElement } from 'react'
 import { Slot } from 'radix-ui'
 import { Popover, PopoverAnchor, PopoverContent } from '@superone/ui/components/ui/popover'
 import { cn } from '@superone/ui/lib/utils'
-import { LinkFaviconPresenter, isHttpHref, type LinkFaviconPorts } from '@superone/chat-view/presenters/LinkFavicon'
+import { FaviconLinkBody, LinkFaviconPresenter, isHttpHref, type LinkFaviconPorts } from '@superone/chat-view/presenters/LinkFavicon'
 import { openBrowserTab } from '@/components/activity/activity-panel-api'
 import { useIsDark } from '@/hooks/use-is-dark'
 import { tryCopy } from '@/lib/clipboard'
@@ -99,8 +99,7 @@ export function WebLink({ href, className, children, ...rest }: AnchorHTMLAttrib
         requestOpenExternalLink(href)
       }}
     >
-      {href && <LinkFavicon href={href} />}
-      {children}
+      <FaviconLinkBody favicon={href && <LinkFavicon href={href} />}>{children}</FaviconLinkBody>
     </a>
   )
   return href && isHttpHref(href) ? <WebLinkHoverCard href={href}>{anchor}</WebLinkHoverCard> : anchor

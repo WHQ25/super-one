@@ -20,14 +20,20 @@ export const WEB_LINK_ATTR = 'data-web-link'
 const key = new PluginKey<DecorationSet>('webLinkDecoration')
 const faviconRoots = new WeakMap<Node, Root>()
 
+/**
+ * The widget only reserves the icon's width and draws it out of flow. An
+ * in-flow icon is an atomic inline, a wrap opportunity of its own, so a URL
+ * too long to fit beside it would leave the icon alone on its line; the
+ * paragraph owns both nodes, so chat's shared no-wrap parent cannot apply here.
+ */
 function favicon(href: string): HTMLElement {
   const dom = document.createElement('span')
-  dom.className = 'composer-web-link-icon'
+  dom.className = 'relative pl-[calc(0.9em+0.25rem)]'
   dom.contentEditable = 'false'
   dom.setAttribute(WEB_LINK_ATTR, href)
   const root = createRoot(dom)
   // Deferred: TipTap may build the view (and this widget) while React is rendering.
-  queueMicrotask(() => root.render(<LinkFavicon href={href} />))
+  queueMicrotask(() => root.render(<span className="absolute top-1/2 left-0 flex -translate-y-1/2"><LinkFavicon href={href} /></span>))
   faviconRoots.set(dom, root)
   return dom
 }

@@ -249,9 +249,9 @@ export class ProviderStore {
         updateCredential: (id, patch) => this.updateCredential(id, patch),
         setBinding: (binding) => this.setBinding(binding),
         upsertCustomPlatform: (def) => this.upsertCustomPlatform(def),
-        clear: () => {
+        clear: (keep) => {
           this.db.exec('DELETE FROM provider_bindings')
-          this.db.exec('DELETE FROM provider_credentials')
+          this.db.prepare('DELETE FROM provider_credentials WHERE id NOT IN (SELECT value FROM json_each(?))').run(JSON.stringify([...keep]))
           this.db.exec('DELETE FROM provider_custom_platforms')
         },
       },

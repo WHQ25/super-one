@@ -345,6 +345,14 @@ describe('DesktopNodeHost providers', () => {
     expect(credentialStore.getCredentialDecrypted('cred-new')?.secret).toBe(pushed[1])
     expect(providerChanges.providerConfigChanged).toHaveBeenCalledTimes(1)
 
+    // A sends '' for a key its keychain could not decrypt: B keeps its own, even when replacing all.
+    await client.rpc('provider.importBundle', {
+      bundle: { credentials: [{ id: 'cred-a', platformId: 'openai', planId: 'api', name: 'Renamed', secret: '' }], bindings: [], customPlatforms: [] },
+      replaceAll: true,
+    })
+    expect(credentialStore.getCredentialDecrypted('cred-a')).toMatchObject({ name: 'Renamed', secret: pushed[0] })
+    expect(credentialStore.getCredentialDecrypted('cred-new')).toBeUndefined()
+
     const reads = JSON.stringify([
       await client.rpc('provider.listCredentials'), await client.rpc('provider.listBindings'), await client.rpc('provider.listCustomPlatforms'),
     ])

@@ -276,7 +276,7 @@ describe('side chats on the local environment endpoint', () => {
   })
 
   it('does not advertise side chats when the host has no implementation', () => {
-    expect(localRoute().domain.localSessions.servedOperations.has('session.sideChatStart')).toBe(false)
+    expect(localRoute().domain.sessions.servedOperations.has('session.sideChatStart')).toBe(false)
   })
 })
 

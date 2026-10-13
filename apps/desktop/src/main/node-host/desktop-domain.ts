@@ -20,7 +20,7 @@ import { EventLog, createSqliteHostActionStore } from '@superone/runtime/session
 import type { HarnessManager } from '@superone/runtime/harness'
 import type { SessionAgentProfile } from '@superone/shared/agent-types'
 import { loadDesktopEnvironmentIdentity } from '../environment/local-identity'
-import { DesktopSessionHost, type NodeHostSessionManager, type NodeHostSessionStore } from './desktop-session-host'
+import { DesktopSessionHost, type DesktopSessionEdits, type DesktopSessionHostDeps, type NodeHostSessionManager } from './desktop-session-host'
 import { createDesktopGitPort } from './desktop-git-port'
 import { createDesktopCatalogMethods, type DesktopCatalog } from './desktop-catalog-methods'
 import { reconcileRunsAfterRestart } from './reconcile-runs'
@@ -33,7 +33,6 @@ import {
 import { SessionEventRecorder } from './session-event-recorder'
 import { runRpcControl } from '../session/control-context'
 import { dispatchRpc } from '@superone/runtime/server'
-import { LocalSessionHost, type LocalSessionEdits, type LocalSessionHostDeps } from './local-session-host'
 import type { DesktopSessionRows } from './desktop-session-reads'
 import type { DesktopSessionRow } from '../db-remote-controlled-sessions'
 import { desktopNodeHostPaths } from './paths'
@@ -51,14 +50,10 @@ const DESKTOP_NODE_CAPABILITIES: HostCapabilityFlags = {
 
 /**
  * Shared methods with no desktop meaning yet: node settings belong to this
- * desktop's own settings, a fork would cut a worktree before learning sessions
- * cannot fork here, harness installs stay with this desktop's user, and a
- * controller's session keeps its cwd, tags and lifetime as this desktop has them.
+ * desktop's own settings, and harness installs stay with this desktop's user.
  */
 const DESKTOP_UNSERVED_METHODS: ReadonlySet<string> = new Set([
   'settings.patch', 'sandbox.probe', 'harness.enable', 'harness.disable',
-  'session.fork', 'session.setCwd', 'session.setTags', 'session.setUiFlags', 'session.close', 'session.remove',
-  'session.modUi', 'session.notifyArtifactCompleted',
 ])
 
 /**
@@ -82,14 +77,13 @@ function desktopCollaborationPort(listProfiles: () => SessionAgentProfile[]): Co
 
 export interface DesktopDomainDeps {
   restore?: import('../session/session-restore-facts').DesktopRestorePorts
-  /** Every session row of this desktop, for the devices that see all of them. */
+  /** Every session row of this desktop. */
   rows: DesktopSessionRows<DesktopSessionRow>
   userDataDir: string
   /** Shown to controllers as this environment's name; the host name by default. */
   label?: string
   appVersion: string
   sessions: NodeHostSessionManager
-  store: NodeHostSessionStore
   projects: ProjectsPort
   harnesses: HarnessManager
   /** The agent profiles this desktop can launch, as its own collaboration lists them. */
@@ -111,9 +105,9 @@ export interface DesktopDomainDeps {
   catalog?: DesktopCatalog
   /** The credential reads a composer's API provider picker needs (`desktop-providers-port.ts`). */
   providers?: ProvidersPort
-  sessionEdits?: LocalSessionEdits
-  sideChats?: LocalSessionHostDeps['sideChats']
-  scheduledSends?: LocalSessionHostDeps['scheduledSends']
+  sessionEdits: DesktopSessionEdits
+  sideChats?: DesktopSessionHostDeps['sideChats']
+  scheduledSends?: DesktopSessionHostDeps['scheduledSends']
   /** Bind local terminal reads and IPC mutations to this domain's one lease authority. */
   bindLocalControl?: (authority: TerminalLeaseAuthority) => void
 }
@@ -134,9 +128,8 @@ export class DesktopDomain {
     readonly identity: NodeIdentity,
     readonly auth: AuthService,
     readonly leases: ControlLeaseService,
+    /** Every session of this desktop, for every client. */
     readonly sessions: DesktopSessionHost,
-    /** Every session of this desktop, fenced by the same domain leases. */
-    readonly localSessions: LocalSessionHost,
     private readonly recorder: SessionEventRecorder,
     private readonly unbindSessions: () => void,
     /** The node home (identity, channel root, config). */
@@ -162,11 +155,16 @@ export class DesktopDomain {
         environmentId: identity.environmentId,
         restore: deps.restore,
         sessions: deps.sessions,
-        store: deps.store,
+        rows: deps.rows,
+        edits: deps.sessionEdits,
+        drafts: deps.drafts,
+        sideChats: deps.sideChats,
+        scheduledSends: deps.scheduledSends,
         leases,
         events,
         hostActions: createSqliteHostActionStore(db),
         projectPath: (projectId) => deps.projects.get(projectId)?.path ?? null,
+        projectId: (path) => deps.projects.list().find((project) => project.path === path)?.projectId ?? null,
         controllerLabel: (clientSessionId) =>
           auth.listClientSessions().find((c) => c.clientSessionId === clientSessionId)?.label ?? null,
       })
@@ -183,12 +181,10 @@ export class DesktopDomain {
         sessions,
         harnesses: deps.harnesses,
         collaboration: desktopCollaborationPort(deps.listAgentProfiles),
-        unservedMethods: DESKTOP_UNSERVED_METHODS,
         subscriptionUsage: { claudeAccounts: claudeUsageAccounts, log: usageLog },
       }
-      const localSessions = new LocalSessionHost({ sessions: deps.sessions, events, rows: deps.rows, edits: deps.sessionEdits, drafts: deps.drafts, sideChats: deps.sideChats, scheduledSends: deps.scheduledSends, projectPath: (id) => deps.projects.get(id)?.path ?? null, projectId: (path) => deps.projects.list().find((project) => project.path === path)?.projectId ?? null, environmentId: identity.environmentId, restore: deps.restore })
       deps.bindLocalControl?.({ environmentId: identity.environmentId, leases })
-      return new DesktopDomain(db, identity, auth, leases, sessions, localSessions, recorder, unbindSessions, paths.nodeHome, context, { terminals: deps.terminals, drafts: deps.drafts, beforeDraftOpen: deps.beforeDraftOpen, phoneMethods: deps.phoneMethods, catalog: deps.catalog, projectEdits: deps.projectEdits, topicNotices: deps.topicNotices, rpcRouter: deps.rpcRouter })
+      return new DesktopDomain(db, identity, auth, leases, sessions, recorder, unbindSessions, paths.nodeHome, context, { terminals: deps.terminals, drafts: deps.drafts, beforeDraftOpen: deps.beforeDraftOpen, phoneMethods: deps.phoneMethods, catalog: deps.catalog, projectEdits: deps.projectEdits, topicNotices: deps.topicNotices, rpcRouter: deps.rpcRouter })
     } catch (err) {
       db.close()
       throw err
@@ -206,14 +202,13 @@ export class DesktopDomain {
   }
 
   /**
-   * A controller desktop's context: the client context, except that its
-   * sessions are still the ones it started, and terminals and drafts stay with
-   * the window and phones until their leases know controller actors
-   * (docs/plans/desktop-node-parity.md).
+   * A controller desktop's context: the client context, except that terminals
+   * and drafts stay with the window and phones until their leases know
+   * controller actors.
    */
   controllerContext(): DesktopRpcContext {
     const { terminals: _terminals, drafts: _drafts, beforeDraftOpen: _beforeDraftOpen, topicNotices: _topicNotices, ...client } = this.clientContext()
-    return { ...client, sessions: this.sessions, unservedMethods: DESKTOP_UNSERVED_METHODS }
+    return client
   }
 
   openPhoneRoute(client: import('@superone/runtime/server').AuthenticatedClient) { return this.phonePorts.rpcRouter?.open(client) }
@@ -237,7 +232,6 @@ export class DesktopDomain {
     return {
       ...this.context,
       ...(edits ? { projects: withProjectEdits(this.context.projects!, edits) } : {}),
-      sessions: this.localSessions,
       workspaceFs,
       workspaceGit: createDesktopGitPort(projects),
       workspaceWatch,
@@ -248,7 +242,7 @@ export class DesktopDomain {
       beforeDraftOpen: this.phonePorts.beforeDraftOpen,
       extensions: extension.dispatch,
       extensionMethods: extension.methods,
-      unservedMethods: new Set([...DESKTOP_UNSERVED_METHODS].filter((method) => !method.startsWith('session.')).concat([...this.localSessions.unservedMethods])),
+      unservedMethods: new Set([...DESKTOP_UNSERVED_METHODS, ...this.sessions.unservedMethods]),
     }
   }
 
@@ -264,7 +258,6 @@ export class DesktopDomain {
     this.unbindSessions()
     for (const watch of this.watches) watch.closeAll()
     this.recorder.dispose()
-    this.localSessions.dispose()
     this.sessions.dispose()
     this.leases.dispose()
     this.db.close()

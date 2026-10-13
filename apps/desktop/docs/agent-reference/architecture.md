@@ -64,7 +64,7 @@ details live in [session-links.md](../../../../docs/features/session-links.md).
 | Session **list** (always `limit`+`offset`) | ✅ Unified — `environment.listSessions` + renderer `lib/session-list-ops.ts` (no unpaginated dump; search pages until short) |
 | Session create / send / settings / interactions / metadata / history | Unified — session client → EnvironmentHost → host RPC |
 | Workspace / git / terminals on remote | ✅ Environment gateway |
-| Agent turns on local | In-process domain RPC → LocalSessionHost → SessionManager |
+| Agent turns on local | In-process domain RPC → DesktopSessionHost → SessionManager |
 | Optional session operations | Served-method capabilities; desktop serves rewind, turn control, MCP/context, side chats, schedules, housekeeping and composer |
 | Local workspace and resource operations | Existing environment/resource adapters; native implementations stay in main |
 

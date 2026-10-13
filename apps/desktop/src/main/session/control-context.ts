@@ -50,6 +50,11 @@ export function runRpcControl<T>(clientSessionId: string, payload: unknown, fn: 
   return scopes.run({ clientSessionId, proofs, acquire: false }, fn)
 }
 
+/** A controller desktop: an authenticated client that is neither a phone nor this desktop's window. */
+export function isControllerClient(clientSessionId: string): boolean {
+  return !clientSessionId.startsWith('phone:') && !clientSessionId.startsWith('ipc:')
+}
+
 export function windowControlIpc(ipc: Pick<IpcMain, 'handle'>): Pick<IpcMain, 'handle'> {
   return { handle: (channel, handler) => ipc.handle(channel, (event, ...args) => runWindowControl(event.sender.id, () => handler(event, ...args))) }
 }

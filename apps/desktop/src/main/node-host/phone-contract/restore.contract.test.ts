@@ -92,7 +92,7 @@ describe('phone endpoint: restore and history', () => {
     ready()
     const loaded = await reading
     expect(loaded.messages.map(row => row.id)).toEqual(['during-wait'])
-    expect(loaded.cursor).toEqual({ sequence: domain.localSessions.snapshotSequence(), epoch: domain.localSessions.streamEpoch(), version: 1 })
+    expect(loaded.cursor).toEqual({ sequence: domain.sessions.snapshotSequence(), epoch: domain.sessions.streamEpoch(), version: 1 })
   })
 
   it('pages around stable message anchors and rejects removed anchors or malformed bounds', async () => {

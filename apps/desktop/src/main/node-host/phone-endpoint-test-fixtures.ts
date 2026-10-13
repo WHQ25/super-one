@@ -10,9 +10,8 @@ import { openNodeDatabase } from '@superone/runtime/db'
 import { nodeWireCompression } from '@superone/runtime/server/wire-compression'
 import { createDesktopProjectsPort } from './desktop-projects-port'
 import { DesktopDomain, type DesktopDomainDeps } from './desktop-domain'
-import { AGENT_PROFILES, FakeSessionManager, memoryStore, type FakeSession } from './node-host-test-fixtures'
+import { AGENT_PROFILES, FakeSessionManager, memorySessionEdits, memoryStore, type FakeSession } from './node-host-test-fixtures'
 import { openPhoneConnection } from './phone-endpoint'
-import type { LocalSessionEdits } from './local-session-host'
 
 /**
  * A desktop domain over one Git project with one session this desktop's user
@@ -35,16 +34,9 @@ export function phoneDomain(cleanup: Array<() => void>, extra: Partial<DesktopDo
   harnesses.enableSimulatedOverlay()
   cleanup.push(() => harnessDb.close())
   const userDataDir = tempDir('superone-domain-')
-  const sessionEdits: LocalSessionEdits = {
-    create: store.createRow,
-    rename: (id, title) => { const row = store.rows.get(id)!; store.rows.set(id, { ...row, title }) },
-    tags: (id, tags) => { const row = store.rows.get(id)!; store.rows.set(id, { ...row, tags }) },
-    flags: (id, flags) => { const row = store.rows.get(id)!; store.rows.set(id, { ...row, ...flags }) },
-    remove: (id) => { store.rows.delete(id) },
-    close: (id) => sessions.disposeSession(id),
-  }
+  const sessionEdits = memorySessionEdits(store, sessions)
   const domain = DesktopDomain.open({
-    userDataDir, appVersion: '0.0.0-test', sessions, store, rows: store.all, projects, harnesses,
+    userDataDir, appVersion: '0.0.0-test', sessions, rows: store.all, projects, harnesses,
     listAgentProfiles: () => AGENT_PROFILES,
     hooks: { probeHarnessReadiness: () => ({ ok: true }) as never, assertSessionHarnessRuntimeReady: () => ({ ok: true, reason: 'test' }) },
     sessionEdits,

@@ -13,20 +13,14 @@ import { variantId } from '../variant'
 import { addRecentFolder, getRecentFolders } from '../recent-folders'
 import { localDraftStore } from '../db-drafts'
 import { createSession as createSessionRow, loadSessionMessagesPaginated, renameSession, setSessionTags, pinSession, hideSession, deleteSession } from '../db-sessions'
-import {
-  getDesktopSessionRow,
-  listDesktopSessionRows,
-  getRemoteControlledSession,
-  listRemoteControlledSessions,
-  setSessionRemoteController,
-} from '../db-remote-controlled-sessions'
+import { getDesktopSessionRow, listDesktopSessionRows, setSessionRemoteController } from '../db-remote-controlled-sessions'
 import { getHarnessManager, probeDesktopHarness } from '../harness/service'
 import { desktopHarnessResolver } from '../harness/host'
 import { listSessionAgentProfiles } from '../session/agent-profiles'
 import { createDesktopProjectsPort } from './desktop-projects-port'
 import { createDesktopProvidersPort } from './desktop-providers-port'
 import { listBindings, listCredentials, listCustomPlatforms } from '../providers/credential-store'
-import type { NodeHostSessionManager, NodeHostSessionStore } from './desktop-session-host'
+import type { NodeHostSessionManager } from './desktop-session-host'
 import { DesktopNodeHost } from './node-host-server'
 import { DesktopDomain, type DesktopDomainDeps } from './desktop-domain'
 import { getEnvironmentHost } from '../environment/environment-host'
@@ -55,18 +49,6 @@ const changeListeners = new Set<() => void>()
 let reconcileTimer: ReturnType<typeof setTimeout> | null = null
 /** Allow Control (the phone link's switch) also gates every controller here. */
 let accessAllowed = true
-
-const desktopSessionStore: NodeHostSessionStore = {
-  createRow: ({ sessionId, projectPath, title, cwd, providerId }) => {
-    const isWorktree = cwd !== projectPath
-    createSessionRow(projectPath, sessionId, title, isWorktree, undefined, isWorktree ? cwd : undefined, providerId)
-  },
-  setController: setSessionRemoteController,
-  get: getRemoteControlledSession,
-  list: listRemoteControlledSessions,
-  rename: renameSession,
-  loadMessages: loadSessionMessagesPaginated,
-}
 
 export function nodeHostStatus(): NodeHostStatus {
   return {
@@ -161,9 +143,12 @@ export function openDesktopDomain(sessions: NodeHostSessionManager, phonePorts: 
       start: async (parentSessionId, assertControl) => (await import('../session/side-chat')).startSideChat(sessions, { parentSessionId }, assertControl),
       close: async (sessionId) => (await import('../session/side-chat')).closeSideChat(sessions, sessionId),
     },
-    store: desktopSessionStore,
     sessionEdits: {
-      create: desktopSessionStore.createRow,
+      create: ({ sessionId, projectPath, title, cwd, providerId }) => {
+        const isWorktree = cwd !== projectPath
+        createSessionRow(projectPath, sessionId, title, isWorktree, undefined, isWorktree ? cwd : undefined, providerId)
+      },
+      setController: setSessionRemoteController,
       rename: renameSession,
       tags: (id, tags) => { setSessionTags(id, tags) },
       flags: (id, flags) => {

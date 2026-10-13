@@ -48,6 +48,9 @@ for (const scenario of [
   { story: 'chinese-history', narrow: false, tail: /^段落 59：/, distance: 120 },
   { story: 'sparse-code-history', narrow: false, tail: /^Final reading anchor\./, distance: 480 },
   { story: 'codex-reasoning-narration', narrow: false, tail: /^Update 29:/, distance: 120 },
+  // Long turns above a short final reply: their first measurement must not be
+  // clamped by the room left below the viewport.
+  { story: 'claude-tool-turns', narrow: false, tail: /^Paragraph 0:/, distance: 240 },
 ]) {
   test(`holds the reading anchor on first upward scroll in ${scenario.story}${scenario.narrow ? ' after narrowing' : ''}`, async ({ page }) => {
     await open(page, scenario.story)

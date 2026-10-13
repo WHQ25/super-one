@@ -1,4 +1,4 @@
-import { defaultRangeExtractor, useVirtualizer } from '@tanstack/react-virtual'
+import { defaultRangeExtractor, elementScroll, useVirtualizer } from '@tanstack/react-virtual'
 import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type Ref, type RefObject } from 'react'
 import { TranscriptStateProvider } from '@superone/ui/lib/transcript-state'
 import { retainMcpAppTranscript } from '../mcp-apps/layout-store'
@@ -72,6 +72,13 @@ export function VirtualTranscriptList({ items, viewportRef, apiRef }: {
     enabled: !small,
     anchorTo: 'end',
     initialOffset: 1e12,
+    // A size correction scrolls synchronously, before React commits the grown
+    // total. Near the end of a list of estimates, a tall row measured above the
+    // fold would be clamped to the old scrollHeight. Size the list first.
+    scrollToFn: (offset, options, instance) => {
+      if (listRef.current) listRef.current.style.height = `${instance.getTotalSize()}px`
+      elementScroll(offset, options, instance)
+    },
   })
   const virtualizerRef = useRef(virtualizer)
   virtualizerRef.current = virtualizer

@@ -50,7 +50,29 @@ export function reasoningNarrationTurn(): ChatMessage {
   return { ...performanceCodexTurn(), id: 'codex-reasoning-narration', metadata: { codex: { threadId: 'codex_local_reasoning', usage: null, items } } }
 }
 
-function PerformancePreview({ count = 120, paragraphs = 60, tools = false, compact = false, syntax = false, codex = false, reasoning = false, chinese = false, sparseCode = false }: { count?: number; paragraphs?: number; tools?: boolean; compact?: boolean; syntax?: boolean; codex?: boolean; reasoning?: boolean; chinese?: boolean; sparseCode?: boolean }) {
+/**
+ * Investigation turns, then a short final reply. Opening at the end leaves little
+ * room below the long turns, whose estimates are far below their measured height.
+ */
+function claudeToolHistory(count: number): ChatMessage[] {
+  const messages = performanceHistory(count, 1)
+  return messages.map((message, messageIndex) => {
+    if (message.role !== 'assistant' || messageIndex === messages.length - 1) return message
+    const content: ChatMessage['content'] = []
+    for (let index = 0; index < 60; index++) {
+      const id = `${message.id}-tool-${index}`
+      if (index % 6 === 0) content.push({ type: 'text', text: `Note ${index}: ${'Checking the next part of the investigation. '.repeat(3)}` })
+      content.push(
+        { type: 'tool_use', toolUseId: id, toolName: 'Bash', input: JSON.stringify({ command: `grep -rn "pattern-${index}" src` }), status: 'complete' },
+        { type: 'tool_result', toolUseId: id, summary: `result-${index}` },
+      )
+    }
+    content.push({ type: 'text', text: Array.from({ length: 12 }, (_, index) => `Finding ${index}: ${'The summary explains what the investigation found and why. '.repeat(4)}`).join('\n\n') })
+    return { ...message, content }
+  })
+}
+
+function PerformancePreview({ count = 120, paragraphs = 60, tools = false, compact = false, syntax = false, codex = false, reasoning = false, chinese = false, sparseCode = false, claudeTools = false }: { count?: number; paragraphs?: number; tools?: boolean; compact?: boolean; syntax?: boolean; codex?: boolean; reasoning?: boolean; chinese?: boolean; sparseCode?: boolean; claudeTools?: boolean }) {
   const [ready, setReady] = useState(false)
   const [panelOpen, setPanelOpen] = useState(false)
   const viewportRef = useRef<HTMLDivElement>(null)
@@ -58,7 +80,7 @@ function PerformancePreview({ count = 120, paragraphs = 60, tools = false, compa
   useEffect(() => {
     const previous = useChatStore.getState()
     const app = useAppStore.getState()
-    const messages = performanceHistory(count, paragraphs, chinese)
+    const messages = claudeTools ? claudeToolHistory(count) : performanceHistory(count, paragraphs, chinese)
     if (codex) messages.splice(1, messages.length - 1, performanceCodexTurn())
     if (reasoning) messages.splice(1, messages.length - 1, reasoningNarrationTurn())
     if (tools) for (const message of messages) {
@@ -98,7 +120,7 @@ function PerformancePreview({ count = 120, paragraphs = 60, tools = false, compa
       useAppStore.setState(app)
       useCodexRealtimeViewStore.getState().clearJump('performance')
     }
-  }, [count, paragraphs, tools, compact, syntax, codex, reasoning, chinese, sparseCode])
+  }, [count, paragraphs, tools, compact, syntax, codex, reasoning, chinese, sparseCode, claudeTools])
 
   const appendChunk = () => useChatStore.setState(state => {
     const project = state.projectSessions.__performance__
@@ -138,6 +160,7 @@ export const ManyTurns: Story = { args: { count: 2000, paragraphs: 1 } }
 export const DarkChinese: Story = { globals: { theme: 'dark', locale: 'zh' } }
 export const ChineseHistory: Story = { args: { chinese: true }, globals: { theme: 'dark', locale: 'zh' } }
 export const SparseCodeHistory: Story = { args: { sparseCode: true } }
+export const ClaudeToolTurns: Story = { args: { count: 16, claudeTools: true } }
 export const StatefulTools: Story = { args: { paragraphs: 1, tools: true } }
 export const CompactedHistory: Story = { args: { paragraphs: 1, compact: true } }
 export const SemanticMarkdown: Story = { args: { count: 2, syntax: true } }

@@ -47,6 +47,7 @@ for (const scenario of [
   { story: 'long-history', narrow: true, tail: /^Paragraph 59:/, distance: 120 },
   { story: 'chinese-history', narrow: false, tail: /^段落 59：/, distance: 120 },
   { story: 'sparse-code-history', narrow: false, tail: /^Final reading anchor\./, distance: 480 },
+  { story: 'codex-reasoning-narration', narrow: false, tail: /^Update 29:/, distance: 120 },
 ]) {
   test(`holds the reading anchor on first upward scroll in ${scenario.story}${scenario.narrow ? ' after narrowing' : ''}`, async ({ page }) => {
     await open(page, scenario.story)
@@ -65,6 +66,42 @@ for (const scenario of [
     expect(Math.max(...await backwardScrollErrors(page, scenario.distance))).toBeLessThan(1)
   })
 }
+
+test('spaces narration under reasoning the same across virtual turn chunks', async ({ page }) => {
+  await open(page, 'codex-reasoning-narration')
+  const gaps = await page.evaluate(() => {
+    const nodes = [...document.querySelectorAll('.thinking-node, .after-thinking')]
+    return nodes.flatMap((text, index) => {
+      const reasoning = nodes[index - 1]
+      if (!text.classList.contains('after-thinking') || !reasoning?.classList.contains('thinking-node')) return []
+      const label = reasoning.firstElementChild!.getBoundingClientRect()
+      const edge = reasoning.closest('[data-virtual-segment]') !== text.closest('[data-virtual-segment]')
+      return [{ gap: Math.round((text.querySelector('p')!.getBoundingClientRect().top - label.bottom) * 10) / 10, edge }]
+    })
+  })
+  expect(gaps.some(item => item.edge)).toBe(true)
+  expect(new Set(gaps.map(item => item.gap)).size).toBe(1)
+})
+
+test('spaces virtual markdown blocks exactly like the unwrapped reply', async ({ page }) => {
+  await open(page, 'long-history')
+  const { virtual, plain } = await page.evaluate(() => {
+    const markdown = [...document.querySelectorAll('.chat-md')].find(el => el.querySelector('[data-virtual-markdown-block] > *'))!
+    const mounted = [...markdown.children].filter(el => el.matches('[data-virtual-markdown-block]') && el.firstElementChild)
+    mounted.forEach((wrapper, index) => { (wrapper.firstElementChild as HTMLElement).dataset.k = String(index) })
+    // The same blocks as direct children of the markdown root, as short replies draw them.
+    const unwrapped = markdown.cloneNode(true) as HTMLElement
+    for (const wrapper of [...unwrapped.children]) if (wrapper.matches('[data-virtual-markdown-block]')) wrapper.replaceWith(...wrapper.children)
+    markdown.before(unwrapped)
+    const gaps = (root: Element) => mounted.slice(1).map((_, index) => {
+      const top = (k: number) => root.querySelector(`[data-k="${k}"]`)!.getBoundingClientRect()
+      return Math.round((top(index + 1).top - top(index).bottom) * 10) / 10
+    })
+    return { virtual: gaps(markdown), plain: gaps(unwrapped) }
+  })
+  expect(virtual.length).toBeGreaterThan(3)
+  expect(virtual).toEqual(plain)
+})
 
 async function jump(page: Page, id: string, atEnd = false) {
   await page.locator(`[data-tick="${id}"]`).evaluate((button: HTMLButtonElement) => button.click())

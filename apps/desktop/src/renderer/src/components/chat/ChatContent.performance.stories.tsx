@@ -40,7 +40,17 @@ export function performanceCodexTurn(): ChatMessage {
   return { id: 'codex-long-turn', role: 'assistant', providerId: 'codex', status: 'complete', createdAt: '2026-10-05T00:00:00.000Z', content: [], metadata: { codex: { threadId: 'codex_local_performance', usage: null, items } } }
 }
 
-function PerformancePreview({ count = 120, paragraphs = 60, tools = false, compact = false, syntax = false, codex = false, chinese = false, sparseCode = false }: { count?: number; paragraphs?: number; tools?: boolean; compact?: boolean; syntax?: boolean; codex?: boolean; chinese?: boolean; sparseCode?: boolean }) {
+/** Reasoning directly above narration, repeated across several virtual chunks. */
+export function reasoningNarrationTurn(): ChatMessage {
+  const items: CodexThreadItem[] = Array.from({ length: 30 }, (_, index) => [
+    { id: `thought-${index}`, type: 'reasoning', text: `Reviewing step ${index}.` },
+    { id: `update-${index}`, type: 'agent_message', text: `Update ${index}: ${'The narration that follows a reasoning block. '.repeat(4)}` },
+    { id: `command-${index}`, type: 'command_execution', command: `echo step-${index}`, aggregatedOutput: `step-${index}\n`, exitCode: 0, status: 'completed' },
+  ] satisfies CodexThreadItem[]).flat()
+  return { ...performanceCodexTurn(), id: 'codex-reasoning-narration', metadata: { codex: { threadId: 'codex_local_reasoning', usage: null, items } } }
+}
+
+function PerformancePreview({ count = 120, paragraphs = 60, tools = false, compact = false, syntax = false, codex = false, reasoning = false, chinese = false, sparseCode = false }: { count?: number; paragraphs?: number; tools?: boolean; compact?: boolean; syntax?: boolean; codex?: boolean; reasoning?: boolean; chinese?: boolean; sparseCode?: boolean }) {
   const [ready, setReady] = useState(false)
   const [panelOpen, setPanelOpen] = useState(false)
   const viewportRef = useRef<HTMLDivElement>(null)
@@ -50,6 +60,7 @@ function PerformancePreview({ count = 120, paragraphs = 60, tools = false, compa
     const app = useAppStore.getState()
     const messages = performanceHistory(count, paragraphs, chinese)
     if (codex) messages.splice(1, messages.length - 1, performanceCodexTurn())
+    if (reasoning) messages.splice(1, messages.length - 1, reasoningNarrationTurn())
     if (tools) for (const message of messages) {
       if (message.role !== 'assistant') continue
       message.content.unshift(
@@ -76,18 +87,18 @@ function PerformancePreview({ count = 120, paragraphs = 60, tools = false, compa
     project._activeSessionId = 'performance'
     project._sessions = { performance: {
       ...createDefaultPerSessionState(),
-      sessionProvider: codex ? 'codex' : 'claude',
+      sessionProvider: codex || reasoning ? 'codex' : 'claude',
       messages,
     } }
     useChatStore.setState({ activeProject: '__performance__', projectSessions: { ...previous.projectSessions, __performance__: project } })
-    useAppStore.setState({ harnessCatalog: null, ...(codex ? { detailChatMode: false } : tools ? { detailChatMode: true } : {}) })
+    useAppStore.setState({ harnessCatalog: null, ...(codex ? { detailChatMode: false } : tools || reasoning ? { detailChatMode: true } : {}) })
     setReady(true)
     return () => {
       useChatStore.setState(previous)
       useAppStore.setState(app)
       useCodexRealtimeViewStore.getState().clearJump('performance')
     }
-  }, [count, paragraphs, tools, compact, syntax, codex, chinese, sparseCode])
+  }, [count, paragraphs, tools, compact, syntax, codex, reasoning, chinese, sparseCode])
 
   const appendChunk = () => useChatStore.setState(state => {
     const project = state.projectSessions.__performance__
@@ -131,3 +142,4 @@ export const StatefulTools: Story = { args: { paragraphs: 1, tools: true } }
 export const CompactedHistory: Story = { args: { paragraphs: 1, compact: true } }
 export const SemanticMarkdown: Story = { args: { count: 2, syntax: true } }
 export const CodexLongTurn: Story = { args: { count: 2, paragraphs: 1, codex: true } }
+export const CodexReasoningNarration: Story = { args: { count: 2, paragraphs: 1, reasoning: true }, globals: { theme: 'dark' } }

@@ -2,7 +2,7 @@ import { Block, type BlockProps } from 'streamdown'
 import { memo, useLayoutEffect, useRef, useState } from 'react'
 import { TranscriptStateScope, useTranscriptState } from '@superone/ui/lib/transcript-state'
 import { useVirtualTranscript } from './virtual-transcript-context'
-import { useVirtualBlockAnchor } from './virtual-block-anchor'
+import { usePlaceholderMargins, useVirtualBlockAnchor } from './virtual-block-anchor'
 
 /** Streamdown supplies semantic blocks, including its reference-link context and streaming repair. */
 export const VirtualMarkdownBlock = memo(function VirtualMarkdownBlock(props: BlockProps) {
@@ -12,6 +12,7 @@ export const VirtualMarkdownBlock = memo(function VirtualMarkdownBlock(props: Bl
   const [measured, setMeasured] = useTranscriptState(`markdown-size-${props.index}`, { height: 0, width: 0 })
   const height = useRef(measured.height)
   const [placeholder, setPlaceholder] = useState(measured.width ? measured.height : 96)
+  const margins = usePlaceholderMargins(`markdown-margins-${props.index}`, visible)
   useVirtualBlockAnchor(element, visible, placeholder)
   useLayoutEffect(() => {
     const node = element.current
@@ -20,8 +21,11 @@ export const VirtualMarkdownBlock = memo(function VirtualMarkdownBlock(props: Bl
     const width = node.clientWidth || 640
     const estimate = Math.max(28, Math.ceil(props.content.length / Math.max(20, width / 7)) * 22 + 12)
     setPlaceholder(measured.width === width ? measured.height : estimate)
-    return transcript.observeBlock(node, setVisible)
-  }, [transcript, props.content.length])
+    return transcript.observeBlock(node, next => {
+      if (!next) margins.capture(node)
+      setVisible(next)
+    })
+  }, [transcript, props.content.length, margins.capture])
   useLayoutEffect(() => {
     const node = element.current
     if (!node || !visible || !transcript) return
@@ -38,7 +42,8 @@ export const VirtualMarkdownBlock = memo(function VirtualMarkdownBlock(props: Bl
   // Streamdown also emits whitespace separators. They render no DOM and must
   // not acquire placeholder height or extra gaps in the markdown document.
   if (!transcript || !props.content.trim()) return <Block {...props} />
-  return <div ref={element} data-virtual-markdown-block={props.index} style={{ display: 'flow-root', ...(visible ? {} : { height: placeholder }) }}>
+  // `chat-md.css` passes the markdown's own spacing rules through this wrapper.
+  return <div ref={element} data-virtual-markdown-block={props.index} style={visible ? undefined : { height: placeholder, ...margins.style }}>
     {visible && <TranscriptStateScope id={`markdown-${props.index}`}><Block {...props} /></TranscriptStateScope>}
   </div>
 })

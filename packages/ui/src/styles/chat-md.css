@@ -184,6 +184,30 @@
   margin: 0.3em 0;
 }
 
+/* --- Virtual markdown blocks ---
+   Desktop wraps each block of a long reply (`VirtualMarkdownBlock`). The wrapper takes
+   no spacing of its own; its block gets what a direct child of the root gets: the root's
+   `space-y-4` gap and first/last margin reset. Those are utilities, so their stand-ins
+   share the utilities layer and lose to the same rules (element rules above, a block's
+   own margin utilities) they lose to unwrapped. */
+.chat-md > [data-virtual-markdown-block] {
+  margin-block: 0;
+}
+
+@layer utilities {
+  :where(.chat-md > [data-virtual-markdown-block]:not(:last-child) > *) {
+    margin-block: 0 calc(var(--spacing) * 4);
+  }
+
+  .chat-md > [data-virtual-markdown-block]:first-child > :first-child {
+    margin-top: 0;
+  }
+
+  .chat-md > [data-virtual-markdown-block]:last-child > :last-child {
+    margin-bottom: 0;
+  }
+}
+
 .tool-node {
   --diff-gutter-bg: color-mix(in oklch, var(--card), var(--muted) 20%);
 }

@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranscriptState } from '@superone/ui/lib/transcript-state'
 import { useVirtualTranscript } from './virtual-transcript-context'
-import { useVirtualBlockAnchor } from './virtual-block-anchor'
+import { usePlaceholderMargins, useVirtualBlockAnchor } from './virtual-block-anchor'
 
 /** A long turn can contain thousands of rows inside a single message. */
 export function VirtualTranscriptBlock({ children, cacheKey, estimate = 48, id }: {
@@ -14,14 +14,18 @@ export function VirtualTranscriptBlock({ children, cacheKey, estimate = 48, id }
   const element = useRef<HTMLDivElement>(null)
   const [visible, setVisible] = useState(!transcript)
   const [height, setHeight] = useTranscriptState(cacheKey, estimate)
+  const margins = usePlaceholderMargins(`${cacheKey}-margins`, visible)
   const measured = useRef(height)
   useVirtualBlockAnchor(element, visible, height)
 
   useLayoutEffect(() => {
     const node = element.current
     if (!node || !transcript) return
-    return transcript.observeBlock(node, setVisible)
-  }, [transcript])
+    return transcript.observeBlock(node, next => {
+      if (!next) margins.capture(node)
+      setVisible(next)
+    })
+  }, [transcript, margins.capture])
 
   useLayoutEffect(() => {
     const node = element.current
@@ -45,7 +49,7 @@ export function VirtualTranscriptBlock({ children, cacheKey, estimate = 48, id }
     ref={element}
     data-virtual-block={cacheKey}
     data-virtual-segment={id}
-    style={{ display: 'flow-root', ...(visible ? {} : { height }) }}
+    style={visible ? undefined : { height, ...margins.style }}
   >{visible && children}</div>
 }
 

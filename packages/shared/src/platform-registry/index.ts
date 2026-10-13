@@ -24,6 +24,7 @@ export * from './relay-discovery'
 export * from './relay-identify'
 export * from './effective-endpoints'
 export * from './legacy-endpoints'
+export * from './provider-bundle'
 export { BUILTIN_PLATFORMS } from './builtin'
 
 // --- lookups -----------------------------------------------------------------

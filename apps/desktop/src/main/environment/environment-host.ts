@@ -66,6 +66,7 @@ import { SshTunnelManager } from './ssh-tunnel-manager'
 import { formatConnectionLog } from './connection-log'
 import { shouldAbortRemoteSessionDrain } from './session-drain-policy'
 import { RemoteSessionFeed, type RemoteSessionListener } from './remote-session-feed'
+import { remoteListObserver, type SessionActivityEvent } from './remote-list-observer'
 import { createRemoteSession, type RemoteSessionCreateInput } from './create-remote-session'
 import {
   bootstrapNodeOverSsh,
@@ -1659,23 +1660,50 @@ export class EnvironmentHost {
     this.watchedSessionLists.delete(connectionId)
   }
 
-  /** Listeners told which machine's session list changed. */
-  private readonly sessionListListeners = new Set<(connectionId: string) => void>()
+  /** Listeners told which machine's session list changed, and in which project when the node says. */
+  private readonly sessionListListeners = new Set<(connectionId: string, projectKey?: string) => void>()
+  /** Listeners told which machine's project list changed. */
+  private readonly projectListListeners = new Set<(connectionId: string) => void>()
+  /** Listeners given a remote session's sidebar summary, keyed by its desktop project key. */
+  private readonly sessionActivityListeners = new Set<(event: SessionActivityEvent) => void>()
   /** Machines whose list changes this desktop watches. */
   private readonly watchedSessionLists = new Set<string>()
 
-  onSessionListChanged(listener: (connectionId: string) => void): () => void {
+  onSessionListChanged(listener: (connectionId: string, projectKey?: string) => void): () => void {
     this.sessionListListeners.add(listener)
     return () => { this.sessionListListeners.delete(listener) }
   }
 
-  /** Tell the list listeners when a node's sessions are created, renamed, flagged, tagged or removed, by any client. */
+  onProjectListChanged(listener: (connectionId: string) => void): () => void {
+    this.projectListListeners.add(listener)
+    return () => { this.projectListListeners.delete(listener) }
+  }
+
+  onRemoteSessionActivity(listener: (event: SessionActivityEvent) => void): () => void {
+    this.sessionActivityListeners.add(listener)
+    return () => { this.sessionActivityListeners.delete(listener) }
+  }
+
+  /**
+   * Follow a node's session list and projects as its phones do: every
+   * create, rename, flag, tag, removal and sidebar activity, by any client.
+   */
   private watchSessionList(connectionId: string): void {
     if (this.watchedSessionLists.has(connectionId)) return
     this.watchedSessionLists.add(connectionId)
-    this.feedFor(connectionId).observe(() => {
-      for (const listener of [...this.sessionListListeners]) listener(connectionId)
-    }).catch(() => { this.watchedSessionLists.delete(connectionId) })
+    this.feedFor(connectionId).observe(remoteListObserver(connectionId, {
+      sessionListChanged: (projectKey) => {
+        for (const listener of [...this.sessionListListeners]) listener(connectionId, projectKey)
+      },
+      projectsChanged: () => {
+        this.remoteProjectCache.delete(connectionId)
+        this.remoteProjectLoads.delete(connectionId)
+        for (const listener of [...this.projectListListeners]) listener(connectionId)
+      },
+      activity: (event) => {
+        for (const listener of [...this.sessionActivityListeners]) listener(event)
+      },
+    })).catch(() => { this.watchedSessionLists.delete(connectionId) })
   }
 
   /** Calls `onEvent` as each event of a remote session is pushed, without mapping it for the chat. */

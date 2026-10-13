@@ -1246,6 +1246,8 @@ export interface EnvironmentAPI extends MediaComposerAPI {
   onStatusEvent(callback: (snapshot: SupervisorSnapshot) => void): () => void
   /** A remote session whose missed events are gone: read it again with `openRemoteSession`. */
   onSessionResync(callback: (target: { connectionId: string; sessionId: string; projectPath?: string; providerId?: string }) => void): () => void
+  /** A paired machine's project list changed (any client added, removed or renamed one). */
+  onProjectsChanged(callback: (connectionId: string) => void): () => void
   onInstallProgress(callback: (progress: EnvironmentInstallProgress) => void): () => void
   /** Download percent of the in-flight local `cloneRepository` from this window. */
   onCloneProgress(callback: (percent: number) => void): () => void

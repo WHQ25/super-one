@@ -979,6 +979,14 @@ describe('idle eviction', () => {
     useChatStore.getState().handleAgentEvent(makeEvent({ type: 'session_seen', sessionId: 'b', messageId: 'reply-1' }))
     expect(useChatStore.getState().projectSessions).toBe(after)
   })
+
+  it("shows a paired machine's session as running from its sidebar summary, without a project path on the event", () => {
+    const projectPath = 'remote:conn-b:/work/app'
+    useChatStore.getState().handleAgentEvent({ type: 'session_activity', activity: {
+      sessionId: 'b-own', projectPath, status: 'streaming', provider: 'codex', pendingCount: 0, pendingReason: { en: null, zh: null },
+    } })
+    expect(useChatStore.getState().projectSessions[projectPath]._sessions['b-own']).toMatchObject({ status: 'streaming', _historyHydrated: false })
+  })
 })
 
 describe('hasPendingInteraction', () => {

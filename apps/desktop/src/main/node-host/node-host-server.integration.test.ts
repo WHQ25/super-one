@@ -56,6 +56,14 @@ import { createDesktopTerminalsPort } from './desktop-terminals-port'
 import { TerminalManager } from '../terminal/terminal-manager'
 import { runWindowControl } from '../session/control-context'
 import { mapNodeSessionEvents } from '@superone/shared/node-session-event-map'
+import { createDesktopTopicHub, publishHubEvent, type HubEventPublishContext } from '../stream/desktop-topics'
+import { LocalTopicRecovery } from '../stream/topic-recovery'
+import { createDesktopTopicNotices } from './desktop-topic-notices'
+import { bindSessionListNotifications } from '../session-list-notifications'
+import { notifyProjectList, notifySessionList, watchProjectList } from '../session-list-watch'
+import { RemoteSessionFeed } from '../environment/remote-session-feed'
+import { remoteListObserver, type SessionActivityEvent } from '../environment/remote-list-observer'
+import { remoteProjectKey } from '@superone/shared/remote-resource-key'
 
 const dirs: string[] = []
 const hosts: DesktopNodeHost[] = []
@@ -589,6 +597,92 @@ describe('DesktopNodeHost visibility', () => {
     expect(store.rows.get('own-session')?.controller).toBeNull()
     await client.rpc('session.close', { sessionId: 'own-session', leaseId: lease.leaseId, generation: lease.generation })
     expect(sessions.live.has('own-session')).toBe(false)
+  })
+})
+
+/**
+ * B's topics as its app publishes them: list changes from its database writes
+ * (`bindSessionListNotifications`, `watchProjectList`) and each session's
+ * sidebar activity, served to phones and controllers as topic notices.
+ */
+function desktopTopics() {
+  const hub = createDesktopTopicHub()
+  let context!: HubEventPublishContext
+  let notices!: ReturnType<typeof createDesktopTopicNotices>
+  const sessions = new Map<string, unknown>()
+  const unbind = [
+    bindSessionListNotifications(() => {}, event => publishHubEvent(hub, { event, source: 'list' }, context)),
+    watchProjectList(() => publishHubEvent(hub, { event: { type: 'project_list_changed' }, source: 'list' }, context)),
+  ]
+  return {
+    deps: { topicNotices: { open: (input) => {
+      notices ??= createDesktopTopicNotices(hub, context.recovery!, context.localEnvironmentId)
+      return notices.open(input)
+    } } } satisfies Partial<DesktopDomainDeps>,
+    bind(environmentId: string) {
+      context = { localEnvironmentId: environmentId, recovery: new LocalTopicRecovery(environmentId, () => null),
+        getSession: (id) => sessions.get(id) as ReturnType<HubEventPublishContext['getSession']>, spawnParentOf: () => null }
+    },
+    /** B's window drives one of its sessions: its row on the list shows the turn. */
+    activity(session: { id: string; projectPath: string; status: 'idle' | 'streaming' }, event: AgentEvent) {
+      sessions.set(session.id, { ephemeral: false, snapshot: { id: session.id, projectPath: session.projectPath, status: session.status, harnessId: 'claude', messages: [] },
+        activityStatus: () => session.status, seenCompletedMessageId: null, realtimeActive: false, getPendingInteractions: () => [] })
+      publishHubEvent(hub, { event, source: 'session', sessionId: session.id }, context)
+    },
+    close: () => { for (const stop of unbind) stop() },
+  }
+}
+
+describe('DesktopNodeHost live session list', () => {
+  it("keeps a controller's list of B live for what B's window does, from the topics phones use", async () => {
+    const topics = desktopTopics()
+    const { host, store, projectDir, connectionId, client } = await pairedDesktops(fakeCatalog(), topics.deps)
+    topics.bind(host.identity.environmentId)
+    try {
+      // A follows B's list as `EnvironmentHost.watchSessionList` does.
+      const gateway = new RemoteEnvironmentGateway(client)
+      await gateway.getDescriptor()
+      const environmentId = host.identity.environmentId
+      const feed = new RemoteSessionFeed({
+        head: () => gateway.eventHeadSequence(),
+        subscribe: (afterSequence, signal, handlers) => gateway.subscribeEvents({ environmentId, afterSequence, topics: handlers.interest.current(), signal, ...handlers }),
+      }, environmentId)
+      const changed: Array<string | undefined> = []
+      const projects = vi.fn()
+      const activity: SessionActivityEvent[] = []
+      await feed.observe(remoteListObserver(connectionId, { sessionListChanged: key => changed.push(key), projectsChanged: projects, activity: event => activity.push(event) }))
+      await vi.waitFor(() => expect(changed).toEqual([undefined]))
+      const key = remoteProjectKey(connectionId, projectDir)
+      changed.length = 0
+
+      // B's window creates, renames and archives a session A never touched.
+      store.createRow({ sessionId: 'b-own', projectPath: projectDir, cwd: projectDir, title: 'New session' })
+      notifySessionList(projectDir)
+      store.rows.set('b-own', { ...store.rows.get('b-own')!, title: 'Renamed on B' })
+      notifySessionList(projectDir)
+      await vi.waitFor(() => expect(changed).toEqual([key, key]))
+      expect((await gateway.sessions.list({ environmentId, projectId: 'p1' }, { limit: 50, offset: 0 }))).toEqual([expect.objectContaining({ sessionId: 'b-own', title: 'Renamed on B' })])
+      store.rows.set('b-own', { ...store.rows.get('b-own')!, isHidden: true })
+      notifySessionList(projectDir)
+      await vi.waitFor(() => expect(changed).toEqual([key, key, key]))
+
+      // B's window runs it: A's sidebar shows the turn, under A's key for the project.
+      topics.activity({ id: 'b-own', projectPath: projectDir, status: 'streaming' }, { type: 'status_change', status: 'streaming', sessionId: 'b-own' } as AgentEvent)
+      await vi.waitFor(() => expect(activity.at(-1)?.activity).toMatchObject({ sessionId: 'b-own', projectPath: key, status: 'streaming' }))
+
+      // A controller's own create is heard once, from the same notices.
+      const created = await client.rpc<{ sessionId: string }>('session.create', { projectId: 'p1', harnessId: 'claude' })
+      notifySessionList(projectDir)
+      await vi.waitFor(() => expect(changed).toHaveLength(4))
+      expect(store.rows.has(created.sessionId)).toBe(true)
+
+      notifyProjectList()
+      await vi.waitFor(() => expect(projects).toHaveBeenCalledTimes(2))
+      expect(changed).toEqual([key, key, key, key])
+      feed.close()
+    } finally {
+      topics.close()
+    }
   })
 })
 

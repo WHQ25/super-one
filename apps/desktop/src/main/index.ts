@@ -1781,8 +1781,11 @@ function attachEnvironmentStatusBridge(host: EnvironmentHost): void {
   // Remote node turns: map session.events → AgentEvent and stream into chat.
   host.setAgentEventSink((event) => sessionEvents.publish({ event, source: 'remote-node' }))
   host.setFollowListener((ref, followed) => rendererInterest.follow(ref, followed))
-  // Sessions another client creates, renames or removes on a machine show up here.
-  host.onSessionListChanged(() => safeSend(AgentIpcChannels.SESSIONS_CHANGED))
+  // Sessions and projects another client creates, renames or removes on a machine show up here.
+  host.onSessionListChanged((_connectionId, projectKey) => safeSend(AgentIpcChannels.SESSIONS_CHANGED, projectKey))
+  host.onProjectListChanged((connectionId) => safeSend(AgentIpcChannels.ENVIRONMENT_PROJECTS_CHANGED_EVENT, connectionId))
+  // A machine's sidebar summaries (running, read) of sessions this desktop does not follow.
+  host.onRemoteSessionActivity((event) => rendererAgentEventTransport.push(event))
   // A remote session whose missed events are gone: the chat reads its snapshot again.
   host.onRemoteSessionResync((target) => safeSend(AgentIpcChannels.ENVIRONMENT_SESSION_RESYNC_EVENT, target))
   // Auto-connect desired remotes + network-online edge wake.

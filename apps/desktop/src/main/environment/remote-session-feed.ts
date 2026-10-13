@@ -1,4 +1,4 @@
-import type { EnvironmentEventEnvelope, SessionStreamFrame, TopicInterest, TopicSubscribeInput } from '@superone/shared/environment'
+import type { EnvironmentEventEnvelope, SessionStreamFrame, TopicInterest, TopicNoticeFrame, TopicSubscribeInput } from '@superone/shared/environment'
 import { SESSION_LIST_EVENT_TYPES, topicKey, type TopicRef } from '@superone/shared/environment/topics'
 import type { RpcStreamHandlers } from '@superone/shared/environment/rpc-connection'
 import { RemoteTopicFollowers, type RemoteTopicStream } from './remote-topic-followers'
@@ -31,6 +31,21 @@ export interface RemoteSessionListener {
   resync?(): void
 }
 
+/**
+ * What a session-list observer hears from a node. A desktop node pushes its
+ * list topics as notices (every create, rename, flag, tag, removal and
+ * sidebar activity, whoever made it); a CLI node's `sessionList` topic is its
+ * durable list events.
+ */
+export interface RemoteListObserver {
+  /** A durable session-list event (`SESSION_LIST_EVENT_TYPES`), from a node that pushes no list notices. */
+  event?(envelope: EnvironmentEventEnvelope): void
+  /** A `sessionList` or `projects` notice: change events, or a snapshot that stands in for missed ones. */
+  notice?(frame: TopicNoticeFrame): void
+}
+
+const LIST_NOTICE_KINDS: ReadonlySet<string> = new Set(['sessionList', 'projects'])
+
 interface Follower {
   listener: RemoteSessionListener
   /** Version the follower starts above; null while its barrier is read, with its events held. */
@@ -42,8 +57,8 @@ interface Follower {
  * One pushed event stream per connected node, shared by everything on this
  * desktop that follows a session there (chat, routed phones, collaboration)
  * or watches its session list. The stream carries only the union of their
- * interests: the `sessionList` topic while anyone observes, and each session
- * someone follows, counted per follower. A follower joins at a barrier —
+ * interests: the `sessionList` and `projects` topics while anyone observes,
+ * and each session someone follows, counted per follower. A follower joins at a barrier —
  * usually the version of a snapshot it reads once the node has its topic,
  * with its events held meanwhile — and gets the session's events above it, so
  * nothing is missed or applied twice however far behind the node the shared
@@ -51,8 +66,9 @@ interface Follower {
  */
 export class RemoteSessionFeed {
   private readonly followers = new Map<string, Set<Follower>>()
-  /** Called with every session-list event (`SESSION_LIST_EVENT_TYPES`). */
-  private readonly observers = new Set<(envelope: EnvironmentEventEnvelope) => void>()
+  private readonly observers = new Set<RemoteListObserver>()
+  /** The node pushes `sessionList` notices, which cover its durable list events. */
+  private listNotices = false
   private readonly watchers = new Set<(topics: TopicRef[]) => Promise<void>>()
   private readonly abort = new AbortController()
   private started: Promise<void> | null = null
@@ -105,8 +121,8 @@ export class RemoteSessionFeed {
     return unfollow
   }
 
-  /** Calls `observer` with every session-list event the stream reads, until the feed ends. */
-  async observe(observer: (envelope: EnvironmentEventEnvelope) => void): Promise<() => void> {
+  /** Tells `observer` every session-list and project change the stream reads, until the feed ends. */
+  async observe(observer: RemoteListObserver): Promise<() => void> {
     if (this.failure) throw this.failure
     const added = this.observers.size === 0
     this.observers.add(observer)
@@ -134,7 +150,7 @@ export class RemoteSessionFeed {
   private topics(): TopicRef[] {
     const environmentId = this.environmentId
     return [...new Map([
-      ...(this.observers.size > 0 ? [{ kind: 'sessionList' as const, environmentId }] : []),
+      ...(this.observers.size > 0 ? [{ kind: 'sessionList' as const, environmentId }, { kind: 'projects' as const, environmentId }] : []),
       ...[...this.followers.keys()].map((sessionId) => ({ kind: 'session' as const, environmentId, sessionId })),
       ...this.native.topics(),
     ].map(topic => [topicKey(topic), topic])).values()]
@@ -168,6 +184,12 @@ export class RemoteSessionFeed {
     }
   }
 
+  private notice(frame: TopicNoticeFrame): void {
+    if (frame.topic.environmentId !== this.environmentId || !LIST_NOTICE_KINDS.has(frame.topic.kind)) return
+    if (frame.topic.kind === 'sessionList') this.listNotices = true
+    for (const observer of [...this.observers]) observer.notice?.(frame)
+  }
+
   private async run(after: string): Promise<void> {
     try {
       const handlers = {
@@ -177,12 +199,12 @@ export class RemoteSessionFeed {
         onFrame: (frame: SessionStreamFrame) => this.native.frame(frame),
         onTerminal: (event: Parameters<NonNullable<RpcStreamHandlers['onTerminal']>>[0]) => this.native.terminal(event),
         onDraft: (event: Parameters<NonNullable<RpcStreamHandlers['onDraft']>>[0]) => this.native.draft(event),
-        onTopic: (frame: Parameters<NonNullable<RpcStreamHandlers['onTopic']>>[0]) => this.native.topic(frame),
+        onTopic: (frame: TopicNoticeFrame) => { this.notice(frame); this.native.topic(frame) },
       }
       for await (const envelope of this.source.subscribe(after, this.abort.signal, handlers)) {
         if (envelope.aggregateType !== 'session') continue
-        if (SESSION_LIST_EVENT_TYPES.has(envelope.eventType)) {
-          for (const observer of [...this.observers]) observer(envelope)
+        if (!this.listNotices && SESSION_LIST_EVENT_TYPES.has(envelope.eventType)) {
+          for (const observer of [...this.observers]) observer.event?.(envelope)
         }
         for (const follower of [...(this.followers.get(envelope.aggregateId) ?? [])]) this.deliver(follower, envelope)
       }

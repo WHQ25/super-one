@@ -8,9 +8,13 @@ export interface PresenceSessionSource { onSession(handler: (session: Session) =
 export class PresenceCoordinator {
   private readonly unsubBySession = new Map<string, () => void>()
   private readonly detachSource: () => void
+  /** The paired name of a controller desktop holding a lease; null for this desktop's own holders. */
+  private controllerLabel: (holderClientId: string) => string | null = () => null
   constructor(source: PresenceSessionSource, private readonly transport: PresenceTransport) {
     this.detachSource = source.onSession(session => this.attach(session))
   }
+  /** Name controller desktops' leases once this desktop's domain (and its pairings) is open. */
+  labelControllers(label: (holderClientId: string) => string | null): void { this.controllerLabel = label }
   dispose(): void {
     this.detachSource()
     for (const unsub of this.unsubBySession.values()) unsub()
@@ -22,8 +26,9 @@ export class PresenceCoordinator {
     if (session.lease.current) this.publish(session, session.lease.current)
   }
   private publish(session: Session, lease: import('@superone/shared/environment').ControlLease | null): void {
+    const controllerLabel = lease && this.controllerLabel(lease.holderClientId)
     this.transport.broadcastToRenderer({ type: 'session_control_changed', sessionId: session.id,
-      projectPath: session.projectPath, lease, harnessId: session.snapshot.harnessId,
+      projectPath: session.projectPath, lease, ...(controllerLabel ? { controllerLabel } : {}), harnessId: session.snapshot.harnessId,
       acpAgentId: session.snapshot.acpAgentId, worktreePath: session.snapshot.worktreePath, gitBranch: session.snapshot.gitBranch })
   }
   private handle(session: Session, event: SessionLifecycleEvent): void {

@@ -45,6 +45,16 @@ describe('native session control presence', () => {
       f.presence.dispose()
     } finally { vi.useRealTimers() }
   })
+  it('names the controller desktop that takes over from the window, and only it', () => {
+    const f = fixture()
+    f.presence.labelControllers(holder => holder === 'controller-a' ? 'Desktop A' : null)
+    runWindowControl(7, () => f.lease.assertMutation())
+    expect(f.broadcast.mock.lastCall?.[0]).not.toHaveProperty('controllerLabel')
+    const grant = f.authority.leases.acquire({ resource: f.lease.resource, holderClientId: 'controller-a', yields: 'holder', ttlMs: 60_000 })
+    expect(f.broadcast).toHaveBeenLastCalledWith(expect.objectContaining({ lease: grant, controllerLabel: 'Desktop A' }))
+    expect(f.lease.isExternal).toBe(true)
+    f.presence.dispose()
+  })
   it('retires a disposed session and the source without keeping control listeners', () => {
     const f = fixture()
     acquirePhoneControl(f.authority, 's', 'a')

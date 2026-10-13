@@ -2,12 +2,11 @@ import { randomUUID } from 'node:crypto'
 import { ADMIN_PAIRING_SCOPES, PROTOCOL_GENERATION, type ExecutionEnvironmentDescriptor, type TopicSubscribeInput, type RpcCommandEnvelope } from '@superone/shared/environment'
 import { RpcConnection, type RpcStreamHandlers } from '@superone/shared/environment/rpc-connection'
 import type { DetailUpdate } from '@superone/shared/environment/detail'
-import { bindControlActor } from '@superone/runtime/lease'
 import { isNodeMutatingCall } from '@superone/runtime/server/rpc-mutating-methods'
 import type { RpcStreams } from '@superone/runtime/server/rpc-context'
 import { ConnectionDelivery, deliveryPolicy } from '@superone/runtime/stream'
 import type { DesktopDomain } from '../node-host/desktop-domain'
-import { currentControlScope } from '../session/control-context'
+import { controlActorFor, currentControlScope } from '../session/control-context'
 import { EnvironmentRpcClient, type TopicStream } from './environment-rpc-client'
 
 /** The local gateway speaks the same RPC contract directly to its desktop domain. */
@@ -22,11 +21,7 @@ export class InProcessRpcClient extends EnvironmentRpcClient {
     this.connection = new RpcConnection((message) => {
       const request = message as RpcCommandEnvelope
       const clientSessionId = currentControlScope()?.clientSessionId ?? 'ipc:0'
-      const actor = clientSessionId.startsWith('phone:') || clientSessionId.startsWith('ipc:')
-        ? bindControlActor(domain.leases, {
-          clientSessionId, holderClientId: `desktop:${domain.identity.environmentId}`,
-          delegate: clientSessionId.replace(/^ipc:/, 'window:'), yields: clientSessionId.startsWith('ipc:') ? 'any' : 'none',
-        }) : domain.leases
+      const actor = controlActorFor(domain.leases, domain.identity.environmentId, clientSessionId)
       void domain.dispatchRpc(request.method, request.payload, {
         ...domain.clientContext(), leases: actor, streams: this.streams,
         requestId: request.requestId, idempotencyKey: request.idempotencyKey,

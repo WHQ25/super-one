@@ -2,9 +2,21 @@ import { describe, expect, it, vi } from 'vitest'
 import { controlLeaseAuthority, acquirePhoneControl } from '../control-lease.test-fixtures'
 import { SessionLease } from './session-lease'
 import { Session } from './session'
-import { runFencedSessionControl, runRpcControl, runWindowControl } from './control-context'
+import { controlActorFor, runFencedSessionControl, runRpcControl, runWindowControl } from './control-context'
 
 describe('desktop session leases', () => {
+  it('binds the window and phones to the desktop holder and leaves a controller its own', () => {
+    const { environmentId, leases } = controlLeaseAuthority()
+    const resource = { environmentId, sessionId: 's' }
+    const window = controlActorFor(leases, environmentId, 'ipc:1').acquire({ resource, holderClientId: 'ipc:1', ttlMs: 60_000 })
+    expect(window).toMatchObject({ holderClientId: 'desktop:env', delegate: 'window:1' })
+    // The window yields; a phone then takes over and does not yield to the controller.
+    const phone = controlActorFor(leases, environmentId, 'phone:a').acquire({ resource, holderClientId: 'phone:a', ttlMs: 60_000 })
+    expect(phone).toMatchObject({ holderClientId: 'desktop:env', delegate: 'phone:a' })
+    expect(controlActorFor(leases, environmentId, 'node:c1')).toBe(leases)
+    expect(() => leases.acquire({ resource, holderClientId: 'node:c1', ttlMs: 60_000 })).toThrow()
+  })
+
   it('passes the original OAuth proof into async backend work and refuses it after takeover', async () => {
     const authority = controlLeaseAuthority(), lease = new SessionLease('s', authority)
     let resume!: () => void

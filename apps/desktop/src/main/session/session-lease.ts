@@ -1,6 +1,6 @@
 import type { ControlLease, SessionRef } from '@superone/shared/environment'
-import { bindControlActor, type ControlLeaseService } from '@superone/runtime/lease'
-import { currentControlScope } from './control-context'
+import type { ControlLeaseService } from '@superone/runtime/lease'
+import { controlActorFor, currentControlScope } from './control-context'
 import { SessionLockedError, type SendProviderOrigin, type SessionLifecycleEvent } from './types'
 
 export interface SessionLeaseAuthority { environmentId: string; leases: ControlLeaseService }
@@ -65,13 +65,7 @@ export class SessionLease {
 
   private actor(clientSessionId: string) {
     if (!this.authority) throw new Error('desktop control leases are not ready')
-    if (!clientSessionId.startsWith('phone:') && !clientSessionId.startsWith('ipc:')) return this.authority.leases
-    return bindControlActor(this.authority.leases, {
-      clientSessionId, holderClientId: `desktop:${this.authority.environmentId}`,
-      delegate: clientSessionId.startsWith('ipc:') ? clientSessionId.replace(/^ipc:/, 'window:') : clientSessionId,
-      // The window steps aside for its phones and for controller desktops.
-      yields: clientSessionId.startsWith('ipc:') ? 'any' : 'none',
-    })
+    return controlActorFor(this.authority.leases, this.authority.environmentId, clientSessionId)
   }
 
   /** Only a host that just created a new resource may seed its request's grant. */

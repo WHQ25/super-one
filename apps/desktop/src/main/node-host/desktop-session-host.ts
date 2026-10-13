@@ -440,14 +440,16 @@ export class DesktopSessionHost extends DesktopSessionReads<RemoteControlledSess
     session.emitHostEvent({ type: 'remote_control_changed', released: true })
   }
 
-  admitControl(sessionId: string, controllerClientSessionId: string, opts: { reclaim: boolean }): void {
+  admitControl(sessionId: string, controllerClientSessionId: string, opts: { reclaim: boolean }): (() => void) | void {
     const row = this.deps.store.get(sessionId)
     if (!row?.controller.released) return
     if (!opts.reclaim) throw controlReleasedError()
-    const controller: RemoteControllerRecord = { ...row.controller, released: false }
-    this.deps.store.setController(sessionId, controller)
-    const session = this.live({ ...row, controller })
-    session.emitHostEvent({ type: 'remote_control_changed', released: false })
+    return () => {
+      const controller: RemoteControllerRecord = { ...row.controller, released: false }
+      this.deps.store.setController(sessionId, controller)
+      const session = this.live({ ...row, controller })
+      session.emitHostEvent({ type: 'remote_control_changed', released: false })
+    }
   }
 
   rebindHostActionController(sessionId: string, controllerClientSessionId: string): unknown {

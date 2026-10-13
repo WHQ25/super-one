@@ -501,6 +501,26 @@ describe('DesktopNodeHost control takeover', () => {
     expect(phoneHeld.lease.phoneDeviceId).toBe('p')
   })
 
+  it("leaves B's window its lease when B took the session back and the controller does not reclaim", async () => {
+    const { host, sessions, client } = await pairedDesktops()
+    const created = await client.rpc<{ sessionId: string }>('session.create', { projectId: 'p1', harnessId: 'claude' })
+    const live = sessions.live.get(created.sessionId)!
+    host.sessions.releaseControl(created.sessionId)
+    windowControl(live)
+    const held = live.lease.current!
+    expect(held.delegate).toBe('window:1')
+
+    await expect(client.rpc('session.acquireControl', { sessionId: created.sessionId, yields: true }))
+      .rejects.toMatchObject({ details: { reason: 'control_released' } })
+    expect(live.lease.current).toEqual(held)
+    windowControl(live)
+
+    // An explicit reconnect takes it over.
+    const reclaimed = await client.rpc<ControlLease>('session.acquireControl', { sessionId: created.sessionId, reclaim: true })
+    expect(live.lease.current).toMatchObject({ leaseId: reclaimed.leaseId, generation: reclaimed.generation })
+    expect(await client.rpc('session.get', { sessionId: created.sessionId })).not.toHaveProperty('controlReleased')
+  })
+
   it("serves B's terminals to a controller under its own writer identity", async () => {
     const terminals = scriptedTerminals()
     const { host, projectDir, client } = await pairedDesktops(fakeCatalog(), terminals.deps)

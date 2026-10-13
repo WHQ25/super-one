@@ -3344,6 +3344,15 @@ export interface CodexMcpOauthLoginResult {
   authorizationUrl?: string
 }
 
+/**
+ * A remote node's MCP sign-in, waiting on the node's loopback redirect: the
+ * client opens the URL and finishes with `codex.completeMcpOauth`.
+ */
+export interface CodexMcpOauthLoginStart {
+  loginId: string
+  authorizationUrl: string
+}
+
 export type CodexMcpOauthClientRegistration = 'auto' | 'cimd' | 'dcr'
 
 export interface CodexMcpOauthLoginOptions {

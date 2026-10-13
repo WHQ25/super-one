@@ -229,9 +229,10 @@ export class CodexAdminService {
     serverName: string,
     apiProviderId?: string | null,
     options?: CodexMcpOauthLoginOptions,
+    openUrl?: (url: string) => void,
   ): Promise<CodexMcpOauthLoginResult> {
     return this.withClient(projectId, apiProviderId, (client) =>
-      loginMcpServerOauth(client, serverName, undefined, 180_000, options),
+      loginMcpServerOauth(client, serverName, openUrl, 180_000, options),
     )
   }
 

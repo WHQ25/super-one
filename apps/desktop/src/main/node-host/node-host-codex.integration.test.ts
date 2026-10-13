@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process'
+import { createServer } from 'node:http'
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -111,6 +112,42 @@ describe('DesktopNodeHost codex', () => {
     expect(codex.service.accounts.start).toHaveBeenCalledWith('chatgptDeviceCode', undefined)
     expect(await client.rpc('codex.accountLoginCancel', { loginId: 'login-1' })).toEqual({ ok: true })
     expect(codex.service.cancelAccountLogin).toHaveBeenCalledWith('login-1')
+  })
+
+  it("hands a controller the MCP authorization URL and forwards the browser's callback to Codex on B", async () => {
+    const { codex, projectDir, client } = await pairedWithCodex()
+    // Codex's loopback listener on B; its completion notification follows the callback.
+    let completed!: () => void
+    const received: string[] = []
+    const listener = createServer((req, res) => { received.push(req.url!); res.end('done'); completed() })
+    await new Promise<void>((r) => listener.listen(0, '127.0.0.1', r))
+    const port = (listener.address() as { port: number }).port
+    const authorizationUrl = `https://mcp.example/authorize?state=s1&redirect_uri=${encodeURIComponent(`http://127.0.0.1:${port}/callback`)}`
+    codex.service.loginMcpServerOauth.mockImplementation((async (_path: string, _name: string, _provider: string | null, openUrl?: (url: string) => void) => {
+      openUrl?.(authorizationUrl)
+      await new Promise<void>((r) => { completed = r })
+      return { success: true }
+    }) as typeof codex.service.loginMcpServerOauth)
+
+    try {
+      const started = await client.rpc<{ loginId: string; authorizationUrl: string }>('codex.loginMcpOauth', { projectId: 'p1', serverName: 'linear' })
+      expect(started).toEqual({ loginId: expect.any(String), authorizationUrl })
+      expect(codex.service.loginMcpServerOauth).toHaveBeenCalledWith(projectDir, 'linear', null, expect.any(Function), {})
+
+      const callback = `http://127.0.0.1:${port}/callback?code=c1&state=s1`
+      for (const wrong of [callback.replace(String(port), String(port + 1)), callback.replace('state=s1', 'state=other')]) {
+        await expect(client.rpc('codex.completeMcpOauth', { loginId: started.loginId, callbackUrl: wrong })).rejects.toMatchObject({ code: 'invalid_argument' })
+      }
+      expect(await client.rpc('codex.completeMcpOauth', { loginId: started.loginId, callbackUrl: callback })).toEqual({ success: true })
+      expect(received).toEqual(['/callback?code=c1&state=s1'])
+      await expect(client.rpc('codex.completeMcpOauth', { loginId: started.loginId })).rejects.toMatchObject({ code: 'not_found' })
+    } finally {
+      listener.close()
+    }
+
+    // A sign-in that fails before Codex has a URL answers its outcome at once.
+    codex.service.loginMcpServerOauth.mockResolvedValueOnce({ success: false, error: 'Codex returned no authorization URL' } as never)
+    expect(await client.rpc('codex.loginMcpOauth', { projectId: 'p1', serverName: 'linear' })).toEqual({ success: false, error: 'Codex returned no authorization URL' })
   })
 
   it("lists and installs B's Codex plugins", async () => {

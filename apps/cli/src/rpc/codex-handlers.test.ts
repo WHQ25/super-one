@@ -3,6 +3,7 @@ import { mkdtempSync, writeFileSync, chmodSync, rmSync, mkdirSync } from 'node:f
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { EventEmitter } from 'node:events'
+import { createServer } from 'node:http'
 import { PassThrough } from 'node:stream'
 import type { ChildProcessWithoutNullStreams } from 'node:child_process'
 import { dispatchCodexRpc, type CodexRpcContext } from './codex-handlers'
@@ -355,6 +356,47 @@ describe('dispatchCodexRpc', () => {
       userCode: 'ABCD-EFGH',
     })
     await pump()
+  })
+
+  it('codex.loginMcpOauth hands back the URL and completes on the forwarded callback', async () => {
+    let child!: FakeChild
+    // Codex's loopback listener on the node: the callback completes the sign-in.
+    const listener = createServer((req, res) => {
+      res.end('done')
+      child.stdout.write(`${JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'mcpServer/oauthLogin/completed',
+        params: { name: 'linear', success: new URL(req.url!, 'http://x').searchParams.get('code') === 'c1' },
+      })}\n`)
+    })
+    await new Promise<void>((r) => listener.listen(0, '127.0.0.1', r))
+    const redirect = `http://127.0.0.1:${(listener.address() as { port: number }).port}/callback`
+    const authorizationUrl = `https://mcp.example/authorize?state=s1&redirect_uri=${encodeURIComponent(redirect)}`
+    const spawnFn: CodexSpawnFn = vi.fn(() => {
+      child = createFakeChild()
+      attachAutoResponder(child, { 'mcpServer/oauth/login': () => ({ authorizationUrl }) })
+      return child as unknown as ChildProcessWithoutNullStreams
+    })
+    const ctx: CodexRpcContext = {
+      nodeHome: dir,
+      client: fakeClient(['node:admin']),
+      projects: fakeProjects(dir),
+      harnesses: fakeHarnesses(bin),
+      providers: null as never,
+      spawnFn,
+    }
+
+    try {
+      const started = await dispatchCodexRpc('codex.loginMcpOauth', { projectId: 'p1', serverName: 'linear' }, ctx)
+      expect(started?.result).toEqual({ loginId: expect.any(String), authorizationUrl })
+      const { loginId } = started!.result as { loginId: string }
+      const other = await dispatchCodexRpc('codex.completeMcpOauth', { loginId }, { ...ctx, client: { ...fakeClient(['node:admin']), clientSessionId: 'c2' } })
+      expect(other?.error?.code).toBe('not_found')
+      const done = await dispatchCodexRpc('codex.completeMcpOauth', { loginId, callbackUrl: `${redirect}?code=c1&state=s1` }, ctx)
+      expect(done?.result).toMatchObject({ success: true, authorizationUrl })
+    } finally {
+      listener.close()
+    }
   })
 
   it('codex.plugins.list|install smoke with mocked app-server', async () => {

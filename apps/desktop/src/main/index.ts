@@ -2635,7 +2635,7 @@ function registerIpcHandlers(): void {
     options?: CodexMcpOauthLoginOptions,
   ) => {
     if (parseRemoteProjectKey(projectPath)) {
-      // Node starts OAuth; browser open stays on desktop (result may include URL later via host_action).
+      // The node runs Codex's sign-in; the authorization page opens in this desktop's browser.
       const { getEnvironmentHost, remoteCodexLoginMcpOauth } = await import('./environment')
       return remoteCodexLoginMcpOauth(
         getEnvironmentHost(),
@@ -2643,6 +2643,7 @@ function registerIpcHandlers(): void {
         serverName,
         apiProviderId ?? null,
         options,
+        (url) => shell.openExternal(url),
       )
     }
     return codexService.loginMcpServerOauth(

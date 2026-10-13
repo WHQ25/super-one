@@ -37,9 +37,9 @@ function desktopCodexPort({ service, plugins, marketplace }: DesktopCodexService
     getServerDiagnostics: (projectId, apiProviderId) => service.getServerDiagnostics(path(projectId), apiProviderId),
     getConfigRequirements: (projectId, apiProviderId) => service.getConfigRequirements(path(projectId), apiProviderId),
     consumeRateLimitReset: (projectId, apiProviderId, creditId) => service.consumeRateLimitReset(path(projectId), apiProviderId, creditId),
-    // The authorization page is not opened on this desktop's screen.
-    loginMcpOauth: (projectId, serverName, apiProviderId, options) =>
-      service.loginMcpServerOauth(path(projectId), serverName, apiProviderId, undefined, options),
+    // The authorization page opens on the client's screen, not this desktop's.
+    loginMcpOauth: (projectId, serverName, apiProviderId, options, openUrl) =>
+      service.loginMcpServerOauth(path(projectId), serverName, apiProviderId, openUrl, options),
     detectExternalAgent: (projectId, apiProviderId) => service.detectExternalAgentConfig(path(projectId), apiProviderId),
     importExternalAgent: (projectId, items, apiProviderId) => service.importExternalAgentConfig(path(projectId), items, apiProviderId),
     // Plugins and marketplaces follow the window's, which are not per API provider.

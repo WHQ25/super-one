@@ -4,11 +4,13 @@
  * node over its own Codex services.
  *
  * The client is not at the node's screen: account sign-in is a device code
- * the client shows, and nothing here returns key material (`setAuth` writes a
- * key and answers with its status only). Methods that need the binary fail
- * with `failed_precondition` while it is not ready.
+ * the client shows, an MCP sign-in hands the client its authorization URL and
+ * takes back the browser's loopback callback, and nothing here returns key
+ * material (`setAuth` writes a key and answers with its status only). Methods
+ * that need the binary fail with `failed_precondition` while it is not ready.
  */
 
+import { randomUUID } from 'node:crypto'
 import { OPERATION_SCOPES, type AuthScope } from '@superone/shared/environment'
 import type { CodexAccount, CodexManagedLoginStart } from '@superone/shared/codex-accounts'
 import type {
@@ -23,11 +25,13 @@ import type {
   CodexMarketplaceUpgradeResult,
   CodexMcpOauthLoginOptions,
   CodexMcpOauthLoginResult,
+  CodexMcpOauthLoginStart,
   CodexRateLimitResetOutcome,
   CodexRateLimits,
   CodexServerDiagnostics,
   CodexSetAuthRequest,
 } from '@superone/shared/agent-types'
+import { validateLoopbackOAuthCallback } from '@superone/shared/oauth-loopback'
 import type { AuthenticatedClient } from './auth-service'
 import type { RpcResult } from './rpc-context'
 import { asRecord, mapThrown, optionalString, requireScopes } from './rpc-helpers'
@@ -48,7 +52,10 @@ export interface CodexAdminPort {
   getServerDiagnostics(projectId: string, apiProviderId: string | null): Promise<CodexServerDiagnostics | null>
   getConfigRequirements(projectId: string, apiProviderId: string | null): Promise<CodexConfigRequirements | null>
   consumeRateLimitReset(projectId: string, apiProviderId: string | null, creditId: string | null): Promise<CodexRateLimitResetOutcome | null>
-  loginMcpOauth(projectId: string, serverName: string, apiProviderId: string | null, options: CodexMcpOauthLoginOptions): Promise<CodexMcpOauthLoginResult>
+  /** Settles when Codex reports the sign-in; `openUrl` receives the authorization URL as soon as it exists. */
+  loginMcpOauth(
+    projectId: string, serverName: string, apiProviderId: string | null, options: CodexMcpOauthLoginOptions, openUrl: (url: string) => void,
+  ): Promise<CodexMcpOauthLoginResult>
   detectExternalAgent(projectId: string, apiProviderId: string | null): Promise<CodexExternalAgentItem[]>
   importExternalAgent(projectId: string, items: CodexExternalAgentItem[], apiProviderId: string | null): Promise<CodexExternalAgentImportResult | null>
   listPlugins(projectId: string, apiProviderId: string | null): Promise<unknown[]>
@@ -71,7 +78,7 @@ interface CodexMethod {
   /** `known`: the project must be registered here; `id`: only named. */
   project?: 'known' | 'id'
   binary?: true
-  run(p: Record<string, unknown>, codex: CodexAdminPort, projectId: string): unknown
+  run(p: Record<string, unknown>, codex: CodexAdminPort, projectId: string, client: AuthenticatedClient): unknown
 }
 
 function invalid(message: string): never {
@@ -93,6 +100,53 @@ function mcpOauthOptions(raw: Record<string, unknown>): CodexMcpOauthLoginOption
     ...(Array.isArray(raw.scopes) && raw.scopes.every((scope) => typeof scope === 'string') ? { scopes: raw.scopes as string[] } : {}),
     ...(typeof raw.timeoutSecs === 'number' && Number.isFinite(raw.timeoutSecs) && raw.timeoutSecs > 0 ? { timeoutSecs: raw.timeoutSecs } : {}),
   }
+}
+
+interface PendingMcpOauth {
+  clientSessionId: string
+  authorizationUrl: string
+  result: Promise<CodexMcpOauthLoginResult>
+}
+
+/** MCP sign-ins handed to a client, by login id; process-wide like the node's Codex services. */
+const pendingMcpOauth = new Map<string, PendingMcpOauth>()
+
+/** How long a settled sign-in waits for its client to collect the outcome. */
+const MCP_OAUTH_COLLECT_MS = 60_000
+
+/** Answers as soon as Codex has an authorization URL; a sign-in that fails before that answers its outcome. */
+async function startMcpOauth(
+  client: AuthenticatedClient,
+  login: (openUrl: (url: string) => void) => Promise<CodexMcpOauthLoginResult>,
+): Promise<CodexMcpOauthLoginStart | CodexMcpOauthLoginResult> {
+  let opened!: (url: string) => void
+  const authorization = new Promise<string>((resolve) => { opened = resolve })
+  const result = login((url) => opened(url))
+  const first = await Promise.race([authorization, result])
+  if (typeof first !== 'string') return first
+  const loginId = randomUUID()
+  pendingMcpOauth.set(loginId, { clientSessionId: client.clientSessionId, authorizationUrl: first, result })
+  const forget = () => { setTimeout(() => pendingMcpOauth.delete(loginId), MCP_OAUTH_COLLECT_MS).unref?.() }
+  result.then(forget, forget)
+  return { loginId, authorizationUrl: first }
+}
+
+/** Delivers the browser's callback to Codex's loopback listener, then answers the sign-in's outcome. */
+async function completeMcpOauth(client: AuthenticatedClient, loginId: string, callbackUrl: string | null): Promise<CodexMcpOauthLoginResult> {
+  const pending = pendingMcpOauth.get(loginId)
+  if (!pending || pending.clientSessionId !== client.clientSessionId) {
+    throw Object.assign(new Error('MCP sign-in not found'), { code: 'not_found' })
+  }
+  if (callbackUrl) {
+    let callback: URL
+    try { callback = validateLoopbackOAuthCallback(pending.authorizationUrl, callbackUrl) }
+    catch (err) { invalid((err as Error).message) }
+    // Codex's listener answers with a page; its completion notification carries the outcome.
+    const response = await fetch(callback, { redirect: 'error', signal: AbortSignal.timeout(10_000) })
+    await response.body?.cancel()
+  }
+  try { return await pending.result }
+  finally { pendingMcpOauth.delete(loginId) }
 }
 
 const provider = (p: Record<string, unknown>) => optionalString(p.apiProviderId)
@@ -143,7 +197,12 @@ const CODEX_METHODS: Readonly<Record<string, CodexMethod>> = {
   },
   'codex.loginMcpOauth': {
     scopes: admin, project: 'id',
-    run: (p, codex, projectId) => codex.loginMcpOauth(projectId, required(p, 'serverName', 'name'), provider(p), mcpOauthOptions(asRecord(p.options))),
+    run: (p, codex, projectId, client) => startMcpOauth(client, (openUrl) =>
+      codex.loginMcpOauth(projectId, required(p, 'serverName', 'name'), provider(p), mcpOauthOptions(asRecord(p.options)), openUrl)),
+  },
+  'codex.completeMcpOauth': {
+    scopes: admin,
+    run: (p, _codex, _projectId, client) => completeMcpOauth(client, required(p, 'loginId'), optionalString(p.callbackUrl)),
   },
   'codex.detectExternalAgent': {
     scopes: read, project: 'id',
@@ -216,7 +275,7 @@ export async function dispatchCodexRpc(method: string, payload: unknown, ctx: Co
     const projectId = handler.project ? required(p, 'projectId') : ''
     if (handler.project === 'known' && !ctx.projects?.get(projectId)) return { error: { code: 'not_found', message: 'project not found' } }
     if (handler.binary && !ctx.codex.isBinaryReady()) return { error: { code: 'failed_precondition', message: 'Codex binary not ready' } }
-    return { result: await handler.run(p, ctx.codex, projectId) }
+    return { result: await handler.run(p, ctx.codex, projectId, ctx.client) }
   } catch (err) {
     return mapThrown(err)
   }

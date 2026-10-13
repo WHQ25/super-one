@@ -96,6 +96,7 @@ export function listCodexMcpConfigs(cwd: string, opts?: CodexMcpOptions): McpSer
   return Array.from(merged.values())
 }
 
+/** A name for a server being written; existing entries are found by whatever key they have. */
 function assertServerName(name: string): void {
   if (!name || name.length > 128 || !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(name)) {
     throw Object.assign(new Error('invalid MCP server name'), { code: 'invalid_argument' })
@@ -148,7 +149,6 @@ export function toggleCodexMcpConfig(
   cwd: string,
   opts?: CodexMcpOptions,
 ): void {
-  assertServerName(name)
   const filePath = getCodexConfigPath(scope, cwd, opts)
   const data = readConfigFile(filePath)
   const mcpServers = data.mcp_servers as Record<string, TomlMcpServer> | undefined
@@ -165,7 +165,6 @@ export function deleteCodexMcpConfig(
   cwd: string,
   opts?: CodexMcpOptions,
 ): void {
-  assertServerName(name)
   const filePath = getCodexConfigPath(scope, cwd, opts)
   const data = readConfigFile(filePath)
   const mcpServers = data.mcp_servers as Record<string, TomlMcpServer> | undefined

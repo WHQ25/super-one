@@ -26,7 +26,7 @@ import {
   listCodexMcpConfigs,
   saveCodexMcpConfig,
   toggleCodexMcpConfig,
-} from './codex-config-service'
+} from './mcp-config-codex'
 
 beforeEach(() => {
   // Use the mocked home even when the test runner inherits CODEX_HOME.
@@ -217,12 +217,12 @@ describe('saveCodexMcpConfig', () => {
     expect(writeFileSyncMock).toHaveBeenCalledWith(
       join('/home/testuser', '.codex', 'config.toml'),
       expect.stringContaining('[mcp_servers.filesystem]'),
-      'utf-8',
+      'utf8',
     )
     expect(writeFileSyncMock).toHaveBeenCalledWith(
       join('/home/testuser', '.codex', 'config.toml'),
       expect.stringContaining('command = "npx"'),
-      'utf-8',
+      'utf8',
     )
   })
 
@@ -243,12 +243,12 @@ describe('saveCodexMcpConfig', () => {
     expect(writeFileSyncMock).toHaveBeenCalledWith(
       join('/project', '.codex', 'config.toml'),
       expect.stringContaining('url = "https://api.example.com/mcp"'),
-      'utf-8',
+      'utf8',
     )
     expect(writeFileSyncMock).toHaveBeenCalledWith(
       join('/project', '.codex', 'config.toml'),
       expect.stringContaining('Authorization = "Bearer token"'),
-      'utf-8',
+      'utf8',
     )
   })
 })
@@ -266,7 +266,7 @@ url = "https://mcp.linear.app/mcp"
     expect(writeFileSyncMock).toHaveBeenCalledWith(
       join('/home/testuser', '.codex', 'config.toml'),
       expect.stringContaining('enabled = false'),
-      'utf-8',
+      'utf8',
     )
   })
 
@@ -283,7 +283,7 @@ enabled = false
     expect(writeFileSyncMock).toHaveBeenCalledWith(
       join('/home/testuser', '.codex', 'config.toml'),
       expect.stringContaining('enabled = true'),
-      'utf-8',
+      'utf8',
     )
   })
 })
@@ -304,12 +304,12 @@ url = "https://developers.openai.com/mcp"
     expect(writeFileSyncMock).toHaveBeenCalledWith(
       join('/home/testuser', '.codex', 'config.toml'),
       expect.not.stringContaining('[mcp_servers.linear]'),
-      'utf-8',
+      'utf8',
     )
     expect(writeFileSyncMock).toHaveBeenCalledWith(
       join('/home/testuser', '.codex', 'config.toml'),
       expect.stringContaining('[mcp_servers.docs]'),
-      'utf-8',
+      'utf8',
     )
   })
 })

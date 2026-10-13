@@ -102,6 +102,7 @@ export function listClaudeMcpConfigs(cwd: string, opts?: ClaudeMcpOptions): McpS
   return results
 }
 
+/** A name for a server being written; existing entries are found by whatever key they have. */
 function assertServerName(name: string): void {
   if (!name || name.length > 128 || !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(name)) {
     throw Object.assign(new Error('invalid MCP server name'), { code: 'invalid_argument' })
@@ -190,7 +191,6 @@ export function toggleClaudeMcpConfig(
   cwd: string,
   opts?: ClaudeMcpOptions,
 ): void {
-  assertServerName(name)
   const filePaths =
     scope === 'user'
       ? [getUserConfigPath(opts)]
@@ -220,7 +220,6 @@ export function deleteClaudeMcpConfig(
   cwd: string,
   opts?: ClaudeMcpOptions,
 ): void {
-  assertServerName(name)
   const filePaths =
     scope === 'user'
       ? [getUserConfigPath(opts)]

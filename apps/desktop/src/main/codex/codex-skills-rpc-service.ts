@@ -82,7 +82,7 @@ export class CodexSkillsRpcService {
           if (!info) continue
           // mapSkill always sets sourcePath (it returns null when path is absent).
           // Normalize via resolve() so path-form variants (trailing slash, ./ )
-          // collapse — matching listSkillsFromDirs' resolve(skillDir) dedup key.
+          // collapse — matching the file listing's resolve(skillDir) dedup key.
           const key = resolve(info.sourcePath!)
           if (seen.has(key)) continue
           seen.add(key)

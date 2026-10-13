@@ -96,7 +96,7 @@ export interface McpbInstallMeta {
   version: string
   installedAt: string
   provider: McpbProvider
-  scope: ResourceScope
+  scope: Extract<ResourceScope, 'user' | 'project'>
   cwd?: string
   manifestHash: string
   userConfigPlain: McpbUserConfigValues
@@ -116,7 +116,7 @@ export interface McpbPreview {
 export interface McpbInstallRequest {
   filePath: string
   provider: McpbProvider
-  scope: ResourceScope
+  scope: Extract<ResourceScope, 'user' | 'project'>
   cwd?: string
   userConfig: McpbUserConfigValues
   expectedManifestHash: string

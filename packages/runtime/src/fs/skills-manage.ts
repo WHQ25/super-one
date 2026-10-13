@@ -131,8 +131,8 @@ export function getClaudeSkillDirs(cwd: string, opts?: SkillsManageOptions): Ski
           dirs.push({
             dir: join(entry.installPath, 'skills'),
             scope: isUser ? 'user' : 'project',
+            // Prefixed, not builtin: the settings page shows these as plugin skills.
             namePrefix: `${pluginName}:`,
-            readOnly: true,
           })
         }
       }

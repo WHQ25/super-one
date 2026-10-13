@@ -26,10 +26,10 @@ import type { ArtifactZoneService } from '../workspace/artifact-zone'
 import { dispatchSessionArchiveRpc, SESSION_ARCHIVE_RPC_METHODS } from './session-archive-handlers'
 import { dispatchMcpAppsRpc, MCP_APPS_RPC_METHODS } from './mcp-apps-handlers'
 import { dispatchResourceRpc, RESOURCE_RPC_METHODS } from './resource-handlers'
-import { AUTOMATION_RPC_METHODS, dispatchAutomationRpc } from './automation-handlers'
+import { AUTOMATION_RPC_METHODS, dispatchAutomationRpc } from '@superone/runtime/server/rpc-automations'
 import { ARTIFACT_RPC_METHOD_SET, dispatchArtifactRpc } from './artifact-handlers'
 import { CODEX_RPC_METHODS, dispatchCodexRpc } from './codex-handlers'
-import { dispatchSessionProviderRpc, SESSION_PROVIDER_RPC_METHODS } from './session-provider-handlers'
+import { dispatchSessionProviderRpc, SESSION_PROVIDER_RPC_METHODS } from '@superone/runtime/server/rpc-session-providers'
 import { dispatchHarnessResourcesRpc, HARNESS_RESOURCES_RPC_METHODS } from './harness-resources-handlers'
 
 export type { RpcResult }

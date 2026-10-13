@@ -3,9 +3,9 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import Database from 'better-sqlite3'
-import { createSessionProviderStore } from '@superone/runtime/session'
-import { dispatchSessionProviderRpc } from './session-provider-handlers'
-import type { AuthenticatedClient } from '../auth/auth-service'
+import { createSessionProviderStore } from '../session/session-provider-store'
+import { dispatchSessionProviderRpc } from './rpc-session-providers'
+import type { AuthenticatedClient } from './auth-service'
 
 const dirs: string[] = []
 const dbs: Database.Database[] = []

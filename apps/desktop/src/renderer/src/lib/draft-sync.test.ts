@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useChatStore, isRemoteSession } from '@/stores/chat-store'
 import { createDefaultPerSessionState, createDefaultProjectState } from '@/stores/chat-store/defaults'
 import { useDraftsStore } from '@/stores/drafts'
+import { useAppStore } from '@/stores/app'
 import { applyDraftChange, flushDraftBeforeOpen, startDraftAutosave } from './draft-sync'
 import { _resetDraftSessionMap } from '@/stores/chat-store/helpers/draft-promote'
 import type { DraftListEntry } from '@superone/shared/environment/draft-rpc'
@@ -95,5 +96,29 @@ describe('desktop watching a mobile draft editor', () => {
     expect(save.mock.calls.some(([, input]) => input.id === draft.id)).toBe(false)
     expect(useChatStore.getState().projectSessions['/repo']._sessions.origin.draftText).toBe('')
     stop(); vi.useRealTimers()
+  })
+  it('keeps a background local draft local after focus moves to a worktree session', async () => {
+    vi.useFakeTimers()
+    const save = vi.fn().mockImplementation(async (_connectionId, input) => ({ ...draft, ...input, controllerDeviceId: null }))
+    window.environment.upsertDraft = save
+    useChatStore.setState((s) => ({ projectSessions: { '/repo': { ...s.projectSessions['/repo'], _activeSessionId: 'other' } } }))
+    useAppStore.getState().setActiveWorktree('/repo', null)
+    const stop = startDraftAutosave()
+    try {
+      await vi.advanceTimersByTimeAsync(300)
+      useChatStore.setState((s) => {
+        const project = s.projectSessions['/repo']
+        return { projectSessions: { '/repo': { ...project, _activeSessionId: 'origin', _sessions: {
+          ...project._sessions, origin: { ...project._sessions.origin, _worktreePath: '/repo/.wt/feat' },
+        } } } }
+      })
+      useAppStore.getState().setActiveWorktree('/repo', '/repo/.wt/feat')
+      useChatStore.getState().setDraftText('another draft, edited', { projectPath: '/repo', sessionId: 'other' })
+      await vi.advanceTimersByTimeAsync(300)
+      const saves = save.mock.calls.map(([, input]) => input).filter((input) => input.originSessionId === 'other')
+      expect(saves.at(-1)).toMatchObject({ text: 'another draft, edited', settings: { worktreePath: null } })
+    } finally {
+      stop(); vi.useRealTimers()
+    }
   })
 })

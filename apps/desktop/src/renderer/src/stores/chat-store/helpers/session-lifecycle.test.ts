@@ -35,6 +35,7 @@ const mockLocalStorage = {
 vi.mock('@/stores/app', () => ({
   useAppStore: {
     getState: () => ({
+      _worktrees: {},
       getWorktreeState: () => ({ pendingBaseBranch: null }),
       setActiveWorktree: mockSetActiveWorktree,
       clearWorktree: mockClearWorktree,

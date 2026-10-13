@@ -86,12 +86,7 @@ export function startDraftAutosave(): () => void {
           continue
         }
         if (!hasDraftContent(session) && !knownId) continue
-        const worktree = useAppStore.getState()._worktrees[path]
-        const input = buildUpsertFromSession(store, path, sid, session, project, worktree ? {
-          path: worktree.activePath, pendingBaseBranch: worktree.pendingBaseBranch,
-          pendingMode: worktree.pendingMode, pendingBranchName: worktree.pendingBranchName,
-          pendingCarryLocalChanges: worktree.pendingCarryLocalChanges,
-        } : null)
+        const input = buildUpsertFromSession(store, path, sid, session, project)
         if (useDraftsStore.getState().isDraftDiscarded(input.id)) continue
         const signature = JSON.stringify(input)
         if (signatures.get(sid) === signature) continue

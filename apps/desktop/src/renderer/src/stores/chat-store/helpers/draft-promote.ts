@@ -22,6 +22,7 @@ import type {
   PermissionMode,
 } from '@superone/shared/agent-types'
 import type { HarnessId } from '@superone/shared/session-types'
+import { useAppStore } from '../../app'
 import { useDraftsStore } from '../../drafts'
 import type { ChatProvider, ChatStore, PerSessionState, ProjectState } from '../types'
 import { _isLiveSession, isUnsentSession } from './session-liveness'
@@ -234,24 +235,18 @@ export function applyDraftWorktreeUi(
   projectPath: string,
   settings: DraftSessionSettings | null | undefined,
 ): void {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { useAppStore } = require('../../app') as typeof import('../../app')
-    useAppStore.setState({
-      _worktrees: {
-        ...useAppStore.getState()._worktrees,
-        [projectPath]: {
-          pendingBaseBranch: settings?.pendingBaseBranch ?? null,
-          pendingMode: (settings?.pendingWorktreeMode as 'branch' | 'attach' | 'detach' | undefined) ?? 'branch',
-          pendingBranchName: settings?.pendingBranchName ?? '',
-          pendingCarryLocalChanges: !!settings?.pendingCarryLocalChanges,
-          activePath: settings?.worktreePath ?? null,
-        },
+  useAppStore.setState({
+    _worktrees: {
+      ...useAppStore.getState()._worktrees,
+      [projectPath]: {
+        pendingBaseBranch: settings?.pendingBaseBranch ?? null,
+        pendingMode: (settings?.pendingWorktreeMode as 'branch' | 'attach' | 'detach' | undefined) ?? 'branch',
+        pendingBranchName: settings?.pendingBranchName ?? '',
+        pendingCarryLocalChanges: !!settings?.pendingCarryLocalChanges,
+        activePath: settings?.worktreePath ?? null,
       },
-    })
-  } catch {
-    /* app store unavailable in unit tests */
-  }
+    },
+  })
 }
 
 export function projectSandboxFromSettings(
@@ -276,23 +271,53 @@ export interface OpenDraftCarry {
 }
 
 function readAppWorktree(projectPath: string): WorktreeHint | null {
-  try {
-    // Lazy import avoids chat-store ↔ app cycle at module init.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { useAppStore } = require('../../app') as typeof import('../../app')
-    const wt = useAppStore.getState()._worktrees[projectPath]
-    if (!wt) return null
-    return {
-      path: wt.activePath,
-      branch: null,
-      pendingBaseBranch: wt.pendingBaseBranch,
-      pendingMode: wt.pendingMode,
-      pendingBranchName: wt.pendingBranchName,
-      pendingCarryLocalChanges: wt.pendingCarryLocalChanges,
-    }
-  } catch {
-    return null
+  const wt = useAppStore.getState()._worktrees[projectPath]
+  if (!wt) return null
+  return {
+    path: wt.activePath,
+    branch: null,
+    pendingBaseBranch: wt.pendingBaseBranch,
+    pendingMode: wt.pendingMode,
+    pendingBranchName: wt.pendingBranchName,
+    pendingCarryLocalChanges: wt.pendingCarryLocalChanges,
   }
+}
+
+/**
+ * Session id → worktree UI last seen while that session was focused. The app
+ * store's `_worktrees[project]` follows the focused session only, so reading it
+ * for a background draft copies another session's workdir into that draft.
+ */
+const worktreeHintBySession = new Map<string, WorktreeHint | null>()
+
+function savedDraftWorktreeHint(projectPath: string, draftId: string | null | undefined): WorktreeHint | null {
+  if (!draftId) return null
+  const settings = useDraftsStore.getState().byConnection?.[resolveDraftTarget(projectPath).connectionId]
+    ?.find((d) => d.id === draftId)?.settings
+  if (!settings) return null
+  return {
+    path: settings.worktreePath ?? null,
+    branch: settings.gitBranch ?? null,
+    pendingBaseBranch: settings.pendingBaseBranch ?? null,
+    pendingMode: settings.pendingWorktreeMode ?? null,
+    pendingBranchName: settings.pendingBranchName ?? null,
+    pendingCarryLocalChanges: !!settings.pendingCarryLocalChanges,
+  }
+}
+
+function worktreeHintForSession(
+  projectPath: string,
+  sessionId: string,
+  session: PerSessionState,
+  project: ProjectState | undefined,
+): WorktreeHint | null {
+  if (project?._activeSessionId === sessionId) {
+    const hint = readAppWorktree(projectPath)
+    worktreeHintBySession.set(sessionId, hint)
+    return hint
+  }
+  return worktreeHintBySession.get(sessionId)
+    ?? savedDraftWorktreeHint(projectPath, draftIdBySession.get(sessionId) ?? session.draftId)
 }
 
 /**
@@ -448,6 +473,7 @@ export function applyCarriedDraft(
   })
 
   draftIdBySession.delete(carried.fromSessionId)
+  worktreeHintBySession.delete(carried.fromSessionId)
   if (toSessionId) draftIdBySession.set(toSessionId, carried.draftId)
   return toSessionId
 }
@@ -462,7 +488,11 @@ export function buildUpsertFromSession(
 ): DraftUpsertRequest {
   const target = resolveDraftTarget(projectPath)
   const draftId = ensureDraftIdForSession(sessionId, session)
-  const settings = snapshotDraftSettings(session, project, worktree === undefined ? readAppWorktree(projectPath) : worktree)
+  const settings = snapshotDraftSettings(
+    session,
+    project,
+    worktree === undefined ? worktreeHintForSession(projectPath, sessionId, session, project) : worktree,
+  )
   return {
     id: draftId,
     text: session.draftText,
@@ -666,7 +696,10 @@ export function discardDeletedDraft(draftId: string, store?: ChatStore): void {
       }
     }
   }
-  if (sessionId) draftIdBySession.delete(sessionId)
+  if (sessionId) {
+    draftIdBySession.delete(sessionId)
+    worktreeHintBySession.delete(sessionId)
+  }
   parkedByDraftId.delete(draftId)
 
   const apply = (s: ChatStore): Partial<ChatStore> => {
@@ -716,6 +749,7 @@ export async function consumeDraftForSession(
   sessionId: string,
 ): Promise<void> {
   const draftId = draftIdBySession.get(sessionId)
+  worktreeHintBySession.delete(sessionId)
   if (!draftId) return
   draftIdBySession.delete(sessionId)
   releaseParkedDraft(draftId)
@@ -733,4 +767,5 @@ export async function consumeDraftForSession(
 export function _resetDraftSessionMap(): void {
   draftIdBySession.clear()
   parkedByDraftId.clear()
+  worktreeHintBySession.clear()
 }

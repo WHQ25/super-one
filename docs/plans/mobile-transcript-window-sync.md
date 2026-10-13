@@ -1,6 +1,6 @@
 # Mobile transcript windows and incremental cache synchronization
 
-Status: in progress — Phases 1–5 implemented; device validation (0.1 baseline, Phase 6) pending · Updated: 2026-10-13
+Status: in progress — Phases 1–5 implemented and accepted on the iOS Simulator; real-device measurements (0.1 baseline), iPad viewport changes and the routed phone pending · Updated: 2026-10-13
 Proposal: [mobile-transcript-window-sync.md](../proposals/mobile-transcript-window-sync.md)
 Goal: Opening or reopening a mobile session transfers, parses and paints a bounded fragment window, never resends unchanged cached bodies, and continues a running reply without gaps or duplicates.
 Long-term docs affected: `docs/architecture/mobile-remote-control.md` (atomic open, progressive loading), `docs/architecture/chat-core.md` (content/state split, if it changes), `apps/mobile/docs/agent-reference/transcript.md`, `apps/mobile/docs/agent-reference/transport.md`.
@@ -14,9 +14,23 @@ Phases 1–5 are implemented on `worktree-mobile-transcript-window`; Phase 0 dec
 - Phone: `restoreWindowSession` (relay-client), window mode in `ChatRuntime`, window cache `session-window-v1`, chat-view window paging, partial-message copy, stories (`Chat/Mobile transcript window`) and `e2e/transcript-window.spec.ts`.
 - Baseline (`bun apps/desktop/scripts/benchmark-mobile-payload.ts`, synthetic fixtures, 390×844 viewport): cold open of a 1 MB reply 1.1 MB → 6.3 KB; 6 cached + 2 new messages resend 2.4 KB of cached bodies → 0; a 500-tool turn 143 KB → 9 KB. Host projection of the 1 MB reply ≈ 13 ms. The phone ledger records `hydrate-painted`.
 
+Simulator acceptance (iPhone 17 Pro Max, iOS 26.5, worktree dev desktop over LAN with a local relay; bytes from the phone's `[SessionRestore]` log, sessions seeded into the dev profile with the benchmark fixtures):
+
+| Scenario | Result |
+|---|---|
+| 1. Cold open of a 1 MB reply | 10,266 bytes (3 fragments), 227 ms; the tail paints with the continued code fence; scrolling up pages earlier parts; copy yields the whole 1,048,409-byte reply. The same session from an old host: 2,945,735 bytes. |
+| 2. Six cached + two new | 6 fragments reused, 2 sent (2,136 bytes); reopening with nothing new: 8 reused, 0 sent (1,249 bytes). |
+| 3. Reopen mid-stream | Switched away and back during a live reply; the phone received only `transcript_window` events; the finished reply copied on the phone equals the host's text (7,522 characters). |
+| 4. 500-tool turn | 48 fragments, 9,056 bytes, with the earlier-part loader. |
+| 5. Giant paragraph, fence, table, deferred result | 11,509 bytes; the table continues as a table; the 200 KiB tool result loads on expand. |
+| 7. Pending question with unloaded content | Restored after switching sessions; the answer reached the host. |
+| 8. Old host | A `main` desktop without the method: the phone restores the legacy way. iPhone is portrait-locked, so viewport changes need an iPad. |
+
+Found and fixed during acceptance: a send that failed moved below later turns (local rows now keep their place).
+
 Remaining:
 
-- 0.1 / Phase 6: real-device LAN and relay measurements, proposal scenarios 1–8 on a device, the node lab with a routed phone; then long-term docs and deleting this plan and the proposal.
+- 0.1 / Phase 6: real-device LAN and relay measurements (timings, memory), viewport changes on an iPad, scenario 6 (epoch change, expired checkpoint, cache eviction, edits/deletes, history jumps) and the node lab with a routed phone; then long-term docs and deleting this plan and the proposal.
 - Code-block copy inside a slice that starts mid-fence copies the visible part (reply and user-message copy fetch the whole message).
 - The phone keeps every fragment it paged in for the open session; only the cache is trimmed (2 MiB). The DOM stays bounded by the 40-row window.
 - Legacy Codex turns (stored items) are converted to content in the window projection; their `item` detail refs are untested on a device.

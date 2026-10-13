@@ -3,6 +3,7 @@ import type { SessionRef } from '@superone/shared/environment/refs'
 import type { SessionLoadCursor } from '@superone/shared/environment/session-messages'
 import type { TopicSubscribeInput } from '@superone/shared/environment/events'
 import type { RpcStreamHandlers } from '@superone/shared/environment/rpc-connection'
+import { isTranscriptWindowEnvelope } from '@superone/shared/environment/transcript-window'
 import { createNodeSessionEventMapper } from '@superone/shared/node-session-event-map'
 import type { PhoneTopicStream } from './phone-protocol'
 
@@ -44,7 +45,7 @@ export class PhoneSessionFeed {
             if (envelope.environmentId !== input.session.environmentId || envelope.aggregateType !== 'session' || envelope.aggregateId !== input.session.sessionId) continue
             const next = envelope.sessionVersion ?? Number(envelope.sequence)
             // A transcript window patch takes the position of the frame's last event for its session.
-            if (next < version || next === version && !isWindowPatch(envelope)) continue
+            if (next < version || next === version && !isTranscriptWindowEnvelope(envelope)) continue
             version = next
             events.push(...mapper.map(envelope).map(event => ({ ...event, environmentId: input.session.environmentId })))
           }
@@ -75,6 +76,3 @@ export class PhoneSessionFeed {
   reset(): void { this.current = null }
 }
 
-function isWindowPatch(envelope: { payload: unknown }): boolean {
-  return (envelope.payload as { event?: { type?: unknown } } | null)?.event?.type === 'transcript_window'
-}

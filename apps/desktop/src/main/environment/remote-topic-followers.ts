@@ -1,6 +1,7 @@
 import type { SessionStreamFrame, TopicSubscribeInput } from '@superone/shared/environment'
 import { TERMINAL_LIST_EVENT_TYPES, topicKey, type TopicRef } from '@superone/shared/environment/topics'
 import type { RpcStreamHandlers } from '@superone/shared/environment/rpc-connection'
+import { isTranscriptWindowEnvelope } from '@superone/shared/environment/transcript-window'
 import { streamFilterMatcher } from '@superone/runtime/server/event-stream'
 
 export interface RemoteTopicStream { close(): void; update(topics: TopicRef[]): Promise<void> }
@@ -98,7 +99,7 @@ export class RemoteTopicFollowers {
       if (!matches(event)) return false
       if (event.aggregateType === 'session' && event.sessionVersion !== undefined) {
         const seen = reader.cursor.versions[event.aggregateId]
-        if (seen !== undefined && event.sessionVersion <= seen) return false
+        if (seen !== undefined && (event.sessionVersion < seen || event.sessionVersion === seen && !isTranscriptWindowEnvelope(event))) return false
         reader.cursor.versions[event.aggregateId] = event.sessionVersion
       } else if (sameEpoch && BigInt(event.sequence) <= BigInt(reader.cursor.sequence)) return false
       return true

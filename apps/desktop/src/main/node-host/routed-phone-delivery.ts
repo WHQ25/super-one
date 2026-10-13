@@ -29,6 +29,8 @@ export class RoutedPhoneDelivery {
       state.realtimeThreadMessages = loaded.restore?.realtimeThreadMessages ?? retained?.state.realtimeThreadMessages ?? []
       this.views.set(id, { state,
         version: loaded.cursor.version, epoch: loaded.cursor.epoch, summarized: loaded.summarized === true,
+        // A read beside the window (a partial message's copy) keeps the phone following its window.
+        ...(retained?.windowHolder !== undefined ? { windowHolder: retained.windowHolder } : {}),
         mapper: retained?.mapper ?? createNodeSessionEventMapper({ sessionId: loaded.sessionId, projectPath: '', providerId: String(state.sessionProvider ?? loaded.state.providerId ?? loaded.state.harnessId ?? '') }),
         ports: retained?.ports ?? { ...defaultChatCorePorts, streaming: createStreamingToolInputStore() } })
     }

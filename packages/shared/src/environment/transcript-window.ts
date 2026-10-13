@@ -130,3 +130,12 @@ export interface TranscriptWindowPatch {
 }
 
 export const TRANSCRIPT_WINDOW_METHOD = 'session.transcriptWindow'
+
+/**
+ * A `transcript_window` event envelope. It takes the session version of the
+ * frame's last event for its session, so readers that skip a version they
+ * already saw must still take it.
+ */
+export function isTranscriptWindowEnvelope(envelope: { payload: unknown }): boolean {
+  return (envelope.payload as { event?: { type?: unknown } } | null)?.event?.type === 'transcript_window'
+}

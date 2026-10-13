@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import type { EnvironmentEventEnvelope, SessionStreamFrame } from '@superone/shared/environment'
 import type { TranscriptWindowResult } from '@superone/shared/environment/transcript-window'
 import { ConnectionDelivery, deliveryPolicy } from '@superone/runtime/stream'
+import { RemoteTopicFollowers } from '../environment/remote-topic-followers'
 import { RoutedPhoneDelivery } from './routed-phone-delivery'
 
 const result = (version = 1): TranscriptWindowResult => ({
@@ -42,5 +43,30 @@ describe('routed transcript windows', () => {
     views.load('source', { sessionId: 's', state: {}, messages: [], before: null, cursor: { sequence: '2', version: 2, epoch: 'epoch' } }, delivery)
     const out = views.frame('source', frame(envelope({ type: 'content_delta', messageId: 'a', delta: { type: 'text', text: 'hi' } }, 3)), delivery, () => {})
     expect(types(out).map((e) => e.type)).toContain('content_delta')
+  })
+
+  it('keeps following the window after a read beside it, such as a partial message\'s copy', () => {
+    const views = new RoutedPhoneDelivery(), delivery = new ConnectionDelivery(deliveryPolicy('relay', 'phone'))
+    views.window('source', result(), delivery, 'phone-a')
+    views.load('source', { sessionId: 's', state: {}, messages: [], before: null, cursor: { sequence: '2', version: 2, epoch: 'epoch' } }, delivery, false)
+    const out = views.frame('source', frame(
+      envelope({ type: 'content_delta', messageId: 'a', delta: { type: 'text', text: 'hi' } }, 3),
+      envelope({ type: 'transcript_window', holder: 'phone-a', patch: { messages: [], total: 1 } }, 3),
+    ), delivery, () => {})
+    expect(types(out).map((e) => e.type)).toEqual(['message_start', 'transcript_window'])
+  })
+
+  it('passes a window patch through the shared upstream follower at its event\'s version', async () => {
+    const followers = new RemoteTopicFollowers(async () => {})
+    const onFrame = vi.fn()
+    const stream = await followers.open({ afterSequence: '1', epoch: 'epoch', versions: { s: 1 }, topics: [{ kind: 'session', environmentId: 'source', sessionId: 's' }] },
+      { onFrame, onEnd: () => {} }, async () => {}, async () => ({ sequence: '1', epoch: 'epoch', events: [] }))
+    const delta = envelope({ type: 'content_delta', messageId: 'a', delta: { type: 'text', text: '!' } }, 2)
+    const patch = { ...envelope({ type: 'transcript_window', holder: 'phone-a', patch: { messages: [], total: 1 } }, 2), eventId: 'e2:window:phone-a' }
+    followers.frame(frame(delta, patch))
+    followers.frame(frame(delta))
+    await stream.close()
+    const relayed = onFrame.mock.calls.flatMap(([f]) => types(f as SessionStreamFrame).map((e) => e.type))
+    expect(relayed).toEqual(['content_delta', 'transcript_window'])
   })
 })

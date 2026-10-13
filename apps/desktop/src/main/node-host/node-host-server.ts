@@ -91,7 +91,10 @@ export class DesktopNodeHost {
       ...(listen.allowRemoteAddress ? { allowRemoteAddress: listen.allowRemoteAddress } : {}),
       // Controllers coming and going change what the settings list shows.
       onClientConnected: () => listen.onControllersChanged?.(),
-      onClientDisconnected: () => listen.onControllersChanged?.(),
+      onClientDisconnected: (clientSessionId) => {
+        domain.releaseClientDrafts(clientSessionId)
+        listen.onControllersChanged?.()
+      },
       createRpcContext: () => ({ ...context, leases: controllerLeases(domain.leases) }),
     })
     auth.onRevoke = (clientSessionId) => {
@@ -217,6 +220,8 @@ export class DesktopNodeHost {
     this.auth.onPaired = null
     // No controller can answer a Host Action until the listener is back.
     this.domain.sessions.cancelHostActions('node_host_stopped')
+    // Closing the sockets below reports no disconnects.
+    for (const { clientSessionId } of this.server.connectedClients()) this.domain.releaseClientDrafts(clientSessionId)
     await this.server.close()
   }
 }

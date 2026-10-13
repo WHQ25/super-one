@@ -221,6 +221,14 @@ export class DesktopDomain {
   /** A controller lost access (revoked, suspended, paused): its leases and draft grants end with it. */
   revokeClient(clientSessionId: string): void {
     this.leases.revokeHolder(clientSessionId)
+    this.releaseClientDrafts(clientSessionId)
+  }
+
+  /**
+   * A controller went away (its last connection closed, or the listener
+   * stopped): its draft grants, which never expire, end as a phone's do.
+   */
+  releaseClientDrafts(clientSessionId: string): void {
     this.phonePorts.drafts?.releaseDevice(clientSessionId)
   }
 

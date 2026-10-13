@@ -8,6 +8,8 @@ import type { ControlLease, EnvironmentEventEnvelope, ExecutionEnvironmentDescri
 import { HarnessManager } from '@superone/runtime/harness'
 import { openNodeDatabase } from '@superone/runtime/db'
 import { bindControlActor } from '@superone/runtime/lease'
+import { createDraftStore, DraftControl } from '@superone/runtime/drafts'
+import Database from 'better-sqlite3'
 
 const electron = vi.hoisted(() => ({ store: new Map<string, string>() }))
 
@@ -123,7 +125,7 @@ async function pairedDesktops(catalog = fakeCatalog(), extra: Partial<DesktopDom
   const manager = new NodeConnectionManager({ credentialStore: new NodeCredentialStore(tempDir('superone-desktop-a-')) })
   managers.push(manager)
   const { connectionId } = await manager.pairAndConnect({ baseUrl: pairing.url, pairingToken: pairing.pairingToken, label: 'Desktop A', channel: pairing.channel })
-  return { host, sessions, store, projectDir, connectionId, client: manager.getClient(connectionId)! }
+  return { host, sessions, store, projectDir, manager, connectionId, client: manager.getClient(connectionId)! }
 }
 
 describe('DesktopNodeHost', () => {
@@ -541,6 +543,29 @@ describe('DesktopNodeHost control takeover', () => {
     expect(after.terminal).toMatchObject({ ownerDeviceId: `node:${controller}`, writableByMe: true })
     expect(tab.lease.isWritableBy('local')).toBe(false)
     expect(() => tab.lease.assertWindow(1)).toThrow()
+  })
+
+  it("ends a controller's draft grants when it disconnects and when B stops listening", async () => {
+    const db = new Database(':memory:')
+    const drafts = new DraftControl(createDraftStore(db))
+    const { host, projectDir, manager, connectionId, client } = await pairedDesktops(fakeCatalog(), { drafts })
+    const controller = host.controllers()[0].id
+    drafts.upsert({ id: 'd1', text: 'from B', projectPath: projectDir })
+
+    await client.rpc('draft.open', { draftId: 'd1' })
+    expect(drafts.get('d1')?.controllerDeviceId).toBe(controller)
+    manager.disconnect(connectionId)
+    await vi.waitFor(() => expect(drafts.get('d1')?.controllerDeviceId).toBeNull())
+
+    await manager.connectExisting(connectionId)
+    await manager.getClient(connectionId)!.rpc('draft.open', { draftId: 'd1' })
+    expect(drafts.get('d1')?.controllerDeviceId).toBe(controller)
+    hosts.splice(hosts.indexOf(host), 1)
+    await stopDesktopNode(host)
+    expect(drafts.get('d1')?.controllerDeviceId).toBeNull()
+    // B's window edits it again.
+    expect(drafts.upsert({ id: 'd1', text: 'B again' }).text).toBe('B again')
+    db.close()
   })
 
   it.each([

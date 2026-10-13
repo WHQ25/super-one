@@ -23,6 +23,7 @@ import { loadDesktopEnvironmentIdentity } from '../environment/local-identity'
 import { DesktopSessionHost, type NodeHostSessionManager, type NodeHostSessionStore } from './desktop-session-host'
 import { createDesktopGitPort } from './desktop-git-port'
 import { createDesktopCatalogMethods, type DesktopCatalog } from './desktop-catalog-methods'
+import { createDesktopCodexMethods, type DesktopCodexServices } from './desktop-codex-methods'
 import { reconcileRunsAfterRestart } from './reconcile-runs'
 import {
   WorkspaceFsService,
@@ -109,6 +110,8 @@ export interface DesktopDomainDeps {
   phoneMethods?: DesktopExtension
   /** The window's harness catalogs, served as the node catalog contract. */
   catalog?: DesktopCatalog
+  /** The window's Codex services, served as the node `codex.*` contract. */
+  codex?: DesktopCodexServices
   /** The credential reads a composer's API provider picker needs (`desktop-providers-port.ts`). */
   providers?: ProvidersPort
   sessionEdits?: LocalSessionEdits
@@ -142,7 +145,7 @@ export class DesktopDomain {
     /** The node home (identity, channel root, config). */
     readonly nodeHome: string,
     private readonly context: DesktopRpcContext,
-    private readonly phonePorts: Pick<DesktopDomainDeps, 'terminals' | 'drafts' | 'beforeDraftOpen' | 'phoneMethods' | 'catalog' | 'projectEdits' | 'topicNotices' | 'rpcRouter'>,
+    private readonly phonePorts: Pick<DesktopDomainDeps, 'terminals' | 'drafts' | 'beforeDraftOpen' | 'phoneMethods' | 'catalog' | 'codex' | 'projectEdits' | 'topicNotices' | 'rpcRouter'>,
   ) {}
 
   static open(deps: DesktopDomainDeps): DesktopDomain {
@@ -188,7 +191,7 @@ export class DesktopDomain {
       }
       const localSessions = new LocalSessionHost({ sessions: deps.sessions, events, rows: deps.rows, edits: deps.sessionEdits, drafts: deps.drafts, sideChats: deps.sideChats, scheduledSends: deps.scheduledSends, projectPath: (id) => deps.projects.get(id)?.path ?? null, projectId: (path) => deps.projects.list().find((project) => project.path === path)?.projectId ?? null, environmentId: identity.environmentId, restore: deps.restore })
       deps.bindLocalControl?.({ environmentId: identity.environmentId, leases })
-      return new DesktopDomain(db, identity, auth, leases, sessions, localSessions, recorder, unbindSessions, paths.nodeHome, context, { terminals: deps.terminals, drafts: deps.drafts, beforeDraftOpen: deps.beforeDraftOpen, phoneMethods: deps.phoneMethods, catalog: deps.catalog, projectEdits: deps.projectEdits, topicNotices: deps.topicNotices, rpcRouter: deps.rpcRouter })
+      return new DesktopDomain(db, identity, auth, leases, sessions, localSessions, recorder, unbindSessions, paths.nodeHome, context, { terminals: deps.terminals, drafts: deps.drafts, beforeDraftOpen: deps.beforeDraftOpen, phoneMethods: deps.phoneMethods, catalog: deps.catalog, codex: deps.codex, projectEdits: deps.projectEdits, topicNotices: deps.topicNotices, rpcRouter: deps.rpcRouter })
     } catch (err) {
       db.close()
       throw err
@@ -233,7 +236,7 @@ export class DesktopDomain {
     const workspaceTailWatch = new WorkspaceTailWatchService(projects, workspaceFs)
     this.watches.push(workspaceWatch, workspaceTailWatch)
     const edits = this.phonePorts.projectEdits
-    const extension = composeExtensions([this.phonePorts.phoneMethods, this.phonePorts.catalog && createDesktopCatalogMethods(this.phonePorts.catalog)])
+    const extension = composeExtensions([this.phonePorts.phoneMethods, this.phonePorts.catalog && createDesktopCatalogMethods(this.phonePorts.catalog), this.phonePorts.codex && createDesktopCodexMethods(this.phonePorts.codex)])
     return {
       ...this.context,
       ...(edits ? { projects: withProjectEdits(this.context.projects!, edits) } : {}),

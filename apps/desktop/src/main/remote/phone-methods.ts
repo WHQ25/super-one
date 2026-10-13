@@ -22,7 +22,7 @@ export interface PhoneMethodHost {
     | 'remoteSystemInfo' | 'remoteProjectResources' | 'remoteHarnessOptions' | 'remoteAttachment' | 'remoteSessionActivity'
     | 'remoteSearchMentions' | 'remoteSearchMcpMentions' | 'remoteReadMcpMentions' | 'remoteMcpServers' | 'markRemoteSeen'
     | 'remoteReadFile' | 'remoteVideoPoster' | 'remoteUpload' | 'remoteUploadComplete' | 'remoteListDirectory' | 'remoteCreateDirectory'
-    | 'remoteUsage' | 'remoteConsumeRateLimitReset'
+    | 'remoteUsage'
   >
   /** Phone-assisted desktop pairing; absent when this desktop cannot pair. */
   desktopPair?: (input: { kind: 'mint'; controllerName: string } | { kind: 'pair'; nodeCode: string; nodeName: string }) => Promise<unknown>
@@ -142,8 +142,6 @@ function createHandlers(host: PhoneMethodHost): Record<string, Handler> {
       acpAgentId: optionalText(p, 'acpAgentId') ?? null,
       force: p.force === true,
     }),
-    'codex.consumeRateLimitReset': (p, ctx) =>
-      host.agent.remoteConsumeRateLimitReset(projectPath(ctx, text(p, 'projectId')), optionalText(p, 'apiProviderId') ?? null, optionalText(p, 'creditId') ?? null),
     'workspace.searchMentions': (p, ctx) =>
       host.agent.remoteSearchMentions(projectPath(ctx, text(p, 'projectId')), typeof p.query === 'string' ? p.query : '', {
         sessionId: optionalText(p, 'sessionId'),

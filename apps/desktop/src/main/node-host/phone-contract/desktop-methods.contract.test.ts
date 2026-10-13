@@ -29,7 +29,6 @@ function methodsDomain() {
     remoteListDirectory: vi.fn(async (path: string) => ({ items: [{ name: 'src', isDirectory: true }], appliedIgnoreMode: 'none', path })),
     remoteCreateDirectory: vi.fn(async () => {}),
     remoteUsage: vi.fn(async () => ({ usage: null })),
-    remoteConsumeRateLimitReset: vi.fn(async () => ({ outcome: null })),
     remoteReadFile: vi.fn(async () => ({ ok: true, inline: true, text: 'hi' })),
     remoteVideoPoster: vi.fn(async () => ({ ok: true, poster: null })),
     remoteUpload: vi.fn(async () => ({ ok: true })),

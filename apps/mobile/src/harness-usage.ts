@@ -49,16 +49,14 @@ export async function fetchHarnessUsage(
 
 /**
  * Redeem a Codex reset credit; `null` covers the host failing, an API-key
- * session, or a desktop without the command. Re-read the meter afterwards.
+ * session, or a host without the command. Re-read the meter afterwards.
  */
 export async function consumeRateLimitReset(
   client: ProjectRpcClient,
   target: Pick<UsageTarget, 'projectPath' | 'apiProviderId'>,
   creditId: string | null = null,
 ): Promise<CodexRateLimitResetOutcome | null> {
-  const result = await projectRpc(client, target.projectPath, 'codex.consumeRateLimitReset', { apiProviderId: target.apiProviderId, creditId }).catch(() => null) as { outcome?: CodexRateLimitResetOutcome | null; error?: string } | null
-  if (!result || result.error) return null
-  return result.outcome ?? null
+  return projectRpc<CodexRateLimitResetOutcome | null>(client, target.projectPath, 'codex.consumeRateLimitReset', { apiProviderId: target.apiProviderId, creditId }).catch(() => null)
 }
 
 export type MeterTone = ReturnType<typeof usageWindowTone>

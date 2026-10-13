@@ -66,15 +66,15 @@ describe('remainingPercent', () => {
 })
 
 describe('consumeRateLimitReset', () => {
-  it('names the credential and credit, and unwraps the outcome', async () => {
-    const request = vi.fn(async () => ({ outcome: 'reset' }))
+  it('names the credential and credit, and answers the outcome', async () => {
+    const request = vi.fn(async () => 'reset')
     const client = { resolveProject: resolveTestProject, rpc: request } as unknown as RelayClient
     await expect(consumeRateLimitReset(client, target, 'rc-1')).resolves.toBe('reset')
     expect(request).toHaveBeenCalledWith('codex.consumeRateLimitReset', { projectId: 'p', apiProviderId: null, creditId: 'rc-1' }, { environmentId: 'desktop' })
   })
 
-  it('reads a host error or transport failure as null', async () => {
-    await expect(consumeRateLimitReset({ resolveProject: resolveTestProject, rpc: async () => ({ error: 'x' }) } as unknown as RelayClient, target)).resolves.toBeNull()
+  it('reads no outcome or a failed request as null', async () => {
+    await expect(consumeRateLimitReset({ resolveProject: resolveTestProject, rpc: async () => null } as unknown as RelayClient, target)).resolves.toBeNull()
     await expect(consumeRateLimitReset({ resolveProject: resolveTestProject, rpc: async () => { throw new Error('offline') } } as unknown as RelayClient, target)).resolves.toBeNull()
   })
 })

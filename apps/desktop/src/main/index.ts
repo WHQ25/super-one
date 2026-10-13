@@ -147,7 +147,6 @@ import {
   type CodexAccountLoginStartResult,
   type CodexAccountStatus,
   type CodexAccountUsage,
-  type CodexRateLimitResetOutcome,
   type CodexRateLimits,
   type ClaudeResources,
   type CodexResources,
@@ -1089,6 +1088,7 @@ async function applyNodeHostSettings(settings: AppSettings): Promise<void> {
         opened: (path) => void agentService.openFolder(path),
       },
       catalog: harnessCatalog,
+      codex: { service: codexService, plugins: codexPluginsService, marketplace: codexMarketplaceService },
       phoneMethods: createPhoneMethods({
         agent: agentService,
         sessions: { getSession: (id) => sessionManager.getSession(id), openMiniAppForm },
@@ -2468,13 +2468,6 @@ function registerIpcHandlers(): void {
         return getAcpRateLimits(agentId, force)
       },
     })
-  })
-  agentService.setCodexConsumeRateLimitReset(async (projectPath, apiProviderId, creditId) => {
-    if (parseRemoteProjectKey(projectPath)) {
-      const { getEnvironmentHost, remoteCodexConsumeRateLimitReset } = await import('./environment')
-      return (await remoteCodexConsumeRateLimitReset(getEnvironmentHost(), projectPath, apiProviderId, creditId)) as CodexRateLimitResetOutcome | null
-    }
-    return codexService.consumeRateLimitReset(projectPath, apiProviderId, creditId)
   })
   agentService.setup()
 

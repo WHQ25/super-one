@@ -1368,16 +1368,6 @@ describe('AgentService phone projections', () => {
     expect(respond).toHaveBeenLastCalledWith('u-3', { error: 'app-server down' })
   })
 
-  it('consume_rate_limit_reset redeems through the Codex service and answers { outcome }', async () => {
-    const consume = vi.fn(async () => 'reset' as const)
-    const respond = vi.fn()
-    const service = new AgentService()
-    service.setCodexConsumeRateLimitReset(consume)
-    await captureValue(respond, 'r-1', () => service.remoteConsumeRateLimitReset('/p', null, 'rc-1'))
-    expect(consume).toHaveBeenCalledWith('/p', null, 'rc-1')
-    expect(respond).toHaveBeenCalledWith('r-1', { outcome: 'reset' })
-  })
-
   it('get_system_info returns user agent defaults for claude', async () => {
     vi.mocked(appSettings.readAppSettings).mockReturnValue({
       analyticsEnabled: true,

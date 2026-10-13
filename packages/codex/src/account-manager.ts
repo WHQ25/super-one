@@ -12,13 +12,16 @@ export interface AccountConnection {
 interface PendingLogin {
   accountId: string
   connection: AccountConnection
+  /** Browser OAuth: holds the fixed localhost callback port until it settles. */
+  browser: boolean
 }
 
 /** Shared by Electron and headless nodes. No tokens cross the host's public API. */
 export class CodexAccountManager {
   private pending = new Map<string, PendingLogin>()
   private failed = new Set<string>()
-  private starting = false
+  private browserStarting = false
+  private startingAccounts = new Set<string>()
   private revisions = new Map<string, number>()
   constructor(
     readonly store: CodexAccountStore,
@@ -57,20 +60,29 @@ export class CodexAccountManager {
   }
 
   async start(type: CodexManagedLoginStart['type'], accountId?: string): Promise<CodexManagedLoginStart> {
-    // Browser OAuth uses a fixed callback port; serialize sign-ins, not chat sessions.
-    if (this.pending.size || this.starting) throw new Error('Finish or cancel the current Codex sign-in first.')
-    this.starting = true
+    // Browser OAuth listens on a fixed callback port; device codes listen on nothing,
+    // so one left waiting (e.g. by a client that went away) blocks no other sign-in.
+    const browser = type === 'chatgpt'
+    const busy = (accountId && this.startingAccounts.has(accountId))
+      || (browser && (this.browserStarting || [...this.pending.values()].some((p) => p.browser && p.accountId !== accountId)))
+    if (busy) throw new Error('Finish or cancel the current Codex sign-in first.')
+    const id = accountId ?? this.store.allocate()
+    this.startingAccounts.add(id)
+    if (browser) this.browserStarting = true
     try {
-      const id = accountId ?? this.store.allocate()
       this.store.home(id)
+      // The newest sign-in to an account replaces one still waiting on it.
+      for (const [loginId, pending] of this.pending) {
+        if (pending.accountId === id) await this.cancel(loginId).catch(() => {})
+      }
       this.failed.delete(id)
       this.revisions.set(id, (this.revisions.get(id) ?? 0) + 1)
       const connection = await this.open(codexAccountProviderId(id))
       try {
         const result = parseAccountLoginStart(await connection.request('account/login/start', {
-          type, ...(type === 'chatgpt' ? { useHostedLoginSuccessPage: true, appBrand: 'chatgpt' } : {}),
+          type, ...(browser ? { useHostedLoginSuccessPage: true, appBrand: 'chatgpt' } : {}),
         }))
-        const pending = { accountId: id, connection }
+        const pending = { accountId: id, connection, browser }
         this.pending.set(result.loginId, pending)
         void this.wait(result.loginId, pending)
         return { ...result, accountId: id }
@@ -79,7 +91,10 @@ export class CodexAccountManager {
         await connection.close()
         throw error
       }
-    } finally { this.starting = false }
+    } finally {
+      this.startingAccounts.delete(id)
+      if (browser) this.browserStarting = false
+    }
   }
 
   private async wait(loginId: string, pending: PendingLogin): Promise<void> {

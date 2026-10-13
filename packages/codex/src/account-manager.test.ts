@@ -41,7 +41,7 @@ function fixture() {
     connections.find((c) => c.provider === loginId && !c.closed)!.send({ method: 'account/login/completed', params: { loginId, success: true } })
     await vi.waitFor(() => expect(changed).toHaveBeenCalledWith(loginId))
   }
-  return { store, manager, changed, complete }
+  return { store, manager, changed, complete, connections }
 }
 
 describe('Codex login and account isolation', () => {
@@ -72,5 +72,30 @@ describe('Codex login and account isolation', () => {
     expect(accounts.find((a) => a.id === pending.accountId)).toMatchObject({ signedIn: false, loginState: 'pending' })
     await expect(manager.start('chatgpt')).rejects.toThrow(/Finish or cancel/)
     await manager.cancel(pending.loginId)
+  })
+
+  it('lets a device-code sign-in left waiting block no other sign-in', async () => {
+    const { manager, connections } = fixture()
+    const remote = await manager.start('chatgptDeviceCode')
+    const window = await manager.start('chatgpt')
+    const another = await manager.start('chatgptDeviceCode')
+    const accounts = await manager.list()
+    for (const login of [remote, window, another]) {
+      expect(accounts.find((a) => a.id === login.accountId)).toMatchObject({ loginState: 'pending' })
+    }
+    // The browser sign-in still owns the callback port.
+    await expect(manager.start('chatgpt')).rejects.toThrow(/Finish or cancel/)
+    expect(connections.filter((c) => !c.closed)).toHaveLength(3)
+  })
+
+  it('replaces a waiting sign-in when the same account signs in again', async () => {
+    const { manager, connections, complete } = fixture()
+    const abandoned = await manager.start('chatgptDeviceCode')
+    const browser = await manager.start('chatgpt', abandoned.accountId)
+    expect(browser.accountId).toBe(abandoned.accountId)
+    expect(connections.map((c) => c.closed)).toEqual([true, false])
+    await complete(browser.loginId, 'b@example.test')
+    expect((await manager.list()).find((a) => a.id === abandoned.accountId)).toMatchObject({ signedIn: true, email: 'b@example.test' })
+    expect((await manager.list()).find((a) => a.id === abandoned.accountId)?.loginState).toBeUndefined()
   })
 })

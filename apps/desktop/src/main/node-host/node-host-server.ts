@@ -99,7 +99,7 @@ export class DesktopNodeHost {
     return this.domain.auth
   }
 
-  /** The `session.*` surface, for tools of sessions served here. */
+  /** This desktop's session host, which serves every client; Host Actions reach the controllers through this listener. */
   get sessions(): DesktopSessionHost {
     return this.domain.sessions
   }

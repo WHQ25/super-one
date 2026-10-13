@@ -87,7 +87,6 @@ const SELECT = `
          s.is_pinned, s.is_hidden, s.is_user_renamed, s.tags_json, s.created_at,
          COALESCE(s.last_user_message_at, s.created_at) AS updated_at, s.remote_controller_json
   FROM sessions s JOIN projects p ON p.id = s.project_id`
-const CONTROLLED = 'WHERE s.remote_controller_json IS NOT NULL'
 
 interface Row {
   id: string
@@ -158,12 +157,4 @@ export function listDesktopSessionRows(projectId?: string): DesktopSessionRow[] 
 export function getRemoteControlledSession(sessionId: string): RemoteControlledSessionRow | null {
   const row = getDesktopSessionRow(sessionId)
   return row && controlled(row) ? row : null
-}
-
-/** Newest first; no projectId spans every project. */
-export function listRemoteControlledSessions(projectId?: string): RemoteControlledSessionRow[] {
-  const rows = (projectId
-    ? getDb().prepare(`${SELECT} ${CONTROLLED} AND s.project_id = ? ORDER BY updated_at DESC`).all(projectId)
-    : getDb().prepare(`${SELECT} ${CONTROLLED} ORDER BY updated_at DESC`).all()) as Row[]
-  return rows.map(toRow).filter(controlled)
 }

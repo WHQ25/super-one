@@ -4,9 +4,8 @@ import log from '../logger'
 import { durableEventOf, type NodeHostSessionManager } from './desktop-session-host'
 
 /**
- * Records every session of this desktop in the domain's event log, once,
- * whoever reads it: controllers see the sessions they started, phones and the
- * window every session, each through its own session host.
+ * Records every session of this desktop in the domain's event log, once, for
+ * every client that reads it: the window, phones and controller desktops.
  */
 export class SessionEventRecorder {
   /** Live Session objects being recorded (a resume makes a new one). */

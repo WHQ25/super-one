@@ -32,7 +32,7 @@ import { RemoteHostActionConsumer } from '../environment/remote-host-action-cons
 import { NodeCredentialStore } from '../environment/node-credential-store'
 import { createDesktopProjectsPort } from './desktop-projects-port'
 import { createDesktopProvidersPort } from './desktop-providers-port'
-import { AGENT_PROFILES, FakeSessionManager, memoryStore, startDesktopNode, stopDesktopNode, type FakeSession } from './node-host-test-fixtures'
+import { AGENT_PROFILES, FakeSessionManager, memorySessionEdits, memoryStore, startDesktopNode, stopDesktopNode, type FakeSession } from './node-host-test-fixtures'
 import { DesktopNodeHost } from './node-host-server'
 import { mapNodeSessionEvents } from '@superone/shared/node-session-event-map'
 
@@ -81,7 +81,7 @@ async function pairedDesktops(catalog = fakeCatalog()) {
   harnesses.enableSimulatedOverlay()
   const host = await startDesktopNode(
     {
-      userDataDir: userData, label: 'Desktop B', appVersion: '0.0.0-test', sessions, store, rows: store.all, projects, harnesses, catalog,
+      userDataDir: userData, label: 'Desktop B', appVersion: '0.0.0-test', sessions, rows: store.all, sessionEdits: memorySessionEdits(store, sessions), projects, harnesses, catalog,
       providers: createDesktopProvidersPort({
         listCredentials: () => [{ id: 'cred-b', name: 'Team key', apiKey: 'sk-…1234' }],
         listCustomPlatforms: () => [],
@@ -122,8 +122,15 @@ describe('DesktopNodeHost', () => {
         label: 'Desktop B',
         appVersion: '0.0.0-test',
         sessions,
-        store,
         rows: store.all,
+        sessionEdits: {
+          ...memorySessionEdits(store, sessions),
+          fork: async ({ sessionId }, assertControl) => {
+            assertControl()
+            store.createRow({ sessionId: `${sessionId}-fork`, projectPath: projectDir, cwd: projectDir })
+            return { ok: true, sessionId: `${sessionId}-fork` }
+          },
+        },
         projects,
         harnesses,
         catalog: fakeCatalog(),
@@ -181,7 +188,9 @@ describe('DesktopNodeHost', () => {
     expect(events[1].payload).toMatchObject({ blockId: 'm1', text: 'do the task' })
     expect((events[2].payload as { event: Record<string, unknown> }).event).not.toHaveProperty('projectPath')
 
-    await expect(client.rpc('session.fork', { sessionId: created.sessionId })).rejects.toMatchObject({ code: 'not_found' })
+    // The session edits B's window has.
+    const forked = await client.rpc<{ ok: boolean; session: { sessionId: string } }>('session.fork', { sessionId: created.sessionId, mode: 'local', leaseId: lease.leaseId, generation: lease.generation })
+    expect(forked).toMatchObject({ ok: true, session: { sessionId: `${created.sessionId}-fork` } })
     await expect(client.rpc('terminal.create', { cwd: projectDir })).rejects.toMatchObject({ code: 'not_found' })
     await expect(client.rpc('harness.enable', { harnessId: 'codex' })).rejects.toMatchObject({ code: 'not_found' })
 
@@ -326,15 +335,35 @@ describe('DesktopNodeHost agent catalog', () => {
 })
 
 describe('DesktopNodeHost visibility', () => {
-  it('records every session of the desktop but shows a controller only the ones it started', async () => {
-    const { sessions, client, projectDir } = await pairedDesktops()
+  it("shows a controller every session of the desktop and lets it edit them as B's window does", async () => {
+    const { sessions, store, client, projectDir } = await pairedDesktops()
     const created = await client.rpc<{ sessionId: string }>('session.create', { projectId: 'p1', harnessId: 'claude' })
-    // A session this desktop's user runs: recorded, and private to the desktop.
+    // A session this desktop's user runs.
+    store.createRow({ sessionId: 'own-session', projectPath: projectDir, cwd: projectDir, title: 'Mine' })
     const own = sessions.createSession({ id: 'own-session', projectPath: projectDir }) as unknown as FakeSession
     own.emitHostEvent({ type: 'status_change', status: 'streaming' } as AgentEvent)
     sessions.live.get(created.sessionId)!.emitHostEvent({ type: 'status_change', status: 'streaming' } as AgentEvent)
     const { events } = await client.rpc<{ events: EnvironmentEventEnvelope[] }>('session.events', { afterSequence: '0' })
-    expect(new Set(events.map((e) => e.aggregateId))).toEqual(new Set([created.sessionId]))
+    expect(new Set(events.map((e) => e.aggregateId))).toEqual(new Set([created.sessionId, 'own-session']))
+    const listed = await client.rpc<Array<{ sessionId: string }>>('session.list', { projectId: 'p1', limit: 50, offset: 0 })
+    expect(listed.map((s) => s.sessionId).sort()).toEqual([created.sessionId, 'own-session'].sort())
+    expect(await client.rpc('session.get', { sessionId: 'own-session' })).toMatchObject({ title: 'Mine', controllerClientSessionId: null })
+
+    const described = await client.rpc<ExecutionEnvironmentDescriptor>('environment.descriptor')
+    for (const method of ['session.setCwd', 'session.setTags', 'session.setUiFlags', 'session.close', 'session.remove', 'session.modUi', 'session.rewind', 'session.hostActionsPoll']) {
+      expect(described.capabilities.methods).toContain(method)
+    }
+    await client.rpc('session.setTags', { sessionId: 'own-session', set: ['review'] })
+    await client.rpc('session.setUiFlags', { sessionId: 'own-session', isPinned: true })
+    expect(store.rows.get('own-session')).toMatchObject({ tags: ['review'], isPinned: true })
+
+    // Driving B's own session takes its lease and leaves its launch origin alone.
+    const lease = await client.rpc<{ leaseId: string; generation: string }>('session.acquireControl', { sessionId: 'own-session' })
+    await client.rpc('session.send', { sessionId: 'own-session', text: 'from A', leaseId: lease.leaseId, generation: lease.generation })
+    expect(own.sent[0]).toMatchObject({ content: 'from A' })
+    expect(store.rows.get('own-session')?.controller).toBeNull()
+    await client.rpc('session.close', { sessionId: 'own-session', leaseId: lease.leaseId, generation: lease.generation })
+    expect(sessions.live.has('own-session')).toBe(false)
   })
 })
 

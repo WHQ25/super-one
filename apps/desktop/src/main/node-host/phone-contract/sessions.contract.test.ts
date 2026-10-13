@@ -112,6 +112,19 @@ describe('phone endpoint: sessions', () => {
     expect(await phone.rpc('session.get', { sessionId: created.sessionId })).toMatchObject({ title: 'New', model: 'claude-opus', effort: 'high', controllerClientSessionId: null })
   })
 
+  it("drives a controller's session without taking its Host Actions or its takeback state", async () => {
+    const { domain, own, store } = phoneDomain(cleanup)
+    const controller = { clientSessionId: 'desktop-a', label: 'Desktop A', released: true }
+    store.setController('own', controller)
+    const phone = await connectPhone(domain)
+    cleanup.push(phone.close)
+    const lease = await phone.rpc<ControlLease>('session.acquireControl', { sessionId: 'own' })
+    await phone.rpc('session.send', { sessionId: 'own', leaseId: lease.leaseId, generation: lease.generation, text: 'phone turn', options: { collaboration: { kind: 'initial_task' } } })
+    expect(own.sent[0]).toMatchObject({ content: 'phone turn' })
+    expect(own.sent[0]).not.toHaveProperty('collaboration')
+    expect(store.rows.get('own')?.controller).toEqual(controller)
+  })
+
   it('pushes a subscribed session to the asking phone and nothing else', async () => {
     const { domain, own } = phoneDomain(cleanup)
     const phone = await connectPhone(domain)

@@ -15,7 +15,7 @@ import type { RemoteControllerRecord } from '../db-remote-controlled-sessions'
 import { Session } from '../session/session'
 import type { SessionBackend } from '../session/types'
 import { DesktopSessionHost, type NodeHostSessionManager } from './desktop-session-host'
-import { memoryStore } from './node-host-test-fixtures'
+import { FakeSessionManager, memorySessionEdits, memoryStore } from './node-host-test-fixtures'
 
 vi.mock('../logger', () => ({ default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() } }))
 vi.mock('../shell-path', async (importOriginal) => ({
@@ -50,7 +50,7 @@ async function setup() {
   store.setController(SID, { clientSessionId: CLIENT } as RemoteControllerRecord, 'claude-base')
   const manager = { getSession: (id: string) => (id === SID ? session : null), onSession: () => () => {} } as unknown as NodeHostSessionManager
   const sessions = new DesktopSessionHost({
-    environmentId: ENV, sessions: manager, store, leases,
+    environmentId: ENV, sessions: manager, rows: store.all, edits: memorySessionEdits(store, new FakeSessionManager()), leases,
     events: new EventLog(db, ENV), hostActions: createSqliteHostActionStore(db),
     projectPath: () => '/b/project', controllerLabel: () => null,
   })

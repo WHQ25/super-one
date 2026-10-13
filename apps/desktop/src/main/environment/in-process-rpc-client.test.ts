@@ -37,7 +37,7 @@ describe('in-process domain protocol', () => {
     const client = new InProcessRpcClient(domain)
     const frames: SessionStreamFrame[] = []
     const onEnd = vi.fn()
-    const stream = await client.subscribeEvents({ afterSequence: domain.localSessions.snapshotSequence(), topics: [{ kind: 'session', environmentId: domain.identity.environmentId, sessionId: 'own' }] }, { onFrame: (frame) => frames.push(frame), onEnd })
+    const stream = await client.subscribeEvents({ afterSequence: domain.sessions.snapshotSequence(), topics: [{ kind: 'session', environmentId: domain.identity.environmentId, sessionId: 'own' }] }, { onFrame: (frame) => frames.push(frame), onEnd })
     own.emitHostEvent({ type: 'status_change', status: 'streaming' } as AgentEvent)
     await vi.waitFor(() => expect(frames.some((frame) => frame.events.some((event) => event.aggregateId === 'own'))).toBe(true))
     cleanup.pop()!() // The domain closes before its database and temporary folders.

@@ -9,7 +9,7 @@ import { withMcpAppContext } from './mcp-app-context'
 import { admitTurnAttachments } from '@superone/shared/attachment-turn'
 import { assertCodexAccountSwitchAllowed } from '@superone/shared/codex-accounts'
 import { insertCodexTimelineRow, stampCodexTimelineOrder } from '@superone/shared/codex-timeline-rows'
-import { buildCompactBoundaryMessage, compactBoundaryInsertIndex, isCompactSlashSend } from '@superone/shared/compact-boundary'
+import { buildCompactBoundaryMessage, compactBoundaryInsertIndex, isCompactSlashSend, withoutManualCompactTurn } from '@superone/shared/compact-boundary'
 import { anchorAsyncAnswer, captureTranscriptBoundary } from '@superone/shared/transcript-boundary'
 import { newMessageId } from '@superone/shared/message-id'
 import { isAgentOutputEvent, withSendFailure, withoutSendFailure, type DuplicateSend } from '@superone/shared/send-failure'
@@ -2487,12 +2487,10 @@ export class Session implements SessionContract {
       this._pendingCompactUserId = ''
       if (event.id && !this._messages.some((m) => m.id === event.id)) {
         // Manual: the "/compact" bubble and its reply are the command, not the
-        // conversation — drop them and close the transcript with the divider.
-        const sourceId = compactUserId ? event.messageId ?? this._currentMessageId : null
-        const next = compactUserId
-          ? this._messages.filter((m) => m.id !== compactUserId && m.id !== sourceId)
-          : [...this._messages]
-        const insertIdx = compactUserId ? next.length : compactBoundaryInsertIndex(next)
+        // conversation — the divider replaces them.
+        const { messages: next, index: insertIdx } = compactUserId
+          ? withoutManualCompactTurn(this._messages, compactUserId, event.messageId ?? this._currentMessageId)
+          : { messages: [...this._messages], index: compactBoundaryInsertIndex(this._messages) }
         next.splice(insertIdx, 0, buildCompactBoundaryMessage(event, event.id, new Date().toISOString(), compactUserId ? undefined : next[insertIdx], next))
         // Incremental persistence only rewrites dirty rows; removing rows or
         // inserting mid-transcript shifts every sort_order after the change.

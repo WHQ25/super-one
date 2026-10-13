@@ -2,6 +2,7 @@ import { nativeRestoreClient, nativeSessionLoad } from './native-restore.test-fi
 import { describe, expect, it, vi } from 'vitest'
 import type { AgentEvent, ChatMessage, SendMessageRequest } from '@superone/shared/agent-types'
 import { ChatRuntime } from '../../../../mobile/src/runtime'
+import { extractTurnOutline } from '@superone/shared/turn-outline'
 import { Session } from './session'
 import type { SessionBackend } from './types'
 
@@ -112,6 +113,27 @@ describe('manual /compact transcript cleanup', () => {
     expect(rows.map((m) => m.id).slice(0, 2)).toEqual(['u1', 'a1'])
     expect(rows).toHaveLength(3)
     expect(rows[2].providerId).toBe('system')
+  })
+
+  it('keeps a message sent while compaction ran below the divider, as its own outline entry', async () => {
+    const { session, emit } = fixture([msg('u1', 'user', { content: [{ type: 'text', text: 'Question' }] }), msg('a1', 'assistant')])
+    const sending = await sendCompact(session, emit)
+    emit({ type: 'status_indicator', indicator: 'compacting' })
+    const next = session.send({ content: 'right after', assistantMessageId: 'a-next' })
+    await vi.waitFor(() => expect(session.snapshot.messages).toHaveLength(5))
+    emit({ ...boundary, trigger: 'manual' } as AgentEvent)
+    emit({ type: 'status_indicator', indicator: null, compactResult: 'success' })
+    emit({ type: 'message_complete', messageId: 'a-compact' })
+    await sending
+    emit({ type: 'message_start', message: msg('a-next', 'assistant', { status: 'streaming' }) })
+    emit({ type: 'message_complete', messageId: 'a-next' })
+    await next
+
+    const rows = session.snapshot.messages
+    const sent = rows.find((m) => m.content.some((b) => b.type === 'text' && b.text === 'right after'))!
+    const divider = systemRows(rows)[0]
+    expect(rows.map((m) => m.id)).toEqual(['u1', 'a1', divider.id, sent.id, 'a-next'])
+    expect(extractTurnOutline(rows).map((entry) => entry.id)).toEqual(['u1', divider.id, sent.id])
   })
 
   it('keeps the bubble when compaction fails, and does not drop a later boundary\'s neighbours', async () => {

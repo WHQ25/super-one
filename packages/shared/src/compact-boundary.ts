@@ -32,6 +32,22 @@ export function compactBoundaryInsertIndex(messages: readonly ChatMessage[]): nu
 }
 
 /**
+ * Drop a manual "/compact" bubble and its blank reply. The divider takes the
+ * bubble's place, so a message sent while compaction ran stays below it.
+ */
+export function withoutManualCompactTurn(messages: readonly ChatMessage[], compactUserId: string, sourceId?: string | null): { messages: ChatMessage[]; index: number } {
+  const at = messages.findIndex((m) => m.id === compactUserId)
+  const kept = messages.filter((m) => m.id !== compactUserId && m.id !== sourceId)
+  return { messages: kept, index: at === -1 ? kept.length : messages.slice(0, at).filter((m) => m.id !== sourceId).length }
+}
+
+/** The "/compact" bubble itself, never a message the user sent after it. */
+export function isCompactSlashBubble(message: ChatMessage): boolean {
+  return message.role === 'user' && message.content.length === 1
+    && message.content[0].type === 'text' && message.content[0].text.trim() === '/compact'
+}
+
+/**
  * Harnesses whose `/compact` turn is pure command: the CLI compacts and replies
  * nothing, so the bubble and its blank reply are dropped once the boundary
  * lands. Codex answers with "Conversation compacted." and keeps its turn; ACP

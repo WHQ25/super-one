@@ -371,7 +371,8 @@ describe('reduceSlash: compact_boundary', () => {
     const msgs = patch.messages!
     expect(msgs.some((m) => m.id === 'u-pending')).toBe(false)
     expect(msgs.some((m) => m.id === 'compact-assistant')).toBe(false)
-    expect(msgs.some((m) => m.providerId === 'system')).toBe(true)
+    // The divider takes the bubble's place: a message sent while compaction ran stays below it.
+    expect(msgs.map((m) => m.providerId === 'system' ? 'divider' : m.id)).toEqual(['divider', 'u1'])
     expect(patch._pendingSlashCommand).toBe('')
   })
 })
@@ -381,7 +382,7 @@ describe('reduceSlash: slash_command_output', () => {
     const session = createDefaultPerSessionState()
     session._pendingSlashCommand = 'compact'
     session.messages = [
-      makeMessage('u-compact', { role: 'user' }),
+      makeMessage('u-compact', { role: 'user', content: [{ type: 'text', text: '/compact' }] }),
       makeMessage('source', { role: 'assistant' }),
     ]
 
@@ -396,6 +397,19 @@ describe('reduceSlash: slash_command_output', () => {
     expect(ids).not.toContain('u-compact')
     expect(patch._pendingSlashCommand).toBe('')
     expect(patch._pendingCompactUserId).toBe('')
+  })
+
+  it('keeps a message sent while compaction ran when the output arrives after the boundary', () => {
+    const session = createDefaultPerSessionState()
+    session._pendingSlashCommand = 'compact'
+    session.messages = [
+      makeMessage('divider', { role: 'assistant', providerId: 'system', content: [{ type: 'text', text: '__compact__:manual:1' }] }),
+      makeMessage('u-next', { role: 'user', content: [{ type: 'text', text: 'right after' }] }),
+    ]
+
+    const patch = reduceSlash(session, { type: 'slash_command_output', messageId: 'source', content: '', command: 'compact' } as never)
+
+    expect(patch.messages!.map((m) => m.id)).toEqual(['divider', 'u-next'])
   })
 
   it('produces a slashCommandOutput popup + hint assistant message for the default slash flow', () => {

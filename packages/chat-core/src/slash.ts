@@ -1,5 +1,5 @@
 import type { AgentEvent, ChatMessage } from '@superone/shared/agent-types'
-import { buildCompactBoundaryMessage, compactBoundaryInsertIndex } from '@superone/shared/compact-boundary'
+import { buildCompactBoundaryMessage, compactBoundaryInsertIndex, isCompactSlashBubble, withoutManualCompactTurn } from '@superone/shared/compact-boundary'
 import { findCheckpointTarget } from './helpers'
 import type { ChatCoreSession } from './types'
 import { defaultChatCorePorts, type ChatCorePorts } from './ports'
@@ -229,17 +229,14 @@ export function reduceSlash(
 
     case 'compact_boundary': {
       const compactUserId = session._pendingCompactUserId
-      const sourceMessageId = compactUserId ? event.messageId : undefined
-      const msgs = compactUserId
-        ? session.messages.filter((m) => m.id !== compactUserId && m.id !== sourceMessageId)
-        : [...session.messages]
-      const source = compactUserId ? undefined : msgs[compactBoundaryInsertIndex(msgs)]
+      const { messages: msgs, index } = compactUserId
+        ? withoutManualCompactTurn(session.messages, compactUserId, event.messageId)
+        : { messages: [...session.messages], index: compactBoundaryInsertIndex(session.messages) }
+      const source = compactUserId ? undefined : msgs[index]
       const row = buildCompactBoundaryMessage(event, event.id ?? ports.id('compact_'), new Date(ports.now()).toISOString(), source, msgs)
       // Main materialises the same row (same id) into its snapshot; a replay
       // that already delivered it must not add a second divider.
-      if (!msgs.some((m) => m.id === row.id)) {
-        msgs.splice(compactUserId ? msgs.length : compactBoundaryInsertIndex(msgs), 0, row)
-      }
+      if (!msgs.some((m) => m.id === row.id)) msgs.splice(index, 0, row)
       return {
         isCompacting: false,
         compactingStartedAt: null,
@@ -268,8 +265,9 @@ export function reduceSlash(
       )
       if (cmd === 'compact') {
         if (!compactUserId) {
+          // A message sent while compaction ran is the conversation, not the command.
           const lastUserIdx = filtered.findLastIndex((m) => m.role === 'user')
-          if (lastUserIdx >= 0) filtered.splice(lastUserIdx, 1)
+          if (lastUserIdx >= 0 && isCompactSlashBubble(filtered[lastUserIdx])) filtered.splice(lastUserIdx, 1)
         }
         return { _pendingSlashCommand: '', _pendingCompactUserId: '', messages: filtered }
       }

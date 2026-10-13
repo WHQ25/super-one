@@ -10,6 +10,7 @@ import {
   type NodeServerHandle,
   type RpcContext,
 } from '@superone/runtime/server'
+import type { ControlLeaseService } from '@superone/runtime/lease'
 import { verifyPayload } from '@superone/runtime/crypto/crypto-util'
 import type { NodeHostController, NodeHostControllerPath, NodeHostPairingToken } from '@superone/shared/agent-types'
 import { networkAddressScope } from '@superone/shared/private-network-address'
@@ -33,6 +34,27 @@ export interface DesktopNodeHostListen {
   /** A controller paired or was removed. */
   onControllersChanged?: () => void
   log?: { info: (message: string) => void; warn: (message: string) => void }
+}
+
+/**
+ * A controller desktop's grants on the domain's lease authority, held under
+ * its own client session. Its delegates can only be the phones it relays
+ * (`phone:<device>`), so none of its grants reads as this desktop's window;
+ * its wire `yields` reaches only those delegates.
+ */
+function controllerLeases(leases: ControlLeaseService): RpcContext['leases'] {
+  return {
+    acquire(input) {
+      if (input.delegate && !input.delegate.startsWith('phone:')) {
+        throw Object.assign(new Error('a controller delegates only to the phones it relays'), { code: 'invalid_argument' })
+      }
+      return leases.acquire(input)
+    },
+    renew: (input) => leases.renew(input),
+    release: (leaseId, generation, holderClientId, delegate) => leases.release(leaseId, generation, holderClientId, delegate),
+    revoke: (resource) => leases.revoke(resource),
+    assertValid: (input) => leases.assertValid(input),
+  }
 }
 
 /**
@@ -70,10 +92,11 @@ export class DesktopNodeHost {
       // Controllers coming and going change what the settings list shows.
       onClientConnected: () => listen.onControllersChanged?.(),
       onClientDisconnected: () => listen.onControllersChanged?.(),
-      createRpcContext: () => ({ ...context }),
+      createRpcContext: () => ({ ...context, leases: controllerLeases(domain.leases) }),
     })
     auth.onRevoke = (clientSessionId) => {
       server.closeSocketsForClient(clientSessionId)
+      domain.revokeClient(clientSessionId)
       listen.onControllersChanged?.()
     }
     auth.onPaired = () => listen.onControllersChanged?.()

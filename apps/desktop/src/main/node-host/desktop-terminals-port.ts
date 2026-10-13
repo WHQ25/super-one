@@ -11,6 +11,16 @@ function notFound(): Error {
 }
 
 /**
+ * A reader in the terms of `TerminalLease` writers: the window (`local`), a
+ * phone of this desktop (its device id) or a controller desktop
+ * (`node:<clientSessionId>`).
+ */
+function terminalReader(clientSessionId: string | undefined): string {
+  if (!clientSessionId || clientSessionId.startsWith('ipc:')) return 'local'
+  return clientSessionId.startsWith('phone:') ? clientSessionId.slice(6) : `node:${clientSessionId}`
+}
+
+/**
  * This desktop's PTYs as the shared terminal port: the tabs its window shows,
  * pushed to readers through `onEvent`. The desktop keeps the screen, not an
  * output buffer, so a reader that is behind gets the screen again.
@@ -28,8 +38,7 @@ export function createDesktopTerminalsPort(
       return { terminalId: term.terminalId, cwd: term.cwd, title: term.title, cols: term.cols, rows: term.rows }
     },
     attach: async (terminalId, clientSessionId) => {
-      const requester = clientSessionId?.startsWith('phone:') ? clientSessionId.slice(6) : 'local'
-      const { snapshot, ansi } = await live(terminalId).attachState(requester)
+      const { snapshot, ansi } = await live(terminalId).attachState(terminalReader(clientSessionId))
       return { snapshot: ansi, sequence: String(snapshot.lastSeq), terminal: snapshot }
     },
     readAfter: async (terminalId, afterSequence): Promise<TerminalReadResult> => {
@@ -49,7 +58,7 @@ export function createDesktopTerminalsPort(
     },
     onEvent,
     eventForClient: (event, clientSessionId) => event.type === 'terminal_owner_changed'
-      ? { ...event, writableByMe: clientSessionId === `phone:${event.ownerDeviceId}` }
+      ? { ...event, writableByMe: terminalReader(clientSessionId) === (event.ownerDeviceId ?? 'local') }
       : event,
   }
 }

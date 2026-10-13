@@ -16,6 +16,7 @@ import {
 } from '@superone/runtime/server'
 import { openNodeDatabase, type NodeDatabase } from '@superone/runtime/db'
 import { ControlLeaseService } from '@superone/runtime/lease'
+import type { DraftControl } from '@superone/runtime/drafts'
 import { EventLog, createSqliteHostActionStore } from '@superone/runtime/session'
 import type { HarnessManager } from '@superone/runtime/harness'
 import type { SessionAgentProfile } from '@superone/shared/agent-types'
@@ -99,7 +100,7 @@ export interface DesktopDomainDeps {
   /** This desktop's PTYs. */
   terminals?: TerminalsPort
   /** This desktop's composer drafts and their leases, shared with its window. */
-  drafts?: DraftsPort
+  drafts?: DraftsPort & Pick<DraftControl, 'releaseDevice'>
   beforeDraftOpen?(draftId: string): Promise<void>
   topicNotices?: RpcContext['topicNotices']
   rpcRouter?: PhoneRpcRouter
@@ -167,8 +168,7 @@ export class DesktopDomain {
         events,
         hostActions: createSqliteHostActionStore(db),
         projectPath: (projectId) => deps.projects.get(projectId)?.path ?? null,
-        controllerLabel: (clientSessionId) =>
-          auth.listClientSessions().find((c) => c.clientSessionId === clientSessionId)?.label ?? null,
+        controllerLabel: (clientSessionId) => controllerLabel(auth, clientSessionId),
       })
       const context: DesktopRpcContext = {
         identity,
@@ -207,16 +207,22 @@ export class DesktopDomain {
 
   /**
    * A controller desktop's context: the client context, except that its
-   * sessions are still the ones it started, and terminals and drafts stay with
-   * the window and phones until their leases know controller actors
-   * (docs/plans/desktop-node-parity.md).
+   * sessions are still the ones it started.
    */
   controllerContext(): DesktopRpcContext {
-    const { terminals: _terminals, drafts: _drafts, beforeDraftOpen: _beforeDraftOpen, topicNotices: _topicNotices, ...client } = this.clientContext()
-    return { ...client, sessions: this.sessions, unservedMethods: DESKTOP_UNSERVED_METHODS }
+    return { ...this.clientContext(), sessions: this.sessions, unservedMethods: DESKTOP_UNSERVED_METHODS }
   }
 
   openPhoneRoute(client: import('@superone/runtime/server').AuthenticatedClient) { return this.phonePorts.rpcRouter?.open(client) }
+
+  /** The name a controller desktop paired under; null for any other holder. */
+  controllerLabel(clientSessionId: string): string | null { return controllerLabel(this.auth, clientSessionId) }
+
+  /** A controller lost access (revoked, suspended, paused): its leases and draft grants end with it. */
+  revokeClient(clientSessionId: string): void {
+    this.leases.revokeHolder(clientSessionId)
+    this.phonePorts.drafts?.releaseDevice(clientSessionId)
+  }
 
   private client: DesktopRpcContext | null = null
   /** Watches clients hold, closed with the domain. */
@@ -269,6 +275,10 @@ export class DesktopDomain {
     this.leases.dispose()
     this.db.close()
   }
+}
+
+function controllerLabel(auth: AuthService, clientSessionId: string): string | null {
+  return auth.listClientSessions().find((c) => c.clientSessionId === clientSessionId)?.label ?? null
 }
 
 /** Methods this desktop serves beyond the shared families. */

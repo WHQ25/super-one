@@ -230,21 +230,25 @@ test('keeps compacted history navigable without mounting the full suffix', async
   expect(await page.locator('[data-message-id]').count()).toBeLessThan(24)
 })
 
-test('places two compactions inside one reply without folding history or adding compact ticks', async ({ page }) => {
+test('places two compactions inside one reply without folding history and ticks each of them', async ({ page }) => {
   await page.goto(`${base}/iframe.html?id=chat-transcript-segmentation--multiple-compactions&viewMode=story`)
-  await expect(page.locator('[data-tick]')).toHaveCount(3)
+  await expect.poll(() => page.locator('[data-tick]').evaluateAll(elements => elements.map(element => (element as HTMLElement).dataset.tick)))
+    .toEqual(['segmented-question', 'first-compact', 'second-compact'])
   await expect.poll(() => page.locator('[data-message-id]').evaluateAll(elements => elements.map(element => (element as HTMLElement).dataset.messageId)))
-    .toEqual(['segmented-turn', 'first-compact', 'segmented-turn:after:first-compact', 'second-compact', 'segmented-turn:after:second-compact'])
+    .toEqual(['segmented-question', 'segmented-turn', 'first-compact', 'segmented-turn:after:first-compact', 'second-compact', 'segmented-turn:after:second-compact'])
   await expect(page.getByRole('button', { name: /Show history|Hide history/ })).toHaveCount(0)
-  await page.locator('[data-tick="segmented-turn:after:first-compact"]').hover()
+  // A compaction tick previews the first reply text after it.
+  await page.locator('[data-tick="first-compact"]').hover()
   await expect(page.getByRole('tooltip')).toContainText('Between both compactions.')
-  await page.locator('[data-tick="segmented-turn:after:second-compact"]').click()
+  await page.locator('[data-tick="second-compact"]').click()
   await expect(page.locator('[data-message-id="segmented-turn:after:second-compact"]')).toContainText('After the second compaction.')
 })
 
 test('keeps async answers between the preceding and resumed assistant segments in narrow chat', async ({ page }) => {
   await page.goto(`${base}/iframe.html?id=chat-transcript-segmentation--narrow-async-answer&viewMode=story&globals=theme:dark`)
-  await expect(page.locator('[data-tick="segmented-turn:after:codex_async_answer:question"]')).toBeVisible()
+  await expect(page.locator('[data-message-id="segmented-turn:after:codex_async_answer:question"]')).toBeVisible()
+  // The answer is the only user message, so the rail stays hidden.
+  await expect(page.locator('[data-tick]')).toHaveCount(0)
   const ids = await page.locator('[data-message-id]').evaluateAll(elements => elements.map(element => (element as HTMLElement).dataset.messageId))
   expect(ids.indexOf('codex_async_answer:question')).toBeGreaterThan(ids.indexOf('segmented-turn'))
   expect(ids.indexOf('segmented-turn:after:codex_async_answer:question')).toBeGreaterThan(ids.indexOf('codex_async_answer:question'))
@@ -266,6 +270,9 @@ test('preserves reference definitions and semantic markdown around virtual block
 
 test('bounds a thousand Codex activities across content segments and preserves tool state', async ({ page }) => {
   await open(page, 'codex-long-turn')
+  // Compact mode folds the earlier activities under Detail. A DOM click keeps
+  // the reading position; a pointer click would scroll the button into view.
+  await page.locator('.turn-detail-section button').evaluate((button: HTMLButtonElement) => button.click())
   await expect(page.getByText('echo activity-799', { exact: true })).toBeVisible()
   expect(await page.locator('.tool-node').count()).toBeLessThan(40)
   expect(await page.locator('[data-chat-root] *').count()).toBeLessThan(4500)

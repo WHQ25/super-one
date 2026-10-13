@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import type { RelayClient } from '@superone/relay-client'
 import type { ShellGitInfo } from '../project-types'
-import { invalidateGitResources } from '../git-resource-cache'
+import type { WorktreeInfo } from '@superone/shared/agent-types'
+import { invalidateGitResources, requestGitResource } from '../git-resource-cache'
 import { fetchProjectGitInfo, gitTurnEnded } from '../session-git-refresh'
 
 /**
@@ -16,8 +17,10 @@ export function useProjectGitInfo(opts: {
   projectPath: string | null | undefined
   sessionId: string | null
   streaming: boolean
+  onWorktreeInfo?: (value: WorktreeInfo | null) => void
+  worktreePath?: string | null
 }) {
-  const { clientRef, projectPath, sessionId, streaming } = opts
+  const { clientRef, projectPath, sessionId, streaming, onWorktreeInfo, worktreePath } = opts
   const [gitInfo, setGitInfo] = useState<ShellGitInfo | null>(null)
   const generation = useRef(0)
   const turnRef = useRef({ sessionId, streaming })
@@ -27,15 +30,25 @@ export function useProjectGitInfo(opts: {
     if (!client || !path) return
     if (force) invalidateGitResources(client, path)
     const request = ++generation.current
-    const git = await fetchProjectGitInfo(client, path)
+    const [git, worktree] = await Promise.all([
+      fetchProjectGitInfo(client, path),
+      onWorktreeInfo ? requestGitResource(client, 'git.worktreeInfo', path).catch(() => null) : null,
+    ])
     if (request !== generation.current || clientRef.current !== client) return
     setGitInfo(git)
-  }, [clientRef, projectPath])
+    if (worktree) onWorktreeInfo?.(worktree)
+  }, [clientRef, projectPath, onWorktreeInfo])
 
   const replace = useCallback((git: ShellGitInfo | null) => {
     generation.current += 1
     setGitInfo(git)
   }, [])
+
+  // Restored and newly created worktrees both need their own branch/HEAD;
+  // the project's status cannot describe a detached session checkout.
+  useEffect(() => {
+    if (sessionId && worktreePath && onWorktreeInfo) void refresh(projectPath).catch(() => {})
+  }, [sessionId, worktreePath, projectPath, onWorktreeInfo, refresh])
 
   useEffect(() => {
     const prev = turnRef.current

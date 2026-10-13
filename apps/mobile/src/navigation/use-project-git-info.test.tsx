@@ -4,11 +4,13 @@ import { useRef } from 'react'
 import type { RelayClient } from '@superone/relay-client'
 import { resolveTestProject } from '../project-rpc.test-fixtures'
 import { useProjectGitInfo } from './use-project-git-info'
+import type { WorktreeInfo } from '@superone/shared/agent-types'
 
-function renderGit(client: RelayClient, session: { sessionId: string | null; streaming: boolean }) {
+type GitSession = { sessionId: string | null; streaming: boolean; worktreePath?: string | null }
+function renderGit(client: RelayClient, session: GitSession, onWorktreeInfo?: (value: WorktreeInfo | null) => void) {
   // `renderHook` is async in RNTL 14, like `render`.
   return renderHook(
-    (props: { sessionId: string | null; streaming: boolean }) => {
+    (props: GitSession) => {
       const clientRef = useRef(client)
       clientRef.current = client
       return useProjectGitInfo({
@@ -16,11 +18,39 @@ function renderGit(client: RelayClient, session: { sessionId: string | null; str
         projectPath: '/repo',
         sessionId: props.sessionId,
         streaming: props.streaming,
+        onWorktreeInfo,
+        worktreePath: props.worktreePath,
       })
     },
     { initialProps: session },
   )
 }
+
+test('opening a detached worktree session loads the checkout needed by its header', async () => {
+  const worktree: WorktreeInfo = { isWorktree: false, currentBranch: 'main', entries: [
+    { path: '/repo/review', branch: '', head: '8a058a749', isMain: false, isCurrent: false },
+  ] }
+  const rpc = jest.fn(async (method: string) => method === 'git.worktreeInfo' ? worktree : { branch: 'main' })
+  const onWorktreeInfo = jest.fn()
+  const client = { rpc, resolveProject: resolveTestProject } as unknown as RelayClient
+  await renderGit(client, { sessionId: 'detached', streaming: false, worktreePath: '/repo/review' }, onWorktreeInfo)
+  await waitFor(() => expect(onWorktreeInfo).toHaveBeenCalledWith(worktree))
+})
+
+test('discards worktree data when a newer shell snapshot supersedes the read', async () => {
+  let resolveWorktree!: (value: unknown) => void
+  const rpc = jest.fn((method: string) => method === 'git.worktreeInfo'
+    ? new Promise(done => { resolveWorktree = done }) : Promise.resolve({ branch: 'main' }))
+  const onWorktreeInfo = jest.fn()
+  const { result } = await renderGit({ rpc, resolveProject: resolveTestProject } as unknown as RelayClient,
+    { sessionId: 'session', streaming: false }, onWorktreeInfo)
+  let pending!: Promise<void>
+  await act(async () => { pending = result.current.refresh('/repo'); await Promise.resolve() })
+  await act(() => result.current.replace({ branch: 'newer' }))
+  await act(async () => { resolveWorktree({ isWorktree: false, currentBranch: 'old', entries: [] }); await pending })
+  expect(onWorktreeInfo).not.toHaveBeenCalled()
+  expect(result.current.gitInfo?.branch).toBe('newer')
+})
 
 test('a turn ending on the open session refreshes git status', async () => {
   const rpc = jest.fn(async () => ({ branch: 'main', porcelain: ' M a\n?? b\n?? c', insertions: 10, deletions: 2 }))

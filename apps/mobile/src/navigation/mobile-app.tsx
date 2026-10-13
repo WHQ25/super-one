@@ -372,6 +372,8 @@ export function MobileApp() {
     projectPath: project?.path,
     sessionId,
     streaming,
+    onWorktreeInfo: setWorktreeInfo,
+    worktreePath: sessionWorktree.worktreePath,
   })
   const composerUsage = useComposerUsage({
     clientRef, projectPath: project?.path, provider: selectedProvider, sessionId,

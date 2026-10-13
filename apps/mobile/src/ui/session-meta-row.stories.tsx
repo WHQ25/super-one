@@ -14,6 +14,8 @@ function Cases({ colorScheme }: { colorScheme: string }) {
         git={{ kind: 'branch', branch, dirtyFiles: 2 }} onOpenBranch={() => {}} />
       <SessionMetaRow deviceStatus="connectedCloud" subtitle="super-one"
         git={{ kind: 'worktreeBranch', branch }} />
+      <SessionMetaRow deviceStatus="connectedLan" subtitle="super-one"
+        git={{ kind: 'worktreeDetached', head: '8a058a7' }} />
     </View>)}
   </View>
 }

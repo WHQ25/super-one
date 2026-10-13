@@ -155,7 +155,8 @@ checkout the session runs in.
   worktree that was deleted under the session. Two rules there are load-bearing:
   a **local** session shows the *live* project branch (switching branches under a
   running session is allowed, so the snapshot goes stale), a **worktree** session
-  shows the *snapshot* branch (the worktree is pinned for its lifetime); and dirty
+  shows its live worktree entry's branch or detached HEAD, falling back to the
+  snapshot branch until the list loads; and dirty
   counts are local-only, because `get_git_info` counted the project checkout.
   Only the plain-branch chip is tappable — a worktree cannot switch branches.
 
@@ -164,6 +165,8 @@ checkout the session runs in.
 project path, so they survive a reconnect. `get_git_info` reports `branch: null` plus
 a short `head` on a detached HEAD — never the literal string `HEAD`, which used to
 reach the branch picker as a switchable name.
+Session restoration/creation, switch-back and turn-end refreshes also read the
+project's worktree list; a detached worktree has no snapshot branch to display.
 
 Both halves have an isolated gallery in the offline preview, because the states
 worth reviewing are the ones a healthy session never reaches:

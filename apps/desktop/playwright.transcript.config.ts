@@ -7,7 +7,7 @@ import { defineConfig } from '@playwright/test'
 const checkout = createHash('sha256').update(import.meta.dirname).digest('hex').slice(0, 12)
 export default defineConfig({
   testDir: './e2e',
-  testMatch: 'chat-transcript-virtualization.storybook.ts',
+  testMatch: ['chat-transcript-virtualization.storybook.ts', 'async-answer-streaming.storybook.ts'],
   outputDir: join(tmpdir(), `superone-transcript-${checkout}`),
   workers: 1,
   timeout: 30_000,

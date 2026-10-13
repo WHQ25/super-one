@@ -35,8 +35,34 @@ export function itemText(item: CodexThreadItem): string | undefined {
   return 'text' in item ? item.text : undefined
 }
 
-export function captureTranscriptBoundary(message: ChatMessage, messages: readonly ChatMessage[] = []): TranscriptBoundary {
+export function transcriptLengths(message: ChatMessage): Pick<TranscriptBoundary, 'content' | 'items'> {
   const keys = contentKeys(message.content)
+  return {
+    content: Object.fromEntries(message.content.map((block, index) => [keys[index], blockText(block)?.length ?? -1])),
+    items: Object.fromEntries((message.metadata?.codex?.items ?? []).map(item => [item.id, itemText(item)?.length ?? -1])),
+  }
+}
+
+/** Resolve saved async-answer cursors to whole block edges, including their later streaming deltas. */
+export function resolveTranscriptBoundaries(cuts: readonly ChatMessage[], lengths: Pick<TranscriptBoundary, 'content' | 'items'>): TranscriptBoundary[] {
+  let previous: Pick<TranscriptBoundary, 'content' | 'items'> = { content: {}, items: {} }
+  return cuts.map(cut => {
+    const cursor = cut.metadata!.transcriptBoundary!
+    const asyncAnswer = isCodexAsyncAnswer(cut)
+    const resolved = { ...cursor, content: { ...previous.content }, items: { ...previous.items } }
+    for (const kind of ['content', 'items'] as const) {
+      for (const [key, offset] of Object.entries(cursor[kind])) {
+        const end = asyncAnswer ? lengths[kind][key] ?? offset : offset
+        // A later compaction cannot replay text consumed by a whole-block answer boundary.
+        resolved[kind][key] = Math.max(previous[kind][key] ?? -1, end)
+      }
+    }
+    previous = resolved
+    return resolved
+  })
+}
+
+export function captureTranscriptBoundary(message: ChatMessage, messages: readonly ChatMessage[] = []): TranscriptBoundary {
   let order = capturedOrders.get(message.id) ?? 0
   for (const row of messages) {
     const cursor = row.metadata?.transcriptBoundary
@@ -49,8 +75,7 @@ export function captureTranscriptBoundary(message: ChatMessage, messages: readon
   return {
     messageId: message.id,
     order,
-    content: Object.fromEntries(message.content.map((block, index) => [keys[index], blockText(block)?.length ?? -1])),
-    items: Object.fromEntries((message.metadata?.codex?.items ?? []).map(item => [item.id, itemText(item)?.length ?? -1])),
+    ...transcriptLengths(message),
   }
 }
 

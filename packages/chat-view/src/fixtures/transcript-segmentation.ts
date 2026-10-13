@@ -2,6 +2,24 @@ import type { ChatMessage, ContentBlock } from '@superone/shared/agent-types'
 import { buildCompactBoundaryMessage } from '@superone/shared/compact-boundary'
 import { anchorAsyncAnswer } from '@superone/shared/transcript-boundary'
 
+/** An answer accepted halfway through a sentence; subsequent deltas keep its block identity. */
+export function streamingAsyncAnswerHistory(stage = 0): ChatMessage[] {
+  const prefix = '找到了两处提示：边缘的“Load earlier / Load later”按钮，以及长消息顶部的“'
+  const source: ChatMessage = { id: 'streaming-async-turn', role: 'assistant', providerId: 'codex',
+    status: 'streaming', createdAt: '', content: [{ type: 'text', id: 'reply', text: prefix }] }
+  const answer = anchorAsyncAnswer({ id: 'codex_async_answer:streaming-question', role: 'user', providerId: 'codex',
+    status: 'complete', createdAt: '', content: [{ type: 'text', text: '只显示 Loading 动画，加载前后不显示任何提示',
+      codexAsyncQuestions: [{ title: '历史加载区是否要完全隐藏非加载状态？', options: null }] }] }, [source])
+  if (stage > 0) source.content = [{ type: 'text', id: 'reply', text: prefix + '更早部分”文字。我会去掉这些提示。' }]
+  if (stage > 1) source.content.push(
+    { type: 'thinking', id: 'reasoning', thinking: '检查历史加载逻辑。' },
+    { type: 'tool_use', toolUseId: 'read', toolName: 'Read', input: '{"file_path":"src/history.ts"}', status: 'complete' },
+    { type: 'tool_result', toolUseId: 'read', summary: 'History loading verified.' },
+    { type: 'text', id: 'next', text: '明白，加载前后都不显示任何提示。' },
+  )
+  return [source, answer]
+}
+
 /** A completed turn with a small process continuation after automatic compaction. */
 export function compactProcessHistory(): ChatMessage[] {
   const tool = (id: string): ContentBlock => ({ type: 'tool_use', toolUseId: id, toolName: 'Bash',

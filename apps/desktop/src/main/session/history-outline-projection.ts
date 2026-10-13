@@ -1,5 +1,5 @@
 import type { ChatMessage, ContentBlock, CodexThreadItem } from '@superone/shared/agent-types'
-import { contentKeys, type TranscriptBoundary } from '@superone/shared/transcript-boundary'
+import { contentKeys, resolveTranscriptBoundaries, type TranscriptBoundary } from '@superone/shared/transcript-boundary'
 import { HISTORY_PREVIEW_LENGTH } from '@superone/shared/session-history-index'
 import { CODEX_ASYNC_QUESTION_DISMISSED, isDismissedCodexAsyncAnswer } from '@superone/shared/codex-async-question'
 import { getDb } from '../database'
@@ -80,21 +80,27 @@ export function loadHistoryOutlineMessages(sessionId: string): ChatMessage[] {
     }
   })
   const byId = new Map(messages.map(message => [message.id, message]))
-  const boundaries = new Map<string, TranscriptBoundary[]>()
+  const boundaries = new Map<string, ChatMessage[]>()
   for (const message of messages) {
     const cursor = message.metadata?.transcriptBoundary
-    if (cursor) boundaries.set(cursor.messageId, [...boundaries.get(cursor.messageId) ?? [], cursor])
+    if (cursor && !isDismissedCodexAsyncAnswer(message)) boundaries.set(cursor.messageId, [...boundaries.get(cursor.messageId) ?? [], message])
   }
   const contentSlice = db.prepare(`SELECT superone_history_text(json_extract(CASE WHEN json_type(content_json) = 'array'
     THEN content_json ELSE json_extract(content_json, '$.content') END, ?), ?) AS slices
     FROM chat_messages WHERE session_id = ? AND id = ?`)
   const itemSlice = db.prepare(`SELECT superone_history_text(json_extract(metadata_json, ?), ?) AS slices
     FROM chat_messages WHERE session_id = ? AND id = ?`)
-  for (const [id, cursors] of boundaries) {
+  for (const [id, cuts] of boundaries) {
     const source = byId.get(id)
     if (!source) continue
     const sourceLeaves = leaves.get(id)!
     const keys = contentKeys(source.content)
+    cuts.sort((a, b) => a.metadata!.transcriptBoundary!.order - b.metadata!.transcriptBoundary!.order)
+    const cursors = resolveTranscriptBoundaries(cuts, {
+      content: Object.fromEntries(sourceLeaves.blocks.map((block, index) => [keys[index], block.preview.length])),
+      items: Object.fromEntries(sourceLeaves.items.map(item => [item.id!, item.preview.length])),
+    })
+    cuts.forEach((cut, index) => { cut.metadata!.transcriptBoundary = cursors[index] })
     const project = (leaf: Leaf, key: string, kind: 'content' | 'items'): string => {
       const limit = leaf.preview.length
       const offsets = [...new Set([0, limit, ...cursors.flatMap(cursor => cursor[kind][key] >= 0

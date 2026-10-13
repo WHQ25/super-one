@@ -14,6 +14,33 @@ const texts = (messages: ChatMessage[]) => transcriptSegments(messages).map(segm
   .flatMap(block => block.type === 'text' ? [block.text] : []).join(''))
 
 describe('transcript segmentation at live boundaries', () => {
+  it.each(['text', 'thinking', 'legacy'] as const)('keeps a growing %s block intact above accepted async answers after restore', (kind) => {
+    const source: ChatMessage = { ...message(`growing-${kind}`, 'Before'), providerId: 'codex' }
+    if (kind === 'thinking') source.content = [{ type: 'thinking', thinking: 'Before' }]
+    if (kind === 'legacy') {
+      source.content = []
+      source.metadata = { codex: { threadId: 'thread', usage: null, items: [{ id: 'reply', type: 'agent_message', text: 'Before' }] } }
+    }
+    const first = anchorAsyncAnswer({ ...message(`codex_async_answer:${kind}-first`, 'Choice'), role: 'user' }, [source])
+    const second = anchorAsyncAnswer({ ...message(`codex_async_answer:${kind}-second`, 'Another choice'), role: 'user' }, [source, first])
+    const updated: ChatMessage = kind === 'legacy'
+      ? { ...source, metadata: { codex: { ...source.metadata!.codex!, items: [{ id: 'reply', type: 'agent_message', text: 'Before and after' }, { id: 'next', type: 'agent_message', text: 'Next block' }] } } }
+      : { ...source, content: [kind === 'text' ? { type: 'text', text: 'Before and after' } : { type: 'thinking', thinking: 'Before and after' }, { type: 'text', text: 'Next block' }] }
+    const { rows } = transcriptView(JSON.parse(JSON.stringify([updated, first, second])))
+    expect(rows.map(row => row.id)).toEqual([source.id, first.id, second.id, `${source.id}:after:${second.id}`])
+    expect(rows[0].message.content).toMatchObject([kind === 'thinking'
+      ? { type: 'thinking', thinking: 'Before and after' } : { type: 'text', text: 'Before and after' }])
+    expect(rows.at(-1)!.message.content).toMatchObject([{ type: 'text', text: 'Next block' }])
+  })
+
+  it('does not repeat text when a compaction follows an async answer in the same growing block', () => {
+    const source: ChatMessage = { ...message('growing-with-compact', 'Before'), providerId: 'codex' }
+    const answer = anchorAsyncAnswer({ ...message('codex_async_answer:compact', 'Choice'), role: 'user' }, [source])
+    const marker = compact('after-answer-compact', source)
+    const updated: ChatMessage = { ...source, content: [{ type: 'text', text: 'Before and after' }, { type: 'text', text: 'Next block' }] }
+    expect(texts([updated, answer, marker])).toEqual(['Before and after', 'Choice', '__compact__:auto:100::', 'Next block'])
+  })
+
   it('keeps two compactions at their exact offsets inside one continued text block after restore', () => {
     const source = message('turn', 'Before')
     const first = compact('c1', source)

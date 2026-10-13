@@ -5,6 +5,8 @@ vi.mock('../database', () => ({ getDb: () => state.db }))
 import { loadSessionHistoryIndex, loadSessionMessageWindow } from './history-navigation'
 import { segmentationHistory } from '@superone/chat-view/fixtures/transcript-segmentation'
 import { buildCompactBoundaryMessage } from '@superone/shared/compact-boundary'
+import { anchorAsyncAnswer } from '@superone/shared/transcript-boundary'
+import { loadHistoryOutlineMessages } from './history-outline-projection'
 import type { ChatMessage } from '@superone/shared/agent-types'
 import { CODEX_ASYNC_QUESTION_DISMISSED, formatCodexAsyncQuestionReply } from '@superone/shared/codex-async-question'
 let db: DatabaseSync
@@ -22,6 +24,23 @@ beforeEach(() => {
 afterEach(() => db.close())
 
 describe('history navigation database projection', () => {
+  it.each([false, true])('previews whole blocks for saved async answers without fetching text at the old character cut (legacy=%s)', (legacy) => {
+    const source: ChatMessage = { id: 'streaming-source', role: 'assistant', providerId: 'codex', status: 'streaming', createdAt: '',
+      content: legacy ? [] : [{ type: 'text', text: 'Before🙂'.repeat(100) }],
+      ...(legacy ? { metadata: { codex: { threadId: 'thread', usage: null, items: [{ id: 'reply', type: 'agent_message' as const, text: 'Before🙂'.repeat(100) }] } } } : {}) }
+    const answer = anchorAsyncAnswer({ id: 'codex_async_answer:streaming', role: 'user', providerId: 'codex', status: 'complete', createdAt: '', content: [{ type: 'text', text: 'Production' }] }, [source])
+    const text = 'Before🙂'.repeat(100) + 'Continued🧠'.repeat(100)
+    if (legacy) source.metadata!.codex!.items = [{ id: 'reply', type: 'agent_message', text }, { id: 'next', type: 'agent_message', text: 'Next block' }]
+    else source.content = [{ type: 'text', text }, { type: 'text', text: 'Next block' }]
+    const insert = db.prepare('INSERT INTO chat_messages VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)')
+    ;[source, answer].forEach((message, index) => insert.run('async-blocks', message.id, index, message.role, message.status,
+      JSON.stringify({ content: message.content }), '', message.providerId, JSON.stringify(message.metadata ?? {})))
+    const projected = loadHistoryOutlineMessages('async-blocks')[0]
+    const preview = legacy ? projected.metadata!.codex!.items[0] : projected.content[0]
+    expect('text' in preview ? preview.text : undefined).toBe(text.slice(0, 160))
+    expect(loadSessionHistoryIndex('async-blocks').entries).toMatchObject([{ id: answer.id, reply: 'Next block' }])
+  })
+
   it('excludes long multi-question dismissals from the bounded outline while retaining real answers', () => {
     const questions = [{ title: 'Environment? '.repeat(200), options: null }, { title: 'Deadline?', options: null }]
     const insert = db.prepare('INSERT INTO chat_messages VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL)')

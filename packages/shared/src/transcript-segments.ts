@@ -1,5 +1,5 @@
 import type { ChatMessage, ContentBlock, CodexThreadItem } from './agent-types'
-import { blockText, contentKeys, itemText, type TranscriptBoundary } from './transcript-boundary'
+import { blockText, contentKeys, itemText, resolveTranscriptBoundaries, transcriptLengths, type TranscriptBoundary } from './transcript-boundary'
 import { isToolResultBlock, isToolUseBlock } from './content-delta'
 import { isDismissedCodexAsyncAnswer } from './codex-async-question'
 import { isLegacyCodexMessage, withCodexContent } from './codex-content'
@@ -162,6 +162,7 @@ export function transcriptView(messages: readonly ChatMessage[]): TranscriptView
       rows.push(...cached.rows)
       continue
     }
+    const cursors = cuts.length ? resolveTranscriptBoundaries(cuts, transcriptLengths(source)) : []
     // A legacy Codex turn's boundaries index its items, and each segment
     // draws the content its own items derive.
     const legacy = isLegacyCodexMessage(source)
@@ -178,7 +179,7 @@ export function transcriptView(messages: readonly ChatMessage[]): TranscriptView
     let firstTurnRow = true
     for (let part = 0; part <= cuts.length; part++) {
       const next = cuts[part]
-      const slice = interval(source, previous?.metadata?.transcriptBoundary, next?.metadata?.transcriptBoundary)
+      const slice = interval(source, cursors[part - 1], cursors[part])
       const groups = legacy ? itemGroups(slice.items).map((items, index, all) => ({ items,
         content: index === all.length - 1 ? finalResponse(slice.content) : [] }))
         : contentGroups(slice.content).map(content => ({ content, items: [] as CodexThreadItem[] }))
@@ -205,7 +206,7 @@ export function transcriptView(messages: readonly ChatMessage[]): TranscriptView
           const block = legacy ? message.content.find(candidate => 'id' in candidate && candidate.id === opens.itemId) : opens.block
           if (block) anchors.set(block, segment.id)
         }
-        const following = next ? interval(source, next.metadata!.transcriptBoundary) : undefined
+        const following = next ? interval(source, cursors[part]) : undefined
         rows.push({ id: first.segment.id, message, source, final: false, first: firstTurnRow, ...(anchors.size ? { anchors } : {}),
           ...(following ? { following: sliceOf(following.content, following.items) } : {}) })
         firstTurnRow = false

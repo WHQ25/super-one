@@ -31,6 +31,25 @@ const answer = { kind: 'codex.steer' as const, input: 'Production', newAssistant
   newUserMessageId: 'codex_async_answer:question', newUserText: 'Production' }
 
 describe('Codex async answers across turn completion', () => {
+  it('keeps text arriving during and after answer acceptance in its original block', async () => {
+    const { session, backend, emit } = fixture()
+    emit({ type: 'status_change', status: 'streaming' })
+    emit({ type: 'message_start', message: { id: 'turn', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'codex' } })
+    emit(reply('reply', 'Found the “'))
+    backend.handleCommand.mockImplementationOnce(async () => { emit(reply('reply', 'earlier part')) })
+    await session.dispatchBackendCommand(answer)
+    emit(reply('reply', '” hint.'))
+    emit({ type: 'content_delta', messageId: 'turn', delta: { type: 'thinking', id: 'reasoning', thinking: 'Check the next block.' } })
+    emit(reply('next', 'The hint will be removed.'))
+    for (const messages of [session.snapshot.messages, JSON.parse(JSON.stringify(session.snapshot.messages))]) {
+      const segments = transcriptSegments(messages)
+      expect(segments.map(segment => segment.id)).toEqual(['turn', answer.newUserMessageId, `turn:after:${answer.newUserMessageId}`, 'turn:segment:text::1'])
+      expect(segments[0].message.content).toMatchObject([{ type: 'text', text: 'Found the “earlier part” hint.' }])
+      expect(segments[2].message.content).toMatchObject([{ type: 'thinking', thinking: 'Check the next block.' }])
+      expect(segments[3].message.content).toMatchObject([{ type: 'text', text: 'The hint will be removed.' }])
+    }
+  })
+
   it('persists and broadcasts both exact compaction cursors in a continuing provider message', () => {
     const { session, emit } = fixture()
     const outbound: AgentEvent[] = []

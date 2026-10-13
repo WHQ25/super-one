@@ -305,6 +305,20 @@ describe('toggleMcpConfig', () => {
 
     expect(mocks.writeFileSync).not.toHaveBeenCalled()
   })
+  it('finds only own entries, so an inherited name never reaches the prototype', () => {
+    mockFiles({
+      [USER_CONFIG]: { mcpServers: { srv: { command: 'x' } } },
+      [PROJECT_MCP]: { mcpServers: { srv: { command: 'x' } } },
+    })
+
+    for (const name of ['__proto__', 'toString', 'constructor']) {
+      expect(() => toggleMcpConfig(name, true, 'user', CWD)).toThrow(expect.objectContaining({ code: 'not_found' }))
+      expect(() => toggleMcpConfig(name, true, 'project', CWD)).toThrow(expect.objectContaining({ code: 'not_found' }))
+      expect(() => deleteMcpConfig(name, 'project', CWD)).toThrow(expect.objectContaining({ code: 'not_found' }))
+    }
+    expect(({} as { disabled?: unknown }).disabled).toBeUndefined()
+    expect(mocks.writeFileSync).not.toHaveBeenCalled()
+  })
 })
 
 describe('deleteMcpConfig', () => {

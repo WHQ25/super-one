@@ -11,6 +11,7 @@ import type { McpServerConfig, ResourceScope } from '@superone/shared/agent-type
 import type { ResourceProvider } from '@superone/shared/environment'
 import {
   deleteClaudeMcpConfig,
+  findClaudeMcpConfig,
   listClaudeMcpConfigs,
   saveClaudeMcpConfig,
   toggleClaudeMcpConfig,
@@ -18,6 +19,7 @@ import {
 } from './mcp-config-claude'
 import {
   deleteCodexMcpConfig,
+  findCodexMcpConfig,
   listCodexMcpConfigs,
   saveCodexMcpConfig,
   toggleCodexMcpConfig,
@@ -45,6 +47,22 @@ export function listMcpConfigs(
   if (provider === 'codex') return listCodexMcpConfigs(cwd, opts)
   if (provider === 'dsh') return listDshMcpConfigs(cwd, opts)
   return listClaudeMcpConfigs(cwd, opts)
+}
+
+/**
+ * The stored server named `name` in `scope` alone. Unlike the merged listing,
+ * an entry another scope shadows or supplies is never returned.
+ */
+export function findMcpConfig(
+  provider: ResourceProvider,
+  name: string,
+  scope: Extract<ResourceScope, 'user' | 'project'>,
+  cwd: string,
+  opts?: McpManageOptions,
+): McpServerConfig | undefined {
+  if (provider === 'codex') return findCodexMcpConfig(name, scope, cwd, opts)
+  if (provider === 'dsh') return scope === 'user' ? listDshMcpConfigs(cwd, opts).find((s) => s.name === name) : undefined
+  return findClaudeMcpConfig(name, scope, cwd, opts)
 }
 
 export function saveMcpConfig(

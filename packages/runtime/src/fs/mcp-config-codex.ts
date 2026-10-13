@@ -96,6 +96,16 @@ export function listCodexMcpConfigs(cwd: string, opts?: CodexMcpOptions): McpSer
   return Array.from(merged.values())
 }
 
+/** The server named `name` as listed from `scope`'s own file, ignoring the other scope. */
+export function findCodexMcpConfig(
+  name: string,
+  scope: Extract<ResourceScope, 'user' | 'project'>,
+  cwd: string,
+  opts?: CodexMcpOptions,
+): McpServerConfig | undefined {
+  return parseConfigFile(getCodexConfigPath(scope, cwd, opts), scope).find((server) => server.name === name)
+}
+
 /** A name for a server being written; existing entries are found by whatever key they have. */
 function assertServerName(name: string): void {
   if (!name || name.length > 128 || !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(name)) {
@@ -152,7 +162,7 @@ export function toggleCodexMcpConfig(
   const filePath = getCodexConfigPath(scope, cwd, opts)
   const data = readConfigFile(filePath)
   const mcpServers = data.mcp_servers as Record<string, TomlMcpServer> | undefined
-  if (!mcpServers?.[name]) {
+  if (!mcpServers || !Object.hasOwn(mcpServers, name)) {
     throw Object.assign(new Error(`MCP server not found: ${name}`), { code: 'not_found' })
   }
   mcpServers[name]!.enabled = !disabled
@@ -168,7 +178,7 @@ export function deleteCodexMcpConfig(
   const filePath = getCodexConfigPath(scope, cwd, opts)
   const data = readConfigFile(filePath)
   const mcpServers = data.mcp_servers as Record<string, TomlMcpServer> | undefined
-  if (!mcpServers?.[name]) {
+  if (!mcpServers || !Object.hasOwn(mcpServers, name)) {
     throw Object.assign(new Error(`MCP server not found: ${name}`), { code: 'not_found' })
   }
   delete mcpServers[name]

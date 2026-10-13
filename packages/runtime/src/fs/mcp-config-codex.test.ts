@@ -288,6 +288,23 @@ enabled = false
   })
 })
 
+describe('own entries only', () => {
+  it('refuses an inherited name instead of writing onto the prototype', () => {
+    existsSyncMock.mockReturnValue(true)
+    readFileSyncMock.mockReturnValue(`
+[mcp_servers.linear]
+url = "https://mcp.linear.app/mcp"
+`)
+
+    for (const name of ['__proto__', 'toString', 'constructor']) {
+      expect(() => toggleCodexMcpConfig(name, true, 'user', '/project')).toThrow(expect.objectContaining({ code: 'not_found' }))
+      expect(() => deleteCodexMcpConfig(name, 'user', '/project')).toThrow(expect.objectContaining({ code: 'not_found' }))
+    }
+    expect(({} as { enabled?: unknown }).enabled).toBeUndefined()
+    expect(writeFileSyncMock).not.toHaveBeenCalled()
+  })
+})
+
 describe('deleteCodexMcpConfig', () => {
   it('removes the target server from config', () => {
     existsSyncMock.mockReturnValue(true)

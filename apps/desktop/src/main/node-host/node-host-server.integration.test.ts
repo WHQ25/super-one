@@ -244,10 +244,10 @@ describe('DesktopNodeHost resources', () => {
     const listed = async () => (await client.rpc<{ servers: Array<Record<string, unknown>> }>('mcp.list', { projectId: 'p1', provider: 'claude' })).servers
 
     await client.rpc('mcp.save', { ...server, config: { type: 'stdio', command: 'node', args: ['a.js'], env: { TOKEN: 'secret-token-123' } } })
-    expect(await listed()).toEqual([expect.objectContaining({ name: 'tools', command: 'node', env: { TOKEN: '***en-123' } })])
+    expect(await listed()).toEqual([expect.objectContaining({ name: 'tools', command: 'node', env: { TOKEN: '********' } })])
 
     // An edit sends the masked env back; B keeps the secret.
-    await client.rpc('mcp.save', { ...server, config: { type: 'stdio', command: 'node', args: ['b.js'], env: { TOKEN: '***en-123' } } })
+    await client.rpc('mcp.save', { ...server, config: { type: 'stdio', command: 'node', args: ['b.js'], env: { TOKEN: '********' } } })
     const onDisk = JSON.parse(readFileSync(join(projectDir, '.mcp.json'), 'utf8')) as { mcpServers: Record<string, unknown> }
     expect(onDisk.mcpServers.tools).toMatchObject({ args: ['b.js'], env: { TOKEN: 'secret-token-123' } })
 

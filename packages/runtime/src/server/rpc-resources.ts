@@ -14,7 +14,6 @@ import {
   type ResourceProvider,
 } from '@superone/shared/environment'
 import type { HookSavePayload, MarketplaceScope, McpServerConfig } from '@superone/shared/agent-types'
-import { maskSecret } from '@superone/shared/secret-mask'
 import {
   addMarketplace,
   deleteHook,
@@ -31,6 +30,7 @@ import {
   listHooks,
   listManagedSkills,
   listMarketplacePlugins,
+  findMcpConfig,
   listMcpConfigs,
   listPlugins,
   readAgentFile,
@@ -162,8 +162,15 @@ function parseMcpWriteConfig(raw: unknown): McpWriteFields | null {
   return config
 }
 
+/**
+ * What every MCP env and header value is shown as. Nothing of the value
+ * leaves the host: these are often short passwords, where even a suffix
+ * gives most of it away.
+ */
+export const MCP_SECRET_MASK = '********'
+
 function maskValues(values: Record<string, string>): Record<string, string> {
-  return Object.fromEntries(Object.entries(values).map(([key, value]) => [key, maskSecret(value)]))
+  return Object.fromEntries(Object.entries(values).map(([key, value]) => [key, value ? MCP_SECRET_MASK : value]))
 }
 
 /** A server as it leaves the host: env and header values masked. */
@@ -177,15 +184,15 @@ export function maskMcpServer(server: McpServerConfig): McpServerConfig {
 
 function restoreValues(values: Record<string, string>, stored: Record<string, string> | undefined): Record<string, string> {
   return Object.fromEntries(Object.entries(values).map(([key, value]) => {
-    const secret = stored?.[key]
-    return [key, secret !== undefined && value === maskSecret(secret) ? secret : value]
+    const secret = stored && Object.hasOwn(stored, key) ? stored[key] : undefined
+    return [key, value === MCP_SECRET_MASK && secret !== undefined ? secret : value]
   }))
 }
 
 /**
  * A save as the client meant it: every value it sent back still masked
- * becomes the stored secret it was masked from. `stored` is the server the
- * client was shown (the listing merges scopes by name).
+ * becomes the stored secret under the same key. `stored` is the entry in the
+ * scope being written, so a save never copies a secret across scopes.
  */
 export function restoreMaskedMcpSecrets(config: McpWriteFields, stored: McpServerConfig | undefined): McpWriteFields {
   if (!stored) return config
@@ -300,8 +307,8 @@ const RESOURCE_METHODS: Readonly<Record<string, ResourceMethod>> = {
       if (!name) return invalid('name is required')
       const config = parseMcpWriteConfig(p.config)
       if (!config) return invalid('config object is required')
-      const shown = listMcpConfigs(provider, cwd, manageOpts(ctx)).find((server) => server.name === name)
-      saveMcpConfig(provider, name, restoreMaskedMcpSecrets(config, shown), scope, cwd, manageOpts(ctx))
+      const stored = findMcpConfig(provider, name, scope, cwd, manageOpts(ctx))
+      saveMcpConfig(provider, name, restoreMaskedMcpSecrets(config, stored), scope, cwd, manageOpts(ctx))
       await ctx.mcpChanged?.({ provider, projectPath: cwd, name, enabled: true, saved: true })
       return { result: { ok: true as const, provider } }
     },

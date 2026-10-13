@@ -25,6 +25,7 @@ import { baseSessionProviderId } from '@superone/shared/session-provider-definit
 import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
 import { localSessionEnvironmentId } from '../environment/session-identity'
 import type { RemoteControlService } from '../remote-control-service'
+import type { McpChange } from '@superone/runtime/server/rpc-resources'
 import { trace } from './event-trace'
 import { applySessionDirectoryHint, sessionCreationCwd } from './session-directory'
 import { getProjectExtraDirs, updateProject } from '../recent-folders';
@@ -794,10 +795,25 @@ export class AgentService {
   }
 
   /** Live Claude runtimes pick up a plugin change now; released ones load it on their next start. */
-  private reloadLiveClaudePlugins(): void {
+  reloadLiveClaudePlugins(): void {
     this.sessionManager?.forEachSession((session) => {
       if (session.snapshot.harnessId === 'claude' && session.hasActiveRuntime()) void session.reloadPlugins()
     })
+  }
+
+  /**
+   * After a Claude MCP config change on disk, by the window or any node
+   * client: the project's active session turns the server on or off, and
+   * reconnects a saved one so it runs the new launch config.
+   */
+  async mcpConfigChanged({ provider, projectPath, name, enabled, saved }: McpChange): Promise<void> {
+    if (provider !== 'claude') return
+    const session = this.sessionManager?.getActiveSession(projectPath)
+    if (!session) return
+    try { await session.toggleMcpServer(name, enabled) } catch (err) { log.debug('[agent] MCP toggle skipped:', err) }
+    if (saved) {
+      try { await session.reconnectMcp(name) } catch (err) { log.debug('[agent] MCP reconnect skipped:', err) }
+    }
   }
 
   setSessionManager(sessionManager: import('../session/session-manager').SessionManagerImpl): void {
@@ -1814,11 +1830,9 @@ export class AgentService {
     })
 
     windowIpc.handle(AgentIpcChannels.MCP_SAVE_CONFIG, async (_event, projectPath: string, name: string, config: Record<string, unknown>, scope: ResourceScope) => {
+      if (scope !== 'user' && scope !== 'project') throw new Error('MCP save only supports user or project scope')
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
       if (parseRemoteProjectKey(projectPath)) {
-        if (scope !== 'user' && scope !== 'project') {
-          throw new Error('Remote MCP save only supports user or project scope')
-        }
         const { getEnvironmentHost } = await import('../environment')
         const { saveRemoteManagedMcp } = await import('../environment/remote-resources')
         const ok = await saveRemoteManagedMcp(getEnvironmentHost(), projectPath, {
@@ -1831,19 +1845,13 @@ export class AgentService {
         return
       }
       saveMcpConfig(name, config, scope, projectPath)
-      const session = this.sessionManager?.getActiveSession(projectPath)
-      if (session) {
-        try { await session.toggleMcpServer(name, true) } catch (err) { log.debug('[agent] MCP save enable skipped:', err) }
-        try { await session.reconnectMcp(name) } catch (err) { log.debug('[agent] MCP save reconnect skipped:', err) }
-      }
+      await this.mcpConfigChanged({ provider: 'claude', projectPath, name, enabled: true, saved: true })
     })
 
     windowIpc.handle(AgentIpcChannels.MCP_DELETE_CONFIG, async (_event, projectPath: string, name: string, scope: ResourceScope) => {
+      if (scope !== 'user' && scope !== 'project') throw new Error('MCP delete only supports user or project scope')
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
       if (parseRemoteProjectKey(projectPath)) {
-        if (scope !== 'user' && scope !== 'project') {
-          throw new Error('Remote MCP delete only supports user or project scope')
-        }
         const { getEnvironmentHost } = await import('../environment')
         const { deleteRemoteManagedMcp } = await import('../environment/remote-resources')
         const ok = await deleteRemoteManagedMcp(getEnvironmentHost(), projectPath, {
@@ -1855,7 +1863,7 @@ export class AgentService {
         return
       }
       deleteMcpConfig(name, scope, projectPath)
-      try { await this.sessionManager?.getActiveSession(projectPath)?.toggleMcpServer(name, false) } catch (err) { log.debug('[agent] MCP delete toggle skipped:', err) }
+      await this.mcpConfigChanged({ provider: 'claude', projectPath, name, enabled: false, saved: false })
     })
 
     windowIpc.handle(AgentIpcChannels.MCP_TOGGLE_CONFIG, async (_event, projectPath: string, name: string, disabled: boolean, scope: ResourceScope) => {
@@ -1876,7 +1884,7 @@ export class AgentService {
         return
       }
       if (scope !== 'claudeai') toggleMcpConfig(name, disabled, scope, projectPath)
-      try { await this.sessionManager?.getActiveSession(projectPath)?.toggleMcpServer(name, !disabled) } catch (err) { log.debug('[agent] MCP toggle skipped:', err) }
+      await this.mcpConfigChanged({ provider: 'claude', projectPath, name, enabled: !disabled, saved: false })
     })
 
     windowIpc.handle(AgentIpcChannels.MCP_CHECK_SERVERS, async (_event, projectPath: string, harness?: HarnessId) => {

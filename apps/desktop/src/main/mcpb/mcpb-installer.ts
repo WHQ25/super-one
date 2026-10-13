@@ -268,6 +268,15 @@ export async function installMcpbBundle(
   }
 }
 
+/** Remove a server entry that the user, or an earlier provider, may already have removed. */
+function removeServerEntry(remove: () => void): void {
+  try {
+    remove()
+  } catch (err) {
+    if ((err as { code?: string }).code !== 'not_found') throw err
+  }
+}
+
 export async function uninstallMcpbBundle(
   name: string,
   paths: InstallerPaths = defaultPaths(),
@@ -285,9 +294,9 @@ export async function uninstallMcpbBundle(
     const resolvedMeta = meta
     const provider: McpbProvider = resolvedMeta.provider ?? 'claude'
     const deleteFn = provider === 'codex' ? deleteCodexMcpConfig : deleteMcpConfig
-    deleteFn(resolvedMeta.name, resolvedMeta.scope, resolvedMeta.cwd ?? '')
+    removeServerEntry(() => deleteFn(resolvedMeta.name, resolvedMeta.scope, resolvedMeta.cwd ?? ''))
     const otherDeleteFn = provider === 'codex' ? deleteMcpConfig : deleteCodexMcpConfig
-    otherDeleteFn(resolvedMeta.name, 'user', '')
+    removeServerEntry(() => otherDeleteFn(resolvedMeta.name, 'user', ''))
   }
 
   log.info('[mcpb] uninstalled %s (install dir preserved for fast re-install)', name)

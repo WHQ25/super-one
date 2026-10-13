@@ -49,7 +49,7 @@ export async function requestMcpServers(
   client: ProjectRpcClient,
   projectPath: string,
 ): Promise<{ rows: McpServerRow[]; error?: string }> {
-  const reply = await projectRpc(client, projectPath, 'mcp.list') as { servers?: McpServerInfo[]; error?: string }
+  const reply = await projectRpc(client, projectPath, 'mcp.status') as { servers?: McpServerInfo[]; error?: string }
   if (typeof reply?.error === 'string' && reply.error) return { rows: [], error: reply.error }
   return { rows: mcpServerRows(Array.isArray(reply?.servers) ? reply.servers : []) }
 }

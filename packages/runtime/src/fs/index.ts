@@ -46,6 +46,7 @@ export {
 } from './skills-manage'
 export {
   listMcpConfigs,
+  findMcpConfig,
   saveMcpConfig,
   toggleMcpConfig,
   deleteMcpConfig,

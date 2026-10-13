@@ -15,6 +15,7 @@ import type {
 } from '@superone/shared/platform-registry'
 import type { NodeDatabase } from '../db/database'
 import { createNodeSecretCrypto } from './secret-crypto'
+import { maskSecret } from '@superone/shared/secret-mask'
 
 function safeParse<T>(text: string | null | undefined, fallback: T): T {
   if (!text) return fallback
@@ -23,12 +24,6 @@ function safeParse<T>(text: string | null | undefined, fallback: T): T {
   } catch {
     return fallback
   }
-}
-
-function maskApiKey(secret: string): string {
-  if (!secret) return ''
-  if (secret.length <= 6) return '***'
-  return `***${secret.slice(-6)}`
 }
 
 export interface CreateCredentialInput {
@@ -324,7 +319,7 @@ export class ProviderStore {
   }
 
   private maskCredential(cred: Credential): Credential {
-    return { ...cred, secret: maskApiKey(this.crypto.decrypt(cred.secret)) }
+    return { ...cred, secret: maskSecret(this.crypto.decrypt(cred.secret)) }
   }
 
   private rowToBinding(row: BindingRow): ConsumerBinding {

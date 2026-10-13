@@ -35,7 +35,7 @@ import { desktopRestorePorts } from '../session/session-restore-ports'
 
 type NodeHostSettings = Pick<AppSettings, 'remoteNodeAccessEnabled' | 'remoteNodeAccessPort'>
 /** What main gives the domain for its phones: its PTYs and its desktop methods. */
-type PhonePorts = Pick<DesktopDomainDeps, 'terminals' | 'phoneMethods' | 'catalog' | 'projectEdits' | 'bindLocalControl' | 'beforeDraftOpen' | 'topicNotices' | 'rpcRouter' | 'scheduledSends'>
+type PhonePorts = Pick<DesktopDomainDeps, 'terminals' | 'phoneMethods' | 'catalog' | 'resources' | 'projectEdits' | 'bindLocalControl' | 'beforeDraftOpen' | 'topicNotices' | 'rpcRouter' | 'scheduledSends'>
 
 let host: DesktopNodeHost | null = null
 /** This desktop's environment backend, open from the first settings pass until quit. */

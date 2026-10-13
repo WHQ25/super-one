@@ -26,6 +26,8 @@ import { DesktopSessionHost, type DesktopSessionEdits, type DesktopSessionHostDe
 import { createDesktopGitPort } from './desktop-git-port'
 import { createDesktopCatalogMethods, type DesktopCatalog } from './desktop-catalog-methods'
 import { createDesktopConfigMethods, type DesktopConfig } from './desktop-config-methods'
+import { createDesktopResourceMethods } from './desktop-resource-methods'
+import type { ResourceHost } from '@superone/runtime/server/rpc-resources'
 import { reconcileRunsAfterRestart } from './reconcile-runs'
 import {
   WorkspaceFsService,
@@ -106,6 +108,8 @@ export interface DesktopDomainDeps {
   phoneMethods?: DesktopExtension
   /** The window's harness catalogs, served as the node catalog contract. */
   catalog?: DesktopCatalog
+  /** What the window adds to the resource families' files: its shell PATH, Codex and live sessions. */
+  resources?: ResourceHost
   /** The credential reads a composer's API provider picker needs (`desktop-providers-port.ts`). */
   providers?: ProvidersPort
   sessionEdits: DesktopSessionEdits
@@ -142,7 +146,7 @@ export class DesktopDomain {
     /** The node home (identity, channel root, config). */
     readonly nodeHome: string,
     private readonly context: DesktopRpcContext,
-    private readonly phonePorts: Pick<DesktopDomainDeps, 'terminals' | 'drafts' | 'beforeDraftOpen' | 'phoneMethods' | 'catalog' | 'config' | 'projectEdits' | 'topicNotices' | 'rpcRouter'>,
+    private readonly phonePorts: Pick<DesktopDomainDeps, 'terminals' | 'drafts' | 'beforeDraftOpen' | 'phoneMethods' | 'catalog' | 'config' | 'resources' | 'projectEdits' | 'topicNotices' | 'rpcRouter'>,
   ) {}
 
   static open(deps: DesktopDomainDeps): DesktopDomain {
@@ -193,7 +197,7 @@ export class DesktopDomain {
         subscriptionUsage: { claudeAccounts: claudeUsageAccounts, log: usageLog },
       }
       deps.bindLocalControl?.({ environmentId: identity.environmentId, leases })
-      return new DesktopDomain(db, identity, auth, leases, sessions, recorder, unbindSessions, paths.nodeHome, context, { terminals: deps.terminals, drafts: deps.drafts, beforeDraftOpen: deps.beforeDraftOpen, phoneMethods: deps.phoneMethods, catalog: deps.catalog, config: deps.config, projectEdits: deps.projectEdits, topicNotices: deps.topicNotices, rpcRouter: deps.rpcRouter })
+      return new DesktopDomain(db, identity, auth, leases, sessions, recorder, unbindSessions, paths.nodeHome, context, { terminals: deps.terminals, drafts: deps.drafts, beforeDraftOpen: deps.beforeDraftOpen, phoneMethods: deps.phoneMethods, catalog: deps.catalog, config: deps.config, resources: deps.resources, projectEdits: deps.projectEdits, topicNotices: deps.topicNotices, rpcRouter: deps.rpcRouter })
     } catch (err) {
       db.close()
       throw err
@@ -248,6 +252,7 @@ export class DesktopDomain {
       this.phonePorts.phoneMethods,
       this.phonePorts.catalog && createDesktopCatalogMethods(this.phonePorts.catalog),
       this.phonePorts.config && createDesktopConfigMethods(this.phonePorts.config, this.context.projects!),
+      this.phonePorts.resources && createDesktopResourceMethods(this.phonePorts.resources),
     ])
     return {
       ...this.context,

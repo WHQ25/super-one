@@ -25,7 +25,7 @@ import type { ProviderStore } from '../provider/provider-store'
 import type { ArtifactZoneService } from '../workspace/artifact-zone'
 import { dispatchSessionArchiveRpc, SESSION_ARCHIVE_RPC_METHODS } from './session-archive-handlers'
 import { dispatchMcpAppsRpc, MCP_APPS_RPC_METHODS } from './mcp-apps-handlers'
-import { dispatchResourceRpc, RESOURCE_RPC_METHODS } from './resource-handlers'
+import { dispatchResourceRpc, RESOURCE_RPC_METHODS, type ResourceHost } from '@superone/runtime/server/rpc-resources'
 import { AUTOMATION_RPC_METHODS, dispatchAutomationRpc } from '@superone/runtime/server/rpc-automations'
 import { ARTIFACT_RPC_METHOD_SET, dispatchArtifactRpc } from './artifact-handlers'
 import { CODEX_RPC_METHODS, dispatchCodexRpc } from './codex-handlers'
@@ -107,24 +107,30 @@ export function dispatchRpc(method: string, payload: unknown, ctx: RpcContext): 
   })
 }
 
-const PLUGIN_RELOAD_METHODS = new Set(['plugins.setEnabled', 'plugins.install', 'plugins.update', 'plugins.delete'])
+/** What the CLI adds to the shared resource families: its Codex app-server and live sessions. */
+function cliResourceHost(ctx: RpcContext): ResourceHost {
+  return {
+    listCodexPlugins: async ({ projectId }) => {
+      const { createCodexAdminService } = await import('../session/codex-admin-service')
+      const svc = createCodexAdminService({
+        harnesses: ctx.harnesses,
+        providers: ctx.providers,
+        resolveProjectPath: (id) => ctx.projects.get(id)?.path ?? null,
+      })
+      if (!svc.isBinaryReady()) throw Object.assign(new Error('Codex binary not ready'), { code: 'failed_precondition' })
+      return svc.listPlugins(projectId)
+    },
+    // A live Claude process loads plugins once; a change on disk reaches it by reload.
+    pluginsChanged: () => { void ctx.sessions.reloadPlugins() },
+  }
+}
 
 /** Method families only the CLI node serves; null hands the method to the shared families. */
 async function dispatchCliRpc(method: string, payload: unknown, ctx: RpcContext): Promise<RpcResult | null> {
   const archive = dispatchSessionArchiveRpc(method, payload, ctx)
   if (archive) return archive
-  const resource = dispatchResourceRpc(method, payload, {
-    client: ctx.client,
-    projects: ctx.projects,
-    harnesses: ctx.harnesses,
-    providers: ctx.providers,
-  })
-  if (resource) {
-    const result = await resource
-    // A live Claude process loads plugins once; a change on disk reaches it by reload.
-    if (!result.error && PLUGIN_RELOAD_METHODS.has(method)) void ctx.sessions.reloadPlugins()
-    return result
-  }
+  const resource = await dispatchResourceRpc(method, payload, { client: ctx.client, projects: ctx.projects, ...cliResourceHost(ctx) })
+  if (resource) return resource
 
   const automation = dispatchAutomationRpc(method, payload, {
     client: ctx.client,

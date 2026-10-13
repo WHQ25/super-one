@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -333,6 +333,38 @@ describe('DesktopNodeHost configuration', () => {
     } finally {
       db.close()
     }
+  })
+})
+
+describe('DesktopNodeHost resources', () => {
+  it("manages B's MCP servers, skills and agents for a controller, with secrets kept on B", async () => {
+    const home = tempDir('superone-node-host-home-')
+    const mcpChanged = vi.fn()
+    const { client, projectDir } = await pairedDesktops(fakeCatalog(), { resources: { homeDir: home, mcpChanged } })
+    mkdirSync(join(projectDir, '.claude', 'skills', 'ship'), { recursive: true })
+    writeFileSync(join(projectDir, '.claude', 'skills', 'ship', 'SKILL.md'), '---\ndescription: Ship it\n---\n')
+    mkdirSync(join(projectDir, '.claude', 'agents'), { recursive: true })
+    writeFileSync(join(projectDir, '.claude', 'agents', 'reviewer.md'), '---\ndescription: Reviews\n---\n')
+    const server = { projectId: 'p1', provider: 'claude', name: 'tools', scope: 'project' }
+    const listed = async () => (await client.rpc<{ servers: Array<Record<string, unknown>> }>('mcp.list', { projectId: 'p1', provider: 'claude' })).servers
+
+    await client.rpc('mcp.save', { ...server, config: { type: 'stdio', command: 'node', args: ['a.js'], env: { TOKEN: 'secret-token-123' } } })
+    expect(await listed()).toEqual([expect.objectContaining({ name: 'tools', command: 'node', env: { TOKEN: '********' } })])
+
+    // An edit sends the masked env back; B keeps the secret.
+    await client.rpc('mcp.save', { ...server, config: { type: 'stdio', command: 'node', args: ['b.js'], env: { TOKEN: '********' } } })
+    const onDisk = JSON.parse(readFileSync(join(projectDir, '.mcp.json'), 'utf8')) as { mcpServers: Record<string, unknown> }
+    expect(onDisk.mcpServers.tools).toMatchObject({ args: ['b.js'], env: { TOKEN: 'secret-token-123' } })
+
+    await client.rpc('mcp.toggle', { ...server, disabled: true })
+    expect(await listed()).toEqual([expect.objectContaining({ name: 'tools', disabled: true })])
+    // B's window applies the same follow-ups as after its own edits.
+    expect(mcpChanged).toHaveBeenLastCalledWith({ provider: 'claude', projectPath: projectDir, name: 'tools', enabled: false, saved: false })
+
+    const { skills } = await client.rpc<{ skills: Array<{ name: string; scope: string }> }>('skills.list', { projectId: 'p1', provider: 'claude' })
+    expect(skills).toContainEqual(expect.objectContaining({ name: 'ship', scope: 'project' }))
+    const { agents } = await client.rpc<{ agents: Array<{ name: string; scope: string }> }>('agents.list', { projectId: 'p1' })
+    expect(agents).toContainEqual(expect.objectContaining({ name: 'reviewer', scope: 'project' }))
   })
 })
 

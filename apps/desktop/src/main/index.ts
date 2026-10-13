@@ -1088,6 +1088,12 @@ async function applyNodeHostSettings(settings: AppSettings): Promise<void> {
         opened: (path) => void agentService.openFolder(path),
       },
       catalog: harnessCatalog,
+      resources: {
+        shellReady: ensureShellPath,
+        listCodexPlugins: ({ path }) => codexPluginsService.listPlugins(path),
+        pluginsChanged: () => agentService.reloadLiveClaudePlugins(),
+        mcpChanged: (change) => agentService.mcpConfigChanged(change),
+      },
       phoneMethods: createPhoneMethods({
         agent: agentService,
         sessions: { getSession: (id) => sessionManager.getSession(id), openMiniAppForm },

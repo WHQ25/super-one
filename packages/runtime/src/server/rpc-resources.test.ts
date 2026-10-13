@@ -1,10 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import type { AuthenticatedClient } from '../auth/auth-service'
-import type { ProjectRegistry } from '../workspace/project-registry'
-import { dispatchResourceRpc } from './resource-handlers'
+import type { AuthenticatedClient } from './auth-service'
+import { dispatchResourceRpc, MCP_SECRET_MASK, type ResourceProjects } from './rpc-resources'
 
 function client(scopes: AuthenticatedClient['scopes']): AuthenticatedClient {
   return {
@@ -18,16 +17,12 @@ function client(scopes: AuthenticatedClient['scopes']): AuthenticatedClient {
 describe('resource RPC handlers', () => {
   let projectDir: string
   let homeDir: string
-  let projects: ProjectRegistry
+  let projects: ResourceProjects
 
   beforeEach(() => {
     projectDir = mkdtempSync(join(tmpdir(), 'res-rpc-'))
     homeDir = mkdtempSync(join(tmpdir(), 'res-home-'))
-    projects = {
-      get: (id: string) =>
-        id === 'p1' ? { projectId: 'p1', path: projectDir, name: 't', repoIdentity: null } : null,
-      touch: () => {},
-    } as unknown as ProjectRegistry
+    projects = { get: (id: string) => (id === 'p1' ? { path: projectDir } : null) }
   })
 
   afterEach(() => {
@@ -145,35 +140,84 @@ describe('resource RPC handlers', () => {
     expect(res?.error?.code).toBe('invalid_argument')
   })
 
-  it('does not expose MCP env or headers without node:admin', async () => {
+  it('masks MCP env and header values for every client and keeps a secret sent back masked', async () => {
+    const ctx = ctxFor(['workspace:read', 'workspace:write', 'node:admin'])
+    const save = (config: Record<string, unknown>) =>
+      dispatchResourceRpc('mcp.save', { projectId: 'p1', provider: 'claude', name: 'secret-tools', scope: 'project', config }, ctx)
+    const listed = async () => {
+      const res = await dispatchResourceRpc('mcp.list', { projectId: 'p1', provider: 'claude' }, ctx)
+      return (res?.result as { servers: Array<Record<string, unknown>> }).servers.find((s) => s.name === 'secret-tools')!
+    }
+    const stored = () => (JSON.parse(readFileSync(join(projectDir, '.mcp.json'), 'utf8')) as {
+      mcpServers: Record<string, { headers?: Record<string, string> }>
+    }).mcpServers['secret-tools']!
+
+    expect((await save({ type: 'http', url: 'https://example.test/mcp', headers: { Authorization: 'Bearer top-secret-value', 'X-Team': 'abc' } }))?.error).toBeUndefined()
+    const shown = await listed()
+    // Nothing of a value leaves the host, however short.
+    expect(shown.headers).toEqual({ Authorization: MCP_SECRET_MASK, 'X-Team': MCP_SECRET_MASK })
+
+    // An edit that changes the URL sends the headers back as it got them.
+    expect((await save({ type: 'http', url: 'https://example.test/v2', headers: shown.headers }))?.error).toBeUndefined()
+    expect(stored()).toMatchObject({ url: 'https://example.test/v2', headers: { Authorization: 'Bearer top-secret-value', 'X-Team': 'abc' } })
+
+    // A value typed anew replaces the secret.
+    await save({ type: 'http', url: 'https://example.test/v2', headers: { Authorization: 'Bearer rotated', 'X-Team': MCP_SECRET_MASK } })
+    expect(stored().headers).toEqual({ Authorization: 'Bearer rotated', 'X-Team': 'abc' })
+  })
+
+  it('restores a masked value only from the scope being written', async () => {
+    // A user-scope secret the client sees masked in the merged listing.
+    writeFileSync(join(homeDir, '.claude.json'), JSON.stringify({
+      mcpServers: { github: { type: 'stdio', command: 'gh-mcp', env: { GITHUB_TOKEN: 'ghp_user_secret' } } },
+    }))
     const ctx = ctxFor(['workspace:read', 'workspace:write'])
+    const res = await dispatchResourceRpc('mcp.list', { projectId: 'p1', provider: 'claude' }, ctx)
+    const shown = (res?.result as { servers: Array<{ name: string; env?: Record<string, string> }> }).servers.find((s) => s.name === 'github')!
+    expect(shown.env).toEqual({ GITHUB_TOKEN: MCP_SECRET_MASK })
+
+    // Without node:admin it may write the project copy, but not with the user secret in it.
     const saved = await dispatchResourceRpc(
       'mcp.save',
-      {
-        projectId: 'p1',
-        provider: 'claude',
-        name: 'secret-tools',
-        scope: 'project',
-        config: {
-          type: 'http',
-          url: 'https://example.test/mcp',
-          headers: { Authorization: 'Bearer top-secret' },
-        },
-      },
+      { projectId: 'p1', provider: 'claude', name: 'github', scope: 'project', config: { type: 'stdio', command: 'x', env: shown.env } },
       ctx,
     )
     expect(saved?.error).toBeUndefined()
+    expect(readFileSync(join(projectDir, '.mcp.json'), 'utf8')).not.toContain('ghp_user_secret')
+  })
 
-    const listed = await dispatchResourceRpc(
-      'mcp.list',
-      { projectId: 'p1', provider: 'claude' },
-      ctx,
-    )
-    const server = (listed?.result as { servers: Array<Record<string, unknown>> }).servers.find(
-      (entry) => entry.name === 'secret-tools',
-    )
-    expect(server).toBeDefined()
-    expect(server).not.toHaveProperty('headers')
+  it('refuses to toggle an inherited name rather than touching the prototype', async () => {
+    const ctx = ctxFor(['workspace:read', 'workspace:write'])
+    writeFileSync(join(projectDir, '.mcp.json'), JSON.stringify({ mcpServers: { tools: { command: 'node' } } }))
+    for (const provider of ['claude', 'codex']) {
+      const res = await dispatchResourceRpc(
+        'mcp.toggle',
+        { projectId: 'p1', provider, scope: 'project', name: '__proto__', disabled: true },
+        ctx,
+      )
+      expect(res?.error?.code).toBe('not_found')
+    }
+    expect(({} as { disabled?: unknown; enabled?: unknown }).disabled).toBeUndefined()
+    expect(({} as { enabled?: unknown }).enabled).toBeUndefined()
+  })
+
+  it('tells the host what changed after an MCP or plugin write', async () => {
+    const mcpChanged = vi.fn()
+    const pluginsChanged = vi.fn()
+    const ctx = { ...ctxFor(['workspace:read', 'workspace:write']), mcpChanged, pluginsChanged }
+    const base = { projectId: 'p1', provider: 'claude', name: 'tools', scope: 'project' }
+
+    await dispatchResourceRpc('mcp.save', { ...base, config: { type: 'stdio', command: 'node' } }, ctx)
+    await dispatchResourceRpc('mcp.toggle', { ...base, disabled: true }, ctx)
+    await dispatchResourceRpc('mcp.delete', base, ctx)
+    expect(mcpChanged.mock.calls.map(([change]) => change)).toEqual([
+      { provider: 'claude', projectPath: projectDir, name: 'tools', enabled: true, saved: true },
+      { provider: 'claude', projectPath: projectDir, name: 'tools', enabled: false, saved: false },
+      { provider: 'claude', projectPath: projectDir, name: 'tools', enabled: false, saved: false },
+    ])
+
+    await dispatchResourceRpc('plugins.setEnabled', { projectId: 'p1', key: 'demo@mp', scope: 'project', enabled: false }, ctx)
+    expect(pluginsChanged).toHaveBeenCalledWith(projectDir)
   })
 
   it('requires node:admin for user-scope writes', async () => {

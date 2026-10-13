@@ -1,14 +1,15 @@
+import { scrollToEdge } from './fixtures/scroll-to-edge'
 import { expect, test, type Page } from '@playwright/test'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 const url = pathToFileURL(resolve(import.meta.dirname, '../dist/index.html')).href
 
-async function open(page: Page, opts: { failWindow?: boolean; holdWindow?: boolean; holdIndex?: boolean; failIndex?: boolean; compacts?: boolean } = {}) {
+async function open(page: Page, opts: { failWindow?: boolean; holdWindow?: boolean; holdIndex?: boolean; failIndex?: boolean; compacts?: boolean; short?: boolean } = {}) {
   await page.context().setOffline(true)
   await page.addInitScript((opts) => {
     const host = window as any
     const messages = Array.from({ length: 100 }, (_, i) => ({ id: `m${i}`, role: i % 2 ? 'assistant' : 'user',
-      status: 'complete', providerId: 'claude', createdAt: '', content: [{ type: 'text', text: `Message ${i}\n\n${'Long content. '.repeat(60)}` }] }))
+      status: 'complete', providerId: 'claude', createdAt: '', content: [{ type: 'text', text: `Message ${i}${opts.short ? '' : `\n\n${'Long content. '.repeat(60)}`}` }] }))
     if (opts.compacts) for (const i of [15, 55]) messages[i] = { ...messages[i], providerId: 'system', content: [{ type: 'text', text: '__compact__:auto:1000' }] }
     host.rows = messages
     host.calls = []
@@ -50,6 +51,24 @@ async function open(page: Page, opts: { failWindow?: boolean; holdWindow?: boole
 const jump = (page: Page, id: string) => page.locator(`[data-tick="${id}"]`).evaluate((element: HTMLElement) => element.click())
 const calls = (page: Page) => page.evaluate(() => (window as any).calls.filter((call: any) => call.action === 'loadHistoryWindow').map((call: any) => call.payload))
 
+test('a short transcript loads history on a touch swipe without an idle button', async ({ page }) => {
+  await open(page, { short: true, holdWindow: true })
+  await expect(page.locator('[data-tick]')).toHaveCount(50)
+  expect(await page.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight + 80)).toBe(true)
+  await expect(page.getByTestId('edge-loader-top')).toHaveCount(0)
+  expect(await calls(page)).toEqual([])
+  const client = await page.context().newCDPSession(page)
+  await client.send('Emulation.setTouchEmulationEnabled', { enabled: true })
+  await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 180, y: 300 }] })
+  await client.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 180, y: 400 }] })
+  await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+  await expect.poll(() => calls(page)).toEqual([{ anchorId: 'm92', direction: 'before' }])
+  await expect(page.getByTestId('edge-loader-top')).toHaveText('Loading...')
+  await page.evaluate(() => { const host = window as any; for (const response of host.responses) host.__applyHost(response) })
+  await expect(page.locator('[data-turn-id="m84"]')).toHaveCount(1)
+  await expect(page.getByTestId('edge-loader-top')).toHaveCount(0)
+})
+
 test('shows the complete outline with only the latest eight messages mounted', async ({ page }) => {
   await open(page)
   await expect(page.locator('[data-tick]')).toHaveCount(50)
@@ -66,7 +85,7 @@ test('jumps directly to an unloaded turn and then loads its preceding page', asy
   await expect(page.locator('[data-turn-id="m20"]')).toBeInViewport()
   expect(await calls(page)).toEqual([{ anchorId: 'm20', direction: 'around' }])
   await expect(page.locator('[data-turn-id="m92"]')).toHaveCount(0)
-  await page.getByRole('button', { name: 'Load earlier' }).evaluate((element: HTMLElement) => element.click())
+  await scrollToEdge(page)
   await expect.poll(() => calls(page)).toContainEqual({ anchorId: 'm18', direction: 'before' })
   await expect(page.locator('[data-turn-id="m10"]')).toHaveCount(1)
   await expect(page.locator('[data-tick]')).toHaveCount(50)
@@ -102,16 +121,15 @@ test('live updates preserve the historical reading position and extend the full 
   expect(Math.abs(await page.locator('[data-turn-id="m20"]').evaluate(el => el.getBoundingClientRect().top) - before)).toBeLessThan(2)
 })
 
-test('failed jumps keep the current transcript and offer retry', async ({ page }) => {
+test('failed jumps keep the current transcript without a notice and retry on a swipe', async ({ page }) => {
   await open(page, { failWindow: true })
   await jump(page, 'm20')
-  // m20 lies above the window, so the failure lands on the top edge — the
-  // one indicator that end of the transcript has.
-  await expect(page.getByTestId('edge-loader-top')).toHaveText('Retry')
+  await expect.poll(() => calls(page)).toHaveLength(1)
+  await expect(page.getByTestId('edge-loader-top')).toHaveCount(0)
   await expect(page.getByTestId('edge-loader-bottom')).toHaveCount(0)
   await expect(page.locator('[data-turn-id="m99"]')).toHaveCount(1)
   await page.evaluate(() => { (window as any).failWindow = false })
-  await page.getByTestId('edge-loader-top').click()
+  await scrollToEdge(page)
   await expect(page.locator('[data-turn-id="m20"]')).toBeInViewport()
 })
 
@@ -143,9 +161,8 @@ test('pages and jumps across unloaded compactions without an expansion control',
   await jump(page, 'm54')
   await expect(page.locator('[data-turn-id="m55"]')).toHaveCount(1)
   await expect(page.getByRole('button', { name: /Show history|Hide history/ })).toHaveCount(0)
-  const loader = page.getByRole('button', { name: 'Load earlier' })
   await expect.poll(async () => {
-    if (await loader.count()) await loader.first().evaluate((element: HTMLElement) => element.click())
+    await scrollToEdge(page)
     return (await calls(page)).some((call: any) => call.direction === 'before' && Number(call.anchorId.slice(1)) < 55)
   }).toBe(true)
   await jump(page, 'm20')
@@ -170,31 +187,43 @@ test('paging upward still reveals older rows after reaching the forty-row ceilin
   await open(page)
   await expect(page.locator('[data-tick]')).toHaveCount(50)
   for (let i = 0; i < 6; i++) {
-    await page.getByRole('button', { name: 'Load earlier' }).evaluate((element: HTMLElement) => element.click())
-    await expect.poll(async () => (await calls(page)).filter((call: any) => call.direction === 'before').length).toBe(i + 1)
+    await scrollToEdge(page)
+    // Reaching an edge can also page after the mounted window shrinks.
+    await expect.poll(async () => (await calls(page)).filter((call: any) => call.direction === 'before').length).toBeGreaterThanOrEqual(i + 1)
     await expect(page.locator(`[data-turn-id="m${84 - i * 8}"]`)).toHaveCount(1)
   }
   expect(Number(await page.locator('main').getAttribute('data-mounted-turns'))).toBeLessThanOrEqual(40)
 })
 
-test('a page above the window reports progress and failure on the top edge alone', async ({ page }) => {
-  // Before, a fixed pill said "Loading…" over a button still reading "Load
-  // earlier" at the same spot — two indicators for one fetch.
+test('a page above the window shows only loading and disappears on success or failure', async ({ page }) => {
   await open(page)
   await page.evaluate(() => { (window as any).holdWindow = true })
-  await page.getByRole('button', { name: 'Load earlier' }).evaluate((element: HTMLElement) => element.click())
+  await scrollToEdge(page)
   await expect.poll(() => calls(page)).toContainEqual({ anchorId: 'm92', direction: 'before' })
   await expect(page.getByTestId('edge-loader-top')).toHaveText('Loading...')
-  await expect(page.getByTestId('edge-loader-top')).toBeDisabled()
-  await expect(page.getByRole('status')).toHaveCount(0)
+  await expect(page.getByTestId('edge-loader-top').locator('.animate-spin')).toHaveCount(1)
+  await expect(page.getByRole('status')).toHaveCount(1)
+  await expect(page.getByRole('button', { name: /Load earlier|Load later|Retry/ })).toHaveCount(0)
+  await page.setViewportSize({ width: 320, height: 780 })
+  await page.evaluate(() => {
+    const host = window as any
+    host.__applyHost({ type: 'setTheme', scheme: 'dark' })
+    host.__applyHost({ type: 'setViewport', locale: 'zh' })
+  })
+  await expect(page.getByTestId('edge-loader-top')).toHaveText('加载中...')
+  const bounds = await page.getByTestId('edge-loader-top').boundingBox()
+  expect(bounds!.x).toBeGreaterThanOrEqual(0)
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(320)
   await page.evaluate(() => { const host = window as any; for (const response of host.responses) host.__applyHost(response) })
   await expect(page.locator('[data-turn-id="m84"]')).toHaveCount(1)
+  await expect(page.getByTestId('edge-loader-top')).toHaveCount(0)
 
   await page.evaluate(() => { (window as any).holdWindow = false; (window as any).failWindow = true })
-  await page.getByRole('button', { name: 'Load earlier' }).evaluate((element: HTMLElement) => element.click())
-  await expect(page.getByTestId('edge-loader-top')).toHaveText('Retry')
+  await scrollToEdge(page)
+  await expect.poll(() => calls(page)).toContainEqual({ anchorId: 'm84', direction: 'before' })
+  await expect(page.getByTestId('edge-loader-top')).toHaveCount(0)
   await page.evaluate(() => { (window as any).failWindow = false })
-  await page.getByTestId('edge-loader-top').evaluate((element: HTMLElement) => element.click())
+  await scrollToEdge(page)
   await expect(page.locator('[data-turn-id="m76"]')).toHaveCount(1)
 })
 
@@ -203,13 +232,13 @@ test('a page below the window reports on the bottom edge', async ({ page }) => {
   await jump(page, 'm20')
   await expect(page.locator('[data-turn-id="m20"]')).toBeInViewport()
   await page.evaluate(() => { (window as any).holdWindow = true })
-  // The jump suppresses window moves for 700 ms; keep tapping until it lets one through.
+  // A new swipe resumes paging after the programmatic jump.
   await expect.poll(async () => {
-    await page.getByRole('button', { name: 'Load later' }).evaluate((element: HTMLElement) => element.click())
+    await scrollToEdge(page, 'bottom')
     return calls(page)
   }).toContainEqual({ anchorId: 'm25', direction: 'after' })
   await expect(page.getByTestId('edge-loader-bottom')).toHaveText('Loading...')
-  await expect(page.getByTestId('edge-loader-top')).not.toHaveText('Loading...')
+  await expect(page.getByTestId('edge-loader-top')).toHaveCount(0)
 })
 
 test('a failed index shows nothing and is asked for again on the next reach for the edge', async ({ page }) => {
@@ -219,6 +248,6 @@ test('a failed index shows nothing and is asked for again on the next reach for 
   await expect(page.locator('[data-tick]')).toHaveCount(4)
   await expect(page.getByRole('status')).toHaveCount(0)
   await page.evaluate(() => { (window as any).failIndex = false })
-  await page.getByRole('button', { name: 'Load earlier' }).evaluate((element: HTMLElement) => element.click())
+  await scrollToEdge(page)
   await expect(page.locator('[data-tick]')).toHaveCount(50)
 })

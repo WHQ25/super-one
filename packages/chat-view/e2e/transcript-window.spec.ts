@@ -1,3 +1,4 @@
+import { scrollToEdge } from './fixtures/scroll-to-edge'
 import { expect, test, type Page } from '@playwright/test'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -28,10 +29,10 @@ function fixture(kind: keyof typeof replies = 'prose') {
   }
 }
 
-async function open(page: Page, kind: keyof typeof replies = 'prose') {
+async function open(page: Page, kind: keyof typeof replies = 'prose', holdEarlier = false) {
   const data = fixture(kind)
   await page.context().setOffline(true)
-  await page.addInitScript((data) => {
+  await page.addInitScript(({ data, holdEarlier }) => {
     const host = window as any
     host.calls = []
     host.copied = []
@@ -40,12 +41,15 @@ async function open(page: Page, kind: keyof typeof replies = 'prose') {
       if (request.type !== 'requestNative') return
       host.calls.push(request.action)
       const reply = (result: unknown) => queueMicrotask(() => host.__applyHost({ type: 'nativeActionResult', requestId: request.requestId, result }))
-      if (request.action === 'loadEarlier') reply(data.page)
+      if (request.action === 'loadEarlier') {
+        if (holdEarlier) host.finishEarlier = () => reply(data.page)
+        else reply(data.page)
+      }
       else if (request.action === 'loadFullMessage') reply({ message: data.full })
       else if (request.action === 'copyText') { host.copied.push(request.payload.text); reply({}) }
       else reply({})
     } }
-  }, data)
+  }, { data, holdEarlier })
   await page.goto(url)
   await expect(page.locator('html')).toHaveAttribute('data-chat-view-ready', 'true')
   await page.evaluate(() => (window as any).__applyHost({ type: 'channelToken', token: 'playwright-window' }))
@@ -53,23 +57,25 @@ async function open(page: Page, kind: keyof typeof replies = 'prose') {
   return data
 }
 
-test('shows the tail of a partial reply and marks its earlier part', async ({ page }) => {
+test('shows the tail of a partial reply without an earlier-part notice', async ({ page }) => {
   await open(page)
-  await expect(page.locator('[data-testid="window-earlier-part"]')).toHaveCount(1)
+  await expect(page.getByTestId('window-earlier-part')).toHaveCount(0)
+  await expect(page.getByTestId('edge-loader-top')).toHaveCount(0)
+  await expect(page.getByText('Earlier part of this message', { exact: false })).toHaveCount(0)
   await expect(page.locator('[data-turn-id="reply"]')).toContainText('Paragraph 399')
   await expect(page.locator('[data-turn-id="reply"]')).not.toContainText('Paragraph 0:')
   await page.screenshot({ path: test.info().outputPath('partial-reply.png') })
-  await page.locator('[data-testid="window-earlier-part"]').scrollIntoViewIfNeeded()
-  await page.screenshot({ path: test.info().outputPath('partial-reply-top.png') })
 })
 
 test('loads the earlier part into the same message without moving what is on screen', async ({ page }) => {
-  await open(page)
+  await open(page, 'prose', true)
   const marker = page.locator('[data-turn-id="reply"] p', { hasText: 'Paragraph 399' })
-  await marker.scrollIntoViewIfNeeded()
-  const before = await marker.evaluate((element) => element.getBoundingClientRect().top)
-  await page.locator('[data-testid="edge-loader-top"]').evaluate((element: HTMLElement) => element.click())
+  await scrollToEdge(page)
   await expect.poll(() => page.evaluate(() => (window as any).calls.includes('loadEarlier'))).toBe(true)
+  await expect(page.getByTestId('edge-loader-top')).toHaveText('Loading...')
+  const before = await marker.evaluate((element) => element.getBoundingClientRect().top)
+  await page.evaluate(() => (window as any).finishEarlier())
+  await expect(page.getByTestId('edge-loader-top')).toHaveCount(0)
   await expect(page.locator('[data-turn-id="reply"]')).toHaveCount(1)
   const after = await marker.evaluate((element) => element.getBoundingClientRect().top)
   expect(Math.abs(after - before)).toBeLessThan(4)

@@ -20,8 +20,7 @@ function HistoryNavigationPreview({ state = 'ready', count = 100, scheme = 'ligh
       const request = JSON.parse(raw)
       if (request.type !== 'requestNative') return
       if (request.action === 'loadNavigationIndex' && state === 'loading') return
-      // A page above or below the window stays in flight, so the "Load earlier"
-      // button's own loading state — not the fixed pill — is what shows.
+      // A page above or below the window stays in flight to show its edge loader.
       if (request.action === 'loadHistoryWindow' && state === 'page-loading' && request.payload.direction !== 'around') return
       const error = !failed && (state === 'error' && request.action === 'loadNavigationIndex'
         || state === 'jump-error' && request.action === 'loadHistoryWindow')

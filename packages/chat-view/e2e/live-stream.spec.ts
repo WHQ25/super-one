@@ -1,3 +1,4 @@
+import { scrollToEdge } from './fixtures/scroll-to-edge'
 import { expect, test, type Page } from '@playwright/test'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -141,8 +142,8 @@ test('older history loads only on demand and reveals the fetched page', async ({
     } } })
   })
   await send(page, { type: 'hydrate', hasMoreHistory: true, messages: [message('latest', 'Latest answer', { status: 'complete' })] })
-  await expect(page.getByRole('button', { name: 'Load earlier' })).toBeVisible()
-  await page.getByRole('button', { name: 'Load earlier' }).click()
+  await expect(page.getByTestId('edge-loader-top')).toHaveCount(0)
+  await scrollToEdge(page)
   await expect(page.locator('article[data-turn-id="older"]')).toContainText('Older question')
   await expect(page.locator('article[data-turn-id="latest"]')).toContainText('Latest answer')
 })

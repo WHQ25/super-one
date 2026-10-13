@@ -1,3 +1,4 @@
+import { scrollToEdge } from './fixtures/scroll-to-edge'
 import { expect, test, type Page } from '@playwright/test'
 import { pathToFileURL } from 'node:url'
 import { resolve } from 'node:path'
@@ -243,14 +244,14 @@ test('pages beyond forty messages in both directions after a jump', async ({ pag
   await send(page, { type: 'scrollToTurn', turnId: 'u50', behavior: 'auto' })
   await page.waitForTimeout(750)
   for (let i = 0; i < 5; i++) {
-    await page.getByRole('button', { name: 'Load earlier', exact: true }).click()
+    await scrollToEdge(page)
     await page.waitForTimeout(100)
   }
   expect(Number(await page.locator('main').getAttribute('data-window-start'))).toBeLessThan(76)
   expect(await page.locator('[data-turn-id]').count()).toBeLessThanOrEqual(40)
   const oldEnd = Number(await page.locator('main').getAttribute('data-window-end'))
   for (let i = 0; i < 3; i++) {
-    await page.getByRole('button', { name: 'Load later', exact: true }).click()
+    await scrollToEdge(page, 'bottom')
     await page.waitForTimeout(100)
   }
   expect(Number(await page.locator('main').getAttribute('data-window-end'))).toBeGreaterThan(oldEnd)

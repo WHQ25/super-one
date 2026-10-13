@@ -1,3 +1,4 @@
+import { scrollToEdge } from './fixtures/scroll-to-edge'
 import { expect, test, type Page } from '@playwright/test'
 import { pathToFileURL } from 'node:url'
 import { resolve } from 'node:path'
@@ -188,7 +189,7 @@ test('11 excludes old turns from the initial DOM', async ({ page }) => {
 
 test('12 loads eight older turns', async ({ page }) => {
   await send(page, { type: 'hydrate', messages: tallMessages(60) })
-  await page.getByRole('button', { name: 'Load earlier' }).click()
+  await scrollToEdge(page)
   await expect(page.locator('main')).toHaveAttribute('data-mounted-turns', '16')
 })
 

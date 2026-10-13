@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronUp, Loader2 } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 /**
@@ -9,23 +9,16 @@ import { useTranslation } from 'react-i18next'
  * `loadEarlier` path alike — so two fetches can never show two indicators at
  * one spot, which is what the old fixed pill over the in-flow button did. It
  * has no fill of its own: it reads as part of the transcript, not a control
- * laid over it. The idle label stays because a transcript shorter than the
- * viewport never scrolls, and then a tap is the only way to reach more history.
+ * laid over it. Idle and failed requests render nothing; another swipe retries.
  */
-export function EdgeLoader({ edge, loading, error, onLoad }: {
+export function EdgeLoader({ edge, loading }: {
   edge: 'top' | 'bottom'
   loading: boolean
-  error: boolean
-  onLoad: () => void
 }) {
   const { t } = useTranslation()
-  const Chevron = edge === 'top' ? ChevronUp : ChevronDown
-  return <button type="button" disabled={loading} onClick={onLoad} data-testid={`edge-loader-${edge}`} data-loading={loading || undefined}
+  if (!loading) return null
+  return <div role="status" data-testid={`edge-loader-${edge}`} data-loading="true"
     className="mx-auto my-1 flex items-center gap-1 px-3 py-1 text-xs text-muted-foreground">
-    {loading
-      ? <><Loader2 className="size-3 animate-spin" aria-hidden /> {t('common.loading')}</>
-      : error
-        ? t('common.retry')
-        : <><Chevron className="size-3" aria-hidden /> {edge === 'top' ? 'Load earlier' : 'Load later'}</>}
-  </button>
+    <Loader2 className="size-3 animate-spin" aria-hidden /> {t('common.loading')}
+  </div>
 }

@@ -225,12 +225,12 @@ export async function startCollaboration(
   if (config.worktreePath && typeof config.worktreePath === 'string' && config.worktreePath.trim()) {
     cwd = pathResolve(config.worktreePath.trim())
   } else if (config.worktree?.enabled) {
-    cwd = ctx.deps.workspaceGit.activateWorktree(parent.projectId, {
+    cwd = (await ctx.deps.workspaceGit.activateWorktree(parent.projectId, {
       baseBranch: config.worktree.baseBranch || 'HEAD',
       mode: config.worktree.mode ?? 'branch',
       branchName: config.worktree.branchName,
       carryLocalChanges: config.worktree.carryLocalChanges,
-    }).path
+    })).path
   }
 
   const profile = resolveProfile(new Map(ctx.listProfiles().map((p) => [p.id, p])), grant.agent_id)

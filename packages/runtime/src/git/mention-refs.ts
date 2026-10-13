@@ -2,9 +2,9 @@
  * Rows for the `@git` / `@gh` mention popups — branches, commits, worktrees,
  * tags from the repository; issues and pull requests from GitHub via `gh`.
  *
- * Host-agnostic: the git (and gh) runners are injected so the desktop (async
- * `gitRun`) and the CLI node (sync `gitRunSync`) list refs with the same
- * commands and the same parsing. Everything is read-only.
+ * Host-agnostic: the git (and gh) runners are injected so the desktop window
+ * and the node's workspace Git service list refs with the same commands and
+ * the same parsing. Everything is read-only.
  */
 
 import {

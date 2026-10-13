@@ -75,7 +75,7 @@ export async function handleSessionCreate(payload: unknown, ctx: CreateRpcContex
     return { error: { code: 'invalid_argument', message: 'cwd must be a string' } }
   }
   const cwd = typeof p.cwd === 'string' && p.cwd.trim() ? p.cwd.trim() : null
-  if (cwd !== null && (!isAbsolute(cwd) || !isAllowedSessionCwd(ctx, projectId, cwd))) {
+  if (cwd !== null && (!isAbsolute(cwd) || !(await isAllowedSessionCwd(ctx, projectId, cwd)))) {
     return { error: { code: 'invalid_argument', message: 'cwd not allowed for this project' } }
   }
   // Optional system-prompt append (e.g. a collaboration prompt for a launched child).

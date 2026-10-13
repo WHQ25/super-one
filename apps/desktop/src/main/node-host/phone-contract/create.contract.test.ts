@@ -7,7 +7,7 @@ import type { DraftOpenResult } from '@superone/shared/environment'
 
 vi.mock('../../logger', () => ({ default: { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} } }))
 vi.mock('../../git/worktree-ops', () => ({ activateWorktree: vi.fn() }))
-vi.mock('../../git-run', () => ({ gitRun: vi.fn(async () => '') }))
+vi.mock('../../git-run', () => ({ gitRun: vi.fn(async () => ''), ghRun: vi.fn() }))
 
 import { activateWorktree } from '../../git/worktree-ops'
 import { gitRun } from '../../git-run'

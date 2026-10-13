@@ -11,7 +11,7 @@ add harness packages only when that harness is enabled.
 | `@superone/runtime` | Session + re-exports of common helpers |
 | `@superone/runtime/session` | `SessionRuntime`, simulated turn runner, `EventLog`, `createSqliteSessionStore` |
 | `@superone/runtime/fs` | Path security, listFiles, skill discovery, **fuzzy path match** (`searchMentionsInEntries` / `searchFilesInEntries`) |
-| `@superone/runtime/git` | sanitize ref, shortstat, worktree porcelain/plan, **`gitRun`/`gitRunSync`**, status porcelain parse |
+| `@superone/runtime/git` | sanitize ref, shortstat, worktree porcelain/plan, **`gitRun`**, status porcelain parse |
 | `@superone/runtime/lease` | `ControlLeaseService` (SQLite-compatible) |
 | `@superone/runtime/spawn-env` | `buildSafeEnv` / `sanitizeEnv` / `mergeLoopbackNoProxy` (child process env safety + loopback proxy bypass) |
 | `@superone/runtime/crypto` | sha256/hmac/ed25519 helpers |

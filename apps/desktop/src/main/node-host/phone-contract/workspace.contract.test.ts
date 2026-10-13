@@ -1,4 +1,4 @@
-import { writeFileSync } from 'node:fs'
+import { rmSync, writeFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -46,6 +46,14 @@ describe('phone endpoint: workspace files and Git', () => {
     const methods = ((await dispatchRpc('environment.descriptor', {}, controller)).result as ExecutionEnvironmentDescriptor).capabilities.methods
     for (const method of ['workspace.listDir', 'git.status', 'git.branches', 'git.mentionRefs']) expect(methods).toContain(method)
     expect((await dispatchRpc('git.status', { projectId: 'p1' }, controller)).result).toMatchObject({ isRepo: true })
+  })
+
+  it('refuses a worktree for a project that is not a repository with the node error code', async () => {
+    const { domain, projectDir } = phoneDomain(cleanup)
+    rmSync(join(projectDir, '.git'), { recursive: true, force: true })
+    const phone = await connectPhone(domain)
+    await expect(phone.rpc('git.worktreeActivate', { projectId: 'p1', baseBranch: 'HEAD', mode: 'detach' }))
+      .rejects.toMatchObject({ code: 'failed_precondition' })
   })
 })
 

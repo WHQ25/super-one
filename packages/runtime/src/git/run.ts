@@ -1,4 +1,4 @@
-import { execFile, execFileSync } from 'child_process'
+import { execFile } from 'child_process'
 import { buildSafeEnv } from '../spawn-env'
 
 /**
@@ -72,31 +72,4 @@ export function gitRun(
       },
     )
   })
-}
-
-/**
- * Sync git runner for hosts that still use synchronous RPC (CLI workspace git).
- * Same flags as {@link gitRun}: `--no-optional-locks`, large buffer, safe env.
- */
-export function gitRunSync(
-  folderPath: string,
-  args: string[],
-  env?: NodeJS.ProcessEnv,
-): string {
-  try {
-    return execFileSync('git', [NO_OPTIONAL_LOCKS, ...args], {
-      cwd: folderPath,
-      encoding: 'utf8',
-      maxBuffer: GIT_MAX_BUFFER,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      env: env ? buildSafeEnv(env) : process.env,
-    }).trimEnd()
-  } catch (err) {
-    const e = err as NodeJS.ErrnoException & { stderr?: string | Buffer; gitArgs?: string[] }
-    if (e.stderr && typeof e.stderr !== 'string') {
-      e.stderr = String(e.stderr)
-    }
-    e.gitArgs = args
-    throw e
-  }
 }

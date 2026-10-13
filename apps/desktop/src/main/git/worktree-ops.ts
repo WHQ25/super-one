@@ -3,13 +3,14 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { basename, join, resolve } from 'path'
 import { gitRun } from '../git-run'
-import { withRepoLock } from './repo-lock'
 import { logGitFailure } from '../git-diagnostics'
 import { sanitizeGitRef } from '../path-security'
 import {
   gitErrorMessage as runtimeGitErrorMessage,
   resolveMainDirFromCommonDir,
   planNewWorktreePaths,
+  allocateWorktreePath,
+  withRepoLock,
   worktreeAddArgs,
   recordedBranchForMode,
   parseNumstat,
@@ -136,19 +137,6 @@ export async function activateWorktree(
       recordedBranch: recordedBranchForMode(mode, safeBase, safeBranchName ?? branchName),
     }
   })
-}
-
-/**
- * `${epoch}-${shortHash}` is only unique per second, so sibling activations from
- * the same base commit would target one directory. Suffix until the name is
- * free — safe to probe because callers hold the repo lock.
- */
-function allocateWorktreePath(wtDir: string, stem: string): string {
-  for (let n = 0; n < 100; n++) {
-    const candidate = join(wtDir, n === 0 ? stem : `${stem}-${n + 1}`)
-    if (!existsSync(candidate)) return candidate
-  }
-  return join(wtDir, `${stem}-${randomUUID().slice(0, 8)}`)
 }
 
 async function writeWorkingTree(worktreePath: string): Promise<string> {

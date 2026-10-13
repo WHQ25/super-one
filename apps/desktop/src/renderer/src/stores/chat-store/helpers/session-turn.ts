@@ -106,13 +106,15 @@ function draftSettings(state: ChatStore, projectPath: string, session: PerSessio
   const { model, effort } = sessionModel(state, projectPath, session)
   const desktop = hostTakesDesktopChoices(projectPath)
   const sandboxMode = sessionSandboxMode(state, projectPath, session)
+  const strategy = HARNESS_STRATEGIES[resolveProvider(session)]
   return {
     permissionMode: session.permissionMode,
     ...(sandboxMode ? { sandboxMode } : {}),
     ...(model ? { model } : {}),
     ...(effort ? { effort } : {}),
     ...(session.apiProviderId ? { apiProviderId: session.apiProviderId } : {}),
-    ...(desktop || (resolveProvider(session) === 'opencode' && session.openCodeAgentId) ? HARNESS_STRATEGIES[resolveProvider(session)].draftSettings?.(session) : {}),
+    ...strategy.portableDraftSettings?.(session),
+    ...(desktop ? strategy.draftSettings?.(session) : {}),
   }
 }
 
@@ -269,7 +271,7 @@ export function scheduledTurnOptions(state: ChatStore, projectPath: string, sess
 
 /** Whether a send to this session waits behind the turn it is running. */
 function nativeQueue(session?: Pick<PerSessionState, 'runtimeCapabilities'>): boolean {
-  return session?.runtimeCapabilities?.harnessId === 'opencode' && session.runtimeCapabilities.supportsQueuedSteer === true
+  return session?.runtimeCapabilities?.supportsQueuedSteer === true
 }
 
 export function queuesBehindTurn(projectPath: string, queued: boolean, session?: Pick<PerSessionState, 'runtimeCapabilities'>): boolean {

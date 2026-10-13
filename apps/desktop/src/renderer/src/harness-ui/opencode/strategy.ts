@@ -3,6 +3,10 @@ import { openCodeAgentsFor } from '@/stores/chat-store/opencode-selectors'
 import { neutralSelection } from '../neutral-selection'
 import { effortForLevels } from '../effort'
 import type { HarnessStrategy } from '../strategy'
+import type { PerSessionState } from '@/stores/chat-store/types'
+
+const portableAgentSettings = (session: Pick<PerSessionState, 'openCodeAgentId'>) =>
+  session.openCodeAgentId ? { agent: session.openCodeAgentId } : {}
 
 export const opencodeStrategy: HarnessStrategy = {
   selection: neutralSelection,
@@ -29,9 +33,10 @@ export const opencodeStrategy: HarnessStrategy = {
   },
   prewarmHint: (session) => ({ model: session.selectedModel || undefined }),
   turnSettings: ({ session }) => ({
-    portable: session.openCodeAgentId ? { agent: session.openCodeAgentId } : {},
+    portable: portableAgentSettings(session),
   }),
   draftSettings: (session) => ({ agent: session.openCodeAgentId }),
+  portableDraftSettings: portableAgentSettings,
   resetFields: (state) => {
     const selection = resolveDefaultOpenCodeSelection(state.harnessResources.opencode?.models ?? [])
     return { selectedModel: selection.modelId, selectedEffort: selection.effort, modelUserChosen: false, effortUserChosen: false }

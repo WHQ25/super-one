@@ -84,6 +84,8 @@ export interface HarnessStrategy {
    * created there. A node takes them with each turn instead.
    */
   draftSettings?(session: PerSessionState): Partial<SessionSettingsPatch>
+  /** Draft selections every host accepts when creating a session. */
+  portableDraftSettings?(session: PerSessionState): Partial<SessionSettingsPatch>
   /** Selections this desktop's host takes when it creates the session. */
   createSelections?(session: PerSessionState): { acpAgentId?: string }
   /**

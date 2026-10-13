@@ -4,6 +4,7 @@ import { formatEffortLabel } from '@superone/shared/effort-labels'
 import { useActiveSession, useChatStore, useScopedSessionActions } from '@/stores/chat'
 import { groupModelsBySlashPrefix, resolveSlashModelLabel, splitSlashModelId } from '../ModelSelectorLists'
 import { useOpenCodeResourceRefresh } from '../useOpenCodeResourceRefresh'
+import { openCodeSessionModels } from '@/harness-ui/opencode/session-resources'
 import {
   GroupedModelEffortSelector,
   type SelectorModelGroup,
@@ -21,7 +22,7 @@ function resolveEffortForModel(
 export function OpenCodeModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: Event) => void } = {}) {
   const { refresh: refreshModels, loading: modelsLoading } = useOpenCodeResourceRefresh('models')
   const resources = useChatStore((state) => state.harnessResources.opencode)
-  const nativeModels = useActiveSession(state => state.runtimeCapabilities?.harnessId === 'opencode' ? state.sessionModels : undefined)
+  const nativeModels = useActiveSession(openCodeSessionModels)
   const catalog = nativeModels ?? resources?.models
   const selectedModel = useActiveSession((state) => state.selectedModel)
   const selectedEffort = useActiveSession((state) => state.selectedEffort)

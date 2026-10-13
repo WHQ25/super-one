@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import { useActiveSession, useChatStore, useSessionScope } from '@/stores/chat'
 import { callSession } from '@/lib/session-client'
 import { useEnvironmentServes } from '@/hooks/use-environment-serves'
+import { ownsOpenCodeSession } from '@/harness-ui/opencode/session-resources'
 
 /** Both selectors refresh the same native catalog, with feedback in their own vocabulary. */
 export function useOpenCodeResourceRefresh(kind: 'models' | 'agents') {
@@ -15,7 +16,7 @@ export function useOpenCodeResourceRefresh(kind: 'models' | 'agents') {
   const scope = useSessionScope()
   const project = useChatStore((state) => state.activeProject)
   const sessionId = useActiveSession((state) => scope?.sessionId ?? state._activeSessionId)
-  const ownsSession = useActiveSession((state) => state.hostSessionOwned && (state.sessionProvider ?? state.preferredProvider) === 'opencode')
+  const ownsSession = useActiveSession(ownsOpenCodeSession)
   const path = scope?.projectPath ?? project
   const canRefresh = useEnvironmentServes(path, 'session.refreshResources')
   const refresh = async () => {

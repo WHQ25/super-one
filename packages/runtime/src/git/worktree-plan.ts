@@ -3,6 +3,8 @@
  * Hosts still invoke git; these functions do not spawn processes.
  */
 
+import { randomUUID } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 import { homedir } from 'node:os'
 import type { WorktreeEntry, WorktreeInfo, WorktreeMode, GitDirtyStatus } from '@superone/shared/agent-types'
@@ -29,6 +31,19 @@ export function planNewWorktreePaths(input: {
   const wtDir = join(home, '.worktrees', repoName)
   const wtPath = join(wtDir, `${epoch}-${short}`)
   return { wtDir, wtPath }
+}
+
+/**
+ * `${epoch}-${shortHash}` is only unique per second, so sibling activations from
+ * the same base commit would target one directory. Suffix until the name is
+ * free — safe to probe only while holding `withRepoLock` for the repo.
+ */
+export function allocateWorktreePath(wtDir: string, stem: string): string {
+  for (let n = 0; n < 100; n++) {
+    const candidate = join(wtDir, n === 0 ? stem : `${stem}-${n + 1}`)
+    if (!existsSync(candidate)) return candidate
+  }
+  return join(wtDir, `${stem}-${randomUUID().slice(0, 8)}`)
 }
 
 /** Args after `git worktree` for add (does not include the `worktree` token). */

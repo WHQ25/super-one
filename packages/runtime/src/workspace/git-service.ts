@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { basename, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { randomUUID } from 'node:crypto'
 import {
@@ -15,6 +15,8 @@ import {
   type GitMentionRunners,
   resolveMainDirFromCommonDir,
   planNewWorktreePaths,
+  allocateWorktreePath,
+  withRepoLock,
   worktreeAddArgs,
   recordedBranchForMode,
   parseNumstat,
@@ -405,30 +407,37 @@ export class WorkspaceGitService {
     const safeBranchName =
       mode === 'branch' ? sanitizeGitRef(branchName!.trim()) : undefined
     const mainDir = await this.resolveMainWorktreeDir(folderPath)
-    const commitHash = (await this.read(folderPath, ['rev-parse', baseBranch])).trim()
-    const { wtDir, wtPath } = planNewWorktreePaths({
-      mainDir,
-      shortHash: commitHash.slice(0, 7),
-    })
 
-    if (!existsSync(wtDir)) mkdirSync(wtDir, { recursive: true })
-
-    try {
-      const addArgs = worktreeAddArgs(mode, wtPath, baseBranch, safeBranchName)
-      await this.write(folderPath, ['worktree', ...addArgs])
-    } catch (err) {
-      throw Object.assign(new Error(gitErrorMessage(err) || 'git worktree add failed'), {
-        code: 'internal',
+    // `worktree add` and the carry stash take repo-wide locks, and two carries
+    // interleaving pop each other's (or the user's) stash. Shared with the
+    // desktop window's activations in the same process.
+    return withRepoLock(mainDir, async () => {
+      const commitHash = (await this.read(folderPath, ['rev-parse', baseBranch])).trim()
+      const planned = planNewWorktreePaths({
+        mainDir,
+        shortHash: commitHash.slice(0, 7),
       })
-    }
 
-    if (carryLocalChanges) {
-      await this.carryUncommittedChanges(folderPath, wtPath)
-    }
+      if (!existsSync(planned.wtDir)) mkdirSync(planned.wtDir, { recursive: true })
+      const wtPath = allocateWorktreePath(planned.wtDir, basename(planned.wtPath))
 
-    const recordedBranch = recordedBranchForMode(mode, baseBranch, safeBranchName ?? branchName)
-    this.projects.touch(projectId)
-    return { path: wtPath, recordedBranch }
+      try {
+        const addArgs = worktreeAddArgs(mode, wtPath, baseBranch, safeBranchName)
+        await this.write(folderPath, ['worktree', ...addArgs])
+      } catch (err) {
+        throw Object.assign(new Error(gitErrorMessage(err) || 'git worktree add failed'), {
+          code: 'internal',
+        })
+      }
+
+      if (carryLocalChanges) {
+        await this.carryUncommittedChanges(folderPath, wtPath)
+      }
+
+      const recordedBranch = recordedBranchForMode(mode, baseBranch, safeBranchName ?? branchName)
+      this.projects.touch(projectId)
+      return { path: wtPath, recordedBranch }
+    })
   }
 
   async fetch(projectId: string, remote: string): Promise<void> {
@@ -532,37 +541,42 @@ export class WorkspaceGitService {
       const diff = await this.buildHandoffDiff(projectId, worktreePath)
       if (!diff.ok) return { ok: false, reason: diff.reason }
 
-      const mainStatus = (await this.read(diff.mainDir, ['status', '--porcelain'])).trim()
-      if (mainStatus) return { ok: false, reason: 'main-dirty' }
+      // Clean-check → apply → rollback must not interleave with another
+      // mutation of main: a failed apply's reset --hard / clean -fd would wipe
+      // a concurrent handoff (or a carry stash) that just landed.
+      return await withRepoLock(diff.mainDir, async (): Promise<HandoffResult> => {
+        const mainStatus = (await this.read(diff.mainDir, ['status', '--porcelain'])).trim()
+        if (mainStatus) return { ok: false, reason: 'main-dirty' }
 
-      const patch = await this.read(diff.worktreePath, ['diff', '--binary', diff.base, diff.tree])
-      const patchFile = join(tmpdir(), `s1-handoff-${randomUUID()}.patch`)
-      writeFileSync(patchFile, `${patch}\n`)
-      // Narrow the TOCTOU window before mutating main; reset --hard on failure is only
-      // safe if main was clean immediately before apply (not just at the first check).
-      if ((await this.read(diff.mainDir, ['status', '--porcelain'])).trim()) {
-        rmSync(patchFile, { force: true })
-        return { ok: false, reason: 'main-dirty' }
-      }
-      try {
-        await this.write(diff.mainDir, ['apply', '--3way', '--whitespace=nowarn', patchFile])
-      } catch (err) {
-        try {
-          await this.write(diff.mainDir, ['reset', '--hard'])
-          await this.write(diff.mainDir, ['clean', '-fd'])
-        } catch {
-          /* best-effort */
+        const patch = await this.read(diff.worktreePath, ['diff', '--binary', diff.base, diff.tree])
+        const patchFile = join(tmpdir(), `s1-handoff-${randomUUID()}.patch`)
+        writeFileSync(patchFile, `${patch}\n`)
+        // Narrow the TOCTOU window before mutating main; reset --hard on failure is only
+        // safe if main was clean immediately before apply (not just at the first check).
+        if ((await this.read(diff.mainDir, ['status', '--porcelain'])).trim()) {
+          rmSync(patchFile, { force: true })
+          return { ok: false, reason: 'main-dirty' }
         }
-        return { ok: false, reason: 'conflict', error: gitErrorMessage(err) }
-      } finally {
-        rmSync(patchFile, { force: true })
-      }
-      try {
-        await this.write(diff.mainDir, ['reset', '--quiet'])
-      } catch {
-        /* ignore */
-      }
-      return { ok: true }
+        try {
+          await this.write(diff.mainDir, ['apply', '--3way', '--whitespace=nowarn', patchFile])
+        } catch (err) {
+          try {
+            await this.write(diff.mainDir, ['reset', '--hard'])
+            await this.write(diff.mainDir, ['clean', '-fd'])
+          } catch {
+            /* best-effort */
+          }
+          return { ok: false, reason: 'conflict', error: gitErrorMessage(err) }
+        } finally {
+          rmSync(patchFile, { force: true })
+        }
+        try {
+          await this.write(diff.mainDir, ['reset', '--quiet'])
+        } catch {
+          /* ignore */
+        }
+        return { ok: true }
+      })
     } catch (err) {
       return { ok: false, reason: 'error', error: gitErrorMessage(err) }
     }

@@ -9,12 +9,14 @@ export {
   type WorktreePorcelainEntry,
 } from './worktree-porcelain'
 export { gitRun, type GitRunOptions } from './run'
+export { withRepoLock } from './repo-lock'
 export { fetchRemoteCommands, isGitRemoteName } from './fetch'
 export { listGitMentionRefs, probeGitMentionCapabilities, type GitMentionRunner, type GitMentionRunners } from './mention-refs'
 export { ghRun, isGhMissingError } from './gh-run'
 export {
   resolveMainDirFromCommonDir,
   planNewWorktreePaths,
+  allocateWorktreePath,
   worktreeAddArgs,
   recordedBranchForMode,
   parseNumstat,

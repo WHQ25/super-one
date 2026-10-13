@@ -7,6 +7,7 @@ import { groupContentPresenter } from '@superone/chat-view/presenters/groupConte
 import { TurnBodyPresenter, type TurnBodyPresenterParts, type TurnBodyPresenterRuntime } from './presenters/TurnBody'
 import { VirtualTurnSegment } from './VirtualTranscriptBlock'
 import { VirtualTranscriptContext } from './virtual-transcript-context'
+import { ReasoningBlock } from './ReasoningBlock'
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
@@ -87,5 +88,34 @@ describe('shared ContentBlock turn virtualization', () => {
   it('renders the full turn when the host has no virtual transcript viewport', () => {
     render(<TurnBodyPresenter grouped={group(content)} isStreaming detailChatMode={false} parts={parts} runtime={runtime} projectPath={null} />)
     expect(screen.getAllByRole('button')).toHaveLength(96)
+  })
+
+  it.each([true, false])('collapses reasoning when the answer and completion arrive together in detail mode %s', detailChatMode => {
+    const values = new Map<string, unknown>()
+    const reasoningParts = { ...parts, Segment: undefined, Reasoning: ReasoningBlock }
+    const startedAt = Date.now() - 5_000
+    const view = (text: string, done: boolean) => (
+      <TranscriptStateProvider values={values} scope="turn">
+        <TurnBodyPresenter
+          grouped={group([
+            { type: 'thinking', thinking: text, startedAt },
+            ...(done ? [{ type: 'text', text: 'The answer.' } as ContentBlock] : []),
+          ])}
+          parts={reasoningParts}
+          runtime={runtime}
+          isStreaming={!done}
+          detailChatMode={detailChatMode}
+          projectPath={null}
+        />
+      </TranscriptStateProvider>
+    )
+    const { rerender } = render(view('', false))
+    rerender(view('reasoning delta', false))
+    expect(screen.getByText('reasoning delta')).toBeVisible()
+
+    rerender(view('reasoning delta', true))
+    expect(screen.getByText('The answer.')).toBeVisible()
+    expect(screen.getByText(/^Thought/)).toBeVisible()
+    expect(screen.queryByText('reasoning delta')).not.toBeInTheDocument()
   })
 })

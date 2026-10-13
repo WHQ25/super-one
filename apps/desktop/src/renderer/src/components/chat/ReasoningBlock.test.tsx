@@ -2,6 +2,7 @@
 
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
+import { TranscriptStateProvider } from '@superone/ui/lib/transcript-state'
 import { ReasoningBlock } from './ReasoningBlock'
 
 describe('ReasoningBlock', () => {
@@ -63,5 +64,70 @@ describe('ReasoningBlock', () => {
   it('falls back to no duration when timestamps are absent and it mounts done', () => {
     render(<ReasoningBlock text="done" blockDone={true} showContent={true} />)
     expect(screen.getByText('Thought')).toBeInTheDocument()
+  })
+
+  it('collapses reasoning that finishes while its row is unmounted', () => {
+    const values = new Map<string, unknown>()
+    const view = (text: string, done: boolean, visible = true) => (
+      <TranscriptStateProvider values={values} scope="turn">
+        {visible && <ReasoningBlock text={text} blockDone={done} showContent={!!text} />}
+      </TranscriptStateProvider>
+    )
+    const { rerender } = render(view('', false))
+    rerender(view('reasoning delta', false))
+    expect(screen.getByText('reasoning delta')).toBeVisible()
+
+    rerender(view('reasoning delta', false, false))
+    rerender(view('reasoning delta', true))
+    expect(screen.getByText(/^Thought/)).toBeVisible()
+    expect(screen.queryByText('reasoning delta')).not.toBeInTheDocument()
+  })
+
+  it('preserves a completed block manually expanded before its row is unmounted', () => {
+    const values = new Map<string, unknown>()
+    const view = (visible = true) => (
+      <TranscriptStateProvider values={values} scope="turn">
+        {visible && <ReasoningBlock text="finished reasoning" blockDone />}
+      </TranscriptStateProvider>
+    )
+    const { rerender } = render(view())
+    fireEvent.click(screen.getByText('Thought'))
+    expect(screen.getByText('finished reasoning')).toBeVisible()
+
+    rerender(view(false))
+    rerender(view())
+    expect(screen.getByText('finished reasoning')).toBeVisible()
+  })
+
+  it('preserves a manual collapse when a live row is remounted', () => {
+    const values = new Map<string, unknown>()
+    const view = (visible = true) => (
+      <TranscriptStateProvider values={values} scope="turn">
+        {visible && <ReasoningBlock text="live reasoning" blockDone={false} />}
+      </TranscriptStateProvider>
+    )
+    const { rerender } = render(view())
+    fireEvent.click(screen.getByText(/^Thinking/))
+    expect(screen.queryByText('live reasoning')).not.toBeInTheDocument()
+
+    rerender(view(false))
+    rerender(view())
+    expect(screen.queryByText('live reasoning')).not.toBeInTheDocument()
+  })
+
+  it('keeps deferred reasoning open on completion when automatic collapse is disabled', () => {
+    const values = new Map<string, unknown>()
+    const view = (done: boolean, visible = true) => (
+      <TranscriptStateProvider values={values} scope="turn">
+        {visible && <ReasoningBlock text="deferred reasoning" blockDone={done} autoExpand={false} collapseOnDone={false} />}
+      </TranscriptStateProvider>
+    )
+    const { rerender } = render(view(false))
+    fireEvent.click(screen.getByText(/^Thinking/))
+    expect(screen.getByText('deferred reasoning')).toBeVisible()
+
+    rerender(view(false, false))
+    rerender(view(true))
+    expect(screen.getByText('deferred reasoning')).toBeVisible()
   })
 })

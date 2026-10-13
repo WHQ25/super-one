@@ -32,8 +32,10 @@ export const ReasoningBlock = memo(function ReasoningBlock({
   const { t } = useTranslation()
   const [now, setNow] = useState(() => Date.now())
   // Expansion follows the real block lifecycle on both desktop and mobile.
-  const [expanded, setExpanded, restored] = useTranscriptState('reasoning', autoExpand && showContent && (!blockDone || !collapseOnDone))
-  const previousDone = useRef(blockDone)
+  const [expanded, setExpanded] = useTranscriptState('reasoning', autoExpand && showContent && (!blockDone || !collapseOnDone))
+  // A block can finish while evicted. Remember observed completion separately
+  // from expansion so only manual expansion after completion survives a remount.
+  const [previousDone, setPreviousDone] = useTranscriptState('reasoning-done', false)
   const autoExpandedRef = useRef(autoExpand && showContent && !blockDone)
   const scrollRef = useRef<HTMLDivElement>(null)
   const rafRef = useRef(0)
@@ -66,7 +68,10 @@ export const ReasoningBlock = memo(function ReasoningBlock({
   }, [autoExpand, showContent, blockDone])
 
   useEffect(() => {
-    if (!blockDone) return
+    if (!blockDone) {
+      if (previousDone) setPreviousDone(false)
+      return
+    }
     // Freeze the fallback end once so a (Codex) block that finishes without
     // persisted timestamps keeps a stable duration instead of drifting.
     if (startedAt == null && start != null && !fallbackEnd) {
@@ -74,9 +79,9 @@ export const ReasoningBlock = memo(function ReasoningBlock({
       setFallbackEnd(ended)
       setNow(ended)
     }
-    if (showContent && collapseOnDone && (!restored || !previousDone.current)) setExpanded(false)
-    previousDone.current = blockDone
-  }, [blockDone, showContent, collapseOnDone, startedAt, start, fallbackEnd])
+    if (collapseOnDone && !previousDone) setExpanded(false)
+    if (!previousDone) setPreviousDone(true)
+  }, [blockDone, collapseOnDone, startedAt, start, fallbackEnd, previousDone])
 
   useEffect(() => {
     if (!showContent) return

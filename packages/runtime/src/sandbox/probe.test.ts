@@ -39,6 +39,17 @@ describe('sandbox probe', () => {
     expect(result.capability).toBeDefined()
   })
 
+  it('does not wait for the host PATH where nothing is looked up on it', async () => {
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')!
+    Object.defineProperty(process, 'platform', { value: 'darwin' })
+    try {
+      const pathReady = () => new Promise<void>(() => {})
+      expect(await probeSandboxRpc(pathReady)).toMatchObject({ ok: true, bwrap: true, socat: true })
+    } finally {
+      Object.defineProperty(process, 'platform', platform)
+    }
+  })
+
   it('sandboxModeToSdkSandbox maps on/auto', () => {
     if (getSandboxCapability().supportLevel === 'unsupported') {
       expect(sandboxModeToSdkSandbox('on')).toBeUndefined()

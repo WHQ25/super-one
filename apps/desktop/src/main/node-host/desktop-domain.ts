@@ -94,8 +94,11 @@ export interface DesktopDomainDeps {
   harnesses: HarnessManager
   /** The agent profiles this desktop can launch, as its own collaboration lists them. */
   listAgentProfiles: () => SessionAgentProfile[]
-  /** Harness readiness probes, runtime checks and installs, as the window's Settings → Harnesses runs them. */
-  hooks: Pick<RpcHostHooks, 'probeHarnessReadiness' | 'assertSessionHarnessRuntimeReady' | 'enableHarness' | 'disableHarness'>
+  /**
+   * Harness readiness probes, runtime checks and installs, as the window's
+   * Settings → Harnesses runs them; `pathReady` is the window's login-shell PATH.
+   */
+  hooks: Pick<RpcHostHooks, 'probeHarnessReadiness' | 'assertSessionHarnessRuntimeReady' | 'enableHarness' | 'disableHarness' | 'pathReady'>
   /** This desktop's PTYs. */
   terminals?: TerminalsPort
   /** This desktop's composer drafts and their leases, shared with its window. */
@@ -354,6 +357,7 @@ function desktopRpcHooks(deps: DesktopDomainDeps): RpcHostHooks {
     assertSessionHarnessRuntimeReady: deps.hooks.assertSessionHarnessRuntimeReady,
     enableHarness: deps.hooks.enableHarness,
     disableHarness: deps.hooks.disableHarness,
+    ...(deps.hooks.pathReady ? { pathReady: deps.hooks.pathReady } : {}),
     listHarnessModels: unsupported('provider.listModels'),
     forkHarnessResume: async () => {
       throw unsupportedMethodError('session.fork')

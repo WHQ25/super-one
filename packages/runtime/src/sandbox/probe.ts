@@ -84,7 +84,14 @@ let inflightProbe: Promise<SandboxProbeResult> | null = null
 const LINUX_INSTALL_HINT =
   'Debian/Ubuntu: sudo apt install bubblewrap socat\nFedora: sudo dnf install bubblewrap socat\nArch: sudo pacman -S bubblewrap socat'
 
-async function runProbe(): Promise<SandboxProbeResult> {
+/**
+ * Resolves once the host's PATH is final. A GUI launch adopts its login
+ * shell's PATH after startup; a lookup before that would cache a PATH-less
+ * answer. Awaited only where the probe looks binaries up (Linux).
+ */
+export type SandboxPathReady = () => Promise<void>
+
+async function runProbe(pathReady?: SandboxPathReady): Promise<SandboxProbeResult> {
   const capability = getSandboxCapability()
   if (capability.supportLevel === 'always') return { ok: true }
   if (capability.supportLevel === 'unsupported') {
@@ -94,6 +101,7 @@ async function runProbe(): Promise<SandboxProbeResult> {
       installHint: capability.unsupportedReason ?? '当前平台不支持沙盒',
     }
   }
+  await pathReady?.()
   const missing: string[] = []
   if (whichSync('bwrap') === null) missing.push('bubblewrap')
   if (whichSync('socat') === null) missing.push('socat')
@@ -101,10 +109,10 @@ async function runProbe(): Promise<SandboxProbeResult> {
   return { ok: false, missing, installHint: LINUX_INSTALL_HINT }
 }
 
-export async function probeSandboxDependencies(): Promise<SandboxProbeResult> {
+export async function probeSandboxDependencies(pathReady?: SandboxPathReady): Promise<SandboxProbeResult> {
   if (cachedProbe) return cachedProbe
   if (inflightProbe) return inflightProbe
-  inflightProbe = runProbe().then((result) => {
+  inflightProbe = runProbe(pathReady).then((result) => {
     cachedProbe = result
     inflightProbe = null
     return result
@@ -115,9 +123,9 @@ export async function probeSandboxDependencies(): Promise<SandboxProbeResult> {
 /**
  * Full RPC payload: capability booleans (bwrap/socat) + desktop-compatible probe.
  */
-export async function probeSandboxRpc(): Promise<SandboxProbeRpcResult> {
+export async function probeSandboxRpc(pathReady?: SandboxPathReady): Promise<SandboxProbeRpcResult> {
   const capability = getSandboxCapability()
-  const probe = await probeSandboxDependencies()
+  const probe = await probeSandboxDependencies(pathReady)
   const bwrap =
     capability.supportLevel === 'always'
       ? true

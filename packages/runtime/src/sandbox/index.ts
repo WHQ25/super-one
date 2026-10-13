@@ -6,4 +6,5 @@ export {
   coerceSandboxModeForCapability,
   sandboxModeToSdkSandbox,
   resetSandboxCapabilityCacheForTests,
+  type SandboxPathReady,
 } from './probe'

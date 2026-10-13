@@ -671,7 +671,7 @@ async function handleUsage(payload: unknown, ctx: RpcContext): Promise<RpcResult
 async function handleSystemInfo(ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readEnvironment)
   if (denied) return denied
-  const sandbox = await probeSandboxRpc()
+  const sandbox = await probeSandboxRpc(ctx.hooks.pathReady)
   return {
     result: {
       environmentId: ctx.identity.environmentId,
@@ -736,7 +736,7 @@ async function handleSandboxProbe(ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readEnvironment)
   if (denied) return denied
   try {
-    return { result: await probeSandboxRpc() }
+    return { result: await probeSandboxRpc(ctx.hooks.pathReady) }
   } catch (err) {
     return mapThrown(err)
   }

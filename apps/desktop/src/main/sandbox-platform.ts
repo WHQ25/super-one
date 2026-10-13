@@ -6,7 +6,6 @@ import { ensureShellPath } from './shell-path'
 export { coerceSandboxModeForCapability, getSandboxCapability, isSandboxEnableAllowed } from '@superone/runtime/sandbox'
 
 /** The probe result is cached, so bwrap / socat are looked up on the full PATH. */
-export async function probeSandboxDependencies(): Promise<SandboxProbeResult> {
-  await ensureShellPath()
-  return probeRuntimeSandbox()
+export function probeSandboxDependencies(): Promise<SandboxProbeResult> {
+  return probeRuntimeSandbox(ensureShellPath)
 }

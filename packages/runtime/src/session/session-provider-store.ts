@@ -167,7 +167,15 @@ export function createSessionProviderStore(
   ensureSessionProvidersTable(db)
   const validConfig = (harnessId: HarnessId, config: unknown): unknown => {
     const normalized = normalizeConfig(config)
-    return options.validateConfig ? options.validateConfig(harnessId, normalized) : normalized
+    if (!options.validateConfig) return normalized
+    try {
+      return options.validateConfig(harnessId, normalized)
+    } catch (err) {
+      // The host's check rejected the client's config, whatever its schema library throws.
+      throw Object.assign(new Error(err instanceof Error ? err.message : String(err), { cause: err }), {
+        code: 'invalid_argument',
+      })
+    }
   }
 
   const list = (): SessionProviderRecord[] => {

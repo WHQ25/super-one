@@ -53,7 +53,10 @@ import {
   updateSessionProvider,
   deleteSessionProvider,
   listByHarness,
+  sessionProviderStore,
 } from './session-provider-repo'
+import { dispatchSessionProviderRpc } from '@superone/runtime/server/rpc-session-providers'
+import type { AuthenticatedClient } from '@superone/runtime/server'
 
 describe('session-provider-repo', () => {
   beforeEach(() => {
@@ -103,6 +106,16 @@ describe('session-provider-repo', () => {
         name: 'bad',
         config: { initializeTimeoutMs: -5 },
       })).toThrow()
+    })
+
+    it('answers a node client\'s invalid config as invalid_argument', () => {
+      const client = { clientSessionId: 'node:c1', scopes: ['node:admin'], devicePublicKeyFingerprint: 'fp', devicePublicKeyPem: 'pem' } as AuthenticatedClient
+      const res = dispatchSessionProviderRpc(
+        'sessionProviders.create',
+        { harnessId: 'claude', name: 'bad', config: { initializeTimeoutMs: -5 } },
+        { client, sessionProviders: sessionProviderStore() },
+      )
+      expect(res?.error?.code).toBe('invalid_argument')
     })
 
     it('auto-generates id when not provided', () => {

@@ -58,6 +58,19 @@ describe('session-provider-store', () => {
     expect(() => store.create({ harnessId: 'nope', name: 'x' })).toThrow(/Unknown harness/)
   })
 
+  it("reports the host validator's rejection as invalid_argument", () => {
+    const db = new Database(':memory:')
+    dbs.push(db)
+    const store = createSessionProviderStore(db, {
+      validateConfig: () => {
+        throw new TypeError('initializeTimeoutMs must be positive')
+      },
+    })
+    expect(() => store.create({ harnessId: 'claude', name: 'x', config: {} })).toThrow(
+      expect.objectContaining({ code: 'invalid_argument', message: 'initializeTimeoutMs must be positive' }),
+    )
+  })
+
   it('listByHarness filters', () => {
     const store = openStore()
     store.create({ harnessId: 'codex', name: 'extra' })

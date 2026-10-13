@@ -2,6 +2,10 @@ import { SUPERONE_SYSTEM_PROMPT_APPEND } from '@superone/shared/superone-system-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
+  startServer: vi.fn(async () => ({
+    url: 'http://127.0.0.1:4000', protocol: 'v1' as const, exited: null,
+    close: async () => mocks.closeServer(),
+  })),
   createSession: vi.fn(async () => ({ id: 'oc-session' })),
   updatePermission: vi.fn(async () => undefined),
   updateSessionTitle: vi.fn(async () => undefined),
@@ -92,13 +96,10 @@ vi.mock('./opencode-client', async (importOriginal) => ({
   }, {
     name: 'unshare', description: 'Unshare session', argumentHint: '', isSkill: false,
   }],
-  startOpenCodeServer: async () => ({
-    url: 'http://127.0.0.1:4000',
-    protocol: 'v1',
-    exited: null,
-    close: mocks.closeServer,
-  }),
+  startOpenCodeServer: mocks.startServer,
 }))
+
+vi.mock('@superone/opencode/owned-service', () => ({ startOpenCodeSessionServer: mocks.startServer }))
 
 vi.mock('../shell-path', async (original) => ({ ...(await original<typeof import('../shell-path')>()), ensureShellPath: async () => {}, isShellPathReady: () => true }))
 

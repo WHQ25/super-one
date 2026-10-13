@@ -132,7 +132,7 @@ describe('Codex async answers across turn completion', () => {
     const { session, backend, emit } = fixture()
     emit({ type: 'status_change', status: 'streaming' })
     await session.dispatchBackendCommand(answer)
-    expect(backend.handleCommand).toHaveBeenCalledWith(answer)
+    expect(backend.handleCommand).toHaveBeenCalledWith(answer, expect.any(Function))
     expect(backend.send).not.toHaveBeenCalled()
   })
 

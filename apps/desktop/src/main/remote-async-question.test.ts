@@ -51,7 +51,7 @@ describe('mobile async question answers', () => {
       await runtime.answerCodexAsyncQuestion('turn', 'question', [CODEX_ASYNC_QUESTION_DISMISSED])
       await runtime.answerCodexAsyncQuestion('turn', 'question', [CODEX_ASYNC_QUESTION_DISMISSED])
       expect(handleCommand).toHaveBeenCalledTimes(1)
-      expect(handleCommand).toHaveBeenCalledWith(expect.objectContaining({ input: CODEX_ASYNC_QUESTION_DISMISSED }))
+      expect(handleCommand).toHaveBeenCalledWith(expect.objectContaining({ input: CODEX_ASYNC_QUESTION_DISMISSED }), expect.any(Function))
       expect(pendingCodexAsyncQuestions(runtime.messages)).toEqual([])
       expect(transcriptSegments(runtime.messages).filter(segment => segment.message.role === 'user')).toEqual([])
       await runtime.reopen()

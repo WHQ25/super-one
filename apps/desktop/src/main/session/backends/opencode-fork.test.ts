@@ -25,6 +25,8 @@ vi.mock('../../opencode/opencode-client', () => ({
   },
 }))
 
+vi.mock('@superone/opencode/owned-service', () => ({ startOpenCodeSessionServer: mocks.startServer }))
+
 import { forkOpenCodeSession } from './opencode-fork'
 
 function source(overrides: Partial<ForkSource> = {}): ForkSource {

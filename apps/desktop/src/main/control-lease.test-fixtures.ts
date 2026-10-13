@@ -16,5 +16,5 @@ export function controlLeaseAuthority(): SessionLeaseAuthority {
 export function acquirePhoneControl(authority: SessionLeaseAuthority, sessionId: string, deviceId: string) {
   const actor = `phone:${deviceId}`
   return bindControlActor(authority.leases, { clientSessionId: actor, holderClientId: `desktop:${authority.environmentId}`,
-    delegate: actor, yields: false }).acquire({ resource: { environmentId: authority.environmentId, sessionId }, holderClientId: actor, ttlMs: 60_000 })
+    delegate: actor, yields: 'none' }).acquire({ resource: { environmentId: authority.environmentId, sessionId }, holderClientId: actor, ttlMs: 60_000 })
 }

@@ -932,8 +932,7 @@ const mobileReceiveService = new MobileReceiveService({
     if (!sessionId) return null
     const session = sessionManager.getSession(sessionId)
     if (!session) return null
-    const delegate = session.lease.current?.delegate
-    const deviceId = delegate?.startsWith('phone:') ? delegate.slice(6) : null
+    const deviceId = session.lease.phoneDeviceId
     if (!deviceId) return null
     return {
       deviceId,

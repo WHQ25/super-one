@@ -124,7 +124,7 @@ describe('terminal control delegates', () => {
     expect(create).not.toHaveBeenCalled()
   })
 
-  it('passes delegate and yields through acquire just as session control does', async () => {
+  it('passes delegate through acquire and yields only to the caller\'s own delegates, as session control does', async () => {
     const acquire = vi.fn(() => ({ leaseId: 'lease' }))
     const ctx = projectsOnlyHost({
       terminals: {} as RpcContext['terminals'],
@@ -133,7 +133,7 @@ describe('terminal control delegates', () => {
     expect(await dispatchRpc('terminal.acquireControl', { terminalId: 't', delegate: 'phone-a', yields: true, ttlMs: 60_000 }, ctx)).toEqual({ result: { leaseId: 'lease' } })
     expect(acquire).toHaveBeenCalledWith({
       resource: { environmentId: 'env-1', terminalId: 't' }, holderClientId: 'c1',
-      delegate: 'phone-a', yields: true, ttlMs: 60_000,
+      delegate: 'phone-a', yields: 'holder', ttlMs: 60_000,
     })
   })
 })

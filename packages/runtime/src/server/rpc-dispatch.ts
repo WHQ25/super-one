@@ -1716,7 +1716,7 @@ function handleSessionAcquireControl(payload: unknown, ctx: RpcContext): RpcResu
       resource,
       holderClientId: ctx.client.clientSessionId,
       ...(typeof p.delegate === 'string' && p.delegate ? { delegate: p.delegate } : {}),
-      ...(p.yields === true ? { yields: true } : {}),
+      ...(p.yields === true ? { yields: 'holder' as const } : {}),
       ttlMs: typeof p.ttlMs === 'number' ? p.ttlMs : undefined,
     })
     try {

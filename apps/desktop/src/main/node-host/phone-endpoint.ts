@@ -53,7 +53,7 @@ export function openPhoneConnection(domain: DesktopDomain, link: PhoneLink): Pho
     route: link.transport,
     surface: 'phone',
     context: {
-      ...domain.phoneContext(),
+      ...domain.clientContext(),
       leases: bindControlActor(domain.leases, {
         clientSessionId: client.clientSessionId,
         holderClientId: `desktop:${domain.identity.environmentId}`,

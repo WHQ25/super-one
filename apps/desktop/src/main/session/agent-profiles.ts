@@ -61,7 +61,7 @@ export function resolveAcpAgentId(provider: ReturnType<typeof listSessionProvide
  * one twist is Cursor, whose picker hides models the user disabled in harness
  * config. Collab launches must offer exactly what the composer offers.
  */
-function cachedHarnessModels(harnessId: Exclude<HarnessId, 'acp'>): ModelOption[] {
+export function cachedHarnessModels(harnessId: Exclude<HarnessId, 'acp'>): ModelOption[] {
   if (harnessId === 'cursor') {
     const cached = getCachedHarnessResources('cursor')
     return cached ? filterEnabledCursorModels(cached.models, cached) : []

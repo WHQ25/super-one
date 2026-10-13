@@ -223,6 +223,8 @@ export interface IdempotencyPort {
 
 /** Node-local AI provider credentials (CLI: ProviderStore). */
 export interface ProvidersPort {
+  /** The `provider.*` methods a partial port serves; the rest answer unsupported. Absent: the whole family. */
+  readonly servedMethods?: ReadonlySet<string>
   listCredentials(): unknown
   getCredentialDecrypted(id: string): unknown
   createCredential(input: unknown): unknown

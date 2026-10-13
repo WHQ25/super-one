@@ -55,7 +55,7 @@ export class DesktopNodeHost {
     // Pairing, tokens and RPC run only inside the pairing-secret channel
     // (AES-256-GCM over ws), so the server may listen beyond loopback.
     const channelRoot = loadOrCreateChannelRoot(domain.nodeHome)
-    const context = domain.rpcContext()
+    const context = domain.controllerContext()
     const server = await startNodeServer<RpcContext>({
       identity,
       auth,

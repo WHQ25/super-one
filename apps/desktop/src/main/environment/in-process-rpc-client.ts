@@ -28,7 +28,7 @@ export class InProcessRpcClient extends EnvironmentRpcClient {
           delegate: clientSessionId.replace(/^ipc:/, 'window:'), yields: clientSessionId.startsWith('ipc:'),
         }) : domain.leases
       void domain.dispatchRpc(request.method, request.payload, {
-        ...domain.phoneContext(), leases: actor, streams: this.streams,
+        ...domain.clientContext(), leases: actor, streams: this.streams,
         requestId: request.requestId, idempotencyKey: request.idempotencyKey,
         client: { clientSessionId, scopes: [...ADMIN_PAIRING_SCOPES], devicePublicKeyPem: '', devicePublicKeyFingerprint: '' },
       }).then((result) => this.connection.receive(result.error

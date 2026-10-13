@@ -24,6 +24,8 @@ import { getHarnessManager, probeDesktopHarness } from '../harness/service'
 import { desktopHarnessResolver } from '../harness/host'
 import { listSessionAgentProfiles } from '../session/agent-profiles'
 import { createDesktopProjectsPort } from './desktop-projects-port'
+import { createDesktopProvidersPort } from './desktop-providers-port'
+import { listBindings, listCredentials, listCustomPlatforms } from '../providers/credential-store'
 import type { NodeHostSessionManager, NodeHostSessionStore } from './desktop-session-host'
 import { DesktopNodeHost } from './node-host-server'
 import { DesktopDomain, type DesktopDomainDeps } from './desktop-domain'
@@ -34,7 +36,7 @@ import { desktopRestorePorts } from '../session/session-restore-ports'
 
 type NodeHostSettings = Pick<AppSettings, 'remoteNodeAccessEnabled' | 'remoteNodeAccessPort'>
 /** What main gives the domain for its phones: its PTYs and its desktop methods. */
-type PhonePorts = Pick<DesktopDomainDeps, 'terminals' | 'phoneMethods' | 'projectEdits' | 'bindLocalControl' | 'beforeDraftOpen' | 'topicNotices' | 'rpcRouter' | 'scheduledSends'>
+type PhonePorts = Pick<DesktopDomainDeps, 'terminals' | 'phoneMethods' | 'catalog' | 'projectEdits' | 'bindLocalControl' | 'beforeDraftOpen' | 'topicNotices' | 'rpcRouter' | 'scheduledSends'>
 
 let host: DesktopNodeHost | null = null
 /** This desktop's environment backend, open from the first settings pass until quit. */
@@ -177,6 +179,7 @@ export function openDesktopDomain(sessions: NodeHostSessionManager, phonePorts: 
     rows: { get: getDesktopSessionRow, list: listDesktopSessionRows, loadMessages: loadSessionMessagesPaginated },
     restore: desktopRestorePorts,
     projects: createDesktopProjectsPort({ list: getRecentFolders, add: addRecentFolder }),
+    providers: createDesktopProvidersPort({ listCredentials, listCustomPlatforms, listBindings }),
     harnesses: getHarnessManager(),
     listAgentProfiles: listSessionAgentProfiles,
     hooks: {

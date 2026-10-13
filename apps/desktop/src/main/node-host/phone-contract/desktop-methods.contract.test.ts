@@ -44,7 +44,7 @@ function methodsDomain() {
 describe('phone endpoint: desktop methods', () => {
   it('requires write or access scopes before invoking extension side effects', async () => {
     const { domain, methods, agent, desktopPair } = methodsDomain()
-    const ctx = { ...domain.phoneContext(), client: { clientSessionId: 'reader', scopes: ['session:read', 'workspace:read', 'environment:read'] } } as RpcContext
+    const ctx = { ...domain.clientContext(), client: { clientSessionId: 'reader', scopes: ['session:read', 'workspace:read', 'environment:read'] } } as RpcContext
     for (const method of ['files.mkdir', 'files.upload', 'files.uploadComplete', 'widget.saveTemplate', 'git.setDefaultClonePath', 'client.mintNodeCode', 'client.pairNode']) {
       expect(await methods.dispatch(method, {}, ctx)).toMatchObject({ error: { code: 'forbidden' } })
     }

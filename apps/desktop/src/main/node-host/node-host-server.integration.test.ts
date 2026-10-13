@@ -31,6 +31,7 @@ import { NodeConnectionManager } from '../environment/node-connection-manager'
 import { RemoteHostActionConsumer } from '../environment/remote-host-action-consumer'
 import { NodeCredentialStore } from '../environment/node-credential-store'
 import { createDesktopProjectsPort } from './desktop-projects-port'
+import { createDesktopProvidersPort } from './desktop-providers-port'
 import { AGENT_PROFILES, FakeSessionManager, memoryStore, startDesktopNode, stopDesktopNode, type FakeSession } from './node-host-test-fixtures'
 import { DesktopNodeHost } from './node-host-server'
 import { mapNodeSessionEvents } from '@superone/shared/node-session-event-map'
@@ -46,6 +47,19 @@ afterEach(async () => {
   electron.store.clear()
 })
 
+/** B's window catalogs: what its composer offers, without probing a real harness. */
+function fakeCatalog() {
+  return {
+    connectClaude: vi.fn(async () => ({
+      models: [{ id: 'claude-opus', name: 'Opus', description: '' }],
+      account: { email: 'b@example.com' },
+      slashCommands: [{ name: 'review', description: 'Review', argumentHint: '', isSkill: false }],
+      skills: [], commands: [], agents: [], outputStyles: ['default'],
+    })),
+    listModels: vi.fn(async (harnessId: string) => harnessId === 'codex' ? [{ id: 'gpt-5', name: 'GPT-5', description: '' }] : []),
+  }
+}
+
 function tempDir(prefix: string): string {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), prefix)))
   dirs.push(dir)
@@ -53,7 +67,7 @@ function tempDir(prefix: string): string {
 }
 
 /** B with one git project (origin + a commit), paired with a fresh A. */
-async function pairedDesktops() {
+async function pairedDesktops(catalog = fakeCatalog()) {
   const userData = tempDir('superone-node-host-')
   const projectDir = tempDir('superone-node-host-project-')
   execFileSync('git', ['init', '-q', projectDir])
@@ -67,7 +81,12 @@ async function pairedDesktops() {
   harnesses.enableSimulatedOverlay()
   const host = await startDesktopNode(
     {
-      userDataDir: userData, label: 'Desktop B', appVersion: '0.0.0-test', sessions, store, rows: store.all, projects, harnesses,
+      userDataDir: userData, label: 'Desktop B', appVersion: '0.0.0-test', sessions, store, rows: store.all, projects, harnesses, catalog,
+      providers: createDesktopProvidersPort({
+        listCredentials: () => [{ id: 'cred-b', name: 'Team key', apiKey: 'sk-…1234' }],
+        listCustomPlatforms: () => [],
+        listBindings: () => [{ consumer: 'chat:claude', credentialId: 'cred-b' }] as never,
+      }),
       listAgentProfiles: () => AGENT_PROFILES,
       hooks: {
         probeHarnessReadiness: () => ({ ok: true }) as never,
@@ -107,6 +126,7 @@ describe('DesktopNodeHost', () => {
         rows: store.all,
         projects,
         harnesses,
+        catalog: fakeCatalog(),
         listAgentProfiles: () => AGENT_PROFILES,
         hooks: {
           probeHarnessReadiness: () => ({ ok: true }) as never,
@@ -132,7 +152,9 @@ describe('DesktopNodeHost', () => {
 
     const described = await client.rpc<ExecutionEnvironmentDescriptor>('environment.descriptor')
     expect(described.capabilities.methods).toContain('session.get')
-    for (const method of ['terminal.create', 'workspace.readFile', 'git.status', 'collaboration.send']) expect(described.capabilities.methods).not.toContain(method)
+    // The workspace, Git and catalog its window and phones get; terminals wait for controller leases.
+    for (const method of ['workspace.readFile', 'git.status', 'git.branches', 'harness.resources', 'provider.listModels']) expect(described.capabilities.methods).toContain(method)
+    for (const method of ['terminal.create', 'collaboration.send']) expect(described.capabilities.methods).not.toContain(method)
     expect(described.capabilities.harnessIds).toContain('claude')
 
     const listed = await client.rpc<ProjectSnapshot[]>('project.list')
@@ -180,6 +202,34 @@ describe('DesktopNodeHost', () => {
   })
 })
 
+describe('DesktopNodeHost composer', () => {
+  it('offers a controller the models, catalog and Git its window has', async () => {
+    const catalog = fakeCatalog()
+    const { client } = await pairedDesktops(catalog)
+
+    expect(await client.rpc('provider.listModels', { harness: 'codex', apiProviderId: 'cred-b' })).toEqual([{ id: 'gpt-5', name: 'GPT-5', description: '' }])
+    expect(catalog.listModels).toHaveBeenCalledWith('codex', 'cred-b')
+
+    const resources = await client.rpc<{ claude: { models: unknown[]; account: unknown; slashCommands: unknown[]; outputStyles: string[] } }>('harness.resources', { projectId: 'p1', harnessId: 'claude' })
+    expect(resources.claude).toMatchObject({
+      models: [{ id: 'claude-opus' }], account: { email: 'b@example.com' }, slashCommands: [{ name: 'review' }], outputStyles: ['default'],
+    })
+    // One probe answers every Claude section.
+    expect(catalog.connectClaude).toHaveBeenCalledTimes(1)
+    await expect(client.rpc('harness.resources', { projectId: 'missing' })).rejects.toMatchObject({ code: 'not_found' })
+
+    expect(await client.rpc('git.status', { projectId: 'p1' })).toMatchObject({ isRepo: true, dirty: false })
+    expect(await client.rpc('git.branches', { projectId: 'p1' })).toMatchObject({ current: expect.any(String) })
+
+    // The API provider picker reads masked credentials; key material stays on B.
+    expect(await client.rpc('provider.listCredentials')).toEqual([{ id: 'cred-b', name: 'Team key', apiKey: 'sk-…1234' }])
+    expect(await client.rpc('provider.listBindings')).toEqual([{ consumer: 'chat:claude', credentialId: 'cred-b' }])
+    for (const method of ['provider.getCredentialDecrypted', 'provider.exportBundle']) {
+      await expect(client.rpc(method, { id: 'cred-b' })).rejects.toMatchObject({ code: 'not_found' })
+    }
+  })
+})
+
 describe('DesktopNodeHost collaboration children', () => {
   it('cuts a worktree for a remote child and carries its mailbox tools to the controller as Host Actions', async () => {
     const { host, sessions, store, projectDir, connectionId, client } = await pairedDesktops()
@@ -187,8 +237,7 @@ describe('DesktopNodeHost collaboration children', () => {
     const described = await client.rpc<ExecutionEnvironmentDescriptor>('environment.descriptor')
     expect(described.capabilities).toMatchObject({ hostActionV1: true })
     expect(described.capabilities.methods).toEqual(expect.arrayContaining(['git.fetch', 'git.worktreeActivate']))
-    // Only fetching and worktree creation of the git family are served.
-    await expect(client.rpc('git.status', { projectId: 'p1' })).rejects.toMatchObject({ code: 'not_found' })
+    expect(await client.rpc('git.status', { projectId: 'p1' })).toMatchObject({ isRepo: true, branch: 'main' })
     // Pushed work B's checkout has not seen yet: the fetch makes it the base.
     const origin = tempDir('superone-origin-')
     execFileSync('git', ['init', '-q', '--bare', origin])

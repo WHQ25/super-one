@@ -41,12 +41,24 @@ export class TranscriptWindowSync {
     return this.materialized.messages
   }
 
-  /** Window rows in order (as given, or as materialized), then the phone's own rows the window does not hold yet. */
+  /**
+   * Window rows in order (as given, or as materialized), with the phone's own
+   * rows the window does not hold yet. Each stays after the window row it
+   * followed, so a send that failed keeps its place as later turns arrive;
+   * one whose predecessor left the window goes last.
+   */
   reconcile(current: readonly ChatMessage[], windowed: ChatMessage[] = this.messages()): ChatMessage[] {
     const ids = new Set(windowed.map((message) => message.id))
     for (const id of this.local) if (ids.has(id)) this.local.delete(id)
-    const own = current.filter((message) => this.local.has(message.id))
-    return own.length ? [...windowed, ...own] : windowed
+    if (!this.local.size) return windowed
+    const after = new Map<string | null, ChatMessage[]>()
+    let anchor: string | null = null
+    for (const message of current) {
+      if (this.local.has(message.id)) after.set(anchor, [...after.get(anchor) ?? [], message])
+      else if (ids.has(message.id)) anchor = message.id
+    }
+    if (!after.size) return windowed
+    return [...windowed.flatMap((message) => [message, ...after.get(message.id) ?? []]), ...after.get(null) ?? []]
   }
 
   /** @returns false when the patch referred to content this window cannot rebuild. */

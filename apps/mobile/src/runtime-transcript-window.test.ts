@@ -105,6 +105,24 @@ describe('ChatRuntime transcript windows', () => {
     runtime.dispose()
   })
 
+  it('keeps a failed send where it was sent as later turns arrive', async () => {
+    const transcript = { current: [textMessage('u', 'user', 'Hi')] }
+    const { client } = windowHost(transcript)
+    client.controlledRpc.mockImplementationOnce(async () => { throw new Error('SessionProvider not found') })
+    const runtime = new ChatRuntime(client as never, () => {}, cache().hooks)
+    await runtime.open('/p', 's')
+    runtime.send('First', { clientMessageId: 'failed' })
+    await vi.waitFor(() => expect(runtime.messages.find((m) => m.id === 'failed')?.metadata?.sendFailure).toBeTruthy())
+    runtime.send('Second', { clientMessageId: 'next' })
+    const echoed = fragmentMessage(textMessage('next', 'user', 'Second'))
+    const reply = fragmentMessage(textMessage('r', 'assistant', 'Answer'))
+    const row = (message: typeof echoed, index: number) => ({ id: message.id, index, metaDigest: message.metaDigest, meta: message.meta,
+      fragments: message.fragments.map(({ key, digest, body }) => ({ key, digest, body })), omittedBefore: 0, omittedAfter: 0 })
+    runtime.ingest([event({ type: 'transcript_window', patch: { total: 3, messages: [row(echoed, 1), row(reply, 2)] } })])
+    expect(runtime.messages.map((m) => m.id)).toEqual(['u', 'failed', 'next', 'r'])
+    runtime.dispose()
+  })
+
   it('drops transcript content the reducer derived from a host event', async () => {
     const { client } = windowHost({ current: [textMessage('u', 'user', 'Hi')] })
     const runtime = new ChatRuntime(client as never, () => {}, cache().hooks)

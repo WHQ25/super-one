@@ -25,6 +25,7 @@ import type { HarnessId } from '@superone/shared/session-types'
 import { useAppStore } from '../../app'
 import { useDraftsStore } from '../../drafts'
 import type { ChatProvider, ChatStore, PerSessionState, ProjectState } from '../types'
+import { useChatStore } from '../index'
 import { _isLiveSession, isUnsentSession } from './session-liveness'
 
 /**
@@ -601,29 +602,23 @@ export async function promoteDraftIfUnsent(
     claimDraftForSession(sessionId, draft.id)
     // Stamp draftId on the live session so the pane stays in draft mode
     // and the sidebar can hide the row while the origin is still focused.
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { useChatStore } = require('../index') as typeof import('../index')
-      useChatStore.setState((s) => {
-        const proj = s.projectSessions[projectPath]
-        const sess = proj?._sessions[sessionId]
-        if (!proj || !sess) return {}
-        return {
-          projectSessions: {
-            ...s.projectSessions,
-            [projectPath]: {
-              ...proj,
-              _sessions: {
-                ...proj._sessions,
-                [sessionId]: { ...sess, draftId: draft.id },
-              },
+    useChatStore.setState((s) => {
+      const proj = s.projectSessions[projectPath]
+      const sess = proj?._sessions[sessionId]
+      if (!proj || !sess) return {}
+      return {
+        projectSessions: {
+          ...s.projectSessions,
+          [projectPath]: {
+            ...proj,
+            _sessions: {
+              ...proj._sessions,
+              [sessionId]: { ...sess, draftId: draft.id },
             },
           },
-        }
-      })
-    } catch {
-      /* chat store unavailable in unit tests */
-    }
+        },
+      }
+    })
     draftTrace('promote_saved', { draftId: draft.id }, draft.id)
   } catch (err) {
     draftTrace('promote_failed', { draftId: draft.id, err: err instanceof Error ? err.message : String(err) }, draft.id)
@@ -731,13 +726,7 @@ export function discardDeletedDraft(draftId: string, store?: ChatStore): void {
     if (patch.projectSessions) store.projectSessions = patch.projectSessions
     return
   }
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { useChatStore } = require('../index') as typeof import('../index')
-    useChatStore.setState((s) => apply(s))
-  } catch {
-    /* chat store unavailable in unit tests */
-  }
+  useChatStore.setState((s) => apply(s))
 }
 
 /**

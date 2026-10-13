@@ -1068,6 +1068,7 @@ async function applyNodeHostSettings(settings: AppSettings): Promise<void> {
     import('./node-host/routed-phone-rpc'),
   ])
   const { getEnvironmentHost, setLegacyScheduleCancellation } = await import('./environment')
+  const { createDesktopProvidersPort } = await import('./node-host/desktop-providers-port')
   setLegacyScheduleCancellation(sessionId => scheduledSendService.clear(sessionId))
   const environmentHost = getEnvironmentHost()
   phoneRpcRouter ??= createPhoneRpcRouter(environmentId => environmentHost.phoneRouteTarget(environmentId),
@@ -1089,6 +1090,7 @@ async function applyNodeHostSettings(settings: AppSettings): Promise<void> {
         opened: (path) => void agentService.openFolder(path),
       },
       catalog: harnessCatalog,
+      providers: createDesktopProvidersPort(await import('./providers/credential-store'), agentService),
       phoneMethods: createPhoneMethods({
         agent: agentService,
         sessions: { getSession: (id) => sessionManager.getSession(id), openMiniAppForm },

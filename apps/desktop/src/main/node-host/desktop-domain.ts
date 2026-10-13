@@ -109,7 +109,7 @@ export interface DesktopDomainDeps {
   phoneMethods?: DesktopExtension
   /** The window's harness catalogs, served as the node catalog contract. */
   catalog?: DesktopCatalog
-  /** The credential reads a composer's API provider picker needs (`desktop-providers-port.ts`). */
+  /** This desktop's credential store, keys withheld (`desktop-providers-port.ts`). */
   providers?: ProvidersPort
   sessionEdits?: LocalSessionEdits
   sideChats?: LocalSessionHostDeps['sideChats']

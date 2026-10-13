@@ -23,6 +23,16 @@ export interface VirtualTranscriptHandle {
 const ROW_GAP = 6
 const SMALL_LIST = 8
 
+/**
+ * A block's own box against the root margin, ignoring ancestor clips. A Detail
+ * region animating open or closed clips laid-out content only for the motion;
+ * mounting by that clip would commit a chunk on every frame in both directions.
+ */
+function inRootBounds({ boundingClientRect: box, rootBounds: root }: IntersectionObserverEntry) {
+  // Content under display:none has an empty box, not a position.
+  return !!root && box.height > 0 && box.bottom >= root.top && box.top <= root.bottom
+}
+
 /** All rows share the existing chat viewport; the list owns only mounted content and geometry. */
 export function VirtualTranscriptList({ items, viewportRef, apiRef }: {
   items: readonly VirtualTranscriptItem[]
@@ -85,8 +95,9 @@ export function VirtualTranscriptList({ items, viewportRef, apiRef }: {
       // batch instead of querying the browser for each of thousands of blocks.
       const hasInteraction = transcriptInteractionSnapshot(root.ownerDocument)
       for (const entry of entries) {
-        intersections.set(entry.target, entry.isIntersecting)
-        const visible = entry.isIntersecting || hasInteraction(entry.target)
+        const intersecting = entry.isIntersecting || inRootBounds(entry)
+        intersections.set(entry.target, intersecting)
+        const visible = intersecting || hasInteraction(entry.target)
         if (visible) blockAnchor.prepare(entry.target as HTMLElement)
         blockCallbacks.get(entry.target)?.(visible)
       }

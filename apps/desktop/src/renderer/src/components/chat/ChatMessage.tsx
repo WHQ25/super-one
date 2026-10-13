@@ -59,7 +59,6 @@ import {
   type TurnDocumentPresenterProps,
   type TurnBodyPresenterParts,
   type TurnBodyPresenterRuntime,
-  type TurnDetailPresenterProps,
   type TurnTextPresenterProps,
 } from './presenters/TurnBody'
 import { PlanBlock } from './PlanBlock'
@@ -114,12 +113,8 @@ const TURN_PARTS: TurnBodyPresenterParts = {
   TurnDetail: TurnDetailSection,
 }
 
-function LongTurnDetail(props: TurnDetailPresenterProps) {
-  return <TurnDetailSection {...props} animate={false} />
-}
-
 const LONG_CONTENT_BLOCK_TURN_PARTS: TurnBodyPresenterParts = {
-  ...TURN_PARTS, Segment: VirtualTurnSegment, TurnDetail: LongTurnDetail,
+  ...TURN_PARTS, Segment: VirtualTurnSegment,
 }
 
 const TURN_RUNTIME: TurnBodyPresenterRuntime = {

@@ -17,8 +17,6 @@ import { formatCompactDuration } from './presenters/duration-format'
 import { useWorkingDuration } from './use-working-duration'
 
 interface TurnDetailSectionProps {
-  /** Huge virtual turns should not animate and measure every process run. */
-  animate?: boolean
   /** Turn content in original order; pinned runs stay visible between collapsed ones. */
   runs: TurnDetailRun[]
   /** Visible tool / file / line stats collapsed under Detail. */
@@ -114,7 +112,7 @@ function TurnDetailRegion({ expanded, children }: { expanded: boolean; children:
   )
 }
 
-export function TurnDetailSection({ runs, stats, workingSince, className, animate = true, turnId, showIndicator = true }: TurnDetailSectionProps) {
+export function TurnDetailSection({ runs, stats, workingSince, className, turnId, showIndicator = true }: TurnDetailSectionProps) {
   const { t, i18n } = useTranslation()
   const [expanded, setExpanded] = useTurnDetailState(turnId)
   const workingDuration = useWorkingDuration(workingSince, expanded)
@@ -185,11 +183,8 @@ export function TurnDetailSection({ runs, stats, workingSince, className, animat
     <>
       {showIndicator && indicator}
       {runs.map((run) =>
-        run.collapsible && animate ? (
+        run.collapsible ? (
           <TurnDetailRegion key={run.key} expanded={expanded}>{run.content}</TurnDetailRegion>
-        ) : run.collapsible && !expanded ? (
-          // A collapsed region's box, so pinned content after it spaces the same (`chat-md.css`).
-          <div key={run.key} data-expanded="false" className="turn-detail-region grid" />
         ) : (
           <Fragment key={run.key}>{run.content}</Fragment>
         ),

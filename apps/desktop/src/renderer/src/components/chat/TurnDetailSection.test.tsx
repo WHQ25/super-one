@@ -11,13 +11,19 @@ const runs = [
   { key: 'd', collapsible: false, content: <p>answer</p> },
 ]
 
+function finishCollapse() {
+  for (const region of screen.getAllByTestId('turn-detail-region')) {
+    fireEvent.transitionEnd(region, { propertyName: 'grid-template-rows' })
+  }
+}
+
 describe('turn detail disclosure', () => {
   it('shares one toggle across cut rows and restores a remounted continuation', () => {
     const view = (showContinuation: boolean, scope = 'session') => (
       <TurnDetailStateProvider scope={scope}>
-        <TurnDetailSection turnId="turn" runs={[runs[0]]} animate={false} />
+        <TurnDetailSection turnId="turn" runs={[runs[0]]} />
         <p>Compacted</p>
-        {showContinuation && <TurnDetailSection turnId="turn" showIndicator={false} runs={[runs[2], runs[3]]} animate={false} />}
+        {showContinuation && <TurnDetailSection turnId="turn" showIndicator={false} runs={[runs[2], runs[3]]} />}
       </TurnDetailStateProvider>
     )
     const { rerender } = render(view(true))
@@ -30,22 +36,29 @@ describe('turn detail disclosure', () => {
     rerender(view(true))
     expect(screen.getByText('tools-2')).toBeVisible()
     fireEvent.click(screen.getByRole('button'))
+    finishCollapse()
     expect(screen.queryByText('tools-1')).toBeNull()
     expect(screen.queryByText('tools-2')).toBeNull()
     expect(screen.getByText('answer')).toBeVisible()
     fireEvent.click(screen.getByRole('button'))
     rerender(view(true, 'other-session'))
+    expect(screen.getByRole('button')).toHaveAttribute('aria-expanded', 'false')
+    finishCollapse()
     expect(screen.queryByText('tools-1')).toBeNull()
     expect(screen.queryByText('tools-2')).toBeNull()
   })
-  it('opens virtual runs immediately and removes them on collapse', () => {
-    render(<TurnDetailSection runs={runs} animate={false} />)
+
+  it('keeps collapsing runs mounted until their height transition ends', async () => {
+    render(<TurnDetailSection runs={runs} />)
     const button = screen.getByRole('button')
     fireEvent.click(button)
-    expect(button).toHaveAttribute('aria-expanded', 'true')
-    expect(screen.getByText('tools-1')).toBeVisible()
-    expect(screen.getByText('tools-2')).toBeVisible()
+    await waitFor(() => screen.getAllByTestId('turn-detail-region').forEach(region =>
+      expect(region).toHaveAttribute('data-expanded', 'true')))
     fireEvent.click(button)
+    expect(button).toHaveAttribute('aria-expanded', 'false')
+    screen.getAllByTestId('turn-detail-region').forEach(region => expect(region).toHaveAttribute('data-expanded', 'false'))
+    expect(screen.getByText('tools-1')).toBeInTheDocument()
+    finishCollapse()
     expect(screen.queryByText('tools-1')).toBeNull()
     expect(screen.getByText('markdown')).toBeVisible()
   })

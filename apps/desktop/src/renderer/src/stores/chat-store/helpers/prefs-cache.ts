@@ -54,8 +54,14 @@ export function sessionDefaultsFor(harnessId: HarnessId): {
 
 let defaultPrefsLoadGeneration = 0
 
-function cacheCodexPreferences(appSettings: Pick<AppSettings, 'agentPreference'>): void {
+/** One projection for the initial load and every later settings broadcast. */
+function cacheAgentPreferences(appSettings: Pick<AppSettings, 'agentPreference'>): void {
   defaultPrefsCache.agentPreference = appSettings.agentPreference ?? null
+  const claude = appSettings.agentPreference?.claude
+  defaultPrefsCache.claudeSelection = {
+    modelId: typeof claude?.defaultModel === 'string' ? claude.defaultModel : '',
+    effort: toEffortLevel(claude?.defaultEffort),
+  }
   const codex = appSettings.agentPreference?.codex
   defaultPrefsCache.codexSelection = {
     modelId: typeof codex?.defaultModel === 'string' ? codex.defaultModel : '',
@@ -72,6 +78,8 @@ export function toCodexReasoningEffort(value: unknown): CodexReasoningEffort | u
     case 'medium':
     case 'high':
     case 'xhigh':
+    case 'max':
+    case 'ultra':
       return value
     default:
       return undefined
@@ -115,7 +123,7 @@ function subscribeToAppSettingsChanges(): void {
   if (appSettingsChangeSubscribed) return
   window.app.onAppSettingsChange?.((settings) => {
     defaultPrefsLoadGeneration += 1
-    cacheCodexPreferences(settings)
+    cacheAgentPreferences(settings)
   })
   appSettingsChangeSubscribed = true
 }
@@ -126,13 +134,7 @@ export async function _loadDefaultSessionPrefs(): Promise<void> {
     subscribeToAppSettingsChanges()
     const appSettings = await window.app.getAppSettings()
     if (generation !== defaultPrefsLoadGeneration) return
-    const claude = appSettings.agentPreference?.claude
-    defaultPrefsCache.agentPreference = appSettings.agentPreference ?? null
-    defaultPrefsCache.claudeSelection = {
-      modelId: typeof claude?.defaultModel === 'string' ? claude.defaultModel : '',
-      effort: toEffortLevel(claude?.defaultEffort),
-    }
-    cacheCodexPreferences(appSettings)
+    cacheAgentPreferences(appSettings)
   } catch {
     if (generation !== defaultPrefsLoadGeneration) return
     defaultPrefsCache.agentPreference = null

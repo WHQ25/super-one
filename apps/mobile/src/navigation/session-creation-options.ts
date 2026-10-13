@@ -7,7 +7,10 @@ import { buildWorktreeCreateOptions, type NewSessionWorktreeSelection } from '..
 /** Text and voice create the same backing session from the landing selections. */
 export function sessionCreationOptions(input: {
   provider: HarnessId; acpAgentId: string | null; permissionMode: string
-  model: string; effort: string; worktree: NewSessionWorktreeSelection; branch?: string | null
+  model: string; effort: string
+  /** Codex Fast picked on the landing; `null` is an explicit off, omission keeps the default. */
+  serviceTier?: string | null
+  worktree: NewSessionWorktreeSelection; branch?: string | null
   directories: string[]; sandboxMode: SandboxMode | null
   modeId: string | null; apiProviderId: string | null
 }): CreateSessionOptions {
@@ -18,6 +21,7 @@ export function sessionCreationOptions(input: {
     permissionMode: input.permissionMode,
     ...(input.model ? { model: input.model } : {}),
     ...(input.effort ? { effort: input.effort } : {}),
+    ...(input.provider === 'codex' && input.serviceTier !== undefined ? { serviceTier: input.serviceTier } : {}),
     ...buildWorktreeCreateOptions(input.worktree, input.branch),
     ...(harnessSupportsAdditionalDirs(input.provider) && dirs.length ? { additionalDirectories: dirs } : {}),
     ...(input.sandboxMode && harnessSupportsSandbox(input.provider) ? { sandboxMode: input.sandboxMode } : {}),

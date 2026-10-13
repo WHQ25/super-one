@@ -16,6 +16,8 @@ vi.mock('../../logger', () => ({
   default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
 }))
 
+vi.mock('../../shell-path', async (original) => ({ ...(await original<typeof import('../../shell-path')>()), ensureShellPath: async () => {}, isShellPathReady: () => true }))
+
 vi.mock('../../agent/resolve-cli', () => ({
   getNodeRuntime: vi.fn(() => ({})),
 }))
@@ -186,6 +188,9 @@ vi.mock('../../codex/codex-session', () => ({
 }))
 
 import { CodexBackend, type CodexRunStreamCallbacksDeps, type CodexServiceDeps } from './codex-backend'
+import { parseSessionSettings } from '@superone/runtime/server/session-settings'
+import { applyDesktopSessionSettings } from '../../node-host/desktop-session-mutations'
+import { Session } from '../session'
 
 function makeStartOpts(overrides: Partial<BackendStartOptions> = {}): BackendStartOptions {
   return {
@@ -2058,5 +2063,29 @@ describe('CodexBackend idle dispose', () => {
 
     expect(handle.close).not.toHaveBeenCalled()
     expect(session.connectionHandle).toBe(handle)
+  })
+})
+
+describe('CodexBackend behind the host Session', () => {
+  it('runs omitted sends with the permission preset and collaboration mode saved through the settings API', async () => {
+    const service = makeFakeService()
+    const session = new Session({
+      id: 'session', projectPath: '/tmp/proj', cwd: '/tmp/proj', providerId: 'codex-base', harnessId: 'codex',
+      providerConfig: { apiKey: 'codex-key', model: 'gpt-5.4' }, backend: new CodexBackend(service),
+    })
+    await applyDesktopSessionSettings(session, parseSessionSettings({ permissionPreset: 'full-access', collaborationMode: 'plan' }))
+
+    // The first send starts the runtime; the second reaches it warm.
+    for (const [index, content] of ['First turn', 'Warm turn'].entries()) {
+      const sending = session.send({ content })
+      await vi.waitFor(() => expect(service.runMock).toHaveBeenCalledTimes(index + 1))
+      service.resolveRun(makeResult())
+      await sending
+    }
+
+    for (const [, , , request] of service.runMock.mock.calls as [unknown, unknown, string, CodexRunRequest][]) {
+      expect(request).toMatchObject({ permissionPreset: 'full-access', collaborationMode: 'plan' })
+    }
+    await session.dispose()
   })
 })

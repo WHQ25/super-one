@@ -20,7 +20,7 @@ import { SessionLiveness } from './session-liveness'
 import { hostPendingInteractions, trackHostInteraction } from './host-pending-interactions'
 import { dispatchBackendSteer } from './dispatch-backend-steer'
 import { broadcastSessionSettings } from './session-settings-broadcast'
-import { sessionRequestSelection, voiceThreadSettings, type PendingSessionRequest } from './session-request-selection'
+import { requestSettingsPatch, selectionFieldsOf, sessionRequestSelection, voiceThreadSettings, withoutSupersededRequestSelections, withoutSupersededSelections, withSessionSelections, type PendingSessionRequest, type SelectionField } from './session-request-selection'
 import type {
   AgentEvent,
   AgentStatus,
@@ -372,6 +372,9 @@ export class Session implements SessionContract {
    */
   private _uiSettings: import('@superone/shared/agent-types').SessionSettingsPatch = {}
   private _selectionRevision = 0
+  /** Revision of the latest explicit pick per send-carried setting. */
+  private _selectionPickedAt = new Map<SelectionField, number>()
+  private _liveModelSwitch: Promise<void> | null = null
   private _pendingQueuedRequests = new Map<string, PendingSessionRequest>()
   /** User message ids of sends waiting in `_sendChain`, before their row is appended. */
   private _admittingSendIds = new Set<string>()
@@ -759,8 +762,12 @@ export class Session implements SessionContract {
     this.touchRuntimeActivity()
     request = this.prepareFirstTurnPreamble(request)
     const isQueued = (request.priority === 'next' || request.priority === 'later') && this.isStreaming()
+    // Admission revision of a queued send. Promoted to the normal path, it runs
+    // only after the current turn and may meet newer picks by then.
+    let queuedAt: number | undefined
     if (isQueued) {
       this.assertNotDisposed()
+      queuedAt = this._selectionRevision
       // Stage the caller half first so the check below — and the normal path,
       // if we fall through to it — both see what this request actually asks for.
       if (request.additionalDirs !== undefined) {
@@ -771,22 +778,28 @@ export class Session implements SessionContract {
       // back through here. Flagging a rebuild would therefore land one turn too
       // late, so a changed root set takes the existing promote-to-normal path.
       const queuedDirsChanged = this.dirsReachBackend() && !sameStringArray(this.resolveEffectiveDirs(), this.additionalDirectories)
+      // Outside Codex an effort change restarts the runtime, so it takes that path too.
+      const queuedEffort = sessionRequestSelection(this.harnessId, request).effort
+      const queuedEffortChanged = this.harnessId !== 'codex' && queuedEffort !== undefined && queuedEffort !== this.effort
       if (!this.backendStarted) {
         log.warn('[Session] queued send before backend start sid=%s — promoting to normal send', this.id)
       } else if (this._needsRebuild) {
         log.info('[Session] queued send promoted to normal send sid=%s (pending rebuild)', this.id)
       } else if (queuedDirsChanged) {
         log.info('[Session] queued send promoted to normal send sid=%s (workspace roots changed)', this.id)
+      } else if (queuedEffortChanged) {
+        log.info('[Session] queued send promoted to normal send sid=%s (effort changed)', this.id)
       } else {
         if (request.clientMessageId) {
-          this._pendingQueuedRequests.set(request.clientMessageId, { request, providerOrigin, selectionRevision: this._selectionRevision })
+          this._pendingQueuedRequests.set(request.clientMessageId, { request, providerOrigin, selectionRevision: queuedAt })
           this.emitQueuedMessages()
         }
         const delivery = this.createSendDelivery(request)
         try {
           this.flushFirstTurnPreamble()
           opts?.onAccepted?.()
-          await this.backend.send(withMcpAppContext(request, this._messages), delivery)
+          await this._liveModelSwitch
+          await this.backend.send(this.outboundRequest(request), delivery)
         } catch (error) {
           if (!delivery.delivered) this.recordSendFailure(request, error)
           throw error
@@ -805,6 +818,13 @@ export class Session implements SessionContract {
       await this.waitForRuntimeRelease()
       this.assertNotDisposed()
       this.assertCanSend(providerOrigin)
+      // A settings change already accepted reaches the runtime before this turn.
+      await this._liveModelSwitch
+      this.assertNotDisposed()
+      if (queuedAt !== undefined) {
+        const admittedAt = queuedAt
+        request = withoutSupersededRequestSelections(request, (field) => (this._selectionPickedAt.get(field) ?? 0) > admittedAt)
+      }
       const effortChanged = this.applyRequestSelection(request)
       // The project's workspace folders are re-applied here rather than trusted
       // from the caller. A renderer that has not hydrated them — a detached
@@ -849,7 +869,7 @@ export class Session implements SessionContract {
         this._status = 'streaming'
         try {
           this.flushFirstTurnPreamble()
-          await this.backend.send(withMcpAppContext(request, this._messages), delivery)
+          await this.backend.send(this.outboundRequest(request), delivery)
         } finally {
           if ((this._status as SessionStatus) !== 'disposed') this._status = 'ended'
         }
@@ -1130,6 +1150,23 @@ export class Session implements SessionContract {
     }
   }
 
+  /**
+   * Switches a warm runtime to the host's model. Switches run in order, and
+   * `send` waits for them, so a turn never starts on the previous model. A
+   * runtime that refused keeps its old model; it restarts on the host's choice.
+   */
+  private switchLiveModel(model: string): Promise<void> {
+    const push = (this._liveModelSwitch ?? Promise.resolve())
+      .then(() => this.backend.setModel(model))
+      .catch((err) => {
+        log.warn('[Session] backend.setModel failed sid=%s, rebuilding on next send:', this.id, err)
+        if (this.backendStarted) this._needsRebuild = true
+      })
+      .finally(() => { if (this._liveModelSwitch === push) this._liveModelSwitch = null })
+    this._liveModelSwitch = push
+    return push
+  }
+
   async setSessionMode(modeId: string): Promise<void> {
     this.lease.assertMutation()
     this.assertNotDisposed()
@@ -1151,6 +1188,8 @@ export class Session implements SessionContract {
    */
   broadcastSettingsPatch(patch: import('@superone/shared/agent-types').SessionSettingsPatch): void {
     this.lease.assertMutation()
+    // An explicit pick is newer than any turn already queued with its own.
+    this.markSelectionPicked(selectionFieldsOf(patch))
     broadcastSessionSettings(patch, {
       harnessId: this.harnessId,
       setSelectedSettings: (settings) => this.setSelectedSettings(settings),
@@ -1158,17 +1197,38 @@ export class Session implements SessionContract {
       mergeUiSettings: (settings) => this.mergeUiSettings(settings),
       forwardEvent: (event) => { this.forwardEvent(event) },
     })
+    // Fast is a durable field that `setSelectedSettings` does not cover.
+    if (patch.selectedCodexServiceTier !== undefined) this.notifyStateChange()
+    // Clearing the OpenCode agent follows the provider's own default again. A
+    // running runtime keeps the last agent it was given, so only a fresh one
+    // (taken by the next send, never the running turn) lets it go.
+    if (patch.openCodeAgentId === null && this.backendStarted) this._needsRebuild = true
   }
 
   setSelectedSettings(opts: { model?: string | null; effort?: SendMessageRequest['effort'] | null; ultracode?: boolean; mode?: string | null; contextWindow?: number | null }): void | Promise<void> {
     this.lease.assertMutation()
     this.assertNotDisposed()
-    if (opts.model !== undefined || opts.effort !== undefined) this._selectionRevision += 1
+    this.markSelectionPicked([
+      ...(opts.model !== undefined ? ['model' as const] : []),
+      ...(opts.effort !== undefined ? ['effort' as const] : []),
+    ])
     if (opts.ultracode !== undefined) this.setUltracode(opts.ultracode)
+    const applyWindow = opts.contextWindow != null && Number.isFinite(opts.contextWindow)
     let changed = false
+    let modelSwitch: Promise<void> | undefined
     if (opts.model !== undefined) {
       const next = opts.model ?? undefined
-      if (this.model !== next) { this.model = next; changed = true }
+      if (this.model !== next) {
+        this.model = next
+        changed = true
+        // A warm backend keeps its own model; a send that omits one runs on it.
+        // Codex receives picks through `setCodexSelection` instead. A cleared
+        // model has no live equivalent, so the runtime restarts on its default.
+        if (this.harnessId !== 'codex') {
+          if (next && !applyWindow) modelSwitch = this.switchLiveModel(next)
+          else if (!next && this.backendStarted) this._needsRebuild = true
+        }
+      }
     }
     if (opts.effort !== undefined) {
       const next = (opts.effort ?? undefined) as SendMessageRequest['effort']
@@ -1182,7 +1242,6 @@ export class Session implements SessionContract {
       this.mergeUiSettings({ selectedAcpModeId: opts.mode })
       void this.setSessionMode(opts.mode)
     }
-    const applyWindow = opts.contextWindow != null && Number.isFinite(opts.contextWindow)
     if (!changed && opts.mode === undefined && !applyWindow) return
     if (changed || opts.mode !== undefined) {
       const patch: import('@superone/shared/agent-types').SessionSettingsPatch = {
@@ -1203,6 +1262,7 @@ export class Session implements SessionContract {
       if (!this.model) throw new Error('ACP model is not selected')
       return this.setModel(this.model, { contextWindow: opts.contextWindow as number })
     }
+    return modelSwitch
   }
 
   /**
@@ -2169,10 +2229,8 @@ export class Session implements SessionContract {
     if (event.type === 'queued_message_consumed') {
       const pending = this._pendingQueuedRequests.get(event.clientMessageId)
       if (pending) {
-        // A turn queued earlier must not replace a newer picker choice.
-        if (this.harnessId === 'codex' && pending.selectionRevision === this._selectionRevision) {
-          this.applyRequestSelection(pending.request)
-        }
+        // Commit before the turn runs; a newer pick of the same setting wins.
+        this.applyRequestSelection(pending.request, pending.selectionRevision ?? 0)
         this.appendUserMessage(pending.request, pending.providerOrigin)
         this._pendingQueuedRequests.delete(event.clientMessageId)
       }
@@ -2256,6 +2314,12 @@ export class Session implements SessionContract {
     trace('agent.emit', event.type, tagged, traceMessageId)
     if (event.type === 'permission_request') {
       trace('permission.flow', 'forward', { sessionId: this.id, projectPath: this.projectPath, toolName: event.request.toolName }, event.request.requestId)
+    }
+    // A runtime that reports its own selection (OpenCode's sticky agent) keeps
+    // the session's copy, which later omitting sends are filled from. Updated
+    // before listeners run, so they read the state the event announces.
+    if (tagged.type === 'agent_setting_change' && tagged.patch?.openCodeAgentId !== undefined) {
+      this.mergeUiSettings({ openCodeAgentId: tagged.patch.openCodeAgentId })
     }
     for (const cb of this.eventListeners) {
       try { cb(tagged, false) } catch (err) { log.warn('[Session] event listener error:', err) }
@@ -2599,28 +2663,62 @@ export class Session implements SessionContract {
     return buildClaudeUserMessage(displayRequest, messageOrigin)
   }
 
-  private applyRequestSelection(request: SendMessageRequest): boolean {
-    const { model, effort } = sessionRequestSelection(this.harnessId, request)
+  /**
+   * Commits the settings a send carries before its turn runs. The caller's
+   * `appendUserMessage` persists the durable fields; subscribers learn of the
+   * change from the published patch.
+   */
+  private applyRequestSelection(request: SendMessageRequest, queuedAt?: number): boolean {
+    const codex = this.harnessId === 'codex'
+    const carried = requestSettingsPatch(this.harnessId, request)
+    // A queued turn keeps only the fields nobody picked again after it was queued.
+    const patch = queuedAt === undefined
+      ? carried
+      : withoutSupersededSelections(carried, (field) => (this._selectionPickedAt.get(field) ?? 0) > queuedAt)
+    if (queuedAt === undefined) this.markSelectionPicked(selectionFieldsOf(patch))
+    const model = (codex ? patch.selectedCodexModel : patch.selectedModel) ?? undefined
+    const effort = ((codex ? patch.selectedCodexReasoningEffort : patch.selectedEffort) ?? undefined) as SendMessageRequest['effort']
+    const current = this.getUiSettings()
     const effortChanged = effort !== undefined && effort !== this.effort
     if (effort !== undefined) this.effort = effort
     if (model !== undefined) this.model = model
-    if (this.harnessId === 'codex' && (model !== undefined || effort !== undefined)) {
-      const uiChanged = (model !== undefined && model !== this._uiSettings.selectedCodexModel)
-        || (effort !== undefined && effort !== this._uiSettings.selectedCodexReasoningEffort)
-      const patch = {
-        ...(model !== undefined ? { selectedCodexModel: model } : {}),
-        ...(effort !== undefined ? { selectedCodexReasoningEffort: effort } : {}),
-      }
-      this.mergeUiSettings(patch)
+    const changed = Object.fromEntries(Object.entries(patch)
+      .filter(([key, value]) => current[key as keyof typeof current] !== value)) as typeof patch
+    this.mergeUiSettings(patch)
+    if (codex) {
+      const serviceTier = patch.selectedCodexServiceTier
       // Queued turns bypass Session.send's rebuild path. Keep the backend's
       // defaults aligned so a later host send with no selection uses these too.
-      void this.backend.setCodexSelection?.({
-        ...(model !== undefined ? { model } : {}),
-        ...(effort !== undefined ? { reasoningEffort: effort } : {}),
-      })
-      if (uiChanged) this.forwardEvent({ type: 'agent_setting_change', patch })
+      if (model !== undefined || effort !== undefined || serviceTier !== undefined) {
+        void this.backend.setCodexSelection?.({
+          ...(model !== undefined ? { model } : {}),
+          ...(effort !== undefined ? { reasoningEffort: effort } : {}),
+          ...(serviceTier !== undefined ? { serviceTier } : {}),
+        })
+      }
+    } else if (queuedAt !== undefined && this.backendStarted) {
+      // The backend runs a queued turn itself, with what the turn carried. A
+      // changed effort, or a carried value a newer pick replaced, reaches the
+      // runtime by a restart, taken by the next host send rather than this turn.
+      const sent = sessionRequestSelection(this.harnessId, request)
+      if (effortChanged
+        || (sent.model !== undefined && sent.model !== this.model)
+        || (sent.effort !== undefined && sent.effort !== this.effort)) this._needsRebuild = true
     }
+    if (Object.keys(changed).length > 0) this.forwardEvent({ type: 'agent_setting_change', patch: changed })
     return effortChanged
+  }
+
+  /** What crosses the runtime boundary: the turn plus session-owned defaults it omitted. */
+  private outboundRequest(request: SendMessageRequest): SendMessageRequest {
+    return withMcpAppContext(withSessionSelections(this.harnessId, request, this._uiSettings), this._messages)
+  }
+
+  /** Records explicit picks, which a turn queued before them must not replace. */
+  private markSelectionPicked(fields: readonly SelectionField[]): void {
+    if (fields.length === 0) return
+    this._selectionRevision += 1
+    for (const field of fields) this._selectionPickedAt.set(field, this._selectionRevision)
   }
 
   private appendUserMessage(request: SendMessageRequest, providerOrigin: SendProviderOrigin): void {

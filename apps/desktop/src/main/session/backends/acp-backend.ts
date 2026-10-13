@@ -1652,12 +1652,9 @@ export class AcpBackend implements SessionBackend {
       if (opts?.contextWindow != null) throw new Error('ACP runtime is not ready')
       return
     }
-    try {
-      await this.applyModel(this.runtime, model, opts)
-    } catch (err) {
-      log.warn('[AcpBackend] setModel failed:', err)
-      if (opts?.contextWindow != null) throw err
-    }
+    // A refused switch leaves the runtime on its old model; the caller decides
+    // whether that is fatal (context window) or recoverable by a restart.
+    await this.applyModel(this.runtime, model, opts)
   }
 
   async setSessionMode(modeId: string): Promise<void> {

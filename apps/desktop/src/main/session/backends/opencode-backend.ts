@@ -249,7 +249,15 @@ export class OpenCodeBackend implements SessionBackend {
         this.activeCompaction = { preTokens: usage?.totalTokens ?? this.lastContextTokens, startedAt: Date.now() }
         this.emit({ type: 'status_indicator', indicator: 'compacting' })
       }
-      const dispatch = await dispatchOpenCodeRequest(runtime, request, delivery?.onInputAccepted)
+      // The runtime keeps no model or effort between turns (its setModel is a
+      // no-op), so this backend keeps the selection: a turn's explicit values
+      // become it, and a turn that omits them runs on it.
+      const turn = { ...request, model: request.model ?? this.opts?.model, effort: request.effort ?? this.opts?.effort }
+      if (this.opts) {
+        this.opts.model = turn.model
+        this.opts.effort = turn.effort
+      }
+      const dispatch = await dispatchOpenCodeRequest(runtime, turn, delivery?.onInputAccepted)
       this.syncNativeSettings(runtime, request.agent)
       if (dispatch.kind === 'local') {
         this.emit({ type: 'slash_command_output', messageId, content: dispatch.content })

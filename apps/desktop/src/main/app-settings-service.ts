@@ -961,8 +961,7 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
       },
     },
   }
-  writeFileSync(getSettingsPath(), JSON.stringify(merged, null, 2))
-  return merged
+  return commitAppSettings(merged)
 }
 
 export function dropMiniAppOrderBucket(projectId: string): void {
@@ -970,5 +969,26 @@ export function dropMiniAppOrderBucket(projectId: string): void {
   if (!(projectId in current.miniAppOrder)) return
   const next = { ...current.miniAppOrder }
   delete next[projectId]
-  writeFileSync(getSettingsPath(), JSON.stringify({ ...current, miniAppOrder: next }, null, 2))
+  commitAppSettings({ ...current, miniAppOrder: next })
+}
+
+const savedListeners = new Set<(settings: AppSettings) => void>()
+
+/**
+ * Observes every committed write, whichever main-process path made it. The
+ * notification belongs to the commit: work a caller does afterwards cannot
+ * leave a saved change unannounced.
+ */
+export function onAppSettingsSaved(listener: (settings: AppSettings) => void): () => void {
+  savedListeners.add(listener)
+  return () => { savedListeners.delete(listener) }
+}
+
+function commitAppSettings(settings: AppSettings): AppSettings {
+  writeFileSync(getSettingsPath(), JSON.stringify(settings, null, 2))
+  for (const listener of savedListeners) {
+    // The write already happened; one failing observer must not hide it from the rest.
+    try { listener(settings) } catch (error) { console.warn('[app-settings] saved listener failed:', error) }
+  }
+  return settings
 }

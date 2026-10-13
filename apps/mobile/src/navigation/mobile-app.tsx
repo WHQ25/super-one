@@ -1909,7 +1909,8 @@ export function MobileApp() {
         sessionId: id,
         ...sessionCreationOptions({
           provider: selectedProvider, acpAgentId: selectedAcpAgentId, permissionMode: permMode,
-          model: selectedModel, effort: selectedEffort, worktree: worktreeSelection, branch: gitInfo?.branch,
+          model: selectedModel, effort: selectedEffort, serviceTier: harnessSelection.serviceTier,
+          worktree: worktreeSelection, branch: gitInfo?.branch,
           directories: [...workspaceDirs, ...additionalDirs.sessionDirs], sandboxMode: pendingSandboxMode,
           modeId: harnessSelection.selectedModeId,
           apiProviderId: turn ? harnessSelection.selectedProviderId : harnessSelection.selectedProviderId ?? harnessSelection.defaultProviderId,

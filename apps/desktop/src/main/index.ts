@@ -242,7 +242,7 @@ import { listAutomationsForProject, createAutomation as dbCreateAutomation, upda
 import { trace, closeTraceDb } from './agent/event-trace'
 import { RemoteControlService } from './remote-control-service'
 import { readProjectPreferences, saveProjectPreferences } from './claude-preferences-service'
-import { readAppSettings, saveAppSettings } from './app-settings-service'
+import { onAppSettingsSaved, readAppSettings, saveAppSettings } from './app-settings-service'
 import { getRemoteControlledSession } from './db-remote-controlled-sessions'
 import { getInstallId } from './install-id'
 import { reportMainException, reportProcessGone } from './crash-telemetry'
@@ -812,6 +812,10 @@ function safeSend(channel: string, ...args: unknown[]): void {
   }
 }
 
+// Every committed settings write reaches renderer subscribers, including
+// writers outside `applyAppSettingsPatch` and a patch whose side effects fail.
+onAppSettingsSaved((settings) => safeSend(AgentIpcChannels.APP_SETTINGS_CHANGED, settings))
+
 function listComputerUseDisplays(): ComputerUseDisplayInfo[] {
   if (process.platform !== 'darwin') return []
   const primaryId = screen.getPrimaryDisplay().id
@@ -1249,7 +1253,6 @@ async function applyAppSettingsPatch(patch: AppSettingsPatch): Promise<AppSettin
       // ignore if browser tool module is not loaded
     }
   }
-  safeSend(AgentIpcChannels.APP_SETTINGS_CHANGED, result)
   return result
 }
 
@@ -4357,7 +4360,6 @@ function registerIpcHandlers(): void {
     const storedPath = storeCustomIcon(buffer)
     const settings = saveAppSettings({ customAppIconPath: storedPath })
     applyAppIcon(storedPath, allWindows)
-    safeSend(AgentIpcChannels.APP_SETTINGS_CHANGED, settings)
     return settings
   })
 
@@ -4365,7 +4367,6 @@ function registerIpcHandlers(): void {
     clearStoredCustomIcons()
     const settings = saveAppSettings({ customAppIconPath: null })
     applyAppIcon(null, allWindows)
-    safeSend(AgentIpcChannels.APP_SETTINGS_CHANGED, settings)
     return settings
   })
   }

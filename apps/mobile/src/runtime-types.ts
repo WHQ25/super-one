@@ -52,6 +52,8 @@ export type CreateSessionOptions = {
   permissionMode?: string
   effort?: string
   model?: string
+  /** Codex service tier; `null` turns Fast off rather than keeping the host default. */
+  serviceTier?: string | null
   gitBranch?: string
   worktreePath?: string
   worktreeBranch?: string

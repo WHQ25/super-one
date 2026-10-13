@@ -100,6 +100,8 @@ vi.mock('./opencode-client', async (importOriginal) => ({
   }),
 }))
 
+vi.mock('../shell-path', async (original) => ({ ...(await original<typeof import('../shell-path')>()), ensureShellPath: async () => {}, isShellPathReady: () => true }))
+
 vi.mock('../mcp-config-service', () => ({
   listMcpConfigs: () => mocks.mcpConfigs,
 }))
@@ -122,7 +124,12 @@ vi.mock('../mcp/superone-mcp-stdio-state', () => ({
 import {
   setComputerUseEnabledForTests,
 } from '../computer-use/tools'
-import { buildOpenCodeHostPermissionRules, reconcileOpenCodePermissions, createOpenCodeRuntime } from './opencode-runtime'
+import { buildOpenCodeHostPermissionRules, reconcileOpenCodePermissions, createOpenCodeRuntime, type OpenCodeRuntimeEvent } from './opencode-runtime'
+import type { SendMessageRequest } from '@superone/shared/agent-types'
+import { parseSessionSettings } from '@superone/runtime/server/session-settings'
+import { applyDesktopSessionSettings } from '../node-host/desktop-session-mutations'
+import { OpenCodeBackend, setOpenCodeRuntimeFactory } from '../session/backends/opencode-backend'
+import { Session } from '../session/session'
 
 describe('opencode-runtime', () => {
   beforeEach(() => {
@@ -385,5 +392,96 @@ describe('opencode-runtime', () => {
       pattern: '*',
       action: 'allow',
     })
+  })
+})
+
+describe('OpenCode runtime behind the host Session', () => {
+  type NativePrompt = { model?: string; variant?: string; agent?: string }
+  let routes: ((event: OpenCodeRuntimeEvent) => void)[] = []
+  const sessions: Session[] = []
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    routes = []
+    // The real runtime; the factory only exposes its event sink to finish turns.
+    setOpenCodeRuntimeFactory(async (opts) => {
+      routes.push(opts.onEvent)
+      return createOpenCodeRuntime(opts)
+    })
+  })
+
+  afterEach(async () => {
+    setOpenCodeRuntimeFactory(null)
+    for (const session of sessions.splice(0)) await session.dispose()
+  })
+
+  function hostSession(): Session {
+    const session = new Session({
+      id: 'superone-session', projectPath: '/project', cwd: '/project', providerId: 'opencode-base', harnessId: 'opencode',
+      providerConfig: {}, model: 'openai/gpt-5', effort: 'low', backend: new OpenCodeBackend(),
+    })
+    sessions.push(session)
+    return session
+  }
+
+  /** Runs one turn and returns what the OpenCode server received for it. */
+  async function turn(session: Session, request: SendMessageRequest): Promise<NativePrompt> {
+    const before = mocks.promptAsync.mock.calls.length
+    const sending = session.send(request)
+    await vi.waitFor(() => expect(mocks.promptAsync).toHaveBeenCalledTimes(before + 1))
+    routes.at(-1)!({ id: `idle-${before}`, type: 'session.idle', properties: { sessionID: 'oc-session' } } as OpenCodeRuntimeEvent)
+    await sending
+    return (mocks.promptAsync.mock.calls.at(-1) as unknown as [string, NativePrompt])[1]
+  }
+
+  it.each([{ warm: false }, { warm: true }])('runs omitted sends on the model and effort saved through the settings API (warm=$warm)', async ({ warm }) => {
+    const session = hostSession()
+    if (warm) await turn(session, { content: 'Warm the runtime' })
+    await applyDesktopSessionSettings(session, parseSessionSettings({ model: 'openai/gpt-5.1', effort: 'high' }))
+
+    for (const content of ['Omit the selection', 'Omit it again']) {
+      expect(await turn(session, { content })).toMatchObject({ model: 'openai/gpt-5.1', variant: 'high' })
+    }
+  })
+
+  it('keeps a model chosen by one send for the omitted sends after it', async () => {
+    const session = hostSession()
+    // Warm first: a cold send would start the runtime on the new model anyway.
+    expect(await turn(session, { content: 'Warm the runtime' })).toMatchObject({ model: 'openai/gpt-5', variant: 'low' })
+    expect(await turn(session, { content: 'Switch model', model: 'openai/gpt-5.1' })).toMatchObject({ model: 'openai/gpt-5.1', variant: 'low' })
+    for (const content of ['Omit the model', 'Omit it again']) {
+      expect(await turn(session, { content })).toMatchObject({ model: 'openai/gpt-5.1', variant: 'low' })
+    }
+  })
+
+  it('runs a queued turn on its own model, then restarts on a newer host pick', async () => {
+    const session = hostSession()
+    const running = session.send({ content: 'Current turn' })
+    await vi.waitFor(() => expect(mocks.promptAsync).toHaveBeenCalledTimes(1))
+    await session.send({ content: 'Queued turn', model: 'openai/gpt-5.1', priority: 'next', clientMessageId: 'queued' })
+    await applyDesktopSessionSettings(session, parseSessionSettings({ model: 'openai/gpt-5.2' }))
+
+    routes.at(-1)!({ id: 'idle-current', type: 'session.idle', properties: { sessionID: 'oc-session' } } as OpenCodeRuntimeEvent)
+    await vi.waitFor(() => expect(mocks.promptAsync).toHaveBeenCalledTimes(2))
+    expect((mocks.promptAsync.mock.calls[1] as unknown as [string, NativePrompt])[1].model).toBe('openai/gpt-5.1')
+    routes.at(-1)!({ id: 'idle-queued', type: 'session.idle', properties: { sessionID: 'oc-session' } } as OpenCodeRuntimeEvent)
+    await running
+    expect(session.getSelectedModel()).toBe('openai/gpt-5.2')
+
+    for (const content of ['Omit the model', 'Omit it again']) {
+      expect((await turn(session, { content })).model).toBe('openai/gpt-5.2')
+    }
+  })
+
+  it.each([{ warm: false }, { warm: true }])('clears a host agent so the runtime follows the OpenCode default again (warm=$warm)', async ({ warm }) => {
+    const session = hostSession()
+    if (warm) expect((await turn(session, { content: 'Plan this', agent: 'plan' })).agent).toBe('plan')
+    else await applyDesktopSessionSettings(session, parseSessionSettings({ agent: 'plan' }))
+    await applyDesktopSessionSettings(session, parseSessionSettings({ agent: null }))
+
+    for (const content of ['Omit the agent', 'Omit it again']) {
+      expect((await turn(session, { content })).agent).toBeUndefined()
+    }
+    expect(session.getUiSettings().openCodeAgentId).toBeNull()
   })
 })

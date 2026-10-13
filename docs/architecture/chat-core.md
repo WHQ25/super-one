@@ -54,6 +54,37 @@ lease. Create persists provider identity before a record can be read back, so a
 new Codex or ACP session cannot be mistaken for the database's default harness.
 A send captures its picker choices before activation replay; the turn keeps those
 choices while taking any restored thread identity from the live session.
+
+Phone pickers likewise stay local until a send. The host `Session` commits the
+settings an accepted send carries (model, effort, Codex tier/permission
+preset/collaboration mode, OpenCode agent) before backend execution: it updates
+its authoritative state, persists the durable fields through the user-row write
+and publishes `agent_setting_change`; subscribers may receive it afterwards. A
+queued turn commits when consumed, before it runs, on every harness with a host
+queue; a setting picked again after the turn was queued keeps the newer pick,
+while the turn's other settings still commit. Outside Codex a queued effort
+change runs after the current turn through the normal restart path. A turn
+already owned by a backend keeps its captured execution parameters; a newer
+pick remains the host default for later sends, which restart when needed.
+A queued send promoted to that path for any reason drops the selections replaced since
+its admission, so it runs on the session's newer state.
+An omitted field keeps the current value; an explicit `null`/off clears it.
+Model, effort, credential and Codex tier are stored; Ultracode, presets and
+modes are live-session state. A settings patch reaches a warm non-Codex runtime
+through a live model switch that the next send waits for; a refused switch
+rebuilds the runtime on the host's model. Session-owned selections the runtime
+has no kept default for (Codex permission preset and collaboration mode,
+OpenCode agent) are filled from session state into every outbound turn that
+omits them; turn and provider fields such as priority or thread identity are not.
+The OpenCode runtime keeps no model or effort between turns, so its backend
+keeps the selection a settings change or a turn's explicit values set, and
+fills omitting turns from it. Clearing the OpenCode agent restarts the
+runtime at the next send. OpenCode 1.x drops its sticky local agent and follows
+its native default; OpenCode 2.x retains the server session's current agent
+because switching it requires a concrete agent id. Every committed
+`AppSettings` write
+announces itself at the storage boundary, so writers outside the central patch
+applier, and a patch whose side effects fail, still reach renderer subscribers.
 Cold restore reads `session.load` with stored settings and the full requested
 transcript; metadata reads do not start a runtime.
 

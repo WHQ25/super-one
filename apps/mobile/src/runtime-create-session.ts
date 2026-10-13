@@ -10,6 +10,7 @@ export function createSessionPayload(project: ProjectRef, sessionId: string, opt
     ...(opts.permissionMode ? { permissionMode: opts.permissionMode } : {}),
     ...(opts.effort ? { effort: opts.effort } : {}),
     ...(opts.model ? { model: opts.model } : {}),
+    ...(opts.serviceTier !== undefined ? { serviceTier: opts.serviceTier } : {}),
     ...(opts.gitBranch ? { gitBranch: opts.gitBranch } : {}),
     ...(opts.worktreePath ? { cwd: opts.worktreePath } : {}),
     ...(opts.worktreeBranch ? { worktreeBranch: opts.worktreeBranch } : {}),

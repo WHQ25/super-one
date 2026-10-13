@@ -13,8 +13,10 @@ import type {
   NodeClaudeAgentDefaults,
   NodeCodexAgentDefaults,
 } from '@superone/shared/environment'
+import { CODEX_PERMISSION_PRESETS } from '@superone/shared/agent-types'
 
-const CODEX_PRESETS = new Set(['', 'read-only', 'default', 'full-access'])
+// '' follows the session's own default; every public preset is a valid node default.
+const CODEX_PRESETS = new Set(['', ...Object.keys(CODEX_PERMISSION_PRESETS)])
 const SANDBOX_MODES = new Set(['', 'off', 'on', 'auto'])
 const QUESTION_PREVIEW_FORMATS = new Set(['', 'markdown', 'html'])
 

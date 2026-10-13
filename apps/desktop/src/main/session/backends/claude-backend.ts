@@ -509,6 +509,8 @@ export class ClaudeBackend implements SessionBackend {
     })
 
     if (turnRequest.model) {
+      // A revived runtime keeps the model this turn ran on.
+      if (this._lastStartOpts) this._lastStartOpts.model = turnRequest.model
       try { await this.query.setModel(turnRequest.model) } catch (err) {
         log.debug('[ClaudeBackend] setModel skipped:', err)
       }
@@ -768,14 +770,14 @@ export class ClaudeBackend implements SessionBackend {
 
   async setSessionMode(_modeId: string): Promise<void> {}
 
+  /**
+   * A refused switch leaves the live query on its old model, so it is reported:
+   * the caller restarts the runtime, which starts from the saved model here.
+   */
   async setModel(model: string): Promise<void> {
     if (this._lastStartOpts) this._lastStartOpts.model = model
     if (!this.query) return
-    try {
-      await this.query.setModel(model)
-    } catch (err) {
-      log.warn('[ClaudeBackend] setModel rejected by SDK, keeping optimistic model:', model, err)
-    }
+    await this.query.setModel(model)
   }
 
   async setPermissionMode(mode: PermissionMode): Promise<void> {

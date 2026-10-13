@@ -220,6 +220,21 @@ describe('ClaudeBackend', () => {
       await sendPromise
     })
 
+    it('reports a live model switch the SDK refuses and revives on the requested model', async () => {
+      const backend = new ClaudeBackend()
+      await backend.start(makeStartOpts())
+      hoisted.captured.mockQuerySetModel.mockRejectedValueOnce(new Error('model refused'))
+
+      await expect(backend.setModel('claude-opus-4-8')).rejects.toThrow('model refused')
+
+      hoisted.captured.iterationDone?.resolve()
+      await (backend as unknown as { releaseRuntime: (r: 'idle') => Promise<void> }).releaseRuntime('idle')
+      void backend.send({ content: 'hi' })
+      await new Promise((r) => setTimeout(r, 0))
+      const [, opts] = hoisted.captured.createSessionQueryMock.mock.calls.at(-1)!
+      expect((opts as { model?: string }).model).toBe('claude-opus-4-8')
+    })
+
     it('send() throws if backend not started', async () => {
       const backend = new ClaudeBackend()
       await expect(backend.send({ content: 'x' })).rejects.toThrow(/not started/)

@@ -732,6 +732,29 @@ describe('AcpBackend', () => {
     await backend.close()
   })
 
+  it('reports a live model switch the agent refuses', async () => {
+    const setModel = vi.fn(async () => { throw new Error('model refused') })
+    setAcpRuntimeFactory(async () => mockRuntime({
+      getModelConfig: () => ({
+        configId: null,
+        selectedModelId: 'grok-4.5',
+        models: [
+          { id: 'grok-4.5', name: 'Grok 4.5', description: '' },
+          { id: 'composer', name: 'Composer', description: '' },
+        ],
+      }),
+      getModeConfig: () => null,
+      getConfigOptions: () => [],
+      setModel,
+    }))
+    const backend = new AcpBackend()
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    await new Promise((r) => setTimeout(r, 10))
+
+    await expect(backend.setModel('composer')).rejects.toThrow('model refused')
+    await backend.close()
+  })
+
   it('setSessionMode uses set_model + reasoningEffort when mode configId is null', async () => {
     const setModel = vi.fn(async () => {})
     setAcpRuntimeFactory(async () => mockRuntime({

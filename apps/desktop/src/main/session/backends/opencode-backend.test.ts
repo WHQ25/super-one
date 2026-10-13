@@ -2,8 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import type { OpenCodeRuntime, OpenCodeRuntimeEvent, OpenCodeRuntimeOptions } from '../../opencode/opencode-runtime'
 
-vi.mock('../../logger', () => ({ default: { debug: vi.fn(), warn: vi.fn() } }))
+vi.mock('../../logger', () => ({ default: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 vi.mock('../../mcp-config-service', () => ({ listMcpConfigs: () => [] }))
+vi.mock('../../shell-path', async (original) => ({ ...(await original<typeof import('../../shell-path')>()), ensureShellPath: async () => {}, isShellPathReady: () => true }))
 vi.mock('../../mcp/superone-mcp-stdio-state', () => ({ getSuperoneMcpStdioConfig: () => null }))
 const mockGateTerminalTabsCall = vi.fn()
 vi.mock('../../mcp/terminal-tabs-harness-gate', () => ({
@@ -11,6 +12,9 @@ vi.mock('../../mcp/terminal-tabs-harness-gate', () => ({
 }))
 
 import { OpenCodeBackend, setOpenCodeRuntimeFactory } from './opencode-backend'
+import { parseSessionSettings } from '@superone/runtime/server/session-settings'
+import { applyDesktopSessionSettings } from '../../node-host/desktop-session-mutations'
+import { Session } from '../session'
 import type { BackendStartOptions } from '../types'
 
 function startOptions(overrides: Partial<BackendStartOptions> = {}): BackendStartOptions {
@@ -606,6 +610,26 @@ describe('OpenCodeBackend', () => {
     await backend.close()
   })
 
+  it('runs omitted host sends with the agent saved through the settings API', async () => {
+    const session = new Session({
+      id: 'session', projectPath: '/project', cwd: '/project', providerId: 'opencode-base', harnessId: 'opencode',
+      providerConfig: {}, backend: new OpenCodeBackend(),
+    })
+    await applyDesktopSessionSettings(session, parseSessionSettings({ agent: 'plan' }))
+
+    // The first send starts the runtime; the second reaches it warm.
+    for (const [index, content] of ['First turn', 'Warm turn'].entries()) {
+      const sending = session.send({ content })
+      await vi.waitFor(() => expect(prompt).toHaveBeenCalledTimes(index + 1))
+      route({ id: `idle-${index}`, type: 'session.idle', properties: { sessionID: 'oc-session' } } as OpenCodeRuntimeEvent)
+      await sending
+    }
+
+    // runtime.prompt(content, model, effort, images, agent)
+    expect(prompt.mock.calls.map((call) => call[4])).toEqual(['plan', 'plan'])
+    await session.dispose()
+  })
+
   it('routes MCP status and lifecycle calls through the runtime', async () => {
     const backend = new OpenCodeBackend()
     await backend.start(startOptions())
@@ -647,7 +671,8 @@ describe('OpenCodeBackend', () => {
     route({ id: 'idle-1', type: 'session.idle', properties: { sessionID: 'oc-session' } } as OpenCodeRuntimeEvent)
     await first
     await vi.waitFor(() => expect(prompt).toHaveBeenCalledTimes(2))
-    expect(prompt).toHaveBeenLastCalledWith('wake once', undefined, undefined, undefined, undefined)
+    // The wake omits a model; it runs on the one the previous turn selected.
+    expect(prompt).toHaveBeenLastCalledWith('wake once', 'openai/gpt-5', undefined, undefined, undefined)
 
     route({ id: 'idle-2', type: 'session.idle', properties: { sessionID: 'oc-session' } } as OpenCodeRuntimeEvent)
     await vi.waitFor(() => expect(backend.hasActiveRuntime()).toBe(true))

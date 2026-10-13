@@ -105,7 +105,7 @@ function TurnDetailRegion({ expanded, children }: { expanded: boolean; children:
       }}
       onTransitionEnd={handleTransitionEnd}
     >
-      <div className="min-h-0 overflow-hidden">
+      <div data-transient-clip className="min-h-0 overflow-hidden">
         {mounted && <div ref={contentRef} className="min-w-0">{children}</div>}
       </div>
     </div>

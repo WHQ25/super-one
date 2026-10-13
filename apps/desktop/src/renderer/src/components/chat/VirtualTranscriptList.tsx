@@ -24,13 +24,17 @@ const ROW_GAP = 6
 const SMALL_LIST = 8
 
 /**
- * A block's own box against the root margin, ignoring ancestor clips. A Detail
- * region animating open or closed clips laid-out content only for the motion;
- * mounting by that clip would commit a chunk on every frame in both directions.
+ * A disclosure animating open or closed (`data-transient-clip`) clips content
+ * already laid out where it will stay. While the clip is on screen, judge a block
+ * by its own box so a chunk mounts once rather than on every frame of the motion.
+ * Off screen, scroll anchoring still moves the clip, so its content's box is not final.
  */
-function inRootBounds({ boundingClientRect: box, rootBounds: root }: IntersectionObserverEntry) {
+function inTransientClip({ boundingClientRect: box, rootBounds: root, target }: IntersectionObserverEntry) {
   // Content under display:none has an empty box, not a position.
-  return !!root && box.height > 0 && box.bottom >= root.top && box.top <= root.bottom
+  if (!root || box.height === 0) return false
+  const clip = target.closest('[data-transient-clip]')?.getBoundingClientRect()
+  return !!clip && clip.bottom >= root.top && clip.top <= root.bottom
+    && box.bottom >= root.top && box.top <= root.bottom
 }
 
 /** All rows share the existing chat viewport; the list owns only mounted content and geometry. */
@@ -95,7 +99,7 @@ export function VirtualTranscriptList({ items, viewportRef, apiRef }: {
       // batch instead of querying the browser for each of thousands of blocks.
       const hasInteraction = transcriptInteractionSnapshot(root.ownerDocument)
       for (const entry of entries) {
-        const intersecting = entry.isIntersecting || inRootBounds(entry)
+        const intersecting = entry.isIntersecting || inTransientClip(entry)
         intersections.set(entry.target, intersecting)
         const visible = intersecting || hasInteraction(entry.target)
         if (visible) blockAnchor.prepare(entry.target as HTMLElement)

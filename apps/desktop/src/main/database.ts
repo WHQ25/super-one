@@ -131,11 +131,7 @@ export function updateCachedHarnessResources<H extends HarnessId>(
     .run(JSON.stringify(resources), harnessId)
 }
 
-export function maskApiKey(key: string): string {
-  if (!key) return ''
-  if (key.length <= 6) return '***'
-  return '***' + key.slice(-6)
-}
+export { maskSecret as maskApiKey } from '@superone/shared/secret-mask'
 
 export function closeDb(): void {
   if (db) {

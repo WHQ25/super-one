@@ -1,29 +1,6 @@
 import type { HarnessOperationHost } from '@superone/runtime/session'
+import { validateLoopbackOAuthCallback } from '@superone/shared/oauth-loopback'
 import type { OAuthBrowserContext } from './opencode-oauth'
-
-/** A remote node owns the native loopback callback; the controller supplies its exact URL. */
-export function validateOpenCodeOAuthCallback(authorizeUrl: string, callback: string): URL {
-  const authorize = new URL(authorizeUrl)
-  const redirect = authorize.searchParams.get('redirect_uri')
-  if (!redirect) throw new Error('This sign-in method does not provide a transferable callback URL')
-  const expected = new URL(redirect),
-    received = new URL(callback)
-  if (
-    expected.protocol !== 'http:' ||
-    !['127.0.0.1', 'localhost', '[::1]'].includes(expected.hostname) ||
-    received.origin !== expected.origin ||
-    received.pathname !== expected.pathname ||
-    received.username ||
-    received.password ||
-    received.hash
-  )
-    throw new Error('Paste the complete callback URL from this sign-in attempt')
-  if (!received.searchParams.has('code') && !received.searchParams.has('error'))
-    throw new Error('The callback URL contains no authorization result')
-  if (authorize.searchParams.has('state') && received.searchParams.get('state') !== authorize.searchParams.get('state'))
-    throw new Error('The callback URL belongs to another sign-in attempt')
-  return received
-}
 
 export async function openRemoteOpenCodeSignIn(url: string, context: OAuthBrowserContext, host: HarnessOperationHost) {
   const authorize = new URL(url)
@@ -65,7 +42,8 @@ export async function openRemoteOpenCodeSignIn(url: string, context: OAuthBrowse
   const answer = Array.isArray(value) ? value[0] : value
   if (typeof answer !== 'string' || !answer.trim()) throw new Error('OpenCode sign-in cancelled')
   if (context.mode !== 'auto') return
-  const callback = validateOpenCodeOAuthCallback(url, answer.trim())
+  // A remote node owns the native loopback callback; the controller supplies its exact URL.
+  const callback = validateLoopbackOAuthCallback(url, answer.trim())
   const response = await fetch(callback, {
     redirect: 'error',
     signal: AbortSignal.any([context.signal, AbortSignal.timeout(10_000)]),

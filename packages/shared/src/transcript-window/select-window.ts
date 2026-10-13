@@ -143,12 +143,13 @@ export function selectTranscriptWindow(
   const endsAtTail = last.index === source.count - 1 && last.omittedAfter === 0
   return {
     messages,
-    older: startsAtTop ? null : anchorOf(first, 'first'),
-    newer: endsAtTail ? null : anchorOf(last, 'last'),
+    older: startsAtTop ? null : windowAnchor(first, 'first'),
+    newer: endsAtTail ? null : windowAnchor(last, 'last'),
   }
 }
 
-function anchorOf(message: TranscriptWindowMessage, edge: 'first' | 'last'): TranscriptWindowAnchor {
+/** Where a window continues from at one edge of `message`: its first or last held fragment. */
+export function windowAnchor(message: { id: string; fragments: ReadonlyArray<{ key: string }> }, edge: 'first' | 'last'): TranscriptWindowAnchor {
   const fragment = edge === 'first' ? message.fragments[0] : message.fragments[message.fragments.length - 1]
   return fragment ? { messageId: message.id, key: fragment.key } : { messageId: message.id }
 }

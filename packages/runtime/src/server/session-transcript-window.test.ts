@@ -167,17 +167,24 @@ describe('transcript window live delivery', () => {
     expect(applied.state.messages.map((m) => m.id)).toEqual(['u', 'a'])
   })
 
-  it('bounds a patch of several large new messages', async () => {
+  it('bounds the whole serialized patch, starting the window after the newest messages that fit', async () => {
     const h = host([textMessage('u', 'user', 'Hi')])
     const ctx = context(h.sessions)
     const held = applyWindowResult(null, await window(ctx), EMPTY_WINDOW_LOOKUP).state
-    const replies = Array.from({ length: 8 }, (_, i) => textMessage(`a${i}`, 'assistant', longReplyText(256 * 1024)))
+    const replies = Array.from({ length: 100 }, (_, i) => textMessage(`a${i}`, 'assistant', 'x'.repeat(20_000)))
     h.set([textMessage('u', 'user', 'Hi'), ...replies])
     const [patch] = patchesOf(deliverFrame(frame(envelope(delta('x'), 2)), ctx.delivery, h.sessions).frame)
-    expect(utf8Length(JSON.stringify(patch))).toBeLessThan(LIVE_PATCH_BYTES + 32 * 1024)
+    expect(utf8Length(JSON.stringify(patch))).toBeLessThanOrEqual(LIVE_PATCH_BYTES)
     const applied = applyWindowPatch(held, patch)
     expect(applied.stale).toBe(false)
-    expect(applied.state.messages).toHaveLength(9)
+    const ids = applied.state.messages.map((m) => m.id)
+    expect(ids.at(-1)).toBe('a99')
+    expect(ids).toEqual(replies.slice(-ids.length).map((m) => m.id))
+    expect(applied.state.older?.messageId).toBe(ids[0])
+    // Paging back from the new edge reaches what the patch left out.
+    const older = await window(ctx, { anchor: applied.state.older!, direction: 'before' })
+    const edge = applied.state.messages[0].omittedBefore > 0 ? ids[0] : replies[100 - ids.length - 1].id
+    expect(older.messages.at(-1)?.id).toBe(edge)
   })
 
   it('re-enters a rewritten reply as its newest fragments instead of resending the held range', async () => {

@@ -91,6 +91,19 @@ describe('window store', () => {
     expect(applyWindowPatch(state, patch).stale).toBe(true)
   })
 
+  it('moves the older edge when a patch brings a message that starts mid-way, or drops the first one', () => {
+    let { state } = applyWindowResult(null, { ...selectTranscriptWindow(windowSource([textMessage('u', 'user', 'Hi')]), {}, budget), total: 1 }, EMPTY_WINDOW_LOOKUP)
+    expect(state.older).toBeNull()
+    const reply = selectTranscriptWindow(windowSource([textMessage('u', 'user', 'Hi'), textMessage('a', 'assistant', longReplyText(300 * 1024))]), {}, budget).messages[0]
+    state = applyWindowPatch(state, { total: 2, messages: [reply], order: ['a'] }).state
+    expect(reply.omittedBefore).toBeGreaterThan(0)
+    expect(state.older).toEqual({ messageId: 'a', key: reply.fragments[0].key })
+    const pair = selectTranscriptWindow(windowSource([textMessage('u', 'user', 'Hi'), textMessage('b', 'assistant', 'Hello')]), {}, budget)
+    state = applyWindowResult(null, { ...pair, total: 2 }, EMPTY_WINDOW_LOOKUP).state
+    state = applyWindowPatch(state, { total: 2, messages: [], removed: ['u'] }).state
+    expect(state.older).toEqual({ messageId: 'b', key: pair.messages[1].fragments[0].key })
+  })
+
   it('applies removal and reorder', () => {
     const messages = conversation(3)
     const { state } = applyWindowResult(null, { ...selectTranscriptWindow(windowSource(messages), {}, budget), total: 3 }, EMPTY_WINDOW_LOOKUP)

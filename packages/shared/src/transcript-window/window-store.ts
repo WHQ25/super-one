@@ -10,7 +10,7 @@ import type {
 } from '../environment/transcript-window'
 import { utf8Length } from './content-digest'
 import { fragmentDigest } from './fragment-message'
-import { MAX_COVERAGE_PAIRS } from './select-window'
+import { MAX_COVERAGE_PAIRS, windowAnchor } from './select-window'
 import { textContextPrefix } from './text-cuts'
 
 export interface WindowStoreFragment {
@@ -142,7 +142,10 @@ export function applyWindowPatch(state: TranscriptWindowState, patch: Transcript
     messages = state.messages.filter((message) => !removed.has(message.id)).map((message) => byId.get(message.id)!)
     messages.push(...added.sort((a, b) => a.index - b.index))
   }
-  return { state: { ...state, messages, total: patch.total }, stale }
+  // A message that entered with only its newest fragments, or a removed first message, moves where older pages start.
+  const first = messages[0]
+  const older = !first ? state.older : first.index === 0 && first.omittedBefore === 0 ? null : windowAnchor(first, 'first')
+  return { state: { ...state, messages, older, total: patch.total }, stale }
 }
 
 function resolveMessage(message: TranscriptWindowMessage, existing: WindowStoreMessage | undefined, lookup: WindowBodyLookup): WindowStoreMessage | null {
@@ -262,11 +265,7 @@ export function trimWindowState(state: TranscriptWindowState, maxBytes: number):
       kept.unshift({ ...message, fragments: message.fragments.slice(start), omittedBefore: message.omittedBefore + start })
     }
     const first = kept[0]
-    return {
-      ...state,
-      messages: kept,
-      older: first ? { messageId: first.id, ...(first.fragments[0] ? { key: first.fragments[0].key } : {}) } : state.older,
-    }
+    return { ...state, messages: kept, older: first ? windowAnchor(first, 'first') : state.older }
   }
   return state
 }

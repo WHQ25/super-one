@@ -17,7 +17,7 @@ import { projectWindowMessage } from './window-projection'
  * reply) re-enters the same way instead of resending what the client held.
  */
 export const LIVE_MESSAGE_BUDGET: TranscriptWindowBudget = { maxBytes: 64 * 1024, maxFragments: 24, targetChars: Number.MAX_SAFE_INTEGER }
-/** What one patch may carry; messages past it enter with their newest fragment only. */
+/** What one patch may carry, serialized; older changed messages past it leave the window. */
 export const LIVE_PATCH_BYTES = 256 * 1024
 /** Held windows per connection; the least recently served or patched goes first. */
 const MAX_HELD = 64
@@ -232,17 +232,23 @@ function diffHeld(held: HeldWindow, messages: readonly ChatMessage[], fragments:
     range = present.map((id) => index.get(id)!).sort((a, b) => a - b)
   }
   const changed: TranscriptWindowMessage[] = []
-  let remaining = LIVE_PATCH_BYTES
-  for (const i of range) {
-    const source = messages[i]
+  // Newest first: once the patch is full, the window starts after the last message that fit,
+  // and the client pages back for the rest.
+  let remaining = LIVE_PATCH_BYTES - utf8Length(JSON.stringify({ messages: [], removed, order: range.map((i) => messages[i].id), total: messages.length }))
+  let start = 0
+  for (let r = range.length - 1; r >= 0; r--) {
+    const source = messages[range[r]]
     if (held.seen.get(source.id) === source && held.messages.has(source.id)) continue
-    const { message, record } = diffMessage(held.messages.get(source.id), fragments.of(source), i, Math.min(LIVE_MESSAGE_BUDGET.maxBytes, remaining))
-    if (message) remaining = Math.max(0, remaining - patchBytes(message))
+    const { message, record } = diffMessage(held.messages.get(source.id), fragments.of(source), range[r], Math.max(0, Math.min(LIVE_MESSAGE_BUDGET.maxBytes, remaining)))
+    const bytes = message ? patchBytes(message) : 0
+    if (bytes > remaining && changed.length) { start = r + 1; break }
+    remaining -= bytes
     held.messages.set(source.id, record)
     held.seen.set(source.id, source)
-    if (message) changed.push(message)
+    if (message) changed.unshift(message)
   }
-  const order = range.map((i) => messages[i].id)
+  for (const i of range.slice(0, start)) { held.messages.delete(messages[i].id); held.seen.delete(messages[i].id) }
+  const order = range.slice(start).map((i) => messages[i].id)
   for (const id of removed) { held.messages.delete(id); held.seen.delete(id) }
   const reordered = order.length !== held.order.length || order.some((id, i) => id !== held.order[i])
   const totalChanged = held.total !== messages.length
@@ -324,8 +330,9 @@ function fragmentPatchBytes(fragment: TranscriptWindowFragment): number {
   return fragment.body ? utf8Length(JSON.stringify(fragment.body)) : fragment.append !== undefined ? utf8Length(fragment.append) : 0
 }
 
+/** Serialized size of `message` in a patch, with its separator. */
 function patchBytes(message: TranscriptWindowMessage): number {
-  return message.fragments.reduce((bytes, fragment) => bytes + fragmentPatchBytes(fragment), message.meta ? utf8Length(JSON.stringify(message.meta)) : 0)
+  return utf8Length(JSON.stringify(message)) + 1
 }
 
 /** First fragment a message enters with: as many newest ones as `maxBytes` allows, and at least one. */

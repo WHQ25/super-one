@@ -123,7 +123,16 @@ async function readWindow(client: RelayClient, project: ProjectRef, request: Tra
   try {
     return await client.rpc<TranscriptWindowResult>(TRANSCRIPT_WINDOW_METHOD, request, { environmentId: project.environmentId })
   } catch (error) {
-    if ((error as { code?: string }).code === 'unsupported') throw new TranscriptWindowUnsupportedError(TRANSCRIPT_WINDOW_METHOD, { cause: error })
+    if (isUnservedMethod(error)) throw new TranscriptWindowUnsupportedError(TRANSCRIPT_WINDOW_METHOD, { cause: error })
     throw error
   }
+}
+
+/**
+ * A host that does not serve the method: hosts that know of it but lack the
+ * port mark the error `unsupported`; hosts older than it answer `unknown method`.
+ */
+function isUnservedMethod(error: unknown): boolean {
+  const { code, message, details } = (error ?? {}) as { code?: string; message?: string; details?: { unsupported?: unknown } }
+  return code === 'not_found' && (details?.unsupported === true || message?.startsWith('unknown method:') === true)
 }

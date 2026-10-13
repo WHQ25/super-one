@@ -73,11 +73,14 @@ describe('restoreWindowSession', () => {
     expect(restored.window.messages).toHaveLength(2)
   })
 
-  it('reports a host without windows so the caller restores the legacy way', async () => {
+  it.each([
+    ['older than the method', { code: 'not_found', message: 'unknown method: session.transcriptWindow' }],
+    ['without the port', { code: 'not_found', message: 'unsupported method on this environment: session.transcriptWindow', details: { method: 'session.transcriptWindow', unsupported: true } }],
+  ])('reports a host %s so the caller restores the legacy way', async (_name, refusal) => {
     const remote = host([])
     remote.rpc.mockImplementation(async (method: string) => {
       if (method === 'environment.descriptor') return { capabilities: { methods: [] } }
-      throw Object.assign(new Error('unsupported method'), { code: 'unsupported' })
+      throw Object.assign(new Error(refusal.message), refusal)
     })
     await expect(restoreWindowSession(remote as never, '/p', 's', null)).rejects.toBeInstanceOf(TranscriptWindowUnsupportedError)
     expect(remote.releaseBuffer).toHaveBeenCalled()

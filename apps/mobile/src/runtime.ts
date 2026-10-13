@@ -30,7 +30,7 @@ import { sandboxInfoFromMode } from '@superone/shared/harness/harness-sandbox'
 import type { CachedTranscript, RelayClient } from '@superone/relay-client'
 import type { VoiceCapability } from '@superone/shared/realtime-voice'
 import { restoreSession, restoreWindowSession, TranscriptWindowUnsupportedError, type RestoredSession, type RestoredWindowSession } from '@superone/relay-client'
-import { TRANSCRIPT_WINDOW_METHOD, TRANSCRIPT_WINDOW_SCHEMA, type TranscriptWindowResult } from '@superone/shared/environment/transcript-window'
+import { TRANSCRIPT_WINDOW_METHOD, TRANSCRIPT_WINDOW_SCHEMA, type TranscriptWindowPatch, type TranscriptWindowResult } from '@superone/shared/environment/transcript-window'
 import { TranscriptWindowSync } from './transcript-window-sync'
 import { randomId } from './ids'
 import { newMessageId } from '@superone/shared/message-id'
@@ -45,6 +45,9 @@ type SessionState = ReturnType<typeof createDefaultChatCoreSession>
 const NO_WORKTREE: SessionWorktreeFacts = { isWorktree: false, worktreePath: null, gitBranch: null }
 
 type SendMessageCommand = SessionSendSelections & SendMessageOptions & { sessionId: string; environmentId: string; text: string }
+
+/** A live window patch and the session version it came at. */
+type PagePatch = { seq?: number; patch: TranscriptWindowPatch }
 
 export class ChatRuntime {
   sourceEnvironmentId: string | null = null
@@ -93,6 +96,8 @@ export class ChatRuntime {
   private readonly windowUnsupported = new Set<string>()
   /** The page request in flight; a request for another placement runs after it. */
   private windowRequest: { key: string; promise: Promise<WindowPage> } | null = null
+  /** Patches received while a page read is in flight, replayed onto its result past its cursor. */
+  private pagePatches: PagePatch[] | null = null
   /** false: idle; true: a resync runs; 'again': a patch went stale while it ran. */
   private resyncing: boolean | 'again' = false
   /** Window rows after `hydrated`, per materialized window: a live batch must not re-create unchanged rows. */
@@ -238,7 +243,7 @@ export class ChatRuntime {
         if (event.environmentId && event.environmentId !== this.sourceEnvironmentId) continue
         if (event.sessionId && event.sessionId !== this.sessionId) continue
         if (this.handleSideEvent(event)) continue
-        if (event.type === 'transcript_window') { this.applyWindowPatch(event.patch); continue }
+        if (event.type === 'transcript_window') { this.applyWindowPatch(event); continue }
         this.captureRuntimeFacts(event, session.messages)
         if (!this.shouldApplyEvent(event)) continue
         session = this.reduce(session, event)
@@ -292,16 +297,21 @@ export class ChatRuntime {
       const edge = placement === 'older' ? sync.current.older : placement === 'newer' ? sync.current.newer : null
       if ((placement === 'older' || placement === 'newer') && !edge) return this.windowPage([], false)
       const viewport = this.hooks.transcriptWindow?.viewport()
+      const patches: PagePatch[] = []
+      this.pagePatches = patches
       const result = await this.read<TranscriptWindowResult>(TRANSCRIPT_WINDOW_METHOD, {
         ...(edge ? { anchor: edge, direction: placement === 'older' ? 'before' : 'after' } : {}),
         ...(around ? { anchor: { messageId: around }, direction: 'around' } : {}),
         ...(viewport ? { viewport } : {}),
         includeState: false,
-      })
+      }).finally(() => { if (this.pagePatches === patches) this.pagePatches = null })
       if (generation !== this.restoreGeneration || this.window !== sync) throw new Error('Session changed')
       if (result.schema !== TRANSCRIPT_WINDOW_SCHEMA) throw new Error('Transcript window format changed')
       const before = new Map(this.session.messages.map((message) => [message.id, message]))
       if (sync.applyResult(result, edge ? placement as 'older' | 'newer' : 'replace').length) throw new Error('History is unavailable')
+      // The page reflects the session at its cursor; patches past it, applied before the page arrived, apply again on top.
+      const later = patches.filter(({ seq }) => seq !== undefined && seq > result.cursor.version)
+      if (later.some(({ patch }) => !sync.applyPatch(patch))) this.resync()
       this.session = { ...this.session, messages: this.reconcileWindow(this.session.messages) }
       this.hasMoreHistory = sync.hasOlder
       this.persistTranscript()
@@ -337,9 +347,10 @@ export class ChatRuntime {
     return withCodexContents([message])[0]
   }
 
-  private applyWindowPatch(patch: Extract<AgentEvent, { type: 'transcript_window' }>['patch']): void {
+  private applyWindowPatch({ patch, seq }: Extract<AgentEvent, { type: 'transcript_window' }>): void {
     const sync = this.window
     if (!sync) return
+    this.pagePatches?.push({ seq, patch })
     const applied = sync.applyPatch(patch)
     this.hasMoreHistory = sync.hasOlder
     this.dirty = true
@@ -1044,7 +1055,7 @@ export class ChatRuntime {
     if (event.type === 'session_title_changed' && event.sessionId === this.sessionId) {
       this.sessionTitle = event.title
     }
-    if (event.type === 'transcript_window') { this.applyWindowPatch(event.patch); return }
+    if (event.type === 'transcript_window') { this.applyWindowPatch(event); return }
     this.captureRuntimeFacts(event)
     if (this.handleSideEvent(event)) return
     if (!this.shouldApplyEvent(event)) return

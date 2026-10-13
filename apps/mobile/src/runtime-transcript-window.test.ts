@@ -9,18 +9,20 @@ import { ChatRuntime } from './runtime'
 import { runtimeTestClient, sessionLoadFixture } from './runtime-test-client'
 
 /** A host serving windows over `transcript`, answering every other call like the shared fake. */
-function windowHost(transcript: { current: ChatMessage[] }, options: { windows?: boolean } = {}) {
+function windowHost(transcript: { current: ChatMessage[] }, options: { windows?: boolean; hold?: (request: TranscriptWindowRequest) => Promise<void> | undefined } = {}) {
   const client = runtimeTestClient()
   const answer = client.dispatch.getMockImplementation()!
   const windows: TranscriptWindowRequest[] = []
   client.dispatch.mockImplementation(async (call) => {
     if (call.method === 'session.transcriptWindow') {
-      if (options.windows === false) throw Object.assign(new Error('unsupported'), { code: 'unsupported' })
+      if (options.windows === false) throw Object.assign(new Error('unknown method: session.transcriptWindow'), { code: 'not_found' })
       windows.push(call as unknown as TranscriptWindowRequest)
       const selected = selectTranscriptWindow(windowSource(transcript.current), call as unknown as TranscriptWindowRequest, DEFAULT_WINDOW_BUDGET)
-      return { sessionId: 's', schema: 1, ...selected, total: transcript.current.length,
+      const result = { sessionId: 's', schema: 1, ...selected, total: transcript.current.length,
         ...(call.includeState === false ? {} : { state: { status: 'idle', sessionProvider: 'claude' } }),
         cursor: { sequence: '1', epoch: 'epoch', version: 1 } }
+      await options.hold?.(call as unknown as TranscriptWindowRequest)
+      return result
     }
     if (call.method === 'session.load') {
       const message = transcript.current.find((row) => row.id === call.anchorId)
@@ -173,6 +175,23 @@ describe('ChatRuntime transcript windows', () => {
     expect(windows.slice(1).map((w) => w.direction)).toEqual(['before', 'around'])
     expect(older.messageOrder).toEqual(['a'])
     expect(jumped.messageOrder[0]).toBe('u')
+    runtime.dispose()
+  })
+
+  it('keeps a patch that arrived while a page was read, when the page reflects an earlier version', async () => {
+    let release: (() => void) | null = null
+    const transcript = { current: [textMessage('a', 'assistant', 'Hello', 'streaming')] }
+    const { client } = windowHost(transcript, { hold: (request) => request.includeState === false ? new Promise<void>((resolve) => { release = resolve }) : undefined })
+    const runtime = new ChatRuntime(client as never, () => {}, cache().hooks)
+    await runtime.open('/p', 's')
+    const page = runtime.loadWindowPage('latest')
+    await vi.waitFor(() => expect(release).not.toBeNull())
+    runtime.ingest([event({ type: 'transcript_window', seq: 2, patch: appendPatch('a', 'Hello', 'Hello!', 1) })])
+    runtime.flush()
+    expect(runtime.messages[0].content[0]).toMatchObject({ text: 'Hello!' })
+    release!()
+    await page
+    expect(runtime.messages[0].content[0]).toMatchObject({ text: 'Hello!' })
     runtime.dispose()
   })
 

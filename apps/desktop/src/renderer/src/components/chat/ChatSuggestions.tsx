@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { useTranslation } from 'react-i18next'
 import { useAppStore, useHasRealProject } from '@/stores/app'
 import { useActiveSession, useChatStore, useIsRemoteLocked, useSessionScope, type ChatProvider } from '@/stores/chat'
+import { useProjectHarnessCatalog } from '@/hooks/use-project-harness-catalog'
 import { useSettingsStore } from '@/stores/settings'
 import { ProviderLabel } from '@/components/ProviderLabel'
 import { HARNESS_CONTROLS } from '@/harness-ui/controls'
@@ -99,9 +100,11 @@ export function ProviderSelector({
   const initializeHarness = useChatStore((s) => s.initializeHarness)
   const experimentalAgentsEnabled = useAppStore((s) => s.experimentalAgentsEnabled)
   const enabledExperimentalAgents = useAppStore((s) => s.enabledExperimentalAgents)
-  const [harnessCatalog, setHarnessCatalog] = useState<HarnessCatalogStatus[] | null>(
+  const [localHarnessCatalog, setHarnessCatalog] = useState<HarnessCatalogStatus[] | null>(
     () => rememberedHarnessCatalog,
   )
+  // Pickers offer what the project's machine runs; harness bootstrap below stays on this desktop's.
+  const harnessCatalog = useProjectHarnessCatalog(localHarnessCatalog)
   const sessionScope = useSessionScope()
   const [agentMenuOpen, setAgentMenuOpen] = useState(false)
   const [ranks, setRanks] = useState<HarnessSessionRank[]>(EMPTY_RANKS)
@@ -123,18 +126,18 @@ export function ProviderSelector({
   }, [initializeHarness])
 
   useEffect(() => {
-    if (!isCatalogHarnessEnabled(harnessCatalog, 'cursor')) return
+    if (!isCatalogHarnessEnabled(localHarnessCatalog, 'cursor')) return
     if (cursorHarnessBootstrapped) return
     cursorHarnessBootstrapped = true
     void initializeHarness('cursor')
-  }, [harnessCatalog, initializeHarness])
+  }, [localHarnessCatalog, initializeHarness])
 
   useEffect(() => {
-    if (!isCatalogHarnessEnabled(harnessCatalog, 'dsh')) return
+    if (!isCatalogHarnessEnabled(localHarnessCatalog, 'dsh')) return
     if (deepseekHarnessBootstrapped) return
     deepseekHarnessBootstrapped = true
     void initializeHarness('dsh')
-  }, [harnessCatalog, initializeHarness])
+  }, [localHarnessCatalog, initializeHarness])
 
   useEffect(() => {
     let cancelled = false

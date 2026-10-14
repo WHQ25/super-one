@@ -89,9 +89,8 @@ node host 7794 (A's dev default is 7793), CDP 9334, renderer 5174.
 There is no single-instance lock, and the phone LAN server and other local
 listeners take ephemeral ports. B's node host starts when it mints a code and
 then runs while A is paired; delete `.dev-data/instance-node-b` for a fresh node. A child
-on B needs its harness enabled and signed in on B (Settings → Harnesses).
-A's harness picker lists the harnesses enabled on A, while B's models come
-from B, so a fresh profile on either side needs the harness enabled on both.
+on B needs its harness enabled and signed in on B (Settings → Harnesses);
+A's composer offers B's enabled harnesses, so a fresh B offers none.
 
 The automated version is `e2e/desktop-node-orchestration.spec.ts`
 (`bun run test:e2e:fast -- e2e/desktop-node-orchestration.spec.ts` after

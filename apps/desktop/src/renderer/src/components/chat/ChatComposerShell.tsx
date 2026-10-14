@@ -8,6 +8,7 @@ import { applyControlHolder, applyRemoteControlChange } from '@/stores/chat-stor
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { useAppStore } from '@/stores/app'
 import { useEnvironmentLabel } from '@/hooks/use-environment-label'
+import { useProjectHarnessCatalog } from '@/hooks/use-project-harness-catalog'
 import { catalogIdForSessionProvider, isCatalogHarnessDisabled } from '@/lib/harness-visibility'
 import { resolveSessionIcon, resolveSessionIconFromBrandKey } from '@/components/harness/resolve-session-icon'
 import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
@@ -54,7 +55,7 @@ export const ChatComposerShell = memo(function ChatComposerShell({
     ?? (projectPath ? useChatStore.getState().projectSessions[projectPath]?._activeSessionId ?? null : null)
   const remoteDraftId = useActiveSession((s) => s.draftRemoteDeviceId ? s.draftId : null)
   const [disconnectingDraft, setDisconnectingDraft] = useState(false)
-  const harnessCatalog = useAppStore((s) => s.harnessCatalog)
+  const harnessCatalog = useProjectHarnessCatalog(useAppStore((s) => s.harnessCatalog))
   const openHarnessSettings = useAppStore((s) => s.openHarnessSettings)
 
   const provider = resolveProvider({ sessionProvider, preferredProvider })
@@ -95,13 +96,16 @@ export const ChatComposerShell = memo(function ChatComposerShell({
           {' '}is disabled.
         </span>
         <span>This session is now <em>READ ONLY</em>.</span>
-        <button
-          type="button"
-          onClick={() => openHarnessSettings(catalogId)}
-          className="text-foreground underline underline-offset-2 hover:opacity-80"
-        >
-          Re-enable {harnessLabel}
-        </button>
+        {/* Settings → Harnesses manages this desktop; a node's harness is enabled on the node. */}
+        {!remoteOn && (
+          <button
+            type="button"
+            onClick={() => openHarnessSettings(catalogId)}
+            className="text-foreground underline underline-offset-2 hover:opacity-80"
+          >
+            Re-enable {harnessLabel}
+          </button>
+        )}
       </div>
     )
   }

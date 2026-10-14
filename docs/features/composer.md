@@ -195,7 +195,9 @@ offers Reconnect. The rules are in
 For a session on a node, desktop or CLI, the composer's catalogs (models,
 efforts, API providers, skills and commands) and Git state come from that
 node through the same methods (`harness.resources`, `provider.listModels`,
-`git.*`).
+`git.*`). Which harnesses the composer offers, and whether a session reads as
+disabled, follow the node's `capabilities.harnessIds`
+(`useProjectHarnessCatalog`), not this desktop's Settings → Harnesses.
 
 ## Handoff animation
 

@@ -302,3 +302,74 @@ export const HeldByHostPhoneLongLabelNarrow: Story = { render: () => <HeldOnHost
 export const HeldByHostPhoneDark: Story = { ...HeldByHostPhone, globals: { theme: 'dark' } }
 export const HeldByHostPhoneChinese: Story = { ...HeldByHostPhone, globals: { locale: 'zh' } }
 export const HeldByAnotherController: Story = { render: () => <HeldOnHostPreview holder={otherController} /> }
+
+type Catalog = NonNullable<ReturnType<typeof useAppStore.getState>['harnessCatalog']>
+const claudeOn: Catalog = [{ id: 'claude', enabled: true, state: 'ready' }]
+const claudeOff: Catalog = [{ id: 'claude', enabled: false, state: 'disabled' }]
+
+/**
+ * A Claude session whose harness may be off. The catalog that counts is the
+ * session's machine's: this desktop's for its own projects, the node's
+ * descriptor (`nodeHarnessIds`) for a node's.
+ */
+function HarnessGatePreview({ local, nodeHarnessIds, narrow = false }: { local: Catalog; nodeHarnessIds?: string[]; narrow?: boolean }) {
+  const [ready, setReady] = useState(false)
+  useEffect(() => {
+    const previous = useChatStore.getState()
+    const oldCatalog = useAppStore.getState().harnessCatalog
+    const environment = window.environment
+    const path = nodeHarnessIds ? remoteProjectPath : projectPath
+    const project = createDefaultProjectState()
+    const session = createDefaultPerSessionState()
+    session.sessionProvider = 'claude'
+    useChatStore.setState({ activeProject: path, projectSessions: {
+      ...previous.projectSessions,
+      [path]: { ...project, _activeSessionId: sessionId, _sessions: { [sessionId]: session } },
+    } })
+    useAppStore.setState({ harnessCatalog: local })
+    // The composer calls more of the environment than this story pins down; the rest stay mocked.
+    const listItems = async () => [{ connectionId: 'mini', label: 'VensendeMac-mini', capabilities: { harnessIds: nodeHarnessIds ?? [] } }]
+    window.environment = new Proxy(environment, {
+      get: (target, key) => key === 'listItems' ? listItems : Reflect.get(target, key),
+    })
+    setReady(true)
+    return () => {
+      window.environment = environment
+      useChatStore.setState(previous)
+      useAppStore.setState({ harnessCatalog: oldCatalog })
+    }
+  }, [local, nodeHarnessIds])
+  return <div style={{ width: narrow ? 320 : 620, maxWidth: '100%' }}>
+    {ready && <TooltipProvider><ChatComposerShell showTodoPopup={false} /><Toaster /></TooltipProvider>}
+  </div>
+}
+
+/** Off on this desktop: read-only, with Re-enable into Settings → Harnesses. */
+export const HarnessDisabledHere: Story = {
+  render: () => <HarnessGatePreview local={claudeOff} />,
+  play: async ({ canvasElement }) => {
+    await within(canvasElement).findByRole('button', { name: /Re-enable/ })
+  },
+}
+export const HarnessDisabledHereNarrow: Story = { render: () => <HarnessGatePreview local={claudeOff} narrow /> }
+export const HarnessDisabledHereDark: Story = { ...HarnessDisabledHere, globals: { theme: 'dark' } }
+
+/** Off on the node though on here: read-only, and nothing here can turn it on. */
+export const HarnessDisabledOnNode: Story = {
+  render: () => <HarnessGatePreview local={claudeOn} nodeHarnessIds={['codex']} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await canvas.findByText(/READ ONLY/)
+    expect(canvas.queryByRole('button', { name: /Re-enable/ })).toBeNull()
+  },
+}
+
+/** Off here but running on the node: the node's session stays writable. */
+export const HarnessRunsOnNodeOnly: Story = {
+  render: () => <HarnessGatePreview local={claudeOff} nodeHarnessIds={['claude']} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await waitFor(() => expect(canvasElement.querySelector('.ProseMirror')).not.toBeNull())
+    expect(canvas.queryByText(/READ ONLY/)).toBeNull()
+  },
+}

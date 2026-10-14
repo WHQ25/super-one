@@ -15,8 +15,8 @@ export interface CollabTaskBubblePresenterProps {
   fromTitle?: string
   /** Launching session; the title becomes a session chip when present. */
   fromSessionId?: string
-  /** Trailing node in the label row — the desktop's hover copy button. */
-  labelTrailing?: ReactNode
+  /** Action row under the bubble — the desktop's hover timestamp and copy, as on user bubbles. */
+  actions?: ReactNode
   /** Gesture handlers spread onto the bubble itself (phone long-press menu). */
   bubbleProps?: HTMLAttributes<HTMLDivElement>
   /** Floating menu anchored to the bubble's wrapper; rendered when open. */
@@ -33,7 +33,7 @@ export function CollabTaskBubblePresenter({
   children,
   fromTitle,
   fromSessionId,
-  labelTrailing,
+  actions,
   bubbleProps,
   menu,
 }: CollabTaskBubblePresenterProps) {
@@ -92,7 +92,6 @@ export function CollabTaskBubblePresenter({
               )
               : t('chat.collaboration.initialTask')}
           </span>
-          {labelTrailing}
         </div>
         <div
           {...bubbleProps}
@@ -122,6 +121,7 @@ export function CollabTaskBubblePresenter({
             </button>
           )}
         </div>
+        {actions}
         {menu}
       </div>
     </div>

@@ -51,3 +51,21 @@ export const Goal: Story = { args: { message: userBubbleGoalMessage() } }
 
 /** A message from before pastes were marked: its long run still shows as a paste chip. */
 export const LegacyPaste: Story = { args: { message: userBubbleLegacyPasteMessage() } }
+
+/** A parent-handed task: markdown bubble; hover shows the time and copy under it, like any user bubble. */
+export const InitialTask: Story = {
+  args: {
+    message: {
+      id: 'story-initial-task',
+      role: 'user',
+      status: 'complete',
+      createdAt: '2026-10-14T09:30:00Z',
+      providerId: 'claude',
+      content: [{ type: 'text', text: '## Review request\n\nReview the diff in `apps/mobile/src/ui/file-preview.tsx` and report anything that would **regress on Android**.' }],
+      metadata: {
+        source: 'collaboration',
+        collaboration: { kind: 'initial_task', direction: 'inbound', fromSessionId: 'parent-1', fromSessionTitle: 'Mobile file preview review' },
+      },
+    },
+  },
+}

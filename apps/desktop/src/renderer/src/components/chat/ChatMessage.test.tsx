@@ -634,6 +634,18 @@ describe('ChatMessage collaboration initial task', () => {
     expect(screen.getByText('Agent task')).toBeInTheDocument()
   })
 
+  it('puts the copy action under the task bubble like other user bubbles', () => {
+    const { container } = render(
+      <ChatMessage message={createCollabTaskMessage('Do the thing')} sessionStatus="idle" isLastAssistant={false} />,
+    )
+
+    const bubble = container.querySelector('.portable-user-message')!
+    const copyIcon = container.querySelector('.lucide-copy')!
+    expect(screen.getByText('Agent task').parentElement).not.toContainElement(copyIcon as HTMLElement)
+    expect(bubble).not.toContainElement(copyIcon as HTMLElement)
+    expect(bubble.compareDocumentPosition(copyIcon) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
   it('clamps a task taller than half the viewport until the expand toggle is clicked', () => {
     const restore = stubBodyHeight(900)
     try {

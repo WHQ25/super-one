@@ -291,7 +291,7 @@ export const ChatMessage = memo(function ChatMessage({
         voiceLabel={delegation ? t('chat.realtimeVoice.delegation.label') : undefined}
         onVoiceLabelClick={delegation ? jumpToVoiceTurn : undefined}
         initialTask={isInitialTask
-          ? <CollabTaskBubble text={userText} from={message.metadata?.collaboration} />
+          ? <CollabTaskBubble text={userText} from={message.metadata?.collaboration} actions={userActions} />
           : undefined}
         body={body}
         imageGallery={generatedImages.length > 0

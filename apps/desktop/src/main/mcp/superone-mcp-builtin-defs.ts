@@ -29,7 +29,7 @@ export const SESSION_ARCHIVE_TOOL_NAMES = [
   'session_tag_list',
 ] as const
 
-export { TERMINAL_TOOL_NAMES } from '@superone/shared/superone-host-owned-tools'
+export { TERMINAL_TOOL_NAMES, UI_TOOL_NAMES } from '@superone/shared/superone-host-owned-tools'
 
 export const AUTOMATION_TOOL_NAMES = [
   'automation_list',
@@ -111,6 +111,7 @@ import {
   AUTOMATION_DELETE_DESCRIPTION,
 } from '@superone/shared/superone-tool-descriptions'
 import { HOST_ACTION_TERMINAL_DESCRIPTORS } from '@superone/shared/environment/host-action-terminal-descriptors'
+import { HOST_ACTION_UI_DESCRIPTORS } from '@superone/shared/environment/host-action-ui-descriptors'
 export * from '@superone/shared/superone-tool-descriptions'
 
 /** Shared nested schedule schema for automation_apply (JSON Schema + host-action). */
@@ -857,4 +858,5 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
     },
   },
   ...HOST_ACTION_TERMINAL_DESCRIPTORS,
+  ...HOST_ACTION_UI_DESCRIPTORS,
 ]

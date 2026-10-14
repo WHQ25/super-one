@@ -85,6 +85,7 @@ import { summarizeClaudeProcess } from './presenters/turn-process-stats'
 import { SetupMiniAppDevBlockPresenter } from './presenters/SetupMiniAppDevBlock'
 import { SuperoneCompactToolRowPresenter } from './presenters/SuperoneCompactToolRow'
 import { superoneToolDescriptor } from './presenters/superone-tool-display'
+import { UI_CONTROL_TOOL_NAMES, UiControlToolRow } from './presenters/UiControlToolRow'
 import { ToolGroupPresenter } from './presenters/ToolGroup'
 import { WorkflowBlockPresenter } from './presenters/WorkflowBlock'
 import { parseWorkflowLaunch, stripWorkflowNamePrefix, workflowToolTargetLabel } from './presenters/workflow-utils'
@@ -382,6 +383,20 @@ function renderDedicatedTool(props: TurnToolPresenterProps, brandIconSrc?: strin
         isError={props.isError}
         isDenied={isDenied}
         allowExpand
+      />
+    )
+  }
+  if (collabToolName && UI_CONTROL_TOOL_NAMES.has(collabToolName)) {
+    // The desktop's own layout; the phone only reports what changed there.
+    const isDenied = Boolean(props.result?.startsWith('[denied] '))
+    return (
+      <UiControlToolRow
+        mcpToolName={collabToolName}
+        params={parseRecord(props.input)}
+        result={props.result ?? null}
+        isStreaming={props.status === 'streaming'}
+        isError={props.isError}
+        isDenied={isDenied}
       />
     )
   }

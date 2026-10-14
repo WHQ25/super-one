@@ -113,18 +113,29 @@ function panelOnScreen(sessionId: string): boolean {
     && !selectPanelsFolded(useWindowMiniModeStore.getState())
 }
 
+const TERMINAL_PANEL_PREFIX = 'terminal-'
+
+/** terminal_tabs names a terminal by its bare id, so the snapshot does too. */
+function publicTabId(panelId: string): string {
+  return panelId.startsWith(TERMINAL_PANEL_PREFIX) ? panelId.slice(TERMINAL_PANEL_PREFIX.length) : panelId
+}
+
 function openedBy(sessionId: string, tab: string): UiTab['openedBy'] {
   const opener = dockOpener(sessionId, tab)
   if (opener === null) return 'user'
   return opener === 'agent' ? 'agent' : 'miniapp'
 }
 
-function liveTabs(sessionId: string): UiTab[] {
+/** A snapshot row plus the dock panel id it stands for. */
+type TabRow = UiTab & { panelId: string }
+
+function liveTabs(sessionId: string): TabRow[] {
   const api = getDockApi()
   if (!api) return []
   const groupIndex = new Map(api.groups.map((group, index) => [group.id, index]))
   return api.panels.map((panel) => ({
-    tab: panel.id,
+    tab: publicTabId(panel.id),
+    panelId: panel.id,
     kind: kindOf(panel.view.contentComponent),
     title: panel.title ?? '',
     active: api.activePanel?.id === panel.id,
@@ -144,15 +155,16 @@ function layoutGroups(node: GridNode | undefined, out: GroupState[] = []): Group
 }
 
 /** A parked session's tabs: its saved layout, the browser tabs it will materialize, then its queued changes. */
-function parkedTabs(sessionId: string): UiTab[] {
+function parkedTabs(sessionId: string): TabRow[] {
   const layout = useActivityViewStateStore.getState().perSession[sessionId]?.layout as SerializedDockview | null | undefined
-  const tabs: UiTab[] = []
+  const tabs: TabRow[] = []
   if (layout) {
     for (const [index, group] of layoutGroups(layout.grid.root as GridNode).entries()) {
       for (const view of group.views) {
         const panel = layout.panels[view]
         tabs.push({
-          tab: view,
+          tab: publicTabId(view),
+          panelId: view,
           kind: kindOf(panel?.contentComponent),
           title: panel?.title ?? '',
           active: layout.activeGroup === group.id && group.activeView === view,
@@ -164,20 +176,20 @@ function parkedTabs(sessionId: string): UiTab[] {
   }
   for (const [id, browserTab] of Object.entries(useBrowserStore.getState().tabs)) {
     if (browserTab.owner !== sessionId || tabs.some((t) => t.tab === id)) continue
-    tabs.push({ tab: id, kind: 'browser', title: browserTab.title, active: false, group: 0, openedBy: openedBy(sessionId, id) })
+    tabs.push({ tab: id, panelId: id, kind: 'browser', title: browserTab.title, active: false, group: 0, openedBy: openedBy(sessionId, id) })
   }
   for (const change of queuedDockChanges(sessionId)) {
-    if (change.kind === 'open' && change.tab && change.preview && !tabs.some((t) => t.tab === change.tab)) {
-      tabs.push({ tab: change.tab, kind: change.preview.kind as UiTabKind, title: change.preview.title, active: false, group: 0, openedBy: openedBy(sessionId, change.tab) })
+    if (change.kind === 'open' && change.tab && change.preview && !tabs.some((t) => t.panelId === change.tab)) {
+      tabs.push({ tab: publicTabId(change.tab), panelId: change.tab, kind: change.preview.kind as UiTabKind, title: change.preview.title, active: false, group: 0, openedBy: openedBy(sessionId, change.tab) })
     } else if (change.kind === 'close' && change.tab) {
-      const at = tabs.findIndex((t) => t.tab === change.tab)
+      const at = tabs.findIndex((t) => t.panelId === change.tab)
       if (at >= 0) tabs.splice(at, 1)
     }
   }
   return tabs
 }
 
-function sessionTabs(sessionId: string): UiTab[] {
+function sessionTabs(sessionId: string): TabRow[] {
   return placement(sessionId).dockLive ? liveTabs(sessionId) : parkedTabs(sessionId)
 }
 
@@ -195,7 +207,7 @@ export function uiSnapshot(caller: UiControlCaller): UiSnapshot {
   const p = placement(sid)
   const ap = useActivityPanelStore.getState()
   const parked = useActivityViewStateStore.getState().perSession[sid]
-  const tabs = p.dockLive ? liveTabs(sid) : parkedTabs(sid)
+  const tabs = (p.dockLive ? liveTabs(sid) : parkedTabs(sid)).map(({ panelId: _panelId, ...tab }) => tab)
   const selfTab = caller.opener.kind === 'miniapp' && caller.opener.instanceKey ? `miniapp-${caller.opener.instanceKey}` : undefined
   return {
     visible: p.chatOnScreen && p.windowVisible,
@@ -221,22 +233,22 @@ function invalid(message: string): never {
   throw new UiControlError('invalid', message)
 }
 
+/** The dock panel id behind a tab id from the snapshot (or a terminal_tabs / browser_tabs id). */
 function requireTab(sessionId: string, tab: string | undefined): string {
   if (!tab) invalid('tab is required. Use a tab id from ui_snapshot.')
-  if (!sessionTabs(sessionId).some((t) => t.tab === tab)) {
-    throw new UiControlError('not_found', `No tab ${tab} in this session's layout. Call ui_snapshot for current tab ids.`)
-  }
-  return tab
+  const row = sessionTabs(sessionId).find((t) => t.tab === tab || t.panelId === tab)
+  if (!row) throw new UiControlError('not_found', `No tab ${tab} in this session's layout. Call ui_snapshot for current tab ids.`)
+  return row.panelId
 }
 
 /** Apply a dock change now when the caller's layout is live, otherwise park it with that layout. */
 function dockChange(sessionId: string, change: QueuedDockChange): UiActResult {
   if (placement(sessionId).dockLive) {
     change.run()
-    return { status: 'applied', visible: panelOnScreen(sessionId), ...(change.tab ? { tab: change.tab } : {}) }
+    return { status: 'applied', visible: panelOnScreen(sessionId), ...(change.tab ? { tab: publicTabId(change.tab) } : {}) }
   }
   queueDockChange(sessionId, change)
-  return { status: 'queued', visible: false, ...(change.tab ? { tab: change.tab } : {}) }
+  return { status: 'queued', visible: false, ...(change.tab ? { tab: publicTabId(change.tab) } : {}) }
 }
 
 function skipped(): UiActResult {
@@ -246,7 +258,7 @@ function skipped(): UiActResult {
 /** Open a tab and record who opened it — unless it is already there, in which case it stays the user's. */
 function openTab(caller: UiControlCaller, tab: string, preview: { kind: UiTabKind; title: string }, run: () => void): UiActResult {
   const sid = caller.sessionId
-  if (!sessionTabs(sid).some((t) => t.tab === tab)) recordDockOpener(sid, tab, openerKey(caller))
+  if (!sessionTabs(sid).some((t) => t.panelId === tab)) recordDockOpener(sid, tab, openerKey(caller))
   return dockChange(sid, { kind: 'open', tab, preview, run })
 }
 

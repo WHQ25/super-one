@@ -21,6 +21,7 @@ import { captureBrowserScreenshot } from './browser-screenshot'
 import { startBrowserRecording, stopBrowserRecording } from './browser-recording'
 import { isMiniAppTargetId } from '@superone/shared/miniapp-automation-target'
 import type { MiniAppToolPreviewRequest } from '@superone/shared/miniapp-types'
+import type { UiActRequest } from '@superone/shared/ui-control'
 import {
   listMiniAppTargets,
   miniAppTargetWebContentsId,
@@ -641,6 +642,14 @@ export async function runBrowserOp(sessionId: string, op: string, rawInput: unkn
   const input = (rawInput ?? {}) as BaseInput
   if (op === 'miniappPreview') {
     return showToolUiPreview(sessionId, rawInput as MiniAppToolPreviewRequest, signal)
+  }
+  if (op === 'uiSnapshot' || op === 'uiAct') {
+    const { root, request } = (rawInput ?? {}) as { root?: string; request?: UiActRequest }
+    const { uiAct, uiSnapshot } = await import('@/lib/ui-control')
+    const caller = { sessionId, opener: { kind: 'agent' as const }, ...(root ? { root } : {}) }
+    if (op === 'uiSnapshot') return uiSnapshot(caller)
+    if (!request) throw new Error('ui_act needs an action.')
+    return uiAct(caller, request)
   }
   if (op === 'miniappReload') {
     const appId = String((rawInput as { appId?: unknown } | null)?.appId ?? '')

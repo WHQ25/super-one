@@ -36,6 +36,7 @@ import {
   BUILT_IN_SUPERONE_TOOL_DEFS,
   BUILT_IN_SUPERONE_TOOL_NAMES,
   TERMINAL_TOOL_NAMES,
+  UI_TOOL_NAMES,
   CONFIG_SETTINGS_DOMAINS,
   CONFIG_READ_DESCRIPTION,
   CONFIG_APPLY_DESCRIPTION,
@@ -129,6 +130,7 @@ import {
   type TerminalToolDeps,
   type TerminalWaitForArgs,
 } from './terminal-tools'
+import { uiActHandler, uiSnapshotHandler, type UiActArgs, type UiSnapshotArgs } from './ui-control-tools'
 import type {
   RequestSessionAgentsArgs,
   SessionSendArgs,
@@ -398,6 +400,10 @@ export async function executeBuiltInSuperoneTool(
       return terminalActHandler(args as unknown as TerminalActArgs, deps)
     case 'terminal_wait_for':
       return terminalWaitForHandler(args as unknown as TerminalWaitForArgs, deps)
+    case 'ui_snapshot':
+      return uiSnapshotHandler(args as unknown as UiSnapshotArgs, deps)
+    case 'ui_act':
+      return uiActHandler(args as unknown as UiActArgs, deps)
   }
 }
 
@@ -500,13 +506,15 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
       (args, extra) => executeInteractionMemoryTool(def.name, args, new InteractionMemoryStore(superoneHome()), extra.signal))
   }
   // These tools share the stdio-bridge JSON Schema so the two surfaces cannot drift.
-  type SharedSchemaTool = (typeof TERMINAL_TOOL_NAMES)[number] | 'session_suggest_task'
+  type SharedSchemaTool = (typeof TERMINAL_TOOL_NAMES)[number] | (typeof UI_TOOL_NAMES)[number] | 'session_suggest_task'
   const sharedSchemaHandlers: Record<SharedSchemaTool, (args: never, deps: BuiltInSuperoneToolDeps) => Promise<{ content: Array<{ type: 'text'; text: string }>; isError?: true }>> = {
     terminal_tabs: terminalTabsHandler,
     terminal_snapshot: terminalSnapshotHandler,
     terminal_act: terminalActHandler,
     terminal_wait_for: terminalWaitForHandler,
     session_suggest_task: sessionSuggestTaskHandler,
+    ui_snapshot: uiSnapshotHandler,
+    ui_act: uiActHandler,
   }
   for (const def of BUILT_IN_SUPERONE_TOOL_DEFS) {
     const handler = sharedSchemaHandlers[def.name as SharedSchemaTool]

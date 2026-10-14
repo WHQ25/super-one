@@ -235,6 +235,16 @@ describe('session split', () => {
   })
 })
 
+describe('tab ids', () => {
+  it('names terminals by the id terminal_tabs uses and accepts it back', async () => {
+    const dock = fakeDock()
+    dock.addPanel({ id: 'terminal-t7', component: 'terminal', title: 'dev', params: { terminalId: 't7' } })
+
+    expect(uiSnapshot(agentA).tabs[0]).toMatchObject({ tab: 't7', kind: 'terminal' })
+    expect(await uiAct(agentA, { action: 'focus_tab', tab: 't7' })).toMatchObject({ status: 'applied', tab: 't7' })
+  })
+})
+
 describe('mini-app caller', () => {
   it('finds its own tab and cannot close what the agent opened', async () => {
     const dock = fakeDock()

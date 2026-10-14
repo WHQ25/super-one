@@ -85,7 +85,7 @@ export function superoneToolGlyph(mcpToolName: string): ToolIcon | null {
   return WIDGET_TOOLS.has(mcpToolName) ? 'widget' : null
 }
 
-export type ToolIcon = 'terminal' | 'code' | 'file-text' | 'file-edit' | 'file-plus' | 'search' | 'folder-search' | 'globe' | 'download' | 'message-circle' | 'wrench' | 'mcp' | 'plug' | 'clipboard-list' | 'bot' | 'book-open' | 'canvas' | 'toolbox' | 'package' | 'pencil' | 'image' | 'smartphone' | 'widget' | 'git-branch' | 'send' | 'reply'
+export type ToolIcon = 'terminal' | 'code' | 'file-text' | 'file-edit' | 'file-plus' | 'search' | 'folder-search' | 'globe' | 'download' | 'message-circle' | 'wrench' | 'mcp' | 'plug' | 'clipboard-list' | 'bot' | 'book-open' | 'canvas' | 'toolbox' | 'package' | 'pencil' | 'image' | 'smartphone' | 'widget' | 'git-branch' | 'send' | 'reply' | 'layout'
 
 export interface ToolDisplay {
   icon: ToolIcon

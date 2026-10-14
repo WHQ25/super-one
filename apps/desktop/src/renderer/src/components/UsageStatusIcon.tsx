@@ -347,7 +347,7 @@ function RateLimitGauge({ title, label, subtitle, planType, badgeRemaining, onOp
           )}
         </IconButton>
       </PopoverTrigger>
-      <PopoverContent side="top" align="end" className="w-auto p-3">
+      <PopoverContent side="top" align="end" className="w-auto p-3" onOpenAutoFocus={(event) => event.preventDefault()}>
         {/* Wide enough that every gauge sits at the same width. Codex's labels ("5h") are far
             shorter than Claude's ("Fable weekly"), so a lower floor left the two popovers
             visibly different sizes depending on which harness the session ran. */}

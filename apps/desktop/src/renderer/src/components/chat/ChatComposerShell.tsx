@@ -2,9 +2,9 @@ import { memo, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { GitFork, Smartphone } from 'lucide-react'
 import { toast } from 'sonner'
-import { useChatStore, useActiveSession, useIsRemoteLocked, useRemoteControlReleased, useSessionRemoteController } from '@/stores/chat'
+import { useChatStore, useActiveSession, useIsRemoteLocked, useRemoteControlReleased, useSessionControlHolder, useSessionRemoteController } from '@/stores/chat'
 import { useSessionScope } from '@/stores/chat-store/session-scope'
-import { applyRemoteControlChange } from '@/stores/chat-store/helpers/remote-control'
+import { applyControlHolder, applyRemoteControlChange } from '@/stores/chat-store/helpers/remote-control'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { useAppStore } from '@/stores/app'
 import { catalogIdForSessionProvider, isCatalogHarnessDisabled } from '@/lib/harness-visibility'
@@ -39,12 +39,15 @@ export const ChatComposerShell = memo(function ChatComposerShell({
   const isRemoteLocked = useIsRemoteLocked()
   const remoteController = useSessionRemoteController()
   const remoteControlReleased = useRemoteControlReleased()
+  const controlHolder = useSessionControlHolder()
   const scope = useSessionScope()
   const projectPath = useChatStore((s) => scope?.projectPath ?? s.activeProject)
   const [controlBusy, setControlBusy] = useState(false)
+  /** Connection of the computer this session runs on; null for this computer's own sessions. */
+  const remoteOn = projectPath ? parseRemoteProjectKey(projectPath)?.connectionId ?? null : null
   /** Connection of the computer that took this session back; null while this pane may drive it. */
-  const releasedOn = remoteControlReleased && projectPath ? parseRemoteProjectKey(projectPath)?.connectionId ?? null : null
-  const hostLabel = useEnvironmentLabel(releasedOn)
+  const releasedOn = remoteControlReleased ? remoteOn : null
+  const hostLabel = useEnvironmentLabel(releasedOn ?? (controlHolder?.kind === 'window' ? remoteOn : null))
   /** The pane's session, read when acted on so an unscoped pane does not follow every switch. */
   const sessionId = (): string | null => scope?.sessionId
     ?? (projectPath ? useChatStore.getState().projectSessions[projectPath]?._activeSessionId ?? null : null)
@@ -101,8 +104,8 @@ export const ChatComposerShell = memo(function ChatComposerShell({
       </div>
     )
   }
-  /** Disconnect or Reconnect; the toast names which one failed. */
-  const changeControl = (action: 'disconnect' | 'reconnect', change: (sid: string) => Promise<unknown>) => {
+  /** Disconnect, Reconnect or Take over; the toast names which one failed. */
+  const changeControl = (action: 'disconnect' | 'reconnect' | 'takeOver', change: (sid: string) => Promise<unknown>) => {
     const sid = sessionId()
     if (!sid) return
     setControlBusy(true)
@@ -115,10 +118,23 @@ export const ChatComposerShell = memo(function ChatComposerShell({
     return <RemoteControlBanner label={remoteController.label} action="disconnect" busy={controlBusy}
       onAction={() => changeControl('disconnect', (sid) => window.app.releaseNodeHostSession(sid))} />
   }
+  if (controlHolder?.kind === 'controller' && !remoteOn) {
+    // A controller desktop drives one of this computer's sessions; its lease ends and this window takes it.
+    return <RemoteControlBanner label={controlHolder.label} action="disconnect" busy={controlBusy}
+      onAction={() => changeControl('disconnect', (sid) => window.environment.disconnectSessionController(sid))} />
+  }
   if (releasedOn && projectPath) {
     return <RemoteControlBanner label={hostLabel} action="reconnect" busy={controlBusy}
       onAction={() => changeControl('reconnect', (sid) => window.environment.reclaimSessionControl(releasedOn, sid)
         .then(() => useChatStore.setState((s) => applyRemoteControlChange(s, projectPath, sid, false))))} />
+  }
+  if (controlHolder && remoteOn && projectPath) {
+    // Someone drives it on the computer it runs on: that computer's window yields to Take over, a phone or another controller does not.
+    const byWindow = controlHolder.kind === 'window'
+    return <RemoteControlBanner label={byWindow ? hostLabel : controlHolder.label} device={controlHolder.kind === 'phone' ? 'phone' : 'computer'}
+      action={byWindow ? 'takeOver' : undefined} busy={controlBusy}
+      onAction={() => changeControl('takeOver', (sid) => window.environment.reclaimSessionControl(remoteOn, sid)
+        .then(() => useChatStore.setState((s) => applyControlHolder(s, projectPath, sid, null))))} />
   }
   if (isRemoteLocked) {
     if (remoteDraftId) return <>

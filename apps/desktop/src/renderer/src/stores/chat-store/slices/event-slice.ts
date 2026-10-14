@@ -20,7 +20,7 @@ import { buildSlashCommands } from '../helpers/chat-helpers'
 import { accumulateCodexFooterTokens, getCodexUsageStepTokens } from '../helpers/codex-helpers'
 import { mergeMessagesByMaxSeq } from '../helpers/event-helpers'
 import { clearUnseenCompleted } from '../helpers/unseen-completed'
-import { applyRemoteControlChange } from '../helpers/remote-control'
+import { applyControlHolder, applyRemoteControlChange, externalHolder } from '../helpers/remote-control'
 import { inferProviderFromHarnessId } from '../helpers/provider-routing'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { createDefaultPerSessionState, createDefaultProjectState, getDefaultEffortForModel } from '../defaults'
@@ -125,6 +125,8 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
             : removeRemoteSession(s.remoteSessions, projectPath, sessionId),
           projectSessions: { ...s.projectSessions, [projectPath]: { ...project, _sessions: { ...project._sessions,
             [sessionId]: { ...base, _controlLease: lease,
+              // A remote session's holder there comes from its host (`session_control_holder`).
+              ...(parseRemoteProjectKey(projectPath) ? {} : { controlHolder: externalHolder(event.holder) }),
               ...(remoteProvider && !base.sessionProvider ? { sessionProvider: remoteProvider, preferredProvider: remoteProvider } : {}),
               acpAgentId: base.acpAgentId ?? event.acpAgentId ?? null,
               ...(event.worktreePath !== undefined ? { _worktreePath: event.worktreePath, _gitBranch: event.gitBranch ?? null } : {}),
@@ -193,6 +195,10 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
     if (!projectPath) return
     if (event.type === 'remote_control_changed') {
       if (eventSessionId) set((s) => applyRemoteControlChange(s, projectPath, eventSessionId, event.released))
+      return
+    }
+    if (event.type === 'session_control_holder') {
+      if (eventSessionId) set((s) => applyControlHolder(s, projectPath, eventSessionId, event.holder))
       return
     }
     // Mod drawing state lives in the session's mod client, not in the transcript.
@@ -769,8 +775,9 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
         const prevProject = nextProjects[entry.projectPath] ?? createDefaultProjectState()
         const prevSession = prevProject._sessions[entry.sid] ?? applyCachedCodexPermissionPreset(createDefaultPerSessionState())
         const requestedLease = projectsAtRequest[entry.projectPath]?._sessions[entry.sid]?._controlLease
-        const controlLease = entry.controlLease !== undefined && requestedLease === prevSession._controlLease
-          ? entry.controlLease : prevSession._controlLease
+        const leaseFromEntry = entry.controlLease !== undefined && requestedLease === prevSession._controlLease
+        const controlLease = leaseFromEntry ? entry.controlLease : prevSession._controlLease
+        const controlHolder = leaseFromEntry ? externalHolder(entry.controlHolder) : prevSession.controlHolder
         if (controlLease !== undefined) remoteSessions = controlLease && !controlLease.delegate?.startsWith('window:')
           ? addRemoteSession(remoteSessions, entry.projectPath, entry.sid)
           : removeRemoteSession(remoteSessions, entry.projectPath, entry.sid)
@@ -813,6 +820,7 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
           // explicit snapshot fields as authoritative fallbacks.
           ...fromUi,
           _controlLease: controlLease,
+          controlHolder,
           permissionMode: fromUi.permissionMode ?? entry.permissionMode ?? prevSession.permissionMode,
           lastAssistantMessageId: entry.snapshot.currentMessageId ?? prevSession.lastAssistantMessageId,
           _worktreePath: entry.snapshot.worktreePath ?? prevSession._worktreePath,

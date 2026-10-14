@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createDefaultPerSessionState, createDefaultProjectState } from '../defaults'
 import type { ChatStore, PerSessionState } from '../types'
-import { applyRemoteControlChange, isControlledElsewhere } from './remote-control'
+import { applyControlHolder, applyRemoteControlChange, externalHolder, isControlledElsewhere } from './remote-control'
 
 function storeWith(session: Partial<PerSessionState>): ChatStore {
   return {
@@ -36,5 +36,14 @@ describe('remote control of a session', () => {
 
   it('ignores a session this window does not hold', () => {
     expect(applyRemoteControlChange(storeWith({}), '/p', 'other', true)).toEqual({})
+    expect(applyControlHolder(storeWith({}), '/p', 'other', { kind: 'window', label: null })).toEqual({})
+  })
+
+  it('closes the composer while another device drives the session, and only a phone or controller is elsewhere here', () => {
+    const held = sessionOf(applyControlHolder(storeWith({}), '/p', 's1', { kind: 'phone', label: 'Pixel 9' }))
+    expect(isControlledElsewhere(held)).toBe(true)
+    expect(isControlledElsewhere(sessionOf(applyControlHolder(storeWith(held), '/p', 's1', null)))).toBe(false)
+    expect(externalHolder({ kind: 'window', label: null })).toBeNull()
+    expect(externalHolder({ kind: 'controller', label: 'Desktop A' })).toEqual({ kind: 'controller', label: 'Desktop A' })
   })
 })

@@ -56,7 +56,7 @@ import type {
 } from '@superone/shared/environment'
 import type { ProjectExtraDirsPatch } from '@superone/shared/project-extra-dirs'
 import type { EnvironmentRpcClient, TopicStream } from './environment-rpc-client'
-import type { CodexMcpOauthLoginOptions } from '@superone/shared/agent-types'
+import type { CodexMcpOauthLoginOptions, CodexMcpOauthLoginResult, CodexMcpOauthLoginStart } from '@superone/shared/agent-types'
 import type { GitMentionRefKind } from '@superone/shared/git-mention-query'
 
 export interface ArtifactGateway {
@@ -1135,13 +1135,18 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     serverName: string,
     apiProviderId?: string | null,
     options?: CodexMcpOauthLoginOptions,
-  ): Promise<unknown> {
+  ): Promise<CodexMcpOauthLoginStart | CodexMcpOauthLoginResult> {
     return this.client.rpc('codex.loginMcpOauth', {
       projectId,
       serverName,
       apiProviderId: apiProviderId ?? null,
       options,
     })
+  }
+
+  /** Hands the browser's loopback callback (null: none was caught) to the node's waiting MCP sign-in. */
+  async codexCompleteMcpOauth(loginId: string, callbackUrl: string | null): Promise<CodexMcpOauthLoginResult> {
+    return this.client.rpc('codex.completeMcpOauth', { loginId, callbackUrl })
   }
 
   async codexDetectExternalAgent(

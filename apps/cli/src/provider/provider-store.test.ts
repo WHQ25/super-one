@@ -123,4 +123,14 @@ describe('ProviderStore', () => {
       rmSync(dir2, { recursive: true, force: true })
     }
   })
+
+  it('keeps a stored key a replacing bundle sends empty', () => {
+    const kept = store.createCredential({ platformId: 'openai', planId: 'api', name: 'kept', secret: 'secret-kept-111111' })
+    const dropped = store.createCredential({ platformId: 'openai', planId: 'api', name: 'dropped', secret: 'secret-drop-222222' })
+    const stats = store.importBundle({ credentials: [{ ...kept, name: 'renamed', secret: '' }], bindings: [], customPlatforms: [] }, { replaceAll: true })
+    expect(stats.credentials).toBe(1)
+    const exported = store.exportBundle().credentials
+    expect(exported.map((c) => [c.id, c.name, c.secret])).toEqual([[kept.id, 'renamed', 'secret-kept-111111']])
+    expect(exported.some((c) => c.id === dropped.id)).toBe(false)
+  })
 })

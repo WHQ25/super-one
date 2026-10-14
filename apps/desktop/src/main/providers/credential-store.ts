@@ -281,7 +281,10 @@ export function importBundle(
         updateCredential,
         setBinding,
         upsertCustomPlatform,
-        clear: () => db.exec('DELETE FROM consumer_bindings; DELETE FROM credentials; DELETE FROM custom_platforms'),
+        clear: (keep) => {
+          db.exec('DELETE FROM consumer_bindings; DELETE FROM custom_platforms')
+          db.prepare('DELETE FROM credentials WHERE id NOT IN (SELECT value FROM json_each(?))').run(JSON.stringify([...keep]))
+        },
       },
       bundle,
       opts,

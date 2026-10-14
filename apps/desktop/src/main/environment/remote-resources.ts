@@ -9,6 +9,7 @@ import type {
   HookConfig,
   HookSavePayload,
   CodexMcpOauthLoginOptions,
+  CodexMcpOauthLoginResult,
   McpServerConfig,
   PluginInfo,
   ResourceScope,
@@ -16,6 +17,8 @@ import type {
   SkillInfo,
 } from '@superone/shared/agent-types'
 import type { ResourceProvider } from '@superone/shared/environment'
+import { isBrowserSignInUrl, loopbackOAuthRedirect } from '@superone/shared/oauth-loopback'
+import { startLoopbackCallback } from '../mcp-apps/auth'
 import type { EnvironmentHost } from './environment-host'
 import { RemoteEnvironmentGateway } from './remote-environment-gateway'
 import { resolveRemoteProjectContext } from './remote-file-tree'
@@ -592,12 +595,51 @@ export async function remoteCodexLoginMcpOauth(
   host: EnvironmentHost,
   folderPath: string,
   serverName: string,
-  apiProviderId?: string | null,
-  options?: CodexMcpOauthLoginOptions,
-): Promise<unknown | null> {
+  apiProviderId: string | null,
+  options: CodexMcpOauthLoginOptions | undefined,
+  openUrl: (url: string) => Promise<void>,
+): Promise<CodexMcpOauthLoginResult | null> {
   const pair = await withRemoteCodexGw(host, folderPath)
   if (!pair) return null
-  return pair.gw.codexLoginMcpOauth(pair.ctx.projectId, serverName, apiProviderId, options)
+  return relayCodexMcpOauth(pair.gw, pair.ctx.projectId, serverName, apiProviderId, options, openUrl)
+}
+
+/**
+ * Codex on the node waits for the redirect on the node's loopback; the browser
+ * is on this desktop. Open the authorization page here, catch the redirect on
+ * the same loopback address and hand it to the node.
+ */
+export async function relayCodexMcpOauth(
+  gw: Pick<RemoteEnvironmentGateway, 'codexLoginMcpOauth' | 'codexCompleteMcpOauth'>,
+  projectId: string,
+  serverName: string,
+  apiProviderId: string | null,
+  options: CodexMcpOauthLoginOptions | undefined,
+  openUrl: (url: string) => Promise<void>,
+): Promise<CodexMcpOauthLoginResult> {
+  const started = await gw.codexLoginMcpOauth(projectId, serverName, apiProviderId, options)
+  if (!('loginId' in started)) return started
+  // The page comes from the node's MCP server metadata; this desktop opens only web pages.
+  if (!isBrowserSignInUrl(started.authorizationUrl)) return { success: false, error: 'The MCP server returned an unsupported sign-in URL' }
+  const redirect = loopbackOAuthRedirect(started.authorizationUrl)
+  const listener = redirect ? await startLoopbackCallback(redirect).catch((err: NodeJS.ErrnoException) => {
+    // The node runs on this machine: its listener already holds the address and receives the redirect itself.
+    if (err.code === 'EADDRINUSE') return null
+    throw err
+  }) : null
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    await openUrl(started.authorizationUrl)
+    // Codex's own deadline for the sign-in.
+    const timeoutMs = options?.timeoutSecs && options.timeoutSecs > 0 ? options.timeoutSecs * 1_000 : 180_000
+    const callbackUrl = listener
+      ? await Promise.race([listener.callbackUrl, new Promise<null>((r) => { timer = setTimeout(() => r(null), timeoutMs) })])
+      : null
+    return await gw.codexCompleteMcpOauth(started.loginId, callbackUrl)
+  } finally {
+    clearTimeout(timer)
+    listener?.close()
+  }
 }
 
 export async function remoteCodexDetectExternalAgent(

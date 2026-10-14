@@ -13,6 +13,7 @@ import {
 } from '@superone/runtime/server'
 import type { ControlLeaseService } from '@superone/runtime/lease'
 import { verifyPayload } from '@superone/runtime/crypto/crypto-util'
+import { cancelCodexAccountLoginForClient } from '@superone/runtime/server/rpc-codex'
 import type { NodeHostController, NodeHostControllerPath, NodeHostPairingToken } from '@superone/shared/agent-types'
 import { networkAddressScope } from '@superone/shared/private-network-address'
 import type { DesktopDomain } from './desktop-domain'
@@ -95,6 +96,7 @@ export class DesktopNodeHost {
       onClientDisconnected: (clientSessionId) => {
         domain.releaseClientDrafts(clientSessionId)
         cancelMcpAppsInvocationsForClient(clientSessionId)
+        void cancelCodexAccountLoginForClient(clientSessionId)
         listen.onControllersChanged?.()
       },
       createRpcContext: () => ({ ...context, leases: controllerLeases(domain.leases) }),
@@ -223,7 +225,10 @@ export class DesktopNodeHost {
     // No controller can answer a Host Action until the listener is back.
     this.domain.sessions.cancelHostActions('node_host_stopped')
     // Closing the sockets below reports no disconnects.
-    for (const { clientSessionId } of this.server.connectedClients()) this.domain.releaseClientDrafts(clientSessionId)
+    for (const { clientSessionId } of this.server.connectedClients()) {
+      this.domain.releaseClientDrafts(clientSessionId)
+      void cancelCodexAccountLoginForClient(clientSessionId)
+    }
     await this.server.close()
   }
 }

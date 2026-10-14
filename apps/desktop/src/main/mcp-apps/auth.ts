@@ -20,26 +20,35 @@ export interface McpAppsAuthDeps {
 const CALLBACK_PATH = '/mcp-oauth-callback'
 const DONE_PAGE = '<!doctype html><meta charset="utf-8"><title>SuperOne</title><p>Sign-in finished. You can return to SuperOne.</p>'
 
-interface LoopbackCallback {
+export interface LoopbackCallback {
   redirectUri: string
   callbackUrl: Promise<string>
   close(): void
 }
 
-/** RFC 8252 loopback redirect: any port on 127.0.0.1, one request, then closed. */
-async function startLoopbackCallback(): Promise<LoopbackCallback> {
+/**
+ * RFC 8252 loopback redirect, one request, then closed: any port on 127.0.0.1,
+ * or the `redirect` a harness on another machine chose for its own listener.
+ */
+export async function startLoopbackCallback(redirect?: URL): Promise<LoopbackCallback> {
+  const path = redirect?.pathname ?? CALLBACK_PATH
   let resolve!: (url: string) => void
   const callbackUrl = new Promise<string>((r) => { resolve = r })
   const server = createServer((req, res) => {
-    if (!req.url?.startsWith(CALLBACK_PATH)) {
+    if (new URL(req.url ?? '/', 'http://loopback').pathname !== path) {
       res.writeHead(404).end()
       return
     }
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }).end(DONE_PAGE)
-    resolve(`${redirectUri}${req.url.slice(CALLBACK_PATH.length)}`)
+    resolve(`${redirectUri}${req.url!.slice(path.length)}`)
   })
-  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
-  const redirectUri = `http://127.0.0.1:${(server.address() as { port: number }).port}${CALLBACK_PATH}`
+  await new Promise<void>((r, reject) => {
+    server.once('error', reject)
+    server.listen(Number(redirect?.port || 0), redirect?.hostname.replace(/^\[(.*)\]$/, '$1') ?? '127.0.0.1', r)
+  })
+  const redirectUri = redirect
+    ? `${redirect.origin}${path}`
+    : `http://127.0.0.1:${(server.address() as { port: number }).port}${CALLBACK_PATH}`
   return { redirectUri, callbackUrl, close: () => server.close() }
 }
 

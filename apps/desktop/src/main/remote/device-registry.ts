@@ -1,3 +1,4 @@
+import { cancelCodexAccountLoginForClient } from '@superone/runtime/server/rpc-codex'
 import { mobileModClientId } from '@superone/shared/mod-ui'
 import log from '../logger'
 import { releaseComposerClient } from '../session/composer-delivery'
@@ -19,6 +20,7 @@ export class DeviceRegistry {
 
   handleDeviceDisconnected(deviceId: string): void {
     this.draftControl?.releaseDevice(`phone:${deviceId}`)
+    void cancelCodexAccountLoginForClient(`phone:${deviceId}`)
     releaseComposerClient({ kind: 'device', id: deviceId })
     let releasedCount = 0
     this.sessionManager.forEachSession((session) => {

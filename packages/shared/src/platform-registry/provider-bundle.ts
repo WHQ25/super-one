@@ -22,8 +22,8 @@ export interface ProviderBundleTarget {
   ): unknown
   setBinding(binding: ConsumerBinding): void
   upsertCustomPlatform(def: Platform): unknown
-  /** Drop every credential, binding and custom platform. */
-  clear(): void
+  /** Drop every binding, custom platform and credential except those in `keep`. */
+  clear(keep: ReadonlySet<string>): void
 }
 
 /**
@@ -35,7 +35,10 @@ export function importProviderBundle(
   bundle: Partial<ProviderBundle>,
   opts?: { replaceAll?: boolean },
 ): { credentials: number; bindings: number } {
-  if (opts?.replaceAll) target.clear()
+  // An empty secret is one the sender could not read (e.g. its keychain failed
+  // to decrypt it): the stored key for that id survives the import.
+  const unread = (c: Partial<Credential> | undefined) => !!c?.id && !c.secret && target.hasCredential(c.id)
+  if (opts?.replaceAll) target.clear(new Set((bundle.credentials ?? []).filter(unread).map((c) => c.id)))
   for (const plat of bundle.customPlatforms ?? []) {
     if (plat?.id) target.upsertCustomPlatform(plat)
   }
@@ -45,7 +48,7 @@ export function importProviderBundle(
     if (target.hasCredential(c.id)) {
       target.updateCredential(c.id, {
         name: c.name,
-        secret: c.secret,
+        secret: c.secret || undefined,
         secretEnv: c.secretEnv,
         baseUrl: c.baseUrl,
         overrides: c.overrides,

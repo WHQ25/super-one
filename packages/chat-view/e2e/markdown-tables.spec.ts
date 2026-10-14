@@ -28,6 +28,12 @@ const TABLE = [
   'Both surfaces share the descriptor table.',
 ].join('\n')
 
+const WIDE_TABLE = [
+  '| Tool | Desktop presenter | Mobile presenter | Projection fields | Notes |',
+  '| --- | --- | --- | --- | --- |',
+  '| widget_show | WidgetBlock | PortableWidgetBlock | widget_code kept whole | sandboxed iframe |',
+].join('\n')
+
 function message(id: string, text: string): ChatMessage {
   return {
     id,
@@ -90,11 +96,7 @@ test('keeps a wide table inside the phone rather than stretching the transcript'
   await send(page, {
     type: 'hydrate',
     sessionStatus: 'idle',
-    messages: [message('wide', [
-      '| Tool | Desktop presenter | Mobile presenter | Projection fields | Notes |',
-      '| --- | --- | --- | --- | --- |',
-      '| widget_show | WidgetBlock | PortableWidgetBlock | widget_code kept whole | sandboxed iframe |',
-    ].join('\n'))],
+    messages: [message('wide', WIDE_TABLE)],
   })
 
   const table = page.locator('article[data-turn-id="wide"] table')
@@ -104,6 +106,32 @@ test('keeps a wide table inside the phone rather than stretching the transcript'
   // whole transcript shifts under the reader's thumb.
   const documentWidth = await page.evaluate(() => document.documentElement.scrollWidth)
   expect(documentWidth).toBeLessThanOrEqual(390)
+})
+
+test('fades a wide table only at the edges that still have columns past them', async ({ page }) => {
+  await send(page, { type: 'hydrate', sessionStatus: 'idle', messages: [message('wide', WIDE_TABLE)] })
+
+  const scroller = page.locator('article[data-turn-id="wide"] table').locator('..')
+  await expect(scroller).toBeVisible()
+  const fades = () => scroller.evaluate((node) => {
+    const style = getComputedStyle(node)
+    return [style.getPropertyValue('--scroll-fade-start'), style.getPropertyValue('--scroll-fade-end')]
+  })
+
+  expect(await fades()).toEqual(['0px', '24px'])
+  await scroller.evaluate((node) => { node.scrollLeft = (node.scrollWidth - node.clientWidth) / 2 })
+  await expect.poll(fades).toEqual(['24px', '24px'])
+  await scroller.evaluate((node) => { node.scrollLeft = node.scrollWidth })
+  await expect.poll(fades).toEqual(['24px', '0px'])
+})
+
+test('leaves a table that fits unmasked', async ({ page }) => {
+  const scroller = page.locator('article[data-turn-id="table"] table').locator('..')
+  await expect(scroller).toBeVisible()
+  expect(await scroller.evaluate((node) => {
+    const style = getComputedStyle(node)
+    return [style.getPropertyValue('--scroll-fade-start'), style.getPropertyValue('--scroll-fade-end')]
+  })).toEqual(['0px', '0px'])
 })
 
 test('keeps a wide display formula inside the phone rather than stretching the transcript', async ({ page }) => {

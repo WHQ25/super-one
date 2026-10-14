@@ -20,3 +20,43 @@
   -webkit-text-fill-color: transparent;
   animation: shimmer 2s ease-in-out infinite;
 }
+
+/* Horizontal scroll edge fade. A consumer masks its scroll container with
+   `linear-gradient(to right, transparent 0, #000 var(--scroll-fade-start),
+   #000 calc(100% - var(--scroll-fade-end)), transparent 100%)` and runs this
+   keyframe on `animation-timeline: scroll(self inline)`. Each edge dissolves
+   only while content is hidden past it. A container that does not overflow has
+   an inactive timeline, so both fades stay at their 0px initial value — a fully
+   opaque mask — and so does any engine without scroll-driven animations. The
+   fades are registered lengths because plain custom properties do not
+   interpolate. */
+@property --scroll-fade-start {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --scroll-fade-end {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+@keyframes scroll-edge-fade-x {
+  0% {
+    --scroll-fade-start: 0px;
+    --scroll-fade-end: 24px;
+  }
+  4% {
+    --scroll-fade-start: 24px;
+    --scroll-fade-end: 24px;
+  }
+  96% {
+    --scroll-fade-start: 24px;
+    --scroll-fade-end: 24px;
+  }
+  100% {
+    --scroll-fade-start: 24px;
+    --scroll-fade-end: 0px;
+  }
+}

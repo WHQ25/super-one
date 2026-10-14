@@ -90,20 +90,6 @@
   align-items: center;
 }
 
-/* Driven by the scroll timeline below, so they have to be registered lengths —
-   plain custom properties are not interpolatable. */
-@property --dv-tabs-fade-start {
-  syntax: '<length>';
-  inherits: false;
-  initial-value: 0px;
-}
-
-@property --dv-tabs-fade-end {
-  syntax: '<length>';
-  inherits: false;
-  initial-value: 0px;
-}
-
 .dockview-theme-superone .dv-tabs-container {
   align-items: center;
   height: 100%;
@@ -114,41 +100,20 @@
      the overflow cue, and reserving 3px inside a 34px header shifts the tabs. */
   scrollbar-width: none;
   overscroll-behavior-x: contain;
-  /* Each edge dissolves only once there is something hidden past it. A scroll
-     timeline is inactive when the strip does not overflow, so the animation
-     drops out entirely and both fades fall back to their 0px initial value —
-     which resolves to a fully opaque mask. */
+  /* Each edge dissolves only once there is something hidden past it
+     (`scroll-edge-fade-x` in @superone/ui animations.css). */
   mask-image: linear-gradient(
     to right,
     transparent 0,
-    #000 var(--dv-tabs-fade-start),
-    #000 calc(100% - var(--dv-tabs-fade-end)),
+    #000 var(--scroll-fade-start),
+    #000 calc(100% - var(--scroll-fade-end)),
     transparent 100%
   );
-  animation-name: dv-tabs-edge-fade;
+  animation-name: scroll-edge-fade-x;
   animation-duration: auto;
   animation-timing-function: linear;
   animation-fill-mode: both;
   animation-timeline: scroll(self inline);
-}
-
-@keyframes dv-tabs-edge-fade {
-  0% {
-    --dv-tabs-fade-start: 0px;
-    --dv-tabs-fade-end: 24px;
-  }
-  4% {
-    --dv-tabs-fade-start: 24px;
-    --dv-tabs-fade-end: 24px;
-  }
-  96% {
-    --dv-tabs-fade-start: 24px;
-    --dv-tabs-fade-end: 24px;
-  }
-  100% {
-    --dv-tabs-fade-start: 24px;
-    --dv-tabs-fade-end: 0px;
-  }
 }
 
 .dockview-theme-superone .dv-tabs-container::-webkit-scrollbar {

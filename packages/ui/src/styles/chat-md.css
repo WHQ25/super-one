@@ -138,6 +138,23 @@
 .chat-md [data-streamdown="table-wrapper"] > div {
   scrollbar-width: none;
 }
+/* The scroll box directly around the table (the desktop wrapper also holds a
+   toolbar). Its edges fade while columns are hidden past them, so an overflow
+   whose edge lands on a column border still reads as scrollable. */
+.chat-md [data-streamdown="table-wrapper"] > div:has(> [data-streamdown="table"]) {
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 var(--scroll-fade-start),
+    #000 calc(100% - var(--scroll-fade-end)),
+    transparent 100%
+  );
+  animation-name: scroll-edge-fade-x;
+  animation-duration: auto;
+  animation-timing-function: linear;
+  animation-fill-mode: both;
+  animation-timeline: scroll(self inline);
+}
 .chat-md [data-streamdown="table"] {
   border-collapse: collapse;
   width: max-content;

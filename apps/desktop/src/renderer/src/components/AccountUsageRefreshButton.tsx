@@ -4,7 +4,7 @@ import { IconButton } from '@superone/ui/components/ui/icon-button'
 
 export function AccountUsageRefreshButton({ loading, disabled, onClick }: { loading?: boolean; disabled?: boolean; onClick: () => void }) {
   const { t } = useTranslation()
-  return <IconButton tooltip={t('usageGauge.refreshUsage')} disabled={loading || disabled} onClick={onClick}>
+  return <IconButton className="ml-auto" tooltip={t('usageGauge.refreshUsage')} disabled={loading || disabled} onClick={onClick}>
     <RefreshCw className={loading ? 'animate-spin' : undefined} />
   </IconButton>
 }

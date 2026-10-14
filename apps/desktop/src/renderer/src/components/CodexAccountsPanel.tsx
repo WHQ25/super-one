@@ -2,12 +2,10 @@ import { Plus, Copy, ExternalLink, Loader2, LogIn, LogOut, RefreshCw, Star, Tras
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
-import { ProviderAccountHeader } from './ProviderAccountHeader'
+import { ProviderAccountCard, ProviderAccountHeader } from './ProviderAccountHeader'
 import { Alert, AlertDescription } from '@superone/ui/components/ui/alert'
 import { Skeleton } from '@superone/ui/components/ui/skeleton'
-import { cn } from '@superone/ui/lib/utils'
 import type { CodexAccount, CodexManagedLoginStart } from '@superone/shared/codex-accounts'
-import { SettingsCard, settingsRowClassName } from './settings/SettingsSection'
 import { SettingsEmptyState } from './settings/SettingsEmptyState'
 
 import { ProviderLabel } from './ProviderLabel'
@@ -63,35 +61,33 @@ export function CodexAccountsPanel({ accounts, meters = {}, loading, busy, disab
       {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
       {loading && accounts.length === 0 ? <Skeleton className="h-16 w-full rounded-lg" /> : null}
       {!loading && !pending && accounts.length === 0 && <SettingsEmptyState title={t('settings.harnesses.codexAccount.empty')} />}
-      {rows.length > 0 && <SettingsCard>
-        <ul className="rounded-[inherit]">
-          {rows.map((account) => (
-            <li key={account.id} className={cn(settingsRowClassName, 'flex min-w-0 flex-col gap-3')}>
-              <ProviderAccountHeader
-                email={account.email || t('settings.harnesses.codexAccount.pendingAccount')}
-                isDefault={account.isDefault} defaultLabel={t('settings.harnesses.codexAccount.defaultAccount')}
-                plan={account.signedIn ? account.planType || meters[account.id]?.limits?.planType || 'ChatGPT' : null}
-                state={account.unavailable || (!account.signedIn && pending?.accountId !== account.id)
-                  ? t(account.unavailable ? 'settings.harnesses.codexAccount.unavailable' : 'settings.harnesses.codexAccount.signedOut') : null}
-              />
-              {account.signedIn && !account.unavailable && <CodexAccountMeters {...meters[account.id]} />}
-              {pending?.accountId === account.id && loginPanel}
-              {pending?.accountId !== account.id && <div className="flex flex-wrap items-center justify-end gap-2">
-                {account.signedIn ? <>
-                  <AccountUsageRefreshButton loading={meters[account.id]?.loading} disabled={blocked || account.unavailable} onClick={() => onRefreshUsage(account.id)} />
-                  {!account.isDefault && <Button variant="ghost" size="sm" className="h-7" disabled={blocked || account.unavailable} onClick={() => onSetDefault(account.id)}>
-                    <Star data-icon="inline-start" />{t('settings.harnesses.codexAccount.setDefault')}
-                  </Button>}
-                  <Button variant="ghost" size="sm" className="h-7" disabled={blocked} onClick={() => onSignOut(account.id)}><LogOut data-icon="inline-start" />{t('settings.harnesses.codexAccount.signOut')}</Button>
-                </> : <>
-                  <Button variant="ghost" size="sm" className="h-7" disabled={blocked} onClick={() => onRemove(account.id)}><Trash2 data-icon="inline-start" />{t('settings.harnesses.codexAccount.removeAccount')}</Button>
-                  <Button variant="ghost" size="sm" className="h-7" disabled={blocked} onClick={() => onSignIn(account.id)}><LogIn data-icon="inline-start" />{t('common.signInAgain')}</Button>
-                </>}
-              </div>}
-            </li>
-          ))}
-        </ul>
-      </SettingsCard>}
+      {rows.length > 0 && <ul className="flex flex-col gap-2">
+        {rows.map((account) => (
+          <ProviderAccountCard key={account.id}>
+            <ProviderAccountHeader
+              email={account.email || t('settings.harnesses.codexAccount.pendingAccount')}
+              isDefault={account.isDefault} defaultLabel={t('settings.harnesses.codexAccount.defaultAccount')}
+              plan={account.signedIn ? account.planType || meters[account.id]?.limits?.planType || 'ChatGPT' : null}
+              state={account.unavailable || (!account.signedIn && pending?.accountId !== account.id)
+                ? t(account.unavailable ? 'settings.harnesses.codexAccount.unavailable' : 'settings.harnesses.codexAccount.signedOut') : null}
+            />
+            {account.signedIn && !account.unavailable && <CodexAccountMeters {...meters[account.id]} />}
+            {pending?.accountId === account.id && loginPanel}
+            {pending?.accountId !== account.id && <div className="flex flex-wrap items-center gap-2">
+              {account.signedIn ? <>
+                <Button variant="ghost" size="sm" className="h-7" disabled={blocked} onClick={() => onSignOut(account.id)}><LogOut data-icon="inline-start" />{t('settings.harnesses.codexAccount.signOut')}</Button>
+                {!account.isDefault && <Button variant="ghost" size="sm" className="h-7" disabled={blocked || account.unavailable} onClick={() => onSetDefault(account.id)}>
+                  <Star data-icon="inline-start" />{t('settings.harnesses.codexAccount.setDefault')}
+                </Button>}
+                <AccountUsageRefreshButton loading={meters[account.id]?.loading} disabled={blocked || account.unavailable} onClick={() => onRefreshUsage(account.id)} />
+              </> : <>
+                <Button variant="ghost" size="sm" className="h-7" disabled={blocked} onClick={() => onRemove(account.id)}><Trash2 data-icon="inline-start" />{t('settings.harnesses.codexAccount.removeAccount')}</Button>
+                <Button variant="ghost" size="sm" className="h-7" disabled={blocked} onClick={() => onSignIn(account.id)}><LogIn data-icon="inline-start" />{t('common.signInAgain')}</Button>
+              </>}
+            </div>}
+          </ProviderAccountCard>
+        ))}
+      </ul>}
       {!pending && <Button variant="ghost" className="h-7 self-start" size="sm" disabled={blocked || loading} onClick={() => onSignIn()}>
         {busy ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <Plus data-icon="inline-start" />}
         {t('settings.harnesses.codexAccount.addAccount')}

@@ -6,10 +6,9 @@ import { Button } from '@superone/ui/components/ui/button'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Alert, AlertDescription } from '@superone/ui/components/ui/alert'
 import { Skeleton } from '@superone/ui/components/ui/skeleton'
-import { SettingsCard, settingsRowClassName } from './settings/SettingsSection'
 import { SettingsEmptyState } from './settings/SettingsEmptyState'
 import { ProviderLabel } from './ProviderLabel'
-import { ProviderAccountHeader } from './ProviderAccountHeader'
+import { ProviderAccountCard, ProviderAccountHeader } from './ProviderAccountHeader'
 import { InfoRow, WindowBar } from './provider-usage'
 import { claudeAccountsChanged } from '@/hooks/useClaudeAccounts'
 import { AccountUsageRefreshButton } from './AccountUsageRefreshButton'
@@ -32,9 +31,9 @@ export function ClaudeAccountsPanel({ accounts, meters = {}, loading, busy, sign
     {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
     {loading && !accounts.length && <Skeleton className="h-16 w-full rounded-lg" />}
     {!loading && !accounts.length && <SettingsEmptyState title={t('resources.providers.accountNotSignedIn')} />}
-    {accounts.length > 0 && <SettingsCard><ul className="rounded-[inherit]">{accounts.map((account) => {
+    {accounts.length > 0 && <ul className="flex flex-col gap-2">{accounts.map((account) => {
       const meter = meters[key(account.credentialDir)]
-      return <li key={key(account.credentialDir)} className={`${settingsRowClassName} flex min-w-0 flex-col gap-3`}>
+      return <ProviderAccountCard key={key(account.credentialDir)}>
         <ProviderAccountHeader email={account.email || t('resources.providers.claudePendingAccount')} detail={account.orgName}
           plan={account.loggedIn ? account.subscriptionType || meter?.limits?.planType : null}
           isDefault={account.isDefault} defaultLabel={t('settings.harnesses.codexAccount.defaultAccount')}
@@ -46,15 +45,15 @@ export function ClaudeAccountsPanel({ accounts, meters = {}, loading, busy, sign
           {meter?.limits?.extraUsage && <InfoRow label={t('usageGauge.extraUsage')} value={meter.limits.extraUsage.limitDollars != null
             ? `$${meter.limits.extraUsage.usedDollars.toFixed(2)} / $${meter.limits.extraUsage.limitDollars.toFixed(2)}` : `$${meter.limits.extraUsage.usedDollars.toFixed(2)}`} />}
         </div>}
-        <div className="flex flex-wrap justify-end gap-2">
-          {account.loggedIn && <AccountUsageRefreshButton loading={meter?.loading} disabled={busy} onClick={() => onRefreshUsage(account.credentialDir)} />}
-          {account.loggedIn && !account.isDefault && <Button variant="ghost" size="sm" className="h-7" disabled={busy} onClick={() => onSetDefault(account.credentialDir)}><Star data-icon="inline-start" />{t('settings.harnesses.codexAccount.setDefault')}</Button>}
+        <div className="flex flex-wrap items-center gap-2">
           {account.credentialDir && (account.loggedIn
             ? <Button variant="ghost" size="sm" className="h-7" disabled={busy} onClick={() => onSignOut(account.credentialDir!)}><LogOut data-icon="inline-start" />{t('settings.harnesses.codexAccount.signOut')}</Button>
             : <Button variant="ghost" size="sm" className="h-7" disabled={busy} onClick={() => onSignIn(account.credentialDir!)}><LogIn data-icon="inline-start" />{t('common.signInAgain')}</Button>)}
+          {account.loggedIn && !account.isDefault && <Button variant="ghost" size="sm" className="h-7" disabled={busy} onClick={() => onSetDefault(account.credentialDir)}><Star data-icon="inline-start" />{t('settings.harnesses.codexAccount.setDefault')}</Button>}
+          {account.loggedIn && <AccountUsageRefreshButton loading={meter?.loading} disabled={busy} onClick={() => onRefreshUsage(account.credentialDir)} />}
         </div>
-      </li>
-    })}</ul></SettingsCard>}
+      </ProviderAccountCard>
+    })}</ul>}
     {signingIn ? <div className="flex items-center gap-2" role="status"><Loader2 className="size-4 animate-spin" /><span className="text-sm">{t('resources.providers.claudeSigningIn')}</span><Button variant="ghost" size="sm" onClick={onCancel}><X data-icon="inline-start" />{t('settings.harnesses.codexAccount.cancel')}</Button></div>
       : <Button variant="ghost" size="sm" className="h-7 self-start" disabled={busy || loading} onClick={() => onSignIn()}><Plus data-icon="inline-start" />{t('resources.providers.claudeAddAccount')}</Button>}
   </section>

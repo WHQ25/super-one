@@ -50,7 +50,7 @@ waits, start the form without the call signal, return from the tool, and handle
 its promise separately. Existing Host Actions retain their 60-second deadline.
 Caller output returns only to the app; agent output never returns its values.
 
-**Capability split (VS Code-shaped):** host capabilities live Node-side on `context` — `agent.*` (prompt / context card), `host.toast / revealInFolder / openExternal / clipboard`, `locale`, `version` — so a background app can reach the user with no UI open. They execute in the renderer (`lib/miniapp-host-actions.ts`, mounted globally by `useMiniAppHostActions`), routed via `miniapp-host-action-bridge.ts`; main only addresses the request, so clipboard and external-link consent prompts are never bypassed. The WebView keeps only what needs DOM coordinates — `ui.showTooltip / showContextMenu / showPopover / startDrag` — plus theme, locale, and `superone.node`.
+**Capability split (VS Code-shaped):** host capabilities live Node-side on `context` — `agent.*` (prompt / context card), `host.toast / revealInFolder / openExternal / clipboard`, `layout` (the desktop layout API shared with `ui_snapshot` / `ui_act`, [ui-control.md](../../../../docs/features/ui-control.md)), `locale`, `version` — so a background app can reach the user with no UI open. They execute in the renderer (`lib/miniapp-host-actions.ts`, mounted globally by `useMiniAppHostActions`), routed via `miniapp-host-action-bridge.ts`; main only addresses the request, so clipboard and external-link consent prompts are never bypassed. The WebView keeps only what needs DOM coordinates — `ui.showTooltip / showContextMenu / showPopover / startDrag` — plus theme, locale, and `superone.node`.
 
 **Adding a new mini-app bridge API:**
 

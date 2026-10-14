@@ -49,9 +49,33 @@ The entry must export `activate(context)`. `deactivate()` is optional.
 | `subscriptions` | Push disposables here for automatic reverse-order cleanup. |
 | `agent.sendPrompt / setContext / clearContext / onContextConsumed` | Reach the chat without a WebView. See `api-agent`. |
 | `host.toast / revealInFolder / openExternal / clipboard` | Host actions that need no DOM coordinates. See `api-system`. |
+| `layout.snapshot() / act(request)` | Read and arrange the desktop layout of the session holding the app: open a file or diff tab, focus / split / close tabs, show or maximize the activity panel (`snapshot().self` is the app's own tab), the bottom terminal, the sidebar, a launched session in the split view. Same contract as the agent's `ui_snapshot` / `ui_act`; see Layout below. |
 | `locale.get / onChange` | Current SuperOne language. |
 | `version` | SuperOne version running this mini-app. |
 | `setStatus(text)` | Show a short runtime status in the sidebar. A host with a status set also counts as a background task, so quitting SuperOne asks for confirmation — pass `''` when the work is done. |
+
+## Layout
+
+`context.layout` acts for the session that holds the app — the project's active
+session when it holds the app, otherwise the first one that does. It rejects when
+no session holds the app.
+
+```ts
+const { self, visible } = await context.layout.snapshot()
+if (self) await context.layout.act({ action: 'maximize_panel', tab: self })
+await context.layout.act({ action: 'open_diff' })               // uncommitted changes
+await context.layout.act({ action: 'open_file', path: 'src/app.ts', line: 42 })
+```
+
+- `status: 'applied'` changed the layout on screen; `visible` says whether the
+  user sees it.
+- `'queued'`: the holder session is not in front, so its own layout takes the
+  change when the user opens it.
+- `'skipped'`: a window-wide change (sidebar, panel side, split view) is refused
+  while the holder is not in front, so the user is never moved.
+- Tabs and split panes can be closed only by whoever opened them. Browser and
+  terminal tabs are opened by agents with their own tools; the app can focus,
+  split or maximize any tab.
 
 ## Session input forms
 

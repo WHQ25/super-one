@@ -99,7 +99,7 @@ const MINIAPP_TOPIC_SUMMARIES: Record<MiniappGuideTopic, string> = {
   'api-agent': 'Node-side agent prompts and context cards',
   'api-system': 'Node-side toast, reveal, external links, and clipboard',
   'api-ui': 'WebView-anchored tooltip, context menu, popover, and drag',
-  'api-host': 'Node.js lifecycle, tools, messaging, state, storage paths, and status',
+  'api-host': 'Node.js lifecycle, tools, messaging, state, storage paths, status, and desktop layout',
   packaging: '.s1app validation and distribution',
   icon: 'mini-app logo requirements',
   recipes: 'cross-API implementation patterns',

@@ -112,6 +112,74 @@ export interface SuperOneMiniAppAgentApi {
   onContextConsumed(handler: () => void): SuperOneMiniAppDisposable
 }
 
+/**
+ * Desktop layout, scoped to the session holding this app — the same contract as
+ * the agent's `ui_snapshot` / `ui_act`. Changes to that session's own layout wait
+ * for it when another session is in front (`queued`); window-wide changes are
+ * refused then (`skipped`). Tabs and split panes can be closed only by whoever
+ * opened them.
+ */
+export type SuperOneMiniAppLayoutAction =
+  | 'open_file' | 'open_diff'
+  | 'focus_tab' | 'close_tab' | 'split_tab'
+  | 'show_panel' | 'hide_panel' | 'maximize_panel' | 'restore_panel' | 'panel_side'
+  | 'show_sidebar' | 'hide_sidebar'
+  | 'show_terminal' | 'hide_terminal'
+  | 'split_session' | 'close_split'
+
+export interface SuperOneMiniAppLayoutRequest {
+  action: SuperOneMiniAppLayoutAction
+  /** open_file: the file. open_diff: limit the diff to this file. */
+  path?: string
+  /** open_file: 1-based line to reveal. */
+  line?: number
+  /** open_diff: commit sha or ref; omit for uncommitted changes. */
+  commit?: string
+  /** A tab id from `snapshot().tabs`, or `snapshot().self` for this app's own tab. */
+  tab?: string
+  /** split_tab / split_session. Default right. */
+  direction?: 'right' | 'down'
+  /** panel_side. */
+  side?: 'left' | 'right'
+  /** split_session / close_split: a session the holder session launched. */
+  sessionId?: string
+}
+
+export interface SuperOneMiniAppLayoutResult {
+  status: 'applied' | 'queued' | 'skipped'
+  /** Whether the user can see the result now. */
+  visible: boolean
+  tab?: string
+  reason?: 'not_visible'
+}
+
+export interface SuperOneMiniAppLayoutTab {
+  tab: string
+  kind: 'file' | 'diff' | 'browser' | 'terminal' | 'miniapp' | 'device' | 'side-chat' | 'trajectory' | 'tool-preview' | 'mcp-app' | 'mod-pane' | 'other'
+  title: string
+  active: boolean
+  group: number
+  openedBy: 'agent' | 'miniapp' | 'user'
+}
+
+export interface SuperOneMiniAppLayoutSnapshot {
+  /** The holder session's chat is on screen and the window is visible. */
+  visible: boolean
+  window: { visible: boolean; sidebar: 'expanded' | 'collapsed'; layout: 'single' | 'split'; splitSessions?: string[] }
+  panel: { open: boolean; onScreen: boolean; side: 'left' | 'right'; maximized: boolean }
+  terminal: { open: boolean }
+  tabs: SuperOneMiniAppLayoutTab[]
+  /** This app's own tab, when it is open in the holder session's panel. */
+  self?: string
+}
+
+export interface SuperOneMiniAppLayoutApi {
+  /** Rejects when no session holds this app. */
+  snapshot(): Promise<SuperOneMiniAppLayoutSnapshot>
+  /** Rejects with a readable message for an unknown tab, a tab or pane the app did not open, or a session the holder did not launch. */
+  act(request: SuperOneMiniAppLayoutRequest): Promise<SuperOneMiniAppLayoutResult>
+}
+
 export interface SuperOneMiniAppLocaleApi {
   get(): SuperOneMiniAppLocale
   onChange(handler: (locale: SuperOneMiniAppLocale) => void): SuperOneMiniAppDisposable
@@ -143,6 +211,7 @@ export interface SuperOneMiniAppContext {
   readonly agent: SuperOneMiniAppAgentApi
   readonly composer: SuperOneMiniAppComposer
   readonly host: SuperOneMiniAppHostApi
+  readonly layout: SuperOneMiniAppLayoutApi
   readonly locale: SuperOneMiniAppLocaleApi
   readonly subscriptions: SuperOneMiniAppDisposable[]
   /**

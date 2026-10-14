@@ -173,6 +173,10 @@ const context: SuperOneMiniAppContext = {
       write(text) { return requestAction('host.clipboard.write', { text: String(text) }) as Promise<void> },
     },
   },
+  layout: {
+    snapshot() { return requestAction('layout.snapshot') as ReturnType<SuperOneMiniAppContext['layout']['snapshot']> },
+    act(request) { return requestAction('layout.act', { ...request }) as ReturnType<SuperOneMiniAppContext['layout']['act']> },
+  },
   locale: {
     get() { return currentLocale },
     onChange(handler) {

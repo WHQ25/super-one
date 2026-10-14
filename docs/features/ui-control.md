@@ -15,6 +15,7 @@ the single implementation is `apps/desktop/src/renderer/src/lib/ui-control.ts`:
 | Entry point | Path to the renderer | Caller |
 |---|---|---|
 | `ui_snapshot` / `ui_act` agent tools | `mcp/ui-control-tools.ts` → `browserAutomationCall` (ops `uiSnapshot` / `uiAct`) → `runBrowserOp` | The calling session; `root` is its working directory |
+| Mini-app `context.layout.snapshot()` / `act()` | Node Host `requestAction('layout.*')` → host-action bridge → `miniapp-host-actions.ts` | The mini-app's holder session (see below) |
 
 The renderer call bridge only targets the main window. Pop-out session windows
 have no activity panel and are not controlled.
@@ -93,3 +94,15 @@ so focus stays where the user had it.
 - **Chat row.** One line per call: the action verb, its subject (file, commit,
   side), and the outcome when it is not a plain `applied`.
 
+## Mini-apps
+
+`context.layout` exposes the same snapshot and actions, scoped to the session
+`miniAppSessionTarget()` resolves. That is the project's active session if it
+holds the app, otherwise the first holder. This is the existing binding with its
+known ambiguity when several sessions hold one app (`docs/proposals/miniapp-agent-api.md`).
+
+The snapshot's `self` is the app's own tab, so the app can focus, maximize or
+split itself. Tabs and panes the app opens are recorded as `miniapp:<appId>`, and
+only the app can close them. Author types are in
+`packages/shared/src/miniapp-host-api.d.ts`; a type test keeps them equal to
+the shared contract. The author guide is the `api-host` manual topic.

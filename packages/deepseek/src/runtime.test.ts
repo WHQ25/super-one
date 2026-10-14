@@ -14,11 +14,14 @@ import { TEST_PRESET_OPTIONS } from './test-presets'
 class MockAdapter extends LlmAdapter {
   /** Every request's message list, serialized, oldest first. */
   readonly requests: string[] = []
+  /** Every request's whole options, serialized — the system prompt included. */
+  readonly systems: string[] = []
 
   async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     expect(JSON.stringify(options)).toContain(JSON.stringify(SUPERONE_SYSTEM_PROMPT_APPEND).slice(1, -1))
     const allText = JSON.stringify(options.messages)
     this.requests.push(allText)
+    this.systems.push(JSON.stringify(options))
     if (allText.includes('"role":"tool"')) {
       yield { type: 'block-start', index: 0, blockType: 'text' }
       yield { type: 'text-delta', index: 0, text: 'tool done' }
@@ -185,6 +188,31 @@ describe('deepseek runtime end-to-end (mock adapter)', () => {
     expect(types.indexOf('message_start')).toBeLessThan(types.indexOf('message_complete'))
 
     await agent.dispose()
+    await runtime.dispose()
+  })
+
+  it('sends a session system prompt append to that session only', async () => {
+    const { runtime, model } = await bootRuntime()
+    const append = 'You are the reviewer. Never edit files.'
+    const withAppend = await runtime.createAgent({
+      sessionId: randomUUID(),
+      cwd: process.cwd(),
+      provider: 'mock',
+      model: 'mock-1',
+      systemPromptAppend: append,
+      onEvent: () => {},
+    })
+    await runTurn(runtime, [], 'first', withAppend)
+    const plain = await runTurn(runtime, [], 'second')
+
+    const [first, second] = model.systems
+    expect(first).toContain(append)
+    // Scoped to the agent: a sibling on the same tree keeps the host prompt alone.
+    expect(second).toContain(SUPERONE_SYSTEM_PROMPT_APPEND.slice(0, 40))
+    expect(second).not.toContain(append)
+
+    await withAppend.dispose()
+    await plain.dispose()
     await runtime.dispose()
   })
 

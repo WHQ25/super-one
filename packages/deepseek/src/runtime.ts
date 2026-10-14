@@ -18,6 +18,7 @@ import { AttachmentId, type EncodedImageAttachment, type ImageMediaType } from '
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type {} from '@deepseek-ai/dsh-permission-presets'
 import type {} from '@deepseek-ai/dsh-plan-mode'
+import type {} from '@deepseek-ai/dsh-system-prompt'
 import { UserQuestionError, type AskUserQuestionAnswer, type AskUserQuestionRequest } from '@deepseek-ai/dsh-user-questions'
 import type { AgentEvent, ImageAttachment } from '@superone/shared/agent-types'
 import { admitImageBlocks, encodeComposerImages, modelAcceptsImages } from './images'
@@ -130,6 +131,12 @@ export interface CreateDeepseekAgentOptions {
    * fails with `NO_PROVIDER` — the model hears it cannot ask.
    */
   askUser?: (question: DeepseekQuestion, signal?: AbortSignal) => Promise<AskUserQuestionAnswer | 'dismissed'>
+  /**
+   * Host text for this session only — agent-profile instructions and the
+   * collaboration protocol. Registered on the agent's own scope so it shadows
+   * nothing global and leaves every other session's prompt untouched.
+   */
+  systemPromptAppend?: string
 }
 
 export interface DeepseekAgentHandle {
@@ -856,6 +863,9 @@ export class DeepseekRuntime {
       setup: async (agentCtx: Context) => {
         if (presets) await presets.mount(agentCtx, preset)
         if (toolPlane) await mountToolPlane(agentCtx, toolPlane)
+        const append = options.systemPromptAppend?.trim()
+        // After the global `superone:host` section; literal like it.
+        if (append) agentCtx.systemPrompt.section({ name: 'superone:session', order: -40, text: append, interpolate: false })
       },
     }
     const handle = options.resume

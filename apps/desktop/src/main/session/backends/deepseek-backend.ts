@@ -176,6 +176,7 @@ export class DeepseekBackend implements SessionBackend {
         resume: Boolean(opts.providerSessionId),
         mcpServers: readDshMcpServerSpecs(opts.cwd),
         askUser: (question, signal) => this.questions.ask(question, signal),
+        ...(opts.systemPromptAppend ? { systemPromptAppend: opts.systemPromptAppend } : {}),
         onEvent: (event) => {
           this.emit(event)
           if (event.type === 'status_change' && event.status === 'idle') this.queuedMessages.flush()

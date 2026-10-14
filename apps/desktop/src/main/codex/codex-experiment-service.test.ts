@@ -789,6 +789,7 @@ describe('CodexExperimentService auth state', () => {
 
     expect(handle.connection.request).toHaveBeenCalledWith('account/usage/read', {})
     expect(usage).toEqual({
+      fetchedAt: expect.any(Number),
       lifetimeTokens: 1_250_000,
       peakDailyTokens: 84_000,
       longestRunningTurnSec: 612,

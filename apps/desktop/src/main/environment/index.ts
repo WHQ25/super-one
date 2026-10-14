@@ -52,6 +52,7 @@ export {
   remoteCodexAccountLoginCancel,
   remoteCodexAccountLogout,
   remoteCodexGetRateLimits,
+  remoteCodexRemoveAccount,
   remoteCodexGetAccountUsage,
   remoteCodexGetServerDiagnostics,
   remoteCodexGetConfigRequirements,

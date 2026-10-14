@@ -35,7 +35,7 @@ export class UsageThrottle<T> {
 
   constructor(private readonly minIntervalMs: number, private readonly defaultBackoffMs = minIntervalMs) {}
 
-  read(key: string, fingerprint: string | null, force: boolean, fetchUsage: () => Promise<UsageFetchOutcome<T>>): Promise<UsageReading<T>> {
+  read(key: string, fingerprint: string | null, force: boolean, fetchUsage: () => Promise<UsageFetchOutcome<T>>, preferCached = false): Promise<UsageReading<T>> {
     return this.requests.get(key, async () => {
       let state = this.states.get(key)
       if (!state || state.fingerprint !== fingerprint) {
@@ -44,6 +44,7 @@ export class UsageThrottle<T> {
       }
       const now = Date.now()
       if (now < state.rateLimitedUntilMs) return this.reading(state)
+      if (!force && preferCached && state.value !== null) return this.reading(state)
       const wasRateLimited = state.rateLimitedUntilMs > 0
       state.rateLimitedUntilMs = 0
       if (!force && !wasRateLimited && state.fetchedAtMs !== null && now - state.fetchedAtMs < this.minIntervalMs) return this.reading(state)

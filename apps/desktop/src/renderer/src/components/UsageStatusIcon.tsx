@@ -12,7 +12,7 @@ import { Button } from '@superone/ui/components/ui/button'
 import { cn } from '@superone/ui/lib/utils'
 import { getLatestCodexThreadId, useActiveSession, useChatStore } from '@/stores/chat'
 import { claudeAccountCredentialDir, isClaudeAccountProvider } from '@superone/shared/agent-types'
-import type { ClaudeExtraUsage, ClaudeRateLimits, CodexAccountUsage, CodexRateLimits, CodexRateLimitResetCredit, CodexRateLimitResetOutcome, ProviderRateLimits } from '@superone/shared/agent-types'
+import type { ClaudeExtraUsage, ClaudeRateLimits, CodexAccountUsage, CodexRateLimitResetCredit, CodexRateLimitResetOutcome, ProviderRateLimits } from '@superone/shared/agent-types'
 import { isGrokAcpAgent } from '@superone/shared/acp-brand'
 import { ProviderLabel } from './ProviderLabel'
 import { formatTokens, formatWindowLabel, WindowBar as WindowRow } from './provider-usage'
@@ -20,6 +20,7 @@ import { USAGE_POLL_MS, type UsageWindow } from '@superone/shared/subscription-u
 import { formatUsageDuration } from '@superone/shared/subscription-usage-presentation'
 import { useSubscriptionAlert } from './use-subscription-alert'
 import type { SubscriptionAlert } from '@superone/shared/subscription-alerts'
+import { useCodexUsage } from './use-codex-usage'
 
 const FORCE_REFRESH_ON_OPEN_STALE_MS = 5 * 60 * 1000
 const RATE_LIMIT_TIP_MS = 6_000
@@ -365,7 +366,7 @@ function RateLimitGauge({ title, label, subtitle, planType, badgeRemaining, onOp
                 {refreshing ? t('usageGauge.updating') : fetchedAt != null ? formatUpdatedAgo(fetchedAt, now, t) : ''}
               </span>
               {onRefresh && (
-                <IconButton size="xs" variant="ghost" disabled={refreshing} onClick={onRefresh}>
+                <IconButton size="xs" variant="ghost" tooltip={t('common.refresh')} aria-label={t('common.refresh')} disabled={refreshing} onClick={onRefresh}>
                   <RefreshCw className={cn(refreshing && 'animate-spin')} />
                 </IconButton>
               )}
@@ -399,24 +400,16 @@ function useRefetchOnTurnEnd(status: string, fetchLimits: () => void) {
 
 function CodexRateLimitIcon({ projectPath, apiProviderId, threadId, status, tip: liveTip }: { projectPath: string; apiProviderId: string | null; threadId: string | null; status: string; tip: RateLimitTipInfo | null }) {
   const { t } = useTranslation()
-  const [limits, setLimits] = useState<CodexRateLimits | null>(null)
-  const [usage, setUsage] = useState<CodexAccountUsage | null>(null)
+  const { limits, usage, loaded, refreshing, fetchLimits, refresh } = useCodexUsage(projectPath, apiProviderId, threadId)
   const [accountEmail, setAccountEmail] = useState<string | null>(null)
-  const [loaded, setLoaded] = useState(false)
   const windows: UsageWindow[] = [limits?.primary, limits?.secondary].flatMap((w) => w ? [{ ...w, label: formatWindowLabel(w.windowDurationMins, t) }] : [])
   const tip = useSubscriptionAlert(limits?.quotaKey ?? `codex:${projectPath}:${apiProviderId ?? 'default'}`, windows, liveTip, loaded)
   const highlight: GaugeHighlight = tip ? (tip.severity >= 2 ? 'error' : 'warning') : null
 
-  const fetchLimits = useCallback(() => {
-    window.app.codexGetRateLimits(projectPath, apiProviderId).then(setLimits).catch(() => {}).finally(() => setLoaded(true))
-    window.app.codexGetAccountUsage(projectPath, apiProviderId, threadId).then(setUsage).catch(() => {})
-  }, [projectPath, apiProviderId, threadId])
-
-  useEffect(() => {
-    setLimits(null)
-    setLoaded(false)
-    setUsage(null)
-  }, [projectPath, apiProviderId, threadId])
+  const refreshIfStale = useCallback(() => {
+    const fetchedAt = limits?.fetchedAt
+    if (fetchedAt == null || Date.now() - fetchedAt > FORCE_REFRESH_ON_OPEN_STALE_MS) fetchLimits()
+  }, [limits?.fetchedAt, fetchLimits])
 
   // Only for the ChatGPT sign-in. With an apiProviderId the turns bill a third-party key, and
   // naming the OAuth account would point at a subscription this session never touches.
@@ -445,7 +438,7 @@ function CodexRateLimitIcon({ projectPath, apiProviderId, threadId, status, tip:
 
   return (
     <RateLimitTipHost tip={tip}>
-      <RateLimitGauge title={<ProviderLabel brandKey="openai" size={14} />} label={t('usageGauge.codexTitle')} subtitle={accountEmail} planType={limits.planType} badgeRemaining={badgeRemaining} onOpen={fetchLimits} highlight={highlight}>
+      <RateLimitGauge title={<ProviderLabel brandKey="openai" size={14} />} label={t('usageGauge.codexTitle')} subtitle={accountEmail} planType={limits.planType} badgeRemaining={badgeRemaining} onOpen={refreshIfStale} onRefresh={refresh} refreshing={refreshing} fetchedAt={limits.fetchedAt} highlight={highlight}>
         {limits.primary && (
           <WindowRow {...limits.primary} label={formatWindowLabel(limits.primary.windowDurationMins, t)} />
         )}
@@ -453,9 +446,10 @@ function CodexRateLimitIcon({ projectPath, apiProviderId, threadId, status, tip:
           <WindowRow {...limits.secondary} label={formatWindowLabel(limits.secondary.windowDurationMins, t)} />
         )}
         {limits.resetCredits != null && limits.resetCredits > 0 && (
-          <ResetCreditsRow count={limits.resetCredits} credits={limits.resetCreditList} projectPath={projectPath} apiProviderId={apiProviderId} onConsumed={fetchLimits} />
+          <ResetCreditsRow count={limits.resetCredits} credits={limits.resetCreditList} projectPath={projectPath} apiProviderId={apiProviderId} onConsumed={refresh} />
         )}
         {usage && <AccountUsageSection usage={usage} />}
+        {(limits.error || usage?.error) && <p className="text-muted-foreground" role="status">{t('settings.harnesses.codexAccount.usageUnavailable')}</p>}
       </RateLimitGauge>
     </RateLimitTipHost>
   )

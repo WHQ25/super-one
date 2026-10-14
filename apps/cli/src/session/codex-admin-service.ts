@@ -162,11 +162,13 @@ export class CodexAdminService {
   async getRateLimits(
     projectId: string,
     apiProviderId?: string | null,
+    force = false,
+    preferCached = false,
   ): Promise<CodexRateLimits | null> {
     const auth = this.getProjectAuth(projectId)
     if (resolveMode(auth.mode, auth.apiKey) !== 'chatgpt') return null
     try {
-      return await this.withClient(projectId, apiProviderId, (client) => readRateLimits(client, apiProviderId ?? 'cli'))
+      return await this.withClient(projectId, apiProviderId, (client) => readRateLimits(client, apiProviderId ?? 'cli', force, preferCached))
     } catch {
       return null
     }
@@ -176,11 +178,13 @@ export class CodexAdminService {
     projectId: string,
     apiProviderId?: string | null,
     threadId?: string | null,
+    force = false,
+    preferCached = false,
   ): Promise<CodexAccountUsage | null> {
     const auth = this.getProjectAuth(projectId)
     if (resolveMode(auth.mode, auth.apiKey) !== 'chatgpt') return null
     try {
-      return await this.withClient(projectId, apiProviderId, (client) => readAccountUsage(client, threadId))
+      return await this.withClient(projectId, apiProviderId, (client) => readAccountUsage(client, threadId, apiProviderId ?? 'cli', force, preferCached))
     } catch {
       return null
     }

@@ -1072,6 +1072,7 @@ const appAPI = {
   codexListAccounts: (projectPath: string) => ipcRenderer.invoke(CodexAccountIpcChannels.LIST, projectPath),
 
   codexSetDefaultAccount: (projectPath: string, accountId: string) => ipcRenderer.invoke(CodexAccountIpcChannels.SET_DEFAULT, projectPath, accountId),
+  codexRemoveAccount: (projectPath: string, apiProviderId: string) => ipcRenderer.invoke(CodexAccountIpcChannels.REMOVE, projectPath, apiProviderId),
 
   codexGetAccountStatus: (projectPath: string, apiProviderId?: string | null) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_GET_ACCOUNT_STATUS, projectPath, apiProviderId),
@@ -1085,14 +1086,14 @@ const appAPI = {
   codexLogoutAccount: (projectPath: string, apiProviderId?: string | null) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_ACCOUNT_LOGOUT, projectPath, apiProviderId),
 
-  codexGetRateLimits: (projectPath: string, apiProviderId?: string | null) =>
-    ipcRenderer.invoke(AgentIpcChannels.CODEX_GET_RATE_LIMITS, projectPath, apiProviderId),
+  codexGetRateLimits: (projectPath: string, apiProviderId?: string | null, force = false, preferCached = false) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_GET_RATE_LIMITS, projectPath, apiProviderId, force, preferCached),
 
   codexListRealtimeVoices: (projectPath?: string | null) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_LIST_REALTIME_VOICES, projectPath) as Promise<CodexRealtimeVoiceCatalog>,
 
-  codexGetAccountUsage: (projectPath: string, apiProviderId?: string | null, threadId?: string | null) =>
-    ipcRenderer.invoke(AgentIpcChannels.CODEX_GET_ACCOUNT_USAGE, projectPath, apiProviderId, threadId),
+  codexGetAccountUsage: (projectPath: string, apiProviderId?: string | null, threadId?: string | null, force = false, preferCached = false) =>
+    ipcRenderer.invoke(AgentIpcChannels.CODEX_GET_ACCOUNT_USAGE, projectPath, apiProviderId, threadId, force, preferCached),
 
   codexGetServerDiagnostics: (projectPath: string, apiProviderId?: string | null) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_GET_SERVER_DIAGNOSTICS, projectPath, apiProviderId),
@@ -1112,8 +1113,8 @@ const appAPI = {
   codexImportExternalAgentConfig: (projectPath: string, items: CodexExternalAgentItem[], apiProviderId?: string | null) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_EXTERNAL_AGENT_IMPORT, projectPath, items, apiProviderId),
 
-  claudeGetRateLimits: (force?: boolean, credentialDir?: string | null) =>
-    ipcRenderer.invoke(AgentIpcChannels.CLAUDE_GET_RATE_LIMITS, force, credentialDir),
+  claudeGetRateLimits: (force?: boolean, credentialDir?: string | null, preferCached = false) =>
+    ipcRenderer.invoke(AgentIpcChannels.CLAUDE_GET_RATE_LIMITS, force, credentialDir, preferCached),
 
   claudeListAccounts: (force?: boolean) => ipcRenderer.invoke(AgentIpcChannels.CLAUDE_LIST_ACCOUNTS, force),
   claudeSignInAccount: (email?: string | null, dir?: string) => ipcRenderer.invoke(AgentIpcChannels.CLAUDE_SIGN_IN_ACCOUNT, email, dir),

@@ -1,4 +1,4 @@
-import { Plus, Copy, ExternalLink, Loader2, LogIn, LogOut, RefreshCw, Star, X } from 'lucide-react'
+import { Plus, Copy, ExternalLink, Loader2, LogIn, LogOut, RefreshCw, Star, Trash2, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
@@ -12,6 +12,7 @@ import { SettingsEmptyState } from './settings/SettingsEmptyState'
 
 import { ProviderLabel } from './ProviderLabel'
 import { CodexAccountMeters } from './CodexAccountMeters'
+import { AccountUsageRefreshButton } from './AccountUsageRefreshButton'
 
 export interface CodexAccountsPanelProps {
   accounts: CodexAccount[]
@@ -22,15 +23,17 @@ export interface CodexAccountsPanelProps {
   error?: string | null
   pending?: CodexManagedLoginStart | null
   onRefresh: () => void
+  onRefreshUsage: (id: string) => void
   onSignIn: (id?: string) => void
   onSignOut: (id: string) => void
+  onRemove: (id: string) => void
   onSetDefault: (id: string) => void
   onCancel: () => void
   onOpenLogin: () => void
   onCopyCode: () => void
 }
 
-export function CodexAccountsPanel({ accounts, meters = {}, loading, busy, disabled, error, pending, onRefresh, onSignIn, onSignOut, onSetDefault, onCancel, onOpenLogin, onCopyCode }: CodexAccountsPanelProps) {
+export function CodexAccountsPanel({ accounts, meters = {}, loading, busy, disabled, error, pending, onRefresh, onRefreshUsage, onSignIn, onSignOut, onRemove, onSetDefault, onCancel, onOpenLogin, onCopyCode }: CodexAccountsPanelProps) {
   const { t } = useTranslation()
   const blocked = !!(busy || disabled || pending)
   const rows = [...accounts, ...(pending && !accounts.some((a) => a.id === pending.accountId)
@@ -39,11 +42,11 @@ export function CodexAccountsPanel({ accounts, meters = {}, loading, busy, disab
         <p className="flex items-center gap-2 text-sm"><Loader2 className="size-4 animate-spin" />{t('settings.harnesses.codexAccount.signingIn')}</p>
         {pending.userCode && <div className="flex flex-wrap items-center gap-2">
           <code className="rounded-md bg-background px-3 py-1.5 text-lg">{pending.userCode}</code>
-          <Button variant="outline" size="sm" className="h-7" onClick={onCopyCode}><Copy data-icon="inline-start" />{t('settings.harnesses.codexAccount.copyCode')}</Button>
+          <Button variant="ghost" size="sm" className="h-7" onClick={onCopyCode}><Copy data-icon="inline-start" />{t('settings.harnesses.codexAccount.copyCode')}</Button>
         </div>}
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" size="sm" className="h-7" onClick={onOpenLogin}><ExternalLink data-icon="inline-start" />{t('settings.harnesses.codexAccount.openPage')}</Button>
-          <Button variant="outline" size="sm" className="h-7" onClick={onCancel}><X data-icon="inline-start" />{t('settings.harnesses.codexAccount.cancel')}</Button>
+          <Button variant="ghost" size="sm" className="h-7" onClick={onOpenLogin}><ExternalLink data-icon="inline-start" />{t('settings.harnesses.codexAccount.openPage')}</Button>
+          <Button variant="ghost" size="sm" className="h-7" onClick={onCancel}><X data-icon="inline-start" />{t('settings.harnesses.codexAccount.cancel')}</Button>
         </div>
       </div> : null
   return (
@@ -75,17 +78,21 @@ export function CodexAccountsPanel({ accounts, meters = {}, loading, busy, disab
               {pending?.accountId === account.id && loginPanel}
               {pending?.accountId !== account.id && <div className="flex flex-wrap items-center justify-end gap-2">
                 {account.signedIn ? <>
-                  {!account.isDefault && <Button variant="outline" size="sm" className="h-7" disabled={blocked || account.unavailable} onClick={() => onSetDefault(account.id)}>
+                  <AccountUsageRefreshButton loading={meters[account.id]?.loading} disabled={blocked || account.unavailable} onClick={() => onRefreshUsage(account.id)} />
+                  {!account.isDefault && <Button variant="ghost" size="sm" className="h-7" disabled={blocked || account.unavailable} onClick={() => onSetDefault(account.id)}>
                     <Star data-icon="inline-start" />{t('settings.harnesses.codexAccount.setDefault')}
                   </Button>}
                   <Button variant="ghost" size="sm" className="h-7" disabled={blocked} onClick={() => onSignOut(account.id)}><LogOut data-icon="inline-start" />{t('settings.harnesses.codexAccount.signOut')}</Button>
-                </> : <Button variant="outline" size="sm" className="h-7" disabled={blocked} onClick={() => onSignIn(account.id)}><LogIn data-icon="inline-start" />{t('settings.harnesses.codexAccount.signIn')}</Button>}
+                </> : <>
+                  <Button variant="ghost" size="sm" className="h-7" disabled={blocked} onClick={() => onRemove(account.id)}><Trash2 data-icon="inline-start" />{t('settings.harnesses.codexAccount.removeAccount')}</Button>
+                  <Button variant="ghost" size="sm" className="h-7" disabled={blocked} onClick={() => onSignIn(account.id)}><LogIn data-icon="inline-start" />{t('common.signInAgain')}</Button>
+                </>}
               </div>}
             </li>
           ))}
         </ul>
       </SettingsCard>}
-      {!pending && <Button variant="outline" className="h-7 self-start" size="sm" disabled={blocked || loading} onClick={() => onSignIn()}>
+      {!pending && <Button variant="ghost" className="h-7 self-start" size="sm" disabled={blocked || loading} onClick={() => onSignIn()}>
         {busy ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <Plus data-icon="inline-start" />}
         {t('settings.harnesses.codexAccount.addAccount')}
       </Button>}

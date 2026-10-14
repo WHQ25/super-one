@@ -44,13 +44,13 @@ async function identityFor(credentialDir: string | null, fingerprint: string): P
   return identity
 }
 
-export async function getClaudeRateLimits(force = false, credentialDir: string | null = null): Promise<ClaudeRateLimits | null> {
+export async function getClaudeRateLimits(force = false, credentialDir: string | null = null, preferCached = false): Promise<ClaudeRateLimits | null> {
   try {
     const creds = loadClaudeCredentials(credentialDir, usageLog)
     if (!creds?.oauth.accessToken?.trim()) return null
     const identity = await identityFor(credentialDir, claudeCredentialFingerprint(creds))
     if (!identity) return null
-    const { value } = await readClaudeRateLimits(credentialDir, { force, log: usageLog })
+    const { value } = await readClaudeRateLimits(credentialDir, { force, preferCached, log: usageLog })
     if (!value) return null
     // Each upstream reading is sampled into the history once, however often the gauge polls.
     const previous = identity.decorated

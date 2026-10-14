@@ -199,13 +199,14 @@ interface AppAPI {
   codexGetAuthStatus(projectPath: string): Promise<CodexAuthStatus>
   codexListAccounts(projectPath: string): Promise<CodexAccount[]>
   codexSetDefaultAccount(projectPath: string, accountId: string): Promise<void>
+  codexRemoveAccount(projectPath: string, apiProviderId: string): Promise<void>
   codexGetAccountStatus(projectPath: string, apiProviderId?: string | null): Promise<CodexAccountStatus>
   codexStartAccountLogin(projectPath: string, accountId?: string): Promise<CodexManagedLoginStart>
   codexCancelAccountLogin(projectPath: string, loginId: string): Promise<void>
   codexLogoutAccount(projectPath: string, apiProviderId?: string | null): Promise<CodexAccountStatus>
-  codexGetRateLimits(projectPath: string, apiProviderId?: string | null): Promise<CodexRateLimits | null>
+  codexGetRateLimits(projectPath: string, apiProviderId?: string | null, force?: boolean, preferCached?: boolean): Promise<CodexRateLimits | null>
   codexListRealtimeVoices(projectPath?: string | null): Promise<CodexRealtimeVoiceCatalog>
-  codexGetAccountUsage(projectPath: string, apiProviderId?: string | null, threadId?: string | null): Promise<CodexAccountUsage | null>
+  codexGetAccountUsage(projectPath: string, apiProviderId?: string | null, threadId?: string | null, force?: boolean, preferCached?: boolean): Promise<CodexAccountUsage | null>
   codexGetServerDiagnostics(projectPath: string, apiProviderId?: string | null): Promise<CodexServerDiagnostics | null>
   codexGetConfigRequirements(projectPath: string, apiProviderId?: string | null): Promise<CodexConfigRequirements | null>
   codexConsumeRateLimitReset(projectPath: string, apiProviderId?: string | null, creditId?: string | null): Promise<CodexRateLimitResetOutcome | null>
@@ -213,7 +214,7 @@ interface AppAPI {
   codexDetectExternalAgentConfig(projectPath: string, apiProviderId?: string | null): Promise<CodexExternalAgentItem[]>
   codexImportExternalAgentConfig(projectPath: string, items: CodexExternalAgentItem[], apiProviderId?: string | null): Promise<CodexExternalAgentImportResult | null>
   /** `credentialDir` selects a signed-in account; omit it for the CLI's default login. */
-  claudeGetRateLimits(force?: boolean, credentialDir?: string | null): Promise<ClaudeRateLimits | null>
+  claudeGetRateLimits(force?: boolean, credentialDir?: string | null, preferCached?: boolean): Promise<ClaudeRateLimits | null>
   claudeListAccounts(force?: boolean): Promise<ClaudeAccount[]>
   /** Allocates a fresh credential domain, then drives `claude auth login` inside it. */
   claudeSignInAccount(email?: string | null, credentialDir?: string): Promise<ClaudeAccount | null>

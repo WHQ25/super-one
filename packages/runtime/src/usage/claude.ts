@@ -370,7 +370,7 @@ const throttle = new UsageThrottle<ClaudeRateLimits>(MIN_USAGE_FETCH_INTERVAL_MS
  * at most one upstream read per five minutes. A domain without an OAuth login that can
  * read the profile (API key, inference-only token) reads `{ value: null }` with no error.
  */
-export async function readClaudeRateLimits(credentialDir: string | null, opts: { force?: boolean; log?: UsageLog } = {}): Promise<UsageReading<ClaudeRateLimits>> {
+export async function readClaudeRateLimits(credentialDir: string | null, opts: { force?: boolean; preferCached?: boolean; log?: UsageLog } = {}): Promise<UsageReading<ClaudeRateLimits>> {
   const log = opts.log ?? silentLog
   const creds = loadClaudeCredentials(credentialDir, log)
   if (!creds?.oauth.accessToken?.trim() || !hasProfileScope(creds)) return { value: null }
@@ -392,5 +392,5 @@ export async function readClaudeRateLimits(credentialDir: string | null, opts: {
     const data = parseJson(await resp.text()) as ClaudeUsageResponse | null
     if (!data) return { fingerprint, error: 'Claude usage response changed.' }
     return { fingerprint, value: { ...parseClaudeUsage(data, claudePlanType(creds.oauth)), fetchedAt: Date.now() } }
-  })
+  }, opts.preferCached)
 }

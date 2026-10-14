@@ -22,6 +22,10 @@ import type {
 import type { CodexAppServerHandle } from './app-server-client'
 import { safePublicError } from './app-server-client'
 import { trackCodexSubscription } from './subscription-usage'
+import { readCachedCodexUsage, UsageThrottle, USAGE_POLL_MS } from './codex-usage-cache'
+
+const rateLimitThrottle = new UsageThrottle<CodexRateLimits | null>(USAGE_POLL_MS)
+const accountUsageThrottle = new UsageThrottle<CodexAccountUsage | null>(USAGE_POLL_MS)
 
 export type CodexAuthMode = 'auto' | 'chatgpt' | 'apiKey'
 
@@ -281,14 +285,14 @@ export function summarizeImportResults(raw: unknown): CodexExternalAgentImportRe
 export async function readRateLimits(
   client: Pick<CodexAppServerHandle, 'request'>,
   scope = 'cli',
+  force = false,
+  preferCached = false,
 ): Promise<CodexRateLimits | null> {
   try {
-    const [result, identity] = await Promise.all([
-      client.request('account/rateLimits/read'),
-      client.request('account/read', { refreshToken: false }).catch(() => null),
-    ])
-    const limits = parseRateLimits(result)
-    return limits ? trackCodexSubscription(limits, asRecord(identity?.account), scope) : null
+    return await readCachedCodexUsage(client, rateLimitThrottle, scope, force, async (account) => {
+      const limits = parseRateLimits(await client.request('account/rateLimits/read'))
+      return limits ? trackCodexSubscription(limits, account, scope) : null
+    }, preferCached)
   } catch (err) {
     throw safePublicError('account/rateLimits/read failed', err)
   }
@@ -341,12 +345,17 @@ export async function logoutAccount(client: CodexAppServerHandle): Promise<void>
 }
 
 export async function readAccountUsage(
-  client: CodexAppServerHandle,
+  client: Pick<CodexAppServerHandle, 'request'>,
   threadId?: string | null,
+  scope = 'cli',
+  force = false,
+  preferCached = false,
 ): Promise<CodexAccountUsage | null> {
   try {
-    const result = await client.request('account/usage/read', threadId ? { threadId } : {})
-    return parseAccountUsage(result)
+    return await readCachedCodexUsage(client, accountUsageThrottle, JSON.stringify([scope, threadId ?? null]), force, async () => {
+      const usage = parseAccountUsage(await client.request('account/usage/read', threadId ? { threadId } : {}))
+      return usage ? { ...usage, fetchedAt: Date.now() } : null
+    }, preferCached)
   } catch (err) {
     throw safePublicError('account/usage/read failed', err)
   }

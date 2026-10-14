@@ -41,14 +41,14 @@ export interface CodexAdminPort {
   getAuthStatus(projectId: string): CodexAuthStatus
   setAuth(projectId: string, request: CodexSetAuthRequest): CodexAuthStatus
   isBinaryReady(): boolean
-  accounts: { list(): Promise<CodexAccount[]>; setDefault(accountId: string): Promise<void> }
+  accounts: { list(): Promise<CodexAccount[]>; setDefault(accountId: string): Promise<void>; remove(providerId: string): Promise<void> }
   getAccountStatus(apiProviderId?: string | null): Promise<CodexAccountStatus>
   /** A device-code sign-in: the client shows the code and opens the URL. */
   startAccountLogin(projectId: string, accountId?: string): Promise<CodexManagedLoginStart>
   cancelAccountLogin(loginId: string): Promise<void>
   logoutAccount(apiProviderId?: string | null): Promise<CodexAccountStatus>
-  getRateLimits(projectId: string, apiProviderId: string | null): Promise<CodexRateLimits | null>
-  getAccountUsage(projectId: string, apiProviderId: string | null, threadId: string | null): Promise<CodexAccountUsage | null>
+  getRateLimits(projectId: string, apiProviderId: string | null, force?: boolean, preferCached?: boolean): Promise<CodexRateLimits | null>
+  getAccountUsage(projectId: string, apiProviderId: string | null, threadId: string | null, force?: boolean, preferCached?: boolean): Promise<CodexAccountUsage | null>
   getServerDiagnostics(projectId: string, apiProviderId: string | null): Promise<CodexServerDiagnostics | null>
   getConfigRequirements(projectId: string, apiProviderId: string | null): Promise<CodexConfigRequirements | null>
   consumeRateLimitReset(projectId: string, apiProviderId: string | null, creditId: string | null): Promise<CodexRateLimitResetOutcome | null>
@@ -182,6 +182,13 @@ const admin = OPERATION_SCOPES.adminNode
 
 const CODEX_METHODS: Readonly<Record<string, CodexMethod>> = {
   'codex.listAccounts': { scopes: read, project: 'known', run: (_p, codex) => codex.accounts.list() },
+  'codex.removeAccount': {
+    scopes: admin, project: 'known',
+    run: async (p, codex) => {
+      await codex.accounts.remove(required(p, 'apiProviderId'))
+      return { ok: true }
+    },
+  },
   'codex.setDefaultAccount': {
     scopes: admin, project: 'known',
     run: async (p, codex) => {
@@ -212,10 +219,10 @@ const CODEX_METHODS: Readonly<Record<string, CodexMethod>> = {
     },
   },
   'codex.accountLogout': { scopes: admin, project: 'known', run: (p, codex) => codex.logoutAccount(optionalString(p.apiProviderId) ?? undefined) },
-  'codex.getRateLimits': { scopes: read, project: 'known', binary: true, run: (p, codex, projectId) => codex.getRateLimits(projectId, provider(p)) },
+  'codex.getRateLimits': { scopes: read, project: 'known', binary: true, run: (p, codex, projectId) => codex.getRateLimits(projectId, provider(p), p.force === true, p.preferCached === true) },
   'codex.getAccountUsage': {
     scopes: read, project: 'known', binary: true,
-    run: (p, codex, projectId) => codex.getAccountUsage(projectId, provider(p), optionalString(p.threadId)),
+    run: (p, codex, projectId) => codex.getAccountUsage(projectId, provider(p), optionalString(p.threadId), p.force === true, p.preferCached === true),
   },
   'codex.getServerDiagnostics': { scopes: read, project: 'known', binary: true, run: (p, codex, projectId) => codex.getServerDiagnostics(projectId, provider(p)) },
   'codex.getConfigRequirements': { scopes: read, project: 'known', binary: true, run: (p, codex, projectId) => codex.getConfigRequirements(projectId, provider(p)) },

@@ -85,11 +85,14 @@ describe('readHarnessUsage', () => {
     expect(usage).toMatchObject({ kind: 'codex', title: 'Codex', account: 'c@x.io', planType: 'plus', resetCredits: 2 })
     expect(usage?.resetCreditList).toEqual(codexLimits.resetCreditList)
     expect(usage?.codexAccount).toMatchObject({ lifetimeTokens: 1_000, currentStreakDays: 3 })
-    expect(d.codexAccountUsage).toHaveBeenCalledWith('/p', null, 's1')
+    expect(d.codexAccountUsage).toHaveBeenCalledWith('/p', null, 's1', false)
     expect(usage?.windows).toEqual([
       { label: '5h', usedPercent: 30, resetsAt: 1_700_000_000 },
       { label: '7d', usedPercent: 5, resetsAt: null },
     ])
+    await readHarnessUsage({ provider: 'codex', projectPath: '/p', sessionId: 's1', force: true }, d)
+    expect(d.codexRateLimits).toHaveBeenLastCalledWith('/p', null, true)
+    expect(d.codexAccountUsage).toHaveBeenLastCalledWith('/p', null, 's1', true)
   })
 
   it('does not name the ChatGPT account for a Codex session billing a third-party key', async () => {

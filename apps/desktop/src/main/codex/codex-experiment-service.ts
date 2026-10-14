@@ -10,7 +10,7 @@ import {
   sanitizeDiscoveredByFamily,
   type ProtocolFamily,
 } from '@superone/shared/platform-registry'
-import { parseAccountUsage, readRateLimits, readCodexConfigRequirements, readCodexServerDiagnostics } from '@superone/codex'
+import { readAccountUsage, readRateLimits, readCodexConfigRequirements, readCodexServerDiagnostics } from '@superone/codex'
 import {
   buildCodexAccountEnv,
   buildCodexProviderCliOverridesFor,
@@ -704,14 +704,14 @@ export class CodexExperimentService {
     return this.withAppServerRequest(projectPath, listCodexRealtimeVoices)
   }
 
-  async getRateLimits(projectPath: string, apiProviderId: string | null = null): Promise<CodexRateLimits | null> {
+  async getRateLimits(projectPath: string, apiProviderId: string | null = null, force = false, preferCached = false): Promise<CodexRateLimits | null> {
     if (apiProviderId == null && !resolveChatService('codex')) apiProviderId = codexAccountStore().defaultProviderId()
     const auth = this.getProjectAuth(projectPath, apiProviderId)
     if (resolveMode(auth.mode, auth.apiKey) !== 'chatgpt') return null
     if (getCodexProviderOverrideFor(apiProviderId)) return null
     try {
       return await this.withAppServerConnection(projectPath, auth, undefined, async (connection) => {
-        return readRateLimits(connection, auth.accountId ?? 'cli')
+        return readRateLimits(connection, auth.accountId ?? 'cli', force, preferCached)
       }, apiProviderId)
     } catch (error) {
       log.info('[codex] getRateLimits failed project=%s: %s', projectPath, error instanceof Error ? error.message : String(error))
@@ -826,15 +826,14 @@ export class CodexExperimentService {
     }
   }
 
-  async getAccountUsage(projectPath: string, apiProviderId: string | null = null, threadId?: string | null): Promise<CodexAccountUsage | null> {
+  async getAccountUsage(projectPath: string, apiProviderId: string | null = null, threadId?: string | null, force = false, preferCached = false): Promise<CodexAccountUsage | null> {
     if (apiProviderId == null && !resolveChatService('codex')) apiProviderId = codexAccountStore().defaultProviderId()
     const auth = this.getProjectAuth(projectPath, apiProviderId)
     if (resolveMode(auth.mode, auth.apiKey) !== 'chatgpt') return null
     if (getCodexProviderOverrideFor(apiProviderId)) return null
     try {
       return await this.withAppServerConnection(projectPath, auth, undefined, async (connection) => {
-        const result = await connection.request('account/usage/read', threadId ? { threadId } : {})
-        return parseAccountUsage(result)
+        return readAccountUsage(connection, threadId, auth.accountId ?? 'cli', force, preferCached)
       }, apiProviderId)
     } catch (error) {
       log.info('[codex] getAccountUsage failed project=%s: %s', projectPath, error instanceof Error ? error.message : String(error))

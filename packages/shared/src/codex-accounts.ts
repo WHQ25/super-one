@@ -44,4 +44,5 @@ export function assertCodexAccountSwitchAllowed(
 export const CodexAccountIpcChannels = {
   LIST: 'codex:list-accounts',
   SET_DEFAULT: 'codex:set-default-account',
+  REMOVE: 'codex:remove-account',
 } as const

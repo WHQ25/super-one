@@ -18,7 +18,7 @@ import { getClaudeRateLimits } from './claude-usage-service'
 let dir: string
 const start = Date.UTC(2026, 8, 30)
 function credentials(token: string) {
-  writeFileSync(join(dir, '.credentials.json'), JSON.stringify({ claudeAiOauth: { accessToken: token, scopes: ['user:profile'], subscriptionType: 'max' } }))
+  writeFileSync(join(dir, '.credentials.json'), JSON.stringify({ claudeAiOauth: { accessToken: `${token}-${dir}`, scopes: ['user:profile'], subscriptionType: 'max' } }))
 }
 beforeEach(() => {
   vi.useFakeTimers()
@@ -33,6 +33,20 @@ beforeEach(() => {
 afterEach(() => { rmSync(dir, { recursive: true, force: true }); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.useRealTimers() })
 
 describe('Claude subscription sampling at the source', () => {
+  it('returns the cached reading when a Provider page opens after the automatic interval', async () => {
+    const fetch = vi.fn(async (url: string) => new Response(JSON.stringify(url.endsWith('/profile')
+      ? { account: { uuid: auth.email, email: auth.email }, organization: { uuid: 'org-test' } }
+      : { five_hour: { utilization: 25 } })))
+    vi.stubGlobal('fetch', fetch)
+    const first = await getClaudeRateLimits(false, null, true)
+    vi.setSystemTime(start + 10 * 60_000)
+    const reads = fetch.mock.calls.filter(([url]) => url.endsWith('/usage')).length
+    expect(await getClaudeRateLimits(false, null, true)).toEqual(first)
+    expect(fetch.mock.calls.filter(([url]) => url.endsWith('/usage'))).toHaveLength(reads)
+    await getClaudeRateLimits(true, null)
+    expect(fetch.mock.calls.filter(([url]) => url.endsWith('/usage'))).toHaveLength(reads + 1)
+  })
+
   it('ignores cached polls and failed requests, then discards the cached account after another login', async () => {
     let used = 70
     const fetch = vi.fn(async (url: string) => new Response(JSON.stringify(url.endsWith('/profile') ? { account: { uuid: auth.email, email: auth.email }, organization: { uuid: 'org-test' } } : { seven_day: { utilization: used, resets_at: new Date(start + 86400_000).toISOString() } })))

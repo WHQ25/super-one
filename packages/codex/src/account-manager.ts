@@ -157,6 +157,19 @@ export class CodexAccountManager {
     this.store.setDefault(id)
   }
 
+  async remove(providerId: string): Promise<void> {
+    const id = codexAccountId(providerId)
+    if (!id) throw new Error('Expected a Codex account')
+    if (this.store.list().some((a) => a.id === id && a.signedIn)) throw new Error('Sign out before removing this Codex account.')
+    this.revisions.set(id, (this.revisions.get(id) ?? 0) + 1)
+    for (const [loginId, pending] of this.pending) {
+      if (pending.accountId === id) await this.cancel(loginId)
+    }
+    this.store.remove(id)
+    this.failed.delete(id)
+    this.changed(providerId)
+  }
+
   dispose(): void {
     for (const [id] of this.pending) void this.cancel(id).catch(() => {})
   }

@@ -250,11 +250,14 @@ export const Interactive: Story = {
   render: () => <Playground />,
 }
 
-function CodexAccountUsagePreview() {
+function CodexAccountUsagePreview({ stale = false }: { stale?: boolean }) {
   const [ready, setReady] = useState(false)
   useEffect(() => {
-    mockIpc('app', 'codexGetRateLimits', async () => ({
+    const fetchedAt = Date.now() - (stale ? 10 * 60_000 : 0)
+    mockIpc('app', 'codexGetRateLimits', async (_path, _provider, force) => ({
       planType: 'plus',
+      fetchedAt: force ? Date.now() : fetchedAt,
+      ...(stale && !force ? { error: 'Network unavailable; showing the last reading.' } : {}),
       primary: { usedPercent: 28, windowDurationMins: 300, resetsAt: Math.floor(Date.now() / 1000) + 3 * 3600 },
       secondary: { usedPercent: 41, windowDurationMins: 10080, resetsAt: Math.floor(Date.now() / 1000) + 4 * 86400 },
     }))
@@ -268,11 +271,12 @@ function CodexAccountUsagePreview() {
     } }
     useChatStore.setState({ activeProject: SB_PROJECT, projectSessions: { [SB_PROJECT]: project } })
     setReady(true)
-  }, [])
+  }, [stale])
   return <div className="flex h-screen overflow-hidden"><SidebarPreview>{ready && <UsageStatusIcon />}</SidebarPreview></div>
 }
 
 export const CodexAccountUsage: Story = { render: () => <CodexAccountUsagePreview /> }
+export const CodexStaleUsage: Story = { render: () => <CodexAccountUsagePreview stale /> }
 
 function GrokCreditsPreview() {
   const [ready, setReady] = useState(false)

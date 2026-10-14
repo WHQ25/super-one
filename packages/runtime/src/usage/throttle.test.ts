@@ -30,4 +30,15 @@ describe('UsageThrottle', () => {
     await throttle.read('k', 'alice', false, async () => ({ value: 1 }))
     expect(await throttle.read('k', 'bob', false, async () => ({ error: 'offline' }))).toEqual({ value: null, error: 'offline' })
   })
+
+  it('uses an older cached reading on page open, fetches a missing reading once and still permits manual refresh', async () => {
+    const throttle = new UsageThrottle<number>(60_000)
+    const fetch = vi.fn(async () => ({ value: fetch.mock.calls.length }))
+    expect(await throttle.read('page', 'alice', false, fetch, true)).toEqual({ value: 1 })
+    vi.setSystemTime(600_000)
+    expect(await throttle.read('page', 'alice', false, fetch, true)).toEqual({ value: 1 })
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(await throttle.read('page', 'alice', true, fetch, true)).toEqual({ value: 2 })
+    expect(await throttle.read('page', 'bob', false, fetch, true)).toEqual({ value: 3 })
+  })
 })

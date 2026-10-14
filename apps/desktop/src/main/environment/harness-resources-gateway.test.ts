@@ -285,7 +285,7 @@ describe('remote-resources codex admin helpers', () => {
     expect(codexSetAuth).toHaveBeenCalledWith('proj-1', { mode: 'apiKey', apiKey: 'sk-test' })
 
     await remoteCodexGetRateLimits(host, folder, null)
-    expect(codexGetRateLimits).toHaveBeenCalledWith('proj-1', null)
+    expect(codexGetRateLimits).toHaveBeenCalledWith('proj-1', null, false, false)
 
     await remoteCodexPluginsList(host, folder)
     expect(codexPluginsList).toHaveBeenCalledWith('proj-1', undefined)

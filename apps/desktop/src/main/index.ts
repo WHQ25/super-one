@@ -7,6 +7,7 @@ import { initializeMcpAppExecutor, observeRemoteMcpAppEvent, releaseMcpAppReques
 import { codexAccountStore } from './codex/codex-account-store'
 import { registerGrokAuthIpc } from './acp/grok-auth-ipc'
 import { registerCodexAccountIpc } from './codex/codex-account-ipc'
+import { registerCodexUsageIpc } from './codex/codex-usage-ipc'
 import { superoneHome } from './superone-home'
 import { registerCollaborationMailboxIpc } from './session/collaboration-mailbox-ipc'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nativeTheme, net, powerMonitor, protocol, screen, session, shell, systemPreferences, webContents } from 'electron'
@@ -2460,12 +2461,12 @@ function registerIpcHandlers(): void {
       providerRateLimits: getProviderRateLimits,
       // Same routing as the CODEX_GET_RATE_LIMITS / CODEX_GET_ACCOUNT_STATUS IPC: a remote
       // project's Codex lives on the node, so its meter is read over the node RPC.
-      codexRateLimits: async (projectPath, apiProviderId) => {
+      codexRateLimits: async (projectPath, apiProviderId, force) => {
         if (parseRemoteProjectKey(projectPath)) {
           const { getEnvironmentHost, remoteCodexGetRateLimits } = await import('./environment')
-          return (await remoteCodexGetRateLimits(getEnvironmentHost(), projectPath, apiProviderId)) as CodexRateLimits | null
+          return (await remoteCodexGetRateLimits(getEnvironmentHost(), projectPath, apiProviderId, force)) as CodexRateLimits | null
         }
-        return codexService.getRateLimits(projectPath, apiProviderId)
+        return codexService.getRateLimits(projectPath, apiProviderId, force)
       },
       codexAccount: async (projectPath, apiProviderId) => {
         if (parseRemoteProjectKey(projectPath)) {
@@ -2474,14 +2475,14 @@ function registerIpcHandlers(): void {
         }
         return codexService.getAccountStatus(apiProviderId)
       },
-      codexAccountUsage: async (projectPath, apiProviderId, sessionId) => {
+      codexAccountUsage: async (projectPath, apiProviderId, sessionId, force) => {
         // A Codex session's provider id is its thread id; that is what scopes the thread estimate.
         const threadId = (sessionId ? sessionManager.getSession(sessionId)?.snapshot.providerSessionId : null) ?? null
         if (parseRemoteProjectKey(projectPath)) {
           const { getEnvironmentHost, remoteCodexGetAccountUsage } = await import('./environment')
-          return (await remoteCodexGetAccountUsage(getEnvironmentHost(), projectPath, apiProviderId, threadId)) as CodexAccountUsage | null
+          return (await remoteCodexGetAccountUsage(getEnvironmentHost(), projectPath, apiProviderId, threadId, force)) as CodexAccountUsage | null
         }
-        return codexService.getAccountUsage(projectPath, apiProviderId, threadId)
+        return codexService.getAccountUsage(projectPath, apiProviderId, threadId, force)
       },
       acpRateLimits: async (agentId, _request, force) => {
         const { getAcpRateLimits } = await import('./acp/acp-usage-service')
@@ -2583,29 +2584,14 @@ function registerIpcHandlers(): void {
   })
 
   registerCodexAccountIpc(codexService)
+  registerCodexUsageIpc(codexService)
   registerGrokAuthIpc()
-
-  ipcMain.handle(AgentIpcChannels.CODEX_GET_RATE_LIMITS, async (_event, projectPath: string, apiProviderId?: string | null) => {
-    if (parseRemoteProjectKey(projectPath)) {
-      const { getEnvironmentHost, remoteCodexGetRateLimits } = await import('./environment')
-      return remoteCodexGetRateLimits(getEnvironmentHost(), projectPath, apiProviderId ?? null)
-    }
-    return codexService.getRateLimits(projectPath, apiProviderId ?? null)
-  })
 
   ipcMain.handle(AgentIpcChannels.CODEX_LIST_REALTIME_VOICES, async (_event, projectPath?: string | null) => {
     const localProjectPath = projectPath && !parseRemoteProjectKey(projectPath)
       ? projectPath
       : app.getPath('userData')
     return codexService.listRealtimeVoices(localProjectPath)
-  })
-
-  ipcMain.handle(AgentIpcChannels.CODEX_GET_ACCOUNT_USAGE, async (_event, projectPath: string, apiProviderId?: string | null, threadId?: string | null) => {
-    if (parseRemoteProjectKey(projectPath)) {
-      const { getEnvironmentHost, remoteCodexGetAccountUsage } = await import('./environment')
-      return remoteCodexGetAccountUsage(getEnvironmentHost(), projectPath, apiProviderId ?? null, threadId ?? null)
-    }
-    return codexService.getAccountUsage(projectPath, apiProviderId ?? null, threadId ?? null)
   })
 
   ipcMain.handle(AgentIpcChannels.CODEX_GET_SERVER_DIAGNOSTICS, async (_event, projectPath: string, apiProviderId?: string | null) => {
@@ -2694,9 +2680,9 @@ function registerIpcHandlers(): void {
     return codexService.importExternalAgentConfig(projectPath, items, apiProviderId ?? null)
   })
 
-  ipcMain.handle(AgentIpcChannels.CLAUDE_GET_RATE_LIMITS, (_event, force?: boolean, credentialDir?: string | null) => {
+  ipcMain.handle(AgentIpcChannels.CLAUDE_GET_RATE_LIMITS, (_event, force?: boolean, credentialDir?: string | null, preferCached = false) => {
     if (credentialDir) claudeAccountStore().assertManaged(credentialDir)
-    return getClaudeRateLimits(force ?? false, credentialDir ?? null)
+    return getClaudeRateLimits(force ?? false, credentialDir ?? null, preferCached)
   })
 
   registerClaudeAccountIpc()

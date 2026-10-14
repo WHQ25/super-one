@@ -38,10 +38,10 @@ export interface HarnessUsageDeps {
   claudeRateLimits: (force: boolean, credentialDir: string | null) => Promise<ClaudeRateLimits | null>
   claudeAccounts: () => Promise<ClaudeAccount[]>
   providerRateLimits: (apiProviderId: string, force: boolean) => Promise<ProviderRateLimits | null>
-  codexRateLimits: (projectPath: string, apiProviderId: string | null) => Promise<CodexRateLimits | null>
+  codexRateLimits: (projectPath: string, apiProviderId: string | null, force: boolean) => Promise<CodexRateLimits | null>
   codexAccount: (projectPath: string, apiProviderId: string | null) => Promise<CodexAccountStatus | null>
   /** Lifetime stats plus the thread estimate for the session named in the request, when it has one. */
-  codexAccountUsage: (projectPath: string, apiProviderId: string | null, sessionId: string | null) => Promise<CodexAccountUsage | null>
+  codexAccountUsage: (projectPath: string, apiProviderId: string | null, sessionId: string | null, force: boolean) => Promise<CodexAccountUsage | null>
   acpRateLimits: (agentId: string, request: HarnessUsageRequest, force: boolean) => Promise<ProviderRateLimits | null>
 }
 
@@ -72,14 +72,14 @@ export async function readHarnessUsage(request: HarnessUsageRequest, deps: Harne
   const force = request.force ?? false
 
   if (provider === 'codex') {
-    const limits = await deps.codexRateLimits(projectPath, apiProviderId)
+    const limits = await deps.codexRateLimits(projectPath, apiProviderId, force)
     if (!limits) return null
     // Only the ChatGPT sign-in owns the meter; a third-party key bills elsewhere.
     const [account, codexAccount] = await Promise.all([
       !apiProviderId || isCodexAccountProvider(apiProviderId)
         ? deps.codexAccount(projectPath, apiProviderId).catch(() => null)
         : null,
-      deps.codexAccountUsage(projectPath, apiProviderId, request.sessionId ?? null).catch(() => null),
+      deps.codexAccountUsage(projectPath, apiProviderId, request.sessionId ?? null, force).catch(() => null),
     ])
     return fromCodex(limits, account, codexAccount)
   }

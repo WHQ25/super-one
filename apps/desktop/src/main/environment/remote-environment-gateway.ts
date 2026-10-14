@@ -1056,6 +1056,10 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     return this.client.rpc('codex.listAccounts', { projectId })
   }
 
+  async codexRemoveAccount(projectId: string, apiProviderId: string): Promise<unknown> {
+    return this.client.rpc('codex.removeAccount', { projectId, apiProviderId })
+  }
+
   async codexSetDefaultAccount(projectId: string, accountId: string): Promise<unknown> {
     return this.client.rpc('codex.setDefaultAccount', { projectId, accountId })
   }
@@ -1079,10 +1083,14 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
   async codexGetRateLimits(
     projectId: string,
     apiProviderId?: string | null,
+    force = false,
+    preferCached = false,
   ): Promise<unknown> {
     return this.client.rpc('codex.getRateLimits', {
       projectId,
       apiProviderId: apiProviderId ?? null,
+      ...(force ? { force: true } : {}),
+      ...(preferCached ? { preferCached: true } : {}),
     })
   }
 
@@ -1090,11 +1098,15 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     projectId: string,
     apiProviderId?: string | null,
     threadId?: string | null,
+    force = false,
+    preferCached = false,
   ): Promise<unknown> {
     return this.client.rpc('codex.getAccountUsage', {
       projectId,
       apiProviderId: apiProviderId ?? null,
       threadId: threadId ?? null,
+      ...(force ? { force: true } : {}),
+      ...(preferCached ? { preferCached: true } : {}),
     })
   }
 

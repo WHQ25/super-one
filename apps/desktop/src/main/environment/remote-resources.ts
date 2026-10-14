@@ -543,10 +543,12 @@ export async function remoteCodexGetRateLimits(
   host: EnvironmentHost,
   folderPath: string,
   apiProviderId?: string | null,
+  force = false,
+  preferCached = false,
 ): Promise<unknown | null> {
   const pair = await withRemoteCodexGw(host, folderPath)
   if (!pair) return null
-  return pair.gw.codexGetRateLimits(pair.ctx.projectId, apiProviderId)
+  return pair.gw.codexGetRateLimits(pair.ctx.projectId, apiProviderId, force, preferCached)
 }
 
 export async function remoteCodexGetAccountUsage(
@@ -554,10 +556,12 @@ export async function remoteCodexGetAccountUsage(
   folderPath: string,
   apiProviderId?: string | null,
   threadId?: string | null,
+  force = false,
+  preferCached = false,
 ): Promise<unknown | null> {
   const pair = await withRemoteCodexGw(host, folderPath)
   if (!pair) return null
-  return pair.gw.codexGetAccountUsage(pair.ctx.projectId, apiProviderId, threadId)
+  return pair.gw.codexGetAccountUsage(pair.ctx.projectId, apiProviderId, threadId, force, preferCached)
 }
 
 export async function remoteCodexGetServerDiagnostics(
@@ -745,4 +749,9 @@ export async function remoteCodexListAccounts(host: EnvironmentHost, folderPath:
 export async function remoteCodexSetDefaultAccount(host: EnvironmentHost, folderPath: string, accountId: string): Promise<unknown | null> {
   const pair = await withRemoteCodexGw(host, folderPath)
   return pair ? pair.gw.codexSetDefaultAccount(pair.ctx.projectId, accountId) : null
+}
+
+export async function remoteCodexRemoveAccount(host: EnvironmentHost, folderPath: string, apiProviderId: string): Promise<unknown | null> {
+  const pair = await withRemoteCodexGw(host, folderPath)
+  return pair ? pair.gw.codexRemoveAccount(pair.ctx.projectId, apiProviderId) : null
 }

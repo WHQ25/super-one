@@ -23,7 +23,7 @@ export * from './grok'
 export * from './opencode'
 export { fetchWithTimeout, silentLog, type UsageLog } from './http'
 export type { OpenReadOnlyDatabase, ReadOnlyDatabase } from './sqlite-reader'
-export type { UsageReading } from './throttle'
+export { UsageThrottle, type UsageReading } from './throttle'
 
 /** A Claude login to read: `credentialDir` null is the CLI's default login. */
 export interface ClaudeUsageAccount {

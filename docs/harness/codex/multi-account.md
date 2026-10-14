@@ -31,6 +31,11 @@ their original authentication resolution.
 ## UI
 
 Settings exposes account status, Add Account, Sign In, Sign Out and Set as Default.
+Signed-out profiles keep a Sign In action and can be removed from the account
+registry. Removal retains local history and profile files, cancels pending login
+work, and fences older status responses so they cannot restore the removed card.
+Signed-in profiles must be signed out first. Removal never changes another
+account's credentials or redirects existing conversation bindings.
 The Codex model/provider selector lists account emails and plans. The desktop and
 remote node use separate registries. English and Chinese strings are included.
 Storybook `Settings/Codex Accounts` covers loading, empty, unavailable/error,

@@ -98,4 +98,39 @@ describe('Codex login and account isolation', () => {
     expect((await manager.list()).find((a) => a.id === abandoned.accountId)).toMatchObject({ signedIn: true, email: 'b@example.test' })
     expect((await manager.list()).find((a) => a.id === abandoned.accountId)?.loginState).toBeUndefined()
   })
+
+  it('removes a signed-out profile without touching another account and keeps it removed after listing accounts', async () => {
+    const { manager, store, complete, changed } = fixture()
+    const a = await manager.start('chatgpt')
+    await complete(a.loginId, 'remove-a@example.test')
+    const b = await manager.start('chatgpt')
+    await complete(b.loginId, 'keep-b@example.test')
+    await expect(manager.remove(codexAccountProviderId(a.accountId))).rejects.toThrow(/Sign out/)
+    await manager.logout(codexAccountProviderId(a.accountId))
+    const profile = store.home(a.accountId)
+    changed.mockClear()
+    await manager.remove(codexAccountProviderId(a.accountId))
+    expect(store.list().map((a) => a.id)).toEqual([b.accountId])
+    expect(store.defaultProviderId()).toBe(codexAccountProviderId(b.accountId))
+    expect(changed).toHaveBeenCalledWith(codexAccountProviderId(a.accountId))
+    expect((await import('node:fs')).existsSync(profile)).toBe(true)
+    expect((await manager.list()).map((a) => a.id)).toEqual([b.accountId])
+  })
+
+  it('does not let a delayed status response restore a removed profile', async () => {
+    const { store } = fixture()
+    const id = store.allocate()
+    let finish!: (value: Record<string, unknown>) => void
+    const manager = new CodexAccountManager(store, async () => ({
+      request: async () => new Promise((resolve) => { finish = resolve }),
+      nextNotification: async () => null, close: async () => {},
+    }))
+    managers.push(manager)
+    const pending = manager.status(codexAccountProviderId(id))
+    await vi.waitFor(() => expect(finish).toBeDefined())
+    await manager.remove(codexAccountProviderId(id))
+    finish({ account: null, requiresOpenaiAuth: true })
+    await pending
+    expect(store.list()).toEqual([])
+  })
 })

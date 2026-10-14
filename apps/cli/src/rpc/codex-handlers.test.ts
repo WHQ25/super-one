@@ -9,6 +9,8 @@ import type { ChildProcessWithoutNullStreams } from 'node:child_process'
 import { dispatchCodexRpc, type CodexRpcContext } from './codex-handlers'
 import { clearCodexAdminAuthForTest } from '../session/codex-admin-service'
 import type { CodexSpawnFn } from '@superone/codex'
+import { nodeCodexAccountStore } from '../session/codex-accounts'
+import { codexAccountProviderId } from '@superone/shared/codex-accounts'
 
 function fakeClient(scopes: string[] = ['environment:read', 'workspace:read', 'node:admin']) {
   return {
@@ -122,6 +124,22 @@ describe('dispatchCodexRpc', () => {
     rmSync(dir, { recursive: true, force: true })
   })
 
+  it('requires admin scope to remove a signed-out card and needs no binary or logout request', async () => {
+    const store = nodeCodexAccountStore(dir)
+    const removed = store.allocate()
+    const kept = store.allocate()
+    const ctx: CodexRpcContext = {
+      nodeHome: dir, client: fakeClient(['environment:read']), projects: fakeProjects(dir),
+      harnesses: fakeHarnesses(null), providers: null as never,
+    }
+    const params = { projectId: 'p1', apiProviderId: codexAccountProviderId(removed) }
+    expect((await dispatchCodexRpc('codex.removeAccount', params, ctx))?.error).toBeDefined()
+    expect(store.list()).toHaveLength(2)
+    ctx.client = fakeClient(['environment:read', 'node:admin'])
+    expect((await dispatchCodexRpc('codex.removeAccount', params, ctx))?.result).toEqual({ ok: true })
+    expect(store.list().map((a) => a.id)).toEqual([kept])
+  })
+
   it('codex.getAuthStatus returns default auto status without binary', async () => {
     const ctx: CodexRpcContext = {
       nodeHome: dir,
@@ -224,6 +242,29 @@ describe('dispatchCodexRpc', () => {
       lifetimeTokens: 42,
       peakDailyTokens: 7,
     })
+  })
+
+  it('shares automatic usage readings and forwards manual refresh through the node RPC', async () => {
+    const fetchLimits = vi.fn(() => ({ rateLimits: { primary: { usedPercent: 25, windowDurationMins: 300, resetsAt: null } } }))
+    const spawnFn: CodexSpawnFn = vi.fn(() => {
+      const child = createFakeChild()
+      attachAutoResponder(child, {
+        'account/read': () => ({ account: { type: 'chatgpt', email: 'rpc-refresh@example.test', planType: 'plus' } }),
+        'account/rateLimits/read': fetchLimits,
+      })
+      return child as unknown as ChildProcessWithoutNullStreams
+    })
+    const ctx: CodexRpcContext = {
+      nodeHome: dir, client: fakeClient(['environment:read', 'node:admin']), projects: fakeProjects(dir),
+      harnesses: fakeHarnesses(bin), providers: null as never, spawnFn,
+    }
+    await dispatchCodexRpc('codex.setAuth', { projectId: 'p1', mode: 'chatgpt' }, ctx)
+    for (const force of [false, false, true]) {
+      const result = await dispatchCodexRpc('codex.getRateLimits', { projectId: 'p1', force }, ctx)
+      expect(result?.error).toBeUndefined()
+      expect(result?.result).toMatchObject({ primary: { usedPercent: 25 } })
+    }
+    expect(fetchLimits).toHaveBeenCalledTimes(2)
   })
 
   it('codex.getServerDiagnostics exposes app-server process gauges', async () => {

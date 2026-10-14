@@ -15,7 +15,7 @@ const meta = {
   args: { accounts, meters: {
     [accounts[0]!.id]: { limits: { primary: { usedPercent: 23, windowDurationMins: 300, resetsAt: null }, secondary: { usedPercent: 48, windowDurationMins: 10080, resetsAt: null }, planType: 'plus', resetCredits: null }, usage: { lifetimeTokens: 12500000, peakDailyTokens: 850000, currentStreakDays: 12, longestStreakDays: null, longestRunningTurnSec: null } },
     [accounts[1]!.id]: { limits: { primary: { usedPercent: 94, windowDurationMins: 300, resetsAt: null }, secondary: { usedPercent: 72, windowDurationMins: 10080, resetsAt: null }, planType: 'pro', resetCredits: null } },
-  }, onRefresh: noop, onSignIn: noop, onSignOut: noop, onSetDefault: noop, onCancel: noop, onOpenLogin: noop, onCopyCode: noop },
+  }, onRefresh: noop, onRefreshUsage: noop, onRemove: noop, onSignIn: noop, onSignOut: noop, onSetDefault: noop, onCancel: noop, onOpenLogin: noop, onCopyCode: noop },
 } satisfies Meta<typeof CodexAccountsPanel>
 export default meta
 type Story = StoryObj<typeof meta>
@@ -37,11 +37,16 @@ function InteractivePanel(props: CodexAccountsPanelProps) {
   return <CodexAccountsPanel {...props} accounts={rows}
     onSetDefault={(id) => setRows((rows) => rows.map((a) => ({ ...a, isDefault: a.id === id })))}
     onSignOut={(id) => setRows((rows) => rows.map((a) => a.id === id ? { ...a, signedIn: false, isDefault: false } : a))}
+    onRemove={(id) => setRows((rows) => rows.filter((a) => a.id !== id))}
     onSignIn={(id) => setRows((rows) => id ? rows.map((a) => a.id === id ? { ...a, signedIn: true } : a) : [...rows, { ...accounts[0]!, id: `account-${rows.length}`, isDefault: rows.length === 0, email: `new-${rows.length}@example.com` }])}
   />
 }
 export const ChangeDefault: Story = { render: (args) => <InteractivePanel {...args} /> }
+export const RemoveSignedOut: Story = { args: { accounts: [{ ...accounts[0]!, signedIn: false, isDefault: false }, accounts[1]!] }, render: (args) => <InteractivePanel {...args} /> }
 
 export const UsageLoading: Story = { args: { meters: { [accounts[0]!.id]: { loading: true }, [accounts[1]!.id]: { loading: true } } } }
 export const UsageUnavailable: Story = { args: { meters: { [accounts[0]!.id]: { error: true } } } }
+export const TokenStatisticsOnly: Story = { args: { meters: { [accounts[0]!.id]: { usage: { lifetimeTokens: 12500000, peakDailyTokens: null, currentStreakDays: null, longestStreakDays: null, longestRunningTurnSec: null } } } } }
+export const RefreshingUsage: Story = { args: { meters: { ...meta.args.meters, [accounts[0]!.id]: { ...meta.args.meters[accounts[0]!.id], loading: true } } } }
+export const StaleUsage: Story = { args: { meters: { [accounts[0]!.id]: { ...meta.args.meters[accounts[0]!.id], error: true } } } }
 export const AccountUnavailable: Story = { args: { accounts: [{ ...accounts[0]!, unavailable: true }] } }

@@ -14,7 +14,20 @@ identities include the organization; Codex identities include the credential
 profile. Opaque keys, never credentials, cross the UI/remote boundary.
 
 - Active turns and an open desktop usage popover refresh every five minutes.
-  Starting/finishing turns and manual refreshes continue to fetch readings.
+  Starting/finishing turns also request readings. Claude and Codex coalesce
+  concurrent upstream reads and reuse each account's reading for five minutes;
+  failed attempts are throttled too. Codex thread statistics have a separate
+  cache per account/thread, while changing threads retains the account quota.
+- Manual refresh bypasses the normal cache interval, but never a 429 backoff.
+  Codex App Server HTTP 429 errors use a five-minute backoff because the RPC
+  does not expose response headers. Sidebar and Provider settings use the same
+  host cache on local desktops and remote nodes. Refresh failures preserve the
+  last successful data and timestamp; Codex shows a failure hint alongside it.
+- Opening the Claude or ChatGPT account page prefers the host's cached usage,
+  even after the automatic interval expires. A profile with no cached reading
+  fetches once, subject to the existing failure throttle and 429 backoff. Each
+  account card has its own manual usage refresh; refreshing account status does
+  not force usage reads for every account.
 - With a known duration and future reset, positive consumption is divided by
   elapsed time since cycle start (reset minus duration). Remaining quota divided
   by that rate gives the projected time to exhaustion. No recent-rate estimator

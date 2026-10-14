@@ -12,7 +12,7 @@ export interface CodexAccountMeters {
 
 export function CodexAccountMeters({ loading, limits, usage, error }: CodexAccountMeters) {
   const { t } = useTranslation()
-  if (loading) return <div aria-label={t('usageGauge.updating')} className="flex flex-col gap-2"><Skeleton className="h-4 w-full" /><Skeleton className="h-4 w-2/3" /></div>
+  if (loading && !limits && !usage) return <div aria-label={t('usageGauge.updating')} className="flex flex-col gap-2"><Skeleton className="h-4 w-full" /><Skeleton className="h-4 w-2/3" /></div>
   return <div className="flex flex-col gap-3">
     {limits?.primary && <WindowBar label={formatWindowLabel(limits.primary.windowDurationMins, t)} {...limits.primary} />}
     {limits?.secondary && <WindowBar label={formatWindowLabel(limits.secondary.windowDurationMins, t)} {...limits.secondary} />}
@@ -21,6 +21,7 @@ export function CodexAccountMeters({ loading, limits, usage, error }: CodexAccou
       {usage.peakDailyTokens != null && <InfoRow label={t('usageGauge.peakDaily')} value={formatTokens(usage.peakDailyTokens)} />}
       {usage.currentStreakDays != null && <InfoRow label={t('usageGauge.streak')} value={`${usage.currentStreakDays}d`} />}
     </div>}
-    {(error || (!limits && !usage)) && <p className="text-xs text-muted-foreground" role="status">{t('settings.harnesses.codexAccount.usageUnavailable')}</p>}
+    {loading && <p className="text-xs text-muted-foreground" role="status">{t('usageGauge.updating')}</p>}
+    {!loading && (error || limits?.error || usage?.error || !limits) && <p className="text-xs text-muted-foreground" role="status">{t('settings.harnesses.codexAccount.usageUnavailable')}</p>}
   </div>
 }

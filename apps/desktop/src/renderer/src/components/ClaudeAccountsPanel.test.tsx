@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { fireEvent, render, screen, waitFor, act } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, act, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { claudeAccountProviderId, type ClaudeAccount } from '@superone/shared/agent-types'
 import { ClaudeAuthSettings } from './ClaudeAccountsPanel'
@@ -35,11 +35,11 @@ describe('Claude account cards and selection updates', () => {
     render(<ClaudeAuthSettings />)
     await screen.findByText('b@example.test')
     fireEvent.click(screen.getAllByRole('button', { name: /sign out/i })[1]!)
-    const signIn = await screen.findByRole('button', { name: /sign in with claude/i })
+    const signIn = await screen.findByRole('button', { name: /sign in again/i })
     expect(screen.getByText('b@example.test')).toBeInTheDocument()
     fireEvent.click(signIn)
     await waitFor(() => expect(window.app.claudeSignInAccount).toHaveBeenCalledWith(undefined, b.credentialDir))
-    await waitFor(() => expect(screen.queryByRole('button', { name: /sign in with claude/i })).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByRole('button', { name: /sign in again/i })).not.toBeInTheDocument())
   })
   it('discards a stale meter response after a newer refresh has completed', async () => {
     let finish!: (value: unknown) => void
@@ -50,5 +50,19 @@ describe('Claude account cards and selection updates', () => {
     await screen.findByText(/80%/)
     await act(async () => { finish({ windows: [{ label: '5-hour', usedPercent: 99, resetsAt: null }], extraUsage: null, planType: 'max' }) })
     expect(screen.queryByText(/1%/)).not.toBeInTheDocument()
+  })
+
+  it('opens with cached readings and refreshes just one chosen account', async () => {
+    render(<ClaudeAuthSettings />)
+    await screen.findByText(/80%/)
+    expect(window.app.claudeGetRateLimits).toHaveBeenCalledWith(false, a.credentialDir, true)
+    expect(window.app.claudeGetRateLimits).toHaveBeenCalledWith(false, b.credentialDir, true)
+    vi.mocked(window.app.claudeGetRateLimits).mockClear()
+    vi.mocked(window.app.claudeListAccounts).mockClear()
+    const row = screen.getByText(b.email!).closest('li')!
+    fireEvent.click(within(row).getByRole('button', { name: 'Refresh Usage' }))
+    await waitFor(() => expect(window.app.claudeGetRateLimits).toHaveBeenCalledWith(true, b.credentialDir, false))
+    expect(window.app.claudeGetRateLimits).toHaveBeenCalledTimes(1)
+    expect(window.app.claudeListAccounts).not.toHaveBeenCalled()
   })
 })

@@ -517,8 +517,27 @@ describe('UsageStatusIcon rate-limit tip', () => {
     render(<UsageStatusIcon />)
     await act(async () => { await Promise.resolve(); await Promise.resolve() })
 
-    expect(codexGetAccountUsage).toHaveBeenCalledWith('/tmp/project', null, 'thread-1')
+    expect(codexGetAccountUsage).toHaveBeenCalledWith('/tmp/project', null, 'thread-1', false)
     expect(screen.getByText('Thread Tokens')).toBeInTheDocument()
     expect(screen.getByText('Estimated Credits')).toBeInTheDocument()
+  })
+
+  it('keeps account quota visible while a new thread loads and exposes manual refresh', async () => {
+    hoisted.sessionState.sessionProvider = 'codex'
+    hoisted.sessionState.preferredProvider = 'codex'
+    const limits = vi.fn().mockResolvedValueOnce({
+      planType: 'plus', primary: { usedPercent: 40, windowDurationMins: 300, resetsAt: null }, secondary: null, fetchedAt: Date.now(),
+    }).mockImplementation(() => new Promise(() => {}))
+    ;(window.app.codexGetRateLimits as ReturnType<typeof vi.fn>) = limits
+    const { rerender } = render(<UsageStatusIcon />)
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+    expect(screen.getByText('60%')).toBeInTheDocument()
+    expect(screen.getByText('Updated just now')).toBeInTheDocument()
+    hoisted.codexThreadId = 'new-thread'
+    rerender(<UsageStatusIcon />)
+    expect(screen.getByText('60%')).toBeInTheDocument()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'common.refresh' })); await Promise.resolve() })
+    expect(limits).toHaveBeenLastCalledWith('/tmp/project', null, true)
+    expect(screen.getByText('Updating…')).toBeInTheDocument()
   })
 })

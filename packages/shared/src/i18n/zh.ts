@@ -348,6 +348,7 @@ export const zh: Messages = {
   },
   common: {
     cancel: '取消',
+    signInAgain: '重新登录',
     confirm: '确认',
     create: '创建',
     save: '保存',
@@ -842,6 +843,7 @@ export const zh: Messages = {
         plan: '套餐',
         signIn: '使用 ChatGPT 登录',
         signOut: '退出登录',
+        removeAccount: '移除账号',
         signingIn: '等待登录完成…',
         signInOpened: '请在浏览器中继续登录',
         signInComplete: 'ChatGPT 登录成功',
@@ -4341,6 +4343,7 @@ export const zh: Messages = {
   },
   usageGauge: {
     claudeTitle: 'Claude 用量',
+    refreshUsage: '刷新用量',
     codexTitle: 'Codex 用量',
     windowFallback: '用量',
     percentLeft: '剩余 {{percent}}%',

@@ -73,4 +73,13 @@ export function registerCodexAccountIpc(codexService: CodexExperimentService): v
     }
     await codexService.accounts.setDefault(accountId)
   })
+  ipcMain.handle(CodexAccountIpcChannels.REMOVE, async (_event, projectPath: string, apiProviderId: string) => {
+    if (parseRemoteProjectKey(projectPath)) {
+      const { getEnvironmentHost, remoteCodexRemoveAccount } = await import('../environment')
+      const result = await remoteCodexRemoveAccount(getEnvironmentHost(), projectPath, apiProviderId)
+      if (!result) throw new Error('Remote Codex accounts unavailable')
+      return
+    }
+    await codexService.accounts.remove(apiProviderId)
+  })
 }

@@ -3398,6 +3398,8 @@ export interface CodexRateLimitResetCredit {
 export interface CodexRateLimits {
   quotaKey?: string
   fetchedAt?: number | null
+  /** A failed refresh; the last successful reading and its timestamp are retained. */
+  error?: string
   primary: CodexRateLimitWindow | null
   secondary: CodexRateLimitWindow | null
   planType: string | null
@@ -3408,6 +3410,8 @@ export interface CodexRateLimits {
 export type CodexRateLimitResetOutcome = 'reset' | 'nothingToReset' | 'noCredit' | 'alreadyRedeemed' | 'unknown'
 
 export interface CodexAccountUsage {
+  fetchedAt?: number | null
+  error?: string
   lifetimeTokens: number | null
   peakDailyTokens: number | null
   longestRunningTurnSec: number | null

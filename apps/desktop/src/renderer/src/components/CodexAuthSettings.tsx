@@ -5,12 +5,13 @@ import { codexAccountProviderId, type CodexAccount, type CodexManagedLoginStart 
 import { useChatStore } from '@/stores/chat'
 import type { CodexAccountMeters } from './CodexAccountMeters'
 import { CodexAccountsPanel } from './CodexAccountsPanel'
+import { useProviderAccountMeters } from './use-provider-account-meters'
 
 export function CodexAuthSettings({ onAuthChanged }: { onAuthChanged?: () => void }) {
   const { t } = useTranslation()
   const projectPath = useChatStore((s) => s.activeProject)
   const [accounts, setAccounts] = useState<CodexAccount[]>([])
-  const [meters, setMeters] = useState<Record<string, CodexAccountMeters>>({})
+  const { meters, sync: syncMeters, load: loadMeter } = useProviderAccountMeters<CodexAccountMeters>()
   const [pending, setPending] = useState<CodexManagedLoginStart | null>(null)
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -24,6 +25,22 @@ export function CodexAuthSettings({ onAuthChanged }: { onAuthChanged?: () => voi
     onChanged.current?.()
   }, [])
 
+  const refreshUsage = useCallback((accountId: string, force = false) => {
+    if (!projectPath) return
+    return loadMeter(accountId, async () => {
+      const providerId = codexAccountProviderId(accountId)
+      const [limits, usage] = await Promise.allSettled([
+        window.app.codexGetRateLimits(projectPath, providerId, force, !force),
+        window.app.codexGetAccountUsage(projectPath, providerId, null, force, !force),
+      ])
+      return {
+        ...(limits.status === 'fulfilled' && limits.value ? { limits: limits.value } : {}),
+        ...(usage.status === 'fulfilled' && usage.value ? { usage: usage.value } : {}),
+        error: limits.status === 'rejected' || !limits.value || !!limits.value.error || usage.status === 'rejected' || !!usage.value?.error,
+      }
+    })
+  }, [projectPath, loadMeter])
+
   const refresh = useCallback(async () => {
     if (!projectPath) return []
     const current = generation.current
@@ -35,38 +52,25 @@ export function CodexAuthSettings({ onAuthChanged }: { onAuthChanged?: () => voi
         setAccounts(result)
         setError(null)
         const signedInAccounts = result.filter((a) => a.signedIn && !a.unavailable)
-        setMeters(Object.fromEntries(signedInAccounts.map((a) => [a.id, { loading: true }])))
-        for (const account of signedInAccounts) {
-          const providerId = codexAccountProviderId(account.id)
-          void Promise.allSettled([
-            window.app.codexGetRateLimits(projectPath, providerId),
-            window.app.codexGetAccountUsage(projectPath, providerId),
-          ]).then(([limits, usage]) => {
-            if (current !== generation.current || request !== meterRequest.current) return
-            setMeters((previous) => ({ ...previous, [account.id]: {
-              limits: limits.status === 'fulfilled' ? limits.value : null,
-              usage: usage.status === 'fulfilled' ? usage.value : null,
-              error: limits.status === 'rejected' || usage.status === 'rejected',
-            } }))
-          })
-        }
+        syncMeters(signedInAccounts.map((a) => ({ key: a.id, identity: a.email ? JSON.stringify([a.email, a.planType, a.authMode]) : `${current}:${request}` })))
+        for (const account of signedInAccounts) void refreshUsage(account.id)
       }
       return result
     } catch (error) {
       if (current === generation.current) setError(error instanceof Error ? error.message : String(error))
       return []
     } finally { if (current === generation.current && request === meterRequest.current) setLoading(false) }
-  }, [projectPath])
+  }, [projectPath, syncMeters, refreshUsage])
 
   useEffect(() => {
     generation.current++
     setAccounts([])
-    setMeters({})
+    syncMeters([])
     setBusy(false)
     setPending(null)
     void refresh()
     return () => { generation.current++ }
-  }, [refresh])
+  }, [refresh, syncMeters])
 
   useEffect(() => {
     if (!pending || !projectPath) return
@@ -114,8 +118,10 @@ export function CodexAuthSettings({ onAuthChanged }: { onAuthChanged?: () => voi
     accounts={accounts} meters={meters} loading={loading} busy={busy} pending={pending}
     disabled={!projectPath} error={!projectPath ? t('settings.harnesses.codexAccount.noProject') : error}
     onRefresh={() => { void refresh() }}
+    onRefreshUsage={(id) => { void refreshUsage(id, true) }}
     onSignIn={(id) => { void action(async (path) => { const current = generation.current; const result = await window.app.codexStartAccountLogin(path, id); if (current !== generation.current) { await window.app.codexCancelAccountLogin(path, result.loginId); return }; setPending(result); await refresh() }) }}
     onSignOut={(id) => { void action(async (path) => { await window.app.codexLogoutAccount(path, codexAccountProviderId(id)); await refresh(); changed() }) }}
+    onRemove={(id) => { void action(async (path) => { await window.app.codexRemoveAccount(path, codexAccountProviderId(id)); await refresh(); changed() }) }}
     onSetDefault={(id) => { void action(async (path) => { await window.app.codexSetDefaultAccount(path, id); await refresh(); changed() }) }}
     onCancel={() => { void action(async (path) => { if (pending) await window.app.codexCancelAccountLogin(path, pending.loginId); setPending(null); await refresh() }) }}
     onOpenLogin={() => { const url = pending?.authUrl ?? pending?.verificationUrl; if (url) void window.app.openExternalLink(url) }}

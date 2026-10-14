@@ -316,6 +316,7 @@ export type Messages = {
   }
   common: {
     cancel: string
+    signInAgain: string
     confirm: string
     create: string
     save: string
@@ -798,6 +799,7 @@ export type Messages = {
         plan: string
         signIn: string
         signOut: string
+        removeAccount: string
         signingIn: string
         signInOpened: string
         signInComplete: string
@@ -4262,6 +4264,7 @@ export type Messages = {
   }
   usageGauge: {
     claudeTitle: string
+    refreshUsage: string
     codexTitle: string
     windowFallback: string
     percentLeft: string
@@ -4651,6 +4654,7 @@ export const en: Messages = {
   },
   common: {
     cancel: 'Cancel',
+    signInAgain: 'Sign In Again',
     confirm: 'Confirm',
     create: 'Create',
     save: 'Save',
@@ -5151,6 +5155,7 @@ export const en: Messages = {
         plan: 'Plan',
         signIn: 'Sign In with ChatGPT',
         signOut: 'Sign Out',
+        removeAccount: 'Remove Account',
         signingIn: 'Waiting for sign-in…',
         signInOpened: 'Continue signing in in your browser',
         signInComplete: 'ChatGPT sign-in complete',
@@ -8665,6 +8670,7 @@ export const en: Messages = {
   },
   usageGauge: {
     claudeTitle: 'Claude Usage',
+    refreshUsage: 'Refresh Usage',
     codexTitle: 'Codex Usage',
     windowFallback: 'Usage',
     percentLeft: '{{percent}}% left',

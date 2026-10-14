@@ -25,6 +25,15 @@ describe('SUPERONE_SYSTEM_PROMPT_APPEND', () => {
     expect(TERMINAL_TABS_DESCRIPTION).toMatch(/use your shell tool, even if slow/)
   })
 
+  it('names the trigger for session_suggest_task', () => {
+    // Claude defers MCP tools, so the tool description is invisible until loaded;
+    // without a trigger here the model never reaches for it.
+    const sideIssues = SUPERONE_SYSTEM_PROMPT_APPEND.match(/^Side issues: .*$/m)?.[0]
+    expect(sideIssues).toMatch(/outside the current task/)
+    expect(sideIssues).toMatch(/session_suggest_task/)
+    expect(sideIssues).toMatch(/keep working on the current task/)
+  })
+
   it('points file delivery to the phone at Markdown links, not at a tool', () => {
     // The phone renders file links as chips that open the preview with save / share,
     // so the model must not look for (or wait on) a dedicated share tool.

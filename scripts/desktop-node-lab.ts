@@ -160,7 +160,8 @@ async function pair(): Promise<void> {
   await waitFor('B window (CDP)', `http://127.0.0.1:${CDP_PORT}/json/version`, 30_000)
   // A fresh profile opens its window a moment after CDP is up.
   const deadline = Date.now() + 30_000
-  while (!(await evaluateInB<boolean>("typeof window.app?.devMintNodePairingCode === 'function'").catch(() => false))) {
+  // The window writes a fresh profile's remote config during boot; Allow Control is switched on below.
+  while (!(await evaluateInB<boolean>("typeof window.app?.devMintNodePairingCode === 'function' && window.app.getRemoteConfig().then(Boolean)").catch(() => false))) {
     if (Date.now() > deadline) throw new Error(`B's window did not load (log: ${join(DESKTOP, `instance-${INSTANCE}-dev.log`)})`)
     await Bun.sleep(500)
   }

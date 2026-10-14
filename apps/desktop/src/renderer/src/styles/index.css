@@ -443,8 +443,8 @@ html[data-platform="win32"].liquid-glass.dark {
   color: var(--sidebar-accent-foreground);
 }
 
-/* The sidebar is a dark island, so remap the generic surface tokens for its
-   whole subtree. Everything inside it — the tab strip (`bg-muted` track,
+/* The sidebar and Windows title bar are dark islands, so remap the generic surface
+   tokens for their subtrees. Everything inside them — the tab strip (`bg-muted` track,
    `bg-card` pill), the scroll thumb (`bg-border`), every IconButton
    (`text-muted-foreground` / `hover:bg-muted`) — is authored against the light
    palette, and on a dark ground each reads as a bright slab or an illegible
@@ -453,7 +453,8 @@ html[data-platform="win32"].liquid-glass.dark {
    Light mode only: dark mode already resolves these to dark values. Overlays
    portal out to <body> and keep the light palette, which is correct — they
    paint on --popover, not on the sidebar. */
-html:not(.dark) [data-sidebar-inner] {
+html:not(.dark) [data-sidebar-inner],
+html:not(.dark) [data-windows-titlebar] {
   --foreground: var(--sidebar-foreground);
   /* 74% is the floor that still clears 4.5:1 on the raised --card surface,
      which is the worst ground a muted label lands on in here. */

@@ -599,7 +599,7 @@ function App(): React.JSX.Element {
       'flex h-screen flex-col overflow-hidden text-foreground',
       compactMiniShell ? (liquidGlass ? 'bg-transparent' : 'bg-card') : 'bg-sidebar',
     )} style={enterAnimation}>
-      {!compactMiniShell && <WindowsTitleBar />}
+      {!compactMiniShell && <WindowsTitleBar showLayoutControls />}
       <div className="group/coding flex min-h-0 flex-1 overflow-hidden">
       <GitAutoRefresh />
       <>

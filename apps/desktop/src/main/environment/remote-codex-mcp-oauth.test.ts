@@ -49,6 +49,17 @@ describe('relayCodexMcpOauth', () => {
     expect(gw.codexCompleteMcpOauth).toHaveBeenCalledWith('login-1', null)
   })
 
+  it('opens no sign-in page that is not a web page', async () => {
+    for (const authorizationUrl of ['file:///System/Applications/Calculator.app', 'vscode://extension/x']) {
+      const gw = { ...nodeGateway(1), codexLoginMcpOauth: vi.fn(async () => ({ loginId: 'login-1', authorizationUrl })) }
+      const openUrl = vi.fn(async () => {})
+
+      expect(await relayCodexMcpOauth(gw, 'p1', 'linear', null, undefined, openUrl)).toEqual({ success: false, error: 'The MCP server returned an unsupported sign-in URL' })
+      expect(openUrl).not.toHaveBeenCalled()
+      expect(gw.codexCompleteMcpOauth).not.toHaveBeenCalled()
+    }
+  })
+
   it('answers a sign-in the node could not start without opening anything', async () => {
     const gw = { ...nodeGateway(1), codexLoginMcpOauth: vi.fn(async () => ({ success: false, error: 'Codex returned no authorization URL' })) }
     const openUrl = vi.fn(async () => {})

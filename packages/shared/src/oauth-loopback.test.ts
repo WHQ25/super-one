@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { loopbackOAuthRedirect, validateLoopbackOAuthCallback } from './oauth-loopback'
+import { isBrowserSignInUrl, loopbackOAuthRedirect, validateLoopbackOAuthCallback } from './oauth-loopback'
 
 const authorize = 'https://login.example/auth?state=original&redirect_uri=http%3A%2F%2F127.0.0.1%3A12345%2Fcallback'
 const callback = 'http://127.0.0.1:12345/callback?code=test&state=original'
 
 describe('loopback OAuth callback', () => {
+  it('opens only http(s) sign-in pages without credentials', () => {
+    expect(isBrowserSignInUrl(authorize)).toBe(true)
+    for (const url of ['file:///System/Applications/Calculator.app', 'vscode://extension/x', 'javascript:alert(1)', 'https://user:secret@login.example/auth', 'not a url'])
+      expect(isBrowserSignInUrl(url)).toBe(false)
+  })
+
   it('finds only a loopback http redirect', () => {
     expect(loopbackOAuthRedirect(authorize)?.href).toBe('http://127.0.0.1:12345/callback')
     expect(loopbackOAuthRedirect('https://login.example/auth')).toBeNull()

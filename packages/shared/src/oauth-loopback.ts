@@ -6,6 +6,12 @@
 
 const LOOPBACK_HOSTS = ['127.0.0.1', 'localhost', '[::1]']
 
+/** An authorization page a harness handed over, safe to open in a browser: http(s), no credentials. */
+export function isBrowserSignInUrl(url: string): boolean {
+  const parsed = URL.canParse(url) ? new URL(url) : null
+  return !!parsed && (parsed.protocol === 'https:' || parsed.protocol === 'http:') && !parsed.username && !parsed.password
+}
+
 /** The attempt's loopback `redirect_uri`, or null when it has none. */
 export function loopbackOAuthRedirect(authorizeUrl: string): URL | null {
   const redirect = URL.canParse(authorizeUrl) ? new URL(authorizeUrl).searchParams.get('redirect_uri') : null

@@ -17,7 +17,7 @@ import type {
   SkillInfo,
 } from '@superone/shared/agent-types'
 import type { ResourceProvider } from '@superone/shared/environment'
-import { loopbackOAuthRedirect } from '@superone/shared/oauth-loopback'
+import { isBrowserSignInUrl, loopbackOAuthRedirect } from '@superone/shared/oauth-loopback'
 import { startLoopbackCallback } from '../mcp-apps/auth'
 import type { EnvironmentHost } from './environment-host'
 import { RemoteEnvironmentGateway } from './remote-environment-gateway'
@@ -619,6 +619,8 @@ export async function relayCodexMcpOauth(
 ): Promise<CodexMcpOauthLoginResult> {
   const started = await gw.codexLoginMcpOauth(projectId, serverName, apiProviderId, options)
   if (!('loginId' in started)) return started
+  // The page comes from the node's MCP server metadata; this desktop opens only web pages.
+  if (!isBrowserSignInUrl(started.authorizationUrl)) return { success: false, error: 'The MCP server returned an unsupported sign-in URL' }
   const redirect = loopbackOAuthRedirect(started.authorizationUrl)
   const listener = redirect ? await startLoopbackCallback(redirect).catch((err: NodeJS.ErrnoException) => {
     // The node runs on this machine: its listener already holds the address and receives the redirect itself.

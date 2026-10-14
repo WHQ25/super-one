@@ -1,11 +1,9 @@
 import type { HarnessOperationHost } from '@superone/runtime/session'
-import { validateLoopbackOAuthCallback } from '@superone/shared/oauth-loopback'
+import { isBrowserSignInUrl, validateLoopbackOAuthCallback } from '@superone/shared/oauth-loopback'
 import type { OAuthBrowserContext } from './opencode-oauth'
 
 export async function openRemoteOpenCodeSignIn(url: string, context: OAuthBrowserContext, host: HarnessOperationHost) {
-  const authorize = new URL(url)
-  if (!['http:', 'https:'].includes(authorize.protocol) || authorize.username || authorize.password)
-    throw new Error('OpenCode returned an unsupported sign-in URL')
+  if (!isBrowserSignInUrl(url)) throw new Error('OpenCode returned an unsupported sign-in URL')
   host.assertControl()
   const question =
     context.mode === 'auto'

@@ -82,3 +82,16 @@ describe('useTerminalSync on terminal_exited', () => {
     expect(storeState.upsertTab).not.toHaveBeenCalled()
   })
 })
+
+describe('useTerminalSync on terminal_owner_changed', () => {
+  it("surfaces this computer's tab a phone took, but only marks a paired node's tab", () => {
+    renderHook(() => useTerminalSync())
+    emit({ type: 'terminal_owner_changed', terminalId: 't1', ownerDeviceId: 'phone-1', writableByMe: false })
+    expect(storeState.setActive).toHaveBeenCalledWith('/proj', 't1')
+
+    vi.clearAllMocks()
+    emit({ type: 'terminal_owner_changed', terminalId: 'remote-terminal:c:t1', ownerDeviceId: 'phone-1', writableByMe: false })
+    expect(storeState.setTabOwner).toHaveBeenCalledWith('remote-terminal:c:t1', 'phone-1')
+    expect(storeState.setActive).not.toHaveBeenCalled()
+  })
+})

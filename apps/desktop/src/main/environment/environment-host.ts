@@ -2,6 +2,8 @@ import type { DetailTarget, DetailUpdate } from '@superone/shared/environment/de
 import type { RpcStreamHandlers } from '@superone/shared/environment/rpc-connection'
 import type { SessionStreamFrame, TopicSubscribeInput } from '@superone/shared/environment'
 import type { RemoteTopicStream } from './remote-topic-followers'
+import type { RemoteTerminalNode } from './remote-terminal-controller'
+import type { EnvironmentRpcClient } from './environment-rpc-client'
 import type { ProviderBundle } from '@superone/shared/platform-registry'
 import { notifySessionClosed } from '../session-list-watch'
 import { currentControlScope } from '../session/control-context'
@@ -34,7 +36,6 @@ import type {
   ProjectRef,
   SessionLoadResult,
   SupervisorSnapshot,
-  TerminalReadResult,
   ResourceProvider,
 } from '@superone/shared/environment'
 import {
@@ -352,8 +353,26 @@ export class EnvironmentHost {
     if (!client || !this.connections.isConnected(known.connectionId)) throw Object.assign(new Error('Remote environment is disconnected'), { code: 'unavailable' })
     return {
       client, environmentId,
-      follow: (input: Omit<TopicSubscribeInput, 'subscriptionId'>, handlers: RpcStreamHandlers): Promise<RemoteTopicStream> =>
-        this.feedFor(known.connectionId).followTopics(input, handlers, () => client.rpc<SessionStreamFrame>('topic.catchUp', input, environmentId)),
+      follow: this.topicFollower(known.connectionId, client, environmentId),
+    }
+  }
+
+  /** A native reader of a node's topics, joining the node's one shared feed at a cursor cut. */
+  private topicFollower(connectionId: string, client: Pick<EnvironmentRpcClient, 'rpc'>, environmentId: string) {
+    return (input: Omit<TopicSubscribeInput, 'subscriptionId'>, handlers: RpcStreamHandlers): Promise<RemoteTopicStream> =>
+      this.feedFor(connectionId).followTopics(input, handlers, () => client.rpc<SessionStreamFrame>('topic.catchUp', input, environmentId))
+  }
+
+  /** A connected node's terminals, read and followed the way its phones do. */
+  remoteTerminalNode(connectionId: string): RemoteTerminalNode {
+    const { gateway, environmentId } = this.resolveRemote(connectionId)
+    const client = this.connections.getClient(connectionId)
+    if (!client) throw Object.assign(new Error('Remote environment is disconnected'), { code: 'unavailable' })
+    return {
+      environmentId,
+      terminals: gateway.terminals,
+      rpc: (method, payload) => client.rpc(method, payload, environmentId),
+      follow: this.topicFollower(connectionId, client, environmentId),
     }
   }
 
@@ -762,11 +781,6 @@ export class EnvironmentHost {
   /** Serialize ensureSessionLease per session key to avoid concurrent acquire races. */
   private readonly sessionLeaseInflight = new Map<string, Promise<{ leaseId: string; generation: string }>>()
 
-  private readonly terminalLeases = new Map<
-    string,
-    { leaseId: string; generation: string; expiresAt: number }
-  >()
-
   /**
    * A local grant belongs to the window asking (each window is its own
    * delegate and yields to a phone); a node's grant to this desktop.
@@ -784,122 +798,6 @@ export class EnvironmentHost {
     const prefix = `${connectionId}:${sessionId}`
     for (const key of [...this.sessionLeases.keys()]) {
       if (key === prefix || key.startsWith(`${prefix}:`)) this.sessionLeases.delete(key)
-    }
-  }
-
-  private terminalLeaseKey(connectionId: string, terminalId: string): string {
-    return `${connectionId}:${terminalId}`
-  }
-
-  private async ensureTerminalLease(
-    connectionId: string,
-    terminalId: string,
-  ): Promise<{ leaseId: string; generation: string }> {
-    const { gateway, environmentId } = this.resolveRemote(connectionId)
-    const key = this.terminalLeaseKey(connectionId, terminalId)
-    const existing = this.terminalLeases.get(key)
-    const now = Date.now()
-    if (existing?.expiresAt && existing.expiresAt > now + 5_000) {
-      return { leaseId: existing.leaseId, generation: existing.generation }
-    }
-
-    if (existing) {
-      try {
-        const renewed = await gateway.terminals.renewControl({
-          leaseId: existing.leaseId,
-          generation: existing.generation,
-          ttlMs: 60_000,
-        })
-        this.terminalLeases.set(key, {
-          leaseId: renewed.leaseId,
-          generation: renewed.generation,
-          expiresAt: Date.parse(renewed.expiresAt),
-        })
-        return { leaseId: renewed.leaseId, generation: renewed.generation }
-      } catch {
-        this.terminalLeases.delete(key)
-      }
-    }
-
-    const lease = await gateway.terminals.acquireControl({
-      resource: { environmentId, terminalId },
-      ttlMs: 60_000,
-    })
-    this.terminalLeases.set(key, {
-      leaseId: lease.leaseId,
-      generation: lease.generation,
-      expiresAt: Date.parse(lease.expiresAt),
-    })
-    return { leaseId: lease.leaseId, generation: lease.generation }
-  }
-
-  async createRemoteTerminal(
-    connectionId: string,
-    input: { cwd: string; title?: string; cols?: number; rows?: number },
-  ): Promise<{ terminalId: string }> {
-    const { gateway } = this.resolveRemote(connectionId)
-    const created = await gateway.terminals.create({
-      cwd: input.cwd,
-      title: input.title,
-      cols: input.cols,
-      rows: input.rows,
-    })
-    await this.ensureTerminalLease(connectionId, created.terminalId)
-    return created
-  }
-
-  async attachRemoteTerminal(
-    connectionId: string,
-    terminalId: string,
-  ): Promise<{ snapshot: string; sequence: string }> {
-    const { gateway, environmentId } = this.resolveRemote(connectionId)
-    return gateway.terminals.attach({ environmentId, terminalId })
-  }
-
-  async readRemoteTerminal(
-    connectionId: string,
-    terminalId: string,
-    afterSequence: string,
-  ): Promise<TerminalReadResult> {
-    const { gateway, environmentId } = this.resolveRemote(connectionId)
-    return gateway.terminals.read({ environmentId, terminalId }, afterSequence)
-  }
-
-  async writeRemoteTerminal(connectionId: string, terminalId: string, data: string): Promise<void> {
-    const { gateway, environmentId } = this.resolveRemote(connectionId)
-    const control = await this.ensureTerminalLease(connectionId, terminalId)
-    await gateway.terminals.write({
-      terminal: { environmentId, terminalId },
-      data,
-      ...control,
-    })
-  }
-
-  async resizeRemoteTerminal(
-    connectionId: string,
-    terminalId: string,
-    cols: number,
-    rows: number,
-  ): Promise<void> {
-    const { gateway, environmentId } = this.resolveRemote(connectionId)
-    const control = await this.ensureTerminalLease(connectionId, terminalId)
-    await gateway.terminals.resize({
-      terminal: { environmentId, terminalId },
-      cols,
-      rows,
-      ...control,
-    })
-  }
-
-  async killRemoteTerminal(connectionId: string, terminalId: string): Promise<void> {
-    const { gateway, environmentId } = this.resolveRemote(connectionId)
-    const key = this.terminalLeaseKey(connectionId, terminalId)
-    const control = await this.ensureTerminalLease(connectionId, terminalId)
-    try {
-      await gateway.terminals.kill({ environmentId, terminalId }, control)
-    } finally {
-      this.terminalLeases.delete(key)
-      await gateway.terminals.releaseControl(control).catch(() => {})
     }
   }
 

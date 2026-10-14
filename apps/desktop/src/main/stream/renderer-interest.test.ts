@@ -37,12 +37,12 @@ describe('RendererInterest', () => {
     expect(interest.closeWindow(3)).toEqual([local, local])
   })
 
-  it('follows remote terminals while attached, with their machine\'s terminal list', () => {
+  it('follows a node\'s terminals and their list while the windows show them', () => {
     const { interest, keys } = setup()
-    interest.attachTerminal({ environmentId: 'node-b', terminalId: 't1' }, true)
-    expect(keys()).toEqual(expect.arrayContaining(['terminal:node-b:t1', 'terminalList:node-b']))
-    interest.attachTerminal({ environmentId: 'node-b', terminalId: 't1' }, false)
-    expect(keys()).not.toContain('terminal:node-b:t1')
+    interest.watchTerminals('node-b', true)
+    expect(keys()).toEqual(expect.arrayContaining(['terminal:node-b:*', 'terminalList:node-b']))
+    interest.watchTerminals('node-b', false)
+    expect(keys()).not.toContain('terminal:node-b:*')
     expect(keys()).not.toContain('terminalList:node-b')
   })
 })

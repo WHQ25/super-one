@@ -35,6 +35,8 @@ vi.mock('electron', () => ({
 
 import { startNodeRuntime, type NodeRuntime } from '../../../../../apps/cli/src/runtime'
 import { EnvironmentHost, resetEnvironmentHostForTests } from './environment-host'
+import { RemoteTerminalController } from './remote-terminal-controller'
+import { remoteProjectKey } from '@superone/shared/remote-resource-key'
 import { probeEndpointHealth } from './endpoint-probes'
 import { ConnectionSupervisor } from './connection-supervisor'
 import { ConnectionSupervisorCore } from '@superone/shared/environment'
@@ -132,19 +134,20 @@ describe('EnvironmentHost product path', () => {
     const connectionId = host.connections
       .listKnown()
       .find((known) => known.environmentId === descriptor.environmentId)!.connectionId
-    const terminal = await host.createRemoteTerminal(connectionId, {
-      cwd: projectDir,
-      cols: 90,
-      rows: 30,
+    // The node's terminal output is pushed on its topic stream, not polled.
+    const output: string[] = []
+    const terminals = new RemoteTerminalController({
+      node: (id) => host.remoteTerminalNode(id),
+      projectId: async () => project.projectId,
+      onEvent: (event) => { if (event.type === 'terminal_output') output.push(event.data) },
     })
-    const attached = await host.attachRemoteTerminal(connectionId, terminal.terminalId)
-    await host.writeRemoteTerminal(connectionId, terminal.terminalId, 'pwd\r')
-    await vi.waitFor(async () => {
-      const read = await host.readRemoteTerminal(connectionId, terminal.terminalId, attached.sequence)
-      expect(read.data).toContain(projectDir)
-    }, { timeout: 10_000, interval: 25 })
-    await host.resizeRemoteTerminal(connectionId, terminal.terminalId, 100, 40)
-    await host.killRemoteTerminal(connectionId, terminal.terminalId)
+    const terminal = await terminals.create({ projectPath: remoteProjectKey(connectionId, projectDir), cols: 90, rows: 30 })
+    await terminals.snapshot(terminal.terminalId)
+    await terminals.write(terminal.terminalId, 'pwd\r', true)
+    await vi.waitFor(() => expect(output.join('')).toContain(projectDir), { timeout: 10_000, interval: 25 })
+    await terminals.resize(terminal.terminalId, 100, 40)
+    await terminals.kill(terminal.terminalId)
+    terminals.dispose()
 
     // Real health probe against live node
     const probe = await probeEndpointHealth(

@@ -25,6 +25,13 @@ export function projectBelongsToHost(projectPath: string | null | undefined, con
   return remote?.connectionId === connectionId
 }
 
+/**
+ * A remote terminal's `ownerDeviceId` on a controller desktop once the node's
+ * own window took the terminal back from it (the node reports its window as
+ * no owner, which also means nobody holds it).
+ */
+export const NODE_WINDOW_TERMINAL_OWNER = 'local'
+
 export function remoteTerminalKey(connectionId: string, terminalId: string): string {
   return `remote-terminal:${connectionId}:${terminalId}`
 }

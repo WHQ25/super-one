@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { TerminalAgentControl } from '@superone/shared/agent-types'
 import type { TermInstance } from '@/stores/terminal'
-import { applyTerminalEvent, createBaseXterm, disposeTermInstance } from '@/components/coding/term-instance'
+import { applyTerminalEvent, createBaseXterm, disposeTermInstance, forwardTerminalInput } from '@/components/coding/term-instance'
 
 // Activity-panel terminals keep their own instance registry, fully decoupled
 // from the bottom terminal panel (which keys off useTerminalStore.instances).
@@ -18,11 +18,8 @@ export function ensureActivityTermInstance(terminalId: string): TermInstance {
   const existing = activityInstances.get(terminalId)
   if (existing) return existing
   const { xterm, fit, search } = createBaseXterm()
-  xterm.onData((data) => {
-    if (activityInstances.get(terminalId)?.writable === false) return
-    void window.terminal.write(terminalId, data)
-  })
   const inst: TermInstance = { xterm, fit, search, lastSeq: 0, writable: true, chunks: new Map() }
+  forwardTerminalInput(inst, terminalId)
   activityInstances.set(terminalId, inst)
   return inst
 }

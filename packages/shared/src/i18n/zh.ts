@@ -688,6 +688,17 @@ export const zh: Messages = {
     mosaic: {
       noSpace: '空间不足',
     },
+    terminal: {
+      heldBy: {
+        host: '{{host}} 正在使用这个终端。',
+        hostUnnamed: '终端所在的电脑正在使用它。',
+        phone: '一台手机正在使用这个终端。',
+        desktop: '另一台电脑正在使用这个终端。',
+      },
+      viewOnly: '仅查看',
+      takeOver: '接管',
+      disconnect: '断开',
+    },
   },
   identityHandoff: {
     title: 'SuperOne 更换了应用标识',

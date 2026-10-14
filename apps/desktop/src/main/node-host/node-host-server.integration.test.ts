@@ -758,6 +758,25 @@ describe('DesktopNodeHost control takeover', () => {
     expect(phoneHeld.lease.phoneDeviceId).toBe('p')
   })
 
+  it("lets a phone the controller relays take what B's window holds, as B's own phones do", async () => {
+    const { host, sessions, projectDir, client } = await pairedDesktops(fakeCatalog(), { phoneLabel: (id) => id === 'p' ? 'Pixel 9' : null })
+    const own = sessions.createSession({ id: 'own-session', projectPath: projectDir }) as unknown as FakeSession
+    windowControl(own)
+
+    // A relayed phone has no Take over: it acquires as routed-phone-rpc does, without reclaim.
+    const relayed = await client.rpc<ControlLease>('session.acquireControl', { sessionId: own.id, delegate: 'phone:a-device', yields: false })
+    expect(relayed).toMatchObject({ holderClientId: host.controllers()[0].id, delegate: 'phone:a-device' })
+    expect(own.lease.current).toMatchObject({ leaseId: relayed.leaseId, delegate: 'phone:a-device' })
+
+    // Still never a lease of B's phones.
+    const phoneHeld = sessions.createSession({ id: 'phone-session', projectPath: projectDir }) as unknown as FakeSession
+    bindControlActor(host.domain.leases, { clientSessionId: 'phone:p', holderClientId: `desktop:${host.identity.environmentId}`, delegate: 'phone:p', yields: 'none' })
+      .acquire({ resource: phoneHeld.lease.resource, holderClientId: 'phone:p', ttlMs: 60_000 })
+    await expect(client.rpc('session.acquireControl', { sessionId: phoneHeld.id, delegate: 'phone:a-device', yields: false }))
+      .rejects.toMatchObject({ code: 'failed_precondition', details: { reason: 'control_held', holder: { kind: 'phone', label: 'Pixel 9' } } })
+    expect(phoneHeld.lease.phoneDeviceId).toBe('p')
+  })
+
   it("lets B's user take a session from a controller, which then sees it in use", async () => {
     const { sessions, projectDir, client } = await pairedDesktops()
     const own = sessions.createSession({ id: 'own-session', projectPath: projectDir }) as unknown as FakeSession

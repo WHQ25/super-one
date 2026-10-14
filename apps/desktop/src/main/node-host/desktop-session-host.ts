@@ -587,9 +587,10 @@ export class DesktopSessionHost extends DesktopSessionReads<DesktopSessionRow> i
    * when it reclaims it on purpose; the reclaim lands once its lease is granted.
    * Nor does it take a session from whoever drives it here: a phone or another
    * controller refuses it, and this desktop's window yields only to the user's
-   * explicit Take over (`reclaim`). The refusal names the holder.
+   * explicit Take over (`reclaim`), or to a phone the controller acquires for,
+   * as it yields to this desktop's own phones. The refusal names the holder.
    */
-  admitControl(sessionId: string, controllerClientSessionId: string, opts: { reclaim: boolean }): (() => void) | void {
+  admitControl(sessionId: string, controllerClientSessionId: string, opts: { reclaim: boolean; delegate?: string }): (() => void) | void {
     const controller = this.requireRow(sessionId).controller
     const isController = isControllerClient(controllerClientSessionId)
     const released = !!controller?.released && isController
@@ -597,7 +598,7 @@ export class DesktopSessionHost extends DesktopSessionReads<DesktopSessionRow> i
     const lease = isController ? this.deps.leases.get({ environmentId: this.deps.environmentId, sessionId }) : null
     if (lease && lease.holderClientId !== controllerClientSessionId) {
       const holder = this.deps.controlHolder(lease)
-      if (holder.kind !== 'window' || !opts.reclaim) throw controlHeldError(holder)
+      if (holder.kind !== 'window' || !(opts.reclaim || opts.delegate?.startsWith('phone:'))) throw controlHeldError(holder)
     }
     if (!released) return
     return () => {

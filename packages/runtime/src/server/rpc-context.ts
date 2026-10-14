@@ -335,9 +335,10 @@ export interface SessionHostPort {
    * Gate a lease about to be acquired on a session: refuse it while the host has
    * taken the session back, unless the client explicitly `reclaim`s it. Runs
    * before the grant, so a refused client takes no lease over; returns what to
-   * commit once the lease is granted. Hosts without takeback omit it.
+   * commit once the lease is granted. `delegate` is the phone a controller
+   * acquires for, if any. Hosts without takeback omit it.
    */
-  admitControl?(sessionId: string, controllerClientSessionId: string, opts: { reclaim: boolean }): (() => void) | void
+  admitControl?(sessionId: string, controllerClientSessionId: string, opts: { reclaim: boolean; delegate?: string }): (() => void) | void
   /** Re-point Host Action ownership after a new client acquires the session's lease. */
   rebindHostActionController(sessionId: string, controllerClientSessionId: string): unknown
   pollHostActions(input: SessionRuntimeInput<'pollHostActions'>): Promise<HostActionsPollResult>

@@ -149,6 +149,33 @@ async function completeMcpOauth(client: AuthenticatedClient, loginId: string, ca
   finally { pendingMcpOauth.delete(loginId) }
 }
 
+/**
+ * The device-code sign-in each client has waiting, as its cancel. A client
+ * keeps one; it ends when the client goes (disconnect, revoke), so a sign-in
+ * nobody can finish never rewrites the node's account.
+ */
+const accountLogins = new Map<string, () => Promise<void>>()
+
+async function startAccountLogin(client: AuthenticatedClient, start: () => Promise<CodexManagedLoginStart>, cancel: (loginId: string) => Promise<void>) {
+  await cancelCodexAccountLoginForClient(client.clientSessionId)
+  const started = start()
+  // Registered before the start settles: a client gone meanwhile still cancels it.
+  const end = () => started.then((login) => cancel(login.loginId), () => {})
+  accountLogins.set(client.clientSessionId, end)
+  try { return await started }
+  catch (err) {
+    if (accountLogins.get(client.clientSessionId) === end) accountLogins.delete(client.clientSessionId)
+    throw err
+  }
+}
+
+/** Ends the device-code sign-in a client that went away left waiting. */
+export async function cancelCodexAccountLoginForClient(clientSessionId: string): Promise<void> {
+  const cancel = accountLogins.get(clientSessionId)
+  accountLogins.delete(clientSessionId)
+  await cancel?.().catch(() => {})
+}
+
 const provider = (p: Record<string, unknown>) => optionalString(p.apiProviderId)
 const read = OPERATION_SCOPES.readEnvironment
 const admin = OPERATION_SCOPES.adminNode
@@ -174,7 +201,8 @@ const CODEX_METHODS: Readonly<Record<string, CodexMethod>> = {
   'codex.getAccountStatus': { scopes: read, project: 'known', run: (p, codex) => codex.getAccountStatus(optionalString(p.apiProviderId) ?? undefined) },
   'codex.accountLoginStart': {
     scopes: admin, project: 'known',
-    run: (p, codex, projectId) => codex.startAccountLogin(projectId, optionalString(p.accountId) ?? undefined),
+    run: (p, codex, projectId, client) => startAccountLogin(
+      client, () => codex.startAccountLogin(projectId, optionalString(p.accountId) ?? undefined), (loginId) => codex.cancelAccountLogin(loginId)),
   },
   'codex.accountLoginCancel': {
     scopes: admin,

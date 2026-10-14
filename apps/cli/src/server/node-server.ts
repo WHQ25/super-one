@@ -1,6 +1,7 @@
 import { verifyPayload } from '../crypto-util'
 import { dispatchRpc, clearWatchBuffersForClient, type RpcContext } from '../rpc/handlers'
 import { cancelMcpAppsInvocationsForClient } from '../rpc/mcp-apps-handlers'
+import { cancelCodexAccountLoginForClient } from '@superone/runtime/server/rpc-codex'
 import { createCliRpcHostHooks } from '../rpc/host-hooks'
 import type { AuthService } from '../auth/auth-service'
 import type { NodeIdentity } from '../identity'
@@ -75,6 +76,7 @@ export async function startNodeServer(opts: NodeServerOptions): Promise<NodeServ
       opts.workspaceTailWatch.cancelForClient?.(clientSessionId)
       clearWatchBuffersForClient(clientSessionId)
       cancelMcpAppsInvocationsForClient(clientSessionId)
+      void cancelCodexAccountLoginForClient(clientSessionId)
     },
     createRpcContext: () => ({
       identity: opts.identity,

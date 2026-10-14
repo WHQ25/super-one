@@ -76,7 +76,7 @@ async function pairedWithCodex() {
   const manager = new NodeConnectionManager({ credentialStore: new NodeCredentialStore(tempDir('superone-desktop-a-')) })
   managers.push(manager)
   const { connectionId } = await manager.pairAndConnect({ baseUrl: pairing.url, pairingToken: pairing.pairingToken, label: 'Desktop A', channel: pairing.channel })
-  return { codex, projectDir, client: manager.getClient(connectionId)! }
+  return { host, codex, projectDir, client: manager.getClient(connectionId)! }
 }
 
 describe('DesktopNodeHost codex', () => {
@@ -112,6 +112,26 @@ describe('DesktopNodeHost codex', () => {
     expect(codex.service.accounts.start).toHaveBeenCalledWith('chatgptDeviceCode', undefined)
     expect(await client.rpc('codex.accountLoginCancel', { loginId: 'login-1' })).toEqual({ ok: true })
     expect(codex.service.cancelAccountLogin).toHaveBeenCalledWith('login-1')
+  })
+
+  it.each([
+    ['removed', (host: DesktopNodeHost, id: string) => host.removeController(id)],
+    ['turned off', (host: DesktopNodeHost, id: string) => host.setControllerEnabled(id, false)],
+  ])("cancels a controller's waiting device-code sign-in when it is %s", async (_case, cut) => {
+    const { host, codex, client } = await pairedWithCodex()
+    let n = 0
+    codex.service.accounts.start.mockImplementation(async (type: string, accountId?: string) => ({
+      type, loginId: `login-${++n}`, verificationUrl: 'https://auth.openai.com/device', userCode: 'ABCD-EFGH', accountId: accountId ?? 'acct-1',
+    }))
+
+    await client.rpc('codex.accountLoginStart', { projectId: 'p1' })
+    // A controller keeps one sign-in waiting: starting another ends the first.
+    await client.rpc('codex.accountLoginStart', { projectId: 'p1', accountId: 'acct-2' })
+    expect(codex.service.cancelAccountLogin.mock.calls).toEqual([['login-1']])
+
+    cut(host, host.controllers()[0].id)
+    // The code it was shown can no longer sign B's account in.
+    await vi.waitFor(() => expect(codex.service.cancelAccountLogin.mock.calls).toEqual([['login-1'], ['login-2']]))
   })
 
   it("hands a controller the MCP authorization URL and forwards the browser's callback to Codex on B", async () => {

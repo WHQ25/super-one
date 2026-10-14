@@ -71,6 +71,20 @@ describe('session-provider-store', () => {
     )
   })
 
+  it('validates and normalizes an agent profile on write', () => {
+    const store = openStore()
+    const created = store.create({
+      harnessId: 'claude',
+      name: 'Reviewer',
+      config: { profile: { version: 1, identity: { name: ' Reviewer ', description: 'Reviews diffs.' } } },
+    })
+    expect(created.config).toEqual({ profile: { version: 1, identity: { name: 'Reviewer', description: 'Reviews diffs.' } } })
+    expect(() => store.create({ harnessId: 'claude', name: 'x', config: { profile: { version: 1, identity: { name: 'x' } } } }))
+      .toThrow(expect.objectContaining({ code: 'invalid_argument', message: expect.stringMatching(/identity.description/) }))
+    expect(() => store.update(created.id, { config: { profile: { version: 2 } } }))
+      .toThrow(expect.objectContaining({ code: 'invalid_argument' }))
+  })
+
   it('listByHarness filters', () => {
     const store = openStore()
     store.create({ harnessId: 'codex', name: 'extra' })
@@ -105,6 +119,14 @@ describe('settingsFromSessionProviderConfig', () => {
         effort: 'xhigh',
       },
     )
+  })
+
+  it('prefers the agent profile runtime, with its context variant', () => {
+    expect(settingsFromSessionProviderConfig({
+      model: 'legacy',
+      reasoningEffort: 'low',
+      profile: { version: 1, identity: { name: 'R', description: 'd' }, runtime: { model: 'opus', context: '1m' } },
+    })).toEqual({ model: 'opus[1m]', effort: 'low' })
   })
 
   it('returns empty for non-objects', () => {

@@ -7,6 +7,7 @@
 import { randomUUID } from 'node:crypto'
 import type { HarnessId } from '@superone/shared/session-types'
 import { BASE_SESSION_PROVIDER_DEFINITIONS } from '@superone/shared/session-provider-definitions'
+import { agentProfileModelId, parseAgentProfileSpec, readAgentProfile } from '@superone/shared/agent-profile'
 import type { SqliteDatabase } from '../sqlite'
 
 export interface SessionProviderRecord {
@@ -45,7 +46,12 @@ function normalizeConfig(config: unknown): unknown {
   if (typeof config !== 'object' || Array.isArray(config)) {
     throw Object.assign(new Error('config must be an object'), { code: 'invalid_argument' })
   }
-  return config
+  const profile = (config as { profile?: unknown }).profile
+  if (profile === undefined) return config
+  // Harness-agnostic, so checked here for every host rather than in each harness schema.
+  const parsed = parseAgentProfileSpec(profile)
+  if (!parsed.ok) throw Object.assign(new Error(parsed.error), { code: 'invalid_argument' })
+  return { ...config, profile: parsed.value }
 }
 
 function rowToProvider(row: SessionProviderRow): SessionProviderRecord {
@@ -131,7 +137,8 @@ export interface SessionProviderStore {
 
 /**
  * Extract session.create seed fields from a session_providers.config_json object.
- * Supports both claude-style `effort` and codex-style `reasoningEffort`.
+ * An agent profile's runtime wins; the legacy top-level fields (claude-style
+ * `effort`, codex-style `reasoningEffort`) fill what it leaves out.
  */
 export function settingsFromSessionProviderConfig(config: unknown): {
   model?: string
@@ -145,11 +152,12 @@ export function settingsFromSessionProviderConfig(config: unknown): {
     const v = c[key]
     return typeof v === 'string' && v.trim() ? v.trim() : undefined
   }
+  const runtime = readAgentProfile(config)?.runtime
+  const model = agentProfileModelId(runtime) ?? str('model')
+  const effort = runtime?.effort ?? str('effort') ?? str('reasoningEffort')
   return {
-    ...(str('model') ? { model: str('model') } : {}),
-    ...(str('effort') || str('reasoningEffort')
-      ? { effort: str('effort') ?? str('reasoningEffort') }
-      : {}),
+    ...(model ? { model } : {}),
+    ...(effort ? { effort } : {}),
     ...(str('permissionMode') ? { permissionMode: str('permissionMode') } : {}),
     ...(str('sandboxMode') ? { sandboxMode: str('sandboxMode') } : {}),
   }

@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { McpAppsError, type McpAppsProvider } from '@superone/shared/mcp-apps'
-import { cancelMcpAppsInvocationsForClient, dispatchMcpAppsRpc } from './mcp-apps-handlers'
-import type { RpcContext } from './handlers'
+import { cancelMcpAppsInvocationsForClient, MCP_APPS_HANDLERS } from './rpc-mcp-apps'
+import type { RpcContext } from './rpc-context'
+
+const dispatchMcpAppsRpc = (method: string, payload: unknown, ctx: RpcContext) => MCP_APPS_HANDLERS[method]!(payload, ctx as never, method)
 
 /** A tool call that runs until the node aborts it, as a call waiting on an MCP form does. */
 function pendingProvider() {
@@ -23,7 +25,7 @@ function context(clientSessionId: string, provider: McpAppsProvider): RpcContext
     client: { clientSessionId, scopes: ['session:read', 'session:operate'] },
     identity: { environmentId: 'node' },
     leases: { assertValid: () => {} },
-    sessions: { getMcpAppsProvider: async () => provider },
+    mcpApps: { getMcpAppsProvider: async () => provider },
   } as unknown as RpcContext
 }
 

@@ -42,6 +42,8 @@ import { handleTopicCatchUp, handleTopicSubscribe, handleTopicUpdate, handleTopi
 import { asRecord, mapThrown, requireScopes } from './rpc-helpers'
 import { DRAFT_HANDLERS, isDraftOpenReceiptLive } from './rpc-drafts'
 import { TERMINAL_HANDLERS } from './rpc-terminals'
+import { ARTIFACT_HANDLERS } from './rpc-artifacts'
+import { MCP_APPS_HANDLERS } from './rpc-mcp-apps'
 import { parseSessionSettings } from './session-settings'
 import { parseSessionSendSelections } from './session-send-selections'
 import type {
@@ -65,11 +67,13 @@ type FamilyPort =
   | 'collaboration'
   | 'providers'
   | 'drafts'
+  | 'artifacts'
+  | 'mcpApps'
 
 /**
  * The context a handler sees once {@link requiredPorts} admitted its method.
  * Ports a handler only uses opportunistically outside its own family
- * (`workspaceGit` from session.*, `artifacts`) are read through
+ * (`workspaceGit` and `artifacts` from session.*) are read through
  * {@link optionalGit} / `ctx.artifacts` instead.
  */
 type RpcContext = HostRpcContext & Required<Pick<HostRpcContext, FamilyPort>>
@@ -98,13 +102,19 @@ function requiredPorts(method: string): readonly FamilyPort[] {
     case 'git.':
       return method === 'git.clone' ? ['projects'] : ['workspaceGit']
     case 'session.':
-      return method === 'session.create' ? ['sessions', 'projects', 'harnesses'] : ['sessions', 'projects']
+      if (method === 'session.create') return ['sessions', 'projects', 'harnesses']
+      if (method === 'session.notifyArtifactCompleted') return ['sessions', 'projects', 'artifacts']
+      return ['sessions', 'projects']
     case 'topic.':
       return ['sessions']
     case 'collaboration.':
       return ['collaboration']
     case 'draft.':
       return ['drafts']
+    case 'artifact.':
+      return ['artifacts', 'sessions']
+    case 'mcpApps.':
+      return ['mcpApps']
     default:
       return []
   }
@@ -342,6 +352,8 @@ const HANDLERS: Readonly<Record<string, (payload: unknown, ctx: RpcContext, meth
   'provider.listModels': (payload, ctx) => handleProviderListModels(payload, ctx),
   ...DRAFT_HANDLERS,
   ...TERMINAL_HANDLERS,
+  ...ARTIFACT_HANDLERS,
+  ...MCP_APPS_HANDLERS,
 }
 
 /** Every method this table serves. */
@@ -2383,7 +2395,6 @@ async function handleSessionNotifyArtifactCompleted(payload: unknown, ctx: RpcCo
     return { error: { code: 'invalid_argument', message: 'sessionId, notificationId and relativePaths are required' } }
   }
   const artifacts = ctx.artifacts
-  if (!artifacts) return unsupported('session.notifyArtifactCompleted')
   // Authorisation first, and before touching the filesystem: otherwise
   // "delivered: false" versus "forbidden" tells a client that is not the
   // controller whether a given path exists in someone else's zone.

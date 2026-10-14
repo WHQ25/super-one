@@ -22,12 +22,10 @@ import type { WorkspaceWatchService } from '@superone/runtime/workspace/watch-se
 import type { WorkspaceTailWatchService } from '@superone/runtime/workspace/tail-watch-service'
 import type { IdempotencyService } from '../auth/idempotency'
 import type { ProviderStore } from '../provider/provider-store'
-import type { ArtifactZoneService } from '../workspace/artifact-zone'
+import type { ArtifactZoneService } from '@superone/runtime/workspace'
 import { dispatchSessionArchiveRpc, SESSION_ARCHIVE_RPC_METHODS } from './session-archive-handlers'
-import { dispatchMcpAppsRpc, MCP_APPS_RPC_METHODS } from './mcp-apps-handlers'
 import { dispatchResourceRpc, RESOURCE_RPC_METHODS, type ResourceHost } from '@superone/runtime/server/rpc-resources'
 import { AUTOMATION_RPC_METHODS, dispatchAutomationRpc } from '@superone/runtime/server/rpc-automations'
-import { ARTIFACT_RPC_METHOD_SET, dispatchArtifactRpc } from './artifact-handlers'
 import { CODEX_RPC_METHODS, dispatchCodexRpc } from './codex-handlers'
 import { dispatchSessionProviderRpc, SESSION_PROVIDER_RPC_METHODS } from '@superone/runtime/server/rpc-session-providers'
 import { dispatchHarnessResourcesRpc, HARNESS_RESOURCES_RPC_METHODS } from './harness-resources-handlers'
@@ -40,7 +38,7 @@ export { clearWatchBuffersForClient } from '@superone/runtime/server'
  * service, plus the stores only the CLI's own method families use.
  */
 export interface RpcContext
-  extends Omit<NodeRpcContext, 'capabilities' | 'extensions' | 'sessionProviders' | 'artifacts'> {
+  extends Omit<NodeRpcContext, 'capabilities' | 'extensions' | 'sessionProviders' | 'artifacts' | 'mcpApps'> {
   terminals: NodeTerminalManager
   projects: ProjectRegistry
   workspaceFs: WorkspaceFsService
@@ -90,10 +88,8 @@ const CLI_EXTENSION_METHODS: ReadonlySet<string> = new Set([
   ...SESSION_ARCHIVE_RPC_METHODS,
   ...RESOURCE_RPC_METHODS,
   ...AUTOMATION_RPC_METHODS,
-  ...ARTIFACT_RPC_METHOD_SET,
   ...SESSION_PROVIDER_RPC_METHODS,
   ...HARNESS_RESOURCES_RPC_METHODS,
-  ...MCP_APPS_RPC_METHODS,
   ...CODEX_RPC_METHODS,
 ])
 
@@ -101,6 +97,7 @@ const CLI_EXTENSION_METHODS: ReadonlySet<string> = new Set([
 export function dispatchRpc(method: string, payload: unknown, ctx: RpcContext): Promise<RpcResult> {
   return dispatchNodeRpc(method, payload, {
     ...ctx,
+    mcpApps: ctx.sessions,
     capabilities: CLI_CAPABILITY_FLAGS,
     extensions: (extMethod, extPayload) => dispatchCliRpc(extMethod, extPayload, ctx),
     extensionMethods: CLI_EXTENSION_METHODS,
@@ -140,15 +137,6 @@ async function dispatchCliRpc(method: string, payload: unknown, ctx: RpcContext)
   })
   if (automation) return await automation
 
-  const artifact = dispatchArtifactRpc(method, payload, {
-    client: ctx.client,
-    environmentId: ctx.identity.environmentId,
-    sessions: ctx.sessions,
-    leases: ctx.leases,
-    artifacts: ctx.artifacts,
-  })
-  if (artifact) return await artifact
-
   const sessionProviders = dispatchSessionProviderRpc(method, payload, {
     client: ctx.client,
     sessionProviders: ctx.sessionProviders,
@@ -164,9 +152,6 @@ async function dispatchCliRpc(method: string, payload: unknown, ctx: RpcContext)
       loadNodeAgentSettings(ctx.settingsConfigPath).experimentalClaudeOpenAiChatEnabled,
   })
   if (harnessResources) return harnessResources
-
-  const mcpApps = await dispatchMcpAppsRpc(method, payload, ctx)
-  if (mcpApps) return mcpApps
 
   const codex = await dispatchCodexRpc(method, payload, {
     nodeHome: configDirname(ctx.settingsConfigPath),

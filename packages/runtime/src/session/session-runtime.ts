@@ -3,8 +3,10 @@ import type { McpAppResourceStore, McpAppResourceSnapshot } from '@superone/shar
 import { parseMessageDisplay, type MessageDisplayFields } from '@superone/shared/message-display'
 import { McpAppsError, type McpAppsBinding, type McpAppOrigin, type McpAppsProvider } from '@superone/shared/mcp-apps'
 import type { McpAppAttachmentUpdate } from '@superone/shared/mcp-apps'
-import { mcpAppResourceHashes, mcpAppModelContextInput, mcpAppModelInput, validateMcpAppAttachmentUpdate } from '@superone/shared/mcp-apps-state'
+import { mcpAppResourceHashes, mcpAppModelContextInput, mcpAppModelInput } from '@superone/shared/mcp-apps-state'
 import { McpAppAttachmentIndex } from './mcp-apps-index'
+import { hydrateMcpAppResource, mcpAppStatePatch } from '../mcp-apps/attachment-state'
+import { ArtifactWakes } from './artifact-wakes'
 import type { McpAppsResolvedAttachment } from '@superone/shared/environment/mcp-apps-state-rpc'
 import { assertCodexAccountSwitchAllowed } from '@superone/shared/codex-accounts'
 import { randomUUID } from 'node:crypto'
@@ -245,15 +247,7 @@ export class SessionRuntime {
    */
   private readonly turnQueues = new Map<string, TurnQueueItem[]>()
   private readonly queueAdmissions = new Set<string>()
-  /**
-   * `session + notificationId` already delivered, so a retried
-   * artifact-completion RPC injects once. In memory: a node restart may let
-   * one duplicate through, which is the right way round — a repeated wake is
-   * noise, a lost one leaves the agent believing a path it can read is gone.
-   */
-  private readonly deliveredArtifactNotifications = new Set<string>()
-  /** Deliveries in flight, so concurrent retries share one turn instead of racing. */
-  private readonly deliveringArtifactNotifications = new Map<string, Promise<void>>()
+  private readonly artifactWakes: ArtifactWakes
   /** In-flight runTurn count per session (for multi-turn live inject). */
   private readonly activeTurnCounts = new Map<string, number>()
   private readonly ambientTurns = new Map<string, { messageId: string; text: string }>()
@@ -291,6 +285,7 @@ export class SessionRuntime {
     this.agentsConfirmTimeoutMs =
       opts?.agentsConfirmTimeoutMs ?? DEFAULT_AGENTS_CONFIRM_TIMEOUT_MS
     this.hostActions = opts?.hostActions ?? null
+    this.artifactWakes = new ArtifactWakes(this.hostActions)
     this.hostActionChannel = this.hostActions
       ? new HostActionChannel({
           store: this.hostActions,
@@ -975,26 +970,12 @@ export class SessionRuntime {
   }
 
   loadMcpAppResource(sessionId: string, appInstanceId: string): McpAppResourceSnapshot {
-    const { app } = this.resolveMcpAppAttachment(sessionId, appInstanceId)
-    if (!app.resource) throw new McpAppsError('invalid', 'Saved MCP App resource is unavailable')
-    if (app.resource.html !== undefined) return app.resource as McpAppResourceSnapshot
-    if (!this.mcpAppResources) throw new McpAppsError('invalid', 'Saved MCP App HTML is unavailable')
-    return this.mcpAppResources.hydrate(app.resource)
+    return hydrateMcpAppResource(this.resolveMcpAppAttachment(sessionId, appInstanceId).app, this.mcpAppResources)
   }
 
   updateMcpApp(sessionId: string, appInstanceId: string, update: McpAppAttachmentUpdate): void {
     const target = this.resolveMcpAppAttachment(sessionId, appInstanceId)
-    const binding = target.app.binding
-    // A remote writer must supply bytes; accepting a caller-chosen CAS reference
-    // could attach another session's blob to an otherwise authorized View.
-    if (update.resource && update.resource.html === undefined) throw new McpAppsError('invalid', 'MCP App resource updates must include HTML')
-
-    const patch: McpAppAttachmentUpdate = {
-      ...(update.resource ? { resource: update.resource.html !== undefined && this.mcpAppResources ? this.mcpAppResources.put(update.resource as McpAppResourceSnapshot) : update.resource } : {}),
-      ...(update.presentation ? { presentation: update.presentation } : {}),
-      ...(update.modelContext !== undefined ? { modelContext: update.modelContext ? { ...update.modelContext, source: { appInstanceId, server: binding.server } } : null } : {}),
-    }
-    validateMcpAppAttachmentUpdate(patch)
+    const patch = mcpAppStatePatch(target.app, update, this.mcpAppResources)
     this.events.appendSession({ sessionId, eventType: SESSION_DURABLE_EVENT.agentEvent, payload: {
       event: { type: 'mcp_app_updated', messageId: target.messageId, appInstanceId, update: patch } satisfies AgentEvent,
     } })
@@ -1262,39 +1243,8 @@ export class SessionRuntime {
     if (!session.controllerClientSessionId || session.controllerClientSessionId !== input.controllerClientSessionId) {
       throw Object.assign(new Error('not the session controller'), { code: 'forbidden' })
     }
-    // Keyed by session as well as id: two sessions' jobs are unrelated even
-    // when their ids collide. Recorded only *after* the turn is accepted — a
-    // receipt written before the await turns a transient failure into a
-    // permanently lost notification, which is the one outcome this channel
-    // exists to prevent.
-    const key = `${input.sessionId}\u0000${input.notificationId}`
-    // The receipt lives in the host-action store, which survives a restart;
-    // the in-memory set only stands in when there is no store at all.
-    const delivered = this.hostActions
-      ? this.hostActions.hasDeliveredNotification(input.sessionId, input.notificationId)
-      : this.deliveredArtifactNotifications.has(key)
-    if (delivered) return { delivered: true }
-    const existing = this.deliveringArtifactNotifications.get(key)
-    if (existing) {
-      await existing
-      return { delivered: true }
-    }
-    const work = this.sendWithoutLease({ sessionId: input.sessionId, text: input.text, source: 'task-notification' })
-      .then(() => {
-        if (this.hostActions) {
-          this.hostActions.recordDeliveredNotification(input.sessionId, input.notificationId)
-          return
-        }
-        this.deliveredArtifactNotifications.add(key)
-        if (this.deliveredArtifactNotifications.size > 4096) {
-          const oldest = this.deliveredArtifactNotifications.values().next().value
-          if (oldest !== undefined) this.deliveredArtifactNotifications.delete(oldest)
-        }
-      })
-      .finally(() => this.deliveringArtifactNotifications.delete(key))
-    this.deliveringArtifactNotifications.set(key, work)
-    await work
-    return { delivered: true }
+    return this.artifactWakes.deliverOnce(input.sessionId, input.notificationId, () =>
+      this.sendWithoutLease({ sessionId: input.sessionId, text: input.text, source: 'task-notification' }))
   }
 
   private appendUserMessage(session: NodeSessionRecord, opts: TurnOpts): void {

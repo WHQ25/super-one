@@ -57,6 +57,7 @@ export {
   type HostActionChannelDeps,
   type HostActionSessionView,
 } from './host-action-channel'
+export { ArtifactWakes } from './artifact-wakes'
 export {
   createSessionProviderStore,
   ensureSessionProvidersTable,

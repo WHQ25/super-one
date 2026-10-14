@@ -15,12 +15,10 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
-- Run native OpenCode V2 on desktop and remote nodes with native model, agent,
-  skill and command catalogs, streaming tool previews and leased approvals.
-- Steer queued OpenCode inputs, manage pending native inputs, sign in to MCP
-  servers with OAuth, and rewind or fork native history from desktop or phone.
-- Recover OpenCode turns after event-stream interruptions without resending
-  input, and isolate native session data and provider credentials by service.
+- Run native OpenCode V2 on desktop and remote nodes with native catalogs,
+  streaming tool previews, leased approvals, queued steering, pending-input
+  controls, MCP OAuth and rewind/fork. Recover interrupted turns without
+  resending input and isolate session data and credentials by service.
 - Queue Codex async questions in the composer and keep answers as quoted
   bubbles on desktop and phone, including after history restore; hide dismissed
   questions and deduplicate answer echoes.
@@ -41,10 +39,15 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Run tasks on another desktop: pair two desktops through a phone already
   paired with one of them, then reach the other desktop over LAN, Tailscale
   or the relay.
-- Control who may drive a desktop with an Allow Control switch and one
-  switch per controlling desktop or phone. Sessions started from another
-  device show a "Started from <device>" badge; take control to edit a session
-  currently controlled by another device.
+- Control who may drive a desktop with Allow Control and per-device switches.
+  Name the current session controller, require explicit desktop takeover and
+  show which device started a session. Viewing a session does not take control.
+- Use a paired desktop's full session operations, models, Git, provider profiles,
+  automations, harness controls, Skills, MCP servers, Plugins, Agents and Hooks.
+- Manage remote Codex accounts, usage and limits, complete MCP OAuth in the
+  controller's browser, and use remote MCP Apps and their host's sync directory.
+- Show Workflow agents as phase-grouped status tiles with nested workflows,
+  hover details and per-agent usage.
 - Spawn collaboration children on another connected machine, using that
   machine's own models and keys. The child clones or fetches the repository
   and works in a fresh worktree there.
@@ -61,7 +64,9 @@ Every alpha release keeps its own notes on its GitHub Release.
   them the same way.
 - Phone: open app settings from the device list, before any pairing.
 - Copy Markdown tables from their toolbar or open them in an expanded preview.
-- Schedule phone messages and see prompts when provider quota recovers.
+- Inspect, schedule, edit and cancel phone messages, including quota-recovery
+  offers; changing the time preserves the original message.
+- Show a read-only notice on phones when a session's worktree has been removed.
 - Open collaboration peers through session chips with their host and harness icon.
 
 ### Changed
@@ -95,6 +100,8 @@ Every alpha release keeps its own notes on its GitHub Release.
   model selector, with a provider-settings button in its Models heading.
 - Only pastes over three lines or 500 characters become chips, on desktop
   and phone.
+- Place Windows sidebar and chat-side controls beside the logo in the title bar.
+- Keep phone settings compact and independent of the selected host connection.
 
 ### Fixed
 
@@ -135,8 +142,20 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Phone: paste chips match desktop, file diffs are highlighted with line
   numbers that scroll with the code, and restores retry until they reach
   the current connection.
-- Preserve draft attachment chips when parking and reopening a composer.
+- Preserve parked drafts and their attachment chips in each session's own
+  worktree; restore them to their origin and clear deleted drafts from composers.
 - Retry usage readings whose connection was reset by a proxy or VPN.
+- Synchronize remote project/session lists, unread marks, running state and
+  terminal ownership after reconnects and changes from other clients.
+- Acquire remote terminals only on real input and release revoked or expired
+  control correctly, including after failed terminal closes.
+- Redact remote profile and MCP secrets and preserve existing keys when an edit
+  sends an unreadable or masked value.
+- Reject unsafe MCP resource names and restore masked secrets only from the
+  configuration scope being edited.
+- Validate remote OAuth URLs and callbacks and cancel abandoned device-code logins.
+- Keep remote MCP App views on their host and acknowledge admitted artifact wakes.
+- Keep Windows acrylic sidebars readable and avoid doubled title-bar backgrounds.
 - Start a new session in its project directory instead of the focused
   session's worktree; a Codex session whose directory changes resumes the
   same thread.
@@ -147,10 +166,66 @@ Every alpha release keeps its own notes on its GitHub Release.
   scrolling and pane resizing responsive across harnesses.
 - Compress and batch remote streams, share routed session subscriptions and
   load full tool-result bodies on demand on desktop and phone.
-- Load phone history in bounded transcript windows, reuse unchanged content
-  after reconnect, and keep visible rows stable while streaming or paging.
+- Load phone history in bounded windows, page visible edges automatically,
+  show only active Loading indicators and preserve rows while streaming or paging.
 - Preserve the reading position on upward scroll and keep transcript spacing,
-  reasoning groups and detail disclosures consistent across compaction cuts.
+  reasoning groups and Detail disclosures consistent across compaction cuts,
+  remounts and live async answers.
+- Subscribe to remote terminal output and list changes instead of polling full
+  screens; run remote Git reads asynchronously with timeouts and shared locks.
+- Reuse unchanged Workflow transcripts and count each Agent's tokens accurately.
+
+## [0.73.0-alpha.7] - 2026-10-14
+
+### Added
+
+- Use a paired desktop's full session operations, models, Git, provider profiles,
+  automations, harness controls, Skills, MCP servers, Plugins, Agents and Hooks.
+- Manage a paired desktop's Codex accounts, usage and limits; complete remote
+  MCP OAuth in the controller's browser and run its sessions' MCP Apps.
+- Show Workflow agents as phase-grouped status tiles with nested workflows,
+  hover details and corrected per-agent token counts.
+- Show a read-only notice on phones when a session's worktree has been removed.
+
+### Changed
+
+- Move Windows sidebar and chat-side controls beside the logo in the title bar.
+- Inspect, edit and cancel scheduled phone messages from one panel. Accepted
+  quota-recovery offers leave the transcript; editing the time keeps the message.
+
+### Fixed
+
+- Name the device controlling a session and require an explicit desktop takeover;
+  release revoked clients' control and avoid taking control just to read a timeline.
+- Synchronize remote session and project lists, unread marks and running state,
+  including after reconnects and changes made by another client.
+- Update remote terminal ownership across all tabs, acquire control only on real
+  input, and recover correctly after disconnects, expired leases or failed closes.
+- Redact remote profile and MCP secrets, preserve stored keys when a pushed bundle
+  has no readable key, and keep masked edits within their original config scope.
+- Reject unsafe MCP resource names and non-web OAuth links; cancel abandoned
+  device-code sign-ins and avoid blocking local browser login behind them.
+- Keep remote MCP App views attached to their host and acknowledge artifact wakes
+  when admitted, without waiting for the Agent's whole turn to finish.
+- Preserve each draft's own worktree, restore drafts onto their origin sessions,
+  and clear deleted drafts from composers and in-memory sessions.
+- Keep long-chat Detail animations and height measurements stable, collapse
+  completed reasoning after remounts, and place async answers between whole blocks.
+- Load visible phone history edges automatically, with only an active Loading
+  indicator and no repeated reads when pagination makes no progress.
+- Keep Windows acrylic sidebars readable in dark mode and title bars transparent.
+- Remove doubled spacing and unrelated host metadata from phone settings cards.
+
+### Performance
+
+- Stream paired desktops' terminal output and list changes through subscriptions
+  instead of repeatedly polling full terminal screens.
+- Reuse unchanged Workflow transcripts and run remote Git reads asynchronously
+  with timeouts and shared worktree-operation locks.
+
+### Tests
+
+- Extend remote-control, transcript ordering and Windows title-bar coverage.
 
 ## [0.73.0-alpha.6] - 2026-10-13
 

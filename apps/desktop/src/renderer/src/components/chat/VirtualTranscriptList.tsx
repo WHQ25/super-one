@@ -1,6 +1,7 @@
 import { defaultRangeExtractor, elementScroll, useVirtualizer } from '@tanstack/react-virtual'
 import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type Ref, type RefObject } from 'react'
 import { TranscriptStateProvider } from '@superone/ui/lib/transcript-state'
+import { isFollowingTail } from '@/hooks/useChatScroll'
 import { retainMcpAppTranscript } from '../mcp-apps/layout-store'
 import { McpAppTranscriptRetention } from '../mcp-apps/transcript-retention'
 import { VirtualTranscriptContext } from './virtual-transcript-context'
@@ -88,6 +89,21 @@ export function VirtualTranscriptList({ items, viewportRef, apiRef }: {
   // including after a backward jump. Growth inside the visible row stays put.
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) =>
     (instance.itemSizeCache.has(item.key) ? item.end : item.start) < (instance.scrollOffset ?? 0)
+
+  // A growing row keeps the tail in place only while the chat follows it. The
+  // list-relative distance leaves out the transcript padding around the list, so
+  // a short upward scroll still read as "at the end" and each streamed row
+  // dragged the reader back down. Hosts without useChatScroll keep the geometry.
+  // The distance is a runtime instance member that the typings mark private.
+  useLayoutEffect(() => {
+    const end = virtualizer as unknown as { getVirtualDistanceFromEnd: () => number }
+    const geometric = end.getVirtualDistanceFromEnd
+    end.getVirtualDistanceFromEnd = () => {
+      const following = viewportRef.current ? isFollowingTail(viewportRef.current) : undefined
+      return following === undefined ? geometric() : following ? 0 : Infinity
+    }
+    return () => { end.getVirtualDistanceFromEnd = geometric }
+  }, [virtualizer, viewportRef])
 
   // Keep paragraph callbacks session-owned, not captured by an unmounted message.
   const blockCallbacks = useRef(new Map<Element, (visible: boolean) => void>()).current

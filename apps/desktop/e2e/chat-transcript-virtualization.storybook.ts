@@ -225,6 +225,23 @@ test('follows streaming at the bottom and holds history when following is paused
   expect(await bottomDistance(page)).toBeGreaterThan(1000)
 })
 
+// The transcript's padding sits outside the virtual list, so a short upward
+// scroll still looks like "at the end" to list-relative geometry.
+test('stays paused after a short upward scroll while streaming', async ({ page }) => {
+  await open(page, 'long-history')
+  await page.locator('[data-perf-append-chunk]').click()
+  await expect.poll(() => bottomDistance(page)).toBeLessThan(2)
+  await page.locator(viewport).evaluate(el => {
+    el.dispatchEvent(new WheelEvent('wheel', { deltaY: -20, bubbles: true }))
+    el.scrollTop -= 20
+  })
+  for (let index = 0; index < 3; index++) {
+    await page.locator('[data-perf-append-chunk]').click()
+    await page.waitForTimeout(150)
+  }
+  expect(await bottomDistance(page)).toBeGreaterThan(100)
+})
+
 test('keeps compacted history navigable without mounting the full suffix', async ({ page }) => {
   await open(page, 'compacted-history')
   expect(await page.locator('[data-message-id="perf-0"]').count()).toBe(0)

@@ -2,6 +2,7 @@ import type { Virtualizer } from '@tanstack/react-virtual'
 import { useCallback, useLayoutEffect, useRef, type RefObject } from 'react'
 import { flushSync } from 'react-dom'
 import { useTranscriptState } from '@superone/ui/lib/transcript-state'
+import { isFollowingTail } from '@/hooks/useChatScroll'
 import { useVirtualTranscript } from './virtual-transcript-context'
 
 export interface EdgeMargins { top: number; bottom: number }
@@ -140,7 +141,8 @@ export function createVirtualBlockAnchor(
       // First/fully-above-row measurements and bottom following belong to the
       // outer virtualizer. Only a measured row spanning the fold needs help.
       if (!item || !instance.itemSizeCache.has(item.key) || item.end < offset
-        || viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop <= instance.options.scrollEndThreshold) return
+        || (isFollowingTail(viewport)
+          ?? viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop <= instance.options.scrollEndThreshold)) return
       const box = element.getBoundingClientRect()
       const above = previous ? item.start + previous.end <= offset : box.top + height <= viewport.getBoundingClientRect().top
       if (!above) return

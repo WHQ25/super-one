@@ -56,6 +56,17 @@ function pinToBottom(el: HTMLElement): void {
   el.scrollTop = el.scrollHeight
 }
 
+const followByViewport = new WeakMap<HTMLElement, () => boolean>()
+
+/**
+ * Whether growth in this viewport should keep the tail in place, or `undefined`
+ * without a useChatScroll host. The virtual transcript anchors to the end only
+ * while this holds; it never decides following from geometry itself.
+ */
+export function isFollowingTail(viewport: HTMLElement): boolean | undefined {
+  return followByViewport.get(viewport)?.()
+}
+
 export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseChatScrollReturn {
   const scope = useSessionScope()
   const messages = useActiveSession((s) => s.messages)
@@ -170,7 +181,10 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
     el.addEventListener('touchstart', handleTouchStart, { passive: true })
     el.addEventListener('touchmove', handleTouchMove, { passive: true })
     el.addEventListener('keydown', handleKeyDown)
+    const following = (): boolean => followRef.current
+    followByViewport.set(el, following)
     return () => {
+      if (followByViewport.get(el) === following) followByViewport.delete(el)
       el.removeEventListener('scroll', handleScroll)
       el.removeEventListener('wheel', handleWheel)
       el.removeEventListener('touchstart', handleTouchStart)

@@ -11,16 +11,22 @@ import type { MobileVoiceState } from './voice-service'
 import type { VoiceAudioLevelSource } from './voice-audio-levels'
 import { VoiceWaveform } from './voice-waveform'
 
+// Leave room for the collapsed input's 2 pt bottom inset within its 42 pt row.
+const ENTRY_HEIGHT = 40
+const ENTRY_HIT_SLOP = 2
+
 export function MobileVoiceEntry(props: { enabled: boolean; busy: boolean; onStart: () => void }) {
   if (!props.enabled || props.busy) return null
-  return <IconButton icon={AudioLines} label="Start voice" onPress={props.onStart} />
+  return <IconButton icon={AudioLines} label="Start voice" onPress={props.onStart}
+    style={{ height: ENTRY_HEIGHT }} hitSlop={ENTRY_HIT_SLOP} />
 }
 
 /** A live call stays reachable in the text composer, including other conversations. */
 export function MobileVoiceReturnEntry({ audioLevels, onReturn, paused = false }: { audioLevels?: VoiceAudioLevelSource; onReturn: () => void; paused?: boolean }) {
   const { t } = useMobileLocale()
   return <Pressable testID="mobile-voice-return" accessibilityRole="button" accessibilityLabel={t('Return to voice conversation')}
-    onPress={onReturn} style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
+    onPress={onReturn} hitSlop={ENTRY_HIT_SLOP}
+    style={{ width: 44, height: ENTRY_HEIGHT, alignItems: 'center', justifyContent: 'center' }}>
     <VoiceWaveform levels={audioLevels} compact paused={paused} />
   </Pressable>
 }

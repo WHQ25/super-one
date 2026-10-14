@@ -207,9 +207,10 @@ export const PhoneCompactWithDraft = {
   name: 'Phone · compact send on the input row',
 }
 
-function VoiceDeliveryPreview({ expanded = false, empty = false, light = false, loading = false }: {
-  expanded?: boolean; empty?: boolean; light?: boolean; loading?: boolean
+function VoiceDeliveryPreview({ expanded = false, empty = false, light = false, loading = false, switchHarness = false }: {
+  expanded?: boolean; empty?: boolean; light?: boolean; loading?: boolean; switchHarness?: boolean
 }) {
+  const [provider, setProvider] = useState<'claude' | 'codex'>(switchHarness ? 'claude' : 'codex')
   const [focused, setFocused] = useState(expanded)
   const [draft, setDraft] = useState(empty ? '' : '检查 Composer 按钮的位置和顺序\n切换键盘布局时保留这条草稿。')
   const [feedback, setFeedback] = useState('Offline preview: voice and send only update this fixture.')
@@ -217,11 +218,15 @@ function VoiceDeliveryPreview({ expanded = false, empty = false, light = false, 
     <Pressable accessibilityRole="button" accessibilityLabel="Toggle keyboard layout" onPress={() => setFocused(!focused)}>
       <Text>Toggle keyboard layout</Text>
     </Pressable>
+    {switchHarness ? <Pressable accessibilityRole="button" accessibilityLabel="Switch harness"
+      onPress={() => setProvider(provider === 'claude' ? 'codex' : 'claude')}>
+      <Text>Harness: {provider} · switch</Text>
+    </Pressable> : null}
     <Text>{feedback}</Text>
-    <Preview {...base} tablet={false} focused={focused} draft={draft} onDraft={setDraft}
+    <Preview {...base} provider={provider} tablet={false} focused={focused} draft={draft} onDraft={setDraft}
       frameWidth={320} colorScheme={light ? 'light' : 'dark'} locale="zh" loadingConversation={loading}
       onSend={() => { setFeedback(`Sent: ${draft}`); setDraft('') }}
-      voiceEntry={<MobileVoiceEntry enabled busy={loading} onStart={() => setFeedback('Voice requested (offline preview).')} />} />
+      voiceEntry={provider === 'codex' ? <MobileVoiceEntry enabled busy={loading} onStart={() => setFeedback('Voice requested (offline preview).')} /> : undefined} />
   </View></MobileThemeProvider>
 }
 
@@ -229,6 +234,8 @@ export const PhoneVoiceDelivery = { name: 'Phone · voice then send move togethe
 export const PhoneVoiceExpandedLight = { name: 'Phone · expanded voice and send, narrow light Chinese', render: () => <VoiceDeliveryPreview expanded light /> }
 export const PhoneVoiceEmpty = { name: 'Phone · empty voice entry in either keyboard state', render: () => <VoiceDeliveryPreview empty /> }
 export const PhoneVoiceRestoring = { name: 'Phone · disabled delivery modes during restore', render: () => <VoiceDeliveryPreview loading /> }
+export const PhoneHarnessSwitch = { name: 'Phone · empty composer stays level when switching harness', render: () => <VoiceDeliveryPreview switchHarness empty /> }
+export const PhoneHarnessSwitchLight = { name: 'Phone · harness switch, narrow light Chinese', render: () => <VoiceDeliveryPreview switchHarness empty light /> }
 
 export const PhoneFocusedActionBar = {
   args: { tablet: false, focused: true, draft: 'Ask about the diff' },

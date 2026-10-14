@@ -23,6 +23,7 @@ import type {
   RuntimeReadyResult,
 } from '../harness/index'
 import type { ControlLeaseService } from '../lease/index'
+import type { SandboxPathReady } from '../sandbox/index'
 import type {
   NodeSessionRecord,
   NodeSessionSettings,
@@ -348,8 +349,8 @@ export interface SessionHostPort {
 }
 
 /**
- * Host-specific harness / catalog hooks. CLI injects binary-override probes,
- * enable/disable and provider-side fork; desktop will inject its own later.
+ * Host-specific harness / catalog hooks: binary-override probes,
+ * enable/disable, provider-side fork (CLI) and the host's PATH readiness.
  */
 export interface RpcHostHooks {
   isCodexBinaryOverrideRunnable(): boolean
@@ -376,11 +377,14 @@ export interface RpcHostHooks {
     providers?: ProvidersPort | null,
   ): Promise<HarnessInstallationStatus>
   disableHarness(harnesses: HarnessManager, id: NodeHarnessId): HarnessInstallationStatus
+  /** The host's PATH is final; `sandbox.probe` / `environment.systemInfo` wait for it before caching a lookup. */
+  pathReady?: SandboxPathReady
   /**
    * Fork the provider-side conversation (Claude transcript / Codex thread) for
-   * `session.fork`. Returns the new resume token, or null when there is none.
+   * the dispatcher's `session.fork`. Returns the new resume token, or null when
+   * there is none. A host whose session port serves `edits.fork` omits it.
    */
-  forkHarnessResume(input: {
+  forkHarnessResume?(input: {
     source: NodeSessionRecord
     targetCwd: string
     forkFromMessageId?: string

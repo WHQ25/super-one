@@ -14,6 +14,7 @@ vi.mock('os', async (importOriginal) => {
   return { ...actual, homedir: () => FAKE_HOME }
 })
 
+import { WorkspaceGitService, type WorkspaceProjects } from '@superone/runtime/workspace'
 import { activateWorktree, assignBranch, carryUncommittedChanges, getHandoffPreview, handoffToLocal } from './worktree-ops'
 
 function git(cwd: string, ...args: string[]): string {
@@ -165,6 +166,24 @@ describe('handoffToLocal', () => {
 
     expect(result).toEqual({ ok: false, reason: 'local-dirty' })
     expect(git(wt, 'status', '--porcelain')).not.toBe('')
+  })
+
+  it('queues with a remote client\'s handoff of the same repo, so only one lands on a clean main', async () => {
+    const repo = makeRepo()
+    const windowWt = addDetachedWorktree(repo)
+    const remoteWt = addDetachedWorktree(repo)
+    writeFileSync(join(windowWt, 'window.txt'), 'window\n')
+    writeFileSync(join(remoteWt, 'remote.txt'), 'remote\n')
+    const projects = {
+      get: () => ({ projectId: 'p1', path: repo, name: 'r', repoIdentity: null }),
+      touch: () => {},
+    } as unknown as WorkspaceProjects
+    const served = new WorkspaceGitService(projects)
+
+    const results = await Promise.all([handoffToLocal(windowWt), served.handoffToMain('p1', remoteWt)])
+
+    expect(results.filter((r) => r.ok)).toHaveLength(1)
+    expect(results.filter((r) => !r.ok && (r.reason === 'local-dirty' || r.reason === 'main-dirty'))).toHaveLength(1)
   })
 
   it('reports no-changes for a worktree that has not diverged from main', async () => {

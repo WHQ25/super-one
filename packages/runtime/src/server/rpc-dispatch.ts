@@ -113,6 +113,7 @@ function requiredPorts(method: string): readonly FamilyPort[] {
 function serves(ctx: HostRpcContext, method: string): boolean {
   if (ctx.unservedMethods?.has(method)) return false
   if (Object.hasOwn(SESSION_OPERATION_HANDLERS, method) && !ctx.sessions?.servedOperations?.has(method)) return false
+  if (method === 'session.fork' && !ctx.sessions?.forkOnHost && !ctx.hooks.forkHarnessResume) return false
   // A partial port (`servedMethods`) serves only the methods it names.
   return requiredPorts(method).every((port) => {
     const served = ctx[port] as { readonly servedMethods?: ReadonlySet<string> } | undefined
@@ -671,7 +672,7 @@ async function handleUsage(payload: unknown, ctx: RpcContext): Promise<RpcResult
 async function handleSystemInfo(ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readEnvironment)
   if (denied) return denied
-  const sandbox = await probeSandboxRpc()
+  const sandbox = await probeSandboxRpc(ctx.hooks.pathReady)
   return {
     result: {
       environmentId: ctx.identity.environmentId,
@@ -736,7 +737,7 @@ async function handleSandboxProbe(ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readEnvironment)
   if (denied) return denied
   try {
-    return { result: await probeSandboxRpc() }
+    return { result: await probeSandboxRpc(ctx.hooks.pathReady) }
   } catch (err) {
     return mapThrown(err)
   }
@@ -1490,6 +1491,8 @@ async function handleSessionFork(payload: unknown, ctx: RpcContext): Promise<Rpc
     if (ctx.sessions.forkOnHost) {
       return { result: await ctx.sessions.forkOnHost({ sessionId, mode, forkFromMessageId, carryLocalChanges: p.carryLocalChanges !== false, client: { clientSessionId: ctx.client.clientSessionId }, leaseId: String(p.leaseId ?? ''), generation: String(p.generation ?? '') }) }
     }
+    const { hooks } = ctx
+    if (!hooks.forkHarnessResume) return unsupported('session.fork')
     if (mode === 'worktree') {
       // writeWorkspace for git worktree create
       const writeDenied = requireScopes(ctx.client, OPERATION_SCOPES.writeWorkspace)
@@ -1518,7 +1521,7 @@ async function handleSessionFork(payload: unknown, ctx: RpcContext): Promise<Rpc
       const anchor = source.harnessId === 'opencode' && forkFromMessageId ? ctx.sessions.messages?.(sessionId).find(message => message.id === forkFromMessageId) : undefined
       const nativeForkAnchor = anchor?.role === 'user' ? anchor.checkpointId : anchor?.metadata?.forkAnchorId
       if (source.harnessId === 'opencode' && forkFromMessageId && !nativeForkAnchor) throw new Error('Native fork anchor is unavailable; reload the session')
-      providerResume = await ctx.hooks.forkHarnessResume({
+      providerResume = await hooks.forkHarnessResume({
         source,
         targetCwd: effectiveCwd,
         forkFromMessageId,

@@ -179,6 +179,7 @@ export function openDesktopDomain(sessions: NodeHostSessionManager, phonePorts: 
         return enableDesktopHarness(input)
       },
       disableHarness: (_harnesses, id) => disableDesktopHarness(id),
+      pathReady: ensureShellPath,
     },
     agentSettings: () => desktopAgentSettings(readAppSettings()),
     config: { sessionProviders: sessionProviderStore(), automations: createDesktopAutomationsPort() },

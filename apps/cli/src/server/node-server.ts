@@ -61,7 +61,7 @@ export async function startNodeServer(opts: NodeServerOptions): Promise<NodeServ
   const hooks = createCliRpcHostHooks()
   const startedAt = opts.startedAt ?? Date.now()
 
-  return startRuntimeNodeServer<RpcContext>({
+  const server = await startRuntimeNodeServer<RpcContext>({
     identity: opts.identity,
     auth: opts.auth,
     bindHost: opts.bindHost,
@@ -102,4 +102,10 @@ export async function startNodeServer(opts: NodeServerOptions): Promise<NodeServ
       simulatedHarness: opts.simulatedHarness,
     }),
   })
+  // A revoked or suspended client loses its sessions and terminals now, not when its leases expire.
+  opts.auth.onRevoke = (clientSessionId) => {
+    server.closeSocketsForClient(clientSessionId)
+    opts.leases.revokeHolder(clientSessionId)
+  }
+  return server
 }

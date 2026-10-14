@@ -10,6 +10,23 @@ export {
 } from './worktree-porcelain'
 export { gitRun, type GitRunOptions } from './run'
 export { withRepoLock } from './repo-lock'
+export {
+  GIT_READ_OPTS,
+  worktreeGit,
+  samePath,
+  resolveMainWorktreeDir,
+  carryUncommittedChanges,
+  activateWorktree,
+  handoffPreview,
+  handoffToMain,
+  assignBranch,
+  type WorktreeGit,
+  type ActivateWorktreeInput,
+  type ActivateWorktreeResult,
+  type AssignBranchResult,
+  type HandoffResult,
+  type HandoffPreview,
+} from './worktree-ops'
 export { fetchRemoteCommands, isGitRemoteName } from './fetch'
 export { listGitMentionRefs, probeGitMentionCapabilities, type GitMentionRunner, type GitMentionRunners } from './mention-refs'
 export { ghRun, isGhMissingError } from './gh-run'

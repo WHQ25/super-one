@@ -110,6 +110,31 @@ describe('node server integration', () => {
     client.close()
   }, 30_000)
 
+  it('ends the leases of a revoked or suspended client so another can take control at once', async () => {
+    const runtime = await freePortRuntime()
+    const other = await connectAuthedRpc(runtime, 'other')
+    const { terminalId } = (await other.rpc('terminal.create', { cwd: runtime.config.nodeHome })) as { terminalId: string }
+    const resource = { environmentId: runtime.identity.environmentId, terminalId }
+
+    for (const cut of [
+      (id: string) => runtime.auth.revokeClientSession(id),
+      (id: string) => runtime.auth.setClientSessionSuspended(id, true),
+    ]) {
+      const holder = await connectAuthedRpc(runtime, 'holder')
+      await holder.rpc('terminal.acquireControl', { terminalId, ttlMs: 60_000 })
+      await expect(other.rpc('terminal.acquireControl', { terminalId, ttlMs: 60_000 })).rejects.toBeTruthy()
+
+      expect(cut(holder.clientSessionId)).toBe(true)
+
+      expect(runtime.leases.get(resource)).toBeNull()
+      const taken = (await other.rpc('terminal.acquireControl', { terminalId, ttlMs: 60_000 })) as { leaseId: string; generation: string }
+      await other.rpc('terminal.releaseControl', { terminalId, ...taken })
+      holder.close()
+    }
+    await other.rpc('terminal.kill', { terminalId, ...(await other.rpc('terminal.acquireControl', { terminalId, ttlMs: 60_000 }) as object) })
+    other.close()
+  }, 30_000)
+
   it('rejects websocket upgrade without a valid ticket', async () => {
     const runtime = await freePortRuntime()
     const wsUrl = runtime.server.url.replace(/^http/, 'ws') + '/ws'

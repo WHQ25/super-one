@@ -98,6 +98,8 @@ A single request may mix spawn, handoff and link launches (one confirm card, mul
 
 Each profile's `defaultConfig` is the user's own launch setup for that agent: model, effort, permission and sandbox mode, and the `apiProviderId` (key or subscription account) their chats run on. Start from it. When it fits the task, leave those `config` fields out and the host applies it. Change a field when the user asks for something else, or when the task needs something the default lacks.
 
+Besides the built-in `<harness>-base` agents, the list includes agent profiles the user saved: named agents whose `description` says what they are for, whose own model, effort, fast-mode and context defaults are already folded into `defaultConfig`, and whose instructions reach the child's system prompt ahead of the collaboration protocol. Pick one by its description the way you would pick a harness. To create or change one, use `agent_profile_list` / `agent_profile_apply` / `agent_profile_delete`; every write asks the user.
+
 What you can read to decide, when it matters. The user's instructions decide how to use it; there is no preferred policy:
 
 | Source | Tells you |

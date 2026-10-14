@@ -147,6 +147,14 @@ export function useHostProjects(options?: UseHostProjectsOptions): UseHostProjec
     return onHostProjectsChanged(() => setRetryNonce((n) => n + 1))
   }, [isLocal])
 
+  // The host's own window, its phones or another controller changed its projects.
+  useEffect(() => {
+    if (isLocal || paused) return
+    return window.environment.onProjectsChanged((connectionId) => {
+      if (connectionId === selectedHostConnectionId) setRetryNonce((n) => n + 1)
+    })
+  }, [isLocal, selectedHostConnectionId, paused])
+
   const refresh = useCallback((opts?: { force?: boolean }) => {
     if (opts?.force) forceNextRef.current = true
     setRetryNonce((n) => n + 1)

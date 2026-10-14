@@ -20,6 +20,7 @@ import { buildSlashCommands } from '../helpers/chat-helpers'
 import { accumulateCodexFooterTokens, getCodexUsageStepTokens } from '../helpers/codex-helpers'
 import { mergeMessagesByMaxSeq } from '../helpers/event-helpers'
 import { clearUnseenCompleted } from '../helpers/unseen-completed'
+import { applySessionActivity } from '../helpers/session-activity'
 import { applyRemoteControlChange } from '../helpers/remote-control'
 import { inferProviderFromHarnessId } from '../helpers/provider-routing'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
@@ -185,6 +186,11 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
         const { projectPath, sessionId } = event
         set((s) => clearUnseenCompleted(s, projectPath, sessionId))
       }
+      return
+    }
+
+    if (event.type === 'session_activity') {
+      set((s) => applySessionActivity(s, event))
       return
     }
 

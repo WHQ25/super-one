@@ -4769,6 +4769,8 @@ export const AgentIpcChannels = {
   ENVIRONMENT_STATUS_EVENT: 'environment:statusEvent',
   /** A remote session the chat must read again (`EnvironmentHost.onRemoteSessionResync`). */
   ENVIRONMENT_SESSION_RESYNC_EVENT: 'environment:sessionResyncEvent',
+  /** A paired machine's project list changed (`EnvironmentHost.onProjectListChanged`). */
+  ENVIRONMENT_PROJECTS_CHANGED_EVENT: 'environment:projectsChangedEvent',
   /** Main → renderer SSH probe/install progress push. */
   ENVIRONMENT_INSTALL_PROGRESS: 'environment:installProgress',
   /** Node-local AI provider credentials (masked). */

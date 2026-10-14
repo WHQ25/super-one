@@ -703,6 +703,8 @@ agentService.setSessionForegroundListener((windowId, ref, foreground, sender) =>
     })
   }
   rendererInterest.setShown(windowId, ref, foreground)
+  // A remote session on screen is read on its machine too (a local one marks itself through setForeground).
+  if (foreground && ref.environmentId !== localEnvironmentId) environmentBridgeHost?.remoteSessionShown(ref.environmentId, ref.sessionId)
 })
 /** A terminal event to the frontends following its terminal; responses with no terminal go to the windows. */
 function publishTerminalEvent(event: TerminalEvent): void {
@@ -1770,19 +1772,23 @@ function setAppMediaPermissions(appId: string, manifest: { permissions?: { media
  * Forward supervisor state changes to the renderer once per host instance.
  * Attached lazily so the environment subsystem stays unloaded until used.
  */
-let environmentStatusBridgeAttached = false
+let environmentBridgeHost: EnvironmentHost | null = null
 let environmentConnectivityDisposer: (() => void) | null = null
 function attachEnvironmentStatusBridge(host: EnvironmentHost): void {
-  if (environmentStatusBridgeAttached) return
-  environmentStatusBridgeAttached = true
+  if (environmentBridgeHost) return
+  environmentBridgeHost = host
+  host.setRemoteSessionOnScreen((connectionId, sessionId) => rendererInterest.shown().some((ref) => ref.environmentId === connectionId && ref.sessionId === sessionId))
   host.onStatusChange((snapshot) => {
     safeSend(AgentIpcChannels.ENVIRONMENT_STATUS_EVENT, snapshot)
   })
   // Remote node turns: map session.events → AgentEvent and stream into chat.
   host.setAgentEventSink((event) => sessionEvents.publish({ event, source: 'remote-node' }))
   host.setFollowListener((ref, followed) => rendererInterest.follow(ref, followed))
-  // Sessions another client creates, renames or removes on a machine show up here.
-  host.onSessionListChanged(() => safeSend(AgentIpcChannels.SESSIONS_CHANGED))
+  // Sessions and projects another client creates, renames or removes on a machine show up here.
+  host.onSessionListChanged((_connectionId, projectKey) => safeSend(AgentIpcChannels.SESSIONS_CHANGED, projectKey))
+  host.onProjectListChanged((connectionId) => safeSend(AgentIpcChannels.ENVIRONMENT_PROJECTS_CHANGED_EVENT, connectionId))
+  // A machine's sidebar summaries (running, read) of sessions this desktop does not follow.
+  host.onRemoteSessionActivity((event) => rendererAgentEventTransport.push(event))
   // A remote session whose missed events are gone: the chat reads its snapshot again.
   host.onRemoteSessionResync((target) => safeSend(AgentIpcChannels.ENVIRONMENT_SESSION_RESYNC_EVENT, target))
   // Auto-connect desired remotes + network-online edge wake.

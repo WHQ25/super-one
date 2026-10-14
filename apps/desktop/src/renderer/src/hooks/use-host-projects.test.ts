@@ -12,12 +12,14 @@ let statusListener: ((snapshot: {
   state: string
   generation: number
 }) => void) | null = null
+let projectsListener: ((connectionId: string) => void) | null = null
 
 beforeEach(() => {
   listItems.mockReset()
   listProjects.mockReset()
   connect.mockReset()
   statusListener = null
+  projectsListener = null
   listItems.mockResolvedValue([])
   listProjects.mockResolvedValue([])
   connect.mockResolvedValue(undefined)
@@ -30,6 +32,10 @@ beforeEach(() => {
     onStatusEvent: (listener: typeof statusListener) => {
       statusListener = listener
       return () => { statusListener = null }
+    },
+    onProjectsChanged: (listener: typeof projectsListener) => {
+      projectsListener = listener
+      return () => { projectsListener = null }
     },
   }
 
@@ -168,6 +174,30 @@ describe('useHostProjects', () => {
 
     await waitFor(() => {
       expect(result.current.projects[0]?.name).toBe('reconnected')
+    })
+    expect(listProjects).toHaveBeenCalledTimes(2)
+  })
+
+  it("reloads when the selected host's projects change elsewhere, and ignores other hosts", async () => {
+    listItems.mockResolvedValue([{ connectionId: 'env-6', state: 'connected', label: 'B' }])
+    listProjects
+      .mockResolvedValueOnce([{ projectId: 'p1', path: '/work/first', name: 'first' }])
+      .mockResolvedValueOnce([{ projectId: 'p2', path: '/work/added-on-b', name: 'added-on-b' }])
+
+    const { result, rerender } = renderHook(() => useHostProjects())
+    act(() => {
+      useAppStore.setState({ selectedHostConnectionId: 'env-6' })
+    })
+    rerender()
+    await waitFor(() => {
+      expect(result.current.projects[0]?.name).toBe('first')
+    })
+
+    act(() => { projectsListener?.('other-host') })
+    act(() => { projectsListener?.('env-6') })
+
+    await waitFor(() => {
+      expect(result.current.projects[0]?.name).toBe('added-on-b')
     })
     expect(listProjects).toHaveBeenCalledTimes(2)
   })

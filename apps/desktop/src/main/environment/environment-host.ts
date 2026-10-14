@@ -66,6 +66,8 @@ import { SshTunnelManager } from './ssh-tunnel-manager'
 import { formatConnectionLog } from './connection-log'
 import { shouldAbortRemoteSessionDrain } from './session-drain-policy'
 import { RemoteSessionFeed, type RemoteSessionListener } from './remote-session-feed'
+import { remoteListObserver, type SessionActivityEvent } from './remote-list-observer'
+import type { SessionActivity } from '@superone/shared/session-activity'
 import { createRemoteSession, type RemoteSessionCreateInput } from './create-remote-session'
 import {
   bootstrapNodeOverSsh,
@@ -1659,23 +1661,77 @@ export class EnvironmentHost {
     this.watchedSessionLists.delete(connectionId)
   }
 
-  /** Listeners told which machine's session list changed. */
-  private readonly sessionListListeners = new Set<(connectionId: string) => void>()
+  /** Listeners told which machine's session list changed, and in which project when the node says. */
+  private readonly sessionListListeners = new Set<(connectionId: string, projectKey?: string) => void>()
+  /** Listeners told which machine's project list changed. */
+  private readonly projectListListeners = new Set<(connectionId: string) => void>()
+  /** Listeners given a remote session's sidebar summary, keyed by its desktop project key. */
+  private readonly sessionActivityListeners = new Set<(event: SessionActivityEvent) => void>()
   /** Machines whose list changes this desktop watches. */
   private readonly watchedSessionLists = new Set<string>()
+  /** Each machine's latest sidebar summary of the sessions it holds live, kept across reconnects. */
+  private readonly remoteSummaries = new Map<string, Map<string, SessionActivity>>()
+  /** Whether a window here shows a remote session (set by the app). */
+  private remoteSessionOnScreen: (connectionId: string, sessionId: string) => boolean = () => false
 
-  onSessionListChanged(listener: (connectionId: string) => void): () => void {
+  setRemoteSessionOnScreen(check: (connectionId: string, sessionId: string) => boolean): void {
+    this.remoteSessionOnScreen = check
+  }
+
+  /**
+   * A window here started showing a remote session: its completion is read,
+   * so tell the machine as a phone does, and every client drops the dot.
+   */
+  remoteSessionShown(connectionId: string, sessionId: string): void {
+    const summary = this.remoteSummaries.get(connectionId)?.get(sessionId)
+    if (summary) void this.reportSeen(connectionId, summary).catch(() => {})
+  }
+
+  /** Only a machine's live sessions keep a receipt, and each has a summary. */
+  private async reportSeen(connectionId: string, summary: SessionActivity): Promise<void> {
+    if (!summary.completedMessageId || summary.completedMessageId === summary.seenCompletedMessageId) return
+    await this.requireRemoteGateway(connectionId).markSeen(summary.sessionId)
+  }
+
+  onSessionListChanged(listener: (connectionId: string, projectKey?: string) => void): () => void {
     this.sessionListListeners.add(listener)
     return () => { this.sessionListListeners.delete(listener) }
   }
 
-  /** Tell the list listeners when a node's sessions are created, renamed, flagged, tagged or removed, by any client. */
+  onProjectListChanged(listener: (connectionId: string) => void): () => void {
+    this.projectListListeners.add(listener)
+    return () => { this.projectListListeners.delete(listener) }
+  }
+
+  onRemoteSessionActivity(listener: (event: SessionActivityEvent) => void): () => void {
+    this.sessionActivityListeners.add(listener)
+    return () => { this.sessionActivityListeners.delete(listener) }
+  }
+
+  /**
+   * Follow a node's session list and projects as its phones do: every
+   * create, rename, flag, tag, removal and sidebar activity, by any client.
+   */
   private watchSessionList(connectionId: string): void {
     if (this.watchedSessionLists.has(connectionId)) return
     this.watchedSessionLists.add(connectionId)
-    this.feedFor(connectionId).observe(() => {
-      for (const listener of [...this.sessionListListeners]) listener(connectionId)
-    }).catch(() => { this.watchedSessionLists.delete(connectionId) })
+    let summaries = this.remoteSummaries.get(connectionId)
+    if (!summaries) this.remoteSummaries.set(connectionId, summaries = new Map())
+    this.feedFor(connectionId).observe(remoteListObserver(connectionId, summaries, {
+      sessionListChanged: (projectKey) => {
+        for (const listener of [...this.sessionListListeners]) listener(connectionId, projectKey)
+      },
+      projectsChanged: () => {
+        this.remoteProjectCache.delete(connectionId)
+        this.remoteProjectLoads.delete(connectionId)
+        for (const listener of [...this.projectListListeners]) listener(connectionId)
+      },
+      activity: (event) => {
+        for (const listener of [...this.sessionActivityListeners]) listener(event)
+        // A completion landing in a session on screen here is read as it lands.
+        if (this.remoteSessionOnScreen(connectionId, event.activity.sessionId)) void this.reportSeen(connectionId, event.activity).catch(() => {})
+      },
+    })).catch(() => { this.watchedSessionLists.delete(connectionId) })
   }
 
   /** Calls `onEvent` as each event of a remote session is pushed, without mapping it for the chat. */
@@ -2210,7 +2266,8 @@ export class EnvironmentHost {
     let promise!: Promise<ProjectSnapshot[]>
     promise = this.requireRemoteGateway(connectionId).listProjects().then((projects) => {
       const latest = this.lastStatus.get(connectionId)
-      if (latest?.state === 'connected' && latest.generation === generation) {
+      // A load the node's project change superseded must not cache the list it read before.
+      if (latest?.state === 'connected' && latest.generation === generation && this.remoteProjectLoads.get(connectionId)?.promise === promise) {
         this.remoteProjectCache.set(connectionId, { generation, projects })
       }
       return projects

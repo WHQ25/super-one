@@ -979,6 +979,14 @@ describe('idle eviction', () => {
     useChatStore.getState().handleAgentEvent(makeEvent({ type: 'session_seen', sessionId: 'b', messageId: 'reply-1' }))
     expect(useChatStore.getState().projectSessions).toBe(after)
   })
+
+  it("shows a paired machine's session as running from its sidebar summary, without a project path on the event", () => {
+    const projectPath = 'remote:conn-b:/work/app'
+    useChatStore.getState().handleAgentEvent({ type: 'session_activity', activity: {
+      sessionId: 'b-own', projectPath, status: 'streaming', provider: 'codex', pendingCount: 0, pendingReason: { en: null, zh: null },
+    } })
+    expect(useChatStore.getState().projectSessions[projectPath]._sessions['b-own']).toMatchObject({ status: 'streaming', _historyHydrated: false })
+  })
 })
 
 describe('hasPendingInteraction', () => {
@@ -1902,6 +1910,17 @@ describe('remote switchSession hydrate race (agent reply loss)', () => {
     expect(asst.content).toEqual([{ type: 'text', text: 'Hello world' }])
     expect(sess.status).toBe('idle')
     expect(sess.awaitingAssistantReply).toBe(false)
+  })
+
+  it("drops the unread dot of a paired machine's session opened here", async () => {
+    seedRemoteTwoSessions('Hello')
+    useChatStore.getState().handleAgentEvent({ type: 'session_activity', completed: true, activity: {
+      sessionId: sidA, projectPath: projectKey, status: 'idle', provider: 'claude', completedMessageId: 'asst-1', seenCompletedMessageId: null,
+      pendingCount: 0, pendingReason: { en: null, zh: null },
+    } })
+    expect(useChatStore.getState().projectSessions[projectKey]!.unseenCompletedSessions.has(sidA)).toBe(true)
+    await useChatStore.getState().switchSession(sidA)
+    expect(useChatStore.getState().projectSessions[projectKey]!.unseenCompletedSessions.has(sidA)).toBe(false)
   })
 
   /**

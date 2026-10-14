@@ -68,3 +68,23 @@ it('refreshes a phone-created voice session in another cached project without se
   await waitFor(() => expect(result.current.folderSessions[FOLDER][0]).toMatchObject(voice))
   expect(mockEnvironment.listSessions).toHaveBeenCalledWith('local', FOLDER, { limit: 13, offset: 0 })
 })
+
+it("re-reads only the paired machine's project its list notice names", async () => {
+  const REMOTE = 'remote:conn-b:/work/app'
+  let changed!: (projectPath?: string) => void
+  vi.mocked(window.app.onSessionChanged).mockImplementation(callback => { changed = callback; return () => {} })
+  sessionFixtures.byFolder.p1 = [{ sessionId: 'b-own', title: 'New session', lastActiveAt: '2026-10-10T00:00:00.000Z', messageCount: 0 }]
+  const { result } = renderHook(() => useSidebarSessions({
+    currentFolder: null, selectedHostConnectionId: 'conn-b',
+    hostProjects: [{ id: 'p1', path: REMOTE, name: 'app', addedAt: '2026-10-10T00:00:00.000Z', lastOpened: '2026-10-10T00:00:00.000Z' }],
+  }))
+  await act(async () => { await result.current.loadFolderSessions(FOLDER, 'expand') })
+  await act(async () => { await result.current.loadFolderSessions(REMOTE, 'expand') })
+  mockEnvironment.listSessions.mockClear()
+
+  // B's window renames its session; B's `sessionList` notice names the project.
+  sessionFixtures.byFolder.p1 = [{ ...sessionFixtures.byFolder.p1[0], title: 'Renamed on B' }]
+  await act(async () => { changed(REMOTE) })
+  await waitFor(() => expect(result.current.folderSessions[REMOTE][0]).toMatchObject({ sessionId: 'b-own', title: 'Renamed on B' }))
+  expect(mockEnvironment.listSessions.mock.calls).toEqual([['conn-b', 'p1', { limit: 13, offset: 0 }]])
+})

@@ -785,6 +785,11 @@ const environmentAPI = {
     ipcRenderer.on(AgentIpcChannels.ENVIRONMENT_SESSION_RESYNC_EVENT, handler)
     return () => ipcRenderer.removeListener(AgentIpcChannels.ENVIRONMENT_SESSION_RESYNC_EVENT, handler)
   },
+  onProjectsChanged: (callback: (connectionId: string) => void) => {
+    const handler = (_e: unknown, connectionId: string): void => callback(connectionId)
+    ipcRenderer.on(AgentIpcChannels.ENVIRONMENT_PROJECTS_CHANGED_EVENT, handler)
+    return () => ipcRenderer.removeListener(AgentIpcChannels.ENVIRONMENT_PROJECTS_CHANGED_EVENT, handler)
+  },
   onCloneProgress: (callback: (percent: number) => void) => {
     const handler = (_e: unknown, percent: number): void => callback(percent)
     ipcRenderer.on(AgentIpcChannels.ENVIRONMENT_CLONE_PROGRESS, handler)

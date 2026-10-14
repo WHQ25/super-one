@@ -4,6 +4,7 @@ import { ToolIcon } from './ToolIcon'
 import type { ToolIcon as ToolIconName } from './tool-display'
 import {
   CompactLabeledToolRow,
+  ToolSummary,
   toolOutcomeLabel,
   toolRowTone,
   withStreamingEllipsis,
@@ -88,7 +89,6 @@ export function UiControlToolRow({ mcpToolName, params, result, isStreaming, isE
   }
 
   const outcome = !isStreaming && !isDenied && !isError ? uiControlOutcome(result) : null
-  const summary = [subject, outcome ? t(`chat.toolBlock.uiControl.outcome.${outcome}`) : ''].filter(Boolean).join(' · ')
 
   return (
     <CompactLabeledToolRow
@@ -105,7 +105,10 @@ export function UiControlToolRow({ mcpToolName, params, result, isStreaming, isE
       )}
       streaming={isStreaming}
       tone={toolRowTone(isDenied, isError)}
-      summary={summary || undefined}
-    />
+      summary={subject || undefined}
+    >
+      {/* Outside the truncating subject: a long path must not hide that the change is waiting. */}
+      {outcome && <ToolSummary className="shrink-0">{t(`chat.toolBlock.uiControl.outcome.${outcome}`)}</ToolSummary>}
+    </CompactLabeledToolRow>
   )
 }

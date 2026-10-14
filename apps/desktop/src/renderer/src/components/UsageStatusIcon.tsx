@@ -524,6 +524,7 @@ function ClaudeRateLimitIcon({ credentialDir, status, tip: liveTip }: { credenti
           <WindowRow key={w.id ?? w.label} {...w} />
         ))}
         {limits.extraUsage && <ExtraUsageRow extra={limits.extraUsage} />}
+        {limits.error && <p className="text-muted-foreground" role="status">{t('settings.harnesses.codexAccount.usageUnavailable')}</p>}
       </RateLimitGauge>
     </RateLimitTipHost>
   )

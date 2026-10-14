@@ -384,8 +384,9 @@ export async function readClaudeRateLimits(credentialDir: string | null, opts: {
       resp = await fetchUsage(refreshed)
     }
     if (resp.status === 429) {
-      log.warn('[claude-usage] rate limited (429)')
-      return { fingerprint: claudeCredentialFingerprint(creds), rateLimitedForMs: retryAfterMs(resp) ?? 0 }
+      const retryMs = retryAfterMs(resp)
+      log.warn('[claude-usage] rate limited (429) retryAfterMs=%s', retryMs ?? 'none')
+      return { fingerprint: claudeCredentialFingerprint(creds), rateLimitedForMs: retryMs ?? 0 }
     }
     const fingerprint = claudeCredentialFingerprint(creds)
     if (!resp.ok) return { fingerprint, error: `Claude usage request failed (HTTP ${resp.status}).` }

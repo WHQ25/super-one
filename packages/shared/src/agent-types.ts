@@ -3536,6 +3536,8 @@ export interface ClaudeExtraUsage {
 
 export interface ClaudeRateLimits {
   quotaKey?: string
+  /** A failed refresh; the last successful reading and its timestamp are retained. */
+  error?: string
   windows: ClaudeRateLimitWindow[]
   extraUsage: ClaudeExtraUsage | null
   planType: string | null

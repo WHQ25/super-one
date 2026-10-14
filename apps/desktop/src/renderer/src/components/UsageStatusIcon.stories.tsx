@@ -275,6 +275,25 @@ function CodexAccountUsagePreview({ stale = false }: { stale?: boolean }) {
   return <div className="flex h-screen overflow-hidden"><SidebarPreview>{ready && <UsageStatusIcon />}</SidebarPreview></div>
 }
 
+/** Claude refresh rate limited upstream: the last reading stays, with the unavailable note. */
+function ClaudeStaleUsagePreview() {
+  const [ready, setReady] = useState(false)
+  useEffect(() => {
+    seedSession(null)
+    const fetchedAt = Date.now() - 45 * 60_000
+    mockIpc('app', 'claudeGetRateLimits', async () => ({
+      planType: 'Max',
+      windows: [{ label: '5h', usedPercent: 82, resetsAt: Math.floor(Date.now() / 1000) + 3 * 3600 }],
+      extraUsage: null,
+      fetchedAt,
+      error: 'Rate limited; showing the last reading.',
+    }))
+    setReady(true)
+  }, [])
+  return <div className="flex h-screen overflow-hidden"><SidebarPreview>{ready && <UsageStatusIcon />}</SidebarPreview></div>
+}
+
+export const ClaudeStaleUsage: Story = { render: () => <ClaudeStaleUsagePreview /> }
 export const CodexAccountUsage: Story = { render: () => <CodexAccountUsagePreview /> }
 export const CodexStaleUsage: Story = { render: () => <CodexAccountUsagePreview stale /> }
 

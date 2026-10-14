@@ -50,11 +50,12 @@ export async function getClaudeRateLimits(force = false, credentialDir: string |
     if (!creds?.oauth.accessToken?.trim()) return null
     const identity = await identityFor(credentialDir, claudeCredentialFingerprint(creds))
     if (!identity) return null
-    const { value } = await readClaudeRateLimits(credentialDir, { force, preferCached, log: usageLog })
+    const { value, error } = await readClaudeRateLimits(credentialDir, { force, preferCached, log: usageLog })
+    if (error) log.warn('[claude-usage] reading failed force=%s: %s', force, error)
     if (!value) return null
     // Each upstream reading is sampled into the history once, however often the gauge polls.
     const previous = identity.decorated
-    if (previous && previous.fetchedAt === value.fetchedAt) return previous.value
+    if (previous && previous.fetchedAt === value.fetchedAt) return error ? { ...previous.value, error } : previous.value
     const fetchedAt = value.fetchedAt ?? Date.now()
     const decorated: ClaudeRateLimits = { ...value, quotaKey: identity.quotaKey,
       windows: value.windows.map((window) => usageHistory.observe(identity.quotaKey, { ...window,
@@ -62,7 +63,7 @@ export async function getClaudeRateLimits(force = false, credentialDir: string |
           : window.id?.startsWith('seven_day') || window.id?.startsWith('weekly_scoped:') ? 7 * 24 * 60 : null,
       }, fetchedAt)) }
     identity.decorated = { fetchedAt: value.fetchedAt, value: decorated }
-    return decorated
+    return error ? { ...decorated, error } : decorated
   } catch (e) {
     log.info('[claude-usage] getClaudeRateLimits failed: %s', String(e))
     return identities.get(credentialDir ?? '')?.decorated?.value ?? null

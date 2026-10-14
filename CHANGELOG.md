@@ -30,8 +30,10 @@ Every alpha release keeps its own notes on its GitHub Release.
   retained while browsing other chats, pauses and app backgrounding. Preserve
   delegated work and return to the backing Codex thread when the call ends;
   keep remote playback decoding across pauses and hide unavailable call entries.
-- Expand Markdown tables and Mermaid previews, and scale Markdown preview
-  text with the pane width.
+- Expand Markdown tables and Mermaid previews, scale Markdown preview
+  text with the pane width, and fade table edges while columns remain hidden.
+- Show Claude `/recap` as a transcript recap row on desktop and phone,
+  including after history restore.
 - Preserve native Codex subagent creation models, reasoning effort and turn roots
   across session persistence and phone projection; UI consumption is deferred.
 - Prepare Codex follow-up prompt suggestions for the existing desktop and mobile
@@ -75,7 +77,9 @@ Every alpha release keeps its own notes on its GitHub Release.
   through the shared desktop and phone turn view, with live command output and
   one session todo list; keep older stored turns readable.
 - Use each harness's own launch defaults, model catalog and permission controls
-  for sessions, collaboration tasks and automations.
+  for sessions, collaboration tasks and automations. Collaborators inherit the
+  user's saved account/provider, permission and sandbox defaults; per-account
+  usage identifies the matching account to launch.
 - Use the official OpenCode 2 client for desktop sessions and mobile-controlled
   sessions, preserving native permissions and waiting for event connection readiness.
 - Upgrade Claude Agent SDK to 0.3.296 (Claude Code 2.1.296).
@@ -144,7 +148,13 @@ Every alpha release keeps its own notes on its GitHub Release.
   the current connection.
 - Preserve parked drafts and their attachment chips in each session's own
   worktree; restore them to their origin and clear deleted drafts from composers.
-- Retry usage readings whose connection was reset by a proxy or VPN.
+- Refresh Claude and Codex account usage independently, preserve cached meters
+  through transient failures and retry connection resets caused by proxies or VPNs.
+  Remove signed-out account profiles without deleting their session history.
+- Keep the phone composer height stable when switching harnesses or showing
+  voice controls.
+- Align delegated task bubbles' timestamps and copy controls with user bubbles
+  and remove extra Markdown spacing.
 - Synchronize remote project/session lists, unread marks, running state and
   terminal ownership after reconnects and changes from other clients.
 - Acquire remote terminals only on real input and release revoked or expired
@@ -170,10 +180,38 @@ Every alpha release keeps its own notes on its GitHub Release.
   show only active Loading indicators and preserve rows while streaming or paging.
 - Preserve the reading position on upward scroll and keep transcript spacing,
   reasoning groups and Detail disclosures consistent across compaction cuts,
-  remounts and live async answers.
+  remounts and live async answers. Keep desktop history steady as composers
+  grow or switch, and resume following only when the reader returns to the tail.
 - Subscribe to remote terminal output and list changes instead of polling full
   screens; run remote Git reads asynchronously with timeouts and shared locks.
 - Reuse unchanged Workflow transcripts and count each Agent's tokens accurately.
+
+## [0.73.0-alpha.8] - 2026-10-14
+
+### Added
+
+- Show Claude `/recap` as a transcript recap row on desktop and phone,
+  including after history restore.
+- Launch collaborators with the user's saved defaults and Claude/Codex accounts;
+  identify each account's usage with its matching launch provider.
+- Suggest separate tasks for out-of-scope issues from the shared host prompt.
+- Fade Markdown table edges while more columns remain hidden.
+
+### Fixed
+
+- Keep desktop history steady while composers grow or switch, and preserve
+  the reader's position during streaming until they return to the live tail.
+- Keep the phone composer height stable when switching harnesses or showing
+  voice controls.
+- Refresh Claude and Codex account usage independently, retain cached meters
+  through transient failures, and remove signed-out profiles without deleting history.
+- Align delegated task bubbles' timestamps and copy controls with user bubbles
+  and remove extra Markdown spacing.
+
+### Tests
+
+- Cover recap persistence, collaborator launch defaults, account usage refresh
+  and transcript scroll anchoring; align remote quota reads with their new defaults.
 
 ## [0.73.0-alpha.7] - 2026-10-14
 

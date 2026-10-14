@@ -186,7 +186,7 @@ export function profileResources(
  * you had already opened a Codex session by hand. The catalog row is the honest
  * signal, and it is the same one Settings shows.
  */
-function isProviderUsable(provider: ReturnType<typeof listSessionProviders>[number]): boolean {
+export function isProviderUsable(provider: ReturnType<typeof listSessionProviders>[number]): boolean {
   const catalogId = sessionHarnessIdToNodeHarnessId(provider.harnessId)
   if (!catalogId) return false
   const status = getHarnessInstallation(catalogId)

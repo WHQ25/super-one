@@ -85,6 +85,7 @@ const SUPERONE_READ_NAMES = new Set<string>([
   'widget_list_templates',
   'miniapp_list',
   'automation_list',
+  'agent_profile_list',
   'device_list',
   'device_snapshot',
   'device_query',

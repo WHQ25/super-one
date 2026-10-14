@@ -71,5 +71,12 @@ export function updateBaseProviderConfig(harnessId: HarnessId, config: unknown):
 }
 
 export function deleteSessionProvider(id: string): boolean {
-  return sessionProviderStore().delete(id)
+  const existing = getSessionProvider(id)
+  const deleted = sessionProviderStore().delete(id)
+  // A session resumes through its provider row; ones started on a deleted
+  // profile resume on their harness's built-in agent instead of failing.
+  if (deleted && existing) {
+    getDb().prepare('UPDATE sessions SET provider_id = ? WHERE provider_id = ?').run(`${existing.harnessId}-base`, id)
+  }
+  return deleted
 }

@@ -342,6 +342,9 @@ function sanitizeWorkflowInput(toolName: string, input: string): string {
     'automation_list',
     'automation_apply',
     'automation_delete',
+    'agent_profile_list',
+    'agent_profile_apply',
+    'agent_profile_delete',
     'config_apply',
     'environment_get_info',
     'project_list',
@@ -364,6 +367,13 @@ function sanitizeWorkflowInput(toolName: string, input: string): string {
   } else if (bare === 'automation_apply') {
     copyDefined(source, safe, ['action', 'name', 'enabled'])
   } else if (bare === 'automation_delete' && Array.isArray(source.ids)) {
+    safe.ids = source.ids.map(() => '')
+  } else if (bare === 'agent_profile_list') {
+    copyDefined(source, safe, ['id'])
+  } else if (bare === 'agent_profile_apply') {
+    // The row names the agent; its instructions stay on the desktop.
+    copyDefined(source, safe, ['action', 'name', 'harnessId'])
+  } else if (bare === 'agent_profile_delete' && Array.isArray(source.ids)) {
     safe.ids = source.ids.map(() => '')
   } else if (bare === 'config_apply') {
     const resource = source.resource && typeof source.resource === 'object' && !Array.isArray(source.resource)

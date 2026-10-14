@@ -1308,6 +1308,7 @@ export interface PermissionRequest {
     | 'computer_use_grant'
     | 'session_cleanup_confirm'
     | 'automation_confirm'
+    | 'agent_profile_confirm'
     | 'webmcp_trust_confirm'
     | 'device_control_confirm'
     | 'terminal_command_confirm'
@@ -1339,6 +1340,8 @@ export interface PermissionRequest {
   sessionCleanupConfirm?: SessionCleanupConfirmPayload
   /** Present only when requestKind === 'automation_confirm'. */
   automationConfirm?: AutomationConfirmPayload
+  /** Present only when requestKind === 'agent_profile_confirm'. */
+  agentProfileConfirm?: AgentProfileConfirmPayload
   /** Present only when requestKind === 'input_request'; the form itself is `schemaForm`. */
   inputRequest?: InputRequestMeta
 }
@@ -1399,6 +1402,43 @@ export interface AutomationConfirmPayload {
   items: AutomationConfirmItem[]
   /** Present for update — what will change if the user approves. */
   changes?: AutomationConfirmChange[]
+}
+
+/** Runtime fields an agent profile can set; the ones a harness/model cannot carry are listed as unsupported. */
+export type AgentProfileRuntimeField = 'effort' | 'fastMode' | 'context'
+
+/** One agent profile as the confirm card shows it: the result on create/update, the subject on delete. */
+export interface AgentProfileConfirmView {
+  id?: string
+  harnessId: HarnessId
+  /** ACP protocol agent the profile is pinned to. */
+  acpAgentId?: string
+  name: string
+  description: string
+  instructions?: string
+  /** Base catalog id; `context` picks its 1M variant. */
+  model?: string
+  /** Catalog display name for {@link model}. */
+  modelName?: string
+  effort?: string
+  fastMode?: boolean
+  context?: '1m'
+  /** Fields this harness (or the chosen model) cannot carry — rendered as explicit "not supported" rows. */
+  unsupported?: AgentProfileRuntimeField[]
+}
+
+/** One field an update changes. Empty `from`/`to` means unset (the global default applies). */
+export interface AgentProfileConfirmChange {
+  field: 'name' | 'description' | 'instructions' | 'model' | 'effort' | 'fastMode' | 'context'
+  from?: string
+  to?: string
+}
+
+export interface AgentProfileConfirmPayload {
+  operation: 'create' | 'update' | 'delete'
+  profiles: AgentProfileConfirmView[]
+  /** Present for update — only the fields that change. */
+  changes?: AgentProfileConfirmChange[]
 }
 
 /** One row in the permanent-delete confirm dialog (mirrors session_list metadata). */

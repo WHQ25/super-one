@@ -149,10 +149,27 @@ describe('session-provider-repo', () => {
   })
 
   describe('delete', () => {
+    beforeEach(() => {
+      const db = new Database(':memory:')
+      db.exec('CREATE TABLE sessions (id TEXT PRIMARY KEY, provider_id TEXT)')
+      getDbMock.mockReturnValue(db)
+    })
+
     it('deletes non-base provider', () => {
       const p = createSessionProvider({ harnessId: 'claude', name: 'tmp', config: {} })
       expect(deleteSessionProvider(p.id)).toBe(true)
       expect(getSessionProvider(p.id)).toBeNull()
+    })
+
+    it('moves sessions started on the deleted profile to the harness base row so they still resume', () => {
+      const p = createSessionProvider({ harnessId: 'codex', name: 'tmp', config: {} })
+      const db = getDbMock() as Database.Database
+      db.prepare('INSERT INTO sessions (id, provider_id) VALUES (?, ?), (?, ?)').run('s1', p.id, 's2', 'claude-base')
+      deleteSessionProvider(p.id)
+      expect(db.prepare('SELECT id, provider_id FROM sessions ORDER BY id').all()).toEqual([
+        { id: 's1', provider_id: 'codex-base' },
+        { id: 's2', provider_id: 'claude-base' },
+      ])
     })
 
     it('returns false for unknown id', () => {

@@ -74,6 +74,7 @@ import { resolveConfigConfirm, rejectConfigConfirm } from '../mcp/config-tools'
 import { resolveVideoConfirm, rejectVideoConfirm } from '../mcp/media-tools'
 import { resolveSessionCleanupConfirm, rejectSessionCleanupConfirm } from '../mcp/session-archive-tools'
 import { resolveAutomationConfirm, rejectAutomationConfirm } from '../mcp/automation-tools'
+import { resolveAgentProfileConfirm, rejectAgentProfileConfirm } from '../mcp/agent-profile-confirm'
 import { resolveDeviceControlConfirm, rejectDeviceControlConfirm } from '../device-agent/control-confirm'
 import { resolveComputerUseGrant, rejectComputerUseGrant } from '../computer-use/grant-request'
 import { rejectTerminalCommandConfirm, resolveTerminalCommandConfirm } from '../mcp/terminal-command-confirm'
@@ -1312,6 +1313,7 @@ export class Session implements SessionContract {
       if (rejectVideoConfirm(requestId, 'User cancelled')) return true
       if (rejectSessionCleanupConfirm(requestId, reason ?? 'User cancelled')) return true
       if (rejectAutomationConfirm(requestId, reason ?? 'User cancelled')) return true
+      if (rejectAgentProfileConfirm(requestId, reason ?? 'User cancelled')) return true
       if (rejectDeviceControlConfirm(requestId, reason ?? 'User cancelled')) return true
       if (rejectTerminalCommandConfirm(requestId, reason ?? 'User cancelled')) return true
       if (rejectComputerUseGrant(requestId, reason ?? 'User cancelled')) return true
@@ -1341,6 +1343,8 @@ export class Session implements SessionContract {
     } else if (resolveSessionCleanupConfirm(requestId, allow ? 'accept' : 'decline')) {
       return true
     } else if (resolveAutomationConfirm(requestId, allow ? 'accept' : 'decline', formAnswers)) {
+      return true
+    } else if (resolveAgentProfileConfirm(requestId, allow ? 'accept' : 'decline', formAnswers)) {
       return true
     } else if (resolveDeviceControlConfirm(
       requestId,

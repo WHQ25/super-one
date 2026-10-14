@@ -262,6 +262,19 @@ export const AUTOMATION_DELETE_DESCRIPTION =
   'Permanently delete project automations by id (from automation_list). ' +
   'Always opens a user confirmation dialog. Current project only. Prefer automation_list to choose ids first.'
 
+export const AGENT_PROFILE_LIST_DESCRIPTION =
+  'List agent profiles: named agents (identity, instructions, model defaults) that session_collab_list_agents offers for delegation, plus the built-in <harness>-base rows. ' +
+  'Pass id for full instructions, launch defaults, and the models, efforts, fast mode and context that harness supports. ' +
+  'Read this before agent_profile_apply or agent_profile_delete.'
+
+export const AGENT_PROFILE_APPLY_DESCRIPTION =
+  'Create or update an agent profile. create needs harnessId, name, description; update needs id plus the fields to change (empty string clears model, effort or instructions). ' +
+  'description is what other agents read to pick a delegate, so say what this agent is for. Model, effort, fastMode and context must be supported by the harness catalog (agent_profile_list with the <harness>-base id). ' +
+  'Built-in <harness>-base rows are read-only; remove profiles with agent_profile_delete. Always opens a user confirmation dialog and applies nothing without approval.'
+
+export const AGENT_PROFILE_DELETE_DESCRIPTION =
+  'Permanently delete agent profiles by id (from agent_profile_list). Sessions already started on one fall back to its built-in harness agent. ' +
+  'Built-in <harness>-base rows cannot be deleted. Always opens a user confirmation dialog.'
 
 export const TERMINAL_TABS_DESCRIPTION =
   'Only for commands that run until stopped (servers, watchers) or need keyboard input (REPLs, TUIs, ssh, wizards). ' +

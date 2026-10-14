@@ -12,6 +12,7 @@ export function WindowsTitleBar(): React.JSX.Element | null {
   return (
     <div
       ref={ref}
+      data-windows-titlebar=""
       className="flex h-10 shrink-0 items-center bg-sidebar pl-3 text-sidebar-foreground"
       style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
     >

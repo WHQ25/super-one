@@ -28,11 +28,15 @@ import type { SessionCreateRequest, SessionForkRequestInput, SessionPermissionAn
 // Per-renderer attribution belongs in an in-app task manager built on
 // `app.getAppMetrics()` + `webContents.getOSProcessId()`. See main/process-titles.ts.
 
-if (process.argv.includes('--superone-liquid-glass')) {
-  const stamp = (): void => document.documentElement.classList.add('liquid-glass')
-  if (document.documentElement) stamp()
-  else document.addEventListener('DOMContentLoaded', stamp, { once: true })
+// Stamped before first paint: glass surfaces differ per platform material, so
+// both markers must be on <html> before the first frame is composited.
+const stampRoot = (): void => {
+  const root = document.documentElement
+  root.dataset.platform = process.platform
+  if (process.argv.includes('--superone-liquid-glass')) root.classList.add('liquid-glass')
 }
+if (document.documentElement) stampRoot()
+else document.addEventListener('DOMContentLoaded', stampRoot, { once: true })
 
 const agentAPI = {
   prewarm: (projectPath: string, hint?: AgentPrewarmHint) =>

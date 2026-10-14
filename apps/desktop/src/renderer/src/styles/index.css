@@ -409,9 +409,20 @@ body[data-scroll-locked] {
    While it is opaque that double paint is invisible; once glass makes it
    translucent the two layers compound and the sidebar reads darker than the
    gutter around the content card. Let the shell carry it alone. Dark glass is
-   unaffected — --sidebar is fully transparent there, so both layers are no-ops. */
-.liquid-glass:not(.dark) [data-sidebar-inner] > * {
+   unaffected — --sidebar is fully transparent there, so both layers are no-ops.
+   The Windows title strip sits on the same shell, so it drops its copy too. */
+.liquid-glass:not(.dark) [data-sidebar-inner] > *,
+html[data-platform="win32"].liquid-glass.dark [data-sidebar-inner] > *,
+.liquid-glass [data-windows-titlebar] {
   background-color: transparent;
+}
+
+/* Dark glass leaves --sidebar transparent because macOS dark vibrancy is itself
+   a dark frost. Windows acrylic is not: over an ordinary wallpaper it reads as
+   mid-grey, which drops the sidebar's light, partly transparent icons and labels
+   to near-invisible. Give it a dark scrim, as light glass does over pale frost. */
+html[data-platform="win32"].liquid-glass.dark {
+  --sidebar: color-mix(in oklab, var(--background) 80%, transparent);
 }
 
 /* --- Dark sidebar in light mode -------------------------------------------

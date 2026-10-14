@@ -88,7 +88,7 @@ describe('DesktopNodeHost codex', () => {
     expect(await client.rpc('codex.listAccounts', { projectId: 'p1' })).toEqual([expect.objectContaining({ id: 'cli', isDefault: true })])
 
     expect(await client.rpc('codex.getRateLimits', { projectId: 'p1', apiProviderId: null })).toMatchObject({ primary: { usedPercent: 40 } })
-    expect(codex.service.getRateLimits).toHaveBeenCalledWith(projectDir, null)
+    expect(codex.service.getRateLimits).toHaveBeenCalledWith(projectDir, null, false, false)
     expect(await client.rpc('codex.consumeRateLimitReset', { projectId: 'p1', apiProviderId: null, creditId: null })).toBe('reset')
     await expect(client.rpc('codex.getRateLimits', { projectId: 'missing' })).rejects.toMatchObject({ code: 'not_found' })
 

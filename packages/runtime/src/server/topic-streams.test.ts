@@ -31,10 +31,13 @@ describe('openTerminalStream', () => {
     src.emit(exited('t2'))
     expect(pushed).toEqual([output('t1')])
 
+    // A list reader gets row metadata, the writer included, never output.
     stream.setTopics([{ kind: 'terminalList', environmentId: 'env' }])
+    const owner: TerminalEvent = { type: 'terminal_owner_changed', terminalId: 't3', ownerDeviceId: 'phone', writableByMe: false }
     src.emit(output('t1'))
     src.emit(exited('t2'))
-    expect(pushed.slice(1)).toEqual([exited('t2')])
+    src.emit(owner)
+    expect(pushed.slice(1)).toEqual([exited('t2'), owner])
 
     stream.setTopics([{ kind: 'terminal', environmentId: 'env', terminalId: '*' }])
     src.emit(output('t9'))

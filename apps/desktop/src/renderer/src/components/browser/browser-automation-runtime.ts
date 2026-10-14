@@ -15,6 +15,7 @@ import {
 import { beginBrowserFocusIsolation, endBrowserFocusIsolation, withBrowserFocusIsolation } from './browser-focus-isolation'
 import { isBlankUrl } from './browser-url'
 import { closeBrowserTab, openBrowserTab } from '@/components/activity/activity-panel-api'
+import { recordDockOpener } from '@/components/activity/dock-ownership'
 import { useAgentViewfinderStore } from '@/stores/agent-viewfinder'
 import { captureBrowserScreenshot } from './browser-screenshot'
 import { startBrowserRecording, stopBrowserRecording } from './browser-recording'
@@ -649,6 +650,7 @@ export async function runBrowserOp(sessionId: string, op: string, rawInput: unkn
     const url = input.url ?? 'about:blank'
     assertNotMiniAppTarget(input.tab)
     const targetId = input.tab ?? `browser-${crypto.randomUUID()}`
+    if (!input.tab) recordDockOpener(sessionId, targetId, 'agent')
     openBrowserTab(url, targetId, sessionId, { reveal: false })
     useAgentViewfinderStore.getState().activate(sessionId, 'browser', targetId)
     const store = useBrowserStore.getState()

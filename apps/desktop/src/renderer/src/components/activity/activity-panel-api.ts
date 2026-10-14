@@ -8,6 +8,7 @@ import { normalizeFileLinkTarget } from '@/lib/file-link'
 import { LAYOUT } from '@/lib/layout-constants'
 import { disposeActivityTermInstance } from './activity-terminal'
 import { closeMcpAppTabs } from './mcp-app-tabs'
+import { recordDockOpener } from './dock-ownership'
 import { useMcpAppLayout } from '@/components/mcp-apps/layout-store'
 
 let dockApi: DockviewApi | null = null
@@ -688,7 +689,7 @@ export async function openTerminalTab(projectPath: string, sessionId?: string) {
   revealTerminalTabInActivity(item)
 }
 
-const terminalPanelId = (terminalId: string) => `terminal-${terminalId}`
+export const terminalPanelId = (terminalId: string) => `terminal-${terminalId}`
 
 function addTerminalPanel(item: { terminalId: string; title?: string }) {
   if (!dockApi) return
@@ -719,6 +720,7 @@ function addTerminalPanel(item: { terminalId: string; title?: string }) {
  */
 export function revealTerminalTabInActivity(item: { terminalId: string; title?: string; agentSessionId?: string }, opts?: { reveal?: boolean }) {
   const owner = item.agentSessionId
+  if (owner != null) recordDockOpener(owner, terminalPanelId(item.terminalId), 'agent')
   if (owner != null && owner !== (currentSessionIdGetter?.() ?? null)) return
   if (opts?.reveal !== false) ensureVisible()
   const panelId = terminalPanelId(item.terminalId)
@@ -750,6 +752,7 @@ export function materializeOwnedTerminalTabs(sessionId: string) {
     }
     for (const item of items) {
       if (item.agentSessionId !== sessionId || item.status !== 'running') continue
+      recordDockOpener(sessionId, terminalPanelId(item.terminalId), 'agent')
       if (dockApi.panels.some((p) => p.id === terminalPanelId(item.terminalId))) continue
       addTerminalPanel(item)
     }
@@ -806,5 +809,75 @@ export function toggleMaximizedActivityGroup(panelId: string) {
   } else {
     panel.api.maximize()
     useActivityPanelStore.getState().setMaximizedGroup(panel.group.id)
+  }
+}
+
+/** Make a tab the focused one and show the panel. False when the dock has no such tab. */
+export function focusActivityTab(panelId: string): boolean {
+  const panel = dockApi?.panels.find((candidate) => candidate.id === panelId)
+  if (!panel) return false
+  ensureVisible()
+  activateInMaximizedGroup(panel)
+  return true
+}
+
+/** Move a tab into a new group beside its current one. */
+export function splitActivityTab(panelId: string, direction: 'right' | 'below'): boolean {
+  const panel = dockApi?.panels.find((candidate) => candidate.id === panelId)
+  if (!panel) return false
+  ensureVisible()
+  // A maximized group hides every other group, so the new one would open unseen.
+  if (panel.api.isMaximized()) {
+    panel.api.exitMaximized()
+    useActivityPanelStore.getState().setMaximizedGroup(null)
+  }
+  panel.api.moveTo({ group: panel.group, position: direction === 'right' ? 'right' : 'bottom' })
+  return true
+}
+
+/** Maximize a tab's group, or the active tab's when none is named. */
+export function maximizeActivityTab(panelId?: string): boolean {
+  const panel = panelId ? dockApi?.panels.find((candidate) => candidate.id === panelId) : dockApi?.activePanel
+  if (!panel) return false
+  ensureVisible()
+  if (!panel.api.isActive) panel.api.setActive()
+  if (!panel.api.isMaximized()) panel.api.maximize()
+  useActivityPanelStore.getState().setMaximizedGroup(panel.group.id)
+  return true
+}
+
+/** Leave the maximized group, if any. */
+export function restoreActivityPanel(): void {
+  const panel = dockApi?.panels.find((candidate) => candidate.api.isMaximized())
+  panel?.api.exitMaximized()
+  useActivityPanelStore.getState().setMaximizedGroup(null)
+}
+
+/** Close a tab the way its own close button does, so its webview, PTY or device is released too. */
+export function closeActivityTab(panelId: string): boolean {
+  const panel = dockApi?.panels.find((candidate) => candidate.id === panelId)
+  if (!panel) {
+    // A browser tab may exist only in the store until its owner's layout is restored.
+    if (!useBrowserStore.getState().tabs[panelId]) return false
+    closeBrowserTab(panelId)
+    return true
+  }
+  const params = (panel.params ?? {}) as Record<string, string | undefined>
+  switch (panel.view.contentComponent) {
+    case 'browser':
+      closeBrowserTab(panelId)
+      return true
+    case 'terminal':
+      if (params.terminalId) closeActivityTerminalTab(params.terminalId)
+      return true
+    case 'device':
+      if (params.instanceId) closeDeviceTab(params.instanceId)
+      return true
+    case 'miniapp':
+      if (params.instanceKey) closeMiniAppTab(params.instanceKey)
+      return true
+    default:
+      panel.api.close()
+      return true
   }
 }

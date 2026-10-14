@@ -707,6 +707,8 @@ interface AppAPI {
   getGitDiffFile(folderPath: string, filePath: string, staged: boolean): Promise<GitFileDiff>
   /** Whole patch for the read-only diff panel: uncommitted changes or one commit. */
   getGitPatch(folderPath: string, request: GitPatchRequest): Promise<GitPatchResult>
+  /** The project of a session `parentSessionId` spawned, or null when it did not spawn it. */
+  getSpawnedSessionProject(parentSessionId: string, childSessionId: string): Promise<string | null>
   readProjectFile(folderPath: string, filePath: string): Promise<GitFileContent>
   /** Re-run the files-previewer verdict for one file — retry after `missing` without reading bytes. */
   statPreviewFile(root: string, filePath: string): Promise<PreviewerFile>

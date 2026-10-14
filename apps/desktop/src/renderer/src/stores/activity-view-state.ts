@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { SerializedDockview } from 'dockview-core'
 import { applyDockSnapshot, closeGhostMiniAppPanels, closeGhostSideChatPanel, getDockSnapshot, isDockReady, materializeOwnedBrowserTabs, materializeOwnedTerminalTabs, setCurrentSessionIdGetter, setOnDockReady } from '@/components/activity/activity-panel-api'
+import { clearDockChanges, drainDockChanges } from '@/components/activity/dock-ownership'
 import { useActivityPanelStore } from './activity-panel'
 import { useMiniAppStore } from './miniapp'
 import { useSideChatStore } from './side-chat'
@@ -17,6 +18,8 @@ interface ActivityViewStateStore {
   park: (sessionId: string) => void
   restore: (sessionId: string) => void
   seedFromCurrent: (sessionId: string) => void
+  /** Open or close the panel in a parked session's layout, for when it is next shown. */
+  setParkedShowPanel: (sessionId: string, show: boolean) => void
   clearForSession: (sessionId: string) => void
   flushPending: () => void
   _resetForTest: () => void
@@ -31,11 +34,12 @@ function applyState(state: SessionViewState | undefined) {
   closeGhostSideChatPanel((sessionId) => sessionId === useSideChatStore.getState().current?.sessionId)
 }
 
-/** Bring a session's layout on screen, then add the agent tabs it acquired while parked. */
+/** Bring a session's layout on screen, then add the agent tabs and layout changes it acquired while parked. */
 function showSession(sessionId: string, state: SessionViewState | undefined) {
   applyState(state ? { layout: state.layout ? structuredClone(state.layout) : null, showPanel: state.showPanel } : undefined)
   materializeOwnedBrowserTabs(sessionId)
   materializeOwnedTerminalTabs(sessionId)
+  drainDockChanges(sessionId)
 }
 
 export const useActivityViewStateStore = create<ActivityViewStateStore>((set, get) => ({
@@ -76,7 +80,17 @@ export const useActivityViewStateStore = create<ActivityViewStateStore>((set, ge
     }))
   },
 
+  setParkedShowPanel: (sessionId, show) => {
+    set((s) => ({
+      perSession: {
+        ...s.perSession,
+        [sessionId]: { layout: s.perSession[sessionId]?.layout ?? null, showPanel: show },
+      },
+    }))
+  },
+
   clearForSession: (sessionId) => {
+    clearDockChanges(sessionId)
     set((s) => {
       if (!(sessionId in s.perSession)) return s
       const { [sessionId]: _removed, ...rest } = s.perSession

@@ -32,6 +32,21 @@ export function toggleSidebar(): void {
 }
 
 /**
+ * Show or hide the activity panel. A first open by a user who never dragged the
+ * sash takes all the width the chat can spare, the same as ⌘B.
+ */
+export function setActivityPanelShown(show: boolean): void {
+  const ap = useActivityPanelStore.getState()
+  if (show === ap.showPanel) return
+  if (show && !ap.userResized) {
+    const { showSidebar, sidebarWidth } = useAppStore.getState()
+    const maxAp = window.innerWidth - (showSidebar ? sidebarWidth : 0) - LAYOUT.MIN_MAIN - LAYOUT.CARD_GUTTER
+    if (maxAp >= LAYOUT.MIN_AP) ap.setPanelWidth(Math.max(LAYOUT.MIN_AP, maxAp))
+  }
+  ap.setShowPanel(show)
+}
+
+/**
  * Mini-app / browser content lives in fixed host layers driven by slot rects.
  * ResizeObserver only sees size changes, so a pure position jump from the side
  * swap never remeasures them — shift stored lefts by the same delta the panel moved.

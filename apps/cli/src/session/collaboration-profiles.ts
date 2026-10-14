@@ -1,4 +1,5 @@
 import type { SessionAgentProfile } from '@superone/shared/agent-types'
+import { composeSystemPromptAppend, readAgentProfile, resolveAgentLaunchDefaults } from '@superone/shared/agent-profile'
 import { normalizeSessionHarnessId } from '@superone/shared/environment'
 import { acpAgentDisplayName, resolveHarnessBrandKey } from '@superone/shared/acp-brand'
 import type { HarnessId } from '@superone/shared/session-types'
@@ -45,44 +46,32 @@ export function listCollaborationProfiles(deps: CollaborationDeps): SessionAgent
       profileConfig && typeof profileConfig === 'object' && !Array.isArray(profileConfig)
         ? (profileConfig as Record<string, unknown>)
         : {}
-    const cfgModel =
-      typeof cfg.model === 'string' && cfg.model.trim() ? cfg.model.trim() : undefined
-    const cfgEffort =
-      typeof cfg.effort === 'string' && cfg.effort.trim()
-        ? cfg.effort.trim()
-        : typeof cfg.reasoningEffort === 'string' && cfg.reasoningEffort.trim()
-          ? cfg.reasoningEffort.trim()
-          : undefined
     // ACP is a protocol, not a brand: the row's config names the concrete
     // agent (grok-build), which is what the user sees and @-mentions.
     const acpAgentId =
       harnessId === 'acp' && typeof cfg.agentId === 'string' && cfg.agentId.trim()
         ? cfg.agentId.trim()
         : null
-    const modelDefault = cfgModel ?? defaultModel?.id
-    const effortDefault =
-      cfgEffort ??
-      (efforts.has('high')
-        ? 'high'
-        : efforts.has('medium')
-          ? 'medium'
-          : efforts.size > 0
-            ? [...efforts][0]
-            : undefined)
+    const profile = readAgentProfile(profileConfig)
+    // The node's global layer is the catalog default; the shared resolver puts
+    // the row's agent profile over it exactly as desktop does.
+    const defaults = resolveAgentLaunchDefaults({
+      catalog: { models: harnessModels },
+      base: {
+        model: defaultModel?.id,
+        effort: efforts.has('high') ? 'high' : efforts.has('medium') ? 'medium' : [...efforts][0],
+        ...(harnessId === 'codex' ? { fastMode: false } : {}),
+      },
+      profile: profile?.runtime,
+    })
     profiles.push({
       id: profileId,
-      name: harnessId === 'acp' ? acpAgentDisplayName(acpAgentId) : name,
+      name: profile ? name : harnessId === 'acp' ? acpAgentDisplayName(acpAgentId) : name,
       harnessId,
       ...(acpAgentId ? { acpAgentId } : {}),
       brandKey: resolveHarnessBrandKey(harnessId, acpAgentId),
-      description,
-      defaultConfig: {
-        ...(modelDefault ? { model: modelDefault } : {}),
-        ...(effortDefault ? { effort: effortDefault } : {}),
-        ...(harnessId === 'codex'
-          ? { fastMode: typeof cfg.fastMode === 'boolean' ? cfg.fastMode : false }
-          : {}),
-      },
+      description: profile?.identity.description ?? description,
+      defaultConfig: defaults,
       models: models.length > 0 ? models : [{ id: 'default', name: 'Default' }],
       efforts: [...efforts],
       apiProviders: listHarnessApiProviders(providers, harnessId, providerOptions),
@@ -120,4 +109,17 @@ export function listCollaborationProfiles(deps: CollaborationDeps): SessionAgent
   }
 
   return profiles
+}
+
+/**
+ * The system-prompt append for a session of `agentId`: its profile's
+ * instructions first, then the collaboration protocol (absent for a handoff).
+ */
+export function collaborationAgentPromptAppend(
+  deps: Pick<CollaborationDeps, 'sessionProviders'>,
+  agentId: string,
+  protocol?: string,
+): string | undefined {
+  const instructions = readAgentProfile(deps.sessionProviders?.get(agentId)?.config)?.instructions
+  return composeSystemPromptAppend(instructions, protocol)
 }

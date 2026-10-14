@@ -768,6 +768,51 @@ describe('SessionManager', () => {
     })
   })
 
+  describe('agent profile instructions', () => {
+    const appendOf = (session: unknown) => (session as { systemPromptAppend?: string }).systemPromptAppend
+    const seedProfile = () => {
+      hoisted.providers.set('claude-reviewer', {
+        ...seedProvider('claude-reviewer', 'claude'),
+        config: {
+          apiKey: 'sk-x',
+          profile: { version: 1, identity: { name: 'Reviewer', description: 'Reviews.' }, instructions: 'Never edit files.' },
+        },
+      })
+    }
+
+    it('puts the profile instructions ahead of the collaboration protocol on create', () => {
+      seedProfile()
+      const session = mgr.createSession({ projectPath: '/p', providerId: 'claude-reviewer', systemPromptAppend: 'Collaboration protocol' })
+      expect(appendOf(session)).toBe('Never edit files.\n\nCollaboration protocol')
+    })
+
+    it('applies the instructions alone to a launch with no host append (handoff)', () => {
+      seedProfile()
+      expect(appendOf(mgr.createSession({ projectPath: '/p', providerId: 'claude-reviewer' }))).toBe('Never edit files.')
+    })
+
+    it('re-applies them on resume', () => {
+      seedProfile()
+      const mgr2 = new SessionManagerImpl({
+        loadSession: () => ({
+          projectPath: '/p',
+          providerId: 'claude-reviewer',
+          providerSessionId: null,
+          messages: [],
+          totalCostUsd: 0,
+          contextTokens: 0,
+          systemPromptAppend: 'Collaboration protocol',
+        }),
+      })
+      expect(appendOf(mgr2.resumeSession('sid-r'))).toBe('Never edit files.\n\nCollaboration protocol')
+    })
+
+    it('leaves a base row launch untouched', () => {
+      expect(appendOf(mgr.createSession({ projectPath: '/p', providerId: 'claude-base', systemPromptAppend: 'Protocol' }))).toBe('Protocol')
+      expect(appendOf(mgr.createSession({ projectPath: '/q', providerId: 'claude-base' }))).toBeUndefined()
+    })
+  })
+
   describe('resolveProviderConfig hook', () => {
     it('uses the resolver to snapshot provider config at createSession time', () => {
       const resolver = vi.fn((p) => ({ apiKey: 'resolved-' + p.id }))

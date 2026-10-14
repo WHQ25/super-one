@@ -6,6 +6,7 @@ import {
   type SessionCollabLaunchMode,
 } from '@superone/shared/agent-types'
 import { normalizeSessionHarnessId } from '@superone/shared/environment'
+import { collaborationAgentPromptAppend } from './collaboration-profiles'
 import type { HarnessId } from '@superone/shared/session-types'
 import {
   CollaborationError,
@@ -200,7 +201,7 @@ export async function startCollaboration(
     if (existing && !isHandoff) {
       ctx.deps.sessions.setSystemPromptAppend(
         existing.sessionId,
-        collaborationSystemPrompt(grant.parent_session_id),
+        collaborationAgentPromptAppend(ctx.deps, grant.agent_id, collaborationSystemPrompt(grant.parent_session_id)),
       )
     }
     if (existing) await deliverInitialTask(ctx, grant, existingSessionId)
@@ -255,10 +256,13 @@ export async function startCollaboration(
       sandboxMode: config.sandboxMode ?? null,
       apiProviderId: config.apiProviderId ?? null,
       controllerClientSessionId: input.controllerClientSessionId ?? parent.controllerClientSessionId,
-      // Handoff is one-way by construction: the receiver gets no collaboration prompt.
-      ...(isHandoff
-        ? {}
-        : { systemPromptAppend: collaborationSystemPrompt(grant.parent_session_id) }),
+      // Handoff is one-way by construction: the receiver gets no collaboration
+      // prompt, only its profile's instructions.
+      systemPromptAppend: collaborationAgentPromptAppend(
+        ctx.deps,
+        grant.agent_id,
+        isHandoff ? undefined : collaborationSystemPrompt(grant.parent_session_id),
+      ) ?? null,
     })
     ctx.store.bindStartedSession(grant, child.sessionId, config)
   } catch (err) {

@@ -21,6 +21,11 @@ import type {
   SessionAgentProfile,
 } from '@superone/shared/agent-types'
 import { filterEnabledCursorModels } from '@superone/cursor/cursor-config'
+import {
+  readAgentProfile,
+  resolveAgentLaunchDefaults,
+  type AgentProfileCatalog,
+} from '@superone/shared/agent-profile'
 import { acpAgentDisplayName, resolveHarnessBrandKey } from '@superone/shared/acp-brand'
 import { acpModeCatalog } from '@superone/shared/harness/acp-mode-catalog'
 import { buildAgentMentionTargets } from '@superone/shared/agent-mention-tags'
@@ -74,28 +79,45 @@ export function cachedHarnessModels(harnessId: Exclude<HarnessId, 'acp'>): Model
   return getCachedHarnessResources(harnessId)?.models ?? []
 }
 
-function profileResources(
+/**
+ * What a profile on this row can be checked against, and what a launch on it
+ * defaults to. The global preference layer is computed here per harness; the
+ * row's agent profile goes over it through the shared resolver, the same rule
+ * the CLI node applies.
+ */
+export function profileResources(
   provider: ReturnType<typeof listSessionProviders>[number],
   acpAgentId?: string | null,
 ): {
   models: ModelOption[]
   efforts: string[]
+  catalog: AgentProfileCatalog
   defaultConfig: SessionAgentLaunchConfig
 } {
+  const profile = readAgentProfile(provider.config)?.runtime
+  // No catalog to check against: a written profile was validated already.
+  const uncatalogued = () => ({
+    models: [],
+    efforts: [],
+    catalog: { models: [] },
+    defaultConfig: resolveAgentLaunchDefaults({ catalog: { models: [] }, base: {}, profile }),
+  })
   let models: ModelOption[]
   const efforts = new Set<string>()
+  let harnessEfforts: string[] | undefined
   let defaultModel: ModelOption | undefined
   let defaultEffort: string | undefined
   let defaultFastMode: boolean | undefined
   if (provider.harnessId === 'acp') {
     const cached = getCachedHarnessResources('acp')
-    if (!cached) return { models: [], efforts: [], defaultConfig: {} }
+    if (!cached) return uncatalogued()
     const agentId = acpAgentId ?? resolveAcpAgentId(provider) ?? cached.selectedAgentId
     const catalog = agentId ? cached.configByAgentId?.[agentId] : undefined
     const sessionCatalog = catalog ? deriveSessionCatalog(catalog) : null
     models = sessionCatalog?.models ?? []
     // Only Grok reasoning effort is an effort; a real session mode is not.
     const acpEfforts = acpModeCatalog(sessionCatalog).efforts.map((option) => option.value)
+    harnessEfforts = acpEfforts
     for (const effort of acpEfforts) efforts.add(effort)
     defaultModel = models.find((model) => model.id === sessionCatalog?.selectedModelId)
       ?? models.find((model) => model.isDefault)
@@ -106,7 +128,7 @@ function profileResources(
       : acpEfforts.includes('medium') ? 'medium' : acpEfforts[0]
   } else {
     models = cachedHarnessModels(provider.harnessId)
-    if (models.length === 0) return { models: [], efforts: [], defaultConfig: {} }
+    if (models.length === 0) return uncatalogued()
     const preferences = readAppSettings().agentPreference
     if (provider.harnessId === 'claude') {
       defaultModel = models.find((model) => model.id === preferences.claude.defaultModel) ?? models[0]
@@ -139,14 +161,20 @@ function profileResources(
     for (const effort of model.supportedEffortLevels ?? []) efforts.add(effort)
     for (const effort of model.supportedReasoningEfforts ?? []) efforts.add(effort.value)
   }
+  const catalog: AgentProfileCatalog = { models, ...(harnessEfforts ? { efforts: harnessEfforts } : {}) }
   return {
     models,
     efforts: [...efforts],
-    defaultConfig: {
-      ...(defaultModel ? { model: defaultModel.id } : {}),
-      ...(defaultEffort ? { effort: defaultEffort } : {}),
-      ...(defaultFastMode !== undefined ? { fastMode: defaultFastMode } : {}),
-    },
+    catalog,
+    defaultConfig: resolveAgentLaunchDefaults({
+      catalog,
+      base: {
+        ...(defaultModel ? { model: defaultModel.id } : {}),
+        ...(defaultEffort ? { effort: defaultEffort } : {}),
+        ...(defaultFastMode !== undefined ? { fastMode: defaultFastMode } : {}),
+      },
+      profile,
+    }),
   }
 }
 
@@ -180,7 +208,8 @@ function profileDisplayName(
   provider: ReturnType<typeof listSessionProviders>[number],
   acpAgentId: string | null,
 ): string {
-  if (provider.harnessId !== 'acp') return provider.name
+  // A user-named agent keeps its name; only the built-in ACP row reads as its agent.
+  if (provider.harnessId !== 'acp' || readAgentProfile(provider.config)) return provider.name
   const cached = getCachedHarnessResources('acp')
   const catalogName = acpAgentId
     ? cached?.agents?.find((agent) => agent.id === acpAgentId)?.name
@@ -280,9 +309,10 @@ export function listSessionAgentProfiles(): SessionAgentProfile[] {
       harnessId: provider.harnessId,
       ...(acpAgentId ? { acpAgentId } : {}),
       brandKey,
-      description: provider.harnessId === 'acp'
-        ? `ACP agent ${acpAgentId ?? 'unknown'} (${brandKey})`
-        : `${provider.harnessId} harness with the built-in configuration`,
+      description: readAgentProfile(provider.config)?.identity.description
+        ?? (provider.harnessId === 'acp'
+          ? `ACP agent ${acpAgentId ?? 'unknown'} (${brandKey})`
+          : `${provider.harnessId} harness with the built-in configuration`),
       defaultConfig: launchDefaultConfig(provider.harnessId, resources.defaultConfig),
       models,
       efforts: resources.efforts,

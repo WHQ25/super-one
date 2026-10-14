@@ -445,6 +445,49 @@ describe('session collaboration', () => {
   })
 })
 
+describe('agent profile defaults', () => {
+  const reviewer = (runtime: Record<string, unknown>) => ({
+    id: 'claude-reviewer',
+    harnessId: 'claude',
+    name: 'Reviewer',
+    isBase: false,
+    config: { profile: { version: 1, identity: { name: 'Reviewer', description: 'Reviews diffs without editing.' }, runtime } },
+    createdAt: 0,
+    updatedAt: 0,
+  })
+
+  beforeEach(() => {
+    state.resourceCache = {
+      claude: {
+        models: [
+          { id: 'test-model', name: 'Test Model', supportedEffortLevels: ['low', 'high'] },
+          { id: 'opus', name: 'Opus', supportedEffortLevels: ['low', 'high', 'max'] },
+          { id: 'opus[1m]', name: 'Opus 1M', supportedEffortLevels: ['low', 'high', 'max'] },
+        ],
+      },
+    }
+  })
+
+  it('puts the profile runtime over the global preference and shows its description', () => {
+    state.providers = [state.providers[0]!, reviewer({ model: 'opus', effort: 'max', context: '1m' })]
+    const profile = listSessionAgentProfiles().find((item) => item.id === 'claude-reviewer')
+    expect(profile).toMatchObject({
+      name: 'Reviewer',
+      description: 'Reviews diffs without editing.',
+      defaultConfig: { model: 'opus[1m]', effort: 'max', permissionMode: 'default' },
+    })
+    // The base row keeps the user's global defaults.
+    expect(listSessionAgentProfiles().find((item) => item.id === 'claude-base')?.defaultConfig)
+      .toMatchObject({ model: 'test-model', effort: 'high' })
+  })
+
+  it('keeps global fields the profile leaves out', () => {
+    state.providers = [state.providers[0]!, reviewer({ model: 'opus' })]
+    expect(listSessionAgentProfiles().find((item) => item.id === 'claude-reviewer')?.defaultConfig)
+      .toMatchObject({ model: 'opus', effort: 'high' })
+  })
+})
+
 describe('@agent mention targets', () => {
   it('gives a base provider the brand keyword rather than its "(Base)" row name', () => {
     state.providers = [{

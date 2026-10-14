@@ -15,7 +15,7 @@ import {
   type CollaborationRetrieveInput,
   type CollaborationSendInput,
 } from './collaboration-messaging'
-import { listCollaborationProfiles } from './collaboration-profiles'
+import { collaborationAgentPromptAppend, listCollaborationProfiles } from './collaboration-profiles'
 import { requestCollaboration, type CollaborationRequestInput } from './collaboration-request'
 import { startCollaboration, type CollaborationStartInput } from './collaboration-start'
 
@@ -63,7 +63,10 @@ export class CollaborationService {
   rehydrateSystemPrompts(): void {
     for (const grant of this.ctx.store.startedSpawnGrants()) {
       if (!grant.child_session_id || !this.deps.sessions.get(grant.child_session_id)) continue
-      this.deps.sessions.setSystemPromptAppend(grant.child_session_id, collaborationSystemPrompt(grant.parent_session_id))
+      this.deps.sessions.setSystemPromptAppend(
+        grant.child_session_id,
+        collaborationAgentPromptAppend(this.deps, grant.agent_id, collaborationSystemPrompt(grant.parent_session_id)),
+      )
     }
   }
 }

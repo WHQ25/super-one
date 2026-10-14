@@ -141,6 +141,38 @@ describe('collaboration grants + mailbox', () => {
     })
   })
 
+  it('offers an agent profile with its own name, description and defaults, and launches it with its instructions', async () => {
+    const { collab, sessions, projects, sessionProviders } = bootCollab()
+    const reviewer = sessionProviders.create({
+      harnessId: 'claude',
+      name: 'Reviewer',
+      config: {
+        profile: {
+          version: 1,
+          identity: { name: 'Reviewer', description: 'Reviews diffs without editing.' },
+          instructions: 'Never edit files.',
+          runtime: { effort: 'low' },
+        },
+      },
+    })
+    const listed = collab.listProfiles().find((p) => p.id === reviewer.id)
+    expect(listed).toMatchObject({ name: 'Reviewer', description: 'Reviews diffs without editing.' })
+
+    const projectDir = mkdtempSync(join(tmpdir(), 'collab-proj-'))
+    dirs.push(projectDir)
+    const project = projects.open(projectDir)
+    const parent = sessions.create({ projectId: project.projectId, harnessId: 'claude', title: 'parent' })
+    const req = await collab.request({
+      parentSessionId: parent.sessionId,
+      launches: [{ agentId: reviewer.id, name: 'Rex', role: 'Reviewer', summary: 'Review.', config: { cwd: projectDir } }],
+    })
+    if (req.status !== 'approved') throw new Error('expected approved')
+    const started = await collab.start({ callerSessionId: parent.sessionId, launchId: req.launches[0].launchId, task: 'Review it' })
+    const append = sessions.getSystemPromptAppend(started.sessionId) ?? ''
+    expect(append.startsWith('Never edit files.\n\n')).toBe(true)
+    expect(append).toContain(parent.sessionId)
+  })
+
   it('request creates durable grants; start is idempotent; send/retrieve advance cursor', async () => {
     const { collab, sessions, projects, db } = bootCollab()
     const projectDir = mkdtempSync(join(tmpdir(), 'collab-proj-'))

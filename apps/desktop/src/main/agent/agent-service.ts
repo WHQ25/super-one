@@ -1128,8 +1128,9 @@ export class AgentService {
       return loadRealtimeTimeline(sessionId)
     })
 
+    // A read the window makes just by showing the session: it takes no lease,
+    // so looking at a session never stops a phone or controller driving it.
     windowIpc.handle(AgentIpcChannels.GET_REALTIME_TIMELINE, async (_event, projectPath: string, sessionId: string) => {
-      this.sessionManager?.getSession(sessionId)?.lease.assertMutation()
       const session = await this.getOrCreateActiveSession(projectPath, sessionId, { provider: 'codex' })
       const timeline = await session.getRealtimeTimeline()
       return reconcileRealtimeTimeline(sessionId, timeline)
